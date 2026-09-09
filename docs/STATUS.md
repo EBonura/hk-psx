@@ -1,0 +1,335 @@
+# Status — 2026-09-09
+
+## Geo and functional menus — current build
+
+The sole normal disc now includes five source Geo rocks, Crawler payouts,
+animated loose coins, collection and a wallet HUD. Mining preserves original
+hit counts, cooldowns and per-hit/final payouts; depleted rocks use original
+broken art. Coins retain state across spatial views and use bounded deterministic
+physics. The source collision matrix confirms rocks do not block the Knight.
+Original pickup/rock-hit sounds are resident. Details and limits: [GEO.md](GEO.md).
+
+The title has Start Game, Options and Controls. Start in gameplay opens a pause
+menu. Sound-effect and ambience levels apply to playing voices, including full
+mute, and persist for this run. Cross/Start on the initially selected Start Game
+still enters directly, retaining the existing recording's launch sequence.
+
+All 47 coin Idle/Air animation frames plus intact/depleted rocks use 57 frame
+references to 50 unique textures. Their 5,154-byte 4bpp bank occupies disjoint
+VRAM strips. Reducing the unused scenery CLUT reservation to 1,248 slots (1,206
+used) provides space without altering current scenery textures. The new 13,904B
+Geo sound bank leaves 1,520 SPU bytes. No mining or pickup event reads the CD.
+
+Final linked code is 278,296B, data 239,840B, BSS 1,462,288B; the gap before the
+reserved 32KiB main stack is 18,160B. Main-stack high-water remains unmeasured.
+Preserve the particle, scene-admission, title, dialogue and Geo outlining
+boundaries: inlining large functions can exceed MIPS PC16 branches. The actual
+final EXE passes its R3000 hazard scan with zero hazards.
+
+### Final validation
+
+Actual-CUE replays completed with unchanged EXE/map/disc/tape/frontend hashes.
+The 6,971-poll long route plus mining/pause tail depleted one five-hit rock,
+registered two Crawler kills, spawned 19 Geo and collected 18, leaving one coin
+and no pending payout. All five rock-hit events, one destruction event and
+16 pickup sound events fired. The wallet stayed visible; source coins, intact/
+broken rocks, title/options/controls, pause pages and the level were inspected
+in 16 final-build captures, including software and hardware final views.
+
+The initial feature replay exposed five missed input samples at 14 moving
+coins. Production checkpoints between coins/emissions and bounded contact scans
+remove all five in the final replay. Guest, CD, input, missed-input and geometry
+repair fault counters stay zero. Pausing preserves the Knight's position across
+280 route samples and resumes correctly. Title and pause settings both work;
+a separate full-mute replay has zero nonzero PCM samples. Listening quality and
+physical SPU output remain unverified.
+
+The standard 5,871-poll route retains zero boundary waits, zero traversal CD
+reads and zero static texture uploads: sectors481, scene admissions2 and
+static VRAM bytes693,952 remain constant across41 post-start activations.
+Its mean render interval is3.3995VBlanks, p954, maximum5. **The strict four-tick
+frame gate still fails:20 of1,707 intervals take five ticks.** This is slightly
+slower on average than the shared-only3.3797 result; changed pacing can also
+alter trajectories, so the runs are not frame-identical A/B measurements.
+No complete-seamlessness or physical-console performance claim is made.
+
+The suite passes198 Python tests and244 Rust/native tests, with further native
+scenarios run inside Python wrappers. Ten Geo scenarios include64 coins against
+1,024 edges with differential physics checks. The final EXE hazard scan passes.
+Evidence: `.hkpsx/gameplay-expansion-final-tests.log`,
+`.hkpsx/gameplay-expansion-final-build.log`, `.hkpsx/gameplay-final-cue/`,
+`.hkpsx/gameplay-final-menu/`, `.hkpsx/gameplay-final-muted/`,
+`.hkpsx/gameplay-final-profile/analysis.json`,
+`.hkpsx/gameplay-final-review/validation.json` and its contact sheet.
+
+Replay without rebuilding or opening the GUI (choose a new ignored output dir):
+
+```sh
+python3 tools/replay_cue.py --tape .hkpsx/gameplay-expansion-input/geo-pause.pxtape --output .hkpsx/geo-replay --screenshot-interval 30
+python3 tools/profile_tape.py --exe dist/hk-psx.exe --map build/hk-psx-normal.map --cue "$HOME/Downloads/ps1 games/hk-psx.cue" --tape .hkpsx/user-6246-input/latest.pxtape --output .hkpsx/geo-profile --require-seamless
+```
+
+The profile command intentionally returns nonzero while its frame gate fails.
+Input-tape construction is recorded in `.hkpsx/gameplay-expansion-input/README.md`.
+
+The canonical pair remains `~/Downloads/ps1 games/hk-psx.bin/.cue`.
+EXE SHA256 `5dac23d7f1da68ff9975c7b748349060bf41cb0d2a654cbb02b34c0e8a835e2e`;
+BIN SHA256 `345a178b71fa03fe2ec92093d45b5f4a1cfdad0f4071d69b278f80ac0c66f89e`.
+`.hkpsx/build.json` binds exact output sizes/hashes, source reports and map.
+
+Still missing: Geo spending/shops, saving, recoverable Shades, full rock gleam/
+jitter/destruction effects, title animation/music, flying enemies and complete
+scene scripting/progression. Death currently removes Geo permanently; this is
+an explicit incomplete system. Rendering cadence and memory headroom need work
+before larger gameplay/content expansion. No full-game or hardware parity claim.
+
+## Previous milestone: shared scene residency
+
+The single main disc now contains two HKSCNE01 scene banks instead of98
+independent room payloads. All98 local region views and the currently authored
+Tutorial/Town content stay in RAM and VRAM. Exact index-plane sharing with
+independent palettes preserves sampled16-bit texels; no additional resolution
+reduction or lossy merge was applied beyond the approved95% cook.
+
+| Resident scene | Raw RAM bytes | Stored disc bytes | Static pages | Palettes |
+| --- | ---: | ---: | ---: | ---: |
+| Tutorial |929,692|452,831|18|1,065|
+| Town entrance |116,756|46,395|2|141|
+| Total |1,046,448|499,226|20|1,206|
+
+The1,179,648-byte shared arena admits the larger scene first, then decodes Town
+in the remaining suffix. Both pinned SDK and incremental decoding match exact
+raw bytes and preserve the first admitted scene. Scene validation yields bounded
+work; local draw/frame/clip/edge references retain their original ordering.
+All98 serialized region geometry packet bounds pass. Source world metadata is
+regenerated even on a cook-cache hit. Animation keys refer to global scene
+textures, retaining slots across spatial crossings and resetting on scene changes.
+Native review covers96 same-scene consecutive pairs; all reuse checks show zero
+uploads. The single cross-scene pair resets its animation namespace.
+
+The linked normal build uses225,100 code bytes,204,976 data bytes and1,461,452
+BSS bytes. It leaves107,060 bytes before the reserved32KiB stack, versus44,428
+previously. Main-stack high-water and hardware performance remain unmeasured.
+The final EXE has zero R3000 hazards. Startup scene admission is outlined to
+avoid the MIPS PC16 range error; preserve that boundary and the particle outlines.
+
+### Current replay evidence
+
+Both the actual main CUE and profiled EXE complete the same5871-poll long tape,
+ending at(163.153656,6.390625), region8, health4, with two kills. Across43
+post-start region activations the CD sector counter stays481, admitted scenes
+stay2 and static VRAM bytes stay693,952: **zero gameplay CD reads, scene decodes
+or static texture uploads**. Both boundary-wait counters stay zero. Input,
+guest/CD and geometry-repair fault counters stay zero. All input VBlanks were
+sampled. This removes measured loading freezes on this route.
+
+| Long replay | Boundary waits | Worst wait | Mean frame interval | p95 | Maximum |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous95% build |478ticks|93ticks|3.663VBlanks|5|6|
+| Shared scene build |0ticks|0ticks|3.380VBlanks|4|5|
+
+The strict seamless gate **still fails only its four-tick frame budget**:
+16 of1,717 measured intervals take five VBlanks. Average interval falls7.74%,
+but simulation/poll paths can diverge; matching inputs/endpoints do not make
+this a frame-identical A/B. Rendering cadence is now the next performance task.
+Startup loading is longer because both scenes are admitted before play.
+
+Actual-CUE software and hardware final captures show the level;22 sampled
+captures from the107-image title/loading/gameplay sequence were inspected.
+The first-door replay shows four active/drawn fragments and source grass
+particles. The long route finishes with20 settled fragments and66 bounces,
+275 particles spawned and zero pool drops. Particle totals differ with route
+and pacing. Full effects/shaders remain incomplete. This tape stays in Tutorial;
+Town banks and all views pass native validation, but natural Town traversal and
+its audio change have not been newly demonstrated.
+
+Validation:422 tests pass (186Python +236Rust/native), including exact scene
+mapping, palette sharing, bounded validation and sequential decoder checks.
+Evidence: `.hkpsx/shared-residency-tests.log`, `.hkpsx/shared-residency-build.log`,
+`.hkpsx/packed-scenes.json`, `.hkpsx/shared-residency-profile/analysis.json`,
+`.hkpsx/shared-residency-cue/`, `.hkpsx/shared-residency-door-cue/`.
+The actual CUE and EXE/map/tape/emulator hashes are bound in replay reports;
+inputs remained unchanged during validation. The prior report is retained in
+`.hkpsx/shared-residency-baseline/` without another disc copy.
+
+Current playable file: `/Users/ebonura/Downloads/ps1 games/hk-psx.cue`.
+No candidate/backup/telemetry disc was created, and no GUI was opened.
+EXE SHA256: `f50f1ef460e770d68792c8f905227800b35552bd28f9aec6162fc03cd63aab9d`.
+BIN SHA256: `703ad32325a15e71720392832d842070d35d42bef3bf956c2d02e018d3d2f91e`.
+
+Next: profile the remaining renderer/activation cost, verify natural Town
+progression, then continue source effects, Geo and gameplay coverage. The
+whole-game inventory has unresolved dependencies and no admitted whole-game
+budget; fitting this current subset does not establish full-game residency.
+
+## Previous milestone and investigation history
+
+Everything below records the preceding95% region-streaming build. Its hashes,
+allocations and timing figures are historical; the section above describes the
+current playable disc and supersedes its next-step streaming proposals.
+
+## Production95% consolidation — built and replayed
+
+The user's95% cutoff is now applied to all eligible same-material static pairs,
+including different original sprites. The fresh cook has37qualifying pairs in
+4direct-representative groups and15global aliases; the lowest admitted member
+score is95.1491%. Every member matches its FINAL representative, with no
+transitive threshold chaining. No80% merges were applied. Animation/effect frames
+and shaped masks are protected. Exact full-quad strict-black masks also share a
+4x4constant tile, with unchanged CLUT/index and complete sampled-word verification.
+The larger sourcecanonical proposal was not applied: source identity alone did
+not meet the approved95% metric.
+
+Across98packs this removes669texture entries,13pages and471476raw bytes versus
+the same fresh cook before merging. These are summed per-region savings, not
+471476bytes of simultaneously resident VRAM. Final maxima:5pages,392textures,
+244968raw bytes. `host/similarity_dedup.py` verifies geometry/material/frame/clip/
+collision preservation and stages every pack before publication. Full proof:
+`.hkpsx/similarity-dedup.json`. `tools/build.py` fingerprints the matcher/helpers.
+
+Deterministic MaxRects packs unchanged texels. Four416-CLUT banks occupy4096
+previously unused VRAM bytes, with all allocations checked together for overlap.
+Texture pages, framebuffer, font, HUD and animation-cache reservations are intact.
+The common4x4tile preserves oversized-quad UV-grid repair;1x1was rejected by the
+geometry admission check. The final constant GPU proof compares12902400pixels
+across tints, fades, rotations and both framebuffers with exact results:
+`.hkpsx/lossless-room-fallback/gpu-report.json`.
+
+This build also integrates the prepared original grass/death particles, bouncing
+and settling persistent door fragments, deterministic scenery dimensions/cache
+keys, fully-soft-black material admission and the corrected black endpoint.
+All particle families remain present. Large particle spawn/tick/draw functions
+are outlined to resolve the MIPS PC16 branch-range compiler failure; final EXE
+hazard scanning passes. These systems remain bounded approximations of Unity.
+
+The earlier80% visual gallery is historical review data. Optional lossless
+palette-plane sharing and HKSCNE01 shared scene banks remain host/parser work;
+the legacy guest still uploads region banks. Do not infer seamless traversal
+from offline global-bank capacity results.
+
+## Current playable build
+
+The sole playable entry is
+`/Users/ebonura/Downloads/ps1 games/hk-psx.cue`, referencing `hk-psx.bin` beside it.
+Every build replaces that pair. No candidate, telemetry, backup or versioned
+disc entries are kept. `.hkpsx/build.json` identifies the current EXE/map/disc.
+The user opens PSoXide themselves; validation below used isolated headless runs.
+
+Current normal EXE SHA256:
+`a172ed26e52493716a5fcddd47790b71238e4de0fd961f72e1f320fbdcef2d7d`
+
+Current BIN SHA256:
+`67cb0c385fadc1ddfc0015c0787a08e2eeda112db7b7a64ac14b539cb42c06e8`
+
+This is an incomplete Tutorial/Dirtmouth port. Existing source-derived systems
+include layered/parallax scenery and terrain, Knight movement/nail attacks,
+breakable doors and grass, three Crawlers, damage/health/SOUL, recoil/pogo,
+hazard checkpoints, Focus, six resident sound effects and cave ambience. The
+minimal title uses original assets. Six source visibility controllers and safe
+geometry extents address the previously disappearing level. Continuous VBlank
+input sampling remains active through CD/decoder/GPU work.
+
+## Latest recording and changes
+
+The6246-sample host profile and5871-poll input tape(start91) are preserved with
+hashes in `.hkpsx/user-6246-input/`. Host frame timing is not guest PS1 timing.
+
+- Crawler deaths now play the original Air/Land corpse clips and retain the last
+  corpse frame. Dead actors cannot cause damage or award repeated SOUL. Contact
+  response is a bounded approximation, not a full Unity/Box2D reproduction.
+- Cut grass now shows the original slash-impact clips. Seven authored doors
+  activate their four original fragments, with28 persistent source-indexed
+  records. Source launch/gravity and approximate rotation are implemented;
+  fragments bounce and settle on terrain. Source grass/death particle subsets
+  are active with a128-particle pool; full source effects remain incomplete.
+  Grass impacts and fragments share a32-packet draw limit.
+- Verified premultiplied black-mask materials now darken through PS1 averaging
+  instead of ineffective additive black. Opaque cores and transparent texels
+  are unchanged. Intermediate alpha is an explicit50% blend approximation;
+  mixed-color materials are not silently converted. This is not full shader parity.
+- Three tutorial tablets use original text, Perpetua font, source prompt markers
+  and exact collider triggers. Up/Down opens; Cross advances/closes; Circle
+  closes. Close/attack input is consumed until released. Movement locks while
+  reading; damage and scene changes close it. Source dialogue choreography,
+  alignment and presentation effects remain incomplete.
+- Completed compressed reads are retained in existing RAM arenas for possible
+  reuse. Urgent inactive VRAM uploads can be cancelled after GPU completion.
+  Vertical motion can prioritize an approaching direct exit. New region entry
+  installs its wishlist before pumping. Background reading and decoding overlap;
+  only an explicit urgent demand can defer an unrelated new decode.
+
+The source audit decoded all88 Tutorial FSMs. The first recorded read attempt
+atx113.80 was slightly outside the first tablet trigger. There is no read trigger
+at(166.75,6.39); the nearby Geo Rock is attack-driven and its payouts remain
+unsupported. Do not widen source triggers arbitrarily. The other pickup found
+in the audit is inactive and elsewhere. Evidence: `.hkpsx/read-point-followup/`.
+
+## Validation and remaining stutters
+
+All404 tests pass (179Python and225Rust/native), recorded in
+`.hkpsx/dedup-95-final-tests.log`. The final EXE has zero R3000 hazards.
+All98packs pass pinned and incremental LZ4 decoding in five256KiB arenas.
+The link leaves44428bytes before the reserved32KiB main stack. Main-stack
+high-water and physical-console timing remain unmeasured. See BUDGET.md.
+
+Both the profiled finalEXE and actual mainCUE complete all5871polls, with identical
+endpoint(163.153656,6.390625), region8, health4 and two kills. Actual software/
+hardware final captures, first-door captures and a97-capture gameplay sequence
+were checked; a21-frame contact sheet includes the darkest capture. The level
+remains visible. Evidence: `.hkpsx/dedup-95-profile/`, `.hkpsx/dedup-95-cue/`,
+`.hkpsx/dedup-95-door-cue/`. The route has zero guest/CD/input/geometry-repair
+faults and zero missed input VBlanks. It spawns400particles with zero dropped,
+records66debris bounces, and finishes with20settled persistent fragments.
+
+| Long recording | Boundary-wait ticks | Longest wait | Mean frame interval | Maximum |
+| --- | ---: | ---: | ---: | ---: |
+| Earlier baseline |648|86|3.633VBlanks|7VBlanks|
+| Previous main |646|90|3.636VBlanks|7VBlanks|
+| Current95% main |478|93|3.663VBlanks|6VBlanks|
+
+Total waiting falls26.0% against the previous main, with82loads and4989sectors
+(previous84/5218). The worst boundary wait increases90→93ticks, mean frame
+interval is slightly higher and p95 remains5VBlanks. **The strict seamless gate
+still fails.** This is a combined art/effects/packing build, not a controlled
+single-variable performance test, and matching tape/endpoints do not guarantee
+identical trajectories. Do not claim overall rendering performance improved.
+
+The first integrated experiment had438waiting ticks but followed a different
+upper route. Subsequent builds exposed a decoder-priority regression; it was
+removed after demonstrating40ticks of idle decoder time followed by a21tick
+crossing stall. Fresh-wishlist activation alone did not improve aggregate waits,
+and its proposed exact eviction mechanism remains inferred. These experiments
+are retained under `.hkpsx/user-6246-update1/`, `user-6246-final/`,
+`user-6246-activation/` and the associated stall audits. They are not alternate
+disc files. Do not compare poll-bound totals as identical-trajectory benchmarks.
+
+A targeted actual-CUE first-door run verifies four active and four drawn pieces;
+its before/after capture sequence and both renderers were inspected. The original
+actual-guest tablet test opens source12118 at(110.758,31.390625) and Cross closes
+it, using controller input without patched RAM. That test used the first
+integrated EXE; later controller replays take a different route and do not
+activate tablets. Native production GPU tests cover all four source pages in
+both framebuffers. Evidence: `.hkpsx/read-points/guest-1/`,
+`.hkpsx/read-points/native-gpu-report.json`, and first-door CUE reports.
+
+## Next work and commands
+
+The immediate performance task is to preserve/read the needed rooms earlier
+across vertical and brief-return transitions. The latest full trace still has
+ordinary traversal holds; do not label the port seamless because input is sampled
+continuously. Compare the first divergent transition and exact read/decode/upload
+leases before trusting an aggregate score. A separate compressed cache or new
+prediction policy needs measured admission and RAM/VRAM evidence.
+
+Remaining gameplay includes Geo drops/rocks, full particles/shaders, other enemy
+families, complete scene scripting, NPCs, saving, inventory, abilities, bosses,
+music, title options and complete-game progression. The existing earned-Focus
+validation tape does not meet its coverage assertion; do not claim newly tested
+healing without a successful route. Source physics/effect approximations are
+recorded in the ignored destruction/door-debris audits.
+
+Build: `python3 tools/build.py`. Tests: `make test`.
+Replay with `tools/profile_tape.py --exe dist/hk-psx.exe --map build/hk-psx-normal.map`,
+the main CUE, preserved tape, a fresh ignored output and `--require-seamless`.
+Actual-CUE helper: `.hkpsx/user-6246-input/replay_main_cue.py --output ...`.
+Never launch the user's GUI or create a second playable disc to validate changes.

@@ -1,0 +1,485 @@
+//! Bounded HealthManager subset, separate from unresolved enemy AI.
+pub const MAX_ACTORS: usize = 32;
+#[derive(Clone, Copy, Debug)]
+pub struct WalkParams {
+    pub speed: i32,
+    pub turn_ticks: u16,
+    pub turn_cooldown_ticks: u16,
+}
+#[derive(Clone, Copy, Debug)]
+pub struct ActorSpec {
+    pub source_id: u32,
+    pub x: i32,
+    pub y: i32,
+    /// Spawn-orientation collider bounds relative to the actor transform.
+    pub bounds: [i32; 4],
+    pub health: EnemyParams,
+    pub walk: WalkParams,
+    pub initial_direction: i32,
+    pub random_start_direction: bool,
+    pub walk_clip: u16,
+    pub turn_clip: u16,
+    pub corpse: Option<crate::CorpseSpec>,
+    pub recoil_speed: i32,
+    pub recoil_ticks: u16,
+}
+#[derive(Clone, Copy, Debug)]
+pub struct EnemyParams {
+    pub health: i16,
+    pub contact_damage: u16,
+    pub evasion_ticks: u16,
+    pub invincible: bool,
+    pub damage_override: bool,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hit {
+    Ignored,
+    Blocked,
+    Damaged,
+    Killed,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActorHealth {
+    pub hp: i16,
+    pub evasion_ticks: u16,
+    pub dead: bool,
+}
+impl ActorHealth {
+    pub const fn new(p: EnemyParams) -> Self {
+        Self {
+            hp: p.health,
+            evasion_ticks: 0,
+            dead: p.health <= 0,
+        }
+    }
+    pub fn tick(&mut self) {
+        self.evasion_ticks = self.evasion_ticks.saturating_sub(1);
+    }
+    pub fn contact_damage(&self, p: EnemyParams) -> u16 {
+        if self.dead {
+            0
+        } else {
+            p.contact_damage
+        }
+    }
+    pub fn hit(&mut self, p: EnemyParams, damage: u16) -> Hit {
+        if self.dead || damage == 0 || self.evasion_ticks != 0 {
+            return Hit::Ignored;
+        }
+        if p.invincible {
+            return Hit::Blocked;
+        }
+        let dealt = if p.damage_override { 1 } else { damage as i32 };
+        // HealthManager.SubtractHealth clamps overkill to -50, not wraparound.
+        self.hp = (self.hp as i32 - dealt).max(-50) as i16;
+        if self.hp <= 0 {
+            self.dead = true;
+            Hit::Killed
+        } else {
+            self.evasion_ticks = p.evasion_ticks;
+            Hit::Damaged
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WalkState {
+    pub direction: i32,
+    pub animation_tick: u32,
+    pub turn_remaining: u16,
+    pub cooldown_remaining: u16,
+    initial_turn: bool,
+}
+impl WalkState {
+    /// Random initial reversal is supplied by the caller's deterministic RNG.
+    pub const fn new(direction: i32, initial_turn: bool) -> Self {
+        Self {
+            direction,
+            animation_tick: 0,
+            turn_remaining: 0,
+            cooldown_remaining: 0,
+            initial_turn,
+        }
+    }
+    /// Original WalkLeftRight turns only on a grounded wall/ledge probe and
+    /// waits for the source turn clip before changing the transform's facing.
+    pub fn tick(&mut self, p: WalkParams, grounded: bool, wall: bool, ledge: bool) -> i32 {
+        assert!(self.direction == -1 || self.direction == 1);
+        self.cooldown_remaining = self.cooldown_remaining.saturating_sub(1);
+        if self.turn_remaining != 0 {
+            self.turn_remaining -= 1;
+            self.animation_tick = self.animation_tick.wrapping_add(1);
+            if self.turn_remaining == 0 {
+                self.direction = -self.direction;
+                self.animation_tick = 0;
+            }
+            return 0;
+        }
+        if self.initial_turn || (grounded && (wall || ledge) && self.cooldown_remaining == 0) {
+            self.initial_turn = false;
+            self.cooldown_remaining = p.turn_cooldown_ticks;
+            self.turn_remaining = p.turn_ticks;
+            self.animation_tick = 0;
+            if p.turn_ticks == 0 {
+                self.direction = -self.direction;
+            }
+            return 0;
+        }
+        self.animation_tick = self.animation_tick.wrapping_add(1);
+        self.direction * p.speed
+    }
+}
+
+/// Resolve only an actor's initial overlap with resident Terrain segments.
+///
+/// HKROOM02 stores two-sided edges, not polygon interiors or one-way normals.
+/// Choose the smallest axis translation that separates the box from an actual
+/// crossing segment, matching the walking solver's axis-separated representation.
+/// This is not Unity/Box2D solver parity and must not run on ongoing movement.
+/// Coordinates and box extents share the guest's validated +/-512-unit bounds.
+/// Returns false without changing the body if eight contact passes cannot find
+/// a non-overlapping placement in a dense chain of intersecting contacts.
+pub fn resolve_actor_spawn(
+    body: &mut crate::Player,
+    p: crate::Params,
+    count: usize,
+    edge: impl Fn(usize) -> [i32; 4],
+) -> bool {
+    let mut candidate = *body;
+    for pass in 0..=8 {
+        let bounds = [
+            candidate.x - p.half_width,
+            candidate.y + p.bottom,
+            candidate.x + p.half_width,
+            candidate.y + p.top,
+        ];
+        let mut correction: Option<[i32; 2]> = None;
+        for i in 0..count {
+            if let Some(delta) = spawn_separation(bounds, edge(i)) {
+                if correction
+                    .is_none_or(|old| delta[0].abs() + delta[1].abs() < old[0].abs() + old[1].abs())
+                {
+                    correction = Some(delta);
+                }
+            }
+        }
+        let Some([dx, dy]) = correction else {
+            *body = candidate;
+            return true;
+        };
+        if pass == 8 {
+            return false;
+        }
+        candidate.x += dx;
+        candidate.y += dy;
+    }
+    false
+}
+
+fn spawn_separation(b: [i32; 4], e: [i32; 4]) -> Option<[i32; 2]> {
+    let [left, bottom, right, top] = b;
+    let [x0, y0, x1, y1] = e;
+    if (x0 == x1 && y0 == y1)
+        || x0.max(x1) <= left
+        || x0.min(x1) >= right
+        || y0.max(y1) <= bottom
+        || y0.min(y1) >= top
+    {
+        return None;
+    }
+    // Clip the segment to each box slab. Rounding outwards by at most one Q16
+    // unit ensures a sloped edge cannot remain inside after integer projection.
+    fn range(a0: i32, b0: i32, a1: i32, b1: i32, lo: i32, hi: i32) -> (i32, i32) {
+        if a0 == a1 {
+            return (b0.min(b1), b0.max(b1));
+        }
+        let (a0, b0, a1, b1) = if a0 > a1 {
+            (a1, b1, a0, b0)
+        } else {
+            (a0, b0, a1, b1)
+        };
+        let den = (a1 - a0) as i64;
+        let at = |a: i32| (a - a0) as i64 * (b1 - b0) as i64;
+        let n0 = at(lo.max(a0));
+        let n1 = at(hi.min(a1));
+        (
+            b0 + n0.min(n1).div_euclid(den) as i32,
+            b0 + (-(-n0.max(n1)).div_euclid(den)) as i32,
+        )
+    }
+    let (low_y, high_y) = range(x0, y0, x1, y1, left, right);
+    if high_y <= bottom || low_y >= top {
+        return None;
+    }
+    let (low_x, high_x) = range(y0, x0, y1, x1, bottom, top);
+    if high_x <= left || low_x >= right {
+        return None;
+    }
+    let options = [
+        [0, high_y - bottom],
+        [0, low_y - top],
+        [high_x - left, 0],
+        [low_x - right, 0],
+    ];
+    options.into_iter().min_by_key(|d| d[0].abs() + d[1].abs())
+}
+
+/// Source probes against the cooked Terrain edges, including sloped segments.
+/// Returns grounded, wall ahead, and missing floor ahead. Q16.16 bounds must
+/// remain inside ±512 world units, matching the cooked scene limits.
+pub fn walker_senses(
+    bounds: [i32; 4],
+    direction: i32,
+    count: usize,
+    edge: impl Fn(usize) -> [i32; 4],
+) -> (bool, bool, bool) {
+    let [left, bottom, right, _] = bounds;
+    let x = left + (right - left) / 2;
+    let y = bottom + crate::ONE / 2;
+    let reach = (right - left) / 2 + crate::ONE / 10;
+    let front = x + direction * reach;
+    let ground_ray = [[x, y], [x, y - crate::ONE]];
+    let wall_ray = [[x, y], [front, y]];
+    let floor_ray = [[front, y], [front, y - crate::ONE]];
+    let mut found = [false; 3];
+    for i in 0..count {
+        let [x0, y0, x1, y1] = edge(i);
+        if x0 == x1 && y0 == y1 {
+            continue;
+        } // Disabled/degenerate terrain sentinel.
+        for (index, ray) in [ground_ray, wall_ray, floor_ray].iter().enumerate() {
+            found[index] |= crate::combat::segments_intersect(ray[0], ray[1], [x0, y0], [x1, y1]);
+        }
+    }
+    (found[0], found[1], !found[2])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const P: EnemyParams = EnemyParams {
+        health: 8,
+        contact_damage: 1,
+        evasion_ticks: 12,
+        invincible: false,
+        damage_override: false,
+    };
+    fn body_params() -> crate::Params {
+        crate::Params {
+            speed: crate::ONE,
+            jump: 0,
+            gravity: 60 * crate::ONE,
+            fall: 100 * crate::ONE,
+            hold_ticks: 0,
+            min_ticks: 0,
+            half_width: crate::ONE / 2,
+            bottom: -crate::ONE,
+            top: crate::ONE,
+        }
+    }
+    #[test]
+    fn spawn_crossing_floor_and_ceiling_uses_nearest_separation() {
+        let p = body_params();
+        let floor = [-4 * crate::ONE, 0, 4 * crate::ONE, 0];
+        let mut body = crate::Player::spawn(0, crate::ONE - crate::ONE / 8);
+        assert!(resolve_actor_spawn(&mut body, p, 1, |_| floor));
+        assert_eq!(body.y, crate::ONE);
+        body.step(p, 0, false, 1, |_| floor);
+        assert!(body.grounded);
+        let mut body = crate::Player::spawn(0, -crate::ONE + crate::ONE / 8);
+        assert!(resolve_actor_spawn(&mut body, p, 1, |_| floor));
+        assert_eq!(body.y, -crate::ONE);
+        assert!(!body.grounded);
+    }
+    #[test]
+    fn spawn_clear_touching_disabled_and_segment_endpoint_are_unchanged() {
+        let p = body_params();
+        let edges = [[-4 * crate::ONE, 0, 4 * crate::ONE, 0], [0; 4]];
+        for y in [crate::ONE, 2 * crate::ONE, -2 * crate::ONE] {
+            let mut body = crate::Player::spawn(0, y);
+            let before = body;
+            assert!(resolve_actor_spawn(&mut body, p, 2, |i| edges[i]));
+            assert_eq!(body, before);
+        }
+        let mut body = crate::Player::spawn(0, 0);
+        let before = body;
+        assert!(resolve_actor_spawn(&mut body, p, 1, |_| [
+            crate::ONE / 2,
+            0,
+            crate::ONE,
+            0
+        ]));
+        assert_eq!(body, before);
+    }
+    #[test]
+    fn spawn_sloped_edge_and_corner_resolve_without_winding_assumptions() {
+        let p = body_params();
+        let edge = [-4 * crate::ONE, -crate::ONE, 4 * crate::ONE, crate::ONE];
+        let mut forward = crate::Player::spawn(0, crate::ONE);
+        let mut reverse = forward;
+        assert!(resolve_actor_spawn(&mut forward, p, 1, |_| edge));
+        assert!(resolve_actor_spawn(&mut reverse, p, 1, |_| [
+            edge[2], edge[3], edge[0], edge[1]
+        ]));
+        assert_eq!(forward, reverse);
+        assert_eq!(forward.y, crate::ONE + crate::ONE / 8);
+        for _ in 0..30 {
+            forward.step(p, 1, false, 1, |_| edge);
+        }
+        assert!(forward.grounded);
+        let edges = [
+            [-4 * crate::ONE, 0, 4 * crate::ONE, 0],
+            [0, -4 * crate::ONE, 0, 4 * crate::ONE],
+        ];
+        let mut corner = crate::Player::spawn(crate::ONE / 4, crate::ONE - crate::ONE / 8);
+        assert!(resolve_actor_spawn(&mut corner, p, 2, |i| edges[i]));
+        assert_eq!((corner.x, corner.y), (crate::ONE / 2, crate::ONE));
+    }
+    #[test]
+    fn contact_chain_exceeding_budget_is_bounded_and_transactional() {
+        let p = body_params();
+        let edges: [[i32; 4]; 12] = core::array::from_fn(|i| {
+            [
+                -4 * crate::ONE,
+                i as i32 * crate::ONE,
+                4 * crate::ONE,
+                i as i32 * crate::ONE,
+            ]
+        });
+        let mut body = crate::Player::spawn(0, crate::ONE / 2);
+        let before = body;
+        assert!(!resolve_actor_spawn(&mut body, p, edges.len(), |i| edges[i]));
+        assert_eq!(body, before);
+    }
+    #[test]
+    fn actual_third_crawler_spawn_stays_on_authored_four_unit_platform() {
+        // level6:12548 Rigidbody/BoxCollider transform; Terrain level6:8366.
+        let p = crate::Params {
+            half_width: (48128 + 45056) / 2,
+            bottom: -69632,
+            top: -10240,
+            ..body_params()
+        };
+        let edge = [
+            157 * crate::ONE,
+            4 * crate::ONE,
+            140 * crate::ONE,
+            4 * crate::ONE,
+        ];
+        let offset = (-45056 + 48128) / 2;
+        let mut body = crate::Player::spawn(10041311 + offset, 326102);
+        assert_eq!(4 * crate::ONE - (body.y + p.bottom), 5674);
+        assert!(resolve_actor_spawn(&mut body, p, 1, |_| edge));
+        assert_eq!(body.y, 331776);
+        for _ in 0..120 {
+            body.step(p, -1, false, 1, |_| edge);
+        }
+        assert_eq!(body.y, 331776);
+        assert!(body.grounded);
+        // First crawler is already above its ten-unit floor, unchanged at spawn.
+        let mut first = crate::Player::spawn(8225424 + offset, 727249);
+        let before = first;
+        assert!(resolve_actor_spawn(&mut first, p, 1, |_| [
+            120 * crate::ONE,
+            10 * crate::ONE,
+            130 * crate::ONE,
+            10 * crate::ONE
+        ]));
+        assert_eq!(first, before);
+    }
+    #[test]
+    fn two_base_nail_hits_kill_and_disable_contact_once() {
+        let mut actor = ActorHealth::new(P);
+        assert_eq!(actor.hit(P, 5), Hit::Damaged);
+        for _ in 0..11 {
+            actor.tick();
+            assert_eq!(actor.hit(P, 5), Hit::Ignored);
+        }
+        actor.tick();
+        assert_eq!(actor.hit(P, 5), Hit::Killed);
+        assert_eq!(actor.hp, -2);
+        assert_eq!(actor.contact_damage(P), 0);
+        assert_eq!(actor.hit(P, 5), Hit::Ignored);
+    }
+    #[test]
+    fn invincible_override_and_overkill_do_not_overflow() {
+        let mut actor = ActorHealth::new(P);
+        assert_eq!(
+            actor.hit(
+                EnemyParams {
+                    invincible: true,
+                    ..P
+                },
+                5
+            ),
+            Hit::Blocked
+        );
+        assert_eq!(actor.hp, 8);
+        assert_eq!(
+            actor.hit(
+                EnemyParams {
+                    damage_override: true,
+                    ..P
+                },
+                u16::MAX
+            ),
+            Hit::Damaged
+        );
+        assert_eq!(actor.hp, 7);
+        for _ in 0..12 {
+            actor.tick();
+        }
+        assert_eq!(actor.hit(P, u16::MAX), Hit::Killed);
+        assert_eq!(actor.hp, -50);
+    }
+    #[test]
+    fn authored_probe_turns_at_ledge_and_observes_clip_and_cooldown() {
+        let p = WalkParams {
+            speed: 4 * crate::ONE,
+            turn_ticks: 6,
+            turn_cooldown_ticks: 60,
+        };
+        let bounds = [-crate::ONE / 2, 0, crate::ONE / 2, crate::ONE];
+        let floor = [-4 * crate::ONE, 0, crate::ONE / 2, 0];
+        let senses = walker_senses(bounds, 1, 1, |_| floor);
+        assert_eq!(senses, (true, false, true));
+        let mut walk = WalkState::new(1, false);
+        assert_eq!(walk.tick(p, senses.0, senses.1, senses.2), 0);
+        for _ in 0..5 {
+            assert_eq!(walk.tick(p, true, false, true), 0);
+            assert_eq!(walk.direction, 1);
+        }
+        assert_eq!(walk.tick(p, true, false, true), 0);
+        assert_eq!(walk.direction, -1);
+        assert_eq!(walk.tick(p, true, true, true), -p.speed); // cooldown guards another turn
+    }
+    #[test]
+    fn disabled_zero_edge_does_not_create_ground_or_wall_at_origin() {
+        assert_eq!(
+            walker_senses(
+                [
+                    -crate::ONE / 2,
+                    -crate::ONE / 2,
+                    crate::ONE / 2,
+                    crate::ONE / 2
+                ],
+                1,
+                1,
+                |_| [0; 4]
+            ),
+            (false, false, true)
+        );
+    }
+    #[test]
+    fn airborne_ledge_does_not_trigger_turn_but_seeded_start_can() {
+        let p = WalkParams {
+            speed: crate::ONE,
+            turn_ticks: 2,
+            turn_cooldown_ticks: 60,
+        };
+        let mut walk = WalkState::new(-1, false);
+        assert_eq!(walk.tick(p, false, true, true), -p.speed);
+        let mut seeded = WalkState::new(-1, true);
+        assert_eq!(seeded.tick(p, false, false, false), 0);
+    }
+}
