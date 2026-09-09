@@ -7,7 +7,7 @@ from pack_scenes import allocate_scenes,manifest,decoder_command,pack_scenes,val
 
 def entry(scene,size,pages,palettes,chunks):
     return dict(scene_id=scene,bytes=size,stored_bytes=size//2,pages=pages,palettes=palettes,
-                stored_fnv=13,raw_fnv=17,stored_path=f'scene{scene}.hlzc',raw_path=f'scene{scene}.hk',source_rooms=[{'chunk_id':c}for c in chunks])
+                stored_fnv=13,raw_fnv=17,textures=65,stored_path=f'scene{scene}.hlzc',raw_path=f'scene{scene}.hk',source_rooms=[{'chunk_id':c,'counts':[1,65,33,1,1,1]}for c in chunks])
 class PackScenes(unittest.TestCase):
     def test_largest_scene_uses_full_arena_then_immutable_aligned_prefix(self):
         out=allocate_scenes([entry(1,116756,2,141,[2]),entry(0,929692,18,1065,[1,3])])
@@ -29,6 +29,8 @@ class PackScenes(unittest.TestCase):
         r={'scenes':scenes,'arena_bytes':1179648,'raw_resident_bytes':1200,'total_pages':3,'total_palettes':4}
         m={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1},{'chunk_id':3,'scene_id':0}]}
         text=manifest(r,m);self.assertIn('(0,0),\n(1,0),\n(0,1),',text);self.assertIn('SCENE_REGIONS:&[usize]=&[0,1]',text)
+        self.assertIn('SCENE_TEXTURE_CAPACITY:usize=96;',text)
+        self.assertIn('SCENE_DRAW_CAPACITY:usize=64;',text)
         command=decoder_command(r);self.assertEqual(command[-5:],['1179648','scene0.hlzc','scene0.hk','scene1.hlzc','scene1.hk'])
         m['regions'][1]['scene_id']=0
         with self.assertRaises(ValueError):manifest(r,m)

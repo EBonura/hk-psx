@@ -174,6 +174,41 @@ fn only_owned_edges_disappear() {
 }
 
 #[test]
+fn one_pass_edge_fill_matches_per_edge_filter() {
+    let mut bytes = vec![0u8; 40 + 16 + 2 * 16 + 32 + 32768];
+    bytes[..8].copy_from_slice(b"HKROOM02");
+    bytes[8] = 1;
+    bytes[12] = 1;
+    bytes[28] = 2;
+    bytes[46] = 1;
+    bytes[48] = 1;
+    for (i, e) in [[1i32, 2, 3, 2], [4, 5, 4, 6]].iter().enumerate() {
+        for (j, v) in e.iter().enumerate() {
+            let p = 56 + i * 16 + j * 4;
+            bytes[p..p + 4].copy_from_slice(&v.to_le_bytes());
+        }
+    }
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let filled = |state: &State| {
+        let mut cache = [std::mem::MaybeUninit::<[i32; 4]>::uninit(); 2];
+        state.fill_edges(&region(), &room, &mut cache);
+        let got: Vec<_> = cache.iter().map(|c| unsafe { c.assume_init() }).collect();
+        let want: Vec<_> = (0..2).map(|i| state.edge(&region(), &room, i)).collect();
+        assert_eq!(got, want);
+        got
+    };
+    let mut state = State::new();
+    assert_eq!(filled(&state), vec![[1, 2, 3, 2], [4, 5, 4, 6]]);
+    state.set_geo_edges(&[0, 9]);
+    assert_eq!(filled(&state), vec![[0; 4], [4, 5, 4, 6]]);
+    state.break_object(B);
+    assert_eq!(filled(&state), vec![[0; 4], [0; 4]]);
+    let mut state = State::new();
+    state.set_lifeblood_edges(&[1, 300]);
+    assert_eq!(filled(&state), vec![[1, 2, 3, 2], [0; 4]]);
+}
+
+#[test]
 fn hazards_and_checkpoints_use_polygons_and_preserve_distant_spawn() {
     const P: hk_sim::Params = hk_sim::Params {
         speed: 0,

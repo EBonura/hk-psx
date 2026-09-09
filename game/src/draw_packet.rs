@@ -17,6 +17,12 @@ impl Packet {
         self.tag=9<<24;
         self.words[..9].copy_from_slice(&quad);
     }
+    /// Same polygon coverage as FT4, with no texture fetch for proven solid fill.
+    pub fn write_black(&mut self,vertices:[u32;4]) {
+        self.tag=5<<24;
+        self.words[0]=0x2800_0000;
+        self.words[1..5].copy_from_slice(&vertices);
+    }
     pub fn scissored(quad:[u32;9],rect:[i16;4],framebuffer_y:u16)->Self {
         let mut p=Self::ZERO;
         p.write_scissored(quad,rect,framebuffer_y);

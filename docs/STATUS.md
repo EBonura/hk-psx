@@ -1,6 +1,88 @@
-# Status — 2026-09-09
+# Status, 2026-09-09
 
-## Geo and functional menus — current build
+## Current build: geometry fills, destruction effects, Lifeblood and burst pacing
+
+This build is validated on the sole disc and supersedes the Geo milestone's
+hashes below. It restores the opaque black `tk2dTileMap` interiors the cooker
+had skipped, spawns the source `Breakable` particle families for all 33
+supported Tutorial breakables, adds the Lifeblood cocoon, Scuttler and
+blue-health logic, and fixes the simulation stall that the first destruction
+burst caused. Details: [GEOMETRY.md](GEOMETRY.md),
+[BREAK_EFFECTS.md](BREAK_EFFECTS.md), [LIFEBLOOD.md](LIFEBLOOD.md).
+
+### Destruction burst and input queue
+
+The first actual-CUE replays after a burst panicked with `input sampler
+contract`, fault `QueueFull`. Around 105 particles each rescanned every room
+edge through a callback that returned 16 bytes through memory and tested them
+with `memcmp`; a sim tick then cost more than one VBlank, the fixed-step loop
+fell behind real time and the 16-sample poll queue filled after about 24
+VBlanks (`.hkpsx/break-overload-profile/`, fault at poll 383).
+
+The tick now integrates every particle first, unions their swept boxes, decodes
+the non-empty room edges once per tick into a 128-entry scratch keeping only
+edges that touch that union, then collides each particle against that subset in
+edge order. Array equality tests became scalar tests, `lerp` uses an exact
+32-bit division identity instead of `__divdi3`, and source-plane particles skip
+a 64-bit division per draw. `tick_debris` builds its filtered edge cache in one
+pass over the exclusion lists. Particle counts and trajectories are unchanged:
+the synthetic full-pool differential, the fallback path beyond the scratch and
+the generated-source differential (33 owners, 650 ticks, 2,745,600 slot states)
+match the naive reference exactly, and both actual-CUE routes end at the same
+positions as the intermediate build (`.hkpsx/burst-fix-*`).
+
+| Long 5,871-poll profile | Worst frame | Frames over 6 VBlanks | Poll queue peak |
+| --- | ---: | ---: | ---: |
+| Before this fix | fault at poll 383 | n/a | 16 (full) |
+| Edge scratch only | 21 VBlanks | 6 | 11 |
+| Current build | 7 VBlanks | 0 | 4 |
+
+### Final validation
+
+`python3 tools/build.py` wrote the sole disc; the final EXE has zero R3000
+hazards (`.hkpsx/burst-fix-build3.log`). `make test` passes 210 Python and 279
+Rust/native tests (`.hkpsx/burst-fix-tests.log`). Actual-CUE replays completed
+with unchanged EXE/map/disc/tape/frontend hashes and zero guest, CD, input,
+missed-input and geometry-repair faults:
+
+- `.hkpsx/burst-fix2-profile/`: the standard 5,810-poll user tape, 1,757
+  render intervals, mean 3.3028 VBlanks, p95 4, maximum 7; 21
+  intervals take five VBlanks and one takes seven, so **the strict four-tick
+  gate still fails** (22 of 1,757). Endpoint (163.154, 6.39062), region
+  8, health 4, 2 kills, 6 breaks, 730 particles
+  spawned, none dropped, 42 post-start activations with zero
+  boundary waits. The preceding Geo build measured mean 3.3995, maximum 5.
+- `.hkpsx/burst-fix2-ascent/`: the 2,450-poll Lifeblood route breaks
+  8 objects and spawns 768 particles, 36 rejected
+  by the full 128-slot pool. It ends in region 2 at (54.4249,
+  11.3906) and never reaches the cocoon; Lifeblood remains unverified in play.
+- `.hkpsx/burst-fix2-geo-pause/`: the 6,971-poll mining/pause route
+  repeats the Geo milestone's results (wallet 18, one depleted rock,
+  2 kills, 6 breaks, 730 particles).
+
+Captures every 30 or 60 route ticks were inspected around the first burst and
+at the route ends: stone and plant particles animate and settle, platform
+interiors are opaque black, and the inspected frames show no background wedge
+under a platform. A dark King's Pass frame that previously showed a dark-blue
+wedge on its right now shows black tilemap interior there. During a
+100-particle burst frames take four to five VBlanks.
+
+Linked code 317,660B, data 261,920B, BSS 1,360,088B, static span 1,939,672B; the gap
+before the reserved 32KiB stack is 58,920B. Main-stack high-water remains
+unmeasured. EXE 581,632B, SHA256 `d01705a5e0eea8904502cf4c6e75aee5730e0d8e722d89413682e62085b6478d`. BIN 3,544,464B, SHA256
+`adc5bf0740676c5f9497a91f7052c4157d2f61602d8a999faf49caf3b461701a`. Map SHA256 `ffb2f1c5a32f6d8eff02da61b4e03d30e2bddb2b554b3fce78c9b06ec47792de`.
+
+### Frame rate
+
+The steady-state CPU is mostly idle: in a 300-VBlank window of the long profile
+76% of retired-instruction samples sit in `main`, which holds the present-wait
+loop and the inlined simulation. Each rendered frame averages 1,171,949 estimated
+GPU cycles and 187 textured quads, so the three-VBlank cadence is GPU
+raster time, mostly large blended scenery layers. Reaching 30 fps needs less
+overdraw per frame rather than further CPU work; a fresh gameplay recording
+will drive that pass.
+
+## Geo and functional menus: preceding validated build
 
 The sole normal disc now includes five source Geo rocks, Crawler payouts,
 animated loose coins, collection and a wallet HUD. Mining preserves original

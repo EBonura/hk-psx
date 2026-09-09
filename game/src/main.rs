@@ -31,6 +31,7 @@ mod pause;
 mod geo;
 mod geo_render;
 mod geo_audio;
+mod lifeblood;
 mod render;
 mod alpha_scissor;
 mod alpha_scissor_cache;
@@ -139,6 +140,7 @@ fn log_state(frame: u32, p: &Player, prims: u32) {
 }
 static mut ROOM_CACHE: disc::Cache = unsafe { disc::Cache::new() };
 static mut GEO_WORLD:geo::World=geo::World::new();
+static mut LIFE_WORLD:lifeblood::World=lifeblood::World::new();
 #[no_mangle] pub static mut HK_HAZARD_RESPAWNS:u32=0;
 #[no_mangle] pub static mut HK_CRAWLER_X:i32=0;
 #[no_mangle] pub static mut HK_CRAWLER_Y:i32=0;
@@ -157,6 +159,15 @@ static mut GEO_WORLD:geo::World=geo::World::new();
 #[no_mangle] pub static mut HK_SFX_LEVEL:u32=10;
 #[no_mangle] pub static mut HK_AMBIENCE_LEVEL:u32=10;
 #[no_mangle] pub static mut HK_GEO_LOST:u32=0;
+#[no_mangle] pub static mut HK_BLUE_HEALTH:u32=0;
+#[inline(never)]
+fn strike_lifeblood(life:&mut lifeblood::World,scene:usize,nail:&Nail,player:&Player)->lifeblood::Strike {
+    if !nail.hitting(ATTACK_PARAMS) {return lifeblood::Strike::default();}
+    let source=NAIL_POLYGONS[nail.kind as usize];let mut polygon=[[0;2];16];
+    assert!((3..=16).contains(&source.len()));
+    for (dst,p) in polygon.iter_mut().zip(source) {*dst=[player.x-p[0]*player.facing,player.y+p[1]];}
+    life.strike(scene,&polygon[..source.len()])
+}
 #[inline(never)]
 fn strike_geo(geo:&mut geo::World,scene:usize,nail:&Nail,player:&Player)->geo::Strike {
     if !nail.hitting(ATTACK_PARAMS) {return geo::Strike::default();}
@@ -206,6 +217,7 @@ fn main() {
     let cache=unsafe { &mut *(&raw mut ROOM_CACHE) };
     let mut state=world::State::new();
     let geo=unsafe {&mut *(&raw mut GEO_WORLD)};
+    let life=unsafe {&mut *(&raw mut LIFE_WORLD)};
     let mut reveals=reveal_masks::State::new();
     let mut enemies=enemies::EnemyWorld::new();
     let mut player=Player::spawn(SPAWN.0,SPAWN.1);
@@ -239,7 +251,7 @@ fn main() {
                 while !vram.ready(id) {prepare_vram(cache,&mut vram,&[id]);}
             }
             vram.activate(region_id);
-            hud::upload();dialogue::upload();geo_render::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);
+            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();world::particles::break_effects::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);
             initial=false;
             sim_clock=psx_rt::interrupts::vblank_count();
             input::start(sim_clock);
@@ -256,6 +268,7 @@ fn main() {
         let bank=vram.activate(region_id);
         render::init(&cache.room(),bank,region_id);state.apply(r);apply_reveal_masks(&reveals,r);
         geo_render::apply(geo,&mut state,region_id);
+        lifeblood::apply(life,&mut state,region_id);
         unsafe { HK_GAME_MODE=1;HK_REGION_ID=region_id as u32+1; }
         let mut pending_target=None;
         let mut boundary_ticks=0u32;
@@ -268,6 +281,7 @@ fn main() {
             state.apply(r);
             apply_reveal_masks(&reveals,r);
             geo_render::apply(geo,&mut state,region_id);
+            lifeblood::apply(life,&mut state,region_id);
             let camera=(player.x.clamp(r.camera[0],r.camera[2]),(player.y+2*ONE).clamp(r.camera[1],r.camera[3]));
             let body_frame=knight_frame(&room,&player,&focus);let effect_frame=nail_frame(&room,&nail);
             let enemy_draws=enemies.prepare_draws(r,&room,camera);
@@ -278,11 +292,12 @@ fn main() {
             render::begin(&room,&needed[..needed_len],fb.buffer_y(fb.drawing));
             fb.clear(9,13,20);let mut prims=render::scenery(camera,false);prims+=enemy_draws.draw();prims+=state.draw_impacts(r,&room,camera);
             prims+=geo_render::draw(geo,region_id,camera);
+            prims+=lifeblood::draw(life,region_id,camera);
             if !vitals.dead && (vitals.invulnerable_ticks==0 || frame%4<2) {
                 draw_frame(&room,body_frame,&player,camera);prims+=1;
             }
             if let Some(f)=effect_frame {draw_frame(&room,f,&player,camera);prims+=1;}
-            prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)));render::submit(vitals.health,VITAL_PARAMS.max_health,vitals.soul,VITAL_PARAMS.max_soul,paused);
+            prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)));render::submit(vitals.health,VITAL_PARAMS.max_health,vitals.soul,VITAL_PARAMS.max_soul,paused,vitals.blue_health);
             emit::counter(counter::TRI_PRIMITIVES,prims*2);emit::stage_end(stage::RENDER);
             emit::stage_begin(stage::PRESENT);
             let display=fb.begin_deferred_swap();
@@ -336,6 +351,7 @@ fn main() {
                     emit::task_begin(task::FIXED_UPDATE);emit::stage_begin(stage::UPDATE);
                     if pad.is_held(button::SELECT) {
                         geo.reset(geo::GEO_PARAMS);unsafe {HK_GEO_LOST=0;}
+                        life.reset();
                         dialogue::reset();state=world::State::new();reveals=reveal_masks::State::new();enemies=enemies::EnemyWorld::new();vitals=hk_sim::Vitals::new(VITAL_PARAMS);
                         player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();attacks=0;target=Some(0);paused=false;
@@ -347,6 +363,7 @@ fn main() {
                         if vitals.needs_death_respawn() {
                             unsafe {HK_GEO_LOST=HK_GEO_LOST.saturating_add(geo.death());}
                             geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
+                            life.reset();
                             dialogue::cancel();state.reset_scene(r.scene);reveals.reset_scene(r.scene);enemies.reset_scene(r.scene);vitals=hk_sim::Vitals::new(VITAL_PARAMS);
                             player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
                             nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();target=Some(0);
@@ -393,6 +410,9 @@ fn main() {
                             let mining=strike_geo(geo,r.scene,&nail,&player);
                             if mining.hits>0 {geo_audio::hit();}
                             if mining.depleted>0 {geo_audio::break_rock();geo_render::apply(geo,&mut state,region_id);}
+                            let blue=life.tick(r.scene,player.x,r.collision_bounds,room.counts[5],|i|state.edge(r,&room,i));
+                            vitals.add_blue_health(blue);
+                            if strike_lifeblood(life,r.scene,&nail,&player).opened {lifeblood::apply(life,&mut state,region_id);}
                             let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS);
                             enemies.take_geo_deaths(r.scene,|source,x,y|geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));
                             let h=geo::HERO_BOX;
@@ -417,6 +437,7 @@ fn main() {
                                 if let Some(g)=world::gate(r.scene,&player) {
                                     if let Some(id)=world::locate(g.target_scene,g.spawn[0],g.spawn[1]) {
                                         geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
+                                        vitals.add_blue_health(life.leave_scene());
                                         dialogue::cancel();state.reset_scene(r.scene);reveals.leave_scene();enemies.reset_scene(r.scene);player=Player::spawn(g.spawn[0],g.spawn[1]);
                                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();target=Some(id);safe=(player.x,player.y,id);safe_facing=player.facing;gate_cooldown=90;
                                     }
@@ -435,7 +456,7 @@ fn main() {
                     }
                     if let Some((x,y,hp))=enemies.actor_state(0,12546) {unsafe {HK_CRAWLER_X=x;HK_CRAWLER_Y=y;HK_CRAWLER_HP=hp as i32;}}
                     let mut cut=0u32;for (i,p) in r.grass.iter().take(32).enumerate(){if state.cut(p.state){cut|=1<<i;}}
-                    unsafe {HK_GRASS_CUT_MASK=cut;HK_NAIL_ATTACK_COUNT=attacks;HK_HEALTH=vitals.health as u32;HK_SOUL=vitals.soul as u32;HK_PLAYER_X=player.x;HK_PLAYER_Y=player.y;HK_FOCUS_LOCKED=u32::from(focus.locks_control());}
+                    unsafe {HK_GRASS_CUT_MASK=cut;HK_NAIL_ATTACK_COUNT=attacks;HK_HEALTH=vitals.health as u32;HK_BLUE_HEALTH=vitals.blue_health as u32;HK_SOUL=vitals.soul as u32;HK_PLAYER_X=player.x;HK_PLAYER_Y=player.y;HK_FOCUS_LOCKED=u32::from(focus.locks_control());}
                     emit::stage_end(stage::UPDATE);emit::task_end(task::FIXED_UPDATE);ticks+=1;
                     input::checkpoint();
                 }

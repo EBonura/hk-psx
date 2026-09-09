@@ -11,8 +11,11 @@ Five source Geo rocks can be mined, Crawlers drop Geo, and animated coins bounce
 and collect into the wallet HUD. Original pickup and rock-hit sounds are resident.
 Three tutorial tablets use the original text, font and interaction triggers.
 Crawlers leave animated corpses; cut grass has source slash impacts and broken
-doors leave persistent fragments that bounce and settle. Source grass and death
-particles are active; full original effects remain incomplete. Verified black masks now darken the background using the
+doors leave persistent fragments that bounce and settle. Source grass, death and
+breakable-destruction particles are active, the latter for all 33 supported
+Tutorial breakables, and platform interiors use the source tilemap fills. The
+Lifeblood cocoon and Scuttlers are implemented but no validated route reaches
+them yet. Full original effects remain incomplete. Verified black masks now darken the background using the
 PS1's limited blend modes; this is not full source-shader parity.
 
 98 bounded regions cover Tutorial_01 and Dirtmouth's left entrance. All their
@@ -27,7 +30,7 @@ select local views without CD reads, decoding or static texture uploads. Eight
 animation slots fetch frames from resident RAM and retain cached frames across
 same-scene crossings. The long user replay now has zero boundary-loading waits
 (previously 478 ticks), with no traversal CD reads or static uploads. Rendering
-still varies from three to five VBlanks per frame; the strict frame-pacing gate
+still varies from three to seven VBlanks per frame; the strict frame-pacing gate
 fails. This covers the current authored subset, not the full game's residency
 or physical-console timing. See [docs/STATUS.md](docs/STATUS.md) for evidence and
 [docs/BUDGET.md](docs/BUDGET.md) for measured allocations.

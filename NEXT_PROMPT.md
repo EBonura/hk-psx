@@ -5,8 +5,9 @@
 Work in `/Users/ebonura/Desktop/repos/hk-psx`. Read AGENTS.md, README.md,
 docs/BOOTSTRAP.md and the current section of docs/STATUS.md; rerun tools/doctor.py.
 Use the psoxide-debug skill. Windows CrossOver Steam assets are read-only build
-inputs. Never substitute the macOS installation. No publishing, pushing, burns,
-Steam changes or unnecessary sibling changes. The full port remains the goal;
+inputs. Never substitute the macOS installation. Push only to the private
+EBonura/hk-psx `codex/bootstrap` branch after clean actual-CUE replays; no
+other publishing, burns, Steam changes or unnecessary sibling changes. The full port remains the goal;
 this is an incomplete playable Tutorial/Town subset, not full-game parity.
 
 The user explicitly requires ONE playable disc pair:
@@ -26,7 +27,47 @@ SDK revision: `7b929ce473ed44b10b0ffca08f413eebf4eeeec4`.
 Toolchain: nightly-2026-03-25. Preserve trim-paths, R3000 mitigation and final
 EXE hazard scans. Emulator evidence is not original-hardware performance proof.
 
-## Latest implementation: Geo and functional menus
+## Latest implementation: geometry fills, destruction effects, Lifeblood
+
+Read the current section of docs/STATUS.md and `.hkpsx/build.json` before
+citing results. The sole disc now has the source tilemap black fills
+(host/tilemap_fill.py, docs/GEOMETRY.md), Breakable particle families for all
+33 supported Tutorial breakables (host/break_effects.py, game/src/break_effects.rs,
+docs/BREAK_EFFECTS.md) and Lifeblood cocoon/Scuttler/blue-health logic
+(host/lifeblood.py, game/src/lifeblood.rs, hk-sim vitals, docs/LIFEBLOOD.md).
+
+The first burst replays faulted with `QueueFull`: 105 particles each rescanned
+every room edge through a 16-byte callback plus `memcmp`, a sim tick exceeded a
+VBlank and the poll queue filled. `tick_specs` now integrates all particles,
+unions their swept boxes, decodes non-empty edges once per tick into a bounded
+scratch filtered by that union and collides against the subset; `lerp` and
+the particle draw avoid 64-bit software division; `State::fill_edges` builds
+the debris edge cache in one pass. Exact differential tests (synthetic pool,
+fallback path, generated source: 2,745,600 slot states) guard trajectories.
+
+Long profile `.hkpsx/burst-fix2-profile/`: 5,810 polls, mean 3.3028 VBlanks,
+p95 4, max 7, 22 of 1,757 intervals over four ticks, poll queue
+peak 4, zero faults, same endpoint (163.154, 6.39062) region 8. Strict
+seamless gate STILL FAILS, as in the Geo milestone (max 5 there). Ascent route
+`.hkpsx/burst-fix2-ascent/` ends at (54.4249, 11.3906) region 2
+without reaching the cocoon: Lifeblood is unverified in gameplay. Geo/pause
+route `.hkpsx/burst-fix2-geo-pause/` repeats the Geo milestone results.
+
+Linked code 317,660, data 261,920, BSS 1,360,088; gap 58,920B before the 32KiB stack.
+VRAM has 608 unallocated bytes inside 1 MiB after the Lifeblood and break-effect
+rectangles. 210 Python + 279 Rust/native tests pass (`.hkpsx/burst-fix-tests.log`).
+Build log `.hkpsx/burst-fix-build3.log`, zero hazards.
+EXE SHA256 `d01705a5e0eea8904502cf4c6e75aee5730e0d8e722d89413682e62085b6478d`.
+BIN SHA256 `adc5bf0740676c5f9497a91f7052c4157d2f61602d8a999faf49caf3b461701a`.
+
+Next: the user will record a gameplay capture; the target is 30 fps. Steady
+frames are GPU-bound (about 1,171,949 estimated GPU cycles and 187 textured
+quads per frame, CPU mostly idle in the present-wait loop), so the lever is
+overdraw of large blended scenery layers, not CPU. Also pending: a Lifeblood
+route that actually opens the cocoon, Geo chips/gleam/jitter effects and the
+remaining destruction paths listed in BREAK_EFFECTS.md.
+
+## Previous implementation: Geo and functional menus
 
 Read STATUS.md and `.hkpsx/build.json` before citing results. The sole normal disc
 contains source Geo rocks, Crawler payouts, animated pickups, wallet HUD, Geo

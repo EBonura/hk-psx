@@ -53,6 +53,14 @@ def manifest(report,metadata):
     text='// Generated lossless HKSCNE01 banks; local licensed data stays on disc.\n'
     text+='#[derive(Clone,Copy,Debug)]\npub struct SceneDesc{'+','.join('pub '+n+':'+t for n,t in fields)+'}\n'
     text+=f'pub const SCENE_ARENA_BYTES:usize={report["arena_bytes"]};\n'
+    # Runtime working tables need only the largest admitted scene/view, not the
+    # format's maximum capacity. Round bitset-backed tables to whole u32 words.
+    textures=max(e['textures'] for e in scenes)
+    draws=max(r['counts'][2] for e in scenes for r in e['source_rooms'])
+    if not 1<=textures<=2048 or not 1<=draws<=1024:
+        raise ValueError('Renderer working set exceeds format limits')
+    text+=f'pub const SCENE_TEXTURE_CAPACITY:usize={(textures+31)//32*32};\n'
+    text+=f'pub const SCENE_DRAW_CAPACITY:usize={(draws+31)//32*32};\n'
     text+='pub const SCENE_MANIFEST:&[SceneDesc]=&[\n'+''.join('SceneDesc{'+','.join(n+':'+str(e[n])for n,t in fields)+'},\n'for e in scenes)+'];\n'
     text+='pub const REGION_SCENE_LOCAL:&[(usize,usize)]=&[\n'+''.join(f'({lookup[r["chunk_id"]][0]},{lookup[r["chunk_id"]][1]}),\n'for r in rows)+'];\n'
     text+='pub const SCENE_REGIONS:&[usize]=&['+','.join(map(str,representatives))+'];\n'

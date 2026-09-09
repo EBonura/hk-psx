@@ -7,10 +7,13 @@ pub const CLUTS:usize=416;
 pub const SCENE_CLUTS:usize=3*CLUTS;
 /// Geo's independent 4bpp art/CLUT allocation in previously unused gaps.
 /// Each tuple is x,y,width,height in VRAM halfwords, not texture pixels.
-pub const GEO_RECTS:[(usize,usize,usize,usize);5]=[
+pub const GEO_RECTS:[(usize,usize,usize,usize);6]=[
     (320,464,64,16),(352,240,32,16),(352,485,32,27),(320,496,32,16),
-    (352,32,32,64),
+    (352,32,8,32),(352,64,32,32),
 ];
+/// Lifeblood and independent break-effect atlases, including their CLUTs.
+pub const LIFE_RECTS:[(usize,usize,usize,usize);1]=[(352,96,32,80)];
+pub const BREAK_RECTS:[(usize,usize,usize,usize);2]=[(352,176,32,64),(360,32,24,32)];
 #[derive(Clone,Copy)]
 struct Entry {region:Option<usize>,ready:bool,stamp:u32}
 pub struct Banks {entries:[Entry;BANKS],active:Option<usize>,pending:Option<usize>,clock:u32}
@@ -174,6 +177,8 @@ pub fn clut_xy(bank:usize,palette:usize)->(u16,u16) {
         // Original dialogue font strips and separate grayscale CLUT.
         claim(0,500,320,12);claim(320,481,16,1);
         for (x,y,w,h) in GEO_RECTS {claim(x,y,w,h);}
+        for (x,y,w,h) in LIFE_RECTS {claim(x,y,w,h);}
+        for (x,y,w,h) in BREAK_RECTS {claim(x,y,w,h);}
         for bank in 0..BANKS {
             for page in 0..PAGES {let(x,y)=page_xy(bank,page);claim(x as usize,y as usize,64,256);}
             for palette in 0..CLUTS {if bank*CLUTS+palette<SCENE_CLUTS {

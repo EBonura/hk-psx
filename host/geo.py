@@ -14,7 +14,7 @@ from cook import tk_sprite,FOCAL,CAM_Z
 from materials import quantize_alpha_coverage
 
 # Halfword rectangles approved against the resident scene/font layout by root.
-VRAM_RECTS=((320,464,64,16),(352,240,32,16),(352,485,32,27),(320,496,32,16),(352,32,32,64))
+VRAM_RECTS=((320,464,64,16),(352,240,32,16),(352,485,32,27),(320,496,32,16),(352,32,8,32),(352,64,32,32))
 MAX_VRAM_BYTES=8192
 COIN_CLIPS=('Small Idle','Small Air','Med Idle','Med Air','Large Idle','Large Air')
 

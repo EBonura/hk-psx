@@ -36,7 +36,8 @@ fn sprite(icon:usize,x:i16,y:i16,cut:u16,gain:u8)->Sprite {
 }
 /// Prepend before scenery, leaving the HUD last in GPU order. Caller owns
 /// every static packet until both DMA and rasterization finish.
-pub fn append(ot:&mut OrderingTable<1>,health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool) {
+pub fn append(ot:&mut OrderingTable<1>,health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool,blue_health:u16) {
+    crate::lifeblood::append_hud(ot,max_health,blue_health);
     unsafe {
     if paused {for (i,x) in [292,300].into_iter().enumerate().rev() {
         PAUSE[i]=RectFlat::new(x,16,4,12,220,220,220);

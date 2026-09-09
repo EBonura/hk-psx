@@ -13,7 +13,7 @@ from pathlib import Path
 import struct
 
 CAP = 1032
-ACTOR_RESERVE = 248  # 128 particles +32 impacts/debris +8 actors +80 Geo coins/rock strips
+ACTOR_RESERVE = 264  # 128 particles +32 impacts/debris +8 actors +80 Geo +16 Lifeblood parts
 CHILD_CAPACITY = 64
 MAX_DIVISIONS = 64
 MAX_COORDINATE = 1 << 20
