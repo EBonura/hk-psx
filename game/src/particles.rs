@@ -2,6 +2,7 @@
 //! 60Hz integration, finite RNG precision and native damping remain approximations.
 use hk_format::{u32_at, Room};
 use hk_sim::ONE;
+#[path="break_effects.rs"]pub mod break_effects;
 pub const CAPACITY: usize = 128;
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {
@@ -45,8 +46,8 @@ struct Particle {
     angle: i32,
     scene: u8,
     kind: u8,
-    life: u8,
-    age: u8,
+    life: u16,
+    age: u16,
     delay: u8,
     cell: u8,
     gradient: u8,
@@ -98,6 +99,17 @@ impl Pool {
         }
         self.publish();
     }
+    pub fn spawn_break(&mut self,scene:usize,owner:usize,kind:u8,facing:i32) {
+        break_effects::spawn_specs(self,scene,owner,kind,facing,break_effects::EMITTERS,break_effects::STYLES);
+    }
+    pub fn needs_break_collision(&self,scene:usize,bounds:[i32;4])->bool {
+        self.particles.iter().flatten().any(|p|p.scene as usize==scene&&p.kind>=2&&p.delay==0&&p.age+1<p.life
+            &&break_effects::STYLES[(p.kind-2)as usize].collision&&p.position[0]>=bounds[0]&&p.position[0]<=bounds[2]
+            &&p.position[1]>=bounds[1]&&p.position[1]<=bounds[3])
+    }
+    pub fn tick_break(&mut self,scene:usize,coverage:[i32;4],count:usize,edge:impl Fn(usize)->[i32;4]) {
+        break_effects::tick_specs(self,scene,break_effects::STYLES,coverage,count,edge);
+    }
     pub fn spawn_grass(&mut self, scene: usize, emitter: EmitterSpec, bank: Bank) {
         self.spawn(scene, 0, emitter, bank);
     }
@@ -131,7 +143,7 @@ impl Pool {
                 self.dropped = self.dropped.saturating_add((style.count - i) as u32);
                 break;
             }
-            let life = range(&mut rng, [style.life[0] as i32, style.life[1] as i32]) as u8;
+            let life = range(&mut rng, [style.life[0] as i32, style.life[1] as i32]) as u16;
             let speed = range(&mut rng, style.speed);
             let size = range(&mut rng, style.size);
             let force = range(&mut rng, style.force);
@@ -199,7 +211,7 @@ impl Pool {
             let Some(p) = slot else {
                 continue;
             };
-            if p.scene as usize != scene {
+            if p.scene as usize != scene || p.kind>=2 {
                 continue;
             }
             if p.delay > 0 {
@@ -238,15 +250,18 @@ impl Pool {
         camera: (i32, i32),
     ) -> u32 {
         self.drawn = 0;
+        for p in self.particles.iter().flatten().filter(|p|p.scene as usize==scene&&p.kind>=2&&p.delay==0) {
+            self.drawn+=u32::from(break_effects::draw_particle(p,camera));
+        }
         let Some(bank) = bank else {
             self.publish();
-            return 0;
+            return self.drawn;
         };
         for p in self
             .particles
             .iter()
             .flatten()
-            .filter(|p| p.scene as usize == scene && p.delay == 0)
+            .filter(|p| p.scene as usize == scene && p.delay == 0 && p.kind<2)
         {
             let kind = p.kind as usize;
             let style = bank.styles[kind];
@@ -323,21 +338,14 @@ fn divq(a: i32, b: i32) -> i32 {
 fn dot3(a: [i32; 3], b: [i32; 3]) -> i32 {
     mulq(a[0], b[0]) + mulq(a[1], b[1]) + mulq(a[2], b[2])
 }
-fn length3(v: [i32; 3]) -> i32 {
-    let mut n = v.iter().map(|x| *x as i64 * *x as i64).sum::<i64>() as u64;
-    let mut result = 0u64;
-    let mut bit = 1u64 << 62;
-    while bit > n {
-        bit >>= 2;
-    }
-    while bit != 0 {
-        if n >= result + bit {
-            n -= result + bit;
-            result = (result >> 1) + bit;
-        } else {
-            result >>= 1;
-        }
-        bit >>= 2;
-    }
-    result as i32
+fn length_squared(v:[i32;3])->u64 {
+    v.iter().map(|x|*x as i64 * *x as i64).sum::<i64>()as u64
+}
+/// Exact integer norm. Candidate squares use the R3000's native32x32 MULTU;
+/// the prior restoring loop manipulated several64-bit values each iteration.
+fn length3(v:[i32;3])->i32 {
+    let n=length_squared(v);if n==0{return 0;}
+    let mut bit=1u32<<((63-n.leading_zeros())/2);let mut root=0u32;
+    while bit!=0 {let candidate=root|bit;if u64::from(candidate)*u64::from(candidate)<=n{root=candidate;}bit>>=1;}
+    root as i32
 }

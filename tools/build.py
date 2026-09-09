@@ -62,7 +62,7 @@ def sdk(source):
 
 def cook_cached(force=False):
     provenance=ROOT/'.hkpsx/regions-provenance.json';cache=ROOT/'.hkpsx/regions-cook-cache.json'
-    code={str(p.relative_to(ROOT)):sha(p) for p in [ROOT/'host'/name for name in ('cook.py','regions.py','actors.py','particles.py','effects.py','breakables.py','combat.py','scene.py','source.py','world.py','flat_support.py','reveal_masks.py','texture_dedup.py','similarity_dedup.py','constant_textures.py','region_delta.py','quality.py','focus.py','alpha_covers.py','materials.py')]}
+    code={str(p.relative_to(ROOT)):sha(p) for p in [ROOT/'host'/name for name in ('cook.py','regions.py','actors.py','particles.py','effects.py','breakables.py','combat.py','scene.py','source.py','world.py','flat_support.py','reveal_masks.py','texture_dedup.py','similarity_dedup.py','constant_textures.py','region_delta.py','quality.py','focus.py','alpha_covers.py','materials.py','tilemap_fill.py','break_effects.py')]}
     for name in ('audit_texture_similarity.py','texture_match_groups.py','audit_resident_bank.py'):
         code['tools/'+name]=sha(ROOT/'tools'/name)
     code['requirements']=sha(ROOT/'host/requirements.lock')
@@ -106,7 +106,7 @@ def main():
     if not stamp.exists() or stamp.read_text()!=sha(req):
         run([venv,'-m','pip','install','--requirement',req]);stamp.write_text(sha(req))
     sdk(args.sdk_source);cook_cached(args.recook);menu_cached(args.recook)
-    for script in ('cook_audio.py','cook_hud.py','ambience.py','read_points.py','geo.py','geo_audio.py'):
+    for script in ('cook_audio.py','cook_hud.py','ambience.py','read_points.py','geo.py','geo_audio.py','lifeblood.py','break_effects.py'):
         run([venv,ROOT/'host'/script],cwd=ROOT)
     run(['cargo','run','--quiet','--manifest-path',ROOT/'shared/hk-format/Cargo.toml','--example','check','--',ROOT/'data/room.hk'])
     from build_guest import build
@@ -127,6 +127,8 @@ def main():
             'hud':json.load(open(ROOT/'.hkpsx/hud-provenance.json')),
             'geo':json.load(open(ROOT/'.hkpsx/geo-provenance.json')),
             'geo_audio':json.load(open(ROOT/'.hkpsx/geo-audio-provenance.json')),
+            'lifeblood':json.load(open(ROOT/'.hkpsx/lifeblood-provenance.json')),
+            'break_effects':json.load(open(ROOT/'.hkpsx/break-effects/report.json')),
             'menu':json.load(open(ROOT/'.hkpsx/menu-provenance.json')),
             'hazards':json.load(open(hazard_report_path(telemetry)))}
     link_map=link_map_path(telemetry)

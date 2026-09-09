@@ -25,6 +25,8 @@ pub enum Hurt {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Vitals {
     pub health: u16,
+    /// Temporary Lifeblood; consumed before normal masks, never Focus-healed.
+    pub blue_health: u16,
     pub soul: u16,
     pub invulnerable_ticks: u16,
     pub recoil_ticks: u16,
@@ -38,6 +40,7 @@ impl Vitals {
     pub const fn new(p: VitalParams) -> Self {
         Self {
             health: p.max_health,
+            blue_health: 0,
             soul: 0,
             invulnerable_ticks: 0,
             recoil_ticks: 0,
@@ -77,7 +80,11 @@ impl Vitals {
         {
             return Hurt::Ignored;
         }
-        self.health = self.health.saturating_sub(damage);
+        // PlayerData.TakeHealth consumes healthBlue then recursively applies
+        // only positive overflow to ordinary health. Keep this AFTER immunity.
+        let normal_damage = damage.saturating_sub(self.blue_health);
+        self.blue_health = self.blue_health.saturating_sub(damage);
+        self.health = self.health.saturating_sub(normal_damage);
         self.recoil_direction = direction.clamp(-1, 1);
         if self.health == 0 {
             self.dead = true;
@@ -118,6 +125,12 @@ impl Vitals {
             self.invulnerable_ticks = p.hazard_invulnerable_ticks;
         }
     }
+    /// Original ADD BLUE HEALTH adds one, independent of max normal health.
+    pub fn add_blue_health(&mut self, amount: u16) {
+        if !self.dead { self.blue_health = self.blue_health.saturating_add(amount); }
+    }
+    /// No-charm PlayerData.UpdateBlueHealth, called at bench/full reset.
+    pub fn reset_blue_health(&mut self) { self.blue_health = 0; }
     pub fn gain_soul_on_nail_hit(&mut self, p: VitalParams) {
         if !self.dead {
             self.soul = self.soul.saturating_add(p.soul_per_hit).min(p.max_soul);
@@ -215,4 +228,34 @@ mod tests {
         v.heal(P, u16::MAX);
         assert_eq!(v.health, 5);
     }
+    #[test]
+    fn lifeblood_absorbs_before_normal_health_and_preserves_recoil() {
+        let mut v=Vitals::new(P);v.add_blue_health(2);
+        assert_eq!(v.hurt(P,1,1,false),Hurt::Recoiling);
+        assert_eq!((v.health,v.blue_health),(5,1));
+        assert_eq!(v.hurt(P,1,1,false),Hurt::Ignored);
+        assert_eq!((v.health,v.blue_health),(5,1));
+        assert_eq!(v.hurt(P,2,1,true),Hurt::Hazard);
+        assert_eq!((v.health,v.blue_health),(4,0));
+        v.finish_hazard_respawn(P);assert_eq!(v.blue_health,0);
+    }
+    #[test]
+    fn lifeblood_cannot_be_focus_healed_and_resets_independently() {
+        let mut v=Vitals::new(P);v.health=3;v.add_blue_health(2);v.heal(P,1);
+        assert_eq!((v.health,v.blue_health),(4,2));
+        v.reset_blue_health();assert_eq!((v.health,v.blue_health),(4,0));
+        v.add_blue_health(2);assert_eq!(v.hurt(P,6,0,true),Hurt::Died);
+        assert_eq!((v.health,v.blue_health),(0,0));
+        v.add_blue_health(1);assert_eq!(v.blue_health,0);
+    }
+    #[test]
+    fn every_small_damage_matches_source_two_pool_subtraction() {
+        for health in 1u16..=5 {for blue in 0u16..=5 {for damage in 0u16..=12 {
+            let mut v=Vitals::new(P);v.health=health;v.blue_health=blue;
+            v.hurt(P,damage,1,false);
+            assert_eq!(v.blue_health,blue.saturating_sub(damage));
+            assert_eq!(v.health,health.saturating_sub(damage.saturating_sub(blue)));
+        }}}
+    }
+
 }

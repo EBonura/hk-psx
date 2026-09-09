@@ -7,9 +7,13 @@ use crate::{alpha_scissor_cache,draw_packet::Packet,scenery_geometry::{self,UvRe
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/scenery_budgets.rs"));
 // Maximum scenery records plus the Knight and the active nail effect.
 const CAP: usize = 1032;
+const MAX_DRAWS:usize=crate::disc::SCENE_DRAW_CAPACITY;
 const FRONT:u8=1;
 const LEGAL_EXTENT:u8=2;
 const BLACK_AVERAGE:u8=4;
+const SCISSOR_CANDIDATE:u8=8;
+const EMPTY_TEXTURE:u8=16;
+const SOLID_BLACK:u8=32;
 const ZERO: QuadTextured = QuadTextured {
     tag: 0,
     color_cmd: 0,
@@ -30,14 +34,14 @@ struct Draw {
     texture: usize,
     tint: (u8, u8, u8),
 }
-static mut DRAWS: [Draw; 1024] = [Draw {
+static mut DRAWS: [Draw; MAX_DRAWS] = [Draw {
     xy: [0; 8],
     scale: 0,
     flags: 0,
     texture: 0,
     tint: (0, 0, 0),
-}; 1024];
-const MAX_TEXTURES:usize=2048;
+}; MAX_DRAWS];
+const MAX_TEXTURES:usize=crate::disc::SCENE_TEXTURE_CAPACITY;
 static mut TEMPLATES: [QuadTextured; MAX_TEXTURES] = [const { ZERO }; MAX_TEXTURES];
 static mut PACKETS: [Packet; CAP] = [const { Packet::ZERO }; CAP];
 static mut OT: OrderingTable<1> = OrderingTable::new();
@@ -48,9 +52,9 @@ static mut TEXTURE_COUNT: usize = 0;
 static mut STREAMED: [u32; MAX_TEXTURES/32] = [0; MAX_TEXTURES/32];
 // Preserve cooked draw order while toggling authored whole-sprite variants.
 // This is transient room state, reset when starting or respawning.
-static mut VISIBLE: [u32; 32] = [0; 32];
-static mut GAINS: [u8; 1024] = [128; 1024];
-static mut OPACITIES: [u8; 1024] = [0; 1024];
+static mut VISIBLE: [u32; MAX_DRAWS/32] = [0; MAX_DRAWS/32];
+static mut GAINS: [u8; MAX_DRAWS] = [128; MAX_DRAWS];
+static mut OPACITIES: [u8; MAX_DRAWS] = [0; MAX_DRAWS];
 static mut BLACK_MASKS: [u32;MAX_TEXTURES/32] = [0;MAX_TEXTURES/32];
 static mut FADE_CLUT_READY: bool = false;
 // Shared 16-word reservation, disjoint from scenery banks, animation and HUD.
@@ -66,9 +70,9 @@ fn binary_black_palette(p:&[u8])->bool {
 // init fills every active entry before drawing; zero initialization keeps this
 // working storage out of the EXE's on-disc data payload.
 static mut COVERS: [[u8;20];MAX_TEXTURES] = [[0;20];MAX_TEXTURES];
-// 40,960 bytes in BSS. Geometry spans may change by one pixel with camera
+// One entry per admitted draw. Geometry spans may change by one pixel with camera
 // rounding; the entry key captures both signed spans and the texture identity.
-static mut SCISSOR_CACHE:[alpha_scissor_cache::Entry;1024]=[alpha_scissor_cache::Entry::EMPTY;1024];
+static mut SCISSOR_CACHE:[alpha_scissor_cache::Entry;MAX_DRAWS]=[alpha_scissor_cache::Entry::EMPTY;MAX_DRAWS];
 static mut EXTRA_ALLOWANCE: usize = 0;
 static mut EXTRA_USED: usize = 0;
 static mut FRAMEBUFFER_Y: u16 = 0;
@@ -81,6 +85,7 @@ static mut FRAMEBUFFER_Y: u16 = 0;
 fn vertex(p: (i16, i16)) -> u32 {
     (p.0 as u16 as u32) | ((p.1 as u16 as u32) << 16)
 }
+#[inline(never)]
 pub fn init(room: &Room, bank: usize, region:usize) {
     crate::input::checkpoint();
     unsafe {
@@ -89,6 +94,7 @@ pub fn init(room: &Room, bank: usize, region:usize) {
         ACTIVE_BANK = bank;
         assert!(room.counts[1]<=MAX_TEXTURES);
         DRAW_COUNT = room.counts[2];
+        assert!(DRAW_COUNT<=MAX_DRAWS);
         TEXTURE_COUNT = room.counts[1];
         // The cooker bounds every mandatory child, even if all source draws
         // are visible. Optional scissors can only spend the remaining capacity.
@@ -138,6 +144,36 @@ pub fn init(room: &Room, bank: usize, region:usize) {
             }
         }
     }
+        // Immutable cover/axis tests belong to activation, not every rendered
+        // frame. A rejected candidate still draws its original complete quad.
+        for (i,d) in DRAWS[..DRAW_COUNT].iter_mut().enumerate() {
+            if i&31==0 {crate::input::checkpoint();}
+            let cover=&COVERS[d.texture];
+            if cover[0]==0 {d.flags|=EMPTY_TEXTURE;continue;}
+            let xy=&d.xy;
+            let axis=xy[1]==xy[3]&&xy[0]==xy[4]&&xy[2]==xy[6]&&xy[5]==xy[7];
+            if axis && cover[0]<=4 {
+                let uv=uv_rect(&TEMPLATES[d.texture]);
+                let full=cover[0]==1&&cover[4]==0&&cover[5]==0&&cover[6]as u16+1==uv.w&&cover[7]as u16+1==uv.h;
+                if !full {d.flags|=SCISSOR_CANDIDATE;}
+            }
+            // The source tilemap uses a constant opaque black patch. Verify
+            // actual sampled words, not just a palette or an alpha bounding box.
+            // Restrict the scan to tiny patches; larger textures use FT4 as usual.
+            if d.flags&BLACK_AVERAGE!=0 {
+                let t=room.texture(d.texture);
+                if !t.is_streamed()&&t.width<=4&&t.height<=4 {
+                    let page=room.page(t.page as usize);
+                    let pal=&room.palettes()[t.palette as usize*32..][..32];
+                    let solid=(0..t.height as usize).all(|y|(0..t.width as usize).all(|x| {
+                        let u=t.u as usize+x;let v=t.v as usize+y;
+                        let index=(page[v*128+u/2]>>((u&1)*4))&15;
+                        u16_at(pal,index as usize*2)==1
+                    }));
+                    if solid {d.flags|=SOLID_BLACK;}
+                }
+            }
+        }
     }
     reset_visibility();
     crate::input::checkpoint();
@@ -165,9 +201,9 @@ fn template(t: Texture, tp: Tpage, u: u16, v: u16) -> QuadTextured {
 }
 pub fn reset_visibility() {
     unsafe {
-        VISIBLE = [u32::MAX; 32];
-        GAINS = [128; 1024];
-        OPACITIES = [128; 1024];
+        VISIBLE = [u32::MAX; MAX_DRAWS/32];
+        GAINS = [128; MAX_DRAWS];
+        OPACITIES = [128; MAX_DRAWS];
     }
 }
 pub fn set_visible(draw: usize, visible: bool) {
@@ -277,12 +313,13 @@ fn uv_rect(t:&QuadTextured)->UvRect {
     let u=(t.uv0_clut&255) as u16;let v=((t.uv0_clut>>8)&255) as u16;
     UvRect {u,v,w:(t.uv1_tpage&255) as u16-u+1,h:((t.uv2>>8)&255) as u16-v+1}
 }
+#[inline(never)]
 pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
     let mut n = 0;
     unsafe {
         for (i, d) in DRAWS[..DRAW_COUNT].iter().enumerate() {
             if i&31==0 {crate::input::checkpoint();}
-            if (d.flags&FRONT!=0) != front || VISIBLE[i / 32] & (1u32 << (i % 32)) == 0 || GAINS[i]==0 || OPACITIES[i]==0 {
+            if (d.flags&FRONT!=0) != front || d.flags&EMPTY_TEXTURE!=0 || VISIBLE[i / 32] & (1u32 << (i % 32)) == 0 || GAINS[i]==0 || OPACITIES[i]==0 {
                 continue;
             }
             // Distant parallax layers can overflow the pre-shift i32 product.
@@ -309,8 +346,11 @@ pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
             let opacity=OPACITIES[i] as u16 | if d.flags&BLACK_AVERAGE!=0 {256}else{0};
             if d.flags&LEGAL_EXTENT!=0 || scenery_geometry::legal(&v) {
                 let xy=v.map(|p|(p.0 as i16,p.1 as i16));
+                if d.flags&SOLID_BLACK!=0 && opacity&255==128 {
+                    assert!(USED<CAP);PACKETS[USED].write_black(xy.map(vertex));USED+=1;n+=1;continue;
+                }
                 let words=quad_words(t,xy,tint,None,opacity);
-                if let Some(scissors)=SCISSOR_CACHE[i].map(xy,d.texture as u16,uv.w,uv.h,&COVERS[d.texture]) {
+                if let Some(scissors)=if d.flags&SCISSOR_CANDIDATE!=0 {SCISSOR_CACHE[i].map(xy,d.texture as u16,uv.w,uv.h,&COVERS[d.texture])}else{None} {
                     let extra=scissors.count.saturating_sub(1);
                     if extra<=EXTRA_ALLOWANCE-EXTRA_USED {
                         EXTRA_USED+=extra;
@@ -353,7 +393,7 @@ fn repair(t:&QuadTextured,v:[(i32,i32);4],uv:UvRect,tint:(u8,u8,u8),opacity:u16)
     }
 }
 
-pub fn submit(health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool) {
+pub fn submit(health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool,blue_health:u16) {
     crate::input::checkpoint();
     animation_cache::submit();
     // One owner, no mutation until main observes DMA and GPU completion.
@@ -361,7 +401,7 @@ pub fn submit(health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool) {
         let ot = &mut *(&raw mut OT);
         ot.clear();
         crate::dialogue::append(ot);
-        crate::hud::append(ot,health,max_health,soul,max_soul,paused);
+        crate::hud::append(ot,health,max_health,soul,max_soul,paused,blue_health);
         for i in (0..USED).rev() {
             if i&31==0 {crate::input::checkpoint();}
             let words=PACKETS[i].word_count();

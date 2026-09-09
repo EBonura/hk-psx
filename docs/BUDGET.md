@@ -7,20 +7,22 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |278,296|
-| Code-to-data alignment |8|
-| Linked data, including menu, HUD and sound bank |239,840|
-| BSS, including shared scene arena and runtime pools |1,462,288|
-| Total static span |1,980,432|
+| Linked code |317,660|
+| Code-to-data alignment |4|
+| Linked data, including menu, HUD and sound bank |261,920|
+| BSS, including shared scene arena and runtime pools |1,360,088|
+| Total static span |1,939,672|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |32,768|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |18,160|
+| Unallocated gap before reserved stack |58,920|
 
-Static data ends at `0x801f3810`; the reserved stack begins at `0x801f7f00`.
+Static data ends at `0x801e98d8`; the reserved stack begins at `0x801f7f00`.
 There is no heap. The single scene arena occupies1,179,648 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays and animation
-key lookup now support2,048 scene-global texture IDs. Geo logic, resident art/audio and functional menus increase the static span.
+key lookup now support2,048 scene-global texture IDs. Geo logic, resident art/audio, functional menus, break-effect and Lifeblood
+tables increase the static span; the pinned Town/Tutorial pack and its
+regenerated tilemap fills changed the data size.
 The remaining unallocated gap is not a measured safe stack allowance; profile
 main-stack high-water and reclaim RAM before substantially expanding content.
 
@@ -50,9 +52,11 @@ both stack allocations is not main-stack consumption; high-water remains unknown
 | Health and SOUL HUD rectangles | 2,208 |
 | Shared black-mask fade CLUT | 32 |
 | Original dialogue font strips and CLUT | 7,712 |
-| Geo texels and CLUT strips | 9,920 |
-| Total | 1,038,752 |
-| Unallocated within 1 MiB | 9,824 |
+| Geo texels and CLUT strips | 8,384 |
+| Lifeblood cocoon, Scuttler and blue-mask texels with CLUTs | 5,120 |
+| Breakable-effect texels and CLUTs | 5,632 |
+| Total | 1,047,968 |
+| Unallocated within 1 MiB | 608 |
 
 Tutorial uses18 pages and1,065 palettes; Town entrance uses2 pages and141
 palettes. All20 pages are populated. The1,206 admitted palettes leave42 unused
@@ -70,7 +74,9 @@ coordinate groups are not runtime eviction units. Coordinates are VRAM halfwords
 - Bank1: x320..383,y256..359. Bank2: x320..383,y360..463.
 - The former bank3 CLUT area is no longer reserved for scenery.
 - Geo: (320,464,64,16), (352,240,32,16), (352,485,32,27),
-  (320,496,32,16), (352,32,32,64), as x/y/w/h halfwords.
+  (320,496,32,16), (352,32,8,32), (352,64,32,32), as x/y/w/h halfwords.
+- Lifeblood: (352,96,32,80). Break effects: (352,176,32,64), (360,32,24,32);
+  the second was carved out of Geo's former (352,32,32,64) strip.
 
 Allocator tests check all reservations together. The title temporarily uses
 89,600 VRAM bytes that gameplay reuses. Its menus share the existing7,712-byte dialogue font reservation. The source

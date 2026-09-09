@@ -1,0 +1,201 @@
+"""Original Breakable particle families, emitted into the existing bounded pool.
+
+Fresh Windows source only. No room mutation and no replacement generic particles.
+Source curves are sampled to a shared 33-entry fixed-point table; PS1 alpha uses
+three prequantized levels. Unity collision/damping/RNG remain approximations.
+"""
+import hashlib,json,math,struct
+from pathlib import Path
+from PIL import Image
+from source import Source,ROOT
+from scene import Scene
+from breakables import breakable_sources
+from particles import curve_value,gradient_alpha
+from materials import quantize_alpha_coverage
+from geo import place_rectangles
+VRAM_RECTS=((352,176,32,64),(360,32,24,32))
+ALPHAS=(43,85,128)
+
+def q(v):
+    if not math.isfinite(v) or abs(v)>=32768:raise ValueError('break effect fixed point range')
+    return round(v*65536)
+
+def values(c,t=0):
+    mode=c['minMaxState']
+    if mode==0:return [c['scalar']]*2
+    if mode==3:return [c['minScalar'],c['scalar']]
+    if mode==1:return [curve_value(c['maxCurve'],t)*c['scalar']]*2
+    if mode==2:return [curve_value(c['minCurve'],t)*c['minScalar'],curve_value(c['maxCurve'],t)*c['scalar']]
+    raise ValueError('unknown particle curve')
+
+def style(ps,gravity):
+    im=ps['InitialModule'];shape=ps['ShapeModule'];uv=ps['UVModule'];em=ps['EmissionModule']
+    enabled={k for k,v in ps.items()if k.endswith('Module')and isinstance(v,dict)and v.get('enabled')}
+    supported={'InitialModule','ShapeModule','EmissionModule','SizeModule','RotationModule','ColorModule','UVModule','VelocityModule','ForceModule','ClampVelocityModule','RotationBySpeedModule','CollisionModule'}
+    if enabled-supported:raise ValueError('unsupported particle modules: '+str(enabled-supported))
+    if not ps['playOnAwake'] or ps['looping']or ps['scalingMode']!=2 or ps['moveWithTransform']not in(0,1):raise ValueError('particle simulation space')
+    if im['size3D']or im['rotation3D']or im['gravitySource']!=0 or em['m_BurstCount']or values(em['rateOverDistance'])!=[0,0]:raise ValueError('particle emission mode')
+    if shape['type']not in(5,10)or not shape['enabled']:raise ValueError('particle shape')
+    if any(shape['m_Position'][k]or shape['m_Rotation'][k]for k in 'xyz'):raise ValueError('particle shape transform')
+    if shape['randomDirectionAmount']or shape['sphericalDirectionAmount']or shape['randomPositionAmount']or shape['radius']['mode']or shape['arc']['mode']:raise ValueError('particle shape random mode')
+    if uv['enabled']and(uv['tilesX']!=1 or uv['animationType']!=1 or uv['rowMode']!=1 or uv['tilesY']not in(3,4)):raise ValueError('particle random row')
+    start=im['startColor']
+    if start['minMaxState']!=0:raise ValueError('particle start color mode')
+    color=[round(start['maxColor'][k]*128)for k in 'rgb'];initial_alpha=start['maxColor']['a']
+    if any(not 0<=v<=255 for v in color):raise ValueError('particle color range')
+    collision=ps['CollisionModule']
+    if collision['enabled']and(collision['type']!=1 or collision['collisionMode']!=1 or collision['collidesWith']['m_Bits']!=256 or collision['colliderForce']):raise ValueError('particle terrain collision')
+    force=ps['ForceModule'];vel=ps['VelocityModule'];limit=ps['ClampVelocityModule']
+    if force['enabled']and(not force['inWorldSpace']or force['randomizePerFrame']):raise ValueError('particle force space')
+    if vel['enabled']and not vel['inWorldSpace']:raise ValueError('particle velocity space')
+    if vel['enabled']and(any(values(vel[k])!=[0,0]for k in ('orbitalX','orbitalY','orbitalZ','orbitalOffsetX','orbitalOffsetY','orbitalOffsetZ','radial'))or values(vel['speedModifier'])!=[1,1]):raise ValueError('particle orbital/speed modifier')
+    if limit['enabled']and(limit['separateAxis']or values(limit['drag'])!=[0,0]):raise ValueError('particle velocity limit')
+    samples=[]
+    for i in range(33):
+        t=i/32
+        size=values(ps['SizeModule']['curve'],t)if ps['SizeModule']['enabled']else[1,1]
+        cm=ps['ColorModule'];alphas=[1,1]
+        if cm['enabled']:
+            g=cm['gradient'];mode=g['minMaxState']
+            if mode not in(1,3):raise ValueError('particle color curve mode')
+            gs=[g['maxGradient']]*2 if mode==1 else[g['minGradient'],g['maxGradient']]
+            for gradient in gs:
+                if any(abs(gradient[f'key{k}'][c]-1)>1e-6 for k in range(gradient['m_NumColorKeys'])for c in 'rgb'):raise ValueError('particle nonwhite color curve')
+            alphas=[gradient_alpha(g,t)for g in gs]
+        rotation=values(ps['RotationModule']['curve'],t)if ps['RotationModule']['enabled']else[0,0]
+        samples.append({'size':list(map(q,size)),'alpha':[max(0,min(255,round(a*initial_alpha*255)))for a in alphas],'spin':[q(math.degrees(v))for v in rotation]})
+    initial=lambda key:sorted(values(im[key]))
+    rate=values(em['rateOverTime'])
+    if rate[0]!=rate[1] or rate[0]<=0:raise ValueError('particle emission rate')
+    count=min(im['maxNumParticles'],math.ceil(rate[0]*ps['lengthInSec']-1e-4))
+    speedspin=ps['RotationBySpeedModule'];omega=values(speedspin['curve'])if speedspin['enabled']else[0,0]
+    forcev=[values(force[k])if force['enabled']else[0,0]for k in 'xyz']
+    gravityv=values(im['gravityModifier'])
+    if gravityv[0]!=gravityv[1]:raise ValueError('particle random gravity')
+    forcev[1]=[v+gravity*gravityv[0]for v in forcev[1]]
+    fields={'life':[max(1,round(v*60))for v in initial('startLifetime')],'speed':list(map(q,initial('startSpeed'))),'size':list(map(q,initial('startSize'))),
+        'rotation':[q(math.degrees(v))for v in initial('startRotation')],'color':color,'count':count,'rate':q(rate[0]),'shape':shape['type'],
+        'radius':q(shape['radius']['value']),'arc':q(shape['arc']['value']),'shape_scale':[q(shape['m_Scale'][k])for k in 'xyz'],
+        'force':[[q(v)for v in pair]for pair in forcev],'velocity':[[q(v)for v in values(vel[k])]if vel['enabled']else[0,0]for k in 'xyz'],
+        'limit':q(values(limit['magnitude'])[0])if limit['enabled']else-1,'dampen':q(limit['dampen'])if limit['enabled']else 0,
+        'spin_speed':list(map(lambda v:q(math.degrees(v)),omega)),'spin_range':[q(speedspin['range'][k])for k in 'xy'],
+        'collision':bool(collision['enabled']),'bounce':q(values(collision['m_Bounce'])[0]),'collision_dampen':q(values(collision['m_Dampen'])[0]),
+        'life_loss':q(values(collision['m_EnergyLossOnCollision'])[0]),'kill_speed':q(collision['minKillSpeed']),'radius_scale':q(collision['radiusScale']),'samples':samples,'cells':uv['tilesY']if uv['enabled']else 1}
+    if not 0<count<=128 or max(fields['life'])>65535:raise ValueError('particle source capacity')
+    return fields
+
+def collect(source=None,metadata=None):
+    source=source or Source();metadata=metadata or json.loads((ROOT/'data/regions.json').read_text())
+    physics=next(o for o in source.file('globalgamemanagers').objects.values()if o.type.name=='PhysicsManager');gravity=source.read(physics)['m_Gravity']['y']
+    wanted={r['source'] for region in metadata['regions']for r in region['breakables']};styles=[];emitters=[];textures={};ignored=[];source_records=[]
+    for desc in metadata['scenes']:
+        sc=Scene(source,desc['file'])
+        for b in breakable_sources(sc):
+            if b['source']not in wanted:continue
+            for part in b['debris']:
+                gid=int(part['game_object'].split(':')[1]);cs={}
+                for ref in sc.gos[gid]['m_Component']:
+                    o=source.ref(sc.file,ref['component']);cs[source.typename(o)]=(o,source.read(o))
+                if 'ParticleSystem'not in cs:
+                    ignored.append({'owner':b['source'],'part':part['game_object'],'reason':'existing rigid fragment'if 'SpinSelf'in cs else'unhandled nonparticle part'});continue
+                po,ps=cs['ParticleSystem'];ro,renderer=cs['ParticleSystemRenderer'];mo=source.ref(sc.file,renderer['m_Materials'][0]);mat=source.read(mo)
+                so=source.ref(mo.assets_file,mat['m_Shader']);shader=source.read(so)['m_ParsedForm']['m_Name']
+                if shader not in('Sprites/Lit','Sprites/Default') or renderer['m_RenderMode']or renderer['m_RenderAlignment']:raise ValueError('particle renderer material')
+                tint=dict(mat['m_SavedProperties']['m_Colors'])['_Color']
+                if any(not 0<=tint[c]<=1 for c in 'rgba'):raise ValueError('particle material tint')
+                texture=source.ref(mo.assets_file,dict(mat['m_SavedProperties']['m_TexEnvs'])['_MainTex']['m_Texture']);sid=source.sid(texture)
+                st=style(ps,gravity);st['texture']=sid
+                st['color']=[round(v*tint[c])for v,c in zip(st['color'],'rgb')]
+                for sample in st['samples']:sample['alpha']=[round(v*tint['a'])for v in sample['alpha']]
+                if st not in styles:styles.append(st)
+                matrix=sc.world(sc.go_transform[gid])
+                emitters.append({'scene':desc['scene_id'],'owner':desc['scene_id']*128+b['state_index'],'source':po.path_id,'style':styles.index(st),
+                    'angle_offset':q(b['angle_offset']),'origin':[q(matrix[i][3])for i in range(3)],'basis':[[q(matrix[i][j])for j in range(3)]for i in range(3)]})
+                textures[sid]=texture
+                source_records.append({'owner':b['source'],'name':b['name'],'part':part['game_object'],'system':source.sid(po),'texture':sid,'shader':shader,'ps_sha256':hashlib.sha256(json.dumps(ps,sort_keys=True).encode()).hexdigest()})
+    if len(styles)>253:raise ValueError('particle style IDs')
+    return source,styles,emitters,textures,source_records,ignored
+
+def art_bank(styles,textures):
+    from cook import FOCAL,CAM_Z
+    cells=[];families=[]
+    for sid,obj in textures.items():
+        group=[s for s in styles if s['texture']==sid];rows={s['cells']for s in group}
+        if len(rows)!=1:raise ValueError('mixed sheet grid')
+        count=rows.pop();target=math.ceil(max(max(s['size'])for s in group)/65536*FOCAL/-CAM_Z)
+        im=obj.read().image.convert('RGBA');w,h=im.width,im.height//count
+        start=len(cells)
+        for i in range(count):cells.append(im.crop((0,(count-1-i)*h,w,(count-i)*h)).resize((target,target),Image.Resampling.LANCZOS))
+        families.append((sid,start,count))
+    # Joint palette per opacity level, preserving the 4px alpha-coverage phase.
+    sheet=Image.new('RGBA',(128,math.ceil(len(cells)/4)*32))
+    if any(im.width>32 or im.height>32 for im in cells):raise ValueError('particle art exceeds source-projection bank')
+    for i,im in enumerate(cells):sheet.paste(im,((i%4)*32,(i//4)*32))
+    palettes=[];planes=[];mapping=[]
+    for alpha in ALPHAS:
+        sw,sh,palette,pixels=quantize_alpha_coverage(sheet,alpha)
+        pal=bytes(palette)
+        if pal not in palettes:palettes.append(pal)
+        for i,im in enumerate(cells):
+            stride=(im.width+3)//4*2;data=bytearray(stride*im.height)
+            for y in range(im.height):
+                for x in range(im.width):
+                    sx=(i%4)*32+x;sy=(i//4)*32+y;index=(pixels[sy*((sw+1)//2)+sx//2]>>(4*(sx&1)))&15
+                    data[y*stride+x//2]|=index<<(4*(x&1))
+            item=(stride//2,im.height,bytes(data))
+            if item not in planes:planes.append(item)
+            mapping.append((planes.index(item),palettes.index(pal),im.width,im.height))
+    items=[('p'+str(i),16,1,16)for i in range(len(palettes))]+[('t'+str(i),w,h,1)for i,(w,h,_)in enumerate(planes)]
+    allocated=place_rectangles(items,VRAM_RECTS);blob=bytearray();uploads=[]
+    for key,_,_,_ in items:
+        x,y,w,h=allocated[key];payload=palettes[int(key[1:])]if key[0]=='p'else planes[int(key[1:])][2]
+        uploads.append({'offset':len(blob),'x':x,'y':y,'w':w,'h':h});blob.extend(payload)
+    art=[]
+    for t,p,w,h in mapping:
+        x,y,_,_=allocated['t'+str(t)];px,py,_,_=allocated['p'+str(p)]
+        art.append({'u':(x%64)*4,'v':y%256,'w':w,'h':h,'clut':(py<<6)|(px>>4),'tpage':(x//64)|((y//256)<<4)})
+    frames={sid:[[level*len(cells)+start+i for level in range(3)]for i in range(count)]for sid,start,count in families}
+    return bytes(blob),uploads,art,frames,sheet
+
+def rust(v):
+    if isinstance(v,bool):return str(v).lower()
+    if isinstance(v,(list,tuple)):return '['+','.join(rust(x)for x in v)+']'
+    return str(v)
+
+def generate(styles,emitters,uploads,art,frames):
+    out=['// Generated from Windows source; source IDs/hashes in ignored break-effects report.']
+    tables={}
+    for st in styles:
+        key=json.dumps(st['samples'],sort_keys=True)
+        if key not in tables:
+            name='CURVE_'+str(len(tables));tables[key]=name
+            out.append('static '+name+':&[Sample]=&['+','.join('Sample{'+','.join(k+':'+rust(s[k])for k in('size','alpha','spin'))+'}'for s in st['samples'])+'];')
+    out.append('pub static STYLES:&[Style]=&[')
+    for st in styles:
+        fields={k:rust(v)for k,v in st.items()if k not in('samples','texture','cells')}
+        fields['samples']=tables[json.dumps(st['samples'],sort_keys=True)];fields['frames']='&'+rust(frames[st['texture']])
+        out.append('Style{'+','.join(k+':'+v for k,v in fields.items())+'},')
+    out.append('];\npub static EMITTERS:&[Emitter]=&[')
+    for e in emitters:out.append('Emitter{'+','.join(k+':'+rust(v)for k,v in e.items())+'},')
+    out.append('];\npub static ART:&[Art]=&[')
+    for a in art:out.append('Art{'+','.join(k+':'+rust(v)for k,v in a.items())+'},')
+    out.append('];\npub static UPLOADS:&[Upload]=&[')
+    for u in uploads:out.append('Upload{'+','.join(k+':'+rust(v)for k,v in u.items())+'},')
+    out.append('];');return '\n'.join(out)+'\n'
+
+def cook():
+    source,styles,emitters,textures,records,ignored=collect()
+    blob,uploads,art,frames,sheet=art_bank(styles,textures);code=generate(styles,emitters,uploads,art,frames)
+    (ROOT/'data/break_effects.rs').write_text(code);(ROOT/'data/break_effects.hk').write_bytes(blob)
+    report={'format':'HKBREAK01','styles':styles,'emitters':emitters,'source_records':records,'other_parts':ignored,'vram_bytes':len(blob),
+        'vram_rects':VRAM_RECTS,'uploads':uploads,'art':art,'frames':frames,'payload_sha256':hashlib.sha256(blob).hexdigest(),'rust_sha256':hashlib.sha256(code.encode()).hexdigest(),
+        'source_files':{name:hashlib.sha256((source.directory/name).read_bytes()).hexdigest()for name in ['level6','level7','globalgamemanagers','Managed/Assembly-CSharp.dll']},
+        'limitations':['Deterministic RNG,60Hz integration/damping,33-point curves,radius/edge collision and initial-lifetime collision-loss approximation differ from nativeUnity particle physics.',
+            'Three baked opacity levels and sourceRGB palette quantization approximate Sprites/Lit lighting/blending.',
+            'Existing128-particle pool reports capacity drops; authored maximum-per-emitter counts and lifetimes preserved.',
+            'No active Breakables occur in the current Town entrance; outside-region props are not admitted.',
+            'Geo-rock hit jitter/gleam/chips,containingParticles probability events and mainLifeblood cocoon are separate systems.']}
+    dest=ROOT/'.hkpsx/break-effects';dest.mkdir(exist_ok=True);(dest/'report.json').write_text(json.dumps(report,indent=2));sheet.save(dest/'art.png')
+    print(f'Break effects: {len(emitters)} source emitters/{len(styles)} styles, {len(art)} art variants, {len(blob)} VRAM bytes')
+    return report
+if __name__=='__main__':cook()
