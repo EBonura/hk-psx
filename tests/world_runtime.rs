@@ -189,23 +189,31 @@ fn one_pass_edge_fill_matches_per_edge_filter() {
         }
     }
     let room = hk_format::Room::parse(&bytes).unwrap();
-    let filled = |state: &State| {
-        let mut cache = [std::mem::MaybeUninit::<[i32; 4]>::uninit(); 2];
+    let filled = |state: &mut State| {
+        let mut cache = [[0i32; 4]; 2];
         state.fill_edges(&region(), &room, &mut cache);
-        let got: Vec<_> = cache.iter().map(|c| unsafe { c.assume_init() }).collect();
         let want: Vec<_> = (0..2).map(|i| state.edge(&region(), &room, i)).collect();
-        assert_eq!(got, want);
-        got
+        assert_eq!(cache.to_vec(), want, "direct path");
+        // The per-tick refreshed table must agree, and every mutator must
+        // invalidate it so a stale table never answers edge().
+        state.refresh_edges(&region(), &room);
+        let cached: Vec<_> = (0..2).map(|i| state.edge(&region(), &room, i)).collect();
+        assert_eq!(cached, want, "cached path");
+        cached
     };
     let mut state = State::new();
-    assert_eq!(filled(&state), vec![[1, 2, 3, 2], [4, 5, 4, 6]]);
+    assert_eq!(filled(&mut state), vec![[1, 2, 3, 2], [4, 5, 4, 6]]);
     state.set_geo_edges(&[0, 9]);
-    assert_eq!(filled(&state), vec![[0; 4], [4, 5, 4, 6]]);
+    assert_eq!(state.edge(&region(), &room, 0), [0; 4], "set_geo_edges invalidates");
+    assert_eq!(filled(&mut state), vec![[0; 4], [4, 5, 4, 6]]);
     state.break_object(B);
-    assert_eq!(filled(&state), vec![[0; 4], [0; 4]]);
+    assert_eq!(state.edge(&region(), &room, 1), [0; 4], "break_object invalidates");
+    assert_eq!(filled(&mut state), vec![[0; 4], [0; 4]]);
     let mut state = State::new();
     state.set_lifeblood_edges(&[1, 300]);
-    assert_eq!(filled(&state), vec![[1, 2, 3, 2], [0; 4]]);
+    assert_eq!(filled(&mut state), vec![[1, 2, 3, 2], [0; 4]]);
+    state.set_lifeblood_edges(&[]);
+    assert_eq!(state.edge(&region(), &room, 1), [4, 5, 4, 6], "set_lifeblood_edges invalidates");
 }
 
 #[test]

@@ -87,7 +87,13 @@ pub struct Strike {
     pub grass_cut: u16,
     pub impact_dropped: u16,
 }
+/// Filtered terrain for the active room, refreshed once per simulation tick.
+/// Coins, Scuttlers, enemies and effects otherwise re-decode and re-filter every
+/// edge per body per tick, which exceeded a VBlank with 16 coins and 7 broken objects.
+const EDGE_CACHE:usize=128;
 pub struct State {
+    edge_cache:[[i32;4];EDGE_CACHE],
+    edge_cache_count:usize,
     geo_edges:[u16;32],
     geo_edge_count:usize,
     lifeblood_edges:[u16;8],
@@ -100,9 +106,17 @@ pub struct State {
     grass: [u32; SCENES * GRASS_PER_SCENE / 32],
     pub fade_left: [u16; SCENES * BREAKABLES_PER_SCENE],
 }
+fn fill_edges(geo:&[u16],life:&[u16],broken:&[u32],region:&Region,room:&Room,cache:&mut [[i32;4]]) {
+    let count=cache.len();
+    for(i,dst)in cache.iter_mut().enumerate(){*dst=room.edge(i);}
+    let mut blank=|i:u16|{if(i as usize)<count{cache[i as usize]=[0;4];}};
+    for &i in geo.iter().chain(life){blank(i);}
+    for b in region.breakables.iter().filter(|b|broken[b.id/32]&(1<<(b.id%32))!=0){for &i in b.edges{blank(i);}}
+}
 impl State {
     pub const fn new() -> Self {
         Self {
+            edge_cache:[[0;4];EDGE_CACHE],edge_cache_count:0,
             geo_edges:[0;32],geo_edge_count:0,
             lifeblood_edges:[0;8],lifeblood_edge_count:0,
             impacts: crate::impact::Pool::new(),
@@ -125,6 +139,7 @@ impl State {
         }
         self.broken[b.id / 32] |= 1 << (b.id % 32);
         self.fade_left[b.id] = b.fade_ticks;
+        self.edge_cache_count=0;
         true
     }
     pub fn cut(&self, id: usize) -> bool {
@@ -151,33 +166,28 @@ impl State {
     #[inline(never)]
     pub fn tick_debris(&mut self, region: &Region, room: &Room) {
         self.particles.tick(region.scene, region.particle_bank);
+        self.refresh_edges(region,room);
+        let count=room.counts[5];
         let broken = &self.broken;
         let geo=&self.geo_edges[..self.geo_edge_count];
         let life=&self.lifeblood_edges[..self.lifeblood_edge_count];
-        let filtered=|i:usize| {
-            if geo.contains(&(i as u16))||life.contains(&(i as u16))||region.breakables.iter().any(|b| {
+        // Future larger rooms retain the direct path rather than dropping terrain.
+        let cached=&self.edge_cache[..self.edge_cache_count];
+        let edge=|i:usize| if i<cached.len() {cached[i]} else if geo.contains(&(i as u16))||life.contains(&(i as u16))||region.breakables.iter().any(|b| {
                 broken[b.id / 32] & (1 << (b.id % 32)) != 0 && b.edges.contains(&(i as u16))
-            }) {[0;4]}else{room.edge(i)}
-        };
-        // The current98regions have at most102edges. Decode/filter once only
-        // when moving collision effects need them. Future larger rooms retain
-        // the direct path rather than dropping terrain or overflowing scratch.
-        let count=room.counts[5];let bounds=region.collision_bounds;
-        let collision=self.particles.needs_break_collision(region.scene,bounds)||region.door_debris.iter().any(|s| {
-            self.debris.body(s.id as usize).is_some_and(|b|!b.stopped&&b.center[0]>=bounds[0]&&b.center[0]<=bounds[2]&&b.center[1]>=bounds[1]&&b.center[1]<=bounds[3])
-        });
-        // Uninitialized storage avoids a2KiB clear on the common empty-pool tick.
-        let mut cache=[core::mem::MaybeUninit::<[i32;4]>::uninit();128];
-        let cached=collision&&count<=cache.len();
-        if cached {self.fill_edges(region,room,&mut cache[..count]);}
-        let edge=|i:usize|if cached{
-            assert!(i<count);
-            // Only the initialized prefix is exposed, and no physics mutation
-            // changes breakable/Geo/Lifeblood filters during this callback.
-            unsafe{cache[i].assume_init()}
-        }else{filtered(i)};
-        self.particles.tick_break(region.scene,region.collision_bounds,room.counts[5],&edge);
-        self.debris.tick(region.scene,region.door_debris,region.collision_bounds,room.counts[5],edge);
+            }) {[0;4]}else{room.edge(i)};
+        self.particles.tick_break(region.scene,region.collision_bounds,count,&edge);
+        self.debris.tick(region.scene,region.door_debris,region.collision_bounds,count,edge);
+    }
+    /// Rebuild the filtered edge table for this room. Mutators of the exclusion
+    /// sets invalidate it; edge() then takes the direct path until the next refresh.
+    pub fn refresh_edges(&mut self,region:&Region,room:&Room) {
+        let count=room.counts[5];
+        let Self{edge_cache,edge_cache_count,geo_edges,geo_edge_count,lifeblood_edges,lifeblood_edge_count,broken,..}=self;
+        if count<=EDGE_CACHE {
+            fill_edges(&geo_edges[..*geo_edge_count],&lifeblood_edges[..*lifeblood_edge_count],broken,region,room,&mut edge_cache[..count]);
+            *edge_cache_count=count;
+        } else {*edge_cache_count=0;}
     }
     pub fn tick(&mut self) {
         self.impacts.tick();
@@ -192,6 +202,7 @@ impl State {
         }
     }
     pub fn reset_scene(&mut self, scene: usize) {
+        self.edge_cache_count=0;
         self.impacts.clear_scene(scene);
         self.debris.clear_scene(scene);
         self.particles.clear_scene(scene);
@@ -336,24 +347,21 @@ impl State {
     /// Only the exact source colliders owned by a broken object disappear.
     pub fn set_geo_edges(&mut self,edges:&[u16]) {
         assert!(edges.len()<=self.geo_edges.len());
-        self.geo_edges[..edges.len()].copy_from_slice(edges);self.geo_edge_count=edges.len();
+        self.geo_edges[..edges.len()].copy_from_slice(edges);self.geo_edge_count=edges.len();self.edge_cache_count=0;
     }
     /// Refresh local cocoon collider bindings on every region activation.
     pub fn set_lifeblood_edges(&mut self,edges:&[u16]) {
         assert!(edges.len()<=self.lifeblood_edges.len());
-        self.lifeblood_edges[..edges.len()].copy_from_slice(edges);self.lifeblood_edge_count=edges.len();
+        self.lifeblood_edges[..edges.len()].copy_from_slice(edges);self.lifeblood_edge_count=edges.len();self.edge_cache_count=0;
     }
     /// Every index below `cache.len()` with the same exclusions as edge(),
     /// built in one pass over the short exclusion lists instead of scanning
     /// them once per edge.
-    pub fn fill_edges(&self,region:&Region,room:&Room,cache:&mut [core::mem::MaybeUninit<[i32;4]>]) {
-        let count=cache.len();
-        for(i,dst)in cache.iter_mut().enumerate(){dst.write(room.edge(i));}
-        let mut blank=|i:u16|{if(i as usize)<count{cache[i as usize].write([0;4]);}};
-        for &i in self.geo_edges[..self.geo_edge_count].iter().chain(&self.lifeblood_edges[..self.lifeblood_edge_count]){blank(i);}
-        for b in region.breakables.iter().filter(|b|self.broken(b.id)){for &i in b.edges{blank(i);}}
+    pub fn fill_edges(&self,region:&Region,room:&Room,cache:&mut [[i32;4]]) {
+        fill_edges(&self.geo_edges[..self.geo_edge_count],&self.lifeblood_edges[..self.lifeblood_edge_count],&self.broken,region,room,cache);
     }
     pub fn edge(&self, region: &Region, room: &Room, index: usize) -> [i32; 4] {
+        if index<self.edge_cache_count {return self.edge_cache[index];}
         if self.geo_edges[..self.geo_edge_count].contains(&(index as u16)) {return [0;4];}
         if self.lifeblood_edges[..self.lifeblood_edge_count].contains(&(index as u16)) {return [0;4];}
         for object in region.breakables {

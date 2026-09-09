@@ -35,28 +35,48 @@ positions as the intermediate build (`.hkpsx/burst-fix-*`).
 | --- | ---: | ---: | ---: |
 | Before this fix | fault at poll 383 | n/a | 16 (full) |
 | Edge scratch only | 21 VBlanks | 6 | 11 |
-| Current build | 7 VBlanks | 0 | 4 |
+| Two-pass particle tick | 7 VBlanks | 0 | 4 |
+| Current build | 5 VBlanks | 0 | 2 |
+
+The user's first play recording on that build (2,958 polls, preserved with its
+hash in `.hkpsx/user-crash-input/`) froze the screen in region 45 with the same
+`QueueFull` fault from a second path: 16 loose Geo coins with seven broken
+objects, each coin re-decoding and re-filtering every room edge through
+`State::edge` per tick (`.hkpsx/user-crash-4/`, reproduced by extending the
+tape 600 polls past the freeze; the tape ends at the freeze because a halted
+guest stops polling). `State` now owns the filtered edge table, refreshed once
+per simulation tick in `tick_debris` and invalidated by every mutator of the
+Geo, Lifeblood and breakable exclusion sets, so coins, Scuttlers, enemies,
+corpses and the Knight read one table. The extended tape now completes all
+3,558 polls with a poll queue peak of 2, 17 coins active
+at most, ending in region 44 with wallet 30
+(`.hkpsx/coin-fix-crash/`). Both standard routes end at identical positions.
+
+Any sustained simulation tick above one VBlank still halts the game by design:
+the 16-sample poll queue faults rather than dropping input. That is the right
+contract for a fixed-step simulation, but it means every per-body edge scan
+must stay bounded; grep for `state.edge(` before adding another body type.
 
 ### Final validation
 
 `python3 tools/build.py` wrote the sole disc; the final EXE has zero R3000
-hazards (`.hkpsx/burst-fix-build3.log`). `make test` passes 210 Python and 279
-Rust/native tests (`.hkpsx/burst-fix-tests.log`). Actual-CUE replays completed
+hazards (`.hkpsx/coin-fix-build1.log`). `make test` passes 210 Python and 279
+Rust/native tests (`.hkpsx/coin-fix-tests.log`). Actual-CUE replays completed
 with unchanged EXE/map/disc/tape/frontend hashes and zero guest, CD, input,
 missed-input and geometry-repair faults:
 
-- `.hkpsx/burst-fix2-profile/`: the standard 5,810-poll user tape, 1,757
-  render intervals, mean 3.3028 VBlanks, p95 4, maximum 7; 21
-  intervals take five VBlanks and one takes seven, so **the strict four-tick
-  gate still fails** (22 of 1,757). Endpoint (163.154, 6.39062), region
+- `.hkpsx/coin-fix-profile/`: the standard 5,810-poll user tape, 1,779
+  render intervals, mean 3.2619 VBlanks, p95 4, maximum 5; 13
+  intervals take five VBlanks, so **the strict four-tick gate still fails**
+  (13 of 1,779). Endpoint (163.154, 6.39062), region
   8, health 4, 2 kills, 6 breaks, 730 particles
   spawned, none dropped, 42 post-start activations with zero
   boundary waits. The preceding Geo build measured mean 3.3995, maximum 5.
-- `.hkpsx/burst-fix2-ascent/`: the 2,450-poll Lifeblood route breaks
+- `.hkpsx/coin-fix-ascent/`: the 2,450-poll Lifeblood route breaks
   8 objects and spawns 768 particles, 36 rejected
   by the full 128-slot pool. It ends in region 2 at (54.4249,
   11.3906) and never reaches the cocoon; Lifeblood remains unverified in play.
-- `.hkpsx/burst-fix2-geo-pause/`: the 6,971-poll mining/pause route
+- `.hkpsx/coin-fix-geo-pause/`: the 6,971-poll mining/pause route
   repeats the Geo milestone's results (wallet 18, one depleted rock,
   2 kills, 6 breaks, 730 particles).
 
@@ -67,10 +87,10 @@ under a platform. A dark King's Pass frame that previously showed a dark-blue
 wedge on its right now shows black tilemap interior there. During a
 100-particle burst frames take four to five VBlanks.
 
-Linked code 317,660B, data 261,920B, BSS 1,360,088B, static span 1,939,672B; the gap
-before the reserved 32KiB stack is 58,920B. Main-stack high-water remains
-unmeasured. EXE 581,632B, SHA256 `d01705a5e0eea8904502cf4c6e75aee5730e0d8e722d89413682e62085b6478d`. BIN 3,544,464B, SHA256
-`adc5bf0740676c5f9497a91f7052c4157d2f61602d8a999faf49caf3b461701a`. Map SHA256 `ffb2f1c5a32f6d8eff02da61b4e03d30e2bddb2b554b3fce78c9b06ec47792de`.
+Linked code 319,904B, data 261,728B, BSS 1,360,088B, static span 1,941,720B; the gap
+before the reserved 32KiB stack is 56,872B. Main-stack high-water remains
+unmeasured. EXE 583,680B, SHA256 `bbbd56d0944466297cbdda430e6238d23e3240d06d27120bc9f789051d318fd6`. BIN 3,544,464B, SHA256
+`f0548f7beec14c818ca129327b5790b6b3ce043993aaadfbfd9d8884a4886217`. Map SHA256 `ca6610424e85a26c634136d6e4efa852c38332d60105bdbf1173452aec94a57d`.
 
 ### Frame rate
 

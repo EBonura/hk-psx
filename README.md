@@ -30,7 +30,7 @@ select local views without CD reads, decoding or static texture uploads. Eight
 animation slots fetch frames from resident RAM and retain cached frames across
 same-scene crossings. The long user replay now has zero boundary-loading waits
 (previously 478 ticks), with no traversal CD reads or static uploads. Rendering
-still varies from three to seven VBlanks per frame; the strict frame-pacing gate
+still varies from three to five VBlanks per frame; the strict frame-pacing gate
 fails. This covers the current authored subset, not the full game's residency
 or physical-console timing. See [docs/STATUS.md](docs/STATUS.md) for evidence and
 [docs/BUDGET.md](docs/BUDGET.md) for measured allocations.
