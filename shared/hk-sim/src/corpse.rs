@@ -1,0 +1,183 @@
+//! Original Crawler corpse lifecycle using the port's bounded terrain solver.
+//! Source Corpse retains its final sprite after Land/one-second Complete(false,
+//! false). Steam/spatter and the full Box2D contact/friction solver are separate.
+use crate::{Params, Player, ONE};
+#[derive(Clone, Copy, Debug)]
+pub struct CorpseSpec {
+    pub air_clip: u16,
+    pub land_clip: u16,
+    pub bounds: [i32; 4],
+    pub spawn_offset: [i32; 2],
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CorpsePhase {
+    Air,
+    Land,
+    Rest,
+    Removed,
+}
+#[derive(Clone, Copy, Debug)]
+pub struct Corpse {
+    pub x: i32,
+    pub y: i32,
+    pub vx: i32,
+    pub vy: i32,
+    pub facing: i32,
+    pub phase: CorpsePhase,
+    pub animation_tick: u32,
+    land_ticks: u16,
+    grounded: bool,
+    rng: u32,
+}
+// Source up-hit angle is uniform75..105 degrees, speed15*1.3. Quantized to
+// 31 original-range directions; this deterministic sequence is not Unity RNG.
+const UP: [[i32; 2]; 31] = [
+    [330758, 1234407],
+    [309165, 1239991],
+    [287477, 1245198],
+    [265701, 1250026],
+    [243845, 1254472],
+    [221914, 1258537],
+    [199916, 1262218],
+    [177857, 1265515],
+    [155743, 1268426],
+    [133582, 1270951],
+    [111381, 1273089],
+    [89145, 1274839],
+    [66883, 1276201],
+    [44600, 1277174],
+    [22303, 1277757],
+    [0, 1277952],
+    [-22303, 1277757],
+    [-44600, 1277174],
+    [-66883, 1276201],
+    [-89145, 1274839],
+    [-111381, 1273089],
+    [-133582, 1270951],
+    [-155743, 1268426],
+    [-177857, 1265515],
+    [-199916, 1262218],
+    [-221914, 1258537],
+    [-243845, 1254472],
+    [-265701, 1250026],
+    [-287477, 1245198],
+    [-309165, 1239991],
+    [-330758, 1234407],
+];
+impl Corpse {
+    pub fn spawn(spec: CorpseSpec, x: i32, y: i32, kind: u16, facing: i32, seed: u32) -> Self {
+        let mut corpse = Self {
+            x: x + spec.spawn_offset[0],
+            y: y + spec.spawn_offset[1],
+            vx: 0,
+            vy: 0,
+            facing,
+            phase: CorpsePhase::Air,
+            animation_tick: 0,
+            land_ticks: 0,
+            grounded: false,
+            rng: seed,
+        };
+        let v = match kind {
+            2 => UP[(corpse.random() % 31) as usize],
+            3 => [0, -15 * ONE],
+            _ => [facing * 491520, 851338], // cos/sin60deg *15, rounded Q16.
+        };
+        corpse.vx = v[0];
+        corpse.vy = v[1];
+        corpse
+    }
+    fn random(&mut self) -> u32 {
+        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng
+    }
+    pub fn clip(self, spec: CorpseSpec) -> u16 {
+        if self.phase == CorpsePhase::Air {
+            spec.air_clip
+        } else {
+            spec.land_clip
+        }
+    }
+    pub fn visible(self) -> bool {
+        self.phase != CorpsePhase::Removed
+    }
+    /// Terrain-apron residency is checked by the caller. No extra allocation,
+    /// timer-based corpse deletion, contact damage, or Geo gameplay is added.
+    pub fn tick(&mut self, spec: CorpseSpec, count: usize, edge: impl Fn(usize) -> [i32; 4]) {
+        if self.phase == CorpsePhase::Removed {
+            return;
+        }
+        self.animation_tick = self.animation_tick.saturating_add(1);
+        if self.phase == CorpsePhase::Land {
+            self.land_ticks = self.land_ticks.saturating_add(1);
+            if self.land_ticks >= 60 {
+                self.phase = CorpsePhase::Rest;
+            }
+        }
+        let b = if self.facing < 0 {
+            spec.bounds
+        } else {
+            [
+                -spec.bounds[2],
+                spec.bounds[1],
+                -spec.bounds[0],
+                spec.bounds[3],
+            ]
+        };
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let mut body = Player::spawn(self.x + offset, self.y);
+        body.vy = self.vy;
+        body.grounded = self.grounded;
+        let params = Params {
+            speed: self.vx.abs(),
+            jump: 0,
+            gravity: 48 * ONE,
+            fall: 100 * ONE,
+            hold_ticks: 0,
+            min_ticks: 0,
+            half_width: (b[2] - b[0]) / 2,
+            bottom: b[1],
+            top: b[3],
+        };
+        let old_x = body.x;
+        let old_vy = self.vy;
+        body.step(params, self.vx.signum(), false, count, edge);
+        let hit_wall = body.x != old_x + self.vx / 60;
+        let hit_floor = body.grounded && old_vy < 0;
+        let hit_ceiling = !body.grounded && old_vy > 0 && body.vy == 0;
+        self.x = body.x - offset;
+        self.y = body.y;
+        self.vy = body.vy;
+        self.grounded = body.grounded;
+        if hit_floor && self.phase == CorpsePhase::Air {
+            self.phase = CorpsePhase::Land;
+            self.animation_tick = 0;
+            self.land_ticks = 0;
+        }
+        // ObjectBounce reflects contact velocity, factor0.3 * Random(0.8,1.2).
+        // Axis contacts reuse the proven body solver. Slope response/friction is
+        // a bounded approximation to Unity's full contact manifold.
+        let speed2 = self.vx as i64 * self.vx as i64 + old_vy as i64 * old_vy as i64;
+        if (hit_floor || hit_wall || hit_ceiling) && speed2 > (ONE as i64 * ONE as i64) {
+            let factor = 15729 + (self.random() % 7865) as i32; // [0.24,0.36] Q16
+            self.vx = ((self.vx as i64 * factor as i64) >> 16) as i32;
+            self.vy = ((old_vy as i64 * factor as i64) >> 16) as i32;
+            if hit_wall {
+                self.vx = -self.vx;
+            }
+            if hit_floor || hit_ceiling {
+                self.vy = -self.vy;
+                self.grounded = false;
+            }
+        } else if body.grounded {
+            // Source corpse PhysicsMaterial2D 'Geo Small' friction0.2. Coulomb
+            // step uses that coefficient; arbitrary terrain material mixing is
+            // not represented by the cooked edge format.
+            self.vx = self.vx.signum() * (self.vx.abs() - 10486).max(0); // .2*48/60 Q16
+        }
+        // Source Corpse.Update only destroys an airborne corpse below y=-10.
+        if self.phase == CorpsePhase::Air && self.y < -10 * ONE {
+            self.phase = CorpsePhase::Removed;
+        }
+    }
+}

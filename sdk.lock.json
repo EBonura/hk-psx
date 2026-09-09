@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/EBonura/PSoXide.git",
+  "revision": "7b929ce473ed44b10b0ffca08f413eebf4eeeec4",
+  "toolchain": "nightly-2026-03-25",
+  "source_owner": "PSoXide SDK split checkout (PSoXide-sdk locally)",
+  "license": "GPL-2.0-or-later"
+}

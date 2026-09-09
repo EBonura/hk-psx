@@ -1,0 +1,17 @@
+# Local source material, extracted data and derived game content.
+/local/
+/data/
+/reference/
+/.hkpsx/
+/.psoxide/
+/build/
+/dist/
+/captures/
+/target/
+**/target/
+/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.*

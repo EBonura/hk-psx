@@ -1,0 +1,28 @@
+cargo-features = ["trim-paths"]
+[package]
+name = "hk-psx"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+[workspace]
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+trim-paths = "all"
+[features]
+emulator-telemetry = ["psx-telemetry/emit"]
+[dependencies]
+psx-rt = { path = "../.psoxide/sdk/crates/psx-rt" }
+psx-gpu = { path = "../.psoxide/sdk/crates/psx-gpu" }
+psx-pad = { path = "../.psoxide/sdk/crates/psx-pad" }
+psx-vram = { path = "../.psoxide/sdk/crates/psx-vram" }
+psx-telemetry = { path = "../.psoxide/sdk/crates/psx-telemetry" }
+psx-pack = { path = "../.psoxide/sdk/crates/psx-pack" }
+psx-spu = { path = "../.psoxide/sdk/crates/psx-spu" }
+
+hk-format = {path="../shared/hk-format"}
+hk-sim = {path="../shared/hk-sim"}
+hk-cache = {path="../shared/hk-cache"}
+psx-io = { path = "../.psoxide/sdk/crates/psx-io" }
+psx-hw = { path = "../.psoxide/crates/psx-hw" }
