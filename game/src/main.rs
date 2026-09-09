@@ -235,6 +235,8 @@ fn main() {
     let mut vram=vram_cache::Cache::new();
     let mut sim_clock=psx_rt::interrupts::vblank_count();
     let mut initial=true;
+    // Timer1 counts HBlanks for frame-pacing telemetry only.
+    psx_io::timers::set_mode(psx_io::timers::Timer::Timer1,0x0100);
     'region: loop {
         if initial {
             unsafe { HK_GAME_MODE=2; }
@@ -276,7 +278,7 @@ fn main() {
         loop {
             let mut target=pending_target.take();
             let room=cache.room();
-            input::checkpoint();
+            input::checkpoint();render::mark_frame_start();
             emit::frame_begin(frame);emit::stage_begin(stage::RENDER);
             state.apply(r);
             apply_reveal_masks(&reveals,r);
@@ -290,9 +292,9 @@ fn main() {
             if let Some(f)=effect_frame {needed[1]=u32_at(room.frame(f),0) as u16;}
             enemy_draws.append_needed(&mut needed,&mut needed_len);
             render::begin(&room,&needed[..needed_len],fb.buffer_y(fb.drawing));
-            fb.clear(9,13,20);let mut prims=render::scenery(camera,false);prims+=enemy_draws.draw();prims+=state.draw_impacts(r,&room,camera);
+            fb.clear(9,13,20);let mut prims=render::scenery(camera,false);prims+=enemy_draws.draw();render::kick_ready();prims+=state.draw_impacts(r,&room,camera);
             prims+=geo_render::draw(geo,region_id,camera);
-            prims+=lifeblood::draw(life,region_id,camera);
+            prims+=lifeblood::draw(life,region_id,camera);render::kick_ready();
             if !vitals.dead && (vitals.invulnerable_ticks==0 || frame%4<2) {
                 draw_frame(&room,body_frame,&player,camera);prims+=1;
             }
@@ -302,15 +304,19 @@ fn main() {
             emit::stage_begin(stage::PRESENT);
             let display=fb.begin_deferred_swap();
             let mut display_queued=false;
+            let mut front_pending=true;
             let mut ticks=0;
             loop {
-                // GPU idle alone is insufficient while a DMA list still has
-                // commands to submit. Queue the display only after the final
-                // packet (including HUD) has reached GP0; the IRQ then also
-                // waits for raster completion at a true VBlank edge.
-                if !display_queued && !render::dma_pending() {
-                    psx_rt::interrupts::queue_gp1_at_vblank(display);
-                    display_queued=true;
+                // An earlier chunk may still be walking: kick the final list as
+                // soon as the channel is free, then queue the display only
+                // after that final list (including HUD) has reached GP0; the
+                // IRQ then also waits for raster completion at a true VBlank edge.
+                if !render::dma_pending() {
+                    if front_pending {render::kick_front();front_pending=false;}
+                    else if !display_queued {
+                        psx_rt::interrupts::queue_gp1_at_vblank(display);
+                        display_queued=true;unsafe {render::HK_FRAME_FLIP_LINES=render::frame_lines();}
+                    }
                 }
                 if display_queued && !psx_rt::interrupts::gp1_queue_pending() {break;}
                 input::checkpoint();

@@ -60,23 +60,22 @@ must stay bounded; grep for `state.edge(` before adding another body type.
 ### Final validation
 
 `python3 tools/build.py` wrote the sole disc; the final EXE has zero R3000
-hazards (`.hkpsx/coin-fix-build1.log`). `make test` passes 210 Python and 279
-Rust/native tests (`.hkpsx/coin-fix-tests.log`). Actual-CUE replays completed
+hazards (`.hkpsx/occl-build5.log`). `make test` passes 210 Python and 279
+Rust/native tests (`.hkpsx/occl2-tests.log`). Actual-CUE replays completed
 with unchanged EXE/map/disc/tape/frontend hashes and zero guest, CD, input,
 missed-input and geometry-repair faults:
 
-- `.hkpsx/coin-fix-profile/`: the standard 5,810-poll user tape, 1,779
-  render intervals, mean 3.2619 VBlanks, p95 4, maximum 5; 13
-  intervals take five VBlanks, so **the strict four-tick gate still fails**
-  (13 of 1,779). Endpoint (163.154, 6.39062), region
+- `.hkpsx/occl2-profile/`: the standard 5,810-poll user tape, 2,068
+  render intervals, mean 2.8066 VBlanks, p95 3, maximum 5; 43 intervals
+  exceed four VBlanks, so **the strict four-tick gate still fails**. Endpoint (163.154, 6.39062), region
   8, health 4, 2 kills, 6 breaks, 730 particles
   spawned, none dropped, 42 post-start activations with zero
   boundary waits. The preceding Geo build measured mean 3.3995, maximum 5.
-- `.hkpsx/coin-fix-ascent/`: the 2,450-poll Lifeblood route breaks
+- `.hkpsx/occl2-ascent/`: the 2,450-poll Lifeblood route breaks
   8 objects and spawns 768 particles, 36 rejected
   by the full 128-slot pool. It ends in region 2 at (54.4249,
   11.3906) and never reaches the cocoon; Lifeblood remains unverified in play.
-- `.hkpsx/coin-fix-geo-pause/`: the 6,971-poll mining/pause route
+- `.hkpsx/occl2-geo-pause/`: the 6,971-poll mining/pause route
   repeats the Geo milestone's results (wallet 18, one depleted rock,
   2 kills, 6 breaks, 730 particles).
 
@@ -87,20 +86,24 @@ under a platform. A dark King's Pass frame that previously showed a dark-blue
 wedge on its right now shows black tilemap interior there. During a
 100-particle burst frames take four to five VBlanks.
 
-Linked code 319,904B, data 261,728B, BSS 1,360,088B, static span 1,941,720B; the gap
-before the reserved 32KiB stack is 56,872B. Main-stack high-water remains
-unmeasured. EXE 583,680B, SHA256 `bbbd56d0944466297cbdda430e6238d23e3240d06d27120bc9f789051d318fd6`. BIN 3,544,464B, SHA256
-`f0548f7beec14c818ca129327b5790b6b3ce043993aaadfbfd9d8884a4886217`. Map SHA256 `ca6610424e85a26c634136d6e4efa852c38332d60105bdbf1173452aec94a57d`.
+Linked code 332,124B, data 267,936B, BSS 1,360,368B, static span 1,960,432B; the gap
+before the reserved 32KiB stack is 38,160B. Main-stack high-water remains
+unmeasured. EXE 602,112B, SHA256 `d598d0f4c6e9d0fc4eff73ca7e8b516c48bab0dfefce47c093ee198ffcce3f90`. BIN 3,544,464B, SHA256
+`a39c1b98e9c6563c2b2e38d9eec1742e77dfc5f42e59ac86f0084ee1ec021e2a`. Map SHA256 `2ce1aa339530a9ce6a9137c35847859641fbbb0df775608ca89af6a10b1f8dbf`.
 
-### Frame rate
+### Frame pacing
 
-The steady-state CPU is mostly idle: in a 300-VBlank window of the long profile
-76% of retired-instruction samples sit in `main`, which holds the present-wait
-loop and the inlined simulation. Each rendered frame averages 1,171,949 estimated
-GPU cycles and 187 textured quads, so the three-VBlank cadence is GPU
-raster time, mostly large blended scenery layers. Reaching 30 fps needs less
-overdraw per frame rather than further CPU work; a fresh gameplay recording
-will drive that pass.
+The renderer now kicks packets progressively as separate DMA lists so the GPU
+starts 1.8 ms after the flip, draws cooked black-mask cores as flat quads and
+subtracts the largest front-layer opaque black rectangles from earlier
+axis-aligned draws, all pixel-exact. The long profile's mean render interval
+fell from 3.262 to 2.807 VBlanks (444 of 2,068 frames at two), the stationary
+spawn camera from 3.00 to 2.61. Frames fit two VBlanks below about 31 ms of
+emulated raster; the route's median frame is 33.1 ms, so a consistent 30 fps
+still needs 15 to 25% less raster than exact rendering of the source layering
+produces. Analysis, tools and the decision options are in
+[PERFORMANCE.md](PERFORMANCE.md). Because pacing moves region activations, the
+ascent route now ends with health 3 and wallet 0 at the same position.
 
 ## Geo and functional menus: preceding validated build
 

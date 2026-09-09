@@ -34,6 +34,33 @@ def allocate_scenes(entries, arena_bytes=SCENE_ARENA_BYTES, max_pages=MAX_PAGES,
     if palette_base>max_palettes:raise ValueError('Scene CLUT residency exceeds palette limit')
     return result
 
+def black_cores(raw,entry):
+    """Largest all-opaque-black (word0x0001) texel rectangle [x,y,w,h] per bank
+    texture, or [0,0,0,0]. At full opacity the guest draws that core as a flat
+    opaque black quad and lets it hide earlier draws; exact because the texel
+    ignores blending and modulates to black. Texels are sampled from the
+    finished bank, so shared planes and palettes are the ones the GPU reads."""
+    s=entry['sections'];out=[]
+    for t in range(entry['textures']):
+        page,u,v,w,h,pal,offset=struct.unpack_from('<6HI',raw,s['textures']['offset']+t*16)
+        if page==65535 or w==0 or h==0 or w>63 or h>63:out.append([0,0,0,0]);continue
+        palette=struct.unpack_from('<16H',raw,s['palettes']['offset']+pal*32);black=[c==1 for c in palette]
+        base=s['pages']['offset']+page*32768;hist=[0]*w;best=(0,[0,0,0,0])
+        for y in range(h):
+            row=base+(v+y)*128
+            for x in range(w):
+                b=raw[row+((u+x)>>1)];hist[x]=hist[x]+1 if black[(b>>4)&15 if (u+x)&1 else b&15] else 0
+            stack=[]
+            for x in range(w+1):
+                cur=hist[x] if x<w else 0;start=x
+                while stack and stack[-1][1]>=cur:
+                    sx,sh=stack.pop();area=sh*(x-sx)
+                    if area>best[0]:best=(area,[sx,y-sh+1,x-sx,sh])
+                    start=sx
+                stack.append((start,cur))
+        out.append(best[1] if best[0]>=64 else [0,0,0,0])
+    return out
+
 def manifest(report,metadata):
     scenes=report['scenes'];rows=sorted(metadata['regions'],key=lambda r:r['chunk_id'])
     if [r['chunk_id']for r in rows]!=list(range(1,len(rows)+1)):raise ValueError('Noncontiguous global region IDs')
@@ -66,6 +93,7 @@ def manifest(report,metadata):
     text+='pub const SCENE_REGIONS:&[usize]=&['+','.join(map(str,representatives))+'];\n'
     text+=f'pub const SCENE_ALL_RAW_BYTES:usize={report["raw_resident_bytes"]};\n'
     text+=f'pub const SCENE_TOTAL_PAGES:usize={report["total_pages"]};\npub const SCENE_TOTAL_PALETTES:usize={report["total_palettes"]};\n'
+    text+='pub static SCENE_BLACK_CORES:&[&[[u8;4]]]=&[\n'+''.join('&['+','.join('[%d,%d,%d,%d]'%tuple(c) for c in e.get('black_cores',[]))+'],\n' for e in scenes)+'];\n'
     return text
 
 def validate_geometry(bank,entry,metadata):
@@ -113,6 +141,7 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
         raw,e=build_scene(scene,inputs,page_limit=MAX_PAGES,scenery_cap=48,dedup_mode='blob',share_pixel_planes=True)
         if e['changed_static_textures']:raise ValueError('Lossless bank unexpectedly resampled scenery')
         e['geometry_packet_bound']=validate_geometry(raw,e,meta)
+        e['black_cores']=black_cores(raw,e)
         stored=compressed(raw);bodies[scene]=(raw,stored)
         e.update(stored_bytes=len(stored),stored_fnv=fnv(stored),raw_fnv=fnv(raw),stored_sha256=sha(stored),raw_sha256=sha(raw),
                  raw_path=str(output_dir/f'scene_{scene}.hk'),stored_path=str(output_dir/f'scene_{scene}.hlzc'),path=str(output_dir/f'scene_{scene}.hlzc'))

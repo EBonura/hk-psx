@@ -71,6 +71,27 @@ impl Axis {
     }
 }
 
+/// Screen pixels (half-open, clipped) whose sampled texel lies inside the
+/// texel rectangle `rect` = [x,y,w,h] of an axis-aligned quad. Same DDA as the
+/// covers, so a flat quad over this rectangle and the textured quad clipped to
+/// its complement partition the original pixels exactly.
+pub fn texel_rect_to_screen(verts:[(i16,i16);4],width:u16,height:u16,rect:[u8;4])->Option<[i16;4]> {
+    let [(x0,y0),(x1,y1),(x2,y2),(x3,y3)]=verts;
+    if y0!=y1 || x0!=x2 || x1!=x3 || y2!=y3 || rect[2]==0 || rect[3]==0 {return None;}
+    let dx=x1 as i32-x0 as i32;let dy=y2 as i32-y0 as i32;
+    if dx==0 || dx.abs()>1023 || dy==0 || dy.abs()>511 || width==0 || width>256 || height==0 || height>256 {return None;}
+    let (l,t)=(rect[0]as i32,rect[1]as i32);let (r,b)=(l+rect[2]as i32,t+rect[3]as i32);
+    if r>width as i32 || b>height as i32 {return None;}
+    let sx=dx.abs();let sy=dy.abs();
+    let x=if dx<0 {Axis::new(sx as i16,0,width,sx)}else{Axis::new(0,sx as i16,width,sx)};
+    let y=if dy<0 {Axis::new(sy as i16,0,height,sy)}else{Axis::new(0,sy as i16,height,sy)};
+    let (l,r)=if l==0 && r==width as i32 {(x.start,x.end)}else{x.interval(l,r)};
+    let (t,b)=if t==0 && b==height as i32 {(y.start,y.end)}else{y.interval(t,b)};
+    let (left,top)=(x0.min(x1)as i32,y0.min(y2)as i32);
+    let l=(left+l).max(0);let r=(left+r).min(320);let t=(top+t).max(0);let b=(top+b).min(240);
+    (l<r && t<b).then_some([l as i16,t as i16,r as i16,b as i16])
+}
+
 /// Fixed-texture room lease contract: cover/dimensions of a texture ID do not
 /// change until all entries are reset. Cache keys include exact signed spans.
 #[derive(Clone,Copy)]

@@ -67,12 +67,21 @@ Build log `.hkpsx/coin-fix-build1.log`, zero hazards.
 EXE SHA256 `bbbd56d0944466297cbdda430e6238d23e3240d06d27120bc9f789051d318fd6`.
 BIN SHA256 `f0548f7beec14c818ca129327b5790b6b3ce043993aaadfbfd9d8884a4886217`.
 
-Next: the user will record a gameplay capture; the target is 30 fps. Steady
-frames are GPU-bound (about 1,171,949 estimated GPU cycles and 187 textured
-quads per frame, CPU mostly idle in the present-wait loop), so the lever is
-overdraw of large blended scenery layers, not CPU. Also pending: a Lifeblood
-route that actually opens the cocoon, Geo chips/gleam/jitter effects and the
-remaining destruction paths listed in BREAK_EFFECTS.md.
+Frame pacing (docs/PERFORMANCE.md top section): packets kick progressively
+as separate DMA lists (GPU starts 1.8 ms after the flip), cooked black-mask
+cores draw as flat quads, and the largest front opaque black rectangles are
+subtracted from earlier axis-aligned draws; all pixel-exact. Long profile mean
+3.262 -> 2.807 VBlanks (444 of 2,068 frames at two), stationary 3.00 -> 2.61.
+Frames fit two VBlanks under about 31 ms emulated raster; the route median is
+33.1 ms and 42 to 57% of raster is rotated quads no clipping can touch, so a
+consistent 30 fps needs a decision on non-exact reductions (half-resolution
+far parallax layers, dropping or merging distant layers, or a mixed cadence).
+Tools: tools/frame_packets.py (exact last-frame packet census from a RAM
+dump), tools/gpu_census.py (camera-based ranking along a replay). Pacing moves
+region activations, so poll-bound routes can diverge (ascent ends health 3).
+Current EXE SHA256 `d598d0f4c6e9d0fc4eff73ca7e8b516c48bab0dfefce47c093ee198ffcce3f90`,
+BIN `a39c1b98e9c6563c2b2e38d9eec1742e77dfc5f42e59ac86f0084ee1ec021e2a`;
+code 332,124, data 267,936, BSS 1,360,368, gap 38,160B; tests 210 + 279 pass.
 
 ## Previous implementation: Geo and functional menus
 
