@@ -45,20 +45,27 @@ the particle draw avoid 64-bit software division; `State::fill_edges` builds
 the debris edge cache in one pass. Exact differential tests (synthetic pool,
 fallback path, generated source: 2,745,600 slot states) guard trajectories.
 
-Long profile `.hkpsx/burst-fix2-profile/`: 5,810 polls, mean 3.3028 VBlanks,
-p95 4, max 7, 22 of 1,757 intervals over four ticks, poll queue
-peak 4, zero faults, same endpoint (163.154, 6.39062) region 8. Strict
-seamless gate STILL FAILS, as in the Geo milestone (max 5 there). Ascent route
-`.hkpsx/burst-fix2-ascent/` ends at (54.4249, 11.3906) region 2
-without reaching the cocoon: Lifeblood is unverified in gameplay. Geo/pause
-route `.hkpsx/burst-fix2-geo-pause/` repeats the Geo milestone results.
+The user's first recording then froze with the same `QueueFull` from Geo
+coins: 16 coins x 7 broken objects re-filtering every edge per tick through
+`State::edge`. `State` now owns the filtered edge table (refreshed in
+`tick_debris`, invalidated by every exclusion-set mutator); the extended crash
+tape `.hkpsx/coin-fix-crash/` completes with queue peak 2. Any sustained tick
+above one VBlank still halts the game by design; keep per-body edge scans bounded.
 
-Linked code 317,660, data 261,920, BSS 1,360,088; gap 58,920B before the 32KiB stack.
+Long profile `.hkpsx/coin-fix-profile/`: 5,810 polls, mean 3.2619 VBlanks,
+p95 4, max 5, 13 of 1,779 intervals over four ticks, poll queue
+peak 2, zero faults, same endpoint (163.154, 6.39062) region 8. Strict
+seamless gate STILL FAILS, as in the Geo milestone (max 5 there). Ascent route
+`.hkpsx/coin-fix-ascent/` ends at (54.4249, 11.3906) region 2
+without reaching the cocoon: Lifeblood is unverified in gameplay. Geo/pause
+route `.hkpsx/coin-fix-geo-pause/` repeats the Geo milestone results.
+
+Linked code 319,904, data 261,728, BSS 1,360,088; gap 56,872B before the 32KiB stack.
 VRAM has 608 unallocated bytes inside 1 MiB after the Lifeblood and break-effect
-rectangles. 210 Python + 279 Rust/native tests pass (`.hkpsx/burst-fix-tests.log`).
-Build log `.hkpsx/burst-fix-build3.log`, zero hazards.
-EXE SHA256 `d01705a5e0eea8904502cf4c6e75aee5730e0d8e722d89413682e62085b6478d`.
-BIN SHA256 `adc5bf0740676c5f9497a91f7052c4157d2f61602d8a999faf49caf3b461701a`.
+rectangles. 210 Python + 279 Rust/native tests pass (`.hkpsx/coin-fix-tests.log`).
+Build log `.hkpsx/coin-fix-build1.log`, zero hazards.
+EXE SHA256 `bbbd56d0944466297cbdda430e6238d23e3240d06d27120bc9f789051d318fd6`.
+BIN SHA256 `f0548f7beec14c818ca129327b5790b6b3ce043993aaadfbfd9d8884a4886217`.
 
 Next: the user will record a gameplay capture; the target is 30 fps. Steady
 frames are GPU-bound (about 1,171,949 estimated GPU cycles and 187 textured
