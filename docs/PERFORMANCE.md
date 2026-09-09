@@ -1,5 +1,71 @@
 # Performance investigation
 
+## Frame pacing and the GPU raster budget (2026-09-09)
+
+Every number below is PSoXide's emulated bus clock (33.87 MHz), not hardware.
+The emulator charges silicon-calibrated raster time per pixel: textured
+2.80 bus cycles, flat opaque 0.54, flat semi-transparent 0.80, fill 0.08.
+Semi-transparency does not change textured cost. `tools/frame_packets.py`
+parses the last built frame from a RAM dump and applies that model per packet;
+`tools/gpu_census.py` ranks static draws along a replay's cameras.
+
+Anatomy before this work (stationary spawn camera, per frame): the CPU built
+the whole display list in about 40% of a VBlank, then submitted one DMA list,
+then spun while the GPU rasterised about 30 ms. A frame therefore took
+`ceil((build + raster) / 16.7 ms)` VBlanks, and 30 ms of raster plus any setup
+overshoots the second edge at 33.4 ms. The steady state was 3 VBlanks.
+
+Changes, all pixel-exact (stationary final frames byte-identical across builds):
+
+- Packets are kicked progressively as their own DMA lists every eight draws
+  whenever the channel is free, so the GPU starts 1.8 ms after the flip
+  (`HK_FRAME_FIRST_KICK_LINES`, Timer1 HBlanks) instead of after the whole
+  build. The final list waits in the present loop for a free channel so
+  simulation ticks and input checkpoints run instead of a spin.
+- Black-mask textures carry a cooked largest-opaque-black rectangle
+  (`SCENE_BLACK_CORES` in `data/scene_manifest.rs`). On the black-average path
+  at full opacity that core is drawn as a flat opaque black quad and the
+  textured border as scissor pieces; the same DDA as the alpha covers maps the
+  texel rectangle to pixels. The sentinel texel 0x0001 keeps its red bit under
+  ordinary tint modulation, so ordinary sprites never take the flat path.
+- The eight largest front-layer opaque black rectangles (solid textures and
+  cores) are subtracted from earlier axis-aligned draws, one rectangle per draw,
+  through the proven E3/E4 scissor packets. Rotated quads are never clipped:
+  the emulator does not rasterise a clipped rotated quad identically.
+
+| Long 5,871-poll profile | Mean VBlanks | 2 / 3 / 4 / 5 frames | Max |
+| --- | ---: | --- | ---: |
+| Coin fix (single list) |3.262|0 / 1,326 / 440 / 13|5|
+| Two lists |2.975|170 / 1,659 / 122 / 0|4|
+| Progressive kicks |2.865|330 / 1,640 / 56 / 0|4|
+| Kicks + cores + occlusion |2.807|444 / 1,581 / 42 / 1|5|
+
+Stationary spawn cadence: 3.00 before, 2.61 now (54 two-VBlank, 85 three).
+Frames land on two VBlanks when raster is under about 31 ms. Raster per frame
+on the long route is p10 25.5 ms, p25 29.9, p50 33.1, p75 35.6, p90 40.2, so
+about a third of frames fit today and the median is 2 ms over the edge.
+
+Remaining exact headroom is small. Measured on three real frames: 42 to 57% of
+raster is rotated quads that no rectangle clipping can touch; texels that draw
+nothing are 2 to 11%; pixels under later opaque black 7 to 22% at full
+resolution, of which single-rectangle subtraction recovers roughly half; flat
+cores 2 to 5%. Spawn-camera raster is 28.7 ms with `haze3` alone 6.2 ms
+(74,595 px) and `fall_BG` layers 27%. A consistent 30 fps needs the median
+frame under about 28 ms, which is 15 to 25% less raster than exact rendering
+of the source layering produces. Options that need a decision: draw far
+parallax layers at half resolution and upscale, drop or merge the cheapest
+distant layers, or accept a mixed 20/30 fps cadence.
+
+Pacing changes move region activations to different ticks, and enemy sync at
+activation can change an encounter: the Lifeblood ascent route now ends with
+health 3 and wallet 0 instead of 4 and 2 at the same final position. This is
+the documented poll-bound-route caveat, not a rendering fault, but it means
+the simulation is not independent of frame timing.
+
+Evidence: `.hkpsx/occl2-profile/`, `.hkpsx/pace-anatomy2/`,
+`.hkpsx/kick-profile/`, `.hkpsx/split-profile/`, `.hkpsx/frame-anatomy/`,
+`.hkpsx/occl2-{ascent,geo-pause,crash}/`.
+
 ## Renderer experiment: not promoted
 
 The current source adds20-byte static alpha covers (255,240 bytes across98
