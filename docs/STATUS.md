@@ -60,23 +60,24 @@ must stay bounded; grep for `state.edge(` before adding another body type.
 ### Final validation
 
 `python3 tools/build.py` wrote the sole disc; the final EXE has zero R3000
-hazards (`.hkpsx/final-build.log`). `make test` passes 210 Python and 279
-Rust/native tests (`.hkpsx/final-tests.log`). Actual-CUE replays completed
+hazards (`.hkpsx/trim-build.log`). `make test` passes 210 Python and 279
+Rust/native tests (`.hkpsx/trim-tests.log`). Actual-CUE replays completed
 with unchanged EXE/map/disc/tape/frontend hashes and zero guest, CD, input,
 missed-input and geometry-repair faults:
 
-- `.hkpsx/final-profile/`: the standard 5,810-poll user tape, 2,247
-  render intervals, mean 2.583 VBlanks, p95 3, maximum 6; 42 intervals
+- `.hkpsx/trim-profile/`: the standard 5,810-poll user tape, 2,260
+  render intervals, mean 2.568 VBlanks, p95 3, maximum 5; 37 intervals
   exceed four VBlanks, so **the strict four-tick gate still fails** (it also
   failed on the 2026-09-09 reference, mean 2.807). Endpoint (163.154,
-  6.39062), region 8, health 4, zero faults. The guest culled 23,857 draws
-  and subtracted occluders from 37,340 (30,587 rotated).
-- `.hkpsx/final-ascent/`: the 2,450-poll Lifeblood route ends in region 2 at
-  (54.4249, 11.3906) with health 3, final frame byte-identical to the
-  reference; the cocoon is still never reached.
-- `.hkpsx/final-geo-pause/` and `.hkpsx/final-crash/`: same endpoints as the
-  references; the only differing pixels (223 and 2) lie inside Knight packet
-  boxes, the known pacing effect on the Knight's animation.
+  6.39062), region 8, health 4, zero faults. The guest culled 24,079 draws.
+- `.hkpsx/trim-ascent/`: the 2,450-poll Lifeblood route ends in region 2 at
+  (54.4249, 11.3906); this run ended with health 4 and the only differing
+  pixels are the HUD health masks (pacing moved the hazard hit). The cocoon
+  is still never reached.
+- `.hkpsx/trim-geo-pause/` and `.hkpsx/trim-crash/`: same endpoints as the
+  references; the crash frame is byte-identical and the 223 differing
+  spawn pixels lie inside Knight packet boxes, the known pacing effect on the
+  Knight's animation.
 
 Captures every 30 or 60 route ticks were inspected around the first burst and
 at the route ends: stone and plant particles animate and settle, platform
@@ -85,10 +86,10 @@ under a platform. A dark King's Pass frame that previously showed a dark-blue
 wedge on its right now shows black tilemap interior there. During a
 100-particle burst frames take four to five VBlanks.
 
-Linked code 333,828B, data 268,272B, BSS 1,360,396B, static span 1,962,508B; the gap
+Linked code 334,608B, data 267,504B, BSS 1,360,396B, static span 1,962,508B; the gap
 before the reserved 32KiB stack is 36,084B. Main-stack high-water remains
-unmeasured. EXE 604,160B, SHA256 `f96b5a3452f56b2e73484e71290f33dd65540af4cc2c63d2bd39be69a2770d7f`. BIN 3,544,464B, SHA256
-`92030beb0216b69cee72f024a84dec6da506b29b6134ad88e5843ddd79a3b8cf`. Map SHA256 `0a372cdbd2cbaa6d9349d61b38a4a97a4130e247e8407a8f4d979f4e73e47bc7`.
+unmeasured. EXE 604,160B, SHA256 `cdc8524c1f1cfc3f7027dc06629382bca712d48e436382b91fbdb374a4476a9f`. BIN 3,544,464B, SHA256
+`2e46213aa232d59efbb8a1c9852ad7c08fa80483b1d41c8ec149a7ad34159859`. Map SHA256 `d743b62d18ed19684b2ea4e7b0b1d67e662a21e56a711074256775215902197e`.
 
 ### Frame pacing
 
@@ -108,7 +109,8 @@ On 2026-09-11 two further exact changes landed: draws whose screen bounding
 box lies entirely under later opaque black are skipped whole, and occlusion
 subtraction now applies to rotated quads too, since the emulator clips spans
 per scanline and samples texels from per-pixel plane equations. The long
-profile's mean fell from 2.807 to 2.583 VBlanks (989 of 2,247 frames at two);
+profile's mean fell from 2.807 to 2.568 VBlanks (1,021 of 2,260 frames at
+two, after a cheaper culling check);
 completed final frames cost 22.1 ms at spawn, 32.8 ms beside the cocoon and
 24.2 ms on the ascent. A Gouraud replacement for the fog sheets was measured
 and rejected as inexact. The parallax breakdown that motivated this is in

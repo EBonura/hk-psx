@@ -82,16 +82,20 @@ parallax layering. Two exact changes landed instead: whole-draw culling under
 the occluder union and occlusion subtraction on rotated quads (the old claim
 that the emulator rasterises clipped rotated quads differently is withdrawn;
 it clips spans per scanline and samples texels per pixel). Long profile mean
-2.807 -> 2.583 VBlanks (989 of 2,247 frames at two); spawn frame 22.1 ms,
-cocoon side 32.8 ms, ascent 24.2 ms. Gouraud fog was measured and rejected.
-The strict seamless gate still fails at the region 1 -> 2 activation and in
-bursts, as it did before. Remaining exact levers are small: semi-black cores
-and 1:1 sprite primitives measured under 0.6 ms per frame each; the culling's
-CPU cost (subtract 3.2% of samples) could be trimmed with a per-occluder
-overlap test.
-Current EXE SHA256 `f96b5a3452f56b2e73484e71290f33dd65540af4cc2c63d2bd39be69a2770d7f`,
-BIN `92030beb0216b69cee72f024a84dec6da506b29b6134ad88e5843ddd79a3b8cf`;
-code 333,828, data 268,272, BSS 1,360,396, gap 36,084B.
+2.807 -> 2.568 VBlanks (1,021 of 2,260 frames at two); completed spawn frame
+22.1 ms, cocoon side 32.8 ms, ascent 24.2 ms (a packet census is only valid
+on a completed list: USED == KICKED). Gouraud fog was measured and rejected;
+semi-black cores were built, measured (257 packets over a tape, none in a
+final frame) and removed. The culling check filters occluders by overlap
+first (subtract 3.2% -> 1.2% of CPU samples). The strict seamless gate still
+fails at the region 1 -> 2 activation and in bursts, as before. The only
+exact lever left that was measured is 1:1 sprite primitives, under 0.6 ms
+per frame. UnityPy's FMOD decode needs no audio device now
+(host/fmod_nosound.py); do not import it from cook_music.py, whose code hash
+is pinned by the music pipeline.
+Current EXE SHA256 `cdc8524c1f1cfc3f7027dc06629382bca712d48e436382b91fbdb374a4476a9f`,
+BIN `2e46213aa232d59efbb8a1c9852ad7c08fa80483b1d41c8ec149a7ad34159859`;
+code 334,608, data 267,504, BSS 1,360,396, gap 36,084B.
 
 ## Previous implementation: Geo and functional menus
 

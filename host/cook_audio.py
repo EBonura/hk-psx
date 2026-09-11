@@ -6,6 +6,7 @@ import math
 import struct
 import wave
 from pathlib import Path
+import fmod_nosound  # noqa: F401  offline FSB decoding without an audio device
 
 BANK_LIMIT = 32768
 SPU_BASE = 0x1010
