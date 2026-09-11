@@ -60,24 +60,23 @@ must stay bounded; grep for `state.edge(` before adding another body type.
 ### Final validation
 
 `python3 tools/build.py` wrote the sole disc; the final EXE has zero R3000
-hazards (`.hkpsx/occl-build5.log`). `make test` passes 210 Python and 279
-Rust/native tests (`.hkpsx/occl2-tests.log`). Actual-CUE replays completed
+hazards (`.hkpsx/final-build.log`). `make test` passes 210 Python and 279
+Rust/native tests (`.hkpsx/final-tests.log`). Actual-CUE replays completed
 with unchanged EXE/map/disc/tape/frontend hashes and zero guest, CD, input,
 missed-input and geometry-repair faults:
 
-- `.hkpsx/occl2-profile/`: the standard 5,810-poll user tape, 2,068
-  render intervals, mean 2.8066 VBlanks, p95 3, maximum 5; 43 intervals
-  exceed four VBlanks, so **the strict four-tick gate still fails**. Endpoint (163.154, 6.39062), region
-  8, health 4, 2 kills, 6 breaks, 730 particles
-  spawned, none dropped, 42 post-start activations with zero
-  boundary waits. The preceding Geo build measured mean 3.3995, maximum 5.
-- `.hkpsx/occl2-ascent/`: the 2,450-poll Lifeblood route breaks
-  8 objects and spawns 768 particles, 36 rejected
-  by the full 128-slot pool. It ends in region 2 at (54.4249,
-  11.3906) and never reaches the cocoon; Lifeblood remains unverified in play.
-- `.hkpsx/occl2-geo-pause/`: the 6,971-poll mining/pause route
-  repeats the Geo milestone's results (wallet 18, one depleted rock,
-  2 kills, 6 breaks, 730 particles).
+- `.hkpsx/final-profile/`: the standard 5,810-poll user tape, 2,247
+  render intervals, mean 2.583 VBlanks, p95 3, maximum 6; 42 intervals
+  exceed four VBlanks, so **the strict four-tick gate still fails** (it also
+  failed on the 2026-09-09 reference, mean 2.807). Endpoint (163.154,
+  6.39062), region 8, health 4, zero faults. The guest culled 23,857 draws
+  and subtracted occluders from 37,340 (30,587 rotated).
+- `.hkpsx/final-ascent/`: the 2,450-poll Lifeblood route ends in region 2 at
+  (54.4249, 11.3906) with health 3, final frame byte-identical to the
+  reference; the cocoon is still never reached.
+- `.hkpsx/final-geo-pause/` and `.hkpsx/final-crash/`: same endpoints as the
+  references; the only differing pixels (223 and 2) lie inside Knight packet
+  boxes, the known pacing effect on the Knight's animation.
 
 Captures every 30 or 60 route ticks were inspected around the first burst and
 at the route ends: stone and plant particles animate and settle, platform
@@ -86,10 +85,10 @@ under a platform. A dark King's Pass frame that previously showed a dark-blue
 wedge on its right now shows black tilemap interior there. During a
 100-particle burst frames take four to five VBlanks.
 
-Linked code 332,124B, data 267,936B, BSS 1,360,368B, static span 1,960,432B; the gap
-before the reserved 32KiB stack is 38,160B. Main-stack high-water remains
-unmeasured. EXE 602,112B, SHA256 `d598d0f4c6e9d0fc4eff73ca7e8b516c48bab0dfefce47c093ee198ffcce3f90`. BIN 3,544,464B, SHA256
-`a39c1b98e9c6563c2b2e38d9eec1742e77dfc5f42e59ac86f0084ee1ec021e2a`. Map SHA256 `2ce1aa339530a9ce6a9137c35847859641fbbb0df775608ca89af6a10b1f8dbf`.
+Linked code 333,828B, data 268,272B, BSS 1,360,396B, static span 1,962,508B; the gap
+before the reserved 32KiB stack is 36,084B. Main-stack high-water remains
+unmeasured. EXE 604,160B, SHA256 `f96b5a3452f56b2e73484e71290f33dd65540af4cc2c63d2bd39be69a2770d7f`. BIN 3,544,464B, SHA256
+`92030beb0216b69cee72f024a84dec6da506b29b6134ad88e5843ddd79a3b8cf`. Map SHA256 `0a372cdbd2cbaa6d9349d61b38a4a97a4130e247e8407a8f4d979f4e73e47bc7`.
 
 ### Frame pacing
 
@@ -104,6 +103,16 @@ still needs 15 to 25% less raster than exact rendering of the source layering
 produces. Analysis, tools and the decision options are in
 [PERFORMANCE.md](PERFORMANCE.md). Because pacing moves region activations, the
 ascent route now ends with health 3 and wallet 0 at the same position.
+
+On 2026-09-11 two further exact changes landed: draws whose screen bounding
+box lies entirely under later opaque black are skipped whole, and occlusion
+subtraction now applies to rotated quads too, since the emulator clips spans
+per scanline and samples texels from per-pixel plane equations. The long
+profile's mean fell from 2.807 to 2.583 VBlanks (989 of 2,247 frames at two);
+completed final frames cost 22.1 ms at spawn, 32.8 ms beside the cocoon and
+24.2 ms on the ascent. A Gouraud replacement for the fog sheets was measured
+and rejected as inexact. The parallax breakdown that motivated this is in
+PERFORMANCE.md; simplifying the layering was ruled out.
 
 ## Geo and functional menus: preceding validated build
 

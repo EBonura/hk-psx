@@ -69,6 +69,8 @@ const OCCLUDER_MIN_AREA: i32 = 2048;
 struct Occluder {front: bool, draw: u16, rect: [i16;4]}
 static mut OCCLUDERS: [Occluder; MAX_OCCLUDERS] = [Occluder {front:false,draw:0,rect:[0;4]}; MAX_OCCLUDERS];
 static mut OCCLUDER_COUNT: usize = 0;
+// Bounding box of every occluder rectangle; a draw outside it cannot be hidden.
+static mut OCCLUDER_UNION: [i16;4] = [0;4];
 /// Frame pacing in scanlines (Timer1 counts HBlanks): time from the frame's
 /// start to its first DMA kick, its final kick and its display-flip request.
 #[no_mangle] pub static mut HK_FRAME_FIRST_KICK_LINES:u32=0;
@@ -270,6 +272,10 @@ fn collect_occluders(camera:(i32,i32)) {
             };
             OCCLUDERS[slot]=Occluder {front:d.flags&FRONT!=0,draw:i as u16,rect};
         }
+        OCCLUDER_UNION=[i16::MAX,i16::MAX,i16::MIN,i16::MIN];
+        for o in &OCCLUDERS[..OCCLUDER_COUNT] {
+            OCCLUDER_UNION=[OCCLUDER_UNION[0].min(o.rect[0]),OCCLUDER_UNION[1].min(o.rect[1]),OCCLUDER_UNION[2].max(o.rect[2]),OCCLUDER_UNION[3].max(o.rect[3])];
+        }
     }
 }
 fn template(t: Texture, tp: Tpage, u: u16, v: u16) -> QuadTextured {
@@ -407,6 +413,41 @@ fn uv_rect(t:&QuadTextured)->UvRect {
     let u=(t.uv0_clut&255) as u16;let v=((t.uv0_clut>>8)&255) as u16;
     UvRect {u,v,w:(t.uv1_tpage&255) as u16-u+1,h:((t.uv2>>8)&255) as u16-v+1}
 }
+/// Subtract later opaque black rectangles from rotated quads too. The
+/// emulator clips spans per scanline and samples texels from per-pixel plane
+/// equations, so the draw area cannot change what the surviving pixels
+/// sample; verified by byte comparison of final frames (PERFORMANCE.md).
+const ROTATED_OCCLUSION:bool=true;
+#[no_mangle] pub static mut HK_ROTATED_OCCLUSION_QUADS:u32=0;
+#[no_mangle] pub static mut HK_HIDDEN_QUADS:u32=0;
+#[no_mangle] pub static mut HK_HIDDEN_PIXELS:u32=0;
+/// True when every on-screen pixel of the quad's bounding box is covered by
+/// the union of occluder rectangles drawn after draw `i`.
+fn hidden_by_occluders(v:&[(i32,i32);4],i:usize,front:bool)->bool {
+    unsafe {
+        if OCCLUDER_COUNT==0 {return false;}
+        let l=v.iter().map(|p|p.0).min().unwrap().max(0);let r=v.iter().map(|p|p.0).max().unwrap().min(320);
+        let t=v.iter().map(|p|p.1).min().unwrap().max(0);let b=v.iter().map(|p|p.1).max().unwrap().min(240);
+        if !(l<r && t<b) {return false;}
+        let u=OCCLUDER_UNION;
+        if (l as i16)<u[0] || (t as i16)<u[1] || (r as i16)>u[2] || (b as i16)>u[3] {return false;}
+        let mut pieces=Pieces {rects:[[l as i16,t as i16,r as i16,b as i16],[0;4],[0;4],[0;4]],count:1};
+        for o in &OCCLUDERS[..OCCLUDER_COUNT] {
+            if !((o.front && !front) || (o.front==front && o.draw as usize>i)) {continue;}
+            // None means no overlap or more than four remaining pieces; both
+            // keep the current partition, which stays conservative.
+            if let Some(p)=subtract(&pieces,&o.rect) {
+                if p.count==0 {
+                    HK_HIDDEN_QUADS=HK_HIDDEN_QUADS.wrapping_add(1);
+                    HK_HIDDEN_PIXELS=HK_HIDDEN_PIXELS.wrapping_add(((r-l)*(b-t)) as u32);
+                    return true;
+                }
+                pieces=p;
+            }
+        }
+        false
+    }
+}
 #[inline(never)]
 pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
     let mut n = 0;
@@ -436,6 +477,11 @@ pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
             {
                 continue;
             }
+            // A draw whose on-screen bounding box lies entirely under later
+            // opaque black rectangles paints nothing that survives, so it is
+            // skipped whole. No clipping is involved, so rotated quads and
+            // oversized repair quads qualify too.
+            if hidden_by_occluders(&v,i,front) {continue;}
             let gain=GAINS[i] as u16;
             let tint=((d.tint.0 as u16*gain/128) as u8,(d.tint.1 as u16*gain/128) as u8,(d.tint.2 as u16*gain/128) as u8);
             let t=&TEMPLATES[d.texture];let uv=uv_rect(t);
@@ -453,13 +499,14 @@ pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
                 // quads only; a flat black core is exact only on the
                 // black-average path, which zeroes the sentinel texel's red bit.
                 let axis=xy[0].1==xy[1].1 && xy[0].0==xy[2].0 && xy[1].0==xy[3].0 && xy[2].1==xy[3].1;
-                let box_area=if axis {(xy[0].0.max(xy[1].0).min(320)-xy[0].0.min(xy[1].0).max(0)) as i32*(xy[0].1.max(xy[2].1).min(240)-xy[0].1.min(xy[2].1).max(0)) as i32}else{0};
+                // On-screen bounding box of the quad; for axis-aligned quads
+                // this is the quad itself.
+                let bl=xy.iter().map(|p|p.0).min().unwrap().max(0);let br=xy.iter().map(|p|p.0).max().unwrap().min(320);
+                let bt=xy.iter().map(|p|p.1).min().unwrap().max(0);let bb=xy.iter().map(|p|p.1).max().unwrap().min(240);
+                let box_area=if bl<br && bt<bb {(br-bl) as i32*(bb-bt) as i32}else{0};
                 let mut pieces=match &scissors {
                     Some(s)=>Pieces {rects:s.rects,count:s.count},
-                    None=>{
-                        let l=xy[0].0.min(xy[1].0).max(0);let r=xy[0].0.max(xy[1].0).min(320);let tp=xy[0].1.min(xy[2].1).max(0);let b=xy[0].1.max(xy[2].1).min(240);
-                        Pieces {rects:[[l,tp,r,b],[0;4],[0;4],[0;4]],count:usize::from(l<r && tp<b)}
-                    }
+                    None=>Pieces {rects:[[bl,bt,br,bb],[0;4],[0;4],[0;4]],count:usize::from(box_area>0)}
                 };
                 let mut core_rect=None;let mut saved=0i32;
                 let core=if axis && box_area>=OCCLUDER_MIN_AREA {core_of(d.texture)}else{[0;4]};
@@ -469,7 +516,7 @@ pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
                     }
                 }
                 let mut best:Option<(i32,usize)>=None;
-                for (k,o) in OCCLUDERS[..if axis && box_area>=OCCLUDER_MIN_AREA {OCCLUDER_COUNT}else{0}].iter().enumerate() {
+                for (k,o) in OCCLUDERS[..if (axis || ROTATED_OCCLUSION) && box_area>=OCCLUDER_MIN_AREA {OCCLUDER_COUNT}else{0}].iter().enumerate() {
                     if !((o.front && !front) || (o.front==front && o.draw as usize>i)) {continue;}
                     let ov:i32=pieces.rects[..pieces.count].iter().map(|p|overlap(p,&o.rect)).sum();
                     if ov>=256 && best.is_none_or(|b|ov>b.0) {best=Some((ov,k));}
@@ -489,7 +536,7 @@ pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
                             assert!(USED<CAP);PACKETS[USED].write_black(q.map(vertex));USED+=1;
                             HK_CORE_QUADS=HK_CORE_QUADS.wrapping_add(1);
                         }
-                        if saved>0 {HK_OCCLUSION_QUADS=HK_OCCLUSION_QUADS.wrapping_add(1);HK_OCCLUSION_SAVED_PIXELS=HK_OCCLUSION_SAVED_PIXELS.wrapping_add(saved as u32);}
+                        if saved>0 {HK_OCCLUSION_QUADS=HK_OCCLUSION_QUADS.wrapping_add(1);HK_OCCLUSION_SAVED_PIXELS=HK_OCCLUSION_SAVED_PIXELS.wrapping_add(saved as u32);if !axis {HK_ROTATED_OCCLUSION_QUADS=HK_ROTATED_OCCLUSION_QUADS.wrapping_add(1);}}
                         n+=pieces.count as u32+u32::from(core_rect.is_some());continue;
                     }
                     HK_SCISSOR_CAPACITY_FALLBACKS=HK_SCISSOR_CAPACITY_FALLBACKS.wrapping_add(1);
