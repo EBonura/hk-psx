@@ -41,6 +41,7 @@ produced two misleadingly low readings during this work.
 | Kicks + cores + occlusion (2026-09-09) |2.807|444 / 1,581 / 42 / 1 / 0|5|
 | + whole-draw culling |2.701|728 / 1,345 / 68 / 7 / 1|6|
 | + rotated occlusion (`.hkpsx/final-profile/`) |2.583|989 / 1,216 / 33 / 8 / 1|6|
+| + culling CPU trim (`.hkpsx/trim-profile/`) |2.568|1,021 / 1,202 / 30 / 7 / 0|5|
 
 Exact raster of the completed final frames: spawn camera 29.4 to 22.1 ms,
 region 44 beside the cocoon 41.8 to 32.8 ms, region 2 on the ascent 28.8 to
@@ -51,8 +52,23 @@ reference build; the 5 and 6 VBlank frames sit at the region 1 to 2
 activation and inside destruction bursts.
 
 CPU: `subtract` rose from 0.15% to 3.2% of retired PC samples and `scenery`
-from 11.9% to 17.3%. A bounding-box early-out over the occluder union is in,
-but most draws lie inside that box. Frames remain GPU-bound.
+from 11.9% to 17.3%. The culling check now filters occluders by overlap
+first, answers immediately when one rectangle contains the box, and only
+runs the subtract chain when at least two overlap; `subtract` fell to 1.2%
+and the long profile's mean to 2.568 VBlanks. Frames remain GPU-bound.
+
+Semi-black cores were tried and removed. The cooker found the largest
+all-0x8000 texel rectangle for 27 scene-0 textures, and the guest drew it as a
+flat semi-transparent black quad (E1 for the draw's blend state, E6 for the
+mask bit) on axis-aligned averaging draws. The measured upper bound was
+0.35 ms at spawn and under 0.11 ms elsewhere, and in practice the core lost
+to the opaque core's four-piece budget: 257 packets over the whole crash
+tape, none in any final frame, so the code was not kept.
+
+Build note: UnityPy decodes FSB clips through FMOD, whose default output
+needs a usable host audio device and failed with OUTPUT DRIVERCALL in the
+Geo audio cook. `host/fmod_nosound.py` (imported by `cook_audio.py`) forces
+the NOSOUND output; the cooked Geo bank hash is unchanged.
 
 ### Parallax layer breakdown
 

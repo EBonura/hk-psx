@@ -431,12 +431,27 @@ fn hidden_by_occluders(v:&[(i32,i32);4],i:usize,front:bool)->bool {
         if !(l<r && t<b) {return false;}
         let u=OCCLUDER_UNION;
         if (l as i16)<u[0] || (t as i16)<u[1] || (r as i16)>u[2] || (b as i16)>u[3] {return false;}
-        let mut pieces=Pieces {rects:[[l as i16,t as i16,r as i16,b as i16],[0;4],[0;4],[0;4]],count:1};
-        for o in &OCCLUDERS[..OCCLUDER_COUNT] {
+        let bbox=[l as i16,t as i16,r as i16,b as i16];
+        // Cheap passes first: keep only later occluders that overlap the box,
+        // and answer at once when one of them contains it.
+        let mut hits=[0usize;MAX_OCCLUDERS];let mut n=0;
+        for (k,o) in OCCLUDERS[..OCCLUDER_COUNT].iter().enumerate() {
             if !((o.front && !front) || (o.front==front && o.draw as usize>i)) {continue;}
-            // None means no overlap or more than four remaining pieces; both
-            // keep the current partition, which stays conservative.
-            if let Some(p)=subtract(&pieces,&o.rect) {
+            let q=&o.rect;
+            if q[0]>=bbox[2] || q[2]<=bbox[0] || q[1]>=bbox[3] || q[3]<=bbox[1] {continue;}
+            if q[0]<=bbox[0] && q[1]<=bbox[1] && q[2]>=bbox[2] && q[3]>=bbox[3] {
+                HK_HIDDEN_QUADS=HK_HIDDEN_QUADS.wrapping_add(1);
+                HK_HIDDEN_PIXELS=HK_HIDDEN_PIXELS.wrapping_add(((r-l)*(b-t)) as u32);
+                return true;
+            }
+            hits[n]=k;n+=1;
+        }
+        if n<2 {return false;}
+        let mut pieces=Pieces {rects:[bbox,[0;4],[0;4],[0;4]],count:1};
+        for &k in &hits[..n] {
+            // None means more than four remaining pieces; keep the current
+            // partition, which stays conservative.
+            if let Some(p)=subtract(&pieces,&OCCLUDERS[k].rect) {
                 if p.count==0 {
                     HK_HIDDEN_QUADS=HK_HIDDEN_QUADS.wrapping_add(1);
                     HK_HIDDEN_PIXELS=HK_HIDDEN_PIXELS.wrapping_add(((r-l)*(b-t)) as u32);
