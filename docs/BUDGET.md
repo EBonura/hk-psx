@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |332,124|
-| Code-to-data alignment |4|
-| Linked data, including menu, HUD and sound bank |267,936|
-| BSS, including shared scene arena and runtime pools |1,360,368|
-| Total static span |1,960,432|
+| Linked code |333,828|
+| Code-to-data alignment |12|
+| Linked data, including menu, HUD and sound bank |268,272|
+| BSS, including shared scene arena and runtime pools |1,360,396|
+| Total static span |1,962,508|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |32,768|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |38,160|
+| Unallocated gap before reserved stack |36,084|
 
-Static data ends at `0x801ee9f0`; the reserved stack begins at `0x801f7f00`.
+Static data ends at `0x801ef20c`; the reserved stack begins at `0x801f7f00`.
 There is no heap. The single scene arena occupies1,179,648 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays and animation
 key lookup now support2,048 scene-global texture IDs. Geo logic, resident art/audio, functional menus, break-effect and Lifeblood

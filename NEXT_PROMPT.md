@@ -72,16 +72,26 @@ as separate DMA lists (GPU starts 1.8 ms after the flip), cooked black-mask
 cores draw as flat quads, and the largest front opaque black rectangles are
 subtracted from earlier axis-aligned draws; all pixel-exact. Long profile mean
 3.262 -> 2.807 VBlanks (444 of 2,068 frames at two), stationary 3.00 -> 2.61.
-Frames fit two VBlanks under about 31 ms emulated raster; the route median is
-33.1 ms and 42 to 57% of raster is rotated quads no clipping can touch, so a
-consistent 30 fps needs a decision on non-exact reductions (half-resolution
-far parallax layers, dropping or merging distant layers, or a mixed cadence).
-Tools: tools/frame_packets.py (exact last-frame packet census from a RAM
-dump), tools/gpu_census.py (camera-based ranking along a replay). Pacing moves
-region activations, so poll-bound routes can diverge (ascent ends health 3).
-Current EXE SHA256 `d598d0f4c6e9d0fc4eff73ca7e8b516c48bab0dfefce47c093ee198ffcce3f90`,
-BIN `a39c1b98e9c6563c2b2e38d9eec1742e77dfc5f42e59ac86f0084ee1ec021e2a`;
-code 332,124, data 267,936, BSS 1,360,368, gap 38,160B; tests 210 + 279 pass.
+Frames fit two VBlanks under about 31 ms emulated raster. Tools:
+tools/frame_packets.py (exact last-frame packet census from a RAM dump, only
+valid on a completed list), tools/gpu_census.py (camera-based ranking along a
+replay). Pacing moves region activations, so poll-bound routes can diverge.
+
+2026-09-11 (PERFORMANCE.md top section): Manny ruled out simplifying the
+parallax layering. Two exact changes landed instead: whole-draw culling under
+the occluder union and occlusion subtraction on rotated quads (the old claim
+that the emulator rasterises clipped rotated quads differently is withdrawn;
+it clips spans per scanline and samples texels per pixel). Long profile mean
+2.807 -> 2.583 VBlanks (989 of 2,247 frames at two); spawn frame 22.1 ms,
+cocoon side 32.8 ms, ascent 24.2 ms. Gouraud fog was measured and rejected.
+The strict seamless gate still fails at the region 1 -> 2 activation and in
+bursts, as it did before. Remaining exact levers are small: semi-black cores
+and 1:1 sprite primitives measured under 0.6 ms per frame each; the culling's
+CPU cost (subtract 3.2% of samples) could be trimmed with a per-occluder
+overlap test.
+Current EXE SHA256 `f96b5a3452f56b2e73484e71290f33dd65540af4cc2c63d2bd39be69a2770d7f`,
+BIN `92030beb0216b69cee72f024a84dec6da506b29b6134ad88e5843ddd79a3b8cf`;
+code 333,828, data 268,272, BSS 1,360,396, gap 36,084B.
 
 ## Previous implementation: Geo and functional menus
 

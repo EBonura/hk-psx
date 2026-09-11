@@ -1,5 +1,85 @@
 # Performance investigation
 
+## Whole-draw culling and rotated-quad occlusion (2026-09-11)
+
+Three experiments on the 2026-09-09 build, each judged by byte comparison of
+final frames against that build's runs of the same tapes (`.hkpsx/occl2-*`
+versus `.hkpsx/final-*`).
+
+1. **Gouraud fog sheets, rejected before a build.** The `fog` sheet texture is
+   a 48x20 blob with five palette colors and 442 of 960 texels transparent,
+   drawn additively over 16,000 to 48,000 pixels per instance. The best
+   bilinear fit, which is all a four-vertex shaded quad can produce, differs
+   on 919 of 960 texels (mean error 3.0 of 31 per channel, maximum 10) and
+   would add light over the 442 transparent texels. Not exact, dropped.
+2. **Whole-draw culling.** A draw whose on-screen bounding box lies entirely
+   under the union of the later opaque black occluder rectangles (the same
+   eight largest front-layer solid textures and cores as before) is skipped
+   before any packet is written. No clipping is involved, so rotated quads
+   and oversized repair quads qualify. `HK_HIDDEN_QUADS` and
+   `HK_HIDDEN_PIXELS` count it.
+3. **Occlusion subtraction on rotated quads.** The earlier statement that the
+   emulator does not rasterise a clipped rotated quad identically is
+   withdrawn. PSoXide clips each scanline span to the drawing area and
+   evaluates texel coordinates from per-pixel plane equations
+   (`for_each_tri_pixel`, `tri_plane_eval` in `gpu/raster.rs`), so the E3/E4
+   area cannot change what the surviving pixels sample. The pieces of a
+   rotated draw start from its screen bounding box and keep the original
+   vertices; `HK_ROTATED_OCCLUSION_QUADS` counts them. Flat cores stay
+   axis-aligned only, because the core rectangle itself is a new quad.
+
+Exactness: the crash tape's region 44 frame is byte-identical after (2); after
+(3) the only differing pixels lie inside Knight or HUD packet boxes of either
+frame (223 at the spawn camera, 2 on the crash tape, 0 on the ascent), which
+is the known pacing effect on the Knight's animation and HUD state, not
+scenery. A packet census must read a completed list: a RAM dump taken while
+the front pass is still being built undercounts foreground packets, which
+produced two misleadingly low readings during this work.
+
+| Long 5,810-poll profile | Mean VBlanks | 2 / 3 / 4 / 5 / 6 frames | Max |
+| --- | ---: | --- | ---: |
+| Kicks + cores + occlusion (2026-09-09) |2.807|444 / 1,581 / 42 / 1 / 0|5|
+| + whole-draw culling |2.701|728 / 1,345 / 68 / 7 / 1|6|
+| + rotated occlusion (`.hkpsx/final-profile/`) |2.583|989 / 1,216 / 33 / 8 / 1|6|
+
+Exact raster of the completed final frames: spawn camera 29.4 to 22.1 ms,
+region 44 beside the cocoon 41.8 to 32.8 ms, region 2 on the ascent 28.8 to
+24.2 ms. Over the long route the guest culled 23,857 draws (55.0 M pixels)
+and subtracted occluders from 37,340 draws, 30,587 of them rotated (141.7 M
+pixels). The strict four-tick seamless gate still fails, as it did for the
+reference build; the 5 and 6 VBlank frames sit at the region 1 to 2
+activation and inside destruction bursts.
+
+CPU: `subtract` rose from 0.15% to 3.2% of retired PC samples and `scenery`
+from 11.9% to 17.3%. A bounding-box early-out over the occluder union is in,
+but most draws lie inside that box. Frames remain GPU-bound.
+
+### Parallax layer breakdown
+
+There are no discrete layers: every source sprite keeps its own depth and the
+cooker derives its scroll ratio from it (camera at z -38.1, ratio
+38.1 / (z + 38.1)). The 116 regions hold 2,977 unique draws at 312 distinct
+depths; a frame on the long route shows 52 to 103 distinct depths (mean 79).
+Exact raster of the 2026-09-09 build's completed final frames by band:
+
+| Scroll ratio band | Unique draws | Spawn (29.7 ms) | Region 44 (41.8 ms) | Region 2 (28.8 ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Foreground, above 1.0 |2,007|9.2|8.1|12.0|
+| Play plane, 1.0 |94|0.2|0.1|0.1|
+| Near background, 0.9 to 1.0 |512|4.2|10.4|6.3|
+| Background, 0.75 to 0.9 |252|6.1|8.6|3.9|
+| Background, 0.5 to 0.75 |70|4.2|7.5|4.3|
+| Far, 0.3 to 0.5 |35|3.4|4.3|1.0|
+| Very far, below 0.3 |7|1.7|1.8|0.3|
+
+The expensive items are a few soft sheets stretched from tiny textures across
+most of the screen and rotated: `fog` (48x20) 6.6 ms at spawn and 6.4 ms in
+region 44, `black_fader` (48x34) 6.8 ms in region 44, `fall_BG` 5.1 ms and
+`haze` 2.6 ms on the ascent. GPU cost is per screen pixel, so texture
+resolution is irrelevant and half-resolution far layers would only pay after
+a full-screen upscaling blit of about 6 ms. Simplifying the layering was
+rejected; the measured exact levers were the two above.
+
 ## Frame pacing and the GPU raster budget (2026-09-09)
 
 Every number below is PSoXide's emulated bus clock (33.87 MHz), not hardware.
@@ -30,8 +110,9 @@ Changes, all pixel-exact (stationary final frames byte-identical across builds):
   ordinary tint modulation, so ordinary sprites never take the flat path.
 - The eight largest front-layer opaque black rectangles (solid textures and
   cores) are subtracted from earlier axis-aligned draws, one rectangle per draw,
-  through the proven E3/E4 scissor packets. Rotated quads are never clipped:
-  the emulator does not rasterise a clipped rotated quad identically.
+  through the proven E3/E4 scissor packets. Rotated quads were not clipped in
+  this build; the 2026-09-11 section above withdraws the claim that the
+  emulator rasterises them differently when clipped.
 
 | Long 5,871-poll profile | Mean VBlanks | 2 / 3 / 4 / 5 frames | Max |
 | --- | ---: | --- | ---: |
