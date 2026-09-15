@@ -1,15 +1,26 @@
 # Hollow Knight PS1: current handoff
 
+## Completion plan for the next executor
+
+The user requested an extensive execution plan for GPT-5.6-Sol to complete the
+whole game. Start with `docs/plans/SOL_START_HERE.md`, then use the master plan
+`docs/plans/COMPLETE_GAME_SOL.md`. It defines 32 work packages,20 initial slices,
+source/code ownership, validation and the full-game completion audit. This
+supersedes historical room-first and FPS-first sequencing below. Planning did
+not resume the importer, modify gameplay or replace disc 71. When execution is
+requested, start by revalidating state and diagnosing P01's worker failure.
+
+
 ## Current direction: whole-world import
 
 Stopped at explicit user request. Source changes are saved; no further work should
 run until requested.344 Python tests pass. Import checkpoints:249 exported scenes,
 196 pool-failed jobs,56 unrecorded. Worker termination cause is unknown; final
 source/code verification was not reached. Read top of docs/STATUS.md. Resume
-with one worker after diagnosis; preserve the unchanged playable disc71.
+with one worker after diagnosis; preserve the unchanged playable disc 71.
 
 User requested importing all areas first, then implementing systems globally.
-This supersedes older room-by-room NEXT items below. The current disc71 stays
+This supersedes older room-by-room NEXT items below. The current disc 71 stays
 available during playtesting. Host-only `host/world_import.py` imports every
 Windows BuildSettings scene to `.hkpsx/world-import/`; see docs/WORLD_IMPORT.md.
 Do not wait for Runner sound/dust or a particular room script before importing
