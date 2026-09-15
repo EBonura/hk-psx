@@ -113,6 +113,12 @@ applying those keep-sets. It releases only completed/parked slots outside the
 set; current, protected GPU uploads and in-flight CD leases remain pinned. The
 room-residency and stored-payload suites pass with this guard.
 
+The shared persistent state layer now has a versioned `HKSV` snapshot codec:
+sorted stable IDs, signed values, exact length, and FNV checksum are validated
+before a store is published. Truncation, version, corruption and capacity cases
+are covered by native tests. This is the host/simulation foundation for P13
+memory-card I/O; no card driver or playable-disc replacement is claimed yet.
+
 ## Completion plan prepared for GPT-5.6-Sol
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),
