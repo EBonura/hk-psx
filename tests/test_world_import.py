@@ -8,7 +8,7 @@ import unittest
 from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'host'))
 from world_import import (atomic_json, catalog, sha, source_json, summarize,
-                          failed_worker_row, read_checkpoint, valid_checkpoint,
+                          can_retry, failed_worker_row, read_checkpoint, valid_checkpoint,
                           next_attempt_number, stop_process, verify_inputs,
                           worker_outcome, write_gzip)
 
@@ -104,6 +104,13 @@ class ImportTests(unittest.TestCase):
             (folder/'attempt-3.json').write_text('{}')
             (folder/'attempt-note.json').write_text('{}')
             self.assertEqual(next_attempt_number(folder), 4)
+
+    def test_retry_budget_uses_run_try_not_persistent_attempt_number(self):
+        # A scene may already have attempt-37.json from older fingerprints; its
+        # first failure in this run still receives the configured retry.
+        self.assertTrue(can_retry(1, 1))
+        self.assertFalse(can_retry(2, 1))
+        self.assertFalse(can_retry(1, 0))
 
     def test_input_content_hash_detects_same_length_change(self):
         with tempfile.TemporaryDirectory() as directory:

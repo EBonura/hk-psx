@@ -3,16 +3,17 @@
 ## Active implementation: P02-P03 whole-world coverage and geometry
 
 The user authorized execution of the complete-game plan. Track it in
-`docs/plans/COMPLETE_GAME_PROGRESS.md`. P01 is validated: bounded isolated
-workers imported and source-verified all 501 scenes with zero scene failures.
-One `Mines_16` worker ended on signal 11 and its isolated automatic retry
-completed. `tools/world_coverage.py` now generates the P02/P03 source ledger:
-1,119 transitions, 466 component types, 515 PlayMaker action types and nine
-ranked extraction-gap families. Continue with exact affine CircleCollider2D
-geometry for all 5,274 instances, then regenerate the complete report and
-proceed through reusable gaps. Runtime transition overrides and final scene
-roles still require source/reference evidence. Do not rebuild the user's disc
-during these host-only packages; build 71 remains the sole playable pair.
+`docs/plans/COMPLETE_GAME_PROGRESS.md`. P01 is validated. The current P03 import
+verified 501/501 scenes with zero failures: 453 have complete source geometry
+and 48 retain five explicit gap families. Exact affine circles, full particle
+payloads/renderers, canonical tk2d generated-mesh aliases and shipped Unity
+Plane/Quad meshes are global. Continue with all 831 TrailRenderers, then the 25
+other runtime meshes and 16 null tk2d collections. TextMeshPro glyph shaping is
+an explicit renderer/cooking task. P02 now inventories all 318 PlayMaker
+scene-load actions alongside 1,119 TransitionPoints; resolve 286 variable-bound
+destinations and final scene roles with source/reference evidence. Do not
+rebuild the user's disc during these host-only packages; build 71 remains the
+sole playable pair.
 
 ## Completion plan for the next executor
 

@@ -5,6 +5,26 @@ import UnityPy
 from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 from UnityPy.helpers import TypeTreeHelper
 ROOT=Path(__file__).resolve().parents[1]
+
+
+def source_path(directory, name):
+    """Resolve one Unity external without discarding its serialized path."""
+    directory = Path(directory).resolve()
+    relative = Path(str(name).replace('\\', '/'))
+    if relative.is_absolute() or '..' in relative.parts:
+        raise ValueError(f'Unsafe Unity external path: {name}')
+    candidates = [directory/relative]
+    # Player builds serialize this editor pseudo-path even though the shipped
+    # file lives in the data directory's Resources folder.
+    if relative.parts and relative.parts[0] == 'Library' and relative.name.startswith('unity '):
+        candidates.append(directory/'Resources'/relative.name)
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved.is_relative_to(directory) and resolved.is_file():
+            return resolved
+    raise FileNotFoundError(f'Unity external not found: {name}')
+
+
 def repair_string_arrays(node):
     """Disambiguate generated string[] containers from scalar Unity strings.
 
@@ -48,13 +68,15 @@ class Source:
         if header.unity_version!='6000.0.61f1' or header.header.version!=22:
             raise ValueError(f'Unvalidated source serialization: {header.unity_version}/{header.header.version}')
     def file(self,name):
-        if name not in self.files:
-            self.files[name]=self.env.load_file(str(self.directory/name))
-        return self.files[name]
+        path = source_path(self.directory, name)
+        key = str(path.relative_to(self.directory))
+        if key not in self.files:
+            self.files[key]=self.env.load_file(str(path))
+        return self.files[key]
     def ref(self,file,ref):
         if not ref['m_PathID']:raise ValueError('null source reference')
         if ref['m_FileID']:
-            file=self.file(Path(file.externals[ref['m_FileID']-1].path).name)
+            file=self.file(file.externals[ref['m_FileID']-1].path)
         return file.objects[ref['m_PathID']]
     def read(self,o):
         if o.type.name!='MonoBehaviour':return o.read_typetree()

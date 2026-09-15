@@ -1,14 +1,18 @@
 ## Complete-game implementation resumed
 
-P00-P01 are complete and P02-P03 are in progress. The isolated-worker importer
-completed and verified all 501 BuildSettings scenes with zero scene failures.
-It recorded 502 attempts: one `Mines_16` worker ended on signal 11 and only that
-scene was retried successfully in a fresh process. The generated whole-world
-coverage ledger inventories 1,119 transitions, 466 component types, 515
-PlayMaker action types and nine reusable extraction-gap families without
-claiming guest support. Exact circle-collider boundaries are the first global
-geometry target: 5,274 instances across 292 scenes. See
-`docs/plans/COMPLETE_GAME_PROGRESS.md`.
+P00-P01 are complete and P02-P03 are in progress. The current isolated-worker
+import verified all 501 BuildSettings scenes with zero failures: 453 now have
+complete source geometry and 48 retain explicit gaps. It preserves all 5,274
+CircleCollider2D boundaries, 28,814 particle systems/renderers, 12,729 canonical
+tk2d generated-mesh aliases and all 577 shipped Unity Plane/Quad mesh instances.
+The generic gap inventory fell from nine families to five. One
+`Pre_Menu_Intro` worker ended on signal 11 and its fresh-process retry succeeded;
+retry budgeting is now independent of persistent attempt-file numbers.
+
+The P02 inventory adds 318 serialized PlayMaker scene-load actions to the 1,119
+TransitionPoint records: 19 map to exact gates, 11 map to scenes, and 286 retain
+runtime variable bindings with their declared initial values. No FSM execution
+or traversal parity is claimed. See `docs/plans/COMPLETE_GAME_PROGRESS.md`.
 
 The playable disc remains build 71 and has not been rebuilt by this host work.
 

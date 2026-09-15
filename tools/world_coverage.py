@@ -108,7 +108,7 @@ def fsm_inventory(report):
     return sorted(rows, key=lambda row: (-row['scene_count'], -row['instances'], row['action']))
 
 
-def build(report, graph, dependency=None):
+def build(report, graph, dependency=None, scripted_transitions=None):
     require_verified(report)
     scenes = []
     roles = Counter()
@@ -128,6 +128,15 @@ def build(report, graph, dependency=None):
             'animations': len(dependency.get('animations', {})),
             'rooms_with_scan_failure': [room['index'] for room in dependency.get('rooms', [])
                                         if room.get('scan_failed')]}
+    scripted = None
+    if scripted_transitions is not None:
+        if scripted_transitions.get('source_world_fingerprint') != report['fingerprint']:
+            raise ValueError('Scripted-transition inventory belongs to a different world import')
+        scripted = {key: scripted_transitions[key] for key in
+                    ('serialized_transition_point_edges', 'scripted_action_count',
+                     'action_counts', 'resolution_counts',
+                     'dynamic_actions_with_initial_scene_candidates')}
+        scripted['error_count'] = len(scripted_transitions.get('errors', []))
     return {'format': 'HKWORLD_COVERAGE01',
         'scope': 'Source-derived work inventory; not PS1 packing or gameplay completion',
         'source_import': {'fingerprint': report['fingerprint'], 'run': report['run'],
@@ -137,6 +146,7 @@ def build(report, graph, dependency=None):
         'dependency_inventory': dependencies,
         'scene_role_signal_counts': dict(sorted(roles.items())),
         'scenes': scenes, 'transitions': transition_summary(graph),
+        'scripted_transitions': scripted,
         'geometry_gaps': aggregate_gaps(report),
         'systems': system_inventory(report), 'fsm_actions': fsm_inventory(report),
         'limitations': [
@@ -158,9 +168,18 @@ def markdown(data):
         f"- Scenes processed: {data['source_import']['coverage']['processed_scenes']} / {data['source_import']['coverage']['catalog_scenes']}",
         f"- Scene import failures: {data['source_import']['coverage']['failed_scenes']}",
         f"- Serialized transition edges: {data['transitions']['edge_count']}",
-        f"- Edges mapped to one destination gate: {data['transitions']['resolutions'].get('mapped_gate', 0)} ({data['transitions']['mapped_gate_percent']}%)", '',
+        f"- Edges mapped to one destination gate: {data['transitions']['resolutions'].get('mapped_gate', 0)} ({data['transitions']['mapped_gate_percent']}%)"]
+    if data.get('scripted_transitions'):
+        scripted = data['scripted_transitions']
+        lines.extend([
+            f"- Serialized PlayMaker scene-load actions: {scripted['scripted_action_count']}",
+            f"- Scripted transition parse errors: {scripted['error_count']}",
+            f"- Scripted target resolutions: {json.dumps(scripted['resolution_counts'], sort_keys=True)}",
+            f"- Dynamic actions with a catalogued initial-scene candidate: {scripted['dynamic_actions_with_initial_scene_candidates']}",
+        ])
+    lines.extend(['',
         '## Highest-impact extraction gaps', '',
-        '| Scenes | Instances | Category | Type | Detail |', '| ---: | ---: | --- | --- | --- |']
+        '| Scenes | Instances | Category | Type | Detail |', '| ---: | ---: | --- | --- | --- |'])
     for row in gaps:
         detail = row['detail'].replace('|', '\\|').replace('\n', ' ')
         lines.append(f"| {row['scene_count']} | {row['instances']} | {row['category']} | {row['type']} | {detail} |")
@@ -182,13 +201,18 @@ def main():
     parser.add_argument('--world', type=Path, default=ROOT/'.hkpsx/world-import/report.json')
     parser.add_argument('--graph', type=Path, default=ROOT/'.hkpsx/world-import/room-graph.json')
     parser.add_argument('--dependencies', type=Path, default=ROOT/'.hkpsx/room-inventory.json')
+    parser.add_argument('--scripted-transitions', type=Path,
+                        default=ROOT/'.hkpsx/world-import/scripted-transitions.json')
     parser.add_argument('--output', type=Path, default=ROOT/'.hkpsx/world-import/system-coverage.json')
     args = parser.parse_args()
     output = args.output.resolve()
     if not output.is_relative_to((ROOT/'.hkpsx').resolve()):
         parser.error('Output must be inside .hkpsx')
     dependency = json.loads(args.dependencies.read_text()) if args.dependencies.is_file() else None
-    data = build(json.loads(args.world.read_text()), json.loads(args.graph.read_text()), dependency)
+    scripted = (json.loads(args.scripted_transitions.read_text())
+                if args.scripted_transitions.is_file() else None)
+    data = build(json.loads(args.world.read_text()), json.loads(args.graph.read_text()),
+                 dependency, scripted)
     output.write_text(json.dumps(data, indent=2) + '\n')
     summary = output.with_suffix('.md')
     summary.write_text(markdown(data))

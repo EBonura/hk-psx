@@ -5,7 +5,10 @@ class Scene:
     def __init__(self,source,name):
         self.source=source;self.file=source.file(name);self.objects={};self.errors=[]
         for o in list(self.file.objects.values()):
-            if o.type.name in ('ParticleSystem','Mesh','ParticleSystemRenderer'):continue
+            # Standalone Mesh payloads are resolved from their renderer/filter
+            # references. Particle payloads are safe now that each scene runs in
+            # a fresh isolated worker and must remain available to system passes.
+            if o.type.name == 'Mesh':continue
             try:
                 typename=source.typename(o)
                 self.objects[o.path_id]=(typename,source.read(o))
