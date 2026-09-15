@@ -1,18 +1,32 @@
-"""Strict original Crawler corpse-art subset, separate from particle emulation."""
+"""Strict original Crawler/Runner corpse art, separate from particle emulation."""
 from pathlib import Path
 from breakables import _components
 
 def corpse_source(source, scene, actor):
-    """Admit the observed non-breaking Crawler Corpse lifecycle only."""
+    """Admit only the verified Crawler or Zombie Runner non-breaking corpse.
+
+    Runner source evidence: .hkpsx/runner71/corpse-source.json. Its zero spawn
+    offset, 0.2 bounce and Single/Once clips differ from the original Crawler
+    contract; never broaden the Crawler validator to accept arbitrary variants.
+    Crawler admission remains structural: source IDs may differ between bundles.
+    """
+    kind=actor.get('movement_control',{}).get('kind')
+    if kind not in ('WalkLeftRight','ZombieSwipeWalker'):
+        raise ValueError('unvalidated corpse controller family')
+    runner=kind=='ZombieSwipeWalker'
+    expected_offset={'x':0.,'y':0. if runner else .5,'z':0.}
+    expected_bounce=.2 if runner else .3
+    expected_timing=[(30,6,1),(12,2,8)] if runner else [(12,2,3),(12,2,2)]
     components=list(_components(scene,actor['game_object']))
     deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
-    if len(deaths)!=1:raise ValueError('Crawler needs exactly one EnemyDeathEffects')
+    if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
     death=deaths[0]
     if any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','rotateCorpse')) or death['corpseFlingSpeed']!=15:
         raise ValueError('unsupported corpse launch')
     offset=death['corpseSpawnPoint']
-    if offset!={'x':0.0,'y':0.5,'z':0.0}:raise ValueError('unsupported corpse spawn offset')
+    if offset!=expected_offset:raise ValueError('unsupported corpse spawn offset')
     obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
+    if runner and source.sid(obj)!='sharedassets37.assets:61':raise ValueError('unvalidated corpse prefab for controller')
     parts={}
     for ref in go['m_Component']:
         component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
@@ -26,19 +40,36 @@ def corpse_source(source, scene, actor):
     if corpse['landEffects']['m_PathID']:raise ValueError('unsupported additional corpse land effects')
     if body['m_BodyType']!=0 or body['m_LinearDamping']!=0 or abs(body['m_GravityScale']-.8)>1e-6 or body['m_Constraints']!=4:
         raise ValueError('unsupported corpse body')
-    if abs(bounce['bounceFactor']-.3)>1e-6 or bounce['speedThreshold']!=1 or any(bounce[k]for k in ('playSound','playAnimationOnBounce','sendFSMEvent')):
+    if abs(bounce['bounceFactor']-expected_bounce)>1e-6 or bounce['speedThreshold']!=1 or any(bounce[k]for k in ('playSound','playAnimationOnBounce','sendFSMEvent')):
         raise ValueError('unsupported corpse bounce')
     sprite=parts['tk2dSprite'][1];anim=parts['tk2dSpriteAnimator'][1];transform=parts['Transform'][1]
     if sprite['_color']!={'r':1.0,'g':1.0,'b':1.0,'a':1.0} or sprite['_scale']!={'x':1.0,'y':1.0,'z':1.0} or transform['m_LocalScale']!={'x':1.0,'y':1.0,'z':1.0}:
         raise ValueError('unsupported corpse scale/color')
     library_o=source.ref(obj.assets_file,anim['library']);library=source.read(library_o)
     selected=[next(c for c in library['clips']if c['name']==name)for name in ('Death Air','Death Land')]
-    if [(c['fps'],c['wrapMode'],len(c['frames']))for c in selected]!=[(12,2,3),(12,2,2)]:raise ValueError('unvalidated corpse clip timing')
+    if runner and source.sid(library_o)!='sharedassets37.assets:149':raise ValueError('unvalidated corpse animation library')
+    if [(c['fps'],c['wrapMode'],len(c['frames']))for c in selected]!=expected_timing:raise ValueError('unvalidated corpse clip timing')
+    if any(c.get('loopStart',0)!=0 or any(f.get('triggerEvent',False)for f in c['frames'])for c in selected):
+        raise ValueError('unsupported corpse animation events/loop start')
     matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
     box=parts['BoxCollider2D'][1];off=box['m_Offset'];size=box['m_Size']
+    if runner:
+        if go['m_Name']!='Corpse Zombie Basic One' or not death['m_Enabled'] or death['playerDataName']!='ZombieRunner':
+            raise ValueError('unvalidated Runner corpse identity')
+        if any(abs(matrix[i][j]-(1 if i==j else 0))>1e-6 for i in range(2)for j in range(2)):
+            raise ValueError('unsupported Runner corpse actor transform')
+        if not box['m_Enabled'] or box['m_IsTrigger'] or box['m_EdgeRadius']!=0 or off!={'x':.03125,'y':-.7265625} or size!={'x':1.21875,'y':1.265625}:
+            raise ValueError('unsupported Runner corpse collider')
+        if not body['m_Simulated'] or body['m_CollisionDetection']!=0 or not corpse['m_Enabled'] or not bounce['m_Enabled']:
+            raise ValueError('unsupported Runner corpse component activation')
+        if not anim['m_Enabled'] or not anim['playAutomatically'] or anim['isRealtime'] or library['clips'][anim['defaultClipId']]['name']!='Death Air':
+            raise ValueError('unsupported Runner corpse animator startup')
+        material_o=source.ref(obj.assets_file,box['m_Material']);material=source.read(material_o)
+        if source.sid(material_o)!='resources.assets:1073' or abs(material['friction']-.2)>1e-6 or material['bounciness']!=0:
+            raise ValueError('unsupported Runner corpse physics material')
     bounds=[(off['x']-size['x']/2)*sx,(off['y']-size['y']/2)*sy,(off['x']+size['x']/2)*sx,(off['y']+size['y']/2)*sy]
     return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],'bounds':[round(v*65536)for v in bounds],
-            'spawn_offset':[0,32768], 'gravity':48*65536,'fling_speed':15*65536,'bounce_factor':round(.3*65536),'land_delay_ticks':60,
+            'spawn_offset':[round(offset['x']*65536),round(offset['y']*65536)], 'gravity':48*65536,'fling_speed':15*65536,'bounce_factor':round(expected_bounce*65536),'land_delay_ticks':60,
             'limitations':['Corpse Steam/Flame and infected wave/spatter remain separate particle/effect work',
                             'Fixed-point terrain solver is not complete Box2D; bounce RNG is deterministic per source, not Unity global RNG']}
 
@@ -70,8 +101,10 @@ def append_corpse_art(source,scene,actors,atlas,frames,clips):
 
 def generated_corpse(record):
     if record is None:return 'None'
-    if any(k not in record for k in ('air_clip','land_clip','bounds','spawn_offset')):raise ValueError('corpse source missing cooked art/geometry')
-    fields={k:record[k]for k in ('air_clip','land_clip')}
+    if any(k not in record for k in ('air_clip','land_clip','bounds','spawn_offset','bounce_factor')):raise ValueError('corpse source missing cooked art/geometry')
+    if type(record['bounce_factor']) is not int or not 0<=record['bounce_factor']<=65536:
+        raise ValueError('corpse bounce factor outside Q16 range')
+    fields={k:record[k]for k in ('air_clip','land_clip','bounce_factor')}
     fields.update({k:'['+','.join(map(str,record[k]))+']'for k in ('bounds','spawn_offset')})
     return 'Some(hk_sim::CorpseSpec {'+','.join(f'{k}:{v}'for k,v in fields.items())+'})'
 

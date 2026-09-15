@@ -1,6 +1,34 @@
 # Status, 2026-09-15
 
-## Current playtest70: user-requested provisional rebuild
+## Current playtest71: actor integration and requested refresh
+
+The user's latest request replaces the sole Downloads/ps1 games/hk-psx BIN/CUE
+pair again. Build and final hazards pass (zero); the850-poll actual-CUE replay
+completes without reported faults, and its inspected320x240 gameplay image is
+byte-identical to70. Evidence: .hkpsx/playtest71/{build.log,focus/command.json}.
+BIN SHA256:4fa805dfa4aeec272d743b8d2ce9721ded164971f43d5ff02ba99e7b02b52d1a.
+Playable area coverage remains Tutorial and Town. Keep this disc available
+for the user's playtest until they request another replacement.
+
+Runner now has an explicit guest ActorController branch with shared cooked clips,
+live terrain sensing, source-ordered damage/recoil, corpse and once-only Geo
+ownership. Native tests check ordered source audio/dust events. Production
+rejects unbound Runner presentation; canonical Runner admission remains closed
+until sound/dust and Crossroads scene bindings are complete. Measured source
+ground clearance fixes a false floor-as-wall query. Runner corpse bounce/offset/
+timing are distinct from the unchanged Crawler path. Actual source art/remap
+proofs pass. Prepared Runner audio uses20,464B at8kHz movement/11.025kHz calls,
+leaving8,032B SPU space, but is not installed in the guest. See RUNNER.md.
+
+All326 Python and222 hk-sim tests pass, including18 actual enemy-runtime tests.
+Logs: .hkpsx/runner71/{python-final,native-final}.log. Current link code391,628B,
+data720,432B, BSS862,100B;8,044B remain before the49,152B reserved stack. Main
+frame33,728B leaves15,424B for nested calls; high-water is not established.
+Additional controller code makes metadata/code capacity work necessary before
+adding more linked scene tables. No new FPS or physical-hardware claim;
+long gate/return routes were not rerun for this refresh.
+
+## Previous playtest70: user-requested provisional rebuild
 
 Rebuilt the current working source and replaced the sole Downloads/ps1 games
 hk-psx.bin/.cue pair. Full asset recook and final guest build pass, with zero

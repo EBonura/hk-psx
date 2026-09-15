@@ -7,13 +7,14 @@ class CorpseMetadataTests(unittest.TestCase):
     def test_legacy_actor_has_no_unverified_corpse(self):
         self.assertEqual(generated_corpse(None),'None')
     def test_cooked_source_clips_and_collider_survive_rust_generation(self):
-        result=generated_corpse({'air_clip':15,'land_clip':16,'bounds':[-46080,-55296,47104,4096],'spawn_offset':[0,32768]})
+        result=generated_corpse({'air_clip':15,'land_clip':16,'bounds':[-46080,-55296,47104,4096],'spawn_offset':[0,32768],'bounce_factor':19661})
         self.assertIn('air_clip:15,land_clip:16',result)
         self.assertIn('bounds:[-46080,-55296,47104,4096]',result)
         self.assertIn('spawn_offset:[0,32768]',result)
+        self.assertIn('bounce_factor:19661',result)
     def test_partial_cook_must_not_publish_corpse(self):
-        for missing in ('air_clip','land_clip','bounds','spawn_offset'):
-            record={'air_clip':15,'land_clip':16,'bounds':[-46080,-55296,47104,4096],'spawn_offset':[0,32768]}
+        for missing in ('air_clip','land_clip','bounds','spawn_offset','bounce_factor'):
+            record={'air_clip':15,'land_clip':16,'bounds':[-46080,-55296,47104,4096],'spawn_offset':[0,32768],'bounce_factor':19661}
             del record[missing]
             with self.assertRaisesRegex(ValueError,'missing cooked'):generated_corpse(record)
 

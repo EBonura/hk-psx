@@ -99,8 +99,15 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
         matrix=sc.world(sc.go_transform[actor['game_object']]);sprite=actor['tk2dSprite']
         sx=abs(matrix[0][0]*sprite['_scale']['x']);sy=abs(matrix[1][1]*sprite['_scale']['y'])
         color=sprite['_color'];alpha=round(color['a']*255)
-        for kind in ('walk','turn'):
-            name=control[kind+'_clip_name'];clip_key=(s.sid(library_o),name,sx,sy,alpha)
+        if control['kind']=='ZombieSwipeWalker':
+            bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack Anticipate',
+                      'lunge':'Attack Lunge','cooldown':'Attack Cooldown','fall':'Fall'}
+        elif control['kind']=='WalkLeftRight':
+            bindings={kind:control[kind+'_clip_name'] for kind in ('walk','turn')}
+        else:
+            raise ValueError('unsupported actor art controller: '+control['kind'])
+        for kind,name in bindings.items():
+            clip_key=(s.sid(library_o),name,sx,sy,alpha)
             if clip_key not in clip_cache:
                 clip=next(c for c in library['clips'] if c['name']==name);start=len(frames)
                 for frame in clip['frames']:

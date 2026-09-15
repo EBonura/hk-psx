@@ -42,6 +42,12 @@ mod alpha_scissor;
 mod alpha_scissor_cache;
 mod scenery_geometry;
 mod draw_packet;
+/// Canonical source admission remains closed until Runner audio and Charge Dust
+/// have resident bindings. Native integration tests supply a recording sink.
+/// Never admit an actor here and silently discard its presentation events.
+fn unbound_runner_event(_: enemies::RunnerEvent) {
+    panic!("Runner presentation bank is not admitted");
+}
 /// Read-only marker: 0 title, 1 gameplay, 2 loading, 3 disc error.
 #[no_mangle]
 pub static mut HK_GAME_MODE: u32 = 0;
@@ -432,7 +438,9 @@ fn main() {
                                 great_door::apply(&door,&mut state,region_id);
                                 dialogue::cancel();focus.interrupt();focus_audio::interrupt();
                             }
-                            let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,|scene,x,y| {let i=world::locate(scene,x,y)?;Some((&world::REGIONS[i],cache.room_for(i)?))});
+                            let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
+                                [camera.0,camera.1,-2496922],unbound_runner_event,
+                                |scene,x,y| {let i=world::locate(scene,x,y)?;Some((&world::REGIONS[i],cache.room_for(i)?))});
                             enemies.take_geo_deaths(r.scene,|source,x,y|geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));
                             let h=geo::HERO_BOX;
                             let collected=geo.tick(r.scene,geo::GEO_PARAMS,[player.x+h[0],player.y+h[1],player.x+h[2],player.y+h[3]],

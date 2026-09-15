@@ -1,8 +1,11 @@
 # Crossroads Zombie Runner implementation
 
-The controller in `shared/hk-sim/src/runner.rs` is source preparation for the
-Crossroads_01 enemies. It is not connected to the guest actor pool or present in
-the current provisional70 disc. Crawler behavior is unchanged.
+The controller in `shared/hk-sim/src/runner.rs` now has an explicit branch in
+the guest actor pool, selected by `ActorController::Runner`. Canonical source
+admission remains disabled until presentation and Crossroads scene bindings are
+ready; native tests exercise the actual guest module with a recording event
+sink. The production sink rejects unbound Runner presentation instead of silently
+discarding sound/dust events. Existing Crawler behavior remains separately tested.
 
 The supported original variant has Coward=false and Reverse=false. Its Walker
 pauses and turns at walls/holes; its separate Swipe FSM attacks when both the
@@ -28,10 +31,11 @@ trace, startup and an already-active/completed turn. Pause selection is injected
 with the source's reversed authored endpoints retained. This is not a claim of
 Unity random-number or trajectory equivalence.
 
-The state uses20 bytes in the native test build; ordered transient actions use
+The controller state uses20 bytes in the native test build; ordered transient actions use
 260 bytes after allowing the13-command startup/turn/attack path. No heap is used
-by the controller. A guest link and stack budget are
-still required when actor integration makes the code reachable on PS1.
+by the controller. RunnerRuntime adds its animation/velocity/RNG state for32B;
+the current native Actor is128B and the32-slot enemy pool is4KiB. Final PS1
+link/stack costs must be checked alongside the active scene metadata.
 
 The strict host recognizer in `host/runner.py` identifies both original instances
 and records one shared34-sprite library, exact transformed body/AlertRange bounds,
@@ -42,12 +46,38 @@ queries, LOS and the original three-ray Sweep geometry. Its10 tests cover slopes
 mirroring, collinear rays and strict endpoints. These edge queries do not claim
 Box2D filled-collider, contact-slop or trigger-callback parity.
 
-Before enabling these enemies, bind the terrain queries and shared animation art,
-health/recoil,
-corpse and Geo ownership; bind footsteps/chase/damage/death sounds and Charge
-Dust. The two instances share one animation library. Unsupported variants must
-remain explicit. Native tests exercise source state/event contracts, not full
-original physics or audible/visual parity.
+Guest integration binds terrain queries, real cooked clip completion, facing,
+health/recoil order, terminal corpses and once-only Geo payout. Actors retain
+their own resident collision view and suspend on unavailable terrain. For these
+source Runners the solver foot has a983-Q16 clearance: native rest y2.45249987
+over source floor y1 with collider bottom-1.4375 establishes about.015 units.
+Contact and sensing retain the actual source box. This avoids a false collinear
+floor-as-wall hit while remaining a bounded solver adaptation, not Box2D parity.
+
+The source art pass now cooks seven live and two corpse clips into a shared bank:
+both actors use43 frame references and34 textures, totaling13,252 stream bytes.
+All live and corpse clip bindings remap during scene-bank append. Two actual
+source probe packs with different preceding clip counts pass and repeated
+postpasses are byte-identical. Evidence: .hkpsx/runner-art70/report.json.
+Runner corpses use their own zero spawn offset, .2 bounce factor, Single Air
+clip and eight-frame Land clip. Crawler offset, .3 bounce distribution and clip
+timing remain unchanged; equivalent validated Crawler assets can live in other
+bundles. The shared terrain solver still approximates source contacts/friction.
+
+Ordered AudioStop/AudioPlay/ChaseSound/DustStart/DustStop/Destroy events include
+source identity, position and facing. The caller owns their presentation and
+scene/reset cleanup. Native tests do not establish audible/visual parity.
+Footstep/chase playback, Charge Dust, source death effects and the well connection
+remain required before canonical admission.
+
+`host/runner_audio.py` prepares a full20,464B source bank in ignored storage.
+Movement uses8kHz; both creature calls use11.025kHz. At the current SPU tail
+495,792 it ends516,256, leaving8,032B. Source pitch/gain, full sample counts,
+transport flags, hashes and layout are verified; no trimming is used to fit.
+This is not installed guest audio. Proposed voices21/22/23 and any resulting
+simultaneous-call arbitration still require an explicit playback policy.
+Evidence: .hkpsx/runner71/audio/report.json; regenerate or verify with
+`.venv/bin/python host/runner_audio.py [--verify]`.
 
 The controlled original run `runner-crossroads70` supplies578 complete samples
 per Runner, including two full attack cycles for the first actor. Anticipation
