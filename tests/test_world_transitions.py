@@ -4,7 +4,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
-from world_transitions import binding, scan_components, target_resolution, variable_table
+from world_transitions import (bind_dynamic_producers, binding, scan_components,
+                               target_resolution, variable_reference_name, variable_table)
 
 
 class WorldTransitionTests(unittest.TestCase):
@@ -52,6 +53,41 @@ class WorldTransitionTests(unittest.TestCase):
         self.assertEqual(rows[0]['resolution'], 'mapped_gate')
         self.assertEqual(rows[0]['target_gate_source_ids'], ['level7:9'])
         self.assertFalse(rows[0]['game_object_active_self'])
+
+    def test_generic_fsm_var_names_are_recognized(self):
+        self.assertEqual(variable_reference_name({'useVariable':1,
+                         'variableName':'Return Scene','type':4}), 'Return Scene')
+        self.assertIsNone(variable_reference_name({'useVariable':0,
+                                                   'variableName':'Return Scene'}))
+
+    def test_dynamic_producer_binding_preserves_runtime_storage_chain(self):
+        rows = [{'resolution':'dynamic_variable','source_file':'level1',
+            'fsm_source':'level1:2','fsm_name':'Dream Return',
+            'game_object_source':'level1:1',
+            'target':{'name':'Return Scene','declarations':[{
+                'category':'stringVariables','initial_value':'Crossroads_10'}]}}]
+        writer = {'kind':'player_data_read','source_key_or_value':'dreamReturnScene'}
+        upstream = {'kind':'player_data_write','key':'dreamReturnScene'}
+        counts,gate_counts = bind_dynamic_producers(rows,
+            ({('level1','level1:2','Return Scene'):[writer]}, {},
+             {'dreamReturnScene':[upstream]}, {}),
+            {'Crossroads_10':[{'file':'level46','index':46}]})
+        self.assertEqual(counts, {'runtime_storage_or_constant_read':1})
+        self.assertEqual(gate_counts,{})
+        flow = rows[0]['target_dataflow']
+        self.assertEqual(flow['upstream_serialized_writers'][0]['count'], 1)
+        self.assertEqual(flow['serialized_target_candidates'][0]['target_files'], ['level46'])
+
+    def test_unresolved_runtime_target_gets_an_owner(self):
+        rows = [{'resolution':'dynamic_variable','source_file':'level1',
+            'fsm_source':'level1:2','fsm_name':'Boss','game_object_source':'level1:1',
+            'target':{'name':'To Scene','declarations':[{
+                'category':'stringVariables','initial_value':''}]}}]
+        counts,gate_counts = bind_dynamic_producers(rows, ({},{},{},{}), {})
+        self.assertEqual(counts, {'runtime_or_external_unresolved':1})
+        self.assertEqual(gate_counts,{})
+        self.assertEqual(rows[0]['target_dataflow']['owner_task'],
+                         'P09/P22 scene-transition runtime')
 
 
 if __name__ == '__main__':

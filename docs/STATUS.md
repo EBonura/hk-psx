@@ -16,9 +16,20 @@ terrain. It includes all 20 Town rows that lack `base_path`, resolving them by
 chunk identity through `.hkpsx/regions-provenance.json`.
 
 The P02 inventory adds 318 serialized PlayMaker scene-load actions to the 1,119
-TransitionPoint records: 19 map to exact gates, 11 map to scenes, and 286 retain
-runtime variable bindings with their declared initial values. No FSM execution
-or traversal parity is claimed. See `docs/plans/COMPLETE_GAME_PROGRESS.md`.
+TransitionPoint records: 19 literal actions map to exact gates, 11 LoadLevel
+actions map to scenes, and all 286 variable targets now carry serialized dataflow.
+The split is 130 storage/constant reads, 89 defaults, three exact same-object
+branch overrides and 64 runtime-injected targets assigned to P09/P22. All 501
+scenes have an evidence-backed primary role and remain in scope; all
+TransitionPoints have resolved trigger geometry and full initial flags.
+
+The source catalog also inventories 17,419 PlayMaker PlayerData actions and 815
+resolved keys. Installed completion CIL is hash-bound and decoded into 44
+boolean/group rules, six integer rules, four nested Godhome rules, 40 charm
+entries and the 33/66/99 SOUL-vessel cases. Managed producer closure and upgrade
+caps remain before the maximum can be asserted. No FSM execution, reachability,
+guest admission or traversal parity is claimed. See
+`docs/plans/COMPLETE_GAME_PROGRESS.md`.
 
 The playable disc remains build 71 and has not been rebuilt by this host work.
 

@@ -15,6 +15,8 @@ python3 tools/world_import_report.py
 .venv/bin/python tools/world_transitions.py
 python3 tools/world_coverage.py
 .venv/bin/python tools/compare_world_regions.py
+.venv/bin/python tools/world_catalog.py
+.venv/bin/python tools/completion_catalog.py
 ```
 
 Outputs stay in ignored `.hkpsx/world-import/`; no guest build, canonical cooked
@@ -52,7 +54,9 @@ evaluated. `room-graph.json` maps literal serialized scene/gate names. Runtime
 `BeginSceneTransition` and `LoadLevel` action, including disabled actions,
 literal targets, variable bindings and declared initial values. Variable values,
 FSM reachability, progression conditions and non-PlayMaker loads remain
-unresolved; a mapped edge or initial candidate is not a verified traversal.
+unresolved; a mapped edge or initial candidate is not a verified traversal. The
+report also traces local PlayerData/static/constant reads and same-object
+`SetFsmString` overrides. Runtime-injected values remain explicit with an owner.
 
 Every run hashes the Windows inputs and importer code. Resume verifies output
 hashes and retries failed scene imports. A final source/code check must pass
@@ -65,6 +69,15 @@ cooked scenery/tilemap quads and terrain against the matching whole-world source
 geometry. It supports both Tutorial's post-packed `base_path` rows and Town's 20
 provenance-only rows; a missing `base_path` never skips a region. Its ignored
 report is `tutorial-town-comparison.json`.
+
+`world-catalog.json` assigns all 501 source scenes an evidence-backed role
+without excluding any scene. It retains all 1,119 TransitionPoints with exact
+serialized direction, delay, fade, entry and trigger geometry; groups every
+component type under implementation owners; and catalogs serialized PlayerData
+producers and consumers. `completion-catalog.json` extracts the installed
+`PlayerData.CountGameCompletion` and `CountCharms` CIL into a hash-bound rule
+checklist. Item cap and managed call-graph closure remain P02 work, so this does
+not yet assert the final completion maximum.
 
 The next passes are:
 

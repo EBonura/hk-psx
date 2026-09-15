@@ -10,9 +10,13 @@ glyph-shaping cases. Exact affine circles, particles, trails, tk2d generated
 meshes (including animator-resolved null collections) and shipped Unity meshes
 are global. The canonical comparison verifies every one of 106 Tutorial/Town
 regions and uses provenance for all 20 Town rows that lack `base_path`. P02 now
-inventories all 318 PlayMaker
-scene-load actions alongside 1,119 TransitionPoints; resolve 286 variable-bound
-destinations and final scene roles with source/reference evidence. Do not
+inventories all 318 PlayMaker scene-load actions alongside 1,119 TransitionPoints.
+All 286 dynamic targets have dataflow status: 130 storage/constants, 89 defaults,
+three same-object overrides and 64 runtime-injected P09/P22 targets. All 501
+scenes have source roles with no exclusion and every TransitionPoint trigger
+shape resolves. The installed completion checklist contains 44 boolean/group,
+six integer, four nested Godhome and exact charm/SOUL rules. Finish managed field
+producer closure, item caps, transition prerequisites and reference cases. Do not
 rebuild the user's disc during these host-only packages; build 71 remains the
 sole playable pair.
 
