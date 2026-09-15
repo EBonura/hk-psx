@@ -8,7 +8,9 @@ import unittest
 from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'host'))
 from world_import import (atomic_json, catalog, sha, source_json, summarize,
-                          valid_checkpoint, verify_inputs, write_gzip)
+                          failed_worker_row, read_checkpoint, valid_checkpoint,
+                          next_attempt_number, stop_process, verify_inputs,
+                          worker_outcome, write_gzip)
 
 
 class ImportTests(unittest.TestCase):
@@ -51,6 +53,57 @@ class ImportTests(unittest.TestCase):
             path = Path(directory)/'result.json'
             atomic_json(path, {'fingerprint':'abc','status':'failed','outputs':{}})
             self.assertIsNone(valid_checkpoint(path,'abc'))
+            self.assertEqual(read_checkpoint(path,'abc',allow_failed=True)['status'], 'failed')
+
+    def test_checkpoint_can_bind_one_worker_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'result.json'
+            atomic_json(path, {'fingerprint':'abc','status':'partial','outputs':{},
+                               'worker_attempt':'abc-level2-2'})
+            self.assertIsNone(read_checkpoint(path,'abc',attempt_id='abc-level2-1'))
+            self.assertIsNotNone(read_checkpoint(path,'abc',attempt_id='abc-level2-2'))
+
+    def test_worker_outcomes_do_not_turn_interruption_into_scene_failure(self):
+        checkpoint = {'status':'partial'}
+        self.assertEqual(worker_outcome(0, checkpoint), 'completed')
+        self.assertEqual(worker_outcome(0, None), 'missing_result')
+        self.assertEqual(worker_outcome(-15, None), 'signal:15')
+        self.assertEqual(worker_outcome(9, None), 'exit:9')
+        self.assertEqual(worker_outcome(-15, None, stopped=True), 'interrupted')
+        self.assertEqual(worker_outcome(-15, None, timed_out=True), 'timeout')
+
+    def test_failed_worker_records_exact_exit_without_traceback_guess(self):
+        row = failed_worker_row({'index':3,'file':'level3','scene_name':'Room'},
+                                'fingerprint','attempt-2','signal:9',-9)
+        self.assertEqual(row['status'], 'failed')
+        self.assertEqual(row['failure'], {'stage':'isolated_worker','outcome':'signal:9',
+                                          'exit_code':-9,'signal':9})
+
+    def test_stop_process_escalates_an_unresponsive_owned_worker(self):
+        class Worker:
+            exitcode = None
+            terminate_calls = 0
+            kill_calls = 0
+            def is_alive(self):
+                return self.kill_calls == 0
+            def terminate(self):
+                self.terminate_calls += 1
+            def kill(self):
+                self.kill_calls += 1
+                self.exitcode = -9
+            def join(self, timeout=None):
+                self.timeout = timeout
+        worker = Worker()
+        self.assertEqual(stop_process(worker, grace_seconds=.01), -9)
+        self.assertEqual((worker.terminate_calls, worker.kill_calls), (1, 1))
+
+    def test_resume_attempt_number_preserves_prior_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder/'attempt-1.json').write_text('{}')
+            (folder/'attempt-3.json').write_text('{}')
+            (folder/'attempt-note.json').write_text('{}')
+            self.assertEqual(next_attempt_number(folder), 4)
 
     def test_input_content_hash_detects_same_length_change(self):
         with tempfile.TemporaryDirectory() as directory:

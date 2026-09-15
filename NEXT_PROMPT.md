@@ -1,5 +1,19 @@
 # Hollow Knight PS1: current handoff
 
+## Active implementation: P02-P03 whole-world coverage and geometry
+
+The user authorized execution of the complete-game plan. Track it in
+`docs/plans/COMPLETE_GAME_PROGRESS.md`. P01 is validated: bounded isolated
+workers imported and source-verified all 501 scenes with zero scene failures.
+One `Mines_16` worker ended on signal 11 and its isolated automatic retry
+completed. `tools/world_coverage.py` now generates the P02/P03 source ledger:
+1,119 transitions, 466 component types, 515 PlayMaker action types and nine
+ranked extraction-gap families. Continue with exact affine CircleCollider2D
+geometry for all 5,274 instances, then regenerate the complete report and
+proceed through reusable gaps. Runtime transition overrides and final scene
+roles still require source/reference evidence. Do not rebuild the user's disc
+during these host-only packages; build 71 remains the sole playable pair.
+
 ## Completion plan for the next executor
 
 The user requested an extensive execution plan for GPT-5.6-Sol to complete the

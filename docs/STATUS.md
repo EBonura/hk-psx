@@ -1,3 +1,17 @@
+## Complete-game implementation resumed
+
+P00-P01 are complete and P02-P03 are in progress. The isolated-worker importer
+completed and verified all 501 BuildSettings scenes with zero scene failures.
+It recorded 502 attempts: one `Mines_16` worker ended on signal 11 and only that
+scene was retried successfully in a fresh process. The generated whole-world
+coverage ledger inventories 1,119 transitions, 466 component types, 515
+PlayMaker action types and nine reusable extraction-gap families without
+claiming guest support. Exact circle-collider boundaries are the first global
+geometry target: 5,274 instances across 292 scenes. See
+`docs/plans/COMPLETE_GAME_PROGRESS.md`.
+
+The playable disc remains build 71 and has not been rebuilt by this host work.
+
 ## Completion plan prepared for GPT-5.6-Sol
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),

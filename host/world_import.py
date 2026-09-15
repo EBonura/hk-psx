@@ -7,12 +7,13 @@ All outputs stay below .hkpsx; this tool never builds or replaces a disc.
 import argparse
 import base64
 import math
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import gzip
 import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
+import signal
 import sys
 import time
 
@@ -75,10 +76,12 @@ def verify_inputs(directory, recorded):
         raise ValueError(f'Source fingerprint changed or missing: {failures[:8]}')
 
 
-def valid_checkpoint(path, fingerprint):
+def read_checkpoint(path, fingerprint, allow_failed=False, attempt_id=None):
     try:
         row = json.loads(path.read_text())
-        if row['fingerprint'] != fingerprint or row['status'] == 'failed':
+        if row['fingerprint'] != fingerprint or (row['status'] == 'failed' and not allow_failed):
+            return None
+        if attempt_id is not None and row.get('worker_attempt') != attempt_id:
             return None
         for item in row['outputs'].values():
             output = (path.parent / item['path']).resolve()
@@ -89,6 +92,27 @@ def valid_checkpoint(path, fingerprint):
         return row
     except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+def valid_checkpoint(path, fingerprint):
+    return read_checkpoint(path, fingerprint)
+
+
+def worker_outcome(exit_code, checkpoint, stopped=False, timed_out=False):
+    """Classify one isolated worker without attributing pool loss to other scenes."""
+    if stopped:
+        return 'interrupted'
+    if timed_out:
+        return 'timeout'
+    if exit_code is None:
+        return 'running'
+    if exit_code < 0:
+        return f'signal:{-exit_code}'
+    if exit_code > 0:
+        return f'exit:{exit_code}'
+    if checkpoint is None:
+        return 'missing_result'
+    return 'completed'
 
 
 def summarize(rows, total):
@@ -113,7 +137,7 @@ def summarize(rows, total):
             'counts': counts, 'systems': dict(sorted(systems.items()))}
 
 
-def import_one(directory, info, output, fingerprint):
+def import_one(directory, info, output, fingerprint, attempt_id=None):
     # A fresh process per scene releases Unity buffers and Scene's bound-method
     # caches. No global source cache grows with the number of imported scenes.
     sys.dont_write_bytecode = True
@@ -123,7 +147,8 @@ def import_one(directory, info, output, fingerprint):
     folder = Path(output) / info['file']
     folder.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
-    row = dict(info, fingerprint=fingerprint, status='failed', outputs={})
+    row = dict(info, fingerprint=fingerprint, status='failed', outputs={},
+               worker_attempt=attempt_id, worker_pid=os.getpid())
     try:
         source = Source(directory)
         scene = Scene(source, info['file'])
@@ -159,18 +184,55 @@ def import_one(directory, info, output, fingerprint):
     return row
 
 
+def failed_worker_row(info, fingerprint, attempt_id, outcome, exit_code):
+    failure = {'stage': 'isolated_worker', 'outcome': outcome, 'exit_code': exit_code}
+    if exit_code is not None and exit_code < 0:
+        failure['signal'] = -exit_code
+    return dict(info, fingerprint=fingerprint, status='failed', outputs={},
+                worker_attempt=attempt_id, failure=failure, seconds=0)
+
+
+def stop_process(process, grace_seconds=5):
+    """Stop one owned worker and do not leave an unobserved child behind."""
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=grace_seconds)
+    if process.is_alive():
+        process.kill()
+        process.join(timeout=grace_seconds)
+    return process.exitcode
+
+
+def next_attempt_number(folder):
+    attempts = []
+    for path in Path(folder).glob('attempt-*.json'):
+        try:
+            attempts.append(int(path.stem.split('-')[-1]))
+        except ValueError:
+            continue
+    return max(attempts, default=0) + 1
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT/'.hkpsx/world-import')
     parser.add_argument('--jobs', type=int, default=2, choices=range(1, 5))
     parser.add_argument('--limit', type=int, help='Diagnostic subset, never whole-world completion')
     parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--scene-timeout', type=float, default=180.0,
+                        help='Maximum seconds for one isolated scene worker')
+    parser.add_argument('--worker-retries', type=int, default=1,
+                        help='Retries after an abnormal worker exit or timeout')
     args = parser.parse_args()
     output = args.output.resolve()
     if not output.is_relative_to((ROOT/'.hkpsx').resolve()):
         parser.error('Output must be inside the ignored .hkpsx directory')
     if args.limit is not None and args.limit < 1:
         parser.error('--limit must be positive')
+    if not math.isfinite(args.scene_timeout) or args.scene_timeout <= 0:
+        parser.error('--scene-timeout must be positive and finite')
+    if not 0 <= args.worker_retries <= 8:
+        parser.error('--worker-retries must be between zero and eight')
     from source import Source
     source = Source()
     directory = source.directory
@@ -226,9 +288,14 @@ def main():
         else:
             pending.append(info)
     started = time.monotonic()
+    run = {'status': 'running', 'started_unix': time.time(), 'jobs': args.jobs,
+           'scene_timeout': args.scene_timeout, 'worker_retries': args.worker_retries,
+           'attempts_started': 0, 'attempts_completed': 0, 'retries': 0,
+           'timeouts': 0, 'abnormal_exits': 0}
     def checkpoint():
         report = {'format': FORMAT, 'fingerprint': fingerprint,
                   'dependency_inventory': dependency_report, 'serialized_fsm_actions': fsm_actions,
+                  'run': run,
                   'coverage': summarize(rows, len(scenes)), 'scenes': sorted(rows, key=lambda r:r['index']),
                   'limitations': [
                       'Host source records, not PS1-ready packed rooms or a playable world.',
@@ -241,18 +308,115 @@ def main():
         return report
     checkpoint()
     del source
-    with ProcessPoolExecutor(max_workers=args.jobs, max_tasks_per_child=1) as pool:
-        futures = {pool.submit(import_one, str(directory), info, str(output), fingerprint): info for info in pending}
-        for future in as_completed(futures):
-            try:
-                row = future.result()
-            except Exception as error:
-                row = dict(futures[future], fingerprint=fingerprint, status='failed', outputs={},
-                           failure={'error': str(error), 'stage':'worker_process'}, seconds=0)
-                atomic_json(output/row['file']/'result.json', row)
-            rows.append(row)
-            checkpoint()
-            print(f"{len(rows)}/{len(scenes)} {row['scene_name']}: {row['status']} ({row['seconds']}s)", flush=True)
+    stop_requested = False
+
+    def request_stop(signum, _frame):
+        nonlocal stop_requested
+        stop_requested = True
+        run['stop_signal'] = signum
+
+    previous_handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+    for signum in previous_handlers:
+        signal.signal(signum, request_stop)
+    context = multiprocessing.get_context('spawn')
+    queue = list(pending)
+    active = {}
+    attempt_counts = {}
+    try:
+        while queue or active:
+            while queue and len(active) < args.jobs and not stop_requested:
+                info = queue.pop(0)
+                attempt = attempt_counts.get(info['index'])
+                if attempt is None:
+                    attempt = next_attempt_number(output/info['file'])
+                else:
+                    attempt += 1
+                attempt_counts[info['index']] = attempt
+                attempt_id = f"{fingerprint[:12]}-{info['file']}-{attempt}"
+                process = context.Process(target=import_one,
+                    args=(str(directory), info, str(output), fingerprint, attempt_id),
+                    name=f"world-import-{info['file']}")
+                process.start()
+                active[process.pid] = {'process': process, 'info': info, 'attempt': attempt,
+                    'attempt_id': attempt_id, 'started': time.monotonic(), 'started_unix': time.time()}
+                run['attempts_started'] += 1
+                atomic_json(output/info['file']/f'attempt-{attempt}.json', {
+                    'scene': info, 'attempt': attempt, 'attempt_id': attempt_id,
+                    'pid': process.pid, 'started_unix': active[process.pid]['started_unix'],
+                    'status': 'running'})
+            if stop_requested:
+                unfinished = len(queue) + len(active)
+                for worker in active.values():
+                    stop_process(worker['process'])
+                for worker in active.values():
+                    atomic_json(output/worker['info']['file']/f"attempt-{worker['attempt']}.json", {
+                        'scene': worker['info'], 'attempt': worker['attempt'],
+                        'attempt_id': worker['attempt_id'], 'pid': worker['process'].pid,
+                        'started_unix': worker['started_unix'], 'ended_unix': time.time(),
+                        'status': 'interrupted', 'exit_code': worker['process'].exitcode})
+                active.clear()
+                run['status'] = 'interrupted'
+                run['pending_scenes'] = unfinished
+                run['completed_scenes'] = len(rows)
+                checkpoint()
+                break
+            now = time.monotonic()
+            finished = []
+            for pid, worker in active.items():
+                process = worker['process']
+                timed_out = process.is_alive() and now - worker['started'] > args.scene_timeout
+                if timed_out:
+                    stop_process(process)
+                elif process.is_alive():
+                    continue
+                else:
+                    process.join()
+                result_path = output/worker['info']['file']/'result.json'
+                row = read_checkpoint(result_path, fingerprint, allow_failed=True,
+                                      attempt_id=worker['attempt_id']) if process.exitcode == 0 else None
+                outcome = worker_outcome(process.exitcode, row, timed_out=timed_out)
+                attempt_record = {'scene': worker['info'], 'attempt': worker['attempt'],
+                    'attempt_id': worker['attempt_id'], 'pid': pid,
+                    'started_unix': worker['started_unix'], 'ended_unix': time.time(),
+                    'status': outcome, 'exit_code': process.exitcode,
+                    'seconds': round(now-worker['started'], 3)}
+                atomic_json(output/worker['info']['file']/f"attempt-{worker['attempt']}.json",
+                            attempt_record)
+                run['attempts_completed'] += 1
+                if outcome == 'completed':
+                    rows.append(row)
+                    print(f"{len(rows)}/{len(scenes)} {row['scene_name']}: {row['status']} ({row['seconds']}s)", flush=True)
+                else:
+                    run['timeouts'] += int(timed_out)
+                    run['abnormal_exits'] += int(not timed_out)
+                    if worker['attempt'] <= args.worker_retries:
+                        run['retries'] += 1
+                        queue.insert(0, worker['info'])
+                        print(f"RETRY {worker['info']['scene_name']}: {outcome}", flush=True)
+                    else:
+                        row = failed_worker_row(worker['info'], fingerprint, worker['attempt_id'],
+                                                outcome, process.exitcode)
+                        atomic_json(result_path, row)
+                        rows.append(row)
+                        print(f"{len(rows)}/{len(scenes)} {row['scene_name']}: failed ({outcome})", flush=True)
+                finished.append(pid)
+            for pid in finished:
+                active.pop(pid)
+            if finished:
+                checkpoint()
+            elif active:
+                time.sleep(0.05)
+        if run['status'] == 'running':
+            run['status'] = 'processed'
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+        for worker in active.values():
+            stop_process(worker['process'])
+    if stop_requested:
+        print(json.dumps({'run_status':'interrupted', 'completed_scenes':len(rows),
+                          'pending_scenes':run['pending_scenes']}), flush=True)
+        return 130
     verify_inputs(directory, inputs)
     if any(sha(ROOT/name) != digest for name,digest in code.items()):
         raise RuntimeError('Importer source code changed during run; rerun before trusting outputs')
@@ -267,6 +431,10 @@ def main():
         'mapped_scene_edges':graph['mapped_scene_edges']}
     report['inputs_unchanged'] = True
     report['elapsed_seconds'] = round(time.monotonic()-started, 3)
+    run['status'] = 'verified'
+    run['completed_scenes'] = len(rows)
+    run['pending_scenes'] = 0
+    run['ended_unix'] = time.time()
     atomic_json(output/'report.json', report)
     print(json.dumps({k:v for k,v in report['coverage'].items() if k not in ('systems', 'counts')}), flush=True)
     return 1 if report['coverage']['failed_scenes'] else 0
