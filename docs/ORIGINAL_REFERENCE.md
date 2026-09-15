@@ -98,7 +98,8 @@ HeroController. This matches the prerequisite in `OpeningSequence`. It then
 calls `OnWillActivateFirstLevel` and `GameManager.LoadScene("Tutorial_01")`.
 The opening movie is bypassed as explicit scene-test setup. The splash Animator
 is retained; an early hypothesis that it required bypassing was disproved.
-No original gameplay methods or state-machine actions are replaced.
+Gameplay logic and state-machine actions remain original. Managed audio API
+call sites are instrumented as described below; each wrapper retains the native call.
 
 The normal first-landing sequence is retained. Its `Initial Fall Impact` FSM
 relinquishes control, waits 0.75s and 3.25s in successive states, then waits for the
@@ -162,6 +163,12 @@ python3 -m unittest tests.test_reference_game
   destruction, and sampled AudioSource configuration. Hierarchies identify
   objects; runtime instance IDs are process-local, not source asset IDs.
 - `driver.log`: setup, READY, command acknowledgements, watchdog/errors and stop.
+- `audio-calls.csv`: intercepted managed Play/PlayOneShot/Stop/Pause/UnPause,
+  PlayClipAtPoint, mixer snapshot TransitionTo and mixer SetFloat requests.
+  Rows include the original caller/IL offset, owner hierarchy, clip/snapshot,
+  source pitch/volume, one-shot scale, Unity time and input-update counters.
+- `hero-audio-config.csv`: once-ready reflected footstep and landing object
+  fields, including configured clip names, sample counts and frequencies.
 - `unity.log`: original runtime diagnostics, including the NullGfxDevice proof.
 - `run.json`: version/input provenance and validation; gameplay exceptions fail
   the run. Exceptions after the explicit completion marker are separately
@@ -170,8 +177,32 @@ python3 -m unittest tests.test_reference_game
 Observation discovery occurs on scene loads and every 30 samples, with explicit
 caps of 2048 FSMs/1024 actors/512 audio sources. Coverage-limit rows report overflow.
 Polling can miss intermediate FSM transitions, transient objects and one-shot
-sounds. Audio rows prove configuration, **not actual audio playback calls**.
-Audio-call instrumentation is a next step for exact missing-SFX comparisons.
+sounds. Audio rows in `observations.csv` prove configuration only.
+
+Audio call tracing wraps exact signatures in the original Assembly-CSharp DLL;
+preparation reports every patched caller, original opcode/signature, and the
+remaining audio API references. Native Unity calls still receive their original
+arguments exactly once, and their return values/exceptions are retained. A row
+has phase `request`: it is written before the native call and does not prove
+that the call succeeded or produced audible sound under NullGfx/no audio device.
+The queued test frame may precede its next input update; use the Unity frame and
+input counters to align events. Source `.clip` is not substituted for the explicit
+PlayOneShot clip, and volume scale is recorded separately from source volume.
+
+Coverage excludes native engine starts (`playOnAwake`), reflection/delegates,
+other assemblies, unsupported overloads, and calls before driver initialization
+or after trace disposal. An original code path that calls
+another traced game helper can still be observed at that helper's final audio
+call. The local PlayMaker DLL had no direct AudioSource/mixer references in the
+inspected build. Mixer automation, audio output, complete cue coverage,
+and original sample asset IDs are not inferred from these rows. Runtime IDs are
+process-local; source clip linkage requires serialized asset provenance.
+Wrapper compilation/static validation is separate from a successful reference
+replay; inspect the new run's audio CSV before making missing-SFX claims.
+The nine compiled wrappers passed an IL check for exactly one native call,
+unchanged argument ordering, a preceding log call, and no exception handler
+around the native invocation. Local evidence is
+`.hkpsx/audio-trace-validation/wrapper-validation.json`.
 
 NullGfx produces no rendered image. It cannot establish visual parity, shader/
 particle coverage, audible output, or on-screen culling-dependent behaviour.
@@ -182,6 +213,7 @@ will require a separate rendered capture path. See Unity's
 The APFS clone, isolated bottle, saves, dependencies, binaries and logs all stay
 under ignored `.hkpsx/og-reference/`. The original Steam install and saves are
 read-only inputs. The Patcher changes only the copied assembly: startup driver
-hooks and persistent-data-path redirection. The isolated bottle additionally
+hooks, persistent-data-path redirection, and managed audio call instrumentation.
+The isolated bottle additionally
 separates platform preferences/saves from the Steam bottle. Normal guest/disc
 build mechanics are unaffected.

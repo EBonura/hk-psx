@@ -19,6 +19,7 @@ HK_GEO_ACTIVE HK_GEO_PENDING_VALUE HK_GEO_LOST HK_GEO_DRAWN'''.split()
 WATCHES+='HK_LIFEBLOOD_OPENED HK_LIFEBLOOD_ACTIVE HK_LIFEBLOOD_STRUCK HK_LIFEBLOOD_GRANTED HK_BLUE_HEALTH HK_GEO_AUDIO_READY HK_GEO_PICKUP_SFX HK_GEO_ROCK_HIT_SFX HK_GEO_ROCK_BREAK_SFX'.split()
 WATCHES+='HK_AMBIENCE_READY HK_AMBIENCE_LOADED_MASK HK_AMBIENCE_PLAYING_MASK HK_AMBIENCE_START_COUNT HK_AMBIENCE_TRANSITIONS HK_AMBIENCE_SCENE HK_AMBIENCE_FADE_TICKS'.split()
 WATCHES+='HK_GREAT_DOOR_HITS HK_GREAT_DOOR_STAGE HK_GREAT_DOOR_OPENED HK_GREAT_DOOR_WAIT HK_GREAT_DOOR_TRANSITIONS'.split()
+WATCHES+='HK_AUDIO_STREAM_STARTS HK_AUDIO_STREAM_REFILLS HK_AUDIO_STREAM_SOURCE_WRAPS HK_AUDIO_STREAM_MAX_SERVICE_GAP HK_AUDIO_STREAM_UNDERRUNS HK_GREAT_DOOR_HIT_SFX HK_FOOTSTEP_STARTS HK_HARD_LAND_SFX'.split()
 WATCHES+='HK_CHEATS HK_CHEAT_NAIL_DAMAGE HK_CHEAT_MASK_CAP'.split()
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -64,7 +65,7 @@ def main():
     report['maximum_observed']={n:max([int(row['ram_'+addr[2:]])for row in rows]+[report['final_ram'][n]])for n,addr in watches.items()}
     report['stop']=re.findall(r'route-ticks=(\d+)\s+port1-polls=(\d+)',(out/'replay.log').read_text())
     report['completed']=bool(report['stop'])and int(report['stop'][-1][1])==start+count
-    faults=[n for n in ('HK_ROOM_LOAD_ERROR','HK_CD_STREAM_ERROR','__psx_rt_fault_count','HK_SCENERY_REPAIR_FAILURES','HK_INPUT_FAULT','HK_INPUT_MISSED_VBLANKS')if report['maximum_observed'].get(n)!=0]
+    faults=[n for n in ('HK_ROOM_LOAD_ERROR','HK_CD_STREAM_ERROR','__psx_rt_fault_count','HK_SCENERY_REPAIR_FAILURES','HK_INPUT_FAULT','HK_INPUT_MISSED_VBLANKS','HK_AUDIO_STREAM_UNDERRUNS')if report['maximum_observed'].get(n,0)!=0]
     report['faults']=faults
     (out/'command.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:report[k]for k in ('completed','exit_code','faults','final_ram')},indent=2))

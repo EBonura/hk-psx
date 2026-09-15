@@ -18,6 +18,10 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / '.hkpsx/og-reference'
+AUDIO_HEADER = ('sequence,queued_test_frame,unity_frame,time,fixed_time,input_tick,input_updates,'
+                'operation,callsite,scene,hierarchy,source_id,clip_or_snapshot,asset_id,pitch,'
+                'source_volume,volume_scale,x,y,z,parameter,value,phase').split(',')
+AUDIO_OPERATIONS = {'Play', 'PlayOneShot', 'Stop', 'Pause', 'UnPause', 'PlayClipAtPoint', 'TransitionTo', 'SetFloat'}
 
 
 def digest(path):
@@ -134,10 +138,56 @@ def prepare(args):
 
 
 
+def validate_audio_calls(output, unity_log):
+    """Validate recorded requests, not audible output or exhaustive native coverage."""
+    errors, operations, sites, previous = [], {}, set(), None
+    count = 0
+    if 'HKReference AudioTrace logging failed:' in unity_log:
+        errors.append('AudioTrace reported a logging failure')
+    try:
+        with (output / 'audio-calls.csv').open(newline='') as stream:
+            reader = csv.DictReader(stream, strict=True)
+            if reader.fieldnames != AUDIO_HEADER:
+                raise ValueError('unexpected or missing audio-calls.csv header')
+            for row in reader:
+                if None in row or any(value is None for value in row.values()):
+                    raise ValueError(f'incomplete audio row {count}')
+                if int(row['sequence']) != count:
+                    raise ValueError(f'audio sequence is not consecutive from zero at row {count}')
+                if row['phase'] != 'request' or row['operation'] not in AUDIO_OPERATIONS:
+                    raise ValueError(f'unsupported audio operation/phase at row {count}')
+                caller, separator, offset = row['callsite'].rpartition('@IL_')
+                if not caller or not separator or not offset or any(c not in '0123456789abcdefABCDEF' for c in offset):
+                    raise ValueError(f'missing original audio callsite at row {count}')
+                if int(row['queued_test_frame']) < -1:
+                    raise ValueError(f'invalid queued audio frame at row {count}')
+                counters = tuple(int(row[key]) for key in ('unity_frame', 'input_tick', 'input_updates'))
+                times = tuple(float(row[key]) for key in ('time', 'fixed_time'))
+                if any(value < 0 for value in counters + times) or not all(math.isfinite(value) for value in times):
+                    raise ValueError(f'invalid audio clock at row {count}')
+                if previous and (any(a < b for a, b in zip(counters, previous[0]))
+                                 or any(a + 1e-6 < b for a, b in zip(times, previous[1]))):
+                    raise ValueError(f'audio clocks moved backwards at row {count}')
+                for key in ('pitch', 'source_volume', 'volume_scale', 'x', 'y', 'z', 'value'):
+                    if row[key] and not math.isfinite(float(row[key])):
+                        raise ValueError(f'non-finite audio {key} at row {count}')
+                if not row['volume_scale']:
+                    raise ValueError(f'missing audio volume scale at row {count}')
+                previous = counters, times
+                operations[row['operation']] = operations.get(row['operation'], 0) + 1
+                sites.add(row['callsite'])
+                count += 1
+    except (OSError, ValueError, TypeError, csv.Error) as error:
+        errors.append('Invalid audio-call evidence: ' + str(error))
+    return {'passed': not errors, 'errors': errors, 'requests': count,
+            'observed_call_sites': len(sites), 'operations': dict(sorted(operations.items())),
+            'coverage': 'Recorded managed requests only; excludes uninstrumented calls and does not prove audible output'}
+
+
 def validate_run(output, expected_frames, allow_command_stop=False):
     try:
         return _validate_run(output, expected_frames, allow_command_stop)
-    except (OSError, ValueError, TypeError, KeyError) as error:
+    except (OSError, ValueError, TypeError, KeyError, csv.Error) as error:
         return {'passed': False, 'errors': ['Incomplete or malformed reference log: ' + str(error)]}
 
 
@@ -164,6 +214,8 @@ def _validate_run(output, expected_frames, allow_command_stop=False):
     if ('STOP completed input frames code=0' not in driver and not command_stop) or 'ERROR ' in driver:
         errors.append('Driver did not report successful completion')
     unity = (output / 'unity.log').read_text(errors='replace') if (output / 'unity.log').exists() else ''
+    audio = validate_audio_calls(output, unity)
+    errors.extend(audio['errors'])
     if 'NullGfxDevice' not in unity:
         errors.append('Null graphics device was not confirmed')
     # Runtime exceptions invalidate reference evidence. Shader/render-texture
@@ -204,6 +256,7 @@ def _validate_run(output, expected_frames, allow_command_stop=False):
             'x_range': [min(float(r['x']) for r in played), max(float(r['x']) for r in played)] if played else None,
             'y_range': [min(float(r['y']) for r in played), max(float(r['y']) for r in played)] if played else None,
             'shutdown_exceptions': shutdown_exceptions,
+            'audio_calls': audio,
             'rendering': 'NullGfx; no image/audio-output parity claim'}
 
 

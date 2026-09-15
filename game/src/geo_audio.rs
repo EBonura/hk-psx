@@ -6,7 +6,7 @@ mod existing_sfx {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/sfx.rs"));
     pub fn rock_break() -> (u32, u32, i16) { SAMPLES[0] }
 }
-const BASE: u32 = 0x7c3c0;
+const BASE: u32 = 0x14000;
 #[repr(align(4))]
 struct Bank([u8; BANK_BYTES]);
 static BANK: Bank = Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/geo-audio.adpcm")));
@@ -20,13 +20,13 @@ static mut RANDOM: u32 = 0x47454f;
 /// Called after the existing SFX/ambience initialization; never resets the SPU.
 pub fn upload() {
     if unsafe { HK_GEO_AUDIO_READY != 0 } { return; }
-    assert!(BANK_BYTES <= (0x80000 - BASE) as usize);
+    assert!(BANK_BYTES <= (0x18000 - BASE) as usize);
     assert_eq!(SAMPLES[0].0, BASE);
     // Validate the complete immutable bank before uploading or admitting playback.
     for i in 0..SAMPLES.len() {
         let (start, rate, gain) = SAMPLES[i];
         let end = if i + 1 < SAMPLES.len() { SAMPLES[i + 1].0 } else { BASE + BANK_BYTES as u32 };
-        assert!(start >= BASE && end > start && end <= 0x80000);
+        assert!(start >= BASE && end > start && end <= 0x18000);
         assert!(start % 16 == 0 && (end - start) % 16 == 0);
         assert!(rate == 11025 && gain == 5461);
         let bytes = &BANK.0[(start - BASE) as usize..(end - BASE) as usize];

@@ -25,6 +25,7 @@ pub fn start(tick: u32) {
 #[inline]
 pub fn checkpoint() {
     crate::presentation::checkpoint();
+    crate::ambience::service();
     let now = psx_rt::interrupts::vblank_count();
     if unsafe { SAMPLER.poll_due(now) } {
         poll_slow(now);

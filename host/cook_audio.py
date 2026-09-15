@@ -8,9 +8,38 @@ import wave
 from pathlib import Path
 import fmod_nosound  # noqa: F401  offline FSB decoding without an audio device
 
-BANK_LIMIT = 32768
 SPU_BASE = 0x1010
-EVENTS = ('door', 'jump', 'land', 'nail', 'hurt', 'enemy_hit')
+# Root layout reserves 0x14000..0x18000 for Geo; ambience begins at0x18000.
+BANK_LIMIT = 0x14000 - SPU_BASE
+EVENTS = ('door', 'jump', 'land', 'nail', 'hurt', 'enemy_hit', 'hard_land', 'footsteps_run')
+# The serialized HeroController tail is not parsed by the cooker. This hash
+# binds its environment0 Dust mapping to the actual-original reflection audit:
+# footstepsRunDust == footStepsRunAudioSource.clip == hero_run_footsteps_stone,
+# 97600 stereo frames at48000Hz (audio-movement-1). No retail bytes are embedded.
+MOVEMENT_HERO_SHA256 = '8a4a799f36e522e7caccffb0c9c345e9a82eb9b2ef2d73024049439340e4e345'
+
+
+def great_door_hit_contract(fsm, sample_rate=22050):
+    """Validate the exact source action before sharing the resident wall clip."""
+    from focus import action_fields
+    if fsm['name'] != 'Great Door':
+        raise ValueError('Great Door sound FSM changed')
+    data = next(st for st in fsm['states'] if st['name'] == 'Hit')['actionData']
+    actions = [i for i, name in enumerate(data['actionNames'])
+               if name.endswith('.AudioPlayRandom') and data['actionEnabled'][i]]
+    if len(actions) != 1:
+        raise ValueError('Great Door hit sound action changed')
+    fields = action_fields(data, actions[0])
+    pitch = [fields[name] for name in ('pitchMin', 'pitchMax')]
+    if any(p['useVariable'] for p in pitch):
+        raise ValueError('Great Door pitch is dynamic')
+    values = [p['value'] for p in pitch]
+    if any(abs(a-b)>1e-6 for a,b in zip(values,(.85,1.15))):
+        raise ValueError('Great Door pitch bounds changed')
+    expected = [{'m_FileID': 2, 'm_PathID': i} for i in (92, 99)]
+    if data['unityObjectParams'] != expected:
+        raise ValueError('Great Door hit clip selection changed')
+    return [round(sample_rate*4096/44100*v) for v in values]
 
 
 def encode(samples):
@@ -33,20 +62,38 @@ def encode(samples):
 
 
 def convert_wav(data, rate):
-    """Mono fold-down and integer-factor box lowpass, no clipping/truncation."""
+    """Mono fold-down and box lowpass, preserving the complete duration.
+
+    Existing integer-factor paths retain their exact bytes. The48000Hz running
+    sequence uses11025Hz like the long-SFX category; rational box integration
+    avoids changing its duration/pitch to force an integer rate ratio.
+    """
     with wave.open(io.BytesIO(data)) as w:
         channels, source_rate, frames = w.getnchannels(), w.getframerate(), w.getnframes()
-        if w.getsampwidth() != 2 or channels not in (1, 2) or source_rate % rate:
+        if w.getsampwidth() != 2 or channels not in (1, 2):
             raise ValueError('unvalidated source PCM format or rate conversion')
         raw = struct.unpack('<' + 'h' * (frames * channels), w.readframes(frames))
     factor = source_rate // rate
-    if factor not in (1, 2, 4):
+    rational = (source_rate, rate) == (48000, 11025)
+    if not rational and (source_rate % rate or factor not in (1, 2, 4)):
         raise ValueError('unvalidated rate-conversion factor')
     mono = [sum(raw[i:i + channels]) / channels for i in range(0, len(raw), channels)]
     # Repeat the last source frame for an incomplete final filter window, as
     # the prior door 2:1 conversion did. One round after channel/time averaging.
-    pcm = [round(sum(mono[min(i + j, len(mono) - 1)] for j in range(factor)) / factor)
-           for i in range(0, len(mono), factor)]
+    if rational:
+        pcm = []
+        for out in range((len(mono)*rate+source_rate-1)//source_rate):
+            start, end = out*source_rate, (out+1)*source_rate
+            total = 0.0
+            while start < end:
+                index = start//rate
+                following = min(end, (index+1)*rate)
+                total += mono[min(index,len(mono)-1)]*(following-start)
+                start = following
+            pcm.append(round(total/source_rate))
+    else:
+        pcm = [round(sum(mono[min(i + j, len(mono) - 1)] for j in range(factor)) / factor)
+               for i in range(0, len(mono), factor)]
     return pcm, {'source_rate': source_rate, 'source_channels': channels,
                  'source_frames': frames, 'sample_rate': rate, 'samples': len(pcm)}
 
@@ -132,19 +179,35 @@ def main():
     if s.typename(controller) != 'HeroAudioController':
         raise ValueError('source HeroAudioController changed')
     hero_audio = s.read(controller)
+    if hashlib.sha256(resources.objects[20602].get_raw_data()).hexdigest()!=MOVEMENT_HERO_SHA256:
+        raise ValueError('HeroController movement audio linkage changed; revalidate environment Dust mapping')
+    for scene_name in ('level6','level7'):
+        scene=s.file(scene_name)
+        managers=[s.read(o) for o in scene.objects.values()
+                  if o.type.name=='MonoBehaviour' and s.typename(o)=='SceneManager']
+        if len(managers)!=1 or managers[0]['environmentType']!=0:
+            raise ValueError('movement audio currently requires verified Dust environment')
     origins = {}
     selected = {}
     expected = {'jump': 'hero_jump', 'land': 'hero_land_soft',
-                'hurt': 'hero_damage_less_harsh'}
-    for event, field in [('jump', 'jump'), ('land', 'softLanding'), ('hurt', 'takeHit')]:
+                'hurt': 'hero_damage_less_harsh', 'hard_land':'hero_land_hard mono test',
+                'footsteps_run':'hero_run_footsteps_stone'}
+    for event, field in [('jump', 'jump'), ('land', 'softLanding'), ('hurt', 'takeHit'),
+                         ('hard_land','hardLanding'), ('footsteps_run','footStepsRun')]:
         source = s.ref(resources, hero_audio[field])
         tree = s.read(source)
+        if event in ('hard_land','footsteps_run') and (tree['Loop'] or tree['m_Pitch'] != 1.0):
+            raise ValueError('movement audio loop/pitch contract changed')
         # Unity 6 moved the resource reference; the deprecated clip is null.
         clip = s.ref(source.assets_file, tree['m_Resource'])
         selected[event] = (clip, expected[event], tree['m_Volume'])
         origins[event] = {'component': s.sid(controller), 'field': field,
                           'audio_source': s.sid(source), 'resource_field': 'm_Resource',
                           'method': 'HeroAudioController.PlaySound'}
+        if event=='footsteps_run':
+            origins[event].update(environment_type=0,environment_field='HeroController.footstepsRunDust',
+                hero_source_sha256=MOVEMENT_HERO_SHA256,
+                selection='Runtime-verified Dust mapping equals default run source; complete nonlooping sequence')
     nail = resources.objects[24289]
     if s.typename(nail) != 'NailSlash':
         raise ValueError('source NailSlash changed')
@@ -196,16 +259,39 @@ def main():
     items = []
     for event in EVENTS:
         clip, name, volume = selected[event]
-        encoded, meta = cook(clip, name, volume, 11025 if event == 'hurt' else 22050, origins[event])
+        encoded, meta = cook(clip, name, volume, 11025 if event=='footsteps_run' else 22050, origins[event])
         items.append((event, encoded, meta))
     bank, records = pack_bank(items)
+    great_door = s.file('level6').objects[12139]
+    great_door_pitch = great_door_hit_contract(s.read(great_door)['fsm'])
     (ROOT / 'data/sfx.adpcm').write_bytes(bank)
     # Preserve the existing artifact/API for diagnostics and old build helpers.
     (ROOT / 'data/door.adpcm').write_bytes(items[0][1])
     rust = f'pub const BANK_BYTES: usize = {len(bank)};\n'
-    rust += 'pub const SAMPLES: [(u32,u32,i16);6] = [\n'
+    rust += f'pub const SAMPLES: [(u32,u32,i16);{len(EVENTS)}] = [\n'
     rust += ''.join(f'    ({SPU_BASE + r["offset"]},{r["sample_rate"]},{r["volume_q14"]}), // {r["event"]}\n' for r in records)
     rust += '];\n'
+    rust += f'pub const GREAT_DOOR_HIT_PITCH:[u16;2]={great_door_pitch};\n'
+    by_event={r['event']:r for r in records}
+    # Complete nonlooping sequences restart on the first60Hz tick after end.
+    for event,constant in [('land','SOFT_LANDING_TICKS'),('footsteps_run','RUN_SEQUENCE_TICKS')]:
+        r=by_event[event]
+        rust+=f'pub const {constant}:u16={(r["samples"]*60+r["sample_rate"]-1)//r["sample_rate"]};\n'
+    # Read the validated serialized scalar prefix, before the unresolved tail.
+    from UnityPy.helpers import TypeTreeHelper
+    hero=resources.objects[20602]
+    if s.typename(hero)!='HeroController':raise ValueError('HeroController source changed')
+    node=hero._get_typetree_node();children=node.m_Children
+    node.m_Children=children[:next(i for i,n in enumerate(children) if n.m_Name=='hero_state')]
+    old=TypeTreeHelper.read_typetree_boost
+    try:
+        TypeTreeHelper.read_typetree_boost=None
+        constants=hero.read_typetree(nodes=node,check_read=False)
+    finally:
+        TypeTreeHelper.read_typetree_boost=old;node.m_Children=children
+    if abs(constants['BIG_FALL_TIME']-1.1)>1e-6:raise ValueError('hard landing fall duration changed')
+    hard_ticks=math.floor(constants['BIG_FALL_TIME']*60)+1
+    rust+=f'pub const HARD_FALL_MIN_TICKS:u16={hard_ticks};\n'
     (ROOT / 'data/sfx.rs').write_text(rust)
 
     # The original death FSM starts both layers together. Preserve full clips
@@ -239,8 +325,20 @@ def main():
         'spu_bytes': len(bank), 'resident_bank_limit': BANK_LIMIT,
         'output_sha256': hashlib.sha256(bank).hexdigest(), 'events': records,
         'deferred_death_layers': deferred,
-        'limitations': ['Mono box-filtered22050Hz; hurt11025Hz; predictor-zero ADPCM',
-                       'Fixed source pitch1.0; source random pitch ranges are not reproduced',
+        'great_door_hit': {'component': s.sid(great_door), 'state': 'Hit',
+            'resident_variant': 'sharedassets6.assets:92', 'voice': 15,
+            'pitch_register_bounds': great_door_pitch,
+            'missing_variants': ['sharedassets6.assets:99', 'sharedassets6.assets:102']},
+        'movement_audio': {'hard_fall_min_ticks':hard_ticks,'hard_fall_seconds':constants['BIG_FALL_TIME'],
+            'simulation_hz':60,'short_sfx_rate':22050,'long_movement_rate':11025,
+            'methods':['HeroController.FallCheck','HeroController.ShouldHardLand',
+                       'HeroController.DoHardLanding','HeroAudioController.PlaySound'],
+            'limitations':['Hard landing audio only; original0.8s recovery/animation not introduced here',
+                           'Running Dust sequence only; walk-zone and other environment sequences remain unsupported',
+                           'AudioSource isPlaying resampled to bounded60Hz clip-duration counters',
+                           'Pause stops/restarts the footstep sequence rather than resuming its exact sample cursor']},
+        'limitations': ['Mono box-filtered22050Hz short SFX;11025Hz long movement; predictor-zero ADPCM',
+                       'Ordinary SFX use pitch1.0; Great Door hit uses source pitch bounds with deterministic guest RNG',
                        'Nail uses one authored Slash sound for all supported directions',
                        'Unity mixer/positional effects omitted; source voice volumes scaled1/3 for mix headroom',
                        'Full death layers cooked separately but not runtime-integrated']})

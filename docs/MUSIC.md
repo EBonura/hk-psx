@@ -1,14 +1,60 @@
 # Resident source ambience and music groundwork
 
-The guest now loads all six complete Cave/Surface ambient loops from disc into
-SPU RAM during startup. Four source-selected stems play in Tutorial_01; grid
-region changes do not restart them. Ambience needs no CD reads during traversal
-and no embedded ambience bank in the EXE. Title music and Dirtmouth music are still
-missing; the longer music clips remain host preparation only.
+## Current implementation (build64,2026-09-15)
 
-The final normal and telemetry builds pass their six-route pacing suites. The
-final normal build also passes the sustained audio and corrupt-bank checks below.
-These are emulator results; physical-console validation remains outstanding.
+Source-derived player running and hard-landing sounds are integrated, along
+with the Great Door's first hit variant/pitch range. Running uses the original
+complete nonlooping rhythm sequence: stop outside running, restart after clip
+completion, and defer a new start while soft landing plays. The port still lacks
+music, Focus, many enemy/break/death/UI effects and original hard-land recovery.
+
+All six full ambience payloads are retained. Cave noises (199,872B) now live in
+main RAM rather than occupying their full length in SPU. A continuous16KiB SPU
+ring plus8KiB aligned refill scratch uses hardware playback IRQ boundaries,
+polled from real-time input checkpoints even during simulation pause. DMA occurs
+only into the inactive half with IRQ detection temporarily disabled; detection
+is rearmed for the next playback boundary afterward. ENDX is read-only and is
+not used. There is no playback-time CD traffic. Late/missing/early boundaries
+stop the streamed voice and increment HK_AUDIO_STREAM_UNDERRUNS.
+
+Allocation: player SFX0x1010..0x107A0 (63,376B), Geo0x14000..0x17650
+(13,904B), ambience0x18000..0x5EA00 (289,280B). The contiguous136,704B above
+ambience is available for a future128KiB music ring. Main RAM still has63,448B
+before the reserved stack. This does not implement music transport or reserve
+reverb workspace; future CD-read arbitration and stereo refill deadlines need
+separate validation.
+
+Quality categories:22,050Hz mono player one-shots;11,025Hz mono longer running
+sequence;11,025Hz Geo;8,000Hz mono ambience. Existing ambience quality is
+unchanged. Hurt was raised from11,025 to22,050Hz to match its short-effect
+category. The user permits lower long-sample rates when necessary, consistently
+within categories. Music profiles below remain preparation only.
+
+Actual-CUE stationary/traversal runs cross two full source loops without
+underruns or missed input polls. A separate100-second capture verifies resident
+bytes, both ring halves and the full RAM source. After startup alignment,
+90.7666 seconds of stereo ambience output match the pre-streaming build63 exactly.
+Tests cover PAL/NTSC boundary schedules, delayed/missing IRQs, incomplete DMA,
+source wrap away from ring boundaries and identical decoded PCM. Silicon timing
+is still untested. Evidence: `.hkpsx/audio64/` and `.hkpsx/audio-stream-tests/`.
+
+The original runner now records playback/stop/mixer requests at217 managed
+call sites. See ORIGINAL_REFERENCE.md for coverage limits and commands. Requests
+and sampled isPlaying still do not prove final audibility; NullGfx permits audio
+but the original's mixed waveform has not been captured. Traced movement confirms
+stone footsteps, jump, soft landing, grass movement, water drips and hits.
+
+Reproduce the PCM check with:
+
+```sh
+.venv/bin/python tools/compare_audio_capture.py --before .hkpsx/audio64/baseline/audio.wav --after .hkpsx/audio64/stream/audio.wav --offset 930 --output .hkpsx/audio64/wave-comparison.json
+python3 tools/validate_ambience.py --output .hkpsx/audio64/ambience --verify-existing
+```
+
+Next: implement a bounded CD-fed music ring using the reclaimed SPU space, then
+restore Title and correctly triggered Dirtmouth music. Tutorial retains its
+Silent snapshot. Continue with source-traced Focus, death/break layers, enemies
+and UI. Current Town music trigger remains beyond cooked coverage.
 
 ## What the current rooms actually request
 

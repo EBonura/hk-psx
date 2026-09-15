@@ -42,7 +42,7 @@ class AmbienceTests(unittest.TestCase):
     def test_bank_preserves_source_channel_masks_gains_and_disjoint_addresses(self):
         with tempfile.TemporaryDirectory()as temp:
             root=pathlib.Path(temp);report,snapshots=self.fixture(root)
-            clips,cues=ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SPU_START)
+            clips,cues=ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
             self.assertEqual([c['mask']for c in cues],[57,54])
             self.assertEqual(cues[0]['gains'],[16383,2,2,16383,16383,16383])
             self.assertEqual([c['fade_ticks']for c in cues],[30,30])
@@ -54,12 +54,12 @@ class AmbienceTests(unittest.TestCase):
                 self.assertEqual(c['valid_frames'],27)
             with patch.object(ambience,'SPU_END',ambience.SPU_START+80):
                 with self.assertRaisesRegex(ValueError,'capacity overflow'):
-                    ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SPU_START)
+                    ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
             with self.assertRaisesRegex(ValueError,'overlaps'):
-                ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SPU_START+16)
+                ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END+16)
             (root/report['clips'][0]['planes'][0]['path']).write_bytes(bytes(16))
             with self.assertRaisesRegex(ValueError,'hash mismatch'):
-                ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SPU_START)
+                ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
 
     def test_sfx_overlap_and_manifest_drift_rejected(self):
         with tempfile.TemporaryDirectory()as temp:
@@ -69,8 +69,27 @@ class AmbienceTests(unittest.TestCase):
             self.assertEqual(ambience.sfx_reservation(root)['end'],0x1020)
             manifest.write_text('pub const BANK_BYTES: usize = 32;')
             with self.assertRaisesRegex(ValueError,'mismatch'):ambience.sfx_reservation(root)
-            bank.write_bytes(bytes(32768));manifest.write_text('pub const BANK_BYTES: usize = 32768;')
+            size=ambience.SFX_END-0x1010+16
+            bank.write_bytes(bytes(size));manifest.write_text(f'pub const BANK_BYTES: usize = {size};')
             with self.assertRaisesRegex(ValueError,'overlaps'):ambience.sfx_reservation(root)
+
+    def test_long_cave_loop_keeps_payload_but_reserves_only_ring_in_spu(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp);report,snapshots=self.fixture(root)
+            clip=report['clips'][3]
+            payload=bytes([12,0]+[0x45]*14)*12492
+            path=root/clip['planes'][0]['path'];path.write_bytes(payload)
+            clip.update(frames=len(payload)//16*28,padding_samples=0)
+            clip['planes'][0].update(bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
+            clips,_=ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
+            self.assertEqual(clips[3]['byte_len'],199872)
+            self.assertEqual(clips[3]['spu_bytes'],16384)
+            self.assertEqual(clips[3]['payload'],ambience.loop_payload(payload))
+            self.assertEqual(clips[4]['spu_address'],clips[3]['spu_address']+16384)
+            self.assertEqual(sum(c['byte_len']-c['spu_bytes'] for c in clips),183488)
+            with patch.object(ambience,'STREAM_RAM_LIMIT',199856):
+                with self.assertRaisesRegex(ValueError,'RAM cache'):
+                    ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
 
     def test_fresh_or_stale_cache_invokes_reproducible_source_cooker(self):
         path=pathlib.Path('/ignored/music/provenance.json')

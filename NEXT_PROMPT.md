@@ -16,19 +16,22 @@ only; instruments and captures stay ignored. The original startup/load/landing
 sequence has specific prerequisites documented there. Do not force hero control
 or misread an unready test as failed original movement.
 
-Next: targeted original/PS1 Great Door, Crawler, and Town scenarios, then fixes.
-Source audit findings are recorded at the top of STATUS; the2.5s door delay is a
-destination-entry delay, Crawler collision aprons are too narrow, and Town is
-cooked only to x48. Pending audio.rs/cook_audio.py edits are unbuilt and have no
-main hit hook yet; do not mistake them for a delivered SFX fix.63 is unchanged.
+Current64 adds source footsteps/hard-land audio/Great Door hit, complete-loop
+RAM-to-SPU ambience streaming, and original managed audio-call tracing. Read the
+new STATUS/MUSIC sections and audio64 evidence before changing transport. No
+music playback exists yet: next implement CD-fed title/music streaming using
+136,704B contiguous free SPU and63,448B main-RAM headroom. Retain consistent
+sample rates within categories; the user allows lower long-sample rates if
+necessary. Then source-trace remaining cues and fix Great Door/Crawler/Town
+issues. The2.5s door delay is a destination-entry delay; Town still ends at x48.
 
 Work in `/Users/ebonura/Desktop/repos/hk-psx`, branch `main`. Read AGENTS.md,
 README.md, docs/BOOTSTRAP.md and docs/STATUS.md; run doctor before another build.
 Use the psoxide-debug skill for guest/emulator work.
 
-## Current delivered build
+## Retained gameplay from63
 
-63 retains the best54 renderer and adds functional Cheats pages to the title
+Build64 retains the best54 renderer and the functional Cheats pages from63 in the title
 and pause menus. Four toggles: invincibility, Pure Nail21 damage, infinite SOUL,
 and nine masks. Pause actions: restore health/SOUL, add5 blue masks (cheat cap20),
 and turn all toggles off. X toggles/applies; Left/Right off/on; Circle backs out;

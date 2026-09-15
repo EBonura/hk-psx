@@ -1,12 +1,20 @@
-//! Complete source ambience loops, loaded from CD once into SPU voices 6..11.
+//! Complete source ambience loops, loaded from CD once for SPU voices 6..11.
+//! The longest loop lives in main RAM, feeding a bounded SPU ring.
 //! Call after audio::init. This module never resets the shared SPU or owns CD IO.
 use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
 #[path="volume.rs"]mod volume;
 static mut LEVEL:u8=10;
 #[path = "ambience_state.rs"]
 mod state;
+#[path = "audio_stream.rs"]
+mod stream;
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/ambience.rs"));
 pub const CLIPS: &[AmbienceClip] = &AMBIENCE_CLIPS;
+const STREAM_INDEX: usize = 3;
+#[repr(align(4))]
+struct Source([u8; AMBIENCE_STREAM_SOURCE_BYTES]);
+#[no_mangle]
+pub static mut HK_AMBIENCE_STREAM_SOURCE: Source = Source([0; AMBIENCE_STREAM_SOURCE_BYTES]);
 static mut MIXER: state::Mixer = state::Mixer::new();
 const VOICE_MASK: u32 = (state::ALL as u32) << 6;
 
@@ -50,6 +58,7 @@ fn publish() {
 
 /// Startup/retry only: silence before replacing any resident bytes.
 pub fn begin_load() {
+    stream::stop();
     for clip in CLIPS {
         Voice::new(clip.voice).set_volume(Volume::SILENCE, Volume::SILENCE);
     }
@@ -70,31 +79,37 @@ pub fn upload(index: usize, bytes: &[u8]) -> bool {
     }
     let clip = CLIPS[index];
     let start = if index == 0 {
-        0x8D00
+        AMBIENCE_SPU_START
     } else {
         let Some(end) = CLIPS[index - 1]
             .spu_address
-            .checked_add(CLIPS[index - 1].byte_len as u32)
+            .checked_add(CLIPS[index - 1].spu_bytes as u32)
         else {
             return false;
         };
         end
     };
-    let Some(end) = start.checked_add(clip.byte_len as u32) else {
+    let Some(end) = start.checked_add(clip.spu_bytes as u32) else {
         return false;
     };
     if clip.voice != 6 + index as u8
         || clip.spu_address != start
         || start % 16 != 0
-        || start < 0x8D00
-        || end > 0x80000
+        || start < AMBIENCE_SPU_START
+        || end > AMBIENCE_SPU_END
+        || clip.spu_bytes != if index == STREAM_INDEX { AMBIENCE_STREAM_BYTES } else { clip.byte_len }
+        || (index == STREAM_INDEX && bytes.len() != AMBIENCE_STREAM_SOURCE_BYTES)
         || clip.pitch == 0
         || clip.pitch > 0x3FFF
         || !state::valid_clip(bytes, clip.byte_len, clip.checksum)
     {
         return false;
     }
-    spu::upload_adpcm(SpuAddr::new(start), bytes);
+    if index == STREAM_INDEX {
+        unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), (&raw mut HK_AMBIENCE_STREAM_SOURCE.0).cast::<u8>(), bytes.len()); }
+    } else {
+        spu::upload_adpcm(SpuAddr::new(start), bytes);
+    }
     unsafe {
         MIXER.loaded |= 1 << index;
     }
@@ -149,9 +164,15 @@ pub fn set_scene(scene: u8) -> bool {
         }
     }
     if start != 0 {
-        Voice::key_on((start as u32) << 6);
+        if start & (1 << STREAM_INDEX) != 0 {
+            let source = unsafe { &*(&raw const HK_AMBIENCE_STREAM_SOURCE.0) };
+            if !stream::start(source, CLIPS[STREAM_INDEX].spu_address, psx_rt::interrupts::vblank_count()) {
+                return false;
+            }
+        }
+        Voice::key_on(((start & !(1 << STREAM_INDEX)) as u32) << 6);
         for i in 0..state::STEMS {
-            if start & (1 << i) != 0 {
+            if i != STREAM_INDEX && start & (1 << i) != 0 {
                 Voice::new(CLIPS[i].voice).set_loop_addr(SpuAddr::new(CLIPS[i].spu_address));
             }
         }
@@ -166,6 +187,17 @@ pub fn set_scene(scene: u8) -> bool {
         publish();
     }
     true
+}
+
+/// Observe actual SPU progress, independently of simulation catch-up ticks.
+pub fn service() {
+    if unsafe { !MIXER.ready || MIXER.playing & (1 << STREAM_INDEX) == 0 } { return; }
+    let source = unsafe { &*(&raw const HK_AMBIENCE_STREAM_SOURCE.0) };
+    if matches!(stream::service(source, psx_rt::interrupts::vblank_count()), stream::Service::Fault) {
+        let voice = Voice::new(CLIPS[STREAM_INDEX].voice);
+        voice.set_volume(Volume::SILENCE, Volume::SILENCE);
+        Voice::key_off(voice.mask());
+    }
 }
 
 /// Once per 60 Hz tick, independently of gameplay pause and grid activation.
@@ -187,6 +219,7 @@ pub fn tick() {
         Voice::new(CLIPS[i].voice).set_volume(gain,gain);
     }
     if stop != 0 {
+        if stop & (1 << STREAM_INDEX) != 0 { stream::stop(); }
         Voice::key_off((stop as u32) << 6);
     }
     publish();

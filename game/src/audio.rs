@@ -1,7 +1,15 @@
 //! Source one-shots resident in SPU RAM. No CD seek at a gameplay event.
-use psx_spu::{self as spu, Adsr, SpuAddr, Voice, Volume};
+use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
 #[path="volume.rs"]mod volume;
+#[path="movement_audio.rs"]mod movement;
 static mut LEVEL:u8=10;
+const GREAT_DOOR_VOICE:u8=15; // 0..5 SFX, 6..11 ambience, 12..14 Geo,16..17 movement.
+const VOICES:[u8;8]=[0,1,2,3,4,5,16,17];
+static mut MOVEMENT:movement::State=movement::State::new();
+static mut GREAT_DOOR_RANDOM:u32=0x47524452;
+#[no_mangle]pub static mut HK_GREAT_DOOR_HIT_SFX:u32=0;
+#[no_mangle]pub static mut HK_FOOTSTEP_STARTS:u32=0;
+#[no_mangle]pub static mut HK_HARD_LAND_SFX:u32=0;
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/sfx.rs"));
 // Word alignment permits the SDK's SPU DMA upload path. No staging allocation.
 #[repr(align(4))]
@@ -10,19 +18,27 @@ static BANK: Bank = Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/.
 #[no_mangle]
 pub static mut HK_SFX_COUNT: u32 = 0;
 #[no_mangle]
-pub static mut HK_SFX_EVENT_COUNTS: [u32; 6] = [0; 6];
+pub static mut HK_SFX_EVENT_COUNTS: [u32; 8] = [0; 8];
 
 pub fn init() {
-    assert!(BANK_BYTES <= 32768);
+    assert!(BANK_BYTES <= 0x14000-0x1010);
+    assert!(SAMPLES.len()==VOICES.len());
     spu::init();
     spu::upload_adpcm(SpuAddr::new(0x1010), &BANK.0);
     for (index, &(address, rate, volume)) in SAMPLES.iter().enumerate() {
         // Pinned SDK fast release + reserved silence repeat address avoid
         // percussive sustain truncation and sample()'s indefinite release.
-        Voice::new(index as u8).configure_sample(
+        Voice::new(VOICES[index]).configure_sample(
             SpuAddr::new(address), rate, Volume(volume::scale(volume,unsafe {LEVEL})), Adsr::sample_one_shot(),
         );
     }
+    // The Great Door requests this same clip as one of its two hit variants.
+    // A separate voice avoids replacing ordinary breakable/Geo playback.
+    let (address,rate,gain)=SAMPLES[0];
+    Voice::new(GREAT_DOOR_VOICE).configure_sample(SpuAddr::new(address),rate,
+        Volume(volume::scale(gain,unsafe {LEVEL})),Adsr::sample_one_shot());
+    unsafe {GREAT_DOOR_RANDOM=0x47524452;HK_GREAT_DOOR_HIT_SFX=0;
+        HK_FOOTSTEP_STARTS=0;HK_HARD_LAND_SFX=0;MOVEMENT=movement::State::new();}
 }
 
 /// Apply to already playing voices too, including exact mute.
@@ -30,19 +46,40 @@ pub fn set_volume(level:u8) {
     unsafe {LEVEL=level.min(10);}
     for (index,&(_,_,source)) in SAMPLES.iter().enumerate() {
         let gain=Volume(volume::scale(source,level));
-        Voice::new(index as u8).set_volume(gain,gain);
+        Voice::new(VOICES[index]).set_volume(gain,gain);
     }
+    let gain=Volume(volume::scale(SAMPLES[0].2,level));
+    Voice::new(GREAT_DOOR_VOICE).set_volume(gain,gain);
+}
+
+/// Resident first authored variant, with the source's .85..1.15 pitch range.
+/// Alternate hit/death clips remain absent; this does not substitute the hit
+/// sample for the distinct destruction sound at stages4,8 and13.
+pub fn great_door_hit() {
+    let random=unsafe {
+        GREAT_DOOR_RANDOM=GREAT_DOOR_RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
+        GREAT_DOOR_RANDOM>>16
+    };
+    let [low,high]=GREAT_DOOR_HIT_PITCH;
+    let pitch=low as u32+random*(high as u32-low as u32+1)/65536;
+    Voice::key_off(1<<GREAT_DOOR_VOICE);
+    Voice::new(GREAT_DOOR_VOICE).set_pitch(Pitch::raw(pitch as u16));
+    Voice::key_on(1<<GREAT_DOOR_VOICE);
+    unsafe {HK_SFX_COUNT=HK_SFX_COUNT.saturating_add(1);
+        HK_GREAT_DOOR_HIT_SFX=HK_GREAT_DOOR_HIT_SFX.saturating_add(1);}
 }
 
 fn play(index: usize) {
     // One dedicated voice per event class. Retrigger replaces only that class;
     // jump/land, nail impacts and hurt can overlap without an unbounded pool.
-    let mask = 1 << index;
+    let mask = 1 << VOICES[index];
     Voice::key_off(mask);
     Voice::key_on(mask);
     unsafe {
         HK_SFX_COUNT = HK_SFX_COUNT.saturating_add(1);
         HK_SFX_EVENT_COUNTS[index] = HK_SFX_EVENT_COUNTS[index].saturating_add(1);
+        if index==6 {HK_HARD_LAND_SFX=HK_HARD_LAND_SFX.saturating_add(1);}
+        if index==7 {HK_FOOTSTEP_STARTS=HK_FOOTSTEP_STARTS.saturating_add(1);}
     }
 }
 
@@ -52,3 +89,32 @@ pub fn land() { play(2); }
 pub fn nail() { play(3); }
 pub fn hurt() { play(4); }
 pub fn enemy_hit() { play(5); }
+
+/// Call once after each consumed60Hz player physics step, replacing the old
+/// standalone soft-land call. `running` describes the supported RUNNING state,
+/// excluding pause/dialogue/recoil; `falling` is post-step vy<0. Normal dry
+/// terrain allows hard landing; NoHardLanding/acid surfaces must pass false.
+pub fn movement_tick(was_grounded:bool,grounded:bool,falling:bool,running:bool,hard_allowed:bool) {
+    let events=unsafe {MOVEMENT.tick(was_grounded,grounded,falling,running,hard_allowed,
+        HARD_FALL_MIN_TICKS,SOFT_LANDING_TICKS,RUN_SEQUENCE_TICKS)};
+    if events.stop_run {Voice::key_off(1<<VOICES[7]);}
+    match events.landing {
+        movement::Landing::None=>{},
+        movement::Landing::Soft=>play(2),
+        movement::Landing::Hard=>play(6),
+    }
+    if events.start_run {play(7);}
+}
+
+/// Pause/dialogue entry must stop the current sequence even when simulation
+/// ticks are suspended. Preserve falling duration across that suspension.
+pub fn stop_footsteps() {
+    Voice::key_off(1<<VOICES[7]);
+    unsafe {MOVEMENT.stop_run();}
+}
+
+/// Scene/respawn/Select reset: discard the previous location's fall duration.
+pub fn reset_movement() {
+    stop_footsteps();
+    unsafe {MOVEMENT=movement::State::new();}
+}
