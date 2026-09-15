@@ -1,3 +1,4 @@
+#[path="../game/src/hud_state.rs"]mod hud;
 extern crate self as psx_gpu;
 extern crate self as psx_vram;
 use std::sync::Mutex;
@@ -44,6 +45,8 @@ fn main(){
  lifeblood::append_hud(&mut ot,5,2);assert_eq!(ot.sprites.iter().map(|s|s.x).collect::<Vec<_>>(),vec![152,136]);
  let art=lifeblood::LIFE_FRAMES[lifeblood::BLUE_HUD].parts[0];
  for sprite in &ot.sprites {assert_eq!((sprite.y,sprite.uv,sprite.clut),(14,(art.u,art.v),art.clut));assert!(sprite.w<=14&&sprite.h<=14);}
+ ot.sprites.clear();lifeblood::append_hud(&mut ot,9,22);assert_eq!(ot.sprites.len(),22);
+ for(i,sprite) in ot.sprites.iter().enumerate(){let(x,y)=hud::mask_position(9+21-i as u16);assert_eq!((sprite.x,sprite.y),(x,y));assert!(x+i16::from(art.w)<=320&&y+i16::from(art.h)<hud::geo_y(31));}
  let mut life=lifeblood::World::new();let origin=lifeblood::LIFE_SPEC.origin;
  assert_eq!(lifeblood::draw(&life,0,(origin[0],origin[1])),5);
  let b=lifeblood::LIFE_SPEC.bounds;let poly=[[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]]];

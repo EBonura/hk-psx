@@ -5,8 +5,12 @@ user's Windows Steam copy in CrossOver. The last validated playable build includ
 King's Pass scenery and terrain, breakable doors, grass, the Knight's movement
 and nail attacks, three source Crawlers, damage, health masks, hazard checkpoints,
 nail recoil/pogo, Focus healing, a SOUL meter, six resident sound effects and
-original cave ambience. The title offers Start Game, Options and Controls; the
+original cave ambience. The title offers Start Game, Options, Controls and Cheats; the
 pause menu supports separate sound-effect and ambience levels, including mute.
+Cheats include invincibility, Pure Nail damage, unlimited SOUL and nine masks.
+Press Start, then choose Cheats for health/SOUL refill and extra Lifeblood.
+All cheats default off and last for the running session. Charms are not yet
+implemented. FPS optimization is paused while the user playtests this build.
 Five source Geo rocks can be mined, Crawlers drop Geo, and animated coins bounce
 and collect into the wallet HUD. Original pickup and rock-hit sounds are resident.
 Three tutorial tablets use the original text, font and interaction triggers.
@@ -24,7 +28,7 @@ PS1's limited blend modes; this is not full source-shader parity.
 scene data now stays in one 369,180-byte RAM arena; both scenery atlases stay in
 VRAM throughout gameplay. Their CPU copies are discarded after startup uploads,
 with exact host-cooked particle tracks using part of the recovered RAM and
-leaving about299KiB unallocated for future bounded data. Lossless sharing across regions uses 20 static 4bpp
+leaving about295KiB unallocated for future bounded data. Lossless sharing across regions uses 20 static 4bpp
 pages and 1,209 palettes. The existing approved 95% static matches remain; no
 further resolution reduction or lossy merging was added. Scenery keeps its
 48-pixel long-axis cap; Knight, enemy and HUD resolution is unchanged.

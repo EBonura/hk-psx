@@ -1,14 +1,43 @@
 # Status, 2026-09-15
 
-## Active work: stable 30 fps
+## Current work: playable build with cheats
 
-The user's next milestone is a complete start-to-finish game, after the strict
-320×240 two-VBlank target passes. Gameplay expansion remains behind that gate.
-[ROADMAP.md](ROADMAP.md) covers normal start/save/death, connected areas and source
-progression, then a new-game-to-ending route and remaining paths/content.
-Full-game compatibility and stable30fps are not yet established.
+The user paused FPS optimization to playtest the current port. The sole disc
+now contains63: the retained54 renderer plus title/pause Cheats menus. Do not
+resume FPS experiments or full-game expansion until the user requests it.
+The long-term start-to-finish objective remains unfinished; see ROADMAP.md.
 
-**Pass54 is the retained optimization, restored as the sole playable disc in57.**
+Cheats default off. Title and pause both expose invincibility, Pure Nail
+(21 damage), infinite SOUL and nine normal masks. Pause additionally restores
+health/SOUL, adds five Lifeblood masks (up to20 from cheats), and turns all
+toggles off. Toggles survive death and Select session reset, but not relaunch.
+Invincibility prevents damage while preserving safe hazard/fall relocation.
+Focus retains ordinary timings. Charms are not implemented, and both pages say
+so rather than offering a nonfunctional unlock. The HUD displays nine normal
+and up to22 blue masks over bounded rows without new textures.
+
+63 validation passed:247 Python and379 directly reported native tests, final
+binary hazards0. Three actual-CUE routes verify title/pause toggles,9 health,
+99 SOUL,20 blue masks, persistence through Select, and turning all toggles off.
+The normal Lifeblood route passes all four earned-health checks with no faults,
+missed input polls or boundary waits; its final image is identical to54.
+Pre-existing14 particle drops remain on that route. Screenshots were inspected.
+No new63 FPS measurement is claimed. The user chose to test the current feel.
+
+The final EXE is1,114,112 bytes, SHA-256
+`10f85ace6f2f1381caa09ef4cc76932b96d1303ecf93350ddcfbd26d9b40f3dc`.
+The canonical BIN is3,605,616 bytes, SHA-256
+`ff85bd0ebf8619c4cbe8d96ef0225f6eb00fd9487cf3392cc66f3a9e54e46e00`.
+Static span1,679,876;302,332 bytes remain before the protected48KiB stack.
+Main frame32,120; nested reserve17,032. Scratch and resident scene/VRAM budgets
+are unchanged. Evidence: `.hkpsx/cheats63-validation/validation.json`,
+`.hkpsx/cheats63-lifeblood/`, `.hkpsx/cheats63-tests-passed.log` and build report.
+Use `tools/validate_cheats.py --prepare PATH`, replay each generated tape with
+`tools/replay_cue.py`, then `tools/validate_cheats.py --replay PATH`.
+
+## Retained performance reference (before cheats)
+
+**Pass54 is the retained renderer;57 was its byte-identical restoration.**
 It adds exact host-cooked destruction-particle tracks:1,513 ordinals,33 phases,
 two words per phase for size/radius/base spin/opacity. Source RNG and live
 motion, forces, damping, contacts and speed-dependent spin remain unchanged.
@@ -51,13 +80,11 @@ inspected. Evidence: `.hkpsx/30fps-pass54-{profile,lifeblood,town}/`,54 validati
 image,55/56 experiment logs, and portable particle proof.57 rebuild identity is
 bound by `.hkpsx/30fps-pass57-identity.json`; no duplicate disc is retained.
 
-Next: target the remaining CPU/GPU critical path using54 as the retained
-comparison. Its153 late frames include116 background-prefix misses and66
-frames with at least40 live particles. GPU command accounting can straddle a
-flip, so those correlations do not establish a hard GPU lower bound. Immutable
-Z-force interpolation is a small possible CPU follow-up; scenery seed/repair
-programs require exact anchor-parity and viewport handling and a measured win.
-Do not repeat rejected whole-block outlining or global run caching unchanged.
+Optimization is paused.58/59 force caches,60 small cuts,61 fused admission,
+and62 packet-cost admission were reverted after cadence regressions.62 gave
+184/2,945 late intervals and5 four-tick stalls. Evidence and unimplemented
+precompute proposals are recorded in PERFORMANCE.md and ignored audits.
+Do not confuse these historical trials with the playable63 cheat build.
 
 Claude's clean worktree was removed after reviewing all nine changed files;
 its committed history remains at `8db50a5` on the preserved Claude branch and

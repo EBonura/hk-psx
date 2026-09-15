@@ -54,22 +54,32 @@ fn number(x:i16,y:i16,value:u32) {
     text(x,y,core::str::from_utf8(&digits[start..]).unwrap());
 }
 #[inline(never)] // UI composition must not expand main beyond MIPS branch reach.
-pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crate::menu::Settings)>){
+pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crate::menu::Settings)>,total_masks:u16){
     unsafe{USED=0;BOX_COUNT=0;
-      text(18,38,"Geo");number(43,38,geo);
+      let geo_y=crate::hud::geo_y(total_masks);text(18,geo_y,"Geo");number(43,geo_y,geo);
       if let Some((p,settings))=pause {
         BOXES[0]=RectFlat::new(38,61,244,144,150,150,150);BOXES[1]=RectFlat::new(40,63,240,140,0,0,0);BOX_COUNT=2;
-        let title=if p.controls {"Controls"}else{"Paused"};text(160-width(title)/2,69,title);
-        if p.controls {
+        if p.cheats {
+            BOXES[0]=RectFlat::new(14,28,292,204,150,150,150);BOXES[1]=RectFlat::new(16,30,288,200,0,0,0);
+            text(160-width("Cheats")/2,38,"Cheats");
+            for(i,line) in crate::menu::state::CHEAT_ITEMS.iter().chain(["Restore health + SOUL","Add 5 Lifeblood masks","Turn all cheats off","Back"].iter()).enumerate(){
+                let y=59+i as i16*16;text(46,y,line);if p.row==i{text(29,y,">");}
+                if i<4{text(255,y,if settings.cheats.enabled(i){"ON"}else{"OFF"});}
+            }
+            text(160-width("Charms are not implemented yet")/2,194,"Charms are not implemented yet");
+            text(160-width("X: apply    Left/Right: off/on    O: back")/2,212,"X: apply    Left/Right: off/on    O: back");
+        }else if p.controls {
+            text(160-width("Controls")/2,69,"Controls");
             for (i,line)in ["D-pad: Move / aim","X: Jump    Square: Nail","O: Hold to Focus / heal","Up: Inspect    Start: Pause","Air Down + Square: Pogo","X / O: Back"].iter().enumerate() {
                 text(53,89+i as i16*17,line);
             }
         }else {
-            for(i,line)in ["Resume","Sound effects","Ambience","Controls"].iter().enumerate() {
-                let y=97+i as i16*21;text(73,y,line);if p.row==i {text(56,y,">");}
+            text(160-width("Paused")/2,69,"Paused");
+            for(i,line)in ["Resume","Sound effects","Ambience","Controls","Cheats"].iter().enumerate() {
+                let y=92+i as i16*18;text(73,y,line);if p.row==i {text(56,y,">");}
             }
-            number(222,118,u32::from(settings.sfx));number(222,139,u32::from(settings.ambience));
-            text(239,118,"/10");text(239,139,"/10");
+            number(222,110,u32::from(settings.sfx));number(222,128,u32::from(settings.ambience));
+            text(239,110,"/10");text(239,128,"/10");
             text(58,185,"Left / Right: Volume   O: Resume");
         }
       }else if let Some(id)=STATE.active{

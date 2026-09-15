@@ -218,6 +218,7 @@ impl EnemyWorld {
         response: &mut hk_sim::NailResponse,
         attack: AttackParams,
         polygons: [&[[i32; 2]]; 4],
+        cheats: crate::cheats::Settings,
     ) -> Events {
         self.sync_region(region);
         let mut events = Events {
@@ -283,7 +284,7 @@ impl EnemyWorld {
                 }
                 match actor
                     .health
-                    .hit(spec.health, crate::VITAL_PARAMS.nail_damage)
+                    .hit(spec.health, cheats.params(crate::VITAL_PARAMS).nail_damage)
                 {
                     Hit::Damaged | Hit::Killed => {
                         events.hits += 1;
@@ -313,7 +314,7 @@ impl EnemyWorld {
             let damage = actor.health.contact_damage(spec.health);
             if damage != 0 && overlap(body, bounds) {
                 let direction = if player.x < actor.x { -1 } else { 1 };
-                let hurt = vitals.hurt(crate::VITAL_PARAMS, damage, direction, false);
+                let hurt = cheats.hurt(vitals,crate::VITAL_PARAMS, damage, direction, false);
                 if hurt != Hurt::Ignored {
                     events.hurt = hurt;
                 }

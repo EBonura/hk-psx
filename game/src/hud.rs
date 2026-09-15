@@ -3,6 +3,7 @@ use hk_format::u16_at;
 use psx_gpu::{material::TextureMaterial, ot::OrderingTable, prim::{RectFlat, Sprite}};
 use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
 #[path="hud_state.rs"] mod hud_state;
+pub use hud_state::{mask_position,geo_y};
 static DATA: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/hud.hk"));
 const TEXTURE_X:[u16;5]=[352,352,356,366,372];
 const TEXTURE_Y:[u16;5]=[0,16,0,0,0];
@@ -24,7 +25,7 @@ pub fn upload() {
 #[repr(C, align(4))]
 struct Mode { tag:u32, word:u32 }
 static mut MODE:Mode=Mode{tag:0,word:0};
-static mut MASKS:[Sprite;5]=[const {Sprite::new(0,0,0,0,(0,0),0,128,128,128)};5];
+static mut MASKS:[Sprite;9]=[const {Sprite::new(0,0,0,0,(0,0),0,128,128,128)};9];
 static mut ORB:[Sprite;3]=[const {Sprite::new(0,0,0,0,(0,0),0,128,128,128)};3];
 static mut PAUSE:[RectFlat;2]=[const {RectFlat::new(0,0,0,0,220,220,220)};2];
 fn sprite(icon:usize,x:i16,y:i16,cut:u16,gain:u8)->Sprite {
@@ -43,8 +44,9 @@ pub fn append(ot:&mut OrderingTable<1>,health:u16,max_health:u16,soul:u16,max_so
         PAUSE[i]=RectFlat::new(x,16,4,12,220,220,220);
         ot.add(0,&mut PAUSE[i],RectFlat::WORDS);
     }}
-    for i in (0..max_health.min(5)).rev() {
-        MASKS[i as usize]=sprite(usize::from(i>=health),56+i as i16*16,14,0,128);
+    for i in (0..max_health.min(9)).rev() {
+        let(x,y)=mask_position(i);
+        MASKS[i as usize]=sprite(usize::from(i>=health),x,y,0,128);
         ot.add(0,&mut MASKS[i as usize],Sprite::WORDS);
     }
     let fill_h=u16_at(DATA,34);

@@ -35,6 +35,7 @@ pub mod interrupts{
 }
 pub mod audio{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((0,v)));}}
 pub mod ambience{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((1,v)));}}
+#[path="../game/src/cheats.rs"]mod cheats;
 #[path="../game/src/menu.rs"]mod menu;
 fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{samples:bits.into_iter().collect(),..Trace::default()});}
 #[test]fn first_start_and_cross_keep_original_poll_count_and_defaults(){
@@ -46,8 +47,8 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
 }
 #[test]fn options_call_real_volume_hooks_and_controls_return_without_auto_start(){
  let _guard=LOCK.lock().unwrap();use menu::state::*;
- let mut samples=Vec::new();for b in [DOWN,CROSS,LEFT,DOWN,LEFT,CIRCLE,DOWN,CROSS,CIRCLE,DOWN,START]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let s=menu::run(&mut framebuf::FrameBuffer);assert_eq!(s,menu::Settings{sfx:9,ambience:9});
+ let mut samples=Vec::new();for b in [DOWN,CROSS,LEFT,DOWN,LEFT,CIRCLE,DOWN,CROSS,CIRCLE,DOWN,DOWN,START]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let s=menu::run(&mut framebuf::FrameBuffer);assert_eq!(s,menu::Settings{sfx:9,ambience:9,..menu::Settings::new()});
  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.volumes,[(0,9),(1,9)]);assert!(t.sprites>100);});
 }
 #[test]fn retry_requires_release_and_patch_uploads_keep_their_exact_ranges(){
@@ -56,4 +57,11 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
   assert_eq!(t.uploads.iter().map(|v|v.1).sum::<usize>(),89600+7712);
  });
  feed([0]);menu::loading(&mut framebuf::FrameBuffer);TRACE.with(|t|assert_eq!(t.borrow().polls,1));
+}
+
+#[test]fn cheats_render_within_screen_and_carry_settings_to_gameplay(){
+ let _guard=LOCK.lock().unwrap();use menu::state::*;
+ let mut samples=Vec::new();for b in [UP,CROSS,CROSS,DOWN,RIGHT,DOWN,RIGHT,DOWN,RIGHT,CIRCLE,DOWN,START]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let s=menu::run(&mut framebuf::FrameBuffer);assert_eq!(s.cheats.bits(),15);
+ TRACE.with(|t|assert!(t.borrow().sprites>100));
 }

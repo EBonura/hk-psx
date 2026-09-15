@@ -59,7 +59,7 @@ fn draw_menu(menu:&State,gain:u8){
     match menu.page {
         Page::Main=>{
             for (i,label)in state::MAIN_ITEMS.iter().enumerate(){
-                let y=151+i as i16*19;let g=if i==menu.selected{gain}else{gain-gain/4};
+                let y=145+i as i16*17;let g=if i==menu.selected{gain}else{gain-gain/4};
                 centered(y,label,g);
                 if i==menu.selected{text(144-text_width(label)/2,y,">",gain);}
             }
@@ -82,6 +82,20 @@ fn draw_menu(menu:&State,gain:u8){
             centered(51,"CONTROLS",gain);
             for (i,line)in state::CONTROL_LINES.iter().enumerate(){text(30,74+i as i16*14,line,gain);}
             centered(214,"X / O / START: back",gain);
+        }
+        Page::Cheats=>{
+            gpu::draw_rect_flat(16,53,288,179,gain/2,gain/2,gain/2);
+            gpu::draw_rect_flat(18,55,284,175,0,0,0);
+            centered(65,"CHEATS",gain);
+            for (i,label) in state::CHEAT_ITEMS.iter().chain(["Back"].iter()).enumerate(){
+                let y=86+i as i16*19;let g=if i==menu.selected{gain}else{gain-gain/4};
+                text(46,y,label,g);
+                if i<4{text(254,y,if menu.settings.cheats.enabled(i){"ON"}else{"OFF"},g);}
+                if i==menu.selected{text(30,y,">",gain);}
+            }
+            centered(189,"Charms are not implemented yet",gain);
+            centered(204,"Session only. More in Pause > Cheats",gain);
+            centered(218,"X: toggle    Left/Right: off/on    O: back",gain);
         }
     }
 }
@@ -110,7 +124,7 @@ pub fn run(fb:&mut FrameBuffer)->Settings {
             let old=menu.settings;start=menu.step(bits);
             if old.sfx!=menu.settings.sfx{crate::audio::set_volume(menu.settings.sfx);}
             if old.ambience!=menu.settings.ambience{crate::ambience::set_volume(menu.settings.ambience);}
-            unsafe{HK_MENU_PAGE=match menu.page{Page::Main=>0,Page::Options=>1,Page::Controls=>2};HK_MENU_ROW=menu.selected as u32;HK_MENU_SFX=menu.settings.sfx as u32;HK_MENU_AMBIENCE=menu.settings.ambience as u32;}
+            unsafe{HK_MENU_PAGE=match menu.page{Page::Main=>0,Page::Options=>1,Page::Controls=>2,Page::Cheats=>3};HK_MENU_ROW=menu.selected as u32;HK_MENU_SFX=menu.settings.sfx as u32;HK_MENU_AMBIENCE=menu.settings.ambience as u32;}
         });
         if start{break;}
     }

@@ -1,23 +1,24 @@
 # Shared scene and gameplay budget
 
-The validated pass54 normal build (restored as57) from 2026-09-15 holds both currently authored scenes in one RAM
+The validated63 cheat-menu build from 2026-09-15 holds both currently authored scenes in one RAM
 arena and persistent VRAM atlases. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |338,116|
-| Code-to-data alignment |12|
-| Linked data, including menu, HUD and sound bank |769,840|
-| BSS, including shared scene arena and runtime pools |567,800|
-| Total static span |1,675,768|
+| Linked code |340,680|
+| Code-to-data alignment |8|
+| Linked data, including menu, HUD and sound bank |771,376|
+| BSS, including shared scene arena and runtime pools |567,812|
+| Total static span |1,679,876|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |306,440|
+| Unallocated gap before reserved stack |302,332|
 
-Static data ends at `0x801a91f8`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801aa204`; the reserved stack begins at `0x801f3f00`.
+The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies369,180 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
 1,120 scene-global texture IDs; the animation cache still permits 2,048 keys.
@@ -32,7 +33,7 @@ its 32,768-byte reservation before nested calls. `host/stack_budget.py` now
 derives a project linker script from the unchanged pinned SDK, protects 48 KiB,
 and checks the actual final main prologue before packaging. The generated
 script's content hash is part of its filename so budget changes force a relink.
-The current main frame is 32,104 bytes, leaving 17,048 reserved bytes for nested
+The current main frame is 32,120 bytes, leaving 17,032 reserved bytes for nested
 calls and other stack use; this is **not** an observed high-water measurement.
 The linker also excludes the 256 bytes above its initial SP from static RAM.
 Evidence: `.hkpsx/stack-budget-2026-09-14.json`.
