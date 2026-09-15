@@ -1,13 +1,19 @@
 ## Complete-game implementation resumed
 
-P00-P01 are complete and P02-P03 are in progress. The current isolated-worker
-import verified all 501 BuildSettings scenes with zero failures: 453 now have
-complete source geometry and 48 retain explicit gaps. It preserves all 5,274
-CircleCollider2D boundaries, 28,814 particle systems/renderers, 12,729 canonical
-tk2d generated-mesh aliases and all 577 shipped Unity Plane/Quad mesh instances.
-The generic gap inventory fell from nine families to five. One
-`Pre_Menu_Intro` worker ended on signal 11 and its fresh-process retry succeeded;
-retry budgeting is now independent of persistent attempt-file numbers.
+P00-P01 and P03 are complete; P02 is in progress. The current isolated-worker
+import verified all 501 BuildSettings scenes with zero failures: 463 have
+complete source geometry and 38 retain only explicit runtime text-glyph work. It
+preserves all 5,274 CircleCollider2D boundaries, 28,814 particle systems and
+renderers, 831 trails, 12,745 canonical tk2d generated-mesh aliases and all 577
+shipped Unity Plane/Quad instances. The remaining 761 cases are 757 TextMeshPro
+and four legacy TextMesh generators, with zero extraction errors.
+
+The final run used 504 isolated attempts. First attempts for `Fungus2_14`,
+`Fungus2_15` and `Fungus2_34` ended on signal 11; fresh-process retries succeeded
+and the final source/code verification passed. The 106-region Tutorial/Town
+comparison now verifies pack provenance and exact scenery/tilemap geometry plus
+terrain. It includes all 20 Town rows that lack `base_path`, resolving them by
+chunk identity through `.hkpsx/regions-provenance.json`.
 
 The P02 inventory adds 318 serialized PlayMaker scene-load actions to the 1,119
 TransitionPoint records: 19 map to exact gates, 11 map to scenes, and 286 retain

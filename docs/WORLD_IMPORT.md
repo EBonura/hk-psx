@@ -14,6 +14,7 @@ python3 tools/doctor.py
 python3 tools/world_import_report.py
 .venv/bin/python tools/world_transitions.py
 python3 tools/world_coverage.py
+.venv/bin/python tools/compare_world_regions.py
 ```
 
 Outputs stay in ignored `.hkpsx/world-import/`; no guest build, canonical cooked
@@ -31,10 +32,12 @@ colliders use exact affine parametric boundaries, preserving transformed ellipse
 without polygon approximation. Runtime-generated tk2d MeshFilters reference the
 canonical extracted tk2d sprite geometry rather than duplicating it. Unity Plane
 and Quad meshes resolve from the shipped Windows `Resources/unity default
-resources` file. Unsupported geometry and read errors remain explicit.
-Binary/nonfinite serialized values use lossless tagged JSON. Particle payloads
-are currently omitted and their source identities remain recorded; dynamic
-prefab closure is not implemented.
+resources` file. Particle systems/renderers and TrailRenderers retain serialized
+parameters, transforms and resource dependencies. Null tk2d collection references
+with a unique animator-library binding are resolved without guessing. Unsupported
+geometry and read errors remain explicit. Binary/nonfinite serialized values use
+lossless tagged JSON. Dynamic prefab closure and runtime text glyph shaping remain
+separate systems.
 
 The source dependency inventory can be reused only when its catalog and recorded
 input content hashes match. It supplies sprite/animation/texture dependencies;
@@ -55,6 +58,13 @@ Every run hashes the Windows inputs and importer code. Resume verifies output
 hashes and retries failed scene imports. A final source/code check must pass
 before the report records unchanged inputs. Scene read failures do not stop
 other imports and do not count as successfully imported scenes.
+
+`compare_world_regions.py` binds every canonical Tutorial/Town row through
+`.hkpsx/regions-provenance.json`, verifies final pack hashes and sizes, and checks
+cooked scenery/tilemap quads and terrain against the matching whole-world source
+geometry. It supports both Tutorial's post-packed `base_path` rows and Town's 20
+provenance-only rows; a missing `base_path` never skips a region. Its ignored
+report is `tutorial-town-comparison.json`.
 
 The next passes are:
 
