@@ -487,5 +487,14 @@ impl Cache {
         // scene owner and prevents select/reset from reclaiming it while used.
         unsafe {CoverageView::validated_view(bytes)}
     }
+    /// Return the checked world bank that belongs to the selected scene. The
+    /// metadata buffer is immutable until the next exclusive admission, just
+    /// like the scene and coverage views returned above.
+    pub fn world_metadata(&self)->WorldMeta<'_> {
+        assert!(self.metadata_scene<SCENE_COUNT && self.metadata_len==WORLD_META_MANIFEST[self.metadata_scene].raw_len,
+            "No admitted world metadata selected");
+        let bytes=unsafe {core::slice::from_raw_parts((&raw const WORLD_META_BUFFER.words).cast::<u8>(),self.metadata_len)};
+        checked_world_metadata(bytes,self.metadata_scene).expect("admitted world metadata changed")
+    }
     pub fn room(&self)->Room<'_> {self.room_for(self.selected).expect("No admitted scene selected")}
 }
