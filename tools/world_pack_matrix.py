@@ -29,22 +29,34 @@ def _by_name(rows):
     return result
 
 
-def _artifact(scene, name):
+def _artifact(scene, name, artifact_root=None):
     item = scene.get("outputs", {}).get(name)
     if not item:
         return None
-    return {
+    result = {
         "sha256": item.get("sha256"),
         "compressed_bytes": item.get("bytes"),
         "uncompressed_bytes": item.get("uncompressed_bytes"),
     }
+    if artifact_root is not None:
+        path = artifact_root / scene["file"] / item["path"]
+        if not path.is_file():
+            raise ValueError(f"missing extracted artifact: {path}")
+        actual = _sha(path)
+        if actual != item.get("sha256"):
+            raise ValueError(f"artifact hash mismatch: {path}")
+        if path.stat().st_size != item.get("bytes"):
+            raise ValueError(f"artifact size mismatch: {path}")
+        result["verified_path"] = str(path)
+        result["verified"] = True
+    return result
 
 
 def _resource_union(rows, key):
     return sorted({value for row in rows for value in row.get(key, [])})
 
 
-def build(world, inventory, graph):
+def build(world, inventory, graph, artifact_root=None):
     """Return the matrix, rejecting stale or incomplete source evidence."""
     coverage = world.get("coverage", {})
     if (world.get("run", {}).get("status") != "verified"
@@ -63,6 +75,21 @@ def build(world, inventory, graph):
         extra = sorted(set(rooms) - set(scenes))
         raise ValueError(f"scene inventory mismatch: missing={missing[:3]} extra={extra[:3]}")
 
+    edges_by_scene = {}
+    for edge in graph.get("edges", []):
+        edges_by_scene.setdefault(edge.get("source_scene"), []).append({
+            "source_id": edge.get("source_id"),
+            "gate_name": edge.get("gate_name"),
+            "target_scene": edge.get("target_scene"),
+            "entry_point": edge.get("entry_point"),
+            "resolution": edge.get("resolution"),
+            "component_enabled": edge.get("component_enabled"),
+            "active_in_hierarchy": edge.get("active_in_hierarchy"),
+            "serialized_flags": edge.get("serialized_flags", {}),
+        })
+    for values in edges_by_scene.values():
+        values.sort(key=lambda value: (str(value.get("source_id")), str(value.get("gate_name"))))
+
     rows = []
     for name in sorted(scenes, key=lambda value: (scenes[value]["index"], value)):
         source = scenes[name]
@@ -79,8 +106,8 @@ def build(world, inventory, graph):
             "path": source["path"],
             "import_status": source.get("status"),
             "source_fingerprint": source.get("fingerprint"),
-            "geometry": _artifact(source, "geometry"),
-            "components": _artifact(source, "components"),
+            "geometry": _artifact(source, "geometry", artifact_root),
+            "components": _artifact(source, "components", artifact_root),
             "counts": source.get("counts", {}),
             "unsupported_count": len(unsupported),
             "unsupported_types": sorted({item.get("type", "unknown") for item in unsupported}),
@@ -95,6 +122,7 @@ def build(world, inventory, graph):
                 "completeness": room.get("dependency_completeness"),
             },
             "neighbours": neighbours,
+            "transitions": edges_by_scene.get(name, []),
             "window": {
                 "scene_names": window_names,
                 "texture_count": len(_resource_union(window_rows, "texture_ids")),
@@ -181,7 +209,9 @@ def main():
     parser.add_argument("--graph", type=Path, default=ROOT / ".hkpsx/world-import/room-graph.json")
     parser.add_argument("--output", type=Path, default=ROOT / ".hkpsx/world-import/pack-matrix.json")
     args = parser.parse_args()
-    data = build(json.loads(args.world.read_text()), json.loads(args.inventory.read_text()), json.loads(args.graph.read_text()))
+    world = json.loads(args.world.read_text())
+    data = build(world, json.loads(args.inventory.read_text()), json.loads(args.graph.read_text()),
+                 artifact_root=args.world.parent)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
     args.output.with_suffix(".md").write_text(markdown(data))
