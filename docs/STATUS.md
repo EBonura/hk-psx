@@ -1,6 +1,6 @@
 ## Complete-game implementation resumed
 
-P00-P01 and P03 are complete; P02 is in progress. The current isolated-worker
+P00-P04 are complete; P05 is in progress. The current isolated-worker
 import verified all 501 BuildSettings scenes with zero failures: 463 have
 complete source geometry and 38 retain only explicit runtime text-glyph work. It
 preserves all 5,274 CircleCollider2D boundaries, 28,814 particle systems and
@@ -49,6 +49,16 @@ sparse IDs. The new no-std central state API separates global, mode and active
 scene owners, makes duplicate rewards idempotent and passes all reset/reload and
 exact-size tests. Its conservative current-source capacities total 93,912 bytes,
 without multiplying active state by 501 scenes. See `docs/STATE_IDENTITY.md`.
+
+The first P05 metadata slice is implemented as `HKWMTA01`. The host cooker emits
+one checked bank per currently cooked source scene from `data/regions.json`:
+Tutorial is 32,072 bytes for 86 regions and Town is 2,844 bytes for 20 regions.
+The banks contain global region IDs, Q16 bounds/camera data, global neighbour
+IDs, breakable/grass/hazard/checkpoint/actor records and polygon point pools.
+`hk-format::WorldMeta` validates section strides, alignment, padding, spans and
+geometry before exposing allocation-free borrowed views. Build 71 and the sole
+Downloads disc are unchanged; guest admission still uses the existing tables
+until the differential migration is complete.
 
 ## Completion plan prepared for GPT-5.6-Sol
 

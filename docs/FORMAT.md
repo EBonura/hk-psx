@@ -7,6 +7,34 @@ visibility certificates separately. See STATUS.md for actual-CUE evidence and
 remaining gameplay gaps; formats alone establish neither source parity nor
 whole-game capacity.
 
+## Scene world metadata: HKWMTA01
+
+P05 adds a separate per-scene metadata bank so world ownership can move out of
+permanently linked Rust tables without changing the existing geometry payload.
+The fixed 160-byte little-endian header contains magic, source scene ID, the
+compact scene FNV, a 32-byte source metadata fingerprint, region count, total
+length, flags, section count and four `(offset,count,stride)` descriptors. The
+four aligned sections are region records (76 bytes), object/state records (36
+bytes), polygon descriptors (8 bytes) and Q16 point records (8 bytes). Padding
+must be zero and every descriptor uses its versioned stride; native Rust layout
+is never serialized.
+
+Region records retain global chunk IDs, activation/collision/camera bounds,
+global-neighbour spans, object spans and polygon spans. Object records carry a
+source identity, stable state ID, kind/ownership flags, bounds and polygon
+spans. Neighbours are global IDs and therefore are not incorrectly compared
+with the local region count of the owning scene. The allocation-free reader
+`hk_format::WorldMeta` validates all arithmetic, section bounds, alignment,
+object and polygon spans, 3..16-vertex polygon limits and nonzero global
+neighbours before exposing `WorldRegion`, `WorldObject`, `WorldPolygon` and
+bounded iterators tied to the immutable bank lifetime.
+
+The current host cook measures the first two banks at 32,072 bytes (Tutorial,
+86 regions) and 2,844 bytes (Town, 20 regions). These are measured payloads,
+not an approved final arena size. Actor clip/effect banks, auxiliary Geo,
+dialogue, Great Door, render-budget and disc mappings remain in their existing
+tables until later P05 migration slices prove differential equivalence.
+
 ## Scene visibility: HKOCSC01
 
 Little-endian scalars; four-byte-aligned sections, with all padding zero.

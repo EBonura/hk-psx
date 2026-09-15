@@ -53,6 +53,7 @@ pub struct Checkpoint {
     pub facing: i32,
 }
 pub struct Region {
+    pub global_id: usize,
     pub scene: usize,
     pub flat_floor_heights: &'static [i32],
     pub bounds: [i32; 4],
@@ -94,8 +95,10 @@ const EDGE_CACHE:usize=128;
 pub struct State {
     edge_cache:[[i32;4];EDGE_CACHE],
     edge_cache_count:usize,
-    edge_cache_source:*const u8,
-    edge_cache_region:*const Region,
+    edge_cache_generation:u32,
+    edge_cache_region_id:usize,
+    edge_cache_valid:bool,
+    world_generation:u32,
     geo_edges:[u16;32],
     geo_edge_count:usize,
     lifeblood_edges:[u16;8],
@@ -120,7 +123,8 @@ impl State {
     pub const fn new() -> Self {
         Self {
             edge_cache:[[0;4];EDGE_CACHE],edge_cache_count:0,
-            edge_cache_source:core::ptr::null(),edge_cache_region:core::ptr::null(),
+            edge_cache_generation:0,edge_cache_region_id:0,edge_cache_valid:false,
+            world_generation:0,
             geo_edges:[0;32],geo_edge_count:0,
             lifeblood_edges:[0;8],lifeblood_edge_count:0,
             impacts: crate::impact::Pool::new(),
@@ -146,6 +150,7 @@ impl State {
         self.fade_left[b.id] = b.fade_ticks;
         if b.fade_ticks!=0 {self.fade_active[b.id/32]|=1<<(b.id%32);}
         self.edge_cache_count=0;
+        self.edge_cache_valid=false;
         true
     }
     pub fn cut(&self, id: usize) -> bool {
@@ -185,14 +190,23 @@ impl State {
         self.particles.tick_break(region.scene,region.collision_bounds,count,&edge);
         self.debris.tick(region.scene,region.door_debris,region.collision_bounds,count,edge);
     }
-    /// The resident scene payload is immutable. Its pointer plus the authored
-    /// region identity selects the local edge reference list, even when adjacent
-    /// views have equal edge counts and share the same scene allocation.
+    /// The resident scene payload is immutable. Explicit world generation plus
+    /// global region ID selects the local edge reference list. No arena or
+    /// temporary-view address participates in cache identity.
     #[inline(always)]
     fn edge_cache_matches(&self,region:&Region,room:&Room)->bool {
-        self.edge_cache_count==room.counts[5]
-            && core::ptr::eq(self.edge_cache_source,room.bytes.as_ptr())
-            && core::ptr::eq(self.edge_cache_region,region)
+        self.edge_cache_valid
+            && self.edge_cache_count==room.counts[5]
+            && self.edge_cache_generation==self.world_generation
+            && self.edge_cache_region_id==region.global_id
+    }
+    /// Retire every view before the reusable world/geometry arena can be
+    /// overwritten. Call once for every metadata admission, including a retry
+    /// of the same scene at the same address.
+    pub fn begin_world_admission(&mut self) {
+        self.world_generation=self.world_generation.wrapping_add(1);
+        self.edge_cache_count=0;
+        self.edge_cache_valid=false;
     }
     /// Rebuild only after an exclusion mutation or source change. Returns true
     /// when the table was rebuilt; larger future rooms retain the direct path.
@@ -203,9 +217,11 @@ impl State {
         if count<=EDGE_CACHE {
             fill_edges(&geo_edges[..*geo_edge_count],&lifeblood_edges[..*lifeblood_edge_count],broken,region,room,&mut edge_cache[..count]);
             *edge_cache_count=count;
-            self.edge_cache_source=room.bytes.as_ptr();self.edge_cache_region=region;
+            self.edge_cache_generation=self.world_generation;
+            self.edge_cache_region_id=region.global_id;
+            self.edge_cache_valid=true;
             true
-        } else {*edge_cache_count=0;false}
+        } else {*edge_cache_count=0;self.edge_cache_valid=false;false}
     }
     pub fn tick(&mut self) {
         self.impacts.tick();
@@ -228,7 +244,7 @@ impl State {
         }
     }
     pub fn reset_scene(&mut self, scene: usize) {
-        self.edge_cache_count=0;
+        self.begin_world_admission();
         self.impacts.clear_scene(scene);
         self.debris.clear_scene(scene);
         self.particles.clear_scene(scene);
@@ -375,13 +391,13 @@ impl State {
     pub fn set_geo_edges(&mut self,edges:&[u16]) {
         assert!(edges.len()<=self.geo_edges.len());
         if self.geo_edge_count==edges.len()&&self.geo_edges[..edges.len()].iter().zip(edges).all(|(a,b)|a==b){return;}
-        self.geo_edges[..edges.len()].copy_from_slice(edges);self.geo_edge_count=edges.len();self.edge_cache_count=0;
+        self.geo_edges[..edges.len()].copy_from_slice(edges);self.geo_edge_count=edges.len();self.edge_cache_count=0;self.edge_cache_valid=false;
     }
     /// Refresh local cocoon collider bindings on every region activation.
     pub fn set_lifeblood_edges(&mut self,edges:&[u16]) {
         assert!(edges.len()<=self.lifeblood_edges.len());
         if self.lifeblood_edge_count==edges.len()&&self.lifeblood_edges[..edges.len()].iter().zip(edges).all(|(a,b)|a==b){return;}
-        self.lifeblood_edges[..edges.len()].copy_from_slice(edges);self.lifeblood_edge_count=edges.len();self.edge_cache_count=0;
+        self.lifeblood_edges[..edges.len()].copy_from_slice(edges);self.lifeblood_edge_count=edges.len();self.edge_cache_count=0;self.edge_cache_valid=false;
     }
     /// Append bounded scripted exclusions after the Lifeblood refresh. The two
     /// controllers share this eight-entry scratch; no second terrain cache.
@@ -391,7 +407,7 @@ impl State {
             assert!(self.lifeblood_edge_count<self.lifeblood_edges.len());
             self.lifeblood_edges[self.lifeblood_edge_count]=edge;
             self.lifeblood_edge_count+=1;
-            self.edge_cache_count=0;
+            self.edge_cache_count=0;self.edge_cache_valid=false;
         }
     }
     /// Every index below `cache.len()` with the same exclusions as edge(),
@@ -427,7 +443,7 @@ impl State {
     pub fn fill_edges_in_view(&self, active:&Region, active_room:&Room,
         target:&Region, target_room:&Room, cache:&mut [[i32;4]]) {
         assert!(cache.len()<=target_room.counts[5]);
-        if core::ptr::eq(active,target) && core::ptr::eq(active_room.bytes.as_ptr(),target_room.bytes.as_ptr()) {
+        if active.global_id==target.global_id {
             if self.edge_cache_matches(active,active_room) {
                 cache.copy_from_slice(&self.edge_cache[..cache.len()]);
             } else {self.fill_edges(active,active_room,cache);}
@@ -454,7 +470,7 @@ impl State {
     /// transient Geo/cocoon/script exclusions are remapped by source segment.
     pub fn edge_in_view(&self, active:&Region, active_room:&Room,
         target:&Region, target_room:&Room, index:usize)->[i32;4] {
-        if core::ptr::eq(active,target) && core::ptr::eq(active_room.bytes.as_ptr(),target_room.bytes.as_ptr()) {
+        if active.global_id==target.global_id {
             return self.edge(active,active_room,index);
         }
         let edge=target_room.edge(index);

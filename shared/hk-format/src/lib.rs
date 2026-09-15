@@ -3,6 +3,8 @@
 pub mod coverage;
 mod scene;
 pub use scene::{Scene,SceneValidation};
+pub mod world_meta;
+pub use world_meta::{Object as WorldObject, Polygon as WorldPolygon, Region as WorldRegion, WorldMeta};
 #[derive(Debug, PartialEq)]
 pub enum Error {
     Header,

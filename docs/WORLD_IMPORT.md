@@ -20,6 +20,7 @@ python3 tools/world_coverage.py
 .venv/bin/python tools/managed_field_usage.py
 .venv/bin/python tools/world_progression.py
 .venv/bin/python tools/world_identity.py
+.venv/bin/python tools/world_metadata.py
 ```
 
 Outputs stay in ignored `.hkpsx/world-import/`; no guest build, canonical cooked
@@ -95,6 +96,14 @@ trace the actual branch.
 It uses scene paths rather than BuildSettings indices, retains compatibility
 aliases for current sparse Breakable/grass IDs and assigns explicit state
 ownership. See `docs/STATE_IDENTITY.md`; the database and report stay ignored.
+
+`world_metadata.py` is the first P05 scene-bank cooker. It writes ignored
+`HKWMTA01` banks under `.hkpsx/world-metadata/`, one per cooked source scene,
+and binds each bank to the current `regions.json` hash. The wire reader is
+`shared/hk-format/src/world_meta.rs`; it checks fixed strides, aligned sections,
+zero padding, global-neighbour IDs, object spans and polygon points before
+publishing borrowed views. This is host/format work only until the world loader
+migration has differential coverage.
 
 The next passes are:
 

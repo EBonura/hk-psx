@@ -528,6 +528,10 @@ fn main() {
                     assert!(world::REGIONS[id].scene!=r.scene,"spatial region not resident");
                     audio::stop_footsteps();focus_audio::interrupt();
                     unsafe {HK_GAME_MODE=2;}
+                    // Revoke all world views before scene metadata/geometry
+                    // arenas are reused. This increments even when a retry
+                    // admits the same scene at the same address.
+                    state.begin_world_admission();
                     sim_clock=scene_transition::load(cache,&mut vram,id,sim_clock).expect("scene gate load");
                     let held=ButtonState::from_bits(input::held_buttons());
                     player.was_jump=held.is_held(button::CROSS);start_held=held.is_held(button::START);
