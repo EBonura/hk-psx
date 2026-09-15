@@ -170,6 +170,20 @@ impl<'a> WorldMeta<'a> {
     pub fn fingerprint(&self) -> &'a [u8] {
         &self.bytes[16..48]
     }
+    /// Bind a decoded bank to the manifest entry that requested it before any
+    /// borrowed view is handed to gameplay or rendering.
+    pub fn check_identity(
+        &self,
+        scene_id: u32,
+        raw_fnv: u32,
+        fingerprint: &[u8; 32],
+    ) -> Result<(), Error> {
+        if self.scene_id != scene_id || self.raw_fnv != raw_fnv || self.fingerprint() != fingerprint
+        {
+            return Err(Error::Reference);
+        }
+        Ok(())
+    }
     pub fn region(&self, index: usize) -> Option<Region<'a>> {
         if index >= self.counts[0] {
             return None;
@@ -486,6 +500,7 @@ mod tests {
         let r = bank.region(0).unwrap();
         assert_eq!(r.global_id(), 77);
         assert_eq!(bank.region_by_global_id(77).unwrap().global_id(), 77);
+        assert!(bank.check_identity(5, 9, &[0; 32]).is_err());
         let o = r.objects().next().unwrap().unwrap();
         assert_eq!(o.source_id(), 123);
         assert_eq!(o.polygons().next().unwrap().unwrap().points().count(), 3);
