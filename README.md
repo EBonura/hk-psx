@@ -4,9 +4,9 @@ A native Hollow Knight port experiment for original PlayStation, built from the
 user's Windows Steam copy in CrossOver. The last validated playable build includes
 King's Pass scenery and terrain, breakable doors, grass, the Knight's movement
 and nail attacks, three source Crawlers, damage, health masks, hazard checkpoints,
-nail recoil/pogo, Focus healing, a SOUL meter, six resident sound effects and
-original cave ambience. The title offers Start Game, Options, Controls and Cheats; the
-pause menu supports separate sound-effect and ambience levels, including mute.
+nail recoil/pogo, Focus healing, a SOUL meter, player and Geo sound effects,
+original cave ambience and CD-streamed title music. The title offers Start Game, Options, Controls and Cheats; the
+pause menu supports separate sound-effect, ambience and music levels, including mute.
 Cheats include invincibility, Pure Nail damage, unlimited SOUL and nine masks.
 Press Start, then choose Cheats for health/SOUL refill and extra Lifeblood.
 All cheats default off and last for the running session. Charms are not yet
@@ -28,7 +28,7 @@ PS1's limited blend modes; this is not full source-shader parity.
 scene data now stays in one 369,180-byte RAM arena; both scenery atlases stay in
 VRAM throughout gameplay. Their CPU copies are discarded after startup uploads,
 with exact host-cooked particle tracks using part of the recovered RAM and
-leaving about295KiB unallocated for future bounded data. Lossless sharing across regions uses 20 static 4bpp
+leaving about60KiB unallocated after caching the full cave-noises loop in RAM. Lossless sharing across regions uses 20 static 4bpp
 pages and 1,209 palettes. The existing approved 95% static matches remain; no
 further resolution reduction or lossy merging was added. Scenery keeps its
 48-pixel long-axis cap; Knight, enemy and HUD resolution is unchanged.
@@ -52,7 +52,7 @@ NullGfx runs do not establish image or audible-output parity.
 
 This is an early port, with substantial missing systems and unverified paths.
 Flying enemies, full scene scripting, saving, inventory, abilities, NPCs, bosses,
-music, Geo spending, Shade recovery and complete-game progression remain unfinished.
+in-game music, Geo spending, Shade recovery and complete-game progression remain unfinished.
 See [docs/STATUS.md](docs/STATUS.md) for tested behavior and limitations.
 The offline per-scene inventory and neighbour preload planner are documented in
 [docs/STREAMING.md](docs/STREAMING.md).

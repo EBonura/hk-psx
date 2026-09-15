@@ -16,7 +16,7 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  for _ in 0..100{assert!(!s.step(CROSS));assert_eq!(s.page,Page::Controls);}
  tap(&mut s,START);assert_eq!(s.page,Page::Main);assert_eq!(s.selected,2);
  for _ in 0..100{assert!(!s.step(START));assert_eq!(s.page,Page::Main);}
- assert_eq!(MAIN_ITEMS.len(),4);assert_eq!(OPTION_ITEMS.len(),3);assert_eq!(CONTROL_LINES.len(),9);
+ assert_eq!(MAIN_ITEMS.len(),4);assert_eq!(OPTION_ITEMS.len(),4);assert_eq!(CONTROL_LINES.len(),9);
 }
 #[test]fn held_directions_repeat_at_bounded_cadence_and_opposites_cancel(){
  let mut s=State::new();s.step(DOWN);assert_eq!(s.selected,1);
@@ -32,7 +32,7 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  for _ in 0..20{s.adjust(0,-1);}assert_eq!(s.sfx,0);assert!(!s.adjust(0,-1));assert_eq!(s.ambience,10);
  assert!(s.adjust(0,127));assert_eq!(s.sfx,10);assert!(s.adjust(1,-128));assert_eq!(s.ambience,0);
  let mut m=State::new();tap(&mut m,DOWN);tap(&mut m,CROSS);tap(&mut m,UP);
- assert_eq!(m.selected,2);let old=m.settings;tap(&mut m,LEFT);assert_eq!(m.settings,old);tap(&mut m,CROSS);assert_eq!(m.page,Page::Main);
+ assert_eq!(m.selected,3);let old=m.settings;tap(&mut m,LEFT);assert_eq!(m.settings,old);tap(&mut m,CROSS);assert_eq!(m.page,Page::Main);
 }
 
 #[test]fn title_cheats_are_explicit_and_confirm_does_not_start_game(){
@@ -42,4 +42,18 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  tap(&mut s,DOWN);tap(&mut s,RIGHT);assert!(s.settings.cheats.max_nail);
  tap(&mut s,CIRCLE);assert_eq!(s.page,Page::Main);assert_eq!(s.selected,3);
  tap(&mut s,DOWN);assert!(tap(&mut s,CROSS));assert!(s.settings.cheats.invincible);
+}
+
+#[test]fn music_is_independent_clamped_and_back_preserves_it(){
+ let mut s=State::new();assert_eq!(s.settings.music,10);
+ tap(&mut s,DOWN);tap(&mut s,CROSS);tap(&mut s,DOWN);tap(&mut s,DOWN);
+ assert_eq!(s.selected,2);assert_eq!(OPTION_ITEMS[s.selected],"Music");
+ for _ in 0..15{tap(&mut s,LEFT);}assert_eq!(s.settings.music,0);
+ assert_eq!((s.settings.sfx,s.settings.ambience),(10,10));
+ tap(&mut s,RIGHT);assert_eq!(s.settings.music,1);
+ tap(&mut s,CROSS);assert_eq!(s.page,Page::Options);assert_eq!(s.settings.music,1);
+ tap(&mut s,DOWN);assert_eq!(OPTION_ITEMS[s.selected],"Back");
+ assert!(!tap(&mut s,CROSS));assert_eq!(s.page,Page::Main);assert_eq!(s.selected,1);
+ tap(&mut s,CROSS);tap(&mut s,CIRCLE);tap(&mut s,UP);
+ assert!(tap(&mut s,START));assert_eq!(s.settings.music,1);
 }

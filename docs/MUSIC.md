@@ -1,11 +1,59 @@
-# Resident source ambience and music groundwork
+# Source ambience and CD-streamed music
 
-## Current implementation (build64,2026-09-15)
+## Title playback (build65,2026-09-15)
+
+The title plays its complete81.8-second source track through SDK CD-DA. The
+Windows48kHz stereo source is resampled to44,100Hz stereo PCM16;14,429,520 bytes
+fill6135 sectors exactly, with no truncated audio or zero padding. The normal
+build adds audio track02 after the data track with the SDK's150-sector pregap,
+in the same canonical BIN/CUE pair. `host/title_music.py` validates the source
+cue/channel, delay, loop, source hashes and mixer base gain; ignored provenance
+is `.hkpsx/title-music.json`. Original managed calls confirm volume1 at Play;
+serialized volume0 describes the inactive source. Original mixer effects are
+not reproduced. The CD input uses one-third Q15 headroom plus the existing
+master gain, and an independent0..10 Music control in title and pause menus.
+
+`game/src/music.rs` uses the pinned SDK CddaStarter/CddaEndDetector, automatic
+track-boundary pause and restart. It waits the source1s before handshake, then
+tracks actual playing status. No music sample bank, SPU voice, refill buffer or
+music IRQ owner is allocated. Starting the game fades CD input and requires
+`try_pause_until_complete` before any data read; an accepted Stop is insufficient.
+Title polling owns the drive until this completed handoff. Boss music can use
+this transport after its whole arena is loaded; arbitrary traversal music needs
+separate read arbitration. Bosses/music are not implemented yet.
+
+Actual-CUE10500-poll validation crosses two track repeats without faults. Three
+captured stereo phrases correlate above0.9999989 with cooked PCM after gain and
+alignment, with under0.84 PCM-unit RMS residual. Emulator repeat gaps measure
+0.500s and0.473s; no gapless or silicon timing claim is made. Active-title mute/
+restore and handoff, plus early Start before the handshake, reach gameplay with
+correct cave ambience and no reported underruns or missed polls. Gameplay and
+music/pause UI captures were inspected. Full suite:266 Python and392 reported
+native tests; final EXE hazards0. Final build identity is in STATUS.md.
+
+Reproduce with `tools.validate.poll_tape`:10500 neutral polls for the long title;
+`9:start:1,170:right:40` over300 polls for early Start; over850 polls use
+`9:down:1,12:cross:1,15:down:1,18:down:1,21:left:70,300:right:70,390:circle:1,397:up:1,400:start:1,550:right:100,680:cross:12,750:start:1,753:down:1,756:down:1,759:down:1`
+for mute/restore, active handoff and the pause Music row. Replay each with
+`python3 tools/replay_cue.py --tape TAPE --output OUTPUT`. Then:
+
+```sh
+.venv/bin/python tools/check_title_capture.py .hkpsx/music65/cdda-title-loop --output .hkpsx/music65/cdda-pcm-check.json
+```
+
+Evidence lives in `.hkpsx/music65/cdda-{title-loop,handoff2,early}/`, plus
+`cdda-tests.log`, `cdda-build.log`, and `cdda-pcm-check.json`. Retail PCM/captures
+stay ignored. Main RAM now has61,356B free before the protected48KiB stack;
+136,704B contiguous SPU remains available. Tutorial's Silent snapshot and the
+uncooked Town music trigger are unchanged. Next restore source-traced Focus and
+missing effects; historical capacity experiments below are not current allocation.
+
+## Ambience milestone (build64,2026-09-15)
 
 Source-derived player running and hard-landing sounds are integrated, along
 with the Great Door's first hit variant/pitch range. Running uses the original
 complete nonlooping rhythm sequence: stop outside running, restart after clip
-completion, and defer a new start while soft landing plays. The port still lacks
+completion, and defer a new start while soft landing plays. At build64 the port still lacked
 music, Focus, many enemy/break/death/UI effects and original hard-land recovery.
 
 All six full ambience payloads are retained. Cave noises (199,872B) now live in
@@ -51,8 +99,8 @@ Reproduce the PCM check with:
 python3 tools/validate_ambience.py --output .hkpsx/audio64/ambience --verify-existing
 ```
 
-Next: implement a bounded CD-fed music ring using the reclaimed SPU space, then
-restore Title and correctly triggered Dirtmouth music. Tutorial retains its
+Build64 follow-up was music transport; build65 implements Title with CD-DA above.
+Correctly triggered Dirtmouth remains pending. Tutorial retains its
 Silent snapshot. Continue with source-traced Focus, death/break layers, enemies
 and UI. Current Town music trigger remains beyond cooked coverage.
 
@@ -145,7 +193,7 @@ See [FFmpeg's ADPCM_PSX decoder](https://github.com/FFmpeg/FFmpeg/blob/master/li
 Synthetic tests cover deterministic encoding, decoding quality, framing, malformed
 PCM, source cache invalidation and resource-boundary rejection.
 
-## Measured capacities
+## Historical resident-bank capacities (before build64)
 
 Bytes below are actual encoded payload sizes, including final-block padding.
 Durations are rounded source lengths. The six 8,000 Hz mono ambience payloads
@@ -180,7 +228,7 @@ their final ADPCM block. The production flag changes preserve independently
 measured decode quality. The measured decoded end-to-start differences are at
 most five PCM units, but this is not proof of click-free physical playback.
 
-## Implemented startup and cue lifecycle
+## Historical all-SPU startup and cue lifecycle (before build64)
 
 `disc::Cache::prepare_ambience` runs before any room arena is leased or exposed.
 It reuses the unused 256 KiB room arena for one complete raw clip at a time,
@@ -204,7 +252,7 @@ The mixer ticks independently of gameplay pause, and settled loops need no
 per-tick volume writes. These are source endpoints and lifecycle with an explicit
 linear-ramp approximation, not complete AudioMixer parity or player audio settings.
 
-## Audio validation and remaining limits
+## Historical all-SPU validation and limits (before build64)
 
 The final audio evidence is
 [`captures/ambience-reader/report.json`](../captures/ambience-reader/report.json).
@@ -242,7 +290,8 @@ loops and downstream mixer/player-setting parity are unverified. The final pacin
 suites cover their six recorded routes; neither those routes nor the stationary
 audio replay establish whole-game coverage or validate a later binary.
 
-Title music and the later Dirtmouth/accordion cues are not implemented. A future
+At this earlier milestone Title and Dirtmouth/accordion were not implemented.
+Build65 now handles Title above; these ring estimates remain historical. A future
 Dirtmouth music ring could reclaim Cave-only SPU loops after their fade completes,
 but the current implementation keeps all six ambience loops resident. Town's
 four 8,000 Hz loops total 174,272 bytes; a 256 KiB music ring plus conservative
@@ -271,7 +320,8 @@ animation or0.23-second finish state exits. Damage stops charging immediately.
 The original charging loop is19.345 seconds. Complete mono ADPCM needs88,448
 bytes at8kHz,121,888 at11,025Hz or176,880 at16kHz. The1.567-second heal plus silent
 END uses14,352 bytes at16kHz, leaving1,072 SPU bytes; at11,025Hz it uses9,888 and
-leaves5,536. A full charging reservoir fits the current main-RAM gap. A future
+leaves5,536. A full charging reservoir fitted that earlier main-RAM gap; the current
+61,356B gap cannot hold even the88,448B8kHz payload. A future
 RAM-to-SPU ring could therefore avoid all Focus-time disc reads without shortening
 the source loop. No ring state, linked allocation, audible-quality choice or
 underrun guarantee is implemented. The pinned SDK has low-level upload, loop

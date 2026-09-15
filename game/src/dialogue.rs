@@ -58,7 +58,7 @@ pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crat
     unsafe{USED=0;BOX_COUNT=0;
       let geo_y=crate::hud::geo_y(total_masks);text(18,geo_y,"Geo");number(43,geo_y,geo);
       if let Some((p,settings))=pause {
-        BOXES[0]=RectFlat::new(38,61,244,144,150,150,150);BOXES[1]=RectFlat::new(40,63,240,140,0,0,0);BOX_COUNT=2;
+        BOXES[0]=RectFlat::new(38,61,244,162,150,150,150);BOXES[1]=RectFlat::new(40,63,240,158,0,0,0);BOX_COUNT=2;
         if p.cheats {
             BOXES[0]=RectFlat::new(14,28,292,204,150,150,150);BOXES[1]=RectFlat::new(16,30,288,200,0,0,0);
             text(160-width("Cheats")/2,38,"Cheats");
@@ -75,12 +75,12 @@ pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crat
             }
         }else {
             text(160-width("Paused")/2,69,"Paused");
-            for(i,line)in ["Resume","Sound effects","Ambience","Controls","Cheats"].iter().enumerate() {
+            for(i,line)in ["Resume","Sound effects","Ambience","Music","Controls","Cheats"].iter().enumerate() {
                 let y=92+i as i16*18;text(73,y,line);if p.row==i {text(56,y,">");}
             }
-            number(222,110,u32::from(settings.sfx));number(222,128,u32::from(settings.ambience));
-            text(239,110,"/10");text(239,128,"/10");
-            text(58,185,"Left / Right: Volume   O: Resume");
+            number(222,110,u32::from(settings.sfx));number(222,128,u32::from(settings.ambience));number(222,146,u32::from(settings.music));
+            text(239,110,"/10");text(239,128,"/10");text(239,146,"/10");
+            text(58,207,"Left / Right: Volume   O: Resume");
         }
       }else if let Some(id)=STATE.active{
         BOXES[0]=RectFlat::new(10,46,300,152,150,150,150);BOXES[1]=RectFlat::new(12,48,296,148,0,0,0);BOX_COUNT=2;

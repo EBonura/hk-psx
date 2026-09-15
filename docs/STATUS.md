@@ -1,8 +1,46 @@
 # Status, 2026-09-15
 
-## Current playable build:64 audio restoration
+## Current playable build:65 CD-streamed title music
 
-The sole Downloads/ps1 games/hk-psx.bin/.cue pair now contains64. This preserves
+The sole `~/Downloads/ps1 games/hk-psx.bin/.cue` pair contains build65. Title now
+plays its complete81.8-second source track directly from CD using the pinned
+SDK's CD-DA starter/end detector. It is44,100Hz stereo PCM16, resampled from the
+48kHz source, with no truncation or padding. Track02 shares the same BIN as data
+track01 and has the SDK's150-sector pregap. No music sample bank occupies main
+RAM, SPU RAM or a voice. There is an independent Music0..10 setting in title and
+pause menus, including mute, and a fade before starting gameplay.
+
+Music stops through completed SDK Pause before the first room/data command,
+retaining drive spin. Source title delay is1s before the command handshake;
+physical seek adds latency. End detection arms only after observed playback.
+The final CUE completed10500 neutral input polls, two track repeats, and continued
+playing with no reported faults. Captured stereo phrases match the cooked PCM
+on all three plays (correlation above0.9999989 after gain/alignment). Measured
+repeat gaps are0.500s and0.473s in PSoXide. This is not gapless playback or a
+physical-console timing claim; original mixer DSP is also not reproduced.
+
+Separate actual-CUE routes verify Music mute/restore, gameplay after active
+music, and early Start before any Play command. Both gameplay captures were
+inspected. No guest/audio/room faults or missed polls were reported; cave
+ambience starts with the expected four stems and continues refilling its ring.
+All266 Python and392 reported native tests pass; final MIPS hazards:0.
+Main RAM has61,356B before the protected48KiB stack; main frame32,136B leaves
+17,016B reserved for nested frames. SPU still has136,704B contiguous free.
+EXE SHA-256: `11ecce96bc6d6dc7427a2968d8394926cab5ac2737918bd5e5c5986698420cda`.
+BIN SHA-256: `ed5307f55dc07becfe6abb8adf9cc2715d582b2b8a0067135c2ccff20bf43f90`.
+Evidence: `.hkpsx/music65/cdda-{title-loop,handoff2,early}/command.json`,
+`cdda-pcm-check.json`, `cdda-build.log`, and `cdda-tests.log`.
+
+Boss tracks are candidates for this transport once their complete arenas are
+resident: CD-DA and room reads cannot run together. Boss gameplay/music is not
+implemented. Tutorial remains source-silent for music, and Dirtmouth's trigger
+is beyond current cooked coverage. Next: source-traced Focus/break/death/enemy/UI
+sounds and the known Great Door/Crawler/Town gaps. Preserve320x240 and current
+textures; this milestone makes no new FPS claim.
+
+## Previous build:64 audio restoration
+
+Build64 preserved
 320x240 rendering and the63 cheat menus. Source running footsteps, hard-landing
 sound selection and the Great Door hit callback are integrated. The door uses
 its first authored hit variant and source pitch range; alternate hits and the
