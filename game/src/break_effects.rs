@@ -62,10 +62,39 @@ pub(super) fn scale_velocity(v:i32,scale:i32,speed:i32)->i32 {
         None=>(v as i64*scale as i64/speed as i64)as i32,
     }
 }
-fn sample(p:&Particle,style:&Style)->Sample {style.samples[(p.age as usize*32/p.life.get() as usize).min(32)]}
+fn phase(p:&Particle)->usize {(p.age as usize*32/p.life.get()as usize).min(32)}
+fn sample(p:&Particle,style:&Style)->Sample {style.samples[phase(p)]}
+#[cfg(not(test))]
+fn generated_tracks(styles:&[Style])->&'static[[[u32;2];33]] {
+    if core::ptr::eq(styles,STYLES) {PARTICLE_TRACKS}else{&[]}
+}
+#[cfg(test)]fn generated_tracks(_:&[Style])->&'static[[[u32;2];33]] {&[]}
+#[inline]
+fn cached_frame(track:u16,phase:usize,tracks:&[[[u32;2];33]])->Option<[u32;2]> {
+    if track==0 {None}else{tracks.get(track as usize-1).map(|t|t[phase])}
+}
+#[inline]fn frame_spin(words:[u32;2])->i32 {(words[1]<<6)as i32>>6}
+#[inline]fn tick_shape(p:&Particle,s:&Style,words:Option<[u32;2]>)->(i32,i32) {
+    if let Some(w)=words {(frame_spin(w),(w[0]>>16)as i32)}else{
+        let sample=sample(p,s);(lerp(sample.spin,p.gradient),mulq(mulq(p.size,lerp(sample.size,p.gradient))/2,s.radius_scale))
+    }
+}
+#[inline]fn draw_shape(p:&Particle,s:&Style,words:Option<[u32;2]>)->(i32,i32) {
+    if let Some(w)=words {((w[0]&65535)as i32,((w[1]>>26)&3)as i32)}else{
+        let sample=sample(p,s);let alpha=lerp(sample.alpha.map(i32::from),p.gradient);
+        (mulq(p.size,lerp(sample.size,p.gradient))/2,((alpha*3+127)/255).clamp(0,3))
+    }
+}
 #[inline(never)]
 pub fn spawn_specs(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emitters:&[Emitter],styles:&[Style]) {
-    for e in emitters.iter().filter(|e|e.scene as usize==scene&&e.owner as usize==owner) {
+    #[cfg(not(test))]
+    let bases=if core::ptr::eq(emitters,EMITTERS)&&core::ptr::eq(styles,STYLES) {EMITTER_TRACK_BASES}else{&[]};
+    #[cfg(test)]let bases:&[u16]=&[];
+    spawn_specs_with_bases(pool,scene,owner,kind,facing,emitters,styles,bases);
+}
+#[inline(never)]
+fn spawn_specs_with_bases(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emitters:&[Emitter],styles:&[Style],bases:&[u16]) {
+    for (emitter_index,e) in emitters.iter().enumerate().filter(|(_,e)|e.scene as usize==scene&&e.owner as usize==owner) {
         let s=&styles[e.style as usize];assert!(s.samples.len()==33&&s.rate>0&&s.count<=128&&s.life[0]>0);
         let mut rng=e.source^0xd1b54a35;let mut search=0;
         for i in 0..s.count {
@@ -89,6 +118,10 @@ pub fn spawn_specs(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emi
             let direction=core::array::from_fn::<_,3,_>(|j|dot3(e.basis[j],direction));
             let norm=length3(direction).max(1);
             let velocity=core::array::from_fn(|j|((direction[j]as i64*speed as i64)/norm as i64)as i32+range(&mut rng,ordered(s.velocity[j])));
+            // Only trusted generated emitter/style slices supply a base. Generic
+            // callers and unpackable future emitters keep the scalar path.
+            pool.tracks[search]=bases.get(emitter_index).copied().filter(|&b|b!=u16::MAX)
+                .and_then(|b|b.checked_add(i)).and_then(|t|t.checked_add(1)).unwrap_or(0);
             pool.particles[search]=Some(Particle{position:core::array::from_fn(|j|e.origin[j]+dot3(e.basis[j],local)),velocity,size,
                 force:lerp(s.force[1],gradient)/60,angle,scene:e.scene,kind:e.style+2,life:super::NonZeroU16::new(life).expect("positive particle lifetime"),age:0,delay:(((i as u64+1)*60*ONE as u64-1)/s.rate as u64).min(255)as u8,
                 cell:(super::random(&mut rng)%s.frames.len()as u32)as u8,gradient,color:s.color});
@@ -104,9 +137,7 @@ fn integer_sqrt(mut n:u64)->u64 {let(mut root,mut bit)=(0,1u64<<62);while bit>n 
 /// tick. Larger future rooms keep the direct callback rather than dropping terrain.
 const EDGE_SCRATCH:usize=128;
 /// Swept-circle extent for this tick; identical inputs give identical bounds in both passes.
-fn sweep(p:&Particle,s:&Style,sample:&Sample)->([i32;3],i32) {
-    (core::array::from_fn(|j|p.position[j]+p.velocity[j]/60),mulq(mulq(p.size,lerp(sample.size,p.gradient))/2,s.radius_scale))
-}
+fn sweep(p:&Particle)->[i32;3] {core::array::from_fn(|j|p.position[j]+p.velocity[j]/60)}
 fn overlaps(e:&[i32;4],b:&[i32;4])->bool {
     e[0].min(e[2])<=b[2]&&e[0].max(e[2])>=b[0]&&e[1].min(e[3])<=b[3]&&e[1].max(e[3])>=b[1]
 }
@@ -117,6 +148,10 @@ fn overlaps(e:&[i32;4],b:&[i32;4])->bool {
 /// preserves the sequential per-particle result.
 #[inline(never)]
 pub fn tick_specs(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],count:usize,edge:impl Fn(usize)->[i32;4]) {
+    tick_specs_with_tracks(pool,scene,styles,coverage,count,edge,generated_tracks(styles));
+}
+#[inline(never)]
+fn tick_specs_with_tracks(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],count:usize,edge:impl Fn(usize)->[i32;4],tracks:&[[[u32;2];33]]) {
     let mut union=[i32::MAX,i32::MAX,i32::MIN,i32::MIN];let mut pending=[0u32;super::CAPACITY/32];
     // Pass one alone changes velocity/age. A pending collision keeps its
     // position unchanged, so these exact swept values remain valid in pass two.
@@ -127,18 +162,19 @@ pub fn tick_specs(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],co
         checkpoint();
         if p.delay>0 {p.delay-=1;continue;}
         p.age+=1;if p.age>=p.life.get() {*slot=None;pool.active_count-=1;continue;}
-        let s=&styles[(p.kind-2)as usize];let sample=sample(p,s);
+        let s=&styles[(p.kind-2)as usize];
         if s.collision&&(p.position[0]<coverage[0]||p.position[0]>coverage[2]||p.position[1]<coverage[1]||p.position[1]>coverage[3]){continue;}
+        let words=cached_frame(pool.tracks[index],phase(p),tracks);let (base_spin,radius)=tick_shape(p,s,words);
         p.velocity[1]+=p.force;
         for j in [0,2] {if (s.force[j][0]|s.force[j][1])!=0 {p.velocity[j]+=lerp(s.force[j],p.gradient)/60;}}
         let spin_by_speed=(s.spin_speed[0]|s.spin_speed[1])!=0&&s.spin_range[1]>s.spin_range[0];
         let speed=if s.limit>=0||spin_by_speed {length3(p.velocity)}else{0};
         if s.limit>=0&&speed>s.limit {let limited=speed-mulq(speed-s.limit,s.dampen);for v in &mut p.velocity {*v=scale_velocity(*v,limited,speed);}}
-        let spin=lerp(sample.spin,p.gradient)+if spin_by_speed {
+        let spin=base_spin+if spin_by_speed {
             lerp(s.spin_speed,speed_fraction(speed,s.spin_range))
         }else{0};
         if spin!=0||!(0..360*ONE).contains(&p.angle){p.angle=(p.angle+spin/60).rem_euclid(360*ONE);}
-        let (next,radius)=sweep(p,s,&sample);
+        let next=sweep(p);
         if s.collision {
             let old=p.position;
             union=[union[0].min(next[0].min(old[0])-radius),union[1].min(next[1].min(old[1])-radius),
@@ -205,11 +241,11 @@ static DATA:&[u8]=include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/br
 pub fn upload(){for u in UPLOADS {psx_vram::upload_bytes(psx_vram::VramRect::new(u.x,u.y,u.w,u.h),&DATA[u.offset..u.offset+u.w as usize*u.h as usize*2]);}}
 #[cfg(not(test))]
 #[inline(never)]
-pub(super) fn draw_particle(p:&Particle,camera:(i32,i32))->bool {
+pub(super) fn draw_particle(p:&Particle,track:u16,camera:(i32,i32))->bool {
     use psx_gpu::{prim::QuadTextured,material::{TextureMaterial,BlendMode}};
-    let s=&STYLES[(p.kind-2)as usize];let sample=sample(p,s);let alpha=lerp(sample.alpha.map(i32::from),p.gradient);
-    let level=((alpha*3+127)/255).clamp(0,3);if level==0{return false;}
-    let a=ART[s.frames[p.cell as usize][level as usize-1]as usize];let half=mulq(p.size,lerp(sample.size,p.gradient))/2;
+    let s=&STYLES[(p.kind-2)as usize];let words=cached_frame(track,phase(p),PARTICLE_TRACKS);
+    let (half,level)=draw_shape(p,s,words);if level==0{return false;}
+    let a=ART[s.frames[p.cell as usize][level as usize-1]as usize];
     let depth=2496922+p.position[2];if depth<=ONE{return false;}
     // Source-plane particles skip the 64-bit software division exactly.
     let scale=if p.position[2]==0 {crate::KNIGHT_SCALE as i64}else{super::perspective::scale(depth)as i64};
@@ -223,7 +259,7 @@ pub(super) fn draw_particle(p:&Particle,camera:(i32,i32))->bool {
     let template=QuadTextured::with_material([(0,0);4],[(a.u,a.v),(r,a.v),(a.u,b),(r,b)],TextureMaterial::blended(a.clut,a.tpage,(p.color[0],p.color[1],p.color[2]),BlendMode::Average));
     crate::render::resident_quad(&template,vertices.map(|(x,y)|(x as i16,y as i16)));true
 }
-#[cfg(test)]pub(super) fn draw_particle(_:&Particle,_:(i32,i32))->bool{false}
+#[cfg(test)]pub(super) fn draw_particle(_:&Particle,_:u16,_:(i32,i32))->bool{false}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,12 +397,15 @@ fn length3_reference(v: [i32; 3]) -> i32 {
         }
     }
     #[test]fn optimized_full_pool_flight_matches_naive_every_tick(){
-        flight_matches_naive(0);
+        flight_matches_naive(0,false);
     }
     #[test]fn rooms_beyond_edge_scratch_keep_the_direct_callback(){
-        flight_matches_naive(EDGE_SCRATCH);
+        flight_matches_naive(EDGE_SCRATCH,false);
     }
-    fn flight_matches_naive(padding:usize){
+    #[test]fn precomputed_shape_tracks_preserve_full_trajectories_and_draw_fields(){
+        flight_matches_naive(0,true);flight_matches_naive(EDGE_SCRATCH,true);
+    }
+    fn flight_matches_naive(padding:usize,cached:bool){
         const SPIN_CURVE:[Sample;33]=[Sample{size:[ONE/2,ONE],alpha:[0,255],spin:[-200*ONE,200*ONE]};33];
         let styles=[
             Style{count:30,life:[120,600],speed:[3*ONE,30*ONE],force:[[0,0],[-86*ONE,-82*ONE],[0,0]],velocity:[[0,0],[0,30*ONE],[0,0]],
@@ -389,15 +428,36 @@ fn length3_reference(v: [i32; 3]) -> i32 {
                 let q=p.particles[i].as_mut().unwrap();q.position=[0,3*ONE,0];q.velocity=v;q.angle=360*ONE;
             }
         }
+        // Build exact immutable phase values once for this synthetic fixture.
+        // Production obtains these from the host; no guest spawn does this work.
+        let mut tracks=Vec::new();
+        if cached {for (i,p)in fast.particles.iter().enumerate(){if let Some(p)=p {
+            let s=&styles[(p.kind-2)as usize];let mut valid=true;
+            let track=core::array::from_fn(|phase|{
+                let sample=&s.samples[phase];let half=mulq(p.size,lerp_reference(sample.size,p.gradient))/2;
+                let radius=mulq(half,s.radius_scale);let spin=lerp_reference(sample.spin,p.gradient);
+                let alpha=lerp_reference(sample.alpha.map(i32::from),p.gradient);let level=((alpha*3+127)/255).clamp(0,3);
+                if !(0..=65535).contains(&half)||!(0..=65535).contains(&radius)||!(-(1<<25)..(1<<25)).contains(&spin){valid=false;}
+                [(half as u32&65535)|((radius as u32&65535)<<16),(spin as u32&0x3ffffff)|((level as u32)<<26)]
+            });
+            if valid {fast.tracks[i]=tracks.len()as u16+1;tracks.push(track);}
+        }}}
+        if cached {assert!(tracks.len()>100,"cached trajectory must exercise the packed path");}
         for tick in 0..650 {
             let coverage=if (70..100).contains(&tick){[-2*ONE,-ONE,2*ONE,ONE]}else{COVER};
             let edge=|i|if i>=edges.len()||(tick>=140&&i==0){[0;4]}else{edges[i]};
             let cached=core::array::from_fn::<_,6,_>(edge);
             let scene=if tick%53==0{1}else{0};
-            tick_specs(&mut fast,scene,&styles,coverage,edges.len()+padding,|i|if i<cached.len(){cached[i]}else{[0;4]});
+            tick_specs_with_tracks(&mut fast,scene,&styles,coverage,edges.len()+padding,|i|if i<cached.len(){cached[i]}else{[0;4]},&tracks);
             tick_reference(&mut reference,scene,&styles,coverage,edges.len()+padding,edge);
             assert_eq!(format!("{:?}",fast.particles),format!("{:?}",reference.particles),"tick{tick}");
-            for p in fast.particles.iter().flatten() {super::super::perspective::assert_vertices(p.position,p.angle,p.size,(tick*7919,-tick*3571));}
+            for (i,slot)in fast.particles.iter().enumerate(){if let Some(p)=slot {
+                let s=&styles[(p.kind-2)as usize];let words=cached_frame(fast.tracks[i],phase(p),&tracks);
+                assert_eq!(draw_shape(p,s,words),draw_shape(p,s,None));
+                assert_eq!(tick_shape(p,s,words),tick_shape(p,s,None));
+                let half=draw_shape(p,s,words).0;
+                super::super::perspective::assert_vertices(p.position,p.angle,half*2,(tick*7919,-tick*3571));
+            }}
             assert_eq!((fast.spawned,fast.dropped,fast.drawn),(reference.spawned,reference.dropped,reference.drawn));
         }
         assert_eq!(fast.active(),0);
@@ -503,7 +563,7 @@ fn length3_reference(v: [i32; 3]) -> i32 {
         assert_eq!(core::mem::size_of::<Particle>(),48);
         assert_eq!(core::mem::size_of::<Option<Particle>>(),48);
         assert_eq!(super::super::CAPACITY,128);
-        assert_eq!(core::mem::size_of::<Pool>(),6160);
+        assert_eq!(core::mem::size_of::<Pool>(),6416);
     }
     #[test]fn positive_lifetime_storage_preserves_full_u16_range_and_expiry(){
         for life in [1,255,256,600,u16::MAX] {

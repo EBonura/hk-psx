@@ -23,7 +23,8 @@ PS1's limited blend modes; this is not full source-shader parity.
 98 bounded regions cover Tutorial_01 and Dirtmouth's left entrance. All their
 scene data now stays in one 369,180-byte RAM arena; both scenery atlases stay in
 VRAM throughout gameplay. Their CPU copies are discarded after startup uploads,
-leaving about691KiB of unallocated main RAM for future bounded data. Lossless sharing across regions uses 20 static 4bpp
+with exact host-cooked particle tracks using part of the recovered RAM and
+leaving about299KiB unallocated for future bounded data. Lossless sharing across regions uses 20 static 4bpp
 pages and 1,209 palettes. The existing approved 95% static matches remain; no
 further resolution reduction or lossy merging was added. Scenery keeps its
 48-pixel long-axis cap; Knight, enemy and HUD resolution is unchanged.
@@ -34,8 +35,8 @@ select local views without CD reads, decoding or static texture uploads. Eight
 animation slots fetch frames from resident RAM and retain cached frames across
 same-scene crossings. The long user replay now has zero boundary-loading waits
 (previously 478 ticks), with no traversal CD reads or static uploads. The best preserved optimization run
-renders at one to four VBlanks per frame (mean 1.976839, approximately30fps on the long
-replay);179 of2,936 intervals still exceed two VBlanks, so the strict30fps gate fails. Current build identity
+renders at one to four VBlanks per frame (mean 1.957504, approximately30fps on the long
+replay);153 of2,965 intervals still exceed two VBlanks, so the strict30fps gate fails. Current build identity
 and ongoing experiments are recorded in docs/STATUS.md. This covers the current authored subset, not the full game's residency
 or physical-console timing. See [docs/STATUS.md](docs/STATUS.md) for evidence and
 [docs/BUDGET.md](docs/BUDGET.md) for measured allocations.
