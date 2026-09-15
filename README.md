@@ -25,7 +25,7 @@ source damage stages and opens after thirteen hits, followed by the source-deriv
 blackout, Town entry fade and scripted walk-in. Full original effects remain incomplete. Verified black masks now darken the background using the
 PS1's limited blend modes; this is not full source-shader parity.
 
-106 bounded views cover Tutorial_01 and Town0..270/-5..76. One369,180-byte
+106 bounded views cover Tutorial_01 and Town0..270/-5..76. One354,032-byte
 RAM arena and the same static VRAM slots are reused at scene exits. All views
 within the active scene stay resident; walking across internal boundaries needs
 no further scene reads or static uploads. Scene exits use a black-screen load

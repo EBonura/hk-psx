@@ -7,7 +7,7 @@ See STATUS.md for final-CUE validation and the current disc identity.
 
 ## Current runtime implementation
 
-Production builds select `scene_gate` residency. One369,180-byte arena and the
+Production builds select `scene_gate` residency. One354,032-byte arena and the
 same static VRAM slots belong to one scene at a time. Tutorial needs321,956
 resident bytes,18 pages and1,068 palettes; Town needs88,200 resident bytes,
 6 pages and390 palettes. Their combined410,156 resident bytes need not coexist.

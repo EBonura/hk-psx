@@ -440,7 +440,7 @@ fn main() {
                             }
                             let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
                                 [camera.0,camera.1,-2496922],unbound_runner_event,
-                                |scene,x,y| {let i=world::locate(scene,x,y)?;Some((&world::REGIONS[i],cache.room_for(i)?))});
+                                |scene,x,y| {let i=cache.locate(scene,x,y)?;Some((&world::REGIONS[i],cache.room_for(i)?))});
                             enemies.take_geo_deaths(r.scene,|source,x,y|geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));
                             let h=geo::HERO_BOX;
                             let collected=geo.tick(r.scene,geo::GEO_PARAMS,[player.x+h[0],player.y+h[1],player.x+h[2],player.y+h[3]],
@@ -457,7 +457,7 @@ fn main() {
                                 if hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
                             }
                             if let Some(checkpoint)=world::checkpoint_record(r,&player,PARAMS) {
-                                if let Some(id)=world::locate(r.scene,checkpoint.spawn[0],checkpoint.spawn[1]) {
+                                if let Some(id)=cache.locate(r.scene,checkpoint.spawn[0],checkpoint.spawn[1]) {
                                     safe=(checkpoint.spawn[0],checkpoint.spawn[1],id);safe_facing=checkpoint.facing;
                                 }
                             }

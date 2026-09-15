@@ -24,7 +24,8 @@ The first P05 `HKWMTA01` scene-bank slice is implemented and measured for
 Tutorial/Town with checked borrowed views. The scene pack emits metadata after
 coverage and the guest Cache validates it in the unused aligned tail of the
 scene arena before publishing a scene. A pinned no-disc guest build passes the
-final hazard scan with 2,172 bytes before the stack floor; the current playable
+final hazard scan with 15,272 bytes before the stack floor; spatial actor and
+checkpoint lookup now uses the admitted bank; the current playable
 disc remains build 71 because it has the older chunk table. Continue P05 with a
 pinned guest differential metadata/geometry/coverage run, and only then replace
 the single disc pair.
@@ -142,7 +143,7 @@ Work68 integrates exclusive scene admission at authored gates and expands Town
 scenery/collision to0..270/-5..76, using106 stable region IDs (86Tutorial/20Town).
 See STATUS.md for final build/replay status; do not infer a playable update from
 host packing alone. All current regions inside a scene stay resident. Gate
-loading reuses the369,180-byte arena and static atlas slots, with retired GPU
+loading reuses the354,032-byte arena and static atlas slots, with retired GPU
 work, VBlank blackout, renderer/animation invalidation and continuous actual
 input/audio service. Both scene manifests use origins0; descriptor ownership is
 explicit. Production host builds select `scene_gate`; joint mode remains tested.
@@ -252,7 +253,7 @@ EXE SHA256:10f85ace6f2f1381caa09ef4cc76932b96d1303ecf93350ddcfbd26d9b40f3dc
 BIN SHA256:ff85bd0ebf8619c4cbe8d96ef0225f6eb00fd9487cf3392cc66f3a9e54e46e00
 Memory: code340680/data771376/BSS567812/alignment8, span1679876,
 end0x801aa204, gap302332 before49152-byte stack. Main32120, nested reserve17032.
-Scene arena369180, scratch948/1024. Linked budgets are not stack high-water.
+Scene arena354032, scratch948/1024. Linked budgets are not stack high-water.
 
 ## Mandatory build discipline
 

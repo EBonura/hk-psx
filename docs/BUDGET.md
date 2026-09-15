@@ -19,7 +19,7 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 Static data ends at `0x801eb794`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
-There is no heap. The single scene arena occupies369,180 bytes, replacing five
+There is no heap. The single scene arena occupies354,032 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
 1,120 scene-global texture IDs; the animation cache still permits 2,048 keys.
 Geo logic, resident art/audio, functional menus, break-effect and Lifeblood
@@ -58,8 +58,8 @@ copies. The48KiB reservation and high-water caveat apply to the retained build.
 
 | Scene | Raw bytes | Stored bytes | RAM offset | Decoder suffix capacity |
 | --- | ---: | ---: | ---: | ---: |
-| Tutorial |321,956|181,163|0|369,180|
-| Town |88,200|53,583|0|369,180|
+| Tutorial |321,956|181,163|0|354,032|
+| Town |88,200|53,583|0|354,032|
 
 HKSCNE02 resident data omits static page/palette payloads held in VRAM.
 Geometry, animation and alpha metadata share one scene arena; only the active
