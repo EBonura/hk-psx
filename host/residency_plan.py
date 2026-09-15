@@ -203,6 +203,55 @@ def plan_inventory(inventory, graph, current, ram_budget_bytes=None, vram_budget
             'fetch_point': 'target_room_entry_prefetch_neighbours',
             'release_rule': 'after source room rendering finishes and target data is verified',
         })
+    # Keep a plan per authored directed gate, rather than collapsing several
+    # gates to the same target scene. Runtime can therefore retain the source
+    # gate identity and its conditional flags while using the same cooked
+    # dependency sets. Unknown target content never produces an executable
+    # eviction list.
+    directed_edges = []
+    edges = [edge for edge in graph.get('edges', [])
+             if edge.get('source_scene') == current]
+    edges.sort(key=lambda edge: (str(edge.get('source_id', '')),
+                                 str(edge.get('target_scene', '')),
+                                 str(edge.get('entry_point', '')),
+                                 json.dumps(edge, sort_keys=True)))
+    for edge in edges:
+        target_name = edge.get('target_scene')
+        target_names, target_ids, target_missing, target_incomplete, graph_available = window(target_name)
+        target_known = target_name in dependencies
+        target_admission = admission(window_budget(target_ids,
+                                                   bool(target_missing) or bool(target_incomplete)
+                                                   or not graph_available))
+        source_window_ids = all_ids
+        directed_edges.append({
+            'source_id': edge.get('source_id'),
+            'source_scene': current,
+            'target_scene': target_name,
+            'entry_point': edge.get('entry_point'),
+            'resolution': edge.get('resolution'),
+            'target_gate_source_ids': sorted(edge.get('target_gate_source_ids', [])),
+            'serialized_flags': edge.get('serialized_flags', {}),
+            'conditional': bool(edge.get('serialized_flags')) or edge.get('resolution') not in (None, 'mapped_gate'),
+            'target_window_rooms': target_names,
+            'target_window_resource_ids': sorted(target_ids),
+            'target_window_missing_room_inventories': target_missing,
+            'target_window_incomplete_room_inventories': target_incomplete,
+            'target_window_graph_available': graph_available,
+            'target_window_admission': target_admission,
+            'priority_tiers': {
+                'current_visible': sorted(current_ids),
+                'target_visible': sorted((dependencies.get(target_name, set())) - source_window_ids),
+                'target_neighbours': sorted(target_ids - set(dependencies.get(target_name, set())) - source_window_ids),
+            } if target_known else None,
+            'fetch_before_gate_crossing_resource_ids': sorted(target_ids - source_window_ids) if target_known else None,
+            'keep_during_transition_resource_ids': sorted(source_window_ids & target_ids) if target_known else None,
+            'evict_after_target_admission_resource_ids': (
+                sorted(source_window_ids - target_ids) if target_admission != 'unadmitted' else None),
+            'fetch_deadline': 'before_gate_crossing',
+            'publish_deadline': 'before_target_first_draw',
+            'eviction_rule': ('after_target_metadata_geometry_atlas_and_coverage_verify'
+                              if target_admission != 'unadmitted' else 'hold_until_target_dependencies_are_complete'),
+        })
     unsupported = {name: sorted(rooms[name].get('unsupported', []),
                                key=lambda item: json.dumps(item, sort_keys=True)) for name in selected
                    if name in rooms and rooms[name].get('unsupported')}
@@ -212,7 +261,7 @@ def plan_inventory(inventory, graph, current, ram_budget_bytes=None, vram_budget
     backing = set().union(*(set(original_rooms[name].get('texture_ids', []))
                            for name in selected if name in original_rooms))
     return {
-        'version': 1,
+        'version': 2,
         'current_scene': current,
         'neighbours': neighbours,
         'selected_rooms': selected,
@@ -224,6 +273,7 @@ def plan_inventory(inventory, graph, current, ram_budget_bytes=None, vram_budget
         'resource_union': sorted(all_ids),
         'fetch_order': fetch_order,
         'transitions': transitions,
+        'directed_edges': directed_edges,
         'budget_scope': 'listed resource dependencies with explicit cooked allocation costs only',
         'budgets': budgets,
         'admission': admission(budgets),
@@ -245,7 +295,7 @@ def plan_inventory(inventory, graph, current, ram_budget_bytes=None, vram_budget
             'Source fragment IDs require cooked-bank mapping before they can drive guest reads.',
             'No unknown dependency is discarded and no source-size estimate is counted as cooked residency.',
             'Audio, other assets, actor state, code, stack, allocator layout and transition overlap still need budgets.',
-            'Fetch points name lifecycle events; prefetch distance, CD seek deadlines and eviction execution are unimplemented.',
+            'Fetch points name lifecycle events; traversal distance, CD seek timing and guest execution remain unimplemented.',
         ],
     }
 
@@ -255,7 +305,7 @@ def plan_all(inventory, graph, ram_budget_bytes=None, vram_budget_bytes=None):
     rooms = _indexed(inventory['rooms'])
     nodes = _indexed(graph['rooms'])
     return {
-        'version': 1,
+        'version': 2,
         'source_inventory_complete': inventory.get('complete'),
         'plans': {name: plan_inventory(inventory, graph, name, ram_budget_bytes, vram_budget_bytes)
                   for name in sorted(rooms) if name in nodes},
