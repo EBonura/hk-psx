@@ -25,6 +25,11 @@ images. Two gates take569 loading samples versus508 in68; no FPS claim. Town-end
 Evidence: .hkpsx/game69/validation.json. Do not replace
 the disc during the user’s playtest without further steering.
 
+Source-only70 adds hk-sim Zombie Runner state/events with10 native tests; the
+full hk-sim suite passes and Crawler remains unchanged. See docs/RUNNER.md.
+Runner is NOT integrated into guest actors or the disc. Preserve documented
+original scheduling/RNG/reentry gaps when adding sensing, art and sound.
+
 Final68 fixed the reverse gate entry.
 Three actual-CUE routes now pass: Focus850polls, gate return12,112 and Town
 traversal/reset12,562. The last reachesx177.274; both long routes replace the

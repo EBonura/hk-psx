@@ -22,6 +22,13 @@ to the opening with an image byte-identical to68;11,832 stable intervals pass. A
 against the exact cooked files in RAM, with a visible inspected Knight atx174.646.
 Consolidated evidence: .hkpsx/game69/validation.json. Crossroads gameplay remains unimplemented.
 
+## Source preparation70: Crossroads enemies
+
+An isolated source-derived Zombie Runner controller is implemented in hk-sim.
+See RUNNER.md for callback ordering, completion-token and integration contracts.
+It is not connected to guest actors or included in the provisional disc; terrain
+queries, art, audio, corpse/Geo and original-runtime comparisons remain.
+
 ## Current playable build68: Town expansion and scene replacement
 
 The previous final68 build, now superseded by provisional69, included
