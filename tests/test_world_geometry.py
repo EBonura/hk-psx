@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'host'))
-from world_geometry import GeometryHierarchy, collider_paths, extract_scene
+from world_geometry import GeometryHierarchy, collider_paths, collider_shape, extract_scene
 
 
 def ptr(ident):
@@ -79,6 +79,18 @@ class WorldGeometryTests(unittest.TestCase):
         self.assertEqual(len(box),5)
         self.assertEqual(box[0],box[-1])
 
+    def test_circle_boundary_preserves_exact_affine_transform(self):
+        _,sc = fixture()
+        tree = dict(collider(), m_Radius=2)
+        shape = collider_shape('CircleCollider2D', tree, GeometryHierarchy(sc), 2)
+        self.assertEqual(shape['kind'], 'affine_circle')
+        self.assertEqual(shape['center'], [7,24.5,0])
+        self.assertEqual(shape['axis_x'], [-4,0,0])
+        self.assertEqual(shape['axis_y'], [0,6,0])
+        tree['m_Radius'] = -1
+        with self.assertRaisesRegex(ValueError, 'invalid circle radius'):
+            collider_shape('CircleCollider2D', tree, GeometryHierarchy(sc), 2)
+
     def test_inactive_and_trigger_colliders_retained_without_terrain(self):
         s,sc = fixture()
         sc.objects[21] = ('PolygonCollider2D',collider())
@@ -123,14 +135,18 @@ class WorldGeometryTests(unittest.TestCase):
         self.assertFalse(r['geometry_extraction_complete'])
         self.assertFalse(r['gameplay_ready'])
 
-    def test_sliced_sprites_and_unsupported_collider_do_not_claim_geometry(self):
+    def test_sliced_sprite_and_exact_circle_boundary_are_distinguished(self):
         s,sc = fixture()
         sc.objects[31] = ('SpriteRenderer',{'m_GameObject':ptr(2),'m_Sprite':ptr(80),'m_DrawMode':1})
         sc.objects[22] = ('CircleCollider2D',dict(collider(),m_Radius=2))
         r = extract_scene(s,sc,{})
-        self.assertEqual(len(r['unsupported']),2)
+        self.assertEqual(len(r['unsupported']),1)
         self.assertEqual(r['counts']['sprite_quads'],0)
         self.assertNotIn('world_paths',r['colliders'][0])
+        self.assertEqual(r['colliders'][0]['world_shape']['center'], [7,24.5,0])
+        self.assertEqual(r['counts']['analytic_collider_shapes'], 1)
+        self.assertEqual(r['terrain_shapes'], [{'source':'level99:22',
+            'shape':r['colliders'][0]['world_shape']}])
 
     def test_camera_gate_metadata_keeps_disabled_and_exact_fields(self):
         s,sc = fixture()
@@ -152,6 +168,8 @@ class WorldGeometryTests(unittest.TestCase):
         sc.objects[61] = ('tk2dSprite',{'m_GameObject':ptr(2),'m_Enabled':False,
             'collection':ptr(82),'_spriteId':0,'_color':{'r':1,'g':1,'b':1,'a':.5},
             '_scale':{'x':-2,'y':.5,'z':1}})
+        sc.objects[62] = ('MeshRenderer',{'m_GameObject':ptr(2),'m_Enabled':True})
+        sc.objects[63] = ('MeshFilter',{'m_GameObject':ptr(2),'m_Mesh':ptr(0)})
         definition = {'name':'source frame','positions':[{'x':0,'y':0,'z':0},
             {'x':1,'y':0,'z':0},{'x':0,'y':1,'z':0}],
             'indices':[0,2,1],'uvs':[{'x':0,'y':0},{'x':.5,'y':0},{'x':0,'y':.5}],
@@ -170,23 +188,67 @@ class WorldGeometryTests(unittest.TestCase):
         self.assertEqual(row['triangles'],[[0,2,1]])
         self.assertEqual(row['uv0'],[[0,0],[.5,0],[0,.5]])
         self.assertEqual(r['counts']['tk2d_frames'],1)
+        self.assertEqual(r['counts']['generated_mesh_aliases'],1)
+        self.assertEqual(r['meshes'][0]['geometry_status'],
+                         'generated_by_extracted_tk2d_source')
+        self.assertEqual(r['meshes'][0]['generated_geometry_sources'],['level99:61'])
+        self.assertEqual(r['unsupported'],[])
         sc.objects[61][1]['_spriteId'] = -1
         r = extract_scene(s,sc,{})
         self.assertEqual(r['counts']['tk2d_frames'],0)
+        self.assertEqual(r['counts']['generated_mesh_aliases'],0)
+        self.assertEqual(r['meshes'][0]['geometry_status'],
+                         'runtime_generated_geometry_unresolved')
         self.assertEqual(len(r['errors']),1)
 
-    def test_omitted_particles_are_reported_and_null_mesh_is_retained(self):
+    def test_omitted_native_mesh_and_unowned_null_mesh_are_retained(self):
         s,sc = fixture()
-        sc.file.objects = {90:SimpleNamespace(path_id=90,type=SimpleNamespace(name='ParticleSystemRenderer')),
-                           91:SimpleNamespace(path_id=91,type=SimpleNamespace(name='Mesh'))}
+        sc.file.objects = {91:SimpleNamespace(path_id=91,type=SimpleNamespace(name='Mesh'))}
         sc.objects[52] = ('MeshRenderer',{'m_GameObject':ptr(2),'m_Enabled':True})
         sc.objects[53] = ('MeshFilter',{'m_GameObject':ptr(2),'m_Mesh':ptr(0)})
         r = extract_scene(s,sc,{})
-        self.assertEqual(len(r['omitted_source_objects']),2)
-        self.assertEqual(len(r['unsupported']),2)
+        self.assertEqual(len(r['omitted_source_objects']),1)
+        self.assertEqual(len(r['unsupported']),1)
         self.assertIsNone(r['meshes'][0]['mesh'])
         self.assertFalse(r['geometry_extraction_complete'])
         self.assertEqual(r['errors'],[])
+
+    def test_particle_parameters_renderer_and_dependencies_are_preserved(self):
+        s,sc = fixture()
+        sc.objects[71] = ('ParticleSystem',{'m_GameObject':ptr(2),'lengthInSec':2.5,
+            'looping':1,'playOnAwake':0,'EmissionModule':{'enabled':1},
+            'SubModule':{'subEmitters':[ptr(90)]}})
+        sc.objects[72] = ('ParticleSystemRenderer',{'m_GameObject':ptr(2),
+            'm_Enabled':True,'m_Materials':[ptr(81)],'m_RenderMode':4,
+            'm_SortingLayer':3,'m_SortingOrder':7,'m_Mesh':ptr(82),
+            'm_Mesh1':ptr(0),'m_Mesh2':ptr(0),'m_Mesh3':ptr(0)})
+        r = extract_scene(s,sc,{})
+        self.assertEqual(r['counts']['particle_systems'],1)
+        self.assertEqual(r['counts']['particle_renderers'],1)
+        particle=r['particle_systems'][0]
+        self.assertEqual((particle['source_duration'],particle['source_looping'],
+                          particle['source_play_on_awake']),(2.5,True,False))
+        self.assertEqual(particle['serialized']['SubModule']['subEmitters'],[ptr(90)])
+        renderer=r['particle_renderers'][0]
+        self.assertEqual(renderer['materials'],['assets:81'])
+        self.assertEqual(renderer['mesh_dependencies'],['assets:82'])
+        self.assertEqual((renderer['render_mode'],renderer['sorting_layer'],
+                          renderer['sorting_order']),(4,3,7))
+        self.assertEqual(r['unsupported'],[])
+
+    def test_runtime_text_mesh_is_bound_to_its_serialized_generator(self):
+        s,sc = fixture()
+        sc.objects[71] = ('TextMeshPro',{'m_GameObject':ptr(2),'m_Enabled':True,
+            'm_text':'Source text','m_fontSize':12})
+        sc.objects[72] = ('MeshRenderer',{'m_GameObject':ptr(2),'m_Enabled':True})
+        sc.objects[73] = ('MeshFilter',{'m_GameObject':ptr(2),'m_Mesh':ptr(0)})
+        r = extract_scene(s,sc,{})
+        self.assertEqual(r['counts']['text_mesh_generators'],1)
+        self.assertEqual(r['meshes'][0]['geometry_status'],
+                         'generated_by_serialized_text_source_unshaped')
+        self.assertEqual(r['meshes'][0]['generator_sources'],['level99:71'])
+        self.assertEqual(r['unsupported'],[{'source':'level99:72','type':'TextMeshPro',
+            'reason':'runtime glyph shaping and mesh geometry not extracted'}])
 
     def test_tilemap_mesh_preserved_when_cell_proof_fails(self):
         s,sc = fixture()

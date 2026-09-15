@@ -11,7 +11,7 @@ from pathlib import Path
 from UnityPy.helpers.MeshHelper import MeshHandler
 from tilemap_fill import mesh_cells, merge_cells
 
-SCHEMA = 'HKWORLDGEOM01'
+SCHEMA = 'HKWORLDGEOM02'
 
 
 class GeometryHierarchy:
@@ -105,6 +105,26 @@ def collider_paths(kind, tree, hierarchy, gid):
     return paths
 
 
+def collider_shape(kind, tree, hierarchy, gid):
+    """Return an exact analytic world-space boundary for non-path colliders."""
+    if kind != 'CircleCollider2D':
+        raise ValueError('analytic boundary extraction not implemented for '+kind)
+    offset = tree['m_Offset']
+    radius = tree['m_Radius']
+    if type(radius) not in (int, float) or not math.isfinite(radius) or radius < 0:
+        raise ValueError('invalid circle radius')
+    center = hierarchy.point(gid, offset['x'], offset['y'])
+    point_x = hierarchy.point(gid, offset['x'] + radius, offset['y'])
+    point_y = hierarchy.point(gid, offset['x'], offset['y'] + radius)
+    return {
+        'kind': 'affine_circle',
+        'center': center,
+        'axis_x': [value-center[index] for index, value in enumerate(point_x)],
+        'axis_y': [value-center[index] for index, value in enumerate(point_y)],
+        'parameterization': 'center + axis_x*cos(theta) + axis_y*sin(theta)',
+    }
+
+
 def sprite_geometry(obj):
     sprite = obj.read()
     mesh = MeshHandler(sprite.m_RD, obj.version)
@@ -126,19 +146,17 @@ def extract_scene(source, scene, scene_info):
     """
     filename = Path(scene.file.name).name
     result = dict(schema=SCHEMA, scene=dict(scene_info), sprites=[], colliders=[],
-                  terrain_edges=[], meshes=[], tk2d_sprites=[], tilemap_fills=[], cameras=[],
-                  camera_locks=[], gates=[], tilemaps=[], errors=list(scene.errors),
+                  terrain_edges=[], terrain_shapes=[], meshes=[], tk2d_sprites=[], tilemap_fills=[], cameras=[],
+                  camera_locks=[], gates=[], tilemaps=[], particle_systems=[],
+                  particle_renderers=[], errors=list(scene.errors),
                   unsupported=[], omitted_source_objects=[], gameplay_ready=False)
     # Scene intentionally skips costly native mesh/particle type-tree reads.
     # Keep their provenance visible even when they are absent from objects.
     for obj in scene.file.objects.values() if hasattr(scene.file, 'objects') else []:
-        if obj.path_id not in scene.objects and obj.type.name in (
-                'ParticleSystem', 'ParticleSystemRenderer', 'Mesh'):
+        if obj.path_id not in scene.objects and obj.type.name == 'Mesh':
             item = {'source': source.sid(obj), 'type': obj.type.name,
                     'reason': 'native type omitted from Scene type-tree inventory'}
             result['omitted_source_objects'].append(item)
-            if obj.type.name != 'Mesh':
-                result['unsupported'].append(dict(item, reason='particle system geometry not extracted'))
     hierarchy = GeometryHierarchy(scene)
     components = {}
     for ident, (kind, tree) in scene.objects.items():
@@ -199,10 +217,11 @@ def extract_scene(source, scene, scene_info):
     mesh_cache = {}
     for ident, (kind, tree) in scene.objects.items():
         relevant = (kind in ('SpriteRenderer', 'tk2dSprite') or kind.endswith('Collider2D') or
-                    kind in ('MeshRenderer', 'Camera', 'CameraLockArea', 'TransitionPoint'))
+                    kind in ('MeshRenderer', 'ParticleSystem', 'ParticleSystemRenderer',
+                             'Camera', 'CameraLockArea', 'TransitionPoint'))
         if not relevant:
-            if kind in ('SkinnedMeshRenderer', 'ParticleSystemRenderer', 'LineRenderer',
-                        'TrailRenderer', 'tk2dSlicedSprite', 'tk2dTiledSprite'):
+            if kind in ('SkinnedMeshRenderer', 'LineRenderer', 'TrailRenderer',
+                        'tk2dSlicedSprite', 'tk2dTiledSprite'):
                 result['unsupported'].append({'source': sid(ident), 'type': kind,
                                               'reason': 'renderer geometry not extracted'})
             continue
@@ -272,6 +291,12 @@ def extract_scene(source, scene, scene_info):
                 row['terrain_eligible'] = (row['layer'] == 8 and row['enabled'] and
                                            row['active_hierarchy'] and not row['trigger'])
                 result['colliders'].append(row)
+                if kind == 'CircleCollider2D':
+                    row['world_shape'] = collider_shape(kind, tree, hierarchy, gid)
+                    if row['terrain_eligible']:
+                        result['terrain_shapes'].append({'source': sid(ident),
+                                                         'shape': row['world_shape']})
+                    continue
                 if kind not in ('BoxCollider2D', 'EdgeCollider2D', 'PolygonCollider2D'):
                     result['unsupported'].append({'source': sid(ident), 'type': kind,
                                                   'reason': 'collider boundary not extracted'})
@@ -281,6 +306,23 @@ def extract_scene(source, scene, scene_info):
                     for path in row['world_paths']:
                         for a, b in zip(path, path[1:]):
                             result['terrain_edges'].append({'source': sid(ident), 'a': a, 'b': b})
+            elif kind == 'ParticleSystem':
+                row['serialized'] = {k:v for k,v in tree.items() if k != 'm_GameObject'}
+                row['source_duration'] = tree.get('lengthInSec')
+                row['source_looping'] = bool(tree.get('looping'))
+                row['source_play_on_awake'] = bool(tree.get('playOnAwake'))
+                result['particle_systems'].append(row)
+            elif kind == 'ParticleSystemRenderer':
+                row.update(materials=[reference(r) for r in tree.get('m_Materials', [])],
+                           render_mode=tree.get('m_RenderMode'),
+                           sorting_layer=tree.get('m_SortingLayer'),
+                           sorting_order=tree.get('m_SortingOrder'),
+                           mesh_dependencies=[reference(tree.get(name, {})) for name in
+                               ('m_Mesh','m_Mesh1','m_Mesh2','m_Mesh3')
+                               if tree.get(name, {}).get('m_PathID')])
+                row['serialized'] = {k:v for k,v in tree.items()
+                                     if k not in ('m_GameObject','m_Materials')}
+                result['particle_renderers'].append(row)
             elif kind == 'MeshRenderer':
                 filters = [t for _, k, t in components[gid] if k == 'MeshFilter']
                 result['meshes'].append(row)
@@ -290,8 +332,7 @@ def extract_scene(source, scene, scene_info):
                            materials=[reference(r) for r in tree.get('m_Materials', [])],
                            sorting_layer=tree.get('m_SortingLayer'), sorting_order=tree.get('m_SortingOrder'))
                 if row['mesh'] is None:
-                    result['unsupported'].append({'source': sid(ident), 'type': kind,
-                        'reason': 'null serialized mesh; runtime-generated geometry not evaluated'})
+                    row['geometry_status'] = 'runtime_generated_mesh_pending_owner_resolution'
                     continue
                 try:
                     obj = source.ref(scene.file, filters[0]['m_Mesh'])
@@ -344,12 +385,49 @@ def extract_scene(source, scene, scene_info):
                     result['cameras'].append(row)
         except Exception as exc:
             error(ident, kind, exc)
+
+    # tk2d owns a runtime-generated MeshFilter as an implementation detail. Keep
+    # the renderer metadata, but point it at the already extracted canonical
+    # sprite definition instead of treating the duplicate mesh as missing.
+    tk2d_geometry = {}
+    for sprite in result['tk2d_sprites']:
+        if 'world_vertices' in sprite:
+            tk2d_geometry.setdefault(sprite['game_object'], []).append(sprite['source'])
+    for mesh in result['meshes']:
+        if mesh.get('geometry_status') != 'runtime_generated_mesh_pending_owner_resolution':
+            continue
+        owners = tk2d_geometry.get(mesh['game_object'], [])
+        if owners:
+            mesh['geometry_status'] = 'generated_by_extracted_tk2d_source'
+            mesh['generated_geometry_sources'] = owners
+        else:
+            gid = int(mesh['game_object'].rsplit(':', 1)[-1])
+            text_sources = [sid(ident) for ident, kind, _ in components.get(gid, [])
+                            if kind == 'TextMeshPro']
+            if text_sources:
+                mesh['geometry_status'] = 'generated_by_serialized_text_source_unshaped'
+                mesh['generator_sources'] = text_sources
+                result['unsupported'].append({'source': mesh['source'], 'type': 'TextMeshPro',
+                    'reason': 'runtime glyph shaping and mesh geometry not extracted'})
+            else:
+                mesh['geometry_status'] = 'runtime_generated_geometry_unresolved'
+                result['unsupported'].append({'source': mesh['source'], 'type': mesh['type'],
+                    'reason': 'null serialized mesh; runtime-generated geometry not evaluated'})
     result['counts'] = {key: len(result[key]) for key in
-                        ('sprites','tk2d_sprites','colliders','terrain_edges','meshes','tilemap_fills',
-                         'cameras','camera_locks','gates','tilemaps','errors','unsupported','omitted_source_objects')}
+                        ('sprites','tk2d_sprites','colliders','terrain_edges','terrain_shapes','meshes','tilemap_fills',
+                         'cameras','camera_locks','gates','tilemaps','particle_systems',
+                         'particle_renderers','errors','unsupported','omitted_source_objects')}
     result['counts']['tk2d_frames'] = sum('world_vertices' in r for r in result['tk2d_sprites'])
     result['counts']['world_meshes'] = sum('world_vertices' in r for r in result['meshes'])
     result['counts']['sprite_quads'] = sum('world_quad' in r for r in result['sprites'])
+    result['counts']['analytic_collider_shapes'] = sum('world_shape' in r
+                                                        for r in result['colliders'])
+    result['counts']['generated_mesh_aliases'] = sum(
+        r.get('geometry_status') == 'generated_by_extracted_tk2d_source'
+        for r in result['meshes'])
+    result['counts']['text_mesh_generators'] = sum(
+        r.get('geometry_status') == 'generated_by_serialized_text_source_unshaped'
+        for r in result['meshes'])
     result['counts']['unique_sprites'] = len({r['sprite'] for r in result['sprites'] if r['sprite']})
     result['component_counts'] = dict(sorted(Counter(k for k,t in scene.objects.values()).items()))
     result['geometry_extraction_complete'] = not result['errors'] and not result['unsupported']

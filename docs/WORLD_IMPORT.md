@@ -12,19 +12,29 @@ python3 tools/doctor.py
 # Resume only matching source/code fingerprints and intact output hashes:
 .venv/bin/python host/world_import.py --jobs 3 --resume
 python3 tools/world_import_report.py
+.venv/bin/python tools/world_transitions.py
+python3 tools/world_coverage.py
 ```
 
 Outputs stay in ignored `.hkpsx/world-import/`; no guest build, canonical cooked
-files or disc is changed. `--limit N` is a diagnostic subset. Workers release all
-Unity buffers between scenes; concurrency is bounded to at most four processes.
+files or disc is changed. `--limit N` is a diagnostic subset. Each scene uses a
+fresh isolated worker, and concurrency is bounded to at most four processes.
+`--scene-timeout` and `--worker-retries` supervise only that scene. Attempt files
+retain exact PID, exit/signal and retry evidence. An interrupted run stops owned
+children and leaves active/queued scenes pending rather than inventing failures.
 
 Each scene has compressed geometry and component records, preserving original
 source IDs, transforms, instance flags, scripts and serialized parameters.
 Geometry includes unculled sprite references and world geometry, terrain segments,
-mesh data, tilemap cell unions, collider metadata, cameras and exits. Unsupported
-geometry and read errors remain explicit. Binary/nonfinite serialized values use
-lossless tagged JSON. Particle payloads are currently omitted and their source
-identities remain recorded; dynamic prefab closure is not implemented.
+mesh data, tilemap cell unions, collider metadata, cameras and exits. Circle
+colliders use exact affine parametric boundaries, preserving transformed ellipses
+without polygon approximation. Runtime-generated tk2d MeshFilters reference the
+canonical extracted tk2d sprite geometry rather than duplicating it. Unity Plane
+and Quad meshes resolve from the shipped Windows `Resources/unity default
+resources` file. Unsupported geometry and read errors remain explicit.
+Binary/nonfinite serialized values use lossless tagged JSON. Particle payloads
+are currently omitted and their source identities remain recorded; dynamic
+prefab closure is not implemented.
 
 The source dependency inventory can be reused only when its catalog and recorded
 input content hashes match. It supplies sprite/animation/texture dependencies;
@@ -35,8 +45,11 @@ packing, deduplication and measured scene budgets remain a separate pass.
 processed scenes, geometry imports, partial imports and failures. Its component
 inventory counts types and affected scenes, with gameplay support explicitly not
 evaluated. `room-graph.json` maps literal serialized scene/gate names. Runtime
-FSM overrides, progression conditions and non-TransitionPoint loads remain
-unresolved; a mapped edge is not a verified traversal.
+`scripted-transitions.json` inventories every serialized PlayMaker
+`BeginSceneTransition` and `LoadLevel` action, including disabled actions,
+literal targets, variable bindings and declared initial values. Variable values,
+FSM reachability, progression conditions and non-PlayMaker loads remain
+unresolved; a mapped edge or initial candidate is not a verified traversal.
 
 Every run hashes the Windows inputs and importer code. Resume verifies output
 hashes and retries failed scene imports. A final source/code check must pass

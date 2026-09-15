@@ -65,6 +65,19 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(data['fsm_actions'][0]['runtime_support'],'not_evaluated')
         self.assertEqual(data['dependency_inventory']['textures'],1)
 
+    def test_scripted_transition_summary_is_bound_to_world_fingerprint(self):
+        source=report()
+        scripted={'source_world_fingerprint':'abc',
+            'serialized_transition_point_edges':2,'scripted_action_count':3,
+            'action_counts':{'BeginSceneTransition':3},
+            'resolution_counts':{'dynamic_variable':2,'mapped_gate':1},
+            'dynamic_actions_with_initial_scene_candidates':1,'errors':[]}
+        data=build(source,graph(),scripted_transitions=scripted)
+        self.assertEqual(data['scripted_transitions']['scripted_action_count'],3)
+        scripted['source_world_fingerprint']='stale'
+        with self.assertRaisesRegex(ValueError,'different world import'):
+            build(source,graph(),scripted_transitions=scripted)
+
 
 if __name__ == '__main__':
     unittest.main()

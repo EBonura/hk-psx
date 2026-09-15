@@ -31,8 +31,8 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | --- | --- | --- |
 | P00 | validated | First-read documents, Git, doctor, source version, disc policy and live-process state rechecked. No importer/emulator process was active. |
 | P01 | validated | All 501 BuildSettings scenes completed with source/code verification and zero scene failures. One isolated `Mines_16` worker ended on signal 11; its automatic fresh-process retry completed successfully and both attempt records are retained. |
-| P02 | in progress | A generated coverage ledger now inventories every scene, 1,119 transition edges, 466 component types and 515 serialized PlayMaker action types without claiming runtime support. Resolve source/runtime transition overrides and classify scene roles with evidence. |
-| P03 | in progress | Nine reusable extraction-gap families are ranked by scene coverage. The first implementation target is exact affine circle-collider geometry: 5,274 instances in 292 scenes. |
+| P02 | in progress | The coverage ledger inventories every scene, 1,119 TransitionPoint edges, 318 PlayMaker scene-load actions, 468 component types and 515 PlayMaker action types without claiming runtime support. Nineteen scripted actions map to exact gates, 11 LoadLevel actions map to scenes, 286 use runtime variables, and 174 of those variables have a catalogued initial-scene candidate. Resolve variable producers and classify scene roles with evidence. |
+| P03 | in progress | 453/501 scenes now have complete source geometry extraction. Five explicit gap families remain. Exact affine circles, shipped Unity built-in meshes, particle payloads/renderers and tk2d generated-mesh aliases are global. TrailRenderer parameters are next. |
 | P04-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
@@ -77,12 +77,35 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
   textures, 21,741 sprites and 313 animation libraries.
 - Targeted importer, geometry and coverage tests: 28 passed.
 
+## P02-P03 current evidence
+
+- `tools/world_transitions.py` parsed all 307 `BeginSceneTransition` and 11
+  `LoadLevel` actions with zero parse errors. Literal and variable-bound fields
+  remain distinct; declared initial values are candidates, not runtime claims.
+- Exact affine boundaries cover all 5,274 CircleCollider2D instances across 292
+  scenes. These are dynamic/trigger objects rather than static layer-8 terrain.
+- All 12,729 runtime-generated tk2d MeshFilters now reference their extracted
+  canonical tk2d geometry rather than appearing as duplicate missing meshes.
+- The source resolver retains serialized external paths and maps Unity's shipped
+  `Library/unity default resources` pseudo-path to the Windows `Resources`
+  file. All 477 Plane and 100 Quad instances now use their exact source meshes.
+- All 28,814 ParticleSystem and 28,814 ParticleSystemRenderer payloads are
+  retained with transforms, modules, renderer settings, material/mesh
+  dependencies and event/sub-emitter references.
+- The current verified import completed 501/501 scenes: 453 imported, 48 partial,
+  zero failed. One `Pre_Menu_Intro` worker ended on signal 11; its per-run retry
+  completed, proving retry budget is independent of persistent attempt numbers.
+- Remaining gaps: 748 TextMeshPro glyph meshes in 38 scenes; 25 other
+  runtime-generated meshes in seven scenes; 831 TrailRenderers in six scenes;
+  16 null tk2d sprite collections in four scenes; four MeshRenderers without an
+  exact single MeshFilter in one scene.
+
 ### Next concrete action
 
-Extract exact transformed circle boundaries for all 5,274 serialized
-CircleCollider2D instances, regenerate the verified 501-scene report, then
-continue down the reusable geometry-gap inventory while P02 resolves scripted
-transition destinations.
+Preserve exact TrailRenderer source parameters/material dependencies for all 831
+instances, then inspect the 25 unowned runtime meshes and 16 null tk2d
+collections individually. Text shaping remains a separate renderer/cooking
+system and must not be reported as extracted glyph geometry.
 
 ## Required package completion record
 

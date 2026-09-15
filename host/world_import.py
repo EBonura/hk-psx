@@ -213,6 +213,11 @@ def next_attempt_number(folder):
     return max(attempts, default=0) + 1
 
 
+def can_retry(run_try, worker_retries):
+    """Retry budget is per run; persistent diagnostic numbering is unrelated."""
+    return run_try <= worker_retries
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT/'.hkpsx/world-import')
@@ -322,6 +327,7 @@ def main():
     queue = list(pending)
     active = {}
     attempt_counts = {}
+    run_try_counts = {}
     try:
         while queue or active:
             while queue and len(active) < args.jobs and not stop_requested:
@@ -332,16 +338,20 @@ def main():
                 else:
                     attempt += 1
                 attempt_counts[info['index']] = attempt
+                run_try = run_try_counts.get(info['index'], 0) + 1
+                run_try_counts[info['index']] = run_try
                 attempt_id = f"{fingerprint[:12]}-{info['file']}-{attempt}"
                 process = context.Process(target=import_one,
                     args=(str(directory), info, str(output), fingerprint, attempt_id),
                     name=f"world-import-{info['file']}")
                 process.start()
                 active[process.pid] = {'process': process, 'info': info, 'attempt': attempt,
-                    'attempt_id': attempt_id, 'started': time.monotonic(), 'started_unix': time.time()}
+                    'run_try': run_try, 'attempt_id': attempt_id,
+                    'started': time.monotonic(), 'started_unix': time.time()}
                 run['attempts_started'] += 1
                 atomic_json(output/info['file']/f'attempt-{attempt}.json', {
                     'scene': info, 'attempt': attempt, 'attempt_id': attempt_id,
+                    'run_try': run_try,
                     'pid': process.pid, 'started_unix': active[process.pid]['started_unix'],
                     'status': 'running'})
             if stop_requested:
@@ -351,6 +361,7 @@ def main():
                 for worker in active.values():
                     atomic_json(output/worker['info']['file']/f"attempt-{worker['attempt']}.json", {
                         'scene': worker['info'], 'attempt': worker['attempt'],
+                        'run_try': worker['run_try'],
                         'attempt_id': worker['attempt_id'], 'pid': worker['process'].pid,
                         'started_unix': worker['started_unix'], 'ended_unix': time.time(),
                         'status': 'interrupted', 'exit_code': worker['process'].exitcode})
@@ -376,6 +387,7 @@ def main():
                                       attempt_id=worker['attempt_id']) if process.exitcode == 0 else None
                 outcome = worker_outcome(process.exitcode, row, timed_out=timed_out)
                 attempt_record = {'scene': worker['info'], 'attempt': worker['attempt'],
+                    'run_try': worker['run_try'],
                     'attempt_id': worker['attempt_id'], 'pid': pid,
                     'started_unix': worker['started_unix'], 'ended_unix': time.time(),
                     'status': outcome, 'exit_code': process.exitcode,
@@ -389,7 +401,7 @@ def main():
                 else:
                     run['timeouts'] += int(timed_out)
                     run['abnormal_exits'] += int(not timed_out)
-                    if worker['attempt'] <= args.worker_retries:
+                    if can_retry(worker['run_try'], args.worker_retries):
                         run['retries'] += 1
                         queue.insert(0, worker['info'])
                         print(f"RETRY {worker['info']['scene_name']}: {outcome}", flush=True)
