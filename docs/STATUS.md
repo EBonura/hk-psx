@@ -58,10 +58,13 @@ IDs, breakable/grass/hazard/checkpoint/actor records and polygon point pools.
 `hk-format::WorldMeta` validates section strides, alignment, padding, spans and
 geometry before exposing allocation-free borrowed views. The scene pack emits
 its compressed admission copies under `.hkpsx/world-metadata-packed/` and
-records metadata checksums, source fingerprints and post-coverage chunk IDs;
-the guest admission transaction stages the bank in a separate RAM buffer and
-cross-checks it against scene geometry before publishing a scene. Build 71 and
-the sole Downloads disc are unchanged while this new chunk layout is validated.
+records metadata checksums, source fingerprints and post-coverage chunk IDs.
+The guest admission transaction stages each bank in the unused aligned tail of
+the admitted scene arena, then cross-checks it against scene geometry before
+publishing a scene; this avoids a second static RAM arena. A pinned release
+guest build now links with zero final hazards and 2,172 bytes before the stack
+floor. Build 71 and the sole Downloads disc are unchanged while this new chunk
+layout is validated.
 
 The guest edge cache now keys entries by world generation plus the generated
 global region ID. Scene admission, retry, death and reset paths revoke the key

@@ -18,7 +18,7 @@ def write_build_report(report,telemetry,candidate=False,latest=False):
     if latest and not candidate:
         (ROOT/'.hkpsx/build.json').write_text(payload)
 
-def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0,metadata_bytes=0):
+def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0):
     """Bind static RAM allocation to the exact final map and EXE header."""
     text=link_map.read_text()
     def section(name):
@@ -46,13 +46,6 @@ def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0,metadata_bytes=0):
             raise ValueError('Invalid linked coverage arena allocation')
         if proof_start<arena_start+arena_total and proof_start+proof_size>arena_start:
             raise ValueError('Scene and coverage arenas overlap')
-    if metadata_bytes:
-        meta_start,meta_size=section('hk_psx::disc::WORLD_META_BUFFER')
-        if meta_size!=metadata_bytes or not bss<=meta_start<meta_start+meta_size<=static_end:
-            raise ValueError('Invalid linked world metadata arena allocation')
-        for start,size in ((arena_start,arena_total),(proof_start,proof_size) if coverage_bytes else (0,0)):
-            if size and meta_start<start+size and meta_start+meta_size>start:
-                raise ValueError('World metadata arena overlaps another arena')
     return {'code_bytes':code_bytes,'data_bytes':data_bytes,'bss_bytes':bss_bytes,
             'code_data_alignment_bytes':data-code-code_bytes,'static_span_bytes':static_end-code,
             'static_end':hex(static_end),'stack_reserved_bytes':stack_bytes,'stack_floor':hex(stack_floor),
@@ -60,7 +53,6 @@ def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0,metadata_bytes=0):
             'reserved_bytes_beyond_main_frame':stack_bytes-main_frame,
             'scene_arena_bytes':arena_bytes,'scene_arena_count':arena_total//arena_bytes,
             'scene_arenas_total_bytes':arena_total,'coverage_arena_bytes':coverage_bytes,
-            'world_metadata_arena_bytes':metadata_bytes,
             'limitations':'Linked reservations only; no main-stack high-water or hardware timing claim.'}
 
 def sdk(source):
@@ -156,8 +148,7 @@ def main():
             'hazards':json.load(open(hazard_report_path(telemetry)))}
     link_map=link_map_path(telemetry)
     report['link_map']={'path':str(link_map),'sha256':sha(link_map)}
-    report['memory']=memory_budget(link_map,outputs['exe'],report['packed_scenes']['scene_arena_bytes'],report['scene_coverage']['arena_bytes'],
-                                   max(((int(e['raw_len'])+3)&~3 for e in report['packed_scenes'].get('world_metadata',[])),default=0))
+    report['memory']=memory_budget(link_map,outputs['exe'],report['packed_scenes']['scene_arena_bytes'],report['scene_coverage']['arena_bytes'])
     report['ambience']=json.load(open(ROOT/'.hkpsx/ambience.json'))
     report['focus_audio']=json.load(open(ROOT/'.hkpsx/focus-audio.json'))
     report['title_music']=json.load(open(ROOT/'.hkpsx/title-music.json'))

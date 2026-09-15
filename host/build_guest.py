@@ -15,7 +15,7 @@ def scene_manifest(residency="scene_gate"):
 def run(args,**kw):
     print('+', ' '.join(map(str,args)),flush=True)
     subprocess.run(list(map(str,args)),check=True,**kw)
-def build(telemetry=False, candidate=False, residency="scene_gate"):
+def build(telemetry=False, candidate=False, residency="scene_gate", package_disc=True):
     if residency!="scene_gate":raise ValueError('Guest coverage residency requires scene_gate')
     # Derive reservations from the exact final packs, including direct builds.
     from scenery_geometry import generate
@@ -73,27 +73,29 @@ def build(telemetry=False, candidate=False, residency="scene_gate"):
     shutil.copy2(link_map,out/'hk-psx.map')
     outputs = artifacts(telemetry,candidate)
     outputs['exe'].parent.mkdir(parents=True,exist_ok=True)
-    DISC_LIBRARY.mkdir(parents=True,exist_ok=True)
-    # Build the complete pair before replacing the library's last good image.
-    # Even temporary BIN/CUE files remain inside the one disc library.
-    with tempfile.TemporaryDirectory(prefix='.hk-psx-',dir=DISC_LIBRARY) as temp, \
-         tempfile.TemporaryDirectory(prefix='disc-chunks-',dir=out) as chunk_temp:
-        staged=Path(temp)/outputs['bin'].name
-        chunks = Path(chunk_temp)
-        for room in rooms:
-            shutil.copy2(room['path'],chunks/f"chunk_{room['chunk_id']}.hk")
-        for index,clip in enumerate(clips):
-            shutil.copy2(ROOT/clip['path'],chunks/f"chunk_{len(rooms)+index+1}.adpcm")
-        for index,atlas in enumerate(atlases):
-            shutil.copy2(atlas['path'],chunks/f"chunk_{len(rooms)+len(clips)+index+1}.atlas")
-        shutil.copy2(ROOT/focus['path'],chunks/f"chunk_{len(rooms)+len(clips)+len(atlases)+1}.focus")
-        for bundle in coverage['bundles']:
-            shutil.copy2(bundle['path'],chunks/f"chunk_{bundle['chunk_id']}.coverage")
-        for bank in json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text()).get('world_metadata',[]):
-            shutil.copy2(bank['path'],chunks/f"chunk_{bank['chunk_id']}.worldmeta")
-        run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks,'--cdda-track',ROOT/music['path']],cwd=ROOT)
-        staged.replace(outputs['bin'])
-        staged.with_suffix('.cue').replace(outputs['cue'])
+    if package_disc:
+        DISC_LIBRARY.mkdir(parents=True,exist_ok=True)
+        # Build the complete pair before replacing the library's last good
+        # image. Even temporary BIN/CUE files remain inside the one disc
+        # library.
+        with tempfile.TemporaryDirectory(prefix='.hk-psx-',dir=DISC_LIBRARY) as temp, \
+             tempfile.TemporaryDirectory(prefix='disc-chunks-',dir=out) as chunk_temp:
+            staged=Path(temp)/outputs['bin'].name
+            chunks = Path(chunk_temp)
+            for room in rooms:
+                shutil.copy2(room['path'],chunks/f"chunk_{room['chunk_id']}.hk")
+            for index,clip in enumerate(clips):
+                shutil.copy2(ROOT/clip['path'],chunks/f"chunk_{len(rooms)+index+1}.adpcm")
+            for index,atlas in enumerate(atlases):
+                shutil.copy2(atlas['path'],chunks/f"chunk_{len(rooms)+len(clips)+index+1}.atlas")
+            shutil.copy2(ROOT/focus['path'],chunks/f"chunk_{len(rooms)+len(clips)+len(atlases)+1}.focus")
+            for bundle in coverage['bundles']:
+                shutil.copy2(bundle['path'],chunks/f"chunk_{bundle['chunk_id']}.coverage")
+            for bank in json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text()).get('world_metadata',[]):
+                shutil.copy2(bank['path'],chunks/f"chunk_{bank['chunk_id']}.worldmeta")
+            run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks,'--cdda-track',ROOT/music['path']],cwd=ROOT)
+            staged.replace(outputs['bin'])
+            staged.with_suffix('.cue').replace(outputs['cue'])
     shutil.copy2(exe,outputs['exe'])
     return outputs
 if __name__=='__main__':
@@ -102,5 +104,6 @@ if __name__=='__main__':
     parser.add_argument('--telemetry',action='store_true')
     parser.add_argument('--candidate',action='store_true')
     parser.add_argument('--residency',choices=('joint','scene_gate'),default='scene_gate')
+    parser.add_argument('--no-disc',action='store_true',help='build and validate the guest EXE without replacing the playable BIN/CUE')
     args=parser.parse_args()
-    build(args.telemetry,candidate=args.candidate,residency=args.residency)
+    build(args.telemetry,candidate=args.candidate,residency=args.residency,package_disc=not args.no_disc)

@@ -53,7 +53,6 @@ pub struct Checkpoint {
     pub facing: i32,
 }
 pub struct Region {
-    pub global_id: usize,
     pub scene: usize,
     pub flat_floor_heights: &'static [i32],
     pub bounds: [i32; 4],
@@ -72,6 +71,14 @@ pub struct Region {
     pub actors: &'static [hk_sim::ActorSpec],
     pub checkpoints: &'static [Checkpoint],
     pub neighbours: &'static [usize],
+}
+/// The generated region table is ordered by the canonical global chunk ID.
+/// Deriving that ID from the static table removes a duplicate word from every
+/// resident Region while keeping cache identity an integer, never an arena
+/// address. HKWMTA admission still checks this ordering before use.
+#[inline]
+pub fn global_id(region:&Region)->usize {
+    unsafe {(region as *const Region).offset_from(REGIONS.as_ptr()) as usize + 1}
 }
 pub struct Gate {
     pub scene: usize,
@@ -198,7 +205,7 @@ impl State {
         self.edge_cache_valid
             && self.edge_cache_count==room.counts[5]
             && self.edge_cache_generation==self.world_generation
-            && self.edge_cache_region_id==region.global_id
+            && self.edge_cache_region_id==global_id(region)
     }
     /// Retire every view before the reusable world/geometry arena can be
     /// overwritten. Call once for every metadata admission, including a retry
@@ -218,7 +225,7 @@ impl State {
             fill_edges(&geo_edges[..*geo_edge_count],&lifeblood_edges[..*lifeblood_edge_count],broken,region,room,&mut edge_cache[..count]);
             *edge_cache_count=count;
             self.edge_cache_generation=self.world_generation;
-            self.edge_cache_region_id=region.global_id;
+            self.edge_cache_region_id=global_id(region);
             self.edge_cache_valid=true;
             true
         } else {*edge_cache_count=0;self.edge_cache_valid=false;false}
@@ -443,7 +450,7 @@ impl State {
     pub fn fill_edges_in_view(&self, active:&Region, active_room:&Room,
         target:&Region, target_room:&Room, cache:&mut [[i32;4]]) {
         assert!(cache.len()<=target_room.counts[5]);
-        if active.global_id==target.global_id {
+        if global_id(active)==global_id(target) {
             if self.edge_cache_matches(active,active_room) {
                 cache.copy_from_slice(&self.edge_cache[..cache.len()]);
             } else {self.fill_edges(active,active_room,cache);}
@@ -470,7 +477,7 @@ impl State {
     /// transient Geo/cocoon/script exclusions are remapped by source segment.
     pub fn edge_in_view(&self, active:&Region, active_room:&Room,
         target:&Region, target_room:&Room, index:usize)->[i32;4] {
-        if active.global_id==target.global_id {
+        if global_id(active)==global_id(target) {
             return self.edge(active,active_room,index);
         }
         let edge=target_room.edge(index);

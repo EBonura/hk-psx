@@ -22,9 +22,6 @@ static mut BUFFERS:Buffer=Buffer {words:[0;SCENE_ARENA_BYTES/4]};
 #[repr(C,align(4))]
 struct CoverageBuffer {words:[u32;COVERAGE_ARENA_BYTES/4]}
 static mut COVERAGE_BUFFER:CoverageBuffer=CoverageBuffer {words:[0;COVERAGE_ARENA_BYTES/4]};
-#[repr(C,align(4))]
-struct WorldMetaBuffer {words:[u32;WORLD_META_ARENA_BYTES/4]}
-static mut WORLD_META_BUFFER:WorldMetaBuffer=WorldMetaBuffer {words:[0;WORLD_META_ARENA_BYTES/4]};
 #[no_mangle]pub static mut HK_COVERAGE_LOADS:u32=0;
 #[no_mangle]pub static mut HK_COVERAGE_BYTES:u32=0;
 #[no_mangle]pub static mut HK_COVERAGE_SCENE:u32=0;
@@ -303,8 +300,9 @@ impl Cache {
         Ok(())
     }
     /// Stage and validate the immutable HKWMTA bank before any scene object
-    /// view is published.  Metadata lives in its own buffer because the scene
-    /// decoder reuses BUFFERS for every CD read and decompression pass.
+    /// view is published. Metadata is copied into the unused, aligned tail of
+    /// the admitted scene arena; the scene decoder only writes the scene's
+    /// raw prefix and later CD scratch reads stay in the arena's front.
     #[inline(never)]
     fn prepare_metadata(&mut self,scene:usize)->Result<(),LoadError> {
         self.init()?;let m=WORLD_META_MANIFEST[scene];
@@ -323,7 +321,11 @@ impl Cache {
                     DecodeError::Decompress=>LoadError::Decompress,DecodeError::RoomFormat=>LoadError::WorldMeta}),
             }
         }
-        let destination=unsafe {core::slice::from_raw_parts_mut((&raw mut WORLD_META_BUFFER.words).cast::<u8>(),m.raw_len)};
+        let scene_tail=(SCENE_MANIFEST[scene].raw_len.saturating_add(3))&!3;
+        if scene_tail.checked_add(WORLD_META_ARENA_BYTES).is_none_or(|end|end>SCENE_ARENA_BYTES) {
+            return Err(LoadError::WorldMeta);
+        }
+        let destination=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>().add(scene_tail),m.raw_len)};
         for (source,destination) in arena[..m.raw_len].chunks(1024).zip(destination.chunks_mut(1024)) {
             crate::input::checkpoint();destination.copy_from_slice(source);
         }
@@ -493,7 +495,8 @@ impl Cache {
     pub fn world_metadata(&self)->WorldMeta<'_> {
         assert!(self.metadata_scene<SCENE_COUNT && self.metadata_len==WORLD_META_MANIFEST[self.metadata_scene].raw_len,
             "No admitted world metadata selected");
-        let bytes=unsafe {core::slice::from_raw_parts((&raw const WORLD_META_BUFFER.words).cast::<u8>(),self.metadata_len)};
+        let scene_tail=(SCENE_MANIFEST[self.metadata_scene].raw_len.saturating_add(3))&!3;
+        let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(scene_tail),self.metadata_len)};
         checked_world_metadata(bytes,self.metadata_scene).expect("admitted world metadata changed")
     }
     pub fn room(&self)->Room<'_> {self.room_for(self.selected).expect("No admitted scene selected")}

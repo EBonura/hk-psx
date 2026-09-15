@@ -13,7 +13,10 @@ from scene_bank import compressed, fnv
 
 ROOT=Path(__file__).resolve().parents[1]
 MAGIC=b'HKOCSC01'
-ARENA_BYTES=84*1024
+# The largest current proof is 83,692 bytes. Keep four-byte alignment while
+# sizing this overlay to the measured maximum instead of reserving a whole
+# 84 KiB page; the saved RAM is needed by the scene admission code.
+ARENA_BYTES=83_700
 HEADER_BYTES=80
 NO_CERT=65535
 STRIDES=(12,4,2,12,4,10)
