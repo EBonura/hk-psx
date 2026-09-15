@@ -11,6 +11,9 @@ repository. The guest does not link any extraction library.
 `room_inventory.py` scans Windows BuildSettings scenes for serialized sprite,
 material and tk2d animation dependencies, sharing its pass with `room_graph.py`
 for literal TransitionPoint exits. Reports and source hashes stay in `.hkpsx/`.
-`residency_plan.py` precomputes current-room/neighbour unions and transition
-fetch/keep/release sets. Unknown cooked costs remain unknown; source atlas sizes
-are not a PS1 memory budget. These host plans do not yet drive runtime room swaps.
+`residency_plan.py` precomputes current-room/neighbour unions plus one
+deterministic directed fetch/keep/evict record for every authored gate. It
+preserves gate IDs and serialized conditions, and refuses executable eviction
+when target content is incomplete. Unknown cooked costs remain unknown; source
+atlas sizes are not a PS1 memory budget. These host plans do not yet drive
+runtime room swaps.

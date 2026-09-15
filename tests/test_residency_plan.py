@@ -66,6 +66,29 @@ class ResidencyPlanTests(unittest.TestCase):
         self.assertEqual(plan['budgets']['vram']['exact_bytes'], 80)
         self.assertFalse(plan['full_room_fit_proven'])
 
+    def test_directed_gate_plan_preserves_gate_identity_and_safe_eviction(self):
+        inventory, graph = fixture()
+        plan = plan_inventory(inventory, graph, 'A', 1000, 1000)
+        self.assertEqual(plan['version'], 2)
+        edges = plan['directed_edges']
+        self.assertEqual([edge['source_id'] for edge in edges], ['gate1', 'gate2'])
+        for edge in edges:
+            self.assertEqual(edge['target_scene'], 'B')
+            self.assertEqual(edge['fetch_before_gate_crossing_resource_ids'], [])
+            self.assertEqual(edge['keep_during_transition_resource_ids'], ['b', 'c', 'shared'])
+            self.assertEqual(edge['evict_after_target_admission_resource_ids'], ['a'])
+            self.assertEqual(edge['fetch_deadline'], 'before_gate_crossing')
+            self.assertEqual(edge['publish_deadline'], 'before_target_first_draw')
+
+    def test_directed_gate_with_incomplete_target_cannot_evict_source(self):
+        inventory, graph = fixture()
+        inventory['rooms'][1]['scan_failed'] = True
+        plan = plan_inventory(inventory, graph, 'A', 1000, 1000)
+        edge = plan['directed_edges'][0]
+        self.assertEqual(edge['target_window_admission'], 'unadmitted')
+        self.assertIsNone(edge['evict_after_target_admission_resource_ids'])
+        self.assertEqual(edge['eviction_rule'], 'hold_until_target_dependencies_are_complete')
+
     def test_source_estimates_never_become_cooked_costs(self):
         inventory, graph = fixture()
         inventory['textures']['b'] = {'serialized_bytes': 1, 'source_size_4bpp_estimate_bytes': 1}

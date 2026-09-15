@@ -101,6 +101,13 @@ remains an explicit deferred event. Native Geo runtime tests pass and the no-dis
 link remains hazard-free. This removes another two-scene ceiling without changing
 the build-71 disc.
 
+The residency planner now emits version-2 directed gate records for all authored
+edges in the 501-scene graph. Each record preserves gate/entry identity and
+serialized conditions, orders current/target/target-neighbour fetch tiers, and
+only publishes an eviction set after the target window is admitted. The refreshed
+ignored plan contains all 501 windows and 850 directed transitions; it remains a
+host scheduling input until guest background reads are bound.
+
 ## Completion plan prepared for GPT-5.6-Sol
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),

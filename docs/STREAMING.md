@@ -190,11 +190,14 @@ that every object type has been implemented.
 
 The offline planner lists current-room resources first, then additional
 neighbour resources, deduplicating stable sprite IDs. For A → B it computes the
-new B-plus-neighbours union, retained resources, additions and releases. Source
-gate references remain available for a future scheduler. This is a deterministic
-dependency proposal, not the guest's exclusive scene-gate admission policy. Conditional gates
-may eventually reduce eligible neighbours, but unsupported conditions are not
-silently guessed.
+new B-plus-neighbours union, retained resources, additions and releases. It now
+also emits one directed record per authored gate, preserving source/entry IDs and
+serialized conditions with explicit `fetch_before_gate_crossing`,
+`keep_during_transition` and `evict_after_target_admission` sets. Incomplete
+target windows never receive an executable eviction list. This is a deterministic
+dependency proposal, not the guest's exclusive scene-gate admission policy.
+Conditional gates may eventually reduce eligible neighbours, but unsupported
+conditions are not silently guessed.
 
 The catalog-wide source matrix at
 `.hkpsx/world-import/pack-matrix.{json,md}` now joins those dependency sets to
