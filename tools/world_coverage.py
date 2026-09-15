@@ -132,10 +132,12 @@ def build(report, graph, dependency=None, scripted_transitions=None):
     if scripted_transitions is not None:
         if scripted_transitions.get('source_world_fingerprint') != report['fingerprint']:
             raise ValueError('Scripted-transition inventory belongs to a different world import')
-        scripted = {key: scripted_transitions[key] for key in
+        scripted = {key: scripted_transitions.get(key) for key in
                     ('serialized_transition_point_edges', 'scripted_action_count',
                      'action_counts', 'resolution_counts',
-                     'dynamic_actions_with_initial_scene_candidates')}
+                     'dynamic_actions_with_initial_scene_candidates',
+                     'dynamic_producer_resolution_counts',
+                     'dynamic_gate_producer_resolution_counts')}
         scripted['error_count'] = len(scripted_transitions.get('errors', []))
     return {'format': 'HKWORLD_COVERAGE01',
         'scope': 'Source-derived work inventory; not PS1 packing or gameplay completion',

@@ -31,7 +31,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | --- | --- | --- |
 | P00 | validated | First-read documents, Git, doctor, source version, disc policy and live-process state rechecked. No importer/emulator process was active. |
 | P01 | validated | All 501 BuildSettings scenes completed with source/code verification and zero scene failures. The latest run isolated three signal-11 workers and retried only those scenes successfully in fresh processes; exact attempt records are retained. |
-| P02 | in progress | The coverage ledger inventories every scene, 1,119 TransitionPoint edges, 318 PlayMaker scene-load actions, 468 component types and 515 PlayMaker action types without claiming runtime support. Nineteen scripted actions map to exact gates, 11 LoadLevel actions map to scenes, 286 use runtime variables, and 174 of those variables have a catalogued initial-scene candidate. Resolve variable producers and classify scene roles with evidence. |
+| P02 | in progress | Every scene now has an evidence-backed source role and remains included. All 1,119 TransitionPoints retain complete serialized flags/trigger geometry. Of 286 variable-bound scene targets, 130 trace to storage/constants, 89 to defaults, three to explicit branch overrides and 64 remain runtime-injected with P09/P22 owners. The installed completion CIL is an auditable checklist; finish managed producer graphs, item caps, edge prerequisites/postconditions and reference cases. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04-P31 | pending | Follow dependency order in the master plan. |
 
@@ -82,6 +82,32 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 - `tools/world_transitions.py` parsed all 307 `BeginSceneTransition` and 11
   `LoadLevel` actions with zero parse errors. Literal and variable-bound fields
   remain distinct; declared initial values are candidates, not runtime claims.
+- Dynamic destination dataflow accounts for all 286 actions: 130 read
+  PlayerData/static/constants, 89 retain serialized defaults, three have exact
+  same-object `SetFsmString` branch overrides, and 64 are runtime/API injected.
+  The last group is 63 Godhome boss destinations plus one finale continuation
+  and is assigned to P09/P22 instead of receiving invented scene names.
+- Dynamic entry-gate dataflow records 63 unresolved runtime values, 63 storage
+  reads and 87 serialized defaults. Eighty-seven source/default combinations
+  produce 91 exact gate matches; two additional Tram defaults remain explicit
+  alongside their serialized branch overrides.
+- `tools/world_catalog.py` classifies all 501 source scenes with evidence: 402
+  gameplay, 63 boss arenas, 13 dream variants, eight cinematics, seven
+  transition/bootstrap helpers, three additive boss-defeated variants, two
+  credits scenes and one each for menu, completion and shared Knight content.
+  No source scene is excluded or left without a primary role.
+- All 1,119 TransitionPoints have resolved trigger geometry and retain exact
+  serialized door, direction, delay, fade, hazard, offset, snapshot and initial
+  activation fields. The catalog covers all 468 component types with owning
+  packages and 17,419 serialized PlayerData actions across 815 resolved keys;
+  1,328 runtime-variable key actions remain explicit under P13/P14.
+- `tools/completion_catalog.py` extracts and hashes the installed
+  `PlayerData.CountGameCompletion` and `CountCharms` CIL: 44 boolean/group rules,
+  six integer rules, four nested Godhome rules, the exact 40-charm count and the
+  33/66/99 SOUL-vessel cases. Managed producer closure and item-cap proof remain
+  required before asserting the installed maximum.
+- The full Python suite passes 382 tests after the transition-dataflow, scene,
+  PlayerData and completion-catalog additions.
 - Exact affine boundaries cover all 5,274 CircleCollider2D instances across 292
   scenes. These are dynamic/trigger objects rather than static layer-8 terrain.
 - All 12,729 runtime-generated tk2d MeshFilters now reference their extracted
@@ -115,9 +141,11 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 
 ### Next concrete action
 
-Finish P02 by resolving variable-produced transition destinations and assigning
-source-evidenced scene roles. Then use that stable catalog to begin P04 IDs and
-ownership; runtime text shaping stays scheduled with the renderer/UI packages.
+Finish P02 by extracting managed-code producers/consumers for completion and
+unlock fields, proving spell/nail/mask caps, and attaching prerequisites and
+postconditions to transition edges with original reference cases. Then use the
+stable catalog to begin P04 IDs and ownership; runtime text shaping stays with
+the renderer/UI packages.
 
 ## Required package completion record
 
