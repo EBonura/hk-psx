@@ -10,9 +10,10 @@ extraction, cooking, runtime binding and playable validation remain separate.
 - Windows source: CrossOver Steam installation, Unity `6000.0.61f1`.
 - Playable disc: build 71; Tutorial/King's Pass and Town/Dirtmouth only.
 - Disc policy: preserve build 71 until the user requests a replacement.
-- Current packages: P05-P07, admit checked metadata, build the catalog-wide
-  source matrix, and remove scene-multiplied Geo state before adding streaming
-  admission. The playable disc is still preserved.
+- Current packages: P05-P08, admit checked metadata, build the catalog-wide
+  source matrix, remove scene-multiplied Geo state, and correct the first
+  cross-layer tile-occlusion failure before adding streaming admission. The
+  playable disc is still preserved.
 
 ## Milestones
 
@@ -35,11 +36,12 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P02 | validated | Every scene has an evidence-backed role and remains included. All 1,119 TransitionPoints and 318 scripted loads retain geometry, flags, destination dataflow and progression-condition status with downstream owners. All 95 completion fields join serialized access to exact managed readers/writers; installed cap CIL proves the 112 maximum. Fifteen source reference cases cover every observed edge/condition category. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
-| P05 | in progress | Tutorial/Town `HKWMTA01` banks are checked and admitted from the aligned scene-arena tail; spatial actor/checkpoint lookup now resolves through the admitted bank. The guest differentially checks bounds, collision bounds, camera and neighbor lists against legacy regions, and derives the pack index/header capacity from generated manifests. Full actual-CUE differential replay and migration of auxiliary tables remain. |
+| P05 | in progress | Tutorial/Town `HKWMTA01` banks are checked and admitted from the aligned scene-arena tail; spatial actor/checkpoint lookup now resolves through the admitted bank. The guest differentially checks bounds, collision bounds, camera and neighbor lists against legacy regions, and derives the pack index/header capacity from generated manifests. The filtered edge cache now keys by world generation, global region and room view, preventing equal-sized room payload reuse. Full actual-CUE differential replay and migration of auxiliary tables remain. |
 | P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. It intentionally leaves PS1 RAM/VRAM admission unknown. Production cooking of all scenes, shared art canonical mappings and native pack validation remain. |
-| P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 19,368 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
+| P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
-| P08-P12, P14-P31 | pending | Follow dependency order in the master plan. |
+| P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
+| P09-P12, P14-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -192,8 +194,9 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
   1,026 points, 32,072 bytes; Town: 20 regions, five objects, five polygons,
   118 points, 2,844 bytes. `check_world_meta` parses both generated banks.
 - The guest `State` edge cache now uses an explicit world generation and global
-  region ID. Scene admission, reset and retry revoke it before any arena reuse;
-  no Region or Room address is part of cache identity.
+  region ID and borrowed room-view key. Scene admission, reset and retry revoke
+  it before any arena reuse; the view key disambiguates equal-sized room
+  payloads while generation protects the reusable arena.
 - `host/pack_scenes.py` now emits the metadata banks into the ignored pack
   report, assigns them after scene coverage, and binds raw/stored checksums plus
   the source fingerprint into `WORLD_META_MANIFEST`. `game/src/disc.rs` stages

@@ -828,9 +828,15 @@ fn scenery_range(camera:(i32,i32),front:bool,start:usize,prebuilding:bool)->(u32
             // chunks retain the established eight-source-draw cadence.
             if !prebuilding && (i&7==0 || (CHUNK_COUNT==0 && USED!=0)) {kick_ready();}
             if (d.flags&FRONT!=0) != front {continue;}
-            // Remove this source's certificate before any cull or fallback.
-            // Both passes visit every matching source, even invisible ones.
-            if TILE_MAX_RANK!=0 {(&*(&raw const TILE_EVENTS)).reach(i,&mut *Scratch::tile_rows(scratch));}
+            // Retire ownership only in the pass that actually draws this
+            // source. Front ownership must survive the entire back pass so a
+            // foreground mask hides back geometry regardless of authored
+            // source index; the front pass then retires those owners in its
+            // own source order. Invisible sources are still retired when they
+            // belong to the active pass, preserving the event protocol.
+            if TILE_MAX_RANK!=0 && (d.flags&FRONT!=0)==front {
+                (&*(&raw const TILE_EVENTS)).reach(i,front,&mut *Scratch::tile_rows(scratch));
+            }
             if d.flags&(EMPTY_TEXTURE|DRAW_ENABLED)!=DRAW_ENABLED {continue;}
             // Distant parallax layers can overflow the pre-shift i32 product.
             // The cooker proves the shifted values/subtractions fit i32.
