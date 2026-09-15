@@ -63,8 +63,11 @@ The guest admission transaction stages each bank in the unused aligned tail of
 the admitted scene arena, then cross-checks it against scene geometry before
 publishing a scene; this avoids a second static RAM arena. A pinned release
 guest build now links with zero final hazards and 2,172 bytes before the stack
-floor. Build 71 and the sole Downloads disc are unchanged while this new chunk
-layout is validated.
+floor. The arena is now sized to the measured 354,032-byte scene-plus-metadata
+peak, leaving 15,272 bytes before the stack floor in the current no-disc link.
+Spatial actor and checkpoint lookup now resolves through the admitted bank while
+retaining the existing static gameplay records. Build 71 and the sole Downloads
+disc are unchanged while this new chunk layout is validated.
 
 The guest edge cache now keys entries by world generation plus the generated
 global region ID. Scene admission, retry, death and reset paths revoke the key

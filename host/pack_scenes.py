@@ -14,9 +14,10 @@ from scene_bank import build_scene, compressed, fnv, aligned, compact_resident, 
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
-# Current scene pair passes the exact sequential in-place decoder at this
-# capacity, including sector padding. Keep validation mandatory for new assets.
-SCENE_ARENA_BYTES=369180
+# Current scene pair plus the admitted metadata overlay require
+# 321,956 + 32,072 = 354,028 bytes. Keep four-byte alignment and a four-byte
+# guard while retaining the exact sequential in-place decoder validation.
+SCENE_ARENA_BYTES=354032
 MAX_PAGES=20
 MAX_PALETTES=1248  # Final legacy CLUT strip is reserved for independent Geo art.
 

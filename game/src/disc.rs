@@ -503,5 +503,26 @@ impl Cache {
         let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(scene_tail),self.metadata_len)};
         checked_world_metadata(bytes,self.metadata_scene).expect("admitted world metadata changed")
     }
+    /// Resolve a spatial point through the admitted scene bank. The returned
+    /// index is the canonical global region slot used by the existing room
+    /// and gameplay tables; no scene-local metadata index is exposed.
+    #[inline(never)]
+    pub fn locate(&self,scene:usize,x:i32,y:i32)->Option<usize> {
+        if self.metadata_scene!=scene || self.metadata_len!=WORLD_META_MANIFEST.get(scene)?.raw_len {return None;}
+        let bank=self.world_metadata();
+        let mut index=0;
+        while index<bank.region_count() {
+            let region=bank.region(index)?;
+            let bounds=region.bounds();
+            if x>=bounds[0] && x<=bounds[2] && y>=bounds[1] && y<=bounds[3] {
+                let global=region.global_id() as usize;
+                if let Some(&(owner,_local))=global.checked_sub(1).and_then(|id|REGION_SCENE_LOCAL.get(id)) {
+                    if owner==scene {return Some(global-1);}
+                }
+            }
+            index+=1;
+        }
+        None
+    }
     pub fn room(&self)->Room<'_> {self.room_for(self.selected).expect("No admitted scene selected")}
 }
