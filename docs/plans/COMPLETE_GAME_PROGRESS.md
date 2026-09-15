@@ -34,7 +34,8 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P02 | validated | Every scene has an evidence-backed role and remains included. All 1,119 TransitionPoints and 318 scripted loads retain geometry, flags, destination dataflow and progression-condition status with downstream owners. All 95 completion fields join serialized access to exact managed readers/writers; installed cap CIL proves the 112 maximum. Fifteen source reference cases cover every observed edge/condition category. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
-| P05-P31 | pending | Follow dependency order in the master plan. |
+| P05 | in progress | First scene-bank slice is implemented and measured; differential guest loader migration and auxiliary-table relocation remain. |
+| P06-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -173,12 +174,30 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
   228 tests after P04. The disc remains build 71; this host/state package did not
   recook or replace it.
 
+## P05 first slice evidence
+
+- `tools/world_metadata.py` emits versioned `HKWMTA01` banks from the canonical
+  region catalogue without rewriting `data/regions.rs` or the disc. The source
+  catalogue hash is recorded in the ignored metadata report.
+- `shared/hk-format/src/world_meta.rs` provides checked little-endian views with
+  fixed strides, checked arithmetic, zero-padding checks, global neighbour IDs,
+  stable state IDs, bounded object/polygon spans and allocation-free iterators.
+  It rejects wrong magic/stride, trailing bytes, out-of-range spans and invalid
+  polygon point references before publishing a view.
+- Current measured banks are Tutorial: 86 regions, 452 objects, 112 polygons,
+  1,026 points, 32,072 bytes; Town: 20 regions, five objects, five polygons,
+  118 points, 2,844 bytes. `check_world_meta` parses both generated banks.
+- Host metadata tests and the three format tests pass. The build 71 link report
+  remains bound to the unchanged playable EXE/BIN/CUE; no guest loader or disc
+  replacement is claimed by this slice.
+
 ### Next concrete action
 
-Begin P05 using the stable identity/state contract: remeasure linked metadata,
-define the checked scene-bank wire format and move Tutorial/Town metadata without
-retaining stale borrows or changing current behavior. Runtime text shaping
-remains with the renderer/UI packages.
+Continue P05 by adding a scene-owned Cache admission transaction, replacing the
+address-based edge-cache key with `(scene_generation, global_region_id)`, then
+differentially compare the new views against Tutorial/Town before moving Geo,
+Lifeblood, dialogue, Great Door, render-budget and disc mapping tables. Runtime
+text shaping remains with the renderer/UI packages.
 
 ## Required package completion record
 

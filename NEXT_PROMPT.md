@@ -20,7 +20,10 @@ the exact 112 maximum. All 95 contributing fields have managed and serialized
 access evidence; all load routes have condition status, downstream owners and
 reference cases. The stable registry covers every scene/component/gate/PlayerData
 key/asset and the bounded state API costs 93,912 bytes at conservative caps.
-Begin P05 checked scene-owned metadata using this identity contract. Do not
+The first P05 `HKWMTA01` scene-bank slice is implemented and measured for
+Tutorial/Town with checked borrowed views, while the guest still uses its
+existing tables. Continue P05 with Cache admission and edge-cache generation
+migration. Do not
 rebuild the user's disc during these host-only packages; build 71 remains the
 sole playable pair.
 
