@@ -1,4 +1,4 @@
-//! Original Crawler corpse lifecycle using the port's bounded terrain solver.
+//! Source corpse lifecycle using the port's bounded terrain solver.
 //! Source Corpse retains its final sprite after Land/one-second Complete(false,
 //! false). Steam/spatter and the full Box2D contact/friction solver are separate.
 use crate::{Params, Player, ONE};
@@ -8,6 +8,8 @@ pub struct CorpseSpec {
     pub land_clip: u16,
     pub bounds: [i32; 4],
     pub spawn_offset: [i32; 2],
+    /// Source ObjectBounce factor in Q16; validated in [0, 1].
+    pub bounce_factor: i32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CorpsePhase {
@@ -66,6 +68,7 @@ const UP: [[i32; 2]; 31] = [
 ];
 impl Corpse {
     pub fn spawn(spec: CorpseSpec, x: i32, y: i32, kind: u16, facing: i32, seed: u32) -> Self {
+        assert!((0..=ONE).contains(&spec.bounce_factor), "invalid corpse bounce factor");
         let mut corpse = Self {
             x: x + spec.spawn_offset[0],
             y: y + spec.spawn_offset[1],
@@ -154,12 +157,17 @@ impl Corpse {
             self.animation_tick = 0;
             self.land_ticks = 0;
         }
-        // ObjectBounce reflects contact velocity, factor0.3 * Random(0.8,1.2).
+        // ObjectBounce reflects contact velocity, source factor * Random(0.8,1.2).
         // Axis contacts reuse the proven body solver. Slope response/friction is
         // a bounded approximation to Unity's full contact manifold.
         let speed2 = self.vx as i64 * self.vx as i64 + old_vy as i64 * old_vy as i64;
         if (hit_floor || hit_wall || hit_ceiling) && speed2 > (ONE as i64 * ONE as i64) {
-            let factor = 15729 + (self.random() % 7865) as i32; // [0.24,0.36] Q16
+            assert!((0..=ONE).contains(&spec.bounce_factor), "invalid corpse bounce factor");
+            // Rounded Q16 endpoints preserve the existing Crawler's exact
+            // [15729,23593] distribution and RNG sequence at factor19661.
+            let low = (spec.bounce_factor * 4 + 2) / 5;
+            let high = (spec.bounce_factor * 6 + 2) / 5;
+            let factor = low + (self.random() % (high - low + 1) as u32) as i32;
             self.vx = ((self.vx as i64 * factor as i64) >> 16) as i32;
             self.vy = ((old_vy as i64 * factor as i64) >> 16) as i32;
             if hit_wall {

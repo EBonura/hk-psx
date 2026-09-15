@@ -75,6 +75,7 @@ mod world {
 #[path = "../../../game/src/enemies.rs"]
 mod enemies;
 const SPEC: ActorSpec = ActorSpec {
+    controller: ActorController::Crawler,
     source_id: 12546,
     x: 0,
     y: ONE,
@@ -156,6 +157,8 @@ fn tick(
         no_attack(),
         [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4],
         cheats::Settings::new(),
+        [0,0,-2496922],
+        |_| panic!("Crawler emitted Runner event"),
         |_,_,_|None,
     )
 }
@@ -386,7 +389,7 @@ fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
 #[test]
 fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
     const WITH_CORPSE:ActorSpec=ActorSpec {health:EnemyParams{health:5,..SPEC.health},
-        corpse:Some(CorpseSpec{air_clip:0,land_clip:0,bounds:SPEC.bounds,spawn_offset:[0,ONE/2]}),..SPEC};
+        corpse:Some(CorpseSpec{air_clip:0,land_clip:0,bounds:SPEC.bounds,spawn_offset:[0,ONE/2],bounce_factor:19661}),..SPEC};
     let bytes=room();let room=hk_format::Room::parse(&bytes).unwrap();
     let r=world::Region{actors:&[WITH_CORPSE],..region()};
     let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);
@@ -413,10 +416,10 @@ fn cheat_nail_and_contact_protection_use_actual_enemy_runtime() {
   let settings=cheats::Settings{invincible:enabled,max_nail:enabled,..cheats::Settings::new()};
   let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);let mut v=Vitals::new(VITAL_PARAMS);let mut n=Nail::new();
   let polygons=[&[[-ONE,-2*ONE],[ONE,-2*ONE],[ONE,ONE],[-ONE,ONE]][..];4];
-  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings,|_,_,_|None);
+  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings,[0,0,-2496922],|_| panic!("Crawler event"),|_,_,_|None);
   assert_eq!(hit.hurt,if enabled{Hurt::Ignored}else{Hurt::Recoiling});assert_eq!(v.health,if enabled{5}else{4});
   p.x=w.actor_state(0,SPEC.source_id).unwrap().0;n.active=true;n.age=1;
-  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings,|_,_,_|None);
+  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings,[0,0,-2496922],|_| panic!("Crawler event"),|_,_,_|None);
   assert_eq!(hit.hits,1);assert_eq!(hit.kills,u16::from(enabled));
   assert_eq!(w.actor_state(0,SPEC.source_id).unwrap().2,if enabled{-13}else{3});
  }
@@ -440,7 +443,7 @@ fn resident_actor_view_matches_unpartitioned_patrol_across_knight_apron() {
     for _ in 0..600 {
         tick(&mut expected,&complete,&floor,&mut p,&mut v,&Nail::new());
         actual.tick(&narrow,&floor,&mut world::State,&mut p,&mut v,&Nail::new(),
-            &mut NailResponse::new(),no_attack(),[&[];4],cheats::Settings::new(),
+            &mut NailResponse::new(),no_attack(),[&[];4],cheats::Settings::new(),[0,0,-2496922],|_| panic!("Crawler event"),
             |scene,x,y| {
                 assert_eq!(scene,0);
                 assert!(world::contains(complete.collision_bounds,x,y));
@@ -461,7 +464,7 @@ fn unrelated_scene_view_cannot_activate_suspended_actor() {
     let mut actors=enemies::EnemyWorld::new();
     actors.tick(&current,&floor,&mut world::State,&mut Player::spawn(10*ONE,ONE),
         &mut Vitals::new(VITAL_PARAMS),&Nail::new(),&mut NailResponse::new(),
-        no_attack(),[&[];4],cheats::Settings::new(),
+        no_attack(),[&[];4],cheats::Settings::new(),[0,0,-2496922],|_| panic!("Crawler event"),
         |_,_,_|Some((&foreign,hk_format::Room::parse(&bytes).unwrap())));
     assert_eq!(actors.actor_state(0,SPEC.source_id),Some((SPEC.x,SPEC.y,8)));
 }

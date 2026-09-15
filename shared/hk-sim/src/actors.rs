@@ -7,8 +7,19 @@ pub struct WalkParams {
     pub turn_cooldown_ticks: u16,
 }
 #[derive(Clone, Copy, Debug)]
+pub enum ActorController {
+    Crawler,
+    Runner {
+        idle_clip: u16,
+        anticipate_clip: u16,
+        lunge_clip: u16,
+        cooldown_clip: u16,
+    },
+}
+#[derive(Clone, Copy, Debug)]
 pub struct ActorSpec {
     pub source_id: u32,
+    pub controller: ActorController,
     pub x: i32,
     pub y: i32,
     /// Spawn-orientation collider bounds relative to the actor transform.

@@ -1,5 +1,23 @@
 # Hollow Knight PS1: current handoff
 
+## Latest71
+
+User asked to play the latest build again. The sole Downloads/ps1 games/hk-psx
+pair is now71: zero final hazards,850-poll CUE smoke passes, inspected image
+matches70. Keep this disc available during their playtest. Evidence:
+.hkpsx/playtest71/ and .hkpsx/build.json.326 Python and222 hk-sim tests pass.
+Current linked headroom8,044B; main frame33,728B/49,152B reserved stack.
+
+Runner is integrated into the guest actor branch and real host art/remap pipeline,
+with native combat/corpse/Geo/sensing/clip/event tests. Canonical source admission
+remains disabled; production intentionally rejects unbound presentation events.
+Next bind Runner sound/Charge Dust and scene/reset cleanup before enabling it.
+Complete isolated sound bank20,464B fits SPU495792..516256; host/runner_audio.py
+verifies it. Proposed21/22 loop and23 shared call voices need explicit arbitration.
+Actor code adds26,652B; measure duplicated generic instantiations and the planned
+metadata migration before growing scene tables. Crossroads/well, Climber guest
+integration and full-game progression remain unfinished. Read RUNNER.md/STATUS.md.
+
 ## User steering takes priority
 
 The user playtested63 and reported slow Great Door progression, missing SFX,

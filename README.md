@@ -33,7 +33,7 @@ with controller/audio servicing and renderer/animation cache invalidation.
 
 Tutorial needs18 static4bpp pages and1,068 palettes; Town needs6pages/390palettes.
 The approved95% static matches and48-pixel scenery cap remain. Knight, enemies
-and HUD retain their existing resolution. Provisional69 has34,668B
+and HUD retain their existing resolution. Provisional71 has8,044B
 unallocated before the reserved stack. Visibility tables now occupy one reusable
 84KiB scene bank. Final-CUE gate/return/reset replays pass, including travel tox177
 in Town; the opening, return and reset images match68 exactly.

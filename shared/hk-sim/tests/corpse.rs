@@ -4,6 +4,7 @@ const SPEC: CorpseSpec = CorpseSpec {
     land_clip: 14,
     bounds: [-46080, -55296, 47104, 4096],
     spawn_offset: [0, 32768],
+    bounce_factor: 19661,
 };
 fn floor(_: usize) -> [i32; 4] {
     [-100 * ONE, 0, 100 * ONE, 0]
@@ -72,4 +73,33 @@ fn identical_source_seed_and_edges_produce_identical_physics() {
         );
     }
     assert!(core::mem::size_of::<Corpse>() <= 48);
+}
+
+#[test]
+fn source_bounce_factor_changes_rebound_without_changing_launch_or_rng_owner() {
+    let crawler = CorpseSpec { bounds: [-ONE / 4, -ONE / 4, ONE / 4, ONE / 4],
+        spawn_offset: [0; 2], ..SPEC };
+    let runner = CorpseSpec { bounce_factor: 13107, ..crawler };
+    for seed in 0..256 {
+        let mut a = Corpse::spawn(crawler, 0, ONE / 4, 3, 1, seed);
+        let mut b = Corpse::spawn(runner, 0, ONE / 4, 3, 1, seed);
+        assert_eq!((a.vx,a.vy), (b.vx,b.vy));
+        a.tick(crawler, 1, floor);
+        b.tick(runner, 1, floor);
+        assert_eq!(a.phase, CorpsePhase::Land);
+        assert_eq!(b.phase, CorpsePhase::Land);
+        // Source base .2 has [.16,.24] rebound, versus [.24,.36] at base .3.
+        assert!((15*10486..=15*15728).contains(&b.vy));
+        assert!((15*15729..=15*23593).contains(&a.vy));
+        assert!(b.vy < a.vy);
+    }
+    let mut resting = Corpse::spawn(CorpseSpec {bounce_factor:0,..crawler},0,ONE/4,3,1,0);
+    resting.tick(CorpseSpec {bounce_factor:0,..crawler},1,floor);
+    assert_eq!(resting.vy,0);
+}
+
+#[test]
+#[should_panic(expected = "invalid corpse bounce factor")]
+fn unsupported_restitution_cannot_overflow_contact_products() {
+    Corpse::spawn(CorpseSpec {bounce_factor:i32::MAX,..SPEC},0,0,0,1,0);
 }

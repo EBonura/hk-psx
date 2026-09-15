@@ -311,6 +311,28 @@ def generated_actor_region(region):
         bounds = [round((box[0] - x) * 65536), round((box[1] - y) * 65536),
                   round((box[2] - x) * 65536), round((box[3] - y) * 65536)]
         control = actor['movement_control']
+        if control['kind'] == 'ZombieSwipeWalker':
+            if len(actor['position']) < 3 or round(actor['position'][2] * 65536) != 66:
+                raise ValueError('Runner depth differs from guest source plane')
+            runner_clips = ('idle_clip', 'anticipate_clip', 'lunge_clip', 'cooldown_clip')
+            if any(key not in actor for key in runner_clips):
+                raise ValueError(f'Runner is missing cooked clips: {actor["source"]}')
+            if not actor.get('corpse'):
+                raise ValueError(f'Runner is missing validated corpse: {actor["source"]}')
+            controller = 'hk_sim::ActorController::Runner {' + ','.join(f'{key}:{actor[key]}' for key in runner_clips) + '}'
+            # Legacy Walker fields remain populated for the common ActorSpec;
+            # the Runner runtime uses its separately verified native controller.
+            speed, turn_ticks, turn_cooldown_ticks = 1.5, 10, 60
+            initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'WalkLeftRight':
+            controller = 'hk_sim::ActorController::Crawler'
+            speed, turn_ticks, turn_cooldown_ticks = control['speed'], control['turn_ticks'], control['turn_cooldown_ticks']
+            initial_direction, random_start_direction = control['initial_direction'], control['random_start_direction']
+        else:
+            raise ValueError('unsupported generated actor controller: ' + control['kind'])
+        clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ())
+        if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
+            raise ValueError('actor clip binding exceeds u16')
         recoil = actor.get('Recoil', {})
         damage = actor.get('DamageHero', {}).get('damageDealt', 0)
         fields = {
@@ -318,10 +340,11 @@ def generated_actor_region(region):
             'bounds': '[' + ','.join(map(str, bounds)) + ']',
             'health': ('hk_sim::EnemyParams {' + f'health:{actor["health"]},contact_damage:{damage},evasion_ticks:12,' +
                        f'invincible:{str(bool(health["invincible"])).lower()},damage_override:{str(bool(health["damageOverride"])).lower()}' + '}'),
-            'walk': ('hk_sim::WalkParams {' + f'speed:{round(control["speed"] * 65536)},turn_ticks:{control["turn_ticks"]},' +
-                     f'turn_cooldown_ticks:{control["turn_cooldown_ticks"]}' + '}'),
-            'initial_direction': control['initial_direction'],
-            'random_start_direction': str(control['random_start_direction']).lower(),
+            'controller': controller,
+            'walk': ('hk_sim::WalkParams {' + f'speed:{round(speed * 65536)},turn_ticks:{turn_ticks},' +
+                     f'turn_cooldown_ticks:{turn_cooldown_ticks}' + '}'),
+            'initial_direction': initial_direction,
+            'random_start_direction': str(random_start_direction).lower(),
             'walk_clip': actor['walk_clip'], 'turn_clip': actor['turn_clip'],
             'corpse': generated_corpse(actor.get('corpse')),
             'recoil_speed': round(recoil.get('recoilSpeedBase', 0) * 65536),

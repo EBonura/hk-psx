@@ -161,6 +161,25 @@ def write_provenance(report, source):
     report['provenance_report']='.hkpsx/regions-provenance.json'
 
 
+def remap_actor_clips(actor, clip_base):
+    """Copy every live/corpse binding into the appended scene-bank clip space."""
+    actor=copy.deepcopy(actor)
+    keys=['walk_clip','turn_clip']
+    if actor['movement_control']['kind']=='ZombieSwipeWalker':
+        keys+=['idle_clip','anticipate_clip','lunge_clip','cooldown_clip','fall_clip']
+    for key in keys:
+        if key not in actor:raise ValueError('actor bank is missing cooked binding: '+key)
+        value=actor[key]+clip_base
+        if not 0<=value<=65535:raise ValueError('actor bank clip binding exceeds u16')
+        actor[key]=value
+    if actor.get('corpse'):
+        for key in ('air_clip','land_clip'):
+            value=actor['corpse'][key]+clip_base
+            if not 0<=value<=65535:raise ValueError('corpse clip binding exceeds u16')
+            actor['corpse'][key]=value
+    return actor
+
+
 def postpack_actor_bank(report, source, scenes=None):
     """Append a shared scene actor bank from immutable pre-append base packs.
 
@@ -217,10 +236,7 @@ def postpack_actor_bank(report, source, scenes=None):
                        alpha_cover_bytes=deduplication['alpha_cover_bytes'],animation_bytes=deduplication['animation_bytes'])
             preserved=[a for a in row['actors'] if not a['movement_supported']]
             for actor in actors:
-                actor=copy.deepcopy(actor);actor['walk_clip']+=nc;actor['turn_clip']+=nc
-                if actor.get('corpse'):
-                    actor['corpse']['air_clip']+=nc;actor['corpse']['land_clip']+=nc
-                preserved.append(actor)
+                preserved.append(remap_actor_clips(actor,nc))
             row['actors']=preserved
             row['great_door']=bind(great_door,row,nf)
             if row['chunk_id']==1:
