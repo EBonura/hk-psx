@@ -101,7 +101,7 @@ class SceneCertificates(unittest.TestCase):
     def test_manifest_carries_predecode_inventory_and_pack_indices(self):
         entry=dict(scene_id=1,scene_raw_fnv=2,atlas_fnv=3,draw_pool_count=17,chunk_id=37,raw_len=88,raw_fnv=4,stored_len=55,stored_fnv=6)
         text=rust_manifest([entry],17)
-        self.assertIn('COVERAGE_ARENA_BYTES:usize=86016;',text)
+        self.assertIn('COVERAGE_ARENA_BYTES:usize=83700;',text)
         self.assertIn('COVERAGE_GROUP_POOL_CAPACITY:usize=17;',text)
         self.assertIn('scene_id:1,scene_raw_fnv:2,atlas_fnv:3,draw_pool_count:17,chunk_id:37',text)
 

@@ -22,10 +22,12 @@ reference cases. The stable registry covers every scene/component/gate/PlayerDat
 key/asset and the bounded state API costs 93,912 bytes at conservative caps.
 The first P05 `HKWMTA01` scene-bank slice is implemented and measured for
 Tutorial/Town with checked borrowed views. The scene pack emits metadata after
-coverage and the guest Cache validates it in a dedicated RAM buffer before
-publishing a scene; the current playable disc remains build 71 because it has
-the older chunk table. Continue P05 with a pinned guest build, differential
-metadata/geometry/coverage checks, and only then replace the single disc pair.
+coverage and the guest Cache validates it in the unused aligned tail of the
+scene arena before publishing a scene. A pinned no-disc guest build passes the
+final hazard scan with 2,172 bytes before the stack floor; the current playable
+disc remains build 71 because it has the older chunk table. Continue P05 with a
+pinned guest differential metadata/geometry/coverage run, and only then replace
+the single disc pair.
 
 ## Completion plan for the next executor
 

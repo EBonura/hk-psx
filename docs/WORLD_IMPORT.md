@@ -104,10 +104,11 @@ its compressed admission copies under `.hkpsx/world-metadata-packed/`, records
 the compressed/raw checksums and assigns metadata chunks after coverage. The
 wire reader is `shared/hk-format/src/world_meta.rs`; it checks fixed strides,
 aligned sections, zero padding, global-neighbour IDs, object spans and polygon
-points before publishing borrowed views. `game/src/disc.rs` now performs that
-admission in a separate bounded metadata buffer and cross-checks all global
-region owners; the chunk layout still needs a pinned guest differential run
-before replacing the playable disc.
+points before publishing borrowed views. `game/src/disc.rs` now admits each
+bank in the unused aligned tail of the scene arena and cross-checks all global
+region owners; `host/build_guest.py --no-disc` can validate this guest without
+touching the sole playable BIN/CUE pair. The chunk layout still needs a pinned
+guest differential run before replacing that disc.
 
 The next passes are:
 
