@@ -24,6 +24,8 @@ test:
 	.hkpsx/hud-tests/draw-packet-tests
 	rustc --edition=2021 --test game/src/volume.rs -o .hkpsx/hud-tests/volume-tests
 	.hkpsx/hud-tests/volume-tests
+	rustc --edition=2021 --test tests/audio_stream_runtime.rs -o .hkpsx/hud-tests/audio-stream-tests
+	.hkpsx/hud-tests/audio-stream-tests
 validate:
 	$(PYTHON) tools/validate.py --emulator "$(EMULATOR)"
 doctor:

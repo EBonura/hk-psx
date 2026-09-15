@@ -59,6 +59,7 @@ namespace HKReference
             string tapePath = Path.Combine(output, "input.csv");
             if (File.Exists(tapePath)) tape = Tape.Load(tapePath);
             Observations.Initialize(output);
+            AudioTrace.Initialize(output);
             ReplayDevice.OpenLog(output);
             Note("installed; bootstrap=" + (Environment.GetEnvironmentVariable("HK_REFERENCE_BOOTSTRAP") ?? "tutorial"));
         }
@@ -140,6 +141,7 @@ namespace HKReference
                         if (Math.Abs(Time.fixedDeltaTime - 0.02f) > 0.000001f || Math.Abs(Time.timeScale - 1f) > 0.000001f)
                             throw new InvalidOperationException("Reference readiness phase requires original 50 Hz physics and timeScale=1");
                         ready = true;
+                        AudioTrace.DescribeHero(hero);
                         scheduledFrame = 0;
                         ReplayDevice.TestFrame = 0;
                         scheduledAfter = ReplayDevice.UpdateCount;
@@ -262,11 +264,12 @@ namespace HKReference
             Debug.Log("HK_REFERENCE_STOP code=" + code + " reason=" + reason);
             if (states != null) { states.Flush(); states.Dispose(); states = null; }
             Observations.Dispose();
+            AudioTrace.Dispose();
             ReplayDevice.CloseLog();
             Application.Quit(code);
         }
 
-        private void OnDestroy() { if (states != null) { states.Dispose(); states = null; } }
+        private void OnDestroy() { AudioTrace.Dispose(); if (states != null) { states.Dispose(); states = null; } }
         private void Note(string text) { File.AppendAllText(Path.Combine(output, "driver.log"), DateTime.UtcNow.ToString("o") + " frame=" + Time.frameCount + " test_frame=" + testFrame + " " + text + Environment.NewLine); }
         private static string Number(object value) { return value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture); }
         private static int IntSetting(string name, int fallback) { int value; return Int32.TryParse(Environment.GetEnvironmentVariable(name), out value) && value > 0 ? value : fallback; }

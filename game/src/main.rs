@@ -324,6 +324,7 @@ fn main() {
                         settings.cheats.apply(previous_cheats,&mut vitals,VITAL_PARAMS,pause_menu.action);
                         if before!=(settings.sfx,settings.ambience) {audio::set_volume(settings.sfx);geo_audio::set_volume(settings.sfx);ambience::set_volume(settings.ambience);}
                     }
+                    if paused || dialogue::open() || door.pending() || vitals.dead || !vitals.can_control() || focus.locks_control() {audio::stop_footsteps();}
                     settings.cheats.maintain(&mut vitals,VITAL_PARAMS);cheats::publish(settings.cheats,VITAL_PARAMS);
                     unsafe {HK_PAUSED=u32::from(paused);HK_PAUSE_CONTROLS=u32::from(paused&&pause_menu.controls);
                         HK_SFX_LEVEL=settings.sfx as u32;HK_AMBIENCE_LEVEL=settings.ambience as u32;}
@@ -343,7 +344,7 @@ fn main() {
                         life.reset();
                         door.reset();
                         dialogue::reset();state=world::State::new();reveals=reveal_masks::State::new();enemies=enemies::EnemyWorld::new();vitals=settings.cheats.new_vitals(VITAL_PARAMS);
-                        player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
+                        audio::reset_movement();player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();attacks=0;target=Some(0);paused=false;
                         unsafe {HK_BREAK_COUNT=0;HK_DEATHS=0;HK_ENEMY_HITS=0;HK_ENEMY_KILLS=0;HK_HAZARD_RESPAWNS=0;HK_FOCUS_STARTED=0;HK_FOCUS_COMPLETED=0;HK_FOCUS_HEALED=0;HK_FOCUS_DRAINED=0;HK_FOCUS_REFUNDED=0;}
                     } else if !paused && !ui_consumed && !vitals.tick() {
@@ -357,12 +358,12 @@ fn main() {
                             life.reset();
                             if !door.opened() {door.reset();}
                             dialogue::cancel();state.reset_scene(r.scene);reveals.reset_scene(r.scene);enemies.reset_scene(r.scene);vitals=settings.cheats.new_vitals(VITAL_PARAMS);
-                            player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
+                            audio::reset_movement();player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
                             nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();target=Some(0);
                         } else if vitals.hazard_pending {
                             dialogue::cancel();
                             unsafe {HK_HAZARD_RESPAWNS+=1;}
-                            player=Player::spawn(safe.0,safe.1);player.facing=safe_facing;nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();
+                            audio::reset_movement();player=Player::spawn(safe.0,safe.1);player.facing=safe_facing;nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();
                             vitals.finish_hazard_respawn(settings.cheats.params(VITAL_PARAMS));target=Some(safe.2);
                         } else if !vitals.dead {
                             let door_exit=door.tick(r.scene);
@@ -394,7 +395,8 @@ fn main() {
                                 if could_jump {audio::jump();}
                                 nail_response.step(NAIL_RESPONSE_PARAMS,PARAMS,&mut player,dir,jump,room.counts[5],state.edge_reader(r,&room));
                             }
-                            if !was_grounded && player.grounded {audio::land();}
+                            audio::movement_tick(was_grounded,player.grounded,player.vy<0,
+                                dir!=0 && !locked && vitals.can_control() && vitals.recoil_velocity(VITAL_PARAMS).is_none(),true);
                             let vertical=i32::from(pad.is_held(button::UP))-i32::from(pad.is_held(button::DOWN));
                             if nail.tick(ATTACK_PARAMS,pad.is_held(button::SQUARE)&&vitals.can_control()&&!locked&&!read_consumes,vertical,&mut player) {attacks=attacks.wrapping_add(1);geo.begin_attack();audio::nail();}
                             if vitals.can_control() {enemies::pogo_contact(r,&state,&mut player,&nail,ATTACK_PARAMS,NAIL_POLYGONS,&mut nail_response);}
@@ -409,6 +411,7 @@ fn main() {
                             vitals.add_blue_health(blue);
                             if strike_lifeblood(life,r.scene,&nail,&player).opened {lifeblood::apply(life,&mut state,region_id);}
                             let door_hit=strike_great_door(&mut door,r.scene,&nail,&player);
+                            if door_hit.hit {audio::great_door_hit();}
                             if door_hit.opened {
                                 great_door::apply(&door,&mut state,region_id);
                                 dialogue::cancel();focus.interrupt();
@@ -442,7 +445,7 @@ fn main() {
                                     if let Some(id)=world::locate(g.target_scene,g.spawn[0],g.spawn[1]) {
                                         geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                                         vitals.add_blue_health(life.leave_scene());
-                                        dialogue::cancel();state.reset_scene(r.scene);reveals.leave_scene();enemies.reset_scene(r.scene);player=Player::spawn(g.spawn[0],g.spawn[1]);
+                                        dialogue::cancel();state.reset_scene(r.scene);reveals.leave_scene();enemies.reset_scene(r.scene);audio::reset_movement();player=Player::spawn(g.spawn[0],g.spawn[1]);
                                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();target=Some(id);safe=(player.x,player.y,id);safe_facing=player.facing;gate_cooldown=90;
                                     }
                                 }

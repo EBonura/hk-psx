@@ -172,7 +172,8 @@ impl Cache {
         }}
     }
     /// Bootstrap-only ambient loading reuses free RAM before any scene is
-    /// admitted. Later calls are no-ops because all ambient samples live in SPU.
+    /// admitted. Later calls are no-ops: all ambient samples live in SPU or
+    /// the dedicated main-RAM stream cache, with no playback-time CD access.
     pub fn prepare_ambience(&mut self)->Result<(),LoadError> {
         if crate::ambience::is_ready() {return Ok(());}
         if self.loaded_scenes!=0 {mark(3,LoadError::Ambience as u32);return Err(LoadError::Ambience);}

@@ -1,12 +1,12 @@
-"""Complete source Geo one-shots in the remaining 15,424-byte SPU range."""
+"""Complete source Geo one-shots in the reserved 16KiB SPU range below ambience."""
 import hashlib
 import math
 import struct
 from pathlib import Path
 from cook_audio import convert_wav, encode, decode_zero
 
-SPU_BASE = 0x7C3C0
-BANK_LIMIT = 0x80000 - SPU_BASE
+SPU_BASE = 0x14000
+BANK_LIMIT = 0x18000 - SPU_BASE
 SOURCES = [('resources.assets', 1179, 'geo_small_collect_1'),
            ('resources.assets', 1144, 'geo_small_collect_2'),
            ('resources.assets', 1352, 'geo_small_collect_2'),

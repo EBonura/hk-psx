@@ -1,6 +1,63 @@
 # Status, 2026-09-15
 
-## Current work: controllable headless original reference
+## Current playable build:64 audio restoration
+
+The sole Downloads/ps1 games/hk-psx.bin/.cue pair now contains64. This preserves
+320x240 rendering and the63 cheat menus. Source running footsteps, hard-landing
+sound selection and the Great Door hit callback are integrated. The door uses
+its first authored hit variant and source pitch range; alternate hits and the
+separate destruction sound remain missing. Hard landing selects audio only,
+not the still-missing original recovery animation. No NoHardLanding components
+exist in the two currently cooked scenes.
+
+The complete199,872-byte cave-noises loop is now cached in main RAM and fed to a
+16KiB SPU ring through8KiB scratch. All existing ambience sample data/rates stay
+unchanged. No playback-time CD reads are added. The continuous ring preserves
+predictor history and uses polled SPU IRQ boundaries, not writable ENDX flags.
+A missed deadline stops the affected voice and records an underrun. All other
+ambient stems remain fully resident, retaining existing fades/shared rain phase.
+
+Final memory:63,376B player SFX,13,904B Geo,289,280B ambience SPU allocation;
+136,704B contiguous SPU space remains for future music streaming. Main RAM has
+63,448B unallocated before the protected48KiB stack; main frame32,144B leaves
+17,008B reserved for nested frames. This is measured linker allocation, not a
+physical-console stack high-water result. Player one-shots are22,050Hz, longer
+running sequence11,025Hz, Geo11,025Hz, ambience8,000Hz. The user permits further
+long-sample reductions if needed, applied consistently within categories.
+
+Actual final-CUE checks: stationary5700-poll and recorded traversal routes
+complete without guest faults, missed polls or audio underruns. They respectively
+perform53/54 stream refills and two complete source wraps; traversal starts the
+running sequence70 times. A separate100-second ambience capture verifies every
+resident SPU payload, both ring halves against their expected source positions,
+and the complete RAM source. A90.7666-second stereo section matches build63's
+captured ambience sample-for-sample after930-sample startup alignment. Final
+stationary/traversal captures were inspected. These are emulator results;
+physical-console SPU IRQ/DMA timing remains untested. The traversal does not
+reach a Great Door strike or qualifying hard landing; native runtime tests
+cover those new dispatch paths, not an observed end-to-end door encounter.
+
+Full make test suite passes after updating old layout/input-wrapper fixtures.
+Final EXE hazard scan:0. Evidence: `.hkpsx/audio64/{build.log,tests.log,stream,
+traversal,ambience,wave-comparison.json}`. Source bank quality/provenance remains
+ignored. Music playback, Focus, numerous enemy/break/death/UI sounds, the door
+transition delay, Crawler apron issue and Town expansion are still pending.
+
+Original runner now intercepts217 managed audio/mixer call sites and records
+actual requests in audio-calls.csv, alongside once-ready hero audio bindings.
+Two300-frame traced runs pass; the first matches pre-instrumentation motion
+exactly, the repeat differs only by at most0.00001 position units. Original
+inputs/saves remain unchanged.14 validation tests pass; polling/native-engine
+calls outside the instrumented sites and final mixed output remain outside
+coverage. Evidence: `.hkpsx/og-reference/runs/audio-movement-{1,2}/`.
+
+## Controllable headless original reference
+
+The user's next feedback highlights the large audio gap heard in the original
+reference runs. Audio restoration is now an active follow-up priority; see the
+current section in MUSIC.md. The audit confirms no guest music transport and
+only1,520 bytes free above current SPU banks. This update changes no playable
+build; actual playback/mixer event tracing and long-clip streaming are next.
 
 The user requested an original-game runner controlled through scripts so future
 fixes can be compared against repeatable original behaviour. The Windows
@@ -45,7 +102,7 @@ original/PS1 scenarios and add audio-call traces for missing SFX.
 Source audits already identified concrete port issues, still unbuilt/unfixed:
 
 - Great Door's original 2.5s delay applies to destination hero entry, while the
-  port currently waits before departure. The current hit sound hook is absent.
+  port currently waits before departure.64 adds the hit sound hook only.
 - Crawlers 12546/12548 freeze at the narrow collision-data apron while still
   visible; three original Buzzers are unsupported.
 - Port Town coverage ends at x48; walking beyond it takes hazard recovery back
@@ -54,8 +111,8 @@ Source audits already identified concrete port issues, still unbuilt/unfixed:
 
 Ignored source evidence: `.hkpsx/great-door-audio-followup/`,
 `.hkpsx/enemy-behavior-audit/`, `.hkpsx/town-expansion62-audit/RESULT.md`.
-A local, unintegrated Great Door hit-audio patch remains in audio.rs/cook_audio.py;
-it is not part of the delivered disc or this reference-runner milestone.
+The previously pending Great Door hit-audio patch is integrated in64; its
+transition timing and other sound variants remain pending.
 
 ## Playable build with cheats
 

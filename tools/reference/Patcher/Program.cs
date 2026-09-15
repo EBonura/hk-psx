@@ -67,7 +67,50 @@ foreach (var method in Types(original.MainModule.Types).SelectMany(t => t.Method
     }
 }
 if (exits == 0 || paths == 0) throw new InvalidOperationException("Expected bootstrap/path hooks not found");
+// Replace only exact managed audio signatures. The wrapper consumes the same
+// receiver/arguments plus a provenance string and invokes the native API once.
+// Keep the original instruction object so branches/EH boundaries remain valid.
+var audioType = driver.MainModule.GetType("HKReference.AudioTrace") ?? throw new InvalidOperationException("Missing AudioTrace");
+var audioWrappers = audioType.Methods.Where(m => m.IsPublic && m.IsStatic && m.HasParameters && m.Parameters.Last().Name == "site").ToArray();
+var audioSites = new List<object>();
+var uncoveredAudio = new Dictionary<string, int>();
+var audioCounts = new Dictionary<string, int>();
+foreach (var method in Types(original.MainModule.Types).SelectMany(t => t.Methods).Where(m => m.HasBody)) {
+    bool changed = false;
+    foreach (var instruction in method.Body.Instructions.ToArray()) {
+        if (instruction.Operand is not MethodReference called || !new[] {
+            "UnityEngine.AudioSource", "UnityEngine.Audio.AudioMixer", "UnityEngine.Audio.AudioMixerSnapshot"
+        }.Contains(called.DeclaringType.FullName)) continue;
+        var parameters = called.Parameters.Select(p => p.ParameterType.FullName).ToList();
+        if (called.HasThis) parameters.Insert(0, called.DeclaringType.FullName);
+        parameters.Add("System.String");
+        var candidates = audioWrappers.Where(w => w.Name == called.Name
+            && w.ReturnType.FullName == called.ReturnType.FullName
+            && w.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(parameters)).ToArray();
+        if (candidates.Length == 0) {
+            uncoveredAudio[called.FullName] = uncoveredAudio.GetValueOrDefault(called.FullName) + 1;
+            continue;
+        }
+        if (candidates.Length != 1 || (instruction.OpCode != OpCodes.Call && instruction.OpCode != OpCodes.Callvirt)
+            || instruction.Previous?.OpCode.OpCodeType == OpCodeType.Prefix || called.HasGenericParameters)
+            throw new InvalidOperationException("Unsupported audio call contract: " + method.FullName + " -> " + called.FullName);
+        string site = method.FullName + "@IL_" + instruction.Offset.ToString("x4");
+        audioSites.Add(new { site, target = called.FullName, opcode = instruction.OpCode.Name, wrapper = candidates[0].FullName });
+        audioCounts[called.FullName] = audioCounts.GetValueOrDefault(called.FullName) + 1;
+        instruction.OpCode = OpCodes.Ldstr;
+        instruction.Operand = site;
+        method.Body.GetILProcessor().InsertAfter(instruction,
+            Instruction.Create(OpCodes.Call, original.MainModule.ImportReference(candidates[0])));
+        changed = true;
+    }
+    if (changed) WidenBranches(method);
+}
+foreach (string required in new[] { "Play", "PlayOneShot", "Stop", "TransitionTo" })
+    if (!audioSites.Any() || !audioCounts.Keys.Any(k => k.Contains("::" + required + "(")))
+        throw new InvalidOperationException("Expected original audio call missing: " + required);
 original.Write(destination);
 File.Copy(args[2], Path.Combine(managed, Path.GetFileName(args[2])), true);
 Console.WriteLine(JsonSerializer.Serialize(new { source_sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))).ToLowerInvariant(), patched_sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(destination))).ToLowerInvariant(), awake_exits = exits, start_manager_awake_exits = earlyExits,
-    isolated_path_calls = paths }));
+    isolated_path_calls = paths, audio_call_counts = audioCounts, audio_call_sites = audioSites,
+    untraced_audio_references = uncoveredAudio,
+    audio_scope = "Exact calls in original Assembly-CSharp only; wrappers retain native calls. No reflection/delegate/native/other-assembly calls, playOnAwake, or audible-output coverage." }));

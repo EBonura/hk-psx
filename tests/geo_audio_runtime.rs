@@ -15,7 +15,7 @@ impl Voice {
  pub fn key_off(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().off|=mask;}
  pub fn key_on(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().on|=mask;}
 }
-pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){assert_eq!(address.0,0x7c3c0);assert_eq!((bytes.as_ptr() as usize)%4,0);assert!(bytes.len()<=15424);TRACE.lock().unwrap().uploads+=1;}
+pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){assert_eq!(address.0,0x14000);assert_eq!((bytes.as_ptr() as usize)%4,0);assert!(bytes.len()<=16384);TRACE.lock().unwrap().uploads+=1;}
 #[path="../game/src/geo_audio.rs"]mod geo_audio;
 #[test]fn actual_runtime_preserves_voice_ownership_variants_mute_and_upload_idempotence(){
  geo_audio::set_volume(0);geo_audio::upload();geo_audio::upload();
@@ -23,7 +23,7 @@ pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){assert_eq!(address.0,0x7c3c0);a
  geo_audio::break_rock();
  {
  let t=TRACE.lock().unwrap();assert_eq!(t.uploads,1);assert!(t.plays.iter().all(|p|p.3==0));
- let address=|i:u32|0x7c3c0+i*32;
+ let address=|i:u32|0x14000+i*32;
  for (index,p) in t.plays[..128].chunks_exact(4).enumerate(){
   let _=index;assert!([address(0),address(1)].contains(&p[0].1));
   assert!([address(0),address(2)].contains(&p[1].1));

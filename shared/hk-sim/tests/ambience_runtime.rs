@@ -133,7 +133,7 @@ fn malformed_flags_headers_truncation_and_checksum_cannot_be_admitted() {
 #[test]
 fn actual_complete_bank_is_contiguous_above_sfx_and_all_checksums_match() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/ambience");
-    let mut end = 0x8D00;
+    let mut end = data::AMBIENCE_SPU_START;
     let channels = [0, 1, 3, 4, 5, 6];
     for (i, c) in data::AMBIENCE_CLIPS.iter().enumerate() {
         assert_eq!(c.spu_address, end);
@@ -143,8 +143,14 @@ fn actual_complete_bank_is_contiguous_above_sfx_and_all_checksums_match() {
         assert_eq!(c.byte_len % 16, 0);
         let bytes = std::fs::read(root.join(format!("clip_{i}.adpcm"))).unwrap();
         assert!(valid_clip(&bytes, c.byte_len, c.checksum));
-        end += c.byte_len as u32;
+        if i == 3 {
+            assert_eq!(c.spu_bytes, data::AMBIENCE_STREAM_BYTES);
+            assert_eq!(c.byte_len, data::AMBIENCE_STREAM_SOURCE_BYTES);
+        } else {
+            assert_eq!(c.spu_bytes, c.byte_len);
+        }
+        end += c.spu_bytes as u32;
     }
-    assert_eq!(end, 0x7C3C0);
-    assert!(end <= 512 * 1024);
+    assert_eq!(end, 0x5EA00);
+    assert_eq!(data::AMBIENCE_SPU_END-end, 136704);
 }
