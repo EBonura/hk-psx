@@ -2,20 +2,19 @@
 //! Group memberships are bank-pool IDs in cooked data and local draw IDs after
 //! resolution. Claim only after all members pass the caller's live/material
 //! guards, using member0's projected vertex0 and the earliest member rank.
+#[cfg(test)]
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 #[repr(C)]
 pub struct Group {pub certificate:u16,pub members:[u16;4]}
+#[cfg(test)]
 #[derive(Clone,Copy)]
 #[repr(C)]
 pub struct GroupCert {pub gx:i16,pub gy:i16,pub width:u16,pub height:u16,pub offset:u32}
 pub const NO_MEMBER:u16=u16::MAX;
 #[cfg(not(test))]
-include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/opaque_groups.rs"));
-#[cfg(test)]static GROUP_CERTS:&[GroupCert]=&[];
-#[cfg(test)]static GROUP_BITS:&[u32]=&[];
-#[cfg(test)]static SCENE_GROUPS:&[&[Group]]=&[];
-#[inline]
-pub fn scene_groups(bank:usize)->&'static[Group] {SCENE_GROUPS.get(bank).copied().unwrap_or(&[])}
+pub use hk_format::coverage::{CoverageCert as GroupCert,CoverageGroup as Group};
+#[cfg(not(test))]
+pub const GROUP_POOL_CAPACITY:usize=crate::disc::COVERAGE_GROUP_POOL_CAPACITY;
 /// Resolve complete membership in one region. A missing member disables the
 /// group; sharing only its anchor across regions is insufficient evidence.
 pub fn resolve(group:&Group,pool_ids:&[u16])->Option<Group> {
@@ -61,8 +60,8 @@ impl Guard {
     pub fn finish(&self)->Option<((i32,i32),u16)>{if self.valid&&self.count>=2{Some((self.origin,self.rank))}else{None}}
 }
 #[inline]
-pub fn intersects(id:u16,origin:(i32,i32))->bool {
-    GROUP_CERTS.get(id as usize).is_some_and(|c|bounds(c,origin).is_some())
+pub fn intersects(certs:&[GroupCert],id:u16,origin:(i32,i32))->bool {
+    certs.get(id as usize).is_some_and(|c|bounds(c,origin).is_some())
 }
 #[inline]
 fn bounds(c:&GroupCert,(ox,oy):(i32,i32))->Option<[i32;4]> {
@@ -73,8 +72,8 @@ fn bounds(c:&GroupCert,(ox,oy):(i32,i32))->Option<[i32;4]> {
 /// Upgrade only owners earlier than every member of this group. Unlike the
 /// ordinary descending single-source collector, occupied cells are not final.
 #[inline(never)]
-pub fn claim(id:u16,origin:(i32,i32),rank:u16,owners:&mut[u16;300])->(u32,u32) {
-    let Some(c)=GROUP_CERTS.get(id as usize)else{return(0,0);};claim_mask(c,GROUP_BITS,origin,rank,owners)
+pub fn claim(certs:&[GroupCert],bits:&[u32],id:u16,origin:(i32,i32),rank:u16,owners:&mut[u16;300])->(u32,u32) {
+    let Some(c)=certs.get(id as usize)else{return(0,0);};claim_mask(c,bits,origin,rank,owners)
 }
 fn claim_mask(c:&GroupCert,bits:&[u32],origin:(i32,i32),rank:u16,owners:&mut[u16;300])->(u32,u32) {
     let Some([l,t,r,b])=bounds(c,origin)else{return(0,0);};let(mut added,mut reads)=(0,0);

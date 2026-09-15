@@ -1,9 +1,31 @@
 # Status, 2026-09-15
 
+## In progress69: scene-owned visibility certificates
+
+Moving unchanged tile/group visibility proofs from aggregate linked tables into
+one84KiB scene-owned bank. Loading stages them through the empty geometry arena
+before atlas/scene admission; checked source identity and bounded copy precede
+readiness. Renderer views borrow that owner and retain only copied IDs/geometry.
+The user-requested provisional69 now replaces the sole Downloads/ps1 games/hk-psx
+BIN/CUE pair. Build succeeded with zero final hazards; 301 Python tests and
+412 reported native tests passed. Linked free space before the reserved stack is
+34,668B, a14,320B net recovery over68. The850-poll actual-CUE Focus smoke replay
+completed without reported faults, loaded83,692B of Tutorial coverage, and its
+inspected final320x240 image is byte-identical to68. Evidence: .hkpsx/game69/
+(build-provisional.log, focus-provisional/); full tests are in
+.hkpsx/scene-certificates69/tests-provisional.log. The12,112-poll Tutorial/Town/return replay also passes: three matching proof
+and geometry admissions, exact321,956B geometry and83,692B proof after return,
+569 loading ticks/samples versus508 in68, queue peak4 and no reported faults.
+Its inspected final image is byte-identical to68. No static transfers occur
+during11,382 checked same-scene gameplay intervals. The12,562-poll Town/reset route also passes, reachingx177.274 and returning
+to the opening with an image byte-identical to68;11,832 stable intervals pass. A separate Town-ending replay verifies88,200B geometry and27,192B proof
+against the exact cooked files in RAM, with a visible inspected Knight atx174.646.
+Consolidated evidence: .hkpsx/game69/validation.json. Crossroads gameplay remains unimplemented.
+
 ## Current playable build68: Town expansion and scene replacement
 
-The sole Downloads/ps1 games/hk-psx.bin/.cue pair contains the final68 build,
-including the return-entry correction after the earlier requested provisional.
+The previous final68 build, now superseded by provisional69, included
+the return-entry correction after the earlier requested provisional.
 106 spatial views cover Tutorial and Town0..270/-5..76 (86+20). Scene/atlas
 ownership is exclusive: an authored gate retires GPU work, blacks the display
 at VBlank, revokes old readiness and resets renderer/animation caches before

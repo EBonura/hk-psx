@@ -1,23 +1,23 @@
 # Shared scene and gameplay budget
 
-The validated68 build from 2026-09-15 keeps one scene at a time in the RAM
+The provisional69 build from 2026-09-15 keeps one scene at a time in the RAM
 arena and replaces its static VRAM atlases at scene gates. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |355,652|
-| Code-to-data alignment |12|
-| Linked data, including menu, HUD and sound bank |830,128|
-| BSS, including shared scene arena and runtime pools |776,068|
-| Total static span |1,961,860|
+| Linked code |364,976|
+| Code-to-data alignment |0|
+| Linked data, including menu, HUD and sound bank |720,464|
+| BSS, including shared scene arena and runtime pools |862,100|
+| Total static span |1,947,540|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |20,348|
+| Unallocated gap before reserved stack |34,668|
 
-Static data ends at `0x801eef84`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801eb794`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies369,180 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -33,10 +33,10 @@ its 32,768-byte reservation before nested calls. `host/stack_budget.py` now
 derives a project linker script from the unchanged pinned SDK, protects 48 KiB,
 and checks the actual final main prologue before packaging. The generated
 script's content hash is part of its filename so budget changes force a relink.
-The current main frame is 32,200 bytes, leaving 16,952 reserved bytes for nested
+The current main frame is 32,208 bytes, leaving 16,944 reserved bytes for nested
 calls and other stack use; this is **not** an observed high-water measurement.
 The linker also excludes the 256 bytes above its initial SP from static RAM.
-Current evidence: `.hkpsx/build.json` and `.hkpsx/game68/build-return.log`.
+Current evidence: `.hkpsx/build.json` and `.hkpsx/game69/build-provisional.log`.
 The outlined enemy terrain helper has a2,336-byte final binary frame, including
 a2KiB edge cache reused per actor. It adds no persistent RAM allocation.
 
@@ -59,17 +59,17 @@ copies. The48KiB reservation and high-water caveat apply to the retained build.
 | Scene | Raw bytes | Stored bytes | RAM offset | Decoder suffix capacity |
 | --- | ---: | ---: | ---: | ---: |
 | Tutorial |321,956|181,163|0|369,180|
-| Town entrance |47,216|25,355|321,956|47,224|
+| Town |88,200|53,583|0|369,180|
 
-HKSCNE02 resident data omits the static page/palette payloads already held in
-VRAM. Runtime records, animation data and alpha maps remain resident and exact.
-Raw data totals369,172 bytes; the arena retains8 bytes beyond this and4 beyond
-the proven369,176-byte aligned minimum. Startup-only atlas chunks decode/upload
-through the same empty arena before scene views are admitted. Host analysis
-keeps the original HKSCNE01 records/payloads separately; these are not on-disc
-resident scene copies. The native sequence proof exercises all23 atlas chunks,
-both scene decoders, budgets1,31,1024,2048,8192 and immutable admitted prefixes.
-The largest ambience startup read is200,704 bytes and fits this same buffer.
+HKSCNE02 resident data omits static page/palette payloads held in VRAM.
+Geometry, animation and alpha metadata share one scene arena; only the active
+scene occupies it. A separate86,016-byte aligned BSS arena holds that scene's
+HKOCSC01 visibility certificates:83,692 bytes for Tutorial or27,192 for Town.
+Those proofs decode through the empty geometry arena before atlas and geometry
+admission. Moving aggregate linked proofs into the reusable bank recovers14,320
+net linked bytes after additional parser/loader code and alignment. This does
+not establish capacity for every original scene. Both arenas are checked against
+the final link map; main-stack high-water remains unmeasured.
 
 The renderer uses948 bytes of CPU-only scratchpad. An888-byte draw workspace
 (three32-piece partitions, eight occluders and union bounds) overlays the

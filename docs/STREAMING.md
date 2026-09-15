@@ -11,15 +11,17 @@ Production builds select `scene_gate` residency. One369,180-byte arena and the
 same static VRAM slots belong to one scene at a time. Tutorial needs321,956
 resident bytes,18 pages and1,068 palettes; Town needs88,200 resident bytes,
 6 pages and390 palettes. Their combined410,156 resident bytes need not coexist.
-The host retains `joint` mode for allocator/loader regression tests.
+The host packer retains `joint` mode for allocator regression tests; production
+guest builds require `scene_gate`.
 
 Startup uploads the shared effects and sound banks and admits Tutorial. At an
 authored exit, the guest retires outgoing GPU work, blacks the display at
 VBlank, revokes old scene/atlas readiness and invalidates renderer and animation
-caches. The outgoing Room borrow ends before replacement. Each destination atlas
-is read and decoded through the same arena, verified and uploaded; the compact
-scene then replaces staging data. Only a fully checked scene and its matching
-page/palette inventory become visible. Both framebuffers are cleared before
+caches. The outgoing Room borrow ends before replacement. First, a scene-owned HKOCSC01 visibility bank is read, incrementally decoded
+and validated in empty geometry scratch, then copied into its84KiB auxiliary
+arena. Each destination atlas is read and decoded through the same arena, verified and uploaded; the compact
+scene then replaces staging data. Only a fully checked scene, visibility bank and matching page/palette
+inventory become visible. Both framebuffers are cleared before
 display resumes. Failed admission keeps the display black and reports an error.
 
 The CD IRQ path remains responsible for payload transfers. Main-thread
@@ -51,7 +53,8 @@ replacements and budgets1,31,1024,2048,8192. Runtime tests cover admission,
 replacement failures, GPU/blackout ordering and loading-input handoff. Actual-CUE
 commands, captures and transfer counters are required separately; native tests
 alone do not prove a playable transition. `tools/validate_scene_gates.py` checks
-final arena bytes and same-scene transfer stability from those replays.
+final geometry and visibility arena bytes, matching owners/load counts, and
+same-scene transfer stability from those replays.
 
 ## Validation status and earlier streaming work
 
@@ -105,8 +108,8 @@ Host provenance additionally records SHA-256. `host/pack_rooms.py` and the old
 region manifests describe the earlier independent-region format workflow;
 current guest packaging uses `pack_scenes.py`.
 
-WORLD.PAK now has eight entries: two scene payloads followed by six complete
-ambience clips. The clips are verified and uploaded to SPU through the empty
+WORLD.PAK currently has38 entries: two scene payloads, six complete ambience
+clips,27 atlas chunks, one Focus bank and two scene visibility banks. The clips are verified and uploaded to SPU through the empty
 shared arena before scene admission; they do not remain in scene RAM or require
 traversal-time CD reads. The title/retry UI remains available during admission.
 Disc images are written only to `~/Downloads/ps1 games/` as the canonical game

@@ -33,8 +33,10 @@ with controller/audio servicing and renderer/animation cache invalidation.
 
 Tutorial needs18 static4bpp pages and1,068 palettes; Town needs6pages/390palettes.
 The approved95% static matches and48-pixel scenery cap remain. Knight, enemies
-and HUD retain their existing resolution. Build68 has20,348B
-unallocated before the reserved stack. Final-CUE gate/return/reset replays pass, including travel tox177 in Town.
+and HUD retain their existing resolution. Provisional69 has34,668B
+unallocated before the reserved stack. Visibility tables now occupy one reusable
+84KiB scene bank. Final-CUE gate/return/reset replays pass, including travel tox177
+in Town; the opening, return and reset images match68 exactly.
 Scene exits still pause for loading; this does not establish seamless whole-game traversal. See
 [STATUS.md](docs/STATUS.md) and [BUDGET.md](docs/BUDGET.md) for current evidence.
 No new30fps or physical-console performance claim is made.

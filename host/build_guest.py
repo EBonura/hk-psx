@@ -16,6 +16,7 @@ def run(args,**kw):
     print('+', ' '.join(map(str,args)),flush=True)
     subprocess.run(list(map(str,args)),check=True,**kw)
 def build(telemetry=False, candidate=False, residency="scene_gate"):
+    if residency!="scene_gate":raise ValueError('Guest coverage residency requires scene_gate')
     # Derive reservations from the exact final packs, including direct builds.
     from scenery_geometry import generate
     generate(ROOT)
@@ -29,6 +30,9 @@ def build(telemetry=False, candidate=False, residency="scene_gate"):
     cook_opaque_groups()
     ambience=json.loads((ROOT/'.hkpsx/ambience.json').read_text())
     clips=ambience['clips']
+    # The compressor uses pinned host dependencies from the build environment.
+    run([ROOT/'.venv/bin/python',ROOT/'host/scene_certificates.py'],cwd=ROOT)
+    coverage=json.loads((ROOT/'.hkpsx/scene-certificates.json').read_text())
     music=json.loads((ROOT/'.hkpsx/title-music.json').read_text())
     if hashlib.sha256((ROOT/music['path']).read_bytes()).hexdigest()!=music['sha256'] or hashlib.sha256((ROOT/'data/title_music.rs').read_bytes()).hexdigest()!=music['manifest_sha256']:raise ValueError('Title music changed after cooking')
     for path,expected in (
@@ -83,6 +87,8 @@ def build(telemetry=False, candidate=False, residency="scene_gate"):
         for index,atlas in enumerate(atlases):
             shutil.copy2(atlas['path'],chunks/f"chunk_{len(rooms)+len(clips)+index+1}.atlas")
         shutil.copy2(ROOT/focus['path'],chunks/f"chunk_{len(rooms)+len(clips)+len(atlases)+1}.focus")
+        for bundle in coverage['bundles']:
+            shutil.copy2(bundle['path'],chunks/f"chunk_{bundle['chunk_id']}.coverage")
         run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks,'--cdda-track',ROOT/music['path']],cwd=ROOT)
         staged.replace(outputs['bin'])
         staged.with_suffix('.cue').replace(outputs['cue'])

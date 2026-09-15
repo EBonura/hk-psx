@@ -51,6 +51,7 @@ impl<'a> Scene<'a>{
     pub fn id(&self)->usize{u32_at(self.bytes,8)as usize}
     pub fn room_count(&self)->usize{self.counts[0]}
     pub fn texture_count(&self)->usize{self.counts[1]}
+    pub fn draw_pool_count(&self)->usize{self.counts[2]}
     pub fn palette_count(&self)->usize{self.counts[6]}
     pub fn page_count(&self)->usize{self.counts[7]}
     pub fn byte_len(&self)->usize{self.bytes.len()}

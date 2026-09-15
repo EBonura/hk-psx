@@ -1,4 +1,5 @@
 //! Resident scenery plus bounded animation residency and SDK DMA packets.
+use hk_format::coverage::CoverageView;
 use crate::animation_cache;
 use hk_format::{i32_at, u16_at, u32_at, Room, Texture};
 use psx_gpu::{self as gpu, ot::OrderingTable, prim::QuadTextured};
@@ -201,11 +202,12 @@ pub fn release_scene() {
         (&mut *(&raw mut BACK_PREFIX)).invalidate();
         (&mut *(&raw mut TILE_PREPARED)).invalidate();
         BACK_PREBUILD_ALLOWED=false;TEXTURE_COUNT=0;DRAW_COUNT=0;
+        TILE_DRAW_COUNT=0;TILE_GROUP_COUNT=0;TILE_MAX_RANK=0;TILE_GENERATION=TILE_GENERATION.wrapping_add(1);
     }
     animation_cache::init();
 }
 #[inline(never)]
-pub fn init(room: &Room, bank: usize, region:usize) {
+pub fn init(room: &Room, bank: usize, region:usize,coverage:CoverageView<'_>) {
     crate::input::checkpoint();
     unsafe {
         (&mut *(&raw mut BACK_PREFIX)).invalidate();
@@ -291,7 +293,7 @@ pub fn init(room: &Room, bank: usize, region:usize) {
         }
         // Bind shared immutable draw identities once per region. Sorting by
         // (front, draw) lets the frame collector visit latest sources first.
-        TILE_DRAW_COUNT=0;let certs=tile_coverage::scene_map(bank);
+        TILE_DRAW_COUNT=0;let certs=coverage.pool_map();
         for front in [false,true] {
             for i in 0..DRAW_COUNT {
                 let d=&DRAWS[i];
@@ -342,14 +344,14 @@ pub fn init(room: &Room, bank: usize, region:usize) {
 
 
         }
-        bind_tile_groups(room,bank);
+        bind_tile_groups(room,coverage);
     }
     reset_visibility();
     crate::input::checkpoint();
 }
 /// Groups are valid only when every original member is in this region. The
 /// bounded table adds optional proofs; omitted groups retain normal rendering.
-fn bind_tile_groups(room:&Room,bank:usize) {
+fn bind_tile_groups(room:&Room,coverage:CoverageView<'_>) {
     unsafe {
         TILE_GROUP_COUNT=0;
         // One inverse map replaces repeated group×member×draw searches at
@@ -365,7 +367,7 @@ fn bind_tile_groups(room:&Room,bank:usize) {
                 }
             }
         }
-        for group in opaque_groups::scene_groups(bank) {
+        for group in coverage.groups() {
             crate::input::checkpoint();
             let Some(local)=opaque_groups::resolve_indexed(group,&pool_to_local)else{continue;};
             let members=local.members.iter().copied().take_while(|&i|i!=u16::MAX);
@@ -465,9 +467,11 @@ fn collect_solid_core(camera:(i32,i32),occluders:&mut Occluders) {
 }
 /// Translate host-certified masks; the grid owns no GPU or DMA references.
 #[inline(never)]
-fn collect_tile_coverage(camera:(i32,i32)) {
+fn collect_tile_coverage(camera:(i32,i32),coverage:CoverageView<'_>) {
     unsafe {
         let grid=&mut *Scratch::tile_owners(occlusion_scratch::base());
+        let certs=coverage.tile_certs();let bits=coverage.tile_bits();
+        let group_certs=coverage.group_certs();let group_bits=coverage.group_bits();
         TILE_MAX_RANK=0;
         let(mut candidates,mut lookups,mut tiles)=(0u32,0u32,0u32);
         for candidate in (0..TILE_DRAW_COUNT).rev() {
@@ -477,7 +481,7 @@ fn collect_tile_coverage(camera:(i32,i32)) {
             let cx=(((camera.0>>8)as i64*d.scale as i64)>>12)as i32;
             let cy=(((camera.1>>8)as i64*d.scale as i64)>>12)as i32;
             let origin=(160+((d.xy[0]-cx)>>8),120-((d.xy[1]-cy)>>8));
-            if !tile_coverage::intersects(cert,origin) {continue;}
+            if !tile_coverage::intersects(certs,cert,origin) {continue;}
             // Cropped certificate bounds lie inside every phase's source
             // AABB. Its tile preflight proves viewport overlap, satisfying
             // LEGAL_EXTENT's absolute-coordinate and triangle-edge contract.
@@ -486,7 +490,7 @@ fn collect_tile_coverage(camera:(i32,i32)) {
                 if !scenery_geometry::legal(&v) {continue;}
             }
             let rank=tile_coverage::rank(i,d.flags&FRONT!=0);candidates+=1;
-            let (added,reads)=tile_coverage::claim(cert,origin,rank,grid);
+            let (added,reads)=tile_coverage::claim(certs,bits,cert,origin,rank,grid);
             if added!=0 && TILE_MAX_RANK==0 {TILE_MAX_RANK=rank;}
             tiles+=added;lookups+=reads;
         }
@@ -498,7 +502,7 @@ fn collect_tile_coverage(camera:(i32,i32)) {
             let cx=(((camera.0>>8)as i64*first.scale as i64)>>12)as i32;
             let cy=(((camera.1>>8)as i64*first.scale as i64)>>12)as i32;
             let origin=(160+((first.xy[0]-cx)>>8),120-((first.xy[1]-cy)>>8));
-            if !opaque_groups::intersects(group.certificate,origin){continue;}
+            if !opaque_groups::intersects(group_certs,group.certificate,origin){continue;}
             let mut guard=opaque_groups::Guard::new();
             for i in group.members.iter().copied().take_while(|&i|i!=u16::MAX) {
                 let i=i as usize;let d=&DRAWS[i];
@@ -509,7 +513,7 @@ fn collect_tile_coverage(camera:(i32,i32)) {
                 guard.push(tile_coverage::rank(i,true),d.scale,eligible,&v);
             }
             if let Some((origin,rank))=guard.finish() {
-                let (added,reads)=opaque_groups::claim(group.certificate,origin,rank,grid);
+                let (added,reads)=opaque_groups::claim(group_certs,group_bits,group.certificate,origin,rank,grid);
                 if added!=0 {TILE_MAX_RANK=TILE_MAX_RANK.max(rank);}
                 candidates+=1;tiles+=added;lookups+=reads;
             }
@@ -524,13 +528,13 @@ fn collect_tile_coverage(camera:(i32,i32)) {
 /// Only CPU scratch/events change; prior DMA packets and VRAM remain untouched.
 /// Any later certified eligibility change or camera change rejects this result.
 #[inline(never)]
-pub fn prepare_tile_coverage(camera:(i32,i32)) {
+pub fn prepare_tile_coverage(camera:(i32,i32),coverage:CoverageView<'_>) {
     unsafe {
         if (&*(&raw const TILE_PREPARED)).matches(camera,TILE_GENERATION) {return;}
         let scratch=occlusion_scratch::base();
         // Switch the exclusive workspace to owner collection; claim requires0.
         Scratch::initialize_owners_at(scratch);
-        collect_tile_coverage(camera);
+        collect_tile_coverage(camera,coverage);
         // Events and rows now own all coverage information. No owner reference
         // survives the collector; reinitialize the overlaid drawing workspace.
         Scratch::initialize_draw_at(scratch);
@@ -543,14 +547,14 @@ pub fn prepare_tile_coverage(camera:(i32,i32)) {
 /// simulation clock while its presentation is queued. A replacement discards
 /// the old prefix before touching tile Events. No GP0 commands are issued.
 #[inline(never)]
-pub fn prepare_back_prefix(camera:(i32,i32),framebuffer_y:u16) {
+pub fn prepare_back_prefix(camera:(i32,i32),framebuffer_y:u16,coverage:CoverageView<'_>) {
     if !crate::presentation::queued() || !psx_rt::interrupts::gp1_queue_pending(){return;}
     unsafe {
         let prefix=&mut *(&raw mut BACK_PREFIX);
         if prefix.next==DRAW_COUNT && prefix.matches(camera,framebuffer_y)
             && draw_visibility::matches_snapshot(prefix.state()){return;}
         prefix.invalidate();
-        prepare_tile_coverage(camera);
+        prepare_tile_coverage(camera,coverage);
         if !BACK_PREBUILD_ALLOWED || !psx_rt::interrupts::gp1_queue_pending(){return;}
         let Some(count)=draw_visibility::sparse_snapshot(prefix.state_mut())else{return;};
         // Pair the SDK's completed async DMA lease before reusing packet RAM.

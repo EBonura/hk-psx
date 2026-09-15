@@ -16,7 +16,16 @@ only; instruments and captures stay ignored. The original startup/load/landing
 sequence has specific prerequisites documented there. Do not force hero control
 or misread an unready test as failed original movement.
 
-Final68 replaces the requested provisional and fixes the reverse gate entry.
+Provisional69 is now the sole playable disc at the user’s request. It includes
+scene-owned visibility certificates, zero final hazards and34,668B linked RAM
+headroom. Tests301Python/412reportednative pass. Its850-poll Focus CUE replay
+passes with an inspected final image byte-identical to68. Long gate/return/reset
+replays also pass with exact restored proof/geometry bytes and matching68 final
+images. Two gates take569 loading samples versus508 in68; no FPS claim. Town-ending RAM verification also passes for both banks.
+Evidence: .hkpsx/game69/validation.json. Do not replace
+the disc during the user’s playtest without further steering.
+
+Final68 fixed the reverse gate entry.
 Three actual-CUE routes now pass: Focus850polls, gate return12,112 and Town
 traversal/reset12,562. The last reachesx177.274; both long routes replace the
 scene twice and resume with exact cooked scene bytes, queue peak4 and no faults.
