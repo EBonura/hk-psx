@@ -1,4 +1,19 @@
-# Playable-game milestones
+# Complete-game execution roadmap
+
+The current plan is [Complete Hollow Knight for GPT-5.6-Sol](plans/COMPLETE_GAME_SOL.md).
+Use [Sol start here](plans/SOL_START_HERE.md) for the immediate handoff.
+
+The user selected whole-world import followed by shared systems across all areas.
+Generic FPS optimization was paused for playtesting/gameplay expansion; maintain
+performance during development and close the final30fps/hardware requirement
+alongside completion. Do not use the historical performance-first gate below to
+indefinitely block missing gameplay work. A first ending remains an intermediate
+milestone; optional content, installed expansions, modes and alternate endings
+are included in the complete-game plan.
+
+## Historical milestone notes (superseded sequencing)
+
+### Earlier playable-game milestones
 
 The user requested this order on September 15, 2026: meet the existing FPS goal,
 then implement the missing gameplay toward the entire game playable from start

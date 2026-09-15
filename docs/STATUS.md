@@ -1,3 +1,12 @@
+## Completion plan prepared for GPT-5.6-Sol
+
+The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),
+with a short [execution entry point](plans/SOL_START_HERE.md). It includes 32 work
+packages,20 first slices, full scope, explicit acceptance criteria, current
+architecture blockers, commands and a copy/paste handoff prompt. This was a
+planning-only task: no import was resumed, no guest code was changed, and the
+playable disc remains71. The interrupted import status below still applies.
+
 ## Whole-world development pass — stopped at user request
 
 Source changes are saved; the sole playable disc remains71 with identical EXE,
