@@ -1,7 +1,8 @@
 //! CPU-only renderer scratchpad lease. No DMA, BIOS or interrupt path may use
-//! this reservation. Only disjoint field pointers are exposed, so a nested
-//! hidden test never borrows the entire store while scenery pieces are live.
-use core::mem::{size_of,MaybeUninit};
+//! this reservation. Owner collection and drawing have exclusive lifetimes.
+//! Drawing exposes disjoint field pointers, so nested hidden tests never borrow
+//! the whole store while scenery pieces are live.
+use core::mem::{size_of,MaybeUninit,ManuallyDrop};
 use super::occlusion::{Pieces,tile_runs::{CELLS,HEIGHT}};
 
 pub const MAX_OCCLUDERS:usize=8;
@@ -43,50 +44,63 @@ impl Occluders {
 }
 
 #[repr(C)]
-pub struct Storage {
+struct DrawStorage {
     hidden:Pieces,
     scenery:Pieces,
     holes:Pieces,
     occluders:Occluders,
     union:[i16;4],
-    tile_owners:[u16;CELLS],
-    tile_rows:[u32;HEIGHT],
 }
+// Owners are consumed into TILE_EVENTS before any drawing. These two phases
+// share bytes, but their typed references must never coexist. Rows survive the
+// phase switch and are kept outside the overlay.
+#[repr(C)]
+union Workspace {draw:ManuallyDrop<DrawStorage>,owners:[u16;CELLS]}
+#[repr(C)]
+pub struct Storage {workspace:Workspace,tile_rows:[u32;HEIGHT]}
 impl Storage {
     /// The caller owns this complete aligned reservation, with no live field
     /// references. Called before any frame's occlusion access, after boot and
     /// cache setup. Does not depend on scratchpad power-on contents.
     pub unsafe fn initialize_at(base:*mut Self) {
+        Self::initialize_draw_at(base);
+        Self::tile_rows(base).write_bytes(0,1);
+    }
+    /// End the owner phase before calling this. All owner references must have
+    /// expired; only the disjoint row array may remain live. Stale owner bytes
+    /// are never interpreted as initialized rectangles or Occluder bools.
+    pub unsafe fn initialize_draw_at(base:*mut Self) {
         Pieces::initialize_at(Self::hidden(base));
         Pieces::initialize_at(Self::scenery(base));
         Pieces::initialize_at(Self::holes(base));
-        (&raw mut (*base).occluders.count).write(0);
+        (&raw mut (*Self::occluders(base)).count).write(0);
         Self::union(base).write([i16::MAX,i16::MAX,i16::MIN,i16::MIN]);
-        // Owner0 proves nothing. Initialize this disjoint CPU-only array in
-        // place, without a600-byte temporary or any DMA reference.
-        Self::tile_owners(base).write_bytes(0,1);
-        // Initialize before the collector forms a typed mutable row slice.
-        Self::tile_rows(base).write_bytes(0,1);
     }
-    pub unsafe fn hidden(base:*mut Self)->*mut Pieces {&raw mut (*base).hidden}
-    pub unsafe fn scenery(base:*mut Self)->*mut Pieces {&raw mut (*base).scenery}
-    pub unsafe fn holes(base:*mut Self)->*mut Pieces {&raw mut (*base).holes}
-    pub unsafe fn occluders(base:*mut Self)->*mut Occluders {&raw mut (*base).occluders}
-    pub unsafe fn union(base:*mut Self)->*mut [i16;4] {&raw mut (*base).union}
+    /// Begin the owner phase with no live draw-workspace references.
+    pub unsafe fn initialize_owners_at(base:*mut Self) {
+        Self::tile_owners(base).write_bytes(0,1);
+    }
+    unsafe fn draw(base:*mut Self)->*mut DrawStorage {
+        (&raw mut (*base).workspace.draw).cast()
+    }
+    pub unsafe fn hidden(base:*mut Self)->*mut Pieces {&raw mut (*Self::draw(base)).hidden}
+    pub unsafe fn scenery(base:*mut Self)->*mut Pieces {&raw mut (*Self::draw(base)).scenery}
+    pub unsafe fn holes(base:*mut Self)->*mut Pieces {&raw mut (*Self::draw(base)).holes}
+    pub unsafe fn occluders(base:*mut Self)->*mut Occluders {&raw mut (*Self::draw(base)).occluders}
+    pub unsafe fn union(base:*mut Self)->*mut [i16;4] {&raw mut (*Self::draw(base)).union}
     pub unsafe fn tile_rows(base:*mut Self)->*mut [u32;HEIGHT] {&raw mut (*base).tile_rows}
-    pub unsafe fn tile_owners(base:*mut Self)->*mut [u16;CELLS] {&raw mut (*base).tile_owners}
+    pub unsafe fn tile_owners(base:*mut Self)->*mut [u16;CELLS] {&raw mut (*base).workspace.owners}
 }
 
 const _:()=assert!(size_of::<Occluder>()==12);
 // usize is native-sized in host tests; these assertions pin the guest ABI.
 #[cfg(target_arch="mips")]
 const _:()={
-    assert!(size_of::<Pieces>()==68);
-    assert!(core::mem::offset_of!(Storage,tile_owners)==312);
-    assert!(core::mem::offset_of!(Storage,tile_owners)%core::mem::align_of::<u16>()==0);
-    assert!(core::mem::offset_of!(Storage,tile_rows)==912);
-    assert!(core::mem::offset_of!(Storage,tile_rows)%core::mem::align_of::<u32>()==0);
-    assert!(size_of::<Storage>()==972);
+    assert!(size_of::<Pieces>()==260);
+    assert!(size_of::<DrawStorage>()==888);
+    assert!(core::mem::offset_of!(Storage,workspace)==0);
+    assert!(core::mem::offset_of!(Storage,tile_rows)==888);
+    assert!(size_of::<Storage>()==948);
     assert!(core::mem::align_of::<Storage>()==4);
     assert!(size_of::<Storage>()<=psx_hw::memory::scratchpad::SIZE);
     assert!(psx_hw::memory::scratchpad::BASE as usize%core::mem::align_of::<Storage>()==0);

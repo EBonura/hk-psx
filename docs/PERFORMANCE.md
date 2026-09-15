@@ -1,13 +1,14 @@
 # Performance investigation
 
-## Active 30 fps target (2026-09-14)
+## Active 30 fps target (2026-09-15)
 
 The acceptance budget is **at most two VBlanks per rendered gameplay frame**.
-The current pass40 disc averages 2.018783 VBlanks (about 29.7 fps), with
-184 / 2,456 / 232 / 3 intervals at one / two / three / four ticks. The strict
-gate still fails on235 of2,875 intervals. One-tick intervals improve the mean;
-they must not disguise the remaining three/four-tick stutters. Pass36 averaged
-2.159226, with427 of2,688 over budget. The original measured route averaged2.5523.
+The current pass48 disc averages1.983254VBlanks (approximately30fps at
+nominal60Hz), with243 /2,494 /184 /5 intervals at one /two /three /four ticks.
+The strict gate still fails on189 of2,926 intervals. Pass40 had235 of2,875
+over budget and mean2.018783. One-tick intervals improve the mean; they must
+not disguise the remaining three/four-tick stutters. The original measured
+route averaged2.5523VBlanks.
 
 Pass37 prepares a bounded background packet prefix after final DMA drains,
 while the prior GPU frame finishes. Exact camera, framebuffer and final sparse
@@ -20,9 +21,9 @@ remain unchanged. User explicitly keeps320×240, framing, layers and effects.
 
 Final long-route, Lifeblood and Town captures match their reference images
 exactly. Lifeblood's four earned-health checks pass; the Great Door opens after
-thirteen hits. Town has one gate-transition wait tick, and pre-existing
+thirteen hits. All three pass48 routes observe zero boundary waits; pre-existing
 Lifeblood/Town particle drops remain14/23. No input faults or missed samples.
-All replay inputs remained hash-stable. Tests236Python/352directnative pass;
+All replay inputs remained hash-stable. Tests241Python/358directnative pass;
 final binary hazards zero. These are emulator measurements, not silicon proof.
 
 Greedy/tail clipping, compiler-wide O2/opt-s, rotated-cover and texel-cell trials
@@ -763,3 +764,52 @@ Any future group approach needs per-region contributor membership, common
 parallax, complete immutable/live-state checks and minimum contributor rank.
 A global certificate attached to one source without checking its neighbours
 would be unsafe. No artwork or runtime behavior changed in this audit.
+
+
+## September 15: capacity and burst follow-up
+
+Pass41 overlaid the owner-grid collection and drawing workspace lifetimes,
+allowing16 terminal rectangles in660 scratch bytes. Pass42 uses24 terminal
+tile rectangles in756bytes while restoring rectangle subtraction's established
+eight-piece CPU limit. No source quad, UV, resolution, layer or effect changes.
+Native frozen-frame GPU checks are exact at both framebuffer positions; the
+full-route final image remains identical. Pass42 averages1.998278VBlanks, with
+217/2,487/188/12 one/two/three/four-tick intervals.200frames remain over budget;
+reaching a30fps mean is not passing the maximum-two-tick gate.
+
+Route-attributed average GPU work falls23.544→22.638→22.327ms for40/41/42.
+All twelve pass42 four-tick intervals coincide with particle bursts and prefix
+misses. Temporary completion instrumentation measured2,906build ends with
+zero DMA-busy results: the final-DMA wait averaged0.1005scanline, maximum one.
+An earlier packet-ring preparation rewrite has no measured useful window and
+was rejected. The diagnostic stamps are removed in the following normal build.
+PC samples remain instruction samples, and modeled GPU work remains emulator
+rather than original-console evidence. Reports: `.hkpsx/pass42-timing-audit/`,
+`.hkpsx/30fps-pass4{1,2}-profile/`.
+
+
+Pass48 retains32 terminal tile pieces,8 rectangle-subtraction pieces, and948
+scratch bytes using exclusive owner/draw phases. Optional seam certificates
+add8,180 bytes for124 selected groups. Every member must resolve in the current
+region and remain eligible; the minimum member rank retires joint coverage.
+The final selection passed2,054 fractional phases and281,016,479 certified
+pixel checks against the native GPU, plus12 complete-frame comparisons.
+Pass45's repeated linear binding searches introduced activation spikes to five
+ticks and were rejected. Pass46/48 use a temporary3,040-entry inverse map and
+restore the maximum to four. This map is stack storage, not static RAM.
+
+The retained CPU work includes an exact radix16 square root, reuse of collision
+sweeps between the two particle passes, axis-specific enemy probes, an empty
+mask preflight and register-resident packed nibble run counts. Only the sweep
+cache adds stack (2,048 logical bytes); final function frame is4,352bytes.
+Preparing the current state during the initial idle window remains protected
+by exact prefix validation. Pass47's whole textured-source outlining regressed
+cadence (206 slow intervals versus195 in46) and was reverted; do not repeat it
+as an unmeasured cleanup. Final48:189 slow intervals, five at four ticks; the
+strict target remains unmet despite the nominal30fps mean.
+
+All final48 actual EXE/CUE route images are pixel-identical to40. The exact
+Lifeblood checks and13-hit Great Door progression pass, with no boundary waits
+in these replays.14/23 pre-existing particle drops remain. Reports and source
+hashes are in `.hkpsx/30fps-pass48-*`; grouped proof detail is in
+`.hkpsx/opaque-groups/` and `.hkpsx/pass36-certificate-gap-audit/`.

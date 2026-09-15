@@ -118,6 +118,10 @@ fn overlaps(e:&[i32;4],b:&[i32;4])->bool {
 #[inline(never)]
 pub fn tick_specs(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],count:usize,edge:impl Fn(usize)->[i32;4]) {
     let mut union=[i32::MAX,i32::MAX,i32::MIN,i32::MIN];let mut pending=[0u32;super::CAPACITY/32];
+    // Pass one alone changes velocity/age. A pending collision keeps its
+    // position unchanged, so these exact swept values remain valid in pass two.
+    // Write a slot before setting its pending bit; no other slot is read.
+    let mut sweeps=[core::mem::MaybeUninit::<([i32;3],i32)>::uninit();super::CAPACITY];
     for (index,slot) in pool.particles.iter_mut().enumerate() {
         let Some(p)=slot.as_mut()else{continue;};if p.scene as usize!=scene||p.kind<2{continue;}
         checkpoint();
@@ -139,6 +143,7 @@ pub fn tick_specs(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],co
             let old=p.position;
             union=[union[0].min(next[0].min(old[0])-radius),union[1].min(next[1].min(old[1])-radius),
                 union[2].max(next[0].max(old[0])+radius),union[3].max(next[1].max(old[1])+radius)];
+            sweeps[index].write((next,radius));
             pending[index/32]|=1<<(index%32);
         } else {p.position=next;}
     }
@@ -159,8 +164,8 @@ pub fn tick_specs(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],co
                 let index=word*32+bits.trailing_zeros()as usize;bits&=bits-1;
                 checkpoint();
                 let slot=&mut pool.particles[index];let p=slot.as_mut().unwrap();
-                let s=&styles[(p.kind-2)as usize];let sample=sample(p,s);
-                let old=p.position;let (mut next,radius)=sweep(p,s,&sample);let mut normal=[0,0];
+                let s=&styles[(p.kind-2)as usize];
+                let old=p.position;let (mut next,radius)=unsafe{sweeps[index].assume_init()};let mut normal=[0,0];
                 if count<=EDGE_SCRATCH {collide(old,&mut next,&mut normal,radius,edges.iter().copied());}
                 else {collide(old,&mut next,&mut normal,radius,(0..count).map(|i|{if i&31==0{checkpoint();}edge(i)}).filter(|e|(e[0]|e[1]|e[2]|e[3])!=0&&overlaps(e,&union)));}
                 p.position=next;
@@ -396,6 +401,33 @@ fn length3_reference(v: [i32; 3]) -> i32 {
             assert_eq!((fast.spawned,fast.dropped,fast.drawn),(reference.spawned,reference.dropped,reference.drawn));
         }
         assert_eq!(fast.active(),0);
+    }
+    #[test]fn cached_sweeps_preserve_sparse_pending_slots_and_age_varying_curves(){
+        const fn curve()->[Sample;33] {
+            let mut out=[Sample{size:[ONE;2],alpha:[255;2],spin:[0;2]};33];let mut i=0;
+            while i<33 {out[i].size=[ONE/4+i as i32*1577,2*ONE-i as i32*1139];i+=1;}
+            out
+        }
+        static CURVE:[Sample;33]=curve();
+        let styles=[Style{count:128,life:[60;2],speed:[ONE,10*ONE],collision:true,
+            force:[[0;2];3],radius_scale:41288,samples:&CURVE,..STYLE},Style{collision:false,..STYLE}];
+        let(mut fast,mut reference)=(Pool::new(),Pool::new());
+        for pool in [&mut fast,&mut reference] {
+            spawn_specs(pool,0,7,0,1,&[EMITTER],&styles);
+            for (i,slot) in pool.particles.iter_mut().enumerate() {
+                let p=slot.as_mut().unwrap();p.age=(i%60)as u16;p.delay=(i%7)as u8;
+                p.scene=if i%11==0{1}else{0};p.kind=if i%5==0{3}else{2};
+                p.position=[if i%13==0{101*ONE}else{(i as i32%9-4)*ONE},ONE/2,0];
+                p.velocity=[(i as i32-64)*1577,-3*ONE,i as i32*19];
+            }
+        }
+        for tick in 0..75 {
+            let edges=[[-20*ONE,0,20*ONE,0],[3*ONE,0,3*ONE,5*ONE]];
+            tick_specs(&mut fast,0,&styles,COVER,edges.len(),|i|edges[i]);
+            tick_reference(&mut reference,0,&styles,COVER,edges.len(),|i|edges[i]);
+            assert_eq!(format!("{:?}",fast.particles),format!("{:?}",reference.particles),"tick{tick}");
+            assert_eq!(fast.active(),reference.active());
+        }
     }
     #[test]fn authored_count_capacity_and_owner_are_distinct_from_pool_limit(){
         let mut p=Pool::new();spawn_specs(&mut p,0,8,0,1,&[EMITTER],&[STYLE]);assert_eq!(p.active(),0);

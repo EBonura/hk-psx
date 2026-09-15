@@ -2,7 +2,10 @@
 use core::mem::MaybeUninit;
 #[path="tile_runs.rs"]
 pub mod tile_runs;
-pub const MAX_PIECES:usize=8;
+pub const MAX_PIECES:usize=32;
+// Rectangle subtraction keeps its established CPU bound. Larger terminal tile
+// output is emitted directly and never feeds back into rectangle subtraction.
+pub const MAX_SUBTRACT_PIECES:usize=8;
 // Small cuts cost more CPU partition work than their saved GPU raster time.
 pub const MIN_SAVED_PIXELS:i32=1024;
 /// Only the initialized prefix is exposed. Empty scratch has no initialization
@@ -46,7 +49,7 @@ pub fn subtract(p:&mut Pieces,hole:&[i16;4])->bool {
             changed=true;
             needed+=usize::from(piece[1]<t)+usize::from(b<piece[3])+usize::from(piece[0]<l)+usize::from(r<piece[2]);
         }
-        if needed>MAX_PIECES {return false;}
+        if needed>MAX_SUBTRACT_PIECES {return false;}
     }
     if !changed {return false;}
     let mut retained=0;
@@ -72,7 +75,7 @@ pub fn subtract(p:&mut Pieces,hole:&[i16;4])->bool {
     true
 }
 
-/// Apply more than one occluder without increasing the eight-rectangle packet
+/// Apply more than one occluder without increasing the bounded rectangle packet
 /// ceiling. Rank by their original overlap, then visit each at most once. A
 /// failed subtraction leaves the exact previous partition intact.
 pub fn subtract_many(pieces:&mut Pieces,holes:&[[i16;4]])->i32 {

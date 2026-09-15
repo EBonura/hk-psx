@@ -324,7 +324,10 @@ fn main() {
             let display=fb.begin_deferred_swap();
             presentation::begin(display);
             let mut ticks=0;
-            let mut coverage_clock=sim_clock;
+            // Idle time before the next simulation tick can already prepare
+            // the current camera/state. A later changed state rejects/replaces
+            // it through the same exact-key validation as any other prefix.
+            let mut coverage_clock=sim_clock.wrapping_sub(1);
             loop {
                 // An earlier chunk may still be walking: kick the final list as
                 // soon as the channel is free, then queue the display only

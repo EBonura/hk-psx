@@ -224,6 +224,21 @@ fn spawn_separation(b: [i32; 4], e: [i32; 4]) -> Option<[i32; 2]> {
     options.into_iter().min_by_key(|d| d[0].abs() + d[1].abs())
 }
 
+/// Exact segment test for a horizontal/vertical closed ray. Bounds overlap
+/// already proves the edge crosses the ray's supporting axis; only the edge's
+/// two orientation signs remain. Q16.16 world coordinates are within ±512, so
+/// differences fit i32 and signed32×32 products fit i64.
+fn axis_ray_hits(ray:[i32;4],edge:[i32;4])->bool {
+    let [left,bottom,right,top]=ray;
+    let [x0,y0,x1,y1]=edge;
+    debug_assert!(left==right || bottom==top);
+    if x0.max(x1)<left || x0.min(x1)>right || y0.max(y1)<bottom || y0.min(y1)>top {return false;}
+    let dx=x1-x0;let dy=y1-y0;
+    let a=dx as i64*(bottom-y0)as i64-dy as i64*(left-x0)as i64;
+    let b=dx as i64*(top-y0)as i64-dy as i64*(right-x0)as i64;
+    a==0 || b==0 || (a<0)!=(b<0)
+}
+
 /// Source probes against the cooked Terrain edges, including sloped segments.
 /// Returns grounded, wall ahead, and missing floor ahead. Q16.16 bounds must
 /// remain inside ±512 world units, matching the cooked scene limits.
@@ -238,9 +253,9 @@ pub fn walker_senses(
     let y = bottom + crate::ONE / 2;
     let reach = (right - left) / 2 + crate::ONE / 10;
     let front = x + direction * reach;
-    let ground_ray = [[x, y], [x, y - crate::ONE]];
-    let wall_ray = [[x, y], [front, y]];
-    let floor_ray = [[front, y], [front, y - crate::ONE]];
+    let ground_ray = [x, y-crate::ONE, x, y];
+    let wall_ray = [x.min(front), y, x.max(front), y];
+    let floor_ray = [front, y-crate::ONE, front, y];
     let mut found = [false; 3];
     for i in 0..count {
         let [x0, y0, x1, y1] = edge(i);
@@ -248,7 +263,10 @@ pub fn walker_senses(
             continue;
         } // Disabled/degenerate terrain sentinel.
         for (index, ray) in [ground_ray, wall_ray, floor_ray].iter().enumerate() {
-            found[index] |= crate::combat::segments_intersect(ray[0], ray[1], [x0, y0], [x1, y1]);
+            // Each sense is existential: a later edge cannot undo a hit.
+            if !found[index] {
+                found[index] = axis_ray_hits(*ray,[x0,y0,x1,y1]);
+            }
         }
     }
     (found[0], found[1], !found[2])
@@ -452,6 +470,48 @@ mod tests {
         assert_eq!(walk.tick(p, true, false, true), 0);
         assert_eq!(walk.direction, -1);
         assert_eq!(walk.tick(p, true, true, true), -p.speed); // cooldown guards another turn
+    }
+    #[test]
+    fn axis_rays_match_general_exact_intersections() {
+        let check=|a:[i32;2],b:[i32;2],c:[i32;2],d:[i32;2]| {
+            let ray=[a[0].min(b[0]),a[1].min(b[1]),a[0].max(b[0]),a[1].max(b[1])];
+            assert_eq!(axis_ray_hits(ray,[c[0],c[1],d[0],d[1]]),
+                crate::combat::segments_intersect(a,b,c,d),"{a:?} {b:?} {c:?} {d:?}");
+        };
+        let points:[[i32;2];25]=core::array::from_fn(|i|[(i%5)as i32-2,(i/5)as i32-2]);
+        for &a in &points {for &b in &points {
+            if a[0]!=b[0] && a[1]!=b[1] {continue;}
+            for &c in &points {for &d in &points {check(a,b,c,d);}}
+        }}
+        let mut seed=18u32;
+        let mut next=||{seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);(seed%(1024*crate::ONE)as u32)as i32-512*crate::ONE};
+        for i in 0..100000 {
+            let a=[next(),next()];let mut b=[next(),next()];b[i&1]=a[i&1];
+            check(a,b,[next(),next()],[next(),next()]);
+        }
+    }
+    #[test]
+    fn repeated_probe_hits_preserve_all_senses_and_edge_checkpoints() {
+        let q=crate::ONE;
+        let bounds=[-q/2,0,q/2,q];
+        let edges=[[0;4],[-4*q,0,4*q,0],[q/2,-q,q/2,q],
+            [-q,-q,q,q],[-q,q,q,-q],[-q/2,-q,-q/2,q],
+            [10*q,10*q,11*q,11*q]];
+        for direction in [-1,1] {
+            for shift in 0..edges.len() {
+                let mut expected=(false,false,true);
+                for e in edges {
+                    let one=walker_senses(bounds,direction,1,|_|e);
+                    expected.0|=one.0;expected.1|=one.1;expected.2&=one.2;
+                }
+                let calls=core::cell::Cell::new(0);
+                let actual=walker_senses(bounds,direction,edges.len()*3,|i| {
+                    calls.set(calls.get()+1);edges[(i+shift)%edges.len()]
+                });
+                assert_eq!(actual,expected);
+                assert_eq!(calls.get(),edges.len()*3);
+            }
+        }
     }
     #[test]
     fn disabled_zero_edge_does_not_create_ground_or_wall_at_origin() {

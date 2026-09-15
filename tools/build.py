@@ -129,6 +129,7 @@ def main():
             'room':json.load(open(ROOT/'.hkpsx/regions-provenance.json')),
             'packed_scenes':json.load(open(ROOT/'.hkpsx/packed-scenes.json')),
             'opaque_tiles':json.load(open(ROOT/'.hkpsx/opaque-tiles/report.json')),
+            'opaque_groups':json.load(open(ROOT/'.hkpsx/opaque-groups/report.json')),
             'audio':json.load(open(ROOT/'.hkpsx/audio-provenance.json')),
             'hud':json.load(open(ROOT/'.hkpsx/hud-provenance.json')),
             'geo':json.load(open(ROOT/'.hkpsx/geo-provenance.json')),

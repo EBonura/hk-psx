@@ -1,23 +1,23 @@
 # Shared scene and gameplay budget
 
-The validated pass40 normal build from 2026-09-15 holds both currently authored scenes in one RAM
+The validated pass48 normal build from 2026-09-15 holds both currently authored scenes in one RAM
 arena and persistent VRAM atlases. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |336,560|
-| Code-to-data alignment |0|
-| Linked data, including menu, HUD and sound bank |359,760|
-| BSS, including shared scene arena and runtime pools |1,266,476|
-| Total static span |1,962,796|
+| Linked code |341,048|
+| Code-to-data alignment |8|
+| Linked data, including menu, HUD and sound bank |369,600|
+| BSS, including shared scene arena and runtime pools |1,266,480|
+| Total static span |1,977,136|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |19,412|
+| Unallocated gap before reserved stack |5,072|
 
-Static data ends at `0x801ef32c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801f2b30`; the reserved stack begins at `0x801f3f00`.
 There is no heap. The single scene arena occupies1,069,056 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
 1,120 scene-global texture IDs; the animation cache still permits 2,048 keys.
@@ -58,9 +58,11 @@ The exact current aligned minimum is 1,063,224 bytes: raw bytes alone are four
 bytes too small for the pinned in-place decoder. The chosen capacity retains
 5,832 bytes over that proven minimum. Sector padding and the largest 200,704-byte
 ambience startup read are included; see `.hkpsx/scene-arena-audit/report.json`.
-The renderer uses972 bytes of CPU-only scratchpad:312 bytes of disjoint
-partitions/rectangular occluders plus600 bytes for a20×15 u16 tile-owner grid and60 row-mask bytes.
-These are never DMA sources or stack storage;52 scratchpad bytes remain.
+The renderer uses948 bytes of CPU-only scratchpad. An888-byte draw workspace
+(three32-piece partitions, eight occluders and union bounds) overlays the
+600-byte owner grid used earlier during coverage collection;60 row-mask bytes
+remain disjoint. Explicit phase initialization ends all owner borrows before
+any draw access. These are never DMA sources or stack storage;76 bytes remain.
 The linked data above includes84,284 bytes of host-certified4px coverage tables
 (62,160 bitmap,15,708 descriptors,6,376 shared draw lookup,40 slice overhead).
 All1309 certificates cover immutable original poses; no new VRAM is allocated.
@@ -156,3 +158,14 @@ initialized-prefix occluder snapshot. The former replaces an experimental
 7,680-byte full bounds table, recovering7,200bytes. Background packet words
 reuse the existing pool after DMA ownership ends; no second framebuffer or
 texture allocation is added.
+
+
+Pass48 also includes8,180bytes of optional grouped seam certificates (124
+selected bank groups, maximum32 per region). The inverse pool map uses6,080
+logical stack bytes only during admission; final `render::init` frame is6,288,
+so main+init totals31,824 before nested calls/IRQ. Collision sweep caching uses
+2,048 logical stack bytes: final tick frame4,352, with the observed static
+main/State/tick/collide chain totaling30,960. These chains fit the48KiB reserved
+stack, but are not a measured high-water guarantee. Only5,072 unallocated
+static bytes remain before that reservation; optional coverage tables are a
+candidate to reclaim if later features need RAM.
