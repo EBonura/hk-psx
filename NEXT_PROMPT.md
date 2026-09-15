@@ -9,25 +9,29 @@ Its history remains on `claude/hk-psx-project-state-d72a31` at `8db50a5` and
 remote `codex/bootstrap`. No sibling repository was changed. See
 `docs/CLAUDE_OPTIMIZATION_REVIEW.md` for the complete nine-file salvage review.
 
-**Pass48 is the current single playable disc. Stable 30 fps is NOT achieved.**
-At 320×240, the long route averages 1.983254 VBlanks (approximately 30 fps at
-nominal 60 Hz): 243 / 2,494 / 184 / 5 intervals at one / two / three / four ticks.
-189 of 2,926 exceed the two-VBlank budget, versus 235 of 2,875 at pass40.
-One-tick intervals improve the mean but do not excuse the remaining stutters.
+**Pass51 is the current single playable disc. Stable30fps is NOT achieved.**
+At320×240 the long route averages1.976839 VBlanks:256 /2,501 /170 /9 intervals
+at one /two /three /four ticks.179/2,936 exceed two ticks, versus189/2,926 in48.
+One-tick intervals improve the mean but do not excuse remaining stutters.
 The strict gate remains `--max-frame-route-ticks 2 --require-seamless`.
 
 Retained this resumption:
-- Exclusive scratch phases overlay the 600-byte owner grid with draw storage.
-  32 terminal tile rectangles fit in 948 scratch bytes; ordinary subtraction
-  remains bounded to eight. GPU packet capacity remains 1,032.
-- All-phase seam proofs across 2–4 original opaque pieces: 124 groups, 8,180
-  cooked bytes, complete region membership and live-state guards. A temporary
-  3,040-entry inverse map avoids repeated activation searches. Joint coverage
-  retires at the earliest contributor and cannot displace a later owner.
-- Empty-mask preflight, packed nibble run scanning and preparation during the
-  first idle window. Exact camera/state validation still controls prefix reuse.
-- Exact radix16 roots, cached collision-particle sweeps and axis-aligned enemy
-  probes. Particle trajectories and surviving source sampling are unchanged.
+
+- HKSCNE02 removes static atlas bytes from resident RAM. Bootstrap uploads23
+  validated chunks through the empty arena, synchronizes each upload, then
+  admits compact scenes. Arena1,069,056 ->369,180 bytes; raw records369,172.
+  Retry resets admissions before menu art can overwrite the atlas. Packed320B
+  texture flags replace CPU palette/texel reads during activation.
+- Host full HKSCNE01 files and existing raw/stored provenance fields remain
+  intact for texture/occlusion analysis. New resident_raw/resident_stored fields
+  bind compact scene chunks. Never pair a pre49 EXE with the new-format disc.
+- Tile retirements use source-row masks rather than one event per cell. Exact
+  ordering is preserved, including disconnected cells from the same owner.
+- Scratch remains948/1024 bytes. The pass50 direct-column run map was
+  pixel-exact but regressed late intervals189 ->195 and was reverted.
+  Its7.1% isolated instruction reduction did not improve delivered cadence.
+- Existing32 terminal pieces,8 subtract pieces,124 grouped seam certificates,
+  inverse activation binding, exact roots/sweeps and prefix reuse remain.
 
 Earlier retained work includes CPU-only background packet preparation during
 existing GPU waits, exact sparse state matching, reusable rectangular-occluder
@@ -37,23 +41,25 @@ bounds rejection uses 480 bytes of packed indices rather than 7,680 bytes of
 full extrema. Full-frame pipelining was not imported.
 
 Validation:
-- 241 Python tests and 358 directly reported native/Rust tests passed.
-- Final EXE hazard scan: zero. SDK 7b929ce473ed44b10b0ffca08f413eebf4eeeec4,
-  nightly2026-03-25, trim-paths and R3000 mitigation retained.
-- Long user route: same endpoint region8, x163.153656/y6.390625, health4,
-  exact final reference image, no input faults/missed samples, no traversal
-  CD reads/static VRAM uploads/boundary waits. Strict frame interval gate fails.
-- Actual-CUE Lifeblood: all four earned-health checks pass; two blue masks
-  absorb damage before ordinary health. Final image matches reference.
-- Actual-CUE Great Door: 13 hits, transition into Town region93, final image
-  matches reference. All three routes now observe zero boundary waits.
-  Pre-existing Lifeblood/Town particle drops remain 14/23; these are not solved.
-- All replay input hashes remained unchanged. Captures were inspected.
 
-Evidence: `.hkpsx/30fps-pass48-{profile,lifeblood,town}/`,
-`.hkpsx/30fps-pass48-{build,tests}.log`, `.hkpsx/30fps-pass48-validation.png`.
-EXE SHA256: `364147ad30a4d883db55aba6d5127d804771db98c79780513aec519e59ed2649`
-BIN SHA256: `f1899737fef409d0c0814ae31a6f7f1f0e5938260e729e3fde02b4b5ae358838`
+- 246 Python tests and365 directly reported native/Rust tests passed.
+- Final EXE hazard scan0. SDK7b929ce473ed44b10b0ffca08f413eebf4eeeec4,
+  nightly2026-03-25, trim-paths and R3000 mitigation retained.
+- Long route endpoint region8 x163.153656/y6.390625 health4, no input faults,
+  missed polls, traversal CD/static uploads or boundary waits. Strict frame
+  gate fails. Final89 changed pixels are exclusively within the Knight sprite;
+  scenery/HUD identical to49. Final route includes one additional tick.
+- Actual-CUE Lifeblood passes all four health checks; final image exact49.
+- Actual-CUE Great Door13hits, opened1, transition1, Town region93, image exact49.
+  Lifeblood boundary waits0; Town2 ticks waiting for a frame boundary without
+  CD/static upload work. Pre-existing particle drops14/23 remain unresolved.
+- Inputs hash-stable; captures inspected. Final actualCUE tests are complete.
+
+Evidence: `.hkpsx/30fps-pass51-{profile,lifeblood,town}/`,
+`.hkpsx/30fps-pass51-{build,tests}.log`, `.hkpsx/30fps-pass51-validation.png`,
+and `.hkpsx/30fps-pass51-final-difference.png`.
+EXE SHA256: `b9dcb98abf2fb765a1da69e6a157a77873d35605ec2bd4313ce6ad2437f0ff4c`
+BIN SHA256: `0d34a4dedbdd1629d2d766550b6f2350bdbc2fd3201d89ea7f03a42bf167534e`
 `.hkpsx/build.json` binds all current outputs and the exact map. Profile
 `artifacts/` contains independent EXE/map/build-report copies; use these for
 historical comparisons, since ordinary dist/build files are overwritten.
@@ -72,8 +78,11 @@ no further resolution loss, fog removal or lossy merging was authorized.
 The original Windows Steam CrossOver files are readonly build inputs, Unity
 6000.0.61f1. Never use the macOS copy. Converted assets, captures, source
 inspection and generated tables stay ignored. Source-only push to main was
-explicitly authorized; no burns or retail uploads. No persistent goal or
-scheduled automation was created by this session.
+explicitly authorized; no burns or retail uploads. An active persistent goal
+records the strict FPS gate followed by full
+start-to-finish gameplay and remaining content. Do not mark it complete for
+average30fps or a first ending. No scheduled automation was created.
+Gameplay implementation begins after the FPS gate; see docs/ROADMAP.md.
 
 Read AGENTS.md, README.md, docs/BOOTSTRAP.md and docs/STATUS.md; run doctor.
 Use psoxide-debug for guest/emulator work. Previously, Claude's worktree
@@ -82,16 +91,18 @@ caused SHA mismatches; that worktree is now removed. Never reproduce this setup.
 
 ## Budgets and remaining work
 
-Pass48 code 341,048 / data 369,600 / BSS 1,266,480; static span 1,977,136
-ending 0x801f2b30. Gap before the reserved 48 KiB stack: 5,072 bytes. Main frame
-25,536, remaining nested reserve 23,616. Scratch 948/1,024 bytes. Group-binding
-initialization has a 6,288-byte frame (main + init = 31,824 before deeper calls
-and IRQ use). Particle tick has a 4,352-byte frame; main + State + tick + collide
-is 30,960 before deeper calls/IRQ use. These are linked budgets, not measured
-stack high-water or console timing. Reclaim RAM before expanding content.
-Scene arena 1,069,056 bytes, aligned minimum 1,063,224. Both authored scenes/
-atlases reside before gameplay; this covers 98 spatial regions of Tutorial/
-Town, not 98 full game rooms. VRAM/SPU allocations did not grow this pass.
+Pass51 code337,340 /data369,216 /BSS567,800; static span1,274,360 ending
+0x801471f8. Gap before reserved48KiB stack707,848 bytes. Main frame25,464,
+remaining nested reserve23,688. Scratch948/1,024 bytes. These are linked budgets,
+not measured stack high-water. Scene arena369,180, aligned minimum369,176.
+Both authored scenes/atlases reside before gameplay:98 spatial regions of
+Tutorial/Town, not98 full rooms. Static atlas payload694,048 bytes remains in
+VRAM;23 separate startup chunks total321,841 stored bytes. Compact scene chunks
+add206,518 stored bytes. TotalWORLD.PAK entries31 including6 ambience clips.
+VRAM/SPU allocations are unchanged. Native full/compact comparisons verified
+146,798 runtime records across98 regions, unchanged animation/alpha bytes and
+all final texture flags. Tests cover startup retries, every atlas destination,
+GPU synchronization before buffer reuse and checksum failures.
 
 Earlier retained work: scoped collision readers, exact particle arithmetic,
 incremental particle count, sparse visual-state reset, cached RGB/alpha/core
@@ -102,9 +113,25 @@ Source Great Door audio/debris/fade, complete effects, Focus controller-route
 coverage, bosses/abilities/NPCs/saving/Shade/music/full-game progression remain
 incomplete. See feature docs; passing these routes does not imply full parity.
 
-Next performance work must target the remaining 189 slow frames, with actual
-cycle and packet measurements. Particle bursts and coverage/prefix misses
-remain important; traversal CD/static VRAM loading does not explain this route.
+Next performance work must target remaining slow frames using actual cycle
+and packet measurements. Pass49 audit found all9 four-tick stalls during
+particle/debris bursts;115/189 late intervals had sampled GPU accounting below
+the two-tick budget. Exact timelines show CPU simulation catch-up starving GPU
+submissions. FIRST_KICK_LINES starts inside render and excludes that prior
+simulation delay. Evidence: .hkpsx/precompute49-tail-audit/RESULT.md.
+The next candidate is materially broader immutable particle precomputation,
+with exact RNG, collisions, nonlinear state and all rendered fields preserved.
+Phase-index-only caching (~0.03ms) and static edge grids (~0.043ms) were already
+rejected; existing cached sweeps/edge filtering must not be rediscovered.
+A combined static coverage field was also rejected:52,928 compressed bytes plus
+3,108 metadata yielded no additional cuts above the1,024-pixel threshold in
+heavy18/20, while a replacement lost certified ownership. Free RAM alone does
+not justify it. Report .hkpsx/precompute49-group-audit/report.md.
+Exact temporal run memoization audit is in .hkpsx/precompute50-run-cache-audit;
+a256-entry cheap hash predicts27.18% hits but only319 cycles/call overhead
+margin. Heavy region20 has2/2,685 hits;15 allows161 cycles/call. Global caching
+is not recommended. The49 trace matches full RAM/display/all timing rows and
+140,934 native return-oracle calls; the50 helper was faster in isolation but regressed full-route cadence.
 Do not repeat these rejected trials unchanged: compiler-wide O2/opt-s,
 greedy/tail scissors, more rectangle collectors, rotated covers, texel-cell
 subdivision, full background cache, coarse tile retry or textured-source

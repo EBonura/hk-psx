@@ -9,12 +9,12 @@ import json
 import subprocess
 import struct
 from pathlib import Path
-from scene_bank import build_scene, compressed, fnv, aligned
+from scene_bank import build_scene, compressed, fnv, aligned, compact_resident, bootstrap_atlases, texture_flags
 
 ROOT=Path(__file__).resolve().parents[1]
 # Current scene pair passes the exact sequential in-place decoder at this
 # capacity, including sector padding. Keep validation mandatory for new assets.
-SCENE_ARENA_BYTES=1069056
+SCENE_ARENA_BYTES=369180
 MAX_PAGES=20
 MAX_PALETTES=1248  # Final legacy CLUT strip is reserved for independent Geo art.
 
@@ -24,13 +24,13 @@ def allocate_scenes(entries, arena_bytes=SCENE_ARENA_BYTES, max_pages=MAX_PAGES,
     """Largest bank first gives its in-place decoder the entire startup arena."""
     if not entries or len({e['scene_id']for e in entries})!=len(entries):raise ValueError('Empty/duplicate scenes')
     offset=page_base=palette_base=0;result=[]
-    for index,entry in enumerate(sorted(entries,key=lambda e:(-e['bytes'],e['scene_id']))):
+    for index,entry in enumerate(sorted(entries,key=lambda e:(-e.get('resident_raw_len',e['bytes']),e['scene_id']))):
         e=dict(entry)
         if min(e['bytes'],e['pages'],e['palettes'])<=0:raise ValueError('Invalid scene size')
         offset=aligned(offset)
         e.update(scene_index=index,chunk_id=index+1,raw_len=e['bytes'],raw_bytes=e['bytes'],stored_len=e['stored_bytes'],
                  ram_offset=offset,arena_capacity=arena_bytes-offset,page_base=page_base,palette_base=palette_base)
-        offset+=e['bytes'];page_base+=e['pages'];palette_base+=e['palettes'];result.append(e)
+        offset+=e.get('resident_raw_len',e['bytes']);page_base+=e['pages'];palette_base+=e['palettes'];result.append(e)
     if offset>arena_bytes:raise ValueError('Scene RAM residency exceeds arena')
     if page_base>max_pages:raise ValueError('Scene atlas residency exceeds page limit')
     if palette_base>max_palettes:raise ValueError('Scene CLUT residency exceeds palette limit')
@@ -92,7 +92,7 @@ def manifest(report,metadata):
         if scenes[lookup[r['chunk_id']][0]]['scene_id']!=r['scene_id']:raise ValueError('Region mapped to wrong source scene')
     fields=[('scene_id','usize'),('stored_len','usize'),('stored_fnv','u32'),('raw_len','usize'),('raw_fnv','u32'),
             ('ram_offset','usize'),('arena_capacity','usize'),('page_base','usize'),('palette_base','usize')]
-    text='// Generated lossless HKSCNE01 banks; local licensed data stays on disc.\n'
+    text='// Generated compact HKSCNE02 banks and bootstrap-only atlas chunks.\n'
     text+='#[derive(Clone,Copy,Debug)]\npub struct SceneDesc{'+','.join('pub '+n+':'+t for n,t in fields)+'}\n'
     text+=f'pub const SCENE_ARENA_BYTES:usize={report["arena_bytes"]};\n'
     # Runtime working tables need only the largest admitted scene/view, not the
@@ -103,13 +103,17 @@ def manifest(report,metadata):
         raise ValueError('Renderer working set exceeds format limits')
     text+=f'pub const SCENE_TEXTURE_CAPACITY:usize={(textures+31)//32*32};\n'
     text+=f'pub const SCENE_DRAW_CAPACITY:usize={(draws+31)//32*32};\n'
-    text+='pub const SCENE_MANIFEST:&[SceneDesc]=&[\n'+''.join('SceneDesc{'+','.join(n+':'+str(e[n])for n,t in fields)+'},\n'for e in scenes)+'];\n'
+    text+='pub const SCENE_MANIFEST:&[SceneDesc]=&[\n'+''.join('SceneDesc{'+','.join(n+':'+str(e.get('resident_'+n,e[n]))for n,t in fields)+'},\n'for e in scenes)+'];\n'
+    atlas_fields=[('stored_len','usize'),('stored_fnv','u32'),('raw_len','usize'),('raw_fnv','u32'),('kind','u8'),('first','usize'),('count','usize')]
+    text+='#[derive(Clone,Copy,Debug)]\npub struct AtlasDesc{'+','.join('pub '+n+':'+t for n,t in atlas_fields)+'}\n'
+    text+='pub const ATLASES:&[AtlasDesc]=&[\n'+''.join('AtlasDesc{'+','.join(n+':'+str(e[n])for n,t in atlas_fields)+'},\n'for e in report.get('atlases',[]))+'];\n'
     text+='pub const REGION_SCENE_LOCAL:&[(usize,usize)]=&[\n'+''.join(f'({lookup[r["chunk_id"]][0]},{lookup[r["chunk_id"]][1]}),\n'for r in rows)+'];\n'
     text+='pub const SCENE_REGIONS:&[usize]=&['+','.join(map(str,representatives))+'];\n'
     text+=f'pub const SCENE_ALL_RAW_BYTES:usize={report["raw_resident_bytes"]};\n'
     text+=f'pub const SCENE_TOTAL_PAGES:usize={report["total_pages"]};\npub const SCENE_TOTAL_PALETTES:usize={report["total_palettes"]};\n'
     text+='pub static SCENE_BLACK_CORES:&[&[[u8;4]]]=&[\n'+''.join('&['+','.join('[%d,%d,%d,%d]'%tuple(c) for c in e.get('black_cores',[]))+'],\n' for e in scenes)+'];\n'
     text+='pub static SCENE_OPAQUE_CORES:&[&[[u8;4]]]=&[\n'+''.join('&['+','.join('[%d,%d,%d,%d]'%tuple(c) for c in e.get('opaque_cores',[]))+'],\n' for e in scenes)+'];\n'
+    text+='pub static SCENE_TEXTURE_FLAGS:&[&[u8]]=&[\n'+''.join('&['+','.join(map(str,e.get('texture_flags',[])))+'],\n'for e in scenes)+'];\n'
     return text
 
 def validate_geometry(bank,entry,metadata):
@@ -137,7 +141,10 @@ def validate_geometry(bank,entry,metadata):
 def decoder_command(report):
     args=['cargo','run','--quiet','--locked','--offline','--manifest-path',str(ROOT/'shared/hk-format/Cargo.toml'),
           '--example','check_scene_sequence','--',str(report['arena_bytes'])]
-    for e in report['scenes']:args.extend((e['stored_path'],e['raw_path']))
+    for e in report['scenes']:args.extend((e.get('resident_stored_path',e['stored_path']),e.get('resident_raw_path',e['raw_path'])))
+    if report.get('atlases'):
+        args.append('--atlases')
+        for e in report['atlases']:args.extend((e['stored_path'],e['raw_path']))
     return args
 
 def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',report_path=ROOT/'.hkpsx/packed-scenes.json',manifest_path=ROOT/'data/scene_manifest.rs',arena_bytes=SCENE_ARENA_BYTES):
@@ -159,23 +166,42 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
         e['geometry_packet_bound']=validate_geometry(raw,e,meta)
         e['black_cores']=black_cores(raw,e)
         e['opaque_cores']=opaque_cores(raw,e)
-        stored=compressed(raw);bodies[scene]=(raw,stored)
+        stored=compressed(raw);resident=compact_resident(raw);resident_stored=compressed(resident)
+        bodies[scene]=(raw,stored,resident,resident_stored)
         e.update(stored_bytes=len(stored),stored_fnv=fnv(stored),raw_fnv=fnv(raw),stored_sha256=sha(stored),raw_sha256=sha(raw),
-                 raw_path=str(output_dir/f'scene_{scene}.hk'),stored_path=str(output_dir/f'scene_{scene}.hlzc'),path=str(output_dir/f'scene_{scene}.hlzc'))
+                 raw_path=str(output_dir/f'scene_{scene}.hk'),stored_path=str(output_dir/f'scene_{scene}.hlzc'),
+                 resident_raw_path=str(output_dir/f'scene_{scene}.resident.hk'),resident_stored_path=str(output_dir/f'scene_{scene}.resident.hlzc'),
+                 resident_raw_len=len(resident),resident_raw_fnv=fnv(resident),resident_raw_sha256=sha(resident),
+                 resident_stored_len=len(resident_stored),resident_stored_fnv=fnv(resident_stored),resident_stored_sha256=sha(resident_stored),
+                 path=str(output_dir/f'scene_{scene}.resident.hlzc'),texture_flags=texture_flags(raw,e))
         entries.append(e)
     entries=allocate_scenes(entries,arena_bytes)
-    report={'format':'HKPACKEDSCENES01','source_format':'HKSCNE01','source_metadata_path':str(metadata),'source_metadata_sha256':sha(source),
+    atlases=[];atlas_bodies=[]
+    for e in entries:
+        raw=bodies[e['scene_id']][0]
+        for spec,chunk in bootstrap_atlases(raw,e):
+            stored=compressed(chunk);index=len(atlases)
+            spec['first']+=e['page_base']if spec['kind']==0 else e['palette_base']
+            path=output_dir/f'atlas_{index:02}'
+            atlases.append(spec|dict(scene_index=e['scene_index'],raw_len=len(chunk),raw_fnv=fnv(chunk),raw_sha256=sha(chunk),
+                stored_len=len(stored),stored_fnv=fnv(stored),stored_sha256=sha(stored),raw_path=str(path)+'.raw',stored_path=str(path)+'.hlzc',path=str(path)+'.hlzc'))
+            atlas_bodies.append((chunk,stored))
+    report={'format':'HKPACKEDSCENES02','source_format':'HKSCNE01','resident_format':'HKSCNE02','source_metadata_path':str(metadata),'source_metadata_sha256':sha(source),
       'code_sha256':{str(p.relative_to(ROOT)):sha(p.read_bytes())for p in (ROOT/'host/scene_bank.py',Path(__file__).resolve(),ROOT/'tools/audit_resident_bank.py',ROOT/'host/region_delta.py',ROOT/'host/scenery_geometry.py',ROOT/'game/src/scenery_geometry.rs')},
       'region_count':len(meta['regions']),'scene_arena_bytes':arena_bytes,'raw_bytes':sum(e['raw_len']for e in entries),'stored_bytes':sum(e['stored_len']for e in entries),
-      'arena_bytes':arena_bytes,'raw_resident_bytes':sum(aligned(e['raw_len'])for e in entries),
-      'total_pages':sum(e['pages']for e in entries),'total_palettes':sum(e['palettes']for e in entries),'scenes':entries,
+      'arena_bytes':arena_bytes,'raw_resident_bytes':sum(aligned(e['resident_raw_len'])for e in entries),
+      'resident_stored_bytes':sum(e['resident_stored_len']for e in entries),'atlas_raw_bytes':sum(e['raw_len']for e in atlases),'atlas_stored_bytes':sum(e['stored_len']for e in atlases),
+      'total_pages':sum(e['pages']for e in entries),'total_palettes':sum(e['palettes']for e in entries),'scenes':entries,'atlases':atlases,
       'sequential_decoder_validation':'pending native pinned-SDK/incremental proof against these exact stored payloads and allocation capacities',
       'quality':'No new resizing or lossy texture aliasing. Shared planes preserve every sampled16bit word; streamed textures and strict black mask palette/index bytes remain exact.'}
     rust=manifest(report,meta)
     # Admission checks precede all output mutations.
     output_dir.mkdir(parents=True,exist_ok=True);report_path.parent.mkdir(parents=True,exist_ok=True);manifest_path.parent.mkdir(parents=True,exist_ok=True)
     for e in entries:
-        raw,stored=bodies[e['scene_id']];Path(e['raw_path']).write_bytes(raw);Path(e['stored_path']).write_bytes(stored)
+        raw,stored,resident,resident_stored=bodies[e['scene_id']];Path(e['raw_path']).write_bytes(raw);Path(e['stored_path']).write_bytes(stored)
+        Path(e['resident_raw_path']).write_bytes(resident);Path(e['resident_stored_path']).write_bytes(resident_stored)
+    for e,(raw,stored)in zip(atlases,atlas_bodies):
+        Path(e['raw_path']).write_bytes(raw);Path(e['stored_path']).write_bytes(stored)
     manifest_path.write_text(rust);report['manifest_path']=str(manifest_path);report['manifest_sha256']=sha(rust.encode())
     report_path.write_text(json.dumps(report,indent=2)+'\n')
     command=decoder_command(report);proof=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)

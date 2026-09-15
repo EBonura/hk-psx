@@ -2,36 +2,54 @@
 
 ## Active work: stable 30 fps
 
-**Validated September15: pass48 is the sole canonical disc.** Rendering stays
-320×240 with the existing camera framing, layers, effects and texture quality.
-The long route averages1.983254VBlanks:243 /2,494 /184 /5 intervals at
-one /two /three /four ticks. **Stable30fps is not achieved:**189 of2,926
-intervals exceed two VBlanks, down from235 of2,875 at pass40. The mean is
-approximately30fps at nominal60Hz; one-tick intervals do not excuse stutters.
-Simulation remains deterministic at60Hz. No original-console timing claim.
+The user's next milestone is a complete start-to-finish game, after the strict
+320×240 two-VBlank target passes. Gameplay expansion remains behind that gate.
+The gameplay sequence is recorded in [ROADMAP.md](ROADMAP.md): restore the normal
+start/save/death loop, expand connected areas and source progression systems,
+verify a new-game-to-ending route, then cover remaining paths and content.
+Full-game compatibility and stable30fps are not yet established.
 
-This resumption retained:
-- Exclusive scratch phases overlay the600-byte owner grid with drawing
-  workspace.32 terminal tile rectangles now fit in948 scratch bytes; ordinary
-  rectangle subtraction remains bounded to eight. Packet capacity stays1,032.
-- Optional all-phase seam proofs across2–4 original opaque pieces:124 groups,
-  8,180 cooked bytes, complete region membership and live-state guards. A
-  3,040-entry temporary inverse map avoids repeated activation searches.
-- Empty-mask preflight, packed nibble run scanning and preparation during the
-  first idle window. Exact camera/state validation still controls prefix reuse.
-- Exact radix16 roots, cached collision-particle sweeps and axis-aligned enemy
-  probes. Particle trajectories and source draw/texture sampling are retained.
+**Pass51 is the sole validated playable disc**, after reverting pass50's
+direct-column run map. The retained compact-scene change removes699,876 bytes from the arena
+without changing texture quality or traversal residency. Startup atlas chunks
+are checksum-validated and synchronized before compact scene admission. Retry
+revokes all admissions before menu art can overwrite VRAM. Packed texture facts
+replace runtime atlas reads, and row retirement events replace per-cell lists.
 
-Validation:241Python tests and358 directly reported native/Rust tests pass;
-final EXE hazard scan is zero. The strict profiler fails only its frame interval
-limit. Endpoint and final image match pass40, with zero traversal CD reads,
-static VRAM uploads or boundary waits. Actual-CUE Lifeblood passes all four
-checks; Great Door opens at13hits and entersTown region93. Both final images
-also match pass40 exactly. All three replays now observe zero boundary waits;
-pre-existing Lifeblood/Town particle drops remain14/23. No input faults or
-missed samples; all replay input hashes remained unchanged. Captures inspected.
-Evidence: `.hkpsx/30fps-pass48-{profile,lifeblood,town}/`, corresponding build/
-test logs, `.hkpsx/30fps-pass48-validation.png`, and `.hkpsx/build.json`.
+Pass49 measured1.978520 VBlanks,189/2,933 late intervals (180 three-tick,9 four).
+Pass50's isolated7.1% helper instruction reduction instead produced195 late
+intervals, including10 at four ticks; it was rejected. Scratch returns to948B.
+Final51 averages1.976839 VBlanks:256 /2,501 /170 /9 intervals at one /two /three /
+four ticks.179/2,936 exceed two ticks, versus189/2,926 in48. The strict profiler
+fails only the maximum frame interval. The mean reaching nominal30fps does not
+pass the strict maximum-two-tick gate.
+No original-console timing claim is made. Existing framing/layers/effects and
+48px scenery cap/approved95% deduplication remain unchanged.
+
+Tests246 Python/365 directly reported native tests pass, including full/compact
+record parity, decoder budgets, bootstrap retries and exact VRAM upload layout.
+Final51 binary hazards are zero. Memory: arena369,180 bytes, linked static
+span1,274,360;707,848 bytes remain before the protected48KiB stack. Main frame
+25,464 bytes; actual main-stack high-water is unmeasured. See BUDGET.md.
+
+The broader combined coverage field and a global memoized tile-run cache were
+not integrated: useful gains disappear after safety/threshold/lookup costs,
+especially in heavy regions. The49 tail audit instead identifies particle and
+debris bursts delaying GPU submissions. Next bounded candidate is substantial
+immutable particle precomputation with exact state/RNG/collision validation.
+See PERFORMANCE.md and ignored `.hkpsx/precompute49-tail-audit/RESULT.md`.
+
+Final actual-CUE validation: long-route endpoint remains region8,
+x163.153656/y6.390625, health4. No input faults, missed polls, traversal CD reads,
+static VRAM uploads or long-route boundary waits. The final image differs from49
+at89 pixels exclusively within the Knight sprite (one additional route tick);
+all scenery/HUD pixels are identical. Lifeblood passes all four health checks,
+and Great Door opens after13hits and entersTown region93. Their final images
+match49 exactly. Lifeblood boundary waits0; Town records2 ticks waiting for a
+frame boundary, with no CD/static upload work. Pre-existing particle drops14/23
+remain. All inputs stayed hash-stable; all captures inspected.
+Evidence: `.hkpsx/30fps-pass51-{profile,lifeblood,town}/`, build/test logs,
+`.hkpsx/30fps-pass51-validation.png` and the bound `.hkpsx/build.json` report.
 
 Claude's clean worktree was removed after reviewing all nine changed files;
 its committed history remains at `8db50a5` on the preserved Claude branch and
@@ -94,6 +112,9 @@ In-progress measurements (normal EXE, same 5,871-sample controller tape):
 | `30fps-pass46` inverse binding / empty-mask preflight / nibble runs | 1.9850 | 4 | 195 / 2,924 |
 | `30fps-pass47` textured-source outlining (rejected) | 1.9877 | 4 | 206 / 2,920 |
 | `30fps-pass48` 32 terminal tile pieces | 1.9833 | 4 | 189 / 2,926 |
+| `30fps-pass49` compact residency / row retirements | 1.9785 | 4 | 189 / 2,933 |
+| `30fps-pass50` scratch run map (rejected) | 1.9789 | 4 | 195 / 2,933 |
+| `30fps-pass51` compact residency / row events, run map reverted | 1.9768 | 4 | 179 / 2,936 |
 
 ### Earlier optimization measurements
 

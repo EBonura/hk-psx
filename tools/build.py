@@ -143,7 +143,7 @@ def main():
     report['link_map']={'path':str(link_map),'sha256':sha(link_map)}
     report['memory']=memory_budget(link_map,outputs['exe'],report['packed_scenes']['scene_arena_bytes'])
     report['ambience']=json.load(open(ROOT/'.hkpsx/ambience.json'))
-    report['disc_chunk_count']=len(report['packed_scenes']['scenes'])+len(report['ambience']['clips'])
+    report['disc_chunk_count']=len(report['packed_scenes']['scenes'])+len(report['ambience']['clips'])+len(report['packed_scenes']['atlases'])
     write_build_report(report,telemetry,latest=True)
     shutil.copy2(link_map,ROOT/'build/hk-psx.map')
     print('Updated:',outputs['cue'],flush=True)

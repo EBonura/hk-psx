@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'host'));sys.path.insert(0,str(ROOT/'tests'))
-from scene_bank import build_scene,verify,resize_static,manifest,shared_planes,joint_refine,texel_words
+from scene_bank import build_scene,verify,resize_static,manifest,shared_planes,joint_refine,texel_words,compact_resident,bootstrap_atlases,texture_flags
 from test_region_delta import room
 from region_delta import textures,layout
 from alpha_covers import record
@@ -21,6 +21,41 @@ def source_room(moved=False):
     return bytes(header)+raw[40:72]+draw+frame+clip+edge+raw[72:]
 
 class SceneBankTests(unittest.TestCase):
+    def test_compact_scene_keeps_runtime_records_and_complete_atlas_chunks(self):
+        raw,e=build_scene(0,[(1,source_room()),(9,source_room(True))])
+        compact=compact_resident(raw);old=struct.unpack_from('<10I',raw,64);new=struct.unpack_from('<10I',compact,64)
+        self.assertEqual(compact[:8],b'HKSCNE02');self.assertEqual(compact[8:48],raw[8:48])
+        self.assertEqual(new[5],new[6]);self.assertEqual(new[6],new[7])
+        self.assertEqual(len(raw)-len(compact),e['pages']*32768+e['palettes']*32)
+        for i,size in enumerate((16,44,20,16,16)):
+            n=e['sections'][('textures','draws','frames','clips','edges')[i]]['bytes']
+            self.assertEqual(compact[new[i]:new[i]+n],raw[old[i]:old[i]+n])
+        self.assertEqual(compact[new[7]:new[8]],raw[old[7]:old[8]])
+        self.assertEqual(compact[new[9]:],raw[old[9]:])
+        for i in range(2):
+            self.assertEqual(compact[new[8]+i*40:new[8]+i*40+20],raw[old[8]+i*40:old[8]+i*40+20])
+            for j in range(4):
+                a=struct.unpack_from('<I',raw,old[8]+i*40+20+j*4)[0];b=struct.unpack_from('<I',compact,new[8]+i*40+20+j*4)[0]
+                self.assertEqual(a-b,len(raw)-len(compact))
+        chunks=bootstrap_atlases(raw,e)
+        for kind,section in((0,'pages'),(1,'palettes')):
+            selected=[(s,b)for s,b in chunks if s['kind']==kind];stride=32768 if kind==0 else 32
+            self.assertEqual(b''.join(b for _,b in selected),raw[e['sections'][section]['offset']:e['sections'][section]['offset']+e['sections'][section]['bytes']])
+            for s,b in selected:self.assertEqual(len(b),s['count']*stride);self.assertLessEqual(len(b),32768)
+        with self.assertRaises(ValueError):compact_resident(compact)
+        with self.assertRaises(ValueError):compact_resident(raw[:-1])
+
+    def test_cooked_texture_flags_match_binary_palette_and_sampled_word(self):
+        raw,e=build_scene(0,[(1,source_room())]);raw=bytearray(raw);s=e['sections']
+        raw[s['pages']['offset']:s['pages']['offset']+s['pages']['bytes']]=bytes([0x11])*s['pages']['bytes']
+        for i in range(e['palettes']):struct.pack_into('<16H',raw,s['palettes']['offset']+i*32,0,1,*([0x8000]*14))
+        for word,want in((1,3),(2,0),(0x8001,0),(0,0)):
+            for i in range(e['palettes']):struct.pack_into('<H',raw,s['palettes']['offset']+i*32+2,word)
+            flags=texture_flags(raw,e)
+            for i in range(e['textures']):
+                streamed=struct.unpack_from('<H',raw,s['textures']['offset']+i*16)[0]==65535
+                self.assertEqual((flags[i//4]>>((i%4)*2))&3,0 if streamed else want)
+
     def test_moved_atlas_and_palette_orders_keep_all_local_record_semantics(self):
         inputs=[(1,source_room()),(9,source_room(True))]
         payload,report=build_scene(0,inputs)

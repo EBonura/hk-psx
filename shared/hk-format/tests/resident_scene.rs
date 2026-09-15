@@ -24,6 +24,35 @@ fn fixture()->Vec<u8>{
     b
 }
 fn offset(b:&[u8],section:usize)->usize{hk_format::u32_at(b,64+section*4)as usize}
+fn compact_fixture()->Vec<u8>{
+    let raw=fixture();let start=offset(&raw,5);let end=offset(&raw,7);let gap=end-start;
+    let mut b=[&raw[..start],&raw[end..]].concat();b[..8].copy_from_slice(b"HKSCNE02");let n=b.len();put(&mut b,48,n as u32);
+    for i in 0..10{let old=offset(&raw,i);put(&mut b,64+i*4,if old<=start{old}else if old<end{start}else{old-gap}as u32);}
+    let rooms=offset(&b,8);
+    for i in 0..2{for j in 0..4{let at=rooms+i*40+20+j*4;let old=hk_format::u32_at(&b,at);put(&mut b,at,old-gap as u32);}}
+    b
+}
+#[test]fn compact_scene_preserves_all_runtime_access_and_rejects_discarded_payload_access(){
+    let raw=fixture();let b=compact_fixture();let old=Scene::parse(&raw).unwrap();let new=Scene::parse(&b).unwrap();
+    assert_eq!(old.page_count(),new.page_count());assert_eq!(old.palette_count(),new.palette_count());
+    for i in 0..2{
+        let a=old.room(i).unwrap();let c=new.room(i).unwrap();assert!(a.has_atlas_payload());assert!(!c.has_atlas_payload());
+        assert_eq!(a.counts,c.counts);assert_eq!(a.draw(0),c.draw(0));assert_eq!(a.frame(0),c.frame(0));assert_eq!(a.clip(0),c.clip(0));assert_eq!(a.edge(0),c.edge(0));
+        assert_eq!(a.draw_pool_index(0),c.draw_pool_index(0));assert_eq!(a.alpha_cover(a.texture(0)),c.alpha_cover(c.texture(0)));
+        assert_eq!(a.stream_pixels(a.texture(1)),c.stream_pixels(c.texture(1)));
+        assert!(std::panic::catch_unwind(||c.page(0)).is_err());assert!(std::panic::catch_unwind(||c.palettes()).is_err());
+    }
+}
+#[test]fn compact_scene_checks_logical_atlas_counts_relocated_references_and_exact_flags(){
+    let b=compact_fixture();
+    for(at,value)in[(52,3),(52,0),(88,offset(&b,6)as u32+4),(40,0),(36,0)]{
+        let mut bad=b.clone();put(&mut bad,at,value);assert!(Scene::parse(&bad).is_err(),"field{at}");
+    }
+    let mut bad=b.clone();bad[..8].copy_from_slice(b"HKSCNE01");assert!(Scene::parse(&bad).is_err());
+    let mut bad=b.clone();let at=offset(&b,8)+20;put(&mut bad,at,offset(&fixture(),9)as u32);assert!(Scene::parse(&bad).is_err());
+    let mut bad=b.clone();let textures=offset(&b,0);word(&mut bad,textures+10,1);assert!(Scene::parse(&bad).is_err());
+    let mut bad=b.clone();word(&mut bad,textures,1);assert!(Scene::parse(&bad).is_err());
+}
 #[test]fn scene_rooms_preserve_local_order_and_share_pixels_without_copying(){
     let b=fixture();let s=Scene::parse(&b).unwrap();assert_eq!(s.id(),7);assert_eq!(s.room_count(),2);
     let a=s.room(0).unwrap();let c=s.room_by_chunk(3).unwrap();assert!(a.scene_resident());

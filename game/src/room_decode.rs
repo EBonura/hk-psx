@@ -4,7 +4,7 @@
 //! selected HKROOM02/HKSCNE01 validator succeed. No extra room-sized scratch allocation.
 use hk_format::{Validation,SceneValidation};
 #[derive(Clone,Copy)]
-enum Payload { Room, Scene }
+enum Payload { Room, Scene, Bytes }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Error { Checksum, Decompress, RoomFormat }
@@ -135,6 +135,13 @@ impl Decoder {
         let mut decoder=Self::new(stored_len,stored_fnv,raw_len,raw_fnv);
         decoder.payload=Payload::Scene;decoder
     }
+    /// Startup atlas payloads have no Room header. Both stored and expanded
+    /// hashes/lengths still pass before any byte can be uploaded; the caller
+    /// validates the atlas descriptor and never publishes a Room from this mode.
+    pub const fn new_bytes(stored_len:usize,stored_fnv:u32,raw_len:usize,raw_fnv:u32)->Self {
+        let mut decoder=Self::new(stored_len,stored_fnv,raw_len,raw_fnv);
+        decoder.payload=Payload::Bytes;decoder
+    }
     fn byte(&mut self,arena:&[u8])->Result<u8,Error> {
         let b=*arena.get(self.source).ok_or(Error::Decompress)?;
         self.source+=1;Ok(b)
@@ -235,6 +242,7 @@ impl Decoder {
                     let records=(budget+1).min(8);
                     let bytes=&arena[..self.raw];
                     let done=match self.payload {
+                        Payload::Bytes=>true,
                         Payload::Room=>{
                             if self.validation.is_none() {
                                 self.validation=Some(Validation::new(bytes).map_err(|_|Error::RoomFormat)?);
@@ -262,6 +270,28 @@ impl Decoder {
 
 #[cfg(test)]
 mod word_copy_tests {
+    #[test]
+    fn atlas_bytes_validate_both_hashes_and_length_before_publication() {
+        let raw=b"atlas words, not a room";
+        let mut stored=std::vec::Vec::from(&b"HLZC"[..]);
+        stored.extend_from_slice(&(raw.len()as u32).to_le_bytes());
+        stored.push(0xf0);stored.push((raw.len()-15)as u8);stored.extend_from_slice(raw);
+        for budget in [1,2,7,31,1024] {
+            for variant in 0..5 {
+                let payload=if variant==4 {raw.as_slice()}else{stored.as_slice()};
+                let sh=super::hash_bytes(super::FNV,payload);let rh=super::hash_bytes(super::FNV,raw);
+                let mut arena=[0u8;128];arena[..payload.len()].copy_from_slice(payload);
+                if variant==1 {arena[payload.len()-1]^=1;}
+                let mut decoder=super::Decoder::new_bytes(payload.len(),sh,raw.len()+usize::from(variant==3),rh^u32::from(variant==2));
+                let result=loop {match decoder.step(&mut arena,budget){Ok(None)=>{},r=>break r}};
+                match variant {
+                    1|2=>assert_eq!(result,Err(super::Error::Checksum)),
+                    3=>assert_eq!(result,Err(super::Error::Decompress)),
+                    _=>{assert_eq!(result,Ok(Some(raw.len())));assert_eq!(&arena[..raw.len()],raw);}
+                }
+            }
+        }
+    }
     #[test]
     fn fnv_shift_multiply_and_chunked_hash_match_scalar_reference() {
         let reference=|seed:u32, bytes:&[u8]| bytes.iter().fold(seed,

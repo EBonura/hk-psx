@@ -3,12 +3,11 @@
 ## Active 30 fps target (2026-09-15)
 
 The acceptance budget is **at most two VBlanks per rendered gameplay frame**.
-The current pass48 disc averages1.983254VBlanks (approximately30fps at
-nominal60Hz), with243 /2,494 /184 /5 intervals at one /two /three /four ticks.
-The strict gate still fails on189 of2,926 intervals. Pass40 had235 of2,875
-over budget and mean2.018783. One-tick intervals improve the mean; they must
-not disguise the remaining three/four-tick stutters. The original measured
-route averaged2.5523VBlanks.
+The current pass51 disc averages1.976839VBlanks (approximately30fps at
+nominal60Hz), with256 /2,501 /170 /9 intervals at one /two /three /four ticks.
+The strict gate still fails on179 of2,936 intervals. Pass48 had189 of2,926,
+mean1.983254. One-tick intervals improve the mean; they must not disguise
+remaining three/four-tick stutters. Original route mean was2.5523VBlanks.
 
 Pass37 prepares a bounded background packet prefix after final DMA drains,
 while the prior GPU frame finishes. Exact camera, framebuffer and final sparse
@@ -19,12 +18,14 @@ bounds rejection using four packed corner indices per draw, consuming480bytes
 instead of7,680. Original surviving vertices, texture sampling and draw order
 remain unchanged. User explicitly keeps320×240, framing, layers and effects.
 
-Final long-route, Lifeblood and Town captures match their reference images
-exactly. Lifeblood's four earned-health checks pass; the Great Door opens after
-thirteen hits. All three pass48 routes observe zero boundary waits; pre-existing
-Lifeblood/Town particle drops remain14/23. No input faults or missed samples.
-All replay inputs remained hash-stable. Tests241Python/358directnative pass;
-final binary hazards zero. These are emulator measurements, not silicon proof.
+Final Lifeblood and Town captures match their references exactly. The long-route
+endpoint is unchanged;89 final pixels differ only within the Knight sprite,
+with one additional route tick. All scenery/HUD pixels match49. Lifeblood's four
+earned-health checks pass; the Great Door opens after13hits. Long/Lifeblood have
+zero boundary waits;Town records2 frame-boundary wait ticks without CD/static
+uploads. Pre-existing Lifeblood/Town particle drops14/23 remain. No input faults
+or missed samples; input hashes stable. Tests246Python/365directnative pass,
+final binary hazards0. These are emulator measurements, not silicon proof.
 
 Greedy/tail clipping, compiler-wide O2/opt-s, rotated-cover and texel-cell trials
 were rejected or left out after measured regressions. See STATUS for the full
@@ -67,6 +68,41 @@ frames remain. Native GPU hit/miss proofs cover48 frames /3,686,400 identical
 pixels. Exactness evidence is `.hkpsx/gpu-30fps-audit/tile-cert/`; slow-frame
 correlations are `.hkpsx/tile-spike-audit/`. No timing claim follows from native
 raster-only estimates; complete guest replays remain decisive.
+
+## Compact residency and precomputation follow-up (September15)
+
+Pass49 separates startup-only static atlases from runtime scene records. Both
+atlases remain in VRAM; the resident arena shrinks1,069,056 ->369,180 bytes.
+Packed texture facts are derived from exact final atlas words during cooking,
+so scene activation needs no retained palette/texel copies. Row retirement
+nodes coalesce same-source cells in one row and preserve exact retirement order.
+The measured49 route mean improves1.983254 ->1.978520, but189 intervals remain
+late (180 three-tick and9 four-tick). The memory win does not establish stable30fps.
+
+Pass50's direct-column run map removed7.1% of isolated helper instructions and
+preserved exact ordered outputs. The complete route instead produced195 late
+frames, mean1.978861, with10 four-tick intervals. It was reverted for pass51.
+Native microbenchmarks are a screening tool; the actual guest replay decides.
+
+The combined static-field audit found no additional accepted cuts above the
+existing1,024-pixel threshold in heavy18/20. A52,928-byte compressed field plus
+3,108 metadata also lost certified ranks when substituted for current coverage.
+The prototype is not integrated. Exact temporal run-cache tracing found27.18%
+hits for256 entries but only319 cycles/call gross overhead margin; region20
+has2 hits in2,685 calls. Generic caching is not justified by average hit rate.
+The trace matched every route timing row, entire RAM and final display;140,934
+calls passed the native return oracle. See ignored precompute49-group-audit
+and precompute50-run-cache-audit reports for reproducible data.
+
+The49 critical-path audit instead shows particle/debris simulation bursts
+starving GPU submission. All9 four-tick cases have57–85 particles and4–20 debris;
+115/189 late intervals have sampled GPU command accounting below two ticks.
+Accounting can straddle display frames, so this is not a hard GPU lower bound.
+FIRST_KICK_LINES starts within render and omits preceding simulation delay.
+Next candidate: broader immutable particle precomputation with exact RNG,
+nonlinear movement, collision and rendered-state comparison. Phase indexing
+alone and static edge grids were already measured too small to justify adding.
+Evidence: `.hkpsx/precompute49-tail-audit/RESULT.md`.
 
 ## Debris comparisons and progression build (2026-09-14)
 

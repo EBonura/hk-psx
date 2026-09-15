@@ -22,7 +22,6 @@ mod world;
 mod reveal_masks;
 mod dialogue;
 mod impact;
-mod preload;
 mod disc;
 mod room_decode;
 mod texture_upload;
@@ -190,33 +189,6 @@ fn strike_geo(geo:&mut geo::World,scene:usize,nail:&Nail,player:&Player)->geo::S
 #[no_mangle] pub static mut HK_BOUNDARY_WAIT_TICKS:u32=0;
 #[no_mangle] pub static mut HK_BOUNDARY_WAIT_MAX:u32=0;
 #[no_mangle] pub static mut HK_PAD_POLL_MAX_VBLANK_GAP:u32=0;
-/// Keep the deeper RAM plan separate from the three direct GPU exits.
-fn wishlist(index:usize,player:&Player)->preload::Plan {
-    preload::plan_motion(index,player.x,player.y,player.facing,preload::Motion {
-        grounded:player.grounded,bottom:PARAMS.bottom,vy:player.vy,
-    },|id| {
-        let r=&world::REGIONS[id];preload::Cell {bounds:r.bounds,neighbours:r.neighbours,scene:r.scene,
-            flat_floor_heights:r.flat_floor_heights}
-    })
-}
-/// Caller has retired the entire GPU frame. A pinned RAM view survives every
-/// CD pump until its inactive VRAM bank has completed all bounded slices.
-fn prepare_vram(cache:&mut disc::Cache,vram:&mut vram_cache::Cache,wanted:&[usize]) {
-    if vram.pending().is_none() {
-        for &id in wanted {
-            if vram.ready(id)||!cache.is_ready(id) {continue;}
-            if cache.protect_upload(Some(id)) {
-                let room=cache.room_for(id).unwrap();
-                if vram.begin(id,&room,wanted) {break;}
-                cache.protect_upload(None);
-            }
-        }
-    }
-    if let Some(id)=vram.pending() {
-        let room=cache.room_for(id).expect("GPU source evicted");
-        if vram.pump(&room) {cache.protect_upload(None);}
-    }
-}
 #[no_mangle]
 fn main() {
     gpu::init(VideoMode::Ntsc, Resolution::R320X240);
@@ -254,26 +226,18 @@ fn main() {
             gpu::draw_sync();
             while cache.prepare_ambience().and_then(|_|cache.select(region_id)).is_err() {
                 unsafe { HK_GAME_MODE=3; }
-                vram=vram_cache::Cache::new();cache.protect_upload(None);
+                vram=vram_cache::Cache::new();cache.reset_bootstrap();
                 menu::restore();menu::retry(&mut fb);menu::loading(&mut fb);
             }
-            // Both authored scenes fit the proven RAM/VRAM layout. Admit all
-            // neighbouring regions before simulation starts, including gates.
-            for scene in 0..disc::SCENE_COUNT {
-                let id=disc::scene_region(scene);
-                while !vram.ready(id) {prepare_vram(cache,&mut vram,&[id]);}
-            }
+            // Atlas bytes were verified/uploaded through startup scratch before
+            // compact immutable scene views were admitted. All banks stay live.
+            vram.admit_bootstrap(cache.atlases_ready());
             vram.activate(region_id);
             hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();world::particles::break_effects::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);
             initial=false;
             sim_clock=psx_rt::interrupts::vblank_count();
             input::start(sim_clock);
         }
-        // Publish the new region's neighbours before its first frame can pump
-        // the loader. The old wishlist omits the room we just left and can
-        // otherwise evict it before a short return crossing.
-        let plan=wishlist(region_id,&player);
-        cache.prefetch_regions(&plan.ram[..plan.ram_len]);
         let r=&world::REGIONS[region_id];
         assert!(ambience::set_scene(r.scene as u8));
         enemies.sync_region(r);
@@ -521,24 +485,12 @@ fn main() {
             emit::counter(counter::SIM_TICKS,ticks);emit::stage_end(stage::PRESENT);emit::counter(counter::VISUAL_FRAMES,1);
             #[cfg(feature="emulator-telemetry")] if frame%30==0 {log_state(frame,&player,prims);}
             frame=frame.wrapping_add(1);
-            let plan=wishlist(region_id,&player);
-            let wanted=&plan.gpu[..plan.gpu_len];
             if let Some(id)=target {
-                if vram.cancel_for_demand(id) {cache.protect_upload(None);}
-                let required=plan.with_demand(id);
-                cache.prefetch_regions(&required.ram[..required.ram_len]);
-                let _=cache.request(id);
-                // A resident destination can activate immediately. Do not put
-                // an unrelated speculative upload on the transition path;
-                // its source stays pinned until a later completed frame.
-                if !vram.ready(id) {prepare_vram(cache,&mut vram,&[id]);}
+                // Both scene metadata and static atlases were admitted at boot.
                 if vram.ready(id) && matches!(cache.try_select(id),Ok(true)) {
                     region_id=id;continue 'region;
                 }
                 pending_target=Some(id);
-            } else if !paused {
-                cache.prefetch_regions(&plan.ram[..plan.ram_len]);
-                prepare_vram(cache,&mut vram,wanted);
             }
         }
     }

@@ -21,19 +21,21 @@ source damage stages and opens after thirteen hits, allowing entry into Town. Fu
 PS1's limited blend modes; this is not full source-shader parity.
 
 98 bounded regions cover Tutorial_01 and Dirtmouth's left entrance. All their
-scene data now stays in one 1,069,056-byte RAM arena; both scenery atlases stay in
-VRAM throughout gameplay. Lossless sharing across regions uses 20 static 4bpp
+scene data now stays in one 369,180-byte RAM arena; both scenery atlases stay in
+VRAM throughout gameplay. Their CPU copies are discarded after startup uploads,
+leaving about691KiB of unallocated main RAM for future bounded data. Lossless sharing across regions uses 20 static 4bpp
 pages and 1,209 palettes. The existing approved 95% static matches remain; no
 further resolution reduction or lossy merging was added. Scenery keeps its
 48-pixel long-axis cap; Knight, enemy and HUD resolution is unchanged.
 
-The title loads both scene banks and six ambience loops once. Region crossings
+The title loads six ambience loops and the static atlases through the empty
+scene arena, then admits both compact scene banks once. Region crossings
 select local views without CD reads, decoding or static texture uploads. Eight
 animation slots fetch frames from resident RAM and retain cached frames across
 same-scene crossings. The long user replay now has zero boundary-loading waits
 (previously 478 ticks), with no traversal CD reads or static uploads. The best preserved optimization run
-renders at one to four VBlanks per frame (mean 1.983, approximately30fps on the long
-replay);189 of2,926 intervals still exceed two VBlanks, so the strict30fps gate fails. Current build identity
+renders at one to four VBlanks per frame (mean 1.976839, approximately30fps on the long
+replay);179 of2,936 intervals still exceed two VBlanks, so the strict30fps gate fails. Current build identity
 and ongoing experiments are recorded in docs/STATUS.md. This covers the current authored subset, not the full game's residency
 or physical-console timing. See [docs/STATUS.md](docs/STATUS.md) for evidence and
 [docs/BUDGET.md](docs/BUDGET.md) for measured allocations.
@@ -85,7 +87,8 @@ Geo. Death currently clears the wallet without a recoverable Shade. Health
 loss and hazard recovery use source-derived values; death returns to the opening
 marker. The development spawn bypasses the cinematic and grants no abilities.
 Region changes preserve breakables and enemy state inside the scene. The authored
-Tutorial/Dirtmouth gate is wired, but a complete traversal has not been verified.
+Tutorial/Dirtmouth gate is replay-verified; progression beyond the current
+Town entrance remains unfinished.
 Open the CUE to play: the standalone EXE now needs its matching disc mounted.
 Room entry shows a loading prompt; a failed read offers Start to retry.
 
