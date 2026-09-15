@@ -196,6 +196,16 @@ dependency proposal, not the guest's exclusive scene-gate admission policy. Cond
 may eventually reduce eligible neighbours, but unsupported conditions are not
 silently guessed.
 
+The catalog-wide source matrix at
+`.hkpsx/world-import/pack-matrix.{json,md}` now joins those dependency sets to
+all 501 imported scene artifacts and authored neighbour windows. It records
+per-scene geometry/component hashes, source sprite/texture/animation counts and
+window peaks, while leaving `ps1_ram_bytes` and `ps1_vram_bytes` unset. The
+largest current-plus-neighbour source window is Hive_03_c with four neighbours:
+52,062,693 uncompressed geometry bytes and 246 source texture fragments. This
+is the input to production crop/palette cooking, not a claim that those source
+bytes can be resident on PS1.
+
 Source atlas dimensions, compressed retail bytes and hypothetical 4bpp estimates
 are not exact cooked RAM or VRAM costs. Cropping, resampling, palettes, frame
 working sets and packing determine those costs. Unknown dependencies and costs
