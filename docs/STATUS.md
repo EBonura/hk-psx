@@ -1,6 +1,6 @@
 ## Complete-game implementation resumed
 
-P00-P04 are complete; P05 and the first P06 slice are in progress. The current isolated-worker
+P00-P04 are complete; P05-P08 and the first P06/P13 slices are in progress. The current isolated-worker
 import verified all 501 BuildSettings scenes with zero failures: 463 have
 complete source geometry and 38 retain only explicit runtime text-glyph work. It
 preserves all 5,274 CircleCollider2D boundaries, 28,814 particle systems and
@@ -69,10 +69,11 @@ Spatial actor and checkpoint lookup now resolves through the admitted bank while
 retaining the existing static gameplay records. Build 71 and the sole Downloads
 disc are unchanged while this new chunk layout is validated.
 
-The guest edge cache now keys entries by world generation plus the generated
-global region ID. Scene admission, retry, death and reset paths revoke the key
-before arena reuse; same-scene region changes do not read or compare stale
-arena addresses.
+The guest edge cache now keys entries by world generation, generated global
+region ID and the borrowed room view. Scene admission, retry, death and reset
+paths revoke the key before arena reuse; the view key prevents equal-sized room
+payloads from reusing one another's filtered edges, while the generation key
+protects the reusable arena from stale addresses.
 
 The admitted metadata path now differentially checks every Tutorial/Town bank
 against the legacy region table before publication: bounds, collision bounds,
@@ -119,13 +120,23 @@ before a store is published. Truncation, version, corruption and capacity cases
 are covered by native tests. This is the host/simulation foundation for P13
 memory-card I/O; no card driver or playable-disc replacement is claimed yet.
 
-Current validation after these changes: 401 Python tests and the complete
-`hk-sim` suite (55 library tests plus its integration targets) pass. The no-disc
-guest rebuild links with zero final hazards; code/data/BSS are 402,628/715,568/
-844,632 bytes and the pre-stack margin is 19,368 bytes. These numbers describe
-the source build only; build 71 remains the sole delivered disc.
+The first P08 rendering-correctness slice is now implemented. Certified tile
+ownership events are partitioned into independent back and front chains, and
+the back pass retires only back ownership; front masks therefore remain valid
+through the whole back-layer traversal and are retired in their own pass. This
+fixes a source-index-dependent occlusion failure without disabling the
+precomputed proof. A regression covers mixed same-index back/front ownership,
+and the hk-format coverage suite exercises prefix resume, invisible draws and
+both layer passes.
 
-## Completion plan prepared for GPT-5.6-Sol
+Current validation after these changes: 401 Python tests, 47 world-runtime
+tests, the complete `shared/hk-format` suite (including 15 tile-coverage tests),
+and the complete `hk-sim` suite pass. The no-disc guest rebuild links with zero
+final hazards; code/data/BSS are 402,860/715,344/847,768 bytes and the
+pre-stack margin is 16,232 bytes. These numbers describe the source build only;
+build 71 remains the sole delivered disc.
+
+## Completion plan and execution history
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),
 with a short [execution entry point](plans/SOL_START_HERE.md). It includes 32 work

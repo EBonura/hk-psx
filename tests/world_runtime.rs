@@ -61,6 +61,7 @@ static TARGETS: &[Breakable] = &[
 ];
 fn region() -> Region {
     Region {
+        global_id: 0,
         flat_floor_heights: &[],
         scene: 0,
         bounds: [0, 0, 1000, 1000],
@@ -267,7 +268,7 @@ fn edge_cache_distinguishes_equal_count_sources_regions_and_large_room_fallback(
     let a=edge_room_bytes(&[[1,2,3,2],[4,5,4,6]]);
     let b=edge_room_bytes(&[[11,12,13,12],[14,15,14,16]]);
     let a=hk_format::Room::parse(&a).unwrap();let b=hk_format::Room::parse(&b).unwrap();
-    let r=region();let mut other=region();other.breakables=&[];
+    let r=region();let mut other=region();other.global_id=1;other.breakables=&[];
     let mut state=State::new();state.break_object(B);
     assert!(state.refresh_edges(&r,&a));assert_eq!(state.edge(&r,&a,1),[0;4]);
     // A source switch must never answer with the old cache, even before refresh.
@@ -626,7 +627,7 @@ fn foreign_view_exclusions_follow_segments_not_local_indices() {
     let target_bytes=edge_room_bytes(&[c,[a[2],a[3],a[0],a[1]],b]);
     let source=hk_format::Room::parse(&source_bytes).unwrap();
     let target=hk_format::Room::parse(&target_bytes).unwrap();
-    let current=region();let mut other=region();other.breakables=&[];
+    let current=region();let mut other=region();other.global_id=1;other.breakables=&[];
     let mut state=State::new();state.set_geo_edges(&[0]);
     state.set_lifeblood_edges(&[1,999]);
     assert_eq!(state.edge_in_view(&current,&source,&other,&target,0),c);

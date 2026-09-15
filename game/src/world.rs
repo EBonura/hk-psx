@@ -97,6 +97,7 @@ pub struct State {
     edge_cache_count:usize,
     edge_cache_generation:u32,
     edge_cache_region_id:usize,
+    edge_cache_room_key:usize,
     edge_cache_valid:bool,
     world_generation:u32,
     geo_edges:[u16;32],
@@ -123,7 +124,7 @@ impl State {
     pub const fn new() -> Self {
         Self {
             edge_cache:[[0;4];EDGE_CACHE],edge_cache_count:0,
-            edge_cache_generation:0,edge_cache_region_id:0,edge_cache_valid:false,
+            edge_cache_generation:0,edge_cache_region_id:0,edge_cache_room_key:0,edge_cache_valid:false,
             world_generation:0,
             geo_edges:[0;32],geo_edge_count:0,
             lifeblood_edges:[0;8],lifeblood_edge_count:0,
@@ -191,14 +192,17 @@ impl State {
         self.debris.tick(region.scene,region.door_debris,region.collision_bounds,count,edge);
     }
     /// The resident scene payload is immutable. Explicit world generation plus
-    /// global region ID selects the local edge reference list. No arena or
-    /// temporary-view address participates in cache identity.
+    /// global region ID and the borrowed room view select the local edge
+    /// reference list. The view address only disambiguates two immutable room
+    /// slices during one generation; world_generation invalidates it whenever
+    /// the reusable arena is replaced.
     #[inline(always)]
     fn edge_cache_matches(&self,region:&Region,room:&Room)->bool {
         self.edge_cache_valid
             && self.edge_cache_count==room.counts[5]
             && self.edge_cache_generation==self.world_generation
             && self.edge_cache_region_id==region.global_id
+            && self.edge_cache_room_key==room as *const Room as usize
     }
     /// Retire every view before the reusable world/geometry arena can be
     /// overwritten. Call once for every metadata admission, including a retry
@@ -219,6 +223,7 @@ impl State {
             *edge_cache_count=count;
             self.edge_cache_generation=self.world_generation;
             self.edge_cache_region_id=region.global_id;
+            self.edge_cache_room_key=room as *const Room as usize;
             self.edge_cache_valid=true;
             true
         } else {*edge_cache_count=0;self.edge_cache_valid=false;false}
