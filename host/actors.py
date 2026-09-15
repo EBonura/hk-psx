@@ -276,6 +276,13 @@ def actor_sources(sc, bounds=None):
                                     'Initial random direction requires deterministic guest sampling; Unity RNG sequence is not reproduced.']
         except (ValueError, KeyError, StopIteration) as error:
             actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
+            from runner import recognize
+            try:
+                actor['pending_movement_control'] = recognize(sc, actor)
+                actor['limitations'] = actor['pending_movement_control']['limitations']
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['pending_movement_error'] = str(error)
         result.append(actor)
     if len(result) > 32:
         raise ValueError('actor region exceeds bounded 32-slot guest pool')

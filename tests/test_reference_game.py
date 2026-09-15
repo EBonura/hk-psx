@@ -76,6 +76,36 @@ class ReferenceValidationTests(unittest.TestCase):
         self.write_audio()
         self.assertFalse(reference.validate_run(self.root, 3)['passed'])
 
+    def test_audio_frame_to_fixed_clock_switch_in_same_frame_is_valid(self):
+        # Actual Unity 6 sequence: SceneManager.Start then a grass trigger callback.
+        first = dict(self.audio_rows[0], unity_frame='1473', time='24.55',
+                     fixed_time='24.51999', input_tick='701', input_updates='699')
+        fixed = dict(first, sequence='1', time='24.5399914', fixed_time='24.5399914')
+        resumed = dict(first, sequence='2', fixed_time='24.5399914',
+                       input_tick='702', input_updates='700')
+        self.audio_rows = [first, fixed, resumed]
+        self.write_audio()
+        result = reference.validate_run(self.root, 3)
+        self.assertTrue(result['passed'], result['errors'])
+        self.assertEqual(result['audio_calls']['fixed_clock_context_switches'], 1)
+        # Validation must retain native timestamps, not clamp or rewrite evidence.
+        with (self.root / 'audio-calls.csv').open(newline='') as stream:
+            self.assertEqual(list(csv.DictReader(stream))[1]['time'], '24.5399914')
+
+    def test_audio_clock_switch_exception_does_not_hide_corruption(self):
+        first = dict(self.audio_rows[0], unity_frame='1473', time='24.55',
+                     fixed_time='24.51999', input_tick='701', input_updates='699')
+        fixed = dict(first, sequence='1', time='24.5399914', fixed_time='24.5399914')
+        for change in [dict(time='24.53'),  # Not actually the fixed clock.
+                       dict(time='24.51999', fixed_time='24.51999'),  # No advance.
+                       dict(time='24.50', fixed_time='24.50'),
+                       dict(unity_frame='1474'), dict(unity_frame='1472'),
+                       dict(input_tick='700'), dict(input_updates='698')]:
+            with self.subTest(change=change):
+                self.audio_rows = [first, dict(fixed, **change)]
+                self.write_audio()
+                self.assertFalse(reference.validate_run(self.root, 3)['passed'])
+
     def test_audio_logging_failure_invalidates_otherwise_complete_trace(self):
         with (self.root / 'unity.log').open('a') as f:
             f.write('HKReference AudioTrace logging failed: disk full\n')

@@ -142,6 +142,7 @@ def validate_audio_calls(output, unity_log):
     """Validate recorded requests, not audible output or exhaustive native coverage."""
     errors, operations, sites, previous = [], {}, set(), None
     count = 0
+    fixed_clock_context_switches = 0
     if 'HKReference AudioTrace logging failed:' in unity_log:
         errors.append('AudioTrace reported a logging failure')
     try:
@@ -165,9 +166,24 @@ def validate_audio_calls(output, unity_log):
                 times = tuple(float(row[key]) for key in ('time', 'fixed_time'))
                 if any(value < 0 for value in counters + times) or not all(math.isfinite(value) for value in times):
                     raise ValueError(f'invalid audio clock at row {count}')
-                if previous and (any(a < b for a, b in zip(counters, previous[0]))
-                                 or any(a + 1e-6 < b for a, b in zip(times, previous[1]))):
-                    raise ValueError(f'audio clocks moved backwards at row {count}')
+                if previous:
+                    old_counters, old_times = previous
+                    if (any(a < b for a, b in zip(counters, old_counters))
+                            or times[1] + 1e-6 < old_times[1]):
+                        raise ValueError(f'audio clocks moved backwards at row {count}')
+                    if times[0] + 1e-6 < old_times[0]:
+                        # Time.time is context-dependent: Unity returns fixedTime
+                        # in a physics callback. Scene Start can emit audio before
+                        # that frame's physics, so its frame time may be ahead of
+                        # the next request's advancing fixed clock. Accept only
+                        # this evidenced same-frame switch, never arbitrary drift.
+                        # https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Time-time.html
+                        fixed_context_switch = (counters[0] == old_counters[0]
+                                                and times[0] == times[1]
+                                                and times[1] > old_times[1])
+                        if not fixed_context_switch:
+                            raise ValueError(f'audio clocks moved backwards at row {count}')
+                        fixed_clock_context_switches += 1
                 for key in ('pitch', 'source_volume', 'volume_scale', 'x', 'y', 'z', 'value'):
                     if row[key] and not math.isfinite(float(row[key])):
                         raise ValueError(f'non-finite audio {key} at row {count}')
@@ -180,6 +196,8 @@ def validate_audio_calls(output, unity_log):
     except (OSError, ValueError, TypeError, csv.Error) as error:
         errors.append('Invalid audio-call evidence: ' + str(error))
     return {'passed': not errors, 'errors': errors, 'requests': count,
+            'fixed_clock_context_switches': fixed_clock_context_switches,
+            'clock_semantics': 'Time.time may switch to an advancing fixed clock within one Unity frame; request sequence remains authoritative',
             'observed_call_sites': len(sites), 'operations': dict(sorted(operations.items())),
             'coverage': 'Recorded managed requests only; excludes uninstrumented calls and does not prove audible output'}
 

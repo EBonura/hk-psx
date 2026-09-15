@@ -1,5 +1,19 @@
 # Status, 2026-09-15
 
+## Current playtest70: user-requested provisional rebuild
+
+Rebuilt the current working source and replaced the sole Downloads/ps1 games
+hk-psx.bin/.cue pair. Full asset recook and final guest build pass, with zero
+R3000 hazards and34,668B before the reserved stack. The850-poll actual-CUE
+smoke replay completes with no reported faults; its inspected320x240 gameplay
+image is byte-identical to provisional69. Evidence: .hkpsx/playtest70/build.log
+and focus/command.json. BIN SHA256:
+1016708eb5482a17eeaf2d2ffc7efbe0b4fa19b55e3b84c681fa4614fa276b1c.
+Exactly one Hollow Knight BIN/CUE pair remains in the library. Crossroads enemy
+preparation is still source-only; this rebuild adds no new playable area.
+Long traversal routes were not rerun for this rebuild. Leave this disc available
+for the user's playtest until they request another replacement.
+
 ## In progress69: scene-owned visibility certificates
 
 Moving unchanged tile/group visibility proofs from aggregate linked tables into
@@ -26,8 +40,43 @@ Consolidated evidence: .hkpsx/game69/validation.json. Crossroads gameplay remain
 
 An isolated source-derived Zombie Runner controller is implemented in hk-sim.
 See RUNNER.md for callback ordering, completion-token and integration contracts.
-It is not connected to guest actors or included in the provisional disc; terrain
-queries, art, audio, corpse/Geo and original-runtime comparisons remain.
+It is not connected to guest actors or included in the provisional disc.
+The host now recognizes both source instances strictly and records their shared
+34-sprite library, transformed sensing bounds and original audio references.
+Rotation lock, terrain filters, gravity and scaled animation clock are checked;
+unrecognized variants remain disabled. Pure bounded Q16 terrain queries implement
+the three-ray Sweep, mirrored body bounds, AlertRange and terrain LOS, with
+10 native tests. Source physics contact tolerances and guest bindings remain.
+
+The isolated original run `runner-crossroads70` now passes revalidation with623
+gameplay frames. Both Runners and both Climbers have578 complete samples; two
+attack cycles expose synchronous restart/Ready behavior and player-hit slowdown
+in the lunge clock. See ORIGINAL_REFERENCE.md for evidence and limitations.
+The original audio validation failure was a frame/fixed-clock context switch;
+raw logs and the failed report are retained alongside hash-bound revalidation.
+
+A full isolated12-view Crossroads scenery/collision pack occupies98,808B RAM,
+7 static pages and501 palettes and passes native incremental decoding. Pending
+Runner/Climber/Mender animation libraries cost30,496B standalone plus2,272B CLUT;
+this is not an integrated scene delta and excludes corpse, VFX and audio costs.
+Evidence: .hkpsx/crossroads70/RESULT.md. Secret Mask scripting, well/camera flow,
+guest actor/art/audio/corpse/Geo bindings and progression remain unfinished.
+
+Runner now preserves synchronous StartMoving/Walker.Update, cooldown clearing
+and immediate Ready sensing, with15 controller tests. Its native state is20B,
+transient ordered actions260B. A separate Climber controller models source
+attachment, ground-before-wall corner sensing, unsnapped inside-turn endpoints,
+scaled-time freeze/ramp and timed stun/end-of-frame resumption. State56B,
+transient actions64B;11 targeted tests pass. Original traces corroborate both
+attachments, speed and10 outside turns, including one slowed by hit-stop.
+Inside turns, stun and death still need live reference comparison. See CLIMBER.md
+and .hkpsx/climber70/controller-trace-proof.json.
+
+Validation:309 Python tests pass. The full hk-sim suite passed213 tests before
+the final scaled-time Climber refinement; all11 Climber tests pass afterward.
+Logs: .hkpsx/runner70/{python-tests-final,hk-sim-final}.log and
+.hkpsx/climber70/controller-tests-final.log. No guest build or disc replacement
+was performed for these source-only controller changes.
 
 ## Current playable build68: Town expansion and scene replacement
 

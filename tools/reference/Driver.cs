@@ -59,6 +59,7 @@ namespace HKReference
             string tapePath = Path.Combine(output, "input.csv");
             if (File.Exists(tapePath)) tape = Tape.Load(tapePath);
             Observations.Initialize(output);
+            EnemyTrace.Initialize(output);
             AudioTrace.Initialize(output);
             ReplayDevice.OpenLog(output);
             Note("installed; bootstrap=" + (Environment.GetEnvironmentVariable("HK_REFERENCE_BOOTSTRAP") ?? "tutorial"));
@@ -242,6 +243,7 @@ namespace HKReference
         private void Capture(object gm)
         {
             Observations.Capture(testFrame);
+            EnemyTrace.Capture(testFrame, physicsSteps);
             Component hero = Singleton("HeroController") as Component;
             Vector3 position = hero == null ? Vector3.zero : hero.transform.position;
             Rigidbody2D body = hero == null ? null : hero.GetComponent<Rigidbody2D>();
@@ -269,12 +271,13 @@ namespace HKReference
             Debug.Log("HK_REFERENCE_STOP code=" + code + " reason=" + reason);
             if (states != null) { states.Flush(); states.Dispose(); states = null; }
             Observations.Dispose();
+            EnemyTrace.Dispose();
             AudioTrace.Dispose();
             ReplayDevice.CloseLog();
             Application.Quit(code);
         }
 
-        private void OnDestroy() { AudioTrace.Dispose(); if (states != null) { states.Dispose(); states = null; } }
+        private void OnDestroy() { EnemyTrace.Dispose(); AudioTrace.Dispose(); if (states != null) { states.Dispose(); states = null; } }
         private void Note(string text) { File.AppendAllText(Path.Combine(output, "driver.log"), DateTime.UtcNow.ToString("o") + " frame=" + Time.frameCount + " test_frame=" + testFrame + " " + text + Environment.NewLine); }
         private static string Number(object value) { return value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture); }
         private static int IntSetting(string name, int fallback) { int value; return Int32.TryParse(Environment.GetEnvironmentVariable(name), out value) && value > 0 ? value : fallback; }
