@@ -123,8 +123,17 @@ impl<'a> WorldMeta<'a> {
     }
 
     fn validate_references(&self) -> Result<(), Error> {
+        // The cooker emits the canonical global chunk order. Keeping that
+        // order in the wire contract makes duplicate or missing region IDs
+        // fail admission before any scene-owner mapping can consume them.
+        let mut previous_global = 0;
         for index in 0..self.counts[0] {
             let region = self.region(index).ok_or(Error::Reference)?;
+            let global = region.global_id();
+            if global == 0 || global <= previous_global {
+                return Err(Error::Reference);
+            }
+            previous_global = global;
             self.span(1, region.object_first(), region.object_count())?;
             self.span(2, region.polygon_first(), region.polygon_count())?;
             self.span(3, region.neighbour_first(), region.neighbour_count())?;
@@ -519,6 +528,13 @@ mod tests {
         let mut b = fixture();
         let at = offset(&b, 1) + 28;
         put(&mut b, at, 99);
+        assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Reference));
+    }
+    #[test]
+    fn rejects_zero_global_region_id() {
+        let mut b = fixture();
+        let at = offset(&b, 0);
+        put(&mut b, at, 0);
         assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Reference));
     }
     fn offset(b: &[u8], section: usize) -> usize {

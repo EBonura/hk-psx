@@ -330,16 +330,20 @@ impl Cache {
             crate::input::checkpoint();destination.copy_from_slice(source);
         }
         let bank=checked_world_metadata(destination,scene)?;
+        let expected_regions=REGION_SCENE_LOCAL.iter().filter(|&&(owner,_)|owner==scene).count();
+        if bank.region_count()!=expected_regions {return Err(LoadError::WorldMeta);}
+        let mut previous_global=0;
         let mut mapped=0;
         for region in bank.regions() {
             let region=region;
             let global=region.global_id() as usize;
-            if global==0 || global>REGION_SCENE_LOCAL.len() || REGION_SCENE_LOCAL[global-1].0!=scene {
+            if global<=previous_global || global>REGION_SCENE_LOCAL.len() || REGION_SCENE_LOCAL[global-1].0!=scene {
                 return Err(LoadError::WorldMeta);
             }
+            previous_global=global;
             mapped+=1;
         }
-        if mapped!=REGION_SCENE_LOCAL.iter().filter(|&&(owner,_)|owner==scene).count() {
+        if mapped!=expected_regions {
             return Err(LoadError::WorldMeta);
         }
         self.metadata_scene=scene;self.metadata_len=m.raw_len;Ok(())
