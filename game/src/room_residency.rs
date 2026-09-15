@@ -73,6 +73,19 @@ impl Residency {
         }
         if self.wanted!=previous {self.refresh_decode();}
     }
+    /// Drop completed or parked payloads outside the current directed edge
+    /// keep-set. Current, protected and in-flight slots remain untouched.
+    pub fn evict_unwanted(&mut self,keep:&[usize])->usize {
+        let mut removed=0;
+        for i in 0..SLOT_COUNT {
+            if i==self.current || i==self.protected || self.loading[i]!=EMPTY {continue;}
+            let region=self.slots[i].region;
+            if region==EMPTY || keep.contains(&region) {continue;}
+            self.slots[i]=Slot::new();removed+=1;
+        }
+        if removed!=0 {self.refresh_decode();}
+        removed
+    }
     pub fn loading(&self,region:usize)->bool {region!=EMPTY && self.loading.contains(&region)}
     pub fn release(&mut self,i:usize) {self.loading[i]=EMPTY;}
     pub fn next_request(&self)->Option<usize> {
@@ -251,5 +264,16 @@ impl Residency {
         assert!(r.find(11).is_some());assert!(r.protect_upload(None));
         for region in 20..24 {load(&mut r,region);}
         assert!(r.find(11).is_none());
+    }
+    #[test] fn directed_eviction_keeps_current_upload_and_requested_payloads() {
+        let mut r=Residency::new();load(&mut r,10);r.select(10).unwrap();
+        load(&mut r,11);load(&mut r,12);
+        let parked=r.reserve(13,true).unwrap();r.park_completed(parked,13);
+        r.protect_upload(Some(11));
+        assert_eq!(r.evict_unwanted(&[12]),1);
+        assert!(r.find(10).is_some());
+        assert!(r.find(11).is_some());
+        assert!(r.find(12).is_some());
+        assert!(r.stored(13).is_none());
     }
 }
