@@ -21,12 +21,11 @@ access evidence; all load routes have condition status, downstream owners and
 reference cases. The stable registry covers every scene/component/gate/PlayerData
 key/asset and the bounded state API costs 93,912 bytes at conservative caps.
 The first P05 `HKWMTA01` scene-bank slice is implemented and measured for
-Tutorial/Town with checked borrowed views. The guest edge cache now uses world
-generation plus global region ID and revokes it before scene/reset arena reuse;
-the guest still uses its existing metadata tables. Continue P05 with Cache
-admission and differential metadata/geometry/coverage checks. Do not
-rebuild the user's disc during these host-only packages; build 71 remains the
-sole playable pair.
+Tutorial/Town with checked borrowed views. The scene pack emits metadata after
+coverage and the guest Cache validates it in a dedicated RAM buffer before
+publishing a scene; the current playable disc remains build 71 because it has
+the older chunk table. Continue P05 with a pinned guest build, differential
+metadata/geometry/coverage checks, and only then replace the single disc pair.
 
 ## Completion plan for the next executor
 

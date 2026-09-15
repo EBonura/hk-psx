@@ -99,11 +99,15 @@ ownership. See `docs/STATE_IDENTITY.md`; the database and report stay ignored.
 
 `world_metadata.py` is the first P05 scene-bank cooker. It writes ignored
 `HKWMTA01` banks under `.hkpsx/world-metadata/`, one per cooked source scene,
-and binds each bank to the current `regions.json` hash. The wire reader is
-`shared/hk-format/src/world_meta.rs`; it checks fixed strides, aligned sections,
-zero padding, global-neighbour IDs, object spans and polygon points before
-publishing borrowed views. This is host/format work only until the world loader
-migration has differential coverage.
+and binds each bank to the current `regions.json` hash. The scene pack writes
+its compressed admission copies under `.hkpsx/world-metadata-packed/`, records
+the compressed/raw checksums and assigns metadata chunks after coverage. The
+wire reader is `shared/hk-format/src/world_meta.rs`; it checks fixed strides,
+aligned sections, zero padding, global-neighbour IDs, object spans and polygon
+points before publishing borrowed views. `game/src/disc.rs` now performs that
+admission in a separate bounded metadata buffer and cross-checks all global
+region owners; the chunk layout still needs a pinned guest differential run
+before replacing the playable disc.
 
 The next passes are:
 

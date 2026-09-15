@@ -56,9 +56,12 @@ Tutorial is 32,072 bytes for 86 regions and Town is 2,844 bytes for 20 regions.
 The banks contain global region IDs, Q16 bounds/camera data, global neighbour
 IDs, breakable/grass/hazard/checkpoint/actor records and polygon point pools.
 `hk-format::WorldMeta` validates section strides, alignment, padding, spans and
-geometry before exposing allocation-free borrowed views. Build 71 and the sole
-Downloads disc are unchanged; guest admission still uses the existing tables
-until the differential migration is complete.
+geometry before exposing allocation-free borrowed views. The scene pack emits
+its compressed admission copies under `.hkpsx/world-metadata-packed/` and
+records metadata checksums, source fingerprints and post-coverage chunk IDs;
+the guest admission transaction stages the bank in a separate RAM buffer and
+cross-checks it against scene geometry before publishing a scene. Build 71 and
+the sole Downloads disc are unchanged while this new chunk layout is validated.
 
 The guest edge cache now keys entries by world generation plus the generated
 global region ID. Scene admission, retry, death and reset paths revoke the key

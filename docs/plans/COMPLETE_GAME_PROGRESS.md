@@ -190,17 +190,21 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 - The guest `State` edge cache now uses an explicit world generation and global
   region ID. Scene admission, reset and retry revoke it before any arena reuse;
   no Region or Room address is part of cache identity.
-- Host metadata tests and the three format tests pass. The build 71 link report
-  remains bound to the unchanged playable EXE/BIN/CUE; no guest loader or disc
+- `host/pack_scenes.py` now emits the metadata banks into the ignored pack
+  report, assigns them after scene coverage, and binds raw/stored checksums plus
+  the source fingerprint into `WORLD_META_MANIFEST`. `game/src/disc.rs` stages
+  those banks in a dedicated bounded buffer, validates the wire view and checks
+  every global region owner before publishing the scene. The build 71 link
+  report remains bound to the unchanged playable EXE/BIN/CUE; no disc
   replacement is claimed by this slice.
 
 ### Next concrete action
 
-Continue P05 by admitting `HKWMTA01` through the exclusive Cache transaction and
-cross-checking metadata/geometry/coverage identities before publishing a scene.
-Then differentially compare Tutorial/Town before moving Geo, Lifeblood,
-dialogue, Great Door, render-budget and disc mapping tables. Runtime text
-shaping remains with the renderer/UI packages.
+Run the pinned guest build with the new metadata chunks and compare Tutorial/Town
+metadata against geometry and coverage traces before replacing the playable
+disc. Then move the same admission contract to Geo, Lifeblood, dialogue, Great
+Door, render-budget and disc mapping tables. Runtime text shaping remains with
+the renderer/UI packages.
 
 ## Required package completion record
 

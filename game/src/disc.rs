@@ -1,7 +1,7 @@
 //! Exclusive scene-gate loading or joint bootstrap residency. Each admitted
 //! scene keeps immutable spatial views; only an exclusive select() at a drained,
 //! blacked-out scene transition may reclaim the arena and replace static art.
-use hk_format::{Room,Scene};
+use hk_format::{Room,Scene,WorldMeta};
 use hk_format::coverage::{CoverageValidation,CoverageView,Expected as CoverageExpected};
 use crate::room_decode::{Decoder,Error as DecodeError};
 #[path="cd_stream.rs"] mod cd_stream;
@@ -22,6 +22,9 @@ static mut BUFFERS:Buffer=Buffer {words:[0;SCENE_ARENA_BYTES/4]};
 #[repr(C,align(4))]
 struct CoverageBuffer {words:[u32;COVERAGE_ARENA_BYTES/4]}
 static mut COVERAGE_BUFFER:CoverageBuffer=CoverageBuffer {words:[0;COVERAGE_ARENA_BYTES/4]};
+#[repr(C,align(4))]
+struct WorldMetaBuffer {words:[u32;WORLD_META_ARENA_BYTES/4]}
+static mut WORLD_META_BUFFER:WorldMetaBuffer=WorldMetaBuffer {words:[0;WORLD_META_ARENA_BYTES/4]};
 #[no_mangle]pub static mut HK_COVERAGE_LOADS:u32=0;
 #[no_mangle]pub static mut HK_COVERAGE_BYTES:u32=0;
 #[no_mangle]pub static mut HK_COVERAGE_SCENE:u32=0;
@@ -49,6 +52,7 @@ pub struct Cache {
     entries:[PackEntry;MAX_CHUNKS],header:[u32;2048],reader:SectorReader,
     ready:bool,loaded_scenes:usize,loaded_atlases:usize,selected:usize,
     resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,
+    metadata_scene:usize,metadata_len:usize,
 }
 #[no_mangle] pub static mut HK_SCENE_LOADS:u32=0;
 #[no_mangle] pub static mut HK_SCENE_READ_ID:u32=0;
@@ -86,6 +90,20 @@ pub enum LoadError {
     Decompress = 8,
     Ambience = 9,
     Coverage = 10,
+    WorldMeta = 11,
+}
+
+/// Check a staged HKWMTA01 bank against the scene manifest before gameplay
+/// receives any world object view.  The caller owns the backing bytes; this
+/// function only returns a borrow after both the wire format and the
+/// scene/raw-bank/fingerprint identities match.
+pub fn checked_world_metadata<'a>(bytes:&'a [u8],scene:usize)->Result<WorldMeta<'a>,LoadError> {
+    let expected=WORLD_META_MANIFEST.get(scene).ok_or(LoadError::WorldMeta)?;
+    let bank=WorldMeta::parse(bytes).map_err(|_|LoadError::WorldMeta)?;
+    if bank.check_identity(expected.scene_id,expected.raw_fnv,&expected.fingerprint).is_err() {
+        return Err(LoadError::WorldMeta);
+    }
+    Ok(bank)
 }
 fn mark(state: u32, error: u32) {
     unsafe {
@@ -108,13 +126,15 @@ impl Cache {
     /// Safety: exactly one Cache owns BUFFERS and the CD controller.
     pub const unsafe fn new()->Self {
         Self {entries:[EMPTY_ENTRY;MAX_CHUNKS],header:[0;2048],reader:SectorReader::new(),
-            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY,coverage_scene:EMPTY,coverage_len:0}
+            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY,coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0}
     }
     fn init(&mut self)->Result<(),LoadError> {
         if self.ready {return Ok(());}
         let focus_index=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len();
-        let chunks=focus_index+1+COVERAGE_MANIFEST.len();
-        if !SCENE_GATE_LOAD || COVERAGE_MANIFEST.len()!=SCENE_COUNT || COVERAGE_ARENA_BYTES%4!=0
+        let metadata_index=focus_index+1+COVERAGE_MANIFEST.len();
+        let chunks=metadata_index+WORLD_META_MANIFEST.len();
+        if !SCENE_GATE_LOAD || COVERAGE_MANIFEST.len()!=SCENE_COUNT || WORLD_META_MANIFEST.len()!=SCENE_COUNT
+            || COVERAGE_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES==0
             || COVERAGE_GRID_SHIFT!=2 || COVERAGE_GROUP_POOL_CAPACITY>4096 {return Err(LoadError::Coverage);}
         if SCENE_COUNT==0 || chunks>MAX_CHUNKS || SCENE_ARENA_BYTES%4!=0
             || SCENE_REGIONS.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
@@ -163,6 +183,13 @@ impl Cache {
                 || c.raw_len>SCENE_ARENA_BYTES || c.stored_len==0
                 || c.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES {return Err(LoadError::Coverage);}
         }
+        for (scene,m) in WORLD_META_MANIFEST.iter().enumerate() {
+            let d=SCENE_MANIFEST[scene];
+            if m.scene_id!=d.scene_id as u32 || m.raw_len<160 || m.raw_len>WORLD_META_ARENA_BYTES
+                || m.raw_len%4!=0 || m.stored_len==0
+                || m.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES
+                || m.chunk_id!=metadata_index+scene+1 {return Err(LoadError::WorldMeta);}
+        }
         if !unsafe {self.reader.prepare_single_speed()} {return Err(LoadError::Prepare);}
         if !unsafe {self.reader.start_read_seek_first(WORLD_PACK_DEFAULT_LBA,SEEK_POLL)}
             || !sector(&mut self.reader,&mut self.header[..SECTOR_WORDS]) {return Err(LoadError::HeaderRead);}
@@ -186,7 +213,8 @@ impl Cache {
                 let a=&ATLASES[i-SCENE_COUNT-crate::ambience::CLIPS.len()];
                 (a.stored_len,a.stored_fnv,SCENE_ARENA_BYTES)
             } else if i==focus_index {(crate::focus_audio::BANK_BYTES,crate::focus_audio::BANK_CHECKSUM,SCENE_ARENA_BYTES)}
-            else {let c=&COVERAGE_MANIFEST[i-focus_index-1];(c.stored_len,c.stored_fnv,SCENE_ARENA_BYTES)};
+            else if i<metadata_index {let c=&COVERAGE_MANIFEST[i-focus_index-1];(c.stored_len,c.stored_fnv,SCENE_ARENA_BYTES)}
+            else {let m=&WORLD_META_MANIFEST[i-metadata_index];(m.stored_len,m.stored_fnv,SCENE_ARENA_BYTES)};
             let e=parse_entry(bytes,i).ok_or(LoadError::HeaderInvalid)?;
             if size==0 || size.div_ceil(SECTOR_BYTES)>capacity/SECTOR_BYTES
                 || e.chunk_id as usize!=i+1 || e.byte_size as usize!=size || e.checksum!=checksum
@@ -274,6 +302,46 @@ impl Cache {
         unsafe {HK_COVERAGE_LOADS=HK_COVERAGE_LOADS.saturating_add(1);HK_COVERAGE_BYTES=c.raw_len as u32;HK_COVERAGE_SCENE=scene as u32+1;}
         Ok(())
     }
+    /// Stage and validate the immutable HKWMTA bank before any scene object
+    /// view is published.  Metadata lives in its own buffer because the scene
+    /// decoder reuses BUFFERS for every CD read and decompression pass.
+    #[inline(never)]
+    fn prepare_metadata(&mut self,scene:usize)->Result<(),LoadError> {
+        self.init()?;let m=WORLD_META_MANIFEST[scene];
+        if self.metadata_scene==scene && self.metadata_len==m.raw_len {return Ok(());}
+        if self.loaded_scenes!=0 {return Err(LoadError::WorldMeta);}
+        self.metadata_scene=EMPTY;self.metadata_len=0;
+        self.read(self.entries[m.chunk_id-1],0)?;
+        let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
+            let mut decoder=Decoder::new_bytes(m.stored_len,m.stored_fnv,m.raw_len,m.bank_fnv);
+        loop {
+            crate::input::checkpoint();
+            match decoder.step(arena,1024) {
+                Ok(Some(len))=>{if len!=m.raw_len{return Err(LoadError::WorldMeta);}break;},
+                Ok(None)=>{},
+                Err(error)=>return Err(match error {DecodeError::Checksum=>LoadError::Checksum,
+                    DecodeError::Decompress=>LoadError::Decompress,DecodeError::RoomFormat=>LoadError::WorldMeta}),
+            }
+        }
+        let destination=unsafe {core::slice::from_raw_parts_mut((&raw mut WORLD_META_BUFFER.words).cast::<u8>(),m.raw_len)};
+        for (source,destination) in arena[..m.raw_len].chunks(1024).zip(destination.chunks_mut(1024)) {
+            crate::input::checkpoint();destination.copy_from_slice(source);
+        }
+        let bank=checked_world_metadata(destination,scene)?;
+        let mut mapped=0;
+        for region in bank.regions() {
+            let region=region;
+            let global=region.global_id() as usize;
+            if global==0 || global>REGION_SCENE_LOCAL.len() || REGION_SCENE_LOCAL[global-1].0!=scene {
+                return Err(LoadError::WorldMeta);
+            }
+            mapped+=1;
+        }
+        if mapped!=REGION_SCENE_LOCAL.iter().filter(|&&(owner,_)|owner==scene).count() {
+            return Err(LoadError::WorldMeta);
+        }
+        self.metadata_scene=scene;self.metadata_len=m.raw_len;Ok(())
+    }
     /// Exclusive atlas admission. No Scene/Room view may exist while this
     /// buffer is scratch; completed chunks remain in VRAM across retries.
     #[inline(never)]
@@ -315,7 +383,7 @@ impl Cache {
         cd_stream::cancel();
         while matches!(cd_stream::status(),cd_stream::Status::Busy) {core::hint::spin_loop();}
         self.loaded_scenes=0;self.loaded_atlases=0;self.selected=EMPTY;self.resident_scene=EMPTY;self.atlas_scene=EMPTY;
-        self.coverage_scene=EMPTY;self.coverage_len=0;
+        self.coverage_scene=EMPTY;self.coverage_len=0;self.metadata_scene=EMPTY;self.metadata_len=0;
         unsafe {HK_COVERAGE_SCENE=0;HK_COVERAGE_BYTES=0;}
     }
 
@@ -327,6 +395,7 @@ impl Cache {
             // revoked before any CD/decode/upload may overwrite those bytes.
             self.loaded_scenes=0;self.resident_scene=EMPTY;self.selected=EMPTY;
         }
+        self.prepare_metadata(wanted)?;
         self.prepare_coverage(wanted)?;
         self.prepare_atlases(wanted)?;
         while self.loaded_scenes<if SCENE_GATE_LOAD {1}else{SCENE_COUNT} {
@@ -398,7 +467,8 @@ impl Cache {
     pub fn is_ready(&self,region:usize)->bool {
         REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene,_)|
             if SCENE_GATE_LOAD {self.loaded_scenes==1 && scene==self.resident_scene && self.atlas_scene==scene && self.atlases_ready()
-                && self.coverage_scene==scene && self.coverage_len==COVERAGE_MANIFEST[scene].raw_len}else{false})
+                && self.coverage_scene==scene && self.coverage_len==COVERAGE_MANIFEST[scene].raw_len
+                && self.metadata_scene==scene && self.metadata_len==WORLD_META_MANIFEST[scene].raw_len}else{false})
     }
     pub fn room_for(&self,region:usize)->Option<Room<'_>> {
         if !self.is_ready(region) {return None;}

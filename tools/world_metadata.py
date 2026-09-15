@@ -134,7 +134,11 @@ def encode_scene(scene, rows):
     total = align(len(payload))
     payload.extend(b"\0" * (total - len(payload)))
     payload[:8] = MAGIC
-    struct.pack_into("<II", payload, 8, int(scene["scene_id"]), fnv1a(scene["file"].encode()))
+    # `raw_fnv` is the identity of the source scene bank when the packer has
+    # one available; the standalone cooker falls back to the stable scene-file
+    # identity.  The bank checksum is reported separately for decompression.
+    scene_identity = int(scene.get("raw_fnv", fnv1a(scene["file"].encode())))
+    struct.pack_into("<II", payload, 8, int(scene["scene_id"]), scene_identity)
     digest = hashlib.sha256(json.dumps({"scene": scene, "regions": rows}, sort_keys=True).encode()).digest()
     payload[16:48] = digest
     struct.pack_into("<4I", payload, 48, len(regions), total, 0, len(sections))
@@ -144,6 +148,7 @@ def encode_scene(scene, rows):
                            "region_count": len(regions), "object_count": len(objects),
                            "polygon_count": len(polygons), "point_count": len(points),
                            "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest(),
+                           "raw_fnv": scene_identity, "bank_fnv": fnv1a(payload),
                            "section_bytes": [count * stride for count, stride in zip(counts, strides)]}
 
 
