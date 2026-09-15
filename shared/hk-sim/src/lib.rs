@@ -4,6 +4,8 @@ use hk_format::Room;
 mod combat;
 mod actors;
 pub mod runner;
+pub mod runner_senses;
+pub mod climber;
 mod corpse;
 pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
 mod vitals;

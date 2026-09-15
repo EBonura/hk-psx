@@ -11,9 +11,9 @@
 //! Update/FixedUpdate ordering and reversed Random.Range distribution still need
 //! original-runtime validation. This deterministic 60 Hz controller makes that
 //! integration boundary explicit rather than claiming trajectory parity. Source
-//! StartMoving also invokes Walker.Update synchronously; this model defers that
-//! additional sensing pass to the caller's scheduled Walker callback. Reference
-//! integration must resolve that reentrant Update/elapsed-time behavior too.
+//! StartMoving invokes an additional Walker.Update synchronously, including its
+//! delta-time countdown. Reset then clears turn cooldown and enters Ready with
+//! an immediate alert check. These callbacks do not advance the physics clock.
 use crate::ONE;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,16 +95,16 @@ pub enum Action {
     Turn(TurnCause),
 }
 /// Ordered commands, including writes superseded later in the same callback.
-/// At most ten commands are emitted by one step (startup plus attack).
+/// At most thirteen commands are emitted by one step (startup, turn, attack).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Actions {
-    commands: [Option<Action>; 12],
+    commands: [Option<Action>; 16],
     len: u8,
 }
 impl Actions {
     const fn new() -> Self {
         Self {
-            commands: [None; 12],
+            commands: [None; 16],
             len: 0,
         }
     }
@@ -118,6 +118,10 @@ impl Actions {
             .map(|a| a.unwrap())
     }
 }
+/// Sample at each public callback, using the current actor facing/body. The
+/// synchronous StartMoving pass uses this same world snapshot: no physics step
+/// occurs between its writes and Ready OnEnter. LOS/range are detector values,
+/// not a request to advance their independent Unity component callbacks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Senses {
     pub camera_in_start_range: bool,
@@ -251,8 +255,7 @@ impl Runner {
         });
         self.play(Clip::Anticipate, out);
     }
-    fn reset(&mut self, choose: &mut impl FnMut(Wait) -> u16, out: &mut Actions) {
-        self.swipe = Swipe::Ready;
+    fn reset(&mut self, senses: Senses, choose: &mut impl FnMut(Wait) -> u16, out: &mut Actions) {
         // StartMoving only begins walking from stopped/waiting states. A global
         // recoil while already walking/turning must not restart that clip.
         if matches!(
@@ -261,7 +264,12 @@ impl Runner {
         ) {
             self.walk(choose, out);
         }
+        // StartMoving IL004c calls Update even when already walking/turning.
+        // StartWalker.Apply IL002e clears cooldown only AFTER this callback.
+        self.walker_callback(senses, choose, out);
         self.turn_cooldown = 0;
+        self.swipe = Swipe::Ready;
+        self.check_ready(senses, out);
         // Source Reset does not stop Charge Dust. Do not invent that event.
     }
     /// An accepted nonlethal HealthManager TOOK DAMAGE event. Ready attacks
@@ -275,10 +283,14 @@ impl Runner {
     }
     /// RECOIL HORIZONTAL is global; vertical recoil has no Swipe transition.
     /// Caller performs this after took_damage, before applying recoil velocity.
-    pub fn horizontal_recoil(&mut self, mut choose: impl FnMut(Wait) -> u16) -> Actions {
+    pub fn horizontal_recoil(
+        &mut self,
+        senses: Senses,
+        mut choose: impl FnMut(Wait) -> u16,
+    ) -> Actions {
         let mut out = Actions::new();
         if self.swipe != Swipe::Dead {
-            self.reset(&mut choose, &mut out);
+            self.reset(senses, &mut choose, &mut out);
         }
         out
     }
@@ -307,9 +319,7 @@ impl Runner {
         if self.walker == Walker::Dead {
             return out;
         }
-        self.turn_cooldown = self.turn_cooldown.saturating_sub(1);
-        let complete = self.animation.is_some() && senses.completed == self.animation;
-        self.update_walker(senses, complete, &mut choose, &mut out);
+        self.walker_callback(senses, &mut choose, &mut out);
         out
     }
     /// Swipe Update only, with the guest's FixedUpdate lunge X write. Call once
@@ -346,18 +356,32 @@ impl Runner {
             Swipe::Idle => {
                 self.wait = self.wait.saturating_sub(1);
                 if self.wait == 0 {
-                    self.reset(&mut choose, &mut out);
+                    self.reset(senses, &mut choose, &mut out);
                 }
             }
             Swipe::Ready => {
-                // Source Ready is independent of Walker's startup camera gate.
-                if senses.in_alert_range && senses.can_see_hero {
-                    self.attack(senses.hero_x, senses.actor_x, &mut out);
-                }
+                self.check_ready(senses, &mut out);
             }
             _ => {}
         }
         out
+    }
+    fn check_ready(&mut self, senses: Senses, out: &mut Actions) {
+        // GetCanSeeHero and CheckAlertRange both Apply on OnEnter, not only
+        // OnUpdate. Coward=false Reset therefore need not spend a tick in Ready.
+        if senses.in_alert_range && senses.can_see_hero {
+            self.attack(senses.hero_x, senses.actor_x, out);
+        }
+    }
+    fn walker_callback(
+        &mut self,
+        senses: Senses,
+        choose: &mut impl FnMut(Wait) -> u16,
+        out: &mut Actions,
+    ) {
+        self.turn_cooldown = self.turn_cooldown.saturating_sub(1);
+        let complete = self.animation.is_some() && senses.completed == self.animation;
+        self.update_walker(senses, complete, choose, out);
     }
     fn update_walker(
         &mut self,
@@ -372,6 +396,9 @@ impl Runner {
                 // pause draw and AudioSource.Stop before AudioSource.Play.
                 self.pause(choose, out);
                 self.walk(choose, out);
+                // The single nested call is bounded: state is now Walking, so
+                // it cannot take the startup branch again or recurse further.
+                self.walker_callback(senses, choose, out);
             }
             Walker::Paused => {
                 self.wait = self.wait.saturating_sub(1);

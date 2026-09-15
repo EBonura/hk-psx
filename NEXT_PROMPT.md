@@ -16,7 +16,14 @@ only; instruments and captures stay ignored. The original startup/load/landing
 sequence has specific prerequisites documented there. Do not force hero control
 or misread an unready test as failed original movement.
 
-Provisional69 is now the sole playable disc at the user’s request. It includes
+The user requested a fresh provisional rebuild after source preparation70.
+That rebuild now occupies the sole Downloads/ps1 games/hk-psx pair. It passed
+full cooking, zero final hazards and an850-poll actual-CUE smoke replay with
+no reported faults and an inspected final image identical to69. Evidence:
+.hkpsx/playtest70/. No new playable area is included; long traversal checks
+below refer to69. Keep this disc available during the user's playtest.
+
+Provisional69 was the previous sole playable disc. It includes
 scene-owned visibility certificates, zero final hazards and34,668B linked RAM
 headroom. Tests301Python/412reportednative pass. Its850-poll Focus CUE replay
 passes with an inspected final image byte-identical to68. Long gate/return/reset
@@ -25,10 +32,22 @@ images. Two gates take569 loading samples versus508 in68; no FPS claim. Town-end
 Evidence: .hkpsx/game69/validation.json. Do not replace
 the disc during the user’s playtest without further steering.
 
-Source-only70 adds hk-sim Zombie Runner state/events with10 native tests; the
-full hk-sim suite passes and Crawler remains unchanged. See docs/RUNNER.md.
-Runner is NOT integrated into guest actors or the disc. Preserve documented
-original scheduling/RNG/reentry gaps when adding sensing, art and sound.
+Source-only70 now includes strict two-instance Runner recognition, shared clip
+inventory, Q16 Sweep/AlertRange/LOS queries and synchronous restart/Ready events.
+Runner controller/sensing tests pass; current trace proves two original attack
+cycles and exposes player-hit scaled-time pauses. The reference audio clock
+validator now accepts the evidenced frame-to-fixed callback switch; original
+run623 frames revalidates without changing raw evidence. Read docs/RUNNER.md
+and docs/ORIGINAL_REFERENCE.md. A separate source-derived Climber controller
+models corner motion and stun with scaled-time support; see docs/CLIMBER.md.
+Neither new enemy is integrated into guest actors or the disc. Preserve the
+remaining physics, scheduling and RNG gaps when binding art, sound and combat.
+
+The isolated full Crossroads pack fits98,808B RAM,7 pages and501 palettes;
+.hkpsx/crossroads70/RESULT.md details all12 views, pending shared animation costs
+and remaining unsupported Secret Mask/well/camera/actor work. This is capacity
+evidence, not a playable third scene. Next integrate scene metadata and the well
+connection with shared actor banks, preserving source IDs and state ownership.
 
 Next capacity work: .hkpsx/world-metadata70/PLAN.md and counts.json describe
 an offset-based gameplay metadata bank. The current root Region table alone is

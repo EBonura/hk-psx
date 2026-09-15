@@ -77,7 +77,7 @@ fn camera_threshold_is_strict_3d_overflow_safe_and_latched() {
 fn pause_timing_uses_injected_choices_and_resumes_same_facing() {
     let mut r = Runner::new();
     start(&mut r);
-    for _ in 0..89 {
+    for _ in 0..88 {
         tick(&mut r);
     }
     assert_eq!(r.walker(), Walker::Walking);
@@ -303,20 +303,34 @@ fn damage_then_horizontal_recoil_resets_all_attack_phases_vertical_does_not() {
         let phase = r.swipe();
         assert!(r.took_damage(-ONE, 0).iter().next().is_none());
         assert_eq!(r.swipe(), phase); // vertical hit has no global reset
-        let out: Vec<_> = r.horizontal_recoil(choose).iter().collect();
+        let out: Vec<_> = r
+            .horizontal_recoil(Senses::default(), choose)
+            .iter()
+            .collect();
         assert_eq!(r.swipe(), Swipe::Ready);
         assert_eq!(r.walker(), Walker::Walking);
         assert_eq!(r.facing(), 1);
-        assert_eq!(out[1..], [Action::AudioPlay, vx(ONE + ONE / 2)]);
+        assert_eq!(
+            out[1..],
+            [Action::AudioPlay, vx(ONE + ONE / 2), vx(ONE + ONE / 2)]
+        );
         assert!(!out.contains(&Action::DustStop)); // Reset lacks source dust stop
     }
     let mut r = Runner::new();
     start(&mut r);
     let before = r.animation();
-    assert!(r.horizontal_recoil(choose).iter().next().is_none());
+    assert_eq!(
+        r.horizontal_recoil(Senses::default(), choose)
+            .iter()
+            .collect::<Vec<_>>(),
+        [vx(-ONE - ONE / 2)]
+    );
     assert_eq!(r.animation(), before); // Ready walking doesn't restart animation
     let a = attack(&mut r, -ONE);
-    let b: Vec<_> = r.horizontal_recoil(choose).iter().collect();
+    let b: Vec<_> = r
+        .horizontal_recoil(Senses::default(), choose)
+        .iter()
+        .collect();
     assert_eq!(a[1], Action::ChaseSound);
     assert_eq!(b[1], Action::AudioPlay); // retain source ordering; recoil follows
 }
@@ -326,7 +340,7 @@ fn stale_same_clip_callback_cannot_finish_restart_and_death_is_terminal() {
     let mut r = Runner::new();
     attack(&mut r, 0);
     let old = r.animation();
-    r.horizontal_recoil(choose);
+    r.horizontal_recoil(Senses::default(), choose);
     attack(&mut r, 0);
     assert_ne!(old, r.animation());
     r.step(
@@ -361,7 +375,11 @@ fn stale_same_clip_callback_cannot_finish_restart_and_death_is_terminal() {
                 .next()
                 .is_none());
             assert!(r.took_damage(0, 0).iter().next().is_none());
-            assert!(r.horizontal_recoil(choose).iter().next().is_none());
+            assert!(r
+                .horizontal_recoil(Senses::default(), choose)
+                .iter()
+                .next()
+                .is_none());
         }
         assert_eq!(r.walker(), Walker::Dead);
         assert_eq!(r.swipe(), Swipe::Dead);
@@ -439,4 +457,205 @@ fn source_clip_clock_completes_nominal_attack_after_85_ticks() {
         core::mem::size_of::<Runner>(),
         core::mem::size_of::<hk_sim::runner::Actions>()
     );
+}
+
+fn last_idle_tick(r: &mut Runner) {
+    attack(r, ONE);
+    complete(r); // Anticipate -> Lunge
+    complete(r); // Lunge -> Cooldown
+    complete(r); // Cooldown -> Idle
+    for _ in 0..14 {
+        tick(r);
+    }
+    assert_eq!(r.swipe(), Swipe::Idle);
+}
+
+#[test]
+fn idle_reset_checks_ready_immediately_after_synchronous_walker_update() {
+    // Original first Runner: Idle at test_frame 348, Anticipate at 363 with
+    // both detector values true. This tests the callback, not Unity trajectory.
+    let mut r = Runner::new();
+    last_idle_tick(&mut r);
+    let mut draws = Vec::new();
+    let out: Vec<_> = r
+        .step_swipe(
+            Senses {
+                hero_x: ONE,
+                in_alert_range: true,
+                can_see_hero: true,
+                ..Senses::default()
+            },
+            |w| {
+                draws.push(w);
+                choose(w)
+            },
+        )
+        .iter()
+        .collect();
+    assert_eq!(r.swipe(), Swipe::Anticipate);
+    assert_eq!(r.walker(), Walker::StoppedForAttack);
+    assert_eq!(draws, [Wait::Walking]);
+    assert!(matches!(out[0], Action::Play(a) if a.clip == Clip::Walk));
+    assert_eq!(
+        out[1..7],
+        [
+            Action::AudioPlay,
+            vx(ONE + ONE / 2),
+            vx(ONE + ONE / 2),
+            Action::AudioStop,
+            Action::ChaseSound,
+            Action::Velocity {
+                x: Some(0),
+                y: Some(0)
+            }
+        ]
+    );
+    assert!(matches!(out[7], Action::Play(a) if a.clip == Clip::Anticipate));
+    assert_eq!(out.len(), 8);
+}
+
+#[test]
+fn reset_can_turn_before_clear_cooldown_and_stay_ready_without_sight() {
+    // Same source actor's later cycle: Idle 463 -> Turning/Ready 478, cooldown
+    // already cleared. Wall versus hole cannot be inferred from that trace;
+    // exercise both source-proven branches with explicit query results here.
+    for (wall, floor_ahead, cause) in [
+        (true, true, TurnCause::Wall),
+        (false, false, TurnCause::Hole),
+    ] {
+        let mut r = Runner::new();
+        last_idle_tick(&mut r);
+        let out: Vec<_> = r
+            .step_swipe(
+                Senses {
+                    wall,
+                    floor_ahead,
+                    ..Senses::default()
+                },
+                choose,
+            )
+            .iter()
+            .collect();
+        assert_eq!(r.walker(), Walker::Turning);
+        assert_eq!(r.swipe(), Swipe::Ready);
+        assert_eq!(r.turn_cooldown(), 0); // not the 60 assigned by BeginTurning
+        assert_eq!(out.len(), 6);
+        assert_eq!(out[1..4], [Action::AudioPlay, vx(ONE + ONE / 2), vx(0)]);
+        assert!(matches!(out[4], Action::Play(a) if a.clip == Clip::Turn));
+        assert_eq!(out[5], Action::Turn(cause));
+    }
+}
+
+#[test]
+fn reset_respects_existing_cooldown_until_after_the_nested_update() {
+    let mut r = Runner::new();
+    start(&mut r);
+    r.step_walker(
+        Senses {
+            wall: true,
+            ..Senses::default()
+        },
+        choose,
+    );
+    assert_eq!(r.turn_cooldown(), 60);
+    attack(&mut r, ONE); // stop that turn; retains source cooldown
+    let out: Vec<_> = r
+        .horizontal_recoil(
+            Senses {
+                wall: true,
+                ..Senses::default()
+            },
+            choose,
+        )
+        .iter()
+        .collect();
+    assert_eq!(r.walker(), Walker::Walking); // cooldown still suppresses wall
+    assert!(!out.iter().any(|a| matches!(a, Action::Turn(_))));
+    assert_eq!(r.turn_cooldown(), 0);
+    let next: Vec<_> = r
+        .step_walker(
+            Senses {
+                wall: true,
+                ..Senses::default()
+            },
+            choose,
+        )
+        .iter()
+        .collect();
+    assert!(next.contains(&Action::Turn(TurnCause::Wall)));
+}
+
+#[test]
+fn recoil_updates_existing_turn_without_restarting_then_checks_ready() {
+    let mut r = Runner::new();
+    start(&mut r);
+    r.step_walker(
+        Senses {
+            wall: true,
+            ..Senses::default()
+        },
+        choose,
+    );
+    let turn = r.animation();
+    let out: Vec<_> = r
+        .horizontal_recoil(Senses::default(), |_| {
+            panic!("StartMoving must not draw again during a running turn")
+        })
+        .iter()
+        .collect();
+    assert_eq!(out, [vx(0)]);
+    assert_eq!(r.animation(), turn);
+    assert_eq!(r.turn_cooldown(), 0);
+    let out: Vec<_> = r
+        .horizontal_recoil(
+            Senses {
+                completed: turn,
+                hero_x: ONE,
+                in_alert_range: true,
+                can_see_hero: true,
+                ..Senses::default()
+            },
+            choose,
+        )
+        .iter()
+        .collect();
+    assert_eq!(r.facing(), 1);
+    assert_eq!(r.swipe(), Swipe::Anticipate);
+    assert_eq!(out[0], vx(0)); // UpdateTurning before EndTurning/BeginWalking
+    assert!(matches!(out[1], Action::Play(a) if a.clip == Clip::Walk));
+    assert_eq!(out[4], Action::AudioStop); // immediate Ready interrupts new Walk
+}
+
+#[test]
+fn startup_turn_and_ready_attack_fit_ordered_command_bound() {
+    let mut r = Runner::new();
+    let mut draws = Vec::new();
+    let out: Vec<_> = r
+        .step(
+            Senses {
+                camera_in_start_range: true,
+                wall: true,
+                in_alert_range: true,
+                can_see_hero: true,
+                hero_x: ONE,
+                ..Senses::default()
+            },
+            |w| {
+                draws.push(w);
+                choose(w)
+            },
+        )
+        .iter()
+        .collect();
+    assert_eq!(draws, [Wait::Paused, Wait::Walking]);
+    assert_eq!(out.len(), 13);
+    assert_eq!(out[0], Action::AudioStop);
+    assert_eq!(out[4], Action::AudioPlay);
+    assert_eq!(out[5], vx(-ONE - ONE / 2));
+    assert_eq!(out[6], vx(0));
+    assert_eq!(out[8], Action::Turn(TurnCause::Wall));
+    assert_eq!(out[9], Action::AudioStop);
+    assert_eq!(out[10], Action::ChaseSound);
+    assert!(matches!(out[12], Action::Play(a) if a.clip == Clip::Anticipate));
+    assert_eq!(r.swipe(), Swipe::Anticipate);
 }

@@ -262,3 +262,55 @@ the watchdog; launcher cleanup also timed out before the process subsequently
 exited. Its CSV and baked-mesh contracts pass independently, and original inputs
 were rechecked unchanged. Do not cite that second run as successful gameplay
 or claim full Unity particle/RNG/collision parity from these bounded probes.
+
+## Sampled Runner and Climber trace
+
+Every actual driver capture also writes `enemy-trace.csv`. This is a separate,
+read-only observer; it does not change `observations.csv`, send FSM events, run
+extra physics queries, or invoke enemy callbacks. Rows join to `state.csv` by
+`test_frame` and `unity_frame`, and include the same cumulative `physics_steps`.
+Scene, hierarchy and controller instance ID identify actors across captures.
+
+The trace records health/death, active/enabled status, transform and Rigidbody2D
+positions, rotation and velocity, and the animator's native `currentClip`,
+`previousFrame`, `clipTime` and `state` fields. The column
+`animation_previous_frame` is specifically that backing field, not a frame
+recomputed from elapsed time. Walker samples add state, facing, stop reason,
+pause/walk/turn timers, the `Zombie Swipe` FSM state, and cached
+`LineOfSightDetector.canSeeHero` / `AlertRange.isHeroInRange` values. Climber
+samples add direction, clockwise orientation, previous positions and whether a
+turn coroutine handle is present. Its phase is explicitly `not_exposed`: a Unity
+coroutine handle cannot establish which coroutine instruction is executing.
+
+Discovery includes inactive objects in loaded scenes, on scene changes and every
+30 captures. Tracking is capped at 128 instances per controller type; Unity's
+per-type discovery API still allocates the initial complete result. Scan counts,
+omitted actors, sampled destruction notices and logging errors are written to
+`enemy-trace-notices.log`; absent components or fields appear in each row's
+`missing` column. Check these before using a run as evidence.
+
+These are LateUpdate snapshots, not callback instrumentation. They cannot prove
+intermediate FSM/coroutine states, execution order within a frame, or actors
+created and destroyed between discovery passes. Use position, velocity,
+animation and state together when comparing a controlled route with the guest.
+
+The controlled `runner-crossroads70` run captured623 gameplay frames and2,671
+managed audio requests with unchanged original inputs. Its initial validation
+failed because an audio request switched from frame time to the advancing
+physics clock within the same Unity frame. The corrected validator accepts this
+specific clock-context switch while retaining sequence, frame, input and fixed
+clock checks. Raw evidence and its initial failed report remain unchanged;
+`.hkpsx/enemy-trace70/audio-clock-revalidation.json` binds the revalidation to
+their hashes. This validates recorded requests, not audible output.
+
+Both active Runners and both Climbers have578 samples with complete fields.
+An inactive Bursting Zombie has missing animator/Swipe fields and is explicitly
+excluded from Runner behavior comparisons. The first Runner completes two attack
+cycles. Their69/70-sample lunges contain player-hit slowdowns: both advance34
+physics steps and approximately4.08 world units, rather than69/70 ordinary game
+ticks. Join `time_scale` from state.csv and use scaled time for such comparisons.
+The driver and enemy trace format Single values at different precision, so join
+integer capture IDs exactly and compare numeric clocks with float tolerance.
+`.hkpsx/runner70/analyze-native-trace.py` reproduces `native-timing.json`.
+The route uses explicit scene load/teleport commands and does not establish
+normal well-entry timing or guest trajectory parity.

@@ -73,7 +73,7 @@ def sdk(source):
 
 def cook_cached(force=False):
     provenance=ROOT/'.hkpsx/regions-provenance.json';cache=ROOT/'.hkpsx/regions-cook-cache.json'
-    code={str(p.relative_to(ROOT)):sha(p) for p in [ROOT/'host'/name for name in ('cook.py','regions.py','actors.py','particles.py','effects.py','breakables.py','combat.py','scene.py','source.py','world.py','flat_support.py','reveal_masks.py','texture_dedup.py','similarity_dedup.py','constant_textures.py','region_delta.py','quality.py','focus.py','alpha_covers.py','materials.py','tilemap_fill.py','break_effects.py','great_door.py')]}
+    code={str(p.relative_to(ROOT)):sha(p) for p in [ROOT/'host'/name for name in ('cook.py','regions.py','actors.py','runner.py','particles.py','effects.py','breakables.py','combat.py','scene.py','source.py','world.py','flat_support.py','reveal_masks.py','texture_dedup.py','similarity_dedup.py','constant_textures.py','region_delta.py','quality.py','focus.py','alpha_covers.py','materials.py','tilemap_fill.py','break_effects.py','great_door.py')]}
     for name in ('audit_texture_similarity.py','texture_match_groups.py','audit_resident_bank.py'):
         code['tools/'+name]=sha(ROOT/'tools'/name)
     code['requirements']=sha(ROOT/'host/requirements.lock')
