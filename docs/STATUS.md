@@ -62,9 +62,9 @@ records metadata checksums, source fingerprints and post-coverage chunk IDs.
 The guest admission transaction stages each bank in the unused aligned tail of
 the admitted scene arena, then cross-checks it against scene geometry before
 publishing a scene; this avoids a second static RAM arena. A pinned release
-guest build now links with zero final hazards and 2,172 bytes before the stack
+guest build now links with zero final hazards and 23,464 bytes before the stack
 floor. The arena is now sized to the measured 354,032-byte scene-plus-metadata
-peak, leaving 13,224 bytes before the stack floor in the current no-disc link.
+peak, leaving 23,464 bytes before the stack floor in the current no-disc link.
 Spatial actor and checkpoint lookup now resolves through the admitted bank while
 retaining the existing static gameplay records. Build 71 and the sole Downloads
 disc are unchanged while this new chunk layout is validated.
@@ -77,8 +77,11 @@ arena addresses.
 The admitted metadata path now differentially checks every Tutorial/Town bank
 against the legacy region table before publication: bounds, collision bounds,
 camera limits and ordered global neighbour IDs must match. The current pinned
-no-disc release link remains hazard-free (`401,936` bytes of code and `13,224`
-bytes before the stack floor). Targeted host tests and the complete
+no-disc release link remains hazard-free (`401,936` bytes of code and `23,464`
+bytes before the stack floor). The loader's pack index and header are sized
+from the generated manifests rather than an arbitrary 256-chunk ceiling; for
+the current 38-chunk pack this removes 6 KiB of unused static header storage.
+Targeted host tests and the complete
 `shared/hk-format` suite pass; the build-71 EXE/BIN/CUE remains untouched.
 
 The first P06 source-matrix slice is recorded in

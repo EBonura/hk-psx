@@ -11,7 +11,14 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/scene_manifest.rs"));
 include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/scene_coverage_manifest.rs"));
 pub const SCENE_COUNT:usize=SCENE_MANIFEST.len();
 pub const ROOM_CAPACITY:usize=SCENE_ARENA_BYTES;
-const MAX_CHUNKS:usize=256;
+// The index owns exactly the generated pack described by the manifests.  This
+// used to be an arbitrary 256-entry ceiling, which would reject a legitimate
+// whole-world pack before any scene could be admitted.  Deriving both tables
+// from the generated inventories keeps the wire/index widths honest as the
+// catalog grows while preserving bounded no_std storage.
+const PACK_CHUNKS:usize=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()+WORLD_META_MANIFEST.len();
+const PACK_HEADER_SECTORS:usize=(28+PACK_CHUNKS*24).div_ceil(SECTOR_BYTES);
+const PACK_HEADER_WORDS:usize=PACK_HEADER_SECTORS*SECTOR_WORDS;
 const EMPTY:usize=usize::MAX;
 const SEEK_POLL:u32=4_000_000;
 const EMPTY_ENTRY:PackEntry=PackEntry {chunk_id:0,sector_offset:0,sector_count:0,byte_size:0,checksum:0};
@@ -46,7 +53,7 @@ pub fn scene_texture_flags(scene:usize,texture:usize)->u8 {
 }
 pub const fn scene_region(scene:usize)->usize {SCENE_REGIONS[scene]}
 pub struct Cache {
-    entries:[PackEntry;MAX_CHUNKS],header:[u32;2048],reader:SectorReader,
+    entries:[PackEntry;PACK_CHUNKS],header:[u32;PACK_HEADER_WORDS],reader:SectorReader,
     ready:bool,loaded_scenes:usize,loaded_atlases:usize,selected:usize,
     resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,
     metadata_scene:usize,metadata_len:usize,
@@ -122,7 +129,7 @@ fn sector(reader: &mut SectorReader, dst: &mut [u32]) -> bool {
 impl Cache {
     /// Safety: exactly one Cache owns BUFFERS and the CD controller.
     pub const unsafe fn new()->Self {
-        Self {entries:[EMPTY_ENTRY;MAX_CHUNKS],header:[0;2048],reader:SectorReader::new(),
+        Self {entries:[EMPTY_ENTRY;PACK_CHUNKS],header:[0;PACK_HEADER_WORDS],reader:SectorReader::new(),
             ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY,coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0}
     }
     fn init(&mut self)->Result<(),LoadError> {
@@ -133,7 +140,7 @@ impl Cache {
         if !SCENE_GATE_LOAD || COVERAGE_MANIFEST.len()!=SCENE_COUNT || WORLD_META_MANIFEST.len()!=SCENE_COUNT
             || COVERAGE_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES==0
             || COVERAGE_GRID_SHIFT!=2 || COVERAGE_GROUP_POOL_CAPACITY>4096 {return Err(LoadError::Coverage);}
-        if SCENE_COUNT==0 || chunks>MAX_CHUNKS || SCENE_ARENA_BYTES%4!=0
+        if SCENE_COUNT==0 || chunks!=PACK_CHUNKS || SCENE_ARENA_BYTES%4!=0
             || SCENE_REGIONS.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
         let mut offset=0usize;
         for (i,d) in SCENE_MANIFEST.iter().enumerate() {
@@ -194,7 +201,9 @@ impl Cache {
         let h=parse_header(first).ok_or(LoadError::HeaderInvalid)?;
         let header_sectors=(28+chunks*24).div_ceil(SECTOR_BYTES);
         if h.chunk_count as usize!=chunks || h.header_sectors as usize!=header_sectors
-            || h.table_bytes as usize!=chunks*24 || header_sectors>4 {return Err(LoadError::HeaderInvalid);}
+            || h.table_bytes as usize!=chunks*24 || header_sectors!=PACK_HEADER_SECTORS {
+            return Err(LoadError::HeaderInvalid);
+        }
         for i in 1..header_sectors {
             if !sector(&mut self.reader,&mut self.header[i*SECTOR_WORDS..(i+1)*SECTOR_WORDS]) {return Err(LoadError::HeaderRead);}
         }
