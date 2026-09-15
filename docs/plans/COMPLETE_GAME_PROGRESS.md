@@ -31,7 +31,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | --- | --- | --- |
 | P00 | validated | First-read documents, Git, doctor, source version, disc policy and live-process state rechecked. No importer/emulator process was active. |
 | P01 | validated | All 501 BuildSettings scenes completed with source/code verification and zero scene failures. The latest run isolated three signal-11 workers and retried only those scenes successfully in fresh processes; exact attempt records are retained. |
-| P02 | in progress | Every scene now has an evidence-backed source role and remains included. All 1,119 TransitionPoints retain complete serialized flags/trigger geometry. Of 286 variable-bound scene targets, 130 trace to storage/constants, 89 to defaults, three to explicit branch overrides and 64 remain runtime-injected with P09/P22 owners. The installed completion CIL is an auditable checklist; finish managed producer graphs, item caps, edge prerequisites/postconditions and reference cases. |
+| P02 | validated | Every scene has an evidence-backed role and remains included. All 1,119 TransitionPoints and 318 scripted loads retain geometry, flags, destination dataflow and progression-condition status with downstream owners. All 95 completion fields join serialized access to exact managed readers/writers; installed cap CIL proves the 112 maximum. Fifteen source reference cases cover every observed edge/condition category. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04-P31 | pending | Follow dependency order in the master plan. |
 
@@ -104,10 +104,21 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 - `tools/completion_catalog.py` extracts and hashes the installed
   `PlayerData.CountGameCompletion` and `CountCharms` CIL: 44 boolean/group rules,
   six integer rules, four nested Godhome rules, the exact 40-charm count and the
-  33/66/99 SOUL-vessel cases. Managed producer closure and item-cap proof remain
-  required before asserting the installed maximum.
-- The full Python suite passes 382 tests after the transition-dataflow, scene,
-  PlayerData and completion-catalog additions.
+  33/66/99 SOUL-vessel cases. `SetupNewPlayerData` proves caps 9 and 99;
+  `AddGGPlayerDataOverrides` proves three spell caps of 2, four nail upgrades and
+  exact cap copying. The installed completion maximum is therefore 112.
+- `tools/managed_field_usage.py` indexes all 95 contributing fields across the
+  installed Assembly-CSharp CIL. Thirty-three methods contain 426 direct field
+  operands: every field has a managed writer, 91 have readers and four nested
+  structures have address users. Direct managed callers and serialized
+  PlayMaker producer/consumer counts are retained with assembly/method hashes.
+- `tools/world_progression.py` attaches progression evidence to all 318 scripted
+  loads: 18 have same-state conditions, 176 have broader FSM-reachable
+  candidates and 124 have no serialized PlayerData condition. It preserves 21
+  same-state postconditions, same-object activation candidates for 204 of 1,119
+  TransitionPoints, 25 one-way serialized candidates and 15 exact source
+  reference cases. Every unresolved condition is assigned to P09/P13/P14.
+- The full Python suite passes 389 tests after the completed P02 catalogs.
 - Exact affine boundaries cover all 5,274 CircleCollider2D instances across 292
   scenes. These are dynamic/trigger objects rather than static layer-8 terrain.
 - All 12,729 runtime-generated tk2d MeshFilters now reference their extracted
@@ -141,11 +152,10 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 
 ### Next concrete action
 
-Finish P02 by extracting managed-code producers/consumers for completion and
-unlock fields, proving spell/nail/mask caps, and attaching prerequisites and
-postconditions to transition edges with original reference cases. Then use the
-stable catalog to begin P04 IDs and ownership; runtime text shaping stays with
-the renderer/UI packages.
+Begin P04 from the validated world/progression catalog: assign stable IDs and
+ownership to all scene, object, gate, actor, asset and PlayerData records, with
+collision checks and deterministic regeneration. Runtime text shaping remains
+with the renderer/UI packages.
 
 ## Required package completion record
 

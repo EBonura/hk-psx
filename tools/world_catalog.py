@@ -42,7 +42,7 @@ CONTENT_OWNERS = {'actors':'P19-P21 actor runtime','bosses':'P22 boss runtime',
     'shops':'P17 economy and shops','quests':'P18 quests and transport',
     'audio':'P25 audio closure','animation':'P08/P26 rendering and effects',
     'particles':'P08/P26 rendering and effects','infrastructure':'P05-P09 scene runtime',
-    'unclassified':'P02 source classification'}
+    'unclassified':'P12-P26 source-system implementation triage'}
 
 
 def classify_component_type(name):

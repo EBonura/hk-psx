@@ -17,6 +17,8 @@ python3 tools/world_coverage.py
 .venv/bin/python tools/compare_world_regions.py
 .venv/bin/python tools/world_catalog.py
 .venv/bin/python tools/completion_catalog.py
+.venv/bin/python tools/managed_field_usage.py
+.venv/bin/python tools/world_progression.py
 ```
 
 Outputs stay in ignored `.hkpsx/world-import/`; no guest build, canonical cooked
@@ -76,8 +78,17 @@ serialized direction, delay, fade, entry and trigger geometry; groups every
 component type under implementation owners; and catalogs serialized PlayerData
 producers and consumers. `completion-catalog.json` extracts the installed
 `PlayerData.CountGameCompletion` and `CountCharms` CIL into a hash-bound rule
-checklist. Item cap and managed call-graph closure remain P02 work, so this does
-not yet assert the final completion maximum.
+checklist. Installed initialization and Godhome override methods prove health,
+SOUL, spell and nail caps and therefore the exact maximum of 112.
+`managed-field-usage.json` joins serialized PlayMaker counts with every direct
+managed reader, writer and address use for all 95 contributing fields.
+
+`world-progression.json` attaches same-state and FSM-reachable PlayerData
+condition/effect candidates to all scripted loads, records same-object evidence
+for every TransitionPoint and flags serialized one-way scene pairs. It selects
+source identities for each edge/condition category as later reference cases.
+FSM graph reachability remains candidate evidence until P09/P13/P14 execute and
+trace the actual branch.
 
 The next passes are:
 

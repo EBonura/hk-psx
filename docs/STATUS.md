@@ -26,9 +26,17 @@ TransitionPoints have resolved trigger geometry and full initial flags.
 The source catalog also inventories 17,419 PlayMaker PlayerData actions and 815
 resolved keys. Installed completion CIL is hash-bound and decoded into 44
 boolean/group rules, six integer rules, four nested Godhome rules, 40 charm
-entries and the 33/66/99 SOUL-vessel cases. Managed producer closure and upgrade
-caps remain before the maximum can be asserted. No FSM execution, reachability,
-guest admission or traversal parity is claimed. See
+entries and the 33/66/99 SOUL-vessel cases. Installed initialization/override
+CIL proves the item caps and exact maximum of 112. All 95 contributing fields
+are joined to 33 direct managed user methods and their serialized PlayMaker
+counts.
+
+Progression evidence covers every load route. Of 318 scripted loads, 18 have a
+same-state PlayerData condition and 176 have broader FSM-reachable candidates;
+the other 124 are explicitly owned by the transition/progression runtime. The
+catalog also records 204 TransitionPoints with same-object PlayerData evidence,
+25 one-way serialized candidates and 15 reference cases. P02 is validated. No
+FSM execution, guest admission or traversal parity is claimed. See
 `docs/plans/COMPLETE_GAME_PROGRESS.md`.
 
 The playable disc remains build 71 and has not been rebuilt by this host work.

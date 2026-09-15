@@ -114,6 +114,77 @@ def extract_nested_fields(rows, accumulator):
     return result
 
 
+def literal_assignments(rows):
+    """Return simple literal-to-field stores exactly as encoded in CIL."""
+    result = {}
+    for index, row in enumerate(rows):
+        if row['op'] != 'stfld' or not row['field'] or index == 0:
+            continue
+        value = rows[index - 1]['literal']
+        if value is not None:
+            result.setdefault(row['field'], []).append(value)
+    return result
+
+
+def copied_assignments(rows):
+    """Recognize `this.destination = this.source` field-copy sequences."""
+    result = {}
+    for index, row in enumerate(rows):
+        if row['op'] != 'stfld' or index < 2:
+            continue
+        source = rows[index - 1]
+        if source['op'] == 'ldfld' and source['field']:
+            result[row['field']] = source['field']
+    return result
+
+
+def verify_caps(rules, setup_rows, override_rows):
+    setup = literal_assignments(setup_rows)
+    override = literal_assignments(override_rows)
+    copies = copied_assignments(override_rows)
+    expected_literals = {'maxHealthCap':9, 'MPReserveCap':99}
+    for field, value in expected_literals.items():
+        if setup.get(field) != [value]:
+            raise ValueError(f'Installed {field} cap changed: {setup.get(field)}')
+    for field, value in {'fireballLevel':2, 'quakeLevel':2, 'screamLevel':2,
+                         'nailSmithUpgrades':4}.items():
+        if override.get(field) != [value]:
+            raise ValueError(f'Installed {field} override changed: {override.get(field)}')
+    if copies.get('maxHealthBase') != 'maxHealthCap':
+        raise ValueError('Installed maximum-health override no longer copies its cap')
+    if copies.get('MPReserveMax') != 'MPReserveCap':
+        raise ValueError('Installed SOUL-reserve override no longer copies its cap')
+
+    caps = {'charmsOwned':rules['charm_count']['maximum'],
+            'fireballLevel':2, 'quakeLevel':2, 'screamLevel':2,
+            'nailSmithUpgrades':4, 'maxHealthBase':9}
+    boolean_total = sum(row['weight'] for row in rules['boolean_rules'])
+    integer_total = 0
+    contributions = []
+    for row in rules['integer_rules']:
+        maximum = caps[row['field']]
+        value = maximum - (row.get('baseline') or 0)
+        contribution = value * row['weight_per_unit']
+        integer_total += contribution
+        contributions.append({'field':row['field'], 'maximum':maximum,
+            'baseline':row.get('baseline'), 'maximum_contribution':contribution})
+    nested_total = sum(row['weight'] for row in rules['nested_boolean_rules'])
+    soul_total = max(row['weight'] for row in rules['soul_vessel_rule']['cases'])
+    maximum = boolean_total + integer_total + nested_total + soul_total
+    return {'status':'verified_from_installed_cil', 'maximum':maximum,
+        'boolean_or_group_contribution':boolean_total,
+        'integer_contributions':contributions,
+        'nested_godhome_contribution':nested_total,
+        'soul_vessel_contribution':soul_total,
+        'cap_evidence':{
+            'PlayerData.SetupNewPlayerData':expected_literals,
+            'PlayerData.AddGGPlayerDataOverrides':{
+                'literal_assignments':{field:values[0] for field,values in override.items()
+                    if field in ('fireballLevel','quakeLevel','screamLevel','nailSmithUpgrades')},
+                'field_copies':{'maxHealthBase':'maxHealthCap',
+                                'MPReserveMax':'MPReserveCap'}}}}
+
+
 def extract_rules(completion_rows, charm_rows):
     conditional = extract_conditional_fields(completion_rows, 'completionPercentage')
     by_name = {row['field']:row for row in conditional}
@@ -151,6 +222,7 @@ def attach_player_data(rules, world_catalog):
     for row in rules['boolean_rules']:
         fields.update(row.get('fields', []))
     fields.update(row['field'] for row in rules['integer_rules'])
+    fields.update(row['field'] for row in rules['nested_boolean_rules'])
     fields.add(rules['soul_vessel_rule']['field'])
     result = []
     for field in sorted(fields):
@@ -168,16 +240,20 @@ def build(assembly, world_catalog):
     pe = dnfile.dnPE(str(assembly))
     completion, completion_hash = method_rows(pe, 'PlayerData', 'CountGameCompletion')
     charms, charms_hash = method_rows(pe, 'PlayerData', 'CountCharms')
+    setup, setup_hash = method_rows(pe, 'PlayerData', 'SetupNewPlayerData')
+    override, override_hash = method_rows(pe, 'PlayerData', 'AddGGPlayerDataOverrides')
     rules = extract_rules(completion, charms)
+    maximum = verify_caps(rules, setup, override)
     return {'format':'HKCOMPLETIONCATALOG01',
         'scope':'Installed PlayerData completion calculation; source checklist, not guest implementation',
         'assembly':str(assembly), 'assembly_sha256':hashlib.sha256(assembly.read_bytes()).hexdigest(),
         'method_sha256':{'PlayerData.CountGameCompletion':completion_hash,
-                         'PlayerData.CountCharms':charms_hash},
+                         'PlayerData.CountCharms':charms_hash,
+                         'PlayerData.SetupNewPlayerData':setup_hash,
+                         'PlayerData.AddGGPlayerDataOverrides':override_hash},
         'rules':rules, 'player_data_cross_reference':attach_player_data(rules,world_catalog),
-        'maximum_verification':{'status':'pending_item_cap_crosscheck',
-            'reason':'Boolean/charm/soul weights are exact; spell, nail and mask cap producers still need managed/content closure before asserting 112.'},
-        'limitations':['Managed-code producer/consumer call graph is not yet complete.',
+        'maximum_verification':maximum,
+        'limitations':['Managed-code producer/consumer access is emitted by managed_field_usage.py.',
                        'This report does not grant completion items or implement save state.']}
 
 
@@ -202,7 +278,8 @@ def main():
         'integer_rules':len(result['rules']['integer_rules']),
         'nested_boolean_rules':len(result['rules']['nested_boolean_rules']),
         'charm_maximum':result['rules']['charm_count']['maximum'],
-        'maximum_verification':result['maximum_verification']['status']},indent=2))
+        'maximum_verification':result['maximum_verification']['status'],
+        'maximum':result['maximum_verification']['maximum']},indent=2))
 
 
 if __name__=='__main__':
