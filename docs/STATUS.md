@@ -108,6 +108,11 @@ only publishes an eviction set after the target window is admitted. The refreshe
 ignored plan contains all 501 windows and 850 directed transitions; it remains a
 host scheduling input until guest background reads are bound.
 
+The bounded room-residency primitive now has an `evict_unwanted` operation for
+applying those keep-sets. It releases only completed/parked slots outside the
+set; current, protected GPU uploads and in-flight CD leases remain pinned. The
+room-residency and stored-payload suites pass with this guard.
+
 ## Completion plan prepared for GPT-5.6-Sol
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),
