@@ -60,6 +60,11 @@ geometry before exposing allocation-free borrowed views. Build 71 and the sole
 Downloads disc are unchanged; guest admission still uses the existing tables
 until the differential migration is complete.
 
+The guest edge cache now keys entries by world generation plus the generated
+global region ID. Scene admission, retry, death and reset paths revoke the key
+before arena reuse; same-scene region changes do not read or compare stale
+arena addresses.
+
 ## Completion plan prepared for GPT-5.6-Sol
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),

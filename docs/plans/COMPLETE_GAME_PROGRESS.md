@@ -187,17 +187,20 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 - Current measured banks are Tutorial: 86 regions, 452 objects, 112 polygons,
   1,026 points, 32,072 bytes; Town: 20 regions, five objects, five polygons,
   118 points, 2,844 bytes. `check_world_meta` parses both generated banks.
+- The guest `State` edge cache now uses an explicit world generation and global
+  region ID. Scene admission, reset and retry revoke it before any arena reuse;
+  no Region or Room address is part of cache identity.
 - Host metadata tests and the three format tests pass. The build 71 link report
   remains bound to the unchanged playable EXE/BIN/CUE; no guest loader or disc
   replacement is claimed by this slice.
 
 ### Next concrete action
 
-Continue P05 by adding a scene-owned Cache admission transaction, replacing the
-address-based edge-cache key with `(scene_generation, global_region_id)`, then
-differentially compare the new views against Tutorial/Town before moving Geo,
-Lifeblood, dialogue, Great Door, render-budget and disc mapping tables. Runtime
-text shaping remains with the renderer/UI packages.
+Continue P05 by admitting `HKWMTA01` through the exclusive Cache transaction and
+cross-checking metadata/geometry/coverage identities before publishing a scene.
+Then differentially compare Tutorial/Town before moving Geo, Lifeblood,
+dialogue, Great Door, render-budget and disc mapping tables. Runtime text
+shaping remains with the renderer/UI packages.
 
 ## Required package completion record
 
