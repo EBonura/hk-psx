@@ -5,9 +5,51 @@ use psx_gpu::{self as gpu, ot::OrderingTable, prim::QuadTextured};
 use psx_vram::{Clut, TexDepth, Tpage};
 use crate::{alpha_scissor_cache,draw_packet::Packet,scenery_geometry::{self,UvRect,Quad}};
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/scenery_budgets.rs"));
+#[path="tile_coverage.rs"] mod tile_coverage;
+#[path="tile_events.rs"] mod tile_events;
+#[path="tile_frame_cache.rs"] mod tile_frame_cache;
+#[path="back_prebuild.rs"] mod back_prebuild;
+#[path="occluder_snapshot.rs"] mod occluder_snapshot;
+#[path="core_map_cache.rs"] mod core_map_cache;
+#[path="draw_visibility.rs"] mod draw_visibility;
+#[path="scenery_color.rs"] mod scenery_color;
+pub use draw_visibility::{reset_visibility,set_visible,set_gain,set_opacity};
+use draw_visibility::DRAW_ENABLED;
+static mut CORE_MAP_CACHE:core_map_cache::Cache=core_map_cache::Cache::new();
 // Maximum scenery records plus the Knight and the active nail effect.
 const CAP: usize = 1032;
 const MAX_DRAWS:usize=crate::disc::SCENE_DRAW_CAPACITY;
+const _:()=assert!(MAX_DRAWS<=1024);
+static mut TILE_DRAWS:[(u16,u16);MAX_DRAWS]=[(0,0);MAX_DRAWS];
+static mut TILE_DRAW_COUNT:usize=0;
+static mut TILE_MAX_RANK:u16=0;
+static mut TILE_EVENTS:tile_events::Events<MAX_DRAWS>=tile_events::Events::new();
+static mut TILE_CERTIFIED:[u32;MAX_DRAWS/32]=[0;MAX_DRAWS/32];
+static mut TILE_GENERATION:u32=0;
+static mut TILE_ELIGIBILITY_DIRTY:bool=false;
+static mut TILE_PREPARED:tile_frame_cache::Prepared=tile_frame_cache::Prepared::new();
+static mut BACK_PREFIX:back_prebuild::Prefix=back_prebuild::Prefix::new();
+// Valid only with BACK_PREFIX. Save initialized entries, never scratch padding
+// or uninitialized bool fields; begin clears scratch before a hit restores it.
+static mut PREFIX_OCCLUDERS:occluder_snapshot::Snapshot<Occluder,MAX_OCCLUDERS>=occluder_snapshot::Snapshot::new();
+#[cfg(target_arch="mips")]
+const _:()=assert!(core::mem::size_of::<occluder_snapshot::Snapshot<Occluder,MAX_OCCLUDERS>>()==108);
+static mut PREFIX_TEXTURES:[u32;MAX_TEXTURES/32]=[0;MAX_TEXTURES/32];
+static mut BACK_PREBUILD_ALLOWED:bool=false;
+#[no_mangle]pub static mut HK_BACK_PREBUILDS:u32=0;
+#[no_mangle]pub static mut HK_BACK_PREBUILD_HITS:u32=0;
+#[no_mangle]pub static mut HK_BACK_PREBUILD_MISSES:u32=0;
+#[no_mangle]pub static mut HK_BACK_PREBUILD_PACKETS:u32=0;
+#[no_mangle]pub static mut HK_BACK_PREBUILD_LINES:u32=0;
+#[no_mangle]pub static mut HK_TILE_PREPARES:u32=0;
+#[no_mangle]pub static mut HK_TILE_PREPARE_HITS:u32=0;
+#[no_mangle]pub static mut HK_TILE_PREPARE_MISSES:u32=0;
+#[no_mangle]pub static mut HK_TILE_COVERAGE_CANDIDATES:u32=0;
+#[no_mangle]pub static mut HK_TILE_COVERAGE_LOOKUPS:u32=0;
+#[no_mangle]pub static mut HK_TILE_COVERAGE_TILES:u32=0;
+#[no_mangle]pub static mut HK_TILE_OCCLUSION_QUADS:u32=0;
+#[no_mangle]pub static mut HK_TILE_SAVED_PIXELS:u32=0;
+#[no_mangle]pub static mut HK_TILE_FALLBACKS:u32=0;
 const FRONT:u8=1;
 const LEGAL_EXTENT:u8=2;
 const BLACK_AVERAGE:u8=4;
@@ -33,14 +75,19 @@ struct Draw {
     flags: u8,
     texture: usize,
     tint: (u8, u8, u8),
+    color: u32,
 }
+#[cfg(target_arch="mips")]
+const _:()=assert!(core::mem::size_of::<Draw>()==48);
 static mut DRAWS: [Draw; MAX_DRAWS] = [Draw {
     xy: [0; 8],
     scale: 0,
     flags: 0,
     texture: 0,
     tint: (0, 0, 0),
+    color: 0,
 }; MAX_DRAWS];
+static mut DRAW_BOUNDS:[u8;MAX_DRAWS]=[0;MAX_DRAWS];
 const MAX_TEXTURES:usize=crate::disc::SCENE_TEXTURE_CAPACITY;
 static mut TEMPLATES: [QuadTextured; MAX_TEXTURES] = [const { ZERO }; MAX_TEXTURES];
 static mut PACKETS: [Packet; CAP] = [const { Packet::ZERO }; CAP];
@@ -62,15 +109,25 @@ static mut SOLID_TEXTURES: [u32; MAX_TEXTURES/32] = [0; MAX_TEXTURES/32];
 /// texture (w==0: none). At full opacity that core is an exact flat opaque
 /// black quad and hides everything drawn earlier beneath it.
 static mut CORES: &[[u8;4]] = &[];
+// A colored STP-clear texel also hides earlier draws, but must retain its
+// texture/color when drawn. This table is never used for flat black rendering.
+static mut OPAQUE_CORES: &[[u8;4]] = &[];
+fn opaque_core_of(texture:usize)->[u8;4] {unsafe {OPAQUE_CORES.get(texture).copied().unwrap_or([0;4])}}
 fn core_of(texture:usize)->[u8;4] {unsafe {CORES.get(texture).copied().unwrap_or([0;4])}}
-const MAX_OCCLUDERS: usize = 8;
 const OCCLUDER_MIN_AREA: i32 = 2048;
-#[derive(Clone,Copy)]
-struct Occluder {front: bool, draw: u16, rect: [i16;4]}
-static mut OCCLUDERS: [Occluder; MAX_OCCLUDERS] = [Occluder {front:false,draw:0,rect:[0;4]}; MAX_OCCLUDERS];
-static mut OCCLUDER_COUNT: usize = 0;
-// Bounding box of every occluder rectangle; a draw outside it cannot be hidden.
-static mut OCCLUDER_UNION: [i16;4] = [0;4];
+// Immutable eligibility is established once per region. Dynamic visibility,
+// gain and opacity are still checked before each frame's occluder selection.
+static mut OCCLUDER_DRAWS:[u16;MAX_DRAWS]=[0;MAX_DRAWS];
+static mut OCCLUDER_DRAW_COUNT:usize=0;
+// Fully opaque rotated back masks use their actual convex-quad interior.
+static mut SOLID_CORE_DRAWS:[u16;MAX_DRAWS]=[0;MAX_DRAWS];
+static mut SOLID_CORE_DRAW_COUNT:usize=0;
+static mut SOLID_CORE_CACHE:solid_occluder::Cache=solid_occluder::Cache::new();
+
+#[no_mangle]pub static mut HK_SOLID_CORE_CACHE_HITS:u32=0;
+#[no_mangle]pub static mut HK_SOLID_CORE_CACHE_MISSES:u32=0;
+#[no_mangle]pub static mut HK_SOLID_CORE_OCCLUDERS:u32=0;
+
 /// Frame pacing in scanlines (Timer1 counts HBlanks): time from the frame's
 /// start to its first DMA kick, its final kick and its display-flip request.
 #[no_mangle] pub static mut HK_FRAME_FIRST_KICK_LINES:u32=0;
@@ -82,26 +139,18 @@ pub fn mark_frame_start() {unsafe {FRAME_START_LINE=psx_io::timers::counter(psx_
 #[no_mangle] pub static mut HK_CORE_QUADS:u32=0;
 #[no_mangle] pub static mut HK_OCCLUSION_QUADS:u32=0;
 #[no_mangle] pub static mut HK_OCCLUSION_SAVED_PIXELS:u32=0;
-struct Pieces {rects: [[i16;4];4], count: usize}
-fn rect_area(r:&[i16;4])->i32 {((r[2]-r[0]) as i32*(r[3]-r[1]) as i32).max(0)}
-fn overlap(a:&[i16;4],b:&[i16;4])->i32 {
-    let l=a[0].max(b[0]);let t=a[1].max(b[1]);let r=a[2].min(b[2]);let bt=a[3].min(b[3]);
-    if l<r && t<bt {(r-l) as i32*(bt-t) as i32}else{0}
-}
-/// Subtract `hole` from every piece; None when nothing overlaps or the result
-/// needs more than four rectangles (the scissor packet budget per draw).
-fn subtract(p:&Pieces,hole:&[i16;4])->Option<Pieces> {
-    let mut out=Pieces {rects:[[0;4];4],count:0};let mut changed=false;
-    for piece in &p.rects[..p.count] {
-        let l=piece[0].max(hole[0]);let t=piece[1].max(hole[1]);let r=piece[2].min(hole[2]);let b=piece[3].min(hole[3]);
-        if !(l<r && t<b) {if out.count==4 {return None;} out.rects[out.count]=*piece;out.count+=1;continue;}
-        changed=true;
-        for part in [[piece[0],piece[1],piece[2],t],[piece[0],b,piece[2],piece[3]],[piece[0],t,l,b],[r,t,piece[2],b]] {
-            if part[0]<part[2] && part[1]<part[3] {if out.count==4 {return None;} out.rects[out.count]=part;out.count+=1;}
-        }
-    }
-    changed.then_some(out)
-}
+#[path="scenery_occlusion.rs"]
+mod occlusion;
+#[path="solid_occluder.rs"]
+mod solid_occluder;
+#[path="occluder_admission.rs"]
+mod occluder_admission;
+use occlusion::{Pieces,rect_area,subtract};
+#[path="occlusion_scratch.rs"]
+mod occlusion_scratch;
+use occlusion_scratch::{Storage as Scratch,Occluder,Occluders,MAX_OCCLUDERS};
+#[path="scenery_bounds.rs"]
+mod scenery_bounds;
 static mut DRAW_COUNT: usize = 0;
 static mut ACTIVE_BANK: usize = 0;
 static mut TEXTURE_COUNT: usize = 0;
@@ -129,6 +178,7 @@ static mut COVERS: [[u8;20];MAX_TEXTURES] = [[0;20];MAX_TEXTURES];
 // One entry per admitted draw. Geometry spans may change by one pixel with camera
 // rounding; the entry key captures both signed spans and the texture identity.
 static mut SCISSOR_CACHE:[alpha_scissor_cache::Entry;MAX_DRAWS]=[alpha_scissor_cache::Entry::EMPTY;MAX_DRAWS];
+static mut SCISSOR_SECONDARY:alpha_scissor_cache::Secondary=alpha_scissor_cache::Secondary::EMPTY;
 static mut EXTRA_ALLOWANCE: usize = 0;
 static mut EXTRA_USED: usize = 0;
 static mut FRAMEBUFFER_Y: u16 = 0;
@@ -145,6 +195,11 @@ fn vertex(p: (i16, i16)) -> u32 {
 pub fn init(room: &Room, bank: usize, region:usize) {
     crate::input::checkpoint();
     unsafe {
+        (&mut *(&raw mut BACK_PREFIX)).invalidate();
+        BACK_PREBUILD_ALLOWED=false;
+        (&mut *(&raw mut TILE_PREPARED)).invalidate();
+        TILE_GENERATION=TILE_GENERATION.wrapping_add(1);
+        TILE_ELIGIBILITY_DIRTY=false;TILE_CERTIFIED=[0;MAX_DRAWS/32];
         let scene_changed=TEXTURE_COUNT==0 || ACTIVE_BANK!=bank;
         if scene_changed {animation_cache::init();}
         ACTIVE_BANK = bank;
@@ -156,10 +211,17 @@ pub fn init(room: &Room, bank: usize, region:usize) {
         // are visible. Optional scissors can only spend the remaining capacity.
         EXTRA_ALLOWANCE=CAP.checked_sub(DYNAMIC_PACKET_RESERVE+SCENERY_PACKET_BUDGETS[region]).expect("scenery packet budget");
         if scene_changed {
+            // Texture IDs, dimensions and covers are immutable within a scene
+            // bank. Cache keys already include exact texture and signed spans,
+            // so region changes can retain matching entries. Clear every slot
+            // on a bank change, including slots beyond the new draw count.
+            for entry in &mut SCISSOR_CACHE {entry.invalidate();}
+            (&mut *(&raw mut SCISSOR_SECONDARY)).invalidate();
             STREAMED = [0;MAX_TEXTURES/32];
             BLACK_MASKS = [0;MAX_TEXTURES/32];
             SOLID_TEXTURES = [0;MAX_TEXTURES/32];
             CORES = crate::disc::scene_black_cores(bank);
+            OPAQUE_CORES = crate::disc::scene_opaque_cores(bank);
         }
         if !FADE_CLUT_READY {
             // First room only; FIFO upload owns static bytes and precedes any
@@ -168,17 +230,19 @@ pub fn init(room: &Room, bank: usize, region:usize) {
             psx_vram::upload_bytes(psx_vram::VramRect::new(FADE_CLUT_X,FADE_CLUT_Y,16,1),&FADE_CLUT);
             FADE_CLUT_READY=true;
         }
+        draw_visibility::begin_region();
         for i in 0..DRAW_COUNT {
             if i&31==0 {crate::input::checkpoint();}
-            SCISSOR_CACHE[i].invalidate();
             let d = room.draw(i);
             let xy=core::array::from_fn(|k| i32_at(d, 8 + k * 4));
+            DRAW_BOUNDS[i]=scenery_bounds::local_indices(&xy);
             DRAWS[i] = Draw {
                 xy,
                 scale: u32_at(d, 4) as i32,
-                flags: u8::from(u16_at(d,2)!=0)*FRONT | u8::from(scenery_geometry::legal_extent_q8(&xy))*LEGAL_EXTENT | u8::from(d[43]==1)*BLACK_AVERAGE,
+                flags: DRAW_ENABLED | u8::from(u16_at(d,2)!=0)*FRONT | u8::from(scenery_geometry::legal_extent_q8(&xy))*LEGAL_EXTENT | u8::from(d[43]==1)*BLACK_AVERAGE,
                 texture: u16_at(d, 0) as usize,
                 tint: (d[40], d[41], d[42]),
+                color: scenery_color::command(0,(d[40],d[41],d[42]),128,128|if d[43]==1 {256}else{0}),
             };
         }
         if scene_changed {
@@ -205,8 +269,36 @@ pub fn init(room: &Room, bank: usize, region:usize) {
             }
         }
     }
+        PREFIX_TEXTURES.fill(0);BACK_PREBUILD_ALLOWED=true;
+        for d in &DRAWS[..DRAW_COUNT] {
+            if d.flags&FRONT==0 {
+                PREFIX_TEXTURES[d.texture/32]|=1<<(d.texture%32);
+                if STREAMED[d.texture/32]&(1<<(d.texture%32))!=0 {BACK_PREBUILD_ALLOWED=false;}
+            }
+        }
+        // Bind shared immutable draw identities once per region. Sorting by
+        // (front, draw) lets the frame collector visit latest sources first.
+        TILE_DRAW_COUNT=0;let certs=tile_coverage::scene_map(bank);
+        for front in [false,true] {
+            for i in 0..DRAW_COUNT {
+                let d=&DRAWS[i];
+                if (d.flags&FRONT!=0)!=front || STREAMED[d.texture/32]&(1<<(d.texture%32))!=0 {continue;}
+                if let Some(pool)=room.draw_pool_index(i) {
+                    if let Some(&cert)=certs.get(pool) {
+                        if cert!=tile_coverage::NO_CERT {
+                            TILE_DRAWS[TILE_DRAW_COUNT]=(i as u16,cert);TILE_DRAW_COUNT+=1;
+                            TILE_CERTIFIED[i/32]|=1<<(i%32);
+                            // Saved tile rows also depend on foreground proofs
+                            // outside the rectangular occluder candidate list.
+                            PREFIX_TEXTURES[d.texture/32]|=1<<(d.texture%32);
+                        }
+                    }
+                }
+            }
+        }
         // Immutable cover/axis tests belong to activation, not every rendered
         // frame. A rejected candidate still draws its original complete quad.
+        OCCLUDER_DRAW_COUNT=0;SOLID_CORE_DRAW_COUNT=0;
         for (i,d) in DRAWS[..DRAW_COUNT].iter_mut().enumerate() {
             if i&31==0 {crate::input::checkpoint();}
             let cover=&COVERS[d.texture];
@@ -219,6 +311,23 @@ pub fn init(room: &Room, bank: usize, region:usize) {
                 if !full {d.flags|=SCISSOR_CANDIDATE;}
             }
             if SOLID_TEXTURES[d.texture/32]&(1<<(d.texture%32))!=0 {d.flags|=SOLID_BLACK;}
+            if d.flags&FRONT!=0 && (d.flags&SOLID_BLACK!=0 || opaque_core_of(d.texture)[2]!=0)
+                && occluder_admission::possible(&d.xy,OCCLUDER_MIN_AREA) {
+                OCCLUDER_DRAWS[OCCLUDER_DRAW_COUNT]=i as u16;
+                OCCLUDER_DRAW_COUNT+=1;
+                // A prefix also depends on later foreground opacity proofs.
+                // Any future template rebind must invalidate that saved work.
+                PREFIX_TEXTURES[d.texture/32]|=1<<(d.texture%32);
+            }
+            if d.flags&(FRONT|SOLID_BLACK)==SOLID_BLACK && !axis {
+                // Optimization admission only: smaller/unproven geometry still
+                // renders normally. Full opacity remains a live per-frame test.
+                let w=(*xy.iter().step_by(2).max().unwrap() as i64-*xy.iter().step_by(2).min().unwrap() as i64+255)>>8;
+                let h=(*xy.iter().skip(1).step_by(2).max().unwrap() as i64-*xy.iter().skip(1).step_by(2).min().unwrap() as i64+255)>>8;
+                if w.min(320)*h.min(240)>=8192 {SOLID_CORE_DRAWS[SOLID_CORE_DRAW_COUNT]=i as u16;SOLID_CORE_DRAW_COUNT+=1;}
+            }
+
+
         }
     }
     reset_visibility();
@@ -235,19 +344,21 @@ fn solid_black(room:&Room,t:Texture)->bool {
         u16_at(pal,index as usize*2)==1
     }))
 }
-/// Every later opaque black rectangle of this frame: whole quads of solid
-/// textures and the cores of black masks, both at full opacity. Draw order is
+/// Every later opaque rectangle of this frame: whole quads of solid black
+/// textures and nonzero STP-clear cores of any texture, at full opacity. Draw order is
 /// every back draw in index order, then every front draw.
 #[inline(never)]
 fn collect_occluders(camera:(i32,i32)) {
     unsafe {
-        OCCLUDER_COUNT=0;
-        for (i,d) in DRAWS[..DRAW_COUNT].iter().enumerate() {
-            if i&31==0 {crate::input::checkpoint();}
-            // Front-layer occluders hide every back draw, which is where the
-            // pixels are; the scan stays cheap enough to precede the first kick.
-            if d.flags&(FRONT|EMPTY_TEXTURE)!=FRONT || VISIBLE[i/32]&(1u32<<(i%32))==0 || GAINS[i]==0 || OPACITIES[i]!=128 {continue;}
-            let solid=d.flags&SOLID_BLACK!=0;let core=core_of(d.texture);
+        let scratch=occlusion_scratch::base();
+        let occluders=&mut *Scratch::occluders(scratch);occluders.clear();
+        for candidate in 0..OCCLUDER_DRAW_COUNT {
+            if candidate&31==0 {crate::input::checkpoint();}
+            let i=OCCLUDER_DRAWS[candidate] as usize;let d=&DRAWS[i];
+            // Admission proved nonempty art with an opaque core.
+            // Gameplay may still hide or fade it, so check the live state.
+            if d.flags&DRAW_ENABLED==0 || OPACITIES[i]!=128 {continue;}
+            let solid=d.flags&SOLID_BLACK!=0;let core=opaque_core_of(d.texture);
             if !solid && core[2]==0 {continue;}
             let cx=(((camera.0>>8) as i64*d.scale as i64)>>12) as i32;let cy=(((camera.1>>8) as i64*d.scale as i64)>>12) as i32;
             let v:[(i32,i32);4]=core::array::from_fn(|k|(160+((d.xy[k*2]-cx)>>8),120-((d.xy[k*2+1]-cy)>>8)));
@@ -261,21 +372,164 @@ fn collect_occluders(camera:(i32,i32)) {
                 if !(l<r && t<b) {continue;} [l,t,r,b]
             } else {
                 let uv=uv_rect(&TEMPLATES[d.texture]);
-                match alpha_scissor_cache::texel_rect_to_screen(xy,uv.w,uv.h,core) {Some(r)=>r,None=>continue}
+                match (&mut *(&raw mut CORE_MAP_CACHE)).map(xy,uv.w,uv.h,core) {Some(r)=>r,None=>continue}
             };
             let area=rect_area(&rect);
             if area<OCCLUDER_MIN_AREA {continue;}
             // Keep the largest rectangles: replace the smallest when full.
-            let slot=if OCCLUDER_COUNT<MAX_OCCLUDERS {OCCLUDER_COUNT+=1;OCCLUDER_COUNT-1} else {
-                let (k,smallest)=OCCLUDERS.iter().enumerate().map(|(k,o)|(k,rect_area(&o.rect))).min_by_key(|&(_,a)|a).unwrap();
+            let slot=if occluders.len()<MAX_OCCLUDERS {occluders.len()} else {
+                let (k,smallest)=occluders.as_slice().iter().enumerate().map(|(k,o)|(k,rect_area(&o.rect))).min_by_key(|&(_,a)|a).unwrap();
                 if smallest>=area {continue;} k
             };
-            OCCLUDERS[slot]=Occluder {front:d.flags&FRONT!=0,draw:i as u16,rect};
+            occluders.set(slot,Occluder {front:d.flags&FRONT!=0,draw:i as u16,rect});
         }
-        OCCLUDER_UNION=[i16::MAX,i16::MAX,i16::MIN,i16::MIN];
-        for o in &OCCLUDERS[..OCCLUDER_COUNT] {
-            OCCLUDER_UNION=[OCCLUDER_UNION[0].min(o.rect[0]),OCCLUDER_UNION[1].min(o.rect[1]),OCCLUDER_UNION[2].max(o.rect[2]),OCCLUDER_UNION[3].max(o.rect[3])];
+        collect_solid_core(camera,occluders);
+        let union=&mut *Scratch::union(scratch);
+        *union=[i16::MAX,i16::MAX,i16::MIN,i16::MIN];
+        for o in occluders.as_slice() {
+            *union=[union[0].min(o.rect[0]),union[1].min(o.rect[1]),union[2].max(o.rect[2]),union[3].max(o.rect[3])];
         }
+    }
+}
+/// Add one conservative interior of a later opaque back mask. Source-order
+/// tests in both occlusion paths restrict it to earlier back draws. Existing
+/// foreground occluders keep their slots. No rendering geometry is altered.
+#[inline(never)]
+fn collect_solid_core(camera:(i32,i32),occluders:&mut Occluders) {
+    unsafe {
+        if occluders.len()==MAX_OCCLUDERS || SOLID_CORE_DRAW_COUNT==0 {return;}
+        let cache=&mut *(&raw mut SOLID_CORE_CACHE);
+        let mut best=None;let mut score=OCCLUDER_MIN_AREA-1;
+        for candidate in 0..SOLID_CORE_DRAW_COUNT {
+            let i=SOLID_CORE_DRAWS[candidate]as usize;let d=&DRAWS[i];
+            if d.flags&DRAW_ENABLED==0 || OPACITIES[i]!=128 {continue;}
+            let cx=(((camera.0>>8)as i64*d.scale as i64)>>12)as i32;let cy=(((camera.1>>8)as i64*d.scale as i64)>>12)as i32;
+            let v=core::array::from_fn::<_,4,_>(|k|(160+((d.xy[k*2]-cx)>>8),120-((d.xy[k*2+1]-cy)>>8)));
+            let l=v.iter().map(|p|p.0).min().unwrap().max(0);let r=v.iter().map(|p|p.0).max().unwrap().min(320);
+            let t=v.iter().map(|p|p.1).min().unwrap().max(0);let b=v.iter().map(|p|p.1).max().unwrap().min(240);
+            if l>=r || t>=b || (r-l)*(b-t)<8192 {continue;}
+            // This is exactly the original packet path. Oversized repair quads
+            // remain untouched; there is no subdivision cost in this collector.
+            if !(d.flags&LEGAL_EXTENT!=0 || scenery_geometry::legal(&v)) {continue;}
+            if let Some(rect)=cache.map(v.map(|(x,y)|(x as i16,y as i16))) {
+                let area=rect_area(&rect);if area>score {score=area;best=Some((i,rect));}
+            }
+        }
+        if let Some((i,rect))=best {
+            occluders.set(occluders.len(),Occluder{front:false,draw:i as u16,rect});
+            HK_SOLID_CORE_OCCLUDERS=HK_SOLID_CORE_OCCLUDERS.wrapping_add(1);
+        }
+        let (hits,misses)=cache.stats();HK_SOLID_CORE_CACHE_HITS=hits;HK_SOLID_CORE_CACHE_MISSES=misses;
+    }
+}
+/// Translate host-certified masks; the grid owns no GPU or DMA references.
+#[inline(never)]
+fn collect_tile_coverage(camera:(i32,i32)) {
+    unsafe {
+        let grid=&mut *Scratch::tile_owners(occlusion_scratch::base());
+        TILE_MAX_RANK=0;
+        let(mut candidates,mut lookups,mut tiles)=(0u32,0u32,0u32);
+        for candidate in (0..TILE_DRAW_COUNT).rev() {
+            if candidate&31==0 {crate::input::checkpoint();}
+            let (draw,cert)=TILE_DRAWS[candidate];let i=draw as usize;let d=&DRAWS[i];
+            if d.flags&DRAW_ENABLED==0 || OPACITIES[i]!=128 {continue;}
+            let cx=(((camera.0>>8)as i64*d.scale as i64)>>12)as i32;
+            let cy=(((camera.1>>8)as i64*d.scale as i64)>>12)as i32;
+            let origin=(160+((d.xy[0]-cx)>>8),120-((d.xy[1]-cy)>>8));
+            if !tile_coverage::intersects(cert,origin) {continue;}
+            // Cropped certificate bounds lie inside every phase's source
+            // AABB. Its tile preflight proves viewport overlap, satisfying
+            // LEGAL_EXTENT's absolute-coordinate and triangle-edge contract.
+            if d.flags&LEGAL_EXTENT==0 {
+                let v=core::array::from_fn::<_,4,_>(|k|(160+((d.xy[k*2]-cx)>>8),120-((d.xy[k*2+1]-cy)>>8)));
+                if !scenery_geometry::legal(&v) {continue;}
+            }
+            let rank=tile_coverage::rank(i,d.flags&FRONT!=0);candidates+=1;
+            let (added,reads)=tile_coverage::claim(cert,origin,rank,grid);
+            if added!=0 && TILE_MAX_RANK==0 {TILE_MAX_RANK=rank;}
+            tiles+=added;lookups+=reads;
+        }
+        (&mut *(&raw mut TILE_EVENTS)).build(grid,&mut *Scratch::tile_rows(occlusion_scratch::base()));
+        HK_TILE_COVERAGE_CANDIDATES=HK_TILE_COVERAGE_CANDIDATES.wrapping_add(candidates);
+        HK_TILE_COVERAGE_LOOKUPS=HK_TILE_COVERAGE_LOOKUPS.wrapping_add(lookups);
+        HK_TILE_COVERAGE_TILES=HK_TILE_COVERAGE_TILES.wrapping_add(tiles);
+    }
+}
+/// Called after both scenery passes and all current frame packet emission.
+/// Only CPU scratch/events change; prior DMA packets and VRAM remain untouched.
+/// Any later certified eligibility change or camera change rejects this result.
+#[inline(never)]
+pub fn prepare_tile_coverage(camera:(i32,i32)) {
+    unsafe {
+        if (&*(&raw const TILE_PREPARED)).matches(camera,TILE_GENERATION) {return;}
+        let scratch=occlusion_scratch::base();
+        // The completed frame's owners are still present; claim requires0.
+        Scratch::tile_owners(scratch).write_bytes(0,1);
+        collect_tile_coverage(camera);
+        (&mut *(&raw mut TILE_PREPARED)).save(camera,TILE_GENERATION,&*Scratch::tile_rows(scratch),TILE_MAX_RANK);
+        HK_TILE_PREPARES=HK_TILE_PREPARES.wrapping_add(1);
+    }
+}
+/// Prepare CPU packet words only after the previous final DMA has drained.
+/// Main supplies the next framebuffer and final visual state, once per new
+/// simulation clock while its presentation is queued. A replacement discards
+/// the old prefix before touching tile Events. No GP0 commands are issued.
+#[inline(never)]
+pub fn prepare_back_prefix(camera:(i32,i32),framebuffer_y:u16) {
+    if !crate::presentation::queued() || !psx_rt::interrupts::gp1_queue_pending(){return;}
+    unsafe {
+        let prefix=&mut *(&raw mut BACK_PREFIX);
+        if prefix.next==DRAW_COUNT && prefix.matches(camera,framebuffer_y)
+            && draw_visibility::matches_snapshot(prefix.state()){return;}
+        prefix.invalidate();
+        prepare_tile_coverage(camera);
+        if !BACK_PREBUILD_ALLOWED || !psx_rt::interrupts::gp1_queue_pending(){return;}
+        let Some(count)=draw_visibility::sparse_snapshot(prefix.state_mut())else{return;};
+        // Pair the SDK's completed async DMA lease before reusing packet RAM.
+        // Animation uploads/completion still belong to the post-flip begin.
+        gpu::submit_linked_list_wait();
+        collect_occluders(camera);restore_tile_coverage(camera);
+        if !psx_rt::interrupts::gp1_queue_pending(){return;}
+        USED=0;EXTRA_USED=0;KICKED=0;CHUNK_COUNT=0;FRAMEBUFFER_Y=framebuffer_y;
+        let started=psx_io::timers::counter(psx_io::timers::Timer::Timer1);
+        let (emitted,next)=scenery_range(camera,false,0,true);
+        let scratch=occlusion_scratch::base();
+        (&mut *(&raw mut PREFIX_OCCLUDERS)).save(
+            (&*Scratch::occluders(scratch)).as_slice(),&*Scratch::union(scratch));
+        prefix.save(camera,framebuffer_y,count,next,USED,EXTRA_USED,emitted,TILE_MAX_RANK,
+            &*Scratch::tile_rows(occlusion_scratch::base()));
+        HK_BACK_PREBUILDS=HK_BACK_PREBUILDS.wrapping_add(1);
+        HK_BACK_PREBUILD_LINES=HK_BACK_PREBUILD_LINES.wrapping_add(psx_io::timers::counter(psx_io::timers::Timer::Timer1).wrapping_sub(started)as u32);
+    }
+}
+#[inline]
+fn tile_eligibility_changed(draw:usize) {
+    unsafe {if TILE_CERTIFIED[draw/32]&(1<<(draw%32))!=0 {
+        TILE_ELIGIBILITY_DIRTY=true;TILE_GENERATION=TILE_GENERATION.wrapping_add(1);
+        (&mut *(&raw mut TILE_PREPARED)).invalidate();
+    }}
+}
+/// Stage tile scissors after the existing exact alpha/core/occlusion pieces.
+/// The output scratch is disjoint. Failed bounds or budget checks retain input.
+#[inline(never)]
+fn tile_visibility(input:&Pieces,out:&mut Pieces,rank:u16,core_packets:usize)->i32 {
+    unsafe {
+        if rank>=TILE_MAX_RANK || input.len()==0 {return 0;}
+        let before=input.as_slice().iter().map(rect_area).sum::<i32>();
+        if before<occlusion::MIN_SAVED_PIXELS {return 0;}
+        let rows=&*Scratch::tile_rows(occlusion_scratch::base());
+        if !occlusion::tile_runs::visible_runs_rows(input.as_slice(),rows,out) {
+            HK_TILE_FALLBACKS=HK_TILE_FALLBACKS.wrapping_add(1);return 0;
+        }
+        let removed=before-out.as_slice().iter().map(rect_area).sum::<i32>();
+        if removed<occlusion::MIN_SAVED_PIXELS {return 0;}
+        let extra=(out.len()+core_packets).saturating_sub(1);
+        if extra>EXTRA_ALLOWANCE-EXTRA_USED {
+            HK_TILE_FALLBACKS=HK_TILE_FALLBACKS.wrapping_add(1);return 0;
+        }
+        HK_TILE_OCCLUSION_QUADS=HK_TILE_OCCLUSION_QUADS.wrapping_add(1);
+        HK_TILE_SAVED_PIXELS=HK_TILE_SAVED_PIXELS.wrapping_add(removed as u32);
+        removed
     }
 }
 fn template(t: Texture, tp: Tpage, u: u16, v: u16) -> QuadTextured {
@@ -299,45 +553,23 @@ fn template(t: Texture, tp: Tpage, u: u16, v: u16) -> QuadTextured {
         ),
     )
 }
-pub fn reset_visibility() {
-    unsafe {
-        VISIBLE = [u32::MAX; MAX_DRAWS/32];
-        GAINS = [128; MAX_DRAWS];
-        OPACITIES = [128; MAX_DRAWS];
-    }
-}
-pub fn set_visible(draw: usize, visible: bool) {
-    unsafe {
-        assert!(draw < DRAW_COUNT);
-        let bit = 1u32 << (draw % 32);
-        if visible {
-            VISIBLE[draw / 32] |= bit;
-        } else {
-            VISIBLE[draw / 32] &= !bit;
-        }
-    }
-}
-pub fn set_gain(draw: usize, gain:u8) {
-    unsafe { assert!(draw<DRAW_COUNT); GAINS[draw]=gain.min(128); }
-}
-/// Source alpha, separately from RGB gain. Host admission must verify the
-/// bound renderer has the supported binary black palette; never guess a shader.
-pub fn set_opacity(draw:usize,alpha128:u8) {
-    unsafe {
-        assert!(draw<DRAW_COUNT);
-        let t=DRAWS[draw].texture;
-        assert!(BLACK_MASKS[t/32]&(1<<(t%32))!=0,"unsupported mask opacity palette");
-        OPACITIES[draw]=alpha128.min(128);
-    }
-}
 /// Supply all animation textures this frame will reference (Knight + nail).
 /// Prepare before framebuffer clear; texture uploads never follow draw packets.
 pub fn begin(room: &Room, animation_ids: &[u16],framebuffer_y:u16) -> hk_cache::Stats {
     let stats = animation_cache::prepare(room, animation_ids);
     unsafe {
+        // The972-byte CPU-only scratchpad lease starts after runtime/cache
+        // setup. Prior-frame references have ended; DMA only owns PACKETS.
+        Scratch::initialize_at(occlusion_scratch::base());
         USED = 0;KICKED = 0;CHUNK_COUNT = 0;
         EXTRA_USED=0;FRAMEBUFFER_Y=framebuffer_y;
         for &id in animation_ids {
+            // Future callers must not rebind any template referenced by a
+            // retained BACK prefix or its foreground occluders, even if a
+            // nonstreamed ID is supplied.
+            if PREFIX_TEXTURES[id as usize/32]&(1<<(id as usize%32))!=0 {
+                (&mut *(&raw mut BACK_PREFIX)).invalidate();
+            }
             let t = room.texture(id as usize);
             let (u, v) = animation_cache::uv(animation_cache::slot(id));
             TEMPLATES[id as usize] = template(t, Tpage::new(320, 0, TexDepth::Bit4), u, v);
@@ -355,12 +587,14 @@ pub fn dma_pending() -> bool {
     psx_io::dma::is_busy(psx_io::dma::Channel::Gpu)
 }
 pub const SOURCE_ALPHA_COVERAGE:u8=1;
+#[no_mangle]pub static mut HK_DYNAMIC_HIDDEN_QUADS:u32=0;
 pub fn texture(id: usize, verts: [(i16, i16); 4], tint: (u8, u8, u8)) {
     texture_material_alpha(id,verts,tint,0);
 }
 /// Small, independently resident Geo art uses the same bounded DMA packet pool.
 pub fn resident_quad(template:&QuadTextured,verts:[(i16,i16);4]) {
     unsafe {
+        if occlusion_scratch::dynamic_hidden(verts,(&*Scratch::occluders(occlusion_scratch::base())).as_slice()) {HK_DYNAMIC_HIDDEN_QUADS=HK_DYNAMIC_HIDDEN_QUADS.wrapping_add(1);return;}
         assert!(USED<CAP);
         PACKETS[USED].write_plain(quad_words(template,verts,(128,128,128),None,128));
         USED+=1;
@@ -372,7 +606,9 @@ pub fn resident_quad(template:&QuadTextured,verts:[(i16,i16);4]) {
 pub fn texture_material_alpha(id:usize,verts:[(i16,i16);4],tint:(u8,u8,u8),material:u8) {
     assert!(material<=SOURCE_ALPHA_COVERAGE);
     unsafe {
-        assert!(USED < CAP && id < TEXTURE_COUNT);
+        assert!(id < TEXTURE_COUNT);
+        if occlusion_scratch::dynamic_hidden(verts,(&*Scratch::occluders(occlusion_scratch::base())).as_slice()) {HK_DYNAMIC_HIDDEN_QUADS=HK_DYNAMIC_HIDDEN_QUADS.wrapping_add(1);return;}
+        assert!(USED < CAP);
         if STREAMED[id / 32] & (1 << (id % 32)) != 0 {
             animation_cache::slot(id as u16);
         }
@@ -423,61 +659,112 @@ const ROTATED_OCCLUSION:bool=true;
 #[no_mangle] pub static mut HK_HIDDEN_PIXELS:u32=0;
 /// True when every on-screen pixel of the quad's bounding box is covered by
 /// the union of occluder rectangles drawn after draw `i`.
-fn hidden_by_occluders(v:&[(i32,i32);4],i:usize,front:bool)->bool {
+fn hidden_by_occluders(bbox:&[i32;4],i:usize,front:bool)->bool {
     unsafe {
-        if OCCLUDER_COUNT==0 {return false;}
-        let l=v.iter().map(|p|p.0).min().unwrap().max(0);let r=v.iter().map(|p|p.0).max().unwrap().min(320);
-        let t=v.iter().map(|p|p.1).min().unwrap().max(0);let b=v.iter().map(|p|p.1).max().unwrap().min(240);
+        let scratch=occlusion_scratch::base();
+        let occluders=(&*Scratch::occluders(scratch)).as_slice();
+        if occluders.is_empty() {return false;}
+        let [l,t,r,b]=*bbox;
         if !(l<r && t<b) {return false;}
-        let u=OCCLUDER_UNION;
-        if (l as i16)<u[0] || (t as i16)<u[1] || (r as i16)>u[2] || (b as i16)>u[3] {return false;}
-        let bbox=[l as i16,t as i16,r as i16,b as i16];
+        let u=*Scratch::union(scratch);
+        if l<i32::from(u[0]) || t<i32::from(u[1]) || r>i32::from(u[2]) || b>i32::from(u[3]) {return false;}
         // Cheap passes first: keep only later occluders that overlap the box,
         // and answer at once when one of them contains it.
-        let mut hits=[0usize;MAX_OCCLUDERS];let mut n=0;
-        for (k,o) in OCCLUDERS[..OCCLUDER_COUNT].iter().enumerate() {
+        let mut hits=0u8;let mut n=0;
+        for (k,o) in occluders.iter().enumerate() {
             if !((o.front && !front) || (o.front==front && o.draw as usize>i)) {continue;}
             let q=&o.rect;
-            if q[0]>=bbox[2] || q[2]<=bbox[0] || q[1]>=bbox[3] || q[3]<=bbox[1] {continue;}
-            if q[0]<=bbox[0] && q[1]<=bbox[1] && q[2]>=bbox[2] && q[3]>=bbox[3] {
+            if i32::from(q[0])>=r || i32::from(q[2])<=l || i32::from(q[1])>=b || i32::from(q[3])<=t {continue;}
+            if i32::from(q[0])<=l && i32::from(q[1])<=t && i32::from(q[2])>=r && i32::from(q[3])>=b {
                 HK_HIDDEN_QUADS=HK_HIDDEN_QUADS.wrapping_add(1);
-                HK_HIDDEN_PIXELS=HK_HIDDEN_PIXELS.wrapping_add(((r-l)*(b-t)) as u32);
+                HK_HIDDEN_PIXELS=HK_HIDDEN_PIXELS.wrapping_add((r-l) as u32*(b-t) as u32);
                 return true;
             }
-            hits[n]=k;n+=1;
+            hits|=1u8<<k;n+=1;
         }
         if n<2 {return false;}
-        let mut pieces=Pieces {rects:[bbox,[0;4],[0;4],[0;4]],count:1};
-        for &k in &hits[..n] {
-            // None means more than four remaining pieces; keep the current
+        let packed_bbox=bbox.map(|v|v as i16);
+        let pieces=&mut *Scratch::hidden(scratch);pieces.set_slice(core::slice::from_ref(&packed_bbox));
+        for (k,o) in occluders.iter().enumerate() {
+            if hits&(1u8<<k)==0 {continue;}
+            // None means more than eight remaining pieces; keep the current
             // partition, which stays conservative.
-            if let Some(p)=subtract(&pieces,&OCCLUDERS[k].rect) {
-                if p.count==0 {
+            if subtract(pieces,&o.rect) {
+                if pieces.len()==0 {
                     HK_HIDDEN_QUADS=HK_HIDDEN_QUADS.wrapping_add(1);
-                    HK_HIDDEN_PIXELS=HK_HIDDEN_PIXELS.wrapping_add(((r-l)*(b-t)) as u32);
+                    HK_HIDDEN_PIXELS=HK_HIDDEN_PIXELS.wrapping_add((r-l) as u32*(b-t) as u32);
                     return true;
                 }
-                pieces=p;
             }
         }
         false
     }
 }
 #[inline(never)]
-pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
-    let mut n = 0;
-    if !front {collect_occluders(camera);}
+fn restore_tile_coverage(camera:(i32,i32)) {
     unsafe {
-        for (i, d) in DRAWS[..DRAW_COUNT].iter().enumerate() {
-            if i&31==0 {crate::input::checkpoint();}
-            if i&7==0 {kick_ready();}
-            if (d.flags&FRONT!=0) != front || d.flags&EMPTY_TEXTURE!=0 || VISIBLE[i / 32] & (1u32 << (i % 32)) == 0 || GAINS[i]==0 || OPACITIES[i]==0 {
-                continue;
+            if let Some(max_rank)=(&mut *(&raw mut TILE_PREPARED)).take(camera,TILE_GENERATION,&mut *Scratch::tile_rows(occlusion_scratch::base())) {
+                TILE_MAX_RANK=max_rank;HK_TILE_PREPARE_HITS=HK_TILE_PREPARE_HITS.wrapping_add(1);
+            }else{
+                // Coverage is optional. CPU-busy frames use the established
+                // alpha/rectangle path instead of delaying their first DMA.
+                TILE_MAX_RANK=0;HK_TILE_PREPARE_MISSES=HK_TILE_PREPARE_MISSES.wrapping_add(1);
             }
+    }
+}
+#[inline(never)]
+pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
+    let mut start=0;let mut emitted=0;
+    if !front {
+        unsafe {
+            let prefix=&mut *(&raw mut BACK_PREFIX);
+            if prefix.matches(camera,FRAMEBUFFER_Y)&&draw_visibility::matches_snapshot(prefix.state()) {
+                let scratch=occlusion_scratch::base();
+                let saved=&*(&raw const PREFIX_OCCLUDERS);
+                let occluders=&mut *Scratch::occluders(scratch);occluders.clear();
+                for (i,&value) in saved.entries().iter().enumerate(){occluders.set(i,value);}
+                *Scratch::union(scratch)=saved.union();
+                USED=prefix.packets;EXTRA_USED=prefix.extra;start=prefix.next;emitted=prefix.emitted;
+                TILE_MAX_RANK=prefix.max_rank;
+                (*Scratch::tile_rows(occlusion_scratch::base())).copy_from_slice(&prefix.rows);
+                HK_BACK_PREBUILD_HITS=HK_BACK_PREBUILD_HITS.wrapping_add(1);
+                HK_BACK_PREBUILD_PACKETS=HK_BACK_PREBUILD_PACKETS.wrapping_add(USED as u32);
+            }else{
+                HK_BACK_PREBUILD_MISSES=HK_BACK_PREBUILD_MISSES.wrapping_add(1);
+                collect_occluders(camera);restore_tile_coverage(camera);
+            }
+            prefix.invalidate();
+        }
+    }
+    emitted+scenery_range(camera,front,start,false).0
+}
+#[inline(never)]
+fn scenery_range(camera:(i32,i32),front:bool,start:usize,prebuilding:bool)->(u32,usize) {
+    let mut n=0;let mut next=start;
+    unsafe {
+        let scratch=occlusion_scratch::base();
+        let occluders=(&*Scratch::occluders(scratch)).as_slice();
+        let occluder_union=&*Scratch::union(scratch);
+        for (i, d) in DRAWS[..DRAW_COUNT].iter().enumerate().skip(start) {
+            // Never stop inside a source's repair/scissor group or after its
+            // tile event without emitting it. One whole source is atomic.
+            if prebuilding && !psx_rt::interrupts::gp1_queue_pending(){break;}
+            next=i+1;
+            if i&31==0 {crate::input::checkpoint();}
+            // Start rasterising after the first emitted draw; subsequent
+            // chunks retain the established eight-source-draw cadence.
+            if !prebuilding && (i&7==0 || (CHUNK_COUNT==0 && USED!=0)) {kick_ready();}
+            if (d.flags&FRONT!=0) != front {continue;}
+            // Remove this source's certificate before any cull or fallback.
+            // Both passes visit every matching source, even invisible ones.
+            if TILE_MAX_RANK!=0 {(&*(&raw const TILE_EVENTS)).reach(i,&mut *Scratch::tile_rows(scratch));}
+            if d.flags&(EMPTY_TEXTURE|DRAW_ENABLED)!=DRAW_ENABLED {continue;}
             // Distant parallax layers can overflow the pre-shift i32 product.
             // The cooker proves the shifted values/subtractions fit i32.
             let cx = (((camera.0 >> 8) as i64 * d.scale as i64) >> 12) as i32;
             let cy = (((camera.1 >> 8) as i64 * d.scale as i64) >> 12) as i32;
+            let Some(bbox)=scenery_bounds::project_clipped(&d.xy,DRAW_BOUNDS[i],cx,cy) else {continue;};
+            if hidden_by_occluders(&bbox,i,front) {continue;}
             let mut v = [(0i32, 0i32); 4];
             for k in 0..4 {
                 v[k] = (
@@ -485,20 +772,6 @@ pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
                     120 - ((d.xy[k * 2 + 1] - cy) >> 8),
                 );
             }
-            if v.iter().all(|p| p.0 < 0)
-                || v.iter().all(|p| p.0 > 320)
-                || v.iter().all(|p| p.1 < 0)
-                || v.iter().all(|p| p.1 > 240)
-            {
-                continue;
-            }
-            // A draw whose on-screen bounding box lies entirely under later
-            // opaque black rectangles paints nothing that survives, so it is
-            // skipped whole. No clipping is involved, so rotated quads and
-            // oversized repair quads qualify too.
-            if hidden_by_occluders(&v,i,front) {continue;}
-            let gain=GAINS[i] as u16;
-            let tint=((d.tint.0 as u16*gain/128) as u8,(d.tint.1 as u16*gain/128) as u8,(d.tint.2 as u16*gain/128) as u8);
             let t=&TEMPLATES[d.texture];let uv=uv_rect(t);
             let opacity=OPACITIES[i] as u16 | if d.flags&BLACK_AVERAGE!=0 {256}else{0};
             if d.flags&LEGAL_EXTENT!=0 || scenery_geometry::legal(&v) {
@@ -506,44 +779,64 @@ pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
                 if d.flags&SOLID_BLACK!=0 && opacity&255==128 && opacity&256!=0 {
                     assert!(USED<CAP);PACKETS[USED].write_black(xy.map(vertex));USED+=1;n+=1;continue;
                 }
-                let words=quad_words(t,xy,tint,None,opacity);
-                let scissors=if d.flags&SCISSOR_CANDIDATE!=0 {SCISSOR_CACHE[i].map(xy,d.texture as u16,uv.w,uv.h,&COVERS[d.texture])}else{None};
-                // Flat core and single-rectangle occlusion: exact partitions of
-                // the original pixels, bounded to four scissor packets per draw.
-                // Draw-area clipping is proven pixel-exact for axis-aligned
-                // quads only; a flat black core is exact only on the
+                // Cache RGB only: the current template still supplies its
+                // command byte, including animation-template rebinding.
+                let words=scenery_color::with_material([
+                    t.color_cmd,vertex(xy[0]),t.uv0_clut,vertex(xy[1]),t.uv1_tpage,
+                    vertex(xy[2]),t.uv2,vertex(xy[3]),t.uv3],d.color,opacity,
+                    Clut::new(FADE_CLUT_X,FADE_CLUT_Y).uv_clut_word() as u32);
+                // Keep the original alpha partition alive for the capacity
+                // fallback below while scenery scratch undergoes subtraction.
+                let mut alpha_storage=core::mem::MaybeUninit::uninit();
+                let scissors=if d.flags&SCISSOR_CANDIDATE!=0 {
+                    let out=alpha_scissor_cache::MappedScissors::initialize(&mut alpha_storage);
+                    if SCISSOR_CACHE[i].map_cached_into(xy,d.texture as u16,uv.w,uv.h,&COVERS[d.texture],&mut *(&raw mut SCISSOR_SECONDARY),out) {Some(&*out)}else{None}
+                }else{None};
+                // Flat core and bounded multi-rectangle occlusion: exact partitions of
+                // the original pixels, bounded to eight scissor packets per draw.
+                // Draw-area clipping retains original vertices and UV planes for
+                // rotated quads too; a flat black core is exact only on the
                 // black-average path, which zeroes the sentinel texel's red bit.
                 let axis=xy[0].1==xy[1].1 && xy[0].0==xy[2].0 && xy[1].0==xy[3].0 && xy[2].1==xy[3].1;
                 // On-screen bounding box of the quad; for axis-aligned quads
                 // this is the quad itself.
-                let bl=xy.iter().map(|p|p.0).min().unwrap().max(0);let br=xy.iter().map(|p|p.0).max().unwrap().min(320);
-                let bt=xy.iter().map(|p|p.1).min().unwrap().max(0);let bb=xy.iter().map(|p|p.1).max().unwrap().min(240);
+                let bbox=bbox.map(|v|v as i16);
+                let [bl,bt,br,bb]=bbox;
                 let box_area=if bl<br && bt<bb {(br-bl) as i32*(bb-bt) as i32}else{0};
-                let mut pieces=match &scissors {
-                    Some(s)=>Pieces {rects:s.rects,count:s.count},
-                    None=>Pieces {rects:[[bl,bt,br,bb],[0;4],[0;4],[0;4]],count:usize::from(box_area>0)}
-                };
+                let pieces=&mut *Scratch::scenery(scratch);pieces.clear();
+                if let Some(s)=&scissors {pieces.set_slice(s.as_slice());}
+                else if box_area>0 {pieces.push([bl,bt,br,bb]);}
                 let mut core_rect=None;let mut saved=0i32;
-                let core=if axis && box_area>=OCCLUDER_MIN_AREA {core_of(d.texture)}else{[0;4]};
-                if opacity&255==128 && opacity&256!=0 && core[2]!=0 {
-                    if let Some(core)=alpha_scissor_cache::texel_rect_to_screen(xy,uv.w,uv.h,core) {
-                        if rect_area(&core)>=256 {if let Some(p)=subtract(&pieces,&core) {pieces=p;core_rect=Some(core);}}
+                // Ordinary RGB zero modulates every STP-clear texel to opaque
+                // black; unlike the material-specific sentinel correction, its
+                // larger general opaque core is also an exact flat replacement.
+                let zero_tint=opacity==128 && d.color==0;
+                let core=if axis && box_area>=OCCLUDER_MIN_AREA {if zero_tint {opaque_core_of(d.texture)}else{core_of(d.texture)}}else{[0;4]};
+                if opacity&255==128 && (opacity&256!=0 || zero_tint) && core[2]!=0 {
+                    if let Some(core)=(&mut *(&raw mut CORE_MAP_CACHE)).map(xy,uv.w,uv.h,core) {
+                        if rect_area(&core)>=256 && subtract(pieces,&core) {core_rect=Some(core);}
                     }
                 }
-                let mut best:Option<(i32,usize)>=None;
-                for (k,o) in OCCLUDERS[..if (axis || ROTATED_OCCLUSION) && box_area>=OCCLUDER_MIN_AREA {OCCLUDER_COUNT}else{0}].iter().enumerate() {
+                let holes=&mut *Scratch::holes(scratch);holes.clear();
+                // Reject impossible savings before copying and ranking holes.
+                // Alpha scissors and core subtraction only remove bbox pixels.
+                let possible_holes=(axis || ROTATED_OCCLUSION) && box_area>=OCCLUDER_MIN_AREA
+                    && !occluders.is_empty() && occlusion::can_save_minimum(&bbox,occluder_union);
+                for o in &occluders[..if possible_holes {occluders.len()}else{0}] {
                     if !((o.front && !front) || (o.front==front && o.draw as usize>i)) {continue;}
-                    let ov:i32=pieces.rects[..pieces.count].iter().map(|p|overlap(p,&o.rect)).sum();
-                    if ov>=256 && best.is_none_or(|b|ov>b.0) {best=Some((ov,k));}
+                    if !occlusion::can_save_minimum(&bbox,&o.rect) {continue;}
+                    holes.push(o.rect);
                 }
-                if let Some((ov,k)) = best {
-                    if let Some(p)=subtract(&pieces,&OCCLUDERS[k].rect) {pieces=p;saved=ov;}
+                if holes.len()!=0 {
+                    saved=occlusion::subtract_many(pieces,holes.as_slice());
                 }
+                let tile_saved=tile_visibility(pieces,holes,tile_coverage::rank(i,front),usize::from(core_rect.is_some()));
+                let pieces=if tile_saved>0 {saved+=tile_saved;holes}else{pieces};
                 if core_rect.is_some() || saved>0 {
-                    let extra=(pieces.count+usize::from(core_rect.is_some())).saturating_sub(1);
+                    let extra=(pieces.len()+usize::from(core_rect.is_some())).saturating_sub(1);
                     if extra<=EXTRA_ALLOWANCE-EXTRA_USED {
                         EXTRA_USED+=extra;
-                        for rect in &pieces.rects[..pieces.count] {
+                        for rect in pieces.as_slice() {
                             assert!(USED<CAP);PACKETS[USED].write_scissored(words,*rect,FRAMEBUFFER_Y);USED+=1;
                         }
                         if let Some(c)=core_rect {
@@ -552,38 +845,43 @@ pub fn scenery(camera: (i32, i32), front: bool) -> u32 {
                             HK_CORE_QUADS=HK_CORE_QUADS.wrapping_add(1);
                         }
                         if saved>0 {HK_OCCLUSION_QUADS=HK_OCCLUSION_QUADS.wrapping_add(1);HK_OCCLUSION_SAVED_PIXELS=HK_OCCLUSION_SAVED_PIXELS.wrapping_add(saved as u32);if !axis {HK_ROTATED_OCCLUSION_QUADS=HK_ROTATED_OCCLUSION_QUADS.wrapping_add(1);}}
-                        n+=pieces.count as u32+u32::from(core_rect.is_some());continue;
+                        n+=pieces.len() as u32+u32::from(core_rect.is_some());continue;
                     }
                     HK_SCISSOR_CAPACITY_FALLBACKS=HK_SCISSOR_CAPACITY_FALLBACKS.wrapping_add(1);
                 }
                 if let Some(scissors)=scissors {
-                    let extra=scissors.count.saturating_sub(1);
+                    let extra=scissors.len().saturating_sub(1);
                     if extra<=EXTRA_ALLOWANCE-EXTRA_USED {
                         EXTRA_USED+=extra;
-                        for rect in &scissors.rects[..scissors.count] {
+                        for rect in scissors.as_slice() {
                             assert!(USED<CAP);PACKETS[USED].write_scissored(words,*rect,FRAMEBUFFER_Y);USED+=1;
                         }
-                        HK_SCISSOR_QUADS=HK_SCISSOR_QUADS.wrapping_add(scissors.count as u32);
-                        HK_SCISSOR_SAVED_PIXELS=HK_SCISSOR_SAVED_PIXELS.wrapping_add(scissors.saved_pixels);
-                        n+=scissors.count as u32;continue;
+                        HK_SCISSOR_QUADS=HK_SCISSOR_QUADS.wrapping_add(scissors.len() as u32);
+                        HK_SCISSOR_SAVED_PIXELS=HK_SCISSOR_SAVED_PIXELS.wrapping_add(scissors.saved_pixels());
+                        n+=scissors.len() as u32;continue;
                     }
                     HK_SCISSOR_CAPACITY_FALLBACKS=HK_SCISSOR_CAPACITY_FALLBACKS.wrapping_add(1);
                 }
                 assert!(USED<CAP);PACKETS[USED].write_plain(words);USED+=1;n+=1;
             } else {
-                n+=repair(t,v,uv,tint,opacity);
+                // Oversized repair retains its existing packet construction.
+                let gain=GAINS[i] as u16;
+                let tint=((d.tint.0 as u16*gain/128) as u8,(d.tint.1 as u16*gain/128) as u8,(d.tint.2 as u16*gain/128) as u8);
+                n+=repair(t,v,uv,tint,opacity,i,front);
             }
         }
     }
-    kick_ready();
-    n
+    if !prebuilding {kick_ready();}
+    (n,next)
 }
 // Repair output is copied into DMA-owned packets before returning. No DMA or
 // interrupt references this scratch; keeping it here avoids clearing1.5KiB
 // and inflating the common scenery loop's stack for every oversized layer.
 static mut REPAIR_CHILDREN:[Quad;64]=[Quad::ZERO;64];
+#[no_mangle]pub static mut HK_REPAIR_OCCLUSION_QUADS:u32=0;
+#[no_mangle]pub static mut HK_REPAIR_OCCLUSION_SAVED_PIXELS:u32=0;
 #[inline(never)]
-fn repair(t:&QuadTextured,v:[(i32,i32);4],uv:UvRect,tint:(u8,u8,u8),opacity:u16)->u32 {
+fn repair(t:&QuadTextured,v:[(i32,i32);4],uv:UvRect,tint:(u8,u8,u8),opacity:u16,draw:usize,front:bool)->u32 {
     crate::input::checkpoint();
     unsafe {
         let children=&mut *(&raw mut REPAIR_CHILDREN);
@@ -591,12 +889,51 @@ fn repair(t:&QuadTextured,v:[(i32,i32);4],uv:UvRect,tint:(u8,u8,u8),opacity:u16)
             Ok(count)=>count,
             Err(_)=>{HK_SCENERY_REPAIR_FAILURES=HK_SCENERY_REPAIR_FAILURES.wrapping_add(1);panic!("scenery subdivision");}
         };
+        let scratch=occlusion_scratch::base();
+        let occluders=(&*Scratch::occluders(scratch)).as_slice();
+        let union=&*Scratch::union(scratch);
+        let pieces=&mut *Scratch::scenery(scratch);
+        let holes=&mut *Scratch::holes(scratch);
+        let mut emitted=0;
         for child in &children[..count] {
-            assert!(USED<CAP);PACKETS[USED].write_plain(quad_words(t,child.xy,tint,Some(child.uv),opacity));USED+=1;
+            let words=quad_words(t,child.xy,tint,Some(child.uv),opacity);
+            // Clip only the original emitted child packet. Restarting geometry
+            // or UV interpolation here would change its samples and seams.
+            let l=child.xy.iter().map(|p|p.0).min().unwrap().max(0);let r=child.xy.iter().map(|p|p.0).max().unwrap().min(320);
+            let top=child.xy.iter().map(|p|p.1).min().unwrap().max(0);let bottom=child.xy.iter().map(|p|p.1).max().unwrap().min(240);
+            if l>=r || top>=bottom {continue;}
+            let bbox=[l,top,r,bottom];holes.clear();
+            if !occluders.is_empty() && occlusion::can_save_minimum(&bbox,union) {
+                for o in occluders {
+                    if !((o.front && !front) || (o.front==front && o.draw as usize>draw)) {continue;}
+                    if occlusion::can_save_minimum(&bbox,&o.rect) {holes.push(o.rect);}
+                }
+            }
+            pieces.clear();pieces.push(bbox);
+            let mut saved=if holes.len()!=0 {occlusion::subtract_many(pieces,holes.as_slice())}else{0};
+            let tile_saved=tile_visibility(pieces,holes,tile_coverage::rank(draw,front),0);
+            let chosen=if tile_saved>0 {saved+=tile_saved;&*holes}else{&*pieces};
+            if saved>0 {
+                // Mandatory repair children were reserved by the cooker.
+                // Only final extra scissors consume the shared optional reserve.
+                let extra=chosen.len().saturating_sub(1);
+                if extra<=EXTRA_ALLOWANCE-EXTRA_USED {
+                    EXTRA_USED+=extra;
+                    for rect in chosen.as_slice() {
+                        assert!(USED<CAP);PACKETS[USED].write_scissored(words,*rect,FRAMEBUFFER_Y);USED+=1;
+                    }
+                    emitted+=chosen.len()as u32;
+                    HK_REPAIR_OCCLUSION_QUADS=HK_REPAIR_OCCLUSION_QUADS.wrapping_add(1);
+                    HK_REPAIR_OCCLUSION_SAVED_PIXELS=HK_REPAIR_OCCLUSION_SAVED_PIXELS.wrapping_add(saved as u32);
+                    continue;
+                }
+                HK_SCISSOR_CAPACITY_FALLBACKS=HK_SCISSOR_CAPACITY_FALLBACKS.wrapping_add(1);
+            }
+            assert!(USED<CAP);PACKETS[USED].write_plain(words);USED+=1;emitted+=1;
         }
         HK_SCENERY_REPAIRS=HK_SCENERY_REPAIRS.wrapping_add(1);
         crate::input::checkpoint();
-        count as u32
+        emitted
     }
 }
 

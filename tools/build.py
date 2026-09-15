@@ -32,6 +32,9 @@ def memory_budget(link_map,exe,arena_bytes):
     static_end=bss+bss_bytes;stack_floor=initial_sp-stack_bytes
     gap=stack_floor-static_end
     if gap<0:raise ValueError('Static RAM overlaps reserved stack')
+    from stack_budget import main_frame_bytes
+    main_frame=main_frame_bytes(exe,text)
+    if main_frame>=stack_bytes:raise ValueError('main frame alone exceeds stack reservation')
     arenas=re.search(r'^([0-9a-f]+)\s+[0-9a-f]+\s+([0-9a-f]+)\s+1\s+hk_psx::disc::BUFFERS$',text,re.M)
     if not arenas:raise ValueError('Cannot verify linked room arenas')
     arena_start,arena_total=int(arenas[1],16),int(arenas[2],16)
@@ -40,7 +43,9 @@ def memory_budget(link_map,exe,arena_bytes):
     return {'code_bytes':code_bytes,'data_bytes':data_bytes,'bss_bytes':bss_bytes,
             'code_data_alignment_bytes':data-code-code_bytes,'static_span_bytes':static_end-code,
             'static_end':hex(static_end),'stack_reserved_bytes':stack_bytes,'stack_floor':hex(stack_floor),
-            'unallocated_before_stack_bytes':gap,'scene_arena_bytes':arena_bytes,'scene_arena_count':arena_total//arena_bytes,
+            'unallocated_before_stack_bytes':gap,'main_frame_bytes':main_frame,
+            'reserved_bytes_beyond_main_frame':stack_bytes-main_frame,
+            'scene_arena_bytes':arena_bytes,'scene_arena_count':arena_total//arena_bytes,
             'scene_arenas_total_bytes':arena_total,
             'limitations':'Linked reservations only; no main-stack high-water or hardware timing claim.'}
 
@@ -62,7 +67,7 @@ def sdk(source):
 
 def cook_cached(force=False):
     provenance=ROOT/'.hkpsx/regions-provenance.json';cache=ROOT/'.hkpsx/regions-cook-cache.json'
-    code={str(p.relative_to(ROOT)):sha(p) for p in [ROOT/'host'/name for name in ('cook.py','regions.py','actors.py','particles.py','effects.py','breakables.py','combat.py','scene.py','source.py','world.py','flat_support.py','reveal_masks.py','texture_dedup.py','similarity_dedup.py','constant_textures.py','region_delta.py','quality.py','focus.py','alpha_covers.py','materials.py','tilemap_fill.py','break_effects.py')]}
+    code={str(p.relative_to(ROOT)):sha(p) for p in [ROOT/'host'/name for name in ('cook.py','regions.py','actors.py','particles.py','effects.py','breakables.py','combat.py','scene.py','source.py','world.py','flat_support.py','reveal_masks.py','texture_dedup.py','similarity_dedup.py','constant_textures.py','region_delta.py','quality.py','focus.py','alpha_covers.py','materials.py','tilemap_fill.py','break_effects.py','great_door.py')]}
     for name in ('audit_texture_similarity.py','texture_match_groups.py','audit_resident_bank.py'):
         code['tools/'+name]=sha(ROOT/'tools'/name)
     code['requirements']=sha(ROOT/'host/requirements.lock')
@@ -106,7 +111,7 @@ def main():
     if not stamp.exists() or stamp.read_text()!=sha(req):
         run([venv,'-m','pip','install','--requirement',req]);stamp.write_text(sha(req))
     sdk(args.sdk_source);cook_cached(args.recook);menu_cached(args.recook)
-    for script in ('cook_audio.py','cook_hud.py','ambience.py','read_points.py','geo.py','geo_audio.py','lifeblood.py','break_effects.py'):
+    for script in ('cook_audio.py','cook_hud.py','ambience.py','read_points.py','geo.py','geo_audio.py','lifeblood.py','break_effects.py','great_door.py'):
         run([venv,ROOT/'host'/script],cwd=ROOT)
     run(['cargo','run','--quiet','--manifest-path',ROOT/'shared/hk-format/Cargo.toml','--example','check','--',ROOT/'data/room.hk'])
     from build_guest import build
@@ -123,11 +128,13 @@ def main():
             'outputs':{str(f):{'bytes':f.stat().st_size,'sha256':sha(f)} for f in outputs.values()},
             'room':json.load(open(ROOT/'.hkpsx/regions-provenance.json')),
             'packed_scenes':json.load(open(ROOT/'.hkpsx/packed-scenes.json')),
+            'opaque_tiles':json.load(open(ROOT/'.hkpsx/opaque-tiles/report.json')),
             'audio':json.load(open(ROOT/'.hkpsx/audio-provenance.json')),
             'hud':json.load(open(ROOT/'.hkpsx/hud-provenance.json')),
             'geo':json.load(open(ROOT/'.hkpsx/geo-provenance.json')),
             'geo_audio':json.load(open(ROOT/'.hkpsx/geo-audio-provenance.json')),
             'lifeblood':json.load(open(ROOT/'.hkpsx/lifeblood-provenance.json')),
+            'great_door':json.load(open(ROOT/'.hkpsx/great-door.json')),
             'break_effects':json.load(open(ROOT/'.hkpsx/break-effects/report.json')),
             'menu':json.load(open(ROOT/'.hkpsx/menu-provenance.json')),
             'hazards':json.load(open(hazard_report_path(telemetry)))}

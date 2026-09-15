@@ -386,6 +386,11 @@ impl<'a> Room<'a> {
     pub fn draw(&self, i: usize) -> &'a [u8] {
         self.record(1, i, 44)
     }
+    /// Shared scene draw identity for immutable cooked side tables. Standalone
+    /// legacy rooms have no scene pool and cannot use those certificates.
+    pub fn draw_pool_index(&self, i: usize) -> Option<usize> {
+        self.references.map(|refs|u16_at(self.bytes,refs[0]+i*2)as usize)
+    }
     pub fn frame(&self, i: usize) -> &'a [u8] {
         self.record(2, i, 20)
     }

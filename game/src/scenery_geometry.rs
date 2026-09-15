@@ -50,7 +50,7 @@ pub fn legal_extent_q8(xy:&[i32;8])->bool {
         min_x=min_x.min(xy[k*2]);max_x=max_x.max(xy[k*2]);
         min_y=min_y.min(xy[k*2+1]);max_y=max_y.max(xy[k*2+1]);
     }
-    max_x as i64-min_x as i64<=703*256 && max_y as i64-min_y as i64<=511*256
+    max_x.abs_diff(min_x)<=703*256 && max_y.abs_diff(min_y)<=511*256
 }
 
 /// Command coordinates are signed 11-bit BEFORE the SDK's drawing offset.
@@ -428,5 +428,29 @@ mod legal_extent_tests {
         assert!(survives(&too_tall));assert!(!legal(&too_tall)); // y edge512
         let zero=projected([0;8],(160*256,120*256));
         assert!(survives(&zero));assert!(legal(&zero));
+    }
+    #[test]fn native_unsigned_extent_matches_wide_reference_for_full_i32_domain() {
+        let reference=|xy:&[i32;8]| {
+            let xs=[xy[0],xy[2],xy[4],xy[6]];let ys=[xy[1],xy[3],xy[5],xy[7]];
+            *xs.iter().max().unwrap() as i64-*xs.iter().min().unwrap() as i64<=703*256
+                && *ys.iter().max().unwrap() as i64-*ys.iter().min().unwrap() as i64<=511*256
+        };
+        for origin in [i32::MIN,i32::MIN+703*256,-703*256,-1,0,1,i32::MAX-703*256,i32::MAX] {
+            for sx in [0,1,703*256-1,703*256,703*256+1,i32::MAX] {
+                for sy in [0,1,511*256-1,511*256,511*256+1,i32::MAX] {
+                    let Some(right)=origin.checked_add(sx)else{continue;};
+                    let Some(bottom)=origin.checked_add(sy)else{continue;};
+                    for xy in [[origin,origin,right,origin,origin,bottom,right,bottom],
+                        [right,bottom,origin,bottom,right,origin,origin,origin]] {
+                        assert_eq!(legal_extent_q8(&xy),reference(&xy));
+                    }
+                }
+            }
+        }
+        let mut seed=0x319ff92au32;
+        for _ in 0..200000 {
+            let xy=core::array::from_fn(|_|{seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;seed as i32});
+            assert_eq!(legal_extent_q8(&xy),reference(&xy));
+        }
     }
 }

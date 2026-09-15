@@ -119,10 +119,44 @@ submission. It is not a substitute for an emulator screenshot or hardware test.
 
 The source target lies in view 62, bounds `[48,59,72,75]`. Nearby source ledges
 include x57–64/y45, x64–67/y50, x57–63/y52, x51–64/y57 and x64–69/y58.
-A native controller-route search reached approximately `(57.15,58.39)`, below
-the cocoon. Natural-route final-CUE activation, two earned masks and absorption
-still require replay validation; no input-RAM patch or alternate disc is part
-of this implementation's evidence. The actual-CUE replay of that planned route
-(`.hkpsx/burst-fix2-ascent/`) completes without faults but ends in region 2 at
-(54.42, 11.39) with the cocoon unopened: the planner assumed cleared breakables
-and no enemy damage. Lifeblood is therefore not yet observed in gameplay.
+The old whole-ascent planner (`.hkpsx/burst-fix2-ascent/`) assumed cleared
+breakables and omitted damage, so its actual-CUE route never reached the cocoon.
+On September 14 a new continuation from the user's extended crash recording
+reached `(57.15,58.39)` on the actual CUE. Its local planner rejects the extracted
+hazard polygons; without that check the first jump struck the authored stalactite.
+Planning only generates controller inputs; it does not alter guest RAM or the disc.
+
+The 6,168-poll controller tape at
+`.hkpsx/lifeblood-validation-plan/attempt5.pxtape` now demonstrates the complete
+interaction on the September 11 baseline (`6517d70`):
+
+- The jumping upward nail strike opens the cocoon and releases two bugs.
+- Horizontal attacks after landing strike both bugs. Grants arrive 72 simulation
+  ticks later, and two original blue masks appear after the ordinary HUD masks.
+- Returning to the stalactite produces blue/ordinary health pairs
+  `(2,4) -> (1,4) -> (0,4) -> (0,3)`. The first two hits consume only the
+  temporary pool; the third damages ordinary health.
+- The actual-CUE replay completes without guest/CD/input/geometry-repair faults
+  and with unchanged input hashes. Software captures of the cocoon, bugs and
+  each health state were inspected. Evidence: `.hkpsx/lifeblood-validation-5/`,
+  including `health-sequence.png` and `lifeblood-coverage.json`.
+
+Reproduce against the current build, then check the observed interaction:
+
+```sh
+python3 tools/replay_cue.py --tape .hkpsx/lifeblood-validation-plan/attempt5.pxtape --output .hkpsx/lifeblood-recheck --screenshot-interval 30
+python3 tools/validate_lifeblood.py --replay .hkpsx/lifeblood-recheck
+```
+
+Use a fresh output directory and inspect captures after guest changes. The
+coverage gate rejects unearned masks, incomplete damage coverage and death/reset
+masquerading as absorption. It does not establish hardware timing or complete
+source effect/audio parity.
+
+The current September 14 EXE was rechecked with that same tape in
+`.hkpsx/progression-scalar-lifeblood/`: all four coverage checks pass, with zero
+faults and unchanged inputs. `health-sequence.png` visibly records two, one and
+zero blue masks followed by ordinary damage. Final state is region 44, ordinary
+health 3, blue health 0, Geo 30, no deaths. Its crash-prefix burst still records
+14 rejected particle spawns; that is separate from the two successful health
+grants and remains an effects limitation.

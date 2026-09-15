@@ -1,6 +1,461 @@
-# Status, 2026-09-09
+# Status, 2026-09-14
 
-## Current build: geometry fills, destruction effects, Lifeblood and burst pacing
+## Active work: stable 30 fps
+
+**Validated September 15: pass40 is the sole canonical disc.** Rendering stays
+320×240 with the existing camera framing, layers, effects and texture quality.
+The long route averages 2.018783 VBlanks (about 29.7 fps): 184 / 2,456 / 232 / 3
+intervals at one / two / three / four ticks. **Stable 30 fps is not achieved:**
+235 of 2,875 intervals exceed the two-VBlank acceptance budget. The preserved
+pass36 result had 427 of 2,688 over budget and averaged 2.159226 ticks.
+Simulation remains deterministic at 60 Hz; no input faults or missed samples
+were observed. No original-console timing claim is made.
+
+The retained changes prepare exact background packet prefixes while the previous
+frame finishes, restore their rectangular occluders on an exact state match,
+and reject off-screen scenery from admission-time extrema indices. The latter
+salvages Claude's bounds idea using 480 bytes instead of 7,680. Full-frame
+pipelining and its extra displayed-frame latency are not imported.
+
+Validation: 236 Python tests and 352 directly reported native/Rust tests pass;
+final EXE hazard scan is zero. The strict full-route profiler fails only its
+frame interval limit. Its endpoint and final image match the reference, with
+zero traversal CD reads, static VRAM uploads or boundary waits. Actual-CUE
+Lifeblood replay passes all four earned-blue-health checks. Town replay opens
+the Great Door at thirteen hits and enters region93. Both final images match
+pass36 exactly. Town retains one gate-transition wait tick; Lifeblood/Town
+retain 14/23 pre-existing particle drops. All three replay input hashes remained
+unchanged. Evidence: `.hkpsx/30fps-pass40-{profile,lifeblood,town}/`, build/test
+logs with the same prefix, and `.hkpsx/build.json` for current artifact identity.
+
+Claude's clean worktree was removed after reviewing all nine changed files;
+its committed history remains at `8db50a5` on the preserved Claude branch and
+remote codex/bootstrap. Root owns builds again. See
+[the salvage review](CLAUDE_OPTIMIZATION_REVIEW.md). The final source is on
+`main`; assets, captures, converted tables and discs remain ignored.
+
+The two-VBlank gate must remain explicit in future measurements:
+`--max-frame-route-ticks 2 --pc-window-ticks 1 --require-seamless`.
+
+In-progress measurements (normal EXE, same 5,871-sample controller tape):
+
+| Build/report prefix | Mean VBlanks | Maximum | Frames over two |
+| --- | ---: | ---: | ---: |
+| `progression-scalar` baseline | 2.5523 | 5 | 1,222 / 2,274 |
+| `30fps-pass2` collision/debris work | 2.5463 | 5 | 1,225 / 2,279 |
+| `30fps-pass3` first opaque-core integration | 2.6370 | 6 | 1,346 / 2,201 |
+| `30fps-pass4` in-place rectangle subtraction | 2.5716 | 5 | 1,250 / 2,257 |
+| `30fps-pass5` reusable scratch / larger cut threshold | 2.5602 | 5 | 1,233 / 2,267 |
+| `30fps-pass6` candidate admission / particle arithmetic | 2.4787 | 5 | 1,107 / 2,342 |
+| `30fps-pass7` background cores / active fade timers | 2.4968 | 4 | 1,135 / 2,325 |
+| `30fps-pass8` scoped edge readers / rotated prototype | 2.4761 | 4 | 1,103 / 2,344 |
+| `30fps-pass9` partial-occlusion bbox admission | 2.4719 | 4 | 1,094 / 2,348 |
+| `30fps-pass10` live solid-quad occlusion | 2.3850 | 4 | 924 / 2,434 |
+| `30fps-pass11` 312-byte scratchpad workspace | 2.3742 | 4 | 910 / 2,445 |
+| `30fps-pass12` partial occlusion of repaired children | 2.2814 | 4 | 712 / 2,544 |
+| `30fps-pass13` shared bounds / inner-vertex solid rows | 2.2743 | 4 | 697 / 2,552 |
+| `30fps-pass14` earlier first kick / i32 bound reuse | 2.2614 | 4 | 668 / 2,567 |
+| `30fps-pass15` secondary solid bands / dynamic culling | 2.2954 | 4 | 736 / 2,529 |
+| `30fps-pass16` cooperative presentation / smaller arena | 2.2439 | 4 | 625 / 2,587 |
+| `30fps-pass17` checked legacy particle velocity | 2.2392 | 4 | 615 / 2,592 |
+| `30fps-pass18` shared exact particle square root | 2.2439 | 4 | 626 / 2,587 |
+| `30fps-pass19` first host-certified tile integration | 2.4618 | 5 | 1,008 / 2,358 |
+| `30fps-pass20` event-driven row masks | 2.3521 | 5 | 801 / 2,468 |
+| `30fps-pass21` prepare coverage during GPU wait | 2.2475 | 5 | 567 / 2,582 |
+| `30fps-pass22` idle-only tile admission / polygon bounds | 2.2094 | 4 | 533 / 2,627 |
+| `30fps-pass23` persistent prepared coverage | 2.2022 | 4 | 515 / 2,636 |
+| `30fps-pass24` coarse retry / initial perspective helper | 2.2097 | 4 | 532 / 2,627 |
+| `30fps-pass25` exact dividers / secondary scissor cache | 2.1897 | 4 | 496 / 2,651 |
+| `30fps-pass26` aligned entries / core-map cache | 2.1861 | 4 | 487 / 2,655 |
+| `30fps-pass27` incremental particle diagnostics | 2.1799 | 4 | 474 / 2,662 |
+| `30fps-pass28` greedy + partial-tail fallback (rejected) | 2.2465 | 4 | 627 / 2,584 |
+| `30fps-pass29` partial-tail fallback only (rejected) | 2.1836 | 4 | 481 / 2,658 |
+| `30fps-pass30` initialized-prefix alpha output | 2.1807 | 4 | 476 / 2,662 |
+| `30fps-pass31` cached draw admission / sparse reset | 2.1697 | 4 | 448 / 2,675 |
+| `30fps-pass32` cached scenery RGB | 2.1661 | 4 | 442 / 2,679 |
+| `30fps-pass33` release opt-level2 (rejected) | 2.2005 | 4 | 517 / 2,638 |
+| `30fps-pass34` release opt-level s (rejected) | 2.3995 | 7 | 831 / 2,418 |
+| `30fps-pass35` opt-level2 / forced packet inline (rejected) | 2.1885 | 4 | 493 / 2,652 |
+| `30fps-pass36` original compiler / borrowed debris Spec | 2.1592 | 4 | 427 / 2,688 |
+| `30fps-pass37` idle background packet preparation | 2.0494 | 4 | 235 / 2,832 |
+| `30fps-pass38` full scenery bounds table | 2.0469 | 4 | 237 / 2,836 |
+| `30fps-pass39` reuse prepared rectangle occluders | 2.0248 | 4 | 260 / 2,867 |
+| `30fps-pass40` packed bounds indices / complete alias guard | 2.0188 | 4 | 235 / 2,875 |
+
+### Earlier optimization measurements
+
+Pass37 improved the mean to 2.049435 VBlanks (about 29.3 fps), with
+98 / 2,499 / 232 / 3 intervals at one / two / three / four ticks. The strict
+two-VBlank gate still fails. It reuses 2,231 background prefixes (178,159
+packets), with 603 misses. Endpoint, error counters and the final image match
+the baseline; traversal CD reads and static VRAM uploads remain zero. The full
+recook/build passed with zero final-binary hazards after build ownership was
+resolved. Pass38 is measuring the salvaged admission-time bounds optimization.
+
+Pass27 was the preceding best result: 2.17994 VBlanks, approximately
+27.5 fps, with 2,188 / 469 / 5 intervals at two / three / four VBlanks.
+The strict 30 fps gate still fails. Its final route image matches the baseline,
+and endpoint, error, CD and static VRAM counters are unchanged. All 233 Python
+and 342 native/Rust tests passed, with zero final-binary hazards.
+
+Pass28's exact rectangle merging regressed the route. Greedy append alone cost
+13,885 PC samples and 61.85 million RAM stall cycles. Pass29 removed merging
+and retained only a cheap partial-tail fallback; that also failed to improve
+the full route (2.18360 VBlanks, seven four-tick intervals). Its final image
+matches the baseline, with no observed guest/CD errors. Both fallback variants
+are now removed from production and retained only as ignored experiment
+artifacts. Native raster savings did not translate into overall guest gains.
+
+Pass32 was the preceding best measured result: 2.16611
+VBlanks (about27.7fps), with2,237 /439 /3 intervals at two /three /four ticks.
+The strict gate still fails. Final route pixels, endpoint and error counters
+match baseline; gameplay CD/static VRAM activity remains zero. All235 Python
+and346 native/Rust tests pass, with zero final hazards. Cached RGB adds1,920B
+RAM and preserves live GPU command bytes, UVs, palettes and texture pages.
+
+Pass31's enabled flag/sparse reset removes about0.93ms/frame of direct
+renderer/collector instruction and RAM costs. Pass30's initialized-prefix
+alpha output removes another approximately0.38ms/frame of useful CPU work.
+These cost estimates are not end-to-end speedup claims. The compiler-only
+pass33 opt-level2 trial regressed to2.20053, with12 four-tick frames. Code
+shrunk40,280 bytes, but stack RAM stalls rose while instruction-cache stalls
+fell. Final route pixels and errors match baseline; arithmetic native-divide
+paths remain correct. Reject this setting for the30fps target. The size-focused34 trial regressed further to2.39950, including a seven-tick
+frame. Forcing the hot packet writer inline recovered part of O2's loss in35
+(2.18854), but still failed to beat32. All compiler variants are rejected;
+implicit opt-level3 is restored in source. The experimental disc was35 before36
+restored the original settings plus a proved borrowed-debris-Spec change. Final
+34/35 image differences are confined to the Knight animation box; endpoint
+and error counters match baseline. Neither is accepted for performance.
+
+Pass36 was the preceding validated best mean:2.15923 (about27.8fps),
+2,261 /426 /1 intervals at two /three /four ticks. The strict gate still fails.
+Only poll390 inregion1 takes four ticks. The final image differs only in the
+Knight animation box; level pixels, endpoint and errors match baseline.
+There are no gameplay CD reads, static VRAM uploads or boundary waits. Tests
+remain235 Python/346 native/Rust, final hazards zero. Actual-CUE Lifeblood and
+Town replays completed: allfourbluehealth checks pass, 13hitsopenDoorintoTown,
+finalcapturesmatch25, anderrorsarezero. Town36 recordszero boundary-wait ticks;
+pre-existingLife/Town particle drops remain14/23. No active CUE readers.
+
+Pass37 implements CPU-only next-BACK-prefix preparation after final DMA has
+drained, during the prior frame's GPU/VBlank wait. It must stop on complete
+source boundaries at the flip, save partial tile rows and packet budget, and
+forbid uploads or GPU commands before the normal post-flip path. Exact camera/
+final-state mismatch discards it. Repeated simulation ticks may replace a
+prefix only after invalidating it before rebuilding Events. Existing matching
+full prefixes retain their Events unchanged. Main visual applies were reviewed
+as idempotent; native renderer proofs and full replay remain required.
+
+An exact unchanged-camera BACK packet cache has native proofs but is not in
+production. Its sparse256B key can represent64 touched draws; overflow skips
+caching. Only59/474 earlier slow frames repeated camera, limiting its scope.
+Exact duplicate fog geometry and partial dynamic occlusion had no useful
+candidates in heavy snapshots. A particle spatial index was rejected after
+measuring only about0.043ms/frame of remaining collision work. Root owns builds.
+
+Retained recent optimizations include exact particle dividers, a two-way alpha
+mapping cache, aligned cache entries, a complete-key core-map cache and an
+incremental particle occupancy count. Pass27 static span is 1,954,828 bytes,
+with 27,380 bytes before the reserved 48 KiB stack. Its main frame is 25,520
+bytes; 23,632 reserved bytes remain for nested calls. Scratchpad use is 972
+bytes. These are linked budgets, not observed stack high-water measurements.
+
+Pass25 is the preceding validated gameplay build:2.18974 VBlanks
+(about27.4fps), with2,155 two-tick /489 three-tick /7 four-tick intervals. It
+still fails30fps. All233 Python/329 direct native tests pass; final hazardszero.
+The complete route reaches the same endpoint with no guest errors, traversal
+CD reads or static VRAM uploads. Final route/Lifeblood/Town images all match
+baseline pixels. Lifeblood's four earned-blue-health checks pass; Great Door
+opens after13hits intoTown. Town retains one pending transition wait tick;
+Life/Town particle drops14/23 remain the pre-existing bounded-pool limitation.
+
+Pass24's coarse retry was removed after a full-route regression. Its perspective
+correction loop was unexpectedly converted by LLVM to software wide division;
+pass25 uses explicit bounded corrections. Final MIPS confirms one native divide
+for perspective and two for exact64/32 velocity scaling, with wide fallback
+outside proven domains. Arithmetic samples fall27% versus24. Multi-million
+arithmetic comparisons and full trajectory/vertex tests retain exact values.
+The128-entry2-way secondary alpha cache uses5,184B plus8B telemetry and reuses
+25,717 of41,539 primary misses (61.9%). Selected cache helper samples fall
+about2,500. Final MIPS revealed unaligned Entry copies; align4 without growing
+40B entries is the next correction, alongside a small pure core-map cache.
+Current static span1,953,540 leaves28,668 bytes before48KiB stack; main25,512,
+scratch972. No hardware timing or stable30fps claim.
+
+Pass22 is the preceding measured build and the best mean so far (about27.2fps),
+but still fails the two-VBlank gate:2,094 two-tick /516 three-tick /17 four-tick
+intervals. Endpoint/error counters match baseline and the final display is
+pixel-identical. Pass21's64 four/five-tick frames all missed prepared coverage;
+synchronous preparation and per-draw tile work cost more CPU during particle
+bursts than they saved in GPU time. Pass22 uses tiles only when preparation
+already succeeded during the prior GPU wait. Misses retain ordinary rendering.
+Native GPU hit/miss proofs cover48 frames /3,686,400 identical16bit pixels.
+The collision helper now rejects distant polygon bounds before edge tests;
+159,049 differential cases plus boundary/extreme checks match the old algorithm.
+Combined collision-helper samples fall41%, RAM-load stalls47%. Main shrinks
+10.6KiB because two formerly inlined polygon instances now share the helper.
+All232 Python/309 direct native tests pass, and final hazards arezero.
+Static span1,944,252 leaves37,956 bytes before the48KiB stack reserve; main
+frame25,512 bytes. Scratchpad972/1024 bytes. Next: retain prepared coverage
+across unchanged-camera frames and investigate remaining exact particle and
+bounded clipping savings. Do not claim30fps or hardware timing.
+
+The preceding particle-only pass18 completed its route.
+Its final display is pixel-identical to the gameplay baseline, all 226 Python
+and 299 direct native/Rust tests pass, final hazards are zero, and endpoint/error
+counters match. Its slightly worse route mean does not establish a frame-rate speedup.
+The shared exact square-root helper is retained for measured CPU savings:
+combined particle/break tick and root samples fall12,264→11,284 (8.0%),
+RAM-load stalls40.990M→36.950M, and the targeted burst samples867→806.
+The static span also shrinks2,048 bytes. GPU timing remains the main limiter.
+Pass18 actual-CUE Lifeblood/Town replays also completed and both final images
+match pass16 byte-for-byte. All four earned-blue-health checks pass. Town
+records one boundary-wait tick immediately after the Great Door warp and before
+region93 activates (poll9946); CD/static VRAM counters remain unchanged. This
+is a pending gate transition, but must not be reported as zero waits.
+
+
+Reports live under `.hkpsx/<prefix>-profile/`. Every row still fails the strict
+two-VBlank acceptance gate. The final display of passes 3–10 is pixel-identical
+to the baseline; this does not prove every intermediate gameplay image. All
+complete routes retain the baseline endpoint and report zero guest faults,
+boundary waits, traversal CD reads and static VRAM uploads. Pass 3 regressed
+because large by-value rectangle partitions introduced copying; final MIPS
+inspection of pass 5 confirms those scenery/subtraction `memcpy` and `memset`
+calls are gone. Pass 7's background-core addition regressed the mean and was
+removed from the next experiment; its active-fade timer change is retained.
+Some heavy regions still issue 35–40 ms of GPU work per frame
+in the emulator. Do not describe any of these experiments as stable 30 fps.
+
+Pass 8's textured rotated-core counters stayed zero: its targeted source reveal
+mask is transparent along this live route. The static-camera coverage estimate
+did not account for that state. This unused guest integration is removed from
+the next experiment; its isolated pixel proof is not a performance result.
+Scoped collision-edge readers and exact bounding-box rejection before partial
+occluder copying/ranking remain. Actual pass-8 RAM snapshots in five slow
+regions establish that the large solid black geometry stays visible and fully
+opaque, unlike the reveal mask. Pass 10 selects one conservative
+rectangle inside a legal convex solid quad, with cached geometry and unchanged
+source order. It improves the route mean from 2.4719 to 2.3850 VBlanks (about
+25.2 fps), with 924 frames still above budget. Region 6 improves from 2.817 to
+2.115 VBlanks, while regions 16, 18 and 20 remain near three. The native GPU
+proof checks 72,353,484 pixels plus 2,906,584 pixels from runtime geometry.
+Pass 11 moves 312 bytes of temporary occlusion state into the PS1 scratchpad;
+its build, target layout assertions, native tests and final hazard scan pass,
+and its route completes with mean 2.3742 VBlanks, five four-tick frames (down
+from thirteen), unchanged endpoint and zero guest/CD/input errors. Its final
+image differs only inside the Knight animation bounds; scenery is identical.
+Region activations are 44 rather than 42 as frame phases shift, with the same
+two resident scenes and zero traversal CD/static VRAM activity. Pass 12 corrects the partial-occlusion bypass for oversized subdivided polygons.
+It retains each actual child XY/UV and source order and uses the existing
+optional packet reserve. A 117,964,800-pixel native differential covers source
+order, reflections, both blend modes/framebuffers and reserve exhaustion.
+The full replay improves to 2.2814 VBlanks (about 26.3 fps), with 712 frames
+still above budget. Repair occlusion activates on 9,058 children; capacity
+fallbacks and guest/CD/input errors remain zero. The final image is identical
+to baseline, and endpoint/resident activity are unchanged. Region 6 is now
+2.008 VBlanks, region 16 is 2.570, but regions 18/20 remain near three.
+Pass 13 combines shared screen-bound calculations with two extra cached
+solid-rectangle search rows. It reaches 2.2743 VBlanks, with three four-tick
+frames and 697 frames above budget; final display is pixel-identical and all
+error counters remain zero. All 224 Python plus 294 native/Rust tests pass.
+Final MIPS confirms duplicate bound calculations are removed, but increased
+register spills partly offset this CPU saving. Pass 14 refines shared bounds to i32 and submits the first packet sooner.
+First-kick delay falls about 0.61 ms in regions 15/16, and the route mean is
+2.2614 VBlanks (about 26.5 fps). Three four-tick frames remain; 668 frames
+still exceed two. Endpoint and error counters are unchanged; final-image
+differences are confined to the Knight animation bounds. Pass 15 added two cached bands inside a steep secondary solid and FRONT-only
+whole dynamic-packet culling. It **regressed** to 2.2954 VBlanks with eleven
+four-tick frames. The isolated band estimate did not survive runtime costs:
+regions 18/20 save only about 0.2/0.55 ms of issued GPU work, and CPU overhead
+outweighs that. The band integration is removed from pass 16; archived proof
+and actual regression data are in `.hkpsx/gpu-30fps-audit/band-production-proof.json`.
+Dynamic culling activates on 2,938 packets; it is retained for burst coverage.
+The final image differs only in the Knight animation, and errors remain zero.
+Pass-15 Lifeblood and Town CUE routes also complete with unchanged evidence
+inputs and zero faults. Lifeblood passes all four earned-blue-health checks;
+Town reaches region 93 after thirteen Great Door hits.
+
+Pass 16 builds successfully with zero final MIPS hazards and cooperative presentation progress inside existing
+input/particle checkpoints. Pass-14 burst frames showed 7–9 ms between final
+DMA kick and queuing the flip while simulation ran; this change checks progress
+inside those phases while preserving final-DMA completion and the SDK VBlank
+GPU gate. Four native state-machine tests cover 65,536 busy/idle schedules.
+The scene arena is reduced to 1,069,056 bytes, recovering 110,592 bytes after
+the exact pinned SDK and incremental decoder both pass the current payloads
+at all five slice budgets. The proven aligned minimum is 1,063,224 bytes,
+not just the 1,063,220 raw bytes; sector padding and ambience startup reads are
+included. Evidence: `.hkpsx/scene-arena-audit/report.json`. No assets are removed.
+Its linked static span is 1,860,712 bytes, leaving 121,496 bytes before the
+unchanged 48 KiB stack reservation; main frame is 25,552 bytes. The native input-wrapper harness was updated for the new service hook; the
+full suite passes (226 Python and 295 native/Rust tests). The pass-16 route
+completes with mean 2.2439 VBlanks, six four-tick frames, unchanged endpoint,
+zero faults/input misses and a pixel-identical final display. The final-DMA
+kick to flip-queue delay is now at most one scanline in burst regions, down
+from 120–147 scanlines in the earlier slow-frame examples. 3,038 dynamic packets are culled. GPU-heavy regions and particle
+update/construction bursts still miss the two-tick target. Lifeblood/Town replays on this CUE both pass with unchanged evidence inputs:
+all four blue-health checks, thirteen Great Door hits, Town ambience mask 54
+and six stem starts. Town final display is identical to baseline; Lifeblood
+differs only inside Knight animation bounds. Pass 17 applies exact checked-product velocity scaling to legacy particles.
+It improves mean to 2.2392 VBlanks, with five four-tick frames; final image,
+endpoint and errors match baseline. Native full-pool differential tests cover
+384 ticks and both checked/wide paths. Final MIPS keeps three native DIVs and
+three guarded wide fallbacks; software-call samples decrease. Static span is
+unchanged. Rotated-alpha cropping is rejected after fresh pass-16 packets show
+less than 0.18 ms potential saving. Earlier pass-8 estimates are superseded in
+`.hkpsx/rotated-alpha-audit/REPORT.json`. The next larger prototype is host-cooked
+opaque coverage certified across every Q8 rounding phase, so runtime work is
+translation/clipping rather than a new per-frame geometry search. It remains
+ignored experimental code until actual packet-budget/CPU/GPU gains are proved.
+These numbers still do not meet stable 30 fps.
+Earlier exploratory coverage estimates that paired stale per-region texture
+IDs with final scene mappings are explicitly invalidated in
+`.hkpsx/black-mask-audit-corrections.json`; use hash-verified final packs and
+actual replay results. The production opaque-core extraction and pixel proofs
+used the correct final data and are unaffected by that diagnostic error.
+The canonical disc is being replaced by these measured experiments during
+active work; the historical build identity below is not its current identity.
+
+## Previous verified gameplay baseline: Great Door progression and Lifeblood
+
+The sole `~/Downloads/ps1 games/hk-psx.cue` is updated. The final normal build
+contains a source-derived Great Door controller, smaller particle storage,
+scalar debris comparisons and a corrected main-stack reservation. It retains
+the existing tilemap fills, parallax, 95% approved static deduplication, Geo,
+menus, read points and shared Tutorial/Town residency. No additional quality
+reduction or disc copy was introduced. Source changes remain local on
+`codex/bootstrap`; this continuation did not commit or push.
+
+The final King's Pass exit was a distinct PlayMaker `Great Door`, not an ordinary
+Breakable: its collider remained permanent and its tk2d MeshRenderer art was
+omitted. The cooker now binds all three source poses. Nail hits change stages at
+four/eight hits and open it at thirteen, with a nine-tick hit cooldown. After a
+152-tick input lock the existing gate places the Knight at Town's `left1` entry.
+Opened state survives scene return and death during this session; Select resets
+it. Dedicated door sounds, stage debris, shake and original fade choreography
+remain missing. See [GREAT_DOOR.md](GREAT_DOOR.md) for source and approximations.
+
+Actual final-CUE validation, all using ordinary controller tapes and unchanged
+EXE/map/disc/frontend/input hashes:
+
+- `.hkpsx/progression-scalar-town/`: all 10,271 samples complete. All thirteen
+  hits and stage thresholds are observed; transition fires exactly 152 ticks
+  after the last hit. Ends in region 93 at `(2.5,44.390625)`, health 4. Surface
+  ambience reaches mask 54 after the 30-tick fade, with six total stem starts:
+  the shared stems are retained. Inspected all door stages, entry, settled Town
+  and final software/hardware captures. `great-door-coverage.json` binds the
+  evidence hashes. This proves the entrance, not complete Dirtmouth content.
+- `.hkpsx/progression-scalar-lifeblood/`: all 6,168 samples complete. The cocoon
+  releases two Scuttlers; striking them earns two blue masks after the source
+  delay. Three hazard hits show `(blue,ordinary)` health
+  `(2,4) -> (1,4) -> (0,4) -> (0,3)`. Touching a bug is not the reward trigger.
+  `tools/validate_lifeblood.py` passes all four checks; the health capture
+  sequence was inspected. Ends in region 44 with ordinary health 3, blue 0,
+  Geo 30 and no death. See [LIFEBLOOD.md](LIFEBLOOD.md).
+- `.hkpsx/progression-scalar-profile/`: the 5,871-sample user tape completes at
+  poll 5,962, ending at `(163.153656,6.390625)`, region 8, health 4. Its final
+  capture shows the level. All three routes have zero guest/CD/input/missed
+  input/geometry-repair faults and zero boundary waits. Gameplay CD sectors
+  remain 484, static VRAM bytes remain 694,048 and scene admissions remain two.
+
+Frame pacing improved modestly. The freshly rescanned baseline had mean 2.568
+VBlanks, maximum five, with seven five-VBlank frames. The final build has mean
+2.552, p95 three, maximum five, with three five-VBlank frames (histogram
+2:1,052 / 3:1,191 / 4:28 / 5:3). **The strict four-VBlank gate still fails.**
+An intermediate feature build had a six-VBlank spike during debris/activation;
+replacing four out-of-line array comparisons with exact scalar operations
+removed that spike in the final replay. Frame alignment changes with pacing;
+this is emulator evidence, not a hardware or frame-identical A/B claim. See
+[PERFORMANCE.md](PERFORMANCE.md).
+
+The 128-particle pool shrinks from 6,668 to 6,156 bytes using a nonzero lifetime
+representation, preserving particle counts and physics. This is a 512-byte
+saving in stack-resident world state, not BSS. Capacity rejections remain:
+14 on the Lifeblood route and 23 on the longer Town route. The original crash
+prefix's 14 rejections came from overlapping source bursts, not leaked slots
+(`.hkpsx/particle-overflow-2026-09-14.json`). Do not claim complete effects or
+increase the pool without measuring RAM, primitive and CPU cost.
+
+The previous main frame used 33,216 bytes against a 32,768-byte reservation.
+The build now derives a project linker script from the unchanged pinned SDK,
+protects 48 KiB and verifies the final EXE's main prologue before packaging.
+Current main frame is 25,560 bytes; total static span is 1,968,672, leaving
+13,536 bytes before the reservation. Main-stack high-water remains unmeasured.
+The two resident scenes total 1,063,220 bytes; arena space remaining is 116,428.
+There are 20 static 4bpp pages, 1,209 of 1,248 CLUT slots used and only 608
+unallocated VRAM bytes. Detailed budgets: [BUDGET.md](BUDGET.md).
+
+Build/test logs: `.hkpsx/progression-scalar-build.log` and
+`.hkpsx/progression-scalar-tests.log`. All 217 Python and 281 Rust/native tests
+pass (498 total); final MIPS branch-hazard scan is clean. Build identity:
+
+- EXE SHA256 `714737536355697e985c13eb069de43656c025794cbd735fe635d345cbca3cc4`
+- BIN SHA256 `c8b402a1d41934ae51318068c98a082e867f3451ca61dc58a1a2640abd8d8f3c`
+- CUE SHA256 `847e6ea3d0762d2163e0616a19c01b3ae85c469748318c588e14656bbc7f98fb`
+
+Next: profile the remaining five-VBlank burst frames, measure main-stack
+high-water and particle overlap demand, then finish Great Door/Lifeblood effect
+families and expand beyond Town's entrance with bounded area residency. Title/
+Dirtmouth music, flying enemies, abilities, NPCs, shops, saving, Shade recovery,
+bosses and full progression remain incomplete. Earned Focus still lacks a
+successful controller coverage route. Reproduction commands are in NEXT_PROMPT.md.
+Everything below is historical milestone evidence, superseded by this section.
+
+## Historical rescan: verified baseline at `6517d70`
+
+No guest changes or disc rebuild were made during this rescan. The main checkout
+and the existing Claude worktree are both at `6517d70`; their normal EXE and
+map hashes match the current canonical disc's build report. The report referenced
+the worktree's artifact paths. Those EXE/map files were subsequently found to be
+hard links to the root outputs and have since been overwritten by builds. Use
+this rescan's preserved `artifacts/` snapshots for historical comparisons.
+`tools/doctor.py` finds the Windows CrossOver installation and Unity `6000.0.61f1`;
+this checks the installation layout, not complete Steam asset integrity.
+
+Fresh checks on September 14:
+
+- `make test`: 210 Python and 279 Rust/native tests pass.
+  Log: `.hkpsx/rescan-2026-09-14-tests.log`.
+- `tools/replay_cue.py` with `.hkpsx/user-crash-4/extended.pxtape`:
+  all 3,558 tape polls complete, zero guest/CD/input/missed-input/geometry-repair
+  faults and zero boundary waits. Seven breakables were destroyed; the final
+  wallet is 30 in region 44. The final software and hardware images are byte-identical
+  to `.hkpsx/trim-crash/`. Inspected a 12-frame contact sheet and final capture;
+  the displayed terrain remains present and black interiors cover the background.
+  This route records 791 particle spawns and 14 pool-rejected spawns, so effects
+  are still capacity-limited. Evidence: `.hkpsx/rescan-2026-09-14-crash/`.
+- `tools/profile_tape.py` with the preserved 5,871-poll user tape and
+  `--require-seamless`: emulator completes at poll 5,962 with unchanged input
+  hashes and zero recorded faults. The strict gate correctly fails: 2,260 render
+  intervals have histogram 2:1,021 / 3:1,202 / 4:30 / 5:7 VBlanks, mean 2.568,
+  p95 3. These interval statistics exactly match `.hkpsx/trim-profile/`.
+  During gameplay CD sectors and static VRAM upload bytes stay constant,
+  with zero boundary waits across 43 region activations. Animation frame uploads
+  still occur from RAM. Endpoint: (163.153656, 6.390625), region 8, health 4.
+  Evidence: `.hkpsx/rescan-2026-09-14-profile/`; the inspected final capture
+  shows the level. This is emulator evidence, not hardware timing.
+
+The current pack contains **98 spatial views across Tutorial and Town entrance**,
+not 98 distinct full game rooms. Both scenes are preloaded; this is not yet a
+whole-game area streaming solution. `BUDGET.md` now reflects the actual packed
+sizes and generated capacities: 1,060,140 resident scene bytes, 119,508 arena
+bytes free, 1,120 texture slots, 480 scenery records and a 264-packet dynamic
+reserve. Only 36,084 bytes remain before the reserved main stack, whose high-water
+is unmeasured; gameplay VRAM has only 608 unallocated bytes. Older sections and
+feature-specific audio reports describe earlier allocations and binaries.
+
+Next concrete work: establish a controller-only route through the Lifeblood
+cocoon and validate blue-health acquisition/damage, then natural Town traversal.
+Profile the remaining activation/burst spikes against this baseline without
+simplifying source parallax. Investigate particle pool rejections before claiming
+complete destruction effects. Measure main-stack high-water and plan bounded
+area residency before adding substantial content. Title/Dirtmouth music, flying
+enemies, abilities, NPCs, saving, shops, Shade recovery, bosses and full progression
+remain incomplete. The prior particle and Geo `QueueFull` regressions are fixed
+on the replayed routes; they are not the current active blocker.
+
+## Earlier milestone: geometry fills, destruction effects, Lifeblood and burst pacing
 
 This build is validated on the sole disc and supersedes the Geo milestone's
 hashes below. It restores the opaque black `tk2dTileMap` interiors the cooker
@@ -66,7 +521,7 @@ with unchanged EXE/map/disc/tape/frontend hashes and zero guest, CD, input,
 missed-input and geometry-repair faults:
 
 - `.hkpsx/trim-profile/`: the standard 5,810-poll user tape, 2,260
-  render intervals, mean 2.568 VBlanks, p95 3, maximum 5; 37 intervals
+  render intervals, mean 2.568 VBlanks, p95 3, maximum 5; 7 intervals
   exceed four VBlanks, so **the strict four-tick gate still fails** (it also
   failed on the 2026-09-09 reference, mean 2.807). Endpoint (163.154,
   6.39062), region 8, health 4, zero faults. The guest culled 24,079 draws.

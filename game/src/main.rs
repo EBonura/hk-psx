@@ -12,6 +12,7 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
 mod input_queue;
 mod input_sampler;
 mod input;
+mod presentation;
 mod animation_cache;
 mod audio;
 mod ambience;
@@ -32,6 +33,7 @@ mod geo;
 mod geo_render;
 mod geo_audio;
 mod lifeblood;
+mod great_door;
 mod render;
 mod alpha_scissor;
 mod alpha_scissor_cache;
@@ -169,6 +171,14 @@ fn strike_lifeblood(life:&mut lifeblood::World,scene:usize,nail:&Nail,player:&Pl
     life.strike(scene,&polygon[..source.len()])
 }
 #[inline(never)]
+fn strike_great_door(door:&mut great_door::World,scene:usize,nail:&Nail,player:&Player)->great_door::Strike {
+    if !nail.hitting(ATTACK_PARAMS) {return great_door::Strike::default();}
+    let source=NAIL_POLYGONS[nail.kind as usize];let mut polygon=[[0;2];16];
+    assert!((3..=16).contains(&source.len()));
+    for (dst,p) in polygon.iter_mut().zip(source) {*dst=[player.x-p[0]*player.facing,player.y+p[1]];}
+    door.strike(scene,&polygon[..source.len()])
+}
+#[inline(never)]
 fn strike_geo(geo:&mut geo::World,scene:usize,nail:&Nail,player:&Player)->geo::Strike {
     if !nail.hitting(ATTACK_PARAMS) {return geo::Strike::default();}
     let source=NAIL_POLYGONS[nail.kind as usize];let mut polygon=[[0;2];16];
@@ -218,6 +228,7 @@ fn main() {
     let mut state=world::State::new();
     let geo=unsafe {&mut *(&raw mut GEO_WORLD)};
     let life=unsafe {&mut *(&raw mut LIFE_WORLD)};
+    let mut door=great_door::World::new();
     let mut reveals=reveal_masks::State::new();
     let mut enemies=enemies::EnemyWorld::new();
     let mut player=Player::spawn(SPAWN.0,SPAWN.1);
@@ -271,6 +282,7 @@ fn main() {
         render::init(&cache.room(),bank,region_id);state.apply(r);apply_reveal_masks(&reveals,r);
         geo_render::apply(geo,&mut state,region_id);
         lifeblood::apply(life,&mut state,region_id);
+        great_door::apply(&door,&mut state,region_id);
         unsafe { HK_GAME_MODE=1;HK_REGION_ID=region_id as u32+1; }
         let mut pending_target=None;
         let mut boundary_ticks=0u32;
@@ -284,15 +296,22 @@ fn main() {
             apply_reveal_masks(&reveals,r);
             geo_render::apply(geo,&mut state,region_id);
             lifeblood::apply(life,&mut state,region_id);
+            great_door::apply(&door,&mut state,region_id);
             let camera=(player.x.clamp(r.camera[0],r.camera[2]),(player.y+2*ONE).clamp(r.camera[1],r.camera[3]));
+            let door_frame=door.frame(region_id,camera);
             let body_frame=knight_frame(&room,&player,&focus);let effect_frame=nail_frame(&room,&nail);
             let enemy_draws=enemies.prepare_draws(r,&room,camera);
             let mut needed=[0u16;8];needed[0]=u32_at(room.frame(body_frame),0) as u16;
             let mut needed_len=if effect_frame.is_some(){2}else{1};
             if let Some(f)=effect_frame {needed[1]=u32_at(room.frame(f),0) as u16;}
             enemy_draws.append_needed(&mut needed,&mut needed_len);
+            if let Some(f)=door_frame {
+                assert!(needed_len<needed.len(),"Great Door animation working set");
+                needed[needed_len]=u32_at(room.frame(f),0)as u16;needed_len+=1;
+            }
             render::begin(&room,&needed[..needed_len],fb.buffer_y(fb.drawing));
             fb.clear(9,13,20);let mut prims=render::scenery(camera,false);prims+=enemy_draws.draw();render::kick_ready();prims+=state.draw_impacts(r,&room,camera);
+            if let Some(f)=door_frame {prims+=great_door::draw(&room,f,camera);}
             prims+=geo_render::draw(geo,region_id,camera);
             prims+=lifeblood::draw(life,region_id,camera);render::kick_ready();
             if !vitals.dead && (vitals.invulnerable_ticks==0 || frame%4<2) {
@@ -303,22 +322,16 @@ fn main() {
             emit::counter(counter::TRI_PRIMITIVES,prims*2);emit::stage_end(stage::RENDER);
             emit::stage_begin(stage::PRESENT);
             let display=fb.begin_deferred_swap();
-            let mut display_queued=false;
-            let mut front_pending=true;
+            presentation::begin(display);
             let mut ticks=0;
+            let mut coverage_clock=sim_clock;
             loop {
                 // An earlier chunk may still be walking: kick the final list as
                 // soon as the channel is free, then queue the display only
                 // after that final list (including HUD) has reached GP0; the
                 // IRQ then also waits for raster completion at a true VBlank edge.
-                if !render::dma_pending() {
-                    if front_pending {render::kick_front();front_pending=false;}
-                    else if !display_queued {
-                        psx_rt::interrupts::queue_gp1_at_vblank(display);
-                        display_queued=true;unsafe {render::HK_FRAME_FLIP_LINES=render::frame_lines();}
-                    }
-                }
-                if display_queued && !psx_rt::interrupts::gp1_queue_pending() {break;}
+                presentation::checkpoint();
+                if presentation::queued() && !psx_rt::interrupts::gp1_queue_pending() {break;}
                 input::checkpoint();
                 let _=cache.pump(); // Detailed errors remain in the CD markers.
                 input::checkpoint();
@@ -326,7 +339,7 @@ fn main() {
                 while sim_clock!=now {
                     sim_clock=sim_clock.wrapping_add(1);
                     let pad=ButtonState::from_bits(input::consume(sim_clock));
-                    dialogue::tick(r.scene,&player,PARAMS,target.is_none() && !paused && !vitals.dead && player.grounded && vitals.can_control() && !nail.active && !focus.locks_control(),pad.bits());
+                    dialogue::tick(r.scene,&player,PARAMS,target.is_none() && !paused && !door.pending() && !vitals.dead && player.grounded && vitals.can_control() && !nail.active && !focus.locks_control(),pad.bits());
                     ambience::tick();
                     let start=pad.is_held(button::START);
                     let mut ui_consumed=paused;
@@ -358,6 +371,7 @@ fn main() {
                     if pad.is_held(button::SELECT) {
                         geo.reset(geo::GEO_PARAMS);unsafe {HK_GEO_LOST=0;}
                         life.reset();
+                        door.reset();
                         dialogue::reset();state=world::State::new();reveals=reveal_masks::State::new();enemies=enemies::EnemyWorld::new();vitals=hk_sim::Vitals::new(VITAL_PARAMS);
                         player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();attacks=0;target=Some(0);paused=false;
@@ -366,10 +380,12 @@ fn main() {
                         gate_cooldown=gate_cooldown.saturating_sub(1);
                         state.tick();
                         state.tick_debris(r, &room);
+                        presentation::checkpoint();
                         if vitals.needs_death_respawn() {
                             unsafe {HK_GEO_LOST=HK_GEO_LOST.saturating_add(geo.death());}
                             geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                             life.reset();
+                            if !door.opened() {door.reset();}
                             dialogue::cancel();state.reset_scene(r.scene);reveals.reset_scene(r.scene);enemies.reset_scene(r.scene);vitals=hk_sim::Vitals::new(VITAL_PARAMS);
                             player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
                             nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();target=Some(0);
@@ -379,10 +395,11 @@ fn main() {
                             player=Player::spawn(safe.0,safe.1);player.facing=safe_facing;nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();
                             vitals.finish_hazard_respawn(VITAL_PARAMS);target=Some(safe.2);
                         } else if !vitals.dead {
+                            let door_exit=door.tick(r.scene);
                             let read_consumes=dialogue::consumes_actions();
                             let focus_events=focus.step(FOCUS_PARAMS,VITAL_PARAMS,hk_sim::FocusInput {
                                 held:pad.is_held(button::CIRCLE)&&!read_consumes,grounded:player.grounded,
-                                can_start:vitals.can_control() && (!nail.active || nail.age>=FOCUS_PARAMS.attack_recovery_ticks),
+                                can_start:vitals.can_control() && !door.pending() && (!nail.active || nail.age>=FOCUS_PARAMS.attack_recovery_ticks),
                             },&mut vitals);
                             unsafe {
                                 HK_FOCUS_STARTED+=u32::from(focus_events.started);HK_FOCUS_COMPLETED+=u32::from(focus_events.completed);
@@ -392,7 +409,7 @@ fn main() {
                             if focus_events.started {
                                 nail=Nail::new();nail_response=hk_sim::NailResponse::new();player.vy=0;player.jumping=false;
                             }
-                            let locked=focus.locks_control()||dialogue::open();
+                            let locked=focus.locks_control()||dialogue::open()||door.pending();
                             let dir=if locked {0}else{i32::from(pad.is_held(button::RIGHT))-i32::from(pad.is_held(button::LEFT))};
                             let was_grounded=player.grounded;
                             let jump=!locked && !read_consumes && pad.is_held(button::CROSS);
@@ -400,11 +417,11 @@ fn main() {
                             if let Some((vx,vy))=vitals.recoil_velocity(VITAL_PARAMS) {
                                 let mut p=PARAMS;p.speed=vx.abs();p.gravity=0;
                                 player.vy=vy;player.jumping=false;
-                                player.step(p,vx.signum(),false,room.counts[5],|i|state.edge(r,&room,i));
+                                player.step(p,vx.signum(),false,room.counts[5],state.edge_reader(r,&room));
                                 player.facing=-vitals.recoil_direction;
                             } else {
                                 if could_jump {audio::jump();}
-                                nail_response.step(NAIL_RESPONSE_PARAMS,PARAMS,&mut player,dir,jump,room.counts[5],|i|state.edge(r,&room,i));
+                                nail_response.step(NAIL_RESPONSE_PARAMS,PARAMS,&mut player,dir,jump,room.counts[5],state.edge_reader(r,&room));
                             }
                             if !was_grounded && player.grounded {audio::land();}
                             let vertical=i32::from(pad.is_held(button::UP))-i32::from(pad.is_held(button::DOWN));
@@ -416,15 +433,22 @@ fn main() {
                             let mining=strike_geo(geo,r.scene,&nail,&player);
                             if mining.hits>0 {geo_audio::hit();}
                             if mining.depleted>0 {geo_audio::break_rock();geo_render::apply(geo,&mut state,region_id);}
-                            let blue=life.tick(r.scene,player.x,r.collision_bounds,room.counts[5],|i|state.edge(r,&room,i));
+                            presentation::checkpoint();
+                            let blue=life.tick(r.scene,player.x,r.collision_bounds,room.counts[5],state.edge_reader(r,&room));
                             vitals.add_blue_health(blue);
                             if strike_lifeblood(life,r.scene,&nail,&player).opened {lifeblood::apply(life,&mut state,region_id);}
+                            let door_hit=strike_great_door(&mut door,r.scene,&nail,&player);
+                            if door_hit.opened {
+                                great_door::apply(&door,&mut state,region_id);
+                                dialogue::cancel();focus.interrupt();
+                            }
                             let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS);
                             enemies.take_geo_deaths(r.scene,|source,x,y|geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));
                             let h=geo::HERO_BOX;
                             let collected=geo.tick(r.scene,geo::GEO_PARAMS,[player.x+h[0],player.y+h[1],player.x+h[2],player.y+h[3]],
-                                r.collision_bounds,room.counts[5],|i|state.edge(r,&room,i));
+                                r.collision_bounds,room.counts[5],state.edge_reader(r,&room));
                             if collected.collected>0 {geo_audio::pickup(collected.last_value);}
+                            presentation::checkpoint();
                             unsafe {HK_ENEMY_HITS+=enemy_events.hits as u32;HK_ENEMY_KILLS+=enemy_events.kills as u32;HK_SOUL=vitals.soul as u32;}
                             if enemy_events.hits>0 {audio::enemy_hit();}
                             if enemy_events.hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();}
@@ -439,8 +463,11 @@ fn main() {
                                     safe=(checkpoint.spawn[0],checkpoint.spawn[1],id);safe_facing=checkpoint.facing;
                                 }
                             }
-                            if gate_cooldown==0 && !vitals.dead && !vitals.hazard_pending {
-                                if let Some(g)=world::gate(r.scene,&player) {
+                            if gate_cooldown==0 && !door.pending() && !vitals.dead && !vitals.hazard_pending {
+                                let gate=if door_exit {
+                                    Some(world::GATES.iter().find(|g|g.scene==r.scene&&g.target_scene==great_door::TARGET_SCENE).expect("Great Door exit gate"))
+                                } else {world::gate(r.scene,&player)};
+                                if let Some(g)=gate {
                                     if let Some(id)=world::locate(g.target_scene,g.spawn[0],g.spawn[1]) {
                                         geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                                         vitals.add_blue_health(life.leave_scene());
@@ -466,7 +493,27 @@ fn main() {
                     emit::stage_end(stage::UPDATE);emit::task_end(task::FIXED_UPDATE);ticks+=1;
                     input::checkpoint();
                 }
+                // Final DMA has drained, so CPU-only work may reuse packet
+                // RAM while the GPU finishes its copied commands. Reflect the
+                // next tick's visual state before preparing its BACK prefix.
+                // The renderer stops at source boundaries when the flip arrives
+                // and validates exact camera/state again before using a prefix.
+                if sim_clock!=coverage_clock && target.is_none()
+                    && presentation::queued() && psx_rt::interrupts::gp1_queue_pending() {
+                    coverage_clock=sim_clock;
+                    state.apply(r);
+                    apply_reveal_masks(&reveals,r);
+                    geo_render::apply(geo,&mut state,region_id);
+                    lifeblood::apply(life,&mut state,region_id);
+                    great_door::apply(&door,&mut state,region_id);
+                    let next_camera=(player.x.clamp(r.camera[0],r.camera[2]),
+                        (player.y+2*ONE).clamp(r.camera[1],r.camera[3]));
+                    // begin_deferred_swap already selected the future draw side.
+                    // No draw-target writes, uploads or GPU kicks occur here.
+                    render::prepare_back_prefix(next_camera,fb.buffer_y(fb.drawing));
+                }
             }
+            presentation::finish();
             render::finish_gpu_frame();fb.apply_draw_target();
             emit::counter(counter::SIM_TICKS,ticks);emit::stage_end(stage::PRESENT);emit::counter(counter::VISUAL_FRAMES,1);
             #[cfg(feature="emulator-telemetry")] if frame%30==0 {log_state(frame,&player,prims);}

@@ -1,5 +1,112 @@
 # Performance investigation
 
+## Active 30 fps target (2026-09-14)
+
+The acceptance budget is **at most two VBlanks per rendered gameplay frame**.
+The current pass40 disc averages 2.018783 VBlanks (about 29.7 fps), with
+184 / 2,456 / 232 / 3 intervals at one / two / three / four ticks. The strict
+gate still fails on235 of2,875 intervals. One-tick intervals improve the mean;
+they must not disguise the remaining three/four-tick stutters. Pass36 averaged
+2.159226, with427 of2,688 over budget. The original measured route averaged2.5523.
+
+Pass37 prepares a bounded background packet prefix after final DMA drains,
+while the prior GPU frame finishes. Exact camera, framebuffer and final sparse
+scenery state are checked before reuse; mismatches fall back. Pass39 retains
+its108-byte rectangular-occluder snapshot too. No GPU commands or animation
+uploads move before the prior flip. Pass40 salvages Claude's admission-time
+bounds rejection using four packed corner indices per draw, consuming480bytes
+instead of7,680. Original surviving vertices, texture sampling and draw order
+remain unchanged. User explicitly keeps320×240, framing, layers and effects.
+
+Final long-route, Lifeblood and Town captures match their reference images
+exactly. Lifeblood's four earned-health checks pass; the Great Door opens after
+thirteen hits. Town has one gate-transition wait tick, and pre-existing
+Lifeblood/Town particle drops remain14/23. No input faults or missed samples.
+All replay inputs remained hash-stable. Tests236Python/352directnative pass;
+final binary hazards zero. These are emulator measurements, not silicon proof.
+
+Greedy/tail clipping, compiler-wide O2/opt-s, rotated-cover and texel-cell trials
+were rejected or left out after measured regressions. See STATUS for the full
+table and CLAUDE_OPTIMIZATION_REVIEW for the removed worktree's salvage review.
+CPU scenery/scissor counters can include discarded speculative preparation;
+use GPU statistics and displayed intervals for delivered performance, and
+prefix counters for attempts, hits and reused packets.
+
+Use `tools/profile_tape.py --max-frame-route-ticks 2 --pc-window-ticks 1
+--require-seamless` with the actual EXE/map/canonical CUE and saved input tape.
+PC sampling is every 4,096 retired instructions; PC windows are one VBlank in
+these runs. Additional idle-loop samples after a speedup are not regressions
+in useful work. Normalize GPU/CPU totals by frame count and inspect slow-region
+critical paths, not just route means. Initial GPU kicks start earlier, and
+cooperative presentation checks reduce final-kick to queue delay to at most
+one scanline in burst regions. GPU-heavy regions and particle update bursts
+remain above budget. No original-console timing claim is made.
+
+Secondary solid bands were pixel-exact but regressed pass15: the actual GPU
+saving was much smaller than a snapshot model, and CPU costs outweighed it.
+They are removed. Exact tests and snapshots establish correctness, not speed;
+only full actual-CUE timing establishes the measured outcome.
+
+### Broader coverage investigation
+
+The three host-cooked opaque rectangle certificates passed all rounding-phase
+and native GPU correctness checks, but their realistic snapshot gain was only
+1.03/1.25 ms in regions18/20 while adding66/104 packets. They are not integrated.
+Evidence: `.hkpsx/gpu-30fps-audit/coverage-cert/report.json`.
+
+The initial tile oracle was only an upper bound. Production now uses exact
+host-certified4px phase coverage (84,284 bytes) and20×15 screen-tile owners.
+Eight-piece scissors retain original vertices, UVs and source order. Pass19
+regressed because per-cell CPU loops outweighed raster savings. Pass20 replaces
+these with event-driven15-word row masks; pass21 prepares during GPU waits.
+All64 pass21 four/five-tick frames lacked preparation and had45–115 particles.
+Pass22 therefore skips all additional tile processing on a preparation miss.
+This preserves ordinary rendering and removes the five-tick spikes;17 four-tick
+frames remain. Native GPU hit/miss proofs cover48 frames /3,686,400 identical
+pixels. Exactness evidence is `.hkpsx/gpu-30fps-audit/tile-cert/`; slow-frame
+correlations are `.hkpsx/tile-spike-audit/`. No timing claim follows from native
+raster-only estimates; complete guest replays remain decisive.
+
+## Debris comparisons and progression build (2026-09-14)
+
+The source-preserving scalar comparison change removes four `memcmp` callsites:
+particle pending bits, sleeping debris support lookup and two comparisons in
+`Body::step`. Four scalar XOR/OR operations compare an edge, and an OR tests an
+empty edge. Final MIPS disassembly confirms all four calls are absent. Existing
+physics/differential tests pass; no counts, lifetimes, collision order, parallax
+or textures changed. The separate lifetime layout change saves 512 stack bytes.
+
+| Same saved user tape | Mean VBlanks | 2 / 3 / 4 / 5 / 6 frames | Maximum |
+| --- | ---: | --- | ---: |
+| Rescanned `6517d70` |2.568|1,021 / 1,202 / 30 / 7 / 0|5|
+| Door + storage + stack build |2.560|1,039 / 1,192 / 32 / 3 / 1|6|
+| Final, with scalar comparisons |2.552|1,052 / 1,191 / 28 / 3 / 0|5|
+
+Reports respectively: `.hkpsx/rescan-2026-09-14-profile/`,
+`.hkpsx/progression-final-profile/` (intermediate despite its name), and
+`.hkpsx/progression-scalar-profile/` (historical gameplay baseline). All reach the same endpoint,
+region 8 at `(163.153656,6.390625)`, health 4. The final 2,274 intervals cover
+5,804 route ticks; earlier runs cover 5,803. Frame phase and animation cache
+choices shift with pacing, so do not interpret this as an identical-frame GPU
+benchmark. Final p95 is three; the strict four-tick gate still fails on three
+five-tick intervals. There are no gameplay CD reads, static VRAM uploads, boundary
+waits or recorded runtime faults. Animation transfers from resident RAM remain.
+
+The intermediate six-tick frame crossed region 1 -> 2 with about 80 active
+particles. Its 120-tick PC window contains 1,482 scenery samples, 1,426 particle/
+debris samples, 207 `memcmp` samples and only 22 renderer-init samples. The
+window is too broad to attribute an exact frame to one function. Global callsite
+samples attributed 608 `memcmp` samples to the targeted debris paths. The
+frame's GPU estimate increased only 3.6% against the old activation; collision
+work and changed phase overlapped the crossing, without loading. The final
+scalar build no longer has a six-tick frame on this tape.
+
+Tradeoff: inlining grows text by 688 bytes. Crossing a 2,048-byte linker alignment
+boundary grows static span by 2,048 bytes overall, leaving 13,536 bytes before
+the protected stack. BSS is unchanged. The modest measured pacing gain is
+retained, but RAM, stack high-water and residual burst cost still need work.
+These are emulator observations; original-console timing remains unmeasured.
+
 ## Whole-draw culling and rotated-quad occlusion (2026-09-11)
 
 Three experiments on the 2026-09-09 build, each judged by byte comparison of
@@ -638,3 +745,21 @@ fixture produces2 hits,1 kill,22 SOUL and5 masks, ending in region18 with no
 faults/deaths/hazard respawns. This avoids scheduling a late jump based on loading
 pauses that no longer occur. The full validator retains the two-hit reward and
 health checks.
+
+## Adjacent opaque-fill certificate audit (September 15)
+
+Joint certificates can cover seams between thin immutable FRONT tilemap fills
+that separate19×19 erosion cannot certify. An ideal single-camera union initially
+suggested1.224ms of additional region18 raster savings beyond existing cuts.
+After exhaustive relative phases and the existing8-piece/1,024-pixel threshold,
+pairs retain only0.288ms (+4packets), and groups of3–4 retain0.557ms (+4).
+Region15 retains0.171ms with groups. These estimates precede added guest CPU
+work, so this version was not integrated. It does not justify the ideal1.224ms
+claim for a production implementation. Native checks covered53certificates,
+819joint phases and299,184,165 certified pixels. Evidence remains ignored at
+`.hkpsx/pass36-certificate-gap-audit/`.
+
+Any future group approach needs per-region contributor membership, common
+parallax, complete immutable/live-state checks and minimum contributor rank.
+A global certificate attached to one source without checking its neighbours
+would be unsafe. No artwork or runtime behavior changed in this audit.

@@ -167,7 +167,10 @@ def postpack_actor_bank(report, source, scenes=None):
         actors=[a for a in actor_sources(sc) if a['movement_supported']]
         if not actors:continue
         atlas=Atlas();frames=[];clips=[]
-        append_actor_art(source,sc,actors,atlas,frames,clips);atlas.pack()
+        append_actor_art(source,sc,actors,atlas,frames,clips)
+        from great_door import append_art,bind
+        great_door=append_art(source,sc,atlas,frames)
+        atlas.pack()
         if atlas.pages:raise ValueError('Scene actor bank unexpectedly requires resident pages')
         for row in report['regions']:
             if row['scene_id']!=info['scene_id']:continue
@@ -211,6 +214,7 @@ def postpack_actor_bank(report, source, scenes=None):
                     actor['corpse']['air_clip']+=nc;actor['corpse']['land_clip']+=nc
                 preserved.append(actor)
             row['actors']=preserved
+            row['great_door']=bind(great_door,row,nf)
             if row['chunk_id']==1:
                 (ROOT/'data/room.hk').write_bytes(pack)
                 provenance_path=ROOT/'.hkpsx/provenance.json'

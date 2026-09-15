@@ -87,13 +87,15 @@ pub struct Strike {
     pub grass_cut: u16,
     pub impact_dropped: u16,
 }
-/// Filtered terrain for the active room, refreshed once per simulation tick.
+/// Filtered terrain retained until its source region or exclusions change.
 /// Coins, Scuttlers, enemies and effects otherwise re-decode and re-filter every
 /// edge per body per tick, which exceeded a VBlank with 16 coins and 7 broken objects.
 const EDGE_CACHE:usize=128;
 pub struct State {
     edge_cache:[[i32;4];EDGE_CACHE],
     edge_cache_count:usize,
+    edge_cache_source:*const u8,
+    edge_cache_region:*const Region,
     geo_edges:[u16;32],
     geo_edge_count:usize,
     lifeblood_edges:[u16;8],
@@ -105,6 +107,7 @@ pub struct State {
     broken: [u32; SCENES * BREAKABLES_PER_SCENE / 32],
     grass: [u32; SCENES * GRASS_PER_SCENE / 32],
     pub fade_left: [u16; SCENES * BREAKABLES_PER_SCENE],
+    fade_active:[u32;SCENES*BREAKABLES_PER_SCENE/32],
 }
 fn fill_edges(geo:&[u16],life:&[u16],broken:&[u32],region:&Region,room:&Room,cache:&mut [[i32;4]]) {
     let count=cache.len();
@@ -117,6 +120,7 @@ impl State {
     pub const fn new() -> Self {
         Self {
             edge_cache:[[0;4];EDGE_CACHE],edge_cache_count:0,
+            edge_cache_source:core::ptr::null(),edge_cache_region:core::ptr::null(),
             geo_edges:[0;32],geo_edge_count:0,
             lifeblood_edges:[0;8],lifeblood_edge_count:0,
             impacts: crate::impact::Pool::new(),
@@ -126,6 +130,7 @@ impl State {
             broken: [0; SCENES * BREAKABLES_PER_SCENE / 32],
             grass: [0; SCENES * GRASS_PER_SCENE / 32],
             fade_left: [0; SCENES * BREAKABLES_PER_SCENE],
+            fade_active:[0;SCENES*BREAKABLES_PER_SCENE/32],
         }
     }
     pub fn broken(&self, id: usize) -> bool {
@@ -139,6 +144,7 @@ impl State {
         }
         self.broken[b.id / 32] |= 1 << (b.id % 32);
         self.fade_left[b.id] = b.fade_ticks;
+        if b.fade_ticks!=0 {self.fade_active[b.id/32]|=1<<(b.id%32);}
         self.edge_cache_count=0;
         true
     }
@@ -179,20 +185,40 @@ impl State {
         self.particles.tick_break(region.scene,region.collision_bounds,count,&edge);
         self.debris.tick(region.scene,region.door_debris,region.collision_bounds,count,edge);
     }
-    /// Rebuild the filtered edge table for this room. Mutators of the exclusion
-    /// sets invalidate it; edge() then takes the direct path until the next refresh.
-    pub fn refresh_edges(&mut self,region:&Region,room:&Room) {
+    /// The resident scene payload is immutable. Its pointer plus the authored
+    /// region identity selects the local edge reference list, even when adjacent
+    /// views have equal edge counts and share the same scene allocation.
+    #[inline(always)]
+    fn edge_cache_matches(&self,region:&Region,room:&Room)->bool {
+        self.edge_cache_count==room.counts[5]
+            && core::ptr::eq(self.edge_cache_source,room.bytes.as_ptr())
+            && core::ptr::eq(self.edge_cache_region,region)
+    }
+    /// Rebuild only after an exclusion mutation or source change. Returns true
+    /// when the table was rebuilt; larger future rooms retain the direct path.
+    pub fn refresh_edges(&mut self,region:&Region,room:&Room)->bool {
+        if self.edge_cache_matches(region,room){return false;}
         let count=room.counts[5];
         let Self{edge_cache,edge_cache_count,geo_edges,geo_edge_count,lifeblood_edges,lifeblood_edge_count,broken,..}=self;
         if count<=EDGE_CACHE {
             fill_edges(&geo_edges[..*geo_edge_count],&lifeblood_edges[..*lifeblood_edge_count],broken,region,room,&mut edge_cache[..count]);
             *edge_cache_count=count;
-        } else {*edge_cache_count=0;}
+            self.edge_cache_source=room.bytes.as_ptr();self.edge_cache_region=region;
+            true
+        } else {*edge_cache_count=0;false}
     }
     pub fn tick(&mut self) {
         self.impacts.tick();
-        for time in &mut self.fade_left {
-            *time = time.saturating_sub(1);
+        // Only broken source objects with an unfinished fade need a timer
+        // update; retain scene-global countdowns and exact simultaneous expiry.
+        for (word,active) in self.fade_active.iter_mut().enumerate() {
+            let mut bits=*active;
+            while bits!=0 {
+                let bit=bits.trailing_zeros()as usize;bits&=bits-1;
+                let time=&mut self.fade_left[word*32+bit];
+                *time=time.saturating_sub(1);
+                if *time==0 {*active&=!(1<<bit);}
+            }
         }
     }
     pub fn enemy_death_particles(&mut self, region: &Region, source: u32, position: [i32; 3]) {
@@ -214,6 +240,7 @@ impl State {
                 if !object.persistent {
                     self.broken[object.id / 32] &= !(1 << (object.id % 32));
                     self.fade_left[object.id] = 0;
+                    self.fade_active[object.id/32]&=!(1<<(object.id%32));
                 }
             }
         }
@@ -347,12 +374,25 @@ impl State {
     /// Only the exact source colliders owned by a broken object disappear.
     pub fn set_geo_edges(&mut self,edges:&[u16]) {
         assert!(edges.len()<=self.geo_edges.len());
+        if self.geo_edge_count==edges.len()&&self.geo_edges[..edges.len()].iter().zip(edges).all(|(a,b)|a==b){return;}
         self.geo_edges[..edges.len()].copy_from_slice(edges);self.geo_edge_count=edges.len();self.edge_cache_count=0;
     }
     /// Refresh local cocoon collider bindings on every region activation.
     pub fn set_lifeblood_edges(&mut self,edges:&[u16]) {
         assert!(edges.len()<=self.lifeblood_edges.len());
+        if self.lifeblood_edge_count==edges.len()&&self.lifeblood_edges[..edges.len()].iter().zip(edges).all(|(a,b)|a==b){return;}
         self.lifeblood_edges[..edges.len()].copy_from_slice(edges);self.lifeblood_edge_count=edges.len();self.edge_cache_count=0;
+    }
+    /// Append bounded scripted exclusions after the Lifeblood refresh. The two
+    /// controllers share this eight-entry scratch; no second terrain cache.
+    pub fn append_script_edges(&mut self,edges:&[u16]) {
+        for &edge in edges {
+            if self.lifeblood_edges[..self.lifeblood_edge_count].contains(&edge) {continue;}
+            assert!(self.lifeblood_edge_count<self.lifeblood_edges.len());
+            self.lifeblood_edges[self.lifeblood_edge_count]=edge;
+            self.lifeblood_edge_count+=1;
+            self.edge_cache_count=0;
+        }
     }
     /// Every index below `cache.len()` with the same exclusions as edge(),
     /// built in one pass over the short exclusion lists instead of scanning
@@ -360,8 +400,29 @@ impl State {
     pub fn fill_edges(&self,region:&Region,room:&Room,cache:&mut [[i32;4]]) {
         fill_edges(&self.geo_edges[..self.geo_edge_count],&self.lifeblood_edges[..self.lifeblood_edge_count],&self.broken,region,room,cache);
     }
+    /// Validate the source once for a whole physics query. The returned reader
+    /// immutably borrows state/room, so exclusions cannot change while it lives.
+    /// Larger rooms and invalidated caches retain exact uncached filtering.
+    #[inline(always)]
+    pub fn edge_reader<'a>(&'a self,region:&'a Region,room:&'a Room<'a>)
+        ->impl Fn(usize)->[i32;4]+'a {
+        let cached=if self.edge_cache_matches(region,room) {
+            &self.edge_cache[..self.edge_cache_count]
+        } else {&[]};
+        move |index| {
+            if index<cached.len(){cached[index]}
+            else{self.edge_uncached(region,room,index)}
+        }
+    }
+    // The cached read must stay in the caller: returning this four-word value
+    // through an outlined MIPS call costs more than decoding the original edge.
+    #[inline(always)]
     pub fn edge(&self, region: &Region, room: &Room, index: usize) -> [i32; 4] {
-        if index<self.edge_cache_count {return self.edge_cache[index];}
+        if index<self.edge_cache_count&&self.edge_cache_matches(region,room) {return self.edge_cache[index];}
+        self.edge_uncached(region,room,index)
+    }
+    #[inline(never)]
+    fn edge_uncached(&self, region:&Region,room:&Room,index:usize)->[i32;4] {
         if self.geo_edges[..self.geo_edge_count].contains(&(index as u16)) {return [0;4];}
         if self.lifeblood_edges[..self.lifeblood_edge_count].contains(&(index as u16)) {return [0;4];}
         for object in region.breakables {

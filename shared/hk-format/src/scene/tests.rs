@@ -63,6 +63,18 @@ fn fixture()->Vec<u8>{
 }
 fn offset(b:&[u8],section:usize)->usize{crate::u32_at(b,64+section*4)as usize}
 
+#[test]
+fn draw_pool_identity_follows_each_room_reference() {
+    let b=fixture();let scene=Scene::parse(&b).unwrap();
+    assert_eq!(scene.room(0).unwrap().draw_pool_index(0),Some(0));
+    assert_eq!(scene.room(1).unwrap().draw_pool_index(0),Some(1));
+    let mut reordered=b.clone();let refs=offset(&reordered,9);
+    word(&mut reordered,refs,1);word(&mut reordered,refs+16,0);
+    let scene=Scene::parse(&reordered).unwrap();
+    assert_eq!(scene.room(0).unwrap().draw_pool_index(0),Some(1));
+    assert_eq!(scene.room(1).unwrap().draw_pool_index(0),Some(0));
+}
+
 fn incremental(bytes:&[u8],budget:usize)->Result<(),Error>{
     let mut cursor=SceneValidation::new(bytes)?;
     for _ in 0..100_000 {

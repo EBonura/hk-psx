@@ -22,6 +22,8 @@ pub const fn scene_page_base(scene:usize)->usize {SCENE_MANIFEST[scene].page_bas
 pub const fn scene_palette_base(scene:usize)->usize {SCENE_MANIFEST[scene].palette_base}
 /// Cooked largest opaque-black texel rectangle per scene texture (w==0: none).
 pub fn scene_black_cores(scene:usize)->&'static [[u8;4]] {SCENE_BLACK_CORES[scene]}
+/// Full-opacity occlusion only: colours remain textured, STP-clear overwrites.
+pub fn scene_opaque_cores(scene:usize)->&'static [[u8;4]] {SCENE_OPAQUE_CORES[scene]}
 pub const fn scene_region(scene:usize)->usize {SCENE_REGIONS[scene]}
 pub struct Cache {
     entries:[PackEntry;MAX_CHUNKS],header:[u32;2048],reader:SectorReader,

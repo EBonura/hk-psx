@@ -214,6 +214,73 @@ fn one_pass_edge_fill_matches_per_edge_filter() {
     assert_eq!(filled(&mut state), vec![[1, 2, 3, 2], [0; 4]]);
     state.set_lifeblood_edges(&[]);
     assert_eq!(state.edge(&region(), &room, 1), [4, 5, 4, 6], "set_lifeblood_edges invalidates");
+    state.set_lifeblood_edges(&[1]);
+    filled(&mut state);
+    state.append_script_edges(&[0]);
+    assert_eq!(state.edge(&region(), &room, 0), [0; 4], "scripted door invalidates cached collision");
+    assert_eq!(filled(&mut state), vec![[0; 4], [0; 4]], "door and Lifeblood exclusions coexist");
+    for _ in 0..16 {state.append_script_edges(&[0]);}
+    assert_eq!(filled(&mut state), vec![[0; 4], [0; 4]], "repeated frame application does not consume capacity");
+    state.set_lifeblood_edges(&[]);
+    state.append_script_edges(&[]);
+    assert_eq!(filled(&mut state), vec![[1, 2, 3, 2], [4, 5, 4, 6]], "region refresh clears prior exclusions");
+}
+
+// Minimal source room used to exercise cache identity independently of the
+// current cooker tables. Distinct payloads can deliberately have equal counts.
+fn edge_room_bytes(edges:&[[i32;4]])->Vec<u8> {
+    let mut bytes=vec![0u8;40+16+edges.len()*16+32+32768];
+    bytes[..8].copy_from_slice(b"HKROOM02");bytes[8]=1;bytes[12]=1;
+    bytes[28..32].copy_from_slice(&(edges.len()as u32).to_le_bytes());
+    bytes[46]=1;bytes[48]=1;
+    for(i,e)in edges.iter().enumerate(){for(j,v)in e.iter().enumerate(){
+        let p=56+i*16+j*4;bytes[p..p+4].copy_from_slice(&v.to_le_bytes());
+    }}
+    bytes
+}
+
+#[test]
+fn edge_cache_reuses_immutable_source_and_invalidates_only_actual_mutations() {
+    let bytes=edge_room_bytes(&[[1,2,3,2],[4,5,4,6]]);
+    let room=hk_format::Room::parse(&bytes).unwrap();
+    let r=region();let mut state=State::new();
+    assert!(state.refresh_edges(&r,&room));
+    for _ in 0..60 {
+        state.set_geo_edges(&[]);state.set_lifeblood_edges(&[]);state.append_script_edges(&[]);
+        assert!(!state.refresh_edges(&r,&room),"unchanged controllers retain terrain");
+    }
+    state.set_geo_edges(&[0]);assert!(state.refresh_edges(&r,&room));
+    state.set_geo_edges(&[0]);assert!(!state.refresh_edges(&r,&room));
+    state.set_lifeblood_edges(&[1]);assert!(state.refresh_edges(&r,&room));
+    state.set_lifeblood_edges(&[1]);state.append_script_edges(&[1]);
+    assert!(!state.refresh_edges(&r,&room),"duplicate scripted binding is unchanged");
+    state.set_lifeblood_edges(&[]);assert!(state.refresh_edges(&r,&room));
+    state.append_script_edges(&[1]);assert!(state.refresh_edges(&r,&room));
+    assert_eq!(state.edge(&r,&room,1),[0;4]);
+    state.break_object(B);assert!(state.refresh_edges(&r,&room));
+    assert!(!state.break_object(B));assert!(!state.refresh_edges(&r,&room));
+    state.reset_scene(0);assert!(state.refresh_edges(&r,&room));
+}
+
+#[test]
+fn edge_cache_distinguishes_equal_count_sources_regions_and_large_room_fallback() {
+    let a=edge_room_bytes(&[[1,2,3,2],[4,5,4,6]]);
+    let b=edge_room_bytes(&[[11,12,13,12],[14,15,14,16]]);
+    let a=hk_format::Room::parse(&a).unwrap();let b=hk_format::Room::parse(&b).unwrap();
+    let r=region();let mut other=region();other.breakables=&[];
+    let mut state=State::new();state.break_object(B);
+    assert!(state.refresh_edges(&r,&a));assert_eq!(state.edge(&r,&a,1),[0;4]);
+    // A source switch must never answer with the old cache, even before refresh.
+    assert_eq!(state.edge(&r,&b,0),[11,12,13,12]);
+    assert!(state.refresh_edges(&r,&b));assert!(!state.refresh_edges(&r,&b));
+    // Same scene bytes, different authored local bindings.
+    assert_eq!(state.edge(&other,&b,1),[14,15,14,16]);
+    assert!(state.refresh_edges(&other,&b));assert!(!state.refresh_edges(&other,&b));
+    let edges=vec![[101,102,103,102];129];let big=edge_room_bytes(&edges);
+    let big=hk_format::Room::parse(&big).unwrap();
+    assert!(!state.refresh_edges(&other,&big));
+    for i in 0..129 {assert_eq!(state.edge(&other,&big,i),edges[i]);}
+    assert!(state.refresh_edges(&r,&a),"return from fallback rebuilds source");
 }
 
 #[test]
@@ -502,4 +569,50 @@ fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
     assert!(binding_count>1,"revealed source sprite spans several residency regions");
     for _ in 0..30 {controller.tick(first.reveal_masks,&outside,p);}
     assert_eq!(controller.opacity(index),0);
+}
+
+
+#[test]
+fn active_fades_match_full_timer_reference_including_simultaneous_expiry() {
+    let mut state=State::new();let mut reference=[0u16;world::SCENES*world::BREAKABLES_PER_SCENE];
+    for (id,ticks) in [(0,0),(1,1),(31,17),(32,17),(63,2),(128,17),(255,65535)] {
+        assert!(state.break_object(Breakable{id,fade_ticks:ticks,..B}));reference[id]=ticks;
+    }
+    for tick in 0..65536 {
+        state.tick();for time in &mut reference{*time=time.saturating_sub(1);}
+        assert_eq!(state.fade_left,reference,"timer tick{tick}");
+        if tick==7 {assert!(!state.break_object(Breakable{id:31,fade_ticks:100,..B}),"repeat hits never restart");}
+    }
+}
+#[test]
+fn scene_reset_clears_only_its_transient_active_fades_and_allows_reactivation() {
+    let b=world::REGIONS.iter().filter(|r|r.scene==0).flat_map(|r|r.breakables)
+        .find(|b|!b.persistent).copied().expect("authored transient breakable");
+    let mut state=State::new();assert!(state.break_object(Breakable{fade_ticks:19,..b}));
+    let other=world::BREAKABLES_PER_SCENE;
+    assert!(state.break_object(Breakable{id:other,fade_ticks:19,..B}));
+    state.tick();assert_eq!(state.fade_left[b.id],18);assert_eq!(state.fade_left[other],18);
+    state.reset_scene(0);assert_eq!(state.fade_left[b.id],0);
+    state.tick();assert_eq!(state.fade_left[b.id],0);assert_eq!(state.fade_left[other],17);
+    assert!(state.break_object(Breakable{fade_ticks:2,..b}));
+    state.tick();assert_eq!(state.fade_left[b.id],1);state.tick();assert_eq!(state.fade_left[b.id],0);
+    let clean=State::new();assert!(clean.fade_left.iter().all(|&n|n==0));
+}
+
+
+#[test]
+fn scoped_edge_reader_matches_direct_queries_across_mutations_sources_and_fallback() {
+    let a=edge_room_bytes(&[[1,2,3,2],[4,5,4,6]]);
+    let b=edge_room_bytes(&[[11,12,13,12],[14,15,14,16]]);
+    let a=hk_format::Room::parse(&a).unwrap();let b=hk_format::Room::parse(&b).unwrap();
+    let r=region();let mut state=State::new();
+    let check=|state:&State,room:&hk_format::Room| {
+        let read=state.edge_reader(&r,room);
+        for i in 0..room.counts[5]{assert_eq!(read(i),state.edge(&r,room,i));}
+    };
+    check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);check(&state,&b);
+    state.break_object(B);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
+    state.set_geo_edges(&[0]);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
+    let big=edge_room_bytes(&vec![[101,102,103,102];129]);
+    let big=hk_format::Room::parse(&big).unwrap();state.refresh_edges(&r,&big);check(&state,&big);
 }

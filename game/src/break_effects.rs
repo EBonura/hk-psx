@@ -26,13 +26,43 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/break_effects.rs"));
 /// Exact `pair[0]+(delta*seed)/255` without the software 64-bit division:
 /// 65536 = 257*255+1, so for n = a*65536+b, n/255 = a*257+(a+b)/255.
 fn lerp(pair:[i32;2],seed:u8)->i32 {
-    if pair[0]==pair[1]{return pair[0];}
+    if seed==0 || pair[0]==pair[1]{return pair[0];}
+    if seed==255{return pair[1];}
     let n=(pair[1]as i64-pair[0]as i64)*seed as i64;
     let m=n.unsigned_abs();let a=(m>>16)as u32;let b=(m&0xffff)as u32;
     let q=a as u64*257+((a+b)/255)as u64;
     pair[0]+(if n<0{q.wrapping_neg()}else{q})as i32
 }
-fn sample(p:&Particle,style:&Style)->Sample {style.samples[(p.age as usize*32/p.life as usize).min(32)]}
+/// Clamping before division preserves the source fraction exactly. The authored
+/// 3..12 speed interval needs at most150405120 in the numerator, so only future
+/// wider ranges use the software64-bit division. Fast particles need no divide.
+fn speed_fraction(speed:i32,range:[i32;2])->u8 {
+    if speed<=range[0]{return 0;}
+    if speed>=range[1]{return 255;}
+    let delta=(speed as i64-range[0]as i64)as u32;
+    let span=(range[1]as i64-range[0]as i64)as u32;
+    match delta.checked_mul(255) {
+        Some(n)=>(n/span)as u8,
+        None=>(delta as u64*255/span as u64)as u8,
+    }
+}
+/// Preserve truncation toward zero; small components (notably source depth)
+/// use the R3000's32-bit divider without changing the general wide fallback.
+pub(super) fn scale_velocity(v:i32,scale:i32,speed:i32)->i32 {
+    match v.checked_mul(scale) {
+        Some(n)=>n/speed,
+        None if speed>0 && scale>=0 && scale<=speed=>{
+            // Damping cannot increase magnitude, including i32::MIN. Thus the
+            // unsigned quotient fits32 bits; signed restoration preserves the
+            // old truncation toward zero without a software wide divider.
+            let numerator=v.unsigned_abs()as u64*scale as u64;
+            let q=super::division::quotient32(numerator,speed as u32);
+            if v<0 {q.wrapping_neg()as i32}else{q as i32}
+        },
+        None=>(v as i64*scale as i64/speed as i64)as i32,
+    }
+}
+fn sample(p:&Particle,style:&Style)->Sample {style.samples[(p.age as usize*32/p.life.get() as usize).min(32)]}
 #[inline(never)]
 pub fn spawn_specs(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emitters:&[Emitter],styles:&[Style]) {
     for e in emitters.iter().filter(|e|e.scene as usize==scene&&e.owner as usize==owner) {
@@ -60,9 +90,9 @@ pub fn spawn_specs(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emi
             let norm=length3(direction).max(1);
             let velocity=core::array::from_fn(|j|((direction[j]as i64*speed as i64)/norm as i64)as i32+range(&mut rng,ordered(s.velocity[j])));
             pool.particles[search]=Some(Particle{position:core::array::from_fn(|j|e.origin[j]+dot3(e.basis[j],local)),velocity,size,
-                force:lerp(s.force[1],gradient)/60,angle,scene:e.scene,kind:e.style+2,life,age:0,delay:(((i as u64+1)*60*ONE as u64-1)/s.rate as u64).min(255)as u8,
+                force:lerp(s.force[1],gradient)/60,angle,scene:e.scene,kind:e.style+2,life:super::NonZeroU16::new(life).expect("positive particle lifetime"),age:0,delay:(((i as u64+1)*60*ONE as u64-1)/s.rate as u64).min(255)as u8,
                 cell:(super::random(&mut rng)%s.frames.len()as u32)as u8,gradient,color:s.color});
-            pool.spawned=pool.spawned.saturating_add(1);search+=1;
+            pool.active_count+=1;pool.spawned=pool.spawned.saturating_add(1);search+=1;
         }
     }
     pool.publish();
@@ -92,16 +122,16 @@ pub fn tick_specs(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],co
         let Some(p)=slot.as_mut()else{continue;};if p.scene as usize!=scene||p.kind<2{continue;}
         checkpoint();
         if p.delay>0 {p.delay-=1;continue;}
-        p.age+=1;if p.age>=p.life {*slot=None;continue;}
+        p.age+=1;if p.age>=p.life.get() {*slot=None;pool.active_count-=1;continue;}
         let s=&styles[(p.kind-2)as usize];let sample=sample(p,s);
         if s.collision&&(p.position[0]<coverage[0]||p.position[0]>coverage[2]||p.position[1]<coverage[1]||p.position[1]>coverage[3]){continue;}
         p.velocity[1]+=p.force;
         for j in [0,2] {if (s.force[j][0]|s.force[j][1])!=0 {p.velocity[j]+=lerp(s.force[j],p.gradient)/60;}}
         let spin_by_speed=(s.spin_speed[0]|s.spin_speed[1])!=0&&s.spin_range[1]>s.spin_range[0];
         let speed=if s.limit>=0||spin_by_speed {length3(p.velocity)}else{0};
-        if s.limit>=0&&speed>s.limit {let limited=speed-mulq(speed-s.limit,s.dampen);for v in &mut p.velocity {*v=(*v as i64*limited as i64/speed as i64)as i32;}}
+        if s.limit>=0&&speed>s.limit {let limited=speed-mulq(speed-s.limit,s.dampen);for v in &mut p.velocity {*v=scale_velocity(*v,limited,speed);}}
         let spin=lerp(sample.spin,p.gradient)+if spin_by_speed {
-            let f=((speed-s.spin_range[0])as i64*255/(s.spin_range[1]-s.spin_range[0])as i64).clamp(0,255)as u8;lerp(s.spin_speed,f)
+            lerp(s.spin_speed,speed_fraction(speed,s.spin_range))
         }else{0};
         if spin!=0||!(0..360*ONE).contains(&p.angle){p.angle=(p.angle+spin/60).rem_euclid(360*ONE);}
         let (next,radius)=sweep(p,s,&sample);
@@ -112,7 +142,7 @@ pub fn tick_specs(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],co
             pending[index/32]|=1<<(index%32);
         } else {p.position=next;}
     }
-    if pending!=[0;super::CAPACITY/32] {
+    if pending.iter().fold(0, |bits, &word| bits | word) != 0 {
         let mut scratch=[core::mem::MaybeUninit::<[i32;4]>::uninit();EDGE_SCRATCH];
         let mut n=0;
         if count<=EDGE_SCRATCH {
@@ -140,8 +170,8 @@ pub fn tick_specs(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],co
                     };
                     let dot=mulq(p.velocity[0],unit[0])+mulq(p.velocity[1],unit[1]);
                     for j in 0..2 {p.velocity[j]=mulq(p.velocity[j]-mulq(ONE+s.bounce,mulq(dot,unit[j])),ONE-s.collision_dampen);}
-                    p.age=p.age.saturating_add(((p.life as u32*s.life_loss.max(0)as u32)/65536).min(65535)as u16);
-                    if (s.kill_speed>0&&super::length_squared(p.velocity)<s.kill_speed as u64*s.kill_speed as u64)||p.age>=p.life {*slot=None;}
+                    p.age=p.age.saturating_add(((p.life.get() as u32*s.life_loss.max(0)as u32)/65536).min(65535)as u16);
+                    if (s.kill_speed>0&&super::length_squared(p.velocity)<s.kill_speed as u64*s.kill_speed as u64)||p.age>=p.life.get() {*slot=None;pool.active_count-=1;}
                 }
             }
         }
@@ -177,7 +207,7 @@ pub(super) fn draw_particle(p:&Particle,camera:(i32,i32))->bool {
     let a=ART[s.frames[p.cell as usize][level as usize-1]as usize];let half=mulq(p.size,lerp(sample.size,p.gradient))/2;
     let depth=2496922+p.position[2];if depth<=ONE{return false;}
     // Source-plane particles skip the 64-bit software division exactly.
-    let scale=if p.position[2]==0 {crate::KNIGHT_SCALE as i64}else{crate::KNIGHT_SCALE as i64*2496922/depth as i64};
+    let scale=if p.position[2]==0 {crate::KNIGHT_SCALE as i64}else{super::perspective::scale(depth)as i64};
     let vertices=[[-half,half],[half,half],[-half,-half],[half,-half]].map(|q|{
         let v=crate::world::debris::rotate(q,p.angle);
         (160+(((p.position[0]as i64+v[0]as i64-camera.0 as i64)*scale)>>28)as i32,
@@ -197,7 +227,7 @@ fn tick_reference(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],co
         let Some(p)=slot.as_mut()else{continue;};if p.scene as usize!=scene||p.kind<2{continue;}
         checkpoint();
         if p.delay>0 {p.delay-=1;continue;}
-        p.age+=1;if p.age>=p.life {*slot=None;continue;}
+        p.age+=1;if p.age>=p.life.get() {*slot=None;continue;}
         let s=&styles[(p.kind-2)as usize];let sample=sample(p,s);
         if s.collision&&(p.position[0]<coverage[0]||p.position[0]>coverage[2]||p.position[1]<coverage[1]||p.position[1]>coverage[3]){continue;}
         for j in 0..3 {p.velocity[j]+=lerp_reference(s.force[j],p.gradient)/60;}
@@ -230,10 +260,11 @@ fn tick_reference(pool:&mut Pool,scene:usize,styles:&[Style],coverage:[i32;4],co
             let n=length3_reference([normal[0],normal[1],0]).max(1);let unit=normal.map(|v|(v as i64*ONE as i64/n as i64)as i32);
             let dot=mulq(p.velocity[0],unit[0])+mulq(p.velocity[1],unit[1]);
             for j in 0..2 {p.velocity[j]=mulq(p.velocity[j]-mulq(ONE+s.bounce,mulq(dot,unit[j])),ONE-s.collision_dampen);}
-            p.age=p.age.saturating_add(((p.life as u32*s.life_loss.max(0)as u32)/65536).min(65535)as u16);
-            if length3_reference(p.velocity)<s.kill_speed||p.age>=p.life {*slot=None;}
+            p.age=p.age.saturating_add(((p.life.get() as u32*s.life_loss.max(0)as u32)/65536).min(65535)as u16);
+            if length3_reference(p.velocity)<s.kill_speed||p.age>=p.life.get() {*slot=None;}
         }
     }
+    pool.active_count=pool.particles.iter().flatten().count()as u32;
     pool.publish();
 }
 fn lerp_reference(pair:[i32;2],seed:u8)->i32 {if pair[0]==pair[1]{pair[0]}else{pair[0]+(((pair[1]as i64-pair[0]as i64)*seed as i64)/255)as i32}}
@@ -284,6 +315,46 @@ fn length3_reference(v: [i32; 3]) -> i32 {
             let seed=(rng>>24)as u8;assert_eq!(lerp(pair,seed),lerp_reference(pair,seed),"{pair:?} {seed}");
         }
     }
+    #[test]fn speed_fraction_preserves_clamps_truncation_and_wide_fallback(){
+        for bounds in [[3*ONE,12*ONE],[0,ONE],[-10*ONE,10*ONE],[-1_000_000_000,1_000_000_000]] {
+            for speed in [i32::MIN,bounds[0],bounds[0]+1,0,bounds[1]-1,bounds[1],i32::MAX] {
+                let expected=((speed as i64-bounds[0]as i64)*255/(bounds[1]as i64-bounds[0]as i64)).clamp(0,255)as u8;
+                assert_eq!(speed_fraction(speed,bounds),expected,"{speed} {bounds:?}");
+            }
+        }
+        for speed in (0..20*ONE).step_by(7) {
+            let expected=((speed as i64-3*ONE as i64)*255/(9*ONE as i64)).clamp(0,255)as u8;
+            assert_eq!(speed_fraction(speed,[3*ONE,12*ONE]),expected);
+        }
+    }
+    #[test]fn velocity_scale_preserves_signed_rounding_and_wide_products(){
+        for v in [i32::MIN,-30*ONE,-100,-1,0,1,100,30*ONE,i32::MAX] {
+            for scale in [0,1,786432,i32::MAX] {
+                for speed in [1,7,ONE,786432,i32::MAX] {
+                    assert_eq!(scale_velocity(v,scale,speed),(v as i64*scale as i64/speed as i64)as i32);
+                }
+            }
+        }
+    }
+    #[test]fn narrowed_velocity_division_keeps_signed_extremes_and_general_fallback(){
+        let mut seed=0x218f937au32;
+        for i in 0..300000 {
+            seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);let v=seed as i32;
+            seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);let speed=(seed&0x7fffffff).max(1)as i32;
+            seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);let scale=if i%4==0 {seed as i32}else{(seed%(speed as u32+1))as i32};
+            assert_eq!(scale_velocity(v,scale,speed),(v as i64*scale as i64/speed as i64)as i32);
+        }
+        for v in [i32::MIN,-65537,-1,0,1,65537,i32::MAX] {
+            for speed in [i32::MIN,-65537,-7] {for scale in [i32::MIN,-ONE,0,ONE,i32::MAX] {
+                assert_eq!(scale_velocity(v,scale,speed),(v as i64*scale as i64/speed as i64)as i32);
+            }}
+        }
+        for v in [i32::MIN,i32::MIN+1,-65537,-1,0,1,65537,i32::MAX] {
+            for speed in [1,65535,65536,65537,i32::MAX] {for scale in [0,1,speed/2,speed] {
+                assert_eq!(scale_velocity(v,scale,speed),(v as i64*scale as i64/speed as i64)as i32);
+            }}
+        }
+    }
     #[test]fn optimized_full_pool_flight_matches_naive_every_tick(){
         flight_matches_naive(0);
     }
@@ -321,6 +392,7 @@ fn length3_reference(v: [i32; 3]) -> i32 {
             tick_specs(&mut fast,scene,&styles,coverage,edges.len()+padding,|i|if i<cached.len(){cached[i]}else{[0;4]});
             tick_reference(&mut reference,scene,&styles,coverage,edges.len()+padding,edge);
             assert_eq!(format!("{:?}",fast.particles),format!("{:?}",reference.particles),"tick{tick}");
+            for p in fast.particles.iter().flatten() {super::super::perspective::assert_vertices(p.position,p.angle,p.size,(tick*7919,-tick*3571));}
             assert_eq!((fast.spawned,fast.dropped,fast.drawn),(reference.spawned,reference.dropped,reference.drawn));
         }
         assert_eq!(fast.active(),0);
@@ -355,10 +427,65 @@ fn length3_reference(v: [i32; 3]) -> i32 {
         for _ in 0..60 {tick_specs(&mut floor,0,&[s],COVER,0,|_|[0;4]);}
         assert!(floor.particles[0].unwrap().position[1]<last);
     }
-    #[test]fn lifetime_widening_stays_inside_existing_particle_pool_allocation(){
+    #[test]fn cached_active_count_tracks_mixed_families_scenes_delays_drops_and_reuse(){
+        use super::super::{Bank,EmitterSpec,Sample as LegacySample,Style as LegacyStyle};
+        static CURVES:[LegacySample;65]=[LegacySample{size:ONE,alpha:[255;2]};65];
+        static LEGACY:[LegacyStyle;2]=[LegacyStyle{life:[3;2],speed:[0;2],size:[ONE;2],force:[0;2],dampen:0,
+            rotation:0,count:40,duration:6,uv_scale:ONE,colors:[[128;3];2],curves:&CURVES};2];
+        let bank=Bank{frames:[&[],&[]],styles:&LEGACY,death_offset:[0;3]};
+        let source=EmitterSpec{state:0,source:13,origin:[0;3],basis:[[ONE,0,0],[0,ONE,0],[0,0,ONE]],direction:[0,0,ONE]};
+        let style=Style{count:40,life:[3;2],rate:60*ONE,..STYLE};
+        let scan=|p:&Pool|{assert_eq!(p.active(),p.particles.iter().flatten().count());assert!(p.active()<=128);};
+        let mut pool=Pool::new();scan(&pool);
+        pool.spawn_grass(0,source,bank);scan(&pool);
+        spawn_specs(&mut pool,1,7,0,1,&[Emitter{scene:1,..EMITTER}],&[style]);scan(&pool);
+        spawn_specs(&mut pool,0,7,0,1,&[EMITTER],&[Style{count:60,..style}]);scan(&pool);
+        assert_eq!((pool.active(),pool.spawned,pool.dropped),(128,128,12));
+        spawn_specs(&mut pool,0,7,0,1,&[EMITTER],&[Style{count:60,..style}]);scan(&pool);
+        assert_eq!((pool.active(),pool.spawned,pool.dropped),(128,128,72));
+        assert!(pool.particles.iter().flatten().any(|p|p.delay>0));
+        pool.clear_scene(2);scan(&pool);assert_eq!(pool.active(),128);
+        pool.tick(0,None);scan(&pool);assert_eq!(pool.active(),128);
+        for tick in 0..72 {
+            pool.tick(0,Some(bank));scan(&pool);
+            pool.tick(2,Some(bank));scan(&pool);
+            for scene in [0,1] {tick_specs(&mut pool,scene,&[style],COVER,0,|_|[0;4]);scan(&pool);}
+            if tick==2 {pool.clear_scene(1);scan(&pool);let count=pool.active();pool.clear_scene(1);scan(&pool);assert_eq!(pool.active(),count);}
+            if tick==8 {pool.spawn_death(2,17,[0;3],bank);scan(&pool);}
+            if tick==10 {pool.clear_scene(0);scan(&pool);}
+        }
+        assert_eq!((pool.active(),pool.spawned,pool.dropped),(0,168,72));
+    }
+    #[test]fn collision_kill_and_life_loss_remove_exactly_one_cached_slot(){
+        for life_loss in [0,ONE] {
+            let mut pool=Pool::new();let style=Style{count:1,life:[60;2],size:[ONE;2],speed:[0;2],force:[[0;2];3],
+                collision:true,kill_speed:if life_loss==0{i32::MAX}else{0},life_loss,radius_scale:ONE,..STYLE};
+            spawn_specs(&mut pool,0,7,0,1,&[EMITTER],&[style]);assert_eq!(pool.active(),1);
+            let p=pool.particles[0].as_mut().unwrap();p.delay=0;p.position=[0,ONE/2+1,0];p.velocity=[0,-60*ONE,0];
+            tick_specs(&mut pool,0,&[style],COVER,1,|_|[-10*ONE,0,10*ONE,0]);
+            assert_eq!(pool.active(),0);assert_eq!(pool.particles.iter().flatten().count(),0);
+            tick_specs(&mut pool,0,&[style],COVER,1,|_|[-10*ONE,0,10*ONE,0]);assert_eq!(pool.active(),0);
+        }
+    }
+    #[test]fn positive_lifetime_eliminates_option_tag_without_reducing_capacity(){
         assert_eq!(core::mem::size_of::<Particle>(),48);
-        assert_eq!(core::mem::size_of::<Option<Particle>>(),52);
-        assert_eq!(core::mem::size_of::<Pool>(),52*super::super::CAPACITY+12);
+        assert_eq!(core::mem::size_of::<Option<Particle>>(),48);
+        assert_eq!(super::super::CAPACITY,128);
+        assert_eq!(core::mem::size_of::<Pool>(),6160);
+    }
+    #[test]fn positive_lifetime_storage_preserves_full_u16_range_and_expiry(){
+        for life in [1,255,256,600,u16::MAX] {
+            let s=Style{life:[life;2],count:1,..STYLE};let mut p=Pool::new();
+            spawn_specs(&mut p,0,7,0,1,&[EMITTER],&[s]);
+            let particle=p.particles[0].as_mut().unwrap();
+            assert_eq!(particle.life.get(),life);
+            particle.delay=0;particle.age=life-1;
+            tick_specs(&mut p,0,&[s],COVER,0,|_|[0;4]);
+            assert_eq!(p.active(),0,"lifetime {life} must expire on its original tick");
+            spawn_specs(&mut p,0,7,0,1,&[EMITTER],&[s]);
+            assert_eq!(p.active(),1,"the zero niche must remain reusable");
+            assert_eq!(p.dropped,0);
+        }
     }
     #[test]fn source_break_angle_offset_changes_with_nail_direction_only(){
         let s=Style{count:1,speed:[ONE;2],arc:0,..STYLE};let e=Emitter{angle_offset:45*ONE,..EMITTER};
