@@ -45,6 +45,11 @@ and ongoing experiments are recorded in docs/STATUS.md. This covers the current 
 or physical-console timing. See [docs/STATUS.md](docs/STATUS.md) for evidence and
 [docs/BUDGET.md](docs/BUDGET.md) for measured allocations.
 
+Development now has a [controlled headless Windows reference runner](docs/ORIGINAL_REFERENCE.md)
+for repeatable original-game input/state comparisons. It runs an isolated copy
+with an internal virtual controller and logs player, enemy and FSM state;
+NullGfx runs do not establish image or audible-output parity.
+
 This is an early port, with substantial missing systems and unverified paths.
 Flying enemies, full scene scripting, saving, inventory, abilities, NPCs, bosses,
 music, Geo spending, Shade recovery and complete-game progression remain unfinished.

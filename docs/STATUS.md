@@ -1,10 +1,67 @@
 # Status, 2026-09-15
 
-## Current work: playable build with cheats
+## Current work: controllable headless original reference
+
+The user requested an original-game runner controlled through scripts so future
+fixes can be compared against repeatable original behaviour. The Windows
+Unity 6000.0.61f1 original now runs under CrossOver with a NullGfxDevice, isolated
+from the Steam bottle/install/saves. See [ORIGINAL_REFERENCE.md](ORIGINAL_REFERENCE.md).
+
+Two final 300-input-frame movement runs pass: every consumed mask matches the
+tape. Despite different startup frames, velocities, health, control/input states
+and relative physics-step counts match exactly; positions differ by at most
+0.00001 world units. Original walk speed is 8.3 units/s; the test walks, jumps,
+lands, reverses and attacks. Both runs have zero gameplay exceptions. One run
+reports a CameraController.ReleaseLock exception during shutdown after the
+explicit completion marker; this is retained as teardown evidence, not hidden.
+Nine host validation tests pass. Evidence is ignored under
+`.hkpsx/og-reference/runs/movement-phase-1/`, `movement-phase-2/` and
+`.hkpsx/og-reference/comparisons/movement-phase-1--movement-phase-2.json`.
+All 1,793 original game/save inputs match before/after fingerprints.
+No PS1 disc was rebuilt; 63 remains the playable pair.
+
+Live mailbox control also passes: movement/release, direct Town loading,
+teleport to (120, 15), and quit. It records 128 gameplay samples and 130 native input
+updates; the extra polls occur during original scene loading and are now logged
+explicitly in input-events.csv. Evidence: `.hkpsx/og-reference/runs/live-v2/` and
+`.hkpsx/og-reference/live-check.json`. Direct loads/teleports are setup fixtures,
+not measurements of normal traversal timing.
+
+The driver retains native input edges, hero physics, enemies and FSMs. The
+movie is bypassed as a test fixture, but the original Knight_Pickup prerequisite
+and first-landing control lock are retained. Startup language confirmation was
+the real first-launch blocker; the provisional splash-animation skip was
+removed after the unmodified animation path passed. Input tapes wait for
+original acceptingInput and grounded state. The test update clock is 60Hz;
+original physics remains approximately 50Hz and both clocks are logged.
+Readiness aligns their 100ms common phase so asynchronous startup does not shift
+input edges by a physics step. No original physics/hero state is reset.
+
+FSM/actor/audio-configuration sampling provides state evidence, not rendered
+image or audible-output parity. Polling cannot prove every one-shot SFX call.
+Next compare the reported Great Door, Crawlers and Town boundary using targeted
+original/PS1 scenarios and add audio-call traces for missing SFX.
+
+Source audits already identified concrete port issues, still unbuilt/unfixed:
+
+- Great Door's original 2.5s delay applies to destination hero entry, while the
+  port currently waits before departure. The current hit sound hook is absent.
+- Crawlers 12546/12548 freeze at the narrow collision-data apron while still
+  visible; three original Buzzers are unsupported.
+- Port Town coverage ends at x48; walking beyond it takes hazard recovery back
+  to the gate. Original Town continues across the main street. The next content
+  expansion requires an atlas-residency decision, not just wider bounds.
+
+Ignored source evidence: `.hkpsx/great-door-audio-followup/`,
+`.hkpsx/enemy-behavior-audit/`, `.hkpsx/town-expansion62-audit/RESULT.md`.
+A local, unintegrated Great Door hit-audio patch remains in audio.rs/cook_audio.py;
+it is not part of the delivered disc or this reference-runner milestone.
+
+## Playable build with cheats
 
 The user paused FPS optimization to playtest the current port. The sole disc
 now contains63: the retained54 renderer plus title/pause Cheats menus. Do not
-resume FPS experiments or full-game expansion until the user requests it.
+resume generic FPS experiments during this reference-runner work.
 The long-term start-to-finish objective remains unfinished; see ROADMAP.md.
 
 Cheats default off. Title and pause both expose invincibility, Pure Nail
