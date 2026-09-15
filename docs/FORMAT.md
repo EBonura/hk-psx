@@ -19,7 +19,8 @@ bytes), polygon descriptors (8 bytes) and Q16 point records (8 bytes). Padding
 must be zero and every descriptor uses its versioned stride; native Rust layout
 is never serialized.
 
-Region records retain global chunk IDs, activation/collision/camera bounds,
+Region records retain strictly increasing, nonzero global chunk IDs,
+activation/collision/camera bounds,
 global-neighbour spans, object spans and polygon spans. Object records carry a
 source identity, stable state ID, kind/ownership flags, bounds and polygon
 spans. Neighbours are global IDs and therefore are not incorrectly compared
