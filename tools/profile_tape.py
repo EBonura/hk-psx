@@ -28,6 +28,7 @@ OPTIONAL_WATCH = ('HK_LIFEBLOOD_OPENED','HK_LIFEBLOOD_ACTIVE','HK_LIFEBLOOD_STRU
                   'HK_VRAM_BANK_HITS', 'HK_VRAM_BANK_MISSES',
                   'HK_VRAM_ACTIVE_BANK', 'HK_VRAM_PENDING_REGION',
                   'HK_SCENERY_REPAIRS', 'HK_SCENERY_REPAIR_FAILURES',
+                  'HK_REPAIR_OCCLUSION_QUADS', 'HK_REPAIR_OCCLUSION_SAVED_PIXELS',
                   'HK_SCISSOR_QUADS', 'HK_SCISSOR_SAVED_PIXELS',
                   'HK_SCISSOR_CAPACITY_FALLBACKS',
                   'HK_REVEAL_MASKS_HIDDEN', 'HK_REVEAL_MASKS_PARTIAL',
@@ -39,7 +40,17 @@ OPTIONAL_WATCH = ('HK_LIFEBLOOD_OPENED','HK_LIFEBLOOD_ACTIVE','HK_LIFEBLOOD_STRU
     'HK_ROOM_STORED_COMPLETIONS','HK_ROOM_STORED_HITS','HK_INPUT_POLLS', 'HK_INPUT_MISSED_VBLANKS',
                   'HK_INPUT_QUEUE_PEAK', 'HK_INPUT_FAULT',
                   'HK_SCISSOR_CACHE_HITS', 'HK_SCISSOR_CACHE_MISSES',
+                  'HK_SCISSOR_SECONDARY_HITS', 'HK_SCISSOR_SECONDARY_MISSES',
+                  'HK_CORE_MAP_CACHE_HITS', 'HK_CORE_MAP_CACHE_MISSES',
                   'HK_CORE_QUADS', 'HK_OCCLUSION_QUADS', 'HK_OCCLUSION_SAVED_PIXELS', 'HK_HIDDEN_QUADS', 'HK_HIDDEN_PIXELS', 'HK_ROTATED_OCCLUSION_QUADS',
+                  'HK_ROTATED_CORE_CACHE_HITS', 'HK_ROTATED_CORE_CACHE_MISSES', 'HK_ROTATED_CORE_OCCLUDERS',
+                  'HK_SOLID_CORE_CACHE_HITS', 'HK_SOLID_CORE_CACHE_MISSES', 'HK_SOLID_CORE_OCCLUDERS',
+                  'HK_DYNAMIC_HIDDEN_QUADS',
+                  'HK_TILE_PREPARES', 'HK_TILE_PREPARE_HITS', 'HK_TILE_PREPARE_MISSES',
+                  'HK_BACK_PREBUILDS', 'HK_BACK_PREBUILD_HITS', 'HK_BACK_PREBUILD_MISSES',
+                  'HK_BACK_PREBUILD_PACKETS', 'HK_BACK_PREBUILD_LINES',
+                  'HK_TILE_COVERAGE_CANDIDATES', 'HK_TILE_COVERAGE_LOOKUPS', 'HK_TILE_COVERAGE_TILES',
+                  'HK_TILE_OCCLUSION_QUADS', 'HK_TILE_SAVED_PIXELS', 'HK_TILE_FALLBACKS',
                   'HK_FRAME_FIRST_KICK_LINES', 'HK_FRAME_LAST_KICK_LINES', 'HK_FRAME_FLIP_LINES',
                   '__psx_rt_vblank_count')
 
@@ -195,7 +206,7 @@ def analyze(output, watches, map_text):
                            'Identical poll inputs can follow different positions after pacing or region changes.']}
 
 
-def seamless_failures(result, max_frame_route_ticks=4):
+def seamless_failures(result, max_frame_route_ticks=2):
     """Strict gameplay continuity gate; CD activity itself is not a failure.
 
     Initial menu/loading is excluded by analyze(). Bank loading must preserve
@@ -255,15 +266,19 @@ def main():
     parser.add_argument('--frontend', type=Path, default=Path(__file__).resolve().parents[2] / 'PSoXide-emulator/target/release/frontend')
     parser.add_argument('--require-seamless', action='store_true',
                         help='Fail on any boundary wait, missed gameplay poll, or activation/frame budget spike')
-    parser.add_argument('--max-frame-route-ticks', type=int, default=4,
-                        help='Maximum gameplay frame interval for --require-seamless (default4)')
+    parser.add_argument('--max-frame-route-ticks', type=int, default=2,
+                        help='Maximum gameplay frame interval for --require-seamless (default2: 30 fps at 60 Hz)')
     parser.add_argument('--screenshot-interval',type=int,default=600,
                         help='Route ticks between software display captures (default600)')
+    parser.add_argument('--pc-window-ticks',type=int,default=120,
+                        help='PC attribution window in route ticks; use1 to isolate a burst VBlank')
     args = parser.parse_args()
     if args.max_frame_route_ticks < 1:
         parser.error('--max-frame-route-ticks must be positive')
     if args.screenshot_interval < 1:
         parser.error('--screenshot-interval must be positive')
+    if args.pc_window_ticks < 1:
+        parser.error('--pc-window-ticks must be positive')
     args.exe, args.map, args.cue, args.tape, args.output, args.frontend = (
         p.resolve() for p in (args.exe, args.map, args.cue, args.tape, args.output, args.frontend))
     tape = args.tape.read_bytes()
@@ -306,7 +321,7 @@ def main():
                'route-screenshot-dir': 'screenshots'}
     for flag, name in outputs.items():
         cmd += ['--' + flag, str(args.output / name)]
-    cmd += ['--pc-sample-window-ticks', '120', '--pc-sample-instructions', '4096',
+    cmd += ['--pc-sample-window-ticks', str(args.pc_window_ticks), '--pc-sample-instructions', '4096',
             '--route-screenshot-interval', str(args.screenshot_interval), '--dump-guest-profile']
     for address in watches.values():
         cmd += ['--route-watch-u32', address]

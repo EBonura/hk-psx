@@ -187,11 +187,24 @@ pub fn polygon_hits_box(poly: &[[i32; 2]], bounds: [i32; 4]) -> bool {
         return false;
     }
     let [x0, y0, x1, y1] = bounds;
-    if poly
-        .iter()
-        .any(|p| (x0..=x1).contains(&p[0]) && (y0..=y1).contains(&p[1]))
+    let mut extent = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
+    for p in poly {
+        if (x0..=x1).contains(&p[0]) && (y0..=y1).contains(&p[1]) {
+            return true;
+        }
+        extent[0] = extent[0].min(p[0]);
+        extent[1] = extent[1].min(p[1]);
+        extent[2] = extent[2].max(p[0]);
+        extent[3] = extent[3].max(p[1]);
+    }
+    // Most trigger polygons are distant from the player. Reuse the vertex
+    // scan to reject them once, before four segment tests per polygon edge.
+    // Strict separation preserves all touching cases. Reversed legacy bounds
+    // retain the old exact path rather than changing their interpretation.
+    if x0 <= x1 && y0 <= y1
+        && (extent[2] < x0 || extent[0] > x1 || extent[3] < y0 || extent[1] > y1)
     {
-        return true;
+        return false;
     }
     let corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
     let mut inside = false;
@@ -295,3 +308,7 @@ mod tests {
         assert!(!polygon_hits_box(&square, [110, 110, 120, 120]));
     }
 }
+
+#[cfg(test)]
+#[path = "combat_polygon_bounds_tests.rs"]
+mod polygon_bounds_tests;

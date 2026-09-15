@@ -20,6 +20,10 @@ def build(telemetry=False, candidate=False):
     from scenery_geometry import generate
     generate(ROOT)
     rooms = scene_manifest()
+    # Certificates bind to the final deduplicated bank geometry/palette words.
+    # Keep direct guest builds on the same reproducible path as tools/build.py.
+    from opaque_tiles import cook as cook_opaque_tiles
+    cook_opaque_tiles()
     ambience=json.loads((ROOT/'.hkpsx/ambience.json').read_text())
     clips=ambience['clips']
     for path,expected in (
@@ -39,7 +43,9 @@ def build(telemetry=False, candidate=False):
     out=build_directory(telemetry,candidate);out.mkdir(parents=True,exist_ok=True)
     env=dict(os.environ,CARGO_TARGET_DIR=str(out/'guest'))
     link_map=link_map_path(telemetry,candidate)
-    env['RUSTFLAGS']=f'-Cllvm-args=-disable-mips-df-backward-search -Clink-arg=-T{ROOT}/.psoxide/sdk/psoxide.ld -Clink-arg=--oformat=binary -Clink-arg=-Map={link_map}'
+    from stack_budget import prepare_linker, check_main_frame
+    linker=prepare_linker(ROOT,out)
+    env['RUSTFLAGS']=f'-Cllvm-args=-disable-mips-df-backward-search -Clink-arg=-T{linker} -Clink-arg=--oformat=binary -Clink-arg=-Map={link_map}'
     # Cargo restores cached EXEs without rerunning the linker. Each feature
     # variant must retain its own map; a missing map requires a fresh guest link.
     if not link_map.exists():
@@ -50,6 +56,7 @@ def build(telemetry=False, candidate=False):
     exe=out/'guest/mipsel-sony-psx/release/hk-psx.exe'
     from hazards import scan
     scan(exe,link_map,report_path=hazard_report_path(telemetry,candidate))
+    check_main_frame(exe,link_map.read_text())
     shutil.copy2(link_map,out/'hk-psx.map')
     outputs = artifacts(telemetry,candidate)
     outputs['exe'].parent.mkdir(parents=True,exist_ok=True)

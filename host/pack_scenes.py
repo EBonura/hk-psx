@@ -12,7 +12,9 @@ from pathlib import Path
 from scene_bank import build_scene, compressed, fnv, aligned
 
 ROOT=Path(__file__).resolve().parents[1]
-SCENE_ARENA_BYTES=1179648
+# Current scene pair passes the exact sequential in-place decoder at this
+# capacity, including sector padding. Keep validation mandatory for new assets.
+SCENE_ARENA_BYTES=1069056
 MAX_PAGES=20
 MAX_PALETTES=1248  # Final legacy CLUT strip is reserved for independent Geo art.
 
@@ -40,16 +42,29 @@ def black_cores(raw,entry):
     opaque black quad and lets it hide earlier draws; exact because the texel
     ignores blending and modulates to black. Texels are sampled from the
     finished bank, so shared planes and palettes are the ones the GPU reads."""
+    return _texel_cores(raw,entry,lambda word:word==1)
+
+def opaque_cores(raw,entry):
+    """Largest nontransparent STP-clear rectangle per static scene texture.
+
+    These texels overwrite the framebuffer regardless of modulation or ABR.
+    They can occlude earlier draws at full opacity, but their colours must
+    still be rendered normally: this table never authorizes a flat black draw.
+    Read final palette words rather than assuming an opaque palette index.
+    """
+    return _texel_cores(raw,entry,lambda word:word!=0 and not(word&0x8000))
+
+def _texel_cores(raw,entry,admitted):
     s=entry['sections'];out=[]
     for t in range(entry['textures']):
         page,u,v,w,h,pal,offset=struct.unpack_from('<6HI',raw,s['textures']['offset']+t*16)
         if page==65535 or w==0 or h==0 or w>63 or h>63:out.append([0,0,0,0]);continue
-        palette=struct.unpack_from('<16H',raw,s['palettes']['offset']+pal*32);black=[c==1 for c in palette]
+        palette=struct.unpack_from('<16H',raw,s['palettes']['offset']+pal*32);accepted=[admitted(c) for c in palette]
         base=s['pages']['offset']+page*32768;hist=[0]*w;best=(0,[0,0,0,0])
         for y in range(h):
             row=base+(v+y)*128
             for x in range(w):
-                b=raw[row+((u+x)>>1)];hist[x]=hist[x]+1 if black[(b>>4)&15 if (u+x)&1 else b&15] else 0
+                b=raw[row+((u+x)>>1)];hist[x]=hist[x]+1 if accepted[(b>>4)&15 if (u+x)&1 else b&15] else 0
             stack=[]
             for x in range(w+1):
                 cur=hist[x] if x<w else 0;start=x
@@ -94,6 +109,7 @@ def manifest(report,metadata):
     text+=f'pub const SCENE_ALL_RAW_BYTES:usize={report["raw_resident_bytes"]};\n'
     text+=f'pub const SCENE_TOTAL_PAGES:usize={report["total_pages"]};\npub const SCENE_TOTAL_PALETTES:usize={report["total_palettes"]};\n'
     text+='pub static SCENE_BLACK_CORES:&[&[[u8;4]]]=&[\n'+''.join('&['+','.join('[%d,%d,%d,%d]'%tuple(c) for c in e.get('black_cores',[]))+'],\n' for e in scenes)+'];\n'
+    text+='pub static SCENE_OPAQUE_CORES:&[&[[u8;4]]]=&[\n'+''.join('&['+','.join('[%d,%d,%d,%d]'%tuple(c) for c in e.get('opaque_cores',[]))+'],\n' for e in scenes)+'];\n'
     return text
 
 def validate_geometry(bank,entry,metadata):
@@ -142,6 +158,7 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
         if e['changed_static_textures']:raise ValueError('Lossless bank unexpectedly resampled scenery')
         e['geometry_packet_bound']=validate_geometry(raw,e,meta)
         e['black_cores']=black_cores(raw,e)
+        e['opaque_cores']=opaque_cores(raw,e)
         stored=compressed(raw);bodies[scene]=(raw,stored)
         e.update(stored_bytes=len(stored),stored_fnv=fnv(stored),raw_fnv=fnv(raw),stored_sha256=sha(stored),raw_sha256=sha(raw),
                  raw_path=str(output_dir/f'scene_{scene}.hk'),stored_path=str(output_dir/f'scene_{scene}.hlzc'),path=str(output_dir/f'scene_{scene}.hlzc'))

@@ -65,6 +65,11 @@ fn random(seed: &mut u32) -> u32 {
     *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
     *seed
 }
+#[inline(always)]
+fn same_edge(a: [i32; 4], b: [i32; 4]) -> bool {
+    // Array equality lowers to an out-of-line memcmp on our MIPS target.
+    ((a[0] ^ b[0]) | (a[1] ^ b[1]) | (a[2] ^ b[2]) | (a[3] ^ b[3])) == 0
+}
 pub fn launch_range(kind: u8, facing: i32) -> (i32, i32, i32) {
     match kind {
         2 => (70, 110, 3), // numerator over 2: source up multiplier 1.5
@@ -110,9 +115,12 @@ impl Body {
         }
     }
     pub fn point(&self, local: [i32; 2], centroid: [i32; 2], scale: [i32; 2]) -> [i32; 2] {
-        let p = rotate([local[0] - centroid[0], local[1] - centroid[1]], self.angle);
-        let p = scaled(p, scale);
-        [self.center[0] + p[0], self.center[1] + p[1]]
+        self.point_rotated(local,centroid,scale,Rotation::new(self.angle))
+    }
+    fn point_rotated(&self,local:[i32;2],centroid:[i32;2],scale:[i32;2],rotation:Rotation)->[i32;2] {
+        let p=rotation.apply([local[0]-centroid[0],local[1]-centroid[1]]);
+        let p=scaled(p,scale);
+        [self.center[0]+p[0],self.center[1]+p[1]]
     }
     /// One approximately 20ms source physics callback (not one 60Hz game tick).
     pub fn step(&mut self, spec: Spec, count: usize, mut edge: impl FnMut(usize) -> [i32; 4]) {
@@ -128,7 +136,7 @@ impl Body {
             && length(self.velocity) <= 655
             && self.omega.abs() <= 2 * ONE
             && supports(*self, spec, self.contact_edge)
-            && (0..count).any(|i| edge(i) == self.contact_edge)
+            && (0..count).any(|i| same_edge(edge(i), self.contact_edge))
         {
             self.velocity = [0; 2];
             self.omega = 0;
@@ -172,9 +180,10 @@ impl Body {
         let mut before = [[0; 2]; 16];
         let mut after = [[0; 2]; 16];
         let mut swept = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
+        let old_rotation=Rotation::new(old.angle);let next_rotation=Rotation::new(self.angle);
         for (index, &p) in spec.polygon.iter().enumerate() {
-            before[index] = old.point(p, spec.centroid, spec.scale);
-            after[index] = self.point(p, spec.centroid, spec.scale);
+            before[index] = old.point_rotated(p, spec.centroid, spec.scale,old_rotation);
+            after[index] = self.point_rotated(p, spec.centroid, spec.scale,next_rotation);
             for q in [before[index], after[index]] {
                 swept[0] = swept[0].min(q[0]);
                 swept[1] = swept[1].min(q[1]);
@@ -186,8 +195,8 @@ impl Body {
         // per vertex. Most edges are rejected before any cross products.
         for i in 0..count {
             let e = edge(i);
-            contact_present |= old.contact && e == old.contact_edge;
-            if e == [0; 4]
+            contact_present |= old.contact && same_edge(e, old.contact_edge);
+            if (e[0] | e[1] | e[2] | e[3]) == 0
                 || e[0].min(e[2]) > swept[2]
                 || e[0].max(e[2]) < swept[0]
                 || e[1].min(e[3]) > swept[3]
@@ -248,18 +257,19 @@ impl Body {
             // contacted-plane manifold from every source vertex within the
             // original .01 contact offset; a single corner impulse cannot settle
             // a flat piece resting on two corners.
+            // Velocity impulses do not change center/angle. Reuse the expired
+            // sweep array for the unchanged contact points, preserving vertex
+            // order and all eight sequential velocity iterations exactly.
+            let contact_rotation=Rotation::new(self.angle);let mut contacts=0;
+            for &v in spec.polygon {
+                let q=self.point_rotated(v,spec.centroid,spec.scale,contact_rotation);
+                if dot([q[0]-edge[0],q[1]-edge[1]],normal).abs()<=655 {
+                    after[contacts]=q;contacts+=1;
+                }
+            }
             for _ in 0..8 {
-                let mut manifold = false;
-                for &v in spec.polygon {
-                    let q = self.point(v, spec.centroid, spec.scale);
-                    if dot([q[0] - edge[0], q[1] - edge[1]], normal).abs() <= 655 {
-                        self.contact_impulse(spec, q, normal);
-                        manifold = true;
-                    }
-                }
-                if !manifold {
-                    self.contact_impulse(spec, point, normal);
-                }
+                for &q in &after[..contacts] {self.contact_impulse(spec,q,normal);}
+                if contacts==0 {self.contact_impulse(spec,point,normal);}
             }
             // Exact source event gate and cached-direction reflection. Native
             // contact impulse happens first, then ObjectBounce overrides v.
@@ -285,9 +295,9 @@ impl Body {
             self.angle = (self.angle + mulq(self.omega / 50, remaining)).rem_euclid(360 * ONE);
             // Nonpenetration along the contacted source plane. Exact Box2D
             // manifold/decomposition and multi-contact iterations are unported.
-            let mut penetration = 0;
+            let mut penetration = 0;let resolved_rotation=Rotation::new(self.angle);
             for &v in spec.polygon {
-                let p = self.point(v, spec.centroid, spec.scale);
+                let p = self.point_rotated(v, spec.centroid, spec.scale,resolved_rotation);
                 penetration = penetration.min(dot([p[0] - edge[0], p[1] - edge[1]], normal));
             }
             for i in 0..2 {
@@ -405,8 +415,9 @@ fn supports(body: Body, spec: Spec, e: [i32; 4]) -> bool {
     let tangent = [-normal[1], normal[0]];
     let mut lo = i32::MAX;
     let mut hi = i32::MIN;
+    let rotation=Rotation::new(body.angle);
     for &v in spec.polygon {
-        let q = body.point(v, spec.centroid, spec.scale);
+        let q = body.point_rotated(v, spec.centroid, spec.scale,rotation);
         if dot([q[0] - e[0], q[1] - e[1]], normal).abs() <= 655 {
             let t = dot([q[0] - body.center[0], q[1] - body.center[1]], tangent);
             lo = lo.min(t);
@@ -484,14 +495,17 @@ fn scaled(p: [i32; 2], s: [i32; 2]) -> [i32; 2] {
 fn mul_trig(v: i32, q14: i32) -> i32 {
     ((v as i64 * q14 as i64) / 16384) as i32
 }
-pub fn rotate(p: [i32; 2], angle: i32) -> [i32; 2] {
-    let s = sin(angle);
-    let c = sin(angle + 90 * ONE);
-    [
-        mul_trig(p[0], c) - mul_trig(p[1], s),
-        mul_trig(p[0], s) + mul_trig(p[1], c),
-    ]
+#[derive(Clone,Copy)]
+struct Rotation {sin:i32,cos:i32}
+impl Rotation {
+    fn new(angle:i32)->Self {Self{sin:sin(angle),cos:sin(angle+90*ONE)}}
+    fn apply(self,p:[i32;2])->[i32;2] {
+        // Keep each signed product's truncation before addition/subtraction.
+        [mul_trig(p[0],self.cos)-mul_trig(p[1],self.sin),
+         mul_trig(p[0],self.sin)+mul_trig(p[1],self.cos)]
+    }
 }
+pub fn rotate(p: [i32; 2], angle: i32) -> [i32; 2] {Rotation::new(angle).apply(p)}
 fn sin(angle: i32) -> i32 {
     let angle = angle.rem_euclid(360 * ONE);
     let index = (angle >> 16) as usize;
@@ -556,17 +570,20 @@ impl Pool {
             return;
         }
         self.phase -= 60;
-        for &s in specs {
+        for s in specs {
             if let Some(p) = &mut self.pieces[s.id as usize] {
                 if p.scene as usize != scene || p.body.stopped {
                     continue;
                 }
+                #[cfg(target_arch="mips")]
+                crate::input::checkpoint();
                 // Check resolved poses against actual resident coverage. A
                 // floor on the apron edge can bounce a candidate that would
                 // otherwise leave coverage; absent floors cannot advance it.
                 let covered = |body: &Body| {
+                    let rotation=Rotation::new(body.angle);
                     s.polygon.iter().all(|&v| {
-                        let q = body.point(v, s.centroid, s.scale);
+                        let q = body.point_rotated(v, s.centroid, s.scale,rotation);
                         q[0] >= bounds[0]
                             && q[0] <= bounds[2]
                             && q[1] >= bounds[1]
@@ -575,7 +592,7 @@ impl Pool {
                 };
                 if covered(&p.body) {
                     let mut next = p.body;
-                    next.step(s, count, &mut edge);
+                    next.step(*s, count, &mut edge);
                     if covered(&next) {
                         p.body = next;
                     }
@@ -597,12 +614,13 @@ impl Pool {
             assert!(!room.texture(texture).is_streamed());
             let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
             let mut verts = [(0i16, 0i16); 4];
+            let rotation=Rotation::new(p.body.angle);
             for (v, local) in
                 verts
                     .iter_mut()
                     .zip([[b[0], b[3]], [b[2], b[3]], [b[0], b[1]], [b[2], b[1]]])
             {
-                let q = p.body.point(local, s.centroid, s.scale);
+                let q = p.body.point_rotated(local, s.centroid, s.scale,rotation);
                 *v = (
                     (160 + ((((q[0] - camera.0) as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20))
                         as i16,

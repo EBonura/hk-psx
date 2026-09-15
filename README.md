@@ -14,14 +14,16 @@ Crawlers leave animated corpses; cut grass has source slash impacts and broken
 doors leave persistent fragments that bounce and settle. Source grass, death and
 breakable-destruction particles are active, the latter for all 33 supported
 Tutorial breakables, and platform interiors use the source tilemap fills. The
-Lifeblood cocoon and Scuttlers are implemented but no validated route reaches
-them yet. Full original effects remain incomplete. Verified black masks now darken the background using the
+Lifeblood cocoon releases two Scuttlers; striking them earns two temporary blue
+health masks, which absorb damage before ordinary health. A controller replay
+verifies the complete interaction. The final Great Door now shows its three
+source damage stages and opens after thirteen hits, allowing entry into Town. Full original effects remain incomplete. Verified black masks now darken the background using the
 PS1's limited blend modes; this is not full source-shader parity.
 
 98 bounded regions cover Tutorial_01 and Dirtmouth's left entrance. All their
-scene data now stays in one 1.125 MiB RAM arena; both scenery atlases stay in
+scene data now stays in one 1,069,056-byte RAM arena; both scenery atlases stay in
 VRAM throughout gameplay. Lossless sharing across regions uses 20 static 4bpp
-pages and 1,206 palettes. The existing approved 95% static matches remain; no
+pages and 1,209 palettes. The existing approved 95% static matches remain; no
 further resolution reduction or lossy merging was added. Scenery keeps its
 48-pixel long-axis cap; Knight, enemy and HUD resolution is unchanged.
 
@@ -29,9 +31,10 @@ The title loads both scene banks and six ambience loops once. Region crossings
 select local views without CD reads, decoding or static texture uploads. Eight
 animation slots fetch frames from resident RAM and retain cached frames across
 same-scene crossings. The long user replay now has zero boundary-loading waits
-(previously 478 ticks), with no traversal CD reads or static uploads. Rendering
-still varies from two to five VBlanks per frame (mean 2.57 on the long
-replay); the strict frame-pacing gate fails. This covers the current authored subset, not the full game's residency
+(previously 478 ticks), with no traversal CD reads or static uploads. The best preserved optimization run
+renders at two to four VBlanks per frame (mean 2.019, about 29.7 fps on the long
+replay); the strict 30 fps frame-pacing gate still fails. Current build identity
+and ongoing experiments are recorded in docs/STATUS.md. This covers the current authored subset, not the full game's residency
 or physical-console timing. See [docs/STATUS.md](docs/STATUS.md) for evidence and
 [docs/BUDGET.md](docs/BUDGET.md) for measured allocations.
 

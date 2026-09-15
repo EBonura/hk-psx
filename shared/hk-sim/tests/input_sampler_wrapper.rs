@@ -5,6 +5,13 @@ use std::sync::atomic::{AtomicU32, Ordering};
 static CLOCK:AtomicU32=AtomicU32::new(100);
 static BUTTONS:AtomicU32=AtomicU32::new(0);
 static POLLS:AtomicU32=AtomicU32::new(0);
+// This harness exercises real input sampling with stub hardware. Presentation
+// state ordering has its own native tests; count calls here to verify input
+// checkpoints still service it even when no new pad transaction is due.
+static PRESENT_CHECKPOINTS:AtomicU32=AtomicU32::new(0);
+mod presentation {
+    pub fn checkpoint() {super::PRESENT_CHECKPOINTS.fetch_add(1,super::Ordering::SeqCst);}
+}
 pub mod interrupts {
     pub fn vblank_count()->u32 {super::CLOCK.load(super::Ordering::SeqCst)}
 }
@@ -28,6 +35,7 @@ fn hardware_wrapper_closes_clock_read_race_and_preserves_pending_pulse() {
     input::start(100);
     input::checkpoint();
     assert_eq!(POLLS.load(Ordering::SeqCst),0);
+    assert_eq!(PRESENT_CHECKPOINTS.load(Ordering::SeqCst),2);
     // VBlank arrived after main's last checkpoint and before reading `now`.
     CLOCK.store(101,Ordering::SeqCst);
     BUTTONS.store(0x4000,Ordering::SeqCst);
@@ -45,6 +53,7 @@ fn hardware_wrapper_closes_clock_read_race_and_preserves_pending_pulse() {
     assert_eq!(input::consume(103),0x1000);
     assert_eq!(input::consume(104),0);
     assert_eq!(POLLS.load(Ordering::SeqCst),4);
+    assert_eq!(PRESENT_CHECKPOINTS.load(Ordering::SeqCst),10);
     unsafe {
         assert_eq!(input::HK_INPUT_POLLS,4);
         assert_eq!(input::HK_INPUT_MISSED_VBLANKS,0);

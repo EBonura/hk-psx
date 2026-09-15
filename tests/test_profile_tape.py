@@ -21,14 +21,19 @@ def clean_result():
         'observed_poll_gaps': {'max_route_ticks': 1},
         'poll_vblank_phase': {'lag_variation': 1},
         'frame_intervals': [
-            {'route_ticks': 3, 'from_region': 1, 'to_region': 1, 'sectors_read': 12},
-            {'route_ticks': 3, 'from_region': 1, 'to_region': 2, 'sectors_read': 2},
-            {'route_ticks': 3, 'from_region': 2, 'to_region': 2, 'sectors_read': 0},
+            {'route_ticks': 2, 'from_region': 1, 'to_region': 1, 'sectors_read': 12},
+            {'route_ticks': 2, 'from_region': 1, 'to_region': 2, 'sectors_read': 2},
+            {'route_ticks': 2, 'from_region': 2, 'to_region': 2, 'sectors_read': 0},
         ],
     }
 
 
 class SeamlessGateTests(unittest.TestCase):
+    def test_default_requires_30fps_even_if_only_one_frame_misses(self):
+        result = clean_result()
+        result['frame_intervals'][2]['route_ticks'] = 3
+        self.assertTrue(any('Frame interval exceeded 2' in failure for failure in PROFILE.seamless_failures(result)))
+
     def test_actual_sampler_faults_or_missed_observations_fail(self):
         for name in ('HK_INPUT_MISSED_VBLANKS','HK_INPUT_FAULT'):
             result=clean_result()

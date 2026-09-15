@@ -12,7 +12,7 @@ class PackScenes(unittest.TestCase):
     def test_largest_scene_uses_full_arena_then_immutable_aligned_prefix(self):
         out=allocate_scenes([entry(1,116756,2,141,[2]),entry(0,929692,18,1065,[1,3])])
         self.assertEqual([e['scene_id']for e in out],[0,1])
-        self.assertEqual([(e['ram_offset'],e['arena_capacity'])for e in out],[(0,1179648),(929692,249956)])
+        self.assertEqual([(e['ram_offset'],e['arena_capacity'])for e in out],[(0,1069056),(929692,139364)])
         self.assertEqual([(e['page_base'],e['palette_base'])for e in out],[(0,0),(18,1065)])
         self.assertEqual([e['chunk_id']for e in out],[1,2])
         odd=allocate_scenes([entry(0,1001,1,1,[1]),entry(1,8,1,1,[2])],arena_bytes=1024)
@@ -26,11 +26,15 @@ class PackScenes(unittest.TestCase):
         with self.assertRaises(ValueError):allocate_scenes([entry(0,100,1,1,[1])]*2)
     def test_region_mapping_uses_source_local_order_not_contiguous_scene_assumption(self):
         scenes=allocate_scenes([entry(1,400,1,1,[2]),entry(0,800,2,3,[1,3])])
+        scenes[0]['black_cores']=[[0,0,8,8]]
+        scenes[0]['opaque_cores']=[[0,0,16,8]]
         r={'scenes':scenes,'arena_bytes':1179648,'raw_resident_bytes':1200,'total_pages':3,'total_palettes':4}
         m={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1},{'chunk_id':3,'scene_id':0}]}
         text=manifest(r,m);self.assertIn('(0,0),\n(1,0),\n(0,1),',text);self.assertIn('SCENE_REGIONS:&[usize]=&[0,1]',text)
         self.assertIn('SCENE_TEXTURE_CAPACITY:usize=96;',text)
         self.assertIn('SCENE_DRAW_CAPACITY:usize=64;',text)
+        self.assertIn('SCENE_BLACK_CORES:&[&[[u8;4]]]=&[\n&[[0,0,8,8]],',text)
+        self.assertIn('SCENE_OPAQUE_CORES:&[&[[u8;4]]]=&[\n&[[0,0,16,8]],',text)
         command=decoder_command(r);self.assertEqual(command[-5:],['1179648','scene0.hlzc','scene0.hk','scene1.hlzc','scene1.hk'])
         m['regions'][1]['scene_id']=0
         with self.assertRaises(ValueError):manifest(r,m)
