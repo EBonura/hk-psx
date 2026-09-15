@@ -1,5 +1,21 @@
 # Hollow Knight PS1: current handoff
 
+## Current direction: whole-world import
+
+Stopped at explicit user request. Source changes are saved; no further work should
+run until requested.344 Python tests pass. Import checkpoints:249 exported scenes,
+196 pool-failed jobs,56 unrecorded. Worker termination cause is unknown; final
+source/code verification was not reached. Read top of docs/STATUS.md. Resume
+with one worker after diagnosis; preserve the unchanged playable disc71.
+
+User requested importing all areas first, then implementing systems globally.
+This supersedes older room-by-room NEXT items below. The current disc71 stays
+available during playtesting. Host-only `host/world_import.py` imports every
+Windows BuildSettings scene to `.hkpsx/world-import/`; see docs/WORLD_IMPORT.md.
+Do not wait for Runner sound/dust or a particular room script before importing
+surrounding scenery. Import, PS1 packing, runtime admission and verified gameplay
+are distinct coverage states. Source-only commit/push remains authorized.
+
 ## Latest71
 
 User asked to play the latest build again. The sole Downloads/ps1 games/hk-psx
