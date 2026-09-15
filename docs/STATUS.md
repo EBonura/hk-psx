@@ -1,5 +1,30 @@
 # Status, 2026-09-15
 
+## In progress:67 full Town coverage and scene replacement
+
+Fresh isolated Windows-source cooks cover Town0..270/-5..76, including central
+street, well and eastern exit. The supported bank is88,980 resident bytes,
+6 pages/408 palettes/426 textures, with684 pooled draws and221 edges. This is
+41,764 more resident bytes than the entrance-only bank. Source records/texels
+are verified during packing; source NPC/FSM/shop/bench behavior remains missing.
+Evidence: `.hkpsx/town67/full-{bank.hk,bank.json,regions.json}`. These are host
+assets only; the playable disc remains66 and still ends at Town x48.
+
+A host-only scene-gate residency mode now permits overlapping scene allocations,
+with explicit native repeated replacement proofs through the guest decoder.
+The actual Tutorial/fullTown package passes six replacements at each of five
+decoder budgets (1,31,1024,2048,8192). It fits the existing369,180-byte arena,
+with321,956 peak resident bytes and18 pages/1,068 palettes at a time. Missing
+atlases, misplaced uploads and undersized arenas are rejected. Reports/commands
+are `.hkpsx/scene-gate67/{packed.json,packed.decoder.log,rejection.json}`.
+`make test` passes275 Python/402 reported native tests. The production mode
+remains joint residency; this is host evidence, not live CD/GPU/transition proof.
+
+This prepares expansion beyond globally resident VRAM. Guest admission/blackout,
+input/audio service during loading and cache invalidation must be integrated and
+replayed before shipping it. No scene-gate package can compile against the current
+joint-residency guest by accident. No new FPS or live-game coverage claim.
+
 ## Current playable build:66 Focus audio and gameplay corrections
 
 The sole `~/Downloads/ps1 games/hk-psx.bin/.cue` pair contains build66.

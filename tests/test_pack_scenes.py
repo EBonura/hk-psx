@@ -39,6 +39,32 @@ class PackScenes(unittest.TestCase):
             with self.assertRaises(ValueError):allocate_scenes([a,b],arena)
         with self.assertRaises(ValueError):allocate_scenes([])
         with self.assertRaises(ValueError):allocate_scenes([entry(0,100,1,1,[1])]*2)
+    def test_scene_gate_allocation_reuses_memory_without_joint_limit(self):
+        a=entry(0,320000,18,1068,[1]);b=entry(1,89000,6,408,[2])
+        out=allocate_scenes([a,b],arena_bytes=369180,residency='scene_gate')
+        self.assertEqual([(e['ram_offset'],e['page_base'],e['palette_base'])for e in out],[(0,0,0)]*2)
+        self.assertEqual([e['arena_capacity']for e in out],[369180]*2)
+        with self.assertRaises(ValueError):allocate_scenes([a,b],arena_bytes=369180)
+        for bad in [dict(a,pages=21),dict(a,palettes=1249),dict(a,bytes=400000)]:
+            with self.assertRaises(ValueError):allocate_scenes([bad,b],residency='scene_gate')
+        with self.assertRaises(ValueError):allocate_scenes([a],residency='invented')
+    def test_scene_gate_decoder_routes_only_matching_atlases(self):
+        a=entry(0,320000,18,1068,[1]);b=entry(1,89000,6,408,[2])
+        for e in (a,b):
+            e.update(resident_stored_path='s'+str(e['scene_id']),resident_raw_path='r'+str(e['scene_id']))
+        scenes=allocate_scenes([a,b],residency='scene_gate')
+        atlases=[dict(scene_index=i,kind=0,first=0,count=1,stored_path='a'+str(i),raw_path='b'+str(i))for i in range(2)]
+        cmd=decoder_command(dict(residency='scene_gate',arena_bytes=369180,scenes=scenes,atlases=atlases))
+        self.assertIn('check_scene_gate_load',cmd)
+        self.assertEqual(cmd[cmd.index('--scene'):],['--scene','0','s0','r0','--atlas','0','0','1','a0','b0',
+                       '--scene','1','s1','r1','--atlas','0','0','1','a1','b1'])
+    def test_scene_gate_cannot_publish_current_guest_data(self):
+        with tempfile.TemporaryDirectory()as d:
+            d=Path(d);meta=d/'regions.json';meta.write_text(json.dumps({'complete':True,'regions':[]}))
+            with patch('world.generate')as generate:
+                with self.assertRaises(ValueError):pack_scenes(meta,d/'banks',d/'report.json',d/'manifest.rs',residency='scene_gate')
+                generate.assert_not_called()
+            self.assertFalse((d/'manifest.rs').exists())
     def test_region_mapping_uses_source_local_order_not_contiguous_scene_assumption(self):
         scenes=allocate_scenes([entry(1,400,1,1,[2]),entry(0,800,2,3,[1,3])])
         scenes[0]['black_cores']=[[0,0,8,8]]

@@ -16,6 +16,26 @@ only; instruments and captures stay ignored. The original startup/load/landing
 sequence has specific prerequisites documented there. Do not force hero control
 or misread an unready test as failed original movement.
 
+Work67 in progress: full Town scenery/collision now cooked in ignored
+`.hkpsx/town67/` (0..270/-5..76). Full bank88,980 resident bytes,6pages,
+408palettes,426textures; same48px quality and exact cooked field/texel proof.
+Town NPCs, bench, shops and source scripts are not implemented by that cook.
+`host.pack_scenes.pack_scenes(..., residency="scene_gate", generate_world=False)`
+now creates isolated overlapping scene packages, guarded from current guest
+outputs. Native `check_scene_gate_load` reuses the real decoder across repeated
+forward/reverse scene loads and atlas staging. `.hkpsx/scene-gate67/` holds the
+combined Tutorial/fullTown preparation and proof; inspect logs before using it.
+
+NEXT IMPLEMENTATION: exclusive scene admission in `game/src/disc.rs` at authored
+gates, atlas ownership/readiness and renderer/animation cache invalidation,
+blackout before the old arena is reclaimed, source entry timing, and continuous
+input/audio servicing while CD/decode/upload owns the transition. Room views
+must not survive mutable replacement. Every spatial region within a scene stays
+resident. Repeated Tutorial->Town->Tutorial/Select routes and exact GPU captures
+must pass before replacing the current disc. Next admit fullTown source gameplay
+and the well/Crossroads connection. Current live66 still ends atx48; the host-only
+package has an explicit compile_error guard and is not playable yet.
+
 Current66 adds complete Focus charging/heal audio, fixes Crawler/corpse motion
 across resident collision regions, and implements source-derived Great Door
 blackout and Town entry fade/walk. The source2.5s wait is at destination entry;

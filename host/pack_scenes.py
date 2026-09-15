@@ -20,17 +20,25 @@ MAX_PALETTES=1248  # Final legacy CLUT strip is reserved for independent Geo art
 
 def sha(data):return hashlib.sha256(data).hexdigest()
 
-def allocate_scenes(entries, arena_bytes=SCENE_ARENA_BYTES, max_pages=MAX_PAGES, max_palettes=MAX_PALETTES):
-    """Largest bank first gives its in-place decoder the entire startup arena."""
+def allocate_scenes(entries, arena_bytes=SCENE_ARENA_BYTES, max_pages=MAX_PAGES, max_palettes=MAX_PALETTES, residency="joint"):
+    """Allocate joint residency, or isolated per-gate replacement candidates.
+
+    A scene_gate plan reuses storage only after all outgoing references expire;
+    it does not establish an implemented loader or a transition-time budget.
+    """
     if not entries or len({e['scene_id']for e in entries})!=len(entries):raise ValueError('Empty/duplicate scenes')
+    if residency not in ("joint", "scene_gate"):raise ValueError("Unknown scene residency policy")
     offset=page_base=palette_base=0;result=[]
     for index,entry in enumerate(sorted(entries,key=lambda e:(-e.get('resident_raw_len',e['bytes']),e['scene_id']))):
         e=dict(entry)
+        if residency=="scene_gate":offset=page_base=palette_base=0
         if min(e['bytes'],e['pages'],e['palettes'])<=0:raise ValueError('Invalid scene size')
         offset=aligned(offset)
         e.update(scene_index=index,chunk_id=index+1,raw_len=e['bytes'],raw_bytes=e['bytes'],stored_len=e['stored_bytes'],
                  ram_offset=offset,arena_capacity=arena_bytes-offset,page_base=page_base,palette_base=palette_base)
         offset+=e.get('resident_raw_len',e['bytes']);page_base+=e['pages'];palette_base+=e['palettes'];result.append(e)
+        if offset>arena_bytes or page_base>max_pages or palette_base>max_palettes:
+            raise ValueError('Scene residency exceeds RAM/page/palette limit')
     if offset>arena_bytes:raise ValueError('Scene RAM residency exceeds arena')
     if page_base>max_pages:raise ValueError('Scene atlas residency exceeds page limit')
     if palette_base>max_palettes:raise ValueError('Scene CLUT residency exceeds palette limit')
@@ -139,6 +147,15 @@ def validate_geometry(bank,entry,metadata):
     return {'status':'PASS','capacity':CAP,'actor_reserve':ACTOR_RESERVE,'child_capacity':CHILD_CAPACITY,'regions':proof}
 
 def decoder_command(report):
+    if report.get('residency')=='scene_gate':
+        args=['cargo','run','--quiet','--locked','--offline','--manifest-path',str(ROOT/'shared/hk-format/Cargo.toml'),
+              '--example','check_scene_gate_load','--',str(report['arena_bytes'])]
+        for e in report['scenes']:
+            args.extend(('--scene',str(e['scene_id']),e['resident_stored_path'],e['resident_raw_path']))
+            for a in report['atlases']:
+                if a['scene_index']==e['scene_index']:
+                    args.extend(('--atlas',str(a['kind']),str(a['first']),str(a['count']),a['stored_path'],a['raw_path']))
+        return args
     args=['cargo','run','--quiet','--locked','--offline','--manifest-path',str(ROOT/'shared/hk-format/Cargo.toml'),
           '--example','check_scene_sequence','--',str(report['arena_bytes'])]
     for e in report['scenes']:args.extend((e.get('resident_stored_path',e['stored_path']),e.get('resident_raw_path',e['raw_path'])))
@@ -147,12 +164,17 @@ def decoder_command(report):
         for e in report['atlases']:args.extend((e['stored_path'],e['raw_path']))
     return args
 
-def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',report_path=ROOT/'.hkpsx/packed-scenes.json',manifest_path=ROOT/'data/scene_manifest.rs',arena_bytes=SCENE_ARENA_BYTES):
+def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',report_path=ROOT/'.hkpsx/packed-scenes.json',manifest_path=ROOT/'data/scene_manifest.rs',arena_bytes=SCENE_ARENA_BYTES, residency="joint", generate_world=True):
     metadata=Path(metadata);output_dir=Path(output_dir);report_path=Path(report_path);manifest_path=Path(manifest_path)
     source=metadata.read_bytes();meta=json.loads(source)
     if not meta.get('complete')or meta.get('pending_regions'):raise ValueError('Source region cook is incomplete')
     from world import generate
-    generate(meta)
+    if residency=="scene_gate":
+        protected=[ROOT/'data',ROOT/'.hkpsx/packed-scenes.json']
+        outputs=[output_dir.resolve(),report_path.resolve(),manifest_path.resolve()]
+        if generate_world or any(p==root or root in p.parents for p in outputs for root in protected):
+            raise ValueError("Scene-gate packages require isolated outputs until guest integration")
+    if generate_world:generate(meta)
     entries=[];bodies={}
     for scene in sorted({r['scene_id']for r in meta['regions']}):
         inputs=[]
@@ -175,7 +197,7 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
                  resident_stored_len=len(resident_stored),resident_stored_fnv=fnv(resident_stored),resident_stored_sha256=sha(resident_stored),
                  path=str(output_dir/f'scene_{scene}.resident.hlzc'),texture_flags=texture_flags(raw,e))
         entries.append(e)
-    entries=allocate_scenes(entries,arena_bytes)
+    entries=allocate_scenes(entries,arena_bytes,residency=residency)
     atlases=[];atlas_bodies=[]
     for e in entries:
         raw=bodies[e['scene_id']][0]
@@ -186,15 +208,18 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
             atlases.append(spec|dict(scene_index=e['scene_index'],raw_len=len(chunk),raw_fnv=fnv(chunk),raw_sha256=sha(chunk),
                 stored_len=len(stored),stored_fnv=fnv(stored),stored_sha256=sha(stored),raw_path=str(path)+'.raw',stored_path=str(path)+'.hlzc',path=str(path)+'.hlzc'))
             atlas_bodies.append((chunk,stored))
-    report={'format':'HKPACKEDSCENES02','source_format':'HKSCNE01','resident_format':'HKSCNE02','source_metadata_path':str(metadata),'source_metadata_sha256':sha(source),
+    report={'residency':residency,'format':'HKPACKEDSCENES02','source_format':'HKSCNE01','resident_format':'HKSCNE02','source_metadata_path':str(metadata),'source_metadata_sha256':sha(source),
       'code_sha256':{str(p.relative_to(ROOT)):sha(p.read_bytes())for p in (ROOT/'host/scene_bank.py',Path(__file__).resolve(),ROOT/'tools/audit_resident_bank.py',ROOT/'host/region_delta.py',ROOT/'host/scenery_geometry.py',ROOT/'game/src/scenery_geometry.rs')},
       'region_count':len(meta['regions']),'scene_arena_bytes':arena_bytes,'raw_bytes':sum(e['raw_len']for e in entries),'stored_bytes':sum(e['stored_len']for e in entries),
       'arena_bytes':arena_bytes,'raw_resident_bytes':sum(aligned(e['resident_raw_len'])for e in entries),
       'resident_stored_bytes':sum(e['resident_stored_len']for e in entries),'atlas_raw_bytes':sum(e['raw_len']for e in atlases),'atlas_stored_bytes':sum(e['stored_len']for e in atlases),
-      'total_pages':sum(e['pages']for e in entries),'total_palettes':sum(e['palettes']for e in entries),'scenes':entries,'atlases':atlases,
+      'total_pages':(max if residency=='scene_gate' else sum)(e['pages']for e in entries),'total_palettes':(max if residency=='scene_gate' else sum)(e['palettes']for e in entries),'scenes':entries,'atlases':atlases,
       'sequential_decoder_validation':'pending native pinned-SDK/incremental proof against these exact stored payloads and allocation capacities',
       'quality':'No new resizing or lossy texture aliasing. Shared planes preserve every sampled16bit word; streamed textures and strict black mask palette/index bytes remain exact.'}
-    rust=manifest(report,meta)
+    report['required_resident_bytes']=(max if residency=='scene_gate' else sum)(aligned(e['resident_raw_len'])for e in entries)
+    # Exclusive packages are not guest manifests: the current guest assumes
+    # joint immutable residency and must never silently consume overlapping data.
+    rust=manifest(report,meta) if residency=='joint' else '// Host-only scene-gate package; guest loader integration required.\ncompile_error!("scene-gate residency is not integrated in the guest");\n'
     # Admission checks precede all output mutations.
     output_dir.mkdir(parents=True,exist_ok=True);report_path.parent.mkdir(parents=True,exist_ok=True);manifest_path.parent.mkdir(parents=True,exist_ok=True)
     for e in entries:
@@ -206,7 +231,7 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
     report_path.write_text(json.dumps(report,indent=2)+'\n')
     command=decoder_command(report);proof=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
     log=report_path.with_suffix('.decoder.log');log.write_text(proof.stdout+proof.stderr)
-    proof_paths=[ROOT/'shared/hk-format/examples/check_scene_sequence.rs',ROOT/'shared/hk-format/src/lib.rs',ROOT/'game/src/room_decode.rs',ROOT/'sdk.lock.json']
+    proof_paths=[ROOT/('shared/hk-format/examples/check_scene_gate_load.rs' if residency=='scene_gate' else 'shared/hk-format/examples/check_scene_sequence.rs'),ROOT/'shared/hk-format/src/lib.rs',ROOT/'game/src/room_decode.rs',ROOT/'sdk.lock.json']
     scene_parser=ROOT/'shared/hk-format/src/scene.rs'
     if scene_parser.exists():proof_paths.append(scene_parser)
     report['sequential_decoder_validation']={'status':'PASS'if proof.returncode==0 else'FAIL','command':command,'log_path':str(log),
@@ -216,6 +241,6 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
     return report
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('metadata',type=Path,nargs='?',default=ROOT/'data/regions.json');p.add_argument('--output',type=Path,default=ROOT/'data/scenes');p.add_argument('--report',type=Path,default=ROOT/'.hkpsx/packed-scenes.json');p.add_argument('--manifest',type=Path,default=ROOT/'data/scene_manifest.rs');a=p.parse_args()
-    r=pack_scenes(a.metadata,a.output,a.report,a.manifest);print(json.dumps({k:r[k]for k in ('arena_bytes','raw_resident_bytes','total_pages','total_palettes')},indent=2))
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('metadata',type=Path,nargs='?',default=ROOT/'data/regions.json');p.add_argument('--output',type=Path,default=ROOT/'data/scenes');p.add_argument('--report',type=Path,default=ROOT/'.hkpsx/packed-scenes.json');p.add_argument('--manifest',type=Path,default=ROOT/'data/scene_manifest.rs');p.add_argument('--residency',choices=('joint','scene_gate'),default='joint',help='scene_gate requires isolated output/report/manifest paths; host proof only');a=p.parse_args()
+    r=pack_scenes(a.metadata,a.output,a.report,a.manifest,residency=a.residency,generate_world=a.residency=='joint');print(json.dumps({k:r[k]for k in ('arena_bytes','raw_resident_bytes','total_pages','total_palettes')},indent=2))
 if __name__=='__main__':main()
