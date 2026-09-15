@@ -24,6 +24,8 @@ def build(telemetry=False, candidate=False):
     # Keep direct guest builds on the same reproducible path as tools/build.py.
     from opaque_tiles import cook as cook_opaque_tiles
     cook_opaque_tiles()
+    from opaque_groups import cook as cook_opaque_groups
+    cook_opaque_groups()
     ambience=json.loads((ROOT/'.hkpsx/ambience.json').read_text())
     clips=ambience['clips']
     for path,expected in (

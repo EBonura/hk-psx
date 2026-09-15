@@ -1,32 +1,37 @@
-# Status, 2026-09-14
+# Status, 2026-09-15
 
 ## Active work: stable 30 fps
 
-**Validated September 15: pass40 is the sole canonical disc.** Rendering stays
+**Validated September15: pass48 is the sole canonical disc.** Rendering stays
 320×240 with the existing camera framing, layers, effects and texture quality.
-The long route averages 2.018783 VBlanks (about 29.7 fps): 184 / 2,456 / 232 / 3
-intervals at one / two / three / four ticks. **Stable 30 fps is not achieved:**
-235 of 2,875 intervals exceed the two-VBlank acceptance budget. The preserved
-pass36 result had 427 of 2,688 over budget and averaged 2.159226 ticks.
-Simulation remains deterministic at 60 Hz; no input faults or missed samples
-were observed. No original-console timing claim is made.
+The long route averages1.983254VBlanks:243 /2,494 /184 /5 intervals at
+one /two /three /four ticks. **Stable30fps is not achieved:**189 of2,926
+intervals exceed two VBlanks, down from235 of2,875 at pass40. The mean is
+approximately30fps at nominal60Hz; one-tick intervals do not excuse stutters.
+Simulation remains deterministic at60Hz. No original-console timing claim.
 
-The retained changes prepare exact background packet prefixes while the previous
-frame finishes, restore their rectangular occluders on an exact state match,
-and reject off-screen scenery from admission-time extrema indices. The latter
-salvages Claude's bounds idea using 480 bytes instead of 7,680. Full-frame
-pipelining and its extra displayed-frame latency are not imported.
+This resumption retained:
+- Exclusive scratch phases overlay the600-byte owner grid with drawing
+  workspace.32 terminal tile rectangles now fit in948 scratch bytes; ordinary
+  rectangle subtraction remains bounded to eight. Packet capacity stays1,032.
+- Optional all-phase seam proofs across2–4 original opaque pieces:124 groups,
+  8,180 cooked bytes, complete region membership and live-state guards. A
+  3,040-entry temporary inverse map avoids repeated activation searches.
+- Empty-mask preflight, packed nibble run scanning and preparation during the
+  first idle window. Exact camera/state validation still controls prefix reuse.
+- Exact radix16 roots, cached collision-particle sweeps and axis-aligned enemy
+  probes. Particle trajectories and source draw/texture sampling are retained.
 
-Validation: 236 Python tests and 352 directly reported native/Rust tests pass;
-final EXE hazard scan is zero. The strict full-route profiler fails only its
-frame interval limit. Its endpoint and final image match the reference, with
-zero traversal CD reads, static VRAM uploads or boundary waits. Actual-CUE
-Lifeblood replay passes all four earned-blue-health checks. Town replay opens
-the Great Door at thirteen hits and enters region93. Both final images match
-pass36 exactly. Town retains one gate-transition wait tick; Lifeblood/Town
-retain 14/23 pre-existing particle drops. All three replay input hashes remained
-unchanged. Evidence: `.hkpsx/30fps-pass40-{profile,lifeblood,town}/`, build/test
-logs with the same prefix, and `.hkpsx/build.json` for current artifact identity.
+Validation:241Python tests and358 directly reported native/Rust tests pass;
+final EXE hazard scan is zero. The strict profiler fails only its frame interval
+limit. Endpoint and final image match pass40, with zero traversal CD reads,
+static VRAM uploads or boundary waits. Actual-CUE Lifeblood passes all four
+checks; Great Door opens at13hits and entersTown region93. Both final images
+also match pass40 exactly. All three replays now observe zero boundary waits;
+pre-existing Lifeblood/Town particle drops remain14/23. No input faults or
+missed samples; all replay input hashes remained unchanged. Captures inspected.
+Evidence: `.hkpsx/30fps-pass48-{profile,lifeblood,town}/`, corresponding build/
+test logs, `.hkpsx/30fps-pass48-validation.png`, and `.hkpsx/build.json`.
 
 Claude's clean worktree was removed after reviewing all nine changed files;
 its committed history remains at `8db50a5` on the preserved Claude branch and
@@ -81,6 +86,14 @@ In-progress measurements (normal EXE, same 5,871-sample controller tape):
 | `30fps-pass38` full scenery bounds table | 2.0469 | 4 | 237 / 2,836 |
 | `30fps-pass39` reuse prepared rectangle occluders | 2.0248 | 4 | 260 / 2,867 |
 | `30fps-pass40` packed bounds indices / complete alias guard | 2.0188 | 4 | 235 / 2,875 |
+| `30fps-pass41` scratch overlay / 16-piece partitions | 2.0059 | 4 | 215 / 2,893 |
+| `30fps-pass42` 24 tile pieces / eight subtract pieces / radix16 root | 1.9983 | 4 | 200 / 2,904 |
+| `30fps-pass43` cached sweeps / exact axis probes | 2.0031 | 4 | 214 / 2,897 |
+| `30fps-pass44` allow initial idle prefix | 1.9907 | 4 | 209 / 2,915 |
+| `30fps-pass45` grouped seam proofs / slow linear binding (rejected) | 2.0038 | 5 | 205 / 2,896 |
+| `30fps-pass46` inverse binding / empty-mask preflight / nibble runs | 1.9850 | 4 | 195 / 2,924 |
+| `30fps-pass47` textured-source outlining (rejected) | 1.9877 | 4 | 206 / 2,920 |
+| `30fps-pass48` 32 terminal tile pieces | 1.9833 | 4 | 189 / 2,926 |
 
 ### Earlier optimization measurements
 

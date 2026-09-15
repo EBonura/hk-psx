@@ -371,10 +371,13 @@ fn root_wide(n:u64)->u32 {
     root
 }
 /// Exact floor square root. Authored speeds fit below sqrt(2^48). Seed the
-/// upper word with a tiny integer table, then append two input bits at a time.
-/// The invariant is prefix=root²+remainder, 0<=remainder<2*root+1. Appending
-/// two bits selects root*2 or root*2+1 by comparing against root*4+1. Below
-/// 2^48 all intermediates fit u32, removing the per-bit MULTU/wide comparison.
+/// upper word with a tiny integer table, then consume four input bits per step.
+/// The invariant is prefix=root²+remainder, 0<=remainder<2*root+1. A nibble
+/// selects 4*root+[0..3]: test the +2 threshold (16*root+4), then +1 against
+/// the updated root. Before any nibble root<2^22; the expanded remainder is
+/// <2^27 and the threshold<2^26. Their wrapping difference therefore has the
+/// exact comparison in its sign bit, avoiding LLVM's duplicated select branches.
+/// Every intermediate fits u32; the full-u64 fallback remains unchanged.
 /// Outline once: both legacy and break particles use this hot path.
 #[inline(never)]
 fn integer_root(n:u64)->u32 {
@@ -392,10 +395,12 @@ fn integer_root(n:u64)->u32 {
         r
     };
     let mut remainder=high-root*root;let mut low=n as u32;
-    for _ in 0..16 {
-        remainder=(remainder<<2)|(low>>30);low<<=2;
-        let trial=(root<<2)|1;let take=u32::from(remainder>=trial);
-        remainder-=trial&take.wrapping_neg();root=(root<<1)|take;
+    for _ in 0..8 {
+        remainder=(remainder<<4)|(low>>28);low<<=4;
+        let mid=(root<<4)|4;let upper=(remainder.wrapping_sub(mid)>>31)^1;
+        remainder-=mid&upper.wrapping_neg();root=(root<<2)|(upper<<1);
+        let trial=(root<<1)|1;let lower=u32::from(remainder>=trial);
+        remainder-=trial&lower.wrapping_neg();root|=lower;
     }
     root
 }
@@ -419,6 +424,35 @@ mod tests {
         for n in [0,1,2,3,4,(1<<32)-1,1<<32,(1<<40)-1,1<<40,(1<<48)-1,1<<48,
             (1<<60)-1,1<<60,(1<<63)-1,1<<63,u64::MAX] {
             assert_eq!(integer_root(n),root_wide(n),"{n}");
+        }
+    }
+    #[test]
+    fn paired_root_digits_preserve_remainder_at_all_fast_domain_boundaries() {
+        for root in [0u32,1,2,3,15,16,255,256,4095,65535,(1<<20)-1,(1<<22)-1] {
+            for prior_remainder in [0,root,root*2] {
+                for nibble in 0..16 {
+                    let expanded=(prior_remainder<<4)|nibble;
+                    let mid=(root<<4)|4;
+                    let upper=(expanded.wrapping_sub(mid)>>31)^1;
+                    assert_eq!(upper,u32::from(expanded>=mid));
+                    let remainder=expanded-(mid&upper.wrapping_neg());
+                    let partial=(root<<2)|(upper<<1);
+                    let trial=(partial<<1)|1;
+                    let lower=u32::from(remainder>=trial);
+                    let next=partial|lower;
+                    let remaining=remainder-(trial&lower.wrapping_neg());
+                    let value=(root as u64*root as u64+prior_remainder as u64)*16+nibble as u64;
+                    assert_eq!(next,root_wide(value));
+                    assert_eq!(value,next as u64*next as u64+remaining as u64);
+                    assert!(remaining<2*next+1);
+                }
+            }
+        }
+        for root in 0u64..65536 {
+            let square=root*root;
+            for n in [square.saturating_sub(1),square,square+1] {
+                assert_eq!(integer_root(n),root_wide(n));
+            }
         }
     }
     /// Keep the prior full legacy update as the differential oracle: compare

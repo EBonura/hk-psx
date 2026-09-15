@@ -6,6 +6,7 @@ use psx_vram::{Clut, TexDepth, Tpage};
 use crate::{alpha_scissor_cache,draw_packet::Packet,scenery_geometry::{self,UvRect,Quad}};
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/scenery_budgets.rs"));
 #[path="tile_coverage.rs"] mod tile_coverage;
+#[path="opaque_groups.rs"] mod opaque_groups;
 #[path="tile_events.rs"] mod tile_events;
 #[path="tile_frame_cache.rs"] mod tile_frame_cache;
 #[path="back_prebuild.rs"] mod back_prebuild;
@@ -22,6 +23,9 @@ const MAX_DRAWS:usize=crate::disc::SCENE_DRAW_CAPACITY;
 const _:()=assert!(MAX_DRAWS<=1024);
 static mut TILE_DRAWS:[(u16,u16);MAX_DRAWS]=[(0,0);MAX_DRAWS];
 static mut TILE_DRAW_COUNT:usize=0;
+const MAX_TILE_GROUPS:usize=32;
+static mut TILE_GROUPS:[opaque_groups::Group;MAX_TILE_GROUPS]=[opaque_groups::Group{certificate:0,members:[u16::MAX;4]};MAX_TILE_GROUPS];
+static mut TILE_GROUP_COUNT:usize=0;
 static mut TILE_MAX_RANK:u16=0;
 static mut TILE_EVENTS:tile_events::Events<MAX_DRAWS>=tile_events::Events::new();
 static mut TILE_CERTIFIED:[u32;MAX_DRAWS/32]=[0;MAX_DRAWS/32];
@@ -329,10 +333,49 @@ pub fn init(room: &Room, bank: usize, region:usize) {
 
 
         }
+        bind_tile_groups(room,bank);
     }
     reset_visibility();
     crate::input::checkpoint();
 }
+/// Groups are valid only when every original member is in this region. The
+/// bounded table adds optional proofs; omitted groups retain normal rendering.
+fn bind_tile_groups(room:&Room,bank:usize) {
+    unsafe {
+        TILE_GROUP_COUNT=0;
+        // One inverse map replaces repeated group×member×draw searches at
+        // region activation. Duplicate pool references preserve the first local
+        // occurrence, exactly matching the original membership resolver.
+        const _:()=assert!(opaque_groups::GROUP_POOL_CAPACITY<=4096);
+        let mut pool_to_local=[u16::MAX;opaque_groups::GROUP_POOL_CAPACITY];
+        for i in 0..DRAW_COUNT {
+            if i&31==0 {crate::input::checkpoint();}
+            if let Some(pool)=room.draw_pool_index(i) {
+                if let Some(slot)=pool_to_local.get_mut(pool) {
+                    if *slot==u16::MAX {*slot=i as u16;}
+                }
+            }
+        }
+        for group in opaque_groups::scene_groups(bank) {
+            crate::input::checkpoint();
+            let Some(local)=opaque_groups::resolve_indexed(group,&pool_to_local)else{continue;};
+            let members=local.members.iter().copied().take_while(|&i|i!=u16::MAX);
+            if !members.clone().all(|i| {
+                let d=&DRAWS[i as usize];
+                d.flags&(FRONT|SOLID_BLACK|BLACK_AVERAGE)==(FRONT|SOLID_BLACK|BLACK_AVERAGE)
+                    && STREAMED[d.texture/32]&(1<<(d.texture%32))==0
+            }) {continue;}
+            if TILE_GROUP_COUNT==MAX_TILE_GROUPS {break;}
+            for i in members {
+                let i=i as usize;let texture=DRAWS[i].texture;
+                TILE_CERTIFIED[i/32]|=1<<(i%32);
+                PREFIX_TEXTURES[texture/32]|=1<<(texture%32);
+            }
+            TILE_GROUPS[TILE_GROUP_COUNT]=local;TILE_GROUP_COUNT+=1;
+        }
+    }
+}
+
 /// Every texel samples the opaque black word0x0001 (source tilemap patches,
 /// `black_solid` sprites). Exits at the first other word.
 fn solid_black(room:&Room,t:Texture)->bool {
@@ -449,6 +492,30 @@ fn collect_tile_coverage(camera:(i32,i32)) {
             if added!=0 && TILE_MAX_RANK==0 {TILE_MAX_RANK=rank;}
             tiles+=added;lookups+=reads;
         }
+        // Joint seam coverage remains valid only until its earliest member.
+        // Upgrade earlier owners without displacing any later single proof.
+        for group in &TILE_GROUPS[..TILE_GROUP_COUNT] {
+            crate::input::checkpoint();
+            let first=&DRAWS[group.members[0]as usize];
+            let cx=(((camera.0>>8)as i64*first.scale as i64)>>12)as i32;
+            let cy=(((camera.1>>8)as i64*first.scale as i64)>>12)as i32;
+            let origin=(160+((first.xy[0]-cx)>>8),120-((first.xy[1]-cy)>>8));
+            if !opaque_groups::intersects(group.certificate,origin){continue;}
+            let mut guard=opaque_groups::Guard::new();
+            for i in group.members.iter().copied().take_while(|&i|i!=u16::MAX) {
+                let i=i as usize;let d=&DRAWS[i];
+                let eligible=d.flags&(DRAW_ENABLED|FRONT|SOLID_BLACK|BLACK_AVERAGE)==(DRAW_ENABLED|FRONT|SOLID_BLACK|BLACK_AVERAGE)
+                    && OPACITIES[i]==128 && d.scale==first.scale
+                    && STREAMED[d.texture/32]&(1<<(d.texture%32))==0;
+                let v=core::array::from_fn(|k|(160+((d.xy[k*2]-cx)>>8),120-((d.xy[k*2+1]-cy)>>8)));
+                guard.push(tile_coverage::rank(i,true),d.scale,eligible,&v);
+            }
+            if let Some((origin,rank))=guard.finish() {
+                let (added,reads)=opaque_groups::claim(group.certificate,origin,rank,grid);
+                if added!=0 {TILE_MAX_RANK=TILE_MAX_RANK.max(rank);}
+                candidates+=1;tiles+=added;lookups+=reads;
+            }
+        }
         (&mut *(&raw mut TILE_EVENTS)).build(grid,&mut *Scratch::tile_rows(occlusion_scratch::base()));
         HK_TILE_COVERAGE_CANDIDATES=HK_TILE_COVERAGE_CANDIDATES.wrapping_add(candidates);
         HK_TILE_COVERAGE_LOOKUPS=HK_TILE_COVERAGE_LOOKUPS.wrapping_add(lookups);
@@ -463,9 +530,12 @@ pub fn prepare_tile_coverage(camera:(i32,i32)) {
     unsafe {
         if (&*(&raw const TILE_PREPARED)).matches(camera,TILE_GENERATION) {return;}
         let scratch=occlusion_scratch::base();
-        // The completed frame's owners are still present; claim requires0.
-        Scratch::tile_owners(scratch).write_bytes(0,1);
+        // Switch the exclusive workspace to owner collection; claim requires0.
+        Scratch::initialize_owners_at(scratch);
         collect_tile_coverage(camera);
+        // Events and rows now own all coverage information. No owner reference
+        // survives the collector; reinitialize the overlaid drawing workspace.
+        Scratch::initialize_draw_at(scratch);
         (&mut *(&raw mut TILE_PREPARED)).save(camera,TILE_GENERATION,&*Scratch::tile_rows(scratch),TILE_MAX_RANK);
         HK_TILE_PREPARES=HK_TILE_PREPARES.wrapping_add(1);
     }
@@ -518,6 +588,7 @@ fn tile_visibility(input:&Pieces,out:&mut Pieces,rank:u16,core_packets:usize)->i
         let before=input.as_slice().iter().map(rect_area).sum::<i32>();
         if before<occlusion::MIN_SAVED_PIXELS {return 0;}
         let rows=&*Scratch::tile_rows(occlusion_scratch::base());
+        if !occlusion::tile_runs::any_hidden(input.as_slice(),rows) {return 0;}
         if !occlusion::tile_runs::visible_runs_rows(input.as_slice(),rows,out) {
             HK_TILE_FALLBACKS=HK_TILE_FALLBACKS.wrapping_add(1);return 0;
         }
@@ -558,7 +629,7 @@ fn template(t: Texture, tp: Tpage, u: u16, v: u16) -> QuadTextured {
 pub fn begin(room: &Room, animation_ids: &[u16],framebuffer_y:u16) -> hk_cache::Stats {
     let stats = animation_cache::prepare(room, animation_ids);
     unsafe {
-        // The972-byte CPU-only scratchpad lease starts after runtime/cache
+        // The948-byte CPU-only scratchpad lease starts after runtime/cache
         // setup. Prior-frame references have ended; DMA only owns PACKETS.
         Scratch::initialize_at(occlusion_scratch::base());
         USED = 0;KICKED = 0;CHUNK_COUNT = 0;
@@ -687,7 +758,7 @@ fn hidden_by_occluders(bbox:&[i32;4],i:usize,front:bool)->bool {
         let pieces=&mut *Scratch::hidden(scratch);pieces.set_slice(core::slice::from_ref(&packed_bbox));
         for (k,o) in occluders.iter().enumerate() {
             if hits&(1u8<<k)==0 {continue;}
-            // None means more than eight remaining pieces; keep the current
+            // Capacity overflow keeps the current
             // partition, which stays conservative.
             if subtract(pieces,&o.rect) {
                 if pieces.len()==0 {
@@ -793,7 +864,7 @@ fn scenery_range(camera:(i32,i32),front:bool,start:usize,prebuilding:bool)->(u32
                     if SCISSOR_CACHE[i].map_cached_into(xy,d.texture as u16,uv.w,uv.h,&COVERS[d.texture],&mut *(&raw mut SCISSOR_SECONDARY),out) {Some(&*out)}else{None}
                 }else{None};
                 // Flat core and bounded multi-rectangle occlusion: exact partitions of
-                // the original pixels, bounded to eight scissor packets per draw.
+                // the original pixels, bounded by MAX_PIECES and the packet allowance.
                 // Draw-area clipping retains original vertices and UV planes for
                 // rotated quads too; a flat black core is exact only on the
                 // black-average path, which zeroes the sentinel texel's red bit.

@@ -15,19 +15,19 @@ fn inside(r:[i16;4],x:i16,y:i16)->bool {x>=r[0]&&x<r[2]&&y>=r[1]&&y<r[3]}
  let mut seed=192u32;
  for _ in 0..500 {
   let mut holes=[[0i16;4];8];for r in &mut holes {for v in r.iter_mut(){seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);*v=((seed>>16)%128)as i16;}if r[0]>r[2]{r.swap(0,2);}if r[1]>r[3]{r.swap(1,3);}}
-  let mut source=Pieces::from_slice(&[[0,0,128,128]]);let saved=subtract_many(&mut source,&holes);let out=&source;assert!(out.len()<=8);
+  let mut source=Pieces::from_slice(&[[0,0,128,128]]);let saved=subtract_many(&mut source,&holes);let out=&source;assert!(out.len()<=occlusion::MAX_SUBTRACT_PIECES);
   let mut missing=0;for y in 0..128 {for x in 0..128 {let copies=out.as_slice().iter().filter(|r|inside(**r,x,y)).count();assert!(copies<=1);if copies==0 {assert!(holes.iter().any(|r|inside(*r,x,y)));missing+=1;}}}assert_eq!(saved,missing);
  }
 }
 #[test]fn failed_large_hole_does_not_block_smaller_legal_saving() {
  let mut source=Pieces::from_slice(&[[0,0,100,100],[150,0,250,100]]);
- let saved=subtract_many(&mut source,&[[25,25,225,75],[0,0,25,100]]);let out=&source;assert!(saved>=2500);assert!(out.len()<=8);
+ let saved=subtract_many(&mut source,&[[25,25,225,75],[0,0,25,100]]);let out=&source;assert!(saved>=2500);assert!(out.len()<=occlusion::MAX_SUBTRACT_PIECES);
 }
 #[test]fn overflowing_preflight_leaves_original_partition_untouched() {
- let original=[[0,0,100,100],[120,0,220,100],[240,0,340,100],[360,0,460,100]];
+ let original:Vec<_>=(0..occlusion::MAX_SUBTRACT_PIECES).map(|i|[i as i16*120,0,i as i16*120+100,100]).collect();
  let mut p=Pieces::from_slice(&original);
- assert!(!occlusion::subtract(&mut p,&[25,25,435,75]));
- assert_eq!(p.as_slice(),&original);
+ assert!(!occlusion::subtract(&mut p,&[25,25,occlusion::MAX_SUBTRACT_PIECES as i16*120-25,75]));
+ assert_eq!(p.as_slice(),original.as_slice());
 }
 #[test]fn covered_entries_retire_before_later_splits_need_capacity() {
  let mut p=Pieces::empty();
@@ -94,7 +94,7 @@ fn compare_filtered(bounds:[i16;4],source:&[[i16;4]],holes:&[[i16;4]]) {
  assert!(mapped>3000);
 }
 
-#[test]fn scratch_slots_initialize_poisoned_memory_and_remain_disjoint() {
+#[test]fn scratch_phase_overlay_initializes_poisoned_memory_and_preserves_rows() {
  use core::mem::{align_of,size_of,MaybeUninit};
  use occlusion_scratch::{Storage,Occluder,Occluders};
  #[repr(C)]struct Guarded {before:[usize;4],storage:MaybeUninit<Storage>,after:[usize;4]}
@@ -112,7 +112,6 @@ fn compare_filtered(bounds:[i16;4],source:&[[i16;4]],holes:&[[i16;4]]) {
    (Storage::holes(base)as usize,size_of::<Pieces>()),
    (Storage::occluders(base)as usize,size_of::<Occluders>()),
    (Storage::union(base)as usize,size_of::<[i16;4]>()),
-   (Storage::tile_owners(base)as usize,size_of::<[u16;300]>()),
    (Storage::tile_rows(base)as usize,size_of::<[u32;15]>()),
   ];
   for (i,(start,len)) in fields.iter().enumerate() {
@@ -122,11 +121,7 @@ fn compare_filtered(bounds:[i16;4],source:&[[i16;4]],holes:&[[i16;4]]) {
   {
    let hidden=&mut *Storage::hidden(base);let scenery=&mut *Storage::scenery(base);
    let holes=&mut *Storage::holes(base);let occluders=&mut *Storage::occluders(base);
-   let owners=&mut *Storage::tile_owners(base);
    let rows=&mut *Storage::tile_rows(base);assert_eq!(*rows,[0;15]);rows[14]=1<<19;
-   assert_eq!(owners.as_ptr()as usize%align_of::<u16>(),0);
-   assert_eq!(owners,&[0u16;300]);
-   for (i,owner)in owners.iter_mut().enumerate() {*owner=(i+1)as u16;}
    assert_eq!((hidden.len(),scenery.len(),holes.len(),occluders.len()),(0,0,0,0));
    hidden.push([0,0,320,240]);scenery.push([1,2,3,4]);holes.push([5,6,7,8]);
    for i in 0..8 {occluders.set(i,Occluder{draw:i as u16,rect:[i as i16;4],front:i%2==0});}
@@ -134,16 +129,30 @@ fn compare_filtered(bounds:[i16;4],source:&[[i16;4]],holes:&[[i16;4]]) {
    assert_eq!(occluders.len(),8);assert_eq!(occluders.as_slice()[3].draw,19);
    assert!(occlusion::subtract(hidden,&[0,0,160,240]));
    assert_eq!(scenery.as_slice(),&[[1,2,3,4]]);assert_eq!(holes.as_slice(),&[[5,6,7,8]]);
-   for (i,owner)in owners.iter().enumerate() {assert_eq!(*owner,(i+1)as u16);}
-   // Exercise all eight output slots while another Pieces source and the
-   // owner grid are borrowed. No output write may reach neighboring fields.
-   scenery.set_slice(&[[0,0,256,16]]);
-   for x in 0..16 {owners[x]=if x%2==0 {0}else{7};}
-   assert!(occlusion::tile_runs::visible_runs(scenery.as_slice(),owners,0,holes));
-   assert_eq!(holes.len(),8);assert_eq!(scenery.as_slice(),&[[0,0,256,16]]);
    assert_eq!(hidden.as_slice(),&[[160,0,320,240]]);
-   assert_eq!(occluders.as_slice()[3].draw,19);
-   for x in 0..16 {assert_eq!(owners[x],if x%2==0 {0}else{7});}
+  }
+  // Switching phases must end every draw-field reference first. Exercise the
+  // whole owner array, then invalidate it without exposing its stale bool bytes.
+  Storage::initialize_owners_at(base);
+  {
+   let owners=&mut *Storage::tile_owners(base);
+   let rows=&mut *Storage::tile_rows(base);
+   assert_eq!(owners.as_ptr()as usize%align_of::<u16>(),0);
+   assert_eq!(owners,&[0u16;300]);
+   for (i,owner)in owners.iter_mut().enumerate() {*owner=(i+1)as u16;}
+   assert_eq!(rows[14],1<<19);
+  }
+  Storage::initialize_draw_at(base);
+  {
+   assert_eq!((*Storage::hidden(base)).len(),0);
+   assert_eq!((*Storage::occluders(base)).len(),0);
+   let scenery=&mut *Storage::scenery(base);let holes=&mut *Storage::holes(base);
+   scenery.push([0,0,320,32]);
+   let rows=&mut *Storage::tile_rows(base);rows.fill(0);rows[0]=0xaaaaa;
+   assert!(occlusion::tile_runs::visible_runs_rows(scenery.as_slice(),rows,holes));
+   assert_eq!(holes.len(),11);assert_eq!(scenery.as_slice(),&[[0,0,320,32]]);
+   assert_eq!(rows[0],0xaaaaa);
+
   }
   // Frame/scene reset invalidates every old prefix without changing or reading
   // the stale backing data. Initialize only after previous borrows have ended.
@@ -153,7 +162,6 @@ fn compare_filtered(bounds:[i16;4],source:&[[i16;4]],holes:&[[i16;4]]) {
   assert_eq!((*Storage::holes(base)).len(),0);
   assert_eq!((*Storage::occluders(base)).len(),0);
   assert_eq!(*Storage::union(base),[i16::MAX,i16::MAX,i16::MIN,i16::MIN]);
-  assert_eq!(*Storage::tile_owners(base),[0u16;300]);
   assert_eq!(*Storage::tile_rows(base),[0u32;15]);
  }
  assert_eq!(guarded.before,[0xabc;4]);assert_eq!(guarded.after,[0xdef;4]);
