@@ -1,0 +1,74 @@
+"""Whole-world matrix keeps source evidence separate from PS1 admission."""
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from world_pack_matrix import build
+
+
+def fixture():
+    world = {
+        "fingerprint": "world",
+        "inputs_unchanged": True,
+        "run": {"status": "verified"},
+        "coverage": {"catalog_scenes": 2, "processed_scenes": 2,
+                      "imported_scenes": 1, "partial_scenes": 1,
+                      "failed_scenes": 0, "all_scenes_processed": True},
+        "scenes": [
+            {"index": 0, "file": "level0", "scene_name": "A", "path": "A.unity",
+             "status": "imported", "outputs": {"geometry": {"bytes": 10,
+             "uncompressed_bytes": 20, "sha256": "ga"}, "components": {"bytes": 3,
+             "uncompressed_bytes": 4, "sha256": "ca"}}, "counts": {}, "unsupported": []},
+            {"index": 1, "file": "level1", "scene_name": "B", "path": "B.unity",
+             "status": "partial", "outputs": {"geometry": {"bytes": 11,
+             "uncompressed_bytes": 30, "sha256": "gb"}}, "counts": {},
+             "unsupported": [{"type": "TextMesh"}]},
+        ],
+    }
+    inventory = {
+        "fingerprint": "inventory", "complete": True,
+        "rooms": [
+            {"scene_name": "A", "texture_ids": ["shared", "a"],
+             "sprite_ids": ["sa"], "animation_ids": ["aa"],
+             "source_texture_bytes": 2, "source_atlas_4bpp_estimate_bytes": 1},
+            {"scene_name": "B", "texture_ids": ["shared", "b"],
+             "sprite_ids": ["sb"], "animation_ids": ["ab"],
+             "source_texture_bytes": 3, "source_atlas_4bpp_estimate_bytes": 2},
+        ],
+    }
+    graph = {"rooms": [{"scene_name": "A", "neighbours": ["B"]},
+                        {"scene_name": "B", "neighbours": ["A"]}]}
+    return world, inventory, graph
+
+
+class WorldPackMatrixTests(unittest.TestCase):
+    def test_matrix_joins_current_and_neighbour_source_sets(self):
+        data = build(*fixture())
+        self.assertEqual(data["scene_count"], 2)
+        row = data["scenes"][0]
+        self.assertEqual(row["window"]["scene_names"], ["A", "B"])
+        self.assertEqual(row["window"]["texture_count"], 3)
+        self.assertEqual(row["window"]["geometry_uncompressed_bytes"], 50)
+        self.assertIsNone(row["cooking"]["ps1_ram_bytes"])
+        self.assertEqual(row["cooking"]["admission"], "source_matrix_only")
+
+    def test_matrix_rejects_stale_or_incomplete_inputs(self):
+        world, inventory, graph = fixture()
+        world["inputs_unchanged"] = False
+        with self.assertRaisesRegex(ValueError, "verified"):
+            build(world, inventory, graph)
+        world, inventory, graph = fixture()
+        inventory["complete"] = False
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            build(world, inventory, graph)
+
+    def test_matrix_rejects_scene_mismatch(self):
+        world, inventory, graph = fixture()
+        inventory["rooms"].pop()
+        with self.assertRaisesRegex(ValueError, "mismatch"):
+            build(world, inventory, graph)
+
+
+if __name__ == "__main__":
+    unittest.main()

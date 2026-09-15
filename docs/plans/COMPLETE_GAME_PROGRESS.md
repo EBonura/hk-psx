@@ -10,15 +10,16 @@ extraction, cooking, runtime binding and playable validation remain separate.
 - Windows source: CrossOver Steam installation, Unity `6000.0.61f1`.
 - Playable disc: build 71; Tutorial/King's Pass and Town/Dirtmouth only.
 - Disc policy: preserve build 71 until the user requests a replacement.
-- Current packages: P02-P03, classify whole-world source coverage and close
-  reusable geometry gaps.
+- Current packages: P05-P06, admit checked metadata and build the first
+  catalog-wide source content/residency matrix without replacing the playable
+  disc.
 
 ## Milestones
 
 | Milestone | Packages | State |
 | --- | --- | --- |
-| M0: recover import | P00-P03 | in progress |
-| M1: scalable content | P04-P08 | pending |
+| M0: recover import | P00-P03 | validated |
+| M1: scalable content | P04-P08 | in progress |
 | M2: connected world | P09-P12 | pending |
 | M3: persistent adventure | P13-P18 | pending |
 | M4: full combat roster | P19-P22 | pending |
@@ -34,8 +35,9 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P02 | validated | Every scene has an evidence-backed role and remains included. All 1,119 TransitionPoints and 318 scripted loads retain geometry, flags, destination dataflow and progression-condition status with downstream owners. All 95 completion fields join serialized access to exact managed readers/writers; installed cap CIL proves the 112 maximum. Fifteen source reference cases cover every observed edge/condition category. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
-| P05 | in progress | Tutorial/Town `HKWMTA01` banks are checked and admitted from the aligned scene-arena tail; spatial actor/checkpoint lookup now resolves through the admitted bank. The pinned no-disc guest links with zero hazards and 15,272 bytes before the stack floor after sizing the arena to 354,032 bytes. Differential guest loader/geometry/coverage replay remains before any disc replacement. |
-| P06-P31 | pending | Follow dependency order in the master plan. |
+| P05 | in progress | Tutorial/Town `HKWMTA01` banks are checked and admitted from the aligned scene-arena tail; spatial actor/checkpoint lookup now resolves through the admitted bank. The guest now differentially checks bounds, collision bounds, camera and neighbor lists against legacy regions. The pinned no-disc guest links with zero hazards and 13,224 bytes before the stack floor after sizing the arena to 354,032 bytes. Full actual-CUE differential replay and migration of auxiliary tables remain. |
+| P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. It intentionally leaves PS1 RAM/VRAM admission unknown. Production cooking of all scenes, shared art canonical mappings and native pack validation remain. |
+| P07-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -203,8 +205,10 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 Run the pinned guest build with the new metadata chunks and compare Tutorial/Town
 metadata against geometry and coverage traces before replacing the playable
 disc. Then move the same admission contract to Geo, Lifeblood, dialogue, Great
-Door, render-budget and disc mapping tables. Runtime text shaping remains with
-the renderer/UI packages.
+Door, render-budget and disc mapping tables. In parallel, use the catalog-wide
+pack matrix to parameterize production cooking and identify the first scenes
+whose exact cropped/paletted PS1 costs can be admitted. Runtime text shaping
+remains with the renderer/UI packages.
 
 ## Required package completion record
 

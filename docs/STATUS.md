@@ -1,6 +1,6 @@
 ## Complete-game implementation resumed
 
-P00-P04 are complete; P05 is in progress. The current isolated-worker
+P00-P04 are complete; P05 and the first P06 slice are in progress. The current isolated-worker
 import verified all 501 BuildSettings scenes with zero failures: 463 have
 complete source geometry and 38 retain only explicit runtime text-glyph work. It
 preserves all 5,274 CircleCollider2D boundaries, 28,814 particle systems and
@@ -64,7 +64,7 @@ the admitted scene arena, then cross-checks it against scene geometry before
 publishing a scene; this avoids a second static RAM arena. A pinned release
 guest build now links with zero final hazards and 2,172 bytes before the stack
 floor. The arena is now sized to the measured 354,032-byte scene-plus-metadata
-peak, leaving 15,272 bytes before the stack floor in the current no-disc link.
+peak, leaving 13,224 bytes before the stack floor in the current no-disc link.
 Spatial actor and checkpoint lookup now resolves through the admitted bank while
 retaining the existing static gameplay records. Build 71 and the sole Downloads
 disc are unchanged while this new chunk layout is validated.
@@ -73,6 +73,22 @@ The guest edge cache now keys entries by world generation plus the generated
 global region ID. Scene admission, retry, death and reset paths revoke the key
 before arena reuse; same-scene region changes do not read or compare stale
 arena addresses.
+
+The admitted metadata path now differentially checks every Tutorial/Town bank
+against the legacy region table before publication: bounds, collision bounds,
+camera limits and ordered global neighbour IDs must match. The current pinned
+no-disc release link remains hazard-free (`401,936` bytes of code and `13,224`
+bytes before the stack floor). Targeted host tests and the complete
+`shared/hk-format` suite pass; the build-71 EXE/BIN/CUE remains untouched.
+
+The first P06 source-matrix slice is recorded in
+`.hkpsx/world-import/pack-matrix.{json,md}`. It covers all 501 verified scenes,
+joins each scene's geometry/component hashes with its 2,615-texture/21,741-
+fragment dependency inventory, and computes current-plus-authored-neighbour
+windows. Its measured largest window is `Hive_03_c` plus four neighbours at
+52,062,693 extracted geometry bytes and 246 source texture fragments. These
+are source evidence only: PS1 RAM/VRAM fields remain unset until real crop,
+palette, compression and upload cooking proves them.
 
 ## Completion plan prepared for GPT-5.6-Sol
 
