@@ -19,6 +19,7 @@ python3 tools/world_coverage.py
 .venv/bin/python tools/completion_catalog.py
 .venv/bin/python tools/managed_field_usage.py
 .venv/bin/python tools/world_progression.py
+.venv/bin/python tools/world_identity.py
 ```
 
 Outputs stay in ignored `.hkpsx/world-import/`; no guest build, canonical cooked
@@ -89,6 +90,11 @@ for every TransitionPoint and flags serialized one-way scene pairs. It selects
 source identities for each edge/condition category as later reference cases.
 FSM graph reachability remains candidate evidence until P09/P13/P14 execute and
 trace the actual branch.
+
+`world-identities.sqlite` is the P04 collision-checked source identity registry.
+It uses scene paths rather than BuildSettings indices, retains compatibility
+aliases for current sparse Breakable/grass IDs and assigns explicit state
+ownership. See `docs/STATE_IDENTITY.md`; the database and report stay ignored.
 
 The next passes are:
 

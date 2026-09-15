@@ -41,6 +41,15 @@ FSM execution, guest admission or traversal parity is claimed. See
 
 The playable disc remains build 71 and has not been rebuilt by this host work.
 
+P04 is also validated. The ignored stable-ID registry collision-checks all
+1,997,203 components plus every scene, gate, PlayerData key and referenced asset;
+no asset remains unresolved. IDs use source scene paths/PathIDs instead of build
+order. Compatibility aliases preserve the current 37 Breakable and 39 grass
+sparse IDs. The new no-std central state API separates global, mode and active
+scene owners, makes duplicate rewards idempotent and passes all reset/reload and
+exact-size tests. Its conservative current-source capacities total 93,912 bytes,
+without multiplying active state by 501 scenes. See `docs/STATE_IDENTITY.md`.
+
 ## Completion plan prepared for GPT-5.6-Sol
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),
