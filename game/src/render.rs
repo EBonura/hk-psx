@@ -19,6 +19,9 @@ use draw_visibility::DRAW_ENABLED;
 static mut CORE_MAP_CACHE:core_map_cache::Cache=core_map_cache::Cache::new();
 // Maximum scenery records plus the Knight and the active nail effect.
 const CAP: usize = 1032;
+// Final-list ownership matches HUD/dialogue: not mutated until DMA completes.
+static mut TRANSITION:gpu::prim::QuadGouraudBlended=gpu::prim::QuadGouraudBlended::new(
+    [(0,0),(320,0),(0,240),(320,240)],[(0,0,0);4],gpu::material::BlendMode::Subtract);
 const MAX_DRAWS:usize=crate::disc::SCENE_DRAW_CAPACITY;
 const _:()=assert!(MAX_DRAWS<=1024);
 static mut TILE_DRAWS:[(u16,u16);MAX_DRAWS]=[(0,0);MAX_DRAWS];
@@ -1014,13 +1017,19 @@ pub fn kick_ready() {
 /// top). It is not kicked here: an earlier chunk may still be walking, and
 /// main kicks it through `kick_front` once the channel is idle so the wait
 /// runs simulation ticks and input checkpoints instead of spinning.
-pub fn submit(health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool,blue_health:u16) {
+pub fn submit(health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool,blue_health:u16,transition:u8) {
     crate::input::checkpoint();
     animation_cache::submit();
     // One owner, no mutation until main observes DMA and GPU completion.
     unsafe {
         let ot = &mut *(&raw mut OT);
         ot.clear();
+        // OT insertion prepends: this packet executes after scenery and HUD.
+        if transition!=0 {
+            TRANSITION=gpu::prim::QuadGouraudBlended::new([(0,0),(320,0),(0,240),(320,240)],
+                [(transition,transition,transition);4],gpu::material::BlendMode::Subtract);
+            ot.add(0,&mut *(&raw mut TRANSITION),gpu::prim::QuadGouraudBlended::WORDS);
+        }
         crate::dialogue::append(ot);
         crate::hud::append(ot,health,max_health,soul,max_soul,paused,blue_health);
         for i in (KICKED..USED).rev() {

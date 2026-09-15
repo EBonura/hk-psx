@@ -38,7 +38,11 @@ def build(telemetry=False, candidate=False):
     ):
         if hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
             raise ValueError('Ambience descriptor/SFX reservation changed: '+str(path))
+    focus=json.loads((ROOT/'.hkpsx/focus-audio.json').read_text())
+    for path,key in ((ROOT/focus['path'],'sha256'),(ROOT/'data/focus-audio.rs','manifest_sha256')):
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=focus[key]:raise ValueError('Focus audio changed after cooking')
     arena=json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text())['scene_arena_bytes']
+    if (focus['byte_len']+2047)//2048*2048>arena:raise ValueError('Focus bank exceeds startup arena')
     for clip in clips:
         path=ROOT/clip['path'];payload=path.read_bytes()
         if len(payload)!=clip['byte_len'] or hashlib.sha256(payload).hexdigest()!=clip['sha256']:
@@ -78,6 +82,7 @@ def build(telemetry=False, candidate=False):
             shutil.copy2(ROOT/clip['path'],chunks/f"chunk_{len(rooms)+index+1}.adpcm")
         for index,atlas in enumerate(atlases):
             shutil.copy2(atlas['path'],chunks/f"chunk_{len(rooms)+len(clips)+index+1}.atlas")
+        shutil.copy2(ROOT/focus['path'],chunks/f"chunk_{len(rooms)+len(clips)+len(atlases)+1}.focus")
         run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks,'--cdda-track',ROOT/music['path']],cwd=ROOT)
         staged.replace(outputs['bin'])
         staged.with_suffix('.cue').replace(outputs['cue'])

@@ -16,21 +16,36 @@ only; instruments and captures stay ignored. The original startup/load/landing
 sequence has specific prerequisites documented there. Do not force hero control
 or misread an unready test as failed original movement.
 
-Current65 restores the full Title as direct44,100Hz stereo CD-DA using the
-existing SDK, with a separate Music setting and completed Pause handoff to room
-loading. The single main disc now has data01/audio02. No music sample RAM/SPU
-bank is needed. Two complete repeats and both early/active Start routes pass;
-repeat seeks add about0.5s in PSoXide. Original mixer DSP/hardware playback remain
-unverified. Read STATUS/MUSIC and `.hkpsx/music65/cdda-*` evidence.
+Current66 adds complete Focus charging/heal audio, fixes Crawler/corpse motion
+across resident collision regions, and implements source-derived Great Door
+blackout and Town entry fade/walk. The source2.5s wait is at destination entry;
+it is not a pre-departure delay. Town spawn uses the source gate-ground position.
+The renderer consumes observed simulation/input ticks before another render;
+final10762-poll Town replay now completes without input faults, queue peak4/16.
+A first66 replay overflowed and was rejected; use only `*-final` evidence.
 
-Build64's complete RAM-to-SPU cave ambience ring, footsteps/hard-land/Great Door
-hit and original managed audio tracing remain.61,356B main RAM and136,704B
-contiguous SPU remain. The user explicitly prefers direct CD streaming for title
-and potentially bosses; use it only when no scene/data reads are needed. Bosses
-are not implemented. Retain consistent sample rates within categories; longer
-samples may use lower rates when necessary. Next source-trace remaining cues,
-then address Great Door/Crawler/Town issues. The2.5s door delay is a destination
-entry delay; Town still ends at x48, before its music trigger.
+Full tests pass272 Python/402 reported native, final hazards0. Four final-CUE
+routes cover Focus, isolated audio, offscreen patrol and the full door encounter.
+Read top of STATUS and MUSIC plus `.hkpsx/game66/validation.json`. Main RAM free
+53,132B before48KiB stack; main frame32,192B, nested reserve16,960B; enemy helper
+frame2,336B. SPU free28,496B after108,208B Focus bank. No physical stack/timing
+claim. Town route records23 particle drops; no new FPS or full-parity claim.
+
+Build65's complete44,100Hz stereo CD-DA title and independent Music setting remain.
+Completed Pause hands the drive to room loading. Music uses no sample RAM/SPU
+bank. Two-repeat/early-Start validation remains in `.hkpsx/music65/`; original
+mixer DSP and hardware playback are unverified. Direct CD music is appropriate
+for resident boss arenas when implemented, not simultaneous arbitrary room reads.
+Build64's full cave-noises RAM-to-SPU ring, running/hard-land/door-hit SFX remain.
+Focus uses category rates8kHz sustained/22.05kHz short. Keep source-traced cues
+and consistent rates; retain full clips. Current textures and scene arena unchanged.
+
+Next expand Town beyond x48 (currently before its music trigger), source-trace
+remaining enemy/break/death/UI sounds, implement unsupported enemies and advance
+progression. No new maps were added in66. Door destruction/alternate hit sounds,
+hard-land recovery, flying enemies, inventory/charms/abilities/NPCs/bosses/save and
+full-game progression remain unfinished. Use the original headless reference
+runner for bounded comparisons; do not claim exact Box2D/RNG/shader/mixer parity.
 
 Work in `/Users/ebonura/Desktop/repos/hk-psx`, branch `main`. Read AGENTS.md,
 README.md, docs/BOOTSTRAP.md and docs/STATUS.md; run doctor before another build.
@@ -38,7 +53,7 @@ Use the psoxide-debug skill for guest/emulator work.
 
 ## Retained gameplay from63
 
-Build65 retains the best54 renderer and the functional Cheats pages from63 in the title
+Build66 retains the best54 renderer and the functional Cheats pages from63 in the title
 and pause menus. Four toggles: invincibility, Pure Nail21 damage, infinite SOUL,
 and nine masks. Pause actions: restore health/SOUL, add5 blue masks (cheat cap20),
 and turn all toggles off. X toggles/applies; Left/Right off/on; Circle backs out;

@@ -93,7 +93,7 @@ impl Cache {
     }
     fn init(&mut self)->Result<(),LoadError> {
         if self.ready {return Ok(());}
-        let chunks=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len();
+        let chunks=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1;
         if SCENE_COUNT==0 || chunks>MAX_CHUNKS || SCENE_ARENA_BYTES%4!=0
             || SCENE_REGIONS.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
         let mut offset=0usize;
@@ -140,10 +140,10 @@ impl Cache {
                 let d=&SCENE_MANIFEST[i];(d.stored_len,d.stored_fnv,d.arena_capacity)
             } else if i<SCENE_COUNT+crate::ambience::CLIPS.len() {
                 let clip=&crate::ambience::CLIPS[i-SCENE_COUNT];(clip.byte_len,clip.checksum,SCENE_ARENA_BYTES)
-            } else {
+            } else if i+1<chunks {
                 let a=&ATLASES[i-SCENE_COUNT-crate::ambience::CLIPS.len()];
                 (a.stored_len,a.stored_fnv,SCENE_ARENA_BYTES)
-            };
+            } else {(crate::focus_audio::BANK_BYTES,crate::focus_audio::BANK_CHECKSUM,SCENE_ARENA_BYTES)};
             let e=parse_entry(bytes,i).ok_or(LoadError::HeaderInvalid)?;
             if size==0 || size.div_ceil(SECTOR_BYTES)>capacity/SECTOR_BYTES
                 || e.chunk_id as usize!=i+1 || e.byte_size as usize!=size || e.checksum!=checksum
@@ -175,7 +175,7 @@ impl Cache {
     /// admitted. Later calls are no-ops: all ambient samples live in SPU or
     /// the dedicated main-RAM stream cache, with no playback-time CD access.
     pub fn prepare_ambience(&mut self)->Result<(),LoadError> {
-        if crate::ambience::is_ready() {return Ok(());}
+        if crate::ambience::is_ready() && crate::focus_audio::ready() {return Ok(());}
         if self.loaded_scenes!=0 {mark(3,LoadError::Ambience as u32);return Err(LoadError::Ambience);}
         mark(1,0);
         let result=(|| {
@@ -186,6 +186,12 @@ impl Cache {
                 if !crate::ambience::upload(index,bytes) {return Err(LoadError::Ambience);}
             }
             if !crate::ambience::finish_load() {return Err(LoadError::Ambience);}
+            if !crate::focus_audio::ready() {
+                let entry=self.entries[SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()];
+                self.read(entry,0)?;
+                let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),entry.byte_size as usize)};
+                if !crate::focus_audio::upload(bytes) {return Err(LoadError::Ambience);}
+            }
             Ok(())
         })();
         if let Err(error)=result {mark(3,error as u32);}result

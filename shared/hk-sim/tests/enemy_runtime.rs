@@ -61,7 +61,10 @@ mod world {
         hk_sim::polygon_hits_box(a, bounds)
     }
     impl State {
-        pub fn edge(&self, _: &Region, r: &hk_format::Room, i: usize) -> [i32; 4] {
+        pub fn fill_edges_in_view(&self, _: &Region, _: &hk_format::Room, _: &Region, r: &hk_format::Room, edges:&mut [[i32;4]]) {
+            for(i,edge)in edges.iter_mut().enumerate(){*edge=r.edge(i);}
+        }
+        pub fn edge_in_view(&self, _: &Region, _: &hk_format::Room, _: &Region, r: &hk_format::Room, i: usize) -> [i32; 4] {
             r.edge(i)
         }
     }
@@ -153,6 +156,7 @@ fn tick(
         no_attack(),
         [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4],
         cheats::Settings::new(),
+        |_,_,_|None,
     )
 }
 #[test]
@@ -409,11 +413,73 @@ fn cheat_nail_and_contact_protection_use_actual_enemy_runtime() {
   let settings=cheats::Settings{invincible:enabled,max_nail:enabled,..cheats::Settings::new()};
   let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);let mut v=Vitals::new(VITAL_PARAMS);let mut n=Nail::new();
   let polygons=[&[[-ONE,-2*ONE],[ONE,-2*ONE],[ONE,ONE],[-ONE,ONE]][..];4];
-  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings);
+  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings,|_,_,_|None);
   assert_eq!(hit.hurt,if enabled{Hurt::Ignored}else{Hurt::Recoiling});assert_eq!(v.health,if enabled{5}else{4});
   p.x=w.actor_state(0,SPEC.source_id).unwrap().0;n.active=true;n.age=1;
-  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings);
+  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings,|_,_,_|None);
   assert_eq!(hit.hits,1);assert_eq!(hit.kills,u16::from(enabled));
   assert_eq!(w.actor_state(0,SPEC.source_id).unwrap().2,if enabled{-13}else{3});
  }
+}
+
+#[test]
+fn resident_actor_view_matches_unpartitioned_patrol_across_knight_apron() {
+    let bytes=room();
+    let floor=hk_format::Room::parse(&bytes).unwrap();
+    let complete=region();
+    let narrow=world::Region {
+        bounds:[-ONE,-5*ONE,ONE,20*ONE],
+        collision_bounds:[-2*ONE,-10*ONE,2*ONE,25*ONE],
+        ..region()
+    };
+    let mut expected=enemies::EnemyWorld::new();
+    let mut actual=enemies::EnemyWorld::new();
+    let mut p=Player::spawn(15*ONE,ONE);
+    let mut v=Vitals::new(VITAL_PARAMS);
+    let mut farthest=0;
+    for _ in 0..600 {
+        tick(&mut expected,&complete,&floor,&mut p,&mut v,&Nail::new());
+        actual.tick(&narrow,&floor,&mut world::State,&mut p,&mut v,&Nail::new(),
+            &mut NailResponse::new(),no_attack(),[&[];4],cheats::Settings::new(),
+            |scene,x,y| {
+                assert_eq!(scene,0);
+                assert!(world::contains(complete.collision_bounds,x,y));
+                Some((&complete,hk_format::Room::parse(&bytes).unwrap()))
+            });
+        assert_eq!(actual.actor_state(0,SPEC.source_id),expected.actor_state(0,SPEC.source_id));
+        farthest=farthest.max(actual.actor_state(0,SPEC.source_id).unwrap().0.abs());
+    }
+    assert!(farthest>10*ONE);
+}
+
+#[test]
+fn unrelated_scene_view_cannot_activate_suspended_actor() {
+    let bytes=room();let floor=hk_format::Room::parse(&bytes).unwrap();
+    let foreign=world::Region{scene:1,..region()};
+    let mut current=region();current.bounds=[100*ONE,0,120*ONE,20*ONE];
+    current.collision_bounds=current.bounds;
+    let mut actors=enemies::EnemyWorld::new();
+    actors.tick(&current,&floor,&mut world::State,&mut Player::spawn(10*ONE,ONE),
+        &mut Vitals::new(VITAL_PARAMS),&Nail::new(),&mut NailResponse::new(),
+        no_attack(),[&[];4],cheats::Settings::new(),
+        |_,_,_|Some((&foreign,hk_format::Room::parse(&bytes).unwrap())));
+    assert_eq!(actors.actor_state(0,SPEC.source_id),Some((SPEC.x,SPEC.y,8)));
+}
+
+#[test]
+fn oversized_actor_terrain_retains_exact_direct_fallback() {
+    let bytes=room();
+    let small=hk_format::Room::parse(&bytes).unwrap();
+    let mut large=bytes.clone();
+    large[28..32].copy_from_slice(&129u32.to_le_bytes());
+    let edge:Vec<u8>=small.edge(0).iter().flat_map(|v|v.to_le_bytes()).collect();
+    large.splice(92..108,edge.repeat(129));
+    let big=hk_format::Room::parse(&large).unwrap();
+    let r=region();let mut a=enemies::EnemyWorld::new();let mut b=enemies::EnemyWorld::new();
+    let mut p=Player::spawn(15*ONE,ONE);let mut v=Vitals::new(VITAL_PARAMS);
+    for _ in 0..600 {
+        tick(&mut a,&r,&small,&mut p,&mut v,&Nail::new());
+        tick(&mut b,&r,&big,&mut p,&mut v,&Nail::new());
+        assert_eq!(a.actor_state(0,SPEC.source_id),b.actor_state(0,SPEC.source_id));
+    }
 }

@@ -616,3 +616,49 @@ fn scoped_edge_reader_matches_direct_queries_across_mutations_sources_and_fallba
     let big=edge_room_bytes(&vec![[101,102,103,102];129]);
     let big=hk_format::Room::parse(&big).unwrap();state.refresh_edges(&r,&big);check(&state,&big);
 }
+
+#[test]
+fn foreign_view_exclusions_follow_segments_not_local_indices() {
+    use hk_sim::ONE;
+    let a=[ONE,0,2*ONE,0];let b=[3*ONE,0,4*ONE,0];
+    let c=[5*ONE,0,6*ONE,0];
+    let source_bytes=edge_room_bytes(&[a,b]);
+    let target_bytes=edge_room_bytes(&[c,[a[2],a[3],a[0],a[1]],b]);
+    let source=hk_format::Room::parse(&source_bytes).unwrap();
+    let target=hk_format::Room::parse(&target_bytes).unwrap();
+    let current=region();let mut other=region();other.breakables=&[];
+    let mut state=State::new();state.set_geo_edges(&[0]);
+    state.set_lifeblood_edges(&[1,999]);
+    assert_eq!(state.edge_in_view(&current,&source,&other,&target,0),c);
+    assert_eq!(state.edge_in_view(&current,&source,&other,&target,1),[0;4]);
+    assert_eq!(state.edge_in_view(&current,&source,&other,&target,2),[0;4]);
+    other.scene=1-current.scene;
+    assert_eq!(state.edge_in_view(&current,&source,&other,&target,1),[a[2],a[3],a[0],a[1]]);
+}
+
+#[test]
+fn actor_terrain_scratch_matches_direct_filter_for_both_views_and_mutations() {
+    let source_bytes=edge_room_bytes(&[[1,2,3,2],[4,5,4,6]]);
+    let target_bytes=edge_room_bytes(&[[4,6,4,5],[7,8,9,8],[1,2,3,2]]);
+    let source=hk_format::Room::parse(&source_bytes).unwrap();
+    let target=hk_format::Room::parse(&target_bytes).unwrap();
+    let active=region();let other=region();
+    let check=|state:&State,r:&Region,room:&hk_format::Room| {
+        let mut scratch=vec![[0;4];room.counts[5]];
+        state.fill_edges_in_view(&active,&source,r,room,&mut scratch);
+        assert_eq!(scratch,(0..room.counts[5]).map(|i|state.edge_in_view(&active,&source,r,room,i)).collect::<Vec<_>>());
+    };
+    let mut state=State::new();
+    for step in 0..5 {
+        match step {
+            1=>{state.set_geo_edges(&[0,999]);state.set_lifeblood_edges(&[1]);},
+            2=>{state.break_object(B);},
+            3=>{state.set_geo_edges(&[]);state.set_lifeblood_edges(&[]);},
+            4=>{state.reset_scene(active.scene);},
+            _=>{}
+        }
+        check(&state,&active,&source);check(&state,&other,&target);
+        state.refresh_edges(&active,&source);
+        check(&state,&active,&source);check(&state,&other,&target);
+    }
+}

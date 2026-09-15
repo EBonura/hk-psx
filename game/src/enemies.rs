@@ -1,7 +1,7 @@
 //! Source WalkLeftRight / HealthManager subset. States survive cooked grid swaps.
-//! Actors outside the loaded collision window are suspended; Unity's full scene
-//! activation, full Box2D solver, corpse particles, Geo drops and global FSM events are
-//! still outside this bounded runtime.
+//! Actors use their own resident collision view, independently of the camera.
+//! Actors outside all loaded views are suspended. Full Unity activation, Box2D
+//! solver parity and global FSM events remain outside this bounded runtime.
 use crate::world::{Region, State};
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::{
@@ -70,7 +70,29 @@ impl Actor {
         let b = self.local_bounds(spec);
         [self.x + b[0], self.y + b[1], self.x + b[2], self.y + b[3]]
     }
-    fn advance(&mut self, spec: &ActorSpec, region: &Region, room: &Room, state: &State) {
+    // Kept out of the main loop's frame: 2KiB temporary terrain is reused for
+    // each actor/corpse and discarded before combat mutates world state.
+    #[inline(never)]
+    fn advance_in_view(&mut self,spec:&ActorSpec,state:&State,active:&Region,
+        active_room:&Room,target:&Region,target_room:&Room) {
+        const EDGES:usize=128;
+        let count=target_room.counts[5];
+        let mut edges=[[0;4];EDGES];
+        if count<=EDGES {
+            state.fill_edges_in_view(active,active_room,target,target_room,&mut edges[..count]);
+            self.advance_body(spec,count,|i|edges[i]);
+        } else {
+            self.advance_body(spec,count,|i|state.edge_in_view(active,active_room,target,target_room,i));
+        }
+    }
+    fn advance_body(&mut self,spec:&ActorSpec,count:usize,edge:impl Fn(usize)->[i32;4]) {
+        if self.health.dead {
+            if let (Some(corpse),Some(corpse_spec))=(&mut self.corpse,spec.corpse) {
+                corpse.tick(corpse_spec,count,edge);
+            }
+        } else {self.advance(spec,count,edge);}
+    }
+    fn advance(&mut self, spec: &ActorSpec, count: usize, edge: impl Fn(usize) -> [i32; 4]) {
         if self.spawn_state == SpawnState::Blocked {
             return;
         }
@@ -97,9 +119,7 @@ impl Actor {
             // once when its collision apron is resident, never on grid swaps or
             // later jump/recoil motion. Unsupported overlapping geometry leaves
             // this actor suspended until a scene reset, without retrying per tick.
-            if !hk_sim::resolve_actor_spawn(&mut body, p, room.counts[5], |i| {
-                state.edge(region, room, i)
-            }) {
+            if !hk_sim::resolve_actor_spawn(&mut body, p, count, &edge) {
                 self.spawn_state = SpawnState::Blocked;
                 return;
             }
@@ -110,8 +130,8 @@ impl Actor {
         let senses = hk_sim::walker_senses(
             self.bounds(spec),
             self.walk.direction,
-            room.counts[5],
-            |i| state.edge(region, room, i),
+            count,
+            &edge,
         );
         let vx = self.walk.tick(spec.walk, senses.0, senses.1, senses.2);
         // A completed source turn can mirror the asymmetric collider offset.
@@ -124,9 +144,7 @@ impl Actor {
         p.bottom = b[1];
         p.top = b[3];
         p.speed = vx.abs();
-        body.step(p, vx.signum(), false, room.counts[5], |i| {
-            state.edge(region, room, i)
-        });
+        body.step(p, vx.signum(), false, count, &edge);
         self.vy = body.vy;
         self.grounded = body.grounded;
         if self.recoil_left != 0 {
@@ -137,9 +155,7 @@ impl Actor {
             p.speed = self.recoil[0].abs();
             p.gravity = 0;
             body.vy = self.recoil[1];
-            body.step(p, self.recoil[0].signum(), false, room.counts[5], |i| {
-                state.edge(region, room, i)
-            });
+            body.step(p, self.recoil[0].signum(), false, count, &edge);
         }
         self.x = body.x - offset;
         self.y = body.y;
@@ -207,7 +223,7 @@ impl EnemyWorld {
     }
     /// Call only on a running 60 Hz simulation tick, after Knight movement/nail
     /// state and before applying transitions. The caller owns hit-stop timing.
-    pub fn tick(
+    pub fn tick<'a>(
         &mut self,
         region: &Region,
         room: &Room,
@@ -219,6 +235,7 @@ impl EnemyWorld {
         attack: AttackParams,
         polygons: [&[[i32; 2]]; 4],
         cheats: crate::cheats::Settings,
+        resident: impl Fn(usize, i32, i32) -> Option<(&'a Region, Room<'a>)>,
     ) -> Events {
         self.sync_region(region);
         let mut events = Events {
@@ -256,22 +273,20 @@ impl EnemyWorld {
             else {
                 continue;
             };
-            if actor.health.dead {
-                if let (Some(corpse),Some(corpse_spec))=(&mut actor.corpse,spec.corpse) {
-                    if crate::world::contains(region.collision_bounds,corpse.x,corpse.y) {
-                        corpse.tick(corpse_spec,room.counts[5],|i|state.edge(region,room,i));
-                    }
-                }
-                continue;
+            // WalkLeftRight keeps running independently of the Knight/camera.
+            // A cooked view boundary is not a source scene or FSM boundary.
+            let (x,y)=actor.corpse.map_or((actor.x,actor.y),|c|(c.x,c.y));
+            let other=if crate::world::contains(region.bounds,x,y) {None}
+                else {resident(region.scene,x,y)};
+            let (terrain_region,terrain_room)=other.as_ref()
+                .map_or((region,room),|(r,room)|(*r,room));
+            let available=terrain_region.scene==region.scene
+                && crate::world::contains(terrain_region.collision_bounds,x,y);
+            if !actor.health.dead {actor.health.tick();}
+            if available {
+                actor.advance_in_view(spec,state,region,room,terrain_region,terrain_room);
             }
-            // Use the resident collision apron, not the Knight's activation
-            // rectangle. A visible actor crossing a grid boundary must not
-            // become intangible. Outside that apron movement pauses, but its
-            // existing collider still receives nail and contact checks.
-            actor.health.tick();
-            if crate::world::contains(region.collision_bounds, actor.x, actor.y) {
-                actor.advance(spec, region, room, state);
-            }
+            if actor.health.dead {continue;}
             let bounds = actor.bounds(spec);
             if !polygon.is_empty() && hk_sim::polygon_hits_box(polygon, bounds) {
                 if vitals.can_control() {

@@ -1,23 +1,23 @@
 # Shared scene and gameplay budget
 
-The validated63 cheat-menu build from 2026-09-15 holds both currently authored scenes in one RAM
+The validated66 gameplay/audio build from 2026-09-15 holds both currently authored scenes in one RAM
 arena and persistent VRAM atlases. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |340,680|
-| Code-to-data alignment |8|
-| Linked data, including menu, HUD and sound bank |771,376|
-| BSS, including shared scene arena and runtime pools |567,812|
-| Total static span |1,679,876|
+| Linked code |351,452|
+| Code-to-data alignment |4|
+| Linked data, including menu, HUD and sound bank |801,568|
+| BSS, including shared scene arena and runtime pools |776,052|
+| Total static span |1,929,076|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |302,332|
+| Unallocated gap before reserved stack |53,132|
 
-Static data ends at `0x801aa204`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801e6f74`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies369,180 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -33,10 +33,12 @@ its 32,768-byte reservation before nested calls. `host/stack_budget.py` now
 derives a project linker script from the unchanged pinned SDK, protects 48 KiB,
 and checks the actual final main prologue before packaging. The generated
 script's content hash is part of its filename so budget changes force a relink.
-The current main frame is 32,120 bytes, leaving 17,032 reserved bytes for nested
+The current main frame is 32,192 bytes, leaving 16,960 reserved bytes for nested
 calls and other stack use; this is **not** an observed high-water measurement.
 The linker also excludes the 256 bytes above its initial SP from static RAM.
-Evidence: `.hkpsx/stack-budget-2026-09-14.json`.
+Current evidence: `.hkpsx/build.json` and `.hkpsx/game66/build-fixed.log`.
+The outlined enemy terrain helper has a2,336-byte final binary frame, including
+a2KiB edge cache reused per actor. It adds no persistent RAM allocation.
 
 Particle lifetime uses a nonzero representation, eliminating the separate
 Option tag: the 128-slot pool shrinks from 6,668 to 6,156 bytes before the four-byte cached active count without changing
@@ -143,11 +145,11 @@ The two compact scene payloads total206,518 stored bytes. The23 startup atlas
 chunks hold694,048 raw /321,841 stored bytes. Combined stored size528,359 bytes
 is21,873 bytes larger than the former combined scene encoding, trading a small
 startup read increase for699,876 bytes removed from the resident arena.
-WORLD.PAK begins at LBA1024; its31-entry table binds2 scenes,6 ambience clips
-and23 atlas chunks. Original HKROOM02/full HKSCNE01 files remain host analysis
+WORLD.PAK begins at LBA1024; its32-entry table binds2 scenes,6 ambience clips,
+23 atlas chunks and the final Focus sound bank. Original HKROOM02/full HKSCNE01 files remain host analysis
 inputs. Raw/stored/source/decoder hashes are in the packed-scene/build reports.
 
-The title loads ambience through the empty arena into SPU, then validates and
+Startup loads ambience and Focus through the empty arena into SPU, then validates and
 uploads atlas chunks synchronously before admitting compact scenes. No atlas
 buffer is reused before draw_sync completes. Retry revokes admission before
 menu artwork overwrites VRAM, ensuring all pages are restored on the next start.
@@ -157,19 +159,23 @@ Eight animation slots retain an independent16KiB maximum per frame. Animation
 frames come from resident RAM, with no traversal CD reads or decoding. This is
 the current two-scene subset, not full-game residency or hardware timing.
 
-Six original effects occupy 31,984 SPU bytes at `0x1010..0x8D00`, voices0..5.
-The SDK silent loop is at0x1000. Five effects use22,050Hz mono; damage uses11,025Hz.
-They are uploaded once and trigger without CD access. Six complete8kHz mono
-ambience loops add472,768 SPU bytes at `0x8D00..0x7C3C0`, voices6..11, leaving
-15,424 bytes above the ambience bank. Geo pickup/hit clips occupy13,904 of
-those bytes at `0x7C3C0..0x7FA10`, voices12..14, leaving1,520 bytes. All six
-Geo clips are complete11,025Hz mono samples; rock destruction reuses the existing
-first destruction variant. The second source variant remains omitted.
-Ambience loops load through the empty shared scene arena at
-startup, adding no staging buffer to main RAM and no traversal CD traffic.
-The disc adds235 payload sectors. Full death layers and longer music transport
-remain pending; see FOCUS.md and MUSIC.md. Physical CD latency, audio quality
-and frame cadence still require hardware evidence.
+Current SPU allocations: player SFX63,376B at0x1010..0x107A0,
+Geo13,904B at0x14000..0x17650, ambience289,280B at0x18000..0x5EA00,
+and Focus108,208B at0x5EA00..0x790B0. There are28,496B contiguous free above
+Focus. The SDK silent loop is at0x1000. Player short effects/heal use22,050Hz
+mono; running and Geo use11,025Hz mono; ambience and sustained Focus charging
+use8,000Hz mono. All admitted source clips are complete.
+
+The full199,872-byte cave-noises clip is resident in main RAM, feeding a16KiB
+SPU ring through8KiB scratch. Other ambience and Focus payloads stay in SPU;
+startup uses the scene arena and adds no permanent staging buffer. Focus uses
+voice18 and alternating19/20 heals. No playback-time CD read is needed for
+these effects. CD-DA title music uses44,100Hz stereo directly from the disc,
+without a voice or sample bank; completed Pause precedes room loading.
+The final66 startup reads562 data sectors and uploads694,048 static VRAM bytes;
+both counters remain unchanged through the validated Town traversal. See
+MUSIC.md for source and replay evidence. Full death layers, numerous effects
+and boss music remain pending. Physical CD/SPU timing remains unverified.
 
 Pass40 retains480bytes of packed scenery-extrema indices and a108-byte
 initialized-prefix occluder snapshot. The former replaces an experimental
