@@ -1,0 +1,58 @@
+# Whole-world import and system development
+
+Development now imports all Windows BuildSettings scenes before expanding shared
+systems. Finishing an enemy, effect or room script is no longer a prerequisite
+for extracting that room's surroundings. The source catalog includes menus,
+cinematics, alternate versions and boss scenes; names do not silently exclude
+content. Imported source data is distinct from PS1 packaging and playable coverage.
+
+```sh
+python3 tools/doctor.py
+.venv/bin/python host/world_import.py --jobs 3
+# Resume only matching source/code fingerprints and intact output hashes:
+.venv/bin/python host/world_import.py --jobs 3 --resume
+python3 tools/world_import_report.py
+```
+
+Outputs stay in ignored `.hkpsx/world-import/`; no guest build, canonical cooked
+files or disc is changed. `--limit N` is a diagnostic subset. Workers release all
+Unity buffers between scenes; concurrency is bounded to at most four processes.
+
+Each scene has compressed geometry and component records, preserving original
+source IDs, transforms, instance flags, scripts and serialized parameters.
+Geometry includes unculled sprite references and world geometry, terrain segments,
+mesh data, tilemap cell unions, collider metadata, cameras and exits. Unsupported
+geometry and read errors remain explicit. Binary/nonfinite serialized values use
+lossless tagged JSON. Particle payloads are currently omitted and their source
+identities remain recorded; dynamic prefab closure is not implemented.
+
+The source dependency inventory can be reused only when its catalog and recorded
+input content hashes match. It supplies sprite/animation/texture dependencies;
+source atlas size is never treated as a PS1 cost. Whole-world texture quantization,
+packing, deduplication and measured scene budgets remain a separate pass.
+
+`catalog.json` retains the source build indices. `report.json` distinguishes
+processed scenes, geometry imports, partial imports and failures. Its component
+inventory counts types and affected scenes, with gameplay support explicitly not
+evaluated. `room-graph.json` maps literal serialized scene/gate names. Runtime
+FSM overrides, progression conditions and non-TransitionPoint loads remain
+unresolved; a mapped edge is not a verified traversal.
+
+Every run hashes the Windows inputs and importer code. Resume verifies output
+hashes and retries failed scene imports. A final source/code check must pass
+before the report records unchanged inputs. Scene read failures do not stop
+other imports and do not count as successfully imported scenes.
+
+The next passes are:
+
+1. Resolve common geometry/dependency gaps across the world, and cook shared art
+   with per-scene inventories at existing quality settings.
+2. Replace the fixed two-scene guest metadata tables with bounded scene-loaded
+   metadata. Measure the actual cooked costs before choosing arena sizes.
+3. Implement shared gameplay families across the imported catalog: enemies,
+   interactions, breakables, NPCs, benches, abilities, progression and bosses.
+4. Validate each system against controlled original-game traces and representative
+   guest routes, then verify long progression paths.
+
+The current Tutorial/Town disc remains the playtest build. Host extraction does
+not add playable areas, establish original behavior parity or prove RAM/VRAM fit.

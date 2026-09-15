@@ -46,6 +46,8 @@ for repeatable original-game input/state comparisons. It runs an isolated copy
 with an internal virtual controller and logs player, enemy and FSM state;
 NullGfx runs do not establish image or audible-output parity.
 
+Development now follows a [whole-world import, then shared systems](docs/WORLD_IMPORT.md) workflow. Host import coverage is separate from the two currently playable scenes.
+
 This is an early port, with substantial missing systems and unverified paths.
 Flying enemies, full scene scripting, saving, inventory, abilities, NPCs, bosses,
 in-game music, Geo spending, Shade recovery and complete-game progression remain unfinished.

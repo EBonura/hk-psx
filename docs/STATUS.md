@@ -1,3 +1,29 @@
+## Whole-world development pass — stopped at user request
+
+Source changes are saved; the sole playable disc remains71 with identical EXE,
+BIN and CUE hashes.344 Python tests passed. No guest build was performed.
+
+New `host/world_import.py` and `host/world_geometry.py` separate all-scene source
+extraction from gameplay admission. They preserve sprite/tk2d geometry, collider
+paths, mesh data, cameras, gates and serialized components, with resumable
+hash-bound checkpoints and explicit gaps. A searchable local report is generated
+by `tools/world_import_report.py`. See [WORLD_IMPORT.md](WORLD_IMPORT.md).
+
+The501-scene run is incomplete. At stop,249 scenes had exported records
+(2 without reported geometry gaps,247 partial),196 further jobs were recorded
+failed after a worker process terminated abruptly, and56 had no recorded result.
+The cause of that worker termination has not been diagnosed; do not interpret
+those196 pool failures as individual corrupt scenes. Final source/code verification
+was not completed. The earlier dependency inventory's1,409 source hashes match.
+Evidence: `.hkpsx/world-import/report.json`, `stopped.json`, `import.log`, and
+`python-tests-final.log`. Completed artifacts are retained, not PS1-ready rooms.
+
+On resumption, diagnose the worker failure and use `--jobs 1 --resume`; intact
+matching checkpoints can be reused and failed jobs are retried. Complete final
+verification before claiming a whole-world import. The attempted comparison
+against all canonical region base files stopped on a missing `base_path` and
+provides no equivalence proof. No additional playable areas were added.
+
 # Status, 2026-09-15
 
 ## Current playtest71: actor integration and requested refresh
