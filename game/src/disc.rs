@@ -340,6 +340,16 @@ impl Cache {
             if global<=previous_global || global>REGION_SCENE_LOCAL.len() || REGION_SCENE_LOCAL[global-1].0!=scene {
                 return Err(LoadError::WorldMeta);
             }
+            let legacy=&crate::world::REGIONS[global-1];
+            if region.bounds()!=legacy.bounds || region.collision_bounds()!=legacy.collision_bounds
+                || region.camera()!=legacy.camera || region.neighbour_count()!=legacy.neighbours.len() {
+                return Err(LoadError::WorldMeta);
+            }
+            for (encoded,expected) in region.neighbours().zip(legacy.neighbours.iter()) {
+                if encoded.map_err(|_|LoadError::WorldMeta)? as usize!=*expected {
+                    return Err(LoadError::WorldMeta);
+                }
+            }
             previous_global=global;
             mapped+=1;
         }
