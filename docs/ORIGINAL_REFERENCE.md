@@ -1,0 +1,187 @@
+# Controlled headless Windows reference
+
+`tools/reference_game.py` runs an isolated copy of the user's Windows Hollow
+Knight installation under CrossOver with Unity `-batchmode -nographics`.
+It injects a managed test driver and a virtual InControl device. It does not
+use desktop input, a game window, the macOS Steam copy, or the PS1 disc.
+
+## Prepare and run
+
+Run from the repository root:
+
+```sh
+python3 tools/doctor.py
+python3 tools/reference_game.py prepare
+python3 tools/reference_game.py run --name movement-example --frames 300 --tape tools/reference/tapes/movement.csv --timeout 90
+```
+
+Run names must be new single directory names. Reports live under
+`.hkpsx/og-reference/runs/<name>/`. A successful process exit is insufficient:
+the runner checks actual Tutorial gameplay, consecutive consumed input frames,
+the complete input schedule, controller attachment, and gameplay exceptions.
+It returns nonzero on a failed check or watchdog timeout.
+
+Preparation needs the locally installed CrossOver and .NET SDK 9. The tested SDK
+is 9.0.318, downloaded from Microsoft's release metadata with its SHA-512 verified;
+local dependency provenance is `.hkpsx/og-reference/deps/sdk.json`. The default
+executable is `.hkpsx/og-reference/deps/dotnet/dotnet`. On another machine pass
+`--dotnet /absolute/path/to/dotnet`. Pass `--crossover-bin /absolute/path/to/bin`
+if CrossOver is not installed in `/Applications` and cannot be discovered from
+its running wineserver. The current machine uses an App Translocation path;
+do not copy that temporary path to another machine.
+
+The patcher uses Mono.Cecil 0.11.6, pinned in its project file; NuGet restores it.
+Cecil is MIT licensed ([upstream license](https://github.com/jbevain/cecil/blob/master/LICENSE.txt)).
+The managed driver compiles against the *original* game's assemblies, not a
+previously modified assembly. No Unity/retail DLLs are tracked or distributed.
+
+## Input and state control
+
+CSV input has header `test_frame,buttons`. Frames are nonnegative decimal
+integers, strictly increasing. Masks are active-high PS1 bits in decimal or
+`0x` hexadecimal. Each row replaces the entire held mask. The last value stays
+held until an explicit zero event releases it. Blank lines and whole-line `#`
+comments are accepted. Unknown button bits and ambiguous schedules are rejected.
+
+| Button | Mask | Original action |
+| --- | --- | --- |
+| Start | `0x0008` | Pause |
+| Up / Right / Down / Left | `0x0010` / `0x0020` / `0x0040` / `0x0080` | Direction |
+| Circle | `0x2000` | Cast/Focus (`HeroActions.cast`) |
+| Cross | `0x4000` | Jump |
+| Square | `0x8000` | Nail attack |
+
+Circle deliberately binds `cast`: the installed original's `ListenForCast`
+action reads it for Focus/spells; its similarly named `focus` field is unused.
+Additional abilities/buttons remain to be mapped and tested.
+
+For a live programmatically controlled run, omit `--tape`, select a sufficiently
+long frame budget, and monitor `driver.log` for `READY` or read `state.csv`.
+Send commands from another process:
+
+```sh
+# Start this in a separate terminal/process and wait for READY:
+python3 tools/reference_game.py run --name live-test --frames 12000 --timeout 180
+
+python3 tools/reference_game.py command --name live-test 'buttons 0x20'
+python3 tools/reference_game.py command --name live-test 'buttons 0'
+python3 tools/reference_game.py command --name live-test 'teleport 120 15'
+python3 tools/reference_game.py command --name live-test 'scene Town left1'
+python3 tools/reference_game.py command --name live-test 'quit'
+```
+
+Commands are written atomically to the run's mailbox and acknowledged in
+`driver.log` with Unity/test frame numbers. Acknowledgement, not file creation,
+proves execution. This is a latest-command mailbox: wait for acknowledgement
+before sending another command. Live buttons cannot override a loaded tape.
+Explicit quit is accepted for a live run that already recorded valid gameplay.
+
+Teleport and direct scene loading are **test setup**, not evidence of authentic
+room-transition timing. Teleport resets the hero's velocity; scene setup uses
+an original build-settings scene and named entry gate through GameManager.
+Use controller-driven traversal for timing/door comparisons. These setup
+commands do not grant abilities or replace the original physics/AI.
+
+## Initialization and timing
+
+Tested original: Unity 6000.0.61f1, Windows Steam build 22529139. The original
+Assembly-CSharp SHA-256 is
+`e9048ef6a633970f735e01ec166d3959f610eaea7a88d827d48d67b1e5fb87bd`.
+Preparation fingerprints **every installed game file** and original save input,
+verifies all retained cloned files except the deliberately patched assembly,
+and rejects stale copies after updates. Run reports bind the driver/source and
+patched assembly hashes and recheck original inputs before and after execution.
+
+The isolated bootstrap confirms the default language, leaves menu input,
+loads the original `Knight_Pickup` scene additively, and waits for its original
+HeroController. This matches the prerequisite in `OpeningSequence`. It then
+calls `OnWillActivateFirstLevel` and `GameManager.LoadScene("Tutorial_01")`.
+The opening movie is bypassed as explicit scene-test setup. The splash Animator
+is retained; an early hypothesis that it required bypassing was disproved.
+No original gameplay methods or state-machine actions are replaced.
+
+The normal first-landing sequence is retained. Its `Initial Fall Impact` FSM
+relinquishes control, waits 0.75s and 3.25s in successive states, then waits for the
+get-up animation before returning control. Tape frame 0 starts only after the
+original reports PLAYING, grounded, not transitioning, accepting input, and an
+attached controller for 30 consecutive driver frames.
+
+Unity `Time.captureDeltaTime` is set to 1/60 for the reference test clock. The
+installed original's physics timestep remains unchanged (observed approximately
+0.02s/50Hz). Readiness waits for their common 100ms phase, adding at most
+five frames; physics is not reset. These are different clocks: compare elapsed simulation time and
+logged physics steps, not PS1 vs Unity frame numbers blindly. Each tape mask is
+queued in LateUpdate for the following real InControl update. Input history,
+WasPressed/WasReleased, action processing, and hero movement remain original.
+Every original input-device update is logged, including extra updates during
+scene loading. Several such updates can share one scheduled test frame; the
+held mask remains unchanged until the next LateUpdate. Validation checks all
+logged device updates against the tape, not just the final sampled mask.
+RNG and asynchronous loading are not globally made deterministic;
+repeatability claims apply only to the measured scenario.
+
+## Validation evidence
+
+Final 300-frame runs `movement-phase-1` and `movement-phase-2` start at different
+Unity frames (1440 and 1434), but match all masks, velocity, health, control state
+and relative physics-step counts. Maximum position difference is 0.00001 world
+units, within the 0.0001 comparison tolerance. The earlier unaligned test could
+vary by a physics step; it is superseded by the phase-aligned runner.
+
+Run a repeat comparison with:
+
+```sh
+python3 tools/reference_game.py compare --left movement-phase-1 --right movement-phase-2
+```
+
+The comparison reports explicit fields and tolerance; it does not compare every
+random enemy/particle state. Reports are under `.hkpsx/og-reference/comparisons/`.
+The `live-v2` run verifies actual mailbox movement and release, direct Town
+loading, teleport to (120, 15), and command shutdown: 128 sampled gameplay frames,
+130 original input updates, no gameplay exceptions. The live test preceded the
+readiness-phase alignment; its control protocol is unchanged. One final movement
+run and the live run reported an original CameraController exception during
+process teardown; reports preserve it separately.
+
+Nine host regression tests exercise false-success rejection, missing/skipped
+frames, mismatched sampled/native-tick masks, decimal-mask parsing, exception
+classification and command restrictions:
+
+```sh
+python3 -m unittest tests.test_reference_game
+```
+
+## Reports and limits
+
+- `state.csv`: consumed input frame/mask/tick, Unity frame/time/fixed time, hero
+  position/velocity/health, game/transition/input states, delta times and physics
+  step count. Samples are taken in LateUpdate after original frame logic.
+- `input-events.csv`: every virtual-device update, its queued test frame, Unity
+  frame, original input tick and applied mask, including extra scene-load polls.
+- `observations.csv`: original FSM state changes, enemy HealthManager poses/HP,
+  destruction, and sampled AudioSource configuration. Hierarchies identify
+  objects; runtime instance IDs are process-local, not source asset IDs.
+- `driver.log`: setup, READY, command acknowledgements, watchdog/errors and stop.
+- `unity.log`: original runtime diagnostics, including the NullGfxDevice proof.
+- `run.json`: version/input provenance and validation; gameplay exceptions fail
+  the run. Exceptions after the explicit completion marker are separately
+  reported as teardown diagnostics.
+
+Observation discovery occurs on scene loads and every 30 samples, with explicit
+caps of 2048 FSMs/1024 actors/512 audio sources. Coverage-limit rows report overflow.
+Polling can miss intermediate FSM transitions, transient objects and one-shot
+sounds. Audio rows prove configuration, **not actual audio playback calls**.
+Audio-call instrumentation is a next step for exact missing-SFX comparisons.
+
+NullGfx produces no rendered image. It cannot establish visual parity, shader/
+particle coverage, audible output, or on-screen culling-dependent behaviour.
+Gameplay traces are useful evidence within these limits; visual comparisons
+will require a separate rendered capture path. See Unity's
+[desktop headless mode documentation](https://docs.unity3d.com/6000.0/Documentation/Manual/desktop-headless-mode.html).
+
+The APFS clone, isolated bottle, saves, dependencies, binaries and logs all stay
+under ignored `.hkpsx/og-reference/`. The original Steam install and saves are
+read-only inputs. The Patcher changes only the copied assembly: startup driver
+hooks and persistent-data-path redirection. The isolated bottle additionally
+separates platform preferences/saves from the Steam bottle. Normal guest/disc
+build mechanics are unaffected.

@@ -2,10 +2,25 @@
 
 ## User steering takes priority
 
-The user stopped FPS optimization to playtest and requested cheats. Build63
-is ready. Do not resume optimization or full-game expansion automatically.
-Wait for their playtest feedback or next instruction. The earlier start-to-finish
-goal remains unfinished, and stable30fps has not been achieved.
+The user playtested63 and reported slow Great Door progression, missing SFX,
+odd enemy behaviour, and a Town boundary that sends the hero back to the gate.
+They explicitly requested a controllable HEADLESS original-game runner instead
+of GUI testing/manual feedback. That runner now works; use it for reproducible
+comparisons. Read docs/ORIGINAL_REFERENCE.md and the top of docs/STATUS.md.
+Do not resume generic FPS work. The full-game goal remains unfinished.
+
+Reference command: `python3 tools/reference_game.py run --name NEW_NAME
+--frames 300 --tape tools/reference/tapes/movement.csv --timeout 90` (one line).
+Prepare again after managed-driver changes. All original inputs/saves are read
+only; instruments and captures stay ignored. The original startup/load/landing
+sequence has specific prerequisites documented there. Do not force hero control
+or misread an unready test as failed original movement.
+
+Next: targeted original/PS1 Great Door, Crawler, and Town scenarios, then fixes.
+Source audit findings are recorded at the top of STATUS; the2.5s door delay is a
+destination-entry delay, Crawler collision aprons are too narrow, and Town is
+cooked only to x48. Pending audio.rs/cook_audio.py edits are unbuilt and have no
+main hit hook yet; do not mistake them for a delivered SFX fix.63 is unchanged.
 
 Work in `/Users/ebonura/Desktop/repos/hk-psx`, branch `main`. Read AGENTS.md,
 README.md, docs/BOOTSTRAP.md and docs/STATUS.md; run doctor before another build.
