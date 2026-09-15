@@ -5,10 +5,12 @@
 //! rock hits persist. Death removes the wallet; Shade recovery is not invented.
 use hk_sim::{ONE,polygon_hits_box};
 pub const MAX_COINS:usize=64;
-pub const MAX_ROCKS:usize=32;
+/// The source catalog contains 207 GeoRock instances. Keep persistent rock
+/// state in one sparse pool instead of multiplying storage by every scene.
+pub const MAX_ROCK_STATES:usize=256;
+pub const MAX_ROCKS_PER_SCENE:usize=16;
 pub const MAX_ENEMIES:usize=32;
 pub const MAX_PENDING:usize=16;
-const SCENES:usize=2;
 /// Cooperative input service only: never consumes queued input or advances
 /// simulation/RNG. Coin contact scans may span a VBlank at the full pool size.
 #[inline]
@@ -41,7 +43,7 @@ pub struct Coin {
     touching:bool,support:Option<usize>,support_edge:[i32;4],
 }
 #[derive(Clone,Copy)]
-struct Rock {source:u32,left:u8,cooldown:u16,swing:u32}
+struct Rock {source:u32,key:usize,left:u8,cooldown:u16,swing:u32}
 #[derive(Clone,Copy)]
 struct Enemy {source:u32,scene:u8}
 #[derive(Clone,Copy)]
@@ -51,7 +53,7 @@ pub struct Strike {pub hits:u32,pub depleted:u32,pub payout:u32}
 #[derive(Default,Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Tick {pub collected:u32,pub coins:u32,pub bounces:u32,pub last_value:u32}
 pub struct World {
-    rocks:[[Option<Rock>;MAX_ROCKS];SCENES],enemies:[Option<Enemy>;MAX_ENEMIES],
+    rocks:[Option<Rock>;MAX_ROCK_STATES],enemies:[Option<Enemy>;MAX_ENEMIES],
     loose:[Option<Coin>;MAX_COINS],pending:[Option<Pending>;MAX_PENDING],swing:u32,phase:u8,
     wallet:u32,pub hit_events:u32,pub depleted_rocks:u32,pub spawned_value:u32,
     pub collected_value:u32,pub discarded_value:u32,pub deferred_events:u32,
@@ -64,7 +66,7 @@ pub struct World {
 #[no_mangle]pub static mut HK_GEO_ACTIVE:u32=0;
 #[no_mangle]pub static mut HK_GEO_PENDING_VALUE:u32=0;
 impl World {
-    pub const fn new()->Self {Self {rocks:[[None;MAX_ROCKS];SCENES],enemies:[None;MAX_ENEMIES],
+    pub const fn new()->Self {Self {rocks:[None;MAX_ROCK_STATES],enemies:[None;MAX_ENEMIES],
         loose:[None;MAX_COINS],pending:[None;MAX_PENDING],swing:0,phase:0,wallet:0,
         hit_events:0,depleted_rocks:0,spawned_value:0,collected_value:0,discarded_value:0,deferred_events:0}}
     pub fn wallet(&self)->u32 {self.wallet}
@@ -75,10 +77,11 @@ impl World {
     pub fn pending_value(&self,params:Params)->u32 {self.pending.iter().flatten().map(|p|value(p.counts,params)).sum()}
     pub fn begin_attack(&mut self) {
         self.swing=self.swing.wrapping_add(1);
-        if self.swing==0 {self.swing=1;for rock in self.rocks.iter_mut().flatten().flatten(){rock.swing=0;}}
+        if self.swing==0 {self.swing=1;for rock in self.rocks.iter_mut().flatten(){rock.swing=0;}}
     }
     pub fn hits_remaining(&self,scene:usize,state:usize)->Option<u8> {
-        self.rocks.get(scene)?.get(state)?.map(|r|r.left)
+        let key=scene.checked_mul(MAX_ROCKS_PER_SCENE)?.checked_add(state)?;
+        self.rocks.iter().flatten().find(|r|r.key==key).map(|r|r.left)
     }
     pub fn rock_depleted(&self,scene:usize,state:usize)->bool {self.hits_remaining(scene,state)==Some(0)}
     /// Caller supplies the current active nail polygon and starts one swing
@@ -91,9 +94,11 @@ impl World {
         if self.swing==0 || !(3..=16).contains(&polygon.len()) {return event;}
         for spec in rocks.iter().filter(|r|r.scene as usize==scene) {
             checkpoint();
-            assert!(scene<SCENES && (spec.state as usize)<MAX_ROCKS && spec.hits>0);
+            assert!((spec.state as usize)<MAX_ROCKS_PER_SCENE && spec.hits>0);
+            let Some(key)=scene.checked_mul(MAX_ROCKS_PER_SCENE).and_then(|v|v.checked_add(spec.state as usize)) else {self.deferred_events+=1;continue;};
             if !polygon_hits_box(polygon,spec.bounds) || !spec.polygons.iter().any(|p|polygons_overlap(polygon,p)) {continue;}
-            let state=self.rocks[scene][spec.state as usize].unwrap_or(Rock {source:spec.source_id,left:spec.hits,cooldown:0,swing:0});
+            let existing=self.rocks.iter().flatten().find(|r|r.key==key).copied();
+            let state=existing.unwrap_or(Rock {source:spec.source_id,key,left:spec.hits,cooldown:0,swing:0});
             assert_eq!(state.source,spec.source_id,"Geo rock state alias");
             if state.left==0 || state.cooldown!=0 || state.swing==self.swing {continue;}
             // Source Hit always emits per-hit coins, including its final hit.
@@ -103,7 +108,9 @@ impl World {
                 self.deferred_events=self.deferred_events.saturating_add(1);continue;
             }
             let left=state.left-1;
-            self.rocks[scene][spec.state as usize]=Some(Rock {left,cooldown:spec.hit_cooldown,swing:self.swing,..state});
+            let slot=self.rocks.iter().position(|r|r.is_some_and(|r|r.key==key)).or_else(||self.rocks.iter().position(Option::is_none));
+            let Some(slot)=slot else {self.deferred_events+=1;continue;};
+            self.rocks[slot]=Some(Rock {left,cooldown:spec.hit_cooldown,swing:self.swing,..state});
             event.hits+=1;event.payout+=count as u32;
             if left==0 {event.depleted+=1;self.depleted_rocks+=1;}
             self.hit_events+=1;
@@ -157,8 +164,8 @@ impl World {
     #[inline(never)]
     pub fn tick(&mut self,scene:usize,params:Params,hero:[i32;4],coverage:[i32;4],count:usize,edge:impl Fn(usize)->[i32;4])->Tick {
         checkpoint();
-        assert!(scene<SCENES);let mut event=Tick::default();
-        for r in self.rocks[scene].iter_mut().flatten(){r.cooldown=r.cooldown.saturating_sub(1);}
+        let mut event=Tick::default();
+        for r in self.rocks.iter_mut().flatten(){r.cooldown=r.cooldown.saturating_sub(1);}
         self.emit(scene,params);self.phase+=50;let physics=self.phase>=60;if physics {self.phase-=60;}
         for slot in &mut self.loose {
             let Some(coin)=slot.as_mut()else{continue;};if coin.scene as usize!=scene {continue;}
@@ -285,6 +292,28 @@ fn sin(angle:i32)->i32 {
  if quadrant==1||quadrant==3 {t=90*ONE-t;}
  let i=(t/ONE)as usize;let v=if i==90 {ONE}else{SINE[i]+mul(SINE[i+1]-SINE[i],t%ONE)};
  if quadrant>=2 {-v}else{v}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sparse_rock_keys_keep_scene_state_independent() {
+        let mut world=World::new();
+        world.rocks[0]=Some(Rock{source:11,key:0,left:4,cooldown:0,swing:0});
+        world.rocks[1]=Some(Rock{source:22,key:MAX_ROCKS_PER_SCENE,left:1,cooldown:0,swing:0});
+        assert_eq!(world.hits_remaining(0,0),Some(4));
+        assert_eq!(world.hits_remaining(1,0),Some(1));
+        assert_eq!(world.hits_remaining(0,1),None);
+    }
+
+    #[test]
+    fn rock_pool_is_catalog_bounded_without_scene_multiplication() {
+        assert_eq!(core::mem::size_of_val(&World::new().rocks),
+                   core::mem::size_of::<Option<Rock>>() * MAX_ROCK_STATES);
+        assert!(MAX_ROCK_STATES>=207);
+    }
 }
 
 #[cfg(not(test))]
