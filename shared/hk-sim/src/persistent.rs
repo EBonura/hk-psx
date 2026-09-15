@@ -209,7 +209,7 @@ impl<const N: usize> Store<N> {
         if u16::from_le_bytes([bytes[4], bytes[5]]) != SAVE_VERSION { return Err(SaveError::BadVersion); }
         let count = u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
         if count > N { return Err(SaveError::Capacity); }
-        let needed = SAVE_HEADER_BYTES.checked_add(count.checked_mul(SAVE_ENTRY_BYTES).ok_or(SaveError::BadLength)?).and_then(|n|n.checked_add(SAVE_CHECKSUM_BYTES)).ok_or(SaveError::BadLength)?;
+        let needed = frame_len(bytes, count)?;
         if bytes.len() != needed { return Err(SaveError::BadLength); }
         let stored = u32::from_le_bytes(bytes[needed-4..needed].try_into().unwrap());
         if checksum(&bytes[..needed-4]) != stored { return Err(SaveError::BadChecksum); }
@@ -227,6 +227,12 @@ impl<const N: usize> Store<N> {
         }
         Ok(result)
     }
+}
+
+fn frame_len(bytes: &[u8], count: usize) -> Result<usize, SaveError> {
+    SAVE_HEADER_BYTES.checked_add(count.checked_mul(SAVE_ENTRY_BYTES).ok_or(SaveError::BadLength)?)
+        .and_then(|n| n.checked_add(SAVE_CHECKSUM_BYTES)).filter(|&n| bytes.len() >= n)
+        .ok_or(SaveError::BadLength)
 }
 
 fn checksum(bytes: &[u8]) -> u32 {
@@ -335,6 +341,27 @@ impl<const G: usize, const M: usize, const W: usize, const T: usize> AdventureSt
             mode: Store::new(),
             active: ActiveScene::new(),
         }
+    }
+    /// Exact byte count for the two persisted owners. Active scene flags and
+    /// timers are deliberately transient and are not serialized.
+    pub fn snapshot_len(&self) -> usize { self.global.encoded_len() + self.mode.encoded_len() }
+    pub fn encode_snapshot(&self, out: &mut [u8]) -> Result<usize, SaveError> {
+        let needed=self.snapshot_len();if out.len()<needed{return Err(SaveError::BufferTooSmall);}
+        let first=self.global.encode(out)?;let second=self.mode.encode(&mut out[first..needed])?;
+        Ok(first+second)
+    }
+    pub fn decode_snapshot(bytes:&[u8])->Result<Self,SaveError> {
+        if bytes.len()<SAVE_HEADER_BYTES+SAVE_CHECKSUM_BYTES{return Err(SaveError::BadLength);}
+        let count=u16::from_le_bytes([bytes[6],bytes[7]])as usize;
+        let first=frame_len(bytes,count)?;
+        let global=Store::<G>::decode(&bytes[..first])?;
+        let rest=&bytes[first..];
+        if rest.len()<SAVE_HEADER_BYTES+SAVE_CHECKSUM_BYTES{return Err(SaveError::BadLength);}
+        let mode_count=u16::from_le_bytes([rest[6],rest[7]])as usize;
+        let second=frame_len(rest,mode_count)?;
+        if first+second!=bytes.len(){return Err(SaveError::BadLength);}
+        let mode=Store::<M>::decode(&rest[..second])?;
+        let mut state=Self::new();state.global=global;state.mode=mode;state.active.enter(StateId(0));Ok(state)
     }
     pub fn reset(&mut self, reset: Reset) {
         match reset {
@@ -519,5 +546,21 @@ mod tests {
         let mut bytes = [0u8; 64];
         let len = store.encode(&mut bytes).unwrap();
         assert!(matches!(Store::<1>::decode(&bytes[..len]), Err(SaveError::Capacity)));
+    }
+    #[test]
+    fn adventure_snapshot_round_trip_resets_active_scene_owner() {
+        type Full = AdventureState<4, 2, 2, 2>;
+        let mut state = Full::new();
+        state.global.apply(Mutation { id: StateId(3), operation: Operation::Set(8) }).unwrap();
+        state.mode.apply(Mutation { id: StateId(7), operation: Operation::Set(2) }).unwrap();
+        state.active.enter(StateId(99));
+        state.active.set_bit(1).unwrap();
+        let mut bytes = [0u8; 256];
+        let len = state.encode_snapshot(&mut bytes).unwrap();
+        let restored = Full::decode_snapshot(&bytes[..len]).unwrap();
+        assert_eq!(restored.global.get(StateId(3)), 8);
+        assert_eq!(restored.mode.get(StateId(7)), 2);
+        assert_eq!(restored.active.scene, StateId(0));
+        assert!(!restored.active.bit(1));
     }
 }
