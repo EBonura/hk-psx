@@ -295,7 +295,7 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
       'arena_bytes':arena_bytes,'raw_resident_bytes':sum(aligned(e['resident_raw_len'])for e in entries),
       'resident_stored_bytes':sum(e['resident_stored_len']for e in entries),'atlas_raw_bytes':sum(e['raw_len']for e in atlases),'atlas_stored_bytes':sum(e['stored_len']for e in atlases),
       'total_pages':(max if residency=='scene_gate' else sum)(e['pages']for e in entries),'total_palettes':(max if residency=='scene_gate' else sum)(e['palettes']for e in entries),'scenes':entries,'atlases':atlases,
-      'world_metadata':world_banks,'world_metadata_policy':'generated and checked separately; not yet assigned WORLD.PAK chunks',
+      'world_metadata':world_banks,'world_metadata_policy':'generated, checksummed and assigned after scene coverage; guest admission is wired but this build has not replaced the playable disc',
       'sequential_decoder_validation':'pending native pinned-SDK/incremental proof against these exact stored payloads and allocation capacities',
       'quality':'No new resizing or lossy texture aliasing. Shared planes preserve every sampled16bit word; streamed textures and strict black mask palette/index bytes remain exact.'}
     # Ambient/focus/coverage chunk numbering is owned by the packer contract.
