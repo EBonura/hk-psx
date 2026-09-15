@@ -213,14 +213,15 @@ mod presentation {
         }
         assert!(drawn<=16);unsafe {HK_LIFEBLOOD_DRAWN=drawn;}drawn
     }
-    static mut BLUE:[Sprite;2]=[const {Sprite::new(0,0,0,0,(0,0),0,128,128,128)};2];
-    /// Current authored subset has exactly one two-bug cocoon and no charms.
+    static mut BLUE:[Sprite;22]=[const {Sprite::new(0,0,0,0,(0,0),0,128,128,128)};22];
+    /// Twenty testing masks plus the authored two-bug cocoon fit this pool.
     /// Use the original Blue Idle image, not a blue tint of a white mask.
     pub fn append_hud(ot:&mut OrderingTable<1>,max_health:u16,blue_health:u16) {
-        assert!(blue_health<=2,"Lifeblood HUD exceeds admitted source cocoon count");
+        assert!(blue_health<=22,"Lifeblood HUD exceeds admitted mask count");
         let parts=LIFE_FRAMES[BLUE_HUD].parts;assert_eq!(parts.len(),1);let art=parts[0];
         for i in (0..blue_health).rev() {unsafe {
-            BLUE[i as usize]=Sprite::with_material(56+(max_health+i)as i16*16,14,u16::from(art.w),u16::from(art.h),(art.u,art.v),material(art));
+            let(x,y)=crate::hud::mask_position(max_health+i);
+            BLUE[i as usize]=Sprite::with_material(x,y,u16::from(art.w),u16::from(art.h),(art.u,art.v),material(art));
             ot.add(0,&mut BLUE[i as usize],Sprite::WORDS);
         }}
     }

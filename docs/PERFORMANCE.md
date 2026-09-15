@@ -1,6 +1,10 @@
 # Performance investigation
 
-## Active 30 fps target (2026-09-15)
+## Deferred 30 fps target (2026-09-15)
+
+The user paused optimization to playtest build63 with cheats. Its renderer
+retains54; the timings below describe the pre-cheat54 binary, not a new63 FPS
+claim. No further performance experiments are authorized by this playtest task.
 
 The acceptance budget is **at most two VBlanks per rendered gameplay frame**.
 The retained pass54 disc (restored as57) averages1.957504VBlanks (approximately30fps at
@@ -171,6 +175,78 @@ Despite that benefit, the route regresses against54:158/2,954 late intervals,
 including7 four-tick, mean1.964455. It was reverted to retain54's better frame
 cadence. This remains a possible later stack-budget change if separately needed.
 The actual-CUE health/progression checks and final Lifeblood/Town images passed.
+
+## Follow-up after retained54/57
+
+Pass58 tried a1,513-byte immutable Z-force table for the existing particle track
+IDs. Source comparisons verify6,060 exact forces, including4,419 nonzero cases,
+plus the existing199,980 phase and334,107 trajectory/draw checks. Wider, signed,
+nonzero-X and unbound cases retain scalar evaluation. The248 Python and369
+native suite results cover the final candidate. The guest selects the byte table,
+but LLVM newly outlines tick_shape and introduces a call and three stack stores
+per particle.58 regresses to185/2,935 late intervals,9 four-tick, mean1.977513.
+59 forces only that helper inline and reaches161/2,955 late,7 four-tick,
+mean1.964129. Both are rejected against54's153/2,965 and6 four-tick. All three
+final images match54, health/progression pass, and no traversalCD/staticuploads
+or input faults appear. Evidence: `.hkpsx/force58-audit/RESULT.md` and58/59 replay
+artifacts. The table is not retained merely because its arithmetic is exact.
+
+Further precompute audits rule out several tempting shortcuts. A128-entry
+alpha/core seed cache needs roughly25.6KiB but retains most of its~1.2ms/frame
+gross scope in heavy15/18/20 for clipping, ordering and thresholds. A copied
+full-local final partition can change rectangle order after viewport clipping,
+which alters bounded fallback; source tags and live clipping would still be
+required. See `.hkpsx/seed-cache58-audit/RESULT.md`.
+
+Exact native packet census finds only0.69/0.33/0.25ms gross axis colored-core
+opportunity in15/18/20. Rotated fog cores offer0.60/1.66ms in18/20 before
+certificates, extra partitions and mask-state costs. Semi-transparent flat
+replacement must preserve framebuffer bit15, ABR and mask state; matching RGB
+alone is insufficient. No colored-core substitution is integrated. Evidence:
+`.hkpsx/constant-color59-audit/RESULT.md`.
+
+A minimum-two-VBlank presentation cap also lacks evidence as a late-frame fix.
+All285 one-tick54 intervals are inregion8; none occurs within five intervals
+before any of153 late frames. Delaying queue submission would also lose current
+queued-GPU prefix overlap unless its ownership protocol changed. Keep ordered
+60Hz simulation and raw flip intervals; do not disguise missed deadlines with
+normalized counters. The cap is not implemented.
+
+Pass60 admitted already-computed256..1023-pixel cuts only when their output
+piece count did not exceed the input count. It regressed to179/2,953 late
+intervals,5 four-tick, mean1.965459. All three final images were exact54;
+Lifeblood passed, and Town completed with2 frame-boundary wait ticks and no
+traversal CD/static uploads. A smaller raw GPU total did not establish a win
+because the trial also displayed fewer frames. The change was reverted.
+
+Pass61 fused the region-admission extrema scans and reused selected extrema
+for the rotated core-size gate. Exact tie/index/overflow checks passed, including
+2 million full-i32 quads. Final render initialization shrank528 code bytes and
+removed duplicate comparisons, but the route regressed to175/2,943 late
+intervals,4 four-tick, mean1.972477. Lifeblood's four checks and Town progression
+passed with zero boundary waits; both final images were exact54. The long
+endpoint was unchanged, with only a Knight-animation difference in the final
+image after one extra route tick. This candidate was also reverted. Evidence:
+`.hkpsx/activation58-audit/pass61-full.patch` and60/61 actual-CUE reports.
+
+The finer16x8 tile-grid estimate was corrected to include setup for nonempty
+polygons and per-polygon raster rounding. Its incremental modeled GPU credit
+is only0.271/0.232ms in regions18/20, before767/858 additional GP0 words and CPU
+work. The8x8 grid has0.538/0.790ms credit, before1,556/1,659 extra words. Neither
+justifies integration on current evidence. See
+`.hkpsx/fine-tiles60-audit/net-cost.json`. A framebuffer mask-bit prepass is also
+not a measured performance option: the pinned emulator charges polygon work
+before raster mask rejection, so it retains the underlying polygon cost and
+adds a prepass. Changing the emulator timing to manufacture a win is excluded.
+
+Pass62 required at least256 removed bbox pixels per additional tile partition,
+with the existing1024-pixel floor. It regressed to184/2,945 late intervals,
+5 four-tick, mean1.971138, and was reverted. Lifeblood/Town images matched54;
+the long-route final difference was confined to the Knight after one extra
+route tick. Trace scope showed only1,263 rejected cuts of71,987 successes,
+including speculative work; this was packet throttling, not exact GPU costing.
+The user then stopped optimization and requested gameplay cheats. The renderer
+in63 matches54, with no58..62 production changes retained.
 
 ## Debris comparisons and progression build (2026-09-14)
 

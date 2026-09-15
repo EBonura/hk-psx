@@ -1,4 +1,7 @@
 //! Pure, bounded geometry for a source-derived SOUL orb. No GPU or asset access.
+/// Keep the original first row; testing upgrades wrap below it within320px.
+pub fn mask_position(index:u16)->(i16,i16){(56+(index%14)as i16*16,14+(index/14)as i16*16)}
+pub fn geo_y(total_masks:u16)->i16 {38+total_masks.saturating_sub(1).min(30)as i16/14*16}
 #[derive(Clone,Copy)]
 pub struct SoulSpec {
     pub cut_zero:i32,pub cut_per_mp:i32,pub height:u16,
@@ -19,6 +22,11 @@ impl SoulSpec {
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test]fn expanded_masks_keep_default_layout_and_clear_the_geo_label(){
+        assert_eq!(mask_position(5),(136,14));assert_eq!(geo_y(7),38);
+        for i in 0..31 {let(x,y)=mask_position(i);assert!((56..=264).contains(&x));assert!(y+16<geo_y(i+1));}
+        assert_eq!(mask_position(14),(56,30));assert_eq!(geo_y(31),70);
+    }
     // Synthetic geometry; source gameplay thresholds are independent of UVs.
     fn spec()->SoulSpec {SoulSpec {cut_zero:20<<16,cut_per_mp:13240,height:21,
         focus_cost:33,eyes_at:50,hide_at:1,dim_gain:55,source_max:99}}

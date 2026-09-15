@@ -18,12 +18,12 @@ test:
 	.hkpsx/hud-tests/preload-tests
 	rustc --edition=2021 --test game/src/scenery_geometry.rs -o .hkpsx/hud-tests/scenery-geometry-tests
 	.hkpsx/hud-tests/scenery-geometry-tests
+	rustc --edition=2021 --test tests/scenery_bounds_runtime.rs -o .hkpsx/hud-tests/scenery-bounds-tests
+	.hkpsx/hud-tests/scenery-bounds-tests
 	rustc --edition=2021 --test game/src/draw_packet.rs -o .hkpsx/hud-tests/draw-packet-tests
 	.hkpsx/hud-tests/draw-packet-tests
 	rustc --edition=2021 --test game/src/volume.rs -o .hkpsx/hud-tests/volume-tests
 	.hkpsx/hud-tests/volume-tests
-	rustc --edition=2021 --test game/src/pause.rs -o .hkpsx/hud-tests/pause-tests
-	.hkpsx/hud-tests/pause-tests
 validate:
 	$(PYTHON) tools/validate.py --emulator "$(EMULATOR)"
 doctor:

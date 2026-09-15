@@ -1,6 +1,7 @@
 //! Native compile/execution of the guest enemy module with hardware-only drawing
 //! stubbed. Fixtures exercise gameplay rather than mirroring GPU internals.
 use hk_sim::*;
+#[path="../../../game/src/cheats.rs"]mod cheats;
 const NAIL_RESPONSE_PARAMS: NailResponseParams = NailResponseParams {
     recoil_ticks: 11,
     recoil_speed: 245760,
@@ -151,6 +152,7 @@ fn tick(
         &mut NailResponse::new(),
         no_attack(),
         [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4],
+        cheats::Settings::new(),
     )
 }
 #[test]
@@ -398,4 +400,20 @@ fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
     assert_eq!(v.soul,11);assert_eq!(v.health,5);
     w.reset_scene(0);w.sync_region(&r);
     assert_eq!(w.actor_state(0,12546).unwrap().2,5);
+}
+
+#[test]
+fn cheat_nail_and_contact_protection_use_actual_enemy_runtime() {
+ let bytes=room();let room=hk_format::Room::parse(&bytes).unwrap();let r=region();
+ for enabled in [false,true] {
+  let settings=cheats::Settings{invincible:enabled,max_nail:enabled,..cheats::Settings::new()};
+  let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);let mut v=Vitals::new(VITAL_PARAMS);let mut n=Nail::new();
+  let polygons=[&[[-ONE,-2*ONE],[ONE,-2*ONE],[ONE,ONE],[-ONE,ONE]][..];4];
+  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings);
+  assert_eq!(hit.hurt,if enabled{Hurt::Ignored}else{Hurt::Recoiling});assert_eq!(v.health,if enabled{5}else{4});
+  p.x=w.actor_state(0,SPEC.source_id).unwrap().0;n.active=true;n.age=1;
+  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&mut NailResponse::new(),no_attack(),polygons,settings);
+  assert_eq!(hit.hits,1);assert_eq!(hit.kills,u16::from(enabled));
+  assert_eq!(w.actor_state(0,SPEC.source_id).unwrap().2,if enabled{-13}else{3});
+ }
 }
