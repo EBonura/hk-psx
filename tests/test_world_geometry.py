@@ -250,6 +250,61 @@ class WorldGeometryTests(unittest.TestCase):
         self.assertEqual(r['unsupported'],[{'source':'level99:72','type':'TextMeshPro',
             'reason':'runtime glyph shaping and mesh geometry not extracted'}])
 
+    def test_trail_curve_renderer_and_material_dependencies_are_preserved(self):
+        s,sc = fixture()
+        sc.objects[71] = ('TrailRenderer',{'m_GameObject':ptr(2),'m_Enabled':True,
+            'm_Materials':[ptr(81)],'m_Time':.5,'m_MinVertexDistance':.125,
+            'm_Autodestruct':1,'m_Emitting':0,'m_SortingLayer':2,'m_SortingOrder':4,
+            'm_Parameters':{'widthCurve':{'m_Curve':[{'time':0,'value':1}]}}})
+        r = extract_scene(s,sc,{})
+        self.assertEqual(r['counts']['trail_renderers'],1)
+        trail=r['trail_renderers'][0]
+        self.assertEqual(trail['materials'],['assets:81'])
+        self.assertEqual((trail['source_duration'],trail['min_vertex_distance']),(.5,.125))
+        self.assertEqual((trail['autodestruct'],trail['emitting']),(True,False))
+        self.assertEqual(trail['serialized']['m_Parameters']['widthCurve']['m_Curve'][0],
+                         {'time':0,'value':1})
+        self.assertEqual(r['unsupported'],[])
+
+    def test_null_tk2d_collection_resolves_from_unique_animator_sprite_id(self):
+        s,sc = fixture()
+        sc.objects[61] = ('tk2dSprite',{'m_GameObject':ptr(2),'m_Enabled':True,
+            'collection':ptr(0),'_spriteId':7,'_color':{'r':1,'g':1,'b':1,'a':1},
+            '_scale':{'x':1,'y':1,'z':1}})
+        sc.objects[62] = ('tk2dSpriteAnimator',{'m_GameObject':ptr(2),'m_Enabled':True,
+            'library':ptr(90),'defaultClipId':0})
+        definition = {'name':'effect','positions':[{'x':0,'y':0,'z':0},
+            {'x':1,'y':0,'z':0},{'x':0,'y':1,'z':0}], 'indices':[0,2,1],
+            'uvs':[{'x':0,'y':0},{'x':1,'y':0},{'x':0,'y':1}], 'material':ptr(81)}
+        oldref=s.ref
+        def ref(file,pointer):
+            obj=oldref(file,pointer);obj.assets_file=sc.file;return obj
+        s.ref=ref
+        s.read=lambda obj: ({'clips':[{'name':'fx','frames':[
+            {'spriteId':7,'spriteCollection':ptr(82)}]}]} if obj.path_id==90
+            else {'spriteDefinitions':[None]*7+[definition]})
+        r=extract_scene(s,sc,{})
+        sprite=r['tk2d_sprites'][0]
+        self.assertEqual(sprite['collection'],'assets:82')
+        self.assertEqual(sprite['animation_library'],'assets:90')
+        self.assertEqual(sprite['collection_resolution'],
+                         'unique sprite id in animator library')
+        self.assertEqual(r['counts']['tk2d_frames'],1)
+        self.assertEqual(r['unsupported'],[])
+
+    def test_legacy_text_renderer_without_mesh_filter_is_explicit_generator(self):
+        s,sc = fixture()
+        sc.objects[71] = ('TextMesh',{'m_GameObject':ptr(2),'m_Enabled':True,
+            'm_Text':'123'})
+        sc.objects[72] = ('MeshRenderer',{'m_GameObject':ptr(2),'m_Enabled':True,
+            'm_Materials':[ptr(81)]})
+        r=extract_scene(s,sc,{})
+        self.assertEqual(r['errors'],[])
+        self.assertEqual(r['counts']['legacy_text_mesh_generators'],1)
+        self.assertEqual(r['meshes'][0]['generator_sources'],['level99:71'])
+        self.assertEqual(r['unsupported'],[{'source':'level99:72','type':'TextMesh',
+            'reason':'runtime glyph shaping and mesh geometry not extracted'}])
+
     def test_tilemap_mesh_preserved_when_cell_proof_fails(self):
         s,sc = fixture()
         sc.objects[51] = ('tk2dTileMap',{'m_GameObject':ptr(1),'m_Enabled':True,'renderData':ptr(2)})

@@ -3,13 +3,14 @@
 ## Active implementation: P02-P03 whole-world coverage and geometry
 
 The user authorized execution of the complete-game plan. Track it in
-`docs/plans/COMPLETE_GAME_PROGRESS.md`. P01 is validated. The current P03 import
-verified 501/501 scenes with zero failures: 453 have complete source geometry
-and 48 retain five explicit gap families. Exact affine circles, full particle
-payloads/renderers, canonical tk2d generated-mesh aliases and shipped Unity
-Plane/Quad meshes are global. Continue with all 831 TrailRenderers, then the 25
-other runtime meshes and 16 null tk2d collections. TextMeshPro glyph shaping is
-an explicit renderer/cooking task. P02 now inventories all 318 PlayMaker
+`docs/plans/COMPLETE_GAME_PROGRESS.md`. P01 and P03 are validated. The current
+import verified 501/501 scenes with zero failures: 463 have complete source
+geometry and 38 retain only 757 TextMeshPro plus four legacy TextMesh runtime
+glyph-shaping cases. Exact affine circles, particles, trails, tk2d generated
+meshes (including animator-resolved null collections) and shipped Unity meshes
+are global. The canonical comparison verifies every one of 106 Tutorial/Town
+regions and uses provenance for all 20 Town rows that lack `base_path`. P02 now
+inventories all 318 PlayMaker
 scene-load actions alongside 1,119 TransitionPoints; resolve 286 variable-bound
 destinations and final scene roles with source/reference evidence. Do not
 rebuild the user's disc during these host-only packages; build 71 remains the

@@ -30,9 +30,9 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | Package | State | Current evidence / next action |
 | --- | --- | --- |
 | P00 | validated | First-read documents, Git, doctor, source version, disc policy and live-process state rechecked. No importer/emulator process was active. |
-| P01 | validated | All 501 BuildSettings scenes completed with source/code verification and zero scene failures. One isolated `Mines_16` worker ended on signal 11; its automatic fresh-process retry completed successfully and both attempt records are retained. |
+| P01 | validated | All 501 BuildSettings scenes completed with source/code verification and zero scene failures. The latest run isolated three signal-11 workers and retried only those scenes successfully in fresh processes; exact attempt records are retained. |
 | P02 | in progress | The coverage ledger inventories every scene, 1,119 TransitionPoint edges, 318 PlayMaker scene-load actions, 468 component types and 515 PlayMaker action types without claiming runtime support. Nineteen scripted actions map to exact gates, 11 LoadLevel actions map to scenes, 286 use runtime variables, and 174 of those variables have a catalogued initial-scene candidate. Resolve variable producers and classify scene roles with evidence. |
-| P03 | in progress | 453/501 scenes now have complete source geometry extraction. Five explicit gap families remain. Exact affine circles, shipped Unity built-in meshes, particle payloads/renderers and tk2d generated-mesh aliases are global. TrailRenderer parameters are next. |
+| P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
@@ -62,11 +62,11 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 - Twenty-scene interruption diagnostic after correction: 12 completed, two
   active workers marked interrupted, zero scene failures and the correct total
   of eight unfinished scenes. The parent exited with the deliberate status 130.
-- Complete import: 501/501 processed, 2 imported, 499 partial, zero failed;
+- Latest complete import: 501/501 processed, 463 imported, 38 partial, zero failed;
   source inputs and importer code remained unchanged through final verification.
-- Supervision recorded 502 attempts: 501 completed directly and one
-  `Mines_16` attempt ended on signal 11. Only that scene was retried, and the
-  retry completed in a fresh worker.
+- Supervision recorded 504 attempts. The first attempts for `Fungus2_14`,
+  `Fungus2_15` and `Fungus2_34` ended on signal 11; only those scenes were
+  retried and all three completed in fresh workers.
 - Extracted source inventory: 414,255 SpriteRenderers, 12,745 tk2d sprites,
   58,852 colliders, 124,947 terrain edges, 18,011 meshes, 3,928 tilemap fills,
   1,696 camera locks and 1,119 transition points.
@@ -92,20 +92,32 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
 - All 28,814 ParticleSystem and 28,814 ParticleSystemRenderer payloads are
   retained with transforms, modules, renderer settings, material/mesh
   dependencies and event/sub-emitter references.
-- The current verified import completed 501/501 scenes: 453 imported, 48 partial,
-  zero failed. One `Pre_Menu_Intro` worker ended on signal 11; its per-run retry
-  completed, proving retry budget is independent of persistent attempt numbers.
-- Remaining gaps: 748 TextMeshPro glyph meshes in 38 scenes; 25 other
-  runtime-generated meshes in seven scenes; 831 TrailRenderers in six scenes;
-  16 null tk2d sprite collections in four scenes; four MeshRenderers without an
-  exact single MeshFilter in one scene.
+- All 831 TrailRenderers retain their serialized curves, timing, materials,
+  sorting and emission flags. Sixteen null tk2d collection references resolve
+  unambiguously through their animator libraries, including Broken Vessel/Lost
+  Kin effects. TextMeshPro submeshes bind to generators through ancestry and
+  the four legacy TextMesh renderers are classified explicitly.
+- The current verified import completed 501/501 scenes: 463 imported, 38 partial,
+  zero failed. It contains 4,505 world meshes, 12,745 tk2d generated-mesh aliases
+  and zero extraction errors.
+- `tools/compare_world_regions.py` verifies final pack sizes/hashes through
+  `.hkpsx/regions-provenance.json`, resolves all 86 Tutorial base-pack rows and
+  all 20 Town provenance-only rows, and compares 22,520 cooked draw occurrences
+  plus 3,425 terrain-edge occurrences. All source geometry matches exactly after
+  applying the cooker's documented near-axis terrain snap.
+- Remaining explicit cases are 757 TextMeshPro and four legacy TextMesh runtime
+  glyph meshes in 38 scenes. They belong to text shaping/rendering and remain
+  visible in the coverage ledger rather than masquerading as missing scenery.
+- Representative checks cover TrailRenderer-heavy `Room_Fungus_Shaman`, all four
+  animator-resolved Broken Vessel/Lost Kin effect scenes, Tutorial/Town sprite,
+  tilemap and terrain cooks, and legacy/TMP text owners. The full Python suite
+  passes 370 tests after the final import and comparison changes.
 
 ### Next concrete action
 
-Preserve exact TrailRenderer source parameters/material dependencies for all 831
-instances, then inspect the 25 unowned runtime meshes and 16 null tk2d
-collections individually. Text shaping remains a separate renderer/cooking
-system and must not be reported as extracted glyph geometry.
+Finish P02 by resolving variable-produced transition destinations and assigning
+source-evidenced scene roles. Then use that stable catalog to begin P04 IDs and
+ownership; runtime text shaping stays scheduled with the renderer/UI packages.
 
 ## Required package completion record
 

@@ -148,7 +148,7 @@ def extract_scene(source, scene, scene_info):
     result = dict(schema=SCHEMA, scene=dict(scene_info), sprites=[], colliders=[],
                   terrain_edges=[], terrain_shapes=[], meshes=[], tk2d_sprites=[], tilemap_fills=[], cameras=[],
                   camera_locks=[], gates=[], tilemaps=[], particle_systems=[],
-                  particle_renderers=[], errors=list(scene.errors),
+                  particle_renderers=[], trail_renderers=[], errors=list(scene.errors),
                   unsupported=[], omitted_source_objects=[], gameplay_ready=False)
     # Scene intentionally skips costly native mesh/particle type-tree reads.
     # Keep their provenance visible even when they are absent from objects.
@@ -218,9 +218,9 @@ def extract_scene(source, scene, scene_info):
     for ident, (kind, tree) in scene.objects.items():
         relevant = (kind in ('SpriteRenderer', 'tk2dSprite') or kind.endswith('Collider2D') or
                     kind in ('MeshRenderer', 'ParticleSystem', 'ParticleSystemRenderer',
-                             'Camera', 'CameraLockArea', 'TransitionPoint'))
+                             'TrailRenderer', 'Camera', 'CameraLockArea', 'TransitionPoint'))
         if not relevant:
-            if kind in ('SkinnedMeshRenderer', 'LineRenderer', 'TrailRenderer',
+            if kind in ('SkinnedMeshRenderer', 'LineRenderer',
                         'tk2dSlicedSprite', 'tk2dTiledSprite'):
                 result['unsupported'].append({'source': sid(ident), 'type': kind,
                                               'reason': 'renderer geometry not extracted'})
@@ -254,7 +254,29 @@ def extract_scene(source, scene, scene_info):
                                      [(x0,y1),(x1,y1),(x0,y0),(x1,y0)]]
                 row['quad_semantics'] = 'tight sprite mesh bounds; original alpha/mask/material required'
             elif kind == 'tk2dSprite':
-                row.update(collection=reference(tree['collection']), frame=tree['_spriteId'],
+                collection_ref = tree['collection']
+                collection_file = scene.file
+                index = tree['_spriteId']
+                if not collection_ref.get('m_PathID'):
+                    animators = [t for _, k, t in components[gid]
+                                 if k == 'tk2dSpriteAnimator' and
+                                 t.get('library', {}).get('m_PathID')]
+                    if len(animators) == 1:
+                        animation_obj = source.ref(scene.file, animators[0]['library'])
+                        animation = source.read(animation_obj)
+                        candidates = {(frame['spriteCollection']['m_FileID'],
+                                       frame['spriteCollection']['m_PathID'])
+                                      for clip in animation.get('clips', [])
+                                      for frame in clip.get('frames', [])
+                                      if frame.get('spriteId') == index and
+                                      frame.get('spriteCollection', {}).get('m_PathID')}
+                        if len(candidates) == 1:
+                            file_id, path_id = candidates.pop()
+                            collection_ref = {'m_FileID': file_id, 'm_PathID': path_id}
+                            collection_file = animation_obj.assets_file
+                            row['collection_resolution'] = 'unique sprite id in animator library'
+                            row['animation_library'] = source.sid(animation_obj)
+                row.update(collection=reference(collection_ref, collection_file), frame=index,
                            color=tree['_color'], scale=tree['_scale'])
                 result['tk2d_sprites'].append(row)
                 if row['collection'] is None:
@@ -262,10 +284,9 @@ def extract_scene(source, scene, scene_info):
                                                   'reason': 'null serialized sprite collection'})
                     continue
                 if row['collection'] not in collection_cache:
-                    obj = source.ref(scene.file, tree['collection'])
+                    obj = source.ref(collection_file, collection_ref)
                     collection_cache[row['collection']] = (obj.assets_file, source.read(obj))
                 collection_file, collection = collection_cache[row['collection']]
-                index = row['frame']
                 if type(index) is not int or not 0 <= index < len(collection['spriteDefinitions']):
                     raise ValueError('tk2d sprite frame outside source collection')
                 definition = collection['spriteDefinitions'][index]
@@ -306,6 +327,17 @@ def extract_scene(source, scene, scene_info):
                     for path in row['world_paths']:
                         for a, b in zip(path, path[1:]):
                             result['terrain_edges'].append({'source': sid(ident), 'a': a, 'b': b})
+            elif kind == 'TrailRenderer':
+                row.update(materials=[reference(r) for r in tree.get('m_Materials', [])],
+                           source_duration=tree.get('m_Time'),
+                           min_vertex_distance=tree.get('m_MinVertexDistance'),
+                           autodestruct=bool(tree.get('m_Autodestruct')),
+                           emitting=bool(tree.get('m_Emitting')),
+                           sorting_layer=tree.get('m_SortingLayer'),
+                           sorting_order=tree.get('m_SortingOrder'))
+                row['serialized'] = {k:v for k,v in tree.items()
+                                     if k not in ('m_GameObject','m_Materials')}
+                result['trail_renderers'].append(row)
             elif kind == 'ParticleSystem':
                 row['serialized'] = {k:v for k,v in tree.items() if k != 'm_GameObject'}
                 row['source_duration'] = tree.get('lengthInSec')
@@ -327,6 +359,17 @@ def extract_scene(source, scene, scene_info):
                 filters = [t for _, k, t in components[gid] if k == 'MeshFilter']
                 result['meshes'].append(row)
                 if len(filters) != 1:
+                    legacy_text = [sid(i) for i, k, _ in components[gid] if k == 'TextMesh']
+                    if not filters and legacy_text:
+                        row.update(mesh=None,
+                                   materials=[reference(r) for r in tree.get('m_Materials', [])],
+                                   sorting_layer=tree.get('m_SortingLayer'),
+                                   sorting_order=tree.get('m_SortingOrder'),
+                                   geometry_status='generated_by_serialized_legacy_text_source_unshaped',
+                                   generator_sources=legacy_text)
+                        result['unsupported'].append({'source': sid(ident), 'type': 'TextMesh',
+                            'reason': 'runtime glyph shaping and mesh geometry not extracted'})
+                        continue
                     raise ValueError('MeshRenderer must have exactly one MeshFilter')
                 row.update(mesh=reference(filters[0]['m_Mesh']),
                            materials=[reference(r) for r in tree.get('m_Materials', [])],
@@ -402,7 +445,8 @@ def extract_scene(source, scene, scene_info):
             mesh['generated_geometry_sources'] = owners
         else:
             gid = int(mesh['game_object'].rsplit(':', 1)[-1])
-            text_sources = [sid(ident) for ident, kind, _ in components.get(gid, [])
+            text_sources = [sid(ident) for ancestor in hierarchy.ancestors(gid)
+                            for ident, kind, _ in components.get(ancestor, [])
                             if kind == 'TextMeshPro']
             if text_sources:
                 mesh['geometry_status'] = 'generated_by_serialized_text_source_unshaped'
@@ -416,7 +460,8 @@ def extract_scene(source, scene, scene_info):
     result['counts'] = {key: len(result[key]) for key in
                         ('sprites','tk2d_sprites','colliders','terrain_edges','terrain_shapes','meshes','tilemap_fills',
                          'cameras','camera_locks','gates','tilemaps','particle_systems',
-                         'particle_renderers','errors','unsupported','omitted_source_objects')}
+                         'particle_renderers','trail_renderers','errors','unsupported',
+                         'omitted_source_objects')}
     result['counts']['tk2d_frames'] = sum('world_vertices' in r for r in result['tk2d_sprites'])
     result['counts']['world_meshes'] = sum('world_vertices' in r for r in result['meshes'])
     result['counts']['sprite_quads'] = sum('world_quad' in r for r in result['sprites'])
@@ -427,6 +472,9 @@ def extract_scene(source, scene, scene_info):
         for r in result['meshes'])
     result['counts']['text_mesh_generators'] = sum(
         r.get('geometry_status') == 'generated_by_serialized_text_source_unshaped'
+        for r in result['meshes'])
+    result['counts']['legacy_text_mesh_generators'] = sum(
+        r.get('geometry_status') == 'generated_by_serialized_legacy_text_source_unshaped'
         for r in result['meshes'])
     result['counts']['unique_sprites'] = len({r['sprite'] for r in result['sprites'] if r['sprite']})
     result['component_counts'] = dict(sorted(Counter(k for k,t in scene.objects.values()).items()))
