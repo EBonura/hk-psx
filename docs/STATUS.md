@@ -119,6 +119,12 @@ before a store is published. Truncation, version, corruption and capacity cases
 are covered by native tests. This is the host/simulation foundation for P13
 memory-card I/O; no card driver or playable-disc replacement is claimed yet.
 
+Current validation after these changes: 401 Python tests and the complete
+`hk-sim` suite (55 library tests plus its integration targets) pass. The no-disc
+guest rebuild links with zero final hazards; code/data/BSS are 402,628/715,568/
+844,632 bytes and the pre-stack margin is 19,368 bytes. These numbers describe
+the source build only; build 71 remains the sole delivered disc.
+
 ## Completion plan prepared for GPT-5.6-Sol
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),
