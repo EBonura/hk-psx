@@ -111,7 +111,7 @@ def main():
     if not stamp.exists() or stamp.read_text()!=sha(req):
         run([venv,'-m','pip','install','--requirement',req]);stamp.write_text(sha(req))
     sdk(args.sdk_source);cook_cached(args.recook);menu_cached(args.recook)
-    for script in ('cook_audio.py','cook_hud.py','ambience.py','read_points.py','geo.py','geo_audio.py','lifeblood.py','break_effects.py','great_door.py'):
+    for script in ('title_music.py','cook_audio.py','cook_hud.py','ambience.py','read_points.py','geo.py','geo_audio.py','lifeblood.py','break_effects.py','great_door.py'):
         run([venv,ROOT/'host'/script],cwd=ROOT)
     run(['cargo','run','--quiet','--manifest-path',ROOT/'shared/hk-format/Cargo.toml','--example','check','--',ROOT/'data/room.hk'])
     from build_guest import build
@@ -143,6 +143,7 @@ def main():
     report['link_map']={'path':str(link_map),'sha256':sha(link_map)}
     report['memory']=memory_budget(link_map,outputs['exe'],report['packed_scenes']['scene_arena_bytes'])
     report['ambience']=json.load(open(ROOT/'.hkpsx/ambience.json'))
+    report['title_music']=json.load(open(ROOT/'.hkpsx/title-music.json'))
     report['disc_chunk_count']=len(report['packed_scenes']['scenes'])+len(report['ambience']['clips'])+len(report['packed_scenes']['atlases'])
     write_build_report(report,telemetry,latest=True)
     shutil.copy2(link_map,ROOT/'build/hk-psx.map')

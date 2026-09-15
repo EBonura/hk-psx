@@ -8,12 +8,12 @@ pub const START:u16=1<<3;
 pub const CIRCLE:u16=1<<13;
 pub const CROSS:u16=1<<14;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub struct Settings {pub sfx:u8,pub ambience:u8,pub cheats:crate::cheats::Settings}
+pub struct Settings {pub sfx:u8,pub ambience:u8,pub music:u8,pub cheats:crate::cheats::Settings}
 impl Settings {
-    pub const fn new()->Self{Self{sfx:10,ambience:10,cheats:crate::cheats::Settings::new()}}
-    /// Rows0/1 adjust sound effects/ambience. Returns whether the value changed.
+    pub const fn new()->Self{Self{sfx:10,ambience:10,music:10,cheats:crate::cheats::Settings::new()}}
+    /// Rows0/1/2 adjust sound effects/ambience/music. Returns whether the value changed.
     pub fn adjust(&mut self,row:usize,delta:i8)->bool {
-        let value=match row{0=>&mut self.sfx,1=>&mut self.ambience,_=>return false};
+        let value=match row{0=>&mut self.sfx,1=>&mut self.ambience,2=>&mut self.music,_=>return false};
         let next=(*value as i16+delta as i16).clamp(0,10)as u8;
         let changed=next!=*value;*value=next;changed
     }
@@ -23,7 +23,7 @@ impl Default for Settings {fn default()->Self{Self::new()}}
 pub enum Page {Main,Options,Controls,Cheats}
 pub const MAIN_ITEMS:[&str;4]=["Start Game","Options","Controls","Cheats"];
 pub const CHEAT_ITEMS:[&str;4]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)"];
-pub const OPTION_ITEMS:[&str;3]=["Sound effects","Ambience","Back"];
+pub const OPTION_ITEMS:[&str;4]=["Sound effects","Ambience","Music","Back"];
 pub const CONTROL_LINES:[&str;9]=[
     "D-pad: move","X: jump","Square: swing nail","Hold O: Focus / heal",
     "Up + Square: upward nail","Airborne Down + Square: downward nail",
@@ -62,7 +62,7 @@ impl State {
                     2=>{self.page=Page::Controls;self.selected=0;},
                     _=>{self.page=Page::Cheats;self.selected=0;},
                 },
-                Page::Options=>if self.selected==2{self.page=Page::Main;self.selected=1;},
+                Page::Options=>if self.selected==3{self.page=Page::Main;self.selected=1;},
                 Page::Controls=>{self.page=Page::Main;self.selected=2;},
                 Page::Cheats=>if self.selected==4{self.page=Page::Main;self.selected=3;}else{
                     let delta=if self.settings.cheats.enabled(self.selected){-1}else{1};
@@ -72,7 +72,7 @@ impl State {
             return false;
         }
         if self.page==Page::Controls{return false;}
-        let count=match self.page{Page::Main=>4,Page::Cheats=>5,_=>3};
+        let count=match self.page{Page::Main=>4,Page::Cheats=>5,_=>4};
         if navigate==UP{self.selected=(self.selected+count-1)%count;}
         else if navigate==DOWN{self.selected=(self.selected+1)%count;}
         else if self.page==Page::Options {

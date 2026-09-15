@@ -15,6 +15,7 @@ mod input;
 mod presentation;
 mod animation_cache;
 mod audio;
+mod music;
 mod ambience;
 mod enemies;
 mod hud;
@@ -317,12 +318,12 @@ fn main() {
                     }
                     start_held=start;
                     if paused {
-                        let before=(settings.sfx,settings.ambience);let previous_cheats=settings.cheats;
-                        if pause_menu.step(pad.bits(),&mut settings.sfx,&mut settings.ambience,&mut settings.cheats) {
+                        let before=(settings.sfx,settings.ambience,settings.music);let previous_cheats=settings.cheats;
+                        if pause_menu.step(pad.bits(),&mut settings.sfx,&mut settings.ambience,&mut settings.music,&mut settings.cheats) {
                             paused=false;player.was_jump=pad.is_held(button::CROSS);
                         }
                         settings.cheats.apply(previous_cheats,&mut vitals,VITAL_PARAMS,pause_menu.action);
-                        if before!=(settings.sfx,settings.ambience) {audio::set_volume(settings.sfx);geo_audio::set_volume(settings.sfx);ambience::set_volume(settings.ambience);}
+                        if before!=(settings.sfx,settings.ambience,settings.music) {audio::set_volume(settings.sfx);geo_audio::set_volume(settings.sfx);ambience::set_volume(settings.ambience);music::set_volume(settings.music);}
                     }
                     if paused || dialogue::open() || door.pending() || vitals.dead || !vitals.can_control() || focus.locks_control() {audio::stop_footsteps();}
                     settings.cheats.maintain(&mut vitals,VITAL_PARAMS);cheats::publish(settings.cheats,VITAL_PARAMS);

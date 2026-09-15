@@ -13,6 +13,7 @@ static FONT:&[u8]=include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/re
 #[no_mangle]pub static mut HK_MENU_ROW:u32=0;
 #[no_mangle]pub static mut HK_MENU_SFX:u32=10;
 #[no_mangle]pub static mut HK_MENU_AMBIENCE:u32=10;
+#[no_mangle]pub static mut HK_MENU_MUSIC:u32=10;
 
 static DATA: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/menu.hk"));
 const HEADER: usize = 16;
@@ -66,11 +67,11 @@ fn draw_menu(menu:&State,gain:u8){
             centered(222,"Up/Down: choose    X/START: select",gain);
         }
         Page::Options=>{
-            centered(143,"OPTIONS",gain);
+            centered(136,"OPTIONS",gain);
             for (i,label)in state::OPTION_ITEMS.iter().enumerate(){
-                let y=161+i as i16*17;let g=if i==menu.selected{gain}else{gain-gain/4};
+                let y=154+i as i16*17;let g=if i==menu.selected{gain}else{gain-gain/4};
                 text(86,y,label,g);
-                if i<2{text(215,y,LEVELS[if i==0{menu.settings.sfx}else{menu.settings.ambience}as usize],g);}
+                if i<3{text(215,y,LEVELS[[menu.settings.sfx,menu.settings.ambience,menu.settings.music][i]as usize],g);}
                 if i==menu.selected{text(70,y,">",gain);}
             }
             centered(221,"Left/Right: volume    O: back",gain);
@@ -115,20 +116,23 @@ fn present(fb:&mut FrameBuffer)->u16 {
 /// with D-pad navigation. Settings apply immediately and persist for this run.
 #[inline(never)] // Keep title rendering outside main's MIPS PC16 branch span.
 pub fn run(fb:&mut FrameBuffer)->Settings {
-    restore();let mut menu=State::new();let mut gain=0u8;
+    restore();crate::music::begin();let mut menu=State::new();let mut gain=0u8;
     loop {
         gain=gain.saturating_add(8).min(128);draw_menu(&menu,gain);
         let mut start=false;
         present_samples(fb,|bits|{
+            crate::music::tick();
             if start{return;}
             let old=menu.settings;start=menu.step(bits);
             if old.sfx!=menu.settings.sfx{crate::audio::set_volume(menu.settings.sfx);}
             if old.ambience!=menu.settings.ambience{crate::ambience::set_volume(menu.settings.ambience);}
-            unsafe{HK_MENU_PAGE=match menu.page{Page::Main=>0,Page::Options=>1,Page::Controls=>2,Page::Cheats=>3};HK_MENU_ROW=menu.selected as u32;HK_MENU_SFX=menu.settings.sfx as u32;HK_MENU_AMBIENCE=menu.settings.ambience as u32;}
+            if old.music!=menu.settings.music{crate::music::set_volume(menu.settings.music);}
+            unsafe{HK_MENU_PAGE=match menu.page{Page::Main=>0,Page::Options=>1,Page::Controls=>2,Page::Cheats=>3};HK_MENU_ROW=menu.selected as u32;HK_MENU_SFX=menu.settings.sfx as u32;HK_MENU_AMBIENCE=menu.settings.ambience as u32;HK_MENU_MUSIC=menu.settings.music as u32;}
         });
         if start{break;}
     }
-    while gain>0{gain=gain.saturating_sub(16);draw_menu(&menu,gain);let _=present(fb);}
+    while gain>0{gain=gain.saturating_sub(16);crate::music::set_fade(gain);draw_menu(&menu,gain);present_samples(fb,|_|crate::music::tick());}
+    assert!(crate::music::stop(),"CD music did not release drive");
     // Consume the activating hold so Cross cannot also cause a gameplay jump.
     while poll_port1().buttons.is_held(button::START|button::CROSS){psx_rt::interrupts::wait_vblank();}
     menu.settings

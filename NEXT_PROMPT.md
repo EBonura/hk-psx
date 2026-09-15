@@ -16,14 +16,21 @@ only; instruments and captures stay ignored. The original startup/load/landing
 sequence has specific prerequisites documented there. Do not force hero control
 or misread an unready test as failed original movement.
 
-Current64 adds source footsteps/hard-land audio/Great Door hit, complete-loop
-RAM-to-SPU ambience streaming, and original managed audio-call tracing. Read the
-new STATUS/MUSIC sections and audio64 evidence before changing transport. No
-music playback exists yet: next implement CD-fed title/music streaming using
-136,704B contiguous free SPU and63,448B main-RAM headroom. Retain consistent
-sample rates within categories; the user allows lower long-sample rates if
-necessary. Then source-trace remaining cues and fix Great Door/Crawler/Town
-issues. The2.5s door delay is a destination-entry delay; Town still ends at x48.
+Current65 restores the full Title as direct44,100Hz stereo CD-DA using the
+existing SDK, with a separate Music setting and completed Pause handoff to room
+loading. The single main disc now has data01/audio02. No music sample RAM/SPU
+bank is needed. Two complete repeats and both early/active Start routes pass;
+repeat seeks add about0.5s in PSoXide. Original mixer DSP/hardware playback remain
+unverified. Read STATUS/MUSIC and `.hkpsx/music65/cdda-*` evidence.
+
+Build64's complete RAM-to-SPU cave ambience ring, footsteps/hard-land/Great Door
+hit and original managed audio tracing remain.61,356B main RAM and136,704B
+contiguous SPU remain. The user explicitly prefers direct CD streaming for title
+and potentially bosses; use it only when no scene/data reads are needed. Bosses
+are not implemented. Retain consistent sample rates within categories; longer
+samples may use lower rates when necessary. Next source-trace remaining cues,
+then address Great Door/Crawler/Town issues. The2.5s door delay is a destination
+entry delay; Town still ends at x48, before its music trigger.
 
 Work in `/Users/ebonura/Desktop/repos/hk-psx`, branch `main`. Read AGENTS.md,
 README.md, docs/BOOTSTRAP.md and docs/STATUS.md; run doctor before another build.
@@ -31,7 +38,7 @@ Use the psoxide-debug skill for guest/emulator work.
 
 ## Retained gameplay from63
 
-Build64 retains the best54 renderer and the functional Cheats pages from63 in the title
+Build65 retains the best54 renderer and the functional Cheats pages from63 in the title
 and pause menus. Four toggles: invincibility, Pure Nail21 damage, infinite SOUL,
 and nine masks. Pause actions: restore health/SOUL, add5 blue masks (cheat cap20),
 and turn all toggles off. X toggles/applies; Left/Right off/on; Circle backs out;

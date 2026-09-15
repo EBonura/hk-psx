@@ -29,6 +29,8 @@ def build(telemetry=False, candidate=False):
     cook_opaque_groups()
     ambience=json.loads((ROOT/'.hkpsx/ambience.json').read_text())
     clips=ambience['clips']
+    music=json.loads((ROOT/'.hkpsx/title-music.json').read_text())
+    if hashlib.sha256((ROOT/music['path']).read_bytes()).hexdigest()!=music['sha256'] or hashlib.sha256((ROOT/'data/title_music.rs').read_bytes()).hexdigest()!=music['manifest_sha256']:raise ValueError('Title music changed after cooking')
     for path,expected in (
         (ROOT/'data/ambience.rs',ambience['rust_manifest_sha256']),
         (ROOT/'data/sfx.adpcm',ambience['sfx_reservation']['sha256']),
@@ -76,7 +78,7 @@ def build(telemetry=False, candidate=False):
             shutil.copy2(ROOT/clip['path'],chunks/f"chunk_{len(rooms)+index+1}.adpcm")
         for index,atlas in enumerate(atlases):
             shutil.copy2(atlas['path'],chunks/f"chunk_{len(rooms)+len(clips)+index+1}.atlas")
-        run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks],cwd=ROOT)
+        run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks,'--cdda-track',ROOT/music['path']],cwd=ROOT)
         staged.replace(outputs['bin'])
         staged.with_suffix('.cue').replace(outputs['cue'])
     shutil.copy2(exe,outputs['exe'])
