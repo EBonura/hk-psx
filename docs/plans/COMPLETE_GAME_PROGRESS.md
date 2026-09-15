@@ -33,7 +33,8 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P01 | validated | All 501 BuildSettings scenes completed with source/code verification and zero scene failures. The latest run isolated three signal-11 workers and retried only those scenes successfully in fresh processes; exact attempt records are retained. |
 | P02 | validated | Every scene has an evidence-backed role and remains included. All 1,119 TransitionPoints and 318 scripted loads retain geometry, flags, destination dataflow and progression-condition status with downstream owners. All 95 completion fields join serialized access to exact managed readers/writers; installed cap CIL proves the 112 maximum. Fifteen source reference cases cover every observed edge/condition category. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
-| P04-P31 | pending | Follow dependency order in the master plan. |
+| P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
+| P05-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -150,12 +151,34 @@ scene failures. This does not identify `Mines_02` or any later scene as corrupt.
   tilemap and terrain cooks, and legacy/TMP text owners. The full Python suite
   passes 370 tests after the final import and comparison changes.
 
+## P04 evidence
+
+- `tools/world_identity.py` builds a disk-backed collision-checked registry for
+  501 scenes, 1,997,203 components, 1,119 gates, 815 PlayerData keys and 7,004
+  assets. All source references resolve. Scene/component IDs use source scene
+  paths and PathIDs instead of `levelN`/BuildSettings order; external art IDs are
+  explicitly source-version scoped.
+- The first relocation retains 37 current Breakable `scene×128` aliases and 39
+  grass `scene×1024` aliases. Duplicate region copies cannot claim different
+  owners. Spawned-instance identity requires prefab, authored owner and stable
+  slot IDs.
+- `shared/hk-sim/src/persistent.rs` provides sorted fixed-capacity global/mode
+  stores, checked central mutations, idempotent rewards and a bounded active
+  scene owner. Reset fixtures cover scene leave/return, bench, death, quit/load,
+  dream return, challenge/mode reset and snapshot reload.
+- Exact current-source capacities cost 84,536 bytes for all 5,283 global keys,
+  8,200 bytes for 512 mode keys and 1,176 bytes for 1,024 active flags plus 64
+  timers: 93,912 bytes total, with no per-scene multiplication.
+- The complete Python suite passes 393 tests and the complete hk-sim suite passes
+  228 tests after P04. The disc remains build 71; this host/state package did not
+  recook or replace it.
+
 ### Next concrete action
 
-Begin P04 from the validated world/progression catalog: assign stable IDs and
-ownership to all scene, object, gate, actor, asset and PlayerData records, with
-collision checks and deterministic regeneration. Runtime text shaping remains
-with the renderer/UI packages.
+Begin P05 using the stable identity/state contract: remeasure linked metadata,
+define the checked scene-bank wire format and move Tutorial/Town metadata without
+retaining stale borrows or changing current behavior. Runtime text shaping
+remains with the renderer/UI packages.
 
 ## Required package completion record
 

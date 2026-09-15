@@ -1,9 +1,9 @@
 # Hollow Knight PS1: current handoff
 
-## Active implementation: P04 stable whole-world identity and ownership
+## Active implementation: P05 scene-owned world metadata
 
 The user authorized execution of the complete-game plan. Track it in
-`docs/plans/COMPLETE_GAME_PROGRESS.md`. P01-P03 are validated. The current
+`docs/plans/COMPLETE_GAME_PROGRESS.md`. P01-P04 are validated. The current
 import verified 501/501 scenes with zero failures: 463 have complete source
 geometry and 38 retain only 757 TextMeshPro plus four legacy TextMesh runtime
 glyph-shaping cases. Exact affine circles, particles, trails, tk2d generated
@@ -18,7 +18,9 @@ shape resolves. The installed completion checklist contains 44 boolean/group,
 six integer, four nested Godhome and exact charm/SOUL rules. Installed CIL proves
 the exact 112 maximum. All 95 contributing fields have managed and serialized
 access evidence; all load routes have condition status, downstream owners and
-reference cases. Begin P04 stable IDs and ownership from these catalogs. Do not
+reference cases. The stable registry covers every scene/component/gate/PlayerData
+key/asset and the bounded state API costs 93,912 bytes at conservative caps.
+Begin P05 checked scene-owned metadata using this identity contract. Do not
 rebuild the user's disc during these host-only packages; build 71 remains the
 sole playable pair.
 

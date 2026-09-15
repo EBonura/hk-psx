@@ -12,6 +12,7 @@ mod vitals;
 mod focus;
 pub use focus::{Focus,FocusParams,FocusInput,FocusClip,FocusEvents};
 mod nail_response;
+pub mod persistent;
 pub use nail_response::{NailResponse, NailResponseParams};
 pub use actors::{resolve_actor_spawn, walker_senses, ActorController, ActorHealth, ActorSpec, EnemyParams, Hit, WalkParams, WalkState, MAX_ACTORS};
 pub use vitals::{Hurt, VitalParams, Vitals};
