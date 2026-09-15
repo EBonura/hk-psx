@@ -176,6 +176,14 @@ impl<'a> WorldMeta<'a> {
         }
         Some(Region { meta: *self, index })
     }
+    /// Resolve a global chunk identity without assuming scene-local IDs are
+    /// contiguous or start at zero.
+    pub fn region_by_global_id(&self, global_id: u32) -> Option<Region<'a>> {
+        (0..self.counts[0]).find_map(|index| {
+            let region = self.region(index)?;
+            (region.global_id() == global_id).then_some(region)
+        })
+    }
     pub fn regions(&self) -> Regions<'a> {
         Regions {
             meta: *self,
@@ -477,6 +485,7 @@ mod tests {
         let bank = WorldMeta::parse(&bytes).unwrap();
         let r = bank.region(0).unwrap();
         assert_eq!(r.global_id(), 77);
+        assert_eq!(bank.region_by_global_id(77).unwrap().global_id(), 77);
         let o = r.objects().next().unwrap().unwrap();
         assert_eq!(o.source_id(), 123);
         assert_eq!(o.polygons().next().unwrap().unwrap().points().count(), 3);
