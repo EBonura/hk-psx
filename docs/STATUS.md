@@ -93,6 +93,14 @@ windows. Its measured largest window is `Hive_03_c` plus four neighbours at
 are source evidence only: PS1 RAM/VRAM fields remain unset until real crop,
 palette, compression and upload cooking proves them.
 
+Persistent Geo state no longer reserves a scene-multiplied `[scene][32]` table.
+The guest now uses a flat 256-entry source-state pool keyed by scene and authored
+rock slot. The verified source catalog contains 207 GeoRock instances, so the pool
+has measured headroom while preserving depletion across scene revisits; overflow
+remains an explicit deferred event. Native Geo runtime tests pass and the no-disc
+link remains hazard-free. This removes another two-scene ceiling without changing
+the build-71 disc.
+
 ## Completion plan prepared for GPT-5.6-Sol
 
 The comprehensive source-grounded plan is [COMPLETE_GAME_SOL.md](plans/COMPLETE_GAME_SOL.md),
