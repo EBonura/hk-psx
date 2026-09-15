@@ -158,7 +158,7 @@ reservation. `main` uses33,728 B; nested reserve is15,424 B, with no measured
 main-stack high-water. Older `docs/BUDGET.md` tables describe69 and must not be
 mistaken for current71 figures.
 
-One369,180-byte geometry/animation arena and one86,016-byte coverage arena are
+One354,032-byte geometry/animation/metadata arena and one86,016-byte coverage arena are
 already reserved. Current static VRAM supports20 scenery pages and1,248 CLUTs;
 Tutorial uses18 pages/1,068 palettes, Town6/390. These budgets do not prove that
 any larger scene fits. The existing VRAM reservation has very little slack.
