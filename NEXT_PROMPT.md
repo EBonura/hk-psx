@@ -30,6 +30,13 @@ full hk-sim suite passes and Crawler remains unchanged. See docs/RUNNER.md.
 Runner is NOT integrated into guest actors or the disc. Preserve documented
 original scheduling/RNG/reentry gaps when adding sensing, art and sound.
 
+Next capacity work: .hkpsx/world-metadata70/PLAN.md and counts.json describe
+an offset-based gameplay metadata bank. The current root Region table alone is
+20,352B (106x192); anonymous nested arrays are additional, not yet sized.
+Preserve sparse persistent source/state IDs and replace edge-cache pointer
+identity with scene generation before arena-backed RegionViews. Do not reserve
+a guessed-size new arena without removing/measuring the old tables.
+
 Final68 fixed the reverse gate entry.
 Three actual-CUE routes now pass: Focus850polls, gate return12,112 and Town
 traversal/reset12,562. The last reachesx177.274; both long routes replace the
