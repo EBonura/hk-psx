@@ -1,8 +1,73 @@
 # Status, 2026-09-15
 
-## Current playable build:65 CD-streamed title music
+## Current playable build:66 Focus audio and gameplay corrections
 
-The sole `~/Downloads/ps1 games/hk-psx.bin/.cue` pair contains build65. Title now
+The sole `~/Downloads/ps1 games/hk-psx.bin/.cue` pair contains build66.
+Focus now plays the complete source charging loop and healing sound, including
+repeated heals and tails after charging stops. Sustained charging uses8,000Hz
+mono; the short heal uses22,050Hz mono, matching the existing quality categories.
+The108,208-byte bank loads once through startup scene scratch into SPU; Focus
+adds no playback-time CD reads or persistent main-RAM sample bank. Two alternating
+heal voices preserve overlapping tails. SFX volume applies to active voices.
+Cancellation/damage stop charging; the existing Focus lifecycle controls fades.
+Source FSMs, clip IDs and assembly hashes are checked by `host/focus_audio.py`.
+Original mixer DSP and full pause-audio parity remain unverified.
+
+The Great Door retains its13 authored hits. The instant blackout and two-frame
+departure now precede the scene switch; the source2.5-second wait belongs to Town
+entry. The destination uses the source gate-ground position, fade, footstep lead
+and scripted28-tick walk with gravity disabled, avoiding the former arrival fall.
+The PS1 subtractive fade approximates the original screen effect. Destruction
+sound/alternate door-hit variants and complete original effects remain missing.
+
+Crawlers and corpses now use collision data for their own resident region instead
+of freezing at the Knight's collision-view boundary. A bounded128-edge scratch
+cache avoids repeating edge remapping during every solver query; larger views
+retain a direct fallback. Native tests compare all three crawler routes against
+the full-scene edge union for1,200 ticks. Original recordings support continued
+offscreen motion, but this is not exact Box2D, timing or RNG parity. Distant
+script-controlled exclusions and flying enemies still need further work.
+
+The render loop now consumes input for observed VBlanks before submitting another
+expensive frame. An initial66 replay exposed queue overflow and was rejected;
+the corrected final10762-poll traversal completes with queue peak4/16, no missed
+polls, boundary waits, audio underruns or reported guest faults. It strikes the
+door13 times, transitions once, finishes Town entry and ends grounded at
+(4.373,44.391). It still records23 particle-pool drops; full effects parity is
+not established. Town coverage still ends at x48: no additional maps were added.
+
+Four final-CUE routes pass: Focus850 polls, isolated Focus audio900, stationary
+crawler patrol1500, and Town traversal10762. Resident Focus bytes match the
+cooked bank exactly. Captured charging phrases correlate above0.9997 with the
+independently decoded source, and both heal tails above0.997 after alignment;
+these are emulator capture checks, not original-mixer or hardware proof.
+Town fade/entry and gameplay captures were inspected. `make test` passes272
+Python tests and402 directly reported native tests; final MIPS hazards:0.
+
+Final memory: code351,452B/data801,568B/BSS776,052B/alignment4B, static span
+1,929,076B ending0x801e6f74. There are53,132B before the protected49,152-byte
+stack. Main frame32,192B leaves16,960B for nested frames; the enemy helper's
+final binary frame is2,336B. These are allocations, not measured stack high-water.
+SPU bank0x5EA00..0x790B0 leaves28,496B contiguous free. Scene arena369,180B,
+20 static pages/1,209 palettes,320x240 framing and existing textures are unchanged.
+This milestone makes no new FPS claim. Build65's CD-DA title remains integrated.
+
+EXE SHA-256: `a2da154b4e273a1578476584cc5636653ec85e8537f3faf38c91dff9a339a2ef`.
+BIN SHA-256: `e70b76959353eb5153443a5de77dc93b1ad06cd5c2c035ad24238f26dbaa2aa2`.
+CUE SHA-256: `7e0d1f91a3b1a1ae9db24e4650d45644db7087da2e3338cacbb2557390a78585`.
+Evidence: `.hkpsx/game66/{build-fixed.log,fixed-tests.log,validation.json,
+focus-wave-check.json,heal-wave-check.json}`, final replays in
+`{focus-final,focus-isolated-final,patrol-final,town-final}/command.json`, source
+provenance `.hkpsx/{focus-audio,great-door}.json`, and enemy audit
+`.hkpsx/enemy-behavior-audit/`. The earlier `game66/town/` is a failed trial.
+Replay commands/tape hashes are retained in each command.json; use
+`python3 tools/replay_cue.py --tape TAPE --output OUTPUT` after completing the
+canonical disc build. Next expand Town coverage and source-traced enemy/break/
+death/UI cues, then unsupported enemies and progression systems.
+
+## Previous build:65 CD-streamed title music
+
+Build65 introduced the CD-streamed title. Title
 plays its complete81.8-second source track directly from CD using the pinned
 SDK's CD-DA starter/end detector. It is44,100Hz stereo PCM16, resampled from the
 48kHz source, with no truncation or padding. Track02 shares the same BIN as data

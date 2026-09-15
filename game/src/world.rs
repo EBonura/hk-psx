@@ -421,6 +421,58 @@ impl State {
         if index<self.edge_cache_count&&self.edge_cache_matches(region,room) {return self.edge_cache[index];}
         self.edge_uncached(region,room,index)
     }
+    /// Materialize a resident actor's terrain once per physics tick. The edge
+    /// order and zero sentinels match edge_in_view(), but short exclusion lists
+    /// are traversed once rather than once per solver edge query.
+    pub fn fill_edges_in_view(&self, active:&Region, active_room:&Room,
+        target:&Region, target_room:&Room, cache:&mut [[i32;4]]) {
+        assert!(cache.len()<=target_room.counts[5]);
+        if core::ptr::eq(active,target) && core::ptr::eq(active_room.bytes.as_ptr(),target_room.bytes.as_ptr()) {
+            if self.edge_cache_matches(active,active_room) {
+                cache.copy_from_slice(&self.edge_cache[..cache.len()]);
+            } else {self.fill_edges(active,active_room,cache);}
+            return;
+        }
+        for (i,edge) in cache.iter_mut().enumerate() {*edge=target_room.edge(i);}
+        for b in target.breakables.iter().filter(|b|self.broken(b.id)) {
+            for &i in b.edges {if let Some(edge)=cache.get_mut(i as usize) {*edge=[0;4];}}
+        }
+        if active.scene==target.scene {
+            for &i in self.geo_edges[..self.geo_edge_count].iter()
+                .chain(&self.lifeblood_edges[..self.lifeblood_edge_count]) {
+                if (i as usize)>=active_room.counts[5] {continue;}
+                let excluded=active_room.edge(i as usize);
+                let reverse=[excluded[2],excluded[3],excluded[0],excluded[1]];
+                for edge in cache.iter_mut() {
+                    if *edge==excluded || *edge==reverse {*edge=[0;4];}
+                }
+            }
+        }
+    }
+    /// Read another resident collision view without applying this view's local
+    /// exclusion indices to unrelated edges. Breakables have stable scene IDs;
+    /// transient Geo/cocoon/script exclusions are remapped by source segment.
+    pub fn edge_in_view(&self, active:&Region, active_room:&Room,
+        target:&Region, target_room:&Room, index:usize)->[i32;4] {
+        if core::ptr::eq(active,target) && core::ptr::eq(active_room.bytes.as_ptr(),target_room.bytes.as_ptr()) {
+            return self.edge(active,active_room,index);
+        }
+        let edge=target_room.edge(index);
+        if target.breakables.iter().any(|b|self.broken(b.id)&&b.edges.contains(&(index as u16))) {
+            return [0;4];
+        }
+        if active.scene==target.scene {
+            for &i in self.geo_edges[..self.geo_edge_count].iter()
+                .chain(&self.lifeblood_edges[..self.lifeblood_edge_count]) {
+                if (i as usize)>=active_room.counts[5] {continue;}
+                let excluded=active_room.edge(i as usize);
+                if edge==excluded || edge==[excluded[2],excluded[3],excluded[0],excluded[1]] {
+                    return [0;4];
+                }
+            }
+        }
+        edge
+    }
     #[inline(never)]
     fn edge_uncached(&self, region:&Region,room:&Room,index:usize)->[i32;4] {
         if self.geo_edges[..self.geo_edge_count].contains(&(index as u16)) {return [0;4];}

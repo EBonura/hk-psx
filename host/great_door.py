@@ -36,9 +36,13 @@ def contract(fsm):
     target=literal(move['sceneName']);entry=literal(move['entryGateName']);delay=literal(move['entryDelay'])
     if (target,entry)!=('Town','left1') or delay!=2.5:raise ValueError('Great Door destination changed')
     if transition('Break','RIGHT')!='Extra Frame' or transition('Extra Frame','FINISHED')!='Move':raise ValueError('Great Door next-frame transition changed')
+    if one('Break','NextFrameEvent')['sendEvent']!='RIGHT' or one('Extra Frame','NextFrameEvent')['sendEvent']!='FINISHED':
+        raise ValueError('Great Door departure events changed')
+    fades=[a for a in actions('Break','SendEventByName') if literal(a['sendEvent'])=='FADE OUT INSTANT']
+    if len(fades)!=1 or literal(fades[0]['delay'])!=0:raise ValueError('Great Door instant blackout changed')
     for kind in ('SetCollider','SetMeshRenderer'):
         if literal(one('Activate',kind)['active']):raise ValueError('Great Door persistence activation changed')
-    return {'stage_hits':stages,'cooldown_ticks':round(waits[0]*60),'transition_ticks':round(delay*60)+2,
+    return {'stage_hits':stages,'cooldown_ticks':round(waits[0]*60),'transition_ticks':2,'entry_delay_ticks':round(delay*60),
             'stage_names':['door_v01']+sprites,'target_scene':target,'entry_gate':entry}
 
 def append_art(source,scene,atlas,frames):
@@ -76,7 +80,75 @@ def bind(record,row,frame_base):
     if len(result['edges'])>4:raise ValueError('Great Door edge budget')
     return result
 
-def generate(metadata):
+def entry_contract(source):
+    """Original left-gate placement, coroutine waits and camera fade contract.
+
+    The only runtime approximation here is 60Hz quantization and a linear PS1
+    fade; the source camera/blanker shader pipeline is not imported.
+    """
+    import dnfile
+    from dncil.cil.body.reader import read_method_body_from_bytes
+    from scene import Scene
+    sc=Scene(source,'level7')
+    gates=[(i,t)for i,(kind,t)in sc.objects.items()if kind=='TransitionPoint' and sc.gos[t['m_GameObject']['m_PathID']]['m_Name']=='left1']
+    if len(gates)!=1:raise ValueError('Town left1 gate changed')
+    gid,gate=gates[0];position=sc.point(gate['m_GameObject']['m_PathID'])
+    if gate['entryDelay']!=0 or gate['customFade'] or gate['isADoor']:raise ValueError('Town left1 entry kind changed')
+    x=position[0]+gate['entryOffset']['x']-1
+    ray_x=x+2;ray_y=position[1]
+    resource=source.file('resources.assets')
+    hero=next(o for o in resource.objects.values()if o.type.name=='MonoBehaviour'and source.typename(o)=='HeroController')
+    hc=source.read(hero);go=source.ref(resource,hc['m_GameObject'])
+    body=next(source.read(o)for o in (source.ref(resource,c['component'])for c in source.read(go)['m_Component'])if o.type.name=='BoxCollider2D')
+    elevation=body['m_Size']['y']/2-body['m_Offset']['y']+.01
+    hits=[]
+    for sid,(kind,t)in sc.objects.items():
+        if kind not in ('BoxCollider2D','PolygonCollider2D','EdgeCollider2D') or not t['m_Enabled'] or t['m_IsTrigger']:continue
+        goid=t['m_GameObject']['m_PathID']
+        if not sc.active(goid) or sc.gos[goid]['m_Layer']!=8:continue
+        if kind=='BoxCollider2D':
+            a,b=t['m_Size']['x']/2,t['m_Size']['y']/2
+            paths=[[{'x':u,'y':v}for u,v in [(-a,-b),(a,-b),(a,b),(-a,b),(-a,-b)]]]
+        elif kind=='EdgeCollider2D':paths=[t['m_Points']]
+        else:paths=[p+p[:1]for p in t['m_Points']['m_Paths']]
+        for path in paths:
+            pts=[sc.point(goid,p['x']+t['m_Offset']['x'],p['y']+t['m_Offset']['y'])for p in path]
+            for a,b in zip(pts,pts[1:]):
+                if a[0]==b[0] or not min(a[0],b[0])<=ray_x<=max(a[0],b[0]):continue
+                y=a[1]+(ray_x-a[0])*(b[1]-a[1])/(b[0]-a[0])
+                if 0<=ray_y-y<=10:hits.append((y,sid))
+    if not hits:raise ValueError('Town entry ground ray missed source terrain')
+    ground,ground_sid=max(hits)
+    # Fail after source code changes instead of silently retaining literal waits.
+    pe=dnfile.dnPE(str(source.directory/'Managed/Assembly-CSharp.dll'))
+    hero_type=next(t for t in pe.net.mdtables.TypeDef.rows if str(t.TypeName)=='HeroController')
+    ctor=next(m.row for m in hero_type.MethodList if str(m.row.Name)=='.ctor')
+    ctor_code=read_method_body_from_bytes(pe.get_data(ctor.Rva,100000)).instructions
+    if not any(i.offset==0xad and i.opcode.name=='ldc.r4' and i.operand==10. for i in ctor_code):raise ValueError('Hero ground ray distance changed')
+    t=next(t for t in pe.net.mdtables.TypeDef.rows if str(t.TypeName)=='<EnterScene>d__487')
+    method=next(m.row for m in t.MethodList if str(m.row.Name)=='MoveNext')
+    code=read_method_body_from_bytes(pe.get_data(method.Rva,100000)).instructions
+    literals={i.offset:float(i.operand)for i in code if i.opcode.name=='ldc.r4'}
+    for offset,value in ((0x6ab,1.),(0x6b6,2.),(0x6f6,.165),(0x7a6,.2),(0x830,.33)):
+        if abs(literals.get(offset,-999)-value)>1e-6:raise ValueError('Hero left entry coroutine changed')
+    fsm=source.read(source.file('level1').objects[9790])['fsm']
+    fade=next(s for s in fsm['states']if s['name']=='FadeIn')['actionData']
+    if fsm['name']!='CameraFade' or fade['actionNames'][0].rsplit('.',1)[-1]!='CameraFadeInWithDelay' or fade['actionNames'][2].rsplit('.',1)[-1]!='SendEventByName':raise ValueError('Camera fade actions changed')
+    def old_scalar(action,name):
+        start=fade['actionStartIndex'][action];end=fade['actionStartIndex'][action+1]if action+1<len(fade['actionNames'])else len(fade['paramName'])
+        p=next(p for p in range(start,end)if fade['paramName'][p]==name)
+        if fade['paramDataType'][p]!=15 or fade['paramByteDataSize'][p]!=0:raise ValueError('Camera legacy float layout changed')
+        v=fade['fsmFloatParams'][fade['paramDataPos'][p]]
+        if v['useVariable']:raise ValueError('Camera fade now variable')
+        return v['value']
+    if abs(old_scalar(0,'time')-.5)>1e-6 or abs(old_scalar(2,'delay')-.1)>1e-6:raise ValueError('Camera entry fade changed')
+    return dict(spawn=[x,ground+elevation],gate_source='level7:'+str(gid),ground_source='level7:'+str(ground_sid),
+                ground_ray=[ray_x,ray_y],settle_ticks=10,fade_delay_ticks=7,fade_ticks=30,
+                lead_ticks=12,walk_ticks=math.ceil((.33+1/hc['RUN_SPEED'])*60),speed=hc['RUN_SPEED'],
+                source_method='HeroController/<EnterScene>d__487::MoveNext',camera_source='level1:9790',
+                limitations=['60Hz wait quantization','linear PS1 fade, not original camera and blanker shader parity'])
+
+def generate(metadata,entry):
     records=[r.get('great_door')for r in metadata['regions']]
     source=next((r for r in records if r),None)
     if source is None:raise ValueError('Cook the source Great Door first')
@@ -85,7 +157,8 @@ def generate(metadata):
     q=lambda v:round(v*65536)
     lines=['// Generated from the local Windows Great Door FSM and sprite collection.',
            'pub const TARGET_SCENE:usize='+str(target)+';',
-           'pub const PARAMS:Params=Params{stage_hits:'+array(source['stage_hits'])+',cooldown:'+str(source['cooldown_ticks'])+',transition:'+str(source['transition_ticks'])+'};',
+           'pub const PARAMS:Params=Params{stage_hits:'+array(source['stage_hits'])+',cooldown:'+str(source['cooldown_ticks'])+',transition:'+str(source['transition_ticks'])+',entry_delay:'+str(source['entry_delay_ticks'])+'};',
+           'pub const ENTRY:Entry=Entry{spawn:'+array(map(q,entry['spawn']))+',settle:'+str(entry['settle_ticks'])+',fade_delay:'+str(entry['fade_delay_ticks'])+',fade:'+str(entry['fade_ticks'])+',lead:'+str(entry['lead_ticks'])+',walk:'+str(entry['walk_ticks'])+',speed:'+str(q(entry['speed']))+'};',
            'pub const POSITION:[i32;2]='+array(map(q,source['position'][:2]))+';',
            'pub const SCALE:i32='+str(source['scale'])+';',
            'pub const BOUNDS:[i32;4]='+array(map(q,source['bounds']))+';',
@@ -96,8 +169,15 @@ def generate(metadata):
 
 def main():
     metadata=json.loads((ROOT/'data/regions.json').read_text())
-    (ROOT/'data/great_door.rs').write_text(generate(metadata))
+    from source import Source
+    source=Source();entry=entry_contract(source)
     record=next(r['great_door']for r in metadata['regions']if r.get('great_door'))
+    file,sid=record['source'].split(':')
+    values=contract(source.read(source.file(file).objects[int(sid)])['fsm'])
+    for region in metadata['regions']:
+        if region.get('great_door'):region['great_door'].update(values)
+    (ROOT/'data/great_door.rs').write_text(generate(metadata,entry))
+    record=dict(record,entry_sequence=entry)
     (ROOT/'.hkpsx/great-door.json').write_text(json.dumps(record,indent=2)+'\n')
 
 if __name__=='__main__':main()

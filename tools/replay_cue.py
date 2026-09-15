@@ -8,9 +8,9 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 WATCHES='''HK_PLAYER_X HK_PLAYER_Y HK_REGION_ID HK_GAME_MODE HK_HEALTH HK_SOUL
 HK_ROOM_LOAD_ERROR HK_CD_STREAM_ERROR __psx_rt_fault_count HK_SCENERY_REPAIR_FAILURES
-HK_BOUNDARY_WAIT_TICKS HK_BOUNDARY_WAIT_MAX HK_INPUT_FAULT HK_INPUT_MISSED_VBLANKS
+HK_BOUNDARY_WAIT_TICKS HK_BOUNDARY_WAIT_MAX HK_INPUT_FAULT HK_INPUT_MISSED_VBLANKS HK_INPUT_QUEUE_PEAK
 HK_SCENE_LOADS HK_CD_SECTORS_READ HK_VRAM_UPLOAD_BYTES HK_REGION_ACTIVATIONS
-HK_BREAK_COUNT HK_ENEMY_KILLS HK_DEBRIS_ACTIVE HK_DEBRIS_DRAWN HK_PARTICLES_SPAWNED
+HK_BREAK_COUNT HK_ENEMY_KILLS HK_CRAWLER_X HK_CRAWLER_Y HK_CRAWLER_HP HK_DEBRIS_ACTIVE HK_DEBRIS_DRAWN HK_PARTICLES_SPAWNED
 HK_PARTICLES_DROPPED HK_READ_SOURCE HK_READ_PAGE HK_READ_OPENED HK_READ_CLOSED
 HK_PAUSED HK_PAUSE_CONTROLS HK_SFX_LEVEL HK_AMBIENCE_LEVEL HK_DEATHS
 HK_MENU_PAGE HK_MENU_ROW HK_MENU_SFX HK_MENU_AMBIENCE
@@ -18,9 +18,10 @@ HK_GEO_WALLET HK_GEO_HITS HK_GEO_ROCKS_DEPLETED HK_GEO_SPAWNED_VALUE HK_GEO_COLL
 HK_GEO_ACTIVE HK_GEO_PENDING_VALUE HK_GEO_LOST HK_GEO_DRAWN'''.split()
 WATCHES+='HK_LIFEBLOOD_OPENED HK_LIFEBLOOD_ACTIVE HK_LIFEBLOOD_STRUCK HK_LIFEBLOOD_GRANTED HK_BLUE_HEALTH HK_GEO_AUDIO_READY HK_GEO_PICKUP_SFX HK_GEO_ROCK_HIT_SFX HK_GEO_ROCK_BREAK_SFX'.split()
 WATCHES+='HK_AMBIENCE_READY HK_AMBIENCE_LOADED_MASK HK_AMBIENCE_PLAYING_MASK HK_AMBIENCE_START_COUNT HK_AMBIENCE_TRANSITIONS HK_AMBIENCE_SCENE HK_AMBIENCE_FADE_TICKS'.split()
-WATCHES+='HK_GREAT_DOOR_HITS HK_GREAT_DOOR_STAGE HK_GREAT_DOOR_OPENED HK_GREAT_DOOR_WAIT HK_GREAT_DOOR_TRANSITIONS'.split()
+WATCHES+='HK_GREAT_DOOR_HITS HK_GREAT_DOOR_STAGE HK_GREAT_DOOR_OPENED HK_GREAT_DOOR_WAIT HK_GREAT_DOOR_ENTRY_WAIT HK_GREAT_DOOR_TRANSITIONS'.split()
 WATCHES+='HK_AUDIO_STREAM_STARTS HK_AUDIO_STREAM_REFILLS HK_AUDIO_STREAM_SOURCE_WRAPS HK_AUDIO_STREAM_MAX_SERVICE_GAP HK_AUDIO_STREAM_UNDERRUNS HK_GREAT_DOOR_HIT_SFX HK_FOOTSTEP_STARTS HK_HARD_LAND_SFX'.split()
 WATCHES+='HK_MUSIC_PLAYING HK_MUSIC_POSITION_SECTORS HK_MUSIC_WRAPS HK_MUSIC_ERROR HK_MUSIC_LEVEL HK_MENU_MUSIC'.split()
+WATCHES+='HK_FOCUS_AUDIO_READY HK_FOCUS_CHARGE_STARTS HK_FOCUS_HEAL_SOUNDS HK_FOCUS_CHARGE_GAIN HK_FOCUS_STARTED HK_FOCUS_COMPLETED HK_FOCUS_HEALED'.split()
 WATCHES+='HK_CHEATS HK_CHEAT_NAIL_DAMAGE HK_CHEAT_MASK_CAP'.split()
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -41,14 +42,14 @@ def main():
     if len(data)!=16+count*6 or a.screenshot_interval<=0:raise ValueError('Invalid tape/capture interval')
     out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
     help_text=subprocess.check_output([str(a.frontend),'launch','--help'],text=True)
-    for flag in ('--embedded-playtest','--stop-at-poll','--dump-hw','--route-watch-u32'):
+    for flag in ('--embedded-playtest','--stop-at-poll','--dump-hw','--dump-spu-ram','--route-watch-u32'):
         if flag not in help_text:raise ValueError('Unsupported frontend flag '+flag)
     (out/'frontend-help.txt').write_text(help_text)
     command=[str(a.frontend),'launch','--path',str(cue),'--embedded-playtest',
         '--config-dir',str(out/'emulator'),'--steps','6000000000','--input-tape',str(tape),
         '--stop-at-poll',str(start+count),'--route-screenshot-interval',str(a.screenshot_interval)]
     for flag,name in {'route-log':'route.csv','route-screenshot-dir':'screenshots','dump-display':'display.ppm',
-        'dump-hw':'hw.ppm','dump-vram':'vram.ppm','dump-ram':'ram.bin','dump-audio':'audio.wav','cd-command-log':'cd.csv'}.items():
+        'dump-hw':'hw.ppm','dump-vram':'vram.ppm','dump-spu-ram':'spu.bin','dump-ram':'ram.bin','dump-audio':'audio.wav','cd-command-log':'cd.csv'}.items():
         command+=['--'+flag,str(out/name)]
     symbols={s[-1]:'0x'+s[0] for line in mp.read_text().splitlines()if len(s:=line.split())==5}
     watches={n:symbols[n] for n in WATCHES if n in symbols}

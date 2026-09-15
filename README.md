@@ -4,7 +4,7 @@ A native Hollow Knight port experiment for original PlayStation, built from the
 user's Windows Steam copy in CrossOver. The last validated playable build includes
 King's Pass scenery and terrain, breakable doors, grass, the Knight's movement
 and nail attacks, three source Crawlers, damage, health masks, hazard checkpoints,
-nail recoil/pogo, Focus healing, a SOUL meter, player and Geo sound effects,
+nail recoil/pogo, Focus healing with charging/heal audio, a SOUL meter, player and Geo sound effects,
 original cave ambience and CD-streamed title music. The title offers Start Game, Options, Controls and Cheats; the
 pause menu supports separate sound-effect, ambience and music levels, including mute.
 Cheats include invincibility, Pure Nail damage, unlimited SOUL and nine masks.
@@ -14,26 +14,28 @@ implemented. FPS optimization is paused while the user playtests this build.
 Five source Geo rocks can be mined, Crawlers drop Geo, and animated coins bounce
 and collect into the wallet HUD. Original pickup and rock-hit sounds are resident.
 Three tutorial tablets use the original text, font and interaction triggers.
-Crawlers leave animated corpses; cut grass has source slash impacts and broken
+Crawlers continue patrolling across resident collision regions and leave animated corpses; cut grass has source slash impacts and broken
 doors leave persistent fragments that bounce and settle. Source grass, death and
 breakable-destruction particles are active, the latter for all 33 supported
 Tutorial breakables, and platform interiors use the source tilemap fills. The
 Lifeblood cocoon releases two Scuttlers; striking them earns two temporary blue
 health masks, which absorb damage before ordinary health. A controller replay
 verifies the complete interaction. The final Great Door now shows its three
-source damage stages and opens after thirteen hits, allowing entry into Town. Full original effects remain incomplete. Verified black masks now darken the background using the
+source damage stages and opens after thirteen hits, followed by the source-derived
+blackout, Town entry fade and scripted walk-in. Full original effects remain incomplete. Verified black masks now darken the background using the
 PS1's limited blend modes; this is not full source-shader parity.
 
 98 bounded regions cover Tutorial_01 and Dirtmouth's left entrance. All their
 scene data now stays in one 369,180-byte RAM arena; both scenery atlases stay in
 VRAM throughout gameplay. Their CPU copies are discarded after startup uploads,
 with exact host-cooked particle tracks using part of the recovered RAM and
-leaving about60KiB unallocated after caching the full cave-noises loop in RAM. Lossless sharing across regions uses 20 static 4bpp
+leaving about52KiB unallocated before the reserved stack after caching the full
+cave-noises loop in RAM. Lossless sharing across regions uses 20 static 4bpp
 pages and 1,209 palettes. The existing approved 95% static matches remain; no
 further resolution reduction or lossy merging was added. Scenery keeps its
 48-pixel long-axis cap; Knight, enemy and HUD resolution is unchanged.
 
-The title loads six ambience loops and the static atlases through the empty
+Startup loads six ambience loops, the Focus sound bank and the static atlases through the empty
 scene arena, then admits both compact scene banks once. Region crossings
 select local views without CD reads, decoding or static texture uploads. Eight
 animation slots fetch frames from resident RAM and retain cached frames across

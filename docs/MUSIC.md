@@ -1,5 +1,32 @@
 # Source ambience and CD-streamed music
 
+## Focus playback (build66,2026-09-15)
+
+The full19.345-second charging loop uses8,000Hz mono; the full1.567-second heal
+uses22,050Hz mono. This follows sustained-loop and short-effect categories,
+without truncation. `host/focus_audio.py` validates Windows Spell Control FSMs,
+AudioSources, clips and inspected assembly hashes. Local provenance and cooked
+assets remain ignored. The108,208-byte bank loads through scene scratch once at
+startup into0x5EA00..0x790B0, leaving28,496B contiguous SPU free. Main RAM has
+53,132B before the protected stack; Focus adds no persistent sample bank there.
+
+Voice18 loops charging;19/20 alternate heals from shared data so tails survive
+release and cancellation. The actual Focus state supplies start/repeat/end phases;
+the source fade is cut off on phase exit. Damage/scene interruption stops charge
+immediately. All voices follow the SFX setting. Original mixer DSP and pause-audio
+parity are not established. Source no-charm timing fits two heal voices; future
+charms must revisit the overlap budget. No event-time CD read is required.
+
+Native tests run the actual guest dispatch against bounded fake SPU registers,
+validating malformed-bank rejection, addresses, loop flags, one-shot ADSR,
+repeat/full-health completion, interruption, tails and volume. Final-CUE Focus
+and isolated-audio routes pass; charging phrases correlate above0.9997 and heal
+tails above0.997 with independently decoded cooked clips after alignment. Resident
+SPU bytes match the bank. Reports are `.hkpsx/game66/{focus-wave-check.json,
+heal-wave-check.json,validation.json}`; final disc identity is in STATUS.md.
+More enemy, break, death and UI sounds remain missing. CD-DA title and the complete
+cave-noises ring below are retained; historical free-space figures are superseded.
+
 ## Title playback (build65,2026-09-15)
 
 The title plays its complete81.8-second source track through SDK CD-DA. The
@@ -43,10 +70,9 @@ for mute/restore, active handoff and the pause Music row. Replay each with
 
 Evidence lives in `.hkpsx/music65/cdda-{title-loop,handoff2,early}/`, plus
 `cdda-tests.log`, `cdda-build.log`, and `cdda-pcm-check.json`. Retail PCM/captures
-stay ignored. Main RAM now has61,356B free before the protected48KiB stack;
-136,704B contiguous SPU remains available. Tutorial's Silent snapshot and the
-uncooked Town music trigger are unchanged. Next restore source-traced Focus and
-missing effects; historical capacity experiments below are not current allocation.
+stay ignored. Build65 had61,356B free before the protected48KiB stack;
+136,704B contiguous SPU was available. Tutorial's Silent snapshot and the
+uncooked Town music trigger are unchanged. Focus is restored in66; continue missing effects; historical capacity experiments below are not current allocation.
 
 ## Ambience milestone (build64,2026-09-15)
 
