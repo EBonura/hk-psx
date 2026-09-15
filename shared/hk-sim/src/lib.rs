@@ -3,6 +3,7 @@
 use hk_format::Room;
 mod combat;
 mod actors;
+pub mod runner;
 mod corpse;
 pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
 mod vitals;
