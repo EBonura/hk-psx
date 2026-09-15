@@ -85,13 +85,15 @@ fn mark(state:u32,error:u32){unsafe{STATUS=(state,error);}}
 const ATLASES:&[u8]=&[0;23];
 struct CoverageDesc{raw_len:usize}
 const COVERAGE_MANIFEST:&[CoverageDesc]=&[CoverageDesc{raw_len:64},CoverageDesc{raw_len:64}];
+struct WorldMetaDesc{raw_len:usize}
+const WORLD_META_MANIFEST:&[WorldMetaDesc]=&[WorldMetaDesc{raw_len:160},WorldMetaDesc{raw_len:160}];
 static mut HK_COVERAGE_SCENE:u32=0;
 static mut HK_COVERAGE_BYTES:u32=0;
-struct Cache{loaded_scenes:usize,loaded_atlases:usize,selected:usize,resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize}
+struct Cache{loaded_scenes:usize,loaded_atlases:usize,selected:usize,resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize}
 impl Cache{
  fn admitted(count:usize)->Self{
   unsafe{HK_REGION_ACTIVATIONS=0;HK_ROOM_CACHE_HITS=0;HK_ROOM_BYTES=0;STATUS=(0,0);}
-  Self{loaded_scenes:count,loaded_atlases:23,selected:EMPTY,resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64}
+ Self{loaded_scenes:count,loaded_atlases:23,selected:EMPTY,resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,metadata_scene:0,metadata_len:160}
  }
 METHODS
 }
@@ -99,7 +101,7 @@ METHODS
  if !SCENE_GATE_LOAD{return;}
  let mut c=Cache::admitted(0);
  for owner in [0,1,0,1]{
-  c.loaded_scenes=0;c.resident_scene=EMPTY;c.selected=EMPTY;c.atlas_scene=owner;
+  c.loaded_scenes=0;c.resident_scene=EMPTY;c.selected=EMPTY;c.atlas_scene=owner;c.metadata_scene=owner;c.metadata_len=160;
   let (start,end)=SCENE_ATLAS_RANGES[owner];
   for completed in start..=end{
    c.loaded_atlases=completed;
@@ -170,6 +172,8 @@ static mut GEOMETRY_READS:usize=0;
 static mut DRAW_COUNTS:[usize;2]=[3,2];
 struct CoverageDesc{draw_pool_count:u32}
 const COVERAGE_MANIFEST:&[CoverageDesc]=&[CoverageDesc{draw_pool_count:3},CoverageDesc{draw_pool_count:2}];
+struct WorldMetaDesc{raw_len:usize}
+const WORLD_META_MANIFEST:&[WorldMetaDesc]=&[WorldMetaDesc{raw_len:160},WorldMetaDesc{raw_len:160}];
 // The real decoder/parser have their own native format tests. This boundary
 // double supplies validated metadata to the *production* admission method so
 // malformed manifest-to-scene bindings cannot be accidentally accepted.
@@ -194,9 +198,10 @@ impl<'a> Scene<'a>{
  fn chunk_id(&self,index:usize)->Option<usize>{(index<self.room_count()&&index<2).then(||self.word(index+4))}
 }
 #[derive(Debug,PartialEq)]enum LoadError{RoomMismatch,Checksum,Decompress,RoomFormat,Coverage}
-struct Cache{loaded_scenes:usize,resident_scene:usize,selected:usize,entries:[usize;2],coverage_scene:usize,coverage_len:usize}
+struct Cache{loaded_scenes:usize,resident_scene:usize,selected:usize,entries:[usize;2],coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize}
 impl Cache{
- fn new()->Self{Self{loaded_scenes:0,resident_scene:EMPTY,selected:EMPTY,entries:[0,1],coverage_scene:EMPTY,coverage_len:0}}
+ fn new()->Self{Self{loaded_scenes:0,resident_scene:EMPTY,selected:EMPTY,entries:[0,1],coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0}}
+ fn prepare_metadata(&mut self,_wanted:usize)->Result<(),LoadError>{Ok(())}
  fn prepare_coverage(&mut self,wanted:usize)->Result<(),LoadError>{
   if self.coverage_scene==wanted{return Ok(());}
   self.coverage_scene=EMPTY;self.coverage_len=0;
@@ -422,6 +427,8 @@ const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
 const ATLASES:&[u8]=&[0;23];
 struct CoverageDesc{raw_len:usize}
 const COVERAGE_MANIFEST:&[CoverageDesc]=&[CoverageDesc{raw_len:64},CoverageDesc{raw_len:64}];
+struct WorldMetaDesc{raw_len:usize}
+const WORLD_META_MANIFEST:&[WorldMetaDesc]=&[WorldMetaDesc{raw_len:160},WorldMetaDesc{raw_len:160}];
 static mut HK_COVERAGE_SCENE:u32=0;
 static mut HK_COVERAGE_BYTES:u32=0;
 mod cd_stream {
@@ -451,7 +458,7 @@ mod cd_stream {
         }
     }
 }
-struct Cache{loaded_scenes:usize,loaded_atlases:usize,selected:usize,resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,ready:bool,header:[u32;4]}
+struct Cache{loaded_scenes:usize,loaded_atlases:usize,selected:usize,resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize,ready:bool,header:[u32;4]}
 impl Cache{METHODS}
 #[test]fn failure_after_any_atlas_or_scene_admission_requires_fresh_uploads(){
     // Failures can follow any atlas chunk, or scene admission after all atlas
@@ -460,7 +467,7 @@ impl Cache{METHODS}
         if scenes!=0&&atlases!=ATLASES.len(){continue;}
         for terminal in [cd_stream::Status::Idle,cd_stream::Status::Done,cd_stream::Status::Failed(42)] {
             let mut cache=Cache{loaded_scenes:scenes,loaded_atlases:atlases,
-                selected:if scenes==0{EMPTY}else{0},resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,ready:true,header:[11,22,33,44]};
+                selected:if scenes==0{EMPTY}else{0},resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,metadata_scene:0,metadata_len:160,ready:true,header:[11,22,33,44]};
             unsafe{HK_COVERAGE_SCENE=1;HK_COVERAGE_BYTES=64;}
             cd_stream::setup(terminal,terminal);cache.reset_bootstrap();
             cd_stream::assert_quiescent(1);
@@ -476,7 +483,7 @@ impl Cache{METHODS}
 }
 #[test]fn active_transport_is_cancelled_and_drained_before_reset_returns(){
     for terminal in [cd_stream::Status::Done,cd_stream::Status::Failed(9)] {
-        let mut cache=Cache{loaded_scenes:1,loaded_atlases:23,selected:0,resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,ready:true,header:[1;4]};
+        let mut cache=Cache{loaded_scenes:1,loaded_atlases:23,selected:0,resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,metadata_scene:0,metadata_len:160,ready:true,header:[1;4]};
         cd_stream::setup(cd_stream::Status::Busy,terminal);cache.reset_bootstrap();
         cd_stream::assert_quiescent(3);
         assert_eq!((cache.loaded_scenes,cache.loaded_atlases,cache.selected),(0,0,EMPTY));

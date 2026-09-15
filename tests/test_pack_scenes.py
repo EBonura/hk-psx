@@ -47,6 +47,18 @@ class PackScenes(unittest.TestCase):
         self.assertEqual(command[at-4:at],['compact.hlzc','compact.hk','scene1.hlzc','scene1.hk'])
         self.assertEqual(command[at+1:],sum(([a['stored_path'],a['raw_path']]for a in atlases),[]))
         self.assertIn('SCENE_GATE_LOAD:bool=false;',text)
+
+    def test_manifest_binds_checked_world_metadata_identity_and_chunk(self):
+        a=entry(0,1000,1,1,[1]);a.update(resident_raw_len=900,resident_stored_len=450,
+            resident_raw_fnv=31,resident_stored_fnv=41)
+        scenes=allocate_scenes([a],arena_bytes=2000,residency='scene_gate')
+        r=dict(scenes=scenes,arena_bytes=2000,raw_resident_bytes=900,total_pages=1,
+               total_palettes=1,atlases=atlases_for(scenes),world_metadata=[dict(
+                   scene_id=0,raw_len=160,raw_fnv=17,bank_fnv=19,stored_len=80,
+                   stored_fnv=23,chunk_id=9,fingerprint='00'*32)])
+        text=manifest(r,{'regions':[{'chunk_id':1,'scene_id':0}]})
+        self.assertIn('WORLD_META_ARENA_BYTES:usize=160;',text)
+        self.assertIn('WorldMetaDesc{scene_id:0,raw_len:160,raw_fnv:17,bank_fnv:19,stored_len:80,stored_fnv:23,chunk_id:9,fingerprint:[0,0,0',text)
     def test_aggregate_limits_reject_individually_valid_banks(self):
         for a,b,arena in [(entry(0,600,10,10,[1]),entry(1,600,10,10,[2]),1000),
                           (entry(0,400,11,10,[1]),entry(1,400,10,10,[2]),1000),

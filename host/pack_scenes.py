@@ -8,10 +8,12 @@ import hashlib
 import json
 import subprocess
 import struct
+import sys
 from pathlib import Path
 from scene_bank import build_scene, compressed, fnv, aligned, compact_resident, bootstrap_atlases, texture_flags
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'tools'))
 # Current scene pair passes the exact sequential in-place decoder at this
 # capacity, including sector padding. Keep validation mandatory for new assets.
 SCENE_ARENA_BYTES=369180
@@ -19,6 +21,43 @@ MAX_PAGES=20
 MAX_PALETTES=1248  # Final legacy CLUT strip is reserved for independent Geo art.
 
 def sha(data):return hashlib.sha256(data).hexdigest()
+
+def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
+    """Cook the checked HKWMTA01 banks that belong to each packed scene.
+
+    Metadata is emitted beside the ignored pack report. Keeping it as a
+    separate bank lets the guest admission path validate world state before
+    any borrowed view is published; the final packer assigns its chunk after
+    scene coverage without changing earlier chunk identities.
+    The scene and region catalogue are the same objects used for HKSCNE, so a
+    bank cannot silently drift to a different room set.
+    """
+    from world_metadata import encode_scene
+    output_dir=Path(output_dir)
+    banks=[];bodies=[]
+    source_scenes=meta.get('scenes')
+    if source_scenes is None:
+        # Unit fixtures for the legacy scene packer intentionally contain only
+        # geometry identity.  They do not describe gameplay metadata and must
+        # not manufacture a partial HKWMTA bank.
+        if any('activation_bounds' not in row for row in meta.get('regions', [])):
+            return [], []
+        source_scenes=[{'scene_id':scene,'scene_name':f'Scene {scene}','file':f'scene-{scene}'}
+                       for scene in sorted({row['scene_id'] for row in meta['regions']})]
+    scene_raw_fnv=scene_raw_fnv or {}
+    for scene in sorted(source_scenes,key=lambda value:value['scene_id']):
+        rows=[row for row in meta['regions'] if row['scene_id']==scene['scene_id']]
+        source_scene=dict(scene)
+        if scene['scene_id'] in scene_raw_fnv: source_scene['raw_fnv']=scene_raw_fnv[scene['scene_id']]
+        raw,descriptor=encode_scene(source_scene,rows)
+        stored=compressed(raw)
+        path=output_dir/f"scene_{scene['scene_id']}"
+        bank=dict(descriptor,raw_len=len(raw),stored_len=len(stored),stored_fnv=fnv(stored),stored_sha256=sha(stored),
+                  bank_fnv=fnv(raw),raw_sha256=sha(raw),raw_path=str(path)+'.hkwm',
+                  stored_path=str(path)+'.hkwm.z',path=str(path)+'.hkwm.z',
+                  fingerprint=raw[16:48].hex())
+        banks.append(bank);bodies.append((bank,raw,stored))
+    return banks,bodies
 
 def allocate_scenes(entries, arena_bytes=SCENE_ARENA_BYTES, max_pages=MAX_PAGES, max_palettes=MAX_PALETTES, residency="joint"):
     """Allocate joint residency, or per-gate replacement banks.
@@ -150,6 +189,12 @@ def manifest(report,metadata):
     text+=f'pub const SCENE_TEXTURE_CAPACITY:usize={(textures+31)//32*32};\n'
     text+=f'pub const SCENE_DRAW_CAPACITY:usize={(draws+31)//32*32};\n'
     text+='pub const SCENE_MANIFEST:&[SceneDesc]=&[\n'+''.join('SceneDesc{'+','.join(n+':'+str(e.get('resident_'+n,e[n]))for n,t in fields)+'},\n'for e in scenes)+'];\n'
+    meta_fields=[('scene_id','u32'),('raw_len','usize'),('raw_fnv','u32'),('bank_fnv','u32'),('stored_len','usize'),('stored_fnv','u32'),('chunk_id','usize')]
+    text+='#[derive(Clone,Copy,Debug)]\npub struct WorldMetaDesc{'+','.join('pub '+n+':'+t for n,t in meta_fields)+',pub fingerprint:[u8;32]}\n'
+    text+='pub const WORLD_META_ARENA_BYTES:usize='+str(max((aligned(e['raw_len']) for e in report.get('world_metadata',[])),default=0))+';\n'
+    text+='pub const WORLD_META_MANIFEST:&[WorldMetaDesc]=&[\n'+''.join(
+        'WorldMetaDesc{'+','.join(n+':'+str(e[n]) for n,t in meta_fields)+',fingerprint:['+','.join(str(value) for value in bytes.fromhex(e['fingerprint']))+']},\n'
+        for e in report.get('world_metadata',[]))+'];\n'
     atlas_fields=[('scene_index','usize'),('stored_len','usize'),('stored_fnv','u32'),('raw_len','usize'),('raw_fnv','u32'),('kind','u8'),('first','usize'),('count','usize')]
     text+='#[derive(Clone,Copy,Debug)]\npub struct AtlasDesc{'+','.join('pub '+n+':'+t for n,t in atlas_fields)+'}\n'
     text+='pub const ATLASES:&[AtlasDesc]=&[\n'+''.join('AtlasDesc{'+','.join(n+':'+str(e[n])for n,t in atlas_fields)+'},\n'for e in report.get('atlases',[]))+'];\n'
@@ -232,6 +277,8 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
                  path=str(output_dir/f'scene_{scene}.resident.hlzc'),texture_flags=texture_flags(raw,e))
         entries.append(e)
     entries=allocate_scenes(entries,arena_bytes,residency=residency)
+    metadata_output=report_path.parent/'world-metadata-packed'
+    world_banks,world_bodies=world_metadata_banks(meta,metadata_output,{e['scene_id']:e['raw_fnv'] for e in entries})
     atlases=[];atlas_bodies=[]
     for e in entries:
         raw=bodies[e['scene_id']][0]
@@ -248,8 +295,18 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
       'arena_bytes':arena_bytes,'raw_resident_bytes':sum(aligned(e['resident_raw_len'])for e in entries),
       'resident_stored_bytes':sum(e['resident_stored_len']for e in entries),'atlas_raw_bytes':sum(e['raw_len']for e in atlases),'atlas_stored_bytes':sum(e['stored_len']for e in atlases),
       'total_pages':(max if residency=='scene_gate' else sum)(e['pages']for e in entries),'total_palettes':(max if residency=='scene_gate' else sum)(e['palettes']for e in entries),'scenes':entries,'atlases':atlases,
+      'world_metadata':world_banks,'world_metadata_policy':'generated and checked separately; not yet assigned WORLD.PAK chunks',
       'sequential_decoder_validation':'pending native pinned-SDK/incremental proof against these exact stored payloads and allocation capacities',
       'quality':'No new resizing or lossy texture aliasing. Shared planes preserve every sampled16bit word; streamed textures and strict black mask palette/index bytes remain exact.'}
+    # Ambient/focus/coverage chunk numbering is owned by the packer contract.
+    # Keep metadata after coverage so existing scene, audio and atlas IDs stay
+    # stable while the guest migration is staged.
+    ambience_report=ROOT/'.hkpsx/ambience.json'
+    clip_count=len(json.loads(ambience_report.read_text()).get('clips',[])) if ambience_report.exists() else 0
+    metadata_first=len(entries)+clip_count+len(atlases)+2+len(entries)
+    for index,bank in enumerate(world_banks): bank['chunk_id']=metadata_first+index
+    report['world_metadata_base_chunk']=metadata_first
+    report['world_metadata_policy']='generated, checksummed and assigned after scene coverage; guest admission is wired but this build has not replaced the playable disc'
     report['required_resident_bytes']=(max if residency=='scene_gate' else sum)(aligned(e['resident_raw_len'])for e in entries)
     rust=manifest(report,meta)
     # Admission checks precede all output mutations.
@@ -258,6 +315,9 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
         raw,stored,resident,resident_stored=bodies[e['scene_id']];Path(e['raw_path']).write_bytes(raw);Path(e['stored_path']).write_bytes(stored)
         Path(e['resident_raw_path']).write_bytes(resident);Path(e['resident_stored_path']).write_bytes(resident_stored)
     for e,(raw,stored)in zip(atlases,atlas_bodies):
+        Path(e['raw_path']).write_bytes(raw);Path(e['stored_path']).write_bytes(stored)
+    for e,raw,stored in world_bodies:
+        Path(e['raw_path']).parent.mkdir(parents=True,exist_ok=True)
         Path(e['raw_path']).write_bytes(raw);Path(e['stored_path']).write_bytes(stored)
     manifest_path.write_text(rust);report['manifest_path']=str(manifest_path);report['manifest_sha256']=sha(rust.encode())
     report_path.write_text(json.dumps(report,indent=2)+'\n')
