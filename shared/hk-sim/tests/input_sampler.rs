@@ -166,3 +166,86 @@ fn fast_guard_preserves_backwards_clock_and_latched_fault_validation() {
     assert!(s.poll_due(11));
     assert_eq!(s.checkpoint(11, || panic!("latched fault must not poll")),Err(Fault::ClockOrder));
 }
+
+#[test]
+fn explicit_scene_load_drains_bounded_queue_preserves_history_and_resumes_edges() {
+    let mut s = Sampler::new();
+    s.start(100).unwrap();
+    s.checkpoint(101, || (101, 0)).unwrap();
+    s.consume(101).unwrap();
+    // Some real observations may already be waiting when this simulation tick
+    // enters a scene gate. The gate acknowledges them as loading-time input.
+    for tick in 102..=117 {
+        s.checkpoint(tick, || (tick, 0x4000)).unwrap();
+    }
+    s.begin_scene_load(101).unwrap();
+    assert_eq!(s.pending_count(), 0);
+    for tick in 118..=717 {
+        assert!(s.checkpoint(tick, || (tick, if tick % 2 == 0 { 0x4000 } else { 0 })).unwrap());
+        assert_eq!(s.pending_count(), 0);
+        assert!(!s.checkpoint(tick, || panic!("same VBlank must not poll")).unwrap());
+    }
+    assert_eq!(s.end_scene_load(), Ok(717));
+    assert_eq!(s.held_buttons(), 0);
+    assert_eq!(s.stats().polls, 617);
+    assert_eq!(s.stats().loading_samples, 616);
+    assert_eq!(s.stats().loading_ticks, 616);
+    assert_eq!(s.stats().pending_peak, 16);
+    assert_eq!(s.stats().missed_vblanks, 0);
+    // A press in the first resumed frame is preserved, never acknowledged by
+    // the previous load merely because it follows end_scene_load immediately.
+    s.checkpoint(718, || (718, 0x4000)).unwrap();
+    assert_eq!(s.consume(718), Ok(0x4000));
+    s.checkpoint(719, || (719, 0)).unwrap();
+    assert_eq!(s.consume(719), Ok(0));
+    assert_eq!(s.stats().loading_samples, 616);
+    assert_eq!(s.stats().polls, 619);
+}
+
+#[test]
+fn scene_load_retains_missed_polls_wrap_and_transfer_completion_boundary() {
+    let mut s = Sampler::new();
+    s.start(u32::MAX - 2).unwrap();
+    s.checkpoint(u32::MAX - 1, || (u32::MAX - 1, 1)).unwrap();
+    s.consume(u32::MAX - 1).unwrap();
+    s.begin_scene_load(u32::MAX - 1).unwrap();
+    s.checkpoint(u32::MAX, || (0, 2)).unwrap();
+    assert_eq!(s.stats().missed_vblanks, 1);
+    s.checkpoint(100, || (100, 4)).unwrap();
+    assert_eq!(s.stats().missed_vblanks, 100);
+    assert_eq!(s.stats().max_poll_gap, 100);
+    assert_eq!(s.stats().loading_ticks, 102);
+    assert_eq!(s.stats().loading_samples, 2);
+    assert_eq!(s.end_scene_load(), Ok(100));
+    assert_eq!(s.held_buttons(), 4);
+    s.checkpoint(101, || (101, 8)).unwrap();
+    assert_eq!(s.consume(101), Ok(8));
+    s.begin_scene_load(101).unwrap();
+    s.checkpoint(102, || (102, 8)).unwrap();
+    assert_eq!(s.end_scene_load(), Ok(102));
+    assert_eq!(s.stats().missed_vblanks, 100);
+    assert_eq!(s.stats().loading_ticks, 103);
+}
+
+#[test]
+fn scene_load_ownership_never_masks_faults_or_allows_simulation_during_pause() {
+    let mut s = Sampler::new();
+    assert_eq!(s.begin_scene_load(0), Err(Fault::NotStarted));
+    let mut s = Sampler::new();
+    s.start(10).unwrap();
+    assert_eq!(s.end_scene_load(), Err(Fault::SceneLoadInactive));
+    let mut s = Sampler::new();
+    s.start(10).unwrap();
+    assert_eq!(s.begin_scene_load(11), Err(Fault::NonConsecutiveUpdate));
+    let mut s = Sampler::new();
+    s.start(10).unwrap();
+    s.begin_scene_load(10).unwrap();
+    assert_eq!(s.begin_scene_load(10), Err(Fault::SceneLoadActive));
+    assert_eq!(s.end_scene_load(), Err(Fault::SceneLoadActive));
+    let mut s = Sampler::new();
+    s.start(10).unwrap();
+    s.begin_scene_load(10).unwrap();
+    s.checkpoint(11, || (11, 0)).unwrap();
+    assert_eq!(s.consume(11), Err(Fault::SceneLoadActive));
+    assert_eq!(s.checkpoint(12, || panic!("fault must remain latched")), Err(Fault::SceneLoadActive));
+}

@@ -13,6 +13,7 @@ mod input_queue;
 mod input_sampler;
 mod input;
 mod presentation;
+mod scene_transition;
 mod animation_cache;
 mod audio;
 mod focus_audio;
@@ -232,9 +233,9 @@ fn main() {
                 vram=vram_cache::Cache::new();cache.reset_bootstrap();
                 menu::restore();menu::retry(&mut fb);menu::loading(&mut fb);
             }
-            // Atlas bytes were verified/uploaded through startup scratch before
-            // compact immutable scene views were admitted. All banks stay live.
-            vram.admit_bootstrap(cache.atlases_ready());
+            // Atlas bytes were verified/uploaded before the initial scene
+            // was admitted. Every spatial view in this scene stays live.
+            vram.admit_scene(region_id,cache.atlases_ready());
             vram.activate(region_id);
             hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();world::particles::break_effects::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);
             initial=false;
@@ -251,7 +252,7 @@ fn main() {
         lifeblood::apply(life,&mut state,region_id);
         great_door::apply(&door,&mut state,region_id);
         unsafe { HK_GAME_MODE=1;HK_REGION_ID=region_id as u32+1; }
-        let mut pending_target=None;
+        let mut pending_target:Option<usize>=None;
         let mut boundary_ticks=0u32;
         let mut spatial_target=false;
         loop {
@@ -313,6 +314,12 @@ fn main() {
                 while sim_clock!=now {
                     sim_clock=sim_clock.wrapping_add(1);
                     let pad=ButtonState::from_bits(input::consume(sim_clock));
+                    // The source scene has ended. A rendered-frame catch-up must
+                    // not simulate the destination player against outgoing terrain.
+                    if target.is_some_and(|id|world::REGIONS[id].scene!=r.scene) {
+                        start_held=pad.is_held(button::START);player.was_jump=pad.is_held(button::CROSS);
+                        continue;
+                    }
                     dialogue::tick(r.scene,&player,PARAMS,target.is_none() && !paused && !door.pending() && !vitals.dead && player.grounded && vitals.can_control() && !nail.active && !focus.locks_control(),pad.bits());
                     ambience::tick();
                     let start=pad.is_held(button::START);
@@ -451,12 +458,17 @@ fn main() {
                                     Some(world::GATES.iter().find(|g|g.scene==r.scene&&g.target_scene==great_door::TARGET_SCENE).expect("Great Door exit gate"))
                                 } else {world::gate(r.scene,&player)};
                                 if let Some(g)=gate {
-                                    let spawn=if door_exit {great_door::ENTRY.spawn}else{g.spawn};
+                                    let side_entry=(g.scene==0&&g.target_scene==great_door::TARGET_SCENE)
+                                        ||(g.scene==great_door::TARGET_SCENE&&g.target_scene==0);
+                                    let spawn=if side_entry {if g.target_scene==0 {great_door::RETURN_ENTRY.spawn}else{great_door::ENTRY.spawn}}else{g.spawn};
                                     if let Some(id)=world::locate(g.target_scene,spawn[0],spawn[1]) {
                                         geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                                         vitals.add_blue_health(life.leave_scene());
                                         dialogue::cancel();state.reset_scene(r.scene);reveals.leave_scene();enemies.reset_scene(r.scene);audio::reset_movement();player=Player::spawn(spawn[0],spawn[1]);
-                                        if door_exit {door.begin_entry(g.target_scene);player.grounded=true;}
+                                        if side_entry {
+                                            if door_exit {door.begin_entry(g.target_scene);}else{door.begin_gate_entry(g.target_scene);}
+                                            player.grounded=true;
+                                        }
                                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();target=Some(id);safe=(player.x,player.y,id);safe_facing=player.facing;gate_cooldown=90;
                                     }
                                 }
@@ -504,7 +516,15 @@ fn main() {
             #[cfg(feature="emulator-telemetry")] if frame%30==0 {log_state(frame,&player,prims);}
             frame=frame.wrapping_add(1);
             if let Some(id)=target {
-                // Both scene metadata and static atlases were admitted at boot.
+                if !cache.is_ready(id) {
+                    assert!(world::REGIONS[id].scene!=r.scene,"spatial region not resident");
+                    audio::stop_footsteps();focus_audio::interrupt();
+                    unsafe {HK_GAME_MODE=2;}
+                    sim_clock=scene_transition::load(cache,&mut vram,id,sim_clock).expect("scene gate load");
+                    let held=ButtonState::from_bits(input::held_buttons());
+                    player.was_jump=held.is_held(button::CROSS);start_held=held.is_held(button::START);
+                }
+                // Every spatial view within the selected scene remains resident.
                 if vram.ready(id) && matches!(cache.try_select(id),Ok(true)) {
                     region_id=id;continue 'region;
                 }

@@ -1,4 +1,4 @@
-"""Cook bounded regions of original Tutorial_01 and the Town entrance.
+"""Cook bounded regions of original Tutorial_01 and full Town scenery.
 
 Partitioning changes residency only. Each region keeps every supported sprite
 layer intersecting its camera range at the existing quality settings. A region
@@ -19,13 +19,13 @@ from cook import cook, CAM_X, CAM_Y, Atlas, append_actor_art
 from actors import actor_sources, postpack_pogo
 from world import postpack_checkpoints, postpack_masks
 from reveal_masks import postpack_reveal_masks
-from quality import REGION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
+from quality import REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
 
 SCENES = [
     {'scene_id': 0, 'scene_name': 'Tutorial_01', 'file': 'level6',
      'runtime_bounds': [0,-5,210,100], 'camera_global_bounds': [14,0,196,92]},
     {'scene_id': 1, 'scene_name': 'Town', 'file': 'level7',
-     'runtime_bounds': [0,-5,48,76], 'camera_global_bounds': [12,15,40,68]},
+     'runtime_bounds': [0,-5,270,76], 'camera_global_bounds': [12,15,258,68]},
 ]
 
 
@@ -72,7 +72,15 @@ def initial_regions():
 
 def fixed_regions():
     """Keep the measured layout stable across texture quality changes."""
+    # Keep every existing chunk ID and Tutorial view. Town's old x40 clamp was
+    # the development coverage edge; extending it allows continuous traversal
+    # into the new views without changing screen scale or the gate's x12 clamp.
     result=[region_spec(SCENES[scene],bounds) for scene,bounds in REGION_LAYOUT]
+    for bounds,camera in TOWN_EXTENSION_LAYOUT:
+        region=region_spec(SCENES[1],bounds)
+        region.update(camera_bounds=list(camera),camera_x=[camera[0],camera[2]],
+                      camera_y=[camera[1],camera[3]])
+        result.append(region)
     initial=initial_regions()[0]
     if result[0]['activation_bounds'] != initial['activation_bounds']:
         raise ValueError('fixed layout opening differs from initial room')
@@ -285,8 +293,8 @@ def main():
     source=Source();scenes={};pixels={};geometry={}
     pending=fixed_regions();regions=[]
     report={'format':'HKREGIONS01','complete':False,'initial_chunk_id':1,'scenes':[],
-            'regions':regions,'quality':{'scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_budget':TEXTURE_BUDGET,'room_byte_budget':ROOM_BYTE_BUDGET,'layout':'fixed98','animation_sampling':'unchanged'},'limitations':[
-                'Tutorial regions cover the original spatial room; Town currently covers only the left entrance',
+            'regions':regions,'quality':{'scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_budget':TEXTURE_BUDGET,'room_byte_budget':ROOM_BYTE_BUDGET,'layout':'fixed106','animation_sampling':'unchanged'},'limitations':[
+                'Tutorial and Town regions cover supported scenery and collision across their development envelopes; Town NPCs, shops, benches and progression scripts remain unsupported',
                 'Region boundaries and camera global clamps are residency/development choices, not original room boundaries',
                 'Source camera locks and gate triggers are recorded separately; runtime must not infer absent links',
                 'Unsupported scripts and effects remain recorded per region; asset cooking alone does not implement their behavior',

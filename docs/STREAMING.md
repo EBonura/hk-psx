@@ -1,75 +1,61 @@
 # Shared scene residency and source inventories
 
-The current build represents 98 spatial region views of supported Tutorial_01
-content and the Town entrance. It loads two shared scene banks before gameplay:
-86 Tutorial views and 12 Town views. These remain bounded authored subsets, not
-complete implementations of either Unity scene or the whole game. The fixed
-region layout retains camera, collision and interaction boundaries; it no longer
-requires separate CD reads and scenery uploads at each spatial boundary.
-
-Geo coin/rock art is also embedded and uploaded once into disjoint VRAM strips;
-its 5,154-byte bank requires no traversal streaming. Scenery palette admission
-is capped at 1,248 (1,206 used), allowing an unused CLUT strip to hold Geo art.
-Geo sounds occupy a further 13,904 SPU bytes. These are bounded additions for
-the current subset, not a whole-game capacity claim.
+The current layout contains106 spatial views:86 in Tutorial_01 and20 across
+Town0..270/-5..76. These cover supported scenery/collision and existing actors;
+Town shops, NPCs, bench scripts and the well connection remain unimplemented.
+See STATUS.md for final-CUE validation and the current disc identity.
 
 ## Current runtime implementation
 
-The data path is CD → checksummed compressed scene → immutable decoded scene RAM
-→ shared static VRAM pages. All current region views are admitted before
-simulation starts, including the supported Town gate destination. Animation
-frames then transfer from resident scene RAM into eight reusable VRAM slots.
-No region traversal requests new scene data or replaces a static scenery bank.
-The old wishlist calls currently remain compatibility hooks with no deferred
-CD/decode work behind them.
+Production builds select `scene_gate` residency. One369,180-byte arena and the
+same static VRAM slots belong to one scene at a time. Tutorial needs321,956
+resident bytes,18 pages and1,068 palettes; Town needs88,200 resident bytes,
+6 pages and390 palettes. Their combined410,156 resident bytes need not coexist.
+The host retains `joint` mode for allocator/loader regression tests.
 
-| Resident allocation | Tutorial_01 subset | Town entrance | Total |
-| --- | ---: | ---: | ---: |
-| Region views | 86 | 12 | 98 |
-| Raw scene bytes | 929,692 | 116,756 | 1,046,448 |
-| Global texture entries | 1,115 | 145 | 1,260 |
-| Immutable palettes | 1,065 | 141 | 1,206 |
-| Static 4bpp pages | 18 | 2 | 20 |
+Startup uploads the shared effects and sound banks and admits Tutorial. At an
+authored exit, the guest retires outgoing GPU work, blacks the display at
+VBlank, revokes old scene/atlas readiness and invalidates renderer and animation
+caches. The outgoing Room borrow ends before replacement. Each destination atlas
+is read and decoded through the same arena, verified and uploaded; the compact
+scene then replaces staging data. Only a fully checked scene and its matching
+page/palette inventory become visible. Both framebuffers are cleared before
+display resumes. Failed admission keeps the display black and reports an error.
 
-The shared RAM arena reserves 1,179,648 bytes. Scenes decode in sequence, largest
-first, using the remaining suffix as in-place scratch. Once admitted, the
-previous scene's raw prefix stays immutable. The raw total leaves 133,200 bytes
-inside this arena; this is not total executable headroom. Code, renderer tables,
-actor/effect pools, stacks and other reservations require final linker evidence.
+The CD IRQ path remains responsible for payload transfers. Main-thread
+checkpoints service the controller and RAM-to-SPU ambience during reads,
+decoding and uploads. Loading has explicit input ownership: it acknowledges
+observed samples without growing the gameplay queue or resetting its history.
+Simulation resumes from the last observed input timestamp, with jump/Start
+holds preserved. This prevents a long load from becoming gameplay catch-up.
+The existing Great Door destination fade/walk follows admission.
 
-The title-time SDK reader verifies the pack table. The existing CD IRQ wrapper
-handles payload transfers and chains to the pinned SDK VBlank/fault handler.
-Foreground decoding verifies stored FNV, performs bounded relocation/HLZC work,
-verifies raw FNV and runs `SceneValidation`. Each validation work unit checks one
-record, descriptor, duplicate-ID comparison, section layout or transition;
-the loader yields with a budget of eight units. The synchronous parser uses the
-same ordered checks. No partially checked scene becomes a Room view.
+Every spatial view inside the active scene remains resident. Region activation
+constructs an O(1) immutable `Scene::room(index)` view and refreshes local
+render/collision state without CD reads, scene decoding or static atlas uploads.
+Original source IDs own persistent breakable/actor state. Eight64x64 4bpp
+animation slots fetch frames from resident RAM, preserving cached frames across
+same-scene boundaries and resetting ownership on a scene change.
 
-The guest uploads all admitted static pages and palettes at startup in bounded
-64 KiB slices, then invalidates the GPU texture cache before marking them ready.
-Tutorial uses physical pages 0–17 and palettes 0–1064; Town uses pages 18–19 and
-palettes 1065–1205. The historical four-bank coordinate helpers now map these
-shared ranges; they do not imply four evicting region banks. Exact disjoint
-coordinates are in [FORMAT.md](FORMAT.md).
+`AtlasDesc.scene_index` and contiguous half-open `SCENE_ATLAS_RANGES` describe
+exclusive ownership. Physical scenery pages0..17 and palettes0..1067 are reused
+for Town's smaller inventory; the reservation still permits20 pages and1,248
+palettes. Host and guest reject incomplete inventories, wrong bases, wrong
+owners and over-capacity scenes. Shared Geo, Lifeblood, HUD, dialogue and break
+art occupy disjoint persistent strips; see BUDGET.md for exact coordinates.
+Scene exits still require a blackout/load. This is not background neighbourhood
+prefetch, arbitrary whole-game residency or a physical-console timing claim.
 
-Region activation indexes `REGION_SCENE_LOCAL` and constructs an O(1) immutable
-`Scene::room(index)` view. Local draw/frame/clip/edge order is preserved through
-reference arrays. Texture and palette IDs are global within a scene. Activation
-rebuilds only local draw/visibility/scissor state; global texture templates are
-rebuilt only when changing scenes. Gameplay ownership remains tied to original
-source IDs, so crossing a residency boundary does not reset actors or effects.
-
-Eight 64x64 4bpp animation slots reserve 16 KiB beside the framebuffers. Knight,
-optional nail and up to six actors request at most eight unique textures per
-frame, with at most 16 KiB uploaded on misses. Requests are pinned before
-replacement, and prior DMA/GPU completion is required before overwriting slots.
-Keys cover 2,048 global texture IDs. Same-scene region changes preserve the
-cache; changing to a different scene resets it because scene-local global IDs
-belong to different namespaces. Static pages and palettes remain resident.
+The real decoder is checked against cooked scenes with repeated forward/reverse
+replacements and budgets1,31,1024,2048,8192. Runtime tests cover admission,
+replacement failures, GPU/blackout ordering and loading-input handoff. Actual-CUE
+commands, captures and transfer counters are required separately; native tests
+alone do not prove a playable transition. `tools/validate_scene_gates.py` checks
+final arena bytes and same-scene transfer stability from those replays.
 
 ## Validation status and earlier streaming work
 
-Native validation passed both current scene files with cursor budgets 1, 8, 31
+Earlier joint-residency native validation passed both scene files with cursor budgets 1, 8, 31
 and 2048. Across 85 Tutorial and 11 Town consecutive region pairs, the same
 original streamed frame retains its cache slot with zero misses or upload bytes:
 **96 same-scene transitions**. The additional transition between the two scenes
@@ -203,7 +189,7 @@ The offline planner lists current-room resources first, then additional
 neighbour resources, deduplicating stable sprite IDs. For A → B it computes the
 new B-plus-neighbours union, retained resources, additions and releases. Source
 gate references remain available for a future scheduler. This is a deterministic
-dependency proposal, not the guest's two-scene startup admission policy. Conditional gates
+dependency proposal, not the guest's exclusive scene-gate admission policy. Conditional gates
 may eventually reduce eligible neighbours, but unsupported conditions are not
 silently guessed.
 
@@ -219,7 +205,7 @@ whole-game neighbourhood residency.
 
 [DELTA_PROTOTYPE.md](DELTA_PROTOTYPE.md) records the host-only lossless neighbour
 payload experiment and its scratch-memory constraints. It is separate from the
-source dependency inventory and the current guest's shared-scene startup loader.
+source dependency inventory and the current guest's scene-gate loader.
 
 [TEXTURE_DEDUP.md](TEXTURE_DEDUP.md) documents exact within-region texture sharing,
 source-reference preservation and the measured static-page savings on the

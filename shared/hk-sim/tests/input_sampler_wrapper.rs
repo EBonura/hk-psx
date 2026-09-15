@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 static CLOCK:AtomicU32=AtomicU32::new(100);
 static BUTTONS:AtomicU32=AtomicU32::new(0);
 static POLLS:AtomicU32=AtomicU32::new(0);
+static POLL_CROSS_VBLANK:AtomicU32=AtomicU32::new(0);
 // This harness exercises real input sampling with stub hardware. Presentation
 // state ordering has its own native tests; count calls here to verify input
 // checkpoints still service it even when no new pad transaction is due.
@@ -24,6 +25,7 @@ impl Buttons {pub fn bits(self)->u16 {self.0}}
 pub struct Pad {pub buttons:Buttons}
 pub fn poll_port1()->Pad {
     POLLS.fetch_add(1,Ordering::SeqCst);
+    CLOCK.fetch_add(POLL_CROSS_VBLANK.swap(0,Ordering::SeqCst),Ordering::SeqCst);
     Pad {buttons:Buttons(BUTTONS.load(Ordering::SeqCst) as u16)}
 }
 #[allow(non_upper_case_globals)]
@@ -66,4 +68,31 @@ fn hardware_wrapper_closes_clock_read_race_and_preserves_pending_pulse() {
         assert_eq!(input::HK_INPUT_FAULT,0);
         assert_eq!(HK_PAD_POLL_MAX_VBLANK_GAP,1);
     }
+    // Exercise the real wrapper with a load much longer than the 16-entry FIFO.
+    input::begin_scene_load(104);
+    for tick in 105..=704 {
+        CLOCK.store(tick,Ordering::SeqCst);
+        BUTTONS.store(if tick == 704 {0x4000} else {0},Ordering::SeqCst);
+        input::checkpoint();
+    }
+    // Final checkpoint's transaction crosses VBlank. The returned boundary is
+    // the completion tick, with its real held state, not the stale entry read.
+    CLOCK.store(705,Ordering::SeqCst);
+    POLL_CROSS_VBLANK.store(1,Ordering::SeqCst);
+    assert_eq!(input::end_scene_load(),706);
+    assert_eq!(input::held_buttons(),0x4000);
+    // A VBlank after return is normal input, including an immediate new button.
+    CLOCK.store(707,Ordering::SeqCst); BUTTONS.store(0x1000,Ordering::SeqCst);
+    assert_eq!(input::consume(707),0x1000);
+    unsafe {
+        assert_eq!(input::HK_INPUT_POLLS,606);
+        assert_eq!(input::HK_INPUT_MISSED_VBLANKS,1);
+        assert_eq!(input::HK_INPUT_LOADING_SAMPLES,601);
+        assert_eq!(input::HK_INPUT_LOADING_TICKS,602);
+        assert_eq!(input::HK_INPUT_QUEUE_PEAK,3);
+        assert_eq!(input::HK_INPUT_FAULT,0);
+    }
+    assert_eq!(AUDIO_CHECKPOINTS.load(Ordering::SeqCst),613);
+    assert_eq!(PRESENT_CHECKPOINTS.load(Ordering::SeqCst),613);
+
 }

@@ -1,6 +1,65 @@
 # Status, 2026-09-15
 
-## In progress:67 full Town coverage and scene replacement
+## Current playable build68: Town expansion and scene replacement
+
+The sole Downloads/ps1 games/hk-psx.bin/.cue pair contains the final68 build,
+including the return-entry correction after the earlier requested provisional.
+106 spatial views cover Tutorial and Town0..270/-5..76 (86+20). Scene/atlas
+ownership is exclusive: an authored gate retires GPU work, blacks the display
+at VBlank, revokes old readiness and resets renderer/animation caches before
+replacing the scene. All internal spatial views stay resident. Actual controller
+observations and RAM-to-SPU audio continue during reads/decode/uploads; loading
+does not become queued gameplay catch-up.
+
+The source Great Door opening retains its13 hits and initial Town entry delay.
+Normal travel in both directions now uses source horizontal entrance placement,
+ground ray, facing, fade and28-tick walk without repeating that special delay.
+An inspected provisional return capture exposed the old development spawn behind
+the foreground. Tutorial/right1 now starts at(193.5,63.400625), walks left and
+returns control visibly near(189.627,63.391). No arbitrary relocation was used.
+
+All75 supported destruction emitters cook, including Town's four grave/crystal
+emitters. Native original probes establish guarded planar/uniform-XY Hierarchy
+scaling. Town emitters use the existing scalar path; Tutorial tracks stay399,432B.
+An unused Geo strip was reassigned: Geo5,154/6,336B; break art6,330/7,680B.
+Full occlusion certificate coverage grows to101,886/106,496B. Existing320x240
+framing,48px scenery cap and approved95% sharing remain unchanged.
+
+Three final-CUE routes pass: startup/Focus850 polls, gate return12,112, and Town
+traversal/reset12,562. The last reachesx177.274 before resetting. Both long routes
+load Tutorial->Town->Tutorial; final321,956B scene bytes match the cooked bank.
+Gate waits total508 observed ticks and508 real pad samples; queue peak4/16.
+No reported input, CD, guest, music or ambience underrun faults. Same-scene
+walking adds no scene reads/static uploads. Captures of Town, returned Knight
+and reset were inspected.23 particle-pool drops remain; gate blackouts are still
+loading pauses. These are emulator results, not physical-console timing evidence.
+
+Full suite:286 Python/406 reported native tests. Exact guest-decoder packing
+passes six repeated scene replacements at budgets1,31,1024,2048,8192; final
+MIPS hazards0. Main RAM: code355,652/data830,128/BSS776,068/alignment12, static
+end0x801eef84.20,348B remain before the protected49,152B stack; main frame32,200B,
+nested reserve16,952B. Arena369,180B; Tutorial321,956B/18pages/1,068palettes,
+Town88,200B/6pages/390palettes. No new FPS or stack high-water claim.
+
+EXE SHA256:9af52a2220bb26c011fc36c3c592f95e282e010f7fc41161aca36ba4962d410f.
+BIN SHA256:40bd382393b59d394bc5f57bbad4ba568f44352916de9bdf4f3412feb97feee9.
+Evidence: `.hkpsx/game68/{build-return.log,tests-return.log,validation.json}`,
+`{focus-final,return-final,town-reset-final}/command.json` and scene validation
+reports. `return-provisional` ended mid-load; `return-complete` exposed the old
+spawn. Earlier build-final.log stopped before disc replacement on the old table
+cap. These trials are not final-build validation. Native particle evidence:
+`.hkpsx/town68/particle-validation.json`; source return and enemy audits:
+`.hkpsx/crossroads68/`.
+
+Next: move per-scene visibility certificates from linked tables into a reusable
+CD-loaded bank before adding Crossroads. Exact sizing/API/validation proposal is
+`.hkpsx/scene-certificates69/PLAN.md`; measured84KiB arena replaces110,066B of
+linked tables, reclaiming roughly24KiB before loader cost without reducing art.
+Then implement the well connection and source-checked Zombie Runner contract.
+Town shops/NPCs/bench, well/Mines transitions and gameplay music are unfinished.
+The full-game objective remains active and far from complete.
+
+## Preparation67: full Town coverage and scene replacement
 
 Fresh isolated Windows-source cooks cover Town0..270/-5..76, including central
 street, well and eastern exit. The supported bank is88,980 resident bytes,
@@ -25,9 +84,9 @@ input/audio service during loading and cache invalidation must be integrated and
 replayed before shipping it. No scene-gate package can compile against the current
 joint-residency guest by accident. No new FPS or live-game coverage claim.
 
-## Current playable build:66 Focus audio and gameplay corrections
+## Previous playable build:66 Focus audio and gameplay corrections
 
-The sole `~/Downloads/ps1 games/hk-psx.bin/.cue` pair contains build66.
+Build66 was the previous validated milestone, superseded by provisional68.
 Focus now plays the complete source charging loop and healing sound, including
 repeated heals and tails after charging stops. Sustained charging uses8,000Hz
 mono; the short heal uses22,050Hz mono, matching the existing quality categories.

@@ -11,6 +11,9 @@ pub enum Fault {
     NonConsecutiveUpdate,
     FutureUpdate,
     LateSample,
+    NotStarted,
+    SceneLoadActive,
+    SceneLoadInactive,
 }
 impl Fault {
     pub const fn code(self) -> u32 {
@@ -23,10 +26,13 @@ pub struct Stats {
     pub max_poll_gap: u32,
     pub missed_vblanks: u32,
     pub pending_peak: u32,
+    pub loading_samples: u32,
+    pub loading_ticks: u32,
 }
 pub struct Sampler {
     queue: Queue,
     enabled: bool,
+    loading: bool,
     observed: u32,
     last_poll: u32,
     consumed: u32,
@@ -45,6 +51,7 @@ impl Sampler {
         Self {
             queue: Queue::new(),
             enabled: false,
+            loading: false,
             observed: 0,
             last_poll: 0,
             consumed: 0,
@@ -53,6 +60,8 @@ impl Sampler {
                 max_poll_gap: 0,
                 missed_vblanks: 0,
                 pending_peak: 0,
+                loading_samples: 0,
+                loading_ticks: 0,
             },
             fault: None,
         }
@@ -68,6 +77,43 @@ impl Sampler {
         self.last_poll = tick;
         self.consumed = tick;
         Ok(())
+    }
+    /// A scene transition owns this explicit pause. It may acknowledge pending
+    /// observations, but may not reset history or start at a different sim tick.
+    pub fn begin_scene_load(&mut self, tick: u32) -> Result<(), Fault> {
+        if let Some(fault) = self.fault { return Err(fault); }
+        if !self.enabled { return self.fail(Fault::NotStarted); }
+        if self.loading { return self.fail(Fault::SceneLoadActive); }
+        if tick != self.consumed { return self.fail(Fault::NonConsecutiveUpdate); }
+        self.loading = true;
+        self.acknowledge_load()
+    }
+    /// Acknowledge only observed time. Never read a newer hardware clock here:
+    /// a VBlank arriving after the final checkpoint belongs to normal resume.
+    pub fn end_scene_load(&mut self) -> Result<u32, Fault> {
+        if let Some(fault) = self.fault { return Err(fault); }
+        if !self.loading { return self.fail(Fault::SceneLoadInactive); }
+        self.loading = false;
+        Ok(self.consumed)
+    }
+    fn acknowledge_load(&mut self) -> Result<(), Fault> {
+        // At most CAPACITY queued observations, even after a long clock gap.
+        // Preserve the last observed hold so held buttons do not become edges
+        // merely because the destination scene resumed.
+        loop {
+            match self.queue.take(self.observed) {
+                Ok(Some(_)) => self.stats.loading_samples = self.stats.loading_samples.saturating_add(1),
+                Ok(None) => break,
+                Err(QueueError::AmbiguousWrap) => return self.fail(Fault::AmbiguousClock),
+                Err(_) => return self.fail(Fault::QueueOrder),
+            }
+        }
+        self.stats.loading_ticks = self.stats.loading_ticks.saturating_add(self.observed.wrapping_sub(self.consumed));
+        self.consumed = self.observed;
+        Ok(())
+    }
+    pub fn held_buttons(&self) -> u16 {
+        self.queue.last_consumed_hold()
     }
     fn fail<T>(&mut self, fault: Fault) -> Result<T, Fault> {
         self.fault = Some(fault);
@@ -139,6 +185,7 @@ impl Sampler {
             .max(self.queue.pending_count() as u32);
         self.last_poll = completed;
         self.observed = completed;
+        if self.loading { self.acknowledge_load()?; }
         Ok(true)
     }
     /// Fixed updates consume consecutive real VBlank timestamps. A missing
@@ -148,6 +195,7 @@ impl Sampler {
         if let Some(fault) = self.fault {
             return Err(fault);
         }
+        if self.loading { return self.fail(Fault::SceneLoadActive); }
         if !self.enabled || tick.wrapping_sub(self.consumed) != 1 {
             return self.fail(Fault::NonConsecutiveUpdate);
         }

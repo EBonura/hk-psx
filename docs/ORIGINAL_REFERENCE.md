@@ -217,3 +217,48 @@ hooks, persistent-data-path redirection, and managed audio call instrumentation.
 The isolated bottle additionally
 separates platform preferences/saves from the Steam bottle. Normal guest/disc
 build mechanics are unaffected.
+
+## Native particle scaling probe (68)
+
+After preparing the current driver, an explicit diagnostic command runs fresh
+synthetic particle systems inside the isolated native Unity player:
+
+```sh
+python3 tools/reference_game.py command --name LIVE_RUN particle-probe
+```
+
+Wait for the command acknowledgement in `driver.log`, then inspect
+`particle-scale.csv`. The command does not modify retail scene objects or
+prefabs. It compares Shape and Hierarchy scaling at unit scale, a uniform
+0.81203 scale, and the source Town grave's nearly uniform XY scale with its
+slightly different Z scale. Each case emits one particle and samples its initial
+state and state after native simulation. Separate cases isolate launch speed,
+world-space velocity, world-space force and velocity limiting. CPU `BakeMesh`
+also records the actual billboard dimensions under NullGfx; this verifies mesh
+size, not final rendered lighting or rasterization.
+
+The native measurements show Hierarchy scaling affects initial speed, the
+world-space velocity and force modules, and rendered size. The velocity-limit
+magnitude remains in world units. `Particle.GetCurrentSize` returns the unscaled
+size even though the baked billboard has scaled dimensions. This distinction
+is consistent with Unity's [scaling-mode documentation](https://docs.unity3d.com/ScriptReference/ParticleSystemScalingMode.html).
+
+The three Town grave emitters use Circle shapes confined to XY, world-space
+simulation, zero gravity modifier and no Z velocity or force. Their serialized
+XY scales differ by about 1.2e-7 (below Q16 scale precision); Z differs by about
+0.00024. The host accepts only uniform-XY, unsheared, planar Hierarchy emitters
+and converts size, speed, force and velocity to the existing guest world-space
+fields. It preserves emitter geometry, lifetime, angular values, velocity limit
+and dimensionless collision settings. Other scaling modes, tilted/nonplanar
+Hierarchy motion, nonuniform XY and nonzero gravity fail explicitly pending
+further native validation. Existing Shape-mode effects retain their parameters.
+
+Evidence is retained in `.hkpsx/town68/particle-validation.json`,
+`break-particles.json`, `break-transforms.jsonl`, and the isolated reference runs
+`particle-scale68` and `particle-planar68`. The first uniform probe's complete
+reference run passed. The second command produced and acknowledged all 48
+native samples, but later ordinary gameplay slowed severely and ended through
+the watchdog; launcher cleanup also timed out before the process subsequently
+exited. Its CSV and baked-mesh contracts pass independently, and original inputs
+were rechecked unchanged. Do not cite that second run as successful gameplay
+or claim full Unity particle/RNG/collision parity from these bounded probes.

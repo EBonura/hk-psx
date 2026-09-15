@@ -110,7 +110,7 @@ def prepare(args):
     driver = WORK / 'HKReference.dll'
     references = ['mscorlib.dll', 'netstandard.dll', 'System.dll', 'System.Core.dll', 'Assembly-CSharp.dll',
                   'UnityEngine.dll', 'UnityEngine.CoreModule.dll', 'UnityEngine.Physics2DModule.dll',
-                  'UnityEngine.AudioModule.dll', 'UnityEngine.AnimationModule.dll',
+                  'UnityEngine.AudioModule.dll', 'UnityEngine.AnimationModule.dll', 'UnityEngine.ParticleSystemModule.dll',
                   'UnityEngine.InputLegacyModule.dll', 'UnityEngine.UI.dll', 'PlayMaker.dll']
     # Compile against the ORIGINAL APIs, never a previously patched assembly.
     command = [str(dotnet), str(csc), '-nologo', '-noconfig', '-nostdlib+',
@@ -329,8 +329,8 @@ def command(args):
     elif len(words) == 3 and words[0] == 'scene':
         if not all(word.replace('_', '').isalnum() for word in words[1:]):
             raise ValueError('Expected original scene and gate names')
-    elif words != ['quit']:
-        raise ValueError('Expected buttons MASK, teleport X Y, scene ROOM GATE, or quit')
+    elif words not in (['quit'], ['particle-probe']):
+        raise ValueError('Expected buttons MASK, teleport X Y, scene ROOM GATE, particle-probe, or quit')
     target = output / 'command.txt'
     temporary = output / 'command.pending'
     temporary.write_text(str(time.time_ns()) + ' ' + ' '.join(words) + '\n')

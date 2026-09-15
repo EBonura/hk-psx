@@ -7,13 +7,13 @@ pub const CLUTS:usize=416;
 pub const SCENE_CLUTS:usize=3*CLUTS;
 /// Geo's independent 4bpp art/CLUT allocation in previously unused gaps.
 /// Each tuple is x,y,width,height in VRAM halfwords, not texture pixels.
-pub const GEO_RECTS:[(usize,usize,usize,usize);6]=[
+pub const GEO_RECTS:[(usize,usize,usize,usize);5]=[
     (320,464,64,16),(352,240,32,16),(352,485,32,27),(320,496,32,16),
-    (352,32,8,32),(352,64,32,32),
+    (352,32,8,32),
 ];
 /// Lifeblood and independent break-effect atlases, including their CLUTs.
 pub const LIFE_RECTS:[(usize,usize,usize,usize);1]=[(352,96,32,80)];
-pub const BREAK_RECTS:[(usize,usize,usize,usize);2]=[(352,176,32,64),(360,32,24,32)];
+pub const BREAK_RECTS:[(usize,usize,usize,usize);3]=[(352,176,32,64),(360,32,24,32),(352,64,32,32)];
 #[derive(Clone,Copy)]
 struct Entry {region:Option<usize>,ready:bool,stamp:u32}
 pub struct Banks {entries:[Entry;BANKS],active:Option<usize>,pending:Option<usize>,clock:u32}

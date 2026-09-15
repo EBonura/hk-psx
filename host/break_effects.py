@@ -13,7 +13,7 @@ from breakables import breakable_sources
 from particles import curve_value,gradient_alpha
 from materials import quantize_alpha_coverage
 from geo import place_rectangles
-VRAM_RECTS=((352,176,32,64),(360,32,24,32))
+VRAM_RECTS=((352,176,32,64),(360,32,24,32),(352,64,32,32))
 ALPHAS=(43,85,128)
 
 def q(v):
@@ -28,12 +28,42 @@ def values(c,t=0):
     if mode==2:return [curve_value(c['minCurve'],t)*c['minScalar'],curve_value(c['maxCurve'],t)*c['scalar']]
     raise ValueError('unknown particle curve')
 
-def style(ps,gravity):
+def particle_scale(ps,matrix):
+    """Reduce static uniform-XY planar Hierarchy scaling to world-space guest parameters.
+
+    Unity6000 native ParticleProbe proves world launch/velocity/force scale, but
+    the velocity clamp remains in world units. Shape mode scales only emission
+    positions (already carried by Emitter.basis). Hierarchy also scales rendered
+    particle size; GetCurrentSize returns the unscaled authoring value.
+    Nonuniform-XY/sheared, Local scaling and local-space Hierarchy simulations need
+    a different guest representation and remain explicit errors.
+    """
+    mode=ps['scalingMode']
+    if mode==2:return 1.0
+    if mode!=0:raise ValueError('unsupported particle scaling mode')
+    if ps['moveWithTransform']!=1:raise ValueError('Hierarchy particles require world simulation')
+    columns=[[matrix[i][j]for i in range(3)]for j in range(3)]
+    lengths=[math.sqrt(sum(v*v for v in col))for col in columns]
+    scale=lengths[0]
+    if not math.isfinite(scale) or scale<=0 or any(not math.isfinite(v)or v<=0 for v in lengths) or abs(lengths[1]-scale)>scale*1e-6:
+        raise ValueError('Hierarchy particle XY scale must be positive and uniform')
+    if any(abs(sum(a*b for a,b in zip(columns[i],columns[j])))>scale*scale*1e-6 for i in range(3)for j in range(i)):
+        raise ValueError('Hierarchy particle transform must not shear')
+    if any(abs(matrix[i][j])>1e-12 for i,j in ((0,2),(1,2),(2,0),(2,1))) or ps['ShapeModule']['type']!=10:
+        raise ValueError('Hierarchy particle emission must stay in XY plane')
+    if any(module['enabled'] and values(module['z'])!=[0,0]for module in (ps['ForceModule'],ps['VelocityModule'])):
+        raise ValueError('Hierarchy particle motion must stay in XY plane')
+    if values(ps['InitialModule']['gravityModifier'])!=[0,0]:
+        raise ValueError('Hierarchy particle gravity scaling needs native validation')
+    return scale
+
+
+def style(ps,gravity,scale=1.0):
     im=ps['InitialModule'];shape=ps['ShapeModule'];uv=ps['UVModule'];em=ps['EmissionModule']
     enabled={k for k,v in ps.items()if k.endswith('Module')and isinstance(v,dict)and v.get('enabled')}
     supported={'InitialModule','ShapeModule','EmissionModule','SizeModule','RotationModule','ColorModule','UVModule','VelocityModule','ForceModule','ClampVelocityModule','RotationBySpeedModule','CollisionModule'}
     if enabled-supported:raise ValueError('unsupported particle modules: '+str(enabled-supported))
-    if not ps['playOnAwake'] or ps['looping']or ps['scalingMode']!=2 or ps['moveWithTransform']not in(0,1):raise ValueError('particle simulation space')
+    if not ps['playOnAwake'] or ps['looping']or ps['scalingMode']not in(0,2) or ps['moveWithTransform']not in(0,1):raise ValueError('particle simulation space')
     if im['size3D']or im['rotation3D']or im['gravitySource']!=0 or em['m_BurstCount']or values(em['rateOverDistance'])!=[0,0]:raise ValueError('particle emission mode')
     if shape['type']not in(5,10)or not shape['enabled']:raise ValueError('particle shape')
     if any(shape['m_Position'][k]or shape['m_Rotation'][k]for k in 'xyz'):raise ValueError('particle shape transform')
@@ -73,10 +103,10 @@ def style(ps,gravity):
     gravityv=values(im['gravityModifier'])
     if gravityv[0]!=gravityv[1]:raise ValueError('particle random gravity')
     forcev[1]=[v+gravity*gravityv[0]for v in forcev[1]]
-    fields={'life':[max(1,round(v*60))for v in initial('startLifetime')],'speed':list(map(q,initial('startSpeed'))),'size':list(map(q,initial('startSize'))),
+    fields={'life':[max(1,round(v*60))for v in initial('startLifetime')],'speed':[q(v*scale)for v in initial('startSpeed')],'size':[q(v*scale)for v in initial('startSize')],
         'rotation':[q(math.degrees(v))for v in initial('startRotation')],'color':color,'count':count,'rate':q(rate[0]),'shape':shape['type'],
         'radius':q(shape['radius']['value']),'arc':q(shape['arc']['value']),'shape_scale':[q(shape['m_Scale'][k])for k in 'xyz'],
-        'force':[[q(v)for v in pair]for pair in forcev],'velocity':[[q(v)for v in values(vel[k])]if vel['enabled']else[0,0]for k in 'xyz'],
+        'force':[[q(v*scale)for v in pair]for pair in forcev],'velocity':[[q(v*scale)for v in values(vel[k])]if vel['enabled']else[0,0]for k in 'xyz'],
         'limit':q(values(limit['magnitude'])[0])if limit['enabled']else-1,'dampen':q(limit['dampen'])if limit['enabled']else 0,
         'spin_speed':list(map(lambda v:q(math.degrees(v)),omega)),'spin_range':[q(speedspin['range'][k])for k in 'xy'],
         'collision':bool(collision['enabled']),'bounce':q(values(collision['m_Bounce'])[0]),'collision_dampen':q(values(collision['m_Dampen'])[0]),
@@ -104,15 +134,15 @@ def collect(source=None,metadata=None):
                 tint=dict(mat['m_SavedProperties']['m_Colors'])['_Color']
                 if any(not 0<=tint[c]<=1 for c in 'rgba'):raise ValueError('particle material tint')
                 texture=source.ref(mo.assets_file,dict(mat['m_SavedProperties']['m_TexEnvs'])['_MainTex']['m_Texture']);sid=source.sid(texture)
-                st=style(ps,gravity);st['texture']=sid
+                matrix=sc.world(sc.go_transform[gid]);scale=particle_scale(ps,matrix)
+                st=style(ps,gravity,scale);st['texture']=sid
                 st['color']=[round(v*tint[c])for v,c in zip(st['color'],'rgb')]
                 for sample in st['samples']:sample['alpha']=[round(v*tint['a'])for v in sample['alpha']]
                 if st not in styles:styles.append(st)
-                matrix=sc.world(sc.go_transform[gid])
                 emitters.append({'scene':desc['scene_id'],'owner':desc['scene_id']*128+b['state_index'],'source':po.path_id,'style':styles.index(st),
                     'angle_offset':q(b['angle_offset']),'origin':[q(matrix[i][3])for i in range(3)],'basis':[[q(matrix[i][j])for j in range(3)]for i in range(3)]})
                 textures[sid]=texture
-                source_records.append({'owner':b['source'],'name':b['name'],'part':part['game_object'],'system':source.sid(po),'texture':sid,'shader':shader,'ps_sha256':hashlib.sha256(json.dumps(ps,sort_keys=True).encode()).hexdigest()})
+                source_records.append({'owner':b['source'],'name':b['name'],'part':part['game_object'],'system':source.sid(po),'texture':sid,'shader':shader,'scaling_mode':ps['scalingMode'],'world_parameter_scale':scale,'ps_sha256':hashlib.sha256(json.dumps(ps,sort_keys=True).encode()).hexdigest()})
     if len(styles)>253:raise ValueError('particle style IDs')
     return source,styles,emitters,textures,source_records,ignored
 
@@ -244,7 +274,7 @@ def cook():
         'limitations':['Deterministic RNG,60Hz integration/damping,33-point curves,radius/edge collision and initial-lifetime collision-loss approximation differ from nativeUnity particle physics.',
             'Three baked opacity levels and sourceRGB palette quantization approximate Sprites/Lit lighting/blending.',
             'Existing128-particle pool reports capacity drops; authored maximum-per-emitter counts and lifetimes preserved.',
-            'No active Breakables occur in the current Town entrance; outside-region props are not admitted.',
+            'Town graves use source uniform-XY planar Hierarchy scaling; nonuniform-XY/sheared/out-of-plane and local-space Hierarchy emitters fail closed.',
             'Geo-rock hit jitter/gleam/chips,containingParticles probability events and mainLifeblood cocoon are separate systems.']}
     dest=ROOT/'.hkpsx/break-effects';dest.mkdir(exist_ok=True);(dest/'report.json').write_text(json.dumps(report,indent=2));sheet.save(dest/'art.png')
     print(f'Break effects: {len(emitters)} source emitters/{len(styles)} styles, {len(art)} art variants, {len(blob)} VRAM bytes')

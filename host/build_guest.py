@@ -3,23 +3,23 @@ import os, subprocess, shutil, tempfile, json, hashlib
 from pathlib import Path
 from paths import DISC_LIBRARY, artifacts, build_directory, link_map_path, hazard_report_path
 ROOT=Path(__file__).resolve().parents[1]
-def scene_manifest():
+def scene_manifest(residency="scene_gate"):
     import json
     metadata=ROOT/'data/regions.json'
     report=json.loads(metadata.read_text())
     if not report.get('complete'):raise ValueError('Region cook is incomplete')
     snapshot=ROOT/'.hkpsx/selected-regions.json'
     snapshot.write_text(metadata.read_text())
-    run([ROOT/'.venv/bin/python',ROOT/'host/pack_scenes.py',snapshot],cwd=ROOT)
+    run([ROOT/'.venv/bin/python',ROOT/'host/pack_scenes.py',snapshot,'--residency',residency],cwd=ROOT)
     return json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text())['scenes']
 def run(args,**kw):
     print('+', ' '.join(map(str,args)),flush=True)
     subprocess.run(list(map(str,args)),check=True,**kw)
-def build(telemetry=False, candidate=False):
+def build(telemetry=False, candidate=False, residency="scene_gate"):
     # Derive reservations from the exact final packs, including direct builds.
     from scenery_geometry import generate
     generate(ROOT)
-    rooms = scene_manifest()
+    rooms = scene_manifest(residency)
     atlases=json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text())['atlases']
     # Certificates bind to the final deduplicated bank geometry/palette words.
     # Keep direct guest builds on the same reproducible path as tools/build.py.
@@ -89,5 +89,10 @@ def build(telemetry=False, candidate=False):
     shutil.copy2(exe,outputs['exe'])
     return outputs
 if __name__=='__main__':
-    import sys
-    build('--telemetry' in sys.argv, candidate='--candidate' in sys.argv)
+    import argparse
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--telemetry',action='store_true')
+    parser.add_argument('--candidate',action='store_true')
+    parser.add_argument('--residency',choices=('joint','scene_gate'),default='scene_gate')
+    args=parser.parse_args()
+    build(args.telemetry,candidate=args.candidate,residency=args.residency)

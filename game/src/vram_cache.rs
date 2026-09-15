@@ -1,8 +1,8 @@
-//! Static atlases are uploaded before compact resident scenes are admitted.
-//! The persistent allocation never needs a traversal upload or eviction.
+//! Static atlases are uploaded before the corresponding scene is admitted.
+//! Exclusive scene residency replaces atlases only behind a drained gate blackout.
 use hk_cache::residency;
 use psx_vram::VramRect;
-pub struct Cache {ready:bool}
+pub struct Cache {ready:bool,scene:usize}
 #[no_mangle] pub static mut HK_VRAM_UPLOAD_CANCELLATIONS:u32=0;
 #[no_mangle] pub static mut HK_VRAM_UPLOAD_BYTES:u32=0;
 #[no_mangle] pub static mut HK_VRAM_UPLOAD_MAX_FRAME:u32=0;
@@ -11,25 +11,26 @@ pub struct Cache {ready:bool}
 #[no_mangle] pub static mut HK_VRAM_ACTIVE_BANK:u32=u32::MAX;
 #[no_mangle] pub static mut HK_VRAM_PENDING_REGION:u32=0;
 impl Cache {
-    pub const fn new()->Self {Self{ready:false}}
-    /// The loader has verified and uploaded every atlas descriptor before it
-    /// publishes any immutable compact Scene. No source payload is retained.
-    pub fn admit_bootstrap(&mut self,uploaded:bool) {
-        assert!(uploaded);self.ready=true;
+    pub const fn new()->Self {Self{ready:false,scene:usize::MAX}}
+    /// The loader has verified the selected residency set before publishing
+    /// immutable scene views. No atlas payload is retained in main RAM.
+    pub fn admit_scene(&mut self,region:usize,uploaded:bool) {
+        assert!(uploaded);self.scene=crate::disc::scene_index(region);self.ready=true;
     }
+    pub fn release(&mut self) {self.ready=false;self.scene=usize::MAX;}
     pub fn ready(&self,region:usize)->bool {
-        let _=crate::disc::scene_index(region);self.ready
+        self.ready && (!crate::disc::SCENE_GATE_LOAD || self.scene==crate::disc::scene_index(region))
     }
     pub fn activate(&mut self,region:usize)->usize {
-        let scene=crate::disc::scene_index(region);assert!(self.ready);
+        let scene=crate::disc::scene_index(region);assert!(self.ready(region));
         unsafe {HK_VRAM_ACTIVE_BANK=scene as u32;HK_VRAM_BANK_HITS+=1;}
         scene
     }
 }
-/// Called only while the loader exclusively owns startup scratch. FIFO upload
+/// Called while the loader exclusively owns the scene arena. FIFO upload
 /// plus draw_sync completes before the next CD read can reuse these bytes.
 /// The generated descriptor inventory is checked for exact, disjoint page and
-/// palette coverage by Cache::init before any upload starts.
+/// palette coverage within each scene by Cache::init before uploads start.
 pub fn upload_atlas(a:&crate::disc::AtlasDesc,bytes:&[u8]) {
     assert_eq!(bytes.len(),a.raw_len);
     assert!(!crate::render::dma_pending()&&!psx_rt::interrupts::gp1_queue_pending());
@@ -63,10 +64,7 @@ pub fn upload_atlas(a:&crate::disc::AtlasDesc,bytes:&[u8]) {
         HK_VRAM_UPLOAD_MAX_FRAME=HK_VRAM_UPLOAD_MAX_FRAME.max(bytes.len()as u32);
         // One admission per scene, rather than one per independent atlas chunk.
         if a.kind==0 {
-            for scene in 0..crate::disc::SCENE_COUNT {
-                let first=crate::disc::scene_page_base(scene);
-                if (a.first..a.first+a.count).contains(&first) {HK_VRAM_BANK_MISSES+=1;}
-            }
+            if a.first==crate::disc::scene_page_base(a.scene_index) {HK_VRAM_BANK_MISSES+=1;}
         }
     }
     crate::input::checkpoint();

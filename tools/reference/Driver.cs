@@ -204,6 +204,11 @@ namespace HKReference
                     : UInt32.Parse(value, CultureInfo.InvariantCulture);
                 ReplayDevice.SetButtons(mask);
             }
+            else if (command == "particle-probe" && words.Length == offset + 1)
+            {
+                ParticleProbe.Run(output);
+                Note("TEST SETUP synthetic native particle scaling probe; retail objects unchanged");
+            }
             else if (command == "scene" && words.Length == offset + 3 && gm != null)
             {
                 string scene = words[offset + 1];

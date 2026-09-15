@@ -28,8 +28,9 @@ use std::cell::RefCell;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]pub struct VramRect{x:u16,y:u16,w:u16,h:u16}
 impl VramRect{pub fn new(x:u16,y:u16,w:u16,h:u16)->Self{Self{x,y,w,h}}}
 mod disc {
-    pub struct AtlasDesc{pub kind:u8,pub first:usize,pub count:usize,pub raw_len:usize}
+    pub struct AtlasDesc{pub scene_index:usize,pub kind:u8,pub first:usize,pub count:usize,pub raw_len:usize}
     pub const SCENE_COUNT:usize=2;
+    pub const SCENE_GATE_LOAD:bool=EXCLUSIVE;
     pub fn scene_index(region:usize)->usize{[0,0,1,1][region]}
     pub fn scene_page_base(scene:usize)->usize{[0,14][scene]}
 }
@@ -75,7 +76,7 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
     for i in 0..count{for word in 0..stride/2 {
         let at=i*stride+word*2;staging[at..at+2].copy_from_slice(&value(kind,first+i,word).to_le_bytes());
     }}
-    vram_cache::upload_atlas(&disc::AtlasDesc{kind,first,count,raw_len:n},&staging[..n]);
+    vram_cache::upload_atlas(&disc::AtlasDesc{scene_index:0,kind,first,count,raw_len:n},&staging[..n]);
     LOG.with(|l|{
         let log=l.borrow();assert!(!log.pending);
         assert_eq!(&log.events[log.events.len()-4..],&[Event::Wait,Event::Clear,Event::Sync,Event::Checkpoint]);
@@ -94,7 +95,10 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
     for (first,count)in[(0,397),(397,23),(420,405),(825,384)] {
         upload_chunk(1,first,count,&mut staging);assert!(!cache.ready(3));
     }
-    cache.admit_bootstrap(true);for region in 0..4{assert!(cache.ready(region));assert_eq!(cache.activate(region),region/2);}
+    cache.admit_scene(0,true);for region in 0..4{
+        assert_eq!(cache.ready(region),!disc::SCENE_GATE_LOAD||region<2);
+        if cache.ready(region){assert_eq!(cache.activate(region),region/2);}
+    }
     // Independent fixed physical map; do not call page_xy/clut_xy here.
     let mut expected=vec![0xdead;1024*512];let mut touched=vec![false;1024*512];
     for y in 0..512{for x in 384..1024{
@@ -116,6 +120,25 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
         assert_eq!(log.events.iter().filter(|e|matches!(e,Event::Upload(_))).count(),1229);
     });
 }
+#[test]fn scene_replacement_revokes_previous_owner_and_reuploads_shared_slots(){
+    if !disc::SCENE_GATE_LOAD{return;}
+    reset();let mut cache=vram_cache::Cache::new();
+    for (scene,tag)in[(0,0x1234u16),(1,0xabcd),(0,0x5678),(1,0x9abc)] {
+        cache.release();for region in 0..4{assert!(!cache.ready(region));}
+        LOG.with(|l|{let mut log=l.borrow_mut();assert!(!log.pending);log.writes.fill(0);});
+        let bytes:Vec<_>=(0..16384).flat_map(|_|tag.to_le_bytes()).collect();
+        vram_cache::upload_atlas(&disc::AtlasDesc{scene_index:scene,kind:0,first:0,count:1,raw_len:32768},&bytes);
+        assert!(!cache.ready(scene*2));
+        cache.admit_scene(scene*2,true);
+        for region in 0..4{assert_eq!(cache.ready(region),region/2==scene);}
+        assert_eq!(cache.activate(scene*2+1),scene);
+        LOG.with(|l|{let log=l.borrow();
+            for y in 0..256{for x in 384..448{assert_eq!(log.pixels[y*1024+x],tag);}}
+            assert_eq!(log.pixels[0],0xdead);assert_eq!(log.pixels[480*1024],0xdead);
+            assert!(!log.pending);
+        });
+    }
+}
 #[test]fn malformed_descriptors_and_active_gpu_cannot_write_or_publish(){
     use std::panic::{catch_unwind,AssertUnwindSafe};
     for (kind,first,count,raw_len,bytes_len)in[
@@ -127,16 +150,16 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
         (2,0,1,32,32), // unsupported kind
     ] {
         reset();let bytes=vec![0;bytes_len];
-        assert!(catch_unwind(AssertUnwindSafe(||vram_cache::upload_atlas(&disc::AtlasDesc{kind,first,count,raw_len},&bytes))).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(||vram_cache::upload_atlas(&disc::AtlasDesc{scene_index:0,kind,first,count,raw_len},&bytes))).is_err());
         LOG.with(|l|{let log=l.borrow();assert!(log.writes.iter().all(|&n|n==0));assert!(!log.pending);});
     }
     for queued in [false,true] {
         reset();LOG.with(|l|{let mut log=l.borrow_mut();log.dma=!queued;log.queued=queued;});
-        assert!(catch_unwind(||vram_cache::upload_atlas(&disc::AtlasDesc{kind:1,first:0,count:1,raw_len:32},&[0;32])).is_err());
+        assert!(catch_unwind(||vram_cache::upload_atlas(&disc::AtlasDesc{scene_index:0,kind:1,first:0,count:1,raw_len:32},&[0;32])).is_err());
         LOG.with(|l|assert!(l.borrow().events.is_empty()));
     }
     let mut cache=vram_cache::Cache::new();
-    assert!(catch_unwind(AssertUnwindSafe(||cache.admit_bootstrap(false))).is_err());
+    assert!(catch_unwind(AssertUnwindSafe(||cache.admit_scene(0,false))).is_err());
     assert!(!cache.ready(0));assert!(catch_unwind(AssertUnwindSafe(||cache.activate(0))).is_err());
 }
 '''.replace('RESIDENCY', str(ROOT / 'shared/hk-cache/src/residency.rs')).replace(
@@ -144,10 +167,12 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
         (ROOT / '.hkpsx').mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='bootstrap-atlas-test-', dir=ROOT / '.hkpsx') as temp:
             path = Path(temp)
-            (path / 'probe.rs').write_text(code)
-            built = subprocess.run(['rustc', '--edition=2021', '--test', str(path / 'probe.rs'),
-                                    '-o', str(path / 'probe')], capture_output=True, text=True)
-            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
-            tested = subprocess.run([str(path / 'probe'), '--test-threads=1'], capture_output=True, text=True)
-            self.assertEqual(tested.returncode, 0, tested.stdout + tested.stderr)
-            self.assertIn('all_twenty_pages_and_1209_palettes_are_exact_disjoint_and_complete', tested.stdout)
+            for exclusive in ('false','true'):
+                with self.subTest(exclusive=exclusive):
+                    (path / 'probe.rs').write_text(code.replace('EXCLUSIVE',exclusive))
+                    built = subprocess.run(['rustc', '--edition=2021', '--test', str(path / 'probe.rs'),
+                                            '-o', str(path / 'probe')], capture_output=True, text=True)
+                    self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                    tested = subprocess.run([str(path / 'probe'), '--test-threads=1'], capture_output=True, text=True)
+                    self.assertEqual(tested.returncode, 0, tested.stdout + tested.stderr)
+                    self.assertIn('all_twenty_pages_and_1209_palettes_are_exact_disjoint_and_complete', tested.stdout)
