@@ -29,6 +29,27 @@ pub enum Error {
     ConflictingRewardId,
 }
 
+/// Compact, endian-explicit store snapshot used by the future memory-card
+/// adapter. The codec is deliberately independent of card I/O and accepts no
+/// unchecked count, duplicate ID or trailing payload.
+pub const SAVE_MAGIC: [u8; 4] = *b"HKSV";
+pub const SAVE_VERSION: u16 = 1;
+const SAVE_HEADER_BYTES: usize = 8;
+const SAVE_ENTRY_BYTES: usize = 12;
+const SAVE_CHECKSUM_BYTES: usize = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveError {
+    BufferTooSmall,
+    BadMagic,
+    BadVersion,
+    BadLength,
+    BadChecksum,
+    InvalidId,
+    Unsorted,
+    Capacity,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operation {
     Set(i32),
@@ -153,6 +174,63 @@ impl<const N: usize> Store<N> {
         })?;
         Ok(true)
     }
+
+    pub const fn encoded_len(&self) -> usize {
+        SAVE_HEADER_BYTES + self.len * SAVE_ENTRY_BYTES + SAVE_CHECKSUM_BYTES
+    }
+
+    /// Encode the sorted sparse store without heap allocation.
+    pub fn encode(&self, out: &mut [u8]) -> Result<usize, SaveError> {
+        let needed = self.encoded_len();
+        if out.len() < needed { return Err(SaveError::BufferTooSmall); }
+        out[..4].copy_from_slice(&SAVE_MAGIC);
+        out[4..6].copy_from_slice(&SAVE_VERSION.to_le_bytes());
+        out[6..8].copy_from_slice(&(self.len as u16).to_le_bytes());
+        let mut at = SAVE_HEADER_BYTES;
+        let mut previous = 0;
+        for entry in self.entries() {
+            if entry.id.0 == 0 { return Err(SaveError::InvalidId); }
+            if entry.id.0 <= previous { return Err(SaveError::Unsorted); }
+            out[at..at + 8].copy_from_slice(&entry.id.0.to_le_bytes());
+            out[at + 8..at + 12].copy_from_slice(&entry.value.to_le_bytes());
+            at += SAVE_ENTRY_BYTES;
+            previous = entry.id.0;
+        }
+        let checksum = checksum(&out[..at]);
+        out[at..at + 4].copy_from_slice(&checksum.to_le_bytes());
+        Ok(needed)
+    }
+
+    /// Decode one complete snapshot and reject malformed/truncated records
+    /// before publishing any entry into the returned store.
+    pub fn decode(bytes: &[u8]) -> Result<Self, SaveError> {
+        if bytes.len() < SAVE_HEADER_BYTES + SAVE_CHECKSUM_BYTES { return Err(SaveError::BadLength); }
+        if bytes[..4] != SAVE_MAGIC { return Err(SaveError::BadMagic); }
+        if u16::from_le_bytes([bytes[4], bytes[5]]) != SAVE_VERSION { return Err(SaveError::BadVersion); }
+        let count = u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
+        if count > N { return Err(SaveError::Capacity); }
+        let needed = SAVE_HEADER_BYTES.checked_add(count.checked_mul(SAVE_ENTRY_BYTES).ok_or(SaveError::BadLength)?).and_then(|n|n.checked_add(SAVE_CHECKSUM_BYTES)).ok_or(SaveError::BadLength)?;
+        if bytes.len() != needed { return Err(SaveError::BadLength); }
+        let stored = u32::from_le_bytes(bytes[needed-4..needed].try_into().unwrap());
+        if checksum(&bytes[..needed-4]) != stored { return Err(SaveError::BadChecksum); }
+        let mut result = Self::new();
+        let mut at = SAVE_HEADER_BYTES;
+        let mut previous = 0;
+        for _ in 0..count {
+            let id = u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
+            if id == 0 { return Err(SaveError::InvalidId); }
+            if id <= previous { return Err(SaveError::Unsorted); }
+            result.entries[result.len] = Entry { id: StateId(id), value: i32::from_le_bytes(bytes[at + 8..at + 12].try_into().unwrap()) };
+            result.len += 1;
+            previous = id;
+            at += SAVE_ENTRY_BYTES;
+        }
+        Ok(result)
+    }
+}
+
+fn checksum(bytes: &[u8]) -> u32 {
+    bytes.iter().fold(2166136261u32, |hash, &byte| hash.wrapping_mul(16777619) ^ byte as u32)
 }
 impl<const N: usize> Default for Store<N> {
     fn default() -> Self {
@@ -408,5 +486,38 @@ mod tests {
             core::mem::size_of::<ActiveScene<ACTIVE_FLAG_WORDS, ACTIVE_TIMERS>>(),
             1_176
         );
+    }
+    #[test]
+    fn snapshot_round_trip_is_sorted_and_checksum_bound() {
+        let mut store = Store::<4>::new();
+        store.apply(Mutation { id: StateId(9), operation: Operation::Set(-3) }).unwrap();
+        store.apply(Mutation { id: StateId(2), operation: Operation::Set(17) }).unwrap();
+        let mut bytes = [0u8; 64];
+        let len = store.encode(&mut bytes).unwrap();
+        let restored = Store::<4>::decode(&bytes[..len]).unwrap();
+        assert_eq!(restored.entries(), store.entries());
+        assert_eq!(len, store.encoded_len());
+    }
+    #[test]
+    fn snapshot_rejects_truncation_version_and_corruption() {
+        let mut store = Store::<2>::new();
+        store.apply(Mutation { id: StateId(1), operation: Operation::Set(4) }).unwrap();
+        let mut bytes = [0u8; 64];
+        let len = store.encode(&mut bytes).unwrap();
+        assert!(matches!(Store::<2>::decode(&bytes[..len - 1]), Err(SaveError::BadLength)));
+        bytes[4] = 2;
+        assert!(matches!(Store::<2>::decode(&bytes[..len]), Err(SaveError::BadVersion)));
+        bytes[4] = SAVE_VERSION as u8;
+        bytes[12] ^= 1;
+        assert!(matches!(Store::<2>::decode(&bytes[..len]), Err(SaveError::BadChecksum)));
+    }
+    #[test]
+    fn snapshot_capacity_is_checked_before_mutation() {
+        let mut store = Store::<2>::new();
+        store.apply(Mutation { id: StateId(1), operation: Operation::Set(1) }).unwrap();
+        store.apply(Mutation { id: StateId(2), operation: Operation::Set(2) }).unwrap();
+        let mut bytes = [0u8; 64];
+        let len = store.encode(&mut bytes).unwrap();
+        assert!(matches!(Store::<1>::decode(&bytes[..len]), Err(SaveError::Capacity)));
     }
 }
