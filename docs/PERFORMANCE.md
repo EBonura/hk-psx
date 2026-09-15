@@ -3,9 +3,9 @@
 ## Active 30 fps target (2026-09-15)
 
 The acceptance budget is **at most two VBlanks per rendered gameplay frame**.
-The current pass51 disc averages1.976839VBlanks (approximately30fps at
-nominal60Hz), with256 /2,501 /170 /9 intervals at one /two /three /four ticks.
-The strict gate still fails on179 of2,936 intervals. Pass48 had189 of2,926,
+The retained pass54 disc (restored as57) averages1.957504VBlanks (approximately30fps at
+nominal60Hz), with285 /2,527 /147 /6 intervals at one /two /three /four ticks.
+The strict gate still fails on153 of2,965 intervals. Pass48 had189 of2,926,
 mean1.983254. One-tick intervals improve the mean; they must not disguise
 remaining three/four-tick stutters. Original route mean was2.5523VBlanks.
 
@@ -22,9 +22,9 @@ Final Lifeblood and Town captures match their references exactly. The long-route
 endpoint is unchanged;89 final pixels differ only within the Knight sprite,
 with one additional route tick. All scenery/HUD pixels match49. Lifeblood's four
 earned-health checks pass; the Great Door opens after13hits. Long/Lifeblood have
-zero boundary waits;Town records2 frame-boundary wait ticks without CD/static
+zero boundary waits;Town records1 frame-boundary wait ticks without CD/static
 uploads. Pre-existing Lifeblood/Town particle drops14/23 remain. No input faults
-or missed samples; input hashes stable. Tests246Python/365directnative pass,
+or missed samples; input hashes stable. Tests247Python/367directnative pass,
 final binary hazards0. These are emulator measurements, not silicon proof.
 
 Greedy/tail clipping, compiler-wide O2/opt-s, rotated-cover and texel-cell trials
@@ -99,10 +99,78 @@ starving GPU submission. All9 four-tick cases have57–85 particles and4–20 de
 115/189 late intervals have sampled GPU command accounting below two ticks.
 Accounting can straddle display frames, so this is not a hard GPU lower bound.
 FIRST_KICK_LINES starts within render and omits preceding simulation delay.
-Next candidate: broader immutable particle precomputation with exact RNG,
-nonlinear movement, collision and rendered-state comparison. Phase indexing
+This motivated the retained immutable particle precomputation below, with exact
+RNG, nonlinear movement, collision and rendered-state comparison. Phase indexing
 alone and static edge grids were already measured too small to justify adding.
 Evidence: `.hkpsx/precompute49-tail-audit/RESULT.md`.
+
+The source-local scenery-program audit found another possible future cache:
+immutable local alpha/core seed partitions plus repaired vertices, while keeping
+live cuts and packet-budget decisions current. Exact repair depends on anchor
+parity for ties-to-even and viewport-dependent subdivision selection; a single
+relative child array is unsafe. Addressable sampled instruction work is only
+about1.4–1.7ms in heavy15/18/20 before lookup cost and overlap with idle prefix
+preparation. No implementation or guaranteed saving is claimed. Evidence:
+`.hkpsx/scenery-program-audit/RESULT.md`.
+
+## Particle precomputation experiments
+
+Pass52 tried exact square-corner reuse: two signed half-size/trigonometric
+products derive four corners with the same per-product truncation as the
+original rotations. Fractional-angle, signed-size and randomized native tests
+passed. The full route nevertheless regressed from179/2,936 late intervals
+to193/2,931, mean1.980212 with8 four-tick intervals. The change was reverted.
+No reduction in isolated arithmetic is treated as delivered performance proof.
+Evidence: `.hkpsx/30fps-pass52-profile/` and corresponding build/test logs.
+
+Pass53 adds host-cooked tracks for1,513 source-seeded particle ordinals across
+71 emitters. Each of33 phases stores exact half-size, collision radius, base spin
+and quantized opacity in two words. This costs399,432 bytes plus142 bytes of
+emitter bases;128 live IDs add256 bytes to the pool. RNG consumption, particle
+counts and live force, damping, motion, collision and speed-dependent spin remain
+unchanged. Unsupported future emitters retain the scalar path, without clamping.
+Generated-slice identity guards prevent generic emitters from binding these tracks.
+
+Pass53 was mixed: mean1.971467,184/2,944 late intervals, including6 four-tick.
+Pass54 changes live IDs to one-based with zero as the scalar sentinel. It reaches
+mean1.957504,153/2,965 late intervals, including6 four-tick, versus179 and9 in51.
+Its main frame is still32,104 bytes, only8 fewer than53. The initial hypothesis
+that zero initialization would remove a large temporary was not established.
+Exact guest disassembly verifies that the cooked path is used and the old scalar
+shape path receives no sampled ticks in the53 profile. Track data raises the
+static span to1,675,768 bytes, leaving306,440 before the protected48KiB stack.
+
+The portable source-data proof runs with:
+`.venv/bin/python tools/test_particle_tracks.py` after cooking local Windows
+assets. It compares199,980 phase values across6,060 admitted/truncated/directional
+instances and334,107 cached draw/shape states over650-tick trajectories per owner.
+Floor/slope contacts, removed terrain, scene pauses and pool reuse match the
+scalar implementation. The lightweight suite includes a synthetic full-pool
+trajectory proof and explicit unpackable-emitter fallback. Generated proof
+fixtures and source assets remain ignored. Exactness is not a timing guarantee.
+
+An exact53 I-cache event capture reproduced all1,672 route rows byte-for-byte.
+It found7.30M scenery self-eviction cycles across186 display changes, including
+conflicts between admitted hidden-occluder scans and packet construction4KiB
+apart. This is a gross ceiling, not an achievable saving. Total53 I-cache stalls
+were already12.48M lower than51, while stack RAM stalls were25.35M higher; this
+conflict is not a proved cause of53's mixed result. The bounded55 experiment
+keeps cheap empty/bounds/union rejection inline and outlines only the admitted
+scan and multi-rectangle subtraction. Its200,000-case native comparison preserves
+Boolean results, counters and initialized partitions. The full55 replay gives175/2,957 late intervals, including3 four-tick,
+mean1.962800. Compared with54 it reduces the worst stalls but adds22 missed
+deadlines overall, so the extraction was reverted. Lifeblood/Town images and
+checks remained exact. Evidence: `.hkpsx/pass53-icache-audit/RESULT.md`.
+
+Pass56 keeps world construction out of line. Final MIPS confirms that startup
+and reset pass the final State as the return destination. Main shrinks32,104
+->18,168 bytes, but a14,624-byte constructor frame still holds intermediate
+arrays/copies; combined construction frames total32,792 before nested calls.
+This reduces the permanent gameplay frame, not total initialization work.
+Despite that benefit, the route regresses against54:158/2,954 late intervals,
+including7 four-tick, mean1.964455. It was reverted to retain54's better frame
+cadence. This remains a possible later stack-budget change if separately needed.
+The actual-CUE health/progression checks and final Lifeblood/Town images passed.
 
 ## Debris comparisons and progression build (2026-09-14)
 

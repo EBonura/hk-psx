@@ -9,60 +9,42 @@ Its history remains on `claude/hk-psx-project-state-d72a31` at `8db50a5` and
 remote `codex/bootstrap`. No sibling repository was changed. See
 `docs/CLAUDE_OPTIMIZATION_REVIEW.md` for the complete nine-file salvage review.
 
-**Pass51 is the current single playable disc. Stable30fps is NOT achieved.**
-At320×240 the long route averages1.976839 VBlanks:256 /2,501 /170 /9 intervals
-at one /two /three /four ticks.179/2,936 exceed two ticks, versus189/2,926 in48.
-One-tick intervals improve the mean but do not excuse remaining stutters.
-The strict gate remains `--max-frame-route-ticks 2 --require-seamless`.
+**Pass54 is retained and restored as57 in the single playable disc. Stable30fps
+is NOT achieved.** The long route averages1.957504 VBlanks:285 /2,527 /147 /6
+intervals at one /two /three /four ticks;153/2,965 exceed two, versus179/2,936
+and9 four-tick in51. Strict gate remains `--max-frame-route-ticks 2 --require-seamless`.
 
-Retained this resumption:
+Retained source: exact source-seeded destruction-particle tracks for1,513
+ordinals/71 emitters.33 two-word phases cache half-size, radius, base spin and
+opacity. Host RNG consumption is exact; live physics/collision stays runtime.
+Generated-slice identity guards and unpackable-emitter scalar fallback remain.
+One-based live IDs use0 for empty/scalar. Table payload399,432B, emitter bases142B,
+live IDs256B; Particle48B, Pool6,416B. Earlier compact HKSCNE02 atlas separation,
+row events and exact occlusion/prefix preparation from51 are unchanged.
 
-- HKSCNE02 removes static atlas bytes from resident RAM. Bootstrap uploads23
-  validated chunks through the empty arena, synchronizes each upload, then
-  admits compact scenes. Arena1,069,056 ->369,180 bytes; raw records369,172.
-  Retry resets admissions before menu art can overwrite the atlas. Packed320B
-  texture flags replace CPU palette/texel reads during activation.
-- Host full HKSCNE01 files and existing raw/stored provenance fields remain
-  intact for texture/occlusion analysis. New resident_raw/resident_stored fields
-  bind compact scene chunks. Never pair a pre49 EXE with the new-format disc.
-- Tile retirements use source-row masks rather than one event per cell. Exact
-  ordering is preserved, including disconnected cells from the same owner.
-- Scratch remains948/1024 bytes. The pass50 direct-column run map was
-  pixel-exact but regressed late intervals189 ->195 and was reverted.
-  Its7.1% isolated instruction reduction did not improve delivered cadence.
-- Existing32 terminal pieces,8 subtract pieces,124 grouped seam certificates,
-  inverse activation binding, exact roots/sweeps and prefix reuse remain.
+Rejected experiments:52 square-corner reuse193 late;53 MAX live sentinel184late;
+55 admitted hidden-scan outlining175late/3four;56 outlined State construction
+158late/7four.54 has153late/6four.56 did shrink main32,104 ->18,168B, but its14,624B
+constructor still contains intermediate copies, and cadence worsened. It is
+reverted.55's exact cache trace proved persistent4KiB scenery conflicts, not an
+automatic speedup from extraction. Production render.rs and world.rs match51.
 
-Earlier retained work includes CPU-only background packet preparation during
-existing GPU waits, exact sparse state matching, reusable rectangular-occluder
-snapshots and complete texture-alias invalidation. No upload or GPU kick moves
-before the prior flip; animation lifetime remains unchanged. Claude's early
-bounds rejection uses 480 bytes of packed indices rather than 7,680 bytes of
-full extrema. Full-frame pipelining was not imported.
+Validation:247 Python/367directnative tests, hazards0. The portable proof
+`.venv/bin/python tools/test_particle_tracks.py` adds199,980 exact source phases
+and334,107 trajectory shape/draw comparisons including contacts and pool reuse.
+It requires local cooked Windows reports and writes ignored proof fixtures.
+Long endpointregion8 x163.153656/y6.390625 health4, no input faults/missed polls,
+traversal CD/static uploads or boundary waits. Final89 changed pixels versus51
+are within the Knight; scenery/HUD exact. Actual-CUE Lifeblood all4checks pass,
+Great Door13hits/opened1/transition1/Town93. Both final images exact51. Life waits0,
+Town1 tick waiting for frame boundary withoutCD/staticupload; drops14/23 remain.
 
-Validation:
-
-- 246 Python tests and365 directly reported native/Rust tests passed.
-- Final EXE hazard scan0. SDK7b929ce473ed44b10b0ffca08f413eebf4eeeec4,
-  nightly2026-03-25, trim-paths and R3000 mitigation retained.
-- Long route endpoint region8 x163.153656/y6.390625 health4, no input faults,
-  missed polls, traversal CD/static uploads or boundary waits. Strict frame
-  gate fails. Final89 changed pixels are exclusively within the Knight sprite;
-  scenery/HUD identical to49. Final route includes one additional tick.
-- Actual-CUE Lifeblood passes all four health checks; final image exact49.
-- Actual-CUE Great Door13hits, opened1, transition1, Town region93, image exact49.
-  Lifeblood boundary waits0; Town2 ticks waiting for a frame boundary without
-  CD/static upload work. Pre-existing particle drops14/23 remain unresolved.
-- Inputs hash-stable; captures inspected. Final actualCUE tests are complete.
-
-Evidence: `.hkpsx/30fps-pass51-{profile,lifeblood,town}/`,
-`.hkpsx/30fps-pass51-{build,tests}.log`, `.hkpsx/30fps-pass51-validation.png`,
-and `.hkpsx/30fps-pass51-final-difference.png`.
-EXE SHA256: `b9dcb98abf2fb765a1da69e6a157a77873d35605ec2bd4313ce6ad2437f0ff4c`
-BIN SHA256: `0d34a4dedbdd1629d2d766550b6f2350bdbc2fd3201d89ea7f03a42bf167534e`
-`.hkpsx/build.json` binds all current outputs and the exact map. Profile
-`artifacts/` contains independent EXE/map/build-report copies; use these for
-historical comparisons, since ordinary dist/build files are overwritten.
+Evidence: `.hkpsx/30fps-pass54-{profile,lifeblood,town}/`,54validation.png,
+55/56 replays and logs, `.hkpsx/particle-track-audit/portable/proof.json`,
+`.hkpsx/pass53-icache-audit/RESULT.md`, `.hkpsx/scenery-program-audit/RESULT.md`.
+The57 rebuild restores the retained54 binary, with identity proof in
+`.hkpsx/30fps-pass57-identity.json`. Historical profile artifacts contain frozen
+EXE/map/build reports; no historical disc copies exist. Source is pushed to main.
 
 ## Constraints
 
@@ -91,10 +73,10 @@ caused SHA mismatches; that worktree is now removed. Never reproduce this setup.
 
 ## Budgets and remaining work
 
-Pass51 code337,340 /data369,216 /BSS567,800; static span1,274,360 ending
-0x801471f8. Gap before reserved48KiB stack707,848 bytes. Main frame25,464,
-remaining nested reserve23,688. Scratch948/1,024 bytes. These are linked budgets,
-not measured stack high-water. Scene arena369,180, aligned minimum369,176.
+Retained54/57 code338,116 /data769,840 /BSS567,800; static span1,675,768 ending
+0x801a91f8. Gap before reserved48KiB stack306,440 bytes. Main frame32,104,
+remaining nested reserve17,048. Scratch948/1,024 bytes. Linked budgets are not
+measured stack high-water. Scene arena369,180, aligned minimum369,176.
 Both authored scenes/atlases reside before gameplay:98 spatial regions of
 Tutorial/Town, not98 full rooms. Static atlas payload694,048 bytes remains in
 VRAM;23 separate startup chunks total321,841 stored bytes. Compact scene chunks
@@ -119,8 +101,13 @@ particle/debris bursts;115/189 late intervals had sampled GPU accounting below
 the two-tick budget. Exact timelines show CPU simulation catch-up starving GPU
 submissions. FIRST_KICK_LINES starts inside render and excludes that prior
 simulation delay. Evidence: .hkpsx/precompute49-tail-audit/RESULT.md.
-The next candidate is materially broader immutable particle precomputation,
-with exact RNG, collisions, nonlinear state and all rendered fields preserved.
+Particle precomputation is now retained. The54 tail audit reports116 background
+prefix misses and66 frames with40+ particles among153 late intervals. Next
+inspect residual simulation/scenery critical paths, not more blind code layout
+trials. Immutable Z-force interpolation is a small bounded possibility; the
+source-program audit estimates1.4–1.7ms gross addressable work in heavy15/18/20
+before lookup and idle-prefix overlap. Exact repair requires anchor parity and
+viewport-dependent subdivision; no such cache is implemented.
 Phase-index-only caching (~0.03ms) and static edge grids (~0.043ms) were already
 rejected; existing cached sweeps/edge filtering must not be rediscovered.
 A combined static coverage field was also rejected:52,928 compressed bytes plus

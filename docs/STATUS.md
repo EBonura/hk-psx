@@ -4,52 +4,60 @@
 
 The user's next milestone is a complete start-to-finish game, after the strict
 320×240 two-VBlank target passes. Gameplay expansion remains behind that gate.
-The gameplay sequence is recorded in [ROADMAP.md](ROADMAP.md): restore the normal
-start/save/death loop, expand connected areas and source progression systems,
-verify a new-game-to-ending route, then cover remaining paths and content.
+[ROADMAP.md](ROADMAP.md) covers normal start/save/death, connected areas and source
+progression, then a new-game-to-ending route and remaining paths/content.
 Full-game compatibility and stable30fps are not yet established.
 
-**Pass51 is the sole validated playable disc**, after reverting pass50's
-direct-column run map. The retained compact-scene change removes699,876 bytes from the arena
-without changing texture quality or traversal residency. Startup atlas chunks
-are checksum-validated and synchronized before compact scene admission. Retry
-revokes all admissions before menu art can overwrite VRAM. Packed texture facts
-replace runtime atlas reads, and row retirement events replace per-cell lists.
+**Pass54 is the retained optimization, restored as the sole playable disc in57.**
+It adds exact host-cooked destruction-particle tracks:1,513 ordinals,33 phases,
+two words per phase for size/radius/base spin/opacity. Source RNG and live
+motion, forces, damping, contacts and speed-dependent spin remain unchanged.
+Generic or unpackable emitters use scalar evaluation. Pool IDs are one-based,
+with zero as the empty/scalar sentinel. Compact scene residency, packed texture
+facts and row-retirement events from51 remain unchanged.
 
-Pass49 measured1.978520 VBlanks,189/2,933 late intervals (180 three-tick,9 four).
-Pass50's isolated7.1% helper instruction reduction instead produced195 late
-intervals, including10 at four ticks; it was rejected. Scratch returns to948B.
-Final51 averages1.976839 VBlanks:256 /2,501 /170 /9 intervals at one /two /three /
-four ticks.179/2,936 exceed two ticks, versus189/2,926 in48. The strict profiler
-fails only the maximum frame interval. The mean reaching nominal30fps does not
-pass the strict maximum-two-tick gate.
-No original-console timing claim is made. Existing framing/layers/effects and
-48px scenery cap/approved95% deduplication remain unchanged.
+The retained route averages1.957504 VBlanks:285 /2,527 /147 /6 intervals at one /
+two /three /four ticks.153/2,965 exceed two ticks, down from179/2,936 in51;
+four-tick stalls fall9 ->6. The strict profiler fails only the maximum frame
+interval. Average nominal30fps does not pass the maximum-two-tick gate.
+Existing320×240 framing/layers/effects and48px scenery cap/approved95% static
+deduplication remain unchanged. These are emulator results, not silicon proof.
 
-Tests246 Python/365 directly reported native tests pass, including full/compact
-record parity, decoder budgets, bootstrap retries and exact VRAM upload layout.
-Final51 binary hazards are zero. Memory: arena369,180 bytes, linked static
-span1,274,360;707,848 bytes remain before the protected48KiB stack. Main frame
-25,464 bytes; actual main-stack high-water is unmeasured. See BUDGET.md.
+Tests247 Python/367 directly reported native tests pass. A portable source-data
+proof adds199,980 exact phase comparisons and334,107 cached draw/shape checks
+through source-seeded trajectories, contacts and pool reuse. Run it explicitly
+with `.venv/bin/python tools/test_particle_tracks.py` after a local asset cook.
+Final binary hazards0. Linked static span1,675,768 bytes;306,440 remain before
+the protected48KiB stack. Main frame32,104; nested reserve17,048, without a
+measured high-water claim. Scene arena369,180; scratch948/1,024. See BUDGET.md.
 
-The broader combined coverage field and a global memoized tile-run cache were
-not integrated: useful gains disappear after safety/threshold/lookup costs,
-especially in heavy regions. The49 tail audit instead identifies particle and
-debris bursts delaying GPU submissions. Next bounded candidate is substantial
-immutable particle precomputation with exact state/RNG/collision validation.
-See PERFORMANCE.md and ignored `.hkpsx/precompute49-tail-audit/RESULT.md`.
+Rejected follow-ups:52 square-corner reuse regressed late intervals179 ->193.
+53 tracks with a0xFFFF live sentinel gave184 late/6 four-tick;54's zero sentinel
+improved the complete route. Exact I-cache tracing then identified persistent
+scenery self-evictions, but55's admitted-scan extraction gave175 late/3 four-tick
+and was reverted.56 moved constructor temporaries out of main, reducing its
+frame to18,168 bytes, but gave158 late/7 four-tick and was also reverted.
+Native correctness and lower isolated cost do not establish faster gameplay.
+See PERFORMANCE.md for evidence and the separate RAM/stack tradeoffs.
 
-Final actual-CUE validation: long-route endpoint remains region8,
-x163.153656/y6.390625, health4. No input faults, missed polls, traversal CD reads,
-static VRAM uploads or long-route boundary waits. The final image differs from49
-at89 pixels exclusively within the Knight sprite (one additional route tick);
-all scenery/HUD pixels are identical. Lifeblood passes all four health checks,
-and Great Door opens after13hits and entersTown region93. Their final images
-match49 exactly. Lifeblood boundary waits0; Town records2 ticks waiting for a
-frame boundary, with no CD/static upload work. Pre-existing particle drops14/23
-remain. All inputs stayed hash-stable; all captures inspected.
-Evidence: `.hkpsx/30fps-pass51-{profile,lifeblood,town}/`, build/test logs,
-`.hkpsx/30fps-pass51-validation.png` and the bound `.hkpsx/build.json` report.
+Actual-CUE validation54: long endpoint region8, x163.153656/y6.390625, health4.
+No input faults, missed polls, traversal CD reads, static VRAM uploads or long
+boundary waits. Final89 changed pixels versus51 are within the Knight sprite;
+scenery/HUD are exact. Lifeblood passes all four health checks. Great Door opens
+after13hits and entersTown region93; Lifeblood/Town final images are exact51.
+Lifeblood boundary waits0; Town1 frame-boundary wait tick without CD/static
+uploads. Pre-existing particle drops14/23 remain. Input hashes stable; captures
+inspected. Evidence: `.hkpsx/30fps-pass54-{profile,lifeblood,town}/`,54 validation
+image,55/56 experiment logs, and portable particle proof.57 rebuild identity is
+bound by `.hkpsx/30fps-pass57-identity.json`; no duplicate disc is retained.
+
+Next: target the remaining CPU/GPU critical path using54 as the retained
+comparison. Its153 late frames include116 background-prefix misses and66
+frames with at least40 live particles. GPU command accounting can straddle a
+flip, so those correlations do not establish a hard GPU lower bound. Immutable
+Z-force interpolation is a small possible CPU follow-up; scenery seed/repair
+programs require exact anchor-parity and viewport handling and a measured win.
+Do not repeat rejected whole-block outlining or global run caching unchanged.
 
 Claude's clean worktree was removed after reviewing all nine changed files;
 its committed history remains at `8db50a5` on the preserved Claude branch and
@@ -115,6 +123,11 @@ In-progress measurements (normal EXE, same 5,871-sample controller tape):
 | `30fps-pass49` compact residency / row retirements | 1.9785 | 4 | 189 / 2,933 |
 | `30fps-pass50` scratch run map (rejected) | 1.9789 | 4 | 195 / 2,933 |
 | `30fps-pass51` compact residency / row events, run map reverted | 1.9768 | 4 | 179 / 2,936 |
+| `30fps-pass52` square-corner reuse (rejected) | 1.9802 | 4 | 193 / 2,931 |
+| `30fps-pass53` source-seeded particle tracks | 1.9715 | 4 | 184 / 2,944 |
+| `30fps-pass54` zero-sentinel particle tracks | 1.9575 | 4 | 153 / 2,965 |
+| `30fps-pass55` admitted occluder scan outlining (rejected) | 1.9628 | 4 | 175 / 2,957 |
+| `30fps-pass56` outlined world construction (rejected) | 1.9645 | 4 | 158 / 2,954 |
 
 ### Earlier optimization measurements
 

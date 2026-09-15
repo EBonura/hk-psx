@@ -60,6 +60,9 @@ struct Particle {
 }
 pub struct Pool {
     particles: [Option<Particle>; CAPACITY],
+    // One-based immutable track IDs; zero means scalar/no particle.
+    // Empty slots therefore use the all-zero scalar sentinel.
+    tracks:[u16;CAPACITY],
     active_count: u32,
     pub spawned: u32,
     pub dropped: u32,
@@ -77,6 +80,7 @@ impl Pool {
     pub const fn new() -> Self {
         Self {
             particles: [None; CAPACITY],
+            tracks:[0;CAPACITY],
             active_count: 0,
             spawned: 0,
             dropped: 0,
@@ -103,9 +107,9 @@ impl Pool {
         }
     }
     pub fn clear_scene(&mut self, scene: usize) {
-        for p in &mut self.particles {
+        for (i,p) in self.particles.iter_mut().enumerate() {
             if p.as_ref().is_some_and(|p| p.scene as usize == scene) {
-                *p = None;
+                *p = None;self.tracks[i]=0;
                 self.active_count -= 1;
             }
         }
@@ -188,6 +192,7 @@ impl Pool {
                 let n = length3(p);
                 (p, core::array::from_fn(|j| divq(p[j], n)))
             };
+            self.tracks[search]=0;
             self.particles[search] = Some(Particle {
                 position: core::array::from_fn(|j| emitter.origin[j] + offset[j]),
                 velocity: core::array::from_fn(|j| mulq(direction[j], speed)),
@@ -266,8 +271,9 @@ impl Pool {
         camera: (i32, i32),
     ) -> u32 {
         self.drawn = 0;
-        for p in self.particles.iter().flatten().filter(|p|p.scene as usize==scene&&p.kind>=2&&p.delay==0) {
-            self.drawn+=u32::from(break_effects::draw_particle(p,camera));
+        for (i,slot) in self.particles.iter().enumerate() {
+            let Some(p)=slot.as_ref() else{continue;};
+            if p.scene as usize==scene&&p.kind>=2&&p.delay==0 {self.drawn+=u32::from(break_effects::draw_particle(p,self.tracks[i],camera));}
         }
         let Some(bank) = bank else {
             self.publish();
@@ -500,7 +506,7 @@ mod tests {
                 age:(i%11)as u16,delay:(i%4)as u8,cell:(i%9)as u8,gradient:i as u8,color:[37,89,123]});
         }
         fast.active_count=128;fast.spawned=128;fast.dropped=11;fast.drawn=17;
-        let mut reference=Pool{particles:fast.particles,active_count:128,spawned:128,dropped:11,drawn:17};
+        let mut reference=Pool{particles:fast.particles,tracks:[0;CAPACITY],active_count:128,spawned:128,dropped:11,drawn:17};
         let mut paths=[0;2];
         for tick in 0..384 {
             let scene=tick/17%3;let selected=if tick%19==0 {None}else{Some(bank)};

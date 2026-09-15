@@ -162,7 +162,51 @@ def rust(v):
     if isinstance(v,(list,tuple)):return '['+','.join(rust(x)for x in v)+']'
     return str(v)
 
-def generate(styles,emitters,uploads,art,frames):
+TRACK_PHASES=33
+NO_TRACK=65535
+
+def particle_tracks(styles,emitters):
+    """Exact source-seeded immutable values; motion/contact remains guest work.
+
+    Each emitter restarts the LCG, so pool truncation only shortens a fixed
+    prefix. Facing/strike direction change geometry after size/gradient draws,
+    with identical RNG consumption. Unpackable future emitters use scalar code.
+    """
+    def trunc(n,d):return (-1 if n<0 else 1)*(abs(n)//d)
+    def lerp(pair,g):return pair[0]+trunc((pair[1]-pair[0])*g,255)
+    def mulq(a,b):return trunc(a*b,65536)
+    tracks=[];bases=[];fallback=[]
+    for ei,e in enumerate(emitters):
+        st=styles[e['style']];rng=e['source']^0xd1b54a35
+        def random():
+            nonlocal rng
+            rng=(rng*1664525+1013904223)&0xffffffff;return rng
+        def sample(pair):return pair[0]+((random()*(pair[1]-pair[0]+1))>>32)
+        rows=[];supported=(st['shape']in(5,10)and len(st['samples'])==TRACK_PHASES
+            and 0<st['count']<=128 and st['cells']>0)
+        if supported:
+            for i in range(st['count']):
+                sample(st['life']);sample(st['speed']);size=sample(st['size']);sample(st['rotation']);gradient=random()>>24
+                for _ in range(2 if st['shape']==10 else 3):random()
+                for _ in range(3):random()
+                random() # texture cell, including a one-cell family
+                frames=[]
+                for curve in st['samples']:
+                    half=trunc(mulq(size,lerp(curve['size'],gradient)),2)
+                    radius=mulq(half,st['radius_scale']);spin=lerp(curve['spin'],gradient)
+                    level=max(0,min(3,(lerp(curve['alpha'],gradient)*3+127)//255))
+                    if not (0<=half<=65535 and 0<=radius<=65535 and -(1<<25)<=spin<(1<<25)):
+                        supported=False;break
+                    frames.append([half|(radius<<16),(spin&0x3ffffff)|(level<<26)])
+                if not supported:break
+                rows.append(frames)
+        if supported and len(tracks)+len(rows)<=NO_TRACK:
+            bases.append(len(tracks));tracks.extend(rows)
+        else:
+            bases.append(NO_TRACK);fallback.append(ei)
+    return tracks,bases,fallback
+
+def generate(styles,emitters,uploads,art,frames,tracks_result=None):
     out=['// Generated from Windows source; source IDs/hashes in ignored break-effects report.']
     tables={}
     for st in styles:
@@ -181,14 +225,21 @@ def generate(styles,emitters,uploads,art,frames):
     for a in art:out.append('Art{'+','.join(k+':'+rust(v)for k,v in a.items())+'},')
     out.append('];\npub static UPLOADS:&[Upload]=&[')
     for u in uploads:out.append('Upload{'+','.join(k+':'+rust(v)for k,v in u.items())+'},')
+    out.append('];')
+    tracks,bases,_=particle_tracks(styles,emitters)if tracks_result is None else tracks_result
+    out.append('pub static EMITTER_TRACK_BASES:&[u16]=&'+rust(bases)+';')
+    out.append('pub static PARTICLE_TRACKS:&[[[u32;2];33]]=&[')
+    out.extend(rust(track)+','for track in tracks)
     out.append('];');return '\n'.join(out)+'\n'
 
 def cook():
     source,styles,emitters,textures,records,ignored=collect()
-    blob,uploads,art,frames,sheet=art_bank(styles,textures);code=generate(styles,emitters,uploads,art,frames)
+    blob,uploads,art,frames,sheet=art_bank(styles,textures);tracks_result=particle_tracks(styles,emitters)
+    code=generate(styles,emitters,uploads,art,frames,tracks_result)
     (ROOT/'data/break_effects.rs').write_text(code);(ROOT/'data/break_effects.hk').write_bytes(blob)
     report={'format':'HKBREAK01','styles':styles,'emitters':emitters,'source_records':records,'other_parts':ignored,'vram_bytes':len(blob),
         'vram_rects':VRAM_RECTS,'uploads':uploads,'art':art,'frames':frames,'payload_sha256':hashlib.sha256(blob).hexdigest(),'rust_sha256':hashlib.sha256(code.encode()).hexdigest(),
+        'particle_tracks':{'bytes':len(tracks_result[0])*33*8,'fallback_emitters':tracks_result[2],'format':'half16-radius16-spin26-alpha2-v1'},
         'source_files':{name:hashlib.sha256((source.directory/name).read_bytes()).hexdigest()for name in ['level6','level7','globalgamemanagers','Managed/Assembly-CSharp.dll']},
         'limitations':['Deterministic RNG,60Hz integration/damping,33-point curves,radius/edge collision and initial-lifetime collision-loss approximation differ from nativeUnity particle physics.',
             'Three baked opacity levels and sourceRGB palette quantization approximate Sprites/Lit lighting/blending.',
