@@ -16,27 +16,53 @@ only; instruments and captures stay ignored. The original startup/load/landing
 sequence has specific prerequisites documented there. Do not force hero control
 or misread an unready test as failed original movement.
 
-Work67 in progress: full Town scenery/collision now cooked in ignored
-`.hkpsx/town67/` (0..270/-5..76). Full bank88,980 resident bytes,6pages,
-408palettes,426textures; same48px quality and exact cooked field/texel proof.
-Town NPCs, bench, shops and source scripts are not implemented by that cook.
-`host.pack_scenes.pack_scenes(..., residency="scene_gate", generate_world=False)`
-now creates isolated overlapping scene packages, guarded from current guest
-outputs. Native `check_scene_gate_load` reuses the real decoder across repeated
-forward/reverse scene loads and atlas staging. `.hkpsx/scene-gate67/` holds the
-combined Tutorial/fullTown preparation and proof; inspect logs before using it.
+Final68 replaces the requested provisional and fixes the reverse gate entry.
+Three actual-CUE routes now pass: Focus850polls, gate return12,112 and Town
+traversal/reset12,562. The last reachesx177.274; both long routes replace the
+scene twice and resume with exact cooked scene bytes, queue peak4 and no faults.
+Their captures were inspected. See `.hkpsx/game68/validation.json` and top of
+STATUS.md. Tests286Python/406reportednative, final hazards0, RAM gap20,348B before
+48KiB stack; main32,200/nested16,952.23 particle drops remain. No FPS claim.
 
-NEXT IMPLEMENTATION: exclusive scene admission in `game/src/disc.rs` at authored
-gates, atlas ownership/readiness and renderer/animation cache invalidation,
-blackout before the old arena is reclaimed, source entry timing, and continuous
-input/audio servicing while CD/decode/upload owns the transition. Room views
-must not survive mutable replacement. Every spatial region within a scene stays
-resident. Repeated Tutorial->Town->Tutorial/Select routes and exact GPU captures
-must pass before replacing the current disc. Next admit fullTown source gameplay
-and the well/Crossroads connection. Current live66 still ends atx48; the host-only
-package has an explicit compile_error guard and is not playable yet.
+Work68 integrates exclusive scene admission at authored gates and expands Town
+scenery/collision to0..270/-5..76, using106 stable region IDs (86Tutorial/20Town).
+See STATUS.md for final build/replay status; do not infer a playable update from
+host packing alone. All current regions inside a scene stay resident. Gate
+loading reuses the369,180-byte arena and static atlas slots, with retired GPU
+work, VBlank blackout, renderer/animation invalidation and continuous actual
+input/audio service. Both scene manifests use origins0; descriptor ownership is
+explicit. Production host builds select `scene_gate`; joint mode remains tested.
+Native exact decoder replacement proof is emitted on every pack.
 
-Current66 adds complete Focus charging/heal audio, fixes Crawler/corpse motion
+Town graves now support source Hierarchy scaling for planar uniform-XY emitters,
+validated with original native simulation/BakeMesh probes. All four Town emitters
+cook; they use the existing scalar particle path while Tutorial tracks remain
+399,432B. A disjoint unused2KiB Geo strip moved to break effects: Geo5,154B within
+6,336B and break art6,330B within7,680B. No resolution reduction was introduced.
+Read docs/ORIGINAL_REFERENCE.md for probe evidence and the documented watchdog
+failure after the second probe's samples had completed.
+
+NEXT: keep actual-CUE Tutorial/Town/return/Select validation green.
+Use tools/replay_cue.py and tools/validate_scene_gates.py, inspect images and
+hash-bound reports in `.hkpsx/game68/`. Then implement Town gameplay and the well
+connection. `.hkpsx/crossroads68/RESULT.md` is a source-grounded landing audit:
+Townwell -> Crossroads_01/top1, spawn(52.5,31), downspeed-12; the return well FSM
+targetsTown/bot1 despite swapped serialized TransitionPoint strings. Top gate
+collision enables after3s. Landing host-only cook fits236,872B/5pages; source
+ZombieRunner/Swipe/Climber and conditional MenderBug behavior remain unsupported.
+Do not admit that scene blindly or spawn every serialized-active enemy.
+Town shops, NPCs, bench, well/Mines transitions and in-game music are unfinished.
+Before admitting Crossroads, use `.hkpsx/scene-certificates69/PLAN.md` and its
+reproducible counts.py: per-scene exact tile/group certificate bundles need
+83,692B Tutorial/27,192B Town; an84KiB reusable arena should reclaim about24KiB
+from110,066B of linked tables before loader costs. No implementation yet.
+`.hkpsx/crossroads68/RUNNER-CONTRACT.md` and check_runner_contract.py contain
+source-checked Zombie Runner behavior, shared animations/audio, LOS/Sweep,
+recoil ordering and tests required. Original native trajectory comparison remains
+pending; the landing-only cook does not implement this enemy family.
+
+
+Historical66 added complete Focus charging/heal audio, fixes Crawler/corpse motion
 across resident collision regions, and implements source-derived Great Door
 blackout and Town entry fade/walk. The source2.5s wait is at destination entry;
 it is not a pre-departure delay. Town spawn uses the source gate-ground position.
@@ -58,9 +84,9 @@ mixer DSP and hardware playback are unverified. Direct CD music is appropriate
 for resident boss arenas when implemented, not simultaneous arbitrary room reads.
 Build64's full cave-noises RAM-to-SPU ring, running/hard-land/door-hit SFX remain.
 Focus uses category rates8kHz sustained/22.05kHz short. Keep source-traced cues
-and consistent rates; retain full clips. Current textures and scene arena unchanged.
+and consistent rates; retain full clips. Current textures and scene arena capacity are unchanged.
 
-Next expand Town beyond x48 (currently before its music trigger), source-trace
+Next implement Town's music trigger and remaining interactions, source-trace
 remaining enemy/break/death/UI sounds, implement unsupported enemies and advance
 progression. No new maps were added in66. Door destruction/alternate hit sounds,
 hard-land recovery, flying enemies, inventory/charms/abilities/NPCs/bosses/save and

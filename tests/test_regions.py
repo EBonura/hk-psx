@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'host'))
-from regions import SCENES,initial_regions,fixed_regions,intersects,split_region
+from regions import SCENES,initial_regions,fixed_regions,intersects,split_region,region_spec
 
 
 class RegionTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class RegionTests(unittest.TestCase):
 
     def test_fixed_quality_layout_preserves_existing_boundaries(self):
         regions=fixed_regions()
-        self.assertEqual(len(regions),98)
+        self.assertEqual(len(regions),106)
         self.assertEqual(regions[0],initial_regions()[0])
         self.assertEqual(regions[13]['activation_bounds'],[84.0,11,96,27])
         for scene in SCENES:
@@ -34,6 +34,32 @@ class RegionTests(unittest.TestCase):
             for x in range(x0,x1):
                 for y in range(y0,y1):
                     self.assertTrue(any(b[0]<=x+.5<=b[2] and b[1]<=y+.5<=b[3] for b in boxes))
+
+    def test_expansion_preserves_ids_and_tutorial_and_opens_town_camera(self):
+        from quality import REGION_LAYOUT
+        regions=fixed_regions()
+        self.assertEqual(len(REGION_LAYOUT),98)
+        town=SCENES[1]
+        for i,(scene,bounds) in enumerate(REGION_LAYOUT):
+            expected=initial_regions()[0] if i==0 else region_spec(SCENES[0] if scene==0 else town,bounds)
+            self.assertEqual(regions[i],expected)
+        self.assertEqual(regions[98]['activation_bounds'],[48,-5,96,40])
+        self.assertEqual(regions[100]['activation_bounds'],[168,-5,216,40])
+        self.assertEqual(regions[105]['activation_bounds'],[168,40,216,76])
+        self.assertTrue(all(r['scene_id']==1 for r in regions[98:]))
+        self.assertEqual(regions[86]['camera_bounds'][0],12)
+        self.assertEqual(regions[87]['camera_bounds'][2],48)
+        self.assertEqual(regions[98]['camera_bounds'],[40,15,96,42])
+        clamp=lambda x,r:max(r['camera_bounds'][0],min(r['camera_bounds'][2],x))
+        self.assertEqual(clamp(48,regions[87]),clamp(48,regions[98]))
+        for left,right,x in ((98,99,96),(99,100,168),(100,101,216),
+                             (103,104,96),(104,105,168),(105,102,216)):
+            self.assertEqual(clamp(x,regions[left]),clamp(x,regions[right]))
+        clamp_y=lambda y,r:max(r['camera_bounds'][1],min(r['camera_bounds'][3],y+2))
+        for lower,upper in ((98,103),(99,104),(100,105),(101,102)):
+            self.assertEqual(clamp_y(40,regions[lower]),42)
+            self.assertEqual(clamp_y(40,regions[lower]),clamp_y(40,regions[upper]))
+        self.assertEqual(regions[102]['camera_bounds'],[216,32,258,68])
 
     def test_budget_split_preserves_parent_coverage(self):
         parent=initial_regions()[1]

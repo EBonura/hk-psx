@@ -86,7 +86,8 @@ def read_certificates(data,count):
 def cook(root=ROOT,grid_shift=2,variant=False):
     if grid_shift not in(2,3):raise ValueError('Opaque tiles: supported grid shifts are2and3')
     root=Path(root);cache=root/('.hkpsx/opaque-tiles-grid4'if variant else'.hkpsx/opaque-tiles');cache.mkdir(parents=True,exist_ok=True)
-    window=16+(1<<grid_shift)-1;table_budget=96*1024 if grid_shift==2 else MAX_TABLE_BYTES
+    # Full Town adds certificates; the final linker still enforces the protected stack.
+    window=16+(1<<grid_shift)-1;table_budget=104*1024 if grid_shift==2 else MAX_TABLE_BYTES
     packed=json.loads((root/'.hkpsx/packed-scenes.json').read_text());metadata_path=root/'data/regions.json';metadata=json.loads(metadata_path.read_text());metadata_hash=file_sha(metadata_path)
     if metadata_hash!=packed['source_metadata_sha256']:raise ValueError('Opaque tiles: packed scene metadata is stale')
     geo=json.loads((root/'.hkpsx/geo-provenance.json').read_text());life=json.loads((root/'.hkpsx/lifeblood-provenance.json').read_text())
@@ -106,7 +107,7 @@ def cook(root=ROOT,grid_shift=2,variant=False):
         for sr in bank['source_rooms']:
             row=metadata['regions'][sr['chunk_id']-1];raw=(root/row['path']).read_bytes()
             if sha(raw)!=row['sha256']or sha(raw)!=sr['sha256']or struct.unpack_from('<I',raw,12)[0]!=len(sr['texture_map']):raise ValueError('Opaque tiles: final room texture map changed')
-    binary,helper=compile_helper(cache);key=sha(json.dumps({'inputs':input_hashes,'helper':helper,'format':'HKOPAQUETILES01','grid_shift':grid_shift},sort_keys=True).encode());report_path=cache/'report.json'
+    binary,helper=compile_helper(cache);key=sha(json.dumps({'inputs':input_hashes,'helper':helper,'format':'HKOPAQUETILES01','grid_shift':grid_shift,'table_budget':table_budget},sort_keys=True).encode());report_path=cache/'report.json'
     old=json.loads(report_path.read_text())if report_path.exists()else{}
     if old.get('input_key')==key and all((root/name).exists()and file_sha(root/name)==digest for name,digest in old.get('outputs',{}).items())and old.get('outputs'):
         print(f"Opaque tiles: cached {old['certificate_count']} certificates, {old['table_bytes']} bytes",flush=True);return old

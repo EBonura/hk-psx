@@ -1,23 +1,23 @@
 # Shared scene and gameplay budget
 
-The validated66 gameplay/audio build from 2026-09-15 holds both currently authored scenes in one RAM
-arena and persistent VRAM atlases. These are linked reservations, not hardware
+The validated68 build from 2026-09-15 keeps one scene at a time in the RAM
+arena and replaces its static VRAM atlases at scene gates. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |351,452|
-| Code-to-data alignment |4|
-| Linked data, including menu, HUD and sound bank |801,568|
-| BSS, including shared scene arena and runtime pools |776,052|
-| Total static span |1,929,076|
+| Linked code |355,652|
+| Code-to-data alignment |12|
+| Linked data, including menu, HUD and sound bank |830,128|
+| BSS, including shared scene arena and runtime pools |776,068|
+| Total static span |1,961,860|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |53,132|
+| Unallocated gap before reserved stack |20,348|
 
-Static data ends at `0x801e6f74`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801eef84`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies369,180 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -33,10 +33,10 @@ its 32,768-byte reservation before nested calls. `host/stack_budget.py` now
 derives a project linker script from the unchanged pinned SDK, protects 48 KiB,
 and checks the actual final main prologue before packaging. The generated
 script's content hash is part of its filename so budget changes force a relink.
-The current main frame is 32,192 bytes, leaving 16,960 reserved bytes for nested
+The current main frame is 32,200 bytes, leaving 16,952 reserved bytes for nested
 calls and other stack use; this is **not** an observed high-water measurement.
 The linker also excludes the 256 bytes above its initial SP from static RAM.
-Current evidence: `.hkpsx/build.json` and `.hkpsx/game66/build-fixed.log`.
+Current evidence: `.hkpsx/build.json` and `.hkpsx/game68/build-return.log`.
 The outlined enemy terrain helper has a2,336-byte final binary frame, including
 a2KiB edge cache reused per actor. It adds no persistent RAM allocation.
 
@@ -48,8 +48,7 @@ do not attribute the entire main-frame reduction to those 512 bytes alone.
 
 Exact particle tracks add399,432 bytes plus142 bytes of emitter bases. Each of
 1,513 source-seeded particles has33 two-word phases. The live pool adds256 bytes
-for128 track IDs, making it6,416 bytes; Particle remains48 bytes. All current
-emitters fit, while unpackable future emitters retain scalar evaluation.
+for128 track IDs, making it6,416 bytes; Particle remains48 bytes. Tutorial emitters use these tracks; four Town emitters retain scalar evaluation.
 These are main-RAM values, not extra VRAM/SPU data or traversal transfers.
 The main frame increased beyond the pool's256 bytes because compiler-generated
 constructor temporaries share its lifetime; do not equate pool and frame growth.
@@ -80,9 +79,9 @@ ends owner borrows before draw access. These are never DMA sources or stack
 storage;76 bytes remain. Row retirement events use2,760 bytes instead of1,560:
 one source-row mask replaces repeated per-cell retirements. Packed texture
 classification adds320 aligned bytes and replaces runtime atlas inspection.
-The linked data above includes84,284 bytes of host-certified4px coverage tables
-(62,160 bitmap,15,708 descriptors,6,376 shared draw lookup,40 slice overhead).
-All1309 certificates cover immutable original poses; no new VRAM is allocated.
+The linked data above includes101,886 bytes of host-certified4px coverage tables
+for1,474 immutable original poses. The host cap is104KiB and the final linker
+continues to enforce the protected stack. No extra VRAM is allocated.
 
 The renderer retains 480 local scenery records and 1,032 draw packets; global
 texture templates and alpha covers have 1,120 slots. The dedicated2,048-byte CD
@@ -98,17 +97,15 @@ both stack allocations is not main-stack consumption; high-water remains unknown
 | Health and SOUL HUD rectangles | 2,208 |
 | Shared black-mask fade CLUT | 32 |
 | Original dialogue font strips and CLUT | 7,712 |
-| Geo texels and CLUT strips | 8,384 |
+| Geo texels and CLUT strips | 6,336 |
 | Lifeblood cocoon, Scuttler and blue-mask texels with CLUTs | 5,120 |
-| Breakable-effect texels and CLUTs | 5,632 |
+| Breakable-effect texels and CLUTs | 7,680 |
 | Total | 1,047,968 |
 | Unallocated within 1 MiB | 608 |
 
-Tutorial uses 18 pages and 1,068 palettes; Town entrance uses 2 pages and 141
-palettes. All 20 pages are populated. The 1,209 admitted palettes leave 39 unused
-CLUT slots inside the reservation. Scene page/palette bases are (0,0) and (18,1068).
-The old bank-coordinate helpers now map global page and palette indices; those
-coordinate groups are not runtime eviction units. Coordinates are VRAM halfwords:
+Tutorial uses18 pages and1,068 palettes; full Town uses6 pages and390 palettes.
+Each scene uses page/palette bases(0,0) with exclusive ownership. The20-page and
+1,248-palette physical reservations remain unchanged. Coordinates are VRAM halfwords:
 
 - Framebuffers: x0..319, y0..479. Animation slots: x320..351, y0..255.
 - Health texels: x352..355, y0..31; CLUTs x352..367, y480..481.
@@ -120,9 +117,10 @@ coordinate groups are not runtime eviction units. Coordinates are VRAM halfwords
 - Bank1: x320..383,y256..359. Bank2: x320..383,y360..463.
 - The former bank3 CLUT area is no longer reserved for scenery.
 - Geo: (320,464,64,16), (352,240,32,16), (352,485,32,27),
-  (320,496,32,16), (352,32,8,32), (352,64,32,32), as x/y/w/h halfwords.
-- Lifeblood: (352,96,32,80). Break effects: (352,176,32,64), (360,32,24,32);
-  the second was carved out of Geo's former (352,32,32,64) strip.
+  (320,496,32,16), (352,32,8,32), as x/y/w/h halfwords.
+- Lifeblood: (352,96,32,80). Break effects: (352,176,32,64), (360,32,24,32),
+  (352,64,32,32); the latter two were carved out of Geo's former
+  (352,32,32,64) strip. The final2KiB transfer admits Town crystal particles.
 
 Allocator tests check all reservations together. The title temporarily uses
 89,600 VRAM bytes that gameplay reuses. Its menus share the existing7,712-byte dialogue font reservation. The source

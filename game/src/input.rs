@@ -9,6 +9,44 @@ pub static mut HK_INPUT_MISSED_VBLANKS: u32 = 0;
 pub static mut HK_INPUT_QUEUE_PEAK: u32 = 0;
 #[no_mangle]
 pub static mut HK_INPUT_FAULT: u32 = 0;
+#[no_mangle]
+pub static mut HK_INPUT_LOADING_SAMPLES: u32 = 0;
+#[no_mangle]
+pub static mut HK_INPUT_LOADING_TICKS: u32 = 0;
+fn publish_stats() {
+    unsafe {
+        let stats = SAMPLER.stats();
+        HK_INPUT_POLLS = stats.polls;
+        HK_INPUT_MISSED_VBLANKS = stats.missed_vblanks;
+        HK_INPUT_QUEUE_PEAK = stats.pending_peak;
+        HK_INPUT_LOADING_SAMPLES = stats.loading_samples;
+        HK_INPUT_LOADING_TICKS = stats.loading_ticks;
+        crate::HK_PAD_POLL_MAX_VBLANK_GAP = stats.max_poll_gap;
+    }
+}
+/// Explicitly pause input consumption for a scene replacement. Enter before
+/// blocking work; all subsequent checkpoints still service pad/audio/display.
+pub fn begin_scene_load(sim_clock: u32) {
+    unsafe {
+        if let Err(fault) = SAMPLER.begin_scene_load(sim_clock) { failed(fault); }
+    }
+    publish_stats();
+    checkpoint();
+}
+/// Return the observed resume boundary, never an unpolled hardware timestamp.
+pub fn end_scene_load() -> u32 {
+    checkpoint();
+    unsafe {
+        match SAMPLER.end_scene_load() {
+            Ok(tick) => tick,
+            Err(fault) => failed(fault),
+        }
+    }
+}
+/// Use after end_scene_load to seed edge detectors from the last loading poll.
+pub fn held_buttons() -> u16 {
+    unsafe { SAMPLER.held_buttons() }
+}
 fn failed(fault: Fault) -> ! {
     unsafe {
         HK_INPUT_FAULT = fault.code();
@@ -42,11 +80,7 @@ fn poll_slow(now: u32) {
         match result {
             Ok(false) => {}
             Ok(true) => {
-                let stats = SAMPLER.stats();
-                HK_INPUT_POLLS = stats.polls;
-                HK_INPUT_MISSED_VBLANKS = stats.missed_vblanks;
-                HK_INPUT_QUEUE_PEAK = stats.pending_peak;
-                crate::HK_PAD_POLL_MAX_VBLANK_GAP = stats.max_poll_gap;
+                publish_stats();
             }
             Err(fault) => failed(fault),
         }

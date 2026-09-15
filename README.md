@@ -1,7 +1,7 @@
 # hk-psx
 
 A native Hollow Knight port experiment for original PlayStation, built from the
-user's Windows Steam copy in CrossOver. The last validated playable build includes
+user's Windows Steam copy in CrossOver. The current build includes
 King's Pass scenery and terrain, breakable doors, grass, the Knight's movement
 and nail attacks, three source Crawlers, damage, health masks, hazard checkpoints,
 nail recoil/pogo, Focus healing with charging/heal audio, a SOUL meter, player and Geo sound effects,
@@ -25,27 +25,19 @@ source damage stages and opens after thirteen hits, followed by the source-deriv
 blackout, Town entry fade and scripted walk-in. Full original effects remain incomplete. Verified black masks now darken the background using the
 PS1's limited blend modes; this is not full source-shader parity.
 
-98 bounded regions cover Tutorial_01 and Dirtmouth's left entrance. All their
-scene data now stays in one 369,180-byte RAM arena; both scenery atlases stay in
-VRAM throughout gameplay. Their CPU copies are discarded after startup uploads,
-with exact host-cooked particle tracks using part of the recovered RAM and
-leaving about52KiB unallocated before the reserved stack after caching the full
-cave-noises loop in RAM. Lossless sharing across regions uses 20 static 4bpp
-pages and 1,209 palettes. The existing approved 95% static matches remain; no
-further resolution reduction or lossy merging was added. Scenery keeps its
-48-pixel long-axis cap; Knight, enemy and HUD resolution is unchanged.
+106 bounded views cover Tutorial_01 and Town0..270/-5..76. One369,180-byte
+RAM arena and the same static VRAM slots are reused at scene exits. All views
+within the active scene stay resident; walking across internal boundaries needs
+no further scene reads or static uploads. Scene exits use a black-screen load
+with controller/audio servicing and renderer/animation cache invalidation.
 
-Startup loads six ambience loops, the Focus sound bank and the static atlases through the empty
-scene arena, then admits both compact scene banks once. Region crossings
-select local views without CD reads, decoding or static texture uploads. Eight
-animation slots fetch frames from resident RAM and retain cached frames across
-same-scene crossings. The long user replay now has zero boundary-loading waits
-(previously 478 ticks), with no traversal CD reads or static uploads. The best preserved optimization run
-renders at one to four VBlanks per frame (mean 1.957504, approximately30fps on the long
-replay);153 of2,965 intervals still exceed two VBlanks, so the strict30fps gate fails. Current build identity
-and ongoing experiments are recorded in docs/STATUS.md. This covers the current authored subset, not the full game's residency
-or physical-console timing. See [docs/STATUS.md](docs/STATUS.md) for evidence and
-[docs/BUDGET.md](docs/BUDGET.md) for measured allocations.
+Tutorial needs18 static4bpp pages and1,068 palettes; Town needs6pages/390palettes.
+The approved95% static matches and48-pixel scenery cap remain. Knight, enemies
+and HUD retain their existing resolution. Build68 has20,348B
+unallocated before the reserved stack. Final-CUE gate/return/reset replays pass, including travel tox177 in Town.
+Scene exits still pause for loading; this does not establish seamless whole-game traversal. See
+[STATUS.md](docs/STATUS.md) and [BUDGET.md](docs/BUDGET.md) for current evidence.
+No new30fps or physical-console performance claim is made.
 
 Development now has a [controlled headless Windows reference runner](docs/ORIGINAL_REFERENCE.md)
 for repeatable original-game input/state comparisons. It runs an isolated copy

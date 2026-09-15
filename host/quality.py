@@ -1,8 +1,9 @@
 """Measured scenery quality and stable development-region residency layout.
 
 Only static SpriteRenderer scenery uses this cap. Knight/nail/enemy animation
-sampling and HUD quality remain unchanged. Bounds preserve the previous98-region
-plan so lowering resolution does not create new traversal boundaries.
+sampling and HUD quality remain unchanged. The first 98 region IDs remain
+stable. Eight Town views append full supported scenery/collision coverage;
+spatial partitions do not implement source scripts.
 """
 SCENERY_MAX_AXIS = 48
 STATIC_PAGE_BUDGET = 5
@@ -107,4 +108,19 @@ REGION_LAYOUT = (
     (1, (24, 59, 48, 75)),
     (1, (0, 75, 24, 76)),
     (1, (24, 75, 48, 76)),
+)
+
+# These measured views cover the rest of Town without changing the original
+# first 98 chunk IDs. Cameras describe extraction coverage, not source lock FSMs.
+# Lower camera tops reach activation top+2 so descending the entrance hill
+# crosses into these views continuously with the fixed player camera offset.
+TOWN_EXTENSION_LAYOUT = (
+    ((48, -5, 96, 40), (40, 15, 96, 42)),
+    ((96, -5, 168, 40), (96, 15, 168, 42)),
+    ((168, -5, 216, 40), (168, 15, 216, 42)),
+    ((216, -5, 270, 40), (216, 15, 258, 42)),
+    ((216, 40, 270, 76), (216, 32, 258, 68)),
+    ((48, 40, 96, 76), (48, 32, 96, 68)),
+    ((96, 40, 168, 76), (96, 32, 168, 68)),
+    ((168, 40, 216, 76), (168, 32, 216, 68)),
 )

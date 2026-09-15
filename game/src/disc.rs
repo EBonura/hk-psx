@@ -1,6 +1,6 @@
-//! Startup-only resident scene loader. One aligned arena keeps every admitted
-//! scene immutable for the session. Region selection creates O(1) local views;
-//! no traversal request, prefetch or pump starts CD reads or decoding.
+//! Exclusive scene-gate loading or joint bootstrap residency. Each admitted
+//! scene keeps immutable spatial views; only an exclusive select() at a drained,
+//! blacked-out scene transition may reclaim the arena and replace static art.
 use hk_format::{Room,Scene};
 use crate::room_decode::{Decoder,Error as DecodeError};
 #[path="cd_stream.rs"] mod cd_stream;
@@ -31,6 +31,7 @@ pub const fn scene_region(scene:usize)->usize {SCENE_REGIONS[scene]}
 pub struct Cache {
     entries:[PackEntry;MAX_CHUNKS],header:[u32;2048],reader:SectorReader,
     ready:bool,loaded_scenes:usize,loaded_atlases:usize,selected:usize,
+    resident_scene:usize,atlas_scene:usize,
 }
 #[no_mangle] pub static mut HK_SCENE_LOADS:u32=0;
 #[no_mangle] pub static mut HK_SCENE_READ_ID:u32=0;
@@ -89,7 +90,7 @@ impl Cache {
     /// Safety: exactly one Cache owns BUFFERS and the CD controller.
     pub const unsafe fn new()->Self {
         Self {entries:[EMPTY_ENTRY;MAX_CHUNKS],header:[0;2048],reader:SectorReader::new(),
-            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY}
+            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY}
     }
     fn init(&mut self)->Result<(),LoadError> {
         if self.ready {return Ok(());}
@@ -98,6 +99,7 @@ impl Cache {
             || SCENE_REGIONS.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
         let mut offset=0usize;
         for (i,d) in SCENE_MANIFEST.iter().enumerate() {
+            if SCENE_GATE_LOAD {offset=0;}
             if d.ram_offset!=offset || d.arena_capacity!=SCENE_ARENA_BYTES.saturating_sub(offset)
                 || d.raw_len==0 || d.raw_len>d.arena_capacity || d.stored_len==0
                 || d.stored_len.div_ceil(SECTOR_BYTES)>d.arena_capacity/SECTOR_BYTES
@@ -106,21 +108,31 @@ impl Cache {
             offset=offset.checked_add(d.raw_len).and_then(|n|n.checked_add(3)).ok_or(LoadError::RoomMismatch)?&!3;
         }
         if offset>SCENE_ARENA_BYTES || REGION_SCENE_LOCAL.iter().any(|&(s,_)|s>=SCENE_COUNT) {return Err(LoadError::RoomMismatch);}
-        // Atlas chunks cover the persistent allocation exactly once. They are
-        // decoded into unborrowed startup scratch, then discarded after upload.
-        let(mut pages,mut palettes)=(0usize,0usize);
-        for a in ATLASES {
-            let (next,unit)=match a.kind {0=>(&mut pages,32768usize),1=>(&mut palettes,32usize),_=>return Err(LoadError::RoomMismatch)};
-            if a.count==0 || a.first!=*next || a.count.checked_mul(unit)!=Some(a.raw_len)
-                || a.raw_len>SCENE_ARENA_BYTES || a.stored_len==0
-                || a.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES {
-                return Err(LoadError::RoomMismatch);
+        // Each scene owns an exact contiguous atlas inventory. Exclusive
+        // scene plans overlap physical slots only across different owners.
+        if SCENE_ATLAS_RANGES.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
+        let(mut pages,mut palettes,mut previous,mut peak_pages,mut peak_palettes)=(0usize,0usize,0usize,0usize,0usize);
+        for (scene,&(start,end)) in SCENE_ATLAS_RANGES.iter().enumerate() {
+            if start!=previous || end<=start || end>ATLASES.len() {return Err(LoadError::RoomMismatch);}
+            if SCENE_GATE_LOAD {pages=0;palettes=0;}
+            let d=SCENE_MANIFEST[scene];
+            if d.page_base!=pages || d.palette_base!=palettes {return Err(LoadError::RoomMismatch);}
+            for a in &ATLASES[start..end] {
+                let (next,unit)=match a.kind {0=>(&mut pages,32768usize),1=>(&mut palettes,32usize),_=>return Err(LoadError::RoomMismatch)};
+                if a.scene_index!=scene || a.count==0 || a.first!=*next || a.count.checked_mul(unit)!=Some(a.raw_len)
+                    || a.raw_len>SCENE_ARENA_BYTES || a.stored_len==0
+                    || a.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES {
+                    return Err(LoadError::RoomMismatch);
+                }
+                *next=next.checked_add(a.count).ok_or(LoadError::RoomMismatch)?;
             }
-            *next=next.checked_add(a.count).ok_or(LoadError::RoomMismatch)?;
+            if pages>hk_cache::residency::BANKS*hk_cache::residency::PAGES
+                || palettes>hk_cache::residency::SCENE_CLUTS {return Err(LoadError::RoomMismatch);}
+            peak_pages=peak_pages.max(pages);peak_palettes=peak_palettes.max(palettes);previous=end;
         }
-        if pages!=SCENE_TOTAL_PAGES || palettes!=SCENE_TOTAL_PALETTES
-            || pages>hk_cache::residency::BANKS*hk_cache::residency::PAGES
-            || palettes>hk_cache::residency::SCENE_CLUTS {return Err(LoadError::RoomMismatch);}
+        if previous!=ATLASES.len() || peak_pages!=SCENE_TOTAL_PAGES || peak_palettes!=SCENE_TOTAL_PALETTES {
+            return Err(LoadError::RoomMismatch);
+        }
         if !unsafe {self.reader.prepare_single_speed()} {return Err(LoadError::Prepare);}
         if !unsafe {self.reader.start_read_seek_first(WORLD_PACK_DEFAULT_LBA,SEEK_POLL)}
             || !sector(&mut self.reader,&mut self.header[..SECTOR_WORDS]) {return Err(LoadError::HeaderRead);}
@@ -165,7 +177,7 @@ impl Cache {
         if let Err(diag)=unsafe {cd_stream::start(destination,entry.sector_count as usize,WORLD_PACK_DEFAULT_LBA+entry.sector_offset)} {
             unsafe {HK_CD_DIAG=diag;}return Err(LoadError::PayloadRead);
         }
-        loop {match cd_stream::status() {
+        loop {crate::input::checkpoint();match cd_stream::status() {
             cd_stream::Status::Done=>return Ok(()),
             cd_stream::Status::Failed(diag)=>{unsafe {HK_CD_DIAG=diag;}return Err(LoadError::PayloadRead);}
             cd_stream::Status::Idle|cd_stream::Status::Busy=>core::hint::spin_loop(),
@@ -196,20 +208,23 @@ impl Cache {
         })();
         if let Err(error)=result {mark(3,error as u32);}result
     }
-    /// Startup-only atlas admission. No Scene/Room view may exist while this
+    /// Exclusive atlas admission. No Scene/Room view may exist while this
     /// buffer is scratch; completed chunks remain in VRAM across retries.
     #[inline(never)]
-    fn prepare_atlases(&mut self)->Result<(),LoadError> {
+    fn prepare_atlases(&mut self,scene:usize)->Result<(),LoadError> {
         self.init()?;
-        if self.atlases_ready() {return Ok(());}
+        if self.atlases_ready() && (!SCENE_GATE_LOAD || self.atlas_scene==scene) {return Ok(());}
         if self.loaded_scenes!=0 {return Err(LoadError::RoomMismatch);}
-        while self.loaded_atlases<ATLASES.len() {
+        let (start,end)=if SCENE_GATE_LOAD {SCENE_ATLAS_RANGES[scene]}else{(0,ATLASES.len())};
+        if self.atlas_scene!=scene {self.loaded_atlases=start;self.atlas_scene=scene;}
+        while self.loaded_atlases<end {
             let a=&ATLASES[self.loaded_atlases];
             let entry=self.entries[SCENE_COUNT+crate::ambience::CLIPS.len()+self.loaded_atlases];
             self.read(entry,0)?;
             let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
             let mut decoder=Decoder::new_bytes(a.stored_len,a.stored_fnv,a.raw_len,a.raw_fnv);
             loop {
+                crate::input::checkpoint();
                 unsafe {HK_ROOM_DECODE_PHASE=decoder.phase_id();}
                 match decoder.step(arena,1024) {
                     Ok(Some(len))=>{if len!=a.raw_len {return Err(LoadError::RoomMismatch);}break;}
@@ -223,28 +238,37 @@ impl Cache {
         }
         Ok(())
     }
-    pub fn atlases_ready(&self)->bool {self.loaded_atlases==ATLASES.len()}
+    pub fn atlases_ready(&self)->bool {
+        if SCENE_GATE_LOAD {self.atlas_scene<SCENE_COUNT && self.loaded_atlases==SCENE_ATLAS_RANGES[self.atlas_scene].1}
+        else {self.loaded_atlases==ATLASES.len()}
+    }
     /// Retry UI overwrites atlas VRAM with title art. Revoke all startup
     /// admissions before it runs, so the retry uploads every affected page.
     /// Exclusive &mut self ensures no Room/Scene view survives this reset.
     pub fn reset_bootstrap(&mut self) {
         cd_stream::cancel();
         while matches!(cd_stream::status(),cd_stream::Status::Busy) {core::hint::spin_loop();}
-        self.loaded_scenes=0;self.loaded_atlases=0;self.selected=EMPTY;
+        self.loaded_scenes=0;self.loaded_atlases=0;self.selected=EMPTY;self.resident_scene=EMPTY;self.atlas_scene=EMPTY;
     }
 
     // Keep the large startup decoder outside main's bounded MIPS branch span.
     #[inline(never)]
-    fn admit_scenes(&mut self)->Result<(),LoadError> {
-        self.prepare_atlases()?;
-        while self.loaded_scenes<SCENE_COUNT {
-            let index=self.loaded_scenes;let d=SCENE_MANIFEST[index];
+    fn admit_scenes(&mut self,wanted:usize)->Result<(),LoadError> {
+        if SCENE_GATE_LOAD && self.resident_scene!=wanted {
+            // &mut self excludes every outgoing Room/Scene view. Readiness is
+            // revoked before any CD/decode/upload may overwrite those bytes.
+            self.loaded_scenes=0;self.resident_scene=EMPTY;self.selected=EMPTY;
+        }
+        self.prepare_atlases(wanted)?;
+        while self.loaded_scenes<if SCENE_GATE_LOAD {1}else{SCENE_COUNT} {
+            let index=if SCENE_GATE_LOAD {wanted}else{self.loaded_scenes};let d=SCENE_MANIFEST[index];
             unsafe {HK_SCENE_READ_ID=index as u32+1;}
             self.read(self.entries[index],d.ram_offset)?;
             unsafe {HK_SCENE_READ_ID=0;HK_SCENE_DECODE_ID=index as u32+1;}
             let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>().add(d.ram_offset),d.arena_capacity)};
             let mut decoder=Decoder::new_scene(d.stored_len,d.stored_fnv,d.raw_len,d.raw_fnv);
             loop {
+                crate::input::checkpoint();
                 unsafe {HK_ROOM_DECODE_PHASE=decoder.phase_id();}
                 match decoder.step(arena,1024) {
                     Ok(Some(len))=>{if len!=d.raw_len {return Err(LoadError::RoomMismatch);}break;}
@@ -255,21 +279,30 @@ impl Cache {
             }
             let scene=unsafe {Scene::validated_view(&arena[..d.raw_len])};
             if scene.id()!=d.scene_id {return Err(LoadError::RoomMismatch);}
+            let (start,end)=SCENE_ATLAS_RANGES[index];
+            let mut counts=[0;2];
+            for a in &ATLASES[start..end] {counts[a.kind as usize]+=a.count;}
+            if counts!=[scene.page_count(),scene.palette_count()] {return Err(LoadError::RoomMismatch);}
+            let mut mapped=0;
             for (region,&(s,local)) in REGION_SCENE_LOCAL.iter().enumerate() {
-                if s==index && scene.chunk_id(local)!=Some(region+1) {return Err(LoadError::RoomMismatch);}
+                if s==index {
+                    mapped+=1;
+                    if scene.chunk_id(local)!=Some(region+1) {return Err(LoadError::RoomMismatch);}
+                }
             }
-            self.loaded_scenes+=1;
+            if mapped!=scene.room_count() {return Err(LoadError::RoomMismatch);}
+            self.resident_scene=index;self.loaded_scenes+=1;
             unsafe {HK_SCENE_LOADS=HK_SCENE_LOADS.saturating_add(1);HK_SCENE_DECODE_ID=0;}
-            // Further reads/decompression use only the suffix after this raw
-            // scene. Retry after a later failure cannot invalidate this prefix.
+            // Joint mode preserves this immutable prefix during later reads.
+            // Exclusive mode admits no second scene until the next gate.
         }
         Ok(())
     }
-    /// Title/retry admission only. Load both scenes once, then select a view.
+    /// Exclusive admission at title or a drained scene gate; spatial selection uses try_select().
     pub fn select(&mut self,region:usize)->Result<(),LoadError> {
         if region>=REGION_SCENE_LOCAL.len() {return Err(LoadError::RoomMismatch);}
         mark(1,0);
-        if let Err(error)=self.admit_scenes() {mark(3,error as u32);return Err(error);}
+        if let Err(error)=self.admit_scenes(scene_index(region)) {mark(3,error as u32);return Err(error);}
         self.try_select(region).and_then(|ready|if ready {Ok(())}else{Err(LoadError::RoomMismatch)})
     }
     pub fn try_select(&mut self,region:usize)->Result<bool,LoadError> {
@@ -283,7 +316,7 @@ impl Cache {
         unsafe {HK_ROOM_BYTES=SCENE_MANIFEST[scene_index(region)].raw_len as u32;}
         mark(2,0);Ok(true)
     }
-    /// No deferred request is created: all scene bytes are admitted at title.
+    /// Spatial requests never initiate I/O. A nonresident scene requires select().
     pub fn request(&mut self,region:usize)->Result<bool,LoadError> {
         if region>=REGION_SCENE_LOCAL.len() {Err(LoadError::RoomMismatch)}else{Ok(self.is_ready(region))}
     }
@@ -293,7 +326,8 @@ impl Cache {
     pub fn protect_upload(&mut self,region:Option<usize>)->bool {region.is_none_or(|r|self.is_ready(r))}
     pub fn pending(&self)->Option<usize> {None}
     pub fn is_ready(&self,region:usize)->bool {
-        REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene,_)|scene<self.loaded_scenes)
+        REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene,_)|
+            if SCENE_GATE_LOAD {self.loaded_scenes==1 && scene==self.resident_scene && self.atlases_ready()}else{scene<self.loaded_scenes})
     }
     pub fn room_for(&self,region:usize)->Option<Room<'_>> {
         if !self.is_ready(region) {return None;}
@@ -301,7 +335,7 @@ impl Cache {
         self.scene(index).room(local)
     }
     fn scene(&self,index:usize)->Scene<'_> {
-        assert!(index<self.loaded_scenes);let d=&SCENE_MANIFEST[index];
+        assert!(if SCENE_GATE_LOAD {self.loaded_scenes==1&&index==self.resident_scene}else{index<self.loaded_scenes});let d=&SCENE_MANIFEST[index];
         let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(d.ram_offset),d.raw_len)};
         unsafe {Scene::validated_view(bytes)}
     }

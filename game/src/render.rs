@@ -194,6 +194,16 @@ static mut FRAMEBUFFER_Y: u16 = 0;
 fn vertex(p: (i16, i16)) -> u32 {
     (p.0 as u16 as u32) | ((p.1 as u16 as u32) << 16)
 }
+/// Called after final GPU/DMA retirement, before any scene/atlas replacement.
+pub fn release_scene() {
+    assert!(!dma_pending()&&!psx_rt::interrupts::gp1_queue_pending());
+    unsafe {
+        (&mut *(&raw mut BACK_PREFIX)).invalidate();
+        (&mut *(&raw mut TILE_PREPARED)).invalidate();
+        BACK_PREBUILD_ALLOWED=false;TEXTURE_COUNT=0;DRAW_COUNT=0;
+    }
+    animation_cache::init();
+}
 #[inline(never)]
 pub fn init(room: &Room, bank: usize, region:usize) {
     crate::input::checkpoint();

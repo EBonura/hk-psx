@@ -56,4 +56,71 @@ class BreakEffectsTests(unittest.TestCase):
         mixed=b.particle_tracks([style,style|{'size':[131072,131072]}],[emitters[0],dict(style=1,source=3),emitters[1]])
         self.assertEqual((len(mixed[0]),mixed[1],mixed[2]),(256,[0,65535,128],[1]))
 
+
+class ParticleScalingTests(unittest.TestCase):
+    def matrix(self,scale=.5):
+        # A uniform scale and90-degree world rotation, with nonzero origin.
+        return [[0,-scale,0,13],[scale,0,0,7],[0,0,scale,2],[0,0,0,1]]
+    def source(self,mode=0):
+        c=lambda x:dict(minMaxState=0,scalar=x)
+        disabled=dict(enabled=False)
+        ps={key:dict(disabled)for key in ('SizeModule','RotationModule','ColorModule','UVModule','ForceModule','VelocityModule','ClampVelocityModule','RotationBySpeedModule','CollisionModule')}
+        ps.update(playOnAwake=True,looping=False,scalingMode=mode,moveWithTransform=1,lengthInSec=.1,
+            InitialModule=dict(enabled=True,size3D=False,rotation3D=False,gravitySource=0,gravityModifier=c(0),
+                startColor=dict(minMaxState=0,maxColor=dict(r=1,g=1,b=1,a=1)),startLifetime=c(2),
+                startSpeed=c(10),startSize=c(.6),startRotation=c(0),maxNumParticles=128),
+            ShapeModule=dict(enabled=True,type=10,m_Position=dict(x=0,y=0,z=0),m_Rotation=dict(x=0,y=0,z=0),
+                m_Scale=dict(x=1,y=1,z=1),randomDirectionAmount=0,sphericalDirectionAmount=0,randomPositionAmount=0,
+                radius=dict(mode=0,value=1),arc=dict(mode=0,value=180)),
+            EmissionModule=dict(enabled=True,m_BurstCount=0,rateOverDistance=c(0),rateOverTime=c(10)))
+        ps['ForceModule'].update(enabled=True,inWorldSpace=True,randomizePerFrame=False,x=c(0),y=c(-10),z=c(0))
+        ps['VelocityModule'].update(enabled=True,inWorldSpace=True,x=c(0),y=c(5),z=c(0),speedModifier=c(1),
+            **{k:c(0)for k in ('orbitalX','orbitalY','orbitalZ','orbitalOffsetX','orbitalOffsetY','orbitalOffsetZ','radial')})
+        ps['ClampVelocityModule'].update(enabled=True,separateAxis=False,drag=c(0),magnitude=c(3),dampen=1)
+        ps['RotationBySpeedModule']['range']=dict(x=3,y=12)
+        ps['CollisionModule'].update(m_Bounce=c(.5),m_Dampen=c(.1),m_EnergyLossOnCollision=c(.2),minKillSpeed=2,radiusScale=.63)
+        return ps
+    def test_uniform_hierarchy_native_world_parameter_contract(self):
+        ps=self.source();scale=b.particle_scale(ps,self.matrix())
+        fields=b.style(ps,-9.81,scale)
+        self.assertEqual(scale,.5)
+        self.assertEqual(fields['speed'],[5*65536]*2)
+        self.assertEqual(fields['size'],[round(.3*65536)]*2)
+        self.assertEqual(fields['force'][1],[-5*65536]*2)
+        self.assertEqual(fields['velocity'][1],[round(2.5*65536)]*2)
+        # Native scaled force/velocity do not rotate with a world emitter; the
+        # original source magnitude3 clamp is demonstrably not scaled to1.5.
+        self.assertEqual(fields['force'][0],[0,0])
+        self.assertEqual(fields['limit'],3*65536)
+        self.assertEqual(fields['kill_speed'],2*65536)
+        self.assertEqual(fields['radius_scale'],round(.63*65536))
+        self.assertEqual(fields['life'],[120,120])
+        self.assertEqual(fields['radius'],65536) # already scaled by basis once
+    def test_shape_mode_preserves_existing_unscaled_parameters(self):
+        ps=self.source(2)
+        scale=b.particle_scale(ps,self.matrix())
+        self.assertEqual(scale,1)
+        self.assertEqual(b.style(ps,-9.81,scale),b.style(ps,-9.81))
+    def test_unrepresented_hierarchy_shapes_fail_closed(self):
+        ps=self.source()
+        for value in (0,float('nan'),float('inf')):
+            with self.assertRaisesRegex(ValueError,'uniform'):b.particle_scale(ps,self.matrix(value))
+        bad=self.matrix();bad[0][1]=-.6
+        with self.assertRaisesRegex(ValueError,'uniform'):b.particle_scale(ps,bad)
+        planar=self.matrix();planar[2][2]=.49
+        self.assertEqual(b.particle_scale(ps,planar),.5)
+        tilted=self.matrix();tilted[0][2]=.1
+        with self.assertRaises(ValueError):b.particle_scale(ps,tilted)
+        ps['ForceModule']['z']['scalar']=1
+        with self.assertRaisesRegex(ValueError,'XY plane'):b.particle_scale(ps,self.matrix())
+        ps['ForceModule']['z']['scalar']=0
+        bad=[[.5,.3,0,0],[0,.4,0,0],[0,0,.5,0],[0,0,0,1]]
+        with self.assertRaisesRegex(ValueError,'shear'):b.particle_scale(ps,bad)
+        ps['moveWithTransform']=0
+        with self.assertRaisesRegex(ValueError,'world simulation'):b.particle_scale(ps,self.matrix())
+        ps['moveWithTransform']=1;ps['InitialModule']['gravityModifier']['scalar']=1
+        with self.assertRaisesRegex(ValueError,'gravity'):b.particle_scale(ps,self.matrix())
+        ps['scalingMode']=1
+        with self.assertRaisesRegex(ValueError,'scaling mode'):b.particle_scale(ps,self.matrix())
+
 if __name__=='__main__':unittest.main()

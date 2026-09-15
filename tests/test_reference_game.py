@@ -141,6 +141,10 @@ class ReferenceValidationTests(unittest.TestCase):
                 reference.command(Namespace(name='live', text='buttons 0x20'))
             with self.assertRaises(ValueError):
                 reference.command(Namespace(name='live', text='buttons 0x100'))
+            reference.command(Namespace(name='live', text='particle-probe'))
+            self.assertTrue((run / 'command.txt').read_text().rstrip().endswith(' particle-probe'))
+            with self.assertRaises(ValueError):
+                reference.command(Namespace(name='live', text='particle-probe extra'))
             (run / 'run.json').write_text('{}')
             with self.assertRaises(ValueError):
                 reference.command(Namespace(name='live', text='quit'))
