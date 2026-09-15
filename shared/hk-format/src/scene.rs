@@ -1,4 +1,6 @@
-//! Checked HKSCNE01 resident scene. Validation happens at scene admission;
+//! Checked HKSCNE01/HKSCNE02 resident scene. Version02 omits bootstrap-only
+//! atlas bytes while retaining logical page/CLUT counts and all runtime data.
+//! Validation happens at scene admission;
 //! spatial region lookup only constructs immutable views of admitted bytes.
 use crate::{Error,Room,u16_at,u32_at,HAS_ALPHA_COVERS,MAX_STREAM_BYTES};
 const HEADER:usize=128;
@@ -12,7 +14,7 @@ impl<'a> Scene<'a>{
         Ok(validation.view(bytes))
     }
     fn header(bytes:&'a[u8])->Result<Self,Error>{
-        if bytes.len()<HEADER || &bytes[..8]!=b"HKSCNE01" || u32_at(bytes,52)!=HAS_ALPHA_COVERS
+        if bytes.len()<HEADER || (&bytes[..8]!=b"HKSCNE01" && &bytes[..8]!=b"HKSCNE02") || u32_at(bytes,52)!=HAS_ALPHA_COVERS
             || bytes[56..64].iter().chain(bytes[104..128].iter()).any(|&b|b!=0){return Err(Error::Header);}
         if u32_at(bytes,48)as usize!=bytes.len(){return Err(Error::Truncated);}
         // rooms, textures, draw/frame/clip/edge pools, palettes, pages, stream
@@ -25,8 +27,9 @@ impl<'a> Scene<'a>{
         if counts[6]>counts[1]{return Err(Error::Reference);}
         let stream_bytes=counts[8];
         let offsets=core::array::from_fn(|i|u32_at(bytes,64+i*4)as usize);
+        let compact=&bytes[..8]==b"HKSCNE02";
         let lengths=[counts[1]*16,counts[2]*44,counts[3]*20,counts[4]*16,counts[5]*16,
-            counts[6]*32,counts[7]*32768,stream_bytes,counts[0]*DESCRIPTOR];
+            if compact {0}else{counts[6]*32},if compact {0}else{counts[7]*32768},stream_bytes,counts[0]*DESCRIPTOR];
         let mut end=HEADER;
         for i in 0..9{
             let start=end.checked_add(3).ok_or(Error::Truncated)?&!3;

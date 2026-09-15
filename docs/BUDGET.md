@@ -1,38 +1,38 @@
 # Shared scene and gameplay budget
 
-The validated pass48 normal build from 2026-09-15 holds both currently authored scenes in one RAM
+The validated pass51 normal build from 2026-09-15 holds both currently authored scenes in one RAM
 arena and persistent VRAM atlases. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |341,048|
-| Code-to-data alignment |8|
-| Linked data, including menu, HUD and sound bank |369,600|
-| BSS, including shared scene arena and runtime pools |1,266,480|
-| Total static span |1,977,136|
+| Linked code |337,340|
+| Code-to-data alignment |4|
+| Linked data, including menu, HUD and sound bank |369,216|
+| BSS, including shared scene arena and runtime pools |567,800|
+| Total static span |1,274,360|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |5,072|
+| Unallocated gap before reserved stack |707,848|
 
-Static data ends at `0x801f2b30`; the reserved stack begins at `0x801f3f00`.
-There is no heap. The single scene arena occupies1,069,056 bytes, replacing five
+Static data ends at `0x801471f8`; the reserved stack begins at `0x801f3f00`.
+There is no heap. The single scene arena occupies369,180 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
 1,120 scene-global texture IDs; the animation cache still permits 2,048 keys.
 Geo logic, resident art/audio, functional menus, break-effect and Lifeblood
 tables increase the static span; the pinned Town/Tutorial pack and its
 regenerated tilemap fills changed the data size.
-The remaining unallocated gap is not a measured safe stack allowance; profile
-main-stack high-water and reclaim RAM before substantially expanding content.
+The recovered gap is available for bounded future data and precompute tables.
+It is not a measured stack allowance; main-stack high-water remains unmeasured.
 
 The former EXE's `main` prologue allocated 33,216 bytes by itself, exceeding
 its 32,768-byte reservation before nested calls. `host/stack_budget.py` now
 derives a project linker script from the unchanged pinned SDK, protects 48 KiB,
 and checks the actual final main prologue before packaging. The generated
 script's content hash is part of its filename so budget changes force a relink.
-The current main frame is 25,536 bytes, leaving 23,616 reserved bytes for nested
+The current main frame is 25,464 bytes, leaving 23,688 reserved bytes for nested
 calls and other stack use; this is **not** an observed high-water measurement.
 The linker also excludes the 256 bytes above its initial SP from static RAM.
 Evidence: `.hkpsx/stack-budget-2026-09-14.json`.
@@ -45,24 +45,27 @@ do not attribute the entire main-frame reduction to those 512 bytes alone.
 
 | Scene | Raw bytes | Stored bytes | RAM offset | Decoder suffix capacity |
 | --- | ---: | ---: | ---: | ---: |
-| Tutorial |945,956|459,873|0|1,069,056|
-| Town entrance |117,264|46,613|945,956|123,100|
+| Tutorial |321,956|181,163|0|369,180|
+| Town entrance |47,216|25,355|321,956|47,224|
 
-Raw resident data totals 1,063,220 bytes. Remaining arena space is 5,836 bytes;
-it is part of BSS and is not additional unallocated heap/stack space. The build
-checks exact sequential decoding through pinned SDK and incremental decoders,
-including budgets1,31,1024,2048,8192. Each later read/decode uses a private suffix
-and preserves the admitted prefix. Sector padding, FNV hashes, scene IDs, local
-references and all serialized region geometry bounds pass before packaging.
-The exact current aligned minimum is 1,063,224 bytes: raw bytes alone are four
-bytes too small for the pinned in-place decoder. The chosen capacity retains
-5,832 bytes over that proven minimum. Sector padding and the largest 200,704-byte
-ambience startup read are included; see `.hkpsx/scene-arena-audit/report.json`.
+HKSCNE02 resident data omits the static page/palette payloads already held in
+VRAM. Runtime records, animation data and alpha maps remain resident and exact.
+Raw data totals369,172 bytes; the arena retains8 bytes beyond this and4 beyond
+the proven369,176-byte aligned minimum. Startup-only atlas chunks decode/upload
+through the same empty arena before scene views are admitted. Host analysis
+keeps the original HKSCNE01 records/payloads separately; these are not on-disc
+resident scene copies. The native sequence proof exercises all23 atlas chunks,
+both scene decoders, budgets1,31,1024,2048,8192 and immutable admitted prefixes.
+The largest ambience startup read is200,704 bytes and fits this same buffer.
+
 The renderer uses948 bytes of CPU-only scratchpad. An888-byte draw workspace
 (three32-piece partitions, eight occluders and union bounds) overlays the
 600-byte owner grid used earlier during coverage collection;60 row-mask bytes
-remain disjoint. Explicit phase initialization ends all owner borrows before
-any draw access. These are never DMA sources or stack storage;76 bytes remain.
+remain disjoint. Explicit phase initialization
+ends owner borrows before draw access. These are never DMA sources or stack
+storage;76 bytes remain. Row retirement events use2,760 bytes instead of1,560:
+one source-row mask replaces repeated per-cell retirements. Packed texture
+classification adds320 aligned bytes and replaces runtime atlas inspection.
 The linked data above includes84,284 bytes of host-certified4px coverage tables
 (62,160 bitmap,15,708 descriptors,6,376 shared draw lookup,40 slice overhead).
 All1309 certificates cover immutable original poses; no new VRAM is allocated.
@@ -124,20 +127,23 @@ palettes, using one existing animation slot while visible. Their distinct
 source frame bounds are retained. No static page or additional VRAM rectangle
 is reserved for the door.
 
-The two shared scene payloads total 506,486 stored bytes. The original98
-HKROOM02 files remain host inputs and geometry proofs, not separate disc chunks.
-WORLD.PAK begins at LBA1024; the8-entry table binds2scenes and6ambience clips in
-one header sector. Exact source, raw, stored and decoder code hashes are in
-`.hkpsx/packed-scenes.json` and the build/replay reports.
+The two compact scene payloads total206,518 stored bytes. The23 startup atlas
+chunks hold694,048 raw /321,841 stored bytes. Combined stored size528,359 bytes
+is21,873 bytes larger than the former combined scene encoding, trading a small
+startup read increase for699,876 bytes removed from the resident arena.
+WORLD.PAK begins at LBA1024; its31-entry table binds2 scenes,6 ambience clips
+and23 atlas chunks. Original HKROOM02/full HKSCNE01 files remain host analysis
+inputs. Raw/stored/source/decoder hashes are in the packed-scene/build reports.
 
-The title reads ambience through the empty shared arena, uploads it to SPU, then
-loads/validates both scenes and uploads their atlases. Static VRAM upload work
-uses64KiB slices before play; all pages/CLUTs then remain immutable. During the
-long replay CDsectors stay481 and staticVRAM upload bytes stay693,952 throughout
-the measured route. Eight animation slots retain an independent16KiB maximum per
-frame; this replay's measured maximum is1,942 bytes. Animation frames come from
-resident RAM, with no traversal CD reads or decoding. This does not establish
-full-game residency or hardware timing.
+The title loads ambience through the empty arena into SPU, then validates and
+uploads atlas chunks synchronously before admitting compact scenes. No atlas
+buffer is reused before draw_sync completes. Retry revokes admission before
+menu artwork overwrites VRAM, ensuring all pages are restored on the next start.
+Pass49 startup reads509 sectors; static uploads total694,048 bytes with a32KiB
+maximum chunk. Both counters stay unchanged throughout the long gameplay route.
+Eight animation slots retain an independent16KiB maximum per frame. Animation
+frames come from resident RAM, with no traversal CD reads or decoding. This is
+the current two-scene subset, not full-game residency or hardware timing.
 
 Six original effects occupy 31,984 SPU bytes at `0x1010..0x8D00`, voices0..5.
 The SDK silent loop is at0x1000. Five effects use22,050Hz mono; damage uses11,025Hz.
@@ -160,12 +166,11 @@ reuse the existing pool after DMA ownership ends; no second framebuffer or
 texture allocation is added.
 
 
-Pass48 also includes8,180bytes of optional grouped seam certificates (124
+Historical pass48 included8,180bytes of optional grouped seam certificates (124
 selected bank groups, maximum32 per region). The inverse pool map uses6,080
 logical stack bytes only during admission; final `render::init` frame is6,288,
 so main+init totals31,824 before nested calls/IRQ. Collision sweep caching uses
 2,048 logical stack bytes: final tick frame4,352, with the observed static
 main/State/tick/collide chain totaling30,960. These chains fit the48KiB reserved
-stack, but are not a measured high-water guarantee. Only5,072 unallocated
-static bytes remain before that reservation; optional coverage tables are a
-candidate to reclaim if later features need RAM.
+stack, but are not a measured high-water guarantee. The subsequent compact-scene split recovered nearly700KiB without removing
+these coverage tables. Historical stack chains above are not current high-water measurements.

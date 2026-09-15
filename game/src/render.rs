@@ -171,10 +171,6 @@ const FADE_CLUT_X:u16=320;
 const FADE_CLUT_Y:u16=480;
 const FADE_CLUT:[u8;32]=[0,0,255,255,0,128,0,128,0,128,0,128,0,128,0,128,
     0,128,0,128,0,128,0,128,0,128,0,128,0,128,0,128];
-fn binary_black_palette(p:&[u8])->bool {
-    p.len()==32 && u16_at(p,0)==0 && u16_at(p,2)==1
-        && (2..16).all(|i|u16_at(p,i*2)==0x8000)
-}
 // A count of255 means the legacy pack has no precomputed alpha cover.
 // init fills every active entry before drawing; zero initialization keeps this
 // working storage out of the EXE's on-disc data payload.
@@ -253,13 +249,13 @@ pub fn init(room: &Room, bank: usize, region:usize) {
         for i in 0..room.counts[1] {
             if i&31==0 {crate::input::checkpoint();}
             let t = room.texture(i);
-            let p=t.palette as usize*32;
-            if !t.is_streamed() && binary_black_palette(&room.palettes()[p..p+32]) {
+            let flags=crate::disc::scene_texture_flags(bank,i);
+            if !t.is_streamed() && flags&1!=0 {
                 BLACK_MASKS[i/32]|=1<<(i%32);
             }
-            // Verify actual sampled words; nearly every texture exits on its
-            // first texel, so this costs little at scene admission.
-            if !t.is_streamed() && solid_black(room,t) {SOLID_TEXTURES[i/32]|=1<<(i%32);}
+            // Flags are derived from the exact final atlas words before its
+            // startup upload. Compact resident scenes keep no duplicate texels.
+            if !t.is_streamed() && flags&2!=0 {SOLID_TEXTURES[i/32]|=1<<(i%32);}
             if let Some(cover)=room.alpha_cover(t) {COVERS[i].copy_from_slice(cover);}
             else {COVERS[i]=[255;20];}
             if t.is_streamed() {
@@ -376,17 +372,6 @@ fn bind_tile_groups(room:&Room,bank:usize) {
     }
 }
 
-/// Every texel samples the opaque black word0x0001 (source tilemap patches,
-/// `black_solid` sprites). Exits at the first other word.
-fn solid_black(room:&Room,t:Texture)->bool {
-    let page=room.page(t.page as usize);
-    let pal=&room.palettes()[t.palette as usize*32..][..32];
-    (0..t.height as usize).all(|y|(0..t.width as usize).all(|x| {
-        let u=t.u as usize+x;let v=t.v as usize+y;
-        let index=(page[v*128+u/2]>>((u&1)*4))&15;
-        u16_at(pal,index as usize*2)==1
-    }))
-}
 /// Every later opaque rectangle of this frame: whole quads of solid black
 /// textures and nonzero STP-clear cores of any texture, at full opacity. Draw order is
 /// every back draw in index order, then every front draw.

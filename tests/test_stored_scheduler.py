@@ -119,3 +119,73 @@ METHODS
 }
 '''.replace('METHODS', methods)
         self.run_rust(code)
+
+    def test_production_bootstrap_retry_discards_admission_before_menu_reuse(self):
+        source = (ROOT / 'game/src/disc.rs').read_text()
+        methods = '\n'.join(method(source, name) for name in (
+            'reset_bootstrap', 'is_ready', 'atlases_ready'))
+        code = r'''
+#![allow(dead_code)]
+const EMPTY:usize=usize::MAX;
+const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
+const ATLASES:&[u8]=&[0;23];
+mod cd_stream {
+    #[derive(Clone,Copy,Debug,PartialEq)]pub enum Status{Idle,Busy,Done,Failed(u32)}
+    static mut SEQUENCE:[Status;4]=[Status::Idle;4];
+    static mut POSITION:usize=0;
+    static mut CANCELLED:bool=false;
+    static mut WRITER_ACTIVE:bool=false;
+    pub fn setup(first:Status,terminal:Status) {
+        unsafe {
+            SEQUENCE=[first,first,terminal,terminal];POSITION=0;
+            CANCELLED=false;WRITER_ACTIVE=first==Status::Busy;
+        }
+    }
+    pub fn cancel(){unsafe{assert!(!CANCELLED);CANCELLED=true;}}
+    pub fn status()->Status {
+        unsafe {
+            assert!(CANCELLED,"transport must be cancelled before polling");
+            let result=SEQUENCE[POSITION];POSITION+=1;
+            if result!=Status::Busy{WRITER_ACTIVE=false;}result
+        }
+    }
+    pub fn assert_quiescent(expected_polls:usize) {
+        unsafe {
+            assert!(CANCELLED);assert!(!WRITER_ACTIVE);
+            assert_eq!(POSITION,expected_polls);
+        }
+    }
+}
+struct Cache{loaded_scenes:usize,loaded_atlases:usize,selected:usize,ready:bool,header:[u32;4]}
+impl Cache{METHODS}
+#[test]fn failure_after_any_atlas_or_scene_admission_requires_fresh_uploads(){
+    // Failures can follow any atlas chunk, or scene admission after all atlas
+    // chunks. Menu restoration overwrites their VRAM, so none may remain ready.
+    for scenes in 0..=2 {for atlases in 0..=ATLASES.len() {
+        if scenes!=0&&atlases!=ATLASES.len(){continue;}
+        for terminal in [cd_stream::Status::Idle,cd_stream::Status::Done,cd_stream::Status::Failed(42)] {
+            let mut cache=Cache{loaded_scenes:scenes,loaded_atlases:atlases,
+                selected:if scenes==0{EMPTY}else{0},ready:true,header:[11,22,33,44]};
+            cd_stream::setup(terminal,terminal);cache.reset_bootstrap();
+            cd_stream::assert_quiescent(1);
+            assert_eq!(cache.loaded_scenes,0);assert_eq!(cache.loaded_atlases,0);
+            assert_eq!(cache.selected,EMPTY);assert!(!cache.atlases_ready());
+            for region in 0..REGION_SCENE_LOCAL.len(){assert!(!cache.is_ready(region));}
+            // Valid pack metadata can survive; only admission references reset.
+            assert!(cache.ready);assert_eq!(cache.header,[11,22,33,44]);
+        }
+    }}
+}
+#[test]fn active_transport_is_cancelled_and_drained_before_reset_returns(){
+    for terminal in [cd_stream::Status::Done,cd_stream::Status::Failed(9)] {
+        let mut cache=Cache{loaded_scenes:1,loaded_atlases:23,selected:0,ready:true,header:[1;4]};
+        cd_stream::setup(cd_stream::Status::Busy,terminal);cache.reset_bootstrap();
+        cd_stream::assert_quiescent(3);
+        assert_eq!((cache.loaded_scenes,cache.loaded_atlases,cache.selected),(0,0,EMPTY));
+    }
+}
+'''.replace('METHODS', methods)
+        self.run_rust(code)
+        main = (ROOT / 'game/src/main.rs').read_text()
+        retry = main[main.index('while cache.prepare_ambience()'):]
+        self.assertLess(retry.index('cache.reset_bootstrap()'), retry.index('menu::restore()'))

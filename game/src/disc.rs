@@ -24,10 +24,13 @@ pub const fn scene_palette_base(scene:usize)->usize {SCENE_MANIFEST[scene].palet
 pub fn scene_black_cores(scene:usize)->&'static [[u8;4]] {SCENE_BLACK_CORES[scene]}
 /// Full-opacity occlusion only: colours remain textured, STP-clear overwrites.
 pub fn scene_opaque_cores(scene:usize)->&'static [[u8;4]] {SCENE_OPAQUE_CORES[scene]}
+pub fn scene_texture_flags(scene:usize,texture:usize)->u8 {
+    (SCENE_TEXTURE_FLAGS[scene][texture/4]>>((texture%4)*2))&3
+}
 pub const fn scene_region(scene:usize)->usize {SCENE_REGIONS[scene]}
 pub struct Cache {
     entries:[PackEntry;MAX_CHUNKS],header:[u32;2048],reader:SectorReader,
-    ready:bool,loaded_scenes:usize,selected:usize,
+    ready:bool,loaded_scenes:usize,loaded_atlases:usize,selected:usize,
 }
 #[no_mangle] pub static mut HK_SCENE_LOADS:u32=0;
 #[no_mangle] pub static mut HK_SCENE_READ_ID:u32=0;
@@ -86,11 +89,11 @@ impl Cache {
     /// Safety: exactly one Cache owns BUFFERS and the CD controller.
     pub const unsafe fn new()->Self {
         Self {entries:[EMPTY_ENTRY;MAX_CHUNKS],header:[0;2048],reader:SectorReader::new(),
-            ready:false,loaded_scenes:0,selected:EMPTY}
+            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY}
     }
     fn init(&mut self)->Result<(),LoadError> {
         if self.ready {return Ok(());}
-        let chunks=SCENE_COUNT+crate::ambience::CLIPS.len();
+        let chunks=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len();
         if SCENE_COUNT==0 || chunks>MAX_CHUNKS || SCENE_ARENA_BYTES%4!=0
             || SCENE_REGIONS.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
         let mut offset=0usize;
@@ -103,6 +106,21 @@ impl Cache {
             offset=offset.checked_add(d.raw_len).and_then(|n|n.checked_add(3)).ok_or(LoadError::RoomMismatch)?&!3;
         }
         if offset>SCENE_ARENA_BYTES || REGION_SCENE_LOCAL.iter().any(|&(s,_)|s>=SCENE_COUNT) {return Err(LoadError::RoomMismatch);}
+        // Atlas chunks cover the persistent allocation exactly once. They are
+        // decoded into unborrowed startup scratch, then discarded after upload.
+        let(mut pages,mut palettes)=(0usize,0usize);
+        for a in ATLASES {
+            let (next,unit)=match a.kind {0=>(&mut pages,32768usize),1=>(&mut palettes,32usize),_=>return Err(LoadError::RoomMismatch)};
+            if a.count==0 || a.first!=*next || a.count.checked_mul(unit)!=Some(a.raw_len)
+                || a.raw_len>SCENE_ARENA_BYTES || a.stored_len==0
+                || a.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES {
+                return Err(LoadError::RoomMismatch);
+            }
+            *next=next.checked_add(a.count).ok_or(LoadError::RoomMismatch)?;
+        }
+        if pages!=SCENE_TOTAL_PAGES || palettes!=SCENE_TOTAL_PALETTES
+            || pages>hk_cache::residency::BANKS*hk_cache::residency::PAGES
+            || palettes>hk_cache::residency::SCENE_CLUTS {return Err(LoadError::RoomMismatch);}
         if !unsafe {self.reader.prepare_single_speed()} {return Err(LoadError::Prepare);}
         if !unsafe {self.reader.start_read_seek_first(WORLD_PACK_DEFAULT_LBA,SEEK_POLL)}
             || !sector(&mut self.reader,&mut self.header[..SECTOR_WORDS]) {return Err(LoadError::HeaderRead);}
@@ -120,8 +138,11 @@ impl Cache {
         for i in 0..chunks {
             let(size,checksum,capacity)=if i<SCENE_COUNT {
                 let d=&SCENE_MANIFEST[i];(d.stored_len,d.stored_fnv,d.arena_capacity)
-            } else {
+            } else if i<SCENE_COUNT+crate::ambience::CLIPS.len() {
                 let clip=&crate::ambience::CLIPS[i-SCENE_COUNT];(clip.byte_len,clip.checksum,SCENE_ARENA_BYTES)
+            } else {
+                let a=&ATLASES[i-SCENE_COUNT-crate::ambience::CLIPS.len()];
+                (a.stored_len,a.stored_fnv,SCENE_ARENA_BYTES)
             };
             let e=parse_entry(bytes,i).ok_or(LoadError::HeaderInvalid)?;
             if size==0 || size.div_ceil(SECTOR_BYTES)>capacity/SECTOR_BYTES
@@ -168,10 +189,47 @@ impl Cache {
         })();
         if let Err(error)=result {mark(3,error as u32);}result
     }
+    /// Startup-only atlas admission. No Scene/Room view may exist while this
+    /// buffer is scratch; completed chunks remain in VRAM across retries.
+    #[inline(never)]
+    fn prepare_atlases(&mut self)->Result<(),LoadError> {
+        self.init()?;
+        if self.atlases_ready() {return Ok(());}
+        if self.loaded_scenes!=0 {return Err(LoadError::RoomMismatch);}
+        while self.loaded_atlases<ATLASES.len() {
+            let a=&ATLASES[self.loaded_atlases];
+            let entry=self.entries[SCENE_COUNT+crate::ambience::CLIPS.len()+self.loaded_atlases];
+            self.read(entry,0)?;
+            let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
+            let mut decoder=Decoder::new_bytes(a.stored_len,a.stored_fnv,a.raw_len,a.raw_fnv);
+            loop {
+                unsafe {HK_ROOM_DECODE_PHASE=decoder.phase_id();}
+                match decoder.step(arena,1024) {
+                    Ok(Some(len))=>{if len!=a.raw_len {return Err(LoadError::RoomMismatch);}break;}
+                    Ok(None)=>{},
+                    Err(error)=>return Err(match error {DecodeError::Checksum=>LoadError::Checksum,
+                        DecodeError::Decompress=>LoadError::Decompress,DecodeError::RoomFormat=>LoadError::RoomFormat}),
+                }
+            }
+            crate::vram_cache::upload_atlas(a,&arena[..a.raw_len]);
+            self.loaded_atlases+=1;
+        }
+        Ok(())
+    }
+    pub fn atlases_ready(&self)->bool {self.loaded_atlases==ATLASES.len()}
+    /// Retry UI overwrites atlas VRAM with title art. Revoke all startup
+    /// admissions before it runs, so the retry uploads every affected page.
+    /// Exclusive &mut self ensures no Room/Scene view survives this reset.
+    pub fn reset_bootstrap(&mut self) {
+        cd_stream::cancel();
+        while matches!(cd_stream::status(),cd_stream::Status::Busy) {core::hint::spin_loop();}
+        self.loaded_scenes=0;self.loaded_atlases=0;self.selected=EMPTY;
+    }
+
     // Keep the large startup decoder outside main's bounded MIPS branch span.
     #[inline(never)]
     fn admit_scenes(&mut self)->Result<(),LoadError> {
-        self.init()?;
+        self.prepare_atlases()?;
         while self.loaded_scenes<SCENE_COUNT {
             let index=self.loaded_scenes;let d=SCENE_MANIFEST[index];
             unsafe {HK_SCENE_READ_ID=index as u32+1;}

@@ -315,6 +315,65 @@ def manifest(result,metadata):
     return text
 
 
+def compact_resident(raw):
+    """HKSCNE02: remove atlas bytes, preserving every logical runtime record.
+
+    Absolute pool/reference offsets are relocated once by the host. Runtime
+    accessors stay direct slices, with no per-record indirection or decoding.
+    The original HKSCNE01 bank remains the texture/provenance input.
+    """
+    if len(raw)<HEADER_BYTES or raw[:8]!=MAGIC or struct.unpack_from('<I',raw,48)[0]!=len(raw):
+        raise ValueError('Expected complete HKSCNE01 source')
+    offsets=struct.unpack_from('<10I',raw,64)
+    start,end=offsets[5],offsets[7]
+    palettes,pages=struct.unpack_from('<2I',raw,36)
+    if not HEADER_BYTES<=start<=end<=len(raw) or end-start!=palettes*32+pages*32768:
+        raise ValueError('Invalid source atlas extent')
+    gap=end-start
+    out=bytearray(raw[:start]+raw[end:]);out[:8]=b'HKSCNE02'
+    struct.pack_into('<I',out,48,len(out))
+    relocated=[old if old<=start else max(start,old-gap)for old in offsets]
+    struct.pack_into('<10I',out,64,*relocated)
+    rooms=struct.unpack_from('<I',raw,12)[0]
+    for i in range(rooms):
+        at=relocated[8]+i*ROOM_BYTES+20
+        refs=struct.unpack_from('<4I',out,at)
+        if any(r<end or r>len(raw)for r in refs):raise ValueError('Invalid source reference offset')
+        struct.pack_into('<4I',out,at,*(r-gap for r in refs))
+    return bytes(out)
+
+
+def bootstrap_atlases(raw,entry):
+    """Page-sized immutable upload chunks with scene-local destination IDs."""
+    s=entry['sections'];out=[]
+    for kind,name,stride in((0,'pages',32768),(1,'palettes',32)):
+        section=s[name];payload=raw[section['offset']:section['offset']+section['bytes']]
+        if len(payload)!=section['bytes'] or len(payload)%stride:raise ValueError('Invalid atlas payload')
+        for first in range(0,len(payload)//stride,32768//stride):
+            chunk=payload[first*stride:(first+32768//stride)*stride]
+            out.append((dict(kind=kind,first=first,count=len(chunk)//stride),chunk))
+    return out
+
+
+def texture_flags(raw,entry):
+    """Two exact facts per final texture: binary mask palette, solid word1.
+
+    Streamed animation IDs have neither flag. Padding is zero and each bank
+    is word-aligned; no raw atlas/palette reads are needed during activation.
+    """
+    s=entry['sections'];out=bytearray((entry['textures']+15)//16*4)
+    for i in range(entry['textures']):
+        page,u,v,w,h,pal,_=struct.unpack_from('<6HI',raw,s['textures']['offset']+i*16)
+        if page==65535:continue
+        palette=struct.unpack_from('<16H',raw,s['palettes']['offset']+pal*32)
+        binary=palette==(0,1,*([0x8000]*14))
+        base=s['pages']['offset']+page*32768
+        solid=all(palette[(raw[base+(v+y)*128+(u+x)//2]>>(((u+x)&1)*4))&15]==1
+                  for y in range(h)for x in range(w))
+        out[i//4]|=(int(binary)|(int(solid)<<1))<<((i%4)*2)
+    return list(out)
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--metadata',type=Path,default=ROOT/'data/regions.json');p.add_argument('--output',type=Path,required=True);p.add_argument('--page-limit',type=int,default=20);p.add_argument('--allow-reduction',action='store_true');p.add_argument('--dedup-mode',choices=('blob','texel_words'),default='blob');p.add_argument('--share-pixel-planes',action='store_true');a=p.parse_args()
     result=cook_scene_banks(a.metadata,a.output,a.page_limit,a.allow_reduction,a.dedup_mode,a.share_pixel_planes)

@@ -402,10 +402,17 @@ impl<'a> Room<'a> {
         let r = self.record(4, i, 16);
         core::array::from_fn(|k| i32_at(r, k * 4))
     }
+    /// Compact resident scenes keep logical atlas references; their payload
+    /// was uploaded separately at bootstrap and is not part of this view.
+    pub fn has_atlas_payload(&self) -> bool {
+        !self.scene_resident() || &self.bytes[..8]!=b"HKSCNE02"
+    }
     pub fn palettes(&self) -> &'a [u8] {
+        assert!(self.has_atlas_payload(),"compact scene has no palette payload");
         &self.bytes[self.offsets[5]..self.offsets[6]]
     }
     pub fn page(&self, i: usize) -> &'a [u8] {
+        assert!(self.has_atlas_payload(),"compact scene has no page payload");
         let p = self.offsets[6] + i * 32768;
         &self.bytes[p..p + 32768]
     }

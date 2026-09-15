@@ -20,6 +20,7 @@ def build(telemetry=False, candidate=False):
     from scenery_geometry import generate
     generate(ROOT)
     rooms = scene_manifest()
+    atlases=json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text())['atlases']
     # Certificates bind to the final deduplicated bank geometry/palette words.
     # Keep direct guest builds on the same reproducible path as tools/build.py.
     from opaque_tiles import cook as cook_opaque_tiles
@@ -73,6 +74,8 @@ def build(telemetry=False, candidate=False):
             shutil.copy2(room['path'],chunks/f"chunk_{room['chunk_id']}.hk")
         for index,clip in enumerate(clips):
             shutil.copy2(ROOT/clip['path'],chunks/f"chunk_{len(rooms)+index+1}.adpcm")
+        for index,atlas in enumerate(atlases):
+            shutil.copy2(atlas['path'],chunks/f"chunk_{len(rooms)+len(clips)+index+1}.atlas")
         run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks],cwd=ROOT)
         staged.replace(outputs['bin'])
         staged.with_suffix('.cue').replace(outputs['cue'])
