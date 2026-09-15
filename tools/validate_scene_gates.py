@@ -10,6 +10,27 @@ ROOT=Path(__file__).resolve().parents[1]
 def source_path(value):
     p=Path(value);return p if p.is_absolute() else ROOT/p
 
+def verify_coverage(build,state,scene,map_text,ram):
+    """Check the replaceable proof bank against this replay's bound build."""
+    if 'scene_coverage' not in build:return None # Historical builds predate this bank.
+    coverage=build['scene_coverage']
+    owners=[b for b in coverage['bundles']if b['scene_id']==scene['scene_id']]
+    if len(owners)!=1:raise ValueError('Unmapped coverage owner')
+    owner=owners[0]
+    if (state.get('HK_COVERAGE_SCENE')!=owner['scene_index']+1 or
+        state.get('HK_COVERAGE_BYTES')!=owner['raw_len'] or
+        state.get('HK_COVERAGE_LOADS')!=state['HK_SCENE_LOADS']):
+        raise ValueError('Coverage owner, length or admission count mismatch')
+    raw=source_path(owner['raw_path']).read_bytes()
+    if len(raw)!=owner['raw_len'] or hashlib.sha256(raw).hexdigest()!=owner['raw_sha256']:
+        raise ValueError('Coverage source changed')
+    m=re.search(r'^([0-9a-f]+)\s+[0-9a-f]+\s+([0-9a-f]+)\s+1\s+hk_psx::disc::COVERAGE_BUFFER$',map_text,re.M)
+    if not m or int(m[2],16)!=coverage['arena_bytes'] or len(raw)>coverage['arena_bytes']:
+        raise ValueError('Unverified coverage allocation')
+    address=int(m[1],16)&0x1fffff
+    if ram[address:address+len(raw)]!=raw:raise ValueError('Resident coverage differs from cooked bytes')
+    return len(raw)
+
 def verify(directory,minimum_loads=1,town_x=None):
     directory=Path(directory)
     command=json.loads((directory/'command.json').read_text())
@@ -29,6 +50,7 @@ def verify(directory,minimum_loads=1,town_x=None):
     if not m or int(m[2],16)!=pack['arena_bytes']:raise ValueError('Unverified arena allocation')
     address=(int(m[1],16)&0x1fffff)+scene['ram_offset'];ram=(directory/'ram.bin').read_bytes()
     if ram[address:address+len(raw)]!=raw:raise ValueError('Final resident scene differs from cooked bytes')
+    coverage_bytes=verify_coverage(build,state,scene,map_text,ram)
     if state['HK_SCENE_GATE_LOADS']<minimum_loads:raise ValueError('Required scene replacements not observed')
     if state['HK_SCENE_LOADS']!=state['HK_SCENE_GATE_LOADS']+1:raise ValueError('Unexpected scene admission count')
     if state['HK_INPUT_LOADING_TICKS']==0 or state['HK_INPUT_LOADING_SAMPLES']==0:raise ValueError('Loading input service not observed')
@@ -46,11 +68,14 @@ def verify(directory,minimum_loads=1,town_x=None):
         if value(row,'HK_GAME_MODE')!=1:last=None;continue
         snapshot=(value(row,'HK_SCENE_GATE_LOADS'),regions.get(value(row,'HK_REGION_ID')),
                   value(row,'HK_CD_SECTORS_READ'),value(row,'HK_VRAM_UPLOAD_BYTES'))
+        if coverage_bytes is not None:
+            snapshot+=(value(row,'HK_COVERAGE_LOADS'),value(row,'HK_COVERAGE_SCENE'),value(row,'HK_COVERAGE_BYTES'))
         if last and snapshot[:2]==last[:2]:
             if snapshot[2:]!=last[2:]:raise ValueError('Static scene transfer during gameplay')
             checked+=1
         last=snapshot
     result={'status':'PASS','final_scene':scene['scene_id'],'resident_bytes_exact':len(raw),
+            'coverage_bytes_exact':coverage_bytes,
             'gate_loads':state['HK_SCENE_GATE_LOADS'],'loading_ticks':state['HK_INPUT_LOADING_TICKS'],
             'loading_samples':state['HK_INPUT_LOADING_SAMPLES'],'queue_peak':state['HK_INPUT_QUEUE_PEAK'],
             'max_town_x':max_town_x,'stable_gameplay_intervals':checked,

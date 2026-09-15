@@ -18,7 +18,7 @@ def write_build_report(report,telemetry,candidate=False,latest=False):
     if latest and not candidate:
         (ROOT/'.hkpsx/build.json').write_text(payload)
 
-def memory_budget(link_map,exe,arena_bytes):
+def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0):
     """Bind static RAM allocation to the exact final map and EXE header."""
     text=link_map.read_text()
     def section(name):
@@ -40,13 +40,19 @@ def memory_budget(link_map,exe,arena_bytes):
     arena_start,arena_total=int(arenas[1],16),int(arenas[2],16)
     if arena_bytes<=0 or not arena_total or arena_total%arena_bytes or not bss<=arena_start<arena_start+arena_total<=static_end:
         raise ValueError('Invalid linked room arena allocation')
+    if coverage_bytes:
+        proof_start,proof_size=section('hk_psx::disc::COVERAGE_BUFFER')
+        if proof_size!=coverage_bytes or not bss<=proof_start<proof_start+proof_size<=static_end:
+            raise ValueError('Invalid linked coverage arena allocation')
+        if proof_start<arena_start+arena_total and proof_start+proof_size>arena_start:
+            raise ValueError('Scene and coverage arenas overlap')
     return {'code_bytes':code_bytes,'data_bytes':data_bytes,'bss_bytes':bss_bytes,
             'code_data_alignment_bytes':data-code-code_bytes,'static_span_bytes':static_end-code,
             'static_end':hex(static_end),'stack_reserved_bytes':stack_bytes,'stack_floor':hex(stack_floor),
             'unallocated_before_stack_bytes':gap,'main_frame_bytes':main_frame,
             'reserved_bytes_beyond_main_frame':stack_bytes-main_frame,
             'scene_arena_bytes':arena_bytes,'scene_arena_count':arena_total//arena_bytes,
-            'scene_arenas_total_bytes':arena_total,
+            'scene_arenas_total_bytes':arena_total,'coverage_arena_bytes':coverage_bytes,
             'limitations':'Linked reservations only; no main-stack high-water or hardware timing claim.'}
 
 def sdk(source):
@@ -130,6 +136,7 @@ def main():
             'packed_scenes':json.load(open(ROOT/'.hkpsx/packed-scenes.json')),
             'opaque_tiles':json.load(open(ROOT/'.hkpsx/opaque-tiles/report.json')),
             'opaque_groups':json.load(open(ROOT/'.hkpsx/opaque-groups/report.json')),
+            'scene_coverage':json.load(open(ROOT/'.hkpsx/scene-certificates.json')),
             'audio':json.load(open(ROOT/'.hkpsx/audio-provenance.json')),
             'hud':json.load(open(ROOT/'.hkpsx/hud-provenance.json')),
             'geo':json.load(open(ROOT/'.hkpsx/geo-provenance.json')),
@@ -141,11 +148,11 @@ def main():
             'hazards':json.load(open(hazard_report_path(telemetry)))}
     link_map=link_map_path(telemetry)
     report['link_map']={'path':str(link_map),'sha256':sha(link_map)}
-    report['memory']=memory_budget(link_map,outputs['exe'],report['packed_scenes']['scene_arena_bytes'])
+    report['memory']=memory_budget(link_map,outputs['exe'],report['packed_scenes']['scene_arena_bytes'],report['scene_coverage']['arena_bytes'])
     report['ambience']=json.load(open(ROOT/'.hkpsx/ambience.json'))
     report['focus_audio']=json.load(open(ROOT/'.hkpsx/focus-audio.json'))
     report['title_music']=json.load(open(ROOT/'.hkpsx/title-music.json'))
-    report['disc_chunk_count']=len(report['packed_scenes']['scenes'])+len(report['ambience']['clips'])+len(report['packed_scenes']['atlases'])+1
+    report['disc_chunk_count']=len(report['packed_scenes']['scenes'])+len(report['ambience']['clips'])+len(report['packed_scenes']['atlases'])+1+len(report['scene_coverage']['bundles'])
     write_build_report(report,telemetry,latest=True)
     shutil.copy2(link_map,ROOT/'build/hk-psx.map')
     print('Updated:',outputs['cue'],flush=True)

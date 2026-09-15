@@ -5,26 +5,23 @@
 //! than one grid step,
 //! so the entire tile remains inside that square. Only later source ranks
 //! may suppress a draw. No source primitive or texture sampling is changed.
+#[cfg(not(test))]
+pub use hk_format::coverage::CoverageCert as TileCert;
+#[cfg(test)]
 #[derive(Clone,Copy)]
 #[repr(C)]
 pub struct TileCert {pub gx:i16,pub gy:i16,pub width:u16,pub height:u16,pub offset:u32}
-#[cfg(not(test))]
-include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/opaque_tiles.rs"));
+#[cfg(not(test))]const TILE_CERT_SHIFT:u32=crate::disc::COVERAGE_GRID_SHIFT;
 #[cfg(test)]const TILE_CERT_SHIFT:u32=3;
-#[cfg(test)]static TILE_CERTS:&[TileCert]=&[];
-#[cfg(test)]static TILE_CERT_BITS:&[u32]=&[];
-#[cfg(test)]static SCENE_DRAW_CERTS:&[&[u16]]=&[];
 pub const NO_CERT:u16=u16::MAX;
 #[inline]
 pub fn rank(draw:usize,front:bool)->u16 {(draw+1+if front{1024}else{0})as u16}
-#[inline]
-pub fn scene_map(bank:usize)->&'static[u16] {SCENE_DRAW_CERTS.get(bank).copied().unwrap_or(&[])}
 
 /// Reject certificates with no screen tile origin inside their cropped bounds.
 /// Uses only vertex0; callers can defer the remaining projection/legal checks.
 #[inline]
-pub fn intersects(cert_id:u16,origin:(i32,i32))->bool {
-    intersects_mask::<TILE_CERT_SHIFT>(&TILE_CERTS[cert_id as usize],origin)
+pub fn intersects(certs:&[TileCert],cert_id:u16,origin:(i32,i32))->bool {
+    intersects_mask::<TILE_CERT_SHIFT>(&certs[cert_id as usize],origin)
 }
 #[inline(always)]
 fn intersects_mask<const SHIFT:u32>(c:&TileCert,origin:(i32,i32))->bool {
@@ -40,8 +37,8 @@ fn intersects_mask<const SHIFT:u32>(c:&TileCert,origin:(i32,i32))->bool {
 /// Actual primitive coordinates must pass the signed11bit and extent guards.
 /// Returns (newly owned tiles, certificate bit lookups), bounded by300 each.
 #[inline(never)]
-pub fn claim(cert_id:u16,origin:(i32,i32),owner:u16,grid:&mut[u16;300])->(u32,u32) {
-    claim_mask::<TILE_CERT_SHIFT>(&TILE_CERTS[cert_id as usize],TILE_CERT_BITS,origin,owner,grid)
+pub fn claim(certs:&[TileCert],bits:&[u32],cert_id:u16,origin:(i32,i32),owner:u16,grid:&mut[u16;300])->(u32,u32) {
+    claim_mask::<TILE_CERT_SHIFT>(&certs[cert_id as usize],bits,origin,owner,grid)
 }
 #[inline(always)]
 fn claim_mask<const SHIFT:u32>(c:&TileCert,bits:&[u32],origin:(i32,i32),owner:u16,grid:&mut[u16;300])->(u32,u32) {

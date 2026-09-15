@@ -1,12 +1,31 @@
 # Cooked formats: HKSCNE01 and HKROOM02
 
-The current guest loads two HKSCNE01 banks containing 98 region views of the
-supported Tutorial_01 and Town entrance subsets. HKROOM02 remains the per-region
-host intermediate. Shared scene packaging preserves those final cooked assets;
-it does not establish full original-scene behavior or whole-game residency.
-Native parser/decode/cache checks and final EXE/CUE traversal replay are recorded
-in STATUS.md. The long route has no loading waits; its rendering frame-budget
-gate still fails. This ABI alone makes no frame-time or hardware claim.
+The current guest loads one compact HKSCNE02 scene bank at a time, exposing
+106 region views across Tutorial_01 and Town. HKSCNE01 is the host's full bank;
+HKROOM02 remains the per-region intermediate. HKOCSC01 stores each scene's
+visibility certificates separately. See STATUS.md for actual-CUE evidence and
+remaining gameplay gaps; formats alone establish neither source parity nor
+whole-game capacity.
+
+## Scene visibility: HKOCSC01
+
+Little-endian scalars; four-byte-aligned sections, with all padding zero.
+The80-byte header contains magic8, scene ID u32, compact-scene raw FNV u32,
+atlas inventory FNV u32, draw-pool count u32, grid shift u32 (2), reserved u32
+(0), then six (byte offset u32, element count u32) descriptors. Sections occur
+in canonical order: tile certificates, tile bitmap words, pool-to-certificate
+IDs, group certificates, group bitmap words, groups. A certificate is12 bytes:
+gx i16, gy i16, width u16, height u16, bitmap BIT offset u32. A group is10 bytes:
+certificate u16, four ordered draw-pool member IDs u16.65535 is the empty ID.
+Map IDs and bitmap offsets relocate; source geometry and bitmap words do not.
+
+Atlas FNV-1a consumes each owner's ordered tuple of LE u32 values: kind, first,
+count, raw byte length, raw FNV. Stored/raw chunk checksums and header identities
+bind proofs to geometry and atlases. Incremental validation rejects malformed
+ranges, padding, bit tails, map IDs and group members before exposing typed
+borrowed slices. Admission stages the data through empty scene scratch, copies
+it into a reusable84KiB bank, then loads atlases and geometry. Rendering requires
+matching owners for all three; no view survives mutable scene replacement.
 
 ## Resident scene: HKSCNE01
 

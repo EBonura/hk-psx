@@ -2,11 +2,13 @@
 //! scene keeps immutable spatial views; only an exclusive select() at a drained,
 //! blacked-out scene transition may reclaim the arena and replace static art.
 use hk_format::{Room,Scene};
+use hk_format::coverage::{CoverageValidation,CoverageView,Expected as CoverageExpected};
 use crate::room_decode::{Decoder,Error as DecodeError};
 #[path="cd_stream.rs"] mod cd_stream;
 use psx_pack::cd::{SectorReader,SECTOR_WORDS,WORLD_PACK_DEFAULT_LBA};
 use psx_pack::{parse_entry,parse_header,PackEntry,SECTOR_BYTES};
 include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/scene_manifest.rs"));
+include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/scene_coverage_manifest.rs"));
 pub const SCENE_COUNT:usize=SCENE_MANIFEST.len();
 pub const ROOM_CAPACITY:usize=SCENE_ARENA_BYTES;
 const MAX_CHUNKS:usize=256;
@@ -17,6 +19,21 @@ const EMPTY_ENTRY:PackEntry=PackEntry {chunk_id:0,sector_offset:0,sector_count:0
 struct Buffer {words:[u32;SCENE_ARENA_BYTES/4]}
 // Preserve the linked symbol so build memory accounting measures actual bytes.
 static mut BUFFERS:Buffer=Buffer {words:[0;SCENE_ARENA_BYTES/4]};
+#[repr(C,align(4))]
+struct CoverageBuffer {words:[u32;COVERAGE_ARENA_BYTES/4]}
+static mut COVERAGE_BUFFER:CoverageBuffer=CoverageBuffer {words:[0;COVERAGE_ARENA_BYTES/4]};
+#[no_mangle]pub static mut HK_COVERAGE_LOADS:u32=0;
+#[no_mangle]pub static mut HK_COVERAGE_BYTES:u32=0;
+#[no_mangle]pub static mut HK_COVERAGE_SCENE:u32=0;
+fn atlas_fingerprint(scene:usize)->u32 {
+    let (start,end)=SCENE_ATLAS_RANGES[scene];let mut hash=2166136261u32;
+    for a in &ATLASES[start..end] {
+        for value in [a.kind as u32,a.first as u32,a.count as u32,a.raw_len as u32,a.raw_fnv] {
+            for byte in value.to_le_bytes() {hash=(hash^byte as u32).wrapping_mul(16777619);}
+        }
+    }
+    hash
+}
 pub const fn scene_index(region:usize)->usize {REGION_SCENE_LOCAL[region].0}
 pub const fn scene_page_base(scene:usize)->usize {SCENE_MANIFEST[scene].page_base}
 pub const fn scene_palette_base(scene:usize)->usize {SCENE_MANIFEST[scene].palette_base}
@@ -31,7 +48,7 @@ pub const fn scene_region(scene:usize)->usize {SCENE_REGIONS[scene]}
 pub struct Cache {
     entries:[PackEntry;MAX_CHUNKS],header:[u32;2048],reader:SectorReader,
     ready:bool,loaded_scenes:usize,loaded_atlases:usize,selected:usize,
-    resident_scene:usize,atlas_scene:usize,
+    resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,
 }
 #[no_mangle] pub static mut HK_SCENE_LOADS:u32=0;
 #[no_mangle] pub static mut HK_SCENE_READ_ID:u32=0;
@@ -68,6 +85,7 @@ pub enum LoadError {
     RoomFormat = 7,
     Decompress = 8,
     Ambience = 9,
+    Coverage = 10,
 }
 fn mark(state: u32, error: u32) {
     unsafe {
@@ -90,11 +108,14 @@ impl Cache {
     /// Safety: exactly one Cache owns BUFFERS and the CD controller.
     pub const unsafe fn new()->Self {
         Self {entries:[EMPTY_ENTRY;MAX_CHUNKS],header:[0;2048],reader:SectorReader::new(),
-            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY}
+            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY,coverage_scene:EMPTY,coverage_len:0}
     }
     fn init(&mut self)->Result<(),LoadError> {
         if self.ready {return Ok(());}
-        let chunks=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1;
+        let focus_index=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len();
+        let chunks=focus_index+1+COVERAGE_MANIFEST.len();
+        if !SCENE_GATE_LOAD || COVERAGE_MANIFEST.len()!=SCENE_COUNT || COVERAGE_ARENA_BYTES%4!=0
+            || COVERAGE_GRID_SHIFT!=2 || COVERAGE_GROUP_POOL_CAPACITY>4096 {return Err(LoadError::Coverage);}
         if SCENE_COUNT==0 || chunks>MAX_CHUNKS || SCENE_ARENA_BYTES%4!=0
             || SCENE_REGIONS.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
         let mut offset=0usize;
@@ -133,6 +154,15 @@ impl Cache {
         if previous!=ATLASES.len() || peak_pages!=SCENE_TOTAL_PAGES || peak_palettes!=SCENE_TOTAL_PALETTES {
             return Err(LoadError::RoomMismatch);
         }
+        for (scene,c) in COVERAGE_MANIFEST.iter().enumerate() {
+            let d=SCENE_MANIFEST[scene];
+            if c.scene_id!=d.scene_id as u32 || c.scene_raw_fnv!=d.raw_fnv
+                || c.atlas_fnv!=atlas_fingerprint(scene) || c.chunk_id!=focus_index+2+scene
+                || c.draw_pool_count==0 || c.draw_pool_count as usize>COVERAGE_GROUP_POOL_CAPACITY
+                || c.raw_len<80 || c.raw_len>COVERAGE_ARENA_BYTES || c.raw_len%4!=0
+                || c.raw_len>SCENE_ARENA_BYTES || c.stored_len==0
+                || c.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES {return Err(LoadError::Coverage);}
+        }
         if !unsafe {self.reader.prepare_single_speed()} {return Err(LoadError::Prepare);}
         if !unsafe {self.reader.start_read_seek_first(WORLD_PACK_DEFAULT_LBA,SEEK_POLL)}
             || !sector(&mut self.reader,&mut self.header[..SECTOR_WORDS]) {return Err(LoadError::HeaderRead);}
@@ -152,10 +182,11 @@ impl Cache {
                 let d=&SCENE_MANIFEST[i];(d.stored_len,d.stored_fnv,d.arena_capacity)
             } else if i<SCENE_COUNT+crate::ambience::CLIPS.len() {
                 let clip=&crate::ambience::CLIPS[i-SCENE_COUNT];(clip.byte_len,clip.checksum,SCENE_ARENA_BYTES)
-            } else if i+1<chunks {
+            } else if i<focus_index {
                 let a=&ATLASES[i-SCENE_COUNT-crate::ambience::CLIPS.len()];
                 (a.stored_len,a.stored_fnv,SCENE_ARENA_BYTES)
-            } else {(crate::focus_audio::BANK_BYTES,crate::focus_audio::BANK_CHECKSUM,SCENE_ARENA_BYTES)};
+            } else if i==focus_index {(crate::focus_audio::BANK_BYTES,crate::focus_audio::BANK_CHECKSUM,SCENE_ARENA_BYTES)}
+            else {let c=&COVERAGE_MANIFEST[i-focus_index-1];(c.stored_len,c.stored_fnv,SCENE_ARENA_BYTES)};
             let e=parse_entry(bytes,i).ok_or(LoadError::HeaderInvalid)?;
             if size==0 || size.div_ceil(SECTOR_BYTES)>capacity/SECTOR_BYTES
                 || e.chunk_id as usize!=i+1 || e.byte_size as usize!=size || e.checksum!=checksum
@@ -208,6 +239,41 @@ impl Cache {
         })();
         if let Err(error)=result {mark(3,error as u32);}result
     }
+    /// Stages proofs only while no geometry view is admitted, then preserves
+    /// their checked bytes in the separate scene-owned coverage arena.
+    #[inline(never)]
+    fn prepare_coverage(&mut self,scene:usize)->Result<(),LoadError> {
+        self.init()?;let c=COVERAGE_MANIFEST[scene];
+        if self.coverage_scene==scene && self.coverage_len==c.raw_len {return Ok(());}
+        if self.loaded_scenes!=0 {return Err(LoadError::Coverage);}
+        self.coverage_scene=EMPTY;self.coverage_len=0;
+        unsafe {HK_COVERAGE_SCENE=0;HK_COVERAGE_BYTES=0;}
+        self.read(self.entries[c.chunk_id-1],0)?;
+        let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
+        let mut decoder=Decoder::new_bytes(c.stored_len,c.stored_fnv,c.raw_len,c.raw_fnv);
+        loop {
+            crate::input::checkpoint();
+            unsafe {HK_ROOM_DECODE_PHASE=decoder.phase_id();}
+            match decoder.step(arena,1024) {
+                Ok(Some(len))=>{if len!=c.raw_len{return Err(LoadError::Coverage);}break;},
+                Ok(None)=>{},
+                Err(error)=>return Err(match error {DecodeError::Checksum=>LoadError::Checksum,
+                    DecodeError::Decompress=>LoadError::Decompress,DecodeError::RoomFormat=>LoadError::Coverage}),
+            }
+        }
+        let expected=CoverageExpected {scene_id:c.scene_id,scene_raw_fnv:c.scene_raw_fnv,
+            atlas_fnv:c.atlas_fnv,draw_pool_count:c.draw_pool_count};
+        let mut check=CoverageValidation::new(&arena[..c.raw_len],expected).map_err(|_|LoadError::Coverage)?;
+        loop {crate::input::checkpoint();if check.step(32).map_err(|_|LoadError::Coverage)?{break;}}
+        check.finish().map_err(|_|LoadError::Coverage)?;
+        let destination=unsafe {core::slice::from_raw_parts_mut((&raw mut COVERAGE_BUFFER.words).cast::<u8>(),c.raw_len)};
+        for (source,destination) in arena[..c.raw_len].chunks(1024).zip(destination.chunks_mut(1024)) {
+            crate::input::checkpoint();destination.copy_from_slice(source);
+        }
+        self.coverage_scene=scene;self.coverage_len=c.raw_len;
+        unsafe {HK_COVERAGE_LOADS=HK_COVERAGE_LOADS.saturating_add(1);HK_COVERAGE_BYTES=c.raw_len as u32;HK_COVERAGE_SCENE=scene as u32+1;}
+        Ok(())
+    }
     /// Exclusive atlas admission. No Scene/Room view may exist while this
     /// buffer is scratch; completed chunks remain in VRAM across retries.
     #[inline(never)]
@@ -249,6 +315,8 @@ impl Cache {
         cd_stream::cancel();
         while matches!(cd_stream::status(),cd_stream::Status::Busy) {core::hint::spin_loop();}
         self.loaded_scenes=0;self.loaded_atlases=0;self.selected=EMPTY;self.resident_scene=EMPTY;self.atlas_scene=EMPTY;
+        self.coverage_scene=EMPTY;self.coverage_len=0;
+        unsafe {HK_COVERAGE_SCENE=0;HK_COVERAGE_BYTES=0;}
     }
 
     // Keep the large startup decoder outside main's bounded MIPS branch span.
@@ -259,6 +327,7 @@ impl Cache {
             // revoked before any CD/decode/upload may overwrite those bytes.
             self.loaded_scenes=0;self.resident_scene=EMPTY;self.selected=EMPTY;
         }
+        self.prepare_coverage(wanted)?;
         self.prepare_atlases(wanted)?;
         while self.loaded_scenes<if SCENE_GATE_LOAD {1}else{SCENE_COUNT} {
             let index=if SCENE_GATE_LOAD {wanted}else{self.loaded_scenes};let d=SCENE_MANIFEST[index];
@@ -279,6 +348,7 @@ impl Cache {
             }
             let scene=unsafe {Scene::validated_view(&arena[..d.raw_len])};
             if scene.id()!=d.scene_id {return Err(LoadError::RoomMismatch);}
+            if scene.draw_pool_count()!=COVERAGE_MANIFEST[index].draw_pool_count as usize {return Err(LoadError::Coverage);}
             let (start,end)=SCENE_ATLAS_RANGES[index];
             let mut counts=[0;2];
             for a in &ATLASES[start..end] {counts[a.kind as usize]+=a.count;}
@@ -327,7 +397,8 @@ impl Cache {
     pub fn pending(&self)->Option<usize> {None}
     pub fn is_ready(&self,region:usize)->bool {
         REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene,_)|
-            if SCENE_GATE_LOAD {self.loaded_scenes==1 && scene==self.resident_scene && self.atlases_ready()}else{scene<self.loaded_scenes})
+            if SCENE_GATE_LOAD {self.loaded_scenes==1 && scene==self.resident_scene && self.atlas_scene==scene && self.atlases_ready()
+                && self.coverage_scene==scene && self.coverage_len==COVERAGE_MANIFEST[scene].raw_len}else{false})
     }
     pub fn room_for(&self,region:usize)->Option<Room<'_>> {
         if !self.is_ready(region) {return None;}
@@ -338,6 +409,13 @@ impl Cache {
         assert!(if SCENE_GATE_LOAD {self.loaded_scenes==1&&index==self.resident_scene}else{index<self.loaded_scenes});let d=&SCENE_MANIFEST[index];
         let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(d.ram_offset),d.raw_len)};
         unsafe {Scene::validated_view(bytes)}
+    }
+    pub fn coverage(&self)->CoverageView<'_> {
+        assert!(self.is_ready(self.selected),"No admitted coverage selected");
+        let bytes=unsafe {core::slice::from_raw_parts((&raw const COVERAGE_BUFFER.words).cast::<u8>(),self.coverage_len)};
+        // Only exact checked bytes are copied here; &self ties the view to the
+        // scene owner and prevents select/reset from reclaiming it while used.
+        unsafe {CoverageView::validated_view(bytes)}
     }
     pub fn room(&self)->Room<'_> {self.room_for(self.selected).expect("No admitted scene selected")}
 }

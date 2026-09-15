@@ -247,7 +247,7 @@ fn main() {
         enemies.sync_region(r);
         reveals.scene_ready(r.scene,r.reveal_masks);
         let bank=vram.activate(region_id);
-        render::init(&cache.room(),bank,region_id);state.apply(r);apply_reveal_masks(&reveals,r);
+        render::init(&cache.room(),bank,region_id,cache.coverage());state.apply(r);apply_reveal_masks(&reveals,r);
         geo_render::apply(geo,&mut state,region_id);
         lifeblood::apply(life,&mut state,region_id);
         great_door::apply(&door,&mut state,region_id);
@@ -507,7 +507,7 @@ fn main() {
                         (player.y+2*ONE).clamp(r.camera[1],r.camera[3]));
                     // begin_deferred_swap already selected the future draw side.
                     // No draw-target writes, uploads or GPU kicks occur here.
-                    render::prepare_back_prefix(next_camera,fb.buffer_y(fb.drawing));
+                    render::prepare_back_prefix(next_camera,fb.buffer_y(fb.drawing),cache.coverage());
                 }
             }
             presentation::finish();
