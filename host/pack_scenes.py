@@ -227,7 +227,7 @@ def validate_geometry(bank,entry,metadata):
             if bound['packets']>CHILD_CAPACITY:raise ValueError('Scene draw child capacity exceeded')
             extent,_=check_camera_arithmetic(xy,scale,regions[chunk]['camera_bounds'])
             largest=max(largest,extent);maximum=max(maximum,bound['packets']);mandatory+=bound['packets']
-        if mandatory+ACTOR_RESERVE>CAP:raise ValueError('Scene region packet reservation exceeded')
+        if mandatory+ACTOR_RESERVE>CAP:raise ValueError(f'Scene region {chunk} packet reservation exceeded: {mandatory}+{ACTOR_RESERVE} > {CAP}')
         proof.append({'chunk_id':chunk,'draws':desc[1],'mandatory_packets':mandatory,'maximum_draw_packets':maximum,'max_abs_projection':largest})
     return {'status':'PASS','capacity':CAP,'actor_reserve':ACTOR_RESERVE,'child_capacity':CHILD_CAPACITY,'regions':proof}
 

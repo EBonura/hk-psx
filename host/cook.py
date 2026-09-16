@@ -7,6 +7,7 @@ sys.path.insert(0,str(ROOT/'tools'))
 from audit_resident_bank import dense_pack,aligned
 from scene import Scene
 from combat import grass_sources,nail_sources,transformed_box,generated_params
+from scenery_geometry import packet_bound, CHILD_CAPACITY
 from breakables import breakable_sources,bind_breakables
 from reveal_masks import reveal_mask_sources
 from materials import scenery_material
@@ -223,7 +224,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     unsupported.extend(dict(record,type='unsupported reveal controller') for record in reveal['unsupported'])
     shared_pixels=shared_pixels if shared_pixels is not None else {}
     shared_geometry=shared_geometry if shared_geometry is not None else {}
-    grass=grass_sources(sc,region.get('grass_bounds'));cut_renderers={g[k] for g in grass for k in ('off','on')}
+    grass=grass_sources(sc,region.get('grass_bounds'),errors=unsupported);cut_renderers={g[k] for g in grass for k in ('off','on')}
     breakables=breakable_sources(sc,region.get('interaction_bounds',region['activation_bounds']),errors=unsupported)
     actors=actor_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
     hazards=hazard_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
@@ -251,6 +252,11 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
             if t['m_DrawMode']!=0:raise ValueError('sliced/tiled SpriteRenderer unsupported')
             w=math.dist(points[0],points[1])*scale;h=math.dist(points[0],points[2])*scale
             if w<0.5 or h<0.5:continue
+            # The native scenery grid repair must be able to bound this draw's
+            # packets; an unrepresentable stretched sprite is an explicit
+            # unsupported record, not a late pack failure.
+            bound=packet_bound([(round(p[0]*scale*256),round(p[1]*scale*256)) for p in points],*scenery_dimensions(w,h,SCENERY_MAX_AXIS))
+            if bound['packets']>CHILD_CAPACITY:raise ValueError(f'draw needs {bound["packets"]} children > {CHILD_CAPACITY}')
             # Preserve individual instances, original ordering and depth parallax.
             texture,cooked_image=scenery_texture(atlas,images,shared_pixels,sid,lambda:sp.image,w,h,t['m_Color']['a'],SCENERY_MAX_AXIS)
             draw={'source':f'{scene_file}:{i}','sprite':sid,'name':sc.gos[gid]['m_Name'],'texture':texture,'points':points,'scale':scale,'tint':[min(255,round(t['m_Color'][k]*128)) for k in 'rgb'],'z':z,'order':t['m_SortingOrder'],'layer':t['m_SortingLayer']}

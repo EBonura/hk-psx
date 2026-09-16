@@ -5,31 +5,44 @@ def ticks(seconds):
     # Ceiling in the 60 Hz guest, tolerating serialized float32 roundoff at integers.
     return math.ceil(seconds*60-1e-5)
 
-def grass_sources(sc,bounds=None):
+def grass_sources(sc,bounds=None,errors=None):
+    """Supported GrassCut instances in `bounds`.
+
+    With `errors`, an unsupported instance is recorded there (like
+    breakable_sources) instead of aborting the whole region cook.
+    """
     result=[]
+    scene_file=sc.file.name.rsplit('/',1)[-1]
     for i,(typ,t) in sc.objects.items():
         if typ!='GrassCut' or not t['m_Enabled']:continue
-        gid=t['m_GameObject']['m_PathID']
-        if not sc.active(gid):continue
-        pos=sc.point(gid)
-        # GrassBehaviour.Start destroys collision beyond its gameplay depth band.
-        area=bounds or (20,0,70,25)
-        if not area[0]<pos[0]<area[2] or not area[1]<pos[1]<area[3] or abs(pos[2]-.004)>1.8:continue
-        cols=[(j,c) for j,(ty,c) in sc.objects.items() if ty=='BoxCollider2D' and c['m_GameObject']['m_PathID']==gid and c['m_Enabled']]
-        if len(cols)!=1 or not cols[0][1]['m_IsTrigger']:raise ValueError('unsupported GrassCut collider')
-        if len(t['disable'])!=1 or len(t['enable'])!=1 or t['disableColliders'] or t['enableColliders']:raise ValueError('unsupported GrassCut renderer/collider topology')
-        off,on=[r[0]['m_PathID'] for r in (t['disable'],t['enable'])]
-        if any(r[0]['m_FileID'] for r in (t['disable'],t['enable'])):raise ValueError('external GrassCut renderer')
-        if sc.objects[off][0]!='SpriteRenderer' or sc.objects[on][0]!='SpriteRenderer':raise ValueError('non-sprite GrassCut renderer')
-        c=cols[0][1];sx=c['m_Size']['x']/2;sy=c['m_Size']['y']/2;o=c['m_Offset']
-        corners=[sc.point(gid,x+o['x'],y+o['y']) for x,y in [(-sx,-sy),(sx,-sy),(sx,sy),(-sx,sy)]]
-        if any(abs(a[0]-b[0])>.005 and abs(a[1]-b[1])>.005 for a,b in zip(corners,corners[1:]+corners[:1])):raise ValueError('rotated GrassCut box unsupported')
-        box=(min(p[0] for p in corners),min(p[1] for p in corners),max(p[0] for p in corners),max(p[1] for p in corners))
-        if any(not math.isfinite(v) or abs(v)>512 for v in box):raise ValueError('GrassCut world coordinate exceeds Q16 bound')
-        scene_file=sc.file.name.rsplit('/',1)[-1]
-        result.append({'source':f'{scene_file}:{i}','collider':f'{scene_file}:{cols[0][0]}','off':off,'on':on,'box':box,'serialized':t})
+        try:
+            record=_grass_source(sc,t,i,bounds,scene_file)
+        except ValueError as ex:
+            if errors is None:raise
+            errors.append({'id':f'{scene_file}:{i}','type':'unsupported GrassCut','error':str(ex)});continue
+        if record:result.append(record)
     if len(result)>32:raise ValueError('GrassCut pool exceeds 32')
     return result
+
+def _grass_source(sc,t,i,bounds,scene_file):
+    gid=t['m_GameObject']['m_PathID']
+    if not sc.active(gid):return None
+    pos=sc.point(gid)
+    # GrassBehaviour.Start destroys collision beyond its gameplay depth band.
+    area=bounds or (20,0,70,25)
+    if not area[0]<pos[0]<area[2] or not area[1]<pos[1]<area[3] or abs(pos[2]-.004)>1.8:return None
+    cols=[(j,c) for j,(ty,c) in sc.objects.items() if ty=='BoxCollider2D' and c['m_GameObject']['m_PathID']==gid and c['m_Enabled']]
+    if len(cols)!=1 or not cols[0][1]['m_IsTrigger']:raise ValueError('unsupported GrassCut collider')
+    if len(t['disable'])!=1 or len(t['enable'])!=1 or t['disableColliders'] or t['enableColliders']:raise ValueError('unsupported GrassCut renderer/collider topology')
+    off,on=[r[0]['m_PathID'] for r in (t['disable'],t['enable'])]
+    if any(r[0]['m_FileID'] for r in (t['disable'],t['enable'])):raise ValueError('external GrassCut renderer')
+    if sc.objects[off][0]!='SpriteRenderer' or sc.objects[on][0]!='SpriteRenderer':raise ValueError('non-sprite GrassCut renderer')
+    c=cols[0][1];sx=c['m_Size']['x']/2;sy=c['m_Size']['y']/2;o=c['m_Offset']
+    corners=[sc.point(gid,x+o['x'],y+o['y']) for x,y in [(-sx,-sy),(sx,-sy),(sx,sy),(-sx,sy)]]
+    if any(abs(a[0]-b[0])>.005 and abs(a[1]-b[1])>.005 for a,b in zip(corners,corners[1:]+corners[:1])):raise ValueError('rotated GrassCut box unsupported')
+    box=(min(p[0] for p in corners),min(p[1] for p in corners),max(p[0] for p in corners),max(p[1] for p in corners))
+    if any(not math.isfinite(v) or abs(v)>512 for v in box):raise ValueError('GrassCut world coordinate exceeds Q16 bound')
+    return {'source':f'{scene_file}:{i}','collider':f'{scene_file}:{cols[0][0]}','off':off,'on':on,'box':box,'serialized':t}
 
 def nail_sources(s,rf,hero_gid):
     # Identify Knight descendants carrying NailSlash, independent of path IDs.
