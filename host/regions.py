@@ -137,8 +137,12 @@ def cook_fingerprints(source):
     def sha(path):
         with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
     code=hashlib.sha256()
-    for path in sorted(p for p in (ROOT/'host').glob('*.py') if p.name!='quality.py'):code.update(f'{path.name}:{sha(path)}\n'.encode())
-    for name in ('audit_texture_similarity.py','texture_match_groups.py','audit_resident_bank.py'):code.update(f'{name}:{sha(ROOT/"tools"/name)}\n'.encode())
+    # host/cook_inputs.txt is the shared list; the catalog (quality.py) and this
+    # orchestrator do not change a region's cooked bytes, the region spec does.
+    for line in (ROOT/'host/cook_inputs.txt').read_text().splitlines():
+        line=line.strip()
+        if not line or line.startswith('#') or line in ('host/quality.py','host/regions.py'):continue
+        code.update(f'{line}:{sha(ROOT/line)}\n'.encode())
     code.update(json.dumps([SCENERY_MAX_AXIS,STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET]).encode())
     inputs=hashlib.sha256();provenance=ROOT/'.hkpsx/regions-provenance.json'
     if not provenance.exists():return None
@@ -361,7 +365,7 @@ def main():
             scenes[scene_id]=Scene(source,region['scene_file'])
             report['scenes'].append(scene_metadata(scenes[scene_id],SCENES[scene_id]))
         chunk_id=len(regions)+1
-        if chunk_id>256:raise ValueError('Region chunk table exceeds 256 slots')
+        if chunk_id>1024:raise ValueError('Region chunk table exceeds 1024 slots')  # sanity bound; static RAM per view is the real limit
         destination=out/f'region-{chunk_id:03}'
         key=cook_cache_key(region,fingerprints);cooked=cached_cook(destination,key)
         if cooked is not None:

@@ -1,0 +1,31 @@
+# Code whose change invalidates cooked regions. Shared by host/hk-build/main.rs
+# (whole-cook cache) and host/regions.py (per-region reuse).
+host/cook.py
+host/regions.py
+host/actors.py
+host/runner.py
+host/particles.py
+host/effects.py
+host/breakables.py
+host/combat.py
+host/scene.py
+host/source.py
+host/world.py
+host/flat_support.py
+host/reveal_masks.py
+host/texture_dedup.py
+host/similarity_dedup.py
+host/constant_textures.py
+host/region_delta.py
+host/quality.py
+host/focus.py
+host/alpha_covers.py
+host/materials.py
+host/tilemap_fill.py
+host/break_effects.py
+host/great_door.py
+host/polygons.py
+tools/audit_texture_similarity.py
+tools/texture_match_groups.py
+tools/audit_resident_bank.py
+host/requirements.lock

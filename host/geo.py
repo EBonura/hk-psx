@@ -13,6 +13,11 @@ from focus import action_fields
 from cook import tk_sprite,FOCAL,CAM_Z
 from materials import quantize_alpha_coverage
 ART_CELL=32  # projected pixels per Geo art cell in the shared bank
+# Distinct rock+coin texel bytes admitted before placement; the remainder of the
+# 8 KiB reservation covers the palette and fragment packing slack.
+ART_BUDGET=8*1024-640
+def payload_bytes(size):
+    w,h=size;return (w+3)//4*2*h
 
 # Halfword rectangles approved against the resident scene/font layout by root.
 VRAM_RECTS=((320,464,64,16),(352,240,32,16),(352,485,32,27),(320,496,32,16),(352,32,8,32))
@@ -169,6 +174,7 @@ def collect(source):
     if [c['value']for c in coins]!=[1,5,25]:raise ValueError('Geo denomination source changed')
     from quality import SCENE_FILES
     unsupported_rocks=[]
+    seen_art={(a['image'].size,a['image'].tobytes()) for a in art};art_bytes=sum(payload_bytes(size) for size,_ in seen_art)
     for scene_id,name in enumerate(SCENE_FILES):
         sc=Scene(source,name);scene_objects.append(sc)
         for ident,(kind,t) in sc.objects.items():
@@ -201,6 +207,16 @@ def collect(source):
                 del art[art_mark:];del clips[clip_mark:]
                 unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'rock art projects to {max(oversize)} pixels, above the {ART_CELL}x{ART_CELL} Geo art cell'})
                 continue
+            # Rock art shares one fixed VRAM reservation with the coins. Rocks are
+            # admitted in catalog order until the distinct-image budget is spent;
+            # later rocks are explicit omissions until Geo art streams per scene.
+            fresh=[(a['image'].size,a['image'].tobytes()) for a in art[art_mark:]]
+            added=sum(payload_bytes(size) for size,pixels in {s:None for s in fresh if s not in seen_art})
+            if art_bytes+added>ART_BUDGET:
+                del art[art_mark:];del clips[clip_mark:]
+                unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'Geo art VRAM budget: {art_bytes+added} distinct bytes would exceed {ART_BUDGET}'})
+                continue
+            art_bytes+=added;seen_art.update(fresh)
             points=[p for poly in polys for p in poly];origin=sc.point(gid)
             rocks.append(contract|{'source':f'{name}:{ident}','source_id':ident,'scene':scene_id,'state':len(rocks),'x':origin[0],'y':origin[1],
                 'polygons':polys,'bounds':[min(p[0]for p in points),min(p[1]for p in points),max(p[0]for p in points),max(p[1]for p in points)],

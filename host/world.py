@@ -213,8 +213,8 @@ def generate(report):
     regions = report['regions']
     if [r['chunk_id'] for r in regions] != list(range(1, len(regions) + 1)):
         raise ValueError('region chunks must be contiguous and start at one')
-    if len(regions) > 256:
-        raise ValueError('region count exceeds metadata budget')
+    if len(regions) > 1024:
+        raise ValueError('region count exceeds the 1024-slot sanity bound')
     stable_breakables, stable_grass = {}, {}
     floors = flat_floor_catalog(report, root=ROOT)
     out = [rust_catalog(floors)]

@@ -272,9 +272,28 @@ def generate(styles,emitters,uploads,art,frames,tracks_result=None):
     out.extend(rust(track)+','for track in tracks)
     out.append('];');return '\n'.join(out)+'\n'
 
+def fit_art(styles,emitters,textures,ignored):
+    """Admit emitter art in catalog order within the fixed VRAM reservation.
+
+    When the shared sheet cannot hold every scene's particle textures, the
+    highest scene's emitters are recorded as omissions and the rest retried.
+    """
+    while True:
+        used={e['style'] for e in emitters};kept=[i for i in range(len(styles)) if i in used]
+        remap={old:new for new,old in enumerate(kept)};trimmed=[styles[i] for i in kept]
+        trimmed_emitters=[dict(e,style=remap[e['style']]) for e in emitters]
+        trimmed_textures={s['texture']:textures[s['texture']] for s in trimmed}
+        try:return trimmed,trimmed_emitters,trimmed_textures,art_bank(trimmed,trimmed_textures)
+        except ValueError as error:
+            if 'VRAM' not in str(error) or not emitters:raise
+            last=max(e['scene'] for e in emitters)
+            for e in [e for e in emitters if e['scene']==last]:
+                ignored.append({'owner':e['owner'],'part':e['source'],'reason':f'particle art VRAM budget: scene {last} omitted ({error})'})
+            emitters=[e for e in emitters if e['scene']!=last]
+
 def cook():
     source,styles,emitters,textures,records,ignored=collect()
-    blob,uploads,art,frames,sheet=art_bank(styles,textures);tracks_result=particle_tracks(styles,emitters)
+    styles,emitters,textures,(blob,uploads,art,frames,sheet)=fit_art(styles,emitters,textures,ignored);tracks_result=particle_tracks(styles,emitters)
     code=generate(styles,emitters,uploads,art,frames,tracks_result)
     (ROOT/'data/break_effects.rs').write_text(code);(ROOT/'data/break_effects.hk').write_bytes(blob)
     report={'format':'HKBREAK01','styles':styles,'emitters':emitters,'source_records':records,'other_parts':ignored,'vram_bytes':len(blob),
