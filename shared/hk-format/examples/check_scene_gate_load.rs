@@ -3,7 +3,7 @@
 #[path="../../../game/src/room_decode.rs"] mod room_decode;
 struct Blob {stored:Vec<u8>, raw:Vec<u8>}
 struct Atlas {kind:usize,first:usize,count:usize,blob:Blob}
-struct Bank {id:usize,scene:Blob,atlases:Vec<Atlas>}
+struct Bank {id:usize,scene:Blob,atlases:Vec<Atlas>,meta:Option<Blob>}
 fn blob(stored:&str,raw:&str)->Blob {
     Blob{stored:std::fs::read(stored).expect("stored file"),raw:std::fs::read(raw).expect("raw file")}
 }
@@ -30,7 +30,8 @@ fn main() {
     let mut banks:Vec<Bank>=Vec::new();let mut i=1;
     while i<a.len() {
         match a[i].as_str() {
-            "--scene"=>{banks.push(Bank{id:a[i+1].parse().unwrap(),scene:blob(&a[i+2],&a[i+3]),atlases:vec![]});i+=4;},
+            "--scene"=>{banks.push(Bank{id:a[i+1].parse().unwrap(),scene:blob(&a[i+2],&a[i+3]),atlases:vec![],meta:None});i+=4;},
+            "--meta"=>{banks.last_mut().expect("meta follows scene").meta=Some(blob(&a[i+1],&a[i+2]));i+=3;},
             "--atlas"=>{banks.last_mut().expect("atlas follows scene").atlases.push(Atlas{kind:a[i+1].parse().unwrap(),
                 first:a[i+2].parse().unwrap(),count:a[i+3].parse().unwrap(),blob:blob(&a[i+4],&a[i+5])});i+=6;},
             _=>panic!("unknown argument"),
@@ -70,6 +71,15 @@ fn main() {
             }
             decode(&mut arena,&b.scene,budget,true);
             assert_eq!(hk_format::Scene::parse(&arena[..b.scene.raw.len()]).unwrap().id(),b.id);
+            if let Some(meta)=&b.meta {
+                // The guest stages the world bank last, inside the arena tail
+                // beyond the resident scene, and reads it back during gameplay.
+                let tail=(b.scene.raw.len()+3)&!3;
+                assert!(tail+meta.raw.len()<=capacity,"metadata bank exceeds the arena tail");
+                decode(&mut arena[tail..],meta,budget,false);
+                assert_eq!(&arena[..b.scene.raw.len()],b.scene.raw.as_slice(),"metadata decode changed the resident scene");
+                assert_eq!(&arena[tail..tail+meta.raw.len()],meta.raw.as_slice(),"metadata bank differs after staging");
+            }
             for a in &b.atlases {
                 let start=a.first*[32768,32][a.kind];
                 assert_eq!(&vram[a.kind][start..start+a.blob.raw.len()],a.blob.raw.as_slice(),"scene decode changed uploaded data");
