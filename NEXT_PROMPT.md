@@ -30,6 +30,14 @@ disc remains build 71 because it has the older chunk table. Continue P05 with a
 pinned guest differential metadata/geometry/coverage run, and only then replace
 the single disc pair.
 
+P06 now has `tools/cook_scene_pack.py`: isolated, write-guarded per-scene packs
+under `.hkpsx/scene-packs/`, merged into the matrix by
+`tools/world_pack_matrix.py --scene-packs`. Crossroads_01 measures 103,960
+resident bytes, 7 pages, 501 palettes with a passing decoder. After the
+`--all` batch finishes, regenerate the matrix, record over-budget/failed scenes
+by shared cause in the ledger, and plan the residency partitioning for scenes
+that exceed the current arena or page limits.
+
 ## Completion plan for the next executor
 
 The user requested an extensive execution plan for GPT-5.6-Sol to complete the
