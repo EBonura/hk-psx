@@ -55,7 +55,7 @@ def damagehero_respawns(hit_type):
     return hit_type in (2, 3)
 
 
-def checkpoint_sources(sc):
+def checkpoint_sources(sc, unsupported=None):
     """Compile direct HazardRespawnTrigger -> Marker links and source ground rays.
 
     HazardRespawnTrigger.OnTriggerEnter2D accepts the hero layer9 and calls
@@ -99,31 +99,41 @@ def checkpoint_sources(sc):
         if kind!='HazardRespawnTrigger' or not tree['m_Enabled']:continue
         gid=_local_id(tree['m_GameObject'])
         if not sc.active(gid):continue
-        if tree['fireOnce']:raise ValueError('one-shot HazardRespawnTrigger state not yet implemented')
-        marker_id=_local_id(tree['respawnMarker'])
-        marker_type,marker=sc.objects[marker_id]
-        if marker_type!='HazardRespawnMarker':raise ValueError('hazard checkpoint does not reference a marker')
-        marker_gid=_local_id(marker['m_GameObject']);position=sc.point(marker_gid);hits=[]
-        for a,b,collider_id in terrain:
-            if a[0]==b[0] or not min(a[0],b[0])<=position[0]<=max(a[0],b[0]):continue
-            y=a[1]+(position[0]-a[0])*(b[1]-a[1])/(b[0]-a[0])
-            if 0<=position[1]-y<=50:hits.append((y,collider_id))
-        if not hits:raise ValueError(f'checkpoint {file}:{index} has no source terrain within downward50 ray')
-        ground,ground_source=max(hits)
-        for collider_id,collider_type,collider in _components(sc,gid):
-            if not collider_type.endswith('Collider2D') or not collider['m_Enabled']:continue
-            if not collider['m_IsTrigger']:raise ValueError('HazardRespawnTrigger body is not a trigger')
-            polygons=collider_polygons(sc,gid,collider_type,collider)
-            points=[p for poly in polygons for p in poly]
-            result.append({'source':f'{file}:{index}','marker_source':f'{file}:{marker_id}',
-                'collider_source':f'{file}:{collider_id}','world_polygons':polygons,
-                'bounds':[min(p[0]for p in points),min(p[1]for p in points),max(p[0]for p in points),max(p[1]for p in points)],
-                'marker_position':position,'spawn':[position[0],ground+elevation],
-                'ground_source':ground_source,'ground_y':ground,'ground_ray_distance':50,
-                'respawn_facing_right':bool(marker['respawnFacingRight']),'fire_once':False,
-                'projection':'initial source terrain; dynamic scripted terrain not evaluated'})
+        try:_checkpoint(sc,file,index,tree,gid,terrain,elevation,result)
+        except (ValueError,KeyError) as error:
+            # Whole-world cooks record a trigger the runtime cannot honour yet
+            # instead of failing the scene; canonical callers still raise.
+            if unsupported is None:raise
+            unsupported.append({'source':f'{file}:{index}','error':str(error)})
     if len(result)>128:raise ValueError('checkpoint scene exceeds128 bounded trigger shapes')
     return result
+
+
+def _checkpoint(sc,file,index,tree,gid,terrain,elevation,result):
+    if tree['fireOnce']:raise ValueError('one-shot HazardRespawnTrigger state not yet implemented')
+    marker_id=_local_id(tree['respawnMarker'])
+    if marker_id not in sc.objects:raise ValueError('hazard checkpoint references no marker')
+    marker_type,marker=sc.objects[marker_id]
+    if marker_type!='HazardRespawnMarker':raise ValueError('hazard checkpoint does not reference a marker')
+    marker_gid=_local_id(marker['m_GameObject']);position=sc.point(marker_gid);hits=[]
+    for a,b,collider_id in terrain:
+        if a[0]==b[0] or not min(a[0],b[0])<=position[0]<=max(a[0],b[0]):continue
+        y=a[1]+(position[0]-a[0])*(b[1]-a[1])/(b[0]-a[0])
+        if 0<=position[1]-y<=50:hits.append((y,collider_id))
+    if not hits:raise ValueError(f'checkpoint {file}:{index} has no source terrain within downward50 ray')
+    ground,ground_source=max(hits)
+    for collider_id,collider_type,collider in _components(sc,gid):
+        if not collider_type.endswith('Collider2D') or not collider['m_Enabled']:continue
+        if not collider['m_IsTrigger']:raise ValueError('HazardRespawnTrigger body is not a trigger')
+        polygons=collider_polygons(sc,gid,collider_type,collider)
+        points=[p for poly in polygons for p in poly]
+        result.append({'source':f'{file}:{index}','marker_source':f'{file}:{marker_id}',
+            'collider_source':f'{file}:{collider_id}','world_polygons':polygons,
+            'bounds':[min(p[0]for p in points),min(p[1]for p in points),max(p[0]for p in points),max(p[1]for p in points)],
+            'marker_position':position,'spawn':[position[0],ground+elevation],
+            'ground_source':ground_source,'ground_y':ground,'ground_ray_distance':50,
+            'respawn_facing_right':bool(marker['respawnFacingRight']),'fire_once':False,
+            'projection':'initial source terrain; dynamic scripted terrain not evaluated'})
 
 
 def postpack_checkpoints(report, source, scenes=None):
@@ -135,8 +145,11 @@ def postpack_checkpoints(report, source, scenes=None):
         scene_id = info['scene_id']
         if scene_id not in scenes:
             scenes[scene_id] = Scene(source, info.get('file', info.get('scene_file')))
-        by_scene[scene_id] = checkpoint_sources(scenes[scene_id])
+        unsupported = []
+        by_scene[scene_id] = checkpoint_sources(scenes[scene_id], unsupported=unsupported)
         info['hazard_checkpoints'] = by_scene[scene_id]
+        if unsupported:
+            info['hazard_checkpoints_unsupported'] = unsupported
     for region in report['regions']:
         bounds = region.get('interaction_bounds', region['activation_bounds'])
         region['checkpoints'] = [record for record in by_scene[region['scene_id']]
