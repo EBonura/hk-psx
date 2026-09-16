@@ -160,7 +160,14 @@ def bind_regions(report,by_scene,draw_sources=None,room_bytes=None):
                     owned.add(draw);bindings.append({'controller':i,'draw':draw,'renderer_source':source})
         if bindings:
             raw=room_bytes[chunk]if room_bytes is not None else (ROOT/region['path']).read_bytes()
-            for binding in bindings:validate_palette(raw,binding['draw'])
+            kept=[];rejected=[]
+            for binding in bindings:
+                try:validate_palette(raw,binding['draw']);kept.append(binding)
+                except ValueError as e:rejected.append(dict(binding,error=str(e)))
+            bindings=kept
+            # A soft-edged mask cannot use the subtractive CLUT fade; it stays a
+            # static draw and the exception is explicit in the region record.
+            if rejected:region['reveal_mask_unsupported']=rejected
         region['reveal_mask_bindings']=bindings
     report['reveal_mask_policy']={'scope':'Verified ordinary/inverse reversible FSM subsets; scene state shared across all residency regions','initialization':'Scene-ready begins Idle at authored opacity (ordinary128, inverse0); approximates source Pause hero-position callback/1s ordinary or2s inverse timeout and inverse0.01s initialization tween','persistence':'Activated bookkeeping does not control visibility; no memory-card save implementation','max_controllers_per_scene':MAX_CONTROLLERS}
 

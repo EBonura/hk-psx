@@ -59,6 +59,25 @@ def packet_bound(xy: list[tuple[int, int]], width: int, height: int) -> dict:
     raise ValueError(f'no safe bounded grid for texture {width}x{height}, source bbox {projected_bbox}')
 
 
+def texture_draws_safe(raw: bytes, texture: int, width: int, height: int) -> bool:
+    """True when every draw of `texture` in a cooked HKROOM02 pack keeps a bounded
+    packet grid if the texture became width×height (similarity/constant collapse)."""
+    counts = struct.unpack_from('<6I', raw, 8)
+    draw_start = 40 + counts[1]*16
+    for index in range(counts[2]):
+        pos = draw_start + index*44
+        if struct.unpack_from('<H', raw, pos)[0] != texture:
+            continue
+        coords = struct.unpack_from('<8i', raw, pos+8)
+        try:
+            bound = packet_bound(list(zip(coords[::2], coords[1::2])), width, height)
+        except ValueError:
+            return False
+        if bound['packets'] > CHILD_CAPACITY:
+            return False
+    return True
+
+
 def check_camera_arithmetic(xy, scale, camera):
     """Verify post-shift/subtraction bounds across the region camera box.
 

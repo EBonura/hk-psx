@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'host'))
-from similarity_dedup import postpack_similarity,sha,compose_row,select_replacements,verify_records
+from similarity_dedup import postpack_similarity,sha,compose_row,select_replacements,verify_records,packet_protected
 from region_delta import reconstruct,textures,layout
 from test_texture_match_groups import tex
 
@@ -84,6 +84,12 @@ class SimilarityDedupTests(unittest.TestCase):
         raw=room(31)
         with self.assertRaises(ValueError):verify_records(raw,raw,[0,1,2],{2},{2})
         with self.assertRaises(ValueError):verify_records(raw,raw,[0,1,2],{1},{1})
+
+    def test_smaller_representative_cannot_break_a_large_draw(self):
+        raw=room(31);giant=bytearray(raw);struct.pack_into('<8i',giant,40+3*16+8,0,0,331*256,0,0,2727*256,331*256,2727*256)
+        items=[{'id':0,'w':2,'h':2,'references':[[1,0]]},{'id':1,'w':4,'h':4,'references':[[2,0]]}]
+        self.assertEqual(packet_protected({0:1},items,{1:bytes(giant)}),[0])
+        self.assertEqual(packet_protected({0:1},items,{1:raw}),[])
 
     def test_partial_cook_is_not_published(self):
         self.assertFalse(postpack_similarity({'complete':False}))
