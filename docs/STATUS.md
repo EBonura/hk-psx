@@ -94,6 +94,16 @@ windows. Its measured largest window is `Hive_03_c` plus four neighbours at
 are source evidence only: PS1 RAM/VRAM fields remain unset until real crop,
 palette, compression and upload cooking proves them.
 
+`tools/cook_scene_pack.py` now performs that cooking per scene in isolation. It
+drives the canonical cooker, similarity pass and scene-bank packer for any
+catalog scene under a write guard, derives the activation envelope from the
+source tilemap, gate triggers and spawn points, and writes a measured summary
+under the ignored `.hkpsx/scene-packs/`. Crossroads_01 cooks into 20 views,
+103,960 resident bytes, 7 pages and 501 palettes with a passing native
+scene-gate decoder and one explicit Secret Mask exception. The matrix merges
+these summaries into per-scene PS1 costs and admission labels without claiming
+playability; the whole-catalog batch is running and its results follow.
+
 Persistent Geo state no longer reserves a scene-multiplied `[scene][32]` table.
 The guest now uses a flat 256-entry source-state pool keyed by scene and authored
 rock slot. The verified source catalog contains 207 GeoRock instances, so the pool

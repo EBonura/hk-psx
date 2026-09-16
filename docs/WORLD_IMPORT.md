@@ -110,6 +110,23 @@ region owners; `host/build_guest.py --no-disc` can validate this guest without
 touching the sole playable BIN/CUE pair. The chunk layout still needs a pinned
 guest differential run before replacing that disc.
 
+`tools/cook_scene_pack.py` is the first P06 production-cooking slice. It runs
+the canonical region cooker, similarity pass, reveal-mask binding and the
+`HKSCNE`/`HKWMTA01` scene-bank packer against any catalog scene, writing only
+under the ignored `.hkpsx/scene-packs/<scene>/` root; a process-wide write guard
+aborts the cook if any helper touches `data/`, canonical `.hkpsx/` reports or
+the disc. The activation envelope is the union of active tk2d tilemaps, gate
+triggers and gate spawn points, padded 1/5/1/1 units; camera-lock volumes are
+excluded because authors size them far beyond the map, and camera bounds follow
+the tilemap like the original camera clamp. Views use the canonical 24x16
+stepping and halve on the cooker's budget errors. Each `summary.json` records
+resident/stored bytes, pages, palettes, decoder status, unsupported cook errors
+and the actor inventory; `tools/world_pack_matrix.py --scene-packs` merges them
+into `ps1_ram_bytes`/`ps1_vram_bytes` plus a per-scene admission label that
+still never claims playability. Costs cover static scenery, tilemap fills,
+supported breakables/grass and the scene bank only: actor banks, audio, effects,
+scripts and neighbour windows are not included.
+
 The next passes are:
 
 1. Resolve common geometry/dependency gaps across the world, and cook shared art

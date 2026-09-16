@@ -56,8 +56,30 @@ def _resource_union(rows, key):
     return sorted({value for row in rows for value in row.get(key, [])})
 
 
-def build(world, inventory, graph, artifact_root=None):
+ADMISSION = {"cooked": "isolated_pack_measured", "over_budget": "isolated_pack_over_budget",
+             "failed": "isolated_pack_failed", "no_envelope": "no_source_envelope"}
+
+
+def _cooking(pack):
+    """PS1 cost fields from a tools/cook_scene_pack.py summary, or the source-only defaults."""
+    if not pack:
+        return {"ps1_ram_bytes": None, "ps1_vram_bytes": None, "admission": "source_matrix_only"}
+    measured = pack.get("status") == "cooked"
+    return {
+        "ps1_ram_bytes": pack.get("resident_bytes") if measured else None,
+        "ps1_vram_bytes": (pack["page_bytes"] + pack["palette_bytes"]) if measured else None,
+        "admission": ADMISSION.get(pack.get("status"), "isolated_pack_failed"),
+        "pack": {key: pack.get(key) for key in (
+            "status", "regions", "view_splits", "pages", "palettes", "resident_stored_bytes", "decoder_status",
+            "geometry_packet_bound", "unique_breakables", "unique_grass", "source_sha256", "summary_path", "error")},
+        "pack_unsupported_errors": len(pack.get("unsupported_cook_errors", [])),
+        "pack_actors": len(pack.get("actors", [])),
+    }
+
+
+def build(world, inventory, graph, artifact_root=None, scene_packs=None):
     """Return the matrix, rejecting stale or incomplete source evidence."""
+    scene_packs = scene_packs or {}
     coverage = world.get("coverage", {})
     if (world.get("run", {}).get("status") != "verified"
             or not world.get("inputs_unchanged")
@@ -139,9 +161,7 @@ def build(world, inventory, graph, artifact_root=None):
             "cooking": {
                 "source_geometry_ready": source.get("status") in ("imported", "complete"),
                 "source_dependencies_ready": not room.get("scan_failed"),
-                "ps1_ram_bytes": None,
-                "ps1_vram_bytes": None,
-                "admission": "source_matrix_only",
+                **_cooking(scene_packs.get(name)),
             },
         })
 
@@ -149,6 +169,11 @@ def build(world, inventory, graph, artifact_root=None):
         -(row["geometry"] or {}).get("uncompressed_bytes", 0), row["index"]))
     by_window = sorted(rows, key=lambda row: (
         -row["window"]["geometry_uncompressed_bytes"], row["index"]))
+    pack_status = {}
+    for row in rows:
+        pack_status[row["cooking"]["admission"]] = pack_status.get(row["cooking"]["admission"], 0) + 1
+    measured = [row for row in rows if row["cooking"]["ps1_ram_bytes"] is not None]
+    largest_pack = max(measured, key=lambda row: (row["cooking"]["ps1_ram_bytes"], -row["index"])) if measured else None
     return {
         "format": "HKWORLD_PACK_MATRIX01",
         "scope": "Whole-world source content matrix; not PS1 pack admission",
@@ -175,11 +200,18 @@ def build(world, inventory, graph, artifact_root=None):
             },
             "largest_current_plus_neighbours_texture_union": max(
                 rows, key=lambda row: (row["window"]["texture_count"], -row["index"]))["window"]["texture_count"],
+            "largest_isolated_pack_resident": None if largest_pack is None else {
+                "scene_name": largest_pack["scene_name"],
+                "bytes": largest_pack["cooking"]["ps1_ram_bytes"],
+                "vram_bytes": largest_pack["cooking"]["ps1_vram_bytes"],
+            },
         },
+        "pack_admission": pack_status,
         "scenes": rows,
         "limitations": [
             "Geometry/components are verified extraction artifacts, not guest scene packs.",
-            "Texture and animation counts are source dependency unions; PS1 costs remain unknown until cropping, palette sharing, compression and upload schedules are cooked.",
+            "Texture and animation counts are source dependency unions; PS1 costs stay unset for scenes without an isolated pack measured by tools/cook_scene_pack.py.",
+            "Isolated pack costs cover static scenery, tilemap fills, supported breakables/grass and the scene bank only; actor banks, audio, effects, scripts and neighbour windows are not included.",
             "Serialized neighbours are candidate residency windows; runtime/scripted destinations and conditional exits still require P09/P10 evidence.",
             "No scene is admitted as playable by this report and no source object is discarded.",
         ],
@@ -193,12 +225,18 @@ def markdown(matrix):
              f"- Largest extracted geometry: {matrix['peaks']['largest_geometry_uncompressed']['scene_name']} ({matrix['peaks']['largest_geometry_uncompressed']['bytes']} bytes uncompressed)",
              f"- Largest current+neighbour geometry window: {matrix['peaks']['largest_current_plus_neighbours_geometry']['scene_name']} ({matrix['peaks']['largest_current_plus_neighbours_geometry']['bytes']} bytes uncompressed)",
              f"- Largest current+neighbour texture union: {matrix['peaks']['largest_current_plus_neighbours_texture_union']} source fragments", "",
-             "| Scene | Import | Neighbours | Geometry | Textures | Sprites | Animations | Matrix admission |",
-             "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |"]
+             f"- Pack admission: {json.dumps(matrix.get('pack_admission', {}), sort_keys=True)}",
+             "| Scene | Import | Neighbours | Geometry | Textures | Sprites | Animations | PS1 RAM | PS1 VRAM | Matrix admission |",
+             "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
+    if matrix["peaks"].get("largest_isolated_pack_resident"):
+        peak = matrix["peaks"]["largest_isolated_pack_resident"]
+        lines.insert(7, f"- Largest isolated pack: {peak['scene_name']} ({peak['bytes']} resident bytes, {peak['vram_bytes']} VRAM bytes)")
     for row in matrix["scenes"]:
         geometry = (row["geometry"] or {}).get("uncompressed_bytes", 0)
-        lines.append(f"| {row['scene_name']} | {row['import_status']} | {len(row['neighbours'])} | {geometry} | {row['dependency']['texture_count']} | {row['dependency']['sprite_count']} | {row['dependency']['animation_count']} | {row['cooking']['admission']} |")
-    lines.extend(["", "The matrix deliberately leaves `ps1_ram_bytes` and `ps1_vram_bytes` unset until production cooking proves crop, palette, compression and upload costs.", ""])
+        ram = row["cooking"]["ps1_ram_bytes"] if row["cooking"]["ps1_ram_bytes"] is not None else ""
+        vram = row["cooking"]["ps1_vram_bytes"] if row["cooking"]["ps1_vram_bytes"] is not None else ""
+        lines.append(f"| {row['scene_name']} | {row['import_status']} | {len(row['neighbours'])} | {geometry} | {row['dependency']['texture_count']} | {row['dependency']['sprite_count']} | {row['dependency']['animation_count']} | {ram} | {vram} | {row['cooking']['admission']} |")
+    lines.extend(["", "`ps1_ram_bytes`/`ps1_vram_bytes` come only from isolated scene packs; they stay unset for scenes not yet cooked by `tools/cook_scene_pack.py`.", ""])
     return "\n".join(lines)
 
 
@@ -208,10 +246,14 @@ def main():
     parser.add_argument("--inventory", type=Path, default=ROOT / ".hkpsx/room-inventory.json")
     parser.add_argument("--graph", type=Path, default=ROOT / ".hkpsx/world-import/room-graph.json")
     parser.add_argument("--output", type=Path, default=ROOT / ".hkpsx/world-import/pack-matrix.json")
+    parser.add_argument("--scene-packs", type=Path, default=ROOT / ".hkpsx/scene-packs",
+                        help="root of tools/cook_scene_pack.py outputs; missing root means no PS1 costs")
     args = parser.parse_args()
     world = json.loads(args.world.read_text())
+    from cook_scene_pack import read_summaries
+    packs = read_summaries(args.scene_packs) if args.scene_packs.is_dir() else {}
     data = build(world, json.loads(args.inventory.read_text()), json.loads(args.graph.read_text()),
-                 artifact_root=args.world.parent)
+                 artifact_root=args.world.parent, scene_packs=packs)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
     args.output.with_suffix(".md").write_text(markdown(data))

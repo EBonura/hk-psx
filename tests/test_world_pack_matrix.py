@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from world_pack_matrix import build
+from world_pack_matrix import build, markdown
 
 
 def fixture():
@@ -72,3 +72,40 @@ class WorldPackMatrixTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScenePackMergeTests(unittest.TestCase):
+    def packs(self):
+        return {
+            "A": {"status": "cooked", "resident_bytes": 98808, "page_bytes": 229376, "palette_bytes": 16032,
+                  "regions": 12, "pages": 7, "palettes": 501, "decoder_status": "PASS",
+                  "unsupported_cook_errors": [{"source": "level37:4778"}], "actors": [{}, {}],
+                  "summary_path": "/tmp/A/summary.json"},
+            "B": {"status": "over_budget", "error": "ValueError('Scene37: 22 pages exceeds 20')",
+                  "resident_bytes": 500000, "page_bytes": 720896, "palette_bytes": 1000},
+        }
+
+    def test_isolated_pack_costs_fill_ps1_fields_without_claiming_admission(self):
+        data = build(*fixture(), scene_packs=self.packs())
+        a, b = data["scenes"]
+        self.assertEqual(a["cooking"]["ps1_ram_bytes"], 98808)
+        self.assertEqual(a["cooking"]["ps1_vram_bytes"], 229376 + 16032)
+        self.assertEqual(a["cooking"]["admission"], "isolated_pack_measured")
+        self.assertEqual(a["cooking"]["pack"]["decoder_status"], "PASS")
+        self.assertEqual(a["cooking"]["pack_unsupported_errors"], 1)
+        self.assertEqual(a["cooking"]["pack_actors"], 2)
+        # Over-budget packs keep their failure visible and never report a fitting cost.
+        self.assertIsNone(b["cooking"]["ps1_ram_bytes"])
+        self.assertEqual(b["cooking"]["admission"], "isolated_pack_over_budget")
+        self.assertIn("exceeds", b["cooking"]["pack"]["error"])
+        self.assertEqual(data["pack_admission"], {"isolated_pack_measured": 1, "isolated_pack_over_budget": 1})
+        self.assertEqual(data["peaks"]["largest_isolated_pack_resident"],
+                         {"scene_name": "A", "bytes": 98808, "vram_bytes": 245408})
+        text = markdown(data)
+        self.assertIn("| A | imported | 1 | 20 | 2 | 1 | 1 | 98808 | 245408 | isolated_pack_measured |", text)
+
+    def test_matrix_without_packs_keeps_source_only_defaults(self):
+        data = build(*fixture())
+        self.assertEqual(data["pack_admission"], {"source_matrix_only": 2})
+        self.assertIsNone(data["peaks"]["largest_isolated_pack_resident"])
+        self.assertNotIn("pack", data["scenes"][0]["cooking"])

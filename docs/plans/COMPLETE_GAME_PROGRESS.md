@@ -37,7 +37,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
 | P05 | in progress | Tutorial/Town `HKWMTA01` banks are checked and admitted from the aligned scene-arena tail; spatial actor/checkpoint lookup now resolves through the admitted bank. The guest differentially checks bounds, collision bounds, camera and neighbor lists against legacy regions, and derives the pack index/header capacity from generated manifests. The filtered edge cache now keys by world generation, global region and room view, preventing equal-sized room payload reuse. Full actual-CUE differential replay and migration of auxiliary tables remain. |
-| P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. It intentionally leaves PS1 RAM/VRAM admission unknown. Production cooking of all scenes, shared art canonical mappings and native pack validation remain. |
+| P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. Crossroads_01 cooks into 20 views, 103,960 resident bytes, 7 pages and 501 palettes with a passing native decoder and one explicit Secret Mask exception. The whole-catalog batch result, shared art canonical mappings and production admission remain. |
 | P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
@@ -214,6 +214,40 @@ Door, render-budget and disc mapping tables. In parallel, use the catalog-wide
 pack matrix to parameterize production cooking and identify the first scenes
 whose exact cropped/paletted PS1 costs can be admitted. Runtime text shaping
 remains with the renderer/UI packages.
+
+## P06 first cooking slice evidence
+
+- `tools/cook_scene_pack.py` replaces the ad hoc `.hkpsx/town67` and
+  `.hkpsx/crossroads70` probe scripts with a tracked tool. It reuses `cook(...,
+  write_shared=False, stage_for_similarity=True)`, `postpack_checkpoints`,
+  `postpack_masks`, `bind_regions`, `postpack_similarity(root=...)` and
+  `pack_scenes(residency='scene_gate', generate_world=False)`, assigns grass
+  state indices exactly like the canonical cook, and writes only under
+  `.hkpsx/scene-packs/<scene>/`. An audit-hook write guard aborts on any other
+  path; canonical `data/regions.json`, `data/room.hk`, `.hkpsx/packed-scenes.json`
+  and `.hkpsx/regions-provenance.json` kept their previous timestamps.
+- Envelope rule: active tk2d tilemaps plus gate triggers and gate spawn points,
+  padded 1/5/1/1 world units, camera bounds equal to the tilemap; camera-lock
+  trigger volumes are excluded after the first Crossroads run cooked a wasted
+  row of empty views below the map. Views use the canonical 24x16 stepping and
+  halve on the cooker's budget errors.
+- Crossroads_01 (`level37`): 20 views, 103,960 resident bytes, 63,161 stored,
+  7 pages, 501 palettes, 507 textures, native scene-gate decoder PASS, geometry
+  packet bound PASS, 10 breakables, 27 grass, one unsupported reveal controller
+  (Secret Mask `level37:4778`), six inventoried actors of which only Crawler is
+  movement-supported, 39.7 seconds. The earlier hand-laid 12-view probe measured
+  98,808 resident bytes with the same atlas; the difference is view bookkeeping.
+- `tools/world_pack_matrix.py --scene-packs .hkpsx/scene-packs` fills
+  `ps1_ram_bytes`/`ps1_vram_bytes` only for `cooked` packs and labels
+  `over_budget`/`failed`/`no_envelope` scenes explicitly; `pack_admission`
+  counts every label. Tests: 408 Python tests pass including seven new
+  envelope/layout/split/merge cases.
+- Commands: `.venv/bin/python tools/cook_scene_pack.py Crossroads_01`,
+  `.venv/bin/python tools/cook_scene_pack.py --all`, then
+  `.venv/bin/python tools/world_pack_matrix.py`.
+- Not claimed: playable rooms, actor banks, audio, effects, camera behavior or
+  neighbour-window residency. The whole-catalog batch was started after this
+  slice; its results are recorded when complete.
 
 ## Required package completion record
 
