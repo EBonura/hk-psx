@@ -309,7 +309,12 @@ def main():
     p.add_argument('--output-root', type=Path, default=DEFAULT_ROOT)
     p.add_argument('--world', type=Path, default=WORLD_REPORT)
     p.add_argument('--force', action='store_true', help='recook scenes whose source is unchanged')
+    p.add_argument('--shard', default='0/1', metavar='K/N',
+                   help='cook only every Nth scene starting at K, so N processes can share --all')
     a = p.parse_args()
+    shard, shards = (int(v) for v in a.shard.split('/'))
+    if not 0 <= shard < shards:
+        p.error('--shard must be K/N with 0 <= K < N')
     if not a.scenes and not a.all:
         p.error('name scenes or pass --all')
     from source import Source
@@ -318,6 +323,7 @@ def main():
     if missing:
         p.error('unknown scenes: ' + ', '.join(missing))
     names = sorted(entries) if a.all else a.scenes
+    names = names[shard::shards]
     root = a.output_root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     install_guard([root])
