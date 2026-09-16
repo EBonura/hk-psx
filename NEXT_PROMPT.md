@@ -1,6 +1,17 @@
 # Hollow Knight PS1: current handoff
 
-## Active implementation: P05 scene-owned world metadata
+## Current state (2026-09-16 evening)
+
+Build 74 is the sole disc: King's Pass, Dirtmouth and Forgotten Crossroads
+(Crossroads_01) connected by the authored gates, validated by
+`cargo run --release -- build` (five route replays, zero faults). RAM headroom
+is 401,256 bytes after removing baked particle tracks. The scene catalog is
+`host/quality.py SCENE_TABLE`; adding a scene means one entry plus a view
+layout, then a build. Next: P09 well entry behaviour (initial velocity, delayed
+collider, source camera locks), the Crossroads return replay, then Crossroads_02
+and the P05 migration of remaining static region payloads into the bank.
+
+## Previous handoff: P05 scene-owned world metadata
 
 The user authorized execution of the complete-game plan. Track it in
 `docs/plans/COMPLETE_GAME_PROGRESS.md`. P01-P04 are validated. The current

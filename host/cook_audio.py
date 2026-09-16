@@ -181,7 +181,8 @@ def main():
     hero_audio = s.read(controller)
     if hashlib.sha256(resources.objects[20602].get_raw_data()).hexdigest()!=MOVEMENT_HERO_SHA256:
         raise ValueError('HeroController movement audio linkage changed; revalidate environment Dust mapping')
-    for scene_name in ('level6','level7'):
+    from quality import SCENE_FILES
+    for scene_name in SCENE_FILES:
         scene=s.file(scene_name)
         managers=[s.read(o) for o in scene.objects.values()
                   if o.type.name=='MonoBehaviour' and s.typename(o)=='SceneManager']

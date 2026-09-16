@@ -61,7 +61,8 @@ def inventory(source):
             record['alternatives'].append({'player_data_bool':alternative['PlayerDataBoolKey'],
                 'cue':cue(obj.assets_file,alternative['Cue'])})
         return sid
-    for file in ('level6','level7'):
+    from quality import SCENE_FILES
+    for file in SCENE_FILES:
         scene=Scene(source,file);row={'scene_file':file,'managers':[],'music_regions':[],'music_fsm_actions':[]}
         for index,(kind,tree)in scene.objects.items():
             if kind=='SceneManager':

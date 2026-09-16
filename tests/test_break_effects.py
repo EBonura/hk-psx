@@ -40,7 +40,13 @@ class BreakEffectsTests(unittest.TestCase):
         style=dict(shape=10,cells=1,count=128,life=[60,120],speed=[3,99],size=[65536,65536],rotation=[0,23592959],radius_scale=65536,
                    samples=[dict(size=[65536,65536],spin=[-33554432,33554431],alpha=[255,0])for _ in range(33)])
         emitters=[dict(style=0,source=8726),dict(style=0,source=4)]
+        # Production leaves the tables empty (scalar path); the rounding contract
+        # of the baked form is still checked with baking switched on.
         tracks,bases,fallback=b.particle_tracks([style],emitters)
+        self.assertEqual((len(tracks),bases,fallback),(0,[65535,65535],[0,1]))
+        from unittest.mock import patch
+        with patch.object(b,'BAKE_TRACKS',True):
+            tracks,bases,fallback=b.particle_tracks([style],emitters)
         self.assertEqual((len(tracks),bases,fallback),(256,[0,128],[]))
         for track in tracks:
             self.assertEqual(len(track),33)

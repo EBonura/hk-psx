@@ -130,12 +130,17 @@ def collect(source=None,metadata=None):
                     ignored.append({'owner':b['source'],'part':part['game_object'],'reason':'existing rigid fragment'if 'SpinSelf'in cs else'unhandled nonparticle part'});continue
                 po,ps=cs['ParticleSystem'];ro,renderer=cs['ParticleSystemRenderer'];mo=source.ref(sc.file,renderer['m_Materials'][0]);mat=source.read(mo)
                 so=source.ref(mo.assets_file,mat['m_Shader']);shader=source.read(so)['m_ParsedForm']['m_Name']
-                if shader not in('Sprites/Lit','Sprites/Default') or renderer['m_RenderMode']or renderer['m_RenderAlignment']:raise ValueError('particle renderer material')
-                tint=dict(mat['m_SavedProperties']['m_Colors'])['_Color']
-                if any(not 0<=tint[c]<=1 for c in 'rgba'):raise ValueError('particle material tint')
-                texture=source.ref(mo.assets_file,dict(mat['m_SavedProperties']['m_TexEnvs'])['_MainTex']['m_Texture']);sid=source.sid(texture)
-                matrix=sc.world(sc.go_transform[gid]);scale=particle_scale(ps,matrix)
-                st=style(ps,gravity,scale);st['texture']=sid
+                try:
+                    if shader not in('Sprites/Lit','Sprites/Default') or renderer['m_RenderMode']or renderer['m_RenderAlignment']:raise ValueError('particle renderer material')
+                    tint=dict(mat['m_SavedProperties']['m_Colors'])['_Color']
+                    if any(not 0<=tint[c]<=1 for c in 'rgba'):raise ValueError('particle material tint')
+                    texture=source.ref(mo.assets_file,dict(mat['m_SavedProperties']['m_TexEnvs'])['_MainTex']['m_Texture']);sid=source.sid(texture)
+                    matrix=sc.world(sc.go_transform[gid]);scale=particle_scale(ps,matrix)
+                    st=style(ps,gravity,scale);st['texture']=sid
+                except ValueError as error:
+                    # An emitter the bounded particle model cannot reproduce is an
+                    # explicit omission for its breakable, not a whole-world failure.
+                    ignored.append({'owner':b['source'],'part':part['game_object'],'reason':'unsupported particle style: '+str(error)});continue
                 st['color']=[round(v*tint[c])for v,c in zip(st['color'],'rgb')]
                 for sample in st['samples']:sample['alpha']=[round(v*tint['a'])for v in sample['alpha']]
                 if st not in styles:styles.append(st)
@@ -194,6 +199,11 @@ def rust(v):
 
 TRACK_PHASES=33
 NO_TRACK=65535
+# Baked per-particle tracks are only a cache of the guest's scalar shape path
+# (tools/test_particle_tracks.py proves them equal). They cost about 4.9 KiB of
+# permanent RAM per emitter, which blocked the third scene; every emitter now
+# uses the scalar path and the tables stay empty.
+BAKE_TRACKS=False
 
 def particle_tracks(styles,emitters):
     """Exact source-seeded immutable values; motion/contact remains guest work.
@@ -230,7 +240,7 @@ def particle_tracks(styles,emitters):
                     frames.append([half|(radius<<16),(spin&0x3ffffff)|(level<<26)])
                 if not supported:break
                 rows.append(frames)
-        if supported and len(tracks)+len(rows)<=NO_TRACK:
+        if BAKE_TRACKS and supported and len(tracks)+len(rows)<=NO_TRACK:
             bases.append(len(tracks));tracks.extend(rows)
         else:
             bases.append(NO_TRACK);fallback.append(ei)
@@ -270,7 +280,7 @@ def cook():
     report={'format':'HKBREAK01','styles':styles,'emitters':emitters,'source_records':records,'other_parts':ignored,'vram_bytes':len(blob),
         'vram_rects':VRAM_RECTS,'uploads':uploads,'art':art,'frames':frames,'payload_sha256':hashlib.sha256(blob).hexdigest(),'rust_sha256':hashlib.sha256(code.encode()).hexdigest(),
         'particle_tracks':{'bytes':len(tracks_result[0])*33*8,'fallback_emitters':tracks_result[2],'format':'half16-radius16-spin26-alpha2-v1'},
-        'source_files':{name:hashlib.sha256((source.directory/name).read_bytes()).hexdigest()for name in ['level6','level7','globalgamemanagers','Managed/Assembly-CSharp.dll']},
+        'source_files':{name:hashlib.sha256((source.directory/name).read_bytes()).hexdigest()for name in [*__import__('quality').SCENE_FILES,'globalgamemanagers','Managed/Assembly-CSharp.dll']},
         'limitations':['Deterministic RNG,60Hz integration/damping,33-point curves,radius/edge collision and initial-lifetime collision-loss approximation differ from nativeUnity particle physics.',
             'Three baked opacity levels and sourceRGB palette quantization approximate Sprites/Lit lighting/blending.',
             'Existing128-particle pool reports capacity drops; authored maximum-per-emitter counts and lifetimes preserved.',

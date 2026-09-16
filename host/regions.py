@@ -19,14 +19,9 @@ from cook import cook, CAM_X, CAM_Y, Atlas, append_actor_art
 from actors import actor_sources, postpack_pogo
 from world import postpack_checkpoints, postpack_masks
 from reveal_masks import postpack_reveal_masks
-from quality import REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
+from quality import SCENE_TABLE, CROSSROADS_LAYOUT, REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
 
-SCENES = [
-    {'scene_id': 0, 'scene_name': 'Tutorial_01', 'file': 'level6',
-     'runtime_bounds': [0,-5,210,100], 'camera_global_bounds': [14,0,196,92]},
-    {'scene_id': 1, 'scene_name': 'Town', 'file': 'level7',
-     'runtime_bounds': [0,-5,270,76], 'camera_global_bounds': [12,15,258,68]},
-]
+SCENES = [dict(scene) for scene in SCENE_TABLE]
 
 
 def intersects(a, b):
@@ -81,6 +76,8 @@ def fixed_regions():
         region.update(camera_bounds=list(camera),camera_x=[camera[0],camera[2]],
                       camera_y=[camera[1],camera[3]])
         result.append(region)
+    for bounds in CROSSROADS_LAYOUT:
+        result.append(region_spec(SCENES[2],bounds))
     initial=initial_regions()[0]
     if result[0]['activation_bounds'] != initial['activation_bounds']:
         raise ValueError('fixed layout opening differs from initial room')

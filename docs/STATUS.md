@@ -1,3 +1,20 @@
+## Build 74: three connected scenes on the actual disc
+
+The sole disc pair is build 74 and it is validated by the root Cargo driver:
+`cargo run --release -- build` cooks with caches, builds the guest, replaces
+`~/Downloads/ps1 games/hk-psx.bin/.cue`, writes the build report and replays
+the five route tapes in `tools/tapes`, failing on any fault. Forgotten
+Crossroads (Crossroads_01) is scene 2: the authored Dirtmouth well gate drops
+the Knight into it and the `town-well` route ends inside Crossroads region 110
+after three scene loads. Build 72 was the first disc run of the metadata
+relocation and exposed three guest faults (neighbour id base, arena-tail bank
+overwritten by later in-place decodes, per-tick re-parsing overflowing the
+input queue); all are fixed and the host gate-load proof now stages the bank
+exactly as the guest does. Baked particle tracks were removed in favour of the
+proven scalar path, freeing 449 KB: the link now has 401,256 bytes before the
+stack floor with three scenes. Every cooker derives its scene list from
+`host/quality.py SCENE_TABLE`. See `docs/plans/COMPLETE_GAME_PROGRESS.md`.
+
 ## Complete-game implementation resumed
 
 P00-P04 are complete; P05-P08 and the first P06/P13 slices are in progress. The current isolated-worker

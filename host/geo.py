@@ -154,7 +154,8 @@ def collect(source):
         coins.append(coin)
     coins.sort(key=lambda c:c['type'])
     if [c['value']for c in coins]!=[1,5,25]:raise ValueError('Geo denomination source changed')
-    for scene_id,name in enumerate(('level6','level7')):
+    from quality import SCENE_FILES
+    for scene_id,name in enumerate(SCENE_FILES):
         sc=Scene(source,name);scene_objects.append(sc)
         for ident,(kind,t) in sc.objects.items():
             if kind not in ('GeoRock','HealthManager') or not t.get('m_Enabled',1):continue

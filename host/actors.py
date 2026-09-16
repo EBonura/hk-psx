@@ -437,7 +437,8 @@ def postpack_pogo(report, source, scenes=None):
     output = ['// Generated static NailSlash-compatible targets, source IDs in regions.json.',
               'static POGO_SCENES: &[&[PogoTarget]] = &[']
     infos = sorted(report['scenes'], key=lambda row: row['scene_id'])
-    if [r['scene_id'] for r in infos] != list(range(len(infos))) or len(infos) > 2:
+    from quality import SCENE_COUNT
+    if [r['scene_id'] for r in infos] != list(range(len(infos))) or len(infos) > SCENE_COUNT:
         raise ValueError('pogo scene IDs must match bounded world scene table')
     for info in infos:
         scene_id = info['scene_id']

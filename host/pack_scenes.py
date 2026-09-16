@@ -282,6 +282,10 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
     entries=allocate_scenes(entries,arena_bytes,residency=residency)
     metadata_output=report_path.parent/'world-metadata-packed'
     world_banks,world_bodies=world_metadata_banks(meta,metadata_output,{e['scene_id']:e['raw_fnv'] for e in entries})
+    # The guest indexes every manifest by scene_index (allocation order), so the
+    # metadata banks must follow SCENE_MANIFEST order, not scene_id order.
+    position={e['scene_id']:e['scene_index'] for e in entries}
+    world_banks.sort(key=lambda bank:position[bank['scene_id']]);world_bodies.sort(key=lambda body:position[body[0]['scene_id']])
     atlases=[];atlas_bodies=[]
     for e in entries:
         raw=bodies[e['scene_id']][0]
