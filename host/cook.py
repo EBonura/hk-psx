@@ -114,6 +114,20 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
             bindings={kind:control[kind+'_clip_name'] for kind in ('walk','turn')}
         else:
             raise ValueError('unsupported actor art controller: '+control['kind'])
+        # Actor sampling is never reduced: a frame beyond the 64x64 animation
+        # cache makes the actor an explicit unsupported record for this cook.
+        def frame_dims(name):
+            clip=next(c for c in library['clips'] if c['name']==name)
+            for frame in clip['frames']:
+                collection_o=s.ref(library_o.assets_file,frame['spriteCollection']);sid=s.sid(collection_o)
+                if sid not in collections:collections[sid]=s.read(collection_o)
+                _,box=tk_sprite(s,collection_o.assets_file,collections[sid],frame['spriteId'],textures);scale=FOCAL/-CAM_Z
+                yield math.ceil((box[2]-box[0])*sx*scale),math.ceil((box[3]-box[1])*sy*scale)
+        oversized=sorted((w,h) for name in bindings.values() for w,h in frame_dims(name) if w>64 or h>64)
+        if oversized:
+            actor['movement_supported']=False
+            actor.setdefault('limitations',[]).append(f'actor frame {oversized[-1][0]}x{oversized[-1][1]} exceeds the 64x64 animation cache; art not cooked')
+            continue
         for kind,name in bindings.items():
             clip_key=(s.sid(library_o),name,sx,sy,alpha)
             if clip_key not in clip_cache:
