@@ -316,29 +316,28 @@ impl Cache {
     fn prepare_metadata(&mut self,scene:usize)->Result<(),LoadError> {
         self.init()?;let m=WORLD_META_MANIFEST[scene];
         if self.metadata_scene==scene && self.metadata_len==m.raw_len {return Ok(());}
-        if self.loaded_scenes!=0 {return Err(LoadError::WorldMeta);}
+        // The resident scene owns the arena; the bank lives in the tail beyond it.
+        if self.loaded_scenes==0 || (SCENE_GATE_LOAD && self.resident_scene!=scene) {return Err(LoadError::WorldMeta);}
         self.metadata_scene=EMPTY;self.metadata_len=0;
-        self.read(self.entries[m.chunk_id-1],0)?;
-        let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
-            let mut decoder=Decoder::new_bytes(m.stored_len,m.stored_fnv,m.raw_len,m.bank_fnv);
+        let scene_tail=(SCENE_MANIFEST[scene].raw_len.saturating_add(3))&!3;
+        if scene_tail.checked_add(WORLD_META_ARENA_BYTES).is_none_or(|end|end>SCENE_ARENA_BYTES) {
+            return Err(LoadError::WorldMeta);
+        }
+        // Read and decode in place within the tail: the decoder relocates the
+        // compressed bytes to the end of this slice, never over the scene.
+        self.read(self.entries[m.chunk_id-1],scene_tail)?;
+        let tail=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>().add(scene_tail),SCENE_ARENA_BYTES-scene_tail)};
+        let mut decoder=Decoder::new_bytes(m.stored_len,m.stored_fnv,m.raw_len,m.bank_fnv);
         loop {
             crate::input::checkpoint();
-            match decoder.step(arena,1024) {
+            match decoder.step(tail,1024) {
                 Ok(Some(len))=>{if len!=m.raw_len{return Err(LoadError::WorldMeta);}break;},
                 Ok(None)=>{},
                 Err(error)=>return Err(match error {DecodeError::Checksum=>LoadError::Checksum,
                     DecodeError::Decompress=>LoadError::Decompress,DecodeError::RoomFormat=>LoadError::WorldMeta}),
             }
         }
-        let scene_tail=(SCENE_MANIFEST[scene].raw_len.saturating_add(3))&!3;
-        if scene_tail.checked_add(WORLD_META_ARENA_BYTES).is_none_or(|end|end>SCENE_ARENA_BYTES) {
-            return Err(LoadError::WorldMeta);
-        }
-        let destination=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>().add(scene_tail),m.raw_len)};
-        for (source,destination) in arena[..m.raw_len].chunks(1024).zip(destination.chunks_mut(1024)) {
-            crate::input::checkpoint();destination.copy_from_slice(source);
-        }
-        let bank=checked_world_metadata(destination,scene)?;
+        let bank=checked_world_metadata(&tail[..m.raw_len],scene)?;
         let expected_regions=REGION_SCENE_LOCAL.iter().filter(|&&(owner,_)|owner==scene).count();
         if bank.region_count()!=expected_regions {return Err(LoadError::WorldMeta);}
         let mut previous_global=0;
@@ -354,8 +353,10 @@ impl Cache {
                 || region.camera()!=legacy.camera || region.neighbour_count()!=legacy.neighbours.len() {
                 return Err(LoadError::WorldMeta);
             }
+            // The bank stores global chunk ids (1-based); the permanent table
+            // stores region indices, and global id == index + 1 there.
             for (encoded,expected) in region.neighbours().zip(legacy.neighbours.iter()) {
-                if encoded.map_err(|_|LoadError::WorldMeta)? as usize!=*expected {
+                if encoded.map_err(|_|LoadError::WorldMeta)? as usize!=*expected+1 {
                     return Err(LoadError::WorldMeta);
                 }
             }
@@ -420,7 +421,12 @@ impl Cache {
             // revoked before any CD/decode/upload may overwrite those bytes.
             self.loaded_scenes=0;self.resident_scene=EMPTY;self.selected=EMPTY;
         }
-        self.prepare_metadata(wanted)?;
+        if self.loaded_scenes==0 {
+            // Every decode below relocates its compressed payload to the end of
+            // the arena it is given, so the metadata bank staged in the arena
+            // tail cannot survive them: revoke it now and admit it last.
+            self.metadata_scene=EMPTY;self.metadata_len=0;
+        }
         self.prepare_coverage(wanted)?;
         self.prepare_atlases(wanted)?;
         while self.loaded_scenes<if SCENE_GATE_LOAD {1}else{SCENE_COUNT} {
@@ -460,6 +466,9 @@ impl Cache {
             // Joint mode preserves this immutable prefix during later reads.
             // Exclusive mode admits no second scene until the next gate.
         }
+        // Last: the bank decodes inside the arena tail beyond the resident
+        // scene, which no later decode touches until the next admission.
+        self.prepare_metadata(wanted)?;
         Ok(())
     }
     /// Exclusive admission at title or a drained scene gate; spatial selection uses try_select().
@@ -520,7 +529,10 @@ impl Cache {
             "No admitted world metadata selected");
         let scene_tail=(SCENE_MANIFEST[self.metadata_scene].raw_len.saturating_add(3))&!3;
         let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(scene_tail),self.metadata_len)};
-        checked_world_metadata(bytes,self.metadata_scene).expect("admitted world metadata changed")
+        // Admission already ran the complete checked parse and the legacy
+        // differential; re-validating every section on each spatial lookup
+        // cost several VBlanks per tick and overflowed the input queue.
+        unsafe {WorldMeta::validated_view(bytes)}
     }
     /// Resolve a spatial point through the admitted scene bank. The returned
     /// index is the canonical global region slot used by the existing room
