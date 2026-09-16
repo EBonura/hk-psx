@@ -37,7 +37,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
 | P05 | in progress | Tutorial/Town `HKWMTA01` banks are checked and admitted from the aligned scene-arena tail; spatial actor/checkpoint lookup now resolves through the admitted bank. The guest differentially checks bounds, collision bounds, camera and neighbor lists against legacy regions, and derives the pack index/header capacity from generated manifests. The filtered edge cache now keys by world generation, global region and room view, preventing equal-sized room payload reuse. Full actual-CUE differential replay and migration of auxiliary tables remain. |
-| P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. Crossroads_01 cooks into 20 views, 103,960 resident bytes, 7 pages and 501 palettes with a passing native decoder and one explicit Secret Mask exception. The whole-catalog batch result, shared art canonical mappings and production admission remain. |
+| P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
 | P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
@@ -248,6 +248,37 @@ remains with the renderer/UI packages.
 - Not claimed: playable rooms, actor banks, audio, effects, camera behavior or
   neighbour-window residency. The whole-catalog batch was started after this
   slice; its results are recorded when complete.
+
+## P06 whole-catalog cooking evidence
+
+- Three `tools/cook_scene_pack.py --all` passes with four `--shard` processes
+  cooked every catalog scene: 457 cooked, 41 `no_envelope`, three over the
+  128-view HKSCNE room limit (Abyss_21 136 views, White_Palace_13 135,
+  White_Palace_20 156). 11,538 views were cooked in 336 CPU minutes; 258 views
+  were halved on cook-time budgets and no scene needed a pack-time recook after
+  the similarity guards landed.
+- Measured isolated resident costs: median 91,076 bytes, maximum 316,892
+  (Tutorial_01, 18 pages, 623,968 VRAM bytes for pages plus palettes). No scene
+  exceeds the current 354,032-byte scene arena on its own; two scenes need 16
+  or more of the 20 pages and Cliffs_01 needs 1,084 of the 1,248 palettes. These
+  exclude actor banks, audio, effects and neighbour windows.
+- Recorded exceptions: 1,697 unsupported cook records across the measured
+  scenes and 2,000 actor records inventoried, with only Crawler and Runner
+  families movement-supported. `.hkpsx/world-import/pack-matrix.{json,md}`
+  carries the per-scene costs, `pack_admission` counts and
+  `pack_failure_causes`.
+- Shared causes fixed during the batch, each with a regression test and a
+  source-only commit: unsupported GrassCut topology, soft-edged reveal masks,
+  near-camera or over-stretched sprites, actor frames above the 64x64
+  animation cache, markerless or one-shot hazard checkpoints and unreadable
+  GameObjects are recorded instead of aborting; hazard polygons above 16
+  vertices are tiled into exact pieces (`host/polygons.py`); the constant 4x4
+  collapse and approximate replacements keep every draw's packet bound and
+  every region's packet reservation; two tilemaps may share a render root;
+  views exceeding runtime page/texture/byte/packet/actor budgets are halved.
+- Remaining structural ceilings for P05/P07: the 128-room scene header limit
+  for the three tallest scenes, and the 20-page/1,248-palette caps once
+  neighbour windows and actor banks are added.
 
 ## Required package completion record
 

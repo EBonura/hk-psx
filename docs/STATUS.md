@@ -102,7 +102,19 @@ under the ignored `.hkpsx/scene-packs/`. Crossroads_01 cooks into 20 views,
 103,960 resident bytes, 7 pages and 501 palettes with a passing native
 scene-gate decoder and one explicit Secret Mask exception. The matrix merges
 these summaries into per-scene PS1 costs and admission labels without claiming
-playability; the whole-catalog batch is running and its results follow.
+playability.
+
+The whole-catalog batch is complete: 457 of 501 scenes cook with a passing
+native scene-gate decoder, 41 have no source envelope and three exceed the
+128-view HKSCNE room limit (Abyss_21, White_Palace_13, White_Palace_20).
+Eleven shared abort causes found by the batch are now explicit recorded
+exceptions or lossless transformations, including exact tiling of hazard
+polygons above 16 vertices and packet-bound guards on the similarity pass.
+Isolated resident costs peak at 316,892 bytes for Tutorial_01 with 18 pages;
+no scene alone exceeds the current scene arena, but two need 16 or more pages
+and Cliffs_01 needs 1,084 palettes before actor banks or neighbour windows.
+The regenerated `.hkpsx/world-import/pack-matrix.{json,md}` records per-scene
+costs and failure causes. Build 71 remains the sole delivered disc.
 
 Persistent Geo state no longer reserves a scene-multiplied `[scene][32]` table.
 The guest now uses a flat 256-entry source-state pool keyed by scene and authored

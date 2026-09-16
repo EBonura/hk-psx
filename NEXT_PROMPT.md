@@ -32,11 +32,12 @@ the single disc pair.
 
 P06 now has `tools/cook_scene_pack.py`: isolated, write-guarded per-scene packs
 under `.hkpsx/scene-packs/`, merged into the matrix by
-`tools/world_pack_matrix.py --scene-packs`. Crossroads_01 measures 103,960
-resident bytes, 7 pages, 501 palettes with a passing decoder. After the
-`--all` batch finishes, regenerate the matrix, record over-budget/failed scenes
-by shared cause in the ledger, and plan the residency partitioning for scenes
-that exceed the current arena or page limits.
+`tools/world_pack_matrix.py --scene-packs`. The whole catalog is
+cooked: 457 scenes measured, 41 without a source envelope, three over the
+128-view room limit; costs and causes are in the regenerated matrix and the
+P06 evidence section of the ledger. Next for M1: decide the room-limit
+ceiling for the three tallest scenes (P05 item 8), measure neighbour-window
+and actor-bank costs on top of the isolated packs (P07), and continue P08.
 
 ## Completion plan for the next executor
 
