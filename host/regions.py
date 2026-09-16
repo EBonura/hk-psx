@@ -127,6 +127,47 @@ def scene_metadata(sc, info):
     return result
 
 
+def cook_fingerprints(source):
+    """Inputs and code identity for per-region cook reuse.
+
+    Code excludes quality.py (the scene catalog) so growing the catalog keeps
+    earlier regions; the budget constants it contributes are hashed by value.
+    """
+    from quality import SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, TEXTURE_BUDGET, ROOM_BYTE_BUDGET
+    def sha(path):
+        with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+    code=hashlib.sha256()
+    for path in sorted(p for p in (ROOT/'host').glob('*.py') if p.name!='quality.py'):code.update(f'{path.name}:{sha(path)}\n'.encode())
+    for name in ('audit_texture_similarity.py','texture_match_groups.py','audit_resident_bank.py'):code.update(f'{name}:{sha(ROOT/"tools"/name)}\n'.encode())
+    code.update(json.dumps([SCENERY_MAX_AXIS,STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET]).encode())
+    inputs=hashlib.sha256();provenance=ROOT/'.hkpsx/regions-provenance.json'
+    if not provenance.exists():return None
+    for name in sorted(json.loads(provenance.read_text())['inputs']):
+        path=source.directory/name
+        if not path.is_file():return None
+        inputs.update(f'{name}:{sha(path)}\n'.encode())
+    return {'code':code.hexdigest(),'inputs':inputs.hexdigest()}
+
+
+def cook_cache_key(region, fingerprints):
+    """Stable key for one cooked region; None disables reuse."""
+    if not fingerprints:return None
+    return hashlib.sha256(json.dumps({'region':region,'fingerprints':fingerprints},sort_keys=True).encode()).hexdigest()
+
+
+def cached_cook(destination, key):
+    """Return the earlier cook report when its key and cooked files are intact."""
+    cache=destination/'cook-cache.json'
+    if key is None or not cache.is_file():return None
+    try:old=json.loads(cache.read_text())
+    except ValueError:return None
+    room=destination/'room.hk'
+    if old.get('key')!=key or not room.is_file() or not (destination/'scene.json').is_file() or not (destination/'unsupported.json').is_file():return None
+    with room.open('rb') as stream:
+        if hashlib.file_digest(stream,'sha256').hexdigest()!=old['cooked'].get('pack_sha256'):return None
+    return old['cooked']
+
+
 def write_report(path, report):
     temp=path.with_suffix('.tmp')
     dump(temp,report);temp.replace(path)
@@ -305,6 +346,7 @@ def main():
         refresh_actors();return
     out=ROOT/'data/regions';out.mkdir(parents=True,exist_ok=True)
     source=Source();scenes={};pixels={};geometry={}
+    fingerprints=cook_fingerprints(source)
     pending=fixed_regions();regions=[]
     report={'format':'HKREGIONS01','complete':False,'initial_chunk_id':1,'scenes':[],
             'regions':regions,'quality':{'scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_budget':TEXTURE_BUDGET,'room_byte_budget':ROOM_BYTE_BUDGET,'layout':'fixed106','animation_sampling':'unchanged'},'limitations':[
@@ -321,13 +363,20 @@ def main():
         chunk_id=len(regions)+1
         if chunk_id>256:raise ValueError('Region chunk table exceeds 256 slots')
         destination=out/f'region-{chunk_id:03}'
-        print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]}',flush=True)
-        try:
-            cooked=cook(source,scenes[scene_id],region,destination,pixels,geometry,write_shared=chunk_id==1,stage_for_similarity=True)
-        except ValueError as error:
-            if chunk_id==1 or not any(text in str(error) for text in ('budget exceeded','pool exceeds','cache dimensions','bank exceeds')):
-                raise
-            raise ValueError(f'Fixed layout region {chunk_id} exceeds measured residency budget: {error}') from error
+        key=cook_cache_key(region,fingerprints);cooked=cached_cook(destination,key)
+        if cooked is not None:
+            print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]} (cached)',flush=True)
+        else:
+            print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]}',flush=True)
+            try:
+                cooked=cook(source,scenes[scene_id],region,destination,pixels,geometry,write_shared=chunk_id==1,stage_for_similarity=True)
+            except ValueError as error:
+                if chunk_id==1 or not any(text in str(error) for text in ('budget exceeded','pool exceeds','cache dimensions','bank exceeds')):
+                    raise
+                raise ValueError(f'Fixed layout region {chunk_id} exceeds measured residency budget: {error}') from error
+            if key is not None:
+                try:(destination/'cook-cache.json').write_text(json.dumps({'key':key,'cooked':cooked}))
+                except TypeError:pass  # a report that is not JSON simply is not reused
         path=out/f'chunk_{chunk_id}.hk';shutil.copy2(destination/'room.hk',path)
         if chunk_id==1:
             shutil.copy2(path,ROOT/'data/room.hk')
