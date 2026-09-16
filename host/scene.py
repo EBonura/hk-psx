@@ -30,6 +30,10 @@ class Scene:
         m=self.world(self.go_transform[gid]);return tuple(sum(m[i][j]*v for j,v in enumerate([x,y,z,1])) for i in range(3))
     @lru_cache(None)
     def active(self,gid):
+        # An object whose GameObject could not be read (see self.errors) or that
+        # lives in another file is never active in this scene.
+        if gid not in self.gos or gid not in self.go_transform:return False
         if not self.gos[gid]['m_IsActive']:return False
         t=self.transforms[self.go_transform[gid]];f=t['m_Father']['m_PathID']
+        if f and f not in self.transforms:return False
         return not f or self.active(self.transforms[f]['m_GameObject']['m_PathID'])
