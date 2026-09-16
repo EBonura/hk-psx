@@ -357,7 +357,11 @@ copies. Measured effect on linked RAM: none (`.data` 497,984 vs 498,160 bytes,
 headroom 218,628 vs 219,292), so the text share above overstated the binary
 weight of actors; the per-view growth sits in the remaining nested arrays
 (breakables with edge lists and polygons, grass patches, hazards, `Region`
-itself at 196 bytes). Attribute those from the link map before moving them.
+itself at 196 bytes). Link-map attribution on build 77: `hk_psx::world::REGIONS`
+is 64,484 bytes (329 x 196) and the anonymous constant sections holding the
+nested per-region arrays total 306,265 bytes across 1,714 sections, about
+930 bytes per view, so the nested arrays, not the `Region` records or the
+actor specs, are what the bank must absorb.
 
 Order: (1) actor specs shared per scene (done), then move them into the bank; (2) breakables, whose bank records exist but lack edge lists and
 fades; (3) hazards and checkpoints, whose bank records are complete, by
