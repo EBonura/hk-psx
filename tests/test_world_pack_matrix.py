@@ -99,9 +99,12 @@ class ScenePackMergeTests(unittest.TestCase):
         self.assertEqual(b["cooking"]["admission"], "isolated_pack_over_budget")
         self.assertIn("exceeds", b["cooking"]["pack"]["error"])
         self.assertEqual(data["pack_admission"], {"isolated_pack_measured": 1, "isolated_pack_over_budget": 1})
+        self.assertEqual(data["pack_failure_causes"],
+                         [{"cause": "ValueError('SceneN: N pages exceeds N')", "scenes": 1, "scene_names": ["B"]}])
         self.assertEqual(data["peaks"]["largest_isolated_pack_resident"],
                          {"scene_name": "A", "bytes": 98808, "vram_bytes": 245408})
         text = markdown(data)
+        self.assertIn("- Pack failure cause (1 scenes): `ValueError('SceneN: N pages exceeds N')`", text)
         self.assertIn("| A | imported | 1 | 20 | 2 | 1 | 1 | 98808 | 245408 | isolated_pack_measured |", text)
 
     def test_matrix_without_packs_keeps_source_only_defaults(self):

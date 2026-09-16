@@ -10,6 +10,7 @@ silently admitting an uncooked scene as playable content.
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,6 +59,11 @@ def _resource_union(rows, key):
 
 ADMISSION = {"cooked": "isolated_pack_measured", "over_budget": "isolated_pack_over_budget",
              "failed": "isolated_pack_failed", "no_envelope": "no_source_envelope"}
+
+
+def _cause(error):
+    """Collapse an error string to its shared cause: exception type and message without numbers."""
+    return re.sub(r"\d+", "N", error).strip()
 
 
 def _cooking(pack):
@@ -170,8 +176,12 @@ def build(world, inventory, graph, artifact_root=None, scene_packs=None):
     by_window = sorted(rows, key=lambda row: (
         -row["window"]["geometry_uncompressed_bytes"], row["index"]))
     pack_status = {}
+    causes = {}
     for row in rows:
         pack_status[row["cooking"]["admission"]] = pack_status.get(row["cooking"]["admission"], 0) + 1
+        error = (row["cooking"].get("pack") or {}).get("error")
+        if error:
+            causes.setdefault(_cause(error), []).append(row["scene_name"])
     measured = [row for row in rows if row["cooking"]["ps1_ram_bytes"] is not None]
     largest_pack = max(measured, key=lambda row: (row["cooking"]["ps1_ram_bytes"], -row["index"])) if measured else None
     return {
@@ -207,6 +217,8 @@ def build(world, inventory, graph, artifact_root=None, scene_packs=None):
             },
         },
         "pack_admission": pack_status,
+        "pack_failure_causes": [{"cause": cause, "scenes": len(names), "scene_names": sorted(names)}
+                                for cause, names in sorted(causes.items(), key=lambda item: (-len(item[1]), item[0]))],
         "scenes": rows,
         "limitations": [
             "Geometry/components are verified extraction artifacts, not guest scene packs.",
@@ -231,6 +243,8 @@ def markdown(matrix):
     if matrix["peaks"].get("largest_isolated_pack_resident"):
         peak = matrix["peaks"]["largest_isolated_pack_resident"]
         lines.insert(7, f"- Largest isolated pack: {peak['scene_name']} ({peak['bytes']} resident bytes, {peak['vram_bytes']} VRAM bytes)")
+    for item in matrix.get("pack_failure_causes", []):
+        lines.insert(len(lines) - 2, f"- Pack failure cause ({item['scenes']} scenes): `{item['cause']}`")
     for row in matrix["scenes"]:
         geometry = (row["geometry"] or {}).get("uncompressed_bytes", 0)
         ram = row["cooking"]["ps1_ram_bytes"] if row["cooking"]["ps1_ram_bytes"] is not None else ""
