@@ -91,8 +91,9 @@ def tilemap_fill_sources(sc):
         ref=t['renderData'];obj=source.ref(sc.file,ref)
         if obj.type.name!='GameObject':raise ValueError('tk2d renderData is not a scene GameObject')
         for gid in _descendants(sc,obj.path_id):
-            if gid in roots:raise ValueError('overlapping tilemap renderData roots')
-            roots[gid]=f'{Path(sc.file.name).name}:{ident}'
+            # Two tilemaps may share a render root (Godhome arenas); each mesh
+            # renderer is still extracted once, attributed to the first owner.
+            roots.setdefault(gid,f'{Path(sc.file.name).name}:{ident}')
     for ident,(kind,t)in sc.objects.items():
         if kind!='MeshRenderer' or not t['m_Enabled']:continue
         gid=t['m_GameObject']['m_PathID']
