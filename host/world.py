@@ -110,6 +110,7 @@ def checkpoint_sources(sc, unsupported=None):
 
 
 def _checkpoint(sc,file,index,tree,gid,terrain,elevation,result):
+    from breakables import _components, _local_id, collider_polygons
     if tree['fireOnce']:raise ValueError('one-shot HazardRespawnTrigger state not yet implemented')
     marker_id=_local_id(tree['respawnMarker'])
     if marker_id not in sc.objects:raise ValueError('hazard checkpoint references no marker')
