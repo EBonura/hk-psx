@@ -335,6 +335,28 @@ remains with the renderer/UI packages.
   about 1 KB of static region payload per view, which makes the P05 migration of
   region payloads into the loadable bank the next structural requirement.
 
+## P05 payload migration: measured order for the next executor
+
+Static region payload measured on build 76 (329 views): `.data` grew 142,528
+bytes for the 175 Crossroads views, about 815 bytes per view. Text share of the
+generated `data/regions.rs` fields, as a proxy for their binary weight:
+
+| Field | Share | Why it is large | Guest consumers |
+| --- | ---: | --- | --- |
+| `actors` | 188 KB | the scene actor bank is appended to every region pack, so each supported actor's `ActorSpec` is emitted once per region with region-specific clip indices (9 distinct actors, 330 emitted specs) | `enemies::sync_region` |
+| `breakables` | 69 KB | per-region props with edge lists and hit polygons; 297 emitted for 187 distinct | `world::State::apply`, strike/fade paths |
+| `neighbours` | 61 KB text, small binary | index lists; already present in the `HKWMTA01` bank | region activation |
+| `hazards` | 15 KB | polygons already present in the bank as records | `world::hazard_contact` |
+| `reveal_bindings` | 12 KB | per-region draw bindings | reveal masks |
+| `checkpoints` | 6 KB | already present in the bank | `world::checkpoint_record` |
+
+Order: (1) give the appended scene actor bank a per-scene clip index space so
+one `ActorSpec` per actor can be shared by reference, then move the specs into
+the bank; (2) breakables, whose bank records exist but lack edge lists and
+fades; (3) hazards and checkpoints, whose bank records are complete, by
+switching the consumers to the admitted `WorldMeta` view; (4) neighbours. Each
+step must keep the six route replays green and record the new headroom.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
