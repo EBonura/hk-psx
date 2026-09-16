@@ -132,6 +132,7 @@ def cached_report(path):
         if sha(Path(report['source_directory'])/name)!=value['sha256']:raise ValueError('music source changed: '+name)
     for name,value in report['tool_hashes'].items():
         if sha(ROOT/'host'/name)!=value:raise ValueError('music conversion code changed: '+name)
+    if [scene['scene_file'] for scene in report['scenes']]!=list(SCENE_FILES):raise ValueError('music report covers a different scene catalog')
     if sha(ROOT/report['source_methods']['path'])!=report['source_methods']['sha256']:raise ValueError('source methods hash mismatch')
     for c in report['clips']:
         if c['rate']==RATE and c['channels']==1:

@@ -1,6 +1,8 @@
-## Build 74: three connected scenes on the actual disc
+## Build 75: five connected scenes on the actual disc
 
-The sole disc pair is build 74 and it is validated by the root Cargo driver:
+The sole disc pair is build 75 (Crossroads_02 and Crossroads_07 joined through
+one catalog entry each; six route replays pass with 376,680 bytes of linked
+headroom). Build 74 and it is validated by the root Cargo driver:
 `cargo run --release -- build` cooks with caches, builds the guest, replaces
 `~/Downloads/ps1 games/hk-psx.bin/.cue`, writes the build report and replays
 the five route tapes in `tools/tapes`, failing on any fault. Forgotten

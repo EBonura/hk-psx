@@ -14,6 +14,10 @@ SCENE_TABLE = (
      'runtime_bounds': [0,-5,270,76], 'camera_global_bounds': [12,15,258,68]},
     {'scene_id': 2, 'scene_name': 'Crossroads_01', 'file': 'level37',
      'runtime_bounds': [-2,-5,102,49], 'camera_global_bounds': [0,0,100,42]},
+    {'scene_id': 3, 'scene_name': 'Crossroads_02', 'file': 'level38',
+     'runtime_bounds': [-2,-5,92,36], 'camera_global_bounds': [0,0,90,30]},
+    {'scene_id': 4, 'scene_name': 'Crossroads_07', 'file': 'level43',
+     'runtime_bounds': [-2,-5,45,116], 'camera_global_bounds': [0,0,43,110]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)
@@ -126,9 +130,13 @@ REGION_LAYOUT = (
 # first 98 chunk IDs. Cameras describe extraction coverage, not source lock FSMs.
 # Lower camera tops reach activation top+2 so descending the entrance hill
 # crosses into these views continuously with the fixed player camera offset.
-# Crossroads_01: the measured 24x16 stepping over its source envelope.
-CROSSROADS_LAYOUT = tuple([x, y, min(x + 24, 102), min(y + 16, 49)]
-                          for y in (-5, 11, 27, 43) for x in (-2, 22, 46, 70, 94))
+def grid_layout(runtime_bounds, step=(24, 16)):
+    """The measured 24x16 view stepping over a scene's runtime envelope."""
+    left, bottom, right, top = runtime_bounds
+    return tuple([x, y, min(x + step[0], right), min(y + step[1], top)]
+                 for y in range(bottom, top, step[1]) for x in range(left, right, step[0]))
+# Scenes after the two hand-tuned ones use the grid over their catalog envelope.
+GRID_SCENE_LAYOUTS = {scene['scene_id']: grid_layout(scene['runtime_bounds']) for scene in SCENE_TABLE[2:]}
 TOWN_EXTENSION_LAYOUT = (
     ((48, -5, 96, 40), (40, 15, 96, 42)),
     ((96, -5, 168, 40), (96, 15, 168, 42)),

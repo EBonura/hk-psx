@@ -12,6 +12,7 @@ from breakables import _components,collider_polygons
 from focus import action_fields
 from cook import tk_sprite,FOCAL,CAM_Z
 from materials import quantize_alpha_coverage
+ART_CELL=32  # projected pixels per Geo art cell in the shared bank
 
 # Halfword rectangles approved against the resident scene/font layout by root.
 VRAM_RECTS=((320,464,64,16),(352,240,32,16),(352,485,32,27),(320,496,32,16),(352,32,8,32))
@@ -92,12 +93,24 @@ def place_rectangles(items,rectangles=VRAM_RECTS):
 def art_bank(images):
     """Joint sourceRGB palette; per-image source alpha uses existing coverage policy."""
     if not images:raise ValueError('empty Geo art')
+    # Rock prefabs repeat across scenes: quantize each distinct source image once
+    # and expand the per-frame mapping afterwards, so the 256x256 joint sheet is
+    # bounded by distinct art rather than by rock occurrences.
+    signatures=[(im.size,im.tobytes()) for im in images];first={}
+    for index,signature in enumerate(signatures):first.setdefault(signature,index)
+    if len(first)!=len(images):
+        blob,uploads,textures,distinct_mapping,sheet=art_bank([images[i] for i in first.values()])
+        position={signature:slot for slot,signature in enumerate(first)}
+        return blob,uploads,textures,[distinct_mapping[position[s]] for s in signatures],sheet
     # A single palette avoids wasting47 independently quantized CLUTs. Every
     # sprite starts on a4px grid, preserving the established Bayer alpha phase.
     # Coin and rock art can share a palette through a taller narrow RGB sample
     # by using32px cells; projected current art is admitted at<=32 each axis.
-    cell=32;cell_h=32;cols=8;rows=(len(images)+cols-1)//cols
-    if rows*cell_h>256 or any(im.width>cell or im.height>cell_h for im in images):raise ValueError('Geo art projected extent')
+    # The sheet only hosts the joint quantization and is sliced per image, so it
+    # widens with the catalog; VRAM placement is bounded separately by VRAM_RECTS.
+    cell=ART_CELL;cell_h=ART_CELL;cols=8;rows=(len(images)+cols-1)//cols
+    oversize=[im.size for im in images if im.width>cell or im.height>cell_h]
+    if rows*cell_h>256 or oversize:raise ValueError(f'Geo art projected extent: {len(images)} images in {rows} rows of {cell_h} px (limit 256), oversize {oversize[:4]}')
     sheet=Image.new('RGBA',(cols*cell,rows*cell_h))
     for i,im in enumerate(images):sheet.paste(im,((i%cols)*cell,(i//cols)*cell_h))
     sw,sh,pal,packed=quantize_alpha_coverage(sheet,128);payloads=[]
@@ -155,6 +168,7 @@ def collect(source):
     coins.sort(key=lambda c:c['type'])
     if [c['value']for c in coins]!=[1,5,25]:raise ValueError('Geo denomination source changed')
     from quality import SCENE_FILES
+    unsupported_rocks=[]
     for scene_id,name in enumerate(SCENE_FILES):
         sc=Scene(source,name);scene_objects.append(sc)
         for ident,(kind,t) in sc.objects.items():
@@ -174,18 +188,26 @@ def collect(source):
             matrix=sc.world(sc.go_transform[gid]);sp=by['tk2dSprite'][1];sx=abs(matrix[0][0]*sp['_scale']['x']);sy=abs(matrix[1][1]*sp['_scale']['y'])
             # Keep original intact and broken images; current scenery omits tk2d rocks.
             animator=by['tk2dSpriteAnimator'][1];lo=source.ref(sc.file,animator['library']);initial=source.read(lo)['clips'][animator['defaultClipId']]['name']
+            art_mark,clip_mark=len(art),len(clips)
             intact=clip_art(sc.file,animator['library'],initial,(sx,sy))
             if clips[intact]['count']!=1:raise ValueError('Geo initial clip not static')
             intact_frame=clips[intact]['start']
             ai=clip_art(sc.file,by['tk2dSpriteAnimator'][1]['library'],contract['broken_clip'],(sx,sy))
             if clips[ai]['count']!=1:raise ValueError('Geo broken clip not static')
+            # The shared Geo art bank admits 32x32 projected cells; a larger rock is
+            # an explicit omission for now rather than a resampled sprite.
+            oversize=[a['image'].size for a in art[art_mark:] if max(a['image'].size)>ART_CELL]
+            if oversize:
+                del art[art_mark:];del clips[clip_mark:]
+                unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'rock art projects to {max(oversize)} pixels, above the {ART_CELL}x{ART_CELL} Geo art cell'})
+                continue
             points=[p for poly in polys for p in poly];origin=sc.point(gid)
             rocks.append(contract|{'source':f'{name}:{ident}','source_id':ident,'scene':scene_id,'state':len(rocks),'x':origin[0],'y':origin[1],
                 'polygons':polys,'bounds':[min(p[0]for p in points),min(p[1]for p in points),max(p[0]for p in points),max(p[1]for p in points)],
                 'draw_sources':[f'{name}:{by[k][0]}'for k in ('tk2dSprite','MeshRenderer')if k in by], 'collider_sources':colliders,'broken_frame':clips[ai]['start'], 'intact_frame':intact_frame, 'intact_vertices':[sc.point(gid,xx/sx*sp['_scale']['x'],yy/sy*sp['_scale']['y'])[:2] for xx,yy in [(art[intact_frame]['box'][0],art[intact_frame]['box'][3]),(art[intact_frame]['box'][2],art[intact_frame]['box'][3]),(art[intact_frame]['box'][0],art[intact_frame]['box'][1]),(art[intact_frame]['box'][2],art[intact_frame]['box'][1])]], 'fsm_source':f'{name}:{fid}', 'broken_vertices':[sc.point(gid,xx/sx*sp['_scale']['x'],yy/sy*sp['_scale']['y'])[:2] for xx,yy in [(art[-1]['box'][0],art[-1]['box'][3]),(art[-1]['box'][2],art[-1]['box'][3]),(art[-1]['box'][0],art[-1]['box'][1]),(art[-1]['box'][2],art[-1]['box'][1])]]})
     canonical_images(art)
     for r in rocks:r['intact_extra']=[];r['broken_extra']=[]
-    return rocks,enemies,coins,art,clips
+    return rocks,enemies,coins,art,clips,unsupported_rocks
 
 def canonical_images(art):
     """Share source pixels at the maximum requested axes without shrinking any."""
@@ -267,7 +289,7 @@ def source_cil_evidence(source):
     return found
 
 def cook():
-    source=Source();cil=source_cil_evidence(source);rocks,enemies,coins,art,clips=collect(source)
+    source=Source();cil=source_cil_evidence(source);rocks,enemies,coins,art,clips,unsupported_rocks=collect(source)
     blob,uploads,textures,mapping,sheet=art_bank([a['image']for a in art])
     metadata=json.loads((ROOT/'data/regions.json').read_text());bindings=bind_regions(rocks,metadata)
     # HeroBox is a child at identity local transform in the observed source.
@@ -284,7 +306,7 @@ def cook():
     physics=next(o for o in source.file('globalgamemanagers').objects.values()if o.type.name=='Physics2DSettings');gravity=source.read(physics)['m_Gravity']['y']
     rust=generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,hero[0][0],gravity)
     out=ROOT/'data';out.mkdir(exist_ok=True);(out/'geo.hk').write_bytes(blob);(out/'geo.rs').write_text(rust)
-    report={'format':'HKGEO01','region_metadata_sha256':hashlib.sha256((ROOT/'data/regions.json').read_bytes()).hexdigest(),'code_sha256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest()for n in ('host/geo.py','host/source.py','host/cook.py','host/materials.py','host/scene.py','host/focus.py')},'cil_evidence':cil,'previously_omitted_rock_art':True,'rocks':rocks,'enemies':enemies,'coins':coins,'clips':clips,'art':[{k:v for k,v in a.items()if k!='image'}|{'texture':tid}for a,tid in zip(art,mapping)],'textures':textures,'uploads':uploads,'bindings':bindings,'hero_box':hero,'gravity':gravity,
+    report={'format':'HKGEO01','region_metadata_sha256':hashlib.sha256((ROOT/'data/regions.json').read_bytes()).hexdigest(),'code_sha256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest()for n in ('host/geo.py','host/source.py','host/cook.py','host/materials.py','host/scene.py','host/focus.py')},'cil_evidence':cil,'previously_omitted_rock_art':True,'rocks':rocks,'unsupported_rocks':unsupported_rocks,'enemies':enemies,'coins':coins,'clips':clips,'art':[{k:v for k,v in a.items()if k!='image'}|{'texture':tid}for a,tid in zip(art,mapping)],'textures':textures,'uploads':uploads,'bindings':bindings,'hero_box':hero,'gravity':gravity,
         'vram_bytes':len(blob),'vram_limit':MAX_VRAM_BYTES,'permitted_rectangles':VRAM_RECTS,'payload_sha256':hashlib.sha256(blob).hexdigest(),'rust_sha256':hashlib.sha256(rust.encode()).hexdigest(),
         'source_files':{str(Path(n).relative_to(source.directory)):hashlib.sha256(Path(n).read_bytes()).hexdigest()for n in sorted({str(source.directory/name)for name in source.files}|{str(source.directory/'Managed/Assembly-CSharp.dll'),str(source.directory/'Managed/PlayMaker.dll')}|{str(p)for name in source.files for p in source.directory.glob(name+'*')if p.is_file()})if Path(n).is_file()},
         'limitations':['Source colors quantized jointly to15 visible colors; source alpha approximated by ordered0/half/full coverage.', 'Coin images sampled at current camera projection; no scenery/room changes or gameplay disc reads.', 'GeoControl Get clip is unused in the observed collection handler and is not cooked.', 'Rock gleam, hit jitter, debris and acid reactions are recorded as incomplete runtime effects.']}

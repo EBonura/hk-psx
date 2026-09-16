@@ -8,8 +8,9 @@ extraction, cooking, runtime binding and playable validation remain separate.
 
 - Source branch: `main`; implementation began from commit `8337d68`.
 - Windows source: CrossOver Steam installation, Unity `6000.0.61f1`.
-- Playable disc: build 74; King's Pass, Dirtmouth and Forgotten Crossroads
-  (Crossroads_01) connected through the authored Great Door and well gates.
+- Playable disc: build 75; King's Pass, Dirtmouth, Crossroads_01, Crossroads_02
+  and Crossroads_07 connected through the authored Great Door, well and side
+  gates (154 views, 5 scenes).
 - Disc policy: the user authorized rebuilds on 2026-09-16; every build now
   replays the route tapes in `tools/tapes` and fails on any fault.
 - Current packages: P05-P08, admit checked metadata, build the catalog-wide
@@ -43,7 +44,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
-| P09 | in progress | Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Entry velocity, the delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and the return replay remain. |
+| P09 | in progress | Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Build 75 adds Crossroads_02 and Crossroads_07 through `GRID_SCENE_LAYOUTS` (one catalog entry per scene); their gates are generated from source and the linked headroom is 376,680 bytes. The `crossroads-floor` route walks the Crossroads_01 floor to the right wall; reaching `right1` needs an authored jump route. Entry velocity, the delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and return replays remain. |
 | P10-P12, P14-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
@@ -313,6 +314,12 @@ remains with the renderer/UI packages.
 - Not claimed: original well entry velocity or delayed collider, source camera
   locks, Runner/Climber/Mender behaviour, Crossroads audio cues beyond ambience,
   performance parity in Crossroads.
+- Build 75 (five scenes, 154 views) surfaced and fixed: the music report cache
+  ignoring the scene catalog, break-effect emitters outside the bounded particle
+  model (now recorded per breakable), the Geo art quantization sheet exceeding
+  256 rows because rock prefabs repeat across scenes (distinct images are now
+  quantized once), and Geo rocks whose art exceeds the 32-pixel cell (recorded
+  as `unsupported_rocks`). Six routes pass; headroom 376,680 bytes.
 
 ## Required package completion record
 
