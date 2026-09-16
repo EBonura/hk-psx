@@ -21,6 +21,7 @@ from texture_dedup import deduplicate_room
 from materials import binary_black_palette
 from quality import STATIC_PAGE_BUDGET,TEXTURE_BUDGET
 from constant_textures import constant_texture_replacements,verify_constant_replacement
+from scenery_geometry import texture_draws_safe
 THRESHOLD=95
 RUNTIME_ROOM_BYTES=256*1024
 
@@ -94,6 +95,12 @@ def select_replacements(items,protected,threshold=THRESHOLD):
     return mapping,matches,groups
 
 
+def packet_protected(mapping,items,packs):
+    """Members whose representative's size would break a referencing draw's packet bound."""
+    return sorted(tid for tid,rep in mapping.items()
+                  if any(not texture_draws_safe(packs[chunk],i,items[rep]['w'],items[rep]['h']) for chunk,i in items[tid]['references']))
+
+
 def frame_textures(raw):
     c,_,_,_=layout(raw);at=40+c[1]*16+c[2]*44
     ids={struct.unpack_from('<I',raw,at+i*20)[0]for i in range(c[3])}
@@ -155,6 +162,10 @@ def postpack_similarity(report,root=ROOT):
         return False
     items,packs,local_ids,protected=inventory(report,root)
     mapping,matches,groups=select_replacements(items,protected)
+    # A smaller representative must keep every referencing draw inside the
+    # native grid-repair packet bound; otherwise the member stays exact.
+    packet_guard=packet_protected(mapping,items,packs)
+    for tid in packet_guard:del mapping[tid]
     # A static occurrence cannot collapse if its exact texture is a frame in
     # any other room. Dynamic masks are separate: only proven constant index1
     # masks may shrink, with exact CLUT and full-quad sampled-word equivalence.
@@ -176,7 +187,7 @@ def postpack_similarity(report,root=ROOT):
         staged.append((final,packed))
         records.append({'chunk_id':chunk,'input_sha256':sha(raw),'output_sha256':sha(packed),'lossless_constant_indices':sorted(constants),**dedup})
     proof={'threshold':THRESHOLD,'metric':matches['scope'],'eligible_textures':matches['eligible_textures'],'compared_pairs':matches['compared_pairs'],
-        'groups':groups,'matches':matches['candidates'],'protected_global_texture_ids':sorted(protected),'global_frame_texture_ids':sorted(global_frames),'mapping':mapping,
+        'groups':groups,'matches':matches['candidates'],'protected_global_texture_ids':sorted(protected),'packet_protected_texture_ids':packet_guard,'global_frame_texture_ids':sorted(global_frames),'mapping':mapping,
         'constant_proof':'Only non-streamed textures never frame-referenced globally, exact strict mask CLUT, every meaningful original and final index1. Final4x4 sentinel1 tile retains integer-UV subdivision intervals and samples the identical word across the full unchanged quad; dynamic alternate-CLUT lookup remains index1. Alpha cover regenerated for the equivalent complete rectangle.',
         'textures':[{'id':t['id'],'sha256':sha(t['blob']),'dimensions':[t['w'],t['h']],'material_modes':t['modes'],'source_refs':t['references'],'sprites':sorted(t['sprites'])}for t in items],
         'regions':records,'code_sha256':{str(p.relative_to(ROOT)):sha(p.read_bytes())for p in (Path(__file__),ROOT/'tools/texture_match_groups.py',ROOT/'tools/audit_texture_similarity.py',ROOT/'host/texture_dedup.py',ROOT/'host/constant_textures.py')},

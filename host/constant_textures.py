@@ -4,10 +4,12 @@ Only static, non-frame textures with the strict mask CLUT and index1 in every
 sample qualify. A4x4 index1 tile covers the same complete quad at every tint.
 Dynamic fades remain safe: palette index1 and the entire original CLUT are
 unchanged, including the renderer's alternate fade-CLUT lookup contract. Four texels per
-axis retain a usable UV span for the large-quad subdivision helper.
+axis retain a usable UV span for the large-quad subdivision helper; a texture
+whose draw is too large even for that span stays exact.
 """
 import struct
 from region_delta import layout, textures
+from scenery_geometry import texture_draws_safe
 
 STRICT_MASK_PALETTE = struct.pack('<16H', 0, 1, *([0x8000]*14))
 
@@ -44,7 +46,8 @@ def constant_texture_replacements(raw, protected_texture_ids=()):
     replacements={}
     for ident,blob in enumerate(blobs):
         if ident in protected or struct.unpack_from('<H',raw,40+ident*16)[0]==65535:continue
-        if _constant(blob) and blob[:4]!=struct.pack('<HH',4,4):
+        # A draw too large for the native grid repair at 4x4 keeps its exact texture.
+        if _constant(blob) and blob[:4]!=struct.pack('<HH',4,4) and texture_draws_safe(raw,ident,4,4):
             replacement=struct.pack('<HH',4,4)+blob[4:36]+bytes([0x11])*8
             verify_constant_replacement(blob,replacement)
             replacements[ident]=replacement

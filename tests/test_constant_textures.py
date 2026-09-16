@@ -44,4 +44,12 @@ class ConstantTextures(unittest.TestCase):
             changed=bytearray(new);changed[at+delta]^=1
             with self.assertRaises(ValueError):verify_constant_room(raw,bytes(changed),record['old_to_canonical'],replacements)
         with self.assertRaises(ValueError):verify_constant_room(raw,new,record['old_to_canonical'],[])  # No silent exemption.
+    def test_oversized_draw_keeps_exact_texture(self):
+        from scenery_geometry import texture_draws_safe
+        raw=room();self.assertTrue(texture_draws_safe(raw,0,4,4))
+        giant=bytearray(raw);struct.pack_into('<8i',giant,40+3*16+8,0,0,331*256,0,0,2727*256,331*256,2727*256);giant=bytes(giant)
+        self.assertFalse(texture_draws_safe(giant,0,4,4));self.assertTrue(texture_draws_safe(giant,1,4,4))
+        self.assertEqual(constant_texture_replacements(giant),{})
+        self.assertEqual(set(constant_texture_replacements(raw)),{0})
+
 if __name__=='__main__':unittest.main()
