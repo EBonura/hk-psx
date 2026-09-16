@@ -66,12 +66,19 @@ The first build installs pinned host Python packages in .venv. Rust selects
 nightly-2026-03-25 and uses SDK components without the 3D engine.
 
 ```sh
-make run
-# Build without opening the emulator:
-python3 tools/build.py
+# Cook (cached), build the guest, replace the sole disc pair, write the report
+# and replay the validation routes in tools/tapes against the final CUE:
+cargo run --release -- build
+# Skip the replays, or point at another emulator frontend:
+cargo run --release -- build --no-validate
+cargo run --release -- validate --frontend ../PSoXide-emulator/target/release/frontend
 # Explicit Windows installation and SDK source overrides:
-python3 tools/build.py --hollow-knight "/path/to/Hollow Knight" --sdk-source "../PSoXide-sdk"
+cargo run --release -- build --hollow-knight "/path/to/Hollow Knight" --sdk-source "../PSoXide-sdk"
 ```
+
+The driver is the root Rust package (`host/hk-build/main.rs`); it orders the
+Python cookers under `host/`, the guest cargo build, the disc packer and the
+replays, and fails the build when a route stops early or reports a fault.
 
 Outputs: dist/hk-psx.exe and `~/Downloads/ps1 games/hk-psx.bin` plus
 `~/Downloads/ps1 games/hk-psx.cue`. The PS1 library is the ONLY disc destination;
@@ -111,7 +118,7 @@ build restores the normal instrumentation setting.
 ## Emulator and validation
 
 ```sh
-python3 tools/build.py --telemetry
+cargo run --release -- build --telemetry
 python3 tools/validate.py --emulator ../PSoXide-emulator/target/release/frontend
 ```
 
