@@ -8,6 +8,13 @@ from scene import Scene
 from combat import ticks, transformed_box, generated_params
 
 class CookTests(unittest.TestCase):
+    def test_native_draw_range_rejects_near_camera_and_far_coordinates(self):
+        from cook import native_draw_range
+        quad=[(0,0),(1,0),(0,1),(1,1)]
+        self.assertIsNone(native_draw_range(1.0,quad))
+        self.assertIn('scale',native_draw_range(85.5,quad))
+        self.assertIn('coordinate',native_draw_range(1.0,[(40000,0)]+quad[1:]))
+
     def test_configured_static_page_budget_fails_without_resampling_animation(self):
         atlas=Atlas(max_pages=1)
         for index in range(5):

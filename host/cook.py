@@ -39,6 +39,13 @@ def scenery_texture(atlas,images,shared_pixels,sid,image_factory,width,height,al
         images[key]=atlas.add(shared_pixels[key],*target)
     return images[key],shared_pixels[key]
 
+def native_draw_range(scale,points):
+    """Reason a draw would fail hk-format's Geometry check, or None when admissible."""
+    q12=round(scale*4096)
+    if not 1<=q12<=262144:return f'draw scale {q12}/4096 outside native range 1..262144'
+    if any(abs(round(p[k]*scale*256))>8_000_000 for p in points for k in (0,1)):return 'draw coordinate exceeds native Q24.8 range'
+    return None
+
 def unsupported_sprite_behavior(name,parent_name,component_types):
     # This named scene helper is driven by a PlayMaker fade/cover state machine.
     # Its ordinary Sprites/Lit material is also used by valid room scenery, so
@@ -252,6 +259,8 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
             if t['m_DrawMode']!=0:raise ValueError('sliced/tiled SpriteRenderer unsupported')
             w=math.dist(points[0],points[1])*scale;h=math.dist(points[0],points[2])*scale
             if w<0.5 or h<0.5:continue
+            reason=native_draw_range(scale,points)
+            if reason:raise ValueError(reason)
             # The native scenery grid repair must be able to bound this draw's
             # packets; an unrepresentable stretched sprite is an explicit
             # unsupported record, not a late pack failure.
