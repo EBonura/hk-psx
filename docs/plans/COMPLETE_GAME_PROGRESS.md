@@ -350,9 +350,16 @@ generated `data/regions.rs` fields, as a proxy for their binary weight:
 | `reveal_bindings` | 12 KB | per-region draw bindings | reveal masks |
 | `checkpoints` | 6 KB | already present in the bank | `world::checkpoint_record` |
 
-Order: (1) give the appended scene actor bank a per-scene clip index space so
-one `ActorSpec` per actor can be shared by reference, then move the specs into
-the bank; (2) breakables, whose bank records exist but lack edge lists and
+Step (1) is done in build 77: the appended scene actor bank pads each region's
+clip table to one scene-wide clip index, so `data/regions.rs` now holds nine
+`static ACTOR_S*` specs referenced from 329 regions instead of 330 inline
+copies. Measured effect on linked RAM: none (`.data` 497,984 vs 498,160 bytes,
+headroom 218,628 vs 219,292), so the text share above overstated the binary
+weight of actors; the per-view growth sits in the remaining nested arrays
+(breakables with edge lists and polygons, grass patches, hazards, `Region`
+itself at 196 bytes). Attribute those from the link map before moving them.
+
+Order: (1) actor specs shared per scene (done), then move them into the bank; (2) breakables, whose bank records exist but lack edge lists and
 fades; (3) hazards and checkpoints, whose bank records are complete, by
 switching the consumers to the admitted `WorldMeta` view; (4) neighbours. Each
 step must keep the six route replays green and record the new headroom.

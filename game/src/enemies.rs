@@ -742,7 +742,7 @@ mod runner_runtime_tests {
     fn phase(actor:&Actor)->Swipe {actor.runner.unwrap().controller.swipe()}
     fn region()->Region {
         Region {scene:0,bounds:[-100*ONE,-10*ONE,100*ONE,30*ONE],
-            collision_bounds:[-100*ONE,-10*ONE,100*ONE,30*ONE],actors:&[SPEC]}
+            collision_bounds:[-100*ONE,-10*ONE,100*ONE,30*ONE],actors:&[&SPEC]}
     }
     #[test]
     fn actual_runner_clock_motion_clips_and_ordered_effects() {

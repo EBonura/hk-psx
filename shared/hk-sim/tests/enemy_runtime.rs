@@ -41,7 +41,7 @@ mod world {
         pub scene: usize,
         pub bounds: [i32; 4],
         pub collision_bounds: [i32; 4],
-        pub actors: &'static [hk_sim::ActorSpec],
+        pub actors: &'static [&'static hk_sim::ActorSpec],
     }
     pub struct State;
     std::thread_local!{pub static DEATHS:std::cell::RefCell<Vec<(u32,[i32;3])>>=const{std::cell::RefCell::new(Vec::new())};}
@@ -105,7 +105,7 @@ fn region() -> world::Region {
         scene: 0,
         bounds: [-20 * ONE, -5 * ONE, 20 * ONE, 20 * ONE],
         collision_bounds: [-23 * ONE, -10 * ONE, 23 * ONE, 25 * ONE],
-        actors: &[SPEC],
+        actors: &[&SPEC],
     }
 }
 fn room() -> Vec<u8> {
@@ -233,7 +233,7 @@ fn contact_is_debounced_and_unloaded_collision_freezes_position() {
         scene: 0,
         bounds: [100 * ONE, 0, 120 * ONE, 20 * ONE],
         collision_bounds: [97 * ONE, -5 * ONE, 123 * ONE, 25 * ONE],
-        actors: &[SPEC],
+        actors: &[&SPEC],
     };
     for _ in 0..60 {
         tick(&mut w, &remote, &room, &mut p, &mut v, &n);
@@ -325,7 +325,7 @@ fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
     let bytes = room();
     let floor = hk_format::Room::parse(&bytes).unwrap();
     let mut r = region();
-    r.actors = &[OVERLAPPING];
+    r.actors = &[&OVERLAPPING];
     let remote = world::Region {
         collision_bounds: [97 * ONE, -5 * ONE, 123 * ONE, 25 * ONE],
         ..r
@@ -368,7 +368,7 @@ fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
     bytes.splice(edge_offset..edge_offset + 16, edges);
     let dense = hk_format::Room::parse(&bytes).unwrap();
     let mut r = region();
-    r.actors = &[EMBEDDED];
+    r.actors = &[&EMBEDDED];
     let mut w = enemies::EnemyWorld::new();
     let mut p = Player::spawn(10 * ONE, ONE);
     let mut v = Vitals::new(VITAL_PARAMS);
@@ -391,7 +391,7 @@ fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
     const WITH_CORPSE:ActorSpec=ActorSpec {health:EnemyParams{health:5,..SPEC.health},
         corpse:Some(CorpseSpec{air_clip:0,land_clip:0,bounds:SPEC.bounds,spawn_offset:[0,ONE/2],bounce_factor:19661}),..SPEC};
     let bytes=room();let room=hk_format::Room::parse(&bytes).unwrap();
-    let r=world::Region{actors:&[WITH_CORPSE],..region()};
+    let r=world::Region{actors:&[&WITH_CORPSE],..region()};
     let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);
     let mut v=Vitals::new(VITAL_PARAMS);let mut n=Nail::new();n.active=true;n.age=1;
     let hit=tick(&mut w,&r,&room,&mut p,&mut v,&n);

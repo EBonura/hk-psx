@@ -69,7 +69,7 @@ pub struct Region {
     pub reveal_masks: &'static [crate::reveal_masks::RevealMaskSpec],
     pub reveal_bindings: &'static [crate::reveal_masks::RevealMaskBinding],
     pub hazards: &'static [Hazard],
-    pub actors: &'static [hk_sim::ActorSpec],
+    pub actors: &'static [&'static hk_sim::ActorSpec],
     pub checkpoints: &'static [Checkpoint],
     pub neighbours: &'static [usize],
 }

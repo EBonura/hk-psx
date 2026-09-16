@@ -242,8 +242,12 @@ def postpack_actor_bank(report, source, scenes=None):
         great_door=append_art(source,sc,atlas,frames)
         atlas.pack()
         if atlas.pages:raise ValueError('Scene actor bank unexpectedly requires resident pages')
-        for row in report['regions']:
-            if row['scene_id']!=info['scene_id']:continue
+        # Actor clips start at one scene-wide clip index so every region of the
+        # scene shares one ActorSpec per actor; shorter clip tables are padded
+        # with an unreferenced one-frame clip.
+        scene_rows=[row for row in report['regions'] if row['scene_id']==info['scene_id']]
+        clip_base=max(struct.unpack_from('<6I',(ROOT/'data/regions'/f'region-{row["chunk_id"]:03}'/'room.hk').read_bytes(),8)[4] for row in scene_rows)
+        for row in scene_rows:
             base=ROOT/'data/regions'/f'region-{row["chunk_id"]:03}'/'room.hk'
             raw=base.read_bytes()
             if raw[:8]!=b'HKROOM02':raise ValueError('Actor append requires HKROOM02 base pack')
@@ -254,9 +258,10 @@ def postpack_actor_bank(report, source, scenes=None):
             for length in (nt*16,nd*44,nf*20,nc*16,ne*16,nt*32,np*32768,ns):
                 blocks.append(raw[offset:offset+length]);offset+=length
             if offset!=len(raw):raise ValueError('Actor append base pack length mismatch')
-            if nf+len(frames)>2048 or nc+len(clips)>128:
+            padding=clip_base-nc
+            if nf+len(frames)>2048 or clip_base+len(clips)>128 or (padding and nf==0):
                 raise ValueError('Scene actor bank exceeds region format limits')
-            pack=bytearray(b'HKROOM02'+struct.pack('<8I',np,nt+len(atlas.entries),nd,nf+len(frames),nc+len(clips),ne,ns+len(atlas.stream),flags))
+            pack=bytearray(b'HKROOM02'+struct.pack('<8I',np,nt+len(atlas.entries),nd,nf+len(frames),clip_base+len(clips),ne,ns+len(atlas.stream),flags))
             pack+=blocks[0]
             for page,u,v,w,h,palette,stream_offset in atlas.entries:
                 pack+=struct.pack('<6HI',page,u,v,w,h,palette+nt,stream_offset+ns)
@@ -264,6 +269,7 @@ def postpack_actor_bank(report, source, scenes=None):
             for frame in frames:
                 pack+=struct.pack('<I4i',frame['texture']+nt,*[round(v*65536) for v in frame['box']])
             pack+=blocks[3]
+            pack+=struct.pack('<4I',0,1,65536,0)*padding
             for clip in clips:
                 pack+=struct.pack('<4I',clip['start']+nf,clip['count'],round(clip['fps']*65536),clip['wrap']|(clip['loopStart']<<16))
             pack+=blocks[4]+blocks[5]+b''.join(atlas.palettes)+blocks[6]+blocks[7]+atlas.stream
@@ -279,7 +285,7 @@ def postpack_actor_bank(report, source, scenes=None):
                        alpha_cover_bytes=deduplication['alpha_cover_bytes'],animation_bytes=deduplication['animation_bytes'])
             preserved=[a for a in row['actors'] if not a['movement_supported']]
             for actor in actors:
-                preserved.append(remap_actor_clips(actor,nc))
+                preserved.append(remap_actor_clips(actor,clip_base))
             row['actors']=preserved
             row['great_door']=bind(great_door,row,nf)
             if row['chunk_id']==1:

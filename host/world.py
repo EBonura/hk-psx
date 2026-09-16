@@ -2,7 +2,7 @@
 import json
 import math
 from source import ROOT
-from actors import generated_actor_region
+from actors import generated_actor_specs
 from flat_support import generate as flat_floor_catalog, rust_catalog
 
 from quality import SCENE_COUNT as SCENES
@@ -265,8 +265,21 @@ def generate(report):
             arrays=['&['+','.join('['+','.join(map(str,v))+']'for v in group)+']'for group in frames]
             out.append(f'static {name}: particles::Bank = particles::Bank '+'{frames:['+','.join(arrays)+f'],styles:PARTICLE_STYLES_{scene},death_offset:'+str(data['death_offset'])+'};')
     if len(particle_banks)>8:raise ValueError('particle metadata variant budget')
-    out.append('pub static REGIONS: &[Region] = &[')
+    # One static per distinct actor spec; regions reference them, since the
+    # scene actor bank gives every region of a scene the same clip indices.
+    actor_statics = {}
+    region_actor_refs = []
     for region in regions:
+        refs = []
+        for text in generated_actor_specs(region):
+            key = (region['scene_id'], text)
+            if key not in actor_statics:
+                actor_statics[key] = f"ACTOR_S{region['scene_id']}_{len(actor_statics)}"
+                out.append(f'static {actor_statics[key]}: hk_sim::ActorSpec = {text};')
+            refs.append('&' + actor_statics[key])
+        region_actor_refs.append('&[' + ','.join(refs) + ']')
+    out.append('pub static REGIONS: &[Region] = &[')
+    for region_index, region in enumerate(regions):
         scene = integer(region['scene_id'], SCENES, 'scene index')
         draw_count = region['draws']; edge_count = region['edges']
         def draw_indices(values):
@@ -369,7 +382,7 @@ def generate(report):
         particle_data=region.get('particle_effects')
         particle_bank='None' if not particle_data else 'Some('+particle_banks[(scene,repr(particle_data['frames']))]+')'
         particle_emitters='&[]' if not particle_data else f'PARTICLE_EMITTERS_{scene}'
-        actors = generated_actor_region(region)
+        actors = region_actor_refs[region_index]
         impact=region.get('grass_impact')
         impact_spec='None' if not impact else 'Some(crate::impact::Spec {clips:['+','.join(str(integer(i,128,'impact clip'))for i in impact['clips'])+'],ticks:'+str(integer(impact['ticks'],65536,'impact duration'))+'})'
         out.append(f'Region {{global_id:{region["chunk_id"]},scene:{scene},flat_floor_heights:FLAT_FLOOR_HEIGHTS[{region["chunk_id"]-1}],bounds:' + rect(region['activation_bounds']) +
