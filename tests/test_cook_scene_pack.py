@@ -7,7 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-from cook_scene_pack import envelope, layout, split, read_summaries, FORMAT
+from cook_scene_pack import envelope, layout, split, read_summaries, mandatory_packets, FORMAT
+import struct
 
 
 class StubScene:
@@ -99,6 +100,25 @@ class EnvelopeTests(unittest.TestCase):
             found = read_summaries(root)
         self.assertEqual(list(found), ['A'])
         self.assertEqual(found['A']['summary_path'], str(root / 'A' / 'summary.json'))
+
+
+def room(draws, size=256):
+    """Minimal HKROOM02 with one size×size texture and `draws` full-quad draws."""
+    data = bytearray(b'HKROOM02' + struct.pack('<6I', 0, 1, draws, 0, 0, 0) + struct.pack('<2I', 0, 0))
+    data += struct.pack('<6HI', 0, 0, 0, size, size, 0, 0)
+    quad = [(-size, -size), (size, -size), (size, size), (-size, size)]
+    for _ in range(draws):
+        data += struct.pack('<Hh', 0, 0) + struct.pack('<i', 65536) + struct.pack('<8i', *[v for xy in quad for v in xy]) + struct.pack('<I', 0)
+    return bytes(data)
+
+
+class PacketReservationTests(unittest.TestCase):
+    def test_reservation_grows_with_draws_and_rejects_other_formats(self):
+        one = mandatory_packets(room(1))
+        self.assertGreaterEqual(one, 1)
+        self.assertEqual(mandatory_packets(room(5)), 5 * one)
+        with self.assertRaisesRegex(ValueError, 'room format'):
+            mandatory_packets(b'HKROOM01' + bytes(40))
 
 
 if __name__ == '__main__':

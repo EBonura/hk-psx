@@ -96,6 +96,31 @@ def split(box):
     return [[x0, y0, x1, mid], [x0, mid, x1, y1]]
 
 
+def mandatory_packets(room):
+    """Per-view mandatory packet reservation of a cooked HKROOM02 pack.
+
+    Mirrors host/scenery_geometry.generate so an over-budget view is split before
+    similarity/packing instead of failing the whole scene at pack time.
+    """
+    from scenery_geometry import packet_bound, CHILD_CAPACITY
+    import struct
+    if room[:8] != b'HKROOM02':
+        raise ValueError('unsupported room format')
+    counts = struct.unpack_from('<6I', room, 8)
+    draw_start = 40 + counts[1] * 16
+    total = 0
+    for index in range(counts[2]):
+        pos = draw_start + index * 44
+        texture, = struct.unpack_from('<H', room, pos)
+        coords = struct.unpack_from('<8i', room, pos + 8)
+        _, _, _, w, h = struct.unpack_from('<5H', room, 40 + texture * 16)
+        packets = packet_bound(list(zip(coords[::2], coords[1::2])), w, h)['packets']
+        if packets > CHILD_CAPACITY:
+            raise ValueError(f'draw {index} needs {packets} children > {CHILD_CAPACITY}')
+        total += packets
+    return total
+
+
 def install_guard(allowed):
     """Abort on any write outside the allowed roots (plus /dev/null and temp)."""
     allowed = [Path(p).resolve() for p in allowed] + [Path(tempfile.gettempdir()).resolve()]
@@ -146,6 +171,7 @@ def cook_scene(source, entry, out, log=print):
     from reveal_masks import reveal_mask_sources, bind_regions
     from world import postpack_checkpoints, postpack_masks
     from pack_scenes import pack_scenes
+    from scenery_geometry import CAP, ACTOR_RESERVE
 
     started = time.time()
     out = Path(out).resolve()
@@ -189,6 +215,9 @@ def cook_scene(source, entry, out, log=print):
             log(f'  cook {i} (+{len(queue)} queued) {box}')
             try:
                 c = cook(source, sc, r, region_out, pixels, geometry, write_shared=False, stage_for_similarity=True)
+                packets = mandatory_packets((region_out / 'room.hk').read_bytes())
+                if packets + ACTOR_RESERVE > CAP:
+                    raise ValueError(f'packet budget exceeded: {packets}+{ACTOR_RESERVE} > {CAP}')
             except ValueError as error:
                 halves = split(box) if any(text in str(error) for text in BUDGET_ERRORS) else None
                 if halves is None:
@@ -200,6 +229,7 @@ def cook_scene(source, entry, out, log=print):
             shutil.copyfile(region_out / 'room.hk', path)
             row = dict(r, chunk_id=i, path=str(path), base_path=str(region_out / 'room.hk'),
                        bytes=c['pack_bytes'], sha256=c['pack_sha256'])
+            row['mandatory_packets'] = packets
             for k in ['pages', 'textures', 'draws', 'edges', 'stream_bytes', 'animation_bytes', 'alpha_cover_bytes',
                       'format_features', 'grass', 'grass_impact', 'door_debris', 'particle_effects', 'breakables',
                       'actors', 'hazards', 'edge_sources', 'texture_request_to_canonical']:
