@@ -34,8 +34,8 @@ class FlatSupport(unittest.TestCase):
         self.assertFalse(static_chain_allowed([{**owner,'active':False},parent]))
     def test_height_catalogue_fails_closed_instead_of_truncating(self):
         with self.assertRaisesRegex(ValueError,'bounded'):
-            self.proof([((64*Q,h*Q,96*Q,h*Q),'terrain')for h in [10,11,12]])
-        with self.assertRaises(ValueError):rust_catalog([[1,2,3]])
+            self.proof([((64*Q,h*Q,96*Q,h*Q),'terrain')for h in range(10,19)])
+        with self.assertRaises(ValueError):rust_catalog([list(range(9))])
     def test_pack_hash_and_quantized_provenance_must_match(self):
         with tempfile.TemporaryDirectory()as tmp:
             root=Path(tmp);d=root/'data';(d/'regions/region-001').mkdir(parents=True)

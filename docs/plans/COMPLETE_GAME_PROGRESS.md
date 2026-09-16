@@ -8,9 +8,9 @@ extraction, cooking, runtime binding and playable validation remain separate.
 
 - Source branch: `main`; implementation began from commit `8337d68`.
 - Windows source: CrossOver Steam installation, Unity `6000.0.61f1`.
-- Playable disc: build 75; King's Pass, Dirtmouth, Crossroads_01, Crossroads_02
-  and Crossroads_07 connected through the authored Great Door, well and side
-  gates (154 views, 5 scenes).
+- Playable disc: build 76; King's Pass, Dirtmouth and seventeen Forgotten
+  Crossroads scenes (01 to 10, 12 to 14, 16, 18, 19, 21) connected through the
+  authored gates: 19 scenes, 329 views, 200 disc chunks.
 - Disc policy: the user authorized rebuilds on 2026-09-16; every build now
   replays the route tapes in `tools/tapes` and fails on any fault.
 - Current packages: P05-P08, admit checked metadata, build the catalog-wide
@@ -320,6 +320,20 @@ remains with the renderer/UI packages.
   256 rows because rock prefabs repeat across scenes (distinct images are now
   quantized once), and Geo rocks whose art exceeds the 32-pixel cell (recorded
   as `unsupported_rocks`). Six routes pass; headroom 376,680 bytes.
+- Build 76 (19 scenes, 329 views) needed: the region sanity bound raised from
+  256 to 1024 (no guest table depends on it), the flat-floor catalogue widened
+  to eight heights (a guest slice), music regions without a snapshot tolerated,
+  break-effect art admitted per scene in catalog order inside its 7,680-byte
+  VRAM reservation (scenes 5 and later have their 107 emitter parts recorded as
+  omissions until effect art streams per scene), and the scene arena derived
+  from the pack (largest resident scene plus largest metadata bank, sector and
+  LZ4 in-place margins, now 354,068 bytes) instead of a fixed constant that the
+  wider similarity pass overflowed by 36 bytes. Per-region cook reuse
+  (`data/regions/region-NNN/cook-cache.json`, keyed by spec, provenance inputs
+  and the shared `host/cook_inputs.txt` code list) makes catalog-only growth
+  cost only the new views. Six routes pass; linked headroom is 219,292 bytes,
+  about 1 KB of static region payload per view, which makes the P05 migration of
+  region payloads into the loadable bank the next structural requirement.
 
 ## Required package completion record
 

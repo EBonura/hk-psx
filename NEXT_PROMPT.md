@@ -2,11 +2,14 @@
 
 ## Current state (2026-09-16 evening)
 
-Build 75 is the sole disc: King's Pass, Dirtmouth, Crossroads_01, Crossroads_02
-and Crossroads_07 connected by the authored gates, validated by
-`cargo run --release -- build` (six route replays, zero faults). RAM headroom
-is 376,680 bytes after removing baked particle tracks; each grid scene costs
-roughly 1 KB of static data per view, and the region table is capped at 256.
+Build 76 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
+Crossroads scenes (19 scenes, 329 views) connected by the authored gates,
+validated by `cargo run --release -- build` (six route replays, zero faults).
+RAM headroom is 219,292 bytes; static region payload costs about 1 KB per view,
+so roughly 200 more views fit before the P05 migration of grass, breakables,
+hazards, actors and emitter tables into the loadable bank becomes mandatory.
+Break-effect art beyond scene 4 and Geo rocks over the shared VRAM budgets are
+recorded omissions; effect and Geo art need per-scene streaming (P07/P25).
 `host/regions.py` now reuses every region whose spec, source inputs and cooker
 code are unchanged (`data/regions/region-NNN/cook-cache.json`), so adding a
 scene cooks only its own views: a full 154-region pass with all hits takes

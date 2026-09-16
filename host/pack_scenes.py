@@ -251,7 +251,31 @@ def decoder_command(report):
         for e in report['atlases']:args.extend((e['stored_path'],e['raw_path']))
     return args
 
-def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',report_path=ROOT/'.hkpsx/packed-scenes.json',manifest_path=ROOT/'data/scene_manifest.rs',arena_bytes=SCENE_ARENA_BYTES, residency="joint", generate_world=True):
+def scene_arena_bytes(entries,meta,bodies,output_dir,residency):
+    """Arena the guest reserves, measured from the pack rather than fixed.
+
+    Every payload decoded in place there (scene, atlas chunks, metadata bank in
+    the tail) is read as whole CD sectors and relocated to the end of its slice,
+    so each needs both its sector-rounded stored size and raw+LZ4 margin; the
+    metadata tail is the largest bank's requirement because the guest checks
+    every scene against that maximum. Four-byte guard, four-byte aligned.
+    """
+    sector=lambda n:(n+2047)//2048*2048
+    banks,_=world_metadata_banks(meta,Path(output_dir)/'unused',{e['scene_id']:e['raw_fnv'] for e in entries})
+    meta_tail=max((max(aligned(b['raw_len']),sector(b['stored_len'])) for b in banks),default=0)
+    def need(e):
+        resident=aligned(e['resident_raw_len']);margin=(e['resident_stored_len']>>8)+32
+        atlas=max((max(len(chunk)+(len(stored)>>8)+32,sector(len(stored))) for _,chunk,stored in atlas_chunks(bodies[e['scene_id']][0],e)),default=0)
+        return max(resident+max(meta_tail,margin),sector(e['resident_stored_len']),atlas)
+    if residency=='scene_gate':peak=max(need(e) for e in entries)
+    else:peak=sum(aligned(e['resident_raw_len']) for e in entries)+max(need(e)-aligned(e['resident_raw_len']) for e in entries)
+    return aligned(peak+4)
+
+def atlas_chunks(raw,entry):
+    """Bootstrap atlas chunks with their stored bytes; independent of allocation."""
+    return [(spec,chunk,compressed(chunk)) for spec,chunk in bootstrap_atlases(raw,entry)]
+
+def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',report_path=ROOT/'.hkpsx/packed-scenes.json',manifest_path=ROOT/'data/scene_manifest.rs',arena_bytes=None, residency="joint", generate_world=True):
     metadata=Path(metadata);output_dir=Path(output_dir);report_path=Path(report_path);manifest_path=Path(manifest_path)
     source=metadata.read_bytes();meta=json.loads(source)
     if not meta.get('complete')or meta.get('pending_regions'):raise ValueError('Source region cook is incomplete')
@@ -279,6 +303,7 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
                  resident_stored_len=len(resident_stored),resident_stored_fnv=fnv(resident_stored),resident_stored_sha256=sha(resident_stored),
                  path=str(output_dir/f'scene_{scene}.resident.hlzc'),texture_flags=texture_flags(raw,e))
         entries.append(e)
+    if arena_bytes is None:arena_bytes=scene_arena_bytes(entries,meta,bodies,report_path.parent,residency)
     entries=allocate_scenes(entries,arena_bytes,residency=residency)
     metadata_output=report_path.parent/'world-metadata-packed'
     world_banks,world_bodies=world_metadata_banks(meta,metadata_output,{e['scene_id']:e['raw_fnv'] for e in entries})

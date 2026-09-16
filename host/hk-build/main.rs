@@ -10,14 +10,8 @@ use std::process::Command;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-const COOK_CODE: &[&str] = &[
-    "cook.py", "regions.py", "actors.py", "runner.py", "particles.py", "effects.py", "breakables.py",
-    "combat.py", "scene.py", "source.py", "world.py", "flat_support.py", "reveal_masks.py",
-    "texture_dedup.py", "similarity_dedup.py", "constant_textures.py", "region_delta.py", "quality.py",
-    "focus.py", "alpha_covers.py", "materials.py", "tilemap_fill.py", "break_effects.py", "great_door.py",
-    "polygons.py",
-];
-const COOK_TOOLS: &[&str] = &["audit_texture_similarity.py", "texture_match_groups.py", "audit_resident_bank.py"];
+/// Cooker inputs, one repo-relative path per line; shared with host/regions.py.
+const COOK_INPUTS: &str = include_str!("../cook_inputs.txt");
 const ASSET_SCRIPTS: &[&str] = &[
     "title_music.py", "cook_audio.py", "cook_hud.py", "ambience.py", "focus_audio.py", "read_points.py",
     "geo.py", "geo_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
@@ -137,13 +131,9 @@ fn inputs_unchanged(source: &Path, provenance: &Value) -> bool {
 
 fn code_fingerprint(root: &Path) -> Result<Value> {
     let mut code = serde_json::Map::new();
-    for name in COOK_CODE {
-        code.insert(format!("host/{name}"), Value::String(sha256_file(&root.join("host").join(name))?));
+    for line in COOK_INPUTS.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+        code.insert(line.to_string(), Value::String(sha256_file(&root.join(line))?));
     }
-    for name in COOK_TOOLS {
-        code.insert(format!("tools/{name}"), Value::String(sha256_file(&root.join("tools").join(name))?));
-    }
-    code.insert("requirements".into(), Value::String(sha256_file(&root.join("host/requirements.lock"))?));
     Ok(Value::Object(code))
 }
 

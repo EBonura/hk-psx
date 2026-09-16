@@ -11,7 +11,7 @@ import struct
 from collections import defaultdict
 
 ROOT = Path(__file__).resolve().parents[1]
-MAX_HEIGHTS = 2  # Explicit bounded guest lookup; current final catalogue reaches two.
+MAX_HEIGHTS = 8  # Explicit bounded guest lookup (a slice, scanned per prefetch); Crossroads regions reach three.
 STATIC_OWNER = {'Transform', 'MeshFilter', 'MeshRenderer', 'EdgeCollider2D'}
 
 

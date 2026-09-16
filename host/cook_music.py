@@ -89,6 +89,7 @@ def inventory(source):
                 for field in ('enterMusicCue','exitMusicCue'):
                     record[field]=cue(scene.file,tree[field])if tree[field]['m_PathID']else None
                 for field in ('enterMusicSnapshot','exitMusicSnapshot'):
+                    if not tree[field]['m_PathID']:record[field]=None;continue  # authored regions may leave a snapshot unset
                     obj=source.ref(scene.file,tree[field]);record[field]={'source':source.sid(obj),'name':source.read(obj)['m_Name']}
                 for _,typ,col in _components(scene,gid):
                     if typ.endswith('Collider2D')and col['m_Enabled']:

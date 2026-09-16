@@ -1,8 +1,11 @@
-## Build 75: five connected scenes on the actual disc
+## Build 76: nineteen connected scenes on the actual disc
 
-The sole disc pair is build 75 (Crossroads_02 and Crossroads_07 joined through
-one catalog entry each; six route replays pass with 376,680 bytes of linked
-headroom). Build 74 and it is validated by the root Cargo driver:
+The sole disc pair is build 76: King's Pass, Dirtmouth and seventeen Forgotten
+Crossroads scenes (329 views, 200 disc chunks) reachable through the authored
+gates, six route replays passing with 219,292 bytes of linked headroom. Growing
+the catalog now reuses cooked regions and derives the scene arena from the
+pack; break-effect art past scene 4 and oversized Geo art are explicit
+omissions until effect art streams per scene. Build 74 and it is validated by the root Cargo driver:
 `cargo run --release -- build` cooks with caches, builds the guest, replaces
 `~/Downloads/ps1 games/hk-psx.bin/.cue`, writes the build report and replays
 the five route tapes in `tools/tapes`, failing on any fault. Forgotten
