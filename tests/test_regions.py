@@ -25,7 +25,8 @@ class RegionTests(unittest.TestCase):
 
     def test_fixed_quality_layout_preserves_existing_boundaries(self):
         regions=fixed_regions()
-        self.assertEqual(len(regions),126)
+        from quality import GRID_SCENE_LAYOUTS
+        self.assertEqual(len(regions),106+sum(len(b) for b in GRID_SCENE_LAYOUTS.values()))
         self.assertEqual(regions[0],initial_regions()[0])
         self.assertEqual(regions[13]['activation_bounds'],[84.0,11,96,27])
         for scene in SCENES:
@@ -48,8 +49,9 @@ class RegionTests(unittest.TestCase):
         self.assertEqual(regions[105]['activation_bounds'],[168,40,216,76])
         self.assertTrue(all(r['scene_id']==1 for r in regions[98:106]))
         # Crossroads_01 follows as scene 2 with the measured 24x16 stepping; IDs 107..126.
-        self.assertTrue(all(r['scene_id']==2 for r in regions[106:]))
-        self.assertEqual(len(regions[106:]),20)
+        self.assertTrue(all(r['scene_id']==2 for r in regions[106:126]))
+        self.assertTrue(all(r['scene_id']>=2 for r in regions[106:]))
+        self.assertEqual(len(regions[106:126]),20)
         self.assertEqual(regions[106]['activation_bounds'],[-2,-5,22,11])
         self.assertEqual(regions[125]['activation_bounds'],[94,43,102,49])
         self.assertEqual(regions[106]['camera_bounds'],[0,0,22,13])

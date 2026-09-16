@@ -2,10 +2,11 @@
 
 ## Current state (2026-09-16 evening)
 
-Build 74 is the sole disc: King's Pass, Dirtmouth and Forgotten Crossroads
-(Crossroads_01) connected by the authored gates, validated by
-`cargo run --release -- build` (five route replays, zero faults). RAM headroom
-is 401,256 bytes after removing baked particle tracks. The scene catalog is
+Build 75 is the sole disc: King's Pass, Dirtmouth, Crossroads_01, Crossroads_02
+and Crossroads_07 connected by the authored gates, validated by
+`cargo run --release -- build` (six route replays, zero faults). RAM headroom
+is 376,680 bytes after removing baked particle tracks; each grid scene costs
+roughly 1 KB of static data per view, and the region table is capped at 256. The scene catalog is
 `host/quality.py SCENE_TABLE`; adding a scene means one entry plus a view
 layout, then a build. Next: P09 well entry behaviour (initial velocity, delayed
 collider, source camera locks), the Crossroads return replay, then Crossroads_02

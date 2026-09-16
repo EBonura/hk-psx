@@ -23,7 +23,7 @@ const ASSET_SCRIPTS: &[&str] = &[
     "geo.py", "geo_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
 ];
 /// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
-const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false)];
+const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,

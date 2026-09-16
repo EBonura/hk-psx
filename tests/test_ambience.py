@@ -5,6 +5,9 @@ sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'host'))
 import ambience
 
 class AmbienceTests(unittest.TestCase):
+    def setUp(self):
+        # The fixture models three scenes regardless of the live catalog size.
+        patcher=patch.object(ambience,'SCENE_FILES',('level6','level7','level37'));patcher.start();self.addCleanup(patcher.stop)
     def test_loop_flags_preserve_every_encoded_sample_nibble(self):
         for blocks in [1,2,17]:
             original=bytes([12,0]+[0x12]*14)+bytes([0x2a,0]+[0x34]*14)*(blocks-1)
