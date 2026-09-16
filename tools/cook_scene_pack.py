@@ -17,6 +17,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -36,6 +37,8 @@ VIEW = (24, 16)  # canonical initial_regions stepping
 DEFAULT_ROOT = ROOT / '.hkpsx/scene-packs'
 WORLD_REPORT = ROOT / '.hkpsx/world-import/report.json'
 BUDGET_ERRORS = ('budget exceeded', 'pool exceeds', 'cache dimensions', 'bank exceeds')
+SCENE_ROOM_LIMIT = 128  # shared/hk-format/src/scene.rs header limit
+PACK_RESTARTS = 3
 OVER_BUDGET_MARKERS = BUDGET_ERRORS + ('exceeds', 'residency budgets')
 
 
@@ -121,6 +124,12 @@ def mandatory_packets(room):
     return total
 
 
+def failing_region(error):
+    """Chunk id named by a pack-time error such as 'region25' or 'Scene region 17'."""
+    match = re.search(r'region ?(\d+)', str(error))
+    return int(match.group(1)) if match else None
+
+
 def install_guard(allowed):
     """Abort on any write outside the allowed roots (plus /dev/null and temp)."""
     allowed = [Path(p).resolve() for p in allowed] + [Path(tempfile.gettempdir()).resolve()]
@@ -161,8 +170,13 @@ def source_sha(source, file):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def cook_scene(source, entry, out, log=print):
-    """Cook one scene into `out`; returns the summary written to out/summary.json."""
+def cook_scene(source, entry, out, log=print, forced_boxes=None, restarts=PACK_RESTARTS):
+    """Cook one scene into `out`; returns the summary written to out/summary.json.
+
+    `forced_boxes` replaces the derived view layout when a pack-time failure
+    named one view: that view is halved and the whole scene is recooked, since
+    the similarity pass forbids partial recooks.
+    """
     from source import dump
     from scene import Scene
     from cook import cook
@@ -172,6 +186,8 @@ def cook_scene(source, entry, out, log=print):
     from world import postpack_checkpoints, postpack_masks
     from pack_scenes import pack_scenes
     from scenery_geometry import CAP, ACTOR_RESERVE
+    from quality import STATIC_PAGE_BUDGET, TEXTURE_BUDGET
+    from similarity_dedup import RUNTIME_ROOM_BYTES
 
     started = time.time()
     out = Path(out).resolve()
@@ -195,7 +211,8 @@ def cook_scene(source, entry, out, log=print):
         info.update(runtime_bounds=env['runtime_bounds'], camera_global_bounds=env['camera_global_bounds'])
         summary.update(envelope=env['runtime_bounds'], camera_global_bounds=env['camera_global_bounds'],
                        tilemaps=env['tilemaps'])
-        boxes = layout(env['runtime_bounds'])
+        boxes = forced_boxes or layout(env['runtime_bounds'])
+        summary['pack_restarts'] = PACK_RESTARTS - restarts
         from regions import scene_metadata
         report = {'format': 'HKREGIONS01', 'complete': False, 'initial_chunk_id': 1,
                   'pending_regions': len(boxes), 'regions': [], 'scenes': [scene_metadata(sc, info)],
@@ -218,6 +235,10 @@ def cook_scene(source, entry, out, log=print):
                 packets = mandatory_packets((region_out / 'room.hk').read_bytes())
                 if packets + ACTOR_RESERVE > CAP:
                     raise ValueError(f'packet budget exceeded: {packets}+{ACTOR_RESERVE} > {CAP}')
+                # Similarity only shrinks a view, so the post-similarity runtime
+                # budget is checked conservatively on the fresh cook.
+                if c['pages'] > STATIC_PAGE_BUDGET or c['textures'] > TEXTURE_BUDGET or c['pack_bytes'] > RUNTIME_ROOM_BYTES:
+                    raise ValueError(f'view budget exceeded: {c["pages"]} pages/{c["textures"]} textures/{c["pack_bytes"]} bytes')
             except ValueError as error:
                 halves = split(box) if any(text in str(error) for text in BUDGET_ERRORS) else None
                 if halves is None:
@@ -241,6 +262,8 @@ def cook_scene(source, entry, out, log=print):
             report['pending_regions'] = len(queue)
         summary['view_splits'] = splits
         report['complete'] = True
+        if len(report['regions']) > SCENE_ROOM_LIMIT:
+            raise ValueError(f'{len(report["regions"])} views exceeds the HKSCNE room limit of {SCENE_ROOM_LIMIT}')
         for r in report['regions']:
             x0, y0, x1, y1 = r['activation_bounds']
             r['neighbour_chunks'] = [o['chunk_id'] for o in report['regions'] if o is not r
@@ -258,8 +281,18 @@ def cook_scene(source, entry, out, log=print):
         bind_regions(report, masks, draws, room_bytes())
         dump(out / 'regions.json', report)
         log('  pack scene')
-        packed = pack_scenes(out / 'regions.json', out / 'scenes', out / 'packed-scenes.json',
-                             out / 'scene_manifest.rs', residency='scene_gate', generate_world=False)
+        try:
+            packed = pack_scenes(out / 'regions.json', out / 'scenes', out / 'packed-scenes.json',
+                                 out / 'scene_manifest.rs', residency='scene_gate', generate_world=False)
+        except ValueError as error:
+            chunk = failing_region(error)
+            row = next((r for r in report['regions'] if r['chunk_id'] == chunk), None)
+            halves = split(row['activation_bounds']) if row else None
+            if halves is None or restarts <= 0:
+                raise
+            log(f'  pack failed on view {chunk} ({error}); halving it and recooking the scene')
+            boxes = [b for r in report['regions'] for b in ([r['activation_bounds']] if r is not row else halves)]
+            return cook_scene(source, entry, out, log, forced_boxes=boxes, restarts=restarts - 1)
         bank = packed['scenes'][0]
         errors = {}
         for r in report['regions']:
@@ -283,6 +316,8 @@ def cook_scene(source, entry, out, log=print):
             unique_grass=len({g['source'] for r in report['regions'] for g in r['grass']}),
             packed_report=str(out / 'packed-scenes.json'))
     except Exception as ex:  # record, never abort a whole-world batch
+        if 'report' in locals():
+            dump(out / 'regions-partial.json', report)
         text = str(ex)
         status = 'over_budget' if any(m in text for m in OVER_BUDGET_MARKERS) else 'failed'
         summary.update(status=status, error=repr(ex), traceback=traceback.format_exc(),
