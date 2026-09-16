@@ -21,7 +21,7 @@ from texture_dedup import deduplicate_room
 from materials import binary_black_palette
 from quality import STATIC_PAGE_BUDGET,TEXTURE_BUDGET
 from constant_textures import constant_texture_replacements,verify_constant_replacement
-from scenery_geometry import texture_draws_safe
+from scenery_geometry import texture_draws_safe,packet_bound,CAP,ACTOR_RESERVE
 THRESHOLD=95
 RUNTIME_ROOM_BYTES=256*1024
 
@@ -101,6 +101,41 @@ def packet_protected(mapping,items,packs):
                   if any(not texture_draws_safe(packs[chunk],i,items[rep]['w'],items[rep]['h']) for chunk,i in items[tid]['references']))
 
 
+def draw_packets(raw,replaced=None):
+    """Mandatory packet total of a pack when local textures in `replaced` (id->(w,h)) change size."""
+    c,_,_,_=layout(raw);at=40+c[1]*16;total=0;replaced=replaced or {}
+    for i in range(c[2]):
+        d=raw[at+i*44:at+(i+1)*44];tex=struct.unpack_from('<H',d)[0];co=struct.unpack_from('<8i',d,8)
+        w,h=replaced.get(tex) or struct.unpack_from('<HH',raw,40+tex*16+6)
+        total+=packet_bound(list(zip(co[::2],co[1::2])),w,h)['packets']
+    return total
+
+
+def reservation_guard(rows,packs,local_ids,items,mapping,constants_by_chunk):
+    """Drop replacements until every region keeps its mandatory packet reservation.
+
+    Smaller representatives subdivide into more packets, so a region that fit
+    before similarity can exceed CAP afterwards. The largest single increase in
+    the first offending region is dropped first; mutates mapping/constants.
+    """
+    dropped=[]
+    while True:
+        offender=None
+        for row in rows:
+            chunk=row['chunk_id'];raw=packs[chunk];local=local_ids[chunk]
+            dims={i:(items[mapping[tid]]['w'],items[mapping[tid]]['h'])for i,tid in enumerate(local)if tid in mapping}
+            dims.update({i:(4,4)for i in constants_by_chunk[chunk]})
+            if draw_packets(raw,dims)+ACTOR_RESERVE<=CAP:continue
+            if not dims:raise ValueError(f'region {chunk} exceeds the packet reservation before similarity')
+            base=draw_packets(raw)
+            offender=(chunk,max(dims,key=lambda i:(draw_packets(raw,{i:dims[i]})-base,i)));break
+        if offender is None:return dropped
+        chunk,i=offender;tid=local_ids[chunk][i]
+        if i in constants_by_chunk[chunk]:del constants_by_chunk[chunk][i]
+        else:del mapping[tid]
+        dropped.append({'chunk_id':chunk,'texture':i,'global_id':tid})
+
+
 def frame_textures(raw):
     c,_,_,_=layout(raw);at=40+c[1]*16+c[2]*44
     ids={struct.unpack_from('<I',raw,at+i*20)[0]for i in range(c[3])}
@@ -170,11 +205,13 @@ def postpack_similarity(report,root=ROOT):
     # any other room. Dynamic masks are separate: only proven constant index1
     # masks may shrink, with exact CLUT and full-quad sampled-word equivalence.
     global_frames={local_ids[chunk][i]for chunk,raw in packs.items()for i in frame_textures(raw)}
+    constants_by_chunk={row['chunk_id']:constant_texture_replacements(packs[row['chunk_id']],[i for i,tid in enumerate(local_ids[row['chunk_id']])if tid in global_frames])for row in report['regions']}
+    reservation_dropped=reservation_guard(report['regions'],packs,local_ids,items,mapping,constants_by_chunk)
     staged=[];records=[]
     for row in report['regions']:
         chunk=row['chunk_id'];raw=packs[chunk];local=local_ids[chunk]
         replacements={i:items[mapping[tid]]['blob']for i,tid in enumerate(local)if tid in mapping}
-        constants=constant_texture_replacements(raw,[i for i,tid in enumerate(local)if tid in global_frames])
+        constants=constants_by_chunk[chunk]
         if replacements.keys()&constants.keys():raise ValueError('Approximate and lossless replacement classes overlap')
         replacements.update(constants)
         packed,dedup=deduplicate_room(raw,replacements)
@@ -187,7 +224,7 @@ def postpack_similarity(report,root=ROOT):
         staged.append((final,packed))
         records.append({'chunk_id':chunk,'input_sha256':sha(raw),'output_sha256':sha(packed),'lossless_constant_indices':sorted(constants),**dedup})
     proof={'threshold':THRESHOLD,'metric':matches['scope'],'eligible_textures':matches['eligible_textures'],'compared_pairs':matches['compared_pairs'],
-        'groups':groups,'matches':matches['candidates'],'protected_global_texture_ids':sorted(protected),'packet_protected_texture_ids':packet_guard,'global_frame_texture_ids':sorted(global_frames),'mapping':mapping,
+        'groups':groups,'matches':matches['candidates'],'protected_global_texture_ids':sorted(protected),'packet_protected_texture_ids':packet_guard,'reservation_protected':reservation_dropped,'global_frame_texture_ids':sorted(global_frames),'mapping':mapping,
         'constant_proof':'Only non-streamed textures never frame-referenced globally, exact strict mask CLUT, every meaningful original and final index1. Final4x4 sentinel1 tile retains integer-UV subdivision intervals and samples the identical word across the full unchanged quad; dynamic alternate-CLUT lookup remains index1. Alpha cover regenerated for the equivalent complete rectangle.',
         'textures':[{'id':t['id'],'sha256':sha(t['blob']),'dimensions':[t['w'],t['h']],'material_modes':t['modes'],'source_refs':t['references'],'sprites':sorted(t['sprites'])}for t in items],
         'regions':records,'code_sha256':{str(p.relative_to(ROOT)):sha(p.read_bytes())for p in (Path(__file__),ROOT/'tools/texture_match_groups.py',ROOT/'tools/audit_texture_similarity.py',ROOT/'host/texture_dedup.py',ROOT/'host/constant_textures.py')},

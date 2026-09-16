@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'host'))
-from similarity_dedup import postpack_similarity,sha,compose_row,select_replacements,verify_records,packet_protected
+from similarity_dedup import postpack_similarity,sha,compose_row,select_replacements,verify_records,packet_protected,reservation_guard,draw_packets
 from region_delta import reconstruct,textures,layout
 from test_texture_match_groups import tex
 
@@ -90,6 +90,21 @@ class SimilarityDedupTests(unittest.TestCase):
         items=[{'id':0,'w':2,'h':2,'references':[[1,0]]},{'id':1,'w':4,'h':4,'references':[[2,0]]}]
         self.assertEqual(packet_protected({0:1},items,{1:bytes(giant)}),[0])
         self.assertEqual(packet_protected({0:1},items,{1:raw}),[])
+
+    def test_reservation_guard_drops_replacements_that_overflow_a_region(self):
+        def minimal(texture_size,draws,side):
+            data=bytearray(b'HKROOM02'+struct.pack('<6I',0,1,draws,0,0,0)+struct.pack('<2I',0,0))
+            data+=struct.pack('<6HI',0,0,0,texture_size,texture_size,0,0)
+            for _ in range(draws):data+=struct.pack('<Hh',0,0)+struct.pack('<i',65536)+struct.pack('<8i',0,0,side,0,0,side,side,side)+struct.pack('<I',0)
+            return bytes(data)+bytes(32)
+        big=minimal(64,50,1000*256);small=minimal(64,50,100*256)
+        self.assertGreater(draw_packets(big,{0:(8,8)}),768);self.assertLessEqual(draw_packets(big),768)
+        items=[{'id':0,'w':64,'h':64},{'id':1,'w':8,'h':8}]
+        rows=[{'chunk_id':1}];local={1:[0]}
+        mapping={0:1};constants={1:{}}
+        self.assertEqual(reservation_guard(rows,{1:big},local,items,mapping,constants),[{'chunk_id':1,'texture':0,'global_id':0}])
+        self.assertEqual(mapping,{})
+        mapping={0:1};self.assertEqual(reservation_guard(rows,{1:small},local,items,mapping,{1:{}}),[]);self.assertEqual(mapping,{0:1})
 
     def test_partial_cook_is_not_published(self):
         self.assertFalse(postpack_similarity({'complete':False}))
