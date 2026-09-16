@@ -2,7 +2,7 @@
 
 Host-only Python source readers, cooker, local CIL inspection and guest build
 orchestration. Dependencies are locked in requirements.lock and installed in
-the ignored .venv by `python3 tools/build.py`. Retail inputs are read-only.
+the ignored .venv by `cargo run --release -- build`. Retail inputs are read-only.
 
 `paths.py` defines the sole disc destination: `~/Downloads/ps1 games/`.
 Cooked assets and source/provenance inspection output remain ignored in the

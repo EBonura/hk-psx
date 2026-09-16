@@ -1575,7 +1575,7 @@ validation tape does not meet its coverage assertion; do not claim newly tested
 healing without a successful route. Source physics/effect approximations are
 recorded in the ignored destruction/door-debris audits.
 
-Build: `python3 tools/build.py`. Tests: `make test`.
+Build: `cargo run --release -- build`. Tests: `make test`.
 Replay with `tools/profile_tape.py --exe dist/hk-psx.exe --map build/hk-psx-normal.map`,
 the main CUE, preserved tape, a fresh ignored output and `--require-seamless`.
 Actual-CUE helper: `.hkpsx/user-6246-input/replay_main_cue.py --output ...`.

@@ -245,7 +245,7 @@ Compressed geometry/components are host records, not PS1 packs.
 | Effects | `host/particles.py`, `break_effects.py`; guest `particles.rs`, `debris.rs`, `impact.rs`, `break_effects.rs` |
 | Audio/music | `host/cook_audio.py`, `cook_music.py`, `ambience.py`, `focus_audio.py`, `runner_audio.py`, `title_music.py`; guest `audio*`, `ambience*`, `focus_audio*`, `music.rs` |
 | Menus/text | `host/cook_menu.py`, `cook_hud.py`, `read_points.py`; guest `menu*`, `pause.rs`, `cheats.rs`, `hud*`, `dialogue.rs` |
-| Builds/validation | `tools/build.py`, `host/build_guest.py`, `host/stack_budget.py`, `tools/replay_cue.py`, `tools/validate_scene_gates.py`, `tools/validate.py`, `Makefile` |
+| Builds/validation | `host/hk-build/main.rs` (root Cargo driver), `host/build_guest.py`, `host/build_report.py`, `host/stack_budget.py`, `tools/replay_cue.py`, `tools/validate_scene_gates.py`, `tools/validate.py`, `Makefile` |
 | Original oracle | `tools/reference_game.py`, `tools/reference/Driver.cs`, `EnemyTrace.cs`, other managed probes, `docs/ORIGINAL_REFERENCE.md` |
 
 Paths mentioned later as **proposed** do not exist yet. Create them deliberately;
@@ -1389,7 +1389,7 @@ assertion requires that the cooked data actually expresses the source behavior.
 
 ### 10.3 Guest validation and playable-build ownership
 
-`python3 tools/build.py` builds/cooks and **replaces the sole playable pair**.
+`cargo run --release -- build` builds/cooks, **replaces the sole playable pair** and replays the route tapes.
 Do not run it during a requested disc-preservation period. A normal authorized
 build must pass final executable hazard and stack/link checks.
 

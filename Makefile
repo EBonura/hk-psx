@@ -2,7 +2,7 @@ PYTHON ?= python3
 EMULATOR ?= ../PSoXide-emulator/target/release/frontend
 .PHONY: build run test validate doctor
 build:
-	$(PYTHON) tools/build.py
+	cargo run --release -- build --no-validate
 run: build
 	$(PYTHON) tools/run.py --emulator "$(EMULATOR)"
 test:
@@ -27,6 +27,8 @@ test:
 	rustc --edition=2021 --test tests/audio_stream_runtime.rs -o .hkpsx/hud-tests/audio-stream-tests
 	.hkpsx/hud-tests/audio-stream-tests
 validate:
+	cargo run --release -- validate --frontend "$(EMULATOR)"
+validate-legacy:
 	$(PYTHON) tools/validate.py --emulator "$(EMULATOR)"
 doctor:
 	$(PYTHON) tools/doctor.py

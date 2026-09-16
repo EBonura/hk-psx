@@ -284,7 +284,7 @@ Commands:
 ```sh
 python3 tools/doctor.py
 make test
-python3 tools/build.py
+cargo run --release -- build
 python3 tools/validate_cheats.py --prepare .hkpsx/new-cheats-check
 # Repeat for title, pause and reset after the build has completed:
 python3 tools/replay_cue.py --tape .hkpsx/new-cheats-check/title.pxtape --output .hkpsx/new-cheats-check/title --screenshot-interval 10
