@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-from cook_scene_pack import envelope, layout, split, read_summaries, mandatory_packets, FORMAT
+from cook_scene_pack import envelope, layout, split, read_summaries, mandatory_packets, failing_region, FORMAT
 import struct
 
 
@@ -84,6 +84,11 @@ class EnvelopeTests(unittest.TestCase):
         self.assertEqual(boxes[0], [-2, -5, 22, 11])
         self.assertEqual(boxes[-1], [94, 43, 101, 49])
         self.assertTrue(all(b[2] - b[0] <= 24 and b[3] - b[1] <= 16 for b in boxes))
+
+    def test_pack_errors_name_the_failing_view(self):
+        self.assertEqual(failing_region(ValueError('Similarity result exceeds runtime budget in region25: 6pages')), 25)
+        self.assertEqual(failing_region('Scene region 17 packet reservation exceeded: 788+264 > 1032'), 17)
+        self.assertIsNone(failing_region('Sequential scene decoding failed'))
 
     def test_split_halves_longer_axis_until_minimum(self):
         self.assertEqual(split([0, 0, 24, 16]), [[0, 0, 12, 16], [12, 0, 24, 16]])
