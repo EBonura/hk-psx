@@ -78,6 +78,8 @@ pub struct Gate {
     pub target_scene: usize,
     pub bounds: [i32; 4],
     pub spawn: [i32; 2],
+    /// Initial vertical velocity at the destination (Q16 units per second).
+    pub entry_vy: i32,
 }
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/regions.rs"));
 

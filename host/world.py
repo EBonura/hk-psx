@@ -414,8 +414,11 @@ def generate(report):
                        r['activation_bounds'][0] <= xy[0] <= r['activation_bounds'][2] and
                        r['activation_bounds'][1] <= xy[1] <= r['activation_bounds'][3] for r in regions):
                 continue
+            # Source HeroController top entries (the Dirtmouth well is the verified
+            # case) start the drop at -12 units per second; other sides keep rest.
+            entry_vy = -12 * 65536 if destination['name'].startswith('top') else 0
             out.append(f'Gate {{scene:{scene["scene_id"]},target_scene:{target["scene_id"]},bounds:' +
-                       rect(gate['trigger_bounds']) + ',spawn:' + arr(map(q, xy)) + '},')
+                       rect(gate['trigger_bounds']) + ',spawn:' + arr(map(q, xy)) + f',entry_vy:{entry_vy}' + '},')
     out.append('];')
     result = '\n'.join(out) + '\n'
     (ROOT/'data/regions.rs').write_text(result)

@@ -141,7 +141,7 @@ def cook_fingerprints(source):
     # orchestrator do not change a region's cooked bytes, the region spec does.
     for line in (ROOT/'host/cook_inputs.txt').read_text().splitlines():
         line=line.strip()
-        if not line or line.startswith('#') or line in ('host/quality.py','host/regions.py'):continue
+        if not line or line.startswith('#') or line in ('host/quality.py','host/regions.py','host/world.py'):continue  # catalog, orchestration and generator do not change cooked bytes
         code.update(f'{line}:{sha(ROOT/line)}\n'.encode())
     code.update(json.dumps([SCENERY_MAX_AXIS,STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET]).encode())
     inputs=hashlib.sha256();provenance=ROOT/'.hkpsx/regions-provenance.json'

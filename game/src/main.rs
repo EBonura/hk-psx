@@ -476,7 +476,7 @@ fn main() {
                                         if side_entry {
                                             if door_exit {door.begin_entry(g.target_scene);}else{door.begin_gate_entry(g.target_scene);}
                                             player.grounded=true;
-                                        }
+                                        } else {player.vy=g.entry_vy;}
                                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();target=Some(id);safe=(player.x,player.y,id);safe_facing=player.facing;gate_cooldown=90;
                                     }
                                 }
