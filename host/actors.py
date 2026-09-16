@@ -296,7 +296,12 @@ def actor_sources(sc, bounds=None):
 
 
 def generated_actor_region(region):
-    """Generate bounded ActorSpec entries only after their source clips are cooked."""
+    """Inline `&[ActorSpec,...]` form of a region's supported actors (fixtures/tests)."""
+    return '&[' + ','.join(generated_actor_specs(region)) + ']'
+
+
+def generated_actor_specs(region):
+    """Generate bounded ActorSpec expressions only after their source clips are cooked."""
     from effects import generated_corpse
     output = []
     for actor in region.get('actors', []):
@@ -357,7 +362,7 @@ def generated_actor_region(region):
             'recoil_ticks': ticks(recoil.get('recoilDuration', 0)),
         }
         output.append('hk_sim::ActorSpec {' + ','.join(f'{key}:{value}' for key, value in fields.items()) + '}')
-    return '&[' + ','.join(output) + ']'
+    return output
 
 
 def hazard_sources(sc, bounds=None):
