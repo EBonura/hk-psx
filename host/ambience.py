@@ -3,6 +3,7 @@ import argparse,array,hashlib,json,math,re,struct,subprocess,sys
 from pathlib import Path
 from source import ROOT,Source,dump
 from cook_music import sha,source_snapshot
+from quality import SCENE_FILES
 
 CHANNELS=(0,1,3,4,5,6)
 SPU_START=0x18000
@@ -45,7 +46,7 @@ def assemble(report,root,transitions,snapshots,sfx_end):
     if sfx_end>SFX_END:raise ValueError("ambience overlaps resident SFX bank")
     channels={};cues=[]
     for scene in report['scenes']:
-        if scene['scene_file'] not in ('level6','level7'):continue
+        if scene['scene_file'] not in SCENE_FILES:continue
         if len(scene['managers'])!=1:raise ValueError('ambiguous scene audio manager')
         manager=scene['managers'][0]
         all_snapshot=snapshots[scene['scene_file']]
@@ -61,11 +62,11 @@ def assemble(report,root,transitions,snapshots,sfx_end):
             gains[idx]=volume(snapshot['internal_volume_db']);mask|=1<<idx
         seconds=transitions[scene['scene_file']]
         if not math.isfinite(seconds) or not 0<=seconds<=60:raise ValueError('invalid atmosphere transition')
-        cues.append({'scene':0 if scene['scene_file']=='level6' else 1,'source_scene':scene['scene_file'],
+        cues.append({'scene':SCENE_FILES.index(scene['scene_file']),'source_scene':scene['scene_file'],
             'name':manager['atmos_cue']['name'],'source':manager['source'],'mask':mask,'gains':gains,
             'fade_ticks':round(seconds*60),'source_fade_seconds':seconds,'source_ambience':manager['ambience'],
             'all_channel_snapshot_gains':all_snapshot})
-    if set(channels)!=set(CHANNELS) or {c['scene']for c in cues}!={0,1}:raise ValueError('missing source ambience channels/scenes')
+    if set(channels)!=set(CHANNELS) or {c['scene']for c in cues}!=set(range(len(SCENE_FILES))):raise ValueError('missing source ambience channels/scenes')
     clips=[];address=SPU_START
     for index,ch in enumerate(CHANNELS):
         matches=[c for c in report['clips']if c['source']==channels[ch] and c['rate']==RATE and c['channels']==1]
@@ -117,7 +118,7 @@ def rust_manifest(clips,cues):
         '#[derive(Clone,Copy)] pub struct AmbienceCue {pub mask:u8,pub gains:[i16;6],pub fade_ticks:u16}',
         'pub const AMBIENCE_CLIPS:[AmbienceClip;6]=[']
     for c in clips:lines.append('AmbienceClip{byte_len:%d,spu_bytes:%d,checksum:%d,spu_address:%d,pitch:%d,voice:%d,source_channel:%d},'%tuple(c[k]for k in ('byte_len','spu_bytes','checksum','spu_address','pitch','voice','source_channel')))
-    lines.extend(['];',f'pub const AMBIENCE_SPU_START:u32={SPU_START};',f'pub const AMBIENCE_SPU_END:u32={SPU_END};',f'pub const AMBIENCE_STREAM_BYTES:usize={STREAM_BYTES};',f'pub const AMBIENCE_STREAM_SOURCE_BYTES:usize={clips[3]["byte_len"]};','pub const AMBIENCE_SCENES:[AmbienceCue;2]=['])
+    lines.extend(['];',f'pub const AMBIENCE_SPU_START:u32={SPU_START};',f'pub const AMBIENCE_SPU_END:u32={SPU_END};',f'pub const AMBIENCE_STREAM_BYTES:usize={STREAM_BYTES};',f'pub const AMBIENCE_STREAM_SOURCE_BYTES:usize={clips[3]["byte_len"]};',f'pub const AMBIENCE_SCENES:[AmbienceCue;{len(cues)}]=['])
     for c in cues:lines.append('AmbienceCue{mask:%d,gains:%s,fade_ticks:%d},'%(c['mask'],str(c['gains']),c['fade_ticks']))
     lines.append('];');return '\n'.join(lines)+'\n'
 
@@ -162,14 +163,16 @@ def main():
     methods=ROOT/report['source_methods']['path']
     s=Source(report['source_directory']);transitions={};snapshots={}
     resource=s.file('resources.assets');manager=s.read(resource.objects[26261])
-    for file,path_id,snapshot in [('level6',12820,3852),('level7',4397,3890)]:
-        obj=s.file(file).objects[path_id]
-        if s.typename(obj)!='SceneManager':raise ValueError('SceneManager source identity changed')
-        transitions[file]=s.read(obj)['transitionTime'];snapshots[file]=[]
+    for file in SCENE_FILES:
+        scene_file=s.file(file)
+        managers=[o for o in scene_file.objects.values() if o.type.name=='MonoBehaviour' and s.typename(o)=='SceneManager']
+        if len(managers)!=1:raise ValueError('ambiguous SceneManager in '+file)
+        scene_manager=s.read(managers[0]);snapshot=s.ref(scene_file,scene_manager['atmosSnapshot'])
+        transitions[file]=scene_manager['transitionTime'];snapshots[file]=[]
         for channel in CHANNELS:
             audio=s.ref(resource,manager['atmosSources'][channel]);tree=s.read(audio)
             group=s.ref(audio.assets_file,tree['OutputAudioMixerGroup'])
-            snapshots[file].append(source_snapshot(s,resource.objects[snapshot],group))
+            snapshots[file].append(source_snapshot(s,snapshot,group))
     sfx=sfx_reservation(ROOT)
     clips,cues=assemble(report,ROOT,transitions,snapshots,sfx['end'])
     out=ROOT/'data/ambience';out.mkdir(parents=True,exist_ok=True)

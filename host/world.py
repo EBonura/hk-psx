@@ -5,7 +5,7 @@ from source import ROOT
 from actors import generated_actor_region
 from flat_support import generate as flat_floor_catalog, rust_catalog
 
-SCENES = 2
+from quality import SCENE_COUNT as SCENES
 BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 

@@ -5,6 +5,18 @@ sampling and HUD quality remain unchanged. The first 98 region IDs remain
 stable. Eight Town views append full supported scenery/collision coverage;
 spatial partitions do not implement source scripts.
 """
+# Scene catalog: every cooker, generated table and guest constant derives its
+# scene list from here. Runtime/camera envelopes follow tools/cook_scene_pack.py.
+SCENE_TABLE = (
+    {'scene_id': 0, 'scene_name': 'Tutorial_01', 'file': 'level6',
+     'runtime_bounds': [0,-5,210,100], 'camera_global_bounds': [14,0,196,92]},
+    {'scene_id': 1, 'scene_name': 'Town', 'file': 'level7',
+     'runtime_bounds': [0,-5,270,76], 'camera_global_bounds': [12,15,258,68]},
+    {'scene_id': 2, 'scene_name': 'Crossroads_01', 'file': 'level37',
+     'runtime_bounds': [-2,-5,102,49], 'camera_global_bounds': [0,0,100,42]},
+)
+SCENE_COUNT = len(SCENE_TABLE)
+SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)
 SCENERY_MAX_AXIS = 48
 STATIC_PAGE_BUDGET = 5
 TEXTURE_BUDGET = 416  # Four disjoint CLUT banks; see hk-cache::residency.
@@ -114,6 +126,9 @@ REGION_LAYOUT = (
 # first 98 chunk IDs. Cameras describe extraction coverage, not source lock FSMs.
 # Lower camera tops reach activation top+2 so descending the entrance hill
 # crosses into these views continuously with the fixed player camera offset.
+# Crossroads_01: the measured 24x16 stepping over its source envelope.
+CROSSROADS_LAYOUT = tuple([x, y, min(x + 24, 102), min(y + 16, 49)]
+                          for y in (-5, 11, 27, 43) for x in (-2, 22, 46, 70, 94))
 TOWN_EXTENSION_LAYOUT = (
     ((48, -5, 96, 40), (40, 15, 96, 42)),
     ((96, -5, 168, 40), (96, 15, 168, 42)),

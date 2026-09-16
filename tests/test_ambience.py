@@ -33,7 +33,7 @@ class AmbienceTests(unittest.TestCase):
                 'planes':[{'path':str(path.relative_to(root)),'bytes':16,'sha256':hashlib.sha256(data).hexdigest()}]})
             entries[ch]={'channel':ch,'clip':str(ch),'loop':True,'pitch':1,'volume':1,
                 'snapshot':{'internal_volume_db':0,'effects':[],'chain':[{'mute':False,'solo':False,'pitch':1}]}}
-        for file,enabled in [('level6',[0,4,5,6]),('level7',[1,3,5,6])]:
+        for file,enabled in [('level6',[0,4,5,6]),('level7',[1,3,5,6]),('level37',[0,4,5,6])]:
             snapshots[file]=[{'internal_volume_db':0 if ch in enabled else -80}for ch in ambience.CHANNELS]
             scenes.append({'scene_file':file,'managers':[{'source':file+':1','atmos_cue':{'name':file},
                 'ambience':[entries[ch]for ch in enabled]}]})
@@ -42,10 +42,10 @@ class AmbienceTests(unittest.TestCase):
     def test_bank_preserves_source_channel_masks_gains_and_disjoint_addresses(self):
         with tempfile.TemporaryDirectory()as temp:
             root=pathlib.Path(temp);report,snapshots=self.fixture(root)
-            clips,cues=ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
-            self.assertEqual([c['mask']for c in cues],[57,54])
+            clips,cues=ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
+            self.assertEqual([c['mask']for c in cues],[57,54,57])
             self.assertEqual(cues[0]['gains'],[16383,2,2,16383,16383,16383])
-            self.assertEqual([c['fade_ticks']for c in cues],[30,30])
+            self.assertEqual([c['fade_ticks']for c in cues],[30,30,30])
             self.assertEqual([c['voice']for c in clips],list(range(6,12)))
             for i,c in enumerate(clips):
                 self.assertEqual(c['spu_address'],ambience.SPU_START+i*16)
@@ -54,12 +54,12 @@ class AmbienceTests(unittest.TestCase):
                 self.assertEqual(c['valid_frames'],27)
             with patch.object(ambience,'SPU_END',ambience.SPU_START+80):
                 with self.assertRaisesRegex(ValueError,'capacity overflow'):
-                    ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
+                    ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
             with self.assertRaisesRegex(ValueError,'overlaps'):
-                ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END+16)
+                ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END+16)
             (root/report['clips'][0]['planes'][0]['path']).write_bytes(bytes(16))
             with self.assertRaisesRegex(ValueError,'hash mismatch'):
-                ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
+                ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
 
     def test_sfx_overlap_and_manifest_drift_rejected(self):
         with tempfile.TemporaryDirectory()as temp:
@@ -81,7 +81,7 @@ class AmbienceTests(unittest.TestCase):
             path=root/clip['planes'][0]['path'];path.write_bytes(payload)
             clip.update(frames=len(payload)//16*28,padding_samples=0)
             clip['planes'][0].update(bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
-            clips,_=ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
+            clips,_=ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
             self.assertEqual(clips[3]['byte_len'],199872)
             self.assertEqual(clips[3]['spu_bytes'],16384)
             self.assertEqual(clips[3]['payload'],ambience.loop_payload(payload))
@@ -89,7 +89,7 @@ class AmbienceTests(unittest.TestCase):
             self.assertEqual(sum(c['byte_len']-c['spu_bytes'] for c in clips),183488)
             with patch.object(ambience,'STREAM_RAM_LIMIT',199856):
                 with self.assertRaisesRegex(ValueError,'RAM cache'):
-                    ambience.assemble(report,root,{'level6':.5,'level7':.5},snapshots,ambience.SFX_END)
+                    ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
 
     def test_fresh_or_stale_cache_invokes_reproducible_source_cooker(self):
         path=pathlib.Path('/ignored/music/provenance.json')

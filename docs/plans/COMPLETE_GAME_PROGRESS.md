@@ -8,8 +8,10 @@ extraction, cooking, runtime binding and playable validation remain separate.
 
 - Source branch: `main`; implementation began from commit `8337d68`.
 - Windows source: CrossOver Steam installation, Unity `6000.0.61f1`.
-- Playable disc: build 71; Tutorial/King's Pass and Town/Dirtmouth only.
-- Disc policy: preserve build 71 until the user requests a replacement.
+- Playable disc: build 74; King's Pass, Dirtmouth and Forgotten Crossroads
+  (Crossroads_01) connected through the authored Great Door and well gates.
+- Disc policy: the user authorized rebuilds on 2026-09-16; every build now
+  replays the route tapes in `tools/tapes` and fails on any fault.
 - Current packages: P05-P08, admit checked metadata, build the catalog-wide
   source matrix, remove scene-multiplied Geo state, and correct the first
   cross-layer tile-occlusion failure before adding streaming admission. The
@@ -36,12 +38,13 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P02 | validated | Every scene has an evidence-backed role and remains included. All 1,119 TransitionPoints and 318 scripted loads retain geometry, flags, destination dataflow and progression-condition status with downstream owners. All 95 completion fields join serialized access to exact managed readers/writers; installed cap CIL proves the 112 maximum. Fifteen source reference cases cover every observed edge/condition category. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
-| P05 | in progress | Tutorial/Town `HKWMTA01` banks are checked and admitted from the aligned scene-arena tail; spatial actor/checkpoint lookup now resolves through the admitted bank. The guest differentially checks bounds, collision bounds, camera and neighbor lists against legacy regions, and derives the pack index/header capacity from generated manifests. The filtered edge cache now keys by world generation, global region and room view, preventing equal-sized room payload reuse. Full actual-CUE differential replay and migration of auxiliary tables remain. |
+| P05 | in progress | The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
 | P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
 | P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
-| P09-P12, P14-P31 | pending | Follow dependency order in the master plan. |
+| P09 | in progress | Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Entry velocity, the delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and the return replay remain. |
+| P10-P12, P14-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -279,6 +282,37 @@ remains with the renderer/UI packages.
 - Remaining structural ceilings for P05/P07: the 128-room scene header limit
   for the three tallest scenes, and the 20-page/1,248-palette caps once
   neighbour windows and actor banks are added.
+
+## P09 first slice and disc validation evidence (builds 72 to 74)
+
+- `cargo run --release -- build` (root `hk-psx-build`) replaced `tools/build.py`;
+  it cooks with caches, builds the guest, replaces the sole pair, writes the
+  report and replays `tools/tapes/{focus,gate-return,town-reset,town-resident,
+  town-well}.pxtape`, failing on faults or incomplete tapes.
+- Build 72 (first disc since 71) failed three ways before passing: WorldMeta
+  neighbour ids compared 1-based to 0-based indices; the bank staged in the
+  scene-arena tail was overwritten by the coverage/atlas/scene in-place
+  decodes, which relocate compressed bytes to the end of the arena they are
+  given; `world_metadata()` re-ran the checked parse per spatial lookup and
+  overflowed the 16-slot input queue (fault 4). Fixes: compare `expected+1`,
+  admit the bank last and decode it inside the tail, extend
+  `check_scene_gate_load` with `--meta`, and return the admission-validated view.
+- Build 74 adds Crossroads_01 (20 views, chunk ids 107..126, 104,652 resident
+  bytes, 7 pages, 501 palettes, 6,480-byte metadata bank). The link first
+  overflowed RAM by 34,800 bytes because baked particle tracks grew from
+  399,432 to 448,800 bytes with ten new emitters; with `BAKE_TRACKS=False`
+  every emitter uses the scalar path the tracks were proven against and the
+  link has 401,256 bytes before the stack floor. The stale linked-table budget
+  in `host/opaque_tiles.py` now scales with the scene count because the guest
+  streams per-scene certificate bundles instead. Ambience for Crossroads
+  uses the King's Pass channel set (mask 57) read from its SceneManager.
+- Replays on build 74: focus 850 polls; gate return (3 scene loads, 2 gates);
+  Town reset; Town resident (x 174.6); Town well (13,074 polls, 3 scene loads,
+  2 gate loads, final region 110 at x 90.6, y 5.4). All report zero faults and
+  zero missed VBlanks. `.hkpsx/validate/*/` holds the captures.
+- Not claimed: original well entry velocity or delayed collider, source camera
+  locks, Runner/Climber/Mender behaviour, Crossroads audio cues beyond ambience,
+  performance parity in Crossroads.
 
 ## Required package completion record
 

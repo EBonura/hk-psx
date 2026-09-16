@@ -6,7 +6,7 @@ pub mod debris;
 pub mod particles;
 use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
-pub const SCENES: usize = 2;
+pub const SCENES: usize = 3;
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
 #[derive(Clone, Copy)]

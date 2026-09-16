@@ -86,8 +86,11 @@ def read_certificates(data,count):
 def cook(root=ROOT,grid_shift=2,variant=False):
     if grid_shift not in(2,3):raise ValueError('Opaque tiles: supported grid shifts are2and3')
     root=Path(root);cache=root/('.hkpsx/opaque-tiles-grid4'if variant else'.hkpsx/opaque-tiles');cache.mkdir(parents=True,exist_ok=True)
-    # Full Town adds certificates; the final linker still enforces the protected stack.
-    window=16+(1<<grid_shift)-1;table_budget=104*1024 if grid_shift==2 else MAX_TABLE_BYTES
+    # The legacy table is a host intermediate: scene_certificates.py cuts it into
+    # per-scene HKOCSC01 bundles that must each fit the streamed coverage arena,
+    # so the whole-catalog bound scales with the scene count instead of a link budget.
+    from quality import SCENE_COUNT
+    window=16+(1<<grid_shift)-1;table_budget=SCENE_COUNT*(104*1024 if grid_shift==2 else MAX_TABLE_BYTES)
     packed=json.loads((root/'.hkpsx/packed-scenes.json').read_text());metadata_path=root/'data/regions.json';metadata=json.loads(metadata_path.read_text());metadata_hash=file_sha(metadata_path)
     if metadata_hash!=packed['source_metadata_sha256']:raise ValueError('Opaque tiles: packed scene metadata is stale')
     geo=json.loads((root/'.hkpsx/geo-provenance.json').read_text());life=json.loads((root/'.hkpsx/lifeblood-provenance.json').read_text())
