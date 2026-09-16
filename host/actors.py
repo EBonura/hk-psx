@@ -7,6 +7,7 @@ import hashlib
 import math
 import struct
 from pathlib import Path
+from polygons import bounded_polygons
 from combat import ticks
 
 
@@ -231,6 +232,11 @@ def _colliders(sc, gid, records):
             continue
         polygons = [[sc.point(gid, x + offset['x'], y + offset['y'])[:2] for x, y in path]
                     for path in paths]
+        try:  # guest records hold at most 16 vertices; pieces tile the source shape exactly
+            polygons = [piece for polygon in polygons for piece in bounded_polygons(polygon)]
+        except ValueError as error:
+            result.append({'source': f'{sc.file.name}:{sid}', 'type': typ, 'unsupported': f'collider polygon: {error}'})
+            continue
         points = [point for path in polygons for point in path]
         if not points or any(not math.isfinite(value) or abs(value) > 512 for point in points for value in point):
             raise ValueError('actor collider exceeds Q16 world coordinate bounds')
