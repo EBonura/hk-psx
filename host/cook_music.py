@@ -199,8 +199,10 @@ def capacity(report,clips):
             'Dirtmouth music trigger is outside current Town coverage']}
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,default=ROOT/'.hkpsx/music');a=p.parse_args();out=a.output.resolve()
-    if not out.is_relative_to(ROOT/'.hkpsx'):raise ValueError('music assets must remain ignored under .hkpsx')
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,default=ROOT/'.hkpsx/music');a=p.parse_args();out=a.output if a.output.is_absolute() else ROOT/a.output
+    # Compare resolved paths so a symlinked .hkpsx (worktree setups) passes, but
+    # keep the unresolved path so report entries stay relative to ROOT.
+    if not out.resolve().is_relative_to((ROOT/'.hkpsx').resolve()):raise ValueError('music assets must remain ignored under .hkpsx')
     out.mkdir(parents=True,exist_ok=True);s=Source();report,objects=inventory(s);encoder=compile_encoder(out)
     cooked=[]
     ambience={a['clip'] for scene in report['scenes'] for manager in scene['managers'] for a in manager['ambience']}
