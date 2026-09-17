@@ -5,7 +5,7 @@ use hk_format::{Room,i32_at,u32_at};
 #[derive(Clone,Copy)]
 pub struct Params {pub stage_hits:[u8;3],pub cooldown:u8,pub transition:u16,pub entry_delay:u16}
 #[derive(Clone,Copy)]
-pub struct Entry {pub spawn:[i32;2],pub settle:u16,pub fade_delay:u16,pub fade:u16,pub lead:u16,pub walk:u16,pub speed:i32}
+pub struct Entry {pub spawn:[i32;2],pub region:usize,pub settle:u16,pub fade_delay:u16,pub fade:u16,pub lead:u16,pub walk:u16,pub speed:i32}
 #[derive(Clone,Copy)]
 pub struct Binding {pub frames:[u16;3],pub edges:&'static [u16]}
 include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/great_door.rs"));

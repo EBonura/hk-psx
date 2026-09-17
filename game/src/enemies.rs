@@ -385,7 +385,7 @@ impl EnemyWorld {
         cheats: crate::cheats::Settings,
         camera: [i32;3],
         mut runner_event: impl FnMut(RunnerEvent),
-        resident: impl Fn(usize, i32, i32) -> Option<(&'a Region, Room<'a>)>,
+        resident: impl Fn(usize, i32, i32) -> Option<(Region, Room<'a>)>,
     ) -> Events {
         self.sync_region(region);
         let mut events = Events {
@@ -428,7 +428,7 @@ impl EnemyWorld {
             let other=if crate::world::contains(region.bounds,x,y) {None}
                 else {resident(region.scene,x,y)};
             let (terrain_region,terrain_room)=other.as_ref()
-                .map_or((region,room),|(r,room)|(*r,room));
+                .map_or((region,room),|(r,room)|(r,room));
             let available=terrain_region.scene==region.scene
                 && crate::world::contains(terrain_region.collision_bounds,x,y);
             if !actor.health.dead {actor.health.tick();}

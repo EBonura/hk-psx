@@ -18,7 +18,7 @@ pub fn upload() {
 pub fn apply(geo:&geo::World,state:&mut world::State,region:usize) {
     let mut edges=[0u16;32];let mut len=0;
     for binding in geo::GEO_BINDINGS[region] {
-        if geo.rock_depleted(world::REGIONS[region].scene,binding.state as usize) {
+        if geo.rock_depleted(world::scene_of(region),binding.state as usize) {
             for &draw in binding.off {render::set_visible(draw as usize,false);}
             for &edge in binding.edges {
                 if !edges[..len].contains(&edge) {assert!(len<edges.len());edges[len]=edge;len+=1;}
@@ -42,7 +42,7 @@ fn draw_art(index:usize,world:[[i32;2];4],camera:(i32,i32))->bool {
 }
 #[inline(never)]
 pub fn draw(geo:&geo::World,region:usize,camera:(i32,i32))->u32 {
-    let scene=world::REGIONS[region].scene;let mut drawn=0;
+    let scene=world::scene_of(region);let mut drawn=0;
     for binding in geo::GEO_BINDINGS[region] {
         let (art,vertices,extra)=if geo.rock_depleted(scene,binding.state as usize) {(binding.broken_art,binding.vertices,binding.broken_extra)}
             else {(binding.intact_art,binding.intact_vertices,binding.intact_extra)};

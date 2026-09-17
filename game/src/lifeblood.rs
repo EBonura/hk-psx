@@ -204,7 +204,7 @@ mod presentation {
     #[inline(never)]
     pub fn draw(life:&World,region:usize,camera:(i32,i32))->u32 {
         let mut drawn=0;
-        if world::REGIONS[region].scene==LIFE_SPEC.scene {
+        if world::scene_of(region)==LIFE_SPEC.scene {
             drawn+=if !life.opened(){draw_frame(INTACT,LIFE_SPEC.origin,ONE,1,camera)}else if life.splat_visible(){draw_frame(SPLAT,SPLAT_ORIGIN,ONE,1,camera)}else{0};
             for bug in life.bugs.iter().flatten().filter(|b|b.phase!=Phase::Healing) {
                 // Cooked bug geometry/art uses maximum source scale1.5.

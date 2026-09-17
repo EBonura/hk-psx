@@ -93,7 +93,7 @@ class RevealTests(unittest.TestCase):
         self.assertEqual([r['reveal_mask_bindings'][0]['draw']for r in data['regions']],[1,0])
         rust=test_world.WorldMetadata().generate(data)
         self.assertIn('source_id:77,trigger:&[[65536,65536]',rust)
-        self.assertEqual(rust.count('reveal_masks:REVEAL_MASKS_SCENE_0'),2)
+        self.assertIn('pub static SCENE_REVEAL_MASKS: &[&[crate::reveal_masks::RevealMaskSpec]] = &[REVEAL_MASKS_SCENE_0,',rust)
         # Bindings live in the bank as one interleaved (controller, draw) list per region.
         self.assertNotIn('RevealMaskBinding',rust)
         objects=test_world.WorldMetadata().bank(dict(data,scenes=[dict(data['scenes'][0],reveal_controllers=1)]))

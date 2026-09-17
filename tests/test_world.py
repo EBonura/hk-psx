@@ -89,8 +89,13 @@ class WorldMetadata(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'mask owner state'):self.bank(data)
 
     def test_collision_coverage_is_distinct_from_activation(self):
+        import struct
+        from world_metadata import encode_scene
         data=report();data['regions'][0]['collision_bounds']=[-3,-5,13,15]
-        self.assertIn('collision_bounds:[-196608,-327680,851968,983040]',self.generate(data))
+        payload,_=encode_scene(data['scenes'][0],data['regions'])
+        offset=struct.unpack_from('<I',payload,64)[0]
+        self.assertEqual(struct.unpack_from('<4i',payload,offset+20),(-196608,-327680,851968,983040))
+        self.assertNotIn('collision_bounds:',self.generate(data))
 
     def test_damagehero_integer_convention_is_not_hazard_enum(self):
         # Hazards are cooked only into the HKWMTA01 bank; the damage word carries
