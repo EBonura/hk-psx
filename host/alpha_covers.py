@@ -54,9 +54,49 @@ def cover(mask):
     assert all(not (row&~seen) for row,seen in zip(rows,covered)),'alpha cover omitted a visible PSX texel'
     return rects
 
-def record(width,height,palette,pixels):
+# The cover is a pure function of the texel words, and the same textures recur
+# across regions and postpasses (72k calls per warm cook, two thirds of its
+# time in this file), so finished records persist in ignored storage.
+_CACHE_PATH=None
+_CACHE={}
+_DIRTY=False
+
+def _cache():
+    global _CACHE_PATH
+    if _CACHE_PATH is None:
+        import atexit,json
+        from pathlib import Path
+        _CACHE_PATH=Path(__file__).resolve().parents[1]/'.hkpsx'/'alpha-covers-cache.json'
+        try:_CACHE.update(json.loads(_CACHE_PATH.read_text()))
+        except (OSError,ValueError):pass
+        atexit.register(_flush)
+    return _CACHE
+
+def _flush():
+    if not _DIRTY:return
+    import json,os
+    _CACHE_PATH.parent.mkdir(parents=True,exist_ok=True)
+    # Parallel cook workers flush concurrently: merge what others wrote since
+    # this process loaded the cache, and rename from a per-process temp file.
+    merged={}
+    try:merged.update(json.loads(_CACHE_PATH.read_text()))
+    except (OSError,ValueError):pass
+    merged.update(_CACHE)
+    temp=_CACHE_PATH.with_suffix(f'.{os.getpid()}.tmp');temp.write_text(json.dumps(merged,separators=(',',':')));temp.replace(_CACHE_PATH)
+
+def compute_record(width,height,palette,pixels):
     rects=cover(support(width,height,palette,pixels))
     output=bytearray(RECORD_BYTES);output[0]=len(rects)
     for index,(left,top,right,bottom) in enumerate(rects):
         struct.pack_into('4B',output,4+index*4,left,top,right-left-1,bottom-top-1)
     return bytes(output)
+
+def record(width,height,palette,pixels):
+    global _DIRTY
+    import hashlib
+    key=hashlib.sha256(struct.pack('<HH',width,height)+bytes(palette)+bytes(pixels)).hexdigest()[:32]
+    cache=_cache();hit=cache.get(key)
+    if hit is not None:return bytes.fromhex(hit)
+    output=compute_record(width,height,palette,pixels)
+    cache[key]=output.hex();_DIRTY=True
+    return output

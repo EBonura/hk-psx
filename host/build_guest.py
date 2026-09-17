@@ -15,23 +15,29 @@ def scene_manifest(residency="scene_gate"):
 def run(args,**kw):
     print('+', ' '.join(map(str,args)),flush=True)
     subprocess.run(list(map(str,args)),check=True,**kw)
-def build(telemetry=False, candidate=False, residency="scene_gate", package_disc=True):
-    if residency!="scene_gate":raise ValueError('Guest coverage residency requires scene_gate')
+def prepass(residency="scene_gate"):
+    """Cooked-data stages between the region cook and the guest link."""
     # Derive reservations from the exact final packs, including direct builds.
     from scenery_geometry import generate
     generate(ROOT)
-    rooms = scene_manifest(residency)
-    atlases=json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text())['atlases']
+    scene_manifest(residency)
     # Certificates bind to the final deduplicated bank geometry/palette words.
     # Keep direct guest builds on the same reproducible path as tools/build.py.
     from opaque_tiles import cook as cook_opaque_tiles
     cook_opaque_tiles()
     from opaque_groups import cook as cook_opaque_groups
     cook_opaque_groups()
-    ambience=json.loads((ROOT/'.hkpsx/ambience.json').read_text())
-    clips=ambience['clips']
     # The compressor uses pinned host dependencies from the build environment.
     run([ROOT/'.venv/bin/python',ROOT/'host/scene_certificates.py'],cwd=ROOT)
+
+def build(telemetry=False, candidate=False, residency="scene_gate", package_disc=True, run_prepass=True):
+    if residency!="scene_gate":raise ValueError('Guest coverage residency requires scene_gate')
+    # The driver skips the prepass when its inputs and outputs are unchanged.
+    if run_prepass:prepass(residency)
+    packed=json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text())
+    rooms=packed['scenes'];atlases=packed['atlases']
+    ambience=json.loads((ROOT/'.hkpsx/ambience.json').read_text())
+    clips=ambience['clips']
     coverage=json.loads((ROOT/'.hkpsx/scene-certificates.json').read_text())
     music=json.loads((ROOT/'.hkpsx/title-music.json').read_text())
     if hashlib.sha256((ROOT/music['path']).read_bytes()).hexdigest()!=music['sha256'] or hashlib.sha256((ROOT/'data/title_music.rs').read_bytes()).hexdigest()!=music['manifest_sha256']:raise ValueError('Title music changed after cooking')
@@ -110,5 +116,6 @@ if __name__=='__main__':
     parser.add_argument('--candidate',action='store_true')
     parser.add_argument('--residency',choices=('joint','scene_gate'),default='scene_gate')
     parser.add_argument('--no-disc',action='store_true',help='build and validate the guest EXE without replacing the playable BIN/CUE')
+    parser.add_argument('--no-prepass',action='store_true',help='reuse the packed scenes, tile certificates and coverage bundles already on disk')
     args=parser.parse_args()
-    build(args.telemetry,candidate=args.candidate,residency=args.residency,package_disc=not args.no_disc)
+    build(args.telemetry,candidate=args.candidate,residency=args.residency,package_disc=not args.no_disc,run_prepass=not args.no_prepass)

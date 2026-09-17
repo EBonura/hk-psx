@@ -481,18 +481,45 @@ events and 2 enemy hits with the invincibility cheat holding health at 5;
 seven routes pass. Memory: `.text` 426,144 -> 428,144, `.data` 395,104 ->
 395,152 plus the 20 KB bank, headroom 281,912 -> 279,832 bytes.
 
-## Build speed (in progress)
+## Build speed (user priority, 2026-09-17)
 
-Measured stages of one `cargo run --release -- build`: region cook with every
-per-region cache hit about 3 min (postpack, actor banks, dedup and generate
-run regardless), full recook 12 to 30 min whenever any of the cooker files in
-`host/cook_inputs.txt` changes, asset scripts and `pack_scenes` with its
-decoder proof 4 to 5 min uncached, guest link and disc 1.5 min, seven route
-replays 7 min sequential. The replays now run concurrently in the driver
-(1:42 wall for seven; the emulator is deterministic and the results matched
-the sequential runs). Next: per-script caches for the asset scripts and the
-packer, a postpack cache, a cook cache split between the geometry cook and
-the postpack stages, and a guest-only fast path.
+Measured before: region cook with every per-region cache hit about 200 s
+(postpack, actor banks, dedup and generate ran regardless), full recook 12 to
+30 min whenever any cooker file in `host/cook_inputs.txt` changed, asset
+scripts 45 s plus `pack_scenes` with its decoder proof 43 s every build, guest
+link and disc about 10 s, seven route replays 7 min sequential; about 16 min
+for a guest-only change.
+
+Changes, each verified byte-identical on the cooked chunks and green on the
+seven routes:
+
+- Route replays run concurrently in the driver (1:42 wall for seven; the
+  emulator is deterministic).
+- `alpha_covers.record` persists its results in `.hkpsx/alpha-covers-cache.json`
+  (72k calls per warm cook were two thirds of its time), and
+  `texture_dedup.deduplicate_room` caches each (pack, replacements, code) result
+  under `.hkpsx/dedup-cache/`; the region report is checkpointed only after
+  fresh cooks and at most every tenth region instead of after every cached
+  one. Warm cook: 200 s -> 23 s.
+- The driver's asset cache (`.hkpsx/assets-cache.json`, keyed on every host and
+  tool Python file, the region report and the cook verdict, verified against
+  the hashes of everything under `data/` and the packer state) skips the
+  twelve asset scripts and the guest prepass (`build_guest.prepass`: scenery
+  budgets, `pack_scenes`, opaque tiles and groups, scene certificates) when
+  nothing they read changed; `build_guest.py --no-prepass` reuses the packed
+  scenes on disk.
+- Cache misses are cooked by one worker process per scene (`regions.py
+  --precook SCENE`), up to cpu_count - 2 at once, region 1's scene first because
+  it writes the shared knight and gameplay files; the parent loop then reuses
+  every worker result through the per-region cache. Full recook: 253 s.
+
+Measured after: no-change or guest-only build 1:48 (of which the seven
+parallel replays are about 1:40), cooker-code change about 5:00 including the
+full parallel recook. Not done: a split between the geometry cook and the
+metadata/postpack stages (the cook is one function whose art appends depend on
+the effects code), which would make actor and effects changes cost the 23 s
+warm path instead of the 4 min recook; and speeding the replays themselves,
+which are bound by the longest route.
 
 Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
 actor objects (flag 64) carry their index into the new per-scene

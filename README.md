@@ -79,6 +79,11 @@ cargo run --release -- build --hollow-knight "/path/to/Hollow Knight" --sdk-sour
 The driver is the root Rust package (`host/hk-build/main.rs`); it orders the
 Python cookers under `host/`, the guest cargo build, the disc packer and the
 replays, and fails the build when a route stops early or reports a fault.
+Three caches keep it fast: the region cook (per region, misses cooked by one
+worker process per scene), the asset stage (skipped when no cooker code, the
+region report or a generated output changed) and the menu; the seven route
+replays run concurrently. A guest-only change builds and validates in about
+two minutes, a cooker change in about five. `--recook` bypasses the caches.
 
 Outputs: dist/hk-psx.exe and `~/Downloads/ps1 games/hk-psx.bin` plus
 `~/Downloads/ps1 games/hk-psx.cue`. The PS1 library is the ONLY disc destination;

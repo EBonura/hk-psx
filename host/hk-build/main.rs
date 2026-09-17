@@ -201,6 +201,94 @@ fn menu_cached(root: &Path, force: bool) -> Result<()> {
     Ok(())
 }
 
+/// Files whose bytes decide every asset script and the guest prepass: all host
+/// and tool Python, the cooked region report and the cook cache verdict.
+fn assets_key(root: &Path) -> Result<String> {
+    let mut hasher = Sha256::new();
+    let mut files: Vec<PathBuf> = Vec::new();
+    for dir in ["host", "tools"] {
+        for entry in std::fs::read_dir(root.join(dir))? {
+            let path = entry?.path();
+            if path.extension().is_some_and(|e| e == "py" || e == "c") {
+                files.push(path);
+            }
+        }
+    }
+    files.push(root.join("data/regions.json"));
+    files.push(root.join(".hkpsx/regions-cook-cache.json"));
+    files.push(root.join(".hkpsx/menu-provenance.json"));
+    files.sort();
+    for path in files {
+        hasher.update(path.strip_prefix(root).unwrap_or(&path).to_string_lossy().as_bytes());
+        hasher.update(sha256_file(&path)?.as_bytes());
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Every generated file the guest link reads: all of data/ plus the packed
+/// scene, certificate and effect-art state under .hkpsx.
+fn asset_outputs(root: &Path) -> Result<BTreeMap<String, String>> {
+    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, String>) -> Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                walk(root, &path, out)?;
+            } else if path.is_file() && !path.file_name().is_some_and(|n| n.to_string_lossy().ends_with(".tmp")) {
+                out.insert(path.strip_prefix(root).unwrap().to_string_lossy().to_string(), sha256_file(&path)?);
+            }
+        }
+        Ok(())
+    }
+    let mut out = BTreeMap::new();
+    walk(root, &root.join("data"), &mut out)?;
+    for state in ["packed-scenes.json", "scene-certificates.json", "ambience.json", "title-music.json", "focus-audio.json",
+        "geo-provenance.json", "geo-audio-provenance.json", "lifeblood-provenance.json", "hud-provenance.json",
+        "audio-provenance.json", "great-door.json", "break-effects/report.json", "opaque-tiles/report.json",
+        "opaque-groups/report.json", "scenery-geometry-budgets.json", "selected-regions.json"] {
+        let path = root.join(".hkpsx").join(state);
+        if path.is_file() {
+            out.insert(format!(".hkpsx/{state}"), sha256_file(&path)?);
+        }
+    }
+    Ok(out)
+}
+
+/// Run the asset scripts and the guest prepass unless their inputs and every
+/// generated output match the previous successful run. Returns true on a hit.
+fn assets_cached(root: &Path, force: bool) -> Result<bool> {
+    let cache = root.join(".hkpsx/assets-cache.json");
+    let key = assets_key(root)?;
+    if !force && cache.exists() {
+        let old = read_json(&cache)?;
+        if old["key"].as_str() == Some(key.as_str()) {
+            let intact = old["outputs"].as_object().is_some_and(|outputs| {
+                outputs.iter().all(|(p, h)| {
+                    let path = root.join(p);
+                    path.is_file() && sha256_file(&path).ok().as_deref() == h.as_str()
+                })
+            });
+            if intact {
+                println!("Asset cache hit: cooker code, region report and generated outputs match.");
+                return Ok(true);
+            }
+        }
+    }
+    for script in ASSET_SCRIPTS {
+        python_step(root, &format!("host/{script}"), &[])?;
+    }
+    run("cargo", &["run", "--quiet", "--manifest-path", "shared/hk-format/Cargo.toml", "--example", "check", "--", "data/room.hk"], root)?;
+    python_step_module(root, "build_guest", "prepass")?;
+    let outputs = asset_outputs(root)?;
+    std::fs::write(&cache, serde_json::to_string_pretty(&serde_json::json!({"key": key, "outputs": outputs}))?)?;
+    Ok(false)
+}
+
+/// Run one function of a host module in the project venv.
+fn python_step_module(root: &Path, module: &str, function: &str) -> Result<()> {
+    let code = format!("import sys;sys.path.insert(0,'host');import {module};{module}.{function}()");
+    run(venv_python(root), &["-c", &code], root)
+}
+
 fn build(root: &Path, options: &Options) -> Result<()> {
     std::fs::create_dir_all(root.join(".hkpsx"))?;
     let doctor = root.join("tools/doctor.py");
@@ -214,12 +302,13 @@ fn build(root: &Path, options: &Options) -> Result<()> {
     sdk(root, &sdk_source)?;
     cook_cached(root, options.recook)?;
     menu_cached(root, options.recook)?;
-    for script in ASSET_SCRIPTS {
-        python_step(root, &format!("host/{script}"), &[])?;
-    }
-    run("cargo", &["run", "--quiet", "--manifest-path", "shared/hk-format/Cargo.toml", "--example", "check", "--", "data/room.hk"], root)?;
+    let assets_hit = assets_cached(root, options.recook)?;
     let telemetry: &[&str] = if options.telemetry { &["--telemetry"] } else { &[] };
-    python_step(root, "host/build_guest.py", telemetry)?;
+    let mut guest_args = telemetry.to_vec();
+    if assets_hit {
+        guest_args.push("--no-prepass");
+    }
+    python_step(root, "host/build_guest.py", &guest_args)?;
     python_step(root, "host/build_report.py", telemetry)?;
     if options.validate {
         validate(root, options)?;

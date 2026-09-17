@@ -41,9 +41,10 @@ short on the Tutorial return before. Break-effect art beyond scene 4 and Geo
 rocks over the shared VRAM budgets are recorded omissions; effect and Geo art
 need per-scene streaming (P07/P25). `host/regions.py` reuses every region
 whose spec, source inputs and cooker code are unchanged. The scene catalog is
-`host/quality.py SCENE_TABLE`. Next (user priority): build speed, per the ledger's build-speed section
-(asset-script and packer caches, postpack cache, cook cache split, guest-only
-path). Then Climber and Mender, Runner dust and death presentation, the P09
+`host/quality.py SCENE_TABLE`. Build speed (user priority) is done for the first pass: no-change or
+guest-only build 1:48, cooker-code change about 5:00 with a parallel full
+recook; see the ledger's build-speed section for what remains (geometry vs
+metadata cook split, replay speed). Next: Then Climber and Mender, Runner dust and death presentation, the P09
 well entry details, and moving emitter/style metadata into the world bank; P09 delayed well collider and source camera locks; Crossroads enemy
 families beyond the Crawler.
 
