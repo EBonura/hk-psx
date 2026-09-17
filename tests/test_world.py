@@ -73,16 +73,21 @@ class WorldMetadata(unittest.TestCase):
         self.assertIn('collision_bounds:[-196608,-327680,851968,983040]',self.generate(data))
 
     def test_damagehero_integer_convention_is_not_hazard_enum(self):
-        data=report()
-        hazard={'damage':1,'bounds':[1,1,2,2],'position':[1,1],
+        # Hazards are cooked only into the HKWMTA01 bank; the damage word carries
+        # the DamageHero respawn convention in its upper half.
+        import struct
+        from world_metadata import encode_scene
+        scene={'scene_id':0,'scene_name':'S','file':'level6'}
+        row={'chunk_id':1,'activation_bounds':[0,0,10,10],'camera_bounds':[0,0,10,10]}
+        hazard={'source':'level6:7','damage':1,'bounds':[1,1,2,2],'position':[1,1],
                 'world_polygons':[[[1,1],[2,1],[2,2],[1,2]]]}
         for hit_type,expected in [(0,False),(1,False),(2,True),(3,True)]:
-            data['regions'][0]['hazards']=[dict(hazard,hazard_type=hit_type)]
-            self.assertIn(f'damage:1,hazard:{str(expected).lower()}',self.generate(data))
+            payload,_=encode_scene(scene,[dict(row,hazards=[dict(hazard,hazard_type=hit_type)])])
+            offset=struct.unpack_from('<I',payload,76)[0]
+            self.assertEqual(struct.unpack_from('<i',payload,offset+40)[0],1|(int(expected)<<16))
         for hit_type in [4,5,6,-1,True]:
-            data['regions'][0]['hazards']=[dict(hazard,hazard_type=hit_type)]
             with self.assertRaisesRegex(ValueError,'unsupported DamageHero'):
-                self.generate(data)
+                encode_scene(scene,[dict(row,hazards=[dict(hazard,hazard_type=hit_type)])])
 
     def test_checkpoint_trigger_overlap_keeps_remote_spawn(self):
         data=report();other=copy.deepcopy(data['regions'][0]);other.update(chunk_id=2,activation_bounds=[10,0,20,10]);data['regions'].append(other)

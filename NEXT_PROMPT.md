@@ -1,23 +1,27 @@
 # Hollow Knight PS1: current handoff
 
-## Current state (2026-09-16 evening)
+## Current state (2026-09-17)
 
-Build 76 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
+Build 79 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (19 scenes, 329 views) connected by the authored gates,
-validated by `cargo run --release -- build` (six route replays, zero faults).
-RAM headroom is 219,292 bytes; static region payload costs about 1 KB per view,
-so roughly 200 more views fit before the P05 migration of grass, breakables,
-hazards, actors and emitter tables into the loadable bank becomes mandatory.
+validated by `cargo run --release -- build --frontend <PSoXide frontend>`
+(six route replays, zero faults). Top-side gate entries carry the source's
+initial drop velocity (`Gate.entry_vy`). Hazards and checkpoints now live only
+in the loadable HKWMTA01 bank (object stride 48 with three payload words);
+`world::hazard_contact` and `world::checkpoint` read the admitted bank region.
+RAM headroom is 223,444 bytes. The remaining static per-view payload is
+breakables, grass patches, neighbours, mask bindings and the 180-byte `Region`
+record itself; P05's end state is the whole region table becoming per-scene
+bank data, since the full game's several thousand views cannot stay static.
 Break-effect art beyond scene 4 and Geo rocks over the shared VRAM budgets are
 recorded omissions; effect and Geo art need per-scene streaming (P07/P25).
-`host/regions.py` now reuses every region whose spec, source inputs and cooker
-code are unchanged (`data/regions/region-NNN/cook-cache.json`), so adding a
-scene cooks only its own views: a full 154-region pass with all hits takes
-under two minutes. The scene catalog is
-`host/quality.py SCENE_TABLE`; adding a scene means one entry plus a view
-layout, then a build. Next: P09 well entry behaviour (initial velocity, delayed
-collider, source camera locks), the Crossroads return replay, then Crossroads_02
-and the P05 migration of remaining static region payloads into the bank.
+`host/regions.py` reuses every region whose spec, source inputs and cooker
+code are unchanged (`data/regions/region-NNN/cook-cache.json`). The scene
+catalog is `host/quality.py SCENE_TABLE`; adding a scene means one entry plus
+a view layout, then a build. Next: P05 step (3) breakables into the bank (edge
+lists, draw lists and fades need bank records), then neighbours, then the
+`Region` table; P09 delayed well collider and source camera locks; Crossroads
+enemy families beyond the Crawler.
 
 ## Previous handoff: P05 scene-owned world metadata
 

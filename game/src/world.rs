@@ -38,20 +38,6 @@ pub struct Patch {
     pub state: usize,
     pub grass: Grass,
 }
-#[derive(Clone, Copy)]
-pub struct Hazard {
-    pub bounds: [i32; 4],
-    pub polygons: &'static [&'static [[i32; 2]]],
-    pub origin_x: i32,
-    pub damage: u16,
-    pub hazard: bool,
-}
-pub struct Checkpoint {
-    pub bounds: [i32; 4],
-    pub polygons: &'static [&'static [[i32; 2]]],
-    pub spawn: [i32; 2],
-    pub facing: i32,
-}
 pub struct Region {
     pub global_id: usize,
     pub scene: usize,
@@ -68,9 +54,7 @@ pub struct Region {
     pub remote_masks: &'static [MaskBinding],
     pub reveal_masks: &'static [crate::reveal_masks::RevealMaskSpec],
     pub reveal_bindings: &'static [crate::reveal_masks::RevealMaskBinding],
-    pub hazards: &'static [Hazard],
     pub actors: &'static [&'static hk_sim::ActorSpec],
-    pub checkpoints: &'static [Checkpoint],
     pub neighbours: &'static [usize],
 }
 pub struct Gate {
@@ -564,52 +548,67 @@ pub(crate) fn polygons_overlap(a: &[[i32; 2]], b: &[[i32; 2]]) -> bool {
     }
     inside(a, b[0]) || inside(b, a[0])
 }
-/// Exact authored static DamageHero polygons against the Knight body box.
-/// Direction points away from the source object's transform, for normal recoil.
+/// Kind tags of the HKWMTA01 object records this module consumes.
+pub const META_HAZARD: u16 = 3;
+pub const META_CHECKPOINT: u16 = 4;
+/// Copy one bank polygon into a bounded stack buffer for the shared polygon
+/// test. Admission already bounded every polygon to 3..16 points.
+fn bank_polygon_hits(polygon: hk_format::world_meta::Polygon, body: [i32; 4]) -> bool {
+    let mut points = [[0i32; 2]; 16];
+    let mut count = 0;
+    for point in polygon.points().take(16) {
+        let Ok(point) = point else { return false };
+        points[count] = point;
+        count += 1;
+    }
+    hk_sim::polygon_hits_box(&points[..count], body)
+}
+fn bank_trigger(
+    region: hk_format::world_meta::Region,
+    kind: u16,
+    body: [i32; 4],
+) -> Option<hk_format::world_meta::Object> {
+    region.objects().flatten().find(|object| {
+        object.kind() == kind
+            && overlap(body, object.bounds())
+            && object.polygons().flatten().any(|p| bank_polygon_hits(p, body))
+    })
+}
+fn body_box(player: &Player, params: Params) -> [i32; 4] {
+    [
+        player.x - params.half_width,
+        player.y + params.bottom,
+        player.x + params.half_width,
+        player.y + params.top,
+    ]
+}
+/// Exact authored static DamageHero polygons against the Knight body box,
+/// read from the admitted scene bank. Direction points away from the source
+/// object's transform, for normal recoil.
 pub fn hazard_contact(
-    region: &Region,
+    region: hk_format::world_meta::Region,
     player: &Player,
     params: Params,
 ) -> Option<(u16, bool, i32)> {
-    let body = [
-        player.x - params.half_width,
-        player.y + params.bottom,
-        player.x + params.half_width,
-        player.y + params.top,
-    ];
-    for hazard in region.hazards {
-        if hazard.damage != 0
-            && overlap(body, hazard.bounds)
-            && hazard
-                .polygons
-                .iter()
-                .any(|p| hk_sim::polygon_hits_box(p, body))
-        {
-            let direction = if player.x < hazard.origin_x { -1 } else { 1 };
-            return Some((hazard.damage, hazard.hazard, direction));
-        }
+    let hazard = bank_trigger(region, META_HAZARD, body_box(player, params))?;
+    let word = hazard.extra(1);
+    let damage = (word & 0xFFFF) as u16;
+    if damage == 0 {
+        return None;
     }
-    None
+    let direction = if player.x < hazard.extra(0) { -1 } else { 1 };
+    Some((damage, word >> 16 != 0, direction))
 }
 
-/// Authored hazard checkpoint trigger, distinct from a bench or death save.
-pub fn checkpoint_record(
-    region: &Region,
+/// Authored hazard checkpoint trigger, distinct from a bench or death save:
+/// spawn point and facing from the admitted scene bank.
+pub fn checkpoint(
+    region: hk_format::world_meta::Region,
     player: &Player,
     params: Params,
-) -> Option<&'static Checkpoint> {
-    let body = [
-        player.x - params.half_width,
-        player.y + params.bottom,
-        player.x + params.half_width,
-        player.y + params.top,
-    ];
-    region.checkpoints.iter().find(|c| {
-        overlap(body, c.bounds) && c.polygons.iter().any(|p| hk_sim::polygon_hits_box(p, body))
-    })
-}
-pub fn checkpoint(region: &Region, player: &Player, params: Params) -> Option<(i32, i32)> {
-    checkpoint_record(region, player, params).map(|c| (c.spawn[0], c.spawn[1]))
+) -> Option<([i32; 2], i32)> {
+    let checkpoint = bank_trigger(region, META_CHECKPOINT, body_box(player, params))?;
+    Some(([checkpoint.extra(0), checkpoint.extra(1)], checkpoint.extra(2)))
 }
 
 pub fn contains(bounds: [i32; 4], x: i32, y: i32) -> bool {

@@ -534,6 +534,15 @@ impl Cache {
         // cost several VBlanks per tick and overflowed the input queue.
         unsafe {WorldMeta::validated_view(bytes)}
     }
+    /// Bank index of a canonical region slot inside the admitted scene bank,
+    /// or None while that scene's metadata is not the admitted one. Resolved
+    /// once per region entry so per-tick trigger reads need no id scan.
+    pub fn world_region_index(&self,region_id:usize)->Option<usize> {
+        let &(owner,_)=REGION_SCENE_LOCAL.get(region_id)?;
+        if self.metadata_scene!=owner || self.metadata_len!=WORLD_META_MANIFEST.get(owner)?.raw_len {return None;}
+        let bank=self.world_metadata();
+        (0..bank.region_count()).find(|&index|bank.region(index).is_some_and(|r|r.global_id() as usize==region_id+1))
+    }
     /// Resolve a spatial point through the admitted scene bank. The returned
     /// index is the canonical global region slot used by the existing room
     /// and gameplay tables; no scene-local metadata index is exposed.
