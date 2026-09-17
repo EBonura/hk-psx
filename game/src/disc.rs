@@ -16,7 +16,8 @@ pub const ROOM_CAPACITY:usize=SCENE_ARENA_BYTES;
 // whole-world pack before any scene could be admitted.  Deriving both tables
 // from the generated inventories keeps the wire/index widths honest as the
 // catalog grows while preserving bounded no_std storage.
-const PACK_CHUNKS:usize=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()+WORLD_META_MANIFEST.len();
+use crate::world::particles::break_effects::EFFECT_ART_MANIFEST;
+const PACK_CHUNKS:usize=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()+WORLD_META_MANIFEST.len()+EFFECT_ART_MANIFEST.len();
 const PACK_HEADER_SECTORS:usize=(28+PACK_CHUNKS*24).div_ceil(SECTOR_BYTES);
 const PACK_HEADER_WORDS:usize=PACK_HEADER_SECTORS*SECTOR_WORDS;
 const EMPTY:usize=usize::MAX;
@@ -57,6 +58,8 @@ pub struct Cache {
     ready:bool,loaded_scenes:usize,loaded_atlases:usize,selected:usize,
     resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,
     metadata_scene:usize,metadata_len:usize,
+    /// Manifest index of the scene whose effect texels sit in the effect VRAM rects.
+    effect_scene:usize,
 }
 #[no_mangle] pub static mut HK_SCENE_LOADS:u32=0;
 #[no_mangle] pub static mut HK_SCENE_READ_ID:u32=0;
@@ -95,6 +98,7 @@ pub enum LoadError {
     Ambience = 9,
     Coverage = 10,
     WorldMeta = 11,
+    EffectArt = 12,
 }
 
 /// Check a staged HKWMTA01 bank against the scene manifest before gameplay
@@ -131,16 +135,19 @@ impl Cache {
     /// Safety: exactly one Cache owns BUFFERS and the CD controller.
     pub const unsafe fn new()->Self {
         Self {entries:[EMPTY_ENTRY;PACK_CHUNKS],header:[0;PACK_HEADER_WORDS],reader:SectorReader::new(),
-            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY,coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0}
+            ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY,coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0,effect_scene:EMPTY}
     }
     fn init(&mut self)->Result<(),LoadError> {
         if self.ready {return Ok(());}
         let focus_index=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len();
         let metadata_index=focus_index+1+COVERAGE_MANIFEST.len();
-        let chunks=metadata_index+WORLD_META_MANIFEST.len();
+        let effect_index=metadata_index+WORLD_META_MANIFEST.len();
+        let chunks=effect_index+EFFECT_ART_MANIFEST.len();
         if !SCENE_GATE_LOAD || COVERAGE_MANIFEST.len()!=SCENE_COUNT || WORLD_META_MANIFEST.len()!=SCENE_COUNT
             || COVERAGE_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES==0
             || COVERAGE_GRID_SHIFT!=2 || COVERAGE_GROUP_POOL_CAPACITY>4096 {return Err(LoadError::Coverage);}
+        if EFFECT_ART_MANIFEST.len()!=SCENE_COUNT || EFFECT_ART_MANIFEST.iter().any(|f|f.raw_len==0||f.raw_len%4!=0||f.raw_len>SCENE_ARENA_BYTES||f.stored_len==0
+            ||f.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES) {return Err(LoadError::RoomMismatch);}
         if SCENE_COUNT==0 || chunks!=PACK_CHUNKS || SCENE_ARENA_BYTES%4!=0
             || SCENE_REGIONS.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
         let mut offset=0usize;
@@ -221,7 +228,8 @@ impl Cache {
                 (a.stored_len,a.stored_fnv,SCENE_ARENA_BYTES)
             } else if i==focus_index {(crate::focus_audio::BANK_BYTES,crate::focus_audio::BANK_CHECKSUM,SCENE_ARENA_BYTES)}
             else if i<metadata_index {let c=&COVERAGE_MANIFEST[i-focus_index-1];(c.stored_len,c.stored_fnv,SCENE_ARENA_BYTES)}
-            else {let m=&WORLD_META_MANIFEST[i-metadata_index];(m.stored_len,m.stored_fnv,SCENE_ARENA_BYTES)};
+            else if i<effect_index {let m=&WORLD_META_MANIFEST[i-metadata_index];(m.stored_len,m.stored_fnv,SCENE_ARENA_BYTES)}
+            else {let f=&EFFECT_ART_MANIFEST[i-effect_index];(f.stored_len,f.stored_fnv,SCENE_ARENA_BYTES)};
             let e=parse_entry(bytes,i).ok_or(LoadError::HeaderInvalid)?;
             if size==0 || size.div_ceil(SECTOR_BYTES)>capacity/SECTOR_BYTES
                 || e.chunk_id as usize!=i+1 || e.byte_size as usize!=size || e.checksum!=checksum
@@ -308,6 +316,32 @@ impl Cache {
         self.coverage_scene=scene;self.coverage_len=c.raw_len;
         unsafe {HK_COVERAGE_LOADS=HK_COVERAGE_LOADS.saturating_add(1);HK_COVERAGE_BYTES=c.raw_len as u32;HK_COVERAGE_SCENE=scene as u32+1;}
         Ok(())
+    }
+    /// Decode the scene's effect texels into the arena front and upload them to
+    /// the fixed effect VRAM rects. Runs before the scene decode owns the arena;
+    /// VRAM keeps the texels, so nothing stays resident in RAM.
+    #[inline(never)]
+    fn prepare_effect_art(&mut self,scene:usize)->Result<(),LoadError> {
+        self.init()?;let f=EFFECT_ART_MANIFEST[SCENE_MANIFEST[scene].scene_id as usize];
+        if self.effect_scene==scene {return Ok(());}
+        if self.loaded_scenes!=0 {return Err(LoadError::EffectArt);}
+        self.effect_scene=EMPTY;
+        let effect_index=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()+WORLD_META_MANIFEST.len();
+        self.read(self.entries[effect_index+SCENE_MANIFEST[scene].scene_id as usize],0)?;
+        let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
+        let mut decoder=Decoder::new_bytes(f.stored_len,f.stored_fnv,f.raw_len,f.raw_fnv);
+        loop {
+            crate::input::checkpoint();
+            match decoder.step(arena,1024) {
+                Ok(Some(len))=>{if len!=f.raw_len{return Err(LoadError::EffectArt);}break;},
+                Ok(None)=>{},
+                Err(error)=>return Err(match error {DecodeError::Checksum=>LoadError::Checksum,
+                    DecodeError::Decompress=>LoadError::Decompress,DecodeError::RoomFormat=>LoadError::EffectArt}),
+            }
+        }
+        psx_gpu::draw_sync();
+        if !crate::world::particles::break_effects::upload_scene(SCENE_MANIFEST[scene].scene_id as usize,&arena[..f.raw_len]) {return Err(LoadError::EffectArt);}
+        self.effect_scene=scene;Ok(())
     }
     /// Stage and validate the immutable HKWMTA bank before any scene object
     /// view is published. Metadata is copied into the unused, aligned tail of
@@ -406,7 +440,7 @@ impl Cache {
         cd_stream::cancel();
         while matches!(cd_stream::status(),cd_stream::Status::Busy) {core::hint::spin_loop();}
         self.loaded_scenes=0;self.loaded_atlases=0;self.selected=EMPTY;self.resident_scene=EMPTY;self.atlas_scene=EMPTY;
-        self.coverage_scene=EMPTY;self.coverage_len=0;self.metadata_scene=EMPTY;self.metadata_len=0;
+        self.coverage_scene=EMPTY;self.coverage_len=0;self.metadata_scene=EMPTY;self.metadata_len=0;self.effect_scene=EMPTY;
         unsafe {HK_COVERAGE_SCENE=0;HK_COVERAGE_BYTES=0;}
     }
 
@@ -425,6 +459,7 @@ impl Cache {
             self.metadata_scene=EMPTY;self.metadata_len=0;
         }
         self.prepare_coverage(wanted)?;
+        self.prepare_effect_art(wanted)?;
         self.prepare_atlases(wanted)?;
         while self.loaded_scenes<if SCENE_GATE_LOAD {1}else{SCENE_COUNT} {
             let index=if SCENE_GATE_LOAD {wanted}else{self.loaded_scenes};let d=SCENE_MANIFEST[index];
@@ -499,7 +534,8 @@ impl Cache {
         REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene,_)| {let scene=scene as usize;
             if SCENE_GATE_LOAD {self.loaded_scenes==1 && scene==self.resident_scene && self.atlas_scene==scene && self.atlases_ready()
                 && self.coverage_scene==scene && self.coverage_len==COVERAGE_MANIFEST[scene].raw_len
-                && self.metadata_scene==scene && self.metadata_len==WORLD_META_MANIFEST[scene].raw_len}else{false}})
+                && self.metadata_scene==scene && self.metadata_len==WORLD_META_MANIFEST[scene].raw_len
+                && self.effect_scene==scene}else{false}})
     }
     pub fn room_for(&self,region:usize)->Option<Room<'_>> {
         if !self.is_ready(region) {return None;}

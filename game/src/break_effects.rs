@@ -18,10 +18,18 @@ pub struct Emitter {pub scene:u8,pub owner:u16,pub source:u32,pub style:u8,pub a
 #[derive(Clone,Copy)]
 pub struct Art {pub u:u8,pub v:u8,pub w:u8,pub h:u8,pub clut:u16,pub tpage:u16}
 pub struct Upload {pub offset:usize,pub x:u16,pub y:u16,pub w:u16,pub h:u16}
+/// One HLZC disc chunk per catalogue scene holding that scene's effect texels.
+#[derive(Clone,Copy)]
+pub struct EffectArtDesc {pub raw_len:usize,pub raw_fnv:u32,pub stored_len:usize,pub stored_fnv:u32}
 #[cfg(not(test))]
 include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/break_effects.rs"));
-#[cfg(test)]pub static STYLES:&[Style]=&[];
-#[cfg(test)]pub static EMITTERS:&[Emitter]=&[];
+#[cfg(test)]pub static SCENE_STYLES:&[&[Style]]=&[&[]];
+#[cfg(test)]pub static SCENE_EMITTERS:&[&[Emitter]]=&[&[]];
+#[cfg(test)]pub static PARTICLE_TRACKS:&[[[u32;2];33]]=&[];
+#[cfg(test)]pub static EMITTER_TRACK_BASES:&[u16]=&[];
+/// Styles and emitters of a catalogue scene; scenes past the cooked tables have none.
+pub fn scene_styles(scene:usize)->&'static [Style] {SCENE_STYLES.get(scene).copied().unwrap_or(&[])}
+pub fn scene_emitters(scene:usize)->&'static [Emitter] {SCENE_EMITTERS.get(scene).copied().unwrap_or(&[])}
 #[inline]fn checkpoint(){#[cfg(not(test))]crate::input::checkpoint();}
 /// Exact `pair[0]+(delta*seed)/255` without the software 64-bit division:
 /// 65536 = 257*255+1, so for n = a*65536+b, n/255 = a*257+(a+b)/255.
@@ -64,11 +72,8 @@ pub(super) fn scale_velocity(v:i32,scale:i32,speed:i32)->i32 {
 }
 fn phase(p:&Particle)->usize {(p.age as usize*32/p.life.get()as usize).min(32)}
 fn sample(p:&Particle,style:&Style)->Sample {style.samples[phase(p)]}
-#[cfg(not(test))]
-fn generated_tracks(styles:&[Style])->&'static[[[u32;2];33]] {
-    if core::ptr::eq(styles,STYLES) {PARTICLE_TRACKS}else{&[]}
-}
-#[cfg(test)]fn generated_tracks(_:&[Style])->&'static[[[u32;2];33]] {&[]}
+// Baked tracks were retired (BAKE_TRACKS=False); every emitter uses the scalar path.
+fn generated_tracks(_styles:&[Style])->&'static[[[u32;2];33]] {&[]}
 #[inline]
 fn cached_frame(track:u16,phase:usize,tracks:&[[[u32;2];33]])->Option<[u32;2]> {
     if track==0 {None}else{tracks.get(track as usize-1).map(|t|t[phase])}
@@ -87,10 +92,7 @@ fn cached_frame(track:u16,phase:usize,tracks:&[[[u32;2];33]])->Option<[u32;2]> {
 }
 #[inline(never)]
 pub fn spawn_specs(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emitters:&[Emitter],styles:&[Style]) {
-    #[cfg(not(test))]
-    let bases=if core::ptr::eq(emitters,EMITTERS)&&core::ptr::eq(styles,STYLES) {EMITTER_TRACK_BASES}else{&[]};
-    #[cfg(test)]let bases:&[u16]=&[];
-    spawn_specs_with_bases(pool,scene,owner,kind,facing,emitters,styles,bases);
+    spawn_specs_with_bases(pool,scene,owner,kind,facing,emitters,styles,&[]);
 }
 #[inline(never)]
 fn spawn_specs_with_bases(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emitters:&[Emitter],styles:&[Style],bases:&[u16]) {
@@ -235,17 +237,25 @@ fn collide(old:[i32;3],next:&mut [i32;3],normal:&mut [i32;2],radius:i32,edges:im
         }
     }
 }
+/// Upload a scene's decoded effect texels into the fixed effect VRAM rects.
+/// The scene's chunk was decoded into `data` by the disc module at admission.
 #[cfg(not(test))]
-static DATA:&[u8]=include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/break_effects.hk"));
-#[cfg(not(test))]
-pub fn upload(){for u in UPLOADS {psx_vram::upload_bytes(psx_vram::VramRect::new(u.x,u.y,u.w,u.h),&DATA[u.offset..u.offset+u.w as usize*u.h as usize*2]);}}
+pub fn upload_scene(scene:usize,data:&[u8])->bool {
+    let Some(uploads)=SCENE_UPLOADS.get(scene) else {return false};
+    for u in *uploads {
+        let end=u.offset+u.w as usize*u.h as usize*2;
+        if end>data.len() {return false;}
+        psx_vram::upload_bytes(psx_vram::VramRect::new(u.x,u.y,u.w,u.h),&data[u.offset..end]);
+    }
+    true
+}
 #[cfg(not(test))]
 #[inline(never)]
 pub(super) fn draw_particle(p:&Particle,track:u16,camera:(i32,i32))->bool {
     use psx_gpu::{prim::QuadTextured,material::{TextureMaterial,BlendMode}};
-    let s=&STYLES[(p.kind-2)as usize];let words=cached_frame(track,phase(p),PARTICLE_TRACKS);
+    let s=&scene_styles(p.scene as usize)[(p.kind-2)as usize];let words=cached_frame(track,phase(p),PARTICLE_TRACKS);
     let (half,level)=draw_shape(p,s,words);if level==0{return false;}
-    let a=ART[s.frames[p.cell as usize][level as usize-1]as usize];
+    let a=SCENE_ART[p.scene as usize][s.frames[p.cell as usize][level as usize-1]as usize];
     let depth=2496922+p.position[2];if depth<=ONE{return false;}
     // Source-plane particles skip the 64-bit software division exactly.
     let scale=if p.position[2]==0 {crate::KNIGHT_SCALE as i64}else{super::perspective::scale(depth)as i64};

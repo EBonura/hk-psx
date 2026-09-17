@@ -91,8 +91,13 @@ def build(telemetry=False, candidate=False, residency="scene_gate", package_disc
             shutil.copy2(ROOT/focus['path'],chunks/f"chunk_{len(rooms)+len(clips)+len(atlases)+1}.focus")
             for bundle in coverage['bundles']:
                 shutil.copy2(bundle['path'],chunks/f"chunk_{bundle['chunk_id']}.coverage")
-            for bank in json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text()).get('world_metadata',[]):
+            world_banks=json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text()).get('world_metadata',[])
+            for bank in world_banks:
                 shutil.copy2(bank['path'],chunks/f"chunk_{bank['chunk_id']}.worldmeta")
+            # One effect-art chunk per catalog scene id, after the world metadata chunks.
+            effect_base=len(rooms)+len(clips)+len(atlases)+1+len(coverage['bundles'])+len(world_banks)
+            for entry in json.loads((ROOT/'.hkpsx/break-effects/report.json').read_text())['chunks']:
+                shutil.copy2(entry['path'],chunks/f"chunk_{effect_base+entry['scene_id']+1}.effectart")
             run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks,'--cdda-track',ROOT/music['path']],cwd=ROOT)
             staged.replace(outputs['bin'])
             staged.with_suffix('.cue').replace(outputs['cue'])

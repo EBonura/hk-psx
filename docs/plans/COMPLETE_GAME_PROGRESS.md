@@ -41,7 +41,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
 | P05 | in progress | Build 87 compacted the Great Door bindings and packet budgets (headroom 298,296); build 86 made fades and grass resident-scene state and stepped the bank validation through pad polls (headroom 294,200); build 85 narrowed the per-slot scene table (headroom 296,248); build 84 removed the static region table: `Region` is a runtime value from the bank plus per-scene statics (headroom 294,200); build 83 moved actor references and reveal bindings into the bank (headroom 259,416); build 82 moved neighbours (headroom 260,776); build 81 moved grass into the bank (headroom 252,584) and added the `crossroads-exit` route through Crossroads_02 and back; build 80 moved breakables, mask fades and remote masks into the loadable bank behind checked views and fixed the guest state tables that were sized for three scenes; build 79 moved hazards and checkpoints (`.data` -11,536 bytes, headroom 223,444). The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
 | P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
-| P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
+| P07 | in progress | Build 88 streams break-effect art per scene through one disc chunk per scene decoded at admission and uploaded to the fixed effect VRAM rectangles; 210 emitters across 18 scenes with no VRAM omissions. Previously: persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
 | P09 | in progress | Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Build 75 adds Crossroads_02 and Crossroads_07 through `GRID_SCENE_LAYOUTS` (one catalog entry per scene); their gates are generated from source and the linked headroom is 376,680 bytes. The `crossroads-floor` route walks the Crossroads_01 floor to the right wall; reaching `right1` needs an authored jump route. Build 78 gives top-side gate entries the source's -12 units/s initial drop (`Gate.entry_vy`, verified for the well; assumed for other top entries). The delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and return replays remain. |
@@ -425,6 +425,34 @@ door instead of an `Option` per catalogue slot, and `SCENERY_PACKET_BUDGETS`
 is `u16`. `.data` 386,432 -> 382,016, headroom 294,200 -> 298,296 bytes;
 seven routes pass. Per-view statics now total four bytes per slot
 (`REGION_SCENES`, `REGION_SCENE_LOCAL`) plus two for the packet budget.
+
+## P07/P25 first slice: break-effect art streams per scene (build 88)
+
+Break-effect texels no longer share one linked sheet admitted in catalog
+order. `host/break_effects.py` cooks one art bank per catalog scene inside the
+same fixed VRAM rectangles (largest sheet 4,800 bytes), writes each as an HLZC
+chunk (`.hkpsx/break-effects/scene_N.hkfx.z`, four zero bytes for a scene
+without emitters) and emits per-scene `SCENE_STYLES`, `SCENE_EMITTERS`,
+`SCENE_ART` and `SCENE_UPLOADS` tables plus `EFFECT_ART_MANIFEST`. The pack
+gains one chunk per scene after the world metadata chunks (`build_guest.py`
+copies them as `chunk_N.effectart`); `disc::Cache::prepare_effect_art` reads
+and decodes the admitted scene's chunk into the arena front before the scene
+decode and uploads it to VRAM (`break_effects::upload_scene`), and
+`is_ready` includes the effect scene. The particle pool already threaded the
+scene through `spawn_break`/`tick_break`, so the guest now indexes styles,
+emitters and art by the particle's scene. Result: 210 supported emitters
+across 18 scenes with no VRAM omissions (build 87 admitted 103 and omitted
+36 parts of scenes 8 and 16); the remaining `other_parts` are unsupported
+particle styles and non-particle debris, unchanged. Baked particle tracks
+and their retired proof harness (`tools/test_particle_tracks.py`,
+`tests/particle_tracks_source.rs`) are removed; every emitter uses the
+scalar path that build 74 made canonical. Cost: `.data` 382,016 -> 395,104
+(the doubled emitter and per-scene style tables are still linked), `.text`
+422,836 -> 426,144, headroom 298,296 -> 281,912 bytes; seven routes pass.
+Emitter and style metadata are per breakable and belong in the world bank
+with their owner (P05 item 7 continues there); Geo art has no omissions on
+this disc (24 rocks, 5,154 of 8,192 VRAM bytes) and follows the same chunk
+pattern when it overflows.
 
 Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
 actor objects (flag 64) carry their index into the new per-scene
