@@ -270,7 +270,6 @@ def generate(report):
             return ids(integer(v, draw_count, 'draw index') for v in values)
         # Grass, breakables, their mask fades, remote masks, hazards and checkpoints
         # live only in the HKWMTA01 bank (tools/world_metadata.py).
-        neighbours = [integer(n-1, len(regions), 'neighbour region') for n in region.get('neighbour_chunks', [])]
         reveal_bindings=[];reveal_owned=set()
         for binding in region.get('reveal_mask_bindings',[]):
             controller=integer(binding['controller'],len(reveal_scenes.get(str(scene),{}).get('controllers',[])),'reveal controller')
@@ -289,7 +288,7 @@ def generate(report):
         out.append(f'Region {{global_id:{region["chunk_id"]},scene:{scene},flat_floor_heights:FLAT_FLOOR_HEIGHTS[{region["chunk_id"]-1}],bounds:' + rect(region['activation_bounds']) +
                    ',collision_bounds:' + rect(region.get('collision_bounds',region['activation_bounds'])) +
                    ',particle_bank:'+particle_bank+',grass_emitters:'+particle_emitters+',door_debris:'+debris_spec+',camera:' + rect(region['camera_bounds']) + ',grass_impact:'+impact_spec+
-                   ',reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+',reveal_bindings:&['+','.join(reveal_bindings)+'],actors:' + actors + ',neighbours:' + ids(neighbours) + '},')
+                   ',reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+',reveal_bindings:&['+','.join(reveal_bindings)+'],actors:' + actors + '},')
     out.append('];\npub static GATES: &[Gate] = &[')
     by_name = {scene['scene_name']: scene for scene in report['scenes']}
     for scene in report['scenes']:

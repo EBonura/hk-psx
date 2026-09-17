@@ -350,15 +350,13 @@ impl Cache {
             }
             let legacy=&crate::world::REGIONS[global-1];
             if region.bounds()!=legacy.bounds || region.collision_bounds()!=legacy.collision_bounds
-                || region.camera()!=legacy.camera || region.neighbour_count()!=legacy.neighbours.len() {
+                || region.camera()!=legacy.camera {
                 return Err(LoadError::WorldMeta);
             }
-            // The bank stores global chunk ids (1-based); the permanent table
-            // stores region indices, and global id == index + 1 there.
-            for (encoded,expected) in region.neighbours().zip(legacy.neighbours.iter()) {
-                if encoded.map_err(|_|LoadError::WorldMeta)? as usize!=*expected+1 {
-                    return Err(LoadError::WorldMeta);
-                }
+            // Neighbours are global chunk ids (1-based) of catalogue slots.
+            for encoded in region.neighbours() {
+                let encoded=encoded.map_err(|_|LoadError::WorldMeta)? as usize;
+                if encoded==0 || encoded>REGION_SCENE_LOCAL.len() {return Err(LoadError::WorldMeta);}
             }
             previous_global=global;
             mapped+=1;

@@ -1,8 +1,8 @@
-## Build 81: nineteen connected scenes on the actual disc
+## Build 82: nineteen connected scenes on the actual disc
 
-The sole disc pair is build 81 (hazards, checkpoints, breakables, mask fades
-and grass read from the loadable bank, guest state tables sized from the
-catalog, a seventh route through Crossroads_02 and back, 252,584 bytes of
+The sole disc pair is build 82 (hazards, checkpoints, breakables, mask fades,
+grass and neighbours read from the loadable bank, guest state tables sized from the
+catalog, a seventh route through Crossroads_02 and back, 260,776 bytes of
 linked headroom). Build 76 was: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (329 views, 200 disc chunks) reachable through the authored
 gates, six route replays passing with 219,292 bytes of linked headroom. Growing
