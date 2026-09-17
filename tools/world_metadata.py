@@ -226,7 +226,7 @@ def encode_scene(scene, rows):
             add_object("region_statics", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0, row["activation_bounds"], None,
                        (bounded(statics["door_debris"], 8, "debris variant"),
                         statics["particle_bank"] if statics["particle_bank"] < 0 else bounded(statics["particle_bank"], 8, "particle bank variant"),
-                        statics["grass_impact"] if statics["grass_impact"] < 0 else bounded(statics["grass_impact"], 8, "impact variant")))
+                        statics["grass_impact"] if statics["grass_impact"] < 0 else bounded(statics["grass_impact"], 32, "impact variant")))
         region_polygon_count = len(polygons) - region_polygon_first
         neighbour_first = len(points)
         neighbours = [int(value) for value in row.get("neighbour_chunks", [])]

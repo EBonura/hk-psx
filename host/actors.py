@@ -301,6 +301,26 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Fly') \
+                and any(kind == 'PlayMakerCollisionStay2D' for _, kind, _ in records):
+            from gruzzer import recognize as recognize_gruzzer
+            try:
+                control = recognize_gruzzer(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Roller') \
+                and any(kind == 'LineOfSightDetector' for _, kind, _ in records):
+            from baldur import recognize as recognize_baldur
+            try:
+                control = recognize_baldur(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
             from runner import recognize
             try:
@@ -379,6 +399,19 @@ def generated_actor_specs(region):
             # The controller owns velocity; the walker fields are unused.
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'Baldur':
+            baldur_clips = ('start_clip', 'roll_clip', 'stop_clip')
+            if any(key not in actor for key in baldur_clips) or not actor.get('corpse'):
+                raise ValueError(f'Baldur is missing cooked clips or corpse: {actor["source"]}')
+            controller = 'hk_sim::ActorController::Baldur {' + ','.join(f'{key}:{actor[key]}' for key in baldur_clips) + '}'
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'Gruzzer':
+            if not actor.get('corpse'):
+                raise ValueError(f'Gruzzer is missing validated corpse: {actor["source"]}')
+            controller = 'hk_sim::ActorController::Gruzzer'
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
         elif control['kind'] == 'WalkLeftRight':
             controller = 'hk_sim::ActorController::Crawler'
             speed, turn_ticks, turn_cooldown_ticks = control['speed'], control['turn_ticks'], control['turn_cooldown_ticks']
@@ -386,7 +419,7 @@ def generated_actor_specs(region):
         else:
             raise ValueError('unsupported generated actor controller: ' + control['kind'])
         clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ()) \
-            + (vengefly_clips if control['kind'] == 'Vengefly' else ())
+            + (vengefly_clips if control['kind'] == 'Vengefly' else ()) + (baldur_clips if control['kind'] == 'Baldur' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')
         recoil = actor.get('Recoil', {})

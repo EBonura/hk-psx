@@ -770,6 +770,47 @@ optional runtimes into one enum would give back about 120 bytes each).
 Linked headroom 193,508 bytes, scene arena 415,488; seven routes pass; hk-sim
 (Vengefly tests included), Python (424) and world runtime (47) suites pass.
 
+## Gruzzers and Baldurs admitted (builds 96 and 97)
+
+Build 96 admits the Gruzzers (Fly, 19 placed across Crossroads_07, _25 and
+_50; `host/gruzzer.py`, `shared/hk-sim/src/gruzzer.rs`, docs/GRUZZER.md,
+.hkpsx/gruzzer/CONTRACT.md). The `Bouncer Control` FSM waits for the main
+camera within 44 units, then flies at 5.2 units/s along a random angle; the
+controller keeps the angle and the FSM's `Facing Right` flag, the guest turns
+the angle into a velocity through the debris sine table, moves the
+gravity-free body with the bounded solver and reports the blocked axis as the
+bonk side in the CheckCollisionSide order (up, right, down, left), each of
+which re-aims from the authored ranges. Its corpse is a breaker that bounces
+twice (`CorpseSpec.smash_bounces`, Corpse.Land counts one bounce per frame and
+smashes once the count reaches smashBounces) with 0.7 bounce and 0.7 gravity.
+Two cook-side fixes came with it: `host/cook_inputs.txt` now lists the
+recognizer modules (climber, vengefly, gruzzer, baldur), which the whole-cook
+cache had never fingerprinted, so a recognizer change alone did not recook;
+and the grass-impact variant budget went from 8 to 32 (`host/world.py`,
+`tools/world_metadata.py`), because per-scene clip indices shift as actor
+art is appended and the deduplicated catalogue outgrew 8 with more actor
+scenes. Headroom 177,124 bytes; seven routes pass.
+
+Build 97 admits the Baldurs (Roller, 11 placed in Crossroads_ShamanTemple;
+`host/baldur.py`, `shared/hk-sim/src/baldur.rs`, docs/BALDUR.md,
+.hkpsx/baldur/CONTRACT.md). The `Roller` FSM idles facing the hero with x
+velocity held at zero, wakes on the 21.14 x 1.9 alert box plus line of sight,
+plays Start, draws a 2 to 3 s roll time, accelerates 0.45 units/s per frame
+toward the hero up to 11 units/s, flips and launches at 12 units/s along 115
+or 65 degrees on a wall contact, resumes the roll the other way on landing,
+and stops, rests half a second and idles when the roll time runs out;
+Recoil's horizontal event resets the roll speed. The guest `BaldurRuntime`
+runs the gravity body (scale 0.8) with last frame's blocked axis and grounded
+flag as the WALL and GROUND senses, resolves the spawn once like the
+Crawlers, and adds the generic Recoil displacement (25 for 0.15 s). Placed
+Rollers start mirrored (scale.x -1, the FSM sets the sign itself) and some
+carry their body box twice; both are accepted. The corpse prefab has no
+Corpse component: its `corpse` FSM lands, plays Death Land while rolling
+faster than 2 units/s, then shrinks and destroys itself; the port gives it
+`CorpseSpec.remove_after_land` 120 ticks with the box bounds of its 0.43
+circle. `Actor` is 312 bytes; folding the five optional runtimes into one
+enum is the obvious next saving.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

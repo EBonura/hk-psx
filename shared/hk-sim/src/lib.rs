@@ -7,6 +7,8 @@ pub mod runner;
 pub mod runner_senses;
 pub mod climber;
 pub mod vengefly;
+pub mod gruzzer;
+pub mod baldur;
 mod corpse;
 pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
 mod vitals;
