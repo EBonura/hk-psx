@@ -181,13 +181,22 @@ def main():
     hero_audio = s.read(controller)
     if hashlib.sha256(resources.objects[20602].get_raw_data()).hexdigest()!=MOVEMENT_HERO_SHA256:
         raise ValueError('HeroController movement audio linkage changed; revalidate environment Dust mapping')
-    from quality import SCENE_FILES
-    for scene_name in SCENE_FILES:
-        scene=s.file(scene_name)
+    from quality import SCENE_TABLE
+    # Footsteps are cooked for the verified Dust environment (type 0). Scenes
+    # whose SceneManager selects another surface keep the Dust set and are
+    # recorded as an explicit omission instead of stopping the cook.
+    environment_omissions=[]
+    for info in SCENE_TABLE:
+        scene=s.file(info['file'])
         managers=[s.read(o) for o in scene.objects.values()
                   if o.type.name=='MonoBehaviour' and s.typename(o)=='SceneManager']
-        if len(managers)!=1 or managers[0]['environmentType']!=0:
-            raise ValueError('movement audio currently requires verified Dust environment')
+        if len(managers)!=1:
+            raise ValueError(f'{info["scene_name"]}: expected one SceneManager for movement audio')
+        if managers[0]['environmentType']!=0:
+            environment_omissions.append({'scene':info['scene_name'],'environment_type':managers[0]['environmentType'],
+                                          'note':'footsteps use the Dust set; this surface set is not cooked'})
+    if environment_omissions:
+        print(f'Movement audio: {len(environment_omissions)} scenes use a non-Dust footstep environment (Dust set substituted)',flush=True)
     origins = {}
     selected = {}
     expected = {'jump': 'hero_jump', 'land': 'hero_land_soft',
@@ -320,6 +329,7 @@ def main():
     inputs['Managed/Assembly-CSharp.dll'] = {'bytes': assembly.stat().st_size,
         'sha256': hashlib.file_digest(assembly.open('rb'), 'sha256').hexdigest()}
     dump(ROOT / '.hkpsx/audio-provenance.json', {
+        'environment_omissions': environment_omissions,
         'source': str(s.directory), 'inputs': inputs,
         'generator_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'spu_base': SPU_BASE,

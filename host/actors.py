@@ -288,6 +288,9 @@ def actor_sources(sc, bounds=None):
                 # A strictly recognized Zombie Runner is admitted: the guest binds
                 # its controller, clips, corpse, senses and audio bank.
                 control = recognize(sc, actor)
+                # The guest Runner runs on the source plane its depth was measured at.
+                if len(actor['position']) < 3 or round(actor['position'][2] * 65536) != 66:
+                    raise ValueError('Runner depth differs from guest source plane')
                 actor['movement_control'] = dict(control, guest_enabled=True)
                 actor['movement_supported'] = True
                 actor['limitations'] = [limit for limit in control['limitations']
@@ -296,7 +299,8 @@ def actor_sources(sc, bounds=None):
             except (ValueError, KeyError, StopIteration) as error:
                 actor['pending_movement_error'] = str(error)
         result.append(actor)
-    if len(result) > 32:
+    # Only supported actors enter the guest pool; unsupported ones stay records.
+    if sum(1 for actor in result if actor['movement_supported']) > 32:
         raise ValueError('actor region exceeds bounded 32-slot guest pool')
     return result
 
