@@ -534,6 +534,10 @@ impl Cache {
         // cost several VBlanks per tick and overflowed the input queue.
         unsafe {WorldMeta::validated_view(bytes)}
     }
+    /// True while a world bank is admitted and its bytes are immutable.
+    pub fn metadata_admitted(&self)->bool {
+        self.metadata_scene<SCENE_COUNT && self.metadata_len==WORLD_META_MANIFEST[self.metadata_scene].raw_len
+    }
     /// Bank index of a canonical region slot inside the admitted scene bank,
     /// or None while that scene's metadata is not the admitted one. Resolved
     /// once per region entry so per-tick trigger reads need no id scan.
@@ -565,4 +569,12 @@ impl Cache {
         None
     }
     pub fn room(&self)->Room<'_> {self.room_for(self.selected).expect("No admitted scene selected")}
+}
+
+/// The admitted world bank for gameplay modules that only hold a catalogue
+/// region. The view is retired by `State::begin_world_admission` before the
+/// next exclusive admission overwrites the arena tail.
+pub fn admitted_world_metadata()->Option<WorldMeta<'static>> {
+    let cache=unsafe {&*(&raw const crate::ROOM_CACHE)};
+    cache.metadata_admitted().then(||cache.world_metadata())
 }

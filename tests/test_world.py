@@ -24,29 +24,48 @@ class WorldMetadata(unittest.TestCase):
             root=pathlib.Path(directory);(root/'data').mkdir()
             with patch.object(world,'ROOT',root), patch.object(world,'flat_floor_catalog',return_value=[[] for _ in data['regions']]):return world.generate(data)
 
+    def bank(self,data):
+        """Objects of the scene-0 HKWMTA01 bank as (kind, state, flags, extra, index lists)."""
+        import struct
+        from world_metadata import encode_scene
+        payload,_=encode_scene(data['scenes'][0],[r for r in data['regions'] if r['scene_id']==0])
+        offset,count,stride=struct.unpack_from('<3I',payload,76)
+        ioffset,icount,_=struct.unpack_from('<3I',payload,112)
+        indices=struct.unpack_from(f'<{icount}H',payload,ioffset)
+        out=[]
+        for i in range(count):
+            fields=struct.unpack_from('<IIHH4i2I3i',payload,offset+i*stride)
+            lists=[list(indices[w&0xFFFF:(w&0xFFFF)+(w>>16)]) for w in fields[10:]]
+            out.append(dict(kind=fields[2],state=fields[1],flags=fields[3],extra=fields[10:],lists=lists))
+        return out
+
     def test_actual_persistence_flags(self):
         for flags,expected in [([],False),([{'dont_save':False,'semi_persistent':False}],True),
                 ([{'dont_save':True,'semi_persistent':False}],False),
                 ([{'dont_save':False,'semi_persistent':True}],False)]:
             data=report();data['regions'][0]['breakables'][0]['persistence']=flags
-            self.assertIn(f'persistent:{str(expected).lower()}',self.generate(data))
+            self.assertEqual(self.bank(data)[0]['flags']&1,int(expected))
+        self.assertNotIn('Breakable {',self.generate(report()))
 
     def test_state_alias_and_owned_index_fail_closed(self):
         data=report();other=copy.deepcopy(data['regions'][0]);other['chunk_id']=2
         other['breakables'][0]['source']='level6:11';data['regions'].append(other)
-        with self.assertRaisesRegex(ValueError,'aliases'):self.generate(data)
+        with self.assertRaisesRegex(ValueError,'aliases'):self.bank(data)
         data=report();data['regions'][0]['breakables'][0]['edge_indices']=[1]
-        with self.assertRaisesRegex(ValueError,'edge index'):self.generate(data)
+        with self.assertRaisesRegex(ValueError,'edge index'):self.bank(data)
         data=report();data['regions'][0]['breakables'][0]['state_index']=128
-        with self.assertRaisesRegex(ValueError,'breakable state'):self.generate(data)
+        with self.assertRaisesRegex(ValueError,'breakable state'):self.bank(data)
+        self.assertEqual(self.bank(report())[0]['lists'],[[0],[1],[0]])
 
     def test_mask_uses_authored_duration_and_bound_draws(self):
         data=report();prop=data['regions'][0]['breakables'][0]
         prop['mask_fades']=[{'ticks_60hz':60,'target_alpha':0,'ease':'linear',
                            'renderers':[{'initial_alpha':1}],'draw_indices':[1]}]
-        self.assertIn('MaskFade {draws:&[1],ticks:60}',self.generate(data))
+        objects=self.bank(data)
+        self.assertEqual(objects[0]['flags']>>6,60)
+        self.assertEqual((objects[1]['kind'],objects[1]['state'],objects[1]['lists'][0],objects[1]['extra'][1]),(6,3,[1],60))
         prop['mask_fades'][0]['draw_indices']=[2]
-        with self.assertRaisesRegex(ValueError,'draw index'):self.generate(data)
+        with self.assertRaisesRegex(ValueError,'draw'):self.bank(data)
 
     def test_remote_mask_follows_renderer_without_copying_hit_shapes(self):
         data=report();owner=data['regions'][0]['breakables'][0]
@@ -61,12 +80,13 @@ class WorldMetadata(unittest.TestCase):
         self.assertEqual(distant['breakables'],[])
         self.assertEqual(distant['remote_mask_bindings'][0]['state_index'],3)
         self.assertEqual(distant['remote_mask_bindings'][0]['fade']['draw_indices'],[1])
-        self.assertIn('MaskBinding {owner:3,fade_ticks:60,fade:MaskFade {draws:&[1],ticks:60}}',self.generate(data))
+        remote=self.bank(data)[-1]
+        self.assertEqual((remote['kind'],remote['state'],remote['lists'][0],remote['extra'][1:]),(7,3,[1],(60,60)))
         before=copy.deepcopy(data)
         world.postpack_masks(data,{1:['door','level6:11301'],2:['floor','level6:11301']})
         self.assertEqual(data,before)
         distant['remote_mask_bindings'][0]['state_index']=128
-        with self.assertRaisesRegex(ValueError,'mask owner state'):self.generate(data)
+        with self.assertRaisesRegex(ValueError,'mask owner state'):self.bank(data)
 
     def test_collision_coverage_is_distinct_from_activation(self):
         data=report();data['regions'][0]['collision_bounds']=[-3,-5,13,15]

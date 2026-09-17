@@ -25,7 +25,21 @@ mod reveal_masks;
 #[path = "../game/src/world.rs"]
 mod world;
 use hk_sim::{AttackParams, Nail, Player};
-use world::{Breakable, MaskFade, Region, State};
+use world::{Region, State};
+static FIXTURE_BANK: &[u8] = include_bytes!(env!("HK_TEST_FIXTURE_BANK"));
+static SCENE0_BANK: &[u8] = include_bytes!(env!("HK_TEST_SCENE0_BANK"));
+/// Select the bank world.rs reads on this test thread.
+fn use_bank(bytes: &'static [u8]) {
+    world::TEST_BANK.with(|bank| bank.set(bytes));
+}
+fn scene0_region(global_id: usize) -> &'static Region {
+    world::REGIONS.iter().find(|r| r.global_id == global_id).unwrap()
+}
+/// (id, persistent, fade_ticks) of every scene 0 breakable in the cooked bank.
+fn scene0_breakables() -> Vec<(usize, bool, u16)> {
+    let bank = hk_format::WorldMeta::parse(SCENE0_BANK).unwrap();
+    bank.regions().flat_map(world::breakables).map(|b| (b.id(), b.persistent(), b.fade_ticks())).collect()
+}
 const PARAMS: AttackParams = AttackParams {
     duration: 21,
     cooldown: 25,
@@ -35,33 +49,13 @@ const PARAMS: AttackParams = AttackParams {
 };
 const TRIANGLE: &[[i32; 2]] = &[[100, 0], [200, 0], [100, 100]];
 const SQUARE: &[[i32; 2]] = &[[100, 0], [200, 0], [200, 100], [100, 100]];
-const FADES: &[MaskFade] = &[MaskFade {
-    draws: &[5],
-    ticks: 60,
-}];
-const B: Breakable = Breakable {
-    id: 0,
-    bounds: [100, 0, 200, 100],
-    polygons: &[TRIANGLE],
-    off: &[1],
-    on: &[2],
-    edges: &[1],
-    fades: FADES,
-    fade_ticks: 60,
-    persistent: true,
-    door_sound: true,
-};
-static TARGETS: &[Breakable] = &[
-    B,
-    Breakable {
-        id: 1,
-        polygons: &[SQUARE],
-        ..B
-    },
-];
+// FIXTURE_BANK (tools/test_world.py): region 1 holds breakable 0 (TRIANGLE,
+// fade draws [5] for 60 ticks) and breakable 1 (SQUARE, no fade), both
+// persistent door-sound objects with off [1], on [2], edges [1]; region 2 is empty.
 fn region() -> Region {
+    use_bank(FIXTURE_BANK);
     Region {
-        global_id: 0,
+        global_id: 1,
         flat_floor_heights: &[],
         scene: 0,
         bounds: [0, 0, 1000, 1000],
@@ -72,8 +66,6 @@ fn region() -> Region {
     door_debris:&[],
     particle_bank:None,
     grass_emitters:&[],
-        breakables: TARGETS,
-        remote_masks: &[],
         reveal_masks: &[],
         reveal_bindings: &[],
         actors: &[],
@@ -110,14 +102,13 @@ fn exact_source_polygon_rejects_box_false_positive_and_breaks_once() {
 fn source_fade_advances_once_without_restarting_on_repeat_hit() {
     let _lock = render::TEST_LOCK.lock().unwrap();
     let mut state = State::new();
-    assert!(state.break_object(B));
+    assert!(state.break_object(0, 60));
     for _ in 0..30 {
         state.tick();
     }
-    assert!(!state.break_object(B));
+    assert!(!state.break_object(0, 60));
     assert_eq!(state.fade_left[0], 30);
-    let mut r = region();
-    r.breakables = &[B];
+    let r = region();
     state.apply(&r);
     assert_eq!(*render::GAINS.lock().unwrap(), vec![(5, 64)]);
     for _ in 0..30 {
@@ -128,25 +119,19 @@ fn source_fade_advances_once_without_restarting_on_repeat_hit() {
 }
 #[test]
 fn actual_generated_persistence_survives_scene_reset_and_grass_is_scene_local() {
-    let persistent = world::REGIONS
-        .iter()
-        .flat_map(|r| r.breakables)
-        .find(|b| b.persistent)
-        .unwrap();
-    let temporary = world::REGIONS
-        .iter()
-        .flat_map(|r| r.breakables)
-        .find(|b| !b.persistent && b.id / 128 == persistent.id / 128)
-        .unwrap();
-    let scene = persistent.id / 128;
+    use_bank(SCENE0_BANK);
+    let all = scene0_breakables();
+    let (persistent, _, fade) = *all.iter().find(|b| b.1).unwrap();
+    let (temporary, _, _) = *all.iter().find(|b| !b.1).unwrap();
+    let scene = persistent / 128;
     let mut state = State::new();
-    state.break_object(*persistent);
-    state.break_object(*temporary);
+    state.break_object(persistent, fade);
+    state.break_object(temporary, 0);
     state.cut_grass(scene * 1024 + 1023);
     state.cut_grass((1 - scene) * 1024 + 1023);
     state.reset_scene(scene);
-    assert!(state.broken(persistent.id));
-    assert!(!state.broken(temporary.id));
+    assert!(state.broken(persistent));
+    assert!(!state.broken(temporary));
     assert!(!state.cut(scene * 1024 + 1023));
     assert!(state.cut((1 - scene) * 1024 + 1023));
 }
@@ -167,7 +152,8 @@ fn only_owned_edges_disappear() {
     }
     let room = hk_format::Room::parse(&bytes).unwrap();
     let mut state = State::new();
-    state.break_object(B);
+    region();
+    state.break_object(0, 60);
     assert_eq!(state.edge(&region(), &room, 0), [1, 2, 3, 2]);
     assert_eq!(state.edge(&region(), &room, 1), [0; 4]);
 }
@@ -205,7 +191,7 @@ fn one_pass_edge_fill_matches_per_edge_filter() {
     state.set_geo_edges(&[0, 9]);
     assert_eq!(state.edge(&region(), &room, 0), [0; 4], "set_geo_edges invalidates");
     assert_eq!(filled(&mut state), vec![[0; 4], [4, 5, 4, 6]]);
-    state.break_object(B);
+    state.break_object(0, 60);
     assert_eq!(state.edge(&region(), &room, 1), [0; 4], "break_object invalidates");
     assert_eq!(filled(&mut state), vec![[0; 4], [0; 4]]);
     let mut state = State::new();
@@ -256,8 +242,8 @@ fn edge_cache_reuses_immutable_source_and_invalidates_only_actual_mutations() {
     state.set_lifeblood_edges(&[]);assert!(state.refresh_edges(&r,&room));
     state.append_script_edges(&[1]);assert!(state.refresh_edges(&r,&room));
     assert_eq!(state.edge(&r,&room,1),[0;4]);
-    state.break_object(B);assert!(state.refresh_edges(&r,&room));
-    assert!(!state.break_object(B));assert!(!state.refresh_edges(&r,&room));
+    state.break_object(0, 60);assert!(state.refresh_edges(&r,&room));
+    assert!(!state.break_object(0, 60));assert!(!state.refresh_edges(&r,&room));
     state.reset_scene(0);assert!(state.refresh_edges(&r,&room));
 }
 
@@ -266,8 +252,8 @@ fn edge_cache_distinguishes_equal_count_sources_regions_and_large_room_fallback(
     let a=edge_room_bytes(&[[1,2,3,2],[4,5,4,6]]);
     let b=edge_room_bytes(&[[11,12,13,12],[14,15,14,16]]);
     let a=hk_format::Room::parse(&a).unwrap();let b=hk_format::Room::parse(&b).unwrap();
-    let r=region();let mut other=region();other.global_id=1;other.breakables=&[];
-    let mut state=State::new();state.break_object(B);
+    let r=region();let mut other=region();other.global_id=2;
+    let mut state=State::new();state.break_object(0, 60);
     assert!(state.refresh_edges(&r,&a));assert_eq!(state.edge(&r,&a,1),[0;4]);
     // A source switch must never answer with the old cache, even before refresh.
     assert_eq!(state.edge(&r,&b,0),[11,12,13,12]);
@@ -302,8 +288,8 @@ fn hazards_and_checkpoints_use_polygons_and_preserve_distant_spawn() {
     bank[..8].copy_from_slice(b"HKWMTA01");
     let total = bank.len() as i32;
     put(&mut bank, 52, total);
-    put(&mut bank, 60, 4);
-    for (i, (offset, count, stride)) in [(regions, 1, 76), (objects, 2, 48), (polygons, 2, 8), (points, 6, 8)].iter().enumerate() {
+    put(&mut bank, 60, 5);
+    for (i, (offset, count, stride)) in [(regions, 1, 76), (objects, 2, 48), (polygons, 2, 8), (points, 6, 8), (total as usize, 0, 2)].iter().enumerate() {
         put(&mut bank, 64 + i * 12, *offset as i32);
         put(&mut bank, 68 + i * 12, *count);
         put(&mut bank, 72 + i * 12, *stride);
@@ -422,7 +408,7 @@ fn vertical_prefetch_respects_removed_owned_floor_and_thirty_tick_bound() {
             .edge(&r, &room, i)),
         None
     );
-    state.break_object(B);
+    state.break_object(0, 60);
     assert_eq!(
         world::vertical_exit(bounds, &player, movement_params(), 2, |i| state
             .edge(&r, &room, i)),
@@ -496,34 +482,36 @@ fn door1_mask_survives_region_entry_outside_its_collider() {
     let _lock = render::TEST_LOCK.lock().unwrap();
     // Original level6:12793 state38 owns FSM12055 -> renderer11301.
     // Region14 includes the mask but not Door1's x59.59 collision/attack shape.
-    let owner = world::REGIONS.iter().flat_map(|r| r.breakables)
-        .find(|b| b.id == 38 && b.fade_ticks == 60).unwrap();
+    use_bank(SCENE0_BANK);
+    let (owner, _, fade) = scene0_breakables().into_iter().find(|b| b.0 == 38 && b.2 == 60).unwrap();
     let distant = world::REGIONS.iter().find(|r| r.scene == 0 &&
         world::contains(r.bounds, 84 * hk_sim::ONE + hk_sim::ONE/32, 11 * hk_sim::ONE + hk_sim::ONE/2))
         .unwrap();
-    assert!(!distant.breakables.iter().any(|b| b.id == owner.id));
-    let bindings: Vec<_> = distant.remote_masks.iter().filter(|m| m.owner == owner.id).collect();
+    let bank = world::bank_region(distant).unwrap();
+    assert!(!world::breakables(bank).any(|b| b.id() == owner));
+    let bindings: Vec<(usize, Vec<u16>)> = world::remote_masks(bank).filter(|m| m.0 == owner)
+        .map(|(o, _, fade)| (o, fade.draws().collect())).collect();
     assert!(!bindings.is_empty());
     let mut state = State::new();
-    state.break_object(*owner);
+    state.break_object(owner, fade);
     for _ in 0..30 { state.tick(); }
     for binding in &bindings {
         // Isolate a single application to avoid sharing the rendering stub
         // with unrelated fade tests run by the native parallel test harness.
-        assert_eq!(state.fade_left[binding.owner],30);
+        assert_eq!(state.fade_left[binding.0],30);
     }
     state.apply(distant);
     let gains = render::GAINS.lock().unwrap().clone();
-    for binding in &bindings { for draw in binding.fade.draws {
+    for binding in &bindings { for draw in &binding.1 {
         assert!(gains.contains(&(*draw as usize,64)));
     }}
     for _ in 0..30 { state.tick(); }
     state.apply(distant);
     let gains = render::GAINS.lock().unwrap().clone();
-    for binding in &bindings { for draw in binding.fade.draws {
+    for binding in &bindings { for draw in &binding.1 {
         assert!(gains.contains(&(*draw as usize,0)));
     }}
-    assert!(state.broken(owner.id));
+    assert!(state.broken(owner));
 }
 
 #[test]
@@ -590,26 +578,26 @@ fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
 fn active_fades_match_full_timer_reference_including_simultaneous_expiry() {
     let mut state=State::new();let mut reference=[0u16;world::SCENES*world::BREAKABLES_PER_SCENE];
     for (id,ticks) in [(0,0),(1,1),(31,17),(32,17),(63,2),(128,17),(255,65535)] {
-        assert!(state.break_object(Breakable{id,fade_ticks:ticks,..B}));reference[id]=ticks;
+        assert!(state.break_object(id,ticks));reference[id]=ticks;
     }
     for tick in 0..65536 {
         state.tick();for time in &mut reference{*time=time.saturating_sub(1);}
         assert_eq!(state.fade_left,reference,"timer tick{tick}");
-        if tick==7 {assert!(!state.break_object(Breakable{id:31,fade_ticks:100,..B}),"repeat hits never restart");}
+        if tick==7 {assert!(!state.break_object(31,100),"repeat hits never restart");}
     }
 }
 #[test]
 fn scene_reset_clears_only_its_transient_active_fades_and_allows_reactivation() {
-    let b=world::REGIONS.iter().filter(|r|r.scene==0).flat_map(|r|r.breakables)
-        .find(|b|!b.persistent).copied().expect("authored transient breakable");
-    let mut state=State::new();assert!(state.break_object(Breakable{fade_ticks:19,..b}));
+    use_bank(SCENE0_BANK);
+    let (b,_,_)=scene0_breakables().into_iter().find(|b|!b.1).expect("authored transient breakable");
+    let mut state=State::new();assert!(state.break_object(b,19));
     let other=world::BREAKABLES_PER_SCENE;
-    assert!(state.break_object(Breakable{id:other,fade_ticks:19,..B}));
-    state.tick();assert_eq!(state.fade_left[b.id],18);assert_eq!(state.fade_left[other],18);
-    state.reset_scene(0);assert_eq!(state.fade_left[b.id],0);
-    state.tick();assert_eq!(state.fade_left[b.id],0);assert_eq!(state.fade_left[other],17);
-    assert!(state.break_object(Breakable{fade_ticks:2,..b}));
-    state.tick();assert_eq!(state.fade_left[b.id],1);state.tick();assert_eq!(state.fade_left[b.id],0);
+    assert!(state.break_object(other,19));
+    state.tick();assert_eq!(state.fade_left[b],18);assert_eq!(state.fade_left[other],18);
+    state.reset_scene(0);assert_eq!(state.fade_left[b],0);
+    state.tick();assert_eq!(state.fade_left[b],0);assert_eq!(state.fade_left[other],17);
+    assert!(state.break_object(b,2));
+    state.tick();assert_eq!(state.fade_left[b],1);state.tick();assert_eq!(state.fade_left[b],0);
     let clean=State::new();assert!(clean.fade_left.iter().all(|&n|n==0));
 }
 
@@ -625,7 +613,7 @@ fn scoped_edge_reader_matches_direct_queries_across_mutations_sources_and_fallba
         for i in 0..room.counts[5]{assert_eq!(read(i),state.edge(&r,room,i));}
     };
     check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);check(&state,&b);
-    state.break_object(B);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
+    state.break_object(0,60);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
     state.set_geo_edges(&[0]);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
     let big=edge_room_bytes(&vec![[101,102,103,102];129]);
     let big=hk_format::Room::parse(&big).unwrap();state.refresh_edges(&r,&big);check(&state,&big);
@@ -640,7 +628,7 @@ fn foreign_view_exclusions_follow_segments_not_local_indices() {
     let target_bytes=edge_room_bytes(&[c,[a[2],a[3],a[0],a[1]],b]);
     let source=hk_format::Room::parse(&source_bytes).unwrap();
     let target=hk_format::Room::parse(&target_bytes).unwrap();
-    let current=region();let mut other=region();other.global_id=1;other.breakables=&[];
+    let current=region();let mut other=region();other.global_id=2;
     let mut state=State::new();state.set_geo_edges(&[0]);
     state.set_lifeblood_edges(&[1,999]);
     assert_eq!(state.edge_in_view(&current,&source,&other,&target,0),c);
@@ -666,7 +654,7 @@ fn actor_terrain_scratch_matches_direct_filter_for_both_views_and_mutations() {
     for step in 0..5 {
         match step {
             1=>{state.set_geo_edges(&[0,999]);state.set_lifeblood_edges(&[1]);},
-            2=>{state.break_object(B);},
+            2=>{state.break_object(0,60);},
             3=>{state.set_geo_edges(&[]);state.set_lifeblood_edges(&[]);},
             4=>{state.reset_scene(active.scene);},
             _=>{}

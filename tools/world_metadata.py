@@ -15,9 +15,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAGIC = b"HKWMTA01"
 HEADER = 160
-REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE = 76, 48, 8, 8
+REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE = 76, 48, 8, 8, 2
+BREAKABLES_PER_SCENE = 128
+MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7}
 
 
 def damagehero_respawns(hit_type):
@@ -31,6 +33,18 @@ def damagehero_respawns(hit_type):
     if type(hit_type) is not int or hit_type not in (0, 1, 2, 3):
         raise ValueError(f'unsupported DamageHero hit type {hit_type}; lava/pit semantics require explicit handling')
     return hit_type in (2, 3)
+
+
+def persistent_object(record):
+    # Full persistent flags survive the session's death/reset operation. Objects
+    # without PersistentBoolItem, dontSave, and semiPersistent objects reset.
+    return any(not p['dont_save'] and not p['semi_persistent'] for p in record.get('persistence', []))
+
+
+def bounded(value, bound, name):
+    if type(value) is not int or not 0 <= value < bound:
+        raise ValueError(f'{name} outside bounded range 0..{bound-1}')
+    return value
 
 
 def q(value):
@@ -77,7 +91,17 @@ def encode_scene(scene, rows):
     objects = []
     polygons = []
     points = []
+    indices = []
     regions = []
+
+    def index_list(values, bound, name):
+        """Append a u16 list to the index section; return its packed span word."""
+        first = len(indices)
+        for value in values:
+            indices.append(bounded(value, bound, name))
+        if first > 0xFFFF or len(values) > 0xFFFF:
+            raise ValueError(f"{name} list exceeds the u16 span")
+        return first | (len(values) << 16)
 
     def add_object(kind, record, state, flags, bounds, shape_key=None, extra=(0, 0, 0)):
         shape = polygon_list(record, shape_key) if shape_key else []
@@ -91,13 +115,57 @@ def encode_scene(scene, rows):
         objects.append((source_id(record["source"]), state, KINDS[kind], flags,
                         rect(bounds), polygon_first, len(shape), tuple(int(v) for v in extra)))
 
+    def fade_record(fade, name):
+        ticks = bounded(fade["ticks_60hz"], MAX_FADE_TICKS + 1, f"{name} ticks")
+        if not ticks or fade["target_alpha"] != 0 or fade["ease"] != "linear":
+            raise ValueError(f"{name} requires a positive-duration linear fade to zero")
+        if any(renderer["initial_alpha"] != 1 for renderer in fade["renderers"]):
+            raise ValueError(f"{name} requires observed full initial alpha")
+        return ticks
+
+    stable_breakables = {}
     for row in sorted(rows, key=lambda value: value["chunk_id"]):
         object_first = len(objects)
         region_polygon_first = len(polygons)
+        draw_count = row.get("draws", 0)
+        edge_count = row.get("edges", 0)
         for record in row.get("breakables", []):
-            flags = (1 if record.get("persistent") else 0) | (2 if record.get("semi_persistent") else 0)
-            add_object("breakable", record, scene["scene_id"] * 128 + int(record["state_index"]),
-                       flags, record["box"], "hit_polygons")
+            state = bounded(record["state_index"], BREAKABLES_PER_SCENE, "breakable state")
+            if record.get("hit_points", 1) != 1:
+                raise ValueError("Breakable C# subset requires observed one-hit behavior")
+            if record.get("scene_state_count", 0) > BREAKABLES_PER_SCENE:
+                raise ValueError("authored Breakable scene state exceeds budget")
+            if stable_breakables.setdefault(state, record["source"]) != record["source"]:
+                raise ValueError("breakable state aliases different source objects")
+            if not 1 <= len(record["hit_polygons"]) <= 8:
+                raise ValueError("Breakable polygon count exceeds 1..8 bound")
+            fades = [(fade_record(fade, "mask fade"), fade.get("draw_indices", [])) for fade in record.get("mask_fades", [])]
+            fade_ticks = max([ticks for ticks, _ in fades], default=0)
+            # Play the resident source sample only when the authored table points
+            # to that clip. Several poles use the same clip as the tutorial doors.
+            options = record.get("audio", {}).get("options", [])
+            door_sound = len(options) == 1 and options[0]["name"] == "breakable_wall_hit_1"
+            flags = ((1 if persistent_object(record) else 0) | (2 if record.get("semi_persistent") else 0)
+                     | (4 if door_sound else 0) | (fade_ticks << 6))
+            add_object("breakable", record, scene["scene_id"] * BREAKABLES_PER_SCENE + state, flags,
+                       record["box"], "hit_polygons",
+                       (index_list(record.get("off_draws", []), draw_count, "breakable off draw"),
+                        index_list(record.get("on_draws", []), draw_count, "breakable on draw"),
+                        index_list(record.get("edge_indices", []), edge_count, "breakable edge index")))
+            for ticks, draws in fades:
+                add_object("mask_fade", record, scene["scene_id"] * BREAKABLES_PER_SCENE + state, 0, record["box"],
+                           None, (index_list(draws, draw_count, "mask fade draw"), ticks, 0))
+        for binding in row.get("remote_mask_bindings", []):
+            state = bounded(binding["state_index"], BREAKABLES_PER_SCENE, "mask owner state")
+            if stable_breakables.setdefault(state, binding["owner_source"]) != binding["owner_source"]:
+                raise ValueError("mask state aliases different source objects")
+            ticks = fade_record(binding["fade"], "remote mask fade")
+            total = bounded(binding["owner_fade_ticks"], MAX_FADE_TICKS + 1, "mask owner fade ticks")
+            if total < ticks:
+                raise ValueError("invalid remote mask fade")
+            add_object("remote_mask", {"source": binding["owner_source"]},
+                       scene["scene_id"] * BREAKABLES_PER_SCENE + state, 0, row["activation_bounds"], None,
+                       (index_list(binding["fade"]["draw_indices"], draw_count, "remote mask draw"), ticks, total))
         for record in row.get("grass", []):
             add_object("grass", record, scene["scene_id"] * 1024 + int(record["state_index"]),
                        4, record["bounds"])
@@ -127,8 +195,8 @@ def encode_scene(scene, rows):
                         object_first, len(objects) - object_first, region_polygon_first,
                         region_polygon_count))
 
-    counts = [len(regions), len(objects), len(polygons), len(points)]
-    strides = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE]
+    counts = [len(regions), len(objects), len(polygons), len(points), len(indices)]
+    strides = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE]
     sections = []
     payload = bytearray(b"\0" * HEADER)
     for section, (count, stride) in enumerate(zip(counts, strides)):
@@ -147,9 +215,12 @@ def encode_scene(scene, rows):
         elif section == 2:
             for first, poly_count in polygons:
                 payload.extend(struct.pack("<2I", first, poly_count))
-        else:
+        elif section == 3:
             for x, y in points:
                 payload.extend(struct.pack("<2i", x, y))
+        else:
+            for value in indices:
+                payload.extend(struct.pack("<H", value))
         if len(payload) - offset != count * stride:
             raise AssertionError(f"metadata section stride mismatch section={section} got={len(payload)-offset} expected={count*stride}")
         sections.append((offset, count, stride))
@@ -168,7 +239,7 @@ def encode_scene(scene, rows):
         struct.pack_into("<3I", payload, 64 + index * 12, offset, count, stride)
     return bytes(payload), {"scene_id": scene["scene_id"], "scene_name": scene["scene_name"],
                            "region_count": len(regions), "object_count": len(objects),
-                           "polygon_count": len(polygons), "point_count": len(points),
+                           "polygon_count": len(polygons), "point_count": len(points), "index_count": len(indices),
                            "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest(),
                            "raw_fnv": scene_identity, "bank_fnv": fnv1a(payload),
                            "section_bytes": [count * stride for count, stride in zip(counts, strides)]}

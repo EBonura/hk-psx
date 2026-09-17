@@ -8,15 +8,28 @@
 use crate::{i32_at, u16_at, u32_at, Error};
 
 const HEADER: usize = 160;
-const SECTIONS: usize = 4;
+const SECTIONS: usize = 5;
 const REGION_STRIDE: usize = 76;
 const OBJECT_STRIDE: usize = 48;
 const POLYGON_STRIDE: usize = 8;
 const POINT_STRIDE: usize = 8;
+const INDEX_STRIDE: usize = 2;
 const MAX_REGIONS: usize = 4096;
 const MAX_OBJECTS: usize = 65_535;
 const MAX_POLYGONS: usize = 65_535;
 const MAX_POINTS: usize = 262_140;
+const MAX_INDICES: usize = 65_535;
+
+/// Object kinds shared with tools/world_metadata.py KINDS.
+pub const KIND_BREAKABLE: u16 = 1;
+pub const KIND_GRASS: u16 = 2;
+pub const KIND_HAZARD: u16 = 3;
+pub const KIND_CHECKPOINT: u16 = 4;
+pub const KIND_ACTOR: u16 = 5;
+/// A breakable's own mask fade; follows its breakable in the region's objects.
+pub const KIND_MASK_FADE: u16 = 6;
+/// A mask in this region faded by a breakable owned elsewhere (state = owner).
+pub const KIND_REMOTE_MASK: u16 = 7;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {
@@ -60,14 +73,14 @@ impl<'a> WorldMeta<'a> {
         if u32_at(bytes, 52) as usize != bytes.len()
             || u32_at(bytes, 56) != 0
             || u32_at(bytes, 60) as usize != SECTIONS
-            || bytes[112..HEADER].iter().any(|&byte| byte != 0)
+            || bytes[64 + SECTIONS * 12..HEADER].iter().any(|&byte| byte != 0)
         {
             return Err(Error::Header);
         }
         let mut offsets = [0; SECTIONS];
         let mut counts = [0; SECTIONS];
-        let strides = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE];
-        let limits = [MAX_REGIONS, MAX_OBJECTS, MAX_POLYGONS, MAX_POINTS];
+        let strides = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE];
+        let limits = [MAX_REGIONS, MAX_OBJECTS, MAX_POLYGONS, MAX_POINTS, MAX_INDICES];
         let mut next = HEADER;
         for section in 0..SECTIONS {
             let offset = u32_at(bytes, 64 + section * 12) as usize;
@@ -112,7 +125,7 @@ impl<'a> WorldMeta<'a> {
         {
             return Err(Error::Reference);
         }
-        let stride = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE][section];
+        let stride = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE][section];
         let start = self.offsets[section]
             .checked_add(first.checked_mul(stride).ok_or(Error::Reference)?)
             .ok_or(Error::Reference)?;
@@ -142,6 +155,16 @@ impl<'a> WorldMeta<'a> {
                 self.span(2, object.polygon_first(), object.polygon_count())?;
                 if object.polygon_count() > 16 {
                     return Err(Error::Limit);
+                }
+                // Index-list spans live in the payload words of list-bearing kinds.
+                let lists: &[usize] = match object.kind() {
+                    KIND_BREAKABLE => &[0, 1, 2],
+                    KIND_MASK_FADE | KIND_REMOTE_MASK => &[0],
+                    _ => &[],
+                };
+                for &word in lists {
+                    let (first, count) = object.index_span(word);
+                    self.span(4, first, count)?;
                 }
                 for polygon in object.polygons() {
                     let polygon = polygon?;
@@ -284,6 +307,13 @@ impl<'a> Region<'a> {
             count: self.object_count(),
         }
     }
+    /// The region's `local`th object; admission checked the span.
+    pub fn object(&self, local: usize) -> Option<Object<'a>> {
+        if local >= self.object_count() {
+            return None;
+        }
+        self.meta.object(self.object_first() + local)
+    }
 }
 
 pub struct Neighbours<'a> {
@@ -380,6 +410,43 @@ impl<'a> Object<'a> {
             count: self.polygon_count(),
         }
     }
+    /// Payload word `word` as an index-list span: first in the low half,
+    /// count in the high half.
+    pub fn index_span(&self, word: usize) -> (usize, usize) {
+        let value = self.extra(word) as u32;
+        ((value & 0xFFFF) as usize, (value >> 16) as usize)
+    }
+    /// The u16 list a payload word spans; admission checked the span.
+    pub fn indices(&self, word: usize) -> Indices<'a> {
+        let (first, count) = self.index_span(word);
+        Indices {
+            meta: self.meta,
+            first,
+            index: 0,
+            count,
+        }
+    }
+}
+
+pub struct Indices<'a> {
+    meta: WorldMeta<'a>,
+    first: usize,
+    index: usize,
+    count: usize,
+}
+impl<'a> Iterator for Indices<'a> {
+    type Item = u16;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.count {
+            return None;
+        }
+        let index = self.first + self.index;
+        self.index += 1;
+        if index >= self.meta.counts[4] {
+            return None;
+        }
+        Some(u16_at(self.meta.bytes, self.meta.offsets[4] + index * INDEX_STRIDE))
+    }
 }
 
 pub struct Polygons<'a> {
@@ -468,8 +535,8 @@ mod tests {
         b[at..at + 4].copy_from_slice(&value.to_le_bytes());
     }
     fn fixture() -> Vec<u8> {
-        let counts = [1, 1, 1, 3];
-        let strides = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE];
+        let counts = [1, 1, 1, 3, 2];
+        let strides = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE];
         let mut offsets = [0; SECTIONS];
         let mut end = HEADER;
         for i in 0..SECTIONS {
@@ -496,11 +563,13 @@ mod tests {
         put(&mut bytes, offsets[0] + 72, 1);
         put(&mut bytes, offsets[1], 123);
         put(&mut bytes, offsets[1] + 4, 456);
-        bytes[offsets[1] + 8..offsets[1] + 10].copy_from_slice(&2u16.to_le_bytes());
+        bytes[offsets[1] + 8..offsets[1] + 10].copy_from_slice(&KIND_MASK_FADE.to_le_bytes());
         put(&mut bytes, offsets[1] + 28, 0);
         put(&mut bytes, offsets[1] + 32, 1);
-        put(&mut bytes, offsets[1] + 36, (-7i32) as u32);
+        put(&mut bytes, offsets[1] + 36, 2 << 16); // two indices from 0
         put(&mut bytes, offsets[1] + 44, 3);
+        bytes[offsets[4]..offsets[4] + 2].copy_from_slice(&40u16.to_le_bytes());
+        bytes[offsets[4] + 2..offsets[4] + 4].copy_from_slice(&41u16.to_le_bytes());
         put(&mut bytes, offsets[2], 0);
         put(&mut bytes, offsets[2] + 4, 3);
         for i in 0..3 {
@@ -519,7 +588,8 @@ mod tests {
         assert!(bank.check_identity(5, 9, &[0; 32]).is_err());
         let o = r.objects().next().unwrap().unwrap();
         assert_eq!(o.source_id(), 123);
-        assert_eq!((o.extra(0), o.extra(1), o.extra(2)), (-7, 0, 3));
+        assert_eq!((o.extra(1), o.extra(2)), (0, 3));
+        assert_eq!(o.indices(0).collect::<Vec<u16>>(), vec![40, 41]);
         assert_eq!(o.polygons().next().unwrap().unwrap().points().count(), 3);
     }
     #[test]
@@ -536,6 +606,13 @@ mod tests {
         let mut b = fixture();
         let at = offset(&b, 1) + 28;
         put(&mut b, at, 99);
+        assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Reference));
+    }
+    #[test]
+    fn rejects_index_list_span_outside_the_index_section() {
+        let mut b = fixture();
+        let at = offset(&b, 1) + 36;
+        put(&mut b, at, 3 << 16);
         assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Reference));
     }
     #[test]
