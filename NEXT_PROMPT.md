@@ -2,7 +2,7 @@
 
 ## Current state (2026-09-17)
 
-Build 88 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
+Build 89 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (19 scenes, 329 views) connected by the authored gates,
 validated by `cargo run --release -- build --frontend <PSoXide frontend>`
 (seven route replays, zero faults). Hazards, checkpoints, breakables, mask
@@ -11,7 +11,10 @@ bindings now live only in the loadable HKWMTA01 bank
 (object stride 48, three payload words, a fifth u16 index-list section); the
 guest reads them through `world::bank_region` and the `Breakable`, `MaskFade`
 and `Patch` views, `State::apply` is one pass over the region's objects, and
-`State::reset_scene` walks the admitted bank. RAM headroom is 281,912 bytes. Break-effect art streams per scene (one
+`State::reset_scene` walks the admitted bank. RAM headroom is 279,832 bytes. The Crossroads Zombie Runners are admitted
+(controller, clips, corpses, resident audio bank; Charge Dust and death
+effects are counted omissions). Route replays run concurrently (1:42 for
+seven). Break-effect art streams per scene (one
 disc chunk per scene decoded at admission and uploaded to the fixed effect
 VRAM rectangles), so every supported emitter in all 18 scenes with breakables
 is admitted (210, up from 103). Transient fades and grass cuts are
@@ -38,10 +41,10 @@ short on the Tutorial return before. Break-effect art beyond scene 4 and Geo
 rocks over the shared VRAM budgets are recorded omissions; effect and Geo art
 need per-scene streaming (P07/P25). `host/regions.py` reuses every region
 whose spec, source inputs and cooker code are unchanged. The scene catalog is
-`host/quality.py SCENE_TABLE`. Next: Crossroads Runner admission (host `pending_movement_control` promotion,
-Runner audio bank and voice policy, Charge Dust and death presentation; see
-docs/RUNNER.md), then Climber and Mender, the P09 well entry details, and
-moving emitter/style metadata into the world bank with their breakables; P09 delayed well collider and source camera locks; Crossroads enemy
+`host/quality.py SCENE_TABLE`. Next (user priority): build speed, per the ledger's build-speed section
+(asset-script and packer caches, postpack cache, cook cache split, guest-only
+path). Then Climber and Mender, Runner dust and death presentation, the P09
+well entry details, and moving emitter/style metadata into the world bank; P09 delayed well collider and source camera locks; Crossroads enemy
 families beyond the Crawler.
 
 ## Previous handoff: P05 scene-owned world metadata

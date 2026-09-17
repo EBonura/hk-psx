@@ -95,7 +95,8 @@ def append_corpse_art(source,scene,actors,atlas,frames,clips):
                     texture,box=images[image_key]
                     frames.append({'texture':texture,'box':box,'sprite':f'{sid}:{frame["spriteId"]}','event':frame})
                 cooked[key]=len(clips)
-                clips.append({'name':f'{record["library"]}/{clip["name"]}','start':start,'count':len(clip['frames']),'fps':clip['fps'],'wrap':clip['wrapMode'],'loopStart':clip.get('loopStart',0)})
+                from cook import guest_wrap
+                clips.append({'name':f'{record["library"]}/{clip["name"]}','start':start,'count':len(clip['frames']),'fps':clip['fps'],'wrap':guest_wrap(clip),'loopStart':clip.get('loopStart',0)})
             record[kind+'_clip']=cooked[key]
         actor['corpse']=record
 

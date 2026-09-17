@@ -100,7 +100,8 @@ class RunnerCorpseTests(unittest.TestCase):
             append_corpse_art(s,sc,[a,b],atlas,frames,clips)
         self.assertEqual(len(frames),9);self.assertEqual(len(clips),2);self.assertEqual(sprite.call_count,8)
         self.assertEqual(a['corpse']['air_clip'],b['corpse']['air_clip']);self.assertEqual(a['corpse']['land_clip'],b['corpse']['land_clip'])
-        self.assertEqual(clips[0]['wrap'],6);self.assertEqual(clips[1]['count'],8)
+        # tk2d Single (6) on the one-frame Air clip cooks as the guest's Once (2).
+        self.assertEqual(clips[0]['wrap'],2);self.assertEqual(clips[1]['count'],8)
         pending=copy.deepcopy(a);pending['movement_supported']=False;pending.pop('corpse')
         with patch('effects.corpse_source',side_effect=AssertionError('must not enable pending actor')):
             append_corpse_art(s,sc,[pending],atlas,frames,clips)
