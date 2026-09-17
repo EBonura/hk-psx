@@ -47,6 +47,9 @@ mod draw_packet;
 /// have resident bindings. Native integration tests supply a recording sink.
 /// Never admit an actor here and silently discard its presentation events.
 #[no_mangle] pub static mut HK_RUNNER_DUST_EVENTS: u32 = 0;
+#[no_mangle] pub static mut HK_CLIMBER_X: i32 = 0;
+#[no_mangle] pub static mut HK_CLIMBER_Y: i32 = 0;
+#[no_mangle] pub static mut HK_CLIMBER_HP: i32 = 0;
 /// Runner presentation: audio through the resident Runner bank. Charge Dust is
 /// counted, not drawn (recorded omission); Destroy releases the actor's voice.
 fn runner_event(event: enemies::RunnerEvent) {
@@ -516,6 +519,8 @@ fn main() {
                         reveals.tick(r.reveal_masks,&player,PARAMS);
                     }
                     if let Some((x,y,hp))=enemies.actor_state(0,12546) {unsafe {HK_CRAWLER_X=x;HK_CRAWLER_Y=y;HK_CRAWLER_HP=hp as i32;}}
+                    // Crossroads_01 "Climber" (HealthManager level37:5145), for route telemetry.
+                    if let Some((x,y,hp))=enemies.actor_state(2,5145) {unsafe {HK_CLIMBER_X=x;HK_CLIMBER_Y=y;HK_CLIMBER_HP=hp as i32;}}
                     let mut cut=0u32;for (i,p) in world::region_grass(r).take(32).enumerate(){if state.cut(p.state){cut|=1<<i;}}
                     unsafe {HK_GRASS_CUT_MASK=cut;HK_NAIL_ATTACK_COUNT=attacks;HK_HEALTH=vitals.health as u32;HK_BLUE_HEALTH=vitals.blue_health as u32;HK_SOUL=vitals.soul as u32;HK_PLAYER_X=player.x;HK_PLAYER_Y=player.y;HK_FOCUS_LOCKED=u32::from(focus.locks_control());}
                     emit::stage_end(stage::UPDATE);emit::task_end(task::FIXED_UPDATE);ticks+=1;

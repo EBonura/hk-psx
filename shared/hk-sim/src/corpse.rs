@@ -10,6 +10,9 @@ pub struct CorpseSpec {
     pub spawn_offset: [i32; 2],
     /// Source ObjectBounce factor in Q16; validated in [0, 1].
     pub bounce_factor: i32,
+    /// Source EnemyDeathEffects.corpseFlingSpeed in Q16 (15 for the Crawler
+    /// and Runner corpses, 20 for the Climber); the launch table is scaled.
+    pub fling_speed: i32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CorpsePhase {
@@ -81,13 +84,16 @@ impl Corpse {
             grounded: false,
             rng: seed,
         };
+        assert!((ONE..=64 * ONE).contains(&spec.fling_speed), "invalid corpse fling speed");
         let v = match kind {
             2 => UP[(corpse.random() % 31) as usize],
             3 => [0, -15 * ONE],
             _ => [facing * 491520, 851338], // cos/sin60deg *15, rounded Q16.
         };
-        corpse.vx = v[0];
-        corpse.vy = v[1];
+        // The table is authored for the common 15 units/s launch.
+        let scale = |q: i32| ((q as i64 * spec.fling_speed as i64) / (15 * ONE as i64)) as i32;
+        corpse.vx = scale(v[0]);
+        corpse.vy = scale(v[1]);
         corpse
     }
     fn random(&mut self) -> u32 {

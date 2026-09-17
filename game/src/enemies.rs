@@ -86,6 +86,65 @@ enum SpawnState {
     Ready,
     Blocked,
 }
+/// Surface-following Tiktik: the kinematic controller owns position, velocity
+/// and rotation; this runtime casts its point rays against the resident terrain.
+#[derive(Clone, Copy)]
+struct ClimberRuntime {
+    controller: hk_sim::climber::Climber,
+    velocity: [i32; 2],
+    animation_tick: u32,
+    clip: hk_sim::climber::Clip,
+    end_token: Option<u32>,
+}
+impl ClimberRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::Climber { stun_clip, .. } = spec.controller else { panic!("Climber runtime with other metadata") };
+        match self.clip { hk_sim::climber::Clip::Walk => spec.walk_clip, hk_sim::climber::Clip::Stun => stun_clip }
+    }
+    /// Quarter turns of the controller rotation (cardinal at rest, nearest during turns).
+    fn quarter(&self) -> i32 {
+        ((self.controller.rotation() + 45 * ONE).div_euclid(90 * ONE)).rem_euclid(4)
+    }
+}
+/// Rotate a local offset by quarter turns counter-clockwise.
+fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
+    match quarter.rem_euclid(4) { 0 => v, 1 => [-v[1], v[0]], 2 => [-v[0], -v[1]], _ => [v[1], -v[0]] }
+}
+/// Nearest terrain hit of a Climber point ray, as the source raycast on layer
+/// 256: origin = position + R(rotation) * (scale * local_origin), direction
+/// rotated without scale, bounded by the ray length.
+fn climber_ray_hit(ray: hk_sim::climber::Ray, count: usize, edge: &impl Fn(usize) -> [i32; 4]) -> Option<[i32; 2]> {
+    let quarter = ((ray.rotation_degrees_q16 + 45 * ONE).div_euclid(90 * ONE)).rem_euclid(4);
+    let local = [ray.local_origin[0] * ray.scale_x_sign as i32, ray.local_origin[1]];
+    let o = rotate_quarter(local, quarter);
+    let origin = [ray.position[0] + o[0], ray.position[1] + o[1]];
+    let d = rotate_quarter(ray.local_direction, quarter);
+    let end = [origin[0] as i64 + (d[0] as i64 * ray.length as i64 >> 16), origin[1] as i64 + (d[1] as i64 * ray.length as i64 >> 16)];
+    let (ox, oy) = (origin[0] as i64, origin[1] as i64);
+    let (rx, ry) = (end[0] - ox, end[1] - oy);
+    let mut best: Option<(i64, i64, [i32; 2])> = None;
+    for i in 0..count {
+        let e = edge(i);
+        if e == [0; 4] { continue; }
+        let (ax, ay) = (e[0] as i64, e[1] as i64);
+        let (sx, sy) = (e[2] as i64 - ax, e[3] as i64 - ay);
+        let denominator = rx * sy - ry * sx;
+        if denominator == 0 { continue; }
+        // origin + t*r = a + u*s, both parameters in [0, 1], scaled by the denominator.
+        let (qx, qy) = (ax - ox, ay - oy);
+        let t_num = qx * sy - qy * sx;
+        let u_num = qx * ry - qy * rx;
+        let (t_num, u_num, den) = if denominator < 0 { (-t_num, -u_num, -denominator) } else { (t_num, u_num, denominator) };
+        if t_num < 0 || t_num > den || u_num < 0 || u_num > den { continue; }
+        // Compare the ray parameter as a fraction t_num/den across edges.
+        let nearer = best.is_none_or(|(t, d, _): (i64, i64, [i32; 2])| t_num * d < t * den);
+        if nearer {
+            let point = [(ox + rx * t_num / den) as i32, (oy + ry * t_num / den) as i32];
+            best = Some((t_num, den, point));
+        }
+    }
+    best.map(|(_, _, p)| p)
+}
 #[derive(Clone, Copy)]
 struct Actor {
     scene: usize,
@@ -102,6 +161,7 @@ struct Actor {
     corpse: Option<hk_sim::Corpse>,
     geo_paid: bool,
     runner: Option<RunnerRuntime>,
+    climber: Option<ClimberRuntime>,
 }
 impl Actor {
     fn new(scene: usize, spec: &ActorSpec) -> Self {
@@ -133,15 +193,75 @@ impl Actor {
                 Some(RunnerRuntime { controller: hk_sim::runner::Runner::new(), rng: seed,
                     vx: 0, animation_tick: 0 })
             } else { None },
+            climber: if let ActorController::Climber { start_right, .. } = spec.controller {
+                Some(ClimberRuntime {
+                    controller: hk_sim::climber::Climber::new([spec.x, spec.y], 0, 1, start_right).expect("validated Climber placement"),
+                    velocity: [0; 2], animation_tick: 0, clip: hk_sim::climber::Clip::Walk, end_token: None })
+            } else { None },
         }
     }
     fn local_bounds(&self, spec: &ActorSpec) -> [i32; 4] {
         let b = spec.bounds;
+        if let Some(climber) = &self.climber {
+            // The source box collider turns with the transform; at rest the
+            // rotation is cardinal, so the rotated box is again axis aligned.
+            let q = climber.quarter();
+            let corners = [rotate_quarter([b[0], b[1]], q), rotate_quarter([b[2], b[3]], q)];
+            return [corners[0][0].min(corners[1][0]), corners[0][1].min(corners[1][1]),
+                corners[0][0].max(corners[1][0]), corners[0][1].max(corners[1][1])];
+        }
         if self.walk.direction == spec.initial_direction {
             b
         } else {
             [-b[2], b[1], -b[0], b[3]]
         }
+    }
+    /// One 60 Hz step of the kinematic Climber: motion along its surface
+    /// direction, then the controller's ray-driven sensing or turn/stun timers.
+    fn advance_climber(&mut self, c: &mut ClimberRuntime, count: usize, edge: &impl Fn(usize) -> [i32; 4]) {
+        use hk_sim::climber::{Action, Phase};
+        c.animation_tick = c.animation_tick.saturating_add(1);
+        let cast = |ray| climber_ray_hit(ray, count, edge);
+        let mut apply = |actor: &mut Self, c: &mut ClimberRuntime, actions: hk_sim::climber::Actions| {
+            for action in actions.iter() {
+                match action {
+                    Action::Position(p) => { actor.x = p[0]; actor.y = p[1]; }
+                    Action::Velocity(v) => c.velocity = v,
+                    Action::Rotation(_) => {}
+                    Action::Play(clip) => { c.clip = clip; c.animation_tick = 0; }
+                    Action::AwaitEndOfFrame(token) => c.end_token = Some(token),
+                }
+            }
+        };
+        match c.controller.phase() {
+            Phase::AwaitAttachment => {
+                let ray = c.controller.attachment_ray().expect("attachment ray while awaiting");
+                let actions = c.controller.attach(cast(ray)).expect("Climber attachment inside validated bounds");
+                apply(self, c, actions);
+                // StartCoroutine(Walk) runs its first iteration immediately.
+                let actions = c.controller.walk_frame([self.x, self.y], |r| cast(r).is_some()).expect("Climber walk inside validated bounds");
+                apply(self, c, actions);
+            }
+            Phase::Walking => {
+                self.x += c.velocity[0] / 60;
+                self.y += c.velocity[1] / 60;
+                let actions = c.controller.walk_frame([self.x, self.y], |r| cast(r).is_some()).expect("Climber walk inside validated bounds");
+                apply(self, c, actions);
+            }
+            Phase::Turning => {
+                let actions = c.controller.turn_frame([self.x, self.y]).expect("Climber turn inside validated bounds");
+                apply(self, c, actions);
+            }
+            Phase::Stunned => { let actions = c.controller.stun_tick(); apply(self, c, actions); }
+            Phase::StunEndOfFrame => {
+                if let Some(token) = c.end_token.take() {
+                    let actions = c.controller.end_of_frame(token);
+                    apply(self, c, actions);
+                }
+            }
+            Phase::Dead => {}
+        }
+        self.walk.direction = 1;
     }
     fn bounds(&self, spec: &ActorSpec) -> [i32; 4] {
         let b = self.local_bounds(spec);
@@ -171,6 +291,15 @@ impl Actor {
     }
     fn advance(&mut self, spec: &ActorSpec, room:&Room, count: usize, edge: impl Fn(usize) -> [i32; 4], context:RunnerContext,emit:&mut impl FnMut(RunnerEvent)) {
         if self.spawn_state == SpawnState::Blocked {
+            return;
+        }
+        if let Some(mut climber) = self.climber.take() {
+            // Kinematic: no gravity solve, no spawn resolution; the source
+            // attachment ray places the body on its surface.
+            self.spawn_state = SpawnState::Ready;
+            self.advance_climber(&mut climber, count, &edge);
+            self.climber = Some(climber);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
         let b = self.local_bounds(spec);
@@ -461,6 +590,7 @@ impl EnemyWorld {
                                 runner.controller.die();
                                 actor.emit_runner(RunnerEventKind::Destroy,&mut runner_event);
                             }
+                            if let Some(climber)=&mut actor.climber {climber.controller.die();}
                             state.enemy_death_particles(region,actor.source_id,[actor.x,actor.y,0]);
                             if let Some(corpse_spec)=spec.corpse {
                                 let mut corpse=hk_sim::Corpse::spawn(corpse_spec,actor.x,actor.y,nail.kind,
@@ -489,7 +619,20 @@ impl EnemyWorld {
                                 actor.runner=Some(runner);
                             }
                         }
-                        if begin_recoil {
+                        if let Some(climber)=&mut actor.climber {
+                            // Recoil.OnHandleFreeze: freeze in place with the Stun
+                            // clip; no displacement recoil for this kinematic body.
+                            if !actor.health.dead {
+                                let actions=climber.controller.freeze();
+                                for action in actions.iter() {
+                                    match action {
+                                        hk_sim::climber::Action::Velocity(v)=>climber.velocity=v,
+                                        hk_sim::climber::Action::Play(clip)=>{climber.clip=clip;climber.animation_tick=0;}
+                                        _=>{}
+                                    }
+                                }
+                            }
+                        } else if begin_recoil {
                         actor.recoil_left = spec.recoil_ticks;
                         actor.recoil = match nail.kind {
                             2 => [0, spec.recoil_speed],
@@ -535,6 +678,8 @@ impl EnemyWorld {
                 (corpse.clip(corpse_spec),corpse.animation_tick,(corpse.x,corpse.y),corpse.facing)
             } else if let Some(runner)=actor.runner {
                 (runner.clip(spec),runner.animation_tick,(actor.x,actor.y),runner.controller.facing())
+            } else if let Some(climber)=actor.climber {
+                (climber.clip(spec),climber.animation_tick,(actor.x,actor.y),1)
             } else {
                 (if actor.walk.turn_remaining!=0 {spec.turn_clip}else{spec.walk_clip},
                     actor.walk.animation_tick,(actor.x,actor.y),actor.walk.direction)
@@ -554,9 +699,12 @@ impl EnemyWorld {
             let f = room.frame((clip[0] + frame) as usize);
             let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
             let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
+            // A live Climber's sprite turns with its transform (Q16 degrees).
+            let rotation = actor.climber.filter(|_| !actor.health.dead).map(|c| c.controller.rotation()).unwrap_or(0);
             let mut verts = [(0i16, 0i16); 4];
             for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {
-                let x = position.0 - x * facing - camera.0;
+                let [x, y] = if rotation != 0 { crate::world::debris::rotate([x * facing, y], rotation) } else { [x * facing, y] };
+                let x = position.0 - x - camera.0;
                 let y = position.1 + y - camera.1;
                 *v = (
                     (160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
@@ -674,7 +822,7 @@ mod runner_runtime_tests {
         walk:hk_sim::WalkParams {speed:ONE+ONE/2,turn_ticks:10,turn_cooldown_ticks:60},
         initial_direction:-1,random_start_direction:false,walk_clip:0,turn_clip:1,
         corpse:Some(hk_sim::CorpseSpec {air_clip:2,land_clip:2,bounds:[-ONE/2,-ONE,ONE/2,0],
-            spawn_offset:[0,ONE/2],bounce_factor:13107}),
+            spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE}),
         recoil_speed:10*ONE,recoil_ticks:9,
     };
     // Source-free six-clip bank with the real Runner rates/lengths. Each clip's
@@ -747,7 +895,9 @@ mod runner_runtime_tests {
         let draws=world.prepare_draws(&region(),&room,(actor.x,actor.y));
         assert_eq!(draws.entries[0].unwrap().texture,0); // actual Walk clip
         assert!(core::mem::size_of::<RunnerRuntime>()<=64);
-        assert!(core::mem::size_of::<Actor>()<=192);
+        // Runner and Climber runtimes are both optional fields (Actor is 208 bytes,
+        // the 32-slot pool 6,656).
+        assert!(core::mem::size_of::<Actor>()<=224);
         println!("RunnerRuntime={} Actor={} EnemyWorld={}",core::mem::size_of::<RunnerRuntime>(),
             core::mem::size_of::<Actor>(),core::mem::size_of::<EnemyWorld>());
     }

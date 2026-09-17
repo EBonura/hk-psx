@@ -123,6 +123,9 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
                       'lunge':'Attack Lunge','cooldown':'Attack Cooldown','fall':'Fall'}
         elif control['kind']=='WalkLeftRight':
             bindings={kind:control[kind+'_clip_name'] for kind in ('walk','turn')}
+        elif control['kind']=='Climber':
+            # Walk continues through source turns; the walk clip doubles as `turn_clip`.
+            bindings={'walk':'Walk','turn':'Walk','stun':'Stun'}
         else:
             raise ValueError('unsupported actor art controller: '+control['kind'])
         # Actor sampling is never reduced: a frame beyond the 64x64 animation

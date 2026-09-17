@@ -59,6 +59,12 @@ mod world {
         }
     }
     pub fn pogo_targets(_: &Region) -> impl Iterator<Item = PogoTarget> { core::iter::once(PogoTarget) }
+    pub mod debris {
+        /// Cardinal-only rotation for the enemy draw test; the guest uses the debris sine table.
+        pub fn rotate(p: [i32; 2], angle: i32) -> [i32; 2] {
+            match (angle / (90 * hk_sim::ONE)).rem_euclid(4) { 0 => p, 1 => [-p[1], p[0]], 2 => [-p[0], -p[1]], _ => [p[1], -p[0]] }
+        }
+    }
     pub struct State;
     std::thread_local!{pub static DEATHS:std::cell::RefCell<Vec<(u32,[i32;3])>>=const{std::cell::RefCell::new(Vec::new())};}
     impl State {
@@ -405,7 +411,7 @@ fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
 #[test]
 fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
     const WITH_CORPSE:ActorSpec=ActorSpec {health:EnemyParams{health:5,..SPEC.health},
-        corpse:Some(CorpseSpec{air_clip:0,land_clip:0,bounds:SPEC.bounds,spawn_offset:[0,ONE/2],bounce_factor:19661}),..SPEC};
+        corpse:Some(CorpseSpec{air_clip:0,land_clip:0,bounds:SPEC.bounds,spawn_offset:[0,ONE/2],bounce_factor:19661, fling_speed: 15 * hk_sim::ONE}),..SPEC};
     let bytes=room();let room=hk_format::Room::parse(&bytes).unwrap();
     let r=world::Region{actors:&[&WITH_CORPSE],..region()};
     let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);

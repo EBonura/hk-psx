@@ -41,7 +41,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
 | P05 | in progress | Build 87 compacted the Great Door bindings and packet budgets (headroom 298,296); build 86 made fades and grass resident-scene state and stepped the bank validation through pad polls (headroom 294,200); build 85 narrowed the per-slot scene table (headroom 296,248); build 84 removed the static region table: `Region` is a runtime value from the bank plus per-scene statics (headroom 294,200); build 83 moved actor references and reveal bindings into the bank (headroom 259,416); build 82 moved neighbours (headroom 260,776); build 81 moved grass into the bank (headroom 252,584) and added the `crossroads-exit` route through Crossroads_02 and back; build 80 moved breakables, mask fades and remote masks into the loadable bank behind checked views and fixed the guest state tables that were sized for three scenes; build 79 moved hazards and checkpoints (`.data` -11,536 bytes, headroom 223,444). The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
 | P06 | in progress | Build 90 cooks and packs the whole Forgotten Crossroads (45 scenes, 693 views) with explicit omissions for the surface audio, atmos channels and actors the guest does not support yet. Previously:  in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
-| P07 | in progress | Build 89 admits the Crossroads Zombie Runners (controller, clips, corpses, audio bank on voices 21 to 23; dust and death effects recorded omissions) and replays the routes concurrently; build 88 streams break-effect art per scene through one disc chunk per scene decoded at admission and uploaded to the fixed effect VRAM rectangles; 210 emitters across 18 scenes with no VRAM omissions. Previously: persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
+| P07 | in progress | Build 94 admits the Crossroads Climbers (kinematic surface follower on the resident terrain, rotated body and sprite, freeze stun, corpse); build 89 admits the Crossroads Zombie Runners (controller, clips, corpses, audio bank on voices 21 to 23; dust and death effects recorded omissions) and replays the routes concurrently; build 88 streams break-effect art per scene through one disc chunk per scene decoded at admission and uploaded to the fixed effect VRAM rectangles; 210 emitters across 18 scenes with no VRAM omissions. Previously: persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
 | P09 | in progress | Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Build 75 adds Crossroads_02 and Crossroads_07 through `GRID_SCENE_LAYOUTS` (one catalog entry per scene); their gates are generated from source and the linked headroom is 376,680 bytes. The `crossroads-floor` route walks the Crossroads_01 floor to the right wall; reaching `right1` needs an authored jump route. Build 78 gives top-side gate entries the source's -12 units/s initial drop (`Gate.entry_vy`, verified for the well; assumed for other top entries). The delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and return replays remain. |
@@ -590,6 +590,39 @@ breakable id or none) and `enemies::pogo_contact` iterates
 by the targets, arena 386,968); seven routes pass. The chunk manifests
 (atlas, coverage, metadata, effect descriptors, about 20 KB) are the last
 per-scene linked tables.
+
+## Crossroads Climbers (Tiktik) admitted (build 94)
+
+`host/climber.py::recognize` admits the placed Climber instances that match
+the audited contract (.hkpsx/climber70/CONTRACT.md: speed 2, spin 0.25 s,
+padding 0.1, min turn 0.25, the 1.09375 x 0.921875 body at offset
+(0.015625, 0.4765625), kinematic body, freeze-in-place recoil, Walk 4@10 loop,
+Stun 7@12 loop-section, Death Air 8@30, Death Land 3@15, looping
+play-on-awake audio source) and `actors.py` promotes them; `cook.py` binds
+Walk (also as the turn clip, since the source walk animation continues through
+turns) and Stun; `effects.py` accepts the Climber corpse (fling speed 20,
+bounce 0.45, `resetRotation`, zero spawn offset) and `hk_sim::CorpseSpec`
+gained `fling_speed`, scaling the 15-unit launch table. The shared
+`ActorController::Climber { stun_clip, start_right }` selects a
+`ClimberRuntime` in the guest actor pool: the kinematic controller from
+`shared/hk-sim/src/climber.rs` owns position, velocity, rotation and phase;
+the runtime advances position by the cardinal velocity each tick, casts the
+controller's point rays against the resident terrain edges
+(`climber_ray_hit`: TransformPoint with rotation and scale, TransformDirection
+with rotation, nearest segment hit within the ray length) for attachment,
+ground and wall sensing, dispatches the immediate first Walk iteration after
+attachment, drives turns and the stun timer, freezes in place on an accepted
+hit (`Recoil.OnHandleFreeze`) instead of displacement recoil, and dies into
+the shared corpse path. The body box rotates with the transform (axis aligned
+again at every cardinal rest) and the sprite is drawn rotated by the
+controller's Q16 degrees through the debris sine table. Admitted: Crossroads_01
+(2), Crossroads_07 (7 of its 8 actors), Crossroads_05 and Crossroads_50; 15
+placed Climbers in total. Route telemetry (`HK_CLIMBER_X/Y/HP` for
+level37:5145) shows the Crossroads_01 Climber circling its 6 x 2 block at
+2 units/s with cardinal turns at each corner; seven routes pass. Not yet
+presented: the climb loop audio (recorded limitation); the rotated sprite has
+telemetry but no frame-level visual check on the routes, whose cameras never
+reach a Climber. `Actor` is 208 bytes (pool 6,656). `.text` +22 KB.
 
 Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
 actor objects (flag 64) carry their index into the new per-scene

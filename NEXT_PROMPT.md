@@ -2,7 +2,7 @@
 
 ## Current state (2026-09-17)
 
-Build 93 is the sole disc: King's Pass, Dirtmouth and the whole Forgotten
+Build 94 is the sole disc: King's Pass, Dirtmouth and the whole Forgotten
 Crossroads (45 scenes, 693 views) connected by the authored gates,
 validated by `cargo run --release -- build --frontend <PSoXide frontend>`
 (seven route replays, zero faults). Hazards, checkpoints, breakables, mask
@@ -29,7 +29,8 @@ per-scene statics and small variant catalogues; gates and Great Door entries
 carry their target region slot from the cookers; `Cache::locate` takes
 catalogue scene ids (the disc module otherwise works in manifest indices, a
 distinction Tutorial's 0 == 0 had hidden).
-Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
+Crossroads Climbers (Tiktik) are admitted on top of the Crawlers and Runners
+(15 placed instances; climb loop audio not yet presented). Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
 for three scenes on a nineteen-scene disc; the new `crossroads-exit` route
 (climb authored with `tools/route_sim.py`, gate into Crossroads_02, four
 breaks there, gate back) covers that path. The remaining static per-view

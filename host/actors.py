@@ -282,6 +282,15 @@ def actor_sources(sc, bounds=None):
                                     'Initial random direction requires deterministic guest sampling; Unity RNG sequence is not reproduced.']
         except (ValueError, KeyError, StopIteration) as error:
             actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and any(kind == 'Climber' for _, kind, _ in records):
+            from climber import recognize as recognize_climber
+            try:
+                control = recognize_climber(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
             from runner import recognize
             try:
@@ -345,6 +354,13 @@ def generated_actor_specs(region):
             # the Runner runtime uses its separately verified native controller.
             speed, turn_ticks, turn_cooldown_ticks = 1.5, 10, 60
             initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'Climber':
+            if 'stun_clip' not in actor or not actor.get('corpse'):
+                raise ValueError(f'Climber is missing cooked clips or corpse: {actor["source"]}')
+            controller = f'hk_sim::ActorController::Climber {{stun_clip:{actor["stun_clip"]},start_right:{str(control["start_right"]).lower()}}}'
+            # The controller owns speed and turns; the walker fields are unused.
+            speed, turn_ticks, turn_cooldown_ticks = 2.0, 15, 0
+            initial_direction, random_start_direction = 1, False
         elif control['kind'] == 'WalkLeftRight':
             controller = 'hk_sim::ActorController::Crawler'
             speed, turn_ticks, turn_cooldown_ticks = control['speed'], control['turn_ticks'], control['turn_cooldown_ticks']

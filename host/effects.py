@@ -11,17 +11,19 @@ def corpse_source(source, scene, actor):
     Crawler admission remains structural: source IDs may differ between bundles.
     """
     kind=actor.get('movement_control',{}).get('kind')
-    if kind not in ('WalkLeftRight','ZombieSwipeWalker'):
+    if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber'):
         raise ValueError('unvalidated corpse controller family')
-    runner=kind=='ZombieSwipeWalker'
-    expected_offset={'x':0.,'y':0. if runner else .5,'z':0.}
-    expected_bounce=.2 if runner else .3
-    expected_timing=[(30,6,1),(12,2,8)] if runner else [(12,2,3),(12,2,2)]
+    runner=kind=='ZombieSwipeWalker';climber=kind=='Climber'
+    expected_offset={'x':0.,'y':0. if (runner or climber) else .5,'z':0.}
+    expected_bounce=.2 if runner else .45 if climber else .3
+    # Climber corpse (.hkpsx/climber70/references.json): Death Air loops eight
+    # frames at 30 fps, Death Land holds three frames at 15 fps.
+    expected_timing=[(30,6,1),(12,2,8)] if runner else [(30,0,8),(15,2,3)] if climber else [(12,2,3),(12,2,2)]
     components=list(_components(scene,actor['game_object']))
     deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
     if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
     death=deaths[0]
-    if any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','rotateCorpse')) or death['corpseFlingSpeed']!=15:
+    if any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','rotateCorpse')) or death['corpseFlingSpeed']!=(20 if climber else 15):
         raise ValueError('unsupported corpse launch')
     offset=death['corpseSpawnPoint']
     if offset!=expected_offset:raise ValueError('unsupported corpse spawn offset')
@@ -35,7 +37,10 @@ def corpse_source(source, scene, actor):
     required=('Corpse','tk2dSprite','tk2dSpriteAnimator','Rigidbody2D','BoxCollider2D','ObjectBounce','Transform')
     if any(k not in parts for k in required):raise ValueError('incomplete corpse prefab')
     corpse=parts['Corpse'][1];body=parts['Rigidbody2D'][1];bounce=parts['ObjectBounce'][1]
-    if any(corpse[k]for k in ('breaker','bigBreaker','chunker','deathStun','fungusExplode','goopExplode','hatcher','instantChunker','massless','resetRotation','spineBurst','zomHive')):
+    # resetRotation only matters for a rotated owner; the guest corpse is drawn
+    # upright, which is what the reset produces for the Climber.
+    special=('breaker','bigBreaker','chunker','deathStun','fungusExplode','goopExplode','hatcher','instantChunker','massless','spineBurst','zomHive')+(() if climber else ('resetRotation',))
+    if any(corpse[k]for k in special):
         raise ValueError('unsupported special corpse')
     if corpse['landEffects']['m_PathID']:raise ValueError('unsupported additional corpse land effects')
     if body['m_BodyType']!=0 or body['m_LinearDamping']!=0 or abs(body['m_GravityScale']-.8)>1e-6 or body['m_Constraints']!=4:
@@ -69,7 +74,7 @@ def corpse_source(source, scene, actor):
             raise ValueError('unsupported Runner corpse physics material')
     bounds=[(off['x']-size['x']/2)*sx,(off['y']-size['y']/2)*sy,(off['x']+size['x']/2)*sx,(off['y']+size['y']/2)*sy]
     return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],'bounds':[round(v*65536)for v in bounds],
-            'spawn_offset':[round(offset['x']*65536),round(offset['y']*65536)], 'gravity':48*65536,'fling_speed':15*65536,'bounce_factor':round(expected_bounce*65536),'land_delay_ticks':60,
+            'spawn_offset':[round(offset['x']*65536),round(offset['y']*65536)], 'gravity':48*65536,'fling_speed':round(death['corpseFlingSpeed']*65536),'bounce_factor':round(expected_bounce*65536),'land_delay_ticks':60,
             'limitations':['Corpse Steam/Flame and infected wave/spatter remain separate particle/effect work',
                             'Fixed-point terrain solver is not complete Box2D; bounce RNG is deterministic per source, not Unity global RNG']}
 
@@ -106,6 +111,7 @@ def generated_corpse(record):
     if type(record['bounce_factor']) is not int or not 0<=record['bounce_factor']<=65536:
         raise ValueError('corpse bounce factor outside Q16 range')
     fields={k:record[k]for k in ('air_clip','land_clip','bounce_factor')}
+    fields['fling_speed']=record.get('fling_speed',15*65536)
     fields.update({k:'['+','.join(map(str,record[k]))+']'for k in ('bounds','spawn_offset')})
     return 'Some(hk_sim::CorpseSpec {'+','.join(f'{k}:{v}'for k,v in fields.items())+'})'
 
