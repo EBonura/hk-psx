@@ -46,8 +46,19 @@ pub struct WorldMeta<'a> {
 
 impl<'a> WorldMeta<'a> {
     pub fn parse(bytes: &'a [u8]) -> Result<Self, Error> {
+        Self::parse_with(bytes, || {})
+    }
+
+    /// `parse` that calls `step` after each region's references are checked,
+    /// so a guest can service its cooperative checkpoints inside a validation
+    /// that grows with the scene's object count.
+    pub fn parse_with(bytes: &'a [u8], mut step: impl FnMut()) -> Result<Self, Error> {
         let view = Self::header(bytes)?;
-        view.validate_references()?;
+        let mut previous_global = 0;
+        for index in 0..view.counts[0] {
+            view.validate_region(index, &mut previous_global)?;
+            step();
+        }
         Ok(view)
     }
 
@@ -139,53 +150,50 @@ impl<'a> WorldMeta<'a> {
         Ok((start, end))
     }
 
-    fn validate_references(&self) -> Result<(), Error> {
+    fn validate_region(&self, index: usize, previous_global: &mut u32) -> Result<(), Error> {
         // The cooker emits the canonical global chunk order. Keeping that
         // order in the wire contract makes duplicate or missing region IDs
         // fail admission before any scene-owner mapping can consume them.
-        let mut previous_global = 0;
-        for index in 0..self.counts[0] {
-            let region = self.region(index).ok_or(Error::Reference)?;
-            let global = region.global_id();
-            if global == 0 || global <= previous_global {
+        let region = self.region(index).ok_or(Error::Reference)?;
+        let global = region.global_id();
+        if global == 0 || global <= *previous_global {
+            return Err(Error::Reference);
+        }
+        *previous_global = global;
+        self.span(1, region.object_first(), region.object_count())?;
+        self.span(2, region.polygon_first(), region.polygon_count())?;
+        self.span(3, region.neighbour_first(), region.neighbour_count())?;
+        for object in region.objects() {
+            let object = object?;
+            self.span(2, object.polygon_first(), object.polygon_count())?;
+            if object.polygon_count() > 16 {
+                return Err(Error::Limit);
+            }
+            // Index-list spans live in the payload words of list-bearing kinds.
+            let lists: &[usize] = match object.kind() {
+                KIND_BREAKABLE => &[0, 1, 2],
+                KIND_MASK_FADE | KIND_REMOTE_MASK | KIND_REVEAL_BINDINGS => &[0],
+                _ => &[],
+            };
+            for &word in lists {
+                let (first, count) = object.index_span(word);
+                self.span(4, first, count)?;
+            }
+            for polygon in object.polygons() {
+                let polygon = polygon?;
+                if polygon.count() < 3 || polygon.count() > 16 {
+                    return Err(Error::Geometry);
+                }
+                self.span(3, polygon.first(), polygon.count())?;
+            }
+        }
+        for neighbour in region.neighbours() {
+            // Neighbours are global region IDs.  A scene bank cannot
+            // compare them with its local region count (Town, for
+            // example, points into Tutorial), but zero is never a valid
+            // global catalogue owner.
+            if neighbour? == 0 {
                 return Err(Error::Reference);
-            }
-            previous_global = global;
-            self.span(1, region.object_first(), region.object_count())?;
-            self.span(2, region.polygon_first(), region.polygon_count())?;
-            self.span(3, region.neighbour_first(), region.neighbour_count())?;
-            for object in region.objects() {
-                let object = object?;
-                self.span(2, object.polygon_first(), object.polygon_count())?;
-                if object.polygon_count() > 16 {
-                    return Err(Error::Limit);
-                }
-                // Index-list spans live in the payload words of list-bearing kinds.
-                let lists: &[usize] = match object.kind() {
-                    KIND_BREAKABLE => &[0, 1, 2],
-                    KIND_MASK_FADE | KIND_REMOTE_MASK | KIND_REVEAL_BINDINGS => &[0],
-                    _ => &[],
-                };
-                for &word in lists {
-                    let (first, count) = object.index_span(word);
-                    self.span(4, first, count)?;
-                }
-                for polygon in object.polygons() {
-                    let polygon = polygon?;
-                    if polygon.count() < 3 || polygon.count() > 16 {
-                        return Err(Error::Geometry);
-                    }
-                    self.span(3, polygon.first(), polygon.count())?;
-                }
-            }
-            for neighbour in region.neighbours() {
-                // Neighbours are global region IDs.  A scene bank cannot
-                // compare them with its local region count (Town, for
-                // example, points into Tutorial), but zero is never a valid
-                // global catalogue owner.
-                if neighbour? == 0 {
-                    return Err(Error::Reference);
-                }
             }
         }
         Ok(())

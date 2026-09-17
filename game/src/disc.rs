@@ -103,7 +103,8 @@ pub enum LoadError {
 /// scene/raw-bank/fingerprint identities match.
 pub fn checked_world_metadata<'a>(bytes:&'a [u8],scene:usize)->Result<WorldMeta<'a>,LoadError> {
     let expected=WORLD_META_MANIFEST.get(scene).ok_or(LoadError::WorldMeta)?;
-    let bank=WorldMeta::parse(bytes).map_err(|_|LoadError::WorldMeta)?;
+    // The checked parse grows with the scene's objects; poll between regions.
+    let bank=WorldMeta::parse_with(bytes,crate::input::checkpoint).map_err(|_|LoadError::WorldMeta)?;
     if bank.check_identity(expected.scene_id,expected.raw_fnv,&expected.fingerprint).is_err() {
         return Err(LoadError::WorldMeta);
     }
@@ -343,7 +344,7 @@ impl Cache {
         let mut previous_global=0;
         let mut mapped=0;
         for region in bank.regions() {
-            let region=region;
+            crate::input::checkpoint();
             let global=region.global_id() as usize;
             if global<=previous_global || global>REGION_SCENE_LOCAL.len() || scene_index(global-1)!=scene {
                 return Err(LoadError::WorldMeta);

@@ -299,9 +299,16 @@ pub struct State {
     pub effect_draw_dropped: u32,
     impacts: crate::impact::Pool,
     broken: [u32; SCENES * BREAKABLES_PER_SCENE / 32],
-    grass: [u32; SCENES * GRASS_PER_SCENE / 32],
-    pub fade_left: [u16; SCENES * BREAKABLES_PER_SCENE],
-    fade_active:[u32;SCENES*BREAKABLES_PER_SCENE/32],
+    // Grass cuts and mask fades are transient: every scene leave resets its
+    // scene, and exactly one scene is resident, so these tables hold the
+    // resident scene only and are indexed by the state within the scene.
+    // `broken` keeps the session-persistent bit of every scene's objects.
+    grass: [u32; GRASS_PER_SCENE / 32],
+    pub fade_left: [u16; BREAKABLES_PER_SCENE],
+    fade_active:[u32;BREAKABLES_PER_SCENE/32],
+}
+const fn local(id: usize) -> usize {
+    id % BREAKABLES_PER_SCENE
 }
 fn fill_edges(geo:&[u16],life:&[u16],broken:&[u32],region:&Region,room:&Room,cache:&mut [[i32;4]]) {
     let count=cache.len();
@@ -323,9 +330,9 @@ impl State {
             particles: particles::Pool::new(),
             effect_draw_dropped: 0,
             broken: [0; SCENES * BREAKABLES_PER_SCENE / 32],
-            grass: [0; SCENES * GRASS_PER_SCENE / 32],
-            fade_left: [0; SCENES * BREAKABLES_PER_SCENE],
-            fade_active:[0;SCENES*BREAKABLES_PER_SCENE/32],
+            grass: [0; GRASS_PER_SCENE / 32],
+            fade_left: [0; BREAKABLES_PER_SCENE],
+            fade_active:[0;BREAKABLES_PER_SCENE/32],
         }
     }
     pub fn broken(&self, id: usize) -> bool {
@@ -338,16 +345,19 @@ impl State {
             return false;
         }
         self.broken[id / 32] |= 1 << (id % 32);
-        self.fade_left[id] = fade_ticks;
-        if fade_ticks!=0 {self.fade_active[id/32]|=1<<(id%32);}
+        let slot = local(id);
+        self.fade_left[slot] = fade_ticks;
+        if fade_ticks!=0 {self.fade_active[slot/32]|=1<<(slot%32);}
         self.edge_cache_count=0;
         self.edge_cache_valid=false;
         true
     }
     pub fn cut(&self, id: usize) -> bool {
+        let id = id % GRASS_PER_SCENE;
         self.grass[id / 32] & (1 << (id % 32)) != 0
     }
     pub fn cut_grass(&mut self, id: usize) {
+        let id = id % GRASS_PER_SCENE;
         self.grass[id / 32] |= 1 << (id % 32);
     }
     /// One call per 60 Hz simulation tick, including GPU-wait VBlanks.
@@ -442,8 +452,7 @@ impl State {
         self.debris.clear_scene(scene);
         self.particles.clear_scene(scene);
         assert!(scene < SCENES);
-        let first = scene * GRASS_PER_SCENE / 32;
-        self.grass[first..first + GRASS_PER_SCENE / 32].fill(0);
+        self.grass.fill(0);
         // The scene being reset is the admitted one: both callers pass the
         // current region's scene before the next admission.
         let bank = admitted_bank().expect("world metadata admitted for scene reset");
@@ -452,8 +461,9 @@ impl State {
             if !object.persistent() {
                 let id = object.id();
                 self.broken[id / 32] &= !(1 << (id % 32));
-                self.fade_left[id] = 0;
-                self.fade_active[id/32]&=!(1<<(id%32));
+                let slot = local(id);
+                self.fade_left[slot] = 0;
+                self.fade_active[slot/32]&=!(1<<(slot%32));
             }
         }
     }
@@ -580,7 +590,7 @@ impl State {
         }
     }
     fn apply_mask(&self, owner: usize, total_ticks: u16, fade: MaskFade) {
-        let elapsed = total_ticks.saturating_sub(self.fade_left[owner]);
+        let elapsed = total_ticks.saturating_sub(self.fade_left[local(owner)]);
         let ticks = fade.ticks();
         let gain = if !self.broken(owner) {
             128
