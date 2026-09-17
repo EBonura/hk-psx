@@ -149,7 +149,7 @@ fn log_state(frame: u32, p: &Player, prims: u32) {
         emit::debug_log(s);
     }
 }
-static mut ROOM_CACHE: disc::Cache = unsafe { disc::Cache::new() };
+pub(crate) static mut ROOM_CACHE: disc::Cache = unsafe { disc::Cache::new() };
 static mut GEO_WORLD:geo::World=geo::World::new();
 static mut LIFE_WORLD:lifeblood::World=lifeblood::World::new();
 #[no_mangle] pub static mut HK_HAZARD_RESPAWNS:u32=0;

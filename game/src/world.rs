@@ -6,32 +6,173 @@ pub mod debris;
 pub mod particles;
 use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
-pub const SCENES: usize = 3;
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-#[derive(Clone, Copy)]
-pub struct MaskFade {
-    pub draws: &'static [u16],
-    pub ticks: u16,
+use hk_format::world_meta::{self as meta, KIND_BREAKABLE, KIND_MASK_FADE, KIND_REMOTE_MASK};
+
+/// The admitted scene bank. Its bytes are immutable until the next exclusive
+/// metadata admission, which `State::begin_world_admission` retires views for.
+#[cfg(not(test))]
+fn admitted_bank() -> Option<hk_format::WorldMeta<'static>> {
+    crate::disc::admitted_world_metadata()
 }
-#[derive(Clone, Copy)]
-pub struct MaskBinding {
-    pub owner: usize,
-    pub fade_ticks: u16,
-    pub fade: MaskFade,
+#[cfg(test)]
+extern crate std;
+/// Host tests select the bank per thread; the native harness runs tests in parallel.
+#[cfg(test)]
+std::thread_local! {
+    pub static TEST_BANK: core::cell::Cell<&'static [u8]> = const { core::cell::Cell::new(&[]) };
 }
+#[cfg(test)]
+fn admitted_bank() -> Option<hk_format::WorldMeta<'static>> {
+    let bytes = TEST_BANK.with(|bank| bank.get());
+    (!bytes.is_empty()).then(|| hk_format::WorldMeta::parse(bytes).expect("test bank"))
+}
+/// Bank region of a catalogue region. The last resolution is remembered
+/// because uncached edge reads ask once per edge.
+#[inline(never)]
+pub fn bank_region(region: &Region) -> Option<meta::Region<'static>> {
+    let bank = admitted_bank()?;
+    #[cfg(not(test))]
+    {
+        static mut LAST: (usize, usize) = (usize::MAX, 0);
+        let last = unsafe { LAST };
+        if last.0 == region.global_id {
+            if let Some(found) = bank.region(last.1) {
+                if found.global_id() as usize == region.global_id {
+                    return Some(found);
+                }
+            }
+        }
+        let index = (0..bank.region_count())
+            .find(|&i| bank.region(i).is_some_and(|r| r.global_id() as usize == region.global_id))?;
+        unsafe { LAST = (region.global_id, index) };
+        bank.region(index)
+    }
+    #[cfg(test)]
+    bank.region_by_global_id(region.global_id as u32)
+}
+
+/// One mask fade record: a draw list and its linear fade-to-zero duration.
 #[derive(Clone, Copy)]
-pub struct Breakable {
-    pub id: usize,
-    pub bounds: [i32; 4],
-    pub polygons: &'static [&'static [[i32; 2]]],
-    pub off: &'static [u16],
-    pub on: &'static [u16],
-    pub edges: &'static [u16],
-    pub fades: &'static [MaskFade],
-    pub fade_ticks: u16,
-    pub persistent: bool,
-    pub door_sound: bool,
+pub struct MaskFade<'a> {
+    object: meta::Object<'a>,
+}
+impl<'a> MaskFade<'a> {
+    pub fn draws(&self) -> meta::Indices<'a> {
+        self.object.indices(0)
+    }
+    pub fn ticks(&self) -> u16 {
+        self.object.extra(1) as u16
+    }
+}
+/// A breakable read from the bank: its object plus the mask fades that follow it.
+#[derive(Clone, Copy)]
+pub struct Breakable<'a> {
+    region: meta::Region<'a>,
+    object: meta::Object<'a>,
+    index: usize,
+    fades: usize,
+}
+impl<'a> Breakable<'a> {
+    /// Scene-global state id (scene * BREAKABLES_PER_SCENE + state).
+    pub fn id(&self) -> usize {
+        self.object.state_id() as usize
+    }
+    pub fn bounds(&self) -> [i32; 4] {
+        self.object.bounds()
+    }
+    pub fn persistent(&self) -> bool {
+        self.object.flags() & 1 != 0
+    }
+    pub fn door_sound(&self) -> bool {
+        self.object.flags() & 4 != 0
+    }
+    pub fn fade_ticks(&self) -> u16 {
+        self.object.flags() >> 6
+    }
+    pub fn off(&self) -> meta::Indices<'a> {
+        self.object.indices(0)
+    }
+    pub fn on(&self) -> meta::Indices<'a> {
+        self.object.indices(1)
+    }
+    pub fn edges(&self) -> meta::Indices<'a> {
+        self.object.indices(2)
+    }
+    #[inline(never)]
+    pub fn owns_edge(&self, index: usize) -> bool {
+        self.edges().any(|e| e as usize == index)
+    }
+    pub fn fades(&self) -> impl Iterator<Item = MaskFade<'a>> + 'a {
+        let region = self.region;
+        (self.index + 1..self.index + 1 + self.fades)
+            .filter_map(move |i| region.object(i).map(|object| MaskFade { object }))
+    }
+    /// Exact transformed source hit polygons against a nail polygon.
+    #[inline(never)]
+    pub fn hit_by(&self, polygon: &[[i32; 2]]) -> bool {
+        for target in self.object.polygons().flatten() {
+            let mut points = [[0i32; 2]; 16];
+            let mut count = 0;
+            for point in target.points().take(16).flatten() {
+                points[count] = point;
+                count += 1;
+            }
+            if polygons_overlap(polygon, &points[..count]) {
+                return true;
+            }
+        }
+        false
+    }
+}
+/// Breakables of a bank region in cooked order, each with its trailing fades.
+pub struct Breakables<'a> {
+    region: Option<meta::Region<'a>>,
+    index: usize,
+}
+impl<'a> Iterator for Breakables<'a> {
+    type Item = Breakable<'a>;
+    #[inline(never)]
+    fn next(&mut self) -> Option<Breakable<'a>> {
+        let region = self.region?;
+        while let Some(object) = region.object(self.index) {
+            let index = self.index;
+            self.index += 1;
+            if object.kind() != KIND_BREAKABLE {
+                continue;
+            }
+            let mut fades = 0;
+            while region.object(index + 1 + fades).is_some_and(|o| o.kind() == KIND_MASK_FADE) {
+                fades += 1;
+            }
+            return Some(Breakable { region, object, index, fades });
+        }
+        None
+    }
+}
+pub fn breakables(region: meta::Region<'_>) -> Breakables<'_> {
+    Breakables { region: Some(region), index: 0 }
+}
+/// Masks in this region faded by a breakable owned elsewhere:
+/// (owner state id, owner total fade ticks, fade).
+pub fn remote_masks<'a>(region: meta::Region<'a>) -> impl Iterator<Item = (usize, u16, MaskFade<'a>)> + 'a {
+    region.objects().flatten().filter(|o| o.kind() == KIND_REMOTE_MASK)
+        .map(|object| (object.state_id() as usize, object.extra(2) as u16, MaskFade { object }))
+}
+/// True when a broken breakable of this region owns room edge `index`.
+#[inline(never)]
+fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
+    for b in region_breakables(region) {
+        let id = b.id();
+        if broken[id / 32] & (1 << (id % 32)) != 0 && b.owns_edge(index) {
+            return true;
+        }
+    }
+    false
+}
+fn region_breakables(region: &Region) -> Breakables<'static> {
+    Breakables { region: bank_region(region), index: 0 }
 }
 #[derive(Clone, Copy)]
 pub struct Patch {
@@ -50,8 +191,6 @@ pub struct Region {
     pub particle_bank: Option<particles::Bank>,
     pub grass_emitters: &'static [particles::EmitterSpec],
     pub door_debris: &'static [debris::Spec],
-    pub breakables: &'static [Breakable],
-    pub remote_masks: &'static [MaskBinding],
     pub reveal_masks: &'static [crate::reveal_masks::RevealMaskSpec],
     pub reveal_bindings: &'static [crate::reveal_masks::RevealMaskBinding],
     pub actors: &'static [&'static hk_sim::ActorSpec],
@@ -66,6 +205,8 @@ pub struct Gate {
     pub entry_vy: i32,
 }
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/regions.rs"));
+#[cfg(not(test))]
+const _: () = assert!(SCENES == crate::disc::SCENE_COUNT, "state tables must cover every disc scene");
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Strike {
@@ -104,7 +245,7 @@ fn fill_edges(geo:&[u16],life:&[u16],broken:&[u32],region:&Region,room:&Room,cac
     for(i,dst)in cache.iter_mut().enumerate(){*dst=room.edge(i);}
     let mut blank=|i:u16|{if(i as usize)<count{cache[i as usize]=[0;4];}};
     for &i in geo.iter().chain(life){blank(i);}
-    for b in region.breakables.iter().filter(|b|broken[b.id/32]&(1<<(b.id%32))!=0){for &i in b.edges{blank(i);}}
+    for b in region_breakables(region).filter(|b|{let id=b.id();broken[id/32]&(1<<(id%32))!=0}){for i in b.edges(){blank(i);}}
 }
 impl State {
     pub const fn new() -> Self {
@@ -129,13 +270,13 @@ impl State {
     }
     /// Returns false for an already broken source object, including another
     /// copy of its metadata after loading an overlapping region.
-    pub fn break_object(&mut self, b: Breakable) -> bool {
-        if self.broken(b.id) {
+    pub fn break_object(&mut self, id: usize, fade_ticks: u16) -> bool {
+        if self.broken(id) {
             return false;
         }
-        self.broken[b.id / 32] |= 1 << (b.id % 32);
-        self.fade_left[b.id] = b.fade_ticks;
-        if b.fade_ticks!=0 {self.fade_active[b.id/32]|=1<<(b.id%32);}
+        self.broken[id / 32] |= 1 << (id % 32);
+        self.fade_left[id] = fade_ticks;
+        if fade_ticks!=0 {self.fade_active[id/32]|=1<<(id%32);}
         self.edge_cache_count=0;
         self.edge_cache_valid=false;
         true
@@ -171,9 +312,7 @@ impl State {
         let life=&self.lifeblood_edges[..self.lifeblood_edge_count];
         // Future larger rooms retain the direct path rather than dropping terrain.
         let cached=&self.edge_cache[..self.edge_cache_count];
-        let edge=|i:usize| if i<cached.len() {cached[i]} else if geo.contains(&(i as u16))||life.contains(&(i as u16))||region.breakables.iter().any(|b| {
-                broken[b.id / 32] & (1 << (b.id % 32)) != 0 && b.edges.contains(&(i as u16))
-            }) {[0;4]}else{room.edge(i)};
+        let edge=|i:usize| if i<cached.len() {cached[i]} else if geo.contains(&(i as u16))||life.contains(&(i as u16))||broken_edge(broken,region,i) {[0;4]}else{room.edge(i)};
         self.particles.tick_break(region.scene,region.collision_bounds,count,&edge);
         self.debris.tick(region.scene,region.door_debris,region.collision_bounds,count,edge);
     }
@@ -242,13 +381,16 @@ impl State {
         assert!(scene < SCENES);
         let first = scene * GRASS_PER_SCENE / 32;
         self.grass[first..first + GRASS_PER_SCENE / 32].fill(0);
-        for region in REGIONS.iter().filter(|r| r.scene == scene) {
-            for object in region.breakables {
-                if !object.persistent {
-                    self.broken[object.id / 32] &= !(1 << (object.id % 32));
-                    self.fade_left[object.id] = 0;
-                    self.fade_active[object.id/32]&=!(1<<(object.id%32));
-                }
+        // The scene being reset is the admitted one: both callers pass the
+        // current region's scene before the next admission.
+        let bank = admitted_bank().expect("world metadata admitted for scene reset");
+        assert!(bank.scene_id() as usize == scene, "scene reset needs that scene's bank");
+        for object in bank.regions().flat_map(breakables) {
+            if !object.persistent() {
+                let id = object.id();
+                self.broken[id / 32] &= !(1 << (id % 32));
+                self.fade_left[id] = 0;
+                self.fade_active[id/32]&=!(1<<(id%32));
             }
         }
     }
@@ -282,25 +424,23 @@ impl State {
             bounds[3] = bounds[3].max(dst[1]);
         }
         let polygon = &transformed[..points.len()];
-        for object in region.breakables {
-            if !self.broken(object.id)
-                && overlap(bounds, object.bounds)
-                && object
-                    .polygons
-                    .iter()
-                    .any(|target| polygons_overlap(polygon, target))
-                && self.break_object(*object)
+        for object in region_breakables(region) {
+            let id = object.id();
+            if !self.broken(id)
+                && overlap(bounds, object.bounds())
+                && object.hit_by(polygon)
+                && self.break_object(id, object.fade_ticks())
             {
-                self.particles.spawn_break(region.scene,object.id,nail.kind as u8,player.facing);
+                self.particles.spawn_break(region.scene,id,nail.kind as u8,player.facing);
                 self.debris.spawn(
                     region.scene,
                     region.door_debris,
-                    object.id,
+                    id,
                     nail.kind as u8,
                     player.facing,
                 );
                 result.broken += 1;
-                result.door_sounds += u16::from(object.door_sound);
+                result.door_sounds += u16::from(object.door_sound());
             }
         }
         for patch in region.grass {
@@ -348,32 +488,34 @@ impl State {
             crate::render::set_visible(patch.grass.off_draw, !cut);
             crate::render::set_visible(patch.grass.on_draw, cut);
         }
-        for object in region.breakables {
-            let broken = self.broken(object.id);
-            for &draw in object.off {
+        let Some(bank) = bank_region(region) else { return };
+        for object in breakables(bank) {
+            let broken = self.broken(object.id());
+            for draw in object.off() {
                 crate::render::set_visible(draw as usize, !broken);
             }
-            for &draw in object.on {
+            for draw in object.on() {
                 crate::render::set_visible(draw as usize, broken);
             }
-            for fade in object.fades {
-                self.apply_mask(object.id, object.fade_ticks, fade);
+            for fade in object.fades() {
+                self.apply_mask(object.id(), object.fade_ticks(), fade);
             }
         }
-        for binding in region.remote_masks {
-            self.apply_mask(binding.owner, binding.fade_ticks, &binding.fade);
+        for (owner, fade_ticks, fade) in remote_masks(bank) {
+            self.apply_mask(owner, fade_ticks, fade);
         }
     }
-    fn apply_mask(&self, owner: usize, total_ticks: u16, fade: &MaskFade) {
+    fn apply_mask(&self, owner: usize, total_ticks: u16, fade: MaskFade) {
         let elapsed = total_ticks.saturating_sub(self.fade_left[owner]);
+        let ticks = fade.ticks();
         let gain = if !self.broken(owner) {
             128
-        } else if fade.ticks == 0 || elapsed >= fade.ticks {
+        } else if ticks == 0 || elapsed >= ticks {
             0
         } else {
-            ((fade.ticks - elapsed) as u32 * 128 / fade.ticks as u32) as u8
+            ((ticks - elapsed) as u32 * 128 / ticks as u32) as u8
         };
-        for &draw in fade.draws {
+        for draw in fade.draws() {
             crate::render::set_gain(draw as usize, gain);
         }
     }
@@ -441,8 +583,8 @@ impl State {
             return;
         }
         for (i,edge) in cache.iter_mut().enumerate() {*edge=target_room.edge(i);}
-        for b in target.breakables.iter().filter(|b|self.broken(b.id)) {
-            for &i in b.edges {if let Some(edge)=cache.get_mut(i as usize) {*edge=[0;4];}}
+        for b in region_breakables(target).filter(|b|self.broken(b.id())) {
+            for i in b.edges() {if let Some(edge)=cache.get_mut(i as usize) {*edge=[0;4];}}
         }
         if active.scene==target.scene {
             for &i in self.geo_edges[..self.geo_edge_count].iter()
@@ -465,7 +607,7 @@ impl State {
             return self.edge(active,active_room,index);
         }
         let edge=target_room.edge(index);
-        if target.breakables.iter().any(|b|self.broken(b.id)&&b.edges.contains(&(index as u16))) {
+        if broken_edge(&self.broken,target,index) {
             return [0;4];
         }
         if active.scene==target.scene {
@@ -484,11 +626,7 @@ impl State {
     fn edge_uncached(&self, region:&Region,room:&Room,index:usize)->[i32;4] {
         if self.geo_edges[..self.geo_edge_count].contains(&(index as u16)) {return [0;4];}
         if self.lifeblood_edges[..self.lifeblood_edge_count].contains(&(index as u16)) {return [0;4];}
-        for object in region.breakables {
-            if self.broken(object.id) && object.edges.contains(&(index as u16)) {
-                return [0; 4];
-            }
-        }
+        if broken_edge(&self.broken,region,index) {return [0;4];}
         room.edge(index)
     }
 }

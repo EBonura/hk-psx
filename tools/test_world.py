@@ -9,8 +9,41 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'tools'))
+
+Q = 65536
+
+
+def world_banks(output):
+    """HKWMTA01 banks the tests read through world::TEST_BANK: the cooked scene 0
+    bank and a synthetic one whose values match the test constants in raw Q16."""
+    from world_metadata import encode_scene
+    report = json.loads((ROOT/'data/regions.json').read_text())
+    scene0 = next(s for s in report['scenes'] if s['scene_id'] == 0)
+    payload, _ = encode_scene(scene0, [r for r in report['regions'] if r['scene_id'] == 0])
+    (output/'scene0.hkwm').write_bytes(payload)
+    triangle = [[100, 0], [200, 0], [100, 100]]
+    square = [[100, 0], [200, 0], [200, 100], [100, 100]]
+    def prop(state, polygon, fades):
+        return {'source': f'test:{10 + state}', 'state_index': state, 'hit_points': 1,
+                'box': [v / Q for v in [100, 0, 200, 100]],
+                'hit_polygons': [[[x / Q, y / Q] for x, y in polygon]],
+                'off_draws': [1], 'on_draws': [2], 'edge_indices': [1],
+                'persistence': [{'dont_save': False, 'semi_persistent': False}],
+                'audio': {'options': [{'name': 'breakable_wall_hit_1'}]},
+                'mask_fades': [{'ticks_60hz': 60, 'target_alpha': 0, 'ease': 'linear',
+                                'renderers': [{'initial_alpha': 1}], 'draw_indices': [5]}] if fades else []}
+    def row(chunk, breakables):
+        bounds = [v / Q for v in [0, 0, 1000, 1000]]
+        return {'chunk_id': chunk, 'scene_id': 0, 'activation_bounds': bounds, 'camera_bounds': bounds,
+                'draws': 8, 'edges': 8, 'breakables': breakables}
+    payload, _ = encode_scene({'scene_id': 0, 'scene_name': 'Fixture', 'file': 'fixture'},
+                              [row(1, [prop(0, triangle, True), prop(1, square, False)]), row(2, [])])
+    (output/'fixture.hkwm').write_bytes(payload)
+    return {'HK_TEST_SCENE0_BANK': str(output/'scene0.hkwm'), 'HK_TEST_FIXTURE_BANK': str(output/'fixture.hkwm')}
 
 
 def main():
@@ -40,7 +73,7 @@ def main():
     for name, path in sorted(libraries.items()):
         command += ['--extern', f'{name}={path}']
     command += ['-L', f'dependency={libraries["hk_sim"].parent}', '-o', str(executable)]
-    subprocess.run(command, cwd=ROOT, env=dict(env, CARGO_MANIFEST_DIR=str(ROOT/'game')), check=True)
+    subprocess.run(command, cwd=ROOT, env=dict(env, CARGO_MANIFEST_DIR=str(ROOT/'game'), **world_banks(output)), check=True)
     subprocess.run([str(executable)], cwd=ROOT, check=True)
 
 

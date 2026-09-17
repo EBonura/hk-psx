@@ -5,7 +5,7 @@ from source import ROOT
 from actors import generated_actor_specs
 import sys
 sys.path.insert(0, str(ROOT / 'tools'))
-from world_metadata import damagehero_respawns
+from world_metadata import damagehero_respawns, persistent_object
 from flat_support import generate as flat_floor_catalog, rust_catalog
 
 from quality import SCENE_COUNT as SCENES
@@ -37,12 +37,6 @@ def rect(values):
     if len(values) != 4 or values[0] > values[2] or values[1] > values[3]:
         raise ValueError('invalid world rectangle')
     return arr(map(q, values))
-
-
-def persistent_object(record):
-    # Full persistent flags survive the session's death/reset operation. Objects
-    # without PersistentBoolItem, dontSave, and semiPersistent objects reset.
-    return any(not p['dont_save'] and not p['semi_persistent'] for p in record.get('persistence', []))
 
 
 def checkpoint_sources(sc, unsupported=None):
@@ -207,7 +201,8 @@ def generate(report):
         raise ValueError('region count exceeds the 1024-slot sanity bound')
     stable_breakables, stable_grass = {}, {}
     floors = flat_floor_catalog(report, root=ROOT)
-    out = [rust_catalog(floors)]
+    # The guest sizes its per-scene persistent state tables from the catalog.
+    out = [f'pub const SCENES: usize = {SCENES};\n', rust_catalog(floors)]
     reveal_scenes=report.get('reveal_mask_scenes',{})
     for scene in range(SCENES):
         records=reveal_scenes.get(str(scene),{}).get('controllers',[])
@@ -284,58 +279,8 @@ def generate(report):
             on = integer(patch['on_draw'], draw_count, 'grass on draw')
             patches.append(f'Patch {{state:{scene*GRASS_PER_SCENE+state},grass:Grass {{bounds:' +
                            rect(patch['bounds']) + f',off_draw:{off},on_draw:{on}}}}}')
-        props = []
-        for record in region['breakables']:
-            state = integer(record['state_index'], BREAKABLES_PER_SCENE, 'breakable state')
-            if record.get('hit_points') != 1:
-                raise ValueError('Breakable C# subset requires observed one-hit behavior')
-            if record.get('scene_state_count', 0) > BREAKABLES_PER_SCENE:
-                raise ValueError('authored Breakable scene state exceeds budget')
-            stable = (scene, state)
-            if stable_breakables.setdefault(stable, record['source']) != record['source']:
-                raise ValueError('breakable state aliases different source objects')
-            polygons = []
-            for polygon in record['hit_polygons']:
-                if not 3 <= len(polygon) <= 16 or any(len(point) != 2 for point in polygon):
-                    raise ValueError('Breakable polygon exceeds 3..16 vertex bound')
-                polygons.append('&[' + ','.join(arr(map(q, point)) for point in polygon) + ']')
-            if not 1 <= len(polygons) <= 8:
-                raise ValueError('Breakable polygon count exceeds 1..8 bound')
-            fades = []; fade_ticks = 0
-            for fade in record.get('mask_fades', []):
-                ticks = integer(fade['ticks_60hz'], 601, 'mask fade ticks')
-                if not ticks or fade['target_alpha'] != 0 or fade['ease'] != 'linear':
-                    raise ValueError('mask fade requires positive-duration linear fade to zero')
-                if any(renderer['initial_alpha'] != 1 for renderer in fade['renderers']):
-                    raise ValueError('mask fade requires observed full initial alpha')
-                fade_ticks = max(fade_ticks, ticks)
-                fades.append('MaskFade {draws:' + draw_indices(fade.get('draw_indices', [])) + f',ticks:{ticks}' + '}')
-            edge_indices = ids(integer(v, edge_count, 'breakable edge index') for v in record['edge_indices'])
-            # Play the resident source sample only when the authored table points
-            # to that clip. Several poles use the same clip as the tutorial doors.
-            options = record.get('audio', {}).get('options', [])
-            sound = len(options) == 1 and options[0]['name'] == 'breakable_wall_hit_1'
-            props.append(f'Breakable {{id:{scene*BREAKABLES_PER_SCENE+state},bounds:' + rect(record['box']) +
-                         ',polygons:&[' + ','.join(polygons) + '],off:' + draw_indices(record['off_draws']) +
-                         ',on:' + draw_indices(record['on_draws']) + ',edges:' + edge_indices +
-                         ',fades:&[' + ','.join(fades) + f'],fade_ticks:{fade_ticks},persistent:' +
-                         str(persistent_object(record)).lower() + ',door_sound:' + str(sound).lower() + '}')
-        remote_masks = []
-        for binding in region.get('remote_mask_bindings', []):
-            state = integer(binding['state_index'], BREAKABLES_PER_SCENE, 'mask owner state')
-            stable = (scene, state)
-            if stable_breakables.setdefault(stable, binding['owner_source']) != binding['owner_source']:
-                raise ValueError('mask state aliases different source objects')
-            fade = binding['fade']
-            ticks = integer(fade['ticks_60hz'], 601, 'mask fade ticks')
-            total = integer(binding['owner_fade_ticks'], 601, 'mask owner fade ticks')
-            if not ticks or total < ticks or fade['target_alpha'] != 0 or fade['ease'] != 'linear':
-                raise ValueError('invalid remote mask fade')
-            if any(r['initial_alpha'] != 1 for r in fade['renderers']):
-                raise ValueError('remote mask requires observed full initial alpha')
-            remote_masks.append(f'MaskBinding {{owner:{scene*BREAKABLES_PER_SCENE+state},fade_ticks:{total},fade:MaskFade {{draws:' +
-                draw_indices(fade['draw_indices']) + f',ticks:{ticks}' + '}}')
-        # Hazards and checkpoints live only in the HKWMTA01 bank (tools/world_metadata.py).
+        # Breakables, their mask fades, remote masks, hazards and checkpoints live only
+        # in the HKWMTA01 bank (tools/world_metadata.py).
         neighbours = [integer(n-1, len(regions), 'neighbour region') for n in region.get('neighbour_chunks', [])]
         reveal_bindings=[];reveal_owned=set()
         for binding in region.get('reveal_mask_bindings',[]):
@@ -355,7 +300,6 @@ def generate(report):
         out.append(f'Region {{global_id:{region["chunk_id"]},scene:{scene},flat_floor_heights:FLAT_FLOOR_HEIGHTS[{region["chunk_id"]-1}],bounds:' + rect(region['activation_bounds']) +
                    ',collision_bounds:' + rect(region.get('collision_bounds',region['activation_bounds'])) +
                    ',particle_bank:'+particle_bank+',grass_emitters:'+particle_emitters+',door_debris:'+debris_spec+',camera:' + rect(region['camera_bounds']) + ',grass_impact:'+impact_spec+',grass:&[' + ','.join(patches) +
-                   '],breakables:&[' + ','.join(props) + '],remote_masks:&[' + ','.join(remote_masks) +
                    '],reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+',reveal_bindings:&['+','.join(reveal_bindings)+'],actors:' + actors + ',neighbours:' + ids(neighbours) + '},')
     out.append('];\npub static GATES: &[Gate] = &[')
     by_name = {scene['scene_name']: scene for scene in report['scenes']}
