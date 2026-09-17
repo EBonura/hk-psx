@@ -97,6 +97,17 @@ def tk_sprite(s,file,collection,index,textures):
     im=tex.transform((w,h),Image.Transform.AFFINE,((b[0]-a[0])/w,(c[0]-a[0])/h,a[0],(b[1]-a[1])/w,(c[1]-a[1])/h,a[1]),Image.Resampling.BILINEAR)
     return im,(xmin,ymin,xmax,ymax)
 
+def guest_wrap(clip):
+    """tk2d wrapMode to the guest's loop/loop-section/once set.
+
+    Loop (0), LoopSection (1) and Once (2) map directly. Single (6) holds one
+    frame, which is Once for a one-frame clip. Other modes fail closed.
+    """
+    mode=clip['wrapMode'];count=len(clip['frames'])
+    if mode in (0,1,2):return mode
+    if mode==6 and count==1:return 2
+    raise ValueError(f'unsupported tk2d wrap mode {mode} for {count}-frame clip {clip.get("name")}')
+
 def append_actor_art(s,sc,actors,atlas,frames,clips):
     """Append original clips only for the explicitly recognized actor controller."""
     textures={};collections={};cache={};clip_cache={}
@@ -147,7 +158,7 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
                     frames.append({'texture':texture,'box':box,'sprite':f'{sid}:{index}','event':frame})
                 clip_cache[clip_key]=len(clips)
                 clips.append({'name':f'{s.sid(library_o)}/{name}','start':start,'count':len(clip['frames']),
-                              'fps':clip['fps'],'wrap':clip['wrapMode'],'loopStart':clip.get('loopStart',0)})
+                              'fps':clip['fps'],'wrap':guest_wrap(clip),'loopStart':clip.get('loopStart',0)})
             actor[kind+'_clip']=clip_cache[clip_key]
         actor['visual_scale']=[sx,sy]
     from effects import append_corpse_art
@@ -324,7 +335,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
                 framecache[cachekey]=(tex,box)
                 if write_shared:im.save(out/f'knight-{index}.png')
             tex,box=framecache[cachekey];frames.append({'texture':tex,'box':box,'sprite':index,'event':fr})
-        clips.append({'name':name,'start':start,'count':len(c['frames']),'fps':c['fps'],'wrap':c['wrapMode'],'loopStart':c.get('loopStart',0)})
+        clips.append({'name':name,'start':start,'count':len(c['frames']),'fps':c['fps'],'wrap':guest_wrap(c),'loopStart':c.get('loopStart',0)})
     append_actor_art(s,sc,actors,atlas,frames,clips)
     from effects import append_grass_impact_art,append_door_debris_art
     grass_impact=append_grass_impact_art(s,sc,atlas,frames,clips)

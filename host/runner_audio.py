@@ -37,10 +37,12 @@ def source_contract(source):
     from actors import actor_sources, _component_records
     from scene import Scene
     scene = Scene(source, 'level37')
-    actors = [a for a in actor_sources(scene)
-              if a.get('pending_movement_control', {}).get('kind') == 'ZombieSwipeWalker']
-    require(len(actors) == 2, 'expected both strictly recognized pending Runners')
-    bindings = [a['pending_movement_control']['audio_sources'] for a in actors]
+    def runner_control(actor):
+        control = actor.get('movement_control') or actor.get('pending_movement_control') or {}
+        return control if control.get('kind') == 'ZombieSwipeWalker' else None
+    actors = [a for a in actor_sources(scene) if runner_control(a)]
+    require(len(actors) == 2, 'expected both strictly recognized Runners')
+    bindings = [runner_control(a)['audio_sources'] for a in actors]
     expected = {'walk_loop': SOURCES[0][1], 'chase': [SOURCES[1][1], SOURCES[2][1]],
                 'loop': True, 'volume': 1.0, 'initial_pitch': 0.9973541498184204, 'play_on_awake': False}
     require(all(b == expected for b in bindings), 'Runner AudioSource contract changed')
@@ -88,8 +90,8 @@ def assemble(profiles, root, contract, spu_base=SPU_BASE):
                 and abs(profile['source_pcm_frames']/profile['source_pcm_rate'] - spec['source_length_seconds']) <= 1/profile['source_pcm_rate']+1e-6
                 and abs(profile['frames'] - profile['source_pcm_frames']*rate/profile['source_pcm_rate']) <= 1,
                 'Runner profile duration was trimmed or changed')
-        plane = profile['planes'][0]; path = (root / plane['path']).resolve()
-        require(path.is_relative_to((root / '.hkpsx').resolve()), 'Runner profile escapes ignored storage')
+        plane = profile['planes'][0]; path = root / plane['path']
+        require(path.resolve().is_relative_to((root / '.hkpsx').resolve()), 'Runner profile escapes ignored storage')
         raw = path.read_bytes()
         require(len(raw) == plane['bytes'] == profile['bytes'] and sha(path) == plane['sha256'], 'Runner profile payload integrity mismatch')
         require(len(raw) == ((profile['frames']+27)//28)*16 and profile['padding_samples'] == (-profile['frames'])%28,
@@ -154,8 +156,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, default=ROOT/'.hkpsx/runner71/audio')
     parser.add_argument('--verify', action='store_true')
-    args = parser.parse_args(); out = args.out.resolve()
-    require(out.is_relative_to((ROOT/'.hkpsx').resolve()), 'Runner output must remain in ignored storage')
+    args = parser.parse_args(); out = args.out
+    require(out.resolve().is_relative_to((ROOT/'.hkpsx').resolve()), 'Runner output must remain in ignored storage')
     report_path = out/'report.json'
     if args.verify:
         report = verify_outputs(report_path); print('Verified complete Runner bank:', report['bank']['byte_len'], 'bytes'); return
@@ -183,6 +185,13 @@ def main():
                                      'Loop padding is preserved; source AudioSource pitch can persist across chase and walk callbacks.',
                                      'SPU voice assignment, gain mixing and playback scheduling require guest integration and validation.']})
     verify_outputs(report_path)
+    # Guest bank: resident ADPCM above the focus bank plus its clip table.
+    (ROOT/'data/runner-audio.adpcm').write_bytes(bank)
+    rows = ''.join(f"    ({c['spu_address']},{c['byte_len']},{c['pitch']},{c['pitch_bounds'][0]},{c['pitch_bounds'][1]},{str(c['loop']).lower()}), // {c['event']}\n" for c in descriptor['clips'])
+    (ROOT/'data/runner-audio.rs').write_text('// Generated from complete Windows source clips; see ignored Runner audio provenance.\n'
+        f'pub const BANK_BASE: u32 = {SPU_BASE};\npub const BANK_BYTES: usize = {len(bank)};\n'
+        '/// (SPU address, bytes, nominal pitch, min pitch, max pitch, loops): walk loop, chase 1, chase 2.\n'
+        f'pub const CLIPS: [(u32,usize,u16,u16,u16,bool);{len(descriptor["clips"])}] = [\n{rows}];\n')
     print('Runner audio:',len(bank),'bytes; SPU end',descriptor['spu_end'],'remaining',descriptor['spu_free_bytes'])
 
 

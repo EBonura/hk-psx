@@ -41,7 +41,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
 | P05 | in progress | Build 87 compacted the Great Door bindings and packet budgets (headroom 298,296); build 86 made fades and grass resident-scene state and stepped the bank validation through pad polls (headroom 294,200); build 85 narrowed the per-slot scene table (headroom 296,248); build 84 removed the static region table: `Region` is a runtime value from the bank plus per-scene statics (headroom 294,200); build 83 moved actor references and reveal bindings into the bank (headroom 259,416); build 82 moved neighbours (headroom 260,776); build 81 moved grass into the bank (headroom 252,584) and added the `crossroads-exit` route through Crossroads_02 and back; build 80 moved breakables, mask fades and remote masks into the loadable bank behind checked views and fixed the guest state tables that were sized for three scenes; build 79 moved hazards and checkpoints (`.data` -11,536 bytes, headroom 223,444). The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
 | P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
-| P07 | in progress | Build 88 streams break-effect art per scene through one disc chunk per scene decoded at admission and uploaded to the fixed effect VRAM rectangles; 210 emitters across 18 scenes with no VRAM omissions. Previously: persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
+| P07 | in progress | Build 89 admits the Crossroads Zombie Runners (controller, clips, corpses, audio bank on voices 21 to 23; dust and death effects recorded omissions) and replays the routes concurrently; build 88 streams break-effect art per scene through one disc chunk per scene decoded at admission and uploaded to the fixed effect VRAM rectangles; 210 emitters across 18 scenes with no VRAM omissions. Previously: persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
 | P09 | in progress | Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Build 75 adds Crossroads_02 and Crossroads_07 through `GRID_SCENE_LAYOUTS` (one catalog entry per scene); their gates are generated from source and the linked headroom is 376,680 bytes. The `crossroads-floor` route walks the Crossroads_01 floor to the right wall; reaching `right1` needs an authored jump route. Build 78 gives top-side gate entries the source's -12 units/s initial drop (`Gate.entry_vy`, verified for the well; assumed for other top entries). The delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and return replays remain. |
@@ -453,6 +453,46 @@ Emitter and style metadata are per breakable and belong in the world bank
 with their owner (P05 item 7 continues there); Geo art has no omissions on
 this disc (24 rocks, 5,154 of 8,192 VRAM bytes) and follows the same chunk
 pattern when it overflows.
+
+## Crossroads Zombie Runners admitted (build 89)
+
+The strict recognizer's `pending_movement_control` is now promoted to a
+supported `ZombieSwipeWalker` control in `host/actors.py`, so the two
+Crossroads_01 Runners (and the Runners in Crossroads_05 and _21) cook their
+seven live and two corpse clips into the scene actor banks and emit
+`ActorController::Runner` specs. The corpse "Single" clip uses tk2d wrap mode
+6, which the scene format rejects; `cook.guest_wrap` maps a one-frame Single
+to Once and fails closed on other modes (both cookers, `cook.py` and
+`effects.py`, use it). `host/runner_audio.py` is an asset script writing
+`data/runner-audio.adpcm` and `.rs` (20,464 bytes at SPU 495,792 to 516,256,
+8,032 bytes left); `game/src/runner_audio.rs` uploads it after the Geo bank
+and plays the walk loop per Runner on voices 21 and 22 at the authored
+initial pitch (a third simultaneous Runner is counted as dropped) and the two
+chase calls on voice 23 at the controller's pitch clamped to the authored
+bounds. `main::runner_event` binds the sink: AudioPlay/AudioStop/Destroy drive
+the loops, ChaseSound the calls; DustStart/DustStop are counted in
+`HK_RUNNER_DUST_EVENTS` and not drawn, and source death effects are not
+presented (both recorded as actor limitations). Two boot assertions in the
+bank check were wrong on first contact with real data (the loop's authored
+pitch sits below its nominal rate; the ADPCM header byte carries a filter
+nibble) and were fixed. On the routes the Runners chase and swipe: the
+`crossroads-floor` replay records 24 loop starts, 14 chase calls, 28 dust
+events and 2 enemy hits with the invincibility cheat holding health at 5;
+seven routes pass. Memory: `.text` 426,144 -> 428,144, `.data` 395,104 ->
+395,152 plus the 20 KB bank, headroom 281,912 -> 279,832 bytes.
+
+## Build speed (in progress)
+
+Measured stages of one `cargo run --release -- build`: region cook with every
+per-region cache hit about 3 min (postpack, actor banks, dedup and generate
+run regardless), full recook 12 to 30 min whenever any of the cooker files in
+`host/cook_inputs.txt` changes, asset scripts and `pack_scenes` with its
+decoder proof 4 to 5 min uncached, guest link and disc 1.5 min, seven route
+replays 7 min sequential. The replays now run concurrently in the driver
+(1:42 wall for seven; the emulator is deterministic and the results matched
+the sequential runs). Next: per-script caches for the asset scripts and the
+packer, a postpack cache, a cook cache split between the geometry cook and
+the postpack stages, and a guest-only fast path.
 
 Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
 actor objects (flag 64) carry their index into the new per-scene

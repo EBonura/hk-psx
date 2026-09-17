@@ -285,8 +285,14 @@ def actor_sources(sc, bounds=None):
         if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
             from runner import recognize
             try:
-                actor['pending_movement_control'] = recognize(sc, actor)
-                actor['limitations'] = actor['pending_movement_control']['limitations']
+                # A strictly recognized Zombie Runner is admitted: the guest binds
+                # its controller, clips, corpse, senses and audio bank.
+                control = recognize(sc, actor)
+                actor['movement_control'] = dict(control, guest_enabled=True)
+                actor['movement_supported'] = True
+                actor['limitations'] = [limit for limit in control['limitations']
+                                        if not limit.startswith('Guest actor/clip/sensing/audio bindings')]
+                actor['limitations'].append('Charge Dust and source death effects are not presented; audio uses the resident Runner bank.')
             except (ValueError, KeyError, StopIteration) as error:
                 actor['pending_movement_error'] = str(error)
         result.append(actor)

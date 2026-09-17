@@ -35,6 +35,7 @@ mod cheats;
 mod geo;
 mod geo_render;
 mod geo_audio;
+mod runner_audio;
 mod lifeblood;
 mod great_door;
 mod render;
@@ -45,8 +46,17 @@ mod draw_packet;
 /// Canonical source admission remains closed until Runner audio and Charge Dust
 /// have resident bindings. Native integration tests supply a recording sink.
 /// Never admit an actor here and silently discard its presentation events.
-fn unbound_runner_event(_: enemies::RunnerEvent) {
-    panic!("Runner presentation bank is not admitted");
+#[no_mangle] pub static mut HK_RUNNER_DUST_EVENTS: u32 = 0;
+/// Runner presentation: audio through the resident Runner bank. Charge Dust is
+/// counted, not drawn (recorded omission); Destroy releases the actor's voice.
+fn runner_event(event: enemies::RunnerEvent) {
+    use enemies::RunnerEventKind::*;
+    match event.kind {
+        AudioPlay => runner_audio::loop_start(event.source_id),
+        AudioStop | Destroy => runner_audio::loop_stop(event.source_id),
+        ChaseSound { pitch_q16, variant } => runner_audio::call(pitch_q16, variant),
+        DustStart | DustStop => unsafe { HK_RUNNER_DUST_EVENTS = HK_RUNNER_DUST_EVENTS.saturating_add(1); },
+    }
 }
 /// Read-only marker: 0 title, 1 gameplay, 2 loading, 3 disc error.
 #[no_mangle]
@@ -243,7 +253,7 @@ fn main() {
             // was admitted. Every spatial view in this scene stays live.
             vram.admit_scene(region_id,cache.atlases_ready());
             vram.activate(region_id);
-            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);
+            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);runner_audio::upload();runner_audio::set_volume(settings.sfx);
             initial=false;
             sim_clock=psx_rt::interrupts::vblank_count();
             input::start(sim_clock);
@@ -350,7 +360,7 @@ fn main() {
                             paused=false;player.was_jump=pad.is_held(button::CROSS);
                         }
                         settings.cheats.apply(previous_cheats,&mut vitals,VITAL_PARAMS,pause_menu.action);
-                        if before!=(settings.sfx,settings.ambience,settings.music) {audio::set_volume(settings.sfx);focus_audio::set_volume(settings.sfx);geo_audio::set_volume(settings.sfx);ambience::set_volume(settings.ambience);music::set_volume(settings.music);}
+                        if before!=(settings.sfx,settings.ambience,settings.music) {audio::set_volume(settings.sfx);focus_audio::set_volume(settings.sfx);geo_audio::set_volume(settings.sfx);runner_audio::set_volume(settings.sfx);ambience::set_volume(settings.ambience);music::set_volume(settings.music);}
                     }
                     if paused || dialogue::open() || (door.pending() && !door.entering()) || vitals.dead || !vitals.can_control() || focus.locks_control() {audio::stop_footsteps();}
                     settings.cheats.maintain(&mut vitals,VITAL_PARAMS);cheats::publish(settings.cheats,VITAL_PARAMS);
@@ -385,7 +395,7 @@ fn main() {
                             geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                             life.reset();
                             if !door.opened() {door.reset();}
-                            dialogue::cancel();state.reset_scene(r.scene);reveals.reset_scene(r.scene);enemies.reset_scene(r.scene);vitals=settings.cheats.new_vitals(VITAL_PARAMS);
+                            dialogue::cancel();state.reset_scene(r.scene);reveals.reset_scene(r.scene);enemies.reset_scene(r.scene);runner_audio::reset();vitals=settings.cheats.new_vitals(VITAL_PARAMS);
                             audio::reset_movement();player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
                             nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();target=Some(0);
                         } else if vitals.hazard_pending {
@@ -448,7 +458,7 @@ fn main() {
                                 dialogue::cancel();focus.interrupt();focus_audio::interrupt();
                             }
                             let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
-                                [camera.0,camera.1,-2496922],unbound_runner_event,
+                                [camera.0,camera.1,-2496922],runner_event,
                                 |scene,x,y| {let i=cache.locate(scene,x,y)?;Some((world::resident(i)?,cache.room_for(i)?))});
                             enemies.take_geo_deaths(r.scene,|source,x,y|geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));
                             let h=geo::HERO_BOX;
@@ -485,7 +495,7 @@ fn main() {
                                     {let id=id;
                                         geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                                         vitals.add_blue_health(life.leave_scene());
-                                        dialogue::cancel();state.reset_scene(r.scene);reveals.leave_scene();enemies.reset_scene(r.scene);audio::reset_movement();player=Player::spawn(spawn[0],spawn[1]);
+                                        dialogue::cancel();state.reset_scene(r.scene);reveals.leave_scene();enemies.reset_scene(r.scene);runner_audio::reset();audio::reset_movement();player=Player::spawn(spawn[0],spawn[1]);
                                         if side_entry {
                                             if door_exit {door.begin_entry(g.target_scene);}else{door.begin_gate_entry(g.target_scene);}
                                             player.grounded=true;

@@ -14,7 +14,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const COOK_INPUTS: &str = include_str!("../cook_inputs.txt");
 const ASSET_SCRIPTS: &[&str] = &[
     "title_music.py", "cook_audio.py", "cook_hud.py", "ambience.py", "focus_audio.py", "read_points.py",
-    "geo.py", "geo_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
+    "geo.py", "geo_audio.py", "runner_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
 ];
 /// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true)];
@@ -240,16 +240,27 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     let out = root.join(".hkpsx/validate");
     let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(&out)?;
+    // Replays are independent deterministic emulator runs: spawn them all at
+    // once and collect in route order, so the wall time is the longest route.
+    let children: Vec<_> = ROUTES
+        .iter()
+        .map(|(name, _)| {
+            let tape = root.join(format!("tools/tapes/{name}.pxtape"));
+            let output = out.join(name);
+            Command::new(venv_python(root))
+                .args([root.join("tools/replay_cue.py").to_str().unwrap(), "--tape", tape.to_str().unwrap(), "--output",
+                    output.to_str().unwrap(), "--screenshot-interval", "400", "--frontend", frontend.to_str().unwrap()])
+                .current_dir(root)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+        })
+        .collect();
     let mut summary = serde_json::Map::new();
     let mut failed = Vec::new();
-    for (name, gates) in ROUTES {
-        let tape = root.join(format!("tools/tapes/{name}.pxtape"));
+    for ((name, gates), child) in ROUTES.iter().zip(children) {
         let output = out.join(name);
-        let replay = Command::new(venv_python(root))
-            .args([root.join("tools/replay_cue.py").to_str().unwrap(), "--tape", tape.to_str().unwrap(), "--output",
-                output.to_str().unwrap(), "--screenshot-interval", "400", "--frontend", frontend.to_str().unwrap()])
-            .current_dir(root)
-            .output()?;
+        let replay = child?.wait_with_output()?;
         let text = String::from_utf8_lossy(&replay.stdout).to_string();
         std::fs::write(out.join(format!("{name}.log")), format!("{text}{}", String::from_utf8_lossy(&replay.stderr)))?;
         let verdict: Value = text.find('{').and_then(|start| serde_json::from_str(&text[start..]).ok()).unwrap_or(Value::Null);

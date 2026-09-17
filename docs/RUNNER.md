@@ -1,9 +1,11 @@
 # Crossroads Zombie Runner implementation
 
 The controller in `shared/hk-sim/src/runner.rs` now has an explicit branch in
-the guest actor pool, selected by `ActorController::Runner`. Canonical source
-admission remains disabled until presentation and Crossroads scene bindings are
-ready; native tests exercise the actual guest module with a recording event
+the guest actor pool, selected by `ActorController::Runner`. Since build 89 the
+recognized Runners are admitted on the disc with the resident audio bank
+(`game/src/runner_audio.rs`, voices 21 to 23); Charge Dust and source death
+effects are counted, not presented. Before that, admission was disabled until
+presentation and Crossroads scene bindings were ready; native tests exercise the actual guest module with a recording event
 sink. The production sink rejects unbound Runner presentation instead of silently
 discarding sound/dust events. Existing Crawler behavior remains separately tested.
 
