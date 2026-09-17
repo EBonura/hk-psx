@@ -89,14 +89,18 @@ impl World {
     }
     pub fn frame(&self,region:usize,camera:(i32,i32))->Option<usize> {
         if self.opened() {return None;}
-        let binding=REGIONS.get(region)?.as_ref()?;
+        let binding=binding(region)?;
         // Conservative world bounds for all three source sprite poses.
         if (camera.0-POSITION[0]).abs()>20*65536 ||(camera.1-POSITION[1]).abs()>18*65536{return None;}
         Some(binding.frames[self.stage()]as usize)
     }
 }
+/// Door frames and owned edges of a catalogue slot; slots are sorted.
+fn binding(region:usize)->Option<&'static Binding> {
+    REGIONS.binary_search_by_key(&(region as u16),|(slot,_)|*slot).ok().map(|i|&REGIONS[i].1)
+}
 pub fn apply(world:&World,state:&mut crate::world::State,region:usize) {
-    if world.opened() {if let Some(Some(binding))=REGIONS.get(region){state.append_script_edges(binding.edges);}}
+    if world.opened() {if let Some(binding)=binding(region){state.append_script_edges(binding.edges);}}
 }
 pub fn draw(room:&Room,frame:usize,camera:(i32,i32))->u32 {
     let f=room.frame(frame);let b=core::array::from_fn::<_,4,_>(|i|i32_at(f,4+i*4));

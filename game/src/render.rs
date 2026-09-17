@@ -224,7 +224,7 @@ pub fn init(room: &Room, bank: usize, region:usize,coverage:CoverageView<'_>) {
         TEXTURE_COUNT = room.counts[1];
         // The cooker bounds every mandatory child, even if all source draws
         // are visible. Optional scissors can only spend the remaining capacity.
-        EXTRA_ALLOWANCE=CAP.checked_sub(DYNAMIC_PACKET_RESERVE+SCENERY_PACKET_BUDGETS[region]).expect("scenery packet budget");
+        EXTRA_ALLOWANCE=CAP.checked_sub(DYNAMIC_PACKET_RESERVE+SCENERY_PACKET_BUDGETS[region] as usize).expect("scenery packet budget");
         if scene_changed {
             // Texture IDs, dimensions and covers are immutable within a scene
             // bank. Cache keys already include exact texture and signed spans,

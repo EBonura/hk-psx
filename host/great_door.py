@@ -194,9 +194,12 @@ def generate(metadata,entry,return_entry):
            'pub const POSITION:[i32;2]='+array(map(q,source['position'][:2]))+';',
            'pub const SCALE:i32='+str(source['scale'])+';',
            'pub const BOUNDS:[i32;4]='+array(map(q,source['bounds']))+';',
-           'pub static REGIONS:&[Option<Binding>]=&[']
-    for record in records:
-        lines.append('None,'if record is None else 'Some(Binding{frames:'+array(record['frames'])+',edges:&'+array(record['edges'])+'}),')
+           '// Only the catalogue slots that see the door carry a binding.',
+           'pub static REGIONS:&[(u16,Binding)]=&[']
+    for slot,record in enumerate(records):
+        if record is None:continue
+        if slot>=65536:raise ValueError('Great Door binding slot exceeds u16')
+        lines.append('('+str(slot)+',Binding{frames:'+array(record['frames'])+',edges:&'+array(record['edges'])+'}),')
     return '\n'.join(lines)+'];\n'
 
 def main():
