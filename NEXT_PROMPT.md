@@ -2,7 +2,7 @@
 
 ## Current state (2026-09-17)
 
-Build 91 is the sole disc: King's Pass, Dirtmouth and the whole Forgotten
+Build 92 is the sole disc: King's Pass, Dirtmouth and the whole Forgotten
 Crossroads (45 scenes, 693 views) connected by the authored gates,
 validated by `cargo run --release -- build --frontend <PSoXide frontend>`
 (seven route replays, zero faults). Hazards, checkpoints, breakables, mask
@@ -11,10 +11,10 @@ bindings now live only in the loadable HKWMTA01 bank
 (object stride 48, three payload words, a fifth u16 index-list section); the
 guest reads them through `world::bank_region` and the `Breakable`, `MaskFade`
 and `Patch` views, `State::apply` is one pass over the region's objects, and
-`State::reset_scene` walks the admitted bank. RAM headroom is 222,316 bytes after the per-texture flags and cores moved
-into the resident scene bank; the remaining per-scene linked tables are the
-break-effect emitter/style/art tables, pogo targets and the chunk manifests
-(P05 item 7), to move before the catalog grows past Crossroads. The Crossroads Zombie Runners are admitted
+`State::reset_scene` walks the admitted bank. RAM headroom is 257,132 bytes after the per-texture flags and cores moved
+into the resident scene bank and the break-effect tables into the effect-art
+chunk; the remaining per-scene linked tables are the pogo targets and the
+chunk manifests (P05 item 7). The Crossroads Zombie Runners are admitted
 (controller, clips, corpses, resident audio bank; Charge Dust and death
 effects are counted omissions). Route replays run concurrently (1:42 for
 seven). Break-effect art streams per scene (one

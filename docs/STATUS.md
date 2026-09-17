@@ -1,11 +1,11 @@
-## Build 91: the whole Forgotten Crossroads on the actual disc
+## Build 92: the whole Forgotten Crossroads on the actual disc
 
-The sole disc pair is build 91 (45 scenes, 693 views; earlier build 89 (Crossroads Zombie Runners admitted with their
+The sole disc pair is build 92 (45 scenes, 693 views; earlier build 89 (Crossroads Zombie Runners admitted with their
 audio bank, break-effect art streamed per scene from its own disc chunk, 210
 emitters admitted across 18 scenes; earlier builds (the static region table is gone: every
 region's metadata is read from the loadable bank through a runtime `Region`
 value, guest state tables sized from the
-catalog, a seventh route through Crossroads_02 and back, 222,316 bytes of
+catalog, a seventh route through Crossroads_02 and back, 257,132 bytes of
 linked headroom). Build 76 was: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (329 views, 200 disc chunks) reachable through the authored
 gates, six route replays passing with 219,292 bytes of linked headroom. Growing

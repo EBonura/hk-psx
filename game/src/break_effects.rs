@@ -23,13 +23,101 @@ pub struct Upload {pub offset:usize,pub x:u16,pub y:u16,pub w:u16,pub h:u16}
 pub struct EffectArtDesc {pub raw_len:usize,pub raw_fnv:u32,pub stored_len:usize,pub stored_fnv:u32}
 #[cfg(not(test))]
 include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/break_effects.rs"));
-#[cfg(test)]pub static SCENE_STYLES:&[&[Style]]=&[&[]];
-#[cfg(test)]pub static SCENE_EMITTERS:&[&[Emitter]]=&[&[]];
+#[cfg(test)]pub static CURVES:&[&[Sample]]=&[];
 #[cfg(test)]pub static PARTICLE_TRACKS:&[[[u32;2];33]]=&[];
 #[cfg(test)]pub static EMITTER_TRACK_BASES:&[u16]=&[];
-/// Styles and emitters of a catalogue scene; scenes past the cooked tables have none.
-pub fn scene_styles(scene:usize)->&'static [Style] {SCENE_STYLES.get(scene).copied().unwrap_or(&[])}
-pub fn scene_emitters(scene:usize)->&'static [Emitter] {SCENE_EMITTERS.get(scene).copied().unwrap_or(&[])}
+#[cfg(test)]pub const FX_MAX_STYLES:usize=16;
+#[cfg(test)]pub const FX_MAX_EMITTERS:usize=96;
+#[cfg(test)]pub const FX_MAX_ART:usize=48;
+#[cfg(test)]pub const FX_MAX_UPLOADS:usize=48;
+#[cfg(test)]pub const FX_MAX_FRAMES:usize=96;
+
+/// The admitted scene's effect tables, decoded from its HKFX0001 chunk at
+/// scene admission (`load_scene`). Exactly one scene is resident, so these
+/// bounded tables replace the per-scene linked statics; `Style::samples`
+/// borrows the linked curve table and `Style::frames` this frame pool.
+struct Resident {
+    scene:usize,
+    styles:[Style;FX_MAX_STYLES],style_count:usize,
+    emitters:[Emitter;FX_MAX_EMITTERS],emitter_count:usize,
+    art:[Art;FX_MAX_ART],art_count:usize,
+    frames:[[u16;3];FX_MAX_FRAMES],
+}
+const EMPTY_STYLE:Style=Style{life:[0;2],speed:[0;2],size:[0;2],rotation:[0;2],color:[0;3],count:0,rate:0,shape:0,radius:0,arc:0,
+    shape_scale:[0;3],force:[[0;2];3],velocity:[[0;2];3],limit:0,dampen:0,spin_speed:[0;2],spin_range:[0;2],collision:false,bounce:0,
+    collision_dampen:0,life_loss:0,kill_speed:0,radius_scale:0,samples:&[],frames:&[]};
+const EMPTY_EMITTER:Emitter=Emitter{scene:0,owner:0,source:0,style:0,angle_offset:0,origin:[0;3],basis:[[0;3];3]};
+static mut RESIDENT:Resident=Resident{scene:usize::MAX,styles:[EMPTY_STYLE;FX_MAX_STYLES],style_count:0,
+    emitters:[EMPTY_EMITTER;FX_MAX_EMITTERS],emitter_count:0,art:[Art{u:0,v:0,w:0,h:0,clut:0,tpage:0};FX_MAX_ART],art_count:0,
+    frames:[[0;3];FX_MAX_FRAMES]};
+/// Styles and emitters of a catalogue scene; only the resident scene has any.
+pub fn scene_styles(scene:usize)->&'static [Style] {
+    let r=unsafe {&*(&raw const RESIDENT)};if r.scene==scene {&r.styles[..r.style_count]}else{&[]}
+}
+pub fn scene_emitters(scene:usize)->&'static [Emitter] {
+    let r=unsafe {&*(&raw const RESIDENT)};if r.scene==scene {&r.emitters[..r.emitter_count]}else{&[]}
+}
+fn scene_art(scene:usize)->&'static [Art] {
+    let r=unsafe {&*(&raw const RESIDENT)};if r.scene==scene {&r.art[..r.art_count]}else{&[]}
+}
+const STYLE_BYTES:usize=168;const EMITTER_BYTES:usize=64;const ART_BYTES:usize=8;const UPLOAD_BYTES:usize=12;const FRAME_BYTES:usize=6;
+fn i32_at(b:&[u8],at:usize)->i32 {i32::from_le_bytes([b[at],b[at+1],b[at+2],b[at+3]])}
+fn u32_at(b:&[u8],at:usize)->u32 {u32::from_le_bytes([b[at],b[at+1],b[at+2],b[at+3]])}
+fn u16_at(b:&[u8],at:usize)->u16 {u16::from_le_bytes([b[at],b[at+1]])}
+fn pair(b:&[u8],at:usize)->[i32;2] {[i32_at(b,at),i32_at(b,at+4)]}
+/// Parse a scene's HKFX0001 chunk into the resident tables and upload its
+/// texels to the fixed effect VRAM rects. Returns false on any bound or
+/// format violation; nothing of the previous scene survives a failure.
+#[cfg(not(test))]
+pub fn load_scene(scene:usize,data:&[u8])->bool {
+    let r=unsafe {&mut *(&raw mut RESIDENT)};
+    r.scene=usize::MAX;r.style_count=0;r.emitter_count=0;r.art_count=0;
+    if data.len()<32 || &data[..8]!=b"HKFX0001" {return false;}
+    let counts:[usize;6]=core::array::from_fn(|i|u32_at(data,8+i*4)as usize);
+    let [styles,emitters,art,uploads,frames,texel_base]=counts;
+    if styles>FX_MAX_STYLES||emitters>FX_MAX_EMITTERS||art>FX_MAX_ART||uploads>FX_MAX_UPLOADS||frames>FX_MAX_FRAMES {return false;}
+    let (s0,e0,a0,u0,f0)=(32,32+styles*STYLE_BYTES,32+styles*STYLE_BYTES+emitters*EMITTER_BYTES,
+        32+styles*STYLE_BYTES+emitters*EMITTER_BYTES+art*ART_BYTES,
+        32+styles*STYLE_BYTES+emitters*EMITTER_BYTES+art*ART_BYTES+uploads*UPLOAD_BYTES);
+    let tables_end=f0+frames*FRAME_BYTES;
+    if texel_base<tables_end || texel_base%4!=0 || texel_base>data.len() {return false;}
+    for i in 0..frames {
+        let at=f0+i*FRAME_BYTES;r.frames[i]=[u16_at(data,at),u16_at(data,at+2),u16_at(data,at+4)];
+        if r.frames[i].iter().any(|&f|f as usize>=art) {return false;}
+    }
+    for i in 0..styles {
+        let b=&data[s0+i*STYLE_BYTES..s0+(i+1)*STYLE_BYTES];
+        let curve=u16_at(b,160)as usize;let first=u16_at(b,162)as usize;let count=u16_at(b,164)as usize;
+        if curve>=CURVES.len() || CURVES[curve].len()!=33 || first+count>frames || count==0 {return false;}
+        let frame_pool:&'static [[u16;3]]=unsafe {core::slice::from_raw_parts((&raw const RESIDENT.frames).cast::<[u16;3]>().add(first),count)};
+        r.styles[i]=Style{life:[u16_at(b,0),u16_at(b,2)],speed:pair(b,4),size:pair(b,12),rotation:pair(b,20),color:[b[28],b[29],b[30]],
+            count:u16_at(b,32),rate:i32_at(b,36),shape:b[40],radius:i32_at(b,44),arc:i32_at(b,48),
+            shape_scale:[i32_at(b,52),i32_at(b,56),i32_at(b,60)],force:[pair(b,64),pair(b,72),pair(b,80)],velocity:[pair(b,88),pair(b,96),pair(b,104)],
+            limit:i32_at(b,112),dampen:i32_at(b,116),spin_speed:pair(b,120),spin_range:pair(b,128),collision:u32_at(b,136)!=0,
+            bounce:i32_at(b,140),collision_dampen:i32_at(b,144),life_loss:i32_at(b,148),kill_speed:i32_at(b,152),radius_scale:i32_at(b,156),
+            samples:CURVES[curve],frames:frame_pool};
+        if r.styles[i].count==0||r.styles[i].count>128||r.styles[i].rate<=0||r.styles[i].life[0]==0 {return false;}
+    }
+    for i in 0..emitters {
+        let b=&data[e0+i*EMITTER_BYTES..e0+(i+1)*EMITTER_BYTES];
+        r.emitters[i]=Emitter{scene:b[0],owner:u16_at(b,2),source:u32_at(b,4),style:b[8],angle_offset:i32_at(b,12),
+            origin:[i32_at(b,16),i32_at(b,20),i32_at(b,24)],basis:[[i32_at(b,28),i32_at(b,32),i32_at(b,36)],[i32_at(b,40),i32_at(b,44),i32_at(b,48)],[i32_at(b,52),i32_at(b,56),i32_at(b,60)]]};
+        if r.emitters[i].style as usize>=styles || r.emitters[i].scene as usize!=scene {return false;}
+    }
+    for i in 0..art {
+        let b=&data[a0+i*ART_BYTES..a0+(i+1)*ART_BYTES];
+        r.art[i]=Art{u:b[0],v:b[1],w:b[2],h:b[3],clut:u16_at(b,4),tpage:u16_at(b,6)};
+    }
+    for i in 0..uploads {
+        let b=&data[u0+i*UPLOAD_BYTES..u0+(i+1)*UPLOAD_BYTES];
+        let (offset,x,y,w,h)=(u32_at(b,0)as usize,u16_at(b,4),u16_at(b,6),u16_at(b,8),u16_at(b,10));
+        let end=offset+w as usize*h as usize*2;
+        if offset<texel_base || end>data.len() {return false;}
+        psx_vram::upload_bytes(psx_vram::VramRect::new(x,y,w,h),&data[offset..end]);
+    }
+    r.style_count=styles;r.emitter_count=emitters;r.art_count=art;r.scene=scene;
+    true
+}
 #[inline]fn checkpoint(){#[cfg(not(test))]crate::input::checkpoint();}
 /// Exact `pair[0]+(delta*seed)/255` without the software 64-bit division:
 /// 65536 = 257*255+1, so for n = a*65536+b, n/255 = a*257+(a+b)/255.
@@ -237,25 +325,13 @@ fn collide(old:[i32;3],next:&mut [i32;3],normal:&mut [i32;2],radius:i32,edges:im
         }
     }
 }
-/// Upload a scene's decoded effect texels into the fixed effect VRAM rects.
-/// The scene's chunk was decoded into `data` by the disc module at admission.
-#[cfg(not(test))]
-pub fn upload_scene(scene:usize,data:&[u8])->bool {
-    let Some(uploads)=SCENE_UPLOADS.get(scene) else {return false};
-    for u in *uploads {
-        let end=u.offset+u.w as usize*u.h as usize*2;
-        if end>data.len() {return false;}
-        psx_vram::upload_bytes(psx_vram::VramRect::new(u.x,u.y,u.w,u.h),&data[u.offset..end]);
-    }
-    true
-}
 #[cfg(not(test))]
 #[inline(never)]
 pub(super) fn draw_particle(p:&Particle,track:u16,camera:(i32,i32))->bool {
     use psx_gpu::{prim::QuadTextured,material::{TextureMaterial,BlendMode}};
     let s=&scene_styles(p.scene as usize)[(p.kind-2)as usize];let words=cached_frame(track,phase(p),PARTICLE_TRACKS);
     let (half,level)=draw_shape(p,s,words);if level==0{return false;}
-    let a=SCENE_ART[p.scene as usize][s.frames[p.cell as usize][level as usize-1]as usize];
+    let a=scene_art(p.scene as usize)[s.frames[p.cell as usize][level as usize-1]as usize];
     let depth=2496922+p.position[2];if depth<=ONE{return false;}
     // Source-plane particles skip the 64-bit software division exactly.
     let scale=if p.position[2]==0 {crate::KNIGHT_SCALE as i64}else{super::perspective::scale(depth)as i64};

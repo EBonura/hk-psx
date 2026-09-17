@@ -342,7 +342,7 @@ impl Cache {
             }
         }
         psx_gpu::draw_sync();
-        if !crate::world::particles::break_effects::upload_scene(SCENE_MANIFEST[scene].scene_id as usize,&arena[..f.raw_len]) {return Err(LoadError::EffectArt);}
+        if !crate::world::particles::break_effects::load_scene(SCENE_MANIFEST[scene].scene_id as usize,&arena[..f.raw_len]) {return Err(LoadError::EffectArt);}
         self.effect_scene=scene;Ok(())
     }
     /// Stage and validate the immutable HKWMTA bank before any scene object

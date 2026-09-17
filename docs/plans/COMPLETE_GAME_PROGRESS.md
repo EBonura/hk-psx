@@ -566,6 +566,20 @@ allocation and their per-index bindings went stale). `.data` 558,400 ->
 421,536 bytes, `.bss` +22 KB (the core arrays and the larger resident banks
 in the arena), headroom 109,540 -> 222,316; seven routes pass.
 
+Build 92 moved the break-effect tables into the effect-art chunk. The chunk is
+now `HKFX0001`: a 32-byte header (style, emitter, art, upload and frame counts,
+texel base), 168-byte style records that reference the linked `CURVES` table
+by index and a per-chunk frame table by span, 64-byte emitters, 8-byte art,
+12-byte uploads with absolute texel offsets, then the texels.
+`break_effects::load_scene` parses it at admission into bounded resident
+tables (`FX_MAX_*`: 16 styles, 96 emitters, 48 art, 48 uploads, 96 frames;
+the 45 scenes peak at 10/71/33/36) and uploads the texels; `scene_styles`,
+`scene_emitters` and the art lookup read the resident scene only. The
+per-scene `SCENE_STYLES`/`SCENE_EMITTERS`/`SCENE_ART`/`SCENE_UPLOADS` statics
+are gone; only the eleven distinct sample curves still link. `.data` 421,536
+-> 384,368 bytes, headroom 222,316 -> 257,132; seven routes pass (the
+`crossroads-exit` statue breaks spawn from the resident tables).
+
 Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
 actor objects (flag 64) carry their index into the new per-scene
 `SCENE_ACTORS[scene]` static, which `host/world.py` assigns as `spec_index` on
