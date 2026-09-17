@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BREAKABLE, KIND_GRASS, KIND_MASK_FADE, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
+use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BREAKABLE, KIND_GRASS, KIND_MASK_FADE, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -195,6 +195,44 @@ pub fn reveal_bindings(region: &Region) -> impl Iterator<Item = crate::reveal_ma
         let draw = pairs.next()?;
         Some(crate::reveal_masks::RevealMaskBinding { controller: controller as u8, draw })
     })
+}
+/// A static NailSlash target read from the bank.
+#[derive(Clone, Copy)]
+pub struct PogoTarget<'a> {
+    object: meta::Object<'a>,
+}
+impl<'a> PogoTarget<'a> {
+    pub fn bounds(&self) -> [i32; 4] {
+        self.object.bounds()
+    }
+    /// The owning breakable's state id; a broken owner no longer bounces.
+    pub fn breakable(&self) -> Option<usize> {
+        (self.object.state_id() != u32::MAX).then_some(self.object.state_id() as usize)
+    }
+    /// Horizontal and up slashes bounce too, not only the down slash.
+    pub fn horizontal_and_up(&self) -> bool {
+        self.object.flags() & 1 != 0
+    }
+    #[inline(never)]
+    pub fn hit_by(&self, polygon: &[[i32; 2]]) -> bool {
+        for target in self.object.polygons().flatten() {
+            let mut points = [[0i32; 2]; 16];
+            let mut count = 0;
+            for point in target.points().take(16).flatten() {
+                points[count] = point;
+                count += 1;
+            }
+            if polygons_overlap(polygon, &points[..count]) {
+                return true;
+            }
+        }
+        false
+    }
+}
+/// Static targets touching a catalogue region, through the admitted bank.
+pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>> {
+    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_POGO).map(|object| PogoTarget { object })
 }
 /// True when a broken breakable of this region owns room edge `index`.
 #[inline(never)]

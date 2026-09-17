@@ -614,26 +614,6 @@ impl Draws {
     }
 }
 
-struct PogoTarget {
-    bounds: [i32; 4],
-    polygons: &'static [&'static [[i32; 2]]],
-    breakable: Option<usize>,
-    horizontal_and_up: bool,
-}
-#[cfg(not(test))]
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/pogo.rs"));
-#[cfg(test)]
-static POGO_SCENES: &[&[PogoTarget]] = &[&[PogoTarget {
-    bounds: [-hk_sim::ONE, -hk_sim::ONE, hk_sim::ONE, 0],
-    polygons: &[&[
-        [-hk_sim::ONE, -hk_sim::ONE],
-        [hk_sim::ONE, -hk_sim::ONE],
-        [hk_sim::ONE, 0],
-        [-hk_sim::ONE, 0],
-    ]],
-    breakable: Some(0),
-    horizontal_and_up: false,
-}]];
 /// Call before world::State::strike so a prop's first destruction hit can still
 /// bounce. Already-destroyed colliders are rejected by their stable source state.
 pub fn pogo_contact(
@@ -659,22 +639,14 @@ pub fn pogo_contact(
         bounds[2] = bounds[2].max(dst[0]);
         bounds[3] = bounds[3].max(dst[1]);
     }
-    let targets = POGO_SCENES
-        .get(region.scene)
-        .expect("pogo scene metadata missing");
-    for target in *targets {
-        if nail.kind != 3 && !target.horizontal_and_up {
+    for target in crate::world::pogo_targets(region) {
+        if nail.kind != 3 && !target.horizontal_and_up() {
             continue;
         }
-        if target.breakable.is_some_and(|id| state.broken(id)) {
+        if target.breakable().is_some_and(|id| state.broken(id)) {
             continue;
         }
-        if overlap(bounds, target.bounds)
-            && target
-                .polygons
-                .iter()
-                .any(|p| crate::world::polygons_overlap(&points[..src.len()], p))
-        {
+        if overlap(bounds, target.bounds()) && target.hit_by(&points[..src.len()]) {
             response.contact(
                 crate::NAIL_RESPONSE_PARAMS,
                 nail.kind,

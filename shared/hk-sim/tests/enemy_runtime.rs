@@ -47,6 +47,18 @@ mod world {
     pub fn region_actors(region: &Region) -> impl Iterator<Item = &'static hk_sim::ActorSpec> {
         region.actors.iter().copied()
     }
+    /// One fixture spike: a down-slash-only target owned by breakable 0.
+    pub struct PogoTarget;
+    impl PogoTarget {
+        pub fn bounds(&self) -> [i32; 4] { [-hk_sim::ONE, -hk_sim::ONE, hk_sim::ONE, 0] }
+        pub fn breakable(&self) -> Option<usize> { Some(0) }
+        pub fn horizontal_and_up(&self) -> bool { false }
+        pub fn hit_by(&self, polygon: &[[i32; 2]]) -> bool {
+            let one = hk_sim::ONE;
+            polygons_overlap(polygon, &[[-one, -one], [one, -one], [one, 0], [-one, 0]])
+        }
+    }
+    pub fn pogo_targets(_: &Region) -> impl Iterator<Item = PogoTarget> { core::iter::once(PogoTarget) }
     pub struct State;
     std::thread_local!{pub static DEATHS:std::cell::RefCell<Vec<(u32,[i32;3])>>=const{std::cell::RefCell::new(Vec::new())};}
     impl State {

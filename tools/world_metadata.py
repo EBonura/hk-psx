@@ -20,7 +20,7 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10}
 MAX_REVEAL_CONTROLLERS = 16
 MAX_SCENE_ACTORS = 32
 
@@ -210,6 +210,15 @@ def encode_scene(scene, rows):
                           bounded(binding["draw"], draw_count, "reveal draw")]
             add_object("reveal_bindings", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0,
                        row["activation_bounds"], None, (index_list(pairs, 65536, "reveal binding"), 0, 0))
+        for record in row.get("pogo_targets", []):
+            # Static NailSlash targets: down-slash only unless flag 1; state is
+            # the owning breakable's id (0xFFFFFFFF when none).
+            polygons_count = len(record["world_polygons"])
+            if not 1 <= polygons_count <= 16:
+                raise ValueError("pogo target polygon count outside 1..16")
+            owner = record.get("breakable_state_id")
+            add_object("pogo", record, 0xFFFFFFFF if owner is None else int(owner),
+                       1 if record["horizontal_and_up"] else 0, record["bounds"], "world_polygons")
         statics = row.get("statics")
         if statics is not None:
             # Variant catalogue indices the runtime Region value resolves:

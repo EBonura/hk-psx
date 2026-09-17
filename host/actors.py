@@ -449,8 +449,6 @@ def postpack_pogo(report, source, scenes=None):
     from scene import Scene
     from source import ROOT
     scenes = {} if scenes is None else scenes
-    output = ['// Generated static NailSlash-compatible targets, source IDs in regions.json.',
-              'static POGO_SCENES: &[&[PogoTarget]] = &[']
     infos = sorted(report['scenes'], key=lambda row: row['scene_id'])
     from quality import SCENE_COUNT
     if [r['scene_id'] for r in infos] != list(range(len(infos))) or len(infos) > SCENE_COUNT:
@@ -467,17 +465,15 @@ def postpack_pogo(report, source, scenes=None):
             for prop in region['breakables']:
                 for collider in prop['disabled_collider_sources']:
                     owned[collider] = scene_id * 128 + prop['state_index']
-        output.append('&[')
         for target in records['targets']:
             target['breakable_state_id'] = owned.get(target['source'])
-            q = lambda v: str(round(v * 65536))
-            polygon = lambda points: '&[' + ','.join('[' + ','.join(map(q, point)) + ']' for point in points) + ']'
-            bounds = '[' + ','.join(map(q, target['bounds'])) + ']'
-            broken = 'None' if target['breakable_state_id'] is None else f'Some({target["breakable_state_id"]})'
-            output.append('PogoTarget {bounds:' + bounds + ',polygons:&[' +
-                          ','.join(map(polygon, target['world_polygons'])) + '],breakable:' + broken +
-                          ',horizontal_and_up:' + str(target['horizontal_and_up']).lower() + '},')
-        output.append('],')
+        # Targets ride in the world bank as objects of every region whose
+        # activation envelope they touch (tools/world_metadata.py, kind 10).
+        for region in report['regions']:
+            if region['scene_id'] != scene_id:
+                continue
+            b = region['activation_bounds']
+            region['pogo_targets'] = [target for target in records['targets']
+                                      if target['bounds'][0] <= b[2] and target['bounds'][2] >= b[0]
+                                      and target['bounds'][1] <= b[3] and target['bounds'][3] >= b[1]]
         info['static_pogo'] = records
-    output.append('];\n')
-    (ROOT/'data/pogo.rs').write_text('\n'.join(output))
