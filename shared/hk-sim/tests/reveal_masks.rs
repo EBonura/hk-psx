@@ -136,7 +136,7 @@ fn opacity_application_follows_active_draw_bindings_and_reports_current_counts()
         draw: 7,
     }];
     assert_eq!(
-        state.apply(&[SPEC], &first),
+        state.apply(&[SPEC], first.iter().copied()),
         Applied {
             hidden: 1,
             partial: 0,
@@ -158,7 +158,7 @@ fn opacity_application_follows_active_draw_bindings_and_reports_current_counts()
         },
     ];
     assert_eq!(
-        state.apply(&[SPEC], &overlap),
+        state.apply(&[SPEC], overlap.iter().copied()),
         Applied {
             hidden: 0,
             partial: 2,
@@ -169,7 +169,7 @@ fn opacity_application_follows_active_draw_bindings_and_reports_current_counts()
         state.tick(&[SPEC], &inside(), P);
     }
     assert_eq!(
-        state.apply(&[SPEC], &first),
+        state.apply(&[SPEC], first.iter().copied()),
         Applied {
             hidden: 0,
             partial: 0,
@@ -178,7 +178,7 @@ fn opacity_application_follows_active_draw_bindings_and_reports_current_counts()
     );
     state.reset_scene(0);
     assert_eq!(
-        state.apply(&[SPEC], &first),
+        state.apply(&[SPEC], first.iter().copied()),
         Applied {
             hidden: 1,
             partial: 0,
@@ -288,10 +288,11 @@ fn ordinary_mask_progress_survives_region_rebinding_and_reset_apply_uses_authore
     state.reset_scene(0);
     let applied = state.apply(
         &[spec],
-        &[RevealMaskBinding {
+        [RevealMaskBinding {
             controller: 0,
             draw: 12,
-        }],
+        }]
+        .into_iter(),
     );
     assert_eq!(
         applied,

@@ -39,7 +39,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P02 | validated | Every scene has an evidence-backed role and remains included. All 1,119 TransitionPoints and 318 scripted loads retain geometry, flags, destination dataflow and progression-condition status with downstream owners. All 95 completion fields join serialized access to exact managed readers/writers; installed cap CIL proves the 112 maximum. Fifteen source reference cases cover every observed edge/condition category. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
-| P05 | in progress | Build 82 moved neighbours into the bank (headroom 260,776); build 81 moved grass into the bank (headroom 252,584) and added the `crossroads-exit` route through Crossroads_02 and back; build 80 moved breakables, mask fades and remote masks into the loadable bank behind checked views and fixed the guest state tables that were sized for three scenes; build 79 moved hazards and checkpoints (`.data` -11,536 bytes, headroom 223,444). The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
+| P05 | in progress | Build 83 moved actor references and reveal bindings into the bank (headroom 259,416); build 82 moved neighbours (headroom 260,776); build 81 moved grass into the bank (headroom 252,584) and added the `crossroads-exit` route through Crossroads_02 and back; build 80 moved breakables, mask fades and remote masks into the loadable bank behind checked views and fixed the guest state tables that were sized for three scenes; build 79 moved hazards and checkpoints (`.data` -11,536 bytes, headroom 223,444). The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
 | P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
 | P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
@@ -366,10 +366,29 @@ actor specs, are what the bank must absorb.
 Order: (1) actor specs shared per scene (done), then move them into the bank;
 (2) hazards and checkpoints (done in build 79); (3) breakables, their mask
 fades and remote masks (done in build 80); (4) grass patches (done in build
-81); (5) neighbours (done in build 82); (6) actors and reveal bindings; (7)
-the `Region` scalars themselves, replacing `REGIONS` with a runtime value
-built from the bank plus per-scene statics. Each step must keep the route
-replays green and record the new headroom.
+81); (5) neighbours (done in build 82); (6) actors and reveal bindings (done
+in build 83); (7) the `Region` scalars themselves, replacing `REGIONS` with a
+runtime value built from the bank plus per-scene statics. Each step must keep
+the route replays green and record the new headroom.
+
+Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
+actor objects (flag 64) carry their index into the new per-scene
+`SCENE_ACTORS[scene]` static, which `host/world.py` assigns as `spec_index` on
+the actor records before the bank is cooked; a region's reveal bindings are
+one `KIND_REVEAL_BINDINGS` object whose index list interleaves (controller,
+draw) pairs, bounded by the scene's controller count that `pack_scenes.py`
+passes to the encoder. `enemies::sync_region` and the per-actor spec lookups
+read `world::region_actors`; `reveal_masks::State::apply` takes a binding
+iterator. The Tutorial return missed a VBlank again with the bank-driven
+entry passes, so region entry now polls the pad before the passes, between
+them and after `render::init`; the longest stretch between polls on the
+`gate-return` replay is 315k CPU cycles in gameplay (a VBlank is about
+564k). Measured against build 82: `.data` 435,632 -> 429,712 bytes (-5,920),
+`.text` 414,288 -> 418,400, scene arena 361,732 -> 365,140 (the Tutorial bank
+grew by the binding lists), linked headroom 260,776 -> 259,416 bytes. The
+arena scales with the largest scene bank while the static tables scaled with
+every view, so the trade is the intended one even though this step's net is
+slightly negative on the nineteen-scene disc; seven routes pass.
 
 Build 82 removed `Region.neighbours`. `world::upcoming` resolves neighbours
 through the admitted bank (global chunk ids, bounds from the bank; neighbours

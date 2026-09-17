@@ -94,9 +94,14 @@ class RevealTests(unittest.TestCase):
         rust=test_world.WorldMetadata().generate(data)
         self.assertIn('source_id:77,trigger:&[[65536,65536]',rust)
         self.assertEqual(rust.count('reveal_masks:REVEAL_MASKS_SCENE_0'),2)
-        self.assertIn('RevealMaskBinding {controller:0,draw:0}',rust)
+        # Bindings live in the bank as one interleaved (controller, draw) list per region.
+        self.assertNotIn('RevealMaskBinding',rust)
+        objects=test_world.WorldMetadata().bank(dict(data,scenes=[dict(data['scenes'][0],reveal_controllers=1)]))
+        bindings=[o for o in objects if o['kind']==8]
+        self.assertEqual([o['lists'][0] for o in bindings],[[0,1],[0,0]])
         distant['reveal_mask_bindings'][0]['controller']=1
-        with self.assertRaisesRegex(ValueError,'reveal controller'):test_world.WorldMetadata().generate(data)
+        with self.assertRaisesRegex(ValueError,'reveal controller'):
+            test_world.WorldMetadata().bank(dict(data,scenes=[dict(data['scenes'][0],reveal_controllers=1)]))
 
     def test_duplicate_owner_and_pool_fail_closed(self):
         data=report();one=controller();two=dict(one,controller=1,source_id=78)

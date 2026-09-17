@@ -50,6 +50,7 @@ def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
         rows=[row for row in meta['regions'] if row['scene_id']==scene['scene_id']]
         source_scene=dict(scene)
         if scene['scene_id'] in scene_raw_fnv: source_scene['raw_fnv']=scene_raw_fnv[scene['scene_id']]
+        source_scene['reveal_controllers']=len(meta.get('reveal_mask_scenes',{}).get(str(scene['scene_id']),{}).get('controllers',[]))
         raw,descriptor=encode_scene(source_scene,rows)
         stored=compressed(raw)
         path=output_dir/f"scene_{scene['scene_id']}"

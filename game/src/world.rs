@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_BREAKABLE, KIND_GRASS, KIND_MASK_FADE, KIND_REMOTE_MASK};
+use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BREAKABLE, KIND_GRASS, KIND_MASK_FADE, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -177,6 +177,25 @@ pub fn grass<'a>(region: meta::Region<'a>) -> impl Iterator<Item = Patch> + 'a {
 pub fn region_grass(region: &Region) -> impl Iterator<Item = Patch> {
     bank_region(region).into_iter().flat_map(grass)
 }
+/// Supported actor specs of a catalogue region: bank actor objects flagged
+/// with a `SCENE_ACTORS[scene]` index.
+pub fn region_actors(region: &Region) -> impl Iterator<Item = &'static hk_sim::ActorSpec> {
+    let specs: &'static [hk_sim::ActorSpec] = SCENE_ACTORS[region.scene];
+    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_ACTOR && o.flags() & 64 != 0)
+        .map(move |o| &specs[o.extra(0) as usize])
+}
+/// Reveal mask draw bindings of a catalogue region: (controller, draw) pairs
+/// from the region's single `KIND_REVEAL_BINDINGS` object.
+pub fn reveal_bindings(region: &Region) -> impl Iterator<Item = crate::reveal_masks::RevealMaskBinding> {
+    let mut pairs = bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_REVEAL_BINDINGS).flat_map(|o| o.indices(0));
+    core::iter::from_fn(move || {
+        let controller = pairs.next()?;
+        let draw = pairs.next()?;
+        Some(crate::reveal_masks::RevealMaskBinding { controller: controller as u8, draw })
+    })
+}
 /// True when a broken breakable of this region owns room edge `index`.
 #[inline(never)]
 fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
@@ -203,8 +222,6 @@ pub struct Region {
     pub grass_emitters: &'static [particles::EmitterSpec],
     pub door_debris: &'static [debris::Spec],
     pub reveal_masks: &'static [crate::reveal_masks::RevealMaskSpec],
-    pub reveal_bindings: &'static [crate::reveal_masks::RevealMaskBinding],
-    pub actors: &'static [&'static hk_sim::ActorSpec],
 }
 pub struct Gate {
     pub scene: usize,

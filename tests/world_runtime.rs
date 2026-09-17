@@ -66,8 +66,6 @@ fn region() -> Region {
     particle_bank:None,
     grass_emitters:&[],
         reveal_masks: &[],
-        reveal_bindings: &[],
-        actors: &[],
     }
 }
 #[test]
@@ -517,9 +515,10 @@ fn door1_mask_survives_region_entry_outside_its_collider() {
 #[test]
 fn actual_crawler_spawn_resolves_against_complete_cooked_terrain() {
     use hk_sim::{resolve_actor_spawn, Params, ONE};
+    use_bank(SCENE0_BANK);
     for source_id in [12546,12548] {
         let (index,region,spec)=world::REGIONS.iter().enumerate().find_map(|(index,r)| {
-            r.actors.iter().find(|s| s.source_id==source_id &&
+            world::region_actors(r).find(|s| s.source_id==source_id &&
                 world::contains(r.bounds,s.x,s.y)).map(|s|(index,r,s))
         }).expect("authored Tutorial crawler activation region");
         let path=format!("{}/../data/regions/chunk_{}.hk",env!("CARGO_MANIFEST_DIR"),index+1);
@@ -554,6 +553,7 @@ fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
     for _ in 0..15 {controller.tick(first.reveal_masks,&inside,p);}
     assert_eq!(controller.opacity(index),64);
     let mut binding_count=0;
+    use_bank(SCENE0_BANK);
     for (id,region) in world::REGIONS.iter().enumerate().filter(|(_,r)|r.scene==0) {
         assert_eq!(region.reveal_masks.len(),first.reveal_masks.len());
         for (a,b) in region.reveal_masks.iter().zip(first.reveal_masks) {
@@ -562,7 +562,7 @@ fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
         controller.scene_ready(0,region.reveal_masks);assert_eq!(controller.opacity(index),64);
         let path=format!("{}/../data/regions/chunk_{}.hk",env!("CARGO_MANIFEST_DIR"),id+1);
         let bytes=std::fs::read(path).unwrap();let room=hk_format::Room::parse(&bytes).unwrap();
-        for binding in region.reveal_bindings {
+        for binding in world::reveal_bindings(region) {
             assert!((binding.controller as usize)<region.reveal_masks.len());
             assert!((binding.draw as usize)<room.counts[2]);
             if binding.controller as usize==index {binding_count+=1;}

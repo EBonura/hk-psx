@@ -20,7 +20,9 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8}
+MAX_REVEAL_CONTROLLERS = 16
+MAX_SCENE_ACTORS = 32
 
 
 def damagehero_respawns(hit_type):
@@ -188,7 +190,26 @@ def encode_scene(scene, rows):
                        (q(record["spawn"][0]), q(record["spawn"][1]), 1 if record["respawn_facing_right"] else -1))
         for record in row.get("actors", []):
             bounds = record.get("bounds", row["activation_bounds"])
-            add_object("actor", record, 0xFFFFFFFF, 32, bounds)
+            # Supported actors carry their SCENE_ACTORS[scene] index (flag 64);
+            # unsupported ones stay recorded without a guest spec.
+            if "spec_index" in record:
+                add_object("actor", record, 0xFFFFFFFF, 32 | 64, bounds, None,
+                           (bounded(record["spec_index"], MAX_SCENE_ACTORS, "scene actor index"), 0, 0))
+            else:
+                add_object("actor", record, 0xFFFFFFFF, 32, bounds)
+        bindings = row.get("reveal_mask_bindings", [])
+        if bindings:
+            controllers = scene.get("reveal_controllers", MAX_REVEAL_CONTROLLERS)
+            owned = set()
+            pairs = []
+            for binding in bindings:
+                if binding["draw"] in owned:
+                    raise ValueError("multiple reveal owners for draw")
+                owned.add(binding["draw"])
+                pairs += [bounded(binding["controller"], controllers, "reveal controller"),
+                          bounded(binding["draw"], draw_count, "reveal draw")]
+            add_object("reveal_bindings", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0,
+                       row["activation_bounds"], None, (index_list(pairs, 65536, "reveal binding"), 0, 0))
         region_polygon_count = len(polygons) - region_polygon_first
         neighbour_first = len(points)
         neighbours = [int(value) for value in row.get("neighbour_chunks", [])]

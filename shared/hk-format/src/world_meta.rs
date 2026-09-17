@@ -30,6 +30,8 @@ pub const KIND_ACTOR: u16 = 5;
 pub const KIND_MASK_FADE: u16 = 6;
 /// A mask in this region faded by a breakable owned elsewhere (state = owner).
 pub const KIND_REMOTE_MASK: u16 = 7;
+/// One per region: interleaved (controller, draw) reveal binding pairs.
+pub const KIND_REVEAL_BINDINGS: u16 = 8;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {
@@ -159,7 +161,7 @@ impl<'a> WorldMeta<'a> {
                 // Index-list spans live in the payload words of list-bearing kinds.
                 let lists: &[usize] = match object.kind() {
                     KIND_BREAKABLE => &[0, 1, 2],
-                    KIND_MASK_FADE | KIND_REMOTE_MASK => &[0],
+                    KIND_MASK_FADE | KIND_REMOTE_MASK | KIND_REVEAL_BINDINGS => &[0],
                     _ => &[],
                 };
                 for &word in lists {

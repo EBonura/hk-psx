@@ -165,7 +165,7 @@ impl State {
     }
     /// Apply after world::State::apply resets renderer state for this frame.
     /// Counts describe bound draws, allowing route checks without another scan.
-    pub fn apply(&self, specs: &[RevealMaskSpec], bindings: &[RevealMaskBinding]) -> Applied {
+    pub fn apply(&self, specs: &[RevealMaskSpec], bindings: impl Iterator<Item = RevealMaskBinding>) -> Applied {
         let mut result = Applied::default();
         for binding in bindings {
             // During a requested full reset the old region may render once
