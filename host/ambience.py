@@ -5,7 +5,7 @@ from source import ROOT,Source,dump
 from cook_music import sha,source_snapshot
 from quality import SCENE_FILES
 
-CHANNELS=(0,1,3,4,5,6)
+from cook_music import RESIDENT_ATMOS_CHANNELS as CHANNELS
 SPU_START=0x18000
 STREAM_CHANNEL=4
 STREAM_BYTES=16384

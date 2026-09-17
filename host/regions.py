@@ -217,7 +217,7 @@ def precook_parallel(pending,fingerprints,out):
     # Region 1 writes the shared knight/gameplay files: cook its scene first
     # so the other workers never race it, then the rest in parallel.
     order=sorted(misses,key=lambda scene:(-(scene==pending[0]['scene_id']),-misses[scene]))
-    workers=max(1,min(len(order),(os.cpu_count() or 4)-2))
+    workers=max(1,min(len(order),(os.cpu_count() or 4)-2,8))
     print(f'Precooking {sum(misses.values())} regions across {len(order)} scenes with {workers} workers',flush=True)
     logs=ROOT/'.hkpsx'/'precook-logs';logs.mkdir(parents=True,exist_ok=True)
     def spawn(scene):
@@ -231,13 +231,18 @@ def precook_parallel(pending,fingerprints,out):
         proc=spawn(first);proc.wait();log=finish(proc)
         if proc.returncode:raise ValueError(f'Precook of scene {first} failed with status {proc.returncode}:\n{log[-4000:]}')
         order=order[1:]
-    queue=list(order)
+    queue=list(order);attempts={}
     while queue or running:
         while queue and len(running)<workers:
-            scene=queue.pop(0);running[scene]=spawn(scene)
+            scene=queue.pop(0);running[scene]=spawn(scene);attempts[scene]=attempts.get(scene,0)+1
         for scene,proc in list(running.items()):
             if proc.poll() is not None:
                 log=finish(proc);del running[scene]
+                if proc.returncode<0 and attempts[scene]<3:
+                    # A worker killed by a signal under parallel load (observed
+                    # SIGSEGV at startup) is retried; finished regions are cached.
+                    print(f'Precook worker for scene {scene} died with signal {-proc.returncode}; retrying',flush=True)
+                    queue.append(scene);continue
                 if proc.returncode:
                     for other in running.values():other.kill()
                     raise ValueError(f'Precook of scene {scene} failed with status {proc.returncode}:\n{log[-4000:]}')

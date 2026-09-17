@@ -10,6 +10,9 @@ from scene import Scene
 from breakables import _components,collider_polygons
 
 
+# Atmos channels with a resident guest loop; host/ambience.py CHANNELS mirrors this.
+RESIDENT_ATMOS_CHANNELS=(0,1,3,4,5,6)
+
 def sha(path):
     with Path(path).open('rb')as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 def source_audio_ref(tree):
@@ -73,8 +76,13 @@ def inventory(source):
                 atmos_obj=source.ref(scene.file,tree['atmosCue']);atmos=source.read(atmos_obj)
                 record['atmos_cue']={'source':source.sid(atmos_obj),'name':atmos['m_Name']}
                 snapshot=source.ref(atmos_obj.assets_file,atmos['snapshot'])
+                record['ambience_omitted_channels']=[]
                 for channel,enabled in enumerate(atmos['isChannelEnabled']):
                     if not enabled:continue
+                    if channel not in RESIDENT_ATMOS_CHANNELS:
+                        # The guest keeps six resident loops (SPU voices 6..11); a
+                        # stem outside that set is an explicit omission for the scene.
+                        record['ambience_omitted_channels'].append(channel);continue
                     audio_obj=source.ref(resource,manager['atmosSources'][channel]);audio=source.read(audio_obj)
                     group=source.ref(audio_obj.assets_file,audio['OutputAudioMixerGroup'])
                     record['ambience'].append({'channel':channel,'audio_source':source.sid(audio_obj),

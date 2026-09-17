@@ -40,7 +40,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
 | P05 | in progress | Build 87 compacted the Great Door bindings and packet budgets (headroom 298,296); build 86 made fades and grass resident-scene state and stepped the bank validation through pad polls (headroom 294,200); build 85 narrowed the per-slot scene table (headroom 296,248); build 84 removed the static region table: `Region` is a runtime value from the bank plus per-scene statics (headroom 294,200); build 83 moved actor references and reveal bindings into the bank (headroom 259,416); build 82 moved neighbours (headroom 260,776); build 81 moved grass into the bank (headroom 252,584) and added the `crossroads-exit` route through Crossroads_02 and back; build 80 moved breakables, mask fades and remote masks into the loadable bank behind checked views and fixed the guest state tables that were sized for three scenes; build 79 moved hazards and checkpoints (`.data` -11,536 bytes, headroom 223,444). The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
-| P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
+| P06 | in progress | Build 90 cooks and packs the whole Forgotten Crossroads (45 scenes, 693 views) with explicit omissions for the surface audio, atmos channels and actors the guest does not support yet. Previously:  in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
 | P07 | in progress | Build 89 admits the Crossroads Zombie Runners (controller, clips, corpses, audio bank on voices 21 to 23; dust and death effects recorded omissions) and replays the routes concurrently; build 88 streams break-effect art per scene through one disc chunk per scene decoded at admission and uploaded to the fixed effect VRAM rectangles; 210 emitters across 18 scenes with no VRAM omissions. Previously: persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
@@ -519,7 +519,40 @@ full parallel recook. Not done: a split between the geometry cook and the
 metadata/postpack stages (the cook is one function whose art appends depend on
 the effects code), which would make actor and effects changes cost the 23 s
 warm path instead of the 4 min recook; and speeding the replays themselves,
-which are bound by the longest route.
+which are bound by the longest route. Cook workers occasionally die with
+SIGSEGV at startup under parallel load (never alone); the parent retries a
+signalled worker up to twice and caps workers at eight.
+
+## Build 90: the whole Forgotten Crossroads (45 scenes, 693 views)
+
+All remaining Crossroads scenes joined `host/quality.py SCENE_TABLE` with the
+envelopes the isolated pack matrix measured (`.hkpsx/scene-packs/*/summary.json`):
+11_alt, 15, 22, 25, 27, 30, 31, 33, 35 to 40, 42, 43, 45, 46, 46b, 47 to 50,
+52 and ShamanTemple (boss, preload and defeated variants excluded). The
+parallel cook did 693 regions in about five minutes. Three cookers stopped on
+new content and now record explicit omissions instead: `actor_sources` bounds
+the 32-slot pool by supported actors only (Crossroads_50 and ShamanTemple hold
+more HealthManagers than that as records), Runners whose depth is not the
+measured guest plane stay unsupported, `cook_audio` substitutes the Dust
+footstep set for the two scenes with another environment (Crossroads_30,
+ShamanTemple) and `cook_music` omits atmos channels without a resident loop
+(channel 15 in Crossroads_46b and Crossroads_50; the guest keeps six resident
+loops on voices 6 to 11 and the SPU has 8 KB free). Seven routes pass; the new
+scenes are reachable through their authored gates but no route enters them yet.
+Actor inventory across the 45 scenes: 127 HealthManager actors, 14 supported
+(Crawlers and Runners); unsupported families by count: Buzzer 20, Climber 15,
+Fly 12, Roller 11, Zombie Barger 9, Spitter 8, Zombie Hornhead 8, Zombie
+Runner variants 7, Zombie Leaper 6, Hatcher 6, Zombie Guard 2, Blocker 2.
+
+Memory: `.data` 415,168 -> 558,400 bytes, headroom 259,352 -> 109,540. The
+growth is the per-scene auxiliary tables P05 item 7 names: texture flags and
+black/opaque cores for every texture of every scene (4,192 textures, about
+38 KB), break-effect emitters/styles/art/uploads for all scenes (411 emitters,
+about 55 KB), Pogo targets (281), atlas/coverage/metadata descriptors (about
+20 KB), opaque groups and gates. At 5.5 KB per scene the full game cannot link
+these; the next slices move them into the per-scene chunks (texture flags and
+cores into the scene bank, effect tables into the effect-art chunk, pogo
+targets into the world bank).
 
 Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
 actor objects (flag 64) carry their index into the new per-scene
