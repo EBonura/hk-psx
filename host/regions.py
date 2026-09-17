@@ -4,6 +4,7 @@ Partitioning changes residency only. Each region keeps every supported sprite
 layer intersecting its camera range at the existing quality settings. A region
 that exceeds a fixed budget is split spatially, never silently truncated.
 """
+import sys
 import argparse
 import copy
 import hashlib
@@ -170,6 +171,77 @@ def cached_cook(destination, key):
     with room.open('rb') as stream:
         if hashlib.file_digest(stream,'sha256').hexdigest()!=old['cooked'].get('pack_sha256'):return None
     return old['cooked']
+
+
+def cook_region(source,sc,region,chunk_id,destination,key,pixels,geometry):
+    """Cook one region into its destination and record its cache key."""
+    try:
+        cooked=cook(source,sc,region,destination,pixels,geometry,write_shared=chunk_id==1,stage_for_similarity=True)
+    except ValueError as error:
+        if chunk_id==1 or not any(text in str(error) for text in ('budget exceeded','pool exceeds','cache dimensions','bank exceeds')):
+            raise
+        raise ValueError(f'Fixed layout region {chunk_id} exceeds measured residency budget: {error}') from error
+    if key is not None:
+        try:(destination/'cook-cache.json').write_text(json.dumps({'key':key,'cooked':cooked}))
+        except TypeError:pass  # a report that is not JSON simply is not reused
+    return cooked
+
+
+def precook_scene(scene_id,out):
+    """Worker: cook every cache miss of one scene; the parent then finds them cached."""
+    source=Source();fingerprints=cook_fingerprints(source);pixels={};geometry={};sc=None
+    for index,region in enumerate(fixed_regions()):
+        if region['scene_id']!=scene_id:continue
+        chunk_id=index+1;destination=out/f'region-{chunk_id:03}'
+        key=cook_cache_key(region,fingerprints)
+        if cached_cook(destination,key) is not None:continue
+        if sc is None:sc=Scene(source,region['scene_file'])
+        print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]} (worker)',flush=True)
+        cook_region(source,sc,region,chunk_id,destination,key,pixels,geometry)
+
+
+def precook_parallel(pending,fingerprints,out):
+    """Cook cache misses with one worker process per scene, most regions first.
+
+    Each worker loads its own source and scene once; the cook of a region is a
+    pure function of its spec, the source and the cooker code, so the parent
+    loop that follows reuses every worker result through the per-region cache.
+    """
+    import subprocess,os
+    misses={}
+    for index,region in enumerate(pending):
+        destination=out/f'region-{index+1:03}'
+        if cached_cook(destination,cook_cache_key(region,fingerprints)) is None:
+            misses[region['scene_id']]=misses.get(region['scene_id'],0)+1
+    if not misses:return
+    # Region 1 writes the shared knight/gameplay files: cook its scene first
+    # so the other workers never race it, then the rest in parallel.
+    order=sorted(misses,key=lambda scene:(-(scene==pending[0]['scene_id']),-misses[scene]))
+    workers=max(1,min(len(order),(os.cpu_count() or 4)-2))
+    print(f'Precooking {sum(misses.values())} regions across {len(order)} scenes with {workers} workers',flush=True)
+    logs=ROOT/'.hkpsx'/'precook-logs';logs.mkdir(parents=True,exist_ok=True)
+    def spawn(scene):
+        handle=(logs/f'scene-{scene}.log').open('w')
+        proc=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'--precook',str(scene)],cwd=ROOT,stdout=handle,stderr=subprocess.STDOUT)
+        proc.log_path=logs/f'scene-{scene}.log';proc.log_handle=handle;return proc
+    def finish(proc):
+        proc.log_handle.close();return proc.log_path.read_text()
+    first=order[0];running={}
+    if first==pending[0]['scene_id']:
+        proc=spawn(first);proc.wait();log=finish(proc)
+        if proc.returncode:raise ValueError(f'Precook of scene {first} failed with status {proc.returncode}:\n{log[-4000:]}')
+        order=order[1:]
+    queue=list(order)
+    while queue or running:
+        while queue and len(running)<workers:
+            scene=queue.pop(0);running[scene]=spawn(scene)
+        for scene,proc in list(running.items()):
+            if proc.poll() is not None:
+                log=finish(proc);del running[scene]
+                if proc.returncode:
+                    for other in running.values():other.kill()
+                    raise ValueError(f'Precook of scene {scene} failed with status {proc.returncode}:\n{log[-4000:]}')
+        import time;time.sleep(0.2)
 
 
 def write_report(path, report):
@@ -345,6 +417,8 @@ def refresh_actors():
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--limit',type=int,help='Diagnostic: stop after this many cooked regions')
+    parser.add_argument('--precook',type=int,metavar='SCENE_ID',help='Worker: cook this scene\'s cache misses into data/regions and exit')
+    parser.add_argument('--serial',action='store_true',help='Cook cache misses in this process instead of one worker per scene')
     parser.add_argument('--refresh-actors',action='store_true',help='Re-cook only actor regions after controller extraction changes')
     parser.add_argument('--append-actor-bank',action='store_true',help='Rebuild the scene-wide actor bank from immutable base packs')
     args=parser.parse_args()
@@ -355,9 +429,12 @@ def main():
     if args.refresh_actors:
         refresh_actors();return
     out=ROOT/'data/regions';out.mkdir(parents=True,exist_ok=True)
+    if args.precook is not None:
+        precook_scene(args.precook,out);return
     source=Source();scenes={};pixels={};geometry={}
     fingerprints=cook_fingerprints(source)
     pending=fixed_regions();regions=[]
+    if not args.serial:precook_parallel(pending,fingerprints,out)
     report={'format':'HKREGIONS01','complete':False,'initial_chunk_id':1,'scenes':[],
             'regions':regions,'quality':{'scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_budget':TEXTURE_BUDGET,'room_byte_budget':ROOM_BYTE_BUDGET,'layout':'fixed106','animation_sampling':'unchanged'},'limitations':[
                 'Tutorial and Town regions cover supported scenery and collision across their development envelopes; Town NPCs, shops, benches and progression scripts remain unsupported',
@@ -373,20 +450,12 @@ def main():
         chunk_id=len(regions)+1
         if chunk_id>1024:raise ValueError('Region chunk table exceeds 1024 slots')  # sanity bound; static RAM per view is the real limit
         destination=out/f'region-{chunk_id:03}'
-        key=cook_cache_key(region,fingerprints);cooked=cached_cook(destination,key)
-        if cooked is not None:
+        key=cook_cache_key(region,fingerprints);cooked=cached_cook(destination,key);cached=cooked is not None
+        if cached:
             print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]} (cached)',flush=True)
         else:
             print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]}',flush=True)
-            try:
-                cooked=cook(source,scenes[scene_id],region,destination,pixels,geometry,write_shared=chunk_id==1,stage_for_similarity=True)
-            except ValueError as error:
-                if chunk_id==1 or not any(text in str(error) for text in ('budget exceeded','pool exceeds','cache dimensions','bank exceeds')):
-                    raise
-                raise ValueError(f'Fixed layout region {chunk_id} exceeds measured residency budget: {error}') from error
-            if key is not None:
-                try:(destination/'cook-cache.json').write_text(json.dumps({'key':key,'cooked':cooked}))
-                except TypeError:pass  # a report that is not JSON simply is not reused
+            cooked=cook_region(source,scenes[scene_id],region,chunk_id,destination,key,pixels,geometry)
         path=out/f'chunk_{chunk_id}.hk';shutil.copy2(destination/'room.hk',path)
         if chunk_id==1:
             shutil.copy2(path,ROOT/'data/room.hk')
@@ -405,7 +474,10 @@ def main():
             grass['bounds']=grass['box']
         regions.append(row)
         report.update(pending_regions=len(pending),total_pack_bytes=sum(r['bytes'] for r in regions))
-        write_report(ROOT/'data/regions.json',report)
+        # Checkpoint the multi-megabyte report after fresh cooks only, and at
+        # most every tenth region: serializing it per cached region cost more
+        # than the cache saved.
+        if not cached and len(regions)%10==0:write_report(ROOT/'data/regions.json',report)
     report['complete']=not pending
     for region in regions:
         x0,y0,x1,y1=region['activation_bounds']

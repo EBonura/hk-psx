@@ -14,7 +14,32 @@ from region_delta import layout, textures
 ROOT = Path(__file__).resolve().parents[1]
 
 
+_CODE_KEY=None
+def _code_key():
+    """Hash of the code that decides a dedup result, so cached packs never outlive it."""
+    global _CODE_KEY
+    if _CODE_KEY is None:
+        h=hashlib.sha256()
+        for name in ('host/texture_dedup.py','host/cook.py','host/alpha_covers.py','host/region_delta.py','tools/audit_resident_bank.py'):
+            h.update((ROOT/name).read_bytes())
+        _CODE_KEY=h.hexdigest()[:16]
+    return _CODE_KEY
+
 def deduplicate_room(raw, replacements=None):
+    """Cached: the result is a pure function of the pack, the replacements and the code."""
+    key=hashlib.sha256(_code_key().encode()+raw+json.dumps(sorted((int(k),v.hex()) for k,v in (replacements or {}).items())).encode()).hexdigest()
+    folder=ROOT/'.hkpsx'/'dedup-cache';packed=folder/f'{key}.hk';record=folder/f'{key}.json'
+    if packed.is_file() and record.is_file():
+        try:return packed.read_bytes(),json.loads(record.read_text())
+        except (OSError,ValueError):pass
+    result,report=_deduplicate_room(raw,replacements)
+    folder.mkdir(parents=True,exist_ok=True)
+    import os
+    temp=packed.with_suffix(f'.{os.getpid()}.tmp');temp.write_bytes(result);temp.replace(packed)
+    temp=record.with_suffix(f'.{os.getpid()}.tmp');temp.write_text(json.dumps(report));temp.replace(record)
+    return result,report
+
+def _deduplicate_room(raw, replacements=None):
     from cook import Atlas
     counts, prefix, _, _ = layout(raw)
     pages, texture_count, draws, frames, clips, edges = counts
