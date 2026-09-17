@@ -580,6 +580,17 @@ are gone; only the eleven distinct sample curves still link. `.data` 421,536
 -> 384,368 bytes, headroom 222,316 -> 257,132; seven routes pass (the
 `crossroads-exit` statue breaks spawn from the resident tables).
 
+Build 93 moved the static NailSlash (pogo) targets into the world bank:
+`postpack_pogo` attaches each scene target to every region whose activation
+envelope it touches, the encoder writes them as `KIND_POGO` objects (polygons
+in the polygon section, flag 1 for horizontal-and-up, state = owning
+breakable id or none) and `enemies::pogo_contact` iterates
+`world::pogo_targets(region)`; `data/pogo.rs` is no longer generated. `.data`
+384,368 -> 363,296 bytes, headroom 257,132 -> 271,340 (the world banks grew
+by the targets, arena 386,968); seven routes pass. The chunk manifests
+(atlas, coverage, metadata, effect descriptors, about 20 KB) are the last
+per-scene linked tables.
+
 Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
 actor objects (flag 64) carry their index into the new per-scene
 `SCENE_ACTORS[scene]` static, which `host/world.py` assigns as `spec_index` on

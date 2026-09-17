@@ -34,6 +34,9 @@ pub const KIND_REMOTE_MASK: u16 = 7;
 pub const KIND_REVEAL_BINDINGS: u16 = 8;
 /// One per region: variant catalogue indices (debris, particle bank, impact).
 pub const KIND_REGION_STATICS: u16 = 9;
+/// Static NailSlash target: polygons, flag 1 = horizontal and up slashes too,
+/// state = owning breakable id or 0xFFFFFFFF.
+pub const KIND_POGO: u16 = 10;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {

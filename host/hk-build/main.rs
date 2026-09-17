@@ -159,7 +159,7 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     }
     python_step(root, "host/regions.py", &[])?;
     let mut outputs: BTreeMap<String, String> = BTreeMap::new();
-    for name in ["data/room.hk", "data/params.rs", "data/regions.json", "data/pogo.rs"] {
+    for name in ["data/room.hk", "data/params.rs", "data/regions.json"] {
         outputs.insert(name.into(), sha256_file(&root.join(name))?);
     }
     for entry in std::fs::read_dir(root.join("data/regions"))? {
