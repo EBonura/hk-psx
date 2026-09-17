@@ -172,6 +172,7 @@ def manifest(report,metadata):
         representatives.append(min(chunks)-1)
         for local,chunk in enumerate(chunks):
             if chunk in lookup:raise ValueError('Region belongs to multiple scenes')
+            if index>=65536 or local>=256:raise ValueError('Scene/room index exceeds the (u16,u8) slot table')
             lookup[chunk]=(index,local)
     if set(lookup)!={r['chunk_id']for r in rows}:raise ValueError('Missing scene region mapping')
     for r in rows:
@@ -201,7 +202,7 @@ def manifest(report,metadata):
     text+='#[derive(Clone,Copy,Debug)]\npub struct AtlasDesc{'+','.join('pub '+n+':'+t for n,t in atlas_fields)+'}\n'
     text+='pub const ATLASES:&[AtlasDesc]=&[\n'+''.join('AtlasDesc{'+','.join(n+':'+str(e[n])for n,t in atlas_fields)+'},\n'for e in report.get('atlases',[]))+'];\n'
     text+='pub const SCENE_ATLAS_RANGES:&[(usize,usize)]=&['+','.join(f'({start},{end})'for start,end in ranges)+'];\n'
-    text+='pub const REGION_SCENE_LOCAL:&[(usize,usize)]=&[\n'+''.join(f'({lookup[r["chunk_id"]][0]},{lookup[r["chunk_id"]][1]}),\n'for r in rows)+'];\n'
+    text+='pub const REGION_SCENE_LOCAL:&[(u16,u8)]=&[\n'+''.join(f'({lookup[r["chunk_id"]][0]},{lookup[r["chunk_id"]][1]}),\n'for r in rows)+'];\n'
     text+='pub const SCENE_REGIONS:&[usize]=&['+','.join(map(str,representatives))+'];\n'
     text+=f'pub const SCENE_ALL_RAW_BYTES:usize={report["raw_resident_bytes"]};\n'
     text+=f'pub const SCENE_TOTAL_PAGES:usize={report["total_pages"]};\npub const SCENE_TOTAL_PALETTES:usize={report["total_palettes"]};\n'

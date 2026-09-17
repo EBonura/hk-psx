@@ -1,9 +1,9 @@
-## Build 84: nineteen connected scenes on the actual disc
+## Build 85: nineteen connected scenes on the actual disc
 
-The sole disc pair is build 84 (the static region table is gone: every
+The sole disc pair is build 85 (the static region table is gone: every
 region's metadata is read from the loadable bank through a runtime `Region`
 value, guest state tables sized from the
-catalog, a seventh route through Crossroads_02 and back, 294,200 bytes of
+catalog, a seventh route through Crossroads_02 and back, 296,248 bytes of
 linked headroom). Build 76 was: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (329 views, 200 disc chunks) reachable through the authored
 gates, six route replays passing with 219,292 bytes of linked headroom. Growing

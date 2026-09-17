@@ -41,7 +41,7 @@ fn atlas_fingerprint(scene:usize)->u32 {
     }
     hash
 }
-pub const fn scene_index(region:usize)->usize {REGION_SCENE_LOCAL[region].0}
+pub const fn scene_index(region:usize)->usize {REGION_SCENE_LOCAL[region].0 as usize}
 pub const fn scene_page_base(scene:usize)->usize {SCENE_MANIFEST[scene].page_base}
 pub const fn scene_palette_base(scene:usize)->usize {SCENE_MANIFEST[scene].palette_base}
 /// Cooked largest opaque-black texel rectangle per scene texture (w==0: none).
@@ -149,10 +149,10 @@ impl Cache {
                 || d.raw_len==0 || d.raw_len>d.arena_capacity || d.stored_len==0
                 || d.stored_len.div_ceil(SECTOR_BYTES)>d.arena_capacity/SECTOR_BYTES
                 || SCENE_REGIONS[i]>=REGION_SCENE_LOCAL.len()
-                || REGION_SCENE_LOCAL[SCENE_REGIONS[i]].0!=i {return Err(LoadError::RoomMismatch);}
+                || scene_index(SCENE_REGIONS[i])!=i {return Err(LoadError::RoomMismatch);}
             offset=offset.checked_add(d.raw_len).and_then(|n|n.checked_add(3)).ok_or(LoadError::RoomMismatch)?&!3;
         }
-        if offset>SCENE_ARENA_BYTES || REGION_SCENE_LOCAL.iter().any(|&(s,_)|s>=SCENE_COUNT) {return Err(LoadError::RoomMismatch);}
+        if offset>SCENE_ARENA_BYTES || REGION_SCENE_LOCAL.iter().any(|&(s,_)|s as usize>=SCENE_COUNT) {return Err(LoadError::RoomMismatch);}
         // Each scene owns an exact contiguous atlas inventory. Exclusive
         // scene plans overlap physical slots only across different owners.
         if SCENE_ATLAS_RANGES.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
@@ -338,14 +338,14 @@ impl Cache {
             }
         }
         let bank=checked_world_metadata(&tail[..m.raw_len],scene)?;
-        let expected_regions=REGION_SCENE_LOCAL.iter().filter(|&&(owner,_)|owner==scene).count();
+        let expected_regions=REGION_SCENE_LOCAL.iter().filter(|&&(owner,_)|owner as usize==scene).count();
         if bank.region_count()!=expected_regions {return Err(LoadError::WorldMeta);}
         let mut previous_global=0;
         let mut mapped=0;
         for region in bank.regions() {
             let region=region;
             let global=region.global_id() as usize;
-            if global<=previous_global || global>REGION_SCENE_LOCAL.len() || REGION_SCENE_LOCAL[global-1].0!=scene {
+            if global<=previous_global || global>REGION_SCENE_LOCAL.len() || scene_index(global-1)!=scene {
                 return Err(LoadError::WorldMeta);
             }
             // The bank is the only source of region bounds and camera; the
@@ -451,9 +451,9 @@ impl Cache {
             if counts!=[scene.page_count(),scene.palette_count()] {return Err(LoadError::RoomMismatch);}
             let mut mapped=0;
             for (region,&(s,local)) in REGION_SCENE_LOCAL.iter().enumerate() {
-                if s==index {
+                if s as usize==index {
                     mapped+=1;
-                    if scene.chunk_id(local)!=Some(region+1) {return Err(LoadError::RoomMismatch);}
+                    if scene.chunk_id(local as usize)!=Some(region+1) {return Err(LoadError::RoomMismatch);}
                 }
             }
             if mapped!=scene.room_count() {return Err(LoadError::RoomMismatch);}
@@ -495,15 +495,15 @@ impl Cache {
     pub fn protect_upload(&mut self,region:Option<usize>)->bool {region.is_none_or(|r|self.is_ready(r))}
     pub fn pending(&self)->Option<usize> {None}
     pub fn is_ready(&self,region:usize)->bool {
-        REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene,_)|
+        REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene,_)| {let scene=scene as usize;
             if SCENE_GATE_LOAD {self.loaded_scenes==1 && scene==self.resident_scene && self.atlas_scene==scene && self.atlases_ready()
                 && self.coverage_scene==scene && self.coverage_len==COVERAGE_MANIFEST[scene].raw_len
-                && self.metadata_scene==scene && self.metadata_len==WORLD_META_MANIFEST[scene].raw_len}else{false})
+                && self.metadata_scene==scene && self.metadata_len==WORLD_META_MANIFEST[scene].raw_len}else{false}})
     }
     pub fn room_for(&self,region:usize)->Option<Room<'_>> {
         if !self.is_ready(region) {return None;}
         let(index,local)=REGION_SCENE_LOCAL[region];
-        self.scene(index).room(local)
+        self.scene(index as usize).room(local as usize)
     }
     fn scene(&self,index:usize)->Scene<'_> {
         assert!(if SCENE_GATE_LOAD {self.loaded_scenes==1&&index==self.resident_scene}else{index<self.loaded_scenes});let d=&SCENE_MANIFEST[index];
@@ -538,7 +538,7 @@ impl Cache {
     /// or None while that scene's metadata is not the admitted one. Resolved
     /// once per region entry so per-tick trigger reads need no id scan.
     pub fn world_region_index(&self,region_id:usize)->Option<usize> {
-        let &(owner,_)=REGION_SCENE_LOCAL.get(region_id)?;
+        let &(owner,_)=REGION_SCENE_LOCAL.get(region_id)?;let owner=owner as usize;
         if self.metadata_scene!=owner || self.metadata_len!=WORLD_META_MANIFEST.get(owner)?.raw_len {return None;}
         let bank=self.world_metadata();
         (0..bank.region_count()).find(|&index|bank.region(index).is_some_and(|r|r.global_id() as usize==region_id+1))

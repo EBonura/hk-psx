@@ -2,7 +2,7 @@
 
 ## Current state (2026-09-17)
 
-Build 84 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
+Build 85 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (19 scenes, 329 views) connected by the authored gates,
 validated by `cargo run --release -- build --frontend <PSoXide frontend>`
 (seven route replays, zero faults). Hazards, checkpoints, breakables, mask
@@ -11,7 +11,7 @@ bindings now live only in the loadable HKWMTA01 bank
 (object stride 48, three payload words, a fifth u16 index-list section); the
 guest reads them through `world::bank_region` and the `Breakable`, `MaskFade`
 and `Patch` views, `State::apply` is one pass over the region's objects, and
-`State::reset_scene` walks the admitted bank. RAM headroom is 294,200 bytes. `world::REGIONS` is gone: `Region` is a
+`State::reset_scene` walks the admitted bank. RAM headroom is 296,248 bytes. `world::REGIONS` is gone: `Region` is a
 runtime value that `world::resident` builds from the admitted bank plus
 per-scene statics and small variant catalogues; gates and Great Door entries
 carry their target region slot from the cookers; `Cache::locate` takes
@@ -21,8 +21,8 @@ Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
 for three scenes on a nineteen-scene disc; the new `crossroads-exit` route
 (climb authored with `tools/route_sim.py`, gate into Crossroads_02, four
 breaks there, gate back) covers that path. The remaining static per-view
-payload is `REGION_SCENES` (one byte per slot) plus `REGION_SCENE_LOCAL`,
-`SCENERY_PACKET_BUDGETS` and the Great Door bindings (P05 item 8); P05's
+payload is `REGION_SCENES` (one byte per slot), `REGION_SCENE_LOCAL` (three
+bytes per slot), `SCENERY_PACKET_BUDGETS` and the Great Door bindings; P05's
 end state is the whole region table becoming per-scene bank data, and the
 per-scene state tables must stop scaling with the catalog (transient fades
 and grass resident per scene, `broken` global). Region entry now polls the pad
@@ -31,10 +31,9 @@ short on the Tutorial return before. Break-effect art beyond scene 4 and Geo
 rocks over the shared VRAM budgets are recorded omissions; effect and Geo art
 need per-scene streaming (P07/P25). `host/regions.py` reuses every region
 whose spec, source inputs and cooker code are unchanged. The scene catalog is
-`host/quality.py SCENE_TABLE`. Next: P05 item 8 (derive `REGION_SCENE_LOCAL` from `REGION_SCENES` and
-`SCENE_REGIONS`, move the per-slot packet budgets and Great Door bindings into
-the bank), per-scene state tables (`fade_left`, grass) that still scale with
-the catalog, then P07/P25 effect and Geo art streaming; P09 delayed well collider and source camera locks; Crossroads enemy
+`host/quality.py SCENE_TABLE`. Next: per-scene state tables (`fade_left`, `fade_active`, grass) that still
+scale with the catalog, the per-slot packet budgets and Great Door bindings,
+then P07/P25 effect and Geo art streaming; P09 delayed well collider and source camera locks; Crossroads enemy
 families beyond the Crawler.
 
 ## Previous handoff: P05 scene-owned world metadata
