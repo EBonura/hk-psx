@@ -10,7 +10,7 @@ use crate::{i32_at, u16_at, u32_at, Error};
 const HEADER: usize = 160;
 const SECTIONS: usize = 4;
 const REGION_STRIDE: usize = 76;
-const OBJECT_STRIDE: usize = 36;
+const OBJECT_STRIDE: usize = 48;
 const POLYGON_STRIDE: usize = 8;
 const POINT_STRIDE: usize = 8;
 const MAX_REGIONS: usize = 4096;
@@ -367,6 +367,11 @@ impl<'a> Object<'a> {
     pub fn polygon_count(&self) -> usize {
         u32_at(self.meta.bytes, self.at() + 32) as usize
     }
+    /// Kind-specific payload words. Hazards: origin x, damage | respawn << 16.
+    /// Checkpoints: spawn x, spawn y, facing.
+    pub fn extra(&self, index: usize) -> i32 {
+        i32_at(self.meta.bytes, self.at() + 36 + (index % 3) * 4)
+    }
     pub fn polygons(&self) -> Polygons<'a> {
         Polygons {
             meta: self.meta,
@@ -494,6 +499,8 @@ mod tests {
         bytes[offsets[1] + 8..offsets[1] + 10].copy_from_slice(&2u16.to_le_bytes());
         put(&mut bytes, offsets[1] + 28, 0);
         put(&mut bytes, offsets[1] + 32, 1);
+        put(&mut bytes, offsets[1] + 36, (-7i32) as u32);
+        put(&mut bytes, offsets[1] + 44, 3);
         put(&mut bytes, offsets[2], 0);
         put(&mut bytes, offsets[2] + 4, 3);
         for i in 0..3 {
@@ -512,6 +519,7 @@ mod tests {
         assert!(bank.check_identity(5, 9, &[0; 32]).is_err());
         let o = r.objects().next().unwrap().unwrap();
         assert_eq!(o.source_id(), 123);
+        assert_eq!((o.extra(0), o.extra(1), o.extra(2)), (-7, 0, 3));
         assert_eq!(o.polygons().next().unwrap().unwrap().points().count(), 3);
     }
     #[test]

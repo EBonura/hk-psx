@@ -3,6 +3,9 @@ import json
 import math
 from source import ROOT
 from actors import generated_actor_specs
+import sys
+sys.path.insert(0, str(ROOT / 'tools'))
+from world_metadata import damagehero_respawns
 from flat_support import generate as flat_floor_catalog, rust_catalog
 
 from quality import SCENE_COUNT as SCENES
@@ -40,19 +43,6 @@ def persistent_object(record):
     # Full persistent flags survive the session's death/reset operation. Objects
     # without PersistentBoolItem, dontSave, and semiPersistent objects reset.
     return any(not p['dont_save'] and not p['semi_persistent'] for p in record.get('persistence', []))
-
-
-def damagehero_respawns(hit_type):
-    """DamageHero's serialized integer is NOT GlobalEnums.HazardType.
-
-    HeroBox copies the integer unchanged into HeroController.TakeDamage's fourth
-    argument. Installed TakeDamage calls StartRecoil for0/1, DieFromHazard for
-    2(spikes)/3(acid), logs4(lava), and calls pit recovery for5 only in its normal
-    damage branch. The latter two require separate handling, not this bool ABI.
-    """
-    if type(hit_type) is not int or hit_type not in (0, 1, 2, 3):
-        raise ValueError(f'unsupported DamageHero hit type {hit_type}; lava/pit semantics require explicit handling')
-    return hit_type in (2, 3)
 
 
 def checkpoint_sources(sc, unsupported=None):
@@ -345,31 +335,8 @@ def generate(report):
                 raise ValueError('remote mask requires observed full initial alpha')
             remote_masks.append(f'MaskBinding {{owner:{scene*BREAKABLES_PER_SCENE+state},fade_ticks:{total},fade:MaskFade {{draws:' +
                 draw_indices(fade['draw_indices']) + f',ticks:{ticks}' + '}}')
-        hazards = []
-        for hazard in region['hazards']:
-            damage = integer(hazard['damage'], 65536, 'hazard damage')
-            polygons = []
-            for polygon in hazard['world_polygons']:
-                if not 3 <= len(polygon) <= 16 or any(len(point) != 2 for point in polygon):
-                    raise ValueError('hazard polygon exceeds 3..16 vertex bound')
-                polygons.append('&[' + ','.join(arr(map(q, point)) for point in polygon) + ']')
-            if not 1 <= len(polygons) <= 8:
-                raise ValueError('hazard polygon count exceeds 1..8 bound')
-            hazards.append('Hazard {bounds:' + rect(hazard['bounds']) + ',polygons:&[' +
-                           ','.join(polygons) + f'],origin_x:{q(hazard["position"][0])},damage:{damage},hazard:' +
-                           str(damagehero_respawns(hazard['hazard_type'])).lower() + '}')
+        # Hazards and checkpoints live only in the HKWMTA01 bank (tools/world_metadata.py).
         neighbours = [integer(n-1, len(regions), 'neighbour region') for n in region.get('neighbour_chunks', [])]
-        checkpoints=[]
-        for checkpoint in region.get('checkpoints',[]):
-            if checkpoint['fire_once']:raise ValueError('one-shot checkpoint unsupported')
-            polygons=[]
-            for polygon in checkpoint['world_polygons']:
-                if not 3<=len(polygon)<=16:raise ValueError('checkpoint polygon bound')
-                polygons.append('&['+','.join(arr(map(q,point)) for point in polygon)+']')
-            if not 1<=len(polygons)<=8:raise ValueError('checkpoint polygon count')
-            checkpoints.append('Checkpoint {bounds:'+rect(checkpoint['bounds'])+',polygons:&['+
-                ','.join(polygons)+'],spawn:'+arr(map(q,checkpoint['spawn']))+
-                ',facing:'+('1'if checkpoint['respawn_facing_right']else'-1')+'}')
         reveal_bindings=[];reveal_owned=set()
         for binding in region.get('reveal_mask_bindings',[]):
             controller=integer(binding['controller'],len(reveal_scenes.get(str(scene),{}).get('controllers',[])),'reveal controller')
@@ -388,8 +355,8 @@ def generate(report):
         out.append(f'Region {{global_id:{region["chunk_id"]},scene:{scene},flat_floor_heights:FLAT_FLOOR_HEIGHTS[{region["chunk_id"]-1}],bounds:' + rect(region['activation_bounds']) +
                    ',collision_bounds:' + rect(region.get('collision_bounds',region['activation_bounds'])) +
                    ',particle_bank:'+particle_bank+',grass_emitters:'+particle_emitters+',door_debris:'+debris_spec+',camera:' + rect(region['camera_bounds']) + ',grass_impact:'+impact_spec+',grass:&[' + ','.join(patches) +
-                   '],breakables:&[' + ','.join(props) + '],remote_masks:&[' + ','.join(remote_masks) + '],hazards:&[' + ','.join(hazards) +
-                   '],reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+',reveal_bindings:&['+','.join(reveal_bindings)+'],checkpoints:&[' + ','.join(checkpoints) + '],actors:' + actors + ',neighbours:' + ids(neighbours) + '},')
+                   '],breakables:&[' + ','.join(props) + '],remote_masks:&[' + ','.join(remote_masks) +
+                   '],reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+',reveal_bindings:&['+','.join(reveal_bindings)+'],actors:' + actors + ',neighbours:' + ids(neighbours) + '},')
     out.append('];\npub static GATES: &[Gate] = &[')
     by_name = {scene['scene_name']: scene for scene in report['scenes']}
     for scene in report['scenes']:

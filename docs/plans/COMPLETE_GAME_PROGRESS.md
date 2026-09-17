@@ -39,7 +39,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P02 | validated | Every scene has an evidence-backed role and remains included. All 1,119 TransitionPoints and 318 scripted loads retain geometry, flags, destination dataflow and progression-condition status with downstream owners. All 95 completion fields join serialized access to exact managed readers/writers; installed cap CIL proves the 112 maximum. Fifteen source reference cases cover every observed edge/condition category. |
 | P03 | validated | All reusable observed geometry families are extracted across 501 scenes. 463 scenes are geometry-complete; the other 38 retain only 757 TextMeshPro and four legacy TextMesh runtime glyph-shaping cases as explicit renderer/cooking work. All 106 canonical Tutorial/Town regions pass source-geometry and terrain comparison, including 20 Town rows resolved through per-region provenance without `base_path`. |
 | P04 | validated | Source-order-independent IDs cover the complete imported catalog with collision checks and zero unresolved assets. Current sparse Breakable/grass IDs have stable aliases. The bounded central state API separates global, mode and active-scene ownership and passes reset, reload, idempotence and exact-size tests. |
-| P05 | in progress | The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
+| P05 | in progress | Build 79 moved hazards and checkpoints out of the static region table into the loadable bank (`.data` -11,536 bytes, headroom 223,444). The metadata relocation now runs on the actual disc: build 72 exposed and fixed a 1-based/0-based neighbour comparison, the bank being overwritten in the arena tail by later in-place decodes (it is admitted last and decoded inside the tail, and the host gate-load proof stages it the same way), and per-tick re-parsing that overflowed the input queue. Baked per-particle tracks (449 KB of permanent RAM) were replaced by the guest's proven scalar path, and the world metadata manifest follows scene-manifest order. Linked headroom is 401,256 bytes with three scenes. Migration of the remaining static region payloads (grass, breakables, hazards, actors, emitters) to the bank remains. |
 | P06 | in progress | `tools/world_pack_matrix.py` joins all 501 verified scene artifacts, dependency inventories and current+neighbor windows, with deterministic hashes and source-cost peaks. `tools/cook_scene_pack.py` now cooks any catalog scene into an isolated, write-guarded pack with the canonical cooker/similarity/scene-bank path, and the matrix merges its measured PS1 costs per scene. The whole-catalog batch is complete: 457 of 501 scenes cook with a passing native decoder, 41 have no source envelope (cinematics, menus, boss-defeated and preload helpers) and three exceed the 128-view HKSCNE room limit. Eleven shared abort causes became explicit recorded exceptions or lossless transformations. Shared art canonical mappings across scenes, neighbour-window costs and production admission remain. |
 | P07 | in progress | Persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
@@ -363,10 +363,24 @@ nested per-region arrays total 306,265 bytes across 1,714 sections, about
 930 bytes per view, so the nested arrays, not the `Region` records or the
 actor specs, are what the bank must absorb.
 
-Order: (1) actor specs shared per scene (done), then move them into the bank; (2) breakables, whose bank records exist but lack edge lists and
-fades; (3) hazards and checkpoints, whose bank records are complete, by
-switching the consumers to the admitted `WorldMeta` view; (4) neighbours. Each
-step must keep the six route replays green and record the new headroom.
+Order: (1) actor specs shared per scene (done), then move them into the bank;
+(2) hazards and checkpoints (done in build 79); (3) breakables, whose bank
+records exist but lack edge lists and fades; (4) neighbours. Each step must
+keep the six route replays green and record the new headroom.
+
+Build 79 removed `Region.hazards` and `Region.checkpoints`. The HKWMTA01
+object record grew from 36 to 48 bytes with three kind-specific payload words
+(hazard: origin x, damage | respawn << 16; checkpoint: spawn x, spawn y,
+facing), `tools/world_metadata.py` owns the DamageHero respawn convention, and
+`world::hazard_contact`/`world::checkpoint` read the admitted bank region
+(resolved once per region entry by `disc::world_region_index`). Measured:
+`.data` 497,984 -> 486,448 bytes (-11,536), linked headroom 218,628 -> 223,444
+bytes; six routes pass. The remaining static payload per view is breakables
+(297 records, 1,188 polygon points, edge/draw lists), grass patches (443 x 28
+bytes), neighbours (1,760 x 4 bytes), mask bindings and `Region` itself, so
+even the complete migration of the nested arrays leaves about 300 bytes per
+view static; the full game needs the `Region` table itself to become
+per-scene bank data, which is the P05 end state.
 
 ## Required package completion record
 

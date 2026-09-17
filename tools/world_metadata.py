@@ -15,9 +15,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAGIC = b"HKWMTA01"
 HEADER = 160
-REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE = 76, 36, 8, 8
+REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE = 76, 48, 8, 8
 MAX_Q16 = 512 * 65536
 KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5}
+
+
+def damagehero_respawns(hit_type):
+    """DamageHero's serialized integer is NOT GlobalEnums.HazardType.
+
+    HeroBox copies the integer unchanged into HeroController.TakeDamage's fourth
+    argument. Installed TakeDamage calls StartRecoil for0/1, DieFromHazard for
+    2(spikes)/3(acid), logs4(lava), and calls pit recovery for5 only in its normal
+    damage branch. The latter two require separate handling, not this bool ABI.
+    """
+    if type(hit_type) is not int or hit_type not in (0, 1, 2, 3):
+        raise ValueError(f'unsupported DamageHero hit type {hit_type}; lava/pit semantics require explicit handling')
+    return hit_type in (2, 3)
 
 
 def q(value):
@@ -66,15 +79,17 @@ def encode_scene(scene, rows):
     points = []
     regions = []
 
-    def add_object(kind, record, state, flags, bounds, shape_key=None):
+    def add_object(kind, record, state, flags, bounds, shape_key=None, extra=(0, 0, 0)):
         shape = polygon_list(record, shape_key) if shape_key else []
         polygon_first = len(polygons)
         for polygon in shape:
             first = len(points)
             points.extend((x, y) for x, y in polygon)
             polygons.append((first, len(polygon)))
+        if len(extra) != 3 or any(not -2**31 <= int(v) < 2**31 for v in extra):
+            raise ValueError(f"{kind} payload words outside i32: {extra}")
         objects.append((source_id(record["source"]), state, KINDS[kind], flags,
-                        rect(bounds), polygon_first, len(shape)))
+                        rect(bounds), polygon_first, len(shape), tuple(int(v) for v in extra)))
 
     for row in sorted(rows, key=lambda value: value["chunk_id"]):
         object_first = len(objects)
@@ -87,9 +102,16 @@ def encode_scene(scene, rows):
             add_object("grass", record, scene["scene_id"] * 1024 + int(record["state_index"]),
                        4, record["bounds"])
         for record in row.get("hazards", []):
-            add_object("hazard", record, 0xFFFFFFFF, 8, record["bounds"], "world_polygons")
+            damage = int(record["damage"])
+            if not 1 <= len(record["world_polygons"]) <= 8 or not 0 <= damage < 65536:
+                raise ValueError("hazard outside guest bounds")
+            add_object("hazard", record, 0xFFFFFFFF, 8, record["bounds"], "world_polygons",
+                       (q(record["position"][0]), damage | (int(damagehero_respawns(record["hazard_type"])) << 16), 0))
         for record in row.get("checkpoints", []):
-            add_object("checkpoint", record, 0xFFFFFFFF, 16, record["bounds"], "world_polygons")
+            if record.get("fire_once") or not 1 <= len(record["world_polygons"]) <= 8:
+                raise ValueError("checkpoint outside guest bounds")
+            add_object("checkpoint", record, 0xFFFFFFFF, 16, record["bounds"], "world_polygons",
+                       (q(record["spawn"][0]), q(record["spawn"][1]), 1 if record["respawn_facing_right"] else -1))
         for record in row.get("actors", []):
             bounds = record.get("bounds", row["activation_bounds"])
             add_object("actor", record, 0xFFFFFFFF, 32, bounds)
@@ -119,9 +141,9 @@ def encode_scene(scene, rows):
                 payload.extend(struct.pack("<I12i6I", chunk, *bounds, *collision, *camera,
                                            nf, nc, of, oc, pf, pc))
         elif section == 1:
-            for source, state, kind, flags, bounds, pf, pc in objects:
-                payload.extend(struct.pack("<IIHH4i2I", source, state, kind, flags,
-                                           *bounds, pf, pc))
+            for source, state, kind, flags, bounds, pf, pc, extra in objects:
+                payload.extend(struct.pack("<IIHH4i2I3i", source, state, kind, flags,
+                                           *bounds, pf, pc, *extra))
         elif section == 2:
             for first, poly_count in polygons:
                 payload.extend(struct.pack("<2I", first, poly_count))

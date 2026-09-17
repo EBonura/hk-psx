@@ -1,6 +1,8 @@
-## Build 76: nineteen connected scenes on the actual disc
+## Build 79: nineteen connected scenes on the actual disc
 
-The sole disc pair is build 76: King's Pass, Dirtmouth and seventeen Forgotten
+The sole disc pair is build 79 (hazards and checkpoints read from the loadable
+bank, top-side gate entries with the source drop velocity, 223,444 bytes of
+linked headroom). Build 76 was: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (329 views, 200 disc chunks) reachable through the authored
 gates, six route replays passing with 219,292 bytes of linked headroom. Growing
 the catalog now reuses cooked regions and derives the scene arena from the

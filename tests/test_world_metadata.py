@@ -26,6 +26,26 @@ class WorldMetadataTests(unittest.TestCase):
         object_section = struct.unpack_from("<3I", payload, 76)
         self.assertEqual(struct.unpack_from("<i", payload, object_section[0] + 12)[0], 0)
 
+    def test_hazard_and_checkpoint_payload_words(self):
+        scene = {"scene_id": 1, "scene_name": "Synthetic", "file": "level1"}
+        tri = [[[0, 0], [1, 0], [0, 1]]]
+        rows = [{"chunk_id": 3, "activation_bounds": [0, 0, 2, 2], "camera_bounds": [0, 0, 2, 2],
+                 "hazards": [{"source": "level1:5", "bounds": [0, 0, 1, 1], "world_polygons": tri,
+                              "position": [0.5, 0], "damage": 2, "hazard_type": 2}],
+                 "checkpoints": [{"source": "level1:6", "bounds": [0, 0, 1, 1], "world_polygons": tri,
+                                  "spawn": [1, -1], "respawn_facing_right": False, "fire_once": False}]}]
+        payload, report = encode_scene(scene, rows)
+        self.assertEqual(report["object_count"], 2)
+        offset, count, stride = struct.unpack_from("<3I", payload, 76)
+        self.assertEqual(stride, 48)
+        hazard = struct.unpack_from("<IIHH4i2I3i", payload, offset)
+        self.assertEqual((hazard[2], hazard[3], hazard[10:]), (3, 8, (32768, 2 | 1 << 16, 0)))
+        checkpoint = struct.unpack_from("<IIHH4i2I3i", payload, offset + stride)
+        self.assertEqual((checkpoint[2], checkpoint[10:]), (4, (65536, -65536, -1)))
+        rows[0]["checkpoints"][0]["fire_once"] = True
+        with self.assertRaises(ValueError):
+            encode_scene(scene, rows)
+
     def test_multiple_scene_rows_are_sorted_by_global_chunk(self):
         scene = {"scene_id": 0, "scene_name": "Synthetic", "file": "level6"}
         def row(chunk):

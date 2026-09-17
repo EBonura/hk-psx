@@ -249,6 +249,7 @@ fn main() {
             input::start(sim_clock);
         }
         let r=&world::REGIONS[region_id];
+        let meta_region=cache.world_region_index(region_id).expect("admitted world metadata covers the selected region");
         assert!(ambience::set_scene(r.scene as u8));
         enemies.sync_region(r);
         reveals.scene_ready(r.scene,r.reveal_masks);
@@ -451,14 +452,15 @@ fn main() {
                             if enemy_events.hits>0 {audio::enemy_hit();}
                             if enemy_events.hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
                             if enemy_events.hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
-                            if let Some((damage,hazard,direction))=world::hazard_contact(r,&player,PARAMS) {
+                            let bank_region=cache.world_metadata().region(meta_region).expect("admitted world metadata covers the selected region");
+                            if let Some((damage,hazard,direction))=world::hazard_contact(bank_region,&player,PARAMS) {
                                 let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,damage,direction,hazard);
                                 if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
                                 if hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
                             }
-                            if let Some(checkpoint)=world::checkpoint_record(r,&player,PARAMS) {
-                                if let Some(id)=cache.locate(r.scene,checkpoint.spawn[0],checkpoint.spawn[1]) {
-                                    safe=(checkpoint.spawn[0],checkpoint.spawn[1],id);safe_facing=checkpoint.facing;
+                            if let Some((spawn,facing))=world::checkpoint(bank_region,&player,PARAMS) {
+                                if let Some(id)=cache.locate(r.scene,spawn[0],spawn[1]) {
+                                    safe=(spawn[0],spawn[1],id);safe_facing=facing;
                                 }
                             }
                             if gate_cooldown==0 && (door_exit || !door.pending()) && !vitals.dead && !vitals.hazard_pending {

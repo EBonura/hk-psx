@@ -76,9 +76,7 @@ fn region() -> Region {
         remote_masks: &[],
         reveal_masks: &[],
         reveal_bindings: &[],
-        hazards: &[],
         actors: &[],
-        checkpoints: &[],
         neighbours: &[],
     }
 }
@@ -297,29 +295,44 @@ fn hazards_and_checkpoints_use_polygons_and_preserve_distant_spawn() {
         bottom: -2,
         top: 2,
     };
-    static H: &[world::Hazard] = &[world::Hazard {
-        bounds: [100, 0, 200, 100],
-        polygons: &[TRIANGLE],
-        origin_x: 150,
-        damage: 1,
-        hazard: true,
-    }];
-    static C: &[world::Checkpoint] = &[world::Checkpoint {
-        bounds: [100, 0, 200, 100],
-        polygons: &[TRIANGLE],
-        spawn: [9000, 3000],
-        facing: -1,
-    }];
-    let mut r = region();
-    r.hazards = H;
-    r.checkpoints = C;
+    // One-region HKWMTA01 bank: a hazard and a checkpoint sharing TRIANGLE.
+    fn put(b: &mut [u8], at: usize, v: i32) { b[at..at + 4].copy_from_slice(&v.to_le_bytes()); }
+    let (regions, objects, polygons, points) = (160usize, 236usize, 332usize, 348usize);
+    let mut bank = vec![0u8; 348 + 6 * 8];
+    bank[..8].copy_from_slice(b"HKWMTA01");
+    let total = bank.len() as i32;
+    put(&mut bank, 52, total);
+    put(&mut bank, 60, 4);
+    for (i, (offset, count, stride)) in [(regions, 1, 76), (objects, 2, 48), (polygons, 2, 8), (points, 6, 8)].iter().enumerate() {
+        put(&mut bank, 64 + i * 12, *offset as i32);
+        put(&mut bank, 68 + i * 12, *count);
+        put(&mut bank, 72 + i * 12, *stride);
+    }
+    put(&mut bank, regions, 1);
+    put(&mut bank, regions + 64, 2);
+    put(&mut bank, regions + 72, 2);
+    for (o, (kind, extra)) in [(3i32, [150, 1 | 1 << 16, 0]), (4, [9000, 3000, -1])].iter().enumerate() {
+        let at = objects + o * 48;
+        bank[at + 8..at + 10].copy_from_slice(&(*kind as u16).to_le_bytes());
+        for (i, v) in [100, 0, 200, 100].iter().enumerate() { put(&mut bank, at + 12 + i * 4, *v); }
+        put(&mut bank, at + 28, o as i32);
+        put(&mut bank, at + 32, 1);
+        for (i, v) in extra.iter().enumerate() { put(&mut bank, at + 36 + i * 4, *v); }
+        put(&mut bank, polygons + o * 8, (o * 3) as i32);
+        put(&mut bank, polygons + o * 8 + 4, 3);
+        for (i, p) in TRIANGLE.iter().enumerate() {
+            put(&mut bank, points + (o * 3 + i) * 8, p[0]);
+            put(&mut bank, points + (o * 3 + i) * 8 + 4, p[1]);
+        }
+    }
+    let meta = hk_format::WorldMeta::parse(&bank).unwrap();
+    let r = meta.region(0).unwrap();
     let missed = Player::spawn(185, 85);
-    assert_eq!(world::hazard_contact(&r, &missed, P), None);
-    assert_eq!(world::checkpoint(&r, &missed, P), None);
+    assert_eq!(world::hazard_contact(r, &missed, P), None);
+    assert_eq!(world::checkpoint(r, &missed, P), None);
     let hit = Player::spawn(115, 20);
-    assert_eq!(world::hazard_contact(&r, &hit, P), Some((1, true, -1)));
-    assert_eq!(world::checkpoint(&r, &hit, P), Some((9000, 3000)));
-    assert_eq!(world::checkpoint_record(&r, &hit, P).unwrap().facing, -1);
+    assert_eq!(world::hazard_contact(r, &hit, P), Some((1, true, -1)));
+    assert_eq!(world::checkpoint(r, &hit, P), Some(([9000, 3000], -1)));
 }
 
 fn movement_params() -> hk_sim::Params {
