@@ -2,31 +2,32 @@
 
 ## Current state (2026-09-17)
 
-Build 80 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
+Build 81 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (19 scenes, 329 views) connected by the authored gates,
 validated by `cargo run --release -- build --frontend <PSoXide frontend>`
-(six route replays, zero faults). Hazards, checkpoints, breakables, mask fades
-and remote masks now live only in the loadable HKWMTA01 bank (object stride
-48, three payload words, a fifth u16 index-list section); the guest reads
-them through `world::bank_region` and the `Breakable`/`MaskFade` views, and
-`State::reset_scene` walks the admitted bank. RAM headroom is 238,248 bytes.
-Build 80 also fixed the guest state tables (`broken`, fades, grass) that were
-sized for three scenes on a nineteen-scene disc: breaking anything in scene 3
-or later would have faulted; `data/regions.rs` now emits `SCENES` and the
-guest asserts it against the disc manifest. A route into Crossroads_02 or
-later is owed to cover that path. The remaining static per-view payload is
-grass patches, neighbours, reveal bindings and the `Region` record itself;
-P05's end state is the whole region table becoming per-scene bank data, and
-per-scene state tables must stop scaling with the catalog (transient fades and
-grass resident per scene, `broken` global). Break-effect art beyond scene 4
-and Geo rocks over the shared VRAM budgets are recorded omissions; effect and
-Geo art need per-scene streaming (P07/P25). `host/regions.py` reuses every
-region whose spec, source inputs and cooker code are unchanged. The scene
-catalog is `host/quality.py SCENE_TABLE`. Next: P05 step (4) grass patches
-into the bank (grass objects already exist; add draw words and emitter
-lookup), then neighbours, then the `Region` scalars; a Crossroads_02 route;
-P09 delayed well collider and source camera locks; Crossroads enemy families
-beyond the Crawler.
+(seven route replays, zero faults). Hazards, checkpoints, breakables, mask
+fades, remote masks and grass now live only in the loadable HKWMTA01 bank
+(object stride 48, three payload words, a fifth u16 index-list section); the
+guest reads them through `world::bank_region` and the `Breakable`, `MaskFade`
+and `Patch` views, `State::apply` is one pass over the region's objects, and
+`State::reset_scene` walks the admitted bank. RAM headroom is 252,584 bytes.
+Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
+for three scenes on a nineteen-scene disc; the new `crossroads-exit` route
+(climb authored with `tools/route_sim.py`, gate into Crossroads_02, four
+breaks there, gate back) covers that path. The remaining static per-view
+payload is neighbours, reveal bindings and the `Region` record itself; P05's
+end state is the whole region table becoming per-scene bank data, and the
+per-scene state tables must stop scaling with the catalog (transient fades
+and grass resident per scene, `broken` global). Region entry now polls the pad
+between `render::init` and the state passes; that stretch was one VBlank
+short on the Tutorial return before. Break-effect art beyond scene 4 and Geo
+rocks over the shared VRAM budgets are recorded omissions; effect and Geo art
+need per-scene streaming (P07/P25). `host/regions.py` reuses every region
+whose spec, source inputs and cooker code are unchanged. The scene catalog is
+`host/quality.py SCENE_TABLE`. Next: P05 step (5) neighbours from the bank
+(`preload.rs`, `world::upcoming`, `disc.rs` admission), then the `Region`
+scalars; P09 delayed well collider and source camera locks; Crossroads enemy
+families beyond the Crawler.
 
 ## Previous handoff: P05 scene-owned world metadata
 

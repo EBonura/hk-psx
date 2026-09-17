@@ -1,9 +1,9 @@
-## Build 80: nineteen connected scenes on the actual disc
+## Build 81: nineteen connected scenes on the actual disc
 
-The sole disc pair is build 80 (hazards, checkpoints, breakables and mask
-fades read from the loadable bank, guest state tables sized from the catalog,
-top-side gate entries with the source drop velocity, 238,248 bytes of linked
-headroom). Build 76 was: King's Pass, Dirtmouth and seventeen Forgotten
+The sole disc pair is build 81 (hazards, checkpoints, breakables, mask fades
+and grass read from the loadable bank, guest state tables sized from the
+catalog, a seventh route through Crossroads_02 and back, 252,584 bytes of
+linked headroom). Build 76 was: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (329 views, 200 disc chunks) reachable through the authored
 gates, six route replays passing with 219,292 bytes of linked headroom. Growing
 the catalog now reuses cooked regions and derives the scene arena from the
@@ -11,7 +11,7 @@ pack; break-effect art past scene 4 and oversized Geo art are explicit
 omissions until effect art streams per scene. Build 74 and it is validated by the root Cargo driver:
 `cargo run --release -- build` cooks with caches, builds the guest, replaces
 `~/Downloads/ps1 games/hk-psx.bin/.cue`, writes the build report and replays
-the five route tapes in `tools/tapes`, failing on any fault. Forgotten
+the route tapes in `tools/tapes`, failing on any fault. Forgotten
 Crossroads (Crossroads_01) is scene 2: the authored Dirtmouth well gate drops
 the Knight into it and the `town-well` route ends inside Crossroads region 110
 after three scene loads. Build 72 was the first disc run of the metadata

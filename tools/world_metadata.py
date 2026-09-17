@@ -17,6 +17,7 @@ MAGIC = b"HKWMTA01"
 HEADER = 160
 REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE = 76, 48, 8, 8, 2
 BREAKABLES_PER_SCENE = 128
+GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
 KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7}
@@ -124,6 +125,7 @@ def encode_scene(scene, rows):
         return ticks
 
     stable_breakables = {}
+    stable_grass = {}
     for row in sorted(rows, key=lambda value: value["chunk_id"]):
         object_first = len(objects)
         region_polygon_first = len(polygons)
@@ -167,8 +169,12 @@ def encode_scene(scene, rows):
                        scene["scene_id"] * BREAKABLES_PER_SCENE + state, 0, row["activation_bounds"], None,
                        (index_list(binding["fade"]["draw_indices"], draw_count, "remote mask draw"), ticks, total))
         for record in row.get("grass", []):
-            add_object("grass", record, scene["scene_id"] * 1024 + int(record["state_index"]),
-                       4, record["bounds"])
+            state = bounded(record["state_index"], GRASS_PER_SCENE, "grass state")
+            if stable_grass.setdefault(state, record["source"]) != record["source"]:
+                raise ValueError("grass state aliases different source objects")
+            add_object("grass", record, scene["scene_id"] * GRASS_PER_SCENE + state, 4, record["bounds"], None,
+                       (bounded(record["off_draw"], draw_count, "grass off draw"),
+                        bounded(record["on_draw"], draw_count, "grass on draw"), 0))
         for record in row.get("hazards", []):
             damage = int(record["damage"])
             if not 1 <= len(record["world_polygons"]) <= 8 or not 0 <= damage < 65536:

@@ -61,7 +61,6 @@ fn region() -> Region {
         bounds: [0, 0, 1000, 1000],
         collision_bounds: [0, 0, 1000, 1000],
         camera: [0, 0, 1000, 1000],
-        grass: &[],
         grass_impact:None,
     door_debris:&[],
     particle_bank:None,
