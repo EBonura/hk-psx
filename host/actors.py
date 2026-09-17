@@ -291,6 +291,16 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and any(kind == 'LineOfSightDetector' for _, kind, _ in records) \
+                and sc.gos[gid]['m_Name'].startswith('Buzzer'):
+            from vengefly import recognize as recognize_vengefly
+            try:
+                control = recognize_vengefly(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
             from runner import recognize
             try:
@@ -361,13 +371,22 @@ def generated_actor_specs(region):
             # The controller owns speed and turns; the walker fields are unused.
             speed, turn_ticks, turn_cooldown_ticks = 2.0, 15, 0
             initial_direction, random_start_direction = 1, False
+        elif control['kind'] == 'Vengefly':
+            vengefly_clips = ('startle_clip', 'chase_clip', 'turn_fly_clip')
+            if any(key not in actor for key in vengefly_clips) or not actor.get('corpse'):
+                raise ValueError(f'Vengefly is missing cooked clips or corpse: {actor["source"]}')
+            controller = 'hk_sim::ActorController::Vengefly {' + ','.join(f'{key}:{actor[key]}' for key in vengefly_clips) + '}'
+            # The controller owns velocity; the walker fields are unused.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
         elif control['kind'] == 'WalkLeftRight':
             controller = 'hk_sim::ActorController::Crawler'
             speed, turn_ticks, turn_cooldown_ticks = control['speed'], control['turn_ticks'], control['turn_cooldown_ticks']
             initial_direction, random_start_direction = control['initial_direction'], control['random_start_direction']
         else:
             raise ValueError('unsupported generated actor controller: ' + control['kind'])
-        clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ())
+        clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ()) \
+            + (vengefly_clips if control['kind'] == 'Vengefly' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')
         recoil = actor.get('Recoil', {})

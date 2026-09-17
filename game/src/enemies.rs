@@ -106,6 +106,39 @@ impl ClimberRuntime {
         ((self.controller.rotation() + 45 * ONE).div_euclid(90 * ONE)).rem_euclid(4)
     }
 }
+/// Gravity-free Buzzer: the controller owns velocity and facing; this runtime
+/// integrates the body against terrain with the bounded solver.
+#[derive(Clone, Copy)]
+struct VengeflyRuntime {
+    controller: hk_sim::vengefly::Vengefly,
+    animation_tick: u32,
+    clip: hk_sim::vengefly::Clip,
+}
+impl VengeflyRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        use hk_sim::vengefly::Clip;
+        let ActorController::Vengefly { startle_clip, chase_clip, turn_fly_clip } = spec.controller
+            else { panic!("Vengefly runtime with other metadata") };
+        match self.clip {
+            Clip::Idle => spec.walk_clip,
+            Clip::TurnToIdle => spec.turn_clip,
+            Clip::Startle => startle_clip,
+            Clip::Chase => chase_clip,
+            Clip::TurnToFly => turn_fly_clip,
+        }
+    }
+    fn apply(&mut self, actions: hk_sim::vengefly::Actions) {
+        use hk_sim::vengefly::Action;
+        for action in actions.iter() {
+            match action {
+                Action::Play(clip, tick) => { self.clip = clip; self.animation_tick = tick; }
+                // Velocity and facing are read from the controller; the
+                // Startle one-shot is not presented.
+                Action::Velocity(_) | Action::Facing(_) | Action::StartleSound => {}
+            }
+        }
+    }
+}
 /// Rotate a local offset by quarter turns counter-clockwise.
 fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
     match quarter.rem_euclid(4) { 0 => v, 1 => [-v[1], v[0]], 2 => [-v[0], -v[1]], _ => [v[1], -v[0]] }
@@ -145,6 +178,43 @@ fn climber_ray_hit(ray: hk_sim::climber::Ray, count: usize, edge: &impl Fn(usize
     }
     best.map(|(_, _, p)| p)
 }
+const EDGES:usize=128;
+/// Simulation neighbourhood around the active view, in Q16 units (one view).
+const NEAR:[i32;2]=[24*ONE,16*ONE];
+// Round-robin eviction thrashes once the advancing actors cycle through more
+// distinct views than slots; the neighbourhood gate keeps that count small.
+const EDGE_SLOTS:usize=4;
+/// Per-view terrain copies for actor physics. Decoding 128 edges of a
+/// non-active view per actor per tick was the largest enemy cost.
+#[cfg(not(test))]
+struct ActorEdges {
+    edges:[[[i32;4];EDGES];EDGE_SLOTS],
+    keys:[(usize,usize,u32);EDGE_SLOTS],
+    next:usize,
+}
+#[cfg(not(test))]
+static mut ACTOR_EDGES:ActorEdges=ActorEdges {edges:[[[0;4];EDGES];EDGE_SLOTS],keys:[(usize::MAX,0,0);EDGE_SLOTS],next:0};
+#[cfg(not(test))]
+fn actor_edges<'a>(state:&State,active:&Region,active_room:&Room,target:&Region,target_room:&Room)->&'a [[i32;4]] {
+    let count=target_room.counts[5];
+    // The scene payload behind a global id is immutable within an edge epoch
+    // (world re-admission bumps it), so the copy is keyed by ids, not by the
+    // transient Room view address. Geo/Lifeblood exclusions are indices into
+    // the active room, so the active view is part of the key.
+    let key=(target.global_id,active.global_id,state.edge_epoch);
+    // Single-threaded main loop; the returned slice is read before the next fill.
+    let cache=unsafe {&mut *core::ptr::addr_of_mut!(ACTOR_EDGES)};
+    let slot=match cache.keys.iter().position(|k|*k==key) {
+        Some(slot)=>slot,
+        None=>{
+            let slot=cache.next;cache.next=(slot+1)%EDGE_SLOTS;
+            state.fill_edges_in_view(active,active_room,target,target_room,&mut cache.edges[slot][..count]);
+            cache.keys[slot]=key;
+            slot
+        }
+    };
+    &cache.edges[slot][..count]
+}
 #[derive(Clone, Copy)]
 struct Actor {
     scene: usize,
@@ -162,6 +232,7 @@ struct Actor {
     geo_paid: bool,
     runner: Option<RunnerRuntime>,
     climber: Option<ClimberRuntime>,
+    vengefly: Option<VengeflyRuntime>,
 }
 impl Actor {
     fn new(scene: usize, spec: &ActorSpec) -> Self {
@@ -198,6 +269,10 @@ impl Actor {
                     controller: hk_sim::climber::Climber::new([spec.x, spec.y], 0, 1, start_right).expect("validated Climber placement"),
                     velocity: [0; 2], animation_tick: 0, clip: hk_sim::climber::Clip::Walk, end_token: None })
             } else { None },
+            vengefly: if matches!(spec.controller, ActorController::Vengefly { .. }) {
+                Some(VengeflyRuntime { controller: hk_sim::vengefly::Vengefly::new([spec.x, spec.y], seed),
+                    animation_tick: 0, clip: hk_sim::vengefly::Clip::Idle })
+            } else { None },
         }
     }
     fn local_bounds(&self, spec: &ActorSpec) -> [i32; 4] {
@@ -210,7 +285,7 @@ impl Actor {
             return [corners[0][0].min(corners[1][0]), corners[0][1].min(corners[1][1]),
                 corners[0][0].max(corners[1][0]), corners[0][1].max(corners[1][1])];
         }
-        if self.walk.direction == spec.initial_direction {
+        if self.vengefly.is_some() || self.walk.direction == spec.initial_direction {
             b
         } else {
             [-b[2], b[1], -b[0], b[3]]
@@ -267,17 +342,26 @@ impl Actor {
         let b = self.local_bounds(spec);
         [self.x + b[0], self.y + b[1], self.x + b[2], self.y + b[3]]
     }
-    // Kept out of the main loop's frame: 2KiB temporary terrain is reused for
-    // each actor/corpse and discarded before combat mutates world state.
+    // Actors and corpses share the materialized terrain of their owning view;
+    // the copy is rebuilt only when that view or the exclusion epoch changes.
     #[inline(never)]
     fn advance_in_view(&mut self,spec:&ActorSpec,state:&State,active:&Region,
         active_room:&Room,target:&Region,target_room:&Room, context:RunnerContext, emit:&mut impl FnMut(RunnerEvent)) {
-        const EDGES:usize=128;
         let count=target_room.counts[5];
-        let mut edges=[[0;4];EDGES];
         if count<=EDGES {
-            state.fill_edges_in_view(active,active_room,target,target_room,&mut edges[..count]);
-            self.advance_body(spec,active_room,count,|i|edges[i],context,emit);
+            // Tests swap rooms behind one region fixture and run in parallel:
+            // they fill a private copy instead of the shared keyed slots.
+            #[cfg(test)]
+            {
+                let mut edges=[[0;4];EDGES];
+                state.fill_edges_in_view(active,active_room,target,target_room,&mut edges[..count]);
+                return self.advance_body(spec,active_room,count,|i|edges[i],context,emit);
+            }
+            #[cfg(not(test))]
+            {
+                let edges=actor_edges(state,active,active_room,target,target_room);
+                self.advance_body(spec,active_room,count,|i|edges[i],context,emit);
+            }
         } else {
             self.advance_body(spec,active_room,count,|i|state.edge_in_view(active,active_room,target,target_room,i),context,emit);
         }
@@ -299,6 +383,13 @@ impl Actor {
             self.spawn_state = SpawnState::Ready;
             self.advance_climber(&mut climber, count, &edge);
             self.climber = Some(climber);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(mut fly) = self.vengefly.take() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_vengefly(&mut fly, spec, count, &edge, context);
+            self.vengefly = Some(fly);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
@@ -381,6 +472,47 @@ impl Actor {
             self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE,
             "enemy left validated Q16 scene bounds"
         );
+    }
+    fn vengefly_senses(&self, context: RunnerContext, count: usize, edge: &impl Fn(usize) -> [i32; 4]) -> hk_sim::vengefly::Senses {
+        use hk_sim::runner_senses as q;
+        let pos = [self.x, self.y];
+        // Alert Range New: a 7.804-unit circle trigger against the hero body box.
+        let hb = context.hero_body;
+        let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
+        let dy = (pos[1].clamp(hb[1], hb[3]) - pos[1]) as i64;
+        const RADIUS: i64 = 511463; // 7.804 Q16
+        let in_alert_range = dx * dx + dy * dy <= RADIUS * RADIUS;
+        let can_see_hero = match q::line_of_sight(pos, context.hero, in_alert_range, count, edge) {
+            Ok(value) => value,
+            Err(q::QueryError::ZeroLengthSight) => false,
+            Err(_) => panic!("Vengefly LOS outside validated coordinates"),
+        };
+        hk_sim::vengefly::Senses { position: pos, hero: context.hero, can_see_hero }
+    }
+    /// One 60 Hz step of the Buzzer: FSM tick, then the gravity-free body
+    /// moves by its velocity against terrain, plus any Recoil displacement.
+    fn advance_vengefly(&mut self, fly: &mut VengeflyRuntime, spec: &ActorSpec, count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext) {
+        fly.animation_tick = fly.animation_tick.saturating_add(1);
+        let senses = self.vengefly_senses(context, count, edge);
+        let actions = fly.controller.tick(senses);
+        fly.apply(actions);
+        self.walk.direction = fly.controller.facing();
+        let b = spec.bounds;
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let v = fly.controller.velocity();
+        let mut body = Player::spawn(self.x + offset, self.y);
+        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0,
+            half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
+        body.vy = v[1];
+        body.step(p, v[0].signum(), false, count, edge);
+        if self.recoil_left != 0 {
+            self.recoil_left -= 1;
+            p.speed = self.recoil[0].abs();
+            body.vy = self.recoil[1];
+            body.step(p, self.recoil[0].signum(), false, count, edge);
+        }
+        self.x = body.x - offset;
+        self.y = body.y;
     }
     fn runner_senses(&self, runner:&RunnerRuntime, spec:&ActorSpec, room:&Room,
         context:RunnerContext, count:usize, edge:impl Fn(usize)->[i32;4]) -> hk_sim::runner::Senses {
@@ -558,7 +690,12 @@ impl EnemyWorld {
                 else {resident(region.scene,x,y)};
             let (terrain_region,terrain_room)=other.as_ref()
                 .map_or((region,room),|(r,room)|(r,room));
-            let available=terrain_region.scene==region.scene
+            // ponytail: with a whole scene resident, only actors within one view of
+            // the active view advance; farther ones hold their state (source Unity
+            // keeps simulating them). Widen or drop when a scene needs it.
+            let b=region.bounds;
+            let near=crate::world::contains([b[0]-NEAR[0],b[1]-NEAR[1],b[2]+NEAR[0],b[3]+NEAR[1]],x,y);
+            let available=near && terrain_region.scene==region.scene
                 && crate::world::contains(terrain_region.collision_bounds,x,y);
             if !actor.health.dead {actor.health.tick();}
             if available {
@@ -591,6 +728,7 @@ impl EnemyWorld {
                                 actor.emit_runner(RunnerEventKind::Destroy,&mut runner_event);
                             }
                             if let Some(climber)=&mut actor.climber {climber.controller.die();}
+                            if let Some(fly)=&mut actor.vengefly {fly.controller.die();}
                             state.enemy_death_particles(region,actor.source_id,[actor.x,actor.y,0]);
                             if let Some(corpse_spec)=spec.corpse {
                                 let mut corpse=hk_sim::Corpse::spawn(corpse_spec,actor.x,actor.y,nail.kind,
@@ -618,6 +756,15 @@ impl EnemyWorld {
                                 }
                                 actor.runner=Some(runner);
                             }
+                        }
+                        if let Some(mut fly)=actor.vengefly.take() {
+                            if !actor.health.dead {
+                                let senses=actor.vengefly_senses(context,terrain_room.counts[5],
+                                    &|i|state.edge_in_view(region,room,terrain_region,terrain_room,i));
+                                let actions=fly.controller.took_damage(senses);
+                                fly.apply(actions);
+                            }
+                            actor.vengefly=Some(fly);
                         }
                         if let Some(climber)=&mut actor.climber {
                             // Recoil.OnHandleFreeze: freeze in place with the Stun
@@ -680,6 +827,9 @@ impl EnemyWorld {
                 (runner.clip(spec),runner.animation_tick,(actor.x,actor.y),runner.controller.facing())
             } else if let Some(climber)=actor.climber {
                 (climber.clip(spec),climber.animation_tick,(actor.x,actor.y),1)
+            } else if let Some(fly)=actor.vengefly {
+                // The source sprite faces left (-1 native, +1 mirrored), as the Crawler.
+                (fly.clip(spec),fly.animation_tick,(actor.x,actor.y),fly.controller.facing())
             } else {
                 (if actor.walk.turn_remaining!=0 {spec.turn_clip}else{spec.walk_clip},
                     actor.walk.animation_tick,(actor.x,actor.y),actor.walk.direction)
@@ -822,7 +972,7 @@ mod runner_runtime_tests {
         walk:hk_sim::WalkParams {speed:ONE+ONE/2,turn_ticks:10,turn_cooldown_ticks:60},
         initial_direction:-1,random_start_direction:false,walk_clip:0,turn_clip:1,
         corpse:Some(hk_sim::CorpseSpec {air_clip:2,land_clip:2,bounds:[-ONE/2,-ONE,ONE/2,0],
-            spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE}),
+            spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false}),
         recoil_speed:10*ONE,recoil_ticks:9,
     };
     // Source-free six-clip bank with the real Runner rates/lengths. Each clip's
@@ -895,9 +1045,9 @@ mod runner_runtime_tests {
         let draws=world.prepare_draws(&region(),&room,(actor.x,actor.y));
         assert_eq!(draws.entries[0].unwrap().texture,0); // actual Walk clip
         assert!(core::mem::size_of::<RunnerRuntime>()<=64);
-        // Runner and Climber runtimes are both optional fields (Actor is 208 bytes,
-        // the 32-slot pool 6,656).
-        assert!(core::mem::size_of::<Actor>()<=224);
+        // Runner, Climber and Vengefly runtimes are all optional fields; folding
+        // them into one enum would give back about 120 bytes per actor.
+        assert!(core::mem::size_of::<Actor>()<=288);
         println!("RunnerRuntime={} Actor={} EnemyWorld={}",core::mem::size_of::<RunnerRuntime>(),
             core::mem::size_of::<Actor>(),core::mem::size_of::<EnemyWorld>());
     }

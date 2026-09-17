@@ -718,6 +718,58 @@ even the complete migration of the nested arrays leaves about 300 bytes per
 view static; the full game needs the `Region` table itself to become
 per-scene bank data, which is the P05 end state.
 
+## Vengeflies (Buzzers) admitted, actor simulation bounded (build 95)
+
+`host/vengefly.py::recognize` admits the Buzzer instances whose `chaser` FSM
+parameters, transitions, body (1.25 x 0.625 box at offset (0, -0.1875),
+dynamic gravity-free Rigidbody2D), Recoil (15 for 0.25 s), alert circle
+(7.804 units) and clips (Idle 5@12, TurnToIdle 7@12 loop-section, Startle 4@12
+once, Chase 4@12, TurnToFly 6@12) match .hkpsx/vengefly/CONTRACT.md (CIL of
+IdleBuzz, ChaseObject, Decelerate, FaceDirection, LineOfSightDetector, Recoil
+in the same directory). `shared/hk-sim/src/vengefly.rs` is the controller:
+IdleBuzz roaming (per-axis random acceleration over 0.75 to 1 s windows,
+roaming-edge damping), sight from the alert circle against the hero body plus
+the existing `runner_senses::line_of_sight`, Startle (velocity zero, faces the
+hero, 20 ticks), ChaseObject (0.045 per fixed step toward the hero, 5 units/s
+clamp, one extra DoBuzz per frame while seen for the In Sight / Out of Sight
+ping-pong), the ten-second attention span and Stop's 0.12 deceleration, with
+a 50 Hz fixed-step accumulator inside the 60 Hz tick so the per-step
+constants stay authored (docs/VENGEFLY.md). The guest `VengeflyRuntime`
+(`ActorController::Vengefly { startle_clip, chase_clip, turn_fly_clip }`,
+walk = Idle, turn = TurnToIdle) integrates the body with the bounded solver at
+zero gravity, reuses the generic recoil displacement pass, and the corpse is
+the source `breaker` variant: `CorpseSpec` gained `gravity` (42 here, 48 for
+the earlier corpses) and `breaker` (removed on landing; break pieces not
+presented). 18 of 20 placed Buzzers are admitted (two share a body-collider
+variant the recognizer rejects), three of them in King's Pass, so every route
+now meets a live Buzzer.
+
+That exposed two guest problems the seven routes had never hit. First, a
+Buzzer kill near the King's Pass exit left three coins and death particles
+alive while the knight cut grass: `State::strike` invalidated the edge table
+and the rest of that tick (coins, enemies, Lifeblood) fell back to the
+per-query breakable scan (`broken_edge` rebuilds the bank region and decodes
+every object per edge), several VBlanks in one frame; the input queue (16
+polls) filled and the sampler faulted. `main.rs` now calls
+`state.refresh_edges` right after a break or depleted rock. Second, with a
+whole scene resident every actor of the scene advanced every tick, each
+re-decoding the 128 edges of its own view plus the broken-object exclusions
+(`Room::edge` under `advance_in_view` was the largest single enemy cost).
+`enemies.rs` keeps four keyed terrain copies (`ActorEdges`, keyed by target
+view, active view and a new `State::edge_epoch` that every exclusion change
+bumps) and only advances actors within one view (24 x 16 units) of the active
+view; farther actors hold their state. That gate is a recorded departure from
+Unity, which keeps simulating them, and is marked `ponytail:` in the code for
+review. Input queue peak on `gate-return` went from 11 back to 7 (the scene
+load) with pending 1 to 2 in gameplay; `HK_INPUT_PENDING` is new telemetry.
+`regions.py::remap_actor_clips` now remaps every `*_clip` binding into the
+scene clip space: the Climber's `stun_clip` and the new Vengefly clips were
+left in region-local numbering, which drew a stunned Tiktik or a Buzzer with
+the knight's frames. `Actor` is 256 bytes (pool 8 KiB; folding the three
+optional runtimes into one enum would give back about 120 bytes each).
+Linked headroom 193,508 bytes, scene arena 415,488; seven routes pass; hk-sim
+(Vengefly tests included), Python (424) and world runtime (47) suites pass.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

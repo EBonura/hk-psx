@@ -3,14 +3,17 @@ from pathlib import Path
 from breakables import _components
 
 def corpse_source(source, scene, actor):
-    """Admit only the verified Crawler or Zombie Runner non-breaking corpse.
+    """Admit only the verified Crawler, Zombie Runner, Climber or Buzzer corpse.
 
     Runner source evidence: .hkpsx/runner71/corpse-source.json. Its zero spawn
     offset, 0.2 bounce and Single/Once clips differ from the original Crawler
     contract; never broaden the Crawler validator to accept arbitrary variants.
     Crawler admission remains structural: source IDs may differ between bundles.
+    The Buzzer corpse (.hkpsx/vengefly/CONTRACT.md) is a breaker without
+    ObjectBounce: it leaves on landing.
     """
     kind=actor.get('movement_control',{}).get('kind')
+    if kind=='Vengefly':return _breaker_corpse_source(source,scene,actor)
     if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber'):
         raise ValueError('unvalidated corpse controller family')
     runner=kind=='ZombieSwipeWalker';climber=kind=='Climber'
@@ -74,9 +77,48 @@ def corpse_source(source, scene, actor):
             raise ValueError('unsupported Runner corpse physics material')
     bounds=[(off['x']-size['x']/2)*sx,(off['y']-size['y']/2)*sy,(off['x']+size['x']/2)*sx,(off['y']+size['y']/2)*sy]
     return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],'bounds':[round(v*65536)for v in bounds],
-            'spawn_offset':[round(offset['x']*65536),round(offset['y']*65536)], 'gravity':48*65536,'fling_speed':round(death['corpseFlingSpeed']*65536),'bounce_factor':round(expected_bounce*65536),'land_delay_ticks':60,
+            'spawn_offset':[round(offset['x']*65536),round(offset['y']*65536)], 'gravity':48*65536,'breaker':False,'fling_speed':round(death['corpseFlingSpeed']*65536),'bounce_factor':round(expected_bounce*65536),'land_delay_ticks':60,
             'limitations':['Corpse Steam/Flame and infected wave/spatter remain separate particle/effect work',
                             'Fixed-point terrain solver is not complete Box2D; bounce RNG is deterministic per source, not Unity global RNG']}
+
+def _breaker_corpse_source(source,scene,actor):
+    components=list(_components(scene,actor['game_object']))
+    deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
+    if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
+    death=deaths[0]
+    if any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','rotateCorpse')) or death['corpseFlingSpeed']!=15 \
+            or death['corpseSpawnPoint']!={'x':0.,'y':0.,'z':0.}:
+        raise ValueError('unsupported corpse launch')
+    obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
+    parts={}
+    for ref in go['m_Component']:
+        component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
+        if typ in parts:raise ValueError('duplicate corpse component')
+        parts[typ]=(component,source.read(component))
+    if any(k not in parts for k in ('Corpse','tk2dSprite','tk2dSpriteAnimator','Rigidbody2D','BoxCollider2D','Transform')) or 'ObjectBounce' in parts:
+        raise ValueError('unsupported breaker corpse prefab')
+    corpse=parts['Corpse'][1];body=parts['Rigidbody2D'][1]
+    if not corpse['breaker'] or any(corpse[k] for k in ('bigBreaker','chunker','deathStun','fungusExplode','goopExplode','hatcher','instantChunker','massless','spineBurst','zomHive','resetRotation')):
+        raise ValueError('unsupported special corpse')
+    if corpse['landEffects']['m_PathID']:raise ValueError('unsupported additional corpse land effects')
+    if body['m_BodyType']!=0 or body['m_LinearDamping']!=0 or abs(body['m_GravityScale']-.7)>1e-6 or body['m_Constraints']!=4:
+        raise ValueError('unsupported corpse body')
+    sprite=parts['tk2dSprite'][1];transform=parts['Transform'][1]
+    if sprite['_color']!={'r':1.0,'g':1.0,'b':1.0,'a':1.0} or sprite['_scale']!={'x':1.0,'y':1.0,'z':1.0} or transform['m_LocalScale']!={'x':1.0,'y':1.0,'z':1.0}:
+        raise ValueError('unsupported corpse scale/color')
+    matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
+    box=parts['BoxCollider2D'][1];off=box['m_Offset'];size=box['m_Size']
+    if not box['m_Enabled'] or box['m_IsTrigger'] or box['m_EdgeRadius']!=0:raise ValueError('unsupported breaker corpse collider')
+    bounds=[(off['x']-size['x']/2)*sx,(off['y']-size['y']/2)*sy,(off['x']+size['x']/2)*sx,(off['y']+size['y']/2)*sy]
+    anim=parts['tk2dSpriteAnimator'][1];library_o=source.ref(obj.assets_file,anim['library']);library=source.read(library_o)
+    selected=[next(c for c in library['clips']if c['name']==name)for name in ('Death Air','Death Land')]
+    if [(c['fps'],c['wrapMode'],len(c['frames']))for c in selected]!=[(12,2,3),(12,2,3)]:raise ValueError('unvalidated corpse clip timing')
+    if any(c.get('loopStart',0)!=0 or any(f.get('triggerEvent',False)for f in c['frames'])for c in selected):
+        raise ValueError('unsupported corpse animation events/loop start')
+    return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],'bounds':[round(v*65536)for v in bounds],
+            'spawn_offset':[0,0],'gravity':42*65536,'breaker':True,'fling_speed':15*65536,'bounce_factor':0,'land_delay_ticks':0,
+            'limitations':['Break pieces, spatter and infected wave on landing are not presented; the corpse is removed',
+                           'Fixed-point terrain solver is not complete Box2D']}
 
 def append_corpse_art(source,scene,actors,atlas,frames,clips):
     from cook import tk_sprite,FOCAL,CAM_Z
@@ -112,6 +154,8 @@ def generated_corpse(record):
         raise ValueError('corpse bounce factor outside Q16 range')
     fields={k:record[k]for k in ('air_clip','land_clip','bounce_factor')}
     fields['fling_speed']=record.get('fling_speed',15*65536)
+    fields['gravity']=record.get('gravity',48*65536)
+    fields['breaker']=str(bool(record.get('breaker',False))).lower()
     fields.update({k:'['+','.join(map(str,record[k]))+']'for k in ('bounds','spawn_offset')})
     return 'Some(hk_sim::CorpseSpec {'+','.join(f'{k}:{v}'for k,v in fields.items())+'})'
 

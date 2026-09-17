@@ -13,9 +13,13 @@ pub static mut HK_INPUT_FAULT: u32 = 0;
 pub static mut HK_INPUT_LOADING_SAMPLES: u32 = 0;
 #[no_mangle]
 pub static mut HK_INPUT_LOADING_TICKS: u32 = 0;
+/// Samples polled but not yet consumed by the simulation, at the last publish.
+#[no_mangle]
+pub static mut HK_INPUT_PENDING: u32 = 0;
 fn publish_stats() {
     unsafe {
         let stats = SAMPLER.stats();
+        HK_INPUT_PENDING = SAMPLER.pending_count() as u32;
         HK_INPUT_POLLS = stats.polls;
         HK_INPUT_MISSED_VBLANKS = stats.missed_vblanks;
         HK_INPUT_QUEUE_PEAK = stats.pending_peak;

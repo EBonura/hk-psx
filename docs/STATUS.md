@@ -1,6 +1,8 @@
-## Build 94: the whole Forgotten Crossroads on the actual disc
+## Build 95: the whole Forgotten Crossroads on the actual disc
 
-The sole disc pair is build 94 (45 scenes, 693 views; Crossroads Climbers admitted;
+The sole disc pair is build 95 (45 scenes, 693 views; Vengeflies admitted (18 of 20
+Buzzers, docs/VENGEFLY.md) with actor simulation bounded to one view around the
+active view; build 94 admitted the Crossroads Climbers;
 earlier build 89 admitted the Crossroads Zombie Runners with their
 audio bank, break-effect art streamed per scene from its own disc chunk, 210
 emitters admitted across 18 scenes; earlier builds (the static region table is gone: every

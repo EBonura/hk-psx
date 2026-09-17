@@ -20,6 +20,13 @@ pub enum ActorController {
         stun_clip: u16,
         start_right: bool,
     },
+    /// Gravity-free Buzzer driven by `crate::vengefly::Vengefly`; `walk_clip`
+    /// is Idle and `turn_clip` TurnToIdle.
+    Vengefly {
+        startle_clip: u16,
+        chase_clip: u16,
+        turn_fly_clip: u16,
+    },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ActorSpec {

@@ -30,7 +30,11 @@ carry their target region slot from the cookers; `Cache::locate` takes
 catalogue scene ids (the disc module otherwise works in manifest indices, a
 distinction Tutorial's 0 == 0 had hidden).
 Crossroads Climbers (Tiktik) are admitted on top of the Crawlers and Runners
-(15 placed instances; climb loop audio not yet presented). Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
+(15 placed instances; climb loop audio not yet presented). Build 95 admits
+the Vengeflies (18 of 20 Buzzers, docs/VENGEFLY.md), bounds actor simulation
+to one view around the active view (a recorded departure from Unity, marked
+`ponytail:` in enemies.rs for review), refreshes the edge table right after a
+break, and fixes controller clip remapping (Climber stun, Vengefly clips). Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
 for three scenes on a nineteen-scene disc; the new `crossroads-exit` route
 (climb authored with `tools/route_sim.py`, gate into Crossroads_02, four
 breaks there, gate back) covers that path. The remaining static per-view
@@ -48,7 +52,7 @@ whose spec, source inputs and cooker code are unchanged. The scene catalog is
 `host/quality.py SCENE_TABLE`. Build speed (user priority) is done for the first pass: no-change or
 guest-only build 1:48, cooker-code change about 5:00 with a parallel full
 recook; see the ledger's build-speed section for what remains (geometry vs
-metadata cook split, replay speed). Next: Then Climber and Mender, Runner dust and death presentation, the P09
+metadata cook split, replay speed). Next: Gruzzer (Fly), Baldur (Roller), Husk Bully, Aspid, Hornhead and Mender, Runner dust and death presentation, the P09
 well entry details, and moving emitter/style metadata into the world bank; P09 delayed well collider and source camera locks; Crossroads enemy
 families beyond the Crawler.
 
