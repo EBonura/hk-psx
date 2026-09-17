@@ -40,7 +40,8 @@ class PackScenes(unittest.TestCase):
         m={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1}]}
         text=manifest(r,m)
         self.assertIn('stored_len:150000,stored_fnv:41,raw_len:300000,raw_fnv:31',text)
-        self.assertIn('SCENE_TEXTURE_FLAGS:&[&[u8]]=&[\n&[3,0,0,0]',text)
+        # Texture flags ride in the resident bank now, not the manifest.
+        self.assertNotIn('SCENE_TEXTURE_FLAGS',text)
         self.assertIn('AtlasDesc{scene_index:0,stored_len:120,stored_fnv:7,raw_len:32768,raw_fnv:9,kind:0,first:0,count:1}',text)
         command=decoder_command(r)
         at=command.index('--atlases')
@@ -156,8 +157,7 @@ class PackScenes(unittest.TestCase):
         text=manifest(r,m);self.assertIn('(0,0),\n(1,0),\n(0,1),',text);self.assertIn('SCENE_REGIONS:&[usize]=&[0,1]',text)
         self.assertIn('SCENE_TEXTURE_CAPACITY:usize=96;',text)
         self.assertIn('SCENE_DRAW_CAPACITY:usize=64;',text)
-        self.assertIn('SCENE_BLACK_CORES:&[&[[u8;4]]]=&[\n&[[0,0,8,8]],',text)
-        self.assertIn('SCENE_OPAQUE_CORES:&[&[[u8;4]]]=&[\n&[[0,0,16,8]],',text)
+        self.assertNotIn('SCENE_BLACK_CORES',text);self.assertNotIn('SCENE_OPAQUE_CORES',text)
         command=decoder_command(r);at=command.index('--atlases');self.assertEqual(command[at-5:at],['1179648','scene0.hlzc','scene0.hk','scene1.hlzc','scene1.hk'])
         m['regions'][1]['scene_id']=0
         with self.assertRaises(ValueError):manifest(r,m)

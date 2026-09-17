@@ -5,8 +5,12 @@
 use crate::{Error,Room,u16_at,u32_at,HAS_ALPHA_COVERS,MAX_STREAM_BYTES};
 const HEADER:usize=128;
 const DESCRIPTOR:usize=40;
+/// Per-texture attributes appended after the reference arrays (offset word at
+/// 104, zero when absent): flags byte, three zero bytes, black core [x,y,w,h],
+/// opaque core [x,y,w,h]. Derived by the packer from the final atlas words.
+pub const ATTRIBUTE_STRIDE:usize=12;
 #[derive(Clone,Copy)]
-pub struct Scene<'a>{bytes:&'a[u8],offsets:[usize;10],counts:[usize;9],stream_bytes:usize}
+pub struct Scene<'a>{bytes:&'a[u8],offsets:[usize;10],counts:[usize;9],stream_bytes:usize,attributes:usize}
 impl<'a> Scene<'a>{
     pub fn parse(bytes:&'a[u8])->Result<Self,Error>{
         let mut validation=SceneValidation::new(bytes)?;
@@ -15,7 +19,7 @@ impl<'a> Scene<'a>{
     }
     fn header(bytes:&'a[u8])->Result<Self,Error>{
         if bytes.len()<HEADER || (&bytes[..8]!=b"HKSCNE01" && &bytes[..8]!=b"HKSCNE02") || u32_at(bytes,52)!=HAS_ALPHA_COVERS
-            || bytes[56..64].iter().chain(bytes[104..128].iter()).any(|&b|b!=0){return Err(Error::Header);}
+            || bytes[56..64].iter().chain(bytes[108..128].iter()).any(|&b|b!=0){return Err(Error::Header);}
         if u32_at(bytes,48)as usize!=bytes.len(){return Err(Error::Truncated);}
         // rooms, textures, draw/frame/clip/edge pools, palettes, pages, stream
         let counts=core::array::from_fn(|i|u32_at(bytes,12+i*4)as usize);
@@ -38,7 +42,10 @@ impl<'a> Scene<'a>{
             if end>bytes.len(){return Err(Error::Truncated);}
         }
         if offsets[9]!=end{return Err(Error::Header);}
-        Ok(Self{bytes,offsets,counts,stream_bytes})
+        let attributes=u32_at(bytes,104)as usize;
+        if attributes!=0 && (attributes<offsets[9] || attributes%4!=0
+            || attributes.checked_add(counts[1]*ATTRIBUTE_STRIDE).is_none_or(|end|end>bytes.len())){return Err(Error::Header);}
+        Ok(Self{bytes,offsets,counts,stream_bytes,attributes})
     }
     /// # Safety
     /// Identical bytes must have passed `Scene::parse` or a completed
@@ -46,8 +53,22 @@ impl<'a> Scene<'a>{
     /// since admission, including every reference array and global pool.
     pub unsafe fn validated_view(bytes:&'a[u8])->Self{
         Self{bytes,offsets:core::array::from_fn(|i|u32_at(bytes,64+i*4)as usize),
-            counts:core::array::from_fn(|i|u32_at(bytes,12+i*4)as usize),stream_bytes:u32_at(bytes,44)as usize}
+            counts:core::array::from_fn(|i|u32_at(bytes,12+i*4)as usize),stream_bytes:u32_at(bytes,44)as usize,
+            attributes:u32_at(bytes,104)as usize}
     }
+    /// True when the packer appended per-texture attributes.
+    pub fn has_texture_attributes(&self)->bool{self.attributes!=0}
+    fn attribute(&self,texture:usize)->Option<&'a[u8]>{
+        (self.attributes!=0 && texture<self.counts[1]).then(||{
+            let at=self.attributes+texture*ATTRIBUTE_STRIDE;&self.bytes[at..at+ATTRIBUTE_STRIDE]})
+    }
+    /// Bit 0: binary black mask palette; bit 1: solid word-1 texels. Zero for
+    /// streamed animation textures and for banks without attributes.
+    pub fn texture_flags(&self,texture:usize)->u8{self.attribute(texture).map_or(0,|a|a[0])}
+    /// Largest all-opaque-black texel rectangle [x,y,w,h], or zeros.
+    pub fn black_core(&self,texture:usize)->[u8;4]{self.attribute(texture).map_or([0;4],|a|[a[4],a[5],a[6],a[7]])}
+    /// Largest nontransparent STP-clear texel rectangle [x,y,w,h], or zeros.
+    pub fn opaque_core(&self,texture:usize)->[u8;4]{self.attribute(texture).map_or([0;4],|a|[a[8],a[9],a[10],a[11]])}
     pub fn id(&self)->usize{u32_at(self.bytes,8)as usize}
     pub fn room_count(&self)->usize{self.counts[0]}
     pub fn texture_count(&self)->usize{self.counts[1]}
@@ -84,7 +105,7 @@ enum Phase { Textures, Descriptor, Duplicate, Section, Record, Tail, Done }
 /// Length is checked on every call, even after completion. Budget zero makes
 /// no progress. The parser does not replace the loader's payload checksums.
 pub struct SceneValidation {
-    offsets:[usize;10], counts:[usize;9], stream_bytes:usize, byte_len:usize,
+    offsets:[usize;10], counts:[usize;9], stream_bytes:usize, byte_len:usize, attributes:usize,
     phase:Phase, room_index:usize, section:usize, index:usize,
     next:usize, chunk:u32, local_counts:[usize;4], references:[usize;4],
 }
@@ -92,12 +113,12 @@ impl SceneValidation {
     pub fn new(bytes:&[u8])->Result<Self,Error>{
         let scene=Scene::header(bytes)?;
         Ok(Self{offsets:scene.offsets,counts:scene.counts,
-            stream_bytes:scene.stream_bytes,byte_len:bytes.len(),
+            stream_bytes:scene.stream_bytes,byte_len:bytes.len(),attributes:scene.attributes,
             phase:Phase::Textures,room_index:0,section:0,index:0,
             next:scene.offsets[9],chunk:0,local_counts:[0;4],references:[0;4]})
     }
     fn view<'a>(&self,bytes:&'a[u8])->Scene<'a>{
-        Scene{bytes,offsets:self.offsets,counts:self.counts,stream_bytes:self.stream_bytes}
+        Scene{bytes,offsets:self.offsets,counts:self.counts,stream_bytes:self.stream_bytes,attributes:self.attributes}
     }
     fn room<'a>(&self,bytes:&'a[u8])->Room<'a>{
         Room{bytes,counts:[self.counts[7],self.counts[1],self.local_counts[0],
@@ -157,8 +178,20 @@ impl SceneValidation {
                     self.index+=1;
                 }
                 Phase::Tail=>{
-                    if (self.next.checked_add(3).ok_or(Error::Truncated)?&!3)!=bytes.len()
-                        || bytes[self.next..].iter().any(|&b|b!=0){return Err(Error::Truncated);}
+                    let mut end=self.next;
+                    if self.attributes!=0 {
+                        // Attributes follow the last reference array; their padding
+                        // bytes and the flag byte's reserved neighbours are zero.
+                        let start=end.checked_add(3).ok_or(Error::Truncated)?&!3;
+                        if start!=self.attributes || bytes[end..start].iter().any(|&b|b!=0){return Err(Error::Header);}
+                        end=start+self.counts[1]*ATTRIBUTE_STRIDE;
+                        for texture in 0..self.counts[1]{
+                            let a=&bytes[start+texture*ATTRIBUTE_STRIDE..][..ATTRIBUTE_STRIDE];
+                            if a[0]>3 || a[1]|a[2]|a[3]!=0 {return Err(Error::Header);}
+                        }
+                    }
+                    if (end.checked_add(3).ok_or(Error::Truncated)?&!3)!=bytes.len()
+                        || bytes[end..].iter().any(|&b|b!=0){return Err(Error::Truncated);}
                     self.phase=Phase::Done;
                 }
                 Phase::Done=>unreachable!(),
