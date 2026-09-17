@@ -343,6 +343,26 @@ def compact_resident(raw):
     return bytes(out)
 
 
+ATTRIBUTE_STRIDE=12
+
+def with_texture_attributes(resident,flags,black,opaque):
+    """Append the per-texture attribute section to a compact resident bank.
+
+    flags: the packed two-bit list from texture_flags(); black/opaque: one
+    [x,y,w,h] core per texture. The offset word at 104 points at the section.
+    """
+    if resident[:8]!=b'HKSCNE02' or struct.unpack_from('<I',resident,104)[0]!=0:raise ValueError('Expected a compact bank without attributes')
+    textures=struct.unpack_from('<I',resident,16)[0]
+    if len(black)!=textures or len(opaque)!=textures:raise ValueError('Texture attribute count mismatch')
+    out=bytearray(resident);out.extend(b'\0'*(-len(out)%4));start=len(out)
+    for i in range(textures):
+        flag=(flags[i//4]>>((i%4)*2))&3
+        out.extend(bytes([flag,0,0,0,*black[i],*opaque[i]]))
+    out.extend(b'\0'*(-len(out)%4))
+    struct.pack_into('<I',out,104,start);struct.pack_into('<I',out,48,len(out))
+    return bytes(out)
+
+
 def bootstrap_atlases(raw,entry):
     """Page-sized immutable upload chunks with scene-local destination IDs."""
     s=entry['sections'];out=[]

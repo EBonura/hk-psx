@@ -93,7 +93,7 @@ def cook(root=ROOT):
         for sr in bank['source_rooms']:
             row=metadata['regions'][sr['chunk_id']-1];raw=(root/row['path']).read_bytes()
             if sha(raw)!=row['sha256']or sha(raw)!=sr['sha256']or struct.unpack_from('<I',raw,12)[0]!=len(sr['texture_map']):raise ValueError('Opaque groups: final room mapping changed')
-    binary,helper=compile_helper(cache);key=sha(json.dumps({'inputs':inputs,'helper':helper,'format':'HKOPAQUEGROUPS01','budget':MAX_TABLE_BYTES,'region_limit':MAX_REGION_GROUPS},sort_keys=True).encode());report_path=cache/'report.json';old=json.loads(report_path.read_text())if report_path.exists()else{}
+    binary,helper=compile_helper(cache);key=sha(json.dumps({'inputs':inputs,'scene_order':[b['scene_id'] for b in packed['scenes']],'helper':helper,'format':'HKOPAQUEGROUPS01','budget':MAX_TABLE_BYTES,'region_limit':MAX_REGION_GROUPS},sort_keys=True).encode());report_path=cache/'report.json';old=json.loads(report_path.read_text())if report_path.exists()else{}
     if old.get('input_key')==key and old.get('outputs')and all((root/p).exists()and file_sha(root/p)==h for p,h in old['outputs'].items()):
         print(f"Opaque groups: cached {old['selected_groups']} groups, {old['table_bytes']} bytes",flush=True);return old
     mutated_sources={sources[i+1][d]['source']for i,ids in enumerate(exclusions)for d in ids};mutated_records=set();records={};regions=[]

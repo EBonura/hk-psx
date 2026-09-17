@@ -45,12 +45,14 @@ fn atlas_fingerprint(scene:usize)->u32 {
 pub const fn scene_index(region:usize)->usize {REGION_SCENE_LOCAL[region].0 as usize}
 pub const fn scene_page_base(scene:usize)->usize {SCENE_MANIFEST[scene].page_base}
 pub const fn scene_palette_base(scene:usize)->usize {SCENE_MANIFEST[scene].palette_base}
-/// Cooked largest opaque-black texel rectangle per scene texture (w==0: none).
-pub fn scene_black_cores(scene:usize)->&'static [[u8;4]] {SCENE_BLACK_CORES[scene]}
-/// Full-opacity occlusion only: colours remain textured, STP-clear overwrites.
-pub fn scene_opaque_cores(scene:usize)->&'static [[u8;4]] {SCENE_OPAQUE_CORES[scene]}
-pub fn scene_texture_flags(scene:usize,texture:usize)->u8 {
-    (SCENE_TEXTURE_FLAGS[scene][texture/4]>>((texture%4)*2))&3
+/// Per-texture attributes of the resident scene bank (packer-derived flags
+/// and cores), read through the admitted Scene view.
+pub fn scene_texture_flags(scene:usize,texture:usize)->u8 {resident_scene(scene).texture_flags(texture)}
+pub fn scene_black_core(scene:usize,texture:usize)->[u8;4] {resident_scene(scene).black_core(texture)}
+pub fn scene_opaque_core(scene:usize,texture:usize)->[u8;4] {resident_scene(scene).opaque_core(texture)}
+fn resident_scene(scene:usize)->Scene<'static> {
+    let cache=unsafe {&*(&raw const crate::ROOM_CACHE)};
+    cache.scene(scene)
 }
 pub const fn scene_region(scene:usize)->usize {SCENE_REGIONS[scene]}
 pub struct Cache {

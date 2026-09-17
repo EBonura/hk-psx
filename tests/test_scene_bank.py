@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'host'));sys.path.insert(0,str(ROOT/'tests'))
-from scene_bank import build_scene,verify,resize_static,manifest,shared_planes,joint_refine,texel_words,compact_resident,bootstrap_atlases,texture_flags
+from scene_bank import with_texture_attributes, build_scene,verify,resize_static,manifest,shared_planes,joint_refine,texel_words,compact_resident,bootstrap_atlases,texture_flags
 from test_region_delta import room
 from region_delta import textures,layout
 from alpha_covers import record
@@ -44,6 +44,16 @@ class SceneBankTests(unittest.TestCase):
             for s,b in selected:self.assertEqual(len(b),s['count']*stride);self.assertLessEqual(len(b),32768)
         with self.assertRaises(ValueError):compact_resident(compact)
         with self.assertRaises(ValueError):compact_resident(raw[:-1])
+        # Attributes append after the reference arrays, one 12-byte record per texture.
+        textures=struct.unpack_from('<I',compact,16)[0]
+        black=[[i,0,4,4] for i in range(textures)];opaque=[[0,i,8,8] for i in range(textures)]
+        flags=[0]*((textures+15)//16*4);flags[0]|=3
+        with_attributes=with_texture_attributes(compact,flags,black,opaque)
+        start=struct.unpack_from('<I',with_attributes,104)[0]
+        self.assertEqual(start,(len(compact)+3)//4*4);self.assertEqual(len(with_attributes),struct.unpack_from('<I',with_attributes,48)[0])
+        self.assertEqual(list(with_attributes[start:start+12]),[3,0,0,0,0,0,4,4,0,0,8,8])
+        with self.assertRaises(ValueError):with_texture_attributes(with_attributes,flags,black,opaque)
+        with self.assertRaises(ValueError):with_texture_attributes(compact,flags,black[:-1],opaque)
 
     def test_cooked_texture_flags_match_binary_palette_and_sampled_word(self):
         raw,e=build_scene(0,[(1,source_room())]);raw=bytearray(raw);s=e['sections']

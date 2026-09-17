@@ -554,6 +554,18 @@ these; the next slices move them into the per-scene chunks (texture flags and
 cores into the scene bank, effect tables into the effect-art chunk, pogo
 targets into the world bank).
 
+Build 91 moved the per-texture flags and black/opaque cores into the resident
+scene bank: `with_texture_attributes` appends one 12-byte record per texture
+after the reference arrays (offset word 104, `hk_format::scene::ATTRIBUTE_STRIDE`),
+the stepped scene validation checks the section, and `render::init` fills two
+`[[u8;4]; MAX_TEXTURES]` arrays from the admitted `Scene` view instead of
+borrowing linked slices. `SCENE_TEXTURE_FLAGS`, `SCENE_BLACK_CORES` and
+`SCENE_OPAQUE_CORES` are gone from the manifest. The opaque tile and group
+caches now key on the packed scene order too (the attribute bytes reordered the
+allocation and their per-index bindings went stale). `.data` 558,400 ->
+421,536 bytes, `.bss` +22 KB (the core arrays and the larger resident banks
+in the arena), headroom 109,540 -> 222,316; seven routes pass.
+
 Build 83 removed `Region.actors` and `Region.reveal_bindings`. Supported
 actor objects (flag 64) carry their index into the new per-scene
 `SCENE_ACTORS[scene]` static, which `host/world.py` assigns as `spec_index` on

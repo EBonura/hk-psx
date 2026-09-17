@@ -116,10 +116,10 @@ static mut SOLID_TEXTURES: [u32; MAX_TEXTURES/32] = [0; MAX_TEXTURES/32];
 /// Cooked largest all-opaque-black texel rectangle [x,y,w,h] per scene
 /// texture (w==0: none). At full opacity that core is an exact flat opaque
 /// black quad and hides everything drawn earlier beneath it.
-static mut CORES: &[[u8;4]] = &[];
+static mut CORES: [[u8;4];MAX_TEXTURES] = [[0;4];MAX_TEXTURES];
 // A colored STP-clear texel also hides earlier draws, but must retain its
 // texture/color when drawn. This table is never used for flat black rendering.
-static mut OPAQUE_CORES: &[[u8;4]] = &[];
+static mut OPAQUE_CORES: [[u8;4];MAX_TEXTURES] = [[0;4];MAX_TEXTURES];
 fn opaque_core_of(texture:usize)->[u8;4] {unsafe {OPAQUE_CORES.get(texture).copied().unwrap_or([0;4])}}
 fn core_of(texture:usize)->[u8;4] {unsafe {CORES.get(texture).copied().unwrap_or([0;4])}}
 const OCCLUDER_MIN_AREA: i32 = 2048;
@@ -235,8 +235,13 @@ pub fn init(room: &Room, bank: usize, region:usize,coverage:CoverageView<'_>) {
             STREAMED = [0;MAX_TEXTURES/32];
             BLACK_MASKS = [0;MAX_TEXTURES/32];
             SOLID_TEXTURES = [0;MAX_TEXTURES/32];
-            CORES = crate::disc::scene_black_cores(bank);
-            OPAQUE_CORES = crate::disc::scene_opaque_cores(bank);
+            // Cores come from the resident bank's texture attributes; slots
+            // beyond the scene's texture count stay zero (no core).
+            CORES = [[0;4];MAX_TEXTURES];OPAQUE_CORES = [[0;4];MAX_TEXTURES];
+            for i in 0..room.counts[1] {
+                if i&63==0 {crate::input::checkpoint();}
+                CORES[i]=crate::disc::scene_black_core(bank,i);OPAQUE_CORES[i]=crate::disc::scene_opaque_core(bank,i);
+            }
         }
         if !FADE_CLUT_READY {
             // First room only; FIFO upload owns static bytes and precedes any

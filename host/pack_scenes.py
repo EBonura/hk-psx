@@ -10,7 +10,7 @@ import subprocess
 import struct
 import sys
 from pathlib import Path
-from scene_bank import build_scene, compressed, fnv, aligned, compact_resident, bootstrap_atlases, texture_flags
+from scene_bank import build_scene, compressed, fnv, aligned, compact_resident, bootstrap_atlases, texture_flags, with_texture_attributes
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
@@ -206,9 +206,6 @@ def manifest(report,metadata):
     text+='pub const SCENE_REGIONS:&[usize]=&['+','.join(map(str,representatives))+'];\n'
     text+=f'pub const SCENE_ALL_RAW_BYTES:usize={report["raw_resident_bytes"]};\n'
     text+=f'pub const SCENE_TOTAL_PAGES:usize={report["total_pages"]};\npub const SCENE_TOTAL_PALETTES:usize={report["total_palettes"]};\n'
-    text+='pub static SCENE_BLACK_CORES:&[&[[u8;4]]]=&[\n'+''.join('&['+','.join('[%d,%d,%d,%d]'%tuple(c) for c in e.get('black_cores',[]))+'],\n' for e in scenes)+'];\n'
-    text+='pub static SCENE_OPAQUE_CORES:&[&[[u8;4]]]=&[\n'+''.join('&['+','.join('[%d,%d,%d,%d]'%tuple(c) for c in e.get('opaque_cores',[]))+'],\n' for e in scenes)+'];\n'
-    text+='pub static SCENE_TEXTURE_FLAGS:&[&[u8]]=&[\n'+''.join('&['+','.join(map(str,e.get('texture_flags',[])))+'],\n'for e in scenes)+'];\n'
     return text
 
 def validate_geometry(bank,entry,metadata):
@@ -296,7 +293,8 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
         e['geometry_packet_bound']=validate_geometry(raw,e,meta)
         e['black_cores']=black_cores(raw,e)
         e['opaque_cores']=opaque_cores(raw,e)
-        stored=compressed(raw);resident=compact_resident(raw);resident_stored=compressed(resident)
+        # Flags and cores ride in the resident bank; nothing per texture links.
+        stored=compressed(raw);resident=with_texture_attributes(compact_resident(raw),texture_flags(raw,e),e['black_cores'],e['opaque_cores']);resident_stored=compressed(resident)
         bodies[scene]=(raw,stored,resident,resident_stored)
         e.update(stored_bytes=len(stored),stored_fnv=fnv(stored),raw_fnv=fnv(raw),stored_sha256=sha(stored),raw_sha256=sha(raw),
                  raw_path=str(output_dir/f'scene_{scene}.hk'),stored_path=str(output_dir/f'scene_{scene}.hlzc'),
