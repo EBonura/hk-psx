@@ -144,9 +144,8 @@ Exact guest disassembly verifies that the cooked path is used and the old scalar
 shape path receives no sampled ticks in the53 profile. Track data raises the
 static span to1,675,768 bytes, leaving306,440 before the protected48KiB stack.
 
-The portable source-data proof runs with:
-`.venv/bin/python tools/test_particle_tracks.py` after cooking local Windows
-assets. It compares199,980 phase values across6,060 admitted/truncated/directional
+The portable source-data proof ran with `tools/test_particle_tracks.py`
+(retired with the baked tracks once effect art moved to per-scene disc chunks). It compares199,980 phase values across6,060 admitted/truncated/directional
 instances and334,107 cached draw/shape states over650-tick trajectories per owner.
 Floor/slope contacts, removed terrain, scene pauses and pool reuse match the
 scalar implementation. The lightweight suite includes a synthetic full-pool

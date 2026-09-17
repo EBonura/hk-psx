@@ -243,7 +243,7 @@ fn main() {
             // was admitted. Every spatial view in this scene stays live.
             vram.admit_scene(region_id,cache.atlases_ready());
             vram.activate(region_id);
-            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();world::particles::break_effects::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);
+            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);
             initial=false;
             sim_clock=psx_rt::interrupts::vblank_count();
             input::start(sim_clock);

@@ -1,9 +1,10 @@
-## Build 87: nineteen connected scenes on the actual disc
+## Build 88: nineteen connected scenes on the actual disc
 
-The sole disc pair is build 87 (the static region table is gone: every
+The sole disc pair is build 88 (break-effect art streamed per scene from its
+own disc chunk, 210 emitters admitted across 18 scenes; earlier builds (the static region table is gone: every
 region's metadata is read from the loadable bank through a runtime `Region`
 value, guest state tables sized from the
-catalog, a seventh route through Crossroads_02 and back, 298,296 bytes of
+catalog, a seventh route through Crossroads_02 and back, 281,912 bytes of
 linked headroom). Build 76 was: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (329 views, 200 disc chunks) reachable through the authored
 gates, six route replays passing with 219,292 bytes of linked headroom. Growing
@@ -683,7 +684,9 @@ deduplication remain unchanged. These are emulator results, not silicon proof.
 Tests247 Python/367 directly reported native tests pass. A portable source-data
 proof adds199,980 exact phase comparisons and334,107 cached draw/shape checks
 through source-seeded trajectories, contacts and pool reuse. Run it explicitly
-with `.venv/bin/python tools/test_particle_tracks.py` after a local asset cook.
+with `.venv/bin/python tools/test_particle_tracks.py` after a local asset cook
+(historical: the harness was retired with the baked tracks when effect art
+moved to per-scene disc chunks).
 Final binary hazards0. Linked static span1,675,768 bytes;306,440 remain before
 the protected48KiB stack. Main frame32,104; nested reserve17,048, without a
 measured high-water claim. Scene arena369,180; scratch948/1,024. See BUDGET.md.

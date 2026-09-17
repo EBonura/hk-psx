@@ -116,15 +116,15 @@ impl Pool {
         self.publish();
     }
     pub fn spawn_break(&mut self,scene:usize,owner:usize,kind:u8,facing:i32) {
-        break_effects::spawn_specs(self,scene,owner,kind,facing,break_effects::EMITTERS,break_effects::STYLES);
+        break_effects::spawn_specs(self,scene,owner,kind,facing,break_effects::scene_emitters(scene),break_effects::scene_styles(scene));
     }
     pub fn needs_break_collision(&self,scene:usize,bounds:[i32;4])->bool {
         self.particles.iter().flatten().any(|p|p.scene as usize==scene&&p.kind>=2&&p.delay==0&&p.age+1<p.life.get()
-            &&break_effects::STYLES[(p.kind-2)as usize].collision&&p.position[0]>=bounds[0]&&p.position[0]<=bounds[2]
+            &&break_effects::scene_styles(p.scene as usize)[(p.kind-2)as usize].collision&&p.position[0]>=bounds[0]&&p.position[0]<=bounds[2]
             &&p.position[1]>=bounds[1]&&p.position[1]<=bounds[3])
     }
     pub fn tick_break(&mut self,scene:usize,coverage:[i32;4],count:usize,edge:impl Fn(usize)->[i32;4]) {
-        break_effects::tick_specs(self,scene,break_effects::STYLES,coverage,count,edge);
+        break_effects::tick_specs(self,scene,break_effects::scene_styles(scene),coverage,count,edge);
     }
     pub fn spawn_grass(&mut self, scene: usize, emitter: EmitterSpec, bank: Bank) {
         self.spawn(scene, 0, emitter, bank);

@@ -200,7 +200,7 @@ def rust(v):
 TRACK_PHASES=33
 NO_TRACK=65535
 # Baked per-particle tracks are only a cache of the guest's scalar shape path
-# (tools/test_particle_tracks.py proves them equal). They cost about 4.9 KiB of
+# (the retired tools/test_particle_tracks.py proved them equal). They cost about 4.9 KiB of
 # permanent RAM per emitter, which blocked the third scene; every emitter now
 # uses the scalar path and the tables stay empty.
 BAKE_TRACKS=False
@@ -246,66 +246,93 @@ def particle_tracks(styles,emitters):
             bases.append(NO_TRACK);fallback.append(ei)
     return tracks,bases,fallback
 
-def generate(styles,emitters,uploads,art,frames,tracks_result=None):
+def generate(scenes,manifest):
+    """Per-scene style, emitter, art and upload tables plus the effect-art chunk manifest.
+
+    `scenes` maps scene_id -> dict(styles, emitters, uploads, art, frames); a scene
+    without emitters has empty tables and a placeholder chunk.
+    """
     out=['// Generated from Windows source; source IDs/hashes in ignored break-effects report.']
     tables={}
-    for st in styles:
-        key=json.dumps(st['samples'],sort_keys=True)
-        if key not in tables:
-            name='CURVE_'+str(len(tables));tables[key]=name
-            out.append('static '+name+':&[Sample]=&['+','.join('Sample{'+','.join(k+':'+rust(s[k])for k in('size','alpha','spin'))+'}'for s in st['samples'])+'];')
-    out.append('pub static STYLES:&[Style]=&[')
-    for st in styles:
-        fields={k:rust(v)for k,v in st.items()if k not in('samples','texture','cells')}
-        fields['samples']=tables[json.dumps(st['samples'],sort_keys=True)];fields['frames']='&'+rust(frames[st['texture']])
-        out.append('Style{'+','.join(k+':'+v for k,v in fields.items())+'},')
-    out.append('];\npub static EMITTERS:&[Emitter]=&[')
-    for e in emitters:out.append('Emitter{'+','.join(k+':'+rust(v)for k,v in e.items())+'},')
-    out.append('];\npub static ART:&[Art]=&[')
-    for a in art:out.append('Art{'+','.join(k+':'+rust(v)for k,v in a.items())+'},')
-    out.append('];\npub static UPLOADS:&[Upload]=&[')
-    for u in uploads:out.append('Upload{'+','.join(k+':'+rust(v)for k,v in u.items())+'},')
-    out.append('];')
-    tracks,bases,_=particle_tracks(styles,emitters)if tracks_result is None else tracks_result
-    out.append('pub static EMITTER_TRACK_BASES:&[u16]=&'+rust(bases)+';')
-    out.append('pub static PARTICLE_TRACKS:&[[[u32;2];33]]=&[')
-    out.extend(rust(track)+','for track in tracks)
-    out.append('];');return '\n'.join(out)+'\n'
+    count=len(manifest)
+    for scene in range(count):
+        data=scenes.get(scene,{'styles':[],'emitters':[],'uploads':[],'art':[],'frames':{}})
+        for st in data['styles']:
+            key=json.dumps(st['samples'],sort_keys=True)
+            if key not in tables:
+                name='CURVE_'+str(len(tables));tables[key]=name
+                out.append('static '+name+':&[Sample]=&['+','.join('Sample{'+','.join(k+':'+rust(s[k])for k in('size','alpha','spin'))+'}'for s in st['samples'])+'];')
+        out.append(f'static STYLES_{scene}:&[Style]=&[')
+        for st in data['styles']:
+            fields={k:rust(v)for k,v in st.items()if k not in('samples','texture','cells')}
+            fields['samples']=tables[json.dumps(st['samples'],sort_keys=True)];fields['frames']='&'+rust(data['frames'][st['texture']])
+            out.append('Style{'+','.join(k+':'+v for k,v in fields.items())+'},')
+        out.append(f'];\nstatic EMITTERS_{scene}:&[Emitter]=&[')
+        for e in data['emitters']:out.append('Emitter{'+','.join(k+':'+rust(v)for k,v in e.items())+'},')
+        out.append(f'];\nstatic ART_{scene}:&[Art]=&[')
+        for a in data['art']:out.append('Art{'+','.join(k+':'+rust(v)for k,v in a.items())+'},')
+        out.append(f'];\nstatic UPLOADS_{scene}:&[Upload]=&[')
+        for u in data['uploads']:out.append('Upload{'+','.join(k+':'+rust(v)for k,v in u.items())+'},')
+        out.append('];')
+    for name in ('STYLES','EMITTERS','ART','UPLOADS'):
+        kind={'STYLES':'Style','EMITTERS':'Emitter','ART':'Art','UPLOADS':'Upload'}[name]
+        out.append(f'pub static SCENE_{name}:&[&[{kind}]]=&['+','.join(f'{name}_{scene}' for scene in range(count))+'];')
+    # One HLZC chunk per catalog scene, after the world metadata chunks; the
+    # guest derives chunk ids from its manifest order like the scene banks.
+    out.append('pub static EFFECT_ART_MANIFEST:&[EffectArtDesc]=&['+','.join(
+        'EffectArtDesc{raw_len:%d,raw_fnv:%d,stored_len:%d,stored_fnv:%d}'%(m['raw_len'],m['raw_fnv'],m['stored_len'],m['stored_fnv']) for m in manifest)+'];')
+    out.append('pub static EMITTER_TRACK_BASES:&[u16]=&[];')
+    out.append('pub static PARTICLE_TRACKS:&[[[u32;2];33]]=&[];')
+    return '\n'.join(out)+'\n'
 
-def fit_art(styles,emitters,textures,ignored):
-    """Admit emitter art in catalog order within the fixed VRAM reservation.
+def scene_art(scene,styles,emitters,textures,ignored):
+    """One scene's trimmed styles, emitters and art bank inside the fixed VRAM reservation.
 
-    When the shared sheet cannot hold every scene's particle textures, the
-    highest scene's emitters are recorded as omissions and the rest retried.
+    Emitters of a scene whose art cannot fit are recorded as omissions for that
+    scene alone; other scenes keep their own sheets.
     """
-    while True:
-        used={e['style'] for e in emitters};kept=[i for i in range(len(styles)) if i in used]
-        remap={old:new for new,old in enumerate(kept)};trimmed=[styles[i] for i in kept]
-        trimmed_emitters=[dict(e,style=remap[e['style']]) for e in emitters]
-        trimmed_textures={s['texture']:textures[s['texture']] for s in trimmed}
-        try:return trimmed,trimmed_emitters,trimmed_textures,art_bank(trimmed,trimmed_textures)
-        except ValueError as error:
-            if 'VRAM' not in str(error) or not emitters:raise
-            last=max(e['scene'] for e in emitters)
-            for e in [e for e in emitters if e['scene']==last]:
-                ignored.append({'owner':e['owner'],'part':e['source'],'reason':f'particle art VRAM budget: scene {last} omitted ({error})'})
-            emitters=[e for e in emitters if e['scene']!=last]
+    emitters=[e for e in emitters if e['scene']==scene]
+    used={e['style'] for e in emitters};kept=[i for i in range(len(styles)) if i in used]
+    remap={old:new for new,old in enumerate(kept)};trimmed=[styles[i] for i in kept]
+    trimmed_emitters=[dict(e,style=remap[e['style']]) for e in emitters]
+    trimmed_textures={s['texture']:textures[s['texture']] for s in trimmed}
+    if not trimmed_emitters:
+        return {'styles':[],'emitters':[],'uploads':[],'art':[],'frames':{}},b''
+    try:
+        blob,uploads,art,frames,sheet=art_bank(trimmed,trimmed_textures)
+    except ValueError as error:
+        if 'VRAM' not in str(error):raise
+        for e in trimmed_emitters:
+            ignored.append({'owner':e['owner'],'part':e['source'],'reason':f'particle art VRAM budget: scene {scene} omitted ({error})'})
+        return {'styles':[],'emitters':[],'uploads':[],'art':[],'frames':{}},b''
+    return {'styles':trimmed,'emitters':trimmed_emitters,'uploads':uploads,'art':art,'frames':frames,'sheet':sheet},bytes(blob)
 
 def cook():
+    from scene_bank import compressed,fnv
+    from quality import SCENE_COUNT
     source,styles,emitters,textures,records,ignored=collect()
-    styles,emitters,textures,(blob,uploads,art,frames,sheet)=fit_art(styles,emitters,textures,ignored);tracks_result=particle_tracks(styles,emitters)
-    code=generate(styles,emitters,uploads,art,frames,tracks_result)
-    (ROOT/'data/break_effects.rs').write_text(code);(ROOT/'data/break_effects.hk').write_bytes(blob)
-    report={'format':'HKBREAK01','styles':styles,'emitters':emitters,'source_records':records,'other_parts':ignored,'vram_bytes':len(blob),
-        'vram_rects':VRAM_RECTS,'uploads':uploads,'art':art,'frames':frames,'payload_sha256':hashlib.sha256(blob).hexdigest(),'rust_sha256':hashlib.sha256(code.encode()).hexdigest(),
-        'particle_tracks':{'bytes':len(tracks_result[0])*33*8,'fallback_emitters':tracks_result[2],'format':'half16-radius16-spin26-alpha2-v1'},
+    dest=ROOT/'.hkpsx/break-effects';dest.mkdir(exist_ok=True)
+    scenes={};manifest=[];chunks=[];total_vram=0;kept_emitters=[]
+    for scene in range(SCENE_COUNT):
+        data,blob=scene_art(scene,styles,emitters,textures,ignored)
+        scenes[scene]=data;kept_emitters+=data['emitters'];total_vram=max(total_vram,len(blob))
+        # The pack needs a nonempty chunk per scene; a scene without art ships four zero bytes.
+        raw=blob or b'\0\0\0\0';raw=raw+b'\0'*(-len(raw)%4)
+        stored=compressed(raw);path=dest/f'scene_{scene}.hkfx.z';path.write_bytes(stored)
+        manifest.append({'scene_id':scene,'raw_len':len(raw),'raw_fnv':fnv(raw),'stored_len':len(stored),'stored_fnv':fnv(stored),'path':str(path),'raw_sha256':hashlib.sha256(raw).hexdigest()})
+        if 'sheet' in data:data.pop('sheet').save(dest/f'art_{scene}.png')
+    code=generate(scenes,manifest)
+    (ROOT/'data/break_effects.rs').write_text(code)
+    report={'format':'HKBREAK02','scenes':{str(k):{n:v for n,v in d.items()} for k,d in scenes.items()},'source_records':records,'other_parts':ignored,
+        'largest_scene_vram_bytes':total_vram,'vram_rects':VRAM_RECTS,'chunks':manifest,'rust_sha256':hashlib.sha256(code.encode()).hexdigest(),
+        'particle_tracks':{'bytes':0,'fallback_emitters':len(kept_emitters),'format':'scalar path only'},
         'source_files':{name:hashlib.sha256((source.directory/name).read_bytes()).hexdigest()for name in [*__import__('quality').SCENE_FILES,'globalgamemanagers','Managed/Assembly-CSharp.dll']},
         'limitations':['Deterministic RNG,60Hz integration/damping,33-point curves,radius/edge collision and initial-lifetime collision-loss approximation differ from nativeUnity particle physics.',
             'Three baked opacity levels and sourceRGB palette quantization approximate Sprites/Lit lighting/blending.',
             'Existing128-particle pool reports capacity drops; authored maximum-per-emitter counts and lifetimes preserved.',
             'Town graves use source uniform-XY planar Hierarchy scaling; nonuniform-XY/sheared/out-of-plane and local-space Hierarchy emitters fail closed.',
             'Geo-rock hit jitter/gleam/chips,containingParticles probability events and mainLifeblood cocoon are separate systems.']}
-    dest=ROOT/'.hkpsx/break-effects';dest.mkdir(exist_ok=True);(dest/'report.json').write_text(json.dumps(report,indent=2));sheet.save(dest/'art.png')
-    print(f'Break effects: {len(emitters)} source emitters/{len(styles)} styles, {len(art)} art variants, {len(blob)} VRAM bytes')
+    (dest/'report.json').write_text(json.dumps(report,indent=2))
+    print(f'Break effects: {len(kept_emitters)} source emitters across {sum(1 for d in scenes.values() if d["emitters"])} scenes, largest sheet {total_vram} VRAM bytes')
     return report
 if __name__=='__main__':cook()
