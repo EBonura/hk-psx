@@ -246,37 +246,55 @@ def particle_tracks(styles,emitters):
             bases.append(NO_TRACK);fallback.append(ei)
     return tracks,bases,fallback
 
-def generate(scenes,manifest):
-    """Per-scene style, emitter, art and upload tables plus the effect-art chunk manifest.
+STYLE_WIRE='<2H2i2i2i3BxHxxiB3xii3i6i6iii2i2iIiiiiiHHHH'  # 168 bytes; offsets in game/src/break_effects.rs
+STYLE_BYTES=struct.calcsize(STYLE_WIRE)
+EMITTER_WIRE='<BxHIBxxxi3i9i'
+EMITTER_BYTES=struct.calcsize(EMITTER_WIRE)
+ART_WIRE='<4BHH';UPLOAD_WIRE='<I4H';FRAME_WIRE='<3H'
+FX_MAGIC=b'HKFX0001'
+FX_LIMITS={'styles':16,'emitters':96,'art':48,'uploads':48,'frames':96}
 
-    `scenes` maps scene_id -> dict(styles, emitters, uploads, art, frames); a scene
-    without emitters has empty tables and a placeholder chunk.
+def pack_scene_effects(data,curves,blob):
+    """HKFX0001 chunk: header, style/emitter/art/upload/frame tables, texels.
+
+    Styles reference a curve by index into the linked CURVES table and their
+    frames by first/count into the chunk's frame table; every table is bounded
+    by the guest's resident capacities (FX_LIMITS).
     """
+    styles,emitters,art,uploads=data['styles'],data['emitters'],data['art'],data['uploads']
+    frames=[]
+    style_records=[]
+    for st in styles:
+        key=json.dumps(st['samples'],sort_keys=True)
+        if key not in curves:curves[key]=len(curves)
+        first=len(frames);cells=data['frames'][st['texture']];frames.extend(cells)
+        style_records.append(struct.pack(STYLE_WIRE,*st['life'],*st['speed'],*st['size'],*st['rotation'],*st['color'],st['count'],
+            st['rate'],st['shape'],st['radius'],st['arc'],*st['shape_scale'],*[v for pair in st['force'] for v in pair],*[v for pair in st['velocity'] for v in pair],
+            st['limit'],st['dampen'],*st['spin_speed'],*st['spin_range'],int(st['collision']),st['bounce'],st['collision_dampen'],st['life_loss'],st['kill_speed'],st['radius_scale'],
+            curves[key],first,len(cells),0))
+    counts={'styles':len(styles),'emitters':len(emitters),'art':len(art),'uploads':len(uploads),'frames':len(frames)}
+    for name,limit in FX_LIMITS.items():
+        if counts[name]>limit:raise ValueError(f'scene effect {name} {counts[name]} exceed the guest capacity {limit}')
+    out=bytearray(FX_MAGIC+struct.pack('<6I',counts['styles'],counts['emitters'],counts['art'],counts['uploads'],counts['frames'],0))
+    out+=b''.join(style_records)
+    for e in emitters:out+=struct.pack(EMITTER_WIRE,e['scene'],e['owner'],e['source'],e['style'],e['angle_offset'],*e['origin'],*[v for row in e['basis'] for v in row])
+    for a in art:out+=struct.pack(ART_WIRE,a['u'],a['v'],a['w'],a['h'],a['clut'],a['tpage'])
+    texel_base=len(out)+len(uploads)*struct.calcsize(UPLOAD_WIRE)+len(frames)*struct.calcsize(FRAME_WIRE)
+    texel_base+=-texel_base%4
+    for u in uploads:out+=struct.pack(UPLOAD_WIRE,u['offset']+texel_base,u['x'],u['y'],u['w'],u['h'])
+    for f in frames:out+=struct.pack(FRAME_WIRE,*f)
+    out+=b'\0'*(texel_base-len(out));out+=blob;out+=b'\0'*(-len(out)%4)
+    struct.pack_into('<I',out,28,texel_base)
+    return bytes(out)
+
+def generate(curves,manifest):
+    """Linked side of the effects: the shared curve table and the chunk manifest."""
     out=['// Generated from Windows source; source IDs/hashes in ignored break-effects report.']
-    tables={}
-    count=len(manifest)
-    for scene in range(count):
-        data=scenes.get(scene,{'styles':[],'emitters':[],'uploads':[],'art':[],'frames':{}})
-        for st in data['styles']:
-            key=json.dumps(st['samples'],sort_keys=True)
-            if key not in tables:
-                name='CURVE_'+str(len(tables));tables[key]=name
-                out.append('static '+name+':&[Sample]=&['+','.join('Sample{'+','.join(k+':'+rust(s[k])for k in('size','alpha','spin'))+'}'for s in st['samples'])+'];')
-        out.append(f'static STYLES_{scene}:&[Style]=&[')
-        for st in data['styles']:
-            fields={k:rust(v)for k,v in st.items()if k not in('samples','texture','cells')}
-            fields['samples']=tables[json.dumps(st['samples'],sort_keys=True)];fields['frames']='&'+rust(data['frames'][st['texture']])
-            out.append('Style{'+','.join(k+':'+v for k,v in fields.items())+'},')
-        out.append(f'];\nstatic EMITTERS_{scene}:&[Emitter]=&[')
-        for e in data['emitters']:out.append('Emitter{'+','.join(k+':'+rust(v)for k,v in e.items())+'},')
-        out.append(f'];\nstatic ART_{scene}:&[Art]=&[')
-        for a in data['art']:out.append('Art{'+','.join(k+':'+rust(v)for k,v in a.items())+'},')
-        out.append(f'];\nstatic UPLOADS_{scene}:&[Upload]=&[')
-        for u in data['uploads']:out.append('Upload{'+','.join(k+':'+rust(v)for k,v in u.items())+'},')
-        out.append('];')
-    for name in ('STYLES','EMITTERS','ART','UPLOADS'):
-        kind={'STYLES':'Style','EMITTERS':'Emitter','ART':'Art','UPLOADS':'Upload'}[name]
-        out.append(f'pub static SCENE_{name}:&[&[{kind}]]=&['+','.join(f'{name}_{scene}' for scene in range(count))+'];')
+    for key,index in sorted(curves.items(),key=lambda kv:kv[1]):
+        samples=json.loads(key)
+        out.append(f'static CURVE_{index}:&[Sample]=&['+','.join('Sample{'+','.join(k+':'+rust(s[k])for k in('size','alpha','spin'))+'}'for s in samples)+'];')
+    out.append('pub static CURVES:&[&[Sample]]=&['+','.join(f'CURVE_{i}' for i in range(len(curves)))+'];')
+    for name,limit in FX_LIMITS.items():out.append(f'pub const FX_MAX_{name.upper()}:usize={limit};')
     # One HLZC chunk per catalog scene, after the world metadata chunks; the
     # guest derives chunk ids from its manifest order like the scene banks.
     out.append('pub static EFFECT_ART_MANIFEST:&[EffectArtDesc]=&['+','.join(
@@ -312,16 +330,16 @@ def cook():
     from quality import SCENE_COUNT
     source,styles,emitters,textures,records,ignored=collect()
     dest=ROOT/'.hkpsx/break-effects';dest.mkdir(exist_ok=True)
-    scenes={};manifest=[];chunks=[];total_vram=0;kept_emitters=[]
+    scenes={};manifest=[];chunks=[];total_vram=0;kept_emitters=[];curves={}
     for scene in range(SCENE_COUNT):
         data,blob=scene_art(scene,styles,emitters,textures,ignored)
         scenes[scene]=data;kept_emitters+=data['emitters'];total_vram=max(total_vram,len(blob))
-        # The pack needs a nonempty chunk per scene; a scene without art ships four zero bytes.
-        raw=blob or b'\0\0\0\0';raw=raw+b'\0'*(-len(raw)%4)
+        # Every scene ships a chunk: tables plus texels, or an empty table set.
+        raw=pack_scene_effects(data,curves,blob)
         stored=compressed(raw);path=dest/f'scene_{scene}.hkfx.z';path.write_bytes(stored)
         manifest.append({'scene_id':scene,'raw_len':len(raw),'raw_fnv':fnv(raw),'stored_len':len(stored),'stored_fnv':fnv(stored),'path':str(path),'raw_sha256':hashlib.sha256(raw).hexdigest()})
         if 'sheet' in data:data.pop('sheet').save(dest/f'art_{scene}.png')
-    code=generate(scenes,manifest)
+    code=generate(curves,manifest)
     (ROOT/'data/break_effects.rs').write_text(code)
     report={'format':'HKBREAK02','scenes':{str(k):{n:v for n,v in d.items()} for k,d in scenes.items()},'source_records':records,'other_parts':ignored,
         'largest_scene_vram_bytes':total_vram,'vram_rects':VRAM_RECTS,'chunks':manifest,'rust_sha256':hashlib.sha256(code.encode()).hexdigest(),
