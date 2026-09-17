@@ -32,6 +32,8 @@ pub const KIND_MASK_FADE: u16 = 6;
 pub const KIND_REMOTE_MASK: u16 = 7;
 /// One per region: interleaved (controller, draw) reveal binding pairs.
 pub const KIND_REVEAL_BINDINGS: u16 = 8;
+/// One per region: variant catalogue indices (debris, particle bank, impact).
+pub const KIND_REGION_STATICS: u16 = 9;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {

@@ -32,8 +32,17 @@ static SCENE0_BANK: &[u8] = include_bytes!(env!("HK_TEST_SCENE0_BANK"));
 fn use_bank(bytes: &'static [u8]) {
     world::TEST_BANK.with(|bank| bank.set(bytes));
 }
-fn scene0_region(global_id: usize) -> &'static Region {
-    world::REGIONS.iter().find(|r| r.global_id == global_id).unwrap()
+/// Runtime Region values of every scene 0 slot, from the cooked bank.
+fn scene0_regions() -> Vec<(usize, Region)> {
+    use_bank(SCENE0_BANK);
+    let bank = hk_format::WorldMeta::parse(SCENE0_BANK).unwrap();
+    bank.regions().map(|m| {
+        let index = m.global_id() as usize - 1;
+        (index, world::resident(index).expect("scene 0 region resident"))
+    }).collect()
+}
+fn scene0_region(global_id: usize) -> Region {
+    scene0_regions().into_iter().find(|(_, r)| r.global_id == global_id).unwrap().1
 }
 /// (id, persistent, fade_ticks) of every scene 0 breakable in the cooked bank.
 fn scene0_breakables() -> Vec<(usize, bool, u16)> {
@@ -56,7 +65,6 @@ fn region() -> Region {
     use_bank(FIXTURE_BANK);
     Region {
         global_id: 1,
-        flat_floor_heights: &[],
         scene: 0,
         bounds: [0, 0, 1000, 1000],
         collision_bounds: [0, 0, 1000, 1000],
@@ -452,7 +460,7 @@ fn generated_region_prefetch_falls_back_horizontally_when_floor_blocks_drop() {
             })
             .expect("generated room table must contain horizontal/downward alternatives");
     let (index, x, y, horizontal, downward) = candidate;
-    let r = &world::REGIONS[index];
+    let r = world::resident(index).unwrap();
     let mut player = Player::spawn(x, y);
     player.vy = -4 * ONE;
     let bytes = room_with_edges(&[[
@@ -482,9 +490,10 @@ fn door1_mask_survives_region_entry_outside_its_collider() {
     // Region14 includes the mask but not Door1's x59.59 collision/attack shape.
     use_bank(SCENE0_BANK);
     let (owner, _, fade) = scene0_breakables().into_iter().find(|b| b.0 == 38 && b.2 == 60).unwrap();
-    let distant = world::REGIONS.iter().find(|r| r.scene == 0 &&
+    let distant = scene0_regions().into_iter().map(|(_, r)| r).find(|r|
         world::contains(r.bounds, 84 * hk_sim::ONE + hk_sim::ONE/32, 11 * hk_sim::ONE + hk_sim::ONE/2))
         .unwrap();
+    let distant = &distant;
     let bank = world::bank_region(distant).unwrap();
     assert!(!world::breakables(bank).any(|b| b.id() == owner));
     let bindings: Vec<(usize, Vec<u16>)> = world::remote_masks(bank).filter(|m| m.0 == owner)
@@ -517,10 +526,11 @@ fn actual_crawler_spawn_resolves_against_complete_cooked_terrain() {
     use hk_sim::{resolve_actor_spawn, Params, ONE};
     use_bank(SCENE0_BANK);
     for source_id in [12546,12548] {
-        let (index,region,spec)=world::REGIONS.iter().enumerate().find_map(|(index,r)| {
-            world::region_actors(r).find(|s| s.source_id==source_id &&
+        let (index,region,spec)=scene0_regions().into_iter().find_map(|(index,r)| {
+            world::region_actors(&r).find(|s| s.source_id==source_id &&
                 world::contains(r.bounds,s.x,s.y)).map(|s|(index,r,s))
         }).expect("authored Tutorial crawler activation region");
+        let region=&region;
         let path=format!("{}/../data/regions/chunk_{}.hk",env!("CARGO_MANIFEST_DIR"),index+1);
         let bytes=std::fs::read(path).unwrap();let room=hk_format::Room::parse(&bytes).unwrap();
         let state=State::new();let b=spec.bounds;
@@ -538,7 +548,7 @@ fn actual_crawler_spawn_resolves_against_complete_cooked_terrain() {
 #[test]
 fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
     use hk_sim::{Params, ONE};
-    let first=world::REGIONS.iter().find(|r|r.scene==0).unwrap();
+    let first=scene0_regions()[0].1;
     let index=first.reveal_masks.iter().position(|s|s.source_id==12038).expect("source inverse_remask_right FSM");
     let spec=first.reveal_masks[index];
     assert_eq!(spec.fade_ticks,30);
@@ -554,7 +564,8 @@ fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
     assert_eq!(controller.opacity(index),64);
     let mut binding_count=0;
     use_bank(SCENE0_BANK);
-    for (id,region) in world::REGIONS.iter().enumerate().filter(|(_,r)|r.scene==0) {
+    for (id,region) in scene0_regions() {
+        let region=&region;
         assert_eq!(region.reveal_masks.len(),first.reveal_masks.len());
         for (a,b) in region.reveal_masks.iter().zip(first.reveal_masks) {
             assert_eq!(a.source_id,b.source_id);assert_eq!(a.trigger,b.trigger);assert_eq!(a.fade_ticks,b.fade_ticks);

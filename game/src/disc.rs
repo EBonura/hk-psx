@@ -348,11 +348,9 @@ impl Cache {
             if global<=previous_global || global>REGION_SCENE_LOCAL.len() || REGION_SCENE_LOCAL[global-1].0!=scene {
                 return Err(LoadError::WorldMeta);
             }
-            let legacy=&crate::world::REGIONS[global-1];
-            if region.bounds()!=legacy.bounds || region.collision_bounds()!=legacy.collision_bounds
-                || region.camera()!=legacy.camera {
-                return Err(LoadError::WorldMeta);
-            }
+            // The bank is the only source of region bounds and camera; the
+            // slot's owner was checked above through REGION_SCENE_LOCAL
+            // (manifest scene indices, unlike world::scene_of's scene ids).
             // Neighbours are global chunk ids (1-based) of catalogue slots.
             for encoded in region.neighbours() {
                 let encoded=encoded.map_err(|_|LoadError::WorldMeta)? as usize;
@@ -545,22 +543,22 @@ impl Cache {
         let bank=self.world_metadata();
         (0..bank.region_count()).find(|&index|bank.region(index).is_some_and(|r|r.global_id() as usize==region_id+1))
     }
-    /// Resolve a spatial point through the admitted scene bank. The returned
-    /// index is the canonical global region slot used by the existing room
-    /// and gameplay tables; no scene-local metadata index is exposed.
+    /// Resolve a spatial point through the admitted scene bank. `scene` is
+    /// the catalogue scene id (as in `world::Region::scene`), not a manifest
+    /// index. The returned index is the canonical global region slot used by
+    /// the existing room and gameplay tables.
     #[inline(never)]
     pub fn locate(&self,scene:usize,x:i32,y:i32)->Option<usize> {
-        if self.metadata_scene!=scene || self.metadata_len!=WORLD_META_MANIFEST.get(scene)?.raw_len {return None;}
+        if !self.metadata_admitted() {return None;}
         let bank=self.world_metadata();
+        if bank.scene_id() as usize!=scene {return None;}
         let mut index=0;
         while index<bank.region_count() {
             let region=bank.region(index)?;
             let bounds=region.bounds();
             if x>=bounds[0] && x<=bounds[2] && y>=bounds[1] && y<=bounds[3] {
                 let global=region.global_id() as usize;
-                if let Some(&(owner,_local))=global.checked_sub(1).and_then(|id|REGION_SCENE_LOCAL.get(id)) {
-                    if owner==scene {return Some(global-1);}
-                }
+                if global>=1 && global<=REGION_SCENE_LOCAL.len() && crate::world::scene_of(global-1)==scene {return Some(global-1);}
             }
             index+=1;
         }

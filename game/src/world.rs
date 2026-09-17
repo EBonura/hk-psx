@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BREAKABLE, KIND_GRASS, KIND_MASK_FADE, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
+use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BREAKABLE, KIND_GRASS, KIND_MASK_FADE, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -210,10 +210,14 @@ fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
 fn region_breakables(region: &Region) -> Breakables<'static> {
     Breakables { region: bank_region(region), index: 0 }
 }
+/// The selected region as a runtime value: identity and bounds from the
+/// admitted bank, effect tables from the per-scene statics and the variant
+/// catalogues the bank's `KIND_REGION_STATICS` object indexes. Nothing per
+/// view is linked; `REGION_SCENES` is the only per-slot table left.
+#[derive(Clone, Copy)]
 pub struct Region {
     pub global_id: usize,
     pub scene: usize,
-    pub flat_floor_heights: &'static [i32],
     pub bounds: [i32; 4],
     pub collision_bounds: [i32; 4],
     pub camera: [i32; 4],
@@ -223,9 +227,41 @@ pub struct Region {
     pub door_debris: &'static [debris::Spec],
     pub reveal_masks: &'static [crate::reveal_masks::RevealMaskSpec],
 }
+/// Scene owner of a catalogue slot.
+pub fn scene_of(region_id: usize) -> usize {
+    REGION_SCENES[region_id] as usize
+}
+/// Build the Region value for a catalogue slot from the admitted bank.
+/// None while that slot's scene bank is not the admitted one.
+#[inline(never)]
+pub fn resident(region_id: usize) -> Option<Region> {
+    let scene = *REGION_SCENES.get(region_id)? as usize;
+    let bank = admitted_bank()?;
+    if bank.scene_id() as usize != scene {
+        return None;
+    }
+    let region = bank.region_by_global_id(region_id as u32 + 1)?;
+    let statics = region.objects().flatten().find(|o| o.kind() == KIND_REGION_STATICS)
+        .expect("region statics object in the admitted bank");
+    let catalogue = |index: i32, len: usize| (index >= 0 && (index as usize) < len).then_some(index as usize);
+    Some(Region {
+        global_id: region_id + 1,
+        scene,
+        bounds: region.bounds(),
+        collision_bounds: region.collision_bounds(),
+        camera: region.camera(),
+        grass_impact: catalogue(statics.extra(2), IMPACT_CATALOG.len()).map(|i| IMPACT_CATALOG[i]),
+        particle_bank: catalogue(statics.extra(1), PARTICLE_BANKS.len()).map(|i| PARTICLE_BANKS[i]),
+        grass_emitters: SCENE_EMITTERS[scene],
+        door_debris: DEBRIS_CATALOG[statics.extra(0) as usize],
+        reveal_masks: SCENE_REVEAL_MASKS[scene],
+    })
+}
 pub struct Gate {
     pub scene: usize,
     pub target_scene: usize,
+    /// Catalogue slot of the destination region containing `spawn`.
+    pub target_region: usize,
     pub bounds: [i32; 4],
     pub spawn: [i32; 2],
     /// Initial vertical velocity at the destination (Q16 units per second).
@@ -790,11 +826,6 @@ pub fn checkpoint(
 pub fn contains(bounds: [i32; 4], x: i32, y: i32) -> bool {
     x >= bounds[0] && x <= bounds[2] && y >= bounds[1] && y <= bounds[3]
 }
-pub fn locate(scene: usize, x: i32, y: i32) -> Option<usize> {
-    REGIONS
-        .iter()
-        .position(|r| r.scene == scene && contains(r.bounds, x, y))
-}
 /// Predict only the current vertical leg. The same swept terrain solver used
 /// by gameplay stops the look-ahead at floors, ceilings and the jump apex.
 /// No horizontal movement is assumed; the caller retains its cheap fallback.
@@ -835,9 +866,9 @@ pub fn upcoming(
     state: &State,
     params: Params,
 ) -> Option<usize> {
-    let region = &REGIONS[index];
+    let region = resident(index)?;
     let bounds = region.bounds;
-    let bank = bank_region(region)?;
+    let bank = bank_region(&region)?;
     let neighbour = |x, y| {
         bank.neighbours().flatten().find_map(|n| {
             let found = admitted_bank()?.region_by_global_id(n)?;
@@ -848,7 +879,7 @@ pub fn upcoming(
         || (player.vy < -ONE && player.y - bounds[1] < 4 * ONE);
     if vertical_candidate {
         if let Some(y) = vertical_exit(bounds, player, params, room.counts[5], |i| {
-            state.edge(region, room, i)
+            state.edge(&region, room, i)
         }) {
             if let Some(next) = neighbour(player.x, y) {
                 return Some(next);

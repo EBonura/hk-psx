@@ -37,6 +37,7 @@ mod render {
     pub fn texture(_: usize, _: [(i16, i16); 4], _: (u8, u8, u8)) {}
 }
 mod world {
+    #[derive(Clone, Copy)]
     pub struct Region {
         pub scene: usize,
         pub bounds: [i32; 4],
@@ -450,7 +451,7 @@ fn resident_actor_view_matches_unpartitioned_patrol_across_knight_apron() {
             |scene,x,y| {
                 assert_eq!(scene,0);
                 assert!(world::contains(complete.collision_bounds,x,y));
-                Some((&complete,hk_format::Room::parse(&bytes).unwrap()))
+                Some((complete,hk_format::Room::parse(&bytes).unwrap()))
             });
         assert_eq!(actual.actor_state(0,SPEC.source_id),expected.actor_state(0,SPEC.source_id));
         farthest=farthest.max(actual.actor_state(0,SPEC.source_id).unwrap().0.abs());
@@ -468,7 +469,7 @@ fn unrelated_scene_view_cannot_activate_suspended_actor() {
     actors.tick(&current,&floor,&mut world::State,&mut Player::spawn(10*ONE,ONE),
         &mut Vitals::new(VITAL_PARAMS),&Nail::new(),&mut NailResponse::new(),
         no_attack(),[&[];4],cheats::Settings::new(),[0,0,-2496922],|_| panic!("Crawler event"),
-        |_,_,_|Some((&foreign,hk_format::Room::parse(&bytes).unwrap())));
+        |_,_,_|Some((foreign,hk_format::Room::parse(&bytes).unwrap())));
     assert_eq!(actors.actor_state(0,SPEC.source_id),Some((SPEC.x,SPEC.y,8)));
 }
 

@@ -20,7 +20,7 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9}
 MAX_REVEAL_CONTROLLERS = 16
 MAX_SCENE_ACTORS = 32
 
@@ -210,6 +210,14 @@ def encode_scene(scene, rows):
                           bounded(binding["draw"], draw_count, "reveal draw")]
             add_object("reveal_bindings", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0,
                        row["activation_bounds"], None, (index_list(pairs, 65536, "reveal binding"), 0, 0))
+        statics = row.get("statics")
+        if statics is not None:
+            # Variant catalogue indices the runtime Region value resolves:
+            # door debris, particle bank (-1 none), grass impact (-1 none).
+            add_object("region_statics", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0, row["activation_bounds"], None,
+                       (bounded(statics["door_debris"], 8, "debris variant"),
+                        statics["particle_bank"] if statics["particle_bank"] < 0 else bounded(statics["particle_bank"], 8, "particle bank variant"),
+                        statics["grass_impact"] if statics["grass_impact"] < 0 else bounded(statics["grass_impact"], 8, "impact variant")))
         region_polygon_count = len(polygons) - region_polygon_first
         neighbour_first = len(points)
         neighbours = [int(value) for value in row.get("neighbour_chunks", [])]

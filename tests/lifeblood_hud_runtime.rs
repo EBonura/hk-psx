@@ -30,7 +30,7 @@ static UPLOADS:Mutex<Vec<(u16,u16,u16,u16)>>=Mutex::new(Vec::new());
 pub fn upload_bytes(rect:VramRect,bytes:&[u8]){assert_eq!(bytes.len(),rect.w as usize*rect.h as usize*2);UPLOADS.lock().unwrap().push((rect.x,rect.y,rect.w,rect.h));}
 mod input{pub fn checkpoint(){}}
 mod world{
- pub struct Region{pub scene:usize}pub static REGIONS:[Region;1]=[Region{scene:0}];
+ pub fn scene_of(_:usize)->usize {0}
  pub struct State{pub edges:Vec<u16>}
  impl State{pub fn set_lifeblood_edges(&mut self,edges:&[u16]){self.edges=edges.to_vec();}}
 }

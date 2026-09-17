@@ -173,7 +173,13 @@ def entry_contract(source, scene_file='level7', gate_name='left1'):
                 source_method='HeroController/<EnterScene>d__487::MoveNext',camera_source='level1:9790',
                 limitations=['60Hz wait quantization','linear PS1 fade, not original camera and blanker shader parity'])
 
+def region_literal(slot):
+    """Catalogue slot of an entry's spawn; fixtures without regions get usize::MAX."""
+    return 'usize::MAX' if slot is None else str(slot)
+
+
 def generate(metadata,entry,return_entry):
+    from world import locate_region
     records=[r.get('great_door')for r in metadata['regions']]
     source=next((r for r in records if r),None)
     if source is None:raise ValueError('Cook the source Great Door first')
@@ -183,8 +189,8 @@ def generate(metadata,entry,return_entry):
     lines=['// Generated from the local Windows Great Door FSM and sprite collection.',
            'pub const TARGET_SCENE:usize='+str(target)+';',
            'pub const PARAMS:Params=Params{stage_hits:'+array(source['stage_hits'])+',cooldown:'+str(source['cooldown_ticks'])+',transition:'+str(source['transition_ticks'])+',entry_delay:'+str(source['entry_delay_ticks'])+'};',
-           'pub const ENTRY:Entry=Entry{spawn:'+array(map(q,entry['spawn']))+',settle:'+str(entry['settle_ticks'])+',fade_delay:'+str(entry['fade_delay_ticks'])+',fade:'+str(entry['fade_ticks'])+',lead:'+str(entry['lead_ticks'])+',walk:'+str(entry['walk_ticks'])+',speed:'+str(q(entry['speed']))+'};',
-           'pub const RETURN_ENTRY:Entry=Entry{spawn:'+array(map(q,return_entry['spawn']))+',settle:'+str(return_entry['settle_ticks'])+',fade_delay:'+str(return_entry['fade_delay_ticks'])+',fade:'+str(return_entry['fade_ticks'])+',lead:'+str(return_entry['lead_ticks'])+',walk:'+str(return_entry['walk_ticks'])+',speed:'+str(q(return_entry['speed']))+'};',
+           'pub const ENTRY:Entry=Entry{spawn:'+array(map(q,entry['spawn']))+',region:'+region_literal(locate_region(metadata['regions'],target,entry['spawn']))+',settle:'+str(entry['settle_ticks'])+',fade_delay:'+str(entry['fade_delay_ticks'])+',fade:'+str(entry['fade_ticks'])+',lead:'+str(entry['lead_ticks'])+',walk:'+str(entry['walk_ticks'])+',speed:'+str(q(entry['speed']))+'};',
+           'pub const RETURN_ENTRY:Entry=Entry{spawn:'+array(map(q,return_entry['spawn']))+',region:'+region_literal(locate_region(metadata['regions'],0,return_entry['spawn']))+',settle:'+str(return_entry['settle_ticks'])+',fade_delay:'+str(return_entry['fade_delay_ticks'])+',fade:'+str(return_entry['fade_ticks'])+',lead:'+str(return_entry['lead_ticks'])+',walk:'+str(return_entry['walk_ticks'])+',speed:'+str(q(return_entry['speed']))+'};',
            'pub const POSITION:[i32;2]='+array(map(q,source['position'][:2]))+';',
            'pub const SCALE:i32='+str(source['scale'])+';',
            'pub const BOUNDS:[i32;4]='+array(map(q,source['bounds']))+';',

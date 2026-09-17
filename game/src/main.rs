@@ -252,7 +252,7 @@ fn main() {
         // poll since the last frame. Service the pad around each bank-driven
         // pass so no stretch between polls approaches a VBlank.
         input::checkpoint();
-        let r=&world::REGIONS[region_id];
+        let r=&world::resident(region_id).expect("admitted world metadata covers the selected region");
         let meta_region=cache.world_region_index(region_id).expect("admitted world metadata covers the selected region");
         assert!(ambience::set_scene(r.scene as u8));
         enemies.sync_region(r);
@@ -331,7 +331,7 @@ fn main() {
                     let pad=ButtonState::from_bits(input::consume(sim_clock));
                     // The source scene has ended. A rendered-frame catch-up must
                     // not simulate the destination player against outgoing terrain.
-                    if target.is_some_and(|id|world::REGIONS[id].scene!=r.scene) {
+                    if target.is_some_and(|id|world::scene_of(id)!=r.scene) {
                         start_held=pad.is_held(button::START);player.was_jump=pad.is_held(button::CROSS);
                         continue;
                     }
@@ -449,7 +449,7 @@ fn main() {
                             }
                             let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
                                 [camera.0,camera.1,-2496922],unbound_runner_event,
-                                |scene,x,y| {let i=cache.locate(scene,x,y)?;Some((&world::REGIONS[i],cache.room_for(i)?))});
+                                |scene,x,y| {let i=cache.locate(scene,x,y)?;Some((world::resident(i)?,cache.room_for(i)?))});
                             enemies.take_geo_deaths(r.scene,|source,x,y|geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));
                             let h=geo::HERO_BOX;
                             let collected=geo.tick(r.scene,geo::GEO_PARAMS,[player.x+h[0],player.y+h[1],player.x+h[2],player.y+h[3]],
@@ -478,8 +478,11 @@ fn main() {
                                 if let Some(g)=gate {
                                     let side_entry=(g.scene==0&&g.target_scene==great_door::TARGET_SCENE)
                                         ||(g.scene==great_door::TARGET_SCENE&&g.target_scene==0);
-                                    let spawn=if side_entry {if g.target_scene==0 {great_door::RETURN_ENTRY.spawn}else{great_door::ENTRY.spawn}}else{g.spawn};
-                                    if let Some(id)=world::locate(g.target_scene,spawn[0],spawn[1]) {
+                                    let (spawn,id)=if side_entry {
+                                        let entry=if g.target_scene==0 {&great_door::RETURN_ENTRY}else{&great_door::ENTRY};
+                                        (entry.spawn,entry.region)
+                                    } else {(g.spawn,g.target_region)};
+                                    {let id=id;
                                         geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                                         vitals.add_blue_health(life.leave_scene());
                                         dialogue::cancel();state.reset_scene(r.scene);reveals.leave_scene();enemies.reset_scene(r.scene);audio::reset_movement();player=Player::spawn(spawn[0],spawn[1]);
@@ -492,7 +495,7 @@ fn main() {
                                 }
                             }
                             if target.is_none() && !vitals.dead && !vitals.hazard_pending && !world::contains(r.bounds,player.x,player.y) {
-                                if let Some(id)=world::locate(r.scene,player.x,player.y) {target=Some(id);spatial_target=true;}
+                                if let Some(id)=cache.locate(r.scene,player.x,player.y) {target=Some(id);spatial_target=true;}
                                 else {
                                     let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,1,0,true);
                                     if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
@@ -535,7 +538,7 @@ fn main() {
             frame=frame.wrapping_add(1);
             if let Some(id)=target {
                 if !cache.is_ready(id) {
-                    assert!(world::REGIONS[id].scene!=r.scene,"spatial region not resident");
+                    assert!(world::scene_of(id)!=r.scene,"spatial region not resident");
                     audio::stop_footsteps();focus_audio::interrupt();
                     unsafe {HK_GAME_MODE=2;}
                     // Revoke all world views before scene metadata/geometry

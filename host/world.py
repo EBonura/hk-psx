@@ -193,6 +193,15 @@ def postpack_masks(report, draw_sources=None):
     }
 
 
+def locate_region(regions, scene_id, xy):
+    """Catalogue slot (chunk_id - 1) of the region of `scene_id` containing `xy`, in cooked order."""
+    for region in regions:
+        b = region.get('activation_bounds')
+        if b and region.get('scene_id') == scene_id and b[0] <= xy[0] <= b[2] and b[1] <= xy[1] <= b[3]:
+            return region['chunk_id'] - 1
+    return None
+
+
 def generate(report):
     regions = report['regions']
     if [r['chunk_id'] for r in regions] != list(range(1, len(regions) + 1)):
@@ -267,27 +276,37 @@ def generate(report):
             raise ValueError('scene actor pool exceeds 32')
         out.append(f'static SCENE_ACTORS_{scene}: &[hk_sim::ActorSpec] = &[' + ','.join(specs) + '];')
     out.append('pub static SCENE_ACTORS: &[&[hk_sim::ActorSpec]] = &[' + ','.join(f'SCENE_ACTORS_{scene}' for scene in range(SCENES)) + '];')
-    out.append('pub static REGIONS: &[Region] = &[')
-    for region_index, region in enumerate(regions):
+    # Per-scene statics the runtime Region value borrows, and small variant
+    # catalogues the bank's KIND_REGION_STATICS object indexes per region.
+    out.append('pub static SCENE_REVEAL_MASKS: &[&[crate::reveal_masks::RevealMaskSpec]] = &[' + ','.join(f'REVEAL_MASKS_SCENE_{scene}' for scene in range(SCENES)) + '];')
+    scene_emitters = {}
+    for region in regions:
+        if region.get('particle_effects'):
+            scene_emitters[region['scene_id']] = f'PARTICLE_EMITTERS_{region["scene_id"]}'
+    out.append('pub static SCENE_EMITTERS: &[&[particles::EmitterSpec]] = &[' + ','.join(scene_emitters.get(scene, '&[]') for scene in range(SCENES)) + '];')
+    out.append('pub static DEBRIS_CATALOG: &[&[debris::Spec]] = &[' + ','.join(debris_catalog.values()) + '];')
+    out.append('pub static PARTICLE_BANKS: &[particles::Bank] = &[' + ','.join(particle_banks.values()) + '];')
+    debris_index = {name: i for i, name in enumerate(debris_catalog.values())}
+    bank_index = {name: i for i, name in enumerate(particle_banks.values())}
+    impact_catalog = []
+    from effects import generated_debris
+    for region in regions:
         scene = integer(region['scene_id'], SCENES, 'scene index')
-        draw_count = region['draws']; edge_count = region['edges']
-        def draw_indices(values):
-            return ids(integer(v, draw_count, 'draw index') for v in values)
-        # Grass, breakables, their mask fades, remote masks, hazards and checkpoints
-        # live only in the HKWMTA01 bank (tools/world_metadata.py).
-        # Reveal bindings and actor references live in the HKWMTA01 bank.
-        from effects import generated_debris
-        debris_spec=debris_catalog[generated_debris(region.get("door_debris",[]),scene)]
-        particle_data=region.get('particle_effects')
-        particle_bank='None' if not particle_data else 'Some('+particle_banks[(scene,repr(particle_data['frames']))]+')'
-        particle_emitters='&[]' if not particle_data else f'PARTICLE_EMITTERS_{scene}'
-        impact=region.get('grass_impact')
-        impact_spec='None' if not impact else 'Some(crate::impact::Spec {clips:['+','.join(str(integer(i,128,'impact clip'))for i in impact['clips'])+'],ticks:'+str(integer(impact['ticks'],65536,'impact duration'))+'})'
-        out.append(f'Region {{global_id:{region["chunk_id"]},scene:{scene},flat_floor_heights:FLAT_FLOOR_HEIGHTS[{region["chunk_id"]-1}],bounds:' + rect(region['activation_bounds']) +
-                   ',collision_bounds:' + rect(region.get('collision_bounds',region['activation_bounds'])) +
-                   ',particle_bank:'+particle_bank+',grass_emitters:'+particle_emitters+',door_debris:'+debris_spec+',camera:' + rect(region['camera_bounds']) + ',grass_impact:'+impact_spec+
-                   ',reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+'},')
-    out.append('];\npub static GATES: &[Gate] = &[')
+        impact = region.get('grass_impact')
+        impact_spec = None if not impact else 'crate::impact::Spec {clips:[' + ','.join(str(integer(i, 128, 'impact clip')) for i in impact['clips']) + '],ticks:' + str(integer(impact['ticks'], 65536, 'impact duration')) + '}'
+        if impact_spec is not None and impact_spec not in impact_catalog:
+            impact_catalog.append(impact_spec)
+        particle_data = region.get('particle_effects')
+        region['statics'] = {
+            'door_debris': debris_index[debris_catalog[generated_debris(region.get('door_debris', []), scene)]],
+            'particle_bank': -1 if not particle_data else bank_index[particle_banks[(scene, repr(particle_data['frames']))]],
+            'grass_impact': -1 if impact_spec is None else impact_catalog.index(impact_spec)}
+    if len(impact_catalog) > 8:
+        raise ValueError('grass impact metadata variant budget')
+    out.append('pub static IMPACT_CATALOG: &[crate::impact::Spec] = &[' + ','.join(impact_catalog) + '];')
+    # Scene owner per catalogue slot: the only per-view table left in the guest.
+    out.append('pub static REGION_SCENES: &[u8] = &[' + ','.join(str(integer(r['scene_id'], min(SCENES, 256), 'scene index')) for r in regions) + '];')
+    out.append('pub static GATES: &[Gate] = &[')
     by_name = {scene['scene_name']: scene for scene in report['scenes']}
     for scene in report['scenes']:
         integer(scene['scene_id'], SCENES, 'gate scene')
@@ -307,14 +326,13 @@ def generate(report):
                 xy[0] += 1
             elif destination['name'].startswith('right'):
                 xy[0] -= 1
-            if not any(r['scene_id'] == target['scene_id'] and
-                       r['activation_bounds'][0] <= xy[0] <= r['activation_bounds'][2] and
-                       r['activation_bounds'][1] <= xy[1] <= r['activation_bounds'][3] for r in regions):
+            target_region = locate_region(regions, target['scene_id'], xy)
+            if target_region is None:
                 continue
             # Source HeroController top entries (the Dirtmouth well is the verified
             # case) start the drop at -12 units per second; other sides keep rest.
             entry_vy = -12 * 65536 if destination['name'].startswith('top') else 0
-            out.append(f'Gate {{scene:{scene["scene_id"]},target_scene:{target["scene_id"]},bounds:' +
+            out.append(f'Gate {{scene:{scene["scene_id"]},target_scene:{target["scene_id"]},target_region:{target_region},bounds:' +
                        rect(gate['trigger_bounds']) + ',spawn:' + arr(map(q, xy)) + f',entry_vy:{entry_vy}' + '},')
     out.append('];')
     result = '\n'.join(out) + '\n'
