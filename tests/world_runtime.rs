@@ -68,7 +68,6 @@ fn region() -> Region {
         reveal_masks: &[],
         reveal_bindings: &[],
         actors: &[],
-        neighbours: &[],
     }
 }
 #[test]
@@ -433,21 +432,23 @@ fn vertical_prefetch_respects_removed_owned_floor_and_thirty_tick_bound() {
 #[test]
 fn generated_region_prefetch_falls_back_horizontally_when_floor_blocks_drop() {
     use hk_sim::ONE;
-    let candidate =
-        world::REGIONS
-            .iter()
-            .enumerate()
-            .find_map(|(index, r)| {
+    use_bank(SCENE0_BANK);
+    let bank = hk_format::WorldMeta::parse(SCENE0_BANK).unwrap();
+    let bounds_of = |global: u32| bank.region_by_global_id(global).unwrap().bounds();
+    let candidate = bank.regions()
+            .find_map(|meta| {
+                let r = scene0_region(meta.global_id() as usize);
+                let neighbours: Vec<u32> = meta.neighbours().flatten().filter(|&n| bank.region_by_global_id(n).is_some()).collect();
                 let x = r.bounds[0] + (r.bounds[2] - r.bounds[0]) / 2;
                 let y = r.bounds[1] + 2 * ONE;
-                let horizontal = r.neighbours.iter().copied().find(|&n| {
-                    world::contains(world::REGIONS[n].bounds, r.bounds[2] + ONE / 16, y)
+                let horizontal = neighbours.iter().copied().find(|&n| {
+                    world::contains(bounds_of(n), r.bounds[2] + ONE / 16, y)
                 });
-                let downward = r.neighbours.iter().copied().find(|&n| {
-                    world::contains(world::REGIONS[n].bounds, x, r.bounds[1] - ONE / 16)
+                let downward = neighbours.iter().copied().find(|&n| {
+                    world::contains(bounds_of(n), x, r.bounds[1] - ONE / 16)
                 });
                 match (horizontal, downward) {
-                    (Some(h), Some(d)) if h != d => Some((index, x, y, h, d)),
+                    (Some(h), Some(d)) if h != d => Some((r.global_id - 1, x, y, h as usize - 1, d as usize - 1)),
                     _ => None,
                 }
             })

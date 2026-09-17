@@ -205,7 +205,6 @@ pub struct Region {
     pub reveal_masks: &'static [crate::reveal_masks::RevealMaskSpec],
     pub reveal_bindings: &'static [crate::reveal_masks::RevealMaskBinding],
     pub actors: &'static [&'static hk_sim::ActorSpec],
-    pub neighbours: &'static [usize],
 }
 pub struct Gate {
     pub scene: usize,
@@ -809,6 +808,9 @@ pub(crate) fn vertical_exit(
     }
     None
 }
+/// Next region the Knight is about to enter, from the admitted bank's
+/// neighbour lists (global chunk ids). Neighbours in another scene's bank
+/// are not resident and are left to the scene gates.
 pub fn upcoming(
     index: usize,
     player: &Player,
@@ -818,12 +820,12 @@ pub fn upcoming(
 ) -> Option<usize> {
     let region = &REGIONS[index];
     let bounds = region.bounds;
+    let bank = bank_region(region)?;
     let neighbour = |x, y| {
-        region
-            .neighbours
-            .iter()
-            .copied()
-            .find(|&n| contains(REGIONS[n].bounds, x, y))
+        bank.neighbours().flatten().find_map(|n| {
+            let found = admitted_bank()?.region_by_global_id(n)?;
+            contains(found.bounds(), x, y).then_some(n as usize - 1)
+        })
     };
     let vertical_candidate = (player.vy > ONE && bounds[3] - player.y < 6 * ONE)
         || (player.vy < -ONE && player.y - bounds[1] < 4 * ONE);
