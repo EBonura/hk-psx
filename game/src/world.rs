@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_BREAKABLE, KIND_MASK_FADE, KIND_REMOTE_MASK};
+use hk_format::world_meta::{self as meta, KIND_BREAKABLE, KIND_GRASS, KIND_MASK_FADE, KIND_REMOTE_MASK};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -160,6 +160,23 @@ pub fn remote_masks<'a>(region: meta::Region<'a>) -> impl Iterator<Item = (usize
     region.objects().flatten().filter(|o| o.kind() == KIND_REMOTE_MASK)
         .map(|object| (object.state_id() as usize, object.extra(2) as u16, MaskFade { object }))
 }
+/// A grass patch read from the bank: scene-global state id plus the shared
+/// `Grass` record (bounds, off draw, on draw).
+#[derive(Clone, Copy)]
+pub struct Patch {
+    pub state: usize,
+    pub grass: Grass,
+}
+pub fn grass<'a>(region: meta::Region<'a>) -> impl Iterator<Item = Patch> + 'a {
+    region.objects().flatten().filter(|o| o.kind() == KIND_GRASS).map(|object| Patch {
+        state: object.state_id() as usize,
+        grass: Grass { bounds: object.bounds(), off_draw: object.extra(0) as usize, on_draw: object.extra(1) as usize },
+    })
+}
+/// Grass patches of a catalogue region through the admitted bank.
+pub fn region_grass(region: &Region) -> impl Iterator<Item = Patch> {
+    bank_region(region).into_iter().flat_map(grass)
+}
 /// True when a broken breakable of this region owns room edge `index`.
 #[inline(never)]
 fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
@@ -174,11 +191,6 @@ fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
 fn region_breakables(region: &Region) -> Breakables<'static> {
     Breakables { region: bank_region(region), index: 0 }
 }
-#[derive(Clone, Copy)]
-pub struct Patch {
-    pub state: usize,
-    pub grass: Grass,
-}
 pub struct Region {
     pub global_id: usize,
     pub scene: usize,
@@ -186,7 +198,6 @@ pub struct Region {
     pub bounds: [i32; 4],
     pub collision_bounds: [i32; 4],
     pub camera: [i32; 4],
-    pub grass: &'static [Patch],
     pub grass_impact: Option<crate::impact::Spec>,
     pub particle_bank: Option<particles::Bank>,
     pub grass_emitters: &'static [particles::EmitterSpec],
@@ -443,7 +454,7 @@ impl State {
                 result.door_sounds += u16::from(object.door_sound());
             }
         }
-        for patch in region.grass {
+        for patch in region_grass(region) {
             if !self.cut(patch.state)
                 && overlap(bounds, patch.grass.bounds)
                 && hk_sim::polygon_hits_box(polygon, patch.grass.bounds)
@@ -481,28 +492,39 @@ impl State {
         }
         result
     }
+    /// One pass over the region's bank objects: grass and breakable
+    /// visibility, then every mask fade (own and remote). Runs every frame.
+    #[inline(never)]
     pub fn apply(&self, region: &Region) {
         crate::render::reset_visibility();
-        for patch in region.grass {
-            let cut = self.cut(patch.state);
-            crate::render::set_visible(patch.grass.off_draw, !cut);
-            crate::render::set_visible(patch.grass.on_draw, cut);
-        }
         let Some(bank) = bank_region(region) else { return };
-        for object in breakables(bank) {
-            let broken = self.broken(object.id());
-            for draw in object.off() {
-                crate::render::set_visible(draw as usize, !broken);
+        let mut index = 0;
+        let mut owner = (0usize, 0u16);
+        while let Some(object) = bank.object(index) {
+            index += 1;
+            match object.kind() {
+                KIND_GRASS => {
+                    let cut = self.cut(object.state_id() as usize);
+                    crate::render::set_visible(object.extra(0) as usize, !cut);
+                    crate::render::set_visible(object.extra(1) as usize, cut);
+                }
+                KIND_BREAKABLE => {
+                    let id = object.state_id() as usize;
+                    let broken = self.broken(id);
+                    for draw in object.indices(0) {
+                        crate::render::set_visible(draw as usize, !broken);
+                    }
+                    for draw in object.indices(1) {
+                        crate::render::set_visible(draw as usize, broken);
+                    }
+                    owner = (id, object.flags() >> 6);
+                }
+                KIND_MASK_FADE => self.apply_mask(owner.0, owner.1, MaskFade { object }),
+                KIND_REMOTE_MASK => {
+                    self.apply_mask(object.state_id() as usize, object.extra(2) as u16, MaskFade { object })
+                }
+                _ => {}
             }
-            for draw in object.on() {
-                crate::render::set_visible(draw as usize, broken);
-            }
-            for fade in object.fades() {
-                self.apply_mask(object.id(), object.fade_ticks(), fade);
-            }
-        }
-        for (owner, fade_ticks, fade) in remote_masks(bank) {
-            self.apply_mask(owner, fade_ticks, fade);
         }
     }
     fn apply_mask(&self, owner: usize, total_ticks: u16, fade: MaskFade) {

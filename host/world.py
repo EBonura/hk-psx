@@ -199,7 +199,6 @@ def generate(report):
         raise ValueError('region chunks must be contiguous and start at one')
     if len(regions) > 1024:
         raise ValueError('region count exceeds the 1024-slot sanity bound')
-    stable_breakables, stable_grass = {}, {}
     floors = flat_floor_catalog(report, root=ROOT)
     # The guest sizes its per-scene persistent state tables from the catalog.
     out = [f'pub const SCENES: usize = {SCENES};\n', rust_catalog(floors)]
@@ -269,18 +268,8 @@ def generate(report):
         draw_count = region['draws']; edge_count = region['edges']
         def draw_indices(values):
             return ids(integer(v, draw_count, 'draw index') for v in values)
-        patches = []
-        for patch in region['grass']:
-            state = integer(patch['state_index'], GRASS_PER_SCENE, 'grass state')
-            stable = (scene, state)
-            if stable_grass.setdefault(stable, patch['source']) != patch['source']:
-                raise ValueError('grass state aliases different source objects')
-            off = integer(patch['off_draw'], draw_count, 'grass off draw')
-            on = integer(patch['on_draw'], draw_count, 'grass on draw')
-            patches.append(f'Patch {{state:{scene*GRASS_PER_SCENE+state},grass:Grass {{bounds:' +
-                           rect(patch['bounds']) + f',off_draw:{off},on_draw:{on}}}}}')
-        # Breakables, their mask fades, remote masks, hazards and checkpoints live only
-        # in the HKWMTA01 bank (tools/world_metadata.py).
+        # Grass, breakables, their mask fades, remote masks, hazards and checkpoints
+        # live only in the HKWMTA01 bank (tools/world_metadata.py).
         neighbours = [integer(n-1, len(regions), 'neighbour region') for n in region.get('neighbour_chunks', [])]
         reveal_bindings=[];reveal_owned=set()
         for binding in region.get('reveal_mask_bindings',[]):
@@ -299,8 +288,8 @@ def generate(report):
         impact_spec='None' if not impact else 'Some(crate::impact::Spec {clips:['+','.join(str(integer(i,128,'impact clip'))for i in impact['clips'])+'],ticks:'+str(integer(impact['ticks'],65536,'impact duration'))+'})'
         out.append(f'Region {{global_id:{region["chunk_id"]},scene:{scene},flat_floor_heights:FLAT_FLOOR_HEIGHTS[{region["chunk_id"]-1}],bounds:' + rect(region['activation_bounds']) +
                    ',collision_bounds:' + rect(region.get('collision_bounds',region['activation_bounds'])) +
-                   ',particle_bank:'+particle_bank+',grass_emitters:'+particle_emitters+',door_debris:'+debris_spec+',camera:' + rect(region['camera_bounds']) + ',grass_impact:'+impact_spec+',grass:&[' + ','.join(patches) +
-                   '],reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+',reveal_bindings:&['+','.join(reveal_bindings)+'],actors:' + actors + ',neighbours:' + ids(neighbours) + '},')
+                   ',particle_bank:'+particle_bank+',grass_emitters:'+particle_emitters+',door_debris:'+debris_spec+',camera:' + rect(region['camera_bounds']) + ',grass_impact:'+impact_spec+
+                   ',reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+',reveal_bindings:&['+','.join(reveal_bindings)+'],actors:' + actors + ',neighbours:' + ids(neighbours) + '},')
     out.append('];\npub static GATES: &[Gate] = &[')
     by_name = {scene['scene_name']: scene for scene in report['scenes']}
     for scene in report['scenes']:

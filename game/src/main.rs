@@ -254,7 +254,11 @@ fn main() {
         enemies.sync_region(r);
         reveals.scene_ready(r.scene,r.reveal_masks);
         let bank=vram.activate(region_id);
-        render::init(&cache.room(),bank,region_id,cache.coverage());state.apply(r);apply_reveal_masks(&reveals,r);
+        render::init(&cache.room(),bank,region_id,cache.coverage());
+        // Region entry follows a scene load or a boundary crossing without a
+        // poll since the last frame; service the pad before the state passes.
+        input::checkpoint();
+        state.apply(r);apply_reveal_masks(&reveals,r);
         geo_render::apply(geo,&mut state,region_id);
         lifeblood::apply(life,&mut state,region_id);
         great_door::apply(&door,&mut state,region_id);
@@ -495,7 +499,7 @@ fn main() {
                         reveals.tick(r.reveal_masks,&player,PARAMS);
                     }
                     if let Some((x,y,hp))=enemies.actor_state(0,12546) {unsafe {HK_CRAWLER_X=x;HK_CRAWLER_Y=y;HK_CRAWLER_HP=hp as i32;}}
-                    let mut cut=0u32;for (i,p) in r.grass.iter().take(32).enumerate(){if state.cut(p.state){cut|=1<<i;}}
+                    let mut cut=0u32;for (i,p) in world::region_grass(r).take(32).enumerate(){if state.cut(p.state){cut|=1<<i;}}
                     unsafe {HK_GRASS_CUT_MASK=cut;HK_NAIL_ATTACK_COUNT=attacks;HK_HEALTH=vitals.health as u32;HK_BLUE_HEALTH=vitals.blue_health as u32;HK_SOUL=vitals.soul as u32;HK_PLAYER_X=player.x;HK_PLAYER_Y=player.y;HK_FOCUS_LOCKED=u32::from(focus.locks_control());}
                     emit::stage_end(stage::UPDATE);emit::task_end(task::FIXED_UPDATE);ticks+=1;
                     input::checkpoint();
