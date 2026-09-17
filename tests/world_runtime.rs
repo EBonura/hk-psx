@@ -122,7 +122,7 @@ fn source_fade_advances_once_without_restarting_on_repeat_hit() {
     assert_eq!(*render::GAINS.lock().unwrap(), vec![(5, 0)]);
 }
 #[test]
-fn actual_generated_persistence_survives_scene_reset_and_grass_is_scene_local() {
+fn actual_generated_persistence_survives_scene_reset_and_grass_is_transient() {
     use_bank(SCENE0_BANK);
     let all = scene0_breakables();
     let (persistent, _, fade) = *all.iter().find(|b| b.1).unwrap();
@@ -131,13 +131,17 @@ fn actual_generated_persistence_survives_scene_reset_and_grass_is_scene_local() 
     let mut state = State::new();
     state.break_object(persistent, fade);
     state.break_object(temporary, 0);
+    // Broken bits of other scenes persist across this scene's reset; grass
+    // is resident-scene state and every cut clears with the reset.
+    state.break_object((1 - scene) * 128 + 5, 0);
     state.cut_grass(scene * 1024 + 1023);
-    state.cut_grass((1 - scene) * 1024 + 1023);
+    state.cut_grass(scene * 1024 + 7);
     state.reset_scene(scene);
     assert!(state.broken(persistent));
     assert!(!state.broken(temporary));
+    assert!(state.broken((1 - scene) * 128 + 5));
     assert!(!state.cut(scene * 1024 + 1023));
-    assert!(state.cut((1 - scene) * 1024 + 1023));
+    assert!(!state.cut(scene * 1024 + 7));
 }
 #[test]
 fn only_owned_edges_disappear() {
@@ -587,8 +591,8 @@ fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
 
 #[test]
 fn active_fades_match_full_timer_reference_including_simultaneous_expiry() {
-    let mut state=State::new();let mut reference=[0u16;world::SCENES*world::BREAKABLES_PER_SCENE];
-    for (id,ticks) in [(0,0),(1,1),(31,17),(32,17),(63,2),(128,17),(255,65535)] {
+    let mut state=State::new();let mut reference=[0u16;world::BREAKABLES_PER_SCENE];
+    for (id,ticks) in [(0,0),(1,1),(31,17),(32,17),(63,2),(96,17),(127,65535)] {
         assert!(state.break_object(id,ticks));reference[id]=ticks;
     }
     for tick in 0..65536 {
@@ -600,9 +604,11 @@ fn active_fades_match_full_timer_reference_including_simultaneous_expiry() {
 #[test]
 fn scene_reset_clears_only_its_transient_active_fades_and_allows_reactivation() {
     use_bank(SCENE0_BANK);
-    let (b,_,_)=scene0_breakables().into_iter().find(|b|!b.1).expect("authored transient breakable");
+    let all=scene0_breakables();
+    let (b,_,_)=all.iter().copied().find(|b|!b.1).expect("authored transient breakable");
+    // A persistent object's fade is the one a scene reset must leave running.
+    let (other,_,_)=all.iter().copied().find(|b|b.1).expect("authored persistent breakable");
     let mut state=State::new();assert!(state.break_object(b,19));
-    let other=world::BREAKABLES_PER_SCENE;
     assert!(state.break_object(other,19));
     state.tick();assert_eq!(state.fade_left[b],18);assert_eq!(state.fade_left[other],18);
     state.reset_scene(0);assert_eq!(state.fade_left[b],0);

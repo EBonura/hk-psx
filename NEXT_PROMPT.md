@@ -2,7 +2,7 @@
 
 ## Current state (2026-09-17)
 
-Build 85 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
+Build 86 is the sole disc: King's Pass, Dirtmouth and seventeen Forgotten
 Crossroads scenes (19 scenes, 329 views) connected by the authored gates,
 validated by `cargo run --release -- build --frontend <PSoXide frontend>`
 (seven route replays, zero faults). Hazards, checkpoints, breakables, mask
@@ -11,7 +11,10 @@ bindings now live only in the loadable HKWMTA01 bank
 (object stride 48, three payload words, a fifth u16 index-list section); the
 guest reads them through `world::bank_region` and the `Breakable`, `MaskFade`
 and `Patch` views, `State::apply` is one pass over the region's objects, and
-`State::reset_scene` walks the admitted bank. RAM headroom is 296,248 bytes. `world::REGIONS` is gone: `Region` is a
+`State::reset_scene` walks the admitted bank. RAM headroom is 294,200 bytes. Transient fades and grass cuts are
+resident-scene tables; `broken` stays global. The bank's checked parse polls
+the pad between regions (that unpolled stretch was the recurring Tutorial
+return VBlank miss). `world::REGIONS` is gone: `Region` is a
 runtime value that `world::resident` builds from the admitted bank plus
 per-scene statics and small variant catalogues; gates and Great Door entries
 carry their target region slot from the cookers; `Cache::locate` takes
@@ -31,9 +34,9 @@ short on the Tutorial return before. Break-effect art beyond scene 4 and Geo
 rocks over the shared VRAM budgets are recorded omissions; effect and Geo art
 need per-scene streaming (P07/P25). `host/regions.py` reuses every region
 whose spec, source inputs and cooker code are unchanged. The scene catalog is
-`host/quality.py SCENE_TABLE`. Next: per-scene state tables (`fade_left`, `fade_active`, grass) that still
-scale with the catalog, the per-slot packet budgets and Great Door bindings,
-then P07/P25 effect and Geo art streaming; P09 delayed well collider and source camera locks; Crossroads enemy
+`host/quality.py SCENE_TABLE`. Next: the per-slot packet budgets and Great Door bindings, then P07/P25
+effect and Geo art streaming (break-effect art past scene 4 and oversized
+Geo rocks are the recorded omissions); P09 delayed well collider and source camera locks; Crossroads enemy
 families beyond the Crawler.
 
 ## Previous handoff: P05 scene-owned world metadata
