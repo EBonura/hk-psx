@@ -111,6 +111,15 @@ class RunnerActorArtTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing cooked binding'):
             remap_actor_clips(actor, 0)
 
+    def test_scene_bank_remaps_controller_specific_bindings(self):
+        actor = actor_fixture()
+        actor['movement_control'] = {'kind': 'Vengefly'}
+        actor.update(startle_clip=4, chase_clip=5, turn_fly_clip=6)
+        remapped = remap_actor_clips(actor, 30)
+        self.assertEqual((remapped['startle_clip'], remapped['chase_clip'], remapped['turn_fly_clip']), (34, 35, 36))
+        climber = actor_fixture(); climber['movement_control'] = {'kind': 'Climber'}; climber['stun_clip'] = 2
+        self.assertEqual(remap_actor_clips(climber, 10)['stun_clip'], 12)
+
 
 if __name__ == '__main__':
     unittest.main()

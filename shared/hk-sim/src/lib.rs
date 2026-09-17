@@ -6,6 +6,7 @@ mod actors;
 pub mod runner;
 pub mod runner_senses;
 pub mod climber;
+pub mod vengefly;
 mod corpse;
 pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
 mod vitals;

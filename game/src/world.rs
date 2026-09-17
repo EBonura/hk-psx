@@ -327,6 +327,9 @@ pub struct State {
     edge_cache_region_id:usize,
     edge_cache_room_key:usize,
     edge_cache_valid:bool,
+    /// Bumped by every exclusion or source change; actor terrain scratch
+    /// copies (enemies::ActorEdges) compare it instead of refilling per tick.
+    pub edge_epoch:u32,
     world_generation:u32,
     geo_edges:[u16;32],
     geo_edge_count:usize,
@@ -359,7 +362,7 @@ impl State {
     pub const fn new() -> Self {
         Self {
             edge_cache:[[0;4];EDGE_CACHE],edge_cache_count:0,
-            edge_cache_generation:0,edge_cache_region_id:0,edge_cache_room_key:0,edge_cache_valid:false,
+            edge_cache_generation:0,edge_cache_region_id:0,edge_cache_room_key:0,edge_cache_valid:false,edge_epoch:0,
             world_generation:0,
             geo_edges:[0;32],geo_edge_count:0,
             lifeblood_edges:[0;8],lifeblood_edge_count:0,
@@ -386,8 +389,7 @@ impl State {
         let slot = local(id);
         self.fade_left[slot] = fade_ticks;
         if fade_ticks!=0 {self.fade_active[slot/32]|=1<<(slot%32);}
-        self.edge_cache_count=0;
-        self.edge_cache_valid=false;
+        self.invalidate_edges();
         true
     }
     pub fn cut(&self, id: usize) -> bool {
@@ -445,8 +447,12 @@ impl State {
     /// of the same scene at the same address.
     pub fn begin_world_admission(&mut self) {
         self.world_generation=self.world_generation.wrapping_add(1);
+        self.invalidate_edges();
+    }
+    fn invalidate_edges(&mut self) {
         self.edge_cache_count=0;
         self.edge_cache_valid=false;
+        self.edge_epoch=self.edge_epoch.wrapping_add(1);
     }
     /// Rebuild only after an exclusion mutation or source change. Returns true
     /// when the table was rebuilt; larger future rooms retain the direct path.
@@ -646,13 +652,13 @@ impl State {
     pub fn set_geo_edges(&mut self,edges:&[u16]) {
         assert!(edges.len()<=self.geo_edges.len());
         if self.geo_edge_count==edges.len()&&self.geo_edges[..edges.len()].iter().zip(edges).all(|(a,b)|a==b){return;}
-        self.geo_edges[..edges.len()].copy_from_slice(edges);self.geo_edge_count=edges.len();self.edge_cache_count=0;self.edge_cache_valid=false;
+        self.geo_edges[..edges.len()].copy_from_slice(edges);self.geo_edge_count=edges.len();self.invalidate_edges();
     }
     /// Refresh local cocoon collider bindings on every region activation.
     pub fn set_lifeblood_edges(&mut self,edges:&[u16]) {
         assert!(edges.len()<=self.lifeblood_edges.len());
         if self.lifeblood_edge_count==edges.len()&&self.lifeblood_edges[..edges.len()].iter().zip(edges).all(|(a,b)|a==b){return;}
-        self.lifeblood_edges[..edges.len()].copy_from_slice(edges);self.lifeblood_edge_count=edges.len();self.edge_cache_count=0;self.edge_cache_valid=false;
+        self.lifeblood_edges[..edges.len()].copy_from_slice(edges);self.lifeblood_edge_count=edges.len();self.invalidate_edges();
     }
     /// Append bounded scripted exclusions after the Lifeblood refresh. The two
     /// controllers share this eight-entry scratch; no second terrain cache.
@@ -662,7 +668,7 @@ impl State {
             assert!(self.lifeblood_edge_count<self.lifeblood_edges.len());
             self.lifeblood_edges[self.lifeblood_edge_count]=edge;
             self.lifeblood_edge_count+=1;
-            self.edge_cache_count=0;self.edge_cache_valid=false;
+            self.invalidate_edges();
         }
     }
     /// Every index below `cache.len()` with the same exclusions as edge(),

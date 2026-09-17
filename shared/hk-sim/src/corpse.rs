@@ -13,6 +13,12 @@ pub struct CorpseSpec {
     /// Source EnemyDeathEffects.corpseFlingSpeed in Q16 (15 for the Crawler
     /// and Runner corpses, 20 for the Climber); the launch table is scaled.
     pub fling_speed: i32,
+    /// Rigidbody2D gravityScale * 60 in Q16 (48 for the 0.8 Crawler/Runner/
+    /// Climber corpses, 42 for the 0.7 Buzzer corpse).
+    pub gravity: i32,
+    /// Source Corpse.breaker: the body is destroyed on landing (its break
+    /// pieces are not presented).
+    pub breaker: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CorpsePhase {
@@ -140,7 +146,7 @@ impl Corpse {
         let params = Params {
             speed: self.vx.abs(),
             jump: 0,
-            gravity: 48 * ONE,
+            gravity: spec.gravity,
             fall: 100 * ONE,
             hold_ticks: 0,
             min_ticks: 0,
@@ -159,6 +165,10 @@ impl Corpse {
         self.vy = body.vy;
         self.grounded = body.grounded;
         if hit_floor && self.phase == CorpsePhase::Air {
+            if spec.breaker {
+                self.phase = CorpsePhase::Removed;
+                return;
+            }
             self.phase = CorpsePhase::Land;
             self.animation_tick = 0;
             self.land_ticks = 0;
@@ -187,7 +197,7 @@ impl Corpse {
             // Source corpse PhysicsMaterial2D 'Geo Small' friction0.2. Coulomb
             // step uses that coefficient; arbitrary terrain material mixing is
             // not represented by the cooked edge format.
-            self.vx = self.vx.signum() * (self.vx.abs() - 10486).max(0); // .2*48/60 Q16
+            self.vx = self.vx.signum() * (self.vx.abs() - ((spec.gravity as i64 * 13107 / 60) >> 16) as i32).max(0); // friction .2 * g / 60
         }
         // Source Corpse.Update only destroys an airborne corpse below y=-10.
         if self.phase == CorpsePhase::Air && self.y < -10 * ONE {

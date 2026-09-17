@@ -450,6 +450,10 @@ fn main() {
                             let mining=strike_geo(geo,r.scene,&nail,&player);
                             if mining.hits>0 {geo_audio::hit();}
                             if mining.depleted>0 {geo_audio::break_rock();geo_render::apply(geo,&mut state,region_id);}
+                            // A break or depleted rock invalidated the edge table; rebuild it now so the
+                            // rest of this tick (enemies, coins, Lifeblood) does not fall back to the
+                            // per-query breakable scan, which cost several VBlanks with three coins.
+                            if strike.broken>0 || mining.depleted>0 {state.refresh_edges(r,&room);}
                             presentation::checkpoint();
                             let blue=life.tick(r.scene,player.x,r.collision_bounds,room.counts[5],state.edge_reader(r,&room));
                             vitals.add_blue_health(blue);

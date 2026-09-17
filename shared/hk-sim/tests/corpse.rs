@@ -4,7 +4,7 @@ const SPEC: CorpseSpec = CorpseSpec {
     land_clip: 14,
     bounds: [-46080, -55296, 47104, 4096],
     spawn_offset: [0, 32768],
-    bounce_factor: 19661, fling_speed: 15 * hk_sim::ONE
+    bounce_factor: 19661, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false
 };
 fn floor(_: usize) -> [i32; 4] {
     [-100 * ONE, 0, 100 * ONE, 0]
