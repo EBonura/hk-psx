@@ -15,6 +15,11 @@ pub enum ActorController {
         lunge_clip: u16,
         cooldown_clip: u16,
     },
+    /// Surface-following Tiktik driven by `crate::climber::Climber`.
+    Climber {
+        stun_clip: u16,
+        start_right: bool,
+    },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ActorSpec {

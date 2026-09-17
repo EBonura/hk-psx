@@ -1,9 +1,10 @@
 # Crossroads Climber controller
 
 `shared/hk-sim/src/climber.rs` implements the source-derived controller for the
-Crossroads wall-crawling enemies. It remains independent of the existing Crawler
-and is not connected to the guest actor pool or present in the provisional70
-playtest disc. Source records and CIL are retained in .hkpsx/climber70/CONTRACT.md.
+Crossroads wall-crawling enemies. Since build 94 it drives the guest actor pool
+through `ActorController::Climber` (`game/src/enemies.rs` `ClimberRuntime`,
+recognized by `host/climber.py`); the climb loop audio is not yet presented.
+It remains independent of the existing Crawler. Source records and CIL are retained in .hkpsx/climber70/CONTRACT.md.
 
 The controller attaches using the original two-unit point ray and assigns the
 whole hit position. It moves at two units/second along cardinal directions,
