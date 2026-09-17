@@ -4,6 +4,10 @@ host/cook.py
 host/regions.py
 host/actors.py
 host/runner.py
+host/climber.py
+host/vengefly.py
+host/gruzzer.py
+host/baldur.py
 host/particles.py
 host/effects.py
 host/breakables.py

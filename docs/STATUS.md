@@ -1,6 +1,7 @@
-## Build 95: the whole Forgotten Crossroads on the actual disc
+## Build 97: the whole Forgotten Crossroads on the actual disc
 
-The sole disc pair is build 95 (45 scenes, 693 views; Vengeflies admitted (18 of 20
+The sole disc pair is build 97 (45 scenes, 693 views; Gruzzers (19, docs/GRUZZER.md)
+and Baldurs (11, docs/BALDUR.md) admitted; build 95 admitted the Vengeflies (18 of 20
 Buzzers, docs/VENGEFLY.md) with actor simulation bounded to one view around the
 active view; build 94 admitted the Crossroads Climbers;
 earlier build 89 admitted the Crossroads Zombie Runners with their

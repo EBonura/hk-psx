@@ -16,9 +16,14 @@ pub struct CorpseSpec {
     /// Rigidbody2D gravityScale * 60 in Q16 (48 for the 0.8 Crawler/Runner/
     /// Climber corpses, 42 for the 0.7 Buzzer corpse).
     pub gravity: i32,
-    /// Source Corpse.breaker: the body is destroyed on landing (its break
-    /// pieces are not presented).
+    /// Source Corpse.breaker: Land counts a bounce and smashes once the count
+    /// reaches `smash_bounces` (0 smashes on the first landing). Break pieces
+    /// are not presented.
     pub breaker: bool,
+    pub smash_bounces: u8,
+    /// Ticks after landing until the corpse is removed (0 keeps it): the
+    /// source Roller corpse rolls out, shrinks and destroys itself.
+    pub remove_after_land: u16,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CorpsePhase {
@@ -38,6 +43,7 @@ pub struct Corpse {
     pub animation_tick: u32,
     land_ticks: u16,
     grounded: bool,
+    bounces: u8,
     rng: u32,
 }
 // Source up-hit angle is uniform75..105 degrees, speed15*1.3. Quantized to
@@ -88,6 +94,7 @@ impl Corpse {
             animation_tick: 0,
             land_ticks: 0,
             grounded: false,
+            bounces: 0,
             rng: seed,
         };
         assert!((ONE..=64 * ONE).contains(&spec.fling_speed), "invalid corpse fling speed");
@@ -123,10 +130,14 @@ impl Corpse {
             return;
         }
         self.animation_tick = self.animation_tick.saturating_add(1);
-        if self.phase == CorpsePhase::Land {
+        if matches!(self.phase, CorpsePhase::Land | CorpsePhase::Rest) {
             self.land_ticks = self.land_ticks.saturating_add(1);
-            if self.land_ticks >= 60 {
+            if self.phase == CorpsePhase::Land && self.land_ticks >= 60 {
                 self.phase = CorpsePhase::Rest;
+            }
+            if spec.remove_after_land != 0 && self.land_ticks >= spec.remove_after_land {
+                self.phase = CorpsePhase::Removed;
+                return;
             }
         }
         let b = if self.facing < 0 {
@@ -166,12 +177,17 @@ impl Corpse {
         self.grounded = body.grounded;
         if hit_floor && self.phase == CorpsePhase::Air {
             if spec.breaker {
-                self.phase = CorpsePhase::Removed;
-                return;
+                self.bounces = self.bounces.saturating_add(1);
+                if self.bounces >= spec.smash_bounces {
+                    self.phase = CorpsePhase::Removed;
+                    return;
+                }
+                // Still airborne after the bounce below; Land never plays.
+            } else {
+                self.phase = CorpsePhase::Land;
+                self.animation_tick = 0;
+                self.land_ticks = 0;
             }
-            self.phase = CorpsePhase::Land;
-            self.animation_tick = 0;
-            self.land_ticks = 0;
         }
         // ObjectBounce reflects contact velocity, source factor * Random(0.8,1.2).
         // Axis contacts reuse the proven body solver. Slope response/friction is

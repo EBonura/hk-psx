@@ -27,6 +27,15 @@ pub enum ActorController {
         chase_clip: u16,
         turn_fly_clip: u16,
     },
+    /// Gravity-free bouncing Fly driven by `crate::gruzzer::Gruzzer`; the
+    /// single Fly clip is both `walk_clip` and `turn_clip`.
+    Gruzzer,
+    /// Rolling Baldur driven by `crate::baldur::Baldur`; `walk_clip` is Idle.
+    Baldur {
+        start_clip: u16,
+        roll_clip: u16,
+        stop_clip: u16,
+    },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ActorSpec {

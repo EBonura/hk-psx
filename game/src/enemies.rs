@@ -139,6 +139,31 @@ impl VengeflyRuntime {
         }
     }
 }
+/// Bouncing Fly: the controller owns the flight angle and facing; this runtime
+/// turns it into a 5.2 unit/s velocity and reports the blocked side.
+#[derive(Clone, Copy)]
+struct GruzzerRuntime {
+    controller: hk_sim::gruzzer::Gruzzer,
+    animation_tick: u32,
+}
+/// Rolling Baldur: the controller owns the roll speed, launches and clips;
+/// this runtime runs the gravity body and reports wall/ground contacts.
+#[derive(Clone, Copy)]
+struct BaldurRuntime {
+    controller: hk_sim::baldur::Baldur,
+    animation_tick: u32,
+    clip: hk_sim::baldur::Clip,
+    vx: i32,
+    wall: bool,
+}
+impl BaldurRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        use hk_sim::baldur::Clip;
+        let ActorController::Baldur { start_clip, roll_clip, stop_clip } = spec.controller
+            else { panic!("Baldur runtime with other metadata") };
+        match self.clip { Clip::Idle => spec.walk_clip, Clip::Start => start_clip, Clip::Roll => roll_clip, Clip::Stop => stop_clip }
+    }
+}
 /// Rotate a local offset by quarter turns counter-clockwise.
 fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
     match quarter.rem_euclid(4) { 0 => v, 1 => [-v[1], v[0]], 2 => [-v[0], -v[1]], _ => [v[1], -v[0]] }
@@ -233,6 +258,8 @@ struct Actor {
     runner: Option<RunnerRuntime>,
     climber: Option<ClimberRuntime>,
     vengefly: Option<VengeflyRuntime>,
+    gruzzer: Option<GruzzerRuntime>,
+    baldur: Option<BaldurRuntime>,
 }
 impl Actor {
     fn new(scene: usize, spec: &ActorSpec) -> Self {
@@ -273,6 +300,13 @@ impl Actor {
                 Some(VengeflyRuntime { controller: hk_sim::vengefly::Vengefly::new([spec.x, spec.y], seed),
                     animation_tick: 0, clip: hk_sim::vengefly::Clip::Idle })
             } else { None },
+            gruzzer: if matches!(spec.controller, ActorController::Gruzzer) {
+                Some(GruzzerRuntime { controller: hk_sim::gruzzer::Gruzzer::new(seed), animation_tick: 0 })
+            } else { None },
+            baldur: if matches!(spec.controller, ActorController::Baldur { .. }) {
+                Some(BaldurRuntime { controller: hk_sim::baldur::Baldur::new(seed), animation_tick: 0,
+                    clip: hk_sim::baldur::Clip::Idle, vx: 0, wall: false })
+            } else { None },
         }
     }
     fn local_bounds(&self, spec: &ActorSpec) -> [i32; 4] {
@@ -285,7 +319,7 @@ impl Actor {
             return [corners[0][0].min(corners[1][0]), corners[0][1].min(corners[1][1]),
                 corners[0][0].max(corners[1][0]), corners[0][1].max(corners[1][1])];
         }
-        if self.vengefly.is_some() || self.walk.direction == spec.initial_direction {
+        if self.vengefly.is_some() || self.gruzzer.is_some() || self.baldur.is_some() || self.walk.direction == spec.initial_direction {
             b
         } else {
             [-b[2], b[1], -b[0], b[3]]
@@ -390,6 +424,19 @@ impl Actor {
             self.spawn_state = SpawnState::Ready;
             self.advance_vengefly(&mut fly, spec, count, &edge, context);
             self.vengefly = Some(fly);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(mut fly) = self.gruzzer.take() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_gruzzer(&mut fly, spec, count, &edge, context);
+            self.gruzzer = Some(fly);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(mut roller) = self.baldur.take() {
+            self.advance_baldur(&mut roller, spec, count, &edge, context);
+            self.baldur = Some(roller);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
@@ -511,6 +558,95 @@ impl Actor {
             body.vy = self.recoil[1];
             body.step(p, self.recoil[0].signum(), false, count, edge);
         }
+        self.x = body.x - offset;
+        self.y = body.y;
+    }
+    /// One 60 Hz step of the Gruzzer: camera wake, constant-speed flight along
+    /// the controller angle against terrain, Recoil displacement, then the
+    /// blocked side (up, right, down, left, as CheckCollisionSide) re-aims.
+    fn advance_gruzzer(&mut self, fly: &mut GruzzerRuntime, spec: &ActorSpec, count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext) {
+        use hk_sim::gruzzer::{Phase, Side, SPEED};
+        fly.animation_tick = fly.animation_tick.saturating_add(1);
+        fly.controller.tick(context.camera, [self.x, self.y, 0]);
+        self.walk.direction = fly.controller.facing();
+        let v = if fly.controller.phase() == Phase::Flying {
+            crate::world::debris::rotate([SPEED, 0], fly.controller.angle())
+        } else { [0; 2] };
+        let b = spec.bounds;
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let mut body = Player::spawn(self.x + offset, self.y);
+        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0,
+            half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
+        body.vy = v[1];
+        body.step(p, v[0].signum(), false, count, edge);
+        let moved = [body.x - (self.x + offset), body.y - self.y];
+        let blocked_x = moved[0] != v[0] / 60;
+        let blocked_y = moved[1] != v[1] / 60;
+        if self.recoil_left != 0 {
+            self.recoil_left -= 1;
+            p.speed = self.recoil[0].abs();
+            body.vy = self.recoil[1];
+            body.step(p, self.recoil[0].signum(), false, count, edge);
+        }
+        self.x = body.x - offset;
+        self.y = body.y;
+        let side = if blocked_y && v[1] > 0 { Some(Side::Up) }
+            else if blocked_x && v[0] > 0 { Some(Side::Right) }
+            else if blocked_y && v[1] < 0 { Some(Side::Down) }
+            else if blocked_x && v[0] < 0 { Some(Side::Left) }
+            else { None };
+        if let Some(side) = side { fly.controller.bonk(side); }
+    }
+    /// One 60 Hz step of the Baldur: FSM tick from last frame's contacts, then
+    /// the gravity body (scale 0.8) moves at the held x velocity and the
+    /// Recoil displacement, and this frame's wall/ground contacts are kept.
+    fn advance_baldur(&mut self, roller: &mut BaldurRuntime, spec: &ActorSpec, count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext) {
+        use hk_sim::baldur::Action;
+        use hk_sim::runner_senses as q;
+        roller.animation_tick = roller.animation_tick.saturating_add(1);
+        let b = spec.bounds;
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let pos = [self.x, self.y];
+        // Alert Range New: 21.14 x 1.9 trigger box at y +0.31 against the hero body.
+        let hb = context.hero_body;
+        let alert = [pos[0] - 692715, pos[1] - 41943, pos[0] + 692715, pos[1] + 82575];
+        let in_alert_range = alert[0] <= hb[2] && alert[2] >= hb[0] && alert[1] <= hb[3] && alert[3] >= hb[1];
+        let can_see_hero = match q::line_of_sight(pos, context.hero, in_alert_range, count, edge) {
+            Ok(value) => value,
+            Err(q::QueryError::ZeroLengthSight) => false,
+            Err(_) => panic!("Baldur LOS outside validated coordinates"),
+        };
+        let senses = hk_sim::baldur::Senses { actor_x: self.x, hero_x: context.hero[0], can_see_hero, wall: roller.wall, grounded: self.grounded };
+        let actions = roller.controller.tick(senses);
+        for action in actions.iter() {
+            match action {
+                Action::VelocityX(v) => roller.vx = v,
+                Action::Velocity(v) => { roller.vx = v[0]; self.vy = v[1]; self.grounded = false; }
+                Action::Play(clip) => { roller.clip = clip; roller.animation_tick = 0; }
+                Action::Facing(f) => self.walk.direction = f,
+            }
+        }
+        let mut body = Player::spawn(self.x + offset, self.y);
+        body.vy = self.vy;
+        body.grounded = self.grounded;
+        let mut p = Params { speed: roller.vx.abs(), jump: 0, gravity: 48 * ONE, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0,
+            half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
+        if self.spawn_state == SpawnState::Pending {
+            if !hk_sim::resolve_actor_spawn(&mut body, p, count, edge) { self.spawn_state = SpawnState::Blocked; return; }
+            self.spawn_state = SpawnState::Ready;
+        }
+        let old_x = body.x;
+        body.step(p, roller.vx.signum(), false, count, edge);
+        roller.wall = roller.vx != 0 && body.x != old_x + roller.vx / 60;
+        if self.recoil_left != 0 {
+            self.recoil_left -= 1;
+            p.speed = self.recoil[0].abs();
+            p.gravity = 0;
+            body.vy = self.recoil[1];
+            body.step(p, self.recoil[0].signum(), false, count, edge);
+        }
+        self.vy = body.vy;
+        self.grounded = body.grounded;
         self.x = body.x - offset;
         self.y = body.y;
     }
@@ -729,6 +865,8 @@ impl EnemyWorld {
                             }
                             if let Some(climber)=&mut actor.climber {climber.controller.die();}
                             if let Some(fly)=&mut actor.vengefly {fly.controller.die();}
+                            if let Some(fly)=&mut actor.gruzzer {fly.controller.die();}
+                            if let Some(roller)=&mut actor.baldur {roller.controller.die();}
                             state.enemy_death_particles(region,actor.source_id,[actor.x,actor.y,0]);
                             if let Some(corpse_spec)=spec.corpse {
                                 let mut corpse=hk_sim::Corpse::spawn(corpse_spec,actor.x,actor.y,nail.kind,
@@ -780,6 +918,17 @@ impl EnemyWorld {
                                 }
                             }
                         } else if begin_recoil {
+                        if let (Some(roller),true)=(&mut actor.baldur,nail.kind<2 && !actor.health.dead) {
+                            // Recoil's global RECOIL HORIZONTAL: Recoil Decel resets the roll speed.
+                            let actions=roller.controller.horizontal_recoil();
+                            for action in actions.iter() {
+                                match action {
+                                    hk_sim::baldur::Action::VelocityX(v)=>roller.vx=v,
+                                    hk_sim::baldur::Action::Play(clip)=>{roller.clip=clip;roller.animation_tick=0;}
+                                    _=>{}
+                                }
+                            }
+                        }
                         actor.recoil_left = spec.recoil_ticks;
                         actor.recoil = match nail.kind {
                             2 => [0, spec.recoil_speed],
@@ -830,6 +979,10 @@ impl EnemyWorld {
             } else if let Some(fly)=actor.vengefly {
                 // The source sprite faces left (-1 native, +1 mirrored), as the Crawler.
                 (fly.clip(spec),fly.animation_tick,(actor.x,actor.y),fly.controller.facing())
+            } else if let Some(fly)=actor.gruzzer {
+                (spec.walk_clip,fly.animation_tick,(actor.x,actor.y),fly.controller.facing())
+            } else if let Some(roller)=actor.baldur {
+                (roller.clip(spec),roller.animation_tick,(actor.x,actor.y),roller.controller.facing())
             } else {
                 (if actor.walk.turn_remaining!=0 {spec.turn_clip}else{spec.walk_clip},
                     actor.walk.animation_tick,(actor.x,actor.y),actor.walk.direction)
@@ -972,7 +1125,7 @@ mod runner_runtime_tests {
         walk:hk_sim::WalkParams {speed:ONE+ONE/2,turn_ticks:10,turn_cooldown_ticks:60},
         initial_direction:-1,random_start_direction:false,walk_clip:0,turn_clip:1,
         corpse:Some(hk_sim::CorpseSpec {air_clip:2,land_clip:2,bounds:[-ONE/2,-ONE,ONE/2,0],
-            spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false}),
+            spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0}),
         recoil_speed:10*ONE,recoil_ticks:9,
     };
     // Source-free six-clip bank with the real Runner rates/lengths. Each clip's
@@ -1047,7 +1200,7 @@ mod runner_runtime_tests {
         assert!(core::mem::size_of::<RunnerRuntime>()<=64);
         // Runner, Climber and Vengefly runtimes are all optional fields; folding
         // them into one enum would give back about 120 bytes per actor.
-        assert!(core::mem::size_of::<Actor>()<=288);
+        assert!(core::mem::size_of::<Actor>()<=352);
         println!("RunnerRuntime={} Actor={} EnemyWorld={}",core::mem::size_of::<RunnerRuntime>(),
             core::mem::size_of::<Actor>(),core::mem::size_of::<EnemyWorld>());
     }

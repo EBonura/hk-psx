@@ -301,7 +301,7 @@ def generate(report):
             'door_debris': debris_index[debris_catalog[generated_debris(region.get('door_debris', []), scene)]],
             'particle_bank': -1 if not particle_data else bank_index[particle_banks[(scene, repr(particle_data['frames']))]],
             'grass_impact': -1 if impact_spec is None else impact_catalog.index(impact_spec)}
-    if len(impact_catalog) > 8:
+    if len(impact_catalog) > 32:
         raise ValueError('grass impact metadata variant budget')
     out.append('pub static IMPACT_CATALOG: &[crate::impact::Spec] = &[' + ','.join(impact_catalog) + '];')
     # Scene owner per catalogue slot: the only per-view table left in the guest.
