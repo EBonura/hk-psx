@@ -249,19 +249,24 @@ def generate(report):
             arrays=['&['+','.join('['+','.join(map(str,v))+']'for v in group)+']'for group in frames]
             out.append(f'static {name}: particles::Bank = particles::Bank '+'{frames:['+','.join(arrays)+f'],styles:PARTICLE_STYLES_{scene},death_offset:'+str(data['death_offset'])+'};')
     if len(particle_banks)>8:raise ValueError('particle metadata variant budget')
-    # One static per distinct actor spec; regions reference them, since the
-    # scene actor bank gives every region of a scene the same clip indices.
-    actor_statics = {}
-    region_actor_refs = []
+    # One static per distinct actor spec per scene; the bank's actor objects
+    # carry the scene-local index (`spec_index`) into SCENE_ACTORS[scene].
+    scene_actor_specs = {scene: [] for scene in range(SCENES)}
     for region in regions:
-        refs = []
-        for text in generated_actor_specs(region):
-            key = (region['scene_id'], text)
-            if key not in actor_statics:
-                actor_statics[key] = f"ACTOR_S{region['scene_id']}_{len(actor_statics)}"
-                out.append(f'static {actor_statics[key]}: hk_sim::ActorSpec = {text};')
-            refs.append('&' + actor_statics[key])
-        region_actor_refs.append('&[' + ','.join(refs) + ']')
+        supported = [actor for actor in region.get('actors', []) if actor['movement_supported']]
+        texts = generated_actor_specs(region)
+        if len(supported) != len(texts):
+            raise ValueError('supported actor records and generated specs disagree')
+        specs = scene_actor_specs[region['scene_id']]
+        for actor, text in zip(supported, texts):
+            if text not in specs:
+                specs.append(text)
+            actor['spec_index'] = specs.index(text)
+    for scene, specs in scene_actor_specs.items():
+        if len(specs) > 32:
+            raise ValueError('scene actor pool exceeds 32')
+        out.append(f'static SCENE_ACTORS_{scene}: &[hk_sim::ActorSpec] = &[' + ','.join(specs) + '];')
+    out.append('pub static SCENE_ACTORS: &[&[hk_sim::ActorSpec]] = &[' + ','.join(f'SCENE_ACTORS_{scene}' for scene in range(SCENES)) + '];')
     out.append('pub static REGIONS: &[Region] = &[')
     for region_index, region in enumerate(regions):
         scene = integer(region['scene_id'], SCENES, 'scene index')
@@ -270,25 +275,18 @@ def generate(report):
             return ids(integer(v, draw_count, 'draw index') for v in values)
         # Grass, breakables, their mask fades, remote masks, hazards and checkpoints
         # live only in the HKWMTA01 bank (tools/world_metadata.py).
-        reveal_bindings=[];reveal_owned=set()
-        for binding in region.get('reveal_mask_bindings',[]):
-            controller=integer(binding['controller'],len(reveal_scenes.get(str(scene),{}).get('controllers',[])),'reveal controller')
-            draw=integer(binding['draw'],draw_count,'reveal draw')
-            if draw in reveal_owned:raise ValueError('multiple reveal owners for draw')
-            reveal_owned.add(draw)
-            reveal_bindings.append(f'crate::reveal_masks::RevealMaskBinding {{controller:{controller},draw:{draw}}}')
+        # Reveal bindings and actor references live in the HKWMTA01 bank.
         from effects import generated_debris
         debris_spec=debris_catalog[generated_debris(region.get("door_debris",[]),scene)]
         particle_data=region.get('particle_effects')
         particle_bank='None' if not particle_data else 'Some('+particle_banks[(scene,repr(particle_data['frames']))]+')'
         particle_emitters='&[]' if not particle_data else f'PARTICLE_EMITTERS_{scene}'
-        actors = region_actor_refs[region_index]
         impact=region.get('grass_impact')
         impact_spec='None' if not impact else 'Some(crate::impact::Spec {clips:['+','.join(str(integer(i,128,'impact clip'))for i in impact['clips'])+'],ticks:'+str(integer(impact['ticks'],65536,'impact duration'))+'})'
         out.append(f'Region {{global_id:{region["chunk_id"]},scene:{scene},flat_floor_heights:FLAT_FLOOR_HEIGHTS[{region["chunk_id"]-1}],bounds:' + rect(region['activation_bounds']) +
                    ',collision_bounds:' + rect(region.get('collision_bounds',region['activation_bounds'])) +
                    ',particle_bank:'+particle_bank+',grass_emitters:'+particle_emitters+',door_debris:'+debris_spec+',camera:' + rect(region['camera_bounds']) + ',grass_impact:'+impact_spec+
-                   ',reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+',reveal_bindings:&['+','.join(reveal_bindings)+'],actors:' + actors + '},')
+                   ',reveal_masks:REVEAL_MASKS_SCENE_'+str(scene)+'},')
     out.append('];\npub static GATES: &[Gate] = &[')
     by_name = {scene['scene_name']: scene for scene in report['scenes']}
     for scene in report['scenes']:

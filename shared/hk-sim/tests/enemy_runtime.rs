@@ -43,6 +43,9 @@ mod world {
         pub collision_bounds: [i32; 4],
         pub actors: &'static [&'static hk_sim::ActorSpec],
     }
+    pub fn region_actors(region: &Region) -> impl Iterator<Item = &'static hk_sim::ActorSpec> {
+        region.actors.iter().copied()
+    }
     pub struct State;
     std::thread_local!{pub static DEATHS:std::cell::RefCell<Vec<(u32,[i32;3])>>=const{std::cell::RefCell::new(Vec::new())};}
     impl State {

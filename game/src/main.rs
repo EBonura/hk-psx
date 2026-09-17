@@ -66,7 +66,7 @@ pub static mut HK_NAIL_ATTACK_COUNT: u32 = 0;
 #[no_mangle] pub static mut HK_REVEAL_MASKS_PARTIAL:u32=0;
 #[no_mangle] pub static mut HK_REVEAL_MASKS_VISIBLE:u32=0;
 fn apply_reveal_masks(state:&reveal_masks::State,region:&world::Region) {
-    let counts=state.apply(region.reveal_masks,region.reveal_bindings);
+    let counts=state.apply(region.reveal_masks,world::reveal_bindings(region));
     unsafe {HK_REVEAL_MASKS_HIDDEN=counts.hidden;HK_REVEAL_MASKS_PARTIAL=counts.partial;HK_REVEAL_MASKS_VISIBLE=counts.visible;}
 }
 fn knight_frame(room: &Room, player: &Player, focus: &hk_sim::Focus) -> usize {
@@ -248,17 +248,21 @@ fn main() {
             sim_clock=psx_rt::interrupts::vblank_count();
             input::start(sim_clock);
         }
+        // Region entry follows a scene load or a boundary crossing without a
+        // poll since the last frame. Service the pad around each bank-driven
+        // pass so no stretch between polls approaches a VBlank.
+        input::checkpoint();
         let r=&world::REGIONS[region_id];
         let meta_region=cache.world_region_index(region_id).expect("admitted world metadata covers the selected region");
         assert!(ambience::set_scene(r.scene as u8));
         enemies.sync_region(r);
         reveals.scene_ready(r.scene,r.reveal_masks);
+        input::checkpoint();
         let bank=vram.activate(region_id);
         render::init(&cache.room(),bank,region_id,cache.coverage());
-        // Region entry follows a scene load or a boundary crossing without a
-        // poll since the last frame; service the pad before the state passes.
         input::checkpoint();
         state.apply(r);apply_reveal_masks(&reveals,r);
+        input::checkpoint();
         geo_render::apply(geo,&mut state,region_id);
         lifeblood::apply(life,&mut state,region_id);
         great_door::apply(&door,&mut state,region_id);

@@ -352,7 +352,7 @@ impl EnemyWorld {
         }
     }
     pub fn sync_region(&mut self, region: &Region) {
-        for spec in region.actors {
+        for spec in crate::world::region_actors(region) {
             if self
                 .actors
                 .iter()
@@ -417,9 +417,7 @@ impl EnemyWorld {
             .flatten()
             .filter(|a| a.scene == region.scene)
         {
-            let Some(spec) = region
-                .actors
-                .iter()
+            let Some(spec) = crate::world::region_actors(region)
                 .find(|s| s.source_id == actor.source_id)
             else {
                 continue;
@@ -526,9 +524,7 @@ impl EnemyWorld {
             .flatten()
             .filter(|a| a.scene == region.scene)
         {
-            let Some(spec) = region
-                .actors
-                .iter()
+            let Some(spec) = crate::world::region_actors(region)
                 .find(|s| s.source_id == actor.source_id)
             else {
                 continue;
