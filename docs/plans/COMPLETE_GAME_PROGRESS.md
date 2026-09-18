@@ -1199,6 +1199,64 @@ deeper Crossroads gates crossroads-exit used to reach. These want scripted
 probe-authored routes, which `tools/route_probe.py` now supports properly since
 it prints every tick rather than every tenth.
 
+## P14 step 2: the four movement abilities (builds 116 to 118)
+
+The Mothwing Cloak, the Mantis Claw's wall slide and wall jump, the Monarch
+Wings double jump and the Crystal Heart, all bound to source constants rather
+than to feel. None of the admitted scenes contains an ability pickup, so each
+one is reachable only through its own Cheats row for now: L1 dashes, R1 holds
+to charge the Crystal Heart, and the Claw and Wings need no button of their
+own.
+
+Where the numbers come from. `DASH_SPEED` 20, `DASH_TIME` 0.25, `DASH_COOLDOWN`
+0.6 and `DASH_QUEUE_STEPS` 10 are serialized on HeroController, as are
+`WALLSLIDE_SPEED` -8, `WALL_STICKY_STEPS` 3, `WJ_KICKOFF_SPEED` 16,
+`WJLOCK_STEPS_SHORT` 5, `WJLOCK_STEPS_LONG` 10 and `DOUBLE_JUMP_STEPS` 9.
+`DOUBLE_JUMP_QUEUE_STEPS` 10 and the three-step wing flourish are CIL
+literals, read the same way `JUMP_QUEUE_STEPS` was in step 1. The Crystal Heart
+is not in HeroController at all: its `SUPER_DASH_SPEED` field of 20 is never
+read, and the Hero's Superdash PlayMaker FSM supplies its own `Superdash Speed`
+of 30, a `Charge Time` of 0.8 s, a `Cancelable Time` of 0.2 s and a 0.5 s Hit
+Wall recovery. `host/superdash.py` binds those from the FSM and asserts the
+shape it read, including that `Superdash Speed neg` is the negation Init
+computes rather than the zero it serializes with.
+
+Behaviour worth recording, because it is not what a re-implementation from
+memory would produce. `WALL_STICKY_STEPS` is an unstick counter, not a stick
+one: letting go of the stick keeps the Knight on the wall, and only holding
+away for three steps detaches. A wall jump locks horizontal velocity for
+`WJLOCK_STEPS_LONG`, shedding the kickoff down to `RUN_SPEED` across the lock,
+but pressing back releases it early once `WJLOCK_STEPS_SHORT` have passed. The
+double jump spends its first steps on the wings and cannot be cancelled by
+releasing the button. And the source's jump decision is ordered: wall jump
+first, then a ground jump, then a double jump, so a jump pressed against a wall
+never becomes a double jump.
+
+`Params` gained fourteen fields across these, and the P14 tail will add more.
+Every previous addition broke roughly ten struct literals belonging to the
+enemy, corpse, Shade and lifeblood bodies, which reuse `Player::step` purely
+for its collision and set four fields out of twenty-four. Those literals now
+spread `Params::ZERO`, so the cascade does not recur.
+
+The wall probe. `CheckTouchingWall` is a raycast in the source, so contact
+holds whether or not the wall is being pushed into, which a collision clamp
+alone cannot reproduce. A probe of one sixteenth of a unit outside each side,
+against the same vertical edges the sweep uses, does reproduce it. It costs an
+extra edge sweep per body per tick, and every enemy body goes through the same
+`step`, so it runs only for a body that has the Claw.
+
+Verification: 77 hk-sim tests, including 5 for the dash, 6 for the wall and
+double jump and 5 for the Crystal Heart, plus the 8 routes and the 4
+power-cut interruption points on the final CUE.
+
+Not done here, and recorded rather than hidden: the Wall Slide, Walljump, Dash
+and Double Jump clips exist in the Knight's animation table but are not cooked,
+so an ability currently plays the Fall clip; the Superdash's NORM CANCEL out of
+the Cancelable window is wired to jump only, not to dash or attack, which waits
+for the attack integration in step 4; SLOPE CANCEL, the Zero Timer that ends a
+travel stalled against a slope, is not modelled; and none of the charge, blast,
+trail or Hit Wall presentation is cooked.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

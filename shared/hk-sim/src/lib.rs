@@ -58,6 +58,13 @@ pub struct Params {
     pub double_jump_delay_ticks: u16,
     pub double_jump_ticks: u16,
     pub double_jump_queue_ticks: u16,
+    /// Crystal Heart. The travel speed is the Superdash FSM's own variable,
+    /// which overrides the HeroController's unread SUPER_DASH_SPEED.
+    pub super_dash_speed: i32,
+    pub super_dash_charge_ticks: u16,
+    /// The travel cannot be cancelled for this long; a wall ends it either way.
+    pub super_dash_cancel_ticks: u16,
+    pub super_dash_recover_ticks: u16,
     pub half_width: i32,
     pub bottom: i32,
     pub top: i32,
@@ -73,8 +80,21 @@ impl Params {
         dash_queue_ticks: 0, wallslide_speed: 0, wall_sticky_ticks: 0,
         walljump_speed: 0, walljump_decel: 0, wall_lock_short: 0, wall_lock_long: 0,
         double_jump_speed: 0, double_jump_delay_ticks: 0, double_jump_ticks: 0,
-        double_jump_queue_ticks: 0, half_width: 0, bottom: 0, top: 0,
+        double_jump_queue_ticks: 0, super_dash_speed: 0, super_dash_charge_ticks: 0,
+        super_dash_cancel_ticks: 0, super_dash_recover_ticks: 0,
+        half_width: 0, bottom: 0, top: 0,
     };
+}
+/// Crystal Heart, as the Hero's Superdash FSM runs it: hold to charge against
+/// the ground or a wall, release once charged to travel, and stop at a wall.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SuperDash {
+    Off,
+    Charging(u16),
+    Ready,
+    Travelling(u16),
+    /// The Hit Wall recovery, during which the Knight has no control.
+    Recovering(u16),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Player {
@@ -114,6 +134,8 @@ pub struct Player {
     pub double_jumped: bool,
     pub double_jump_tick: u16,
     pub has_double_jump: bool,
+    pub super_dash: SuperDash,
+    pub has_super_dash: bool,
     pub animation: u16,
     pub animation_tick: u32,
     pub land_tick: u16,
@@ -150,6 +172,8 @@ impl Player {
             double_jumped: false,
             double_jump_tick: 0,
             has_double_jump: false,
+            super_dash: SuperDash::Off,
+            has_super_dash: false,
             animation: 0,
             animation_tick: 0,
             land_tick: 0,
@@ -189,6 +213,27 @@ impl Player {
             self.dash_queue += 1;
         }
     }
+    /// The Superdash FSM's button, sampled once per tick before `step`.
+    /// Charging needs the ground or a wall slide, letting go early cancels,
+    /// and letting go once charged launches along the facing.
+    pub fn super_dash_input(&mut self, p: Params, held: bool) {
+        self.super_dash = match self.super_dash {
+            SuperDash::Off if held && self.has_super_dash && (self.grounded || self.wall_sliding) => {
+                // The entry call is the charge's first tick.
+                SuperDash::Charging(1)
+            }
+            // Ground Charge also watches Y Speed < -0.1, so walking off the
+            // ledge being charged on drops the charge.
+            SuperDash::Charging(_) if !held || (!self.grounded && !self.wall_sliding) => SuperDash::Off,
+            SuperDash::Charging(t) if t + 1 >= p.super_dash_charge_ticks => SuperDash::Ready,
+            SuperDash::Charging(t) => SuperDash::Charging(t + 1),
+            SuperDash::Ready if !held => {
+                self.vy = 0;
+                SuperDash::Travelling(0)
+            }
+            other => other,
+        };
+    }
     pub fn step(
         &mut self,
         p: Params,
@@ -201,6 +246,7 @@ impl Player {
         if dir != 0 {
             self.facing = dir;
         }
+        let jump_pressed = jump && !self.was_jump;
         // Source: pressing back out of a wall jump releases the lock once
         // WJLOCK_STEPS_SHORT have passed; otherwise it runs its full length.
         if self.wall_locked && dir == -self.wall_jumped && self.wall_lock_ticks >= p.wall_lock_short {
@@ -311,8 +357,18 @@ impl Player {
         if self.grounded {
             self.air_dashed = false;
         }
+        let super_dashing = matches!(self.super_dash, SuperDash::Travelling(_));
+        // Relinquish Control: a charge, a charged hold and the Hit Wall
+        // recovery all pin the Knight horizontally, but gravity keeps running
+        // so a ground charge stays on its floor.
+        let pinned = matches!(self.super_dash,
+            SuperDash::Charging(_) | SuperDash::Ready | SuperDash::Recovering(_));
         let dashing = self.dash_left > 0;
-        let (dir, speed) = if dashing {
+        let (dir, speed) = if super_dashing {
+            // SetGravity2dScale(0): the travel owns velocity outright.
+            self.vy = 0;
+            (self.facing, p.super_dash_speed)
+        } else if dashing {
             self.dash_left -= 1;
             // AffectedByGravity(false): the dash holds its own velocity.
             self.vy = 0;
@@ -323,7 +379,9 @@ impl Player {
             if self.wall_sliding {
                 self.vy = self.vy.max(p.wallslide_speed);
             }
-            if self.wall_locked {
+            if pinned {
+                (0, 0)
+            } else if self.wall_locked {
                 let locked = (self.wall_jumped, self.walljump_speed);
                 self.wall_lock_ticks += 1;
                 if self.wall_lock_ticks > p.wall_lock_long {
@@ -388,8 +446,10 @@ impl Player {
         // Source CheckTouchingWall is a raycast, so contact holds whether or
         // not the wall is being pushed into. A probe just outside each side
         // reproduces that against the same vertical edges the sweep uses.
+        // Only the Claw reads it, and every enemy body reuses this step, so
+        // the extra edge sweep is skipped for everything that cannot wall jump.
         self.touching_wall = 0;
-        if !self.grounded {
+        if self.has_walljump && !self.grounded {
             const PROBE: i32 = ONE / 16;
             for i in 0..count {
                 let [x0, y0, x1, y1] = edge(i);
@@ -410,6 +470,19 @@ impl Player {
             self.double_jumped = false;
             self.double_jumping = false;
         }
+        self.super_dash = match self.super_dash {
+            // Hit Wall: the sweep refused part of the step, so a wall is there.
+            SuperDash::Travelling(_) if nx != ox + dir * speed / 60 => {
+                SuperDash::Recovering(p.super_dash_recover_ticks)
+            }
+            // Cancelable: once the locked window passes, a jump gets out of it.
+            // The source consumes that press; here it also feeds the jump queue.
+            SuperDash::Travelling(t) if t >= p.super_dash_cancel_ticks && jump_pressed => SuperDash::Off,
+            SuperDash::Travelling(t) => SuperDash::Travelling(t + 1),
+            SuperDash::Recovering(t) if t <= 1 => SuperDash::Off,
+            SuperDash::Recovering(t) => SuperDash::Recovering(t - 1),
+            other => other,
+        };
         self.x = nx;
         self.y = ny;
         if self.grounded && !was_ground {
@@ -726,5 +799,101 @@ mod wall_tests {
         p.was_jump = false;
         p.step(P, 0, true, 1, room());
         assert!(!p.double_jumping, "one per airtime");
+    }
+}
+
+
+#[cfg(test)]
+mod super_dash_tests {
+    use super::*;
+    const P: Params = Params {
+        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
+        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
+        super_dash_speed: 30 * ONE, super_dash_charge_ticks: 48,
+        super_dash_cancel_ticks: 12, super_dash_recover_ticks: 30,
+        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+    };
+    const EDGES: [[i32; 4]; 2] = [[-40 * ONE, 0, 40 * ONE, 0], [4 * ONE, 0, 4 * ONE, 40 * ONE]];
+    fn room() -> impl Fn(usize) -> [i32; 4] {
+        |i| EDGES[i]
+    }
+    fn charged() -> Player {
+        let mut p = Player::spawn(-10 * ONE, ONE);
+        p.has_super_dash = true;
+        p.grounded = true;
+        p.facing = 1;
+        for _ in 0..P.super_dash_charge_ticks {
+            p.super_dash_input(P, true);
+            p.step(P, 0, false, 2, room());
+        }
+        assert_eq!(p.super_dash, SuperDash::Ready);
+        p
+    }
+    #[test]
+    fn without_the_heart_the_button_does_nothing() {
+        let mut p = Player::spawn(0, ONE);
+        p.grounded = true;
+        p.super_dash_input(P, true);
+        assert_eq!(p.super_dash, SuperDash::Off);
+    }
+    #[test]
+    fn letting_go_before_the_charge_completes_gives_control_back() {
+        let mut p = Player::spawn(0, ONE);
+        p.has_super_dash = true;
+        p.grounded = true;
+        for _ in 0..P.super_dash_charge_ticks - 1 {
+            p.super_dash_input(P, true);
+            p.step(P, 0, false, 2, room());
+        }
+        assert!(matches!(p.super_dash, SuperDash::Charging(_)));
+        p.super_dash_input(P, false);
+        assert_eq!(p.super_dash, SuperDash::Off);
+    }
+    #[test]
+    fn leaving_the_ground_drops_the_charge() {
+        let mut p = charged();
+        p.super_dash = SuperDash::Charging(4);
+        p.grounded = false;
+        p.super_dash_input(P, true);
+        assert_eq!(p.super_dash, SuperDash::Off, "Ground Charge watches Y Speed");
+    }
+    #[test]
+    fn a_charged_release_travels_at_its_own_speed_until_a_wall() {
+        let mut p = charged();
+        p.super_dash_input(P, false);
+        assert_eq!(p.super_dash, SuperDash::Travelling(0));
+        let start = p.x;
+        p.step(P, 0, false, 2, room());
+        assert_eq!(p.x - start, P.super_dash_speed / 60, "the FSM speed, not RUN_SPEED");
+        assert_eq!(p.vy, 0, "SetGravity2dScale zeroes it for the travel");
+        for _ in 0..200 {
+            p.step(P, 0, false, 2, room());
+            if matches!(p.super_dash, SuperDash::Recovering(_)) {
+                break;
+            }
+        }
+        assert!(matches!(p.super_dash, SuperDash::Recovering(_)), "stopped at the wall");
+        assert_eq!(p.x, 4 * ONE - P.half_width);
+        for _ in 0..P.super_dash_recover_ticks {
+            let held = p.x;
+            p.step(P, -1, false, 2, room());
+            assert_eq!(p.x, held, "no control through the Hit Wall recovery");
+        }
+        p.step(P, -1, false, 2, room());
+        assert_eq!(p.super_dash, SuperDash::Off);
+        assert!(p.x < 4 * ONE - P.half_width, "control is back");
+    }
+    #[test]
+    fn a_jump_only_cancels_the_travel_after_the_locked_window() {
+        let mut p = charged();
+        p.super_dash_input(P, false);
+        for _ in 0..P.super_dash_cancel_ticks {
+            p.was_jump = false;
+            p.step(P, 0, true, 2, room());
+            assert!(matches!(p.super_dash, SuperDash::Travelling(_)), "locked");
+        }
+        p.was_jump = false;
+        p.step(P, 0, true, 2, room());
+        assert_eq!(p.super_dash, SuperDash::Off);
     }
 }
