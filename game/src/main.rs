@@ -319,7 +319,7 @@ fn main() {
             if let Some(f)=door_frame {prims+=great_door::draw(&room,f,camera);}
             prims+=geo_render::draw(geo,region_id,camera);
             prims+=lifeblood::draw(life,region_id,camera);render::kick_ready();
-            if !vitals.dead && (vitals.invulnerable_ticks==0 || frame%4<2) {
+            if !vitals.dead && !door.hidden() && (vitals.invulnerable_ticks==0 || frame%4<2) {
                 draw_frame(&room,body_frame,&player,camera);prims+=1;
             }
             if let Some(f)=effect_frame {draw_frame(&room,f,&player,camera);prims+=1;}
@@ -438,6 +438,7 @@ fn main() {
                             let was_grounded=player.grounded;
                             let jump=!locked && !read_consumes && pad.is_held(button::CROSS);
                             let could_jump=was_grounded && !player.was_jump && jump && vitals.can_control() && nail_response.bounce_left==0;
+                            if door.drop_starts() {player.vy=-12*ONE;}
                             if door.apply_entry(&mut player) {
                                 // Source entry owns position/animation while input is locked.
                             } else if let Some((vx,vy))=vitals.recoil_velocity(VITAL_PARAMS) {
@@ -517,9 +518,17 @@ fn main() {
                                         geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                                         vitals.add_blue_health(life.leave_scene());
                                         dialogue::cancel();state.reset_scene(r.scene);reveals.leave_scene();enemies.reset_scene(r.scene);runner_audio::reset();audio::reset_movement();player=Player::spawn(spawn[0],spawn[1]);
+                                        // The Great Door pair walks in through its audited entries; every
+                                        // other side gate uses the same source sequence toward the scene
+                                        // interior (a right exit enters at the destination's left gate).
                                         if side_entry {
-                                            if door_exit {door.begin_entry(g.target_scene);}else{door.begin_gate_entry(g.target_scene);}
+                                            if door_exit {door.begin_entry(g.target_scene);}else{door.begin_gate_entry(g.target_scene,if g.target_scene==0 {-1}else{1});}
                                             player.grounded=true;
+                                        } else if g.side==1||g.side==2 {
+                                            door.begin_gate_entry(g.target_scene,if g.side==2 {1}else{-1});
+                                            player.facing=if g.side==2 {1}else{-1};player.grounded=true;
+                                        } else if g.side==3 {
+                                            door.begin_top_entry(g.target_scene);
                                         } else {player.vy=g.entry_vy;}
                                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();target=Some(id);safe=(player.x,player.y,id);safe_facing=player.facing;gate_cooldown=90;
                                     }
