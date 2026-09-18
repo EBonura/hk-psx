@@ -280,6 +280,8 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     breakables=breakable_sources(sc,region.get('interaction_bounds',region['activation_bounds']),errors=unsupported)
     actors=actor_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
     hazards=hazard_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
+    from benches import bench_sources
+    benches=bench_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
     forced_renderers=cut_renderers|{i for b in breakables for key in ('off_renderer_ids','on_renderer_ids') for i in b[key]}
     forced_renderers|={int(sid.split(':')[-1]) for b in breakables for fade in b.get('mask_fades',[]) for sid in fade['renderer_sources']}
     for i,(typ,t) in sc.objects.items():
@@ -341,7 +343,11 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     nails=nail_sources(s,rf,hero_gid)
     frames=[];clips=[];framecache={};textures={}
     focus_clip_base=len(CLIPS)+len(nails)
-    for clip_index,name in enumerate(CLIPS+tuple(n['clip'] for n in nails)+FOCUS_CLIPS):
+    # Bench clips ride only in views that contain a bench trigger; their index
+    # is constant (BENCH_CLIP_BASE) because actor art is appended afterwards.
+    from benches import BENCH_CLIPS
+    knight_clip_names=CLIPS+tuple(n['clip'] for n in nails)+FOCUS_CLIPS+(BENCH_CLIPS if benches else ())
+    for clip_index,name in enumerate(knight_clip_names):
         nail=nails[clip_index-len(CLIPS)] if len(CLIPS)<=clip_index<focus_clip_base else None
         c=next(c for c in animation['clips'] if c['name']==name);start=len(frames)
         for fr in c['frames']:
@@ -434,7 +440,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         dump(ROOT/'.hkpsx/vitals-source.json',vital_values)
         (ROOT/'data/params.rs').write_text(params)
         dump(ROOT/'.hkpsx/combat-source.json',{'hero':s.sid(hero),'nails':nails,'grass':grass,'source_methods':['HeroController.Attack','HeroController.DoAttack','HeroController.CanAttack','HeroAnimationController.Update','NailSlash.StartSlash','NailSlash.FixedUpdate','GrassCut.OnTriggerEnter2D','GrassCut.ShouldCut','GrassBehaviour.Start'],'semantics':{'attack_seconds':constants['ATTACK_DURATION'],'cooldown_seconds':constants['ATTACK_COOLDOWN_TIME'],'alternate_reset_seconds':constants['ALT_ATTACK_RESET'],'polygon_source_fixed_steps':[1,5],'source_fixed_dt':dt,'first_horizontal_body_clip':'SlashAlt','first_horizontal_effect':'SlashEffect'},'limitations':['This attack-extraction report does not describe the separate world, damage, enemy and pogo runtime; arbitrary PlayMaker execution remains unsupported','Grass cut renderer switch only; source cut particles, sound and shader bending omitted','Attack input buffering and animation cancellation are not implemented','FixedUpdate collision phase resampled to 60Hz; original runtime trajectories not compared']})
-    dump(out/'scene.json',{'tilemap_fill':tilemap_summary,'draws':draws,'frames':frames,'clips':clips,'grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'edges':edges,'atlas':atlas.entries,'texture_request_to_canonical':atlas.request_map})
+    dump(out/'scene.json',{'tilemap_fill':tilemap_summary,'draws':draws,'frames':frames,'clips':clips,'grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'benches':benches,'edges':edges,'atlas':atlas.entries,'texture_request_to_canonical':atlas.request_map})
     if write_shared:
         for i,page in enumerate(atlas.pages):(out/f'page-{i}.bin').write_bytes(page)
         (out/'palettes.bin').write_bytes(b''.join(atlas.palettes))
@@ -452,7 +458,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     for e in edges:pack.extend(struct.pack('<4i',*[round(v*65536) for p in [e['a'],e['b']] for v in p]))
     pack.extend(b''.join(atlas.palettes));pack.extend(b''.join(atlas.pages));pack.extend(atlas.stream);(out/'room.hk').write_bytes(pack)
     if len(edges)>1024 or len(draws)>1024 or len(pack)>ROOM_BYTE_BUDGET:raise ValueError('region RAM/draw/edge budget exceeded')
-    report={'tilemap_fill':tilemap_summary,'source':str(s.directory),'scene':region.get('scene_name','Tutorial_01'),'scene_file':scene_file,'knight_collection':s.sid(col_o),'knight_animation':s.sid(anim_o),'pack_sha256':hashlib.sha256(pack).hexdigest(),'pack_bytes':len(pack),'draws':len(draws),'textures':len(atlas.entries),'pages':len(atlas.pages),'edges':len(edges),'format':'HKROOM02','scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_request_to_canonical':atlas.request_map,'stream_bytes':len(atlas.stream),'animation_bytes':atlas.animation_bytes,'alpha_cover_bytes':atlas.alpha_cover_bytes,'format_features':atlas.flags,'stream_textures':len(atlas.streamed),'static_texture_bytes':len(atlas.pages)*32768,'palette_bytes':len(atlas.palettes)*32,'focus_clips':{name:focus_clip_base+i for i,name in enumerate(FOCUS_CLIPS)},'focus_parameter_source':'.hkpsx/focus-source.json','animation_storage':'resident RAM bank with bounded VRAM frame cache','grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'edge_sources':[e['source'] for e in edges]}
+    report={'tilemap_fill':tilemap_summary,'source':str(s.directory),'scene':region.get('scene_name','Tutorial_01'),'scene_file':scene_file,'knight_collection':s.sid(col_o),'knight_animation':s.sid(anim_o),'pack_sha256':hashlib.sha256(pack).hexdigest(),'pack_bytes':len(pack),'draws':len(draws),'textures':len(atlas.entries),'pages':len(atlas.pages),'edges':len(edges),'format':'HKROOM02','scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_request_to_canonical':atlas.request_map,'stream_bytes':len(atlas.stream),'animation_bytes':atlas.animation_bytes,'alpha_cover_bytes':atlas.alpha_cover_bytes,'format_features':atlas.flags,'stream_textures':len(atlas.streamed),'static_texture_bytes':len(atlas.pages)*32768,'palette_bytes':len(atlas.palettes)*32,'focus_clips':{name:focus_clip_base+i for i,name in enumerate(FOCUS_CLIPS)},'focus_parameter_source':'.hkpsx/focus-source.json','animation_storage':'resident RAM bank with bounded VRAM frame cache','grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'benches':benches,'bench_clip_base':focus_clip_base+len(FOCUS_CLIPS),'edge_sources':[e['source'] for e in edges]}
     if not write_shared:
         print('cooked',len(pack),'bytes',len(edges),'edges',flush=True)
         return report

@@ -9,6 +9,7 @@ use psx_pad::{button, ButtonState};
 use psx_telemetry::{counter, emit, stage, task};
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
+mod bench;
 mod camera;
 mod input_queue;
 mod input_sampler;
@@ -89,6 +90,10 @@ fn knight_frame(room: &Room, player: &Player, focus: &hk_sim::Focus) -> usize {
         let offset=match clip {hk_sim::FocusClip::Focus=>0,hk_sim::FocusClip::Get=>1,hk_sim::FocusClip::End=>2,hk_sim::FocusClip::GetOnce=>3};
         (FOCUS_CLIP_BASE+offset,age)
     } else {(player.animation as usize,player.animation_tick)};
+    clip_frame(room,clip,age)
+}
+/// Frame of a room clip at a 60 Hz age, honouring loop / loop-section / once.
+fn clip_frame(room: &Room, clip: usize, age: u32) -> usize {
     let c = room.clip(clip);
     let time = (age as u64 * c[2] as u64 / (60 * 65536)) as u32;
     let mode = c[3] & 65535;
@@ -246,6 +251,10 @@ fn main() {
     let mut sim_clock=psx_rt::interrupts::vblank_count();
     let mut initial=true;
     let mut camera_state=camera::Camera::new();
+    let mut bench_state=bench::State::new();
+    // Bench respawn marker: scene, seat, facing, catalogue slot. None means the new-game spawn.
+    let mut respawn:Option<(usize,[i32;2],i32,usize)>=None;
+    let mut prev_pad=ButtonState::from_bits(0);
     // Timer1 counts HBlanks for frame-pacing telemetry only.
     psx_io::timers::set_mode(psx_io::timers::Timer::Timer1,0x0100);
     'region: loop {
@@ -304,7 +313,8 @@ fn main() {
             great_door::apply(&door,&mut state,region_id);
             let camera=camera_state.position();
             let door_frame=door.frame(region_id,camera);
-            let body_frame=knight_frame(&room,&player,&focus);let effect_frame=nail_frame(&room,&nail);
+            let body_frame=if let Some((clip,age))=bench_state.animation() {clip_frame(&room,clip,age)} else {knight_frame(&room,&player,&focus)};
+            let effect_frame=nail_frame(&room,&nail);
             let enemy_draws=enemies.prepare_draws(r,&room,camera);
             let mut needed=[0u16;12];needed[0]=u32_at(room.frame(body_frame),0) as u16;
             let mut needed_len=if effect_frame.is_some(){2}else{1};
@@ -409,8 +419,10 @@ fn main() {
                             life.reset();
                             if !door.opened() {door.reset();}
                             dialogue::cancel();state.reset_scene(r.scene);reveals.reset_scene(r.scene);enemies.reset_scene(r.scene);runner_audio::reset();vitals=settings.cheats.new_vitals(VITAL_PARAMS);
-                            audio::reset_movement();player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
-                            nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();target=Some(0);
+                            // Respawn at the last bench (standing at its seat) or the new-game spawn.
+                            let (spawn,facing,slot)=respawn.map_or(((SPAWN.0,SPAWN.1),1,0),|(_,seat,facing,slot)|((seat[0],seat[1]),facing,slot));
+                            audio::reset_movement();player=Player::spawn(spawn.0,spawn.1);player.facing=facing;safe=(spawn.0,spawn.1,slot);safe_facing=facing;bench_state.reset();
+                            nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();target=Some(slot);
                         } else if vitals.hazard_pending {
                             dialogue::cancel();
                             unsafe {HK_HAZARD_RESPAWNS+=1;}
@@ -433,7 +445,20 @@ fn main() {
                             if focus_events.started {
                                 nail=Nail::new();nail_response=hk_sim::NailResponse::new();player.vy=0;player.jumping=false;
                             }
-                            let locked=focus.locks_control()||dialogue::open()||door.pending();
+                            let pressed=|b:u16| pad.is_held(b)&&!prev_pad.is_held(b);
+                            let bench_events={
+                                let hero_body=[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top];
+                                let free=!(focus.locks_control()||dialogue::open()||door.pending()||read_consumes)&&vitals.can_control()&&!nail.active;
+                                let leave=[button::CROSS,button::SQUARE,button::LEFT,button::RIGHT,button::UP,button::DOWN].iter().any(|&b|pressed(b));
+                                let grounded=player.grounded;
+                                bench_state.tick(r,hero_body,&mut player,grounded,free,pressed(button::UP),leave)
+                            };
+                            if bench_events.rest {
+                                // Rest Burst: HERO REVIVED, respawn marker on this bench, then Save Game.
+                                vitals.heal(settings.cheats.params(VITAL_PARAMS),u16::MAX);
+                                respawn=Some((r.scene,bench_state.seat(),player.facing,region_id));
+                            }
+                            let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control();
                             let dir=if door.entering() {door.forced_direction()}else if locked {0}else{i32::from(pad.is_held(button::RIGHT))-i32::from(pad.is_held(button::LEFT))};
                             let was_grounded=player.grounded;
                             let jump=!locked && !read_consumes && pad.is_held(button::CROSS);
@@ -441,6 +466,9 @@ fn main() {
                             if door.drop_starts() {player.vy=-12*ONE;}
                             if door.apply_entry(&mut player) {
                                 // Source entry owns position/animation while input is locked.
+                            } else if bench_state.locks_control() {
+                                // Seated or getting off: the bench owns position and animation.
+                                player.grounded=true;player.jumping=false;player.was_jump=pad.is_held(button::CROSS);
                             } else if let Some((vx,vy))=vitals.recoil_velocity(VITAL_PARAMS) {
                                 let mut p=PARAMS;p.speed=vx.abs();p.gravity=0;
                                 player.vy=vy;player.jumping=false;
@@ -550,6 +578,7 @@ fn main() {
                     if let Some((x,y,hp))=enemies.actor_state(2,5145) {unsafe {HK_CLIMBER_X=x;HK_CLIMBER_Y=y;HK_CLIMBER_HP=hp as i32;}}
                     let mut cut=0u32;for (i,p) in world::region_grass(r).take(32).enumerate(){if state.cut(p.state){cut|=1<<i;}}
                     unsafe {HK_GRASS_CUT_MASK=cut;HK_NAIL_ATTACK_COUNT=attacks;HK_HEALTH=vitals.health as u32;HK_BLUE_HEALTH=vitals.blue_health as u32;HK_SOUL=vitals.soul as u32;HK_PLAYER_X=player.x;HK_PLAYER_Y=player.y;HK_FOCUS_LOCKED=u32::from(focus.locks_control());}
+                    prev_pad=pad;
                     emit::stage_end(stage::UPDATE);emit::task_end(task::FIXED_UPDATE);ticks+=1;
                     input::checkpoint();
                 }

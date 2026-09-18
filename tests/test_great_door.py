@@ -74,7 +74,7 @@ fn main() {
  w.begin_entry(TARGET_SCENE);assert!(!w.pending()); // One entry per reset.
  assert!(!w.strike(0,&polygon).hit);unsafe {assert_eq!(HK_GREAT_DOOR_TRANSITIONS,1);}
  // Reverse traversal has a source right-side walk, no Great Door150-tick delay.
- w.begin_gate_entry(0);let total=RETURN_ENTRY.settle+RETURN_ENTRY.lead+RETURN_ENTRY.walk;
+ w.begin_gate_entry(0,-1);let total=RETURN_ENTRY.settle+RETURN_ENTRY.lead+RETURN_ENTRY.walk;
  let mut player=hk_sim::Player::spawn(RETURN_ENTRY.spawn[0],RETURN_ENTRY.spawn[1]);
  for _ in 0..400 {assert!(!w.tick(TARGET_SCENE));}
  unsafe {assert_eq!(HK_GREAT_DOOR_ENTRY_WAIT,total as u32);}
@@ -88,12 +88,12 @@ fn main() {
  assert_eq!(walks,RETURN_ENTRY.walk as i32);assert_eq!(player.animation,1);
  assert!(!w.tick(0));assert!(!w.pending());assert!(!w.apply_entry(&mut player));
  // Later forward entries are repeatable, but do not repeat the initial delay.
- w.begin_gate_entry(TARGET_SCENE);unsafe {assert_eq!(HK_GREAT_DOOR_ENTRY_WAIT,(ENTRY.settle+ENTRY.lead+ENTRY.walk)as u32);}
+ w.begin_gate_entry(TARGET_SCENE,1);unsafe {assert_eq!(HK_GREAT_DOOR_ENTRY_WAIT,(ENTRY.settle+ENTRY.lead+ENTRY.walk)as u32);}
  for _ in 0..ENTRY.settle+ENTRY.lead+ENTRY.walk {assert!(!w.tick(TARGET_SCENE));}
- assert!(!w.pending());w.begin_gate_entry(0);assert!(w.pending());
+ assert!(!w.pending());w.begin_gate_entry(0,-1);assert!(w.pending());
 
  w.reset();assert!(!w.opened());assert_eq!(w.frame(0,(POSITION[0],POSITION[1])),Some(10));assert_eq!(w.frame(1,(POSITION[0],POSITION[1])),None);
- assert_eq!(w.frame(0,(0,0)),None);assert!(core::mem::size_of::<World>()<=12);
+ assert_eq!(w.frame(0,(0,0)),None);assert!(core::mem::size_of::<World>()<=16);
 }'''
    (p/'main.rs').write_text(harness)
    deps=ROOT/'shared/hk-sim/target/debug/deps';args=['rustc','--edition=2021','-Awarnings',str(p/'main.rs'),'-o',str(p/'run')]

@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GRASS, KIND_MASK_FADE, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
+use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GRASS, KIND_MASK_FADE, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -246,6 +246,19 @@ pub fn camera_locks(region: &Region) -> impl Iterator<Item = CameraLock> {
             let high = points.next()?;
             Some(CameraLock { bounds: object.bounds(), limits: [low[0], low[1], high[0], high[1]] })
         })
+}
+/// Source RestBench touching a catalogue region.
+#[derive(Clone, Copy)]
+pub struct Bench {
+    pub bounds: [i32; 4],
+    pub seat: [i32; 2],
+    /// Knight clips Sit, Sit Idle, Get Off cooked into this view.
+    pub clip_base: u16,
+}
+pub fn benches(region: &Region) -> impl Iterator<Item = Bench> {
+    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_BENCH)
+        .map(|o| Bench { bounds: o.bounds(), seat: [o.extra(0), o.extra(1)], clip_base: o.extra(2) as u16 })
 }
 /// Static targets touching a catalogue region, through the admitted bank.
 pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>> {

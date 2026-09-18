@@ -1,7 +1,8 @@
-## Build 104: the whole Forgotten Crossroads on the actual disc
+## Build 105: the whole Forgotten Crossroads on the actual disc
 
-The sole disc pair is build 104 (45 scenes, 693 views; every gate enters through the
-source fade/lead/forced-walk or hidden-drop sequence; build 103 applied the source gate
+The sole disc pair is build 105 (45 scenes, 693 views; five benches rest, heal and set
+the respawn marker; build 104 made every gate enter through the source
+fade/lead/forced-walk or hidden-drop sequence; build 103 applied the source gate
 facing and delayed top-collider rules; build 102 added source camera locks and a damped camera; build 101 folded the actor runtimes into one enum;
 build 100 admitted the Aspid Hunters with
 the first projectile pool (docs/ASPID.md); build 99 admitted the Leapers through a Leap
