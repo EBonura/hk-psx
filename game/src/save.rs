@@ -233,7 +233,7 @@ fn read_profile<B: Block>(card: &mut Card<B>, profile: usize) -> Result<Slot, Fa
 /// Every profile, for the selection screen. Boot-time, before the pad sampler
 /// starts (nothing else uses SIO0).
 #[inline(never)]
-pub fn survey() -> (([Slot; PROFILES]), Option<Fault>) {
+pub fn survey() -> ([Slot; PROFILES], Option<Fault>) {
     let mut card = Card::new(HardwareCard::new(psx_mc::Slot::One));
     let mut slots = [Slot::Empty; PROFILES];
     let mut fault = None;

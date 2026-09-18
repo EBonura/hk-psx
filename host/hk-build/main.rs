@@ -16,6 +16,9 @@ const ASSET_SCRIPTS: &[&str] = &[
     "title_music.py", "cook_audio.py", "cook_hud.py", "ambience.py", "focus_audio.py", "read_points.py",
     "geo.py", "geo_audio.py", "runner_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
     "shade.py",
+    // Reports only: the ability catalog P14 step 3 treats as authority, and
+    // which special traversal surfaces the admitted scenes actually contain.
+    "abilities.py",
 ];
 /// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
 /// Final telemetry a route must reach besides completing its tape.
@@ -34,7 +37,10 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // from the Dirtmouth bench with a 99-Geo pool. It must spawn, chase and hurt the
     // Knight, die to the nail, and hand the pool back on top of the saved six.
     ("town-shade", "HK_SHADE_KILLS", 1), ("town-shade", "HK_SHADE_PRESENT", 0), ("town-shade", "HK_GEO_WALLET", 105),
-    ("town-shade", "HK_HEALTH", 2),
+    // Two masks, not the three this cost before build 120: ATTACK_QUEUE_STEPS now
+    // carries a swing pressed a few ticks early, so the same tape kills the Shade
+    // sooner and eats one fewer hit. Exact on purpose, so a later regression shows.
+    ("town-shade", "HK_HEALTH", 3),
     // kings-death walks the King's Pass traversal with the nail silent past the fifth
     // breakable, so the Crawler there survives to kill the Knight. Death must record a
     // Shade at the spot with nailDamage * clamp(maxHealth / 2, 1, 99) health, and must

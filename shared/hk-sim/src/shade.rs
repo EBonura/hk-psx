@@ -164,7 +164,7 @@ impl Shade {
         }
         out
     }
-    fn startle(&mut self, senses: Senses, out: &mut Actions) {
+    fn startle(&mut self, _senses: Senses, out: &mut Actions) {
         self.phase = Phase::Startle;
         self.timer = STARTLE_TICKS;
         out.push(Action::Play(Clip::Startle, 0));

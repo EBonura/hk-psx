@@ -399,7 +399,7 @@ impl Actor {
         use hk_sim::climber::{Action, Phase};
         c.animation_tick = c.animation_tick.saturating_add(1);
         let cast = |ray| climber_ray_hit(ray, count, edge);
-        let mut apply = |actor: &mut Self, c: &mut ClimberRuntime, actions: hk_sim::climber::Actions| {
+        let apply = |actor: &mut Self, c: &mut ClimberRuntime, actions: hk_sim::climber::Actions| {
             for action in actions.iter() {
                 match action {
                     Action::Position(p) => { actor.x = p[0]; actor.y = p[1]; }
@@ -1125,7 +1125,7 @@ impl EnemyWorld {
             let damage = actor.health.contact_damage(spec.health);
             if damage != 0 && overlap(body, bounds) {
                 let direction = if player.x < actor.x { -1 } else { 1 };
-                let hurt = cheats.hurt(vitals,crate::VITAL_PARAMS, damage, direction, false);
+                let hurt = cheats.hurt(vitals,crate::VITAL_PARAMS, damage, direction, false, player.shadow_dashing);
                 if hurt != Hurt::Ignored {
                     events.hurt = hurt;
                 }
@@ -1134,8 +1134,9 @@ impl EnemyWorld {
         for (scene, position, velocity, shot_clip, impact_clip) in fires.into_iter().flatten() {
             self.spawn_shot(scene, position, velocity, shot_clip, impact_clip);
         }
+        let shadow = player.shadow_dashing;
         let hurt = self.tick_shots(region, body, room.counts[5], &|i| state.edge(region, room, i),
-            |direction| cheats.hurt(vitals, crate::VITAL_PARAMS, 1, direction, false));
+            |direction| cheats.hurt(vitals, crate::VITAL_PARAMS, 1, direction, false, shadow));
         if hurt != Hurt::Ignored { events.hurt = hurt; }
         events
     }
@@ -1448,7 +1449,7 @@ mod runner_runtime_tests {
         let b=bytes();let room=Room::parse(&b).unwrap();let r=region();
         let mut world=EnemyWorld::new();let mut player=Player::spawn(0,SPEC.y);
         let mut vitals=Vitals::new(crate::VITAL_PARAMS);let mut nail=Nail::new();
-        let attack=AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8};
+        let attack=AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8, ..AttackParams::ZERO };
         let poly=&[[-3*ONE,-3*ONE],[3*ONE,-3*ONE],[3*ONE,3*ONE],[-3*ONE,3*ONE]][..];
         let mut events=Vec::new();let mut state=State;let mut response=hk_sim::NailResponse::new();
         let cheats=crate::cheats::Settings {invincible:true,..crate::cheats::Settings::new()};
@@ -1505,7 +1506,7 @@ mod runner_runtime_tests {
         let mut world=EnemyWorld::new();let mut player=Player::spawn(0,SPEC.y);
         let mut vitals=Vitals::new(crate::VITAL_PARAMS);let mut nail=Nail::new();
         nail.active=true;nail.age=1;nail.kind=2;
-        let attack=AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8};
+        let attack=AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8, ..AttackParams::ZERO };
         let poly=&[[-3*ONE,-3*ONE],[3*ONE,-3*ONE],[3*ONE,3*ONE],[-3*ONE,3*ONE]][..];
         let mut events=Vec::new();
         let hit=world.tick(&r,&room,&mut State,&mut player,&mut vitals,&nail,
@@ -1528,7 +1529,7 @@ mod runner_runtime_tests {
             world.tick(r,&room,&mut State,&mut Player::spawn(30*ONE,SPEC.y),
                 &mut Vitals::new(crate::VITAL_PARAMS),&Nail::new(),
                 &mut hk_sim::NailResponse::new(),
-                AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8},
+                AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8, ..AttackParams::ZERO },
                 [&[];4],crate::cheats::Settings::new(),[0,SPEC.y,-2496922],
                 |e|events.push(e),|_,_,_|None);
         };

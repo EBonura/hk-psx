@@ -41,6 +41,9 @@ pub struct Params {
     pub dash_ticks: u16,
     pub dash_cooldown_ticks: u16,
     pub dash_queue_ticks: u16,
+    /// Shade Cloak: the upgraded dash keeps the ordinary speed and duration and
+    /// adds invulnerability, gated by its own cooldown rather than the dash's.
+    pub shadow_dash_cooldown_ticks: u16,
     /// Mantis Claw: the fall speed a wall slide clamps to (negative).
     pub wallslide_speed: i32,
     /// Holding away from the wall for this long detaches (`WALL_STICKY_STEPS`).
@@ -65,6 +68,10 @@ pub struct Params {
     /// The travel cannot be cancelled for this long; a wall ends it either way.
     pub super_dash_cancel_ticks: u16,
     pub super_dash_recover_ticks: u16,
+    /// `LEDGE_BUFFER_STEPS`: a jump still fires this long after walking off a
+    /// ledge, and `HEAD_BUMP_STEPS` refuses one this long after a ceiling.
+    pub ledge_buffer_ticks: u16,
+    pub head_bump_ticks: u16,
     pub half_width: i32,
     pub bottom: i32,
     pub top: i32,
@@ -77,11 +84,12 @@ impl Params {
     pub const ZERO: Self = Self {
         speed: 0, jump: 0, gravity: 0, fall: 0, hold_ticks: 0, min_ticks: 0,
         jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0,
-        dash_queue_ticks: 0, wallslide_speed: 0, wall_sticky_ticks: 0,
+        dash_queue_ticks: 0, shadow_dash_cooldown_ticks: 0, wallslide_speed: 0, wall_sticky_ticks: 0,
         walljump_speed: 0, walljump_decel: 0, wall_lock_short: 0, wall_lock_long: 0,
         double_jump_speed: 0, double_jump_delay_ticks: 0, double_jump_ticks: 0,
         double_jump_queue_ticks: 0, super_dash_speed: 0, super_dash_charge_ticks: 0,
         super_dash_cancel_ticks: 0, super_dash_recover_ticks: 0,
+        ledge_buffer_ticks: 0, head_bump_ticks: 0,
         half_width: 0, bottom: 0, top: 0,
     };
 }
@@ -118,6 +126,10 @@ pub struct Player {
     pub was_dash: bool,
     /// Set when the Mothwing Cloak has been acquired; nothing grants it yet.
     pub has_dash: bool,
+    /// Source cState.shadowDashing: TakeDamage returns immediately while set.
+    pub shadow_dashing: bool,
+    pub shadow_dash_cooldown: u16,
+    pub has_shade_cloak: bool,
     /// -1 for a wall on the left, +1 on the right, 0 for none. Airborne only,
     /// since nothing reads a grounded wall contact.
     pub touching_wall: i32,
@@ -136,6 +148,12 @@ pub struct Player {
     pub has_double_jump: bool,
     pub super_dash: SuperDash,
     pub has_super_dash: bool,
+    /// Source ledgeBufferSteps and headBumpSteps, both counted down per tick.
+    pub ledge_buffer: u16,
+    pub head_bump: u16,
+    /// Set by `Nail::tick` so the source's CanDash can refuse a dash during an
+    /// attack's active window, as it reads cState.attacking there.
+    pub attack_recovering: bool,
     pub animation: u16,
     pub animation_tick: u32,
     pub land_tick: u16,
@@ -160,6 +178,9 @@ impl Player {
             dash_queue: 0,
             was_dash: false,
             has_dash: false,
+            shadow_dashing: false,
+            shadow_dash_cooldown: 0,
+            has_shade_cloak: false,
             touching_wall: 0,
             wall_sliding: false,
             wall_unstick: 0,
@@ -174,6 +195,9 @@ impl Player {
             has_double_jump: false,
             super_dash: SuperDash::Off,
             has_super_dash: false,
+            ledge_buffer: 0,
+            head_bump: 0,
+            attack_recovering: false,
             animation: 0,
             animation_tick: 0,
             land_tick: 0,
@@ -186,6 +210,7 @@ impl Player {
     /// tick before `step`; a caller that never calls it never dashes.
     pub fn dash_input(&mut self, p: Params, pressed: bool) {
         self.dash_cooldown = self.dash_cooldown.saturating_sub(1);
+        self.shadow_dash_cooldown = self.shadow_dash_cooldown.saturating_sub(1);
         if pressed && !self.was_dash {
             self.dash_queuing = true;
             self.dash_queue = 0;
@@ -195,11 +220,20 @@ impl Player {
             return;
         }
         // A dash in the air is allowed once until the next landing.
+        // CanDash: the cooldown, no dash running, not inside an attack's
+        // recovery window, and either footing, an unspent air dash or a wall.
         let allowed = self.has_dash && self.dash_left == 0 && self.dash_cooldown == 0
-            && (self.grounded || !self.air_dashed);
+            && !self.attack_recovering
+            && (self.grounded || !self.air_dashed || self.wall_sliding);
         if pressed && allowed {
             self.dash_left = p.dash_ticks;
             self.dash_cooldown = p.dash_cooldown_ticks;
+            // HeroDash takes the shadow branch whenever the Cloak is owned and
+            // its own timer has run out; otherwise this is an ordinary dash.
+            self.shadow_dashing = self.has_shade_cloak && self.shadow_dash_cooldown == 0;
+            if self.shadow_dashing {
+                self.shadow_dash_cooldown = p.shadow_dash_cooldown_ticks;
+            }
             self.dash_queuing = false;
             if !self.grounded {
                 self.air_dashed = true;
@@ -247,6 +281,8 @@ impl Player {
             self.facing = dir;
         }
         let jump_pressed = jump && !self.was_jump;
+        self.ledge_buffer = self.ledge_buffer.saturating_sub(1);
+        self.head_bump = self.head_bump.saturating_sub(1);
         // Source: pressing back out of a wall jump releases the lock once
         // WJLOCK_STEPS_SHORT have passed; otherwise it runs its full length.
         if self.wall_locked && dir == -self.wall_jumped && self.wall_lock_ticks >= p.wall_lock_short {
@@ -286,7 +322,11 @@ impl Player {
             // Source order: CanWallJump, then CanJump, then CanDoubleJump.
             let can_wall_jump = self.has_walljump
                 && (self.wall_sliding || (self.touching_wall != 0 && !self.grounded));
-            let can_jump = self.grounded && !self.jumping && self.jump_queue <= p.jump_queue_ticks;
+            // CanJump: not dashing, not already jumping, no head bump, and
+            // either on the ground or still inside the ledge buffer.
+            let can_jump = (self.grounded || self.ledge_buffer > 0) && !self.jumping
+                && self.dash_left == 0 && self.head_bump == 0
+                && self.jump_queue <= p.jump_queue_ticks;
             let can_double_jump = self.has_double_jump && !self.double_jumped && !self.grounded
                 && self.dash_left == 0;
             // The retry window is the longer of the two the source keeps.
@@ -314,6 +354,7 @@ impl Player {
                 self.jumping = true;
                 self.jump_tick = 0;
                 self.grounded = false;
+                self.ledge_buffer = 0;
                 self.land_tick = 0;
                 self.jump_queuing = false;
             } else if jump && can_double_jump {
@@ -370,6 +411,9 @@ impl Player {
             (self.facing, p.super_dash_speed)
         } else if dashing {
             self.dash_left -= 1;
+            if self.dash_left == 0 {
+                self.shadow_dashing = false;
+            }
             // AffectedByGravity(false): the dash holds its own velocity.
             self.vy = 0;
             (self.facing, p.dash_speed)
@@ -441,6 +485,7 @@ impl Player {
                 ny = surface - p.top;
                 self.vy = 0;
                 self.jumping = false;
+                self.head_bump = p.head_bump_ticks;
             }
         }
         // Source CheckTouchingWall is a raycast, so contact holds whether or
@@ -464,6 +509,10 @@ impl Player {
                     self.touching_wall = -1;
                 }
             }
+        }
+        // Source: leaving the ground without jumping arms the ledge buffer.
+        if was_ground && !self.grounded && !self.jumping {
+            self.ledge_buffer = p.ledge_buffer_ticks;
         }
         if self.grounded {
             self.wall_sliding = false;
@@ -895,5 +944,195 @@ mod super_dash_tests {
         p.was_jump = false;
         p.step(P, 0, true, 2, room());
         assert_eq!(p.super_dash, SuperDash::Off);
+    }
+}
+
+#[cfg(test)]
+mod shade_cloak_tests {
+    use super::*;
+    const P: Params = Params {
+        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
+        dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10,
+        shadow_dash_cooldown_ticks: 90,
+        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+    };
+    fn flat() -> impl Fn(usize) -> [i32; 4] {
+        |_| [0, 0, 0, 0]
+    }
+    fn hero() -> Player {
+        let mut p = Player::spawn(0, 0);
+        p.has_dash = true;
+        p.has_shade_cloak = true;
+        p.grounded = true;
+        p
+    }
+    fn dash(p: &mut Player) {
+        p.dash_input(P, false);
+        p.dash_input(P, true);
+        for _ in 0..P.dash_ticks {
+            p.step(P, 0, false, 0, flat());
+        }
+    }
+    #[test]
+    fn without_the_cloak_a_dash_is_never_invulnerable() {
+        let mut p = hero();
+        p.has_shade_cloak = false;
+        p.dash_input(P, true);
+        assert!(!p.shadow_dashing);
+    }
+    #[test]
+    fn the_cloak_makes_the_dash_invulnerable_for_exactly_its_duration() {
+        let mut p = hero();
+        p.dash_input(P, true);
+        assert!(p.shadow_dashing);
+        for _ in 0..P.dash_ticks - 1 {
+            p.step(P, 0, false, 0, flat());
+            assert!(p.shadow_dashing, "the whole dash carries the i-frames");
+        }
+        p.step(P, 0, false, 0, flat());
+        assert!(!p.shadow_dashing, "and not one tick longer");
+    }
+    #[test]
+    fn its_own_cooldown_outlasts_the_dash_cooldown() {
+        let mut p = hero();
+        dash(&mut p);
+        // The ordinary dash is available again well before the Cloak is.
+        for _ in 0..P.dash_cooldown_ticks {
+            p.dash_input(P, false);
+        }
+        // The flat fixture has no floor, so put the Knight back on the ground
+        // rather than spending the one air dash CanDash allows.
+        p.grounded = true;
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks, "the dash itself is ready");
+        assert!(!p.shadow_dashing, "but this one is an ordinary dash");
+        for _ in 0..P.shadow_dash_cooldown_ticks {
+            p.dash_input(P, false);
+            p.step(P, 0, false, 0, flat());
+        }
+        p.grounded = true;
+        p.dash_input(P, true);
+        assert!(p.shadow_dashing);
+    }
+}
+
+#[cfg(test)]
+mod priority_tests {
+    use super::*;
+    const P: Params = Params {
+        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
+        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
+        dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10,
+        ledge_buffer_ticks: 2, head_bump_ticks: 4,
+        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+    };
+    // A cooldown longer than the swing, so the queue window is reachable.
+    const A: AttackParams = AttackParams {
+        duration: 25, cooldown: 32, alternate_reset: 36, hit_start: 1, hit_end: 6,
+        queue_ticks: 6, recovery_ticks: 8,
+    };
+    /// A floor that stops at x=0, so walking right leaves it.
+    const EDGES: [[i32; 4]; 2] = [[-40 * ONE, 0, 0, 0], [-6 * ONE, 12 * ONE, 6 * ONE, 12 * ONE]];
+    fn ledge() -> impl Fn(usize) -> [i32; 4] {
+        |i| EDGES[i]
+    }
+    fn on_floor() -> Player {
+        let mut p = Player::spawn(-4 * ONE, ONE);
+        p.has_dash = true;
+        p.step(P, 0, false, 1, ledge());
+        assert!(p.grounded);
+        p
+    }
+    #[test]
+    fn the_ledge_buffer_still_allows_a_jump_just_after_walking_off() {
+        let mut p = on_floor();
+        while p.grounded {
+            p.step(P, 1, false, 1, ledge());
+        }
+        assert!(p.ledge_buffer > 0, "walking off arms the buffer");
+        p.step(P, 1, true, 1, ledge());
+        assert!(p.jumping, "the source's coyote time");
+        assert_eq!(p.ledge_buffer, 0, "and it is spent, not re-offered");
+    }
+    #[test]
+    fn past_the_ledge_buffer_the_jump_is_refused() {
+        let mut p = on_floor();
+        while p.grounded {
+            p.step(P, 1, false, 1, ledge());
+        }
+        for _ in 0..P.ledge_buffer_ticks {
+            p.step(P, 1, false, 1, ledge());
+        }
+        p.step(P, 1, true, 1, ledge());
+        assert!(!p.jumping);
+    }
+    #[test]
+    fn a_ceiling_refuses_the_next_jumps() {
+        let mut p = Player::spawn(0, 8 * ONE);
+        p.vy = 30 * ONE;
+        // Rise into the low ceiling the second edge provides.
+        for _ in 0..10 {
+            p.step(P, 0, false, 2, ledge());
+            if p.head_bump > 0 {
+                break;
+            }
+        }
+        assert!(p.head_bump > 0, "the bump is recorded");
+        p.grounded = true;
+        p.step(P, 0, true, 2, ledge());
+        assert!(!p.jumping, "HEAD_BUMP_STEPS refuses it");
+    }
+    #[test]
+    fn a_dash_refuses_a_jump_and_a_swing_and_the_swing_is_kept_queued() {
+        let mut p = on_floor();
+        let mut nail = Nail::new();
+        p.dash_input(P, true);
+        assert!(p.dash_left > 0);
+        p.step(P, 0, true, 1, ledge());
+        assert!(!p.jumping, "CanJump refuses a jump out of a dash");
+        assert!(!nail.tick(A, true, 0, &mut p), "CanAttack refuses a swing out of a dash");
+        // ATTACK_QUEUE_STEPS is shorter than a dash, so that press is lost, as
+        // it is in the source. The buffer is for the cooldown's tail instead.
+        for _ in 0..p.dash_left {
+            p.step(P, 0, false, 1, ledge());
+            nail.tick(A, true, 0, &mut p);
+        }
+        assert!(!nail.active, "the queue is too short to outlast a whole dash");
+    }
+    #[test]
+    fn a_swing_pressed_inside_the_queue_window_lands_when_the_cooldown_ends() {
+        let mut p = on_floor();
+        let mut nail = Nail::new();
+        assert!(nail.tick(A, true, 0, &mut p));
+        // Run out the swing and all but a few ticks of its cooldown.
+        for _ in 0..A.cooldown - 4 {
+            p.step(P, 0, false, 1, ledge());
+            nail.tick(A, false, 0, &mut p);
+        }
+        assert!(!nail.active);
+        // Press early: a strict edge would drop this, the queue holds it.
+        let mut landed = false;
+        for _ in 0..4 {
+            p.step(P, 0, false, 1, ledge());
+            landed |= nail.tick(A, true, 0, &mut p);
+        }
+        assert!(landed, "ATTACK_QUEUE_STEPS carried the early press");
+    }
+    #[test]
+    fn an_attack_refuses_a_dash_until_its_recovery_passes() {
+        let mut p = on_floor();
+        let mut nail = Nail::new();
+        assert!(nail.tick(A, true, 0, &mut p));
+        assert!(p.attack_recovering);
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, 0, "CanDash refuses one inside the recovery");
+        for _ in 0..A.recovery_ticks {
+            p.step(P, 0, false, 1, ledge());
+            nail.tick(A, false, 0, &mut p);
+        }
+        assert!(!p.attack_recovering);
+        p.dash_input(P, false);
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks);
     }
 }

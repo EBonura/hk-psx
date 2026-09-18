@@ -150,8 +150,7 @@ fn no_attack() -> AttackParams {
         cooldown: 24,
         alternate_reset: 30,
         hit_start: 1,
-        hit_end: 8,
-    }
+        hit_end: 8, ..AttackParams::ZERO }
 }
 fn tick(
     w: &mut enemies::EnemyWorld,
