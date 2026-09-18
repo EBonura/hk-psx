@@ -119,8 +119,13 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
         sx=abs(matrix[0][0]*sprite['_scale']['x']);sy=abs(matrix[1][1]*sprite['_scale']['y'])
         color=sprite['_color'];alpha=round(color['a']*255)
         if control['kind']=='ZombieSwipeWalker':
-            bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack Anticipate',
-                      'lunge':'Attack Lunge','cooldown':'Attack Cooldown'}
+            if control['parameters'].get('attack',{}).get('kind')=='Leap':
+                # Leaper: the Attack clip anticipates and keeps playing through the
+                # jump (lunge slot), Land is the cooldown clip.
+                bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack','lunge':'Attack','cooldown':'Land'}
+            else:
+                bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack Anticipate',
+                          'lunge':'Attack Lunge','cooldown':'Attack Cooldown'}
             # Barger and Hornhead libraries have no Fall clip; the controller never plays it.
             if any(c['name']=='Fall' for c in library['clips']):bindings['fall']='Fall'
         elif control['kind']=='WalkLeftRight':

@@ -1,7 +1,8 @@
-## Build 98: the whole Forgotten Crossroads on the actual disc
+## Build 99: the whole Forgotten Crossroads on the actual disc
 
-The sole disc pair is build 98 (45 scenes, 693 views; Husk Bullies, Hornheads and
-the other-scene Runners admitted through the parameterized Runner; build 97 admitted
+The sole disc pair is build 99 (45 scenes, 693 views; Leapers admitted through a Leap
+attack on the Runner walker; build 98 admitted Husk Bullies, Hornheads and
+the other-scene Runners through the parameterized Runner; build 97 admitted
 the Gruzzers (19, docs/GRUZZER.md) and Baldurs (11, docs/BALDUR.md); build 95 admitted the Vengeflies (18 of 20
 Buzzers, docs/VENGEFLY.md) with actor simulation bounded to one view around the
 active view; build 94 admitted the Crossroads Climbers;

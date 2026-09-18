@@ -34,7 +34,7 @@ def corpse_source(source, scene, actor):
     obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
     # Runner, Barger and Hornhead corpses (Corpse Zombie Basic One/Three/Five)
     # share one structure; identity is checked below by name and player data.
-    if runner and not go['m_Name'].startswith('Corpse Zombie Basic '):raise ValueError('unvalidated corpse prefab for controller')
+    if runner and not (go['m_Name'].startswith('Corpse Zombie Basic ') or go['m_Name']=='Corpse Zombie Leaper'):raise ValueError('unvalidated corpse prefab for controller')
     parts={}
     for ref in go['m_Component']:
         component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
@@ -65,7 +65,7 @@ def corpse_source(source, scene, actor):
     matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
     box=parts['BoxCollider2D'][1];off=box['m_Offset'];size=box['m_Size']
     if runner:
-        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead'):
+        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead','ZombieLeaper'):
             raise ValueError('unvalidated Runner corpse identity')
         if any(abs(matrix[i][j]-(1 if i==j else 0))>1e-6 for i in range(2)for j in range(2)):
             raise ValueError('unsupported Runner corpse actor transform')

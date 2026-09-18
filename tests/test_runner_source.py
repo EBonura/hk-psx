@@ -26,7 +26,7 @@ class RunnerSourceTests(unittest.TestCase):
                     m_Material={'m_FileID': 0, 'm_PathID': 0},
                     m_IncludeLayers={'m_Bits': 0}, m_ExcludeLayers={'m_Bits': 0})
         body_contract(body)
-        for key, changed in [('m_GravityScale', 0), ('m_Constraints', 0),
+        for key, changed in [('m_GravityScale', 0.5), ('m_Constraints', 0),
                              ('m_LinearDamping', .1), ('m_Mass', math.nan),
                              ('m_BodyType', 2), ('m_Simulated', False),
                              ('m_ExcludeLayers', {'m_Bits': 256}),

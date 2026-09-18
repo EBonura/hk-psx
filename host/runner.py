@@ -14,6 +14,10 @@ from combat import ticks
 # Zombie Swipe placement in the catalog shares it; any changed variant requires
 # another source audit before recognition.
 FSM_SHA256 = '73f11594e0115a43a66c8d1695a65916b81bfe6057c180636eed3330aaad92c2'
+# Zombie Leap (Leaper): same Walker, a leap attack instead of the swipe.
+LEAP_FSM_SHA256 = '15ecb1c0984cd4955e5412dfae354441eb9a9d19c6b2bff9d7b6fc564dc7fe47'
+LEAP_CLIPS = {'Idle': (6, 12, 0), 'Walk': (7, 12, 0), 'Turn': (2, 10, 2), 'Attack': (11, 12, 2), 'Land': (2, 15, 2),
+              'Death Air': (1, 30, 6), 'Death Land': (8, 12, 2)}
 ASSEMBLY_SHA256 = 'e9048ef6a633970f735e01ec166d3959f610eaea7a88d827d48d67b1e5fb87bd'
 ASSEMBLIES = {'Assembly-CSharp.dll': ASSEMBLY_SHA256,
               'PlayMaker.dll': '0ef0e7829d125e1f632c8a189260ec6c6882630be6932c8c7ae032efbc53469a',
@@ -85,22 +89,23 @@ def fsm_fingerprint(fsm):
     return hashlib.sha256(json.dumps(summary, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def clip_contract(clips):
+def clip_contract(clips, expected=CLIPS):
     """Every Zombie Swipe library carries the same clip set with the same wrap
     modes; frame counts and rates differ per variant and are cooked as found.
     `Fall` is optional (the controller never plays it)."""
     by_name = {c['name']: c for c in clips}
-    if len(by_name) != len(clips) or not (set(CLIPS) - {'Fall'}) <= set(by_name) or not set(by_name) <= set(CLIPS):
+    if len(by_name) != len(clips) or not (set(expected) - {'Fall'}) <= set(by_name) or not set(by_name) <= set(expected):
         raise ValueError('unsupported Runner animation inventory')
     result = []
-    for name, (frames, fps, wrap) in CLIPS.items():
+    for name, (frames, fps, wrap) in expected.items():
         clip = by_name.get(name)
         if clip is None:
             continue
         frames, fps = len(clip['frames']), clip['fps']
         if clip['wrapMode'] != wrap or frames == 0 or fps <= 0:
             raise ValueError('unsupported Runner animation: ' + name)
-        if any(frame.get('triggerEvent', False) for frame in clip['frames']):
+        # The Leaper's Attack trigger frame is the launch cue, read by recognize().
+        if name != 'Attack' and any(frame.get('triggerEvent', False) for frame in clip['frames']):
             raise ValueError('unsupported Runner frame event: ' + name)
         if not 0 <= clip['loopStart'] < frames:
             raise ValueError('invalid Runner loop start: ' + name)
@@ -113,7 +118,7 @@ def body_contract(rigid):
     """Reject physics variants that the pending actor integration cannot honor."""
     expected = {'m_BodyType': 0, 'm_Simulated': True, 'm_UseAutoMass': False,
                 'm_UseFullKinematicContacts': False, 'm_Mass': 1.,
-                'm_LinearDamping': 0., 'm_GravityScale': 1., 'm_Interpolate': 0,
+                'm_LinearDamping': 0., 'm_Interpolate': 0,
                 'm_SleepingMode': 1, 'm_Constraints': 4,
                 'm_Material': {'m_FileID': 0, 'm_PathID': 0},
                 'm_IncludeLayers': {'m_Bits': 0}, 'm_ExcludeLayers': {'m_Bits': 0}}
@@ -123,6 +128,9 @@ def body_contract(rigid):
     # Hornheads use continuous collision detection; the swept solver covers both.
     if rigid.get('m_CollisionDetection') not in (0, 1):
         raise ValueError('unsupported Runner rigid body field: m_CollisionDetection')
+    # Runners fall at gravity scale 1, Leapers at .8; the guest body takes it from Params.
+    if rigid.get('m_GravityScale') not in (1., .800000011920929):
+        raise ValueError('unsupported Runner rigid body field: m_GravityScale')
 
 
 def axis_aligned_bounds(matrix, offset, size):
@@ -157,13 +165,21 @@ def recognize(sc, actor):
     fsm = fsm_component['fsm']
     variables = {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
                  for v in group if isinstance(v, dict) and 'name' in v and 'value' in v and not isinstance(v['value'], dict)}
-    parameters = walker_parameters(walker, variables.get('Lunge Speed'))
+    leap = fsm.get('name') == 'Zombie Leap'
+    parameters = walker_parameters(walker, 1. if leap else variables.get('Lunge Speed'))
     # The serialized FSM embeds owner references, so the fingerprint covers its
     # structure and scalar parameters (states, transitions, enabled actions and
     # their fields, variables other than Lunge Speed).
     fingerprint = fsm_fingerprint(fsm)
-    if not fsm_component['m_Enabled'] or fsm.get('name') != 'Zombie Swipe' or fingerprint != FSM_SHA256:
+    if not fsm_component['m_Enabled'] or fingerprint != (LEAP_FSM_SHA256 if leap else FSM_SHA256):
         raise ValueError('unverified Runner FSM variant')
+    if leap:
+        parameters['lunge_speed'] = 0.; parameters['lunge_velocity_q16'] = [0, 0]
+        parameters['attack'] = {'kind': 'Leap', 'jump_speed_y': 20., 'jump_x_factor': 1.25, 'idle_time': variables.get('Idle Time')}
+        if parameters['attack']['idle_time'] != .5:
+            raise ValueError('unsupported Leaper idle time')
+    else:
+        parameters['attack'] = {'kind': 'Swipe'}
     for name, expected in ASSEMBLIES.items():
         if hashlib.sha256((source.directory / 'Managed' / name).read_bytes()).hexdigest() != expected:
             raise ValueError('Runner methods require a fresh source audit: ' + name)
@@ -179,6 +195,7 @@ def recognize(sc, actor):
     if not body['m_Enabled'] or body['m_IsTrigger'] or body['m_EdgeRadius'] != 0:
         raise ValueError('unsupported Runner body collider')
     body_contract(rigid)
+    parameters['gravity_scale'] = rigid['m_GravityScale']
     body_bounds = axis_aligned_bounds(matrix, [body['m_Offset'][i] for i in 'xy'], [body['m_Size'][i] for i in 'xy'])
     los_id, los = _one(records, 'LineOfSightDetector')
     def local_ref(ref):
@@ -202,7 +219,13 @@ def recognize(sc, actor):
     if not animator['m_Enabled'] or animator['isRealtime']:
         raise ValueError('Runner requires enabled scaled-time animation')
     library = source.ref(sc.file, animator['library']); clips = source.read(library)['clips']
-    animation = clip_contract(clips)
+    animation = clip_contract(clips, LEAP_CLIPS if leap else CLIPS)
+    if leap:
+        attack = next(c for c in clips if c['name'] == 'Attack')
+        triggers = [i for i, frame in enumerate(attack['frames']) if frame.get('triggerEvent')]
+        if len(triggers) != 1:
+            raise ValueError('Leaper Attack clip needs exactly one trigger frame')
+        parameters['attack']['trigger_ticks'] = round(triggers[0] * 60 / attack['fps'])
     sprite_keys = sorted({(source.sid(source.ref(library.assets_file, frame['spriteCollection'])), frame['spriteId'])
                          for clip in clips for frame in clip['frames']})
     if not sprite_keys:raise ValueError('Runner sprite inventory empty')
@@ -213,6 +236,10 @@ def recognize(sc, actor):
     chase = [source.ref(sc.file, ref) for ref in anticipate['unityObjectParams']]
     if len(chase) != 2 or any(obj.type.name != 'AudioClip' for obj in [loop, *chase]):
         raise ValueError('Runner audio references differ from the verified FSM')
+    if leap:
+        # The Leaper's random attack samples are not in the resident Runner bank;
+        # the guest plays the Runner chase sounds in their place.
+        pass
     audio = {'walk_loop': source.sid(loop), 'chase': [source.sid(obj) for obj in chase],
              'loop': bool(audio_source['Loop']), 'volume': audio_source['m_Volume'],
              'initial_pitch': audio_source['m_Pitch'], 'play_on_awake': bool(audio_source['m_PlayOnAwake'])}

@@ -453,10 +453,11 @@ impl Actor {
         // remain the source box. Otherwise its lowest horizontal Sweep lies
         // exactly on Terrain and the segment model invents a perpetual wall.
         let foot_skin=if self.runner.is_some() {983}else{0};
+        let gravity = if let ActorController::Runner { params, .. } = spec.controller { params.gravity } else { 60 * ONE };
         let mut p = Params {
             speed: 0,
             jump: 0,
-            gravity: 60 * ONE,
+            gravity,
             fall: 100 * ONE,
             hold_ticks: 0,
             min_ticks: 0,
@@ -673,7 +674,7 @@ impl Actor {
             camera_in_start_range: hk_sim::runner::camera_in_start_range(context.camera,[self.x,self.y,66]),
             hero_x:context.hero[0], actor_x:self.x, in_alert_range, can_see_hero,
             wall:probes.wall, floor_ahead:probes.floor_ahead,
-            completed:runner.completed(spec,room),
+            completed:runner.completed(spec,room), grounded:self.grounded,
         }
     }
     fn emit_runner(&self, kind:RunnerEventKind, emit:&mut impl FnMut(RunnerEvent)) {

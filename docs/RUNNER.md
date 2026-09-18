@@ -103,3 +103,8 @@ alert boxes, and `host/runner.py::fsm_fingerprint` verifies the FSM structure
 and scalar fields instead of the per-scene serialization. Bargers keep the
 Runner's 1.5 walk with a 14 units/s lunge and shorter pauses; Hornheads walk
 at 2.5 with a 9 units/s lunge and recoil at 15.
+
+The Leaper (build 99) is the same walker with `Attack::Leap`: the Attack clip's
+trigger frame launches at ((hero x - self x) * 1.25, 20) under gravity scale
+.8, bottom contact plays Land, then Idle .5 s and StartWalker; it has no damage
+or recoil transitions.
