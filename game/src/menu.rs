@@ -96,13 +96,13 @@ fn draw_menu(menu:&State,gain:u8,slots:&[&str;4],fault:&str){
             centered(214,"X / O / START: back",gain);
         }
         Page::Cheats=>{
-            gpu::draw_rect_flat(16,53,288,179,gain/2,gain/2,gain/2);
-            gpu::draw_rect_flat(18,55,284,175,0,0,0);
+            gpu::draw_rect_flat(16,45,288,187,gain/2,gain/2,gain/2);
+            gpu::draw_rect_flat(18,47,284,183,0,0,0);
             centered(65,"CHEATS",gain);
             for (i,label) in state::CHEAT_ITEMS.iter().chain(["Back"].iter()).enumerate(){
                 let y=86+i as i16*19;let g=if i==menu.selected{gain}else{gain-gain/4};
                 text(46,y,label,g);
-                if i<4{text(254,y,if menu.settings.cheats.enabled(i){"ON"}else{"OFF"},g);}
+                if i<state::CHEAT_ITEMS.len(){text(254,y,if menu.settings.cheats.enabled(i){"ON"}else{"OFF"},g);}
                 if i==menu.selected{text(30,y,">",gain);}
             }
             centered(189,"Charms are not implemented yet",gain);

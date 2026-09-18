@@ -155,7 +155,7 @@ impl World {
         let v = live.control.velocity();
         if v != [0; 2] && live.control.phase() != Phase::Retreat {
             let mut body = Player::spawn(live.position[0], live.position[1]);
-            let params = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0,
+            let params = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
                 half_width: (BODY_BOUNDS[2] - BODY_BOUNDS[0]) / 2, bottom: BODY_BOUNDS[1], top: BODY_BOUNDS[3] };
             body.vy = v[1];
             body.step(params, v[0].signum(), false, count, &edge);

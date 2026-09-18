@@ -36,6 +36,11 @@ pub struct Params {
     /// A jump pressed this many ticks before landing still fires, as the
     /// source's `JUMP_QUEUE_STEPS` buffer does.
     pub jump_queue_ticks: u16,
+    /// Mothwing Cloak: constant velocity for `dash_ticks` with gravity off.
+    pub dash_speed: i32,
+    pub dash_ticks: u16,
+    pub dash_cooldown_ticks: u16,
+    pub dash_queue_ticks: u16,
     pub half_width: i32,
     pub bottom: i32,
     pub top: i32,
@@ -52,6 +57,16 @@ pub struct Player {
     pub was_jump: bool,
     pub jump_queuing: bool,
     pub jump_queue: u16,
+    /// Ticks of dash left; the dash owns velocity and suspends gravity while non-zero.
+    pub dash_left: u16,
+    pub dash_cooldown: u16,
+    /// One dash per airtime, as `CanDash` enforces through `airDashed`.
+    pub air_dashed: bool,
+    pub dash_queuing: bool,
+    pub dash_queue: u16,
+    pub was_dash: bool,
+    /// Set when the Mothwing Cloak has been acquired; nothing grants it yet.
+    pub has_dash: bool,
     pub animation: u16,
     pub animation_tick: u32,
     pub land_tick: u16,
@@ -69,6 +84,13 @@ impl Player {
             was_jump: false,
             jump_queuing: false,
             jump_queue: 0,
+            dash_left: 0,
+            dash_cooldown: 0,
+            air_dashed: false,
+            dash_queuing: false,
+            dash_queue: 0,
+            was_dash: false,
+            has_dash: false,
             animation: 0,
             animation_tick: 0,
             land_tick: 0,
@@ -76,6 +98,37 @@ impl Player {
     }
     pub fn tick(&mut self, p: Params, dir: i32, jump: bool, room: &Room) {
         self.step(p, dir, jump, room.counts[5], |i| room.edge(i));
+    }
+    /// `CanDash` plus the source's `DASH_QUEUE_STEPS` buffer. Call once per
+    /// tick before `step`; a caller that never calls it never dashes.
+    pub fn dash_input(&mut self, p: Params, pressed: bool) {
+        self.dash_cooldown = self.dash_cooldown.saturating_sub(1);
+        if pressed && !self.was_dash {
+            self.dash_queuing = true;
+            self.dash_queue = 0;
+        }
+        self.was_dash = pressed;
+        if !self.dash_queuing {
+            return;
+        }
+        // A dash in the air is allowed once until the next landing.
+        let allowed = self.has_dash && self.dash_left == 0 && self.dash_cooldown == 0
+            && (self.grounded || !self.air_dashed);
+        if pressed && allowed {
+            self.dash_left = p.dash_ticks;
+            self.dash_cooldown = p.dash_cooldown_ticks;
+            self.dash_queuing = false;
+            if !self.grounded {
+                self.air_dashed = true;
+            }
+            // Dash owns velocity outright, and gravity is off for its duration.
+            self.vy = 0;
+            self.jumping = false;
+        } else if !pressed || self.dash_queue >= p.dash_queue_ticks {
+            self.dash_queuing = false;
+        } else {
+            self.dash_queue += 1;
+        }
     }
     pub fn step(
         &mut self,
@@ -123,10 +176,22 @@ impl Player {
             self.vy = 0;
         }
         self.was_jump = jump;
-        self.vy = (self.vy - p.gravity / 60).max(-p.fall);
+        if self.grounded {
+            self.air_dashed = false;
+        }
+        let dashing = self.dash_left > 0;
+        let (dir, speed) = if dashing {
+            self.dash_left -= 1;
+            // AffectedByGravity(false): the dash holds its own velocity.
+            self.vy = 0;
+            (self.facing, p.dash_speed)
+        } else {
+            self.vy = (self.vy - p.gravity / 60).max(-p.fall);
+            (dir, p.speed)
+        };
         let ox = self.x;
         let oy = self.y;
-        let mut nx = ox + dir * p.speed / 60;
+        let mut nx = ox + dir * speed / 60;
         // Axis-separated swept AABB against source terrain edges, with open endpoints.
         // No invented floor: collision comes only from cooked source edges.
         for i in 0..count {
@@ -216,6 +281,7 @@ mod tests {
             fall: 20 * ONE,
             hold_ticks: 12,
             min_ticks: 5, jump_queue_ticks: 0,
+            dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
             half_width: ONE / 4,
             bottom: -ONE,
             top: ONE / 4,
@@ -281,5 +347,100 @@ mod tests {
         assert!(a.grounded);
         assert!((a.x - ONE).abs() < 64);
         assert!((a.y - 2 * ONE).abs() < 64);
+    }
+}
+
+#[cfg(test)]
+mod dash_tests {
+    use super::*;
+    const P: Params = Params {
+        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
+        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
+        half_width: ONE / 2, bottom: -ONE, top: 0,
+        dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10,
+    };
+    fn flat() -> impl Fn(usize) -> [i32; 4] {
+        |_| [0, 0, 0, 0]
+    }
+    fn hero() -> Player {
+        let mut p = Player::spawn(0, 0);
+        p.has_dash = true;
+        p.grounded = true;
+        p
+    }
+    #[test]
+    fn without_the_cloak_the_button_does_nothing() {
+        let mut p = Player::spawn(0, 0);
+        p.grounded = true;
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, 0);
+    }
+    #[test]
+    fn a_dash_runs_for_its_time_at_its_own_speed_and_then_stops() {
+        let mut p = hero();
+        p.facing = 1;
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks);
+        let start = p.x;
+        for _ in 0..P.dash_ticks {
+            p.step(P, 0, false, 0, flat());
+        }
+        // Constant velocity for the whole dash, regardless of the held direction.
+        assert_eq!(p.x - start, P.dash_speed / 60 * P.dash_ticks as i32);
+        assert_eq!(p.dash_left, 0);
+        assert_eq!(p.vy, 0, "gravity is suspended for the dash");
+    }
+    #[test]
+    fn the_cooldown_blocks_a_second_dash_until_it_expires() {
+        let mut p = hero();
+        p.dash_input(P, true);
+        for _ in 0..P.dash_ticks {
+            p.step(P, 0, false, 0, flat());
+        }
+        p.dash_input(P, false);
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, 0, "still cooling down");
+        for _ in 0..P.dash_cooldown_ticks {
+            p.dash_input(P, false);
+        }
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks);
+    }
+    #[test]
+    fn only_one_dash_per_airtime() {
+        let mut p = hero();
+        p.grounded = false;
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks, "the first air dash is allowed");
+        assert!(p.air_dashed);
+        for _ in 0..P.dash_ticks {
+            p.step(P, 0, false, 0, flat());
+        }
+        for _ in 0..P.dash_cooldown_ticks {
+            p.dash_input(P, false);
+        }
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, 0, "a second dash in the same airtime is refused");
+        // Touching down restores it.
+        p.grounded = true;
+        p.step(P, 0, false, 0, flat());
+        p.dash_input(P, false);
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks, "landing clears airDashed");
+    }
+    #[test]
+    fn a_dash_pressed_before_landing_is_buffered() {
+        let mut p = hero();
+        p.grounded = false;
+        p.air_dashed = true;
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, 0);
+        // Still held, and the Knight lands inside the queue window.
+        for _ in 0..P.dash_queue_ticks - 1 {
+            p.dash_input(P, true);
+        }
+        p.grounded = true;
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks, "the buffered press fired on landing");
     }
 }

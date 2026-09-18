@@ -105,7 +105,7 @@ impl Bug {
             if dir==self.direction {self.vx=(self.vx-dir*spec.acceleration).clamp(-self.max_speed,self.max_speed);}
             self.direction=dir;
         }
-        let p=Params {speed:self.vx.abs(),jump:0,jump_queue_ticks:0,gravity:spec.gravity,fall:i32::MAX,
+        let p=Params {speed:self.vx.abs(),jump:0,jump_queue_ticks:0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,gravity:spec.gravity,fall:i32::MAX,
             hold_ticks:0,min_ticks:0,half_width:mul(spec.body[2],self.scale),
             bottom:mul(spec.body[1],self.scale),top:mul(spec.body[3],self.scale)};
         let old=self.body;self.body.step(p,self.vx.signum(),false,count,edge);

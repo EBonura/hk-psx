@@ -334,7 +334,7 @@ mod tests {
             gravity: 60 * crate::ONE,
             fall: 100 * crate::ONE,
             hold_ticks: 0,
-            min_ticks: 0, jump_queue_ticks: 0,
+            min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
             half_width: crate::ONE / 2,
             bottom: -crate::ONE,
             top: crate::ONE,
