@@ -21,7 +21,7 @@ impl Settings {
 impl Default for Settings {fn default()->Self{Self::new()}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Page {Main,Options,Controls,Cheats}
-pub const MAIN_ITEMS:[&str;4]=["Start Game","Options","Controls","Cheats"];
+pub const MAIN_ITEMS:[&str;5]=["Start Game","Options","Controls","Cheats","Continue"];
 pub const CHEAT_ITEMS:[&str;4]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)"];
 pub const OPTION_ITEMS:[&str;4]=["Sound effects","Ambience","Music","Back"];
 pub const CONTROL_LINES:[&str;9]=[
@@ -31,10 +31,15 @@ pub const CONTROL_LINES:[&str;9]=[
 ];
 pub struct State {
     pub page:Page,pub selected:usize,pub settings:Settings,
+    /// A memory card save exists: the last main row (Continue) is shown and selectable.
+    pub has_save:bool,
+    /// Set when step confirms the Continue row.
+    pub continued:bool,
     previous:u16,direction:u16,repeat:u8,
 }
 impl State {
-    pub const fn new()->Self{Self{page:Page::Main,selected:0,settings:Settings::new(),previous:0,direction:0,repeat:0}}
+    pub const fn new()->Self{Self{page:Page::Main,selected:0,settings:Settings::new(),has_save:false,continued:false,previous:0,direction:0,repeat:0}}
+    pub fn main_rows(&self)->usize{if self.has_save{5}else{4}}
     /// Consume exactly one actual pad sample. Navigation repeats after20 held
     /// polls then every5 polls. Confirm/back require fresh edges. Confirm has
     /// priority over a simultaneous direction, preserving direct first START/X.
@@ -60,7 +65,8 @@ impl State {
                     0=>return true,
                     1=>{self.page=Page::Options;self.selected=0;},
                     2=>{self.page=Page::Controls;self.selected=0;},
-                    _=>{self.page=Page::Cheats;self.selected=0;},
+                    3=>{self.page=Page::Cheats;self.selected=0;},
+                    _=>{self.continued=true;return true;},
                 },
                 Page::Options=>if self.selected==3{self.page=Page::Main;self.selected=1;},
                 Page::Controls=>{self.page=Page::Main;self.selected=2;},
@@ -72,7 +78,7 @@ impl State {
             return false;
         }
         if self.page==Page::Controls{return false;}
-        let count=match self.page{Page::Main=>4,Page::Cheats=>5,_=>4};
+        let count=match self.page{Page::Main=>self.main_rows(),Page::Cheats=>5,_=>4};
         if navigate==UP{self.selected=(self.selected+count-1)%count;}
         else if navigate==DOWN{self.selected=(self.selected+1)%count;}
         else if self.page==Page::Options {

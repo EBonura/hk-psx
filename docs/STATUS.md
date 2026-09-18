@@ -1,6 +1,7 @@
-## Build 105: the whole Forgotten Crossroads on the actual disc
+## Build 106: the whole Forgotten Crossroads on the actual disc
 
-The sole disc pair is build 105 (45 scenes, 693 views; five benches rest, heal and set
+The sole disc pair is build 106 (45 scenes, 693 views; a bench rest saves to the
+port-1 memory card and the title offers Continue; five benches rest, heal and set
 the respawn marker; build 104 made every gate enter through the source
 fade/lead/forced-walk or hidden-drop sequence; build 103 applied the source gate
 facing and delayed top-collider rules; build 102 added source camera locks and a damped camera; build 101 folded the actor runtimes into one enum;

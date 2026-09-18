@@ -24,7 +24,7 @@ WATCHES+='HK_AUDIO_STREAM_STARTS HK_AUDIO_STREAM_REFILLS HK_AUDIO_STREAM_SOURCE_
 WATCHES+='HK_MUSIC_PLAYING HK_MUSIC_POSITION_SECTORS HK_MUSIC_WRAPS HK_MUSIC_ERROR HK_MUSIC_LEVEL HK_MENU_MUSIC'.split()
 WATCHES+='HK_FOCUS_AUDIO_READY HK_FOCUS_CHARGE_STARTS HK_FOCUS_HEAL_SOUNDS HK_FOCUS_CHARGE_GAIN HK_FOCUS_STARTED HK_FOCUS_COMPLETED HK_FOCUS_HEALED'.split()
 WATCHES+='HK_COVERAGE_LOADS HK_COVERAGE_BYTES HK_COVERAGE_SCENE'.split()
-WATCHES+='HK_CHEATS HK_CHEAT_NAIL_DAMAGE HK_CHEAT_MASK_CAP'.split()
+WATCHES+='HK_CHEATS HK_CHEAT_NAIL_DAMAGE HK_CHEAT_MASK_CAP HK_SAVE_WRITES HK_SAVE_ERRORS HK_SAVE_LOADED HK_INPUT_BLOCKED_VBLANKS'.split()
 WATCHES+='HK_RUNNER_AUDIO_READY HK_RUNNER_LOOP_STARTS HK_RUNNER_CALLS HK_RUNNER_LOOP_DROPPED HK_RUNNER_DUST_EVENTS HK_ENEMY_HITS HK_CLIMBER_X HK_CLIMBER_Y HK_CLIMBER_HP'.split()
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -33,6 +33,7 @@ def main():
     p.add_argument('--tape',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--screenshot-interval',type=int,default=60)
     p.add_argument('--frontend',type=Path,default=ROOT.parent/'PSoXide-emulator/target/release/frontend')
+    p.add_argument('--memcard',type=Path,help='port 1 card image; a missing file boots freshly formatted and is written back')
     a=p.parse_args();r=json.loads((ROOT/'.hkpsx/build.json').read_text())
     cue=Path(r['artifacts']['cue']);exe=Path(r['artifacts']['exe']);mp=Path(r['link_map']['path'])
     if cue.resolve()!=(Path.home()/'Downloads/ps1 games/hk-psx.cue').resolve():raise ValueError('Not the canonical disc')
@@ -57,6 +58,7 @@ def main():
     symbols={s[-1]:'0x'+s[0] for line in mp.read_text().splitlines()if len(s:=line.split())==5}
     watches={n:symbols[n] for n in WATCHES if n in symbols}
     for addr in watches.values():command+=['--route-watch-u32',addr]
+    if a.memcard:command+=['--memcard',str(a.memcard.resolve())]
     paths=[cue,Path(r['artifacts']['bin']),exe,mp,tape,a.frontend]
     def inputs():return {str(path):{'bytes':path.stat().st_size,'sha256':digest(path)}for path in paths}
     before=inputs();report={'command':command,'inputs':before,'watches':watches,'samples':count,'start_poll':start}

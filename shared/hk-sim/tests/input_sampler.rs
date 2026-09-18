@@ -225,6 +225,20 @@ fn scene_load_retains_missed_polls_wrap_and_transfer_completion_boundary() {
     assert_eq!(s.end_scene_load(), Ok(102));
     assert_eq!(s.stats().missed_vblanks, 100);
     assert_eq!(s.stats().loading_ticks, 103);
+    // A blocking card transfer inside a load: its gaps are blocked, not missed,
+    // and the flag does not outlive the load.
+    assert_eq!(s.begin_blocking_transfer(), Err(Fault::SceneLoadInactive));
+    let mut s = Sampler::new();
+    s.start(0).unwrap();
+    s.checkpoint(1, || (1, 0)).unwrap();
+    s.consume(1).unwrap();
+    s.begin_scene_load(1).unwrap();
+    s.begin_blocking_transfer().unwrap();
+    s.checkpoint(4, || (4, 0)).unwrap();
+    assert_eq!((s.stats().missed_vblanks, s.stats().blocked_vblanks, s.stats().max_poll_gap), (0, 2, 0));
+    assert_eq!(s.end_scene_load(), Ok(4));
+    s.checkpoint(7, || (7, 0)).unwrap();
+    assert_eq!((s.stats().missed_vblanks, s.stats().blocked_vblanks), (2, 2));
 }
 
 #[test]

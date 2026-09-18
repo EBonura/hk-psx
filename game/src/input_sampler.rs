@@ -28,11 +28,15 @@ pub struct Stats {
     pub pending_peak: u32,
     pub loading_samples: u32,
     pub loading_ticks: u32,
+    /// VBlanks without a poll while a blocking transfer owned the port (a
+    /// memory card frame cannot be interrupted by a pad poll). Not a miss.
+    pub blocked_vblanks: u32,
 }
 pub struct Sampler {
     queue: Queue,
     enabled: bool,
     loading: bool,
+    blocking: bool,
     observed: u32,
     last_poll: u32,
     consumed: u32,
@@ -52,6 +56,7 @@ impl Sampler {
             queue: Queue::new(),
             enabled: false,
             loading: false,
+            blocking: false,
             observed: 0,
             last_poll: 0,
             consumed: 0,
@@ -62,6 +67,7 @@ impl Sampler {
                 pending_peak: 0,
                 loading_samples: 0,
                 loading_ticks: 0,
+                blocked_vblanks: 0,
             },
             fault: None,
         }
@@ -94,7 +100,17 @@ impl Sampler {
         if let Some(fault) = self.fault { return Err(fault); }
         if !self.loading { return self.fail(Fault::SceneLoadInactive); }
         self.loading = false;
+        self.blocking = false;
         Ok(self.consumed)
+    }
+    /// Inside a scene load only: the port is about to run transfers longer
+    /// than a VBlank (memory card frames). Their poll gaps count as blocked,
+    /// not missed. Cleared by end_scene_load.
+    pub fn begin_blocking_transfer(&mut self) -> Result<(), Fault> {
+        if let Some(fault) = self.fault { return Err(fault); }
+        if !self.loading { return self.fail(Fault::SceneLoadInactive); }
+        self.blocking = true;
+        Ok(())
     }
     fn acknowledge_load(&mut self) -> Result<(), Fault> {
         // At most CAPACITY queued observations, even after a long clock gap.
@@ -172,13 +188,17 @@ impl Sampler {
             });
         }
         // First hardware observation has no earlier actual poll to compare.
-        if previous_poll.is_some() {
-            self.stats.max_poll_gap = self.stats.max_poll_gap.max(gap);
+        if self.blocking {
+            self.stats.blocked_vblanks = self.stats.blocked_vblanks.saturating_add(gap.saturating_sub(1));
+        } else {
+            if previous_poll.is_some() {
+                self.stats.max_poll_gap = self.stats.max_poll_gap.max(gap);
+            }
+            self.stats.missed_vblanks = self
+                .stats
+                .missed_vblanks
+                .saturating_add(gap.saturating_sub(1));
         }
-        self.stats.missed_vblanks = self
-            .stats
-            .missed_vblanks
-            .saturating_add(gap.saturating_sub(1));
         self.stats.pending_peak = self
             .stats
             .pending_peak

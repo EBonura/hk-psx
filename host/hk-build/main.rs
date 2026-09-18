@@ -18,8 +18,16 @@ const ASSET_SCRIPTS: &[&str] = &[
 ];
 /// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
 /// Final telemetry a route must reach besides completing its tape.
-const REQUIRED: &[(&str, &str, u64)] = &[("town-bench", "HK_BENCH_RESTS", 1)];
-const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false)];
+const REQUIRED: &[(&str, &str, u64)] = &[("town-bench", "HK_BENCH_RESTS", 1), ("town-bench", "HK_SAVE_WRITES", 1), ("town-bench", "HK_SAVE_ERRORS", 0),
+    // Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the title offers row 4,
+    // and play resumes in the Town view with that record's wallet and opened Great Door. A catalogue change
+    // that moves the Town slot invalidates the fixture: copy .hkpsx/validate/town-bench.mcd over it.
+    ("town-continue", "HK_SAVE_LOADED", 1), ("town-continue", "HK_MENU_ROW", 4), ("town-continue", "HK_REGION_ID", 100),
+    ("town-continue", "HK_GEO_WALLET", 6), ("town-continue", "HK_GREAT_DOOR_HITS", 13)];
+/// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
+/// fresh formatted card when the fixture is absent (the run writes it back there).
+const MEMCARDS: &[(&str, &str)] = &[("town-bench", "town-bench.mcd"), ("town-continue", "town-continue.mcd")];
+const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false), ("town-continue", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
@@ -338,9 +346,16 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         .map(|(name, _)| {
             let tape = root.join(format!("tools/tapes/{name}.pxtape"));
             let output = out.join(name);
+            let mut args = vec![root.join("tools/replay_cue.py"), "--tape".into(), tape, "--output".into(), output,
+                "--screenshot-interval".into(), "400".into(), "--frontend".into(), frontend.clone()];
+            if let Some((_, card)) = MEMCARDS.iter().find(|(route, _)| route == name) {
+                // The replay writes the card back: run against a scratch copy so the fixture stays put.
+                let scratch = out.join(format!("{name}.mcd"));
+                let _ = std::fs::copy(root.join("tools/cards").join(card), &scratch);
+                args.extend(["--memcard".into(), scratch]);
+            }
             Command::new(venv_python(root))
-                .args([root.join("tools/replay_cue.py").to_str().unwrap(), "--tape", tape.to_str().unwrap(), "--output",
-                    output.to_str().unwrap(), "--screenshot-interval", "400", "--frontend", frontend.to_str().unwrap()])
+                .args(args)
                 .current_dir(root)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())

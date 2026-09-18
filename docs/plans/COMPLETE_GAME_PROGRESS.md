@@ -979,6 +979,50 @@ Game (next slice: memory card) and the bench audio. New route `town-bench`
 with `HK_BENCH_RESTS` 1 (`REQUIRED` in the build driver); eight routes pass.
 Headroom 132,524 bytes.
 
+## Bench Save Game on the memory card and title Continue (build 106)
+
+P13 steps 5 to 7, first slice, on the SDK's `psx-mc` crate (`game/Cargo.toml`;
+no card protocol code was written in the port). `game/src/save.rs` holds a
+40-byte record (magic `HKS1`, bench scene, standing position, facing,
+catalogue slot, Geo wallet, Great Door hit count, FNV-1a checksum) in one
+retail-style file (`BASLUS-00000HKPSX000`, title "HOLLOW KNIGHT PSX") on the
+port-1 card. The Rest Burst that sets the respawn marker also requests a
+save; the write runs at the next frame boundary inside the input sampler's
+scene-load bracket with a pad checkpoint after every card frame. A card frame
+transfer is longer than a VBlank and cannot be interrupted by a pad poll
+(SIO0 is shared), so the sampler gained a blocking-transfer mode: those poll
+gaps count in `HK_INPUT_BLOCKED_VBLANKS` (20 for this write) instead of
+`HK_INPUT_MISSED_VBLANKS`, which stays a route fault. An unformatted card is
+formatted first; no card or a card error counts in `HK_SAVE_ERRORS` and play
+continues. At boot, before the pad sampler exists, the record is read; when
+it decodes and names a slot the catalogue still has for that scene, the title
+menu shows a fifth row "Continue" (`menu_state::State {has_save, continued}`;
+`menu::run` returns `(Settings, bool)`) and choosing it starts standing at
+the saved bench with the saved wallet and door hits
+(`geo::World::restore_wallet`, `great_door::World::restore`). Masks are the
+constant 5, so the record stores no max health. Found on the way: the build
+105 respawn marker used the source seat y (the sprite's), which puts the body
+inside the floor and drops it through; the marker and the record now keep
+the Knight's standing y. Checks: `tests/test_save.py` (record round trip and
+corruption rejection through a stub card), `tests/test_menu.py` (Continue
+offered only with a save), `shared/hk-sim/tests/input_sampler.rs` (blocked
+gaps), and two card routes: `town-bench` boots with a fresh formatted card
+(`--memcard` in `tools/replay_cue.py`; `MEMCARDS` in the driver copies
+`tools/cards/<route>.mcd` to the validate directory, a missing fixture boots
+freshly formatted) and must end with `HK_SAVE_WRITES` 1 and `HK_SAVE_ERRORS`
+0; new `town-continue` (tape: UP, X at the title, then walk) boots from
+`tools/cards/town-continue.mcd`, a town-bench run's written card, and must
+end with `HK_SAVE_LOADED` 1, `HK_MENU_ROW` 4, the Town slot, wallet 6 and 13
+door hits. Nine routes pass. Headroom 116,124 bytes (psx-mc's filesystem code
+and the save path cost 16.4 KB; the trend since build 94 is now 246 KB to
+116 KB and needs a review before the next large runtime). The fixture card
+depends on the Town catalogue slot: after a catalogue change, copy
+`.hkpsx/validate/town-bench.mcd` over it. Not done (next slices): the source
+save menu (three slots, file select, delete), power-interruption tests (step
+8; the SDK's `Card::write` is not atomic across its frames), a versioned
+global-flag codec once there are flags to save, and step 4 (Geo loss and
+Shade).
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
