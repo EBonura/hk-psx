@@ -54,7 +54,7 @@ fn number(x:i16,y:i16,value:u32) {
     text(x,y,core::str::from_utf8(&digits[start..]).unwrap());
 }
 #[inline(never)] // UI composition must not expand main beyond MIPS branch reach.
-pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crate::menu::Settings)>,total_masks:u16){
+pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crate::menu::Settings)>,total_masks:u16,save_prompt:Option<u8>){
     unsafe{USED=0;BOX_COUNT=0;
       let geo_y=crate::hud::geo_y(total_masks);text(18,geo_y,"Geo");number(43,geo_y,geo);
       if let Some((p,settings))=pause {
@@ -81,6 +81,14 @@ pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crat
             number(222,110,u32::from(settings.sfx));number(222,128,u32::from(settings.ambience));number(222,146,u32::from(settings.music));
             text(239,110,"/10");text(239,128,"/10");text(239,146,"/10");
             text(58,207,"Left / Right: Volume   O: Resume");
+        }
+      }else if let Some(row)=save_prompt {
+        // Seated at a bench. The source saves silently; this port asks first.
+        BOXES[0]=RectFlat::new(92,84,136,72,150,150,150);BOXES[1]=RectFlat::new(94,86,132,68,0,0,0);BOX_COUNT=2;
+        text(160-width("Save game?")/2,96,"Save game?");
+        for (i,label) in ["Yes","No"].iter().enumerate() {
+            let y=116+i as i16*18;text(146,y,label);
+            if row as usize==i {text(130,y,">");}
         }
       }else if let Some(id)=STATE.active{
         BOXES[0]=RectFlat::new(10,46,300,152,150,150,150);BOXES[1]=RectFlat::new(12,48,296,148,0,0,0);BOX_COUNT=2;
