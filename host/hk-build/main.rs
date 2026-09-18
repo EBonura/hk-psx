@@ -20,10 +20,10 @@ const ASSET_SCRIPTS: &[&str] = &[
 /// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
 /// Final telemetry a route must reach besides completing its tape.
 const REQUIRED: &[(&str, &str, u64)] = &[("town-bench", "HK_BENCH_RESTS", 1), ("town-bench", "HK_SAVE_WRITES", 1), ("town-bench", "HK_SAVE_ERRORS", 0),
-    // Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the title offers row 4,
-    // and play resumes in the Town view with that record's wallet and opened Great Door. A catalogue change
+    // Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the save
+    // screen's first slot resumes in the Town view with that record's wallet and opened Great Door. A catalogue change
     // that moves the Town slot invalidates the fixture: copy .hkpsx/validate/town-bench.mcd over it.
-    ("town-continue", "HK_SAVE_LOADED", 1), ("town-continue", "HK_MENU_ROW", 4), ("town-continue", "HK_REGION_ID", 100),
+    ("town-continue", "HK_SAVE_LOADED", 1), ("town-continue", "HK_MENU_ROW", 0), ("town-continue", "HK_REGION_ID", 100),
     ("town-continue", "HK_GEO_WALLET", 6), ("town-continue", "HK_GREAT_DOOR_HITS", 13),
     // town-shade boots from a card whose record already carries a Hollow Shade six units
     // from the Dirtmouth bench with a 99-Geo pool. It must spawn, chase and hurt the

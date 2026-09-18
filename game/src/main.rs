@@ -241,10 +241,36 @@ fn main() {
     let mut fb=FrameBuffer::new(320,240);
     gpu::set_draw_area(0,0,319,239);gpu::set_draw_offset(0,0);
     // The card is read before the pad sampler exists: SIO0 is not yet shared.
-    let saved=save::read();
-    audio::init();let (mut settings,continued)=menu::run(&mut fb,saved.is_some());focus_audio::set_volume(settings.sfx);menu::loading(&mut fb);
-    // A record from another disc build may name a slot this catalogue lacks: treat it as no save.
-    let saved=saved.filter(|s|continued&&(s.region as usize)<world::REGION_SCENES.len()&&world::scene_of(s.region as usize)==s.scene as usize);
+    let (slots,card_fault)=save::survey();
+    // Each slot's one line on the save screen. Geo and masks are what the
+    // record holds; the source also shows play time, completion and the map
+    // zone, none of which this port tracks.
+    let mut slot_text=[[0u8;16];save::PROFILES];
+    let mut slot_used=[0usize;save::PROFILES];
+    for (i,slot) in slots.iter().enumerate() {
+        if let save::Slot::Used(save)=slot {
+            let line=&mut slot_text[i];let mut at=0;
+            for b in b"Geo " {line[at]=*b;at+=1;}
+            let mut geo=save.geo.min(9999);let mut digits=[0u8;4];let mut n=0;
+            loop {digits[n]=b'0'+(geo%10) as u8;geo/=10;n+=1;if geo==0 {break;}}
+            while n>0 {n-=1;line[at]=digits[n];at+=1;}
+            slot_used[i]=at;
+        }
+    }
+    let mut slot_lines=["Empty";save::PROFILES];
+    for (i,slot) in slots.iter().enumerate() {
+        slot_lines[i]=match slot {
+            save::Slot::Empty=>"Empty",
+            save::Slot::Corrupt=>"Damaged",
+            save::Slot::Used(_)=>core::str::from_utf8(&slot_text[i][..slot_used[i]]).unwrap_or("Used"),
+        };
+    }
+    let profile_fault=card_fault.map_or("",|f|f.message());
+    audio::init();let (mut settings,profile)=menu::run(&mut fb,&slot_lines,profile_fault);
+    focus_audio::set_volume(settings.sfx);menu::loading(&mut fb);
+    let saved=match slots[profile] {save::Slot::Used(s)=>Some(s),_=>None}
+        // A record from another disc build may name a slot this catalogue lacks.
+        .filter(|s|(s.region as usize)<world::REGION_SCENES.len()&&world::scene_of(s.region as usize)==s.scene as usize);
     let cache=unsafe { &mut *(&raw mut ROOM_CACHE) };
     let mut state=world::State::new();
     let geo=unsafe {&mut *(&raw mut GEO_WORLD)};
@@ -671,7 +697,7 @@ fn main() {
             if let Some(s)=save_requested.take() {
                 // Card frames share SIO0 with the pad: bracket the write like a scene load
                 // so the sampler drops the polls it cannot take instead of faulting.
-                input::begin_scene_load(sim_clock);input::begin_blocking_transfer();save::write(&s);sim_clock=input::end_scene_load();
+                input::begin_scene_load(sim_clock);input::begin_blocking_transfer();let _=save::write(profile,&s);sim_clock=input::end_scene_load();
                 let held=ButtonState::from_bits(input::held_buttons());
                 player.was_jump=held.is_held(button::CROSS);start_held=held.is_held(button::START);
             }

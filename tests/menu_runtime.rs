@@ -37,19 +37,25 @@ pub mod audio{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volume
 pub mod ambience{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((1,v)));}}
 pub mod music{pub fn begin(){}pub fn tick(){}pub fn stop()->bool{true}pub fn set_fade(_:u8){}pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((2,v)));}}
 #[path="../game/src/cheats.rs"]mod cheats;
+// menu_state indexes the save screen by the profile count.
+mod save{pub const PROFILES:usize=4;}
+const EMPTY:[&str;4]=["Empty","Empty","Empty","Empty"];
 #[path="../game/src/menu.rs"]mod menu;
 fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{samples:bits.into_iter().collect(),..Trace::default()});}
-#[test]fn first_start_and_cross_keep_original_poll_count_and_defaults(){
+#[test]fn start_opens_the_save_screen_and_the_first_slot_keeps_the_defaults(){
  let _guard=LOCK.lock().unwrap();
- for b in [button::START,button::CROSS]{let mut samples=vec![0;8];samples.push(b);samples.extend([0;40]);feed(samples);
-  let (s,c)=menu::run(&mut framebuf::FrameBuffer,false);assert_eq!(s,menu::Settings::new());assert!(!c);
-  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.polls,15);assert!(t.volumes.is_empty());assert_eq!(t.uploads.len(),10);});
+ // As in the source, Start Game leads to the save screen rather than straight
+ // into play; confirming slot 1 is what begins.
+ for b in [button::START,button::CROSS]{
+  let mut samples=vec![0;8];samples.push(b);samples.push(0);samples.push(button::CROSS);samples.extend([0;40]);feed(samples);
+  let (s,p)=menu::run(&mut framebuf::FrameBuffer,&EMPTY,"");assert_eq!(s,menu::Settings::new());assert_eq!(p,0);
+  TRACE.with(|t|{let t=t.borrow();assert!(t.volumes.is_empty());assert_eq!(t.uploads.len(),10);});
  }
 }
 #[test]fn options_call_real_volume_hooks_and_controls_return_without_auto_start(){
  let _guard=LOCK.lock().unwrap();use menu::state::*;
- let mut samples=Vec::new();for b in [DOWN,CROSS,LEFT,DOWN,LEFT,DOWN,LEFT,CIRCLE,DOWN,CROSS,CIRCLE,DOWN,DOWN,START]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,false);assert_eq!(s,menu::Settings{sfx:9,ambience:9,music:9,..menu::Settings::new()});
+ let mut samples=Vec::new();for b in [DOWN,CROSS,LEFT,DOWN,LEFT,DOWN,LEFT,CIRCLE,DOWN,CROSS,CIRCLE,DOWN,DOWN,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (s,_)=menu::run(&mut framebuf::FrameBuffer,&EMPTY,"");assert_eq!(s,menu::Settings{sfx:9,ambience:9,music:9,..menu::Settings::new()});
  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.volumes,[(0,9),(1,9),(2,9)]);assert!(t.sprites>100);});
 }
 #[test]fn retry_requires_release_and_patch_uploads_keep_their_exact_ranges(){
@@ -62,15 +68,20 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
 
 #[test]fn cheats_render_within_screen_and_carry_settings_to_gameplay(){
  let _guard=LOCK.lock().unwrap();use menu::state::*;
- let mut samples=Vec::new();for b in [UP,CROSS,CROSS,DOWN,RIGHT,DOWN,RIGHT,DOWN,RIGHT,CIRCLE,DOWN,START]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,false);assert_eq!(s.cheats.bits(),15);
+ let mut samples=Vec::new();for b in [UP,CROSS,CROSS,DOWN,RIGHT,DOWN,RIGHT,DOWN,RIGHT,CIRCLE,DOWN,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (s,_)=menu::run(&mut framebuf::FrameBuffer,&EMPTY,"");assert_eq!(s.cheats.bits(),15);
  TRACE.with(|t|assert!(t.borrow().sprites>100));
 }
-#[test]fn continue_row_is_only_offered_with_a_save(){
+#[test]fn the_save_screen_returns_the_confirmed_profile_and_can_be_left(){
  let _guard=LOCK.lock().unwrap();use menu::state::*;
- // Without a save UP from Start wraps to Cheats (4 rows); with one it lands on Continue.
- let mut samples=Vec::new();for b in [UP,DOWN,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (_,c)=menu::run(&mut framebuf::FrameBuffer,false);assert!(!c);
- let mut samples=Vec::new();for b in [UP,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (_,c)=menu::run(&mut framebuf::FrameBuffer,true);assert!(c);
+ // Start Game, down twice to slot 3, confirm.
+ let mut samples=Vec::new();for b in [START,DOWN,DOWN,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (_,p)=menu::run(&mut framebuf::FrameBuffer,&EMPTY,"");assert_eq!(p,2);
+ // Circle leaves the save screen for the title, so the next Start still works.
+ let mut samples=Vec::new();for b in [START,DOWN,CIRCLE,START,DOWN,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (_,p)=menu::run(&mut framebuf::FrameBuffer,&EMPTY,"");assert_eq!(p,1);
+ // A slot's line is whatever the caller surveyed, including a card fault.
+ let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let lines=["Geo 42","Empty","Damaged","Empty"];
+ let (_,p)=menu::run(&mut framebuf::FrameBuffer,&lines,"Memory card full");assert_eq!(p,0);
 }
