@@ -927,8 +927,9 @@ bytes; seven routes pass.
 ## Source gate rules: facing into side gates, delayed top colliders (build 103)
 
 P09 steps 2 and 4. `TransitionPoint.TryDoTransition` only fires a left or
-right gate while the Knight faces into it (or is recoiling); top and bottom
-gates fire on contact. Top gates ship with a disabled BoxCollider2D and a
+right gate while the Knight faces into it; a recoiling Knight never
+transitions (the source zeroes its velocity and translates it back out of the
+trigger); top and bottom gates fire on contact. Top gates ship with a disabled BoxCollider2D and a
 `Delay Collider` FSM (Wait 3 s, SetCollider) so the arriving Knight cannot
 bounce straight back out; in the admitted catalog that is Crossroads_01
 `top1` (the Tutorial `top1` leads outside the catalog). `host/regions.py`

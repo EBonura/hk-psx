@@ -333,8 +333,9 @@ def generate(report):
             # case) start the drop at -12 units per second; other sides keep rest.
             entry_vy = -12 * 65536 if destination['name'].startswith('top') else 0
             # TransitionPoint.TryDoTransition: side gates need the Knight facing
-            # into them (or recoiling); the collider of a delayed top gate turns
-            # on `collider_delay` seconds after the scene starts.
+            # into them, a recoiling Knight is pushed back out instead, and the
+            # collider of a delayed top gate turns on `collider_delay` seconds
+            # after the scene starts. Source GatePosition: right 1, left 2.
             side = {'left': 1, 'right': 2, 'top': 3, 'bot': 4}.get(''.join(c for c in gate['name'].split(' ')[0] if c.isalpha()), 0)
             delay = gate.get('collider_delay', 0.)
             if not gate.get('collider_initially_enabled', True) and delay <= 0:
