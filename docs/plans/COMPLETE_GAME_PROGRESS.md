@@ -811,6 +811,31 @@ faster than 2 units/s, then shrinks and destroys itself; the port gives it
 circle. `Actor` is 312 bytes; folding the five optional runtimes into one
 enum is the obvious next saving.
 
+## Husk Bullies and Hornheads through the parameterized Runner (build 98)
+
+Every Zombie Swipe placement in the catalog runs the same PlayMaker FSM: a
+structural fingerprint (`runner.py::fsm_fingerprint`: states, transitions,
+enabled actions and their scalar fields, variables other than `Lunge Speed`)
+is identical across Runner, Barger and Hornhead objects in seven scenes; the
+old whole-serialization sha differed per scene only through embedded owner
+references, which is why the Runners outside Crossroads_01 read as
+"unverified variants". The differences are Walker fields (walk speed 1.5 or
+2.5, pause wait/time ranges) and the FSM `Lunge Speed` (6, 14, 9), plus each
+placement's body and alert boxes, clip frame counts and corpse prefab
+(`Corpse Zombie Basic One/Three/Five`, same structure). `hk_sim::runner` now
+takes `Params { walk_speed, lunge_speed, walking_wait, paused_wait }`
+(`Params::RUNNER` is the level37 variant; the wait sampler receives the
+endpoints), `runner_senses::Shape` carries the body and alert boxes
+(`Shape::RUNNER` for the old constants, `from_boxes` from the actor spec), and
+`ActorController::Runner` gained `params` and `alert`. The recognizer accepts
+depth within 0.01, continuous collision detection (Hornheads), libraries
+without `Fall` (never played) and variant clip counts, and the corpse admits
+the three Basic prefabs by name and player data. Admitted: 9 Runners, 9
+Bargers, 8 Hornheads (from 4 Runners). Still unsupported in the family:
+Leapers (their own `Zombie Leap` FSM), Shields (no pauses, own FSM), Guards,
+Myla, one Runner with an `enemy_corpse` FSM and one that starts inactive.
+Headroom 168,932 bytes; seven routes pass.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

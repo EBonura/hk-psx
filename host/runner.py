@@ -7,11 +7,13 @@ import hashlib
 import json
 import math
 from pathlib import Path
+from combat import ticks
 
-# Full serialized FSM fingerprint includes action parameters omitted by narrow
-# action decoders (object types, references, disabled actions and event flags).
-# Any changed variant requires another source audit before recognition.
-FSM_SHA256 = '82bd846bbe92f489c0684645a657a196514dd6f0338bc58103ee3aae51ec4908'
+# Structural FSM fingerprint (fsm_fingerprint): states, transitions, enabled
+# actions and their scalar fields, variables other than Lunge Speed. Every
+# Zombie Swipe placement in the catalog shares it; any changed variant requires
+# another source audit before recognition.
+FSM_SHA256 = '73f11594e0115a43a66c8d1695a65916b81bfe6057c180636eed3330aaad92c2'
 ASSEMBLY_SHA256 = 'e9048ef6a633970f735e01ec166d3959f610eaea7a88d827d48d67b1e5fb87bd'
 ASSEMBLIES = {'Assembly-CSharp.dll': ASSEMBLY_SHA256,
               'PlayMaker.dll': '0ef0e7829d125e1f632c8a189260ec6c6882630be6932c8c7ae032efbc53469a',
@@ -23,31 +25,80 @@ CLIPS = {'Idle': (6, 10, 0), 'Walk': (7, 10, 0), 'Turn': (2, 12, 2),
          'Death Air': (1, 30, 6), 'Death Land': (8, 12, 2)}
 
 
-def walker_parameters(walker):
-    """Reject C# controller variants not represented by hk_sim::runner."""
-    expected = dict(walkSpeedL=-1.5, walkSpeedR=1.5, rightScale=-1.,
-                    edgeXAdjuster=0., turnPause=1., turnAfterIdlePercentage=0,
-                    pauseWaitMin=4., pauseWaitMax=1.5, pauseTimeMin=2.5,
-                    pauseTimeMax=1.5, pauses=1, idleClip='Idle', walkClip='Walk',
+def walker_parameters(walker, lunge_speed=6.):
+    """Reject C# controller variants not represented by hk_sim::runner.
+
+    Walk speed, the pause wait/time ranges and the FSM `Lunge Speed` are the
+    placement parameters (Runner 1.5/6, Barger 1.5/14, Hornhead 2.5/9); every
+    other Walker field must match the audited Runner.
+    """
+    expected = dict(rightScale=-1., edgeXAdjuster=0., turnPause=1., turnAfterIdlePercentage=0,
+                    pauses=1, idleClip='Idle', walkClip='Walk',
                     turnClip='Turn', ambush=0, startInactive=0, waitForHeroX=0,
                     preventTurn=0, ignoreHoles=0, preventTurningToFaceHero=0,
                     preventScaleChange=0, m_Enabled=1)
     for name, value in expected.items():
         if walker.get(name) != value:
             raise ValueError('unsupported Runner Walker field: ' + name)
-    return {'walk_velocity_q16': [-98304, 98304], 'lunge_velocity_q16': [-393216, 393216],
-            'walking_wait_endpoints_ticks': [240, 90], 'pause_endpoints_ticks': [150, 90],
+    speed = walker.get('walkSpeedR')
+    if not isinstance(speed, float) or not 0 < speed <= 16 or walker.get('walkSpeedL') != -speed:
+        raise ValueError('unsupported Runner Walker field: walkSpeedL')
+    if not isinstance(lunge_speed, float) or not 0 < lunge_speed <= 32:
+        raise ValueError('unsupported Runner lunge speed')
+    waits = {}
+    for key, (low, high) in {'walking': ('pauseWaitMin', 'pauseWaitMax'), 'pause': ('pauseTimeMin', 'pauseTimeMax')}.items():
+        values = [walker.get(low), walker.get(high)]
+        if any(not isinstance(v, float) or not 0 < v <= 10 for v in values):
+            raise ValueError('unsupported Runner Walker field: ' + low)
+        # Random.Range accepts either argument order; the guest samples [hi, lo].
+        waits[key] = sorted((ticks(values[0]), ticks(values[1])), reverse=True)
+    return {'walk_speed': speed, 'lunge_speed': lunge_speed,
+            'walk_velocity_q16': [-round(speed * 65536), round(speed * 65536)],
+            'lunge_velocity_q16': [-round(lunge_speed * 65536), round(lunge_speed * 65536)],
+            'walking_wait_endpoints_ticks': waits['walking'], 'pause_endpoints_ticks': waits['pause'],
             'turn_cooldown_ticks': 60, 'idle_ticks': 15, 'initial_direction': -1}
 
 
+def fsm_fingerprint(fsm):
+    """Structure and scalar parameters of the Zombie Swipe FSM, without the
+    per-scene object references and the placement's Lunge Speed."""
+    from focus import action_fields
+    def scalar(value):
+        if isinstance(value, dict):
+            return ('VAR:' + value['name']) if value.get('useVariable') else repr(value.get('value', value.get('name')))
+        return repr(value)
+    summary = {'name': fsm['name'], 'start': fsm['startState'],
+               'variables': sorted((v['name'], repr(v['value'])) for group in fsm['variables'].values() if isinstance(group, list)
+                                   for v in group if isinstance(v, dict) and 'name' in v and 'value' in v
+                                   and not isinstance(v['value'], dict) and v['name'] != 'Lunge Speed'),
+               'globals': [(t['fsmEvent']['name'], t['toState']) for t in fsm.get('globalTransitions', [])], 'states': []}
+    for state in fsm['states']:
+        data = state['actionData']
+        actions = []
+        for index, name in enumerate(data['actionNames']):
+            try:
+                fields = action_fields(data, index)
+            except ValueError as error:
+                fields = {'error': str(error)}
+            actions.append((name, int(data['actionEnabled'][index]), sorted((k, scalar(v)) for k, v in fields.items() if k != 'gameObject')))
+        summary['states'].append((state['name'], [(t['fsmEvent']['name'], t['toState']) for t in state['transitions']], actions))
+    return hashlib.sha256(json.dumps(summary, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def clip_contract(clips):
+    """Every Zombie Swipe library carries the same clip set with the same wrap
+    modes; frame counts and rates differ per variant and are cooked as found.
+    `Fall` is optional (the controller never plays it)."""
     by_name = {c['name']: c for c in clips}
-    if len(by_name) != len(clips) or set(by_name) != set(CLIPS):
+    if len(by_name) != len(clips) or not (set(CLIPS) - {'Fall'}) <= set(by_name) or not set(by_name) <= set(CLIPS):
         raise ValueError('unsupported Runner animation inventory')
     result = []
     for name, (frames, fps, wrap) in CLIPS.items():
-        clip = by_name[name]
-        if (len(clip['frames']), clip['fps'], clip['wrapMode']) != (frames, fps, wrap):
+        clip = by_name.get(name)
+        if clip is None:
+            continue
+        frames, fps = len(clip['frames']), clip['fps']
+        if clip['wrapMode'] != wrap or frames == 0 or fps <= 0:
             raise ValueError('unsupported Runner animation: ' + name)
         if any(frame.get('triggerEvent', False) for frame in clip['frames']):
             raise ValueError('unsupported Runner frame event: ' + name)
@@ -63,12 +114,15 @@ def body_contract(rigid):
     expected = {'m_BodyType': 0, 'm_Simulated': True, 'm_UseAutoMass': False,
                 'm_UseFullKinematicContacts': False, 'm_Mass': 1.,
                 'm_LinearDamping': 0., 'm_GravityScale': 1., 'm_Interpolate': 0,
-                'm_SleepingMode': 1, 'm_CollisionDetection': 0, 'm_Constraints': 4,
+                'm_SleepingMode': 1, 'm_Constraints': 4,
                 'm_Material': {'m_FileID': 0, 'm_PathID': 0},
                 'm_IncludeLayers': {'m_Bits': 0}, 'm_ExcludeLayers': {'m_Bits': 0}}
     for name, value in expected.items():
         if rigid.get(name) != value:
             raise ValueError('unsupported Runner rigid body field: ' + name)
+    # Hornheads use continuous collision detection; the swept solver covers both.
+    if rigid.get('m_CollisionDetection') not in (0, 1):
+        raise ValueError('unsupported Runner rigid body field: m_CollisionDetection')
 
 
 def axis_aligned_bounds(matrix, offset, size):
@@ -99,10 +153,15 @@ def recognize(sc, actor):
     source = sc.source
     records = _component_records(sc, actor['game_object'])
     walker_id, walker = _one(records, 'Walker')
-    parameters = walker_parameters(walker)
     _, fsm_component = _one(records, 'PlayMakerFSM')
     fsm = fsm_component['fsm']
-    fingerprint = hashlib.sha256(json.dumps(fsm, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    variables = {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
+                 for v in group if isinstance(v, dict) and 'name' in v and 'value' in v and not isinstance(v['value'], dict)}
+    parameters = walker_parameters(walker, variables.get('Lunge Speed'))
+    # The serialized FSM embeds owner references, so the fingerprint covers its
+    # structure and scalar parameters (states, transitions, enabled actions and
+    # their fields, variables other than Lunge Speed).
+    fingerprint = fsm_fingerprint(fsm)
     if not fsm_component['m_Enabled'] or fsm.get('name') != 'Zombie Swipe' or fingerprint != FSM_SHA256:
         raise ValueError('unverified Runner FSM variant')
     for name, expected in ASSEMBLIES.items():
@@ -111,6 +170,8 @@ def recognize(sc, actor):
     gid = actor['game_object']; matrix = sc.world(sc.go_transform[gid])
     # These two placed instances begin with unit scale facing left. Runtime
     # facing changes must mirror the body offset along with the source sprite.
+    if len(actor['position']) < 3 or abs(actor['position'][2]) > .01:
+        raise ValueError('Runner depth differs from guest source plane')
     if sc.gos[gid]['m_Layer'] != 11 or any(abs(matrix[i][i] - 1) > 1e-6 for i in range(2)):
         raise ValueError('unsupported Runner layer or initial scale')
     _, body = _one(records, 'BoxCollider2D')
@@ -144,7 +205,7 @@ def recognize(sc, actor):
     animation = clip_contract(clips)
     sprite_keys = sorted({(source.sid(source.ref(library.assets_file, frame['spriteCollection'])), frame['spriteId'])
                          for clip in clips for frame in clip['frames']})
-    if len(sprite_keys) != 34:raise ValueError('Runner shared sprite inventory changed')
+    if not sprite_keys:raise ValueError('Runner sprite inventory empty')
     _, audio_source = _one(records, 'AudioSource')
     # Unity6 stores the assigned loop in m_Resource; m_audioClip is null here.
     loop = source.ref(sc.file, audio_source['m_Resource'])
@@ -161,8 +222,10 @@ def recognize(sc, actor):
         if any(abs(v) > 16 * 65536 for v in result):raise ValueError('Runner local bounds exceed Q16 contract')
         return result
     body_q16, alert_q16 = relative_q16(body_bounds), relative_q16(alert_bounds)
-    if body_q16 != [-51200, -94208, 28672, 12288] or alert_q16 != [-365036, -144507, 365036, 12730]:
-        raise ValueError('Runner sensing shape differs from the compiled query contract')
+    # The level37 Runner shape is hk_sim::runner_senses::Shape::RUNNER; other
+    # placements carry their body and alert boxes through the actor spec.
+    if alert_q16[0] != -alert_q16[2] or body_q16[0] >= body_q16[2] or body_q16[1] >= body_q16[3] or alert_q16[1] >= alert_q16[3]:
+        raise ValueError('Runner sensing shape is not a mirror-stable box')
     return {'kind': 'ZombieSwipeWalker', 'guest_enabled': False, 'parameters': parameters,
             'walker_source': f'{Path(sc.file.name).name}:{walker_id}', 'fsm_sha256': fingerprint,
             'assembly_sha256': ASSEMBLY_SHA256, 'assemblies_sha256': dict(ASSEMBLIES),

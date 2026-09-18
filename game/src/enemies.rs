@@ -41,12 +41,11 @@ impl RunnerRuntime {
         *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
         *rng
     }
-    fn choose(rng: &mut u32, wait: hk_sim::runner::Wait) -> u16 {
-        let [hi, lo] = wait.endpoints();
+    fn choose(rng: &mut u32, _wait: hk_sim::runner::Wait, [hi, lo]: [u16; 2]) -> u16 {
         lo + (Self::draw(rng) % (hi - lo + 1) as u32) as u16
     }
     fn clip(&self, spec: &ActorSpec) -> u16 {
-        let ActorController::Runner { idle_clip, anticipate_clip, lunge_clip, cooldown_clip } = spec.controller
+        let ActorController::Runner { idle_clip, anticipate_clip, lunge_clip, cooldown_clip, .. } = spec.controller
             else { panic!("Runner runtime with Crawler metadata") };
         use hk_sim::runner::Clip;
         match self.controller.animation().map(|a| a.clip).unwrap_or(Clip::Idle) {
@@ -285,10 +284,10 @@ impl Actor {
             recoil: [0; 2],
             corpse: None,
             geo_paid: false,
-            runner: if matches!(spec.controller, ActorController::Runner { .. }) {
+            runner: if let ActorController::Runner { params, .. } = spec.controller {
                 assert!(spec.initial_direction == -1 && !spec.random_start_direction,
                     "unsupported Runner initial facing variant");
-                Some(RunnerRuntime { controller: hk_sim::runner::Runner::new(), rng: seed,
+                Some(RunnerRuntime { controller: hk_sim::runner::Runner::with_params(params), rng: seed,
                     vx: 0, animation_tick: 0 })
             } else { None },
             climber: if let ActorController::Climber { start_right, .. } = spec.controller {
@@ -481,7 +480,7 @@ impl Actor {
         let vx = if let Some(mut runner) = self.runner.take() {
             runner.animation_tick = runner.animation_tick.saturating_add(1);
             let senses = self.runner_senses(&runner, spec, room, context, count, &edge);
-            let actions = runner.controller.step(senses, |w| RunnerRuntime::choose(&mut runner.rng, w));
+            let actions = runner.controller.step(senses, |w, e| RunnerRuntime::choose(&mut runner.rng, w, e));
             self.apply_runner_actions(&mut runner, actions, emit);
             let vx = runner.vx;
             self.runner = Some(runner);
@@ -654,10 +653,13 @@ impl Actor {
         context:RunnerContext, count:usize, edge:impl Fn(usize)->[i32;4]) -> hk_sim::runner::Senses {
         use hk_sim::runner_senses as q;
         let pos = [self.x,self.y];
-        // Both checked level37 variants have the same body shape and z=.001.
-        let expected = q::body_bounds(pos, runner.controller.facing()).expect("Runner bounds");
+        let ActorController::Runner { alert, .. } = spec.controller else { panic!("Runner senses without Runner metadata") };
+        // Body and alert boxes come from the placement (facing-left frame); the
+        // level37 Runner shape is `Shape::RUNNER`.
+        let shape = q::Shape::from_boxes(spec.bounds, alert);
+        let expected = q::body_bounds_of(shape, pos, runner.controller.facing()).expect("Runner bounds");
         assert_eq!(self.bounds(spec), expected, "unsupported Runner collider variant");
-        let in_alert_range = q::alert_overlap(pos,context.hero_body).expect("Runner alert bounds");
+        let in_alert_range = q::alert_overlap_of(shape,pos,context.hero_body).expect("Runner alert bounds");
         let can_see_hero = match q::line_of_sight(pos,context.hero,in_alert_range,count,&edge) {
             Ok(value) => value,
             // Coincident transform points have no proven Physics2D equivalent;
@@ -665,7 +667,7 @@ impl Actor {
             Err(q::QueryError::ZeroLengthSight) => false,
             Err(_) => panic!("Runner LOS outside validated coordinates"),
         };
-        let probes = q::walker_queries(pos,runner.controller.facing(),count,edge)
+        let probes = q::walker_queries_of(shape,pos,runner.controller.facing(),count,edge)
             .expect("Runner Sweep outside validated coordinates");
         hk_sim::runner::Senses {
             camera_in_start_range: hk_sim::runner::camera_in_start_range(context.camera,[self.x,self.y,66]),
@@ -889,7 +891,7 @@ impl EnemyWorld {
                                 if nail.kind<2 && begin_recoil {
                                     let senses=actor.runner_senses(&runner,spec,room,context,
                                         terrain_room.counts[5],|i|state.edge_in_view(region,room,terrain_region,terrain_room,i));
-                                    let actions=runner.controller.horizontal_recoil(senses,|w|RunnerRuntime::choose(&mut runner.rng,w));
+                                    let actions=runner.controller.horizontal_recoil(senses,|w,e|RunnerRuntime::choose(&mut runner.rng,w,e));
                                     actor.apply_runner_actions(&mut runner,actions,&mut runner_event);
                                 }
                                 actor.runner=Some(runner);
@@ -1117,6 +1119,7 @@ mod runner_runtime_tests {
     const SPEC: ActorSpec = ActorSpec {
         controller: ActorController::Runner {
             idle_clip: 2, anticipate_clip: 3, lunge_clip: 4, cooldown_clip: 5,
+            params: hk_sim::runner::Params::RUNNER, alert: hk_sim::runner_senses::ALERT_LOCAL,
         },
         source_id: 5196, x: 0, y: 94208,
         bounds: [-51200,-94208,28672,12288],
@@ -1197,7 +1200,7 @@ mod runner_runtime_tests {
         let mut world=EnemyWorld::new();world.actors[0]=Some(actor);
         let draws=world.prepare_draws(&region(),&room,(actor.x,actor.y));
         assert_eq!(draws.entries[0].unwrap().texture,0); // actual Walk clip
-        assert!(core::mem::size_of::<RunnerRuntime>()<=64);
+        assert!(core::mem::size_of::<RunnerRuntime>()<=80);
         // Runner, Climber and Vengefly runtimes are all optional fields; folding
         // them into one enum would give back about 120 bytes per actor.
         assert!(core::mem::size_of::<Actor>()<=352);

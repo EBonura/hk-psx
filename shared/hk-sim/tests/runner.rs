@@ -3,7 +3,7 @@ use hk_sim::{
     ONE,
 };
 
-fn choose(wait: Wait) -> u16 {
+fn choose(wait: Wait, _: [u16; 2]) -> u16 {
     wait.endpoints()[1]
 }
 fn tick(r: &mut Runner) -> Vec<Action> {
@@ -56,9 +56,9 @@ fn camera_threshold_is_strict_3d_overflow_safe_and_latched() {
                 camera_in_start_range: true,
                 ..Senses::default()
             },
-            |w| {
-                draws.push(w.endpoints());
-                choose(w)
+            |w, e| {
+                draws.push(e);
+                choose(w, e)
             },
         )
         .iter()
@@ -103,7 +103,7 @@ fn rejects_unproven_pause_samples() {
             camera_in_start_range: true,
             ..Senses::default()
         },
-        |_| 1,
+        |_, _| 1,
     );
 }
 
@@ -385,7 +385,7 @@ fn stale_same_clip_callback_cannot_finish_restart_and_death_is_terminal() {
         assert_eq!(r.swipe(), Swipe::Dead);
         assert_eq!(r.animation(), None);
     }
-    assert!(core::mem::size_of::<Runner>() <= 32);
+    assert!(core::mem::size_of::<Runner>() <= 48);
 }
 
 #[test]
@@ -485,9 +485,9 @@ fn idle_reset_checks_ready_immediately_after_synchronous_walker_update() {
                 can_see_hero: true,
                 ..Senses::default()
             },
-            |w| {
+            |w, e| {
                 draws.push(w);
-                choose(w)
+                choose(w, e)
             },
         )
         .iter()
@@ -598,7 +598,7 @@ fn recoil_updates_existing_turn_without_restarting_then_checks_ready() {
     );
     let turn = r.animation();
     let out: Vec<_> = r
-        .horizontal_recoil(Senses::default(), |_| {
+        .horizontal_recoil(Senses::default(), |_, _| {
             panic!("StartMoving must not draw again during a running turn")
         })
         .iter()
@@ -640,9 +640,9 @@ fn startup_turn_and_ready_attack_fit_ordered_command_bound() {
                 hero_x: ONE,
                 ..Senses::default()
             },
-            |w| {
+            |w, e| {
                 draws.push(w);
-                choose(w)
+                choose(w, e)
             },
         )
         .iter()

@@ -11,7 +11,7 @@ from effects import corpse_source,append_corpse_art,generated_corpse
 
 def fixture(runner=True):
     family='ZombieSwipeWalker' if runner else 'WalkLeftRight'
-    actor={'game_object':1,'movement_supported':True,'movement_control':{'kind':family}}
+    actor={'game_object':1,'movement_supported':True,'movement_control':{'kind':family,'library_source':'sharedassets37.assets:149'}}
     scene=SimpleNamespace(file='scene',go_transform={1:1,2:2},world=lambda _:[[1,0,0],[0,1,0],[0,0,1]])
     death=dict(isCorpseRecyclable=False,corpseFacesRight=False,lowCorpseArc=False,rotateCorpse=False,
         corpseFlingSpeed=15,corpseSpawnPoint={'x':0.,'y':0. if runner else .5,'z':0.},
@@ -72,7 +72,7 @@ class RunnerCorpseTests(unittest.TestCase):
     def test_runner_rejects_changed_variant_without_weakening_source_guards(self):
         changes=[
             lambda f:f[2]['movement_control'].update(kind='Climber'),
-            lambda f:setattr(f[5][1],'sid','sharedassets37.assets:69'),
+            lambda f:f[5][1].data.update(m_Name='Corpse Other'),
             lambda f:setattr(f[5][100],'sid','sharedassets37.assets:146'),
             lambda f:f[3].update(corpseFlingSpeed=20),
             lambda f:f[3].update(corpseSpawnPoint={'x':0.,'y':.5,'z':0.}),
@@ -80,7 +80,7 @@ class RunnerCorpseTests(unittest.TestCase):
             lambda f:f[4]['Corpse'].update(resetRotation=True),
             lambda f:f[4]['Corpse'].update(landEffects={'m_PathID':5}),
             lambda f:f[4]['BoxCollider2D'].update(m_IsTrigger=True),
-            lambda f:f[4]['BoxCollider2D']['m_Offset'].update(x=0.),
+            lambda f:f[4]['BoxCollider2D']['m_Size'].update(x=5.),
             lambda f:f[4]['Rigidbody2D'].update(m_Simulated=False),
             lambda f:f[4]['tk2dSpriteAnimator'].update(defaultClipId=1),
             lambda f:f[5][100].data['clips'][1].update(fps=15),

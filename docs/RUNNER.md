@@ -93,3 +93,13 @@ durations and excludes the inactive Bursting Zombie's incomplete fields.
 Local source evidence and reproduction live in
 `.hkpsx/crossroads68/RUNNER-CONTRACT.md`, `runner-provenance.json` and
 `check_runner_contract.py`; retail records and decompilation stay ignored.
+
+## Variants (build 98)
+
+The Zombie Swipe FSM is shared by the Runner, the Husk Bully (Zombie Barger)
+and the Hornhead. `hk_sim::runner::Params` carries the placement's walk speed,
+lunge speed and pause wait/time endpoints, `runner_senses::Shape` its body and
+alert boxes, and `host/runner.py::fsm_fingerprint` verifies the FSM structure
+and scalar fields instead of the per-scene serialization. Bargers keep the
+Runner's 1.5 walk with a 14 units/s lunge and shorter pauses; Hornheads walk
+at 2.5 with a 9 units/s lunge and recoil at 15.

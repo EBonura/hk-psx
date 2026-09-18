@@ -60,21 +60,35 @@ pub enum Wait {
     Paused,
 }
 impl Wait {
-    /// Authored Random.Range argument order, quantized to nominal 60 Hz ticks.
+    /// Authored level37 Runner Random.Range argument order, quantized to
+    /// nominal 60 Hz ticks (`Params::RUNNER`).
     pub const fn endpoints(self) -> [u16; 2] {
         match self {
             Self::Walking => [240, 90],
             Self::Paused => [150, 90],
         }
     }
-    fn sample(self, choose: &mut impl FnMut(Wait) -> u16) -> u16 {
-        let value = choose(self);
-        let [hi, lo] = self.endpoints();
-        assert!(
-            value >= lo && value <= hi,
-            "Runner wait outside source endpoints"
-        );
-        value
+}
+/// Per-variant Walker fields and the FSM `Lunge Speed`: the Zombie Swipe FSM
+/// is otherwise identical across Runner, Barger and Hornhead placements.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Params {
+    /// Walker walkSpeedR in Q16 units/s (walkSpeedL is its negative).
+    pub walk_speed: i32,
+    /// FSM `Lunge Speed` in Q16 units/s.
+    pub lunge_speed: i32,
+    /// pauseWaitMin/Max in ticks, as authored (hi, lo after sorting).
+    pub walking_wait: [u16; 2],
+    /// pauseTimeMin/Max in ticks (hi, lo).
+    pub paused_wait: [u16; 2],
+}
+impl Params {
+    pub const RUNNER: Self = Self { walk_speed: ONE + ONE / 2, lunge_speed: 6 * ONE, walking_wait: [240, 90], paused_wait: [150, 90] };
+    const fn endpoints(self, wait: Wait) -> [u16; 2] {
+        match wait {
+            Wait::Walking => self.walking_wait,
+            Wait::Paused => self.paused_wait,
+        }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,6 +185,7 @@ pub struct Runner {
     turn_cooldown: u16,
     animation: Option<Animation>,
     serial: u32,
+    params: Params,
 }
 impl Default for Runner {
     fn default() -> Self {
@@ -178,9 +193,13 @@ impl Default for Runner {
     }
 }
 impl Runner {
-    /// Both supported source instances start facing left.
+    /// The level37 Runner variant; every supported placement starts facing left.
     pub const fn new() -> Self {
+        Self::with_params(Params::RUNNER)
+    }
+    pub const fn with_params(params: Params) -> Self {
         Self {
+            params,
             walker: Walker::Waiting,
             swipe: Swipe::Ready,
             facing: -1,
@@ -221,19 +240,25 @@ impl Runner {
             y: None,
         });
     }
-    fn walk(&mut self, choose: &mut impl FnMut(Wait) -> u16, out: &mut Actions) {
+    fn sample(&self, wait: Wait, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16) -> u16 {
+        let [hi, lo] = self.params.endpoints(wait);
+        let value = choose(wait, [hi, lo]);
+        assert!(value >= lo && value <= hi, "Runner wait outside source endpoints");
+        value
+    }
+    fn walk(&mut self, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
         self.walker = Walker::Walking;
         self.play(Clip::Walk, out);
-        self.wait = Wait::Walking.sample(choose);
+        self.wait = self.sample(Wait::Walking, choose);
         out.push(Action::AudioPlay);
-        Self::vx(out, self.facing() * (ONE + ONE / 2));
+        Self::vx(out, self.facing() * self.params.walk_speed);
     }
-    fn pause(&mut self, choose: &mut impl FnMut(Wait) -> u16, out: &mut Actions) {
+    fn pause(&mut self, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
         self.walker = Walker::Paused;
         out.push(Action::AudioStop);
         self.play(Clip::Idle, out);
         Self::vx(out, 0);
-        self.wait = Wait::Paused.sample(choose);
+        self.wait = self.sample(Wait::Paused, choose);
     }
     fn turn(&mut self, cause: TurnCause, out: &mut Actions) {
         self.walker = Walker::Turning;
@@ -255,7 +280,7 @@ impl Runner {
         });
         self.play(Clip::Anticipate, out);
     }
-    fn reset(&mut self, senses: Senses, choose: &mut impl FnMut(Wait) -> u16, out: &mut Actions) {
+    fn reset(&mut self, senses: Senses, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
         // StartMoving only begins walking from stopped/waiting states. A global
         // recoil while already walking/turning must not restart that clip.
         if matches!(
@@ -286,7 +311,7 @@ impl Runner {
     pub fn horizontal_recoil(
         &mut self,
         senses: Senses,
-        mut choose: impl FnMut(Wait) -> u16,
+        mut choose: impl FnMut(Wait, [u16; 2]) -> u16,
     ) -> Actions {
         let mut out = Actions::new();
         if self.swipe != Swipe::Dead {
@@ -305,7 +330,7 @@ impl Runner {
     /// Convenience guest schedule, Walker then Swipe. This ordering is a
     /// deterministic policy, not established original execution order. A
     /// reference-driven caller can invoke the two callbacks in observed order.
-    pub fn step(&mut self, senses: Senses, mut choose: impl FnMut(Wait) -> u16) -> Actions {
+    pub fn step(&mut self, senses: Senses, mut choose: impl FnMut(Wait, [u16; 2]) -> u16) -> Actions {
         let mut out = self.step_walker(senses, &mut choose);
         for action in self.step_swipe(senses, &mut choose).iter() {
             out.push(action);
@@ -314,7 +339,7 @@ impl Runner {
     }
     /// Walker Update only. Call once per 60 Hz tick, including while stopped,
     /// so turn cooldown advances. Independently callable from Swipe Update.
-    pub fn step_walker(&mut self, senses: Senses, mut choose: impl FnMut(Wait) -> u16) -> Actions {
+    pub fn step_walker(&mut self, senses: Senses, mut choose: impl FnMut(Wait, [u16; 2]) -> u16) -> Actions {
         let mut out = Actions::new();
         if self.walker == Walker::Dead {
             return out;
@@ -325,7 +350,7 @@ impl Runner {
     /// Swipe Update only, with the guest's FixedUpdate lunge X write. Call once
     /// per 60 Hz tick. Source FixedUpdate scheduling needs a reference trace;
     /// clip completion always comes from the caller's real animation clock.
-    pub fn step_swipe(&mut self, senses: Senses, mut choose: impl FnMut(Wait) -> u16) -> Actions {
+    pub fn step_swipe(&mut self, senses: Senses, mut choose: impl FnMut(Wait, [u16; 2]) -> u16) -> Actions {
         let mut out = Actions::new();
         if self.swipe == Swipe::Dead {
             return out;
@@ -336,7 +361,7 @@ impl Runner {
                 self.swipe = Swipe::Lunge;
                 out.push(Action::DustStart);
                 self.play(Clip::Lunge, &mut out);
-                Self::vx(&mut out, self.facing() * 6 * ONE);
+                Self::vx(&mut out, self.facing() * self.params.lunge_speed);
             }
             Swipe::Lunge => {
                 if complete {
@@ -345,7 +370,7 @@ impl Runner {
                     self.play(Clip::Cooldown, &mut out);
                     Self::vx(&mut out, 0);
                 } else {
-                    Self::vx(&mut out, self.facing() * 6 * ONE);
+                    Self::vx(&mut out, self.facing() * self.params.lunge_speed);
                 }
             }
             Swipe::Cooldown if complete => {
@@ -376,7 +401,7 @@ impl Runner {
     fn walker_callback(
         &mut self,
         senses: Senses,
-        choose: &mut impl FnMut(Wait) -> u16,
+        choose: &mut impl FnMut(Wait, [u16; 2]) -> u16,
         out: &mut Actions,
     ) {
         self.turn_cooldown = self.turn_cooldown.saturating_sub(1);
@@ -387,7 +412,7 @@ impl Runner {
         &mut self,
         senses: Senses,
         complete: bool,
-        choose: &mut impl FnMut(Wait) -> u16,
+        choose: &mut impl FnMut(Wait, [u16; 2]) -> u16,
         out: &mut Actions,
     ) {
         match self.walker {
@@ -427,7 +452,7 @@ impl Runner {
                 if self.wait == 0 {
                     self.pause(choose, out);
                 } else {
-                    Self::vx(out, self.facing() * (ONE + ONE / 2));
+                    Self::vx(out, self.facing() * self.params.walk_speed);
                 }
             }
             Walker::Turning => {
