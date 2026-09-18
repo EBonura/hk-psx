@@ -10,17 +10,7 @@ const NAIL_RESPONSE_PARAMS: NailResponseParams = NailResponseParams {
     down_speed: 0,
 };
 const KNIGHT_SCALE: i32 = 60693;
-const PARAMS: Params = Params {
-    speed: 8 * ONE,
-    jump: 16 * ONE,
-    gravity: 48 * ONE,
-    fall: 20 * ONE,
-    hold_ticks: 12,
-    min_ticks: 5, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-    half_width: ONE / 4,
-    bottom: -ONE,
-    top: 0,
-};
+const PARAMS: Params = Params { speed: 8 * ONE, jump: 16 * ONE, gravity: 48 * ONE, fall: 20 * ONE, hold_ticks: 12, min_ticks: 5, half_width: ONE / 4, bottom: -ONE, ..Params::ZERO };
 const VITAL_PARAMS: VitalParams = VitalParams {
     max_health: 5,
     max_soul: 99,

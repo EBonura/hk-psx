@@ -154,17 +154,7 @@ impl Corpse {
         let mut body = Player::spawn(self.x + offset, self.y);
         body.vy = self.vy;
         body.grounded = self.grounded;
-        let params = Params {
-            speed: self.vx.abs(),
-            jump: 0,
-            gravity: spec.gravity,
-            fall: 100 * ONE,
-            hold_ticks: 0,
-            min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-            half_width: (b[2] - b[0]) / 2,
-            bottom: b[1],
-            top: b[3],
-        };
+        let params = Params { speed: self.vx.abs(), gravity: spec.gravity, fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3], ..Params::ZERO };
         let old_x = body.x;
         let old_vy = self.vy;
         body.step(params, self.vx.signum(), false, count, edge);
