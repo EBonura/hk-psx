@@ -284,7 +284,7 @@ fn hazards_and_checkpoints_use_polygons_and_preserve_distant_spawn() {
         gravity: 0,
         fall: 0,
         hold_ticks: 0,
-        min_ticks: 0, jump_queue_ticks: 0,
+        min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
         half_width: 2,
         bottom: -2,
         top: 2,
@@ -336,7 +336,7 @@ fn movement_params() -> hk_sim::Params {
         gravity: 48 * hk_sim::ONE,
         fall: 20 * hk_sim::ONE,
         hold_ticks: 12,
-        min_ticks: 5, jump_queue_ticks: 0,
+        min_ticks: 5, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
         half_width: hk_sim::ONE / 4,
         bottom: -hk_sim::ONE,
         top: 0,
@@ -539,7 +539,7 @@ fn actual_crawler_spawn_resolves_against_complete_cooked_terrain() {
         let bytes=std::fs::read(path).unwrap();let room=hk_format::Room::parse(&bytes).unwrap();
         let state=State::new();let b=spec.bounds;
         let p=Params {speed:spec.walk.speed,jump:0,gravity:60*ONE,fall:100*ONE,
-            hold_ticks:0,min_ticks:0, jump_queue_ticks: 0,half_width:(b[2]-b[0])/2,bottom:b[1],top:b[3]};
+            hold_ticks:0,min_ticks:0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,half_width:(b[2]-b[0])/2,bottom:b[1],top:b[3]};
         let mut body=Player::spawn(spec.x+b[0]+p.half_width,spec.y);
         assert!(resolve_actor_spawn(&mut body,p,room.counts[5],|i|state.edge(region,&room,i)));
         assert_eq!(body.y,if source_id==12548 {331776} else {spec.y});
@@ -558,7 +558,7 @@ fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
     assert_eq!(spec.fade_ticks,30);
     assert_eq!(spec.initial_opacity,0);
     assert_eq!(spec.trigger,&[[13202367,2153911],[10462305,2153911],[10462305,822671],[13202367,822671]]);
-    let p=Params {speed:0,jump:0,gravity:0,fall:0,hold_ticks:0,min_ticks:0, jump_queue_ticks: 0,half_width:ONE/4,bottom:-ONE,top:0};
+    let p=Params {speed:0,jump:0,gravity:0,fall:0,hold_ticks:0,min_ticks:0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,half_width:ONE/4,bottom:-ONE,top:0};
     let inside=Player::spawn(180*ONE,20*ONE);
     let outside=Player::spawn(154*ONE,20*ONE);
     let mut controller=reveal_masks::State::new();controller.scene_ready(0,first.reveal_masks);

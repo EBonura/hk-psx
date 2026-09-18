@@ -7,18 +7,21 @@ pub const PURE_NAIL_DAMAGE:u16=21;
 pub const MAX_MASKS:u16=9;
 pub const BLUE_CHEAT_CAP:u16=20;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub struct Settings {pub invincible:bool,pub max_nail:bool,pub infinite_soul:bool,pub max_masks:bool}
+pub struct Settings {pub invincible:bool,pub max_nail:bool,pub infinite_soul:bool,pub max_masks:bool,
+    /// No admitted scene grants the Mothwing Cloak, so this is the only way to
+    /// reach the dash until the ability pickups exist.
+    pub dash:bool}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Action {None,Restore,AddBlue,Reset}
 impl Settings {
-    pub const fn new()->Self {Self{invincible:false,max_nail:false,infinite_soul:false,max_masks:false}}
-    pub fn enabled(&self,row:usize)->bool {match row {0=>self.invincible,1=>self.max_nail,2=>self.infinite_soul,3=>self.max_masks,_=>false}}
+    pub const fn new()->Self {Self{invincible:false,max_nail:false,infinite_soul:false,max_masks:false,dash:false}}
+    pub fn enabled(&self,row:usize)->bool {match row {0=>self.invincible,1=>self.max_nail,2=>self.infinite_soul,3=>self.max_masks,4=>self.dash,_=>false}}
     pub fn adjust(&mut self,row:usize,delta:i8) {
         if delta==0{return;}
-        let value=match row {0=>&mut self.invincible,1=>&mut self.max_nail,2=>&mut self.infinite_soul,3=>&mut self.max_masks,_=>return};
+        let value=match row {0=>&mut self.invincible,1=>&mut self.max_nail,2=>&mut self.infinite_soul,3=>&mut self.max_masks,4=>&mut self.dash,_=>return};
         *value=delta>0;
     }
-    pub fn bits(self)->u32 {u32::from(self.invincible)|(u32::from(self.max_nail)<<1)|(u32::from(self.infinite_soul)<<2)|(u32::from(self.max_masks)<<3)}
+    pub fn bits(self)->u32 {u32::from(self.invincible)|(u32::from(self.max_nail)<<1)|(u32::from(self.infinite_soul)<<2)|(u32::from(self.max_masks)<<3)|(u32::from(self.dash)<<4)}
     pub fn params(self,mut base:VitalParams)->VitalParams {
         if self.max_nail {base.nail_damage=PURE_NAIL_DAMAGE;}
         if self.max_masks {base.max_health=MAX_MASKS;}

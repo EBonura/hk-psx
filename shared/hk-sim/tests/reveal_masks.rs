@@ -15,7 +15,7 @@ const P: Params = Params {
     gravity: 0,
     fall: 0,
     hold_ticks: 0,
-    min_ticks: 0, jump_queue_ticks: 0,
+    min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
     half_width: ONE / 4,
     bottom: -ONE,
     top: 0,

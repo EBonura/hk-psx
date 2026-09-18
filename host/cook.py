@@ -407,7 +407,16 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # the held velocity, and so the hold's displacement, equal to the source's.
     held=constants['JUMP_SPEED']-fall_accel*dt
     vals={'speed':constants['RUN_SPEED'],'jump':held+fall_accel/60,'gravity':fall_accel,'fall':constants['MAX_FALL_VELOCITY'],'half_width':body['m_Size']['x']/2,'bottom':body['m_Offset']['y']-body['m_Size']['y']/2,'top':body['m_Offset']['y']+body['m_Size']['y']/2}
-    params='pub const PARAMS: hk_sim::Params = hk_sim::Params {'+','.join(f'{k}:{round(v*65536)}' for k,v in vals.items())+f",hold_ticks:{round((constants['JUMP_STEPS']+1)*dt*60)},min_ticks:{math.ceil(constants['JUMP_STEPS_MIN']*dt*60)},jump_queue_ticks:{round(JUMP_QUEUE_STEPS*dt*60)}"+'};\n'
+    params=('pub const PARAMS: hk_sim::Params = hk_sim::Params {'
+        +','.join(f'{k}:{round(v*65536)}' for k,v in vals.items())
+        +f",hold_ticks:{round((constants['JUMP_STEPS']+1)*dt*60)}"
+        +f",min_ticks:{math.ceil(constants['JUMP_STEPS_MIN']*dt*60)}"
+        +f",jump_queue_ticks:{round(JUMP_QUEUE_STEPS*dt*60)}"
+        +f",dash_speed:{round(constants['DASH_SPEED']*65536)}"
+        +f",dash_ticks:{round(constants['DASH_TIME']*60)}"
+        +f",dash_cooldown_ticks:{round(constants['DASH_COOLDOWN']*60)}"
+        +f",dash_queue_ticks:{round(constants['DASH_QUEUE_STEPS']*dt*60)}"
+        +'};\n')
     params+=f'pub const SPAWN:(i32,i32)=({round(spawn[0]*65536)},{round(spawn[1]*65536)});\n'
     params+=f'pub const KNIGHT_SCALE:i32={round(FOCAL/-CAM_Z*4096)};\n'
     # Final renderer indices are assigned after sorting below.

@@ -218,6 +218,11 @@ fn strike_shade(shade:&mut shade::World,nail:&Nail,player:&Player,damage:u16)->b
     for (dst,p) in polygon.iter_mut().zip(source) {*dst=[player.x-p[0]*player.facing,player.y+p[1]];}
     shade.strike(&polygon[..source.len()],damage)
 }
+/// A dash is refused for the same reasons a jump is: scripted control, a
+/// dialogue, a door sequence or the bench all own the Knight.
+fn locked_for_dash(focus:&hk_sim::Focus,door:&great_door::World,bench:&bench::State)->bool {
+    focus.locks_control()||dialogue::open()||door.pending()||bench.locks_control()
+}
 /// StartSoulLimiter caps the vessel at 66 while a Shade is owed.
 fn soul_cap(shade:&shade::World)->u16 {
     if shade.soul_limited() {66} else {VITAL_PARAMS.max_soul}
@@ -518,6 +523,10 @@ fn main() {
                                 nail=Nail::new();nail_response=hk_sim::NailResponse::new();player.vy=0;player.jumping=false;
                             }
                             let pressed=|b:u16| pad.is_held(b)&&!prev_pad.is_held(b);
+                            // Mothwing Cloak. Nothing in the admitted scenes grants it, so
+                            // the cheat is the only source until the pickups exist.
+                            player.has_dash=settings.cheats.dash;
+                            player.dash_input(PARAMS,pad.is_held(button::L1)&&vitals.can_control()&&!locked_for_dash(&focus,&door,&bench_state));
                             // The seated prompt owns input while it is up, so the bench
                             // neither reads a leave press nor starts another rest.
                             let asking=save_prompt.is_some();

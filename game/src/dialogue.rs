@@ -64,7 +64,7 @@ pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crat
             text(160-width("Cheats")/2,38,"Cheats");
             for(i,line) in crate::menu::state::CHEAT_ITEMS.iter().chain(["Restore health + SOUL","Add 5 Lifeblood masks","Turn all cheats off","Back"].iter()).enumerate(){
                 let y=59+i as i16*16;text(46,y,line);if p.row==i{text(29,y,">");}
-                if i<4{text(255,y,if settings.cheats.enabled(i){"ON"}else{"OFF"});}
+                if i<crate::menu::state::CHEAT_ITEMS.len(){text(255,y,if settings.cheats.enabled(i){"ON"}else{"OFF"});}
             }
             text(160-width("Charms are not implemented yet")/2,194,"Charms are not implemented yet");
             text(160-width("X: apply    Left/Right: off/on    O: back")/2,212,"X: apply    Left/Right: off/on    O: back");

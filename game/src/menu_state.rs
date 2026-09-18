@@ -22,7 +22,7 @@ impl Default for Settings {fn default()->Self{Self::new()}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Page {Main,Options,Controls,Cheats,Profiles}
 pub const MAIN_ITEMS:[&str;4]=["Start Game","Options","Controls","Cheats"];
-pub const CHEAT_ITEMS:[&str;4]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)"];
+pub const CHEAT_ITEMS:[&str;5]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)","Mothwing Cloak (L1 dash)"];
 pub const OPTION_ITEMS:[&str;4]=["Sound effects","Ambience","Music","Back"];
 pub const CONTROL_LINES:[&str;9]=[
     "D-pad: move","X: jump","Square: swing nail","Hold O: Focus / heal",
@@ -69,7 +69,7 @@ impl State {
                 Page::Profiles=>{self.profile=Some(self.selected);return true;},
                 Page::Options=>if self.selected==3{self.page=Page::Main;self.selected=1;},
                 Page::Controls=>{self.page=Page::Main;self.selected=2;},
-                Page::Cheats=>if self.selected==4{self.page=Page::Main;self.selected=3;}else{
+                Page::Cheats=>if self.selected==CHEAT_ITEMS.len(){self.page=Page::Main;self.selected=3;}else{
                     let delta=if self.settings.cheats.enabled(self.selected){-1}else{1};
                     self.settings.cheats.adjust(self.selected,delta);
                 },
@@ -77,7 +77,7 @@ impl State {
             return false;
         }
         if self.page==Page::Controls{return false;}
-        let count=match self.page{Page::Cheats=>5,Page::Profiles=>crate::save::PROFILES,_=>4};
+        let count=match self.page{Page::Cheats=>CHEAT_ITEMS.len()+1,Page::Profiles=>crate::save::PROFILES,_=>4};
         if navigate==UP{self.selected=(self.selected+count-1)%count;}
         else if navigate==DOWN{self.selected=(self.selected+1)%count;}
         else if self.page==Page::Options {
