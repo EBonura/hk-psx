@@ -17,7 +17,9 @@ const ASSET_SCRIPTS: &[&str] = &[
     "geo.py", "geo_audio.py", "runner_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
 ];
 /// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
-const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true)];
+/// Final telemetry a route must reach besides completing its tape.
+const REQUIRED: &[(&str, &str, u64)] = &[("town-bench", "HK_BENCH_RESTS", 1)];
+const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
@@ -363,6 +365,12 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
             ok = check.status.success();
         }
         let ram = &verdict["final_ram"];
+        for (route, key, expected) in REQUIRED {
+            if route == name && ram[*key].as_u64() != Some(*expected) {
+                println!("{name}: {key}={} expected {expected}", ram[*key]);
+                ok = false;
+            }
+        }
         println!(
             "{} {name}: completed={} faults={} x={} y={} region={} scene_loads={} gate_loads={}",
             if ok { "PASS" } else { "FAIL" }, verdict["completed"], verdict["faults"], ram["HK_PLAYER_X"], ram["HK_PLAYER_Y"],

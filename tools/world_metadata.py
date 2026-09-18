@@ -20,7 +20,7 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12}
 MAX_REVEAL_CONTROLLERS = 16
 MAX_SCENE_ACTORS = 32
 
@@ -220,6 +220,14 @@ def encode_scene(scene, rows):
             owner = record.get("breakable_state_id")
             add_object("pogo", record, 0xFFFFFFFF if owner is None else int(owner),
                        1 if record["horizontal_and_up"] else 0, record["bounds"], "world_polygons")
+        for record in row.get("benches", []):
+            # RestBench: trigger bounds; payload words seat x, seat y (Q16) and
+            # the view's Knight sit clip base.
+            base = row.get("bench_clip_base")
+            if base is None:
+                raise ValueError("bench without cooked sit clips: " + record["source"])
+            add_object("bench", record, 0xFFFFFFFF, 0, record["bounds"], None,
+                       (q(record["position"][0]), q(record["position"][1]), bounded(base, 65536, "bench clip base")))
         for record in row.get("camera_locks", []):
             # CameraLockArea: trigger bounds; one two-point polygon carries the
             # resolved (xmin, ymin), (xmax, ymax) camera-centre limits; flag 1

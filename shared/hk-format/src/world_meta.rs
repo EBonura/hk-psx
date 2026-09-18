@@ -39,6 +39,8 @@ pub const KIND_REGION_STATICS: u16 = 9;
 pub const KIND_POGO: u16 = 10;
 /// CameraLockArea trigger; its one two-point polygon holds the camera-centre limits.
 pub const KIND_CAMERA_LOCK: u16 = 11;
+/// RestBench trigger; payload: seat x, seat y, Knight sit clip base.
+pub const KIND_BENCH: u16 = 12;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {
