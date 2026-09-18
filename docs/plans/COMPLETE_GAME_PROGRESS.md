@@ -1086,8 +1086,11 @@ Headroom fell to 68,988 bytes from 116,124: the cooked art is 30,386 of that
 and the controller, runtime and grown save record the rest. The trend since
 build 94 is now 246 KB, 132 KB, 116 KB, 69 KB, and the next large runtime
 needs a budget pass before it lands rather than after. Not done: a route that
-the source save menu, power-interruption tests (step 8), a route that returns
-to a Shade after a reload (step 9), and the Shade's particles, orbs and audio.
+the source save menu, power-interruption tests (step 8), and the Shade's
+particles, orbs and audio. Step 9 is covered: `kings-return` boots from the
+card `kings-death` wrote, finds the Shade that real death recorded and recovers
+it, so quit, reload and recover is verified on genuine save data rather than a
+seeded fixture. Twelve routes pass.
 
 ## Required package completion record
 

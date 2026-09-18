@@ -36,13 +36,19 @@ const REQUIRED: &[(&str, &str, u64)] = &[("town-bench", "HK_BENCH_RESTS", 1), ("
     // the card even though no bench has been rested.
     ("kings-death", "HK_DEATHS", 1), ("kings-death", "HK_ENEMY_KILLS", 0),
     ("kings-death", "HK_SHADE_PRESENT", 1), ("kings-death", "HK_SHADE_HP", 10),
-    ("kings-death", "HK_SAVE_WRITES", 1), ("kings-death", "HK_SAVE_ERRORS", 0)];
+    ("kings-death", "HK_SAVE_WRITES", 1), ("kings-death", "HK_SAVE_ERRORS", 0),
+    // kings-return boots from the card kings-death itself wrote, so the Shade it spawns
+    // comes from a real death rather than a hand-seeded record. Walking the same
+    // traversal back must find it there and recover it without dying again. Regenerate
+    // the fixture from .hkpsx/validate/kings-death.mcd whenever the save record changes.
+    ("kings-return", "HK_SAVE_LOADED", 1), ("kings-return", "HK_SHADE_KILLS", 1),
+    ("kings-return", "HK_SHADE_PRESENT", 0), ("kings-return", "HK_DEATHS", 0)];
 /// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
 /// fresh formatted card when the fixture is absent (the run writes it back there).
 const MEMCARDS: &[(&str, &str)] = &[("town-bench", "town-bench.mcd"), ("town-continue", "town-continue.mcd"),
-    ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd")];
+    ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false), ("town-continue", false), ("town-shade", false),
-    ("kings-death", false)];
+    ("kings-death", false), ("kings-return", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
