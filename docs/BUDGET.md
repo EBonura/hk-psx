@@ -210,6 +210,9 @@ Headroom before the stack is 68,988 bytes, down from 246 KB at build 94 and
 | `enemies::Actor::advance_in_view` | 29,656 | text |
 | `render::SCISSOR_CACHE` | 28,160 | bss |
 
+Build 109 halved that stream's rate, so the table's 199,872 is now 99,936 and
+headroom is 166,876. The rest of this section is the analysis that led there.
+
 The one disproportionate entry is `HK_AMBIENCE_STREAM_SOURCE`: 199,872 bytes,
 nearly three times the remaining headroom, holding one scene's streamed
 ambience stem in full. The clip is already read from the disc at scene
@@ -230,3 +233,22 @@ inlined into one another.
 P14 adds movement abilities whose new Knight clips cost both per-view texture
 budget and linked RAM, so the ambience change is worth making before that
 package rather than during it.
+
+## What build 109 did, and what is left
+
+Streaming the clip from the disc was the wrong idea: docs/MUSIC.md records that
+the resident copy exists precisely to avoid the CDDA and data-read contention
+the SDK's `cdda-read-contention` example demonstrates, and all six loops load
+once at boot rather than per scene. What the clip actually needed was a lower
+rate. 99% of its energy is below 637 Hz and only 0.06% sits above 2 kHz, so it
+cooks at 4,000 Hz instead of 8,000, halving the RAM cache to 99,936 bytes for
+no audible loss once the resampling is done properly.
+
+Taking the other half would mean making it SPU resident, which needs about
+119,000 bytes of SPU that is not free today. The two Ruins loops (77,584 bytes)
+are cued in all 45 scenes at gain 16 of 16383, roughly -60 dB, so they are
+inaudible on this disc and could be dropped until City of Tears ships; the two
+gaps below ambience are another 16,912; the ring itself is 16,384. That
+together with the 4 kHz clip fits, but it relocates every audio bank's base
+address and changes the cue mask layout, so it is its own change rather than a
+tail on this one.

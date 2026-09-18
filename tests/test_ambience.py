@@ -32,7 +32,10 @@ class AmbienceTests(unittest.TestCase):
         clips=[];entries={};snapshots={};scenes=[]
         for i,ch in enumerate(ambience.CHANNELS):
             data=bytes([12,0])+bytes([i]*14);path=root/'.hkpsx'/f'{i}.adpcm';path.parent.mkdir(exist_ok=True);path.write_bytes(data)
-            clips.append({'source':str(ch),'name':str(ch),'rate':8000,'channels':1,'frames':27,'padding_samples':1,'spu_pitch':743,
+            # The streamed cave bed is cooked at its own lower rate; the rest stay at RATE.
+            rate=ambience.STREAM_RATE if ch==ambience.STREAM_CHANNEL else ambience.RATE
+            clips.append({'source':str(ch),'name':str(ch),'rate':rate,'channels':1,'frames':27,'padding_samples':1,
+                'spu_pitch':round(rate*4096/44100),
                 'planes':[{'path':str(path.relative_to(root)),'bytes':16,'sha256':hashlib.sha256(data).hexdigest()}]})
             entries[ch]={'channel':ch,'clip':str(ch),'loop':True,'pitch':1,'volume':1,
                 'snapshot':{'internal_volume_db':0,'effects':[],'chain':[{'mute':False,'solo':False,'pitch':1}]}}

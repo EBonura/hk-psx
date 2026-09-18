@@ -1,10 +1,20 @@
+//! The stream state machine against the cooked ambience bank, so the boundary
+//! window follows whatever rate the cave bed is cooked at rather than a
+//! literal. The include stands in for game/src/ambience.rs, which supplies
+//! these to the stream module in the guest.
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/ambience.rs"));
+pub const STREAM_INDEX: usize = 3;
 #[path = "../game/src/audio_stream.rs"]
 mod stream;
 use stream::*;
 
+/// The NTSC boundary period and its PAL counterpart at the same pitch.
+const NTSC: u32 = BOUNDARY_TICKS;
+const PAL: u32 = BOUNDARY_TICKS * 5 / 6;
+
 #[test]
 fn pal_ntsc_boundaries_refill_only_the_previous_half() {
-    for period in [89u32, 90, 107, 108] {
+    for period in [PAL, PAL + 1, NTSC, NTSC + 1] {
         for lag in 0..7 {
             let mut state = State::new();
             state.start(0);
@@ -33,35 +43,35 @@ fn stale_lost_and_early_events_stop_before_refill() {
     state.start(0);
     assert_eq!(state.poll(1, true), Poll::Fault);
     state.start(0);
-    for now in 1..=120 {
+    for now in 1..=MAX_BOUNDARY_TICKS {
         assert_eq!(state.poll(now, false), Poll::Idle);
     }
-    assert_eq!(state.poll(121, false), Poll::Fault);
+    assert_eq!(state.poll(MAX_BOUNDARY_TICKS + 1, false), Poll::Fault);
     state.start(0);
-    for now in 1..107 {
+    for now in 1..NTSC {
         assert_eq!(state.poll(now, false), Poll::Idle);
     }
-    assert_eq!(state.poll(107, true), Poll::Refill(0));
-    assert!(!state.complete(107 + MAX_POLL_GAP));
-    assert_eq!(state.poll(116, true), Poll::Idle);
+    assert_eq!(state.poll(NTSC, true), Poll::Refill(0));
+    assert!(!state.complete(NTSC + MAX_POLL_GAP));
+    assert_eq!(state.poll(NTSC + MAX_POLL_GAP + 1, true), Poll::Idle);
 }
 
 #[test]
 fn incomplete_dma_and_duplicate_event_never_grant_second_refill() {
     let mut state = State::new();
     state.start(0);
-    for now in 1..107 {
+    for now in 1..NTSC {
         state.poll(now, false);
     }
-    assert_eq!(state.poll(107, true), Poll::Refill(0));
-    assert_eq!(state.poll(108, true), Poll::Fault);
+    assert_eq!(state.poll(NTSC, true), Poll::Refill(0));
+    assert_eq!(state.poll(NTSC + 1, true), Poll::Fault);
     state.start(0);
-    for now in 1..107 {
+    for now in 1..NTSC {
         state.poll(now, false);
     }
-    assert_eq!(state.poll(107, true), Poll::Refill(0));
-    assert!(state.complete(107));
-    assert_eq!(state.poll(108, true), Poll::Fault);
+    assert_eq!(state.poll(NTSC, true), Poll::Refill(0));
+    assert!(state.complete(NTSC));
+    assert_eq!(state.poll(NTSC + 1, true), Poll::Fault);
 }
 
 #[test]
@@ -69,17 +79,17 @@ fn timestamp_wrap_and_restart_reestablish_a() {
     let mut state = State::new();
     let start = u32::MAX - 40;
     state.start(start);
-    for delta in 1..107 {
+    for delta in 1..NTSC {
         assert_eq!(state.poll(start.wrapping_add(delta), false), Poll::Idle);
     }
-    assert_eq!(state.poll(start.wrapping_add(107), true), Poll::Refill(0));
-    assert!(state.complete(start.wrapping_add(107)));
+    assert_eq!(state.poll(start.wrapping_add(NTSC), true), Poll::Refill(0));
+    assert!(state.complete(start.wrapping_add(NTSC)));
     state.stop();
     state.start(500);
-    for now in 501..607 {
+    for now in 501..500 + NTSC {
         state.poll(now, false);
     }
-    assert_eq!(state.poll(607, true), Poll::Refill(0));
+    assert_eq!(state.poll(500 + NTSC, true), Poll::Refill(0));
 }
 
 fn source(bytes: usize) -> Vec<u8> {

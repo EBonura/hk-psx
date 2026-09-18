@@ -13,6 +13,9 @@ STREAM_RAM_LIMIT=200000
 SPU_END=0x80000
 SFX_END=0x14000 # Geo occupies 0x14000..0x18000, below ambience.
 RATE=8000
+# The cave bed is the one clip whose 8 kHz copy will not fit SPU; halving its
+# rate halves the RAM cache it streams from. 99% of its energy is below 637 Hz.
+STREAM_RATE=4000
 
 def fnv(data):
     value=0x811c9dc5
@@ -69,8 +72,9 @@ def assemble(report,root,transitions,snapshots,sfx_end):
     if set(channels)!=set(CHANNELS) or {c['scene']for c in cues}!=set(range(len(SCENE_FILES))):raise ValueError('missing source ambience channels/scenes')
     clips=[];address=SPU_START
     for index,ch in enumerate(CHANNELS):
-        matches=[c for c in report['clips']if c['source']==channels[ch] and c['rate']==RATE and c['channels']==1]
-        if len(matches)!=1:raise ValueError('missing or duplicate 8kHz mono profile')
+        rate=STREAM_RATE if ch==STREAM_CHANNEL else RATE
+        matches=[c for c in report['clips']if c['source']==channels[ch] and c['rate']==rate and c['channels']==1]
+        if len(matches)!=1:raise ValueError(f'missing or duplicate {rate}Hz mono profile')
         c=matches[0]
         if len(c['planes'])!=1 or c['frames']<=0:raise ValueError('invalid mono source profile')
         plane=c['planes'][0];path=(root/plane['path']).resolve()
@@ -83,10 +87,10 @@ def assemble(report,root,transitions,snapshots,sfx_end):
         spu_bytes=min(len(payload),STREAM_BYTES) if ch==STREAM_CHANNEL else len(payload)
         if spu_bytes<len(payload) and len(payload)>STREAM_RAM_LIMIT:raise ValueError('ambient stream exceeds RAM cache')
         if address%16 or address<SPU_START or address+spu_bytes>SPU_END:raise ValueError('ambience SPU capacity overflow')
-        pitch=round(RATE*4096/44100)
+        pitch=round(rate*4096/44100)
         if pitch!=c['spu_pitch']:raise ValueError('pitch/profile mismatch')
         clips.append({'source':c['source'],'name':c['name'],'source_channel':ch,'voice':6+index,
-            'rate':RATE,'pitch':pitch,'actual_rate':pitch*44100/4096,'spu_address':address,
+            'rate':rate,'pitch':pitch,'actual_rate':pitch*44100/4096,'spu_address':address,
             'byte_len':len(payload),'spu_bytes':spu_bytes,'checksum':fnv(payload),'sha256':hashlib.sha256(payload).hexdigest(),
             'valid_frames':c['frames'],'padding_samples':c['padding_samples'],
             'converted_payload_sha256':plane['sha256'],'profile':c,'payload':payload})
