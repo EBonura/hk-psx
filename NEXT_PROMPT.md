@@ -42,7 +42,8 @@ the Bargers and Hornheads and the other-scene Runners are admitted through it;
 build 99 adds the Leap attack (5 of 6 Leapers); build 100 admits the Aspids
 (18) with the guest's first projectile pool (docs/ASPID.md). Build 102 puts
 the source CameraLockArea limits in the world bank and gives the guest a damped
-camera with look-ahead (game/src/camera.rs). Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
+camera with look-ahead (game/src/camera.rs); build 103 applies the source
+gate rules (facing into side gates, the 3 s delayed top collider). Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
 for three scenes on a nineteen-scene disc; the new `crossroads-exit` route
 (climb authored with `tools/route_sim.py`, gate into Crossroads_02, four
 breaks there, gate back) covers that path. The remaining static per-view
@@ -60,7 +61,7 @@ whose spec, source inputs and cooker code are unchanged. The scene catalog is
 `host/quality.py SCENE_TABLE`. Build speed (user priority) is done for the first pass: no-change or
 guest-only build 1:48, cooker-code change about 5:00 with a parallel full
 recook; see the ledger's build-speed section for what remains (geometry vs
-metadata cook split, replay speed). Next: the delayed top-gate collider and entry descriptors (P09), Runner dust and death presentation, Climber loop audio, chunk manifests off the linked binary, P09 well entry details, then Hatcher (needs runtime spawning), Shield, Guard, Mender, Hatcher, Shield, Guard and Mender, Runner dust and death presentation, the P09
+metadata cook split, replay speed). Next: entry descriptors (forced walk, fades, control delays; P09), Runner dust and death presentation, Climber loop audio, chunk manifests off the linked binary, P09 well entry details, then Hatcher (needs runtime spawning), Shield, Guard, Mender, Hatcher, Shield, Guard and Mender, Runner dust and death presentation, the P09
 well entry details, and moving emitter/style metadata into the world bank; P09 delayed well collider and source camera locks; Crossroads enemy
 families beyond the Crawler.
 

@@ -322,6 +322,11 @@ pub struct Gate {
     pub spawn: [i32; 2],
     /// Initial vertical velocity at the destination (Q16 units per second).
     pub entry_vy: i32,
+    /// Source gate side: 1 left, 2 right, 3 top, 4 bottom, 0 other (doors).
+    pub side: u8,
+    /// `Delay Collider` FSM: ticks after the scene starts before this gate's
+    /// collider exists (top gates, 3 s).
+    pub delay_ticks: u16,
 }
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/regions.rs"));
 #[cfg(not(test))]
@@ -966,8 +971,14 @@ pub fn upcoming(
     neighbour(x, player.y)
 }
 
-pub fn gate(scene: usize, player: &Player) -> Option<&'static Gate> {
-    GATES
-        .iter()
-        .find(|g| g.scene == scene && contains(g.bounds, player.x, player.y))
+/// TransitionPoint.TryDoTransition: the Knight's origin inside the trigger, a
+/// side gate only while facing into it (or recoiling), and a delayed collider
+/// only once `scene_ticks` has passed its delay.
+pub fn gate(scene: usize, player: &Player, recoiling: bool, scene_ticks: u32) -> Option<&'static Gate> {
+    GATES.iter().find(|g| {
+        g.scene == scene
+            && contains(g.bounds, player.x, player.y)
+            && scene_ticks >= g.delay_ticks as u32
+            && (recoiling || match g.side { 1 => player.facing < 0, 2 => player.facing > 0, _ => true })
+    })
 }

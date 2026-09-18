@@ -147,6 +147,20 @@ def scene_metadata(sc, info):
             break
         if typ=='TransitionPoint':
             row.update(target_scene=tree['targetScene'],entry_point=tree['entryPoint'],entry_offset=tree['entryOffset'])
+            # Top gates ship with a disabled collider and a `Delay Collider` FSM
+            # (Wait, then SetCollider active), so the arriving Knight cannot
+            # bounce straight back through the gate it fell out of.
+            row['collider_delay']=0.
+            for _,(kind,comp) in sc.objects.items():
+                if kind!='PlayMakerFSM' or comp['m_GameObject']['m_PathID']!=gid or comp['fsm']['name']!='Delay Collider':continue
+                from focus import action_fields
+                for st in comp['fsm']['states']:
+                    data=st['actionData']
+                    for i,name in enumerate(data['actionNames']):
+                        if name.endswith('.Wait'):
+                            value=action_fields(data,i)['time'];value=value['value'] if isinstance(value,dict) else value
+                            row['collider_delay']=float(value)
+            row['collider_initially_enabled']=all(col.get('m_Enabled',1) for _,(kind,col) in sc.objects.items() if kind=='BoxCollider2D' and col['m_GameObject']['m_PathID']==gid)
             result['gates'].append(row)
         else:
             row['serialized_limits']={k:v for k,v in tree.items() if k.startswith('camera') or k.startswith('preventLook')}
