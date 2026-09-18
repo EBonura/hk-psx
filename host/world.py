@@ -332,8 +332,16 @@ def generate(report):
             # Source HeroController top entries (the Dirtmouth well is the verified
             # case) start the drop at -12 units per second; other sides keep rest.
             entry_vy = -12 * 65536 if destination['name'].startswith('top') else 0
+            # TransitionPoint.TryDoTransition: side gates need the Knight facing
+            # into them (or recoiling); the collider of a delayed top gate turns
+            # on `collider_delay` seconds after the scene starts.
+            side = {'left': 1, 'right': 2, 'top': 3, 'bot': 4}.get(''.join(c for c in gate['name'].split(' ')[0] if c.isalpha()), 0)
+            delay = gate.get('collider_delay', 0.)
+            if not gate.get('collider_initially_enabled', True) and delay <= 0:
+                raise ValueError('gate collider starts disabled without a Delay Collider FSM: ' + gate['source'])
+            delay_ticks = integer(round(delay * 60), 65536, 'gate collider delay')
             out.append(f'Gate {{scene:{scene["scene_id"]},target_scene:{target["scene_id"]},target_region:{target_region},bounds:' +
-                       rect(gate['trigger_bounds']) + ',spawn:' + arr(map(q, xy)) + f',entry_vy:{entry_vy}' + '},')
+                       rect(gate['trigger_bounds']) + ',spawn:' + arr(map(q, xy)) + f',entry_vy:{entry_vy},side:{side},delay_ticks:{delay_ticks}' + '},')
     out.append('];')
     result = '\n'.join(out) + '\n'
     (ROOT/'data/regions.rs').write_text(result)

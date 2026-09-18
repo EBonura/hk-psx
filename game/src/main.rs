@@ -238,6 +238,8 @@ fn main() {
     let mut safe=(SPAWN.0,SPAWN.1,0usize);
     let mut safe_facing=1;
     let mut gate_cooldown=0u16;
+    // Ticks since the current scene started (source Delay Collider gates).
+    let mut scene_ticks=0u32;let mut scene_ticks_scene=usize::MAX;
     let mut paused=false;let mut start_held=false;
     let mut pause_menu=pause::State::new();
     let mut vram=vram_cache::Cache::new();
@@ -283,6 +285,7 @@ fn main() {
         lifeblood::apply(life,&mut state,region_id);
         great_door::apply(&door,&mut state,region_id);
         unsafe { HK_GAME_MODE=1;HK_REGION_ID=region_id as u32+1; }
+        if scene_ticks_scene!=r.scene {scene_ticks=0;scene_ticks_scene=r.scene;}
         // The first frame renders before the first tick: seat the camera now
         // (a scene gate or respawn snaps through the displacement rule).
         camera_state.tick((player.x,player.y),player.facing,camera::limits(r,[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top]));
@@ -396,6 +399,7 @@ fn main() {
                         unsafe {HK_BREAK_COUNT=0;HK_DEATHS=0;HK_ENEMY_HITS=0;HK_ENEMY_KILLS=0;HK_HAZARD_RESPAWNS=0;HK_FOCUS_STARTED=0;HK_FOCUS_COMPLETED=0;HK_FOCUS_HEALED=0;HK_FOCUS_DRAINED=0;HK_FOCUS_REFUNDED=0;}
                     } else if !paused && !ui_consumed && !vitals.tick() {
                         gate_cooldown=gate_cooldown.saturating_sub(1);
+                        scene_ticks=scene_ticks.saturating_add(1);
                         state.tick();
                         state.tick_debris(r, &room);
                         presentation::checkpoint();
@@ -501,7 +505,7 @@ fn main() {
                             if gate_cooldown==0 && (door_exit || !door.pending()) && !vitals.dead && !vitals.hazard_pending {
                                 let gate=if door_exit {
                                     Some(world::GATES.iter().find(|g|g.scene==r.scene&&g.target_scene==great_door::TARGET_SCENE).expect("Great Door exit gate"))
-                                } else {world::gate(r.scene,&player)};
+                                } else {world::gate(r.scene,&player,vitals.recoil_ticks!=0,scene_ticks)};
                                 if let Some(g)=gate {
                                     let side_entry=(g.scene==0&&g.target_scene==great_door::TARGET_SCENE)
                                         ||(g.scene==great_door::TARGET_SCENE&&g.target_scene==0);

@@ -1,7 +1,7 @@
-## Build 102: the whole Forgotten Crossroads on the actual disc
+## Build 103: the whole Forgotten Crossroads on the actual disc
 
-The sole disc pair is build 102 (45 scenes, 693 views; source camera locks and a
-damped camera; build 101 folded the actor runtimes into one enum;
+The sole disc pair is build 103 (45 scenes, 693 views; source gate facing and delayed
+top-collider rules; build 102 added source camera locks and a damped camera; build 101 folded the actor runtimes into one enum;
 build 100 admitted the Aspid Hunters with
 the first projectile pool (docs/ASPID.md); build 99 admitted the Leapers through a Leap
 attack on the Runner walker; build 98 admitted Husk Bullies, Hornheads and
