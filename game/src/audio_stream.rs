@@ -8,17 +8,25 @@
 //! No IRQ handler, other voice, reverb buffer or unrelated DMA may use this
 //! ring. Checkpoints must run independently of simulation pause/catch-up.
 
-pub const SOURCE_BYTES: usize = 199_872;
+// Both taken from the cooked bank so the guest cannot drift from the payload
+// the host actually wrote; the cave bed's rate is not the other loops'.
+pub const SOURCE_BYTES: usize = super::AMBIENCE_STREAM_SOURCE_BYTES;
 pub const HALF_BYTES: usize = 8_192;
 pub const RING_BYTES: usize = HALF_BYTES * 2;
 pub const VOICE: u8 = 9;
-pub const PITCH: u16 = 743;
-// 512 blocks * 28 samples at 44100*743/4096 Hz = 1.792 s/half.
+pub const PITCH: u16 = super::AMBIENCE_CLIPS[super::STREAM_INDEX].pitch;
+// 512 blocks * 28 samples at 44100*PITCH/4096 Hz per half.
 // PAL and NTSC give about 89 and 107 VBlanks. Eight missed checkpoints
 // invalidate synchronization; no attempt is made to guess a current cursor.
 pub const MAX_POLL_GAP: u32 = 8;
-const MIN_BOUNDARY_TICKS: u32 = 80;
-const MAX_BOUNDARY_TICKS: u32 = 120;
+/// One half is 512 blocks of 28 samples; how many VBlanks that lasts depends on
+/// the cooked pitch, so the sanity window around each boundary is derived from
+/// it rather than fixed. At the 8 kHz pitch this is the 107 ticks the previous
+/// literal 80 and 120 bracketed.
+pub const HALF_SAMPLES: u64 = (HALF_BYTES as u64 / 16) * 28;
+pub const BOUNDARY_TICKS: u32 = (HALF_SAMPLES * 60 * 4096 / (44_100 * PITCH as u64)) as u32;
+pub const MIN_BOUNDARY_TICKS: u32 = BOUNDARY_TICKS * 3 / 4;
+pub const MAX_BOUNDARY_TICKS: u32 = BOUNDARY_TICKS * 9 / 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Service {

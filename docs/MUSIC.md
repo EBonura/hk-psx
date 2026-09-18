@@ -82,8 +82,12 @@ complete nonlooping rhythm sequence: stop outside running, restart after clip
 completion, and defer a new start while soft landing plays. At build64 the port still lacked
 music, Focus, many enemy/break/death/UI effects and original hard-land recovery.
 
-All six full ambience payloads are retained. Cave noises (199,872B) now live in
-main RAM rather than occupying their full length in SPU. A continuous16KiB SPU
+All six full ambience payloads are retained. Cave noises live in main RAM
+rather than occupying their full length in SPU, and since build 109 cook at
+4,000 Hz rather than 8,000, which halves that cache to 99,936B. The clip is a
+low rumble bed: 99% of its energy is below 637 Hz and 0.06% above 2 kHz. The
+SPU ring's boundary sanity window is derived from the cooked pitch rather than
+fixed, since a half lasts twice as long at the lower rate. A continuous16KiB SPU
 ring plus8KiB aligned refill scratch uses hardware playback IRQ boundaries,
 polled from real-time input checkpoints even during simulation pause. DMA occurs
 only into the inactive half with IRQ detection temporarily disabled; detection

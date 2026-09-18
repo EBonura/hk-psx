@@ -218,7 +218,8 @@ def main():
     ambience={a['clip'] for scene in report['scenes'] for manager in scene['managers'] for a in manager['ambience']}
     for sid,obj in sorted(objects.items()):
         print('AUDIO',sid,s.read(obj)['m_Name'],flush=True)
-        for rate,channels in ((22050,2),(11025,1))+(((10000,1),(8000,1))if sid in ambience else ()):
+        # 4000 exists for the long cave bed, whose 8 kHz copy does not fit SPU.
+        for rate,channels in ((22050,2),(11025,1))+(((10000,1),(8000,1),(4000,1))if sid in ambience else ()):
             cooked.append(cook_clip(s,obj,out,encoder,rate,channels))
     report['clips']=cooked;report['capacity']=capacity(report,cooked)
     from inspect_il import inspect
