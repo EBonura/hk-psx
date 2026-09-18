@@ -16,6 +16,11 @@
     "middle_staircase": {
       "ticks": 2000,
       "events": "54:right:790,850:cross:24,870:right:20,78:square:2,102:square:2,126:square:2,150:square:2,174:square:2,198:square:2,222:square:2,246:square:2,270:square:2,294:square:2,318:square:2,342:square:2,366:square:2,390:square:2,414:square:2,438:square:2,462:square:2,486:square:2,510:square:2,534:square:2,558:square:2,582:square:2,606:square:2,630:square:2,654:square:2,678:square:2,702:square:2,726:square:2,750:square:2,774:square:2,798:square:2,822:square:2,846:square:2,870:square:2,894:square:2,285:cross:24,410:cross:24,540:cross:24,655:cross:24,900:cross:24,900:right:40,950:cross:24,956:right:28,1010:cross:24,1010:left:42,1100:cross:24,1100:left:48,1160:cross:24,1160:left:46,1220:cross:24,1220:left:33,1280:cross:24,1280:left:25,1340:left:319,1700:cross:24,1714:left:18,1760:cross:24,1760:right:36,1820:cross:24,1820:right:42,1880:cross:24,1880:right:30,1940:cross:24,1940:left:52"
+    },
+    "kings_pass_spikes": {
+      "ticks": 1450,
+      "events": "54:right:790,850:cross:24,870:right:20,78:square:2,102:square:2,126:square:2,150:square:2,174:square:2,198:square:2,222:square:2,246:square:2,270:square:2,294:square:2,318:square:2,342:square:2,366:square:2,390:square:2,414:square:2,438:square:2,462:square:2,486:square:2,510:square:2,534:square:2,558:square:2,582:square:2,606:square:2,630:square:2,654:square:2,678:square:2,702:square:2,726:square:2,750:square:2,774:square:2,798:square:2,822:square:2,846:square:2,870:square:2,894:square:2,285:cross:24,410:cross:24,540:cross:24,655:cross:24,900:cross:24,900:right:40,950:cross:24,956:right:28,1010:cross:24,1010:left:42,1100:cross:24,1100:left:48,1160:cross:24,1160:left:46,1220:cross:24,1220:left:33,1280:cross:24,1280:left:25,1350:cross:24,1352:left:4",
+      "note": "Climbs the lower staircase, then jumps into the King's Pass spikes above it. Guards the hazard path: this route must report hazard contact ticks."
     }
   }
 }
