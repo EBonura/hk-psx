@@ -81,8 +81,12 @@ def generated_params(constants,dt,nails,grass,draws):
     if any(not math.isfinite(v) or abs(v)>512 for g in grass for v in g['box']):raise ValueError('GrassCut world coordinate exceeds Q16 bound')
     ids={d['source']:i for i,d in enumerate(draws)}
     out='pub const ATTACK_PARAMS: hk_sim::AttackParams = hk_sim::AttackParams {'
+    # HeroController::.ctor sets ATTACK_QUEUE_STEPS to 5, the same shape as
+    # JUMP_QUEUE_STEPS; it is a constructor literal, not a serialized field.
+    ATTACK_QUEUE_STEPS=5
     values={'duration':ticks(constants['ATTACK_DURATION']),'cooldown':ticks(constants['ATTACK_COOLDOWN_TIME']),'alternate_reset':ticks(constants['ALT_ATTACK_RESET']),
-        'hit_start':ticks(dt),'hit_end':ticks(5*dt)}
+        'hit_start':ticks(dt),'hit_end':ticks(5*dt),
+        'queue_ticks':round(ATTACK_QUEUE_STEPS*dt*60),'recovery_ticks':ticks(constants['ATTACK_RECOVERY_TIME'])}
     out+=','.join(f'{k}:{v}' for k,v in values.items())+'};\n'
     out+='pub const NAIL_POLYGONS: [&[[i32;2]];4] = ['
     out+=','.join('&['+','.join(f'[{round(x*65536)},{round(y*65536)}]' for x,y in n['polygon'])+']' for n in nails)+'];\n'

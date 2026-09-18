@@ -405,6 +405,14 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # before the upward velocity starts.
     DOUBLE_JUMP_QUEUE_STEPS=10
     DOUBLE_JUMP_DELAY_STEPS=3
+    # Coyote time and the ceiling lockout, both .ctor literals as well.
+    LEDGE_BUFFER_STEPS=2
+    HEAD_BUMP_STEPS=3
+    # The Shade Cloak reuses the dash's speed and duration outright; only the
+    # cooldown and the invulnerability differ, so a divergent install must fail
+    # here rather than quietly ship a differently shaped dash.
+    assert constants['SHADOW_DASH_SPEED']==constants['DASH_SPEED']
+    assert constants['SHADOW_DASH_TIME']==constants['DASH_TIME']
     fall_accel=-gravity*constants['DEFAULT_GRAVITY']
     # Unity applies gravity inside the same physics step that Jump() pins the
     # velocity, so the source rises at JUMP_SPEED - g*0.02 = 15.702, not at
@@ -423,6 +431,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         +f",dash_ticks:{round(constants['DASH_TIME']*60)}"
         +f",dash_cooldown_ticks:{round(constants['DASH_COOLDOWN']*60)}"
         +f",dash_queue_ticks:{round(constants['DASH_QUEUE_STEPS']*dt*60)}"
+        +f",shadow_dash_cooldown_ticks:{round(constants['SHADOW_DASH_COOLDOWN']*60)}"
         +f",wallslide_speed:{round(constants['WALLSLIDE_SPEED']*65536)}"
         +f",wall_sticky_ticks:{round(constants['WALL_STICKY_STEPS']*dt*60)}"
         +f",walljump_speed:{round(constants['WJ_KICKOFF_SPEED']*65536)}"
@@ -441,6 +450,8 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         +f",super_dash_charge_ticks:{round(superdash['charge']*60)}"
         +f",super_dash_cancel_ticks:{round(superdash['cancelable']*60)}"
         +f",super_dash_recover_ticks:{round(superdash['recover']*60)}"
+        +f",ledge_buffer_ticks:{round(LEDGE_BUFFER_STEPS*dt*60)}"
+        +f",head_bump_ticks:{round(HEAD_BUMP_STEPS*dt*60)}"
         +'};\n')
     params+=f'pub const SPAWN:(i32,i32)=({round(spawn[0]*65536)},{round(spawn[1]*65536)});\n'
     params+=f'pub const KNIGHT_SCALE:i32={round(FOCAL/-CAM_Z*4096)};\n'

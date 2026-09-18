@@ -54,8 +54,7 @@ const PARAMS: AttackParams = AttackParams {
     cooldown: 25,
     alternate_reset: 30,
     hit_start: 2,
-    hit_end: 6,
-};
+    hit_end: 6, ..AttackParams::ZERO };
 const TRIANGLE: &[[i32; 2]] = &[[100, 0], [200, 0], [100, 100]];
 const SQUARE: &[[i32; 2]] = &[[100, 0], [200, 0], [200, 100], [100, 100]];
 // FIXTURE_BANK (tools/test_world.py): region 1 holds breakable 0 (TRIANGLE,

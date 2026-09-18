@@ -296,7 +296,7 @@ fn main() {
     // Pending Save Game record, written at the frame boundary once the player
     // accepts the bench prompt. Nothing else ever writes the card.
     let mut save_requested:Option<save::Save>=None;
-    /// Row 0 is Yes, row 1 is No, while the seated save prompt is open.
+    // Row 0 is Yes, row 1 is No, while the seated save prompt is open.
     let mut save_prompt:Option<u8>=None;
     let mut gate_cooldown=0u16;
     // Ticks since the current scene started (source Delay Collider gates).
@@ -529,6 +529,7 @@ fn main() {
                             player.has_walljump=settings.cheats.claw;
                             player.has_double_jump=settings.cheats.wings;
                             player.has_super_dash=settings.cheats.heart;
+                            player.has_shade_cloak=settings.cheats.cloak;
                             player.super_dash_input(PARAMS,pad.is_held(button::R1)&&vitals.can_control()&&!locked_for_dash(&focus,&door,&bench_state));
                             player.dash_input(PARAMS,pad.is_held(button::L1)&&vitals.can_control()&&!locked_for_dash(&focus,&door,&bench_state));
                             // The seated prompt owns input while it is up, so the bench
@@ -620,7 +621,7 @@ fn main() {
                                 let shade_events=shade.tick([player.x,player.y],hero_body,room.counts[5],state.edge_reader(r,&room));
                                 if shade_events.touched {
                                     let direction=if player.x<shade_position[0] {-1}else{1};
-                                    let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,1,direction,false);
+                                    let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,1,direction,false,player.shadow_dashing);
                                     if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
                                     if hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
                                 }
@@ -641,7 +642,7 @@ fn main() {
                             if enemy_events.hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
                             let bank_region=cache.world_metadata().region(meta_region).expect("admitted world metadata covers the selected region");
                             if let Some((damage,hazard,direction))=world::hazard_contact(bank_region,&player,PARAMS) {
-                                let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,damage,direction,hazard);
+                                let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,damage,direction,hazard,player.shadow_dashing);
                                 if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
                                 if hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
                             }
@@ -684,7 +685,7 @@ fn main() {
                             if target.is_none() && !vitals.dead && !vitals.hazard_pending && !world::contains(r.bounds,player.x,player.y) {
                                 if let Some(id)=cache.locate(r.scene,player.x,player.y) {target=Some(id);spatial_target=true;}
                                 else {
-                                    let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,1,0,true);
+                                    let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,1,0,true,player.shadow_dashing);
                                     if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
                                     if hurt!=hk_sim::Hurt::Ignored {audio::hurt();focus.interrupt();focus_audio::interrupt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();}
                                 }

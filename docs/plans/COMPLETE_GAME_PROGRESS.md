@@ -1257,6 +1257,66 @@ for the attack integration in step 4; SLOPE CANCEL, the Zero Timer that ends a
 travel stalled against a slope, is not modelled; and none of the charge, blast,
 trail or Hit Wall presentation is cooked.
 
+## P14 steps 3 and 4: the ability catalog, input priority and two missing buffers (build 120)
+
+Step 3 asks for the extracted ability catalog to be used as exhaustive
+authority rather than a guess at which traversal states exist, so
+`host/abilities.py` reads the PlayerData booleans out of the CIL and asserts
+that every one it names is still there. Eleven of them gate movement or
+traversal. It then walks the 45 admitted scenes for the components that put the
+Knight into a special state, and the answer is narrower than expected:
+`AcidCorpseSplash` and its `DamageHero` volumes in Crossroads_11_alt and
+Crossroads_35, and one `BounceShroom` in Crossroads_38.
+
+Acid therefore needs nothing new. Its damage already arrives through the
+generic `DamageHero` hazard path with a `HazardRespawnTrigger`, which is what
+the source does; `hasAcidArmour` would cancel that damage, and since nothing
+grants Isma's Tear the gate is catalogued rather than written. `hasLantern`
+gates darkened rooms and no admitted scene is darkened. The bounce shroom is a
+real unimplemented surface, and it belongs with the pogo machinery rather than
+here: `SHROOM_BOUNCE_VELOCITY` and `BOUNCE_SHROOM_TIME` sit next to the pogo's
+`BOUNCE_VELOCITY`, and P11 step 4 owns bouncy targets. Recorded as owed there.
+
+The Shade Cloak completes the "upgraded dash behavior" half of step 2.
+`SHADOW_DASH_SPEED` and `SHADOW_DASH_TIME` are identical to the ordinary dash's,
+which the cooker now asserts, so the upgrade is exactly two things: the dash
+becomes invulnerable, and it is gated by its own `SHADOW_DASH_COOLDOWN` of 1.5 s
+rather than the dash's 0.6 s. `TakeDamage` returns immediately while
+`cState.shadowDashing`, which means a Shade Cloak dash passes through a hazard
+instead of respawning at it, deliberately unlike the Invincibility cheat.
+
+Step 4's input priority came out of the Can* methods rather than from taste.
+`CanJump` refuses a jump while dashing, already jumping, wall sliding or inside
+`HEAD_BUMP_STEPS` of a ceiling, and grants one while `ledgeBufferSteps` is
+still running. `CanDash` refuses a dash inside `ATTACK_RECOVERY_TIME` of a
+swing, and allows one off a wall even when the air dash is spent. `CanAttack`
+refuses a swing while dashing. The jump chain itself is ordered wall jump, then
+ground jump, then double jump.
+
+Two of those are constants the step 1 audit missed outright, both `.ctor`
+literals: `LEDGE_BUFFER_STEPS` 2 is coyote time, and `HEAD_BUMP_STEPS` 3 locks
+out the jump after a ceiling. `ATTACK_QUEUE_STEPS` 5 is the third, and the nail
+now buffers its press the way the jump and dash already did. That buffer is
+shorter than a dash, so a swing pressed during one is genuinely lost, which a
+test pins so nobody later "fixes" it into lasting longer.
+
+`AttackParams` picked up the same `ZERO` treatment `Params` got, for the same
+reason: the enemy nails and the test fixtures set five fields out of seven.
+
+Verification: 86 hk-sim tests, and the 8 routes plus the 4 power-cut points on
+the final CUE. `town-shade` had to move its expected `HK_HEALTH` from 2 to 3:
+the same tape now kills the Shade sooner because a swing pressed a few ticks
+early lands instead of being dropped, so the fight costs one mask less. It
+stays an exact value rather than a range, so a later regression still shows.
+
+A note worth keeping. Gating the wall probe on the Claw was not a micro
+optimisation. Before it was gated, `kings-return` finished 6.8 units short of
+where it had, with no change to any movement rule, purely because one extra
+edge sweep per body per tick changed how much simulation fits between polls.
+Build 120 puts it back exactly where build 116 left it. Per-tick cost is
+observable in route positions, so a movement-neutral change is not automatically
+route-neutral.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

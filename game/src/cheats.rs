@@ -11,18 +11,18 @@ pub struct Settings {pub invincible:bool,pub max_nail:bool,pub infinite_soul:boo
     /// No admitted scene grants the Mothwing Cloak, Mantis Claw or Monarch
     /// Wings, so these are the only way to reach them until the ability
     /// pickups exist.
-    pub dash:bool,pub claw:bool,pub wings:bool,pub heart:bool}
+    pub dash:bool,pub claw:bool,pub wings:bool,pub heart:bool,pub cloak:bool}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Action {None,Restore,AddBlue,Reset}
 impl Settings {
-    pub const fn new()->Self {Self{invincible:false,max_nail:false,infinite_soul:false,max_masks:false,dash:false,claw:false,wings:false,heart:false}}
-    pub fn enabled(&self,row:usize)->bool {match row {0=>self.invincible,1=>self.max_nail,2=>self.infinite_soul,3=>self.max_masks,4=>self.dash,5=>self.claw,6=>self.wings,7=>self.heart,_=>false}}
+    pub const fn new()->Self {Self{invincible:false,max_nail:false,infinite_soul:false,max_masks:false,dash:false,claw:false,wings:false,heart:false,cloak:false}}
+    pub fn enabled(&self,row:usize)->bool {match row {0=>self.invincible,1=>self.max_nail,2=>self.infinite_soul,3=>self.max_masks,4=>self.dash,5=>self.claw,6=>self.wings,7=>self.heart,8=>self.cloak,_=>false}}
     pub fn adjust(&mut self,row:usize,delta:i8) {
         if delta==0{return;}
-        let value=match row {0=>&mut self.invincible,1=>&mut self.max_nail,2=>&mut self.infinite_soul,3=>&mut self.max_masks,4=>&mut self.dash,5=>&mut self.claw,6=>&mut self.wings,7=>&mut self.heart,_=>return};
+        let value=match row {0=>&mut self.invincible,1=>&mut self.max_nail,2=>&mut self.infinite_soul,3=>&mut self.max_masks,4=>&mut self.dash,5=>&mut self.claw,6=>&mut self.wings,7=>&mut self.heart,8=>&mut self.cloak,_=>return};
         *value=delta>0;
     }
-    pub fn bits(self)->u32 {u32::from(self.invincible)|(u32::from(self.max_nail)<<1)|(u32::from(self.infinite_soul)<<2)|(u32::from(self.max_masks)<<3)|(u32::from(self.dash)<<4)|(u32::from(self.claw)<<5)|(u32::from(self.wings)<<6)|(u32::from(self.heart)<<7)}
+    pub fn bits(self)->u32 {u32::from(self.invincible)|(u32::from(self.max_nail)<<1)|(u32::from(self.infinite_soul)<<2)|(u32::from(self.max_masks)<<3)|(u32::from(self.dash)<<4)|(u32::from(self.claw)<<5)|(u32::from(self.wings)<<6)|(u32::from(self.heart)<<7)|(u32::from(self.cloak)<<8)}
     pub fn params(self,mut base:VitalParams)->VitalParams {
         if self.max_nail {base.nail_damage=PURE_NAIL_DAMAGE;}
         if self.max_masks {base.max_health=MAX_MASKS;}
@@ -49,7 +49,11 @@ impl Settings {
         }}
         self.maintain(v,base);
     }
-    pub fn hurt(self,v:&mut Vitals,base:VitalParams,damage:u16,direction:i32,hazard:bool)->Hurt {
+    pub fn hurt(self,v:&mut Vitals,base:VitalParams,damage:u16,direction:i32,hazard:bool,shadow:bool)->Hurt {
+        // Source TakeDamage returns immediately while cState.shadowDashing, so
+        // a Shade Cloak dash passes through a hazard rather than respawning at
+        // it. That is deliberately unlike the Invincibility cheat below.
+        if shadow {return Hurt::Ignored;}
         if !self.invincible {return v.hurt(self.params(base),damage,direction,hazard);}
         if !hazard||damage==0||v.dead||v.hazard_pending {return Hurt::Ignored;}
         // Invulnerability must not strand the Knight below the room or in

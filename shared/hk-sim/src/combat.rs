@@ -9,12 +9,26 @@ pub struct AttackParams {
     pub alternate_reset: u16,
     pub hit_start: u16,
     pub hit_end: u16,
+    /// `ATTACK_QUEUE_STEPS`: a press this long before the swing becomes legal
+    /// still lands, the same buffer the jump and the dash get.
+    pub queue_ticks: u16,
+    /// `ATTACK_RECOVERY_TIME`: while the swing is younger than this, CanDash
+    /// refuses a dash out of it.
+    pub recovery_ticks: u16,
 }
 #[derive(Clone, Copy)]
 pub struct Grass {
     pub bounds: [i32; 4],
     pub off_draw: usize,
     pub on_draw: usize,
+}
+impl AttackParams {
+    /// Every field zero, so a caller that only needs a swing's shape (the
+    /// enemy nails, the test fixtures) does not restate the hero's buffers.
+    pub const ZERO: Self = Self {
+        duration: 0, cooldown: 0, alternate_reset: 0, hit_start: 0, hit_end: 0,
+        queue_ticks: 0, recovery_ticks: 0,
+    };
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Nail {
@@ -26,6 +40,8 @@ pub struct Nail {
     since_attack: u16,
     alternate: bool,
     was_button: bool,
+    queuing: bool,
+    queue: u16,
 }
 impl Default for Nail {
     fn default() -> Self {
@@ -42,6 +58,8 @@ impl Nail {
             since_attack: u16::MAX,
             alternate: false,
             was_button: false,
+            queuing: false,
+            queue: 0,
         }
     }
     /// Call after movement once per simulation tick. Returns true on a new swing.
@@ -62,8 +80,23 @@ impl Nail {
                 self.active = false;
             }
         }
-        let start = button && !self.was_button && !self.active && self.cooldown == 0;
+        if button && !self.was_button {
+            self.queuing = true;
+            self.queue = 0;
+        }
         self.was_button = button;
+        // CanAttack refuses a swing while dashing; the source keeps the press
+        // queued across that, so it fires the moment the dash releases.
+        let legal = !self.active && self.cooldown == 0 && player.dash_left == 0
+            && !matches!(player.super_dash, crate::SuperDash::Travelling(_));
+        let start = self.queuing && button && legal;
+        if self.queuing {
+            if start || !button || self.queue >= p.queue_ticks {
+                self.queuing = false;
+            } else {
+                self.queue += 1;
+            }
+        }
         if start {
             if self.since_attack > p.alternate_reset {
                 self.alternate = false;
@@ -82,6 +115,7 @@ impl Nail {
             self.cooldown = p.cooldown;
             self.since_attack = 0;
         }
+        player.attack_recovering = self.active && self.age < p.recovery_ticks;
         if self.active {
             player.animation = [6, 5, 7, 8][self.kind as usize];
             player.animation_tick = self.age as u32;
@@ -234,8 +268,7 @@ mod tests {
         cooldown: 25,
         alternate_reset: 30,
         hit_start: 2,
-        hit_end: 6,
-    };
+        hit_end: 6, ..AttackParams::ZERO };
     #[test]
     fn press_edges_cooldown_alternate_and_reset() {
         let mut n = Nail::new();
