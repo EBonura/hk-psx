@@ -58,6 +58,12 @@ until it dies. It proves death records a Shade at the death position with
 nailDamage times clamp(maxHealth / 2, 1, 99) health and writes the card with no
 bench rested. Its wallet is zero, so the Geo transfer is the other route's job.
 
+`kings-return` closes the loop on real data: it boots from the card
+`kings-death` itself wrote, so the Shade it meets was recorded by an actual
+death rather than seeded by hand, and walking the same traversal back must find
+it waiting and recover it without dying again. That is the quit, reload and
+recover path end to end.
+
 `town-shade` boots from `tools/cards/town-shade.mcd`, a card whose save record
 already carries a Shade six units from the Dirtmouth bench with a 99-Geo pool,
 so the whole loop is exercised without a recorded death: it spawns, chases,
