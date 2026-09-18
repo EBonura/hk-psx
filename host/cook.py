@@ -14,6 +14,7 @@ from materials import scenery_material
 from tilemap_fill import append_tilemap_fills
 from quality import SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
 from focus import FOCUS_CLIPS,source_focus_values,generated_focus_params
+from superdash import source_superdash_values
 from actors import actor_sources,hazard_sources,source_vital_values,generated_vital_params,generated_nail_response_params
 from UnityPy.helpers.MeshHelper import MeshHandler
 
@@ -397,6 +398,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # Set in HeroController::.ctor rather than serialized, so it is not in the
     # typetree prefix: `ldc.i4.2; stfld JUMP_QUEUE_STEPS`. A jump pressed this
     # many fixed steps before landing still fires.
+    superdash=source_superdash_values(s)
     JUMP_QUEUE_STEPS=2
     # Also .ctor literals: `ldc.i4.s 10; stfld DOUBLE_JUMP_QUEUE_STEPS`, and
     # DoubleJump()'s `ldc.i4.3; ble` that spends the first steps on the wings
@@ -435,6 +437,10 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         +f",double_jump_delay_ticks:{round(DOUBLE_JUMP_DELAY_STEPS*dt*60)}"
         +f",double_jump_ticks:{round(constants['DOUBLE_JUMP_STEPS']*dt*60)}"
         +f",double_jump_queue_ticks:{round(DOUBLE_JUMP_QUEUE_STEPS*dt*60)}"
+        +f",super_dash_speed:{round(superdash['speed']*65536)}"
+        +f",super_dash_charge_ticks:{round(superdash['charge']*60)}"
+        +f",super_dash_cancel_ticks:{round(superdash['cancelable']*60)}"
+        +f",super_dash_recover_ticks:{round(superdash['recover']*60)}"
         +'};\n')
     params+=f'pub const SPAWN:(i32,i32)=({round(spawn[0]*65536)},{round(spawn[1]*65536)});\n'
     params+=f'pub const KNIGHT_SCALE:i32={round(FOCAL/-CAM_Z*4096)};\n'

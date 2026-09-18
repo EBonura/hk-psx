@@ -11,16 +11,20 @@ impl State {
         let press=bits&!self.previous;self.previous=bits;
         if self.cheats {
             if press&CIRCLE!=0 {self.cheats=false;self.row=5;return false;}
-            if press&UP!=0 {self.row=(self.row+7)%8;}
-            if press&DOWN!=0 {self.row=(self.row+1)%8;}
+            // Toggles, then Restore, Add Lifeblood, Reset All and Back. Derived
+            // so a new ability row cannot silently land on one of the actions.
+            const TOGGLES:usize=crate::menu::state::CHEAT_ITEMS.len();
+            const ROWS:usize=TOGGLES+4;
+            if press&UP!=0 {self.row=(self.row+ROWS-1)%ROWS;}
+            if press&DOWN!=0 {self.row=(self.row+1)%ROWS;}
             let delta=i8::from(press&RIGHT!=0)-i8::from(press&LEFT!=0);
             if delta!=0 {cheats.adjust(self.row,delta);}
             if press&CROSS!=0 {
                 match self.row {
-                    0..=3=>{let delta=if cheats.enabled(self.row){-1}else{1};cheats.adjust(self.row,delta);},
-                    4=>self.action=crate::cheats::Action::Restore,
-                    5=>self.action=crate::cheats::Action::AddBlue,
-                    6=>{*cheats=crate::cheats::Settings::new();self.action=crate::cheats::Action::Reset;},
+                    r if r<TOGGLES=>{let delta=if cheats.enabled(r){-1}else{1};cheats.adjust(r,delta);},
+                    r if r==TOGGLES=>self.action=crate::cheats::Action::Restore,
+                    r if r==TOGGLES+1=>self.action=crate::cheats::Action::AddBlue,
+                    r if r==TOGGLES+2=>{*cheats=crate::cheats::Settings::new();self.action=crate::cheats::Action::Reset;},
                     _=>{self.cheats=false;self.row=5;},
                 }
             }

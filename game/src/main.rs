@@ -528,6 +528,8 @@ fn main() {
                             player.has_dash=settings.cheats.dash;
                             player.has_walljump=settings.cheats.claw;
                             player.has_double_jump=settings.cheats.wings;
+                            player.has_super_dash=settings.cheats.heart;
+                            player.super_dash_input(PARAMS,pad.is_held(button::R1)&&vitals.can_control()&&!locked_for_dash(&focus,&door,&bench_state));
                             player.dash_input(PARAMS,pad.is_held(button::L1)&&vitals.can_control()&&!locked_for_dash(&focus,&door,&bench_state));
                             // The seated prompt owns input while it is up, so the bench
                             // neither reads a leave press nor starts another rest.
