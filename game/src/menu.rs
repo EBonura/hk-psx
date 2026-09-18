@@ -92,7 +92,7 @@ fn draw_menu(menu:&State,gain:u8,slots:&[&str;4],fault:&str){
             gpu::draw_rect_flat(16,39,288,192,border,border,border);
             gpu::draw_rect_flat(18,41,284,188,0,0,0);
             centered(51,"CONTROLS",gain);
-            for (i,line)in state::CONTROL_LINES.iter().enumerate(){text(30,74+i as i16*14,line,gain);}
+            for (i,line)in state::CONTROL_LINES.iter().enumerate(){text(30,66+i as i16*12,line,gain);}
             centered(214,"X / O / START: back",gain);
         }
         Page::Cheats=>{
@@ -100,7 +100,7 @@ fn draw_menu(menu:&State,gain:u8,slots:&[&str;4],fault:&str){
             gpu::draw_rect_flat(18,47,284,183,0,0,0);
             centered(65,"CHEATS",gain);
             for (i,label) in state::CHEAT_ITEMS.iter().chain(["Back"].iter()).enumerate(){
-                let y=72+i as i16*12;let g=if i==menu.selected{gain}else{gain-gain/4};
+                let y=70+i as i16*11;let g=if i==menu.selected{gain}else{gain-gain/4};
                 text(46,y,label,g);
                 if i<state::CHEAT_ITEMS.len(){text(254,y,if menu.settings.cheats.enabled(i){"ON"}else{"OFF"},g);}
                 if i==menu.selected{text(30,y,">",gain);}

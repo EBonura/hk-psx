@@ -136,6 +136,10 @@ impl Vitals {
             self.soul = self.soul.saturating_add(p.soul_per_hit).min(p.max_soul);
         }
     }
+    /// `AddMPCharge`, as the Dream Nail's reward uses it.
+    pub fn add_soul(&mut self, p: VitalParams, amount: u16) {
+        self.soul = self.soul.saturating_add(amount).min(p.max_soul);
+    }
     pub fn take_soul(&mut self, amount: u16) {
         self.soul = self.soul.saturating_sub(amount);
     }

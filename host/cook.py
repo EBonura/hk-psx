@@ -15,6 +15,7 @@ from tilemap_fill import append_tilemap_fills
 from quality import SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
 from focus import FOCUS_CLIPS,source_focus_values,generated_focus_params
 from superdash import source_superdash_values
+from dream_nail import source_dream_nail_values,generated_dream_nail_params
 from actors import actor_sources,hazard_sources,source_vital_values,generated_vital_params,generated_nail_response_params
 from UnityPy.helpers.MeshHelper import MeshHandler
 
@@ -487,6 +488,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     breakables=bind_breakables(breakables,draws,edges)
     params+=generated_params(constants,dt,nails,grass,draws)
     params+=generated_nail_response_params(constants,dt)
+    params+=generated_dream_nail_params(source_dream_nail_values(s))
     if write_shared:
         vital_values=source_vital_values(s,constants)
         params+=generated_vital_params(vital_values)
