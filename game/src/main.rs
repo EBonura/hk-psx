@@ -9,6 +9,7 @@ use psx_pad::{button, ButtonState};
 use psx_telemetry::{counter, emit, stage, task};
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
+mod camera;
 mod input_queue;
 mod input_sampler;
 mod input;
@@ -242,6 +243,7 @@ fn main() {
     let mut vram=vram_cache::Cache::new();
     let mut sim_clock=psx_rt::interrupts::vblank_count();
     let mut initial=true;
+    let mut camera_state=camera::Camera::new();
     // Timer1 counts HBlanks for frame-pacing telemetry only.
     psx_io::timers::set_mode(psx_io::timers::Timer::Timer1,0x0100);
     'region: loop {
@@ -281,6 +283,9 @@ fn main() {
         lifeblood::apply(life,&mut state,region_id);
         great_door::apply(&door,&mut state,region_id);
         unsafe { HK_GAME_MODE=1;HK_REGION_ID=region_id as u32+1; }
+        // The first frame renders before the first tick: seat the camera now
+        // (a scene gate or respawn snaps through the displacement rule).
+        camera_state.tick((player.x,player.y),player.facing,camera::limits(r,[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top]));
         let mut pending_target:Option<usize>=None;
         let mut boundary_ticks=0u32;
         let mut spatial_target=false;
@@ -294,7 +299,7 @@ fn main() {
             geo_render::apply(geo,&mut state,region_id);
             lifeblood::apply(life,&mut state,region_id);
             great_door::apply(&door,&mut state,region_id);
-            let camera=(player.x.clamp(r.camera[0],r.camera[2]),(player.y+2*ONE).clamp(r.camera[1],r.camera[3]));
+            let camera=camera_state.position();
             let door_frame=door.frame(region_id,camera);
             let body_frame=knight_frame(&room,&player,&focus);let effect_frame=nail_frame(&room,&nail);
             let enemy_draws=enemies.prepare_draws(r,&room,camera);
@@ -465,6 +470,10 @@ fn main() {
                                 great_door::apply(&door,&mut state,region_id);
                                 dialogue::cancel();focus.interrupt();focus_audio::interrupt();
                             }
+                            {
+                                let hero_body=[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top];
+                                camera_state.tick((player.x,player.y),player.facing,camera::limits(r,hero_body));
+                            }
                             let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
                                 [camera.0,camera.1,-2496922],runner_event,
                                 |scene,x,y| {let i=cache.locate(scene,x,y)?;Some((world::resident(i)?,cache.room_for(i)?))});
@@ -544,8 +553,7 @@ fn main() {
                     geo_render::apply(geo,&mut state,region_id);
                     lifeblood::apply(life,&mut state,region_id);
                     great_door::apply(&door,&mut state,region_id);
-                    let next_camera=(player.x.clamp(r.camera[0],r.camera[2]),
-                        (player.y+2*ONE).clamp(r.camera[1],r.camera[3]));
+                    let next_camera=camera_state.position();
                     // begin_deferred_swap already selected the future draw side.
                     // No draw-target writes, uploads or GPU kicks occur here.
                     render::prepare_back_prefix(next_camera,fb.buffer_y(fb.drawing),cache.coverage());

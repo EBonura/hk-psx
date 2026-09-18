@@ -37,6 +37,8 @@ pub const KIND_REGION_STATICS: u16 = 9;
 /// Static NailSlash target: polygons, flag 1 = horizontal and up slashes too,
 /// state = owning breakable id or 0xFFFFFFFF.
 pub const KIND_POGO: u16 = 10;
+/// CameraLockArea trigger; its one two-point polygon holds the camera-centre limits.
+pub const KIND_CAMERA_LOCK: u16 = 11;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {
@@ -182,9 +184,11 @@ impl<'a> WorldMeta<'a> {
                 let (first, count) = object.index_span(word);
                 self.span(4, first, count)?;
             }
+            // A camera lock's single "polygon" is its two limit points.
+            let minimum = if object.kind() == KIND_CAMERA_LOCK { 2 } else { 3 };
             for polygon in object.polygons() {
                 let polygon = polygon?;
-                if polygon.count() < 3 || polygon.count() > 16 {
+                if polygon.count() < minimum || polygon.count() > 16 {
                     return Err(Error::Geometry);
                 }
                 self.span(3, polygon.first(), polygon.count())?;
