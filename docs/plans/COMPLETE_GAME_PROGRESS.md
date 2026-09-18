@@ -1110,6 +1110,45 @@ card `kings-death` wrote, finds the Shade that real death recorded and recovers
 it, so quit, reload and recover is verified on genuine save data rather than a
 seeded fixture. Twelve routes pass.
 
+## P14 step 1: the movement audit against the original (build 112)
+
+Before adding dash, wall jump, super dash or double jump, the plan requires
+re-auditing the movement already shipped against original traces. The port's
+constants are not hand-tuned: `host/cook.py` reads `RUN_SPEED`, `JUMP_SPEED`,
+`DEFAULT_GRAVITY`, `MAX_FALL_VELOCITY`, `JUMP_STEPS` and `JUMP_STEPS_MIN`
+straight off HeroController, with the collider box and the project's gravity
+and fixed timestep, and resamples the jump hold from the source's 50 Hz steps
+to the guest's 60 Hz. Every constant the remaining abilities need is in that
+same serialized prefix and is already captured in
+`.hkpsx/gameplay-source.json`: DASH_SPEED 20 / DASH_TIME 0.25 /
+DASH_COOLDOWN 0.6 / DASH_QUEUE_STEPS 10, WALLSLIDE_SPEED -8 /
+WJ_KICKOFF_SPEED 16 / WJLOCK_STEPS_SHORT 5 / WJLOCK_STEPS_LONG 10 /
+WALL_STICKY_STEPS 3, DOUBLE_JUMP_STEPS 9, SUPER_DASH_SPEED 20, and the
+backdash and shadow-dash sets.
+
+Measured against the existing `movement-phase-1` reference capture (the
+instrumented Windows original under CrossOver, 300 gameplay frames of a
+recorded input schedule) using a new flat-ground `jump-probe` tape on the port:
+
+| quantity | original | port | delta |
+| --- | ---: | ---: | ---: |
+| ground run speed | 8.300 u/s | 8.2993 u/s | 0.0% |
+| jump rise | 3.705 u | 3.886 u | +4.9% |
+| airtime | 0.617 s | 0.633 s | +2.6% |
+
+Run speed is exact. The jump is about 5% too high and hangs 2.6% too long. The
+hold duration itself resamples correctly (the source holds `JUMP_SPEED` for
+`JUMP_STEPS + 1` = 10 steps of 0.02 s, which the cook turns into 12 ticks of
+1/60, both 0.2 s), so the discrepancy is in how the port integrates gravity
+around that hold rather than in the constants. It is small but it is a real
+mismatch, and the plan is explicit that these are fixed before complex moves
+land on top of them.
+
+Not yet closed from the older record: "Jump release queue and Unity contact
+solver parity unverified". Fixing the jump integration changes every recorded
+route's trajectory, so it is called out here as a decision rather than made
+silently.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
