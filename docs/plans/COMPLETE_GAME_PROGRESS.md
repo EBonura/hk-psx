@@ -1144,10 +1144,37 @@ around that hold rather than in the constants. It is small but it is a real
 mismatch, and the plan is explicit that these are fixed before complex moves
 land on top of them.
 
-Not yet closed from the older record: "Jump release queue and Unity contact
-solver parity unverified". Fixing the jump integration changes every recorded
-route's trajectory, so it is called out here as a decision rather than made
-silently.
+Both were then fixed, and the second was a genuine missing feature rather than
+a constant:
+
+The held velocity. Unity applies gravity inside the same physics step that
+`Jump()` pins the velocity, so the source rises at `JUMP_SPEED - g * 0.02` =
+15.702, which the reference trace shows directly. The cook stored `JUMP_SPEED`
+unchanged and the guest subtracted gravity over its own smaller step, holding
+15.860 for the whole 0.2 s. The cook now pre-compensates the step-length
+difference, and the guest measures 15.701 against the source's 15.702, the
+residue being Q16 rounding.
+
+The jump queue. `HeroController::.ctor` sets `JUMP_QUEUE_STEPS` to 2, and the
+source retries the jump each step while the button is held and the counter is
+within that, so a press up to two steps before landing still fires. The port
+required a strict rising edge on an already-grounded frame and dropped those
+presses entirely. This is the "release buffering" the package text names, and
+it is now implemented with the constant taken from the CIL, since it is a
+constructor literal rather than a serialized field.
+
+Consequence, and it is not small: five recorded routes (gate-return,
+town-reset, town-resident, crossroads-exit, town-bench, with town-well and
+crossroads-floor stalling in the same place without an assertion to catch it)
+no longer complete the King's Pass platform climb. They are human recordings
+whose jump timings were tuned against a jump that rose 1% too high, and they
+now fall short of the first platforms. The level itself is not less
+traversable: the port now jumps within 0.001 units of the original and the
+previous build jumped higher than the original, so nothing reachable before has
+become unreachable. The tapes encode the old physics and need re-recording, or
+replacing with scripted routes designed through `tools/route_probe.py` as
+`kings-death` was. Until then `cargo run --release -- build` fails its
+validation step.
 
 ## Required package completion record
 

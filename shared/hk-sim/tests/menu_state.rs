@@ -1,15 +1,22 @@
 #[path="../../../game/src/cheats.rs"]mod cheats;
+// menu_state sizes the save screen by the profile count.
+mod save{pub const PROFILES:usize=4;}
 #[path="../../../game/src/menu_state.rs"]mod menu_state;
 use menu_state::*;
 fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
 #[test]fn first_confirm_preserves_direct_start_and_default_levels(){
- for b in [START,CROSS,START|CROSS,START|DOWN]{let mut s=State::new();assert!(s.step(b));assert_eq!(s.settings,Settings::new());}
+ // Start Game opens the save screen; confirming a slot is what starts.
+ for b in [START,CROSS,START|CROSS,START|DOWN]{
+  let mut s=State::new();assert!(!s.step(b));assert_eq!(s.page,Page::Profiles);
+  assert!(s.step(0)==false);assert!(s.step(CROSS));
+  assert_eq!(s.profile,Some(0));assert_eq!(s.settings,Settings::new());}
 }
 #[test]fn options_apply_actual_settings_and_return_without_starting(){
  let mut s=State::new();tap(&mut s,DOWN);tap(&mut s,CROSS);assert_eq!(s.page,Page::Options);
  tap(&mut s,LEFT);assert_eq!(s.settings.sfx,9);tap(&mut s,DOWN);tap(&mut s,LEFT);assert_eq!(s.settings.ambience,9);
  tap(&mut s,CIRCLE);assert_eq!(s.page,Page::Main);assert_eq!(s.selected,1);
- tap(&mut s,UP);assert!(tap(&mut s,START));assert_eq!(s.settings,Settings{sfx:9,ambience:9,..Settings::new()});
+ tap(&mut s,UP);assert!(!tap(&mut s,START));assert!(tap(&mut s,CROSS));
+ assert_eq!(s.settings,Settings{sfx:9,ambience:9,..Settings::new()});
 }
 #[test]fn controls_and_back_are_functional_and_confirm_never_retriggers_while_held(){
  let mut s=State::new();tap(&mut s,UP);tap(&mut s,UP);tap(&mut s,CROSS);assert_eq!(s.page,Page::Controls);
@@ -41,7 +48,7 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  for _ in 0..100{assert!(!s.step(CROSS));}assert!(s.settings.cheats.invincible);
  tap(&mut s,DOWN);tap(&mut s,RIGHT);assert!(s.settings.cheats.max_nail);
  tap(&mut s,CIRCLE);assert_eq!(s.page,Page::Main);assert_eq!(s.selected,3);
- tap(&mut s,DOWN);assert!(tap(&mut s,CROSS));assert!(s.settings.cheats.invincible);
+ tap(&mut s,DOWN);assert!(!tap(&mut s,CROSS));assert!(s.settings.cheats.invincible);
 }
 
 #[test]fn music_is_independent_clamped_and_back_preserves_it(){
@@ -55,5 +62,5 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  tap(&mut s,DOWN);assert_eq!(OPTION_ITEMS[s.selected],"Back");
  assert!(!tap(&mut s,CROSS));assert_eq!(s.page,Page::Main);assert_eq!(s.selected,1);
  tap(&mut s,CROSS);tap(&mut s,CIRCLE);tap(&mut s,UP);
- assert!(tap(&mut s,START));assert_eq!(s.settings.music,1);
+ assert!(!tap(&mut s,START));assert!(tap(&mut s,CROSS));assert_eq!(s.settings.music,1);
 }

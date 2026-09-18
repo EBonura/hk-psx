@@ -16,7 +16,7 @@ const PARAMS: Params = Params {
     gravity: 48 * ONE,
     fall: 20 * ONE,
     hold_ticks: 12,
-    min_ticks: 5,
+    min_ticks: 5, jump_queue_ticks: 0,
     half_width: ONE / 4,
     bottom: -ONE,
     top: 0,

@@ -160,7 +160,7 @@ impl Corpse {
             gravity: spec.gravity,
             fall: 100 * ONE,
             hold_ticks: 0,
-            min_ticks: 0,
+            min_ticks: 0, jump_queue_ticks: 0,
             half_width: (b[2] - b[0]) / 2,
             bottom: b[1],
             top: b[3],
