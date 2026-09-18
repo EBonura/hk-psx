@@ -1063,10 +1063,19 @@ Checks: six controller tests in hk-sim, `tests/test_shade.py` (the real guest
 runtime against the cooked art: record, spawn rule, clip table, every frame
 inside one slot), `tests/test_save.py` extended to the grown record with the
 checksum moved to the end so it covers the Shade fields, and a new
-`town-shade` route. Authoring a route that dies on tape proved expensive
-(no admitted scene puts a reachable enemy or hazard on any recorded path, and
-`tools/route_probe.py`, which would have made that search cheap, no longer
-compiles against the current world API), so the route instead boots from
+`town-shade` route, and a `kings-death` route once the probe was repaired. The
+first attempts at a death on tape failed because no admitted scene puts a
+reachable enemy or hazard on a recorded path by accident; the repaired
+`tools/route_probe.py` found the answer natively in seconds. `kings-death`
+walks the King's Pass traversal (its four jumps kept) with the nail silent past
+the fifth breakable, so the Crawler at x 125.5 survives, the sixth obstacle
+stays unbroken and the Knight stops beside it at 126.78 and is killed where it
+stands. It must end with `HK_DEATHS` 1, `HK_ENEMY_KILLS` 0, `HK_SHADE_PRESENT`
+1, `HK_SHADE_HP` 10 and one clean card write; reading that card back shows the
+Shade recorded at exactly the death position, which is the Set Shade fallback,
+and Continue pointing at the new-game spawn because no bench was rested. Its
+wallet is zero, so the Geo transfer itself stays `town-shade`'s job. The
+seeded-card route still boots from
 `tools/cards/town-shade.mcd`, a card whose save record already carries a Shade
 six units from the Dirtmouth bench with a 99-Geo pool. It must end with
 `HK_SHADE_KILLS` 1, `HK_SHADE_PRESENT` 0, the wallet at 105 and the Knight on
@@ -1077,8 +1086,8 @@ Headroom fell to 68,988 bytes from 116,124: the cooked art is 30,386 of that
 and the controller, runtime and grown save record the rest. The trend since
 build 94 is now 246 KB, 132 KB, 116 KB, 69 KB, and the next large runtime
 needs a budget pass before it lands rather than after. Not done: a route that
-records a death on tape (see the note above on route_probe), the source save
-menu, power-interruption tests, and the Shade's particles, orbs and audio.
+the source save menu, power-interruption tests (step 8), a route that returns
+to a Shade after a reload (step 9), and the Shade's particles, orbs and audio.
 
 ## Required package completion record
 

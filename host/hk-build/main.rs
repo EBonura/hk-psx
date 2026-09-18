@@ -29,12 +29,20 @@ const REQUIRED: &[(&str, &str, u64)] = &[("town-bench", "HK_BENCH_RESTS", 1), ("
     // from the Dirtmouth bench with a 99-Geo pool. It must spawn, chase and hurt the
     // Knight, die to the nail, and hand the pool back on top of the saved six.
     ("town-shade", "HK_SHADE_KILLS", 1), ("town-shade", "HK_SHADE_PRESENT", 0), ("town-shade", "HK_GEO_WALLET", 105),
-    ("town-shade", "HK_HEALTH", 2)];
+    ("town-shade", "HK_HEALTH", 2),
+    // kings-death walks the King's Pass traversal with the nail silent past the fifth
+    // breakable, so the Crawler there survives to kill the Knight. Death must record a
+    // Shade at the spot with nailDamage * clamp(maxHealth / 2, 1, 99) health and write
+    // the card even though no bench has been rested.
+    ("kings-death", "HK_DEATHS", 1), ("kings-death", "HK_ENEMY_KILLS", 0),
+    ("kings-death", "HK_SHADE_PRESENT", 1), ("kings-death", "HK_SHADE_HP", 10),
+    ("kings-death", "HK_SAVE_WRITES", 1), ("kings-death", "HK_SAVE_ERRORS", 0)];
 /// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
 /// fresh formatted card when the fixture is absent (the run writes it back there).
 const MEMCARDS: &[(&str, &str)] = &[("town-bench", "town-bench.mcd"), ("town-continue", "town-continue.mcd"),
-    ("town-shade", "town-shade.mcd")];
-const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false), ("town-continue", false), ("town-shade", false)];
+    ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd")];
+const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false), ("town-continue", false), ("town-shade", false),
+    ("kings-death", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,

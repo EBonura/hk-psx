@@ -49,7 +49,14 @@ Scream, Friendly, Lake and Jar branches are unreachable at this port's levels;
 `host/shade.py` fails the build if any of them stops being gated on a zero
 level.
 
-## Route
+## Routes
+
+`kings-death` kills the Knight for real: it walks the King's Pass traversal
+with the nail silent past the fifth breakable, so the Crawler there survives
+and the sixth obstacle stays unbroken, leaving the Knight standing beside both
+until it dies. It proves death records a Shade at the death position with
+nailDamage times clamp(maxHealth / 2, 1, 99) health and writes the card with no
+bench rested. Its wallet is zero, so the Geo transfer is the other route's job.
 
 `town-shade` boots from `tools/cards/town-shade.mcd`, a card whose save record
 already carries a Shade six units from the Dirtmouth bench with a 99-Geo pool,
