@@ -44,8 +44,9 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P07 | in progress | Build 94 admits the Crossroads Climbers (kinematic surface follower on the resident terrain, rotated body and sprite, freeze stun, corpse); build 89 admits the Crossroads Zombie Runners (controller, clips, corpses, audio bank on voices 21 to 23; dust and death effects recorded omissions) and replays the routes concurrently; build 88 streams break-effect art per scene through one disc chunk per scene decoded at admission and uploaded to the fixed effect VRAM rectangles; 210 emitters across 18 scenes with no VRAM omissions. Previously: persistent Geo state is now a flat 256-entry source-state pool keyed by scene and authored rock slot, covering the verified 207 GeoRock instances without a `[scene][32]` allocation. Version-2 host plans preserve all 850 directed gates, and the bounded room-residency runtime can safely evict only completed slots outside a keep-set. Native residency/Geo tests pass and the no-disc link is hazard-free with 16,232 bytes before the stack floor. Predictive CD residency and guest streaming admission are still pending. |
 | P13 | in progress | Shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
-| P09 | in progress | Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Build 75 adds Crossroads_02 and Crossroads_07 through `GRID_SCENE_LAYOUTS` (one catalog entry per scene); their gates are generated from source and the linked headroom is 376,680 bytes. The `crossroads-floor` route walks the Crossroads_01 floor to the right wall; reaching `right1` needs an authored jump route. Build 78 gives top-side gate entries the source's -12 units/s initial drop (`Gate.entry_vy`, verified for the well; assumed for other top entries). The delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and return replays remain. |
-| P10-P12, P14-P31 | pending | Follow dependency order in the master plan. |
+| P09 | in progress | Build 102 adds the source CameraLockArea limits (world bank kind 11) and a damped camera with look-ahead; the delayed top-gate collider and per-entry behaviour descriptors remain. Earlier: Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Build 75 adds Crossroads_02 and Crossroads_07 through `GRID_SCENE_LAYOUTS` (one catalog entry per scene); their gates are generated from source and the linked headroom is 376,680 bytes. The `crossroads-floor` route walks the Crossroads_01 floor to the right wall; reaching `right1` needs an authored jump route. Build 78 gives top-side gate entries the source's -12 units/s initial drop (`Gate.entry_vy`, verified for the well; assumed for other top entries). The delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and return replays remain. |
+| P19/P20 | in progress | Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
+| P10-P12, P14-P18, P21-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -900,6 +901,28 @@ budget; a cook-side policy that drops an actor's art (leaving it an
 unsupported record) when its view overflows is the next step if more
 placements need it. 120 of 144 placed actors are admitted; headroom
 148,452 bytes; seven routes pass.
+
+## Source camera locks and a damped camera (build 102)
+
+P09 step 3, first slice. The 122 enabled `CameraLockArea` objects of the
+catalog now ride in the world bank as kind 11 objects (trigger bounds plus one
+two-point polygon with the camera-centre limits; flags 1 preventLookDown, 2
+preventLookUp). `host/regions.py::postpack_camera_locks` attaches every lock
+whose trigger touches a region and resolves the source `-1` (and 9999) sides
+the way `CameraController.LockToArea` does, to the scene camera bounds (14.6 /
+xLimit / 8.3 / yLimit in camera-centre units); Crossroads_18 authors an
+inverted x pair, which the guest clamps to the sorted pair as Mathf.Clamp
+effectively does. The guest's new `camera.rs` replaces the per-view instant
+clamp: the camera target follows the hero with the source one-unit look-ahead
+and 0.075 s damping, the camera follows the target with 0.15 s damping at
+most 30 units/s (per-tick exponential approach with the serialized
+CameraTarget/CameraController time constants, not SmoothDamp's spring), both
+clamped to the lock whose trigger the hero body overlaps (the last in bank
+order, as the source keeps the most recently entered zone) or the view's
+camera bounds; a hero displacement over 20 units in a tick (gate, respawn)
+snaps. Fall catcher, look up/down, quake and super-dash offsets are not
+modelled. `tools/world_metadata.py` joined the cook inputs. Headroom 136,620
+bytes; seven routes pass.
 
 ## Required package completion record
 

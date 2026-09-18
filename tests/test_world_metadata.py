@@ -46,6 +46,25 @@ class WorldMetadataTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             encode_scene(scene, rows)
 
+    def test_camera_lock_carries_two_limit_points_and_look_flags(self):
+        scene = {"scene_id": 1, "scene_name": "Synthetic", "file": "level1"}
+        rows = [{"chunk_id": 3, "activation_bounds": [0, 0, 24, 16], "camera_bounds": [0, 0, 24, 16],
+                 "camera_locks": [{"source": "level1:9", "bounds": [2, 1, 10, 8], "limit_points": [[(14.6, 8.3), (30.5, 8.3)]],
+                                   "prevent_look_down": True, "prevent_look_up": False}]}]
+        payload, report = encode_scene(scene, rows)
+        self.assertEqual(report["object_count"], 1)
+        offset, count, stride = struct.unpack_from("<3I", payload, 76)
+        lock = struct.unpack_from("<IIHH4i2I3i", payload, offset)
+        self.assertEqual((lock[1], lock[2], lock[3]), (0xFFFFFFFF, 11, 1))
+        self.assertEqual(lock[4:8], (2 * 65536, 65536, 10 * 65536, 8 * 65536))
+        self.assertEqual(lock[9], 1)  # one polygon: the two limit points
+        points_offset, points_count, points_stride = struct.unpack_from("<3I", payload, 64 + 12 * 3)
+        self.assertEqual((points_count, points_stride), (2, 8))
+        self.assertEqual(struct.unpack_from("<4i", payload, points_offset), (956826, 543949, 1998848, 543949))
+        rows[0]["camera_locks"][0]["limit_points"] = [[(0, 0)]]
+        with self.assertRaises(ValueError):
+            encode_scene(scene, rows)
+
     def test_multiple_scene_rows_are_sorted_by_global_chunk(self):
         scene = {"scene_id": 0, "scene_name": "Synthetic", "file": "level6"}
         def row(chunk):

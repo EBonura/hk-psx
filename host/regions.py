@@ -99,6 +99,32 @@ def split_region(region):
     return [region_spec(scene,piece) for piece in pieces]
 
 
+def postpack_camera_locks(report):
+    """Attach every enabled CameraLockArea whose trigger touches a region's
+    activation envelope, with -1 / 9999 limits resolved to the scene's camera
+    bounds (CameraController.LockToArea substitutes 14.6 / xLimit / 8.3 / yLimit,
+    which are those bounds in camera-centre units)."""
+    by_scene={scene['scene_name']:scene for scene in report['scenes']}
+    for region in report['regions']:
+        scene=by_scene[region['scene_name']];g=scene['camera_global_bounds'];b=region['activation_bounds']
+        locks=[]
+        for lock in scene.get('camera_locks',[]):
+            if not lock['enabled'] or 'trigger_bounds' not in lock:continue
+            t=lock['trigger_bounds']
+            if not (t[0]<=b[2] and t[2]>=b[0] and t[1]<=b[3] and t[3]>=b[1]):continue
+            lim=lock['serialized_limits']
+            xmin=g[0] if lim['cameraXMin']<0 else min(max(lim['cameraXMin'],g[0]),g[2])
+            xmax=g[2] if lim['cameraXMax']<0 else min(max(lim['cameraXMax'],g[0]),g[2])
+            ymin=g[1] if lim['cameraYMin']<0 else min(max(lim['cameraYMin'],g[1]),g[3])
+            ymax=g[3] if lim['cameraYMax']<0 else min(max(lim['cameraYMax'],g[1]),g[3])
+            # Crossroads_18 authors xMin 26.27 above xMax 25.43; Mathf.Clamp then
+            # pins the camera near either value. The guest clamps to the sorted pair.
+            locks.append({'source':lock['source'],'name':lock['name'],'bounds':t,
+                          'limit_points':[[(xmin,ymin),(xmax,ymax)]],
+                          'prevent_look_down':bool(lim.get('preventLookDown')),'prevent_look_up':bool(lim.get('preventLookUp'))})
+        region['camera_locks']=locks
+
+
 def scene_metadata(sc, info):
     result=dict(info, gates=[], camera_locks=[])
     result['grass_state_count']=sum(typ=='GrassCut' for typ,_ in sc.objects.values())
@@ -411,7 +437,7 @@ def refresh_actors():
             if (source.directory/name).is_file():source.file(name)
     report['scenes']=[scene_metadata(scenes[info['scene_id']],info) for info in SCENES]
     report['total_pack_bytes']=sum(row['bytes'] for row in report['regions'])
-    postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes)
+    postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report)
     postpack_masks(report)
     postpack_reveal_masks(report,source,scenes)
     for row in report['regions']:
@@ -432,7 +458,7 @@ def main():
     args=parser.parse_args()
     if args.append_actor_bank:
         report=json.loads((ROOT/'data/regions.json').read_text());source=Source()
-        scenes=postpack_actor_bank(report,source);postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_masks(report);postpack_reveal_masks(report,source,scenes);write_provenance(report,source)
+        scenes=postpack_actor_bank(report,source);postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report);postpack_masks(report);postpack_reveal_masks(report,source,scenes);write_provenance(report,source)
         write_report(ROOT/'data/regions.json',report);return
     if args.refresh_actors:
         refresh_actors();return
@@ -493,7 +519,7 @@ def main():
             if other['chunk_id']!=region['chunk_id'] and other['scene_id']==region['scene_id']
             and intersects([x0-.01,y0-.01,x1+.01,y1+.01],other['activation_bounds'])]
     postpack_actor_bank(report,source,scenes)
-    postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes)
+    postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report)
     postpack_masks(report)
     postpack_reveal_masks(report,source,scenes)
     if report['complete']:

@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BREAKABLE, KIND_GRASS, KIND_MASK_FADE, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
+use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GRASS, KIND_MASK_FADE, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -228,6 +228,24 @@ impl<'a> PogoTarget<'a> {
         }
         false
     }
+}
+/// Source CameraLockArea touching a catalogue region: its trigger box and the
+/// camera-centre limits the cooker resolved from the scene bounds.
+#[derive(Clone, Copy)]
+pub struct CameraLock {
+    pub bounds: [i32; 4],
+    /// [xmin, ymin, xmax, ymax] of the camera centre.
+    pub limits: [i32; 4],
+}
+pub fn camera_locks(region: &Region) -> impl Iterator<Item = CameraLock> {
+    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_CAMERA_LOCK).filter_map(|object| {
+            let polygon = object.polygons().next()?.ok()?;
+            let mut points = polygon.points().flatten();
+            let low = points.next()?;
+            let high = points.next()?;
+            Some(CameraLock { bounds: object.bounds(), limits: [low[0], low[1], high[0], high[1]] })
+        })
 }
 /// Static targets touching a catalogue region, through the admitted bank.
 pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>> {

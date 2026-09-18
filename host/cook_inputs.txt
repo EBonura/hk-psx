@@ -30,6 +30,7 @@ host/tilemap_fill.py
 host/break_effects.py
 host/great_door.py
 host/polygons.py
+tools/world_metadata.py
 tools/audit_texture_similarity.py
 tools/texture_match_groups.py
 tools/audit_resident_bank.py
