@@ -4,7 +4,7 @@ The controller lives in shared/hk-sim/src/vengefly.rs; this module admits only
 placed instances whose serialized FSM parameters and body match the audited
 contract in .hkpsx/vengefly/CONTRACT.md. Anything else stays unsupported.
 """
-from runner import ASSEMBLIES, _one, axis_aligned_bounds
+from runner import ASSEMBLIES, _one, axis_aligned_bounds, body_box
 from focus import action_fields
 import hashlib
 
@@ -91,7 +91,7 @@ def recognize(sc, actor):
     matrix = sc.world(sc.go_transform[gid])
     if any(abs(matrix[i][j] - (1 if i == j else 0)) > 1e-6 for i in range(2) for j in range(2)):
         raise ValueError('unsupported Vengefly initial rotation or scale')
-    _, body = _one(records, 'BoxCollider2D')
+    body = body_box(records, 'Vengefly')
     if not body['m_Enabled'] or body['m_IsTrigger'] or body['m_EdgeRadius'] != 0 \
             or not all(_near(body['m_Size'][k], v) for k, v in zip('xy', BODY_SIZE)) \
             or not all(_near(body['m_Offset'][k], v) for k, v in zip('xy', BODY_OFFSET)):

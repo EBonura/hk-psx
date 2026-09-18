@@ -885,6 +885,22 @@ headroom 146,404 bytes (Actor is 400 bytes: the runtime enum fold is due);
 seven routes pass. Not presented: shot rotation and stretch, dribble spatter,
 Aspid audio.
 
+## One runtime per actor (build 101)
+
+`enemies::Actor` carried six optional controller runtimes side by side; it
+now holds one `Runtime` enum (Walker, Runner, Climber, Vengefly, Gruzzer,
+Baldur, Aspid) with small accessors, so an actor costs the largest runtime
+rather than the sum: `Actor` 400 -> 176 bytes, the 32-slot `EnemyWorld`
+13,024 -> 5,856 bytes. The two ShamanTemple Buzzers that carry their body box
+twice are admitted (`runner.py::body_box`, shared with the Baldur); the two
+duplicate-box Climbers in Crossroads_03 and _05 are not, because their views
+sit at the 416 texture budget after similarity dedup and the extra Climber art
+pushed one to 421. That is the first time actor art has hit the texture
+budget; a cook-side policy that drops an actor's art (leaving it an
+unsupported record) when its view overflows is the next step if more
+placements need it. 120 of 144 placed actors are admitted; headroom
+148,452 bytes; seven routes pass.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

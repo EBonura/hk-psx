@@ -58,7 +58,7 @@ whose spec, source inputs and cooker code are unchanged. The scene catalog is
 `host/quality.py SCENE_TABLE`. Build speed (user priority) is done for the first pass: no-change or
 guest-only build 1:48, cooker-code change about 5:00 with a parallel full
 recook; see the ledger's build-speed section for what remains (geometry vs
-metadata cook split, replay speed). Next: fold the six optional actor runtimes into one enum (Actor is 400 bytes), Hatcher, Shield, Guard and Mender, Runner dust and death presentation, the P09
+metadata cook split, replay speed). Next (build 101 folded the actor runtimes into one enum, Actor 176 bytes): Runner dust and death presentation, Climber loop audio, chunk manifests off the linked binary, P09 well entry details, then Hatcher (needs runtime spawning), Shield, Guard, Mender, Hatcher, Shield, Guard and Mender, Runner dust and death presentation, the P09
 well entry details, and moving emitter/style metadata into the world bank; P09 delayed well collider and source camera locks; Crossroads enemy
 families beyond the Crawler.
 

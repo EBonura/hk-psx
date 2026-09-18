@@ -306,14 +306,30 @@ struct Actor {
     recoil: [i32; 2],
     corpse: Option<hk_sim::Corpse>,
     geo_paid: bool,
-    runner: Option<RunnerRuntime>,
-    climber: Option<ClimberRuntime>,
-    vengefly: Option<VengeflyRuntime>,
-    gruzzer: Option<GruzzerRuntime>,
-    baldur: Option<BaldurRuntime>,
-    aspid: Option<AspidRuntime>,
+    runtime: Runtime,
+}
+/// One controller runtime per actor; the Crawler keeps only the shared WalkState.
+#[derive(Clone, Copy)]
+enum Runtime {
+    Walker,
+    Runner(RunnerRuntime),
+    Climber(ClimberRuntime),
+    Vengefly(VengeflyRuntime),
+    Gruzzer(GruzzerRuntime),
+    Baldur(BaldurRuntime),
+    Aspid(AspidRuntime),
 }
 impl Actor {
+    fn runner(&self) -> Option<RunnerRuntime> { if let Runtime::Runner(r) = self.runtime { Some(r) } else { None } }
+    fn runner_mut(&mut self) -> Option<&mut RunnerRuntime> { if let Runtime::Runner(r) = &mut self.runtime { Some(r) } else { None } }
+    fn climber(&self) -> Option<ClimberRuntime> { if let Runtime::Climber(c) = self.runtime { Some(c) } else { None } }
+    fn climber_mut(&mut self) -> Option<&mut ClimberRuntime> { if let Runtime::Climber(c) = &mut self.runtime { Some(c) } else { None } }
+    fn vengefly(&self) -> Option<VengeflyRuntime> { if let Runtime::Vengefly(v) = self.runtime { Some(v) } else { None } }
+    fn gruzzer(&self) -> Option<GruzzerRuntime> { if let Runtime::Gruzzer(g) = self.runtime { Some(g) } else { None } }
+    fn baldur(&self) -> Option<BaldurRuntime> { if let Runtime::Baldur(b) = self.runtime { Some(b) } else { None } }
+    fn baldur_mut(&mut self) -> Option<&mut BaldurRuntime> { if let Runtime::Baldur(b) = &mut self.runtime { Some(b) } else { None } }
+    fn aspid(&self) -> Option<AspidRuntime> { if let Runtime::Aspid(a) = self.runtime { Some(a) } else { None } }
+    fn is_flyer(&self) -> bool { matches!(self.runtime, Runtime::Vengefly(_) | Runtime::Gruzzer(_) | Runtime::Baldur(_) | Runtime::Aspid(_)) }
     fn new(scene: usize, spec: &ActorSpec) -> Self {
         // Stable per-source seed, not a claim to reproduce Unity's global RNG.
         let seed = spec
@@ -337,38 +353,33 @@ impl Actor {
             recoil: [0; 2],
             corpse: None,
             geo_paid: false,
-            runner: if let ActorController::Runner { params, .. } = spec.controller {
-                assert!(spec.initial_direction == -1 && !spec.random_start_direction,
-                    "unsupported Runner initial facing variant");
-                Some(RunnerRuntime { controller: hk_sim::runner::Runner::with_params(params), rng: seed,
-                    vx: 0, animation_tick: 0 })
-            } else { None },
-            climber: if let ActorController::Climber { start_right, .. } = spec.controller {
-                Some(ClimberRuntime {
+            runtime: match spec.controller {
+                ActorController::Crawler => Runtime::Walker,
+                ActorController::Runner { params, .. } => {
+                    assert!(spec.initial_direction == -1 && !spec.random_start_direction,
+                        "unsupported Runner initial facing variant");
+                    Runtime::Runner(RunnerRuntime { controller: hk_sim::runner::Runner::with_params(params), rng: seed,
+                        vx: 0, animation_tick: 0 })
+                }
+                ActorController::Climber { start_right, .. } => Runtime::Climber(ClimberRuntime {
                     controller: hk_sim::climber::Climber::new([spec.x, spec.y], 0, 1, start_right).expect("validated Climber placement"),
-                    velocity: [0; 2], animation_tick: 0, clip: hk_sim::climber::Clip::Walk, end_token: None })
-            } else { None },
-            vengefly: if matches!(spec.controller, ActorController::Vengefly { .. }) {
-                Some(VengeflyRuntime { controller: hk_sim::vengefly::Vengefly::new([spec.x, spec.y], seed),
-                    animation_tick: 0, clip: hk_sim::vengefly::Clip::Idle })
-            } else { None },
-            gruzzer: if matches!(spec.controller, ActorController::Gruzzer) {
-                Some(GruzzerRuntime { controller: hk_sim::gruzzer::Gruzzer::new(seed), animation_tick: 0 })
-            } else { None },
-            baldur: if matches!(spec.controller, ActorController::Baldur { .. }) {
-                Some(BaldurRuntime { controller: hk_sim::baldur::Baldur::new(seed), animation_tick: 0,
-                    clip: hk_sim::baldur::Clip::Idle, vx: 0, wall: false })
-            } else { None },
-            aspid: if let ActorController::Aspid { start_alert, .. } = spec.controller {
-                let controller = if start_alert { hk_sim::aspid::Aspid::new_alert([spec.x, spec.y], seed) }
-                    else { hk_sim::aspid::Aspid::new([spec.x, spec.y], seed) };
-                Some(AspidRuntime { controller, animation_tick: 10, clip: hk_sim::aspid::Clip::Fly })
-            } else { None },
+                    velocity: [0; 2], animation_tick: 0, clip: hk_sim::climber::Clip::Walk, end_token: None }),
+                ActorController::Vengefly { .. } => Runtime::Vengefly(VengeflyRuntime {
+                    controller: hk_sim::vengefly::Vengefly::new([spec.x, spec.y], seed), animation_tick: 0, clip: hk_sim::vengefly::Clip::Idle }),
+                ActorController::Gruzzer => Runtime::Gruzzer(GruzzerRuntime { controller: hk_sim::gruzzer::Gruzzer::new(seed), animation_tick: 0 }),
+                ActorController::Baldur { .. } => Runtime::Baldur(BaldurRuntime { controller: hk_sim::baldur::Baldur::new(seed), animation_tick: 0,
+                    clip: hk_sim::baldur::Clip::Idle, vx: 0, wall: false }),
+                ActorController::Aspid { start_alert, .. } => {
+                    let controller = if start_alert { hk_sim::aspid::Aspid::new_alert([spec.x, spec.y], seed) }
+                        else { hk_sim::aspid::Aspid::new([spec.x, spec.y], seed) };
+                    Runtime::Aspid(AspidRuntime { controller, animation_tick: 10, clip: hk_sim::aspid::Clip::Fly })
+                }
+            },
         }
     }
     fn local_bounds(&self, spec: &ActorSpec) -> [i32; 4] {
         let b = spec.bounds;
-        if let Some(climber) = &self.climber {
+        if let Some(climber) = self.climber() {
             // The source box collider turns with the transform; at rest the
             // rotation is cardinal, so the rotated box is again axis aligned.
             let q = climber.quarter();
@@ -376,7 +387,7 @@ impl Actor {
             return [corners[0][0].min(corners[1][0]), corners[0][1].min(corners[1][1]),
                 corners[0][0].max(corners[1][0]), corners[0][1].max(corners[1][1])];
         }
-        if self.vengefly.is_some() || self.gruzzer.is_some() || self.baldur.is_some() || self.aspid.is_some() || self.walk.direction == spec.initial_direction {
+        if self.is_flyer() || self.walk.direction == spec.initial_direction {
             b
         } else {
             [-b[2], b[1], -b[0], b[3]]
@@ -468,39 +479,39 @@ impl Actor {
         if self.spawn_state == SpawnState::Blocked {
             return;
         }
-        if let Some(mut climber) = self.climber.take() {
+        if let Some(mut climber) = self.climber() {
             // Kinematic: no gravity solve, no spawn resolution; the source
             // attachment ray places the body on its surface.
             self.spawn_state = SpawnState::Ready;
             self.advance_climber(&mut climber, count, &edge);
-            self.climber = Some(climber);
+            self.runtime = Runtime::Climber(climber);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
-        if let Some(mut fly) = self.vengefly.take() {
+        if let Some(mut fly) = self.vengefly() {
             self.spawn_state = SpawnState::Ready;
             self.advance_vengefly(&mut fly, spec, count, &edge, context);
-            self.vengefly = Some(fly);
+            self.runtime = Runtime::Vengefly(fly);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
-        if let Some(mut fly) = self.gruzzer.take() {
+        if let Some(mut fly) = self.gruzzer() {
             self.spawn_state = SpawnState::Ready;
             self.advance_gruzzer(&mut fly, spec, count, &edge, context);
-            self.gruzzer = Some(fly);
+            self.runtime = Runtime::Gruzzer(fly);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
-        if let Some(mut roller) = self.baldur.take() {
+        if let Some(mut roller) = self.baldur() {
             self.advance_baldur(&mut roller, spec, count, &edge, context);
-            self.baldur = Some(roller);
+            self.runtime = Runtime::Baldur(roller);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
-        if let Some(mut aspid) = self.aspid.take() {
+        if let Some(mut aspid) = self.aspid() {
             self.spawn_state = SpawnState::Ready;
             self.advance_aspid(&mut aspid, spec, count, &edge, context, emit);
-            self.aspid = Some(aspid);
+            self.runtime = Runtime::Aspid(aspid);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
@@ -517,7 +528,7 @@ impl Actor {
         // grounded clearance in the bounded solver; contact/Sweep/draw bounds
         // remain the source box. Otherwise its lowest horizontal Sweep lies
         // exactly on Terrain and the segment model invents a perpetual wall.
-        let foot_skin=if self.runner.is_some() {983}else{0};
+        let foot_skin=if self.runner().is_some() {983}else{0};
         let gravity = if let ActorController::Runner { params, .. } = spec.controller { params.gravity } else { 60 * ONE };
         let mut p = Params {
             speed: 0,
@@ -543,13 +554,13 @@ impl Actor {
             self.y = body.y;
             self.spawn_state = SpawnState::Ready;
         }
-        let vx = if let Some(mut runner) = self.runner.take() {
+        let vx = if let Some(mut runner) = self.runner() {
             runner.animation_tick = runner.animation_tick.saturating_add(1);
             let senses = self.runner_senses(&runner, spec, room, context, count, &edge);
             let actions = runner.controller.step(senses, |w, e| RunnerRuntime::choose(&mut runner.rng, w, e));
             self.apply_runner_actions(&mut runner, actions, emit);
             let vx = runner.vx;
-            self.runner = Some(runner);
+            self.runtime = Runtime::Runner(runner);
             vx
         } else {
             let senses = hk_sim::walker_senses(self.bounds(spec), self.walk.direction, count, &edge);
@@ -1018,7 +1029,7 @@ impl EnemyWorld {
                 actor.advance_in_view(spec,state,region,room,terrain_region,terrain_room,context,&mut runner_event);
             }
             if actor.health.dead {continue;}
-            if actor.runner.is_some() && (!available || actor.spawn_state==SpawnState::Blocked) {
+            if actor.runner().is_some() && (!available || actor.spawn_state==SpawnState::Blocked) {
                 continue; // no attack/recoil sensing against an unavailable terrain owner
             }
             let bounds = actor.bounds(spec);
@@ -1039,15 +1050,18 @@ impl EnemyWorld {
                         events.hits += 1;
                         if actor.health.dead {
                             events.kills += 1;
-                            if let Some(runner)=&mut actor.runner {
+                            if let Some(runner)=actor.runner_mut() {
                                 runner.controller.die();
                                 actor.emit_runner(RunnerEventKind::Destroy,&mut runner_event);
                             }
-                            if let Some(climber)=&mut actor.climber {climber.controller.die();}
-                            if let Some(fly)=&mut actor.vengefly {fly.controller.die();}
-                            if let Some(fly)=&mut actor.gruzzer {fly.controller.die();}
-                            if let Some(roller)=&mut actor.baldur {roller.controller.die();}
-                            if let Some(aspid)=&mut actor.aspid {aspid.controller.die();}
+                            match &mut actor.runtime {
+                                Runtime::Climber(c)=>c.controller.die(),
+                                Runtime::Vengefly(f)=>f.controller.die(),
+                                Runtime::Gruzzer(f)=>f.controller.die(),
+                                Runtime::Baldur(r)=>r.controller.die(),
+                                Runtime::Aspid(a)=>a.controller.die(),
+                                Runtime::Walker|Runtime::Runner(_)=>{}
+                            }
                             state.enemy_death_particles(region,actor.source_id,[actor.x,actor.y,0]);
                             if let Some(corpse_spec)=spec.corpse {
                                 let mut corpse=hk_sim::Corpse::spawn(corpse_spec,actor.x,actor.y,nail.kind,
@@ -1062,9 +1076,9 @@ impl EnemyWorld {
                         // HealthManager TOOK DAMAGE precedes Recoil's global
                         // horizontal event. RecoilByDirection ignores a request
                         // while already recoiling; accepted damage still reacts.
-                        let begin_recoil = actor.runner.is_none() || actor.recoil_left == 0;
+                        let begin_recoil = actor.runner().is_none() || actor.recoil_left == 0;
                         if !actor.health.dead {
-                            if let Some(mut runner)=actor.runner.take() {
+                            if let Some(mut runner)=actor.runner() {
                                 let actions=runner.controller.took_damage(player.x,actor.x);
                                 actor.apply_runner_actions(&mut runner,actions,&mut runner_event);
                                 if nail.kind<2 && begin_recoil {
@@ -1073,22 +1087,23 @@ impl EnemyWorld {
                                     let actions=runner.controller.horizontal_recoil(senses,|w,e|RunnerRuntime::choose(&mut runner.rng,w,e));
                                     actor.apply_runner_actions(&mut runner,actions,&mut runner_event);
                                 }
-                                actor.runner=Some(runner);
+                                actor.runtime=Runtime::Runner(runner);
                             }
                         }
-                        if let Some(mut fly)=actor.vengefly.take() {
+                        if let Some(mut fly)=actor.vengefly() {
                             if !actor.health.dead {
                                 let senses=actor.vengefly_senses(context,terrain_room.counts[5],
                                     &|i|state.edge_in_view(region,room,terrain_region,terrain_room,i));
                                 let actions=fly.controller.took_damage(senses);
                                 fly.apply(actions);
                             }
-                            actor.vengefly=Some(fly);
+                            actor.runtime=Runtime::Vengefly(fly);
                         }
-                        if let Some(climber)=&mut actor.climber {
+                        let dead=actor.health.dead;
+                        if let Some(climber)=actor.climber_mut() {
                             // Recoil.OnHandleFreeze: freeze in place with the Stun
                             // clip; no displacement recoil for this kinematic body.
-                            if !actor.health.dead {
+                            if !dead {
                                 let actions=climber.controller.freeze();
                                 for action in actions.iter() {
                                     match action {
@@ -1099,7 +1114,7 @@ impl EnemyWorld {
                                 }
                             }
                         } else if begin_recoil {
-                        if let (Some(roller),true)=(&mut actor.baldur,nail.kind<2 && !actor.health.dead) {
+                        if let (Some(roller),true)=(actor.baldur_mut(),nail.kind<2 && !dead) {
                             // Recoil's global RECOIL HORIZONTAL: Recoil Decel resets the roll speed.
                             let actions=roller.controller.horizontal_recoil();
                             for action in actions.iter() {
@@ -1159,18 +1174,18 @@ impl EnemyWorld {
                 let (Some(corpse),Some(corpse_spec))=(actor.corpse,spec.corpse) else {continue;};
                 if !corpse.visible(){continue;}
                 (corpse.clip(corpse_spec),corpse.animation_tick,(corpse.x,corpse.y),corpse.facing)
-            } else if let Some(runner)=actor.runner {
+            } else if let Some(runner)=actor.runner() {
                 (runner.clip(spec),runner.animation_tick,(actor.x,actor.y),runner.controller.facing())
-            } else if let Some(climber)=actor.climber {
+            } else if let Some(climber)=actor.climber() {
                 (climber.clip(spec),climber.animation_tick,(actor.x,actor.y),1)
-            } else if let Some(fly)=actor.vengefly {
+            } else if let Some(fly)=actor.vengefly() {
                 // The source sprite faces left (-1 native, +1 mirrored), as the Crawler.
                 (fly.clip(spec),fly.animation_tick,(actor.x,actor.y),fly.controller.facing())
-            } else if let Some(fly)=actor.gruzzer {
+            } else if let Some(fly)=actor.gruzzer() {
                 (spec.walk_clip,fly.animation_tick,(actor.x,actor.y),fly.controller.facing())
-            } else if let Some(roller)=actor.baldur {
+            } else if let Some(roller)=actor.baldur() {
                 (roller.clip(spec),roller.animation_tick,(actor.x,actor.y),roller.controller.facing())
-            } else if let Some(aspid)=actor.aspid {
+            } else if let Some(aspid)=actor.aspid() {
                 (aspid.clip(spec),aspid.animation_tick,(actor.x,actor.y),aspid.controller.facing())
             } else {
                 (if actor.walk.turn_remaining!=0 {spec.turn_clip}else{spec.walk_clip},
@@ -1192,7 +1207,7 @@ impl EnemyWorld {
             let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
             let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
             // A live Climber's sprite turns with its transform (Q16 degrees).
-            let rotation = actor.climber.filter(|_| !actor.health.dead).map(|c| c.controller.rotation()).unwrap_or(0);
+            let rotation = actor.climber().filter(|_| !actor.health.dead).map(|c| c.controller.rotation()).unwrap_or(0);
             let mut verts = [(0i16, 0i16); 4];
             for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {
                 let [x, y] = if rotation != 0 { crate::world::debris::rotate([x * facing, y], rotation) } else { [x * facing, y] };
@@ -1370,7 +1385,7 @@ mod runner_runtime_tests {
     fn advance(actor:&mut Actor,room:&Room,c:RunnerContext,events:&mut Vec<RunnerEvent>) {
         actor.advance(&SPEC,room,room.counts[5],|i|room.edge(i),c,&mut |e|events.push(e));
     }
-    fn phase(actor:&Actor)->Swipe {actor.runner.unwrap().controller.swipe()}
+    fn phase(actor:&Actor)->Swipe {actor.runner().unwrap().controller.swipe()}
     fn region()->Region {
         Region {scene:0,bounds:[-100*ONE,-10*ONE,100*ONE,30*ONE],
             collision_bounds:[-100*ONE,-10*ONE,100*ONE,30*ONE],actors:&[&SPEC]}
@@ -1382,7 +1397,7 @@ mod runner_runtime_tests {
         advance(&mut actor,&room,c,&mut events);
         assert_eq!(phase(&actor),Swipe::Anticipate);
         assert_eq!(actor.walk.direction,1);
-        assert_eq!(actor.runner.unwrap().clip(&SPEC),3);
+        assert_eq!(actor.runner().unwrap().clip(&SPEC),3);
         assert_eq!(events.iter().map(|e|e.kind).take(3).collect::<Vec<_>>(),
             [RunnerEventKind::AudioStop,RunnerEventKind::AudioPlay,RunnerEventKind::AudioStop]);
         assert!(matches!(events[3].kind,RunnerEventKind::ChaseSound {pitch_q16:55706..=75366,variant:0..=1}));
@@ -1391,7 +1406,7 @@ mod runner_runtime_tests {
         let before=actor.x;
         advance(&mut actor,&room,c,&mut events);
         assert_eq!(phase(&actor),Swipe::Lunge);
-        assert_eq!(actor.runner.unwrap().clip(&SPEC),4);
+        assert_eq!(actor.runner().unwrap().clip(&SPEC),4);
         for _ in 0..39 {advance(&mut actor,&room,c,&mut events);}
         assert_eq!(phase(&actor),Swipe::Lunge);
         assert_eq!(actor.x-before,40*(6*ONE/60));
@@ -1410,9 +1425,8 @@ mod runner_runtime_tests {
         let draws=world.prepare_draws(&region(),&room,(actor.x,actor.y));
         assert_eq!(draws.entries[0].unwrap().texture,0); // actual Walk clip
         assert!(core::mem::size_of::<RunnerRuntime>()<=80);
-        // Runner, Climber and Vengefly runtimes are all optional fields; folding
-        // them into one enum would give back about 120 bytes per actor.
-        assert!(core::mem::size_of::<Actor>()<=416);
+        // One runtime enum per actor: the pool costs the largest controller.
+        assert!(core::mem::size_of::<Actor>()<=256);
         println!("RunnerRuntime={} Actor={} EnemyWorld={}",core::mem::size_of::<RunnerRuntime>(),
             core::mem::size_of::<Actor>(),core::mem::size_of::<EnemyWorld>());
     }
@@ -1422,19 +1436,19 @@ mod runner_runtime_tests {
         let mut actor=Actor::new(0,&SPEC);let mut events=Vec::new();
         let mut c=context(30*ONE);c.camera=[50*ONE,SPEC.y,-40*ONE];
         advance(&mut actor,&room,c,&mut events);
-        assert_eq!(actor.runner.unwrap().controller.walker(),Walker::Waiting);
+        assert_eq!(actor.runner().unwrap().controller.walker(),Walker::Waiting);
         assert_eq!(actor.x,SPEC.x);assert!(events.is_empty());
         c.camera=[0,SPEC.y,-40*ONE];advance(&mut actor,&room,c,&mut events);
-        assert_eq!(actor.runner.unwrap().controller.walker(),Walker::Walking);
+        assert_eq!(actor.runner().unwrap().controller.walker(),Walker::Walking);
         assert_eq!(actor.y,-SPEC.bounds[1]+983);
         let before=actor.x;
         for _ in 0..40 {advance(&mut actor,&room,c,&mut events);}
-        assert_eq!(actor.runner.unwrap().controller.walker(),Walker::Walking);
+        assert_eq!(actor.runner().unwrap().controller.walker(),Walker::Walking);
         assert!(actor.x<before);
         assert_eq!(actor.y,-SPEC.bounds[1]+983);
         c.camera=[200*ONE,200*ONE,-40*ONE];advance(&mut actor,&room,c,&mut events);
-        assert_eq!(actor.runner.unwrap().controller.walker(),Walker::Walking);
-        let actor=Actor::new(0,&SPEC);let runner=actor.runner.unwrap();
+        assert_eq!(actor.runner().unwrap().controller.walker(),Walker::Walking);
+        let actor=Actor::new(0,&SPEC);let runner=actor.runner().unwrap();
         let floor=room.edge(0);let wall=[ONE,0,ONE,5*ONE];
         let blocked=actor.runner_senses(&runner,&SPEC,&room,context(3*ONE),2,
             |i|if i==0 {floor}else{wall});
@@ -1496,7 +1510,7 @@ mod runner_runtime_tests {
             assert_eq!((a.x,a.y,a.walk.direction),(b.x,b.y,b.walk.direction));
         }
         assert_eq!(ea,eb);
-        assert_eq!(a.runner.unwrap().rng,b.runner.unwrap().rng);
+        assert_eq!(a.runner().unwrap().rng,b.runner().unwrap().rng);
         assert!(ea.iter().any(|e|matches!(e.kind,RunnerEventKind::ChaseSound {..})));
     }
     #[test]
@@ -1537,13 +1551,13 @@ mod runner_runtime_tests {
         for _ in 0..120 {tick(&mut world,&missing,&mut events);}
         let suspended=world.actors[0].unwrap();
         assert_eq!((before.x,before.y),(suspended.x,suspended.y));
-        assert_eq!(before.runner.unwrap().animation_tick,suspended.runner.unwrap().animation_tick);
-        assert_eq!(before.runner.unwrap().rng,suspended.runner.unwrap().rng);
+        assert_eq!(before.runner().unwrap().animation_tick,suspended.runner().unwrap().animation_tick);
+        assert_eq!(before.runner().unwrap().rng,suspended.runner().unwrap().rng);
         assert!(events.is_empty());
         tick(&mut world,&r,&mut events);
         let resumed=world.actors[0].unwrap();
         assert_eq!(resumed.source_id,before.source_id);
-        assert_eq!(resumed.runner.unwrap().animation_tick,before.runner.unwrap().animation_tick+1);
+        assert_eq!(resumed.runner().unwrap().animation_tick,before.runner().unwrap().animation_tick+1);
     }
 
 }
