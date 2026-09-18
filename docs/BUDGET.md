@@ -190,3 +190,43 @@ so main+init totals31,824 before nested calls/IRQ. Collision sweep caching uses
 main/State/tick/collide chain totaling30,960. These chains fit the48KiB reserved
 stack, but are not a measured high-water guarantee. The subsequent compact-scene split recovered nearly700KiB without removing
 these coverage tables. Historical stack chains above are not current high-water measurements.
+
+## Where the remaining headroom went (build 107)
+
+Headroom before the stack is 68,988 bytes, down from 246 KB at build 94 and
+116 KB at build 106. The link map ranks the reservations that account for it:
+
+| Reservation | Bytes | Section |
+| --- | ---: | --- |
+| `disc::BUFFERS` (scene arena) | 421,176 | bss |
+| `HK_AMBIENCE_STREAM_SOURCE` | 199,872 | bss |
+| `main` | 130,808 | text |
+| `disc::COVERAGE_BUFFER` | 83,700 | bss |
+| `audio::BANK` | 63,376 | bss |
+| `render::PACKETS` | 57,792 | bss |
+| `render::TEMPLATES` | 46,080 | bss |
+| `render::DRAWS` | 33,792 | bss |
+| `data/shade.hk` | 30,386 | data |
+| `enemies::Actor::advance_in_view` | 29,656 | text |
+| `render::SCISSOR_CACHE` | 28,160 | bss |
+
+The one disproportionate entry is `HK_AMBIENCE_STREAM_SOURCE`: 199,872 bytes,
+nearly three times the remaining headroom, holding one scene's streamed
+ambience stem in full. The clip is already read from the disc at scene
+admission and then fed SPU-ward in chunks by `audio_stream::service`, so the
+resident copy is what costs the RAM, not the streaming itself. Replacing it
+with a small ring refilled from the CD, the shape `music.rs` already uses,
+would recover about 200 KB and take headroom to roughly 269 KB. The risk is
+audio underruns from CD contention, which `HK_AUDIO_STREAM_UNDERRUNS` already
+fails a route on, so the change is testable rather than speculative.
+
+`render::TEMPLATES` is `SCENE_TEXTURE_CAPACITY` (1,152) times 40 bytes, and the
+largest admitted scene uses 1,138 textures, so there is almost no slack there.
+The scene and coverage arenas are sized by the largest scene and cannot shrink
+without changing what a scene may contain. `main` at 130,808 bytes of text is a
+single function; splitting it would help only if the pieces stopped being
+inlined into one another.
+
+P14 adds movement abilities whose new Knight clips cost both per-view texture
+budget and linked RAM, so the ambience change is worth making before that
+package rather than during it.
