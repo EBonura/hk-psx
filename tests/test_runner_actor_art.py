@@ -76,7 +76,8 @@ class RunnerActorArtTests(unittest.TestCase):
         actor = actor_fixture()
         text = generated_actor_region({'actors': [actor]})
         self.assertIn('controller:hk_sim::ActorController::Runner {idle_clip:2,anticipate_clip:3,lunge_clip:4,cooldown_clip:5,'
-                      'params:hk_sim::runner::Params {walk_speed:98304,lunge_speed:393216,walking_wait:[240,90],paused_wait:[150,90]},'
+                      'params:hk_sim::runner::Params {walk_speed:98304,lunge_speed:393216,walking_wait:[240,90],paused_wait:[150,90],'
+                      'attack:hk_sim::runner::Attack::Swipe,gravity:3932160},'
                       'alert:[-365036,-144507,365036,12730]}', text)
         self.assertIn('speed:98304,turn_ticks:10,turn_cooldown_ticks:60', text)
         self.assertIn('initial_direction:-1,random_start_direction:false', text)

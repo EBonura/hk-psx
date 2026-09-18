@@ -69,6 +69,16 @@ impl Wait {
         }
     }
 }
+/// The attack FSM layered on the shared Walker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Attack {
+    /// Zombie Swipe: Anticipate clip, Lunge clip at `lunge_speed`, Cooldown clip, 15-tick Idle.
+    Swipe,
+    /// Zombie Leap (Leaper): the Attack clip's trigger frame launches at
+    /// ((hero x - self x) * factor, jump_speed_y); the airborne clip keeps
+    /// playing; bottom contact plays Land; Idle waits, then StartWalker.
+    Leap { trigger_ticks: u16, jump_speed_y: i32, jump_x_factor: i32, idle_ticks: u16 },
+}
 /// Per-variant Walker fields and the FSM `Lunge Speed`: the Zombie Swipe FSM
 /// is otherwise identical across Runner, Barger and Hornhead placements.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,9 +91,16 @@ pub struct Params {
     pub walking_wait: [u16; 2],
     /// pauseTimeMin/Max in ticks (hi, lo).
     pub paused_wait: [u16; 2],
+    pub attack: Attack,
+    /// Rigidbody2D gravityScale * 60 in Q16 units/s^2 (60 Runner, 48 Leaper); the caller's body uses it.
+    pub gravity: i32,
 }
 impl Params {
-    pub const RUNNER: Self = Self { walk_speed: ONE + ONE / 2, lunge_speed: 6 * ONE, walking_wait: [240, 90], paused_wait: [150, 90] };
+    pub const RUNNER: Self = Self { walk_speed: ONE + ONE / 2, lunge_speed: 6 * ONE, walking_wait: [240, 90], paused_wait: [150, 90], attack: Attack::Swipe, gravity: 60 * ONE };
+    /// The level57 Leaper: trigger frame 3 of the 12 fps Attack clip, jump
+    /// (1.25 * dx, 20), Idle Time .5 s, gravity scale .8.
+    pub const LEAPER: Self = Self { walk_speed: 2 * ONE + ONE / 4, lunge_speed: 0, walking_wait: [240, 90], paused_wait: [150, 90],
+        attack: Attack::Leap { trigger_ticks: 15, jump_speed_y: 20 * ONE, jump_x_factor: ONE + ONE / 4, idle_ticks: 30 }, gravity: 48 * ONE };
     const fn endpoints(self, wait: Wait) -> [u16; 2] {
         match wait {
             Wait::Walking => self.walking_wait,
@@ -146,6 +163,8 @@ pub struct Senses {
     pub wall: bool,
     pub floor_ahead: bool,
     pub completed: Option<Animation>,
+    /// Bottom contact this frame (CheckCollisionSide LAND for the Leaper).
+    pub grounded: bool,
 }
 impl Default for Senses {
     fn default() -> Self {
@@ -158,6 +177,7 @@ impl Default for Senses {
             wall: false,
             floor_ahead: true,
             completed: None,
+            grounded: true,
         }
     }
 }
@@ -186,6 +206,8 @@ pub struct Runner {
     animation: Option<Animation>,
     serial: u32,
     params: Params,
+    /// Leap: chosen jump x velocity; Swipe: unused.
+    jump_x: i32,
 }
 impl Default for Runner {
     fn default() -> Self {
@@ -208,6 +230,7 @@ impl Runner {
             turn_cooldown: 0,
             animation: None,
             serial: 0,
+            jump_x: 0,
         }
     }
     pub fn walker(&self) -> Walker {
@@ -273,6 +296,13 @@ impl Runner {
         out.push(Action::AudioStop);
         self.facing = if hero_x > actor_x { 1 } else { -1 };
         self.swipe = Swipe::Anticipate;
+        if let Attack::Leap { jump_x_factor, trigger_ticks, .. } = self.params.attack {
+            // Left or Right?: Jump X Speed = (Hero X - Self X) * 1.25; Anticipate
+            // stops, plays Attack (one random-pitch sample) and waits for its
+            // trigger frame.
+            self.jump_x = ((hero_x as i64 - actor_x as i64) * jump_x_factor as i64 >> 16) as i32;
+            self.wait = trigger_ticks;
+        }
         out.push(Action::ChaseSound);
         out.push(Action::Velocity {
             x: Some(0),
@@ -298,10 +328,11 @@ impl Runner {
         // Source Reset does not stop Charge Dust. Do not invent that event.
     }
     /// An accepted nonlethal HealthManager TOOK DAMAGE event. Ready attacks
-    /// even without sight/range. Other Swipe states ignore this event.
+    /// even without sight/range. Other Swipe states ignore this event; the
+    /// Leap FSM has no TOOK DAMAGE transition.
     pub fn took_damage(&mut self, hero_x: i32, actor_x: i32) -> Actions {
         let mut out = Actions::new();
-        if self.swipe == Swipe::Ready {
+        if self.swipe == Swipe::Ready && self.params.attack == Attack::Swipe {
             self.attack(hero_x, actor_x, &mut out);
         }
         out
@@ -314,7 +345,8 @@ impl Runner {
         mut choose: impl FnMut(Wait, [u16; 2]) -> u16,
     ) -> Actions {
         let mut out = Actions::new();
-        if self.swipe != Swipe::Dead {
+        // The Leap FSM has no RECOIL HORIZONTAL transition.
+        if self.swipe != Swipe::Dead && self.params.attack == Attack::Swipe {
             self.reset(senses, &mut choose, &mut out);
         }
         out
@@ -356,6 +388,44 @@ impl Runner {
             return out;
         }
         let complete = self.animation.is_some() && senses.completed == self.animation;
+        if let Attack::Leap { jump_speed_y, idle_ticks, .. } = self.params.attack {
+            match self.swipe {
+                Swipe::Anticipate => {
+                    self.wait = self.wait.saturating_sub(1);
+                    if self.wait == 0 {
+                        // Launch, then Lunge until bottom contact; the Attack clip keeps playing.
+                        self.swipe = Swipe::Lunge;
+                        out.push(Action::Velocity { x: Some(self.jump_x), y: Some(jump_speed_y) });
+                    }
+                }
+                Swipe::Lunge if senses.grounded => {
+                    self.swipe = Swipe::Cooldown;
+                    self.play(Clip::Cooldown, &mut out);
+                    Self::vx(&mut out, 0);
+                }
+                Swipe::Cooldown if complete => {
+                    self.swipe = Swipe::Idle;
+                    self.play(Clip::Idle, &mut out);
+                    self.wait = idle_ticks;
+                }
+                Swipe::Idle => {
+                    self.wait = self.wait.saturating_sub(1);
+                    if self.wait == 0 {
+                        // Reset: Idle clip and StartWalker.
+                        self.play(Clip::Idle, &mut out);
+                        if matches!(self.walker, Walker::StoppedForAttack | Walker::Paused | Walker::Waiting) {
+                            self.walk(&mut choose, &mut out);
+                        }
+                        self.turn_cooldown = 0;
+                        self.swipe = Swipe::Ready;
+                        self.check_ready(senses, &mut out);
+                    }
+                }
+                Swipe::Ready => self.check_ready(senses, &mut out),
+                _ => {}
+            }
+            return out;
+        }
         match self.swipe {
             Swipe::Anticipate if complete => {
                 self.swipe = Swipe::Lunge;

@@ -38,7 +38,8 @@ break, and fixes controller clip remapping (Climber stun, Vengefly clips).
 Builds 96 and 97 admit the Gruzzers (19, docs/GRUZZER.md) and Baldurs (11,
 docs/BALDUR.md); the recognizer modules are now cook inputs. Build 98
 parameterizes the Runner (walk/lunge speeds, waits, body and alert boxes) so
-the Bargers and Hornheads and the other-scene Runners are admitted through it. Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
+the Bargers and Hornheads and the other-scene Runners are admitted through it;
+build 99 adds the Leap attack (5 of 6 Leapers). Build 80 fixed the guest state tables (`broken`, fades, grass) that were sized
 for three scenes on a nineteen-scene disc; the new `crossroads-exit` route
 (climb authored with `tools/route_sim.py`, gate into Crossroads_02, four
 breaks there, gate back) covers that path. The remaining static per-view
@@ -56,7 +57,7 @@ whose spec, source inputs and cooker code are unchanged. The scene catalog is
 `host/quality.py SCENE_TABLE`. Build speed (user priority) is done for the first pass: no-change or
 guest-only build 1:48, cooker-code change about 5:00 with a parallel full
 recook; see the ledger's build-speed section for what remains (geometry vs
-metadata cook split, replay speed). Next: Leaper (Zombie Leap attack on the Runner walker), Aspid (Spitter, needs projectiles), Hatcher, Shield, Guard and Mender, Runner dust and death presentation, the P09
+metadata cook split, replay speed). Next: Aspid (Spitter, needs a projectile subsystem: FireAtTarget 15 plus 3 to 5 dribbles), Hatcher, Shield, Guard and Mender, Runner dust and death presentation, the P09
 well entry details, and moving emitter/style metadata into the world bank; P09 delayed well collider and source camera locks; Crossroads enemy
 families beyond the Crawler.
 

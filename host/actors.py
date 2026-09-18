@@ -375,9 +375,16 @@ def generated_actor_specs(region):
             if not actor.get('corpse'):
                 raise ValueError(f'Runner is missing validated corpse: {actor["source"]}')
             p = control['parameters']
+            attack = p.get('attack', {'kind': 'Swipe'})
+            if attack['kind'] == 'Leap':
+                attack_text = (f'hk_sim::runner::Attack::Leap {{trigger_ticks:{int(attack["trigger_ticks"])},jump_speed_y:{round(attack["jump_speed_y"] * 65536)},'
+                               f'jump_x_factor:{round(attack["jump_x_factor"] * 65536)},idle_ticks:{ticks(attack["idle_time"])}}}')
+            else:
+                attack_text = 'hk_sim::runner::Attack::Swipe'
             params = (f'hk_sim::runner::Params {{walk_speed:{p["walk_velocity_q16"][1]},lunge_speed:{p["lunge_velocity_q16"][1]},'
                       f'walking_wait:[{p["walking_wait_endpoints_ticks"][0]},{p["walking_wait_endpoints_ticks"][1]}],'
-                      f'paused_wait:[{p["pause_endpoints_ticks"][0]},{p["pause_endpoints_ticks"][1]}]}}')
+                      f'paused_wait:[{p["pause_endpoints_ticks"][0]},{p["pause_endpoints_ticks"][1]}],attack:{attack_text},'
+                      f'gravity:{round(p.get("gravity_scale", 1.) * 60 * 65536)}}}')
             alert = '[' + ','.join(map(str, control['alert_bounds_q16'])) + ']'
             controller = ('hk_sim::ActorController::Runner {' + ','.join(f'{key}:{actor[key]}' for key in runner_clips)
                           + f',params:{params},alert:{alert}' + '}')

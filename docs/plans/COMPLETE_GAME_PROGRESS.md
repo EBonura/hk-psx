@@ -836,6 +836,26 @@ Leapers (their own `Zombie Leap` FSM), Shields (no pauses, own FSM), Guards,
 Myla, one Runner with an `enemy_corpse` FSM and one that starts inactive.
 Headroom 168,932 bytes; seven routes pass.
 
+## Leapers through a Leap attack on the Runner walker (build 99)
+
+The Leaper shares the Walker with the Runner family and layers the `Zombie
+Leap` FSM: Ready (alert by name plus sight) -> StopWalker, Jump X Speed =
+(Hero X - Self X) * 1.25, face -> Anticipate (velocity zero, Attack clip,
+wait for its trigger frame 3 of 11 at 12 fps) -> Launch (velocity (Jump X,
+20)) -> Lunge until bottom contact -> Land clip -> Idle .5 s -> Reset
+(StartWalker). `hk_sim::runner::Params` gained `attack: Attack::Swipe |
+Attack::Leap { trigger_ticks, jump_speed_y, jump_x_factor, idle_ticks }` and
+`gravity` (Runners fall at gravity scale 1, Leapers at .8), `Senses` gained
+`grounded`, and the Leap FSM has no TOOK DAMAGE or RECOIL HORIZONTAL
+transitions, so those callbacks are no-ops for it. `host/runner.py`
+fingerprints the Leap FSM separately (`LEAP_FSM_SHA256`), reads the trigger
+frame from the Attack clip and binds Attack as the anticipate and lunge slots
+and Land as the cooldown slot; `Corpse Zombie Leaper` joins the admitted
+Runner-family corpses. Admitted: 5 of 6 Leapers (the mirrored placement in
+Crossroads_37 is still rejected, as the Walker facing of a mirrored start is
+unverified). The Leaper's own attack samples are not in the Runner audio bank;
+the guest plays the Runner chase sound in their place. Seven routes pass.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
