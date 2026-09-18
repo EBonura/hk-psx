@@ -20,8 +20,8 @@ impl Settings {
 }
 impl Default for Settings {fn default()->Self{Self::new()}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Page {Main,Options,Controls,Cheats}
-pub const MAIN_ITEMS:[&str;5]=["Start Game","Options","Controls","Cheats","Continue"];
+pub enum Page {Main,Options,Controls,Cheats,Profiles}
+pub const MAIN_ITEMS:[&str;4]=["Start Game","Options","Controls","Cheats"];
 pub const CHEAT_ITEMS:[&str;4]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)"];
 pub const OPTION_ITEMS:[&str;4]=["Sound effects","Ambience","Music","Back"];
 pub const CONTROL_LINES:[&str;9]=[
@@ -31,15 +31,12 @@ pub const CONTROL_LINES:[&str;9]=[
 ];
 pub struct State {
     pub page:Page,pub selected:usize,pub settings:Settings,
-    /// A memory card save exists: the last main row (Continue) is shown and selectable.
-    pub has_save:bool,
-    /// Set when step confirms the Continue row.
-    pub continued:bool,
+    /// The profile the player confirmed on the save screen, once chosen.
+    pub profile:Option<usize>,
     previous:u16,direction:u16,repeat:u8,
 }
 impl State {
-    pub const fn new()->Self{Self{page:Page::Main,selected:0,settings:Settings::new(),has_save:false,continued:false,previous:0,direction:0,repeat:0}}
-    pub fn main_rows(&self)->usize{if self.has_save{5}else{4}}
+    pub const fn new()->Self{Self{page:Page::Main,selected:0,settings:Settings::new(),profile:None,previous:0,direction:0,repeat:0}}
     /// Consume exactly one actual pad sample. Navigation repeats after20 held
     /// polls then every5 polls. Confirm/back require fresh edges. Confirm has
     /// priority over a simultaneous direction, preserving direct first START/X.
@@ -55,19 +52,21 @@ impl State {
         }else{0};
         if edge&CIRCLE!=0 {
             if self.page!=Page::Main {
-                self.selected=match self.page{Page::Options=>1,Page::Cheats=>3,_=>2};self.page=Page::Main;
+                self.selected=match self.page{Page::Options=>1,Page::Cheats=>3,Page::Profiles=>0,_=>2};self.page=Page::Main;
             }
             return false;
         }
         if edge&(START|CROSS)!=0 {
             match self.page {
                 Page::Main=>match self.selected {
-                    0=>return true,
+                    // Start Game opens the save screen, as the source does;
+                    // an empty profile begins a new game and a used one resumes.
+                    0=>{self.page=Page::Profiles;self.selected=0;},
                     1=>{self.page=Page::Options;self.selected=0;},
                     2=>{self.page=Page::Controls;self.selected=0;},
-                    3=>{self.page=Page::Cheats;self.selected=0;},
-                    _=>{self.continued=true;return true;},
+                    _=>{self.page=Page::Cheats;self.selected=0;},
                 },
+                Page::Profiles=>{self.profile=Some(self.selected);return true;},
                 Page::Options=>if self.selected==3{self.page=Page::Main;self.selected=1;},
                 Page::Controls=>{self.page=Page::Main;self.selected=2;},
                 Page::Cheats=>if self.selected==4{self.page=Page::Main;self.selected=3;}else{
@@ -78,7 +77,7 @@ impl State {
             return false;
         }
         if self.page==Page::Controls{return false;}
-        let count=match self.page{Page::Main=>self.main_rows(),Page::Cheats=>5,_=>4};
+        let count=match self.page{Page::Cheats=>5,Page::Profiles=>crate::save::PROFILES,_=>4};
         if navigate==UP{self.selected=(self.selected+count-1)%count;}
         else if navigate==DOWN{self.selected=(self.selected+1)%count;}
         else if self.page==Page::Options {

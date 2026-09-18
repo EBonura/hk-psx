@@ -12,16 +12,63 @@
 //! ms an interrupted write leaves that file unfindable with its predecessor
 //! already destroyed. Alternating means an interrupted write never touches the
 //! copy currently being relied on.
-use psx_mc::{Block, Card, HardwareCard, Slot, FRAME_SIZE};
+use psx_mc::{Block, Card, HardwareCard, FRAME_SIZE};
 
-const NAMES: [&str; 2] = ["BASLUS-00000HKPSX000", "BASLUS-00000HKPSX001"];
+/// Source save profiles. Each one owns two card files so an interrupted write
+/// cannot destroy the copy in use, which is 8 of the card's 15 blocks.
+pub const PROFILES: usize = 4;
 const TITLE: &str = "HOLLOW KNIGHT PSX";
 const MAGIC: [u8; 4] = *b"HKS1";
 pub const LEN: usize = 56;
-/// The slot the next write goes to, so it is never the one `read` returned.
-static mut NEXT_SLOT: usize = 0;
-/// Sequence of the newest save seen, so a later write always outranks it.
-static mut LAST_SEQUENCE: u32 = 0;
+/// Per profile: the copy the next write goes to, and the newest sequence seen.
+static mut NEXT_COPY: [usize; PROFILES] = [0; PROFILES];
+static mut LAST_SEQUENCE: [u32; PROFILES] = [0; PROFILES];
+
+/// `BASLUS-00000HKPSX<profile><copy>`, built without a formatter.
+fn file_name(profile: usize, copy: usize, out: &mut [u8; 19]) -> &str {
+    out.copy_from_slice(b"BASLUS-00000HKPSX00");
+    out[17] = b'0' + profile as u8;
+    out[18] = b'0' + copy as u8;
+    core::str::from_utf8(out).expect("ASCII save name")
+}
+/// What a profile holds, for the selection screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slot {
+    Empty,
+    Used(Save),
+    /// Both copies present but neither decodes.
+    Corrupt,
+}
+/// Why a card operation could not be completed, in the terms the plan asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fault {
+    NoCard,
+    Full,
+    Corrupt,
+    Unformatted,
+    Other,
+}
+impl Fault {
+    fn of(error: psx_mc::Error) -> Self {
+        use psx_mc::Error::*;
+        match error {
+            NoCard | Protocol => Fault::NoCard,
+            NoSpace => Fault::Full,
+            BadChecksum | Corrupt | BadContainer => Fault::Corrupt,
+            NotFormatted => Fault::Unformatted,
+            _ => Fault::Other,
+        }
+    }
+    pub fn message(self) -> &'static str {
+        match self {
+            Fault::NoCard => "No memory card in slot 1",
+            Fault::Full => "Memory card full",
+            Fault::Corrupt => "Memory card data damaged",
+            Fault::Unformatted => "Memory card not formatted",
+            Fault::Other => "Memory card error",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Save {
@@ -105,60 +152,109 @@ pub static mut HK_SAVE_WRITES: u32 = 0;
 pub static mut HK_SAVE_ERRORS: u32 = 0;
 #[no_mangle]
 pub static mut HK_SAVE_LOADED: u32 = 0;
-/// Which of the two files was last read or written.
+/// Which of the two copies was last read or written.
 #[no_mangle]
 pub static mut HK_SAVE_SLOT: u32 = 0;
+#[no_mangle]
+pub static mut HK_SAVE_PROFILE: u32 = 0;
+/// Zero for none, otherwise the Fault discriminant plus one.
+#[no_mangle]
+pub static mut HK_SAVE_FAULT: u32 = 0;
 /// Call only inside an input scene-load bracket (the sampler drops the
-/// samples polled while the card is busy). Writes the slot `read` did not
+/// samples polled while the card is busy). Writes the copy `read` did not
 /// return, so an interruption cannot destroy the save still being relied on.
 #[inline(never)]
-pub fn write(save: &Save) -> bool {
+pub fn write(profile: usize, save: &Save) -> Result<(), Fault> {
     let mut record = *save;
-    let slot = unsafe { NEXT_SLOT };
-    record.sequence = unsafe { LAST_SEQUENCE }.wrapping_add(1);
-    let mut card = Card::new(PollingCard(HardwareCard::new(Slot::One)));
+    let copy = unsafe { NEXT_COPY[profile] };
+    record.sequence = unsafe { LAST_SEQUENCE[profile] }.wrapping_add(1);
+    let mut name = [0u8; 19];
+    let name = file_name(profile, copy, &mut name);
+    let mut card = Card::new(PollingCard(HardwareCard::new(psx_mc::Slot::One)));
     let result = card.is_formatted().and_then(|formatted| {
         if !formatted { card.format()?; }
-        card.write(NAMES[slot], TITLE, &record.encode())
+        card.write(name, TITLE, &record.encode())
     });
     unsafe {
         match result {
             Ok(()) => {
                 HK_SAVE_WRITES = HK_SAVE_WRITES.saturating_add(1);
-                LAST_SEQUENCE = record.sequence;
-                NEXT_SLOT = 1 - slot;
+                LAST_SEQUENCE[profile] = record.sequence;
+                NEXT_COPY[profile] = 1 - copy;
+                HK_SAVE_SLOT = copy as u32;
+                HK_SAVE_PROFILE = profile as u32;
+                Ok(())
             }
-            Err(_) => HK_SAVE_ERRORS = HK_SAVE_ERRORS.saturating_add(1),
+            Err(error) => {
+                HK_SAVE_ERRORS = HK_SAVE_ERRORS.saturating_add(1);
+                let fault = Fault::of(error);
+                HK_SAVE_FAULT = fault as u32 + 1;
+                Err(fault)
+            }
         }
-        HK_SAVE_SLOT = slot as u32;
     }
-    result.is_ok()
 }
-/// Boot-time read, before the pad sampler starts (nothing else uses SIO0).
-/// Both slots are read; the valid record with the higher sequence wins and the
-/// next write goes to the other one. None for no card, no file or two corrupt
-/// records.
-#[inline(never)]
-pub fn read() -> Option<Save> {
-    let mut card = Card::new(HardwareCard::new(Slot::One));
+/// One profile's newer valid copy, and which copy the next write should use.
+fn read_profile<B: Block>(card: &mut Card<B>, profile: usize) -> Result<Slot, Fault> {
     let mut newest: Option<(usize, Save)> = None;
-    for slot in 0..NAMES.len() {
+    let mut seen = false;
+    let mut fault = None;
+    for copy in 0..2 {
+        let mut name = [0u8; 19];
+        let name = file_name(profile, copy, &mut name);
         let mut buf = [0u8; 256];
-        let Ok(len) = card.read(NAMES[slot], &mut buf) else { continue };
-        let Some(save) = Save::decode(&buf[..len]) else { continue };
-        // Sequences only ever increase here, so a plain comparison is enough.
-        if newest.is_none_or(|(_, best)| save.sequence > best.sequence) {
-            newest = Some((slot, save));
+        match card.read(name, &mut buf) {
+            Ok(len) => {
+                seen = true;
+                if let Some(save) = Save::decode(&buf[..len]) {
+                    // Sequences only ever increase, so a plain comparison holds.
+                    if newest.is_none_or(|(_, best)| save.sequence > best.sequence) {
+                        newest = Some((copy, save));
+                    }
+                }
+            }
+            Err(psx_mc::Error::NotFound) => {}
+            Err(error) => fault = Some(Fault::of(error)),
         }
     }
-    let (slot, save) = newest?;
-    unsafe {
-        HK_SAVE_LOADED = 1;
-        HK_SAVE_SLOT = slot as u32;
-        LAST_SEQUENCE = save.sequence;
-        NEXT_SLOT = 1 - slot;
+    if let Some((copy, save)) = newest {
+        unsafe {
+            LAST_SEQUENCE[profile] = save.sequence;
+            NEXT_COPY[profile] = 1 - copy;
+        }
+        return Ok(Slot::Used(save));
     }
-    Some(save)
+    // A card-level fault matters more than an unreadable record.
+    if let Some(fault) = fault {
+        return Err(fault);
+    }
+    Ok(if seen { Slot::Corrupt } else { Slot::Empty })
+}
+/// Every profile, for the selection screen. Boot-time, before the pad sampler
+/// starts (nothing else uses SIO0).
+#[inline(never)]
+pub fn survey() -> (([Slot; PROFILES]), Option<Fault>) {
+    let mut card = Card::new(HardwareCard::new(psx_mc::Slot::One));
+    let mut slots = [Slot::Empty; PROFILES];
+    let mut fault = None;
+    for profile in 0..PROFILES {
+        match read_profile(&mut card, profile) {
+            Ok(slot) => slots[profile] = slot,
+            Err(seen) => {
+                fault = Some(seen);
+                // A missing or unformatted card fails every profile the same
+                // way; there is nothing to learn from asking three more times.
+                if matches!(seen, Fault::NoCard | Fault::Unformatted) {
+                    break;
+                }
+            }
+        }
+    }
+    unsafe {
+        HK_SAVE_LOADED = u32::from(slots.iter().any(|s| matches!(s, Slot::Used(_))));
+        HK_SAVE_FAULT = fault.map_or(0, |f| f as u32 + 1);
+    }
+    (slots, fault)
 }
 
 #[cfg(test)]
