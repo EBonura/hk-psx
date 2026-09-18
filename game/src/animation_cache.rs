@@ -30,6 +30,20 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
         let cache = &mut *(&raw mut CACHE);
         let stats = cache
             .prepare(ids, |key, slot| {
+                // The Hollow Shade is not in any room's atlas: its keys sit
+                // above every texture table and stream from linked RAM.
+                if key >= crate::shade::KEY_BASE {
+                    let (bytes, width, height) = crate::shade::texels((key - crate::shade::KEY_BASE) as usize)?;
+                    if bytes.len() > 2048 {
+                        return None;
+                    }
+                    let (u, v) = uv(slot);
+                    crate::texture_upload::upload(
+                        VramRect::new(320 + u / 4, v, (width + 3) / 4, height),
+                        bytes,
+                    );
+                    return Some(bytes.len() as u32);
+                }
                 if key as usize >= room.counts[1] {
                     return None;
                 }

@@ -10,6 +10,7 @@ host/gruzzer.py
 host/baldur.py
 host/aspid.py
 host/benches.py
+host/shade.py
 host/particles.py
 host/effects.py
 host/breakables.py

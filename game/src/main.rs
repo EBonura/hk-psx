@@ -12,6 +12,7 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
 mod bench;
 mod camera;
 mod save;
+mod shade;
 mod input_queue;
 mod input_sampler;
 mod input;
@@ -208,6 +209,19 @@ fn strike_great_door(door:&mut great_door::World,scene:usize,nail:&Nail,player:&
     for (dst,p) in polygon.iter_mut().zip(source) {*dst=[player.x-p[0]*player.facing,player.y+p[1]];}
     door.strike(scene,&polygon[..source.len()])
 }
+/// The Shade's body takes the nail through the same swept polygon as the rest.
+#[inline(never)]
+fn strike_shade(shade:&mut shade::World,nail:&Nail,player:&Player,damage:u16)->bool {
+    if !nail.hitting(ATTACK_PARAMS) {return false;}
+    let source=NAIL_POLYGONS[nail.kind as usize];let mut polygon=[[0;2];16];
+    assert!((3..=16).contains(&source.len()));
+    for (dst,p) in polygon.iter_mut().zip(source) {*dst=[player.x-p[0]*player.facing,player.y+p[1]];}
+    shade.strike(&polygon[..source.len()],damage)
+}
+/// StartSoulLimiter caps the vessel at 66 while a Shade is owed.
+fn soul_cap(shade:&shade::World)->u16 {
+    if shade.soul_limited() {66} else {VITAL_PARAMS.max_soul}
+}
 #[inline(never)]
 fn strike_geo(geo:&mut geo::World,scene:usize,nail:&Nail,player:&Player)->geo::Strike {
     if !nail.hitting(ATTACK_PARAMS) {return geo::Strike::default();}
@@ -237,6 +251,7 @@ fn main() {
     let life=unsafe {&mut *(&raw mut LIFE_WORLD)};
     let mut door=great_door::World::new();
     let mut reveals=reveal_masks::State::new();
+    let mut shade=shade::World::new();
     let mut enemies=enemies::EnemyWorld::new();
     let mut player=Player::spawn(SPAWN.0,SPAWN.1);
     let mut vitals=settings.cheats.new_vitals(VITAL_PARAMS);cheats::publish(settings.cheats,VITAL_PARAMS);
@@ -267,6 +282,7 @@ fn main() {
         region_id=s.region as usize;player=Player::spawn(s.seat[0],s.seat[1]);player.facing=s.facing;
         safe=(s.seat[0],s.seat[1],region_id);safe_facing=s.facing;
         geo.restore_wallet(s.geo,geo::GEO_PARAMS);door.restore(s.door_hits);
+        shade.restore(s.shade);
     }
     let mut prev_pad=ButtonState::from_bits(0);
     // Timer1 counts HBlanks for frame-pacing telemetry only.
@@ -284,7 +300,7 @@ fn main() {
             // was admitted. Every spatial view in this scene stays live.
             vram.admit_scene(region_id,cache.atlases_ready());
             vram.activate(region_id);
-            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);runner_audio::upload();runner_audio::set_volume(settings.sfx);
+            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();shade::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);runner_audio::upload();runner_audio::set_volume(settings.sfx);
             initial=false;
             sim_clock=psx_rt::interrupts::vblank_count();
             input::start(sim_clock);
@@ -309,6 +325,7 @@ fn main() {
         great_door::apply(&door,&mut state,region_id);
         unsafe { HK_GAME_MODE=1;HK_REGION_ID=region_id as u32+1; }
         if scene_ticks_scene!=r.scene {scene_ticks=0;scene_ticks_scene=r.scene;}
+        shade.enter_scene(r.scene);
         // The first frame renders before the first tick: seat the camera now
         // (a scene gate or respawn snaps through the displacement rule).
         camera_state.tick((player.x,player.y),player.facing,camera::limits(r,[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top]));
@@ -334,6 +351,7 @@ fn main() {
             let mut needed_len=if effect_frame.is_some(){2}else{1};
             if let Some(f)=effect_frame {needed[1]=u32_at(room.frame(f),0) as u16;}
             enemy_draws.append_needed(&mut needed,&mut needed_len);
+            shade.append_needed(&mut needed,&mut needed_len);
             if let Some(f)=door_frame {
                 assert!(needed_len<needed.len(),"Great Door animation working set");
                 needed[needed_len]=u32_at(room.frame(f),0)as u16;needed_len+=1;
@@ -341,13 +359,14 @@ fn main() {
             render::begin(&room,&needed[..needed_len],fb.buffer_y(fb.drawing));
             fb.clear(9,13,20);let mut prims=render::scenery(camera,false);prims+=enemy_draws.draw();render::kick_ready();prims+=state.draw_impacts(r,&room,camera);
             if let Some(f)=door_frame {prims+=great_door::draw(&room,f,camera);}
+            prims+=shade.draw(camera);
             prims+=geo_render::draw(geo,region_id,camera);
             prims+=lifeblood::draw(life,region_id,camera);render::kick_ready();
             if !vitals.dead && !door.hidden() && (vitals.invulnerable_ticks==0 || frame%4<2) {
                 draw_frame(&room,body_frame,&player,camera);prims+=1;
             }
             if let Some(f)=effect_frame {draw_frame(&room,f,&player,camera);prims+=1;}
-            prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)),settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(vitals.blue_health));render::submit(vitals.health,settings.cheats.params(VITAL_PARAMS).max_health,vitals.soul,VITAL_PARAMS.max_soul,paused,vitals.blue_health,door.shade());
+            prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)),settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(vitals.blue_health));render::submit(vitals.health,settings.cheats.params(VITAL_PARAMS).max_health,vitals.soul,soul_cap(&shade),paused,vitals.blue_health,door.shade());
             emit::counter(counter::TRI_PRIMITIVES,prims*2);emit::stage_end(stage::RENDER);
             emit::stage_begin(stage::PRESENT);
             let display=fb.begin_deferred_swap();
@@ -400,6 +419,8 @@ fn main() {
                     }
                     if paused || dialogue::open() || (door.pending() && !door.entering()) || vitals.dead || !vitals.can_control() || focus.locks_control() {audio::stop_footsteps();}
                     settings.cheats.maintain(&mut vitals,VITAL_PARAMS);cheats::publish(settings.cheats,VITAL_PARAMS);
+                    // StartSoulLimiter lowers maxMP itself while a Shade is owed.
+                    vitals.soul=vitals.soul.min(soul_cap(&shade));
                     unsafe {HK_PAUSED=u32::from(paused);HK_PAUSE_CONTROLS=u32::from(paused&&pause_menu.controls);
                         HK_SFX_LEVEL=settings.sfx as u32;HK_AMBIENCE_LEVEL=settings.ambience as u32;}
                     let ready_crossing=spatial_target && target.is_some_and(|id|cache.is_ready(id)&&vram.ready(id))
@@ -428,6 +449,16 @@ fn main() {
                         state.tick_debris(r, &room);
                         presentation::checkpoint();
                         if vitals.needs_death_respawn() {
+                            // Hero Death Anim: Remove Geo moves the wallet into the pool the
+                            // Shade carries, Set Shade records where and how strong it is, and
+                            // the Save state writes the card. SOUL is already drained to zero.
+                            let params=settings.cheats.params(VITAL_PARAMS);
+                            shade.record_death(r.scene,[player.x,player.y],
+                                shade::death_health(params.max_health,params.nail_damage),geo.wallet());
+                            let (save_scene,save_seat,save_facing,save_slot)=respawn
+                                .map_or((world::scene_of(0),[SPAWN.0,SPAWN.1],1,0),|(scene,seat,facing,slot)|(scene,seat,facing,slot));
+                            save_requested=Some(save::Save{scene:save_scene as u32,seat:save_seat,facing:save_facing,
+                                region:save_slot as u32,geo:0,door_hits:door.hits(),shade:shade.record()});
                             unsafe {HK_GEO_LOST=HK_GEO_LOST.saturating_add(geo.death());}
                             geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                             life.reset();
@@ -474,7 +505,7 @@ fn main() {
                                 // body spawned there starts inside the floor and falls through it.
                                 let stand=[bench_state.seat()[0],player.y];
                                 respawn=Some((r.scene,stand,player.facing,region_id));
-                                save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,region:region_id as u32,geo:geo.wallet(),door_hits:door.hits()});
+                                save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,region:region_id as u32,geo:geo.wallet(),door_hits:door.hits(),shade:shade.record()});
                             }
                             let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control();
                             let dir=if door.entering() {door.forced_direction()}else if locked {0}else{i32::from(pad.is_held(button::RIGHT))-i32::from(pad.is_held(button::LEFT))};
@@ -524,6 +555,19 @@ fn main() {
                             {
                                 let hero_body=[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top];
                                 camera_state.tick((player.x,player.y),player.facing,camera::limits(r,hero_body));
+                            }
+                            if shade.present_here() {
+                                let hero_body=[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top];
+                                if strike_shade(&mut shade,&nail,&player,settings.cheats.params(VITAL_PARAMS).nail_damage) {audio::enemy_hit();}
+                                let shade_position=shade.position().unwrap_or([player.x,player.y]);
+                                let shade_events=shade.tick([player.x,player.y],hero_body,room.counts[5],state.edge_reader(r,&room));
+                                if shade_events.touched {
+                                    let direction=if player.x<shade_position[0] {-1}else{1};
+                                    let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,1,direction,false);
+                                    if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
+                                    if hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
+                                }
+                                if shade_events.returned_geo>0 {geo.add_quietly(shade_events.returned_geo,geo::GEO_PARAMS);geo_audio::pickup(1);}
                             }
                             let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
                                 [camera.0,camera.1,-2496922],runner_event,
