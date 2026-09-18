@@ -9,17 +9,7 @@ mod render {
 #[path = "../../../game/src/reveal_masks.rs"]
 mod reveal_masks;
 use reveal_masks::*;
-const P: Params = Params {
-    speed: 0,
-    jump: 0,
-    gravity: 0,
-    fall: 0,
-    hold_ticks: 0,
-    min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-    half_width: ONE / 4,
-    bottom: -ONE,
-    top: 0,
-};
+const P: Params = Params { half_width: ONE / 4, bottom: -ONE, ..Params::ZERO };
 const POLYGON: &[[i32; 2]] = &[
     [10 * ONE, 10 * ONE],
     [20 * ONE, 10 * ONE],

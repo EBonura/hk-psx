@@ -41,9 +41,40 @@ pub struct Params {
     pub dash_ticks: u16,
     pub dash_cooldown_ticks: u16,
     pub dash_queue_ticks: u16,
+    /// Mantis Claw: the fall speed a wall slide clamps to (negative).
+    pub wallslide_speed: i32,
+    /// Holding away from the wall for this long detaches (`WALL_STICKY_STEPS`).
+    pub wall_sticky_ticks: u16,
+    /// Wall jump kickoff, decaying by `walljump_decel` for every locked tick.
+    pub walljump_speed: i32,
+    pub walljump_decel: i32,
+    /// Pressing back releases the lock after `wall_lock_short`; it always ends
+    /// after `wall_lock_long`.
+    pub wall_lock_short: u16,
+    pub wall_lock_long: u16,
+    /// Monarch Wings: `JUMP_SPEED * 1.1`, held from `double_jump_delay_ticks`
+    /// to `double_jump_ticks` while the wings beat.
+    pub double_jump_speed: i32,
+    pub double_jump_delay_ticks: u16,
+    pub double_jump_ticks: u16,
+    pub double_jump_queue_ticks: u16,
     pub half_width: i32,
     pub bottom: i32,
     pub top: i32,
+}
+/// Wall interaction, double jump and super dash, added by P14 step 2.
+impl Params {
+    /// Every field zero. The enemy, corpse and prop bodies reuse `Player::step`
+    /// for its collision and only set the handful of fields they care about,
+    /// so they spread this instead of restating the hero's ability constants.
+    pub const ZERO: Self = Self {
+        speed: 0, jump: 0, gravity: 0, fall: 0, hold_ticks: 0, min_ticks: 0,
+        jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0,
+        dash_queue_ticks: 0, wallslide_speed: 0, wall_sticky_ticks: 0,
+        walljump_speed: 0, walljump_decel: 0, wall_lock_short: 0, wall_lock_long: 0,
+        double_jump_speed: 0, double_jump_delay_ticks: 0, double_jump_ticks: 0,
+        double_jump_queue_ticks: 0, half_width: 0, bottom: 0, top: 0,
+    };
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Player {
@@ -67,6 +98,22 @@ pub struct Player {
     pub was_dash: bool,
     /// Set when the Mothwing Cloak has been acquired; nothing grants it yet.
     pub has_dash: bool,
+    /// -1 for a wall on the left, +1 on the right, 0 for none. Airborne only,
+    /// since nothing reads a grounded wall contact.
+    pub touching_wall: i32,
+    pub wall_sliding: bool,
+    /// Ticks spent holding away from the wall; `WALL_STICKY_STEPS` detaches.
+    pub wall_unstick: u16,
+    /// While locked the wall jump owns horizontal velocity: +1 kicked right.
+    pub wall_locked: bool,
+    pub wall_jumped: i32,
+    pub wall_lock_ticks: u16,
+    pub walljump_speed: i32,
+    pub has_walljump: bool,
+    pub double_jumping: bool,
+    pub double_jumped: bool,
+    pub double_jump_tick: u16,
+    pub has_double_jump: bool,
     pub animation: u16,
     pub animation_tick: u32,
     pub land_tick: u16,
@@ -91,6 +138,18 @@ impl Player {
             dash_queue: 0,
             was_dash: false,
             has_dash: false,
+            touching_wall: 0,
+            wall_sliding: false,
+            wall_unstick: 0,
+            wall_locked: false,
+            wall_jumped: 0,
+            wall_lock_ticks: 0,
+            walljump_speed: 0,
+            has_walljump: false,
+            double_jumping: false,
+            double_jumped: false,
+            double_jump_tick: 0,
+            has_double_jump: false,
             animation: 0,
             animation_tick: 0,
             land_tick: 0,
@@ -142,6 +201,34 @@ impl Player {
         if dir != 0 {
             self.facing = dir;
         }
+        // Source: pressing back out of a wall jump releases the lock once
+        // WJLOCK_STEPS_SHORT have passed; otherwise it runs its full length.
+        if self.wall_locked && dir == -self.wall_jumped && self.wall_lock_ticks >= p.wall_lock_short {
+            self.wall_locked = false;
+        }
+        // Source: CanWallSlide wants the Claw, airtime, no dash and a fall
+        // (or a slide already running); entry also wants the wall held into.
+        // WALL_STICKY_STEPS keeps the slide when the stick is let go, and only
+        // holding away for that long lets go of the wall.
+        if self.wall_sliding {
+            if dir == -self.touching_wall {
+                self.wall_unstick += 1;
+            } else {
+                self.wall_unstick = 0;
+            }
+            if self.grounded || self.dash_left > 0 || self.touching_wall == 0
+                || self.wall_unstick >= p.wall_sticky_ticks {
+                self.wall_sliding = false;
+            }
+        } else if self.has_walljump && !self.grounded && self.dash_left == 0 && !self.double_jumping
+            && self.vy < 0 && self.touching_wall != 0 && dir == self.touching_wall {
+            self.wall_sliding = true;
+            self.wall_unstick = 0;
+            // The slide restores both air abilities and turns into the wall.
+            self.air_dashed = false;
+            self.double_jumped = false;
+            self.facing = self.touching_wall;
+        }
         // Source: a jump press sets jumpQueuing and each step retries while
         // jumpQueueSteps <= JUMP_QUEUE_STEPS, so a press up to that many steps
         // early is not lost. A strict edge dropped those.
@@ -150,13 +237,46 @@ impl Player {
             self.jump_queue = 0;
         }
         if self.jump_queuing {
-            if jump && self.grounded && !self.jumping {
+            // Source order: CanWallJump, then CanJump, then CanDoubleJump.
+            let can_wall_jump = self.has_walljump
+                && (self.wall_sliding || (self.touching_wall != 0 && !self.grounded));
+            let can_jump = self.grounded && !self.jumping && self.jump_queue <= p.jump_queue_ticks;
+            let can_double_jump = self.has_double_jump && !self.double_jumped && !self.grounded
+                && self.dash_left == 0;
+            // The retry window is the longer of the two the source keeps.
+            let window = if self.has_double_jump {
+                p.double_jump_queue_ticks.max(p.jump_queue_ticks)
+            } else {
+                p.jump_queue_ticks
+            };
+            if jump && can_wall_jump {
+                self.facing = -self.touching_wall;
+                self.wall_jumped = -self.touching_wall;
+                self.wall_sliding = false;
+                self.touching_wall = 0;
+                self.air_dashed = false;
+                self.double_jumped = false;
+                self.walljump_speed = p.walljump_speed;
+                self.wall_locked = true;
+                self.wall_lock_ticks = 0;
                 self.jumping = true;
                 self.jump_tick = 0;
                 self.grounded = false;
                 self.land_tick = 0;
                 self.jump_queuing = false;
-            } else if !jump || self.jump_queue >= p.jump_queue_ticks {
+            } else if jump && can_jump {
+                self.jumping = true;
+                self.jump_tick = 0;
+                self.grounded = false;
+                self.land_tick = 0;
+                self.jump_queuing = false;
+            } else if jump && can_double_jump {
+                self.jumping = false;
+                self.double_jumping = true;
+                self.double_jumped = true;
+                self.double_jump_tick = 0;
+                self.jump_queuing = false;
+            } else if !jump || self.jump_queue >= window {
                 self.jump_queuing = false;
             } else {
                 self.jump_queue += 1;
@@ -171,6 +291,18 @@ impl Player {
                 if !jump && self.vy > 0 {
                     self.vy = 0;
                 }
+            }
+        } else if self.double_jumping {
+            // Source DoubleJump(): the first steps are the wing flourish, then
+            // JUMP_SPEED * 1.1 is held until DOUBLE_JUMP_STEPS runs out. A
+            // release does not cancel it.
+            if self.double_jump_tick > p.double_jump_ticks || self.grounded {
+                self.double_jumping = false;
+            } else {
+                if self.double_jump_tick > p.double_jump_delay_ticks {
+                    self.vy = p.double_jump_speed;
+                }
+                self.double_jump_tick += 1;
             }
         } else if !jump && self.was_jump && self.vy > 0 {
             self.vy = 0;
@@ -187,7 +319,21 @@ impl Player {
             (self.facing, p.dash_speed)
         } else {
             self.vy = (self.vy - p.gravity / 60).max(-p.fall);
-            (dir, p.speed)
+            // WALLSLIDE_DECEL is zero in the source, so the slide is a clamp.
+            if self.wall_sliding {
+                self.vy = self.vy.max(p.wallslide_speed);
+            }
+            if self.wall_locked {
+                let locked = (self.wall_jumped, self.walljump_speed);
+                self.wall_lock_ticks += 1;
+                if self.wall_lock_ticks > p.wall_lock_long {
+                    self.wall_locked = false;
+                }
+                self.walljump_speed -= p.walljump_decel;
+                locked
+            } else {
+                (dir, p.speed)
+            }
         };
         let ox = self.x;
         let oy = self.y;
@@ -239,6 +385,31 @@ impl Player {
                 self.jumping = false;
             }
         }
+        // Source CheckTouchingWall is a raycast, so contact holds whether or
+        // not the wall is being pushed into. A probe just outside each side
+        // reproduces that against the same vertical edges the sweep uses.
+        self.touching_wall = 0;
+        if !self.grounded {
+            const PROBE: i32 = ONE / 16;
+            for i in 0..count {
+                let [x0, y0, x1, y1] = edge(i);
+                if x0 != x1 || y0 == y1 || ny + p.top <= y0.min(y1) + 32
+                    || ny + p.bottom >= y0.max(y1) - 32 {
+                    continue;
+                }
+                if (nx + p.half_width - x0).abs() <= PROBE {
+                    self.touching_wall = 1;
+                }
+                if (nx - p.half_width - x0).abs() <= PROBE {
+                    self.touching_wall = -1;
+                }
+            }
+        }
+        if self.grounded {
+            self.wall_sliding = false;
+            self.double_jumped = false;
+            self.double_jumping = false;
+        }
         self.x = nx;
         self.y = ny;
         if self.grounded && !was_ground {
@@ -274,18 +445,7 @@ impl Player {
 mod tests {
     use super::*;
     fn params() -> Params {
-        Params {
-            speed: 8 * ONE,
-            jump: 16 * ONE,
-            gravity: 48 * ONE,
-            fall: 20 * ONE,
-            hold_ticks: 12,
-            min_ticks: 5, jump_queue_ticks: 0,
-            dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-            half_width: ONE / 4,
-            bottom: -ONE,
-            top: ONE / 4,
-        }
+        Params { speed: 8 * ONE, jump: 16 * ONE, gravity: 48 * ONE, fall: 20 * ONE, hold_ticks: 12, min_ticks: 5, half_width: ONE / 4, bottom: -ONE, top: ONE / 4, ..Params::ZERO }
     }
     #[test]
     fn swept_floor_wall_and_repeatable_route() {
@@ -353,12 +513,7 @@ mod tests {
 #[cfg(test)]
 mod dash_tests {
     use super::*;
-    const P: Params = Params {
-        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
-        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
-        half_width: ONE / 2, bottom: -ONE, top: 0,
-        dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10,
-    };
+    const P: Params = Params { speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE, hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2, half_width: ONE / 2, bottom: -ONE, dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10, ..Params::ZERO };
     fn flat() -> impl Fn(usize) -> [i32; 4] {
         |_| [0, 0, 0, 0]
     }
@@ -442,5 +597,134 @@ mod dash_tests {
         p.grounded = true;
         p.dash_input(P, true);
         assert_eq!(p.dash_left, P.dash_ticks, "the buffered press fired on landing");
+    }
+}
+
+#[cfg(test)]
+mod wall_tests {
+    use super::*;
+    const P: Params = Params {
+        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
+        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
+        wallslide_speed: -8 * ONE, wall_sticky_ticks: 4,
+        walljump_speed: 16 * ONE, walljump_decel: (16 - 8) * ONE / 12,
+        wall_lock_short: 6, wall_lock_long: 12,
+        double_jump_speed: 18 * ONE, double_jump_delay_ticks: 4,
+        double_jump_ticks: 11, double_jump_queue_ticks: 12,
+        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+    };
+    /// A floor at y=0 and a wall whose face is at x=4.
+    const EDGES: [[i32; 4]; 2] = [[-40 * ONE, 0, 40 * ONE, 0], [4 * ONE, 0, 4 * ONE, 40 * ONE]];
+    fn room() -> impl Fn(usize) -> [i32; 4] {
+        |i| EDGES[i]
+    }
+    /// Airborne against the wall's face, falling, with the Claw.
+    fn against_wall() -> Player {
+        let mut p = Player::spawn(3 * ONE, 30 * ONE);
+        p.has_walljump = true;
+        for _ in 0..8 {
+            p.step(P, 1, false, 2, room());
+            if p.touching_wall != 0 {
+                break;
+            }
+        }
+        assert_eq!(p.touching_wall, 1, "the probe finds the wall it just clamped against");
+        assert!(!p.wall_sliding, "the slide only starts on the step after contact");
+        p
+    }
+    #[test]
+    fn without_the_claw_the_wall_is_just_a_wall() {
+        let mut p = against_wall();
+        p.has_walljump = false;
+        for _ in 0..20 {
+            p.step(P, 1, false, 2, room());
+            assert!(!p.wall_sliding);
+        }
+        assert!(p.vy < P.wallslide_speed, "still in free fall");
+    }
+    #[test]
+    fn a_slide_clamps_the_fall_and_gives_back_the_air_abilities() {
+        let mut p = against_wall();
+        p.air_dashed = true;
+        p.double_jumped = true;
+        p.step(P, 1, false, 2, room());
+        assert!(p.wall_sliding);
+        assert!(!p.air_dashed && !p.double_jumped);
+        assert_eq!(p.facing, 1, "turned into the wall");
+        for _ in 0..20 {
+            p.step(P, 1, false, 2, room());
+            assert!(p.vy >= P.wallslide_speed, "the slide is a floor on the fall");
+        }
+        assert_eq!(p.vy, P.wallslide_speed, "and gravity pins it there");
+    }
+    #[test]
+    fn the_slide_holds_when_the_stick_is_let_go_and_ends_when_it_is_held_away() {
+        let mut p = against_wall();
+        p.step(P, 1, false, 2, room());
+        assert!(p.wall_sliding);
+        for _ in 0..10 {
+            p.step(P, 0, false, 2, room());
+            assert!(p.wall_sliding, "WALL_STICKY_STEPS only counts the away direction");
+        }
+        for _ in 0..P.wall_sticky_ticks {
+            p.step(P, -1, false, 2, room());
+        }
+        assert!(!p.wall_sliding);
+    }
+    #[test]
+    fn a_wall_jump_kicks_away_at_its_own_speed_until_the_lock_runs_out() {
+        let mut p = against_wall();
+        p.step(P, 1, false, 2, room());
+        let x = p.x;
+        p.step(P, 1, true, 2, room());
+        assert!(p.wall_locked && p.jumping && !p.wall_sliding);
+        assert_eq!(p.wall_jumped, -1, "kicked away from a wall on the right");
+        assert_eq!(p.facing, -1);
+        assert!(p.x < x);
+        // Neutral stick, so only WJLOCK_STEPS_LONG can end the lock.
+        for tick in 0..P.wall_lock_long {
+            let before = p.x;
+            p.step(P, 0, true, 2, room());
+            assert!(p.x < before, "tick {tick}: the lock owns horizontal velocity");
+        }
+        assert!(!p.wall_locked);
+        let before = p.x;
+        p.step(P, 1, true, 2, room());
+        assert!(p.x > before, "input is back");
+    }
+    #[test]
+    fn pressing_back_releases_the_lock_once_the_short_window_passes() {
+        let mut p = against_wall();
+        p.step(P, 1, false, 2, room());
+        p.step(P, 1, true, 2, room());
+        for _ in 0..P.wall_lock_short - 1 {
+            p.step(P, 1, true, 2, room());
+            assert!(p.wall_locked);
+        }
+        p.step(P, 1, true, 2, room());
+        assert!(!p.wall_locked, "holding back past WJLOCK_STEPS_SHORT releases it");
+    }
+    #[test]
+    fn the_double_jump_waits_for_the_wings_and_runs_once_per_airtime() {
+        let mut p = Player::spawn(0, 10 * ONE);
+        p.has_double_jump = true;
+        p.step(P, 0, true, 1, room());
+        assert!(p.double_jumping && p.double_jumped);
+        for tick in 0..P.double_jump_delay_ticks {
+            p.step(P, 0, true, 1, room());
+            assert!(p.vy < 0, "tick {tick} is still the flourish");
+        }
+        p.step(P, 0, true, 1, room());
+        // Pre-compensated like `jump`: the source sets velocity, then the
+        // physics step applies gravity, so the held value is one tick lower.
+        assert_eq!(p.vy, P.double_jump_speed - P.gravity / 60);
+        // A release does not cancel it; only the step count does.
+        for _ in 0..P.double_jump_ticks {
+            p.step(P, 0, false, 1, room());
+        }
+        assert!(!p.double_jumping);
+        p.was_jump = false;
+        p.step(P, 0, true, 1, room());
+        assert!(!p.double_jumping, "one per airtime");
     }
 }

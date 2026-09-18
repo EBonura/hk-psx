@@ -24,7 +24,7 @@ mod render {
 mod reveal_masks;
 #[path = "../game/src/world.rs"]
 mod world;
-use hk_sim::{AttackParams, Nail, Player};
+use hk_sim::{AttackParams, Nail, Params, Player};
 use world::{Region, State};
 static FIXTURE_BANK: &[u8] = include_bytes!(env!("HK_TEST_FIXTURE_BANK"));
 static SCENE0_BANK: &[u8] = include_bytes!(env!("HK_TEST_SCENE0_BANK"));
@@ -278,17 +278,7 @@ fn edge_cache_distinguishes_equal_count_sources_regions_and_large_room_fallback(
 
 #[test]
 fn hazards_and_checkpoints_use_polygons_and_preserve_distant_spawn() {
-    const P: hk_sim::Params = hk_sim::Params {
-        speed: 0,
-        jump: 0,
-        gravity: 0,
-        fall: 0,
-        hold_ticks: 0,
-        min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-        half_width: 2,
-        bottom: -2,
-        top: 2,
-    };
+    const P: hk_sim::Params = hk_sim::Params { half_width: 2, bottom: -2, top: 2, ..Params::ZERO };
     // One-region HKWMTA01 bank: a hazard and a checkpoint sharing TRIANGLE.
     fn put(b: &mut [u8], at: usize, v: i32) { b[at..at + 4].copy_from_slice(&v.to_le_bytes()); }
     let (regions, objects, polygons, points) = (160usize, 236usize, 332usize, 348usize);
@@ -330,17 +320,7 @@ fn hazards_and_checkpoints_use_polygons_and_preserve_distant_spawn() {
 }
 
 fn movement_params() -> hk_sim::Params {
-    hk_sim::Params {
-        speed: 8 * hk_sim::ONE,
-        jump: 16 * hk_sim::ONE,
-        gravity: 48 * hk_sim::ONE,
-        fall: 20 * hk_sim::ONE,
-        hold_ticks: 12,
-        min_ticks: 5, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-        half_width: hk_sim::ONE / 4,
-        bottom: -hk_sim::ONE,
-        top: 0,
-    }
+    hk_sim::Params { speed: 8 * hk_sim::ONE, jump: 16 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, fall: 20 * hk_sim::ONE, hold_ticks: 12, min_ticks: 5, half_width: hk_sim::ONE / 4, bottom: -hk_sim::ONE, top: 0, ..hk_sim::Params::ZERO }
 }
 fn room_with_edges(edges: &[[i32; 4]]) -> Vec<u8> {
     let mut bytes = vec![0u8; 40 + 16 + edges.len() * 16 + 32 + 32768];
@@ -538,8 +518,7 @@ fn actual_crawler_spawn_resolves_against_complete_cooked_terrain() {
         let path=format!("{}/../data/regions/chunk_{}.hk",env!("CARGO_MANIFEST_DIR"),index+1);
         let bytes=std::fs::read(path).unwrap();let room=hk_format::Room::parse(&bytes).unwrap();
         let state=State::new();let b=spec.bounds;
-        let p=Params {speed:spec.walk.speed,jump:0,gravity:60*ONE,fall:100*ONE,
-            hold_ticks:0,min_ticks:0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,half_width:(b[2]-b[0])/2,bottom:b[1],top:b[3]};
+        let p=Params { speed:spec.walk.speed, gravity:60*ONE, fall:100*ONE, half_width:(b[2]-b[0])/2, bottom:b[1], top:b[3], ..Params::ZERO };
         let mut body=Player::spawn(spec.x+b[0]+p.half_width,spec.y);
         assert!(resolve_actor_spawn(&mut body,p,room.counts[5],|i|state.edge(region,&room,i)));
         assert_eq!(body.y,if source_id==12548 {331776} else {spec.y});
@@ -558,7 +537,7 @@ fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
     assert_eq!(spec.fade_ticks,30);
     assert_eq!(spec.initial_opacity,0);
     assert_eq!(spec.trigger,&[[13202367,2153911],[10462305,2153911],[10462305,822671],[13202367,822671]]);
-    let p=Params {speed:0,jump:0,gravity:0,fall:0,hold_ticks:0,min_ticks:0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,half_width:ONE/4,bottom:-ONE,top:0};
+    let p=Params { half_width:ONE/4, bottom:-ONE, ..Params::ZERO };
     let inside=Player::spawn(180*ONE,20*ONE);
     let outside=Player::spawn(154*ONE,20*ONE);
     let mut controller=reveal_masks::State::new();controller.scene_ready(0,first.reveal_masks);

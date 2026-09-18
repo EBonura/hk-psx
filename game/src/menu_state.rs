@@ -22,7 +22,7 @@ impl Default for Settings {fn default()->Self{Self::new()}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Page {Main,Options,Controls,Cheats,Profiles}
 pub const MAIN_ITEMS:[&str;4]=["Start Game","Options","Controls","Cheats"];
-pub const CHEAT_ITEMS:[&str;5]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)","Mothwing Cloak (L1 dash)"];
+pub const CHEAT_ITEMS:[&str;7]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)","Mothwing Cloak (L1 dash)","Mantis Claw (wall jump)","Monarch Wings (double jump)"];
 pub const OPTION_ITEMS:[&str;4]=["Sound effects","Ambience","Music","Back"];
 pub const CONTROL_LINES:[&str;9]=[
     "D-pad: move","X: jump","Square: swing nail","Hold O: Focus / heal",

@@ -63,11 +63,11 @@ pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crat
             BOXES[0]=RectFlat::new(14,28,292,204,150,150,150);BOXES[1]=RectFlat::new(16,30,288,200,0,0,0);
             text(160-width("Cheats")/2,38,"Cheats");
             for(i,line) in crate::menu::state::CHEAT_ITEMS.iter().chain(["Restore health + SOUL","Add 5 Lifeblood masks","Turn all cheats off","Back"].iter()).enumerate(){
-                let y=59+i as i16*16;text(46,y,line);if p.row==i{text(29,y,">");}
+                let y=52+i as i16*14;text(46,y,line);if p.row==i{text(29,y,">");}
                 if i<crate::menu::state::CHEAT_ITEMS.len(){text(255,y,if settings.cheats.enabled(i){"ON"}else{"OFF"});}
             }
-            text(160-width("Charms are not implemented yet")/2,194,"Charms are not implemented yet");
-            text(160-width("X: apply    Left/Right: off/on    O: back")/2,212,"X: apply    Left/Right: off/on    O: back");
+            text(160-width("Charms are not implemented yet")/2,200,"Charms are not implemented yet");
+            text(160-width("X: apply    Left/Right: off/on    O: back")/2,214,"X: apply    Left/Right: off/on    O: back");
         }else if p.controls {
             text(160-width("Controls")/2,69,"Controls");
             for (i,line)in ["D-pad: Move / aim","X: Jump    Square: Nail","O: Hold to Focus / heal","Up: Inspect    Start: Pause","Air Down + Square: Pogo","X / O: Back"].iter().enumerate() {

@@ -530,17 +530,7 @@ impl Actor {
         // exactly on Terrain and the segment model invents a perpetual wall.
         let foot_skin=if self.runner().is_some() {983}else{0};
         let gravity = if let ActorController::Runner { params, .. } = spec.controller { params.gravity } else { 60 * ONE };
-        let mut p = Params {
-            speed: 0,
-            jump: 0,
-            gravity,
-            fall: 100 * ONE,
-            hold_ticks: 0,
-            min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-            half_width: (b[2] - b[0]) / 2,
-            bottom: b[1]-foot_skin,
-            top: b[3],
-        };
+        let mut p = Params { gravity, fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1]-foot_skin, top: b[3], ..Params::ZERO };
         if self.spawn_state == SpawnState::Pending {
             // The source Rigidbody2D may begin slightly inside Terrain. Resolve
             // once when its collision apron is resident, never on grid swaps or
@@ -624,8 +614,7 @@ impl Actor {
         let offset = b[0] + (b[2] - b[0]) / 2;
         let v = fly.controller.velocity();
         let mut body = Player::spawn(self.x + offset, self.y);
-        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-            half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
+        let mut p = Params { speed: v[0].abs(), fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3], ..Params::ZERO };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);
         if self.recoil_left != 0 {
@@ -651,8 +640,7 @@ impl Actor {
         let b = spec.bounds;
         let offset = b[0] + (b[2] - b[0]) / 2;
         let mut body = Player::spawn(self.x + offset, self.y);
-        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-            half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
+        let mut p = Params { speed: v[0].abs(), fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3], ..Params::ZERO };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);
         let moved = [body.x - (self.x + offset), body.y - self.y];
@@ -705,8 +693,7 @@ impl Actor {
         let mut body = Player::spawn(self.x + offset, self.y);
         body.vy = self.vy;
         body.grounded = self.grounded;
-        let mut p = Params { speed: roller.vx.abs(), jump: 0, gravity: 48 * ONE, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-            half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
+        let mut p = Params { speed: roller.vx.abs(), gravity: 48 * ONE, fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3], ..Params::ZERO };
         if self.spawn_state == SpawnState::Pending {
             if !hk_sim::resolve_actor_spawn(&mut body, p, count, edge) { self.spawn_state = SpawnState::Blocked; return; }
             self.spawn_state = SpawnState::Ready;
@@ -763,8 +750,7 @@ impl Actor {
         let offset = b[0] + (b[2] - b[0]) / 2;
         let v = aspid.controller.velocity();
         let mut body = Player::spawn(self.x + offset, self.y);
-        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-            half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
+        let mut p = Params { speed: v[0].abs(), fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3], ..Params::ZERO };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);
         if self.recoil_left != 0 {

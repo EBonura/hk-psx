@@ -398,6 +398,11 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # typetree prefix: `ldc.i4.2; stfld JUMP_QUEUE_STEPS`. A jump pressed this
     # many fixed steps before landing still fires.
     JUMP_QUEUE_STEPS=2
+    # Also .ctor literals: `ldc.i4.s 10; stfld DOUBLE_JUMP_QUEUE_STEPS`, and
+    # DoubleJump()'s `ldc.i4.3; ble` that spends the first steps on the wings
+    # before the upward velocity starts.
+    DOUBLE_JUMP_QUEUE_STEPS=10
+    DOUBLE_JUMP_DELAY_STEPS=3
     fall_accel=-gravity*constants['DEFAULT_GRAVITY']
     # Unity applies gravity inside the same physics step that Jump() pins the
     # velocity, so the source rises at JUMP_SPEED - g*0.02 = 15.702, not at
@@ -416,6 +421,20 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         +f",dash_ticks:{round(constants['DASH_TIME']*60)}"
         +f",dash_cooldown_ticks:{round(constants['DASH_COOLDOWN']*60)}"
         +f",dash_queue_ticks:{round(constants['DASH_QUEUE_STEPS']*dt*60)}"
+        +f",wallslide_speed:{round(constants['WALLSLIDE_SPEED']*65536)}"
+        +f",wall_sticky_ticks:{round(constants['WALL_STICKY_STEPS']*dt*60)}"
+        +f",walljump_speed:{round(constants['WJ_KICKOFF_SPEED']*65536)}"
+        # The source sheds the kickoff down to RUN_SPEED across the whole lock,
+        # so the per-tick share follows the resampled lock length, not the
+        # source's step count.
+        +f",walljump_decel:{round((constants['WJ_KICKOFF_SPEED']-constants['RUN_SPEED'])*65536/round(constants['WJLOCK_STEPS_LONG']*dt*60))}"
+        +f",wall_lock_short:{round(constants['WJLOCK_STEPS_SHORT']*dt*60)}"
+        +f",wall_lock_long:{round(constants['WJLOCK_STEPS_LONG']*dt*60)}"
+        # Pre-compensated exactly as `jump` is, against the same step mismatch.
+        +f",double_jump_speed:{round((constants['JUMP_SPEED']*1.1-fall_accel*dt+fall_accel/60)*65536)}"
+        +f",double_jump_delay_ticks:{round(DOUBLE_JUMP_DELAY_STEPS*dt*60)}"
+        +f",double_jump_ticks:{round(constants['DOUBLE_JUMP_STEPS']*dt*60)}"
+        +f",double_jump_queue_ticks:{round(DOUBLE_JUMP_QUEUE_STEPS*dt*60)}"
         +'};\n')
     params+=f'pub const SPAWN:(i32,i32)=({round(spawn[0]*65536)},{round(spawn[1]*65536)});\n'
     params+=f'pub const KNIGHT_SCALE:i32={round(FOCAL/-CAM_Z*4096)};\n'

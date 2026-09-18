@@ -328,17 +328,7 @@ mod tests {
         damage_override: false,
     };
     fn body_params() -> crate::Params {
-        crate::Params {
-            speed: crate::ONE,
-            jump: 0,
-            gravity: 60 * crate::ONE,
-            fall: 100 * crate::ONE,
-            hold_ticks: 0,
-            min_ticks: 0, jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0, dash_queue_ticks: 0,
-            half_width: crate::ONE / 2,
-            bottom: -crate::ONE,
-            top: crate::ONE,
-        }
+        crate::Params { speed: crate::ONE, gravity: 60 * crate::ONE, fall: 100 * crate::ONE, half_width: crate::ONE / 2, bottom: -crate::ONE, top: crate::ONE, ..crate::Params::ZERO }
     }
     #[test]
     fn spawn_crossing_floor_and_ceiling_uses_nearest_separation() {
