@@ -149,6 +149,14 @@ def axis_aligned_bounds(matrix, offset, size):
             max(p[0] for p in points), max(p[1] for p in points)]
 
 
+def body_box(records, who='actor'):
+    """The actor's own BoxCollider2D; some placements carry the same box twice."""
+    boxes = [d for _, t, d in records if t == 'BoxCollider2D']
+    if not 1 <= len(boxes) <= 2 or any((b['m_Size'], b['m_Offset'], b['m_IsTrigger'], b['m_Enabled']) != (boxes[0]['m_Size'], boxes[0]['m_Offset'], boxes[0]['m_IsTrigger'], boxes[0]['m_Enabled']) for b in boxes):
+        raise ValueError(f'unsupported {who} body colliders')
+    return boxes[0]
+
+
 def _one(records, kind):
     matches = [(sid, data) for sid, typ, data in records if typ == kind]
     if len(matches) != 1:

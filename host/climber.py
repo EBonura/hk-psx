@@ -31,6 +31,8 @@ def recognize(sc, actor):
     matrix = sc.world(sc.go_transform[gid])
     if any(abs(matrix[i][j] - (1 if i == j else 0)) > 1e-6 for i in range(2) for j in range(2)):
         raise ValueError('unsupported Climber initial rotation or scale')
+    # Duplicate-box Climber placements (Crossroads_03, _05) stay out: their
+    # views already sit at the 416 texture budget after similarity dedup.
     _, body = _one(records, 'BoxCollider2D')
     if not body['m_Enabled'] or body['m_IsTrigger'] or body['m_EdgeRadius'] != 0 \
             or not all(_near(body['m_Size'][k], v) for k, v in zip('xy', BODY_SIZE)) \
