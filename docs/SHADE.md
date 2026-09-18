@@ -49,6 +49,20 @@ Scream, Friendly, Lake and Jar branches are unreachable at this port's levels;
 `host/shade.py` fails the build if any of them stops being gated on a zero
 level.
 
+## Saving safely
+
+`Card::write` frees a file's directory entry before writing its data and only
+restores it at the end, so a save that used one file spent roughly 190 ms in a
+state where the old copy was already unfindable and the new one not yet
+readable. Measured by stopping the emulator at cycle points across the write:
+every cut in that window left a card the game could not load at all, with the
+previous save destroyed. `game/src/save.rs` now alternates between two files,
+each carrying a sequence number, and takes the valid record with the higher
+sequence at boot. An interrupted write therefore never touches the copy being
+relied on. `tools/validate_power_cut.py`, which the build runs after the
+routes, cuts power early, mid, late and just past the transfer and requires a
+loadable save every time.
+
 ## Routes
 
 `kings-death` kills the Knight for real: it walks the King's Pass traversal

@@ -458,7 +458,7 @@ fn main() {
                             let (save_scene,save_seat,save_facing,save_slot)=respawn
                                 .map_or((world::scene_of(0),[SPAWN.0,SPAWN.1],1,0),|(scene,seat,facing,slot)|(scene,seat,facing,slot));
                             save_requested=Some(save::Save{scene:save_scene as u32,seat:save_seat,facing:save_facing,
-                                region:save_slot as u32,geo:0,door_hits:door.hits(),shade:shade.record()});
+                                region:save_slot as u32,geo:0,door_hits:door.hits(),shade:shade.record(),sequence:0});
                             unsafe {HK_GEO_LOST=HK_GEO_LOST.saturating_add(geo.death());}
                             geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                             life.reset();
@@ -505,7 +505,7 @@ fn main() {
                                 // body spawned there starts inside the floor and falls through it.
                                 let stand=[bench_state.seat()[0],player.y];
                                 respawn=Some((r.scene,stand,player.facing,region_id));
-                                save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,region:region_id as u32,geo:geo.wallet(),door_hits:door.hits(),shade:shade.record()});
+                                save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,region:region_id as u32,geo:geo.wallet(),door_hits:door.hits(),shade:shade.record(),sequence:0});
                             }
                             let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control();
                             let dir=if door.entering() {door.forced_direction()}else if locked {0}else{i32::from(pad.is_held(button::RIGHT))-i32::from(pad.is_held(button::LEFT))};

@@ -422,6 +422,19 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     std::fs::write(out.join("summary.json"), serde_json::to_string_pretty(&Value::Object(summary))?)?;
     if failed.is_empty() {
         println!("All {} routes pass on the final CUE.", ROUTES.len());
+        // Card writes free a file's directory entry before rewriting it, so a
+        // save that used one file had a window where an interruption left
+        // nothing loadable. Prove the alternating slots close it.
+        let cut = Command::new(venv_python(root))
+            .args([root.join("tools/validate_power_cut.py").to_str().unwrap(),
+                "--output", out.join("power-cut").to_str().unwrap()])
+            .current_dir(root)
+            .output()?;
+        std::fs::write(out.join("power-cut.log"), [cut.stdout.as_slice(), cut.stderr.as_slice()].concat())?;
+        print!("{}", String::from_utf8_lossy(&cut.stdout));
+        if !cut.status.success() {
+            return Err(format!("power-cut check failed: {}", String::from_utf8_lossy(&cut.stderr)).into());
+        }
         Ok(())
     } else {
         Err(format!("routes failed: {}", failed.join(", ")).into())
