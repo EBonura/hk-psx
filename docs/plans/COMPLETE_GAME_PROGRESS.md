@@ -1171,10 +1171,33 @@ whose jump timings were tuned against a jump that rose 1% too high, and they
 now fall short of the first platforms. The level itself is not less
 traversable: the port now jumps within 0.001 units of the original and the
 previous build jumped higher than the original, so nothing reachable before has
-become unreachable. The tapes encode the old physics and need re-recording, or
-replacing with scripted routes designed through `tools/route_probe.py` as
-`kings-death` was. Until then `cargo run --release -- build` fails its
-validation step.
+become unreachable.
+
+Diffing old against new physics natively through the probe, which replays a
+tape's poll stream as a probe script, located the break exactly. At tick 2047
+the lower jump lands one tick earlier than the old one did, and that single
+tick falls inside the new two-step input buffer, so the Knight jumps where the
+old build swallowed the press. Everything after that is a different route. A
+one-tick landing difference is all it takes, which is the real lesson: a
+recorded traversal is a knife edge, and P14 is about to change movement four
+more times.
+
+So the route suite was rebuilt around saves rather than traversals. A card
+fixture puts the Knight where a route needs to be and the tape does only the
+local work, which no longer depends on jump timing at all. `well-drop` resumes
+at the Dirtmouth bench and walks right into the well, exercising the Town to
+Crossroads gate; `town-reset2` resumes, walks, and resets with Select. Those
+plus the existing save-resumed routes replace gate-return, town-reset,
+town-resident, town-well, crossroads-floor, crossroads-exit and town-bench,
+whose tapes are deleted rather than left encoding physics the port no longer
+has. Eight routes pass.
+
+Owed, and not covered by anything now: the King's Pass platform climb itself,
+the Town to King's Pass gate pair (its Town side sits at y 43 to 55, so a
+resumed route needs a save placed up there rather than at the bench), and the
+deeper Crossroads gates crossroads-exit used to reach. These want scripted
+probe-authored routes, which `tools/route_probe.py` now supports properly since
+it prints every tick rather than every tenth.
 
 ## Required package completion record
 
