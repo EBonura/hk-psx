@@ -1086,8 +1086,16 @@ Headroom fell to 68,988 bytes from 116,124: the cooked art is 30,386 of that
 and the controller, runtime and grown save record the rest. The trend since
 build 94 is now 246 KB, 132 KB, 116 KB, 69 KB, and the next large runtime
 needs a budget pass before it lands rather than after. Not done: a route that
-the source save menu, power-interruption tests (step 8), and the Shade's
-particles, orbs and audio. Step 9 is covered: `kings-return` boots from the
+the source save menu and the Shade's particles, orbs and audio. Step 8 is
+covered, and it found a real defect: `Card::write` frees a file's directory
+entry before rewriting it, so the single-file save had a roughly 190 ms window
+in which an interruption left the card with no loadable save at all, the
+previous one included. Measured by stopping the emulator at cycle points across
+the write rather than by poll, since a poll-bound tape pauses with the guest and
+cannot land inside the transfer. The save now alternates between two files with
+a sequence number and takes the newer valid one at boot, so an interrupted write
+never touches the copy in use; `tools/validate_power_cut.py` runs after the
+routes and requires a loadable save at four points across the transfer. Step 9 is covered: `kings-return` boots from the
 card `kings-death` wrote, finds the Shade that real death recorded and recovers
 it, so quit, reload and recover is verified on genuine save data rather than a
 seeded fixture. Twelve routes pass.
