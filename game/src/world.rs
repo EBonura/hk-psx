@@ -971,14 +971,16 @@ pub fn upcoming(
     neighbour(x, player.y)
 }
 
-/// TransitionPoint.TryDoTransition: the Knight's origin inside the trigger, a
-/// side gate only while facing into it (or recoiling), and a delayed collider
-/// only once `scene_ticks` has passed its delay.
+/// TransitionPoint.TryDoTransition: the Knight's origin inside the trigger,
+/// never while recoiling (the source zeroes the velocity and pushes the body
+/// back out of the trigger instead), a side gate only while facing into it,
+/// and a delayed collider only once `scene_ticks` has passed its delay.
 pub fn gate(scene: usize, player: &Player, recoiling: bool, scene_ticks: u32) -> Option<&'static Gate> {
     GATES.iter().find(|g| {
         g.scene == scene
+            && !recoiling
             && contains(g.bounds, player.x, player.y)
             && scene_ticks >= g.delay_ticks as u32
-            && (recoiling || match g.side { 1 => player.facing < 0, 2 => player.facing > 0, _ => true })
+            && match g.side { 1 => player.facing < 0, 2 => player.facing > 0, _ => true }
     })
 }
