@@ -89,6 +89,9 @@ mod world {
         pub fn edge_in_view(&self, _: &Region, _: &hk_format::Room, _: &Region, r: &hk_format::Room, i: usize) -> [i32; 4] {
             r.edge(i)
         }
+        pub fn edge(&self, _: &Region, r: &hk_format::Room, i: usize) -> [i32; 4] {
+            r.edge(i)
+        }
     }
     pub fn contains(b: [i32; 4], x: i32, y: i32) -> bool {
         x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]

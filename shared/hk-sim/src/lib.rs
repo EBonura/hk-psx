@@ -6,6 +6,8 @@ mod actors;
 pub mod runner;
 pub mod runner_senses;
 pub mod climber;
+pub mod buzz;
+pub mod aspid;
 pub mod vengefly;
 pub mod gruzzer;
 pub mod baldur;

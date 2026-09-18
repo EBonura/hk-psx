@@ -59,6 +59,7 @@ fn runner_event(event: enemies::RunnerEvent) {
         AudioStop | Destroy => runner_audio::loop_stop(event.source_id),
         ChaseSound { pitch_q16, variant } => runner_audio::call(pitch_q16, variant),
         DustStart | DustStop => unsafe { HK_RUNNER_DUST_EVENTS = HK_RUNNER_DUST_EVENTS.saturating_add(1); },
+        Fire { .. } => {} // spawned inside EnemyWorld::tick
     }
 }
 /// Read-only marker: 0 title, 1 gameplay, 2 loading, 3 disc error.
@@ -297,7 +298,7 @@ fn main() {
             let door_frame=door.frame(region_id,camera);
             let body_frame=knight_frame(&room,&player,&focus);let effect_frame=nail_frame(&room,&nail);
             let enemy_draws=enemies.prepare_draws(r,&room,camera);
-            let mut needed=[0u16;8];needed[0]=u32_at(room.frame(body_frame),0) as u16;
+            let mut needed=[0u16;12];needed[0]=u32_at(room.frame(body_frame),0) as u16;
             let mut needed_len=if effect_frame.is_some(){2}else{1};
             if let Some(f)=effect_frame {needed[1]=u32_at(room.frame(f),0) as u16;}
             enemy_draws.append_needed(&mut needed,&mut needed_len);

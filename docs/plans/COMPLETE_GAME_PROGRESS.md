@@ -856,6 +856,35 @@ Crossroads_37 is still rejected, as the Walker facing of a mirrored start is
 unverified). The Leaper's own attack samples are not in the Runner audio bank;
 the guest plays the Runner chase sound in their place. Seven routes pass.
 
+## Aspid Hunters and the first projectiles (build 100)
+
+`host/aspid.py` admits the Spitters (18 placed, including the `startAlert`
+arena placements that skip Idle) against .hkpsx/aspid/CONTRACT.md;
+`shared/hk-sim/src/aspid.rs` ports the `spitter` FSM (IdleBuzz roaming,
+7.804 alert circle plus sight, DistanceFly at 7 units with 0.1 per fixed step
+and 4 units/s, 1.5 to 2.25 s checks of range 14 and a clear ray, Fly Back at
+8.25 for half a second, Fire Long anticipation to its trigger frame 9 at 9
+units, one FireAtTarget shot at 15 units/s, the 12.1 unalert circle with an
+8 s Range Out Timer, no damage transition), sharing IdleBuzz and DistanceFly
+through the new `shared/hk-sim/src/buzz.rs` (the Vengefly now uses the same
+IdleBuzz). The guest gained its first projectile pool: `EnemyWorld.shots`
+(eight slots) holds `Spitter Shot R` bodies flying straight under gravity
+0.05; a shot ends on a terrain contact of its movement segment or on a hero
+box overlap (one damage through the existing cheat-aware hurt path), plays
+Impact for 18 ticks and leaves. The shot Idle and Impact clips are cooked
+from the shot library at the prefab scale (0.7 x 0.8) by a shared
+`_ClipCooker` that the corpse art now uses too; the fire cue travels as a
+`RunnerEventKind::Fire` collected inside `EnemyWorld::tick` and spawned after
+the actor pass. `Corpse Spitter` is `massless` (no collider; the source lets
+it fall out of the scene) and is removed on its first landing here.
+`host/similarity_dedup.py` still capped one cooked view at 256 KiB from the
+per-room era; it now uses `quality.ROOM_BYTE_BUDGET` (384 KiB), since the
+resident bank is bounded by the scene arena, after a Crossroads_03 view with
+the new shot art reached 264 KiB. 118 of 144 placed actors are admitted;
+headroom 146,404 bytes (Actor is 400 bytes: the runtime enum fold is due);
+seven routes pass. Not presented: shot rotation and stretch, dribble spatter,
+Aspid audio.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

@@ -40,6 +40,15 @@ pub enum ActorController {
         roll_clip: u16,
         stop_clip: u16,
     },
+    /// Aspid Hunter driven by `crate::aspid::Aspid`; `walk_clip` is Fly and
+    /// `turn_clip` TurnToFly. The shot clips belong to the projectile pool.
+    Aspid {
+        fire_clip: u16,
+        shot_clip: u16,
+        impact_clip: u16,
+        /// FSM `startAlert`: skips Idle on the first frame.
+        start_alert: bool,
+    },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ActorSpec {

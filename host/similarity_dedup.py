@@ -19,11 +19,13 @@ from texture_match_groups import all_static_matches,review_groups
 from region_delta import layout,textures
 from texture_dedup import deduplicate_room
 from materials import binary_black_palette
-from quality import STATIC_PAGE_BUDGET,TEXTURE_BUDGET
+from quality import STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET
 from constant_textures import constant_texture_replacements,verify_constant_replacement
 from scenery_geometry import texture_draws_safe,packet_bound,CAP,ACTOR_RESERVE
 THRESHOLD=95
-RUNTIME_ROOM_BYTES=256*1024
+# One cooked view before the scene bank deduplicates it; the resident bank is
+# bounded separately by the scene arena.
+RUNTIME_ROOM_BYTES=ROOM_BYTE_BUDGET
 
 
 def sha(data):return hashlib.sha256(data).hexdigest()

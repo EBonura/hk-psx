@@ -20,6 +20,8 @@ pub enum RunnerEventKind {
     DustStop,
     /// GameObject lifetime cleanup, not a fabricated Swipe FSM transition.
     Destroy,
+    /// Aspid FireAtTarget: spawn a shot at the actor with this velocity.
+    Fire { velocity: [i32; 2], shot_clip: u16, impact_clip: u16 },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RunnerEvent {
@@ -78,7 +80,7 @@ struct RunnerContext {
     hero_body: [i32; 4],
 }
 
-pub const MAX_VISIBLE: usize = 6;
+pub const MAX_VISIBLE: usize = 10;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SpawnState {
     Pending,
@@ -162,6 +164,56 @@ impl BaldurRuntime {
             else { panic!("Baldur runtime with other metadata") };
         match self.clip { Clip::Idle => spec.walk_clip, Clip::Start => start_clip, Clip::Roll => roll_clip, Clip::Stop => stop_clip }
     }
+}
+/// Aspid Hunter: the controller owns velocity, facing, clips and the shot cue.
+#[derive(Clone, Copy)]
+struct AspidRuntime {
+    controller: hk_sim::aspid::Aspid,
+    animation_tick: u32,
+    clip: hk_sim::aspid::Clip,
+}
+impl AspidRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        use hk_sim::aspid::Clip;
+        let ActorController::Aspid { fire_clip, .. } = spec.controller else { panic!("Aspid runtime with other metadata") };
+        match self.clip { Clip::Fly => spec.walk_clip, Clip::TurnToFly => spec.turn_clip, Clip::FireLong => fire_clip }
+    }
+}
+/// Source `Spitter Shot R`: a gravity 0.05 dynamic body that damages the hero
+/// on contact and plays Impact where it hits terrain or the hero.
+pub const SHOTS: usize = 8;
+const SHOT_GRAVITY: i32 = 3 * ONE; // .05 * 60
+const SHOT_HALF: [i32; 2] = [20992, 18432]; // .640625 x .5625 box at scale .7 * .8... kept at source size
+const IMPACT_TICKS: u32 = 18; // six frames at 20 fps
+#[derive(Clone, Copy)]
+struct Shot {
+    scene: u8,
+    x: i32,
+    y: i32,
+    vx: i32,
+    vy: i32,
+    animation_tick: u32,
+    impact: bool,
+    shot_clip: u16,
+    impact_clip: u16,
+}
+/// Does the movement segment cross any terrain edge (closed endpoints)?
+fn segment_hits_terrain(a: [i32; 2], b: [i32; 2], count: usize, edge: &impl Fn(usize) -> [i32; 4]) -> bool {
+    let (ox, oy) = (a[0] as i64, a[1] as i64);
+    let (rx, ry) = (b[0] as i64 - ox, b[1] as i64 - oy);
+    for i in 0..count {
+        let e = edge(i);
+        if e == [0; 4] { continue; }
+        let (ax, ay) = (e[0] as i64, e[1] as i64);
+        let (sx, sy) = (e[2] as i64 - ax, e[3] as i64 - ay);
+        let den = rx * sy - ry * sx;
+        if den == 0 { continue; }
+        let (qx, qy) = (ax - ox, ay - oy);
+        let (mut t, mut u, mut d) = (qx * sy - qy * sx, qx * ry - qy * rx, den);
+        if d < 0 { t = -t; u = -u; d = -d; }
+        if t >= 0 && t <= d && u >= 0 && u <= d { return true; }
+    }
+    false
 }
 /// Rotate a local offset by quarter turns counter-clockwise.
 fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
@@ -259,6 +311,7 @@ struct Actor {
     vengefly: Option<VengeflyRuntime>,
     gruzzer: Option<GruzzerRuntime>,
     baldur: Option<BaldurRuntime>,
+    aspid: Option<AspidRuntime>,
 }
 impl Actor {
     fn new(scene: usize, spec: &ActorSpec) -> Self {
@@ -306,6 +359,11 @@ impl Actor {
                 Some(BaldurRuntime { controller: hk_sim::baldur::Baldur::new(seed), animation_tick: 0,
                     clip: hk_sim::baldur::Clip::Idle, vx: 0, wall: false })
             } else { None },
+            aspid: if let ActorController::Aspid { start_alert, .. } = spec.controller {
+                let controller = if start_alert { hk_sim::aspid::Aspid::new_alert([spec.x, spec.y], seed) }
+                    else { hk_sim::aspid::Aspid::new([spec.x, spec.y], seed) };
+                Some(AspidRuntime { controller, animation_tick: 10, clip: hk_sim::aspid::Clip::Fly })
+            } else { None },
         }
     }
     fn local_bounds(&self, spec: &ActorSpec) -> [i32; 4] {
@@ -318,7 +376,7 @@ impl Actor {
             return [corners[0][0].min(corners[1][0]), corners[0][1].min(corners[1][1]),
                 corners[0][0].max(corners[1][0]), corners[0][1].max(corners[1][1])];
         }
-        if self.vengefly.is_some() || self.gruzzer.is_some() || self.baldur.is_some() || self.walk.direction == spec.initial_direction {
+        if self.vengefly.is_some() || self.gruzzer.is_some() || self.baldur.is_some() || self.aspid.is_some() || self.walk.direction == spec.initial_direction {
             b
         } else {
             [-b[2], b[1], -b[0], b[3]]
@@ -436,6 +494,13 @@ impl Actor {
         if let Some(mut roller) = self.baldur.take() {
             self.advance_baldur(&mut roller, spec, count, &edge, context);
             self.baldur = Some(roller);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(mut aspid) = self.aspid.take() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_aspid(&mut aspid, spec, count, &edge, context, emit);
+            self.aspid = Some(aspid);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
@@ -650,6 +715,56 @@ impl Actor {
         self.x = body.x - offset;
         self.y = body.y;
     }
+    /// One 60 Hz step of the Aspid: senses (alert circle plus sight, unalert
+    /// circle, clear ray), FSM tick, gravity-free body against terrain, recoil.
+    fn advance_aspid(&mut self, aspid: &mut AspidRuntime, spec: &ActorSpec, count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext, emit: &mut impl FnMut(RunnerEvent)) {
+        use hk_sim::aspid::Action;
+        use hk_sim::runner_senses as q;
+        aspid.animation_tick = aspid.animation_tick.saturating_add(1);
+        let pos = [self.x, self.y];
+        let hb = context.hero_body;
+        let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
+        let dy = (pos[1].clamp(hb[1], hb[3]) - pos[1]) as i64;
+        const ALERT: i64 = 511463; // 7.804
+        const UNALERT: i64 = 792986; // 12.1
+        let in_alert = dx * dx + dy * dy <= ALERT * ALERT;
+        let in_unalert = dx * dx + dy * dy <= UNALERT * UNALERT;
+        let sight = |gate: bool| match q::line_of_sight(pos, context.hero, gate, count, edge) {
+            Ok(value) => value,
+            Err(q::QueryError::ZeroLengthSight) => false,
+            Err(_) => panic!("Aspid LOS outside validated coordinates"),
+        };
+        let clear = sight(true);
+        let senses = hk_sim::aspid::Senses { position: pos, hero: context.hero, can_see_hero: in_alert && clear,
+            in_unalert_range: in_unalert && clear, sight_clear: clear };
+        let actions = aspid.controller.tick(senses);
+        let ActorController::Aspid { shot_clip, impact_clip, .. } = spec.controller else { panic!("Aspid runtime with other metadata") };
+        for action in actions.iter() {
+            match action {
+                Action::Play(clip, tick) => { aspid.clip = clip; aspid.animation_tick = tick; }
+                Action::Facing(f) => self.walk.direction = f,
+                Action::Fire(velocity) => emit(RunnerEvent { scene: self.scene, source_id: self.source_id, position: pos,
+                    facing: self.walk.direction, kind: RunnerEventKind::Fire { velocity, shot_clip, impact_clip } }),
+                Action::Velocity(_) => {}
+            }
+        }
+        let b = spec.bounds;
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let v = aspid.controller.velocity();
+        let mut body = Player::spawn(self.x + offset, self.y);
+        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0,
+            half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
+        body.vy = v[1];
+        body.step(p, v[0].signum(), false, count, edge);
+        if self.recoil_left != 0 {
+            self.recoil_left -= 1;
+            p.speed = self.recoil[0].abs();
+            body.vy = self.recoil[1];
+            body.step(p, self.recoil[0].signum(), false, count, edge);
+        }
+        self.x = body.x - offset;
+        self.y = body.y;
+    }
     fn runner_senses(&self, runner:&RunnerRuntime, spec:&ActorSpec, room:&Room,
         context:RunnerContext, count:usize, edge:impl Fn(usize)->[i32;4]) -> hk_sim::runner::Senses {
         use hk_sim::runner_senses as q;
@@ -721,8 +836,59 @@ pub struct Events {
 }
 pub struct EnemyWorld {
     actors: [Option<Actor>; MAX_ACTORS],
+    shots: [Option<Shot>; SHOTS],
 }
 impl EnemyWorld {
+    /// Source shots are pooled per Aspid (two each); the oldest live shot
+    /// yields when the shared pool is full.
+    fn spawn_shot(&mut self, scene: usize, position: [i32; 2], velocity: [i32; 2], shot_clip: u16, impact_clip: u16) {
+        let shot = Shot { scene: scene as u8, x: position[0], y: position[1], vx: velocity[0], vy: velocity[1],
+            animation_tick: 0, impact: false, shot_clip, impact_clip };
+        let slot = self.shots.iter().position(|s| s.is_none())
+            .unwrap_or_else(|| { let mut oldest = 0; for (i, s) in self.shots.iter().enumerate() {
+                if s.map_or(0, |s| s.animation_tick) >= self.shots[oldest].map_or(0, |s| s.animation_tick) { oldest = i; } } oldest });
+        self.shots[slot] = Some(shot);
+    }
+    /// EnemyBullet: gravity .05 flight, Collision on terrain or the HeroBox
+    /// (DamageHero 1), Impact clip, then recycled. Off-scene shots are dropped.
+    fn tick_shots(&mut self, region: &Region, hero_body: [i32; 4], count: usize, edge: &impl Fn(usize) -> [i32; 4],
+        mut hurt: impl FnMut(i32) -> Hurt) -> Hurt {
+        let mut result = Hurt::Ignored;
+        for slot in self.shots.iter_mut() {
+            let Some(shot) = slot else { continue };
+            if shot.scene as usize != region.scene { continue; }
+            shot.animation_tick = shot.animation_tick.saturating_add(1);
+            if shot.impact {
+                if shot.animation_tick >= IMPACT_TICKS { *slot = None; }
+                continue;
+            }
+            shot.vy -= SHOT_GRAVITY / 60;
+            let (ox, oy) = (shot.x, shot.y);
+            shot.x += shot.vx / 60;
+            shot.y += shot.vy / 60;
+            if !crate::world::contains(region.collision_bounds, shot.x, shot.y) && !crate::world::contains(region.bounds, shot.x, shot.y) {
+                if shot.x.abs() > 512 * ONE || shot.y.abs() > 512 * ONE { *slot = None; continue; }
+            }
+            let hit_terrain = segment_hits_terrain([ox, oy], [shot.x, shot.y], count, edge);
+            let bounds = [shot.x - SHOT_HALF[0], shot.y - SHOT_HALF[1], shot.x + SHOT_HALF[0], shot.y + SHOT_HALF[1]];
+            let hit_hero = overlap(bounds, hero_body);
+            if hit_hero {
+                let outcome = hurt(if shot.vx < 0 { -1 } else { 1 });
+                if outcome != Hurt::Ignored { result = outcome; }
+            }
+            if hit_terrain || hit_hero {
+                shot.impact = true;
+                shot.animation_tick = 0;
+                shot.vx = 0; shot.vy = 0;
+            }
+        }
+        result
+    }
+    pub fn clear_shots(&mut self, scene: usize) {
+        for slot in self.shots.iter_mut() {
+            if slot.is_some_and(|s| s.scene as usize == scene) { *slot = None; }
+        }
+    }
     /// Drain each source actor's death event once, even across local views.
     pub fn take_geo_deaths(&mut self,scene:usize,mut emit:impl FnMut(u32,i32,i32)->bool) {
         for actor in self.actors.iter_mut().flatten().filter(|a|a.scene==scene) {
@@ -734,6 +900,7 @@ impl EnemyWorld {
     pub const fn new() -> Self {
         Self {
             actors: [None; MAX_ACTORS],
+            shots: [None; SHOTS],
         }
     }
     /// Compact read-only state for route validation/telemetry.
@@ -750,6 +917,7 @@ impl EnemyWorld {
                 *slot = None;
             }
         }
+        self.clear_shots(scene);
     }
     pub fn sync_region(&mut self, region: &Region) {
         for spec in crate::world::region_actors(region) {
@@ -811,6 +979,15 @@ impl EnemyWorld {
             player.y + crate::PARAMS.top,
         ];
         let context=RunnerContext {camera,hero:[player.x,player.y],hero_body:body};
+        // Aspid shots spawn after the actor pass (the pool is a sibling field).
+        let mut fires: [Option<(usize, [i32; 2], [i32; 2], u16, u16)>; 4] = [None; 4];
+        let mut runner_event = |event: RunnerEvent| {
+            if let RunnerEventKind::Fire { velocity, shot_clip, impact_clip } = event.kind {
+                if let Some(slot) = fires.iter_mut().find(|f| f.is_none()) {
+                    *slot = Some((event.scene, event.position, velocity, shot_clip, impact_clip));
+                }
+            } else { runner_event(event); }
+        };
         for actor in self
             .actors
             .iter_mut()
@@ -870,6 +1047,7 @@ impl EnemyWorld {
                             if let Some(fly)=&mut actor.vengefly {fly.controller.die();}
                             if let Some(fly)=&mut actor.gruzzer {fly.controller.die();}
                             if let Some(roller)=&mut actor.baldur {roller.controller.die();}
+                            if let Some(aspid)=&mut actor.aspid {aspid.controller.die();}
                             state.enemy_death_particles(region,actor.source_id,[actor.x,actor.y,0]);
                             if let Some(corpse_spec)=spec.corpse {
                                 let mut corpse=hk_sim::Corpse::spawn(corpse_spec,actor.x,actor.y,nail.kind,
@@ -952,6 +1130,12 @@ impl EnemyWorld {
                 }
             }
         }
+        for (scene, position, velocity, shot_clip, impact_clip) in fires.into_iter().flatten() {
+            self.spawn_shot(scene, position, velocity, shot_clip, impact_clip);
+        }
+        let hurt = self.tick_shots(region, body, room.counts[5], &|i| state.edge(region, room, i),
+            |direction| cheats.hurt(vitals, crate::VITAL_PARAMS, 1, direction, false));
+        if hurt != Hurt::Ignored { events.hurt = hurt; }
         events
     }
     /// Create the immutable visible working set before preparing the GPU cache.
@@ -986,6 +1170,8 @@ impl EnemyWorld {
                 (spec.walk_clip,fly.animation_tick,(actor.x,actor.y),fly.controller.facing())
             } else if let Some(roller)=actor.baldur {
                 (roller.clip(spec),roller.animation_tick,(actor.x,actor.y),roller.controller.facing())
+            } else if let Some(aspid)=actor.aspid {
+                (aspid.clip(spec),aspid.animation_tick,(actor.x,actor.y),aspid.controller.facing())
             } else {
                 (if actor.walk.turn_remaining!=0 {spec.turn_clip}else{spec.walk_clip},
                     actor.walk.animation_tick,(actor.x,actor.y),actor.walk.direction)
@@ -1032,6 +1218,28 @@ impl EnemyWorld {
                 texture: u32_at(f, 0) as u16,
                 verts,
             });
+            draws.len += 1;
+        }
+        for shot in self.shots.iter().flatten().filter(|s| s.scene as usize == region.scene) {
+            let clip_id = if shot.impact { shot.impact_clip } else { shot.shot_clip } as usize;
+            assert!(clip_id < room.counts[4]);
+            let clip = room.clip(clip_id);
+            let elapsed = (shot.animation_tick as u64 * clip[2] as u64 / (60 * 65536)) as u32;
+            let frame = if clip[3] & 65535 == 0 { elapsed % clip[1] } else { elapsed.min(clip[1] - 1) };
+            let f = room.frame((clip[0] + frame) as usize);
+            let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
+            let facing = if shot.vx > 0 { 1 } else { -1 };
+            let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
+            let mut verts = [(0i16, 0i16); 4];
+            for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {
+                let x = shot.x - x * facing - camera.0;
+                let y = shot.y + y - camera.1;
+                *v = ((160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+                      (120 - (((y as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16);
+            }
+            if verts.iter().all(|v| v.0 < 0) || verts.iter().all(|v| v.0 >= 320) || verts.iter().all(|v| v.1 < 0) || verts.iter().all(|v| v.1 >= 240) { continue; }
+            if draws.len >= MAX_VISIBLE { break; }
+            draws.entries[draws.len] = Some(Draw { texture: u32_at(f, 0) as u16, verts });
             draws.len += 1;
         }
         draws
@@ -1204,7 +1412,7 @@ mod runner_runtime_tests {
         assert!(core::mem::size_of::<RunnerRuntime>()<=80);
         // Runner, Climber and Vengefly runtimes are all optional fields; folding
         // them into one enum would give back about 120 bytes per actor.
-        assert!(core::mem::size_of::<Actor>()<=352);
+        assert!(core::mem::size_of::<Actor>()<=416);
         println!("RunnerRuntime={} Actor={} EnemyWorld={}",core::mem::size_of::<RunnerRuntime>(),
             core::mem::size_of::<Actor>(),core::mem::size_of::<EnemyWorld>());
     }

@@ -15,6 +15,7 @@ def corpse_source(source, scene, actor):
     kind=actor.get('movement_control',{}).get('kind')
     if kind in ('Vengefly','Gruzzer'):return _breaker_corpse_source(source,scene,actor,kind)
     if kind=='Baldur':return _roller_corpse_source(source,scene,actor)
+    if kind=='Aspid':return _aspid_corpse_source(source,scene,actor)
     if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber'):
         raise ValueError('unvalidated corpse controller family')
     runner=kind=='ZombieSwipeWalker';climber=kind=='Climber'
@@ -173,32 +174,92 @@ def _roller_corpse_source(source,scene,actor):
             'limitations':['Circle body as its bounding box; the solver .2 slide replaces 0.7 linear damping; no spin',
                            'Removed 120 ticks after landing instead of the source slow-down/shrink/destroy sequence']}
 
+class _ClipCooker:
+    """Append tk2d clips from any library into the region frame/clip tables,
+    sharing identical (library, clip, scale) entries."""
+    def __init__(self,source,atlas,frames,clips):
+        self.source=source;self.atlas=atlas;self.frames=frames;self.clips=clips
+        self.textures={};self.collections={};self.images={};self.cooked={}
+    def clip(self,library_sid,library_o,clip,sx,sy):
+        from cook import tk_sprite,FOCAL,CAM_Z,guest_wrap
+        source=self.source
+        key=(library_sid,clip['name'],sx,sy)
+        if key not in self.cooked:
+            start=len(self.frames)
+            for frame in clip['frames']:
+                co=source.ref(library_o.assets_file,frame['spriteCollection']);sid=source.sid(co)
+                if sid not in self.collections:self.collections[sid]=source.read(co)
+                image_key=(sid,frame['spriteId'],sx,sy)
+                if image_key not in self.images:
+                    image,box=tk_sprite(source,co.assets_file,self.collections[sid],frame['spriteId'],self.textures)
+                    box=(box[0]*sx,box[1]*sy,box[2]*sx,box[3]*sy)
+                    texture=self.atlas.add(image,(box[2]-box[0])*FOCAL/-CAM_Z,(box[3]-box[1])*FOCAL/-CAM_Z,streamed=True)
+                    self.images[image_key]=(texture,box)
+                texture,box=self.images[image_key]
+                self.frames.append({'texture':texture,'box':box,'sprite':f'{sid}:{frame["spriteId"]}','event':frame})
+            self.cooked[key]=len(self.clips)
+            self.clips.append({'name':f'{library_sid}/{clip["name"]}','start':start,'count':len(clip['frames']),'fps':clip['fps'],'wrap':guest_wrap(clip),'loopStart':clip.get('loopStart',0)})
+        return self.cooked[key]
+
+def _aspid_corpse_source(source,scene,actor):
+    """`Corpse Spitter`: gravity .7, no collider (falls out of the scene). The
+    guest removes it on its first landing instead."""
+    components=list(_components(scene,actor['game_object']))
+    deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
+    if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
+    death=deaths[0]
+    if any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','rotateCorpse')) or death['corpseFlingSpeed']!=15 \
+            or death['corpseSpawnPoint']!={'x':0.,'y':0.,'z':0.}:
+        raise ValueError('unsupported corpse launch')
+    obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
+    if go['m_Name']!='Corpse Spitter':raise ValueError('unvalidated Aspid corpse identity')
+    parts={}
+    for ref in go['m_Component']:
+        component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
+        if typ in parts:raise ValueError('duplicate corpse component')
+        parts[typ]=(component,source.read(component))
+    if any(k not in parts for k in ('Corpse','tk2dSprite','tk2dSpriteAnimator','Rigidbody2D','Transform')) or any(k in parts for k in ('BoxCollider2D','CircleCollider2D','ObjectBounce')):
+        raise ValueError('unsupported Aspid corpse prefab')
+    corpse=parts['Corpse'][1];body=parts['Rigidbody2D'][1]
+    # `massless` is the source flag for a corpse without a collider.
+    if not corpse['massless'] or any(corpse[k] for k in ('breaker','bigBreaker','chunker','deathStun','fungusExplode','goopExplode','hatcher','instantChunker','spineBurst','zomHive','resetRotation')):
+        raise ValueError('unsupported special corpse')
+    if body['m_BodyType']!=0 or body['m_LinearDamping']!=0 or abs(body['m_GravityScale']-.7)>1e-6 or body['m_Constraints']!=4:
+        raise ValueError('unsupported corpse body')
+    sprite=parts['tk2dSprite'][1];transform=parts['Transform'][1]
+    if sprite['_color']!={'r':1.0,'g':1.0,'b':1.0,'a':1.0} or sprite['_scale']!={'x':1.0,'y':1.0,'z':1.0} or transform['m_LocalScale']!={'x':1.0,'y':1.0,'z':1.0}:
+        raise ValueError('unsupported corpse scale/color')
+    matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
+    anim=parts['tk2dSpriteAnimator'][1];library_o=source.ref(obj.assets_file,anim['library']);library=source.read(library_o)
+    air=next(c for c in library['clips'] if c['name']=='Death Air')
+    if (air['fps'],air['wrapMode'],len(air['frames']))!=(12,2,6):raise ValueError('unvalidated corpse clip timing')
+    # Half-unit box standing in for the missing collider.
+    bounds=[round(-.5*sx*65536),round(-.5*sy*65536),round(.5*sx*65536),round(.5*sy*65536)]
+    return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':[air,air],'scale':[sx,sy],'bounds':bounds,
+            'spawn_offset':[0,0],'gravity':42*65536,'breaker':True,'smash_bounces':0,'remove_after_land':0,'fling_speed':15*65536,'bounce_factor':0,'land_delay_ticks':0,
+            'limitations':['No source collider: removed on the first landing instead of falling out of the scene']}
+
 def append_corpse_art(source,scene,actors,atlas,frames,clips):
-    from cook import tk_sprite,FOCAL,CAM_Z
-    textures={};collections={};images={};cooked={}
+    cooker=_ClipCooker(source,atlas,frames,clips)
     for actor in actors:
         if not actor['movement_supported']:continue
         record=corpse_source(source,scene,actor);library_o=record.pop('library_object');selected=record.pop('clips');sx,sy=record['scale']
         for kind,clip in zip(('air','land'),selected):
-            key=(record['library'],clip['name'],sx,sy)
-            if key not in cooked:
-                start=len(frames)
-                for frame in clip['frames']:
-                    co=source.ref(library_o.assets_file,frame['spriteCollection']);sid=source.sid(co)
-                    if sid not in collections:collections[sid]=source.read(co)
-                    image_key=(sid,frame['spriteId'],sx,sy)
-                    if image_key not in images:
-                        image,box=tk_sprite(source,co.assets_file,collections[sid],frame['spriteId'],textures)
-                        box=(box[0]*sx,box[1]*sy,box[2]*sx,box[3]*sy)
-                        texture=atlas.add(image,(box[2]-box[0])*FOCAL/-CAM_Z,(box[3]-box[1])*FOCAL/-CAM_Z,streamed=True)
-                        images[image_key]=(texture,box)
-                    texture,box=images[image_key]
-                    frames.append({'texture':texture,'box':box,'sprite':f'{sid}:{frame["spriteId"]}','event':frame})
-                cooked[key]=len(clips)
-                from cook import guest_wrap
-                clips.append({'name':f'{record["library"]}/{clip["name"]}','start':start,'count':len(clip['frames']),'fps':clip['fps'],'wrap':guest_wrap(clip),'loopStart':clip.get('loopStart',0)})
-            record[kind+'_clip']=cooked[key]
+            record[kind+'_clip']=cooker.clip(record['library'],library_o,clip,sx,sy)
         actor['corpse']=record
+    append_shot_art(source,actors,cooker)
+
+def append_shot_art(source,actors,cooker):
+    """Aspid `Spitter Shot R` Idle/Impact clips at the prefab scale times the
+    EnemyBullet scale; the source stretch and rotation are not cooked."""
+    for actor in actors:
+        control=actor.get('movement_control',{})
+        if not actor['movement_supported'] or control.get('kind')!='Aspid':continue
+        shot=control['shot'];library_o=shot.pop('library_object');library=source.read(library_o)
+        scale=shot['scale']
+        for kind,name in (('shot','Idle'),('impact','Impact')):
+            clip=next(c for c in library['clips'] if c['name']==name)
+            actor[kind+'_clip']=cooker.clip(shot['library'],library_o,clip,scale,scale)
 
 def generated_corpse(record):
     if record is None:return 'None'
