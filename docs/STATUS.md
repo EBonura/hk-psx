@@ -1,6 +1,7 @@
-## Build 99: the whole Forgotten Crossroads on the actual disc
+## Build 100: the whole Forgotten Crossroads on the actual disc
 
-The sole disc pair is build 99 (45 scenes, 693 views; Leapers admitted through a Leap
+The sole disc pair is build 100 (45 scenes, 693 views; Aspid Hunters admitted with
+the first projectile pool (docs/ASPID.md); build 99 admitted the Leapers through a Leap
 attack on the Runner walker; build 98 admitted Husk Bullies, Hornheads and
 the other-scene Runners through the parameterized Runner; build 97 admitted
 the Gruzzers (19, docs/GRUZZER.md) and Baldurs (11, docs/BALDUR.md); build 95 admitted the Vengeflies (18 of 20

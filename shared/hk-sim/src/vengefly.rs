@@ -8,11 +8,7 @@
 //! Random.Range is replaced by a deterministic per-actor sequence.
 use crate::ONE;
 
-pub const IDLE_SPEED_MAX: i32 = 114688; // 1.75
-pub const IDLE_ACCELERATION_MAX: i32 = 15 * ONE;
-pub const ROAMING_RANGE: i32 = ONE;
-pub const WAIT_MIN: i32 = 49152; // .75 s
-pub const WAIT_MAX: i32 = ONE;
+pub use crate::buzz::{IDLE_ACCELERATION_MAX, IDLE_SPEED_MAX, ROAMING_RANGE, WAIT_MAX, WAIT_MIN};
 pub const CHASE_SPEED_MAX: i32 = 5 * ONE;
 pub const CHASE_ACCELERATION: i32 = 2949; // .045 per fixed step
 pub const DECELERATION: i32 = 7864; // .12 per fixed step
@@ -76,11 +72,7 @@ pub struct Senses {
 pub struct Vengefly {
     phase: Phase,
     velocity: [i32; 2],
-    start: [i32; 2],
-    /// Per fixed step, Q16 units/s (already divided by 2000).
-    accel: [i32; 2],
-    /// IdleBuzz waitTime in Q16 seconds.
-    wait: i32,
+    buzz: crate::buzz::IdleBuzz,
     timer: u16,
     face_pause: u16,
     facing: i32,
@@ -92,9 +84,7 @@ impl Vengefly {
         Self {
             phase: Phase::Idle,
             velocity: [0; 2],
-            start: position,
-            accel: [0; 2],
-            wait: 0,
+            buzz: crate::buzz::IdleBuzz::new(position),
             timer: 0,
             face_pause: 0,
             facing: -1,
@@ -125,42 +115,12 @@ impl Vengefly {
         let span = (high - low) as i64;
         low + ((self.random() as i64 * span) >> 24) as i32
     }
-    fn clamp(v: &mut [i32; 2], max: i32) {
-        for axis in v.iter_mut() {
-            *axis = (*axis).clamp(-max, max);
-        }
-    }
     /// IdleBuzz.DoBuzz for one fixed step (also the OnEnter call).
     fn idle_buzz(&mut self, position: [i32; 2]) {
         let mut v = self.velocity;
-        for axis in 0..2 {
-            let low = position[axis] < self.start[axis] - ROAMING_RANGE;
-            let high = position[axis] > self.start[axis] + ROAMING_RANGE;
-            if (low && v[axis] < 0) || (high && v[axis] > 0) {
-                self.accel[axis] = if low { IDLE_ACCELERATION_MAX } else { -IDLE_ACCELERATION_MAX } / 2000;
-                v[axis] = ((v[axis] as i64) * 8 / 9) as i32; // /= 1.125
-                self.wait = self.range(WAIT_MIN, WAIT_MAX);
-            }
-        }
-        if self.wait <= 0 {
-            for axis in 0..2 {
-                let (lo, hi) = if position[axis] < self.start[axis] - ROAMING_RANGE {
-                    (0, IDLE_ACCELERATION_MAX)
-                } else if position[axis] > self.start[axis] + ROAMING_RANGE {
-                    (-IDLE_ACCELERATION_MAX, 0)
-                } else {
-                    (-IDLE_ACCELERATION_MAX, IDLE_ACCELERATION_MAX)
-                };
-                self.accel[axis] = self.range(lo, hi) / 2000;
-            }
-            self.wait = self.range(WAIT_MIN, WAIT_MAX);
-        }
-        if self.wait > 0 {
-            self.wait -= ONE / 50;
-        }
-        v[0] += self.accel[0];
-        v[1] += self.accel[1];
-        Self::clamp(&mut v, IDLE_SPEED_MAX);
+        let mut buzz = self.buzz;
+        buzz.step(position, &mut v, &mut |lo, hi| self.range(lo, hi));
+        self.buzz = buzz;
         self.velocity = v;
     }
     /// ChaseObject.DoBuzz: per-axis acceleration toward the hero.
@@ -169,7 +129,7 @@ impl Vengefly {
         for axis in 0..2 {
             v[axis] += if hero[axis] > position[axis] { CHASE_ACCELERATION } else { -CHASE_ACCELERATION };
         }
-        Self::clamp(&mut v, CHASE_SPEED_MAX);
+        crate::buzz::clamp(&mut v, CHASE_SPEED_MAX);
         self.velocity = v;
     }
     fn decelerate(&mut self) {
@@ -276,7 +236,7 @@ impl Vengefly {
                 if self.timer == 0 {
                     // IdleBuzz.OnEnter re-samples the roaming origin, then DoBuzz.
                     self.phase = Phase::Idle;
-                    self.start = senses.position;
+                    self.buzz.enter(senses.position);
                     self.idle_buzz(senses.position);
                     out.push(Action::Play(Clip::Idle, 0));
                     out.push(Action::Velocity(self.velocity));

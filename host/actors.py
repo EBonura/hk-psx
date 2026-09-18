@@ -321,6 +321,16 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Spitter') \
+                and any(kind == 'PersonalObjectPool' for _, kind, _ in records):
+            from aspid import recognize as recognize_aspid
+            try:
+                control = recognize_aspid(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
             from runner import recognize
             try:
@@ -414,6 +424,14 @@ def generated_actor_specs(region):
             controller = 'hk_sim::ActorController::Baldur {' + ','.join(f'{key}:{actor[key]}' for key in baldur_clips) + '}'
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'Aspid':
+            aspid_clips = ('fire_clip', 'shot_clip', 'impact_clip')
+            if any(key not in actor for key in aspid_clips) or not actor.get('corpse'):
+                raise ValueError(f'Aspid is missing cooked clips or corpse: {actor["source"]}')
+            controller = ('hk_sim::ActorController::Aspid {' + ','.join(f'{key}:{actor[key]}' for key in aspid_clips)
+                          + f',start_alert:{str(bool(control.get("start_alert"))).lower()}' + '}')
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
         elif control['kind'] == 'Gruzzer':
             if not actor.get('corpse'):
                 raise ValueError(f'Gruzzer is missing validated corpse: {actor["source"]}')
@@ -427,7 +445,8 @@ def generated_actor_specs(region):
         else:
             raise ValueError('unsupported generated actor controller: ' + control['kind'])
         clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ()) \
-            + (vengefly_clips if control['kind'] == 'Vengefly' else ()) + (baldur_clips if control['kind'] == 'Baldur' else ())
+            + (vengefly_clips if control['kind'] == 'Vengefly' else ()) + (baldur_clips if control['kind'] == 'Baldur' else ()) \
+            + (aspid_clips if control['kind'] == 'Aspid' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')
         recoil = actor.get('Recoil', {})

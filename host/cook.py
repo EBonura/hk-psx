@@ -141,6 +141,8 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
         elif control['kind']=='Baldur':
             # Idle doubles as `walk_clip`; the turn slot is unused and holds Idle too.
             bindings={'walk':'Idle','turn':'Idle','start':'Start','roll':'Roll','stop':'Stop'}
+        elif control['kind']=='Aspid':
+            bindings={'walk':'Fly','turn':'TurnToFly','fire':'Fire Long'}
         else:
             raise ValueError('unsupported actor art controller: '+control['kind'])
         # Actor sampling is never reduced: a frame beyond the 64x64 animation
