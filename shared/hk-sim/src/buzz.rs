@@ -78,3 +78,21 @@ pub fn distance_fly(position: [i32; 2], target: [i32; 2], distance: i32, speed_m
     }
     clamp(velocity, speed_max);
 }
+/// DistanceFly.DoBuzz with `targetsHeight`: only x uses the far/near test,
+/// while y always seeks `target.y + height`. Evidence: DistanceFly::DoBuzz
+/// skips the paired y branch and converges on the height comparison.
+pub fn distance_fly_height(position: [i32; 2], target: [i32; 2], distance: i32, height: i32, speed_max: i32, acceleration: i32, velocity: &mut [i32; 2]) {
+    let dx = (position[0] as i64 - target[0] as i64) >> 8;
+    let dy = (position[1] as i64 - target[1] as i64) >> 8;
+    let d = distance as i64 >> 8;
+    let far = dx * dx + dy * dy > d * d;
+    let toward = position[0] < target[0];
+    velocity[0] += if toward == far { acceleration } else { -acceleration };
+    let goal = target[1] + height;
+    if position[1] < goal {
+        velocity[1] += acceleration;
+    } else if position[1] > goal {
+        velocity[1] -= acceleration;
+    }
+    clamp(velocity, speed_max);
+}

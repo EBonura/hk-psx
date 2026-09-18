@@ -11,6 +11,7 @@ pub mod aspid;
 pub mod vengefly;
 pub mod gruzzer;
 pub mod baldur;
+pub mod shade;
 mod corpse;
 pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
 mod vitals;

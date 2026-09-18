@@ -642,6 +642,11 @@ pub fn begin(room: &Room, animation_ids: &[u16],framebuffer_y:u16) -> hk_cache::
         USED = 0;KICKED = 0;CHUNK_COUNT = 0;
         EXTRA_USED=0;FRAMEBUFFER_Y=framebuffer_y;
         for &id in animation_ids {
+            // Shade keys have no room texture or template; they are drawn
+            // through resident_quad with the slot UV from animation_uv.
+            if id >= crate::shade::KEY_BASE {
+                continue;
+            }
             // Future callers must not rebind any template referenced by a
             // retained BACK prefix or its foreground occluders, even if a
             // nonstreamed ID is supplied.
@@ -654,6 +659,11 @@ pub fn begin(room: &Room, animation_ids: &[u16],framebuffer_y:u16) -> hk_cache::
         }
     }
     stats
+}
+/// The slot UV of a prepared animation key, for art with no room template.
+pub fn animation_uv(id: u16) -> (u8, u8) {
+    let (u, v) = animation_cache::uv(animation_cache::slot(id));
+    (u as u8, v as u8)
 }
 pub fn finish_gpu_frame() {
     // Main has already observed DMA idle. Pair the SDK async submission with

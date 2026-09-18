@@ -1023,6 +1023,63 @@ save menu (three slots, file select, delete), power-interruption tests (step
 global-flag codec once there are flags to save, and step 4 (Geo loss and
 Shade).
 
+## Death Geo loss, the Hollow Shade and the soul limiter (build 107)
+
+P13 step 4. `shared/hk-sim/src/shade.rs` ports the `Shade Control` FSM of the
+`Hollow Shade` prefab and `game/src/shade.rs` runs it; `host/shade.py` audits
+the prefab and cooks its art (.hkpsx/shade/CONTRACT.md, docs/SHADE.md). Death
+now drains SOUL, moves the whole wallet into the pool the Shade carries,
+records where and how strong it is (`shadeHealth` = clamp(maxHealth / 2, 1,
+99) and HP = `nailDamage` times that, which reproduces the prefab's 10), saves
+the card and starts the soul limiter, which caps the vessel at 66 instead of
+99. A second death overwrites the pool, so the earlier Shade's Geo is forfeit
+as in the source. Death saves even with no bench rested; that record points
+Continue at the new-game spawn. No object in the 45 admitted scenes carries
+the `Shade Marker` tag (verified by scanning every admitted level), so the
+Shade always appears at the death position through the FSM's own fallback.
+
+The Shade spawns on entering the scene that recorded it, idles until the hero
+is inside its 7.27-unit alert circle with a clear ray, then startles and
+chases (ChaseObject 0.2 per axis then ChaseObjectV2 0.16 along the direction,
+both clamped to 4 units/s), holds 3 units out while levelling with the hero's
+y, and lunges at 8 units/s with a half-second wind-up when the hero is within
+5 units and 0.2 of its own height. Its damage box is live for the Slash state
+alone. Past 25 units from the spawn it retreats and resets. Killing it returns
+the pool, clears the record and ends the limiter. `DistanceFly`'s
+`targetsHeight` branch was missing from the shared helpers and is now
+`buzz::distance_fly_height`: only x uses the far/near test while y always
+seeks the target, which is what makes the level-with-the-hero slash condition
+reachable.
+
+Art: the Shade can appear in any scene, so its 72 frames cannot live in a
+per-view atlas. They sit in linked RAM (30,386 bytes) and reach VRAM through
+the shared 64x64 animation slots under keys above `SCENE_TEXTURE_CAPACITY`,
+with only two 16-colour CLUTs resident in the free rows above the dialogue
+palette. VRAM had 608 spare bytes, so no new rectangle was available; the
+cache's upload closure gained a second source rather than a new reservation.
+The largest frame is 740 bytes against the 2,048-byte slot.
+
+Checks: six controller tests in hk-sim, `tests/test_shade.py` (the real guest
+runtime against the cooked art: record, spawn rule, clip table, every frame
+inside one slot), `tests/test_save.py` extended to the grown record with the
+checksum moved to the end so it covers the Shade fields, and a new
+`town-shade` route. Authoring a route that dies on tape proved expensive
+(no admitted scene puts a reachable enemy or hazard on any recorded path, and
+`tools/route_probe.py`, which would have made that search cheap, no longer
+compiles against the current world API), so the route instead boots from
+`tools/cards/town-shade.mcd`, a card whose save record already carries a Shade
+six units from the Dirtmouth bench with a 99-Geo pool. It must end with
+`HK_SHADE_KILLS` 1, `HK_SHADE_PRESENT` 0, the wallet at 105 and the Knight on
+2 masks, which exercises spawn, chase, contact damage, the nail, death and the
+Geo return. Ten routes pass, and all 428 host tests.
+
+Headroom fell to 68,988 bytes from 116,124: the cooked art is 30,386 of that
+and the controller, runtime and grown save record the rest. The trend since
+build 94 is now 246 KB, 132 KB, 116 KB, 69 KB, and the next large runtime
+needs a budget pass before it lands rather than after. Not done: a route that
+records a death on tape (see the note above on route_probe), the source save
+menu, power-interruption tests, and the Shade's particles, orbs and audio.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

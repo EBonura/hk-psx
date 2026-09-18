@@ -15,6 +15,7 @@ const COOK_INPUTS: &str = include_str!("../cook_inputs.txt");
 const ASSET_SCRIPTS: &[&str] = &[
     "title_music.py", "cook_audio.py", "cook_hud.py", "ambience.py", "focus_audio.py", "read_points.py",
     "geo.py", "geo_audio.py", "runner_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
+    "shade.py",
 ];
 /// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
 /// Final telemetry a route must reach besides completing its tape.
@@ -23,11 +24,17 @@ const REQUIRED: &[(&str, &str, u64)] = &[("town-bench", "HK_BENCH_RESTS", 1), ("
     // and play resumes in the Town view with that record's wallet and opened Great Door. A catalogue change
     // that moves the Town slot invalidates the fixture: copy .hkpsx/validate/town-bench.mcd over it.
     ("town-continue", "HK_SAVE_LOADED", 1), ("town-continue", "HK_MENU_ROW", 4), ("town-continue", "HK_REGION_ID", 100),
-    ("town-continue", "HK_GEO_WALLET", 6), ("town-continue", "HK_GREAT_DOOR_HITS", 13)];
+    ("town-continue", "HK_GEO_WALLET", 6), ("town-continue", "HK_GREAT_DOOR_HITS", 13),
+    // town-shade boots from a card whose record already carries a Hollow Shade six units
+    // from the Dirtmouth bench with a 99-Geo pool. It must spawn, chase and hurt the
+    // Knight, die to the nail, and hand the pool back on top of the saved six.
+    ("town-shade", "HK_SHADE_KILLS", 1), ("town-shade", "HK_SHADE_PRESENT", 0), ("town-shade", "HK_GEO_WALLET", 105),
+    ("town-shade", "HK_HEALTH", 2)];
 /// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
 /// fresh formatted card when the fixture is absent (the run writes it back there).
-const MEMCARDS: &[(&str, &str)] = &[("town-bench", "town-bench.mcd"), ("town-continue", "town-continue.mcd")];
-const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false), ("town-continue", false)];
+const MEMCARDS: &[(&str, &str)] = &[("town-bench", "town-bench.mcd"), ("town-continue", "town-continue.mcd"),
+    ("town-shade", "town-shade.mcd")];
+const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false), ("town-continue", false), ("town-shade", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,

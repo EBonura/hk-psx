@@ -73,6 +73,11 @@ impl World {
     pub fn reset(&mut self,params:Params) {*self=Self::new();self.publish(params);}
     /// Save Game restore of the wallet alone (rocks and loose coins start fresh).
     pub fn restore_wallet(&mut self,wallet:u32,params:Params) {self.wallet=wallet;self.publish(params);}
+    /// HeroController::AddGeoQuietly, which the Shade's Death Start calls with
+    /// the pool it carried. No coin is spawned and no pickup is collected.
+    pub fn add_quietly(&mut self,amount:u32,params:Params) {
+        self.wallet=self.wallet.saturating_add(amount).min(params.wallet_max);self.publish(params);
+    }
     pub fn coins(&self)->impl Iterator<Item=&Coin> {self.loose.iter().flatten()}
     pub fn indexed_coins(&self)->impl Iterator<Item=(usize,&Coin)> {self.loose.iter().enumerate().filter_map(|(i,c)|c.as_ref().map(|c|(i,c)))}
     pub fn active(&self)->usize {self.coins().count()}

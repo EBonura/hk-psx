@@ -10,7 +10,7 @@ use psx_mc::{Block, Card, HardwareCard, Slot, FRAME_SIZE};
 const NAME: &str = "BASLUS-00000HKPSX000";
 const TITLE: &str = "HOLLOW KNIGHT PSX";
 const MAGIC: [u8; 4] = *b"HKS1";
-pub const LEN: usize = 40;
+pub const LEN: usize = 52;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Save {
@@ -20,6 +20,8 @@ pub struct Save {
     pub region: u32,
     pub geo: u32,
     pub door_hits: u8,
+    /// The Hollow Shade owed at the time of the save, and the Geo it carries.
+    pub shade: crate::shade::Record,
 }
 fn fnv(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c9dc5u32, |h, &b| (h ^ b as u32).wrapping_mul(16777619))
@@ -35,12 +37,19 @@ impl Save {
         out[20..24].copy_from_slice(&self.region.to_le_bytes());
         out[24..28].copy_from_slice(&self.geo.to_le_bytes());
         out[28] = self.door_hits;
-        let sum = fnv(&out[..36]);
-        out[36..40].copy_from_slice(&sum.to_le_bytes());
+        out[29] = u8::from(self.shade.present);
+        out[30..32].copy_from_slice(&self.shade.hp.to_le_bytes());
+        out[32..36].copy_from_slice(&self.shade.geo_pool.to_le_bytes());
+        out[36..40].copy_from_slice(&self.shade.scene.to_le_bytes());
+        out[40..44].copy_from_slice(&self.shade.position[0].to_le_bytes());
+        out[44..48].copy_from_slice(&self.shade.position[1].to_le_bytes());
+        let sum = fnv(&out[..LEN - 4]);
+        out[LEN - 4..].copy_from_slice(&sum.to_le_bytes());
         out
     }
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < LEN || bytes[0..4] != MAGIC || fnv(&bytes[..36]) != u32::from_le_bytes(bytes[36..40].try_into().ok()?) {
+        if bytes.len() < LEN || bytes[0..4] != MAGIC
+            || fnv(&bytes[..LEN - 4]) != u32::from_le_bytes(bytes[LEN - 4..LEN].try_into().ok()?) {
             return None;
         }
         let word = |at: usize| i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
@@ -51,6 +60,13 @@ impl Save {
             region: word(20) as u32,
             geo: word(24) as u32,
             door_hits: bytes[28],
+            shade: crate::shade::Record {
+                present: bytes[29] != 0,
+                hp: u16::from_le_bytes([bytes[30], bytes[31]]),
+                geo_pool: word(32) as u32,
+                scene: word(36) as u32,
+                position: [word(40), word(44)],
+            },
         })
     }
 }
@@ -108,12 +124,15 @@ mod tests {
     use super::*;
     #[test]
     fn round_trip_and_reject_corruption() {
-        let save = Save { scene: 3, seat: [-65536, 720896], facing: -1, region: 7, geo: 41, door_hits: 13 };
+        let save = Save { scene: 3, seat: [-65536, 720896], facing: -1, region: 7, geo: 41, door_hits: 13,
+            shade: crate::shade::Record { present: true, scene: 2, position: [-131072, 65536], hp: 10, geo_pool: 77 } };
         let bytes = save.encode();
         assert_eq!(Save::decode(&bytes), Some(save));
-        let mut bad = bytes;
-        bad[24] ^= 1;
-        assert_eq!(Save::decode(&bad), None);
+        for at in [24, 29, 33, 37, 41, 45] {
+            let mut bad = bytes;
+            bad[at] ^= 1;
+            assert_eq!(Save::decode(&bad), None, "byte {at} is outside the checksum");
+        }
         assert_eq!(Save::decode(&bytes[..LEN - 1]), None);
     }
 }
