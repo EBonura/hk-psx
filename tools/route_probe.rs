@@ -84,7 +84,9 @@ fn main() {
         if let Some(next) = world::checkpoint(bank_region, &player, PARAMS) { checkpoint = next; }
         let hazard = world::hazard_contact(bank_region, &player, PARAMS).is_some();
         hazard_ticks += usize::from(hazard);
-        if tick % 10 == 0 || strike.broken > 0 || hazard || previous_checkpoint != checkpoint {
+        // Every tick: route authoring needs to see the exact frame a landing,
+        // a buffered jump or a ledge contact happens, not a 10-tick average.
+        {
             println!("{},{:.5},{:.5},{:.5},{},{},{},{},{:.5},{:.5},{}", tick,
                 player.x as f64 / ONE as f64, player.y as f64 / ONE as f64,
                 player.vy as f64 / ONE as f64, player.grounded, index + 1, broken, hazard,
