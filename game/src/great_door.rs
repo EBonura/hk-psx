@@ -24,6 +24,9 @@ impl World {
     const TOP_WALK:u16=20;
     pub fn reset(&mut self) {*self=Self::new();self.publish();}
     pub fn opened(&self)->bool {self.hits>=PARAMS.stage_hits[2]}
+    pub fn hits(&self)->u8 {self.hits}
+    /// Save Game restore: the recorded hit count, no pending transition or entry.
+    pub fn restore(&mut self,hits:u8) {self.hits=hits.min(PARAMS.stage_hits[2]);self.publish();}
     pub fn pending(&self)->bool {self.wait!=0 || self.entry!=0 || (self.transitions!=0&&!self.entered)}
     pub fn blackout(&self)->bool {self.shade()==255}
     pub fn entering(&self)->bool {self.entry!=0}

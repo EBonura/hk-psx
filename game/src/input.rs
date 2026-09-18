@@ -13,6 +13,8 @@ pub static mut HK_INPUT_FAULT: u32 = 0;
 pub static mut HK_INPUT_LOADING_SAMPLES: u32 = 0;
 #[no_mangle]
 pub static mut HK_INPUT_LOADING_TICKS: u32 = 0;
+#[no_mangle]
+pub static mut HK_INPUT_BLOCKED_VBLANKS: u32 = 0;
 /// Samples polled but not yet consumed by the simulation, at the last publish.
 #[no_mangle]
 pub static mut HK_INPUT_PENDING: u32 = 0;
@@ -25,6 +27,7 @@ fn publish_stats() {
         HK_INPUT_QUEUE_PEAK = stats.pending_peak;
         HK_INPUT_LOADING_SAMPLES = stats.loading_samples;
         HK_INPUT_LOADING_TICKS = stats.loading_ticks;
+        HK_INPUT_BLOCKED_VBLANKS = stats.blocked_vblanks;
         crate::HK_PAD_POLL_MAX_VBLANK_GAP = stats.max_poll_gap;
     }
 }
@@ -36,6 +39,13 @@ pub fn begin_scene_load(sim_clock: u32) {
     }
     publish_stats();
     checkpoint();
+}
+/// Memory card frames own SIO0 for longer than a VBlank; count their poll
+/// gaps as blocked rather than missed until the scene load ends.
+pub fn begin_blocking_transfer() {
+    unsafe {
+        if let Err(fault) = SAMPLER.begin_blocking_transfer() { failed(fault); }
+    }
 }
 /// Return the observed resume boundary, never an unpolled hardware timestamp.
 pub fn end_scene_load() -> u32 {

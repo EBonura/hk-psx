@@ -71,6 +71,8 @@ impl World {
         hit_events:0,depleted_rocks:0,spawned_value:0,collected_value:0,discarded_value:0,deferred_events:0}}
     pub fn wallet(&self)->u32 {self.wallet}
     pub fn reset(&mut self,params:Params) {*self=Self::new();self.publish(params);}
+    /// Save Game restore of the wallet alone (rocks and loose coins start fresh).
+    pub fn restore_wallet(&mut self,wallet:u32,params:Params) {self.wallet=wallet;self.publish(params);}
     pub fn coins(&self)->impl Iterator<Item=&Coin> {self.loose.iter().flatten()}
     pub fn indexed_coins(&self)->impl Iterator<Item=(usize,&Coin)> {self.loose.iter().enumerate().filter_map(|(i,c)|c.as_ref().map(|c|(i,c)))}
     pub fn active(&self)->usize {self.coins().count()}

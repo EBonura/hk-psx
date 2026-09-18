@@ -59,7 +59,7 @@ fn draw_menu(menu:&State,gain:u8){
     draw(gain);
     match menu.page {
         Page::Main=>{
-            for (i,label)in state::MAIN_ITEMS.iter().enumerate(){
+            for (i,label)in state::MAIN_ITEMS.iter().take(menu.main_rows()).enumerate(){
                 let y=145+i as i16*17;let g=if i==menu.selected{gain}else{gain-gain/4};
                 centered(y,label,g);
                 if i==menu.selected{text(144-text_width(label)/2,y,">",gain);}
@@ -114,9 +114,10 @@ fn present(fb:&mut FrameBuffer)->u16 {
 }
 /// First START/Cross still directly enters gameplay. Other choices are exposed
 /// with D-pad navigation. Settings apply immediately and persist for this run.
+/// The bool is true when the Continue row (only offered with a save) was chosen.
 #[inline(never)] // Keep title rendering outside main's MIPS PC16 branch span.
-pub fn run(fb:&mut FrameBuffer)->Settings {
-    restore();crate::music::begin();let mut menu=State::new();let mut gain=0u8;
+pub fn run(fb:&mut FrameBuffer,has_save:bool)->(Settings,bool) {
+    restore();crate::music::begin();let mut menu=State::new();menu.has_save=has_save;let mut gain=0u8;
     loop {
         gain=gain.saturating_add(8).min(128);draw_menu(&menu,gain);
         let mut start=false;
@@ -135,7 +136,7 @@ pub fn run(fb:&mut FrameBuffer)->Settings {
     assert!(crate::music::stop(),"CD music did not release drive");
     // Consume the activating hold so Cross cannot also cause a gameplay jump.
     while poll_port1().buttons.is_held(button::START|button::CROSS){psx_rt::interrupts::wait_vblank();}
-    menu.settings
+    (menu.settings,menu.continued)
 }
 
 fn status(fb: &mut FrameBuffer, patch: u8) -> u16 {

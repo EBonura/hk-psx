@@ -42,14 +42,14 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
 #[test]fn first_start_and_cross_keep_original_poll_count_and_defaults(){
  let _guard=LOCK.lock().unwrap();
  for b in [button::START,button::CROSS]{let mut samples=vec![0;8];samples.push(b);samples.extend([0;40]);feed(samples);
-  let s=menu::run(&mut framebuf::FrameBuffer);assert_eq!(s,menu::Settings::new());
+  let (s,c)=menu::run(&mut framebuf::FrameBuffer,false);assert_eq!(s,menu::Settings::new());assert!(!c);
   TRACE.with(|t|{let t=t.borrow();assert_eq!(t.polls,15);assert!(t.volumes.is_empty());assert_eq!(t.uploads.len(),10);});
  }
 }
 #[test]fn options_call_real_volume_hooks_and_controls_return_without_auto_start(){
  let _guard=LOCK.lock().unwrap();use menu::state::*;
  let mut samples=Vec::new();for b in [DOWN,CROSS,LEFT,DOWN,LEFT,DOWN,LEFT,CIRCLE,DOWN,CROSS,CIRCLE,DOWN,DOWN,START]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let s=menu::run(&mut framebuf::FrameBuffer);assert_eq!(s,menu::Settings{sfx:9,ambience:9,music:9,..menu::Settings::new()});
+ let (s,_)=menu::run(&mut framebuf::FrameBuffer,false);assert_eq!(s,menu::Settings{sfx:9,ambience:9,music:9,..menu::Settings::new()});
  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.volumes,[(0,9),(1,9),(2,9)]);assert!(t.sprites>100);});
 }
 #[test]fn retry_requires_release_and_patch_uploads_keep_their_exact_ranges(){
@@ -63,6 +63,14 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
 #[test]fn cheats_render_within_screen_and_carry_settings_to_gameplay(){
  let _guard=LOCK.lock().unwrap();use menu::state::*;
  let mut samples=Vec::new();for b in [UP,CROSS,CROSS,DOWN,RIGHT,DOWN,RIGHT,DOWN,RIGHT,CIRCLE,DOWN,START]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let s=menu::run(&mut framebuf::FrameBuffer);assert_eq!(s.cheats.bits(),15);
+ let (s,_)=menu::run(&mut framebuf::FrameBuffer,false);assert_eq!(s.cheats.bits(),15);
  TRACE.with(|t|assert!(t.borrow().sprites>100));
+}
+#[test]fn continue_row_is_only_offered_with_a_save(){
+ let _guard=LOCK.lock().unwrap();use menu::state::*;
+ // Without a save UP from Start wraps to Cheats (4 rows); with one it lands on Continue.
+ let mut samples=Vec::new();for b in [UP,DOWN,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (_,c)=menu::run(&mut framebuf::FrameBuffer,false);assert!(!c);
+ let mut samples=Vec::new();for b in [UP,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (_,c)=menu::run(&mut framebuf::FrameBuffer,true);assert!(c);
 }

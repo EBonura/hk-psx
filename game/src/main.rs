@@ -11,6 +11,7 @@ use psx_telemetry::{counter, emit, stage, task};
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
 mod bench;
 mod camera;
+mod save;
 mod input_queue;
 mod input_sampler;
 mod input;
@@ -225,7 +226,11 @@ fn main() {
     psx_rt::interrupts::install_vblank_counter();
     let mut fb=FrameBuffer::new(320,240);
     gpu::set_draw_area(0,0,319,239);gpu::set_draw_offset(0,0);
-    audio::init();let mut settings=menu::run(&mut fb);focus_audio::set_volume(settings.sfx);menu::loading(&mut fb);
+    // The card is read before the pad sampler exists: SIO0 is not yet shared.
+    let saved=save::read();
+    audio::init();let (mut settings,continued)=menu::run(&mut fb,saved.is_some());focus_audio::set_volume(settings.sfx);menu::loading(&mut fb);
+    // A record from another disc build may name a slot this catalogue lacks: treat it as no save.
+    let saved=saved.filter(|s|continued&&(s.region as usize)<world::REGION_SCENES.len()&&world::scene_of(s.region as usize)==s.scene as usize);
     let cache=unsafe { &mut *(&raw mut ROOM_CACHE) };
     let mut state=world::State::new();
     let geo=unsafe {&mut *(&raw mut GEO_WORLD)};
@@ -242,6 +247,8 @@ fn main() {
     let mut frame=0u32;let mut attacks=0u32;
     let mut safe=(SPAWN.0,SPAWN.1,0usize);
     let mut safe_facing=1;
+    // Pending Save Game record, written at the frame boundary after the tick that rested.
+    let mut save_requested:Option<save::Save>=None;
     let mut gate_cooldown=0u16;
     // Ticks since the current scene started (source Delay Collider gates).
     let mut scene_ticks=0u32;let mut scene_ticks_scene=usize::MAX;
@@ -254,6 +261,13 @@ fn main() {
     let mut bench_state=bench::State::new();
     // Bench respawn marker: scene, seat, facing, catalogue slot. None means the new-game spawn.
     let mut respawn:Option<(usize,[i32;2],i32,usize)>=None;
+    // Continue: stand at the saved bench with the saved wallet and Great Door hits.
+    if let Some(s)=saved {
+        respawn=Some((s.scene as usize,s.seat,s.facing,s.region as usize));
+        region_id=s.region as usize;player=Player::spawn(s.seat[0],s.seat[1]);player.facing=s.facing;
+        safe=(s.seat[0],s.seat[1],region_id);safe_facing=s.facing;
+        geo.restore_wallet(s.geo,geo::GEO_PARAMS);door.restore(s.door_hits);
+    }
     let mut prev_pad=ButtonState::from_bits(0);
     // Timer1 counts HBlanks for frame-pacing telemetry only.
     psx_io::timers::set_mode(psx_io::timers::Timer::Timer1,0x0100);
@@ -456,7 +470,11 @@ fn main() {
                             if bench_events.rest {
                                 // Rest Burst: HERO REVIVED, respawn marker on this bench, then Save Game.
                                 vitals.heal(settings.cheats.params(VITAL_PARAMS),u16::MAX);
-                                respawn=Some((r.scene,bench_state.seat(),player.facing,region_id));
+                                // Sitting keeps the Knight's floor y; the source seat y is the sprite's, and a
+                                // body spawned there starts inside the floor and falls through it.
+                                let stand=[bench_state.seat()[0],player.y];
+                                respawn=Some((r.scene,stand,player.facing,region_id));
+                                save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,region:region_id as u32,geo:geo.wallet(),door_hits:door.hits()});
                             }
                             let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control();
                             let dir=if door.entering() {door.forced_direction()}else if locked {0}else{i32::from(pad.is_held(button::RIGHT))-i32::from(pad.is_held(button::LEFT))};
@@ -606,6 +624,13 @@ fn main() {
             emit::counter(counter::SIM_TICKS,ticks);emit::stage_end(stage::PRESENT);emit::counter(counter::VISUAL_FRAMES,1);
             #[cfg(feature="emulator-telemetry")] if frame%30==0 {log_state(frame,&player,prims);}
             frame=frame.wrapping_add(1);
+            if let Some(s)=save_requested.take() {
+                // Card frames share SIO0 with the pad: bracket the write like a scene load
+                // so the sampler drops the polls it cannot take instead of faulting.
+                input::begin_scene_load(sim_clock);input::begin_blocking_transfer();save::write(&s);sim_clock=input::end_scene_load();
+                let held=ButtonState::from_bits(input::held_buttons());
+                player.was_jump=held.is_held(button::CROSS);start_held=held.is_held(button::START);
+            }
             if let Some(id)=target {
                 if !cache.is_ready(id) {
                     assert!(world::scene_of(id)!=r.scene,"spatial region not resident");
