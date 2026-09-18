@@ -33,6 +33,9 @@ pub struct Params {
     pub fall: i32,
     pub hold_ticks: u16,
     pub min_ticks: u16,
+    /// A jump pressed this many ticks before landing still fires, as the
+    /// source's `JUMP_QUEUE_STEPS` buffer does.
+    pub jump_queue_ticks: u16,
     pub half_width: i32,
     pub bottom: i32,
     pub top: i32,
@@ -47,6 +50,8 @@ pub struct Player {
     pub jump_tick: u16,
     pub jumping: bool,
     pub was_jump: bool,
+    pub jump_queuing: bool,
+    pub jump_queue: u16,
     pub animation: u16,
     pub animation_tick: u32,
     pub land_tick: u16,
@@ -62,6 +67,8 @@ impl Player {
             jump_tick: 0,
             jumping: false,
             was_jump: false,
+            jump_queuing: false,
+            jump_queue: 0,
             animation: 0,
             animation_tick: 0,
             land_tick: 0,
@@ -82,11 +89,25 @@ impl Player {
         if dir != 0 {
             self.facing = dir;
         }
-        if jump && !self.was_jump && self.grounded {
-            self.jumping = true;
-            self.jump_tick = 0;
-            self.grounded = false;
-            self.land_tick = 0;
+        // Source: a jump press sets jumpQueuing and each step retries while
+        // jumpQueueSteps <= JUMP_QUEUE_STEPS, so a press up to that many steps
+        // early is not lost. A strict edge dropped those.
+        if jump && !self.was_jump {
+            self.jump_queuing = true;
+            self.jump_queue = 0;
+        }
+        if self.jump_queuing {
+            if jump && self.grounded && !self.jumping {
+                self.jumping = true;
+                self.jump_tick = 0;
+                self.grounded = false;
+                self.land_tick = 0;
+                self.jump_queuing = false;
+            } else if !jump || self.jump_queue >= p.jump_queue_ticks {
+                self.jump_queuing = false;
+            } else {
+                self.jump_queue += 1;
+            }
         }
         if self.jumping {
             if self.jump_tick < p.hold_ticks && (jump || self.jump_tick < p.min_ticks) {
@@ -194,7 +215,7 @@ mod tests {
             gravity: 48 * ONE,
             fall: 20 * ONE,
             hold_ticks: 12,
-            min_ticks: 5,
+            min_ticks: 5, jump_queue_ticks: 0,
             half_width: ONE / 4,
             bottom: -ONE,
             top: ONE / 4,

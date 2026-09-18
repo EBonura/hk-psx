@@ -139,7 +139,8 @@ fn actual_complete_bank_is_contiguous_above_sfx_and_all_checksums_match() {
         assert_eq!(c.spu_address, end);
         assert_eq!(c.voice, 6 + i as u8);
         assert_eq!(c.source_channel, channels[i]);
-        assert_eq!(c.pitch, 743);
+        // The streamed cave bed is cooked at 4 kHz; the resident loops at 8.
+        assert_eq!(c.pitch, if i == 3 { 372 } else { 743 });
         assert_eq!(c.byte_len % 16, 0);
         let bytes = std::fs::read(root.join(format!("clip_{i}.adpcm"))).unwrap();
         assert!(valid_clip(&bytes, c.byte_len, c.checksum));

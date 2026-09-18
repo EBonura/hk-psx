@@ -536,7 +536,7 @@ impl Actor {
             gravity,
             fall: 100 * ONE,
             hold_ticks: 0,
-            min_ticks: 0,
+            min_ticks: 0, jump_queue_ticks: 0,
             half_width: (b[2] - b[0]) / 2,
             bottom: b[1]-foot_skin,
             top: b[3],
@@ -624,7 +624,7 @@ impl Actor {
         let offset = b[0] + (b[2] - b[0]) / 2;
         let v = fly.controller.velocity();
         let mut body = Player::spawn(self.x + offset, self.y);
-        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0,
+        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0,
             half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);
@@ -651,7 +651,7 @@ impl Actor {
         let b = spec.bounds;
         let offset = b[0] + (b[2] - b[0]) / 2;
         let mut body = Player::spawn(self.x + offset, self.y);
-        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0,
+        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0,
             half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);
@@ -705,7 +705,7 @@ impl Actor {
         let mut body = Player::spawn(self.x + offset, self.y);
         body.vy = self.vy;
         body.grounded = self.grounded;
-        let mut p = Params { speed: roller.vx.abs(), jump: 0, gravity: 48 * ONE, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0,
+        let mut p = Params { speed: roller.vx.abs(), jump: 0, gravity: 48 * ONE, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0,
             half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
         if self.spawn_state == SpawnState::Pending {
             if !hk_sim::resolve_actor_spawn(&mut body, p, count, edge) { self.spawn_state = SpawnState::Blocked; return; }
@@ -763,7 +763,7 @@ impl Actor {
         let offset = b[0] + (b[2] - b[0]) / 2;
         let v = aspid.controller.velocity();
         let mut body = Player::spawn(self.x + offset, self.y);
-        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0,
+        let mut p = Params { speed: v[0].abs(), jump: 0, gravity: 0, fall: 100 * ONE, hold_ticks: 0, min_ticks: 0, jump_queue_ticks: 0,
             half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3] };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);

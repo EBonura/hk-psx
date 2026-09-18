@@ -394,8 +394,20 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     step=s.read(glob.objects[8])['Fixed Timestep'];dt=step['m_Count']*step['m_Rate']['m_Denominator']/step['m_Rate']['m_Numerator']
     # Jump() holds speed for source steps 0..JUMP_STEPS inclusive. Preserve
     # that duration when resampling source 50 Hz steps to the guest's 60 Hz.
-    vals={'speed':constants['RUN_SPEED'],'jump':constants['JUMP_SPEED'],'gravity':-gravity*constants['DEFAULT_GRAVITY'],'fall':constants['MAX_FALL_VELOCITY'],'half_width':body['m_Size']['x']/2,'bottom':body['m_Offset']['y']-body['m_Size']['y']/2,'top':body['m_Offset']['y']+body['m_Size']['y']/2}
-    params='pub const PARAMS: hk_sim::Params = hk_sim::Params {'+','.join(f'{k}:{round(v*65536)}' for k,v in vals.items())+f",hold_ticks:{round((constants['JUMP_STEPS']+1)*dt*60)},min_ticks:{math.ceil(constants['JUMP_STEPS_MIN']*dt*60)}"+'};\n'
+    # Set in HeroController::.ctor rather than serialized, so it is not in the
+    # typetree prefix: `ldc.i4.2; stfld JUMP_QUEUE_STEPS`. A jump pressed this
+    # many fixed steps before landing still fires.
+    JUMP_QUEUE_STEPS=2
+    fall_accel=-gravity*constants['DEFAULT_GRAVITY']
+    # Unity applies gravity inside the same physics step that Jump() pins the
+    # velocity, so the source rises at JUMP_SPEED - g*0.02 = 15.702, not at
+    # JUMP_SPEED. The guest subtracts g over its own smaller step, so storing
+    # JUMP_SPEED unchanged would hold 15.86 and climb 1% too fast for the whole
+    # hold. Pre-compensate the difference in step length instead, which leaves
+    # the held velocity, and so the hold's displacement, equal to the source's.
+    held=constants['JUMP_SPEED']-fall_accel*dt
+    vals={'speed':constants['RUN_SPEED'],'jump':held+fall_accel/60,'gravity':fall_accel,'fall':constants['MAX_FALL_VELOCITY'],'half_width':body['m_Size']['x']/2,'bottom':body['m_Offset']['y']-body['m_Size']['y']/2,'top':body['m_Offset']['y']+body['m_Size']['y']/2}
+    params='pub const PARAMS: hk_sim::Params = hk_sim::Params {'+','.join(f'{k}:{round(v*65536)}' for k,v in vals.items())+f",hold_ticks:{round((constants['JUMP_STEPS']+1)*dt*60)},min_ticks:{math.ceil(constants['JUMP_STEPS_MIN']*dt*60)},jump_queue_ticks:{round(JUMP_QUEUE_STEPS*dt*60)}"+'};\n'
     params+=f'pub const SPAWN:(i32,i32)=({round(spawn[0]*65536)},{round(spawn[1]*65536)});\n'
     params+=f'pub const KNIGHT_SCALE:i32={round(FOCAL/-CAM_Z*4096)};\n'
     # Final renderer indices are assigned after sorting below.
