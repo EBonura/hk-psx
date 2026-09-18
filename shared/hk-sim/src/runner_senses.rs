@@ -79,15 +79,38 @@ fn translated(local: [i32; 4], actor: [i32; 2]) -> Result<[i32; 4], QueryError> 
     bounds(result)?;
     Ok(result)
 }
+/// Body collider and alert trigger of one Zombie Swipe variant, in the
+/// facing-left placement frame. `RUNNER` is the two level37 instances; Barger
+/// and Hornhead placements carry their own boxes through the actor spec.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shape {
+    pub body_offset_left: [i32; 2],
+    pub body_extents: [i32; 2],
+    pub alert_local: [i32; 4],
+}
+impl Shape {
+    pub const RUNNER: Self = Self { body_offset_left: BODY_OFFSET_LEFT, body_extents: BODY_EXTENTS, alert_local: ALERT_LOCAL };
+    /// From a facing-left body box and alert box relative to the actor origin.
+    pub const fn from_boxes(body: [i32; 4], alert: [i32; 4]) -> Self {
+        Self {
+            body_offset_left: [(body[0] + body[2]) / 2, (body[1] + body[3]) / 2],
+            body_extents: [(body[2] - body[0]) / 2, (body[3] - body[1]) / 2],
+            alert_local: alert,
+        }
+    }
+}
 pub fn body_bounds(actor: [i32; 2], direction: i32) -> Result<[i32; 4], QueryError> {
+    body_bounds_of(Shape::RUNNER, actor, direction)
+}
+pub fn body_bounds_of(shape: Shape, actor: [i32; 2], direction: i32) -> Result<[i32; 4], QueryError> {
     facing(direction)?;
-    let ox = -direction * BODY_OFFSET_LEFT[0];
+    let ox = -direction * shape.body_offset_left[0];
     translated(
         [
-            ox - BODY_EXTENTS[0],
-            BODY_OFFSET_LEFT[1] - BODY_EXTENTS[1],
-            ox + BODY_EXTENTS[0],
-            BODY_OFFSET_LEFT[1] + BODY_EXTENTS[1],
+            ox - shape.body_extents[0],
+            shape.body_offset_left[1] - shape.body_extents[1],
+            ox + shape.body_extents[0],
+            shape.body_offset_left[1] + shape.body_extents[1],
         ],
         actor,
     )
@@ -100,7 +123,10 @@ pub fn alert_bounds(actor: [i32; 2]) -> Result<[i32; 4], QueryError> {
 /// Touch counts in this segment model; original trigger/contact tolerances need
 /// runtime evidence. A valid zero-area Hero box remains a point/line query.
 pub fn alert_overlap(actor: [i32; 2], hero_body: [i32; 4]) -> Result<bool, QueryError> {
-    let a = alert_bounds(actor)?;
+    alert_overlap_of(Shape::RUNNER, actor, hero_body)
+}
+pub fn alert_overlap_of(shape: Shape, actor: [i32; 2], hero_body: [i32; 4]) -> Result<bool, QueryError> {
+    let a = translated(shape.alert_local, actor)?;
     bounds(hero_body)?;
     Ok(
         a[0] <= hero_body[2]
@@ -275,13 +301,22 @@ pub fn walker_queries(
     count: usize,
     edge: impl Fn(usize) -> [i32; 4],
 ) -> Result<WalkerQueries, QueryError> {
+    walker_queries_of(Shape::RUNNER, actor, direction, count, edge)
+}
+pub fn walker_queries_of(
+    shape: Shape,
+    actor: [i32; 2],
+    direction: i32,
+    count: usize,
+    edge: impl Fn(usize) -> [i32; 4],
+) -> Result<WalkerQueries, QueryError> {
     facing(direction)?;
-    let offset = [-direction * BODY_OFFSET_LEFT[0], BODY_OFFSET_LEFT[1]];
-    let forward = BODY_EXTENTS[0] + ONE / 2;
+    let offset = [-direction * shape.body_offset_left[0], shape.body_offset_left[1]];
+    let forward = shape.body_extents[0] + ONE / 2;
     let wall = Sweep::new(
         actor,
         offset,
-        BODY_EXTENTS,
+        shape.body_extents,
         if direction < 0 {
             Direction::Left
         } else {
@@ -294,7 +329,7 @@ pub fn walker_queries(
     let floor = Sweep::new(
         [actor[0] + direction * forward, actor[1]],
         offset,
-        BODY_EXTENTS,
+        shape.body_extents,
         Direction::Down,
         ONE / 4,
         SKIN,

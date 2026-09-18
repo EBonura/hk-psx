@@ -47,12 +47,25 @@ class RunnerSourceTests(unittest.TestCase):
             changed = walker(); changed[key] = 1
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, key):
                 walker_parameters(changed)
-        for key, value in [('walkSpeedL', -2), ('pauseWaitMin', 1.5),
+        for key, value in [('walkSpeedL', -2), ('pauseWaitMin', 0.),
                            ('rightScale', 1), ('walkClip', 'Other'), ('m_Enabled', 0),
                            ('edgeXAdjuster', .1), ('turnPause', math.nan)]:
             changed = walker(); changed[key] = value
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, key):
                 walker_parameters(changed)
+        with self.assertRaisesRegex(ValueError, 'lunge speed'):
+            walker_parameters(walker(), 0.)
+
+    def test_barger_and_hornhead_placements_become_parameters(self):
+        barger = walker(); barger.update(pauseWaitMin=1.5, pauseWaitMax=4., pauseTimeMin=1.)
+        result = walker_parameters(barger, 14.)
+        self.assertEqual(result['walking_wait_endpoints_ticks'], [240, 90])
+        self.assertEqual(result['pause_endpoints_ticks'], [90, 60])
+        self.assertEqual(result['lunge_velocity_q16'], [-917504, 917504])
+        hornhead = walker(); hornhead.update(walkSpeedL=-2.5, walkSpeedR=2.5, pauseWaitMin=4.5, pauseWaitMax=2.)
+        result = walker_parameters(hornhead, 9.)
+        self.assertEqual(result['walk_velocity_q16'], [-163840, 163840])
+        self.assertEqual(result['walking_wait_endpoints_ticks'], [270, 120])
 
     def test_clip_clock_wraps_and_event_rejection(self):
         clips = [{'name': name, 'fps': fps, 'wrapMode': wrap,
@@ -63,15 +76,19 @@ class RunnerSourceTests(unittest.TestCase):
         self.assertEqual([contract[n]['nominal_duration_ticks'] for n in
                           ['Attack Anticipate', 'Attack Lunge', 'Attack Cooldown']], [25, 40, 5])
         self.assertEqual(contract['Fall']['loop_start'], 1)
-        for change in ('event', 'rate', 'wrap', 'duplicate', 'missing', 'loop'):
+        # Frame counts and rates are per variant (Barger Attack Lunge is 2@10);
+        # the wrap modes, events and loop starts stay contracted.
+        for change in ('event', 'wrap', 'duplicate', 'missing', 'loop', 'extra'):
             bad = copy.deepcopy(clips)
             if change == 'event':bad[0]['frames'][0]['triggerEvent'] = True
-            if change == 'rate':bad[0]['fps'] = 12
             if change == 'wrap':bad[0]['wrapMode'] = 2
             if change == 'duplicate':bad.append(bad[0])
-            if change == 'missing':bad.pop()
+            if change == 'missing':bad.pop(0)
             if change == 'loop':bad[0]['loopStart'] = 100
+            if change == 'extra':bad.append(dict(bad[0], name='Other'))
             with self.subTest(change=change), self.assertRaises(ValueError):clip_contract(bad)
+        without_fall = [c for c in clips if c['name'] != 'Fall']
+        self.assertEqual(len(clip_contract(without_fall)), len(CLIPS) - 1)
 
     def test_child_scale_offset_and_mirror_preserve_full_alert_range(self):
         matrix = [[11.14, 0, 0, 42], [0, 3.45, 0, 2 - .48], [0, 0, 1, 0], [0, 0, 0, 1]]

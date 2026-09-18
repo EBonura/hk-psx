@@ -288,7 +288,7 @@ def remap_actor_clips(actor, clip_base):
     # in the same appended clip space as walk/turn.
     keys=['walk_clip','turn_clip']+sorted(k for k in actor if k.endswith('_clip') and k not in ('walk_clip','turn_clip'))
     if actor['movement_control']['kind']=='ZombieSwipeWalker':
-        for key in ('idle_clip','anticipate_clip','lunge_clip','cooldown_clip','fall_clip'):
+        for key in ('idle_clip','anticipate_clip','lunge_clip','cooldown_clip'):
             if key not in keys:raise ValueError('actor bank is missing cooked binding: '+key)
     for key in keys:
         if key not in actor:raise ValueError('actor bank is missing cooked binding: '+key)

@@ -32,7 +32,9 @@ def corpse_source(source, scene, actor):
     offset=death['corpseSpawnPoint']
     if offset!=expected_offset:raise ValueError('unsupported corpse spawn offset')
     obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
-    if runner and source.sid(obj)!='sharedassets37.assets:61':raise ValueError('unvalidated corpse prefab for controller')
+    # Runner, Barger and Hornhead corpses (Corpse Zombie Basic One/Three/Five)
+    # share one structure; identity is checked below by name and player data.
+    if runner and not go['m_Name'].startswith('Corpse Zombie Basic '):raise ValueError('unvalidated corpse prefab for controller')
     parts={}
     for ref in go['m_Component']:
         component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
@@ -56,18 +58,18 @@ def corpse_source(source, scene, actor):
         raise ValueError('unsupported corpse scale/color')
     library_o=source.ref(obj.assets_file,anim['library']);library=source.read(library_o)
     selected=[next(c for c in library['clips']if c['name']==name)for name in ('Death Air','Death Land')]
-    if runner and source.sid(library_o)!='sharedassets37.assets:149':raise ValueError('unvalidated corpse animation library')
+    if runner and source.sid(library_o)!=actor['movement_control'].get('library_source'):raise ValueError('corpse animation library differs from the actor library')
     if [(c['fps'],c['wrapMode'],len(c['frames']))for c in selected]!=expected_timing:raise ValueError('unvalidated corpse clip timing')
     if any(c.get('loopStart',0)!=0 or any(f.get('triggerEvent',False)for f in c['frames'])for c in selected):
         raise ValueError('unsupported corpse animation events/loop start')
     matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
     box=parts['BoxCollider2D'][1];off=box['m_Offset'];size=box['m_Size']
     if runner:
-        if go['m_Name']!='Corpse Zombie Basic One' or not death['m_Enabled'] or death['playerDataName']!='ZombieRunner':
+        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead'):
             raise ValueError('unvalidated Runner corpse identity')
         if any(abs(matrix[i][j]-(1 if i==j else 0))>1e-6 for i in range(2)for j in range(2)):
             raise ValueError('unsupported Runner corpse actor transform')
-        if not box['m_Enabled'] or box['m_IsTrigger'] or box['m_EdgeRadius']!=0 or off!={'x':.03125,'y':-.7265625} or size!={'x':1.21875,'y':1.265625}:
+        if not box['m_Enabled'] or box['m_IsTrigger'] or box['m_EdgeRadius']!=0 or not (0<size['x']<4 and 0<size['y']<4):
             raise ValueError('unsupported Runner corpse collider')
         if not body['m_Simulated'] or body['m_CollisionDetection']!=0 or not corpse['m_Enabled'] or not bounce['m_Enabled']:
             raise ValueError('unsupported Runner corpse component activation')

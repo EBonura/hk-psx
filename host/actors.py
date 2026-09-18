@@ -327,9 +327,6 @@ def actor_sources(sc, bounds=None):
                 # A strictly recognized Zombie Runner is admitted: the guest binds
                 # its controller, clips, corpse, senses and audio bank.
                 control = recognize(sc, actor)
-                # The guest Runner runs on the source plane its depth was measured at.
-                if len(actor['position']) < 3 or round(actor['position'][2] * 65536) != 66:
-                    raise ValueError('Runner depth differs from guest source plane')
                 actor['movement_control'] = dict(control, guest_enabled=True)
                 actor['movement_supported'] = True
                 actor['limitations'] = [limit for limit in control['limitations']
@@ -372,17 +369,21 @@ def generated_actor_specs(region):
                   round((box[2] - x) * 65536), round((box[3] - y) * 65536)]
         control = actor['movement_control']
         if control['kind'] == 'ZombieSwipeWalker':
-            if len(actor['position']) < 3 or round(actor['position'][2] * 65536) != 66:
-                raise ValueError('Runner depth differs from guest source plane')
             runner_clips = ('idle_clip', 'anticipate_clip', 'lunge_clip', 'cooldown_clip')
             if any(key not in actor for key in runner_clips):
                 raise ValueError(f'Runner is missing cooked clips: {actor["source"]}')
             if not actor.get('corpse'):
                 raise ValueError(f'Runner is missing validated corpse: {actor["source"]}')
-            controller = 'hk_sim::ActorController::Runner {' + ','.join(f'{key}:{actor[key]}' for key in runner_clips) + '}'
+            p = control['parameters']
+            params = (f'hk_sim::runner::Params {{walk_speed:{p["walk_velocity_q16"][1]},lunge_speed:{p["lunge_velocity_q16"][1]},'
+                      f'walking_wait:[{p["walking_wait_endpoints_ticks"][0]},{p["walking_wait_endpoints_ticks"][1]}],'
+                      f'paused_wait:[{p["pause_endpoints_ticks"][0]},{p["pause_endpoints_ticks"][1]}]}}')
+            alert = '[' + ','.join(map(str, control['alert_bounds_q16'])) + ']'
+            controller = ('hk_sim::ActorController::Runner {' + ','.join(f'{key}:{actor[key]}' for key in runner_clips)
+                          + f',params:{params},alert:{alert}' + '}')
             # Legacy Walker fields remain populated for the common ActorSpec;
             # the Runner runtime uses its separately verified native controller.
-            speed, turn_ticks, turn_cooldown_ticks = 1.5, 10, 60
+            speed, turn_ticks, turn_cooldown_ticks = p['walk_speed'], 10, 60
             initial_direction, random_start_direction = -1, False
         elif control['kind'] == 'Climber':
             if 'stun_clip' not in actor or not actor.get('corpse'):

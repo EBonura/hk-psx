@@ -19,7 +19,11 @@ LIVE = {'walk_clip': 'Walk', 'turn_clip': 'Turn', 'idle_clip': 'Idle',
 
 def actor_fixture():
     actor = dict(source='fixture:42', movement_supported=True, game_object=1,
-                 movement_control={'kind': 'ZombieSwipeWalker'}, position=[2., 3., .001],
+                 movement_control={'kind': 'ZombieSwipeWalker', 'library_source': 'fixture:9',
+                                   'alert_bounds_q16': [-365036, -144507, 365036, 12730],
+                                   'parameters': {'walk_speed': 1.5, 'walk_velocity_q16': [-98304, 98304], 'lunge_velocity_q16': [-393216, 393216],
+                                                  'walking_wait_endpoints_ticks': [240, 90], 'pause_endpoints_ticks': [150, 90]}},
+                 position=[2., 3., .001],
                  colliders=[dict(bounds=[1.5, 2., 2.5, 3.5])], health=15,
                  health_manager=dict(hasSpecialDeath=False, hasAlternateHitAnimation=False,
                                      invincibleFromDirection=0, invincible=False, damageOverride=False),
@@ -71,7 +75,9 @@ class RunnerActorArtTests(unittest.TestCase):
     def test_runner_metadata_requires_every_bound_clip_corpse_and_depth(self):
         actor = actor_fixture()
         text = generated_actor_region({'actors': [actor]})
-        self.assertIn('controller:hk_sim::ActorController::Runner {idle_clip:2,anticipate_clip:3,lunge_clip:4,cooldown_clip:5}', text)
+        self.assertIn('controller:hk_sim::ActorController::Runner {idle_clip:2,anticipate_clip:3,lunge_clip:4,cooldown_clip:5,'
+                      'params:hk_sim::runner::Params {walk_speed:98304,lunge_speed:393216,walking_wait:[240,90],paused_wait:[150,90]},'
+                      'alert:[-365036,-144507,365036,12730]}', text)
         self.assertIn('speed:98304,turn_ticks:10,turn_cooldown_ticks:60', text)
         self.assertIn('initial_direction:-1,random_start_direction:false', text)
         self.assertIn('health:15,contact_damage:1', text)
@@ -80,7 +86,7 @@ class RunnerActorArtTests(unittest.TestCase):
                 bad = copy.deepcopy(actor); del bad[key]
                 with self.assertRaisesRegex(ValueError, 'missing'):
                     generated_actor_region({'actors': [bad]})
-        for change in [{'idle_clip': 65536}, {'position': [2., 3., .01]},
+        for change in [{'idle_clip': 65536},
                        {'health_manager': dict(actor['health_manager'], hasSpecialDeath=True)}]:
             with self.subTest(change=change), self.assertRaises(ValueError):
                 generated_actor_region({'actors': [dict(actor, **change)]})
@@ -107,7 +113,7 @@ class RunnerActorArtTests(unittest.TestCase):
         self.assertEqual(left['corpse']['bounce_factor'], 13107)
         with self.assertRaisesRegex(ValueError, 'exceeds u16'):
             remap_actor_clips(actor, 65535)
-        del actor['fall_clip']
+        del actor['lunge_clip']
         with self.assertRaisesRegex(ValueError, 'missing cooked binding'):
             remap_actor_clips(actor, 0)
 

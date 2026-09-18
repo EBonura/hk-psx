@@ -14,6 +14,10 @@ pub enum ActorController {
         anticipate_clip: u16,
         lunge_clip: u16,
         cooldown_clip: u16,
+        /// Walker speeds/waits and the FSM lunge speed of this placement.
+        params: crate::runner::Params,
+        /// Alert trigger box relative to the actor origin (facing-left frame).
+        alert: [i32; 4],
     },
     /// Surface-following Tiktik driven by `crate::climber::Climber`.
     Climber {
