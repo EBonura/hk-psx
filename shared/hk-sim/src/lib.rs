@@ -17,6 +17,8 @@ pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
 mod vitals;
 mod focus;
 pub use focus::{Focus,FocusParams,FocusInput,FocusClip,FocusEvents};
+mod dream_nail;
+pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
 pub mod persistent;
 pub use nail_response::{NailResponse, NailResponseParams};
@@ -1134,5 +1136,131 @@ mod priority_tests {
         p.dash_input(P, false);
         p.dash_input(P, true);
         assert_eq!(p.dash_left, P.dash_ticks);
+    }
+}
+
+/// P14 step 7: the ability boundaries and combinations, which is where a
+/// re-implementation usually diverges from the source even when each ability
+/// on its own is right.
+#[cfg(test)]
+mod combination_tests {
+    use super::*;
+    const P: Params = Params {
+        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
+        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
+        dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10,
+        shadow_dash_cooldown_ticks: 90,
+        wallslide_speed: -8 * ONE, wall_sticky_ticks: 4,
+        walljump_speed: 16 * ONE, walljump_decel: (16 - 8) * ONE / 12,
+        wall_lock_short: 6, wall_lock_long: 12,
+        double_jump_speed: 18 * ONE, double_jump_delay_ticks: 4,
+        double_jump_ticks: 11, double_jump_queue_ticks: 12,
+        super_dash_speed: 30 * ONE, super_dash_charge_ticks: 48,
+        super_dash_cancel_ticks: 12, super_dash_recover_ticks: 30,
+        ledge_buffer_ticks: 2, head_bump_ticks: 4,
+        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+    };
+    /// A floor at y=0 and a wall whose face is at x=4.
+    const EDGES: [[i32; 4]; 2] = [[-40 * ONE, 0, 40 * ONE, 0], [4 * ONE, 0, 4 * ONE, 40 * ONE]];
+    fn room() -> impl Fn(usize) -> [i32; 4] {
+        |i| EDGES[i]
+    }
+    /// Jump off the floor and hold right until the wall slide takes. A jump
+    /// only fires on a press made while already grounded, so this settles the
+    /// Knight on the floor before pressing.
+    fn slide_up_the_wall(p: &mut Player) {
+        p.step(P, 0, false, 2, room());
+        p.was_jump = false;
+        p.step(P, 1, true, 2, room());
+        assert!(p.jumping, "left the floor");
+        for _ in 0..90 {
+            p.step(P, 1, true, 2, room());
+            if p.wall_sliding {
+                return;
+            }
+        }
+        panic!("never reached the wall");
+    }
+    fn knight() -> Player {
+        let mut p = Player::spawn(0, ONE);
+        p.has_dash = true;
+        p.has_walljump = true;
+        p.has_double_jump = true;
+        p.has_super_dash = true;
+        p
+    }
+    #[test]
+    fn wall_slide_then_wall_jump_then_dash_all_land() {
+        let mut p = knight();
+        slide_up_the_wall(&mut p);
+        // The slide handed the air dash back, and the wall jump does again.
+        p.was_jump = false;
+        p.step(P, 1, true, 2, room());
+        assert!(p.wall_locked && p.wall_jumped == -1);
+        assert!(!p.air_dashed);
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks, "a dash out of a wall jump is allowed");
+    }
+    #[test]
+    fn a_dash_into_a_wall_stops_at_it_rather_than_tunnelling() {
+        let mut p = knight();
+        p.x = 3 * ONE;
+        p.facing = 1;
+        p.dash_input(P, true);
+        for _ in 0..P.dash_ticks {
+            p.step(P, 1, false, 2, room());
+        }
+        assert_eq!(p.x, 4 * ONE - P.half_width, "flush with the wall, not through it");
+    }
+    #[test]
+    fn a_spent_air_dash_comes_back_from_a_wall_but_not_from_the_air() {
+        let mut p = knight();
+        p.grounded = false;
+        p.y = 20 * ONE;
+        p.dash_input(P, true);
+        for _ in 0..P.dash_ticks + P.dash_cooldown_ticks {
+            p.dash_input(P, false);
+            p.step(P, 0, false, 2, room());
+        }
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, 0, "airDashed is still spent");
+        // CanDash allows one off a wall even with the air dash gone.
+        p.wall_sliding = true;
+        p.dash_input(P, false);
+        p.dash_input(P, true);
+        assert_eq!(p.dash_left, P.dash_ticks);
+    }
+    #[test]
+    fn mashing_a_button_never_beats_its_cooldown() {
+        let mut p = knight();
+        p.dash_input(P, true);
+        let mut dashes = 1;
+        for tick in 0..P.dash_cooldown_ticks * 3 {
+            // Alternate every tick, the worst case a player can produce.
+            p.dash_input(P, tick % 2 == 0);
+            if p.dash_left == P.dash_ticks {
+                dashes += 1;
+            }
+            p.step(P, 0, false, 2, room());
+            p.grounded = true;
+        }
+        // Three cooldowns can yield at most three more dashes, never one a tick.
+        assert!(dashes <= 4, "{dashes} dashes in three cooldowns");
+    }
+    #[test]
+    fn a_double_jump_is_still_available_after_a_wall_jump() {
+        let mut p = knight();
+        slide_up_the_wall(&mut p);
+        p.was_jump = false;
+        p.step(P, 1, true, 2, room());
+        assert!(p.wall_locked, "wall jumped");
+        assert!(!p.double_jumped, "the wall jump handed the wings back");
+        // Let the lock run out, then press again in mid-air.
+        for _ in 0..P.wall_lock_long + 1 {
+            p.step(P, 0, true, 2, room());
+        }
+        p.was_jump = false;
+        p.step(P, 0, true, 2, room());
+        assert!(p.double_jumping);
     }
 }

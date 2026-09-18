@@ -22,12 +22,16 @@ impl Default for Settings {fn default()->Self{Self::new()}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Page {Main,Options,Controls,Cheats,Profiles}
 pub const MAIN_ITEMS:[&str;4]=["Start Game","Options","Controls","Cheats"];
-pub const CHEAT_ITEMS:[&str;9]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)","Mothwing Cloak (L1 dash)","Mantis Claw (wall jump)","Monarch Wings (double jump)","Crystal Heart (hold R1)","Shade Cloak (dash i-frames)"];
+const _:()=assert!(CHEAT_ITEMS.len()==crate::cheats::CHEAT_ROWS);
+pub const CHEAT_ITEMS:[&str;10]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)","Mothwing Cloak (L1 dash)","Mantis Claw (wall jump)","Monarch Wings (double jump)","Crystal Heart (hold R1)","Shade Cloak (dash i-frames)","Dream Nail (hold Triangle)"];
 pub const OPTION_ITEMS:[&str;4]=["Sound effects","Ambience","Music","Back"];
-pub const CONTROL_LINES:[&str;9]=[
+pub const CONTROL_LINES:[&str;12]=[
     "D-pad: move","X: jump","Square: swing nail","Hold O: Focus / heal",
     "Up + Square: upward nail","Airborne Down + Square: downward nail",
     "Up/Down at tablet: inspect","Start: pause / resume","Select: reset session",
+    // The abilities below are reachable only through Cheats until their
+    // pickups exist, but the mapping is the shipped one.
+    "L1: dash (Mothwing Cloak)","Hold R1: Crystal Heart","Hold Triangle: Dream Nail",
 ];
 pub struct State {
     pub page:Page,pub selected:usize,pub settings:Settings,

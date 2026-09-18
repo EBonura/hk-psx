@@ -266,7 +266,8 @@ def actor_sources(sc, bounds=None):
                  'colliders': _colliders(sc, gid, records), 'components': {str(i): kind for i, kind, _ in records},
                  'movement_supported': False, 'limitations': ['Enemy PlayMaker movement and state transitions remain unsupported.']}
         for component_id, kind, component in records:
-            if kind in ('tk2dSprite', 'tk2dSpriteAnimator', 'Recoil', 'DamageHero', 'Rigidbody2D'):
+            if kind in ('tk2dSprite', 'tk2dSpriteAnimator', 'Recoil', 'DamageHero', 'Rigidbody2D',
+                        'EnemyDreamnailReaction'):
                 actor[kind] = component
                 actor[kind + '_source'] = f'{Path(sc.file.name).name}:{component_id}'
         fsms = []
@@ -451,6 +452,10 @@ def generated_actor_specs(region):
             raise ValueError('actor clip binding exceeds u16')
         recoil = actor.get('Recoil', {})
         damage = actor.get('DamageHero', {}).get('damageDealt', 0)
+        # EnemyDreamnailReaction::RecieveDreamImpact pays SOUL once, unless the
+        # component sets noSoul or starts suppressed. 33 without Dream Wielder.
+        dream = actor.get('EnemyDreamnailReaction')
+        dream_soul = 33 if dream and not dream['noSoul'] and not dream['startSuppressed'] else 0
         fields = {
             'source_id': int(actor['source'].rsplit(':', 1)[1]), 'x': round(x * 65536), 'y': round(y * 65536),
             'bounds': '[' + ','.join(map(str, bounds)) + ']',
@@ -465,6 +470,7 @@ def generated_actor_specs(region):
             'corpse': generated_corpse(actor.get('corpse')),
             'recoil_speed': round(recoil.get('recoilSpeedBase', 0) * 65536),
             'recoil_ticks': ticks(recoil.get('recoilDuration', 0)),
+            'dream_soul': dream_soul,
         }
         output.append('hk_sim::ActorSpec {' + ','.join(f'{key}:{value}' for key, value in fields.items()) + '}')
     return output

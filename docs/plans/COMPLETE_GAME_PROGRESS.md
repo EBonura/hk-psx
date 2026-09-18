@@ -1317,6 +1317,64 @@ Build 120 puts it back exactly where build 116 left it. Per-tick cost is
 observable in route positions, so a movement-neutral change is not automatically
 route-neutral.
 
+## P14 steps 5 to 8: the Dream Nail, the control map and the combinations (build 121)
+
+The Dream Nail is not another nail swing, and the source keeps that clear by
+putting it in three separate places. The Hero's `Dream Nail` PlayMaker FSM
+drives the states; each state's length is its tk2d clip rather than a
+serialized time, since every phase ends on `Tk2dPlayAnimationWithEvents`; and
+the reward lives on the target's `EnemyDreamnailReaction` rather than on the
+swing. `host/dream_nail.py` binds all three and asserts the shape it read, so a
+later source change fails the cook instead of quietly shortening a phase.
+
+DN Start 0.333 s, DN Charge 0.583 s, DN Slash Antic 0.417 s and DN Slash
+0.556 s, which resample to 20, 35, 25 and 33 ticks. `CanDreamNail` wants both
+feet on the ground, a velocity above -0.1, no dash running and no attack still
+inside its recovery. Letting go during the charge cancels it; past the charge
+the swing is committed and a release does nothing. Take Control runs from Start
+to End, so the Knight has no input for the whole sequence, which the guest
+handles through the same lock the Focus and the bench already use. The hitbox
+is the `Dream Effects > Hitbox` polygon, live for exactly the Slash phase, and
+`RecieveDreamImpact` pays 33 SOUL once per target.
+
+That reward is real in the shipped scenes: 29 of the 45 carry
+`EnemyDreamnailReaction`, so each actor now cooks a `dream_soul` and keeps a
+`dream_taken` flag, matching the source's one-impact-per-enemy state.
+
+Step 6, the control map. L1 dashes, R1 holds to charge the Crystal Heart,
+Triangle holds for the Dream Nail, and both control screens say so. The replay
+schema had only movement, jump, nail and Focus; `tools/validate.py` now knows
+the whole pad, and `tools/route_probe.py` accepts l1, r1 and triangle and
+drives the abilities natively, printing the dash, wall, super dash and Dream
+Nail state every tick. A probe run confirms the dash moves 0.33333 units a tick
+with gravity suspended, which is `DASH_SPEED` 20 over 60.
+
+Step 7's combinations are hk-sim tests rather than routes, because the probe
+proved the sim answers them in milliseconds where a tape costs a build. Wall
+slide into wall jump into dash; a dash into a wall stopping flush rather than
+tunnelling; a spent air dash coming back from a wall but not from the air;
+mashing a button never beating its cooldown; and the wings surviving a wall
+jump. One of those fixtures found its own bug: holding jump from before landing
+does not re-fire on touchdown, because the source only starts the queue on a
+fresh press. That is correct, and the test now says so.
+
+Step 8 is where this package stops short and says so. Nothing in the admitted
+scenes grants any of these five abilities, so each is reachable only through
+its Cheats row, and no acquisition route exists to validate progression
+against. The Cheats page is now ten toggles deep and wants paging rather than
+tighter line spacing.
+
+Also not done: the Wall Slide, Walljump, Dash, Double Jump and the four DN
+clips all exist in the Knight's animation table and none are cooked, so an
+ability currently plays the Fall or Idle clip. That is 33 frames for the
+movement set and 26 for the Dream Nail against the 103 the Knight ships with,
+so it wants the streamed treatment the Shade already uses rather than a bigger
+per-room bank. Dream dialogue, the GENERIC line a target shows, is owed with
+it.
+
+Verification: 95 hk-sim tests plus the harness suites, the 8 routes and the 4
+power-cut points on the final CUE.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

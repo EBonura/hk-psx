@@ -6,7 +6,7 @@
 // is the same shape tests/world_runtime.rs uses: the PS1 presentation paths
 // drop out and world.rs reads its bank from TEST_BANK instead of the disc.
 #![allow(dead_code)]
-use hk_sim::{Nail, Player, ONE};
+use hk_sim::{DreamNail, Nail, Player, SuperDash, ONE};
 include!("params.rs");
 include!("paths.rs");
 mod render {
@@ -64,16 +64,32 @@ fn main() {
     let mut scene = world::scene_of(index);
     let mut bank = admit_scene(scene);
     let mut player = Player::spawn(SPAWN.0, SPAWN.1);
+    // Every ability is granted: the probe is a diagnostic for authoring routes,
+    // and a route that never presses L1, R1 or Triangle is unaffected.
+    player.has_dash = true;
+    player.has_walljump = true;
+    player.has_double_jump = true;
+    player.has_super_dash = true;
+    player.has_shade_cloak = true;
     let mut nail = Nail::new();
+    let mut dream = DreamNail::new();
+    dream.has_dream_nail = true;
     let mut state = world::State::new();
     let (mut broken, mut hazard_ticks) = (0, 0);
     let mut checkpoint = ([SPAWN.0, SPAWN.1], 1);
-    println!("tick,x,y,vy,ground,region,broken,hazard,checkpoint_x,checkpoint_y,facing");
+    println!("tick,x,y,vy,ground,region,broken,hazard,checkpoint_x,checkpoint_y,facing,\
+dash,wall,superdash,dream");
     for tick in 0..ticks {
         let held = |button: &str| events.iter().any(|(start, name, hold)| *name == button && tick >= *start && tick < start + hold);
         let room = &rooms[index];
         let region = world::resident(index).expect("selected region resident in its admitted bank");
-        player.step(PARAMS, held("right") as i32 - held("left") as i32, held("cross"), room.counts[5],
+        dream.tick(DREAM_NAIL_PARAMS, held("triangle"), &player, false);
+        player.super_dash_input(PARAMS, held("r1"));
+        player.dash_input(PARAMS, held("l1"));
+        let locked = dream.locks_control();
+        player.step(PARAMS,
+            if locked { 0 } else { held("right") as i32 - held("left") as i32 },
+            held("cross") && !locked, room.counts[5],
             state.edge_reader(&region, room));
         nail.tick(ATTACK_PARAMS, held("square"), held("up") as i32 - held("down") as i32, &mut player);
         let strike = state.strike(&region, &nail, ATTACK_PARAMS, NAIL_POLYGONS, &player);
@@ -87,10 +103,18 @@ fn main() {
         // Every tick: route authoring needs to see the exact frame a landing,
         // a buffered jump or a ledge contact happens, not a 10-tick average.
         {
-            println!("{},{:.5},{:.5},{:.5},{},{},{},{},{:.5},{:.5},{}", tick,
+            let wall = if player.wall_locked { "locked" } else if player.wall_sliding { "sliding" }
+                else if player.touching_wall != 0 { "touching" } else { "-" };
+            let superdash = match player.super_dash {
+                SuperDash::Off => "-", SuperDash::Charging(_) => "charging",
+                SuperDash::Ready => "ready", SuperDash::Travelling(_) => "travelling",
+                SuperDash::Recovering(_) => "recovering",
+            };
+            println!("{},{:.5},{:.5},{:.5},{},{},{},{},{:.5},{:.5},{},{},{},{},{:?}", tick,
                 player.x as f64 / ONE as f64, player.y as f64 / ONE as f64,
                 player.vy as f64 / ONE as f64, player.grounded, index + 1, broken, hazard,
-                checkpoint.0[0] as f64 / ONE as f64, checkpoint.0[1] as f64 / ONE as f64, checkpoint.1);
+                checkpoint.0[0] as f64 / ONE as f64, checkpoint.0[1] as f64 / ONE as f64, checkpoint.1,
+                player.dash_left, wall, superdash, dream.phase);
         }
         if !world::contains(region.bounds, player.x, player.y) {
             if let Some(next) = locate(&bank, region.scene, player.x, player.y) {

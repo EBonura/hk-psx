@@ -19,8 +19,11 @@ ENEMY_ROUTE=('9:start:1,54:right:756,'+','.join(f'{n}:square:2' for n in range(7
 EARNED_COMBAT_ROUTE=('9:start:1,54:right:706,'+','.join(f'{n}:square:2' for n in range(78,720,24))+','+
                     ','.join(f'{n}:cross:24' for n in (285,410,540,655))+','+
                     ','.join(f'{n}:square:2' for n in range(722,1200,26)))
-BUTTONS={'select':1,'start':8,'up':16,'right':32,'down':64,'left':128,
-         'circle':8192,'cross':16384,'square':32768}
+# The full pad, so a route can exercise the abilities P14 bound to the shoulders
+# and Triangle, not only movement, jump, nail and Focus.
+BUTTONS={'select':1,'l3':2,'r3':4,'start':8,'up':16,'right':32,'down':64,'left':128,
+         'l2':256,'r2':512,'l1':1024,'r1':2048,
+         'triangle':4096,'circle':8192,'cross':16384,'square':32768}
 def poll_tape(path,events,count=1024):
     """PXITAPE2: verified frontend format, one input sample per port-1 poll.
 

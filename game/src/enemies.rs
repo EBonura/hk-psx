@@ -306,6 +306,9 @@ struct Actor {
     recoil: [i32; 2],
     corpse: Option<hk_sim::Corpse>,
     geo_paid: bool,
+    /// A Dream Nail slash pays SOUL once per actor, as the source's
+    /// `EnemyDreamnailReaction` clears its state after the first impact.
+    dream_taken: bool,
     runtime: Runtime,
 }
 /// One controller runtime per actor; the Crawler keeps only the shared WalkState.
@@ -353,6 +356,7 @@ impl Actor {
             recoil: [0; 2],
             corpse: None,
             geo_paid: false,
+            dream_taken: false,
             runtime: match spec.controller {
                 ActorController::Crawler => Runtime::Walker,
                 ActorController::Runner { params, .. } => {
@@ -830,6 +834,8 @@ pub struct Events {
     pub hits: u16,
     pub kills: u16,
     pub hurt: Hurt,
+    /// SOUL taken by a Dream Nail slash this tick, summed over the actors hit.
+    pub dream_soul: u16,
 }
 pub struct EnemyWorld {
     actors: [Option<Actor>; MAX_ACTORS],
@@ -944,6 +950,7 @@ impl EnemyWorld {
         player: &mut Player,
         vitals: &mut Vitals,
         nail: &Nail,
+        dream: &hk_sim::DreamNail,
         response: &mut hk_sim::NailResponse,
         attack: AttackParams,
         polygons: [&[[i32; 2]]; 4],
@@ -957,6 +964,18 @@ impl EnemyWorld {
             hits: 0,
             kills: 0,
             hurt: Hurt::Ignored,
+            dream_soul: 0,
+        };
+        // The Dream Nail carries its own polygon, live for the whole slash.
+        let mut dream_points = [[0; 2]; 16];
+        let dream_polygon: &[[i32; 2]] = if dream.hitting() {
+            let src = crate::DREAM_NAIL_POLYGON;
+            for (dst, p) in dream_points.iter_mut().zip(src) {
+                *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+            }
+            &dream_points[..src.len()]
+        } else {
+            &dream_points[..0]
         };
         let mut points = [[0; 2]; 16];
         let polygon = if nail.hitting(attack) {
@@ -1019,6 +1038,11 @@ impl EnemyWorld {
                 continue; // no attack/recoil sensing against an unavailable terrain owner
             }
             let bounds = actor.bounds(spec);
+            if !dream_polygon.is_empty() && spec.dream_soul != 0 && !actor.dream_taken
+                && hk_sim::polygon_hits_box(dream_polygon, bounds) {
+                actor.dream_taken = true;
+                events.dream_soul = events.dream_soul.saturating_add(spec.dream_soul);
+            }
             if !polygon.is_empty() && hk_sim::polygon_hits_box(polygon, bounds) {
                 if vitals.can_control() {
                     response.contact(
@@ -1340,7 +1364,7 @@ mod runner_runtime_tests {
         initial_direction:-1,random_start_direction:false,walk_clip:0,turn_clip:1,
         corpse:Some(hk_sim::CorpseSpec {air_clip:2,land_clip:2,bounds:[-ONE/2,-ONE,ONE/2,0],
             spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0}),
-        recoil_speed:10*ONE,recoil_ticks:9,
+        recoil_speed:10*ONE,recoil_ticks:9, dream_soul: 0
     };
     // Source-free six-clip bank with the real Runner rates/lengths. Each clip's
     // frames reference a distinct texture so draw selection is independently visible.
@@ -1456,7 +1480,7 @@ mod runner_runtime_tests {
         // Coincident origin has conservatively unknown LOS. Accepted damage must
         // nevertheless enter anticipation BEFORE its horizontal reset restarts Walk.
         world.sync_region(&r);nail.active=true;nail.age=1;
-        let hit=world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&mut response,
+        let hit=world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&hk_sim::DreamNail::new(),&mut response,
             attack,[poly;4],cheats,[0,SPEC.y,-2496922],|e|events.push(e),|_,_,_|None);
         assert_eq!((hit.hits,hit.kills),(1,0));
         assert_eq!(world.actors[0].unwrap().health.hp,10);
@@ -1464,7 +1488,7 @@ mod runner_runtime_tests {
         assert!(events[chase+1..].iter().any(|e|e.kind==RunnerEventKind::AudioPlay));
         assert_eq!(world.actors[0].unwrap().recoil_left,9);
         let after_first=events.len();
-        world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&mut response,
+        world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&hk_sim::DreamNail::new(),&mut response,
             attack,[poly;4],cheats,[0,SPEC.y,-2496922],|e|events.push(e),|_,_,_|None);
         assert_eq!(world.actors[0].unwrap().health.hp,10); // evaded overlap
         assert!(!events[after_first..].iter().any(|e|matches!(e.kind,RunnerEventKind::ChaseSound {..})));
@@ -1472,7 +1496,7 @@ mod runner_runtime_tests {
         for expected in [5,0] {
             let actor=world.actors[0].as_mut().unwrap();
             actor.health.evasion_ticks=0;actor.recoil_left=0;player.x=actor.x;player.y=actor.y;
-            let result=world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&mut response,
+            let result=world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&hk_sim::DreamNail::new(),&mut response,
                 attack,[poly;4],cheats,[0,SPEC.y,-2496922],|e|events.push(e),|_,_,_|None);
             assert_eq!(world.actors[0].unwrap().health.hp,expected);
             assert_eq!(result.kills,u16::from(expected==0));
@@ -1509,7 +1533,7 @@ mod runner_runtime_tests {
         let attack=AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8, ..AttackParams::ZERO };
         let poly=&[[-3*ONE,-3*ONE],[3*ONE,-3*ONE],[3*ONE,3*ONE],[-3*ONE,3*ONE]][..];
         let mut events=Vec::new();
-        let hit=world.tick(&r,&room,&mut State,&mut player,&mut vitals,&nail,
+        let hit=world.tick(&r,&room,&mut State,&mut player,&mut vitals,&nail,&hk_sim::DreamNail::new(),
             &mut hk_sim::NailResponse::new(),attack,[poly;4],
             crate::cheats::Settings {invincible:true,..crate::cheats::Settings::new()},
             [0,SPEC.y,-2496922],|e|events.push(e),|_,_,_|None);
@@ -1527,7 +1551,7 @@ mod runner_runtime_tests {
         let mut world=EnemyWorld::new();let mut events=Vec::new();
         let tick=|world:&mut EnemyWorld,r:&Region,events:&mut Vec<RunnerEvent>| {
             world.tick(r,&room,&mut State,&mut Player::spawn(30*ONE,SPEC.y),
-                &mut Vitals::new(crate::VITAL_PARAMS),&Nail::new(),
+                &mut Vitals::new(crate::VITAL_PARAMS),&Nail::new(),&hk_sim::DreamNail::new(),
                 &mut hk_sim::NailResponse::new(),
                 AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8, ..AttackParams::ZERO },
                 [&[];4],crate::cheats::Settings::new(),[0,SPEC.y,-2496922],

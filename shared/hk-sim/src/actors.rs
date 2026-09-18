@@ -67,6 +67,9 @@ pub struct ActorSpec {
     pub corpse: Option<crate::CorpseSpec>,
     pub recoil_speed: i32,
     pub recoil_ticks: u16,
+    /// SOUL a Dream Nail slash takes from this actor, once. Zero where the
+    /// source carries no `EnemyDreamnailReaction`, or one that pays nothing.
+    pub dream_soul: u16,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct EnemyParams {

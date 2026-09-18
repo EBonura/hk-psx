@@ -289,6 +289,7 @@ fn main() {
     let mut nail=Nail::new();
     let mut focus=hk_sim::Focus::new();
     let mut nail_response=hk_sim::NailResponse::new();
+    let mut dream=hk_sim::DreamNail::new();
     let mut region_id=0usize;
     let mut frame=0u32;let mut attacks=0u32;
     let mut safe=(SPAWN.0,SPAWN.1,0usize);
@@ -566,6 +567,10 @@ fn main() {
                                 save_prompt=Some(0);
                             }
                             let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control()||save_prompt.is_some();
+                            // Take Control: the Dream Nail owns the Knight from Start to End.
+                            dream.has_dream_nail=settings.cheats.dream;
+                            dream.tick(DREAM_NAIL_PARAMS,pad.is_held(button::TRIANGLE)&&vitals.can_control(),&player,locked);
+                            let locked=locked||dream.locks_control();
                             let dir=if door.entering() {door.forced_direction()}else if locked {0}else{i32::from(pad.is_held(button::RIGHT))-i32::from(pad.is_held(button::LEFT))};
                             let was_grounded=player.grounded;
                             let jump=!locked && !read_consumes && pad.is_held(button::CROSS);
@@ -627,7 +632,7 @@ fn main() {
                                 }
                                 if shade_events.returned_geo>0 {geo.add_quietly(shade_events.returned_geo,geo::GEO_PARAMS);geo_audio::pickup(1);}
                             }
-                            let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
+                            let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&dream,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
                                 [camera.0,camera.1,-2496922],runner_event,
                                 |scene,x,y| {let i=cache.locate(scene,x,y)?;Some((world::resident(i)?,cache.room_for(i)?))});
                             enemies.take_geo_deaths(r.scene,|source,x,y|geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));
@@ -637,6 +642,7 @@ fn main() {
                             if collected.collected>0 {geo_audio::pickup(collected.last_value);}
                             presentation::checkpoint();
                             unsafe {HK_ENEMY_HITS+=enemy_events.hits as u32;HK_ENEMY_KILLS+=enemy_events.kills as u32;HK_SOUL=vitals.soul as u32;}
+                            if enemy_events.dream_soul>0 {vitals.add_soul(VITAL_PARAMS,enemy_events.dream_soul);}
                             if enemy_events.hits>0 {audio::enemy_hit();}
                             if enemy_events.hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
                             if enemy_events.hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
