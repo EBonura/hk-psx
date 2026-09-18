@@ -353,3 +353,22 @@ the source loop. No ring state, linked allocation, audible-quality choice or
 underrun guarantee is implemented. The pinned SDK has low-level upload, loop
 address and ENDX APIs, but no complete refill/IRQ owner; this must coexist with
 the existing CD exception wrapper and preserve ADPCM history and heal tails.
+
+## Sound effect and Geo resampling (build 108)
+
+`cook_audio.convert_wav`, which the eight effects, the footstep set and the six
+Geo samples pass through, used a box average for integer rate factors and a
+rational box integration for the 48000 to 11025 footsteps. A boxcar is a poor
+lowpass: it rolls off inside the band it keeps and barely rejects above the new
+Nyquist, so content folded back as aliasing. It now calls the same ffmpeg
+polyphase resampler that `cook_music.cook_clip` already used for music,
+ambience, Focus and Runner, so the whole game shares one conversion rather than
+two, and the hand-written filter is gone rather than replaced by another.
+
+Sizes are unchanged: the effects bank stays 63,376 bytes and Geo moves 13,904
+to 13,888, one ADPCM block. A real filter has a finite stopband where the box
+cancelled the Nyquist-alternating case exactly, so that test now asserts the
+residue is 40 dB down rather than zero. The resampler primes its filter, which
+can truncate a clip shorter than that window, so `convert_wav` fails when the
+output length does not match the input duration instead of shipping a clip
+missing its head or tail.

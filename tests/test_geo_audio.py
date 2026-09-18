@@ -40,16 +40,21 @@ class GeoAudioTests(unittest.TestCase):
             with self.assertRaises(ValueError):geo.random_audio_action(bad)
 
     def test_no_truncation_final_pcm_window_and_safe_terminator(self):
-        frames=[(1000,-500)]*40+[(24000,24000)]
+        # Long enough for the resampler to prime; the tail stays loud so a
+        # truncated conversion or a dropped final window would show up.
+        frames=[(1000,-500)]*4000+[(24000,24000)]*100
         wav=io.BytesIO()
         with wave.open(wav,'wb') as out:
             out.setnchannels(2);out.setsampwidth(2);out.setframerate(44100)
             out.writeframes(b''.join(struct.pack('<hh',*p) for p in frames))
         pcm,meta=convert_wav(wav.getvalue(),11025)
-        self.assertEqual(len(pcm),11);self.assertEqual(pcm[-1],24000)
+        self.assertEqual(meta['source_frames'],4100)
+        self.assertEqual(len(pcm),1025)
+        self.assertGreater(pcm[-1],20000)
         bank=encode(pcm);decoded=decode_zero(bank)
-        self.assertEqual(meta['source_frames'],41);self.assertEqual(len(decoded),28)
-        self.assertNotEqual(decoded[10],0);self.assertEqual(bank[-16:],bytes([12,1])+bytes(14))
+        self.assertEqual(len(decoded),(len(pcm)+27)//28*28)
+        self.assertNotEqual(decoded[len(pcm)-1],0)
+        self.assertEqual(bank[-16:],bytes([12,1])+bytes(14))
         unsafe=bytearray(bank);unsafe[1]=3
         with self.assertRaises(ValueError):decode_zero(unsafe)
 

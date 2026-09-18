@@ -154,7 +154,7 @@ def main():
         'break_reuse':dict(door_meta,source='sharedassets6.assets:92',address=0x1010,
                           resident_bank_sha256=hashlib.sha256(resident).hexdigest()),
         'limitations':['Second rock-destruction variant sharedassets6.assets:99 omitted for SPU budget.',
-            'Complete clips folded to mono and box-filtered to 11025 Hz before predictor-zero ADPCM.',
+            'Complete clips folded to mono and polyphase-resampled to 11025 Hz before predictor-zero ADPCM.',
             'Equal-weight deterministic event PRNG differs from original Unity RNG.',
             'One voice per event class; rapid same-class retriggers replace that class.',
             'Initial source pitch 1 used; inherited Geo bounce pitch, spatial attenuation and source mixer are not reproduced.'],
