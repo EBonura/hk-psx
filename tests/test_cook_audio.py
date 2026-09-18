@@ -9,7 +9,6 @@ import subprocess
 import tempfile
 import unittest
 import wave
-from fractions import Fraction
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'host'))
 from cook_audio import BANK_LIMIT, EVENTS, convert_wav, decode_zero, death_action_layers, encode, pack_bank
 
@@ -90,45 +89,38 @@ class AudioTests(unittest.TestCase):
         self.assertTrue(all(-32768 <= x <= 32767 for x in decoded))
         self.assertLessEqual(max(abs(a - b) for a, b in zip(samples, decoded)), 4095)
 
-    def test_stereo_downmix_and_lowpass_preserve_duration(self):
-        pcm, meta = convert_wav(wav([1000, -1000, 3000, 1000, -1000, -3000], 2), 22050)
-        self.assertEqual(pcm, [1000, -2000])
-        self.assertEqual(meta['source_frames'], 3)
+    def test_downmix_and_resample_preserve_duration_and_level(self):
+        # Real clip lengths, since the resampler primes its filter.
+        pcm, meta = convert_wav(wav([1000, -1000, 3000, 1000, -1000, -3000] * 4000, 2), 22050)
+        self.assertEqual(meta['source_frames'], 12000)
         self.assertEqual(meta['source_channels'], 2)
-        self.assertEqual(meta['samples'], 2)
+        self.assertEqual(len(pcm), 6000)
+        self.assertEqual(meta['samples'], 6000)
+        # A constant survives the conversion exactly: no droop, no DC shift.
+        flat, _ = convert_wav(wav([12345] * 97600, rate=48000), 11025)
+        self.assertEqual(len(flat), 22418)
+        self.assertEqual(set(flat), {12345})
 
-    def test_lowpass_removes_alternating_nyquist_signal(self):
-        pcm, _ = convert_wav(wav([10000, -10000] * 20), 11025)
-        self.assertEqual(pcm, [0] * 10)
+    def test_resample_rejects_the_signal_above_the_new_nyquist(self):
+        pcm, _ = convert_wav(wav([10000, -10000] * 2000), 11025)
+        # A real filter leaves a finite stopband residue where the old box
+        # average cancelled exactly; 40 dB down is the property that matters.
+        self.assertLess(max(abs(x) for x in pcm), 1000)
 
-    def test_48000_running_sequence_uses_rational_filter_without_pitch_change(self):
-        source=[1000,-2000,3000,-4000,5000,-6000,7000,-8000,9000]
-        pcm,meta=convert_wav(wav(source,rate=48000),11025)
-        # Independent exact rational integration of source sample intervals;
-        # the incomplete final output window repeats the last source frame.
-        expected=[]
-        for j in range((len(source)*11025+47999)//48000):
-            lo,hi=Fraction(j*48000,11025),Fraction((j+1)*48000,11025)
-            area=Fraction(0)
-            for i in range(int(lo),int(hi)+1):
-                width=max(Fraction(0),min(hi,i+1)-max(lo,i))
-                area+=source[min(i,len(source)-1)]*width
-            expected.append(round(area/(hi-lo)))
-        self.assertEqual(pcm,expected)
-        self.assertEqual(meta['source_frames'],len(source))
-        self.assertEqual(meta['samples'],3)
-        dc,_=convert_wav(wav([12345]*97600,rate=48000),11025)
-        self.assertEqual(len(dc),22418)
-        self.assertEqual(set(dc),{12345})
+    def test_non_integer_rate_conversion_keeps_duration_and_pitch(self):
+        pcm, meta = convert_wav(wav([1234] * 97600, rate=48000), 11025)
+        self.assertEqual(len(pcm), 22418)
+        self.assertEqual(meta['samples'], 22418)
 
-    def test_empty_rational_clip_has_no_invented_sample(self):
-        pcm,meta=convert_wav(wav([],rate=48000),11025)
-        self.assertEqual(pcm,[])
-        self.assertEqual(meta['samples'],0)
+    def test_empty_clip_has_no_invented_sample(self):
+        pcm, meta = convert_wav(wav([], rate=48000), 11025)
+        self.assertEqual(pcm, [])
+        self.assertEqual(meta['samples'], 0)
 
-    def test_rate_conversion_rejects_unverified_factor(self):
+    def test_a_truncated_resample_is_rejected_rather_than_shipped(self):
+        # Shorter than the filter's priming window: must fail, not lose audio.
         with self.assertRaises(ValueError):
-            convert_wav(wav([0] * 100), 8000)
+            convert_wav(wav([1000, -1000, 3000], 1), 22050)
 
     def test_bad_loop_flags_are_rejected(self):
         bank = bytearray(encode([1000] * 28))

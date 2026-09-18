@@ -4,6 +4,7 @@ import io
 import json
 import math
 import struct
+import subprocess
 import wave
 from pathlib import Path
 import fmod_nosound  # noqa: F401  offline FSB decoding without an audio device
@@ -62,38 +63,31 @@ def encode(samples):
 
 
 def convert_wav(data, rate):
-    """Mono fold-down and box lowpass, preserving the complete duration.
+    """Mono fold-down and resample, preserving the complete duration.
 
-    Existing integer-factor paths retain their exact bytes. The48000Hz running
-    sequence uses11025Hz like the long-SFX category; rational box integration
-    avoids changing its duration/pitch to force an integer rate ratio.
+    Uses the same ffmpeg polyphase resampler the music, ambience, Focus and
+    Runner cooks already run through `cook_music.cook_clip`, rather than a
+    second hand-written filter. The previous box average aliased everything
+    above the new Nyquist back into the band and rolled off inside it, which
+    was audible on the nail swing and footsteps.
     """
     with wave.open(io.BytesIO(data)) as w:
         channels, source_rate, frames = w.getnchannels(), w.getframerate(), w.getnframes()
         if w.getsampwidth() != 2 or channels not in (1, 2):
             raise ValueError('unvalidated source PCM format or rate conversion')
-        raw = struct.unpack('<' + 'h' * (frames * channels), w.readframes(frames))
-    factor = source_rate // rate
-    rational = (source_rate, rate) == (48000, 11025)
-    if not rational and (source_rate % rate or factor not in (1, 2, 4)):
-        raise ValueError('unvalidated rate-conversion factor')
-    mono = [sum(raw[i:i + channels]) / channels for i in range(0, len(raw), channels)]
-    # Repeat the last source frame for an incomplete final filter window, as
-    # the prior door 2:1 conversion did. One round after channel/time averaging.
-    if rational:
-        pcm = []
-        for out in range((len(mono)*rate+source_rate-1)//source_rate):
-            start, end = out*source_rate, (out+1)*source_rate
-            total = 0.0
-            while start < end:
-                index = start//rate
-                following = min(end, (index+1)*rate)
-                total += mono[min(index,len(mono)-1)]*(following-start)
-                start = following
-            pcm.append(round(total/source_rate))
-    else:
-        pcm = [round(sum(mono[min(i + j, len(mono) - 1)] for j in range(factor)) / factor)
-               for i in range(0, len(mono), factor)]
+    if frames == 0:
+        return [], {'source_rate': source_rate, 'source_channels': channels,
+                    'source_frames': 0, 'sample_rate': rate, 'samples': 0}
+    converted = subprocess.run(
+        ['ffmpeg', '-v', 'error', '-i', 'pipe:0', '-ar', str(rate), '-ac', '1', '-f', 's16le', 'pipe:1'],
+        input=data, stdout=subprocess.PIPE, check=True).stdout
+    pcm = list(struct.unpack('<' + 'h' * (len(converted) // 2), converted))
+    # The resampler primes its filter, so a clip shorter than that window can
+    # come back truncated. Every real clip here is thousands of frames; fail
+    # rather than let a short one ship silently missing its head or tail.
+    expected = round(frames * rate / source_rate)
+    if abs(len(pcm) - expected) > 1:
+        raise ValueError(f'resampled length {len(pcm)} is not the expected {expected}')
     return pcm, {'source_rate': source_rate, 'source_channels': channels,
                  'source_frames': frames, 'sample_rate': rate, 'samples': len(pcm)}
 
@@ -348,7 +342,7 @@ def main():
                            'Running Dust sequence only; walk-zone and other environment sequences remain unsupported',
                            'AudioSource isPlaying resampled to bounded60Hz clip-duration counters',
                            'Pause stops/restarts the footstep sequence rather than resuming its exact sample cursor']},
-        'limitations': ['Mono box-filtered22050Hz short SFX;11025Hz long movement; predictor-zero ADPCM',
+        'limitations': ['Mono polyphase-resampled 22050 Hz short SFX; 11025 Hz long movement; predictor-zero ADPCM',
                        'Ordinary SFX use pitch1.0; Great Door hit uses source pitch bounds with deterministic guest RNG',
                        'Nail uses one authored Slash sound for all supported directions',
                        'Unity mixer/positional effects omitted; source voice volumes scaled1/3 for mix headroom',
