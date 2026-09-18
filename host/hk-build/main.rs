@@ -32,23 +32,27 @@ const REQUIRED: &[(&str, &str, u64)] = &[("town-bench", "HK_BENCH_RESTS", 1), ("
     ("town-shade", "HK_HEALTH", 2),
     // kings-death walks the King's Pass traversal with the nail silent past the fifth
     // breakable, so the Crawler there survives to kill the Knight. Death must record a
-    // Shade at the spot with nailDamage * clamp(maxHealth / 2, 1, 99) health and write
-    // the card even though no bench has been rested.
+    // Shade at the spot with nailDamage * clamp(maxHealth / 2, 1, 99) health, and must
+    // not touch the card: this port only writes when the player accepts the bench prompt.
     ("kings-death", "HK_DEATHS", 1), ("kings-death", "HK_ENEMY_KILLS", 0),
     ("kings-death", "HK_SHADE_PRESENT", 1), ("kings-death", "HK_SHADE_HP", 10),
-    ("kings-death", "HK_SAVE_WRITES", 1), ("kings-death", "HK_SAVE_ERRORS", 0),
+    ("kings-death", "HK_SAVE_WRITES", 0), ("kings-death", "HK_SAVE_ERRORS", 0),
     // kings-return boots from the card kings-death itself wrote, so the Shade it spawns
     // comes from a real death rather than a hand-seeded record. Walking the same
     // traversal back must find it there and recover it without dying again. Regenerate
     // the fixture from .hkpsx/validate/kings-death.mcd whenever the save record changes.
     ("kings-return", "HK_SAVE_LOADED", 1), ("kings-return", "HK_SHADE_KILLS", 1),
-    ("kings-return", "HK_SHADE_PRESENT", 0), ("kings-return", "HK_DEATHS", 0)];
+    ("kings-return", "HK_SHADE_PRESENT", 0), ("kings-return", "HK_DEATHS", 0),
+    // bench-save resumes at the Dirtmouth bench, sits, and accepts the prompt. It is the
+    // only way this port writes the card, and what the power-cut check interrupts.
+    ("bench-save", "HK_BENCH_RESTS", 1), ("bench-save", "HK_SAVE_WRITES", 1), ("bench-save", "HK_SAVE_ERRORS", 0)];
 /// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
 /// fresh formatted card when the fixture is absent (the run writes it back there).
 const MEMCARDS: &[(&str, &str)] = &[("town-bench", "town-bench.mcd"), ("town-continue", "town-continue.mcd"),
-    ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd")];
+    ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd"),
+    ("bench-save", "town-continue.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("gate-return", true), ("town-reset", true), ("town-resident", true), ("town-well", false), ("crossroads-floor", false), ("crossroads-exit", true), ("town-bench", false), ("town-continue", false), ("town-shade", false),
-    ("kings-death", false), ("kings-return", false)];
+    ("kings-death", false), ("kings-return", false), ("bench-save", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,

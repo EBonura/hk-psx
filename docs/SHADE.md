@@ -49,6 +49,16 @@ Scream, Friendly, Lake and Jar branches are unreachable at this port's levels;
 `host/shade.py` fails the build if any of them stops being gated on a zero
 level.
 
+## When the card is written
+
+Never on its own. The source autosaves on a bench rest and again on death;
+this port asks instead. Sitting heals and sets the respawn marker as the source
+does, then a "Save game?" prompt takes Yes or No, and only Yes writes. Death
+records the Shade, the Geo pool and the soul limiter in memory alone, so they
+reach the card at the next bench the player chooses to save at. That is a
+deliberate departure from the source, at the project owner's request, not an
+unimplemented autosave.
+
 ## Saving safely
 
 `Card::write` frees a file's directory entry before writing its data and only

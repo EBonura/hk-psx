@@ -288,8 +288,11 @@ fn main() {
     let mut frame=0u32;let mut attacks=0u32;
     let mut safe=(SPAWN.0,SPAWN.1,0usize);
     let mut safe_facing=1;
-    // Pending Save Game record, written at the frame boundary after the tick that rested.
+    // Pending Save Game record, written at the frame boundary once the player
+    // accepts the bench prompt. Nothing else ever writes the card.
     let mut save_requested:Option<save::Save>=None;
+    /// Row 0 is Yes, row 1 is No, while the seated save prompt is open.
+    let mut save_prompt:Option<u8>=None;
     let mut gate_cooldown=0u16;
     // Ticks since the current scene started (source Delay Collider gates).
     let mut scene_ticks=0u32;let mut scene_ticks_scene=usize::MAX;
@@ -392,7 +395,7 @@ fn main() {
                 draw_frame(&room,body_frame,&player,camera);prims+=1;
             }
             if let Some(f)=effect_frame {draw_frame(&room,f,&player,camera);prims+=1;}
-            prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)),settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(vitals.blue_health));render::submit(vitals.health,settings.cheats.params(VITAL_PARAMS).max_health,vitals.soul,soul_cap(&shade),paused,vitals.blue_health,door.shade());
+            prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)),settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(vitals.blue_health),save_prompt);render::submit(vitals.health,settings.cheats.params(VITAL_PARAMS).max_health,vitals.soul,soul_cap(&shade),paused,vitals.blue_health,door.shade());
             emit::counter(counter::TRI_PRIMITIVES,prims*2);emit::stage_end(stage::RENDER);
             emit::stage_begin(stage::PRESENT);
             let display=fb.begin_deferred_swap();
@@ -476,15 +479,13 @@ fn main() {
                         presentation::checkpoint();
                         if vitals.needs_death_respawn() {
                             // Hero Death Anim: Remove Geo moves the wallet into the pool the
-                            // Shade carries, Set Shade records where and how strong it is, and
-                            // the Save state writes the card. SOUL is already drained to zero.
+                            // Shade carries and Set Shade records where and how strong it is.
+                            // The source also saves here; this port never writes the card on
+                            // its own, so the Shade reaches it at the next bench the player
+                            // chooses to save at.
                             let params=settings.cheats.params(VITAL_PARAMS);
                             shade.record_death(r.scene,[player.x,player.y],
                                 shade::death_health(params.max_health,params.nail_damage),geo.wallet());
-                            let (save_scene,save_seat,save_facing,save_slot)=respawn
-                                .map_or((world::scene_of(0),[SPAWN.0,SPAWN.1],1,0),|(scene,seat,facing,slot)|(scene,seat,facing,slot));
-                            save_requested=Some(save::Save{scene:save_scene as u32,seat:save_seat,facing:save_facing,
-                                region:save_slot as u32,geo:0,door_hits:door.hits(),shade:shade.record(),sequence:0});
                             unsafe {HK_GEO_LOST=HK_GEO_LOST.saturating_add(geo.death());}
                             geo.leave_scene(r.scene,geo::GEO_PARAMS);geo.reset_enemies(r.scene);
                             life.reset();
@@ -517,23 +518,40 @@ fn main() {
                                 nail=Nail::new();nail_response=hk_sim::NailResponse::new();player.vy=0;player.jumping=false;
                             }
                             let pressed=|b:u16| pad.is_held(b)&&!prev_pad.is_held(b);
+                            // The seated prompt owns input while it is up, so the bench
+                            // neither reads a leave press nor starts another rest.
+                            let asking=save_prompt.is_some();
+                            if let Some(row)=save_prompt {
+                                if pressed(button::UP)||pressed(button::DOWN) {save_prompt=Some(1-row);}
+                                else if pressed(button::CROSS) {
+                                    if row==0 {
+                                        let stand=[bench_state.seat()[0],player.y];
+                                        save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,
+                                            region:region_id as u32,geo:geo.wallet(),door_hits:door.hits(),
+                                            shade:shade.record(),sequence:0});
+                                    }
+                                    save_prompt=None;
+                                } else if pressed(button::CIRCLE) {save_prompt=None;}
+                            }
                             let bench_events={
                                 let hero_body=[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top];
-                                let free=!(focus.locks_control()||dialogue::open()||door.pending()||read_consumes)&&vitals.can_control()&&!nail.active;
-                                let leave=[button::CROSS,button::SQUARE,button::LEFT,button::RIGHT,button::UP,button::DOWN].iter().any(|&b|pressed(b));
+                                let free=!(focus.locks_control()||dialogue::open()||door.pending()||read_consumes||asking)&&vitals.can_control()&&!nail.active;
+                                let leave=!asking&&[button::CROSS,button::SQUARE,button::LEFT,button::RIGHT,button::UP,button::DOWN].iter().any(|&b|pressed(b));
                                 let grounded=player.grounded;
-                                bench_state.tick(r,hero_body,&mut player,grounded,free,pressed(button::UP),leave)
+                                bench_state.tick(r,hero_body,&mut player,grounded,free,!asking&&pressed(button::UP),leave)
                             };
                             if bench_events.rest {
-                                // Rest Burst: HERO REVIVED, respawn marker on this bench, then Save Game.
+                                // Rest Burst: HERO REVIVED and the respawn marker, then ask.
+                                // The source saves here without asking; this port never
+                                // writes the card unless the player says so.
                                 vitals.heal(settings.cheats.params(VITAL_PARAMS),u16::MAX);
                                 // Sitting keeps the Knight's floor y; the source seat y is the sprite's, and a
                                 // body spawned there starts inside the floor and falls through it.
                                 let stand=[bench_state.seat()[0],player.y];
                                 respawn=Some((r.scene,stand,player.facing,region_id));
-                                save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,region:region_id as u32,geo:geo.wallet(),door_hits:door.hits(),shade:shade.record(),sequence:0});
+                                save_prompt=Some(0);
                             }
-                            let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control();
+                            let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control()||save_prompt.is_some();
                             let dir=if door.entering() {door.forced_direction()}else if locked {0}else{i32::from(pad.is_held(button::RIGHT))-i32::from(pad.is_held(button::LEFT))};
                             let was_grounded=player.grounded;
                             let jump=!locked && !read_consumes && pad.is_held(button::CROSS);

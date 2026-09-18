@@ -43,12 +43,9 @@ def findable_saves(path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--route', default='kings-death', help='a route whose run writes the card')
-    # Both copies present, so the next write must free an existing directory
-    # entry while the other copy carries the save being relied on. That is the
-    # case the single-file version lost. The death save also resumes at the
-    # new-game spawn, so the route replays as recorded and dies again.
-    p.add_argument('--card', type=Path, default=ROOT / 'tools/cards/power-cut.mcd')
+    p.add_argument('--route', default='bench-save', help='a route whose run writes the card')
+    # Resumes at the Dirtmouth bench, so the route sits and accepts the prompt.
+    p.add_argument('--card', type=Path, default=ROOT / 'tools/cards/town-continue.mcd')
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
     report = json.loads((ROOT / '.hkpsx/validate' / a.route / 'command.json').read_text())
@@ -70,11 +67,22 @@ def main():
         result = subprocess.run(command, capture_output=True, text=True)
         return result, run
 
-    # Calibrate against the very card the cuts will use: a card that already
-    # holds a save takes longer to survey at boot, so the route's own cycle
-    # numbers would put every cut on the wrong side of the write.
+    # Seed the profile's second copy first, so the write under test is one that
+    # frees an existing directory entry while the other copy carries the save.
+    # That is the case a single-file save lost entirely.
+    seeded = a.output / 'seeded.mcd'
+    shutil.copyfile(a.card, seeded)
+    result, _ = replay(6_000_000_000, 'seed', seeded)
+    if result.returncode != 0:
+        raise SystemExit(f'seed run failed: {result.stderr[:200]}')
+    before = findable_saves(seeded)
+    if len(before) < 2:
+        raise SystemExit('seed run did not leave both copies; the cuts would not test an overwrite')
+    # Calibrate against the very card the cuts will use: boot timing depends on
+    # what the card holds, so the route's own cycle numbers would put every cut
+    # on the wrong side of the write.
     calibration = a.output / 'calibration.mcd'
-    shutil.copyfile(a.card, calibration)
+    shutil.copyfile(seeded, calibration)
     result, run = replay(6_000_000_000, 'calibrate', calibration)
     if result.returncode != 0:
         raise SystemExit(f'calibration run failed: {result.stderr[:200]}')
@@ -86,18 +94,15 @@ def main():
     done = next((int(r['cpu_tick']) for r in rows if int(r[writes]) > 0), None)
     if not window or done is None:
         raise SystemExit('calibration run never completed a card write')
-    if findable_saves(calibration) == findable_saves(a.card):
+    if findable_saves(calibration) == before:
         raise SystemExit('calibration run did not change the card; the cuts would prove nothing')
-    before = findable_saves(a.card)
-    if not before:
-        raise SystemExit('the starting card holds no loadable save')
     results = []
     # Early, middle and late in the transfer, plus just past its completion.
     span = done - window[0]
     for name, steps in (('early', window[0] + span // 8), ('middle', window[0] + span // 2),
                         ('late', done - span // 8), ('after', done + span)):
         card = a.output / f'{name}.mcd'
-        shutil.copyfile(a.card, card)
+        shutil.copyfile(seeded, card)
         result, _ = replay(steps, name, card)
         saves = findable_saves(card)
         results.append({'cut': name, 'steps': steps, 'exit': result.returncode, 'saves': saves,

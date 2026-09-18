@@ -1086,7 +1086,17 @@ Headroom fell to 68,988 bytes from 116,124: the cooked art is 30,386 of that
 and the controller, runtime and grown save record the rest. The trend since
 build 94 is now 246 KB, 132 KB, 116 KB, 69 KB, and the next large runtime
 needs a budget pass before it lands rather than after. Not done: a route that
-the source save menu and the Shade's particles, orbs and audio. Step 8 is
+the Shade's particles, orbs and audio. The save screen is in: Start Game opens
+four profiles, each owning two card files, showing Geo or Empty or Damaged with
+an explicit line for no card, full, damaged and unformatted. Play time,
+completion and the map zone that a source slot also shows are not tracked here.
+
+One deliberate departure from the source, at the project owner's request: the
+card is never written automatically. The source saves on a bench rest and on
+death; this port heals and sets the respawn marker on the rest, then asks
+"Save game?", and death records the Shade and Geo pool in memory only until the
+player accepts a bench prompt. The `bench-save` route exercises that path and is
+what the power-cut check interrupts. Step 8 is
 covered, and it found a real defect: `Card::write` frees a file's directory
 entry before rewriting it, so the single-file save had a roughly 190 ms window
 in which an interruption left the card with no loadable save at all, the
