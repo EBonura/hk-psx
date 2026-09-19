@@ -633,6 +633,11 @@ fn template(t: Texture, tp: Tpage, u: u16, v: u16) -> QuadTextured {
 }
 /// Supply all animation textures this frame will reference (Knight + nail).
 /// Prepare before framebuffer clear; texture uploads never follow draw packets.
+// Never inlined: `main` is one 611-line function whose generated code sits
+// against the 128 KB a MIPS PC16 branch reaches, and absorbing a body this
+// size pushes a branch out of range. The assembler reports only "out of
+// range PC16 fixup" when that happens, naming nothing.
+#[inline(never)]
 pub fn begin(room: &Room, animation_ids: &[u16],framebuffer_y:u16) -> hk_cache::Stats {
     let stats = animation_cache::prepare(room, animation_ids);
     unsafe {
@@ -1070,6 +1075,11 @@ pub fn kick_ready() {
 /// top). It is not kicked here: an earlier chunk may still be walking, and
 /// main kicks it through `kick_front` once the channel is idle so the wait
 /// runs simulation ticks and input checkpoints instead of spinning.
+// Never inlined: `main` is one 611-line function whose generated code sits
+// against the 128 KB a MIPS PC16 branch reaches, and absorbing a body this
+// size pushes a branch out of range. The assembler reports only "out of
+// range PC16 fixup" when that happens, naming nothing.
+#[inline(never)]
 pub fn submit(health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool,blue_health:u16,transition:u8) {
     crate::input::checkpoint();
     animation_cache::submit();

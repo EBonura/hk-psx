@@ -523,7 +523,12 @@ mod presentation {
     /// frame below is the only one on screen. It has already drawn the wallet
     /// inside this box, at the HUD's own place, so the shelf does not draw a
     /// second copy of the number the player is about to spend.
-    pub fn prepare(screen: &Screen, camera: (i32, i32), paused: bool) {
+    // Never inlined: `main` is one 611-line function whose generated code sits
+    // against the 128 KB a MIPS PC16 branch reaches, and absorbing a body this
+    // size pushes a branch out of range. The assembler reports only "out of
+    // range PC16 fixup" when that happens, naming nothing.
+    #[inline(never)]
+pub fn prepare(screen: &Screen, camera: (i32, i32), paused: bool) {
         if paused {
             return;
         }
