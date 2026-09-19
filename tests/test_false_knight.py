@@ -168,3 +168,93 @@ class GeneratedConstantsStayBounded(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AdditiveMergeTests(unittest.TestCase):
+    """The id and reference rewrite that lets one scene hold two files.
+
+    Synthetic: both sides of the rewrite are pure functions of a tree, so this
+    needs no retail fixture. What it guards is the failure that would be silent,
+    which is a reference that still points at the wrong file's object.
+    """
+
+    def test_own_file_references_shift_and_external_ones_are_remapped(self):
+        from scene import retarget
+        tree = {'m_GameObject': {'m_FileID': 0, 'm_PathID': 40},
+                'm_Script': {'m_FileID': 3, 'm_PathID': 2049},
+                'library': {'m_FileID': 2, 'm_PathID': 9},
+                'nothing': {'m_FileID': 0, 'm_PathID': 0},
+                'children': [{'component': {'m_FileID': 0, 'm_PathID': 7}}],
+                'box': {'x': 1.0, 'y': 2.0}}
+        retarget(tree, 100000, {2: 20, 3: 4})
+        self.assertEqual(tree['m_GameObject'], {'m_FileID': 0, 'm_PathID': 100040})
+        self.assertEqual(tree['children'][0]['component'], {'m_FileID': 0, 'm_PathID': 100007})
+        self.assertEqual(tree['m_Script'], {'m_FileID': 4, 'm_PathID': 2049})
+        self.assertEqual(tree['library'], {'m_FileID': 20, 'm_PathID': 9})
+        # A null reference stays null, and a plain two-field vector is not a PPtr.
+        self.assertEqual(tree['nothing'], {'m_FileID': 0, 'm_PathID': 0})
+        self.assertEqual(tree['box'], {'x': 1.0, 'y': 2.0})
+
+    def test_a_merged_object_reports_its_own_file(self):
+        from scene import Scene, ADDITIVE_ID_BASE
+        sc = Scene.__new__(Scene)
+        sc._origins = ((ADDITIVE_ID_BASE, 'level48'), (0, 'level46'))
+        self.assertEqual(sc.sid(325), 'level46:325')
+        self.assertEqual(sc.sid(ADDITIVE_ID_BASE + 325), 'level48:325')
+
+
+@unittest.skipUnless((ROOT / '.hkpsx/doctor.json').is_file(), 'needs the installed game')
+class PlacedFalseKnightTests(unittest.TestCase):
+    """Crossroads_10 with its additive boss scene merged in."""
+
+    @classmethod
+    def setUpClass(cls):
+        from source import Source
+        from scene import Scene
+        cls.source = Source()
+        cls.scene = Scene(cls.source, fk.ROOM_FILE)
+
+    def test_the_room_merges_the_boss_scene_the_loader_selects(self):
+        # falseKnightDefeated is false on a fresh save, so BossLoader takes
+        # sceneNameToLoad rather than the defeated variant.
+        self.assertEqual(self.scene.additive, ('level48',))
+
+    def test_the_boss_is_admitted_and_the_pre_battle_zombies_are_not(self):
+        from actors import actor_sources
+        actors = {a['name']: a for a in actor_sources(self.scene)}
+        boss = actors['False Knight New']
+        self.assertTrue(boss['movement_supported'])
+        self.assertEqual(boss['source'], 'level48:325')
+        control = boss['movement_control']
+        self.assertEqual(control['kind'], 'FalseKnight')
+        self.assertEqual(control['art_bindings'], {'walk': 'Idle', 'turn': 'Turn'})
+        # `Turn L` writes the scale negative, so the placement starts facing
+        # left, and the cook's absolute scale turns that into +1 for the draw.
+        self.assertFalse(control['facing_right'])
+        self.assertEqual(control['initial_direction'], 1)
+        self.assertEqual(control['turn_ticks'], 10)
+        self.assertTrue(control['invincible'])
+        for name in ('Zombie Barger', 'Zombie Runner', 'Zombie Hornhead'):
+            self.assertFalse(actors[name]['movement_supported'], name)
+            self.assertIn('additive scene', actors[name]['movement_error'])
+        # The Head carries no FalseyControl, so it stays a record either way.
+        self.assertFalse(actors['Head']['movement_supported'])
+
+    def test_the_merge_brings_the_arena_floor_the_room_does_not_have(self):
+        """Every layer-8 floor under the boss belongs to the additive scene."""
+        from scene import Scene
+        def floors(scene):
+            out = set()
+            for i, (kind, tree) in scene.objects.items():
+                if kind != 'BoxCollider2D' or not tree['m_Enabled'] or tree['m_IsTrigger']:
+                    continue
+                gid = tree['m_GameObject']['m_PathID']
+                if not scene.active(gid) or scene.gos[gid]['m_Layer'] != 8:
+                    continue
+                top = scene.point(gid, tree['m_Offset']['x'], tree['m_Offset']['y'] + tree['m_Size']['y'] / 2)
+                half = tree['m_Size']['x'] / 2
+                if top[0] - half <= 26.07 <= top[0] + half and 26 <= top[1] <= 27:
+                    out.add(scene.sid(i))
+            return out
+        self.assertEqual(floors(Scene(self.source, fk.ROOM_FILE, merge_additive=False)), set())
+        self.assertIn('level48:154', floors(self.scene))

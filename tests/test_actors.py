@@ -41,7 +41,10 @@ class ActorCookTests(unittest.TestCase):
         objects[202]=('BigBouncer',{'m_GameObject':{'m_PathID':6}})
         objects[203]=('PlayMakerFSM',{'m_GameObject':{'m_PathID':7}})
         objects[204]=('HealthManager',{'m_GameObject':{'m_PathID':8}})
+        # Scene.sid names the file an object was serialized in, which is not the
+        # scene's own file once a room has an additive scene merged into it.
         scene=SimpleNamespace(gos=gos,objects=objects,file=SimpleNamespace(name='fixture'),
+            sid=lambda i:f'fixture:{i}',
             active=lambda gid:True,point=lambda gid,x,y:(x+gid*3,y,0))
         result=pogo_sources(scene)
         self.assertEqual([t['layer'] for t in result['targets']],[17,19,11])

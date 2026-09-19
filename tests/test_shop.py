@@ -123,33 +123,20 @@ class ShopRuntimeTests(unittest.TestCase):
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
 
     @unittest.skipUnless(TABLE.is_file(), 'run host/shops.py first')
-    def test_the_module_still_compiles_without_a_standard_library(self):
-        """The guest is `no_std`, and the native harness would not notice."""
-        library = shared_library()
-        with tempfile.TemporaryDirectory(prefix='hk-shop-nostd-') as temp:
-            source = Path(temp) / 'guest.rs'
-            # The charm panel's drawing calls plus the shop counter's prompt
-            # marker are the only thing either module needs from outside, so
-            # they stand in with their real signatures rather than the module
-            # being mocked out.
-            source.write_text(
-                '#![no_std]\n'
-                'pub mod dialogue {\n'
-                '    pub const CAP: usize = 416;\n'
-                '    pub(crate) fn panel_text(_x: i16, _y: i16, _value: &str) {}\n'
-                '    pub(crate) fn panel_number(_x: i16, _y: i16, _value: u32) {}\n'
-                '    pub(crate) fn panel_width(_value: &str) -> i16 { 0 }\n'
-                '    pub(crate) fn panel_frame(_x: i16, _y: i16, _w: u16, _h: u16) {}\n'
-                '    pub(crate) fn panel_prompt(_c: (i32, i32), _p: [i32; 2], _l: &str) {}\n'
-                '}\n'
-                f'#[path = "{ROOT}/game/src/charms.rs"] pub mod charms;\n'
-                f'#[path = "{ROOT}/game/src/shop.rs"] pub mod shop;\n')
-            env = dict(os.environ, CARGO_MANIFEST_DIR=str(ROOT / 'game'))
-            compiled = subprocess.run(
-                ['rustc', '--edition=2021', '-Awarnings', '--crate-type=rlib', str(source),
-                 '--extern', 'hk_sim=' + str(library), '-L', 'dependency=' + str(library.parent / 'deps'),
-                 '-o', str(Path(temp) / 'guest.rlib')], env=env, capture_output=True, text=True)
-            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+    def test_the_modules_still_compile_for_the_guest_target(self):
+        """The guest is `no_std`, and the native harness would not notice.
+
+        This used to compile shop.rs and charms.rs against a hand-written stand-in
+        for the console crates. That stub had to grow every time the renderer
+        surface moved, and when the charm board gained icons it went stale the
+        same day, failing on a mismatch in a mock rather than on anything real.
+        Checking the guest crate against its own target is the thing the stub was
+        approximating, it needs no maintenance, and it takes about a second.
+        """
+        check = subprocess.run(
+            ['cargo', 'check', '--quiet', '--target', 'mipsel-sony-psx'],
+            cwd=ROOT / 'game', capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
 
 
 if __name__ == '__main__':

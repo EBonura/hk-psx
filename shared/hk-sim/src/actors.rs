@@ -52,6 +52,11 @@ pub enum ActorController {
     /// Source object with no FSM and no Rigidbody2D: `playAutomatically` loops
     /// the default clip where it stands, so the nail is the only interaction.
     Static { idle_clip: u16 },
+    /// False Knight standing in its arena, driven by
+    /// `crate::false_knight::Sentry`: `walk_clip` is Idle and `turn_clip` is
+    /// Turn, which is the whole clip set the standing subset plays. The fight
+    /// itself is `crate::false_knight::FalseKnight` and is not wired to this.
+    FalseKnight,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ActorSpec {

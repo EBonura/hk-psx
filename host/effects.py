@@ -17,6 +17,11 @@ def corpse_source(source, scene, actor):
     if kind=='Baldur':return _roller_corpse_source(source,scene,actor)
     if kind=='Aspid':return _aspid_corpse_source(source,scene,actor)
     if kind=='EggSac':return _egg_sac_corpse_source(source,scene,actor)
+    # A controller whose recognizer states it leaves no corpse is answered, not
+    # refused. The False Knight is admitted invincible because Check Health
+    # restores its body rather than letting it die, so nothing of it ever falls.
+    if actor.get('movement_control',{}).get('no_corpse'):
+        return None
     if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber'):
         raise ValueError('unvalidated corpse controller family')
     runner=kind=='ZombieSwipeWalker';climber=kind=='Climber'
@@ -325,7 +330,9 @@ def append_corpse_art(source,scene,actors,atlas,frames,clips):
     cooker=_ClipCooker(source,atlas,frames,clips)
     for actor in actors:
         if not actor['movement_supported']:continue
-        record=corpse_source(source,scene,actor);library_o=record.pop('library_object');selected=record.pop('clips');sx,sy=record['scale']
+        record=corpse_source(source,scene,actor)
+        if record is None:continue
+        library_o=record.pop('library_object');selected=record.pop('clips');sx,sy=record['scale']
         for kind,clip in zip(('air','land'),selected):
             record[kind+'_clip']=cooker.clip(record['library'],library_o,clip,sx,sy)
         actor['corpse']=record

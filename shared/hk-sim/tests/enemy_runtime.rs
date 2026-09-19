@@ -689,3 +689,121 @@ fn oversized_actor_terrain_retains_exact_direct_fallback() {
         assert_eq!(a.actor_state(0,SPEC.source_id),b.actor_state(0,SPEC.source_id));
     }
 }
+
+/// Source False Knight (`level48:40`) standing in its arena: `FalseyControl`'s
+/// `Idle` and `Turn R`/`Turn L` and nothing else. The authored transform hangs
+/// it above the arena, so the fixture places it in the air and expects the
+/// shared solver to put it down before anything else happens.
+const FALSE_KNIGHT: ActorSpec = ActorSpec {
+    controller: ActorController::FalseKnight,
+    source_id: 100040, x: 0, y: 8 * ONE,
+    // Asymmetric on purpose: a symmetric box would hide which way it faces.
+    bounds: [-ONE, -2 * ONE, ONE / 2, 0],
+    health: EnemyParams { health: 65, contact_damage: 1, invincible: true, ..SPEC.health },
+    walk: WalkParams { speed: 0, turn_ticks: 10, turn_cooldown_ticks: 0 },
+    // `Turn R` writes the source scale +1.3, which the cook takes the absolute
+    // of, so a boss that starts facing right starts at -1 here.
+    initial_direction: -1,
+    walk_clip: 0, turn_clip: 1, corpse: None, recoil_speed: 0, recoil_ticks: 0, ..SPEC
+};
+/// Two clips over two textures, so Idle and Turn are told apart by what is
+/// submitted rather than by counting quads.
+fn boss_room() -> Vec<u8> {
+    let mut b = Vec::from(*b"HKROOM02");
+    for n in [1u32, 2, 0, 2, 2, 1, 0, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for texture in 0..2u16 {
+        for n in [0u16, texture * 8, 0, 8, 8, texture] {
+            b.extend(n.to_le_bytes());
+        }
+        b.extend(0u32.to_le_bytes());
+    }
+    for texture in 0..2i32 {
+        for n in [texture, -ONE, -2 * ONE, ONE / 2, 0] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    // Idle loops (wrap 0) and Turn plays once (wrap 2), as the source library
+    // declares them; one frame each is enough to name the clip in a draw.
+    for (start, wrap) in [(0u32, 0u32), (1, 2)] {
+        for n in [start, 1, 12 * 65536, wrap] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    for n in [-20 * ONE, 0, 20 * ONE, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.resize(b.len() + 32 * 2 + 32768, 0);
+    b
+}
+#[test]
+fn false_knight_falls_out_of_its_dormant_perch_and_then_only_turns() {
+    let bytes = boss_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = world::Region { actors: &[&FALSE_KNIGHT], ..region() };
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(10 * ONE, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    for _ in 0..120 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    // Body bottom is two units below the transform, so a boss standing on the
+    // fixture floor at y 0 rests at y 2.
+    let (x, y, health) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+    assert_eq!((x, y), (0, 2 * ONE));
+    assert_eq!(health, 65);
+    // Facing right, at -1, draws the frame box as authored.
+    let idle = submitted(&w, &r, &room);
+    assert_eq!(idle.len(), 1);
+    assert_eq!(idle[0].0, 0);
+    let facing_right = span(&idle[0].1);
+    // The Knight crosses to the other side: `Turn L` plays Turn once and the
+    // facing is already written while it plays.
+    p.x = -10 * ONE;
+    tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    let turning = submitted(&w, &r, &room);
+    assert_eq!(turning.len(), 1);
+    assert_eq!(turning[0].0, 1, "Turn is its own clip");
+    let facing_left = span(&turning[0].1);
+    assert_ne!(facing_left, facing_right, "the body mirrors on entry to Turn");
+    // Nine more ticks of the ten-tick Turn clip, then Idle again, mirrored.
+    for _ in 0..9 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+        assert_eq!(submitted(&w, &r, &room)[0].0, 1);
+    }
+    tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    let back = submitted(&w, &r, &room);
+    assert_eq!(back[0].0, 0);
+    assert_eq!(span(&back[0].1), facing_left);
+    // It stands still through all of it: no walk speed, and the solver is not
+    // run again once it has landed.
+    assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap(), (0, 2 * ONE, 65));
+}
+#[test]
+fn a_standing_false_knight_ignores_the_nail_the_way_check_health_does() {
+    let bytes = boss_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = world::Region { actors: &[&FALSE_KNIGHT], ..region() };
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(0, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut n = Nail::new();
+    for _ in 0..120 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    p.x = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap().0;
+    for _ in 0..20 {
+        n.active = true;
+        n.age = 1;
+        let events = tick(&mut w, &r, &room, &mut p, &mut v, &n);
+        assert_eq!(events.kills, 0);
+        n.active = false;
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    // The source body restores to 65 every time it reaches zero; without the
+    // stagger states the guest admits it invincible instead.
+    assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap().2, 65);
+    assert_eq!(submitted(&w, &r, &room).len(), 1);
+}

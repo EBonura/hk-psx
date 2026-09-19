@@ -9,6 +9,7 @@ import struct
 from pathlib import Path
 from polygons import bounded_polygons
 from combat import ticks
+from scene import ADDITIVE_ID_BASE
 
 
 def _literal(instruction):
@@ -293,7 +294,7 @@ def _colliders(sc, gid, records):
             paths = [[(point['x'], point['y']) for point in path]
                      for path in tree['m_Points']['m_Paths']]
         else:
-            result.append({'source': f'{sc.file.name}:{sid}', 'type': typ,
+            result.append({'source': sc.sid(sid), 'type': typ,
                            'unsupported': 'exact circle contact not yet cooked'})
             continue
         polygons = [[sc.point(gid, x + offset['x'], y + offset['y'])[:2] for x, y in path]
@@ -301,12 +302,12 @@ def _colliders(sc, gid, records):
         try:  # guest records hold at most 16 vertices; pieces tile the source shape exactly
             polygons = [piece for polygon in polygons for piece in bounded_polygons(polygon)]
         except ValueError as error:
-            result.append({'source': f'{sc.file.name}:{sid}', 'type': typ, 'unsupported': f'collider polygon: {error}'})
+            result.append({'source': sc.sid(sid), 'type': typ, 'unsupported': f'collider polygon: {error}'})
             continue
         points = [point for path in polygons for point in path]
         if not points or any(not math.isfinite(value) or abs(value) > 512 for point in points for value in point):
             raise ValueError('actor collider exceeds Q16 world coordinate bounds')
-        result.append({'source': f'{Path(sc.file.name).name}:{sid}', 'type': typ,
+        result.append({'source': sc.sid(sid), 'type': typ,
                        'trigger': bool(tree['m_IsTrigger']), 'world_polygons': polygons,
                        'bounds': [min(p[0] for p in points), min(p[1] for p in points),
                                   max(p[0] for p in points), max(p[1] for p in points)]})
@@ -326,7 +327,7 @@ def actor_sources(sc, bounds=None):
         if bounds and not (bounds[0] <= position[0] <= bounds[2] and bounds[1] <= position[1] <= bounds[3]):
             continue
         records = _component_records(sc, gid)
-        actor = {'source': f'{Path(sc.file.name).name}:{sid}', 'game_object': gid,
+        actor = {'source': sc.sid(sid), 'spec_source_id': sid, 'game_object': gid,
                  'name': sc.gos[gid]['m_Name'], 'position': position,
                  'health': tree['hp'], 'health_manager': tree,
                  'colliders': _colliders(sc, gid, records), 'components': {str(i): kind for i, kind, _ in records},
@@ -335,7 +336,7 @@ def actor_sources(sc, bounds=None):
             if kind in ('tk2dSprite', 'tk2dSpriteAnimator', 'Recoil', 'DamageHero', 'Rigidbody2D',
                         'EnemyDreamnailReaction'):
                 actor[kind] = component
-                actor[kind + '_source'] = f'{Path(sc.file.name).name}:{component_id}'
+                actor[kind + '_source'] = sc.sid(component_id)
         fsms = []
         for ref in sc.gos[gid]['m_Component']:
             obj = source.ref(sc.file, ref['component'])
@@ -406,6 +407,16 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('False Knight') \
+                and any(kind == 'EnemyHitEffectsArmoured' for _, kind, _ in records):
+            from false_knight import recognize_placement
+            try:
+                control = recognize_placement(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
             from runner import recognize
             try:
@@ -419,6 +430,22 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'].append('Charge Dust and source death effects are not presented; audio uses the resident Runner bank.')
             except (ValueError, KeyError, StopIteration) as error:
                 actor['pending_movement_error'] = str(error)
+        # Content merged in from an additive scene is admitted one controller at
+        # a time rather than wholesale, because the merge exists for one of them.
+        # Crossroads_10_boss brings the False Knight and the three pre-battle
+        # Zombies that `Battle Control` kills with KILL ALL ENEMIES the moment
+        # the boss lands. Nothing runs that arena yet, so admitting the Zombies
+        # would stand three enemies in a fight that does not exist, and the CLUT
+        # measurement agrees: the boss's Idle and Turn are 42 of the 141 slots
+        # Crossroads_10's tightest view has free, the Zombies are 99 more, and
+        # the two banks together take that view to 438 of 416 after the room
+        # dedup. They stay records until the arena exists and the view has room.
+        if actor['movement_supported'] and sid >= ADDITIVE_ID_BASE \
+                and not actor['movement_control'].get('admit_from_additive_scene'):
+            actor['movement_supported'] = False
+            actor['movement_error'] = (
+                f'{actor["movement_control"]["kind"]} merged in from an additive scene; only a'
+                ' controller that opts in is admitted from one')
         result.append(actor)
     # Only supported actors enter the guest pool; unsupported ones stay records.
     if sum(1 for actor in result if actor['movement_supported']) > 32:
@@ -446,13 +473,19 @@ def generated_actor_specs(region):
         if not colliders or any(collider['bounds'] != colliders[0]['bounds'] for collider in colliders):
             raise ValueError('actor requires unsupported distinct body colliders')
         health = actor['health_manager']
-        if health['hasSpecialDeath'] or health['hasAlternateHitAnimation'] or health['invincibleFromDirection']:
+        control = actor['movement_control']
+        # A controller may answer the nail differently from its HealthManager,
+        # and the False Knight does: its `hasSpecialDeath` is the death sequence
+        # this admission never reaches, and it is admitted invincible because
+        # `Check Health` restores the body rather than letting it die.
+        invincible = control.get('invincible', bool(health['invincible']))
+        if (health['hasSpecialDeath'] and not control.get('invincible')) \
+                or health['hasAlternateHitAnimation'] or health['invincibleFromDirection']:
             raise ValueError('actor requires unsupported HealthManager variant')
         x, y = actor['position'][:2]
         box = colliders[0]['bounds']
         bounds = [round((box[0] - x) * 65536), round((box[1] - y) * 65536),
                   round((box[2] - x) * 65536), round((box[3] - y) * 65536)]
-        control = actor['movement_control']
         if control['kind'] == 'ZombieSwipeWalker':
             runner_clips = ('idle_clip', 'anticipate_clip', 'lunge_clip', 'cooldown_clip')
             if any(key not in actor for key in runner_clips):
@@ -522,6 +555,13 @@ def generated_actor_specs(region):
             # identity, so the guest draws the sprite in its native orientation.
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'FalseKnight':
+            # `FalseyControl`'s Idle and Turn R/Turn L and nothing else, so the
+            # walk and turn slots are the whole clip set and the controller
+            # carries no clip of its own. The fight is not wired to it.
+            controller = 'hk_sim::ActorController::FalseKnight'
+            speed, turn_ticks, turn_cooldown_ticks = 0, control['turn_ticks'], 0
+            initial_direction, random_start_direction = control['initial_direction'], False
         elif control['kind'] == 'WalkLeftRight':
             controller = 'hk_sim::ActorController::Crawler'
             speed, turn_ticks, turn_cooldown_ticks = control['speed'], control['turn_ticks'], control['turn_cooldown_ticks']
@@ -540,10 +580,13 @@ def generated_actor_specs(region):
         dream = actor.get('EnemyDreamnailReaction')
         dream_soul = 33 if dream and not dream['noSoul'] and not dream['startSuppressed'] else 0
         fields = {
-            'source_id': int(actor['source'].rsplit(':', 1)[1]), 'x': round(x * 65536), 'y': round(y * 65536),
+            # Scene-unique, which for an object merged in from an additive scene
+            # is its shifted id rather than the one in its own file.
+            'source_id': actor.get('spec_source_id', int(actor['source'].rsplit(':', 1)[1])),
+            'x': round(x * 65536), 'y': round(y * 65536),
             'bounds': '[' + ','.join(map(str, bounds)) + ']',
             'health': ('hk_sim::EnemyParams {' + f'health:{actor["health"]},contact_damage:{damage},evasion_ticks:12,' +
-                       f'invincible:{str(bool(health["invincible"])).lower()},damage_override:{str(bool(health["damageOverride"])).lower()}' + '}'),
+                       f'invincible:{str(invincible).lower()},damage_override:{str(bool(health["damageOverride"])).lower()}' + '}'),
             'controller': controller,
             'walk': ('hk_sim::WalkParams {' + f'speed:{round(speed * 65536)},turn_ticks:{turn_ticks},' +
                      f'turn_cooldown_ticks:{turn_cooldown_ticks}' + '}'),
@@ -575,7 +618,7 @@ def hazard_sources(sc, bounds=None):
             box = collider['bounds']
             if bounds and (box[2] < bounds[0] or box[0] > bounds[2] or box[3] < bounds[1] or box[1] > bounds[3]):
                 continue
-            result.append({**collider, 'source': f'{Path(sc.file.name).name}:{sid}', 'collider_source': collider['source'], 'name': sc.gos[gid]['m_Name'],
+            result.append({**collider, 'source': sc.sid(sid), 'collider_source': collider['source'], 'name': sc.gos[gid]['m_Name'],
                            'damage': tree['damageDealt'], 'hazard_type': tree['hazardType'],
                            'position': sc.point(gid)})
     if len(result) > 64:
@@ -614,7 +657,7 @@ def shroom_sources(sc, bounds=None):
                    or {p[1] for p in polygon} != {box[1], box[3]}
                    for polygon in collider['world_polygons']):
                 raise ValueError(f'BounceShroom collider is not an axis-aligned box: {collider["source"]}')
-            result.append({'source': f'{Path(sc.file.name).name}:{sid}', 'collider_source': collider['source'],
+            result.append({'source': sc.sid(sid), 'collider_source': collider['source'],
                            'name': sc.gos[gid]['m_Name'], 'bounds': box, 'owner_fsms': fsms,
                            'limitations': ['Down slash response only: no shroom bob, bounce animation or particles',
                                            'The owner FSMs are not run, so a PlayerData gate that would deactivate this object is ignored']})
@@ -646,7 +689,7 @@ def pogo_sources(sc):
         if any(typ == 'Rigidbody2D' and tree['m_BodyType'] != 2 for _, typ, tree in records):
             blockers.add('moving Rigidbody2D')
         if blockers:
-            unsupported.append({'game_object': f'{Path(sc.file.name).name}:{gid}', 'name': go['m_Name'],
+            unsupported.append({'game_object': sc.sid(gid), 'name': go['m_Name'],
                                 'reason': 'special/dynamic pogo: ' + ', '.join(sorted(blockers))})
             continue
         for collider in colliders:
@@ -657,7 +700,7 @@ def pogo_sources(sc):
             if not 1 <= len(polygons) <= 8 or any(not 3 <= len(p) <= 16 for p in polygons):
                 unsupported.append({'source': collider['source'], 'reason': 'pogo polygon bound'})
                 continue
-            result.append({**collider, 'game_object': f'{Path(sc.file.name).name}:{gid}',
+            result.append({**collider, 'game_object': sc.sid(gid),
                            'name': go['m_Name'], 'layer': layer, 'horizontal_and_up': layer == 11})
     if len(result) > 128:
         raise ValueError('static pogo pool exceeds 128 targets per scene')
