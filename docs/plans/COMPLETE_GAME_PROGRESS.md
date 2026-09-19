@@ -2165,6 +2165,67 @@ clip. A unit variant reading `walk_clip`, as `Gruzzer` does, would be a field
 lighter. It was built as specified rather than changed silently, and it is a
 small edit on both sides whenever someone is in there anyway.
 
+## P10 step 5: object references, and a measurement that had been lying
+
+Every cook-time-resolvable reference action now resolves: `GetOwner` 820 of 820,
+`GetHero` 177 of 178, `FindChild` 809 of 945, `GetParent` 183 of 376,
+`FindGameObject` 68 of 202. The refusals are specific rather than blanket, the
+largest being an object that arrives through a variable this cook cannot fix,
+and tag lookups for persistent objects the port has no model of.
+
+**The FSM count did not move: still 246 of 1,876.** Not one definition was
+blocked solely by a reference action, so unlocking them completed nothing. That
+is the honest headline, and it is why the compiler now also reports action
+instances, which is the measure that actually moved: **8,380 of 42,166, up from
+7,088.** A definition count moves in steps and hides work; the instance count
+does not.
+
+Two corrections to code I wrote. `GetOwner` was resolving to the FSM
+*component's* path id rather than the owner GameObject's, which is neither what
+the world metadata carries nor a node a transform walk can start from. And
+`SendEventByName` names its event with an `FsmString` rather than the interned
+`FsmEvent` every other action uses, so the compiler raised a `TypeError` that
+the survey swallowed as an ordinary refusal: **all 2,286 instances had been
+measured as uncompilable and no self-send had ever been emitted.** It never
+crashed the survey outright only because every FSM containing one refused on an
+earlier action first. 55 self-sends compile now.
+
+### The resolution rule
+
+A reference resolves from the *source* scene, never the cooked world, because an
+object the port has not built yet is not an object the game did not have. A
+`FindChild` that finds nothing stores `NO_OBJECT`, which is the null the
+original stores, while an unreadable sibling refuses instead. Verified by
+checking 70 resolutions in Tutorial_01 against the transform tree by name: 70
+matched, 0 mismatched.
+
+That exposed a contract problem worth fixing before anything depends on it.
+docs/SCRIPT_IR.md said a native call handed `NO_OBJECT` "refuses rather than
+acting on some default", which would make a correctly compiled `FindChild` trip
+an assertion. PlayMaker treats a null target as a quiet no-op, so that is what
+it means now; what a call must never do is fall back to some *other* object.
+
+### What actually blocks the most
+
+The sole-blocker ranking puts `ActivateAllChildren` (67), cross-FSM
+`SendEventByName` (31) and `ActivateGameObject` (29) on top, but it hides the
+real answer. **`Trigger2dEvent` is the first refusal for 274 FSM instances and
+1,026 action instances**, far more than any of them, and with `Collision2dEvent`
+it needs the same thing the cross-FSM send needs: a way for an event to reach a
+script from outside. The executor had none at all. `Instance::receive` is that
+path now, delivering synchronously exactly as a self-send does, and ignoring an
+event the current state has no transition for, which is what PlayMaker does
+rather than a silent drop.
+
+Also corrected: `tools/playmaker_inventory.py` counted `ActivateGameObject` as a
+family the guest already covers natively, which the no-runtime-active-flag
+finding contradicts. That overstated step 1's covered share by 707 action
+instances.
+
+And `host/script_ir.py` now has tests. The read-only variable fold is the
+subtlest code in the file, it substitutes a serialized initial value into an
+action, and a wrong answer there is silent rather than a refusal.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
