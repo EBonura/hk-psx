@@ -75,6 +75,11 @@ pub fn render(game: &mut Game, r: &world::Region, room: &Room, fb: &mut FrameBuf
     geo_render::apply(game.geo,&mut game.state,game.region_id);
     lifeblood::apply(game.life,&mut game.state,game.region_id);
     great_door::apply(&game.door,&mut game.state,game.region_id);
+    // After the Lifeblood refresh, which is what clears the exclusion list, and
+    // beside the door's for the same reason. A gate that lifts inside a
+    // simulation tick reaches the terrain on the next frame's rebuild, which is
+    // two seconds after the boss dies with nothing standing in the doorway.
+    battle_gates::apply(&mut game.state,game.region_id);
     let door_frame=game.door.frame(game.region_id,camera);
     // The bench owns the body first, then an ability, then the room clip.
     let pose=if game.bench.animation().is_some() {None} else {ability_pose(&game.player,&game.dream,&game.cast)};
@@ -201,10 +206,17 @@ pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
     game.geo.reset(geo::GEO_PARAMS);unsafe {HK_GEO_LOST=0;}
     game.life.reset();
     game.door.reset();
+    battle_gates::reset();
     dialogue::reset();script::reset();game.state=world::State::new();game.reveals=reveal_masks::State::new();game.enemies=enemies::EnemyWorld::new();game.vitals=game.settings.cheats.new_vitals(VITAL_PARAMS);
     audio::reset_movement();game.player=Player::spawn(SPAWN.0,SPAWN.1);game.safe=(SPAWN.0,SPAWN.1,0);game.safe_facing=1;
     game.nail=Nail::new();game.nail_response=hk_sim::NailResponse::new();game.focus.interrupt();focus_audio::interrupt();game.attacks=0;*target=Some(0);game.paused=false;
     unsafe {HK_BREAK_COUNT=0;HK_DEATHS=0;HK_ENEMY_HITS=0;HK_ENEMY_KILLS=0;HK_HAZARD_RESPAWNS=0;HK_FOCUS_STARTED=0;HK_FOCUS_COMPLETED=0;HK_FOCUS_HEALED=0;HK_FOCUS_DRAINED=0;HK_FOCUS_REFUNDED=0;}
+    // The boss counters and its live mirror: the actor is gone with the enemy
+    // world above, so nothing would otherwise clear what the last fight left.
+    unsafe {enemies::HK_FK_TRIGGERED=0;enemies::HK_FK_DROPPED=0;enemies::HK_FK_STAGGERS=0;
+        enemies::HK_FK_CONVERSIONS=0;enemies::HK_FK_DEATHS=0;enemies::HK_FK_HP=0;enemies::HK_FK_HEAD_HP=0;
+        enemies::HK_FK_ACTIVE=0;enemies::HK_FK_EXPOSED=0;enemies::HK_FK_STUNNED=0;
+        enemies::HK_FK_ARENA=0;enemies::HK_FK_ACTIVATED=0;}
 }
 
 /// UPDATE: one simulation tick that the player's input drives. Death and the

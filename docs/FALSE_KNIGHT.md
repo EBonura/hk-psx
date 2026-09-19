@@ -95,7 +95,7 @@ per frame) rather than estimating it.
 | Widest frame / tallest frame | 204 px / 188 px | 252 texture axis | yes |
 | 64x64 slots for the largest single frame (198x169) | 12 | 20 per frame, 24 total | yes |
 | 64x64 tiles, all frames | 499 | | |
-| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 41,064 B unallocated RAM | no |
+| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 32,160 B unallocated RAM | no |
 | 4bpp texels, all frames | 716,110 B | 393,216 B per room pack, of which the admitted six leave 38,248 free | no |
 | Distinct palettes, all frames | 107 | 150 free in Crossroads_10's tightest view | yes |
 | HKROOM02 texture records, all frames | 499 | 640 per view, of which the admitted six leave 245 free | no |
@@ -104,7 +104,7 @@ The slot row used to read 4 per frame and 8 total, and it was the row this
 whole document was written around. It changed because the cache took a static
 scenery page; `docs/BUDGET.md` has the census that made that affordable. The
 RAM row is read out of `.hkpsx/build.json` and has fallen again, from 73,876
-bytes to 63,636, then 51,348, and it is 41,064 now. It only bites the Hollow
+bytes to 63,636, then 51,348, then 41,064, and it is 32,160 now. It only bites the Hollow
 Shade route, which moves frames into linked RAM; the room-pack route this art
 takes spends none of it.
 
@@ -230,10 +230,10 @@ CLUT for a whole clip set, which would take the False Knight from 110 CLUTs to a
 handful. It does not change the slot geometry. `game/src/animation_cache.rs`
 still rejects any payload over 2,048 bytes per slot, so a 198x169 frame needs
 the same twelve slots from linked RAM as from a room pack. Twelve now fit, but
-the RAM does not stretch: `.hkpsx/build.json` reports 51,348 unallocated bytes
+the RAM does not stretch: `.hkpsx/build.json` reports 32,160 unallocated bytes
 before the reserved stack, against 699 KiB of texels, short by a factor of
-fourteen. Read that figure from the build report every time; it was 113,636,
-then 73,876, then 63,636, and it is 51,348 now.
+twenty-two. Read that figure from the build report every time; it was 113,636,
+then 73,876, then 63,636, then 51,348, then 41,064, and it is 32,160 now.
 
 ## The route past it
 
@@ -295,10 +295,10 @@ that.
 3. **Per-clip residency, with no prefetch room.** 699 KiB never fits main RAM,
    and against the live gap the prefetch does not either. The clip bytes were
    measured against 73,876 unallocated bytes, and the gap has since fallen to
-   51,348 and then to 41,064, so the ratios below are recomputed rather than
-   re-measured: the heaviest clip, `Stun Recover`, is 56,406 bytes, which is
-   137.4% of the gap and no longer fits on its own at all; the heaviest adjacent
-   pair is 112,456 bytes, 273.9% of it. At least nine of the 33
+   51,348, then 41,064, and then 32,160, so the ratios below are recomputed
+   rather than re-measured: the heaviest clip, `Stun Recover`, is 56,406 bytes,
+   which is 175.4% of the gap and no longer fits on its own at all; the heaviest
+   adjacent pair is 112,456 bytes, 349.7% of it. At least nine of the 33
    clips pair with the next heaviest to more than the gap, and that count can
    only have risen; re-run `host/false_knight.py` before quoting it. So holding
    the current clip and prefetching
@@ -502,20 +502,105 @@ so the overlay's clip plays on the body and the `Blank` that would have hidden i
 is dropped; the overlay's DamageHero trigger is reproduced as a box reaching
 nearly eight units ahead, mirrored onto the side the body faces.
 
+## The gates, and the half of them that is a recook
+
+`game/src/battle_gates.rs` is the `great_door.rs` shape the plan asked for: a
+cooked `(catalogue slot, gate, edges)` table in `data/battle_gates.rs`, a bit
+per gate, and an `apply` that drops the edges of every open gate from the view's
+terrain. `host/battle_gates.py` is the join and `.hkpsx/battle-gates.json` the
+report. The state is a `static mut` rather than a field of `frame::Game`
+because the arena rides on the boss actor several layers inside `enemies.rs`,
+and threading a world down there would have cost more call sites than the
+feature is worth.
+
+The census, from `host/battle_gates.py` against `data/regions.json`:
+
+| Quantity | Measured |
+| --- | ---: |
+| `BG Control` gates in the 46 admitted scenes | 15, in 5 scenes |
+| Of those, cooked as terrain | 3 |
+| Crossroads_10's gates, cooked / not | 2 of 5 |
+| Catalogue slots carrying a gate binding | 5, of 699 |
+| Gate edges in the worst slot (slot 230, Crossroads_10) | 8 |
+| Scripted exclusion slots in `world::State` | 12, up from 8 |
+
+Which three are cooked is not a choice this table makes. `host/cook.py` bakes a
+gate's collider only when `battle_gate`'s `solid_on_load` is set, because a gate
+the source has open from the first frame would otherwise be an invisible wall:
+the comment there records Crossroads_09 impassable between its only two doors
+and Crossroads_08 cut into three columns. So `PLACEMENT_CLOSED` and `COOKED`
+are the same mask, and the runtime only ever takes terrain away.
+
+That is why the arena still does not seal. Crossroads_10's `Battle Gate` at
+x 46.25 and `Battle Gate 1` at x 10.75 are the two arena ends, both open on
+load, so `BG CLOSE` has no edge to restore. The two that do lift,
+`Battle Gate 2` at x 18.50 y 3.78 and `Battle Gate 2 (1)` at x 11.50 y 12.92,
+are the pair at the bottom of the room that the source keeps shut until the
+fight is won, and until now nothing in the port could ever open them.
+
+Sealing needs `host/cook.py` to bake every gate and this table to carry the open
+ones with a "solid only while closed" flag. That is not a small change because
+of where `host/cook.py` sits: above the divider in `host/cook_inputs.txt`, so
+editing it invalidates the per-region reuse key for all 693 cooked regions and
+the next build re-cooks the whole world. It also inverts the failure mode. Today
+a wrong binding can only open terrain that should be shut, in five slots; after
+that change a missing binding walls a room off, in every slot with a gate. The
+generator refuses a per-slot total over `world::SCRIPT_EDGE_SLOTS` and
+`tests/test_boss_arena.py` checks the join in both directions, which is the
+guard that change would need before it is worth making.
+
+## What a route can see
+
+`game/src/enemies.rs` and `game/src/battle_gates.rs` export these. The counters
+are edges; the live values are mirrored in one place,
+`Actor::publish_false_knight`, because the boss runtime is written back from three
+different exits and publishing at each of them is how one goes stale.
+
+| Symbol | What it says |
+| --- | --- |
+| `HK_FK_TRIGGERED` | the hero crossed `Battle Scene`'s trigger and the arena armed |
+| `HK_FK_DROPPED` | `Start Fall` separated the body from the ceiling slab |
+| `HK_FK_STAGGERS` | `Check Health` took the body to zero and the armour opened |
+| `HK_FK_CONVERSIONS` | `Health Check` took the exposed Head to zero, which is a phase |
+| `HK_FK_DEATHS` | the HealthManager death event at the end of the 450-tick tail |
+| `HK_FK_HP` / `HK_FK_HEAD_HP` | the 65 and the 40, both of which restore |
+| `HK_FK_ACTIVE` | out of `Dormant` |
+| `HK_FK_EXPOSED` | the armour is open, so the nail reaches the Head |
+| `HK_FK_STUNNED` | `Stunned Amount`, which selects the phase table |
+| `HK_FK_ARENA` | `Battle Control`'s phase, as `hk_sim::boss::Phase` orders it |
+| `HK_FK_ACTIVATED` | the `Activated` PersistentBoolItem |
+| `HK_ARENA_GATES` | bit per gate, set while its collider is solid |
+| `HK_ARENA_GATE_CLOSES` / `HK_ARENA_GATE_OPENS` | broadcasts answered |
+
+The death and the Head merely emptying are different counters on purpose: the
+last exposure empties the Head too, and only the tail after it is a death.
+
+## Persistence
+
+The `Battle Scene` PersistentBoolItem and `falseKnightFirstPlop` ride the save
+record's PlayerData reserve. `SCRIPT_FIELD_SLOTS` is 16 and the cooked script
+bank uses five, so the record's length, magic and every committed card fixture
+under `tools/cards` are untouched: nothing about `HKS3` moved.
+
+The two fields sit at the top of the reserve and the cooked bank fills it from
+the bottom, so they can only ever meet at the `const` assertion in
+`game/src/script.rs` rather than at a wrong value, and
+`tests/test_boss_arena.py` checks the same relation from the host side before a
+guest build gets that far. They ride the bank's `SCRIPT_FIELD_FNV` even though
+the cook does not name them: a bank whose field list moved has moved the slots
+under them too, and dropping a won fight is the conservative answer to that.
+
+`Arena::new` therefore takes the source's `Activate` branch on a reload,
+`Init` quick-opens the gates, and the fight never re-arms. Within a session the
+same store survives a scene reload and a death respawn; across a boot it reaches
+the card at the next bench, which is the only thing in this port that ever
+writes one.
+
 ## What is not implemented
 
-- **The gates.** `Arena` reaches `Phase::Open` and emits `OpenGates`, and nothing
-  answers. The five `BG Control` gates are cooked terrain edges, and lifting one
-  needs a per-view edge binding plus a region-activation hook, which is exactly
-  the shape `game/src/great_door.rs` already has: a cooked `(region, edges)`
-  table, a persistent opened bit, and an `apply` called on activation. So
-  `Battle Gate 2` and `Battle Gate 2 (1)`, which start closed at the bottom of
-  the room, stay closed after the fight is won, and the arena never seals at its
-  ends because the other three start open and are not cooked as terrain at all.
-- **Persistence.** The `Battle Scene` PersistentBoolItem is not saved, so
-  `Arena::new` always takes the fresh branch and a reload re-arms a won fight.
-  `Action::Persist` is emitted and dropped, and so is `falseKnightFirstPlop`,
-  which means every first plop is the long one.
+- **Half the gates.** `BG OPEN` and `BG QUICK OPEN` now reach the two gates the
+  source loads closed; `BG CLOSE` reaches the other three and moves nothing.
+  The section below has the measurement and why the missing half is a recook.
 - **The pre-battle Zombies.** Recorded, not admitted, so `KILL ALL ENEMIES` has
   no target. The arena counts only the boss, which is what the source does.
 - **Everything the fight emits that has no object.** Barrels

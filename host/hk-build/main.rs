@@ -15,6 +15,10 @@ const COOK_INPUTS: &str = include_str!("../cook_inputs.txt");
 const ASSET_SCRIPTS: &[&str] = &[
     "title_music.py", "cook_audio.py", "cook_hud.py", "ambience.py", "focus_audio.py", "read_points.py",
     "geo.py", "geo_audio.py", "runner_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
+    // The arena gates, after both tables that share the guest's scripted-edge
+    // scratch: it reads data/lifeblood.rs and data/great_door.rs to check the
+    // union in one catalogue slot rather than its own rows alone.
+    "battle_gates.py",
     "shade.py", "ability_art.py",
     // After read_points.py: the charm catalogue wraps its descriptions against
     // the glyph advances that cook writes into data/read_points.rs.
@@ -463,7 +467,7 @@ fn asset_outputs(root: &Path) -> Result<BTreeMap<String, String>> {
     walk(root, &root.join("data"), &mut out)?;
     for state in ["packed-scenes.json", "scene-certificates.json", "ambience.json", "title-music.json", "focus-audio.json",
         "geo-provenance.json", "geo-audio-provenance.json", "lifeblood-provenance.json", "hud-provenance.json",
-        "audio-provenance.json", "great-door.json", "break-effects/report.json", "opaque-tiles/report.json",
+        "audio-provenance.json", "great-door.json", "battle-gates.json", "break-effects/report.json", "opaque-tiles/report.json",
         "opaque-groups/report.json", "scenery-geometry-budgets.json", "selected-regions.json"] {
         let path = root.join(".hkpsx").join(state);
         if path.is_file() {

@@ -48,12 +48,22 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/scripts.rs"));
 const INSTANCES: usize = SCRIPT_INSTANCES.len();
 const VOLUMES: usize = SCRIPT_VOLUMES.len();
 const FIELDS: usize = SCRIPT_FIELD_NAMES.len();
+/// PlayerData that belongs to a controller this port writes by hand rather than
+/// to a cooked FSM, so the cooker never names it. The cooked bank fills the
+/// reserve from slot zero up and these fill it from the top down, so the two
+/// can only ever meet at the assertion below instead of at a wrong value.
+pub const FIELD_FALSE_KNIGHT_ARENA: usize = crate::save::SCRIPT_FIELD_SLOTS - 1;
+pub const FIELD_FALSE_KNIGHT_FIRST_PLOP: usize = crate::save::SCRIPT_FIELD_SLOTS - 2;
+const PORT_FIELDS: usize = 2;
+const _: () = assert!(FIELDS + PORT_FIELDS <= crate::save::SCRIPT_FIELD_SLOTS,
+                      "the cooked script bank has grown into the port's own PlayerData");
 
 static mut RUNNING: [Instance; INSTANCES] = [const { Instance::new() }; INSTANCES];
 static mut VARS: [i32; SCRIPT_VARS] = [0; SCRIPT_VARS];
-/// The PlayerData a script reads and writes. The bench save record carries it,
-/// so a flag a script sets survives a quit the way the source's own does.
-static mut STORE: [i32; FIELDS] = [0; FIELDS];
+/// The PlayerData a script reads and writes, and the port's own fields above.
+/// The bench save record carries the whole reserve, so a flag a script sets, or
+/// one a boss sets, survives a quit the way the source's own does.
+static mut STORE: [i32; crate::save::SCRIPT_FIELD_SLOTS] = [0; crate::save::SCRIPT_FIELD_SLOTS];
 static mut INSIDE: Overlaps<VOLUMES> = Overlaps::new();
 /// The scene the pool is seated in; `usize::MAX` before the first tick.
 static mut SEATED: usize = usize::MAX;
@@ -142,14 +152,10 @@ fn seat(scene: usize) {
     }
 }
 
-/// The PlayerData a script wrote, for the bench save record, with the identity
-/// of the field list it is indexed by.
+/// The PlayerData a script or a port controller wrote, for the bench save
+/// record, with the identity of the field list it is indexed by.
 pub fn record() -> ([i32; crate::save::SCRIPT_FIELD_SLOTS], u32) {
-    let mut out = [0; crate::save::SCRIPT_FIELD_SLOTS];
-    for (slot, value) in out.iter_mut().enumerate() {
-        *value = unsafe { STORE.get(slot).copied().unwrap_or(0) };
-    }
-    (out, SCRIPT_FIELD_FNV)
+    (unsafe { STORE }, SCRIPT_FIELD_FNV)
 }
 /// Restore it from a loaded record, or refuse to.
 ///
@@ -157,17 +163,26 @@ pub fn record() -> ([i32; crate::save::SCRIPT_FIELD_SLOTS], u32) {
 /// would land on the wrong fields: `seenFocusTablet` read as `currentArea` is a
 /// wrong answer no checksum can see. A mismatch drops them and says so rather
 /// than guessing which ones still line up.
+/// The port's own fields ride the same identity even though the cook does not
+/// name them: a bank whose field list moved has moved the slots under them too,
+/// and dropping a won boss fight is the conservative answer to that.
 pub fn boot(values: &[i32; crate::save::SCRIPT_FIELD_SLOTS], field_fnv: u32) {
     unsafe {
         if field_fnv != SCRIPT_FIELD_FNV {
             HK_SCRIPT_RESTORED = 0;
             return;
         }
-        for slot in 0..FIELDS {
-            STORE[slot] = values.get(slot).copied().unwrap_or(0);
-        }
+        STORE = *values;
         HK_SCRIPT_RESTORED = 1;
     }
+}
+/// One PlayerData slot the port owns. `FIELD_*` above are the only valid slots
+/// for these two; the cooked bank reaches its own through the executor.
+pub fn player_data(slot: usize) -> i32 {
+    unsafe { STORE[slot] }
+}
+pub fn set_player_data(slot: usize, value: i32) {
+    unsafe { STORE[slot] = value }
 }
 
 /// Clear the whole bank, for a new game or a session reset. The PlayerData a
@@ -175,9 +190,7 @@ pub fn boot(values: &[i32; crate::save::SCRIPT_FIELD_SLOTS], field_fnv: u32) {
 pub fn reset() {
     unsafe {
         SEATED = usize::MAX;
-        for slot in 0..FIELDS {
-            STORE[slot] = 0;
-        }
+        STORE = [0; crate::save::SCRIPT_FIELD_SLOTS];
         HK_SCRIPT_ACTIVE = 0;
         HK_SCRIPT_TRANSITIONS = 0;
         HK_SCRIPT_WRITES = 0;

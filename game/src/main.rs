@@ -50,6 +50,7 @@ mod geo_audio;
 mod runner_audio;
 mod lifeblood;
 mod great_door;
+mod battle_gates;
 mod render;
 mod alpha_scissor;
 mod alpha_scissor_cache;
@@ -481,6 +482,7 @@ fn main() {
         geo_render::apply(game.geo,&mut game.state,game.region_id);
         lifeblood::apply(game.life,&mut game.state,game.region_id);
         great_door::apply(&game.door,&mut game.state,game.region_id);
+        battle_gates::apply(&mut game.state,game.region_id);
         unsafe { HK_GAME_MODE=1;HK_REGION_ID=game.region_id as u32+1; }
         if scene_ticks_scene!=r.scene {game.scene_ticks=0;scene_ticks_scene=r.scene;}
         game.shade.enter_scene(r.scene);
@@ -572,6 +574,7 @@ fn main() {
                     geo_render::apply(game.geo,&mut game.state,game.region_id);
                     lifeblood::apply(game.life,&mut game.state,game.region_id);
                     great_door::apply(&game.door,&mut game.state,game.region_id);
+                    battle_gates::apply(&mut game.state,game.region_id);
                     let next_camera=game.camera.position();
                     // begin_deferred_swap already selected the future draw side.
                     // No draw-target writes, uploads or GPU kicks occur here.

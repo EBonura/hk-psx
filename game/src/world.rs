@@ -384,6 +384,13 @@ pub struct Strike {
 /// Coins, Scuttlers, enemies and effects otherwise re-decode and re-filter every
 /// edge per body per tick, which exceeded a VBlank with 16 coins and 7 broken objects.
 const EDGE_CACHE:usize=128;
+/// Slots in the scratch the Lifeblood cocoons, the Great Door and the arena
+/// gates share for their exclusions. Eight held two of these; Crossroads_10's
+/// first view alone binds eight gate edges, so a third controller in that view
+/// would have tripped `append_script_edges`'s assertion on the disc rather
+/// than in a test. `host/battle_gates.py` reads this number and refuses a
+/// binding that would not fit, which is the check that keeps it honest.
+pub const SCRIPT_EDGE_SLOTS: usize = 12;
 pub struct State {
     edge_cache:[[i32;4];EDGE_CACHE],
     edge_cache_count:usize,
@@ -397,7 +404,7 @@ pub struct State {
     world_generation:u32,
     geo_edges:[u16;32],
     geo_edge_count:usize,
-    lifeblood_edges:[u16;8],
+    lifeblood_edges:[u16;SCRIPT_EDGE_SLOTS],
     lifeblood_edge_count:usize,
     debris: debris::Pool,
     particles: particles::Pool,
@@ -429,7 +436,7 @@ impl State {
             edge_cache_generation:0,edge_cache_region_id:0,edge_cache_room_key:0,edge_cache_valid:false,edge_epoch:0,
             world_generation:0,
             geo_edges:[0;32],geo_edge_count:0,
-            lifeblood_edges:[0;8],lifeblood_edge_count:0,
+            lifeblood_edges:[0;SCRIPT_EDGE_SLOTS],lifeblood_edge_count:0,
             impacts: crate::impact::Pool::new(),
             debris: debris::Pool::new(),
             particles: particles::Pool::new(),
