@@ -240,7 +240,13 @@ def generate(report, out_path=None):
             name=f'DOOR_DEBRIS_{len(debris_catalog)}'
             debris_catalog[key]=name
             out.append(f'static {name}: &[debris::Spec] = {key};')
-    if len(debris_catalog)>8:raise ValueError('door debris metadata variant budget')
+    # A guard against unnoticed growth, not a format limit: the guest indexes
+    # DEBRIS_CATALOG with a full i32 and the catalogue is a slice. It was 8 while
+    # only Tutorial_01 cooked rigid fragments, and generalising that to the
+    # catalogue took it to 11, because fragment sets differ per region rather
+    # than per scene. Raised with the measurement rather than removed, so the
+    # next jump still has to be looked at.
+    if len(debris_catalog)>12:raise ValueError('door debris metadata variant budget')
     from particles import generated_style,generated_emitter
     particle_scenes={};particle_banks={}
     for region in regions:
