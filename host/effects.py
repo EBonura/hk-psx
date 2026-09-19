@@ -396,8 +396,19 @@ def append_grass_impact_art(source,scene,atlas,frames,clips):
                             'Serialized Anim1 name contains trailing newline; original clip family is preserved without claiming PlayMaker scheduling parity',
                             'GrassCut particles and bending remain separate work']}
 
-# Exact observed Tutorial door family. Other Breakable debris stays unsupported.
-DOOR_SPRITES={'resources.assets:3261','resources.assets:3639','resources.assets:3745','resources.assets:2451'}
+# Breakable.Break's rigid fling, as a shared definition rather than the four
+# Tutorial door sprites it was first written against. Every fragment in the 45
+# admitted scenes flings at flingSpeed 10..17 and angleOffset -60, so those are
+# the contract, not the room. breakables.rigid_fragment owns the body, bounce
+# and spin side; this file owns the art and the solver's per-instance geometry.
+FLING_SPEED=[10.,17.]
+FLING_ANGLE_OFFSET=-60
+# One scene's fragments share the runtime pool in game/src/debris.rs, and a
+# Spec's id is its slot in it, so the pool is the limit on how many of a scene's
+# fragments can exist at once. Two of the 32 scenes that author fragments hold
+# more than the pool (Crossroads_ShamanTemple 57, Crossroads_07 33); the
+# overflow is a recorded refusal rather than a silently shortened list.
+FRAGMENT_POOL=28
 def polygon_moment(points):
     """Mass-one uniform polygon centroid/moment; not native Rigidbody2D inertia."""
     area=cx=cy=moment=0.
@@ -410,60 +421,96 @@ def polygon_moment(points):
     if inertia<=0:raise ValueError('invalid door polygon inertia')
     return center,inertia
 
-def append_door_debris_art(source,scene,atlas,frames):
-    """Original four rigid sprites, present in every same-scene residency bank."""
+def fragment_polygon(components):
+    """The fragment's own collider as local points, box or polygon alike."""
+    kind=next(typ for typ in components if typ.endswith('Collider2D'))
+    collider=components[kind][1]
+    offset=collider['m_Offset']
+    if kind=='BoxCollider2D':
+        x,y=collider['m_Size']['x']/2,collider['m_Size']['y']/2
+        paths=[[(-x,-y),(x,-y),(x,y),(-x,y)]]
+    elif kind=='PolygonCollider2D':
+        paths=[[(p['x'],p['y'])for p in path]for path in collider['m_Points']['m_Paths']]
+    else:
+        raise ValueError(f'unsupported rigid fragment collider {kind}')
+    if len(paths)!=1:raise ValueError('unsupported composite fragment collider')
+    return [[x+offset['x'],y+offset['y']]for x,y in paths[0]]
+
+
+def fragment_records(source,scene,atlas,frames,refusals=None):
+    """Every rigid Breakable fragment this scene authors, with its solver geometry.
+
+    Reproduces Breakable.Break's FlingObject path for any instance matching the
+    shared definition in breakables.rigid_fragment, not the four Tutorial door
+    sprites this was first written against. A part the solver has not been shown
+    is a recorded refusal for its owner, never a fragment quietly left out.
+    """
     from cook import native_sprite,FOCAL,CAM_Z
-    from breakables import breakable_sources
+    from breakables import breakable_sources,rigid_fragment
     import math
-    if Path(scene.file.name).name!='level6':return []
-    textures={};records=[];errors=[]
-    for door in breakable_sources(scene,errors=errors):
+    file=Path(scene.file.name).name
+    textures={};records=[];errors=[];refusals=refusals if refusals is not None else []
+    for owner in breakable_sources(scene,errors=errors,contract=False):
         selected=[]
-        for part in door['debris']:
+        for part in owner['debris']:
             gid=int(part['game_object'].split(':')[-1]);components={typ:(i,d)for i,typ,d in _components(scene,gid)}
-            if 'SpinSelf'not in components:continue
-            required=('SpriteRenderer','Rigidbody2D','PolygonCollider2D','ObjectBounce','Transform')
-            if any(k not in components for k in required):raise ValueError('incomplete physical door fragment')
-            rid,renderer=components['SpriteRenderer'];obj=source.ref(scene.file,renderer['m_Sprite']);sid=source.sid(obj)
-            if sid not in DOOR_SPRITES:raise ValueError('unrecognized spinning Breakable sprite')
-            body=components['Rigidbody2D'][1];bounce=components['ObjectBounce'][1];spin=components['SpinSelf'][1]
-            if body['m_BodyType']!=0 or body['m_Mass']!=1 or body['m_UseAutoMass'] or body['m_LinearDamping']!=0 or abs(body['m_AngularDamping']-.05)>1e-6 or body['m_GravityScale']!=1 or body['m_Constraints']!=0 or spin['spinFactor']!=4:
-                raise ValueError('unsupported door rigid body')
-            if bounce['bounceFactor']!=.5 or bounce['speedThreshold']!=1:raise ValueError('unsupported door bounce')
-            if renderer['m_Color']!={'r':1.,'g':1.,'b':1.,'a':1.} or renderer['m_FlipX'] or renderer['m_FlipY']:
-                raise ValueError('unsupported door sprite color/reflection')
-            matrix=scene.world(scene.go_transform[gid])
-            if abs(matrix[0][1])>1e-6 or abs(matrix[1][0])>1e-6 or not all(.5<=abs(matrix[i][i])<=2 for i in range(2)):
-                raise ValueError('unsupported door world scale/rotation')
-            collider=components['PolygonCollider2D'][1];paths=collider['m_Points']['m_Paths'];offset=collider['m_Offset']
-            if len(paths)!=1:raise ValueError('unsupported composite door collider')
-            points=[[p['x']+offset['x'],p['y']+offset['y']]for p in paths[0]]
-            center,_=polygon_moment(points)
-            sx,sy=matrix[0][0],matrix[1][1]
-            _,inertia=polygon_moment([[x*sx,y*sy]for x,y in points])
+            try:
+                if rigid_fragment(scene,gid) is None:continue
+                if owner['fling_speed']!=FLING_SPEED or round(owner['angle_offset'])!=FLING_ANGLE_OFFSET:
+                    raise ValueError(f"unmeasured fling {owner['fling_speed']} at {owner['angle_offset']}")
+                rid,renderer=components['SpriteRenderer'];obj=source.ref(scene.file,renderer['m_Sprite']);sid=source.sid(obj)
+                spin=next((components[name][1]for name in ('SpinSelf','SpinSelfSimple')if name in components),None)
+                # SpinSelfSimple turns at a fixed rate; the solver only carries
+                # SpinSelf's speed-driven torque, so the others are refused here
+                # rather than drawn spinning at the wrong rate.
+                if 'SpinSelfSimple' in components:raise ValueError('SpinSelfSimple fixed-rate spin is not in the solver')
+                # Spec carries one speed-driven torque and generated_debris
+                # requires it positive, so a spinless fragment has no Spec to
+                # write rather than one that silently never turns.
+                if spin is None or spin['spinFactor']<=0:raise ValueError('fragment has no positive SpinSelf factor')
+                if renderer['m_Color']!={'r':1.,'g':1.,'b':1.,'a':1.} or renderer['m_FlipX'] or renderer['m_FlipY']:
+                    raise ValueError('unsupported fragment sprite color/reflection')
+                matrix=scene.world(scene.go_transform[gid])
+                if abs(matrix[0][1])>1e-6 or abs(matrix[1][0])>1e-6 or not all(.5<=abs(matrix[i][i])<=2 for i in range(2)):
+                    raise ValueError('unsupported fragment world scale/rotation')
+                points=fragment_polygon(components)
+                center,_=polygon_moment(points)
+                sx,sy=matrix[0][0],matrix[1][1]
+                _,inertia=polygon_moment([[x*sx,y*sy]for x,y in points])
+                factor=spin['spinFactor']if spin else 0.
+            except ValueError as error:
+                refusals.append({'owner':owner['source'],'part':part['game_object'],'reason':str(error)});continue
             key=(sid,sx,sy)
             if key not in textures:
                 image,box=native_sprite(obj)
                 tex=atlas.add(image,(box[2]-box[0])*abs(sx)*FOCAL/-CAM_Z,(box[3]-box[1])*abs(sy)*FOCAL/-CAM_Z,streamed=False)
                 textures[key]=len(frames)
                 frames.append({'texture':tex,'box':box,'sprite':sid,'event':{'source':'Breakable debris/SpinSelf'}})
-            selected.append({'source':f'level6:{rid}','game_object':part['game_object'],'sprite':sid,'door_source':door['source'],
-                'door_state':door['state_index'],'frame':textures[key],'scale':[round(sx*65536),round(sy*65536)],'origin':[round(v*65536)for v in part['position'][:2]],
+            selected.append({'source':f'{file}:{rid}','game_object':part['game_object'],'sprite':sid,'door_source':owner['source'],
+                'door_state':owner['state_index'],'frame':textures[key],'scale':[round(sx*65536),round(sy*65536)],'origin':[round(v*65536)for v in part['position'][:2]],
                 'centroid':[round(v*65536)for v in center],'polygon':[[round(v*65536)for v in p]for p in points],
-                'inertia_estimate':inertia,'torque':round((4/50)*(180/math.pi)/inertia*65536),'angle_offset':round(door['angle_offset']),
+                'inertia_estimate':inertia,'torque':round((factor/50)*(180/math.pi)/inertia*65536),'angle_offset':round(owner['angle_offset']),
                 'z':part['position'][2],'order':renderer['m_SortingOrder'],'layer':renderer['m_SortingLayer'],
                 'limitations':['Uniform-polygon inertia and 50Hz approximation are not verified Unity native physics',
                     'Source ObjectBounce cache/threshold/reflection and sleep are implemented; contact manifold/inertia/friction remain fixed-point native-physics approximations',
                     'No authored lifetime; persistent per-scene pool, deterministic RNG differs from Unity']})
-        if selected:
-            if len(selected)!=4 or {p['sprite']for p in selected}!=DOOR_SPRITES or door['fling_speed']!=[10.,17.] or door['angle_offset']!=-60:
-                raise ValueError('unvalidated door fragment family/launch')
-            records.extend(selected)
-    if len(records)!=28:raise ValueError(f'expected 28 exact Tutorial door fragments, got {len(records)}')
+        records.extend(selected)
     # Stable identity independent of texture/region ordering; draw original Z order.
     indices={p['source']:i for i,p in enumerate(sorted(records,key=lambda p:int(p['source'].split(':')[-1])))}
     for p in records:p['id']=indices[p['source']]
+    if len(records)>FRAGMENT_POOL:
+        authored=len(records)
+        for p in records:
+            if p['id']>=FRAGMENT_POOL:
+                refusals.append({'owner':p['door_source'],'part':p['game_object'],
+                    'reason':f'rigid fragment pool holds {FRAGMENT_POOL}; this scene authors {authored}'})
+        records=[p for p in records if p['id']<FRAGMENT_POOL]
     return sorted(records,key=lambda p:(-p['z'],p['layer'],p['order'],p['source']))
+
+
+def append_door_debris_art(source,scene,atlas,frames):
+    """Cooked rigid fragments for this scene; see fragment_records."""
+    return fragment_records(source,scene,atlas,frames)
 
 def generated_debris(records,scene):
     if len(records)>28:raise ValueError('door fragment pool budget')
