@@ -48,12 +48,13 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P19/P20 | in progress | 123 of 215 admitted: the Crossroads_39 Runner, the mirrored Crossroads_37 Leaper and the Egg Sac all landed. `host/remaining_actors.py` measures the roster: originally 216 placements, 120 admitted, 96 refused across twelve families, with a per-recognizer refusal reason for each. Contracts written for Hatcher, Egg Sac and Mender Bug. Four placements are refused by the recognizer rather than the controller and are being admitted; Crossroads_22 cannot hold a full Hatcher cage against the 32-actor cap; Zombie Myla and one Runner are hidden by the original and must stay out. Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
 | P14 | in progress | Builds 112 to 121. Step 1's audit corrected the jump velocity and added the jump, ledge and head-bump buffers the port was missing. Step 2 implemented the Mothwing Cloak, the Mantis Claw's wall slide and jump, the Monarch Wings, the Crystal Heart and the Shade Cloak, all from source constants and the Superdash FSM. Step 3 catalogued every PlayerData traversal flag and found acid already covered by the generic hazard path, `hasAcidArmour` and `hasLantern` unreachable, and one unimplemented bounce shroom owed to P11. Step 4 took the input priority from the Can* methods. Step 5 added the Dream Nail with its SOUL reward. Step 6 mapped L1, R1 and Triangle and extended the replay schema and the native probe. Step 7's combinations are hk-sim tests. The art landed afterwards and this row was stale: all 16 clips are cooked through the Hollow Shade route, 97 frames in 36,190 linked bytes reaching VRAM through the shared 64x64 animation slots, so Dash, Wall Slide, Walljump, Double Jump and the four Dream Nail clips play their own art rather than Fall or Idle. Remaining: no ability has an acquisition route (step 8), and no route on the disc exercises any ability, so every one of them is verified in hk-sim and the native probe only. |
 | P15 | in progress | Build 122 adds Vengeful Spirit from `Spell Control`, `Fireball Cast` and the projectile's own FSMs, with the source's one-button cast-versus-Focus split. Two of those remainders are now done and this row was stale: step 4's centralized damage resolution is `apply_hurt`/`respond_to_hurt` in game/src/main.rs, and the `Ball`/`Ball End` art is cooked through the Hollow Shade route rather than needing a reserved VRAM rectangle. Remaining: Desolate Dive and Howling Wraiths (catalogued only, and both gated on progression no admitted scene grants), nail arts, nail damage tiers, and the verification matrix of step 7. |
-| P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Variables are a caller-owned pool and `GetOwner` resolves at cook time, which between them unblocked 852 instances. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, because an FSM needs every action supported. `PlayerDataBoolTest` is answered too, through the existing persistent store plus a read-only-variable fold, so the first authored behaviour compiles: 246 instances, 7 ops. The next slice is not more opcodes: `Trigger2dEvent` (198), `FindChild` (176), `GetVelocity2d` (122), `Tk2dPlayAnimation` (115) and every other remaining blocker needs a guest object model, which is step 5's scope and reference work. P12, P17, P18 and P23 all wait on this. |
+| P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Variables are a caller-owned pool and `GetOwner` resolves at cook time, which between them unblocked 852 instances. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, because an FSM needs every action supported. `PlayerDataBoolTest` is answered too, through the existing persistent store plus a read-only-variable fold, so the first authored behaviour compiles: 246 instances, 7 ops. The next slice is not more opcodes: `Trigger2dEvent` (198), `FindChild` (176), `GetVelocity2d` (122), `Tk2dPlayAnimation` (115) and every other remaining blocker needs a guest object model, which is step 5's scope and reference work. P12, P17, P18 and P23 all wait on this. **A cooked FSM now runs on the disc**: Town's `Area Resetter` takes TOUCH from its well-mouth trigger and writes `currentArea`, observed on `well-drop` and `crossroads-gate`. `Trigger2dEvent` compiles for 470 of 1,026 instances, `host/cook_scripts.py` cooks 10 instances and 27 ops into 2,565 linked bytes, and `game/src/script.rs` runs them for +6,896 bytes of static footprint. The honest headline is still that 245 of the 255 compiling instances compile to nothing, and that a script's PlayerData write does not yet reach the memory card. |
 | P11 | in progress | Steps 1 and 4 done for the admitted world. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. The `BounceShroom` in Crossroads_38 is implemented as the down slash target it actually is, with its `fatGrubKing` gate recorded rather than evaluated. Owed: the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
-| P16 | in progress | Step 1 done. `host/items.py` catalogs 40 charms with notch costs and PlayerData fields, 26 equipment entries, and the fragment fusion rules from the prefabs the pickups spawn. The slice contains 6 charms, 1 notch, 3 mask shards, 1 vessel fragment, 3 relics and the City Crest, none of it implemented. Charm effects belong to steps 5 and 6 and are not read. |
+| P16 | in progress | Steps 1 to 4 have a real slice. `host/charms.py` cooks all 40 charms with the equip contract asserted out of the `UI Charms` FSM rather than assumed: a full board never overcharms and never counts an attempt, and overcharming is unlocked the way the source unlocks it, by four refused attempts whose notches are handed back and a fifth that goes through and sets `canOvercharm`. The board is a pause row, the collection and notch budget ride the save record, and six effects are implemented from real numbers (Grubsong, Stalwart Shell, Soul Catcher, Soul Eater, Fragile Heart, Fragile Strength). The other 34 cook as no effect and the board refuses to equip them, each with the missing port system named. No icons: a pause screen is reachable from every view, so the 3-slot global headroom applies, and the Hollow Shade route does not rescue it either, because there are 8 shared animation slots and the frozen view behind the panel is still drawing into them. Previously: step 1 done. `host/items.py` catalogs 40 charms with notch costs and PlayerData fields, 26 equipment entries, and the fragment fusion rules from the prefabs the pickups spawn. The slice contains 6 charms, 1 notch, 3 mask shards, 1 vessel fragment, 3 relics and the City Crest, none of it implemented. Charm effects belong to steps 5 and 6 and are not read. |
 | P17 | in progress | Step 1 done. `host/shops.py` catalogs Sly's stock and the stag rules, and found that prices come from an encrypted sheet rather than the serialized `cost`, which is stale on 9 of 14 items. Every `ShopMenuStock` is in an unadmitted scene, so no purchase is reachable; the whole economy loop in the slice is 1,177 Geo earned against 230 Geo of sinks. |
 | P18 | in progress | Step 1 done. `host/npcs.py` catalogs 27 NPCs, their gates and 154 decrypted dialogue keys. On a fresh save only Elderbug and the Jiji door are talkable in Dirtmouth; the other eight are gated on progression the port cannot reach. Dialogue selection is a priority list, verified from PlayMaker.dll and now pinned by a test in the script executor. Steps 1 and 2 have their first instance: Elderbug stands in Dirtmouth and holds his whole fresh-save conversation. His talk range is npc_control's own trigger cooked as world-bank kind 14, his six pages are Conversation Control's entries, his facing comes from the `Hero Is Right`/`Hero Is Left` compare against his own `localScale.x`, and his three clips ride Town's room bank for 18 of its 212 spare texture slots. Verified on the disc, not only in the cook: the `town-elderbug` route walks into his trigger, opens with UP and pages through all six entries with X, and a captured frame shows him drawn in front of the bench. Owed: `metElderbug` is a session flag rather than a PlayerData record, conversation selection takes the fresh-save branch only, and four scenes (Tutorial_01, Crossroads_03, Crossroads_01, Crossroads_13) have too little texture headroom to hold an NPC at all. |
-| P12, P21-P31 | pending | Follow dependency order in the master plan. |
+| P21 | in progress | The False Knight is fully extracted and its phase machine and arena lifecycle run in `hk-sim` with 26 tests: 65 body hp restored after every stagger, 40 head hp, three staggers, eight rage slams, the three-row phase table and the reusable gate lifecycle. It cannot be drawn, and the reason is not the CLUT budget: Crossroads_10 has 141 free slots against the boss's 110, but 77 of its 110 sprites exceed the 64x64 animation cache, its largest frame wants 12 slots against 8, and one frame is larger than the whole 16,384-byte upload budget. It is also not in an admitted scene, because `BossLoader` additively loads `Crossroads_10_boss` and neither additive scene is in the scene table. docs/FALSE_KNIGHT.md has the route past both. Nothing is wired into the actor pool, because a controller variant that can never be instantiated is dead code. |
+| P12, P22-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -2291,6 +2292,96 @@ Two things follow that were not obvious before measuring. Four scenes cannot
 hold a three-clip NPC at all: Tutorial_01, Crossroads_03, Crossroads_01 and
 Crossroads_13 have 3, 10, 13 and 13. And Tutorial_01, the scene the game opens
 in, is the constraint on every resident-art decision in the whole port.
+
+## A PlayMaker FSM runs on the PlayStation
+
+Town's `Area Resetter` sits in `Detect` waiting for its `Trigger2dEvent` volume
+at the mouth of the well, takes `TOUCH` to `Reset`, and writes `currentArea`.
+That is a state machine read out of a Unity scene, compiled to the script IR,
+cooked into a linked bank and executed on a 1994 console, with its trigger
+entered by the hero body and its write landing in the persistent store. Two
+routes walk it.
+
+Getting `Trigger2dEvent` to compile at all needed an argument rather than a
+lookup. Only 71 of its 1,026 instances name a `Player` tag, and not one of the
+15 FSMs blocked solely on this action names any tag at all, so tags would have
+unlocked nothing. A no-tag instance fires for whatever Unity's physics
+delivered, and what physics delivers is what the project's Physics2D layer
+matrix allows: layer 13 `Hero Detector` admits layer 9 `Player` and no other
+named layer. That is the rule the engine applies, not a guess about what a room
+contains. 470 compile, 56 by tag and 414 by the matrix, and the refusals stay
+refusals: 309 volumes no Player collider can reach, 52 that store the colliding
+object, 51 filtering on `Enemies`, 94 naming a child collider of the Knight
+rather than its body, and 22 whose own object carries no collider, so Unity
+never raises the callback for them at all.
+
+The honest headline is not the 255 instances that compile. **245 of them compile
+to nothing**: `Spawn Offset`, `PlayMaker Unity 2D`, `RespawnTriggerFSM` and the
+Shade markers are single empty states, so every action in them compiles
+trivially. Ten have ops and three can act. Seven of the remaining are `Area
+Title Controller`, which is one state with no transitions, so its `DISPLAY` goes
+nowhere. That is also what the source does, so it is cooked and reported
+separately rather than counted as behaviour.
+
+Cost: 2,565 linked bytes of bank and +6,896 bytes of static footprint, about 6%
+of the headroom, for an executor and a module that had never been linked.
+
+Owed, and named in the cooker's own report: a script's PlayerData write lives in
+a session store and never reaches the memory card, so a flag a script sets is
+lost on a quit where the source would have kept it.
+
+### Watching before pinning
+
+The behaviour the whole slice was built around, `Set Seen Focus Tablet` in
+King's Pass, is not reached by any route. Its volume sits at y 27.98 to 37.9;
+`kings-death` stays below y 25 and `kings-return` passes underneath at y 11.4.
+Pinning it there, as the plan said to, would have asserted a script that cannot
+fire. Adding the telemetry first and reading what ten routes actually observed
+is what found the one that does.
+
+## Two bugs the disc found that no test could
+
+Neither of these had a symptom anywhere except on hardware.
+
+**The card fixtures.** The save record grew from 56 bytes to 78 when the charm
+board and the NPC conversation cursors joined it, so every committed card under
+`tools/cards` read as Corrupt and the seven routes that boot from one stopped
+resuming. That is correct behaviour, not a bug: a short record must never
+half-decode into a save whose new fields would be invented. Regenerating by
+replay is circular, though, because `bench-save` is the only route that writes a
+card and it resumes from the fixture that needs regenerating.
+`tools/migrate_cards.py` carries them forward instead, reading the layout out of
+`save.rs` so it cannot drift, refusing any record whose own checksum does not
+hold, and zeroing only fields genuinely zero for a save made before charms or
+conversations existed.
+
+The first attempt at that failed in the most expensive way available. It
+rewrote each record correctly, checksum and all, and left the psx-mc container
+header 16 bytes ahead of it saying 56. That header is what makes a read
+self-describing, so the guest read back 56 bytes of a 78-byte record and
+rejected it for being short. Eight routes failed with nothing to point at: the
+records were valid the entire time.
+
+**A loop nobody was running.** With the cards loading again, `kings-return` came
+back 3.2 units short of where it had always stopped, with two masks more than it
+should have had, while its kills, its hits, the Crawler's health and its
+breakables were all identical. The cause was not damage. `charms::vitals` walked
+all 40 charms on every `params()` call, and `params` is called several times a
+tick by `hurt`, `maintain`, `new_vitals` and the enemy soul gain. That is enough
+to push a frame past a VBlank boundary, which changes how many simulation ticks
+fall between two input polls, which moves the route. An empty board returns
+immediately now and the route is back to exactly 8135671.
+
+This is the second time per-tick cost has shown up as a position rather than as
+a frame time, after the wall probe moved the same route by 6.8 units. It is
+worth saying plainly: on this port, route positions are a performance test.
+
+And it was only findable because `HK_HEALTH` on that route had been pinned an
+hour earlier, from a single observation, in a pass that added assertions to
+three routes which were doing real combat and asserting none of it.
+`crossroads-gate` kills an enemy, takes two hits and loses a mask; the enemy
+runtime could have stopped working entirely and validate would have printed
+PASS.
 
 ## Required package completion record
 
