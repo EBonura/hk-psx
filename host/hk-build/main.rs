@@ -201,7 +201,36 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("town-shop", "HK_SCENE_GATE_LOADS", 1), ("town-shop", "HK_REGION_ID", 694),
     ("town-shop", "HK_SHOP_OPENED", 1), ("town-shop", "HK_SHOP_CLOSED", 1),
     ("town-shop", "HK_SHOP_OPEN", 0), ("town-shop", "HK_SHOP_PURCHASES", 0),
-    ("town-shop", "HK_SAVE_LOADED", 1), ("town-shop", "HK_DEATHS", 0)];
+    ("town-shop", "HK_SAVE_LOADED", 1), ("town-shop", "HK_DEATHS", 0),
+    // The False Knight, fought on the disc. The card is seeded rather than
+    // earned, because the arena is three scene transitions past anywhere a
+    // route walks; tools/seed_card.py writes it and says plainly that it proves
+    // the room and not the journey to it.
+    //
+    // The Knight lands on the arena floor, which exists only because
+    // Crossroads_10 merges its additive boss scene, crosses Battle Scene's
+    // curtain and swings. TRIGGERED and DROPPED are the fight starting at all.
+    // Invincibility is granted first so the tape can keep swinging: without it
+    // the boss takes three of five masks in under 4,000 polls, which is its
+    // attacks landing and is worth knowing.
+    //
+    // The boss ends at 10 of 65 hp, deterministically, and that is not asserted
+    // here: the Knight stands still and the boss eventually fights from out of
+    // his reach, so the last hits need a tape that chases. A stagger, an
+    // exposed head and a death are all past that and none has been seen on
+    // hardware.
+    //
+    // Route string, through poll_tape at 8000:
+    //   9:start:1,12:cross:1,60:start:1,63:up:1,66:up:1,69:cross:1,
+    //   72:right:1,78:circle:1,82:circle:1,150:right:30,
+    //   then 200:square:2 every 26 polls to 7800
+    ("boss-fight", "HK_FK_TRIGGERED", 1), ("boss-fight", "HK_FK_DROPPED", 1),
+    ("boss-fight", "HK_FK_ACTIVE", 1), ("boss-fight", "HK_CHEATS", 1),
+    ("boss-fight", "HK_HEALTH", 5), ("boss-fight", "HK_DEATHS", 0),
+    ("boss-fight", "HK_SAVE_LOADED", 1),
+    // 235, not the 239 he lands in: the boss knocks him off the arena floor
+    // into the view below during the fight, and he is still there at the end.
+    ("boss-fight", "HK_REGION_ID", 235)];
 /// Telemetry a route must reach at least, rather than exactly.
 ///
 /// Reserved for counters that sit on a knife edge. The frame is stall-bound, so
@@ -235,13 +264,13 @@ const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
     ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd"),
     ("bench-save", "town-continue.mcd"), ("well-drop", "town-continue.mcd"), ("town-reset2", "town-continue.mcd"),
     ("crossroads-gate", "town-continue.mcd"), ("town-elderbug", "town-continue.mcd"),
-    ("town-shop", "town-continue.mcd")];
+    ("town-shop", "town-continue.mcd"), ("boss-fight", "boss-fight.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-reset2", true),
     ("crossroads-gate", true), ("town-continue", false), ("town-shade", false), ("kings-death", false),
     ("kings-return", false), ("bench-save", false), ("town-elderbug", false),
     ("cheat-spell", false), ("cheat-dash", false), ("cheat-wings", false), ("ctrl-wings", false),
     ("cheat-heart", false), ("cheat-dream", false), ("kings-climb", false), ("ctrl-climb", false),
-    ("town-shop", true)];
+    ("town-shop", true), ("boss-fight", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
