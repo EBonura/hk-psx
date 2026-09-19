@@ -1733,10 +1733,17 @@ jobs. Together they are 90 of the 1,879 instances, 4.8 points of coverage, for
 one native call plus a scope selector, and `script.rs` already has the passing
 test for the constant-operand form they need.
 
-The blocker is not the IR. `ActivateAllChildren` needs the cooked bank to carry
-parentage so the guest can resolve a parent's children, and the single-object
-form needs a per-object active state the guest actually honours. Both are world
-bank questions, so this waits on that rather than on more opcodes.
+The blocker is not the IR, and it is further away than it looks. Checking what
+the bank actually carries: a region object's `state_id` is a persistence key for
+the store, not a runtime active flag, and nothing in the renderer consults such
+a thing. Scenery becomes draws at cook time. So `ActivateGameObject` needs the
+renderer to be able to drop a draw at runtime, which is a P08 capability, and
+`ActivateAllChildren` needs bank parentage on top of that.
+
+That reframes the 90 instances. They are not 4.8 points of coverage waiting on
+one compile arm; they are waiting on a rendering feature the port has not built.
+Worth knowing before anyone writes the compile arm and finds the host has
+nothing to call.
 
 `SendEventByName` to another FSM (31 instances) is a different kind of work and
 should not be compared like for like: the action already compiles to self, and
