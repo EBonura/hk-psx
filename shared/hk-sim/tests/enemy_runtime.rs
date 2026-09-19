@@ -690,58 +690,89 @@ fn oversized_actor_terrain_retains_exact_direct_fallback() {
     }
 }
 
-/// Source False Knight (`level48:40`) standing in its arena: `FalseyControl`'s
-/// `Idle` and `Turn R`/`Turn L` and nothing else. The authored transform hangs
-/// it above the arena, so the fixture places it in the air and expects the
-/// shared solver to put it down before anything else happens.
+/// Source False Knight (`level48:40`) and the `Battle Scene` trigger that starts
+/// its fight. The authored transform hangs it inside the ceiling slab above the
+/// arena, so the fixture places it in the air and expects nothing to happen to
+/// it until the hero crosses the trigger.
 const FALSE_KNIGHT: ActorSpec = ActorSpec {
-    controller: ActorController::FalseKnight,
+    controller: ActorController::FalseKnight {
+        jump_antic_clip: 2, land_clip: 3, stun_opened_clip: 4, attack_clip: 5,
+        trigger: [-2 * ONE, -ONE, 2 * ONE, 10 * ONE],
+    },
     source_id: 100040, x: 0, y: 8 * ONE,
     // Asymmetric on purpose: a symmetric box would hide which way it faces.
     bounds: [-ONE, -2 * ONE, ONE / 2, 0],
-    health: EnemyParams { health: 65, contact_damage: 1, invincible: true, ..SPEC.health },
+    health: EnemyParams { health: 65, contact_damage: 1, evasion_ticks: 15,
+        invincible: false, damage_override: false },
     walk: WalkParams { speed: 0, turn_ticks: 10, turn_cooldown_ticks: 0 },
-    // `Turn R` writes the source scale +1.3, which the cook takes the absolute
-    // of, so a boss that starts facing right starts at -1 here.
-    initial_direction: -1,
+    // `Turn L` writes the source scale -1.3, which the cook takes the absolute
+    // of, so the one authored placement, which faces left, starts at +1 here.
+    initial_direction: 1,
     walk_clip: 0, turn_clip: 1, corpse: None, recoil_speed: 0, recoil_ticks: 0, ..SPEC
 };
-/// Two clips over two textures, so Idle and Turn are told apart by what is
-/// submitted rather than by counting quads.
+/// Wide enough that the fight's own jumps stay inside one collision view: the
+/// slam leaps up to eighteen units past the hero.
+fn boss_region() -> world::Region {
+    world::Region {
+        scene: 0,
+        bounds: [-60 * ONE, -5 * ONE, 60 * ONE, 40 * ONE],
+        collision_bounds: [-64 * ONE, -10 * ONE, 64 * ONE, 44 * ONE],
+        actors: &[&FALSE_KNIGHT],
+    }
+}
+/// The six cooked clips over six textures, so which one is playing is read off
+/// what was submitted rather than guessed from a quad count.
 fn boss_room() -> Vec<u8> {
     let mut b = Vec::from(*b"HKROOM02");
-    for n in [1u32, 2, 0, 2, 2, 1, 0, 0] {
+    for n in [1u32, 6, 0, 6, 6, 1, 0, 0] {
         b.extend(n.to_le_bytes());
     }
-    for texture in 0..2u16 {
+    for texture in 0..6u16 {
         for n in [0u16, texture * 8, 0, 8, 8, texture] {
             b.extend(n.to_le_bytes());
         }
         b.extend(0u32.to_le_bytes());
     }
-    for texture in 0..2i32 {
+    for texture in 0..6i32 {
         for n in [texture, -ONE, -2 * ONE, ONE / 2, 0] {
             b.extend(n.to_le_bytes());
         }
     }
-    // Idle loops (wrap 0) and Turn plays once (wrap 2), as the source library
-    // declares them; one frame each is enough to name the clip in a draw.
-    for (start, wrap) in [(0u32, 0u32), (1, 2)] {
-        for n in [start, 1, 12 * 65536, wrap] {
+    // Idle loops (wrap 0); the other five play once (wrap 2), as the source
+    // library declares them. One frame each names the clip in a draw.
+    for start in 0..6u32 {
+        for n in [start, 1, 12 * 65536, if start == 0 { 0 } else { 2 }] {
             b.extend(n.to_le_bytes());
         }
     }
-    for n in [-20 * ONE, 0, 20 * ONE, 0] {
+    for n in [-60 * ONE, 0, 60 * ONE, 0] {
         b.extend(n.to_le_bytes());
     }
-    b.resize(b.len() + 32 * 2 + 32768, 0);
+    b.resize(b.len() + 32 * 6 + 32768, 0);
     b
 }
+/// One swing and its recovery frame, with the hero parked on the boss so that
+/// both the body box and the exposed Head box are inside the nail polygon. A
+/// fresh `Vitals` each tick because the Hitter would otherwise kill the
+/// five-mask harness hero long before the fight ends; the fight is what is
+/// under test, not how survivable it is.
+fn swing(w: &mut enemies::EnemyWorld, r: &world::Region, room: &hk_format::Room,
+         p: &mut Player, n: &mut Nail) -> enemies::Events {
+    let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+    p.x = x;
+    p.y = y + ONE;
+    n.active = true;
+    n.age = 1;
+    let events = tick(w, r, room, p, &mut Vitals::new(VITAL_PARAMS), n);
+    n.active = false;
+    tick(w, r, room, p, &mut Vitals::new(VITAL_PARAMS), n);
+    events
+}
 #[test]
-fn false_knight_falls_out_of_its_dormant_perch_and_then_only_turns() {
+fn nothing_of_the_boss_runs_until_the_hero_crosses_the_battle_trigger() {
     let bytes = boss_room();
     let room = hk_format::Room::parse(&bytes).unwrap();
-    let r = world::Region { actors: &[&FALSE_KNIGHT], ..region() };
+    let r = boss_region();
     let mut w = enemies::EnemyWorld::new();
     let mut p = Player::spawn(10 * ONE, ONE);
     let mut v = Vitals::new(VITAL_PARAMS);
@@ -749,43 +780,27 @@ fn false_knight_falls_out_of_its_dormant_perch_and_then_only_turns() {
     for _ in 0..120 {
         tick(&mut w, &r, &room, &mut p, &mut v, &n);
     }
+    // `Dormant` runs no solver: the body holds the authored transform, and it
+    // is not drawn either, because the source hides it inside the ceiling slab.
+    assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap(), (0, 8 * ONE, 65));
+    assert!(submitted(&w, &r, &room).is_empty());
+    // `Detect` -> `Start`: BATTLE START, and `Start Fall` drops it.
+    p.x = 0;
+    for _ in 0..120 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
     // Body bottom is two units below the transform, so a boss standing on the
     // fixture floor at y 0 rests at y 2.
-    let (x, y, health) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
-    assert_eq!((x, y), (0, 2 * ONE));
+    let (_, y, health) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+    assert_eq!(y, 2 * ONE);
     assert_eq!(health, 65);
-    // Facing right, at -1, draws the frame box as authored.
-    let idle = submitted(&w, &r, &room);
-    assert_eq!(idle.len(), 1);
-    assert_eq!(idle[0].0, 0);
-    let facing_right = span(&idle[0].1);
-    // The Knight crosses to the other side: `Turn L` plays Turn once and the
-    // facing is already written while it plays.
-    p.x = -10 * ONE;
-    tick(&mut w, &r, &room, &mut p, &mut v, &n);
-    let turning = submitted(&w, &r, &room);
-    assert_eq!(turning.len(), 1);
-    assert_eq!(turning[0].0, 1, "Turn is its own clip");
-    let facing_left = span(&turning[0].1);
-    assert_ne!(facing_left, facing_right, "the body mirrors on entry to Turn");
-    // Nine more ticks of the ten-tick Turn clip, then Idle again, mirrored.
-    for _ in 0..9 {
-        tick(&mut w, &r, &room, &mut p, &mut v, &n);
-        assert_eq!(submitted(&w, &r, &room)[0].0, 1);
-    }
-    tick(&mut w, &r, &room, &mut p, &mut v, &n);
-    let back = submitted(&w, &r, &room);
-    assert_eq!(back[0].0, 0);
-    assert_eq!(span(&back[0].1), facing_left);
-    // It stands still through all of it: no walk speed, and the solver is not
-    // run again once it has landed.
-    assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap(), (0, 2 * ONE, 65));
+    assert_eq!(submitted(&w, &r, &room).len(), 1, "it is drawn once it has dropped");
 }
 #[test]
-fn a_standing_false_knight_ignores_the_nail_the_way_check_health_does() {
+fn the_body_staggers_at_zero_instead_of_dying_and_opens_its_armour() {
     let bytes = boss_room();
     let room = hk_format::Room::parse(&bytes).unwrap();
-    let r = world::Region { actors: &[&FALSE_KNIGHT], ..region() };
+    let r = boss_region();
     let mut w = enemies::EnemyWorld::new();
     let mut p = Player::spawn(0, ONE);
     let mut v = Vitals::new(VITAL_PARAMS);
@@ -793,17 +808,70 @@ fn a_standing_false_knight_ignores_the_nail_the_way_check_health_does() {
     for _ in 0..120 {
         tick(&mut w, &r, &room, &mut p, &mut v, &n);
     }
-    p.x = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap().0;
-    for _ in 0..20 {
-        n.active = true;
-        n.age = 1;
-        let events = tick(&mut w, &r, &room, &mut p, &mut v, &n);
-        assert_eq!(events.kills, 0);
-        n.active = false;
+    // Thirteen five-damage hits empty a 65 hp body. `Check Health` answers zero
+    // with SetHP 65 and STUN, so it never dies and never stops being drawn.
+    let mut opened = false;
+    for _ in 0..500 {
+        let events = swing(&mut w, &r, &room, &mut p, &mut n);
+        assert_eq!(events.kills, 0, "the body is not killable");
+        assert!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap().2 > 0);
+        if submitted(&w, &r, &room).iter().any(|(id, _)| *id == 4) {
+            opened = true;
+            break;
+        }
+    }
+    assert!(opened, "the stagger reaches `Opened` and shows the exposed head");
+}
+#[test]
+fn three_conversions_take_it_through_the_death_sequence() {
+    let bytes = boss_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = boss_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(0, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut n = Nail::new();
+    for _ in 0..120 {
         tick(&mut w, &r, &room, &mut p, &mut v, &n);
     }
-    // The source body restores to 65 every time it reaches zero; without the
-    // stagger states the guest admits it invincible instead.
-    assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap().2, 65);
-    assert_eq!(submitted(&w, &r, &room).len(), 1);
+    // A player who punishes the stagger and then backs off, rather than the
+    // impossible one that swings every other tick forever: the armour closing
+    // holds fire for the 700 ticks a rage takes. That is not politeness, it is
+    // what makes the fight finish at all. The source body is damageable during
+    // its rage, so a hero who can stand inside the boss and keep hitting it
+    // empties the 65 hp again before the eighth slam, `Check Health` staggers it
+    // out of `Rage Check`, and the branch that reads `Stunned Amount >= 3` is
+    // never reached however many conversions the player wins.
+    let mut hits = 0u32;
+    let mut died = false;
+    let mut was_open = false;
+    let mut hold = 0u32;
+    for _ in 0..30000 {
+        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+        // The camera follows the boss so the open-armour clip is never culled.
+        render::QUADS.with(|q| q.borrow_mut().clear());
+        w.prepare_draws(&r, &room, (x, y)).draw();
+        let open = render::QUADS.with(|q| q.borrow().iter().any(|(id, _)| *id == 4));
+        if was_open && !open { hold = 700; }
+        was_open = open;
+        if hold == 0 {
+            p.x = x;
+            p.y = y + ONE;
+            n.active = true;
+            n.age = 1;
+        }
+        hold = hold.saturating_sub(1);
+        let events = tick(&mut w, &r, &room, &mut p, &mut Vitals::new(VITAL_PARAMS), &n);
+        n.active = false;
+        assert_eq!(events.kills, 0, "neither HealthManager reports a kill");
+        hits += events.hits as u32;
+        // `Decrement Battle Enemies` and then the HealthManager death event the
+        // arena has been waiting on. The boss pays no Geo, but this drain is
+        // where a dead actor's death event surfaces.
+        w.take_geo_deaths(0, |_, _, _| { died = true; true });
+        if died { break; }
+    }
+    assert!(died, "the fight never reached the death event");
+    // Three staggers converted: 13 body hits and 8 head hits each, at least.
+    assert!(hits >= 63, "the fight took {hits} nail hits, which is too few to have run");
 }

@@ -327,54 +327,9 @@ fn the_recorded_health_numbers_are_the_source_ones() {
 }
 
 #[test]
-fn the_standing_subset_only_idles_and_turns() {
-    // `Turn L` writes Facing Right false with SetScale x -1.3; a placement whose
-    // own scale is negative starts there.
-    let mut sentry = Sentry::new(false);
-    assert_eq!(sentry.clip(), Clip::Idle);
-    // `Idle` compares the hero's x every frame and nothing else happens while
-    // the hero stays on the side the boss already faces.
-    for _ in 0..600 {
-        assert!(!sentry.tick(false));
-        assert_eq!(sentry.clip(), Clip::Idle);
-        assert!(!sentry.facing_right());
-    }
-    // The hero crosses: the facing is written on entry to `Turn R`, and the
-    // clip plays out afterwards.
-    assert!(sentry.tick(true));
-    assert!(sentry.facing_right());
-    assert_eq!(sentry.clip(), Clip::Turn);
-    // Turn is visible for its own ten ticks: the entry tick plus the nine that
-    // run the clip down, and the tenth decrement returns to `Idle`.
-    for tick in 1..=TURN_TICKS {
-        assert_eq!(sentry.tick(true), tick == TURN_TICKS);
-        assert_eq!(sentry.clip(), if tick == TURN_TICKS { Clip::Idle } else { Clip::Turn });
-    }
-    assert_eq!(sentry.clip(), Clip::Idle);
-    assert!(sentry.facing_right());
-}
-
-#[test]
-fn a_turn_in_progress_finishes_before_the_next_one_starts() {
-    let mut sentry = Sentry::new(false);
-    assert!(sentry.tick(true));
-    // The hero going back the other way mid-turn does not restart or cancel it:
-    // `Turn R` has no transition out until Tk2dWatchAnimationEvents completes.
-    for tick in 1..=TURN_TICKS {
-        assert_eq!(sentry.tick(false), tick == TURN_TICKS);
-        assert!(sentry.facing_right(), "the facing was written on entry");
-    }
-    assert_eq!(sentry.clip(), Clip::Idle);
-    // Back in Idle it sees the hero on the other side and turns again.
-    assert!(sentry.tick(false));
-    assert!(!sentry.facing_right());
-    assert_eq!(sentry.clip(), Clip::Turn);
-}
-
-#[test]
-fn the_standing_subset_agrees_with_the_fight_on_idle_and_turn() {
-    // The same two states inside `FalseKnight`: entering Turn flips the facing
-    // immediately and holds the Turn clip for the same number of ticks.
+fn the_turn_writes_its_facing_before_its_clip_plays() {
+    // `Turn R` sets Facing Right and SetScale x +1.3 on entry and then holds
+    // for the Turn clip, so the body has already turned while it is playing.
     let mut boss = FalseKnight::new(7, true);
     boss.battle_start();
     let mut body = Body::new(0, 20 * ONE);
@@ -400,8 +355,18 @@ fn the_standing_subset_agrees_with_the_fight_on_idle_and_turn() {
         }
         if turn_ticks != 0 { break; }
     }
-    assert_eq!(turn_ticks, TURN_TICKS, "the fight and the standing subset share Turn's length");
-    let mut sentry = Sentry::new(false);
-    assert!(sentry.tick(true));
-    assert!(sentry.facing_right());
+    assert_eq!(turn_ticks, TURN_TICKS, "Turn holds for the length of its own clip");
+}
+
+#[test]
+fn the_two_child_hitboxes_sit_where_the_source_colliders_do() {
+    // Both are already multiplied by the body's 1.3 transform scale, and both
+    // are in the source's facing-right frame. The Head is the 40 hp target the
+    // armour exposes and it sits above the body box rather than inside it; the
+    // Hitter reaches nearly eight units ahead, which is the ground the slam
+    // covers without the body moving.
+    assert!(HEAD_BOX[1] > -2 * ONE && HEAD_BOX[3] > 0, "the head is above the armour");
+    assert_eq!(HEAD_BOX[0], -HEAD_BOX[2], "the head box is symmetric in x");
+    assert!(HITTER_BOX[0] > 0 && HITTER_BOX[2] > 7 * ONE, "the hitter reaches ahead of the body");
+    assert!(HITTER_BOX[1] < HITTER_BOX[3] && HITTER_BOX[3] < 0, "and below the transform");
 }
