@@ -1743,6 +1743,50 @@ should not be compared like for like: the action already compiles to self, and
 what those 31 need is the cross-FSM instance table from step 5. Architecture,
 not an opcode.
 
+## P15: the nail tiers and the two spells the port does not reach
+
+The nail damage table is source-derived now rather than a Windows-override
+guess. `nailDamage` indexed by `nailSmithUpgrades` is [5, 9, 13, 17, 21], and
+the upgrades cost 250, 800, 2000 and 4000 Geo plus 0, 1, 2 and 3 Pale Ore.
+`game/src/cheats.rs`'s hardcoded `PURE_NAIL_DAMAGE = 21` is confirmed correct:
+the extractor asserts the Nailsmith's `Upgrade 4` against
+`PlayerData::AddGGPlayerDataOverrides` and they agree.
+
+Two things about where those numbers live are worth recording, because neither
+is where the plan's text would lead you to look. The tier table is **not** in
+PlayerData, which carries only the starting 5 and the Godhome override 21. It
+is four int variables on the Nailsmith's `Conversation Control` FSM in
+`Room_nailsmith`, which is not an admitted scene. And the Geo prices are not in
+that FSM either: each upgrade state calls `GetLanguageString('Prices',
+'NAIL_UPGRADE_N')` and converts it, so the costs come out of the encrypted
+`EN_Prices` sheet. So a nail tier cannot be earned in the shipped slice, and
+saying it is "source-derived" means the table is, not the acquisition.
+
+Desolate Dive and Howling Wraiths are extracted but deliberately not
+implemented. Both cost the same 33 MP as Vengeful Spirit, and the held
+direction picks between them: up is Scream, down is Quake, neither is Fireball.
+
+Quake, gated on `quakeLevel`, is a 0.25 s antic that launches +11.0 when
+grounded and 0.0 when not, then holds -50.0 every frame until the fall ends at
+`|Y Speed| <= 0.2`, so the dive has no fixed length, then a 0.75 s landing. It
+damages 15 through `Q Fall Damage` on the way down and 20 through `Q Slam` for
+0.10 s on impact. It spawns nothing: it activates children the Knight already
+carries.
+
+Scream, gated on `screamLevel`, is 0.60 s in four phases, damaging 13 through
+three `Scr Heads` polygons for 0.40 s, and spawns a purely visual roar emitter.
+
+Two extraction hazards came out of it. Two of the four cast phases do not get
+their length from a clip at all: `Quake1 Down` plays a Loop clip and ends on
+landing, and `Scream Burst 1` plays a LoopSection clip and ends on a Wait, so
+reading a clip length there would have invented a duration. The extractor
+asserts each clip's wrap mode so that a source change fails the cook instead.
+And `Spell Control` serializes duplicate bool variables, `Can Cancel` and
+`Is In Dream Focus` each twice, which a name-keyed variable map silently
+reduces to the last one. That pattern is in `spells.py`, `superdash.py` and
+`focus.py` too and is a live hazard in all of them, not something introduced
+here.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
