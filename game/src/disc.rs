@@ -181,7 +181,7 @@ impl Cache {
                 }
                 *next=next.checked_add(a.count).ok_or(LoadError::RoomMismatch)?;
             }
-            if pages>hk_cache::residency::BANKS*hk_cache::residency::PAGES
+            if pages>hk_cache::residency::STATIC_PAGES
                 || palettes>hk_cache::residency::SCENE_CLUTS {return Err(LoadError::RoomMismatch);}
             peak_pages=peak_pages.max(pages);peak_palettes=peak_palettes.max(palettes);previous=end;
         }

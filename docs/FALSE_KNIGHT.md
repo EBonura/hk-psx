@@ -3,9 +3,14 @@
 `host/false_knight.py` extracts the whole fight from the installed Windows
 source and refuses to admit it. The phase machine and the reusable arena
 lifecycle exist and are tested (`shared/hk-sim/src/false_knight.rs`,
-`shared/hk-sim/src/boss.rs`), but no frame of the boss can reach VRAM through
-the current animation path. The measurement is below; read it before designing
-any boss art work, because it is the same wall every large enemy will hit.
+`shared/hk-sim/src/boss.rs`).
+
+The animation cache used to be the reason no frame could reach VRAM, and it is
+not any more: it is 24 slots since a static scenery page no scene had ever used
+became its second region, and the boss's largest frame binds 12 of them. What
+refuses the boss now is the actor art path, which draws a frame as one quad.
+The measurement is below; read it before designing any boss art work, because
+the cache is the same wall every large enemy would have hit.
 
 Regenerate everything here with:
 
@@ -34,22 +39,34 @@ per frame) rather than estimating it.
 | Unique animation sprites | 110 | | |
 | Sprites larger than 64x64 | 77 | 0 | no |
 | Widest frame / tallest frame | 204 px / 188 px | 64 / 64 | no |
-| 64x64 slots for the largest single frame (198x169) | 12 | 4 per frame, 8 total | no |
-| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 73,876 B unallocated RAM | no |
+| 64x64 slots for the largest single frame (198x169) | 12 | 20 per frame, 24 total | yes |
+| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 63,636 B unallocated RAM | no |
 | CLUT slots, one palette per frame | 110 | 141 free in Crossroads_10 | yes |
 
-The CLUT number is the only one that fits. `tools/texture_headroom.py` reports
-Crossroads_10 at 275 of 416 slots in its tightest of 20 views, leaving 141, so
-per-frame palettes would just fit if nothing else changed. That is not the
-binding constraint here and sizing the work against it would be a mistake.
+The slot row used to read 4 per frame and 8 total, and it was the row this
+whole document was written around. It changed because the cache took a static
+scenery page; `docs/BUDGET.md` has the census that made that affordable. The
+RAM row is read out of `.hkpsx/build.json` and has fallen again, from 73,876
+bytes to 63,636.
 
-The binding constraint is the animation cache. `hk_cache::SLOTS` is 8 slots of
-64x64 4bpp in a 32x256 halfword VRAM strip at x 320, each slot upload capped at
-2,048 bytes and the whole frame capped at `MAX_UPLOAD_BYTES` 16,384. The False
-Knight's largest frame alone is 16,900 bytes across 12 tiles: one frame is
-bigger than the entire cache. A frame may now bind a rectangle of slots, but
-only `hk_cache::MAX_FRAME_TILES` of them, which is 4; `host/cook.py` still
-refuses this actor, now with the slot count rather than the pixel size.
+On the CLUT row, `tools/texture_headroom.py` reports Crossroads_10 at 275 of
+416 slots in its tightest of 20 views, leaving 141, so per-frame palettes would
+just fit if nothing else changed. That was never the binding constraint and
+sizing the work against it would be a mistake.
+
+The animation cache was the binding constraint and is not any more.
+`hk_cache::SLOTS` was 8 slots of 64x64 4bpp in a 32x256 halfword VRAM strip at
+x 320, capped at `MAX_UPLOAD_BYTES` 16,384: the False Knight's largest frame
+alone is 16,900 bytes across 12 tiles, so one frame was bigger than the whole
+cache. `SLOTS` is now 24 and `MAX_FRAME_TILES` is 20, so 12 tiles beside the
+four keys `main.rs` always reserves is 16 of 24, 32,768 bytes of 49,152.
+
+`host/cook.py` still refuses this actor, but for a different reason now, and it
+is the next thing to fix rather than a capacity problem: the actor path rejects
+any frame over 64x64 outright, before the tile count is consulted, because
+`enemies.rs` draws an actor frame as one quad and `enemy_draws.append_needed`
+declares one key per actor. NPC art already goes through `Atlas.add_tiled` and
+`Room::frame_grid`; the actor path has to do the same.
 
 Per-clip figures, since they are what a streaming route would have to hold:
 the heaviest clip is `Stun Recover` at 6 unique frames and 56,406 bytes; `Rage`,
@@ -67,10 +84,11 @@ CLUT cost, and `host/shade.py` shows the palette trick: one resident 16-colour
 CLUT for a whole clip set, which would take the False Knight from 110 CLUTs to a
 handful. It does not change the slot geometry. `game/src/animation_cache.rs`
 still rejects any payload over 2,048 bytes per slot, so a 198x169 frame needs
-the same twelve slots from linked RAM as from a room pack. The RAM does not
-stretch either: `.hkpsx/build.json` reports 73,876 unallocated bytes before the
-reserved stack, against 699 KiB of texels, short by a factor of ten. Read that
-figure from the build report; `docs/BUDGET.md` has been stale about it before.
+the same twelve slots from linked RAM as from a room pack. Twelve now fit, but
+the RAM does not stretch: `.hkpsx/build.json` reports 63,636 unallocated bytes
+before the reserved stack, against 699 KiB of texels, short by a factor of
+eleven. Read that figure from the build report every time; it was 113,636, then
+73,876, and it is 63,636 now.
 
 ## The route past it
 
@@ -79,31 +97,44 @@ standing constraint is that actor animation sampling is not reduced to fit a
 scenery-grade cap, and a 3.2x linear reduction of the largest frame is exactly
 that.
 
-1. **Multi-slot frames.** A frame binds a rectangle of 64x64 slots instead of
-   one, and the draw submits the tiles. This is implemented for room frames:
-   `Atlas.add_tiled` splits an oversized frame into consecutive streamed
-   textures, the first carries the grid in the two fields a streamed texture
-   never uses for a VRAM origin, and `hk_format::Room::frame_grid`/`frame_tile`
-   read it back. The NPC path uses it; the actor path does not, because
-   `enemies.rs` draws a frame as one quad.
+1. **Multi-slot frames, and the slots to hold them.** Done. A frame binds a
+   rectangle of 64x64 slots and the draw submits the tiles. `Atlas.add_tiled`
+   splits an oversized frame into consecutive streamed textures, the first
+   carries the grid in the two fields a streamed texture never uses for a VRAM
+   origin, and `hk_format::Room::frame_grid`/`frame_tile` read it back.
 
-   The strip did **not** grow, and cannot. `residency::SPARE_HALFWORDS` records
-   the measurement: the disjoint allocation test leaves 304 of 524,288
-   halfwords unclaimed, 608 bytes, in two fragments 16 halfwords wide at rows
-   480 to 495. The widest free run on any row is 16 halfwords and the tallest
-   free run in any column is 14 rows; one slot needs 16 by 64. Every other
-   halfword is a framebuffer, a static scenery page, a CLUT bank, the font, or
-   one of the Geo, Lifeblood, SOUL and break-effect atlases. So `SLOTS` stays
-   at 8 and `MAX_UPLOAD_BYTES` stays at 16,384, which is exactly the strip.
+   The strip itself still cannot grow, and that was never the way. It is half
+   of one texture page, boxed in on both sides, and `residency::SPARE_HALFWORDS`
+   is the measurement: 304 of 524,288 halfwords unclaimed, 608 bytes, in two
+   fragments 16 halfwords wide at rows 480 to 495; the widest free run on any
+   row is 16 halfwords and the tallest free run in any column is 14 rows,
+   against a slot's 16 by 64. A ninth slot had to come from a whole
+   reservation.
 
-   That caps a frame at `hk_cache::MAX_FRAME_TILES`, 4: the other four keys
-   `main.rs` can request in one frame are the Knight's body or ability pose,
-   the nail effect, the Hollow Shade and the Vengeful Spirit ball. The False
-   Knight's 198x169 frame binds 12, and 12 plus those four is 16 slots, 32,768
-   bytes against 16,384 allocated and 608 free. Multi-slot frames therefore do
-   not admit the boss, and no repack of the current VRAM map will: the room has
-   to come out of the 20 static scenery pages, which is a scenery capacity
-   decision, not a constant change.
+   It came from the static scenery pages, and the census is why that was
+   affordable rather than a trade. The 20 pages are a whole-scene reservation,
+   not a per-view one, and `.hkpsx/packed-scenes.json` has all 45 cooked scenes:
+   the largest, Tutorial_01, is 18 pages; the next, Crossroads_ShamanTemple, is
+   9; Crossroads_10 itself is 8; 44 of the 45 are 9 or fewer. Pages 18 and 19
+   were reserved and no scene ever uploaded either. Page 19 is now the animation
+   cache's second region at (960,256), and a 4bpp texture page is exactly four
+   64x64 slots across and four down, so `SLOTS` is 24, `MAX_UPLOAD_BYTES` is
+   49,152 and `MAX_FRAME_TILES` is 20. No cooked scene lost anything and
+   Tutorial_01 keeps page 18 as headroom. `docs/BUDGET.md` carries the cost
+   that was not free: the 24,576-byte VRAM write a 12-tile pose change costs has
+   not been timed.
+
+   The False Knight's 198x169 frame binds 12, and 12 beside the four keys
+   `main.rs` always reserves (the Knight's body or ability pose, the nail
+   effect, the Hollow Shade and the Vengeful Spirit ball) is 16 of the 24.
+
+   What still refuses the boss is not capacity. `host/cook.py` drops any actor
+   with a frame beyond one slot before it ever counts tiles, because
+   `enemies.rs` draws an actor frame as one quad and
+   `enemy_draws.append_needed` declares one key per actor, so a tiled actor
+   would show only its top-left corner. Teaching the actor path what the NPC
+   path already knows is the next piece of work, and it is a rendering change
+   with no budget in it.
 2. **One palette for the boss.** Quantize all 110 frames against a shared
    16-colour palette the way the Shade does, so the whole fight costs a few CLUT
    slots instead of 110 and can be resident in every view of the arena.
@@ -118,12 +149,15 @@ that.
    Measured: the Stag's Idle cooks to 200 textures, four tiles on each of 50
    frames, and the region carrying it reaches 358 of 416 CLUT slots.
 3. **Per-clip residency, with no prefetch room.** 699 KiB never fits main RAM,
-   and against the live gap the prefetch does not either. Measured per clip
-   against 73,876 unallocated bytes: no single clip exceeds the gap, but the
-   heaviest, `Stun Recover`, is 56,406 bytes, 76.4% of it, leaving 17,470 bytes
-   for everything else the project has left; and the heaviest adjacent pair is
-   112,456 bytes, 152.2% of the gap. Nine of the 33 clips pair with the next
-   heaviest to more than the gap. So holding the current clip and prefetching
+   and against the live gap the prefetch does not either. The clip bytes were
+   measured against 73,876 unallocated bytes, and the gap has since fallen to
+   63,636, so the ratios below are recomputed rather than re-measured: the
+   heaviest clip, `Stun Recover`, is 56,406 bytes, now 88.6% of the gap,
+   leaving 7,230 bytes for everything else the project has left; the heaviest
+   adjacent pair is 112,456 bytes, now 176.7% of it. At least nine of the 33
+   clips pair with the next heaviest to more than the gap, and that count can
+   only have risen; re-run `host/false_knight.py` before quoting it. So holding
+   the current clip and prefetching
    the next, which is what made the plan's timing work, does not fit: the
    controller's beat of warning (`Jump Antic` 0.3 s, `S Attack Antic` 1.2 s)
    would have to cover a blocking load of up to 56,406 compressed bytes rather

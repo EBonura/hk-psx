@@ -25,7 +25,7 @@ return; Select resets it. Memory-card persistence remains unsupported.
 then appends all three original stage sprites to the existing scene animation
 bank. Each frame retains its own original bounds and pivot; the source poses
 have different extents. Textures use the existing 48-pixel scenery cap and
-4bpp conversion. One of the existing eight animation slots is used while the
+4bpp conversion. One of the existing animation slots is used while the
 door is visible, with no additional VRAM rectangle or per-stage CD read.
 Per-region collider indices are derived from the original collider source ID.
 

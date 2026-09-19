@@ -203,10 +203,14 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
 from alpha_covers import HAS_ALPHA_COVERS, RECORD_BYTES, record as alpha_cover_record
 
 # One animation slot, and the tile rectangle a frame may bind beside the four
-# keys main.rs always reserves. Both come from hk_cache; the VRAM strip cannot
-# grow, so an oversized frame takes more slots instead of a bigger one.
+# keys main.rs always reserves. Both come from hk_cache, where the cache is 24
+# slots: eight in the strip at x320 and sixteen in the texture page static
+# scenery page 19 gave up. A slot cannot be larger than 64x64, so an oversized
+# frame takes more of them rather than a bigger one.
 SLOT_PIXELS=64
-MAX_FRAME_TILES=4
+ANIMATION_SLOTS=24
+RESERVED_SLOTS=4
+MAX_FRAME_TILES=ANIMATION_SLOTS-RESERVED_SLOTS
 
 
 class Atlas:

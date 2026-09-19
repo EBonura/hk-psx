@@ -86,7 +86,7 @@ class CookTests(unittest.TestCase):
 
     def test_the_refusal_boundary_is_the_slot_budget_not_sixty_four_pixels(self):
         from cook import MAX_FRAME_TILES
-        self.assertEqual(MAX_FRAME_TILES,4)
+        self.assertEqual(MAX_FRAME_TILES,20)
         a=Atlas(max_pages=0)
         # What used to be refused outright now costs two slots.
         self.assertEqual(a.add_tiled(Image.new('RGBA',(65,1)),65,1),0)
@@ -94,12 +94,24 @@ class CookTests(unittest.TestCase):
         # A frame inside one slot still costs one texture and no grid.
         one=a.add_tiled(Image.new('RGBA',(64,64)),64,64)
         self.assertNotIn(one,a.grids)
-        # The False Knight's largest frame, 198x169, needs twelve.
-        with self.assertRaisesRegex(ValueError,'binds 12 of the 4 animation slots'):
-            a.add_tiled(Image.new('RGBA',(198,169)),198,169)
+        # The False Knight's largest frame, 198x169, needs twelve, and twelve
+        # now fits: the cache is 24 slots since static scenery page 19 became
+        # the animation cache's second region.
+        base=a.add_tiled(Image.new('RGBA',(198,169)),198,169)
+        self.assertEqual(a.grids[base],(4,3))
         # add() still refuses on its own: a single streamed texture is one slot.
         with self.assertRaisesRegex(ValueError,'64x64'):
             a.add(Image.new('RGBA',(65,1)),65,1,streamed=True)
+
+    def test_the_texture_clamp_now_binds_before_the_tile_budget(self):
+        # add() and add_tiled() clamp a frame to 252 pixels on each axis, so
+        # the largest frame the format can express is four tiles by four. That
+        # is 16 of the 20 a frame may bind, which is why the slot count stopped
+        # being the thing that refuses art.
+        from cook import MAX_FRAME_TILES, SLOT_PIXELS
+        per_axis=-(-252//SLOT_PIXELS)
+        self.assertEqual(per_axis,4)
+        self.assertLess(per_axis*per_axis,MAX_FRAME_TILES)
 
     def test_tiles_survive_the_canonical_dedup_postpass_consecutive(self):
         from texture_dedup import _deduplicate_room

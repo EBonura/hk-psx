@@ -84,11 +84,11 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
     // Reuse immediately after return: recorded pixels must retain their bytes.
     staging.fill(0x5a);
 }
-#[test]fn all_twenty_pages_and_1209_palettes_are_exact_disjoint_and_complete(){
+#[test]fn all_nineteen_pages_and_1209_palettes_are_exact_disjoint_and_complete(){
     reset();let mut staging=vec![0;65536];let mut cache=vram_cache::Cache::new();
     assert!(!cache.ready(0));assert!(!cache.ready(3));
     // Include single- and multiple-page descriptors and cross a ten-page row.
-    for (first,count)in[(0,1),(1,2),(3,2),(5,2),(7,2),(9,2),(11,2),(13,1),(14,2),(16,2),(18,2)] {
+    for (first,count)in[(0,1),(1,2),(3,2),(5,2),(7,2),(9,2),(11,2),(13,1),(14,2),(16,2),(18,1)] {
         upload_chunk(0,first,count,&mut staging);assert!(!cache.ready(0));
     }
     // Cross every CLUT strip boundary within an upload chunk.
@@ -103,6 +103,9 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
     let mut expected=vec![0xdead;1024*512];let mut touched=vec![false;1024*512];
     for y in 0..512{for x in 384..1024{
         let page=(y/256)*10+(x-384)/64;let word=(y%256)*64+(x-384)%64;
+        // Page 19 is the animation cache's second region now, so the atlas
+        // path must leave x960..1024,y256..512 untouched.
+        if page>=residency::STATIC_PAGES {continue;}
         let at=y*1024+x;expected[at]=value(0,page,word);touched[at]=true;
     }}
     let mut origins=Vec::new();
@@ -117,7 +120,7 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
         let log=l.borrow();assert_eq!(log.pixels,expected,"VRAM differs, including untouched reservations");
         for (i,&written)in log.writes.iter().enumerate(){assert_eq!(written,u8::from(touched[i]),"write count at {i}");}
         assert_eq!(log.events.iter().filter(|e|matches!(e,Event::Sync)).count(),15);
-        assert_eq!(log.events.iter().filter(|e|matches!(e,Event::Upload(_))).count(),1229);
+        assert_eq!(log.events.iter().filter(|e|matches!(e,Event::Upload(_))).count(),1228);
     });
 }
 #[test]fn scene_replacement_revokes_previous_owner_and_reuploads_shared_slots(){
@@ -175,4 +178,4 @@ fn upload_chunk(kind:u8,first:usize,count:usize,staging:&mut[u8]) {
                     self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
                     tested = subprocess.run([str(path / 'probe'), '--test-threads=1'], capture_output=True, text=True)
                     self.assertEqual(tested.returncode, 0, tested.stdout + tested.stderr)
-                    self.assertIn('all_twenty_pages_and_1209_palettes_are_exact_disjoint_and_complete', tested.stdout)
+                    self.assertIn('all_nineteen_pages_and_1209_palettes_are_exact_disjoint_and_complete', tested.stdout)

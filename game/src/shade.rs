@@ -280,7 +280,7 @@ fn segment_hits_terrain(a: [i32; 2], b: [i32; 2], count: usize, edge: &impl Fn(u
 mod presentation {
     use super::*;
     use psx_gpu::{material::{BlendMode, TextureMaterial}, prim::QuadTextured};
-    use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
+    use psx_vram::{upload_bytes, Clut, VramRect};
     #[no_mangle]
     pub static mut HK_SHADE_DRAWN: u32 = 0;
     /// One resident CLUT row per cooked palette, above the dialogue palette.
@@ -312,7 +312,7 @@ mod presentation {
             let right = (u16::from(u) + frame.width - 1) as u8;
             let bottom = (u16::from(v) + frame.height - 1) as u8;
             let clut = Clut::new(CLUT_RECT.0, CLUT_RECT.1 + frame.clut as u16).uv_clut_word();
-            let tpage = Tpage::new(320, 0, TexDepth::Bit4).uv_tpage_word(0);
+            let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
             let template = QuadTextured::with_material([(0, 0); 4], [(u, v), (right, v), (u, bottom), (right, bottom)],
                 TextureMaterial::blended(clut, tpage, (128, 128, 128), BlendMode::Average));
             crate::render::resident_quad(&template, vertices.map(|(x, y)| (x as i16, y as i16)));

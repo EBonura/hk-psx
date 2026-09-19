@@ -1,5 +1,7 @@
-//! Eight 64x64 4bpp slots in the gap beside the two framebuffers.
+//! Twenty-four 64x64 4bpp slots: eight in the strip beside the two
+//! framebuffers and sixteen in the texture page a static scenery page gave up.
 //! Room palettes remain immutable and resident; only texels are replaced.
+use hk_cache::residency;
 use hk_cache::{Cache, Stats};
 use hk_format::Room;
 use psx_hw::gpu::{gp0, GpuStat};
@@ -18,9 +20,21 @@ pub static mut HK_ANIM_UPLOAD_MAX_FRAME: u32 = 0;
 pub fn init() {
     unsafe { CACHE = Cache::new() };
 }
+/// Pixel UV of a slot inside its own texture page.
 pub fn uv(slot: usize) -> (u16, u16) {
-    assert!(slot < hk_cache::SLOTS);
-    ((slot as u16 % 2) * 64, (slot as u16 / 2) * 64)
+    let (_, _, u, v) = residency::slot_placement(slot);
+    (u, v)
+}
+/// The texture page origin a slot sits on, in VRAM halfwords. The slots are
+/// not all in the same page, so a draw has to ask rather than assume.
+pub fn page(slot: usize) -> (u16, u16) {
+    let (x, y, _, _) = residency::slot_placement(slot);
+    (x, y)
+}
+/// Where a slot's texels go, for an upload of `width` by `height` pixels.
+fn dest(slot: usize, width: u16, height: u16) -> VramRect {
+    let (x, y, u, v) = residency::slot_placement(slot);
+    VramRect::new(x + u / 4, y + v, width.div_ceil(4), height)
 }
 /// Called before the frame clear or any submitted drawing commands. The prior
 /// frame's idle VBlank acknowledgement must already have called `complete`.
@@ -40,11 +54,7 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                     if bytes.len() > 2048 {
                         return None;
                     }
-                    let (u, v) = uv(slot);
-                    crate::texture_upload::upload(
-                        VramRect::new(320 + u / 4, v, (width + 3) / 4, height),
-                        bytes,
-                    );
+                    crate::texture_upload::upload(dest(slot, width, height), bytes);
                     return Some(bytes.len() as u32);
                 }
                 if key >= crate::shade::KEY_BASE {
@@ -52,11 +62,7 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                     if bytes.len() > 2048 {
                         return None;
                     }
-                    let (u, v) = uv(slot);
-                    crate::texture_upload::upload(
-                        VramRect::new(320 + u / 4, v, (width + 3) / 4, height),
-                        bytes,
-                    );
+                    crate::texture_upload::upload(dest(slot, width, height), bytes);
                     return Some(bytes.len() as u32);
                 }
                 if key as usize >= room.counts[1] {
@@ -67,11 +73,7 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                 if bytes.len() > 2048 {
                     return None;
                 }
-                let (u, v) = uv(slot);
-                crate::texture_upload::upload(
-                    VramRect::new(320 + u / 4, v, (t.width + 3) / 4, t.height),
-                    bytes,
-                );
+                crate::texture_upload::upload(dest(slot, t.width, t.height), bytes);
                 Some(bytes.len() as u32)
             })
             .expect("animation working set");
