@@ -92,7 +92,34 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     //   730:cross:2,755:cross:2,780:cross:2,805:cross:2,830:cross:2,855:cross:2
     ("town-elderbug", "HK_NPC_OPENED", 1), ("town-elderbug", "HK_NPC_SOURCE", 0),
     ("town-elderbug", "HK_MET_ELDERBUG", 1), ("town-elderbug", "HK_REGION_ID", 100),
-    ("town-elderbug", "HK_SAVE_LOADED", 1), ("town-elderbug", "HK_DEATHS", 0)];
+    ("town-elderbug", "HK_SAVE_LOADED", 1), ("town-elderbug", "HK_DEATHS", 0),
+    // The conversation is a chain, so the cursor moving is what says the next
+    // visit gets the next conversation rather than the introduction again.
+    ("town-elderbug", "HK_NPC_MET", 1),
+    // The first cooked PlayMaker FSM to run on the disc. Town's Area Resetter
+    // waits in Detect for its Trigger2dEvent volume at x 182.7 to 187.4, y 2.14
+    // to 3.14, which is the mouth of the well, takes TOUCH to Reset and writes
+    // currentArea. FLAGS bit 1 is that field, so 2 is the write having landed
+    // in the persistent store rather than the transition merely having fired.
+    // crossroads-gate carries the same walk on, and ends with no instance
+    // resident because Crossroads_07 has none.
+    ("well-drop", "HK_SCRIPT_TRANSITIONS", 1), ("well-drop", "HK_SCRIPT_WRITES", 1),
+    ("well-drop", "HK_SCRIPT_FLAGS", 2), ("well-drop", "HK_SCRIPT_ACTIVE", 1),
+    ("crossroads-gate", "HK_SCRIPT_TRANSITIONS", 1), ("crossroads-gate", "HK_SCRIPT_WRITES", 1),
+    ("crossroads-gate", "HK_SCRIPT_FLAGS", 2),
+    // The bank emits no native call, so one arriving means the bank and the
+    // runtime have diverged. Same for a halt: every program is meant to fit its
+    // op budget, so a halt is a cooked program the executor could not run.
+    ("well-drop", "HK_SCRIPT_HALTS", 0), ("well-drop", "HK_SCRIPT_NATIVE", 0),
+    ("kings-death", "HK_SCRIPT_HALTS", 0), ("kings-death", "HK_SCRIPT_NATIVE", 0),
+    // Instances resident per scene: one in King's Pass, two in Town. This is
+    // what says the bank is being seated at all, on routes where nothing fires.
+    // Nothing reaches Tutorial_01's own acting volume (Set Seen Focus Tablet at
+    // x 102.0 to 103.7, y 27.98 to 37.9): kings-death stays below y 25 and
+    // kings-return passes underneath at y 11.4. That needs the King's Pass
+    // climb, which no route does yet.
+    ("kings-death", "HK_SCRIPT_ACTIVE", 1),
+    ("town-elderbug", "HK_SCRIPT_ACTIVE", 2), ("town-elderbug", "HK_SCRIPT_HALTS", 0)];
 /// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
 /// fresh formatted card when the fixture is absent (the run writes it back there).
 const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
