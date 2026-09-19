@@ -236,7 +236,41 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("boss-fight", "HK_ARENA_GATE_CLOSES", 1), ("boss-fight", "HK_ARENA_GATE_OPENS", 1),
     ("boss-fight", "HK_HEALTH", 5), ("boss-fight", "HK_DEATHS", 0),
     ("boss-fight", "HK_ENEMY_KILLS", 0), ("boss-fight", "HK_CHEATS", 1),
-    ("boss-fight", "HK_SAVE_LOADED", 1), ("boss-fight", "HK_REGION_ID", 240)];
+    ("boss-fight", "HK_SAVE_LOADED", 1), ("boss-fight", "HK_REGION_ID", 240),
+    // Losing to the False Knight, and walking back in for a second go.
+    //
+    // HK_CHEATS 0 is the first assertion and the reason this route exists.
+    // boss-fight runs with Invincibility on: its tape's polls 60 to 82 are a
+    // pause-menu sequence that sets it, and its "the Knight never loses a mask"
+    // is that cheat rather than any property of the fight. So the disc proved a
+    // boss that could be killed and never proved one that could kill. A mortal
+    // Knight who presses nothing after walking into the trigger is dead in
+    // 1,002 polls, on five separate hits.
+    //
+    // What the second half proves is the retry. The death leaves a Shade in the
+    // arena, respawns at the seat with five masks, resets the arena to Waiting
+    // and restores the boss to 65 and 40, and the closed gate goes back to its
+    // placement state on the same tick the scene reloads, so nothing is sealed
+    // in with nothing to fight. Walking right again drops the boss a second
+    // time: TRIGGERED and DROPPED are 2, and GATE_CLOSES is 2.
+    //
+    // The tape stops at poll 1,600 and that is not where the fight ends. At
+    // poll 1,897, about 490 polls into the second fight, the frame collapses:
+    // two missed VBlanks per poll, every poll, with the input queue climbing
+    // from 5 to 16 in 21 polls until the sampler faults QueueFull and the guest
+    // panics. Health is steady at 3 through all of it, so it is not damage. A
+    // fight with a Shade in the room is the ordinary case after any death, and
+    // it is the one case the port cannot currently survive. Do not extend this
+    // tape past 1,600 expecting it to pass; fix that first.
+    ("boss-death", "HK_CHEATS", 0), ("boss-death", "HK_DEATHS", 1),
+    ("boss-death", "HK_SHADE_PRESENT", 1), ("boss-death", "HK_SHADE_HP", 10),
+    ("boss-death", "HK_FK_TRIGGERED", 2), ("boss-death", "HK_FK_DROPPED", 2),
+    ("boss-death", "HK_FK_HP", 65), ("boss-death", "HK_FK_HEAD_HP", 40),
+    ("boss-death", "HK_FK_ARENA", 2), ("boss-death", "HK_FK_DEATHS", 0),
+    ("boss-death", "HK_FK_STAGGERS", 0), ("boss-death", "HK_ARENA_GATE_CLOSES", 2),
+    ("boss-death", "HK_SCENE_LOADS", 1), ("boss-death", "HK_ENEMY_KILLS", 0),
+    ("boss-death", "HK_SAVE_LOADED", 1), ("boss-death", "HK_SAVE_ERRORS", 0),
+    ("boss-death", "HK_REGION_ID", 239)];
 /// Telemetry a route must reach at least, rather than exactly.
 ///
 /// Reserved for counters that sit on a knife edge. The frame is stall-bound, so
@@ -262,6 +296,10 @@ const REQUIRED_MIN: &[(&str, &str, u64)] = &[
     ("cheat-heart", "HK_ABILITY_DRAWN", 50),
     ("cheat-dream", "HK_ABILITY_DRAWN", 400),
     ("cheat-wings", "HK_ABILITY_DRAWN", 5),
+    // Alive when the tape runs out. How many masks the second fight has cost by
+    // then is frame timing; HK_DEATHS 1 above is the assertion that he died
+    // exactly once and got back up.
+    ("boss-death", "HK_HEALTH", 1),
 ];
 
 /// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
@@ -270,13 +308,14 @@ const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
     ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd"),
     ("bench-save", "town-continue.mcd"), ("well-drop", "town-continue.mcd"), ("town-reset2", "town-continue.mcd"),
     ("crossroads-gate", "town-continue.mcd"), ("town-elderbug", "town-continue.mcd"),
-    ("town-shop", "town-continue.mcd"), ("boss-fight", "boss-fight.mcd")];
+    ("town-shop", "town-continue.mcd"), ("boss-fight", "boss-fight.mcd"),
+    ("boss-death", "boss-fight.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-reset2", true),
     ("crossroads-gate", true), ("town-continue", false), ("town-shade", false), ("kings-death", false),
     ("kings-return", false), ("bench-save", false), ("town-elderbug", false),
     ("cheat-spell", false), ("cheat-dash", false), ("cheat-wings", false), ("ctrl-wings", false),
     ("cheat-heart", false), ("cheat-dream", false), ("kings-climb", false), ("ctrl-climb", false),
-    ("town-shop", true), ("boss-fight", false)];
+    ("town-shop", true), ("boss-fight", false), ("boss-death", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
