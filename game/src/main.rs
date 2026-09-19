@@ -91,6 +91,12 @@ pub static mut HK_NAIL_ATTACK_COUNT: u32 = 0;
 #[no_mangle] pub static mut HK_REVEAL_MASKS_HIDDEN:u32=0;
 #[no_mangle] pub static mut HK_REVEAL_MASKS_PARTIAL:u32=0;
 #[no_mangle] pub static mut HK_REVEAL_MASKS_VISIBLE:u32=0;
+// Kept out of `main` for the same reason the strike helpers below are: at 611
+// lines it is one function whose generated code outgrew the +/-128 KB a MIPS
+// PC16 branch can reach, and the assembler refuses with "out of range PC16
+// fixup" rather than anything that names a cause. These four are the largest
+// bodies `main` would otherwise absorb.
+#[inline(never)]
 fn apply_reveal_masks(state:&reveal_masks::State,region:&world::Region) {
     let counts=state.apply(region.reveal_masks,world::reveal_bindings(region));
     unsafe {HK_REVEAL_MASKS_HIDDEN=counts.hidden;HK_REVEAL_MASKS_PARTIAL=counts.partial;HK_REVEAL_MASKS_VISIBLE=counts.visible;}
@@ -99,6 +105,7 @@ fn apply_reveal_masks(state:&reveal_masks::State,region:&world::Region) {
 /// far into it we are. Ordered as the source's own states are: a cast or a
 /// Dream Nail takes control outright, then the dash, then the wall, then the
 /// wings. The Crystal Heart has no cooked clip and keeps the fall pose.
+#[inline(never)]
 fn ability_pose(player:&Player,dream:&hk_sim::DreamNail,cast:&hk_sim::Cast)->Option<(usize,u32)> {
     use hk_sim::{CastPhase,DreamPhase};
     if cast.phase!=CastPhase::Off {
@@ -161,6 +168,7 @@ fn nail_frame(room: &Room, nail: &Nail) -> Option<usize> {
     }
     Some((clip[0] + frame) as usize)
 }
+#[inline(never)]
 fn draw_frame(room: &Room, frame: usize, player: &Player, camera: (i32, i32)) {
     let f = room.frame(frame);
     let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
@@ -180,6 +188,7 @@ fn draw_frame(room: &Room, frame: usize, player: &Player, camera: (i32, i32)) {
 }
 /// One room frame drawn at a fixed world point on the gameplay plane, for a
 /// scene fixture that stands where it was authored rather than moving.
+#[inline(never)]
 fn draw_at(room: &Room, frame: usize, position: [i32; 2], camera: (i32, i32)) -> u32 {
     // A frame too large for one animation slot is drawn as its tiles, each
     // covering its own share of the frame's world box.

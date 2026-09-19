@@ -68,7 +68,14 @@ class CookedCatalogueTests(unittest.TestCase):
         self.assertLess(icons['global_clut_headroom'], 40)
         self.assertEqual(len(icons['source_sprite_pixels']), 40)
         self.assertGreater(icons['animation_slots'], 0)
-        self.assertLess(icons['animation_slots'], icons['rows_on_screen'] + 8)
+        # The slot half of the refusal is derived, not asserted, because it
+        # stopped being true: reclaiming an unused scenery page took the cache
+        # from 8 slots to 24, and the recorded verdict went on interpolating the
+        # new number into the old argument. The atlas route above is refused on
+        # a number that cannot move; this one is a live comparison.
+        self.assertEqual(icons['shade_route_slots_needed'], icons['rows_on_screen'] + 4)
+        self.assertEqual(icons['shade_route_fits'],
+                         icons['shade_route_slots_needed'] <= icons['animation_slots'])
 
 
 class CharmRuntimeTests(unittest.TestCase):

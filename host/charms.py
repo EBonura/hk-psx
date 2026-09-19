@@ -520,6 +520,12 @@ def generated_charms_rs(rows, rules, defaults):
     ]) + '\n'
 
 
+# What the frozen view behind the pause panel keeps hold of: the Knight's pose,
+# the nail effect, the Hollow Shade and the Vengeful Spirit ball. Same four
+# main.rs reserves every frame.
+RESERVED_ANIMATION_SLOTS = 4
+
+
 def icon_measurement(source, catalogue, rows_on_screen):
     """What the forty charm icons would cost, measured rather than guessed.
 
@@ -561,14 +567,28 @@ def icon_measurement(source, catalogue, rows_on_screen):
         'shade_route_linked_bytes': {f'{side}x{side}': linked(side) for side in (16, 24, 32)},
         'animation_slots': slots,
         'rows_on_screen': rows_on_screen,
+        # Derived rather than written down, because the slot count moved under
+        # this once already: the cache went from 8 to 24 when an unused scenery
+        # page was reclaimed, and the sentence explaining the refusal kept
+        # interpolating the new number into the old argument.
+        'shade_route_slots_needed': rows_on_screen + RESERVED_ANIMATION_SLOTS,
+        'shade_route_fits': rows_on_screen + RESERVED_ANIMATION_SLOTS <= slots,
         'verdict': (
-            f"Text only. The atlas route is out at {budget['global_headroom']} free CLUT slots "
-            f"in {tightest[0]} chunk {tightest[1]['tightest_chunk']}. The Hollow Shade route has "
-            f"the RAM, {linked(32)} bytes at 32x32 against roughly 110,000 linked bytes free, but "
-            f"not the slots: there are {slots} shared 64x64 animation slots and the frozen view "
-            f"behind the panel is still drawing into them, while {rows_on_screen} visible rows "
-            f"would each want one every paused frame. Shipping the screen without icons costs "
-            'nothing to revisit; trimming an icon set to squeeze under either cap does.'),
+            f"The atlas route is out at {budget['global_headroom']} free CLUT slots in "
+            f"{tightest[0]} chunk {tightest[1]['tightest_chunk']}, and always will be: a pause "
+            'screen is reachable from every view. '
+            + (f"The Hollow Shade route now fits and did not before. It needs "
+               f"{rows_on_screen} slots for the visible rows beside the "
+               f"{RESERVED_ANIMATION_SLOTS} the frozen view behind the panel reserves, which is "
+               f"{rows_on_screen + RESERVED_ANIMATION_SLOTS} of {slots}, and the RAM was never "
+               f"the problem at {linked(32)} bytes for 32x32. Icons are affordable and not yet "
+               'implemented.'
+               if rows_on_screen + RESERVED_ANIMATION_SLOTS <= slots else
+               f"The Hollow Shade route has the RAM, {linked(32)} bytes at 32x32, but not the "
+               f"slots: {rows_on_screen} visible rows beside the {RESERVED_ANIMATION_SLOTS} the "
+               f"frozen view reserves is more than the {slots} that exist. Shipping the screen "
+               'without icons costs nothing to revisit; trimming an icon set to squeeze under a '
+               'cap does.')),
     }
 
 
