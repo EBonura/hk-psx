@@ -17,6 +17,8 @@ pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
 mod vitals;
 mod focus;
 pub use focus::{Focus,FocusParams,FocusInput,FocusClip,FocusEvents};
+mod spell;
+pub use spell::{Cast, CastPhase, Fireball, FireballParams};
 mod dream_nail;
 pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
@@ -1264,3 +1266,4 @@ mod combination_tests {
         assert!(p.double_jumping);
     }
 }
+

@@ -23,7 +23,7 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  for _ in 0..100{assert!(!s.step(CROSS));assert_eq!(s.page,Page::Controls);}
  tap(&mut s,START);assert_eq!(s.page,Page::Main);assert_eq!(s.selected,2);
  for _ in 0..100{assert!(!s.step(START));assert_eq!(s.page,Page::Main);}
- assert_eq!(MAIN_ITEMS.len(),4);assert_eq!(OPTION_ITEMS.len(),4);assert_eq!(CONTROL_LINES.len(),9);
+ assert_eq!(MAIN_ITEMS.len(),4);assert_eq!(OPTION_ITEMS.len(),4);assert_eq!(CONTROL_LINES.len(),12);
 }
 #[test]fn held_directions_repeat_at_bounded_cadence_and_opposites_cancel(){
  let mut s=State::new();s.step(DOWN);assert_eq!(s.selected,1);

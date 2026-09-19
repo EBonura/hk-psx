@@ -1375,6 +1375,55 @@ it.
 Verification: 95 hk-sim tests plus the harness suites, the 8 routes and the 4
 power-cut points on the final CUE.
 
+## P15 first slice: Vengeful Spirit and the cast-versus-Focus button (build 122)
+
+One spell lives in three FSMs and the extraction reads all three.
+`Spell Control` on the Hero decides what is cast and pays for it, the spawned
+`Fireball Cast` object aims and launches, and the projectile's own
+`Fireball Control` and `damages_enemy` pair carry the damage, the lifetime and
+the wall behaviour. `host/spells.py` binds them and asserts the shape, so a
+changed source fails the cook rather than quietly shipping a different spell.
+
+The numbers: 33 SOUL (`MP Cost`), 40 units a second, 15 damage (20 with Shaman
+Stone, which needs charms), a 0.45 s flight before it dissipates on its own,
+and a 2.611 by 2.125 box. The projectile passes through what it hits: its Idle
+state listens only for the terrain layer, so the enemy's own invulnerability
+window is what stops a second hit rather than the ball stopping.
+
+The ordering caught something a re-implementation would get wrong. `Fireball 1`
+plays the cast clip, spawns the ball and sends FINISHED in the same frame, and
+`Fireball Recoil` then watches that same clip finish. So the ball leaves as the
+cast starts, and the 0.3 s cast clip is the recoil, not a wind-up. The first
+version here had the ball leaving at the end of the clip, which would have felt
+sluggish and been wrong by 18 ticks.
+
+Step 5's spell-versus-Focus priority is the interesting half. One button does
+both: `Button Down` waits `Button Down Time` of 0.25 s for a release, and a
+release inside that casts while continuing to hold starts a Focus. The port had
+only the hold, so the Focus now begins 15 ticks later than it did, which is
+what the source does. The SOUL is debited when the cast starts and a refused
+cast takes nothing.
+
+Not done in this slice, and recorded rather than implied. Desolate Dive and
+Howling Wraiths are catalogued with their `quakeLevel` and `screamLevel` gates
+and nothing more, since no admitted scene grants or needs them. Nail arts,
+nail damage tiers, the centralized damage resolution of step 4 and the
+verification matrix of step 7 are untouched. And the spell is invisible: the
+`Ball` and `Ball End` clips are 4 and 3 frames, small enough for a resident
+bank like the Lifeblood's 14, but they need a reserved VRAM rectangle in the
+hand-allocated 320 to 384 column and a cooker to go with it.
+
+One thing worth watching. `Player` is 80 bytes now, up from about 40 before
+P14, because every ability's state lives on it. The 32 actors, the corpses, the
+Shade and the Lifeblood bugs all embed one purely for its collision, and the
+Lifeblood's own RAM budget assertion had to move from 224 to 384 bytes because
+of it. The budget has 166 KB free so this is not urgent, but the next time that
+assertion needs raising the answer is to split the hero-only fields out of
+`Player` rather than to raise it again.
+
+Verification: 26 test binaries green, the 8 routes and the 4 power-cut points
+on the final CUE.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and

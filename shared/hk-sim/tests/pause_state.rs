@@ -7,7 +7,8 @@ fn tap(p:&mut pause::State,c:&mut cheats::Settings,b:u16)->bool{step(p,c,0);step
  tap(&mut p,&mut c,0x10);assert_eq!(p.row,5);tap(&mut p,&mut c,0x4000);assert!(p.cheats);
  tap(&mut p,&mut c,0x4000);assert!(c.invincible);
  step(&mut p,&mut c,0x4000);assert!(c.invincible);
- for _ in 0..4{tap(&mut p,&mut c,0x40);}
+ // Down from the first toggle to the first action row.
+ for _ in 0..cheats::CHEAT_ROWS{tap(&mut p,&mut c,0x40);}
  tap(&mut p,&mut c,0x4000);assert_eq!(p.action,cheats::Action::Restore);
  step(&mut p,&mut c,0x4000);assert_eq!(p.action,cheats::Action::None);
  tap(&mut p,&mut c,0x40);tap(&mut p,&mut c,0x4000);assert_eq!(p.action,cheats::Action::AddBlue);
@@ -29,7 +30,8 @@ fn tap(p:&mut pause::State,c:&mut cheats::Settings,b:u16)->bool{step(p,c,0);step
  tap(&mut p,&mut c,0x40);assert_eq!(p.row,4);tap(&mut p,&mut c,0x4000);assert!(p.controls);
  assert!(!tap(&mut p,&mut c,0x2000));assert!(!p.controls);assert_eq!(p.row,4);
  tap(&mut p,&mut c,0x40);assert_eq!(p.row,5);tap(&mut p,&mut c,0x4000);assert!(p.cheats);
- tap(&mut p,&mut c,0x10);assert_eq!(p.row,7);assert!(!tap(&mut p,&mut c,0x4000));
+ // Up from row 0 wraps to the last row, which is Back.
+ tap(&mut p,&mut c,0x10);assert_eq!(p.row,cheats::CHEAT_ROWS+3);assert!(!tap(&mut p,&mut c,0x4000));
  assert!(!p.cheats);assert_eq!(p.row,5);tap(&mut p,&mut c,0x40);assert_eq!(p.row,0);
  assert!(tap(&mut p,&mut c,0x4000));drop(tap);
  assert_eq!((sfx,ambience,music),(7,6,1));assert_eq!(c,cheats::Settings::new());
