@@ -18,7 +18,8 @@ def action_data(actions):
     `actions` is a list of `(name, [(field, kind, value), ...])`. Only the kinds
     the gate vocabulary uses are supported: 23 is a plain string in `byteData`,
     18 indexes `fsmStringParams` (whose entries are FsmString records, not bare
-    strings), 20 indexes `fsmOwnerDefaultParams`, and 17 is a compact bool.
+    strings), 20 indexes `fsmOwnerDefaultParams`, 17 is a compact bool and 16 a
+    compact int, which carries a variable name instead when given a string.
     """
     names, enabled, starts = [], [], []
     param_name, param_kind, param_pos, param_size = [], [], [], []
@@ -47,6 +48,15 @@ def action_data(actions):
                 param_pos.append(len(byte_data))
                 # One byte of payload, then useVariable, then the name.
                 encoded = bytes([1 if value else 0, 0])
+                param_size.append(len(encoded))
+                byte_data.extend(encoded)
+            elif kind == 16:
+                # A compact int: four bytes, then useVariable, then the name.
+                param_pos.append(len(byte_data))
+                variable = isinstance(value, str)
+                encoded = ((0 if variable else value).to_bytes(4, 'little', signed=True)
+                           + bytes([1 if variable else 0])
+                           + (value.encode('utf8') if variable else b''))
                 param_size.append(len(encoded))
                 byte_data.extend(encoded)
             else:
