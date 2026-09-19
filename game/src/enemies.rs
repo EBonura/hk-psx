@@ -592,8 +592,10 @@ impl Actor {
                         controller: hk_sim::runner::Runner::with_facing(params, spec.initial_direction as i8), rng: seed,
                         vx: 0, animation_tick: 0 })
                 }
-                ActorController::Climber { start_right, .. } => Runtime::Climber(ClimberRuntime {
-                    controller: hk_sim::climber::Climber::new([spec.x, spec.y], 0, 1, start_right).expect("validated Climber placement"),
+                ActorController::Climber { start_right, rotation_q16, .. } => Runtime::Climber(ClimberRuntime {
+                    // Unit positive scale is the recognizer's contract, so the
+                    // authored rotation is the whole of the starting pose.
+                    controller: hk_sim::climber::Climber::new([spec.x, spec.y], rotation_q16, 1, start_right).expect("validated Climber placement"),
                     velocity: [0; 2], animation_tick: 0, clip: hk_sim::climber::Clip::Walk, end_token: None }),
                 ActorController::Vengefly { .. } => Runtime::Vengefly(VengeflyRuntime {
                     controller: hk_sim::vengefly::Vengefly::new([spec.x, spec.y], seed), animation_tick: 0, clip: hk_sim::vengefly::Clip::Idle }),
@@ -643,7 +645,12 @@ impl Actor {
         if let Some(climber) = self.climber() {
             // The source box collider turns with the transform; at rest the
             // rotation is cardinal, so the rotated box is again axis aligned.
-            let q = climber.quarter();
+            // The cooked box is already in the spawn pose, so only the turns
+            // taken since spawn rotate it: a ceiling placement starts at 180
+            // and its authored box is the upside-down one.
+            let ActorController::Climber { rotation_q16, .. } = spec.controller
+                else { panic!("Climber runtime with other metadata") };
+            let q = climber.quarter() - ((rotation_q16 + 45 * ONE).div_euclid(90 * ONE)).rem_euclid(4);
             let corners = [rotate_quarter([b[0], b[1]], q), rotate_quarter([b[2], b[3]], q)];
             return [corners[0][0].min(corners[1][0]), corners[0][1].min(corners[1][1]),
                 corners[0][0].max(corners[1][0]), corners[0][1].max(corners[1][1])];

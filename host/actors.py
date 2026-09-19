@@ -515,7 +515,9 @@ def generated_actor_specs(region):
         elif control['kind'] == 'Climber':
             if 'stun_clip' not in actor or not actor.get('corpse'):
                 raise ValueError(f'Climber is missing cooked clips or corpse: {actor["source"]}')
-            controller = f'hk_sim::ActorController::Climber {{stun_clip:{actor["stun_clip"]},start_right:{str(control["start_right"]).lower()}}}'
+            controller = ('hk_sim::ActorController::Climber {'
+                          f'stun_clip:{actor["stun_clip"]},start_right:{str(control["start_right"]).lower()},'
+                          f'rotation_q16:{control["rotation_q16"]}' + '}')
             # The controller owns speed and turns; the walker fields are unused.
             speed, turn_ticks, turn_cooldown_ticks = 2.0, 15, 0
             initial_direction, random_start_direction = 1, False
