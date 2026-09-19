@@ -1,4 +1,4 @@
-"""What the 45 admitted scenes actually contain of P12's breakable families.
+"""What the 46 admitted scenes actually contain of P12's breakable families.
 
 The package plan lists ten families from the whole game. This measures which of
 them the admitted catalogue holds, and in what form, so the work is sized
@@ -11,14 +11,22 @@ inventories under `.hkpsx/world-import/<file>/components.json.gz`, so it runs
 without the Windows source. `--fsm` additionally compiles the PlayMaker-authored
 families through host/script_ir.py, which does need the source.
 
+The `secret_mask` name rule below is a census of names and nothing more. The
+authored secret-mask behaviour is one FSM structure that ships under two
+definition names and under object names the rule does not match, so the count it
+gives is not the family size; `--recognize` reports the structural one.
+
 `--terrain` asks the question that turned out to matter more than the counts:
 which FSM definitions own a collider host/world_geometry.py bakes into terrain?
 Those are the instances where the serialized state and the state the original
-loads with can disagree, and the cook reads the serialized one.
+loads with can disagree, and the cook reads the serialized one. It then narrows
+that list twice, to the unconditional load path and to actions aimed at the
+FSM's own object, which is the only combination that can make the cook wrong
+before the hero has done anything.
 
-`--recognize` runs the compiled per-family subsets in host/breakables.py over
-the catalogue and reports what each admits and what it refuses, with the source
-reason. It needs the Windows source.
+`--recognize` runs the compiled per-family subsets in host/breakables.py and
+host/reveal_masks.py over the catalogue and reports what each admits and what it
+refuses, with the source reason. It needs the Windows source.
 """
 import argparse
 import collections
@@ -30,6 +38,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
+from focus import action_fields
 
 # A family is a component signature plus, where the behaviour lives in a
 # PlayMaker FSM rather than a C# component, the authored object name that
@@ -69,7 +78,7 @@ FSM_FAMILIES = {
     'inspect_sign': r'Sign Post$',
 }
 # The plan's list, against what the admitted catalogue holds. A family named
-# here with no entry is absent from these 45 scenes, which is a result, not a
+# here with no entry is absent from these 46 scenes, which is a result, not a
 # gap: the port cannot implement a contract it has no instance of.
 PLAN_FAMILIES = {
     'grass': ('grass', 'town_grass', 'grass_sprite'),
@@ -186,6 +195,59 @@ def enabled_action_names(fsm):
                 yield raw.rsplit('.', 1)[-1]
 
 
+# The two mutators that reach the owner's children rather than the owner, so
+# they cannot turn the owner's own collider off however they run.
+CHILD_MUTATORS = frozenset({'ActivateAllChildren', 'DestroyAllChildren'})
+# The one that names no target because it always acts on the owner.
+IMPLICIT_OWNER_MUTATORS = frozenset({'DestroySelf'})
+
+
+def owner_load_path_mutators(fsm):
+    """Collider mutators aimed at the owner, on the unconditional load path.
+
+    This is the screen `fsm_owned_terrain` wanted and the mutator list alone
+    could not give. Two things narrow it, and both are exact rather than
+    heuristic. Reachability: only `FINISHED` transitions are followed, so the
+    walk covers what runs with no hero, no save state and no other object, which
+    is the window the cook's serialized read has to be right in. Target: the
+    action has to name Owner, because one that moves a different object cannot
+    change this object's terrain collider.
+
+    What is left out is left out on purpose. A state behind `ACTIVATE` needs the
+    save to say the room was already opened, which a fresh boot does not, and a
+    state behind a hero event needs the hero, which is after the first drawn
+    frame. Those are behaviours to reproduce, not places the cook can be wrong.
+    """
+    states = {state['name']: state for state in fsm['states']}
+    seen, stack, found = set(), [fsm['startState']], collections.Counter()
+    while stack:
+        name = stack.pop()
+        if name in seen or name not in states:
+            continue
+        seen.add(name)
+        data = states[name]['actionData']
+        for index, raw in enumerate(data['actionNames']):
+            action = raw.rsplit('.', 1)[-1]
+            if not data['actionEnabled'][index] or action not in COLLIDER_MUTATORS \
+                    or action in CHILD_MUTATORS:
+                continue
+            if action in IMPLICIT_OWNER_MUTATORS:
+                found[f'{name}:{action}'] += 1
+                continue
+            try:
+                target = action_fields(data, index).get('gameObject')
+            except ValueError:
+                # An undecodable target is not evidence of safety.
+                found[f'{name}:{action}?'] += 1
+                continue
+            if isinstance(target, dict) and target.get('ownerOption') == 0:
+                found[f'{name}:{action}'] += 1
+        for transition in states[name]['transitions']:
+            if transition['fsmEvent']['name'] == 'FINISHED':
+                stack.append(transition['toState'])
+    return found
+
+
 def fsm_owned_terrain(scenes):
     """Per FSM definition, the terrain colliders and edges its object owns.
 
@@ -217,10 +279,14 @@ def fsm_owned_terrain(scenes):
                 continue
             mutators = sorted({name for fsm in fsms for name in enabled_action_names(fsm)}
                               & COLLIDER_MUTATORS)
+            load = collections.Counter()
+            for fsm in fsms:
+                load += owner_load_path_mutators(fsm)
             rows.append({'scene': scene['scene_name'],
                          'definition': ' + '.join(sorted(fsm['name'] for fsm in fsms)),
                          'collider': collider['source'], 'type': collider['type'],
-                         'edges': edges.get(collider['source'], 0), 'mutators': mutators})
+                         'edges': edges.get(collider['source'], 0), 'mutators': mutators,
+                         'load_path_mutators': sorted(load)})
     return rows
 
 
@@ -242,6 +308,56 @@ def scene_doors(sc):
     return found
 
 
+def secret_masks(sc, errors=None):
+    """The one-way secret masks host/reveal_masks.py admits, in this scene.
+
+    Wrapped to the same (scene, errors) shape the other recognizers use. The
+    reversible reveal shapes are left out: they are not a destruction family and
+    they are already reported by the region bindings.
+    """
+    from reveal_masks import reveal_mask_sources
+    found = reveal_mask_sources(sc)
+    if errors is not None:
+        errors += [{'id': record['source'], 'type': 'secret mask', 'error': record['error']}
+                   for record in found['unsupported']]
+    return [dict(record, position=[min(p[0] for p in record['trigger']),
+                                   min(p[1] for p in record['trigger'])])
+            for record in found['controllers'] if record['one_way']]
+
+
+def secret_mask_fade_contract(scenes):
+    """Re-run the region bind, so the report says what actually ships.
+
+    `secret_masks` answers the scene-level question: does this instance decode.
+    Whether its whole authored group can fade is a property of the cooked rooms,
+    so host/reveal_masks.py decides it at bind time and this repeats that here
+    against the packs on disk rather than restating the scene-level count as if
+    it were the final one. Nothing is written.
+    """
+    from source import Source
+    from scene import Scene
+    from reveal_masks import bind_regions, reveal_mask_sources
+    path = ROOT / 'data/regions.json'
+    if not path.is_file():
+        return None
+    report = json.loads(path.read_text())
+    source = Source()
+    by_scene = {info['scene_id']: reveal_mask_sources(Scene(source, info['file']))
+                for info in report['scenes']}
+    before = {scene: [record['source'] for record in entry['controllers'] if record['one_way']]
+              for scene, entry in by_scene.items()}
+    bind_regions(report, by_scene)
+    names = {info['scene_id']: info['scene_name'] for info in report['scenes']}
+    kept, dropped = [], []
+    for scene, entry in by_scene.items():
+        for item in entry['unsupported']:
+            if item['source'] in before[scene]:
+                dropped.append((names[scene], item['name'], item['source'], item['error']))
+        kept += [(names[scene], record['name'], record['source'])
+                 for record in entry['controllers'] if record['one_way']]
+    return kept, dropped
+
+
 def recognized(scenes):
     """What the compiled per-family subsets admit and refuse, whole catalogue."""
     from source import Source
@@ -249,7 +365,8 @@ def recognized(scenes):
     import breakables
     source = Source()
     families = {'arena gates': (breakables.battle_gates, {}),
-                'infected vines': (breakables.infected_vines, {})}
+                'infected vines': (breakables.infected_vines, {}),
+                'secret masks': (secret_masks, {})}
     out = {name: {'admitted': [], 'refused': []} for name in families}
     doors = {}
     for desc in scenes:
@@ -291,6 +408,18 @@ def main():
             print(f"  {len(group):4d} colliders {sum(row['edges'] for row in group):5d} edges "
                   f"in {rooms:2d} scenes  {definition:34s} "
                   + (', '.join(mutators) if mutators else 'moves no collider'))
+        # The screen above says which FSMs *can* move a collider. This one says
+        # which ones do it to their own collider before the hero exists, which is
+        # the only window where the cook's serialized read can already be wrong.
+        reached = [row for row in terrain if row['load_path_mutators']]
+        print(f"\n  narrowing to the unconditional load path and to actions aimed at the FSM's own "
+              f"object leaves {len(reached)} of {len(moved)} ({sum(row['edges'] for row in reached)} "
+              f"of {sum(row['edges'] for row in moved)} edges):")
+        for definition, group in sorted(collections.Counter(
+                (row['definition'], ', '.join(sorted({name for row2 in [row]
+                                                      for name in row2['load_path_mutators']})))
+                for row in reached).items(), key=lambda kv: -kv[1]):
+            print(f'  {group:4d} colliders  {definition[0]:34s} {definition[1]}')
     admitted, doors = recognized(SCENE_TABLE) if args.recognize else ({}, {})
     for name, result in admitted.items():
         print(f"\n{name}: {len(result['admitted'])} admitted, {len(result['refused'])} refused")
@@ -302,6 +431,11 @@ def main():
                 print(f"    door {door['name']:18s} ({door['position'][0]:8.2f},{door['position'][1]:7.2f})"
                       f"   -> {door['target']}")
             for row in rows:
+                if 'one_way' in row:
+                    print(f"    mask {row['name']:18s} {row['source']:14s} "
+                          f"{len(row['renderer_sources']):2d} renderers, {row['fade_ticks']:3d} ticks"
+                          + (', authored to chime' if row['plays_sound'] else ''))
+                    continue
                 if 'solid_on_load' not in row:
                     print(f"    {row['name']:18s} {row['source']}")
                     continue
@@ -315,6 +449,16 @@ def main():
         if solid:
             print(f"  {len(solid)} of these are terrain in the cooked world and open in the source; "
                   f"their colliders are " + ', '.join(row['collider_source'] for row in solid))
+        if name == 'secret masks':
+            contract = secret_mask_fade_contract(SCENE_TABLE)
+            if contract is None:
+                print('  (no data/regions.json, so the whole-group fade contract was not applied)')
+            else:
+                kept, dropped = contract
+                print(f'  the region bind then applies the whole-group fade contract: '
+                      f'{len(kept)} of these ship, {len(dropped)} more are refused')
+                for scene, mask, source, error in dropped:
+                    print(f'  refused {scene:16s} {source:14s} {error}')
     rows = fsm_support(SCENE_TABLE, FSM_FAMILIES) if args.fsm else []
     if rows:
         print('\nPlayMaker-authored families against the current script IR:')

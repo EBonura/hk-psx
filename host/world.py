@@ -229,8 +229,14 @@ def generate(report, out_path=None):
             if not ticks:raise ValueError('reveal duration must be positive')
             opacity=record['initial_opacity']
             if type(opacity)is not int or opacity not in (0,128):raise ValueError('invalid reveal initial opacity')
+            # An authored secret mask: covered on load, uncovered for good on the
+            # first hero entry, because its FSM declares no COVER event.
+            one_way=record.get('one_way',False)
+            if type(one_way)is not bool:raise ValueError('invalid reveal one-way flag')
+            if one_way and opacity!=128:raise ValueError('one-way reveal must start covered')
             specs.append('crate::reveal_masks::RevealMaskSpec {source_id:'+str(source)+',trigger:&['+
-                ','.join(arr(map(q,point))for point in polygon)+f'],fade_ticks:{ticks},initial_opacity:{opacity}'+'}')
+                ','.join(arr(map(q,point))for point in polygon)+f'],fade_ticks:{ticks},initial_opacity:{opacity}'
+                +f',one_way:{str(one_way).lower()}'+'}')
         out.append(f'static REVEAL_MASKS_SCENE_{scene}: &[crate::reveal_masks::RevealMaskSpec] = &['+','.join(specs)+'];')
     from effects import generated_debris
     debris_catalog={}
