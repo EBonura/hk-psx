@@ -48,7 +48,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P19/P20 | in progress | Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
 | P14 | in progress | Builds 112 to 121. Step 1's audit corrected the jump velocity and added the jump, ledge and head-bump buffers the port was missing. Step 2 implemented the Mothwing Cloak, the Mantis Claw's wall slide and jump, the Monarch Wings, the Crystal Heart and the Shade Cloak, all from source constants and the Superdash FSM. Step 3 catalogued every PlayerData traversal flag and found acid already covered by the generic hazard path, `hasAcidArmour` and `hasLantern` unreachable, and one unimplemented bounce shroom owed to P11. Step 4 took the input priority from the Can* methods. Step 5 added the Dream Nail with its SOUL reward. Step 6 mapped L1, R1 and Triangle and extended the replay schema and the native probe. Step 7's combinations are hk-sim tests. Remaining: no ability has an acquisition route (step 8), and the Wall Slide, Walljump, Dash, Double Jump and four DN clips are not cooked, so an ability plays the Fall or Idle clip. |
 | P15 | in progress | Build 122 adds Vengeful Spirit from `Spell Control`, `Fireball Cast` and the projectile's own FSMs, with the source's one-button cast-versus-Focus split. Remaining: Desolate Dive and Howling Wraiths (catalogued only), nail arts, nail damage tiers, the centralized damage resolution of step 4, the verification matrix of step 7, and the `Ball`/`Ball End` art, which needs a reserved VRAM rectangle. |
-| P10 | in progress | Step 1 done. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. Steps 2 onward (the typed IR, the executor and its slices) are the largest remaining unlock: P12, P17, P18 and P23 all wait on them. |
+| P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, so the next slices are `GetOwner` (blocks 385), a shared variable pool (295), `Trigger2dEvent` (186), `GetVelocity2d` (122), `Tk2dPlayAnimation` (99) and `Collision2dEvent` (89). P12, P17, P18 and P23 all wait on this. |
 | P11 | in progress | Step 1 done. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. Owed: the single `BounceShroom` in Crossroads_38, and the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
 | P12, P16-P18, P21-P31 | pending | Follow dependency order in the master plan. |
 
@@ -1556,6 +1556,50 @@ an unreachable state still counts; prefab FSMs reached only through a pooled
 spawn are counted where a scene holds the prefab and not otherwise; and nothing
 here implements anything. It is the authority step 1 asks for, with numbers
 against every candidate.
+
+## P10 steps 2 and 4: the IR, the executor and an honest coverage number
+
+docs/SCRIPT_IR.md is step 2's decision, made against the inventory rather than
+in the abstract. Three measurements shaped it. Instances outnumber definitions
+ten to one (2,028 against 200), so a program is cooked once per definition and
+bound per instance. 280 action types is far more than is needed, and the four
+that carry the declarative flow are already native families, so the IR has a
+small fixed opcode set plus one typed escape into native code rather than an
+opcode per PlayMaker action. And a third of the instances belong to FSMs a
+native controller already runs, which are tagged and never compiled.
+
+`hk_sim::script` is the first slice of step 4: waits, bool and int sets,
+`BoolTest`, `IntCompare` with a selector, synchronous `SendEventByName` to self,
+`NextFrameEvent`, and `Native`. Eight tests cover the semantics that are easy to
+get wrong. A send runs the target state inside the sending op, which is what
+PlayMaker does and what step 5's note about the Runner's same-callback restart
+depends on; a queue would turn it into an extra frame. A `NextFrameEvent` does
+not fire in the tick that queued it. And every bound refuses rather than
+dropping: a self-transition loop returns `Halt::Depth` instead of hanging, a
+program with a bad index returns `Halt::BadProgram` instead of reading past
+itself, and an overfull pending queue returns `Halt::PendingFull` instead of
+losing an event, which is the failure mode that would be hardest to notice.
+
+`host/script_ir.py` compiles PlayMaker FSMs to that IR and refuses, by name,
+every action the slice does not implement. Running it over the admitted scenes
+gives the number this package should be judged on rather than a claim:
+
+**245 of 2,028 FSM instances compile, and they carry 0 ops.** Every one of them
+is an FSM with no enabled actions. The first slice runs nothing real yet.
+
+That is the point of the exercise, because the refusals rank what comes next
+precisely. `GetOwner` blocks 385 instances, and the IR already says how to
+answer it: resolve the owner at cook time into a fixed object reference where
+the target is static, and refuse where it is not. The variable cap blocks 295;
+the distribution says 16 slots cover 85.5% of FSMs, 24 cover 95.9%, and the
+largest wants 107, so the answer is a shared variable pool with a per-definition
+span rather than a bigger fixed array. Then `Trigger2dEvent` 186, which is the
+interaction primitive every room uses, `GetVelocity2d` 122,
+`Tk2dPlayAnimation` 99 and `Collision2dEvent` 89.
+
+Nothing is cooked into the disc yet. This is the compiler and the executor with
+a measured gap between them and the authored behaviour, which is what the next
+slices close.
 
 ## Required package completion record
 

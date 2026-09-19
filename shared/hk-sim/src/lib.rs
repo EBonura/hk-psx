@@ -17,6 +17,7 @@ pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
 mod vitals;
 mod focus;
 pub use focus::{Focus,FocusParams,FocusInput,FocusClip,FocusEvents};
+pub mod script;
 mod spell;
 pub use spell::{Cast, CastPhase, Fireball, FireballParams};
 mod dream_nail;
