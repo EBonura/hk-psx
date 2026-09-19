@@ -19,7 +19,7 @@ BUILD = ROOT / '.hkpsx/build.json'
 ROWS = {
     'Linked code': 'code_bytes',
     'Code-to-data alignment': 'code_data_alignment_bytes',
-    'Linked data, including menu, HUD and sound bank': 'data_bytes',
+    'Linked data, including menu and HUD': 'data_bytes',
     'BSS, including shared scene arena and runtime pools': 'bss_bytes',
     'Total static span': 'static_span_bytes',
     'Linker stack exclusion': 'stack_reserved_bytes',
