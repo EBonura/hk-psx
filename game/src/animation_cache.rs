@@ -32,6 +32,21 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
             .prepare(ids, |key, slot| {
                 // The Hollow Shade is not in any room's atlas: its keys sit
                 // above every texture table and stream from linked RAM.
+                if key >= crate::ability_art::KEY_BASE {
+                    // The Knight's ability clips sit above the Shade's keys and
+                    // stream from linked RAM the same way.
+                    let (bytes, width, height) =
+                        crate::ability_art::texels((key - crate::ability_art::KEY_BASE) as usize)?;
+                    if bytes.len() > 2048 {
+                        return None;
+                    }
+                    let (u, v) = uv(slot);
+                    crate::texture_upload::upload(
+                        VramRect::new(320 + u / 4, v, (width + 3) / 4, height),
+                        bytes,
+                    );
+                    return Some(bytes.len() as u32);
+                }
                 if key >= crate::shade::KEY_BASE {
                     let (bytes, width, height) = crate::shade::texels((key - crate::shade::KEY_BASE) as usize)?;
                     if bytes.len() > 2048 {

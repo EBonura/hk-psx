@@ -13,6 +13,7 @@ mod bench;
 mod camera;
 mod save;
 mod shade;
+mod ability_art;
 mod input_queue;
 mod input_sampler;
 mod input;
@@ -86,6 +87,27 @@ pub static mut HK_NAIL_ATTACK_COUNT: u32 = 0;
 fn apply_reveal_masks(state:&reveal_masks::State,region:&world::Region) {
     let counts=state.apply(region.reveal_masks,world::reveal_bindings(region));
     unsafe {HK_REVEAL_MASKS_HIDDEN=counts.hidden;HK_REVEAL_MASKS_PARTIAL=counts.partial;HK_REVEAL_MASKS_VISIBLE=counts.visible;}
+}
+/// The ability clip that owns the Knight's body this frame, if any, and how
+/// far into it we are. Ordered as the source's own states are: a cast or a
+/// Dream Nail takes control outright, then the dash, then the wall, then the
+/// wings. The Crystal Heart has no cooked clip and keeps the fall pose.
+fn ability_pose(player:&Player,dream:&hk_sim::DreamNail,cast:&hk_sim::Cast)->Option<(usize,u32)> {
+    use hk_sim::{CastPhase,DreamPhase};
+    if cast.phase!=CastPhase::Off {
+        let clip=if cast.phase==CastPhase::Antic {ability_art::FIREBALL_ANTIC} else {ability_art::FIREBALL_CAST};
+        return Some((clip,cast.tick as u32));
+    }
+    if dream.phase!=DreamPhase::Off {
+        // DN Start, DN Charge, DN Slash Antic and DN Slash sit in phase order.
+        let offset=match dream.phase {DreamPhase::Start=>0,DreamPhase::Charge=>1,DreamPhase::Antic=>2,_=>3};
+        return Some((ability_art::DN_START+offset,dream.tick as u32));
+    }
+    if player.dash_left>0 {return Some((ability_art::DASH,(PARAMS.dash_ticks-player.dash_left) as u32));}
+    if player.wall_locked {return Some((ability_art::WALLJUMP,player.wall_lock_ticks as u32));}
+    if player.wall_sliding {return Some((ability_art::WALL_SLIDE,player.animation_tick));}
+    if player.double_jumping {return Some((ability_art::DOUBLE_JUMP,player.double_jump_tick as u32));}
+    None
 }
 fn knight_frame(room: &Room, player: &Player, focus: &hk_sim::Focus) -> usize {
     let (clip,age)=if let Some((clip,age))=focus.animation() {
@@ -336,7 +358,7 @@ fn main() {
             // was admitted. Every spatial view in this scene stays live.
             vram.admit_scene(region_id,cache.atlases_ready());
             vram.activate(region_id);
-            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();shade::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);runner_audio::upload();runner_audio::set_volume(settings.sfx);
+            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();shade::upload();ability_art::upload();geo_audio::upload();geo_audio::set_volume(settings.sfx);runner_audio::upload();runner_audio::set_volume(settings.sfx);
             initial=false;
             sim_clock=psx_rt::interrupts::vblank_count();
             input::start(sim_clock);
@@ -380,10 +402,17 @@ fn main() {
             great_door::apply(&door,&mut state,region_id);
             let camera=camera_state.position();
             let door_frame=door.frame(region_id,camera);
+            // The bench owns the body first, then an ability, then the room clip.
+            let pose=if bench_state.animation().is_some() {None} else {ability_pose(&player,&dream,&cast)};
             let body_frame=if let Some((clip,age))=bench_state.animation() {clip_frame(&room,clip,age)} else {knight_frame(&room,&player,&focus)};
             let effect_frame=nail_frame(&room,&nail);
             let enemy_draws=enemies.prepare_draws(r,&room,camera);
-            let mut needed=[0u16;12];needed[0]=u32_at(room.frame(body_frame),0) as u16;
+            let ability_frame=pose.map(|(clip,age)|ability_art::frame_index(clip,age));
+            let mut needed=[0u16;12];
+            needed[0]=match ability_frame {
+                Some(i)=>ability_art::KEY_BASE+i as u16,
+                None=>u32_at(room.frame(body_frame),0) as u16,
+            };
             let mut needed_len=if effect_frame.is_some(){2}else{1};
             if let Some(f)=effect_frame {needed[1]=u32_at(room.frame(f),0) as u16;}
             enemy_draws.append_needed(&mut needed,&mut needed_len);
@@ -399,7 +428,10 @@ fn main() {
             prims+=geo_render::draw(geo,region_id,camera);
             prims+=lifeblood::draw(life,region_id,camera);render::kick_ready();
             if !vitals.dead && !door.hidden() && (vitals.invulnerable_ticks==0 || frame%4<2) {
-                draw_frame(&room,body_frame,&player,camera);prims+=1;
+                prims+=match ability_frame {
+                    Some(i)=>ability_art::draw(i,player.x,player.y,player.facing,camera),
+                    None=>{draw_frame(&room,body_frame,&player,camera);1}
+                };
             }
             if let Some(f)=effect_frame {draw_frame(&room,f,&player,camera);prims+=1;}
             prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)),settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(vitals.blue_health),save_prompt);render::submit(vitals.health,settings.cheats.params(VITAL_PARAMS).max_health,vitals.soul,soul_cap(&shade),paused,vitals.blue_health,door.shade());

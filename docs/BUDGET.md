@@ -121,6 +121,12 @@ Each scene uses page/palette bases(0,0) with exclusive ownership. The20-page and
 - Lifeblood: (352,96,32,80). Break effects: (352,176,32,64), (360,32,24,32),
   (352,64,32,32); the latter two were carved out of Geo's former
   (352,32,32,64) strip. The final2KiB transfer admits Town crystal particles.
+- The Hollow Shade reserved 14 CLUT rows at x320..335, y482 and uses two. The
+  Knight's ability clips take four of the rest, (320,484,16,1) upward, and use
+  one. Neither reserves a texel rectangle: both hold their frames in linked RAM
+  and reach VRAM through the eight shared 64x64 animation slots, because an
+  ability is usable in any view and the tightest admitted region has about 19
+  free texture slots against the416-slot per-region CLUT budget.
 
 Allocator tests check all reservations together. The title temporarily uses
 89,600 VRAM bytes that gameplay reuses. Its menus share the existing7,712-byte dialogue font reservation. The source

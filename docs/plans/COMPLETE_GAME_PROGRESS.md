@@ -1474,6 +1474,40 @@ scene decoded at admission, or splitting region 17 so the per-region budget has
 room. Until one of those happens, a dash plays the Fall clip. That is now a
 budget item with a number against it rather than a vague omission.
 
+## Every ability's source animation, through the Shade's route (build 126)
+
+The previous entry left the ability clips as a budget item: a dash played the
+Fall clip because the Knight's per-region bank is at its 416-slot CLUT limit and
+the tightest region has about 19 free slots. The answer was already in the
+repository. The Hollow Shade has the same problem, since it can appear in any
+scene the Knight died in, and it solves it by keeping its frames in linked RAM
+and reaching VRAM through the eight shared 64x64 animation slots. Nothing new is
+reserved but a CLUT row.
+
+`host/ability_art.py` cooks all ten clips that way: Dash, Wall Slide, Walljump
+and Double Jump for P14, the four Dream Nail phases for its step 5, and the two
+Fireball cast clips for P15. 68 original frames, one palette, 26,044 linked
+bytes. The CLUT row comes out of the 14 rows `shade.py` reserved at y482 and
+never used, four of which are now the ability block at (320,484,16,1);
+docs/BUDGET.md carries the split. Linked headroom went from 152,500 to 121,780
+bytes.
+
+On the guest side `ability_pose` decides which clip owns the Knight's body this
+frame, ordered as the source's own states are: a cast or a Dream Nail takes
+control outright, then the dash, then the wall, then the wings. When one does,
+its key replaces the room body frame in the animation working set and
+`ability_art::draw` puts it on screen through the slot UV, mirrored by the
+Knight's facing. The animation cache dispatches on the key range, so the Shade's
+range is untouched.
+
+The Crystal Heart is the one ability still without a clip. Its SD set is a
+separate charge, travel and wall-hit sequence rather than one animation, and it
+keeps the fall pose until that is modelled. Everything else now plays what the
+original plays.
+
+Verification: 68 frames cooked, the 8 routes and the 4 power-cut points on the
+final CUE, with 121,780 bytes of linked headroom left.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
