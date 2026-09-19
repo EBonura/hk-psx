@@ -1,4 +1,4 @@
-"""The economy, shop and station catalog P17 step 1 asks for, from the source.
+"""The economy, shop and station catalog, and the stock table the guest links.
 
 P17 wants purchase transactions, shop catalogs and their unlock conditions taken
 from the installed game rather than assumed, and the source spreads one purchase
@@ -17,81 +17,44 @@ the `Text YN` dialogue box takes the Geo, and `Stag Control` holds the
 destination table while `UI List Stag` in resources.assets holds the per
 destination PlayerData gate.
 
-Nothing is cooked and no retail payload is embedded. The report goes to
-.hkpsx/shop-catalog.json.
+`collect` reports, to .hkpsx/shop-catalog.json. `cook` turns Sly's half of that
+report into data/shop.rs, the table `game/src/shop.rs` links: fourteen rows with
+their sheet price, their localized name and description wrapped to the panel,
+the PlayerData each one reads and writes and the delivery branch it runs. The
+three rules a purchase obeys, `BuildItemList`, `CanBuy` and the Defender's Crest
+discount in `ShopItemStats::OnEnable`, are read out of the shipped CIL and
+asserted rather than transcribed, so an install whose rules moved fails the cook
+instead of shipping a guest that quietly obeys a different shop.
 
 Scope note: of everything here only the Crossroads stag station, Cornifer's map
 and the City lift toll are inside the admitted scene list. Sly's shop is a
 separate scene (`Room_shop`) that the slice does not contain; it is catalogued
-because Dirtmouth carries its door. See `out_of_reach` in the report.
+and cooked because Dirtmouth carries its door, and admitting that one scene is
+the only step between the cooked table and a reachable shop. See `out_of_reach`
+in the report.
 """
-import base64
 import json
 import mmap
-import xml.etree.ElementTree as ElementTree
+import re
 import language
 from source import Source, ROOT, dump
 from scene import Scene
 from focus import action_fields
 
-# StringEncrypt::.cctor, with Mode=ECB and Padding=PKCS7 from Decrypt/EncryptData.
+# The sheet `ShopItemStats::Awake` reparses every price from. `host/language.py`
+# owns the key derivation and the decryption for every sheet in the install.
 PRICE_SHEET = 'EN_Prices'
 GEO_REPORT = ROOT / '.hkpsx/geo-provenance.json'
 ADMITTED = ROOT / '.hkpsx/selected-regions.json'
-
-# ---------------------------------------------------------------- AES-256-ECB
-# The language sheets are the only authority on shipped prices and the install
-# ships them encrypted, so the decryption lives here rather than a new
-# dependency. Decrypt only; nothing in this repo ever writes a sheet back.
-_SBOX = bytearray(256)
-_INV = bytearray(256)
-
-
-def _build_sbox():
-    p = q = 1
-    while True:
-        p = p ^ ((p << 1) & 0xff) ^ (0x1b if p & 0x80 else 0)
-        q ^= q << 1
-        q ^= q << 2
-        q ^= q << 4
-        q &= 0xff
-        if q & 0x80:
-            q ^= 0x09
-        _SBOX[p] = (q ^ ((q << 1) | (q >> 7)) ^ ((q << 2) | (q >> 6))
-                    ^ ((q << 3) | (q >> 5)) ^ ((q << 4) | (q >> 4)) ^ 0x63) & 0xff
-        if p == 1:
-            break
-    _SBOX[0] = 0x63
-    for value, substituted in enumerate(_SBOX):
-        _INV[substituted] = value
-
-
-def _mul(a, b):
-    """Multiply in GF(2^8) with the AES polynomial."""
-    result = 0
-    while b:
-        if b & 1:
-            result ^= a
-        a = ((a << 1) ^ 0x1b) & 0xff if a & 0x80 else a << 1
-        b >>= 1
-    return result
-
-
-def _schedule(key):
-    size = len(key) // 4
-    rounds = size + 6
-    words = [list(key[4 * i:4 * i + 4]) for i in range(size)]
-    rcon = 1
-    for i in range(size, 4 * (rounds + 1)):
-        word = list(words[i - 1])
-        if i % size == 0:
-            word = [_SBOX[b] for b in word[1:] + word[:1]]
-            word[0] ^= rcon
-            rcon = _mul(rcon, 2)
-        elif size > 6 and i % size == 4:
-            word = [_SBOX[b] for b in word]
-        words.append([words[i - size][j] ^ word[j] for j in range(4)])
-    return words, rounds
+SHOP_TABLE = ROOT / 'data/shop.rs'
+CATALOG_REPORT = ROOT / '.hkpsx/shop-catalog.json'
+ITEM_CATALOG = ROOT / '.hkpsx/item-catalog.json'
+# The shop list reuses the charm panel's box, so it wraps against the same width
+# and the same cooked glyph advances the guest draws with.
+DESC_WIDTH = 264
+DESC_LINES = 6
+# `ShopItemStats::OnEnable` discounts while charm 10, Defender's Crest, is worn.
+DUNG_CHARM = 10
 
 
 def _reader(fsm):
@@ -630,6 +593,255 @@ def geo_sinks(catalog, prices, admitted):
     return sinks
 
 
+# ------------------------------------------------- the rules a purchase obeys
+
+
+def _bodies(types, assembly='Assembly-CSharp.dll'):
+    """`{(type, method): [opcode names]}` for the shipped CIL of whole types."""
+    from inspect_il import inspect
+    text = inspect(language.managed_directory() / assembly, set(types))
+    bodies = {}
+    for block in text.split('\n\n'):
+        head, _, rest = block.strip().partition('\n')
+        match = re.fullmatch(r'(\w+)::(\S+) RVA=[0-9a-f]+', head)
+        if not match:
+            continue
+        bodies[(match.group(1), match.group(2))] = [
+            line.split(None, 2)[1:] for line in rest.splitlines() if line.strip()]
+    return bodies
+
+
+def _reads(body, kinds=('ldfld', 'callvirt', 'call', 'ldstr')):
+    """The named operands one method body touches, as a set.
+
+    `inspect_il` prints a user string as its repr, so the quotes come off here
+    and a field name and the literal it is compared against read the same way.
+    """
+    names = set()
+    for opcode, operand in (entry for entry in body if len(entry) == 2):
+        if opcode not in kinds:
+            continue
+        names.add(operand[1:-1] if operand[:1] == "'" and operand[-1:] == "'" else operand)
+    return names
+
+
+def purchase_rules():
+    """The three rules a purchase obeys, checked against the shipped CIL.
+
+    `ShopMenuStock::BuildItemList` decides what is on the shelf, `CanBuy`
+    decides what can be afforded, and `ShopItemStats::OnEnable` is the only
+    price modifier in the shop. Each one is asserted by the fields it reads, so
+    an install whose rules moved fails the cook instead of shipping a guest that
+    quietly obeys a different shop.
+    """
+    bodies = _bodies(('ShopMenuStock', 'ShopItemStats'))
+    listing = _reads(bodies[('ShopMenuStock', 'BuildItemList')])
+    wanted = {'requiredPlayerDataBool', 'playerDataBoolName', 'removalPlayerDataBool', 'GetBool'}
+    missing = wanted - listing
+    if missing:
+        raise ValueError(f'BuildItemList no longer reads {missing}')
+    buying = _reads(bodies[('ShopMenuStock', 'CanBuy')])
+    if not {'relicNumber', 'geo', 'charmsOwned', 'charmsRequired'} <= buying:
+        raise ValueError('CanBuy no longer weighs relic, Geo and charm count')
+    enable = bodies[('ShopItemStats', 'OnEnable')]
+    fields = _reads(enable)
+    if not {'dungDiscount', f'equippedCharm_{DUNG_CHARM}', 'runningCost'} <= fields:
+        raise ValueError('the shop discount is no longer Defender\'s Crest on runningCost')
+    scale = [float(operand) for opcode, operand in enable
+             if opcode == 'ldc.r4' and 0 < float(operand) < 1]
+    if len(scale) != 1 or abs(scale[0] - 0.8) > 1e-6:
+        raise ValueError(f'the shop discount factor is now {scale}')
+    awake = _reads(bodies[('ShopItemStats', 'Awake')], ('ldstr', 'ldfld', 'stfld'))
+    if not {'Prices', 'priceConvo', 'cost'} <= awake:
+        raise ValueError('Awake no longer reparses the cost from the Prices sheet')
+    return {
+        'listing': 'BuildItemList lists an item when its playerDataBoolName is unset, its '
+                   'requiredPlayerDataBool is empty or set, and its removalPlayerDataBool is '
+                   'empty or unset',
+        'affording': 'CanBuy passes a relic sale outright, else needs geo >= GetCost() and '
+                     'charmsOwned >= charmsRequired',
+        'discount_charm': DUNG_CHARM,
+        'discount_factor': scale[0],
+        'discount_rule': 'OnEnable sets runningCost = (int)(cost * 0.8f) while charm 10 is '
+                         'equipped and dungDiscount is set; the cast truncates',
+        'price_source': 'Awake overwrites the serialized cost with int.Parse(Language.Get('
+                        'priceConvo, "Prices"))',
+    }
+
+
+# ------------------------------------------------------------- the cooked table
+
+
+SPECIAL_DELIVERY = {
+    0: ('Item', []),
+    1: ('MaskShard', []),
+    2: ('Charm', [('SetPlayerDataBool', 'hasCharm'), ('IncrementPlayerDataInt', 'charmsOwned')]),
+    3: ('VesselFragment', []),
+    10: ('SimpleKey', [('IncrementPlayerDataInt', 'simpleKeys')]),
+    11: ('RancidEgg', [('IncrementPlayerDataInt', 'rancidEggs')]),
+}
+
+
+def _discounted(cost, factor=0.8):
+    """`(int)(cost * 0.8f)`, and the integer identity the guest uses instead.
+
+    The guest has no floats, so it divides. The two agree for every shipped
+    price because 0.8f rounds up, so the product only ever lands just above the
+    exact fifth rather than just below it; the cook checks that rather than
+    assuming it.
+    """
+    from struct import pack, unpack
+    single = unpack('<f', pack('<f', factor))[0]
+    truncated = int(cost * single)
+    if truncated != cost * 4 // 5:
+        raise ValueError(f'{cost} discounts to {truncated}, not {cost * 4 // 5}')
+    return truncated
+
+
+def shop_rows(report, ui, advances):
+    """Sly's stock as cooked guest rows, with the flags they read and write.
+
+    The port has no general PlayerData store, so every non-charm bool the shop
+    reads gets a slot in a bitmask this module owns. `gotCharm_N` is the one
+    exception: `game/src/charms.rs` already holds that set, so a charm row
+    points at the charm rather than at a second copy of its bool.
+    """
+    from read_points import wrap_page
+    stock = report['sly_shop']['stock']
+    special_types = report['sly_shop']['transaction']['special_types']
+    fragments = json.loads(ITEM_CATALOG.read_text())['fragments']
+    order, rows = [], {}
+    slots = []
+
+    def flag(name):
+        """A PlayerData bool as the guest reads it: a charm, or a cooked slot."""
+        charm = re.fullmatch(r'gotCharm_(\d+)', name)
+        if charm:
+            return f'Flag::Charm({int(charm.group(1))})'
+        if name not in slots:
+            slots.append(name)
+        return f'Flag::Slot({slots.index(name)})'
+
+    for name in stock['alternate_when']:
+        flag(name)
+    for key in ('stock', 'stockAlt'):
+        for item in stock['lists'][key]:
+            if item['object'] in rows:
+                continue
+            order.append(item['object'])
+            rows[item['object']] = item
+    cooked = []
+    for name in order:
+        item = rows[name]
+        kind, writes = SPECIAL_DELIVERY.get(item['special_type'], (None, None))
+        if kind is None:
+            raise ValueError(f'{name} has unsupported special type {item["special_type"]}')
+        branch = [(w['action'], w['field']) for w in
+                  special_types[str(item['special_type'])]['playerdata']]
+        if branch != writes:
+            raise ValueError(f'special type {item["special_type"]} now writes {branch}')
+        if item['charms_required'] and kind != 'Charm':
+            raise ValueError(f'{name} gates on charms without being one')
+        if kind == 'Charm':
+            charm = re.fullmatch(r'gotCharm_(\d+)', item['sets'])
+            if not charm or item['notch_cost_bool'] != f'charmCost_{charm.group(1)}':
+                raise ValueError(f'{name} is a charm row whose charm cannot be named')
+            delivery = f'Delivery::Charm({int(charm.group(1))})'
+        else:
+            delivery = f'Delivery::{kind}'
+        title = ui[item['name_key']].replace('’', "'").replace('‘', "'")
+        if not all(32 <= ord(c) <= 126 for c in title):
+            raise ValueError(f'{name} has an undrawable title {title!r}')
+        pages = wrap_page(ui[item['description_key']], advances, DESC_WIDTH, DESC_LINES)
+        if len(pages) != 1:
+            raise ValueError(f'{name} needs {len(pages)} description panels')
+        cooked.append({
+            'object': name, 'name': title, 'lines': pages[0], 'cost': item['cost'],
+            'discounted': _discounted(item['cost']),
+            'sets': flag(item['sets']),
+            'requires': flag(item['requires']) if item['requires'] else 'None',
+            'removed_by': flag(item['removed_by']) if item['removed_by'] else 'None',
+            'delivery': delivery, 'charms_required': item['charms_required'],
+            'dung_discount': bool(item['dung_discount']),
+            'price_key': item['price_key'], 'sets_field': item['sets'],
+        })
+    lists = {key: [order.index(i['object']) for i in stock['lists'][key]]
+             for key in ('stock', 'stockAlt')}
+    return {
+        'items': cooked, 'slots': slots, 'lists': lists,
+        'alternate_when': [flag(n) for n in stock['alternate_when']],
+        'mask_shards_per_mask': fragments['mask_shard']['fuse']['per_whole'],
+        'mask_cap': fragments['mask_shard']['mask_cap'],
+        'starting_masks': fragments['mask_shard']['starting_masks'],
+        'vessel_fragments_per_vessel': fragments['vessel_fragment']['fuse']['per_whole'],
+        'soul_per_vessel': fragments['vessel_fragment']['fuse']['awards'][0]['amount'],
+    }
+
+
+def generated_shop_rs(table, rules):
+    """The guest table. `Item`, `Flag` and `Delivery` live in game/src/shop.rs."""
+    def quoted(value):
+        if '"' in value or '\\' in value:
+            raise ValueError(f'unquotable cooked text {value!r}')
+        return '"' + value + '"'
+    if len(table['slots']) > 32:
+        raise ValueError(f'{len(table["slots"])} shop bools exceed the cooked bitmask')
+    entries = []
+    for row in table['items']:
+        lines = ','.join(quoted(line) for line in row['lines'])
+        entries.append(
+            'Item{name:%s,lines:&[%s],cost:%d,sets:%s,requires:%s,removed_by:%s,'
+            'delivery:%s,charms_required:%d,dung_discount:%s}' % (
+                quoted(row['name']), lines, row['cost'], row['sets'],
+                f"Some({row['requires']})" if row['requires'] != 'None' else 'None',
+                f"Some({row['removed_by']})" if row['removed_by'] != 'None' else 'None',
+                row['delivery'], row['charms_required'],
+                'true' if row['dung_discount'] else 'false'))
+    array = lambda values: '&[' + ','.join(str(v) for v in values) + ']'
+    return '\n'.join([
+        "// Generated Sly's shop; prices and text from the installed language sheets.",
+        f"pub const ITEM_COUNT:usize={len(entries)};",
+        '/// The PlayerData bools the shop reads that are not `gotCharm_N`, in the',
+        '/// order `Flag::Slot` indexes them.',
+        f"pub const FLAG_COUNT:usize={len(table['slots'])};",
+        '/// Their source names, which only the tests and the report need, so the',
+        '/// guest never links a quarter of a kilobyte of strings it cannot draw.',
+        f"#[cfg(test)] pub const FLAG_NAMES:[&str;FLAG_COUNT]=[" +
+        ','.join(quoted(name) for name in table['slots']) + '];',
+        '/// `ShopMenuStock::Start` swaps in the alternate list when either bool is set.',
+        'pub const ALTERNATE_WHEN:&[Flag]=&[' + ','.join(table['alternate_when']) + '];',
+        '/// Source stock order; the alternate list is what Sly sells once he has his key.',
+        'pub const BASE_STOCK:&[u8]=' + array(table['lists']['stock']) + ';',
+        'pub const ALTERNATE_STOCK:&[u8]=' + array(table['lists']['stockAlt']) + ';',
+        f"/// `{rules['discount_rule']}`.",
+        f"pub const DISCOUNT_CHARM:usize={rules['discount_charm']};",
+        '/// `Heart Container Control` fuses this many shards into one mask.',
+        f"pub const SHARDS_PER_MASK:u8={table['mask_shards_per_mask']};",
+        f"pub const MASK_CAP:u8={table['mask_cap']};",
+        f"pub const STARTING_MASKS:u8={table['starting_masks']};",
+        '/// `Vessel Fragment Control` fuses this many fragments into one vessel.',
+        f"pub const FRAGMENTS_PER_VESSEL:u8={table['vessel_fragments_per_vessel']};",
+        f"pub const SOUL_PER_VESSEL:u16={table['soul_per_vessel']};",
+        f'pub const ITEMS:[Item;ITEM_COUNT]=[' + ','.join(entries) + '];',
+    ]) + '\n'
+
+
+def cook():
+    """Write data/shop.rs from the catalog report, the price sheet and the CIL."""
+    from charms import advances
+    if not CATALOG_REPORT.is_file():
+        raise FileNotFoundError('run host/shops.py collect first; the catalog is its report')
+    report = json.loads(CATALOG_REPORT.read_text())
+    if report['format'] != 'HKSHOP01':
+        raise ValueError('the shop catalog format changed')
+    rules = purchase_rules()
+    ui = language.sheet(Source(), 'UI')
+    table = shop_rows(report, ui, advances())
+    SHOP_TABLE.write_text(generated_shop_rs(table, rules))
+    dump(ROOT / '.hkpsx/shop-table.json', {'format': 'HKSHOPTABLE01', 'rules': rules, **table})
+    return table, rules
+
+
 # ------------------------------------------------------------------- the report
 
 
@@ -643,6 +855,45 @@ def out_of_reach(catalog, admitted):
     if not shops:
         raise LookupError('no scene carries a ShopMenuStock')
     return shops
+
+
+def admission_cost(name):
+    """What admitting one shop scene would cost, from its measured capacity pack.
+
+    `tools/cook_scene_pack.py` already cooked every BuildSettings scene into
+    `.hkpsx/scene-packs`, under a write guard, so the budget answer for a
+    candidate scene is a measurement that exists rather than an estimate. The
+    numbers that decide it are the per-view ones: the 416-slot CLUT budget is
+    per view and is the binding constraint on this port.
+    """
+    root = ROOT / '.hkpsx/scene-packs' / name
+    if not (root / 'summary.json').is_file():
+        return {'scene': name, 'measured': False,
+                'reason': f'cook it first: tools/cook_scene_pack.py {name}'}
+    summary = json.loads((root / 'summary.json').read_text())
+    if summary.get('status') != 'cooked':
+        return {'scene': name, 'measured': True, 'status': summary.get('status'),
+                'error': summary.get('error')}
+    from quality import TEXTURE_BUDGET, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET
+    views = json.loads((root / 'regions.json').read_text())['regions']
+    worst = max(views, key=lambda v: v['textures'])
+    return {
+        'scene': name, 'measured': True, 'status': 'cooked',
+        'file': summary['file'], 'views': len(views),
+        'runtime_bounds': summary['envelope'],
+        'camera_global_bounds': summary['camera_global_bounds'],
+        'worst_view_textures': worst['textures'], 'texture_budget': TEXTURE_BUDGET,
+        'worst_view_pages': max(v['pages'] for v in views), 'page_budget': STATIC_PAGE_BUDGET,
+        'worst_view_bytes': max(v['bytes'] for v in views), 'room_byte_budget': ROOM_BYTE_BUDGET,
+        'scene_bank_bytes': summary['scene_bank_bytes'],
+        'resident_bytes': summary['resident_bytes'],
+        'decoder': summary['decoder_status'], 'packet_bound': summary['geometry_packet_bound'],
+        'view_splits': summary['view_splits'],
+        'gates': [{'name': g['name'], 'target_scene': g['target_scene'],
+                   'entry_point': g['entry_point']}
+                  for g in json.loads((root / 'regions.json').read_text())['scenes'][0]['gates']],
+        'cook_seconds': summary['elapsed_seconds'],
+    }
 
 
 def collect():
@@ -671,10 +922,22 @@ def collect():
             'shop_scenes': shops,
             'admitted_shop_scenes': [s['scene'] for s in shops if s['admitted']],
             'stag_destinations_outside_slice': [d['choice'] for d in unreachable],
+            'admission_cost': [admission_cost(s['scene']) for s in shops if not s['admitted']],
+            'town_shop_door': next(g for g in
+                                   next(s for s in json.loads(ADMITTED.read_text())['scenes']
+                                        if s['scene_name'] == 'Town')['gates']
+                                   if g['name'] == 'door_sly'),
             'notes': [
                 'Every ShopMenuStock in the game lives in a scene the admitted list '
                 'does not contain, Sly included. Dirtmouth carries his door and the '
                 'shop interior is a separate scene.',
+                'Room_shop fits every residency budget with room to spare; see '
+                'admission_cost. What blocks it is the door, not the budget: Town\'s '
+                'door_sly is an enabled TransitionPoint with an empty targetScene, '
+                'because Door Control sets New Scene at runtime, and host/world.py '
+                'only emits a Gate whose serialized targetScene names an admitted '
+                'scene. Room_shop\'s own left1 already targets Town/door_sly, so the '
+                'way out would cook and only the way in would not.',
                 'The only station in the slice is Crossroads_47. Its toll can be paid '
                 'and the station opened, but the only destination inside the slice is '
                 'Crossroads_47 itself, which Current Location Check cancels. Every '
@@ -682,8 +945,9 @@ def collect():
                 'Nail upgrades, charm notches, charm repair, the relic dealer, map and '
                 'quill and pin purchases and the bank all live in unadmitted scenes. '
                 'Cornifer selling the Crossroads map is the one map purchase in reach.',
-                'Charms cannot be delivered yet: the charm branch increments '
-                'charmsOwned and raises a charm message, and P16 owns that inventory.',
+                'Charms can be delivered: the charm branch writes the same gotCharm_N '
+                'bool game/src/charms.rs owns, so a cooked charm row hands the charm '
+                'straight to the inventory the pause screen equips from.',
                 'The stag menu never hides Dirtmouth, so a player who opens the '
                 'Crossroads station is offered a stop the slice does not contain. '
                 'Forest Of Bones and Palace Grounds are dead events on Stag Control: '
@@ -691,21 +955,28 @@ def collect():
             ],
         },
         'limitations': [
-            'Extraction only. Nothing here is cooked, bound to the guest or given a '
-            'runtime, and no purchase can be made in the port today.',
+            'Sly\'s stock is cooked into data/shop.rs and game/src/shop.rs runs the '
+            'transaction, but Room_shop is not an admitted scene, so nothing in the '
+            'disc build can reach a shop counter to call it.',
+            'The stag station, Cornifer and the City lift are catalogued only. Their '
+            'Geo is still taken by no code in the port.',
             'Prices come from the decrypted EN_Prices sheet because ShopItemStats::Awake '
             'overwrites the serialized cost with it. Only the English sheet is read; '
             'the other eleven language sheets are not checked for disagreement.',
-            'Charm prices are read but no charm can be equipped, so notch cost, '
-            'charmsRequired and the Defender\'s Crest dung discount are recorded '
-            'and not applied.',
-            'Shop UI layout, icons, text, the item list scrolling and the confirm '
-            'window are not extracted; only the catalog and the transaction are.',
+            'The Defender\'s Crest discount is implemented and unreachable: no row in '
+            'Sly\'s stock sets dungDiscount, so only the relic dealer would use it.',
+            'Shop UI layout, icons and the confirm window are not extracted. The cooked '
+            'rows carry text and price; the guest keeps a cursor and a refusal and '
+            'draws nothing, because there is no scene to draw it in.',
             'Relic selling (the Selling Shop branch of Confirm Control) is recorded '
             'as a branch but not extracted: no relic dealer scene is admitted.',
             'Mask shard and vessel fragment counting happens inside a prefab the '
-            'branch spawns, not in the branch, so only the branch action list is '
-            'reported for special types 1 and 3.',
+            'branch spawns, not in the branch, so the guest counts them from the '
+            'fuse rules in the item catalog rather than from the branch itself.',
+            'A purchase does not survive a quit. game/src/shop.rs carries a record '
+            'and a restore that refuses a contradictory one, but save::Save has no '
+            'field for it yet; the charm half of a purchase does persist, because '
+            'charms::State is already in the record.',
             'Cornifer scales his sheet price by 0.75 and converts back to an int. '
             'The Crossroads product is exact, so which way PlayMaker rounds a '
             'fractional map price is untested here.',
@@ -771,4 +1042,15 @@ def summary(report):
 
 
 if __name__ == '__main__':
-    print(summary(collect()))
+    import sys
+    if 'collect' in sys.argv[1:] or not sys.argv[1:]:
+        print(summary(collect()))
+    if 'cook' in sys.argv[1:] or not sys.argv[1:]:
+        table, rules = cook()
+        total = sum(row['cost'] for row in table['items'])
+        print(f"\nCooked {len(table['items'])} rows into {SHOP_TABLE.relative_to(ROOT)}: "
+              f"{total} Geo of stock across {len(table['slots'])} PlayerData bools, "
+              f"discounting {rules['discount_factor']:.1f} on charm {rules['discount_charm']}.")
+        print('  ' + '\n  '.join(f"{row['cost']:>5} Geo  {row['name']:<18} "
+                                 f"{row['delivery']:<26} sets {row['sets_field']}"
+                                 for row in table['items']))
