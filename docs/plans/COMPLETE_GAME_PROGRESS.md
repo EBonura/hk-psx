@@ -48,7 +48,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P19/P20 | in progress | Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
 | P14 | in progress | Builds 112 to 121. Step 1's audit corrected the jump velocity and added the jump, ledge and head-bump buffers the port was missing. Step 2 implemented the Mothwing Cloak, the Mantis Claw's wall slide and jump, the Monarch Wings, the Crystal Heart and the Shade Cloak, all from source constants and the Superdash FSM. Step 3 catalogued every PlayerData traversal flag and found acid already covered by the generic hazard path, `hasAcidArmour` and `hasLantern` unreachable, and one unimplemented bounce shroom owed to P11. Step 4 took the input priority from the Can* methods. Step 5 added the Dream Nail with its SOUL reward. Step 6 mapped L1, R1 and Triangle and extended the replay schema and the native probe. Step 7's combinations are hk-sim tests. Remaining: no ability has an acquisition route (step 8), and the Wall Slide, Walljump, Dash, Double Jump and four DN clips are not cooked, so an ability plays the Fall or Idle clip. |
 | P15 | in progress | Build 122 adds Vengeful Spirit from `Spell Control`, `Fireball Cast` and the projectile's own FSMs, with the source's one-button cast-versus-Focus split. Remaining: Desolate Dive and Howling Wraiths (catalogued only), nail arts, nail damage tiers, the centralized damage resolution of step 4, the verification matrix of step 7, and the `Ball`/`Ball End` art, which needs a reserved VRAM rectangle. |
-| P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Variables are a caller-owned pool and `GetOwner` resolves at cook time, which between them unblocked 852 instances. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, because an FSM needs every action supported. The next slice is not more opcodes: `Trigger2dEvent` (188), `FindChild` (171), `GetVelocity2d` (122), `Tk2dPlayAnimation` (115) and `PlayerDataBoolTest` (104) all need a script to address an object, which is step 5's scope and reference work. P12, P17, P18 and P23 all wait on this. |
+| P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Variables are a caller-owned pool and `GetOwner` resolves at cook time, which between them unblocked 852 instances. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, because an FSM needs every action supported. `PlayerDataBoolTest` is answered too, through the existing persistent store plus a read-only-variable fold, so the first authored behaviour compiles: 246 instances, 7 ops. The next slice is not more opcodes: `Trigger2dEvent` (198), `FindChild` (176), `GetVelocity2d` (122), `Tk2dPlayAnimation` (115) and every other remaining blocker needs a guest object model, which is step 5's scope and reference work. P12, P17, P18 and P23 all wait on this. |
 | P11 | in progress | Step 1 done. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. Owed: the single `BounceShroom` in Crossroads_38, and the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
 | P12, P16-P18, P21-P31 | pending | Follow dependency order in the master plan. |
 
@@ -1615,10 +1615,40 @@ flag read that P18's dialogue conditions are built on.
 
 The compiled count did not move, and that is not a failure of the slice: an FSM
 compiles only when every one of its actions does, so unblocking an early action
-just moves the refusal later. What it does mean is that the next slice is not
-more opcodes. Almost every remaining blocker needs the script to *address an
-object*, and objects are not addressable from a script yet. That is step 5's
-scope and reference work, and it is the gate on everything after.
+just moves the refusal later.
+
+The third blocker answered was `PlayerDataBoolTest`, at 104, and it is the one
+that matters most for what comes after, because it is the progression-flag read
+every dialogue condition in P18 is built on. The guest already had the store for
+it: `persistent::Store` is a catalog of `StateId` to `i32` with save and load, so
+a script reads and writes the same values the save file holds. The executor grew
+`PlayerDataGet`, `PlayerDataSet` and `PlayerDataBoolTest`, and the closure the
+tick used for native calls became a `Host` trait, so later slices can add
+services without rewriting every call site.
+
+Half of those 104 were blocked by something subtler than a missing opcode. The
+field name is an `FsmString` with `useVariable` set, pointing at a declared FSM
+variable whose serialized initial value is the actual name: Crossroads_47's
+Grate Control reads a variable called "PlayerData bool name" holding
+"openedCrossroads". Folding that is only safe if nothing writes the variable,
+so the compiler counts how many enabled actions mention each name and folds
+only the ones mentioned exactly once. A second mention might be the write. The
+genuinely dynamic case, Crossroads_01's Activate Infected, whose field name is
+set at runtime by another FSM and serializes empty, stays refused.
+
+With that, the first authored behaviour actually compiles: 246 instances and 7
+ops, where before every compiling FSM was empty.
+
+What the remaining list says is unambiguous. `Trigger2dEvent` 198,
+`FindChild` 176, `GetVelocity2d` 122, `Tk2dPlayAnimation` 115,
+`SetMaterialColor` 92, `Collision2dEvent` 89, `GetParent` 83, `SetParent` 76,
+`FindGameObject` 71, `ActivateAllChildren` 67 and `GetHero` 61. Every one of
+them needs the script to *address an object*, and objects are not addressable
+from a script yet. The next slice is not more opcodes; it is a guest object
+model: what a script may refer to (the Knight, a region object, an actor, its
+own owner), how a cooked stable id resolves to it, and what a native call may
+do with one. That is step 5's scope and reference work, and it is the gate on
+P12, P17, P18 and P23.
 
 Nothing is cooked into the disc yet. This is the compiler and the executor with
 a measured gap between them and the authored behaviour, which is what the next
