@@ -105,6 +105,19 @@ pub const FINAL_JUMP_FACTOR: i32 = 49807; // 0.76
 
 /// `Turn R`/`Turn L` count up to three free turns before forcing an attack.
 pub const TURNS_BEFORE_ATTACK: i32 = 3;
+/// The two child hitboxes, in the source's facing-right frame (+x ahead) and
+/// already multiplied by the body's 1.3 transform scale, as `[x0,y0,x1,y1]`
+/// offsets from the transform. A caller facing left mirrors x.
+///
+/// `Head` is the 40 hp target the armour exposes, and it sits *above* the body
+/// box rather than inside it, which is why a caller cannot reuse `ActorSpec`'s
+/// bounds for it. The source parks it at y 150 while the armour is shut and
+/// drops it back on `Opened`, which `Action::HeadExposed` reports.
+pub const HEAD_BOX: [i32; 4] = [-68157, -91587, 68157, 54100];
+/// `Hitter` is the DamageHero trigger the attacks switch on; it reaches nearly
+/// eight units ahead of the boss, which is what makes the slam and the jump
+/// attack cover ground the body never touches.
+pub const HITTER_BOX: [i32; 4] = [22630, -366080, 527155, -149094];
 /// `Row Check` returns to Move Choice once JA In A Row is already above three.
 pub const JUMP_ATTACKS_IN_A_ROW: i32 = 3;
 /// `S Check Hero Pos` returns once Slam In A Row is already above two.
@@ -294,61 +307,6 @@ pub struct Senses {
     pub wall_right: bool,
     /// The 9.5-unit downward ray the jump attack uses to commit its slam.
     pub ground_below: bool,
-}
-/// The standing subset of `FalseyControl`: `Idle` and the `Turn R`/`Turn L`
-/// pair, and nothing else.
-///
-/// The source reaches those states after the entrance drop and leaves them for
-/// `Move Choice` when the idle wait runs out. This type never leaves them, so a
-/// room can show the boss standing in it before the fight is wired. It exists
-/// beside `FalseKnight` rather than inside it because the fight owns velocities,
-/// terrain rays, the Hitter overlay, the barrels and the arena, and none of
-/// those are needed to stand still: what this costs a tick is one comparison.
-///
-/// Two source rules are deliberately missing, both because they lead out of the
-/// subset: `Idle` ends on a timer and picks an attack, and the fourth turn
-/// without an attack forces `Move Choice` instead of turning.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Sentry {
-    /// `Facing Right`, which `Turn R` sets with SetScale x +1.3 and `Turn L`
-    /// clears with -1.3, so it is the sign of the placement's own scale.
-    facing_right: bool,
-    /// What is left of the `Turn` clip; zero while the body idles.
-    turning: u16,
-}
-impl Sentry {
-    pub const fn new(facing_right: bool) -> Self {
-        Self { facing_right, turning: 0 }
-    }
-    pub fn facing_right(self) -> bool {
-        self.facing_right
-    }
-    pub fn turning(self) -> bool {
-        self.turning != 0
-    }
-    pub fn clip(self) -> Clip {
-        if self.turning != 0 { Clip::Turn } else { Clip::Idle }
-    }
-    /// One 60 Hz step. `hero_right` is the whole sense: `Idle` compares the
-    /// hero's x against its own every frame, and that is the only thing either
-    /// state reads. Returns true when the played clip changed, because
-    /// `tk2dSpriteAnimator.Play` restarts the clip's clock.
-    ///
-    /// `Turn R`/`Turn L` write the facing on entry and then hold for the `Turn`
-    /// clip, so the body has already turned while the clip is still playing.
-    pub fn tick(&mut self, hero_right: bool) -> bool {
-        if self.turning != 0 {
-            self.turning -= 1;
-            // `FINISHED` from Tk2dWatchAnimationEvents returns to `Idle`.
-            return self.turning == 0;
-        }
-        if hero_right == self.facing_right {
-            return false;
-        }
-        self.facing_right = hero_right;
-        self.turning = TURN_TICKS;
-        true
-    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FalseKnight {

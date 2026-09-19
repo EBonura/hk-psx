@@ -491,7 +491,18 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
                 if write_shared:im.save(out/f'knight-{index}.png')
             tex,box=framecache[cachekey];frames.append({'texture':tex,'box':box,'sprite':index,'event':fr})
         clips.append({'name':name,'start':start,'count':len(c['frames']),'fps':c['fps'],'wrap':guest_wrap(c),'loopStart':c.get('loopStart',0)})
-    append_actor_art(s,sc,actors,atlas,frames,clips)
+    # Into an atlas this pack throws away, for the admission rather than the art.
+    # host/regions.py::postpack_actor_bank builds one scene-wide actor bank and
+    # appends it to every view of the scene, then replaces this row's clip
+    # indices with its own, so art cooked into a base pack here is never read:
+    # it is only paid for, and only by the one view that happens to contain an
+    # actor's authored transform. Measured on Crossroads_10 view 244, which is
+    # where the False Knight is authored: 75,752 bytes of the 393,216-byte room
+    # budget, which is what its clip set was competing against. The pass still
+    # runs because it owns the refusal that clears `movement_supported` for a
+    # frame the animation cache cannot hold, and that verdict has to be the same
+    # here as in the postpass.
+    append_actor_art(s,sc,actors,Atlas(max_textures=MAX_ROOM_TEXTURES),[],[])
     from effects import append_grass_impact_art,append_door_debris_art
     grass_impact=append_grass_impact_art(s,sc,atlas,frames,clips)
     door_debris=append_door_debris_art(s,sc,atlas,frames)

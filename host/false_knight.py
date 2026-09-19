@@ -11,11 +11,13 @@ The False Knight does not live in Crossroads_10 (`level46`). `BossLoader`, a
 SceneAdditiveLoadConditional in that room, loads `Crossroads_10_boss`
 (`level48`) while `falseKnightDefeated` is false and `Crossroads_10_boss_defeated`
 (`level49`) afterwards. Neither additive scene is in host/quality.py's
-SCENE_TABLE, so nothing in the port cooks the boss today.
+SCENE_TABLE; host/scene.py merges the chosen one into the room instead.
 
-`measure_animation` is the reason the guest is not wired up: see
-docs/FALSE_KNIGHT.md. The measurement is reproduced here rather than quoted so
-that a later art-path change is checked against the source, not against prose.
+The fight is wired. What is still a subset is the art: `measure_animation`
+reproduces host/cook.py's own actor path so the clip set is admitted against a
+measurement rather than a guess, and docs/FALSE_KNIGHT.md carries the per-view
+figures. It is reproduced here rather than quoted so that a later art-path
+change is checked against the source, not against prose.
 """
 import hashlib
 import json
@@ -374,10 +376,14 @@ def recognize(sc, room):
                                            (head, 'Health Check'), (battle, 'Battle Control'),
                                            (summoner, 'summon'))},
         'limitations': [
-            'Guest admission is off: at the authored 1.3 scale 77 of the 110 unique animation'
-            ' sprites exceed one 64x64 slot (largest 204x188). The cache holds the largest frame'
-            ' now; the actor art path does not, because enemies.rs draws a frame as one quad.'
-            ' The slot counts are in the animation block. See docs/FALSE_KNIGHT.md.',
+            'Six of the thirty-four clips are cooked. At the authored 1.3 scale the whole set is'
+            ' 716,110 bytes of 4bpp texels against a 393,216-byte room pack that already holds'
+            " Crossroads_10's own art, so the clip set is admitted against room bytes rather than"
+            ' palettes or animation slots. The per-clip figures are in the animation block and the'
+            ' per-view measurement is in docs/FALSE_KNIGHT.md.',
+            'The battle gates are cooked terrain with no per-view edge binding, so BG OPEN reaches'
+            ' nothing and the two that start closed never lift; the arena `Activated`'
+            ' PersistentBoolItem is not saved either.',
             'The sim reproduces FalseyControl at 60 Hz; the source shapes rising and falling speed'
             ' per 50 Hz FixedUpdate, so airtime differs slightly.',
             'The `Esc` branch is unreachable in the Crossroads arena: nothing there sets `Hero Escaped`.',
@@ -389,29 +395,51 @@ def recognize(sc, room):
     }
 
 
-# The standing subset's clip bindings, in the slots an ActorSpec already
-# carries: `walk_clip` holds Idle and `turn_clip` holds Turn, the way the Egg
-# Sac puts its one looping clip in both. Nothing else is cooked, because Idle
-# and Turn are 42 of the 141 CLUT slots Crossroads_10's tightest view has left
-# and the rest of the clip set is 457 more.
-STANDING_ART_BINDINGS = {'walk': 'Idle', 'turn': 'Turn'}
-# `Turn R` writes Facing Right true with SetScale x +1.3, `Turn L` writes false
-# with -1.3, so the facing the placement starts with is the sign of its own
-# transform scale.
-STANDING_CLIPS = ('Idle', 'Turn')
+# The clips the fight is cooked with, in the order the bank lays them out:
+# `walk_clip` holds Idle and `turn_clip` holds Turn, and the other four ride in
+# the ActorController. Six of thirty-four, and the limit is room-pack bytes
+# rather than palettes. Measured against the real pipeline (cook the boss view's
+# base, append the scene-wide bank to all 20 Crossroads_10 views, dedup): this
+# set puts the worst view at 354,968 of the 393,216-byte room budget, 395
+# texture records of 640 and 279 CLUT slots of 416. Adding Jump as a seventh
+# reaches 383,036, and Attack Recover or an eighth clip does not fit at all.
+# docs/FALSE_KNIGHT.md carries the per-clip table behind the choice.
+ART_BINDINGS = {'walk': 'Idle', 'turn': 'Turn', 'jump_antic': 'Jump Antic',
+                'land': 'Land', 'stun_opened': 'Stun Opened', 'attack': 'Attack'}
+# The clip records checked against CLIPS before admission, which is every clip
+# the cook will actually read.
+ADMITTED_CLIPS = tuple(dict.fromkeys(ART_BINDINGS.values()))
+
+
+def arena_trigger_world_box(sc):
+    """`Battle Scene`'s trigger box in world coordinates, or a refusal.
+
+    Crossing it is what sends BATTLE START, so the guest needs it as a plain
+    world AABB: it is the only thing the boss tests while it is dormant. The
+    object carries no rotation or scale in this scene and the recognizer refuses
+    one rather than projecting a box it has never seen.
+    """
+    battle = _named(sc, 'Battle Scene')
+    matrix = sc.world(sc.go_transform[battle])
+    if not _near(matrix[0][0], 1.) or not _near(matrix[1][1], 1.) \
+            or abs(matrix[0][1]) > 1e-6 or abs(matrix[1][0]) > 1e-6:
+        raise ValueError('arena trigger carries an unsupported rotation or scale')
+    (width, height), (ox, oy) = _box(sc, battle)
+    x, y = sc.point(battle)[:2]
+    return [x + ox - width / 2, y + oy - height / 2, x + ox + width / 2, y + oy + height / 2]
 
 
 def recognize_placement(sc, actor):
     """Admit the one placed False Knight into the guest actor pool, or refuse.
 
     `recognize` above is the whole-fight source contract and needs the parent
-    room, because the arena lives there. This is the actor-pool admission, which
-    needs only the boss's own object, and it is deliberately narrower than the
-    fight: the guest binds `shared/hk-sim`'s `false_knight::Sentry`, which is
-    `FalseyControl`'s `Idle` and `Turn R`/`Turn L` states and nothing else.
+    room, because the battle gates live there. This is the actor-pool admission,
+    which needs only the boss's own object and the `Battle Scene` beside it: the
+    guest binds `shared/hk-sim`'s `false_knight::FalseKnight` and the
+    `boss::Arena` that sends it BATTLE START.
 
     The `FalseyControl` digest is checked here too, so a source change fails at
-    admission rather than leaving the guest standing a boss whose behaviour has
+    admission rather than leaving the guest running a boss whose behaviour has
     moved underneath it.
     """
     source = sc.source
@@ -445,16 +473,22 @@ def recognize_placement(sc, actor):
         raise ValueError('unsupported False Knight rotation or scale')
     library = clip_contract(sc, gid)
     by_name = {clip['name']: clip for clip in library['clips']}
-    for name in STANDING_CLIPS:
+    for name in ADMITTED_CLIPS:
         clip = by_name[name]
         if (clip['frames'], clip['fps'], clip['wrap_mode'], clip['loop_start']) != CLIPS[name]:
-            raise ValueError('unsupported False Knight standing animation: ' + name)
+            raise ValueError('unsupported False Knight cooked animation: ' + name)
     facing_right = matrix[0][0] > 0
+    # `FalseKnight::new` starts the guest controller at Facing Right false, the
+    # way `FalseyControl`'s own variable is serialized, so a placement mirrored
+    # the other way would start the fight facing the wrong side. There is one
+    # placement and it faces left; refuse rather than silently disagree.
+    if facing_right:
+        raise ValueError('False Knight placement faces right; the guest controller starts facing left')
     return {
-        'kind': 'FalseKnight', 'guest_enabled': True, 'art_bindings': dict(STANDING_ART_BINDINGS),
-        # Check Health restores the body to 65 rather than letting it die,
-        # and the stagger that consumes that is not implemented, so this is
-        # admitted invincible and nothing of it ever falls.
+        'kind': 'FalseKnight', 'guest_enabled': True, 'art_bindings': dict(ART_BINDINGS),
+        # Both HealthManagers restore rather than die, so nothing of the boss
+        # ever falls: the death sequence ends at the HealthManager death event
+        # the arena waits on, and the corpse is a separate authored object.
         'no_corpse': True,
         # Crossroads_10 merges Crossroads_10_boss in for this actor; nothing
         # else that scene carries is admitted with it (see actor_sources).
@@ -463,31 +497,37 @@ def recognize_placement(sc, actor):
         # The cook takes the absolute transform scale, so a positive source
         # scale is the art as authored, which the guest's draw expresses as -1.
         'initial_direction': -1 if facing_right else 1,
-        # `Check Health` restores the body to 65 every time it reaches zero, so
-        # the source body never dies; without the stagger states the guest has
-        # nothing to restore it with, and a killable body would vanish on its
-        # fifth nail hit. Admitted invincible, which is the closer of the two.
-        'invincible': True,
+        # The body is killable now: reaching zero restores it to 65 and staggers
+        # it, which is what `Check Health` does, and the exposed Head is what a
+        # phase costs. `hasSpecialDeath` is the death sequence the guest runs.
+        'invincible': False, 'special_death': True,
+        'head_health': HEAD_HEALTH, 'head_invulnerable_ticks': ticks(HEAD_INVULNERABLE_TIME),
+        'staggers': STAGGERS_TO_DEATH,
+        # The one thing the boss tests while it is dormant.
+        'arena_trigger_world': arena_trigger_world_box(sc),
         'turn_ticks': ticks(CLIPS['Turn'][0] / CLIPS['Turn'][1]),
         'library_source': library['library_source'],
         'fsm_sha256': {name: fsm_digest(fsms[name]['fsm']) for name in ('FalseyControl', 'Check Health')},
         'limitations': [
-            'Standing subset only: Idle and the Turn R/Turn L pair. No attack, no stagger, no'
-            ' rage, no death and no barrels; the arena lifecycle in shared/hk-sim/src/boss.rs is'
-            ' not wired to it either.',
-            'The source hangs the boss above the arena in Dormant and drops it on BATTLE START.'
-            ' Nothing sends BATTLE START yet, so the guest body falls from the authored transform'
-            ' under the shared terrain solver on its first resident tick and stands where it'
-            ' lands; the entrance drop is not the scripted one.',
-            'The body is admitted invincible. The source body is not, but Check Health restores'
-            ' it to 65 rather than letting it die, and the stagger that consumes that is not'
-            ' implemented.',
-            'The fourth turn without an attack forces Move Choice in the source; with no attacks'
-            ' to choose, the guest keeps turning.',
-            'Hitter, Head, Death Head, the staff and every particle, camera shake and audio cue'
-            ' are recorded, not presented.',
+            'Six of the thirty-four clips are cooked (Idle, Turn, Jump Antic, Land, Stun Opened,'
+            ' Attack); the rest of the fight plays the nearest of those. The limit is'
+            " Crossroads_10's 393,216-byte room budget, not palettes: see docs/FALSE_KNIGHT.md.",
+            'BG OPEN, BG CLOSE and BG QUICK OPEN reach nothing. The five battle gates are cooked'
+            ' terrain with no per-view edge binding, so the two that start closed stay closed'
+            ' after the fight is won and the arena never seals at its ends.',
+            'The arena `Activated` PersistentBoolItem is not saved, so a reload re-arms a fight'
+            ' the player has already won.',
+            'The three pre-battle Zombies are recorded rather than admitted, so KILL ALL ENEMIES'
+            ' has no target; the arena counts only the boss, as the source does.',
+            'The Hitter overlay plays its attack clip on the body rather than as a second draw,'
+            ' and its DamageHero trigger is reproduced as a box.',
+            'Barrels, the shockwave, the floor crack and break, the staff, the Death Head and'
+            ' every particle, camera shake and audio cue are recorded, not presented.',
+            'Rise and Fall shape vertical speed per 50 Hz FixedUpdate in the source and per'
+            ' 60 Hz tick in the guest, so airtime differs slightly.',
         ],
-        'source_methods': ['HealthManager.Hit', 'tk2dSpriteAnimator.Play'],
+        'source_methods': ['HealthManager.Hit', 'HealthManager.Die', 'tk2dSpriteAnimator.Play',
+                           'CameraLockArea.OnTriggerEnter2D'],
     }
 
 
@@ -599,7 +639,7 @@ def measure_animation(sc):
     takes one of the 416 CLUT slots in every view it is resident in.
     """
     from cook import tk_sprite, FOCAL, CAM_Z, SLOT_PIXELS, ANIMATION_SLOTS, MAX_FRAME_TILES
-    from quality import TEXTURE_BUDGET
+    from quality import TEXTURE_BUDGET, ROOM_BYTE_BUDGET
     from actors import _component_records
     source = sc.source
     gid = _named(sc, 'False Knight New')
@@ -661,9 +701,13 @@ def measure_animation(sc):
         'total_bytes': sum(frame_bytes(size) for size in unique.values()),
         'total_tiles_64': tiles,
         'max_tiles_one_frame': max(frame_tiles(size) for size in unique.values()),
-        # One 32-byte palette entry per texture, and a tile is a texture, so the
-        # CLUT cost is the tile count rather than the frame count.
-        'clut_slots_required': tiles, 'texture_budget': TEXTURE_BUDGET,
+        # A tile is a texture, so the tile count is what the pack's texture
+        # table has to address. It is not the CLUT cost: `Atlas.add_tiled`
+        # quantizes a whole frame once and the scene bank pools palettes by
+        # value, so the 499 tiles carry far fewer distinct palette words.
+        # `tools/texture_headroom.py` reports the palette side.
+        'texture_records_required': tiles, 'texture_budget': TEXTURE_BUDGET,
+        'room_byte_budget': ROOM_BYTE_BUDGET,
         'animation_cache_slot': [SLOT_PIXELS, SLOT_PIXELS],
         'animation_cache_slots': ANIMATION_SLOTS,
         'animation_cache_max_frame_tiles': MAX_FRAME_TILES,
@@ -675,8 +719,10 @@ def measure_animation(sc):
         # count against tools/texture_headroom.py's free slots for the view the
         # boss would live in.
         'verdict': (f'drawable: every frame binds at most {max(frame_tiles(size) for size in unique.values())} '
-                    f'of the {MAX_FRAME_TILES} slots a frame may hold; '
-                    f'the whole clip set costs {tiles} CLUT slots of {TEXTURE_BUDGET} per view'),
+                    f'of the {MAX_FRAME_TILES} slots a frame may hold; the whole clip set is '
+                    f'{sum(frame_bytes(size) for size in unique.values())} bytes against a '
+                    f'{ROOM_BYTE_BUDGET}-byte room pack that already holds the room, which is '
+                    f'what admits a clip at a time'),
         'tiles_fit_the_cache': max(frame_tiles(size) for size in unique.values()) <= MAX_FRAME_TILES,
     }
 
@@ -762,6 +808,12 @@ def generated_false_knight_params():
         if type(value) is not int or not 0 <= value <= limit:
             raise ValueError(f'False Knight constant exceeds its guest representation: {key}')
     fields['CLIP_TICKS'] = [ticks(CLIPS[name][0] / CLIPS[name][1]) for name in CLIP_ORDER]
+    # The two child hitboxes in the body's own frame, already multiplied by its
+    # 1.3 transform scale, as [x0,y0,x1,y1]. The source frame is the +1.3 one,
+    # so the Hitter reaches forward in +x and a caller facing left mirrors it.
+    for name, ((width, height), (ox, oy)) in (('HEAD_BOX', HEAD_BOX), ('HITTER_BOX', HITTER_BOX)):
+        fields[name] = [round(value * BODY_SCALE * 65536) for value in
+                        (ox - width / 2, oy - height / 2, ox + width / 2, oy + height / 2)]
     fields['SLAM_OVERSHOOT'] = [round(value * 65536) for value in SLAM_OVERSHOOT]
     fields['HERO_X_CLAMP'] = [round(value * 65536) for value in HERO_X_CLAMP]
     fields['IDLE_TICKS'] = [[ticks(phase['idle'][0]), ticks(phase['idle'][1])] for phase in PHASES]

@@ -227,13 +227,27 @@ class PlacedFalseKnightTests(unittest.TestCase):
         self.assertEqual(boss['source'], 'level48:325')
         control = boss['movement_control']
         self.assertEqual(control['kind'], 'FalseKnight')
-        self.assertEqual(control['art_bindings'], {'walk': 'Idle', 'turn': 'Turn'})
+        # Six of the thirty-four clips, which is what Crossroads_10's room-pack
+        # byte budget holds; the guest shows the rest as the nearest of them.
+        self.assertEqual(control['art_bindings'], {
+            'walk': 'Idle', 'turn': 'Turn', 'jump_antic': 'Jump Antic',
+            'land': 'Land', 'stun_opened': 'Stun Opened', 'attack': 'Attack'})
         # `Turn L` writes the scale negative, so the placement starts facing
         # left, and the cook's absolute scale turns that into +1 for the draw.
         self.assertFalse(control['facing_right'])
         self.assertEqual(control['initial_direction'], 1)
         self.assertEqual(control['turn_ticks'], 10)
-        self.assertTrue(control['invincible'])
+        # The body is killable: reaching zero restores it to 65 and staggers it,
+        # and the exposed Head is what a phase costs.
+        self.assertFalse(control['invincible'])
+        self.assertTrue(control['special_death'])
+        self.assertEqual(control['head_health'], 40)
+        # `Battle Scene`'s trigger: a one-unit curtain across the arena floor,
+        # and the only thing the boss tests while it is dormant.
+        x0, y0, x1, y1 = control['arena_trigger_world']
+        self.assertAlmostEqual(x1 - x0, 1.)
+        self.assertAlmostEqual(y1 - y0, 19.592126846313477)
+        self.assertAlmostEqual(x0, 13.5)
         for name in ('Zombie Barger', 'Zombie Runner', 'Zombie Hornhead'):
             self.assertFalse(actors[name]['movement_supported'], name)
             self.assertIn('additive scene', actors[name]['movement_error'])

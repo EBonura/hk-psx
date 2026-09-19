@@ -475,11 +475,12 @@ def generated_actor_specs(region):
         health = actor['health_manager']
         control = actor['movement_control']
         # A controller may answer the nail differently from its HealthManager,
-        # and the False Knight does: its `hasSpecialDeath` is the death sequence
-        # this admission never reaches, and it is admitted invincible because
-        # `Check Health` restores the body rather than letting it die.
+        # and the False Knight does: `Check Health` restores the body instead of
+        # letting it die, and `hasSpecialDeath` is the death sequence its own
+        # controller runs. A recognizer has to claim that explicitly, because
+        # for everything else a special death is behaviour nothing reproduces.
         invincible = control.get('invincible', bool(health['invincible']))
-        if (health['hasSpecialDeath'] and not control.get('invincible')) \
+        if (health['hasSpecialDeath'] and not (control.get('invincible') or control.get('special_death'))) \
                 or health['hasAlternateHitAnimation'] or health['invincibleFromDirection']:
             raise ValueError('actor requires unsupported HealthManager variant')
         x, y = actor['position'][:2]
@@ -556,10 +557,17 @@ def generated_actor_specs(region):
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
         elif control['kind'] == 'FalseKnight':
-            # `FalseyControl`'s Idle and Turn R/Turn L and nothing else, so the
-            # walk and turn slots are the whole clip set and the controller
-            # carries no clip of its own. The fight is not wired to it.
-            controller = 'hk_sim::ActorController::FalseKnight'
+            # `walk_clip` is Idle and `turn_clip` is Turn; these four are the
+            # rest of what fits the room budget, and the trigger box is what the
+            # arena watches for BATTLE START. The walk fields are unused: the
+            # controller owns every velocity the body ever has.
+            false_knight_clips = ('jump_antic_clip', 'land_clip', 'stun_opened_clip', 'attack_clip')
+            if any(key not in actor for key in false_knight_clips):
+                raise ValueError(f'False Knight is missing cooked clips: {actor["source"]}')
+            trigger = '[' + ','.join(str(round(value * 65536)) for value in control['arena_trigger_world']) + ']'
+            controller = ('hk_sim::ActorController::FalseKnight {'
+                          + ','.join(f'{key}:{actor[key]}' for key in false_knight_clips)
+                          + f',trigger:{trigger}' + '}')
             speed, turn_ticks, turn_cooldown_ticks = 0, control['turn_ticks'], 0
             initial_direction, random_start_direction = control['initial_direction'], False
         elif control['kind'] == 'WalkLeftRight':
@@ -570,7 +578,8 @@ def generated_actor_specs(region):
             raise ValueError('unsupported generated actor controller: ' + control['kind'])
         clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ()) \
             + (vengefly_clips if control['kind'] == 'Vengefly' else ()) + (baldur_clips if control['kind'] == 'Baldur' else ()) \
-            + (aspid_clips if control['kind'] == 'Aspid' else ()) + (('idle_clip',) if control['kind'] == 'EggSac' else ())
+            + (aspid_clips if control['kind'] == 'Aspid' else ()) + (('idle_clip',) if control['kind'] == 'EggSac' else ()) \
+            + (false_knight_clips if control['kind'] == 'FalseKnight' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')
         recoil = actor.get('Recoil', {})

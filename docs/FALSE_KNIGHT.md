@@ -1,22 +1,23 @@
-# False Knight source contract, and the standing subset that is admitted
+# False Knight source contract, and the fight that is admitted
 
 `host/false_knight.py` extracts the whole fight from the installed Windows
-source. A standing subset of it is admitted: the boss is merged into
-Crossroads_10, cooked and drawn, and it idles and turns to face the Knight.
-Nothing else about the fight is wired. The phase machine and the reusable arena
-lifecycle exist and are tested (`shared/hk-sim/src/false_knight.rs`,
-`shared/hk-sim/src/boss.rs`).
+source, and the fight runs. The boss is merged into Crossroads_10, hangs dormant
+above the arena until the hero crosses the `Battle Scene` trigger, drops in,
+chases, jumps, slams, staggers through three phases and dies.
+`shared/hk-sim/src/false_knight.rs` is `FalseyControl`,
+`shared/hk-sim/src/boss.rs` is `Battle Control`, and
+`game/src/enemies.rs`'s `FalseKnightRuntime` binds both to the guest body.
 
-The animation cache used to be the reason no frame could reach VRAM, and it is
-not any more: it is 24 slots since a static scenery page no scene had ever used
-became its second region, and the boss's largest frame binds 12 of them. The
-actor art path used to be the second reason, because it drew a frame as one
-quad; it now tiles an actor frame the way NPC art already did. What decides how
-much of the fight can be on screen is residency: tiling makes a frame drawable
-and multiplies what it costs a view, so the clip set is admitted a clip at a
-time. `Idle` and `Turn` fit and are in; the other 33 clips are 457 more CLUT
-slots and are not. Read the measurement below before designing any boss art
-work, because the same wall meets every large enemy.
+What is still a subset is the art. Six of the thirty-four clips are cooked and
+the other twenty-eight are shown as the nearest of the six. The constraint is
+not the animation cache, which is 24 slots since a static scenery page no scene
+had ever used became its second region, and the boss's largest frame binds 12 of
+them. It is not the actor art path either, which tiles a frame the way NPC art
+already did. It is not palettes: `tools/texture_headroom.py` counts distinct
+palette words rather than texture records now, and the whole fight's 499 tiles
+carry 107 of them against 150 free in Crossroads_10's tightest view. **It is
+room-pack bytes**, and the measurement is below. Read it before designing any
+boss art work, because the same wall meets every large enemy.
 
 Regenerate everything here with:
 
@@ -94,54 +95,77 @@ per frame) rather than estimating it.
 | Widest frame / tallest frame | 204 px / 188 px | 252 texture axis | yes |
 | 64x64 slots for the largest single frame (198x169) | 12 | 20 per frame, 24 total | yes |
 | 64x64 tiles, all frames | 499 | | |
-| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 51,348 B unallocated RAM | no |
-| CLUT slots, one palette per tile | 499 | 141 free in Crossroads_10 | no |
+| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 41,064 B unallocated RAM | no |
+| 4bpp texels, all frames | 716,110 B | 393,216 B per room pack, of which the admitted six leave 38,248 free | no |
+| Distinct palettes, all frames | 107 | 150 free in Crossroads_10's tightest view | yes |
+| HKROOM02 texture records, all frames | 499 | 640 per view, of which the admitted six leave 245 free | no |
 
 The slot row used to read 4 per frame and 8 total, and it was the row this
 whole document was written around. It changed because the cache took a static
 scenery page; `docs/BUDGET.md` has the census that made that affordable. The
 RAM row is read out of `.hkpsx/build.json` and has fallen again, from 73,876
-bytes to 63,636 and now 51,348. It only bites the Hollow Shade route, which
-moves frames into linked RAM; the room-pack route the standing subset takes
-spends none of it.
+bytes to 63,636, then 51,348, and it is 41,064 now. It only bites the Hollow
+Shade route, which moves frames into linked RAM; the room-pack route this art
+takes spends none of it.
 
-The CLUT row is the one the tiling change moved, and it moved the wrong way.
-`tools/texture_headroom.py` reports Crossroads_10 at 275 of 416 slots in its
-tightest of 20 views, leaving 141. One palette per *frame* would have been 110
-and would have fit. A tile is a texture, HKROOM02 sizes its palette block at one
-32-byte entry per texture, and the region uploads that block whole, so the
-110 frames cost 499 slots rather than 110. Whole-fight residency in a
-Crossroads_10 view is over by 3.5x on CLUTs, and 732,078 room bytes against a
-393,216-byte room budget is over by 1.9x. Nothing about that is a reason not to
-tile: the alternative was a frame that could not be drawn at all.
+The CLUT row is no longer a refusal and the measurement is what changed, not the
+art. `tools/texture_headroom.py` counts a view's distinct palette *words* rather
+than its texture records, because the tiles of one frame are quantized together
+and carry byte-identical palettes and the scene bank pools palettes by value.
+Crossroads_10's tightest of its 20 views is 266 of 416 with 150 free, and the
+whole fight's 499 tiles are 107 distinct palettes. The whole clip set fits the
+palette budget. The separate limit on how many 16-byte records HKROOM02 can
+address is 640, and that view spends 319 of them.
 
-Per clip, in tiles, from `measure_animation`'s `clips` rows: `Blank` 1, `Turn`
-12, `Jump Antic` 18, `Idle` 30, `Stun Recover` 36, `Rage` 36, `Run` 42. A
-standing boss is affordable in Crossroads_10 today: `Idle` and `Turn` together
-are 42 tiles and 73,556 bytes. The phase-one clip set is not.
+What refuses is bytes. Room packs are capped at 393,216 each, Crossroads_10's
+heaviest view is 244, and the whole fight's 716,110 bytes of 4bpp texels never
+come close to fitting beside it.
 
-## What the standing admission actually costs
+Per clip, in tiles and bytes, from `measure_animation`'s `clips` rows: `Blank` 1
+tile / 2 B, `Turn` 12 / 18,190, `Jump Antic` 18 / 27,464, `Land` 18 / 27,464
+(the same three sprites as `Jump Antic`, so the pair costs one of them),
+`Attack` 24 / 37,248, `Idle` 30 / 55,366, `Rage` 36 / 56,050, `Stun Recover`
+36 / 56,406, `Run` 42 / 53,240.
 
-Cooked rather than estimated. `Idle` and `Turn` through `Atlas.add_tiled` come
-to 42 streamed textures, 73,564 stream bytes, 7 frames and 2 clips, no resident
-page, largest frame 185x119.
+## What the admitted clip set costs, and what pins it
 
-Appending that bank to Crossroads_10's view packs and re-running
-`texture_dedup.deduplicate_room` adds exactly 42 textures to each, with no
-interaction with what is already there:
+Six clips: `Idle`, `Turn`, `Jump Antic`, `Land`, `Stun Opened`, `Attack`. As a
+bank that is 66 streamed textures and 146,340 texel bytes.
 
-| View | Textures now | With the boss | Pack bytes |
-| ---: | ---: | ---: | ---: |
-| 240 | 303 | 345 | 202,200 -> 277,952 |
-| 241 | 297 | 339 | 202,012 -> 277,764 |
-| 237 | 291 | 333 | 202,192 -> 277,944 |
+Measured against the real pipeline rather than estimated, which means cooking
+each of Crossroads_10's 20 base packs, appending the scene-wide actor bank
+(`host/regions.py::postpack_actor_bank`) to every one of them and re-running
+`texture_dedup.deduplicate_room`:
 
-Two cautions on those numbers. The tightest view is 240 at 303, not the 241 that
-`tools/texture_headroom.py` reports, because that tool reads `textures` out of
-`data/regions.json` and the packs on disc carry more than that field records
-(view 241 is 275 in the metadata and 297 in its own header). The CLUT cost is
-the pack's texture count, so 345 of 416 is the number that matters, leaving 71.
-Room bytes stay well inside the 393,216 budget.
+| Clip set | Worst view | Bytes of 393,216 | Free | Records of 640 | Palettes of 416 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Idle, Turn | 244 | 279,584 | 113,632 | 347 | 272 |
+| + Jump Antic, Land, Stun Opened | 244 | 316,492 | 76,724 | 371 | 276 |
+| **+ Attack (admitted)** | 244 | **354,968** | **38,248** | 395 | 279 |
+| + Jump | 244 | 383,036 | 10,180 | 413 | 282 |
+| + Attack Recover instead of Jump | 244 | 399,104 | over | 422 | 284 |
+| eight clips | 244 | n/a | n/a | n/a | refused: the 256 KiB animation and alpha metadata bank |
+
+`Jump` fits and is left out on purpose: 28,068 bytes for the airborne pose, in a
+room another agent is adding breakable and effect art to, against a 10,180-byte
+margin that would fail the next cook loudly. `Jump Antic` stands in for it.
+
+### The 75,752 bytes that were being paid twice
+
+The binding view is 244, the one that contains the boss's authored transform,
+and until this change it was carrying the actor art twice. `host/cook.py`'s
+per-view cook appended the actor bank into the base pack, and then
+`postpack_actor_bank` appended the scene-wide bank to every view of the scene
+and replaced that row's clip indices with its own, so the base copy was paid for
+and never read. Measured: view 244's base was 279,584 bytes and is 203,832
+without it, and the worst-view figures above roughly double without the fix.
+`cook()` still runs `append_actor_art` into an atlas it discards, because that
+pass owns the refusal that clears `movement_supported` for a frame the animation
+cache cannot hold and that verdict has to match the postpass.
+
+This is a whole-game change, not a Crossroads_10 one: every scene with a
+supported actor has one view paying for art it never reads. It has not been
+validated by a full recook.
 
 None of that is linked RAM. The bank rides in the scene pack, which is read from
 disc into the scene arena, and `pack_scenes.scene_arena_bytes` sizes that arena
@@ -149,23 +173,25 @@ from the largest scene: Tutorial_01 at 352,412 resident bytes, giving 421,128.
 Crossroads_10 is 150,396, so roughly 76 KB more leaves it around 226 KB, still
 126 KB below the scene that sets the arena. `SCENE_ARENA_BYTES` does not move and
 the art costs nothing against
-`memory.unallocated_before_stack_bytes`. What does cost linked bytes is one
-172-byte `ActorSpec` row in `data/regions.rs` and the controller's code;
-`EnemyWorld` measured 5,856 bytes both with and without the new `Runtime`
-variant, because `FalseKnightRuntime` is 12 bytes against a Runner variant that
-already sets the enum's size, so there is no bss growth.
+`memory.unallocated_before_stack_bytes`. What does cost linked bytes is the
+`ActorSpec` row in `data/regions.rs` and the controller's code. `EnemyWorld`
+measured 5,856 bytes with the standing `Sentry` and 6,112 with the whole fight,
+so the fight costs 256 bytes of bss: `false_knight::FalseKnight` is 44 bytes and
+`boss::Arena` is 12, and the `Runtime` enum only grows by what the new variant
+exceeds the Runner variant by, times the 32 actor slots.
 
 ### The three pre-battle Zombies stay out
 
 The merge also brings `Zombie Barger`, `Zombie Runner` and `Zombie Hornhead`,
-and `runner.recognize` admits all three. They are not admitted, for two reasons
-that agree. `Battle Control` kills them with `KILL ALL ENEMIES` the moment the
-boss lands, and nothing runs that arena yet, so they would stand in a fight that
-does not exist. And they cost 99 textures and 45,564 stream bytes: with the boss
-that is 141, which takes view 240 to 444 of 416. `actor_sources` therefore
-admits content merged in from an additive scene one controller at a time: a
-recognizer has to set `admit_from_additive_scene`, and only the False Knight
-does.
+and `runner.recognize` admits all three. They are not admitted, and now that the
+arena runs the reason is only the budget: `Battle Control` kills them with
+`KILL ALL ENEMIES` the moment the boss lands, so they would be alive for the
+length of the entrance drop, and they cost 99 textures and 45,564 stream bytes
+in every one of Crossroads_10's 20 views. Against the 38,248 bytes the admitted
+clip set leaves free in view 244 they do not fit, and the thing to spend that on
+first is more of the boss. `actor_sources` therefore admits content merged in
+from an additive scene one controller at a time: a recognizer has to set
+`admit_from_additive_scene`, and only the False Knight does.
 
 The animation cache was the binding constraint and is not any more.
 `hk_cache::SLOTS` was 8 slots of 64x64 4bpp in a 32x256 halfword VRAM strip at
@@ -258,31 +284,21 @@ that.
    twelve screen quads meet on every seam and cover 198x168 pixels of the
    320x240 view. Total stream payload 16,900 bytes; a full miss on all twelve
    slots is a 24,576-byte VRAM write, which is still not timed.
-2. **One palette for the boss.** Quantize all 110 frames against a shared
-   16-colour palette the way the Shade does, so the whole fight costs a few CLUT
-   slots instead of 499 and can be resident in every view of the arena.
-
-   This moved from a nice-to-have to the binding constraint when the frames
-   started tiling: the cost is one CLUT per tile, and the 110 frames are 499
-   tiles against 141 free slots in Crossroads_10's tightest view. Nothing else
-   on this list closes a 3.5x gap.
-
-   A shared palette cannot reduce the CLUT count inside HKROOM02 as it stands.
-   The pack's palette block is exactly one 32-byte entry per texture, the region
-   uploads that block whole, and `tools/texture_headroom.py` counts a view's
-   CLUT slots as its texture count. Two textures pointing at one palette index
-   still cost two slots. `Atlas.add_tiled` quantizes a whole frame once anyway,
-   because that is what keeps the colours identical across a tile seam, but the
-   saving needs a separate palette count in the format, which is its own work.
-   Measured: the Stag's Idle cooks to 200 textures, four tiles on each of 50
-   frames, and the region carrying it reaches 358 of 416 CLUT slots.
+2. **One palette for the boss.** Done, and it turned out not to need doing.
+   `Atlas.add_tiled` quantizes a whole frame once, because that is what keeps
+   the colours identical across a tile seam, and the scene bank pools palettes
+   by value before anything reaches VRAM. So the whole fight's 499 tiles are
+   107 distinct palette words, `tools/texture_headroom.py` counts those rather
+   than texture records, and Crossroads_10's tightest view has 150 free. The
+   palette budget is not what refuses the clip set; room-pack bytes are, and no
+   amount of palette sharing moves a texel.
 3. **Per-clip residency, with no prefetch room.** 699 KiB never fits main RAM,
    and against the live gap the prefetch does not either. The clip bytes were
    measured against 73,876 unallocated bytes, and the gap has since fallen to
-   51,348, so the ratios below are recomputed rather than re-measured: the
-   heaviest clip, `Stun Recover`, is 56,406 bytes, which is 109.8% of the gap
-   and no longer fits on its own at all; the heaviest adjacent pair is 112,456
-   bytes, 219.0% of it. At least nine of the 33
+   51,348 and then to 41,064, so the ratios below are recomputed rather than
+   re-measured: the heaviest clip, `Stun Recover`, is 56,406 bytes, which is
+   137.4% of the gap and no longer fits on its own at all; the heaviest adjacent
+   pair is 112,456 bytes, 273.9% of it. At least nine of the 33
    clips pair with the next heaviest to more than the gap, and that count can
    only have risen; re-run `host/false_knight.py` before quoting it. So holding
    the current clip and prefetching
@@ -291,12 +307,17 @@ that.
    would have to cover a blocking load of up to 56,406 compressed bytes rather
    than an overlapped one. Whether a load that size lands inside 0.3 s is not
    measured here; the byte figures are.
+4. **Stop paying for the actor art twice.** Done, and it is the one that
+   actually moved: see the 75,752-byte section above. It tripled the clip set
+   without touching a texel, and the same duplication is in every scene with a
+   supported actor.
 
 Only after those does `MAX_SCENE_ACTORS` matter. The arena's worst concurrent
 set is the boss, its Hitter overlay and its Head, the three pre-battle enemies
 and the barrel pool, whose `PersonalObjectPool` reserves 8: fourteen against a
 cap of 32 that Crossroads_22 already contends for at 36. Raising that cap is not
-part of this work and the boss does not need it.
+part of this work and the boss does not need it: the Hitter and the Head are
+boxes on the boss's own runtime rather than actors of their own.
 
 ## The fight
 
@@ -381,6 +402,14 @@ pause, a jump to x 28.9, then eight slams from a stationary `Rage` loop with
 conversion cracks
 the arena floor; the boss breaks through it on the third.
 
+The body is not invincible during any of that, and the check that ends the fight
+is at the end of the rage rather than at the conversion: `Rage Check` reads
+`Stunned Amount` only once `Rages` has counted down to zero. So a hero who can
+empty the 65 hp again before the eighth slam staggers the boss out of its own
+rage and the fight never ends, however many conversions are won. That is source
+structure, not a port artifact, and it is why the guest test drives a player who
+punishes the stagger and then holds fire while the boss rages.
+
 ### Death
 
 After the third conversion the boss jumps to x 34, invulnerable, and slams
@@ -419,55 +448,83 @@ At zero the arena writes `Activated` and waits two seconds before `BG OPEN`. The
 write happens before the wait, so a save taken during it already counts as
 cleared.
 
-## The standing subset, which is what is wired
+## What is wired
 
-`shared/hk-sim/src/false_knight.rs`'s `Sentry` is `FalseyControl`'s `Idle` and
-`Turn R`/`Turn L` and nothing else, and it is the only part of the fight the
-guest runs. It holds a facing and a countdown. `Idle` compares the hero's x
-against its own every frame, which is the whole sense; entering a turn writes
-the facing immediately, the way `Turn R` writes `Facing Right` true and sets the
-transform scale to +1.3 before its clip plays, and holds `Turn` for its own ten
-ticks. `host/false_knight.py::recognize_placement` admits the placement,
-re-checking the `FalseyControl` and `Check Health` digests so a source change
-fails at admission, and `game/src/enemies.rs`'s `FalseKnightRuntime` runs it.
+`game/src/enemies.rs`'s `FalseKnightRuntime` holds three things: the
+`false_knight::FalseKnight` controller, the `boss::Arena` its `Battle Scene`
+owns, and the `Head`'s own 40 hp `ActorHealth`. The arena rides on the boss
+rather than on a world object because the boss is the only thing in the room it
+drives and because `Battle Enemies` never moves except from the boss's own
+`Decrement Battle Enemies`.
 
-Three things about it are deliberate and none of them is source behaviour.
+**Dormant is free.** Until `BATTLE START` the runtime does one AABB a tick,
+the hero's body against `Battle Control`'s trigger, and nothing else: no solver,
+no terrain ray, no clip clock, and no draw. The source hangs the boss at the
+authored transform, x 26.07 y 46.64, inside the ceiling slab above the arena
+(layer-8 terrain from y 44 to 47) where the room's own scenery hides it; actor
+draws here are not depth sorted against scenery, so the closer answer is to draw
+nothing until it drops. That gate matters because Crossroads_10 carried no
+actors at all before the boss and the frame is stall-bound: the fight only costs
+anything while it is running.
 
-**It falls in on its own.** The source hangs the boss in `Dormant` at the
-authored transform, x 26.07 y 46.64, which is inside the ceiling slab above the
-arena (layer-8 terrain from y 44 to 47), and drops it on `BATTLE START`. Nothing
-sends `BATTLE START`: `boss.rs`'s `Arena` is written and tested but not wired to
-a trigger box, gates or the camera lock. So the runtime separates the body out
-of the slab with the same `resolve_actor_spawn` every actor uses, lets it fall
-under the shared solver, and latches `settled` on the first ground contact. It
-lands on `Break Floor` at y 26.05, putting its transform at y 31.64, against an
-authored `CameraLockArea B` that pins the camera at y 31.37. The position is
-produced by the port's own terrain solver from the authored transform; it is not
-written down anywhere.
+**The trigger is the source's own.** `Battle Scene`'s BoxCollider2D is a
+one-unit curtain from x 13.5 to 14.5 spanning y 25.01 to 44.60, cooked into the
+`ActorSpec` as a world box. Crossing it runs `Arena::hero_entered`, which sends
+`BATTLE START`, and `Start Fall` drops the body: `resolve_actor_spawn` separates
+it from the slab once, there rather than on load, and the shared solver takes it
+from there. It lands on `Break Floor` at y 26.05, putting its transform at
+y 31.64, against the authored `CameraLockArea B` that pins the camera at y 31.37.
 
-**It costs one comparison a tick once it is down.** Crossroads_10 carried no
-actors at all before this, and the frame is stall-bound, so the settle latch is
-load-bearing: after it lands the solver is never run again, because the source
-body is a kinematic transform between attacks and the subset has no attacks.
+**The camera lock needs no wiring.** `Battle Control` enables an authored
+`CameraLockArea`, and the world already cooks that one: `CameraLockArea B`
+(`level46:100331`, the merged `level48` object) is live in twelve of
+Crossroads_10's views with the source's own 21.60 to 33.83 limit. `Action::
+CameraLock` is therefore accepted and dropped.
 
-**It is admitted invincible.** The source body is not, but `Check Health`
-restores it to 65 every time it reaches zero rather than letting it die, and the
-stagger that consumes that is not implemented. A killable body would vanish on
-its fifth nail hit, which is further from the source than refusing the damage.
+**Only the states that read a sense pay for it.** `GetDistance` costs a square
+root and is computed in `Idle` and `Run`; the two 8-unit wall rays are cast only
+in `Idle`, because `Walls Check` is reachable only through `Move Choice` and only
+`Idle` reaches that; the 9.5-unit fall ray only in `JA Fall` and its death
+counterpart. Casting all three every tick would be three passes over the view's
+terrain on a frame that has none to spare.
+
+**Both HealthManagers restore instead of dying.** A nail that empties the body's
+65 hp gets `Check Health`'s answer, SetHP 65 and STUN, so the body is killable
+and never dies; the armour rolls, opens and exposes a `Head` box that sits above
+the body box rather than inside it, and emptying its 40 hp is `Health Check`'s
+STUN END and one phase. Three of those reach the death sequence, and
+`Action::Died` is what marks the actor dead. It declares no corpse, so it stops
+being drawn there.
+
+**The Hitter is a box, not a second draw.** The source splits attack art between
+the body, which plays `Blank`, and a `Hitter` overlay. This port draws one actor,
+so the overlay's clip plays on the body and the `Blank` that would have hidden it
+is dropped; the overlay's DamageHero trigger is reproduced as a box reaching
+nearly eight units ahead, mirrored onto the side the body faces.
 
 ## What is not implemented
 
-- Everything past standing. The attacks, the staggers, the rage, the death
-  sequence, the Hitter overlay, the Head, the barrels and the floor break are
-  all in `false_knight.rs` and none of it is bound to the guest controller.
-- The arena. `boss.rs` holds `Battle Control` and is tested, but no trigger box,
-  gate, camera lock or persistent bool is wired to it, so `BATTLE START` is never
-  sent and the pre-battle Zombies are never cleared.
-- `host/cook.py::append_actor_art` needs a `FalseKnight` arm in its clip-binding
-  dispatch, and `host/effects.py::append_corpse_art` needs to skip a controller
-  that declares no corpse. The recognizer already carries `art_bindings`
-  (`walk` -> Idle, `turn` -> Turn) so both can read the record rather than grow
-  another controller branch.
+- **The gates.** `Arena` reaches `Phase::Open` and emits `OpenGates`, and nothing
+  answers. The five `BG Control` gates are cooked terrain edges, and lifting one
+  needs a per-view edge binding plus a region-activation hook, which is exactly
+  the shape `game/src/great_door.rs` already has: a cooked `(region, edges)`
+  table, a persistent opened bit, and an `apply` called on activation. So
+  `Battle Gate 2` and `Battle Gate 2 (1)`, which start closed at the bottom of
+  the room, stay closed after the fight is won, and the arena never seals at its
+  ends because the other three start open and are not cooked as terrain at all.
+- **Persistence.** The `Battle Scene` PersistentBoolItem is not saved, so
+  `Arena::new` always takes the fresh branch and a reload re-arms a won fight.
+  `Action::Persist` is emitted and dropped, and so is `falseKnightFirstPlop`,
+  which means every first plop is the long one.
+- **The pre-battle Zombies.** Recorded, not admitted, so `KILL ALL ENEMIES` has
+  no target. The arena counts only the boss, which is what the source does.
+- **Everything the fight emits that has no object.** Barrels
+  (`FK Barrel Summon`'s pool), the shockwave, the floor crack and break, the
+  staff, the Death Head, particles, camera shake and audio.
+- **Twenty-eight of the thirty-four clips.** Substituted, not missing: every
+  airborne and anticipating clip borrows `Jump Antic`, every impact and the whole
+  roll borrow `Land`, the open-armour window borrows `Stun Opened`, `Rage`
+  borrows `Attack`, and the rest stand in `Idle`.
 - Corpse and Aspid shot art still cannot tile. `host/effects.py`'s `_ClipCooker`
   calls `Atlas.add(streamed=True)`, which refuses a frame past one slot, and the
   shot loop in `prepare_draws` draws one quad without consulting the grid. An
@@ -479,5 +536,8 @@ its fifth nail hit, which is further from the source than refusing the damage.
   exist as a state.
 - `Rise` and `Fall` shape vertical speed per 50 Hz FixedUpdate in the source and
   per 60 Hz tick in the sim, so airtime differs slightly.
-- Particles, camera shake, audio, the barrel prefabs, the shockwave object, the
-  staff, the death head and the Godhome variants are recorded, not presented.
+- The Godhome variants are recorded, not presented.
+- Nothing about the fight has been timed on hardware. It replaces one comparison
+  a tick with a terrain solve, up to two rays and a square root for as long as
+  the fight runs, and the whole frame is stall-bound: the route positions are the
+  test, and they have not been run.

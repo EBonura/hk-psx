@@ -80,25 +80,63 @@ struct RunnerContext {
     hero_body: [i32; 4],
 }
 
-/// False Knight standing in its arena: `hk_sim::false_knight::Sentry`, which is
-/// the `Idle` and `Turn R`/`Turn L` states of `FalseyControl` and nothing else.
+/// The False Knight fight: `hk_sim::false_knight::FalseKnight` is `FalseyControl`
+/// and `hk_sim::boss::Arena` is the `Battle Scene`'s `Battle Control`. The arena
+/// rides on the boss rather than on a world object because the boss is the only
+/// thing in the room it drives, and because the source's own counter never moves
+/// except from the boss's `Decrement Battle Enemies`.
 ///
-/// The source hangs the boss above the arena in `Dormant` and drops it on
-/// `BATTLE START`. Nothing sends `BATTLE START` yet, so the body falls from the
-/// authored transform on its first resident tick and `settled` latches on the
-/// first ground contact. After that the boss is what the source body is between
-/// attacks, a kinematic transform, and this runtime costs one comparison a
-/// tick: that matters because Crossroads_10 carried no actors at all before it.
+/// The body hangs kinematic above the arena in `Dormant` until the hero crosses
+/// the trigger box, so before the fight this costs one AABB a tick and no
+/// solver, no terrain rays and no clip clock at all. That matters: Crossroads_10
+/// carried no actors before the boss and the frame is stall-bound.
 #[derive(Clone, Copy)]
 struct FalseKnightRuntime {
-    controller: hk_sim::false_knight::Sentry,
+    controller: hk_sim::false_knight::FalseKnight,
+    arena: hk_sim::boss::Arena,
+    /// The `Head`'s own HealthManager, which `Health Check` restores to 40 so
+    /// that emptying it spends a phase instead of killing anything.
+    head: ActorHealth,
     animation_tick: u32,
-    settled: bool,
+    clip: hk_sim::false_knight::Clip,
+    vx: i32,
+    /// SetGravity2dScale, Q16: the serialized Rigidbody2D scale is zero and the
+    /// FSM writes one of `GRAVITY_*` every time the body leaves the ground.
+    gravity: i32,
+    kinematic: bool,
+    /// The `Hitter` child's DamageHero trigger, switched by the attack states.
+    hitter: bool,
+    /// The body's own DamageHero, which the stagger switches off.
+    contact_damage: u16,
+    /// `Start Fall` drops the body out of the ceiling slab it is authored in;
+    /// the shared spawn resolution runs once, there, rather than on load.
+    separated: bool,
 }
 impl FalseKnightRuntime {
+    /// The cooked clip for a source clip.
+    ///
+    /// Six of the thirty-four clips fit Crossroads_10's room-pack byte budget
+    /// (the measurement is in docs/FALSE_KNIGHT.md), so the rest are shown as
+    /// the nearest cooked pose rather than not shown at all. The substitutions
+    /// are: every airborne clip borrows `Jump Antic`, every impact and every
+    /// part of the roll borrows `Land`, the whole open-armour window borrows
+    /// `Stun Opened`, the slam's wind-up and recovery borrow `Attack`, and what
+    /// is left stands in `Idle`.
     fn clip(&self, spec: &ActorSpec) -> u16 {
-        match self.controller.clip() {
-            hk_sim::false_knight::Clip::Turn => spec.turn_clip,
+        use hk_sim::false_knight::Clip::*;
+        let ActorController::FalseKnight { jump_antic_clip, land_clip, stun_opened_clip, attack_clip, .. } =
+            spec.controller else { panic!("False Knight runtime with other metadata") };
+        match self.clip {
+            Turn => spec.turn_clip,
+            JumpAntic | Jump | JumpAttackUp => jump_antic_clip,
+            Land | JumpAttackHit1 | JumpAttackHit2 | JumpAttackHit3 | StunRoll | StunRollEnd
+            | StunRecover | DeathFall | DeathLand => land_clip,
+            StunOpen | StunOpened | StunHit => stun_opened_clip,
+            // The wind-up and the recovery are the mace going up and coming
+            // back; the struck pose is nearer to both than a standing one.
+            Attack | AttackAntic | AttackRecover | Rage => attack_clip,
+            // Idle, Run, Run Antic, Death Spaz and the one-pixel Blank the
+            // Hitter overlay would have needed.
             _ => spec.walk_clip,
         }
     }
@@ -108,7 +146,32 @@ impl FalseKnightRuntime {
     fn facing(&self) -> i32 {
         if self.controller.facing_right() { -1 } else { 1 }
     }
+    /// The `Hitter` trigger in world coordinates, mirrored onto the side the
+    /// body faces the way its parent transform's scale sign mirrors the child.
+    fn hitter_box(&self, x: i32, y: i32) -> [i32; 4] {
+        let b = hk_sim::false_knight::HITTER_BOX;
+        if self.controller.facing_right() {
+            [x + b[0], y + b[1], x + b[2], y + b[3]]
+        } else {
+            [x - b[2], y + b[1], x - b[0], y + b[3]]
+        }
+    }
+    /// The exposed `Head` in world coordinates. Symmetric in x, so it does not
+    /// mirror; it sits above the body box rather than inside it.
+    fn head_box(&self, x: i32, y: i32) -> [i32; 4] {
+        let b = hk_sim::false_knight::HEAD_BOX;
+        [x + b[0], y + b[1], x + b[2], y + b[3]]
+    }
 }
+/// The Head's HealthManager: 40 hp with 0.15 s of invulnerability, no contact
+/// damage of its own and no Geo, exactly as `host/false_knight.py` reads it.
+const FALSE_KNIGHT_HEAD: hk_sim::EnemyParams = hk_sim::EnemyParams {
+    health: hk_sim::false_knight::HEAD_HEALTH,
+    contact_damage: 0,
+    evasion_ticks: hk_sim::false_knight::HEAD_INVULNERABLE_TICKS,
+    invincible: false,
+    damage_override: false,
+};
 /// Visible enemy draws, which are tiles rather than actors: a frame past one
 /// 64x64 animation slot contributes one draw and one animation key per tile.
 /// The ceiling is `hk_cache::MAX_FRAME_TILES`, the slots the cache holds beyond
@@ -249,6 +312,20 @@ fn segment_hits_terrain(a: [i32; 2], b: [i32; 2], count: usize, edge: &impl Fn(u
         if t >= 0 && t <= d && u >= 0 && u <= d { return true; }
     }
     false
+}
+/// `GetDistance` between two transforms, Q16. World coordinates stay inside
+/// +/-512 units, so the squares stay well below the i64 range.
+fn distance_q16(dx: i32, dy: i32) -> i32 {
+    let square = (dx as i64) * (dx as i64) + (dy as i64) * (dy as i64);
+    if square <= 0 { return 0; }
+    let mut x = 1i64 << ((64 - square.leading_zeros() as i64 + 1) / 2);
+    loop {
+        let next = (x + square / x) / 2;
+        if next >= x { break; }
+        x = next;
+    }
+    while x * x > square { x -= 1; }
+    x as i32
 }
 /// Rotate a local offset by quarter turns counter-clockwise.
 fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
@@ -425,9 +502,19 @@ impl Actor {
                 // `initial_direction` carries the sign the cooker read off the
                 // placement's transform scale, and a positive source scale is
                 // the art as authored, which that field writes as -1.
-                ActorController::FalseKnight => Runtime::FalseKnight(FalseKnightRuntime {
-                    controller: hk_sim::false_knight::Sentry::new(spec.initial_direction < 0),
-                    animation_tick: 0, settled: false }),
+                //
+                // `Arena::new(false)` is the fresh-save branch. The source reads
+                // the `Battle Scene`'s PersistentBoolItem here and quick-opens a
+                // cleared arena instead; nothing in this port saves that bool
+                // yet, so a reload re-arms the fight.
+                ActorController::FalseKnight { .. } => Runtime::FalseKnight(FalseKnightRuntime {
+                    controller: hk_sim::false_knight::FalseKnight::new(seed, false),
+                    arena: hk_sim::boss::Arena::new(false),
+                    head: ActorHealth::new(FALSE_KNIGHT_HEAD),
+                    animation_tick: 0, clip: hk_sim::false_knight::Clip::Idle,
+                    vx: 0, gravity: hk_sim::false_knight::GRAVITY_IDLE,
+                    kinematic: true, hitter: false, contact_damage: spec.health.contact_damage,
+                    separated: false }),
             },
         }
     }
@@ -498,6 +585,55 @@ impl Actor {
         let b = self.local_bounds(spec);
         [self.x + b[0], self.y + b[1], self.x + b[2], self.y + b[3]]
     }
+    /// Source `Check Health` on the body and `Health Check` on the `Head`.
+    /// Neither HealthManager lets its owner die from a nail: zero on the body
+    /// restores 65 and staggers, zero on the exposed Head restores 40 and ends
+    /// the stagger, and only the third of those reaches the death sequence.
+    ///
+    /// `hits` is the attacker's own shape test against a world box, because the
+    /// nail is a polygon and the Vengeful Spirit ball is a box. Returns whether
+    /// it reached a box at all, so the caller answers it with the same recoil an
+    /// invulnerable enemy gets, and what the hit was.
+    #[inline(never)]
+    fn strike_false_knight(&mut self, boss: &mut FalseKnightRuntime, spec: &ActorSpec,
+                           hits: impl Fn([i32; 4]) -> bool, damage: u16) -> (bool, Hit) {
+        if boss.controller.head_exposed() {
+            // `Opened` drops the Head hitbox out of its parked position; the
+            // armour around it is invincible for as long as the window lasts.
+            if !hits(boss.head_box(self.x, self.y)) {
+                return (false, Hit::Ignored);
+            }
+            let hit = boss.head.hit(FALSE_KNIGHT_HEAD, damage);
+            let actions = if boss.head.dead {
+                // `Health Check`: SetHP 40 then STUN END, so the Head survives
+                // to be exposed again. Three of these are the whole fight.
+                boss.head = ActorHealth::new(FALSE_KNIGHT_HEAD);
+                boss.controller.head_reached_zero()
+            } else if hit == Hit::Damaged {
+                boss.controller.head_hit()
+            } else {
+                return (true, hit);
+            };
+            self.apply_false_knight(boss, actions);
+            return (true, Hit::Damaged);
+        }
+        if !hits(self.bounds(spec)) {
+            return (false, Hit::Ignored);
+        }
+        if boss.controller.invincible() {
+            return (true, Hit::Blocked);
+        }
+        let hit = self.health.hit(spec.health, damage);
+        if !self.health.dead {
+            return (true, hit);
+        }
+        // `Check Health`: ZERO HP sends STUN and SetHP 65, so the body never
+        // dies. Reaching zero is what staggers it, which is the only way in.
+        self.health = ActorHealth::new(spec.health);
+        let actions = boss.controller.body_reached_zero();
+        self.apply_false_knight(boss, actions);
+        (true, Hit::Damaged)
+    }
     // Actors and corpses share the materialized terrain of their owning view;
     // the copy is rebuilt only when that view or the exclusion epoch changes.
     #[inline(never)]
@@ -526,6 +662,13 @@ impl Actor {
         if self.health.dead {
             if let (Some(corpse),Some(corpse_spec))=(&mut self.corpse,spec.corpse) {
                 corpse.tick(corpse_spec,count,edge);
+            }
+            // `End Wait` runs after the boss's death event, so the arena has to
+            // keep counting for the two seconds the source waits before BG OPEN.
+            if let Some(mut boss)=self.false_knight() {
+                let actions=boss.arena.tick();
+                self.apply_arena(&mut boss,actions);
+                self.runtime=Runtime::FalseKnight(boss);
             }
         } else {self.advance(spec,room,count,edge,context,emit);}
     }
@@ -728,51 +871,161 @@ impl Actor {
             else { None };
         if let Some(side) = side { fly.controller.bonk(side); }
     }
-    /// One 60 Hz step of the standing False Knight.
+    /// `Battle Control`'s own actions. The camera lock is the one this port
+    /// already answers, because `CameraLockArea B` is an authored lock area the
+    /// world cooks like any other rather than something the arena switches.
+    fn apply_arena(&mut self, boss: &mut FalseKnightRuntime, actions: hk_sim::boss::Actions) {
+        for action in actions.iter() {
+            match action {
+                hk_sim::boss::Action::StartBattle => {
+                    let started = boss.controller.battle_start();
+                    self.apply_false_knight(boss, started);
+                }
+                // Not presented, and each for its own reason. The gates are
+                // cooked terrain with no per-view edge binding to lift, so
+                // BG OPEN/CLOSE/QUICK OPEN reach nothing; `KillMinions` has no
+                // target because the three pre-battle Zombies are recorded
+                // rather than admitted; `ActivateFloor` belongs to the
+                // already-defeated branch this save can never take; `Persist`
+                // needs the `Battle Scene` PersistentBoolItem in the save file;
+                // and `CameraLock` is the authored lock area above.
+                hk_sim::boss::Action::CloseGates
+                | hk_sim::boss::Action::OpenGates
+                | hk_sim::boss::Action::QuickOpenGates
+                | hk_sim::boss::Action::ActivateFloor
+                | hk_sim::boss::Action::CameraLock(_)
+                | hk_sim::boss::Action::KillMinions
+                | hk_sim::boss::Action::Persist => {}
+            }
+        }
+    }
+    /// One `FalseyControl` action list against the guest body.
+    fn apply_false_knight(&mut self, boss: &mut FalseKnightRuntime, actions: hk_sim::false_knight::Actions) {
+        use hk_sim::false_knight::Action;
+        for action in actions.iter() {
+            match action {
+                // The source splits the attack art between the body, which
+                // plays `Blank`, and the `Hitter` overlay. This port draws one
+                // actor, so the overlay's clip plays on the body and the Blank
+                // that would have hidden it is dropped.
+                Action::Play(clip) | Action::PlayHitter(clip) => {
+                    if clip != hk_sim::false_knight::Clip::Blank {
+                        boss.clip = clip;
+                        boss.animation_tick = 0;
+                    }
+                }
+                Action::Velocity([x, y]) => { boss.vx = x; self.vy = y; self.grounded = false; }
+                Action::VelocityX(x) => boss.vx = x,
+                Action::Gravity(g) => boss.gravity = g,
+                Action::Facing(f) => self.walk.direction = -f,
+                Action::Hitter(on) => boss.hitter = on,
+                Action::ContactDamage(d) => boss.contact_damage = d,
+                Action::Kinematic(k) => { boss.kinematic = k; if k { self.vy = 0; boss.vx = 0; } }
+                Action::KillAllEnemies => {
+                    let cleared = boss.arena.kill_all_enemies();
+                    self.apply_arena(boss, cleared);
+                }
+                Action::Died => {
+                    boss.arena.enemy_died();
+                    self.health.dead = true;
+                }
+                // `Invincible` and `HeadExposed` are read back off the phase
+                // rather than latched, so there is one source of truth for
+                // which target the nail reaches.
+                //
+                // The rest is recorded, not presented: there is no shockwave
+                // object, no barrel `PersonalObjectPool`, the arena floor is
+                // cooked terrain that nothing can crack or destroy, and
+                // `falseKnightFirstPlop` has nowhere to persist to.
+                Action::Invincible(_) | Action::HeadExposed(_) | Action::Shockwave { .. }
+                | Action::SummonBarrels(_) | Action::CrackFloor | Action::BreakFloor
+                | Action::Staggered(_) | Action::SetFirstPlop => {}
+            }
+        }
+    }
+    /// One 60 Hz step of the False Knight and the arena it drives.
     ///
-    /// Two different costs, and the `settled` latch is what keeps them apart.
-    /// Before it lands the body is the shared solver under ordinary gravity,
-    /// which is the source's `Start Fall` without its script. After it lands
-    /// the source body is kinematic until an attack moves it, the subset has no
-    /// attacks, and the terrain under it cannot change, so the solver is never
-    /// run again and the tick is one comparison: which side of the boss the
-    /// Knight stands on, exactly what source `Idle` tests every frame.
+    /// Two very different costs, and `Phase::Dormant` is what keeps them apart.
+    /// Until `BATTLE START` the source body hangs kinematic in the ceiling slab
+    /// above the arena and the only thing running is `Battle Control`'s
+    /// `Detect`, which is one box against the hero and nothing else: no solver,
+    /// no terrain ray, no clip clock. That gate is load-bearing, because
+    /// Crossroads_10 carried no actors at all before the boss and the frame is
+    /// stall-bound.
     #[inline(never)]
     fn advance_false_knight(&mut self, boss: &mut FalseKnightRuntime, spec: &ActorSpec,
                             count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext) {
-        boss.animation_tick = boss.animation_tick.saturating_add(1);
-        if !boss.settled {
-            let b = self.local_bounds(spec);
-            let offset = b[0] + (b[2] - b[0]) / 2;
-            let mut body = Player::spawn(self.x + offset, self.y);
-            body.vy = self.vy;
-            body.grounded = self.grounded;
-            let p = Params { gravity: 60 * ONE, fall: 100 * ONE, half_width: (b[2] - b[0]) / 2,
-                bottom: b[1], top: b[3], ..Params::ZERO };
-            if self.spawn_state == SpawnState::Pending {
-                // The authored transform sits inside the ceiling slab above the
-                // arena, which is where the source hangs it; separate once, as
-                // every other actor does, and then let it fall out.
-                if !hk_sim::resolve_actor_spawn(&mut body, p, count, edge) {
-                    self.spawn_state = SpawnState::Blocked;
-                    return;
-                }
-                self.spawn_state = SpawnState::Ready;
+        use hk_sim::false_knight as fk;
+        let ActorController::FalseKnight { trigger, .. } = spec.controller
+            else { panic!("False Knight runtime with other metadata") };
+        if boss.controller.phase() == fk::Phase::Dormant {
+            // `Detect`: the hero's collider entered the Battle Scene trigger.
+            if overlap(trigger, context.hero_body) {
+                let started = boss.arena.hero_entered();
+                self.apply_arena(boss, started);
             }
-            body.step(p, 0, false, count, edge);
-            self.x = body.x - offset;
-            self.y = body.y;
-            self.vy = body.vy;
-            self.grounded = body.grounded;
-            boss.settled = body.grounded;
             return;
         }
-        // `Idle` compares the hero's x against its own every frame; `Turn R`
-        // and `Turn L` write the facing on entry and hold for the Turn clip.
-        if boss.controller.tick(context.hero[0] > self.x) {
-            boss.animation_tick = 0;
+        let arena = boss.arena.tick();
+        self.apply_arena(boss, arena);
+        // The Head has a HealthManager of its own, so it has its own 0.15 s
+        // invulnerability window; the caller only ticks the body's.
+        boss.head.tick();
+        boss.animation_tick = boss.animation_tick.saturating_add(1);
+        let b = self.local_bounds(spec);
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let p = Params {
+            speed: boss.vx.abs(),
+            // SetGravity2dScale against the installed Physics2DSettings gravity.
+            gravity: (((60 * ONE) as i64 * boss.gravity as i64) >> 16) as i32,
+            fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3], ..Params::ZERO
+        };
+        let mut body = Player::spawn(self.x + offset, self.y);
+        body.vy = self.vy;
+        body.grounded = self.grounded;
+        if !boss.separated {
+            // `Start Fall` turns gravity on while the body is still inside the
+            // ceiling slab it is authored in. The source body is not solved
+            // against terrain; this one is, so it is separated once here, with
+            // the same resolution every other actor spawns through.
+            if !hk_sim::resolve_actor_spawn(&mut body, p, count, edge) {
+                self.spawn_state = SpawnState::Blocked;
+                return;
+            }
+            boss.separated = true;
+            self.spawn_state = SpawnState::Ready;
         }
-        self.walk.direction = boss.facing();
+        if !boss.kinematic {
+            body.step(p, boss.vx.signum(), false, count, edge);
+        }
+        self.x = body.x - offset;
+        self.y = body.y;
+        self.vy = body.vy;
+        self.grounded = body.grounded;
+        let phase = boss.controller.phase();
+        // Only the states that read a sense pay for it. `Walls Check` is a
+        // one-shot state the source enters out of `Determine Jump`, which only
+        // `Move Choice` reaches and only `Idle` reaches that; `JA Fall` is the
+        // one place the 9.5-unit fall ray is read; and `GetDistance` is read by
+        // `Move Choice` and by `Run`. Casting all three every tick would put
+        // three passes over the view's terrain on a stall-bound frame.
+        let idle = phase == fk::Phase::Idle;
+        let falling = matches!(phase, fk::Phase::JumpAttackAir | fk::Phase::DeathAir);
+        let distance = if idle || phase == fk::Phase::Run {
+            distance_q16(context.hero[0] - self.x, context.hero[1] - self.y)
+        } else { 0 };
+        let senses = fk::Senses {
+            self_x: self.x, hero_x: context.hero[0], distance,
+            velocity_y: body.vy, velocity_x: boss.vx, grounded: body.grounded,
+            wall_left: idle && segment_hits_terrain([self.x, self.y],
+                [self.x - fk::WALL_RAY_DISTANCE, self.y], count, edge),
+            wall_right: idle && segment_hits_terrain([self.x, self.y],
+                [self.x + fk::WALL_RAY_DISTANCE, self.y], count, edge),
+            ground_below: falling && segment_hits_terrain([self.x, self.y],
+                [self.x, self.y - fk::FALL_RAY_DISTANCE], count, edge),
+        };
+        let actions = boss.controller.tick(senses);
+        self.apply_false_knight(boss, actions);
     }
     /// One 60 Hz step of the Baldur: FSM tick from last frame's contacts, then
     /// the gravity body (scale 0.8) moves at the held x velocity and the
@@ -1149,6 +1402,49 @@ impl EnemyWorld {
                 continue; // no attack/recoil sensing against an unavailable terrain owner
             }
             let bounds = actor.bounds(spec);
+            // The boss answers the nail through two HealthManagers rather than
+            // one and hurts the hero from the Hitter as well as its own body,
+            // so it does not take the shared Runner/flyer path below.
+            if let Some(mut boss) = actor.false_knight() {
+                let mut reached = false;
+                if let Some((box_, damage)) = ball {
+                    let (_, hit) = actor.strike_false_knight(&mut boss, spec, |b| overlap(box_, b), damage);
+                    if matches!(hit, Hit::Damaged | Hit::Killed) { events.hits += 1; }
+                }
+                if !polygon.is_empty() {
+                    let nail_damage = cheats.params(crate::VITAL_PARAMS).nail_damage;
+                    let (hit_box, hit) = actor.strike_false_knight(&mut boss, spec,
+                        |b| hk_sim::polygon_hits_box(polygon, b), nail_damage);
+                    reached = hit_box;
+                    if matches!(hit, Hit::Damaged | Hit::Killed) {
+                        events.hits += 1;
+                        vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                    }
+                }
+                if reached && vitals.can_control() {
+                    response.contact(crate::NAIL_RESPONSE_PARAMS, nail.kind, player.facing, player);
+                }
+                if !dream_polygon.is_empty() && spec.dream_soul != 0 && !actor.dream_taken
+                    && hk_sim::polygon_hits_box(dream_polygon, bounds) {
+                    actor.dream_taken = true;
+                    events.dream_soul = events.dream_soul.saturating_add(spec.dream_soul);
+                }
+                // The body's own DamageHero, which the stagger switches off, and
+                // the `Hitter` trigger the attacks switch on, which reaches
+                // nearly eight units ahead of the body the source never moves.
+                let mut damage = 0;
+                if boss.contact_damage != 0 && overlap(body, bounds) { damage = boss.contact_damage; }
+                if boss.hitter && overlap(body, boss.hitter_box(actor.x, actor.y)) {
+                    damage = hk_sim::false_knight::CONTACT_DAMAGE;
+                }
+                if damage != 0 {
+                    let direction = if player.x < actor.x { -1 } else { 1 };
+                    let hurt = cheats.hurt(vitals, crate::VITAL_PARAMS, damage, direction, false, player.shadow_dashing);
+                    if hurt != Hurt::Ignored { events.hurt = hurt; }
+                }
+                actor.runtime = Runtime::FalseKnight(boss);
+                continue;
+            }
             // A fireball passes through what it hits: Fireball Control only
             // listens for the terrain layer, so the enemy's own invulnerability
             // window is what stops it hitting twice.
@@ -1196,8 +1492,8 @@ impl EnemyWorld {
                                 Runtime::Gruzzer(f)=>f.controller.die(),
                                 Runtime::Baldur(r)=>r.controller.die(),
                                 Runtime::Aspid(a)=>a.controller.die(),
-                                // The False Knight is admitted invincible, so
-                                // nothing can reach this arm through it.
+                                // The False Knight answers the nail through its
+                                // own branch above and never reaches this one.
                                 Runtime::Walker|Runtime::Runner(_)|Runtime::Static {..}|Runtime::FalseKnight(_)=>{}
                             }
                             state.enemy_death_particles(region,actor.source_id,[actor.x,actor.y,0]);
@@ -1330,6 +1626,11 @@ impl EnemyWorld {
             } else if let Some(aspid)=actor.aspid() {
                 (aspid.clip(spec),aspid.animation_tick,(actor.x,actor.y),aspid.controller.facing())
             } else if let Some(boss)=actor.false_knight() {
+                // `Dormant` hangs the body inside the ceiling slab above the
+                // arena, where the room's own scenery covers it in the source.
+                // Actor draws here are not depth sorted against scenery, so the
+                // closer answer is to draw nothing until it drops.
+                if boss.controller.phase()==hk_sim::false_knight::Phase::Dormant {continue;}
                 (boss.clip(spec),boss.animation_tick,(actor.x,actor.y),boss.facing())
             } else if let Some(animation_tick)=actor.immobile() {
                 let ActorController::Static {idle_clip}=spec.controller else {panic!("Static runtime with other metadata")};
