@@ -342,6 +342,11 @@ fn build(root: &Path, options: &Options) -> Result<()> {
     }
     run("python3", &args, root)?;
     ensure_python(root)?;
+    // The host suite is cheap and nothing else ran it, so a cooker regression
+    // used to survive whole builds: adding a required constant to
+    // `generated_params` broke a fixture and nine builds shipped before anyone
+    // noticed. Fail here rather than after ten minutes of cooking.
+    run(venv_python(root), &["-m", "unittest", "discover", "-s", "tests", "-q"], root)?;
     let sdk_source = options.sdk_source.clone().unwrap_or_else(|| root.parent().unwrap().join("PSoXide-sdk"));
     sdk(root, &sdk_source)?;
     cook_cached(root, options.recook)?;

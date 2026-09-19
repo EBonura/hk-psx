@@ -90,7 +90,7 @@ class CookTests(unittest.TestCase):
         nail={'position':{'x':1,'y':-2},'scale':{'x':2,'y':3}}
         self.assertEqual(transformed_box((-2,-1,0,1),nail),(-3,-5,1,1))
     def test_grass_draw_switch_requires_both_source_renderers(self):
-        constants={'ATTACK_DURATION':.35,'ATTACK_COOLDOWN_TIME':.41,'ALT_ATTACK_RESET':.5}
+        constants={'ATTACK_DURATION':.35,'ATTACK_COOLDOWN_TIME':.41,'ALT_ATTACK_RESET':.5,'ATTACK_RECOVERY_TIME':.1}
         nails=[{'polygon':[(0,0),(1,0),(0,1)]}]*4
         grass=[{'off':10,'on':20,'box':(0,0,1,1)}]
         with self.assertRaisesRegex(ValueError,'renderer omitted'):
