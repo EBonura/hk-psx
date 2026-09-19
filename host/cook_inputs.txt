@@ -1,7 +1,6 @@
 # Code whose change invalidates cooked regions. Shared by host/hk-build/main.rs
 # (whole-cook cache) and host/regions.py (per-region reuse).
 host/cook.py
-host/regions.py
 host/actors.py
 host/runner.py
 host/climber.py
@@ -17,14 +16,12 @@ host/breakables.py
 host/combat.py
 host/scene.py
 host/source.py
-host/world.py
 host/flat_support.py
 host/reveal_masks.py
 host/texture_dedup.py
 host/similarity_dedup.py
 host/constant_textures.py
 host/region_delta.py
-host/quality.py
 host/focus.py
 host/alpha_covers.py
 host/materials.py
@@ -37,3 +34,21 @@ tools/audit_texture_similarity.py
 tools/texture_match_groups.py
 tools/audit_resident_bank.py
 host/requirements.lock
+
+# --- postpass only ---
+# Below this line: code the cook run depends on but a single region's cooked
+# bytes do not, so the build hashes it and a region's reuse key does not.
+# Placing a file wrongly is silent in one direction and expensive in the other.
+# Leave it out of this file entirely and the whole-cook cache hits, the code
+# never runs and the change is quietly ignored. Put it above the divider and
+# three lines of NPC dialogue recook all 693 regions.
+#
+# regions.py decides which regions cook, not what they contain. world.py turns
+# the finished report into data/regions.rs. npc_sources.py and npc_dialogue.py
+# are postpasses over immutable base packs. quality.py is the catalog, and the
+# four budget constants a region actually depends on are hashed by value.
+host/regions.py
+host/world.py
+host/npc_sources.py
+host/npc_dialogue.py
+host/quality.py
