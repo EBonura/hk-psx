@@ -1199,12 +1199,10 @@ town-resident, town-well, crossroads-floor, crossroads-exit and town-bench,
 whose tapes are deleted rather than left encoding physics the port no longer
 has. Eight routes pass.
 
-Owed, and not covered by anything now: the King's Pass platform climb itself,
-the Town to King's Pass gate pair (its Town side sits at y 43 to 55, so a
-resumed route needs a save placed up there rather than at the bench), and the
-deeper Crossroads gates crossroads-exit used to reach. These want scripted
-probe-authored routes, which `tools/route_probe.py` now supports properly since
-it prints every tick rather than every tenth.
+Owed at the time: the King's Pass platform climb, the Town to King's Pass gate
+pair, and the deeper Crossroads gates. The last of those is back as
+`crossroads-gate`; see the route coverage entry below for what blocks the other
+two, which is more specific than "wants a probe-authored route".
 
 ## P14 step 2: the four movement abilities (builds 116 to 118)
 
@@ -2084,6 +2082,55 @@ has no acquisition for any of them, which makes the cook-time answer exactly the
 answer the original would give every time. The moment a save can set one of
 these flags it stops being correct, and the gate needs the runtime script
 executor plus a renderer that can drop a draw.
+
+## Route coverage: one of three owed routes back, and why the other two are not
+
+`crossroads-gate` restores the deepest of the three: resumed from the existing
+Dirtmouth card, into the well, west along the Crossroads_01 shaft and out
+through the side gate into Crossroads_07. It asserts the gate count and the
+destination view rather than a position, and both of its jumps start from a wall
+the Knight is already stopped against, so a few ticks either way change nothing.
+That is the P14 lesson applied rather than restated. Nine routes pass.
+
+**The King's Pass climb is built and verified, but only in the probe.** Spawn to
+the Great Door, 22 breakables, no hazard contact, every jump starting from rest.
+It does not reproduce on the disc, and the reason is the probe's own boundary:
+it models no actors and no damage. On the real disc the Knight loses two masks
+on the King's Pass floor, and the second hit's knockback lifts it over the very
+step the route anchors on. It is recorded as a probe-only fixture rather than
+committed as a route that would pass for the wrong reason. Landing it needs
+either actors and damage in the probe or that stretch authored directly against
+the emulator, which is tractable at about 30 seconds a replay.
+
+**The Town to King's Pass gate pair is structurally blocked and that is worth
+stating once properly.** The Town-side gate sits at y 43 to 55. The only card
+fixture resumes at the Dirtmouth bench at y 11.39, Town's ground floor is y 10,
+and the next floor up is a 22-unit wall against a 5.25-unit jump. There is no
+path. The pair therefore needs either the King's Pass climb (whose Great Door
+drops the Knight one unit from the gate, which is why the climb is the real
+prerequisite) or a card saved in Town at that height, which nothing can
+currently produce because the only bench in the admitted scenes is at y 11.
+
+### A probe that lied, and a fall that misses VBlanks
+
+Two findings worth more than the route.
+
+The probe granted every ability, with a comment of mine claiming a route that
+never presses L1, R1 or Triangle was unaffected. That is false: **a wall slide
+and a wall jump need no button**, so any route pressing into a wall in mid-air
+would slide or kick off in the probe and could never reproduce on the guest. A
+greedy route search picked exactly such a jump before it was caught. The Claw is
+now withheld by default and `--claw` grants it for deliberate wall authoring.
+
+And the route deliberately stops on the Crossroads_07 entry ledge rather than
+walking off it, because the 79-unit fall down that shaft makes the port miss
+VBlanks: `HK_INPUT_MISSED_VBLANKS` reaches 2 as the fall crosses three region
+bands. That is a real streaming hiccup on a fast multi-region drop, nothing
+covers it, and the route stops short of it rather than dodging it silently.
+
+Also recorded: probe tick maps to tape poll only with a memory card inserted,
+since a cardless boot costs 400 extra polls, and the probe and the guest
+disagree about at least one King's Pass breakable.
 
 ## Required package completion record
 
