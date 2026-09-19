@@ -23,6 +23,12 @@ pub enum ActorController {
     Climber {
         stun_clip: u16,
         start_right: bool,
+        /// Authored `transform.rotation.eulerAngles.z` in Q16 degrees, which
+        /// `Climber::new` reads for its starting direction. Cardinal: a floor
+        /// placement is 0 and a ceiling one 180. `ActorSpec::bounds` is the
+        /// collider in this pose, so the runtime rotates the box by the turns
+        /// taken since, not by the absolute rotation.
+        rotation_q16: i32,
     },
     /// Gravity-free Buzzer driven by `crate::vengefly::Vengefly`; `walk_clip`
     /// is Idle and `turn_clip` TurnToIdle.
