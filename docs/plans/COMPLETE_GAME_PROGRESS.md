@@ -2293,6 +2293,47 @@ hold a three-clip NPC at all: Tutorial_01, Crossroads_03, Crossroads_01 and
 Crossroads_13 have 3, 10, 13 and 13. And Tutorial_01, the scene the game opens
 in, is the constraint on every resident-art decision in the whole port.
 
+## Three projections, three overshoots, and where the script wall is
+
+The script runtime got three slices this session and **compiled FSM instances
+stayed at 255 through all of them**. `Trigger2dEvent` moved action instances
+from 8,380 to 8,850 and left 255. The dominance resolver moved answerable object
+fields from 1,579 to 2,084, a 32% increase, and left 255. Of the 255, 245
+compile to nothing, because `Spawn Offset`, `PlayMaker Unity 2D`,
+`RespawnTriggerFSM` and the Shade markers are single empty states whose every
+action compiles trivially. Ten have ops. Three can act.
+
+The forward estimates were wrong in the same direction every time, and it is
+worth naming the shape rather than the instances. The runtime active flag was
+projected at 94 acting instances and measured at 7. The resolver was projected
+to recover 333 references and measured 94. Its cross-action reach was projected
+at 1,131 object fields and measured 505. Each one counted cases where the data
+exists somewhere and reported them as cases where the data resolves into a
+usable answer. Those are different questions and the gap between them is large
+and consistent.
+
+Where the wall actually is, measured: 6,792 object fields, 60.9% of all that go
+through a variable, name a variable nothing in the reference set writes, or that
+something outside it disturbs. A spawned object genuinely has no cook-time
+identity, so `SpawnObjectFromGlobalPool` and `CreateObject` are correctly
+refused for ever. And 20 of the targets that do resolve are `activate=true` on
+objects `Scene.active` gated out of the cooked world, which no runtime
+visibility flag can ever serve: the port can hide what it built and cannot
+reveal what it never built. The classic `closed`/`open` door pair is half
+unbuildable for exactly that reason.
+
+The contrast is the thing to take from this. Everything that reached the disc
+this session (the charm board, the shop transaction, Elderbug's conversation
+chain, the False Knight's phase machine, the Egg Sac) was written natively
+against extracted source numbers. The script runtime's one on-disc behaviour is
+Town's `Area Resetter`.
+
+One real bug came out of the resolver slice anyway, and it had nothing to do
+with dominance: the opening run of actions was read out of `states[0]` rather
+than out of the authored `startState`, so an FSM beginning anywhere else would
+have been given the wrong state's writes. Every cooked FSM starts at index 0, so
+nothing shipped wrong. That was luck.
+
 ## The conversation was stuck, and the port was not saying so
 
 Generalising Elderbug turned up a bug in what had already shipped, which is the
