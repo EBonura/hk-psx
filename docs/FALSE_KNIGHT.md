@@ -659,7 +659,7 @@ goes. That is the real state of the budget. Nothing large can be added to
 Crossroads_10's packs either, so the next content that wants either budget has
 to come with something given back.
 
-## The gates, and the half of them that is a recook
+## The gates, and the recook that sealed the arena
 
 `game/src/battle_gates.rs` is the `great_door.rs` shape the plan asked for: a
 cooked `(catalogue slot, gate, edges)` table in `data/battle_gates.rs`, a bit
@@ -675,36 +675,44 @@ The census, from `host/battle_gates.py` against `data/regions.json`:
 | Quantity | Measured |
 | --- | ---: |
 | `BG Control` gates in the 46 admitted scenes | 15, in 5 scenes |
-| Of those, cooked as terrain | 3 |
-| Crossroads_10's gates, cooked / not | 2 of 5 |
-| Catalogue slots carrying a gate binding | 5, of 699 |
-| Gate edges in the worst slot (slot 230, Crossroads_10) | 8 |
-| Scripted exclusion slots in `world::State` | 12, up from 8 |
+| Of those, cooked as terrain | 15 |
+| Crossroads_10's gates, cooked / not | 5 of 5 |
+| Of the 15, open on the first frame | 12 |
+| Catalogue slots carrying a gate binding | 31, of 699 |
+| Gate edges in the worst slot (slot 214, Crossroads_08) | 11 |
+| Scripted exclusion slots in `world::State` | 12, unchanged |
 
-Which three are cooked is not a choice this table makes. `host/cook.py` bakes a
-gate's collider only when `battle_gate`'s `solid_on_load` is set, because a gate
-the source has open from the first frame would otherwise be an invisible wall:
-the comment there records Crossroads_09 impassable between its only two doors
-and Crossroads_08 cut into three columns. So `PLACEMENT_CLOSED` and `COOKED`
-are the same mask, and the runtime only ever takes terrain away.
+`host/cook.py` bakes every gate's collider whatever `battle_gate`'s
+`solid_on_load` says, so `COOKED` and `PLACEMENT_CLOSED` are now independent
+masks and the difference between them is the work. Twelve of the fifteen gates
+are open from the first frame, and each of those is terrain in a room pack that
+the runtime lifts on load: `CLOSED` starts at `PLACEMENT_CLOSED`, so the first
+`apply` excludes `!PLACEMENT_CLOSED & COOKED`. Get that wrong and the twelve are
+invisible walls, which is what the cook's old skip was avoiding. Get it right
+and `BG CLOSE` has edges to restore, which is what seals an arena.
 
-That is why the arena still does not seal. Crossroads_10's `Battle Gate` at
-x 46.25 and `Battle Gate 1` at x 10.75 are the two arena ends, both open on
-load, so `BG CLOSE` has no edge to restore. The two that do lift,
-`Battle Gate 2` at x 18.50 y 3.78 and `Battle Gate 2 (1)` at x 11.50 y 12.92,
-are the pair at the bottom of the room that the source keeps shut until the
-fight is won, and until now nothing in the port could ever open them.
+Crossroads_10's `Battle Gate` at x 46.25 and `Battle Gate 1` at x 10.75 are the
+two arena ends, both open on load and both now cooked, so the trigger shuts
+them. `Battle Gate 2` at x 18.50 y 3.78 and `Battle Gate 2 (1)` at x 11.50
+y 12.92 are the pair at the bottom of the room that the source keeps shut until
+the fight is won, and `Battle Gate 3` at x 51.64 is the fifth.
 
-Sealing needs `host/cook.py` to bake every gate and this table to carry the open
-ones with a "solid only while closed" flag. That is not a small change because
-of where `host/cook.py` sits: above the divider in `host/cook_inputs.txt`, so
-editing it invalidates the per-region reuse key for all 693 cooked regions and
-the next build re-cooks the whole world. It also inverts the failure mode. Today
-a wrong binding can only open terrain that should be shut, in five slots; after
-that change a missing binding walls a room off, in every slot with a gate. The
-generator refuses a per-slot total over `world::SCRIPT_EDGE_SLOTS` and
-`tests/test_boss_arena.py` checks the join in both directions, which is the
-guard that change would need before it is worth making.
+The cost of getting there was a whole-world recook, because of where
+`host/cook.py` sits: above the divider in `host/cook_inputs.txt`, so editing it
+invalidates the per-region reuse key for all 693 cooked regions. It also
+inverted the failure mode, on purpose. Before, a wrong binding could only open
+terrain that should be shut, in five slots, and a gate that could never close
+was silent. Now a missing binding walls a room off, in any of the 31 slots with
+a gate, which is a thing a player sees on the first screen. The guards are the
+generator refusing a per-slot total over `world::SCRIPT_EDGE_SLOTS`,
+`tests/test_boss_arena.py` checking the join in both directions against
+`data/regions.json`, and `tests/battle_gates_runtime.rs` asserting the load-time
+exclusion set against the table the guest actually links.
+
+The scratch did not have to grow. The worst slot after the recook is
+Crossroads_08's slot 214 at 11 of the 12 scripted exclusion slots, three gates
+in one view, and no slot carrying a gate also carries a Lifeblood cocoon or the
+Great Door.
 
 ## What a route can see
 

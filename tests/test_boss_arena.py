@@ -66,18 +66,35 @@ class GateTableTests(unittest.TestCase):
                     expected.setdefault((slot, owner[source]), []).append(edge)
         self.assertEqual({(slot, gate): edges for slot, gate, edges in rows()}, expected)
 
-    def test_only_gates_the_source_loads_closed_reach_the_terrain(self):
-        """`host/cook.py` skips a gate the source has open on the first frame.
+    def test_the_placement_state_is_read_off_the_source_and_not_off_the_cook(self):
+        """`PLACEMENT_CLOSED` is the FSM's verdict; `COOKED` is the pack's.
 
-        If that ever stops being true the table has to carry the open ones too,
-        and until it does an unbound gate would be an invisible wall: the exact
-        regression the comment in cook.py records.
+        These used to be the same set, because `host/cook.py` baked only the
+        gates the source loads closed. It bakes every gate now, so the two are
+        independent and the guest's initial exclusion set is the difference
+        between them: `COOKED & ~PLACEMENT_CLOSED`, the gates that are terrain
+        in the pack and open on the first frame. Conflating them again in either
+        direction is a wall or a hole, so each is checked against its own source.
         """
         closed = sum(1 << i for i, gate in enumerate(self.gates) if gate['solid_on_load'])
         self.assertEqual(constant('PLACEMENT_CLOSED'), closed)
-        self.assertEqual(constant('COOKED') & ~closed, 0)
         bound = sum(1 << gate for gate in {gate for _, gate, _ in rows()})
         self.assertEqual(constant('COOKED'), bound)
+
+    def test_every_gate_the_cook_baked_carries_a_binding(self):
+        """A baked gate with no row is terrain nothing can lift.
+
+        This is the failure the cook's old skip made impossible and the recook
+        makes the one to watch: the gate is in the pack, the runtime has no
+        edges for it, and because no gate cooks a sprite the player walks into
+        an invisible wall. `bind` derives the rows from `edge_sources`, so this
+        checks the two halves of that join have not drifted apart.
+        """
+        regions = json.loads(REGIONS.read_text())['regions']
+        owner = {gate['collider_source']: index for index, gate in enumerate(self.gates)}
+        baked = {owner[source] for region in regions
+                 for source in set(region['edge_sources']) if source in owner}
+        self.assertEqual(baked, {gate for _, gate, _ in rows()})
 
     def test_the_shared_exclusion_scratch_holds_every_slot(self):
         """Gates, the Great Door and the Lifeblood cocoons share one list."""
