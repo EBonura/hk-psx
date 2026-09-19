@@ -178,11 +178,14 @@ def cook_fingerprints(source):
     def sha(path):
         with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
     code=hashlib.sha256()
-    # host/cook_inputs.txt is the shared list; the catalog (quality.py) and this
-    # orchestrator do not change a region's cooked bytes, the region spec does.
+    # host/cook_inputs.txt is the shared list. Its postpass section is the whole
+    # difference between the two caches this feeds: the build hashes the file
+    # entire, so a postpass change re-runs the cook, while a base region's key
+    # stops at the divider so that same change reuses all 693 cooked packs.
     for line in (ROOT/'host/cook_inputs.txt').read_text().splitlines():
+        if line.strip()=='# --- postpass only ---':break
         line=line.strip()
-        if not line or line.startswith('#') or line in ('host/quality.py','host/regions.py','host/world.py'):continue  # catalog, orchestration and generator do not change cooked bytes
+        if not line or line.startswith('#'):continue
         code.update(f'{line}:{sha(ROOT/line)}\n'.encode())
     code.update(json.dumps([SCENERY_MAX_AXIS,STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET]).encode())
     inputs=hashlib.sha256();provenance=ROOT/'.hkpsx/regions-provenance.json'

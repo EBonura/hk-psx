@@ -2226,6 +2226,48 @@ And `host/script_ir.py` now has tests. The read-only variable fold is the
 subtlest code in the file, it substitutes a serialized initial value into an
 action, and a wrong answer there is silent rather than a refusal.
 
+## P18 first steps: somebody to talk to
+
+Elderbug stands in Dirtmouth and answers UP with his fresh-save conversation.
+He is the port's first NPC, and what makes him interesting is how little of him
+needed inventing. His talk range is npc_control's own trigger, so it becomes the
+cooked object's bounds. His lines are Conversation Control's entries, flattened
+into panel pages in the order its states run them. His facing is not a guess
+either: `Hero Is Right` and `Hero Is Left` compare against his own
+`localScale.x`, which is +1.25, so the hero standing further right picks Talk
+Right. Three clips, Idle and the two talk directions.
+
+The art rides in the view's own room bank, appended during the postpass rather
+than inside `cook()`. That is a cache decision, not an aesthetic one: cooking it
+inside `cook()` would invalidate all 693 per-region caches for three frames.
+Town's tightest view moves 187 to 204 textures against the 416 budget, exactly
+one slot per frame.
+
+Two deviations are deliberate and worth naming rather than burying. `metElderbug`
+is written when the main entry *opens*, not when it finishes, because that is
+where PlayMaker's `OnEnter` ordering puts it relative to the DialogueBox call
+sitting beside it. And it is a session flag today, not a real PlayerData record,
+which is honest for exactly one NPC and stops being honest at two.
+
+The panel itself is now shared with the tablet reader rather than duplicated,
+and the interlock runs both ways: a tablet cannot open behind a conversation and
+a conversation cannot open behind a tablet.
+
+### A guard that fired on the wrong thing
+
+`tests/test_route_probe` failed five ways after this landed, and the first
+diagnosis offered was wrong. The cause was not the probe's includes. The probe
+checks every cooked pack against `.hkpsx/selected-regions.json`, which sounds
+like the cook report but is a copy of it frozen at the last *guest build*. So
+any cook since then, including this one, makes the guard fire on staleness
+rather than on the half-written pack it exists to catch. Measured directly: the
+live `data/regions.json` matched every pack on disk, the frozen copy disagreed
+about 56 of them.
+
+This mattered more than a failing test because the build now runs the host suite
+before the cook, so the suite was aborting the build ahead of the cook that
+would have refreshed the copy. The probe reads the live report now.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
