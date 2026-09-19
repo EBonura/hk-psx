@@ -41,6 +41,10 @@ pub const KIND_POGO: u16 = 10;
 pub const KIND_CAMERA_LOCK: u16 = 11;
 /// RestBench trigger; payload: seat x, seat y, Knight sit clip base.
 pub const KIND_BENCH: u16 = 12;
+/// BounceShroom trigger. The cooker admits only axis-aligned box colliders,
+/// so the object's bounds are the exact shape the down slash has to meet and
+/// no polygon or payload is carried.
+pub const KIND_SHROOM: u16 = 13;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {

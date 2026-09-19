@@ -513,7 +513,7 @@ def main():
                  draws=cooked['draws'],edges=cooked['edges'],stream_bytes=cooked['stream_bytes'],
                  alpha_cover_bytes=cooked['alpha_cover_bytes'],animation_bytes=cooked['animation_bytes'],format_features=cooked['format_features'],
                  grass=cooked['grass'],grass_impact=cooked.get('grass_impact'),door_debris=cooked.get('door_debris',[]),particle_effects=cooked.get('particle_effects'),breakables=cooked['breakables'],actors=cooked['actors'],
-                 hazards=cooked['hazards'],benches=cooked.get('benches',[]),bench_clip_base=cooked.get('bench_clip_base'),edge_sources=cooked['edge_sources'],
+                 hazards=cooked['hazards'],benches=cooked.get('benches',[]),bench_clip_base=cooked.get('bench_clip_base'),shrooms=cooked.get('shrooms',[]),edge_sources=cooked['edge_sources'],
                  texture_request_to_canonical=cooked['texture_request_to_canonical'])
         grass_indices={sid:index for index,(sid,(typ,_)) in enumerate(
             (item for item in scenes[scene_id].objects.items() if item[1][0]=='GrassCut'))}

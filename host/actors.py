@@ -500,6 +500,44 @@ def hazard_sources(sc, bounds=None):
     return result
 
 
+def shroom_sources(sc, bounds=None):
+    """Enabled BounceShroom triggers, which pogo_sources deliberately refuses.
+
+    NailSlash.OnTriggerEnter2D answers a down slash on one of these with
+    HeroController.ShroomBounce rather than the ordinary Bounce, so the guest
+    needs the trigger box and nothing else: the response is a constant.
+    """
+    result = []
+    for sid, (typ, tree) in sc.objects.items():
+        if typ != 'BounceShroom' or not tree['m_Enabled']:
+            continue
+        gid = tree['m_GameObject']['m_PathID']
+        if not sc.active(gid):
+            continue
+        # The owning object's FSMs are recorded, not cooked: several of them
+        # deactivate their object from PlayerData, which the guest cannot see.
+        fsms = sorted(d['fsm']['name'] for _, (kind, d) in sc.objects.items()
+                      if kind == 'PlayMakerFSM' and d['m_GameObject']['m_PathID'] == gid)
+        for collider in _colliders(sc, gid, _component_records(sc, gid)):
+            if 'bounds' not in collider or not collider['trigger']:
+                continue
+            box = collider['bounds']
+            if bounds and (box[2] < bounds[0] or box[0] > bounds[2] or box[3] < bounds[1] or box[1] > bounds[3]):
+                continue
+            # The guest carries the box alone, so a shape whose bounds are
+            # wider than the collider the source tests would silently grow the
+            # target. Refuse it instead.
+            if any(len(polygon) != 4 or {p[0] for p in polygon} != {box[0], box[2]}
+                   or {p[1] for p in polygon} != {box[1], box[3]}
+                   for polygon in collider['world_polygons']):
+                raise ValueError(f'BounceShroom collider is not an axis-aligned box: {collider["source"]}')
+            result.append({'source': f'{Path(sc.file.name).name}:{sid}', 'collider_source': collider['source'],
+                           'name': sc.gos[gid]['m_Name'], 'bounds': box, 'owner_fsms': fsms,
+                           'limitations': ['Down slash response only: no shroom bob, bounce animation or particles',
+                                           'The owner FSMs are not run, so a PlayerData gate that would deactivate this object is ignored']})
+    return result
+
+
 def pogo_sources(sc):
     """Static, enabled source NailSlash targets; special/dynamic bouncers explicit."""
     by_go = {}

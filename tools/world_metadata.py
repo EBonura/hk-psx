@@ -20,7 +20,7 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13}
 MAX_REVEAL_CONTROLLERS = 16
 MAX_SCENE_ACTORS = 32
 
@@ -228,6 +228,10 @@ def encode_scene(scene, rows):
                 raise ValueError("bench without cooked sit clips: " + record["source"])
             add_object("bench", record, 0xFFFFFFFF, 0, record["bounds"], None,
                        (q(record["position"][0]), q(record["position"][1]), bounded(base, 65536, "bench clip base")))
+        for record in row.get("shrooms", []):
+            # BounceShroom: the trigger box alone. The hero's answer is the one
+            # SHROOM_BOUNCE_VELOCITY constant, so there is nothing per instance.
+            add_object("shroom", record, 0xFFFFFFFF, 0, record["bounds"])
         for record in row.get("camera_locks", []):
             # CameraLockArea: trigger bounds; one two-point polygon carries the
             # resolved (xmin, ymin), (xmax, ymax) camera-centre limits; flag 1

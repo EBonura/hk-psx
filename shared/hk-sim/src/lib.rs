@@ -80,6 +80,9 @@ pub struct Params {
     pub half_width: i32,
     pub bottom: i32,
     pub top: i32,
+    /// `SHROOM_BOUNCE_VELOCITY`: the one-shot rise a BounceShroom answers a
+    /// down slash with. `BOUNCE_SHROOM_TIME` is zero, so there is no hold.
+    pub shroom_speed: i32,
 }
 /// Wall interaction, double jump and super dash, added by P14 step 2.
 impl Params {
@@ -95,7 +98,7 @@ impl Params {
         double_jump_queue_ticks: 0, super_dash_speed: 0, super_dash_charge_ticks: 0,
         super_dash_cancel_ticks: 0, super_dash_recover_ticks: 0,
         ledge_buffer_ticks: 0, head_bump_ticks: 0,
-        half_width: 0, bottom: 0, top: 0,
+        half_width: 0, bottom: 0, top: 0, shroom_speed: 0,
     };
 }
 /// Crystal Heart, as the Hero's Superdash FSM runs it: hold to charge against
@@ -156,6 +159,9 @@ pub struct Player {
     /// Source ledgeBufferSteps and headBumpSteps, both counted down per tick.
     pub ledge_buffer: u16,
     pub head_bump: u16,
+    /// Source cState.shroomBouncing: held for the rise a BounceShroom started,
+    /// during which HeroController.Bounce refuses an ordinary pogo.
+    pub shroom_bouncing: bool,
     /// Set by `Nail::tick` so the source's CanDash can refuse a dash during an
     /// attack's active window, as it reads cState.attacking there.
     pub attack_recovering: bool,
@@ -202,6 +208,7 @@ impl Player {
             has_super_dash: false,
             ledge_buffer: 0,
             head_bump: 0,
+            shroom_bouncing: false,
             attack_recovering: false,
             animation: 0,
             animation_tick: 0,
@@ -251,6 +258,20 @@ impl Player {
         } else {
             self.dash_queue += 1;
         }
+    }
+    /// `HeroController::ShroomBounce`, which NailSlash's down slash calls in
+    /// place of the ordinary bounce when the target carries a BounceShroom.
+    /// Both air abilities come back and the rise replaces the velocity
+    /// outright; there is no timer, so the rise simply runs out under gravity.
+    pub fn shroom_bounce(&mut self, p: Params) {
+        self.double_jumped = false;
+        self.air_dashed = false;
+        self.shroom_bouncing = true;
+        // The source leaves cState.jumping alone here, but this port re-pins
+        // the jump hold's velocity every tick, so an unfinished hold would eat
+        // the impulse. The ordinary pogo ends the hold for the same reason.
+        self.jumping = false;
+        self.vy = p.shroom_speed;
     }
     /// The Superdash FSM's button, sampled once per tick before `step`.
     /// Charging needs the ground or a wall slide, letting go early cancels,
@@ -523,6 +544,11 @@ impl Player {
             self.wall_sliding = false;
             self.double_jumped = false;
             self.double_jumping = false;
+        }
+        // Source Update: the shroom flag lasts exactly as long as the rise it
+        // started, and a ceiling or a floor ends that rise as surely as gravity.
+        if self.shroom_bouncing && self.vy <= 0 {
+            self.shroom_bouncing = false;
         }
         self.super_dash = match self.super_dash {
             // Hit Wall: the sweep refused part of the step, so a wall is there.
@@ -1139,6 +1165,91 @@ mod priority_tests {
         p.dash_input(P, false);
         p.dash_input(P, true);
         assert_eq!(p.dash_left, P.dash_ticks);
+    }
+}
+
+/// P11 step 4: the bouncy target. The world side decides what the down slash
+/// meets; this is only what the hero does once it has met one.
+#[cfg(test)]
+mod shroom_tests {
+    use super::*;
+    const P: Params = Params {
+        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
+        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
+        shroom_speed: 25 * ONE,
+        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+    };
+    /// Open air: nothing but gravity acts on the rise.
+    fn free(p: &mut Player, jump: bool) {
+        p.step(P, 0, jump, 0, |_| [0; 4]);
+    }
+    /// The highest the Knight gets above where it started, over `ticks`.
+    fn apex(mut p: Player, jump: bool, ticks: u32) -> i32 {
+        let start = p.y;
+        let mut top = 0;
+        for _ in 0..ticks {
+            free(&mut p, jump);
+            top = top.max(p.y - start);
+        }
+        top
+    }
+    #[test]
+    fn the_bounce_replaces_the_fall_and_gives_back_the_air_abilities() {
+        let mut p = Player::spawn(0, 20 * ONE);
+        p.vy = -12 * ONE;
+        p.air_dashed = true;
+        p.double_jumped = true;
+        p.shroom_bounce(P);
+        assert_eq!(p.vy, P.shroom_speed, "the source sets the velocity outright");
+        assert!(p.shroom_bouncing);
+        assert!(!p.air_dashed && !p.double_jumped, "ShroomBounce clears both");
+    }
+    #[test]
+    fn the_flag_lasts_exactly_as_long_as_the_rise() {
+        let mut p = Player::spawn(0, 0);
+        p.shroom_bounce(P);
+        let mut ticks = 0;
+        while p.shroom_bouncing {
+            free(&mut p, false);
+            ticks += 1;
+            assert_eq!(p.shroom_bouncing, p.vy > 0, "tick {ticks}");
+        }
+        // 25 units of rise shed at 47 a second, sampled at 60 Hz.
+        assert_eq!(ticks, 32);
+    }
+    #[test]
+    fn a_ceiling_ends_the_flag_with_the_rise() {
+        const CEILING: [[i32; 4]; 1] = [[-40 * ONE, 4 * ONE, 40 * ONE, 4 * ONE]];
+        let mut p = Player::spawn(0, 0);
+        p.shroom_bounce(P);
+        for _ in 0..20 {
+            p.step(P, 0, false, 1, |i| CEILING[i]);
+            if !p.shroom_bouncing {
+                break;
+            }
+        }
+        assert_eq!(p.vy, 0, "the head bump stopped the rise short");
+        assert!(!p.shroom_bouncing, "and the flag went with it");
+        assert_eq!(p.y + P.top, 4 * ONE);
+    }
+    #[test]
+    fn the_impulse_survives_an_unfinished_jump_hold() {
+        let mut p = Player::spawn(0, 0);
+        p.grounded = true;
+        free(&mut p, true);
+        assert!(p.jumping, "the hold is still running");
+        p.shroom_bounce(P);
+        free(&mut p, true);
+        assert_eq!(p.vy, P.shroom_speed - P.gravity / 60, "the hold cannot re-pin JUMP_SPEED");
+    }
+    #[test]
+    fn the_shroom_throws_the_knight_higher_than_its_own_jump() {
+        let mut held = Player::spawn(0, 0);
+        held.grounded = true;
+        let mut bounced = Player::spawn(0, 0);
+        bounced.shroom_bounce(P);
+        assert!(apex(bounced, false, 120) > apex(held, true, 120),
+                "SHROOM_BOUNCE_VELOCITY beats a fully held JUMP_SPEED");
     }
 }
 
