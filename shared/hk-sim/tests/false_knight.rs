@@ -358,6 +358,77 @@ fn the_turn_writes_its_facing_before_its_clip_plays() {
     assert_eq!(turn_ticks, TURN_TICKS, "Turn holds for the length of its own clip");
 }
 
+/// Every `Effect` in a list, in order, so a site that moved shows up as a
+/// different sequence rather than as a missing boolean.
+fn effects(actions: &[Action]) -> std::vec::Vec<Effect> {
+    actions
+        .iter()
+        .filter_map(|a| match a {
+            Action::Effect(effect) => Some(*effect),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_slam_swings_before_the_mace_reaches_the_floor() {
+    let mut fight = Fight::new(13, true);
+    // `Start Fall` is the first BigShake of the fight, before a tick has run.
+    assert!(fight.boss.battle_start().contains(Action::Effect(Effect::BigShake)));
+    fight.until(600, |f| f.boss.phase() == Phase::Landing);
+    assert_eq!(effects(&fight.seen), [Effect::LandingShake], "`State 2`");
+    let before = fight.seen.len();
+    fight.until(6000, |f| f.boss.phase() == Phase::SlamStrike);
+    assert_eq!(effects(&fight.seen[before..]).last(), Some(&Effect::Swing), "`S Attack`");
+    let before = fight.seen.len();
+    // `Slam` sits between `S Attack` and the recovery that carries the wave.
+    fight.until(600, |f| f.boss.phase() == Phase::SlamRecover);
+    assert_eq!(effects(&fight.seen[before..]), [Effect::BigShake], "`Slam`");
+}
+
+/// `Jump`, `S Jump`, `JA Jump` and `Jump 2` each send EnemyKillShake. `JA Jump
+/// 2`, the death jump, shares this port's launch arm with three of them and
+/// sends nothing, which is the one place a shared arm does not mean a shared
+/// effect.
+#[test]
+fn every_launch_but_the_death_jump_shakes_the_camera() {
+    let mut fight = Fight::new(11, true);
+    fight.boss.battle_start();
+    fight.until(600, |f| f.boss.phase() == Phase::Landing);
+    let before = fight.seen.len();
+    fight.until(600, |f| f.boss.phase() == Phase::Airborne);
+    assert_eq!(effects(&fight.seen[before..]), [Effect::JumpShake], "`Jump`");
+    let before = fight.seen.len();
+    // `Land Noise` is the only landing state that plays its voice with no shake.
+    fight.until(600, |f| f.boss.phase() == Phase::Landing);
+    assert_eq!(effects(&fight.seen[before..]), [Effect::Landing], "`Land Noise`");
+    for _ in 0..STAGGERS {
+        fight.to_opened();
+        fight.kill_head();
+        fight.through_rage();
+    }
+    assert_eq!(fight.boss.phase(), Phase::DeathJumpAntic);
+    let before = fight.seen.len();
+    fight.until(600, |f| f.boss.phase() == Phase::DeathAir);
+    assert!(effects(&fight.seen[before..]).is_empty(), "`JA Jump 2` sends no shake");
+}
+
+#[test]
+fn the_rage_shakes_once_per_slam_and_its_landing_shakes_not_at_all() {
+    let mut fight = Fight::new(19, true);
+    fight.boss.battle_start();
+    fight.until(600, |f| f.boss.phase() == Phase::Landing);
+    fight.to_opened();
+    fight.kill_head();
+    // `Jump 2` launches the rage, and the state it lands in plays no clip and
+    // sends no shake, so the next effect is the first `Rage Slam`.
+    fight.until(4000, |f| f.boss.phase() == Phase::RageAir);
+    let before = fight.seen.len();
+    fight.until(6000, |f| matches!(f.boss.phase(), Phase::RageEnd | Phase::DeathJumpAntic));
+    assert_eq!(effects(&fight.seen[before..]),
+               std::vec::Vec::from([Effect::RageSlam; RAGE_SLAMS as usize]));
+}
+
 #[test]
 fn the_two_child_hitboxes_sit_where_the_source_colliders_do() {
     // Both are already multiplied by the body's 1.3 transform scale, and both

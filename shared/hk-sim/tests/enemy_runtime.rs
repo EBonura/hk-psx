@@ -135,6 +135,39 @@ mod battle_gates {
     pub fn close(scene: usize) { record("close", scene); }
     pub fn open(scene: usize) { record("open", scene); }
 }
+/// The camera and the SPU, which the boss reaches through two global modules
+/// the real guest keeps in `static mut`. A shared static cannot be asserted
+/// against while the other cases in this file run beside it, so both record
+/// into one per-thread log here. One log rather than two, because the order is
+/// the interesting part: `S Attack` swings and then `Slam` shakes, where the
+/// jump attack's `JA Slam` shakes and then `JA Hit 2` swings.
+mod boss_effects {
+    std::thread_local! {
+        pub static LOG: std::cell::RefCell<Vec<&'static str>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+    pub fn record(what: &'static str) { LOG.with(|l| l.borrow_mut().push(what)); }
+    pub fn take() -> Vec<&'static str> { LOG.with(|l| l.borrow_mut().drain(..).collect()) }
+}
+mod camera {
+    /// `game/src/camera.rs` declares these; `tests/camera_shake_runtime.rs`
+    /// drives the real module over the serialized `CameraShake` table.
+    #[allow(dead_code)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum Shake { Small, Kill, Average, Big }
+    pub fn request(kind: Shake) {
+        crate::boss_effects::record(match kind {
+            Shake::Small => "shake small",
+            Shake::Kill => "shake kill",
+            Shake::Average => "shake average",
+            Shake::Big => "shake big",
+        });
+    }
+}
+mod audio {
+    pub fn boss_land() { crate::boss_effects::record("land voice"); }
+    pub fn boss_swing() { crate::boss_effects::record("swing voice"); }
+}
 #[path = "../../../game/src/enemies.rs"]
 mod enemies;
 const SPEC: ActorSpec = ActorSpec {
@@ -952,4 +985,44 @@ fn a_persisted_arena_quick_opens_its_gates_and_refuses_to_fight() {
     // Still hanging in the ceiling slab at its authored transform, undrawn.
     assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap(), (0, 8 * ONE, 65));
     assert!(submitted(&w, &r, &room).is_empty());
+}
+
+/// The one thing that proves the shake and the two voices are wired rather than
+/// merely present: `camera::request`, `audio::boss_land` and `audio::boss_swing`
+/// have no other caller in the guest, so if this arm is dropped the guest still
+/// builds, every other case here still passes, and the fight goes silent.
+#[test]
+fn the_fight_reaches_the_camera_and_the_spu() {
+    let bytes = boss_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = boss_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(10 * ONE, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    for _ in 0..120 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert!(boss_effects::take().is_empty(), "`Dormant` sends nothing at all");
+    // `Start Fall` shakes as the body is released from the ceiling slab, and
+    // `State 2` lands it with AverageShake over the landing voice.
+    p.x = 0;
+    for _ in 0..120 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert_eq!(boss_effects::take(), vec!["shake big", "shake average", "land voice"]);
+    let mut log: Vec<&'static str> = Vec::new();
+    let slam = |log: &[&'static str]| log.windows(2).any(|pair| pair == ["swing voice", "shake big"]);
+    for _ in 0..4000 {
+        tick(&mut w, &r, &room, &mut p, &mut Vitals::new(VITAL_PARAMS), &n);
+        log.extend(boss_effects::take());
+        if slam(&log) {
+            break;
+        }
+    }
+    assert!(log.contains(&"shake kill"), "a launch sends EnemyKillShake: {log:?}");
+    assert!(log.contains(&"land voice"), "and a landing plays its own voice: {log:?}");
+    // `S Attack` swings and `Slam` shakes eight ticks later. The jump attack
+    // fires the same two the other way round, so this order is the slam's.
+    assert!(slam(&log), "the slam has to reach the camera: {log:?}");
 }
