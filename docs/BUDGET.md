@@ -7,15 +7,15 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |364,976|
-| Code-to-data alignment |0|
-| Linked data, including menu, HUD and sound bank |720,464|
-| BSS, including shared scene arena and runtime pools |862,100|
-| Total static span |1,947,540|
+| Linked code |551,940|
+| Code-to-data alignment |12|
+| Linked data, including menu, HUD and sound bank |467,952|
+| BSS, including shared scene arena and runtime pools |848,668|
+| Total static span |1,868,572|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |34,668|
+| Unallocated gap before reserved stack |113,636|
 
 Static data ends at `0x801eb794`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
@@ -258,3 +258,30 @@ gaps below ambience are another 16,912; the ring itself is 16,384. That
 together with the 4 kHz clip fits, but it relocates every audio bank's base
 address and changes the cue mask layout, so it is its own change rather than a
 tail on this one.
+
+## What bounded the P14 and P15 work (build 133)
+
+Linked headroom is 113,636 bytes, down from
+166,876 at build 107. Three decisions this session were budget decisions, and
+the number that decided each is worth keeping, because two of them look like
+code problems and are not.
+
+**The per-region texture budget, not RAM, is the binding constraint on art.**
+`TEXTURE_BUDGET` is 416 CLUT slots per region. Adding the Knight's ability clips
+to the per-region bank put the tightest region at 419 with all ten clips, 421
+with only the four movement clips, and still 418 with three of them. Admitting
+two Climbers whose recognizer already accepts them would put Crossroads_03 at
+421. Both were abandoned rather than tuned, and the Climber projection is a
+floor rather than an estimate: `similarity_dedup` protects every animation
+frame, so none of a new actor's frames can be collapsed.
+
+**The way past it is the Hollow Shade's route**, which costs linked RAM instead
+of textures. 97 ability frames across 16 clips are 36,190 linked bytes and one
+CLUT row, taken from the fourteen the Shade reserved at y482 and never used.
+That is why the ability animations ship and the Climbers do not: the abilities
+are usable in every view, so they had somewhere else to live; a Climber belongs
+to two specific scenes, so it does not.
+
+**The scene arena is 421,128 bytes** and the ambience clip's
+4 kHz recook freed the last large block. Taking the remaining SPU half still
+needs the relocation described above, and nothing this session touched it.
