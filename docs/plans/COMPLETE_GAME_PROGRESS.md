@@ -52,7 +52,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P11 | in progress | Steps 1 and 4 done for the admitted world. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. The `BounceShroom` in Crossroads_38 is implemented as the down slash target it actually is, with its `fatGrubKing` gate recorded rather than evaluated. Owed: the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
 | P16 | in progress | Step 1 done. `host/items.py` catalogs 40 charms with notch costs and PlayerData fields, 26 equipment entries, and the fragment fusion rules from the prefabs the pickups spawn. The slice contains 6 charms, 1 notch, 3 mask shards, 1 vessel fragment, 3 relics and the City Crest, none of it implemented. Charm effects belong to steps 5 and 6 and are not read. |
 | P17 | in progress | Step 1 done. `host/shops.py` catalogs Sly's stock and the stag rules, and found that prices come from an encrypted sheet rather than the serialized `cost`, which is stale on 9 of 14 items. Every `ShopMenuStock` is in an unadmitted scene, so no purchase is reachable; the whole economy loop in the slice is 1,177 Geo earned against 230 Geo of sinks. |
-| P18 | in progress | Step 1 done. `host/npcs.py` catalogs 27 NPCs, their gates and 154 decrypted dialogue keys. On a fresh save only Elderbug and the Jiji door are talkable in Dirtmouth; the other eight are gated on progression the port cannot reach. Dialogue selection is a priority list, verified from PlayMaker.dll and now pinned by a test in the script executor. Nothing is implemented: Dirtmouth still has no people in it. |
+| P18 | in progress | Step 1 done. `host/npcs.py` catalogs 27 NPCs, their gates and 154 decrypted dialogue keys. On a fresh save only Elderbug and the Jiji door are talkable in Dirtmouth; the other eight are gated on progression the port cannot reach. Dialogue selection is a priority list, verified from PlayMaker.dll and now pinned by a test in the script executor. Steps 1 and 2 have their first instance: Elderbug stands in Dirtmouth and holds his whole fresh-save conversation. His talk range is npc_control's own trigger cooked as world-bank kind 14, his six pages are Conversation Control's entries, his facing comes from the `Hero Is Right`/`Hero Is Left` compare against his own `localScale.x`, and his three clips ride Town's room bank for 18 of its 212 spare texture slots. Verified on the disc, not only in the cook: the `town-elderbug` route walks into his trigger, opens with UP and pages through all six entries with X, and a captured frame shows him drawn in front of the bench. Owed: `metElderbug` is a session flag rather than a PlayerData record, conversation selection takes the fresh-save branch only, and four scenes (Tutorial_01, Crossroads_03, Crossroads_01, Crossroads_13) have too little texture headroom to hold an NPC at all. |
 | P12, P21-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
@@ -2267,6 +2267,30 @@ about 56 of them.
 This mattered more than a failing test because the build now runs the host suite
 before the cook, so the suite was aborting the build ahead of the cook that
 would have refreshed the copy. The probe reads the live report now.
+
+## The texture budget, measured where it actually binds
+
+Three separate pieces of art work were being sized against the wrong number, so
+`tools/texture_headroom.py` now answers the question properly. The 416-slot CLUT
+budget is per view, which means a scene's real answer is its worst view, and the
+two questions people ask have very different answers.
+
+Art that stands in one place is measured against its own scene. Town has 212
+slots left, most Crossroads scenes have between 90 and 280, and Elderbug's three
+frames cost 18, six per frame.
+
+Art that has to exist in every view is measured against the tightest view
+anywhere, and that is **3 slots**, set by Tutorial_01 view 47 sitting at 413 of
+416. Three is small enough to settle a design question rather than inform one: a
+pause-screen charm icon, a HUD element, anything resident, either goes through
+the Hollow Shade route (frames in linked RAM reaching VRAM through shared
+animation slots) or it does not go. Forty charm icons at six slots each would be
+240, against a global three.
+
+Two things follow that were not obvious before measuring. Four scenes cannot
+hold a three-clip NPC at all: Tutorial_01, Crossroads_03, Crossroads_01 and
+Crossroads_13 have 3, 10, 13 and 13. And Tutorial_01, the scene the game opens
+in, is the constraint on every resident-art decision in the whole port.
 
 ## Required package completion record
 
