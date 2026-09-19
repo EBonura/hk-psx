@@ -64,10 +64,15 @@ fn main() {
     let mut scene = world::scene_of(index);
     let mut bank = admit_scene(scene);
     let mut player = Player::spawn(SPAWN.0, SPAWN.1);
-    // Every ability is granted: the probe is a diagnostic for authoring routes,
-    // and a route that never presses L1, R1 or Triangle is unaffected.
+    // Only the abilities that need a button are granted, so a route that never
+    // presses L1, R1 or Triangle behaves exactly as the guest does. The Mantis
+    // Claw is deliberately withheld: a wall slide and a wall jump need no
+    // button at all, so granting it would make any route that presses into a
+    // wall in mid-air slide or kick off here and not on the disc. That cost a
+    // route once already. `--claw` grants it for deliberate wall authoring.
+    let claw = std::env::args().any(|a| a == "--claw");
     player.has_dash = true;
-    player.has_walljump = true;
+    player.has_walljump = claw;
     player.has_double_jump = true;
     player.has_super_dash = true;
     player.has_shade_cloak = true;
