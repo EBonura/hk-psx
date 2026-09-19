@@ -1,6 +1,7 @@
 """Generate bounded guest metadata from cooked region indices, never raw Unity."""
 import json
 import math
+from pathlib import Path
 from source import ROOT
 from actors import generated_actor_specs
 import sys
@@ -202,7 +203,9 @@ def locate_region(regions, scene_id, xy):
     return None
 
 
-def generate(report):
+def generate(report, out_path=None):
+    """Write the guest region metadata. `out_path` diverts it for a dry run,
+    so a catalogue change can be checked without touching the shared table."""
     regions = report['regions']
     if [r['chunk_id'] for r in regions] != list(range(1, len(regions) + 1)):
         raise ValueError('region chunks must be contiguous and start at one')
@@ -345,7 +348,7 @@ def generate(report):
                        rect(gate['trigger_bounds']) + ',spawn:' + arr(map(q, xy)) + f',entry_vy:{entry_vy},side:{side},delay_ticks:{delay_ticks}' + '},')
     out.append('];')
     result = '\n'.join(out) + '\n'
-    (ROOT/'data/regions.rs').write_text(result)
+    Path(out_path or ROOT/'data/regions.rs').write_text(result)
     return result
 
 

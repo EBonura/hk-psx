@@ -125,6 +125,54 @@ def postpack_camera_locks(report):
         region['camera_locks']=locks
 
 
+def door_destination(sc, gid):
+    """Where a door leads, from the FSM that actually performs its transition.
+
+    A TransitionPoint carrying a `Door Control` FSM is never walked out of. `In
+    Range` listens for UP and `Change Scene` calls `BeginSceneTransition`, so
+    the component's own `targetScene` and `entryPoint` are not read on the way
+    out, and eleven of the seventeen doors in the admitted scenes show it: nine
+    leave the pair empty, Crossroads_01's `door1` has the two fields transposed
+    and Town's `room_grimm` names a scene its FSM does not.
+
+    Two things make the FSM readable rather than a guess. The action's own
+    inline `sceneName`/`entryGateName` are stale editor defaults, `Room_temple`
+    on every door in these scenes, and the shipped values are in the FSM
+    variables the action points at; and no enabled action in any admitted scene
+    writes `New Scene` or `Entry Gate`, so the serialized variable is the value
+    the door departs with.
+
+    Returns None whenever any of that cannot be read, which leaves the gate
+    exactly as it is today. A door with no edge is visible the moment someone
+    walks into it; a door with the wrong edge sends the player to the wrong room.
+    """
+    from focus import action_fields
+    doors=[comp['fsm'] for _,(kind,comp) in sc.objects.items()
+           if kind=='PlayMakerFSM' and comp['m_GameObject']['m_PathID']==gid
+           and comp['fsm']['name']=='Door Control']
+    if len(doors)!=1:
+        return None
+    fsm=doors[0]
+    variables={v['name']:v['value'] for group in fsm['variables'].values()
+               if isinstance(group,list) for v in group
+               if isinstance(v,dict) and 'name' in v and 'value' in v}
+    found=[]
+    for state in fsm['states']:
+        data=state['actionData']
+        for i,name in enumerate(data['actionNames']):
+            if data['actionEnabled'][i] and name.rsplit('.',1)[-1]=='BeginSceneTransition':
+                found.append(action_fields(data,i))
+    if len(found)!=1:
+        return None
+    def literal(field):
+        if not isinstance(field,dict):
+            return None
+        value=variables.get(field['name']) if field.get('useVariable') else field.get('value')
+        return value if isinstance(value,str) and value else None
+    scene=literal(found[0]['sceneName']);gate=literal(found[0]['entryGateName'])
+    return (scene,gate) if scene and gate else None
+
+
 def scene_metadata(sc, info):
     result=dict(info, gates=[], camera_locks=[])
     result['grass_state_count']=sum(typ=='GrassCut' for typ,_ in sc.objects.values())
@@ -161,6 +209,20 @@ def scene_metadata(sc, info):
                             value=action_fields(data,i)['time'];value=value['value'] if isinstance(value,dict) else value
                             row['collider_delay']=float(value)
             row['collider_initially_enabled']=all(col.get('m_Enabled',1) for _,(kind,col) in sc.objects.items() if kind=='BoxCollider2D' and col['m_GameObject']['m_PathID']==gid)
+            door=door_destination(sc,gid)
+            if door:
+                row['door_control']={'target_scene':door[0],'entry_point':door[1]}
+                serialized=(row['target_scene'],row['entry_point'])
+                if not any(serialized):
+                    row['target_scene'],row['entry_point']=door
+                elif serialized!=door:
+                    # Two records of the same destination that disagree. The FSM
+                    # is what the source departs through, so the component is
+                    # almost certainly the stale one, but almost certainly is
+                    # what this refuses on: Crossroads_01's door1 is the only
+                    # case and it produces no gate today either. Both are
+                    # recorded so the choice can be made on the evidence later.
+                    row['door_control']['disagrees_with_serialized']=True
             result['gates'].append(row)
         else:
             row['serialized_limits']={k:v for k,v in tree.items() if k.startswith('camera') or k.startswith('preventLook')}

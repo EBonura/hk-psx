@@ -932,12 +932,12 @@ def collect():
                 'does not contain, Sly included. Dirtmouth carries his door and the '
                 'shop interior is a separate scene.',
                 'Room_shop fits every residency budget with room to spare; see '
-                'admission_cost. What blocks it is the door, not the budget: Town\'s '
-                'door_sly is an enabled TransitionPoint with an empty targetScene, '
-                'because Door Control sets New Scene at runtime, and host/world.py '
-                'only emits a Gate whose serialized targetScene names an admitted '
-                'scene. Room_shop\'s own left1 already targets Town/door_sly, so the '
-                'way out would cook and only the way in would not.',
+                'admission_cost. Its way in is Dirtmouth\'s door_sly, whose '
+                'serialized targetScene is empty because the Door Control FSM holds '
+                'the destination (Room_shop, entry gate left1). regions.'
+                'door_destination reads that FSM, so the gate cooks as soon as the '
+                'scene is admitted, and Room_shop\'s own left1 already targets '
+                'Town/door_sly for the way back.',
                 'The only station in the slice is Crossroads_47. Its toll can be paid '
                 'and the station opened, but the only destination inside the slice is '
                 'Crossroads_47 itself, which Current Location Check cancels. Every '
