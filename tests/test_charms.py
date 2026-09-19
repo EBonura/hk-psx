@@ -96,7 +96,12 @@ class CharmRuntimeTests(unittest.TestCase):
                  '--extern', 'hk_sim=' + str(library), '-L', 'dependency=' + str(library.parent / 'deps'),
                  '-o', str(binary)], env=env, capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
-            run = subprocess.run([str(binary)], capture_output=True, text=True)
+            # Serialised, because the charm tests share one process-wide
+            # `static mut STATE`: the module owns the live board the way the
+            # guest does. Ordering is no longer a hazard (each case that
+            # touches it resets first) but parallel access to a `static mut`
+            # is a race whatever the order. tests/test_shop.py does the same.
+            run = subprocess.run([str(binary), '--test-threads=1'], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
 
 

@@ -552,6 +552,11 @@ mod tests {
     }
     #[test]
     fn the_cheat_grant_takes_back_only_what_it_gave() {
+        // Set up rather than clean up. `state()` is one process-wide `static
+        // mut` shared by every test in the binary, so a case that only resets
+        // on the way out passes in declaration order and fails the moment
+        // anything runs before it. Adding a second test module to the same
+        // binary is enough to reorder them.
         let s = state();
         *s = owning(&[GRUBSONG]);
         grant_all(true);
@@ -562,7 +567,6 @@ mod tests {
         assert!(s.owns(GRUBSONG), "a charm the save already held stays owned");
         assert!(!s.owns(SOUL_CATCHER) && !s.equipped(SOUL_CATCHER));
         assert_eq!(s.filled(), 0, "nothing worn survives losing its charm");
-        *state() = State::new();
     }
     #[test]
     fn a_record_that_contradicts_itself_is_refused() {
@@ -585,6 +589,7 @@ mod tests {
     }
     #[test]
     fn the_screen_pages_the_list_and_reports_the_refusal() {
+        *state() = State::new();
         let mut screen = Screen::new();
         screen.enter();
         assert_eq!(screen.top(), 0);
