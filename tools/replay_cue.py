@@ -34,6 +34,10 @@ WATCHES+='HK_SCRIPT_ACTIVE HK_SCRIPT_TRANSITIONS HK_SCRIPT_WRITES HK_SCRIPT_FLAG
 # landed and never watched, which left every ability route asserting a
 # position instead.
 WATCHES+=['HK_ABILITY_DRAWN']
+# Sly's counter. The Knight stands still while the shelf is up and a purchase
+# moves only the wallet, which a Geo rock also moves, so without these the
+# shop has nothing a replay can assert.
+WATCHES+='HK_SHOP_OPENED HK_SHOP_CLOSED HK_SHOP_PURCHASES HK_SHOP_GEO_SPENT HK_SHOP_OPEN HK_SHOP_PROMPT'.split()
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def main():
