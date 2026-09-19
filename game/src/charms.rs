@@ -266,6 +266,16 @@ pub fn vitals(base: VitalParams) -> VitalParams {
     compose(state(), base)
 }
 fn compose(s: &State, mut base: VitalParams) -> VitalParams {
+    // Nothing equipped is the overwhelmingly common case and it is on a very
+    // hot path: `params` is called several times a tick, by `hurt`, `maintain`,
+    // `new_vitals` and the enemy soul gain. Walking all 40 charms there cost
+    // enough per tick to move kings-return 3.2 units and two masks, because a
+    // frame that slips past a VBlank boundary changes how many simulation ticks
+    // fall between two input polls. The route's combat was identical; only its
+    // timing moved. Nothing below this line runs for an empty board.
+    if s.equipped == 0 {
+        return base;
+    }
     for charm in 1..=CHARM_COUNT {
         if !s.equipped(charm) {
             continue;
