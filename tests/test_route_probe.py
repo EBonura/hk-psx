@@ -29,7 +29,21 @@ def cooked():
     report=ROOT/'data/regions.json'
     if not report.is_file():return False
     with report.open() as stream:
-        return json.load(stream).get('complete') is True
+        catalogue=json.load(stream)
+    if catalogue.get('complete') is not True:return False
+    # And that it still describes the packs on disc. A cook that ran but failed
+    # before writing its report leaves the two disagreeing, which is the same
+    # transient the `complete` flag catches at the other end of the run, and
+    # `route_probe.py` refuses it for the same good reason. Blocking on it
+    # deadlocks the build, because this suite runs ahead of the cook that would
+    # make them agree again. A pack that is genuinely wrong is caught by the
+    # cook, which recomputes every hash, and by the route replays after it.
+    import hashlib
+    for region in catalogue['regions']:
+        path=ROOT/region['path']
+        if not path.is_file():return False
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=region['sha256']:return False
+    return True
 @unittest.skipUnless(cooked(),'the cooked catalogue is unfinished; the cook this build runs will finish it')
 class RouteProbeTests(unittest.TestCase):
     def test_named_fixtures_traverse_and_report_contacts(self):

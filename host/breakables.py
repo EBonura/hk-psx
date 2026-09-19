@@ -436,7 +436,7 @@ def battle_gate(sc, gid, fsm):
         'gid': gid, 'position': sc.point(gid), 'start_closed': bool(start_closed),
         # The verdict the cook needs, and the join key it needs it under:
         # world_geometry keys every terrain edge by its collider's source id.
-        'solid_on_load': bool(start_closed), 'collider_source': f'{file}:{body_id}',
+        'solid_on_load': bool(start_closed), 'collider_source': sc.sid(body_id),
         'box': [min(p[0] for p in points), min(p[1] for p in points),
                 max(p[0] for p in points), max(p[1] for p in points)],
         'opens_on': BG_CONTROL_OPEN_EVENT,
@@ -714,7 +714,7 @@ def breakable_sources(sc, bounds=None, errors=None, contract=True):
                 'disabled_collider_ids': sorted(disabled),
                 'off_renderer_sources': [f'{file}:{i}' for i in sorted(off)],
                 'on_renderer_sources': [f'{file}:{i}' for i in sorted(on)],
-                'disabled_collider_sources': [f'{file}:{i}' for i in sorted(disabled)],
+                'disabled_collider_sources': [sc.sid(i) for i in sorted(disabled)],
                 'persistence': persistence, 'audio': _audio(sc, tree), 'mask_fades': fades, 'event_errors': event_errors,
                 'debris': debris, 'fling_speed': [tree['flingSpeedMin'], tree['flingSpeedMax']],
                 'angle_offset': tree['angleOffset'],

@@ -444,11 +444,11 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
             if bound['packets']>CHILD_CAPACITY:raise ValueError(f'draw needs {bound["packets"]} children > {CHILD_CAPACITY}')
             # Preserve individual instances, original ordering and depth parallax.
             texture,cooked_image=scenery_texture(atlas,images,shared_pixels,sid,lambda:sp.image,w,h,t['m_Color']['a'],SCENERY_MAX_AXIS)
-            draw={'source':f'{scene_file}:{i}','sprite':sid,'name':sc.gos[gid]['m_Name'],'texture':texture,'points':points,'scale':scale,'tint':[min(255,round(t['m_Color'][k]*128)) for k in 'rgb'],'z':z,'order':t['m_SortingOrder'],'layer':t['m_SortingLayer']}
+            draw={'source':sc.sid(i),'sprite':sid,'name':sc.gos[gid]['m_Name'],'texture':texture,'points':points,'scale':scale,'tint':[min(255,round(t['m_Color'][k]*128)) for k in 'rgb'],'z':z,'order':t['m_SortingOrder'],'layer':t['m_SortingLayer']}
             material=scenery_material(s,sc.file,t,cooked_image,atlas.quantized[texture][2])
             if material:draw['material']=material
             draws.append(draw);rendered.append(i)
-        except Exception as ex:unsupported.append({'id':f'{scene_file}:{i}','type':typ,'error':str(ex)})
+        except Exception as ex:unsupported.append({'id':sc.sid(i),'type':typ,'error':str(ex)})
     tilemap_fill=append_tilemap_fills(sc,atlas,draws,region,cam_x,cam_y,FOCAL,CAM_Z)
     tilemap_summary={k:v for k,v in tilemap_fill.items()if k!='meshes'}
     dump(out/'tilemap-fill.json',tilemap_fill)
@@ -595,6 +595,11 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # Terrain-only collision. Keep exact world segments; guest handles axis-aligned
     # edges, while unsupported slopes are explicit, never converted into floors.
     edges=[]
+    # Object identity goes through `Scene.sid`, never the room's file name with
+    # a raw index: a scene that additively merges another carries those objects
+    # under shifted ids, so `level46:100154` names nothing while `level48:154`
+    # is the object. The cook built edge sources the second way and the flat
+    # support pass could not open them.
     # An arena gate serializes closed whatever state it loads in, because
     # BG Control's start state is what opens it: `Opened` tests `Start Closed`
     # and sets the collider inactive. Baking the serialized collider made twelve
@@ -609,7 +614,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     for i,(typ,t) in sc.objects.items():
         if typ not in ('EdgeCollider2D','BoxCollider2D','PolygonCollider2D'):continue
         gid=t['m_GameObject']['m_PathID']
-        if f'{scene_file}:{i}' in open_gates:continue
+        if sc.sid(i) in open_gates:continue
         if not sc.active(gid) or not t['m_Enabled'] or t['m_IsTrigger'] or sc.gos[gid]['m_Layer']!=8:continue
         off=t['m_Offset'];paths=[]
         if typ=='BoxCollider2D':
@@ -624,11 +629,11 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
                 if max(a[0],b[0])<collision_bounds[0] or min(a[0],b[0])>collision_bounds[2] or max(a[1],b[1])<collision_bounds[1] or min(a[1],b[1])>collision_bounds[3]:continue
                 if abs(a[0]-b[0])>0.005 and abs(a[1]-b[1])>0.005:
                     if not region.get('allow_slopes'):
-                        unsupported.append({'id':f'{scene_file}:{i}','type':'sloped terrain edge','points':[a,b]});continue
+                        unsupported.append({'id':sc.sid(i),'type':'sloped terrain edge','points':[a,b]});continue
                 a=list(a);b=list(b)
                 if abs(a[0]-b[0])<=0.005:b[0]=a[0]
                 elif abs(a[1]-b[1])<=0.005:b[1]=a[1]
-                edges.append({'source':f'{scene_file}:{i}','a':a[:2],'b':b[:2]})
+                edges.append({'source':sc.sid(i),'a':a[:2],'b':b[:2]})
     draws.sort(key=lambda d:(d['layer'],d['order'],-d['z'],d['source']))
     breakables=bind_breakables(breakables,draws,edges)
     params+=generated_params(constants,dt,nails,grass,draws)
