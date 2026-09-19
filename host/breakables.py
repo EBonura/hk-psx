@@ -713,18 +713,86 @@ def _uncover_targets(sc, gid, fsm, shape):
     return [_named_object(sc, name)]
 
 
-def _particle_outputs(sc, gids, gravity, authored, missing):
-    """Record every emitter in `gids` the bounded particle model cannot run."""
+def _particle_outputs(sc, gids, gravity, authored, missing, played=()):
+    """Record every emitter in `gids` the bounded particle model cannot run.
+
+    `played` is the emitters this instance has resolved an action for, which is
+    what lets a one-shot system with `playOnAwake` off be read as the emitter it
+    is rather than as one nothing starts.
+    """
     from break_effects import part_emitter
     for gid in gids:
         try:
-            found = part_emitter(sc.source, sc, gid, gravity)
+            found = part_emitter(sc.source, sc, gid, gravity, played=gid in played)
         except ValueError as error:
             authored.append(OUTPUT_PARTICLES)
             missing.append({'output': OUTPUT_PARTICLES, 'part': sc.sid(gid), 'reason': str(error)})
             continue
         if found is not None:
             authored.append(OUTPUT_PARTICLES)
+
+
+def _child_bindings(sc, gid, fsm):
+    """Object variable to scene object, for every literal FindChild on the owner.
+
+    `Transform.Find` takes a direct child by name, so the binding is decidable
+    from the serialized hierarchy alone. A lookup aimed at anything but the
+    FSM's own object, or one whose name or result is itself a variable, binds
+    nothing rather than binding a guess.
+    """
+    from focus import action_fields
+    owner = _owner_variable(fsm)
+    children = {}
+    for child in sc.transforms[sc.go_transform[gid]]['m_Children']:
+        found = sc.transforms[child['m_PathID']]['m_GameObject']['m_PathID']
+        children.setdefault(sc.gos[found]['m_Name'], []).append(found)
+    bound = {}
+    for state in fsm['states']:
+        data = state['actionData']
+        for index, raw in enumerate(data['actionNames']):
+            if not data['actionEnabled'][index] or not raw.endswith('.FindChild'):
+                continue
+            fields = action_fields(data, index)
+            target = fields['gameObject']
+            if target['ownerOption'] and target['gameObject'].get('name') != owner:
+                continue
+            if fields['childName']['useVariable']:
+                continue
+            slot = _action_slots(data, index).get('storeResult')
+            if slot is None or data['paramDataType'][slot] != 19:
+                continue
+            stored = data['fsmGameObjectParams'][data['paramDataPos'][slot]]
+            if not stored.get('useVariable') or not stored.get('name'):
+                continue
+            found = children.get(fields['childName']['value'], [])
+            bound[stored['name']] = found[0] if len(found) == 1 else None
+    return bound
+
+
+def _played_emitters(sc, gid, fsm):
+    """Scene objects an enabled PlayParticleEmitter in this FSM starts.
+
+    The action names an FSM object variable rather than an object, so the name
+    is traced back to the literal `FindChild` that binds it. A variable nothing
+    binds resolves to nothing and its emitter stays refused, which is the point:
+    the flag this feeds says an action was resolved, not that one was assumed.
+    """
+    from focus import action_fields
+    bound = _child_bindings(sc, gid, fsm)
+    played = set()
+    for state in fsm['states']:
+        data = state['actionData']
+        for index, raw in enumerate(data['actionNames']):
+            if not data['actionEnabled'][index] or not raw.endswith('.PlayParticleEmitter'):
+                continue
+            target = action_fields(data, index)['gameObject']
+            if not target['ownerOption']:
+                played.add(gid)
+                continue
+            found = bound.get(target['gameObject'].get('name'))
+            if found is not None:
+                played.add(found)
+    return played
 
 
 def _prefab_particles(source, file, ref):
@@ -770,17 +838,147 @@ def _action_parameters(fsm, state_name, action, parameter, kind, table):
     return out
 
 
-def _create_object_prefabs(sc, fsm, state_name):
-    """Every enabled CreateObject prefab in one state, resolved."""
+# FsmVector3 as PlayMaker byte-serializes it: three floats then the UseVariable
+# flag. The record is exactly 13 bytes, so no variable name can follow it, which
+# is what makes a set flag readable as IsNone rather than as a named variable.
+FSM_VECTOR3 = 28
+FSM_VECTOR3_BYTES = 13
+
+
+def _action_slots(data, index):
+    """Parameter name to flat-run index for one action's own slice."""
+    start = data['actionStartIndex'][index]
+    end = (data['actionStartIndex'][index + 1] if index + 1 < len(data['actionNames'])
+           else len(data['paramName']))
+    return {data['paramName'][k]: k for k in range(start, end)}
+
+
+def _vector_parameter(data, slot):
+    """One serialized FsmVector3, or None when the action leaves it unset."""
+    if data['paramDataType'][slot] != FSM_VECTOR3 or data['paramByteDataSize'][slot] != FSM_VECTOR3_BYTES:
+        raise ValueError('unsupported serialized vector parameter')
+    raw = bytes(data['byteData'])
+    start = data['paramDataPos'][slot]
+    if start < 0 or start + FSM_VECTOR3_BYTES > len(raw):
+        raise ValueError('action parameter byte range')
+    if raw[start + 12]:
+        return None
+    value = struct.unpack('<3f', raw[start:start + 12])
+    if not all(math.isfinite(v) for v in value):
+        raise ValueError('non-finite action vector')
+    return value
+
+
+def _owner_variable(fsm):
+    """The object variable GetOwner stores, which is the FSM's own GameObject.
+
+    Both hidden-wall shapes and both cracked-floor shapes bind one, and it is
+    the variable their CreateObject names as its spawn point. Reading it is what
+    turns `Self` into a scene object without trusting the variable's name.
+    """
+    for state in fsm['states']:
+        data = state['actionData']
+        for index, raw in enumerate(data['actionNames']):
+            if not data['actionEnabled'][index] or not raw.endswith('.GetOwner'):
+                continue
+            slot = _action_slots(data, index).get('storeGameObject')
+            if slot is None or data['paramDataType'][slot] != 19:
+                continue
+            stored = data['fsmGameObjectParams'][data['paramDataPos'][slot]]
+            if stored.get('useVariable') and stored.get('name'):
+                return stored['name']
+    return None
+
+
+def _spawn_transform(sc, gid, fsm, data, slots):
+    """Where CreateObject puts the object it instantiates, in world terms.
+
+    PlayMaker starts from the spawn point's own transform, adds the action's
+    literal `position` as an offset, and takes the literal `rotation` when one
+    is authored. Every catalogue instance spawns at its own object, so the only
+    spawn point resolved here is the variable `GetOwner` stores; anything else
+    is refused rather than placed by guess.
+    """
+    point = data['fsmGameObjectParams'][data['paramDataPos'][slots['spawnPoint']]]
+    offset = _vector_parameter(data, slots['position'])
+    rotation = _vector_parameter(data, slots['rotation'])
+    if point['value']['m_PathID'] or not point.get('useVariable'):
+        raise ValueError('the spawn point is not the FSM object variable this port can resolve')
+    owner = _owner_variable(fsm)
+    if owner is None or point.get('name') != owner:
+        raise ValueError(f"the spawn point {point.get('name')!r} is not the object GetOwner stores")
+    origin = sc.point(gid)
+    if offset is not None:
+        origin = [a + b for a, b in zip(origin, offset)]
+    if rotation is None:
+        # Unity would take the spawn point's own eulerAngles here. No catalogue
+        # instance does, so the decomposition that would need is not written.
+        raise ValueError('the spawn takes its rotation from the spawn point, which is not read')
+    return list(origin), rotation
+
+
+def _create_object_prefabs(sc, gid, fsm, state_name):
+    """Every enabled CreateObject prefab in one state, with where it lands.
+
+    Raises through `_spawn_transform` when the spawn cannot be resolved, so a
+    prefab is never placed by assumption.
+    """
     out = []
-    for reference in _action_parameters(fsm, state_name, 'CreateObject',
-                                        'gameObject', 19, 'fsmGameObjectParams'):
-        if reference.get('useVariable'):
+    for state in fsm['states']:
+        if state['name'] != state_name:
             continue
-        found = _prefab_particles(sc.source, sc.file, reference['value'])
-        if found is not None:
+        data = state['actionData']
+        for index, raw in enumerate(data['actionNames']):
+            if not data['actionEnabled'][index] or not raw.endswith('.CreateObject'):
+                continue
+            slots = _action_slots(data, index)
+            if not {'gameObject', 'spawnPoint', 'position', 'rotation'} <= set(slots):
+                raise ValueError('unsupported serialized CreateObject parameters')
+            if data['paramDataType'][slots['gameObject']] != 19:
+                raise ValueError('unsupported serialized CreateObject target')
+            reference = data['fsmGameObjectParams'][data['paramDataPos'][slots['gameObject']]]
+            if reference.get('useVariable'):
+                continue
+            found = _prefab_particles(sc.source, sc.file, reference['value'])
+            if found is None or not found['particles']:
+                # A prefab with no ParticleSystem is not a particle output, so
+                # where it lands never has to be resolved. The break's flung
+                # wood and rock pools are this, and asking them for a spawn this
+                # port can place would refuse the dust beside them.
+                continue
+            found['reference'] = reference['value']
+            found['origin'], found['rotation'] = _spawn_transform(sc, gid, fsm, data, slots)
             out.append(found)
     return out
+
+
+def _prefab_particle_outputs(sc, gid, fsm, states, gravity, authored, missing):
+    """Record every emitter the break's CreateObject prefabs bring with them.
+
+    The refusal this replaces read "no cooked path spawns a prefab", and that
+    stopped being the question once the spawn stopped needing a runtime: the
+    prefab reference and its place are both literals in the action, so
+    break_effects resolves the whole thing at cook time and runs each emitter
+    through the same validator an authored child goes through. What is left is
+    the honest one, which is whether those emitters are reproducible at all.
+    """
+    from break_effects import prefab_emitters
+    for state in states:
+        try:
+            prefabs = _create_object_prefabs(sc, gid, fsm, state)
+        except ValueError as error:
+            authored.append(OUTPUT_PARTICLES)
+            missing.append({'output': OUTPUT_PARTICLES, 'reason': f'the break spawns a prefab and {error}'})
+            continue
+        for prefab in prefabs:
+            authored.append(OUTPUT_PARTICLES)
+            try:
+                prefab_emitters(sc.source, sc.file, prefab['reference'], gravity,
+                                prefab['origin'], prefab['rotation'])
+            except ValueError as error:
+                missing.append({'output': OUTPUT_PARTICLES, 'part': prefab['source'],
+                                'reason': f"the break instantiates the {prefab['name']!r} particle "
+                                          f'prefab, and {error}'})
 
 
 def _break_clips(sc, fsm, state_name):
@@ -859,14 +1057,8 @@ def hidden_wall(sc, gid, index, fsm, shape, gravity, drawn_renderers=None):
     _audio_output(_break_clips(sc, fsm, 'Break'), authored, missing)
     emitters = [g for g in sorted(_descendants(sc, gid) - {gid})
                 if 'ParticleSystem' in {t for _, t, _ in _components(sc, g)}]
-    _particle_outputs(sc, emitters, gravity, authored, missing)
-    for prefab in _create_object_prefabs(sc, fsm, 'Break'):
-        if not prefab['particles']:
-            continue
-        authored.append(OUTPUT_PARTICLES)
-        missing.append({'output': OUTPUT_PARTICLES, 'part': prefab['source'],
-                        'reason': f"the break instantiates the {prefab['name']!r} particle prefab, "
-                                  'and no cooked path spawns a prefab'})
+    _particle_outputs(sc, emitters, gravity, authored, missing, _played_emitters(sc, gid, fsm))
+    _prefab_particle_outputs(sc, gid, fsm, ('Break',), gravity, authored, missing)
 
     uncovers = []
     from reveal_masks import reveal_mask_sources
@@ -1045,14 +1237,8 @@ def cracked_floor(sc, gid, index, fsm, shape, gravity):
     _audio_output(_break_clips(sc, fsm, 'Break') + _break_clips(sc, fsm, 'Break Wood'), authored, missing)
     emitters = [g for g in sorted(_descendants(sc, gid) - {gid})
                 if 'ParticleSystem' in {t for _, t, _ in _components(sc, g)}]
-    _particle_outputs(sc, emitters, gravity, authored, missing)
-    for prefab in _create_object_prefabs(sc, fsm, 'Break') + _create_object_prefabs(sc, fsm, 'Break Wood'):
-        if not prefab['particles']:
-            continue
-        authored.append(OUTPUT_PARTICLES)
-        missing.append({'output': OUTPUT_PARTICLES, 'part': prefab['source'],
-                        'reason': f"the break instantiates the {prefab['name']!r} particle prefab, "
-                                  'and no cooked path spawns a prefab'})
+    _particle_outputs(sc, emitters, gravity, authored, missing, _played_emitters(sc, gid, fsm))
+    _prefab_particle_outputs(sc, gid, fsm, ('Break', 'Break Wood'), gravity, authored, missing)
     renderers = [sc.sid(i) for child in sorted(_descendants(sc, gid) - {gid})
                  for i, t, d in _components(sc, child)
                  if t == 'SpriteRenderer' and d['m_Enabled'] and sc.active(child)]

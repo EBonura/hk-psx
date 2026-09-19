@@ -129,22 +129,66 @@ FLOOR_STAGED = 'b74c4cdb9150a87be0a398b4d50bab0a1ebf40f99c2a1a746768b8573ed72d55
 FLOOR_WOOD = '72a2d729923a6564f3059f52037143bc90ad25cbf7975787bb5d4f59883d3f12'
 
 
-def scene(tree, names, active=None, file='level46'):
+def scene(tree, names, active=None, file='level46', positions=None):
     """A Scene stand-in: `tree` is child gid -> parent gid, 0 for a root."""
     store, gos, transforms, go_transform = {}, {}, {}, {}
     for gid, parent in tree.items():
         tid = gid + 1000
         transforms[tid] = {'m_GameObject': {'m_FileID': 0, 'm_PathID': gid},
-                           'm_Father': {'m_FileID': 0, 'm_PathID': parent + 1000 if parent else 0}}
+                           'm_Father': {'m_FileID': 0, 'm_PathID': parent + 1000 if parent else 0},
+                           'm_Children': []}
         go_transform[gid] = tid
         store[tid] = ('Transform', transforms[tid])
         gos[gid] = {'m_Name': names.get(gid, f'object {gid}'), 'm_Component': [],
                     'm_Layer': b.TERRAIN_LAYER}
+    for gid, parent in tree.items():
+        if parent:
+            transforms[parent + 1000]['m_Children'].append({'m_FileID': 0, 'm_PathID': gid + 1000})
     return SimpleNamespace(objects=store, gos=gos, transforms=transforms,
                            go_transform=go_transform, source=None,
                            file=SimpleNamespace(name=f'/source/{file}'),
                            sid=lambda i: f'{file}:{i}',
+                           point=lambda gid, *rest: (positions or {}).get(gid, (0.0, 0.0, 0.0)),
                            active=lambda gid: (active or {}).get(gid, True))
+
+
+def owner_default(variable=None):
+    """An FsmOwnerDefault: the FSM's own object, or the one a variable holds."""
+    return {'ownerOption': 1 if variable else 0,
+            'gameObject': {'useVariable': int(bool(variable)), 'name': variable or '',
+                           'value': {'m_FileID': 0, 'm_PathID': 0}}}
+
+
+def object_variable(name):
+    return {'useVariable': 1, 'name': name, 'value': {'m_FileID': 0, 'm_PathID': 0}}
+
+
+def vector(x, y, z, unset=False):
+    """An FsmVector3 as PlayMaker byte-serializes it, with its UseVariable flag."""
+    return struct.pack('<3f', x, y, z) + bytes([int(unset)])
+
+
+def refs_fsm(finds=(), plays=(), owner='Self', spawn=None):
+    """A wall-shaped FSM that binds children in `Get Refs` and plays them in `Break`."""
+    refs = Table()
+    if owner:
+        refs.action('GetOwner', [('storeGameObject', 19, object_variable(owner))])
+    for child, variable, target in finds:
+        refs.action('FindChild', [('gameObject', 20, owner_default(target)),
+                                  ('childName', 18, text(child)),
+                                  ('storeResult', 19, object_variable(variable))])
+    run = Table()
+    for variable in plays:
+        run.action('PlayParticleEmitter', [('gameObject', 20, owner_default(variable)),
+                                           ('emit', 16, struct.pack('<i', 0) + b'\0')])
+    if spawn is not None:
+        point, offset, rotation = spawn
+        run.action('CreateObject', [('gameObject', 19, object_variable('')),
+                                    ('spawnPoint', 19, point),
+                                    ('position', 28, offset), ('rotation', 28, rotation)])
+    return {'name': 'breakable_wall_v2', 'startState': 'Get Refs', 'globalTransitions': [],
+            'states': [state('Get Refs', refs), state('Break', run)],
+            'variables': {'categories': ['']}}
 
 
 class DefinitionNames(unittest.TestCase):
@@ -347,7 +391,7 @@ class ContractShape(unittest.TestCase):
         self.assertEqual(b.HIDDEN_WALL_SPELL_ATTACK_TYPE, 2)
 
     def test_a_particle_emitter_the_model_refuses_is_authored_and_missing(self):
-        def refuse(source, sc, gid, gravity):
+        def refuse(source, sc, gid, gravity, played=False):
             raise ValueError('particle simulation space')
 
         authored, missing = [], []
@@ -361,14 +405,14 @@ class ContractShape(unittest.TestCase):
     def test_an_emitter_the_model_runs_is_authored_and_not_missing(self):
         authored, missing = [], []
         sc = scene({1: 0, 2: 1}, {1: 'Breakable Wall', 2: 'Particle_rocks_large'})
-        with patch('break_effects.part_emitter', lambda *a: {'style': {}}):
+        with patch('break_effects.part_emitter', lambda *a, **k: {'style': {}}):
             b._particle_outputs(sc, [2], -60.0, authored, missing)
         self.assertEqual((authored, missing), ([b.OUTPUT_PARTICLES], []))
 
     def test_a_part_that_is_not_an_emitter_authors_nothing(self):
         authored, missing = [], []
         sc = scene({1: 0, 2: 1}, {1: 'Breakable Wall', 2: 'Camera Locks'})
-        with patch('break_effects.part_emitter', lambda *a: None):
+        with patch('break_effects.part_emitter', lambda *a, **k: None):
             b._particle_outputs(sc, [2], -60.0, authored, missing)
         self.assertEqual((authored, missing), ([], []))
 
@@ -391,6 +435,101 @@ class RevealRefusalNamesTheWall(unittest.TestCase):
         with patch.object(b, 'uncover_drivers', lambda sc: {}):
             message = reveal_masks.no_collider_reason(None, 7)
         self.assertEqual(message, reveal_masks.NO_COLLIDER)
+
+
+class ResolvedActions(unittest.TestCase):
+    """An emitter an action starts, and a prefab spawn, are read not assumed.
+
+    Both families author one-shot emitters with `playOnAwake` off, waiting for a
+    `PlayParticleEmitter`. Reading that as "nothing starts this" refused the
+    whole family on a property that was never the blocker, so the action is
+    traced back to the child it names. The same applies to the break's
+    `CreateObject`: its prefab and its place are both literals, so the emitters
+    it brings resolve at cook time instead of needing a runtime that spawns.
+    """
+
+    def wall(self):
+        return scene({1: 0, 2: 1, 3: 1}, {1: 'Breakable Wall', 2: 'Particle_rocks_small',
+                                          3: 'Particle_rocks_large'},
+                     positions={1: (10.0, 20.0, -0.1)})
+
+    def test_a_variable_a_literal_find_child_binds_resolves_to_that_child(self):
+        fsm = refs_fsm(finds=[('Particle_rocks_large', 'Particles Large', None)],
+                       plays=['Particles Large'])
+        self.assertEqual(b._played_emitters(self.wall(), 1, fsm), {3})
+
+    def test_a_lookup_aimed_at_another_object_binds_nothing(self):
+        # `FindChild` on a variable that is not the one GetOwner stores looks
+        # somewhere this port has not resolved, so its result is not a binding.
+        fsm = refs_fsm(finds=[('Particle_rocks_large', 'Particles Large', 'Masks')],
+                       plays=['Particles Large'])
+        self.assertEqual(b._played_emitters(self.wall(), 1, fsm), set())
+
+    def test_an_ambiguous_child_name_binds_nothing(self):
+        sc = scene({1: 0, 2: 1, 3: 1}, {1: 'Breakable Wall', 2: 'Dust', 3: 'Dust'})
+        fsm = refs_fsm(finds=[('Dust', 'Dust Break 1', None)], plays=['Dust Break 1'])
+        self.assertEqual(b._played_emitters(sc, 1, fsm), set())
+
+    def test_an_action_on_the_owner_plays_the_owner(self):
+        self.assertEqual(b._played_emitters(self.wall(), 1, refs_fsm(plays=[None])), {1})
+
+    def test_a_played_emitter_is_the_only_one_the_flag_reaches(self):
+        fsm = refs_fsm(finds=[('Particle_rocks_large', 'Particles Large', None)],
+                       plays=['Particles Large'])
+        seen = {}
+
+        def emitter(source, sc, gid, gravity, played=False):
+            seen[gid] = played
+            return {'style': {}}
+
+        authored, missing = [], []
+        with patch('break_effects.part_emitter', emitter):
+            b._particle_outputs(self.wall(), [2, 3], -60.0, authored, missing,
+                                b._played_emitters(self.wall(), 1, fsm))
+        self.assertEqual(seen, {2: False, 3: True})
+        self.assertEqual(missing, [])
+
+    def test_get_owner_names_the_variable_that_holds_the_fsm_object(self):
+        self.assertEqual(b._owner_variable(refs_fsm()), 'Self')
+        self.assertIsNone(b._owner_variable(refs_fsm(owner=None)))
+
+    def spawn_slots(self, point, offset, rotation):
+        fsm = refs_fsm(spawn=(point, offset, rotation))
+        data = fsm['states'][1]['actionData']
+        return fsm, data, b._action_slots(data, 0)
+
+    def test_an_unset_vector_reads_as_unset_rather_than_as_zero(self):
+        _, data, slots = self.spawn_slots(object_variable('Self'), vector(0, 0, 0, unset=True),
+                                          vector(-72.5, -180.0, -180.0))
+        self.assertIsNone(b._vector_parameter(data, slots['position']))
+        self.assertEqual(b._vector_parameter(data, slots['rotation']), (-72.5, -180.0, -180.0))
+
+    def test_the_spawn_is_the_owner_position_plus_the_literal_offset(self):
+        fsm, data, slots = self.spawn_slots(object_variable('Self'), vector(0, -2, 0),
+                                            vector(-72.5, -180.0, -180.0))
+        origin, rotation = b._spawn_transform(self.wall(), 1, fsm, data, slots)
+        self.assertEqual([round(v, 4) for v in origin], [10.0, 18.0, -0.1])
+        self.assertEqual(rotation, (-72.5, -180.0, -180.0))
+
+    def test_an_unset_offset_leaves_the_owner_position_alone(self):
+        fsm, data, slots = self.spawn_slots(object_variable('Self'), vector(0, 0, 0, unset=True),
+                                            vector(0, 0, 0))
+        origin, _ = b._spawn_transform(self.wall(), 1, fsm, data, slots)
+        self.assertEqual([round(v, 4) for v in origin], [10.0, 20.0, -0.1])
+
+    def test_a_spawn_point_that_is_not_the_owner_is_refused(self):
+        fsm, data, slots = self.spawn_slots(object_variable('Masks'), vector(0, 0, 0),
+                                            vector(0, 0, 0))
+        with self.assertRaises(ValueError) as caught:
+            b._spawn_transform(self.wall(), 1, fsm, data, slots)
+        self.assertIn("'Masks' is not the object GetOwner stores", str(caught.exception))
+
+    def test_a_rotation_taken_from_the_spawn_point_is_refused(self):
+        fsm, data, slots = self.spawn_slots(object_variable('Self'), vector(0, 0, 0),
+                                            vector(0, 0, 0, unset=True))
+        with self.assertRaises(ValueError) as caught:
+            b._spawn_transform(self.wall(), 1, fsm, data, slots)
+        self.assertIn('takes its rotation from the spawn point', str(caught.exception))
 
 
 if __name__ == '__main__':
