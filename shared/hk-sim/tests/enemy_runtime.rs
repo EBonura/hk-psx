@@ -106,6 +106,35 @@ mod world {
         x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]
     }
 }
+/// The save record's PlayerData reserve, which the arena's `Activated` bool and
+/// `falseKnightFirstPlop` ride. The real module links the cooked script bank
+/// this harness has no manifest directory for; what the boss needs from it is
+/// two plain slots, and a per-thread store keeps the parallel cases apart.
+mod script {
+    pub const FIELD_FALSE_KNIGHT_ARENA: usize = 15;
+    pub const FIELD_FALSE_KNIGHT_FIRST_PLOP: usize = 14;
+    std::thread_local! {
+        pub static STORE: std::cell::RefCell<[i32; 16]> = const { std::cell::RefCell::new([0; 16]) };
+    }
+    pub fn player_data(slot: usize) -> i32 { STORE.with(|s| s.borrow()[slot]) }
+    pub fn set_player_data(slot: usize, value: i32) { STORE.with(|s| s.borrow_mut()[slot] = value) }
+}
+/// The arena gates. The real module links the cooked `(slot, gate, edges)`
+/// table, which `tests/battle_gates_runtime.rs` drives directly; what this
+/// harness has to see is that every broadcast leaves the boss with the room it
+/// names, so they are recorded in order.
+mod battle_gates {
+    std::thread_local! {
+        pub static EVENTS: std::cell::RefCell<Vec<(&'static str, usize)>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+    fn record(event: &'static str, scene: usize) { EVENTS.with(|e| e.borrow_mut().push((event, scene))); }
+    pub fn arena_entry(scene: usize, activated: bool) {
+        record(if activated { "quick open" } else { "placement" }, scene);
+    }
+    pub fn close(scene: usize) { record("close", scene); }
+    pub fn open(scene: usize) { record("open", scene); }
+}
 #[path = "../../../game/src/enemies.rs"]
 mod enemies;
 const SPEC: ActorSpec = ActorSpec {
@@ -874,4 +903,53 @@ fn three_conversions_take_it_through_the_death_sequence() {
     assert!(died, "the fight never reached the death event");
     // Three staggers converted: 13 body hits and 8 head hits each, at least.
     assert!(hits >= 63, "the fight took {hits} nail hits, which is too few to have run");
+    // The route counters are one process-wide set and the other boss cases in
+    // this file run beside this one, so what holds here is what interference
+    // can only add to, plus the relation between two of them. Their exact
+    // values belong to a replay, which is the whole reason they exist.
+    unsafe {
+        assert!(enemies::HK_FK_TRIGGERED >= 1 && enemies::HK_FK_DROPPED >= 1);
+        assert!(enemies::HK_FK_CONVERSIONS >= 3, "three phases, from three emptied Heads");
+        // The last exposure empties the Head too, and only the 450-tick tail
+        // after it counts as a death, so a route can tell the two apart.
+        assert!(enemies::HK_FK_DEATHS >= 1);
+        assert!(enemies::HK_FK_STAGGERS >= enemies::HK_FK_CONVERSIONS,
+                "every converted phase cost a stagger first");
+    }
+    // `End Wait` writes `Activated` before its two-second wait and then sends
+    // BG OPEN. Both have to have happened by the time the gates reopen.
+    for _ in 0..hk_sim::boss::END_WAIT_TICKS + 2 {
+        tick(&mut w, &r, &room, &mut p, &mut Vitals::new(VITAL_PARAMS), &n);
+    }
+    assert_eq!(script::player_data(script::FIELD_FALSE_KNIGHT_ARENA), 1,
+               "a won arena has to persist, or a reload re-arms it");
+    let events = battle_gates::EVENTS.with(|e| e.borrow().clone());
+    assert_eq!(events.first(), Some(&("placement", 0)));
+    assert!(events.contains(&("close", 0)), "the trigger shuts the room");
+    assert_eq!(events.last(), Some(&("open", 0)), "and the win reopens it");
+}
+
+/// The reload the whole of `Battle Control`'s `Init` branch exists for: the same
+/// room, entered with the persisted bool set, must place its gates open and
+/// never fight again however long the hero stands in the trigger.
+#[test]
+fn a_persisted_arena_quick_opens_its_gates_and_refuses_to_fight() {
+    let bytes = boss_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = boss_region();
+    script::set_player_data(script::FIELD_FALSE_KNIGHT_ARENA, 1);
+    script::set_player_data(script::FIELD_FALSE_KNIGHT_FIRST_PLOP, 1);
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(0, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    // Standing in the trigger from the first tick, which is the worst case: a
+    // hero who reloads inside the curtain must not re-arm the fight.
+    for _ in 0..600 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert_eq!(battle_gates::EVENTS.with(|e| e.borrow().clone()), vec![("quick open", 0)]);
+    // Still hanging in the ceiling slab at its authored transform, undrawn.
+    assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap(), (0, 8 * ONE, 65));
+    assert!(submitted(&w, &r, &room).is_empty());
 }

@@ -381,9 +381,10 @@ def recognize(sc, room):
             " Crossroads_10's own art, so the clip set is admitted against room bytes rather than"
             ' palettes or animation slots. The per-clip figures are in the animation block and the'
             ' per-view measurement is in docs/FALSE_KNIGHT.md.',
-            'The battle gates are cooked terrain with no per-view edge binding, so BG OPEN reaches'
-            ' nothing and the two that start closed never lift; the arena `Activated`'
-            ' PersistentBoolItem is not saved either.',
+            'BG OPEN and BG QUICK OPEN lift the two gates the source loads closed, through'
+            " host/battle_gates.py's per-view edge binding. The other three are open on the"
+            ' first frame, so host/cook.py bakes no terrain for them and BG CLOSE has nothing'
+            ' to seal: the arena still does not close at its ends.',
             'The sim reproduces FalseyControl at 60 Hz; the source shapes rising and falling speed'
             ' per 50 Hz FixedUpdate, so airtime differs slightly.',
             'The `Esc` branch is unreachable in the Crossroads arena: nothing there sets `Hero Escaped`.',
@@ -512,11 +513,10 @@ def recognize_placement(sc, actor):
             'Six of the thirty-four clips are cooked (Idle, Turn, Jump Antic, Land, Stun Opened,'
             ' Attack); the rest of the fight plays the nearest of those. The limit is'
             " Crossroads_10's 393,216-byte room budget, not palettes: see docs/FALSE_KNIGHT.md.",
-            'BG OPEN, BG CLOSE and BG QUICK OPEN reach nothing. The five battle gates are cooked'
-            ' terrain with no per-view edge binding, so the two that start closed stay closed'
-            ' after the fight is won and the arena never seals at its ends.',
-            'The arena `Activated` PersistentBoolItem is not saved, so a reload re-arms a fight'
-            ' the player has already won.',
+            'BG OPEN and BG QUICK OPEN reach the two gates the source loads closed, which lift'
+            ' for good once the fight is won. BG CLOSE reaches the other three and moves'
+            ' nothing: they are open on the first frame, so host/cook.py bakes no terrain for'
+            ' them and the arena never seals at its ends.',
             'The three pre-battle Zombies are recorded rather than admitted, so KILL ALL ENEMIES'
             ' has no target; the arena counts only the boss, as the source does.',
             'The Hitter overlay plays its attack clip on the body rather than as a second draw,'
@@ -624,7 +624,12 @@ def arena_sources(sc, room):
             sc.gos[gid]['m_Name'] for gid, go in sc.gos.items()
             if go['m_Name'].startswith('Zombie ') and sc.active(gid)),
         'persistence': {'arena_activated': 'Battle Scene PersistentBoolItem',
-                        'scene_selection': ADDITIVE['gate_flag']},
+                        'scene_selection': ADDITIVE['gate_flag'],
+                        # Both ride the save record's PlayerData reserve, at the
+                        # top of it, because no cooked FSM names either one:
+                        # game/src/script.rs FIELD_FALSE_KNIGHT_*.
+                        'guest_fields': ['arena Activated', 'falseKnightFirstPlop'],
+                        'guest_store': 'game/src/save.rs SCRIPT_FIELD_SLOTS'},
     }
 
 

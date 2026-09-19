@@ -163,6 +163,44 @@ impl FalseKnightRuntime {
         [x + b[0], y + b[1], x + b[2], y + b[3]]
     }
 }
+// What a route can see of the fight. Without these the boss is the one feature
+// in this port a replay cannot say anything about: it draws in a room the
+// Knight can stand in without fighting, it never drops Geo, and its two health
+// managers both restore instead of dying, so neither the wallet nor the kill
+// counter moves until the whole thing is over.
+//
+// The counters are edges, incremented where the event happens. The live values
+// below them are mirrored in exactly one place, `Actor::publish_false_knight`,
+// because the boss is written back from three different exits and publishing at
+// each of them is how one of them ends up stale.
+/// The hero crossed `Battle Scene`'s trigger and the arena armed.
+#[no_mangle] pub static mut HK_FK_TRIGGERED: u32 = 0;
+/// `Start Fall` separated the body from the ceiling slab it hangs in.
+#[no_mangle] pub static mut HK_FK_DROPPED: u32 = 0;
+/// `Check Health` took the body to zero, so the armour rolled and opened.
+#[no_mangle] pub static mut HK_FK_STAGGERS: u32 = 0;
+/// `Health Check` took the exposed Head to zero during a stagger, which is the
+/// only thing that advances a phase. Three of these reach the death sequence.
+#[no_mangle] pub static mut HK_FK_CONVERSIONS: u32 = 0;
+/// The HealthManager death event at the end of the 450-tick tail, which is a
+/// different thing from the Head merely emptying: the last exposure empties it
+/// too and only the tail that follows counts here.
+#[no_mangle] pub static mut HK_FK_DEATHS: u32 = 0;
+/// The body's own 65 hp and the exposed Head's 40, both of which restore.
+#[no_mangle] pub static mut HK_FK_HP: i32 = 0;
+#[no_mangle] pub static mut HK_FK_HEAD_HP: i32 = 0;
+/// Out of `Dormant`, which is the whole difference between a fight that is
+/// running and a boss hanging in the ceiling costing one AABB a tick.
+#[no_mangle] pub static mut HK_FK_ACTIVE: u32 = 0;
+/// The armour is open, so the nail reaches the Head rather than the body.
+#[no_mangle] pub static mut HK_FK_EXPOSED: u32 = 0;
+/// `Stunned Amount`, which selects the phase table.
+#[no_mangle] pub static mut HK_FK_STUNNED: u32 = 0;
+/// `Battle Control`'s own phase, as `hk_sim::boss::Phase` orders it, and its
+/// `Activated` PersistentBoolItem.
+#[no_mangle] pub static mut HK_FK_ARENA: u32 = 0;
+#[no_mangle] pub static mut HK_FK_ACTIVATED: u32 = 0;
+
 /// The Head's HealthManager: 40 hp with 0.15 s of invulnerability, no contact
 /// damage of its own and no Geo, exactly as `host/false_knight.py` reads it.
 const FALSE_KNIGHT_HEAD: hk_sim::EnemyParams = hk_sim::EnemyParams {
@@ -449,6 +487,36 @@ impl Actor {
     fn aspid(&self) -> Option<AspidRuntime> { if let Runtime::Aspid(a) = self.runtime { Some(a) } else { None } }
     fn immobile(&self) -> Option<u32> { if let Runtime::Static { animation_tick } = self.runtime { Some(animation_tick) } else { None } }
     fn false_knight(&self) -> Option<FalseKnightRuntime> { if let Runtime::FalseKnight(b) = self.runtime { Some(b) } else { None } }
+    /// Write the boss back and mirror what a route reads off it.
+    ///
+    /// The runtime is `Copy` and is taken out, stepped and put back from three
+    /// places: the tick that advances it, the nail pass that strikes it, and
+    /// the dead path that keeps the arena counting through `End Wait`. Every
+    /// one of those goes through here, so the live values cannot be published
+    /// by two of the three and quietly go stale in the other.
+    ///
+    /// Dormant is free and stays free. None of these can move while the boss
+    /// hangs in the ceiling waiting on one AABB, and `sync_region` published
+    /// them once when the actor was seated, so the tick the room spends most of
+    /// its life in pays nothing for them.
+    fn seat_false_knight(&mut self, boss: FalseKnightRuntime) {
+        self.runtime = Runtime::FalseKnight(boss);
+        if boss.controller.phase() != hk_sim::false_knight::Phase::Dormant {
+            self.publish_false_knight(boss);
+        }
+    }
+    /// The one place the fight's live values reach a route.
+    fn publish_false_knight(&self, boss: FalseKnightRuntime) {
+        unsafe {
+            HK_FK_HP = self.health.hp as i32;
+            HK_FK_HEAD_HP = boss.head.hp as i32;
+            HK_FK_ACTIVE = u32::from(boss.controller.phase() != hk_sim::false_knight::Phase::Dormant);
+            HK_FK_EXPOSED = u32::from(boss.controller.head_exposed());
+            HK_FK_STUNNED = boss.controller.stunned() as u32;
+            HK_FK_ARENA = boss.arena.phase() as u32;
+            HK_FK_ACTIVATED = u32::from(boss.arena.activated());
+        }
+    }
     fn is_flyer(&self) -> bool { matches!(self.runtime, Runtime::Vengefly(_) | Runtime::Gruzzer(_) | Runtime::Baldur(_) | Runtime::Aspid(_)) }
     fn new(scene: usize, spec: &ActorSpec) -> Self {
         // Stable per-source seed, not a claim to reproduce Unity's global RNG.
@@ -503,18 +571,31 @@ impl Actor {
                 // placement's transform scale, and a positive source scale is
                 // the art as authored, which that field writes as -1.
                 //
-                // `Arena::new(false)` is the fresh-save branch. The source reads
-                // the `Battle Scene`'s PersistentBoolItem here and quick-opens a
-                // cleared arena instead; nothing in this port saves that bool
-                // yet, so a reload re-arms the fight.
-                ActorController::FalseKnight { .. } => Runtime::FalseKnight(FalseKnightRuntime {
-                    controller: hk_sim::false_knight::FalseKnight::new(seed, false),
-                    arena: hk_sim::boss::Arena::new(false),
-                    head: ActorHealth::new(FALSE_KNIGHT_HEAD),
-                    animation_tick: 0, clip: hk_sim::false_knight::Clip::Idle,
-                    vx: 0, gravity: hk_sim::false_knight::GRAVITY_IDLE,
-                    kinematic: true, hitter: false, contact_damage: spec.health.contact_damage,
-                    separated: false }),
+                // `Pause` -> `Init`, which the source takes on the arena's first
+                // frame. The `Battle Scene`'s PersistentBoolItem and
+                // `falseKnightFirstPlop` live in the save record's PlayerData
+                // reserve, so a cleared arena is still cleared after a scene
+                // reload, a death respawn or a boot from the card.
+                ActorController::FalseKnight { .. } => {
+                    let arena = hk_sim::boss::Arena::new(
+                        crate::script::player_data(crate::script::FIELD_FALSE_KNIGHT_ARENA) != 0);
+                    let first_plop =
+                        crate::script::player_data(crate::script::FIELD_FALSE_KNIGHT_FIRST_PLOP) != 0;
+                    // Of `Init`'s actions the gates are the only ones with
+                    // anywhere to go: `CameraLockArea B` is authored world the
+                    // cook already lays down, and the arena floor the defeated
+                    // branch activates is cooked terrain nothing can break.
+                    crate::battle_gates::arena_entry(scene,
+                        arena.enter().contains(hk_sim::boss::Action::QuickOpenGates));
+                    Runtime::FalseKnight(FalseKnightRuntime {
+                        controller: hk_sim::false_knight::FalseKnight::new(seed, first_plop),
+                        arena,
+                        head: ActorHealth::new(FALSE_KNIGHT_HEAD),
+                        animation_tick: 0, clip: hk_sim::false_knight::Clip::Idle,
+                        vx: 0, gravity: hk_sim::false_knight::GRAVITY_IDLE,
+                        kinematic: true, hitter: false, contact_damage: spec.health.contact_damage,
+                        separated: false })
+                }
             },
         }
     }
@@ -631,6 +712,11 @@ impl Actor {
         // dies. Reaching zero is what staggers it, which is the only way in.
         self.health = ActorHealth::new(spec.health);
         let actions = boss.controller.body_reached_zero();
+        // `Check Health` is refused while the boss is invincible or still
+        // dropping, so the counter follows what the controller did rather than
+        // what the nail asked for: an empty list is a stagger that did not
+        // happen and the body is back at 65 either way.
+        if !actions.is_empty() { unsafe { HK_FK_STAGGERS = HK_FK_STAGGERS.saturating_add(1) } }
         self.apply_false_knight(boss, actions);
         (true, Hit::Damaged)
     }
@@ -668,7 +754,7 @@ impl Actor {
             if let Some(mut boss)=self.false_knight() {
                 let actions=boss.arena.tick();
                 self.apply_arena(&mut boss,actions);
-                self.runtime=Runtime::FalseKnight(boss);
+                self.seat_false_knight(boss);
             }
         } else {self.advance(spec,room,count,edge,context,emit);}
     }
@@ -714,7 +800,7 @@ impl Actor {
         }
         if let Some(mut boss) = self.false_knight() {
             self.advance_false_knight(&mut boss, spec, count, &edge, context);
-            self.runtime = Runtime::FalseKnight(boss);
+            self.seat_false_knight(boss);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
@@ -881,21 +967,28 @@ impl Actor {
                     let started = boss.controller.battle_start();
                     self.apply_false_knight(boss, started);
                 }
-                // Not presented, and each for its own reason. The gates are
-                // cooked terrain with no per-view edge binding to lift, so
-                // BG OPEN/CLOSE/QUICK OPEN reach nothing; `KillMinions` has no
-                // target because the three pre-battle Zombies are recorded
-                // rather than admitted; `ActivateFloor` belongs to the
-                // already-defeated branch this save can never take; `Persist`
-                // needs the `Battle Scene` PersistentBoolItem in the save file;
-                // and `CameraLock` is the authored lock area above.
-                hk_sim::boss::Action::CloseGates
-                | hk_sim::boss::Action::OpenGates
-                | hk_sim::boss::Action::QuickOpenGates
-                | hk_sim::boss::Action::ActivateFloor
+                // The broadcast reaches every gate in the room, not only the two
+                // at the arena ends, which is why the gate world is keyed by
+                // scene. Three of Crossroads_10's five carry no cooked terrain,
+                // so closing them moves nothing: see game/src/battle_gates.rs.
+                hk_sim::boss::Action::CloseGates => crate::battle_gates::close(self.scene),
+                hk_sim::boss::Action::OpenGates
+                | hk_sim::boss::Action::QuickOpenGates => crate::battle_gates::open(self.scene),
+                // `End Wait` writes `Activated` before its two-second wait, so a
+                // save taken during the wait already counts as cleared. This
+                // write is the same order: the record reaches the card at the
+                // next bench, which is the only thing that ever writes it.
+                hk_sim::boss::Action::Persist => {
+                    crate::script::set_player_data(crate::script::FIELD_FALSE_KNIGHT_ARENA, 1)
+                }
+                // Still not presented, and each for its own reason.
+                // `KillMinions` has no target because the three pre-battle
+                // Zombies are recorded rather than admitted; `ActivateFloor`
+                // names the arena floor, which is cooked terrain nothing can
+                // break; and `CameraLock` is the authored `CameraLockArea B`.
+                hk_sim::boss::Action::ActivateFloor
                 | hk_sim::boss::Action::CameraLock(_)
-                | hk_sim::boss::Action::KillMinions
-                | hk_sim::boss::Action::Persist => {}
+                | hk_sim::boss::Action::KillMinions => {}
             }
         }
     }
@@ -928,18 +1021,26 @@ impl Actor {
                 Action::Died => {
                     boss.arena.enemy_died();
                     self.health.dead = true;
+                    unsafe { HK_FK_DEATHS = HK_FK_DEATHS.saturating_add(1) }
                 }
+                // `Pause Long` sets `falseKnightFirstPlop`, so every later
+                // stagger takes the short pause, in this fight and in every
+                // one after it that the card carries.
+                Action::SetFirstPlop => {
+                    crate::script::set_player_data(crate::script::FIELD_FALSE_KNIGHT_FIRST_PLOP, 1)
+                }
+                Action::Staggered(_) => unsafe {
+                    HK_FK_CONVERSIONS = HK_FK_CONVERSIONS.saturating_add(1)
+                },
                 // `Invincible` and `HeadExposed` are read back off the phase
                 // rather than latched, so there is one source of truth for
                 // which target the nail reaches.
                 //
                 // The rest is recorded, not presented: there is no shockwave
-                // object, no barrel `PersonalObjectPool`, the arena floor is
-                // cooked terrain that nothing can crack or destroy, and
-                // `falseKnightFirstPlop` has nowhere to persist to.
+                // object, no barrel `PersonalObjectPool`, and the arena floor is
+                // cooked terrain that nothing can crack or destroy.
                 Action::Invincible(_) | Action::HeadExposed(_) | Action::Shockwave { .. }
-                | Action::SummonBarrels(_) | Action::CrackFloor | Action::BreakFloor
-                | Action::Staggered(_) | Action::SetFirstPlop => {}
+                | Action::SummonBarrels(_) | Action::CrackFloor | Action::BreakFloor => {}
             }
         }
     }
@@ -962,6 +1063,9 @@ impl Actor {
             // `Detect`: the hero's collider entered the Battle Scene trigger.
             if overlap(trigger, context.hero_body) {
                 let started = boss.arena.hero_entered();
+                // `Detect` arms once; a hero who walks back through the curtain
+                // gets an empty list rather than a second count.
+                if !started.is_empty() { unsafe { HK_FK_TRIGGERED = HK_FK_TRIGGERED.saturating_add(1) } }
                 self.apply_arena(boss, started);
             }
             return;
@@ -994,6 +1098,7 @@ impl Actor {
             }
             boss.separated = true;
             self.spawn_state = SpawnState::Ready;
+            unsafe { HK_FK_DROPPED = HK_FK_DROPPED.saturating_add(1) }
         }
         if !boss.kinematic {
             body.step(p, boss.vx.signum(), false, count, edge);
@@ -1300,6 +1405,11 @@ impl EnemyWorld {
                 .find(|a| a.is_none())
                 .expect("enemy source pool exceeds 32");
             *slot = Some(Actor::new(region.scene, spec));
+            // A boss reports its load-time state before anything advances it,
+            // so a route that never crosses the trigger still reads 65 hp and a
+            // dormant fight rather than the zeros a fresh session starts with.
+            let seated = slot.as_ref().expect("the actor just seated");
+            if let Some(boss) = seated.false_knight() { seated.publish_false_knight(boss); }
         }
     }
     /// Call only on a running 60 Hz simulation tick, after Knight movement/nail
@@ -1442,7 +1552,7 @@ impl EnemyWorld {
                     let hurt = cheats.hurt(vitals, crate::VITAL_PARAMS, damage, direction, false, player.shadow_dashing);
                     if hurt != Hurt::Ignored { events.hurt = hurt; }
                 }
-                actor.runtime = Runtime::FalseKnight(boss);
+                actor.seat_false_knight(boss);
                 continue;
             }
             // A fireball passes through what it hits: Fireball Control only
