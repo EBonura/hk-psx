@@ -11,10 +11,10 @@ inventories under `.hkpsx/world-import/<file>/components.json.gz`, so it runs
 without the Windows source. `--fsm` additionally compiles the PlayMaker-authored
 families through host/script_ir.py, which does need the source.
 
-The `secret_mask` name rule below is a census of names and nothing more. The
-authored secret-mask behaviour is one FSM structure that ships under two
-definition names and under object names the rule does not match, so the count it
-gives is not the family size; `--recognize` reports the structural one.
+The `secret_mask` and `hidden_wall` name rules below are a census of names and
+nothing more. Both behaviours are one FSM structure that ships under two
+definition names and under object names the rules do not match, so the counts
+they give are not the family sizes; `--recognize` reports the structural ones.
 
 `--terrain` asks the question that turned out to matter more than the counts:
 which FSM definitions own a collider host/world_geometry.py bakes into terrain?
@@ -67,7 +67,10 @@ COMPONENT_FAMILIES = {
                         'DeactivateInDarknessWithoutLantern'),
 }
 FSM_FAMILIES = {
-    'hidden_wall': r'^Breakable Wall',
+    # `Break Wall 2` is the same authored hidden wall under another object name
+    # and another definition name; `--recognize` selects it structurally and
+    # counts 7 where `^Breakable Wall` alone counted 4.
+    'hidden_wall': r'^Breakable Wall|^Break Wall',
     'cracked_floor': r'^Break Floor',
     'ability_floor': r'^Quake Floor',
     'multi_hit_gate': r'^Battle Gate',
@@ -365,6 +368,8 @@ def recognized(scenes):
     import breakables
     source = Source()
     families = {'arena gates': (breakables.battle_gates, {}),
+                'hidden walls': (breakables.hidden_walls, {}),
+                'cracked floors': (breakables.cracked_floors, {}),
                 'infected vines': (breakables.infected_vines, {}),
                 'secret masks': (secret_masks, {})}
     out = {name: {'admitted': [], 'refused': []} for name in families}

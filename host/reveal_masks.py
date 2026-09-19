@@ -178,6 +178,27 @@ def verify_secret_states(states,variables):
     return math.ceil(duration*60-1e-5),bool(sound)
 
 
+NO_COLLIDER='no trigger collider on the owner, so the authored Trigger2dEvent can never fire'
+
+def no_collider_reason(sc,gid):
+    """Why an owner with no Collider2D is refused, and what it is waiting on.
+
+    An owner with no Collider2D never receives OnTriggerEnter2D at all, so its
+    Trigger2dEvent cannot fire however much the port builds. On its own that
+    reads as broken authoring, and it is not: five of the catalogue's secret
+    masks are uncovered by a hidden wall broadcasting UNCOVER when it breaks,
+    not by the hero, so the refusal names the wall it waits on.
+
+    breakables.uncover_drivers reads scene structure only and never asks back
+    about reveal admission, so there is no cycle between the two recognizers.
+    """
+    from breakables import uncover_drivers
+    driver=uncover_drivers(sc).get(gid)
+    if not driver:return NO_COLLIDER
+    return (f"{NO_COLLIDER}; uncovered instead by the hidden wall {driver['name']} "
+            f"({driver['source']}, definition {driver['definition']}), which has to be admitted first")
+
+
 def validate_fade(f,time,variables,loop_finish):
     if (abs(scalar(f,'time',variables)-time)>1e-5 or scalar(f,'delay')!=0 or not scalar(f,'includeChildren')
         or scalar(f,'namedValueColor')!='_Color' or f['easeType']!=21 or f['loopType']!=0
@@ -217,12 +238,9 @@ def reveal_mask_sources(sc):
                 children=sc.transforms[sc.go_transform[gid]]['m_Children']
                 if not ordinary and any(sc.gos[sc.transforms[c['m_PathID']]['m_GameObject']['m_PathID']]['m_Name']=='Inverse Mask'for c in children):raise ValueError('non-null inverse target needs separate bindings')
             components=list(_components(sc,gid));colliders=[(i,t,d)for i,t,d in components if t.endswith('Collider2D')and d['m_Enabled']]
-            # Separate reasons, because these two refusals mean different things.
-            # An owner with no Collider2D never receives OnTriggerEnter2D at all,
-            # so its Trigger2dEvent cannot fire however much the port builds; the
-            # five secret masks in this state are uncovered by the adjacent
-            # hidden wall broadcasting UNCOVER when it breaks, not by the hero.
-            if not colliders:raise ValueError('no trigger collider on the owner, so the authored Trigger2dEvent can never fire')
+            # Separate reasons, because these two refusals mean different things;
+            # `no_collider_reason` explains the first and names its driver.
+            if not colliders:raise ValueError(no_collider_reason(sc,gid))
             if len(colliders)>1:raise ValueError(f'authored with {len(colliders)} trigger colliders; one controller carries one polygon')
             if colliders[0][1]not in ('BoxCollider2D','PolygonCollider2D')or not colliders[0][2]['m_IsTrigger']:raise ValueError('unsupported trigger geometry')
             collider,ctype,body=colliders[0];polygons=collider_polygons(sc,gid,ctype,body)

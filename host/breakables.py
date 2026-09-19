@@ -11,6 +11,7 @@ components. Nothing is keyed on a scene or object name: the same barrel appears
 under a dozen names and the same name appears with different parts.
 """
 import math
+import re
 import struct
 from pathlib import Path
 
@@ -480,6 +481,638 @@ def battle_gates(sc, errors=None):
             if errors is None:
                 raise
             errors.append({'id': f'{file}:{index}', 'type': BG_CONTROL_FSM, 'error': str(error)})
+    return result
+
+
+# ------------------------------------------------------- FSM-authored families
+#
+# Everything below reads a family whose behaviour lives in a PlayMaker FSM
+# rather than a C# component. Two rules apply to all of them.
+#
+# Selection is by FSM *definition*, never by object name. `Breakable Wall`,
+# `Breakable Wall_Silhouette`, `Breakable Wall Waterways` and `Break Wall 2` are
+# four object names for two authored hidden-wall definitions, and the object
+# name also picks up copies the editor suffixed. Definition names are normalised
+# first, for the same reason: an editor copy can carry one of those suffixes too.
+#
+# A definition name is a starting point and not a proof. `Break Wall 2` ships
+# under the definition name `FSM`, which names dozens of unrelated behaviours,
+# so a candidate is confirmed by its state-name signature and then pinned with
+# `false_knight.fsm_digest`, exactly as the secret masks are. Placement
+# variables a family legitimately varies are excluded from the digest and
+# validated per instance instead, because the digest cannot see them.
+
+_COPY_SUFFIX = re.compile(r'\s*\(\d+\)\s*$')
+
+
+def definition_name(fsm):
+    """One FSM definition's name with an editor copy suffix removed."""
+    return _COPY_SUFFIX.sub('', (fsm.get('name') or '').strip())
+
+
+def _state_names(fsm):
+    return frozenset(state['name'] for state in fsm['states'])
+
+
+def _string_variable(fsm, name):
+    value = _fsm_variables(fsm).get(name, '')
+    if not isinstance(value, str):
+        raise ValueError(f'{name!r} is not a serialized string')
+    return value
+
+
+def _named_object(sc, name):
+    """The one active scene object with this name, for a FindGameObject target.
+
+    PlayMaker's `FindGameObject` resolves a name against the whole scene at
+    runtime and takes whichever object it finds first. The port has no runtime
+    scene graph to ask, so a name that does not resolve to exactly one active
+    object is refused rather than guessed: picking the wrong one here wires a
+    wall to somebody else's art.
+    """
+    found = [gid for gid, go in sc.gos.items() if go['m_Name'] == name and sc.active(gid)]
+    if len(found) != 1:
+        raise ValueError(f'{name!r} names {len(found)} active scene objects, not one')
+    return found[0]
+
+
+def _send_events(fsm, state_name):
+    """(event, target, object variable, sendToChildren) per enabled send."""
+    from focus import action_fields
+    out = []
+    for state in fsm['states']:
+        if state['name'] != state_name:
+            continue
+        data = state['actionData']
+        for index, raw in enumerate(data['actionNames']):
+            if not data['actionEnabled'][index] or not raw.endswith('.SendEventByName'):
+                continue
+            fields = action_fields(data, index)
+            target = fields['eventTarget']
+            owner = target['gameObject']
+            out.append({'event': fields['sendEvent']['value'],
+                        'target': target['target'],
+                        'variable': owner['gameObject'].get('name') if owner.get('ownerOption') else None,
+                        'owner': not owner.get('ownerOption'),
+                        'to_children': bool(target['sendToChildren']['value'])})
+    return out
+
+
+# ---------------------------------------------------------------- hidden walls
+#
+# A hidden wall is solid drawn terrain that takes four nail hits, or one spell,
+# and then takes itself and the black mask in front of the secret away. Measured
+# over the 46 admitted scenes: 7 instances of one authored shape under two
+# definition names, 6 of them active.
+#
+#   breakable_wall_v2   4 instances, 4 scenes, 1 structural shape, 2 digests
+#                       before `Facing` is excluded and 1 after.
+#   FSM (`Break Wall 2`)  3 instances, 3 scenes, 1 digest once the three
+#                       placement variables are excluded. Crossroads_27's is
+#                       serialized inactive and its `Mask Name` resolves to
+#                       nothing in that scene, so 2 are live.
+#
+# The two shapes differ in how the break reaches the mask, and that difference
+# is the whole reason this family and the secret masks are one piece of work:
+#
+#   breakable_wall_v2  `Break` and `Activated` send UNCOVER to the wall's own
+#                      GameObject with `sendToChildren` set, so it reaches the
+#                      `Masks` child and everything under it.
+#   Break Wall 2       `Initiate` resolves `Mask Name` with `FindGameObject` and
+#                      `Break`/`Activated` send UNCOVER straight to that object.
+#
+# Either way the mask's own `Trigger2dEvent` is not what fires it. Five of the
+# twelve reveal-mask refusals in host/reveal_masks.py read "no trigger collider
+# on the owner"; those owners are not badly authored, they are waiting on a
+# wall. `uncover_drivers` below is what lets that refusal say so.
+HIDDEN_WALL_NAIL_HITS = 4
+# `Check If Nail` switches on the damager's `attackType`: 0 is the nail and
+# takes one off `Hits`, 2 is a spell and goes straight to `Break`.
+HIDDEN_WALL_SPELL_ATTACK_TYPE = 2
+HIDDEN_WALL_UNCOVER = 'UNCOVER'
+# Serialized per placement, so excluded from the digest and checked per
+# instance. `Facing` picks which recoil state runs and does not gate the hit
+# count; the two name variables are Break Wall 2's scene lookups.
+HIDDEN_WALL_PLACEMENT_VARIABLES = ('Facing', 'Mask Name', 'CamLock Name')
+HIDDEN_WALL_FACINGS = (0, 1, 2, 3)
+HIDDEN_WALL_SHAPES = {
+    '5ed4602f92093bd200971a86dec0e40c9af85ca39e4bf40924b864b5ebfb47ea': {
+        'definition': 'breakable_wall_v2', 'start': 'Get Refs', 'uncover': 'children',
+        'renderer': 'SpriteRenderer',
+        'states': frozenset({
+            'Idle', 'Check If Nail', 'Hit', 'Initiate', 'Check Direction', 'Break',
+            'Hit Right', 'Return Right', 'Hit Left', 'Return Left', 'Hit Down',
+            'Return Down', 'Hit Up', 'Pause Frame', 'Destroy', 'Pause', 'Activated',
+            'Activated?', 'Ruin Lift?', 'Deactivate', 'Get Refs', 'PD Bool?',
+            'Spell Destroy'}),
+        # `Activated?` reaches `Ruin Lift?` only because `StringCompare` finds
+        # `PlayerData Bool` empty and fires FINISHED before `PlayerDataBoolTest`
+        # runs, and `Ruin Lift?` reaches `Initiate` only because `Ruin Lift` is
+        # clear. A placement that sets either needs a save this port has not got.
+        'clear_booleans': ('Ruin Lift',), 'empty_strings': ('PlayerData Bool',)},
+    'e316a8d60e3e4f8269f5d3ac97cfbda4e2cb7715495a24778123019e3d534283': {
+        'definition': 'FSM', 'start': 'Pause', 'uncover': 'name',
+        'renderer': 'tk2dSprite',
+        'states': frozenset({
+            'Idle', 'Check If Nail', 'Hit', 'Initiate', 'Check Direction', 'Break',
+            'Hit Right', 'Return Right', 'Hit Left', 'Return Left', 'Hit Down',
+            'Return Down', 'Hit Up', 'Pause Frame', 'Damage', 'Destroy', 'Pause',
+            'Activated', 'Spell Destroy'}),
+        # No PlayerData branch on this shape; the camera lock it would look up is
+        # unnamed on every catalogue instance and is refused below if it is not.
+        'clear_booleans': (), 'empty_strings': ('CamLock Name',)},
+}
+# The break spawns this prefab. It carries a ParticleSystem, so it is authored
+# particle output, and the port has no path that instantiates a prefab at all.
+HIDDEN_WALL_DUST_PREFAB = 'Dust Break Wall'
+
+
+def hidden_wall_shape(fsm):
+    """The pinned hidden-wall shape this FSM is, or None.
+
+    The state-name signature is the cheap screen; the digest is the proof. Both
+    are needed: the signature alone would admit an edited variant and the digest
+    alone would hash every FSM in the scene.
+    """
+    from false_knight import fsm_digest
+    names = _state_names(fsm)
+    if not any(names == shape['states'] for shape in HIDDEN_WALL_SHAPES.values()):
+        return None
+    digest = fsm_digest(fsm, HIDDEN_WALL_PLACEMENT_VARIABLES)
+    shape = HIDDEN_WALL_SHAPES.get(digest)
+    if shape is None:
+        raise ValueError(f'unverified hidden wall variant: {digest}')
+    if definition_name(fsm) != shape['definition']:
+        raise ValueError(f'hidden wall digest {digest} under definition {definition_name(fsm)!r}')
+    if fsm['startState'] != shape['start']:
+        raise ValueError(f"hidden wall starts in {fsm['startState']!r}")
+    return dict(shape, sha256=digest)
+
+
+def uncover_drivers(sc):
+    """Scene objects a hidden wall uncovers, by the object that receives UNCOVER.
+
+    Maps the receiving GameObject id to the wall record fragment, so a reveal
+    controller that carries no trigger collider of its own can say which wall
+    fires it instead of reading as broken authoring. Only structure is read
+    here; whether either side is admitted is decided by its own recognizer.
+    """
+    if hasattr(sc, '_uncover_drivers'):
+        return sc._uncover_drivers
+    drivers = {}
+    for index, (typ, tree) in sorted(sc.objects.items()):
+        if typ != 'PlayMakerFSM' or not tree['m_Enabled']:
+            continue
+        gid = _local_id(tree['m_GameObject'])
+        if gid not in sc.gos or not sc.active(gid):
+            continue
+        try:
+            shape = hidden_wall_shape(tree['fsm'])
+        except ValueError:
+            continue
+        if shape is None:
+            continue
+        try:
+            targets = _uncover_targets(sc, gid, tree['fsm'], shape)
+        except ValueError:
+            continue
+        driver = {'source': sc.sid(index), 'game_object': sc.sid(gid),
+                  'name': sc.gos[gid]['m_Name'], 'definition': shape['definition'],
+                  'fsm_sha256': shape['sha256'], 'uncover': shape['uncover']}
+        for target in targets:
+            drivers.setdefault(target, driver)
+    sc._uncover_drivers = drivers
+    return drivers
+
+
+def _uncover_targets(sc, gid, fsm, shape):
+    """GameObject ids that receive the wall's UNCOVER, in source terms.
+
+    `sendToChildren` is a field of the serialized `FsmEventTarget`, so whether
+    the break reaches the mask is read rather than assumed: the subtree shape
+    sets it and the named shape does not.
+    """
+    sends = [send for state in ('Break', 'Activated') for send in _send_events(fsm, state)
+             if send['event'] == HIDDEN_WALL_UNCOVER]
+    if not sends:
+        raise ValueError('hidden wall no longer broadcasts UNCOVER')
+    if shape['uncover'] == 'children':
+        if not all(send['to_children'] for send in sends):
+            raise ValueError('hidden wall UNCOVER no longer reaches its children')
+        # Every active descendant, because the authored receivers sit two levels
+        # down under `Masks` and PlayMaker's broadcast is recursive. Inactive
+        # ones are left out: the broadcast collects components from the active
+        # hierarchy, and an FSM that is not running cannot answer an event.
+        # Crossroads_18 ships two of its four mask objects inactive.
+        return sorted(g for g in _descendants(sc, gid) - {gid} if sc.active(g))
+    if any(send['to_children'] for send in sends):
+        raise ValueError('named-target hidden wall UNCOVER also broadcasts to children')
+    name = _string_variable(fsm, 'Mask Name')
+    if not name:
+        raise ValueError('hidden wall names no mask to uncover')
+    return [_named_object(sc, name)]
+
+
+def _particle_outputs(sc, gids, gravity, authored, missing):
+    """Record every emitter in `gids` the bounded particle model cannot run."""
+    from break_effects import part_emitter
+    for gid in gids:
+        try:
+            found = part_emitter(sc.source, sc, gid, gravity)
+        except ValueError as error:
+            authored.append(OUTPUT_PARTICLES)
+            missing.append({'output': OUTPUT_PARTICLES, 'part': sc.sid(gid), 'reason': str(error)})
+            continue
+        if found is not None:
+            authored.append(OUTPUT_PARTICLES)
+
+
+def _prefab_particles(source, file, ref):
+    """(name, carries a ParticleSystem) for a CreateObject prefab reference."""
+    if not ref['m_PathID']:
+        return None
+    prefab = source.ref(file, ref)
+    tree = source.read(prefab)
+    if 'm_Component' not in tree:
+        raise ValueError('CreateObject target is not a GameObject')
+    parts = []
+    for component in tree['m_Component']:
+        try:
+            parts.append(source.ref(prefab.assets_file, component['component']).type.name)
+        except Exception:
+            parts.append('?')
+    return {'source': source.sid(prefab), 'name': tree['m_Name'],
+            'particles': 'ParticleSystem' in parts}
+
+
+def _action_parameters(fsm, state_name, action, parameter, kind, table):
+    """One named typed parameter of every enabled `action` in one state.
+
+    PlayMaker serializes a state's parameters as one flat run split by
+    `actionStartIndex`, and the typed tables are indexed by `paramDataPos`
+    rather than by parameter order, so reading a parameter means walking that
+    action's slice. `focus.action_fields` decodes the compact scalars and skips
+    the reference kinds this needs, which is why the slice is walked here.
+    """
+    out = []
+    for state in fsm['states']:
+        if state['name'] != state_name:
+            continue
+        data = state['actionData']
+        for index, raw in enumerate(data['actionNames']):
+            if not data['actionEnabled'][index] or not raw.endswith('.' + action):
+                continue
+            start = data['actionStartIndex'][index]
+            end = (data['actionStartIndex'][index + 1] if index + 1 < len(data['actionNames'])
+                   else len(data['paramName']))
+            out += [data[table][data['paramDataPos'][k]] for k in range(start, end)
+                    if data['paramName'][k] == parameter and data['paramDataType'][k] == kind]
+    return out
+
+
+def _create_object_prefabs(sc, fsm, state_name):
+    """Every enabled CreateObject prefab in one state, resolved."""
+    out = []
+    for reference in _action_parameters(fsm, state_name, 'CreateObject',
+                                        'gameObject', 19, 'fsmGameObjectParams'):
+        if reference.get('useVariable'):
+            continue
+        found = _prefab_particles(sc.source, sc.file, reference['value'])
+        if found is not None:
+            out.append(found)
+    return out
+
+
+def _break_clips(sc, fsm, state_name):
+    """AudioPlayerOneShotSingle clip names played by one state."""
+    names = []
+    for clip in _action_parameters(fsm, state_name, 'AudioPlayerOneShotSingle',
+                                   'audioClip', 24, 'fsmObjectParams'):
+        reference = clip['value']
+        if reference['m_PathID']:
+            names.append(sc.source.read(sc.source.ref(sc.file, reference))['m_Name'])
+    return names
+
+
+def _audio_output(clips, authored, missing):
+    """Break audio, measured against the resident bank and never enforced.
+
+    Same rule the Breakable catalogue already runs under: 164 of its instances
+    name a clip the 0x14000 SPU bank has no room for, so no cook can satisfy
+    them and enforcing it would only delete objects that otherwise work.
+    """
+    if not clips:
+        return
+    authored.append(OUTPUT_AUDIO)
+    absent = sorted({name for name in clips if name not in RESIDENT_BREAK_CLIPS})
+    if absent:
+        missing.append({'output': OUTPUT_AUDIO, 'reason': 'break clip not resident: ' + ', '.join(absent)})
+
+
+def hidden_wall(sc, gid, index, fsm, shape, gravity, drawn_renderers=None):
+    """One hidden wall's authored break, and which of it the port can produce."""
+    variables = _fsm_variables(fsm)
+    for name in shape['clear_booleans']:
+        if variables.get(name) not in (0, False):
+            raise ValueError(f'{name!r} is set, so the load path is not the plain one')
+    for name in shape['empty_strings']:
+        if _string_variable(fsm, name):
+            raise ValueError(f'{name!r} names a save-backed lookup this port cannot answer')
+    # Nothing answers `Activated` here: no save and no scene state, so the cook
+    # reproduces the fresh-save answer the serialized value gives.
+    if variables.get('Activated') not in (0, False):
+        raise ValueError('hidden wall is serialized already broken')
+    if variables.get('Facing') not in HIDDEN_WALL_FACINGS:
+        raise ValueError(f"hidden wall Facing {variables.get('Facing')!r} is outside the authored switch")
+    hits = variables.get('Hits')
+    if not isinstance(hits, int) or isinstance(hits, bool) or not 1 <= hits <= MAX_HIT_POINTS:
+        raise ValueError(f'hidden wall hit count {hits!r} is not a serialized 1..16 integer')
+
+    colliders = [(i, t, c) for i, t, c in _components(sc, gid) if t.endswith('Collider2D')]
+    if len(colliders) != 1:
+        raise ValueError(f'hidden wall carries {len(colliders)} colliders, not one')
+    body_id, collider_type, body = colliders[0]
+    if collider_type != 'BoxCollider2D':
+        raise ValueError(f'hidden wall collider is a {collider_type}')
+    if not body['m_Enabled'] or body['m_IsTrigger']:
+        raise ValueError('hidden wall collider is not a serialized solid')
+    if sc.gos[gid]['m_Layer'] != TERRAIN_LAYER:
+        raise ValueError(f"hidden wall is on layer {sc.gos[gid]['m_Layer']}, not terrain")
+    polygons = collider_polygons(sc, gid, collider_type, body)
+    points = [p for polygon in polygons for p in polygon]
+
+    components = {typ: i for i, typ, _ in _components(sc, gid)}
+    authored, missing = [OUTPUT_COLLIDER, OUTPUT_VISUAL], []
+    renderer = components.get(shape['renderer'])
+    if renderer is None:
+        raise ValueError(f"hidden wall has no {shape['renderer']} to hide")
+    renderer_source = sc.sid(renderer)
+    if shape['renderer'] != 'SpriteRenderer':
+        # The same reason the arena gates' 16 tk2dSprites are invisible walls:
+        # no tk2d sprite in the catalogue is cooked into a draw, so hiding this
+        # wall would remove a collider and leave the art standing.
+        missing.append({'output': OUTPUT_VISUAL,
+                        'reason': f"the wall is drawn by a {shape['renderer']}, which no cooked draw carries"})
+    elif drawn_renderers is not None and renderer_source not in drawn_renderers:
+        missing.append({'output': OUTPUT_VISUAL, 'reason': 'the wall renderer is not cooked into any draw'})
+
+    _audio_output(_break_clips(sc, fsm, 'Break'), authored, missing)
+    emitters = [g for g in sorted(_descendants(sc, gid) - {gid})
+                if 'ParticleSystem' in {t for _, t, _ in _components(sc, g)}]
+    _particle_outputs(sc, emitters, gravity, authored, missing)
+    for prefab in _create_object_prefabs(sc, fsm, 'Break'):
+        if not prefab['particles']:
+            continue
+        authored.append(OUTPUT_PARTICLES)
+        missing.append({'output': OUTPUT_PARTICLES, 'part': prefab['source'],
+                        'reason': f"the break instantiates the {prefab['name']!r} particle prefab, "
+                                  'and no cooked path spawns a prefab'})
+
+    uncovers = []
+    from reveal_masks import reveal_mask_sources
+    reveals = reveal_mask_sources(sc)
+    admitted = {record['game_object'] for record in reveals['controllers']}
+    refused = {record['source']: record['error'] for record in reveals['unsupported']}
+    for target in _uncover_targets(sc, gid, fsm, shape):
+        for controller, kind, tree in _components(sc, target):
+            if kind != 'PlayMakerFSM':
+                continue
+            source_id = sc.sid(controller)
+            entry = {'source': source_id, 'game_object': sc.sid(target),
+                     'name': sc.gos[target]['m_Name'], 'definition': definition_name(tree['fsm'])}
+            if sc.sid(target) in admitted:
+                entry['reveal'] = 'admitted'
+            elif source_id in refused:
+                entry['reveal'] = 'refused'
+                entry['reveal_error'] = refused[source_id]
+            else:
+                # Crossroads_03's `crossroads_03_mask` is this: a two-state
+                # `Idle -UNCOVER-> Fade` definition with no `Trigger2dEvent` at
+                # all, so host/reveal_masks.py's candidate screen never sees it.
+                entry['reveal'] = 'not a reveal controller'
+            uncovers.append(entry)
+    if uncovers:
+        authored.append(OUTPUT_MASK)
+        unusable = [entry for entry in uncovers if entry['reveal'] != 'admitted']
+        if unusable:
+            missing.append({'output': OUTPUT_MASK,
+                            'reason': 'the break uncovers ' + ', '.join(
+                                f"{entry['name']} ({entry['reveal']})" for entry in unusable)})
+
+    authored = [name for name in OUTPUTS if name in authored]
+    refused_outputs = sorted({item['output'] for item in missing} & set(ENFORCED_OUTPUTS))
+    return {
+        'gid': gid, 'source': sc.sid(index), 'game_object': sc.sid(gid),
+        'name': sc.gos[gid]['m_Name'], 'definition': shape['definition'],
+        'fsm_sha256': shape['sha256'], 'position': sc.point(gid),
+        'nail_hits': hits, 'spell_attack_type': HIDDEN_WALL_SPELL_ATTACK_TYPE,
+        'facing': variables['Facing'],
+        # world_geometry keys every terrain edge by its collider's source id, so
+        # this is the join key a cook needs to take the wall's wall away.
+        'collider_source': sc.sid(body_id), 'hit_polygons': polygons,
+        'box': [min(p[0] for p in points), min(p[1] for p in points),
+                max(p[0] for p in points), max(p[1] for p in points)],
+        'renderer_source': renderer_source, 'renderer_type': shape['renderer'],
+        'uncovers': uncovers, 'break_clips': _break_clips(sc, fsm, 'Break'),
+        'destruction': {'authored': authored, 'missing': missing, 'refused_outputs': refused_outputs},
+        'limitations': [
+            f'{hits} nail hits or one spell; the port has no multi-hit break, so this count '
+            'is recorded and not yet run',
+            'Recoil, hit sparks, the camera shake the break sends to CameraShake and the '
+            'PersistentBoolItem that keeps a wall broken across a reload are not reproduced'],
+    }
+
+
+def hidden_walls(sc, errors=None, contract=True, drawn_renderers=None):
+    """Every active hidden wall in the scene, with its break contract.
+
+    With `contract`, a wall whose authored destruction output the port cannot
+    produce is refused here, so it stays solid drawn terrain instead of opening
+    onto a black mask it cannot take with it. That is the step 4 rule read for
+    this family, and it is the whole reason the wall and the secret behind it
+    are decided together.
+    """
+    gravity = None
+    result = []
+    for index, (typ, tree) in sorted(sc.objects.items()):
+        if typ != 'PlayMakerFSM' or not tree['m_Enabled']:
+            continue
+        gid = _local_id(tree['m_GameObject'])
+        if gid not in sc.gos or not sc.active(gid):
+            continue
+        try:
+            shape = hidden_wall_shape(tree['fsm'])
+            if shape is None:
+                continue
+        except ValueError as error:
+            if errors is None:
+                raise
+            errors.append({'id': sc.sid(index), 'type': 'hidden wall', 'error': str(error)})
+            continue
+        try:
+            if gravity is None:
+                from break_effects import scene_gravity
+                gravity = scene_gravity(sc.source)
+            record = hidden_wall(sc, gid, index, tree['fsm'], shape, gravity, drawn_renderers)
+            if contract and record['destruction']['refused_outputs']:
+                raise ValueError('authored destruction output the port cannot produce: '
+                                 + '; '.join(f"{item['output']} ({item['reason']})"
+                                             for item in record['destruction']['missing']
+                                             if item['output'] in ENFORCED_OUTPUTS))
+            result.append(record)
+        except Exception as error:
+            if errors is None:
+                raise
+            errors.append({'id': sc.sid(index), 'type': 'hidden wall', 'error': str(error)})
+    return result
+
+
+# -------------------------------------------------------------- cracked floors
+#
+# `break_floor` is the floor version of the same idea and it is authored twice:
+# 5 instances over 5 scenes, 2 digests, no placement variable between them.
+#
+#   b74c4cdb  4 instances. `Idle` receives damage through the C# `ReceivedDamage`
+#             action, `Check If Nail` requires the hero inside the `Hero Range`
+#             child trigger and attack type 0, and three hits reach `Break`.
+#   72a2d729  1 instance, Crossroads_09. `Idle` carries a `Nail Attack`
+#             `Trigger2dEvent` straight to `Hit`, so nothing gates the type or
+#             the hero's distance, and `Break` runs through `Break Wood` first.
+#
+# The floor's terrain is not its own collider. The owner carries a trigger on
+# layer 8 that is only the nail target; the solid the hero stands on is a
+# `Solid` child, and `Break` takes it away with `ActivateGameObject`. That is
+# why tools/breakable_catalog.py's terrain screen does not list this family: the
+# collider that matters belongs to an object with no FSM on it.
+CRACKED_FLOOR_NAIL_HITS = 3
+CRACKED_FLOOR_SOLID_CHILD = 'Solid'
+CRACKED_FLOOR_SHAPES = {
+    'b74c4cdb9150a87be0a398b4d50bab0a1ebf40f99c2a1a746768b8573ed72d55': {
+        'definition': 'break_floor', 'start': 'Pause', 'gate': 'Hero Range and attack type',
+        'states': frozenset({'Idle', 'Check If Nail', 'Hit', 'Initiate', 'Break',
+                             'Hit 1', 'Hit 2', 'Pause', 'Activated'})},
+    '72a2d729923a6564f3059f52037143bc90ad25cbf7975787bb5d4f59883d3f12': {
+        'definition': 'break_floor', 'start': 'Pause', 'gate': 'any Nail Attack trigger',
+        'states': frozenset({'Idle', 'Check If Nail', 'Hit', 'Initiate', 'Break',
+                             'Break Wood', 'Hit 1', 'Hit 2', 'Pause', 'Activated'})},
+}
+
+
+def cracked_floor_shape(fsm):
+    """The pinned cracked-floor shape this FSM is, or None."""
+    from false_knight import fsm_digest
+    names = _state_names(fsm)
+    if not any(names == shape['states'] for shape in CRACKED_FLOOR_SHAPES.values()):
+        return None
+    digest = fsm_digest(fsm)
+    shape = CRACKED_FLOOR_SHAPES.get(digest)
+    if shape is None:
+        raise ValueError(f'unverified cracked floor variant: {digest}')
+    if definition_name(fsm) != shape['definition']:
+        raise ValueError(f'cracked floor digest {digest} under definition {definition_name(fsm)!r}')
+    if fsm['startState'] != shape['start']:
+        raise ValueError(f"cracked floor starts in {fsm['startState']!r}")
+    return dict(shape, sha256=digest)
+
+
+def cracked_floor(sc, gid, index, fsm, shape, gravity):
+    """One cracked floor's authored break, and which of it the port can produce."""
+    variables = _fsm_variables(fsm)
+    if variables.get('Activated') not in (0, False):
+        raise ValueError('cracked floor is serialized already broken')
+    if variables.get('Hits') not in (0, False):
+        raise ValueError('cracked floor is serialized part way through its hits')
+    colliders = [(i, t, c) for i, t, c in _components(sc, gid) if t.endswith('Collider2D')]
+    if len(colliders) != 1:
+        raise ValueError(f'cracked floor carries {len(colliders)} hit colliders, not one')
+    body_id, collider_type, body = colliders[0]
+    if not body['m_Enabled'] or not body['m_IsTrigger']:
+        raise ValueError('cracked floor hit collider is not an enabled trigger')
+    polygons = collider_polygons(sc, gid, collider_type, body)
+    points = [p for polygon in polygons for p in polygon]
+
+    solids = []
+    for child in sorted(_descendants(sc, gid) - {gid}):
+        if sc.gos[child]['m_Name'] != CRACKED_FLOOR_SOLID_CHILD or not sc.active(child):
+            continue
+        for i, t, c in _components(sc, child):
+            if t.endswith('Collider2D') and c['m_Enabled'] and not c['m_IsTrigger']:
+                solids.append(sc.sid(i))
+    if not solids:
+        raise ValueError(f'cracked floor has no active {CRACKED_FLOOR_SOLID_CHILD} collider to remove')
+
+    authored, missing = [OUTPUT_COLLIDER, OUTPUT_VISUAL], []
+    _audio_output(_break_clips(sc, fsm, 'Break') + _break_clips(sc, fsm, 'Break Wood'), authored, missing)
+    emitters = [g for g in sorted(_descendants(sc, gid) - {gid})
+                if 'ParticleSystem' in {t for _, t, _ in _components(sc, g)}]
+    _particle_outputs(sc, emitters, gravity, authored, missing)
+    for prefab in _create_object_prefabs(sc, fsm, 'Break') + _create_object_prefabs(sc, fsm, 'Break Wood'):
+        if not prefab['particles']:
+            continue
+        authored.append(OUTPUT_PARTICLES)
+        missing.append({'output': OUTPUT_PARTICLES, 'part': prefab['source'],
+                        'reason': f"the break instantiates the {prefab['name']!r} particle prefab, "
+                                  'and no cooked path spawns a prefab'})
+    renderers = [sc.sid(i) for child in sorted(_descendants(sc, gid) - {gid})
+                 for i, t, d in _components(sc, child)
+                 if t == 'SpriteRenderer' and d['m_Enabled'] and sc.active(child)]
+
+    authored = [name for name in OUTPUTS if name in authored]
+    refused_outputs = sorted({item['output'] for item in missing} & set(ENFORCED_OUTPUTS))
+    return {
+        'gid': gid, 'source': sc.sid(index), 'game_object': sc.sid(gid),
+        'name': sc.gos[gid]['m_Name'], 'definition': shape['definition'],
+        'fsm_sha256': shape['sha256'], 'position': sc.point(gid),
+        'nail_hits': CRACKED_FLOOR_NAIL_HITS, 'hit_gate': shape['gate'],
+        'hit_collider': sc.sid(body_id), 'hit_polygons': polygons,
+        'box': [min(p[0] for p in points), min(p[1] for p in points),
+                max(p[0] for p in points), max(p[1] for p in points)],
+        # The colliders the break removes, keyed the way world_geometry keys
+        # terrain edges. The hit trigger is not one of them; it is not terrain.
+        'solid_collider_sources': solids, 'renderer_sources': renderers,
+        'destruction': {'authored': authored, 'missing': missing, 'refused_outputs': refused_outputs},
+        'limitations': [
+            f'{CRACKED_FLOOR_NAIL_HITS} nail hits with the two staged sag frames between them; the '
+            'port has no multi-hit break, so this count is recorded and not yet run',
+            'The flung wood and rock pool objects, the camera shake and the PersistentBoolItem '
+            'that keeps a floor broken across a reload are not reproduced'],
+    }
+
+
+def cracked_floors(sc, errors=None, contract=True):
+    """Every active cracked floor in the scene, with its break contract."""
+    gravity = None
+    result = []
+    for index, (typ, tree) in sorted(sc.objects.items()):
+        if typ != 'PlayMakerFSM' or not tree['m_Enabled']:
+            continue
+        gid = _local_id(tree['m_GameObject'])
+        if gid not in sc.gos or not sc.active(gid):
+            continue
+        try:
+            shape = cracked_floor_shape(tree['fsm'])
+            if shape is None:
+                continue
+        except ValueError as error:
+            if errors is None:
+                raise
+            errors.append({'id': sc.sid(index), 'type': 'cracked floor', 'error': str(error)})
+            continue
+        try:
+            if gravity is None:
+                from break_effects import scene_gravity
+                gravity = scene_gravity(sc.source)
+            record = cracked_floor(sc, gid, index, tree['fsm'], shape, gravity)
+            if contract and record['destruction']['refused_outputs']:
+                raise ValueError('authored destruction output the port cannot produce: '
+                                 + '; '.join(f"{item['output']} ({item['reason']})"
+                                             for item in record['destruction']['missing']
+                                             if item['output'] in ENFORCED_OUTPUTS))
+            result.append(record)
+        except Exception as error:
+            if errors is None:
+                raise
+            errors.append({'id': sc.sid(index), 'type': 'cracked floor', 'error': str(error)})
     return result
 
 
