@@ -35,7 +35,15 @@ const VITAL_PARAMS: VitalParams = VitalParams {
     recoil_speed: 15 * ONE,
 };
 mod render {
-    pub fn texture(_: usize, _: [(i16, i16); 4], _: (u8, u8, u8)) {}
+    std::thread_local! {
+        /// Submitted quads, so a frame drawn as several tiles can be checked
+        /// tile by tile instead of only counted.
+        pub static QUADS: std::cell::RefCell<Vec<(usize, [(i16, i16); 4])>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+    pub fn texture(id: usize, verts: [(i16, i16); 4], _: (u8, u8, u8)) {
+        QUADS.with(|q| q.borrow_mut().push((id, verts)));
+    }
 }
 mod world {
     #[derive(Clone, Copy)]
@@ -154,6 +162,125 @@ fn room() -> Vec<u8> {
     }
     b.resize(b.len() + 32 + 32768, 0);
     b
+}
+/// The same actor frame spread over a 2x2 rectangle of 64x64 animation slots,
+/// sized like Crossroads_47's Stag: 91x89 pixels is 64+27 across by 64+25 down.
+/// Its world box is the one `room()` gives the single-slot frame, so the two
+/// fixtures have to project to the same rectangle.
+fn tiled_room() -> Vec<u8> {
+    let tiles = [(64u16, 64u16), (27, 64), (64, 25), (27, 25)];
+    let mut offsets = Vec::new();
+    let mut stream = 0usize;
+    for &(w, h) in tiles.iter() {
+        offsets.push(stream);
+        // Atlas.pack pads each streamed row to a word and each texture to four.
+        stream += ((((w as usize + 3) & !3) / 2) * h as usize).next_multiple_of(4);
+    }
+    let mut b = Vec::from(*b"HKROOM02");
+    for n in [0u32, tiles.len() as u32, 0, 1, 1, 1, stream as u32, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for (i, &(w, h)) in tiles.iter().enumerate() {
+        // Only the frame's first tile carries the grid, in the two fields a
+        // streamed texture never uses for a VRAM origin.
+        let (u, v) = if i == 0 { (2u16, 2) } else { (0, 0) };
+        for n in [hk_format::STREAMED_PAGE, u, v, w, h, i as u16] {
+            b.extend(n.to_le_bytes());
+        }
+        b.extend((offsets[i] as u32).to_le_bytes());
+    }
+    for n in [0i32, -ONE / 2, -ONE, ONE / 2, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for n in [0u32, 1, 12 * 65536, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for n in [-20 * ONE, 0, 20 * ONE, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.resize(b.len() + 32 * tiles.len() + stream, 0);
+    b
+}
+fn submitted(w: &enemies::EnemyWorld, r: &world::Region, room: &hk_format::Room)
+    -> Vec<(usize, [(i16, i16); 4])> {
+    render::QUADS.with(|q| q.borrow_mut().clear());
+    w.prepare_draws(r, room, (0, 0)).draw();
+    render::QUADS.with(|q| q.borrow().clone())
+}
+fn span(quad: &[(i16, i16); 4]) -> (i16, i16, i16, i16) {
+    (
+        quad.iter().map(|v| v.0).min().unwrap(),
+        quad.iter().map(|v| v.1).min().unwrap(),
+        quad.iter().map(|v| v.0).max().unwrap(),
+        quad.iter().map(|v| v.1).max().unwrap(),
+    )
+}
+#[test]
+fn an_actor_frame_past_one_slot_draws_and_keys_every_tile() {
+    let plain = room();
+    let tiled = tiled_room();
+    let one = hk_format::Room::parse(&plain).unwrap();
+    let many = hk_format::Room::parse(&tiled).unwrap();
+    let r = region();
+    let mut w = enemies::EnemyWorld::new();
+    w.sync_region(&r);
+    // Every tile is its own animation key, in the consecutive order the cooker
+    // emits, so the cache is asked for all four rather than the first.
+    let mut needed = [0u16; 8];
+    let mut len = 0;
+    w.prepare_draws(&r, &many, (0, 0)).append_needed(&mut needed, &mut len);
+    assert_eq!(len, 4);
+    assert_eq!(&needed[..4], &[0, 1, 2, 3]);
+    let whole = submitted(&w, &r, &one);
+    let tiles = submitted(&w, &r, &many);
+    assert_eq!(whole.len(), 1);
+    assert_eq!(tiles.len(), 4);
+    assert_eq!(tiles.iter().map(|t| t.0).collect::<Vec<_>>(), [0, 1, 2, 3]);
+    let (x0, y0, x1, y1) = span(&whole[0].1);
+    let spans: Vec<_> = tiles.iter().map(|t| span(&t.1)).collect();
+    // The union is the quad the single-slot frame draws: a tiled actor covers
+    // the same rectangle, not only its top-left corner.
+    assert_eq!(spans.iter().map(|s| s.0).min(), Some(x0));
+    assert_eq!(spans.iter().map(|s| s.1).min(), Some(y0));
+    assert_eq!(spans.iter().map(|s| s.2).max(), Some(x1));
+    assert_eq!(spans.iter().map(|s| s.3).max(), Some(y1));
+    // Neighbours meet on one coordinate, so no seam gaps or overdraws. Art row
+    // 0 is the top of the box, and the atlas faces left, so tile 0 is the
+    // screen's top-left for this actor's facing.
+    assert_eq!(spans[0].2, spans[1].0);
+    assert_eq!(spans[2].2, spans[3].0);
+    assert_eq!(spans[0].3, spans[2].1);
+    assert_eq!(spans[1].3, spans[3].1);
+    // The split follows the texels, 64 of 91 across and 64 of 89 down, to
+    // within the pixel the projection rounds: this fixture's box is only about
+    // fourteen screen pixels wide, so the cut lands on a rounding boundary.
+    // hk-format's own tests hold the world-box split exactly.
+    assert!((spans[0].2 - x0 - (x1 - x0) * 64 / 91).abs() <= 1);
+    assert!((spans[0].3 - y0 - (y1 - y0) * 64 / 89).abs() <= 1);
+    for s in spans.iter() {
+        assert!(s.2 > s.0 && s.3 > s.1, "degenerate tile quad {s:?}");
+    }
+}
+#[test]
+fn a_tile_outside_the_view_costs_neither_a_quad_nor_a_key() {
+    let tiled = tiled_room();
+    let many = hk_format::Room::parse(&tiled).unwrap();
+    let r = region();
+    let mut w = enemies::EnemyWorld::new();
+    w.sync_region(&r);
+    let whole = w.prepare_draws(&r, &many, (0, 0));
+    let mut needed = [0u16; 8];
+    let mut len = 0;
+    whole.append_needed(&mut needed, &mut len);
+    assert_eq!(len, 4);
+    // Far enough that the actor leaves the view entirely: no tile survives, so
+    // a distant tiled actor holds none of the twenty slots.
+    let gone = w.prepare_draws(&r, &many, (300 * ONE, 0));
+    let mut needed = [0u16; 8];
+    let mut len = 0;
+    gone.append_needed(&mut needed, &mut len);
+    assert_eq!(len, 0);
+    assert_eq!(gone.draw(), 0);
 }
 fn no_attack() -> AttackParams {
     AttackParams {

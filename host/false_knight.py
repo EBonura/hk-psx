@@ -490,9 +490,11 @@ def measure_animation(sc):
     """Reproduce host/cook.py's actor art path for the False Knight, exactly.
 
     Returns the per-clip and unique-sprite cost the cooker would produce, which
-    is what decides whether the boss can be admitted at all: `Atlas.add` refuses
-    a streamed frame wider or taller than 64, and every frame takes one of the
-    416 CLUT slots in every region it is resident in.
+    is what decides whether the boss can be admitted at all. `Atlas.add_tiled`
+    spreads a frame past 64x64 over a rectangle of animation slots, so the unit
+    of cost is the tile, not the frame: HKROOM02 sizes its palette block at one
+    32-byte entry per texture and the region uploads it whole, so every tile
+    takes one of the 416 CLUT slots in every view it is resident in.
     """
     from cook import tk_sprite, FOCAL, CAM_Z, SLOT_PIXELS, ANIMATION_SLOTS, MAX_FRAME_TILES
     from quality import TEXTURE_BUDGET
@@ -508,11 +510,22 @@ def measure_animation(sc):
     projection = FOCAL / -CAM_Z
     library_object = source.ref(sc.file, animator['library'])
     library = source.read(library_object)
+    # Atlas.pack pads each streamed row to a word, so the linked-RAM cost is the
+    # padded stride, not width/2.
+    def frame_bytes(size):
+        return (((size[0] + 3) & ~3) // 2) * size[1]
+
+    def frame_tiles(size):
+        return math.ceil(size[0] / SLOT_PIXELS) * math.ceil(size[1] / SLOT_PIXELS)
+
     textures, collections, unique, clips = {}, {}, {}, []
     for clip in library['clips']:
         if not clip['name']:
             continue
         widest = (0, 0)
+        # A clip pays for its own distinct sprites, because Atlas dedup shares a
+        # repeated frame; a residency route holding one clip at a time pays this.
+        seen = {}
         for frame in clip['frames']:
             collection_object = source.ref(library_object.assets_file, frame['spriteCollection'])
             sid = source.sid(collection_object)
@@ -522,19 +535,17 @@ def measure_animation(sc):
                                frame['spriteId'], textures)
             size = (math.ceil((box[2] - box[0]) * sx * projection),
                     math.ceil((box[3] - box[1]) * sy * projection))
+            seen[(sid, frame['spriteId'])] = size
             unique[(sid, frame['spriteId'])] = size
             widest = max(widest, size)
-        clips.append({'name': clip['name'], 'frames': len(clip['frames']), 'largest': list(widest)})
-    oversized = {key: size for key, size in unique.items() if size[0] > 64 or size[1] > 64}
+        clips.append({'name': clip['name'], 'frames': len(clip['frames']),
+                      'unique_sprites': len(seen), 'largest': list(widest),
+                      'tiles': sum(frame_tiles(size) for size in seen.values()),
+                      'bytes': sum(frame_bytes(size) for size in seen.values()),
+                      'max_tiles_one_frame': max(frame_tiles(size) for size in seen.values())})
+    oversized = {key: size for key, size in unique.items() if frame_tiles(size) > 1}
     largest = max(unique.values(), key=lambda size: (size[0] * size[1], size))
-    # Atlas.pack pads each streamed row to a word, so the linked-RAM cost is the
-    # padded stride, not width/2.
-    def frame_bytes(size):
-        return (((size[0] + 3) & ~3) // 2) * size[1]
-
-    def frame_tiles(size):
-        return math.ceil(size[0] / 64) * math.ceil(size[1] / 64)
-
+    tiles = sum(frame_tiles(size) for size in unique.values())
     return {
         'library_source': source.sid(library_object), 'sprite_scale': [sx, sy],
         'projection_scale': projection, 'clips': clips,
@@ -546,20 +557,24 @@ def measure_animation(sc):
         'max_extent': [max(size[0] for size in unique.values()),
                        max(size[1] for size in unique.values())],
         'total_bytes': sum(frame_bytes(size) for size in unique.values()),
-        'total_tiles_64': sum(frame_tiles(size) for size in unique.values()),
+        'total_tiles_64': tiles,
         'max_tiles_one_frame': max(frame_tiles(size) for size in unique.values()),
-        'clut_slots_required': len(unique), 'texture_budget': TEXTURE_BUDGET,
+        # One 32-byte palette entry per texture, and a tile is a texture, so the
+        # CLUT cost is the tile count rather than the frame count.
+        'clut_slots_required': tiles, 'texture_budget': TEXTURE_BUDGET,
         'animation_cache_slot': [SLOT_PIXELS, SLOT_PIXELS],
         'animation_cache_slots': ANIMATION_SLOTS,
         'animation_cache_max_frame_tiles': MAX_FRAME_TILES,
         'animation_cache_upload_bytes': ANIMATION_SLOTS * SLOT_PIXELS * SLOT_PIXELS // 2,
-        # The cache now holds the largest frame. What still refuses the actor is
-        # the actor art path itself: enemies.rs draws a frame as one quad, so
-        # host/cook.py drops any actor with a frame beyond one slot, whatever
-        # the tile budget says.
-        'verdict': ('refused: host/cook.py drops any actor with a frame beyond '
-                    f'{SLOT_PIXELS}x{SLOT_PIXELS} because enemies.rs draws one quad per frame'
-                    if oversized else 'admissible against the animation cache'),
+        # The art path admits these frames now: Atlas.add_tiled spreads a frame
+        # past one slot over a rectangle of them and enemies.rs::prepare_draws
+        # submits a quad per tile. What is left is residency, which is a per-view
+        # question this measurement cannot answer on its own: compare the tile
+        # count against tools/texture_headroom.py's free slots for the view the
+        # boss would live in.
+        'verdict': (f'drawable: every frame binds at most {max(frame_tiles(size) for size in unique.values())} '
+                    f'of the {MAX_FRAME_TILES} slots a frame may hold; '
+                    f'the whole clip set costs {tiles} CLUT slots of {TEXTURE_BUDGET} per view'),
         'tiles_fit_the_cache': max(frame_tiles(size) for size in unique.values()) <= MAX_FRAME_TILES,
     }
 
@@ -682,7 +697,11 @@ if __name__ == '__main__':
     print(f"False Knight: {contract['health']} hp body, {contract['head_health']} hp head, "
           f"{contract['staggers']} staggers; {len(contract['arena']['gates'])} arena gates.")
     print(f"Animation: {art['clip_frames']} clip frames, {art['unique_sprites']} unique sprites, "
-          f"{art['oversized_sprites']} beyond 64x64, extent {art['max_extent'][0]}x{art['max_extent'][1]}, "
-          f"{art['total_bytes'] / 1024:.1f} KiB of 4bpp texels, "
+          f"{art['oversized_sprites']} beyond one slot, extent {art['max_extent'][0]}x{art['max_extent'][1]}, "
+          f"{art['total_tiles_64']} tiles, {art['total_bytes'] / 1024:.1f} KiB of 4bpp texels, "
           f"{art['max_tiles_one_frame']} of {art['animation_cache_max_frame_tiles']} tiles for its "
           f"largest frame; {art['verdict']}.")
+    cheapest = min(art['clips'], key=lambda clip: clip['tiles'])
+    dearest = max(art['clips'], key=lambda clip: clip['tiles'])
+    print(f"Per clip, in tiles: {cheapest['name']} is the cheapest at {cheapest['tiles']}, "
+          f"{dearest['name']} the dearest at {dearest['tiles']}.")

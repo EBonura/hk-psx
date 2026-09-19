@@ -80,7 +80,13 @@ struct RunnerContext {
     hero_body: [i32; 4],
 }
 
-pub const MAX_VISIBLE: usize = 10;
+/// Visible enemy draws, which are tiles rather than actors: a frame past one
+/// 64x64 animation slot contributes one draw and one animation key per tile.
+/// The ceiling is `hk_cache::MAX_FRAME_TILES`, the slots the cache holds beyond
+/// the four `main.rs` always reserves, because a draw the cache cannot key is
+/// a draw that cannot reach VRAM. `main.rs` sizes its working set from
+/// `hk_cache::MAX_REQUESTS` and holds the two constants to that relation.
+pub const MAX_VISIBLE: usize = 20;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SpawnState {
     Pending,
@@ -1251,37 +1257,57 @@ impl EnemyWorld {
             } else {
                 elapsed.min(clip[1] - 1)
             };
-            let f = room.frame((clip[0] + frame) as usize);
-            let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
-            let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
+            let frame_index = (clip[0] + frame) as usize;
+            let f = room.frame(frame_index);
+            let base = u32_at(f, 0) as usize;
             // A live Climber's sprite turns with its transform (Q16 degrees).
             let rotation = actor.climber().filter(|_| !actor.health.dead).map(|c| c.controller.rotation()).unwrap_or(0);
-            let mut verts = [(0i16, 0i16); 4];
-            for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {
-                let [x, y] = if rotation != 0 { crate::world::debris::rotate([x * facing, y], rotation) } else { [x * facing, y] };
-                let x = position.0 - x - camera.0;
-                let y = position.1 + y - camera.1;
-                *v = (
-                    (160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
-                    (120 - (((y as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+            let project = |b: [i32; 4]| {
+                let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
+                let mut verts = [(0i16, 0i16); 4];
+                for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {
+                    let [x, y] = if rotation != 0 { crate::world::debris::rotate([x * facing, y], rotation) } else { [x * facing, y] };
+                    let x = position.0 - x - camera.0;
+                    let y = position.1 + y - camera.1;
+                    *v = (
+                        (160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+                        (120 - (((y as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+                    );
+                }
+                verts
+            };
+            // An actor frame past one 64x64 animation slot binds a rectangle of
+            // them, the way NPC art already does, and each tile is its own quad
+            // over its own share of the frame's world box. The grid rides in the
+            // frame's first texture, so an actor whose art fits one slot pays
+            // one texture read and never enters the tile arithmetic.
+            let (cols, rows) = room.texture(base).tile_grid();
+            for tile in 0..cols * rows {
+                let (texture, b) = if cols * rows == 1 {
+                    (base, core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4)))
+                } else {
+                    room.frame_tile(frame_index, tile)
+                };
+                let verts = project(b);
+                // Culled per tile, so an actor leaning out of the view spends
+                // neither a quad nor an animation slot on the part off screen.
+                if verts.iter().all(|v| v.0 < 0)
+                    || verts.iter().all(|v| v.0 >= 320)
+                    || verts.iter().all(|v| v.1 < 0)
+                    || verts.iter().all(|v| v.1 >= 240)
+                {
+                    continue;
+                }
+                assert!(
+                    draws.len < MAX_VISIBLE,
+                    "visible enemy cache budget exceeded"
                 );
+                draws.entries[draws.len] = Some(Draw {
+                    texture: texture as u16,
+                    verts,
+                });
+                draws.len += 1;
             }
-            if verts.iter().all(|v| v.0 < 0)
-                || verts.iter().all(|v| v.0 >= 320)
-                || verts.iter().all(|v| v.1 < 0)
-                || verts.iter().all(|v| v.1 >= 240)
-            {
-                continue;
-            }
-            assert!(
-                draws.len < MAX_VISIBLE,
-                "visible enemy cache budget exceeded"
-            );
-            draws.entries[draws.len] = Some(Draw {
-                texture: u32_at(f, 0) as u16,
-                verts,
-            });
-            draws.len += 1;
         }
         for shot in self.shots.iter().flatten().filter(|s| s.scene as usize == region.scene) {
             let clip_id = if shot.impact { shot.impact_clip } else { shot.shot_clip } as usize;

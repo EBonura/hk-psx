@@ -63,7 +63,7 @@ class RunnerActorArtTests(unittest.TestCase):
         frames, clips = [], []
         with patch('cook.tk_sprite', return_value=(Image.new('RGBA', (4, 4)), (0, 0, 1, 1))), \
              patch('effects.append_corpse_art') as corpses:
-            append_actor_art(source, scene, [first, second], SimpleNamespace(add=add), frames, clips)
+            append_actor_art(source, scene, [first, second], SimpleNamespace(add_tiled=add), frames, clips)
         self.assertEqual(len(allocated), 2)
         self.assertEqual(len(clips), 7)
         self.assertEqual(len(frames), 14)
@@ -71,6 +71,60 @@ class RunnerActorArtTests(unittest.TestCase):
             self.assertEqual(first[key], second[key])
             self.assertEqual(clips[first[key]]['name'], 'library:1/' + name)
         corpses.assert_called_once()
+
+    def _cook_one_actor(self, atlas, box):
+        """Run the actor art path over a single fixture sprite of this size."""
+        collection = SimpleNamespace(sid='collection:1', assets_file='collectionfile', data={})
+        library = SimpleNamespace(sid='library:1', assets_file='libraryfile', data={'clips': [
+            dict(name=name, frames=[{'spriteCollection': collection, 'spriteId': 0}],
+                 fps=12, wrapMode=0, loopStart=0) for name in LIVE.values()]})
+        source = SimpleNamespace(ref=lambda file, ref: ref, read=lambda obj: obj.data,
+                                 sid=lambda obj: obj.sid)
+        scene = SimpleNamespace(file='scene', go_transform={1: 1},
+                                world=lambda tid: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
+        actor = actor_fixture()
+        actor.update(tk2dSpriteAnimator={'library': library},
+                     tk2dSprite={'_scale': {'x': 1, 'y': 1}, '_color': {'a': 1}})
+        frames, clips = [], []
+        image = Image.new('RGBA', (8, 8), (200, 100, 30, 255))
+        with patch('cook.tk_sprite', return_value=(image, box)), \
+             patch('effects.append_corpse_art'):
+            append_actor_art(source, scene, [actor], atlas, frames, clips)
+        return actor, frames
+
+    def test_an_oversized_actor_frame_binds_a_rectangle_of_slots(self):
+        # Crossroads_47's Stag is the smallest real case: its Idle frames
+        # measure 91x89 through this same path. Divided by the FOCAL / -CAM_Z
+        # projection, that is the source box below.
+        from cook import Atlas, FOCAL, CAM_Z
+        atlas = Atlas(max_pages=0)
+        actor, frames = self._cook_one_actor(atlas, (0, 0, 91 / (FOCAL / -CAM_Z), 89 / (FOCAL / -CAM_Z)))
+        self.assertTrue(actor['movement_supported'])
+        self.assertNotIn('limitations', actor)
+        # One sprite shared by every clip, so one frame and one 2x2 grid.
+        self.assertEqual(atlas.grids, {0: (2, 2)})
+        self.assertEqual({frame['texture'] for frame in frames}, {0})
+        atlas.pack()
+        self.assertEqual([entry[3:5] for entry in atlas.entries],
+                         [(64, 64), (27, 64), (64, 25), (27, 25)])
+        # Only the frame's first tile carries the grid, which is what
+        # hk_format::Room::frame_grid reads back.
+        self.assertEqual([entry[1:3] for entry in atlas.entries],
+                         [(2, 2), (0, 0), (0, 0), (0, 0)])
+
+    def test_the_actor_refusal_is_the_axis_clamp_not_a_single_slot(self):
+        # Scenery is resampled to fit a cap; actor sampling is not, so a frame
+        # the 252-pixel clamp would resize is refused instead of squashed. The
+        # tile-budget branch cannot fire under that clamp: four tiles by four is
+        # 16 of the 20 a frame may bind. tests/test_cook.py holds that bound.
+        from cook import Atlas, FOCAL, CAM_Z, MAX_TEXTURE_AXIS
+        atlas = Atlas(max_pages=0)
+        actor, frames = self._cook_one_actor(
+            atlas, (0, 0, (MAX_TEXTURE_AXIS + 2) / (FOCAL / -CAM_Z), 1))
+        self.assertFalse(actor['movement_supported'])
+        self.assertIn('exceeds the 252-pixel texture axis', actor['limitations'][0])
+        # Refused as a whole actor, before any frame reaches the atlas.
+        self.assertEqual((frames, atlas.images), ([], []))
 
     def test_runner_metadata_requires_every_bound_clip_corpse_and_depth(self):
         actor = actor_fixture()

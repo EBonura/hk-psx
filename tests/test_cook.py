@@ -84,6 +84,22 @@ class CookTests(unittest.TestCase):
         self.assertEqual(len(a.palettes),4)
         self.assertEqual(len(set(a.palettes)),1)
 
+    def test_a_sub_slot_frame_cooks_identically_through_add_and_add_tiled(self):
+        # host/cook.py's actor path moved from add(streamed=True) to add_tiled,
+        # so every actor whose art already fitted one slot has to cook byte for
+        # byte or the change would silently rewrite cooked packs.
+        im=Image.new('RGBA',(61,62))
+        for x in range(61):
+            for y in range(62):im.putpixel((x,y),((x*7)%256,(y*11)%256,40,255))
+        one=Atlas(max_pages=0);one.add(im,61,62,streamed=True);one.pack()
+        tiled=Atlas(max_pages=0);tiled.add_tiled(im,61,62);tiled.pack()
+        self.assertEqual(one.entries,tiled.entries)
+        self.assertEqual(one.palettes,tiled.palettes)
+        self.assertEqual(bytes(one.stream),bytes(tiled.stream))
+        # A one-slot frame carries no grid, so frame_grid reads (1,1) for it.
+        self.assertEqual(tiled.grids,{})
+        self.assertEqual(tiled.tile_owner,{})
+
     def test_the_refusal_boundary_is_the_slot_budget_not_sixty_four_pixels(self):
         from cook import MAX_FRAME_TILES
         self.assertEqual(MAX_FRAME_TILES,20)
