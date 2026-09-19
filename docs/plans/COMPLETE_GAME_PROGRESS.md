@@ -1500,13 +1500,17 @@ its key replaces the room body frame in the animation working set and
 Knight's facing. The animation cache dispatches on the key range, so the Shade's
 range is untouched.
 
-The Crystal Heart is the one ability still without a clip. Its SD set is a
-separate charge, travel and wall-hit sequence rather than one animation, and it
-keeps the fall pose until that is modelled. Everything else now plays what the
-original plays.
+Build 127 then closed the last two gaps the same way. The Crystal Heart's four
+body poses (SD Charge Ground, SD Wall Charge, SD Dash and SD Hit Wall; its Fx,
+Trail and Crys clips are effects rather than the Knight) and Vengeful Spirit's
+own projectile clips, which come from the fireball's own sprite collection
+rather than the Knight's and are reached through the Fireball Cast FSM rather
+than by prefab name. 97 frames, two palettes, 36,190 linked bytes, and the spell
+is no longer invisible: the ball carries its own animation key and is drawn at
+its own position and facing.
 
-Verification: 68 frames cooked, the 8 routes and the 4 power-cut points on the
-final CUE, with 121,780 bytes of linked headroom left.
+Verification: 97 frames cooked across 16 clips, the 8 routes and the 4
+power-cut points on the final CUE, with 111,540 bytes of linked headroom left.
 
 ## Required package completion record
 

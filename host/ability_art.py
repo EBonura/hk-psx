@@ -26,7 +26,13 @@ SLOT_BYTES = 2048
 # Order is the guest's ABILITY_CLIP index; it is not free to move.
 ORDER = ('Dash', 'Wall Slide', 'Walljump', 'Double Jump',
          'DN Start', 'DN Charge', 'DN Slash Antic', 'DN Slash',
-         'Fireball Antic', 'Fireball1 Cast')
+         'Fireball Antic', 'Fireball1 Cast',
+         # The Crystal Heart's body poses. Its Fx, Trail and Crys clips are
+         # effects rather than the Knight, and are not cooked.
+         'SD Charge Ground', 'SD Wall Charge', 'SD Dash', 'SD Hit Wall')
+# Vengeful Spirit's projectile, from its own sprite collection rather than the
+# Knight's, appended after the Knight clips.
+BALL_CLIPS = ('Ball', 'Ball End')
 
 def knight_animation(source):
     """The Knight's own tk2d animation table, found by the clips it carries."""
@@ -39,6 +45,23 @@ def knight_animation(source):
         if {'Idle', 'Run', 'Slash', 'Airborne', 'Focus'}.issubset(names):
             return obj, table
     raise LookupError('no Knight animation table')
+
+def fireball_animation(source):
+    """The Vengeful Spirit projectile's own tk2d clips, reached through the
+    Hero's Fireball Cast FSM rather than by prefab name."""
+    from spells import _named_child, _fsm_on
+    from superdash import _fsm
+    file = source.file('resources.assets')
+    control = _fsm(source, 'Spell Control')
+    states = {s['name']: s for s in control['states']}
+    caster = _named_child(source, file, states['Fireball 1'], 'Fireball Top')
+    cast = _fsm_on(source, file, caster, 'Fireball Cast')
+    cast_states = {s['name']: s for s in cast['states']}
+    ball = _named_child(source, file, cast_states['Cast Right'], 'Fireball')
+    animator = next(source.ref(file, c['component']) for c in ball['m_Component']
+                    if source.typename(source.ref(file, c['component'])) == 'tk2dSpriteAnimator')
+    library = source.read(source.ref(file, source.read(animator)['library']))
+    return {c['name']: c for c in library['clips']}
 
 def shelf(sizes, limit=256):
     """Shelf packing into one quantizer sheet; None when the set does not fit."""
@@ -76,9 +99,12 @@ def cook():
         boxes.append(list(box))
         art_sources.append(f'{source.sid(obj)}:{index}')
 
+    ball_by_name = fireball_animation(source)
+    missing = [n for n in BALL_CLIPS if n not in ball_by_name]
+    assert not missing, f'the Fireball animation lost {missing}'
     clips = []
-    for name in ORDER:
-        clip = by_name[name]
+    for name in ORDER + BALL_CLIPS:
+        clip = by_name[name] if name in ORDER else ball_by_name[name]
         start = len(images)
         for frame in clip['frames']:
             sprite(frame['spriteCollection'], frame['spriteId'])
