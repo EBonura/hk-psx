@@ -1426,6 +1426,54 @@ assertion needs raising the answer is to split the hero-only fields out of
 Verification: 26 test binaries green, the 8 routes and the 4 power-cut points
 on the final CUE.
 
+## P11 step 1, and why the ability clips do not fit (builds 123 to 125)
+
+The physics catalog first, since it decides how much of P11 there is to write.
+`tools/physics_catalog.py` walks all 45 admitted scenes and refuses to pass if a
+family appears that the guest cannot represent, so it cannot go stale as more of
+the map is admitted.
+
+What it found. Terrain is 190 polygons, 400 boxes and 509 edge colliders, every
+one of which the cooked segment model represents exactly; the only solid circles
+anywhere are seven Baldur bodies on the enemy layer. There is no
+`PlatformEffector2D` and no collider marked `usedByEffector` in any admitted
+scene, so P11 step 2's directional one-way rules have nothing to preserve here.
+The only mover is `LiftPlatform`, 25 of them in Crossroads_07, and reading its
+`Update` shows it is not a moving platform at all: it sinks its two parts by
+0.75 a second for 0.12 s to a floor of 0.09 units and holds. It cannot carry,
+block or tunnel a rider, so step 3 has nothing to implement either. Contact
+damage and hazard recovery already run through the cooked `DamageHero` volumes
+and `HazardRespawnTrigger`s, which is also how acid gets its behaviour.
+
+That leaves two real gaps, both measured rather than described. One
+`BounceShroom` in Crossroads_38, which `pogo_sources` explicitly refuses as a
+special bouncer; its hero side is `SHROOM_BOUNCE_VELOCITY` 25 and a
+`shroomBouncing` flag that clears when the rise ends. And the nail's tink
+surfaces: of 166, the static pogo pool already covers 39. Of the rest, 23 sit on
+the Terrain layer outside the pogo layer policy, 68 have a PlayMaker FSM on the
+owner so the object may move or vanish, and 36 keep their collider on a child
+rather than the tink owner. Those are policy decisions belonging to
+`pogo_sources`, so the catalog measures them rather than quietly widening them.
+
+Both catalogs are tools, not build steps. `tools/abilities.py` and
+`tools/physics_catalog.py` parse every admitted scene, which costs minutes, and
+build speed is a recorded priority.
+
+Then the ability animations, which turned into a budget measurement. The
+Knight's clips ride in each region's own texture bank, and that bank is at its
+limit: `TEXTURE_BUDGET` is 416 CLUT slots across four disjoint banks. Adding all
+ten ability clips (68 frames) put the tightest region at 419. The four movement
+clips alone (33 frames) put region 17 at 421. Dash, Wall Slide and Double Jump
+(24 frames) still put it at 418. So region 17 carries about 19 free texture
+slots and every useful clip set needs more than that.
+
+The clips were reverted rather than trimmed to whatever squeaked under, because
+picking clips by what fits is not a decision worth encoding. The two real
+options are the streamed path the break effects already use, one chunk per
+scene decoded at admission, or splitting region 17 so the per-region budget has
+room. Until one of those happens, a dash plays the Fall clip. That is now a
+budget item with a number against it rather than a vague omission.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
