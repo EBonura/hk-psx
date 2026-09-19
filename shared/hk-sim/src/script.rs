@@ -69,9 +69,15 @@ pub struct Program<'a> {
     pub transitions: &'a [Transition],
     pub ops: &'a [Op],
     pub constants: &'a [i32],
+    /// Slots this definition's instances need from the caller's pool.
+    pub var_count: u16,
 }
 /// Bounds, all checked. Raising one is a deliberate budget change.
-pub const MAX_VARS: usize = 16;
+///
+/// Variables are not among them: they live in a pool the caller owns, with a
+/// span per instance, because the measured distribution runs from zero to 107
+/// slots and a fixed array wide enough for the tail would be mostly padding in
+/// the 85.5% of FSMs that use sixteen or fewer.
 pub const MAX_PENDING: usize = 8;
 pub const MAX_DEPTH: u8 = 4;
 pub const MAX_OPS_PER_TICK: u16 = 256;
@@ -106,7 +112,6 @@ pub struct Instance {
     pub wait: u16,
     /// The event a finished wait sends, zero when none is pending.
     wait_event: u16,
-    pub vars: [i32; MAX_VARS],
     pending: [u16; MAX_PENDING],
     pending_len: u8,
     pub finished: bool,
@@ -123,7 +128,6 @@ impl Instance {
             cursor: 0,
             wait: 0,
             wait_event: 0,
-            vars: [0; MAX_VARS],
             pending: [0; MAX_PENDING],
             pending_len: 0,
             finished: false,
@@ -139,7 +143,10 @@ impl Instance {
     /// One 60 Hz tick. `native` receives every `Op::Native` in order and
     /// returns the value the call produced, which the op stores nowhere: a
     /// native call that has to return something writes through its own system.
-    pub fn tick(&mut self, p: Program, mut native: impl FnMut(NativeCall)) -> Halt {
+    pub fn tick(&mut self, p: Program, vars: &mut [i32], mut native: impl FnMut(NativeCall)) -> Halt {
+        if vars.len() < p.var_count as usize {
+            return Halt::BadProgram;
+        }
         // Delayed sends from the previous tick run first, in order.
         let drained = self.pending_len;
         self.pending_len = 0;
@@ -174,7 +181,7 @@ impl Instance {
             let index = state.first_op as usize + self.cursor as usize;
             let Some(op) = p.ops.get(index).copied() else { return Halt::BadProgram };
             self.cursor += 1;
-            match self.run(p, op, &mut native, 0) {
+            match self.run(p, op, vars, &mut native, 0) {
                 Ok(Some(target)) => self.enter(target),
                 Ok(None) => {
                     if self.wait > 0 {
@@ -186,10 +193,10 @@ impl Instance {
         }
     }
     /// Run one op. `Ok(Some(state))` means it transitioned.
-    fn run(&mut self, p: Program, op: Op, native: &mut impl FnMut(NativeCall), depth: u8)
-        -> Result<Option<u16>, Halt> {
-        let var = |i: u16, s: &Self| -> Result<i32, Halt> {
-            s.vars.get(i as usize).copied().ok_or(Halt::BadProgram)
+    fn run(&mut self, p: Program, op: Op, vars: &mut [i32],
+           native: &mut impl FnMut(NativeCall), depth: u8) -> Result<Option<u16>, Halt> {
+        let var = |i: u16| -> Result<i32, Halt> {
+            vars.get(i as usize).copied().ok_or(Halt::BadProgram)
         };
         match op.code {
             Code::Nop => Ok(None),
@@ -199,20 +206,20 @@ impl Instance {
                 Ok(None)
             }
             Code::SetBool => {
-                *self.vars.get_mut(op.a as usize).ok_or(Halt::BadProgram)? = i32::from(op.flags != 0);
+                *vars.get_mut(op.a as usize).ok_or(Halt::BadProgram)? = i32::from(op.flags != 0);
                 Ok(None)
             }
             Code::SetInt => {
                 let value = *p.constants.get(op.b as usize).ok_or(Halt::BadProgram)?;
-                *self.vars.get_mut(op.a as usize).ok_or(Halt::BadProgram)? = value;
+                *vars.get_mut(op.a as usize).ok_or(Halt::BadProgram)? = value;
                 Ok(None)
             }
             Code::BoolTest => {
-                let event = if var(op.a, self)? != 0 { op.b } else { op.c };
-                self.send(p, event, native, depth)
+                let event = if var(op.a)? != 0 { op.b } else { op.c };
+                self.send(p, event, vars, native, depth)
             }
             Code::IntCompare => {
-                let left = var(op.a, self)?;
+                let left = var(op.a)?;
                 let right = *p.constants.get(op.b as usize).ok_or(Halt::BadProgram)?;
                 let holds = match op.flags {
                     CMP_LT => left < right,
@@ -223,9 +230,9 @@ impl Instance {
                     CMP_GT => left > right,
                     _ => return Err(Halt::BadProgram),
                 };
-                if holds { self.send(p, op.c, native, depth) } else { Ok(None) }
+                if holds { self.send(p, op.c, vars, native, depth) } else { Ok(None) }
             }
-            Code::SendEvent => self.send(p, op.a, native, depth),
+            Code::SendEvent => self.send(p, op.a, vars, native, depth),
             Code::NextFrameEvent => {
                 if op.a == 0 {
                     return Ok(None);
@@ -238,15 +245,15 @@ impl Instance {
                 Ok(None)
             }
             Code::Native => {
-                native(NativeCall { id: op.a, args: [var(op.b, self)?, var(op.c, self)?] });
+                native(NativeCall { id: op.a, args: [var(op.b)?, var(op.c)?] });
                 Ok(None)
             }
         }
     }
     /// A synchronous send: the target state is entered inside the sending op,
     /// as PlayMaker does, and its own ops run before this one returns.
-    fn send(&mut self, p: Program, event: u16, native: &mut impl FnMut(NativeCall), depth: u8)
-        -> Result<Option<u16>, Halt> {
+    fn send(&mut self, p: Program, event: u16, vars: &mut [i32],
+            native: &mut impl FnMut(NativeCall), depth: u8) -> Result<Option<u16>, Halt> {
         if event == 0 {
             return Ok(None);
         }
@@ -261,7 +268,7 @@ impl Instance {
         for i in 0..state.op_count {
             let op = *p.ops.get(state.first_op as usize + i as usize).ok_or(Halt::BadProgram)?;
             self.cursor = i + 1;
-            match self.run(p, op, native, depth + 1)? {
+            match self.run(p, op, vars, native, depth + 1)? {
                 Some(next) => return Ok(Some(next)),
                 None if self.wait > 0 => return Ok(None),
                 None => {}
@@ -295,13 +302,14 @@ mod tests {
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
                       State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
         let transitions = [Transition { event: FINISHED, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[] };
+        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
         let mut i = Instance::new();
+        let mut vars = [0i32; 2];
         for tick in 0..3 {
-            assert_eq!(i.tick(p, |_| {}), Halt::Ran);
+            assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::Ran);
             assert_eq!(i.state, START, "tick {tick} is still waiting");
         }
-        assert_eq!(i.tick(p, |_| {}), Halt::Ran);
+        assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::Ran);
         assert_eq!(i.state, DONE);
     }
     #[test]
@@ -310,13 +318,15 @@ mod tests {
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
                       State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
         let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[] };
+        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
         let mut i = Instance::new();
-        i.tick(p, |_| {});
+        let mut vars = [0i32; 2];
+        i.tick(p, &mut vars, |_| {});
         assert_eq!(i.state, START, "a false variable takes no branch");
         let mut i = Instance::new();
-        i.vars[0] = 1;
-        i.tick(p, |_| {});
+        let mut vars = [0i32; 2];
+        vars[0] = 1;
+        i.tick(p, &mut vars, |_| {});
         assert_eq!(i.state, DONE);
     }
     #[test]
@@ -325,11 +335,12 @@ mod tests {
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
                       State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
         let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[33] };
+        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[33], var_count: 2 };
         for (soul, expected) in [(32, START), (33, DONE), (99, DONE)] {
             let mut i = Instance::new();
-            i.vars[0] = soul;
-            i.tick(p, |_| {});
+        let mut vars = [0i32; 2];
+            vars[0] = soul;
+            i.tick(p, &mut vars, |_| {});
             assert_eq!(i.state, expected, "soul {soul}");
         }
     }
@@ -342,12 +353,13 @@ mod tests {
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
                       State { first_op: 1, op_count: 1, first_transition: 1, transition_count: 0 }];
         let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[] };
+        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
         let mut i = Instance::new();
-        i.vars[0] = 11;
-        i.vars[1] = 22;
+        let mut vars = [0i32; 2];
+        vars[0] = 11;
+        vars[1] = 22;
         let mut seen = None;
-        i.tick(p, |call| seen = Some(call));
+        i.tick(p, &mut vars, |call| seen = Some(call));
         assert_eq!(i.state, DONE);
         assert_eq!(seen, Some(NativeCall { id: 7, args: [11, 22] }));
     }
@@ -357,11 +369,12 @@ mod tests {
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
                       State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
         let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[] };
+        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
         let mut i = Instance::new();
-        i.tick(p, |_| {});
+        let mut vars = [0i32; 2];
+        i.tick(p, &mut vars, |_| {});
         assert_eq!(i.state, START, "not in the tick that queued it");
-        i.tick(p, |_| {});
+        i.tick(p, &mut vars, |_| {});
         assert_eq!(i.state, DONE);
     }
     #[test]
@@ -370,17 +383,19 @@ mod tests {
         let ops = [op(Code::SendEvent, 0, YES, 0, 0)];
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 }];
         let transitions = [Transition { event: YES, target: START }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[] };
+        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
         let mut i = Instance::new();
-        assert_eq!(i.tick(p, |_| {}), Halt::Depth, "the nesting bound catches it first");
+        let mut vars = [0i32; 2];
+        assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::Depth, "the nesting bound catches it first");
     }
     #[test]
     fn a_bad_index_refuses_rather_than_reading_past_the_program() {
         let ops = [op(Code::SetInt, 0, 0, 9, 0)];
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 0 }];
-        let p = Program { states: &states, transitions: &[], ops: &ops, constants: &[1] };
+        let p = Program { states: &states, transitions: &[], ops: &ops, constants: &[1], var_count: 2 };
         let mut i = Instance::new();
-        assert_eq!(i.tick(p, |_| {}), Halt::BadProgram);
+        let mut vars = [0i32; 2];
+        assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::BadProgram);
     }
     #[test]
     fn the_pending_queue_refuses_rather_than_dropping_an_event() {
@@ -389,8 +404,9 @@ mod tests {
         let many = [op(Code::NextFrameEvent, 0, YES, 0, 0); MAX_PENDING + 1];
         let states = [State { first_op: 0, op_count: many.len() as u16,
                               first_transition: 0, transition_count: 0 }];
-        let p = Program { states: &states, transitions: &[], ops: &many, constants: &[] };
+        let p = Program { states: &states, transitions: &[], ops: &many, constants: &[], var_count: 2 };
         let mut i = Instance::new();
-        assert_eq!(i.tick(p, |_| {}), Halt::PendingFull);
+        let mut vars = [0i32; 2];
+        assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::PendingFull);
     }
 }
