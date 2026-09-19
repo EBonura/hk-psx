@@ -13,7 +13,7 @@ replace are counted apart from that, because they are not script work at all.
 
 No retail payload is embedded; the report goes to .hkpsx.
 """
-import collections
+import collections, re, struct
 from focus import action_fields
 
 # Opcode numbers, in the declaration order of hk_sim::script::Code. Every
@@ -21,15 +21,26 @@ from focus import action_fields
 # every opcode below it: omitting NativeConst silently aimed the three
 # PlayerData opcodes one slot low.
 (NOP, WAIT, SET_BOOL, SET_INT, BOOL_TEST, INT_COMPARE, SEND_EVENT, NEXT_FRAME, NATIVE,
- NATIVE_CONST, PD_GET, PD_SET, PD_BOOL_TEST) = range(13)
+ NATIVE_CONST, PD_GET, PD_SET, PD_BOOL_TEST, HERO_TRIGGER) = range(14)
+
+CMP_LT, CMP_LE, CMP_EQ, CMP_NE, CMP_GE, CMP_GT = range(6)
+# HeroTrigger phases, in the declaration order of PlayMaker's Trigger2DType,
+# which is the enum the source action serializes.
+TRIGGER_ENTER, TRIGGER_STAY, TRIGGER_EXIT = range(3)
+# The flag bit marking an op that re-runs every tick while its state is current.
+REPEAT = 0x80
 
 def _check_opcodes():
-    """Fail the import when these numbers drift from hk_sim::script::Code.
+    """Fail the import when these numbers drift from hk_sim::script.
 
     They already did once: `NativeConst` was added to the Rust enum and not
     here, which silently shifted all three PlayerData opcodes one slot low.
     Nothing had cooked a bank yet, so nothing caught it. Reading the enum is
     cheaper than the next silent miscompile.
+
+    The flag and selector bytes are checked the same way and for the same
+    reason: they are cooked into every op's `flags`, and a mismatch there is a
+    behaviour change rather than a crash.
     """
     from source import ROOT
     text = (ROOT / 'shared/hk-sim/src/script.rs').read_text()
@@ -39,13 +50,15 @@ def _check_opcodes():
                 if line.startswith('    ') and line.strip()[:1].isupper()]
     expected = ['Nop', 'Wait', 'SetBool', 'SetInt', 'BoolTest', 'IntCompare', 'SendEvent',
                 'NextFrameEvent', 'Native', 'NativeConst', 'PlayerDataGet', 'PlayerDataSet',
-                'PlayerDataBoolTest']
+                'PlayerDataBoolTest', 'HeroTrigger']
     if variants != expected:
         raise AssertionError(f'hk_sim::script::Code changed: {variants} != {expected}')
+    for name, value in re.findall(r'pub const (\w+): u8 = (\w+);', text):
+        here = globals().get(name)
+        if here is not None and here != int(value, 0):
+            raise AssertionError(f'hk_sim::script::{name} is {value}, not {here}')
 
 _check_opcodes()
-
-CMP_LT, CMP_LE, CMP_EQ, CMP_NE, CMP_GE, CMP_GT = range(6)
 
 # The object reference constants, mirroring hk_sim::script.
 HERO = 0x7fff_ffff
@@ -58,6 +71,29 @@ def source_id(path_id):
     collide with a real object.
     """
     return path_id & 0x7fff_ffff
+
+def decoded_action(data, index):
+    """One action's fields, including the enums `action_fields` leaves out.
+
+    A PlayMaker enum is a raw four-byte parameter rather than one of the compact
+    scalar shapes, so the shared decoder skips it: adding it there would change
+    the field set the actor recognizers match on. `Trigger2dEvent` carries its
+    whole meaning in one, the Trigger2DType that says enter, stay or exit, so
+    the compiler reads them here instead.
+    """
+    fields = action_fields(data, index, objects=True)
+    start = data['actionStartIndex'][index]
+    end = (data['actionStartIndex'][index + 1] if index + 1 < len(data['actionNames'])
+           else len(data['paramName']))
+    for i in range(start, end):
+        if data['paramDataType'][i] != 7:
+            continue
+        pos, size = data['paramDataPos'][i], data['paramByteDataSize'][i]
+        if size != 4:
+            raise ValueError('invalid enum width')
+        fields[data['paramName'][i] or str(i)] = struct.unpack(
+            '<i', bytes(data['byteData'][pos:pos + size]))[0]
+    return fields
 
 class Unsupported(Exception):
     """An action this slice cannot compile. Carries the action for the report."""
@@ -100,6 +136,23 @@ class Constants:
         if value not in self.values:
             self.values.append(value)
         return self.values.index(value)
+
+def physics_layers(source):
+    """The project's 2D layer names and collision matrix, read once per source.
+
+    A `Trigger2dEvent` with no tag filter fires for whatever Unity's physics
+    delivered to the collider, and what physics delivers is exactly what this
+    matrix allows. So "could anything but the Knight be inside this volume" has
+    a source-derived answer rather than a feeling about what the room contains.
+    """
+    if not hasattr(source, '_physics_layers'):
+        file = source.file('globalgamemanagers')
+        names = next(o for o in file.objects.values()
+                     if o.type.name == 'TagManager').read_typetree()['layers']
+        matrix = next(o for o in file.objects.values()
+                      if o.type.name == 'Physics2DSettings').read_typetree()['m_LayerCollisionMatrix']
+        source._physics_layers = (names, matrix)
+    return source._physics_layers
 
 class SceneObjects:
     """Cook-time object resolution over one scene's transform tree.
@@ -176,6 +229,46 @@ class SceneObjects:
         """
         found = [gid for gid in self.named_objects.get(name, ()) if self.scene.active(gid)]
         return found[0] if len(found) == 1 else None
+
+    def has_trigger(self, gid):
+        """Whether this object carries an enabled 2D trigger collider of its own.
+
+        Unity raises OnTriggerEnter2D on the collider's GameObject, so an FSM
+        whose own object has none never receives the callback. Six of the
+        admitted scenes' `Area Title Controller` instances are exactly that: an
+        authored `Trigger2dEvent` with no collider, and no Rigidbody2D to
+        forward one from a child either. Compiling those would put an op in the
+        bank that can never fire, which reads as an implemented trigger rather
+        than an absent one.
+        """
+        for component in self.scene.gos.get(gid, {}).get('m_Component', ()):
+            if component['component']['m_FileID']:
+                continue
+            typename, tree = self.scene.objects.get(component['component']['m_PathID'],
+                                                    (None, None))
+            if (typename or '').endswith('Collider2D') and tree['m_Enabled'] and tree['m_IsTrigger']:
+                return True
+        return False
+
+    def reachable_layers(self, gid):
+        """The named layers whose colliders physics can deliver to this object.
+
+        `{'Player'}` is the compilable case: nothing but a Player-layer collider
+        can be inside the volume, and in this game that layer holds the Knight's
+        body. `Hero Detector` is the layer the level authors used for exactly
+        that, and its matrix row admits Player and nothing else named.
+
+        Layers the project never named are dropped. Their matrix rows keep
+        Unity's all-on default because the inspector shows no row to edit for a
+        layer with no name, and nothing can be assigned to one in the editor
+        either: no object in the 45 admitted scenes carries a collider on one.
+        """
+        go = self.scene.gos.get(gid)
+        if go is None:
+            return None
+        names, matrix = physics_layers(self.scene.source)
+        mask = matrix[go['m_Layer']] & 0xffff_ffff
+        return {names[i] for i in range(len(names)) if mask >> i & 1 and names[i]}
 
 # The reference actions that store an object, and the field each stores into.
 OBJECT_STORE = {'GetOwner': 'storeGameObject', 'GetHero': 'storeResult',
@@ -380,7 +473,7 @@ def compile_fsm(fsm, owner_id=None, objects=None):
             if not data['actionEnabled'][i]:
                 continue
             action = raw.rsplit('.', 1)[-1]
-            args = action_fields(data, i, objects=True)
+            args = decoded_action(data, i)
             ops.extend(compile_action(action, args, events, constants, variables, owner_id,
                                       fields, folded, objects, visible))
             _reference(action, args, owner_id, objects, visible, folded, fixed)
@@ -497,6 +590,81 @@ def _resolve_object(action, args, owner_id, objects, env, folded):
         raise Unsupported(action, 'target is not an object of this scene')
     return found
 
+def _filter(field, action, folded, what):
+    """A tag or layer filter as a string, reading PlayMaker's None as no filter.
+
+    A NamedVariable with `useVariable` set and an empty name is PlayMaker's
+    None: the field is unbound and the action reads the empty string, which for
+    these two means "match anything". 816 of the 1,026 `Trigger2dEvent`
+    instances carry the tag in that shape, and treating it as a variable the
+    cook cannot fix would refuse them all for the wrong reason.
+    """
+    if isinstance(field, dict) and field.get('useVariable') and not field.get('name'):
+        return ''
+    value = _folded_scalar(field, folded)
+    if not isinstance(value, str):
+        raise Unsupported(action, f'{what} from a variable this cook cannot fix')
+    return value
+
+def _trigger(action, args, events, constants, owner_id, folded, objects):
+    """`Trigger2dEvent` as a HeroTrigger op, or a refusal naming what is in the way.
+
+    The port can answer one question about a trigger volume: is the hero body
+    inside it. That is the question npc_control's talk range and the bench
+    already put to a cooked object's bounds. Everything else an instance can
+    name, an enemy, a nail swing, a spell, a breaker, is a collider the guest
+    has no model of, and an op that tested the hero in its place would fire for
+    the wrong body rather than not at all.
+    """
+    if owner_id is None:
+        raise Unsupported(action, 'no stable owner id supplied')
+    if objects is None:
+        raise Unsupported(action, 'no scene resolver supplied')
+    phase = args.get('trigger')
+    if phase not in (TRIGGER_ENTER, TRIGGER_STAY, TRIGGER_EXIT):
+        raise Unsupported(action, 'unreadable trigger type')
+    # What the volume watches for is asked before how the instance books the
+    # result, so an instance that is out of reach for both reasons is reported
+    # by the one that would still be true after the other is implemented.
+    layer = _filter(args.get('collideLayer'), action, folded, 'collide layer')
+    if layer:
+        raise Unsupported(action, f'layer filter {layer!r}')
+    tag = _filter(args.get('collideTag'), action, folded, 'collide tag')
+    if tag and tag != 'Player':
+        # HeroBox, Nail Attack, Dream Attack, Hero Spell and Wall Breaker all
+        # name a child collider of the Knight rather than the Knight, and each
+        # is a different shape from the body, so answering them with the body
+        # would move where the trigger fires rather than refuse to place it.
+        raise Unsupported(action, f'collide tag {tag!r}')
+    reachable = objects.reachable_layers(owner_id)
+    if reachable is None:
+        raise Unsupported(action, 'the FSM object is not an object of this scene')
+    if 'Player' not in reachable:
+        # Said of the body rather than of the hero, because an Attack-layer
+        # volume does see the Knight, through the HeroBox child the port has no
+        # collider for.
+        raise Unsupported(action, 'physics delivers no hero-body collider to this volume')
+    if not tag and reachable != {'Player'}:
+        raise Unsupported(action, 'any collider on ' + ', '.join(sorted(reachable - {'Player'})))
+    if not objects.has_trigger(owner_id):
+        raise Unsupported(action, 'the FSM object carries no trigger collider')
+    store = args.get('storeCollider')
+    if isinstance(store, dict) and store.get('useVariable') and store.get('name'):
+        # PlayMaker stores the colliding object before it sends, so the write
+        # belongs inside the op rather than beside it: emitted as its own op it
+        # would leave the Knight in that variable on every tick the volume is
+        # empty. The op has no fourth operand to carry the slot.
+        raise Unsupported(action, 'stores the colliding object')
+    event = events.id(args.get('sendEvent'))
+    if not event:
+        # An authored trigger with no event does nothing in PlayMaker either,
+        # but a compiled op that queries a volume and sends nowhere is
+        # indistinguishable from an unimplemented one in a trace, so it refuses
+        # by name instead.
+        raise Unsupported(action, 'no event to send')
+    # Always REPEAT: the action listens for as long as its state is current.
+    return [(HERO_TRIGGER, phase | REPEAT, constants.index(source_id(owner_id)), 0, event)]
+
 def compile_action(action, args, events, constants, variables, owner_id=None, fields=None,
                    folded=None, objects=None, env=None):
     """Ops for one enabled action, or Unsupported."""
@@ -528,6 +696,8 @@ def compile_action(action, args, events, constants, variables, owner_id=None, fi
             return [(SET_INT, 0, temp, constants.index(int(_scalar(value))), 0),
                     (PD_SET, 0, field, temp, 0)]
         return [(PD_SET, 0, field, _var(value, variables, action), 0)]
+    if action == 'Trigger2dEvent':
+        return _trigger(action, args, events, constants, owner_id, folded, objects)
     if action == 'Wait':
         time = _scalar(args.get('time'))
         if time is None:
@@ -616,7 +786,7 @@ def unsupported_actions(fsm, owner_id=None, objects=None, reasons=None):
                 continue
             action = raw.rsplit('.', 1)[-1]
             try:
-                args = action_fields(data, i, objects=True)
+                args = decoded_action(data, i)
                 compile_action(action, args, events, constants, variables, owner_id, fields,
                                folded, objects, visible)
             except Unsupported as refusal:
@@ -754,9 +924,19 @@ if __name__ == '__main__':
     out = survey(s, scenes)
     out['limitations'] = [
         'Only the first slice compiles: waits, bool and int sets, BoolTest, IntCompare, '
-        'SendEventByName to self, NextFrameEvent, the PlayerData accessors and the '
+        'SendEventByName to self, NextFrameEvent, the PlayerData accessors, the '
         'cook-time object references (GetOwner, GetHero, FindChild, GetParent, '
-        'FindGameObject).',
+        'FindGameObject) and the hero half of Trigger2dEvent.',
+        'Trigger2dEvent compiles only where the hero body is the one collider that can '
+        'be in the volume: either the action filters on the Player tag, or it filters on '
+        'nothing and the project Physics2D matrix lets no named layer but Player reach '
+        'the owner, which is what the Hero Detector layer means. An instance naming '
+        'HeroBox, Nail Attack, Dream Attack, Hero Spell or Wall Breaker is refused '
+        'because each is a child collider of the Knight with its own shape, and one '
+        'naming an Enemies layer or an Enemy Detector volume is refused because the '
+        'guest has no collider for what it is watching for. An owner with no enabled '
+        'trigger collider of its own is refused too: Unity would never raise the '
+        'callback, so the op could only ever be a trigger that silently never fires.',
         'A reference compiles only where its target is fixed at cook time. FindChild and '
         'GetParent walk the source scene from the owner, a literal pointer or a variable '
         'the start state sets before it can transition; FindGameObject answers only for '

@@ -56,6 +56,13 @@ pub enum Code {
     /// Send `b` when PlayerData field `a` is true, `c` when false. The source
     /// action is one step, so this is too: no compiler temporary is needed.
     PlayerDataBoolTest,
+    /// Send `c` while the hero body is in phase `flags` with the trigger volume
+    /// of the object at constant `a`. `Trigger2dEvent` is the source action,
+    /// and it is live for as long as its state is current, so the cooker always
+    /// sets `REPEAT` on it: without that the volume would be sampled once on
+    /// state entry and never again, which is a trigger that silently never
+    /// fires rather than one that refused to compile.
+    HeroTrigger,
 }
 /// An op with this flag bit set re-runs every tick for as long as its state is
 /// current, which is what PlayMaker's `everyFrame` means: the action's OnEnter
@@ -71,6 +78,12 @@ pub const CMP_EQ: u8 = 2;
 pub const CMP_NE: u8 = 3;
 pub const CMP_GE: u8 = 4;
 pub const CMP_GT: u8 = 5;
+/// `HeroTrigger` phases, in the declaration order of PlayMaker's
+/// `Trigger2DType`, which is the field the source action stores. They share the
+/// flags byte with `REPEAT` the same way the comparison selectors do.
+pub const TRIGGER_ENTER: u8 = 0;
+pub const TRIGGER_STAY: u8 = 1;
+pub const TRIGGER_EXIT: u8 = 2;
 
 #[derive(Clone, Copy, Debug)]
 pub struct State {
@@ -141,6 +154,19 @@ pub trait Host {
     /// save file holds.
     fn player_data(&mut self, field: u16) -> i32;
     fn set_player_data(&mut self, field: u16, value: i32);
+    /// Whether the hero body is entering, staying inside or leaving `object`'s
+    /// trigger volume this tick, for one of the three `TRIGGER_` phases.
+    ///
+    /// The host remembers last tick's overlap, not the executor. Unity raises
+    /// `OnTriggerEnter2D` from the physics step rather than from the state that
+    /// listens, so an FSM that enters a state while the Knight is already
+    /// standing inside sees Stay and never Enter; an edge kept per op here
+    /// would instead fire Enter on every re-entry to that state, which is a
+    /// wrong answer the trace comparison would only catch by luck.
+    ///
+    /// `NO_OBJECT` is inside nothing, so the host answers false for it rather
+    /// than falling back to some other volume.
+    fn hero_trigger(&mut self, object: i32, phase: u8) -> bool;
 }
 /// One running FSM instance.
 #[derive(Clone, Copy, Debug)]
@@ -365,6 +391,18 @@ impl Instance {
                 let event = if host.player_data(op.a) != 0 { op.b } else { op.c };
                 self.send(p, event, vars, host, depth)
             }
+            Code::HeroTrigger => {
+                let phase = op.flags & !REPEAT;
+                if phase > TRIGGER_EXIT {
+                    return Err(Halt::BadProgram);
+                }
+                let object = *p.constants.get(op.a as usize).ok_or(Halt::BadProgram)?;
+                if host.hero_trigger(object, phase) {
+                    self.send(p, op.c, vars, host, depth)
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
     /// A synchronous send: the target state is entered inside the sending op,
@@ -419,6 +457,11 @@ mod tests {
         calls: [Option<NativeCall>; 4],
         count: usize,
         fields: [i32; 4],
+        /// The one volume and phase this host answers true for; the hero is
+        /// outside everything else.
+        inside: Option<(i32, u8)>,
+        last_ask: Option<(i32, u8)>,
+        asks: usize,
     }
     impl Host for Recorder {
         fn native(&mut self, call: NativeCall) {
@@ -434,6 +477,11 @@ mod tests {
             if let Some(slot) = self.fields.get_mut(field as usize) {
                 *slot = value;
             }
+        }
+        fn hero_trigger(&mut self, object: i32, phase: u8) -> bool {
+            self.last_ask = Some((object, phase));
+            self.asks += 1;
+            self.inside == Some((object, phase))
         }
     }
     #[test]
@@ -642,6 +690,47 @@ mod tests {
         // ignores it, rather than being queued or refused.
         assert_eq!(i.receive(p, &mut vars, &mut host, YES), Halt::Ran);
         assert_eq!(i.state, DONE);
+    }
+    #[test]
+    fn a_hero_trigger_keeps_watching_its_volume_and_sends_when_the_hero_arrives() {
+        // Trigger2dEvent listens for as long as its state is current, so the
+        // cooker always sets REPEAT on it. Sampled once on entry it would be a
+        // trigger that never fires again, which is the silent wrong answer
+        // rather than the refusal.
+        const VOLUME: i32 = 4242;
+        let ops = [op(Code::HeroTrigger, TRIGGER_STAY | REPEAT, 0, 0, YES)];
+        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
+                      State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
+        let transitions = [Transition { event: YES, target: DONE }];
+        let p = Program { states: &states, transitions: &transitions, ops: &ops,
+                          constants: &[VOLUME], var_count: 0 };
+        let mut host = Recorder::default();
+        let mut i = Instance::new();
+        for tick in 0..3 {
+            assert_eq!(i.tick(p, &mut [], &mut host), Halt::Ran);
+            assert_eq!(i.state, START, "tick {tick}: the hero is somewhere else");
+        }
+        assert_eq!(host.last_ask, Some((VOLUME, TRIGGER_STAY)),
+                   "the volume is the cooked object id, the phase the authored one");
+        // Four asks for three ticks: the entry tick runs the op in the one-shot
+        // pass and again in that same tick's repeat pass, then every later tick
+        // runs only the repeat.
+        assert_eq!(host.asks, 4);
+        host.inside = Some((VOLUME, TRIGGER_STAY));
+        i.tick(p, &mut [], &mut host);
+        assert_eq!(i.state, DONE);
+    }
+    #[test]
+    fn a_hero_trigger_phase_the_executor_does_not_know_refuses() {
+        // The three phases are PlayMaker's Trigger2DType. A fourth value means
+        // the bank and this executor disagree, which must stop rather than pick
+        // a phase.
+        let ops = [op(Code::HeroTrigger, TRIGGER_EXIT + 1, 0, 0, YES)];
+        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 0 }];
+        let p = Program { states: &states, transitions: &[], ops: &ops,
+                          constants: &[4242], var_count: 0 };
+        let mut i = Instance::new();
+        assert_eq!(i.tick(p, &mut [], &mut Recorder::default()), Halt::BadProgram);
     }
     #[test]
     fn a_bad_index_refuses_rather_than_reading_past_the_program() {
