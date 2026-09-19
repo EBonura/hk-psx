@@ -16,6 +16,13 @@ pub const DOUBLE_JUMP: usize = 3;
 pub const DN_START: usize = 4;
 pub const FIREBALL_ANTIC: usize = 8;
 pub const FIREBALL_CAST: usize = 9;
+pub const SD_CHARGE_GROUND: usize = 10;
+pub const SD_WALL_CHARGE: usize = 11;
+pub const SD_DASH: usize = 12;
+pub const SD_HIT_WALL: usize = 13;
+/// Vengeful Spirit's projectile, from its own sprite collection.
+pub const BALL: usize = 14;
+pub const BALL_END: usize = 15;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;

@@ -103,6 +103,17 @@ fn ability_pose(player:&Player,dream:&hk_sim::DreamNail,cast:&hk_sim::Cast)->Opt
         let offset=match dream.phase {DreamPhase::Start=>0,DreamPhase::Charge=>1,DreamPhase::Antic=>2,_=>3};
         return Some((ability_art::DN_START+offset,dream.tick as u32));
     }
+    // The Crystal Heart owns the body through all four of its phases.
+    match player.super_dash {
+        hk_sim::SuperDash::Charging(t)=>return Some((if player.grounded {ability_art::SD_CHARGE_GROUND}
+            else {ability_art::SD_WALL_CHARGE},t as u32)),
+        hk_sim::SuperDash::Ready=>return Some((if player.grounded {ability_art::SD_CHARGE_GROUND}
+            else {ability_art::SD_WALL_CHARGE},PARAMS.super_dash_charge_ticks as u32)),
+        hk_sim::SuperDash::Travelling(t)=>return Some((ability_art::SD_DASH,t as u32)),
+        hk_sim::SuperDash::Recovering(t)=>return Some((ability_art::SD_HIT_WALL,
+            (PARAMS.super_dash_recover_ticks.saturating_sub(t)) as u32)),
+        hk_sim::SuperDash::Off=>{}
+    }
     if player.dash_left>0 {return Some((ability_art::DASH,(PARAMS.dash_ticks-player.dash_left) as u32));}
     if player.wall_locked {return Some((ability_art::WALLJUMP,player.wall_lock_ticks as u32));}
     if player.wall_sliding {return Some((ability_art::WALL_SLIDE,player.animation_tick));}
@@ -408,6 +419,9 @@ fn main() {
             let effect_frame=nail_frame(&room,&nail);
             let enemy_draws=enemies.prepare_draws(r,&room,camera);
             let ability_frame=pose.map(|(clip,age)|ability_art::frame_index(clip,age));
+            // Vengeful Spirit's projectile carries its own frame and key.
+            let ball_frame=cast.ball_bounds(FIREBALL_PARAMS).map(|_|
+                ability_art::frame_index(ability_art::BALL,cast.ball.life as u32));
             let mut needed=[0u16;12];
             needed[0]=match ability_frame {
                 Some(i)=>ability_art::KEY_BASE+i as u16,
@@ -417,6 +431,10 @@ fn main() {
             if let Some(f)=effect_frame {needed[1]=u32_at(room.frame(f),0) as u16;}
             enemy_draws.append_needed(&mut needed,&mut needed_len);
             shade.append_needed(&mut needed,&mut needed_len);
+            if let Some(i)=ball_frame {
+                assert!(needed_len<needed.len(),"Vengeful Spirit animation working set");
+                needed[needed_len]=ability_art::KEY_BASE+i as u16;needed_len+=1;
+            }
             if let Some(f)=door_frame {
                 assert!(needed_len<needed.len(),"Great Door animation working set");
                 needed[needed_len]=u32_at(room.frame(f),0)as u16;needed_len+=1;
@@ -434,6 +452,9 @@ fn main() {
                 };
             }
             if let Some(f)=effect_frame {draw_frame(&room,f,&player,camera);prims+=1;}
+            if let Some(i)=ball_frame {
+                prims+=ability_art::draw(i,cast.ball.x,cast.ball.y,cast.ball.facing,camera);
+            }
             prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)),settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(vitals.blue_health),save_prompt);render::submit(vitals.health,settings.cheats.params(VITAL_PARAMS).max_health,vitals.soul,soul_cap(&shade),paused,vitals.blue_health,door.shade());
             emit::counter(counter::TRI_PRIMITIVES,prims*2);emit::stage_end(stage::RENDER);
             emit::stage_begin(stage::PRESENT);
