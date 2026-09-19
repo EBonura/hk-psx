@@ -139,8 +139,12 @@ def scene(parts, layers=None, positions=None, active=None, file='level44'):
         base = origins.get(gid, (10., 20., 0.))
         return (base[0] + x, base[1] + y, base[2] + z)
 
+    # `sid` rather than the file name and a raw index, because the real one
+    # resolves an additively merged object back to the file it was serialized
+    # in. This stub has no merge, so it is the plain form.
     return SimpleNamespace(objects=store, gos=gos, source=None,
                            file=SimpleNamespace(name=f'/source/{file}'),
+                           sid=lambda i: f'{file}:{i}',
                            point=point, active=lambda gid: (active or {}).get(gid, True))
 
 
