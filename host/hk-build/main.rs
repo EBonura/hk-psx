@@ -202,50 +202,66 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("town-shop", "HK_SHOP_OPENED", 1), ("town-shop", "HK_SHOP_CLOSED", 1),
     ("town-shop", "HK_SHOP_OPEN", 0), ("town-shop", "HK_SHOP_PURCHASES", 0),
     ("town-shop", "HK_SAVE_LOADED", 1), ("town-shop", "HK_DEATHS", 0),
-    // The False Knight, killed on the disc. Three staggers, three conversions,
-    // the death event 450 ticks after the last head kill, the arena cleared and
-    // its gates reopened, with the Knight never losing a mask.
+    // The False Knight, fought fairly and killed. No cheats, five masks at the
+    // end and not one of them lost: HK_CHEATS 0 and HK_HEALTH 5 hold at every
+    // poll of the tape, not only at the last one. Three staggers, three
+    // conversions, the death event, the arena cleared and its gates reopened.
+    //
+    // The tape before this one ran with Invincibility on, set by its own
+    // pause-menu polls, so the port had proved a boss that could be killed and
+    // had never proved a fight that could be won. Strip those seven events from
+    // it and the Knight dies without landing a single stagger.
     //
     // STAGGERS equal to CONVERSIONS is the assertion worth having. The source
     // lets a hero stagger the boss out of its own rage, after which the fight
     // never ends because Rage Check only reads the stagger count once the rage
     // counter reaches zero; an earlier tape measured 8 staggers against 1
-    // conversion. Equal counts are the proof this one held fire through both
+    // conversion, and the recook that sealed the arena left the cheated tape at
+    // 4 against 2. Equal counts are the proof this one held fire through both
     // rages instead.
     //
-    // Two things had to be found before any tape could finish this fight. The
+    // Three things had to be found before any tape could finish this fight. The
     // exposed Head sits at y 30.24 to 32.47 and a Knight standing on the arena
     // floor reaches y 30.18 with an up slash, so it is unreachable from the
-    // ground by 0.06 units and the tape jumps and swings at the apex. And every
-    // landed hit recoils the Knight 0.69 units away from his facing, so a tape
-    // that never presses a direction walks itself off the floor: that, not the
-    // boss fighting out of reach, is what stopped the previous tape at exactly
-    // 10 hp.
+    // ground by 0.06 units and the tape jumps and swings at the apex. Every
+    // landed hit recoils the Knight 0.69 units away from his facing. And the
+    // arena has to seal: with both end gates cooked as terrain that recoil can
+    // no longer walk him off the floor, which is what left an earlier tape
+    // stuck at exactly 10 hp, and it gives the hero a bounded band from x 19 to
+    // x 39 to dodge in. This route did not exist until the gates did.
     //
     // The card is seeded rather than earned, so this proves the fight and not
-    // the journey to it. The route string is tools/tapes/boss-kill.route, kept
-    // because a .pxtape is opaque and this one is 831 events.
+    // the journey to it. The route string is tools/tapes/boss-fight.route, kept
+    // because a .pxtape is opaque; it is 239 events over 4,609 polls, and the
+    // only buttons in it are square, left, right, cross and one start.
     //
-    // Fragile to a rebuild: the two parked hunts at polls 2150 and 10180 expect
-    // the boss at a particular x. If a rebuild moves it, the generic sweep used
-    // at 4720 and 6660 found and emptied a Head without being told where.
+    // Fragile to anything that moves the boss path, the actor bounds or the
+    // nail geometry. Three that silently break a tape and cost real time to
+    // find: Actor::local_bounds mirrors the placement box when the walk
+    // direction leaves the cooked initial_direction, which flips this boss's
+    // collision offset by 0.142 units the moment it turns right;
+    // respond_to_hurt cancels the swing and the nail recoil on any landed hit,
+    // whatever the source; and the barrel summoner seeds from 1 out of
+    // EnemyWorld::new rather than from the scene id, because nothing in this
+    // route reloads the scene for clear_shots to re-seed it.
     ("boss-fight", "HK_FK_TRIGGERED", 1), ("boss-fight", "HK_FK_DROPPED", 1),
     ("boss-fight", "HK_FK_STAGGERS", 3), ("boss-fight", "HK_FK_CONVERSIONS", 3),
     ("boss-fight", "HK_FK_DEATHS", 1), ("boss-fight", "HK_FK_STUNNED", 3),
     ("boss-fight", "HK_FK_ARENA", 4), ("boss-fight", "HK_FK_ACTIVATED", 1),
     ("boss-fight", "HK_ARENA_GATE_CLOSES", 1), ("boss-fight", "HK_ARENA_GATE_OPENS", 1),
     ("boss-fight", "HK_HEALTH", 5), ("boss-fight", "HK_DEATHS", 0),
-    ("boss-fight", "HK_ENEMY_KILLS", 0), ("boss-fight", "HK_CHEATS", 1),
+    ("boss-fight", "HK_ENEMY_KILLS", 0), ("boss-fight", "HK_CHEATS", 0),
     ("boss-fight", "HK_SAVE_LOADED", 1), ("boss-fight", "HK_REGION_ID", 240),
+    // Every barrel the rage flung reached terrain or the hero. Spawns and
+    // breaks are separate counters because a barrel the pool recycled under
+    // pressure never breaks, so equal counts are what tells a fight the player
+    // dodged from one where the rage's own barrels evicted each other.
+    ("boss-fight", "HK_FK_BARRELS", 24), ("boss-fight", "HK_FK_BARRELS_BROKEN", 24),
     // Losing to the False Knight, and walking back in for a second go.
     //
-    // HK_CHEATS 0 is the first assertion and the reason this route exists.
-    // boss-fight runs with Invincibility on: its tape's polls 60 to 82 are a
-    // pause-menu sequence that sets it, and its "the Knight never loses a mask"
-    // is that cheat rather than any property of the fight. So the disc proved a
-    // boss that could be killed and never proved one that could kill. A mortal
-    // Knight who presses nothing after walking into the trigger is dead in
-    // 1,002 polls, on five separate hits.
+    // boss-fight above is the win. This is the loss, and the two together are
+    // what P21 actually asks for. A Knight who presses nothing after walking
+    // into the trigger is dead in 1,002 polls, on five separate hits.
     //
     // What the second half proves is the retry. The death leaves a Shade in the
     // arena, respawns at the seat with five masks, resets the arena to Waiting
