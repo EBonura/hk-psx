@@ -290,6 +290,7 @@ fn main() {
     let mut focus=hk_sim::Focus::new();
     let mut nail_response=hk_sim::NailResponse::new();
     let mut dream=hk_sim::DreamNail::new();
+    let mut cast=hk_sim::Cast::new();
     let mut region_id=0usize;
     let mut frame=0u32;let mut attacks=0u32;
     let mut safe=(SPAWN.0,SPAWN.1,0usize);
@@ -509,8 +510,17 @@ fn main() {
                         } else if !vitals.dead {
                             let door_exit=door.tick(r.scene);
                             let read_consumes=dialogue::consumes_actions();
+                            // Source Spell Control: the cast button waits Button Down Time
+                            // for a release. Let go inside that and it casts; keep holding
+                            // and the Focus starts instead. One button, two moves.
+                            let cast_button=pad.is_held(button::CIRCLE)&&!read_consumes&&vitals.can_control();
+                            let cast_blocked=!vitals.can_control()||door.pending()||read_consumes;
+                            cast.has_fireball=settings.cheats.spell;
+                            cast.tick(FIREBALL_PARAMS,FIREBALL_ANTIC_TICKS,FIREBALL_CAST_TICKS,
+                                cast_button,&mut vitals.soul,&player,cast_blocked);
+                            cast.stop_at_wall(FIREBALL_PARAMS,room.counts[5],state.edge_reader(r,&room));
                             let focus_events=focus.step(FOCUS_PARAMS,settings.cheats.params(VITAL_PARAMS),hk_sim::FocusInput {
-                                held:pad.is_held(button::CIRCLE)&&!read_consumes,grounded:player.grounded,
+                                held:cast_button&&cast.held_past_tap(FIREBALL_PARAMS)&&!cast.locks_control(),grounded:player.grounded,
                                 can_start:vitals.can_control() && !door.pending() && (!nail.active || nail.age>=FOCUS_PARAMS.attack_recovery_ticks),
                             },&mut vitals);
                             focus_audio::tick(&focus,focus_events);
@@ -566,7 +576,7 @@ fn main() {
                                 respawn=Some((r.scene,stand,player.facing,region_id));
                                 save_prompt=Some(0);
                             }
-                            let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control()||save_prompt.is_some();
+                            let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control()||save_prompt.is_some()||cast.locks_control();
                             // Take Control: the Dream Nail owns the Knight from Start to End.
                             dream.has_dream_nail=settings.cheats.dream;
                             dream.tick(DREAM_NAIL_PARAMS,pad.is_held(button::TRIANGLE)&&vitals.can_control(),&player,locked);
@@ -632,7 +642,7 @@ fn main() {
                                 }
                                 if shade_events.returned_geo>0 {geo.add_quietly(shade_events.returned_geo,geo::GEO_PARAMS);geo_audio::pickup(1);}
                             }
-                            let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&dream,&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
+                            let enemy_events=enemies.tick(r,&room,&mut state,&mut player,&mut vitals,&nail,&dream,cast.ball_bounds(FIREBALL_PARAMS).map(|b|(b,FIREBALL_PARAMS.damage)),&mut nail_response,ATTACK_PARAMS,NAIL_POLYGONS,settings.cheats,
                                 [camera.0,camera.1,-2496922],runner_event,
                                 |scene,x,y| {let i=cache.locate(scene,x,y)?;Some((world::resident(i)?,cache.room_for(i)?))});
                             enemies.take_geo_deaths(r.scene,|source,x,y|geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));

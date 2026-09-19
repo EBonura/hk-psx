@@ -23,7 +23,7 @@ impl Default for Settings {fn default()->Self{Self::new()}}
 pub enum Page {Main,Options,Controls,Cheats,Profiles}
 pub const MAIN_ITEMS:[&str;4]=["Start Game","Options","Controls","Cheats"];
 const _:()=assert!(CHEAT_ITEMS.len()==crate::cheats::CHEAT_ROWS);
-pub const CHEAT_ITEMS:[&str;10]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)","Mothwing Cloak (L1 dash)","Mantis Claw (wall jump)","Monarch Wings (double jump)","Crystal Heart (hold R1)","Shade Cloak (dash i-frames)","Dream Nail (hold Triangle)"];
+pub const CHEAT_ITEMS:[&str;11]=["Invincibility","Pure Nail (21 damage)","Infinite SOUL","Max masks (9)","Mothwing Cloak (L1 dash)","Mantis Claw (wall jump)","Monarch Wings (double jump)","Crystal Heart (hold R1)","Shade Cloak (dash i-frames)","Dream Nail (hold Triangle)","Vengeful Spirit (tap O)"];
 pub const OPTION_ITEMS:[&str;4]=["Sound effects","Ambience","Music","Back"];
 pub const CONTROL_LINES:[&str;12]=[
     "D-pad: move","X: jump","Square: swing nail","Hold O: Focus / heal",

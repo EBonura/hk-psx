@@ -49,7 +49,6 @@ fn tick(w:&mut World,spec:Spec)->u16 {w.tick_with(spec,0,0,COVER,1,|_|[-100*ONE,
  let poly=[[p.bounds[0],p.bounds[1]],[p.bounds[2],p.bounds[1]],[p.bounds[2],p.bounds[3]],[p.bounds[0],p.bounds[3]]];
  let mut a=World::new();let mut b=World::new();a.strike_with(p,0,&poly);b.strike_with(p,0,&poly);
  for (a,b)in a.bugs.iter().flatten().zip(b.bugs.iter().flatten()) {assert_eq!(a.body,b.body);assert_eq!(a.vx,b.vx);assert!((p.scale[0]..=p.scale[1]).contains(&a.scale));assert!(a.body.vy>0);assert!((a.body.x-p.origin[0]).abs()<=ONE/2);}
- assert!(core::mem::size_of::<World>()<=224);
 }
 #[test]fn earned_two_masks_absorb_damage_before_normal_and_focus_does_not_restore_them(){
  let p=Spec{gravity:0,..SPEC};let mut w=World::new();w.strike_with(p,0,&POLY);for _ in 0..15{tick(&mut w,p);}w.strike_with(p,0,&POLY);
@@ -66,4 +65,12 @@ fn tick(w:&mut World,spec:Spec)->u16 {w.tick_with(spec,0,0,COVER,1,|_|[-100*ONE,
  w.tick_with(p,0,0,[0;4],0,|_|[0;4]);assert!(!w.splat_visible());assert!(w.opened());
  w.reset();assert!(!w.splat_visible());w.strike_with(p,0,&POLY);assert!(w.splat_visible());
  w.leave_scene();assert!(!w.splat_visible());assert!(w.opened());
+}
+#[test]fn world_stays_within_its_ram_budget(){
+ // The bugs embed a Player each, purely for its collision. Player carries the
+ // hero's ability state too, which P14 and P15 grew from 40 to 80 bytes, so
+ // this budget moved with it. If it needs raising again, split the hero-only
+ // fields out of Player instead: 32 actors, the corpses and these bugs all pay
+ // for state only the Knight ever reads.
+ assert!(core::mem::size_of::<World>()<=384,"lifeblood World is {} bytes",core::mem::size_of::<World>());
 }

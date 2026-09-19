@@ -169,6 +169,7 @@ fn tick(
         v,
         n,
         &hk_sim::DreamNail::new(),
+        None,
         &mut NailResponse::new(),
         no_attack(),
         [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4],
@@ -432,10 +433,10 @@ fn cheat_nail_and_contact_protection_use_actual_enemy_runtime() {
   let settings=cheats::Settings{invincible:enabled,max_nail:enabled,..cheats::Settings::new()};
   let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);let mut v=Vitals::new(VITAL_PARAMS);let mut n=Nail::new();
   let polygons=[&[[-ONE,-2*ONE],[ONE,-2*ONE],[ONE,ONE],[-ONE,ONE]][..];4];
-  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&hk_sim::DreamNail::new(),&mut NailResponse::new(),no_attack(),polygons,settings,[0,0,-2496922],|_| panic!("Crawler event"),|_,_,_|None);
+  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&hk_sim::DreamNail::new(),None,&mut NailResponse::new(),no_attack(),polygons,settings,[0,0,-2496922],|_| panic!("Crawler event"),|_,_,_|None);
   assert_eq!(hit.hurt,if enabled{Hurt::Ignored}else{Hurt::Recoiling});assert_eq!(v.health,if enabled{5}else{4});
   p.x=w.actor_state(0,SPEC.source_id).unwrap().0;n.active=true;n.age=1;
-  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&hk_sim::DreamNail::new(),&mut NailResponse::new(),no_attack(),polygons,settings,[0,0,-2496922],|_| panic!("Crawler event"),|_,_,_|None);
+  let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&hk_sim::DreamNail::new(),None,&mut NailResponse::new(),no_attack(),polygons,settings,[0,0,-2496922],|_| panic!("Crawler event"),|_,_,_|None);
   assert_eq!(hit.hits,1);assert_eq!(hit.kills,u16::from(enabled));
   assert_eq!(w.actor_state(0,SPEC.source_id).unwrap().2,if enabled{-13}else{3});
  }
@@ -458,7 +459,7 @@ fn resident_actor_view_matches_unpartitioned_patrol_across_knight_apron() {
     let mut farthest=0;
     for _ in 0..600 {
         tick(&mut expected,&complete,&floor,&mut p,&mut v,&Nail::new());
-        actual.tick(&narrow,&floor,&mut world::State,&mut p,&mut v,&Nail::new(),&hk_sim::DreamNail::new(),
+        actual.tick(&narrow,&floor,&mut world::State,&mut p,&mut v,&Nail::new(),&hk_sim::DreamNail::new(),None,
             &mut NailResponse::new(),no_attack(),[&[];4],cheats::Settings::new(),[0,0,-2496922],|_| panic!("Crawler event"),
             |scene,x,y| {
                 assert_eq!(scene,0);
@@ -479,7 +480,7 @@ fn unrelated_scene_view_cannot_activate_suspended_actor() {
     current.collision_bounds=current.bounds;
     let mut actors=enemies::EnemyWorld::new();
     actors.tick(&current,&floor,&mut world::State,&mut Player::spawn(10*ONE,ONE),
-        &mut Vitals::new(VITAL_PARAMS),&Nail::new(),&hk_sim::DreamNail::new(),&mut NailResponse::new(),
+        &mut Vitals::new(VITAL_PARAMS),&Nail::new(),&hk_sim::DreamNail::new(),None,&mut NailResponse::new(),
         no_attack(),[&[];4],cheats::Settings::new(),[0,0,-2496922],|_| panic!("Crawler event"),
         |_,_,_|Some((foreign,hk_format::Room::parse(&bytes).unwrap())));
     assert_eq!(actors.actor_state(0,SPEC.source_id),Some((SPEC.x,SPEC.y,8)));
