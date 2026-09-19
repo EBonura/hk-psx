@@ -1683,6 +1683,66 @@ The measured position is unchanged at 246 instances and 7 ops. What moved is the
 map: the next slice is a guest object model, and this ranking says what it has to
 support first, which is activation of a static object's children.
 
+## P10: the denominator was wrong, and so was half my reason for thinking so
+
+The 2,028 FSM instances included ones sitting on enemies the port already runs
+through native Rust controllers, whose PlayMaker side is not script work at all.
+Excluding them gives **1,879 script-side instances with 149 on native actors**,
+and coverage moves from 12.1% to 13.1%.
+
+The interesting part is what did not get excluded. The two candidates were
+`flyer_receive_direction_msg` at 117 and `enemy_message` at 112, and only the
+first partly qualifies: 35 of its instances sit on supported flyers, while 78
+sit on Hatchers, which have a HealthManager but no native controller yet, and 4
+on a Spitter with no HealthManager at all. `enemy_message` loses **none**. Every
+one of its 112 instances is on a detector or trigger volume that forwards a
+message *to* an enemy: `EnemyDetector` 82, `GO UP Message` 12, `Enemy Msg` 10,
+and a few others. `ActorHealth` does not own those, so excluding them would have
+been wrong. The overstatement was 149, not the 229 the two names suggested.
+
+That distinction only came out because the exclusion is reported as a list
+rather than a count, which is worth keeping: an exclusion you cannot inspect is
+an exclusion you cannot check.
+
+Two other fixes came with it. The survey now builds one `Scene` per scene and
+reads the FSM list off that single parse instead of re-reading every typetree
+afterwards, which halves the per-scene cost. And a scene that fails to parse now
+lands in an `unparsed_scenes` key and leaves the denominator, where before it
+silently produced an empty native-owner set and quietly reinstated the
+overstatement for that scene. It is empty for all 45 today.
+
+### An opcode that had already drifted
+
+`host/script_ir.py` declared its opcode numbers under a comment claiming they
+matched `hk_sim::script::Code`. They did not. Adding `NativeConst` to the Rust
+enum shifted every later variant, so the compiler was emitting `PlayerDataGet`
+as `NativeConst`, `PlayerDataSet` as `PlayerDataGet` and `PlayerDataBoolTest` as
+`PlayerDataSet`. Nothing has cooked a script bank yet, so nothing caught it.
+
+The numbers are part of the cooked format, so a comment asserting they match was
+never going to hold. `script_ir.py` now reads the Rust enum's variant order on
+import and refuses to run when it differs, and the enum carries a note saying
+that adding a variant anywhere but the end changes every cooked bank.
+
+### What to implement next, revised
+
+`ActivateGameObject` (23 instances) and `ActivateAllChildren` (67) are the same
+primitive, set a GameObject's active flag, over either one cooked object or a
+parent's children. Ranking them apart as two entries makes them look like two
+jobs. Together they are 90 of the 1,879 instances, 4.8 points of coverage, for
+one native call plus a scope selector, and `script.rs` already has the passing
+test for the constant-operand form they need.
+
+The blocker is not the IR. `ActivateAllChildren` needs the cooked bank to carry
+parentage so the guest can resolve a parent's children, and the single-object
+form needs a per-object active state the guest actually honours. Both are world
+bank questions, so this waits on that rather than on more opcodes.
+
+`SendEventByName` to another FSM (31 instances) is a different kind of work and
+should not be compared like for like: the action already compiles to self, and
+what those 31 need is the cross-FSM instance table from step 5. Architecture,
+not an opcode.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
