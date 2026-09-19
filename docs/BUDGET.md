@@ -7,17 +7,24 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |551,940|
-| Code-to-data alignment |12|
-| Linked data, including menu, HUD and sound bank |467,952|
-| BSS, including shared scene arena and runtime pools |848,668|
-| Total static span |1,868,572|
+| Linked code |575,672|
+| Code-to-data alignment |8|
+| Linked data, including menu, HUD and sound bank |483,136|
+| BSS, including shared scene arena and runtime pools |849,516|
+| Total static span |1,908,332|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |113,636|
+| Unallocated gap before reserved stack |73,876|
 
-Static data ends at `0x801eb794`; the reserved stack begins at `0x801f3f00`.
+Every figure above is the current build's, read out of `.hkpsx/build.json`, and
+`tests/test_budget_doc.py` fails when this table drifts from it. The table stood
+at 113,636 bytes of headroom for long enough that it was quoted in three
+separate agent briefings after it had fallen to 73,876. A budget
+document nobody can trust is worse than none, because work gets planned against
+it.
+
+Static data ends at `0x801e1e6c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies354,032 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -261,8 +268,8 @@ tail on this one.
 
 ## What bounded the P14 and P15 work (build 133)
 
-Linked headroom is 113,636 bytes, down from
-166,876 at build 107. Three decisions this session were budget decisions, and
+Linked headroom was 113,636 bytes at build 133, down from 166,876 at build 107, and is
+73,876 now. Three decisions this session were budget decisions, and
 the number that decided each is worth keeping, because two of them look like
 code problems and are not.
 

@@ -7,6 +7,23 @@ spatial partitions do not implement source scripts.
 """
 # Scene catalog: every cooker, generated table and guest constant derives its
 # scene list from here. Runtime/camera envelopes follow tools/cook_scene_pack.py.
+#
+# Before adding a row, measure the candidate with tools/cook_scene_pack.py and
+# read its per-view numbers: the 416-slot TEXTURE_BUDGET below is per view, so a
+# scene's answer is its worst view, not its total. Appending keeps every existing
+# chunk id, because fixed_regions() lays the grid scenes out in scene_id order
+# and cook_fingerprints() deliberately leaves this file out of the cache key.
+#
+# Room_shop (level17), Sly's shop and the only scene that could make P17's
+# purchases reachable, is measured and fits with room to spare: 6 views, worst
+# view 90 of 416 CLUT slots, 1 of 5 pages, 70,372 of 393,216 room bytes, a
+# 71,656-byte scene bank, decoder and packet bound PASS, 7.8 s to cook. What
+# blocks it is not a budget. Town's door_sly is an enabled TransitionPoint whose
+# serialized targetScene is empty, because its Door Control FSM sets New Scene at
+# runtime, and host/world.py only emits a Gate when targetScene names an admitted
+# scene. Room_shop's own left1 already targets Town/door_sly, so admitting the
+# scene would cook the way out and not the way in. See out_of_reach in
+# .hkpsx/shop-catalog.json for the measurement this paragraph quotes.
 SCENE_TABLE = (
     {'scene_id': 0, 'scene_name': 'Tutorial_01', 'file': 'level6',
      'runtime_bounds': [0,-5,210,100], 'camera_global_bounds': [14,0,196,92]},
