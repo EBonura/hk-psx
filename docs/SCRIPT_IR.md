@@ -139,11 +139,35 @@ to nothing. A variable is fixed when no action outside the reference set
 mentions it under anything but a known read field, since an action the slice
 does not model might be writing it; a read sees the write when the two are in
 one state, because PlayMaker runs a state's actions in order and abandons the
-rest as soon as one transitions, and across states only when the write is in
-the run of actions that opens the start state and nothing before it can
-transition or block. Everything else is refused. A reference resolved from a
-write that did not happen would be a wrong answer rather than a refusal, which
-is the one outcome this format is built to avoid.
+rest as soon as one transitions, and across states when the writing state
+*dominates* the reading one, which is to say every path from the FSM's start
+state to the read has already taken the write. Everything else is refused. A
+reference resolved from a write that did not happen would be a wrong answer
+rather than a refusal, which is the one outcome this format is built to avoid.
+
+Dominance is computed over the authored transitions, which are the whole of a
+PlayMaker FSM's control flow once a definition carrying a global transition is
+refused. A write counts only where it sits in the run of actions at the top of
+its state with nothing before it that could transition or block, because that is
+what makes "the state ran" mean "the write ran". A state does not read its own
+entry writes this way: an action ahead of the store still has to see nothing,
+and the in-order pass inside the state is what gets that right.
+
+The narrow version of this rule was the start state's opening run alone, and
+widening it to dominance is worth 505 more resolved object fields, 1,579 to
+2,084 over the admitted scenes. It is also a correctness fix: the old rule read
+that opening run out of `states[0]` rather than out of the authored start state,
+so an FSM that begins elsewhere got the wrong state's writes.
+
+What is left is not this rule. 6,792 object fields still go through a variable
+the cook will not fix at all, and 4,338 of those are written by an action
+outside the reference set: `SetGameObject`, `SpawnObjectFromGlobalPool`,
+`CreateObject`, `GetEventSender`. A spawned object genuinely has no cook-time
+identity, but `SetGameObject` alone accounts for 955 and does. Another 2,138 are
+disturbed rather than unwritten, and the top two disturbers, `gameObject1` on
+`BoxColliderOffset` and on `BoundsBoxCollider`, look like inputs counted as
+writes, 440 each. `OBJECT_READS` is a closed list on purpose, so widening it is
+evidence work rather than a guess.
 
 ## Triggers
 
@@ -289,8 +313,26 @@ object carries a `state_id`, but that is a persistence key and nothing in the
 renderer consults an active flag, so these would compile to a call that changes
 nothing. Step 7 asks for a refusal rather than a scene that claims to be
 implemented, and a no-op at runtime is the worse of the two because it is
-invisible. They are the largest single unlock on the list, which is precisely
-why they need the runtime flag first rather than an opcode.
+invisible.
+
+They look like the largest unlock on the list and they are not, which is worth
+writing down so the next pass does not re-derive it. 872 enabled instances
+across the admitted scenes; 695 name an object through a variable this cook
+cannot fix; and of the targets that do resolve, **20 are `activate=true` on an
+object the cook never built**. That last group is not a resolver problem and
+will never come back. It is the disagreement `host/activation.py` already
+documents: a fresh save deletes objects that are on screen in the source, and
+the cook resolves it by leaving them out. A runtime flag can hide something
+built and can never reveal something absent, so the paired `closed`/`open` door
+objects, seven of each, are half unbuildable. If those matter later, the fix is
+in what the cook admits, not in the script runtime.
+
+What a runtime active flag would actually unlock, measured at full depth, is
+**eight FSM instances**: seven `ActivateGameObject` (four in Town, three in
+Crossroads_33) and one `ActivateAllChildren`. Widening the reference resolver to
+dominance did not move that number at all, which is the measurement that
+matters: the binding constraint on these two is the cooked world, not the cook's
+ability to name an object.
 
 `SendEventByName` to another FSM needs a cross-FSM instance table, which is the
 scoping work and not a missing opcode: the executor already sends synchronously,
