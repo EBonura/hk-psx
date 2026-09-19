@@ -827,6 +827,33 @@ def _first_choice(fsm, origins):
     return None
 
 
+def fresh_save_conversation(source, scene, gid, defaults=None):
+    """The entries one NPC's `Conversation Control` speaks on a fresh save.
+
+    The walk starts at the choice state for the reason `_first_choice` records,
+    and each entry keeps the PlayerData its own state writes, because PlayMaker
+    runs a state's `SetPlayerDataBool` as it enters, before the DialogueBox call
+    beside it has spoken. A cooker needs that pairing; the report's walk keeps
+    the lines and the writes in separate lists.
+    """
+    if defaults is None:
+        defaults = playerdata_defaults(source.directory / 'Managed/Assembly-CSharp.dll')
+    _cid, convo = _fsms(scene, gid)[CONVO_FSM]
+    variables = fsm_variables(convo)
+    origins = _origins(convo)
+    start = _first_choice(convo, origins)
+    if start is None:
+        raise LookupError(f'{scene.gos[gid]["m_Name"]} chooses no line from PlayerData')
+    walk = _walk(convo, start, defaults, variables, origins)
+    states = {s['name']: s for s in convo['states']}
+    entries = []
+    for step in walk['path']:
+        state = states[step['state']]
+        for line in _lines(state, variables):
+            entries.append(dict(line, state=step['state'], writes=_writes(state)))
+    return entries
+
+
 def _dream(source, scene, gid):
     """The dream nail line each npc_dream_dialogue under this NPC speaks."""
     out = []

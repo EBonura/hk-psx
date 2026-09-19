@@ -146,6 +146,9 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
             bindings={'walk':'Idle','turn':'Idle','start':'Start','roll':'Roll','stop':'Stop'}
         elif control['kind']=='Aspid':
             bindings={'walk':'Fly','turn':'TurnToFly','fire':'Fire Long'}
+        elif control['kind']=='EggSac':
+            # One looping Idle and no movement: the walk and turn slots hold it too.
+            bindings={'walk':'Idle','turn':'Idle','idle':'Idle'}
         else:
             raise ValueError('unsupported actor art controller: '+control['kind'])
         # Actor sampling is never reduced: a frame beyond the 64x64 animation

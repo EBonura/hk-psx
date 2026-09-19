@@ -45,6 +45,11 @@ pub const KIND_BENCH: u16 = 12;
 /// so the object's bounds are the exact shape the down slash has to meet and
 /// no polygon or payload is carried.
 pub const KIND_SHROOM: u16 = 13;
+/// Talkable NPC: the object's bounds are its npc_control talk trigger and the
+/// payload is its world x, y and the view's clip base for Idle, Talk Left and
+/// Talk Right. Its conversation pages live in the guest's own cooked table,
+/// found by this object's source id.
+pub const KIND_NPC: u16 = 14;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {

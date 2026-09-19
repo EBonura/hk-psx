@@ -1,9 +1,15 @@
-//! Original tablet text/Perpetua font; bounded PS1 panel adaptation.
+//! Original tablet and NPC text/Perpetua font; bounded PS1 panel adaptation.
 use psx_gpu::{ot::OrderingTable,prim::RectFlat};
 use psx_vram::{upload_bytes,Clut,TexDepth,Tpage,VramRect};
 #[path="read_state.rs"]mod read_state;
 use read_state::{ReadPoint,State};
 include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/read_points.rs"));
+/// One cooked NPC conversation: the entries its `Conversation Control` speaks
+/// on a fresh save, flattened into panel pages in the order its states run
+/// them, plus the page whose own state writes the NPC's met PlayerData bool.
+pub struct NpcLines{pub scene:usize,pub source_id:u32,pub label:&'static str,pub marker:[i32;2],
+    pub pages:&'static [&'static [&'static str]],pub met_page:usize}
+include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/npc_lines.rs"));
 static FONT:&[u8]=include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/read_font.hk"));
 static mut STATE:State=State::new();
 #[no_mangle]pub static mut HK_READ_SOURCE:u32=0;
@@ -22,15 +28,65 @@ pub fn upload(){
     upload_bytes(VramRect::new(320,481,16,1),&FONT[..32]);
     for page in 0..5{upload_bytes(VramRect::new(page*64,500,64,12),&FONT[32+page as usize*1536..32+(page as usize+1)*1536]);}
 }
-pub fn open()->bool{unsafe{STATE.open()}}
-pub fn consumes_actions()->bool{unsafe{STATE.consumes_actions()}}
-pub fn cancel(){unsafe{if STATE.open(){HK_READ_CLOSED+=1;}STATE.cancel();HK_READ_SOURCE=0;}}
-pub fn reset(){unsafe{STATE=State::new();HK_READ_SOURCE=0;HK_READ_PAGE=0;}}
+/// The buttons a panel owns while it is up; the tablet reader's own set.
+const NPC_ACTIONS:u16=read_state::UP|read_state::DOWN|read_state::CROSS|read_state::CIRCLE|0x8000;
+/// An open NPC conversation. The tablet's `State` owns a list of world
+/// triggers; an NPC's trigger is a resident world-bank record instead, so the
+/// caller passes the NPC already in range and this keeps only the panel.
+struct Convo{active:Option<usize>,prompt:Option<usize>,page:usize,previous:u16,release:bool}
+impl Convo{const fn new()->Self{Self{active:None,prompt:None,page:0,previous:0,release:false}}}
+static mut CONVO:Convo=Convo::new();
+#[no_mangle]pub static mut HK_NPC_SOURCE:u32=0;
+#[no_mangle]pub static mut HK_NPC_PAGE:u32=0;
+#[no_mangle]pub static mut HK_NPC_OPENED:u32=0;
+/// Source PlayerData `metElderbug`. One cooked NPC writes a met bool today, so
+/// it is a session flag here; a second would need a real PlayerData record.
+#[no_mangle]pub static mut HK_MET_ELDERBUG:u32=0;
+pub fn open()->bool{unsafe{STATE.open()||CONVO.active.is_some()}}
+pub fn consumes_actions()->bool{unsafe{STATE.consumes_actions()||CONVO.active.is_some()||CONVO.release}}
+pub fn cancel(){unsafe{if STATE.open(){HK_READ_CLOSED+=1;}STATE.cancel();HK_READ_SOURCE=0;convo_cancel();}}
+pub fn reset(){unsafe{STATE=State::new();HK_READ_SOURCE=0;HK_READ_PAGE=0;
+  CONVO=Convo::new();HK_NPC_SOURCE=0;HK_NPC_PAGE=0;HK_MET_ELDERBUG=0;}}
 pub fn tick(scene:usize,player:&hk_sim::Player,params:hk_sim::Params,eligible:bool,bits:u16){
     let body=[player.x-params.half_width,player.y+params.bottom,player.x+params.half_width,player.y+params.top];
+    // One panel at a time: a tablet cannot open behind an open conversation.
+    let eligible=eligible&&unsafe{CONVO.active.is_none()};
     unsafe{let e=STATE.step(POINTS,scene,body,eligible,bits);HK_READ_OPENED+=u32::from(e.opened);HK_READ_CLOSED+=u32::from(e.closed);
       HK_READ_SOURCE=STATE.active.map_or(0,|i|POINTS[i].source_id);HK_READ_PAGE=STATE.page as u32;}
 }
+/// The NPC whose conversation is open, by its cooked source object id.
+pub fn npc_speaking()->Option<u32>{unsafe{CONVO.active.map(|i|NPC_LINES[i].source_id)}}
+fn convo_cancel(){unsafe{CONVO.active=None;CONVO.prompt=None;CONVO.page=0;
+  CONVO.release=CONVO.previous&NPC_ACTIONS!=0;HK_NPC_SOURCE=0;HK_NPC_PAGE=0;}}
+/// One tick of the NPC panel. `in_range` is the cooked NPC whose talk trigger
+/// the hero body is inside; UP there is npc_control's own CONVO START. Paging
+/// and closing follow the tablet panel exactly, including holding the closing
+/// press until it is released so it cannot also swing the nail.
+pub fn npc_tick(scene:usize,in_range:Option<u32>,eligible:bool,bits:u16){unsafe{
+    let eligible=eligible&&!STATE.open();
+    let pressed=bits & !CONVO.previous;CONVO.previous=bits;
+    if bits&NPC_ACTIONS==0 {CONVO.release=false;}
+    if let Some(id)=CONVO.active {
+        if NPC_LINES[id].scene!=scene || pressed&read_state::CIRCLE!=0 {convo_cancel();}
+        else if pressed&read_state::CROSS!=0 {
+            if CONVO.page+1<NPC_LINES[id].pages.len(){CONVO.page+=1;}else{convo_cancel();}
+        }
+    } else {
+        CONVO.prompt=if eligible && !CONVO.release {
+            in_range.and_then(|source|NPC_LINES.iter().position(|n|n.scene==scene&&n.source_id==source))
+        }else{None};
+        // npc_control listens for UP alone, unlike the tablet reader.
+        if pressed&read_state::UP!=0 {
+            if let Some(id)=CONVO.prompt {CONVO.active=Some(id);CONVO.page=0;HK_NPC_OPENED+=1;}
+        }
+    }
+    if let Some(id)=CONVO.active {
+        // Source `Intro Main` writes metElderbug as PlayMaker enters it, which
+        // is before the DialogueBox call beside the write has spoken.
+        if CONVO.page>=NPC_LINES[id].met_page {HK_MET_ELDERBUG=1;}
+        HK_NPC_SOURCE=NPC_LINES[id].source_id;HK_NPC_PAGE=CONVO.page as u32;
+    }
+}}
 fn width(text:&str)->i16{text.bytes().map(|b|ADVANCES[(b-32) as usize] as i16).sum()}
 fn text(x:i16,y:i16,text:&str){
     let mut x=x;
@@ -90,18 +146,30 @@ pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crat
             if row as usize==i {text(130,y,">");}
         }
       }else if let Some(id)=STATE.active{
-        BOXES[0]=RectFlat::new(10,46,300,152,150,150,150);BOXES[1]=RectFlat::new(12,48,296,148,0,0,0);BOX_COUNT=2;
-        for (i,line) in POINTS[id].pages[STATE.page].iter().enumerate(){text(24,59+i as i16*14,line);}
-        let footer=if STATE.page+1<POINTS[id].pages.len(){"X: Next    O: Close"}else{"X / O: Close"};
-        text(160-width(footer)/2,178,footer);
+        panel(POINTS[id].pages,STATE.page);
+      }else if let Some(id)=CONVO.active{
+        panel(NPC_LINES[id].pages,CONVO.page);
       }else if let Some(id)=STATE.prompt{
-        let p=POINTS[id].marker;
-        let x=160+((((p[0]-camera.0)>>8) as i64*crate::KNIGHT_SCALE as i64)>>20) as i32;
-        let y=120-((((p[1]-camera.1)>>8) as i64*crate::KNIGHT_SCALE as i64)>>20) as i32;
-        let label=POINTS[id].label;let w=width(label);let x=(x-w as i32/2).clamp(4,316-w as i32) as i16;let y=y.clamp(32,220) as i16;
-        BOXES[0]=RectFlat::new(x-3,y-2,w as u16+6,16,0,0,0);BOX_COUNT=1;text(x,y,label);
+        prompt_marker(camera,POINTS[id].marker,POINTS[id].label);
+      }else if let Some(id)=CONVO.prompt{
+        prompt_marker(camera,NPC_LINES[id].marker,NPC_LINES[id].label);
       }
     }
+}
+/// The one text panel, shared by a tablet and an NPC conversation.
+fn panel(pages:&[&'static [&'static str]],page:usize){
+    unsafe{BOXES[0]=RectFlat::new(10,46,300,152,150,150,150);BOXES[1]=RectFlat::new(12,48,296,148,0,0,0);BOX_COUNT=2;}
+    for (i,line) in pages[page].iter().enumerate(){text(24,59+i as i16*14,line);}
+    let footer=if page+1<pages.len(){"X: Next    O: Close"}else{"X / O: Close"};
+    text(160-width(footer)/2,178,footer);
+}
+/// The source prompt marker's label, over the marker's own world point.
+fn prompt_marker(camera:(i32,i32),p:[i32;2],label:&str){
+    let x=160+((((p[0]-camera.0)>>8) as i64*crate::KNIGHT_SCALE as i64)>>20) as i32;
+    let y=120-((((p[1]-camera.1)>>8) as i64*crate::KNIGHT_SCALE as i64)>>20) as i32;
+    let w=width(label);let x=(x-w as i32/2).clamp(4,316-w as i32) as i16;let y=y.clamp(32,220) as i16;
+    unsafe{BOXES[0]=RectFlat::new(x-3,y-2,w as u16+6,16,0,0,0);BOX_COUNT=1;}
+    text(x,y,label);
 }
 /// Called before scenery/HUD insertions: prepend ordering puts the panel last.
 pub fn append(ot:&mut OrderingTable<1>){unsafe{

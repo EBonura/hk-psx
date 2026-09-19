@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GRASS, KIND_MASK_FADE, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_SHROOM};
+use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GRASS, KIND_MASK_FADE, KIND_NPC, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_SHROOM};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -270,6 +270,23 @@ pub fn shrooms(region: &Region) -> impl Iterator<Item = Shroom> {
     bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
         .filter(|o| o.kind() == KIND_SHROOM)
         .map(|o| Shroom { bounds: o.bounds() })
+}
+/// A talkable NPC standing in a catalogue region: the npc_control talk trigger
+/// the hero body has to be inside, where the NPC stands and the view's clip
+/// base for its Idle, Talk Left and Talk Right clips. `source_id` is what binds
+/// it to its cooked conversation pages.
+#[derive(Clone, Copy)]
+pub struct Npc {
+    pub bounds: [i32; 4],
+    pub position: [i32; 2],
+    pub clip_base: u16,
+    pub source_id: u32,
+}
+pub fn npcs(region: &Region) -> impl Iterator<Item = Npc> {
+    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_NPC)
+        .map(|o| Npc { bounds: o.bounds(), position: [o.extra(0), o.extra(1)],
+                       clip_base: o.extra(2) as u16, source_id: o.source_id() })
 }
 /// Static targets touching a catalogue region, through the admitted bank.
 pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>> {

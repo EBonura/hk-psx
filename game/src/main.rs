@@ -171,6 +171,20 @@ fn draw_frame(room: &Room, frame: usize, player: &Player, camera: (i32, i32)) {
     }
     render::texture(u32_at(f, 0) as usize, v, (128, 128, 128));
 }
+/// One room frame drawn at a fixed world point on the gameplay plane, for a
+/// scene fixture that stands where it was authored rather than moving.
+fn draw_at(room: &Room, frame: usize, position: [i32; 2], camera: (i32, i32)) -> u32 {
+    let f = room.frame(frame);
+    let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
+    let coords = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
+    let mut v = [(0i16, 0i16); 4];
+    for (k, (x, y)) in coords.iter().enumerate() {
+        v[k] = ((160 + ((((position[0] + x - camera.0) >> 8) * KNIGHT_SCALE) >> 20)) as i16,
+                (120 - ((((position[1] + y - camera.1) >> 8) * KNIGHT_SCALE) >> 20)) as i16);
+    }
+    render::texture(u32_at(f, 0) as usize, v, (128, 128, 128));
+    1
+}
 #[cfg(feature = "emulator-telemetry")]
 fn log_state(frame: u32, p: &Player, prims: u32) {
     use core::fmt::Write;
@@ -426,6 +440,10 @@ fn main() {
         let r=&world::resident(region_id).expect("admitted world metadata covers the selected region");
         let meta_region=cache.world_region_index(region_id).expect("admitted world metadata covers the selected region");
         assert!(ambience::set_scene(r.scene as u8));
+        // The view's cooked NPC, read once: the bank record cannot change while
+        // this region is resident, and the tick and the draw both want it.
+        // One per view, which host/regions.py refuses to exceed.
+        let region_npc=world::npcs(r).next();
         enemies.sync_region(r);
         reveals.scene_ready(r.scene,r.reveal_masks);
         input::checkpoint();
@@ -467,6 +485,16 @@ fn main() {
             // Vengeful Spirit's projectile carries its own frame and key.
             let ball_frame=cast.ball_bounds(FIREBALL_PARAMS).map(|_|
                 ability_art::frame_index(ability_art::BALL,cast.ball.life as u32));
+            // The view's NPC, whose clips ride in this view's own room bank.
+            let npc_frame=region_npc.map(|npc|{
+                // Conversation Control reaches Talk Right through Hero Is Right
+                // and Talk Left through Hero Is Left, because the NPC's own
+                // localScale.x is positive; Idle is what it stands in.
+                let slot=if dialogue::npc_speaking()==Some(npc.source_id) {
+                    if player.x>=npc.position[0] {2} else {1}
+                } else {0};
+                (npc.position,clip_frame(&room,npc.clip_base as usize+slot,sim_clock))
+            });
             let mut needed=[0u16;12];
             needed[0]=match ability_frame {
                 Some(i)=>ability_art::KEY_BASE+i as u16,
@@ -484,12 +512,18 @@ fn main() {
                 assert!(needed_len<needed.len(),"Great Door animation working set");
                 needed[needed_len]=u32_at(room.frame(f),0)as u16;needed_len+=1;
             }
+            if let Some((_,f))=npc_frame {
+                assert!(needed_len<needed.len(),"NPC animation working set");
+                needed[needed_len]=u32_at(room.frame(f),0)as u16;needed_len+=1;
+            }
             render::begin(&room,&needed[..needed_len],fb.buffer_y(fb.drawing));
             fb.clear(9,13,20);let mut prims=render::scenery(camera,false);prims+=enemy_draws.draw();render::kick_ready();prims+=state.draw_impacts(r,&room,camera);
             if let Some(f)=door_frame {prims+=great_door::draw(&room,f,camera);}
             prims+=shade.draw(camera);
             prims+=geo_render::draw(geo,region_id,camera);
             prims+=lifeblood::draw(life,region_id,camera);render::kick_ready();
+            // Behind the Knight: the NPC sits a hair further from the camera.
+            if let Some((position,f))=npc_frame {prims+=draw_at(&room,f,position,camera);}
             if !vitals.dead && !door.hidden() && (vitals.invulnerable_ticks==0 || frame%4<2) {
                 prims+=match ability_frame {
                     Some(i)=>ability_art::draw(i,player.x,player.y,player.facing,camera),
@@ -534,7 +568,15 @@ fn main() {
                         start_held=pad.is_held(button::START);player.was_jump=pad.is_held(button::CROSS);
                         continue;
                     }
-                    dialogue::tick(r.scene,&player,PARAMS,target.is_none() && !paused && !door.pending() && !vitals.dead && player.grounded && vitals.can_control() && !nail.active && !focus.locks_control(),pad.bits());
+                    let can_inspect=target.is_none() && !paused && !door.pending() && !vitals.dead && player.grounded && vitals.can_control() && !nail.active && !focus.locks_control();
+                    dialogue::tick(r.scene,&player,PARAMS,can_inspect,pad.bits());
+                    // npc_control's own range trigger, cooked into the view's
+                    // bank: the hero body inside it is what UP answers.
+                    let body=[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top];
+                    let npc_in_range=region_npc.filter(|n|
+                        n.bounds[0]<=body[2] && n.bounds[2]>=body[0] && n.bounds[1]<=body[3] && n.bounds[3]>=body[1]
+                    ).map(|n|n.source_id);
+                    dialogue::npc_tick(r.scene,npc_in_range,can_inspect,pad.bits());
                     ambience::tick();
                     let start=pad.is_held(button::START);
                     let mut ui_consumed=paused;
