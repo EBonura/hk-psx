@@ -7,9 +7,6 @@ mod existing_sfx {
     pub fn rock_break() -> (u32, u32, i16) { SAMPLES[0] }
 }
 const BASE: u32 = 0x14000;
-#[repr(align(4))]
-struct Bank([u8; BANK_BYTES]);
-static BANK: Bank = Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/geo-audio.adpcm")));
 static mut LEVEL: u8 = 10;
 static mut RANDOM: u32 = 0x47454f;
 #[no_mangle] pub static mut HK_GEO_AUDIO_READY: u32 = 0;
@@ -17,9 +14,14 @@ static mut RANDOM: u32 = 0x47454f;
 #[no_mangle] pub static mut HK_GEO_ROCK_HIT_SFX: u32 = 0;
 #[no_mangle] pub static mut HK_GEO_ROCK_BREAK_SFX: u32 = 0;
 
+pub fn ready() -> bool { unsafe { HK_GEO_AUDIO_READY != 0 } }
+
 /// Called after the existing SFX/ambience initialization; never resets the SPU.
-pub fn upload() {
+/// `bank` is the disc chunk staged in the scene arena, checked for length and
+/// checksum by the loader; the SPU keeps the samples and the staging bytes go.
+pub fn upload(bank: &[u8]) {
     if unsafe { HK_GEO_AUDIO_READY != 0 } { return; }
+    assert!(bank.len() == BANK_BYTES);
     assert!(BANK_BYTES <= (0x18000 - BASE) as usize);
     assert_eq!(SAMPLES[0].0, BASE);
     // Validate the complete immutable bank before uploading or admitting playback.
@@ -29,14 +31,14 @@ pub fn upload() {
         assert!(start >= BASE && end > start && end <= 0x18000);
         assert!(start % 16 == 0 && (end - start) % 16 == 0);
         assert!(rate == 11025 && gain == 5461);
-        let bytes = &BANK.0[(start - BASE) as usize..(end - BASE) as usize];
+        let bytes = &bank[(start - BASE) as usize..(end - BASE) as usize];
         for (block, data) in bytes.chunks_exact(16).enumerate() {
             let terminal = (block + 1) * 16 == bytes.len();
             assert!(data[0] <= 12 && data[1] == u8::from(terminal));
             if terminal { assert!(data[2..].iter().all(|&b| b == 0)); }
         }
     }
-    spu::upload_adpcm(SpuAddr::new(BASE), &BANK.0);
+    spu::upload_adpcm(SpuAddr::new(BASE), bank);
     unsafe { HK_GEO_AUDIO_READY = 1; }
 }
 

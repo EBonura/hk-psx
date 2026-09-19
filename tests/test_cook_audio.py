@@ -9,7 +9,8 @@ import subprocess
 import tempfile
 import unittest
 import wave
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'host'))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'host'))
 from cook_audio import (BANK_LIMIT, BOSS_EVENTS, EVENTS, convert_wav, decode_zero,
                         death_action_layers, encode, encoded_bytes,
                         false_knight_audio_contract, pack_bank)
@@ -195,6 +196,42 @@ class AudioTests(unittest.TestCase):
             break_it(broken)
             with self.assertRaises(ValueError):
                 false_knight_audio_contract(broken, lambda ref: BOSS_CLIP_IDS[ref['m_PathID']])
+
+
+class StreamedBankManifestTests(unittest.TestCase):
+    """The three ADPCM banks the guest streams instead of linking.
+
+    The guest no longer carries the samples, only each bank's length and FNV-1a
+    checksum, and it refuses a chunk that does not match them. That makes the
+    generated manifest the only thing standing between a recooked payload and a
+    boot with silence (or garbage) in SPU RAM, so the pair is checked here as
+    well as at build time.
+    """
+
+    def setUp(self):
+        import build_guest
+        self.build_guest = build_guest
+
+    def test_every_streamed_bank_matches_its_generated_manifest(self):
+        for name in self.build_guest.AUDIO_BANKS:
+            with self.subTest(bank=name):
+                self.assertTrue((ROOT / 'data' / name).is_file(), f'Missing data/{name}')
+                self.assertTrue((ROOT / 'data' / name.replace('.adpcm', '.rs')).is_file())
+        self.build_guest.check_audio_banks()
+
+    def test_a_recooked_payload_without_its_manifest_is_refused(self):
+        from ambience import fnv
+        for name in self.build_guest.AUDIO_BANKS:
+            payload = (ROOT / 'data' / name).read_bytes()
+            manifest = (ROOT / 'data' / name.replace('.adpcm', '.rs')).read_text()
+            with self.subTest(bank=name):
+                # One flipped bit in the payload has to break the pairing, or
+                # the checksum the guest validates the chunk against is inert.
+                damaged = bytearray(payload)
+                damaged[32] ^= 1
+                self.assertNotEqual(fnv(bytes(damaged)), fnv(payload))
+                self.assertIn(f'pub const BANK_CHECKSUM: u32 = {fnv(payload)};', manifest)
+                self.assertIn(f'pub const BANK_BYTES: usize = {len(payload)};', manifest)
 
 
 if __name__ == '__main__':

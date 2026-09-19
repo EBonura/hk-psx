@@ -472,6 +472,10 @@ def main():
         return ''.join(f'    ({SPU_BASE + r["offset"]},{r["sample_rate"]},{r["volume_q14"]}), // {r["event"]}\n'
                        for r in records if r['event'] in selected)
     rust = f'pub const BANK_BYTES: usize = {len(bank)};\n'
+    # The guest streams this bank from the disc, so it carries the pack chunk's
+    # expected length and FNV-1a checksum rather than the bytes themselves.
+    from ambience import fnv
+    rust += f'pub const BANK_CHECKSUM: u32 = {fnv(bank)};\n'
     rust += f'pub const SAMPLES: [(u32,u32,i16);{len(EVENTS)}] = [\n{rows(EVENTS)}];\n'
     boss = tuple(event[0] for event in BOSS_EVENTS)
     rust += f'/// False Knight one-shots, on the shared voice: {", ".join(boss)}.\n'

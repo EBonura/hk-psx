@@ -53,6 +53,11 @@ pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){
     TRACE.lock().unwrap().events.push(Event::Upload(address.0,bytes.len()));
 }
 #[path="../game/src/audio.rs"]mod audio;
+// The bank now arrives as a slice from the disc loader, which stages it in the
+// word-aligned scene arena; the fixture keeps that alignment so the DMA
+// contract asserted in upload_adpcm above still means something.
+#[repr(align(4))]struct Bank([u8;320]);
+static BANK:Bank=Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/sfx.adpcm")));
 
 fn descent(ticks:usize){for _ in 0..ticks{audio::movement_tick(false,false,true,false,true);}}
 fn run(){audio::movement_tick(true,true,false,true,true);}
@@ -61,8 +66,13 @@ fn pair(index:u8,gain:i16)->Vec<Event>{vec![Event::Off(1<<index),Event::On(1<<in
 #[test]
 fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     // Muting before boot must affect initial configuration too.
-    audio::set_volume(0);take();audio::init();
-    let events=take();assert_eq!(events[0],Event::Init);assert_eq!(events[1],Event::Upload(0x1010,320));
+    audio::set_volume(0);take();
+    // init owns the SPU reset and runs before the disc is ready; no voice is
+    // configured until the bank it points at is actually uploaded.
+    audio::init();assert!(!audio::ready());assert_eq!(take(),[Event::Init]);
+    audio::upload(&BANK.0);assert!(audio::ready());
+    let mut events=vec![Event::Init];events.extend(take());
+    assert_eq!(events[1],Event::Upload(0x1010,320));
     let physical=[0,1,2,3,4,5,16,17];
     let mut expected=vec![Event::Init,Event::Upload(0x1010,320)];
     for (i,v) in physical.iter().enumerate(){expected.push(Event::Configure(*v,0x1010+i as u32*32,if i==7{11025}else{22050},0));}

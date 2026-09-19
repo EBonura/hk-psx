@@ -17,8 +17,13 @@ impl Voice {
 }
 pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){assert_eq!(address.0,0x14000);assert_eq!((bytes.as_ptr() as usize)%4,0);assert!(bytes.len()<=16384);TRACE.lock().unwrap().uploads+=1;}
 #[path="../game/src/geo_audio.rs"]mod geo_audio;
+// The bank now arrives as a slice from the disc loader. Word alignment is the
+// loader's guarantee (the scene arena it stages through), so the fixture keeps
+// it rather than relying on include_bytes!'s.
+#[repr(align(4))]struct Bank([u8;192]);
+static BANK:Bank=Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/geo-audio.adpcm")));
 #[test]fn actual_runtime_preserves_voice_ownership_variants_mute_and_upload_idempotence(){
- geo_audio::set_volume(0);geo_audio::upload();geo_audio::upload();
+ geo_audio::set_volume(0);geo_audio::upload(&BANK.0);geo_audio::upload(&BANK.0);
  for _ in 0..32 {geo_audio::pickup(1);geo_audio::pickup(5);geo_audio::pickup(25);geo_audio::hit();}
  geo_audio::break_rock();
  {
