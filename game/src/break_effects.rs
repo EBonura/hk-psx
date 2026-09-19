@@ -1,4 +1,4 @@
-//! Source Breakable particle families sharing the existing128-slot particle pool.
+//! Source Breakable particle families sharing the fixed particle pool.
 //! Fixed-step motion, sampled curves and radius/edge contacts approximate Unity.
 use super::{Particle,Pool,range,mulq,dot3,length3};
 use hk_sim::ONE;
@@ -6,7 +6,12 @@ use hk_sim::ONE;
 pub struct Sample {pub size:[i32;2],pub alpha:[u8;2],pub spin:[i32;2]}
 #[derive(Clone,Copy)]
 pub struct Style {
-    pub life:[u16;2],pub speed:[i32;2],pub size:[i32;2],pub rotation:[i32;2],pub color:[u8;3],
+    /// The two ends of the source start colour. Equal ends are one authored
+    /// colour; differing ends are Unity's random-between-two, picked per particle.
+    pub life:[u16;2],pub speed:[i32;2],pub size:[i32;2],pub rotation:[i32;2],pub colors:[[u8;3];2],
+    /// Each end's opacity as a fraction of the one baked into `samples`, so a
+    /// single authored colour is [255,255] and costs the draw nothing.
+    pub start_alpha:[u8;2],
     pub count:u16,pub rate:i32,pub shape:u8,pub radius:i32,pub arc:i32,pub shape_scale:[i32;3],
     pub force:[[i32;2];3],pub velocity:[[i32;2];3],pub limit:i32,pub dampen:i32,
     pub spin_speed:[i32;2],pub spin_range:[i32;2],pub collision:bool,pub bounce:i32,
@@ -43,7 +48,7 @@ struct Resident {
     art:[Art;FX_MAX_ART],art_count:usize,
     frames:[[u16;3];FX_MAX_FRAMES],
 }
-const EMPTY_STYLE:Style=Style{life:[0;2],speed:[0;2],size:[0;2],rotation:[0;2],color:[0;3],count:0,rate:0,shape:0,radius:0,arc:0,
+const EMPTY_STYLE:Style=Style{life:[0;2],speed:[0;2],size:[0;2],rotation:[0;2],colors:[[0;3];2],start_alpha:[255;2],count:0,rate:0,shape:0,radius:0,arc:0,
     shape_scale:[0;3],force:[[0;2];3],velocity:[[0;2];3],limit:0,dampen:0,spin_speed:[0;2],spin_range:[0;2],collision:false,bounce:0,
     collision_dampen:0,life_loss:0,kill_speed:0,radius_scale:0,samples:&[],frames:&[]};
 const EMPTY_EMITTER:Emitter=Emitter{scene:0,owner:0,source:0,style:0,angle_offset:0,origin:[0;3],basis:[[0;3];3]};
@@ -90,13 +95,15 @@ pub fn load_scene(scene:usize,data:&[u8])->bool {
         let curve=u16_at(b,160)as usize;let first=u16_at(b,162)as usize;let count=u16_at(b,164)as usize;
         if curve>=CURVES.len() || CURVES[curve].len()!=33 || first+count>frames || count==0 {return false;}
         let frame_pool:&'static [[u16;3]]=unsafe {core::slice::from_raw_parts((&raw const RESIDENT.frames).cast::<[u16;3]>().add(first),count)};
-        r.styles[i]=Style{life:[u16_at(b,0),u16_at(b,2)],speed:pair(b,4),size:pair(b,12),rotation:pair(b,20),color:[b[28],b[29],b[30]],
-            count:u16_at(b,32),rate:i32_at(b,36),shape:b[40],radius:i32_at(b,44),arc:i32_at(b,48),
+        r.styles[i]=Style{life:[u16_at(b,0),u16_at(b,2)],speed:pair(b,4),size:pair(b,12),rotation:pair(b,20),
+            colors:[[b[28],b[29],b[30]],[b[31],b[32],b[33]]],
+            start_alpha:[b[41],b[42]],
+            count:u16_at(b,34),rate:i32_at(b,36),shape:b[40],radius:i32_at(b,44),arc:i32_at(b,48),
             shape_scale:[i32_at(b,52),i32_at(b,56),i32_at(b,60)],force:[pair(b,64),pair(b,72),pair(b,80)],velocity:[pair(b,88),pair(b,96),pair(b,104)],
             limit:i32_at(b,112),dampen:i32_at(b,116),spin_speed:pair(b,120),spin_range:pair(b,128),collision:u32_at(b,136)!=0,
             bounce:i32_at(b,140),collision_dampen:i32_at(b,144),life_loss:i32_at(b,148),kill_speed:i32_at(b,152),radius_scale:i32_at(b,156),
             samples:CURVES[curve],frames:frame_pool};
-        if r.styles[i].count==0||r.styles[i].count>128||r.styles[i].rate<=0||r.styles[i].life[0]==0 {return false;}
+        if r.styles[i].count==0||r.styles[i].count as usize>super::CAPACITY||r.styles[i].rate<=0||r.styles[i].life[0]==0 {return false;}
     }
     for i in 0..emitters {
         let b=&data[e0+i*EMITTER_BYTES..e0+(i+1)*EMITTER_BYTES];
@@ -174,7 +181,11 @@ fn cached_frame(track:u16,phase:usize,tracks:&[[[u32;2];33]])->Option<[u32;2]> {
 }
 #[inline]fn draw_shape(p:&Particle,s:&Style,words:Option<[u32;2]>)->(i32,i32) {
     if let Some(w)=words {((w[0]&65535)as i32,((w[1]>>26)&3)as i32)}else{
-        let sample=sample(p,s);let alpha=lerp(sample.alpha.map(i32::from),p.gradient);
+        let sample=sample(p,s);
+        // The style's baked curve, then this particle's share of the start
+        // alpha: lerp from zero is an exact multiply by start_alpha/255, and a
+        // 255 share takes lerp's own identity path.
+        let alpha=lerp([0,lerp(sample.alpha.map(i32::from),p.gradient)],p.start_alpha);
         (mulq(p.size,lerp(sample.size,p.gradient))/2,((alpha*3+127)/255).clamp(0,3))
     }
 }
@@ -185,7 +196,7 @@ pub fn spawn_specs(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emi
 #[inline(never)]
 fn spawn_specs_with_bases(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:i32,emitters:&[Emitter],styles:&[Style],bases:&[u16]) {
     for (emitter_index,e) in emitters.iter().enumerate().filter(|(_,e)|e.scene as usize==scene&&e.owner as usize==owner) {
-        let s=&styles[e.style as usize];assert!(s.samples.len()==33&&s.rate>0&&s.count<=128&&s.life[0]>0);
+        let s=&styles[e.style as usize];assert!(s.samples.len()==33&&s.rate>0&&s.count as usize<=super::CAPACITY&&s.life[0]>0);
         let mut rng=e.source^0xd1b54a35;let mut search=0;
         for i in 0..s.count {
             checkpoint();
@@ -194,6 +205,18 @@ fn spawn_specs_with_bases(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:
             let life=range(&mut rng,s.life.map(i32::from))as u16;let speed=range(&mut rng,s.speed);
             let size=range(&mut rng,s.size);let angle=range(&mut rng,s.rotation);
             let gradient=(super::random(&mut rng)>>24)as u8;
+            // Unity's random-between-two start colours. One seed drives all
+            // four channels, so a particle lands on the line between the ends
+            // rather than in the box they span. Two identical ends draw nothing,
+            // which keeps every already-admitted one-colour emitter's stream and
+            // so its trajectories unchanged.
+            let (color,start_alpha)=if s.colors[0]==s.colors[1]&&s.start_alpha[0]==s.start_alpha[1] {
+                (s.colors[0],s.start_alpha[0])
+            } else {
+                let tint=(super::random(&mut rng)>>24)as u8;
+                (core::array::from_fn(|j|lerp([s.colors[0][j]as i32,s.colors[1][j]as i32],tint)as u8),
+                 lerp(s.start_alpha.map(i32::from),tint)as u8)
+            };
             let (local,direction)=if s.shape==10 {
                 let a=range(&mut rng,[0,s.arc]);let unit=crate::world::debris::rotate([ONE,0],a);
                 // Area-uniform circle sector; radius sampled through integer sqrt.
@@ -214,7 +237,7 @@ fn spawn_specs_with_bases(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:
                 .and_then(|b|b.checked_add(i)).and_then(|t|t.checked_add(1)).unwrap_or(0);
             pool.particles[search]=Some(Particle{position:core::array::from_fn(|j|e.origin[j]+dot3(e.basis[j],local)),velocity,size,
                 force:lerp(s.force[1],gradient)/60,angle,scene:e.scene,kind:e.style+2,life:super::NonZeroU16::new(life).expect("positive particle lifetime"),age:0,delay:(((i as u64+1)*60*ONE as u64-1)/s.rate as u64).min(255)as u8,
-                cell:(super::random(&mut rng)%s.frames.len()as u32)as u8,gradient,color:s.color});
+                cell:(super::random(&mut rng)%s.frames.len()as u32)as u8,gradient,color,start_alpha});
             pool.active_count+=1;pool.spawned=pool.spawned.saturating_add(1);search+=1;
         }
     }
@@ -416,7 +439,7 @@ fn length3_reference(v: [i32; 3]) -> i32 {
 
     const CURVE:[Sample;33]=[Sample{size:[ONE;2],alpha:[255;2],spin:[0;2]};33];
     const FRAMES:[[u16;3];4]=[[0,1,2];4];
-    const STYLE:Style=Style{life:[60,60],speed:[0,0],size:[ONE,ONE],rotation:[0,0],color:[128;3],count:30,rate:5000*ONE,
+    const STYLE:Style=Style{life:[60,60],speed:[0,0],size:[ONE,ONE],rotation:[0,0],colors:[[128;3];2],start_alpha:[255;2],count:30,rate:5000*ONE,
         shape:10,radius:0,arc:180*ONE,shape_scale:[ONE;3],force:[[0,0];3],velocity:[[0,0];3],limit:-1,dampen:0,
         spin_speed:[0,0],spin_range:[0,ONE],collision:false,bounce:39322,collision_dampen:3277,life_loss:0,kill_speed:0,radius_scale:ONE,
         samples:&CURVE,frames:&FRAMES};
@@ -493,13 +516,15 @@ fn length3_reference(v: [i32; 3]) -> i32 {
     }
     fn flight_matches_naive(padding:usize,cached:bool){
         const SPIN_CURVE:[Sample;33]=[Sample{size:[ONE/2,ONE],alpha:[0,255],spin:[-200*ONE,200*ONE]};33];
+        // 52+79+42+52 authors one particle more than the pool holds, so the
+        // flight still runs against a full pool with exactly one drop.
         let styles=[
-            Style{count:30,life:[120,600],speed:[3*ONE,30*ONE],force:[[0,0],[-86*ONE,-82*ONE],[0,0]],velocity:[[0,0],[0,30*ONE],[0,0]],
+            Style{count:52,life:[120,600],speed:[3*ONE,30*ONE],force:[[0,0],[-86*ONE,-82*ONE],[0,0]],velocity:[[0,0],[0,30*ONE],[0,0]],
                 limit:12*ONE,dampen:19661,spin_speed:[3*ONE,12*ONE],spin_range:[0,ONE],collision:true,kill_speed:ONE,radius_scale:41288,samples:&SPIN_CURVE,..STYLE},
-            Style{count:45,rate:150*ONE,life:[36,60],shape:5,speed:[0,ONE],size:[ONE/2,2*ONE],force:[[0,0],[-4*ONE,-ONE],[0,0]],..STYLE},
-            Style{count:24,life:[60,480],speed:[5*ONE,25*ONE],force:[[-ONE,ONE],[-50*ONE,-40*ONE],[-ONE,ONE]],
+            Style{count:79,rate:150*ONE,life:[36,60],shape:5,speed:[0,ONE],size:[ONE/2,2*ONE],force:[[0,0],[-4*ONE,-ONE],[0,0]],..STYLE},
+            Style{count:42,life:[60,480],speed:[5*ONE,25*ONE],force:[[-ONE,ONE],[-50*ONE,-40*ONE],[-ONE,ONE]],
                 limit:0,dampen:3932,collision:true,life_loss:19661,kill_speed:ONE,radius_scale:41288,samples:&SPIN_CURVE,..STYLE},
-            Style{count:30,life:[600,600],speed:[3*ONE,15*ONE],force:[[0,0],[-60*ONE,-40*ONE],[0,0]],collision:true,kill_speed:0,..STYLE},
+            Style{count:52,life:[600,600],speed:[3*ONE,15*ONE],force:[[0,0],[-60*ONE,-40*ONE],[0,0]],collision:true,kill_speed:0,..STYLE},
         ];
         let emitters=core::array::from_fn::<_,4,_>(|i|Emitter{style:i as u8,source:3860+i as u32,origin:[i as i32*ONE,3*ONE,0],..EMITTER});
         // Include both orientations of slopes, floor, ceiling and wall.
@@ -507,7 +532,7 @@ fn length3_reference(v: [i32; 3]) -> i32 {
             [-20*ONE,8*ONE,20*ONE,8*ONE],[4*ONE,0,8*ONE,2*ONE],[0,0,-4*ONE,2*ONE]];
         let(mut fast,mut reference)=(Pool::new(),Pool::new());
         for p in [&mut fast,&mut reference]{spawn_specs(p,0,7,0,1,&emitters,&styles);}
-        assert_eq!(fast.active(),128);assert_eq!(fast.dropped,1);
+        assert_eq!(fast.active(),super::super::CAPACITY);assert_eq!(fast.dropped,1);
         // Force contact cases as well as random flight, and canonicalize a360-degree spawn.
         for p in [&mut fast,&mut reference]{
             for (i,v) in [[0,-30*ONE,0],[30*ONE,0,0],[-30*ONE,0,0],[0,30*ONE,0]].into_iter().enumerate(){
@@ -555,7 +580,8 @@ fn length3_reference(v: [i32; 3]) -> i32 {
             out
         }
         static CURVE:[Sample;33]=curve();
-        let styles=[Style{count:128,life:[60;2],speed:[ONE,10*ONE],collision:true,
+        // One emitter fills every slot, so the loop below can rewrite them all.
+        let styles=[Style{count:super::super::CAPACITY as u16,life:[60;2],speed:[ONE,10*ONE],collision:true,
             force:[[0;2];3],radius_scale:41288,samples:&CURVE,..STYLE},Style{collision:false,..STYLE}];
         let(mut fast,mut reference)=(Pool::new(),Pool::new());
         for pool in [&mut fast,&mut reference] {
@@ -576,10 +602,12 @@ fn length3_reference(v: [i32; 3]) -> i32 {
         }
     }
     #[test]fn authored_count_capacity_and_owner_are_distinct_from_pool_limit(){
+        // STYLE authors 30 particles, so seven bursts fit the 224-slot pool and
+        // the eighth is the one the pool limit truncates.
         let mut p=Pool::new();spawn_specs(&mut p,0,8,0,1,&[EMITTER],&[STYLE]);assert_eq!(p.active(),0);
-        for _ in 0..4 {spawn_specs(&mut p,0,7,0,1,&[EMITTER],&[STYLE]);}
-        assert_eq!(p.active(),120);spawn_specs(&mut p,0,7,0,1,&[EMITTER],&[STYLE]);
-        assert_eq!(p.active(),128);assert_eq!(p.spawned,128);assert_eq!(p.dropped,22);
+        for _ in 0..7 {spawn_specs(&mut p,0,7,0,1,&[EMITTER],&[STYLE]);}
+        assert_eq!(p.active(),210);spawn_specs(&mut p,0,7,0,1,&[EMITTER],&[STYLE]);
+        assert_eq!(p.active(),224);assert_eq!(p.spawned,224);assert_eq!(p.dropped,16);
         assert!(p.particles.iter().flatten().all(|p|p.delay==0&&p.kind==2&&p.cell<4));
     }
     #[test]fn long_source_lifetime_and_scene_changes_do_not_restart_or_truncate(){
@@ -608,22 +636,24 @@ fn length3_reference(v: [i32; 3]) -> i32 {
     #[test]fn cached_active_count_tracks_mixed_families_scenes_delays_drops_and_reuse(){
         use super::super::{Bank,EmitterSpec,Sample as LegacySample,Style as LegacyStyle};
         static CURVES:[LegacySample;65]=[LegacySample{size:ONE,alpha:[255;2]};65];
+        // Authored counts are the previous 128-slot fixture scaled by 224/128,
+        // which keeps every burst's overflow and every scene's timing intact.
         static LEGACY:[LegacyStyle;2]=[LegacyStyle{life:[3;2],speed:[0;2],size:[ONE;2],force:[0;2],dampen:0,
-            rotation:0,count:40,duration:6,uv_scale:ONE,colors:[[128;3];2],curves:&CURVES};2];
+            rotation:0,count:70,duration:6,uv_scale:ONE,colors:[[128;3];2],curves:&CURVES};2];
         let bank=Bank{frames:[&[],&[]],styles:&LEGACY,death_offset:[0;3]};
         let source=EmitterSpec{state:0,source:13,origin:[0;3],basis:[[ONE,0,0],[0,ONE,0],[0,0,ONE]],direction:[0,0,ONE]};
-        let style=Style{count:40,life:[3;2],rate:60*ONE,..STYLE};
-        let scan=|p:&Pool|{assert_eq!(p.active(),p.particles.iter().flatten().count());assert!(p.active()<=128);};
+        let style=Style{count:70,life:[3;2],rate:60*ONE,..STYLE};
+        let scan=|p:&Pool|{assert_eq!(p.active(),p.particles.iter().flatten().count());assert!(p.active()<=super::super::CAPACITY);};
         let mut pool=Pool::new();scan(&pool);
         pool.spawn_grass(0,source,bank);scan(&pool);
         spawn_specs(&mut pool,1,7,0,1,&[Emitter{scene:1,..EMITTER}],&[style]);scan(&pool);
-        spawn_specs(&mut pool,0,7,0,1,&[EMITTER],&[Style{count:60,..style}]);scan(&pool);
-        assert_eq!((pool.active(),pool.spawned,pool.dropped),(128,128,12));
-        spawn_specs(&mut pool,0,7,0,1,&[EMITTER],&[Style{count:60,..style}]);scan(&pool);
-        assert_eq!((pool.active(),pool.spawned,pool.dropped),(128,128,72));
+        spawn_specs(&mut pool,0,7,0,1,&[EMITTER],&[Style{count:105,..style}]);scan(&pool);
+        assert_eq!((pool.active(),pool.spawned,pool.dropped),(224,224,21));
+        spawn_specs(&mut pool,0,7,0,1,&[EMITTER],&[Style{count:105,..style}]);scan(&pool);
+        assert_eq!((pool.active(),pool.spawned,pool.dropped),(224,224,126));
         assert!(pool.particles.iter().flatten().any(|p|p.delay>0));
-        pool.clear_scene(2);scan(&pool);assert_eq!(pool.active(),128);
-        pool.tick(0,None);scan(&pool);assert_eq!(pool.active(),128);
+        pool.clear_scene(2);scan(&pool);assert_eq!(pool.active(),224);
+        pool.tick(0,None);scan(&pool);assert_eq!(pool.active(),224);
         for tick in 0..72 {
             pool.tick(0,Some(bank));scan(&pool);
             pool.tick(2,Some(bank));scan(&pool);
@@ -632,7 +662,7 @@ fn length3_reference(v: [i32; 3]) -> i32 {
             if tick==8 {pool.spawn_death(2,17,[0;3],bank);scan(&pool);}
             if tick==10 {pool.clear_scene(0);scan(&pool);}
         }
-        assert_eq!((pool.active(),pool.spawned,pool.dropped),(0,168,72));
+        assert_eq!((pool.active(),pool.spawned,pool.dropped),(0,294,126));
     }
     #[test]fn collision_kill_and_life_loss_remove_exactly_one_cached_slot(){
         for life_loss in [0,ONE] {
@@ -646,10 +676,14 @@ fn length3_reference(v: [i32; 3]) -> i32 {
         }
     }
     #[test]fn positive_lifetime_eliminates_option_tag_without_reducing_capacity(){
-        assert_eq!(core::mem::size_of::<Particle>(),48);
-        assert_eq!(core::mem::size_of::<Option<Particle>>(),48);
-        assert_eq!(super::super::CAPACITY,128);
-        assert_eq!(core::mem::size_of::<Pool>(),6416);
+        // The zero niche still removes the tag; the per-particle start alpha is
+        // what takes the slot from 48 to 52, a whole word for one byte.
+        assert_eq!(core::mem::size_of::<Particle>(),52);
+        assert_eq!(core::mem::size_of::<Option<Particle>>(),52);
+        assert_eq!(super::super::CAPACITY,224);
+        // 224 slots plus one u16 track ID each, then the four cached counters:
+        // 11648+448+16.
+        assert_eq!(core::mem::size_of::<Pool>(),12112);
     }
     #[test]fn positive_lifetime_storage_preserves_full_u16_range_and_expiry(){
         for life in [1,255,256,600,u16::MAX] {

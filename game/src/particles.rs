@@ -6,7 +6,12 @@ use core::num::NonZeroU16;
 #[path="break_effects.rs"]pub mod break_effects;
 #[path="particle_perspective.rs"]mod perspective;
 #[path="particle_division.rs"]mod division;
-pub const CAPACITY: usize = 128;
+/// Slots shared by the grass, death and break families. Must stay a multiple of
+/// 32, which `break_effects::tick_specs` assumes for its pending bitmap, and
+/// must agree with `POOL_CAPACITY` in host/break_effects.py, which refuses any
+/// source emitter authored above it. The pool is a field of `world::State`, so
+/// this is stack rather than BSS: each slot costs 50 bytes of main's frame.
+pub const CAPACITY: usize = 224;
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {
     pub size: i32,
@@ -57,6 +62,10 @@ struct Particle {
     cell: u8,
     gradient: u8,
     color: [u8; 3],
+    /// This particle's share of its style's baked start alpha, 255 when the
+    /// style authored one start colour. Break families only; the legacy grass
+    /// and death styles have no per-particle opacity and always store 255.
+    start_alpha: u8,
 }
 pub struct Pool {
     particles: [Option<Particle>; CAPACITY],
@@ -211,6 +220,7 @@ impl Pool {
                 },
                 gradient,
                 color,
+                start_alpha: 255,
             });
             self.active_count += 1;
             self.spawned = self.spawned.saturating_add(1);
@@ -503,10 +513,10 @@ mod tests {
             fast.particles[i]=Some(Particle{position:[i as i32,-12345,765],velocity,size:ONE,
                 force:if i%7==0 {0}else{-137*ONE},angle:if i%2==0 {-1}else{360*ONE+1},
                 scene:(i%3)as u8,kind:(i%5%3)as u8,life:NonZeroU16::new(80+(i%17)as u16).unwrap(),
-                age:(i%11)as u16,delay:(i%4)as u8,cell:(i%9)as u8,gradient:i as u8,color:[37,89,123]});
+                age:(i%11)as u16,delay:(i%4)as u8,cell:(i%9)as u8,gradient:i as u8,color:[37,89,123],start_alpha:255});
         }
-        fast.active_count=128;fast.spawned=128;fast.dropped=11;fast.drawn=17;
-        let mut reference=Pool{particles:fast.particles,tracks:[0;CAPACITY],active_count:128,spawned:128,dropped:11,drawn:17};
+        fast.active_count=CAPACITY as u32;fast.spawned=CAPACITY as u32;fast.dropped=11;fast.drawn=17;
+        let mut reference=Pool{particles:fast.particles,tracks:[0;CAPACITY],active_count:CAPACITY as u32,spawned:CAPACITY as u32,dropped:11,drawn:17};
         let mut paths=[0;2];
         for tick in 0..384 {
             let scene=tick/17%3;let selected=if tick%19==0 {None}else{Some(bank)};

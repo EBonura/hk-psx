@@ -38,6 +38,7 @@ class BreakEffectsTests(unittest.TestCase):
             b.art_bank([{'texture':'original:1','cells':4,'size':[1,1]},{'texture':'original:1','cells':3,'size':[1,1]}],{'original:1':obj})
     def test_particle_track_rounding_and_explicit_unrepresentable_fallback(self):
         style=dict(shape=10,cells=1,count=128,life=[60,120],speed=[3,99],size=[65536,65536],rotation=[0,23592959],radius_scale=65536,
+                   colors=[[128,128,128]]*2,start_alpha=[255,255],
                    samples=[dict(size=[65536,65536],spin=[-33554432,33554431],alpha=[255,0])for _ in range(33)])
         emitters=[dict(style=0,source=8726),dict(style=0,source=4)]
         # Production leaves the tables empty (scalar path); the rounding contract
@@ -55,8 +56,15 @@ class BreakEffectsTests(unittest.TestCase):
                 spin=(spin_alpha&0x3ffffff)-((spin_alpha>>25&1)<<26)
                 self.assertTrue(-33554432<=spin<=33554431)
                 self.assertTrue(0<=spin_alpha>>26<=3)
+        # Two start colours cost one more draw per particle, so the same seed
+        # reaches different shape values. The guest spends its extra draw in the
+        # same place, and only when the two ends differ.
         with patch.object(b,'BAKE_TRACKS',True):
-            for key,value in [('size',[131072,131072]),('size',[-65536,-65536]),('radius_scale',3*65536),
+            two=b.particle_tracks([style|{'colors':[[128,128,128],[64,32,16]]}],emitters)
+        self.assertEqual((len(two[0]),two[1],two[2]),(256,[0,128],[]))
+        self.assertNotEqual(two[0],tracks)
+        with patch.object(b,'BAKE_TRACKS',True):
+            for key,value in [('size',[131072,131072]),('size',[-65536,-65536]),('radius_scale',3*65536),('start_alpha',[83,255]),
                               ('samples',[dict(size=[65536,65536],spin=[33554432,33554432],alpha=[255,255])for _ in range(33)])]:
                 wider=style|{key:value}
                 self.assertEqual(b.particle_tracks([wider],emitters),([],[65535,65535],[0,1]))

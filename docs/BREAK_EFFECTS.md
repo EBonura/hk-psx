@@ -27,7 +27,9 @@ and terrain-collision parameters. Breakable's directional angle offset follows
 the nail direction. Long-lived fragments retain source lifetimes up to ten
 seconds. Spatial region changes do not restart effects; scene reset clears them.
 
-All effects share the existing 128-particle pool and its primitive allowance.
+All effects share the 224-particle pool and its primitive allowance. The pool
+holds the largest admitted source emitter, Crossroads_09's 210; one emitter
+across the refused cracked floors authors 250 and stays refused on capacity.
 Full pools count rejected spawns instead of overwriting existing effects. Widening
 particle ages to support longer lifetimes fits existing struct padding: the pool
 allocation remains 6,668 bytes. Input checkpoints run during emission and
@@ -77,7 +79,7 @@ are also not claimed complete.
 
 Host extraction/allocation, Geo allocation, native particle and native world
 integration tests pass in `make test`. The native differential in the particle
-suite compares the optimized tick with a naive reference over a full 128-slot
+suite compares the optimized tick with a naive reference over a full 224-slot
 pool for 650 ticks, on both the scratch path and the fallback path; the ignored
 `.hkpsx/break-effects/check_optimized_source.py` repeats it with the generated
 emitters and cooked terrain for all 33 owners (2,745,600 slot states, exact).
