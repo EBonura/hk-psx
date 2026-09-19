@@ -17,7 +17,7 @@ const ASSET_SCRIPTS: &[&str] = &[
     "geo.py", "geo_audio.py", "runner_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
     "shade.py", "ability_art.py",
 ];
-/// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
+/// Route tapes replayed against the final CUE; the ones flagged in ROUTES also run the scene-gate verifier.
 /// Final telemetry a route must reach besides completing its tape.
 const REQUIRED: &[(&str, &str, u64)] = &[
     // well-drop resumes at the Dirtmouth bench and walks right into the well, so the
@@ -25,6 +25,13 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("well-drop", "HK_SCENE_GATE_LOADS", 1),
     // town-reset2 resumes, walks, then Select resets the session back to the spawn.
     ("town-reset2", "HK_REGION_ID", 1),
+    // crossroads-gate carries well-drop on into the Crossroads: after the well it walks
+    // west along the shaft floor and takes the Crossroads_01 side gate into Crossroads_07,
+    // so a scene gate between two Crossroads scenes is covered again. Two gate loads and
+    // the Crossroads_07 entry view are what it is here to prove; the deaths count keeps a
+    // respawn from standing in for the traversal.
+    ("crossroads-gate", "HK_SCENE_GATE_LOADS", 2), ("crossroads-gate", "HK_REGION_ID", 150),
+    ("crossroads-gate", "HK_DEATHS", 0), ("crossroads-gate", "HK_SAVE_LOADED", 1),
     // Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the save
     // screen's first slot resumes in the Town view with that record's wallet and opened Great Door. A catalogue change
     // that moves the Town slot invalidates the fixture: copy .hkpsx/validate/town-bench.mcd over it.
@@ -58,10 +65,11 @@ const REQUIRED: &[(&str, &str, u64)] = &[
 /// fresh formatted card when the fixture is absent (the run writes it back there).
 const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
     ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd"),
-    ("bench-save", "town-continue.mcd"), ("well-drop", "town-continue.mcd"), ("town-reset2", "town-continue.mcd")];
+    ("bench-save", "town-continue.mcd"), ("well-drop", "town-continue.mcd"), ("town-reset2", "town-continue.mcd"),
+    ("crossroads-gate", "town-continue.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-reset2", true),
-    ("town-continue", false), ("town-shade", false), ("kings-death", false), ("kings-return", false),
-    ("bench-save", false)];
+    ("crossroads-gate", true), ("town-continue", false), ("town-shade", false), ("kings-death", false),
+    ("kings-return", false), ("bench-save", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
