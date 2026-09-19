@@ -44,8 +44,17 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
         let cache = &mut *(&raw mut CACHE);
         let stats = cache
             .prepare(ids, |key, slot| {
-                // The Hollow Shade is not in any room's atlas: its keys sit
-                // above every texture table and stream from linked RAM.
+                // Three sets of art are in no room's atlas, because each one
+                // can be wanted in any view: their keys sit above every texture
+                // table, in the order they were added, and stream from linked
+                // RAM. The charm board's icons are the highest of them, because
+                // a pause screen is reachable from every view.
+                if key >= crate::charms::KEY_BASE {
+                    let (bytes, width, height) =
+                        crate::charms::texels((key - crate::charms::KEY_BASE) as usize)?;
+                    crate::texture_upload::upload(dest(slot, width, height), bytes);
+                    return Some(bytes.len() as u32);
+                }
                 if key >= crate::ability_art::KEY_BASE {
                     // The Knight's ability clips sit above the Shade's keys and
                     // stream from linked RAM the same way.

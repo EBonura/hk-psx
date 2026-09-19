@@ -554,6 +554,9 @@ fn main() {
                 // them, so it can contribute several keys.
                 render::append_frame_keys(&room,f,&mut needed,&mut needed_len);
             }
+            // Last, because the charm board is the one caller that yields when
+            // the view behind it has already claimed the frame's whole cache.
+            charms::append_needed(paused,&pause_menu.charms,&mut needed,&mut needed_len);
             render::begin(&room,&needed[..needed_len],fb.buffer_y(fb.drawing));
             fb.clear(9,13,20);let mut prims=render::scenery(camera,false);prims+=enemy_draws.draw();render::kick_ready();prims+=state.draw_impacts(r,&room,camera);
             if let Some(f)=door_frame {prims+=great_door::draw(&room,f,camera);}

@@ -42,6 +42,9 @@ pub fn upload(){
     assert_eq!(FONT.len(),7712);
     upload_bytes(VramRect::new(320,481,16,1),&FONT[..32]);
     for page in 0..5{upload_bytes(VramRect::new(page*64,500,64,12),&FONT[32+page as usize*1536..32+(page as usize+1)*1536]);}
+    // The charm board's own resident CLUTs ride with the panel font rather than
+    // taking a second call site in `main`, which is at the MIPS branch limit.
+    crate::charms::upload();
 }
 static mut CONVO:Convo=Convo::new();
 /// Every cooked NPC's conversation cursor. `save.rs` carries the word so it
@@ -192,5 +195,8 @@ fn prompt_marker(camera:(i32,i32),p:[i32;2],label:&str){
 /// Called before scenery/HUD insertions: prepend ordering puts the panel last.
 pub fn append(ot:&mut OrderingTable<1>){unsafe{
     for i in (0..USED).rev(){ot.add(0,&mut GLYPHS[i],5);}
+    // Insertion prepends, so this lands between the box and the glyphs: a charm
+    // icon sits on the board rather than behind it, and under its own row.
+    crate::charms::append_icons(ot);
     for i in (0..BOX_COUNT).rev(){ot.add(0,&mut BOXES[i],3);}
 }}
