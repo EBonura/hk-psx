@@ -20,6 +20,7 @@ const SPEC: RevealMaskSpec = RevealMaskSpec {
     source_id: 12038,
     trigger: POLYGON,
     fade_ticks: 30,
+    one_way: false,
     initial_opacity: 0,
 };
 fn inside() -> Player {
@@ -223,7 +224,8 @@ fn maximum_u16_duration_uses_bounded_unsigned_interpolation_without_overflow() {
 fn ordinary_mask_starts_opaque_stay_fades_out_exit_restores_and_reentry_reverses() {
     let spec = RevealMaskSpec {
         source_id: 12056,
-        initial_opacity: 128,
+        one_way: false,
+    initial_opacity: 128,
         ..SPEC
     };
     let mut state = State::new();
@@ -260,7 +262,8 @@ fn ordinary_mask_progress_survives_region_rebinding_and_reset_apply_uses_authore
     let _guard = render::TEST_LOCK.lock().unwrap();
     let spec = RevealMaskSpec {
         source_id: 12037,
-        initial_opacity: 128,
+        one_way: false,
+    initial_opacity: 128,
         ..SPEC
     };
     let mut state = State::new();
