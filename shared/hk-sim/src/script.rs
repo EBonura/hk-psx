@@ -179,6 +179,29 @@ impl Instance {
         self.wait = 0;
         self.wait_event = 0;
     }
+    /// Deliver an event from outside this instance: a trigger volume the
+    /// Knight entered, a collision, or a send from another FSM. It is the same
+    /// synchronous path a self-send takes, so the target state's ops run before
+    /// this returns, which is what PlayMaker does and what the Runner's
+    /// same-callback restart depends on.
+    ///
+    /// An event the current state has no transition for is ignored, exactly as
+    /// PlayMaker ignores it. That is not a silent drop: the state genuinely has
+    /// nothing to do with it.
+    pub fn receive(&mut self, p: Program, vars: &mut [i32], host: &mut impl Host, event: u16)
+        -> Halt {
+        if vars.len() < p.var_count as usize {
+            return Halt::BadProgram;
+        }
+        match self.send(p, event, vars, host, 0) {
+            Ok(Some(target)) => {
+                self.enter(target);
+                Halt::Ran
+            }
+            Ok(None) => Halt::Ran,
+            Err(halt) => halt,
+        }
+    }
     /// One 60 Hz tick. `native` receives every `Op::Native` in order and
     /// returns the value the call produced, which the op stores nowhere: a
     /// native call that has to return something writes through its own system.
@@ -596,6 +619,29 @@ mod tests {
         let mut vars = [0i32, 1];
         i.tick(p, &mut vars, &mut Recorder::default());
         assert_eq!(i.state, 2);
+    }
+    #[test]
+    fn an_event_from_outside_runs_the_target_state_at_once() {
+        // A trigger volume the Knight entered, a collision, or another FSM's
+        // send. Together those are the single largest group of actions the
+        // compiler still refuses, and all of them arrive this way.
+        const ACTED: u8 = 9;
+        let ops = [op(Code::Native, ACTED, 0, 0, 0)];
+        let states = [State { first_op: 0, op_count: 0, first_transition: 0, transition_count: 1 },
+                      State { first_op: 0, op_count: 1, first_transition: 1, transition_count: 0 }];
+        let transitions = [Transition { event: YES, target: DONE }];
+        let p = Program { states: &states, transitions: &transitions, ops: &ops,
+                          constants: &[], var_count: 1 };
+        let mut host = Recorder::default();
+        let mut i = Instance::new();
+        let mut vars = [0i32; 1];
+        assert_eq!(i.receive(p, &mut vars, &mut host, YES), Halt::Ran);
+        assert_eq!(i.state, DONE);
+        assert_eq!(host.count, 1, "the target state ran inside the delivery");
+        // An event this state has no transition for is ignored, as PlayMaker
+        // ignores it, rather than being queued or refused.
+        assert_eq!(i.receive(p, &mut vars, &mut host, YES), Halt::Ran);
+        assert_eq!(i.state, DONE);
     }
     #[test]
     fn a_bad_index_refuses_rather_than_reading_past_the_program() {
