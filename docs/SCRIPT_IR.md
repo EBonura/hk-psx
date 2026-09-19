@@ -1,0 +1,101 @@
+# HKSCR01: the shared script IR
+
+P10 step 2 asks for a compact typed intermediate representation for the source
+behaviour the port supports: state transitions, conditions, timers, variables,
+references and calls into native systems. This is that choice, made against the
+measured inventory rather than in the abstract.
+
+## What the numbers say
+
+`tools/playmaker_inventory.py` over the 45 admitted scenes:
+
+| | |
+| --- | ---: |
+| FSM instances | 2,028 |
+| Distinct FSM names | 200 |
+| Enabled actions | 48,037 |
+| Distinct action types | 280 |
+| Instances in families the guest already runs natively | 15,731 |
+
+Three facts shape the design.
+
+**Instances outnumber definitions ten to one.** 2,028 instances share 200
+names, and most of those names are one authored FSM reused per placement. The
+program is therefore cooked once per *definition* and bound per *instance*, and
+the instance record holds only what actually differs: the owner object, the
+initial variable values and the source identity.
+
+**280 action types is too many to implement and far more than is needed.** The
+top four actions carry the declarative flow and appear in every scene:
+`SendEventByName` 2,332, `Wait` 2,040, `BoolTest` 1,993 and
+`Tk2dPlayAnimation` 1,731. The long tail is mostly one-off Unity plumbing. So
+the IR has a small fixed opcode set for the flow and a single typed escape into
+native code for everything else, rather than one opcode per PlayMaker action.
+
+**A third of the work is already native.** The Hero's Superdash, Spell Control,
+Dream Nail and Nail Arts, plus `damages_enemy` and `Geo Rock`, already run as
+native controllers and must not be re-run by a script executor. Definitions are
+tagged at cook time and never compiled.
+
+## Shape
+
+One cooked bank, `HKSCR01`, holding four aligned sections.
+
+- **Definitions**: name id, state span, variable span, flags.
+- **States**: op span, transition span, source state name id.
+- **Transitions**: event id, target state index.
+- **Ops**: a fixed 8-byte record, `{code: u8, flags: u8, a: u16, b: u16, c: u16}`.
+
+Operands are indices, never pointers: into the definition's variable slots, the
+constant pool, the interned event table or the native call table. A fixed-width
+op keeps the guest's decode a table index rather than a parser, and keeps the
+whole program addressable with 16-bit fields at the sizes measured above.
+
+Variables are typed slots, one byte of type plus a 4-byte payload: bool, i32,
+Q16.16 fixed, event id, object reference. No floats and no strings at runtime;
+a string is an index into the source-derived localization table, which is what
+`GetLanguageString` (1,067 instances) needs anyway.
+
+## Execution
+
+Each active instance holds a current state, a wait counter and its variable
+block. A tick runs the current state's ops from where it left off until it
+blocks on a wait, takes a transition, or spends its share of the operation
+budget.
+
+Bounds are fixed and checked, as step 7 requires: active instances, pending
+events, nested dispatch depth and ops per tick. Exceeding any of them is a
+guest assertion, not a silent drop, because a dropped event is the failure mode
+that would be hardest to notice.
+
+Events are synchronous and nested, matching PlayMaker: `SendEventByName` runs
+the target's transition inside the sending op, up to the depth bound, and only
+then returns. Delayed sends go on a pending queue drained at the start of the
+next tick. The Runner's same-callback restart, called out in step 5, works
+because of the synchronous half; turning it into an extra frame would change
+its behaviour.
+
+## Native calls
+
+`CallMethodProper`, `SendMessage` and the rest of the tail compile to
+`Op::Native { id }`, where the id indexes a guest table of implemented
+functions. The cooker refuses an id it cannot bind. That is the rule step 7
+names: an unsupported required action must block the scene, never compile to a
+no-op that lets the scene claim to be implemented.
+
+## Provenance
+
+Every definition, state and op keeps its source identity: the assets file and
+path id of the FSM, the authored state name and the action index within it.
+That costs a parallel table in the host report and nothing in the guest bank,
+and it is what makes step 8's trace comparison possible: the guest emits
+`(definition, state, op)` triples and the host replays the same FSM to compare
+event and state order.
+
+## Not in this format
+
+Arbitrary Unity semantics. There is no component graph, no transform hierarchy
+walk, no reflection. `FindChild` (995 instances) and `GetOwner` (921) resolve at
+cook time into fixed object references wherever the target is static, and are
+refused where it is not. A universal PlayMaker VM is explicitly not the goal;
+the mapping from each supported source action to an implemented IR form is.
