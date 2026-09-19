@@ -38,8 +38,14 @@ pub enum Code {
     SendEvent,
     /// Send event `a` to self at the start of the next tick.
     NextFrameEvent,
-    /// Call native function `a` with variables `b` and `c`.
+    /// Call native function `flags` with the values in variables `a`, `b` and
+    /// `c`. The id is in `flags` so all three operands can be arguments: an
+    /// object plus a two-component value is the common shape.
     Native,
+    /// The same call with `a`, `b` and `c` as constant-pool indices instead of
+    /// variable slots. Cook-time-resolved object references arrive this way, so
+    /// an action over a fixed set of objects needs no temporaries.
+    NativeConst,
     /// Read PlayerData field `b` into variable `a`.
     PlayerDataGet,
     /// Write variable `b` into PlayerData field `a`.
@@ -107,9 +113,14 @@ pub enum Halt {
 /// ids at cook time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NativeCall {
-    pub id: u16,
-    pub args: [i32; 2],
+    pub id: u8,
+    pub args: [i32; 3],
 }
+/// The reserved object id every script means by "the Knight". Source ids are
+/// path ids masked to 31 bits, so the top of that range cannot collide.
+pub const HERO: i32 = 0x7fff_ffff;
+/// No object. A native call given this refuses rather than acting on a default.
+pub const NO_OBJECT: i32 = 0;
 /// The services a running script needs from the game around it. Keeping this a
 /// trait rather than a closure is what lets later slices add services without
 /// rewriting every call site.
@@ -263,7 +274,14 @@ impl Instance {
                 Ok(None)
             }
             Code::Native => {
-                host.native(NativeCall { id: op.a, args: [var(op.b)?, var(op.c)?] });
+                host.native(NativeCall { id: op.flags, args: [var(op.a)?, var(op.b)?, var(op.c)?] });
+                Ok(None)
+            }
+            Code::NativeConst => {
+                let konst = |i: u16| -> Result<i32, Halt> {
+                    p.constants.get(i as usize).copied().ok_or(Halt::BadProgram)
+                };
+                host.native(NativeCall { id: op.flags, args: [konst(op.a)?, konst(op.b)?, konst(op.c)?] });
                 Ok(None)
             }
             Code::PlayerDataGet => {
@@ -404,19 +422,20 @@ mod tests {
         // START sends YES; DONE then calls native 7 in the same tick, which is
         // the synchronous nesting PlayMaker has and a queue would not give.
         let ops = [op(Code::SendEvent, 0, YES, 0, 0),
-                   op(Code::Native, 0, 7, 0, 1)];
+                   op(Code::Native, 7, 0, 1, 2)];
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
                       State { first_op: 1, op_count: 1, first_transition: 1, transition_count: 0 }];
         let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
+        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 3 };
         let mut i = Instance::new();
-        let mut vars = [0i32; 2];
+        let mut vars = [0i32; 3];
         vars[0] = 11;
         vars[1] = 22;
+        vars[2] = 33;
         let mut host = Recorder::default();
         i.tick(p, &mut vars, &mut host);
         assert_eq!(i.state, DONE);
-        assert_eq!(host.calls[0], Some(NativeCall { id: 7, args: [11, 22] }));
+        assert_eq!(host.calls[0], Some(NativeCall { id: 7, args: [11, 22, 33] }));
     }
     #[test]
     fn a_next_frame_event_waits_for_the_next_tick() {
@@ -467,6 +486,23 @@ mod tests {
         assert_eq!(i.state, DONE);
         assert_eq!(host.fields[HAS_DASH as usize], 7, "the write went to the host");
         assert_eq!(vars[1], 7, "and the read came back from it");
+    }
+    #[test]
+    fn a_const_native_call_carries_cook_time_object_references() {
+        // ActivateAllChildren over a static parent is one call per child, with
+        // the child's cooked id and the active flag straight from the pool, so
+        // no compiler temporary is needed for a fixed set of objects.
+        const ACTIVATE: u8 = 3;
+        let ops = [op(Code::NativeConst, ACTIVATE, 0, 2, 0),
+                   op(Code::NativeConst, ACTIVATE, 1, 2, 0)];
+        let states = [State { first_op: 0, op_count: 2, first_transition: 0, transition_count: 0 }];
+        let p = Program { states: &states, transitions: &[], ops: &ops,
+                          constants: &[4242, 4243, 1], var_count: 0 };
+        let mut host = Recorder::default();
+        let mut i = Instance::new();
+        i.tick(p, &mut [], &mut host);
+        assert_eq!(host.calls[0], Some(NativeCall { id: ACTIVATE, args: [4242, 1, 4242] }));
+        assert_eq!(host.calls[1], Some(NativeCall { id: ACTIVATE, args: [4243, 1, 4242] }));
     }
     #[test]
     fn a_bad_index_refuses_rather_than_reading_past_the_program() {
