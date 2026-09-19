@@ -406,7 +406,7 @@ fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
 #[test]
 fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
     const WITH_CORPSE:ActorSpec=ActorSpec {health:EnemyParams{health:5,..SPEC.health},
-        corpse:Some(CorpseSpec{air_clip:0,land_clip:0,bounds:SPEC.bounds,spawn_offset:[0,ONE/2],bounce_factor:19661, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0}),..SPEC};
+        corpse:Some(CorpseSpec{air_clip:0,land_clip:0,bounds:SPEC.bounds,spawn_offset:[0,ONE/2],bounce_factor:19661, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0, hold_ticks: 0}),..SPEC};
     let bytes=room();let room=hk_format::Room::parse(&bytes).unwrap();
     let r=world::Region{actors:&[&WITH_CORPSE],..region()};
     let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);
@@ -424,6 +424,55 @@ fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
     assert_eq!(v.soul,11);assert_eq!(v.health,5);
     w.reset_scene(0);w.sync_region(&r);
     assert_eq!(w.actor_state(0,12546).unwrap().2,5);
+}
+
+/// Source Egg Sac (level81:4050): hp 20, no Rigidbody2D, no DamageHero and no
+/// Recoil, so it holds its authored transform above the floor and answers only
+/// the nail. Its corpse holds one clip for 84 ticks, then plays the other.
+const EGG_SAC: ActorSpec = ActorSpec {
+    controller: ActorController::Static { idle_clip: 0 },
+    source_id: 4050, x: 3 * ONE, y: 5 * ONE,
+    health: EnemyParams { health: 20, contact_damage: 0, ..SPEC.health },
+    walk: WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
+    corpse: Some(CorpseSpec { air_clip: 0, land_clip: 0, bounds: [0; 4], spawn_offset: [0, 0],
+        bounce_factor: 0, fling_speed: 0, gravity: 0, breaker: false, smash_bounces: 0,
+        remove_after_land: 14, hold_ticks: 84 }),
+    recoil_speed: 0, recoil_ticks: 0, ..SPEC
+};
+#[test]
+fn static_actor_never_falls_or_hurts_and_its_corpse_bursts_where_it_stood() {
+    let bytes = room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = world::Region { actors: &[&EGG_SAC], ..region() };
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(EGG_SAC.x, EGG_SAC.y);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut n = Nail::new();
+    for _ in 0..120 {
+        assert_eq!(tick(&mut w, &r, &room, &mut p, &mut v, &n).hurt, Hurt::Ignored);
+    }
+    // Four units above the fixture floor, overlapping the Knight the whole time.
+    assert_eq!(w.actor_state(0, EGG_SAC.source_id), Some((EGG_SAC.x, EGG_SAC.y, 20)));
+    assert_eq!(v.health, 5);
+    assert_eq!(w.prepare_draws(&r, &room, (0, 0)).draw(), 1);
+    for round in 0..4 {
+        n.active = true;
+        n.age = 1;
+        let events = tick(&mut w, &r, &room, &mut p, &mut v, &n);
+        assert_eq!((events.hits, events.kills), (1, u16::from(round == 3)));
+        n.active = false;
+        if round < 3 {
+            for _ in 0..12 { tick(&mut w, &r, &room, &mut p, &mut v, &n); }
+        }
+    }
+    assert_eq!(w.actor_state(0, EGG_SAC.source_id).unwrap().2, 0);
+    assert_eq!(world::DEATHS.with(|v| v.borrow().len()), 1);
+    for _ in 0..97 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+        assert_eq!(w.prepare_draws(&r, &room, (0, 0)).draw(), 1);
+    }
+    tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    assert_eq!(w.prepare_draws(&r, &room, (0, 0)).draw(), 0);
 }
 
 #[test]

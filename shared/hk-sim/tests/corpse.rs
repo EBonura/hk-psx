@@ -4,7 +4,7 @@ const SPEC: CorpseSpec = CorpseSpec {
     land_clip: 14,
     bounds: [-46080, -55296, 47104, 4096],
     spawn_offset: [0, 32768],
-    bounce_factor: 19661, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0
+    bounce_factor: 19661, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0, hold_ticks: 0
 };
 fn floor(_: usize) -> [i32; 4] {
     [-100 * ONE, 0, 100 * ONE, 0]
@@ -102,4 +102,41 @@ fn source_bounce_factor_changes_rebound_without_changing_launch_or_rng_owner() {
 #[should_panic(expected = "invalid corpse bounce factor")]
 fn unsupported_restitution_cannot_overflow_contact_products() {
     Corpse::spawn(CorpseSpec {bounce_factor:i32::MAX,..SPEC},0,0,0,1,0);
+}
+
+/// Source `Corpse Egg Sac`: no Rigidbody2D, so its Control FSM holds Death for
+/// 1.4 seconds (84 ticks) and then plays four Burst frames at 18 fps.
+const HELD: CorpseSpec = CorpseSpec {bounds:[0;4],spawn_offset:[0,0],bounce_factor:0,
+    fling_speed:0,gravity:0,remove_after_land:14,hold_ticks:84,..SPEC};
+fn no_terrain(_: usize) -> [i32; 4] { panic!("a corpse without a body never reads terrain") }
+#[test]
+fn held_corpse_plays_both_clips_where_it_spawned_and_then_leaves() {
+    let mut c = Corpse::spawn(HELD, 7 * ONE, 3 * ONE, 0, 1, 12546);
+    assert_eq!((c.x, c.y, c.vx, c.vy), (7 * ONE, 3 * ONE, 0, 0));
+    for _ in 0..83 {
+        c.tick(HELD, 0, no_terrain);
+        assert_eq!((c.phase, c.clip(HELD)), (CorpsePhase::Air, HELD.air_clip));
+    }
+    c.tick(HELD, 0, no_terrain);
+    assert_eq!((c.phase, c.clip(HELD), c.animation_tick), (CorpsePhase::Land, HELD.land_clip, 0));
+    for _ in 0..13 {
+        c.tick(HELD, 0, no_terrain);
+        assert!(c.visible());
+    }
+    c.tick(HELD, 0, no_terrain);
+    assert_eq!(c.phase, CorpsePhase::Removed);
+    assert!(!c.visible());
+    // The spawn point is the whole trajectory, and removal is terminal.
+    assert_eq!((c.x, c.y), (7 * ONE, 3 * ONE));
+    c.tick(HELD, 0, no_terrain);
+    assert_eq!(c.phase, CorpsePhase::Removed);
+}
+#[test]
+fn held_corpse_ignores_the_hit_cardinal_that_launches_a_flung_one() {
+    for kind in 0..4 {
+        let held = Corpse::spawn(HELD, 0, 0, kind, 1, 12546);
+        assert_eq!((held.vx, held.vy), (0, 0));
+        let flung = Corpse::spawn(SPEC, 0, 0, kind, 1, 12546);
+        assert!(flung.vx != 0 || flung.vy != 0);
+    }
 }

@@ -213,6 +213,72 @@ def walker_control(sc, actor):
                                'WalkLeftRight.CheckFloor', 'WalkLeftRight.CheckIsGrounded']}
 
 
+# Serialized shape of the one placed Egg Sac (docs/EGG_SAC.md, level81:4050).
+# The family has a single placement, so the recognizer matches it exactly rather
+# than structurally: anything that differs stays an unadmitted record.
+EGG_SAC_COMPONENTS = sorted([
+    'AudioSource', 'BoxCollider2D', 'EnemyDeathEffects', 'EnemyDreamnailReaction',
+    'ExtraDamageable', 'HealthManager', 'InfectedEnemyEffects', 'MeshFilter', 'MeshRenderer',
+    'PersistentBoolItem', 'SetZ', 'SpriteFlash', 'Transform', 'tk2dSprite', 'tk2dSpriteAnimator'])
+EGG_SAC_BODY_SIZE = (1.7711232900619507, 1.8317594528198242)
+EGG_SAC_BODY_OFFSET = (-0.04640769958496094, -0.37363290786743164)
+# name: (frames, fps, wrapMode, loopStart)
+EGG_SAC_CLIPS = {'Idle': (4, 12., 0, 0), 'Death': (4, 12., 1, 1), 'Burst': (4, 18., 2, 0)}
+
+
+def egg_sac_control(sc, actor):
+    """Recognize the Egg Sac, a destructible with no FSM and no rigid body.
+
+    There is no behaviour to port: `playAutomatically` loops the default clip
+    and nothing else on the object moves it, damages the hero or recoils. The
+    controller is therefore "play Idle where you stand", and the only checks
+    that matter are the ones proving nothing else is attached.
+    """
+    source = sc.source
+    gid = actor['game_object']
+    records = _component_records(sc, gid)
+    if sc.gos[gid]['m_Layer'] != 11:
+        raise ValueError('Egg Sac outside the enemy layer')
+    if sorted(kind for _, kind, _ in records) != EGG_SAC_COMPONENTS:
+        raise ValueError('unsupported Egg Sac component set')
+    matrix = sc.world(sc.go_transform[gid])
+    if any(abs(matrix[row][column] - (1 if row == column else 0)) > 1e-6 for row in range(2) for column in range(2)):
+        raise ValueError('unsupported Egg Sac rotation or scale')
+    body = next(tree for _, kind, tree in records if kind == 'BoxCollider2D')
+    if not body['m_Enabled'] or body['m_IsTrigger'] or body['m_EdgeRadius'] != 0 \
+            or any(abs(body['m_Size'][axis] - value) > 1e-6 for axis, value in zip('xy', EGG_SAC_BODY_SIZE)) \
+            or any(abs(body['m_Offset'][axis] - value) > 1e-6 for axis, value in zip('xy', EGG_SAC_BODY_OFFSET)):
+        raise ValueError('unsupported Egg Sac body collider')
+    health = actor['health_manager']
+    if health['hp'] <= 0 or any(health[key] for key in (
+            'invincible', 'invincibleFromDirection', 'hasSpecialDeath',
+            'hasAlternateHitAnimation', 'damageOverride', 'megaFlingGeo')):
+        raise ValueError('unsupported Egg Sac HealthManager variant')
+    sprite = actor['tk2dSprite']
+    if sprite['_color'] != {'r': 1., 'g': 1., 'b': 1., 'a': 1.} or sprite['_scale'] != {'x': 1., 'y': 1., 'z': 1.}:
+        raise ValueError('unsupported Egg Sac sprite scale/color')
+    animator = actor['tk2dSpriteAnimator']
+    if not animator['m_Enabled'] or not animator['playAutomatically'] or animator['isRealtime']:
+        raise ValueError('unsupported Egg Sac animator startup')
+    library_object = source.ref(sc.file, animator['library'])
+    library = source.read(library_object)
+    clips = {clip['name']: clip for clip in library['clips'] if clip['name']}
+    if library['clips'][animator['defaultClipId']]['name'] != 'Idle':
+        raise ValueError('Egg Sac does not start on Idle')
+    for name, expected in EGG_SAC_CLIPS.items():
+        clip = clips.get(name)
+        if clip is None or (len(clip['frames']), clip['fps'], clip['wrapMode'], clip.get('loopStart', 0)) != expected:
+            raise ValueError('unsupported Egg Sac animation: ' + name)
+        if any(frame.get('triggerEvent') for frame in clip['frames']):
+            raise ValueError('unsupported Egg Sac animation events: ' + name)
+    return {'kind': 'EggSac', 'guest_enabled': True, 'idle_clip_name': 'Idle',
+            'library_source': source.sid(library_object),
+            'limitations': [
+                'No FSM, rigid body, Recoil or DamageHero on the source object: the guest loops Idle at the authored transform and answers only the nail.',
+                'PersistentBoolItem is recorded, not honoured: a killed Egg Sac returns on a scene reload.',
+                'The looping idle AudioSource, the SetZ depth and the death particles are not presented.']}
+
+
 def _colliders(sc, gid, records):
     result = []
     for sid, typ, tree in records:
@@ -332,6 +398,14 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Egg Sac') and not fsms:
+            try:
+                control = egg_sac_control(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
             from runner import recognize
             try:
@@ -440,6 +514,14 @@ def generated_actor_specs(region):
             controller = 'hk_sim::ActorController::Gruzzer'
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'EggSac':
+            if 'idle_clip' not in actor or not actor.get('corpse'):
+                raise ValueError(f'Egg Sac is missing cooked clips or corpse: {actor["source"]}')
+            controller = f'hk_sim::ActorController::Static {{idle_clip:{actor["idle_clip"]}}}'
+            # Nothing on the source object moves it, and its world basis is the
+            # identity, so the guest draws the sprite in its native orientation.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
         elif control['kind'] == 'WalkLeftRight':
             controller = 'hk_sim::ActorController::Crawler'
             speed, turn_ticks, turn_cooldown_ticks = control['speed'], control['turn_ticks'], control['turn_cooldown_ticks']
@@ -448,7 +530,7 @@ def generated_actor_specs(region):
             raise ValueError('unsupported generated actor controller: ' + control['kind'])
         clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ()) \
             + (vengefly_clips if control['kind'] == 'Vengefly' else ()) + (baldur_clips if control['kind'] == 'Baldur' else ()) \
-            + (aspid_clips if control['kind'] == 'Aspid' else ())
+            + (aspid_clips if control['kind'] == 'Aspid' else ()) + (('idle_clip',) if control['kind'] == 'EggSac' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')
         recoil = actor.get('Recoil', {})
