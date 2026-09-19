@@ -5,6 +5,11 @@ serialized initial value into an action, which is only sound when nothing writes
 that variable. A wrong answer there is silent rather than a refusal, which is
 why it is pinned here. The opcode numbers are checked against the Rust enum on
 import, so a drift fails this suite too.
+
+The Trigger2dEvent tests pin the other kind of silent wrong answer: a trigger
+that compiles but watches for the wrong body, or one that compiles and can never
+fire. Both look like an implemented trigger from outside, so each refusal case
+has a test naming it.
 """
 import sys, unittest
 from pathlib import Path
@@ -12,8 +17,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'host'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from script_ir import (CMP_GT, CMP_LT, INT_COMPARE, SET_BOOL, WAIT, Constants, Events,
-                       Unsupported, compile_action, compile_fsm)
+from script_ir import (CMP_GT, CMP_LT, HERO_TRIGGER, INT_COMPARE, REPEAT, SET_BOOL,
+                       TRIGGER_ENTER, TRIGGER_EXIT, TRIGGER_STAY, WAIT, Constants, Events,
+                       Unsupported, compile_action, compile_fsm, decoded_action, source_id)
 from test_activation import action_data, state
 
 
@@ -27,8 +33,7 @@ def fsm(states, variables=()):
 class CompilerTests(unittest.TestCase):
     def compile_one(self, action, fields, variables=None, folded=None):
         data = action_data([(action, fields)])
-        from focus import action_fields
-        return compile_action(action, action_fields(data, 0, objects=True), Events(),
+        return compile_action(action, decoded_action(data, 0), Events(),
                               Constants(), variables if variables is not None else {},
                               folded=folded)
 
@@ -99,6 +104,125 @@ class ReadOnlyFoldTests(unittest.TestCase):
                   {'name': 'B', 'actionData': second, 'transitions': []}]
         with self.assertRaises(Unsupported):
             compile_fsm(fsm(states, variables=[('Field', 'someFlag')]))
+
+
+OWNER = 0x1234
+
+
+def trigger_data(phase, tag='Player', layer='', event='HIT', store=''):
+    """The exact `Trigger2dEvent` field set every admitted instance carries.
+
+    `action_data` has no encoding for the two shapes this action needs, so they
+    are appended here: the Trigger2DType is a raw four-byte enum parameter
+    rather than one of the compact scalars, and `storeCollider` is an
+    FsmGameObject. `tag=None` is PlayMaker's None, an unbound field that reads
+    as the empty string, which is how 816 of the 1,026 instances leave it.
+    """
+    data = action_data([('Trigger2dEvent', [('collideTag', 18, tag or ''),
+                                            ('collideLayer', 18, layer),
+                                            ('sendEvent', 23, event)])])
+    if tag is None:
+        data['fsmStringParams'][0] = {'useVariable': 1, 'name': '', 'value': ''}
+    for name, kind, pos, size in [('storeCollider', 19, len(data['fsmGameObjectParams']), 0),
+                                  ('trigger', 7, len(data['byteData']), 4)]:
+        data['paramName'].append(name)
+        data['paramDataType'].append(kind)
+        data['paramDataPos'].append(pos)
+        data['paramByteDataSize'].append(size)
+    data['fsmGameObjectParams'].append({'useVariable': 1, 'name': store,
+                                        'value': {'m_FileID': 0, 'm_PathID': 0}})
+    data['byteData'].extend(phase.to_bytes(4, 'little', signed=True))
+    return data
+
+
+class Volume:
+    """A stand-in for the scene resolver, answering only about one trigger owner."""
+
+    def __init__(self, reachable=('Player',), has_trigger=True):
+        self.reachable, self.has = set(reachable), has_trigger
+
+    def reachable_layers(self, gid):
+        return set(self.reachable)
+
+    def has_trigger(self, gid):
+        return self.has
+
+
+class TriggerTests(unittest.TestCase):
+    """Trigger2dEvent is the first refusal for 274 FSM instances, and the port
+    can answer exactly one of the questions it asks: is the hero body inside
+    this volume. Every other collider it can name is refused, because a trigger
+    that fires for the wrong body is worse than one that does not compile."""
+
+    def compile_trigger(self, phase=TRIGGER_STAY, objects=None, **kwargs):
+        data = trigger_data(phase, **kwargs)
+        return compile_action('Trigger2dEvent', decoded_action(data, 0), Events(), Constants(),
+                              {}, owner_id=OWNER, objects=objects or Volume())
+
+    def test_a_player_tagged_trigger_watches_the_owners_volume_every_tick(self):
+        ops = self.compile_trigger()
+        self.assertEqual(ops, [(HERO_TRIGGER, TRIGGER_STAY | REPEAT, 0, 0, 1)])
+
+    def test_every_authored_phase_reaches_the_op(self):
+        for phase in (TRIGGER_ENTER, TRIGGER_STAY, TRIGGER_EXIT):
+            self.assertEqual(self.compile_trigger(phase)[0][1], phase | REPEAT)
+
+    def test_the_watched_object_is_the_owners_cooked_id(self):
+        # The action names no object: PlayMaker delivers the callback to the
+        # FSM's own GameObject, so that is the volume and the id the op carries.
+        events, constants = Events(), Constants()
+        compile_action('Trigger2dEvent', decoded_action(trigger_data(TRIGGER_ENTER), 0),
+                       events, constants, {}, owner_id=OWNER, objects=Volume())
+        self.assertEqual(constants.values, [source_id(OWNER)])
+
+    def test_an_untagged_trigger_compiles_where_physics_admits_the_hero_alone(self):
+        # Hero Detector is the layer the level authors used for this, and its
+        # matrix row admits Player and nothing else named.
+        ops = self.compile_trigger(tag=None)
+        self.assertEqual(ops[0][0], HERO_TRIGGER)
+
+    def test_an_untagged_trigger_something_else_can_enter_refuses(self):
+        # An Enemy Detector volume watches for enemies, which the guest has no
+        # collider for. Answering it with the hero body would fire for the
+        # wrong thing rather than not at all.
+        with self.assertRaises(Unsupported) as caught:
+            self.compile_trigger(tag=None, objects=Volume(reachable=('Player', 'Enemies')))
+        self.assertIn('Enemies', caught.exception.detail)
+
+    def test_a_trigger_watching_a_collider_of_the_knight_refuses(self):
+        # HeroBox and the attack tags are child colliders of the Knight, each a
+        # different shape from the body the port can test.
+        for tag in ('HeroBox', 'Nail Attack', 'Dream Attack', 'Hero Spell'):
+            with self.assertRaises(Unsupported) as caught:
+                self.compile_trigger(tag=tag)
+            self.assertIn(tag, caught.exception.detail)
+
+    def test_a_layer_filter_refuses(self):
+        with self.assertRaises(Unsupported):
+            self.compile_trigger(layer='Enemies')
+
+    def test_a_trigger_on_an_object_with_no_collider_refuses(self):
+        # Six Area Title Controllers are authored this way. Unity never raises
+        # the callback for them, so the op could only ever be a trigger that
+        # silently never fires.
+        with self.assertRaises(Unsupported):
+            self.compile_trigger(objects=Volume(has_trigger=False))
+
+    def test_a_trigger_that_stores_the_colliding_object_refuses(self):
+        # The store happens before the send and only when the filter matched, so
+        # a separate op beside this one would hold the Knight while the volume
+        # is empty.
+        with self.assertRaises(Unsupported):
+            self.compile_trigger(store='Hero')
+
+    def test_a_trigger_with_no_event_refuses(self):
+        with self.assertRaises(Unsupported):
+            self.compile_trigger(event='')
+
+    def test_a_trigger_without_a_scene_resolver_refuses(self):
+        with self.assertRaises(Unsupported):
+            compile_action('Trigger2dEvent', decoded_action(trigger_data(TRIGGER_STAY), 0),
+                           Events(), Constants(), {}, owner_id=OWNER)
 
 
 if __name__ == '__main__':

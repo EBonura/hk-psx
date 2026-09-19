@@ -145,6 +145,67 @@ transition or block. Everything else is refused. A reference resolved from a
 write that did not happen would be a wrong answer rather than a refusal, which
 is the one outcome this format is built to avoid.
 
+## Triggers
+
+`Trigger2dEvent` is the interaction primitive: 1,026 enabled instances, present
+in all 45 admitted scenes, and the action that refused first for 274 FSM
+instances, more than any other. It fires an event when a collider enters, stays
+inside or leaves the FSM object's own trigger volume, filtered by a tag and a
+layer.
+
+The port can answer one question about a volume, and it is the question
+`dialogue::npc_tick` and the bench already put to a cooked object's bounds: is
+the hero body inside it. So the op is `HeroTrigger`, not a general
+`Trigger2dEvent`, and it names what it does. Its operands are the owner's cooked
+id in the constant pool, the phase in the flags byte beside `REPEAT`, and the
+event, in PlayMaker's own `Trigger2DType` order: enter 0, stay 1, exit 2.
+
+The compiler compiles an instance only where the hero is provably the one body
+that can be in the volume, and there are two ways to know that. The first is the
+action's own tag filter: `Player` is the Knight. The second is the project's
+Physics2D layer matrix, which decides what Unity delivers to the collider in the
+first place. An instance with no tag filter fires for whatever physics handed
+it, and for an object on the `Hero Detector` layer the matrix admits the
+`Player` layer and no other named layer, so "any collider" and "the Knight" are
+the same set. That is a rule read out of `globalgamemanagers`, not a guess about
+what a room contains. Layers the project never named are dropped from the
+reading, because their matrix rows keep Unity's all-on default: the inspector
+shows no row to edit for an unnamed layer and nothing can be assigned to one,
+and no object in the 45 scenes carries a collider on one.
+
+Everything else refuses, and the measured reasons are worth keeping because they
+are not one missing feature. 309 instances sit on a layer the matrix delivers no
+Player-layer collider to, which is an `Enemy Detector` volume watching for
+enemies, or an `Attack` volume that sees the Knight only through the `Hero Box`
+layer the port has no collider for. 94 name a tag that is a child
+collider of the Knight rather than the Knight: `HeroBox` 36, `Dream Attack` 35,
+`Nail Attack` 13, `Hero Spell` 6, `Wall Breaker` 4. Each is a different shape
+from the body, so answering them with the body would move where the trigger
+fires rather than decline to place it. 51 filter on the `Enemies` layer. 52
+store the colliding object into a variable, which has to happen inside the op,
+before the send and only when the filter matched, and the op has no fourth
+operand for the slot. 22 sit on an object with no trigger collider of its own,
+so Unity never raises the callback for them: six `Area Title Controller`
+instances are authored exactly that way, with no collider and no `Rigidbody2D`
+to forward one from a child. That leaves 470 compiling and 556 refused, and the
+compiling ones are 56 proven by the tag and 414 by the layer matrix, over 226
+distinct objects that will need cooked trigger bounds.
+
+Whole FSM instances move much less than that, because an FSM compiles only when
+every action in it does: 246 to 255. The ranking is what actually moved.
+`Trigger2dEvent` refuses first for 196 instances now rather than 274, and the
+instances one action short of compiling regrouped behind `SetFsmBool`, which is
+scoping work rather than a missing opcode.
+
+Two things about the runtime. The op always carries `REPEAT`, because the source
+action listens for as long as its state is current; sampled once on state entry
+it would be a trigger that silently never fires again, which is the failure this
+format exists to avoid. And the host owns the previous tick's overlap, not the
+executor. Unity raises `OnTriggerEnter2D` from the physics step rather than from
+the state that listens, so an FSM entering a state while the Knight already
+stands inside sees Stay and never Enter; an edge remembered per op would fire
+Enter on every re-entry to that state instead.
+
 ## Native calls
 
 `CallMethodProper`, `SendMessage` and the rest of the tail compile to a native
