@@ -457,7 +457,10 @@ fn main() {
             // was admitted. Every spatial view in this scene stays live.
             vram.admit_scene(game.region_id,cache.atlases_ready());
             vram.activate(game.region_id);
-            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();shade::upload();ability_art::upload();geo_audio::upload();geo_audio::set_volume(game.settings.sfx);runner_audio::upload();runner_audio::set_volume(game.settings.sfx);
+            // The Geo and Runner banks were streamed and uploaded by
+            // prepare_ambience above, before any scene took the arena they
+            // stage through; only their levels are applied here.
+            hud::upload();dialogue::upload();geo_render::upload();lifeblood::upload();shade::upload();ability_art::upload();geo_audio::set_volume(game.settings.sfx);runner_audio::set_volume(game.settings.sfx);
             initial=false;
             sim_clock=psx_rt::interrupts::vblank_count();
             input::start(sim_clock);

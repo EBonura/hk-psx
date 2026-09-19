@@ -1,8 +1,22 @@
 """Build using the pinned SDK snapshot, scan the final binary and pack a disc."""
-import os, subprocess, shutil, tempfile, json, hashlib
+import os, re, subprocess, shutil, tempfile, json, hashlib
 from pathlib import Path
 from paths import DISC_LIBRARY, artifacts, build_directory, link_map_path, hazard_report_path
 ROOT=Path(__file__).resolve().parents[1]
+# The ADPCM banks the guest streams from the disc at bootstrap, in the order it
+# uploads them. Each payload pairs with a generated manifest of the same stem
+# that carries the length and checksum the guest validates the chunk against.
+AUDIO_BANKS=('sfx.adpcm','geo-audio.adpcm','runner-audio.adpcm')
+def check_audio_banks():
+    """Each streamed bank's payload against the constants the guest links."""
+    from ambience import fnv
+    for name in AUDIO_BANKS:
+        payload=(ROOT/'data'/name).read_bytes()
+        manifest=(ROOT/'data'/name.replace('.adpcm','.rs')).read_text()
+        fields={key:int(value) for key,value in
+                re.findall(r'const (BANK_BYTES|BANK_CHECKSUM)\s*:\s*\w+\s*=\s*(\d+);',manifest)}
+        if fields.get('BANK_BYTES')!=len(payload) or fields.get('BANK_CHECKSUM')!=fnv(payload):
+            raise ValueError('Streamed audio bank does not match its manifest: data/'+name)
 def scene_manifest(residency="scene_gate"):
     import json
     metadata=ROOT/'data/regions.json'
@@ -51,6 +65,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", package_disc
     focus=json.loads((ROOT/'.hkpsx/focus-audio.json').read_text())
     for path,key in ((ROOT/focus['path'],'sha256'),(ROOT/'data/focus-audio.rs','manifest_sha256')):
         if hashlib.sha256(path.read_bytes()).hexdigest()!=focus[key]:raise ValueError('Focus audio changed after cooking')
+    check_audio_banks()
     arena=json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text())['scene_arena_bytes']
     if (focus['byte_len']+2047)//2048*2048>arena:raise ValueError('Focus bank exceeds startup arena')
     for clip in clips:
@@ -102,8 +117,18 @@ def build(telemetry=False, candidate=False, residency="scene_gate", package_disc
                 shutil.copy2(bank['path'],chunks/f"chunk_{bank['chunk_id']}.worldmeta")
             # One effect-art chunk per catalog scene id, after the world metadata chunks.
             effect_base=len(rooms)+len(clips)+len(atlases)+1+len(coverage['bundles'])+len(world_banks)
-            for entry in json.loads((ROOT/'.hkpsx/break-effects/report.json').read_text())['chunks']:
+            effect_chunks=json.loads((ROOT/'.hkpsx/break-effects/report.json').read_text())['chunks']
+            for entry in effect_chunks:
                 shutil.copy2(entry['path'],chunks/f"chunk_{effect_base+entry['scene_id']+1}.effectart")
+            # The SFX, Geo and Runner ADPCM banks, last and in the guest's upload
+            # order. They used to be linked into the guest; streaming them at
+            # bootstrap returned 109,536 bytes of RAM, and the SPU owns the
+            # samples from the one upload just as it did before.
+            for index,name in enumerate(AUDIO_BANKS):
+                payload=ROOT/'data'/name
+                if (len(payload.read_bytes())+2047)//2048*2048>arena:
+                    raise ValueError('Audio bank does not fit the startup room arena: '+str(payload))
+                shutil.copy2(payload,chunks/f"chunk_{effect_base+len(effect_chunks)+index+1}.bank")
             run(['cargo','run','--locked','--release','--manifest-path',ROOT/'.psoxide/tools/mkisopsx/Cargo.toml','--','--exe',exe,'--out',staged,'--volume','HKPSX','--world-pack-extra-dir',chunks,'--cdda-track',ROOT/music['path']],cwd=ROOT)
             staged.replace(outputs['bin'])
             staged.with_suffix('.cue').replace(outputs['cue'])

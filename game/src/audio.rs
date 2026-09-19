@@ -17,10 +17,7 @@ static mut GREAT_DOOR_RANDOM:u32=0x47524452;
 #[no_mangle]pub static mut HK_FOOTSTEP_STARTS:u32=0;
 #[no_mangle]pub static mut HK_HARD_LAND_SFX:u32=0;
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/sfx.rs"));
-// Word alignment permits the SDK's SPU DMA upload path. No staging allocation.
-#[repr(align(4))]
-struct Bank([u8; BANK_BYTES]);
-static BANK: Bank = Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/sfx.adpcm")));
+static mut BANK_READY: bool = false;
 #[no_mangle]
 pub static mut HK_SFX_COUNT: u32 = 0;
 #[no_mangle]
@@ -29,14 +26,30 @@ pub static mut HK_SFX_EVENT_COUNTS: [u32; 8] = [0; 8];
 #[no_mangle]
 pub static mut HK_BOSS_SFX_COUNTS: [u32; 2] = [0; 2];
 
+pub fn ready()->bool {unsafe {BANK_READY}}
+
+/// Owns the SPU reset for every bank in the game, so it runs before the title
+/// screen: the retail BIOS leaves a live reverb preset behind and `spu::init`
+/// is what silences it. The samples themselves arrive later, from the disc.
 pub fn init() {
-    assert!(BANK_BYTES <= 0x14000-0x1010);
     assert!(SAMPLES.len()==VOICES.len());
     // set_volume applies one gain to the shared voice, so everything that
     // reaches it has to carry the same source gain.
     assert!(BOSS_SAMPLES[0].2==SAMPLES[0].2 && BOSS_SAMPLES[1].2==SAMPLES[0].2);
     spu::init();
-    spu::upload_adpcm(SpuAddr::new(0x1010), &BANK.0);
+    unsafe {GREAT_DOOR_RANDOM=0x47524452;HK_GREAT_DOOR_HIT_SFX=0;HK_BOSS_SFX_COUNTS=[0;2];
+        HK_FOOTSTEP_STARTS=0;HK_HARD_LAND_SFX=0;MOVEMENT=movement::State::new();}
+}
+
+/// Bootstrap bank upload. `bank` is the disc chunk staged in the scene arena,
+/// checked for length and checksum by the loader; the SPU owns the samples
+/// from here and nothing stays resident in main RAM. No voice is configured
+/// until its sample is actually in SPU RAM, so a failed load leaves silence
+/// rather than voices pointed at uninitialised memory.
+pub fn upload(bank:&[u8]) {
+    assert!(bank.len()==BANK_BYTES);
+    assert!(BANK_BYTES <= 0x14000-0x1010);
+    spu::upload_adpcm(SpuAddr::new(0x1010), bank);
     for (index, &(address, rate, volume)) in SAMPLES.iter().enumerate() {
         // Pinned SDK fast release + reserved silence repeat address avoid
         // percussive sustain truncation and sample()'s indefinite release.
@@ -49,8 +62,7 @@ pub fn init() {
     let (address,rate,gain)=SAMPLES[0];
     Voice::new(SHARED_VOICE).configure_sample(SpuAddr::new(address),rate,
         Volume(volume::scale(gain,unsafe {LEVEL})),Adsr::sample_one_shot());
-    unsafe {GREAT_DOOR_RANDOM=0x47524452;HK_GREAT_DOOR_HIT_SFX=0;HK_BOSS_SFX_COUNTS=[0;2];
-        HK_FOOTSTEP_STARTS=0;HK_HARD_LAND_SFX=0;MOVEMENT=movement::State::new();}
+    unsafe {BANK_READY=true;}
 }
 
 /// Apply to already playing voices too, including exact mute.

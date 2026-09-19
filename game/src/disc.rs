@@ -17,7 +17,18 @@ pub const ROOM_CAPACITY:usize=SCENE_ARENA_BYTES;
 // from the generated inventories keeps the wire/index widths honest as the
 // catalog grows while preserving bounded no_std storage.
 use crate::world::particles::break_effects::EFFECT_ART_MANIFEST;
-const PACK_CHUNKS:usize=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()+WORLD_META_MANIFEST.len()+EFFECT_ART_MANIFEST.len();
+/// The ADPCM banks streamed at bootstrap, in upload order: SFX, Geo, Runner.
+/// Each entry is the chunk's exact byte length and its FNV-1a checksum, taken
+/// from the same generated manifest the owning module reads. Linking these
+/// banks into `.data` cost 109,536 bytes of RAM for samples the SPU owns after
+/// one upload; they are staged in the scene arena instead, like the ambience
+/// clips and the Focus bank, and nothing stays resident.
+const AUDIO_BANKS:[(usize,u32);3]=[
+    (crate::audio::BANK_BYTES,crate::audio::BANK_CHECKSUM),
+    (crate::geo_audio::BANK_BYTES,crate::geo_audio::BANK_CHECKSUM),
+    (crate::runner_audio::BANK_BYTES,crate::runner_audio::BANK_CHECKSUM),
+];
+const PACK_CHUNKS:usize=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()+WORLD_META_MANIFEST.len()+EFFECT_ART_MANIFEST.len()+AUDIO_BANKS.len();
 const PACK_HEADER_SECTORS:usize=(28+PACK_CHUNKS*24).div_ceil(SECTOR_BYTES);
 const PACK_HEADER_WORDS:usize=PACK_HEADER_SECTORS*SECTOR_WORDS;
 const EMPTY:usize=usize::MAX;
@@ -55,6 +66,13 @@ fn resident_scene(scene:usize)->Scene<'static> {
     cache.scene(scene)
 }
 pub const fn scene_region(scene:usize)->usize {SCENE_REGIONS[scene]}
+/// Chunk-table index of one bootstrap audio bank, after the effect art chunks.
+/// The host packer appends them in the same order, so existing chunk ids are
+/// unchanged.
+const fn audio_bank_index(bank:usize)->usize {
+    SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()
+        +WORLD_META_MANIFEST.len()+EFFECT_ART_MANIFEST.len()+bank
+}
 pub struct Cache {
     entries:[PackEntry;PACK_CHUNKS],header:[u32;PACK_HEADER_WORDS],reader:SectorReader,
     ready:bool,loaded_scenes:usize,loaded_atlases:usize,selected:usize,
@@ -144,7 +162,8 @@ impl Cache {
         let focus_index=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len();
         let metadata_index=focus_index+1+COVERAGE_MANIFEST.len();
         let effect_index=metadata_index+WORLD_META_MANIFEST.len();
-        let chunks=effect_index+EFFECT_ART_MANIFEST.len();
+        let bank_index=effect_index+EFFECT_ART_MANIFEST.len();
+        let chunks=bank_index+AUDIO_BANKS.len();
         if !SCENE_GATE_LOAD || COVERAGE_MANIFEST.len()!=SCENE_COUNT || WORLD_META_MANIFEST.len()!=SCENE_COUNT
             || COVERAGE_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES==0
             || COVERAGE_GRID_SHIFT!=2 || COVERAGE_GROUP_POOL_CAPACITY>4096 {return Err(LoadError::Coverage);}
@@ -231,7 +250,8 @@ impl Cache {
             } else if i==focus_index {(crate::focus_audio::BANK_BYTES,crate::focus_audio::BANK_CHECKSUM,SCENE_ARENA_BYTES)}
             else if i<metadata_index {let c=&COVERAGE_MANIFEST[i-focus_index-1];(c.stored_len,c.stored_fnv,SCENE_ARENA_BYTES)}
             else if i<effect_index {let m=&WORLD_META_MANIFEST[i-metadata_index];(m.stored_len,m.stored_fnv,SCENE_ARENA_BYTES)}
-            else {let f=&EFFECT_ART_MANIFEST[i-effect_index];(f.stored_len,f.stored_fnv,SCENE_ARENA_BYTES)};
+            else if i<bank_index {let f=&EFFECT_ART_MANIFEST[i-effect_index];(f.stored_len,f.stored_fnv,SCENE_ARENA_BYTES)}
+            else {let (size,checksum)=AUDIO_BANKS[i-bank_index];(size,checksum,SCENE_ARENA_BYTES)};
             let e=parse_entry(bytes,i).ok_or(LoadError::HeaderInvalid)?;
             if size==0 || size.div_ceil(SECTOR_BYTES)>capacity/SECTOR_BYTES
                 || e.chunk_id as usize!=i+1 || e.byte_size as usize!=size || e.checksum!=checksum
@@ -259,15 +279,53 @@ impl Cache {
             cd_stream::Status::Idle|cd_stream::Status::Busy=>core::hint::spin_loop(),
         }}
     }
+    /// Stage one ADPCM bank in the arena front and hand back its exact checked
+    /// bytes. The caller uploads them to the SPU and keeps nothing, the same
+    /// deal `prepare_effect_art` makes with VRAM.
+    ///
+    /// Bootstrap only, and the refusal below is the whole reason: the banks
+    /// share the scene arena, so a load while a scene is admitted would write
+    /// over the resident scene and every view borrowed from it.
+    ///
+    /// The arena is word aligned and the bank starts at its front, which is
+    /// what keeps the SDK's SPU DMA upload path available; the banks used to
+    /// get that from their own `repr(align(4))` static.
+    fn audio_bank(&mut self,bank:usize)->Result<&[u8],LoadError> {
+        self.init()?;
+        if self.loaded_scenes!=0 {return Err(LoadError::Ambience);}
+        let (size,checksum)=AUDIO_BANKS[bank];
+        let entry=self.entries[audio_bank_index(bank)];
+        if entry.byte_size as usize!=size {return Err(LoadError::RoomMismatch);}
+        self.read(entry,0)?;
+        let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),size)};
+        // The header entry was matched against this same pair at init(); this
+        // checks the payload the drive actually delivered, as the scene, atlas
+        // and coverage decoders do through the decoder's own checksum.
+        let mut hash=0x811c9dc5u32;
+        for block in bytes.chunks(1024) {
+            crate::input::checkpoint();
+            for &byte in block {hash=(hash^u32::from(byte)).wrapping_mul(0x01000193);}
+        }
+        if hash!=checksum {return Err(LoadError::Checksum);}
+        Ok(bytes)
+    }
     /// Bootstrap-only ambient loading reuses free RAM before any scene is
     /// admitted. Later calls are no-ops: all ambient samples live in SPU or
     /// the dedicated main-RAM stream cache, with no playback-time CD access.
+    ///
+    /// The three sample banks load here for the same reason and under the same
+    /// invariant. SPU order matters and is preserved: `audio::init` already
+    /// reset the SPU before the title screen, and nothing below resets it, so
+    /// the SFX bank goes first, then ambience, Focus, Geo and Runner above it.
     pub fn prepare_ambience(&mut self)->Result<(),LoadError> {
-        if crate::ambience::is_ready() && crate::focus_audio::ready() {return Ok(());}
+        if crate::audio::ready() && crate::ambience::is_ready() && crate::focus_audio::ready()
+            && crate::geo_audio::ready() && crate::runner_audio::ready() {return Ok(());}
         if self.loaded_scenes!=0 {mark(3,LoadError::Ambience as u32);return Err(LoadError::Ambience);}
         mark(1,0);
         let result=(|| {
-            self.init()?;crate::ambience::begin_load();
+            self.init()?;
+            if !crate::audio::ready() {let bank=self.audio_bank(0)?;crate::audio::upload(bank);}
+            crate::ambience::begin_load();
             for index in 0..crate::ambience::CLIPS.len() {
                 let entry=self.entries[SCENE_COUNT+index];self.read(entry,0)?;
                 let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),entry.byte_size as usize)};
@@ -280,6 +338,8 @@ impl Cache {
                 let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),entry.byte_size as usize)};
                 if !crate::focus_audio::upload(bytes) {return Err(LoadError::Ambience);}
             }
+            if !crate::geo_audio::ready() {let bank=self.audio_bank(1)?;crate::geo_audio::upload(bank);}
+            if !crate::runner_audio::ready() {let bank=self.audio_bank(2)?;crate::runner_audio::upload(bank);}
             Ok(())
         })();
         if let Err(error)=result {mark(3,error as u32);}result

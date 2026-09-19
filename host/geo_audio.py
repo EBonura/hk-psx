@@ -4,6 +4,7 @@ import math
 import struct
 from pathlib import Path
 from cook_audio import convert_wav, encode, decode_zero
+from ambience import fnv
 
 SPU_BASE = 0x14000
 BANK_LIMIT = 0x18000 - SPU_BASE
@@ -138,7 +139,10 @@ def main():
         raise ValueError('resident door sample no longer equals source rock-break clip')
     (ROOT/'data/geo-audio.adpcm').write_bytes(bank)
     manifest = '// Generated from complete Windows source clips; see ignored Geo audio provenance.\n'
-    manifest += f'const BANK_BYTES: usize = {len(bank)};\n'
+    # The guest streams this bank from the disc, so it carries the pack chunk's
+    # expected length and FNV-1a checksum rather than the bytes themselves.
+    manifest += f'pub const BANK_BYTES: usize = {len(bank)};\n'
+    manifest += f'pub const BANK_CHECKSUM: u32 = {fnv(bank)};\n'
     manifest += 'const SAMPLES: [(u32,u32,i16);6] = [\n'
     manifest += ''.join(f'    ({r["spu_address"]},11025,5461),\n' for r in records) + '];\n'
     (ROOT/'data/geo-audio.rs').write_text(manifest)

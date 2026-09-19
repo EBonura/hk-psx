@@ -189,7 +189,10 @@ def main():
     (ROOT/'data/runner-audio.adpcm').write_bytes(bank)
     rows = ''.join(f"    ({c['spu_address']},{c['byte_len']},{c['pitch']},{c['pitch_bounds'][0]},{c['pitch_bounds'][1]},{str(c['loop']).lower()}), // {c['event']}\n" for c in descriptor['clips'])
     (ROOT/'data/runner-audio.rs').write_text('// Generated from complete Windows source clips; see ignored Runner audio provenance.\n'
+        # The guest streams this bank from the disc, so it carries the pack
+        # chunk's expected length and FNV-1a checksum, not the bytes themselves.
         f'pub const BANK_BASE: u32 = {SPU_BASE};\npub const BANK_BYTES: usize = {len(bank)};\n'
+        f'pub const BANK_CHECKSUM: u32 = {fnv(bank)};\n'
         '/// (SPU address, bytes, nominal pitch, min pitch, max pitch, loops): walk loop, chase 1, chase 2.\n'
         f'pub const CLIPS: [(u32,usize,u16,u16,u16,bool);{len(descriptor["clips"])}] = [\n{rows}];\n')
     print('Runner audio:',len(bank),'bytes; SPU end',descriptor['spu_end'],'remaining',descriptor['spu_free_bytes'])

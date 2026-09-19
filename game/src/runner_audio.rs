@@ -7,9 +7,6 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/runner-audio.rs"));
 const LOOP_VOICES: [u8; 2] = [21, 22];
 const CALL_VOICE: u8 = 23;
 const GAIN: i16 = 5461;
-#[repr(align(4))]
-struct Bank([u8; BANK_BYTES]);
-static BANK: Bank = Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/runner-audio.adpcm")));
 static mut LEVEL: u8 = 10;
 /// Source id of the Runner owning each loop voice, 0 when free.
 static mut LOOP_OWNERS: [u32; 2] = [0; 2];
@@ -19,14 +16,17 @@ static mut LOOP_OWNERS: [u32; 2] = [0; 2];
 #[no_mangle] pub static mut HK_RUNNER_LOOP_DROPPED: u32 = 0;
 
 /// Called after the Geo bank upload; validates the complete immutable bank first.
-pub fn upload() {
+/// `bank` is the disc chunk staged in the scene arena, checked for length and
+/// checksum by the loader; the SPU keeps the samples and the staging bytes go.
+pub fn upload(bank: &[u8]) {
     if unsafe { HK_RUNNER_AUDIO_READY != 0 } { return; }
+    assert!(bank.len() == BANK_BYTES);
     assert!(BANK_BASE % 16 == 0 && BANK_BASE as usize + BANK_BYTES <= 0x80000);
     let mut expected = BANK_BASE;
     for &(start, bytes, pitch, low, high, loops) in &CLIPS {
         // The loop's authored initial pitch (its bounds) sits below the clip's nominal rate.
         assert!(start == expected && bytes % 16 == 0 && bytes > 0 && pitch > 0 && low <= high);
-        let data = &BANK.0[(start - BANK_BASE) as usize..(start - BANK_BASE) as usize + bytes];
+        let data = &bank[(start - BANK_BASE) as usize..(start - BANK_BASE) as usize + bytes];
         for (block, chunk) in data.chunks_exact(16).enumerate() {
             let last = (block + 1) * 16 == bytes;
             // ADPCM header byte: shift in the low nibble (0..12), filter in the high (0..4).
@@ -37,7 +37,7 @@ pub fn upload() {
         expected = start + bytes as u32;
     }
     assert!(expected == BANK_BASE + BANK_BYTES as u32);
-    spu::upload_adpcm(SpuAddr::new(BANK_BASE), &BANK.0);
+    spu::upload_adpcm(SpuAddr::new(BANK_BASE), bank);
     unsafe { HK_RUNNER_AUDIO_READY = 1; }
 }
 pub fn set_volume(level: u8) {
@@ -46,7 +46,7 @@ pub fn set_volume(level: u8) {
     let gain = Volume(volume::scale(GAIN, unsafe { LEVEL }));
     for voice in LOOP_VOICES.iter().copied().chain([CALL_VOICE]) { Voice::new(voice).set_volume(gain, gain); }
 }
-fn ready() -> bool { unsafe { HK_RUNNER_AUDIO_READY != 0 } }
+pub fn ready() -> bool { unsafe { HK_RUNNER_AUDIO_READY != 0 } }
 fn loop_slot(source: u32) -> Option<usize> {
     unsafe { LOOP_OWNERS.iter().position(|&owner| owner == source) }
 }
