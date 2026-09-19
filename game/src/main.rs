@@ -273,6 +273,34 @@ fn strike_shroom(region:&world::Region,nail:&Nail,player:&mut Player)->bool {
 fn locked_for_dash(focus:&hk_sim::Focus,door:&great_door::World,bench:&bench::State)->bool {
     focus.locks_control()||dialogue::open()||door.pending()||bench.locks_control()
 }
+/// Everything that follows a hit the Knight actually took. Four call sites used
+/// to repeat this and the fifth, falling out of the world, had drifted and lost
+/// the dialogue cancel, so a dialogue open at that moment survived the hazard
+/// respawn when every other kind of damage ended it. See docs/DAMAGE.md.
+#[inline(never)]
+fn respond_to_hurt(hurt:hk_sim::Hurt,nail:&mut Nail,response:&mut hk_sim::NailResponse,
+                   focus:&mut hk_sim::Focus) {
+    if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
+    if hurt==hk_sim::Hurt::Ignored {return;}
+    dialogue::cancel();
+    audio::hurt();
+    *nail=Nail::new();
+    *response=hk_sim::NailResponse::new();
+    focus.interrupt();
+    focus_audio::interrupt();
+}
+/// Every source of damage to the Knight goes through here, so a new one cannot
+/// take the damage and forget the response. `hazard` routes to the respawn
+/// marker instead of a recoil, and the Shade Cloak's immunity is read from the
+/// player rather than passed, because no caller may forget that either.
+#[inline(never)]
+fn apply_hurt(cheats:&cheats::Settings,vitals:&mut hk_sim::Vitals,player:&Player,
+              nail:&mut Nail,response:&mut hk_sim::NailResponse,focus:&mut hk_sim::Focus,
+              damage:u16,direction:i32,hazard:bool)->hk_sim::Hurt {
+    let hurt=cheats.hurt(vitals,VITAL_PARAMS,damage,direction,hazard,player.shadow_dashing);
+    respond_to_hurt(hurt,nail,response,focus);
+    hurt
+}
 /// StartSoulLimiter caps the vessel at 66 while a Shade is owed.
 fn soul_cap(shade:&shade::World)->u16 {
     if shade.soul_limited() {66} else {VITAL_PARAMS.max_soul}
@@ -710,9 +738,7 @@ fn main() {
                                 let shade_events=shade.tick([player.x,player.y],hero_body,room.counts[5],state.edge_reader(r,&room));
                                 if shade_events.touched {
                                     let direction=if player.x<shade_position[0] {-1}else{1};
-                                    let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,1,direction,false,player.shadow_dashing);
-                                    if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
-                                    if hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
+                                    apply_hurt(&settings.cheats,&mut vitals,&player,&mut nail,&mut nail_response,&mut focus,1,direction,false);
                                 }
                                 if shade_events.returned_geo>0 {geo.add_quietly(shade_events.returned_geo,geo::GEO_PARAMS);geo_audio::pickup(1);}
                             }
@@ -728,13 +754,10 @@ fn main() {
                             unsafe {HK_ENEMY_HITS+=enemy_events.hits as u32;HK_ENEMY_KILLS+=enemy_events.kills as u32;HK_SOUL=vitals.soul as u32;}
                             if enemy_events.dream_soul>0 {vitals.add_soul(VITAL_PARAMS,enemy_events.dream_soul);}
                             if enemy_events.hits>0 {audio::enemy_hit();}
-                            if enemy_events.hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
-                            if enemy_events.hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
+                            respond_to_hurt(enemy_events.hurt,&mut nail,&mut nail_response,&mut focus);
                             let bank_region=cache.world_metadata().region(meta_region).expect("admitted world metadata covers the selected region");
                             if let Some((damage,hazard,direction))=world::hazard_contact(bank_region,&player,PARAMS) {
-                                let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,damage,direction,hazard,player.shadow_dashing);
-                                if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
-                                if hurt!=hk_sim::Hurt::Ignored {dialogue::cancel();audio::hurt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();}
+                                apply_hurt(&settings.cheats,&mut vitals,&player,&mut nail,&mut nail_response,&mut focus,damage,direction,hazard);
                             }
                             if let Some((spawn,facing))=world::checkpoint(bank_region,&player,PARAMS) {
                                 if let Some(id)=cache.locate(r.scene,spawn[0],spawn[1]) {
@@ -775,9 +798,7 @@ fn main() {
                             if target.is_none() && !vitals.dead && !vitals.hazard_pending && !world::contains(r.bounds,player.x,player.y) {
                                 if let Some(id)=cache.locate(r.scene,player.x,player.y) {target=Some(id);spatial_target=true;}
                                 else {
-                                    let hurt=settings.cheats.hurt(&mut vitals,VITAL_PARAMS,1,0,true,player.shadow_dashing);
-                                    if hurt==hk_sim::Hurt::Died {unsafe {HK_DEATHS+=1;}}
-                                    if hurt!=hk_sim::Hurt::Ignored {audio::hurt();focus.interrupt();focus_audio::interrupt();nail=Nail::new();nail_response=hk_sim::NailResponse::new();}
+                                    apply_hurt(&settings.cheats,&mut vitals,&player,&mut nail,&mut nail_response,&mut focus,1,0,true);
                                 }
                             }
                         }
