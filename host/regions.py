@@ -343,6 +343,97 @@ def remap_actor_clips(actor, clip_base):
     return actor
 
 
+def append_room_bank(raw, atlas, frames, clips, clip_base, what):
+    """Append one packed art bank to an immutable HKROOM02 pack.
+
+    The base stays unchanged, making a repeated postpass byte-identical.
+    Existing palette/page contents and texture IDs do not move; the appended
+    descriptors explicitly offset their own palettes, stream data and frame IDs.
+    Clips are padded up to `clip_base` so every view of a scene can share one
+    clip index space. Returns the new pack and the base's own frame count, which
+    is the offset any binding into the appended frames needs.
+    """
+    if raw[:8]!=b'HKROOM02':raise ValueError(f'{what} requires an HKROOM02 base pack')
+    np,nt,nd,nf,nc,ne=struct.unpack_from('<6I',raw,8)
+    ns,flags=struct.unpack_from('<2I',raw,32)
+    if flags&~1:raise ValueError('Unknown room features')
+    offset=40;blocks=[]
+    for length in (nt*16,nd*44,nf*20,nc*16,ne*16,nt*32,np*32768,ns):
+        blocks.append(raw[offset:offset+length]);offset+=length
+    if offset!=len(raw):raise ValueError(f'{what} base pack length mismatch')
+    padding=clip_base-nc
+    if padding<0 or nf+len(frames)>2048 or clip_base+len(clips)>128 or (padding and nf==0):
+        raise ValueError(f'{what} exceeds region format limits')
+    pack=bytearray(b'HKROOM02'+struct.pack('<8I',np,nt+len(atlas.entries),nd,nf+len(frames),clip_base+len(clips),ne,ns+len(atlas.stream),flags))
+    pack+=blocks[0]
+    for page,u,v,w,h,palette,stream_offset in atlas.entries:
+        pack+=struct.pack('<6HI',page,u,v,w,h,palette+nt,stream_offset+ns)
+    pack+=blocks[1]+blocks[2]
+    for frame in frames:
+        pack+=struct.pack('<I4i',frame['texture']+nt,*[round(v*65536) for v in frame['box']])
+    pack+=blocks[3]
+    pack+=struct.pack('<4I',0,1,65536,0)*padding
+    for clip in clips:
+        pack+=struct.pack('<4I',clip['start']+nf,clip['count'],round(clip['fps']*65536),clip['wrap']|(clip['loopStart']<<16))
+    pack+=blocks[4]+blocks[5]+b''.join(atlas.palettes)+blocks[6]+blocks[7]+atlas.stream
+    return pack,nf
+
+
+def postpack_npc_bank(report, source, scenes):
+    """Append each view's cooked NPC art to its own immutable base pack.
+
+    An NPC stands in one view of one scene, so its clips ride in that view's
+    bank rather than in the scene-wide actor bank every view of the scene
+    carries. Town has no supported actor today, so no actor bank rewrites these
+    views; a view that would need both is refused rather than composed untested.
+    """
+    from npc_sources import npc_sources, append_npc_art
+    from texture_dedup import deduplicate_room
+    placed=[]
+    for row in report['regions']:
+        sc=scenes[row['scene_id']]
+        npcs=npc_sources(sc,row['interaction_bounds'])
+        row['npcs']=npcs
+        if not npcs:continue
+        # The guest reserves one animation-cache slot for the view's NPC.
+        if len(npcs)>1:raise ValueError(f'view {row["chunk_id"]} holds {len(npcs)} cooked NPCs')
+        if any(actor['movement_supported'] for actor in row['actors']):
+            raise ValueError(f'view {row["chunk_id"]} would need both an NPC and an actor bank')
+        for npc in npcs:npc['scene_id']=row['scene_id']
+        atlas=Atlas();frames=[];clips=[]
+        append_npc_art(source,sc,npcs,atlas,frames,clips)
+        atlas.pack()
+        if atlas.pages:raise ValueError('NPC bank unexpectedly requires resident pages')
+        base=ROOT/'data/regions'/f'region-{row["chunk_id"]:03}'/'room.hk'
+        raw=base.read_bytes()
+        # Appended straight after the view's own clips: nothing else shares this
+        # index space, so no padding is needed and no existing clip index moves.
+        clip_base=struct.unpack_from('<6I',raw,8)[4]
+        pack,_nf=append_room_bank(raw,atlas,frames,clips,clip_base,'NPC bank')
+        for npc in npcs:npc['clip_base']+=clip_base
+        npc_bank_bytes=len(pack)-len(raw)
+        pack,deduplication=deduplicate_room(bytes(pack))
+        if len(pack)>ROOM_BYTE_BUDGET:raise ValueError('NPC bank exceeds host staging budget')
+        (ROOT/row['path']).write_bytes(pack)
+        row.update(base_path=str(base.relative_to(ROOT)),base_sha256=hashlib.sha256(raw).hexdigest(),
+                   bytes=len(pack),sha256=hashlib.sha256(pack).hexdigest(),textures=deduplication['textures_after'],
+                   pages=deduplication['pages_after'],stream_bytes=deduplication['stream_bytes_after'],
+                   npc_bank_bytes=npc_bank_bytes,texture_deduplication=deduplication,
+                   alpha_cover_bytes=deduplication['alpha_cover_bytes'],animation_bytes=deduplication['animation_bytes'])
+        # One conversation per NPC however many views its trigger reaches into.
+        placed.extend(n for n in npcs if not any(p['scene_id']==n['scene_id']
+                      and p['game_object']==n['game_object'] for p in placed))
+        print(f'NPC bank {row["scene_name"]} view {row["chunk_id"]}: '
+              f'{", ".join(n["name"] for n in npcs)}, {len(atlas.entries)} images, '
+              f'{len(atlas.stream)} texel bytes, {row["textures"]} textures',flush=True)
+    if placed:
+        from npc_dialogue import cook as cook_npc_lines
+        cook_npc_lines(source,scenes,placed)
+    report['total_pack_bytes']=sum(row['bytes'] for row in report['regions'])
+    report['npc_bank_policy']='One ungated NPC per view, cooked into that view alone; its conversation pages link through data/npc_lines.rs'
+    return placed
+
+
 def postpack_actor_bank(report, source, scenes=None):
     """Append a shared scene actor bank from immutable pre-append base packs.
 
@@ -370,29 +461,7 @@ def postpack_actor_bank(report, source, scenes=None):
         for row in scene_rows:
             base=ROOT/'data/regions'/f'region-{row["chunk_id"]:03}'/'room.hk'
             raw=base.read_bytes()
-            if raw[:8]!=b'HKROOM02':raise ValueError('Actor append requires HKROOM02 base pack')
-            np,nt,nd,nf,nc,ne=struct.unpack_from('<6I',raw,8)
-            ns,flags=struct.unpack_from('<2I',raw,32)
-            if flags&~1:raise ValueError('Unknown room features')
-            offset=40;blocks=[]
-            for length in (nt*16,nd*44,nf*20,nc*16,ne*16,nt*32,np*32768,ns):
-                blocks.append(raw[offset:offset+length]);offset+=length
-            if offset!=len(raw):raise ValueError('Actor append base pack length mismatch')
-            padding=clip_base-nc
-            if nf+len(frames)>2048 or clip_base+len(clips)>128 or (padding and nf==0):
-                raise ValueError('Scene actor bank exceeds region format limits')
-            pack=bytearray(b'HKROOM02'+struct.pack('<8I',np,nt+len(atlas.entries),nd,nf+len(frames),clip_base+len(clips),ne,ns+len(atlas.stream),flags))
-            pack+=blocks[0]
-            for page,u,v,w,h,palette,stream_offset in atlas.entries:
-                pack+=struct.pack('<6HI',page,u,v,w,h,palette+nt,stream_offset+ns)
-            pack+=blocks[1]+blocks[2]
-            for frame in frames:
-                pack+=struct.pack('<I4i',frame['texture']+nt,*[round(v*65536) for v in frame['box']])
-            pack+=blocks[3]
-            pack+=struct.pack('<4I',0,1,65536,0)*padding
-            for clip in clips:
-                pack+=struct.pack('<4I',clip['start']+nf,clip['count'],round(clip['fps']*65536),clip['wrap']|(clip['loopStart']<<16))
-            pack+=blocks[4]+blocks[5]+b''.join(atlas.palettes)+blocks[6]+blocks[7]+atlas.stream
+            pack,nf=append_room_bank(raw,atlas,frames,clips,clip_base,'Scene actor bank')
             from texture_dedup import deduplicate_room
             actor_bank_bytes=len(pack)-len(raw)
             pack,deduplication=deduplicate_room(bytes(pack))
@@ -451,6 +520,7 @@ def refresh_actors():
             if (source.directory/name).is_file():source.file(name)
     report['scenes']=[scene_metadata(scenes[info['scene_id']],info) for info in SCENES]
     report['total_pack_bytes']=sum(row['bytes'] for row in report['regions'])
+    postpack_npc_bank(report,source,scenes)
     postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report)
     postpack_masks(report)
     postpack_reveal_masks(report,source,scenes)
@@ -472,7 +542,7 @@ def main():
     args=parser.parse_args()
     if args.append_actor_bank:
         report=json.loads((ROOT/'data/regions.json').read_text());source=Source()
-        scenes=postpack_actor_bank(report,source);postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report);postpack_masks(report);postpack_reveal_masks(report,source,scenes);write_provenance(report,source)
+        scenes=postpack_actor_bank(report,source);postpack_npc_bank(report,source,scenes);postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report);postpack_masks(report);postpack_reveal_masks(report,source,scenes);write_provenance(report,source)
         write_report(ROOT/'data/regions.json',report);return
     if args.refresh_actors:
         refresh_actors();return
@@ -533,6 +603,7 @@ def main():
             if other['chunk_id']!=region['chunk_id'] and other['scene_id']==region['scene_id']
             and intersects([x0-.01,y0-.01,x1+.01,y1+.01],other['activation_bounds'])]
     postpack_actor_bank(report,source,scenes)
+    postpack_npc_bank(report,source,scenes)
     postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report)
     postpack_masks(report)
     postpack_reveal_masks(report,source,scenes)
