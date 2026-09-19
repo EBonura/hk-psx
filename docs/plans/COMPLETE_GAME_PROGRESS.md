@@ -1654,6 +1654,35 @@ Nothing is cooked into the disc yet. This is the compiler and the executor with
 a measured gap between them and the authored behaviour, which is what the next
 slices close.
 
+## P10: ranking by what completes an FSM, not by what refuses first
+
+The blocker histogram was answering the wrong question. An FSM compiles only
+when every one of its actions does, so a list of first refusals is a treadmill:
+implementing the top entry moves the refusal one action later and the compiled
+count does not move. `host/script_ir.py` now reports the whole set of actions
+each FSM is still missing, and ranks by how many instances a single action would
+complete.
+
+That list is short and specific. `ActivateAllChildren` alone would complete 67
+instances; `SendEventByName` to another FSM, 31; `ActivateGameObject`, 24;
+`Trigger2dEvent`, 15. Underneath them the common missing sets are coherent
+behaviours rather than scattered actions: 117 instances want the same six
+physics actions, 112 want the four that make up enemy contact messaging, 92 want
+the seven of a colour fade.
+
+The 67 are worth naming, because they are one authored behaviour repeated. 64 of
+them are `Activate Infected`, and the whole FSM is six states: wait a frame, read
+a PlayerData bool, test a local bool, then activate or deactivate all children of
+its owner. It is the Crossroads infection variant switch, and it is the reason
+scene variants are a scripting problem rather than a cooking one. Whether
+implementing it changes anything visible today depends on whether the authored
+default state already matches what the FSM sets on its first frame, which is
+worth checking before building for it.
+
+The measured position is unchanged at 246 instances and 7 ops. What moved is the
+map: the next slice is a guest object model, and this ranking says what it has to
+support first, which is activation of a static object's children.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
