@@ -75,13 +75,45 @@ next tick. The Runner's same-callback restart, called out in step 5, works
 because of the synchronous half; turning it into an extra frame would change
 its behaviour.
 
+## Objects
+
+Nearly every action left on the blocker list needs a script to address an
+object, so this is what one is. A reference is a plain `i32`, and there are
+exactly three kinds:
+
+- `HERO`, the reserved id `0x7fffffff`. Source ids are path ids masked to 31
+  bits, so the top of that range cannot collide with one.
+- A cooked object's stable source id, the same one the world metadata bank
+  carries, which the host resolves to whatever it actually holds: a region
+  object, an actor instance, or nothing.
+- `NO_OBJECT`, zero. A native call handed this refuses rather than acting on
+  some default, because "the wrong object" is worse than "no object".
+
+The executor never resolves a reference. It passes the id to the host, which
+owns the mapping, and that is deliberate: the guest's object model is regions,
+region objects and actors, not a Unity scene graph, and pretending otherwise in
+the IR would invite actions the port cannot honour.
+
+References come from three places and all three are cook time.
+`GetOwner` is the FSM's own object, which never changes. `GetHero` is the
+constant. `FindChild`, `GetParent` and `FindGameObject` resolve where the
+target is static and are refused where it is not.
+
 ## Native calls
 
-`CallMethodProper`, `SendMessage` and the rest of the tail compile to
-`Op::Native { id }`, where the id indexes a guest table of implemented
-functions. The cooker refuses an id it cannot bind. That is the rule step 7
-names: an unsupported required action must block the scene, never compile to a
-no-op that lets the scene claim to be implemented.
+`CallMethodProper`, `SendMessage` and the rest of the tail compile to a native
+call, whose id sits in the op's `flags` so all three operands stay free for
+arguments. An object plus a two-component value is the common shape:
+`SetVelocity2d(object, x, y)` fits exactly.
+
+There are two forms. `Native` reads its three arguments from variable slots.
+`NativeConst` reads them from the constant pool, which is what a cook-time
+resolved reference needs: `ActivateAllChildren` over a static parent becomes one
+call per child, each carrying the child's cooked id, with no temporaries.
+
+The cooker refuses an id it cannot bind. That is the rule step 7 names: an
+unsupported required action must block the scene, never compile to a no-op that
+lets the scene claim to be implemented.
 
 ## Provenance
 
