@@ -48,7 +48,9 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P19/P20 | in progress | Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
 | P14 | in progress | Builds 112 to 121. Step 1's audit corrected the jump velocity and added the jump, ledge and head-bump buffers the port was missing. Step 2 implemented the Mothwing Cloak, the Mantis Claw's wall slide and jump, the Monarch Wings, the Crystal Heart and the Shade Cloak, all from source constants and the Superdash FSM. Step 3 catalogued every PlayerData traversal flag and found acid already covered by the generic hazard path, `hasAcidArmour` and `hasLantern` unreachable, and one unimplemented bounce shroom owed to P11. Step 4 took the input priority from the Can* methods. Step 5 added the Dream Nail with its SOUL reward. Step 6 mapped L1, R1 and Triangle and extended the replay schema and the native probe. Step 7's combinations are hk-sim tests. Remaining: no ability has an acquisition route (step 8), and the Wall Slide, Walljump, Dash, Double Jump and four DN clips are not cooked, so an ability plays the Fall or Idle clip. |
 | P15 | in progress | Build 122 adds Vengeful Spirit from `Spell Control`, `Fireball Cast` and the projectile's own FSMs, with the source's one-button cast-versus-Focus split. Remaining: Desolate Dive and Howling Wraiths (catalogued only), nail arts, nail damage tiers, the centralized damage resolution of step 4, the verification matrix of step 7, and the `Ball`/`Ball End` art, which needs a reserved VRAM rectangle. |
-| P10-P12, P16-P18, P21-P31 | pending | Follow dependency order in the master plan. |
+| P10 | in progress | Step 1 done. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. Steps 2 onward (the typed IR, the executor and its slices) are the largest remaining unlock: P12, P17, P18 and P23 all wait on them. |
+| P11 | in progress | Step 1 done. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. Owed: the single `BounceShroom` in Crossroads_38, and the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
+| P12, P16-P18, P21-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -1511,6 +1513,49 @@ its own position and facing.
 
 Verification: 97 frames cooked across 16 clips, the 8 routes and the 4
 power-cut points on the final CUE, with 111,540 bytes of linked headroom left.
+
+## P10 step 1: what the admitted scenes actually script
+
+P10 is the package the rest of the plan is waiting on. P12's secrets, P17's
+economy, P18's NPCs and quests and P23's story all need a shared event and
+variable runtime, and step 1 asks for the action inventory to be ranked by
+required instances rather than raw count, because that ranking is what decides
+which slices get built.
+
+`tools/playmaker_inventory.py` walks every PlayMakerFSM in the 45 admitted
+scenes. The size of the problem: **2,028 FSM instances across 200 distinct FSM
+names, running 48,037 enabled actions of 280 distinct types.** About a third of
+those instances (15,731) are operations the guest already has a native system
+for, which is the ranking, not a completion claim.
+
+The shape of the first slice falls out of the ordering. Four actions carry the
+bulk of the declarative flow and all four are already native families:
+`SendEventByName` 2,332, `Wait` 2,040, `BoolTest` 1,993 and
+`Tk2dPlayAnimation` 1,731, each in 44 or 45 of the 45 scenes. Underneath them
+sit the primitives with no native equivalent yet, led by `CallMethodProper`
+1,271 in 34 scenes, which is the escape hatch into native code, and
+`Trigger2dEvent` 1,026 in all 45, which is the interaction primitive every
+room uses.
+
+Two entries in that list matter more than their count suggests.
+`GetLanguageString` 1,067 and `SetTextMeshProText` 1,064 appear in only 8 to 10
+scenes, but they are the whole of dialogue and signage, so P18 cannot start
+without them. And `SpawnObjectFromGlobalPool` 786 in 39 scenes is the pooled
+object mechanism every projectile, effect and reward already goes through by
+hand today.
+
+By FSM name rather than action, the repeated behaviours are `FSM` 219 (the
+unnamed default), `Spawn Offset` 157, `flyer_receive_direction_msg` 117,
+`enemy_message` 112 and `Control` 110. `Music Control` and `PlayMaker Unity 2D`
+appear in all 45 scenes. The ones a native controller already covers are
+tagged: `damages_enemy` 84, `Geo Rock` 36, and the Hero's own Superdash, Spell
+Control, Dream Nail and Nail Arts.
+
+What this does not claim: state reachability is not analysed, so an action in
+an unreachable state still counts; prefab FSMs reached only through a pooled
+spawn are counted where a scene holds the prefab and not otherwise; and nothing
+here implements anything. It is the authority step 1 asks for, with numbers
+against every candidate.
 
 ## Required package completion record
 
