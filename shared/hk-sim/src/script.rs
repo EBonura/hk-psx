@@ -571,6 +571,33 @@ mod tests {
         assert_eq!(i.state, DONE, "the repeated compare caught it");
     }
     #[test]
+    fn the_first_test_that_transitions_wins_and_the_rest_of_the_state_is_skipped() {
+        // `FsmState::ActivateActions` in the shipped PlayMaker.dll returns as
+        // soon as `Fsm.IsSwitchingState`, so a state's remaining actions never
+        // run once one of them has transitioned. Every conditional dialogue
+        // branch in the game depends on that: Elderbug's 21 branches are a
+        // priority list in declaration order, not independent tests.
+        const NO: u16 = 3;
+        let ops = [op(Code::BoolTest, 0, 0, YES, 0),
+                   op(Code::BoolTest, 0, 1, NO, 0)];
+        let states = [State { first_op: 0, op_count: 2, first_transition: 0, transition_count: 2 },
+                      State { first_op: 2, op_count: 0, first_transition: 2, transition_count: 0 },
+                      State { first_op: 2, op_count: 0, first_transition: 2, transition_count: 0 }];
+        let transitions = [Transition { event: YES, target: 1 }, Transition { event: NO, target: 2 }];
+        let p = Program { states: &states, transitions: &transitions, ops: &ops,
+                          constants: &[], var_count: 2 };
+        // Both conditions hold, so declaration order decides.
+        let mut i = Instance::new();
+        let mut vars = [1i32, 1];
+        i.tick(p, &mut vars, &mut Recorder::default());
+        assert_eq!(i.state, 1, "the first branch won");
+        // With only the second true, it is reached because the first did not fire.
+        let mut i = Instance::new();
+        let mut vars = [0i32, 1];
+        i.tick(p, &mut vars, &mut Recorder::default());
+        assert_eq!(i.state, 2);
+    }
+    #[test]
     fn a_bad_index_refuses_rather_than_reading_past_the_program() {
         let ops = [op(Code::SetInt, 0, 0, 9, 0)];
         let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 0 }];
