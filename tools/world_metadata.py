@@ -7,6 +7,13 @@ the playable disc.
 """
 import argparse
 import hashlib
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'host'))
+# The one definition of how many debris variants the catalogue may hold,
+# beside the function that produces them. Two copies of this number is what
+# made the last build fail after the other copy had already been raised.
+from effects import DEBRIS_VARIANT_LIMIT
 import json
 import math
 import struct
@@ -256,7 +263,7 @@ def encode_scene(scene, rows):
             # Variant catalogue indices the runtime Region value resolves:
             # door debris, particle bank (-1 none), grass impact (-1 none).
             add_object("region_statics", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0, row["activation_bounds"], None,
-                       (bounded(statics["door_debris"], 8, "debris variant"),
+                       (bounded(statics["door_debris"], DEBRIS_VARIANT_LIMIT, "debris variant"),
                         statics["particle_bank"] if statics["particle_bank"] < 0 else bounded(statics["particle_bank"], 8, "particle bank variant"),
                         statics["grass_impact"] if statics["grass_impact"] < 0 else bounded(statics["grass_impact"], 32, "impact variant")))
         region_polygon_count = len(polygons) - region_polygon_first
