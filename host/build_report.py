@@ -44,7 +44,20 @@ def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0):
             raise ValueError('Invalid linked coverage arena allocation')
         if proof_start<arena_start+arena_total and proof_start+proof_size>arena_start:
             raise ValueError('Scene and coverage arenas overlap')
-    return {'code_bytes':code_bytes,'data_bytes':data_bytes,'bss_bytes':bss_bytes,
+    # The size of `main` against what a MIPS PC16 branch reaches. A branch
+    # inside one function can only span +/-128 KB, and `main` has been over that
+    # for a while: the assembler only refuses when a specific branch pair
+    # actually spans too far, so being over is necessary for the failure and not
+    # sufficient. When it does refuse it says "out of range PC16 fixup" and
+    # names nothing, which is a bad thing to meet without warning, so the number
+    # is reported every build and the margin is stated in the report.
+    main_size = None
+    entry = re.search(r'^([0-9a-f]+)\s+[0-9a-f]+\s+([0-9a-f]+)\s+\d+\s+main$', text, re.M)
+    if entry:
+        main_size = int(entry[2], 16)
+    return {'main_text_bytes':main_size,'pc16_branch_range_bytes':1<<17,
+            'main_over_pc16_range':bool(main_size and main_size > (1<<17)),
+            'code_bytes':code_bytes,'data_bytes':data_bytes,'bss_bytes':bss_bytes,
             'code_data_alignment_bytes':data-code-code_bytes,'static_span_bytes':static_end-code,
             'static_end':hex(static_end),'stack_reserved_bytes':stack_bytes,'stack_floor':hex(stack_floor),
             'unallocated_before_stack_bytes':gap,'main_frame_bytes':main_frame,
@@ -86,6 +99,15 @@ def main():
     report['disc_chunk_count']=len(report['packed_scenes']['scenes'])+len(report['ambience']['clips'])+len(report['packed_scenes']['atlases'])+1+len(report['scene_coverage']['bundles'])+len(report['packed_scenes'].get('world_metadata',[]))
     write_build_report(report,telemetry,latest=True)
     shutil.copy2(link_map,ROOT/'build/hk-psx.map')
+    memory=report['memory']
+    if memory.get('main_over_pc16_range'):
+        # Said out loud every build, because the failure mode when it finally
+        # bites is an assembler error that names nothing. Several callees carry
+        # inline(never) purely to hold this down; adding a feature to `main`
+        # means pinning another one, or splitting the function properly.
+        print(f"WARNING: main is {memory['main_text_bytes']:,} bytes, past the "
+              f"{memory['pc16_branch_range_bytes']:,} a MIPS PC16 branch reaches. It links only "
+              'while no branch pair inside it spans too far.',flush=True)
     print('Build report:',build_report_path(telemetry),flush=True)
 
 if __name__=='__main__':main()
