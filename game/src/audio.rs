@@ -3,7 +3,13 @@ use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
 #[path="volume.rs"]mod volume;
 #[path="movement_audio.rs"]mod movement;
 static mut LEVEL:u8=10;
-const GREAT_DOOR_VOICE:u8=15; // 0..5 SFX, 6..11 ambience, 12..14 Geo,16..17 movement.
+/// Every one of the SPU's 24 voices is allocated: 0..5 and16..17 here, 6..11
+/// ambience, 12..14 Geo, 18..20 Focus, 21..23 Runner. Voice15 therefore
+/// carries both the Great Door's hit variant and the False Knight's one-shots.
+/// No scene holds both, the door being Tutorial_01 and the fight Crossroads_10,
+/// and every play reconfigures the voice so neither inherits the other's
+/// sample address or rate.
+const SHARED_VOICE:u8=15;
 const VOICES:[u8;8]=[0,1,2,3,4,5,16,17];
 static mut MOVEMENT:movement::State=movement::State::new();
 static mut GREAT_DOOR_RANDOM:u32=0x47524452;
@@ -19,10 +25,16 @@ static BANK: Bank = Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/.
 pub static mut HK_SFX_COUNT: u32 = 0;
 #[no_mangle]
 pub static mut HK_SFX_EVENT_COUNTS: [u32; 8] = [0; 8];
+/// One per admitted False Knight voice: landing, then mace swing.
+#[no_mangle]
+pub static mut HK_BOSS_SFX_COUNTS: [u32; 2] = [0; 2];
 
 pub fn init() {
     assert!(BANK_BYTES <= 0x14000-0x1010);
     assert!(SAMPLES.len()==VOICES.len());
+    // set_volume applies one gain to the shared voice, so everything that
+    // reaches it has to carry the same source gain.
+    assert!(BOSS_SAMPLES[0].2==SAMPLES[0].2 && BOSS_SAMPLES[1].2==SAMPLES[0].2);
     spu::init();
     spu::upload_adpcm(SpuAddr::new(0x1010), &BANK.0);
     for (index, &(address, rate, volume)) in SAMPLES.iter().enumerate() {
@@ -35,9 +47,9 @@ pub fn init() {
     // The Great Door requests this same clip as one of its two hit variants.
     // A separate voice avoids replacing ordinary breakable/Geo playback.
     let (address,rate,gain)=SAMPLES[0];
-    Voice::new(GREAT_DOOR_VOICE).configure_sample(SpuAddr::new(address),rate,
+    Voice::new(SHARED_VOICE).configure_sample(SpuAddr::new(address),rate,
         Volume(volume::scale(gain,unsafe {LEVEL})),Adsr::sample_one_shot());
-    unsafe {GREAT_DOOR_RANDOM=0x47524452;HK_GREAT_DOOR_HIT_SFX=0;
+    unsafe {GREAT_DOOR_RANDOM=0x47524452;HK_GREAT_DOOR_HIT_SFX=0;HK_BOSS_SFX_COUNTS=[0;2];
         HK_FOOTSTEP_STARTS=0;HK_HARD_LAND_SFX=0;MOVEMENT=movement::State::new();}
 }
 
@@ -49,7 +61,18 @@ pub fn set_volume(level:u8) {
         Voice::new(VOICES[index]).set_volume(gain,gain);
     }
     let gain=Volume(volume::scale(SAMPLES[0].2,level));
-    Voice::new(GREAT_DOOR_VOICE).set_volume(gain,gain);
+    Voice::new(SHARED_VOICE).set_volume(gain,gain);
+}
+
+/// Retrigger the shared voice on one clip. Two owners take turns on it, so the
+/// address and rate are written every time rather than left from `init`.
+fn play_shared(address:u32,rate:u32,gain:i16,pitch:Option<u16>) {
+    Voice::key_off(1<<SHARED_VOICE);
+    Voice::new(SHARED_VOICE).configure_sample(SpuAddr::new(address),rate,
+        Volume(volume::scale(gain,unsafe {LEVEL})),Adsr::sample_one_shot());
+    if let Some(pitch)=pitch {Voice::new(SHARED_VOICE).set_pitch(Pitch::raw(pitch));}
+    Voice::key_on(1<<SHARED_VOICE);
+    unsafe {HK_SFX_COUNT=HK_SFX_COUNT.saturating_add(1);}
 }
 
 /// Resident first authored variant, with the source's .85..1.15 pitch range.
@@ -62,12 +85,24 @@ pub fn great_door_hit() {
     };
     let [low,high]=GREAT_DOOR_HIT_PITCH;
     let pitch=low as u32+random*(high as u32-low as u32+1)/65536;
-    Voice::key_off(1<<GREAT_DOOR_VOICE);
-    Voice::new(GREAT_DOOR_VOICE).set_pitch(Pitch::raw(pitch as u16));
-    Voice::key_on(1<<GREAT_DOOR_VOICE);
-    unsafe {HK_SFX_COUNT=HK_SFX_COUNT.saturating_add(1);
-        HK_GREAT_DOOR_HIT_SFX=HK_GREAT_DOOR_HIT_SFX.saturating_add(1);}
+    let (address,rate,gain)=SAMPLES[0];
+    play_shared(address,rate,gain,Some(pitch as u16));
+    unsafe {HK_GREAT_DOOR_HIT_SFX=HK_GREAT_DOOR_HIT_SFX.saturating_add(1);}
 }
+
+/// `FalseyControl`'s own one-shots, both `AudioPlaySimple` at source gain and
+/// pitch. `boss_land` is `S Land`, `State 2` and `Land Noise`, the armoured
+/// body hitting the floor; `boss_swing` is `S Attack` and `JA Hit 2`, the mace
+/// coming down. `Slam`'s own `false_knight_strike_ground` is not resident:
+/// host/cook_audio.py's refusal table carries its measured size, and what the
+/// slam has instead is `camera::request(Shake::Big)` on the same state.
+fn boss_play(index:usize) {
+    let (address,rate,gain)=BOSS_SAMPLES[index];
+    play_shared(address,rate,gain,None);
+    unsafe {HK_BOSS_SFX_COUNTS[index]=HK_BOSS_SFX_COUNTS[index].saturating_add(1);}
+}
+pub fn boss_land() {boss_play(0);}
+pub fn boss_swing() {boss_play(1);}
 
 fn play(index: usize) {
     // One dedicated voice per event class. Retrigger replaces only that class;

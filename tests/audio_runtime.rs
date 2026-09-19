@@ -45,7 +45,7 @@ impl Voice {
 pub fn init(){TRACE.lock().unwrap().events.push(Event::Init);}
 pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){
     assert_eq!((bytes.as_ptr() as usize)%4,0,"DMA source alignment");
-    assert_eq!(address.0,0x1010);assert_eq!(bytes.len(),256);
+    assert_eq!(address.0,0x1010);assert_eq!(bytes.len(),320);
     for (i,sample) in bytes.chunks_exact(32).enumerate(){
         assert_eq!(sample[0],i as u8,"complete, ordered synthetic bank");
         assert!(sample[1..].iter().all(|b|*b==0));
@@ -62,9 +62,9 @@ fn pair(index:u8,gain:i16)->Vec<Event>{vec![Event::Off(1<<index),Event::On(1<<in
 fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     // Muting before boot must affect initial configuration too.
     audio::set_volume(0);take();audio::init();
-    let events=take();assert_eq!(events[0],Event::Init);assert_eq!(events[1],Event::Upload(0x1010,256));
+    let events=take();assert_eq!(events[0],Event::Init);assert_eq!(events[1],Event::Upload(0x1010,320));
     let physical=[0,1,2,3,4,5,16,17];
-    let mut expected=vec![Event::Init,Event::Upload(0x1010,256)];
+    let mut expected=vec![Event::Init,Event::Upload(0x1010,320)];
     for (i,v) in physical.iter().enumerate(){expected.push(Event::Configure(*v,0x1010+i as u32*32,if i==7{11025}else{22050},0));}
     expected.push(Event::Configure(15,0x1010,22050,0));assert_eq!(events,expected);
 
@@ -76,12 +76,27 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     let mut pitches=std::collections::BTreeSet::new();
     for _ in 0..256 {
         audio::great_door_hit();let events=take();
-        assert_eq!(events.len(),3);assert_eq!(events[0],Event::Off(1<<15));assert_eq!(events[2],Event::On(1<<15,0));
-        let Event::Pitch(v,p)=events[1] else {panic!("pitch must be set before key-on");};
+        // The False Knight shares this voice, so the door rewrites its own
+        // sample address and rate before the pitch and the key-on.
+        assert_eq!(events.len(),4);assert_eq!(events[0],Event::Off(1<<15));
+        assert_eq!(events[1],Event::Configure(15,0x1010,22050,0));assert_eq!(events[3],Event::On(1<<15,0));
+        let Event::Pitch(v,p)=events[2] else {panic!("pitch must be set before key-on");};
         assert_eq!(v,15);assert!((1741..=2355).contains(&p));pitches.insert(p);
     }
     assert!(pitches.len()>100,"source pitch interval must produce variation");
     unsafe {assert_eq!(audio::HK_GREAT_DOOR_HIT_SFX,256);assert_eq!(audio::HK_SFX_COUNT,262);}
+
+    // The boss takes the same voice back at its own address, rate and no pitch
+    // override, and the door's next hit must not inherit either of them.
+    for (index,play,address,rate) in [(0usize,audio::boss_land as fn(),0x1010+8*32,11025u32),
+                                      (1,audio::boss_swing as fn(),0x1010+9*32,22050)] {
+        play();
+        assert_eq!(take(),[Event::Off(1<<15),Event::Configure(15,address,rate,0),Event::On(1<<15,0)]);
+        unsafe {assert_eq!(audio::HK_BOSS_SFX_COUNTS[index],1);}
+    }
+    audio::great_door_hit();
+    assert_eq!(take()[1],Event::Configure(15,0x1010,22050,0),"the door inherited the boss sample");
+    unsafe {assert_eq!(audio::HK_SFX_COUNT,265);assert_eq!(audio::HK_BOSS_SFX_COUNTS,[1,1]);}
 
     // Threshold and suppression exercise the actual event->physical voice path.
     audio::reset_movement();assert_eq!(take(),[Event::Off(1<<17)]);
