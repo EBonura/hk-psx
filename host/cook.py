@@ -228,11 +228,24 @@ MAX_FRAME_TILES=ANIMATION_SLOTS-RESERVED_SLOTS
 MAX_TEXTURE_AXIS=252
 
 
+# HKROOM02's own texture-table limit, checked again by hk_format::MAX_TEXTURES.
+# It bounds the 16-byte records a region may carry, which is a different
+# question from how many CLUT slots those records need.
+MAX_ROOM_TEXTURES=640
+
+
 class Atlas:
-    def __init__(self,deduplicate=True,max_pages=20,max_textures=640,alpha_covers=True):
+    def __init__(self,deduplicate=True,max_pages=20,max_textures=MAX_ROOM_TEXTURES,alpha_covers=True,max_cluts=None):
         self.flags=HAS_ALPHA_COVERS if alpha_covers else 0
         self.animation_bytes=0;self.alpha_cover_bytes=0
         self.max_textures=max_textures
+        # A CLUT slot is a distinct palette, not a texture. HKROOM02 lets any
+        # number of textures name one palette index, and the scene bank pools
+        # palettes by value before anything reaches VRAM, so the slots a region
+        # really costs are its distinct palette words. Callers that only know
+        # one number keep the old behaviour of spending both against it.
+        self.max_cluts=max_textures if max_cluts is None else max_cluts
+        self.cluts=0
         self.max_pages=max_pages
         self.images=[];self.entries=[];self.pages=[];self.palettes=[];self.streamed=set();self.stream=bytearray()
         self.quantized=[];self.canonical={};self.request_map=[];self.deduplicate=deduplicate
@@ -293,9 +306,10 @@ class Atlas:
         """Admit one streamed frame across a rectangle of 64x64 animation slots.
 
         The frame is quantized once, so the tiles hold identical colours and a
-        seam does not shift hue where two slots meet. It does not make them
-        cheaper: HKROOM02 sizes its palette block at one entry per texture and
-        the region uploads it whole, so a tile costs a CLUT slot either way.
+        seam does not shift hue where two slots meet. That also makes them
+        cheap: every tile of a frame carries the same palette words, and the
+        region's CLUT cost counts distinct words, so a twelve-tile frame spends
+        one slot rather than twelve.
 
         Tiles are emitted row-major as consecutive texture IDs and the first
         carries the grid, which is what hk_format::Room::frame_grid reads back.
@@ -323,7 +337,7 @@ class Atlas:
                 self.images[index]=im.crop((x0,y0,x0+tw,y0+th))
         return base
     def pack(self):
-        self.entries=[None]*len(self.quantized);self.palettes=[];self.stream=bytearray()
+        self.entries=[None]*len(self.quantized);self.palettes=[];self.stream=bytearray();distinct=set()
         page_count,placements=dense_pack([(aligned(w),h,i)for i,(w,h,palette,pixels)in enumerate(self.quantized)if i not in self.streamed])
         if page_count>self.max_pages:raise ValueError('4bpp VRAM page budget exceeded')
         self.pages=[bytearray(32768)for _ in range(page_count)]
@@ -340,16 +354,18 @@ class Atlas:
                 p,(x,y)=65535,self.grids.get(i,(0,0))
             else:
                 p,x,y=positions[i]
-            # HKROOM02 sizes the palette block at one 32-byte entry per texture
-            # and the guest uploads the block whole, so a tile costs a CLUT slot
-            # whether or not it repeats its frame's palette. The tiles of one
-            # frame were quantized together, which is what keeps their colours
-            # identical across the seam; it does not make them cheaper.
+            # The block keeps one 32-byte entry per texture because that is how
+            # the reader sizes it, but repeats cost nothing in VRAM: the scene
+            # bank pools palettes by value and a scene uploads that pool, so the
+            # slots a region spends are its distinct palette words. The tiles of
+            # one frame were quantized together, which is what keeps their
+            # colours identical across the seam, and it now makes them cheaper.
             owner=self.tile_owner.get(i)
             if owner is not None and self.quantized[owner][2]!=palette:
                 raise ValueError('tiles of one frame disagree on their palette')
-            self.palettes.append(palette);cl=len(self.palettes)-1
-            if cl>=self.max_textures:raise ValueError('CLUT budget exceeded')
+            self.palettes.append(palette);cl=len(self.palettes)-1;distinct.add(palette)
+            if len(distinct)>self.max_cluts:raise ValueError('CLUT budget exceeded')
+            if len(self.palettes)>self.max_textures:raise ValueError('HKROOM02 texture table exceeded')
             for yy in range(h):
                 for xx in range(w):
                     v=(pixels[yy*((w+1)//2)+xx//2]>>((xx&1)*4))&15
@@ -360,6 +376,7 @@ class Atlas:
                     target[k]=(target[k]&~(15<<shift))|(v<<shift)
             self.entries[i]=(p,x,y,w,h,cl,stream_offset)
         self.stream.extend(bytes((-len(self.stream))&3))
+        self.cluts=len(distinct)
         self.animation_bytes=len(self.stream);self.alpha_cover_bytes=0
         if self.flags&HAS_ALPHA_COVERS:
             for i,(w,h,palette,pixels) in enumerate(self.quantized):
@@ -374,7 +391,8 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     s=source or Source();sc=scene or Scene(s,'level6');scene_file=Path(sc.file.name).name
     region=region or {'camera_x':CAM_X,'camera_y':CAM_Y,'collision_bounds':(15,-5,78,35),'activation_bounds':(15,-5,62,25)}
     cam_x,cam_y=region['camera_x'],region['camera_y'];collision_bounds=region['collision_bounds']
-    atlas=Atlas(max_pages=20 if stage_for_similarity else STATIC_PAGE_BUDGET,max_textures=640 if stage_for_similarity else TEXTURE_BUDGET);draws=[];images={};unsupported=list(sc.errors);rendered=[]
+    atlas=Atlas(max_pages=20 if stage_for_similarity else STATIC_PAGE_BUDGET,max_textures=MAX_ROOM_TEXTURES,
+                max_cluts=MAX_ROOM_TEXTURES if stage_for_similarity else TEXTURE_BUDGET);draws=[];images={};unsupported=list(sc.errors);rendered=[]
     reveal=reveal_mask_sources(sc)
     supported_reveal_renderers={int(source.split(':')[-1]) for controller in reveal['controllers'] for source in controller['renderer_sources']}
     unsupported.extend(dict(record,type='unsupported reveal controller') for record in reveal['unsupported'])
@@ -567,7 +585,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     params+=f'pub const KNIGHT_SCALE:i32={round(FOCAL/-CAM_Z*4096)};\n'
     # Final renderer indices are assigned after sorting below.
     if write_shared:dump(ROOT/'.hkpsx/gameplay-source.json',{'hero':s.sid(hero),'prefix':constants,'collider':body,'fixed_dt':dt,'development_spawn_marker':f'{scene_file}:{marker}','spawn':spawn,'limitations':['Full HeroController tail schema unresolved','Jump release queue and Unity contact solver parity unverified','No original-input trajectory capture yet']})
-    atlas.pack();print('pages',len(atlas.pages),'textures',len(atlas.images),flush=True)
+    atlas.pack();print('pages',len(atlas.pages),'textures',len(atlas.images),'cluts',atlas.cluts,flush=True)
     # Terrain-only collision. Keep exact world segments; guest handles axis-aligned
     # edges, while unsupported slopes are explicit, never converted into floors.
     edges=[]
@@ -627,7 +645,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     for e in edges:pack.extend(struct.pack('<4i',*[round(v*65536) for p in [e['a'],e['b']] for v in p]))
     pack.extend(b''.join(atlas.palettes));pack.extend(b''.join(atlas.pages));pack.extend(atlas.stream);(out/'room.hk').write_bytes(pack)
     if len(edges)>1024 or len(draws)>1024 or len(pack)>ROOM_BYTE_BUDGET:raise ValueError('region RAM/draw/edge budget exceeded')
-    report={'tilemap_fill':tilemap_summary,'source':str(s.directory),'scene':region.get('scene_name','Tutorial_01'),'scene_file':scene_file,'knight_collection':s.sid(col_o),'knight_animation':s.sid(anim_o),'pack_sha256':hashlib.sha256(pack).hexdigest(),'pack_bytes':len(pack),'draws':len(draws),'textures':len(atlas.entries),'pages':len(atlas.pages),'edges':len(edges),'format':'HKROOM02','scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_request_to_canonical':atlas.request_map,'stream_bytes':len(atlas.stream),'animation_bytes':atlas.animation_bytes,'alpha_cover_bytes':atlas.alpha_cover_bytes,'format_features':atlas.flags,'stream_textures':len(atlas.streamed),'static_texture_bytes':len(atlas.pages)*32768,'palette_bytes':len(atlas.palettes)*32,'focus_clips':{name:focus_clip_base+i for i,name in enumerate(FOCUS_CLIPS)},'focus_parameter_source':'.hkpsx/focus-source.json','animation_storage':'resident RAM bank with bounded VRAM frame cache','grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'benches':benches,'shrooms':shrooms,'bench_clip_base':focus_clip_base+len(FOCUS_CLIPS),'edge_sources':[e['source'] for e in edges]}
+    report={'tilemap_fill':tilemap_summary,'source':str(s.directory),'scene':region.get('scene_name','Tutorial_01'),'scene_file':scene_file,'knight_collection':s.sid(col_o),'knight_animation':s.sid(anim_o),'pack_sha256':hashlib.sha256(pack).hexdigest(),'pack_bytes':len(pack),'draws':len(draws),'textures':len(atlas.entries),'cluts':atlas.cluts,'pages':len(atlas.pages),'edges':len(edges),'format':'HKROOM02','scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_request_to_canonical':atlas.request_map,'stream_bytes':len(atlas.stream),'animation_bytes':atlas.animation_bytes,'alpha_cover_bytes':atlas.alpha_cover_bytes,'format_features':atlas.flags,'stream_textures':len(atlas.streamed),'static_texture_bytes':len(atlas.pages)*32768,'palette_bytes':len(atlas.palettes)*32,'focus_clips':{name:focus_clip_base+i for i,name in enumerate(FOCUS_CLIPS)},'focus_parameter_source':'.hkpsx/focus-source.json','animation_storage':'resident RAM bank with bounded VRAM frame cache','grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'benches':benches,'shrooms':shrooms,'bench_clip_base':focus_clip_base+len(FOCUS_CLIPS),'edge_sources':[e['source'] for e in edges]}
     if not write_shared:
         print('cooked',len(pack),'bytes',len(edges),'edges',flush=True)
         return report

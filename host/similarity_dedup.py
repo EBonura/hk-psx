@@ -17,7 +17,8 @@ sys.path.insert(0,str(ROOT/'tools'))
 from audit_texture_similarity import words
 from texture_match_groups import all_static_matches,review_groups
 from region_delta import layout,textures
-from texture_dedup import deduplicate_room
+from texture_dedup import deduplicate_room,clut_count
+from cook import MAX_ROOM_TEXTURES
 from materials import binary_black_palette
 from quality import STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET
 from constant_textures import constant_texture_replacements,verify_constant_replacement
@@ -219,8 +220,13 @@ def postpack_similarity(report,root=ROOT):
         packed,dedup=deduplicate_room(raw,replacements)
         verify_records(raw,packed,dedup['old_to_canonical'],protected_textures(raw,row),constants)
         c,_,_,_=layout(packed)
-        if c[0]>STATIC_PAGE_BUDGET or c[1]>TEXTURE_BUDGET or len(packed)>RUNTIME_ROOM_BYTES:
-            raise ValueError(f'Similarity result exceeds runtime budget in region{chunk}: {c[0]}pages/{c[1]}textures/{len(packed)}bytes')
+        # A CLUT slot is a distinct palette rather than a texture record, so the
+        # two counts are checked against their own limits: the table against
+        # what HKROOM02 can address, the palette words against the slot budget.
+        cluts=clut_count(packed)
+        if c[0]>STATIC_PAGE_BUDGET or c[1]>MAX_ROOM_TEXTURES or cluts>TEXTURE_BUDGET or len(packed)>RUNTIME_ROOM_BYTES:
+            raise ValueError(f'Similarity result exceeds runtime budget in region{chunk}: '
+                             f'{c[0]}pages/{c[1]}textures/{cluts}cluts/{len(packed)}bytes')
         final=compose_row(row,raw,packed,dedup)
         final['similarity_deduplication']['lossless_constant_indices']=sorted(constants)
         staged.append((final,packed))
