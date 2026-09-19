@@ -82,8 +82,10 @@ PANEL_MARGIN = 8
 # it can seat; nothing here picks a number to make a budget work.
 ICON_SIZES = (16, 24, 32)
 # x320..335 y488..491, out of the fourteen rows host/shade.py reserved at y482.
-# The Shade uses two and the Knight's ability clips four, so these are the next
-# four free and eight rows stay unclaimed. docs/BUDGET.md carries the split.
+# The Shade uses two and the Knight's ability clips reserve four, so these are
+# the next four free and four rows, y492..495, stay unclaimed. That block sits
+# outside the per-view CLUT banks, which is why these four cost no texture slot
+# in any view. docs/BUDGET.md carries the split.
 ICON_CLUT = (320, 488, 16, 1)
 # Icons sharing one resident palette. Fewer per row is better colour and more
 # CLUT rows; forty over four rows is what the free block affords.

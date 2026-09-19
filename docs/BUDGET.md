@@ -133,8 +133,9 @@ cache's second region. Coordinates are VRAM halfwords:
   (352,32,32,64) strip. The final2KiB transfer admits Town crystal particles.
 - The Hollow Shade reserved 14 CLUT rows at x320..335, y482 and uses two. The
   Knight's ability clips take four of the rest, (320,484,16,1) upward, and use
-  one. The charm board's icons take the next four, (320,488,16,1) upward, and
-  use all four; eight rows of the fourteen are still free. None of the three
+  two. The charm board's icons take the next four, (320,488,16,1) upward, and
+  use all four; that leaves four rows of the fourteen unreserved, y492..495,
+  and two reserved but unused inside the ability block. None of the three
   reserves a texel rectangle: all hold their frames in linked RAM and reach
   VRAM through the shared 64x64 animation slots, because an ability is usable
   in any view, a Shade can be in any scene and a pause screen is reachable from
@@ -320,8 +321,8 @@ floor rather than an estimate: `similarity_dedup` protects every animation
 frame, so none of a new actor's frames can be collapsed.
 
 **The way past it is the Hollow Shade's route**, which costs linked RAM instead
-of textures. 97 ability frames across 16 clips are 36,190 linked bytes and one
-CLUT row, taken from the fourteen the Shade reserved at y482 and never used.
+of textures. 97 ability frames across 16 clips are 36,190 linked bytes and two
+CLUT rows, taken from the fourteen the Shade reserved at y482 and never used.
 That is why the ability animations ship and the Climbers do not: the abilities
 are usable in every view, so they had somewhere else to live; a Climber belongs
 to two specific scenes, so it does not.
@@ -331,7 +332,7 @@ size.** Forty icons are 5,248 linked bytes at 16x16 across four resident CLUT
 rows, and cost no per-view texture slot at all. The atlas route stayed refused,
 now for two reasons rather than one: the tightest view in the world is the
 figure that applies to a pause screen, and resident texels would also need
-2,624 VRAM halfwords against the 304 `residency::SPARE_HALFWORDS` leaves
+2,560 VRAM halfwords against the 304 `residency::SPARE_HALFWORDS` leaves
 unclaimed. What settled 16 over 24 or 32 was neither budget. Six rows of
 24-pixel icons are 144 scanlines on their own, and with the title, the notch
 counter, the six-line description and the footer around them that is 281 of the
