@@ -218,7 +218,20 @@ so they are cooked and reproduced, and they are never counted as behaviour.
 The three that act are `Set` on King's Pass's Set Seen Focus Tablet, which
 writes `seenFocusTablet` when the Knight enters its box, `Area Resetter` in
 Dirtmouth, which writes `currentArea`, and `Set NPC Leave` in Crossroads_06. The
-first two are in the only two scenes the disc holds.
+first two are in the only two scenes the disc holds, and only the second is
+reached by a validation route: the tablet trigger spans y 27.98 to 37.9 and both
+King's Pass routes pass below it, `kings-death` under y 25 and `kings-return` at
+y 11.4. `Area Resetter` at the well mouth is the one `well-drop` and
+`crossroads-gate` walk into, and it is what the route assertions pin.
+
+What a script writes survives a quit. The PlayerData store rides in the bench
+save record, `HKS3`, in a fixed reserve of sixteen slots rather than in the
+bank's own field count, because a record whose length followed a generated table
+would invalidate every card fixture on every cook. The cooker refuses a bank that
+needs more. Slot order is the cook's, so the record also carries an identity word
+over the ordered field list and the loader drops the values when it is running a
+different bank: reading `seenFocusTablet` as `currentArea` is the one corruption
+a checksum cannot see, because the bytes are intact.
 
 Bounds for the nine watched volumes ride in the generated table rather than in
 the world metadata bank. The bank is the right home and needs a `KIND_` of its

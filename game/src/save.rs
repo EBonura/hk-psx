@@ -19,11 +19,18 @@ use psx_mc::{Block, Card, HardwareCard, FRAME_SIZE};
 pub const PROFILES: usize = 4;
 const TITLE: &str = "HOLLOW KNIGHT PSX";
 /// Bumped from HKS1 when the charm board and the NPC conversation cursors
-/// joined the record. An HKS1 file is both shorter and differently tagged, so it
-/// reads back as Corrupt rather than decoding into a save whose notch board and
-/// conversations would be invented.
-const MAGIC: [u8; 4] = *b"HKS2";
-pub const LEN: usize = 78;
+/// joined the record, and from HKS2 when the script runtime's PlayerData did. An
+/// older file is both shorter and differently tagged, so it reads back as
+/// Corrupt rather than decoding into a save whose notch board, conversations or
+/// progression flags would be invented.
+const MAGIC: [u8; 4] = *b"HKS3";
+pub const LEN: usize = 146;
+/// PlayerData slots reserved for the cooked script bank. A fixed reserve rather
+/// than the bank's own count, because the record length cannot follow a
+/// generated table: every change to it invalidates every card fixture. The
+/// cooker refuses a bank that needs more, which is a build failure rather than a
+/// record that quietly holds some of the fields.
+pub const SCRIPT_FIELD_SLOTS: usize = 16;
 /// Per profile: the copy the next write goes to, and the newest sequence seen.
 static mut NEXT_COPY: [usize; PROFILES] = [0; PROFILES];
 static mut LAST_SEQUENCE: [u32; PROFILES] = [0; PROFILES];
@@ -100,6 +107,14 @@ pub struct Save {
     /// the source's own conversations write, and the only reason Elderbug does
     /// not introduce himself again after a reload. See game/src/npc_state.rs.
     pub npc_conversations: u32,
+    /// The PlayerData the cooked script bank reads and writes, by bank slot.
+    pub script_fields: [i32; SCRIPT_FIELD_SLOTS],
+    /// The identity of the field list those values are indexed by. Slot order
+    /// is the cook's, so a record written by one bank and read by another would
+    /// put `seenFocusTablet` where `currentArea` belongs. The loader compares
+    /// this with the bank it is running and drops the values when they disagree,
+    /// which is the one failure a checksum cannot catch.
+    pub script_field_fnv: u32,
 }
 fn fnv(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c9dc5u32, |h, &b| (h ^ b as u32).wrapping_mul(16777619))
@@ -127,6 +142,11 @@ impl Save {
         out[68] = self.charm_notches;
         out[69] = u8::from(self.can_overcharm);
         out[70..74].copy_from_slice(&self.npc_conversations.to_le_bytes());
+        for (slot, value) in self.script_fields.iter().enumerate() {
+            out[74 + slot * 4..78 + slot * 4].copy_from_slice(&value.to_le_bytes());
+        }
+        let after = 74 + SCRIPT_FIELD_SLOTS * 4;
+        out[after..after + 4].copy_from_slice(&self.script_field_fnv.to_le_bytes());
         let sum = fnv(&out[..LEN - 4]);
         out[LEN - 4..].copy_from_slice(&sum.to_le_bytes());
         out
@@ -158,6 +178,8 @@ impl Save {
             charm_notches: bytes[68],
             can_overcharm: bytes[69] != 0,
             npc_conversations: u32::from_le_bytes(bytes[70..74].try_into().unwrap()),
+            script_fields: core::array::from_fn(|slot| word(74 + slot * 4)),
+            script_field_fnv: word(74 + SCRIPT_FIELD_SLOTS * 4) as u32,
         })
     }
 }
@@ -294,18 +316,33 @@ mod tests {
         let save = Save { scene: 3, seat: [-65536, 720896], facing: -1, region: 7, geo: 41, door_hits: 13,
             shade: crate::shade::Record { present: true, scene: 2, position: [-131072, 65536], hp: 10, geo_pool: 77 },
             sequence: 9, charms_owned: 0x0000_00ff_0000_1005, charms_equipped: 0x0000_0000_0000_1001,
-            charm_notches: 5, can_overcharm: true, npc_conversations: 0x0000_0009 };
+            charm_notches: 5, can_overcharm: true, npc_conversations: 0x0000_0009,
+            script_fields: core::array::from_fn(|slot| slot as i32 - 3),
+            script_field_fnv: 0x1234_5678 };
         let bytes = save.encode();
         assert_eq!(Save::decode(&bytes), Some(save));
-        for at in [24, 29, 33, 37, 41, 45, 49, 53, 61, 68, 69, 70, 73] {
+        // The last script slot and the field identity are the two fields most
+        // likely to be left out of a layout change, so they are named here.
+        for at in [24, 29, 33, 37, 41, 45, 49, 53, 61, 68, 69, 70, 73, 74,
+                   74 + (SCRIPT_FIELD_SLOTS - 1) * 4, 74 + SCRIPT_FIELD_SLOTS * 4] {
             let mut bad = bytes;
             bad[at] ^= 1;
             assert_eq!(Save::decode(&bad), None, "byte {at} is outside the checksum");
         }
         assert_eq!(Save::decode(&bytes[..LEN - 1]), None);
-        // An HKS1 record is both shorter and differently tagged.
-        let mut old = bytes;
-        old[..4].copy_from_slice(b"HKS1");
-        assert_eq!(Save::decode(&old), None);
+        // An older record is both shorter and differently tagged.
+        for tag in [b"HKS1", b"HKS2"] {
+            let mut old = bytes;
+            old[..4].copy_from_slice(tag);
+            assert_eq!(Save::decode(&old), None);
+        }
+    }
+    #[test]
+    fn the_script_reserve_leaves_the_record_inside_one_card_block() {
+        // A card file is one 8,192-byte block and the migrator refuses a record
+        // that would leave it, so the reserve has to be checked against that
+        // bound here rather than discovered when a fixture stops migrating.
+        assert_eq!(LEN, 74 + SCRIPT_FIELD_SLOTS * 4 + 8);
+        assert!(LEN < 8192);
     }
 }

@@ -51,9 +51,8 @@ const FIELDS: usize = SCRIPT_FIELD_NAMES.len();
 
 static mut RUNNING: [Instance; INSTANCES] = [const { Instance::new() }; INSTANCES];
 static mut VARS: [i32; SCRIPT_VARS] = [0; SCRIPT_VARS];
-/// The PlayerData a script reads and writes. Session-scoped: the memory card
-/// record does not carry it yet, so a flag a script sets is lost on a quit
-/// where the source would have kept it.
+/// The PlayerData a script reads and writes. The bench save record carries it,
+/// so a flag a script sets survives a quit the way the source's own does.
 static mut STORE: [i32; FIELDS] = [0; FIELDS];
 static mut INSIDE: Overlaps<VOLUMES> = Overlaps::new();
 /// The scene the pool is seated in; `usize::MAX` before the first tick.
@@ -74,6 +73,10 @@ static mut SEATED: usize = usize::MAX;
 /// `Op::Native` reaching the host. The cooked bank emits none, so this staying
 /// at zero is what says the bank and this module still agree.
 #[no_mangle] pub static mut HK_SCRIPT_NATIVE: u32 = 0;
+/// Whether a loaded record's PlayerData was taken. Zero after a boot with a
+/// record whose field list is not this bank's, which is the case the loader
+/// refuses rather than mapping onto the wrong fields.
+#[no_mangle] pub static mut HK_SCRIPT_RESTORED: u32 = 0;
 
 fn program(def: &ScriptDef) -> Program<'static> {
     Program { states: def.states, transitions: def.transitions, ops: def.ops,
@@ -139,6 +142,34 @@ fn seat(scene: usize) {
     }
 }
 
+/// The PlayerData a script wrote, for the bench save record, with the identity
+/// of the field list it is indexed by.
+pub fn record() -> ([i32; crate::save::SCRIPT_FIELD_SLOTS], u32) {
+    let mut out = [0; crate::save::SCRIPT_FIELD_SLOTS];
+    for (slot, value) in out.iter_mut().enumerate() {
+        *value = unsafe { STORE.get(slot).copied().unwrap_or(0) };
+    }
+    (out, SCRIPT_FIELD_FNV)
+}
+/// Restore it from a loaded record, or refuse to.
+///
+/// Slot order is the cook's, so values from a bank with a different field list
+/// would land on the wrong fields: `seenFocusTablet` read as `currentArea` is a
+/// wrong answer no checksum can see. A mismatch drops them and says so rather
+/// than guessing which ones still line up.
+pub fn boot(values: &[i32; crate::save::SCRIPT_FIELD_SLOTS], field_fnv: u32) {
+    unsafe {
+        if field_fnv != SCRIPT_FIELD_FNV {
+            HK_SCRIPT_RESTORED = 0;
+            return;
+        }
+        for slot in 0..FIELDS {
+            STORE[slot] = values.get(slot).copied().unwrap_or(0);
+        }
+        HK_SCRIPT_RESTORED = 1;
+    }
+}
+
 /// Clear the whole bank, for a new game or a session reset. The PlayerData a
 /// script wrote goes with it, because nothing carries it across yet.
 pub fn reset() {
@@ -153,6 +184,7 @@ pub fn reset() {
         HK_SCRIPT_FLAGS = 0;
         HK_SCRIPT_HALTS = 0;
         HK_SCRIPT_NATIVE = 0;
+        HK_SCRIPT_RESTORED = 0;
     }
 }
 
