@@ -26,6 +26,11 @@ def main():
     parser.add_argument('--route', required=True, help='named route fixture, tick:button:duration CSV, or @route-file')
     parser.add_argument('--ticks', type=int)
     parser.add_argument('--metadata', type=Path, default=ROOT/'.hkpsx/selected-regions.json')
+    # The Mantis Claw is off by default because a wall slide and a wall jump
+    # need no button: granting it silently changes any route that presses into
+    # a wall in mid-air, and such a route cannot reproduce on the guest.
+    parser.add_argument('--claw', action='store_true',
+                        help='grant the Mantis Claw, for authoring wall routes deliberately')
     args = parser.parse_args()
     fixtures = json.loads((ROOT/'tools/route_fixtures.json').read_text())['routes']
     if args.route in fixtures:
@@ -103,7 +108,8 @@ def main():
     # shape this probe needs; no guest file is edited to suit the probe.
     env = dict(os.environ, RUSTFLAGS=os.environ.get('RUSTFLAGS', '')+' --cfg test')
     subprocess.run(['cargo', 'build', '--offline', '--release', '--manifest-path', str(work/'Cargo.toml')], check=True, env=env)
-    subprocess.run([str(work/'target/release/hk-native-route-probe'), route, str(args.ticks)], check=True)
+    probe = [str(work/'target/release/hk-native-route-probe'), route, str(args.ticks)]
+    subprocess.run(probe + (['--claw'] if args.claw else []), check=True)
 
 
 if __name__ == '__main__':
