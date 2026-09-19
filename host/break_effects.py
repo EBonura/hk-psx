@@ -15,6 +15,14 @@ from materials import quantize_alpha_coverage
 from geo import place_rectangles
 VRAM_RECTS=((352,176,32,64),(360,32,24,32),(352,64,32,32))
 ALPHAS=(43,85,128)
+# Slots in the guest particle pool, game/src/particles.rs CAPACITY. An emitter
+# authored above this can never finish emitting even into an empty pool, so the
+# host refuses it here rather than shipping a style the guest truncates. This
+# bounds one emitter, not one break: a breakable whose emitters together author
+# more than the pool holds still drops the overflow at spawn.
+# 224 is the smallest multiple of 32 (the guest's pending-collision bitmap word)
+# above the largest measured source emitter, Crossroads_09's 210.
+POOL_CAPACITY=224
 # Texture-sheet rows a random-row emitter may draw from. The catalogue's
 # measured values are 3, 4 and 6; the bound exists so a malformed sheet cannot
 # turn into hundreds of art cells, not because the guest counts rows.
@@ -49,10 +57,11 @@ def particle_scale(ps,matrix):
     # size, force and velocity, so only a uniform scale is expressible; the
     # measured Local emitters are nonuniform in XY, and no native ParticleProbe
     # case covers Local at all. See tools/reference/ParticleProbe.cs.
-    if mode!=0:raise ValueError(f'unsupported particle scaling mode {mode}')
-    if ps['moveWithTransform']!=1:raise ValueError('Hierarchy particles require world simulation')
     columns=[[matrix[i][j]for i in range(3)]for j in range(3)]
     lengths=[math.sqrt(sum(v*v for v in col))for col in columns]
+    if mode!=0:raise ValueError(f'unsupported particle scaling mode {mode} at scale '
+                               f'[{lengths[0]:.4f},{lengths[1]:.4f},{lengths[2]:.4f}]')
+    if ps['moveWithTransform']!=1:raise ValueError('Hierarchy particles require world simulation')
     scale=lengths[0]
     if not math.isfinite(scale) or scale<=0 or any(not math.isfinite(v)or v<=0 for v in lengths) or abs(lengths[1]-scale)>scale*1e-6:
         raise ValueError('Hierarchy particle XY scale must be positive and uniform')
@@ -115,9 +124,23 @@ def style(ps,gravity,scale=1.0,played=False):
     # the art it produces, which art_bank measures against the VRAM reservation.
     if uv['enabled']and(uv['tilesX']!=1 or uv['animationType']!=1 or uv['rowMode']!=1 or not 1<=uv['tilesY']<=MAX_SHEET_ROWS):raise ValueError('particle random row')
     start=im['startColor']
-    if start['minMaxState']!=0:raise ValueError('particle start color mode')
-    color=[round(start['maxColor'][k]*128)for k in 'rgb'];initial_alpha=start['maxColor']['a']
-    if any(not 0<=v<=255 for v in color):raise ValueError('particle color range')
+    # 0 is one authored colour. 2 is Unity's random-between-two-colors, which
+    # the guest draws one seed for and reproduces as a per-particle lerp between
+    # the ends. The RGB is free, because Particle already carries its own; the
+    # alpha is not, and took Particle from 48 to 52 bytes. The gradient modes 1
+    # and 3 would need a colour curve evaluated per phase, which no sampled
+    # table here carries, and stay refused.
+    if start['minMaxState']not in(0,2):raise ValueError(f"particle start color mode {start['minMaxState']}")
+    ends=[start['maxColor']]*2 if start['minMaxState']==0 else[start['minColor'],start['maxColor']]
+    colors=[[round(end[k]*128)for k in 'rgb']for end in ends]
+    # The sampled alpha table is shared by every particle of a style, so the
+    # louder of the two start alphas is baked into it and each particle carries
+    # its own fraction of that. One authored colour gives [255,255], which the
+    # guest's lerp short-circuits back to exactly the table value.
+    initial_alpha=max(end['a']for end in ends)
+    start_alpha=[round(end['a']/initial_alpha*255)if initial_alpha else 255 for end in ends]
+    if any(not 0<=v<=255 for v in start_alpha):raise ValueError(f'particle start color alpha {start_alpha}')
+    if any(not 0<=v<=255 for color in colors for v in color):raise ValueError('particle color range')
     collision=ps['CollisionModule']
     if collision['enabled']and(collision['type']!=1 or collision['collisionMode']!=1 or collision['collidesWith']['m_Bits']!=256 or collision['colliderForce']):raise ValueError('particle terrain collision')
     force=ps['ForceModule'];vel=ps['VelocityModule'];limit=ps['ClampVelocityModule']
@@ -149,14 +172,15 @@ def style(ps,gravity,scale=1.0,played=False):
     if gravityv[0]!=gravityv[1]:raise ValueError('particle random gravity')
     forcev[1]=[v+gravity*gravityv[0]for v in forcev[1]]
     fields={'life':[max(1,round(v*60))for v in initial('startLifetime')],'speed':[q(v*scale)for v in initial('startSpeed')],'size':[q(v*scale)for v in initial('startSize')],
-        'rotation':[q(math.degrees(v))for v in initial('startRotation')],'color':color,'count':count,'rate':q(rate[0]),'shape':shape['type'],
+        'rotation':[q(math.degrees(v))for v in initial('startRotation')],'colors':colors,'start_alpha':start_alpha,'count':count,'rate':q(rate[0]),'shape':shape['type'],
         'radius':q(shape['radius']['value']),'arc':q(shape['arc']['value']),'shape_scale':[q(shape['m_Scale'][k])for k in 'xyz'],
         'force':[[q(v*scale)for v in pair]for pair in forcev],'velocity':[[q(v*scale)for v in values(vel[k])]if vel['enabled']else[0,0]for k in 'xyz'],
         'limit':q(values(limit['magnitude'])[0])if limit['enabled']else-1,'dampen':q(limit['dampen'])if limit['enabled']else 0,
         'spin_speed':list(map(lambda v:q(math.degrees(v)),omega)),'spin_range':[q(speedspin['range'][k])for k in 'xy'],
         'collision':bool(collision['enabled']),'bounce':q(values(collision['m_Bounce'])[0]),'collision_dampen':q(values(collision['m_Dampen'])[0]),
         'life_loss':q(values(collision['m_EnergyLossOnCollision'])[0]),'kill_speed':q(collision['minKillSpeed']),'radius_scale':q(collision['radiusScale']),'samples':samples,'cells':uv['tilesY']if uv['enabled']else 1}
-    if not 0<count<=128 or max(fields['life'])>65535:raise ValueError('particle source capacity')
+    if not 0<count<=POOL_CAPACITY:raise ValueError(f'particle source capacity: {count} particles against a {POOL_CAPACITY}-slot pool')
+    if max(fields['life'])>65535:raise ValueError(f"particle source capacity: lifetime {max(fields['life'])} ticks")
     return fields
 
 def scene_gravity(source):
@@ -193,7 +217,7 @@ def part_emitter(source,sc,part_gid,gravity,played=False):
     texture=source.ref(mo.assets_file,dict(mat['m_SavedProperties']['m_TexEnvs'])['_MainTex']['m_Texture']);sid=source.sid(texture)
     matrix=sc.world(sc.go_transform[part_gid]);scale=particle_scale(ps,matrix)
     st=style(ps,gravity,scale,played);st['texture']=sid
-    st['color']=[round(v*tint[c])for v,c in zip(st['color'],'rgb')]
+    st['colors']=[[round(v*tint[c])for v,c in zip(color,'rgb')]for color in st['colors']]
     for sample in st['samples']:sample['alpha']=[round(v*tint['a'])for v in sample['alpha']]
     return {'style':st,'system':po,'texture':texture,'texture_id':sid,'matrix':matrix,
             'shader':shader,'scaling_mode':ps['scalingMode'],'world_parameter_scale':scale,
@@ -400,11 +424,18 @@ def particle_tracks(styles,emitters):
             nonlocal rng
             rng=(rng*1664525+1013904223)&0xffffffff;return rng
         def sample(pair):return pair[0]+((random()*(pair[1]-pair[0]+1))>>32)
+        # A varying start alpha is per-particle, and a baked phase word carries
+        # one quantized level for every particle sharing the track, so those
+        # styles stay on the scalar path rather than baking the wrong opacity.
         rows=[];supported=(st['shape']in(5,10)and len(st['samples'])==TRACK_PHASES
-            and 0<st['count']<=128 and st['cells']>0)
+            and 0<st['count']<=POOL_CAPACITY and st['cells']>0
+            and st['start_alpha'][0]==st['start_alpha'][1])
         if supported:
             for i in range(st['count']):
                 sample(st['life']);sample(st['speed']);size=sample(st['size']);sample(st['rotation']);gradient=random()>>24
+                # The start-colour seed, drawn only when the two ends differ, so
+                # a one-colour style keeps the stream it had before two were allowed.
+                if st['colors'][0]!=st['colors'][1] or st['start_alpha'][0]!=st['start_alpha'][1]:random()
                 for _ in range(2 if st['shape']==10 else 3):random()
                 for _ in range(3):random()
                 random() # texture cell, including a one-cell family
@@ -424,7 +455,11 @@ def particle_tracks(styles,emitters):
             bases.append(NO_TRACK);fallback.append(ei)
     return tracks,bases,fallback
 
-STYLE_WIRE='<2H2i2i2i3BxHxxiB3xii3i6i6iii2i2iIiiiiiHHHH'  # 168 bytes; offsets in game/src/break_effects.rs
+# The second start colour lands in the three padding bytes that followed the
+# first plus the two that preceded `count`, and the two start alphas in the
+# padding after `shape`, so the record stays 168 bytes and every field from
+# `rate` onward keeps its offset.
+STYLE_WIRE='<2H2i2i2i6BHiB2Bxii3i6i6iii2i2iIiiiiiHHHH'  # 168 bytes; offsets in game/src/break_effects.rs
 STYLE_BYTES=struct.calcsize(STYLE_WIRE)
 EMITTER_WIRE='<BxHIBxxxi3i9i'
 EMITTER_BYTES=struct.calcsize(EMITTER_WIRE)
@@ -446,8 +481,8 @@ def pack_scene_effects(data,curves,blob):
         key=json.dumps(st['samples'],sort_keys=True)
         if key not in curves:curves[key]=len(curves)
         first=len(frames);cells=data['frames'][st['texture']];frames.extend(cells)
-        style_records.append(struct.pack(STYLE_WIRE,*st['life'],*st['speed'],*st['size'],*st['rotation'],*st['color'],st['count'],
-            st['rate'],st['shape'],st['radius'],st['arc'],*st['shape_scale'],*[v for pair in st['force'] for v in pair],*[v for pair in st['velocity'] for v in pair],
+        style_records.append(struct.pack(STYLE_WIRE,*st['life'],*st['speed'],*st['size'],*st['rotation'],*[v for color in st['colors'] for v in color],st['count'],
+            st['rate'],st['shape'],*st['start_alpha'],st['radius'],st['arc'],*st['shape_scale'],*[v for pair in st['force'] for v in pair],*[v for pair in st['velocity'] for v in pair],
             st['limit'],st['dampen'],*st['spin_speed'],*st['spin_range'],int(st['collision']),st['bounce'],st['collision_dampen'],st['life_loss'],st['kill_speed'],st['radius_scale'],
             curves[key],first,len(cells),0))
     counts={'styles':len(styles),'emitters':len(emitters),'art':len(art),'uploads':len(uploads),'frames':len(frames)}
@@ -539,7 +574,7 @@ def cook():
         'source_files':{name:hashlib.sha256((source.directory/name).read_bytes()).hexdigest()for name in [*__import__('quality').SCENE_FILES,'globalgamemanagers','Managed/Assembly-CSharp.dll']},
         'limitations':['Deterministic RNG,60Hz integration/damping,33-point curves,radius/edge collision and initial-lifetime collision-loss approximation differ from nativeUnity particle physics.',
             'Three baked opacity levels and sourceRGB palette quantization approximate Sprites/Lit lighting/blending.',
-            'Existing128-particle pool reports capacity drops; authored maximum-per-emitter counts and lifetimes preserved.',
+            f'Shared {POOL_CAPACITY}-slot particle pool reports capacity drops; authored maximum-per-emitter counts and lifetimes preserved.',
             'Town graves use source uniform-XY planar Hierarchy scaling; nonuniform-XY/sheared/out-of-plane and local-space Hierarchy emitters fail closed.',
             'Geo-rock hit jitter/gleam/chips,containingParticles probability events and mainLifeblood cocoon are separate systems.']}
     (dest/'report.json').write_text(json.dumps(report,indent=2))
