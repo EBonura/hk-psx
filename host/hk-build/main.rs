@@ -32,6 +32,12 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // respawn from standing in for the traversal.
     ("crossroads-gate", "HK_SCENE_GATE_LOADS", 2), ("crossroads-gate", "HK_REGION_ID", 150),
     ("crossroads-gate", "HK_DEATHS", 0), ("crossroads-gate", "HK_SAVE_LOADED", 1),
+    // The traversal also fights, and nothing pinned that: it swings twice, kills one
+    // of the two families living in these scenes and takes a mask doing it. Exact on
+    // purpose. A Climber left alive at full health is the point of the last one, so a
+    // regression that stops the Climber contacting the Knight shows here.
+    ("crossroads-gate", "HK_ENEMY_KILLS", 1), ("crossroads-gate", "HK_ENEMY_HITS", 2),
+    ("crossroads-gate", "HK_HEALTH", 4), ("crossroads-gate", "HK_CLIMBER_HP", 8),
     // Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the save
     // screen's first slot resumes in the Town view with that record's wallet and opened Great Door. A catalogue change
     // that moves the Town slot invalidates the fixture: copy .hkpsx/validate/town-bench.mcd over it.
@@ -58,6 +64,14 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // the fixture from .hkpsx/validate/kings-death.mcd whenever the save record changes.
     ("kings-return", "HK_SAVE_LOADED", 1), ("kings-return", "HK_SHADE_KILLS", 1),
     ("kings-return", "HK_SHADE_PRESENT", 0), ("kings-return", "HK_DEATHS", 0),
+    // Walking back past the Crawler that did the killing costs three of the five
+    // masks, and the Knight kills it this time. Unpinned until now, so the return
+    // traversal could have stopped fighting entirely and still passed.
+    ("kings-return", "HK_ENEMY_KILLS", 1), ("kings-return", "HK_ENEMY_HITS", 2),
+    ("kings-return", "HK_HEALTH", 2),
+    // well-drop falls the length of the well and must arrive unhurt: the drop is not
+    // a hazard and nothing down there reaches the Knight on the way.
+    ("well-drop", "HK_HEALTH", 5), ("well-drop", "HK_DEATHS", 0),
     // bench-save resumes at the Dirtmouth bench, sits, and accepts the prompt. It is the
     // only way this port writes the card, and what the power-cut check interrupts.
     ("bench-save", "HK_BENCH_RESTS", 1), ("bench-save", "HK_SAVE_WRITES", 1), ("bench-save", "HK_SAVE_ERRORS", 0),
