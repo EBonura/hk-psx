@@ -49,7 +49,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P14 | in progress | Builds 112 to 121. Step 1's audit corrected the jump velocity and added the jump, ledge and head-bump buffers the port was missing. Step 2 implemented the Mothwing Cloak, the Mantis Claw's wall slide and jump, the Monarch Wings, the Crystal Heart and the Shade Cloak, all from source constants and the Superdash FSM. Step 3 catalogued every PlayerData traversal flag and found acid already covered by the generic hazard path, `hasAcidArmour` and `hasLantern` unreachable, and one unimplemented bounce shroom owed to P11. Step 4 took the input priority from the Can* methods. Step 5 added the Dream Nail with its SOUL reward. Step 6 mapped L1, R1 and Triangle and extended the replay schema and the native probe. Step 7's combinations are hk-sim tests. Remaining: no ability has an acquisition route (step 8), and the Wall Slide, Walljump, Dash, Double Jump and four DN clips are not cooked, so an ability plays the Fall or Idle clip. |
 | P15 | in progress | Build 122 adds Vengeful Spirit from `Spell Control`, `Fireball Cast` and the projectile's own FSMs, with the source's one-button cast-versus-Focus split. Remaining: Desolate Dive and Howling Wraiths (catalogued only), nail arts, nail damage tiers, the centralized damage resolution of step 4, the verification matrix of step 7, and the `Ball`/`Ball End` art, which needs a reserved VRAM rectangle. |
 | P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Variables are a caller-owned pool and `GetOwner` resolves at cook time, which between them unblocked 852 instances. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, because an FSM needs every action supported. `PlayerDataBoolTest` is answered too, through the existing persistent store plus a read-only-variable fold, so the first authored behaviour compiles: 246 instances, 7 ops. The next slice is not more opcodes: `Trigger2dEvent` (198), `FindChild` (176), `GetVelocity2d` (122), `Tk2dPlayAnimation` (115) and every other remaining blocker needs a guest object model, which is step 5's scope and reference work. P12, P17, P18 and P23 all wait on this. |
-| P11 | in progress | Step 1 done. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. Owed: the single `BounceShroom` in Crossroads_38, and the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
+| P11 | in progress | Steps 1 and 4 done for the admitted world. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. The `BounceShroom` in Crossroads_38 is implemented as the down slash target it actually is, with its `fatGrubKing` gate recorded rather than evaluated. Owed: the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
 | P12, P16-P18, P21-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
@@ -1793,6 +1793,63 @@ And `Spell Control` serializes duplicate bool variables, `Can Cancel` and
 reduces to the last one. That pattern is in `spells.py`, `superdash.py` and
 `focus.py` too and is a live hazard in all of them, not something introduced
 here.
+
+## P11 step 4: the BounceShroom, and two things the brief had wrong (build 131)
+
+The one bouncy target in the admitted world is implemented end to end: a
+`KIND_SHROOM` region object carrying the trigger box, a `shroom_sources` cooker
+that refuses any collider which is not an axis-aligned box (the guest carries
+only bounds, so anything else would silently grow the target), a `shrooms()`
+reader, and `Player::shroom_bounce` doing what `HeroController::ShroomBounce`
+does: both air abilities back, `shroomBouncing` set, velocity replaced with
+`SHROOM_BOUNCE_VELOCITY` 25.0, and the flag cleared when the rise ends.
+`BOUNCE_SHROOM_TIME` is zero, so there is no hold, which the cooker asserts.
+
+Two things I had wrong when I scoped it, both caught before the build.
+
+**It is not a platform.** I assumed the Knight bounces by landing on it.
+`HeroController::ShroomBounce` has exactly one caller in the whole assembly,
+`NailSlash.OnTriggerEnter2D` in its down slash branch, and there is no
+body-overlap path anywhere. So it is a pogo target with a different velocity,
+not a trampoline, and implementing the landing version would have been invented
+behaviour.
+
+**It should not be there yet.** The single shroom is on "Fat Grub King" in
+Crossroads_38, and that GameObject carries an FSM that reads the PlayerData bool
+`fatGrubKing` and deactivates itself on the second frame when it is false. On a
+fresh save the original removes the object; there is nothing to slash.
+
+That decides how it ships. The port does not run that FSM, so the object is
+already cooked and visible today: this is one instance of the activation gap the
+script work measured, where at least 23 FSMs say "PlayerData bool false,
+deactivate self" and none of them run. Given the object is on screen, a bounce
+target on it is closer to the original than an inert one. The wrongness is the
+object being visible at all, and that is recorded against the renderer
+capability activation needs, not papered over here. The source record carries
+the gate and the owning FSMs as an explicit limitation rather than a silent
+omission.
+
+One port-specific divergence, commented where it lives: `shroom_bounce` clears
+`jumping`, which the source does not. This port re-pins the jump hold's velocity
+every tick, so an unfinished hold would eat the impulse. The ordinary pogo
+already does the same thing for the same reason.
+
+Also measured and deliberately ignored: `BounceShroom.active` is serialized
+false on this instance, but that field only gates the shroom's own idle bob,
+animation and particles. `NailSlash` checks only that the component exists, so
+the bounce still fires.
+
+### A test suite nothing ran
+
+Verifying this turned up a regression of mine that nine builds had shipped.
+Adding `ATTACK_RECOVERY_TIME` to `generated_params` for the attack queue work
+broke a fixture in `tests/test_cook.py`, and nothing noticed because the build
+never ran the host suite. It runs now, immediately after the Python environment
+is ready, so a cooker regression fails in seconds rather than surviving ten
+minutes of cooking and a clean route sweep. All 431 host tests pass.
+
+That is the third time this session that a suite with no runner had quietly
+rotted. The pattern is worth naming: a test that nothing executes is not a test.
 
 ## Required package completion record
 
