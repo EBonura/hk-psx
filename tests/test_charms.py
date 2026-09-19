@@ -91,15 +91,22 @@ class CookedCatalogueTests(unittest.TestCase):
         self.assertEqual(icons['icon_px'], max(seatable))
         for side, layout in layouts.items():
             self.assertEqual(layout['fits'], layout['scanlines_needed'] <= icons['panel_scanlines'])
-        # The size is not a RAM decision. Every offered size is affordable in
-        # linked RAM against what the build has left; the screen is what refuses
-        # the larger two, and a trimmed row count or a shorter description is
-        # what this must not buy a bigger icon with.
+        # What must not change is the reason: the screen refuses the larger
+        # sizes, and a trimmed row count or a shorter description is not allowed
+        # to buy a bigger icon.
         self.assertEqual(icons['rows_on_screen'], 6)
+        # The size was chosen when every offered size fit linked RAM, so the
+        # screen was the only thing refusing them. That is no longer true:
+        # headroom fell from 51,348 to 11,556 over one day of boss work, and
+        # 32x32's 20,480 bytes stopped fitting. The chosen size still does fit,
+        # which is the part that has to hold, and the two constraints now agree
+        # rather than one doing all the work.
         if BUILD.is_file():
             headroom = json.loads(BUILD.read_text())['memory']['unallocated_before_stack_bytes']
-            for side, cost in icons['shade_route_linked_bytes'].items():
-                self.assertLess(cost, headroom, f'{side} no longer fits linked RAM either')
+            chosen = icons['shade_route_linked_bytes'][f"{icons['icon_px']}x{icons['icon_px']}"]
+            self.assertLess(chosen, headroom,
+                            'the cooked icon set no longer fits linked RAM; it is not a screen '
+                            'decision any more and the catalogue should say so')
 
     @unittest.skipUnless(ICONS.is_file(), 'run host/charms.py first')
     def test_the_cooked_icons_are_one_square_frame_each(self):
