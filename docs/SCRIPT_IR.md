@@ -103,8 +103,11 @@ exactly three kinds:
 - A cooked object's stable source id, the same one the world metadata bank
   carries, which the host resolves to whatever it actually holds: a region
   object, an actor instance, or nothing.
-- `NO_OBJECT`, zero. A native call handed this refuses rather than acting on
-  some default, because "the wrong object" is worse than "no object".
+- `NO_OBJECT`, zero. A native call handed this does nothing, which is what
+  PlayMaker does with a null target. It is not an error: a `FindChild` whose
+  parent genuinely has no such child stores exactly this, and the original
+  stores the same null. What a native call must never do is fall back to some
+  default object, because "the wrong object" is worse than "no object".
 
 The executor never resolves a reference. It passes the id to the host, which
 owns the mapping, and that is deliberate: the guest's object model is regions,

@@ -31,11 +31,16 @@ NATIVE_FSMS = {
 # so an FSM built only from these is a candidate for the first script slice.
 COVERED_HINT = {
     'Wait', 'SetBoolValue', 'SetIntValue', 'SetFloatValue', 'BoolTest', 'IntCompare',
-    'FloatCompare', 'SendEventByName', 'NextFrameEvent', 'ActivateGameObject',
+    'FloatCompare', 'SendEventByName', 'NextFrameEvent',
     'GetPlayerDataBool', 'SetPlayerDataBool', 'GetPlayerDataInt', 'SetPlayerDataInt',
     'PlayerDataBoolTest', 'Tk2dPlayAnimation', 'Tk2dPlayAnimationWithEvents',
     'Tk2dWatchAnimationEvents', 'SetVelocity2d', 'SetGravity2dScale',
 }
+# `ActivateGameObject` was in the list above until the script work established
+# that a cooked object has no runtime active flag: its `state_id` is a
+# persistence key and nothing in the renderer consults one. Counting it as
+# covered overstated the share by 707 action instances.
+assert 'ActivateGameObject' not in COVERED_HINT
 
 def inventory(source, scene_files):
     actions = collections.Counter()
