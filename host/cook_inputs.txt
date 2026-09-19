@@ -2,6 +2,12 @@
 # (whole-cook cache) and host/regions.py (per-region reuse).
 host/cook.py
 host/actors.py
+# Imported by actors.py, breakables.py and reveal_masks.py, and what it
+# returns decides the False Knight's clip bindings, its refusals and its
+# barrel art. It was in neither section, so a change here changed cooked
+# bytes while every region's reuse key said it had not, which is the
+# failure this file's own comment calls silent in one direction.
+host/false_knight.py
 host/runner.py
 host/climber.py
 host/vengefly.py

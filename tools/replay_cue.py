@@ -42,6 +42,10 @@ WATCHES+='HK_SHOP_OPENED HK_SHOP_CLOSED HK_SHOP_PURCHASES HK_SHOP_GEO_SPENT HK_S
 # exposure empties the Head too, and only the tail after it is a death.
 WATCHES+='HK_FK_TRIGGERED HK_FK_DROPPED HK_FK_STAGGERS HK_FK_CONVERSIONS HK_FK_DEATHS HK_FK_HP HK_FK_HEAD_HP HK_FK_ACTIVE HK_FK_EXPOSED HK_FK_STUNNED HK_FK_ARENA HK_FK_ACTIVATED'.split()
 WATCHES+='HK_ARENA_GATES HK_ARENA_GATE_CLOSES HK_ARENA_GATE_OPENS'.split()
+# Two counters rather than one: a barrel the pool recycled under pressure
+# never breaks, so spawns alone cannot tell a fight the player dodged from
+# one where the rage's eight evicted each other.
+WATCHES+='HK_FK_BARRELS HK_FK_BARRELS_BROKEN'.split()
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def main():

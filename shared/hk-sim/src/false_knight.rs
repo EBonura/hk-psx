@@ -130,6 +130,86 @@ pub const IDLE_TICKS: [[u16; 2]; 3] = [[60, 60], [48, 60], [48, 60]];
 pub const JUMP_BARRELS: [[u8; 2]; 3] = [[0, 0], [2, 3], [2, 2]];
 pub const SLAM_BARRELS: [[u8; 2]; 3] = [[0, 0], [2, 3], [3, 4]];
 
+/// `FK Barrel Summon`'s `PersonalObjectPool` reserve, which is also the most
+/// barrels one SUMMON ever asks for (the rage's eight).
+pub const BARREL_POOL: usize = 8;
+/// `summon`'s `Spawn`: RandomFloat between `Summon Min` and `Summon Max`, Q16.
+/// The y is the summoner's own transform, which the caller carries in its
+/// `ActorSpec` because it belongs to a different source object.
+pub const BARREL_SPAWN_X: [i32; 2] = [863764, 2901279];
+/// The `WaitRandom` that both `Determine Spawns` and `Spawn` hold, so the first
+/// barrel of a burst is as late as every later one.
+pub const BARREL_GAP_TICKS: [u16; 2] = [9, 15];
+/// `Falling Barrel`'s Rigidbody2D gravity scale 0.325 against the installed
+/// Physics2DSettings gravity of 60, Q16 units per second squared.
+pub const BARREL_GRAVITY: i32 = 1277952;
+/// Its BoxCollider2D, 1.18 by 1.11 centred on the transform, as half extents.
+pub const BARREL_HALF: [i32; 2] = [38666, 36372];
+/// Its `DamageHero`, which is the whole reason a barrel is worth presenting.
+pub const BARREL_DAMAGE: u16 = 1;
+
+/// Source `summon` on `FK Barrel Summon`, the object that actually makes the
+/// barrels. It is not part of `FalseyControl` and it is not modelled as part of
+/// `FalseKnight` here either: the boss writes `Spawns` and sends SUMMON, and
+/// this counts the burst out at its own pace.
+///
+/// `Determine Spawns` waits before the first spawn, `Spawn` waits after every
+/// one, and both waits are the same `WaitRandom`, so a burst of n barrels takes
+/// n gaps and the first barrel is never on the same frame as the slam. The
+/// count itself comes from the caller: the FSM's own `RandomInt 6..8` is
+/// disabled in the serialized state machine and `FalseyControl` writes `Spawns`
+/// through SetFsmInt instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Summon {
+    /// `Spawns`, counted down by `Spawn`'s IntOperator.
+    remaining: u8,
+    timer: u16,
+    rng: u32,
+}
+impl Summon {
+    pub const fn new(seed: u32) -> Self {
+        Self { remaining: 0, timer: 0, rng: seed | 1 }
+    }
+    pub fn remaining(self) -> u8 {
+        self.remaining
+    }
+    fn random(&mut self) -> u32 {
+        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng >> 8
+    }
+    /// `SUMMON` into `Idle`. A second SUMMON while the loop is still running is
+    /// dropped, because `Determine Spawns`, `Spawn` and `Check Spawns` declare
+    /// no transition for it and PlayMaker only answers the current state's.
+    pub fn summon(&mut self, spawns: u8) {
+        if self.remaining != 0 || spawns == 0 {
+            return;
+        }
+        self.remaining = spawns;
+        self.timer = self.gap();
+    }
+    fn gap(&mut self) -> u16 {
+        let [low, high] = BARREL_GAP_TICKS;
+        low + (((self.random() * (high - low + 1) as u32) >> 24) as u16)
+    }
+    /// One 60 Hz frame; `Some(x)` is one `SpawnObjectFromGlobalPool`, in Q16
+    /// world x. At most one a frame, because the shortest gap is nine ticks.
+    pub fn tick(&mut self) -> Option<i32> {
+        if self.remaining == 0 {
+            return None;
+        }
+        self.timer -= 1;
+        if self.timer != 0 {
+            return None;
+        }
+        self.remaining -= 1;
+        if self.remaining != 0 {
+            self.timer = self.gap();
+        }
+        let [low, high] = BARREL_SPAWN_X;
+        Some(low + ((self.random() as i64 * (high - low) as i64) >> 24) as i32)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Clip {
     Idle,

@@ -760,6 +760,9 @@ const FALSE_KNIGHT: ActorSpec = ActorSpec {
     controller: ActorController::FalseKnight {
         jump_antic_clip: 2, land_clip: 3, stun_opened_clip: 4, attack_clip: 5,
         trigger: [-2 * ONE, -ONE, 2 * ONE, 10 * ONE],
+        // `FK Barrel Summon` hangs well above the arena floor in the source, so
+        // the fixture drops barrels from above the boss's own spawn height.
+        barrel_clip: 6, barrel_spawn_y: 22 * ONE,
     },
     source_id: 100040, x: 0, y: 8 * ONE,
     // Asymmetric on purpose: a symmetric box would hide which way it faces.
@@ -782,27 +785,29 @@ fn boss_region() -> world::Region {
         actors: &[&FALSE_KNIGHT],
     }
 }
-/// The six cooked clips over six textures, so which one is playing is read off
-/// what was submitted rather than guessed from a quad count.
+/// The six cooked clips over six textures, plus the barrel's own one-frame
+/// clip, so which one is playing is read off what was submitted rather than
+/// guessed from a quad count.
+const BOSS_CLIPS: u32 = 7;
 fn boss_room() -> Vec<u8> {
     let mut b = Vec::from(*b"HKROOM02");
-    for n in [1u32, 6, 0, 6, 6, 1, 0, 0] {
+    for n in [1u32, BOSS_CLIPS, 0, BOSS_CLIPS, BOSS_CLIPS, 1, 0, 0] {
         b.extend(n.to_le_bytes());
     }
-    for texture in 0..6u16 {
+    for texture in 0..BOSS_CLIPS as u16 {
         for n in [0u16, texture * 8, 0, 8, 8, texture] {
             b.extend(n.to_le_bytes());
         }
         b.extend(0u32.to_le_bytes());
     }
-    for texture in 0..6i32 {
+    for texture in 0..BOSS_CLIPS as i32 {
         for n in [texture, -ONE, -2 * ONE, ONE / 2, 0] {
             b.extend(n.to_le_bytes());
         }
     }
     // Idle loops (wrap 0); the other five play once (wrap 2), as the source
     // library declares them. One frame each names the clip in a draw.
-    for start in 0..6u32 {
+    for start in 0..BOSS_CLIPS {
         for n in [start, 1, 12 * 65536, if start == 0 { 0 } else { 2 }] {
             b.extend(n.to_le_bytes());
         }
@@ -810,7 +815,7 @@ fn boss_room() -> Vec<u8> {
     for n in [-60 * ONE, 0, 60 * ONE, 0] {
         b.extend(n.to_le_bytes());
     }
-    b.resize(b.len() + 32 * 6 + 32768, 0);
+    b.resize(b.len() + 32 * BOSS_CLIPS as usize + 32768, 0);
     b
 }
 /// One swing and its recovery frame, with the hero parked on the boss so that
@@ -1025,4 +1030,139 @@ fn the_fight_reaches_the_camera_and_the_spu() {
     // `S Attack` swings and `Slam` shakes eight ticks later. The jump attack
     // fires the same two the other way round, so this order is the slam's.
     assert!(slam(&log), "the slam has to reach the camera: {log:?}");
+}
+
+/// `FK Barrel Summon`, end to end: the boss sends SUMMON, the summoner spaces
+/// the burst out, and each `Falling Barrel` falls from the summoner's own y
+/// until terrain or the hero ends it.
+///
+/// Driven through a real fight rather than by poking the pool, because the
+/// thing worth proving is that the phase tables reach the summoner at all: in
+/// phase one both barrel tables are [0, 0] and nothing may fall, and the rage
+/// that follows the first conversion asks for the whole pool.
+#[test]
+fn the_fight_drops_barrels_the_hero_can_be_hit_by() {
+    let bytes = boss_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = boss_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(0, ONE);
+    let mut n = Nail::new();
+    // The barrel's own clip, which is the only way to tell one from the boss in
+    // a submitted frame: boss_room gives clip k the texture k.
+    let barrel_texture = 6usize;
+    let barrels = |w: &enemies::EnemyWorld, x: i32, y: i32| {
+        render::QUADS.with(|q| q.borrow_mut().clear());
+        w.prepare_draws(&r, &room, (x, y)).draw();
+        render::QUADS.with(|q| q.borrow().iter().filter(|(id, _)| *id == barrel_texture)
+            .map(|(_, quad)| span(quad).1).collect::<Vec<_>>())
+    };
+    for _ in 0..120 {
+        tick(&mut w, &r, &room, &mut p, &mut Vitals::new(VITAL_PARAMS), &n);
+    }
+    assert!(barrels(&w, 0, 0).is_empty(), "the entrance summons nothing");
+
+    let mut was_open = false;
+    let mut hold = 0u32;
+    let mut fell = Vec::new();
+    let mut hurt_in_the_air = 0u32;
+    let mut phase_one_barrels = 0u32;
+    let mut conversions = 0u32;
+    for _ in 0..30000 {
+        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+        render::QUADS.with(|q| q.borrow_mut().clear());
+        w.prepare_draws(&r, &room, (x, y)).draw();
+        let open = render::QUADS.with(|q| q.borrow().iter().any(|(id, _)| *id == 4));
+        if was_open && !open { hold = 700; conversions += 1; }
+        was_open = open;
+        if hold == 0 {
+            p.x = x;
+            p.y = y + ONE;
+            n.active = true;
+            n.age = 1;
+        } else {
+            // Ten units above the arena floor and in the middle of the summon
+            // span, which is out of reach of the body box and of the Hitter's
+            // eight units and leaves a falling barrel as the only thing that
+            // can touch the hero.
+            p.x = hk_sim::false_knight::RAGE_POINT_X;
+            p.y = 12 * ONE;
+        }
+        hold = hold.saturating_sub(1);
+        let events = tick(&mut w, &r, &room, &mut p, &mut Vitals::new(VITAL_PARAMS), &n);
+        n.active = false;
+        let seen = barrels(&w, x, y);
+        if conversions == 0 { phase_one_barrels += seen.len() as u32; }
+        if !seen.is_empty() { fell.push(seen); }
+        if hold > 0 && events.hurt != Hurt::Ignored { hurt_in_the_air += 1; }
+        if conversions >= 2 { break; }
+    }
+    assert_eq!(phase_one_barrels, 0,
+               "JUMP_BARRELS[0] and SLAM_BARRELS[0] are both [0,0]: phase one drops nothing");
+    assert!(fell.len() > 60, "the rage asks for the whole pool; saw {} frames with a barrel", fell.len());
+    // `Falling Barrel` is a dynamic body under gravity 0.325 and nothing pushes
+    // it sideways, so every barrel's screen y only ever increases.
+    let highest = fell.iter().map(|ys| *ys.iter().min().unwrap()).min().unwrap();
+    let lowest = fell.iter().map(|ys| *ys.iter().max().unwrap()).max().unwrap();
+    assert!(lowest > highest, "the barrels never fell: {highest}..{lowest}");
+    assert!(hurt_in_the_air > 0,
+            "no barrel reached a hero parked in the middle of the summon span");
+    // A barrel's box is a trigger, so terrain ends it rather than stopping it,
+    // and the pool has to come back or the next burst evicts a live barrel.
+    for _ in 0..600 {
+        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+        p.x = x;
+        p.y = y + ONE;
+        tick(&mut w, &r, &room, &mut p, &mut Vitals::new(VITAL_PARAMS), &n);
+        let _ = barrels(&w, x, y);
+    }
+    let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+    assert!(barrels(&w, x, y).is_empty(), "every barrel of the burst reached the floor");
+}
+
+/// What the barrel costs in static RAM, which is the budget this port is
+/// tightest on: `.hkpsx/build.json` reports 11,556 unallocated bytes before the
+/// reserved stack, and `game/src/audio.rs` `include_bytes!`s the sound bank out
+/// of the same figure. Every field below is a fixed-width integer, so the
+/// native layout here is the MIPS layout.
+///
+/// The barrel art is not in this: it rides the scene pack, which is read from
+/// disc into the scene arena, and `pack_scenes::scene_arena_bytes` sizes that
+/// arena from the largest scene, which is Tutorial_01 rather than Crossroads_10.
+#[test]
+fn the_barrel_pool_is_paid_for_in_padding_and_twenty_bytes() {
+    use core::mem::size_of;
+    // `Shot` before the barrel rode the same pool, field for field, and after.
+    #[allow(dead_code)]
+    struct ShotBefore { scene: u8, x: i32, y: i32, vx: i32, vy: i32,
+        animation_tick: u32, impact: bool, shot_clip: u16, impact_clip: u16 }
+    #[allow(dead_code)]
+    struct ShotAfter { scene: u8, x: i32, y: i32, vx: i32, vy: i32,
+        animation_tick: u32, impact: bool, barrel: bool, shot_clip: u16, impact_clip: u16 }
+    // The pool costs nothing: `barrel` is a second bool beside `impact`, and
+    // `Option` still has a bool's niche to put its discriminant in.
+    assert_eq!(size_of::<ShotAfter>(), size_of::<ShotBefore>());
+    assert_eq!(size_of::<[Option<ShotAfter>; 8]>(), size_of::<[Option<ShotBefore>; 8]>());
+    // The held SUMMON costs four bytes on the boss runtime and none in
+    // `EnemyWorld`, because `Runtime` is sized by a larger variant than the
+    // False Knight's. Measured rather than argued: without this pair a later
+    // field would grow the boss runtime past that variant in silence.
+    #[allow(dead_code)]
+    struct BossBefore { controller: hk_sim::false_knight::FalseKnight, arena: hk_sim::boss::Arena,
+        head: ActorHealth, animation_tick: u32, clip: hk_sim::false_knight::Clip, vx: i32,
+        gravity: i32, kinematic: bool, hitter: bool, contact_damage: u16, separated: bool }
+    #[allow(dead_code)]
+    struct BossAfter { controller: hk_sim::false_knight::FalseKnight, arena: hk_sim::boss::Arena,
+        head: ActorHealth, animation_tick: u32, clip: hk_sim::false_knight::Clip, vx: i32,
+        gravity: i32, kinematic: bool, hitter: bool, contact_damage: u16, summon: u8, separated: bool }
+    assert!(size_of::<BossAfter>() - size_of::<BossBefore>() <= 4);
+    // What the summoner itself costs, once for the whole world rather than per
+    // actor slot, which is why it lives on `EnemyWorld` and not on the boss.
+    assert_eq!(size_of::<hk_sim::false_knight::Summon>() + size_of::<Option<(u8, i32, u16)>>(), 20);
+    // 5,856 with the standing Sentry, 6,112 with the whole fight, 6,136 with
+    // the barrels. Asserted as a ceiling rather than an equality because other
+    // controllers share this type; docs/FALSE_KNIGHT.md carries the reading.
+    assert!(size_of::<enemies::EnemyWorld>() <= 6136,
+            "EnemyWorld is {} bytes of the 11,556 unallocated in build.json",
+            size_of::<enemies::EnemyWorld>());
 }

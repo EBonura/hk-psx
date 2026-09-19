@@ -65,6 +65,12 @@ pub enum ActorController {
         /// `Battle Control`'s trigger box in world coordinates: crossing it is
         /// what sends BATTLE START, and before that the boss costs one AABB.
         trigger: [i32; 4],
+        /// `FK Barrel Summon`'s pooled `Falling Barrel`, one streamed frame.
+        barrel_clip: u16,
+        /// The summoner's own world y, which `summon`'s `Spawn` takes off its
+        /// transform. It rides here because that object has no actor of its
+        /// own and the boss is the only thing that ever sends it SUMMON.
+        barrel_spawn_y: i32,
     },
 }
 #[derive(Clone, Copy, Debug)]

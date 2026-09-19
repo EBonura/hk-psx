@@ -441,3 +441,67 @@ fn the_two_child_hitboxes_sit_where_the_source_colliders_do() {
     assert!(HITTER_BOX[0] > 0 && HITTER_BOX[2] > 7 * ONE, "the hitter reaches ahead of the body");
     assert!(HITTER_BOX[1] < HITTER_BOX[3] && HITTER_BOX[3] < 0, "and below the transform");
 }
+
+/// Source `summon` on `FK Barrel Summon`: the loop that turns one SUMMON into a
+/// spaced-out burst of `Falling Barrel`s.
+#[test]
+fn a_burst_spaces_every_barrel_and_never_starts_on_the_frame_it_was_asked_for() {
+    let mut summon = Summon::new(7);
+    summon.summon(4);
+    assert_eq!(summon.remaining(), 4);
+    // `Determine Spawns` holds the same WaitRandom as `Spawn`, so there is a
+    // gap in front of the first barrel as well as between the later ones.
+    let mut spawns = std::vec::Vec::new();
+    let mut gap = 0u16;
+    for _ in 0..600 {
+        gap += 1;
+        if let Some(x) = summon.tick() {
+            spawns.push((gap, x));
+            gap = 0;
+        }
+    }
+    assert_eq!(spawns.len(), 4, "the burst is exactly the count it was given");
+    for (gap, x) in spawns {
+        assert!((BARREL_GAP_TICKS[0]..=BARREL_GAP_TICKS[1]).contains(&gap),
+                "every gap is the source WaitRandom, got {gap}");
+        assert!((BARREL_SPAWN_X[0]..=BARREL_SPAWN_X[1]).contains(&x),
+                "every barrel lands inside Summon Min..Summon Max");
+    }
+    assert_eq!(summon.remaining(), 0);
+    assert_eq!(summon.tick(), None, "an emptied summoner is back in Idle");
+}
+
+#[test]
+fn a_summon_during_a_burst_is_dropped_the_way_the_state_machine_drops_it() {
+    // Only `Idle` declares the SUMMON transition; `Determine Spawns`, `Spawn`
+    // and `Check Spawns` do not, so a second send while the loop is running
+    // reaches nothing rather than restarting or adding to the count.
+    let mut summon = Summon::new(11);
+    summon.summon(3);
+    for _ in 0..BARREL_GAP_TICKS[1] + 1 {
+        summon.tick();
+    }
+    assert_eq!(summon.remaining(), 2);
+    summon.summon(8);
+    assert_eq!(summon.remaining(), 2, "the second SUMMON found no state that answers it");
+    let mut spawned = 1;
+    for _ in 0..600 {
+        if summon.tick().is_some() {
+            spawned += 1;
+        }
+    }
+    assert_eq!(spawned, 3);
+}
+
+#[test]
+fn the_rage_asks_for_exactly_the_pool_and_the_phase_tables_stay_inside_it() {
+    // `R Attack Antic` sets Rages to eight and sends one SUMMON of eight, which
+    // is why `FK Barrel Summon`'s PersonalObjectPool reserves eight and why the
+    // guest's projectile pool is sized from this constant.
+    assert_eq!(BARREL_POOL, RAGE_SLAMS as usize);
+    for table in [JUMP_BARRELS, SLAM_BARRELS] {
+        for [low, high] in table {
+            assert!(low <= high && high as usize <= BARREL_POOL);
+        }
+    }
+}
