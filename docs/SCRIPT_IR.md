@@ -116,6 +116,32 @@ References come from three places and all three are cook time.
 constant. `FindChild`, `GetParent` and `FindGameObject` resolve where the
 target is static and are refused where it is not.
 
+"Static" is a rule, not a feeling, so here it is. The compiler is handed the
+source scene and walks its transform tree. `FindChild` and `GetParent` answer
+from the owner, from a literal pointer, or from a variable this cook fixed;
+`FindChild` over a parent with no such child stores `NO_OBJECT`, which is the
+null the original stores, and the source scene is the authority for that rather
+than the cooked world, because an object the port has not built yet is not an
+object the game did not have. `FindGameObject` answers for the `Player` tag,
+which is the Knight, and for a name exactly one active object of the scene
+carries; a second object with the same name is refused, because Unity does not
+define which one `GameObject.Find` returns, and a name this scene does not hold
+is refused too, because Unity searches the persistent objects as well and the
+port has no model of those.
+
+Fixing a variable is the part that earns the rest. `FindChild` under `Self` is
+the common shape, and `Self` is whatever the state's opening `GetOwner` put
+there, so without that step most of the reference actions in the game resolve
+to nothing. A variable is fixed when no action outside the reference set
+mentions it under anything but a known read field, since an action the slice
+does not model might be writing it; a read sees the write when the two are in
+one state, because PlayMaker runs a state's actions in order and abandons the
+rest as soon as one transitions, and across states only when the write is in
+the run of actions that opens the start state and nothing before it can
+transition or block. Everything else is refused. A reference resolved from a
+write that did not happen would be a wrong answer rather than a refusal, which
+is the one outcome this format is built to avoid.
+
 ## Native calls
 
 `CallMethodProper`, `SendMessage` and the rest of the tail compile to a native
@@ -148,3 +174,18 @@ walk, no reflection. `FindChild` (995 instances) and `GetOwner` (921) resolve at
 cook time into fixed object references wherever the target is static, and are
 refused where it is not. A universal PlayMaker VM is explicitly not the goal;
 the mapping from each supported source action to an implemented IR form is.
+
+Three actions are refused although they look cheap, and it is worth writing down
+why so the next pass does not re-derive it.
+
+`ActivateGameObject` and `ActivateAllChildren` have no guest to call. A cooked
+object carries a `state_id`, but that is a persistence key and nothing in the
+renderer consults an active flag, so these would compile to a call that changes
+nothing. Step 7 asks for a refusal rather than a scene that claims to be
+implemented, and a no-op at runtime is the worse of the two because it is
+invisible. They are the largest single unlock on the list, which is precisely
+why they need the runtime flag first rather than an opcode.
+
+`SendEventByName` to another FSM needs a cross-FSM instance table, which is the
+scoping work and not a missing opcode: the executor already sends synchronously,
+it just has nowhere to look the target up. A send to self compiles today.
