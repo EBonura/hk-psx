@@ -45,8 +45,9 @@ ADMITTED = {
 }
 CONTROL_FSM = 'npc_control'
 CONVO_FSM = 'Conversation Control'
-# tk2d frames reach VRAM through the shared 64x64 animation slots.
-FRAME_LIMIT = 64
+# tk2d frames reach VRAM through the shared 64x64 animation slots. A frame
+# larger than one slot binds a rectangle of them, up to the budget the four
+# keys main.rs always holds leave free; Atlas.add_tiled enforces that.
 
 
 def _components(sc, gid, kind):
@@ -220,10 +221,11 @@ def append_npc_art(source, sc, npcs, atlas, frames, clips):
                     image.putalpha(image.getchannel('A').point(lambda a: round(a * colour['a'])))
                     box = (box[0] * sx, box[1] * sy, box[2] * sx, box[3] * sy)
                     width, height = (box[2] - box[0]) * scale, (box[3] - box[1]) * scale
-                    if width > FRAME_LIMIT or height > FRAME_LIMIT:
-                        raise ValueError(f'{npc["name"]} frame {width:.0f}x{height:.0f} exceeds '
-                                         f'the {FRAME_LIMIT}x{FRAME_LIMIT} animation cache')
-                    cache[key] = (atlas.add(image, width, height, streamed=True), box)
+                    try:
+                        cache[key] = (atlas.add_tiled(image, width, height), box)
+                    except ValueError as error:
+                        raise ValueError(f'{npc["name"]} frame '
+                                         f'{width:.0f}x{height:.0f}: {error}') from error
                 texture, box = cache[key]
                 frames.append({'texture': texture, 'box': box, 'sprite': f'{sid}:{index}', 'event': frame})
             clips.append({'name': f'{source.sid(library_o)}/{name}', 'start': start,

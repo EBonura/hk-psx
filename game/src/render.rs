@@ -660,6 +660,16 @@ pub fn begin(room: &Room, animation_ids: &[u16],framebuffer_y:u16) -> hk_cache::
     }
     stats
 }
+/// Every animation key one frame needs. A frame too large for one 64x64 slot
+/// binds a rectangle of them, so it contributes one key per tile.
+pub fn append_frame_keys(room: &Room, frame: usize, needed: &mut [u16], len: &mut usize) {
+    let (base, cols, rows) = room.frame_grid(frame);
+    assert!(*len + cols * rows <= needed.len(), "animation working set");
+    for tile in 0..cols * rows {
+        needed[*len] = (base + tile) as u16;
+        *len += 1;
+    }
+}
 /// The slot UV of a prepared animation key, for art with no room template.
 pub fn animation_uv(id: u16) -> (u8, u8) {
     let (u, v) = animation_cache::uv(animation_cache::slot(id));

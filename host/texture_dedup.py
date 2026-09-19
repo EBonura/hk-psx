@@ -54,11 +54,31 @@ def _deduplicate_room(raw, replacements=None):
     for i in replacements:
         if struct.unpack_from('<H',raw,40+i*16)[0] == 65535 and expected[i] != blobs[i]:
             raise ValueError('Static texture trial cannot replace animation')
+    # A frame split across several animation slots is a run of consecutive
+    # streamed texture IDs whose first record carries the grid. Canonical
+    # sharing would renumber or merge those tiles, so the run is carried
+    # through whole, grid and all.
+    tile_owner = {}
+    for i in range(texture_count):
+        page, cols, rows = struct.unpack_from('<3H', raw, 40+i*16)
+        if page != 65535 or not cols:
+            continue
+        if i in tile_owner or i+cols*rows > texture_count:
+            raise ValueError('Overlapping or truncated animation tile grid')
+        for tile in range(cols*rows):
+            tile_owner[i+tile] = i
     mapping = []
     for i, blob in enumerate(expected):
         width, height = struct.unpack_from('<HH', blob)
         streamed = struct.unpack_from('<H', raw, 40+i*16)[0] == 65535
-        mapping.append(atlas.add_quantized(width,height,blob[4:36],blob[36:],streamed))
+        index = atlas.add_quantized(width,height,blob[4:36],blob[36:],streamed,
+                                    unique=i in tile_owner)
+        if i in tile_owner:
+            owner = mapping[tile_owner[i]] if tile_owner[i] != i else index
+            if tile_owner[i] == i:
+                atlas.grids[index] = struct.unpack_from('<2H', raw, 42+i*16)
+            atlas.tile_owner[index] = owner
+        mapping.append(index)
     atlas.pack()
     at = 40+texture_count*16
     draw_data = bytearray(raw[at:at+draws*44]);at += draws*44

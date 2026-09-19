@@ -151,8 +151,14 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
             bindings={'walk':'Idle','turn':'Idle','idle':'Idle'}
         else:
             raise ValueError('unsupported actor art controller: '+control['kind'])
-        # Actor sampling is never reduced: a frame beyond the 64x64 animation
-        # cache makes the actor an explicit unsupported record for this cook.
+        # Actor sampling is never reduced: a frame the animation cache cannot
+        # hold makes the actor an explicit unsupported record for this cook.
+        # NPC art already binds a rectangle of slots through Atlas.add_tiled;
+        # actors still take one slot per frame because enemies.rs draws a frame
+        # as one quad and enemy_draws.append_needed declares one key per actor,
+        # so a tiled actor would silently show only its top-left corner. The
+        # refusal reports the slots the frame would need, which is the number
+        # that has to fit beside every other actor a view can show at once.
         def frame_dims(name):
             clip=next(c for c in library['clips'] if c['name']==name)
             for frame in clip['frames']:
@@ -160,10 +166,14 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
                 if sid not in collections:collections[sid]=s.read(collection_o)
                 _,box=tk_sprite(s,collection_o.assets_file,collections[sid],frame['spriteId'],textures);scale=FOCAL/-CAM_Z
                 yield math.ceil((box[2]-box[0])*sx*scale),math.ceil((box[3]-box[1])*sy*scale)
-        oversized=sorted((w,h) for name in bindings.values() for w,h in frame_dims(name) if w>64 or h>64)
+        oversized=sorted((w,h) for name in bindings.values() for w,h in frame_dims(name)
+                         if w>SLOT_PIXELS or h>SLOT_PIXELS)
         if oversized:
+            w,h=oversized[-1];slots=-(-w//SLOT_PIXELS)*-(-h//SLOT_PIXELS)
             actor['movement_supported']=False
-            actor.setdefault('limitations',[]).append(f'actor frame {oversized[-1][0]}x{oversized[-1][1]} exceeds the 64x64 animation cache; art not cooked')
+            actor.setdefault('limitations',[]).append(
+                f'actor frame {w}x{h} binds {slots} of the {MAX_FRAME_TILES} animation slots '
+                'a frame may hold, and the guest draws an actor frame as one quad; art not cooked')
             continue
         for kind,name in bindings.items():
             clip_key=(s.sid(library_o),name,sx,sy,alpha)
@@ -192,6 +202,13 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
 
 from alpha_covers import HAS_ALPHA_COVERS, RECORD_BYTES, record as alpha_cover_record
 
+# One animation slot, and the tile rectangle a frame may bind beside the four
+# keys main.rs always reserves. Both come from hk_cache; the VRAM strip cannot
+# grow, so an oversized frame takes more slots instead of a bigger one.
+SLOT_PIXELS=64
+MAX_FRAME_TILES=4
+
+
 class Atlas:
     def __init__(self,deduplicate=True,max_pages=20,max_textures=640,alpha_covers=True):
         self.flags=HAS_ALPHA_COVERS if alpha_covers else 0
@@ -200,22 +217,30 @@ class Atlas:
         self.max_pages=max_pages
         self.images=[];self.entries=[];self.pages=[];self.palettes=[];self.streamed=set();self.stream=bytearray()
         self.quantized=[];self.canonical={};self.request_map=[];self.deduplicate=deduplicate
-    def add_quantized(self,w,h,palette,pixels,streamed=False):
-        """Admit exact final texels; different palettes/storage classes never alias."""
+        # index -> (columns, rows) for the first tile of a multi-slot frame, and
+        # every tile's first tile. Both are empty until add_tiled runs.
+        self.grids={};self.tile_owner={}
+    def add_quantized(self,w,h,palette,pixels,streamed=False,unique=False):
+        """Admit exact final texels; different palettes/storage classes never alias.
+
+        `unique` opts a texture out of canonical sharing. A frame's tiles are
+        consecutive texture IDs on the guest, so a tile that deduplicated
+        against an earlier one would renumber the rest of its frame.
+        """
         if not 1<=w<=256 or not 1<=h<=256 or len(palette)!=32 or len(pixels)!=((w+1)//2)*h:
             raise ValueError('invalid canonical texture dimensions/palette/texels')
-        if streamed and (w>64 or h>64):raise ValueError(f'animation cache dimensions exceed 64x64: {w}x{h}')
+        if streamed and (w>SLOT_PIXELS or h>SLOT_PIXELS):
+            raise ValueError(f'animation cache dimensions exceed {SLOT_PIXELS}x{SLOT_PIXELS}: {w}x{h}')
         key=(bool(streamed),w,h,bytes(palette),bytes(pixels))
-        index=self.canonical.get(key) if self.deduplicate else None
+        index=self.canonical.get(key) if self.deduplicate and not unique else None
         if index is None:
             index=len(self.images);self.images.append(None);self.quantized.append((w,h,key[3],key[4]))
             if streamed:self.streamed.add(index)
-            self.canonical[key]=index
+            if not unique:self.canonical[key]=index
         self.request_map.append(index)
         return index
-    def add(self,im,w,h,streamed=False):
-        w=max(1,min(252,math.ceil(w)));h=max(1,min(252,math.ceil(h)))
-        if streamed and (w>64 or h>64):raise ValueError(f'animation cache dimensions exceed 64x64: {w}x{h}')
+    def _quantize(self,im,w,h):
+        """One 16-colour palette and one index plane for a whole frame."""
         im=im.resize((w,h),Image.Resampling.LANCZOS)
         q=im.quantize(colors=15,method=Image.Quantize.FASTOCTREE,dither=Image.Dither.NONE)
         pal=q.getpalette('RGBA')+[0]*60;colors=[0]
@@ -227,14 +252,57 @@ class Atlas:
             v=(r>>3)|((g>>3)<<5)|((b>>3)<<10)
             colors.append((v|0x8000) if semi else (v or 1))
         px=list(q.get_flattened_data());alpha=list(im.getchannel('A').get_flattened_data())
+        plane=[px[i]+1 if alpha[i]>=16 else 0 for i in range(w*h)]
+        return im,struct.pack('<16H',*colors),plane
+    @staticmethod
+    def _pack_plane(plane,plane_width,x0,y0,w,h):
         stride=(w+1)//2;pixels=bytearray(stride*h)
         for yy in range(h):
+            row=(y0+yy)*plane_width+x0
             for xx in range(w):
-                v=px[yy*w+xx]+1 if alpha[yy*w+xx]>=16 else 0
-                pixels[yy*stride+xx//2]|=v<<((xx&1)*4)
-        index=self.add_quantized(w,h,struct.pack('<16H',*colors),pixels,streamed)
+                pixels[yy*stride+xx//2]|=plane[row+xx]<<((xx&1)*4)
+        return pixels
+    def add(self,im,w,h,streamed=False):
+        w=max(1,min(252,math.ceil(w)));h=max(1,min(252,math.ceil(h)))
+        if streamed and (w>SLOT_PIXELS or h>SLOT_PIXELS):
+            raise ValueError(f'animation cache dimensions exceed {SLOT_PIXELS}x{SLOT_PIXELS}: {w}x{h}')
+        im,palette,plane=self._quantize(im,w,h)
+        index=self.add_quantized(w,h,palette,self._pack_plane(plane,w,0,0,w,h),streamed)
         self.images[index]=im
         return index
+    def add_tiled(self,im,w,h):
+        """Admit one streamed frame across a rectangle of 64x64 animation slots.
+
+        The frame is quantized once, so the tiles hold identical colours and a
+        seam does not shift hue where two slots meet. It does not make them
+        cheaper: HKROOM02 sizes its palette block at one entry per texture and
+        the region uploads it whole, so a tile costs a CLUT slot either way.
+
+        Tiles are emitted row-major as consecutive texture IDs and the first
+        carries the grid, which is what hk_format::Room::frame_grid reads back.
+        """
+        w=max(1,min(252,math.ceil(w)));h=max(1,min(252,math.ceil(h)))
+        cols=-(-w//SLOT_PIXELS);rows=-(-h//SLOT_PIXELS)
+        if cols*rows>MAX_FRAME_TILES:
+            raise ValueError(f'frame {w}x{h} binds {cols*rows} of the {MAX_FRAME_TILES} '
+                             'animation slots a frame may hold')
+        if cols*rows==1:
+            return self.add(im,w,h,streamed=True)
+        im,palette,plane=self._quantize(im,w,h)
+        base=None
+        for row in range(rows):
+            for col in range(cols):
+                x0,y0=col*SLOT_PIXELS,row*SLOT_PIXELS
+                tw,th=min(SLOT_PIXELS,w-x0),min(SLOT_PIXELS,h-y0)
+                index=self.add_quantized(tw,th,palette,self._pack_plane(plane,w,x0,y0,tw,th),
+                                         streamed=True,unique=True)
+                if base is None:
+                    base=index;self.grids[base]=(cols,rows)
+                elif index!=base+row*cols+col:
+                    raise ValueError('a frame\'s tiles are no longer consecutive texture IDs')
+                self.tile_owner[index]=base
+                self.images[index]=im.crop((x0,y0,x0+tw,y0+th))
+        return base
     def pack(self):
         self.entries=[None]*len(self.quantized);self.palettes=[];self.stream=bytearray()
         page_count,placements=dense_pack([(aligned(w),h,i)for i,(w,h,palette,pixels)in enumerate(self.quantized)if i not in self.streamed])
@@ -247,9 +315,20 @@ class Atlas:
                 # Original UV dimensions survive word-aligned transfer padding.
                 self.stream.extend(bytes((-len(self.stream))&3))
                 stream_offset=len(self.stream);stride=((w+3)&~3)//2
-                self.stream.extend(bytes(stride*h));p,x,y=65535,0,0
+                self.stream.extend(bytes(stride*h))
+                # A streamed texture's VRAM origin is its animation slot, so
+                # these two fields carry the frame's tile grid instead.
+                p,(x,y)=65535,self.grids.get(i,(0,0))
             else:
                 p,x,y=positions[i]
+            # HKROOM02 sizes the palette block at one 32-byte entry per texture
+            # and the guest uploads the block whole, so a tile costs a CLUT slot
+            # whether or not it repeats its frame's palette. The tiles of one
+            # frame were quantized together, which is what keeps their colours
+            # identical across the seam; it does not make them cheaper.
+            owner=self.tile_owner.get(i)
+            if owner is not None and self.quantized[owner][2]!=palette:
+                raise ValueError('tiles of one frame disagree on their palette')
             self.palettes.append(palette);cl=len(self.palettes)-1
             if cl>=self.max_textures:raise ValueError('CLUT budget exceeded')
             for yy in range(h):
