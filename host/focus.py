@@ -26,6 +26,27 @@ def fsm_variables(fsm):
             out[name]=value
     return out
 
+def action_parameters(data,index,objects=False):
+    """The same fields as `action_fields`, in declaration order with real names.
+
+    An array-shaped action (IntSwitch's compareTo and sendEvent pairs, an event
+    list) leaves its elements unnamed, and `action_fields` keys those by their
+    index, which turns a dict lookup into positional guesswork. Two separate
+    readers have already had to work around that locally, and a misread switch
+    is a silent behaviour change rather than a refusal, so read arrays through
+    this instead: `[(name_or_None, value), ...]`.
+    """
+    fields=action_fields(data,index,objects)
+    start=data['actionStartIndex'][index]
+    end=data['actionStartIndex'][index+1] if index+1<len(data['actionNames']) else len(data['paramName'])
+    out=[]
+    for i in range(start,end):
+        name=data['paramName'][i]
+        key=name or str(i)
+        if key in fields:
+            out.append((name or None,fields[key]))
+    return out
+
 def action_fields(data,index,objects=False):
     """Read compact scalar fields used by this observed PlayMaker version."""
     start=data['actionStartIndex'][index]
