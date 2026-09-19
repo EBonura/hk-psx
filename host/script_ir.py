@@ -8,16 +8,43 @@ be implemented.
 
 The refusals are the useful output right now. Running this over the admitted
 scenes says exactly how much of the authored behaviour the current slice covers
-and which action to implement next.
+and which action to implement next. FSMs the native actor controllers already
+replace are counted apart from that, because they are not script work at all.
 
 No retail payload is embedded; the report goes to .hkpsx.
 """
 import collections
 from focus import action_fields
 
-# Opcode numbers, matching hk_sim::script::Code.
+# Opcode numbers, in the declaration order of hk_sim::script::Code. Every
+# variant is named even where nothing emits it yet, because a gap here shifts
+# every opcode below it: omitting NativeConst silently aimed the three
+# PlayerData opcodes one slot low.
 (NOP, WAIT, SET_BOOL, SET_INT, BOOL_TEST, INT_COMPARE, SEND_EVENT, NEXT_FRAME, NATIVE,
- PD_GET, PD_SET, PD_BOOL_TEST) = range(12)
+ NATIVE_CONST, PD_GET, PD_SET, PD_BOOL_TEST) = range(13)
+
+def _check_opcodes():
+    """Fail the import when these numbers drift from hk_sim::script::Code.
+
+    They already did once: `NativeConst` was added to the Rust enum and not
+    here, which silently shifted all three PlayerData opcodes one slot low.
+    Nothing had cooked a bank yet, so nothing caught it. Reading the enum is
+    cheaper than the next silent miscompile.
+    """
+    from source import ROOT
+    text = (ROOT / 'shared/hk-sim/src/script.rs').read_text()
+    body = text[text.index('pub enum Code {'):]
+    body = body[:body.index('\n}')]
+    variants = [line.strip().rstrip(',') for line in body.splitlines()[1:]
+                if line.startswith('    ') and line.strip()[:1].isupper()]
+    expected = ['Nop', 'Wait', 'SetBool', 'SetInt', 'BoolTest', 'IntCompare', 'SendEvent',
+                'NextFrameEvent', 'Native', 'NativeConst', 'PlayerDataGet', 'PlayerDataSet',
+                'PlayerDataBoolTest']
+    if variants != expected:
+        raise AssertionError(f'hk_sim::script::Code changed: {variants} != {expected}')
+
+_check_opcodes()
+
 CMP_LT, CMP_LE, CMP_EQ, CMP_NE, CMP_GE, CMP_GT = range(6)
 
 class Unsupported(Exception):
@@ -269,47 +296,88 @@ def unsupported_actions(fsm, owner_id=None):
                 missing.add(action)
     return missing
 
+def scene_fsms(source, name):
+    """The scene's FSMs as (path id, definition, runs_natively).
+
+    An FSM whose GameObject already carries a supported native actor controller
+    is the PlayMaker side of behaviour the port implements in Rust, not script
+    work: the 35 `flyer_receive_direction_msg` instances on driven flyers are
+    the recoil those controllers already apply. Counting them as blocked
+    overstates what is left to build.
+
+    The test is the actor's own GameObject, not the enemy it talks about. The
+    112 `enemy_message` instances look like the damage path `ActorHealth` owns,
+    but every one of them sits on a detector or trigger volume with no
+    HealthManager, so they stay script work.
+
+    Both halves come out of one Scene, because parsing a scene reads every
+    object's typetree and is by far the expensive step here. Reading the FSMs
+    back off that same parse is why this does not touch the file twice.
+    """
+    from scene import Scene
+    from actors import actor_sources
+    sc = Scene(source, name)
+    native = {a['game_object'] for a in actor_sources(sc) if a.get('movement_supported')}
+    return [(path_id, tree['fsm'], tree['m_GameObject']['m_PathID'] in native)
+            for path_id, (typename, tree) in sc.objects.items()
+            if typename == 'PlayMakerFSM' and 'fsm' in tree]
+
 def survey(source, scene_files):
     """How much of the admitted scenes' authored behaviour this slice compiles."""
     compiled = collections.Counter()
     blockers = collections.Counter()
     blocking_fsms = collections.Counter()
+    native_fsms = collections.Counter()
     # Instances keyed by the exact set of actions they still need, so the
     # ranking answers "what would make whole FSMs run" rather than "what
     # refuses first".
     missing_sets = collections.Counter()
     action_unlocks = collections.Counter()
-    for name, scene in scene_files.items():
-        file = source.file(name)
-        for obj in file.objects.values():
-            if obj.type.name != 'MonoBehaviour':
-                continue
-            try:
-                if source.typename(obj) != 'PlayMakerFSM':
-                    continue
-                fsm = source.read(obj)['fsm']
-            except Exception:
+    unlock_fsms = collections.defaultdict(collections.Counter)
+    unparsed = {}
+    for name in scene_files:
+        try:
+            fsms = scene_fsms(source, name)
+        except Exception as error:
+            # Without a parse there is no native-actor set, so counting this
+            # scene's FSMs as script work would put back exactly the
+            # overstatement this measurement exists to remove. Name the scene
+            # instead, so a silent drop cannot be mistaken for coverage.
+            unparsed[name] = str(error)
+            continue
+        for path_id, fsm, runs_natively in fsms:
+            if runs_natively:
+                compiled['on_native_actors'] += 1
+                native_fsms[fsm['name']] += 1
                 continue
             compiled['instances'] += 1
+            # The FSM's own path id is its stable owner identity here; the
+            # cooked bank uses the same source id the world metadata does.
+            owner_id = path_id & 0x7fffffff
             try:
-                # The FSM's own path id is its stable owner identity here; the
-                # cooked bank uses the same source id the world metadata does.
-                program = compile_fsm(fsm, owner_id=obj.path_id & 0x7fffffff)
+                program = compile_fsm(fsm, owner_id=owner_id)
             except Unsupported as refusal:
                 blockers[refusal.action] += 1
                 blocking_fsms[fsm['name']] += 1
-                missing = unsupported_actions(fsm, owner_id=obj.path_id & 0x7fffffff)
+                missing = unsupported_actions(fsm, owner_id=owner_id)
                 missing_sets[tuple(sorted(missing))] += 1
                 if len(missing) == 1:
-                    action_unlocks[next(iter(missing))] += 1
+                    action = next(iter(missing))
+                    action_unlocks[action] += 1
+                    unlock_fsms[action][fsm['name']] += 1
                 continue
             compiled['compiled'] += 1
             compiled['ops'] += len(program['ops'])
     return {'instances': compiled['instances'], 'compiled': compiled['compiled'],
             'compiled_ops': compiled['ops'],
+            'on_native_actors': compiled['on_native_actors'],
+            'native_actor_fsms': dict(native_fsms.most_common(20)),
+            'unparsed_scenes': unparsed,
             'first_blocking_action': dict(blockers.most_common(25)),
             'blocked_fsms': dict(blocking_fsms.most_common(20)),
-            'one_action_from_compiling': dict(action_unlocks.most_common(20)),
+            'one_action_from_compiling': [
+                {'action': action, 'instances': n, 'fsms': dict(unlock_fsms[action].most_common(8))}
+                for action, n in action_unlocks.most_common(20)],
             'missing_sets': [{'actions': list(k), 'instances': n}
                              for k, n in missing_sets.most_common(15)]}
 
@@ -323,18 +391,29 @@ if __name__ == '__main__':
     out['limitations'] = [
         'Only the first slice compiles: waits, bool and int sets, BoolTest, IntCompare, '
         'SendEventByName to self and NextFrameEvent.',
-        'An FSM is counted as blocked by the first action that refuses it, so the '
-        'blocker histogram ranks what to implement next rather than counting every '
-        'unsupported action in the scene.',
+        'FSMs on GameObjects a supported native actor controller already runs are counted '
+        'under on_native_actors and left out of the instances denominator, because their '
+        'behaviour is already implemented in Rust rather than waiting on the script slice.',
+        'An actor counts as native only where actors.py reports movement_supported and only '
+        'on its own GameObject, so an enemy the port draws but does not yet drive, and a '
+        'detector or trigger volume that only messages one, both stay script work.',
+        'first_blocking_action counts each blocked FSM once, by the action that refuses '
+        'first; one_action_from_compiling and missing_sets use the whole set an FSM is '
+        'missing and are the ones to rank by.',
         'Nothing is cooked into the disc yet: this measures the compiler, it does not '
         'ship a script bank.',
     ]
     dump(ROOT / '.hkpsx/script-ir-coverage.json', out)
-    print(f"{out['compiled']} of {out['instances']} FSM instances compile "
-          f"({out['compiled'] / max(1, out['instances']):.1%}), {out['compiled_ops']} ops")
+    print(f"{out['compiled']} of {out['instances']} script-side FSM instances compile "
+          f"({out['compiled'] / max(1, out['instances']):.1%}), {out['compiled_ops']} ops; "
+          f"{out['on_native_actors']} further instances sit on native actor controllers")
+    if out['unparsed_scenes']:
+        print(f"{len(out['unparsed_scenes'])} scenes did not parse and are not measured: "
+              f"{', '.join(out['unparsed_scenes'])}")
     print('one action away from compiling:')
-    for action, n in list(out['one_action_from_compiling'].items())[:12]:
-        print(f'  {action:32} would complete {n} instances')
+    for row in out['one_action_from_compiling'][:12]:
+        print(f"  {row['action']:32} would complete {row['instances']:4} instances  "
+              f"({', '.join(row['fsms'])[:60]})")
     print('most common missing sets:')
     for row in out['missing_sets'][:8]:
         print(f"  {row['instances']:4}  {', '.join(row['actions'])[:90]}")

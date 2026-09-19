@@ -21,6 +21,9 @@ pub struct Op {
     pub b: u16,
     pub c: u16,
 }
+/// The opcode numbers are part of the cooked format, so `host/script_ir.py`
+/// reads this enum's variant order on import and refuses to run when it drifts.
+/// Adding a variant anywhere but the end changes every cooked bank.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Code {
     Nop,
