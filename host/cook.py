@@ -589,9 +589,21 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # Terrain-only collision. Keep exact world segments; guest handles axis-aligned
     # edges, while unsupported slopes are explicit, never converted into floors.
     edges=[]
+    # An arena gate serializes closed whatever state it loads in, because
+    # BG Control's start state is what opens it: `Opened` tests `Start Closed`
+    # and sets the collider inactive. Baking the serialized collider made twelve
+    # gates solid terrain that the source has open from the first frame, and
+    # since none of them cooks a sprite they were invisible walls. Every one
+    # measures 4.16 units tall against a jump apex of 2.87, and Crossroads_04's
+    # is 12.66, so none could be cleared: Crossroads_09 was impassable between
+    # its only two doors and Crossroads_08 was cut into three columns.
+    from breakables import battle_gates
+    open_gates={gate['collider_source'] for gate in battle_gates(sc,errors=[])
+                if not gate['solid_on_load']}
     for i,(typ,t) in sc.objects.items():
         if typ not in ('EdgeCollider2D','BoxCollider2D','PolygonCollider2D'):continue
         gid=t['m_GameObject']['m_PathID']
+        if f'{scene_file}:{i}' in open_gates:continue
         if not sc.active(gid) or not t['m_Enabled'] or t['m_IsTrigger'] or sc.gos[gid]['m_Layer']!=8:continue
         off=t['m_Offset'];paths=[]
         if typ=='BoxCollider2D':
