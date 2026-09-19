@@ -24,7 +24,7 @@ never fires, which is the silent failure the IR exists to avoid.
 
 No retail payload is embedded; the generated table and report are build outputs.
 """
-import collections, json, math
+import collections, json, math, re
 from pathlib import Path
 
 from source import Source, ROOT, dump
@@ -56,6 +56,36 @@ def sent_events(op):
 def writes(op):
     """Whether an op changes something outside its own FSM's variables."""
     return op[0] in (PD_SET, NATIVE, NATIVE_CONST)
+
+
+def field_slots():
+    """The PlayerData reserve the save record holds, read out of the guest.
+
+    The record cannot follow a generated field count: changing its length
+    invalidates every committed card fixture. So the reserve is fixed in
+    `game/src/save.rs` and a bank that outgrows it fails the build here, rather
+    than shipping a record that silently holds some of the fields. Read rather
+    than repeated, the way tools/migrate_cards.py reads the same file.
+    """
+    text = (ROOT / 'game/src/save.rs').read_text()
+    found = re.search(r'pub const SCRIPT_FIELD_SLOTS: usize = (\d+);', text)
+    if not found:
+        raise ValueError('cannot read SCRIPT_FIELD_SLOTS out of game/src/save.rs')
+    return int(found.group(1))
+
+
+def field_identity(names):
+    """fnv1a-32 over the ordered field list, as the record's slot identity.
+
+    Slot order is this cook's. A record written by one bank and read by another
+    would put one field's value on another's, which the record checksum cannot
+    see because the bytes are intact. The guest compares this and drops the
+    values when it disagrees.
+    """
+    value = 0x811c9dc5
+    for byte in '\0'.join(names).encode():
+        value = ((value ^ byte) * 16777619) & 0xffffffff
+    return value
 
 
 def q(value):
@@ -268,6 +298,7 @@ def emit(bank):
     parts['fields'] = ('pub static SCRIPT_FIELD_NAMES:&[&str]=&['
                        + ','.join(json.dumps(name) for name in bank['fields']) + '];')
     lines += [f'pub const SCRIPT_VARS:usize={base};',
+              f"pub const SCRIPT_FIELD_FNV:u32={field_identity(bank['fields'])};",
               parts['definitions'], parts['instances'], parts['volumes'], parts['fields']]
     return '\n'.join(lines) + '\n', {name: len(text) for name, text in parts.items()}
 
@@ -313,6 +344,11 @@ def cook(source=None):
     for instance in bank['instances']:
         instance['scene_name'] = names[[f for f, s in scenes.items()
                                         if s == instance['scene']][0]]
+    slots = field_slots()
+    if len(bank['fields']) > slots:
+        raise ValueError(f"the bank needs {len(bank['fields'])} PlayerData slots and the save "
+                         f'record reserves {slots}; raise SCRIPT_FIELD_SLOTS in game/src/save.rs '
+                         'and migrate the card fixtures')
     code, text_bytes = emit(bank)
     (ROOT / 'data/scripts.rs').write_text(code)
     rows = linked_bytes(bank)
@@ -327,6 +363,8 @@ def cook(source=None):
         'compiled_but_inactive': bank['inactive'],
         'volumes': len(bank['volumes']),
         'player_data_fields': bank['fields'],
+        'player_data_slots_reserved': slots,
+        'player_data_field_fnv': field_identity(bank['fields']),
         'refused': bank['refused'],
         'linked_bytes': rows,
         'linked_bytes_total': sum(rows.values()),
@@ -346,9 +384,11 @@ def cook(source=None):
             'live instances in any scene the whole scene\'s set is ticked while it is '
             'resident; a region binding is the next step and needs a world-bank object '
             'kind, which needs host/regions.py to emit the rows.',
-            'PlayerData fields live in a session store sized by this bank. They are not '
-            'written to the memory card: that needs game/src/save.rs, so a flag a script '
-            'sets is lost on a quit and the source would have kept it.',
+            'PlayerData rides in the bench save record, in a fixed reserve of slots rather '
+            'than in this bank\'s own count, because the record length cannot follow a '
+            'generated table. Slot order is this cook\'s, so the record carries the field '
+            'list identity and the guest drops the values when it is running a different '
+            'bank rather than reading one field as another.',
             'Non-integer variables start at zero. No compiled op reads a slot as anything '
             'but a bool, an int or an object reference, and zero is NO_OBJECT, so this is '
             'exact for what can be read rather than an approximation.',

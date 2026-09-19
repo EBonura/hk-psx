@@ -377,7 +377,10 @@ fn main() {
         Some((s.charms_owned,s.charms_equipped,s.charm_notches,s.can_overcharm)),_=>None},settings.cheats.charms);
     // Each NPC's conversation cursor, from the record for the same reason: a
     // stale spawn point is no reason to make Elderbug introduce himself again.
-    if let save::Slot::Used(s)=slots[profile] {dialogue::restore_met(s.npc_conversations);}
+    if let save::Slot::Used(s)=slots[profile] {dialogue::restore_met(s.npc_conversations);
+        // And the PlayerData the cooked scripts wrote, if the record was
+        // written by this bank. `script::boot` drops it when it was not.
+        script::boot(&s.script_fields,s.script_field_fnv);}
     let cache=unsafe { &mut *(&raw mut ROOM_CACHE) };
     let mut state=world::State::new();
     let geo=unsafe {&mut *(&raw mut GEO_WORLD)};
@@ -706,11 +709,12 @@ fn main() {
                                     if row==0 {
                                         let stand=[bench_state.seat()[0],player.y];
                                         let (owned,equipped,notches,can_overcharm)=charms::record();
+                                        let (script_fields,script_field_fnv)=script::record();
                                         save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,
                                             region:region_id as u32,geo:geo.wallet(),door_hits:door.hits(),
                                             shade:shade.record(),sequence:0,charms_owned:owned,
                                             charms_equipped:equipped,charm_notches:notches,can_overcharm,
-                                            npc_conversations:dialogue::met_bits()});
+                                            npc_conversations:dialogue::met_bits(),script_fields,script_field_fnv});
                                     }
                                     save_prompt=None;
                                 } else if pressed(button::CIRCLE) {save_prompt=None;}
