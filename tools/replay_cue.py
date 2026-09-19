@@ -29,6 +29,11 @@ WATCHES+='HK_SHADE_PRESENT HK_SHADE_GEO_POOL HK_SHADE_HP HK_SHADE_KILLS HK_SHADE
 WATCHES+='HK_RUNNER_AUDIO_READY HK_RUNNER_LOOP_STARTS HK_RUNNER_CALLS HK_RUNNER_LOOP_DROPPED HK_RUNNER_DUST_EVENTS HK_ENEMY_HITS HK_CLIMBER_X HK_CLIMBER_Y HK_CLIMBER_HP'.split()
 WATCHES+='HK_NPC_SOURCE HK_NPC_PAGE HK_NPC_OPENED HK_NPC_MET HK_MET_ELDERBUG'.split()
 WATCHES+='HK_SCRIPT_ACTIVE HK_SCRIPT_TRANSITIONS HK_SCRIPT_WRITES HK_SCRIPT_FLAGS HK_SCRIPT_HALTS HK_SCRIPT_NATIVE'.split()
+# The only counter that says an ability clip owned the Knight's body this
+# frame rather than that the Knight moved. Exported since the ability art
+# landed and never watched, which left every ability route asserting a
+# position instead.
+WATCHES+=['HK_ABILITY_DRAWN']
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def main():

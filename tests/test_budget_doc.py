@@ -55,6 +55,17 @@ class BudgetDocTests(unittest.TestCase):
         self.assertEqual(self.rows['Unallocated gap before reserved stack'],
                          self.memory['unallocated_before_stack_bytes'])
 
+    def test_the_scene_arena_figure_in_the_prose_matches(self):
+        # Not a table row, but quoted as a plain number in the prose and just as
+        # capable of going stale: it read 354,032 while the live arena was
+        # 421,128, found while correcting the headroom figure.
+        import re
+        arena = self.memory['scene_arena_bytes']
+        text = DOC.read_text()
+        quoted = re.search(r'scene arena occupies ([\d,]+) bytes', text)
+        self.assertIsNotNone(quoted, 'the scene arena sentence moved; repoint this test')
+        self.assertEqual(int(quoted.group(1).replace(',', '')), arena)
+
     def test_the_static_end_address_matches(self):
         self.assertIn(self.memory['static_end'], DOC.read_text(),
                       'the quoted static end address is from an older build')
