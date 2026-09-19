@@ -40,6 +40,13 @@ pub enum Code {
     NextFrameEvent,
     /// Call native function `a` with variables `b` and `c`.
     Native,
+    /// Read PlayerData field `b` into variable `a`.
+    PlayerDataGet,
+    /// Write variable `b` into PlayerData field `a`.
+    PlayerDataSet,
+    /// Send `b` when PlayerData field `a` is true, `c` when false. The source
+    /// action is one step, so this is too: no compiler temporary is needed.
+    PlayerDataBoolTest,
 }
 /// `IntCompare` selectors, in the order the cooker emits them.
 pub const CMP_LT: u8 = 0;
@@ -103,6 +110,17 @@ pub struct NativeCall {
     pub id: u16,
     pub args: [i32; 2],
 }
+/// The services a running script needs from the game around it. Keeping this a
+/// trait rather than a closure is what lets later slices add services without
+/// rewriting every call site.
+pub trait Host {
+    fn native(&mut self, call: NativeCall);
+    /// PlayerData field `index`, through the cooked field table. Progression
+    /// flags live in the persistent store, so a script reads the same value the
+    /// save file holds.
+    fn player_data(&mut self, field: u16) -> i32;
+    fn set_player_data(&mut self, field: u16, value: i32);
+}
 /// One running FSM instance.
 #[derive(Clone, Copy, Debug)]
 pub struct Instance {
@@ -143,7 +161,7 @@ impl Instance {
     /// One 60 Hz tick. `native` receives every `Op::Native` in order and
     /// returns the value the call produced, which the op stores nowhere: a
     /// native call that has to return something writes through its own system.
-    pub fn tick(&mut self, p: Program, vars: &mut [i32], mut native: impl FnMut(NativeCall)) -> Halt {
+    pub fn tick(&mut self, p: Program, vars: &mut [i32], host: &mut impl Host) -> Halt {
         if vars.len() < p.var_count as usize {
             return Halt::BadProgram;
         }
@@ -181,7 +199,7 @@ impl Instance {
             let index = state.first_op as usize + self.cursor as usize;
             let Some(op) = p.ops.get(index).copied() else { return Halt::BadProgram };
             self.cursor += 1;
-            match self.run(p, op, vars, &mut native, 0) {
+            match self.run(p, op, vars, host, 0) {
                 Ok(Some(target)) => self.enter(target),
                 Ok(None) => {
                     if self.wait > 0 {
@@ -194,7 +212,7 @@ impl Instance {
     }
     /// Run one op. `Ok(Some(state))` means it transitioned.
     fn run(&mut self, p: Program, op: Op, vars: &mut [i32],
-           native: &mut impl FnMut(NativeCall), depth: u8) -> Result<Option<u16>, Halt> {
+           host: &mut impl Host, depth: u8) -> Result<Option<u16>, Halt> {
         let var = |i: u16| -> Result<i32, Halt> {
             vars.get(i as usize).copied().ok_or(Halt::BadProgram)
         };
@@ -216,7 +234,7 @@ impl Instance {
             }
             Code::BoolTest => {
                 let event = if var(op.a)? != 0 { op.b } else { op.c };
-                self.send(p, event, vars, native, depth)
+                self.send(p, event, vars, host, depth)
             }
             Code::IntCompare => {
                 let left = var(op.a)?;
@@ -230,9 +248,9 @@ impl Instance {
                     CMP_GT => left > right,
                     _ => return Err(Halt::BadProgram),
                 };
-                if holds { self.send(p, op.c, vars, native, depth) } else { Ok(None) }
+                if holds { self.send(p, op.c, vars, host, depth) } else { Ok(None) }
             }
-            Code::SendEvent => self.send(p, op.a, vars, native, depth),
+            Code::SendEvent => self.send(p, op.a, vars, host, depth),
             Code::NextFrameEvent => {
                 if op.a == 0 {
                     return Ok(None);
@@ -245,15 +263,29 @@ impl Instance {
                 Ok(None)
             }
             Code::Native => {
-                native(NativeCall { id: op.a, args: [var(op.b)?, var(op.c)?] });
+                host.native(NativeCall { id: op.a, args: [var(op.b)?, var(op.c)?] });
                 Ok(None)
+            }
+            Code::PlayerDataGet => {
+                let value = host.player_data(op.b);
+                *vars.get_mut(op.a as usize).ok_or(Halt::BadProgram)? = value;
+                Ok(None)
+            }
+            Code::PlayerDataSet => {
+                let value = var(op.b)?;
+                host.set_player_data(op.a, value);
+                Ok(None)
+            }
+            Code::PlayerDataBoolTest => {
+                let event = if host.player_data(op.a) != 0 { op.b } else { op.c };
+                self.send(p, event, vars, host, depth)
             }
         }
     }
     /// A synchronous send: the target state is entered inside the sending op,
     /// as PlayMaker does, and its own ops run before this one returns.
     fn send(&mut self, p: Program, event: u16, vars: &mut [i32],
-            native: &mut impl FnMut(NativeCall), depth: u8) -> Result<Option<u16>, Halt> {
+            host: &mut impl Host, depth: u8) -> Result<Option<u16>, Halt> {
         if event == 0 {
             return Ok(None);
         }
@@ -268,7 +300,7 @@ impl Instance {
         for i in 0..state.op_count {
             let op = *p.ops.get(state.first_op as usize + i as usize).ok_or(Halt::BadProgram)?;
             self.cursor = i + 1;
-            match self.run(p, op, vars, native, depth + 1)? {
+            match self.run(p, op, vars, host, depth + 1)? {
                 Some(next) => return Ok(Some(next)),
                 None if self.wait > 0 => return Ok(None),
                 None => {}
@@ -296,6 +328,29 @@ mod tests {
     fn op(code: Code, flags: u8, a: u16, b: u16, c: u16) -> Op {
         Op { code, flags, a, b, c }
     }
+    /// A host that records native calls and keeps four PlayerData fields.
+    #[derive(Default)]
+    struct Recorder {
+        calls: [Option<NativeCall>; 4],
+        count: usize,
+        fields: [i32; 4],
+    }
+    impl Host for Recorder {
+        fn native(&mut self, call: NativeCall) {
+            if self.count < self.calls.len() {
+                self.calls[self.count] = Some(call);
+            }
+            self.count += 1;
+        }
+        fn player_data(&mut self, field: u16) -> i32 {
+            self.fields.get(field as usize).copied().unwrap_or(0)
+        }
+        fn set_player_data(&mut self, field: u16, value: i32) {
+            if let Some(slot) = self.fields.get_mut(field as usize) {
+                *slot = value;
+            }
+        }
+    }
     #[test]
     fn a_wait_blocks_for_its_ticks_then_takes_its_transition() {
         let ops = [op(Code::Wait, 0, 3, FINISHED, 0)];
@@ -306,10 +361,10 @@ mod tests {
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
         for tick in 0..3 {
-            assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::Ran);
+            assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::Ran);
             assert_eq!(i.state, START, "tick {tick} is still waiting");
         }
-        assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::Ran);
+        assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::Ran);
         assert_eq!(i.state, DONE);
     }
     #[test]
@@ -321,12 +376,12 @@ mod tests {
         let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
-        i.tick(p, &mut vars, |_| {});
+        i.tick(p, &mut vars, &mut Recorder::default());
         assert_eq!(i.state, START, "a false variable takes no branch");
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
         vars[0] = 1;
-        i.tick(p, &mut vars, |_| {});
+        i.tick(p, &mut vars, &mut Recorder::default());
         assert_eq!(i.state, DONE);
     }
     #[test]
@@ -340,7 +395,7 @@ mod tests {
             let mut i = Instance::new();
         let mut vars = [0i32; 2];
             vars[0] = soul;
-            i.tick(p, &mut vars, |_| {});
+            i.tick(p, &mut vars, &mut Recorder::default());
             assert_eq!(i.state, expected, "soul {soul}");
         }
     }
@@ -358,10 +413,10 @@ mod tests {
         let mut vars = [0i32; 2];
         vars[0] = 11;
         vars[1] = 22;
-        let mut seen = None;
-        i.tick(p, &mut vars, |call| seen = Some(call));
+        let mut host = Recorder::default();
+        i.tick(p, &mut vars, &mut host);
         assert_eq!(i.state, DONE);
-        assert_eq!(seen, Some(NativeCall { id: 7, args: [11, 22] }));
+        assert_eq!(host.calls[0], Some(NativeCall { id: 7, args: [11, 22] }));
     }
     #[test]
     fn a_next_frame_event_waits_for_the_next_tick() {
@@ -372,9 +427,9 @@ mod tests {
         let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
-        i.tick(p, &mut vars, |_| {});
+        i.tick(p, &mut vars, &mut Recorder::default());
         assert_eq!(i.state, START, "not in the tick that queued it");
-        i.tick(p, &mut vars, |_| {});
+        i.tick(p, &mut vars, &mut Recorder::default());
         assert_eq!(i.state, DONE);
     }
     #[test]
@@ -386,7 +441,32 @@ mod tests {
         let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
-        assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::Depth, "the nesting bound catches it first");
+        assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::Depth, "the nesting bound catches it first");
+    }
+    #[test]
+    fn player_data_reads_and_writes_the_hosts_progression_flags() {
+        const HAS_DASH: u16 = 2;
+        // Read the flag, branch on it, and record having done so.
+        let ops = [op(Code::PlayerDataBoolTest, 0, HAS_DASH, YES, 0),
+                   op(Code::PlayerDataSet, 0, HAS_DASH, 0, 0),
+                   op(Code::PlayerDataGet, 0, 1, HAS_DASH, 0)];
+        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
+                      State { first_op: 1, op_count: 2, first_transition: 1, transition_count: 0 }];
+        let transitions = [Transition { event: YES, target: DONE }];
+        let p = Program { states: &states, transitions: &transitions, ops: &ops,
+                          constants: &[], var_count: 2 };
+        let mut host = Recorder::default();
+        let mut i = Instance::new();
+        let mut vars = [0i32; 2];
+        i.tick(p, &mut vars, &mut host);
+        assert_eq!(i.state, START, "a false flag takes no branch");
+        host.fields[HAS_DASH as usize] = 1;
+        vars[0] = 7;
+        let mut i = Instance::new();
+        i.tick(p, &mut vars, &mut host);
+        assert_eq!(i.state, DONE);
+        assert_eq!(host.fields[HAS_DASH as usize], 7, "the write went to the host");
+        assert_eq!(vars[1], 7, "and the read came back from it");
     }
     #[test]
     fn a_bad_index_refuses_rather_than_reading_past_the_program() {
@@ -395,7 +475,7 @@ mod tests {
         let p = Program { states: &states, transitions: &[], ops: &ops, constants: &[1], var_count: 2 };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
-        assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::BadProgram);
+        assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::BadProgram);
     }
     #[test]
     fn the_pending_queue_refuses_rather_than_dropping_an_event() {
@@ -407,6 +487,6 @@ mod tests {
         let p = Program { states: &states, transitions: &[], ops: &many, constants: &[], var_count: 2 };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
-        assert_eq!(i.tick(p, &mut vars, |_| {}), Halt::PendingFull);
+        assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::PendingFull);
     }
 }
