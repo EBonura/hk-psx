@@ -1008,8 +1008,9 @@ impl Actor {
                 }
                 // The broadcast reaches every gate in the room, not only the two
                 // at the arena ends, which is why the gate world is keyed by
-                // scene. Three of Crossroads_10's five carry no cooked terrain,
-                // so closing them moves nothing: see game/src/battle_gates.rs.
+                // scene. All five of Crossroads_10's are cooked terrain, so this
+                // seals the arena rather than only shutting the middle of it:
+                // see game/src/battle_gates.rs.
                 hk_sim::boss::Action::CloseGates => crate::battle_gates::close(self.scene),
                 hk_sim::boss::Action::OpenGates
                 | hk_sim::boss::Action::QuickOpenGates => crate::battle_gates::open(self.scene),

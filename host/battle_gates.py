@@ -1,18 +1,24 @@
 """Source `BG Control` arena gates, joined to the terrain edges the cook baked.
 
-`host/breakables.py::battle_gate` already reads the one decision a gate makes on
-load: `Opened` tests `Start Closed`, and a gate that has it set turns its box
-back on in `Quick Close` and then waits for a `BG OPEN` that, until now, nothing
-in this port sent. `host/cook.py` reads the same verdict and bakes only the
-closed ones as terrain, because a gate the source has open from the first frame
-would otherwise be an invisible wall.
+`host/breakables.py::battle_gate` reads the one decision a gate makes on load:
+`Opened` tests `Start Closed`, and a gate that has it set turns its box back on
+in `Quick Close` and then waits for the `BG OPEN` its arena sends when the fight
+is won. `host/cook.py` bakes every gate's collider as terrain whatever that
+verdict says, so the room pack holds an edge for all of them.
 
-That leaves the edges of the closed gates sitting in the cooked room packs with
-nothing able to lift them. This is the join that lets the runtime lift them: for
-every catalogue slot, the edge indices in that slot's room pack that belong to a
-gate collider, keyed by gate. `game/src/battle_gates.rs` excludes the edges of
-every gate that is currently open, the way `game/src/great_door.rs` excludes the
-door's when it is broken through.
+This is the join that lets the runtime move them: for every catalogue slot, the
+edge indices in that slot's room pack that belong to a gate collider, keyed by
+gate. `game/src/battle_gates.rs` excludes the edges of every gate that is
+currently open, the way `game/src/great_door.rs` excludes the door's when it is
+broken through, and it starts from the gates that are open on load, which is the
+complement of `PLACEMENT_CLOSED`. A gate that loads open is therefore terrain
+the runtime lifts on the first frame rather than terrain the cook withheld,
+which is what lets `BG CLOSE` seal an arena at its ends.
+
+Both directions of that join have to hold. A missing row is now an invisible
+wall rather than a gate that cannot close, so `bind` derives the rows from the
+cook's own `edge_sources` and never from a second copy of the rule, and `main`
+reports any gate the cook baked no terrain for at all.
 
 This reads `data/regions.json` rather than cooking anything, so it is not a
 cooker input: changing it must not invalidate a single cooked region. Regenerate
@@ -20,14 +26,10 @@ with
 
     .venv/bin/python host/battle_gates.py
 
-which rewrites `data/battle_gates.rs` and `.hkpsx/battle-gates.json`.
-
-What this cannot do is close a gate the cook left out. The three Crossroads_10
-gates that the source has open on load carry no terrain at all, so `BG CLOSE`
-has no edge to restore and the arena still does not seal at its ends. Sealing
-needs `host/cook.py` to bake every gate and this table to carry the open ones
-too, which is a whole-world recook: `host/cook.py` sits above the divider in
-`host/cook_inputs.txt`, so touching it re-cooks all 693 regions.
+which rewrites `data/battle_gates.rs` and `.hkpsx/battle-gates.json`. The table
+is only as current as `data/regions.json`: `host/cook.py` sits above the divider
+in `host/cook_inputs.txt`, so a change to which colliders it bakes re-cooks all
+693 regions and this has to run again afterwards.
 """
 import json
 import re
@@ -119,8 +121,11 @@ def bind(gates, report):
     """(catalogue slot, gate, edges) for every gate the cook baked as terrain.
 
     `edge_sources` is the cook's own join key: it names, per cooked edge, the
-    source collider the edge came out of. A gate the cook skipped simply has no
-    row, which is the honest answer rather than an empty one.
+    source collider the edge came out of. Reading the answer off the cook's
+    output rather than re-deriving it is the whole point: a row that disagrees
+    with the pack is an invisible wall now that the open gates are baked too.
+    A gate with no row at all means no edge of it survived any region's
+    collision-bounds cull, which is the honest answer rather than an empty one.
     """
     owner = {gate['collider_source']: index for index, gate in enumerate(gates)}
     if len(owner) != len(gates):
@@ -167,8 +172,9 @@ def generate(gates, rows):
         '/// is waiting for a `BG OPEN` its arena has not sent yet.',
         f'pub const PLACEMENT_CLOSED:u16={mask(sum(1 << i for i, g in enumerate(gates) if g["solid_on_load"]))};',
         '/// The gates whose collider reached a room pack as terrain. `host/cook.py`',
-        '/// skips a gate the source has open on load, so opening one of the others',
-        '/// moves nothing and the runtime never has to look for its edges.',
+        '/// bakes every gate, so this is normally all of them; a gate outside every',
+        '/// region\'s collision bounds would be the one exception, and closing it',
+        '/// would move nothing because there is no edge of it anywhere to restore.',
         f'pub const COOKED:u16={mask(sum(1 << i for i in cooked))};',
         '/// Guest scene id and the gates a `Battle Scene` there broadcasts to. The',
         "/// source's BG CLOSE/BG OPEN reach every gate in the room, not only the two",
@@ -190,22 +196,31 @@ def main():
     gates = survey(Source(), report)
     rows = bind(gates, report)
     (ROOT / 'data/battle_gates.rs').write_text(generate(gates, rows))
+    # A gate with no row carries no terrain anywhere, so its arena cannot seal
+    # at that end. That is not a refusal, because it is a property of the source
+    # placement against the region bounds rather than of this join, but it is
+    # the one thing a reader of this table would otherwise have to derive.
+    bound = {index for _, index, _ in rows}
+    limitations = [
+        f'{gates[index]["scene_name"]} {gates[index]["name"]} has no cooked terrain in any'
+        ' region, so BG CLOSE cannot seal that end of its arena.'
+        for index in range(len(gates)) if index not in bound
+    ]
+    limitations.append(
+        'Gate animation, dust and slam audio are not reproduced; only the collider moves.')
     record = {
         'gates': gates,
         'bindings': [{'slot': slot, 'gate': index, 'name': gates[index]['name'],
                       'scene_name': gates[index]['scene_name'], 'edges': edges}
                      for slot, index, edges in rows],
-        'limitations': [
-            'A gate the source has open on load is not cooked as terrain, so it carries no'
-            ' binding and BG CLOSE cannot seal it. Three of Crossroads_10\'s five gates are'
-            ' in that state, including both arena ends.',
-            'Gate animation, dust and slam audio are not reproduced; only the collider moves.',
-        ],
+        'limitations': limitations,
     }
     (ROOT / '.hkpsx/battle-gates.json').write_text(json.dumps(record, indent=2) + '\n')
     cooked = {row['name'] for row in record['bindings']}
     print(f'{len(gates)} arena gates, {len(cooked)} cooked as terrain, '
           f'{len(rows)} region bindings: {sorted(cooked)}', flush=True)
+    for line in limitations:
+        print(f'  note: {line}', flush=True)
 
 
 if __name__ == '__main__':

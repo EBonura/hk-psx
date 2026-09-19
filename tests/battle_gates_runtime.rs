@@ -54,13 +54,24 @@ fn gates_of(slot: usize) -> Vec<u8> {
 fn scene_of(gate: u8) -> usize {
     SCENE_GATES.iter().find(|&&(_, mask)| mask & (1 << gate) != 0).expect("every gate has a scene").0 as usize
 }
+/// What a slot must exclude for a given closed mask: the edges of every gate
+/// the table binds there whose bit is clear, in the order `apply` appends them.
+/// Written out of the table rather than repeating `apply`'s arithmetic, so a
+/// test that passes says the two agree about which gate owns which edge.
+fn expected(slot: usize, closed: u16) -> Vec<u16> {
+    REGIONS.iter()
+        .filter(|&&(row, gate, _)| row as usize == slot && closed & (1 << gate) == 0)
+        .flat_map(|&(_, _, edges)| edges.iter().copied())
+        .collect()
+}
 
 fn main() {
     // The table itself, before anything runs against it.
     assert!(GATES <= 16, "the closed set is one u16");
-    assert_eq!(COOKED & !PLACEMENT_CLOSED, 0,
-               "the cook bakes a gate's collider only when the source loads it closed, so a gate \
-                with terrain that does not start closed means cook.py and this table disagree");
+    // There is deliberately no `COOKED & !PLACEMENT_CLOSED == 0` assertion here
+    // any more. `host/cook.py` bakes every gate, so most of COOKED is gates the
+    // source loads open, and those are precisely the edges a fresh session has
+    // to lift. The fresh-session block below is what replaced this check.
     let every_gate: u16 = if GATES == 16 { u16::MAX } else { (1 << GATES) - 1 };
     let mut seen = 0u16;
     for &(_, mask) in SCENE_GATES {
@@ -77,26 +88,41 @@ fn main() {
     }
     assert_eq!(bound, COOKED, "COOKED must be exactly the gates REGIONS binds");
 
-    // A fresh session is the cooked world unchanged. This is the assertion that
-    // matters most: three of these gates are the only terrain standing between
-    // two halves of a room, and a default that lifted one would open a route
-    // the source does not have.
+    // A fresh session is the cooked world with every gate the source loads open
+    // lifted out of it, and nothing else. This is the assertion that matters
+    // most, and since the recook it can go wrong in both directions. Lift too
+    // little and a gate the source has open from the first frame is an invisible
+    // wall no sprite explains, in five rooms, one of which is cut between its
+    // only two doors. Lift too much and one of the three gates that do load
+    // closed stops being terrain, opening a route the source does not have.
+    reset();
     for slot in bound_slots() {
-        assert!(excluded(slot).is_empty(), "slot {slot} lifts terrain before any arena is won");
+        assert_eq!(excluded(slot), expected(slot, PLACEMENT_CLOSED),
+                   "slot {slot} on load");
     }
 
     // One scene at a time, because the source broadcast is per room: winning
-    // Crossroads_10 must not open a gate in Crossroads_04.
+    // Crossroads_10 must not open a gate in Crossroads_04, and must not shut one
+    // either. Every other scene's gates stay at their placement state, so the
+    // slots outside this room keep lifting whatever they lifted on load.
     for &(scene, mask) in SCENE_GATES {
         reset();
         arena_entry(scene as usize, true);
         assert_eq!(unsafe { HK_ARENA_GATES } as u16, PLACEMENT_CLOSED & !mask);
         for slot in bound_slots() {
-            let owned: Vec<u16> = REGIONS.iter()
-                .filter(|&&(row, gate, _)| row as usize == slot && mask & (1 << gate) != 0)
-                .flat_map(|&(_, _, edges)| edges.iter().copied()).collect();
-            assert_eq!(excluded(slot), owned, "slot {slot} after scene {scene} was won");
+            assert_eq!(excluded(slot), expected(slot, PLACEMENT_CLOSED & !mask),
+                       "slot {slot} after scene {scene} was won");
         }
+    }
+
+    // The direction the whole recook was for: the arena's `BG CLOSE` has to put
+    // terrain back, not merely leave it alone. A gate that loads open is lifted
+    // on the first frame and must stop being lifted once the trigger fires, or
+    // the arena has no ends.
+    reset();
+    for &(scene, _) in SCENE_GATES { close(scene as usize); }
+    for slot in bound_slots() {
+        assert!(excluded(slot).is_empty(), "slot {slot} still lifts terrain after BG CLOSE");
     }
 
     // The fight itself: the trigger shuts every gate in the room, the win opens

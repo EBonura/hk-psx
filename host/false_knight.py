@@ -395,10 +395,10 @@ def recognize(sc, room):
             " Crossroads_10's own art, so the clip set is admitted against room bytes rather than"
             ' palettes or animation slots. The per-clip figures are in the animation block and the'
             ' per-view measurement is in docs/FALSE_KNIGHT.md.',
-            'BG OPEN and BG QUICK OPEN lift the two gates the source loads closed, through'
-            " host/battle_gates.py's per-view edge binding. The other three are open on the"
-            ' first frame, so host/cook.py bakes no terrain for them and BG CLOSE has nothing'
-            ' to seal: the arena still does not close at its ends.',
+            'BG CLOSE, BG OPEN and BG QUICK OPEN move all five gates, through'
+            " host/battle_gates.py's per-view edge binding. host/cook.py bakes every gate as"
+            ' terrain and the runtime lifts the three the source loads open, so closing them'
+            ' is a restore rather than a placement and the arena seals at its ends.',
             'The sim reproduces FalseyControl at 60 Hz; the source shapes rising and falling speed'
             ' per 50 Hz FixedUpdate, so airtime differs slightly.',
             'The `Esc` branch is unreachable in the Crossroads arena: nothing there sets `Hero Escaped`.',

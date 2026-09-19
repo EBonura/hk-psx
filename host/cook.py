@@ -639,21 +639,26 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # under shifted ids, so `level46:100154` names nothing while `level48:154`
     # is the object. The cook built edge sources the second way and the flat
     # support pass could not open them.
-    # An arena gate serializes closed whatever state it loads in, because
-    # BG Control's start state is what opens it: `Opened` tests `Start Closed`
-    # and sets the collider inactive. Baking the serialized collider made twelve
-    # gates solid terrain that the source has open from the first frame, and
-    # since none of them cooks a sprite they were invisible walls. Every one
-    # measures 4.16 units tall against a jump apex of 2.87, and Crossroads_04's
-    # is 12.66, so none could be cleared: Crossroads_09 was impassable between
-    # its only two doors and Crossroads_08 was cut into three columns.
-    from breakables import battle_gates
-    open_gates={gate['collider_source'] for gate in battle_gates(sc,errors=[])
-                if not gate['solid_on_load']}
+    # Every arena gate is baked, including the twelve the source has open from
+    # the first frame. A gate serializes closed whatever state it loads in,
+    # because BG Control's start state is what opens it: `Opened` tests
+    # `Start Closed` and sets the collider inactive. Baking only the gates that
+    # load closed left the other twelve carrying no terrain at all, so the
+    # `BG CLOSE` an arena broadcasts had no edge to restore and the arena never
+    # sealed at its ends. `game/src/battle_gates.rs` instead excludes the edges
+    # of every gate that is currently open, starting from the ones that are open
+    # on load, the way `great_door.rs` excludes the door's once it is broken
+    # through; `host/battle_gates.py` is the join that names those edges per
+    # cooked region. That inverts the failure mode: a lost binding is a gate
+    # that never opens, which is visible, rather than one that never closes.
+    # What the exclusion is holding back, if it is ever lost: none of these
+    # gates cooks a sprite, so each is an invisible wall, and every one measures
+    # 4.16 units tall against a jump apex of 2.87, with Crossroads_04's at
+    # 12.66. Crossroads_09 would be impassable between its only two doors and
+    # Crossroads_08 cut into three columns.
     for i,(typ,t) in sc.objects.items():
         if typ not in ('EdgeCollider2D','BoxCollider2D','PolygonCollider2D'):continue
         gid=t['m_GameObject']['m_PathID']
-        if sc.sid(i) in open_gates:continue
         if not sc.active(gid) or not t['m_Enabled'] or t['m_IsTrigger'] or sc.gos[gid]['m_Layer']!=8:continue
         off=t['m_Offset'];paths=[]
         if typ=='BoxCollider2D':

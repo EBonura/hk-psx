@@ -4,29 +4,36 @@
 //! observable behaviour is one boolean: `Opened` tests `Start Closed`, and a
 //! gate that carries it turns its box back on in `Quick Close` and then waits
 //! for the `BG OPEN` its `Battle Scene` sends when the arena is won.
-//! `host/cook.py` bakes exactly those gates into the room packs and skips the
-//! rest, because a gate the source has open from the first frame would be an
-//! invisible wall. So this module never has to place a gate: it only has to
-//! take one away, which is the same exclusion `great_door.rs` uses for the door
-//! it breaks through, and `host/battle_gates.py` is the cooked join.
+//! `host/cook.py` bakes every gate into the room packs, whichever way that test
+//! goes, so this module never has to place a gate: it only has to take one
+//! away, which is the same exclusion `great_door.rs` uses for the door it
+//! breaks through, and `host/battle_gates.py` is the cooked join.
+//!
+//! That is why the initial exclusion set is not empty. `CLOSED` starts at
+//! `PLACEMENT_CLOSED`, so the first `apply` lifts `!PLACEMENT_CLOSED & COOKED`:
+//! every gate the source has open from the first frame, twelve of the fifteen.
+//! Each of those is terrain in the pack and an invisible wall without the
+//! exclusion, so this is the load-bearing line in the file. It also buys the
+//! thing the old shape could not do: because the open gates are terrain, a
+//! `BG CLOSE` can put them back and an arena can seal at its ends.
 //!
 //! The state is a `static mut` rather than a field of `frame::Game` because the
 //! arena that drives it rides on the boss actor, several layers inside
 //! `enemies.rs`, and threading a world down there would have cost more call
 //! sites than the whole feature is worth.
-//!
-//! What this cannot do is seal an arena. Three of Crossroads_10's five gates,
-//! including both arena ends, are open on load and therefore carry no terrain
-//! at all, so `BG CLOSE` has nothing to restore. Closing them needs the cook to
-//! bake every gate and this table to carry the open ones too, which is a
-//! whole-world recook: see host/battle_gates.py.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/battle_gates.rs"));
 
 const _: () = assert!(GATES <= 16, "the closed set is one u16");
-const _: () = assert!(COOKED & !PLACEMENT_CLOSED == 0, "the cook bakes only gates that load closed");
+// There is deliberately no `COOKED & !PLACEMENT_CLOSED == 0` here any more.
+// That assertion encoded the cook baking only the gates that load closed, and
+// inverting it would be worse than useless: a gate legitimately carries no row
+// when no edge of it survives a region's collision-bounds cull, and asserting
+// otherwise would fail a whole-world recook over a gate that moves nothing.
+// `host/battle_gates.py` reports those gates by name instead.
 
 /// Bit per gate, set while the gate's collider is solid. Starts at the state
-/// `BG Control`'s own start state leaves each gate in.
+/// `BG Control`'s own start state leaves each gate in, which for twelve of the
+/// fifteen is open, so `apply` has edges to lift from the first frame.
 static mut CLOSED: u16 = PLACEMENT_CLOSED;
 
 /// The gates standing right now, as the bit mask above. Without this "the arena
@@ -60,9 +67,10 @@ pub fn arena_entry(scene: usize, activated: bool) {
     if activated { open(scene); } else { publish(); }
 }
 /// `BG CLOSE`, broadcast to every gate in the room when the hero crosses the
-/// trigger. A gate the cook left out of the terrain is still counted as closed,
-/// because the arena's own state is what the counter reports; `COOKED` is what
-/// says whether closing it moved anything.
+/// trigger. This is the direction that seals an arena: the gate's edges are in
+/// the pack, `apply` was lifting them, and clearing the bit stops. A gate with
+/// no row in `COOKED` is still counted as closed, because the arena's own state
+/// is what the counter reports; `COOKED` is what says whether it moved terrain.
 pub fn close(scene: usize) {
     unsafe {
         CLOSED |= scene_mask(scene);
@@ -91,9 +99,11 @@ pub fn reset() {
 /// Drop the edges of every open gate from this view's terrain, after the
 /// Lifeblood refresh and beside the Great Door's own exclusions.
 ///
-/// Called once per region activation and once per drawn frame, so the first
-/// thing it does is the cheapest test there is: until an arena is won, every
-/// gate the cook baked is standing and the room's terrain is the pack's.
+/// Called once per region activation and once per drawn frame. The early test
+/// is still the cheapest one there is, but it no longer means "nothing to do
+/// until an arena is won": twelve of the fifteen gates load open, so in the
+/// five rooms that have gates this does its work from the first frame, and
+/// only a room without any is free. A `BG CLOSE` is what makes it stop.
 pub fn apply(state: &mut crate::world::State, region: usize) {
     let lifted = unsafe { !CLOSED } & COOKED;
     if lifted == 0 { return; }
