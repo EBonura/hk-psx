@@ -123,14 +123,8 @@ def _variable_mentions(fsm):
     return counts
 
 def _variables(fsm):
-    out = {}
-    for group in fsm['variables'].values():
-        if not isinstance(group, list):
-            continue
-        for v in group:
-            if isinstance(v, dict) and 'name' in v:
-                out.setdefault(v['name'], len(out))
-    return out
+    """Variable name to slot index, in declaration order."""
+    return {name: i for i, name in enumerate(_variable_values(fsm))}
 
 def compile_fsm(fsm, owner_id=None):
     """One FSM definition to (states, transitions, ops, constants, events).

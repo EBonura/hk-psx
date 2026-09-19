@@ -11,11 +11,10 @@ catalogued with their gates, since neither is reachable in the admitted scenes.
 No retail payload is embedded; the report goes to .hkpsx.
 """
 from superdash import _fsm
-from focus import action_fields
+from focus import action_fields, fsm_variables
 
 def _variables(fsm):
-    return {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
-            for v in group if isinstance(v, dict) and 'name' in v and 'value' in v}
+    return fsm_variables(fsm)
 
 def _reader(fsm):
     states = {s['name']: s for s in fsm['states']}

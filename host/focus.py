@@ -7,6 +7,25 @@ import hashlib,json,struct
 from combat import ticks
 FOCUS_CLIPS=('Focus','Focus Get','Focus End','Focus Get Once')
 
+def fsm_variables(fsm):
+    """An FSM's declared variables as name to serialized value.
+
+    PlayMaker lets two variables share a name, and `Spell Control` actually does
+    (`Can Cancel` and `Is In Dream Focus` are each declared twice). A dict keyed
+    by name silently keeps one of them, which is a wrong answer rather than a
+    refusal, so a duplicate whose values disagree raises instead.
+    """
+    out={}
+    for group in fsm['variables'].values():
+        if not isinstance(group,list):continue
+        for v in group:
+            if not isinstance(v,dict) or 'name' not in v:continue
+            name=v['name'];value=v.get('value')
+            if name in out and out[name]!=value:
+                raise ValueError(f'FSM {fsm.get("name")!r} declares {name!r} twice with different values')
+            out[name]=value
+    return out
+
 def action_fields(data,index,objects=False):
     """Read compact scalar fields used by this observed PlayMaker version."""
     start=data['actionStartIndex'][index]
@@ -46,8 +65,7 @@ def source_focus_values(source,hero_constants=None):
     candidates=[(o,source.read(o)['fsm']) for o in fsms]
     fsm_o,fsm=next((o,f) for o,f in candidates if f['name']=='Spell Control')
     states={s['name']:s for s in fsm['states']}
-    variables={v['name']:v['value'] for group in fsm['variables'].values() if isinstance(group,list)
-               for v in group if isinstance(v,dict) and 'name'in v and 'value'in v}
+    variables=fsm_variables(fsm)
     def actions(state,kind):
         d=states[state]['actionData']
         return [action_fields(d,i) for i,n in enumerate(d['actionNames'])
