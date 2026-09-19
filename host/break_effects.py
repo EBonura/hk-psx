@@ -15,6 +15,10 @@ from materials import quantize_alpha_coverage
 from geo import place_rectangles
 VRAM_RECTS=((352,176,32,64),(360,32,24,32),(352,64,32,32))
 ALPHAS=(43,85,128)
+# Texture-sheet rows a random-row emitter may draw from. The catalogue's
+# measured values are 3, 4 and 6; the bound exists so a malformed sheet cannot
+# turn into hundreds of art cells, not because the guest counts rows.
+MAX_SHEET_ROWS=8
 
 def q(v):
     if not math.isfinite(v) or abs(v)>=32768:raise ValueError('break effect fixed point range')
@@ -62,13 +66,20 @@ def style(ps,gravity,scale=1.0):
     im=ps['InitialModule'];shape=ps['ShapeModule'];uv=ps['UVModule'];em=ps['EmissionModule']
     enabled={k for k,v in ps.items()if k.endswith('Module')and isinstance(v,dict)and v.get('enabled')}
     supported={'InitialModule','ShapeModule','EmissionModule','SizeModule','RotationModule','ColorModule','UVModule','VelocityModule','ForceModule','ClampVelocityModule','RotationBySpeedModule','CollisionModule'}
+    # An enabled SubModule whose every entry has a null emitter reference spawns
+    # nothing in Unity, so it is not a reason to refuse the parent emitter.
+    if 'SubModule' in enabled and all(not e['emitter']['m_PathID'] for e in ps['SubModule']['subEmitters']):
+        enabled.discard('SubModule')
     if enabled-supported:raise ValueError('unsupported particle modules: '+str(enabled-supported))
     if not ps['playOnAwake'] or ps['looping']or ps['scalingMode']not in(0,2) or ps['moveWithTransform']not in(0,1):raise ValueError('particle simulation space')
     if im['size3D']or im['rotation3D']or im['gravitySource']!=0 or em['m_BurstCount']or values(em['rateOverDistance'])!=[0,0]:raise ValueError('particle emission mode')
     if shape['type']not in(5,10)or not shape['enabled']:raise ValueError('particle shape')
     if any(shape['m_Position'][k]or shape['m_Rotation'][k]for k in 'xyz'):raise ValueError('particle shape transform')
     if shape['randomDirectionAmount']or shape['sphericalDirectionAmount']or shape['randomPositionAmount']or shape['radius']['mode']or shape['arc']['mode']:raise ValueError('particle shape random mode')
-    if uv['enabled']and(uv['tilesX']!=1 or uv['animationType']!=1 or uv['rowMode']!=1 or uv['tilesY']not in(3,4)):raise ValueError('particle random row')
+    # One column, whole-sheet animation, random row: each particle draws one row
+    # for its life. The row count is not a property the guest cares about, only
+    # the art it produces, which art_bank measures against the VRAM reservation.
+    if uv['enabled']and(uv['tilesX']!=1 or uv['animationType']!=1 or uv['rowMode']!=1 or not 1<=uv['tilesY']<=MAX_SHEET_ROWS):raise ValueError('particle random row')
     start=im['startColor']
     if start['minMaxState']!=0:raise ValueError('particle start color mode')
     color=[round(start['maxColor'][k]*128)for k in 'rgb'];initial_alpha=start['maxColor']['a']
@@ -114,40 +125,67 @@ def style(ps,gravity,scale=1.0):
     if not 0<count<=128 or max(fields['life'])>65535:raise ValueError('particle source capacity')
     return fields
 
+def scene_gravity(source):
+    physics=next(o for o in source.file('globalgamemanagers').objects.values()if o.type.name=='PhysicsManager')
+    return source.read(physics)['m_Gravity']['y']
+
+def part_emitter(source,sc,part_gid,gravity):
+    """One debrisPart's emitter, or None when the part is not a particle system.
+
+    The single place a Breakable debris emitter is validated, so the destruction
+    contract in breakables.py and the art cook here refuse exactly the same set.
+    Raises ValueError with the source reason when the part is an emitter the
+    bounded particle model cannot reproduce.
+    """
+    cs={}
+    for ref in sc.gos[part_gid]['m_Component']:
+        o=source.ref(sc.file,ref['component']);cs[source.typename(o)]=(o,source.read(o))
+    if 'ParticleSystem' not in cs:return None
+    po,ps=cs['ParticleSystem'];ro,renderer=cs['ParticleSystemRenderer']
+    mo=source.ref(sc.file,renderer['m_Materials'][0]);mat=source.read(mo)
+    so=source.ref(mo.assets_file,mat['m_Shader']);shader=source.read(so)['m_ParsedForm']['m_Name']
+    if shader not in('Sprites/Lit','Sprites/Default') or renderer['m_RenderMode']or renderer['m_RenderAlignment']:
+        raise ValueError(f"particle renderer material {shader} mode {renderer['m_RenderMode']}/{renderer['m_RenderAlignment']}")
+    tint=dict(mat['m_SavedProperties']['m_Colors'])['_Color']
+    if any(not 0<=tint[c]<=1 for c in 'rgba'):raise ValueError('particle material tint')
+    texture=source.ref(mo.assets_file,dict(mat['m_SavedProperties']['m_TexEnvs'])['_MainTex']['m_Texture']);sid=source.sid(texture)
+    matrix=sc.world(sc.go_transform[part_gid]);scale=particle_scale(ps,matrix)
+    st=style(ps,gravity,scale);st['texture']=sid
+    st['color']=[round(v*tint[c])for v,c in zip(st['color'],'rgb')]
+    for sample in st['samples']:sample['alpha']=[round(v*tint['a'])for v in sample['alpha']]
+    return {'style':st,'system':po,'texture':texture,'texture_id':sid,'matrix':matrix,
+            'shader':shader,'scaling_mode':ps['scalingMode'],'world_parameter_scale':scale,
+            'ps_sha256':hashlib.sha256(json.dumps(ps,sort_keys=True).encode()).hexdigest()}
+
 def collect(source=None,metadata=None):
+    from breakables import rigid_fragment
     source=source or Source();metadata=metadata or json.loads((ROOT/'data/regions.json').read_text())
-    physics=next(o for o in source.file('globalgamemanagers').objects.values()if o.type.name=='PhysicsManager');gravity=source.read(physics)['m_Gravity']['y']
+    gravity=scene_gravity(source)
     wanted={r['source'] for region in metadata['regions']for r in region['breakables']};styles=[];emitters=[];textures={};ignored=[];source_records=[]
     for desc in metadata['scenes']:
         sc=Scene(source,desc['file'])
-        for b in breakable_sources(sc):
+        for b in breakable_sources(sc,contract=False):
             if b['source']not in wanted:continue
             for part in b['debris']:
-                gid=int(part['game_object'].split(':')[1]);cs={}
-                for ref in sc.gos[gid]['m_Component']:
-                    o=source.ref(sc.file,ref['component']);cs[source.typename(o)]=(o,source.read(o))
-                if 'ParticleSystem'not in cs:
-                    ignored.append({'owner':b['source'],'part':part['game_object'],'reason':'existing rigid fragment'if 'SpinSelf'in cs else'unhandled nonparticle part'});continue
-                po,ps=cs['ParticleSystem'];ro,renderer=cs['ParticleSystemRenderer'];mo=source.ref(sc.file,renderer['m_Materials'][0]);mat=source.read(mo)
-                so=source.ref(mo.assets_file,mat['m_Shader']);shader=source.read(so)['m_ParsedForm']['m_Name']
+                gid=int(part['game_object'].split(':')[1])
                 try:
-                    if shader not in('Sprites/Lit','Sprites/Default') or renderer['m_RenderMode']or renderer['m_RenderAlignment']:raise ValueError('particle renderer material')
-                    tint=dict(mat['m_SavedProperties']['m_Colors'])['_Color']
-                    if any(not 0<=tint[c]<=1 for c in 'rgba'):raise ValueError('particle material tint')
-                    texture=source.ref(mo.assets_file,dict(mat['m_SavedProperties']['m_TexEnvs'])['_MainTex']['m_Texture']);sid=source.sid(texture)
-                    matrix=sc.world(sc.go_transform[gid]);scale=particle_scale(ps,matrix)
-                    st=style(ps,gravity,scale);st['texture']=sid
+                    found=part_emitter(source,sc,gid,gravity)
                 except ValueError as error:
                     # An emitter the bounded particle model cannot reproduce is an
                     # explicit omission for its breakable, not a whole-world failure.
                     ignored.append({'owner':b['source'],'part':part['game_object'],'reason':'unsupported particle style: '+str(error)});continue
-                st['color']=[round(v*tint[c])for v,c in zip(st['color'],'rgb')]
-                for sample in st['samples']:sample['alpha']=[round(v*tint['a'])for v in sample['alpha']]
+                if found is None:
+                    try:rigid=rigid_fragment(sc,gid)
+                    except ValueError as error:rigid=None;reason='unhandled rigid fragment: '+str(error)
+                    else:reason='rigid fragment' if rigid else 'unhandled nonparticle part'
+                    ignored.append({'owner':b['source'],'part':part['game_object'],'reason':reason});continue
+                st=found['style'];matrix=found['matrix']
                 if st not in styles:styles.append(st)
-                emitters.append({'scene':desc['scene_id'],'owner':desc['scene_id']*128+b['state_index'],'source':po.path_id,'style':styles.index(st),
+                emitters.append({'scene':desc['scene_id'],'owner':desc['scene_id']*128+b['state_index'],'source':found['system'].path_id,'style':styles.index(st),
                     'angle_offset':q(b['angle_offset']),'origin':[q(matrix[i][3])for i in range(3)],'basis':[[q(matrix[i][j])for j in range(3)]for i in range(3)]})
-                textures[sid]=texture
-                source_records.append({'owner':b['source'],'name':b['name'],'part':part['game_object'],'system':source.sid(po),'texture':sid,'shader':shader,'scaling_mode':ps['scalingMode'],'world_parameter_scale':scale,'ps_sha256':hashlib.sha256(json.dumps(ps,sort_keys=True).encode()).hexdigest()})
+                textures[found['texture_id']]=found['texture']
+                source_records.append({'owner':b['source'],'name':b['name'],'part':part['game_object'],'system':source.sid(found['system']),'texture':found['texture_id'],
+                    'shader':found['shader'],'scaling_mode':found['scaling_mode'],'world_parameter_scale':found['world_parameter_scale'],'ps_sha256':found['ps_sha256']})
     if len(styles)>253:raise ValueError('particle style IDs')
     return source,styles,emitters,textures,source_records,ignored
 
@@ -303,27 +341,41 @@ def generate(curves,manifest):
     out.append('pub static PARTICLE_TRACKS:&[[[u32;2];33]]=&[];')
     return '\n'.join(out)+'\n'
 
+def style_art_cost(style):
+    """Texels one style's cells occupy, the quantity the VRAM reservation bounds."""
+    from cook import FOCAL,CAM_Z
+    target=math.ceil(max(max(style['size']),1)/65536*FOCAL/-CAM_Z)
+    return style['cells']*target*target
+
 def scene_art(scene,styles,emitters,textures,ignored):
     """One scene's trimmed styles, emitters and art bank inside the fixed VRAM reservation.
 
-    Emitters of a scene whose art cannot fit are recorded as omissions for that
-    scene alone; other scenes keep their own sheets.
+    When the bank overflows, drop the costliest style rather than the scene.
+    Losing one emitter family is a recorded omission for the breakables that
+    owned it; losing the scene silently took every other family down with it.
     """
     emitters=[e for e in emitters if e['scene']==scene]
     used={e['style'] for e in emitters};kept=[i for i in range(len(styles)) if i in used]
-    remap={old:new for new,old in enumerate(kept)};trimmed=[styles[i] for i in kept]
-    trimmed_emitters=[dict(e,style=remap[e['style']]) for e in emitters]
-    trimmed_textures={s['texture']:textures[s['texture']] for s in trimmed}
-    if not trimmed_emitters:
-        return {'styles':[],'emitters':[],'uploads':[],'art':[],'frames':{}},b''
-    try:
-        blob,uploads,art,frames,sheet=art_bank(trimmed,trimmed_textures)
-    except ValueError as error:
-        if 'VRAM' not in str(error):raise
-        for e in trimmed_emitters:
-            ignored.append({'owner':e['owner'],'part':e['source'],'reason':f'particle art VRAM budget: scene {scene} omitted ({error})'})
-        return {'styles':[],'emitters':[],'uploads':[],'art':[],'frames':{}},b''
-    return {'styles':trimmed,'emitters':trimmed_emitters,'uploads':uploads,'art':art,'frames':frames,'sheet':sheet},bytes(blob)
+    empty={'styles':[],'emitters':[],'uploads':[],'art':[],'frames':{}}
+    while kept:
+        remap={old:new for new,old in enumerate(kept)};trimmed=[styles[i] for i in kept]
+        trimmed_emitters=[dict(e,style=remap[e['style']]) for e in emitters if e['style'] in remap]
+        trimmed_textures={s['texture']:textures[s['texture']] for s in trimmed}
+        if not trimmed_emitters:
+            return empty,b''
+        try:
+            blob,uploads,art,frames,sheet=art_bank(trimmed,trimmed_textures)
+        except ValueError as error:
+            if 'VRAM' not in str(error):raise
+            dropped=max(kept,key=lambda i:(style_art_cost(styles[i]),i))
+            for e in emitters:
+                if e['style']==dropped:
+                    ignored.append({'owner':e['owner'],'part':e['source'],
+                        'reason':f'particle art VRAM budget: style {dropped} dropped from scene {scene} ({error})'})
+            kept=[i for i in kept if i!=dropped]
+            continue
+        return {'styles':trimmed,'emitters':trimmed_emitters,'uploads':uploads,'art':art,'frames':frames,'sheet':sheet},bytes(blob)
+    return empty,b''
 
 def cook():
     from scene_bank import compressed,fnv

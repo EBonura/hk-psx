@@ -2,8 +2,13 @@
 
 Breakable.Hit calls Break on the first valid hit, with no health counter.
 Break toggles authored whole/remnant objects, disables colliders and sets its
-isBroken flag. PersistentBoolItem callbacks expose that flag. Effects, debris,
-audio and forwarded FSM events are recorded separately rather than fabricated.
+isBroken flag. PersistentBoolItem callbacks expose that flag.
+
+Breakable.Break is one behaviour for the whole catalogue; what differs between
+instances is the destruction output the scene hangs off it. So a family here is
+the shape of that output, read from the instance's own serialized fields and
+components. Nothing is keyed on a scene or object name: the same barrel appears
+under a dozen names and the same name appears with different parts.
 """
 import math
 import struct
@@ -11,6 +16,23 @@ from pathlib import Path
 
 MAX_SCENE_BREAKABLES = 128
 MAX_HIT_POINTS = 16
+
+# The outputs Breakable.Break produces, each traced to the source member that
+# authors it. An instance's contract is the subset it actually authors.
+OUTPUT_VISUAL = 'visual'        # SetStaticPartsActivation: wholeParts off, remnantParts on
+OUTPUT_COLLIDER = 'collider'    # Break disables the body collider and whole colliders
+OUTPUT_AUDIO = 'audio'          # breakAudioEvent / breakAudioClipTable
+OUTPUT_PARTICLES = 'particles'  # debrisParts carrying a ParticleSystem
+OUTPUT_FRAGMENTS = 'fragments'  # debrisParts flung as rigid bodies at flingSpeed
+OUTPUT_MASK = 'mask'            # hitEventReciever forwarding HIT to a mask fade
+OUTPUTS = (OUTPUT_VISUAL, OUTPUT_COLLIDER, OUTPUT_AUDIO, OUTPUT_PARTICLES,
+           OUTPUT_FRAGMENTS, OUTPUT_MASK)
+
+# The one break sample resident in the SPU bank below 0x14000 (data/sfx.rs
+# entry 0). The other four clips the catalogue's tables name need 50,864 bytes
+# against 14,432 free there, measured from their serialized lengths, so an
+# instance that wants one of them has no reproducible break sound today.
+RESIDENT_BREAK_CLIPS = ('breakable_wall_hit_1',)
 
 
 def _local_id(ref):
@@ -64,7 +86,22 @@ def collider_polygons(sc, gid, typ, tree):
     return result
 
 
+def _clip(source, file, ref, weight):
+    clip = source.ref(file, ref)
+    data = source.read(clip)
+    return {'source': source.sid(clip), 'weight': weight, 'name': data['m_Name'],
+            'channels': data['m_Channels'], 'frequency': data['m_Frequency'],
+            'seconds': data['m_Length'], 'compression_format': data['m_CompressionFormat'],
+            'resource': data['m_Resource']}
+
+
 def _audio(sc, tree):
+    """Both source break-sound paths, not only the weighted table.
+
+    Breakable.Break plays breakAudioClipTable when one is assigned and
+    breakAudioEvent otherwise. Reading only the table left 18 catalogue
+    instances looking silent when the scene actually authors a single clip.
+    """
     source = sc.source
     out = {'event': tree['breakAudioEvent'], 'table_id': None, 'options': []}
     table_ref = tree['breakAudioClipTable']
@@ -73,15 +110,69 @@ def _audio(sc, tree):
         table = source.read(obj)
         out.update(table_id=source.sid(obj), pitch_min=table['pitchMin'], pitch_max=table['pitchMax'])
         for option in table['options']:
-            if not option['Clip']['m_PathID']:
-                continue
-            clip = source.ref(obj.assets_file, option['Clip'])
-            data = source.read(clip)
-            out['options'].append({'source': source.sid(clip), 'weight': option['Weight'],
-                'name': data['m_Name'], 'channels': data['m_Channels'], 'frequency': data['m_Frequency'],
-                'seconds': data['m_Length'], 'compression_format': data['m_CompressionFormat'],
-                'resource': data['m_Resource']})
+            if option['Clip']['m_PathID']:
+                out['options'].append(_clip(source, obj.assets_file, option['Clip'], option['Weight']))
+    elif tree['breakAudioEvent']['Clip']['m_PathID']:
+        event = tree['breakAudioEvent']
+        out.update(event_clip=True, pitch_min=event['PitchMin'], pitch_max=event['PitchMax'])
+        out['options'].append(_clip(source, sc.file, event['Clip'], 1.0))
     return out
+
+
+# Serialized rigid-fling variants, measured across every debrisPart of every
+# Breakable in the 45 admitted scenes (355 parts under 193 owners). Listing the
+# observed values rather than pinning one keeps the definition shared without
+# admitting a body the debris solver has never been shown.
+RIGID_BODIES = ((0, 1.0, 0.05, 1.0, 0), (0, 1.0, 0.05, 0.9, 0), (0, 1.0, 3.0, 1.0, 0))
+RIGID_BOUNCE_FACTORS = (0.1, 0.4, 0.5)
+# SpinSelf turns with the fragment's own speed; SpinSelfSimple turns at a fixed
+# rate. A part with neither keeps the launch rotation.
+SPIN_COMPONENTS = ('SpinSelf', 'SpinSelfSimple')
+
+
+def _close(value, expected, tolerance=1e-5):
+    return abs(value - expected) <= tolerance
+
+
+def rigid_fragment(sc, part_gid):
+    """The shared rigid-fling definition, or a reason this part is not one.
+
+    Reproduces Breakable.Break's FlingObject path: the part is detached, given a
+    speed inside flingSpeedMin..Max at angleOffset, and left to ObjectBounce.
+    Returns None when the part is not a rigid fling at all (a particle emitter,
+    say); raises ValueError when it is one the solver has not been shown.
+    """
+    components = {typ: (index, data) for index, typ, data in _components(sc, part_gid)}
+    if 'Rigidbody2D' not in components or 'SpriteRenderer' not in components:
+        return None
+    colliders = [typ for typ in components if typ.endswith('Collider2D')]
+    spins = [name for name in SPIN_COMPONENTS if name in components]
+    if len(colliders) != 1:
+        raise ValueError(f'rigid fragment needs exactly one collider, has {len(colliders)}')
+    if len(spins) > 1:
+        raise ValueError('rigid fragment carries two spin behaviours')
+    if 'ObjectBounce' not in components:
+        raise ValueError('rigid fragment has no ObjectBounce landing behaviour')
+    body = components['Rigidbody2D'][1]
+    fields = (body['m_BodyType'], body['m_Mass'], round(body['m_AngularDamping'], 4),
+              round(body['m_GravityScale'], 4), body['m_Constraints'])
+    if body['m_UseAutoMass'] or body['m_LinearDamping']:
+        raise ValueError('rigid fragment uses auto mass or linear damping')
+    if not any(all(_close(a, b) for a, b in zip(fields, variant)) for variant in RIGID_BODIES):
+        raise ValueError(f'unmeasured rigid fragment body {fields}')
+    bounce = components['ObjectBounce'][1]
+    if not any(_close(bounce['bounceFactor'], v) for v in RIGID_BOUNCE_FACTORS):
+        raise ValueError(f"unmeasured fragment bounce factor {bounce['bounceFactor']}")
+    if bounce['speedThreshold'] != 1 or any(bounce[k] for k in ('playSound', 'playAnimationOnBounce', 'sendFSMEvent')):
+        raise ValueError('fragment bounce drives sound, animation or an FSM event')
+    spin = components[spins[0]][1] if spins else None
+    if spins and spins[0] == 'SpinSelfSimple' and (spin['randomStartRotation'] or spin['waitForCall']):
+        raise ValueError('SpinSelfSimple fragment waits for a call or randomizes its start')
+    return {'game_object': f'{Path(sc.file.name).name}:{part_gid}',
+            'renderer': components['SpriteRenderer'][0], 'collider_type': colliders[0],
+            'spin': spins[0] if spins else None,
+            'spin_factor': spin['spinFactor'] if spin else 0.0,
+            'bounce_factor': bounce['bounceFactor'], 'body': list(fields)}
 
 
 def _literal_action(data, name, kind, size):
@@ -157,7 +248,84 @@ def mask_fades(sc, receiver_gid):
     return fades, errors
 
 
-def breakable_sources(sc, bounds=None, errors=None):
+# Authored outputs whose absence refuses the instance outright.
+#
+# Enforcing an output means an instance that authors it and cannot get it stops
+# being a breakable: it keeps its collider and its whole art and reads as
+# ordinary scenery, which is honest, where a silent break reads as a bug.
+#
+# Two authored outputs are measured per instance and reported but not enforced,
+# because enforcing either is a budget decision rather than a cook decision:
+#
+#   OUTPUT_AUDIO      164 of 338 catalogue instances name one of four clips that
+#                     are not resident. Their serialized lengths need 50,864 SPU
+#                     bytes against the 14,432 free below the 0x14000 bank limit
+#                     in host/cook_audio.py, so no cook can satisfy them.
+#   OUTPUT_FRAGMENTS  193 instances fling 355 rigid parts; only Tutorial_01's 28
+#                     are cooked. The definition below recognizes all 355, but
+#                     every Spec links, so admitting them is a measured cost
+#                     against the linked headroom rather than a free win.
+ENFORCED_OUTPUTS = (OUTPUT_VISUAL, OUTPUT_PARTICLES, OUTPUT_MASK)
+
+
+def destruction_contract(sc, record, gravity=None):
+    """The outputs this instance authors, and which of them the port produces.
+
+    Reads the instance's own parts, so the same definition answers a Tutorial
+    door and a Crossroads barrel. `gravity` is only needed to evaluate particle
+    emitters; omit it to report the authored shape without the port's verdict.
+    """
+    from break_effects import part_emitter, scene_gravity
+    if gravity is None:
+        gravity = scene_gravity(sc.source)
+    authored, missing = [], []
+    if record['off_renderer_ids'] or record['on_renderer_ids']:
+        authored.append(OUTPUT_VISUAL)
+    authored.append(OUTPUT_COLLIDER)
+    clips = [option['name'] for option in record['audio']['options']]
+    if clips:
+        authored.append(OUTPUT_AUDIO)
+        absent = sorted({name for name in clips if name not in RESIDENT_BREAK_CLIPS})
+        if absent:
+            missing.append({'output': OUTPUT_AUDIO, 'reason': 'break clip not resident: ' + ', '.join(absent)})
+    emitters, fragments = [], []
+    for part in record['debris']:
+        part_gid = int(part['game_object'].split(':')[1])
+        try:
+            found = part_emitter(sc.source, sc, part_gid, gravity)
+        except ValueError as error:
+            authored.append(OUTPUT_PARTICLES)
+            missing.append({'output': OUTPUT_PARTICLES, 'part': part['game_object'], 'reason': str(error)})
+            continue
+        if found is not None:
+            authored.append(OUTPUT_PARTICLES)
+            emitters.append(part['game_object'])
+            continue
+        try:
+            rigid = rigid_fragment(sc, part_gid)
+        except ValueError as error:
+            authored.append(OUTPUT_FRAGMENTS)
+            missing.append({'output': OUTPUT_FRAGMENTS, 'part': part['game_object'], 'reason': str(error)})
+            continue
+        if rigid is not None:
+            authored.append(OUTPUT_FRAGMENTS)
+            fragments.append(rigid)
+        else:
+            missing.append({'output': OUTPUT_PARTICLES, 'part': part['game_object'],
+                            'reason': 'debris part is neither a particle system nor a rigid fling'})
+            authored.append(OUTPUT_PARTICLES)
+    if record['forwarded_events']['hit_receiver']:
+        authored.append(OUTPUT_MASK)
+        if not record['mask_fades']:
+            reasons = '; '.join(error['error'] for error in record['event_errors']) or 'no recognized handler'
+            missing.append({'output': OUTPUT_MASK, 'reason': reasons})
+    authored = [name for name in OUTPUTS if name in authored]
+    enforced = sorted({item['output'] for item in missing} & set(ENFORCED_OUTPUTS))
+    return {'authored': authored, 'missing': missing, 'refused_outputs': enforced,
+            'particle_parts': emitters, 'rigid_fragments': fragments}
+
+
+def breakable_sources(sc, bounds=None, errors=None, contract=True):
     """Return authored records, optionally overlapping (xmin,ymin,xmax,ymax).
 
     state_index is the sorted ordinal of ALL Breakable components in the source
@@ -165,8 +333,14 @@ def breakable_sources(sc, bounds=None, errors=None):
     state bitmap associated with its scene; source is the persistent identity.
     If errors is supplied, unsupported records are appended there; otherwise a
     malformed selected object fails explicitly rather than silently disappearing.
+
+    With `contract`, an instance that authors an enforced destruction output the
+    port cannot produce is refused here, so it stays solid drawn scenery instead
+    of vanishing without it. Passes that report their own per-part refusals
+    (the effect and fragment art cooks) pass contract=False and see everything.
     """
     file = Path(sc.file.name).name
+    gravity = None
     all_ids = sorted(o.path_id for o in sc.file.objects.values()
                      if o.type.name == 'MonoBehaviour' and sc.source.typename(o) == 'Breakable')
     if len(all_ids) > MAX_SCENE_BREAKABLES:
@@ -237,7 +411,7 @@ def breakable_sources(sc, bounds=None, errors=None):
                                'position': sc.point(part_gid), 'components': components})
             receiver = tree['hitEventReciever']
             fades, event_errors = mask_fades(sc,_local_id(receiver)) if receiver['m_PathID'] else ([],[])
-            result.append({'source': f'{file}:{index}', 'game_object': f'{file}:{gid}', 'gid': gid,
+            record = {'source': f'{file}:{index}', 'game_object': f'{file}:{gid}', 'gid': gid,
                 'name': sc.gos[gid]['m_Name'], 'state_index': state_index, 'scene_state_count': len(all_ids),
                 'position': position, 'hit_points': 1, 'box': box, 'hit_polygons': hit_polygons,
                 'body_collider': f'{file}:{body_id}', 'body_is_trigger': bool(body['m_IsTrigger']),
@@ -254,7 +428,18 @@ def breakable_sources(sc, bounds=None, errors=None):
                     'self_event': 'BREAK' if tree['forwardBreakEvent'] else None},
                 'limitations': ['Debris physics, dust and impact effects, audio playback and forwarded FSM events require separate runtime support',
                     'PersistentBoolItem identity/state is recorded; no memory-card or retail-save compatibility is implied'],
-            })
+            }
+            if contract:
+                if gravity is None:
+                    from break_effects import scene_gravity
+                    gravity = scene_gravity(sc.source)
+                record['destruction'] = destruction_contract(sc, record, gravity)
+                if record['destruction']['refused_outputs']:
+                    raise ValueError('authored destruction output the port cannot produce: '
+                                     + '; '.join(f"{item['output']} ({item['reason']})"
+                                                 for item in record['destruction']['missing']
+                                                 if item['output'] in ENFORCED_OUTPUTS))
+            result.append(record)
         except Exception as error:
             if errors is None:
                 raise
