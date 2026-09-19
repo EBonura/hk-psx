@@ -45,7 +45,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P13 | in progress | Build 105 admits the five catalog benches (rest, heal, respawn marker; `town-bench` route). Earlier: shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
 | P09 | in progress | Build 104 runs the source entry sequence (fade, lead, forced walk; hidden top drop) for every gate; build 103 applies the source gate rules (side gates need the Knight facing in, no transition while recoiling, delayed top colliders); build 102 adds the source CameraLockArea limits (world bank kind 11) and a damped camera with look-ahead; per-entry behaviour descriptors (forced walk, fades, control delays) remain. Earlier: Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Build 75 adds Crossroads_02 and Crossroads_07 through `GRID_SCENE_LAYOUTS` (one catalog entry per scene); their gates are generated from source and the linked headroom is 376,680 bytes. The `crossroads-floor` route walks the Crossroads_01 floor to the right wall; reaching `right1` needs an authored jump route. Build 78 gives top-side gate entries the source's -12 units/s initial drop (`Gate.entry_vy`, verified for the well; assumed for other top entries). The delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and return replays remain. |
-| P19/P20 | in progress | Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
+| P19/P20 | in progress | `host/remaining_actors.py` measures the roster: 216 placements, 120 admitted, 96 refused across twelve families, with a per-recognizer refusal reason for each. Contracts written for Hatcher, Egg Sac and Mender Bug. Four placements are refused by the recognizer rather than the controller and are being admitted; Crossroads_22 cannot hold a full Hatcher cage against the 32-actor cap; Zombie Myla and one Runner are hidden by the original and must stay out. Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
 | P14 | in progress | Builds 112 to 121. Step 1's audit corrected the jump velocity and added the jump, ledge and head-bump buffers the port was missing. Step 2 implemented the Mothwing Cloak, the Mantis Claw's wall slide and jump, the Monarch Wings, the Crystal Heart and the Shade Cloak, all from source constants and the Superdash FSM. Step 3 catalogued every PlayerData traversal flag and found acid already covered by the generic hazard path, `hasAcidArmour` and `hasLantern` unreachable, and one unimplemented bounce shroom owed to P11. Step 4 took the input priority from the Can* methods. Step 5 added the Dream Nail with its SOUL reward. Step 6 mapped L1, R1 and Triangle and extended the replay schema and the native probe. Step 7's combinations are hk-sim tests. Remaining: no ability has an acquisition route (step 8), and the Wall Slide, Walljump, Dash, Double Jump and four DN clips are not cooked, so an ability plays the Fall or Idle clip. |
 | P15 | in progress | Build 122 adds Vengeful Spirit from `Spell Control`, `Fireball Cast` and the projectile's own FSMs, with the source's one-button cast-versus-Focus split. Remaining: Desolate Dive and Howling Wraiths (catalogued only), nail arts, nail damage tiers, the centralized damage resolution of step 4, the verification matrix of step 7, and the `Ball`/`Ball End` art, which needs a reserved VRAM rectangle. |
 | P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Variables are a caller-owned pool and `GetOwner` resolves at cook time, which between them unblocked 852 instances. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, because an FSM needs every action supported. `PlayerDataBoolTest` is answered too, through the existing persistent store plus a read-only-variable fold, so the first authored behaviour compiles: 246 instances, 7 ops. The next slice is not more opcodes: `Trigger2dEvent` (198), `FindChild` (176), `GetVelocity2d` (122), `Tk2dPlayAnimation` (115) and every other remaining blocker needs a guest object model, which is step 5's scope and reference work. P12, P17, P18 and P23 all wait on this. |
@@ -1909,6 +1909,65 @@ scene. In this install King's Pass is the only pickup for that charm.
 actions like `IntSwitch`'s compareTo and sendEvent pairs have to be read
 positionally. Both catalogs worked around it locally. It is worth a named helper
 before a third reader gets it wrong.
+
+## P19/P20: the unadmitted roster, measured rather than listed
+
+The ledger said 120 of 144 placed Crossroads actors were admitted and named
+seven missing families. Both numbers needed correcting.
+`host/remaining_actors.py` walks all 45 packed scenes, runs the real recognizer
+and records why each placement is refused, per recognizer rather than per
+object. There are **216 active HealthManager placements, 120 admitted and 96
+refused**, and the refused ones fall into **twelve families, not seven**: Egg
+Sac, Blocker, Giant Fly and Mawlek Body were not on the list at all. Of the 96,
+24 sit inside a packed region envelope, which is where the ledger's 144 came
+from, and 72 are Hatcher pool objects parked at world (100, 100).
+
+The refusal reasons were not what the code says they are. `actor_sources` keeps
+a single `movement_error` that every gate overwrites, so a Hatcher, an Egg Sac
+and a Blocker all report "no single supported Crawler FSM", naming a recognizer
+that was never a candidate for them. That is a design smell worth fixing at the
+source: the field should be a per-recognizer list.
+
+### Four placements are refused by the recognizer, not the controller
+
+Verified by editing the parsed trees and re-running the real recognizer, not by
+reading. A Zombie Runner in Crossroads_39 is refused only because it carries an
+extra `enemy_corpse` FSM and the recognizer demands exactly one. A mirrored
+Zombie Leaper in Crossroads_37 has a world basis of a plain x mirror, unit
+magnitude and no rotation, and the recognizer refuses any non-identity basis
+outright. Two Climbers carry their box collider twice, and `runner.body_box()`
+already tolerates exactly that while `climber.recognize` calls `_one` instead.
+
+The Climber pair carries a real risk the others do not: neither scene admits a
+Climber today, so admitting them adds a whole art set to two scene banks, and
+Crossroads_03 already sits near the 416-texture CLUT budget that defeated the
+Knight ability clips earlier this session. That one gets measured before it
+ships, and dropped if it does not fit.
+
+### "Hatchers need runtime spawning" was the wrong description
+
+It is not instantiation. The 68 babies are pre-placed pooled objects with their
+own HealthManager and FSM, parked at (100, 100) under one cage per scene. A
+Hatcher takes a random cage child, moves it, sends SPAWN, and on death the baby
+reparents to the cage with its health reset. Nothing is ever created or
+destroyed, so no allocator is needed. What it actually needs is cook-time
+membership (the cooker selects actors by position, so it must follow a
+Hatcher's cage rather than the babies' parked coordinates), a park and live
+flag with on-death reset, and a pool budget answer: **Crossroads_22 would need
+36 actors against the 32-slot per-scene cap**, so it needs a bounded sub-pool
+like the Aspid's 8-slot shot pool, or a truncated cage recorded as a
+divergence.
+
+### Two placements the original hides
+
+Zombie Myla carries `DeactivateIfPlayerdataFalse("hasSuperDash")`, so the
+original hides her until the Crystal Heart, and a Zombie Runner in ShamanTemple
+has `startInactive` set. Admitting either by relaxing a field would put an
+enemy in a room the player should not yet see. That is the same class as the
+Fat Grub King the BounceShroom work found, and the third instance this session
+of the port showing something a PlayerData gate should be hiding. The pattern is
+now large enough to name: the activation gap is not cosmetic, it is the port
+disagreeing with the original about what exists.
 
 ## Required package completion record
 
