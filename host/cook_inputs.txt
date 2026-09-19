@@ -45,10 +45,12 @@ host/requirements.lock
 #
 # regions.py decides which regions cook, not what they contain. world.py turns
 # the finished report into data/regions.rs. npc_sources.py and npc_dialogue.py
-# are postpasses over immutable base packs. quality.py is the catalog, and the
-# four budget constants a region actually depends on are hashed by value.
+# are postpasses over immutable base packs, and npcs.py is where the second one
+# reads the conversation chain it cooks. quality.py is the catalog, and the four
+# budget constants a region actually depends on are hashed by value.
 host/regions.py
 host/world.py
 host/npc_sources.py
 host/npc_dialogue.py
+host/npcs.py
 host/quality.py

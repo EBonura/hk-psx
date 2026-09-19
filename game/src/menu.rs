@@ -105,7 +105,6 @@ fn draw_menu(menu:&State,gain:u8,slots:&[&str;4],fault:&str){
                 if i<state::CHEAT_ITEMS.len(){text(254,y,if menu.settings.cheats.enabled(i){"ON"}else{"OFF"},g);}
                 if i==menu.selected{text(30,y,">",gain);}
             }
-            centered(189,"Charms are not implemented yet",gain);
             centered(204,"Session only. More in Pause > Cheats",gain);
             centered(218,"X: toggle    Left/Right: off/on    O: back",gain);
         }

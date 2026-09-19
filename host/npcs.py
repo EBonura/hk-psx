@@ -57,6 +57,10 @@ CONTROL_VARIABLES = ('Prompt Name', 'Turn Anim Name', 'Can Talk', 'Always Faces 
 
 UNKNOWN = object()
 WALK_LIMIT = 64
+# How many conversations one NPC may speak before it starts repeating. The port
+# remembers where an NPC has got to in a fixed-width per-NPC cursor, so a longer
+# chain is refused rather than truncated to the branches that happen to fit.
+MAX_CONVERSATIONS = 4
 
 # Actions that branch and are decoded below. Anything else that can send an
 # event stops a walk instead of being guessed at.
@@ -68,8 +72,10 @@ BRANCHING = {'PlayerDataBoolTest', 'PlayerDataBoolTrueAndFalse', 'PlayerDataBool
 WAITING = {'Trigger2dEvent', 'ListenForDown', 'ListenForUp', 'ListenForJump',
            'ListenForAttack', 'ListenForCast', 'ListenForQuickMap',
            'CheckTrackTriggerCount', 'FaceObject'}
-# Actions with no influence on which line is selected. Presentation, audio,
-# object plumbing and arithmetic on variables no decoded test reads.
+# Actions a walk may step past: they send no event, so they cannot end a state.
+# Most are presentation, audio, object plumbing or arithmetic no decoded test
+# reads; the PlayerData and variable ones do carry state and are evaluated in
+# `_walk` before it reaches this set.
 INERT = {
     'GetOwner', 'GetParent', 'GetHero', 'FindChild', 'FindGameObject', 'SetGameObject',
     'SetFsmGameObject', 'ActivateGameObject', 'ActivateAllChildren', 'DestroyObject',
@@ -86,6 +92,7 @@ INERT = {
     'ForceHeroFootstepSound', 'SetVelocity2d', 'CreateObject', 'SpawnObjectFromGlobalPool',
     'PlayerDataIntAdd', 'IncrementPlayerDataInt', 'SetPlayerDataBool', 'SetPlayerDataInt',
     'GetPlayerDataBool', 'GetPlayerDataInt', 'SetBoolValue', 'SetIntValue',
+    'IntCompareToBool',
     'CallMethodProper', 'Wait', 'NextFrameEvent', 'Tk2dWatchAnimationEvents',
     'Tk2dPlayAnimationWithEvents',
 }
@@ -458,6 +465,24 @@ def _walk(fsm, start, playerdata, variables, origins):
                 if name and not isinstance(value, str):
                     variables[name] = value
                 continue
+            if kind == 'IntCompareToBool':
+                # Not a branch: it stores the comparison in up to three bool
+                # variables and a later test reads them. Elderbug's Convo Choice
+                # derives `Is Steel Soul Mode` from permadeathMode this way, and
+                # leaving it undecoded stops every walk that reaches him after
+                # metElderbug is set.
+                fields = action_fields(data, i)
+                left = _integer(_word(fields.get('integer1')), variables)
+                right = _integer(_word(fields.get('integer2')), variables)
+                for key, holds in (('equalBool', lambda a, b: a == b),
+                                   ('lessThanBool', lambda a, b: a < b),
+                                   ('greaterThanBool', lambda a, b: a > b)):
+                    name = _variable(fields.get(key))
+                    if not name:
+                        continue
+                    variables[name] = (UNKNOWN if UNKNOWN in (left, right)
+                                       else holds(left, right))
+                continue
             if kind not in BRANCHING:
                 if kind in WAITING or kind not in INERT:
                     break
@@ -827,31 +852,80 @@ def _first_choice(fsm, origins):
     return None
 
 
+def _conversation_entries(states, variables, walk):
+    """One walk's spoken entries, each keeping the PlayerData its state writes.
+
+    PlayMaker runs a state's `SetPlayerDataBool` as it enters, before the
+    DialogueBox call beside it has spoken, so the pairing is per entry. The
+    report's walk keeps the lines and the writes in separate lists.
+    """
+    return [dict(line, state=step['state'], writes=_writes(states[step['state']]))
+            for step in walk['path'] for line in _lines(states[step['state']], variables)]
+
+
 def fresh_save_conversation(source, scene, gid, defaults=None):
     """The entries one NPC's `Conversation Control` speaks on a fresh save.
 
-    The walk starts at the choice state for the reason `_first_choice` records,
-    and each entry keeps the PlayerData its own state writes, because PlayMaker
-    runs a state's `SetPlayerDataBool` as it enters, before the DialogueBox call
-    beside it has spoken. A cooker needs that pairing; the report's walk keeps
-    the lines and the writes in separate lists.
+    The walk starts at the choice state for the reason `_first_choice` records.
+    """
+    return conversation_chain(source, scene, gid, defaults, limit=1)[0]['entries']
+
+
+def conversation_chain(source, scene, gid, defaults=None, limit=MAX_CONVERSATIONS):
+    """Every conversation one NPC speaks in turn, starting from a fresh save.
+
+    `Conversation Control` picks its line from PlayerData and the state it picks
+    then writes the flags that change the next pick, so what a player hears is a
+    chain rather than one line: walk, apply what the walk wrote, walk again. The
+    chain stops at the first conversation that leaves PlayerData exactly as it
+    found it, because from there the source's own answer can no longer change;
+    that last conversation is the one it repeats for the rest of the game.
+
+    Elderbug is the worked example: the intro writes metElderbug, the second
+    talk is History 1 and writes elderbugHistory1, and the third is the generic
+    bench line, which writes nothing and so repeats forever.
     """
     if defaults is None:
         defaults = playerdata_defaults(source.directory / 'Managed/Assembly-CSharp.dll')
+    name = scene.gos[gid]['m_Name']
     _cid, convo = _fsms(scene, gid)[CONVO_FSM]
     variables = fsm_variables(convo)
     origins = _origins(convo)
     start = _first_choice(convo, origins)
     if start is None:
-        raise LookupError(f'{scene.gos[gid]["m_Name"]} chooses no line from PlayerData')
-    walk = _walk(convo, start, defaults, variables, origins)
+        raise LookupError(f'{name} chooses no line from PlayerData')
     states = {s['name']: s for s in convo['states']}
-    entries = []
-    for step in walk['path']:
-        state = states[step['state']]
-        for line in _lines(state, variables):
-            entries.append(dict(line, state=step['state'], writes=_writes(state)))
-    return entries
+    playerdata = dict(defaults)
+    chain, spoken = [], []
+    while True:
+        walk = _walk(convo, start, playerdata, variables, origins)
+        entries = _conversation_entries(states, variables, walk)
+        if not entries:
+            raise LookupError(f'{name} speaks nothing on conversation {len(chain)}; '
+                              f"the walk stops in {walk.get('undecided_in') or walk['settles_in']}")
+        keys = [(entry.get('key'), entry.get('sheet')) for entry in entries]
+        if keys in spoken:
+            raise LookupError(f'{name} returns to conversation {spoken.index(keys)} '
+                              f'after {len(chain)}; a saturating cursor cannot express a cycle')
+        spoken.append(keys)
+        # A write whose value is chosen at runtime cannot be replayed here, and
+        # guessing it would silently pick one arm of the next conversation.
+        changed = False
+        for write in walk['writes']:
+            value = write.get('value')
+            if not isinstance(value, (int, bool)) or isinstance(value, str):
+                raise LookupError(f'{name} writes {write["field"]} with a runtime value')
+            if playerdata.get(write['field']) != value:
+                playerdata[write['field']] = value
+                changed = True
+        chain.append({'entries': entries, 'writes': walk['writes'], 'terminal': not changed,
+                      'states': [step['state'] for step in walk['path']],
+                      'settles_in': walk['settles_in'], 'stops_in': walk.get('undecided_in'),
+                      'not_decoded': walk.get('not_decoded')})
+        if not changed:
+            return chain
+        if len(chain) > limit:
+            raise LookupError(f'{name} speaks more than {limit} conversations before repeating')
 
 
 def _dream(source, scene, gid):

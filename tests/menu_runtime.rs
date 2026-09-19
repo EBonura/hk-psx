@@ -36,6 +36,15 @@ pub mod interrupts{
 pub mod audio{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((0,v)));}}
 pub mod ambience{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((1,v)));}}
 pub mod music{pub fn begin(){}pub fn tick(){}pub fn stop()->bool{true}pub fn set_fade(_:u8){}pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((2,v)));}}
+// cheats composes the equipped charms into the live parameters and reconciles
+// the all-charms grant. Neither reaches the title screen, and the real module
+// links the cooked catalogue this harness has no manifest directory for, so the
+// contract is stubbed here; tests/charms_runtime.rs exercises the real one.
+mod charms{
+ pub fn vitals(base:hk_sim::VitalParams)->hk_sim::VitalParams{base}
+ pub fn grant_all(_:bool){}
+ pub fn on_damage(_:&mut hk_sim::Vitals,_:hk_sim::VitalParams){}
+}
 #[path="../game/src/cheats.rs"]mod cheats;
 // menu_state indexes the save screen by the profile count.
 mod save{pub const PROFILES:usize=4;}

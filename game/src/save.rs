@@ -18,8 +18,12 @@ use psx_mc::{Block, Card, HardwareCard, FRAME_SIZE};
 /// cannot destroy the copy in use, which is 8 of the card's 15 blocks.
 pub const PROFILES: usize = 4;
 const TITLE: &str = "HOLLOW KNIGHT PSX";
-const MAGIC: [u8; 4] = *b"HKS1";
-pub const LEN: usize = 56;
+/// Bumped from HKS1 when the charm board and the NPC conversation cursors
+/// joined the record. An HKS1 file is both shorter and differently tagged, so it
+/// reads back as Corrupt rather than decoding into a save whose notch board and
+/// conversations would be invented.
+const MAGIC: [u8; 4] = *b"HKS2";
+pub const LEN: usize = 78;
 /// Per profile: the copy the next write goes to, and the newest sequence seen.
 static mut NEXT_COPY: [usize; PROFILES] = [0; PROFILES];
 static mut LAST_SEQUENCE: [u32; PROFILES] = [0; PROFILES];
@@ -82,6 +86,20 @@ pub struct Save {
     pub sequence: u32,
     /// The Hollow Shade owed at the time of the save, and the Geo it carries.
     pub shade: crate::shade::Record,
+    /// The charm half of PlayerData: `gotCharm_N` and `equippedCharm_N` as bit
+    /// per charm, `charmSlots`, and `canOvercharm`. `charmSlotsFilled` and
+    /// `overcharmed` are not stored because the source derives both, in
+    /// `CalculateNotchesUsed` and `RefreshOvercharm`, and a stored copy could
+    /// only ever contradict the set it was derived from.
+    pub charms_owned: u64,
+    pub charms_equipped: u64,
+    pub charm_notches: u8,
+    pub can_overcharm: bool,
+    /// How far along its cooked conversation chain each talkable NPC has got,
+    /// two bits per NPC. The port's stand-in for the per-NPC PlayerData bools
+    /// the source's own conversations write, and the only reason Elderbug does
+    /// not introduce himself again after a reload. See game/src/npc_state.rs.
+    pub npc_conversations: u32,
 }
 fn fnv(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c9dc5u32, |h, &b| (h ^ b as u32).wrapping_mul(16777619))
@@ -104,6 +122,11 @@ impl Save {
         out[40..44].copy_from_slice(&self.shade.position[0].to_le_bytes());
         out[44..48].copy_from_slice(&self.shade.position[1].to_le_bytes());
         out[48..52].copy_from_slice(&self.sequence.to_le_bytes());
+        out[52..60].copy_from_slice(&self.charms_owned.to_le_bytes());
+        out[60..68].copy_from_slice(&self.charms_equipped.to_le_bytes());
+        out[68] = self.charm_notches;
+        out[69] = u8::from(self.can_overcharm);
+        out[70..74].copy_from_slice(&self.npc_conversations.to_le_bytes());
         let sum = fnv(&out[..LEN - 4]);
         out[LEN - 4..].copy_from_slice(&sum.to_le_bytes());
         out
@@ -114,6 +137,7 @@ impl Save {
             return None;
         }
         let word = |at: usize| i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+        let long = |at: usize| u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
         Some(Self {
             scene: word(4) as u32,
             seat: [word(8), word(12)],
@@ -129,6 +153,11 @@ impl Save {
                 position: [word(40), word(44)],
             },
             sequence: word(48) as u32,
+            charms_owned: long(52),
+            charms_equipped: long(60),
+            charm_notches: bytes[68],
+            can_overcharm: bytes[69] != 0,
+            npc_conversations: u32::from_le_bytes(bytes[70..74].try_into().unwrap()),
         })
     }
 }
@@ -264,14 +293,19 @@ mod tests {
     fn round_trip_and_reject_corruption() {
         let save = Save { scene: 3, seat: [-65536, 720896], facing: -1, region: 7, geo: 41, door_hits: 13,
             shade: crate::shade::Record { present: true, scene: 2, position: [-131072, 65536], hp: 10, geo_pool: 77 },
-            sequence: 9 };
+            sequence: 9, charms_owned: 0x0000_00ff_0000_1005, charms_equipped: 0x0000_0000_0000_1001,
+            charm_notches: 5, can_overcharm: true, npc_conversations: 0x0000_0009 };
         let bytes = save.encode();
         assert_eq!(Save::decode(&bytes), Some(save));
-        for at in [24, 29, 33, 37, 41, 45, 49] {
+        for at in [24, 29, 33, 37, 41, 45, 49, 53, 61, 68, 69, 70, 73] {
             let mut bad = bytes;
             bad[at] ^= 1;
             assert_eq!(Save::decode(&bad), None, "byte {at} is outside the checksum");
         }
         assert_eq!(Save::decode(&bytes[..LEN - 1]), None);
+        // An HKS1 record is both shorter and differently tagged.
+        let mut old = bytes;
+        old[..4].copy_from_slice(b"HKS1");
+        assert_eq!(Save::decode(&old), None);
     }
 }

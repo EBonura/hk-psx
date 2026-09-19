@@ -10,15 +10,16 @@ This replays the death route, stops the emulator mid-write, and checks the card.
 import argparse, json, shutil, struct, subprocess, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+# The record's tag and length come from game/src/save.rs rather than being
+# repeated here. They were hardcoded once and went stale the moment the charm
+# board joined the record: this file would then have found no save on any card
+# and reported a healthy result for a check that never ran.
+from migrate_cards import fnv, layout
+
 # game/src/save.rs names each file BASLUS-00000HKPSX<profile><copy>.
 PREFIX = b'BASLUS-00000HKPSX'
-
-
-def fnv(data):
-    value = 0x811c9dc5
-    for byte in data:
-        value = ((value ^ byte) * 16777619) & 0xffffffff
-    return value
+MAGIC, LEN = layout()
 
 
 def findable_saves(path):
@@ -31,10 +32,10 @@ def findable_saves(path):
         if entry[0] != 0x51 or not name.startswith(PREFIX) or len(name) != len(PREFIX) + 2:
             continue
         start = 8192 * block
-        at = card.find(b'HKS1', start, start + 8192)
+        at = card.find(MAGIC, start, start + 8192)
         if at < 0:
             continue
-        if fnv(card[at:at + 52]) == struct.unpack_from('<I', card, at + 52)[0]:
+        if fnv(card[at:at + LEN - 4]) == struct.unpack_from('<I', card, at + LEN - 4)[0]:
             out.append({'name': name.decode(),
                         'sequence': struct.unpack_from('<I', card, at + 48)[0],
                         'geo': struct.unpack_from('<I', card, at + 24)[0]})

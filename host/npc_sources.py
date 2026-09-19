@@ -3,39 +3,61 @@
 `npc_control` is one template FSM every talkable NPC carries. It owns the range
 trigger, which is the NPC object's own enabled trigger collider, raises the
 prompt marker while the hero body is inside it and starts the conversation on
-UP. `Conversation Control` then picks the line and plays `Talk Left` or
-`Talk Right` on the NPC: `Hero Is Left` and `Hero Is Right` both compare the
-NPC's own localScale.x against zero, and Elderbug's is +1.25, so the hero's side
-is the clip's own direction and neither state can mirror the choice.
+UP. `Conversation Control` then picks the line and plays the talk clip.
 
-Admission is an explicit name list rather than the recognizer in npcs.py,
-because only one NPC is implemented: an NPC gated on PlayerData, or one whose
-conversation needs a branch the port cannot pick, must not be cooked into a
-region by accident. The turn, reach, slump, flower and shiver clips, the prompt
-marker art, the hero alignment walk and the NPC name plate are not cooked.
+Admission is an explicit table rather than the recognizer in npcs.py. The
+recognizer finds 27 NPCs across the 45 admitted scenes and almost none of them
+has a shape this cooker can hold: see `.hkpsx/npc-catalog.json` for the survey
+and `.hkpsx/npc-lines.json` for what each cook actually did.
+
+The table carries the clip binding too, because the libraries disagree on what
+the talk clips are called. Elderbug's names `Talk Left` and `Talk Right`, and
+his `Hero Is Left`/`Hero Is Right` compare his own localScale.x, which is +1.25,
+so the hero's side is the clip's own direction. Everyone else has a single
+`Talk`, or a seated pair, and turns by mirroring instead. Reading the names and
+guessing would bind the wrong clip in silence, so the binding is written down.
+
+Not cooked: every other clip in the library, the prompt marker art, the hero
+alignment walk and the NPC name plate.
 """
+from functools import lru_cache
+
 from cook import FOCAL, CAM_Z, guest_wrap, tk_sprite
 from focus import fsm_variables
-# The parent walk and the deactivator component names are the NPC extractor's,
-# and this cooker must reject exactly what that extractor calls a gate.
-from npcs import DEACTIVATORS, _ancestors
+# The parent walk, the deactivator component names and the new-save PlayerData
+# are the NPC extractor's, so this cooker reads a gate exactly as it does.
+from npcs import DEACTIVATORS, playerdata_defaults, _ancestors
 
-# The clip order the guest's cooked clip base indexes: Idle, then the two talk
-# clips, so one payload word binds all three.
-NPC_CLIPS = ('Idle', 'Talk Left', 'Talk Right')
-# Ungated on a fresh save, reachable from the opening route, and its opening
-# conversation needs no player choice. .hkpsx/npc-catalog.json is the survey.
-ADMITTED = ('Elderbug',)
+# The three guest animation slots one cooked clip base indexes, in this order,
+# so one payload word binds all of them.
+NPC_SLOTS = ('idle', 'talk left', 'talk right')
+# (scene, object) -> the source clip each slot plays. Present on a fresh save
+# with the gates activation.py evaluates, standing in its own default clip, and
+# with a conversation chain npcs.py can decide end to end.
+#
+# Elderbug's `Hero Is Left`/`Hero Is Right` compare his own localScale.x, which
+# is +1.25, so the hero's side is the clip's own direction. Myla has a single
+# `Talk` and turns by mirroring instead, which the port does not reproduce, so
+# both talk slots hold it and she keeps facing the way the scene placed her.
+ADMITTED = {
+    ('Town', 'Elderbug'): ('Idle', 'Talk Left', 'Talk Right'),
+    ('Crossroads_45', 'Miner'): ('Idle', 'Talk', 'Talk'),
+}
 CONTROL_FSM = 'npc_control'
 CONVO_FSM = 'Conversation Control'
 # tk2d frames reach VRAM through the shared 64x64 animation slots.
 FRAME_LIMIT = 64
 
 
+def _components(sc, gid, kind):
+    """Every component of this kind on an object, in file order."""
+    return [tree for _cid, (typ, tree) in sc.objects.items()
+            if typ == kind and tree.get('m_GameObject', {}).get('m_PathID') == gid]
+
+
 def _component(sc, gid, kind):
     """The one component of this kind on an object, or None."""
-    found = [tree for _cid, (typ, tree) in sc.objects.items()
-             if typ == kind and tree.get('m_GameObject', {}).get('m_PathID') == gid]
+    found = _components(sc, gid, kind)
     if len(found) > 1:
         raise ValueError(f'{sc.gos[gid]["m_Name"]} carries {len(found)} {kind} components')
     return found[0] if found else None
@@ -72,26 +94,48 @@ def _child(sc, gid, name):
     raise ValueError(f'{sc.gos[gid]["m_Name"]} has no {name} child')
 
 
-def _refuse_if_gated(sc, gid):
-    """A Deactivate component anywhere above the NPC removes it on some saves."""
+@lru_cache(maxsize=1)
+def _new_save(assembly):
+    """SetupNewPlayerData, decompiled once rather than once per region."""
+    return playerdata_defaults(assembly)
+
+
+def _gates(sc, gid):
+    """The Deactivate components on the NPC or above it, and what they read.
+
+    `Scene.active` has already applied the ones that fire on a fresh save, which
+    is the answer the whole cooked world is built from: the port has no producer
+    for any of these fields, so a gate that does not fire today cannot start
+    firing later. Those survivors are recorded rather than refused, because the
+    divergence from a save that does set them belongs in the report. A gate whose
+    field is not a new-save default is refused instead: nothing here knows
+    whether that NPC exists.
+    """
+    defaults = _new_save(sc.source.directory / 'Managed/Assembly-CSharp.dll')
+    out = []
     for owner in [gid] + _ancestors(sc, gid):
         for kind in DEACTIVATORS:
-            if _component(sc, owner, kind) is not None:
-                raise ValueError(f'{sc.gos[gid]["m_Name"]} is gated by {kind} on '
-                                 f'{sc.gos[owner]["m_Name"]}; only ungated NPCs are cooked')
+            for component in _components(sc, owner, kind):
+                field = component['boolName']
+                if field not in defaults:
+                    raise ValueError(f'{sc.gos[gid]["m_Name"]} sits under {kind}({field}) on '
+                                     f'{sc.gos[owner]["m_Name"]}, and {field} is not a new-save '
+                                     'default; whether it exists is unanswered')
+                out.append(f'{kind}({field}) on {sc.gos[owner]["m_Name"]}')
+    return out
 
 
-def npc_sources(sc, bounds):
+def npc_sources(scene_name, sc, bounds):
     """Every admitted NPC whose talk trigger touches this region's envelope."""
     scene_file = sc.file.name.split('/')[-1]
     result = []
     for gid, go in sorted(sc.gos.items()):
-        if go['m_Name'] not in ADMITTED or not sc.active(gid):
+        binding = ADMITTED.get((scene_name, go['m_Name']))
+        if binding is None or not sc.active(gid):
             continue
         control = _fsm(sc, gid, CONTROL_FSM)
         if control is None or _fsm(sc, gid, CONVO_FSM) is None:
             continue
-        _refuse_if_gated(sc, gid)
         variables = fsm_variables(control)
         if not variables.get('Can Talk'):
             raise ValueError(f'{go["m_Name"]} carries Can Talk clear; it answers no prompt')
@@ -105,23 +149,35 @@ def npc_sources(sc, bounds):
         position = sc.point(gid)
         marker = sc.point(_child(sc, gid, 'Prompt Marker'))
         animator = _component(sc, gid, 'tk2dSpriteAnimator')
+        gates = _gates(sc, gid)
+        limitations = [f'{" / ".join(dict.fromkeys(binding))} only: the other clips, the '
+                       'prompt marker art, the hero alignment walk and the name plate '
+                       'are not cooked']
+        if binding[1] == binding[2]:
+            limitations.append('one talk clip for both sides: the source mirrors the NPC '
+                               'to face the hero and the port does not')
+        if gates:
+            limitations.append('present because none of these fires on a fresh save: '
+                               + ', '.join(gates))
         result.append({
             'source': f'{scene_file}:{gid}', 'game_object': gid, 'name': go['m_Name'],
             'position': [position[0], position[1]], 'bounds': trigger,
             'marker': [marker[0], marker[1]],
             'prompt': prompt,
-            'default_clip': NPC_CLIPS[0],
+            'default_clip': binding[0],
             'plays_automatically': bool(animator['playAutomatically']),
-            'clips': list(NPC_CLIPS),
-            'limitations': ['Idle, Talk Left and Talk Right only: the turn, reach, slump, '
-                            'flower and shiver clips, the prompt marker art, the hero '
-                            'alignment walk and the name plate are not cooked'],
+            'clips': list(binding), 'slots': list(NPC_SLOTS), 'gates': gates,
+            'limitations': limitations,
         })
     return result
 
 
 def append_npc_art(source, sc, npcs, atlas, frames, clips):
-    """Append each NPC's three clips to one room bank, in NPC_CLIPS order."""
+    """Append each NPC's three clips to one room bank, in NPC_SLOTS order.
+
+    A binding may name the same source clip twice; the atlas keys its images by
+    sprite, so the second slot costs frame records and no texture.
+    """
     textures, collections, cache = {}, {}, {}
     scale = FOCAL / -CAM_Z
     for npc in npcs:
@@ -139,7 +195,8 @@ def append_npc_art(source, sc, npcs, atlas, frames, clips):
         sx = abs(matrix[0][0] * sprite['_scale']['x'])
         sy = abs(matrix[1][1] * sprite['_scale']['y'])
         # Hero Is Left / Hero Is Right read this scale to choose the talk clip,
-        # so a mirrored NPC would invert the guest's own side test.
+        # so a mirrored NPC would invert the guest's own side test, and the
+        # cooked frames would face the wrong way besides.
         if matrix[0][0] <= 0:
             raise ValueError(f'{npc["name"]} is mirrored; the talk clip choice is unmodelled')
         colour = sprite['_color']
@@ -147,7 +204,9 @@ def append_npc_art(source, sc, npcs, atlas, frames, clips):
         npc['visual_scale'] = [sx, sy]
         npc['library'] = source.sid(library_o)
         for name in npc['clips']:
-            clip = next(c for c in library['clips'] if c['name'] == name)
+            clip = next((c for c in library['clips'] if c['name'] == name), None)
+            if clip is None:
+                raise ValueError(f'{npc["name"]}\'s library has no {name!r} clip')
             start = len(frames)
             for frame in clip['frames']:
                 collection_o = source.ref(library_o.assets_file, frame['spriteCollection'])
