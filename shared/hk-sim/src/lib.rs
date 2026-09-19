@@ -11,6 +11,8 @@ pub mod aspid;
 pub mod vengefly;
 pub mod gruzzer;
 pub mod baldur;
+pub mod boss;
+pub mod false_knight;
 pub mod shade;
 mod corpse;
 pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
