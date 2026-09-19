@@ -206,12 +206,19 @@ def recognize(sc, actor):
         if hashlib.sha256((source.directory / 'Managed' / name).read_bytes()).hexdigest() != expected:
             raise ValueError('Runner methods require a fresh source audit: ' + name)
     gid = actor['game_object']; matrix = sc.world(sc.go_transform[gid])
-    # These two placed instances begin with unit scale facing left. Runtime
-    # facing changes must mirror the body offset along with the source sprite.
+    # Placements are authored facing left, except where the transform carries a
+    # plain x mirror, which faces them right. Anything else (a rotation, a
+    # non-unit magnitude, a y flip) stays refused: the body offset and the
+    # sprite both follow the matrix, so only the sign is free to vary.
     if len(actor['position']) < 3 or abs(actor['position'][2]) > .01:
         raise ValueError('Runner depth differs from guest source plane')
-    if sc.gos[gid]['m_Layer'] != 11 or any(abs(matrix[i][i] - 1) > 1e-6 for i in range(2)):
+    mirror = -1 if matrix[0][0] < 0 else 1
+    if (sc.gos[gid]['m_Layer'] != 11
+            or abs(abs(matrix[0][0]) - 1) > 1e-6 or abs(matrix[1][1] - 1) > 1e-6
+            or abs(matrix[0][1]) > 1e-6 or abs(matrix[1][0]) > 1e-6):
         raise ValueError('unsupported Runner layer or initial scale')
+    # rightScale is -1, so a mirrored transform starts the walker facing right.
+    parameters['initial_direction'] = -mirror
     _, body = _one(records, 'BoxCollider2D')
     _, rigid = _one(records, 'Rigidbody2D')
     if not body['m_Enabled'] or body['m_IsTrigger'] or body['m_EdgeRadius'] != 0:

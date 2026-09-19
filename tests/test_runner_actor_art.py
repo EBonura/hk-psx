@@ -21,7 +21,7 @@ def actor_fixture():
     actor = dict(source='fixture:42', movement_supported=True, game_object=1,
                  movement_control={'kind': 'ZombieSwipeWalker', 'library_source': 'fixture:9',
                                    'alert_bounds_q16': [-365036, -144507, 365036, 12730],
-                                   'parameters': {'walk_speed': 1.5, 'walk_velocity_q16': [-98304, 98304], 'lunge_velocity_q16': [-393216, 393216],
+                                   'parameters': {'walk_speed': 1.5, 'initial_direction': -1, 'walk_velocity_q16': [-98304, 98304], 'lunge_velocity_q16': [-393216, 393216],
                                                   'walking_wait_endpoints_ticks': [240, 90], 'pause_endpoints_ticks': [150, 90]}},
                  position=[2., 3., .001],
                  colliders=[dict(bounds=[1.5, 2., 2.5, 3.5])], health=15,
