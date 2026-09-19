@@ -7,7 +7,12 @@ import json,subprocess,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def probe(route,ticks=None):
-    args=['--route',route]+(['--ticks',str(ticks)] if ticks else [])
+    # Probe the live cook report, not `.hkpsx/selected-regions.json`: that one is
+    # a copy frozen at the last guest build, so any cook since then makes the
+    # probe's pack-hash guard fire on staleness rather than on a half-written
+    # pack. These tests run inside the build, ahead of the cook that would
+    # refresh the copy.
+    args=['--route',route,'--metadata',str(ROOT/'data/regions.json')]+(['--ticks',str(ticks)] if ticks else [])
     run=subprocess.run([str(ROOT/'.venv/bin/python'),str(ROOT/'tools/route_probe.py')]+args,
         cwd=ROOT,capture_output=True,text=True)
     return run
