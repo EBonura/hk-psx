@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GRASS, KIND_MASK_FADE, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS};
+use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GRASS, KIND_MASK_FADE, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_SHROOM};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -259,6 +259,17 @@ pub fn benches(region: &Region) -> impl Iterator<Item = Bench> {
     bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
         .filter(|o| o.kind() == KIND_BENCH)
         .map(|o| Bench { bounds: o.bounds(), seat: [o.extra(0), o.extra(1)], clip_base: o.extra(2) as u16 })
+}
+/// Source BounceShroom touching a catalogue region. The cooker admits only an
+/// axis-aligned box collider, so these bounds are the trigger's exact shape.
+#[derive(Clone, Copy)]
+pub struct Shroom {
+    pub bounds: [i32; 4],
+}
+pub fn shrooms(region: &Region) -> impl Iterator<Item = Shroom> {
+    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_SHROOM)
+        .map(|o| Shroom { bounds: o.bounds() })
 }
 /// Static targets touching a catalogue region, through the admitted bank.
 pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>> {

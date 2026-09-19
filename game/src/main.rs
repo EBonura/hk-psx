@@ -251,6 +251,23 @@ fn strike_shade(shade:&mut shade::World,nail:&Nail,player:&Player,damage:u16)->b
     for (dst,p) in polygon.iter_mut().zip(source) {*dst=[player.x-p[0]*player.facing,player.y+p[1]];}
     shade.strike(&polygon[..source.len()],damage)
 }
+/// NailSlash.OnTriggerEnter2D's shroom branch. Only the down slash reaches it,
+/// and the hero answers with ShroomBounce instead of the ordinary Bounce, so
+/// this takes the contact before the pogo targets get a look at it.
+#[inline(never)]
+fn strike_shroom(region:&world::Region,nail:&Nail,player:&mut Player)->bool {
+    if nail.kind!=3 || !nail.hitting(ATTACK_PARAMS) {return false;}
+    let source=NAIL_POLYGONS[nail.kind as usize];let mut polygon=[[0;2];16];
+    assert!((3..=16).contains(&source.len()));
+    for (dst,p) in polygon.iter_mut().zip(source) {*dst=[player.x-p[0]*player.facing,player.y+p[1]];}
+    for shroom in world::shrooms(region) {
+        if hk_sim::polygon_hits_box(&polygon[..source.len()],shroom.bounds) {
+            player.shroom_bounce(PARAMS);
+            return true;
+        }
+    }
+    false
+}
 /// A dash is refused for the same reasons a jump is: scripted control, a
 /// dialogue, a door sequence or the bench all own the Knight.
 fn locked_for_dash(focus:&hk_sim::Focus,door:&great_door::World,bench:&bench::State)->bool {
@@ -657,7 +674,11 @@ fn main() {
                                 (door.entry_footsteps() || (dir!=0 && !locked)) && vitals.can_control() && vitals.recoil_velocity(VITAL_PARAMS).is_none(),true);
                             let vertical=i32::from(pad.is_held(button::UP))-i32::from(pad.is_held(button::DOWN));
                             if nail.tick(ATTACK_PARAMS,pad.is_held(button::SQUARE)&&vitals.can_control()&&!locked&&!read_consumes,vertical,&mut player) {attacks=attacks.wrapping_add(1);geo.begin_attack();audio::nail();}
-                            if vitals.can_control() {enemies::pogo_contact(r,&state,&mut player,&nail,ATTACK_PARAMS,NAIL_POLYGONS,&mut nail_response);}
+                            // HeroController.Bounce returns early while cState.shroomBouncing,
+                            // so an ordinary pogo cannot cut a shroom's rise short.
+                            if vitals.can_control() && !strike_shroom(r,&nail,&mut player) && !player.shroom_bouncing {
+                                enemies::pogo_contact(r,&state,&mut player,&nail,ATTACK_PARAMS,NAIL_POLYGONS,&mut nail_response);
+                            }
                             let strike=state.strike(r,&nail,ATTACK_PARAMS,NAIL_POLYGONS,&player);
                             unsafe {HK_BREAK_COUNT=HK_BREAK_COUNT.saturating_add(strike.broken as u32);}
                             if strike.door_sounds>0 {audio::door();}

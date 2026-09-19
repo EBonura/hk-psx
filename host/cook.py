@@ -17,7 +17,7 @@ from focus import FOCUS_CLIPS,source_focus_values,generated_focus_params
 from superdash import source_superdash_values
 from dream_nail import source_dream_nail_values,generated_dream_nail_params
 from spells import source_spell_values,generated_spell_params
-from actors import actor_sources,hazard_sources,source_vital_values,generated_vital_params,generated_nail_response_params
+from actors import actor_sources,hazard_sources,shroom_sources,source_vital_values,generated_vital_params,generated_nail_response_params
 from UnityPy.helpers.MeshHelper import MeshHandler
 
 # Camera limits for this isolated development chamber. Source locks are reported.
@@ -283,6 +283,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     breakables=breakable_sources(sc,region.get('interaction_bounds',region['activation_bounds']),errors=unsupported)
     actors=actor_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
     hazards=hazard_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
+    shrooms=shroom_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
     from benches import bench_sources
     benches=bench_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
     forced_renderers=cut_renderers|{i for b in breakables for key in ('off_renderer_ids','on_renderer_ids') for i in b[key]}
@@ -415,6 +416,9 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # here rather than quietly ship a differently shaped dash.
     assert constants['SHADOW_DASH_SPEED']==constants['DASH_SPEED']
     assert constants['SHADOW_DASH_TIME']==constants['DASH_TIME']
+    # The shroom bounce carries no timer, so the guest holds no shroom state
+    # beyond the rise. A non-zero source time would need one.
+    assert constants['BOUNCE_SHROOM_TIME']==0
     fall_accel=-gravity*constants['DEFAULT_GRAVITY']
     # Unity applies gravity inside the same physics step that Jump() pins the
     # velocity, so the source rises at JUMP_SPEED - g*0.02 = 15.702, not at
@@ -454,6 +458,9 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         +f",super_dash_recover_ticks:{round(superdash['recover']*60)}"
         +f",ledge_buffer_ticks:{round(LEDGE_BUFFER_STEPS*dt*60)}"
         +f",head_bump_ticks:{round(HEAD_BUMP_STEPS*dt*60)}"
+        # A one-shot impulse, so no pre-compensation: the arc a single velocity
+        # buys does not depend on the step length the way a held jump does.
+        +f",shroom_speed:{round(constants['SHROOM_BOUNCE_VELOCITY']*65536)}"
         +'};\n')
     params+=f'pub const SPAWN:(i32,i32)=({round(spawn[0]*65536)},{round(spawn[1]*65536)});\n'
     params+=f'pub const KNIGHT_SCALE:i32={round(FOCAL/-CAM_Z*4096)};\n'
@@ -501,7 +508,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         dump(ROOT/'.hkpsx/vitals-source.json',vital_values)
         (ROOT/'data/params.rs').write_text(params)
         dump(ROOT/'.hkpsx/combat-source.json',{'hero':s.sid(hero),'nails':nails,'grass':grass,'source_methods':['HeroController.Attack','HeroController.DoAttack','HeroController.CanAttack','HeroAnimationController.Update','NailSlash.StartSlash','NailSlash.FixedUpdate','GrassCut.OnTriggerEnter2D','GrassCut.ShouldCut','GrassBehaviour.Start'],'semantics':{'attack_seconds':constants['ATTACK_DURATION'],'cooldown_seconds':constants['ATTACK_COOLDOWN_TIME'],'alternate_reset_seconds':constants['ALT_ATTACK_RESET'],'polygon_source_fixed_steps':[1,5],'source_fixed_dt':dt,'first_horizontal_body_clip':'SlashAlt','first_horizontal_effect':'SlashEffect'},'limitations':['This attack-extraction report does not describe the separate world, damage, enemy and pogo runtime; arbitrary PlayMaker execution remains unsupported','Grass cut renderer switch only; source cut particles, sound and shader bending omitted','Attack input buffering and animation cancellation are not implemented','FixedUpdate collision phase resampled to 60Hz; original runtime trajectories not compared']})
-    dump(out/'scene.json',{'tilemap_fill':tilemap_summary,'draws':draws,'frames':frames,'clips':clips,'grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'benches':benches,'edges':edges,'atlas':atlas.entries,'texture_request_to_canonical':atlas.request_map})
+    dump(out/'scene.json',{'tilemap_fill':tilemap_summary,'draws':draws,'frames':frames,'clips':clips,'grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'benches':benches,'shrooms':shrooms,'edges':edges,'atlas':atlas.entries,'texture_request_to_canonical':atlas.request_map})
     if write_shared:
         for i,page in enumerate(atlas.pages):(out/f'page-{i}.bin').write_bytes(page)
         (out/'palettes.bin').write_bytes(b''.join(atlas.palettes))
@@ -519,7 +526,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     for e in edges:pack.extend(struct.pack('<4i',*[round(v*65536) for p in [e['a'],e['b']] for v in p]))
     pack.extend(b''.join(atlas.palettes));pack.extend(b''.join(atlas.pages));pack.extend(atlas.stream);(out/'room.hk').write_bytes(pack)
     if len(edges)>1024 or len(draws)>1024 or len(pack)>ROOM_BYTE_BUDGET:raise ValueError('region RAM/draw/edge budget exceeded')
-    report={'tilemap_fill':tilemap_summary,'source':str(s.directory),'scene':region.get('scene_name','Tutorial_01'),'scene_file':scene_file,'knight_collection':s.sid(col_o),'knight_animation':s.sid(anim_o),'pack_sha256':hashlib.sha256(pack).hexdigest(),'pack_bytes':len(pack),'draws':len(draws),'textures':len(atlas.entries),'pages':len(atlas.pages),'edges':len(edges),'format':'HKROOM02','scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_request_to_canonical':atlas.request_map,'stream_bytes':len(atlas.stream),'animation_bytes':atlas.animation_bytes,'alpha_cover_bytes':atlas.alpha_cover_bytes,'format_features':atlas.flags,'stream_textures':len(atlas.streamed),'static_texture_bytes':len(atlas.pages)*32768,'palette_bytes':len(atlas.palettes)*32,'focus_clips':{name:focus_clip_base+i for i,name in enumerate(FOCUS_CLIPS)},'focus_parameter_source':'.hkpsx/focus-source.json','animation_storage':'resident RAM bank with bounded VRAM frame cache','grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'benches':benches,'bench_clip_base':focus_clip_base+len(FOCUS_CLIPS),'edge_sources':[e['source'] for e in edges]}
+    report={'tilemap_fill':tilemap_summary,'source':str(s.directory),'scene':region.get('scene_name','Tutorial_01'),'scene_file':scene_file,'knight_collection':s.sid(col_o),'knight_animation':s.sid(anim_o),'pack_sha256':hashlib.sha256(pack).hexdigest(),'pack_bytes':len(pack),'draws':len(draws),'textures':len(atlas.entries),'pages':len(atlas.pages),'edges':len(edges),'format':'HKROOM02','scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_request_to_canonical':atlas.request_map,'stream_bytes':len(atlas.stream),'animation_bytes':atlas.animation_bytes,'alpha_cover_bytes':atlas.alpha_cover_bytes,'format_features':atlas.flags,'stream_textures':len(atlas.streamed),'static_texture_bytes':len(atlas.pages)*32768,'palette_bytes':len(atlas.palettes)*32,'focus_clips':{name:focus_clip_base+i for i,name in enumerate(FOCUS_CLIPS)},'focus_parameter_source':'.hkpsx/focus-source.json','animation_storage':'resident RAM bank with bounded VRAM frame cache','grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'actors':actors,'hazards':hazards,'benches':benches,'shrooms':shrooms,'bench_clip_base':focus_clip_base+len(FOCUS_CLIPS),'edge_sources':[e['source'] for e in edges]}
     if not write_shared:
         print('cooked',len(pack),'bytes',len(edges),'edges',flush=True)
         return report
