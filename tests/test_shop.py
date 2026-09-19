@@ -128,9 +128,10 @@ class ShopRuntimeTests(unittest.TestCase):
         library = shared_library()
         with tempfile.TemporaryDirectory(prefix='hk-shop-nostd-') as temp:
             source = Path(temp) / 'guest.rs'
-            # The charm panel's four drawing calls are the only thing either
-            # module needs from outside, so they stand in with their real
-            # signatures rather than the module being mocked out.
+            # The charm panel's drawing calls plus the shop counter's prompt
+            # marker are the only thing either module needs from outside, so
+            # they stand in with their real signatures rather than the module
+            # being mocked out.
             source.write_text(
                 '#![no_std]\n'
                 'pub mod dialogue {\n'
@@ -139,6 +140,7 @@ class ShopRuntimeTests(unittest.TestCase):
                 '    pub(crate) fn panel_number(_x: i16, _y: i16, _value: u32) {}\n'
                 '    pub(crate) fn panel_width(_value: &str) -> i16 { 0 }\n'
                 '    pub(crate) fn panel_frame(_x: i16, _y: i16, _w: u16, _h: u16) {}\n'
+                '    pub(crate) fn panel_prompt(_c: (i32, i32), _p: [i32; 2], _l: &str) {}\n'
                 '}\n'
                 f'#[path = "{ROOT}/game/src/charms.rs"] pub mod charms;\n'
                 f'#[path = "{ROOT}/game/src/shop.rs"] pub mod shop;\n')

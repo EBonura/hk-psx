@@ -15,12 +15,12 @@ spatial partitions do not implement source scripts.
 # and cook_fingerprints() deliberately leaves this file out of the cache key.
 #
 # Room_shop (level17), Sly's shop and the only scene that makes P17's purchases
-# reachable, is measured and fits with room to spare: 6 views, worst view 90 of
-# 416 CLUT slots, 1 of 5 pages, 70,372 of 393,216 room bytes, a 71,656-byte
-# scene bank, decoder and packet bound PASS, 7.8 s to cook. Its way in is
-# Dirtmouth's door_sly, whose serialized targetScene is empty because its Door
-# Control FSM holds the destination; `regions.door_destination` reads it, so the
-# gate cooks once this row is in. See out_of_reach in .hkpsx/shop-catalog.json.
+# reachable, was measured before admission and fits with room to spare: 6 views,
+# worst view 90 of 416 CLUT slots, 1 of 5 pages, 70,372 of 393,216 room bytes, a
+# 71,656-byte scene bank, decoder and packet bound PASS, 7.8 s to cook. Its way
+# in is Dirtmouth's door_sly, whose serialized targetScene is empty because its
+# Door Control FSM holds the destination; `regions.door_destination` reads it,
+# so the gate cooks. See out_of_reach in .hkpsx/shop-catalog.json.
 SCENE_TABLE = (
     {'scene_id': 0, 'scene_name': 'Tutorial_01', 'file': 'level6',
      'runtime_bounds': [0,-5,210,100], 'camera_global_bounds': [14,0,196,92]},
@@ -115,26 +115,24 @@ SCENE_TABLE = (
     # tools/cook_scene_pack.py; the 24x16 grid over it is the same six views that
     # measurement cooked, so its numbers carry over unchanged.
     #
-    # The row itself, verified and held back only because admitting a 46th scene
-    # is not an append. Paste it back as the last entry, never anywhere else:
+    # This row stays last. A row inserted anywhere else renumbers the chunk ids
+    # the packs, the guest tables and the save records all address by;
+    # tests/test_regions.py is what guards that. Re-run host/cook_music.py, then
+    # host/ambience.py, then host/regions.py after any change here: the first two
+    # are keyed on this table (ambience checks the music provenance covers the
+    # same scene list, and AMBIENCE_SCENES is indexed by scene id), so running
+    # them out of order raises instead of indexing off the end. Room_shop needs
+    # no new SPU audio: one SceneManager, atmos cue SurfaceInterior, channels
+    # [1,3,5,6] all resident, environmentType 0.
     #
-    #   {'scene_id': 45, 'scene_name': 'Room_shop', 'file': 'level17',
-    #    'runtime_bounds': [-1, -5, 34, 31], 'camera_global_bounds': [0, 0, 33, 30]},
-    #
-    # What has to happen with it, in this order, because each is keyed on the
-    # scene table and will otherwise raise or index off the end:
-    #   1. host/cook_music.py, whose provenance covers 45 scenes and which
-    #      host/ambience.py checks against.
-    #   2. host/ambience.py, whose AMBIENCE_SCENES the guest indexes by scene.
-    #      Room_shop needs no new SPU audio: one SceneManager, atmos cue
-    #      SurfaceInterior, channels [1,3,5,6] all resident, environmentType 0.
-    #   3. host/regions.py, taking 693 regions to 699 as chunks 694 to 699. No
-    #      existing chunk moves; tests/test_regions.py guards that, because a row
-    #      inserted anywhere but the end renumbers ids the packs, the guest
-    #      tables and the save records all address by.
-    # Expect every chunk sha to change even so: postpack_similarity picks
-    # representatives world-wide, so 90 new textures can move what any other
-    # view's textures collapse to. The per-region cook cache survives it.
+    # Growing this table can move chunks it did not add, because
+    # postpack_similarity picks representatives world-wide and new textures can
+    # change what an unrelated view collapses to. Admitting Room_shop did not:
+    # all 693 existing chunk packs, data/room.hk and data/params.rs came back
+    # byte-identical against the previous build's recorded hashes, and only
+    # data/regions.json moved. Compare hashes rather than assuming either way.
+    {'scene_id': 45, 'scene_name': 'Room_shop', 'file': 'level17',
+     'runtime_bounds': [-1, -5, 34, 31], 'camera_global_bounds': [0, 0, 33, 30]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)

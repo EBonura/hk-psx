@@ -118,6 +118,9 @@ fn number(x:i16,y:i16,value:u32) {
 pub(crate) fn panel_text(x:i16,y:i16,value:&str){text(x,y,value);}
 pub(crate) fn panel_number(x:i16,y:i16,value:u32){number(x,y,value);}
 pub(crate) fn panel_width(value:&str)->i16{width(value)}
+/// The shop counter raises the same marker over the same world point an NPC
+/// does, so it borrows the marker rather than keeping a second copy of it.
+pub(crate) fn panel_prompt(camera:(i32,i32),p:[i32;2],label:&str){prompt_marker(camera,p,label);}
 pub(crate) fn panel_frame(x:i16,y:i16,w:u16,h:u16){
     unsafe{BOXES[0]=RectFlat::new(x,y,w,h,150,150,150);BOXES[1]=RectFlat::new(x+2,y+2,w-4,h-4,0,0,0);BOX_COUNT=2;}
 }

@@ -189,6 +189,45 @@ class InstalledDoorTests(unittest.TestCase):
         self.assertEqual(self.doors('Crossroads_06')['door1'][2],
                          ('Crossroads_ShamanTemple', 'left1'))
 
+    def test_a_cooked_door_gate_is_entered_on_up_and_not_walked_through(self):
+        """Side 5, because a door collider is too short for the point test.
+
+        Every other gate is a tall side or a floor the Knight falls through, and
+        `world::gate` tests the player's own origin against it. A door's collider
+        is a strip of floor a quarter of a unit tall, and the origin sits 1.39
+        units above the Knight's feet, so that test passes straight over it: the
+        two doors in the catalogue cooked for several builds and neither could
+        ever fire. The guest answers a side 5 gate with the hero body and an UP
+        press instead, which is what `Door Control` itself does.
+        """
+        import re
+        regions = ROOT / 'data/regions.rs'
+        if not regions.is_file():
+            self.skipTest('run host/regions.py first')
+        params = (ROOT / 'data/params.rs').read_text()
+        bottom = int(re.search(r'bottom:(-?\d+)', params).group(1)) / 65536
+        rows = re.findall(r'Gate \{scene:(\d+),target_scene:(\d+),target_region:\d+,'
+                          r'bounds:\[([-\d,]+)\],spawn:\[[-\d,]+\],entry_vy:-?\d+,side:(\d+),',
+                          regions.read_text())
+        doors = [(int(s), [int(v) / 65536 for v in b.split(',')]) for s, _t, b, side in rows
+                 if int(side) == 5]
+        self.assertTrue(doors, 'the catalogue cooks at least one door gate')
+        import json
+        cooked = json.loads((ROOT / 'data/regions.json').read_text())['scenes']
+        by_id = {scene['scene_id']: scene for scene in cooked}
+        for scene_id, bounds in doors:
+            # Shorter than the Knight's own origin sits above his feet, which is
+            # the measurement that makes the point test wrong for these.
+            self.assertLess(bounds[3] - bounds[1], -bottom, bounds)
+            source = [g for g in by_id[scene_id]['gates']
+                      if 'trigger_bounds' in g
+                      and all(abs(a - b) < 1e-4 for a, b in zip(g['trigger_bounds'], bounds))]
+            self.assertEqual(len(source), 1, bounds)
+            # Only a TransitionPoint with a Door Control FSM becomes a door, and
+            # a gate named for a side keeps that side rather than being one.
+            self.assertIn('door_control', source[0])
+            self.assertFalse(source[0]['name'].startswith(('left', 'right', 'top', 'bot')))
+
     def test_nothing_in_these_scenes_writes_the_variables_the_walker_reads(self):
         """The serialized variable is only the shipped value if nothing sets it."""
         from focus import action_fields

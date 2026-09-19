@@ -363,7 +363,7 @@ pub struct Gate {
     pub spawn: [i32; 2],
     /// Initial vertical velocity at the destination (Q16 units per second).
     pub entry_vy: i32,
-    /// Source gate side: 1 left, 2 right, 3 top, 4 bottom, 0 other (doors).
+    /// Source gate side: 1 left, 2 right, 3 top, 4 bottom, 5 a door, 0 other.
     pub side: u8,
     /// `Delay Collider` FSM: ticks after the scene starts before this gate's
     /// collider exists (top gates, 3 s).
@@ -944,6 +944,11 @@ pub fn checkpoint(
 pub fn contains(bounds: [i32; 4], x: i32, y: i32) -> bool {
     x >= bounds[0] && x <= bounds[2] && y >= bounds[1] && y <= bounds[3]
 }
+/// Two world boxes touching, which is what a source trigger asks of the hero
+/// body rather than of the single point `contains` takes.
+pub fn intersects(bounds: [i32; 4], body: [i32; 4]) -> bool {
+    bounds[0] <= body[2] && bounds[2] >= body[0] && bounds[1] <= body[3] && bounds[3] >= body[1]
+}
 /// Predict only the current vertical leg. The same swept terrain solver used
 /// by gameplay stops the look-ahead at floors, ceilings and the jump apex.
 /// No horizontal movement is assumed; the caller retains its cheap fallback.
@@ -1016,12 +1021,26 @@ pub fn upcoming(
 /// never while recoiling (the source zeroes the velocity and pushes the body
 /// back out of the trigger instead), a side gate only while facing into it,
 /// and a delayed collider only once `scene_ticks` has passed its delay.
-pub fn gate(scene: usize, player: &Player, recoiling: bool, scene_ticks: u32) -> Option<&'static Gate> {
+/// `Gate::side` for a TransitionPoint that carries a `Door Control` FSM.
+pub const DOOR: u8 = 5;
+pub fn gate(scene: usize, player: &Player, body: [i32; 4], up: bool, recoiling: bool,
+            scene_ticks: u32) -> Option<&'static Gate> {
     GATES.iter().find(|g| {
         g.scene == scene
             && !recoiling
-            && contains(g.bounds, player.x, player.y)
             && scene_ticks >= g.delay_ticks as u32
-            && match g.side { 1 => player.facing < 0, 2 => player.facing > 0, _ => true }
+            && match g.side {
+                // `Door Control` is never walked through: `In Range` is the
+                // door's own trigger against the hero body and `Change Scene`
+                // waits on `ListenForUp`. Both matter here, because a door
+                // collider is a strip of floor about a quarter of a unit tall,
+                // so the player point a side gate is tested with sits well
+                // above it and would never enter. Town's door_sly and
+                // Crossroads_06's door1 are the two in the catalogue.
+                DOOR => up && intersects(g.bounds, body),
+                1 => contains(g.bounds, player.x, player.y) && player.facing < 0,
+                2 => contains(g.bounds, player.x, player.y) && player.facing > 0,
+                _ => contains(g.bounds, player.x, player.y),
+            }
     })
 }

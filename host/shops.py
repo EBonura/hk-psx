@@ -26,12 +26,10 @@ discount in `ShopItemStats::OnEnable`, are read out of the shipped CIL and
 asserted rather than transcribed, so an install whose rules moved fails the cook
 instead of shipping a guest that quietly obeys a different shop.
 
-Scope note: of everything here only the Crossroads stag station, Cornifer's map
-and the City lift toll are inside the admitted scene list. Sly's shop is a
-separate scene (`Room_shop`) that the slice does not contain; it is catalogued
-and cooked because Dirtmouth carries its door, and admitting that one scene is
-the only step between the cooked table and a reachable shop. See `out_of_reach`
-in the report.
+Scope note: Sly's shop is a separate scene (`Room_shop`) reached through
+Dirtmouth's door_sly, and it is now admitted, so the cooked table is reachable.
+The other five shop scenes, the relic dealer, the charm smith, the mapper and
+Sly's storeroom among them, are not. See `out_of_reach` in the report.
 """
 import json
 import mmap
@@ -327,6 +325,67 @@ def shop_stock(catalog, scene, prices, special_types):
             'lists': lists}
 
 
+def shop_region(catalog, scene):
+    """Where the player stands to open the shop, from `Shop Region`'s own FSM.
+
+    `Shop Region` is the counter-side twin of `npc_control`: `Out Of Range`
+    waits on the object's trigger collider, `In Range` raises the `Prompt
+    Marker` child through `ShowPromptMarker` and listens for UP, and `Shop Up`
+    is what finally opens the menu. So the three things the guest needs, the
+    trigger box, the marker point and the label, are all readable rather than
+    placed by hand, and a moved counter moves them with it.
+
+    The scene id is the catalog's, so a shop scene that is not admitted refuses
+    here instead of cooking a trigger into a scene the guest cannot load.
+    """
+    from quality import SCENE_TABLE
+    found = [(tree['m_GameObject']['m_PathID'], tree['fsm']) for kind, tree
+             in scene.objects.values()
+             if kind == 'PlayMakerFSM' and tree['fsm']['name'] == 'Shop Region']
+    if len(found) != 1:
+        raise LookupError(f'expected one Shop Region FSM, found {len(found)}')
+    gid, fsm = found[0]
+    if not scene.active(gid):
+        raise ValueError('the Shop Region object starts inactive')
+    states = {state['name']: state for state in fsm['states']}
+    label = None
+    for name in ('In Range',):
+        data = states[name]['actionData']
+        for i, action in enumerate(data['actionNames']):
+            if data['actionEnabled'][i] and action.rsplit('.', 1)[-1] == 'ShowPromptMarker':
+                label = _word(action_fields(data, i)['labelName'])
+    if not label:
+        raise LookupError('Shop Region raises no prompt label')
+    boxes = [tree for kind, tree in scene.objects.values()
+             if kind == 'BoxCollider2D' and tree['m_GameObject']['m_PathID'] == gid
+             and tree['m_Enabled'] and tree['m_IsTrigger']]
+    if len(boxes) != 1:
+        raise ValueError(f'Shop Region has {len(boxes)} triggers')
+    off, size = boxes[0]['m_Offset'], boxes[0]['m_Size']
+    corners = [scene.point(gid, x + off['x'], y + off['y'])[:2] for x, y in
+               ((-size['x'] / 2, -size['y'] / 2), (size['x'] / 2, size['y'] / 2))]
+    marker = [pid for pid, (kind, tree) in scene.objects.items()
+              if kind == 'GameObject' and tree['m_Name'] == 'Prompt Marker'
+              and scene.transforms[scene.transforms[scene.go_transform[pid]]
+                                   ['m_Father']['m_PathID']]['m_GameObject']['m_PathID'] == gid]
+    if len(marker) != 1:
+        raise LookupError('Shop Region has no single Prompt Marker child')
+    point = scene.point(marker[0])
+    scene_name = next(name for name, parsed in catalog.parsed.items() if parsed is scene)
+    admitted = [row for row in SCENE_TABLE if row['scene_name'] == scene_name]
+    if len(admitted) != 1:
+        raise LookupError(f'{scene_name} is not in the cooked scene catalog')
+    return {
+        'scene': scene_name, 'scene_id': admitted[0]['scene_id'], 'prompt': label,
+        'bounds': [min(corners[0][0], corners[1][0]), min(corners[0][1], corners[1][1]),
+                   max(corners[0][0], corners[1][0]), max(corners[0][1], corners[1][1])],
+        'marker': [point[0], point[1]],
+        'note': 'Trigger, prompt marker and label only. The hero alignment walk, '
+                'the turn, the intro conversation and the shop window art that '
+                'Shop Region also drives are not cooked.',
+    }
+
+
 def sly_shop(catalog, prices):
     town = catalog.scene('Town')
     building = catalog.object(town, 'Sly_shop')
@@ -345,6 +404,7 @@ def sly_shop(catalog, prices):
     return {
         'shop_scene': destination,
         'shop_file': catalog.files[destination],
+        'region': shop_region(catalog, shop),
         'town_building': {'object': 'Sly_shop',
                           'visible_when': _word(gate[0]['boolName']),
                           'swaps': 'Check Opened enables the open or the closed child'},
@@ -769,6 +829,7 @@ def shop_rows(report, ui, advances):
              for key in ('stock', 'stockAlt')}
     return {
         'items': cooked, 'slots': slots, 'lists': lists,
+        'region': report['sly_shop']['region'],
         'alternate_when': [flag(n) for n in stock['alternate_when']],
         'mask_shards_per_mask': fragments['mask_shard']['fuse']['per_whole'],
         'mask_cap': fragments['mask_shard']['mask_cap'],
@@ -776,6 +837,13 @@ def shop_rows(report, ui, advances):
         'vessel_fragments_per_vessel': fragments['vessel_fragment']['fuse']['per_whole'],
         'soul_per_vessel': fragments['vessel_fragment']['fuse']['awards'][0]['amount'],
     }
+
+
+def _q16(value):
+    """World units as the guest reads them, the same Q16 host/world.py emits."""
+    if not -512 < value < 512:
+        raise ValueError('shop world coordinate outside Q16 bounds')
+    return round(value * 65536)
 
 
 def generated_shop_rs(table, rules):
@@ -798,8 +866,17 @@ def generated_shop_rs(table, rules):
                 row['delivery'], row['charms_required'],
                 'true' if row['dung_discount'] else 'false'))
     array = lambda values: '&[' + ','.join(str(v) for v in values) + ']'
+    region = table['region']
     return '\n'.join([
         "// Generated Sly's shop; prices and text from the installed language sheets.",
+        f"/// `Shop Region` in {region['scene']}: the strip of floor in front of the",
+        '/// counter its `Out Of Range`/`In Range` pair watches, the `Prompt Marker`',
+        '/// child `ShowPromptMarker` raises over it and the label it raises. Q16 world',
+        '/// units, the same units world::GATES and the NPC talk triggers use.',
+        f"pub const SHOP_SCENE:usize={region['scene_id']};",
+        'pub const SHOP_REGION:[i32;4]=[' + ','.join(str(_q16(v)) for v in region['bounds']) + '];',
+        'pub const SHOP_MARKER:[i32;2]=[' + ','.join(str(_q16(v)) for v in region['marker']) + '];',
+        f"pub const SHOP_PROMPT:&str={quoted(region['prompt'])};",
         f"pub const ITEM_COUNT:usize={len(entries)};",
         '/// The PlayerData bools the shop reads that are not `gotCharm_N`, in the',
         '/// order `Flag::Slot` indexes them.',
@@ -928,16 +1005,13 @@ def collect():
                                         if s['scene_name'] == 'Town')['gates']
                                    if g['name'] == 'door_sly'),
             'notes': [
-                'Every ShopMenuStock in the game lives in a scene the admitted list '
-                'does not contain, Sly included. Dirtmouth carries his door and the '
-                'shop interior is a separate scene.',
-                'Room_shop fits every residency budget with room to spare; see '
-                'admission_cost. Its way in is Dirtmouth\'s door_sly, whose '
-                'serialized targetScene is empty because the Door Control FSM holds '
-                'the destination (Room_shop, entry gate left1). regions.'
-                'door_destination reads that FSM, so the gate cooks as soon as the '
-                'scene is admitted, and Room_shop\'s own left1 already targets '
-                'Town/door_sly for the way back.',
+                'Room_shop is admitted, so Sly is the one ShopMenuStock in the game '
+                'a player can reach. The other five shop scenes are not.',
+                'Its way in is Dirtmouth\'s door_sly, whose serialized targetScene is '
+                'empty because the Door Control FSM holds the destination (Room_shop, '
+                'entry gate left1). regions.door_destination reads that FSM, so the '
+                'gate cooks, and Room_shop\'s own left1 targets Town/door_sly for the '
+                'way back. Both directions are in data/regions.rs.',
                 'The only station in the slice is Crossroads_47. Its toll can be paid '
                 'and the station opened, but the only destination inside the slice is '
                 'Crossroads_47 itself, which Current Location Check cancels. Every '
@@ -955,9 +1029,11 @@ def collect():
             ],
         },
         'limitations': [
-            'Sly\'s stock is cooked into data/shop.rs and game/src/shop.rs runs the '
-            'transaction, but Room_shop is not an admitted scene, so nothing in the '
-            'disc build can reach a shop counter to call it.',
+            'The purchase is reachable: Room_shop is admitted, data/shop.rs carries '
+            'the stock and the Shop Region trigger, and game/src/shop.rs runs the '
+            'transaction from it. What the source also runs from that trigger and '
+            'this does not: the hero alignment walk and turn, Sly\'s intro '
+            'conversation, the shop window art and the confirm sub-window.',
             'The stag station, Cornifer and the City lift are catalogued only. Their '
             'Geo is still taken by no code in the port.',
             'Prices come from the decrypted EN_Prices sheet because ShopItemStats::Awake '
@@ -965,9 +1041,9 @@ def collect():
             'the other eleven language sheets are not checked for disagreement.',
             'The Defender\'s Crest discount is implemented and unreachable: no row in '
             'Sly\'s stock sets dungDiscount, so only the relic dealer would use it.',
-            'Shop UI layout, icons and the confirm window are not extracted. The cooked '
-            'rows carry text and price; the guest keeps a cursor and a refusal and '
-            'draws nothing, because there is no scene to draw it in.',
+            'Shop UI layout and icons are not extracted. The cooked rows carry text '
+            'and price and the guest draws them in the shared dialogue panel, which '
+            'is the port\'s own layout rather than the source\'s scrolling list.',
             'Relic selling (the Selling Shop branch of Confirm Control) is recorded '
             'as a branch but not extracted: no relic dealer scene is admitted.',
             'Mask shard and vessel fragment counting happens inside a prefab the '
