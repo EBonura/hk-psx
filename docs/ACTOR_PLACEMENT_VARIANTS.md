@@ -1,13 +1,36 @@
 # Placement variants of already ported actors
 
 Four of the 24 unadmitted Crossroads placements belong to families whose
-controller is already written and shipped. They are refused by a recognizer
-check about the placement, not by anything about the behaviour. This note
-records what each check rejects and what was measured when the check was relaxed
-in memory, so the work can be scoped without repeating the experiment.
+controller is already written and shipped, or nearly so. They are refused by a
+recognizer check about the placement rather than by anything about the
+behaviour. This note records what each check rejects and what was measured when
+it was relaxed.
 
-Nothing here has been changed. `host/climber.py` and `host/runner.py` are
-untouched.
+Two of the four are now admitted and two are not, for reasons worth keeping.
+
+- **Crossroads_39's Zombie Runner: admitted.** `host/runner.py` selects the
+  driving FSM by name instead of demanding exactly one component, so the extra
+  `enemy_corpse` no longer refuses it. Cost was nil: the scene's tightest region
+  stayed at 290 textures.
+- **Crossroads_37's mirrored Leaper: admitted**, but it needed more than a
+  recognizer relax. The claim that its controller already supported it was
+  wrong. `Runner::with_params` hardcoded `facing: -1` and `enemies.rs` asserted
+  `initial_direction == -1`, so relaxing the host check alone would have shipped
+  a guaranteed panic in a scene that already admits twelve actors. The
+  controller now takes a starting facing, the guest accepts either sign, and the
+  cooker reads the sign off the transform mirror rather than assuming.
+- **The two duplicate-box Climbers: measured and dropped.** The recognizer side
+  works, and with it relaxed both admit. The cost does not fit: one Climber art
+  set is +15 textures, which puts Crossroads_03's tightest region at **421
+  against the 416 CLUT budget**, the same wall the Knight ability clips hit
+  earlier. ShamanTemple's would fit at 400, but admitting only that half needs a
+  scene-specific carve-out, which is not a relax. The projection is a floor
+  rather than an estimate: `similarity_dedup` protects every animation frame, so
+  none of the 15 can be collapsed.
+- The pure dedup half of that work, routing `runner.recognize`,
+  `climber.recognize` and `baldur.py` through the one `body_box` tolerance that
+  is currently written three times, is admission-neutral and would land on its
+  own.
 
 ## Crossroads_39 Zombie Runner, `level69:3429`
 
