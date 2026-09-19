@@ -16,9 +16,6 @@ const ASSET_SCRIPTS: &[&str] = &[
     "title_music.py", "cook_audio.py", "cook_hud.py", "ambience.py", "focus_audio.py", "read_points.py",
     "geo.py", "geo_audio.py", "runner_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
     "shade.py",
-    // Reports only: the ability catalog P14 step 3 treats as authority, and
-    // which special traversal surfaces the admitted scenes actually contain.
-    "abilities.py",
 ];
 /// Route tapes replayed against the final CUE; the last three also run the scene-gate verifier.
 /// Final telemetry a route must reach besides completing its tape.

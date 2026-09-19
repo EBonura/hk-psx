@@ -7,6 +7,9 @@ per ability, so that list is the catalog; the scenes then say which of those
 states any admitted room can reach. No retail payload is embedded; the report
 goes to .hkpsx.
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'host'))
 import json, re
 from pathlib import Path
 from source import ROOT, dump
