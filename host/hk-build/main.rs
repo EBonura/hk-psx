@@ -19,6 +19,11 @@ const ASSET_SCRIPTS: &[&str] = &[
     // After read_points.py: the charm catalogue wraps its descriptions against
     // the glyph advances that cook writes into data/read_points.rs.
     "charms.py",
+    // Sly's shop, which the guest links now that Room_shop is admitted. It
+    // needs geo.py's report for the economy, read_points.py's advances to wrap
+    // its descriptions and items.py's fuse rules, so it follows all three.
+    "items.py",
+    "shops.py",
     // The compiled FSM programs. Independent of the others: it reads the source
     // scenes and .hkpsx/selected-regions.json and writes data/scripts.rs.
     "cook_scripts.py",

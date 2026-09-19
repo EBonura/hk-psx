@@ -341,6 +341,13 @@ def generate(report, out_path=None):
             # collider of a delayed top gate turns on `collider_delay` seconds
             # after the scene starts. Source GatePosition: right 1, left 2.
             side = {'left': 1, 'right': 2, 'top': 3, 'bot': 4}.get(''.join(c for c in gate['name'].split(' ')[0] if c.isalpha()), 0)
+            # A door is 5, and the guest enters it on UP with the hero body
+            # rather than by walking a point through it, because that is what
+            # its `Door Control` FSM does. Its collider is a strip of floor
+            # about a quarter of a unit tall, so a point test taken at the
+            # Knight's own origin passes over it and never enters.
+            if gate.get('door_control') and side == 0:
+                side = 5
             delay = gate.get('collider_delay', 0.)
             if not gate.get('collider_initially_enabled', True) and delay <= 0:
                 raise ValueError('gate collider starts disabled without a Delay Collider FSM: ' + gate['source'])

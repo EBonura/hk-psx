@@ -25,6 +25,10 @@ mod focus_audio;
 mod music;
 mod ambience;
 mod enemies;
+// The visible enemy draws are animation keys, and the cache cannot be asked for
+// more than it holds: the tile budget and the four reserved keys have to leave
+// the request array room for both.
+const _: () = assert!(enemies::MAX_VISIBLE + hk_cache::RESERVED_SLOTS <= hk_cache::MAX_REQUESTS);
 mod hud;
 mod world;
 mod reveal_masks;
@@ -38,6 +42,7 @@ mod vram_cache;
 mod menu;
 mod pause;
 mod charms;
+mod shop;
 mod cheats;
 mod geo;
 mod geo_render;
@@ -414,6 +419,9 @@ fn main() {
     let mut scene_ticks=0u32;let mut scene_ticks_scene=usize::MAX;
     let mut paused=false;let mut start_held=false;
     let mut pause_menu=pause::State::new();
+    // Sly's counter. The shelf itself is `shop::state()`, because the charm
+    // half of a purchase lands in `charms::state()` and the two must agree.
+    let mut shop_screen=shop::Screen::new();
     let mut vram=vram_cache::Cache::new();
     let mut sim_clock=psx_rt::interrupts::vblank_count();
     let mut initial=true;
@@ -512,7 +520,10 @@ fn main() {
                 } else {0};
                 (npc.position,clip_frame(&room,npc.clip_base as usize+slot,sim_clock))
             });
-            let mut needed=[0u16;12];
+            // One key per slot the cache can be asked for in a frame. A tiled
+            // actor or NPC contributes one key per tile, so twelve no longer
+            // bounds the working set.
+            let mut needed=[0u16;hk_cache::MAX_REQUESTS];
             needed[0]=match ability_frame {
                 Some(i)=>ability_art::KEY_BASE+i as u16,
                 None=>u32_at(room.frame(body_frame),0) as u16,
@@ -552,7 +563,7 @@ fn main() {
             if let Some(i)=ball_frame {
                 prims+=ability_art::draw(i,cast.ball.x,cast.ball.y,cast.ball.facing,camera);
             }
-            prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)),settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(vitals.blue_health),save_prompt);render::submit(vitals.health,settings.cheats.params(VITAL_PARAMS).max_health,vitals.soul,soul_cap(&shade),paused,vitals.blue_health,door.shade());
+            prims+=render::scenery(camera,true);dialogue::prepare(camera,geo.wallet(),paused.then_some((&pause_menu,&settings)),settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(vitals.blue_health),save_prompt);shop::prepare(&shop_screen,camera,paused);render::submit(vitals.health,settings.cheats.params(VITAL_PARAMS).max_health,vitals.soul,soul_cap(&shade),paused,vitals.blue_health,door.shade());
             emit::counter(counter::TRI_PRIMITIVES,prims*2);emit::stage_end(stage::RENDER);
             emit::stage_begin(stage::PRESENT);
             let display=fb.begin_deferred_swap();
@@ -595,6 +606,11 @@ fn main() {
                         n.bounds[0]<=body[2] && n.bounds[2]>=body[0] && n.bounds[1]<=body[3] && n.bounds[3]>=body[1]
                     ).map(|n|n.source_id);
                     dialogue::npc_tick(r.scene,npc_in_range,can_inspect,pad.bits());
+                    // Sly's `Shop Region`, whose trigger answers UP the way an
+                    // NPC's does. It takes the same hero body, so the shop and a
+                    // conversation cannot disagree about where the Knight is.
+                    let paid=shop::tick(&mut shop_screen,r.scene,body,can_inspect&&!dialogue::open(),pad.bits(),geo.wallet());
+                    if paid>0 {geo.take(paid,geo::GEO_PARAMS);}
                     // The cooked FSM programs. Their trigger volumes take the
                     // same hero body the NPC range does, so a script and an NPC
                     // standing in the same place agree on where the Knight is.
@@ -602,7 +618,7 @@ fn main() {
                     ambience::tick();
                     let start=pad.is_held(button::START);
                     let mut ui_consumed=paused;
-                    if start&&!start_held && !dialogue::open() {
+                    if start&&!start_held && !dialogue::open() && !shop_screen.open {
                         paused=!paused;ui_consumed=true;
                         if paused {pause_menu.enter(pad.bits());}
                     }
@@ -615,7 +631,7 @@ fn main() {
                         settings.cheats.apply(previous_cheats,&mut vitals,VITAL_PARAMS,pause_menu.action);
                         if before!=(settings.sfx,settings.ambience,settings.music) {audio::set_volume(settings.sfx);focus_audio::set_volume(settings.sfx);geo_audio::set_volume(settings.sfx);runner_audio::set_volume(settings.sfx);ambience::set_volume(settings.ambience);music::set_volume(settings.music);}
                     }
-                    if paused || dialogue::open() || (door.pending() && !door.entering()) || vitals.dead || !vitals.can_control() || focus.locks_control() {audio::stop_footsteps();}
+                    if paused || dialogue::open() || shop_screen.open || (door.pending() && !door.entering()) || vitals.dead || !vitals.can_control() || focus.locks_control() {audio::stop_footsteps();}
                     settings.cheats.maintain(&mut vitals,VITAL_PARAMS);cheats::publish(settings.cheats,VITAL_PARAMS);
                     // StartSoulLimiter lowers maxMP itself while a Shade is owed.
                     vitals.soul=vitals.soul.min(soul_cap(&shade));
@@ -671,7 +687,7 @@ fn main() {
                             vitals.finish_hazard_respawn(settings.cheats.params(VITAL_PARAMS));target=Some(safe.2);
                         } else if !vitals.dead {
                             let door_exit=door.tick(r.scene);
-                            let read_consumes=dialogue::consumes_actions();
+                            let read_consumes=dialogue::consumes_actions()||shop_screen.consumes_actions();
                             // Source Spell Control: the cast button waits Button Down Time
                             // for a release. Let go inside that and it casts; keep holding
                             // and the Focus starts instead. One button, two moves.
@@ -742,7 +758,7 @@ fn main() {
                                 respawn=Some((r.scene,stand,player.facing,region_id));
                                 save_prompt=Some(0);
                             }
-                            let locked=focus.locks_control()||dialogue::open()||door.pending()||bench_state.locks_control()||save_prompt.is_some()||cast.locks_control();
+                            let locked=focus.locks_control()||dialogue::open()||shop_screen.open||door.pending()||bench_state.locks_control()||save_prompt.is_some()||cast.locks_control();
                             // Take Control: the Dream Nail owns the Knight from Start to End.
                             dream.has_dream_nail=settings.cheats.dream;
                             dream.tick(DREAM_NAIL_PARAMS,pad.is_held(button::TRIANGLE)&&vitals.can_control(),&player,locked);
@@ -835,7 +851,12 @@ fn main() {
                             if gate_cooldown==0 && (door_exit || !door.pending()) && !vitals.dead && !vitals.hazard_pending {
                                 let gate=if door_exit {
                                     Some(world::GATES.iter().find(|g|g.scene==r.scene&&g.target_scene==great_door::TARGET_SCENE).expect("Great Door exit gate"))
-                                } else {world::gate(r.scene,&player,vitals.recoil_ticks!=0,scene_ticks)};
+                                } else {
+                                    // A door answers UP against the hero body; every other
+                                    // gate keeps the point test it has always used.
+                                    let hero_body=[player.x-PARAMS.half_width,player.y+PARAMS.bottom,player.x+PARAMS.half_width,player.y+PARAMS.top];
+                                    world::gate(r.scene,&player,hero_body,pressed(button::UP)&&!read_consumes,vitals.recoil_ticks!=0,scene_ticks)
+                                };
                                 if let Some(g)=gate {
                                     let side_entry=(g.scene==0&&g.target_scene==great_door::TARGET_SCENE)
                                         ||(g.scene==great_door::TARGET_SCENE&&g.target_scene==0);

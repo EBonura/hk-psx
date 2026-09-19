@@ -78,6 +78,13 @@ impl World {
     pub fn add_quietly(&mut self,amount:u32,params:Params) {
         self.wallet=self.wallet.saturating_add(amount).min(params.wallet_max);self.publish(params);
     }
+    /// HeroController::TakeGeo, which a shop's Confirm Control calls with the
+    /// price it just charged. Nothing is spawned or dropped; the wallet is
+    /// simply lighter, and a caller that never checked CanBuy cannot push it
+    /// below zero.
+    pub fn take(&mut self,amount:u32,params:Params) {
+        self.wallet=self.wallet.saturating_sub(amount);self.publish(params);
+    }
     pub fn coins(&self)->impl Iterator<Item=&Coin> {self.loose.iter().flatten()}
     pub fn indexed_coins(&self)->impl Iterator<Item=(usize,&Coin)> {self.loose.iter().enumerate().filter_map(|(i,c)|c.as_ref().map(|c|(i,c)))}
     pub fn active(&self)->usize {self.coins().count()}
