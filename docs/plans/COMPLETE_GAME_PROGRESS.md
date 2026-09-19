@@ -1822,15 +1822,11 @@ Crossroads_38, and that GameObject carries an FSM that reads the PlayerData bool
 `fatGrubKing` and deactivates itself on the second frame when it is false. On a
 fresh save the original removes the object; there is nothing to slash.
 
-That decides how it ships. The port does not run that FSM, so the object is
-already cooked and visible today: this is one instance of the activation gap the
-script work measured, where at least 23 FSMs say "PlayerData bool false,
-deactivate self" and none of them run. Given the object is on screen, a bounce
-target on it is closer to the original than an inert one. The wrongness is the
-object being visible at all, and that is recorded against the renderer
-capability activation needs, not papered over here. The source record carries
-the gate and the owning FSMs as an explicit limitation rather than a silent
-omission.
+That decided how it shipped at the time, on reasoning that later turned out to
+rest on a false premise. See the activation-gate entry below: the Fat Grub King
+was never drawn, because it carries a `tk2dSprite` and the scenery cooker reads
+only `SpriteRenderer`. The cook-time gate now removes the object and its shroom
+with it, which is what the original does.
 
 One port-specific divergence, commented where it lives: `shroom_bounce` clears
 `jumping`, which the source does not. This port re-pins the jump hold's velocity
@@ -2021,6 +2017,73 @@ with the key as a literal, one deriving it from the assembly, and the third
 importing the second's private helper. A literal key goes stale silently the day
 the install changes. `host/language.py` now owns key derivation and sheet
 decryption, all three callers dropped their copy, and the outputs are unchanged.
+
+## Activation gates evaluated at cook time, and a templated-FSM scare measured
+
+The port was showing objects the original deletes. `host/activation.py` now
+evaluates the recognized PlayerData gates once, at cook time, against the
+PlayerData a new save starts from, and `Scene.active` refuses a gated-off
+object. Three gate shapes are recognized by structure rather than by name: the
+`DeactivateIfPlayerdataFalse`/`True` components, and the two FSM templates
+`deactivate_ifnot_playerdatabool` and `activate_if_pd_bool`. The FSM side is a
+walker that follows the FSM from its start state with fresh-save values and
+refuses anything it cannot fully decode, so an unfamiliar shape never removes
+content.
+
+**1,465 objects are gated off across the 45 scenes, but only 26 were authored
+active**, so only 26 actually leave the world. The rest were already inactive.
+The 26 are the Grimm troupe and Divine tents in Dirtmouth, the NPCs who are not
+in town on a fresh save, Quirrel and Tiso at the lake, Zombie Myla, and the Fat
+Grub King.
+
+The verification is worth copying: rather than trusting a full cook, every
+region of the 9 affected scenes was A/B cooked through the real cooker with
+gates on and off, and the other 36 scenes were proved untouchable because every
+gated object in them was already inactive. Town loses 117 draws across 8
+regions, Crossroads_45 loses its one actor, Crossroads_38 loses its shroom, and
+every other region is byte-identical.
+
+### A correction to this ledger
+
+An earlier entry justified shipping the BounceShroom ungated with "given the
+object is on screen, a bounce target on it is closer to the original than an
+inert one". **The object was never on screen.** The Fat Grub King carries a
+`tk2dSprite` and the scenery cooker reads only `SpriteRenderer`, so its draw
+count never moved. The premise was wrong, and so the conclusion it supported is
+void: removing the shroom, which is what the gate now does, is simply correct.
+
+### The templated-FSM scare
+
+A `PlayMakerFSM` built from a template does not run its own serialized states.
+`InitTemplate` rebuilds from the template and `OverrideVariableValues` applies
+only the instance variables the template flags `showInInspector`. 209 of 462
+FSMs in eight scenes are templated, so this looked like it could invalidate
+every extractor that reads FSM variables, several of which feed the cook: Geo
+Rock, Zombie Swipe, chaser and Bouncer Control are all templated and all differ
+from their template.
+
+Measured across all 45 scenes: **1,914 variables differ, 1,842 of them are
+`showInInspector` so the instance wins and reading the instance is correct, and
+the remaining 72 are all the same thing**, `npc_dream_dialogue`'s `Impact Pt`
+and `Active Pt`, where only the reference's `m_FileID` differs and the path id
+is identical. That is a cross-file reference fixup, not a value any cooker
+reads.
+
+So the existing extractors are right, and now there is a number behind that
+rather than an assumption. The concern is real for anything that starts reading
+a non-inspector variable, and `activation.py`'s `instantiate()` is the model for
+doing it properly: 84 of the gate FSMs are templated, and reading their own
+copies would have made that feature do nothing at all.
+
+### Limitation, stated plainly
+
+These gates are evaluated once, at cook time, against the PlayerData a new save
+starts from. The original re-evaluates them on every scene load, so this is
+equivalent only while no gate flag can change. Today none can, because the port
+has no acquisition for any of them, which makes the cook-time answer exactly the
+answer the original would give every time. The moment a save can set one of
+these flags it stops being correct, and the gate needs the runtime script
+executor plus a renderer that can drop a draw.
 
 ## Required package completion record
 
