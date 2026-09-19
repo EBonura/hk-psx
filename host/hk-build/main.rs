@@ -60,16 +60,28 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("kings-return", "HK_SHADE_PRESENT", 0), ("kings-return", "HK_DEATHS", 0),
     // bench-save resumes at the Dirtmouth bench, sits, and accepts the prompt. It is the
     // only way this port writes the card, and what the power-cut check interrupts.
-    ("bench-save", "HK_BENCH_RESTS", 1), ("bench-save", "HK_SAVE_WRITES", 1), ("bench-save", "HK_SAVE_ERRORS", 0)];
+    ("bench-save", "HK_BENCH_RESTS", 1), ("bench-save", "HK_SAVE_WRITES", 1), ("bench-save", "HK_SAVE_ERRORS", 0),
+    // town-elderbug resumes in Town, walks into Elderbug's npc_control talk trigger and
+    // holds a whole conversation: UP opens it, six presses of X page through all six
+    // cooked entries and close it. SOURCE back to 0 is what proves it closed rather than
+    // ran out of tape; OPENED stays 1 because the trigger the Knight is standing in must
+    // not reopen it behind the closing press. metElderbug is written on the way through.
+    // A .pxtape is opaque once written, so this is the string that made it, through
+    // tools/validate.py's poll_tape at count 900:
+    //   9:start:1,12:cross:1,400:left:120,600:right:84,700:up:4,
+    //   730:cross:2,755:cross:2,780:cross:2,805:cross:2,830:cross:2,855:cross:2
+    ("town-elderbug", "HK_NPC_OPENED", 1), ("town-elderbug", "HK_NPC_SOURCE", 0),
+    ("town-elderbug", "HK_MET_ELDERBUG", 1), ("town-elderbug", "HK_REGION_ID", 100),
+    ("town-elderbug", "HK_SAVE_LOADED", 1), ("town-elderbug", "HK_DEATHS", 0)];
 /// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
 /// fresh formatted card when the fixture is absent (the run writes it back there).
 const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
     ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd"),
     ("bench-save", "town-continue.mcd"), ("well-drop", "town-continue.mcd"), ("town-reset2", "town-continue.mcd"),
-    ("crossroads-gate", "town-continue.mcd")];
+    ("crossroads-gate", "town-continue.mcd"), ("town-elderbug", "town-continue.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-reset2", true),
     ("crossroads-gate", true), ("town-continue", false), ("town-shade", false), ("kings-death", false),
-    ("kings-return", false), ("bench-save", false)];
+    ("kings-return", false), ("bench-save", false), ("town-elderbug", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
