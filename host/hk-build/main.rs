@@ -202,35 +202,41 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("town-shop", "HK_SHOP_OPENED", 1), ("town-shop", "HK_SHOP_CLOSED", 1),
     ("town-shop", "HK_SHOP_OPEN", 0), ("town-shop", "HK_SHOP_PURCHASES", 0),
     ("town-shop", "HK_SAVE_LOADED", 1), ("town-shop", "HK_DEATHS", 0),
-    // The False Knight, fought on the disc. The card is seeded rather than
-    // earned, because the arena is three scene transitions past anywhere a
-    // route walks; tools/seed_card.py writes it and says plainly that it proves
-    // the room and not the journey to it.
+    // The False Knight, killed on the disc. Three staggers, three conversions,
+    // the death event 450 ticks after the last head kill, the arena cleared and
+    // its gates reopened, with the Knight never losing a mask.
     //
-    // The Knight lands on the arena floor, which exists only because
-    // Crossroads_10 merges its additive boss scene, crosses Battle Scene's
-    // curtain and swings. TRIGGERED and DROPPED are the fight starting at all.
-    // Invincibility is granted first so the tape can keep swinging: without it
-    // the boss takes three of five masks in under 4,000 polls, which is its
-    // attacks landing and is worth knowing.
+    // STAGGERS equal to CONVERSIONS is the assertion worth having. The source
+    // lets a hero stagger the boss out of its own rage, after which the fight
+    // never ends because Rage Check only reads the stagger count once the rage
+    // counter reaches zero; an earlier tape measured 8 staggers against 1
+    // conversion. Equal counts are the proof this one held fire through both
+    // rages instead.
     //
-    // The boss ends at 10 of 65 hp, deterministically, and that is not asserted
-    // here: the Knight stands still and the boss eventually fights from out of
-    // his reach, so the last hits need a tape that chases. A stagger, an
-    // exposed head and a death are all past that and none has been seen on
-    // hardware.
+    // Two things had to be found before any tape could finish this fight. The
+    // exposed Head sits at y 30.24 to 32.47 and a Knight standing on the arena
+    // floor reaches y 30.18 with an up slash, so it is unreachable from the
+    // ground by 0.06 units and the tape jumps and swings at the apex. And every
+    // landed hit recoils the Knight 0.69 units away from his facing, so a tape
+    // that never presses a direction walks itself off the floor: that, not the
+    // boss fighting out of reach, is what stopped the previous tape at exactly
+    // 10 hp.
     //
-    // Route string, through poll_tape at 8000:
-    //   9:start:1,12:cross:1,60:start:1,63:up:1,66:up:1,69:cross:1,
-    //   72:right:1,78:circle:1,82:circle:1,150:right:30,
-    //   then 200:square:2 every 26 polls to 7800
+    // The card is seeded rather than earned, so this proves the fight and not
+    // the journey to it. The route string is tools/tapes/boss-kill.route, kept
+    // because a .pxtape is opaque and this one is 831 events.
+    //
+    // Fragile to a rebuild: the two parked hunts at polls 2150 and 10180 expect
+    // the boss at a particular x. If a rebuild moves it, the generic sweep used
+    // at 4720 and 6660 found and emptied a Head without being told where.
     ("boss-fight", "HK_FK_TRIGGERED", 1), ("boss-fight", "HK_FK_DROPPED", 1),
-    ("boss-fight", "HK_FK_ACTIVE", 1), ("boss-fight", "HK_CHEATS", 1),
+    ("boss-fight", "HK_FK_STAGGERS", 3), ("boss-fight", "HK_FK_CONVERSIONS", 3),
+    ("boss-fight", "HK_FK_DEATHS", 1), ("boss-fight", "HK_FK_STUNNED", 3),
+    ("boss-fight", "HK_FK_ARENA", 4), ("boss-fight", "HK_FK_ACTIVATED", 1),
+    ("boss-fight", "HK_ARENA_GATE_CLOSES", 1), ("boss-fight", "HK_ARENA_GATE_OPENS", 1),
     ("boss-fight", "HK_HEALTH", 5), ("boss-fight", "HK_DEATHS", 0),
-    ("boss-fight", "HK_SAVE_LOADED", 1),
-    // 235, not the 239 he lands in: the boss knocks him off the arena floor
-    // into the view below during the fight, and he is still there at the end.
-    ("boss-fight", "HK_REGION_ID", 235)];
+    ("boss-fight", "HK_ENEMY_KILLS", 0), ("boss-fight", "HK_CHEATS", 1),
+    ("boss-fight", "HK_SAVE_LOADED", 1), ("boss-fight", "HK_REGION_ID", 240)];
 /// Telemetry a route must reach at least, rather than exactly.
 ///
 /// Reserved for counters that sit on a knife edge. The frame is stall-bound, so
