@@ -325,6 +325,301 @@ def destruction_contract(sc, record, gravity=None):
             'particle_parts': emitters, 'rigid_fragments': fragments}
 
 
+# --------------------------------------------------------------- arena gates
+#
+# An arena gate is the one family in this package whose serialized state and its
+# state on the first drawn frame disagree, which is why it is worth a recognizer
+# of its own. host/world_geometry.py makes terrain out of every enabled,
+# non-trigger, layer-8 collider it finds, reading the serialized values; a gate
+# is serialized closed whatever its placement says, so an open gate arrives here
+# as solid terrain. None of the 16 gate tk2dSprites is cooked into a draw, so
+# the result is an invisible wall rather than a visible one.
+BG_CONTROL_FSM = 'BG Control'
+# The same definition, and the same digest, host/false_knight.py pinned for the
+# False Knight arena. Excluding the placement variable, every active gate in the
+# catalogue hashes to it, so one pin covers the family rather than one per room.
+BG_CONTROL_SHA256 = '98a0b55f39c2f01fa2e16c353d581532179c4893a03437b10cbee49b19e8ca9f'
+BG_CONTROL_PLACEMENT_VARIABLE = 'Start Closed'
+BG_CONTROL_START_STATE = 'Opened'
+BG_CONTROL_START_ACTIONS = ('GetOwner', 'BoolTest', 'Tk2dPlayAnimation', 'SetCollider')
+# `Opened` sends this to itself when the placement variable is set. PlayMaker
+# abandons the rest of a state once a transition is taken, so the `SetCollider`
+# that would open the gate never runs and `Quick Close` turns the box on instead.
+BG_CONTROL_CLOSE_EVENT = 'BG QUICK CLOSE'
+BG_CONTROL_CLOSE_STATE = 'Quick Close'
+# A closed gate reopens only on this, broadcast by a `Battle Scene` when its
+# arena is won. Nothing in this port broadcasts it.
+BG_CONTROL_OPEN_EVENT = 'BG OPEN'
+TERRAIN_LAYER = 8
+
+
+def _state_actions(fsm, name):
+    """(action, fields) for one state's enabled actions, in authored order."""
+    from focus import action_fields
+    states = [state for state in fsm['states'] if state['name'] == name]
+    if len(states) != 1:
+        raise ValueError(f'expected exactly one {name!r} state, found {len(states)}')
+    data = states[0]['actionData']
+    return [(raw.rsplit('.', 1)[-1], action_fields(data, index))
+            for index, raw in enumerate(data['actionNames']) if data['actionEnabled'][index]]
+
+
+def _fsm_variables(fsm):
+    """Serialized FSM variables by name, object references left out."""
+    return {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
+            for v in group if isinstance(v, dict) and 'name' in v and 'value' in v
+            and not (isinstance(v['value'], dict) and 'm_PathID' in v['value'])}
+
+
+def _sets_own_collider(action, fields, expected):
+    """A SetCollider acting on Owner with a literal value, or a refusal."""
+    if action != 'SetCollider':
+        raise ValueError(f'expected SetCollider, found {action}')
+    target = fields.get('gameObject')
+    if not isinstance(target, dict) or target.get('ownerOption') != 0:
+        raise ValueError('SetCollider does not act on the gate itself')
+    active = fields.get('active')
+    if not isinstance(active, dict) or active.get('useVariable') or bool(active.get('value')) is not expected:
+        raise ValueError(f'SetCollider no longer sets the gate collider to {expected}')
+
+
+def battle_gate(sc, gid, fsm):
+    """The one decision a `BG Control` gate makes on load, or a reason to refuse.
+
+    Reproduces `Opened`, the start state: `GetOwner`, a `BoolTest` of the
+    placement variable that sends `BG QUICK CLOSE` when it is set and names no
+    event when it is clear, the opened animation, and `SetCollider active=false`
+    on the gate itself. Every other authored path waits on an arena event, so in
+    this port a gate's whole observable behaviour is the boolean below.
+    """
+    if fsm['startState'] != BG_CONTROL_START_STATE:
+        raise ValueError(f"BG Control starts in {fsm['startState']!r}")
+    actions = _state_actions(fsm, BG_CONTROL_START_STATE)
+    if tuple(name for name, _ in actions) != BG_CONTROL_START_ACTIONS:
+        raise ValueError('BG Control start state is not the authored action sequence')
+    test = actions[1][1]
+    variable = test.get('boolVariable')
+    if not isinstance(variable, dict) or not variable.get('useVariable') \
+            or variable.get('name') != BG_CONTROL_PLACEMENT_VARIABLE:
+        raise ValueError('BG Control start test does not read the placement variable')
+    if test.get('isTrue') != BG_CONTROL_CLOSE_EVENT or test.get('isFalse') or test.get('everyFrame'):
+        raise ValueError('BG Control start test no longer only closes the gate')
+    _sets_own_collider(*actions[3], expected=False)
+    # The other half of the pair has to say so too: a gate that starts closed is
+    # only solid because `Quick Close` turns its box back on.
+    closing = _state_actions(fsm, BG_CONTROL_CLOSE_STATE)
+    if not closing:
+        raise ValueError('BG Control quick close does nothing')
+    _sets_own_collider(*closing[0], expected=True)
+    if not any(event['fsmEvent']['name'] == BG_CONTROL_OPEN_EVENT
+               for state in fsm['states'] if state['name'] == BG_CONTROL_CLOSE_STATE
+               for event in state['transitions']):
+        raise ValueError('BG Control quick close no longer waits for the arena to open it')
+    start_closed = _fsm_variables(fsm).get(BG_CONTROL_PLACEMENT_VARIABLE)
+    if start_closed not in (0, 1, False, True):
+        raise ValueError(f'BG Control {BG_CONTROL_PLACEMENT_VARIABLE!r} is not a serialized boolean')
+
+    colliders = [(i, t, c) for i, t, c in _components(sc, gid) if t.endswith('Collider2D')]
+    if len(colliders) != 1:
+        raise ValueError(f'arena gate carries {len(colliders)} colliders, not one')
+    body_id, collider_type, body = colliders[0]
+    if collider_type != 'BoxCollider2D':
+        raise ValueError(f'arena gate collider is a {collider_type}')
+    if not body['m_Enabled'] or body['m_IsTrigger']:
+        raise ValueError('arena gate collider is not a serialized solid')
+    if sc.gos[gid]['m_Layer'] != TERRAIN_LAYER:
+        raise ValueError(f"arena gate is on layer {sc.gos[gid]['m_Layer']}, not terrain")
+    polygons = collider_polygons(sc, gid, collider_type, body)
+    points = [p for polygon in polygons for p in polygon]
+    file = Path(sc.file.name).name
+    return {
+        'gid': gid, 'position': sc.point(gid), 'start_closed': bool(start_closed),
+        # The verdict the cook needs, and the join key it needs it under:
+        # world_geometry keys every terrain edge by its collider's source id.
+        'solid_on_load': bool(start_closed), 'collider_source': f'{file}:{body_id}',
+        'box': [min(p[0] for p in points), min(p[1] for p in points),
+                max(p[0] for p in points), max(p[1] for p in points)],
+        'opens_on': BG_CONTROL_OPEN_EVENT,
+        # A closed gate has no way out of `Quick Close` here: no Battle Scene
+        # runs, so nothing sends BG OPEN. That is the fresh-save state the
+        # original also presents, but it never lifts.
+        'opens_in_port': False,
+        'limitations': ['Gate animation, dust and slam audio are not reproduced; only the '
+                        'collider state the room loads with is answered',
+                        'A gate that starts closed stays closed: no Battle Scene arena runs'],
+    }
+
+
+def battle_gates(sc, errors=None):
+    """Every active arena gate in the scene, each with its load-time collider.
+
+    The selector is the FSM definition name, never the object name: the same
+    `Battle Gate` name appears on an object driven by a different FSM, and the
+    same definition appears under other names. Anything carrying the definition
+    that does not decode is appended to `errors` rather than guessed at, because
+    a wrong answer here either walls a room off or opens one that should be shut.
+    """
+    from false_knight import fsm_digest
+    file = Path(sc.file.name).name
+    result = []
+    for index, (typ, tree) in sorted(sc.objects.items()):
+        if typ != 'PlayMakerFSM' or tree['fsm']['name'] != BG_CONTROL_FSM:
+            continue
+        gid = _local_id(tree['m_GameObject'])
+        if gid not in sc.gos or not sc.active(gid):
+            continue
+        try:
+            digest = fsm_digest(tree['fsm'], (BG_CONTROL_PLACEMENT_VARIABLE,))
+            if digest != BG_CONTROL_SHA256:
+                raise ValueError(f'unverified BG Control variant: {digest}')
+            record = battle_gate(sc, gid, tree['fsm'])
+            record.update(source=f'{file}:{index}', game_object=f'{file}:{gid}',
+                          name=sc.gos[gid]['m_Name'], fsm_sha256=digest)
+            result.append(record)
+        except Exception as error:
+            if errors is None:
+                raise
+            errors.append({'id': f'{file}:{index}', 'type': BG_CONTROL_FSM, 'error': str(error)})
+    return result
+
+
+# ------------------------------------------------------------ infected vines
+#
+# BreakableInfectedVine needs no FSM recognizer, but it is not a Breakable
+# either, and reading it as one would be wrong in both directions.
+# `OnTriggerEnter2D` keeps the vine's own renderer and collider and instead
+# deactivates every `blobs` entry, asks the global blood pool for
+# `spatterAmount` spatters at each blob's position between
+# `spatterAngleMin..Max` at `spatterSpeedMin..Max`, activates every `effects`
+# entry and plays its AudioSource at a pitch in `audioPitchMin..Max`. It sets a
+# plain field, not a PersistentBoolItem, so a cut vine returns on scene reload.
+VINE_COMPONENT = 'BreakableInfectedVine'
+# `Start` disables the AudioSource, the Collider2D and the component itself when
+# the object sits further than this from the plane the vines are authored on, so
+# a vine outside the band can never be hit. This is the same shape as
+# Breakable's inertForegroundThreshold/inertBackgroundThreshold, except that
+# these two are literals in `Start` rather than serialized per instance.
+VINE_DEPTH_CENTRE = 0.004000000189989805
+VINE_DEPTH_RANGE = 1.0
+# `Nail Attack`, `Hero Spell`, and `HeroBox` while cState.superDashing.
+VINE_HIT_TAGS = ('Nail Attack', 'Hero Spell', 'HeroBox')
+# BreakableInfectedVine authors one output Breakable.Break never does: a clip
+# played on a separate object, its tk2d `effects` and its Mecanim blobs.
+OUTPUT_ANIMATION = 'animation'
+VINE_ENFORCED_OUTPUTS = (OUTPUT_VISUAL, OUTPUT_PARTICLES, OUTPUT_ANIMATION)
+
+
+def _vine_parts(sc, refs, what):
+    """The in-scene objects one vine array names, with what each carries."""
+    file = Path(sc.file.name).name
+    parts = []
+    for ref in refs:
+        if not ref['m_PathID']:
+            continue
+        if ref['m_FileID']:
+            raise ValueError(f'vine {what} lives outside this scene')
+        part_gid = ref['m_PathID']
+        if part_gid not in sc.gos:
+            raise ValueError(f'vine {what} is not a readable scene object')
+        parts.append({'game_object': f'{file}:{part_gid}', 'name': sc.gos[part_gid]['m_Name'],
+                      'components': sorted(typ for _, typ, _ in _components(sc, part_gid))})
+    return parts
+
+
+def infected_vine(sc, gid, tree):
+    """One vine's authored output, and which of it the port can produce."""
+    position = sc.point(gid)
+    inert = abs(position[2] - VINE_DEPTH_CENTRE) > VINE_DEPTH_RANGE
+    blobs = _vine_parts(sc, tree['blobs'], 'blob')
+    effects = _vine_parts(sc, tree['effects'], 'effect')
+    colliders = [(i, t, c) for i, t, c in _components(sc, gid) if t.endswith('Collider2D')]
+    if len(colliders) != 1:
+        raise ValueError(f'vine carries {len(colliders)} colliders, not one')
+    body_id, collider_type, body = colliders[0]
+    if not body['m_IsTrigger']:
+        raise ValueError('vine hit collider is not a trigger')
+    spatter = [tree['spatterAmount'], tree['spatterAngleMin'], tree['spatterAngleMax'],
+               tree['spatterSpeedMin'], tree['spatterSpeedMax']]
+    if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in spatter):
+        raise ValueError('vine spatter parameters are not finite numbers')
+
+    authored, missing = [], []
+    if blobs:
+        authored.append(OUTPUT_VISUAL)
+        # The blobs are the vine's visible payload and they only go away; the
+        # port can turn a SpriteRenderer off, but only if the cook draws it.
+        for blob in blobs:
+            if 'SpriteRenderer' not in blob['components']:
+                missing.append({'output': OUTPUT_VISUAL, 'part': blob['game_object'],
+                                'reason': 'vine blob has no SpriteRenderer to hide'})
+        animated = [blob for blob in blobs if 'Animator' in blob['components']]
+        if animated:
+            authored.append(OUTPUT_ANIMATION)
+            missing.append({'output': OUTPUT_ANIMATION,
+                            'reason': f'{len(animated)} vine blobs animate through Mecanim, '
+                                      'which no cooked animation path reaches'})
+    if spatter[0]:
+        # GlobalPool.SpawnBlood, not a ParticleSystem on the object, so
+        # break_effects.part_emitter has nothing to read and no style to cook.
+        authored.append(OUTPUT_PARTICLES)
+        missing.append({'output': OUTPUT_PARTICLES,
+                        'reason': f'{int(spatter[0])} blood spatters per blob come from the '
+                                  'global pool, which this port has no emitter for'})
+    if effects:
+        authored.append(OUTPUT_ANIMATION)
+        missing.append({'output': OUTPUT_ANIMATION,
+                        'reason': 'vine effects are tk2d clips on separate objects: '
+                                  + ', '.join(effect['name'] for effect in effects)})
+    refused = sorted({item['output'] for item in missing} & set(VINE_ENFORCED_OUTPUTS))
+    file = Path(sc.file.name).name
+    return {'gid': gid, 'name': sc.gos[gid]['m_Name'], 'position': position,
+            'game_object': f'{file}:{gid}', 'hit_collider': f'{file}:{body_id}',
+            'collider_type': collider_type, 'inert_by_depth': inert,
+            'hit_tags': list(VINE_HIT_TAGS), 'spatter': spatter,
+            'audio_pitch': [tree['audioPitchMin'], tree['audioPitchMax']],
+            'blobs': blobs, 'effects': effects, 'persistent': False,
+            'destruction': {'authored': sorted(set(authored)), 'missing': missing,
+                            'refused_outputs': refused},
+            'limitations': ['Vine state is not persistent in the source either; a cut vine '
+                            'returns when the scene reloads']}
+
+
+def infected_vines(sc, errors=None, contract=True):
+    """Every BreakableInfectedVine in the scene that the source leaves hittable.
+
+    A vine outside the authored depth band is reported with `inert_by_depth` and
+    not admitted, because `Start` disables the component before any hit can
+    reach it. With `contract`, a vine whose authored output the port cannot
+    produce is refused here, so it stays whole scenery instead of losing its
+    blobs with no spatter, no effect clip and no sound.
+    """
+    file = Path(sc.file.name).name
+    result = []
+    for index, (typ, tree) in sorted(sc.objects.items()):
+        if typ != VINE_COMPONENT:
+            continue
+        gid = _local_id(tree['m_GameObject'])
+        if gid not in sc.gos or not tree.get('m_Enabled', 1) or not sc.active(gid):
+            continue
+        try:
+            record = infected_vine(sc, gid, tree)
+            record['source'] = f'{file}:{index}'
+            if record['inert_by_depth']:
+                raise ValueError('vine is outside the authored depth band and Start disables it: '
+                                 f"z {record['position'][2]:.3f}")
+            if contract and record['destruction']['refused_outputs']:
+                raise ValueError('authored destruction output the port cannot produce: '
+                                 + '; '.join(f"{item['output']} ({item['reason']})"
+                                             for item in record['destruction']['missing']
+                                             if item['output'] in VINE_ENFORCED_OUTPUTS))
+            result.append(record)
+        except Exception as error:
+            if errors is None:
+                raise
+            errors.append({'id': f'{file}:{index}', 'type': VINE_COMPONENT, 'error': str(error)})
+    return result
+
+
 def breakable_sources(sc, bounds=None, errors=None, contract=True):
     """Return authored records, optionally overlapping (xmin,ymin,xmax,ymax).
 
