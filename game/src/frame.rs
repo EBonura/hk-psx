@@ -216,7 +216,8 @@ pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
     unsafe {enemies::HK_FK_TRIGGERED=0;enemies::HK_FK_DROPPED=0;enemies::HK_FK_STAGGERS=0;
         enemies::HK_FK_CONVERSIONS=0;enemies::HK_FK_DEATHS=0;enemies::HK_FK_HP=0;enemies::HK_FK_HEAD_HP=0;
         enemies::HK_FK_ACTIVE=0;enemies::HK_FK_EXPOSED=0;enemies::HK_FK_STUNNED=0;
-        enemies::HK_FK_ARENA=0;enemies::HK_FK_ACTIVATED=0;}
+        enemies::HK_FK_ARENA=0;enemies::HK_FK_ACTIVATED=0;
+        enemies::HK_FK_BARRELS=0;enemies::HK_FK_BARRELS_BROKEN=0;}
 }
 
 /// UPDATE: one simulation tick that the player's input drives. Death and the

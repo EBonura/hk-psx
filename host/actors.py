@@ -561,13 +561,17 @@ def generated_actor_specs(region):
             # rest of what fits the room budget, and the trigger box is what the
             # arena watches for BATTLE START. The walk fields are unused: the
             # controller owns every velocity the body ever has.
-            false_knight_clips = ('jump_antic_clip', 'land_clip', 'stun_opened_clip', 'attack_clip')
+            false_knight_clips = ('jump_antic_clip', 'land_clip', 'stun_opened_clip', 'attack_clip',
+                                  'barrel_clip')
             if any(key not in actor for key in false_knight_clips):
                 raise ValueError(f'False Knight is missing cooked clips: {actor["source"]}')
             trigger = '[' + ','.join(str(round(value * 65536)) for value in control['arena_trigger_world']) + ']'
+            # `summon`'s `Spawn` reads the summoner's own transform for the drop
+            # height, so it is a placement number rather than a constant.
+            spawn_y = round(control['barrel']['spawn_world'][1] * 65536)
             controller = ('hk_sim::ActorController::FalseKnight {'
                           + ','.join(f'{key}:{actor[key]}' for key in false_knight_clips)
-                          + f',trigger:{trigger}' + '}')
+                          + f',trigger:{trigger},barrel_spawn_y:{spawn_y}' + '}')
             speed, turn_ticks, turn_cooldown_ticks = 0, control['turn_ticks'], 0
             initial_direction, random_start_direction = control['initial_direction'], False
         elif control['kind'] == 'WalkLeftRight':

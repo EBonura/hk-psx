@@ -25,6 +25,21 @@ Regenerate everything here with:
 
 which writes `.hkpsx/false-knight/source-contract.json` and prints the summary.
 
+**The barrel art needs a cook before the guest links.** `ActorController::
+FalseKnight` carries `barrel_clip` and `barrel_spawn_y` now, and the committed
+`data/regions.rs` predates both, so `game` does not build until the cook
+regenerates that row. `host/cook.py` and `host/actors.py` are both above the
+divider in `host/cook_inputs.txt`, so the next build re-cooks all 693 regions
+whatever else it does.
+
+While reading that file: `host/false_knight.py` is **not** in it, above the
+divider or below, and it should be. `host/actors.py` imports it, and what it
+returns decides the boss's clip bindings, its limitations and now its barrel
+art, so a change here changes cooked bytes while every region's reuse key says
+it did not. That is the failure mode `cook_inputs.txt`'s own comment calls
+silent in one direction. It is left as found rather than fixed inside this
+change, because moving a line in that file re-cooks the world by itself.
+
 ## Where the boss actually lives
 
 Not in Crossroads_10. `BossLoader`, a `SceneAdditiveLoadConditional` in
@@ -95,7 +110,7 @@ per frame) rather than estimating it.
 | Widest frame / tallest frame | 204 px / 188 px | 252 texture axis | yes |
 | 64x64 slots for the largest single frame (198x169) | 12 | 20 per frame, 24 total | yes |
 | 64x64 tiles, all frames | 499 | | |
-| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 32,160 B unallocated RAM | no |
+| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 11,556 B unallocated RAM | no |
 | 4bpp texels, all frames | 716,110 B | 393,216 B per room pack, of which the admitted six leave 38,248 free | no |
 | Distinct palettes, all frames | 107 | 150 free in Crossroads_10's tightest view | yes |
 | HKROOM02 texture records, all frames | 499 | 640 per view, of which the admitted six leave 245 free | no |
@@ -104,7 +119,7 @@ The slot row used to read 4 per frame and 8 total, and it was the row this
 whole document was written around. It changed because the cache took a static
 scenery page; `docs/BUDGET.md` has the census that made that affordable. The
 RAM row is read out of `.hkpsx/build.json` and has fallen again, from 73,876
-bytes to 63,636, then 51,348, then 41,064, and it is 32,160 now. It only bites the Hollow
+bytes to 63,636, then 51,348, then 41,064, then 32,160, and it is 11,556 now. It only bites the Hollow
 Shade route, which moves frames into linked RAM; the room-pack route this art
 takes spends none of it.
 
@@ -169,9 +184,12 @@ validated by a full recook.
 
 None of that is linked RAM. The bank rides in the scene pack, which is read from
 disc into the scene arena, and `pack_scenes.scene_arena_bytes` sizes that arena
-from the largest scene: Tutorial_01 at 352,412 resident bytes, giving 421,128.
-Crossroads_10 is 150,396, so roughly 76 KB more leaves it around 226 KB, still
-126 KB below the scene that sets the arena. `SCENE_ARENA_BYTES` does not move and
+from the largest scene. Re-read out of `.hkpsx/packed-scenes.json` rather than
+quoted: the arena is 417,748 bytes, Tutorial_01's resident scene is 349,032 and
+the difference of 68,716 is the metadata tail every scene is checked against.
+Crossroads_10's resident scene is now 301,304, the second largest, so it needs
+301,304 + 68,716 = 370,020 and has 47,728 bytes of headroom before it would be
+the scene that sets the arena. `SCENE_ARENA_BYTES` does not move and
 the art costs nothing against
 `memory.unallocated_before_stack_bytes`. What does cost linked bytes is the
 `ActorSpec` row in `data/regions.rs` and the controller's code. `EnemyWorld`
@@ -230,10 +248,13 @@ CLUT for a whole clip set, which would take the False Knight from 110 CLUTs to a
 handful. It does not change the slot geometry. `game/src/animation_cache.rs`
 still rejects any payload over 2,048 bytes per slot, so a 198x169 frame needs
 the same twelve slots from linked RAM as from a room pack. Twelve now fit, but
-the RAM does not stretch: `.hkpsx/build.json` reports 32,160 unallocated bytes
+the RAM does not stretch: `.hkpsx/build.json` reports 11,556 unallocated bytes
 before the reserved stack, against 699 KiB of texels, short by a factor of
-twenty-two. Read that figure from the build report every time; it was 113,636,
-then 73,876, then 63,636, then 51,348, then 41,064, and it is 32,160 now.
+sixty-two. Read that figure from the build report every time; it was 113,636,
+then 73,876, then 63,636, then 51,348, then 41,064, then 32,160, and it is
+11,556 now. The boss audio alone took 11,808 of it, so there is now less left
+than that one change spent, and `game/src/audio.rs` `include_bytes!`s the sound
+bank, which means bank bytes and this figure are the same bytes.
 
 ## The route past it
 
@@ -295,7 +316,8 @@ that.
 3. **Per-clip residency, with no prefetch room.** 699 KiB never fits main RAM,
    and against the live gap the prefetch does not either. The clip bytes were
    measured against 73,876 unallocated bytes, and the gap has since fallen to
-   51,348, then 41,064, and then 32,160, so the ratios below are recomputed
+   51,348, then 41,064, then 32,160, and then 11,556, so the ratios below are
+   recomputed
    rather than re-measured: the heaviest clip, `Stun Recover`, is 56,406 bytes,
    which is 175.4% of the gap and no longer fits on its own at all; the heaviest
    adjacent pair is 112,456 bytes, 349.7% of it. At least nine of the 33
@@ -455,7 +477,9 @@ cleared.
 owns, and the `Head`'s own 40 hp `ActorHealth`. The arena rides on the boss
 rather than on a world object because the boss is the only thing in the room it
 drives and because `Battle Enemies` never moves except from the boss's own
-`Decrement Battle Enemies`.
+`Decrement Battle Enemies`. The summoner does **not** ride the boss: it is on
+`EnemyWorld` beside the projectile pool it fills, because `Runtime` would
+otherwise have paid for it in all thirty-two actor slots.
 
 **Dormant is free.** Until `BATTLE START` the runtime does one AABB a tick,
 the hero's body against `Battle Control`'s trigger, and nothing else: no solver,
@@ -530,6 +554,111 @@ Priority is what keeps this from turning into one long tremor: the source's
 slam's BigShake outlasts the jump that set it up and three slams in a row do not
 stack. `game/src/camera.rs` reproduces that refusal and counts it.
 
+**The barrels fall, and they hurt.** `FK Barrel Summon` is a second source
+object with its own `summon` FSM and a `PersonalObjectPool` of eight, and the
+boss only ever writes `Spawns` and sends SUMMON at it. That split is kept:
+`hk_sim::false_knight::Summon` is `summon` and nothing else, and it lives on
+`EnemyWorld` beside the pool it fills rather than on the boss runtime, where
+`Runtime` would have paid for it in all thirty-two actor slots.
+
+The pooled prefab is `Falling Barrel` (`sharedassets48.assets:61`), and it is
+the same shape of object as the Aspid's `Spitter Shot R`: a trigger box on a
+dynamic body that damages the hero and ends on terrain. So it rides the same
+eight-slot projectile pool, with `Falling Barrel`'s own gravity scale 0.325 and
+its own 1.18 by 1.11 box, and a `const` assertion holds `SHOTS` at or above
+`BARREL_POOL`. Only one of the two can ever be live: Crossroads_10 is the only
+room with a boss and it carries no Aspid.
+
+| Quantity | Measured |
+| --- | ---: |
+| Barrel sprite, cooked at the 14.8178 px/unit projection | 36 x 33 px |
+| Streamed bytes it adds to the scene-wide actor bank | 596 |
+| Texture records it adds, of 640 per view | 1 |
+| CLUT slots it adds, of 150 free in Crossroads_10's tightest view | 1 |
+| Animation slots one barrel binds, of 20 a frame may hold | 1 |
+| Crossroads_10's worst base pack, cooked with the barrel | 203,832 |
+
+`MAX_VISIBLE` is 20 tiles and the boss's largest frame binds 12, so the whole
+pool of eight fits beside it exactly, with nothing to spare. That is by
+construction rather than by luck: `BARREL_POOL` is eight because the rage asks
+for eight, and the projectile draw loop stops at `MAX_VISIBLE` rather than
+asserting, so a nineteenth tile would be dropped rather than crash.
+
+The first five rows are measured off `host/cook.py`'s own atlas; the base-pack
+row is a real cook of catalogue slot 243 into a scratch directory, which is
+203,832 bytes with the barrel exactly as it was without it, because the art
+rides the scene-wide bank rather than the base. The per-view total after
+`postpack_actor_bank` is arithmetic rather than measured: 596 stream bytes plus
+a 16-byte texture record plus a 32-byte palette is 644 a view, which takes the
+worst view from 353,540 to about 354,184 and leaves about 39,032 free.
+
+What the barrel does not do, and each for its own reason:
+
+- **Spin.** `Idle` rotates it at 720 degrees a second with a randomised sign.
+  The projectile draw builds an axis-aligned quad out of the frame's world box,
+  so turning one would cost a rotation per barrel per frame on a frame that is
+  stall-bound.
+- **Vary its size.** `RandomScale` picks 0.8 to 1.0; every barrel here is the
+  authored size.
+- **Answer the nail.** `Idle`'s `NAIL HIT` sends the barrel away at 45 units/s
+  along the attack direction with gravity 0.3. A barrel is not a nail target
+  here: the nail pass walks actors, and a barrel is a pool entry.
+- **Break into anything.** `Break` hides the sprite, plays Bits and Dust Puff,
+  activates Splat, spawns blood and plays a one-shot, then waits three seconds
+  before recycling. Here the barrel simply leaves, at once, so it does not hold
+  a pool slot through a frame it has nothing to draw.
+
+The pool recycles the oldest live barrel when it is full, which is the source's
+own rule, and that is why `HK_FK_BARRELS` and `HK_FK_BARRELS_BROKEN` are two
+counters: a recycled barrel never breaks, so a route watching only the spawns
+could not tell a fight the player dodged from one where the rage's eight evicted
+each other.
+
+### What the barrels cost against the 11,556 bytes
+
+Linked RAM headroom is the tightest budget here and it has moved again:
+`memory.unallocated_before_stack_bytes` is **11,556**, down from the 32,160 this
+page carried a build ago, and the boss audio alone took 11,808 of it. Every
+candidate below was costed against that figure before it was built, not after.
+
+| Where it lands | Barrels |
+| --- | ---: |
+| `EnemyWorld` bss, measured with `size_of` | 6,112 -> 6,136, so **24 bytes** |
+| Sound bank, which `audio.rs` `include_bytes!`s out of the same figure | 0 |
+| Scene arena, which `SCENE_ARENA_BYTES` reserves | 0 |
+| Room pack, per Crossroads_10 view | about 644 |
+| `.text`, which only a link measures | not measured |
+
+The 24 bytes are `Summon` (8) plus the summoner's site (12) plus 4 of
+alignment, all on `EnemyWorld` once rather than per actor slot; the pool itself
+is free, because `barrel` is a second `bool` beside `impact` and `Option` still
+has a niche to put its discriminant in.
+`tests/enemy_runtime.rs::the_barrel_pool_is_paid_for_in_padding_and_twenty_bytes`
+holds all three of those.
+
+The zero in the arena row is the load-bearing one, and it is why the barrels
+were the candidate worth building. The art rides the scene pack, which is read
+from disc into the scene arena, and `pack_scenes::scene_arena_bytes` sizes that
+arena from the largest scene. From `.hkpsx/packed-scenes.json`: the arena is
+417,748, Tutorial_01's resident scene is 349,032 and the 68,716 difference is
+the metadata tail every scene is checked against. Crossroads_10's resident scene
+is 301,304, the second largest, so it needs 370,020 and has **47,728 bytes** of
+headroom before it would set the arena. 644 bytes a view is nowhere near it.
+
+`.text` is the one number that cannot be had without a link, and a link is a
+disc build. What was added is `Summon` (four small integer methods), three
+one-line accessors on `Shot`, one branch in the projectile loop and one event
+arm, so it is hundreds of bytes rather than thousands; the build report is the
+only thing that can say how many.
+
+The other three candidates were costed the same way and refused below. None of
+them is refused on linked RAM, which is worth saying plainly: the Death Head is
+refused on room-pack bytes, the staff on a rotation the draw path cannot
+express, and the floor break on what is left of the arena once `Break Floor`
+goes. That is the real state of the budget. Nothing large can be added to
+Crossroads_10's packs either, so the next content that wants either budget has
+to come with something given back.
+
 ## The gates, and the half of them that is a recook
 
 `game/src/battle_gates.rs` is the `great_door.rs` shape the plan asked for: a
@@ -597,8 +726,13 @@ different exits and publishing at each of them is how one goes stale.
 | `HK_FK_STUNNED` | `Stunned Amount`, which selects the phase table |
 | `HK_FK_ARENA` | `Battle Control`'s phase, as `hk_sim::boss::Phase` orders it |
 | `HK_FK_ACTIVATED` | the `Activated` PersistentBoolItem |
+| `HK_FK_BARRELS` | `Falling Barrel`s the summoner put in the pool |
+| `HK_FK_BARRELS_BROKEN` | of those, the ones that reached terrain or the hero |
 | `HK_ARENA_GATES` | bit per gate, set while its collider is solid |
 | `HK_ARENA_GATE_CLOSES` / `HK_ARENA_GATE_OPENS` | broadcasts answered |
+
+`tools/replay_cue.py` carries the watch list and does not yet name the two
+barrel counters; the one-line addition is in this change's handover note.
 
 The death and the Head merely emptying are different counters on purpose: the
 last exposure empties the Head too, and only the tail after it is a death.
@@ -631,9 +765,52 @@ writes one.
   The section below has the measurement and why the missing half is a recook.
 - **The pre-battle Zombies.** Recorded, not admitted, so `KILL ALL ENEMIES` has
   no target. The arena counts only the boss, which is what the source does.
-- **Everything the fight emits that has no object.** Barrels
-  (`FK Barrel Summon`'s pool), the shockwave, the floor crack and break, the
-  staff, the Death Head and particles.
+- **The shockwave and every particle.** `S Attack Recover`'s ground wave is the
+  pooled `Shockwave Wave` and `Shockwave Spurt`, which are particle systems;
+  they wait on the particle model rather than on a budget.
+- **The floor crack and break.** Refused on geometry, not on bytes, and this is
+  the measurement. `FK Floor`'s `Floor Control` is three states over five
+  SpriteRenderers and one collider: `Crack` swaps `Normal 1`/`Normal 2` for
+  `Cracked 1`/`Cracked 2`, and `Break` swaps those for `Broken` and deactivates
+  the `Break Floor` GameObject. The art is cheap: cooked at the scenery path's
+  48-pixel axis cap, `Cracked 1` is 240 bytes, `Cracked 2` 192 and `Broken` 240,
+  672 in all against the 39,676 that `data/regions.json` leaves free in
+  Crossroads_10's tightest view. The terrain is
+  cheap too, and the machinery already exists: `Break Floor` is three
+  BoxCollider2Ds (`level48:145`, `:154`, `:155`), they are named in the cooked
+  `edge_sources`, and `host/battle_gates.py`'s join plus
+  `world::append_script_edges` is exactly the shape that takes edges away. The
+  worst Crossroads_10 slot would spend 10 of `SCRIPT_EDGE_SLOTS`'s 12, gates
+  included.
+
+  What refuses it is what is left afterwards. Taking `Break Floor` away leaves
+  **no layer-8 surface at all** under the arena at x 20, x 34 or x 40: the only
+  survivors at the boss's own column are `Floor` (`level48:156`) at y 25.99
+  spanning x 22.98 to 28.57 and `Floor` (`level48:157`) at y 23.77 spanning
+  x 22.98 to 27.16. The death jump goes to `Final Point X` 34, where nothing is
+  left, and the next layer-8 edge below is Crossroads_10's own at y 2: a
+  twenty-four unit fall, out of the bottom of `CameraLockArea B`'s 21.60 to
+  33.83 window, taking the 450-tick death tail and the hero with it. That is the
+  same fall the additive merge was added to fix, and presenting the break needs
+  the camera lock, the death-fall landing and the hero's way back out answered
+  first. The crack on its own is separable and affordable, and it is left too:
+  on its own it damages a floor that then never opens.
+- **The staff.** Refused on rotation, not on bytes. `Staff` (`level48:35`) is a
+  0.18 by 6.81 pole on `ObjectBounce` and a Rigidbody2D, and `Staff Head`
+  (`level48:44`) runs `Mace Control`: wait 20 s, jitter 0.07 for half a second
+  with a one-shot, then rotate, spawn and destroy itself. Cooked, the two
+  sprites are 96 and 720 bytes. Both land at whatever angle they bounced to, and
+  the draw paths here emit axis-aligned quads from a frame box, so an upright
+  pole would be visibly wrong rather than merely plain. It also needs a bounce
+  model this port does not have. It appears after the boss is dead and the gates
+  have opened, and nothing in the fight touches it.
+- **The Death Head.** Refused on room-pack bytes. `Death Head 1` is 10 frames,
+  17 tiles and 19,524 bytes; `Death Head 2` is 4 frames, 7 tiles and 6,674. The
+  pair is 26,198 bytes, 66% of the 39,676 the admitted clip set leaves free in
+  Crossroads_10's tightest view, in a room another agent is adding
+  breakable and effect art to, for the last two and a half seconds of a
+  450-tick tail. It is also a separate object with its own Rigidbody2D and box,
+  so it would want a pool entry as well as the art.
 - **Two of the shakes, and every clip but two.** `Floor Break` and `Death Anim
   Start` send BigShake and EnemyKillShake in the source and reach neither here.
   `false_knight_land` and `false_knight_swing` are the whole of the resident

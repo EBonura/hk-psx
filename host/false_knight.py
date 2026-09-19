@@ -155,6 +155,20 @@ ARENA_CAMERA_LOCK = (21.600000381469727, 31.3700008392334, 33.83000183105469, 31
 BARREL_SPAWN_X = (13.180000305175781, 44.27000045776367)
 BARREL_SPAWN_GAP = (.15000000596046448, .25)
 
+# `FK Barrel Summon`'s PersonalObjectPool and the prefab it holds. The prefab is
+# not in level48: it is `Falling Barrel` in sharedassets48, reached through the
+# pool rather than by name, so a source that repoints the pool fails here.
+BARREL_PREFAB = 'Falling Barrel'
+BARREL_POOL = 8
+BARREL_LAYER = 17
+BARREL_BOX = ((1.1799999475479126, 1.1100000143051147), (0., 0.))
+BARREL_GRAVITY_SCALE = .32499998807907104
+BARREL_DAMAGE = 1
+BARREL_HAZARD = 1
+BARREL_SPIN = 720.
+BARREL_RANDOM_SCALE = (.800000011920929, 1.)
+FALL_BARREL_SHA256 = '25064c55a01b08378bddcb4fe51b2dfd76ec74302e06ea443f21c224e5c7dad4'
+
 # Structural digests over states, transitions, enabled actions and their
 # serialized parameter bytes, excluding per-scene object references. The five
 # battle gates share one BG Control apart from `Start Closed`, which is the
@@ -388,8 +402,12 @@ def recognize(sc, room):
             'The sim reproduces FalseyControl at 60 Hz; the source shapes rising and falling speed'
             ' per 50 Hz FixedUpdate, so airtime differs slightly.',
             'The `Esc` branch is unreachable in the Crossroads arena: nothing there sets `Hero Escaped`.',
-            'Particles, camera shake, the barrel prefabs, the shockwave object and every audio cue'
-            ' are recorded, not presented.',
+            "`FK Barrel Summon` and its pooled `Falling Barrel` are presented: the barrels fall from"
+            ' the summoner and damage the hero. Their spin, their RandomScale and the nail knock-back'
+            ' are not, and the break is the collider and the sprite going away.',
+            'The shockwave object, the floor crack and break, the staff, the Death Head and every'
+            ' particle are recorded, not presented; docs/FALSE_KNIGHT.md carries the measurement'
+            ' behind each refusal.',
         ],
         'source_methods': ['HealthManager.Hit', 'HealthManager.Die', 'SceneAdditiveLoadConditional.Start',
                            'PersistentBoolItem.OnEnable', 'CameraLockArea.OnTriggerEnter2D'],
@@ -506,6 +524,10 @@ def recognize_placement(sc, actor):
         'staggers': STAGGERS_TO_DEATH,
         # The one thing the boss tests while it is dormant.
         'arena_trigger_world': arena_trigger_world_box(sc),
+        # `FK Barrel Summon` is a different source object, but the guest reaches
+        # it through the boss: the boss is the only thing that ever sends SUMMON
+        # and the arena already rides on the boss for the same reason.
+        'barrel': barrel_source(sc),
         'turn_ticks': ticks(CLIPS['Turn'][0] / CLIPS['Turn'][1]),
         'library_source': library['library_source'],
         'fsm_sha256': {name: fsm_digest(fsms[name]['fsm']) for name in ('FalseyControl', 'Check Health')},
@@ -521,13 +543,123 @@ def recognize_placement(sc, actor):
             ' has no target; the arena counts only the boss, as the source does.',
             'The Hitter overlay plays its attack clip on the body rather than as a second draw,'
             ' and its DamageHero trigger is reproduced as a box.',
-            'Barrels, the shockwave, the floor crack and break, the staff, the Death Head and'
-            ' every particle, camera shake and audio cue are recorded, not presented.',
+            'The barrels fall and hurt. What the barrel does not do is spin, vary its scale or'
+            ' answer the nail; the break is the collider and the sprite going away, with no'
+            ' Bits, Dust Puff, Splat or one-shot.',
+            'The shockwave, the floor crack and break, the staff, the Death Head and every'
+            ' particle are recorded, not presented.',
             'Rise and Fall shape vertical speed per 50 Hz FixedUpdate in the source and per'
             ' 60 Hz tick in the guest, so airtime differs slightly.',
         ],
         'source_methods': ['HealthManager.Hit', 'HealthManager.Die', 'tk2dSpriteAnimator.Play',
                            'CameraLockArea.OnTriggerEnter2D'],
+    }
+
+
+def barrel_source(sc):
+    """`FK Barrel Summon`'s pooled `Falling Barrel`, or a refusal.
+
+    The one thing the fight throws that a player can be hit by, and the only
+    part of the summoner the guest needs: one SpriteRenderer, one box, one
+    gravity scale and one DamageHero. Everything about it is read back here so
+    that a source change fails the cook instead of leaving the guest dropping a
+    barrel with the wrong damage or the wrong reach.
+
+    The prefab lives in sharedassets48 rather than in the boss scene, so it is
+    reached through the pool's own reference. `spawn` carries the summoner's
+    world transform because `summon`'s `Spawn` state takes the y off it, and
+    that object is not the boss.
+    """
+    from actors import _component_records
+    source = sc.source
+    summoner = _named(sc, 'FK Barrel Summon')
+    pools = [tree for _, kind, tree in _component_records(sc, summoner) if kind == 'PersonalObjectPool']
+    if len(pools) != 1 or len(pools[0]['startupPool']) != 1:
+        raise ValueError('FK Barrel Summon no longer holds exactly one pooled prefab')
+    entry = pools[0]['startupPool'][0]
+    if entry['size'] != BARREL_POOL or entry['initialiseSpawnedObjects']:
+        raise ValueError('barrel pool reserve changed')
+    prefab = source.ref(sc.file, entry['prefab'])
+    file = prefab.assets_file
+    go = source.read(prefab)
+    if go['m_Name'] != BARREL_PREFAB or go['m_Layer'] != BARREL_LAYER:
+        raise ValueError('unsupported barrel prefab identity')
+    parts = {}
+    for ref in go['m_Component']:
+        component = file.objects[ref['component']['m_PathID']]
+        kind = source.typename(component)
+        tree = source.read(component)
+        if kind == 'PlayMakerFSM':
+            parts.setdefault('fsm', {})[tree['fsm']['name']] = tree
+        else:
+            if kind in parts:
+                raise ValueError('duplicate barrel component: ' + kind)
+            parts[kind] = tree
+    for kind in ('Transform', 'BoxCollider2D', 'Rigidbody2D', 'SpriteRenderer', 'DamageHero', 'RandomScale'):
+        if kind not in parts:
+            raise ValueError('barrel prefab is missing a ' + kind)
+    control = parts['fsm'].get('Fall Barrel Control')
+    if control is None or not control['m_Enabled']:
+        raise ValueError('barrel prefab has no enabled Fall Barrel Control')
+    digest = fsm_digest(control['fsm'])
+    if digest != FALL_BARREL_SHA256:
+        raise ValueError(f'unverified Fall Barrel Control variant: {digest}')
+    transform = parts['Transform']
+    if transform['m_LocalScale'] != {'x': 1., 'y': 1., 'z': 1.} \
+            or transform['m_LocalRotation'] != {'x': 0., 'y': 0., 'z': 0., 'w': 1.}:
+        raise ValueError('unsupported barrel prefab transform')
+    box = parts['BoxCollider2D']
+    shape = ((box['m_Size']['x'], box['m_Size']['y']), (box['m_Offset']['x'], box['m_Offset']['y']))
+    # The box is a trigger, which is why the barrel falls through the arena
+    # floor instead of resting on it: `Idle`'s Trigger2dEventLayer on layer 8
+    # is what ends the fall, and the guest reproduces that as the fall segment
+    # crossing a terrain edge rather than as a solve against one.
+    if not box['m_IsTrigger'] or not all(_near(a, b) for pair in zip(shape, BARREL_BOX) for a, b in zip(*pair)):
+        raise ValueError('unsupported barrel collider')
+    body = parts['Rigidbody2D']
+    if body['m_BodyType'] != 0 or body['m_LinearDamping'] != 0 \
+            or not _near(body['m_GravityScale'], BARREL_GRAVITY_SCALE):
+        raise ValueError('unsupported barrel body')
+    hurt = parts['DamageHero']
+    if hurt['damageDealt'] != BARREL_DAMAGE or hurt['hazardType'] != BARREL_HAZARD or hurt['shadowDashHazard']:
+        raise ValueError('unsupported barrel DamageHero')
+    render = parts['SpriteRenderer']
+    if not render['m_Enabled'] or not render['m_Sprite']['m_PathID'] or render['m_FlipX'] or render['m_FlipY'] \
+            or render['m_Color'] != {'r': 1., 'g': 1., 'b': 1., 'a': 1.}:
+        raise ValueError('unsupported barrel SpriteRenderer')
+    scaler = parts['RandomScale']
+    if not all(_near(scaler[key], value) for key, value in
+               zip(('minScale', 'maxScale'), BARREL_RANDOM_SCALE)):
+        raise ValueError('barrel RandomScale range changed')
+    # `Determine Spawns` carries a disabled RandomInt 6..8: the live count is
+    # the one FalseyControl writes into `Spawns` before it sends SUMMON, which
+    # is the phase table. A source that re-enables it would randomise the count
+    # under the phase table and the guest would not know.
+    summon = _fsms(sc, summoner)['summon']['fsm']
+    data = _states(summon)['Determine Spawns']['actionData']
+    if any(name.endswith('RandomInt') and enabled
+           for name, enabled in zip(data['actionNames'], data['actionEnabled'])):
+        raise ValueError('summon now chooses its own spawn count')
+    # Recorded as a `file:path_id` sid rather than as the live object, so the
+    # record stays JSON-serializable whatever the cook later decides about this
+    # actor; host/cook.py::append_barrel_art reopens it from the sid.
+    sprite = source.ref(file, render['m_Sprite'])
+    return {
+        'source': source.sid(prefab), 'sprite': source.sid(sprite),
+        'pool': BARREL_POOL, 'damage': BARREL_DAMAGE,
+        'collider_local': shape, 'gravity_scale': BARREL_GRAVITY_SCALE,
+        'spawn_x': list(BARREL_SPAWN_X), 'spawn_world': sc.point(summoner),
+        'gap_ticks': [ticks(BARREL_SPAWN_GAP[0]), ticks(BARREL_SPAWN_GAP[1])],
+        'limitations': [
+            'The 720 degrees per second `Rotate` the barrel spins at is not reproduced: the'
+            ' draw path emits an axis-aligned quad from the frame box and turning one would'
+            ' cost a rotation per barrel per frame on a stall-bound frame.',
+            'RandomScale 0.8 to 1.0 is not reproduced; every barrel is the authored size.',
+            "`Check Direct` is not reproduced: the source lets the nail knock a barrel away at"
+            ' 45 units/s, and here a barrel is not a nail target.',
+            'The break is the collider and the sprite going away. `Break`\'s Bits and Dust Puff'
+            ' emitters, its Splat, its SpawnBlood and its one-shot are particles and audio.',
+        ],
     }
 
 
@@ -620,6 +752,9 @@ def arena_sources(sc, room):
         'battle_enemies': 1, 'gates': gates, 'additive': dict(ADDITIVE),
         'barrel_spawn_x': list(BARREL_SPAWN_X),
         'barrel_gap_ticks': [ticks(BARREL_SPAWN_GAP[0]), ticks(BARREL_SPAWN_GAP[1])],
+        # The pooled prefab itself, so the whole-fight contract fails at
+        # extraction rather than at the cook if the barrel moves.
+        'barrel': barrel_source(sc),
         'pre_battle_enemies': sorted(
             sc.gos[gid]['m_Name'] for gid, go in sc.gos.items()
             if go['m_Name'].startswith('Zombie ') and sc.active(gid)),
@@ -807,6 +942,12 @@ def generated_false_knight_params():
         'TURNS_BEFORE_ATTACK': TURNS_BEFORE_ATTACK,
         'JUMP_ATTACKS_IN_A_ROW': JUMP_ATTACKS_IN_A_ROW,
         'SLAMS_IN_A_ROW': SLAMS_IN_A_ROW,
+        # `FK Barrel Summon` and its pooled `Falling Barrel`. The pool reserve
+        # doubles as the guest's projectile budget, which is why it is a guest
+        # constant rather than a record: the rage asks for exactly eight.
+        'BARREL_POOL': BARREL_POOL,
+        'BARREL_DAMAGE': BARREL_DAMAGE,
+        'BARREL_GRAVITY': round(BARREL_GRAVITY_SCALE * 60 * 65536),
     }
     for key, value in fields.items():
         limit = 65535 if key.endswith('TICKS') else 0x7fffffff
@@ -821,6 +962,12 @@ def generated_false_knight_params():
                         (ox - width / 2, oy - height / 2, ox + width / 2, oy + height / 2)]
     fields['SLAM_OVERSHOOT'] = [round(value * 65536) for value in SLAM_OVERSHOOT]
     fields['HERO_X_CLAMP'] = [round(value * 65536) for value in HERO_X_CLAMP]
+    fields['BARREL_SPAWN_X'] = [round(value * 65536) for value in BARREL_SPAWN_X]
+    # `Determine Spawns` waits before the first barrel and `Spawn` waits after
+    # every one, and both hold the same WaitRandom.
+    fields['BARREL_GAP_TICKS'] = [ticks(BARREL_SPAWN_GAP[0]), ticks(BARREL_SPAWN_GAP[1])]
+    (bw, bh), _ = BARREL_BOX
+    fields['BARREL_HALF'] = [round(bw / 2 * 65536), round(bh / 2 * 65536)]
     fields['IDLE_TICKS'] = [[ticks(phase['idle'][0]), ticks(phase['idle'][1])] for phase in PHASES]
     fields['JUMP_BARRELS'] = [list(phase['jump_barrels']) for phase in PHASES]
     fields['SLAM_BARRELS'] = [list(phase['slam_barrels']) for phase in PHASES]

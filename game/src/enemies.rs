@@ -22,6 +22,11 @@ pub enum RunnerEventKind {
     Destroy,
     /// Aspid FireAtTarget: spawn a shot at the actor with this velocity.
     Fire { velocity: [i32; 2], shot_clip: u16, impact_clip: u16 },
+    /// `SUMMON` to `FK Barrel Summon`, with `Spawns` already written. The
+    /// summoner is a different source object from the boss and keeps its own
+    /// clock, so this only hands over the count and where the barrels come
+    /// from; `EnemyWorld` owns the loop that spaces them out.
+    Summon { spawns: u8, spawn_y: i32, barrel_clip: u16 },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RunnerEvent {
@@ -108,6 +113,9 @@ struct FalseKnightRuntime {
     hitter: bool,
     /// The body's own DamageHero, which the stagger switches off.
     contact_damage: u16,
+    /// `Spawns`, written by the SUMMON the controller just sent and drained by
+    /// the one exit that can reach `FK Barrel Summon`. Zero the rest of the time.
+    summon: u8,
     /// `Start Fall` drops the body out of the ceiling slab it is authored in;
     /// the shared spawn resolution runs once, there, rather than on load.
     separated: bool,
@@ -200,6 +208,13 @@ impl FalseKnightRuntime {
 /// `Activated` PersistentBoolItem.
 #[no_mangle] pub static mut HK_FK_ARENA: u32 = 0;
 #[no_mangle] pub static mut HK_FK_ACTIVATED: u32 = 0;
+/// `summon`'s `Spawn`, once per `Falling Barrel` that left the pool, and once
+/// per barrel that reached terrain or the hero. The two are separate because a
+/// barrel the pool recycled under pressure never breaks, so a route that only
+/// watched the spawns could not tell a fight the player dodged from one where
+/// the eight of the rage evicted each other.
+#[no_mangle] pub static mut HK_FK_BARRELS: u32 = 0;
+#[no_mangle] pub static mut HK_FK_BARRELS_BROKEN: u32 = 0;
 
 /// The Head's HealthManager: 40 hp with 0.15 s of invulnerability, no contact
 /// damage of its own and no Geo, exactly as `host/false_knight.py` reads it.
@@ -317,7 +332,16 @@ impl AspidRuntime {
 }
 /// Source `Spitter Shot R`: a gravity 0.05 dynamic body that damages the hero
 /// on contact and plays Impact where it hits terrain or the hero.
+///
+/// The False Knight's `Falling Barrel` rides the same pool. It is the same
+/// shape of object: a trigger box on a dynamic body that damages the hero and
+/// ends on terrain, and its own `PersonalObjectPool` reserve is also eight, so
+/// sharing costs neither a second array nor a second integrate-and-collide
+/// loop. Only one of the two can ever be live, because Crossroads_10 is the
+/// only room with a boss and it carries no Aspid.
 pub const SHOTS: usize = 8;
+const _: () = assert!(SHOTS >= hk_sim::false_knight::BARREL_POOL,
+    "the shared projectile pool must hold FK Barrel Summon's whole reserve");
 const SHOT_GRAVITY: i32 = 3 * ONE; // .05 * 60
 const SHOT_HALF: [i32; 2] = [20992, 18432]; // .640625 x .5625 box at scale .7 * .8... kept at source size
 const IMPACT_TICKS: u32 = 18; // six frames at 20 fps
@@ -330,8 +354,23 @@ struct Shot {
     vy: i32,
     animation_tick: u32,
     impact: bool,
+    /// A `Falling Barrel` rather than an Aspid bullet: heavier, wider, and with
+    /// no Impact clip, because `Break` hides the sprite and everything left of
+    /// that state is particles and a one-shot.
+    barrel: bool,
     shot_clip: u16,
     impact_clip: u16,
+}
+impl Shot {
+    fn gravity(&self) -> i32 {
+        if self.barrel { hk_sim::false_knight::BARREL_GRAVITY } else { SHOT_GRAVITY }
+    }
+    fn half(&self) -> [i32; 2] {
+        if self.barrel { hk_sim::false_knight::BARREL_HALF } else { SHOT_HALF }
+    }
+    fn damage(&self) -> u16 {
+        if self.barrel { hk_sim::false_knight::BARREL_DAMAGE } else { 1 }
+    }
 }
 /// Does the movement segment cross any terrain edge (closed endpoints)?
 fn segment_hits_terrain(a: [i32; 2], b: [i32; 2], count: usize, edge: &impl Fn(usize) -> [i32; 4]) -> bool {
@@ -594,7 +633,7 @@ impl Actor {
                         animation_tick: 0, clip: hk_sim::false_knight::Clip::Idle,
                         vx: 0, gravity: hk_sim::false_knight::GRAVITY_IDLE,
                         kinematic: true, hitter: false, contact_damage: spec.health.contact_damage,
-                        separated: false })
+                        summon: 0, separated: false })
                 }
             },
         }
@@ -799,7 +838,7 @@ impl Actor {
             return;
         }
         if let Some(mut boss) = self.false_knight() {
-            self.advance_false_knight(&mut boss, spec, count, &edge, context);
+            self.advance_false_knight(&mut boss, spec, count, &edge, context, emit);
             self.seat_false_knight(boss);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
@@ -1050,15 +1089,23 @@ impl Actor {
                     Effect::RageSlam => crate::camera::request(Shake::Average),
                     Effect::JumpShake => crate::camera::request(Shake::Kill),
                 },
+                // SUMMON, with `Spawns` written. The summoner is a different
+                // object with its own clock, so this is only the send: it is
+                // held here and drained once, in `advance_false_knight`, rather
+                // than emitted from each of the three places the boss is
+                // written back from. Only `tick` ever produces one, and holding
+                // it means the other two exits cannot quietly drop it.
+                Action::SummonBarrels(spawns) => boss.summon = spawns,
                 // `Invincible` and `HeadExposed` are read back off the phase
                 // rather than latched, so there is one source of truth for
                 // which target the nail reaches.
                 //
                 // The rest is recorded, not presented: there is no shockwave
-                // object, no barrel `PersonalObjectPool`, and the arena floor is
-                // cooked terrain that nothing can crack or destroy.
+                // object, and the arena floor is cooked terrain that nothing
+                // can crack or destroy. docs/FALSE_KNIGHT.md carries what each
+                // of those costs against the budget that refuses it.
                 Action::Invincible(_) | Action::HeadExposed(_) | Action::Shockwave { .. }
-                | Action::SummonBarrels(_) | Action::CrackFloor | Action::BreakFloor => {}
+                | Action::CrackFloor | Action::BreakFloor => {}
             }
         }
     }
@@ -1073,9 +1120,10 @@ impl Actor {
     /// stall-bound.
     #[inline(never)]
     fn advance_false_knight(&mut self, boss: &mut FalseKnightRuntime, spec: &ActorSpec,
-                            count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext) {
+                            count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext,
+                            emit: &mut impl FnMut(RunnerEvent)) {
         use hk_sim::false_knight as fk;
-        let ActorController::FalseKnight { trigger, .. } = spec.controller
+        let ActorController::FalseKnight { trigger, barrel_clip, barrel_spawn_y, .. } = spec.controller
             else { panic!("False Knight runtime with other metadata") };
         if boss.controller.phase() == fk::Phase::Dormant {
             // `Detect`: the hero's collider entered the Battle Scene trigger.
@@ -1149,6 +1197,15 @@ impl Actor {
         };
         let actions = boss.controller.tick(senses);
         self.apply_false_knight(boss, actions);
+        // The one exit that reaches `FK Barrel Summon`. The other two write the
+        // boss back on a nail hit and on the arena's own countdown, and neither
+        // source path sends SUMMON from either of those.
+        if boss.summon != 0 {
+            let spawns = core::mem::take(&mut boss.summon);
+            emit(RunnerEvent { scene: self.scene, source_id: self.source_id,
+                position: [self.x, self.y], facing: self.walk.direction,
+                kind: RunnerEventKind::Summon { spawns, spawn_y: barrel_spawn_y, barrel_clip } });
+        }
     }
     /// One 60 Hz step of the Baldur: FSM tick from last frame's contacts, then
     /// the gravity body (scale 0.8) moves at the held x velocity and the
@@ -1325,13 +1382,32 @@ pub struct Events {
 pub struct EnemyWorld {
     actors: [Option<Actor>; MAX_ACTORS],
     shots: [Option<Shot>; SHOTS],
+    /// `FK Barrel Summon`'s own `summon`, which is a second object in the room
+    /// rather than part of the boss: `FalseyControl` writes `Spawns` and sends
+    /// SUMMON, and this counts the burst out at its own pace. It lives here
+    /// beside the pool it fills rather than on the boss runtime, where the
+    /// `Runtime` enum would have paid for it in all thirty-two actor slots.
+    summon: hk_sim::false_knight::Summon,
+    /// The scene, drop height and cooked clip the live summoner uses, taken
+    /// from the boss's `ActorSpec` when SUMMON arrives. `None` until a fight
+    /// asks for a barrel, which is what keeps every other room's tick at one
+    /// test of a `u8`.
+    summon_site: Option<(u8, i32, u16)>,
 }
 impl EnemyWorld {
     /// Source shots are pooled per Aspid (two each); the oldest live shot
     /// yields when the shared pool is full.
     fn spawn_shot(&mut self, scene: usize, position: [i32; 2], velocity: [i32; 2], shot_clip: u16, impact_clip: u16) {
-        let shot = Shot { scene: scene as u8, x: position[0], y: position[1], vx: velocity[0], vy: velocity[1],
-            animation_tick: 0, impact: false, shot_clip, impact_clip };
+        self.spawn_projectile(Shot { scene: scene as u8, x: position[0], y: position[1], vx: velocity[0],
+            vy: velocity[1], animation_tick: 0, impact: false, barrel: false, shot_clip, impact_clip });
+    }
+    /// `summon`'s `Spawn`: one `Falling Barrel` at the chosen x and the
+    /// summoner's own y, at rest, with the pool's own recycling rule.
+    fn spawn_barrel(&mut self, scene: usize, position: [i32; 2], clip: u16) {
+        self.spawn_projectile(Shot { scene: scene as u8, x: position[0], y: position[1], vx: 0, vy: 0,
+            animation_tick: 0, impact: false, barrel: true, shot_clip: clip, impact_clip: clip });
+    }
+    fn spawn_projectile(&mut self, shot: Shot) {
         let slot = self.shots.iter().position(|s| s.is_none())
             .unwrap_or_else(|| { let mut oldest = 0; for (i, s) in self.shots.iter().enumerate() {
                 if s.map_or(0, |s| s.animation_tick) >= self.shots[oldest].map_or(0, |s| s.animation_tick) { oldest = i; } } oldest });
@@ -1339,8 +1415,15 @@ impl EnemyWorld {
     }
     /// EnemyBullet: gravity .05 flight, Collision on terrain or the HeroBox
     /// (DamageHero 1), Impact clip, then recycled. Off-scene shots are dropped.
+    ///
+    /// A barrel walks the same path with `Falling Barrel`'s own gravity and box.
+    /// Its collider is a trigger, so terrain ends it rather than stopping it,
+    /// which is what `Idle`'s `Trigger2dEventLayer` on layer 8 does; and it has
+    /// no Impact clip, because `Break` turns the sprite off and everything else
+    /// that state does is particles and a one-shot. So a broken barrel leaves
+    /// at once rather than holding a slot through a frame it cannot draw.
     fn tick_shots(&mut self, region: &Region, hero_body: [i32; 4], count: usize, edge: &impl Fn(usize) -> [i32; 4],
-        mut hurt: impl FnMut(i32) -> Hurt) -> Hurt {
+        mut hurt: impl FnMut(u16, i32) -> Hurt) -> Hurt {
         let mut result = Hurt::Ignored;
         for slot in self.shots.iter_mut() {
             let Some(shot) = slot else { continue };
@@ -1350,7 +1433,7 @@ impl EnemyWorld {
                 if shot.animation_tick >= IMPACT_TICKS { *slot = None; }
                 continue;
             }
-            shot.vy -= SHOT_GRAVITY / 60;
+            shot.vy -= shot.gravity() / 60;
             let (ox, oy) = (shot.x, shot.y);
             shot.x += shot.vx / 60;
             shot.y += shot.vy / 60;
@@ -1358,13 +1441,23 @@ impl EnemyWorld {
                 if shot.x.abs() > 512 * ONE || shot.y.abs() > 512 * ONE { *slot = None; continue; }
             }
             let hit_terrain = segment_hits_terrain([ox, oy], [shot.x, shot.y], count, edge);
-            let bounds = [shot.x - SHOT_HALF[0], shot.y - SHOT_HALF[1], shot.x + SHOT_HALF[0], shot.y + SHOT_HALF[1]];
+            let half = shot.half();
+            let bounds = [shot.x - half[0], shot.y - half[1], shot.x + half[0], shot.y + half[1]];
             let hit_hero = overlap(bounds, hero_body);
             if hit_hero {
-                let outcome = hurt(if shot.vx < 0 { -1 } else { 1 });
+                // A barrel falls straight down, so the recoil side is the side
+                // of the hero it landed on rather than the side it came from.
+                let outcome = hurt(shot.damage(), if shot.barrel {
+                    if shot.x < (hero_body[0] + hero_body[2]) / 2 { -1 } else { 1 }
+                } else if shot.vx < 0 { -1 } else { 1 });
                 if outcome != Hurt::Ignored { result = outcome; }
             }
             if hit_terrain || hit_hero {
+                if shot.barrel {
+                    unsafe { HK_FK_BARRELS_BROKEN = HK_FK_BARRELS_BROKEN.saturating_add(1) }
+                    *slot = None;
+                    continue;
+                }
                 shot.impact = true;
                 shot.animation_tick = 0;
                 shot.vx = 0; shot.vy = 0;
@@ -1375,6 +1468,12 @@ impl EnemyWorld {
     pub fn clear_shots(&mut self, scene: usize) {
         for slot in self.shots.iter_mut() {
             if slot.is_some_and(|s| s.scene as usize == scene) { *slot = None; }
+        }
+        // A scene load recreates `FK Barrel Summon` at its own start state, so
+        // a burst the player left mid-count does not resume on the way back in.
+        if self.summon_site.is_some_and(|(id, _, _)| id as usize == scene) {
+            self.summon = hk_sim::false_knight::Summon::new(scene as u32);
+            self.summon_site = None;
         }
     }
     /// Drain each source actor's death event once, even across local views.
@@ -1389,6 +1488,8 @@ impl EnemyWorld {
         Self {
             actors: [None; MAX_ACTORS],
             shots: [None; SHOTS],
+            summon: hk_sim::false_knight::Summon::new(1),
+            summon_site: None,
         }
     }
     /// Compact read-only state for route validation/telemetry.
@@ -1489,11 +1590,16 @@ impl EnemyWorld {
         let context=RunnerContext {camera,hero:[player.x,player.y],hero_body:body};
         // Aspid shots spawn after the actor pass (the pool is a sibling field).
         let mut fires: [Option<(usize, [i32; 2], [i32; 2], u16, u16)>; 4] = [None; 4];
+        // At most one SUMMON a tick: one boss, and `Actions` carries one of
+        // these per state change.
+        let mut summoned: Option<(usize, u8, i32, u16)> = None;
         let mut runner_event = |event: RunnerEvent| {
             if let RunnerEventKind::Fire { velocity, shot_clip, impact_clip } = event.kind {
                 if let Some(slot) = fires.iter_mut().find(|f| f.is_none()) {
                     *slot = Some((event.scene, event.position, velocity, shot_clip, impact_clip));
                 }
+            } else if let RunnerEventKind::Summon { spawns, spawn_y, barrel_clip } = event.kind {
+                summoned = Some((event.scene, spawns, spawn_y, barrel_clip));
             } else { runner_event(event); }
         };
         for actor in self
@@ -1713,9 +1819,22 @@ impl EnemyWorld {
         for (scene, position, velocity, shot_clip, impact_clip) in fires.into_iter().flatten() {
             self.spawn_shot(scene, position, velocity, shot_clip, impact_clip);
         }
+        if let Some((scene, spawns, spawn_y, barrel_clip)) = summoned {
+            self.summon_site = Some((scene as u8, spawn_y, barrel_clip));
+            self.summon.summon(spawns);
+        }
+        // `Determine Spawns` / `Spawn` / `Check Spawns`: one barrel a frame at
+        // most, and one `u8` test a frame while the summoner is idle, which is
+        // every frame of every other room in the game.
+        if let Some((scene, spawn_y, clip)) = self.summon_site {
+            if let Some(x) = self.summon.tick() {
+                self.spawn_barrel(scene as usize, [x, spawn_y], clip);
+                unsafe { HK_FK_BARRELS = HK_FK_BARRELS.saturating_add(1) }
+            }
+        }
         let shadow = player.shadow_dashing;
         let hurt = self.tick_shots(region, body, room.counts[5], &|i| state.edge(region, room, i),
-            |direction| cheats.hurt(vitals, crate::VITAL_PARAMS, 1, direction, false, shadow));
+            |damage, direction| cheats.hurt(vitals, crate::VITAL_PARAMS, damage, direction, false, shadow));
         if hurt != Hurt::Ignored { events.hurt = hurt; }
         events
     }

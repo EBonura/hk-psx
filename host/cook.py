@@ -24,6 +24,9 @@ from UnityPy.helpers.MeshHelper import MeshHandler
 CAM_X=(30.0,58.0);CAM_Y=(14.11,20.0)
 FOCAL=120/math.tan(math.radians(12));CAM_Z=-38.1
 CLIPS=('Idle','Run','Airborne','Fall','Land','Slash','SlashAlt','UpSlash','DownSlash')
+# The one-frame clip name the False Knight's barrel rides; the prefab has no
+# tk2d library of its own, so the clip is named after the pooled object.
+BARREL_CLIP='Falling Barrel'
 
 def scenery_dimensions(width,height,cap):
     """One stable integer sampling size; floating roundoff cannot exceed cap."""
@@ -215,6 +218,31 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
         actor['visual_scale']=[sx,sy]
     from effects import append_corpse_art
     append_corpse_art(s,sc,actors,atlas,frames,clips)
+    append_barrel_art(s,actors,atlas,frames,clips)
+
+def append_barrel_art(s,actors,atlas,frames,clips):
+    """`FK Barrel Summon`'s pooled `Falling Barrel`, as one streamed frame.
+
+    The barrel is a SpriteRenderer prefab in sharedassets48, not a tk2d clip, so
+    it takes neither the actor path above nor effects.py's _ClipCooker: one
+    native sprite, one frame, one clip the projectile pool plays exactly the way
+    it plays the Aspid shot's. The frame's box is the sprite's own mesh extent,
+    which is what enemies.rs::prepare_draws turns into the four corners.
+
+    host/false_knight.py::barrel_source already refused anything about the
+    prefab that this draw would get wrong, so nothing here has a second opinion
+    about scale, colour or flip.
+    """
+    for actor in actors:
+        control=actor.get('movement_control',{})
+        if not actor['movement_supported'] or control.get('kind')!='FalseKnight':continue
+        barrel=control['barrel'];name,path_id=barrel['sprite'].rsplit(':',1)
+        image,box=native_sprite(s.file(name).objects[int(path_id)]);scale=FOCAL/-CAM_Z
+        actor['barrel_clip']=len(clips)
+        clips.append({'name':barrel['source']+'/'+BARREL_CLIP,'start':len(frames),'count':1,
+                      'fps':1.,'wrap':2,'loopStart':0})
+        frames.append({'texture':atlas.add(image,(box[2]-box[0])*scale,(box[3]-box[1])*scale,streamed=True),
+                       'box':box,'sprite':barrel['sprite'],'event':{}})
 
 from alpha_covers import HAS_ALPHA_COVERS, RECORD_BYTES, record as alpha_cover_record
 
