@@ -68,6 +68,15 @@ events, nested dispatch depth and ops per tick. Exceeding any of them is a
 guest assertion, not a silent drop, because a dropped event is the failure mode
 that would be hardest to notice.
 
+An action authored `everyFrame` is not a one-shot. PlayMaker runs a state's
+actions once on entry, then re-runs the OnUpdate of those that have one, every
+frame, for as long as the state is current. The IR marks those ops with a
+`REPEAT` flag bit, and once a state's one-shot pass is done the executor runs
+only the flagged ops, once each per tick. Without it a state authored to watch a
+condition would test it once and sit there for ever, which is a silent wrong
+answer rather than a refusal, so the compiler must set the flag or refuse the
+action.
+
 Events are synchronous and nested, matching PlayMaker: `SendEventByName` runs
 the target's transition inside the sending op, up to the depth bound, and only
 then returns. Delayed sends go on a pending queue drained at the start of the
