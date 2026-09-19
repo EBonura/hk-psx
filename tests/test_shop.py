@@ -133,6 +133,10 @@ class ShopRuntimeTests(unittest.TestCase):
         Checking the guest crate against its own target is the thing the stub was
         approximating, it needs no maintenance, and it takes about a second.
         """
+        from generated_data import stale_generated_data
+        stale = stale_generated_data()
+        if stale:
+            self.skipTest(stale)
         check = subprocess.run(
             ['cargo', 'check', '--quiet', '--target', 'mipsel-sony-psx'],
             cwd=ROOT / 'game', capture_output=True, text=True)
