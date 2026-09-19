@@ -434,12 +434,26 @@ def actor_sources(sc, bounds=None):
         # a time rather than wholesale, because the merge exists for one of them.
         # Crossroads_10_boss brings the False Knight and the three pre-battle
         # Zombies that `Battle Control` kills with KILL ALL ENEMIES the moment
-        # the boss lands. Nothing runs that arena yet, so admitting the Zombies
-        # would stand three enemies in a fight that does not exist, and the CLUT
-        # measurement agrees: the boss's Idle and Turn are 42 of the 141 slots
-        # Crossroads_10's tightest view has free, the Zombies are 99 more, and
-        # the two banks together take that view to 438 of 416 after the room
-        # dedup. They stay records until the arena exists and the view has room.
+        # the boss lands. Both halves of the reason this comment used to give
+        # have expired, so read them as history rather than as the rule:
+        #
+        # The arena does run now. The boss is fought and killed on the disc,
+        # `Action::KillAllEnemies` is handled, and the `boss-fight` route takes
+        # the arena to Open.
+        #
+        # And the CLUT figure does not reproduce. It said the two banks reach
+        # 438 of 416 after the room dedup. Re-measuring by replaying
+        # `regions.postpack_actor_bank` and `deduplicate_room` in memory puts
+        # the tightest view at 379 of 416 with the Zombies lifted, before
+        # `postpack_similarity` runs, with no resident page. The +99 the comment
+        # attributed to them is right; the baseline it was measured against was
+        # not. That leaves the NPC bank, appended after this one, as the only
+        # part of the figure still unaccounted for.
+        #
+        # What is holding them out today is neither: the `boss-fight` tape is
+        # 239 events tuned to the exact fight, and standing three more enemies
+        # in that arena invalidates it on the first frame. Admitting them is a
+        # re-authoring job, not a budget one.
         if actor['movement_supported'] and sid >= ADDITIVE_ID_BASE \
                 and not actor['movement_control'].get('admit_from_additive_scene'):
             actor['movement_supported'] = False
