@@ -52,7 +52,8 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P11 | in progress | Steps 1 and 4 done for the admitted world. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. The `BounceShroom` in Crossroads_38 is implemented as the down slash target it actually is, with its `fatGrubKing` gate recorded rather than evaluated. Owed: the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
 | P16 | in progress | Step 1 done. `host/items.py` catalogs 40 charms with notch costs and PlayerData fields, 26 equipment entries, and the fragment fusion rules from the prefabs the pickups spawn. The slice contains 6 charms, 1 notch, 3 mask shards, 1 vessel fragment, 3 relics and the City Crest, none of it implemented. Charm effects belong to steps 5 and 6 and are not read. |
 | P17 | in progress | Step 1 done. `host/shops.py` catalogs Sly's stock and the stag rules, and found that prices come from an encrypted sheet rather than the serialized `cost`, which is stale on 9 of 14 items. Every `ShopMenuStock` is in an unadmitted scene, so no purchase is reachable; the whole economy loop in the slice is 1,177 Geo earned against 230 Geo of sinks. |
-| P12, P18, P21-P31 | pending | Follow dependency order in the master plan. |
+| P18 | in progress | Step 1 done. `host/npcs.py` catalogs 27 NPCs, their gates and 154 decrypted dialogue keys. On a fresh save only Elderbug and the Jiji door are talkable in Dirtmouth; the other eight are gated on progression the port cannot reach. Dialogue selection is a priority list, verified from PlayMaker.dll and now pinned by a test in the script executor. Nothing is implemented: Dirtmouth still has no people in it. |
+| P12, P21-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -1968,6 +1969,58 @@ Fat Grub King the BounceShroom work found, and the third instance this session
 of the port showing something a PlayerData gate should be hiding. The pattern is
 now large enough to name: the activation gap is not cosmetic, it is the port
 disagreeing with the original about what exists.
+
+## P18 step 1: who is actually in Dirtmouth, and what they say
+
+27 NPCs across 12 of the 45 admitted scenes, with 154 dialogue keys decrypted
+from 14 English sheets. There is no single dialogue sheet: every
+`DialogueBox.StartConversation` names its own, so the extractor follows the call
+rather than guessing a filename.
+
+Dirtmouth authors ten NPCs and on a fresh save exactly **two** can be talked to.
+Elderbug, ungated, who is the whole quest log in one FSM with 21 branches and 33
+lines. And the Jiji door, which with no simple key says only "A stone door with
+a simple lock." The other eight are all gated on progression the port cannot
+reach: Tiso wants the dash, Nymm wants `nymmInTown`, the Gravedigger's FSMs go
+inert without the Dream Nail, Zote destroys himself, and Elderbug has a second
+Grimm-troupe variant that disables whichever of the pair does not apply.
+
+Elderbug's opening is what a fresh save gets: `ELDERBUG_INTRO_NORMAL` then a
+five-page `ELDERBUG_INTRO_MAIN`, and the FSM sets `metElderbug` as it plays.
+
+### The semantic that matters more than the text
+
+Dialogue selection is a **priority list, not a set of independent tests**, and
+that was established from `FsmState::ActivateActions` in the shipped
+PlayMaker.dll rather than assumed: it returns as soon as `Fsm.IsSwitchingState`,
+so once one action transitions, the rest of that state never runs. Elderbug's 21
+branches are ordered and each is a said-once flag, so evaluating them as
+independent tests would pick the wrong line.
+
+The script executor already behaved that way, but nothing pinned it. It has a
+test now that names the reason, and docs/SCRIPT_IR.md cites the evidence. This
+is the kind of rule that a later refactor breaks silently and no route notices.
+
+### Honest gaps
+
+Eight keys could not be resolved and are listed rather than guessed. Three are
+built at runtime from an FSM variable, one is composed by `BuildString`, and one
+is a genuine hole in the shipped English sheet: `Crossroads_04`'s inspect prompt
+asks `EN_Prompts` for `MENDER_DOOR`, which that sheet does not contain. That is
+a source bug, not a decode failure, and worth knowing before someone spends an
+afternoon on the decryptor.
+
+The new-save walker stops at the first action it cannot decide rather than
+assuming an undecodable action does nothing, so three NPCs are reported
+undecided instead of wrongly decided.
+
+### One consolidation that came out of it
+
+Three extractors had each grown their own copy of the language decryption: one
+with the key as a literal, one deriving it from the assembly, and the third
+importing the second's private helper. A literal key goes stale silently the day
+the install changes. `host/language.py` now owns key derivation and sheet
+decryption, all three callers dropped their copy, and the outputs are unchanged.
 
 ## Required package completion record
 
