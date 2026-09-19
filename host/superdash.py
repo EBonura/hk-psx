@@ -5,7 +5,7 @@ the travel velocity comes from the FSM's own `Superdash Speed` variable, so
 that is what is bound here. No retail payload is embedded; the caller appends
 the returned scalars to the guest's cooked parameters.
 """
-from focus import action_fields
+from focus import action_fields, fsm_variables
 
 def _fsm(source, name):
     file = source.file('resources.assets')
@@ -25,8 +25,7 @@ def _fsm(source, name):
 def source_superdash_values(source):
     fsm = _fsm(source, 'Superdash')
     states = {s['name']: s for s in fsm['states']}
-    variables = {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
-                 for v in group if isinstance(v, dict) and 'name' in v and 'value' in v}
+    variables = fsm_variables(fsm)
     def actions(state, kind):
         d = states[state]['actionData']
         return [action_fields(d, i) for i, n in enumerate(d['actionNames'])

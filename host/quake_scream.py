@@ -11,7 +11,7 @@ Nothing here is implemented in the guest. This is extraction and a report only;
 no retail payload is embedded and the report goes to .hkpsx.
 """
 from superdash import _fsm
-from focus import action_fields
+from focus import action_fields, fsm_variables
 from dream_nail import _knight_animation
 from spells import _named_child, _fsm_on
 
@@ -22,8 +22,7 @@ CHARM_SHAMAN_STONE = 'equippedCharm_19'
 
 def _reader(fsm):
     states = {s['name']: s for s in fsm['states']}
-    variables = {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
-                 for v in group if isinstance(v, dict) and 'name' in v and 'value' in v}
+    variables = fsm_variables(fsm)
     def scalar(value):
         if isinstance(value, dict) and 'value' in value and 'useVariable' in value:
             return variables.get(value['name']) if value['useVariable'] else value['value']
