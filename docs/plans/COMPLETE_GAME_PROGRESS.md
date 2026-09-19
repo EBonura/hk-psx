@@ -52,7 +52,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P11 | in progress | Steps 1 and 4 done for the admitted world. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. The `BounceShroom` in Crossroads_38 is implemented as the down slash target it actually is, with its `fatGrubKing` gate recorded rather than evaluated. Owed: the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
 | P16 | in progress | Steps 1 to 4 have a real slice. `host/charms.py` cooks all 40 charms with the equip contract asserted out of the `UI Charms` FSM rather than assumed: a full board never overcharms and never counts an attempt, and overcharming is unlocked the way the source unlocks it, by four refused attempts whose notches are handed back and a fifth that goes through and sets `canOvercharm`. The board is a pause row, the collection and notch budget ride the save record, and six effects are implemented from real numbers (Grubsong, Stalwart Shell, Soul Catcher, Soul Eater, Fragile Heart, Fragile Strength). The other 34 cook as no effect and the board refuses to equip them, each with the missing port system named. No icons: a pause screen is reachable from every view, so the 3-slot global headroom applies, and the Hollow Shade route does not rescue it either, because there are 8 shared animation slots and the frozen view behind the panel is still drawing into them. Previously: step 1 done. `host/items.py` catalogs 40 charms with notch costs and PlayerData fields, 26 equipment entries, and the fragment fusion rules from the prefabs the pickups spawn. The slice contains 6 charms, 1 notch, 3 mask shards, 1 vessel fragment, 3 relics and the City Crest, none of it implemented. Charm effects belong to steps 5 and 6 and are not read. |
 | P17 | in progress | Step 1 done. `host/shops.py` catalogs Sly's stock and the stag rules, and found that prices come from an encrypted sheet rather than the serialized `cost`, which is stale on 9 of 14 items. Every `ShopMenuStock` is in an unadmitted scene, so no purchase is reachable; the whole economy loop in the slice is 1,177 Geo earned against 230 Geo of sinks. |
-| P18 | in progress | Step 1 done. `host/npcs.py` catalogs 27 NPCs, their gates and 154 decrypted dialogue keys. On a fresh save only Elderbug and the Jiji door are talkable in Dirtmouth; the other eight are gated on progression the port cannot reach. Dialogue selection is a priority list, verified from PlayMaker.dll and now pinned by a test in the script executor. Steps 1 and 2 have their first instance: Elderbug stands in Dirtmouth and holds his whole fresh-save conversation. His talk range is npc_control's own trigger cooked as world-bank kind 14, his six pages are Conversation Control's entries, his facing comes from the `Hero Is Right`/`Hero Is Left` compare against his own `localScale.x`, and his three clips ride Town's room bank for 18 of its 212 spare texture slots. Verified on the disc, not only in the cook: the `town-elderbug` route walks into his trigger, opens with UP and pages through all six entries with X, and a captured frame shows him drawn in front of the bench. Owed: `metElderbug` is a session flag rather than a PlayerData record, conversation selection takes the fresh-save branch only, and four scenes (Tutorial_01, Crossroads_03, Crossroads_01, Crossroads_13) have too little texture headroom to hold an NPC at all. |
+| P18 | in progress | Step 1 done. `host/npcs.py` catalogs 27 NPCs, their gates and 154 decrypted dialogue keys. On a fresh save only Elderbug and the Jiji door are talkable in Dirtmouth; the other eight are gated on progression the port cannot reach. Dialogue selection is a priority list, verified from PlayMaker.dll and now pinned by a test in the script executor. Steps 1 and 2 have their first instance: Elderbug stands in Dirtmouth and holds his whole fresh-save conversation. His talk range is npc_control's own trigger cooked as world-bank kind 14, his six pages are Conversation Control's entries, his facing comes from the `Hero Is Right`/`Hero Is Left` compare against his own `localScale.x`, and his three clips ride Town's room bank for 18 of its 212 spare texture slots. Verified on the disc, not only in the cook: the `town-elderbug` route walks into his trigger, opens with UP and pages through all six entries with X, and a captured frame shows him drawn in front of the bench. Both of the first two owed items are now closed. Conversation selection is a chain rather than a branch, because the state that speaks also writes the flag that changes the next pick: Elderbug runs intro, then history, then a generic line that writes nothing and repeats. The met flag is a two-bit cursor per NPC in the save record, advancing on the page carrying the source's own write. Myla joins him in Crossroads_45 at 223 of 416 in the view she stands in. 27 NPCs surveyed, 12 present on a fresh save, 5 talkable, and every refusal has a reason: the Stag speaks nothing on a fresh save and its idle frames are 91x87 against the 64x64 cache, and Jiji Door, Goam Inspect, both Tram Call Boxes, Cornifer Card and Gravedigger carry no animator at all. Owed: four scenes (Tutorial_01, Crossroads_03, Crossroads_01, Crossroads_13) have too little texture headroom to hold an NPC, and Myla has no route that reaches her. |
 | P21 | in progress | The False Knight is fully extracted and its phase machine and arena lifecycle run in `hk-sim` with 26 tests: 65 body hp restored after every stagger, 40 head hp, three staggers, eight rage slams, the three-row phase table and the reusable gate lifecycle. It cannot be drawn, and the reason is not the CLUT budget: Crossroads_10 has 141 free slots against the boss's 110, but 77 of its 110 sprites exceed the 64x64 animation cache, its largest frame wants 12 slots against 8, and one frame is larger than the whole 16,384-byte upload budget. It is also not in an admitted scene, because `BossLoader` additively loads `Crossroads_10_boss` and neither additive scene is in the scene table. docs/FALSE_KNIGHT.md has the route past both. Nothing is wired into the actor pool, because a controller variant that can never be instantiated is dead code. |
 | P12, P22-P31 | pending | Follow dependency order in the master plan. |
 
@@ -2292,6 +2292,34 @@ Two things follow that were not obvious before measuring. Four scenes cannot
 hold a three-clip NPC at all: Tutorial_01, Crossroads_03, Crossroads_01 and
 Crossroads_13 have 3, 10, 13 and 13. And Tutorial_01, the scene the game opens
 in, is the constraint on every resident-art decision in the whole port.
+
+## The conversation was stuck, and the port was not saying so
+
+Generalising Elderbug turned up a bug in what had already shipped, which is the
+kind of find that justifies the exercise. `Conversation Control` does not pick a
+line and stop: the state that speaks also writes the PlayerData flag that
+changes the next pick, so what a player hears is a chain. Elderbug's runs intro,
+then history, then a generic line that writes nothing and therefore repeats
+forever.
+
+The port got the first link and no further. His `Convo Choice` derives `Is Steel
+Soul Mode` from `permadeathMode` through `IntCompareToBool`, which the walker
+could not decode, so every walk after `metElderbug` was set stopped dead. The
+port was writing the met flag and then replaying the introduction, forever, with
+nothing anywhere reporting a problem. `IntCompareToBool` is not a branch, it
+stores a comparison into up to three bool variables, so decoding it was bounded,
+and the walk runs on to History 1 now.
+
+The other correction was to an assumption baked into the first NPC. Only
+Elderbug's library names its talk clips `Talk Left` and `Talk Right`. Everyone
+else has a single `Talk`, or `Talk L` and `Talk R`, or a seated pair. The triple
+was Elderbug-shaped and is per NPC now.
+
+Myla is the second admission, measured in the view she actually stands in rather
+than in her scene's worst view: 223 of 416, against the 265 that the scene's
+tightest view carries with no NPC in it. She has no route that reaches her,
+because Crossroads_45 is entered only from Crossroads_14 and no card fixture
+starts anywhere near it, so she is cook-verified and nothing more.
 
 ## A PlayMaker FSM runs on the PlayStation
 
