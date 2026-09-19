@@ -4,24 +4,28 @@
 pub mod residency;
 use psx_cache::SlotCache;
 
-pub const SLOTS: usize = 8;
-pub const MAX_REQUESTS: usize = 8;
+/// Eight slots in the 32x256 strip at x320 and sixteen in the texture page a
+/// static scenery page gave up; `residency::ANIMATION_REGIONS` holds the
+/// measurement and `residency::ANIMATION_SLOTS` must agree with this.
+pub const SLOTS: usize = 24;
+pub const MAX_REQUESTS: usize = 24;
 /// Global texture IDs in an admitted resident scene.
 pub const MAX_KEYS: usize = 2048;
-pub const MAX_UPLOAD_BYTES: u32 = 16384;
+/// The whole cache, which is what one frame may replace: a cap, not a target.
+/// A frame only uploads its misses.
+pub const MAX_UPLOAD_BYTES: u32 = 49152;
 
 /// One slot is 64x64 4bpp. A frame larger than that binds a rectangle of slots
-/// and the draw submits one quad per tile, because the strip cannot hold a
-/// bigger slot: `residency::SPARE_HALFWORDS` measures 304 free halfwords in
-/// two fragments 16 halfwords wide, and one slot is 16 by 64.
+/// and the draw submits one quad per tile, because no slot can be bigger than
+/// a texture page's own 64x64 grid step.
 pub const TILE: usize = 64;
 /// Slots the rest of the frame always keeps: the Knight's body or ability pose,
 /// the nail effect, the Hollow Shade and the Vengeful Spirit ball are the four
 /// keys `main.rs` can request beside the view's own actor or NPC.
 pub const RESERVED_SLOTS: usize = 4;
 /// The largest tile rectangle one frame may bind. Growing this needs more
-/// slots, and more slots need VRAM that `residency::SPARE_HALFWORDS` says is
-/// not there.
+/// slots, and the next sixteen slots cost another static scenery page:
+/// `residency::SPARE_HALFWORDS` says the gaps hold none.
 pub const MAX_FRAME_TILES: usize = SLOTS - RESERVED_SLOTS;
 /// Tile columns and rows a frame of this pixel size binds.
 pub const fn tile_grid(width: usize, height: usize) -> (usize, usize) {
@@ -196,14 +200,19 @@ mod tests {
     #[test]
     fn incoming_hit_is_pinned_before_lru_miss() {
         let mut c = Cache::new();
+        // Keys 1 and 2 land first, so they are the least recently used once
+        // the rest of the slots fill behind them.
         frame(&mut c, &[1, 2]);
-        frame(&mut c, &[3, 4]);
-        frame(&mut c, &[6, 7, 8, 9]);
-        // 1 is the oldest slot, and appears AFTER the miss in this request.
-        let stats = c.prepare(&[5, 1], |_, _| Some(2048)).unwrap();
+        let rest: std::vec::Vec<u16> = (3..=SLOTS as u16).collect();
+        for chunk in rest.chunks(MAX_REQUESTS) {
+            frame(&mut c, chunk);
+        }
+        // 1 is an oldest slot, and appears AFTER the miss in this request.
+        let incoming = SLOTS as u16 + 1;
+        let stats = c.prepare(&[incoming, 1], |_, _| Some(2048)).unwrap();
         assert_eq!(stats.hits, 1);
         assert_eq!(stats.misses, 1);
-        assert_ne!(c.slot(5), c.slot(1));
+        assert_ne!(c.slot(incoming), c.slot(1));
         assert_eq!(c.slot(2), None); // undeclared texture cannot be drawn
         c.submit().unwrap();
         c.complete().unwrap();
@@ -223,12 +232,14 @@ mod tests {
     #[test]
     fn invalid_working_set_rejected_before_any_upload() {
         let mut c = Cache::new();
+        let over: std::vec::Vec<u16> = (1..=MAX_REQUESTS as u16 + 1).collect();
+        assert_eq!(c.prepare(&over, |_, _| panic!()), Err(Error::WorkingSet));
         assert_eq!(
-            c.prepare(&[1, 2, 3, 4, 5, 6, 7, 8, 9], |_, _| panic!()),
+            c.prepare(&[MAX_KEYS as u16], |_, _| panic!()),
             Err(Error::WorkingSet)
         );
-        assert_eq!(c.prepare(&[2048], |_, _| panic!()), Err(Error::WorkingSet));
-        assert_eq!(frame(&mut c, &[1, 2, 3, 4, 5, 6, 7, 8]).upload_bytes, MAX_UPLOAD_BYTES);
+        let full: std::vec::Vec<u16> = (1..=MAX_REQUESTS as u16).collect();
+        assert_eq!(frame(&mut c, &full).upload_bytes, MAX_UPLOAD_BYTES);
     }
     #[test]
     fn a_frame_binds_a_rectangle_of_slots_and_covers_every_texel_once() {
@@ -256,25 +267,31 @@ mod tests {
         }
     }
     #[test]
-    fn the_frame_tile_budget_is_what_the_eight_slots_leave() {
-        // The slot count is the strip's, and the upload cap is the strip.
+    fn the_frame_tile_budget_is_what_the_slots_leave() {
+        // The slot count is the regions', and the upload cap is the whole
+        // cache. Both have to hold somewhere else too, or they drift.
         assert_eq!(SLOTS, residency::ANIMATION_SLOTS);
         assert_eq!(MAX_UPLOAD_BYTES as usize, SLOTS * TILE * TILE / 2);
         assert_eq!(MAX_REQUESTS, SLOTS);
-        assert_eq!(MAX_FRAME_TILES, 4);
+        assert_eq!(MAX_FRAME_TILES, 20);
         assert!(MAX_FRAME_TILES + RESERVED_SLOTS <= SLOTS);
         assert!(frame_tiles(91, 89) <= MAX_FRAME_TILES);
-        // The False Knight's largest frame, 198x169 through the same path.
-        // It needs 12 tiles, and beside the four reserved keys that is 16
-        // slots: 32,768 bytes against the strip's 16,384 and 608 free.
+        // The False Knight's largest frame, 198x169 through host/cook.py's own
+        // actor art path. Twelve tiles beside the four reserved keys is 16 of
+        // the 24 slots, 32,768 bytes of the 49,152 the cache now holds.
         assert_eq!(frame_tiles(198, 169), 12);
-        assert!(frame_tiles(198, 169) > MAX_FRAME_TILES);
+        assert!(frame_tiles(198, 169) <= MAX_FRAME_TILES);
         assert_eq!((frame_tiles(198, 169) + RESERVED_SLOTS) * 2048, 32768);
+        assert!(frame_tiles(198, 169) + RESERVED_SLOTS <= SLOTS);
+        // No frame of the fight is wider than 204 or taller than 188, so four
+        // by three tiles bounds all 110 of its sprites, not just that one.
+        assert_eq!(frame_tiles(204, 188), 12);
+        assert!(frame_tiles(204, 188) + RESERVED_SLOTS <= SLOTS);
     }
     #[test]
     fn every_slot_of_a_full_frame_fits_one_prepare(){
         let mut c=Cache::new();
-        // Four tiles of one frame plus the four reserved keys is the whole
+        // The largest tile rectangle plus the four reserved keys is the whole
         // cache, and the tile keys are consecutive because the cooker emits
         // them that way.
         let mut keys=[0u16;SLOTS];
@@ -282,7 +299,9 @@ mod tests {
         let stats=frame(&mut c,&keys);
         assert_eq!(stats.misses,SLOTS as u32);
         assert_eq!(stats.upload_bytes,MAX_UPLOAD_BYTES);
-        assert_eq!(c.prepare(&[0,1,2,3,4,5,6,7,8],|_,_|panic!()),Err(Error::WorkingSet));
+        let mut over=[0u16;SLOTS+1];
+        for (i,k) in over.iter_mut().enumerate(){*k=i as u16;}
+        assert_eq!(c.prepare(&over,|_,_|panic!()),Err(Error::WorkingSet));
     }
     #[test]
     fn failed_upload_is_not_resident_and_can_be_retried() {

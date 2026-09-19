@@ -38,10 +38,9 @@ pub fn upload_atlas(a:&crate::disc::AtlasDesc,bytes:&[u8]) {
     match a.kind {
         0=>{
             assert_eq!(bytes.len(),a.count*32768);
-            assert!(a.first+a.count<=residency::BANKS*residency::PAGES);
+            assert!(a.first+a.count<=residency::STATIC_PAGES);
             for i in 0..a.count {
-                let page=a.first+i;
-                let(x,y)=residency::page_xy(page/residency::PAGES,page%residency::PAGES);
+                let(x,y)=residency::page_xy(a.first+i);
                 crate::texture_upload::upload(VramRect::new(x,y,64,256),&bytes[i*32768..(i+1)*32768]);
                 crate::input::checkpoint();
             }

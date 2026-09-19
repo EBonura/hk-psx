@@ -71,5 +71,52 @@ class BudgetDocTests(unittest.TestCase):
                       'the quoted static end address is from an older build')
 
 
+class VramTableTests(unittest.TestCase):
+    """The gameplay VRAM table, which has no build report behind it.
+
+    Nothing regenerates this table, so the only thing keeping it honest is that
+    it has to add up and agree with the cache constants. It moved when a static
+    scenery page became the animation cache's second region, and the next such
+    move should fail here rather than be noticed a package later.
+    """
+    VRAM_BYTES = 1024 * 512 * 2
+    PAGE_BYTES = 256 * 256 // 2
+
+    def setUp(self):
+        self.text = DOC.read_text()
+        section = self.text.split('| Gameplay VRAM reservation | Bytes |')[1]
+        self.rows = dict(re.findall(r'^\|\s*([^|]+?)\s*\|\s*([\d,]+)\s*\|$',
+                                    section.split('\n\n')[0], re.M))
+        self.rows = {k: int(v.replace(',', '')) for k, v in self.rows.items()}
+
+    def row(self, ending):
+        matches = [k for k in self.rows if k.endswith(ending)]
+        self.assertEqual(len(matches), 1, f'no single row ends with {ending!r}')
+        return matches[0], self.rows[matches[0]]
+
+    def test_the_reservations_add_up_to_the_total_and_the_spare(self):
+        parts = {k: v for k, v in self.rows.items() if k not in ('Total', 'Unallocated within 1 MiB')}
+        self.assertEqual(sum(parts.values()), self.rows['Total'])
+        self.assertEqual(self.rows['Total'] + self.rows['Unallocated within 1 MiB'], self.VRAM_BYTES)
+
+    def test_the_animation_row_is_the_cache_upload_cap(self):
+        # MAX_UPLOAD_BYTES is the whole cache, so the two are the same number
+        # stated in two places, which is the only reason the doc can be checked.
+        source = (ROOT / 'shared/hk-cache/src/lib.rs').read_text()
+        cap = int(re.search(r'pub const MAX_UPLOAD_BYTES: u32 = (\d+);', source).group(1))
+        label, bytes_ = self.row('4bpp animation slots')
+        self.assertEqual(bytes_, cap, f'{label} disagrees with hk_cache::MAX_UPLOAD_BYTES')
+        self.assertEqual(bytes_ % (64 * 64 // 2), 0, 'not a whole number of 64x64 4bpp slots')
+
+    def test_the_scenery_row_is_a_whole_number_of_pages_the_layout_can_address(self):
+        label, bytes_ = self.row('4bpp scenery pages')
+        self.assertEqual(bytes_ % self.PAGE_BYTES, 0, f'{label} is not a whole number of pages')
+        source = (ROOT / 'shared/hk-cache/src/residency.rs').read_text()
+        banks = int(re.search(r'pub const BANKS:usize=(\d+);', source).group(1))
+        per_bank = int(re.search(r'pub const PAGES:usize=(\d+);', source).group(1))
+        self.assertLessEqual(bytes_ // self.PAGE_BYTES, banks * per_bank,
+                             'more pages than page_xy can address')
+
+
 if __name__ == '__main__':
     unittest.main()

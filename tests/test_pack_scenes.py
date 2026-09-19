@@ -21,22 +21,38 @@ def atlases_for(scenes):
 
 class PackScenes(unittest.TestCase):
     def test_largest_scene_uses_full_arena_then_immutable_aligned_prefix(self):
-        out=allocate_scenes([entry(1,116756,2,141,[2]),entry(0,929692,18,1065,[1,3])],arena_bytes=1069056)
+        out=allocate_scenes([entry(1,116756,1,141,[2]),entry(0,929692,18,1065,[1,3])],arena_bytes=1069056)
         self.assertEqual([e['scene_id']for e in out],[0,1])
         self.assertEqual([(e['ram_offset'],e['arena_capacity'])for e in out],[(0,1069056),(929692,139364)])
         self.assertEqual([(e['page_base'],e['palette_base'])for e in out],[(0,0),(18,1065)])
         self.assertEqual([e['chunk_id']for e in out],[1,2])
         odd=allocate_scenes([entry(0,1001,1,1,[1]),entry(1,8,1,1,[2])],arena_bytes=1024)
         self.assertEqual(odd[1]['ram_offset'],1004)
+    def test_the_page_reservation_is_nineteen_since_one_became_animation_slots(self):
+        """The twentieth 256x256 4bpp page is the animation cache's second
+        region; see hk_cache::residency::STATIC_PAGES. Measured over all 45
+        cooked scenes, the largest is Tutorial_01 at 18 pages and the next is
+        Crossroads_ShamanTemple at 9, so the shipped scene_gate plan is
+        unaffected. What no longer fits is a joint plan that wanted twenty.
+        """
+        from pack_scenes import MAX_PAGES
+        self.assertEqual(MAX_PAGES,19)
+        gate=allocate_scenes([entry(0,929692,18,1065,[1]),entry(1,116756,9,141,[2])],
+                             arena_bytes=1069056,residency='scene_gate')
+        self.assertEqual([e['page_base']for e in gate],[0,0])
+        with self.assertRaisesRegex(ValueError,'page'):
+            allocate_scenes([entry(0,929692,18,1065,[1]),entry(1,116756,2,141,[2])],
+                            arena_bytes=1069056)
+
     def test_compact_allocation_and_manifest_keep_full_host_provenance(self):
         a=entry(0,1000000,18,1000,[1]);a.update(resident_raw_len=300000,resident_stored_len=150000,resident_raw_fnv=31,resident_stored_fnv=41,
             resident_raw_path='compact.hk',resident_stored_path='compact.hlzc',texture_flags=[3,0,0,0])
-        b=entry(1,100000,2,100,[2]);b.update(resident_raw_len=40000,resident_stored_len=20000,resident_raw_fnv=51,resident_stored_fnv=61)
+        b=entry(1,100000,1,100,[2]);b.update(resident_raw_len=40000,resident_stored_len=20000,resident_raw_fnv=51,resident_stored_fnv=61)
         scenes=allocate_scenes([a,b],arena_bytes=350000)
         self.assertEqual(scenes[0]['raw_len'],1000000)
         self.assertEqual(scenes[1]['ram_offset'],300000)
         atlases=atlases_for(scenes)
-        r=dict(scenes=scenes,arena_bytes=350000,raw_resident_bytes=340000,total_pages=20,total_palettes=1100,atlases=atlases)
+        r=dict(scenes=scenes,arena_bytes=350000,raw_resident_bytes=340000,total_pages=19,total_palettes=1100,atlases=atlases)
         m={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1}]}
         text=manifest(r,m)
         self.assertIn('stored_len:150000,stored_fnv:41,raw_len:300000,raw_fnv:31',text)

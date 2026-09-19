@@ -1485,7 +1485,7 @@ Fall clip because the Knight's per-region bank is at its 416-slot CLUT limit and
 the tightest region has about 19 free slots. The answer was already in the
 repository. The Hollow Shade has the same problem, since it can appear in any
 scene the Knight died in, and it solves it by keeping its frames in linked RAM
-and reaching VRAM through the eight shared 64x64 animation slots. Nothing new is
+and reaching VRAM through the shared 64x64 animation slots. Nothing new is
 reserved but a CLUT row.
 
 `host/ability_art.py` cooks all ten clips that way: Dash, Wall Slide, Walljump

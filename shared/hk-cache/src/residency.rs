@@ -13,17 +13,57 @@ pub const GEO_RECTS:[(usize,usize,usize,usize);5]=[
 ];
 /// Lifeblood and independent break-effect atlases, including their CLUTs.
 pub const LIFE_RECTS:[(usize,usize,usize,usize);1]=[(352,96,32,80)];
-/// The 32x256 halfword animation strip at x320: two 64x64 4bpp slots across
-/// and four down. A 64x64 4bpp slot is 16 halfwords wide and 64 rows tall.
-pub const ANIMATION_STRIP:(usize,usize,usize,usize)=(320,0,32,256);
+/// Static scenery pages this build reserves, out of the `BANKS*PAGES` the
+/// layout can address. The twentieth belongs to the animation cache instead.
+/// Measured over all 45 cooked scenes in `.hkpsx/packed-scenes.json`: the
+/// largest, Tutorial_01, is 18 pages and the next largest, Crossroads_ShamanTemple,
+/// is 9, so pages 18 and 19 were reserved and no scene has ever uploaded
+/// either. Page 18 is what remains of that spare.
+pub const STATIC_PAGES:usize=BANKS*PAGES-1;
+/// A 64x64 4bpp slot: 16 halfwords wide and 64 rows tall.
 pub const SLOT_HALFWORDS:(usize,usize)=(16,64);
-/// Slots the strip physically holds, which is what `crate::SLOTS` must equal.
-pub const ANIMATION_SLOTS:usize=(ANIMATION_STRIP.2/SLOT_HALFWORDS.0)*(ANIMATION_STRIP.3/SLOT_HALFWORDS.1);
+/// The animation cache's VRAM, as x,y,width,height in halfwords. A region
+/// holds `width/16` slots across and `height/64` down, and slot indices walk
+/// the regions in order, row-major inside each.
+///
+/// The first is the original 32x256 strip at x320, two slots across and four
+/// down, boxed in by CLUT bank 1 below it and the SOUL, Geo, Lifeblood and
+/// break-effect atlases at x352. It cannot grow: `SPARE_HALFWORDS` measures
+/// 304 free halfwords in two fragments 16 halfwords wide, against a slot's 16
+/// by 64. The second is static scenery page 19's texture page, four slots
+/// across and four down, which is where the other sixteen came from.
+///
+/// Every region starts on a texture page origin, so a slot never straddles two
+/// texture pages and its pixel UV always fits the u8 a primitive carries.
+pub const ANIMATION_REGIONS:[(usize,usize,usize,usize);2]=[(320,0,32,256),(960,256,64,256)];
+/// Slots the regions physically hold, which is what `crate::SLOTS` must equal.
+pub const ANIMATION_SLOTS:usize={
+    let(mut total,mut i)=(0,0);
+    while i<ANIMATION_REGIONS.len() {
+        let(_,_,w,h)=ANIMATION_REGIONS[i];
+        total+=(w/SLOT_HALFWORDS.0)*(h/SLOT_HALFWORDS.1);i+=1;
+    }
+    total
+};
+/// Texture page origin and pixel UV of one slot: `(tpage_x, tpage_y, u, v)`,
+/// the four numbers a draw needs and, as `(tpage_x+u/4, tpage_y+v)`, the
+/// halfword origin its upload needs.
+pub const fn slot_placement(slot:usize)->(u16,u16,u16,u16) {
+    let(mut slot,mut i)=(slot,0);
+    while i<ANIMATION_REGIONS.len() {
+        let(x,y,w,h)=ANIMATION_REGIONS[i];
+        let(cols,rows)=(w/SLOT_HALFWORDS.0,h/SLOT_HALFWORDS.1);
+        if slot<cols*rows {
+            return(x as u16,y as u16,((slot%cols)*64) as u16,((slot/cols)*64) as u16);
+        }
+        slot-=cols*rows;i+=1;
+    }
+    panic!("animation slot beyond ANIMATION_REGIONS")
+}
 /// Halfwords `all_vram_allocations_are_disjoint` leaves unclaimed. Measured,
 /// not budgeted: the two free fragments are 16x14 and 16x5 halfwords, both in
-/// the CLUT rows below y480, and one animation slot is 16x64. The strip
-/// therefore cannot grow, and `crate::SLOTS` cannot rise, without taking a
-/// static scenery page.
+/// the CLUT rows below y480, and one animation slot is 16x64. So no further
+/// slot can come from the gaps; the next one costs another scenery page.
 pub const SPARE_HALFWORDS:usize=304;
 pub const BREAK_RECTS:[(usize,usize,usize,usize);3]=[(352,176,32,64),(360,32,24,32),(352,64,32,32)];
 #[derive(Clone,Copy)]
@@ -66,10 +106,12 @@ impl Banks {
     }
 }
 impl Default for Banks {fn default()->Self{Self::new()}}
-/// Static texture page origin in VRAM halfwords; all twenty pages are available.
-pub fn page_xy(bank:usize,page:usize)->(u16,u16) {
-    assert!(bank<BANKS&&page<PAGES);let p=bank*PAGES+page;
-    (384+(p%10) as u16*64,(p/10) as u16*256)
+/// Static texture page origin in VRAM halfwords, by linear page index. The
+/// pages tile the right of VRAM ten across and two down; the twentieth is the
+/// animation cache's second region, so `STATIC_PAGES` of them are reachable.
+pub fn page_xy(page:usize)->(u16,u16) {
+    assert!(page<STATIC_PAGES);
+    (384+(page%10) as u16*64,(page/10) as u16*256)
 }
 pub fn clut_xy(bank:usize,palette:usize)->(u16,u16) {
     assert!(bank<BANKS&&palette<CLUTS);
@@ -160,12 +202,12 @@ pub fn clut_xy(bank:usize,palette:usize)->(u16,u16) {
         assert_eq!(b.activate(2),Some(dest));assert_eq!(b.find(3),None);
     }
     #[test] fn all_texture_and_palette_origins_are_ps1_encodable() {
+        for page in 0..STATIC_PAGES {
+            let(x,y)=page_xy(page);assert_eq!(x%64,0);assert!(y==0||y==256);
+            let tpage=(x/64)|((y/256)<<4);
+            assert_eq!(((tpage&15)*64,((tpage>>4)&1)*256),(x,y));
+        }
         for bank in 0..BANKS {
-            for page in 0..PAGES {
-                let(x,y)=page_xy(bank,page);assert_eq!(x%64,0);assert!(y==0||y==256);
-                let tpage=(x/64)|((y/256)<<4);
-                assert_eq!(((tpage&15)*64,((tpage>>4)&1)*256),(x,y));
-            }
             for palette in 0..CLUTS {
                 let(x,y)=clut_xy(bank,palette);assert_eq!(x%16,0);
                 let clut=(x/16)|(y<<6);
@@ -183,7 +225,8 @@ pub fn clut_xy(bank:usize,palette:usize)->(u16,u16) {
             assert!(x+w<=1024&&y+h<=512);
             for yy in y..y+h {for xx in x..x+w {assert!(!used[yy*1024+xx],"overlap at {xx},{yy}");used[yy*1024+xx]=true;}}
         };
-        claim(0,0,320,480);claim(ANIMATION_STRIP.0,ANIMATION_STRIP.1,ANIMATION_STRIP.2,ANIMATION_STRIP.3);
+        claim(0,0,320,480);
+        for (x,y,w,h) in ANIMATION_REGIONS {claim(x,y,w,h);}
         claim(352,0,4,32);claim(352,480,16,2);
         // Source SOUL frame, masked fill and eyes; their three CLUTs remain
         // below bank 0 and outside the vertical scenery-palette strips.
@@ -195,8 +238,8 @@ pub fn clut_xy(bank:usize,palette:usize)->(u16,u16) {
         for (x,y,w,h) in GEO_RECTS {claim(x,y,w,h);}
         for (x,y,w,h) in LIFE_RECTS {claim(x,y,w,h);}
         for (x,y,w,h) in BREAK_RECTS {claim(x,y,w,h);}
+        for page in 0..STATIC_PAGES {let(x,y)=page_xy(page);claim(x as usize,y as usize,64,256);}
         for bank in 0..BANKS {
-            for page in 0..PAGES {let(x,y)=page_xy(bank,page);claim(x as usize,y as usize,64,256);}
             for palette in 0..CLUTS {if bank*CLUTS+palette<SCENE_CLUTS {
                 let(x,y)=clut_xy(bank,palette);claim(x as usize,y as usize,16,1);
             }}
@@ -205,18 +248,38 @@ pub fn clut_xy(bank:usize,palette:usize)->(u16,u16) {
         used
     }
     #[test] fn all_vram_allocations_are_disjoint() {vram_map();}
-    /// The strip holds exactly the slots the cache declares, and what is left
-    /// over cannot hold another one. This is the measurement behind
-    /// `crate::MAX_FRAME_TILES`: a frame binds more slots instead of the strip
-    /// growing, because there is nowhere for it to grow into.
-    #[test] fn the_animation_strip_is_full_and_nothing_spare_can_hold_another_slot() {
-        let(_sx,_sy,sw,sh)=ANIMATION_STRIP;
-        assert_eq!(ANIMATION_SLOTS,8);
-        assert_eq!(sw*sh,ANIMATION_SLOTS*SLOT_HALFWORDS.0*SLOT_HALFWORDS.1);
+    /// The regions hold exactly the slots the cache declares, each slot sits
+    /// inside one texture page, and what is left over still cannot hold
+    /// another. This is the measurement behind `crate::MAX_FRAME_TILES`.
+    #[test] fn the_animation_regions_are_full_and_nothing_spare_can_hold_another_slot() {
+        // `crate::SLOTS` is checked against this in lib.rs, which is the only
+        // place both are in scope: test_bootstrap_atlas compiles this file on
+        // its own as a crate root.
+        assert_eq!(ANIMATION_SLOTS,24);
+        // Sixteen of those slots are one static scenery page: the reservation
+        // is one page shorter and the region sits exactly where the linear
+        // page map used to put index 19.
+        assert_eq!(STATIC_PAGES,BANKS*PAGES-1);
+        assert_eq!((ANIMATION_REGIONS[1].0,ANIMATION_REGIONS[1].1),(384+(19%10)*64,(19/10)*256));
+        assert_eq!(ANIMATION_REGIONS[1].2*ANIMATION_REGIONS[1].3,64*256);
+        let mut origins=std::vec::Vec::new();
         for slot in 0..ANIMATION_SLOTS {
-            // animation_cache::uv lays the slots out two across and four down.
-            let(u,v)=((slot%2)*64,(slot/2)*64);
-            assert!(u/4+SLOT_HALFWORDS.0<=sw&&v+SLOT_HALFWORDS.1<=sh,"slot {slot} leaves the strip");
+            let(tx,ty,u,v)=slot_placement(slot);
+            assert_eq!(tx%64,0,"slot {slot} is not on a texture page");
+            assert!(ty==0||ty==256,"slot {slot} is not on a texture page");
+            // A textured primitive carries u and v as one byte each, so the
+            // far corner of a 64x64 slot has to stay inside 255.
+            assert!(u+63<=255&&v+63<=255,"slot {slot} leaves its texture page");
+            let(x,y)=(tx as usize+u as usize/4,ty as usize+v as usize);
+            assert!(ANIMATION_REGIONS.iter().any(|&(rx,ry,w,h)|
+                x>=rx&&y>=ry&&x+SLOT_HALFWORDS.0<=rx+w&&y+SLOT_HALFWORDS.1<=ry+h),
+                "slot {slot} leaves every animation region");
+            assert!(!origins.contains(&(x,y)),"slot {slot} shares another slot's texels");
+            origins.push((x,y));
+        }
+        // The eight slots that were always there keep the strip's own layout.
+        for slot in 0..8 {
+            assert_eq!(slot_placement(slot),(320,0,(slot as u16%2)*64,(slot as u16/2)*64));
         }
         let used=vram_map();
         assert_eq!(used.iter().filter(|&&u|!u).count(),SPARE_HALFWORDS);

@@ -244,17 +244,21 @@ separate gates; these preservation checks do not establish runtime improvement.
 
 ## Animation and shared scenery VRAM residency
 
-Eight 64x64 4bpp animation slots reserve 16 KiB. At most eight unique textures
-are requested per frame: Knight, optional nail and up to six visible actors.
-A miss transfers at most 2 KiB, giving a 16 KiB worst-case upload. Requested
-slots are pinned before eviction, and prior DMA/GPU completion is required before
-replacement. The 2,048-key cache survives same-scene region activation; actual
+Twenty-four 64x64 4bpp animation slots reserve 48 KiB: eight in the strip at
+x320 and sixteen in the texture page static scenery page 19 gave up. At most
+twenty-four unique textures are requested per frame, and a frame larger than
+one slot binds a rectangle of up to twenty of them. A miss transfers at most
+2 KiB, giving a 48 KiB worst-case upload; a frame only uploads its misses.
+Requested slots are pinned before eviction, and prior DMA/GPU completion is
+required before replacement. The 2,048-key cache survives same-scene region activation; actual
 scene changes reset it before another scene's global IDs are reused. Its frames
 come from resident scene RAM, without animation-time CD seeks.
 
-Static pages and palettes for both current scenes are loaded before gameplay.
-Tutorial occupies 18 pages and 1,065 CLUTs; Town occupies the final two pages and
-141 CLUTs. Texture templates use the scene's page/palette base plus the texture's
+A scene's static pages and palettes are loaded before gameplay. Under
+scene-gate residency every scene owns page and palette base 0 exclusively, so
+the reservation holds the largest scene rather than a sum: measured over the 45
+cooked scenes, that is Tutorial_01 at 18 pages and 1,087 CLUTs, against 19
+pages and 1,248 CLUTs reserved. Texture templates use the scene's page/palette base plus the texture's
 local global index. Region activation rebuilds local draw state only; scene
 changes rebuild global texture templates. All scene pixels remain resident.
 
@@ -264,7 +268,7 @@ coordinate groups now address disjoint shared ranges, without region eviction:
 | Use | Allocation |
 | --- | --- |
 | Two 320x240 framebuffers | x=0..319, y=0..479 |
-| Animation slots | x=320..351, y=0..255 |
+| Animation slots | x=320..351, y=0..255 and x=960..1023, y=256..511 |
 | HUD icon texels | x=352..383, y=0..31, within assigned icon slots |
 | HUD palettes | x=352..367, y=480 and y=481 |
 | Reveal-mask fade CLUT | x=320..335, y=480 |
@@ -275,13 +279,14 @@ coordinate groups now address disjoint shared ranges, without region eviction:
 | CLUT group 1, 416 entries | x=320..383, y=256..359, four CLUTs per row |
 | CLUT group 2, 416 entries | x=320..383, y=360..463, four CLUTs per row |
 | Geo texels/CLUT allocation | (320,464,64,16), (352,240,32,16), (352,485,32,27), (320,496,32,16), (352,32,32,64); x/y/w/h in halfwords |
-| Static physical page p=0..19 | x=384+(p%10)*64, y=(p/10)*256; each 64 words by 256 rows |
+| Static physical page p=0..18 | x=384+(p%10)*64, y=(p/10)*256; each 64 words by 256 rows |
 
-Scene palette bases are 0 and 1,065. Global physical palette index p maps to
-group `p/416` and entry `p%416`; scene texture palette IDs remain independent of
-texture count. Static page bases are 0 and 18. Native allocation checks cover
-all twenty pages, 1,248 admitted CLUT positions and disjoint Geo/UI/animation
-areas. The unused fourth CLUT group is no longer reserved for scenery; admission
+Global physical palette index p maps to group `p/416` and entry `p%416`; scene
+texture palette IDs remain independent of texture count. Under scene-gate
+residency every scene's page and palette base is 0. Native allocation checks
+cover the nineteen reserved pages, 1,248 admitted CLUT positions and disjoint
+Geo/UI/animation areas; the twentieth page slot is the animation cache's second
+region and the same checks prove nothing else writes it. The unused fourth CLUT group is no longer reserved for scenery; admission
 rejects totals above 1,248, and Geo reuses part of that area. Actual EXE memory and emulator/hardware checks remain
 separate from these coordinate proofs.
 

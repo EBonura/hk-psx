@@ -18,7 +18,11 @@ sys.path.insert(0,str(ROOT/'tools'))
 # 321,956 + 32,072 = 354,028 bytes. Keep four-byte alignment and a four-byte
 # guard while retaining the exact sequential in-place decoder validation.
 SCENE_ARENA_BYTES=354032
-MAX_PAGES=20
+# Nineteen of the twenty 256x256 4bpp page slots the VRAM layout can address.
+# The twentieth is the animation cache's second region; see
+# hk_cache::residency::STATIC_PAGES. The largest of the 45 cooked scenes,
+# Tutorial_01, is 18 pages and the next largest is 9.
+MAX_PAGES=19
 MAX_PALETTES=1248  # Final legacy CLUT strip is reserved for independent Geo art.
 
 def sha(data):return hashlib.sha256(data).hexdigest()

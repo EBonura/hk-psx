@@ -7,15 +7,15 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |575,672|
-| Code-to-data alignment |8|
-| Linked data, including menu, HUD and sound bank |483,136|
+| Linked code |578,580|
+| Code-to-data alignment |12|
+| Linked data, including menu, HUD and sound bank |490,464|
 | BSS, including shared scene arena and runtime pools |849,516|
-| Total static span |1,908,332|
+| Total static span |1,918,572|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |73,876|
+| Unallocated gap before reserved stack |63,636|
 
 Every figure above is the current build's, read out of `.hkpsx/build.json`, and
 `tests/test_budget_doc.py` fails when this table drifts from it. The table stood
@@ -24,7 +24,7 @@ separate agent briefings after it had fallen to 73,876. A budget
 document nobody can trust is worse than none, because work gets planned against
 it.
 
-Static data ends at `0x801e1e6c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801e466c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 421,128 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -98,8 +98,8 @@ both stack allocations is not main-stack consumption; high-water remains unknown
 | Gameplay VRAM reservation | Bytes |
 | --- | ---: |
 | Two 320×240 16-bit framebuffers | 307,200 |
-| Twenty persistent 256×256 4bpp scenery pages | 655,360 |
-| Eight 64×64 4bpp animation slots | 16,384 |
+| Nineteen persistent 256×256 4bpp scenery pages | 622,592 |
+| Twenty-four 64×64 4bpp animation slots | 49,152 |
 | Physical capacity for 1,248 texture CLUTs | 39,936 |
 | Health and SOUL HUD rectangles | 2,208 |
 | Shared black-mask fade CLUT | 32 |
@@ -110,16 +110,19 @@ both stack allocations is not main-stack consumption; high-water remains unknown
 | Total | 1,047,968 |
 | Unallocated within 1 MiB | 608 |
 
-Tutorial uses18 pages and1,068 palettes; full Town uses6 pages and390 palettes.
-Each scene uses page/palette bases(0,0) with exclusive ownership. The20-page and
-1,248-palette physical reservations remain unchanged. Coordinates are VRAM halfwords:
+Each scene uses page/palette bases(0,0) with exclusive ownership. The
+1,248-palette physical reservation is unchanged; the page reservation is 19 of
+the 20 the layout can address, because the twentieth is now the animation
+cache's second region. Coordinates are VRAM halfwords:
 
-- Framebuffers: x0..319, y0..479. Animation slots: x320..351, y0..255.
+- Framebuffers: x0..319, y0..479. Animation slots: x320..351, y0..255 and
+  x960..1023, y256..511.
 - Health texels: x352..355, y0..31; CLUTs x352..367, y480..481.
 - SOUL texel reservation: x356..383, y0..31; CLUTs x352..367, y482..484.
 - Dialogue: texel strips x0..319,y500..511; CLUT x320..335,y481.
 - Black-mask fade CLUT: x320..335,y480.
-- Static page `p=bank*5+page`: `(384+(p%10)*64, (p/10)*256)`.
+- Static page `p` in 0..18: `(384+(p%10)*64, (p/10)*256)`. `p=19` would be
+  `(960,256)`, which is the animation cache's second region instead.
 - Bank0 CLUTs: first400 at x0..319,y480..499; last16 at x336..351,y480..495.
 - Bank1: x320..383,y256..359. Bank2: x320..383,y360..463.
 - The former bank3 CLUT area is no longer reserved for scenery.
@@ -131,9 +134,40 @@ Each scene uses page/palette bases(0,0) with exclusive ownership. The20-page and
 - The Hollow Shade reserved 14 CLUT rows at x320..335, y482 and uses two. The
   Knight's ability clips take four of the rest, (320,484,16,1) upward, and use
   one. Neither reserves a texel rectangle: both hold their frames in linked RAM
-  and reach VRAM through the eight shared 64x64 animation slots, because an
+  and reach VRAM through the shared 64x64 animation slots, because an
   ability is usable in any view and the tightest admitted region has about 19
   free texture slots against the416-slot per-region CLUT budget.
+
+### Where the sixteen extra animation slots came from
+
+The animation cache was eight slots in a 32x256 halfword strip at x320, which
+is half of one texture page, and it cannot grow: the disjointness test leaves
+304 halfwords unclaimed in two fragments 16 halfwords wide, against a slot's 16
+by 64. A ninth slot had to come from a whole reservation, and the static
+scenery pages were the only one large enough.
+
+Measured over all 45 cooked scenes in `.hkpsx/packed-scenes.json`, the page
+reservation was never full. Tutorial_01 is 18 pages, Crossroads_ShamanTemple is
+9, Crossroads_10 (the False Knight's arena) is 8, and 44 of the 45 are 9 or
+fewer. Pages 18 and 19 were reserved and no scene has ever uploaded either.
+Page 19 is now the animation cache's second region, at (960,256): a 4bpp
+texture page is 64 halfwords by 256 rows, which is exactly four 64x64 slots
+across and four down, so one page is worth 16 slots. Page 18 is what remains of
+the spare, and Tutorial_01 keeps one page of headroom.
+
+The cost is bounded and measured. No cooked scene loses anything. Every scene
+uses page base 0 under scene-gate residency, so the released page is a suffix
+of the range and nothing needed relocating. The one thing that no longer fits
+is a joint-residency plan whose scenes sum to 20 pages, which the shipped disc
+does not use; `tests/test_pack_scenes.py` pins that.
+
+Two costs are not measured here. Raising `MAX_UPLOAD_BYTES` from 16,384 to
+49,152 raises a cap rather than a per-frame transfer, since a frame uploads
+only its misses, but a 12-tile boss frame changing pose is a 24,576-byte VRAM
+write and its GPU and DMA time has not been timed on hardware or in the
+emulator. The cache's own storage grows by about 224 BSS bytes for the 16 extra
+slot records and the wider request array, which is derived from the struct
+layout rather than read off a link map.
 
 Allocator tests check all reservations together. The title temporarily uses
 89,600 VRAM bytes that gameplay reuses. Its menus share the existing7,712-byte dialogue font reservation. The source
@@ -166,7 +200,7 @@ buffer is reused before draw_sync completes. Retry revokes admission before
 menu artwork overwrites VRAM, ensuring all pages are restored on the next start.
 Pass49 startup reads509 sectors; static uploads total694,048 bytes with a32KiB
 maximum chunk. Both counters stay unchanged throughout the long gameplay route.
-Eight animation slots retain an independent16KiB maximum per frame. Animation
+The24 animation slots retain an independent48KiB maximum per frame. Animation
 frames come from resident RAM, with no traversal CD reads or decoding. This is
 the current two-scene subset, not full-game residency or hardware timing.
 

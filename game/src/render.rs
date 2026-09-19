@@ -283,7 +283,7 @@ pub fn init(room: &Room, bank: usize, region:usize,coverage:CoverageView<'_>) {
                 TEMPLATES[i] = ZERO;
             } else {
                 let page=crate::disc::scene_page_base(bank)+t.page as usize;
-                let (x,y)=hk_cache::residency::page_xy(page/hk_cache::residency::PAGES,page%hk_cache::residency::PAGES);
+                let (x,y)=hk_cache::residency::page_xy(page);
                 let tp = Tpage::new(x,y,TexDepth::Bit4);
                 TEMPLATES[i] = template(t, tp, t.u, t.v);
             }
@@ -654,8 +654,10 @@ pub fn begin(room: &Room, animation_ids: &[u16],framebuffer_y:u16) -> hk_cache::
                 (&mut *(&raw mut BACK_PREFIX)).invalidate();
             }
             let t = room.texture(id as usize);
-            let (u, v) = animation_cache::uv(animation_cache::slot(id));
-            TEMPLATES[id as usize] = template(t, Tpage::new(320, 0, TexDepth::Bit4), u, v);
+            let slot = animation_cache::slot(id);
+            let (u, v) = animation_cache::uv(slot);
+            let (px, py) = animation_cache::page(slot);
+            TEMPLATES[id as usize] = template(t, Tpage::new(px, py, TexDepth::Bit4), u, v);
         }
     }
     stats
@@ -674,6 +676,12 @@ pub fn append_frame_keys(room: &Room, frame: usize, needed: &mut [u16], len: &mu
 pub fn animation_uv(id: u16) -> (u8, u8) {
     let (u, v) = animation_cache::uv(animation_cache::slot(id));
     (u as u8, v as u8)
+}
+/// The texture page word that goes with `animation_uv`. The slots span two
+/// VRAM regions, so this is not the same page for every key.
+pub fn animation_tpage_word(id: u16) -> u16 {
+    let (x, y) = animation_cache::page(animation_cache::slot(id));
+    Tpage::new(x, y, TexDepth::Bit4).uv_tpage_word(0)
 }
 pub fn finish_gpu_frame() {
     // Main has already observed DMA idle. Pair the SDK async submission with

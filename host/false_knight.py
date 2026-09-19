@@ -375,7 +375,9 @@ def recognize(sc, room):
                                            (summoner, 'summon'))},
         'limitations': [
             'Guest admission is off: at the authored 1.3 scale 77 of the 110 unique animation'
-            ' sprites exceed the 64x64 animation cache (largest 204x188). See docs/FALSE_KNIGHT.md.',
+            ' sprites exceed one 64x64 slot (largest 204x188). The cache holds the largest frame'
+            ' now; the actor art path does not, because enemies.rs draws a frame as one quad.'
+            ' The slot counts are in the animation block. See docs/FALSE_KNIGHT.md.',
             'The sim reproduces FalseyControl at 60 Hz; the source shapes rising and falling speed'
             ' per 50 Hz FixedUpdate, so airtime differs slightly.',
             'The `Esc` branch is unreachable in the Crossroads arena: nothing there sets `Hero Escaped`.',
@@ -492,7 +494,7 @@ def measure_animation(sc):
     a streamed frame wider or taller than 64, and every frame takes one of the
     416 CLUT slots in every region it is resident in.
     """
-    from cook import tk_sprite, FOCAL, CAM_Z
+    from cook import tk_sprite, FOCAL, CAM_Z, SLOT_PIXELS, ANIMATION_SLOTS, MAX_FRAME_TILES
     from quality import TEXTURE_BUDGET
     from actors import _component_records
     source = sc.source
@@ -547,10 +549,18 @@ def measure_animation(sc):
         'total_tiles_64': sum(frame_tiles(size) for size in unique.values()),
         'max_tiles_one_frame': max(frame_tiles(size) for size in unique.values()),
         'clut_slots_required': len(unique), 'texture_budget': TEXTURE_BUDGET,
-        'animation_cache_slot': [64, 64], 'animation_cache_slots': 8,
-        'animation_cache_upload_bytes': 16384,
-        'verdict': ('refused: host/cook.py drops any actor with a frame beyond 64x64'
-                    if oversized else 'admissible against the 64x64 animation cache'),
+        'animation_cache_slot': [SLOT_PIXELS, SLOT_PIXELS],
+        'animation_cache_slots': ANIMATION_SLOTS,
+        'animation_cache_max_frame_tiles': MAX_FRAME_TILES,
+        'animation_cache_upload_bytes': ANIMATION_SLOTS * SLOT_PIXELS * SLOT_PIXELS // 2,
+        # The cache now holds the largest frame. What still refuses the actor is
+        # the actor art path itself: enemies.rs draws a frame as one quad, so
+        # host/cook.py drops any actor with a frame beyond one slot, whatever
+        # the tile budget says.
+        'verdict': ('refused: host/cook.py drops any actor with a frame beyond '
+                    f'{SLOT_PIXELS}x{SLOT_PIXELS} because enemies.rs draws one quad per frame'
+                    if oversized else 'admissible against the animation cache'),
+        'tiles_fit_the_cache': max(frame_tiles(size) for size in unique.values()) <= MAX_FRAME_TILES,
     }
 
 
@@ -674,4 +684,5 @@ if __name__ == '__main__':
     print(f"Animation: {art['clip_frames']} clip frames, {art['unique_sprites']} unique sprites, "
           f"{art['oversized_sprites']} beyond 64x64, extent {art['max_extent'][0]}x{art['max_extent'][1]}, "
           f"{art['total_bytes'] / 1024:.1f} KiB of 4bpp texels, "
-          f"{art['max_tiles_one_frame']} slots for its largest frame; {art['verdict']}.")
+          f"{art['max_tiles_one_frame']} of {art['animation_cache_max_frame_tiles']} tiles for its "
+          f"largest frame; {art['verdict']}.")

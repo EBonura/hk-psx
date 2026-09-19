@@ -90,7 +90,7 @@ with origins `(384 + (page % 10) * 64, (page / 10) * 256)`. Each page occupies
 | Allocation | Word coordinates / rows |
 | --- | --- |
 | Framebuffers | x0–319, y0–479 |
-| Eight animation slots | x320–351, y0–255 |
+| Twenty-four animation slots | x320–351, y0–255 and x960–1023, y256–511 |
 | HUD icon storage | x352–355, y0–31 |
 | HUD palettes | x352–367, y480–481 |
 | Bank 0 palettes | x0–319, y480–499; 20 CLUTs/row, final row partial |
