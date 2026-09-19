@@ -44,7 +44,12 @@ def particle_scale(ps,matrix):
     """
     mode=ps['scalingMode']
     if mode==2:return 1.0
-    if mode!=0:raise ValueError('unsupported particle scaling mode')
+    # Local (1) scales by the emitter's own transform rather than the hierarchy.
+    # The guest carries one scalar world scale that multiplies launch speed,
+    # size, force and velocity, so only a uniform scale is expressible; the
+    # measured Local emitters are nonuniform in XY, and no native ParticleProbe
+    # case covers Local at all. See tools/reference/ParticleProbe.cs.
+    if mode!=0:raise ValueError(f'unsupported particle scaling mode {mode}')
     if ps['moveWithTransform']!=1:raise ValueError('Hierarchy particles require world simulation')
     columns=[[matrix[i][j]for i in range(3)]for j in range(3)]
     lengths=[math.sqrt(sum(v*v for v in col))for col in columns]
@@ -62,7 +67,28 @@ def particle_scale(ps,matrix):
     return scale
 
 
-def style(ps,gravity,scale=1.0):
+SILENT=object()
+"""A ParticleSystem whose authored emission is exactly zero particles.
+
+Distinct from None, which `part_emitter` already means as "not a particle
+system". A caller that receives this has an emitter it reproduces exactly by
+drawing nothing, not an omission to record.
+"""
+
+def emits_nothing(ps):
+    """True when the source emission is provably zero particles.
+
+    A disabled EmissionModule, or constant-zero rateOverTime and rateOverDistance
+    with no bursts, emits nothing in Unity. Only the constant mode (`minMaxState`
+    0) answers this: a curve that happens to read zero at t=0 is a real emitter.
+    """
+    em=ps['EmissionModule']
+    if not em['enabled']:return True
+    zero=lambda c:c['minMaxState']==0 and not c['scalar']
+    return not em['m_BurstCount'] and zero(em['rateOverTime']) and zero(em['rateOverDistance'])
+
+
+def style(ps,gravity,scale=1.0,played=False):
     im=ps['InitialModule'];shape=ps['ShapeModule'];uv=ps['UVModule'];em=ps['EmissionModule']
     enabled={k for k,v in ps.items()if k.endswith('Module')and isinstance(v,dict)and v.get('enabled')}
     supported={'InitialModule','ShapeModule','EmissionModule','SizeModule','RotationModule','ColorModule','UVModule','VelocityModule','ForceModule','ClampVelocityModule','RotationBySpeedModule','CollisionModule'}
@@ -71,7 +97,15 @@ def style(ps,gravity,scale=1.0):
     if 'SubModule' in enabled and all(not e['emitter']['m_PathID'] for e in ps['SubModule']['subEmitters']):
         enabled.discard('SubModule')
     if enabled-supported:raise ValueError('unsupported particle modules: '+str(enabled-supported))
-    if not ps['playOnAwake'] or ps['looping']or ps['scalingMode']not in(0,2) or ps['moveWithTransform']not in(0,1):raise ValueError('particle simulation space')
+    # These four unrelated properties shared one 'particle simulation space'
+    # message, and it named the wrong one: every Breakable-adjacent emitter that
+    # hit it was a one-shot system with `playOnAwake` off, waiting for an FSM
+    # `PlayParticleEmitter`, not a simulation-space or scaling variant. `played`
+    # is the caller saying it resolved the action that starts this emitter.
+    if ps['looping']:raise ValueError('looping particle system')
+    if not ps['playOnAwake']and not played:raise ValueError('particle system does not play on awake and no resolved action plays it')
+    if ps['scalingMode']not in(0,2):raise ValueError(f"unsupported particle scaling mode {ps['scalingMode']}")
+    if ps['moveWithTransform']not in(0,1):raise ValueError(f"unsupported particle simulation space {ps['moveWithTransform']}")
     if im['size3D']or im['rotation3D']or im['gravitySource']!=0 or em['m_BurstCount']or values(em['rateOverDistance'])!=[0,0]:raise ValueError('particle emission mode')
     if shape['type']not in(5,10)or not shape['enabled']:raise ValueError('particle shape')
     if any(shape['m_Position'][k]or shape['m_Rotation'][k]for k in 'xyz'):raise ValueError('particle shape transform')
@@ -129,19 +163,27 @@ def scene_gravity(source):
     physics=next(o for o in source.file('globalgamemanagers').objects.values()if o.type.name=='PhysicsManager')
     return source.read(physics)['m_Gravity']['y']
 
-def part_emitter(source,sc,part_gid,gravity):
+def part_emitter(source,sc,part_gid,gravity,played=False):
     """One debrisPart's emitter, or None when the part is not a particle system.
 
     The single place a Breakable debris emitter is validated, so the destruction
     contract in breakables.py and the art cook here refuse exactly the same set.
     Raises ValueError with the source reason when the part is an emitter the
     bounded particle model cannot reproduce.
+
+    `played` is the caller stating that it resolved the action that starts this
+    emitter, which a Breakable's debrisPart does not need (it plays on awake when
+    the break activates it) and an FSM-driven one does. It admits `playOnAwake`
+    off, and it lets a provably silent system answer SILENT rather than raise:
+    only a caller that knows the emitter is reached can say that drawing nothing
+    reproduces it. Left off, the answer is exactly what it was before.
     """
     cs={}
     for ref in sc.gos[part_gid]['m_Component']:
         o=source.ref(sc.file,ref['component']);cs[source.typename(o)]=(o,source.read(o))
     if 'ParticleSystem' not in cs:return None
     po,ps=cs['ParticleSystem'];ro,renderer=cs['ParticleSystemRenderer']
+    if played and emits_nothing(ps):return SILENT
     mo=source.ref(sc.file,renderer['m_Materials'][0]);mat=source.read(mo)
     so=source.ref(mo.assets_file,mat['m_Shader']);shader=source.read(so)['m_ParsedForm']['m_Name']
     if shader not in('Sprites/Lit','Sprites/Default') or renderer['m_RenderMode']or renderer['m_RenderAlignment']:
@@ -150,12 +192,110 @@ def part_emitter(source,sc,part_gid,gravity):
     if any(not 0<=tint[c]<=1 for c in 'rgba'):raise ValueError('particle material tint')
     texture=source.ref(mo.assets_file,dict(mat['m_SavedProperties']['m_TexEnvs'])['_MainTex']['m_Texture']);sid=source.sid(texture)
     matrix=sc.world(sc.go_transform[part_gid]);scale=particle_scale(ps,matrix)
-    st=style(ps,gravity,scale);st['texture']=sid
+    st=style(ps,gravity,scale,played);st['texture']=sid
     st['color']=[round(v*tint[c])for v,c in zip(st['color'],'rgb')]
     for sample in st['samples']:sample['alpha']=[round(v*tint['a'])for v in sample['alpha']]
     return {'style':st,'system':po,'texture':texture,'texture_id':sid,'matrix':matrix,
             'shader':shader,'scaling_mode':ps['scalingMode'],'world_parameter_scale':scale,
             'ps_sha256':hashlib.sha256(json.dumps(ps,sort_keys=True).encode()).hexdigest()}
+
+def euler_basis(degrees):
+    """Unity's Quaternion.Euler as a 3x3 basis: intrinsic Z, then X, then Y."""
+    x,y,z=(math.radians(v) for v in degrees)
+    def rot(axis,a):
+        c,s=math.cos(a),math.sin(a)
+        if axis=='x':return [[1,0,0],[0,c,-s],[0,s,c]]
+        if axis=='y':return [[c,0,s],[0,1,0],[-s,0,c]]
+        return [[c,-s,0],[s,c,0],[0,0,1]]
+    def mul(a,b):return [[sum(a[i][k]*b[k][j]for k in range(3))for j in range(3)]for i in range(3)]
+    return mul(mul(rot('y',y),rot('x',x)),rot('z',z))
+
+
+class PrefabView:
+    """A CreateObject prefab presented the way `part_emitter` reads a scene.
+
+    Only the four members `part_emitter` touches are provided: `gos`, `file`,
+    `go_transform` and `world`. The point is that a prefab emitter then goes
+    through the identical validator and cook as an authored one rather than a
+    parallel path that could drift from it.
+
+    `Instantiate(prefab, position, rotation)` replaces the prefab root's
+    serialized position and rotation and keeps its scale, so `world` composes the
+    spawn transform with each object's own local chain *below* the root. The
+    root's stale authoring position, which is a leftover of wherever the prefab
+    was built, is never used.
+    """
+    def __init__(self,source,file,root_gid,origin,rotation=(0,0,0)):
+        # Walk the prefab's own subtree rather than the assets file, which for a
+        # pooled prefab is resources.assets and thousands of unrelated objects.
+        self.source=source;self.file=file;self.gos={};self.transforms={};self.go_transform={}
+        pending=[root_gid]
+        while pending:
+            gid=pending.pop()
+            if gid in self.gos:continue
+            self.gos[gid]=go=source.read(file.objects[gid])
+            tid=next((o.path_id for o in (source.ref(file,c['component']) for c in go['m_Component'])
+                      if o.type.name=='Transform'),None)
+            if tid is None:raise ValueError('prefab object carries no Transform')
+            self.go_transform[gid]=tid
+            self.transforms[tid]=transform=source.read(file.objects[tid])
+            for child in transform['m_Children']:
+                self.transforms[child['m_PathID']]=kid=source.read(file.objects[child['m_PathID']])
+                pending.append(kid['m_GameObject']['m_PathID'])
+        self.root=root_gid;self.root_tid=self.go_transform[root_gid]
+        scale=self.transforms[self.root_tid]['m_LocalScale']
+        basis=euler_basis(rotation)
+        self.spawn=[[basis[i][j]*scale['xyz'[j]] for j in range(3)]+[origin[i]] for i in range(3)]+[[0,0,0,1]]
+        self._cache={}
+    def _local(self,tid):
+        """Local transform of one object relative to the prefab root."""
+        if tid==self.root_tid:return [[float(i==j) for j in range(4)] for i in range(4)]
+        t=self.transforms[tid];q=t['m_LocalRotation'];x,y,z,w=[q[k] for k in 'xyzw']
+        s=t['m_LocalScale'];p=t['m_LocalPosition']
+        r=[[1-2*(y*y+z*z),2*(x*y-z*w),2*(x*z+y*w),p['x']],[2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w),p['y']],
+           [2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y),p['z']],[0,0,0,1]]
+        for row in range(3):
+            for col,k in enumerate('xyz'):r[row][col]*=s[k]
+        father=t['m_Father']['m_PathID']
+        if not father or father not in self.transforms:
+            raise ValueError('prefab object is not under the instantiated root')
+        a=self._local(father)
+        return [[sum(a[i][k]*r[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
+    def world(self,tid):
+        if tid not in self._cache:
+            a,r=self.spawn,self._local(tid)
+            self._cache[tid]=[[sum(a[i][k]*r[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
+        return self._cache[tid]
+    def subtree(self,gid=None):
+        out=[gid if gid is not None else self.root];i=0
+        while i<len(out):
+            tid=self.go_transform.get(out[i]);i+=1
+            for child in (self.transforms[tid]['m_Children'] if tid is not None else []):
+                if child['m_PathID'] in self.transforms:
+                    out.append(self.transforms[child['m_PathID']]['m_GameObject']['m_PathID'])
+        return out
+
+
+def prefab_emitters(source,file,ref,gravity,origin,rotation=(0,0,0)):
+    """Every emitter a fixed CreateObject prefab reference instantiates.
+
+    The prefab is resolved at cook time, so what it spawns is as fixed as an
+    authored child: nothing about it is decided at runtime. Each ParticleSystem
+    in it is validated and cooked by `part_emitter` unchanged, with the spawn
+    transform the action supplies standing in for the scene transform an authored
+    emitter would have. `played=True` because Instantiate is what starts it.
+    """
+    prefab=source.ref(file,ref);tree=source.read(prefab)
+    if 'm_Component' not in tree:raise ValueError('CreateObject target is not a GameObject')
+    view=PrefabView(source,prefab.assets_file,prefab.path_id,origin,rotation)
+    found=[]
+    for gid in view.subtree():
+        emitter=part_emitter(source,view,gid,gravity,played=True)
+        if emitter is None or emitter is SILENT:continue
+        found.append(dict(emitter,prefab=source.sid(prefab),prefab_name=tree['m_Name'],
+                          part=f'{Path(view.file.name).name}:{gid}'))
+    return found
+
 
 def collect(source=None,metadata=None):
     from breakables import rigid_fragment

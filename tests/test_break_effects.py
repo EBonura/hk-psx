@@ -129,5 +129,66 @@ class ParticleScalingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'gravity'):b.particle_scale(ps,self.matrix())
         ps['scalingMode']=1
         with self.assertRaisesRegex(ValueError,'scaling mode'):b.particle_scale(ps,self.matrix())
+    def test_each_refused_simulation_property_says_which_one_it_was(self):
+        # One message used to cover four unrelated properties, and it named the
+        # wrong one: every hidden-wall and cracked-floor emitter it refused was a
+        # one-shot system waiting for an FSM PlayParticleEmitter.
+        for field,value,reason in (('looping',True,'looping'),('playOnAwake',False,'play on awake'),
+                                   ('scalingMode',3,'scaling mode 3'),('moveWithTransform',2,'simulation space 2')):
+            ps=self.source(2);ps[field]=value
+            with self.assertRaisesRegex(ValueError,reason):b.style(ps,-9.81)
+    def test_an_emitter_an_action_plays_does_not_need_play_on_awake(self):
+        ps=self.source(2);ps['playOnAwake']=False
+        with self.assertRaisesRegex(ValueError,'no resolved action plays it'):b.style(ps,-9.81)
+        self.assertEqual(b.style(ps,-9.81,played=True),b.style(self.source(2),-9.81))
+        # `played` opens that one gate and nothing else.
+        ps['looping']=True
+        with self.assertRaisesRegex(ValueError,'looping'):b.style(ps,-9.81,played=True)
+    def test_a_source_emitter_that_emits_nothing_is_reproduced_by_drawing_nothing(self):
+        ps=self.source(2)
+        self.assertFalse(b.emits_nothing(ps))
+        for change in ({'enabled':False},{'rateOverTime':dict(minMaxState=0,scalar=0)}):
+            probe=self.source(2);probe['EmissionModule'].update(change)
+            self.assertTrue(b.emits_nothing(probe))
+        # A burst, a distance rate, or a rate given as a curve is a real emitter:
+        # silence has to be provable from the constant form alone.
+        for change in ({'m_BurstCount':1},{'rateOverDistance':dict(minMaxState=0,scalar=5)},
+                       {'rateOverTime':dict(minMaxState=1,scalar=1)}):
+            probe=self.source(2)
+            probe['EmissionModule'].update(dict({'rateOverTime':dict(minMaxState=0,scalar=0)},**change))
+            self.assertFalse(b.emits_nothing(probe))
+    def test_unity_euler_basis_is_the_z_then_x_then_y_order(self):
+        rows=b.euler_basis((-72.5,-180.0,-180.0))
+        for row,want in zip(rows,([1,0,0],[0,-.30071,.95372],[0,-.95372,-.30071])):
+            for got,expected in zip(row,want):self.assertAlmostEqual(got,expected,places=5)
+        for row,want in zip(b.euler_basis((0,0,0)),([1,0,0],[0,1,0],[0,0,1])):
+            for got,expected in zip(row,want):self.assertAlmostEqual(got,expected,places=6)
+    def prefab(self,scale=(1,1,1)):
+        """A one-object prefab carrying a stale authoring position, as the source does."""
+        trees={1:dict(m_Name='Dust Break Wall',m_Component=[dict(component=dict(m_PathID=2,m_FileID=0))],m_IsActive=True),
+               2:dict(m_GameObject=dict(m_PathID=1,m_FileID=0),m_Father=dict(m_PathID=0,m_FileID=0),m_Children=[],
+                      m_LocalRotation=dict(x=0,y=0,z=0,w=1),m_LocalPosition=dict(x=81.6,y=50.1,z=0),
+                      m_LocalScale=dict(x=scale[0],y=scale[1],z=scale[2]))}
+        objects={i:SimpleNamespace(path_id=i,type=SimpleNamespace(name=name))
+                 for i,name in ((1,'GameObject'),(2,'Transform'))}
+        file=SimpleNamespace(name='sharedassets31.assets',objects=objects,externals=[])
+        return SimpleNamespace(typename=lambda o:o.type.name,read=lambda o:trees[o.path_id],
+                               ref=lambda f,r:f.objects[r['m_PathID']]),file
+    def test_an_instantiated_prefab_takes_the_spawn_transform_not_its_authoring_one(self):
+        source,file=self.prefab()
+        view=b.PrefabView(source,file,1,(54.57,47.92,-.12),(-72.5,-180.0,-180.0))
+        world=view.world(view.go_transform[1])
+        # Instantiate replaces the prefab root's serialized position, so the
+        # emitter sits where the break is and never at (81.6, 50.1).
+        for got,expected in zip([world[i][3]for i in range(3)],(54.57,47.92,-.12)):
+            self.assertAlmostEqual(got,expected,places=5)
+        for row,want in zip(world,([1,0,0],[0,-.30071,.95372],[0,-.95372,-.30071])):
+            for got,expected in zip(row[:3],want):self.assertAlmostEqual(got,expected,places=5)
+        self.assertEqual(view.subtree(),[1])
+        # Instantiate keeps the prefab's own scale, which a Shape-mode system
+        # spends on emission positions through this basis.
+        source,file=self.prefab(scale=(1,.1,1))
+        columns=b.PrefabView(source,file,1,(0,0,0),(0,0,0)).world(2)
+        self.assertAlmostEqual(columns[1][1],.1,places=6)
 
 if __name__=='__main__':unittest.main()
