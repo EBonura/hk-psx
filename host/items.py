@@ -22,6 +22,7 @@ from pathlib import Path
 from source import ROOT, dump
 from focus import action_fields
 from inspect_il import inspect
+import language
 
 # PlayerData fields this catalog tracks, by group. Every name is asserted
 # against the CIL defaults before use, so a renamed field refuses rather than
@@ -161,39 +162,14 @@ def playerdata_defaults(assembly):
     return values
 
 
-def _encryption_key(managed):
-    """The language key, read from Encryption's static constructor."""
-    body = inspect(managed / 'TeamCherry.SharedUtils.dll', {'Encryption'}).split('Encryption::.cctor')[1]
-    keys = re.findall(r"ldstr\s+'([^']+)'", body)
-    assert len(keys) == 1 and len(keys[0]) == 32, 'the language key is no longer one 32 byte literal'
-    return keys[0]
+def _encryption_key(managed=None):
+    """Kept for callers; `host/language.py` owns the derivation."""
+    return language.encryption_key()
 
 
-def language_sheet(source, sheet, key):
-    """One English language sheet, decrypted and parsed into its entries.
-
-    Language.GetLanguageFileContents loads `Languages/<code>_<sheet>` and hands
-    it to Encryption.Decrypt: base64, then AES-256 in ECB with PKCS7 padding.
-    openssl does the block cipher, the way the cooking tools already lean on
-    ffmpeg and clang.
-    """
-    file = source.file('resources.assets')
-    for o in file.objects.values():
-        if o.type.name != 'TextAsset':
-            continue
-        asset = o.read()
-        if asset.m_Name != f'EN_{sheet}':
-            continue
-        cipher = asset.m_Script
-        if isinstance(cipher, str):
-            cipher = cipher.encode('utf8', 'surrogateescape')
-        plain = subprocess.run(
-            ['openssl', 'enc', '-d', '-aes-256-ecb', '-K', key.encode('utf8').hex(), '-base64', '-A'],
-            input=bytes(cipher), stdout=subprocess.PIPE, check=True).stdout.decode('utf8')
-        entries = re.findall(r'<entry name="([^"]+)">(.*?)</entry>', plain, re.S)
-        assert entries, f'EN_{sheet} decrypted without entries'
-        return {k: html.unescape(v).strip() for k, v in entries}
-    raise LookupError(f'no EN_{sheet} language sheet')
+def language_sheet(source, sheet, key=None):
+    """Kept for callers; `host/language.py` owns the decryption."""
+    return language.sheet(source, sheet)
 
 
 def charms(source, defaults, ui):

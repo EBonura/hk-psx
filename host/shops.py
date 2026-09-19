@@ -29,12 +29,12 @@ import base64
 import json
 import mmap
 import xml.etree.ElementTree as ElementTree
+import language
 from source import Source, ROOT, dump
 from scene import Scene
 from focus import action_fields
 
 # StringEncrypt::.cctor, with Mode=ECB and Padding=PKCS7 from Decrypt/EncryptData.
-LANGUAGE_KEY = b'UKu52ePUBwetZ9wNX88o54dnfKRu0T1l'
 PRICE_SHEET = 'EN_Prices'
 GEO_REPORT = ROOT / '.hkpsx/geo-provenance.json'
 ADMITTED = ROOT / '.hkpsx/selected-regions.json'
@@ -92,45 +92,6 @@ def _schedule(key):
             word = [_SBOX[b] for b in word]
         words.append([words[i - size][j] ^ word[j] for j in range(4)])
     return words, rounds
-
-
-def _decrypt_block(block, words, rounds):
-    state = [block[row + 4 * col] for col in range(4) for row in range(4)]
-    state = [state[i] ^ words[4 * rounds + i // 4][i % 4] for i in range(16)]
-    for rnd in range(rounds - 1, -1, -1):
-        shifted = list(state)
-        for row in range(1, 4):
-            for col in range(4):
-                shifted[4 * col + row] = state[4 * ((col - row) % 4) + row]
-        state = [_INV[b] for b in shifted]
-        state = [state[i] ^ words[4 * rnd + i // 4][i % 4] for i in range(16)]
-        if rnd:
-            mixed = []
-            for col in range(4):
-                a, b, c, d = state[4 * col:4 * col + 4]
-                mixed += [_mul(a, 14) ^ _mul(b, 11) ^ _mul(c, 13) ^ _mul(d, 9),
-                          _mul(a, 9) ^ _mul(b, 14) ^ _mul(c, 11) ^ _mul(d, 13),
-                          _mul(a, 13) ^ _mul(b, 9) ^ _mul(c, 14) ^ _mul(d, 11),
-                          _mul(a, 11) ^ _mul(b, 13) ^ _mul(c, 9) ^ _mul(d, 14)]
-            state = mixed
-    return bytes(state)
-
-
-def _decrypt(data, key):
-    if not data or len(data) % 16:
-        raise ValueError('language sheet is not a whole number of AES blocks')
-    words, rounds = _schedule(key)
-    plain = b''.join(_decrypt_block(data[i:i + 16], words, rounds)
-                     for i in range(0, len(data), 16))
-    pad = plain[-1]
-    if not 1 <= pad <= 16 or plain[-pad:] != bytes([pad]) * pad:
-        raise ValueError('language sheet padding is not PKCS7; wrong key?')
-    return plain[:-pad]
-
-
-_build_sbox()
-
-# --------------------------------------------------------------- FSM plumbing
 
 
 def _reader(fsm):
@@ -283,15 +244,13 @@ class Catalog:
 def resources(source):
     """One pass for the price sheet and the stag menu gate, both persistent."""
     file = source.file('resources.assets')
-    prices, stag_menu = None, None
+    # `host/language.py` owns key derivation and decryption for every sheet, so
+    # the key is never written down here and cannot go stale against an install.
+    table = {name: int(text) for name, text in language.sheet(source, 'Prices').items()}
+    if not table:
+        raise ValueError('the decrypted price sheet is empty')
+    stag_menu = None
     for o in file.objects.values():
-        if o.type.name == 'TextAsset':
-            tree = o.read_typetree()
-            if tree['m_Name'] == PRICE_SHEET:
-                raw = tree['m_Script']
-                raw = raw.encode('utf8', 'surrogateescape') if isinstance(raw, str) else bytes(raw)
-                prices = _decrypt(base64.b64decode(raw), LANGUAGE_KEY).decode('utf8')
-            continue
         if o.type.name != 'MonoBehaviour' or source.typename(o) != 'PlayMakerFSM':
             continue
         fsm = source.read(o)['fsm']
@@ -299,13 +258,8 @@ def resources(source):
             if stag_menu is not None:
                 raise ValueError('more than one UI List Stag menu in resources.assets')
             stag_menu = fsm
-    if prices is None or stag_menu is None:
-        raise LookupError('resources.assets lost the price sheet or the stag menu')
-    table = {}
-    for entry in ElementTree.fromstring(prices):
-        table[entry.attrib['name']] = int(entry.text)
-    if not table:
-        raise ValueError('the decrypted price sheet is empty')
+    if stag_menu is None:
+        raise LookupError('resources.assets lost the stag menu')
     return table, stag_menu
 
 
