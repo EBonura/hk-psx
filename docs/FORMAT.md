@@ -124,19 +124,48 @@ are used. Regions occur in the following order, without padding between tables.
 | Frame | 20 | u32 texture, four i32 Q16 local bounds (xmin, ymin, xmax, ymax) |
 | Clip | 16 | u32 start, count, Q16 fps, packed wrap mode (low 16) and loopStart (high 16) |
 | Edge | 16 | Four i32 Q16 world coordinates, including source slopes |
-| Palettes | 32 each | 16 BGR555/STP entries; colour word zero is transparent; one palette record per texture |
+| Palettes | 32 each | 16 BGR555/STP entries; colour word zero is transparent; the block holds one record per texture, and records may repeat |
 | Static pages | 32768 each | 256x256 4bpp texels, low nibble first |
 | Tail | Header byte count | Packed 4bpp animation rows and alignment padding, then optional static alpha-cover records |
 
-HKROOM02 limits are 20 static pages, 640 palettes/textures, 1,024 draws, 2,048
-frames, 128 clips, 1,024 edges and 256 KiB of combined animation/alpha-cover tail.
+HKROOM02 limits are 20 static pages, 640 texture records and the palette block
+that matches them, 1,024 draws, 2,048 frames, 128 clips, 1,024 edges and 256 KiB
+of combined animation/alpha-cover tail.
 At least one texture is required; zero static pages are allowed. Indices,
 coordinate ranges and division bounds are checked. Clip modes 0/1/2 mean
 Loop/LoopSection/Once. Knight clips preserve loop sections and authored fps;
 frame events remain in the local intermediate report and are not generally
-executed. Current source cooking admits up to five pages and 416 textures per
-intermediate region, with a 384 KiB host ceiling. These are input-cook limits,
-not independent runtime slots in the shared-scene build.
+executed. Current source cooking admits up to five pages, 640 texture records
+and 416 CLUT slots per intermediate region, with a 384 KiB host ceiling. These
+are input-cook limits, not independent runtime slots in the shared-scene build.
+
+## What a CLUT slot costs, and what it does not
+
+A slot is a distinct palette, not a texture record. The block holds one 32-byte
+entry per texture because that is how the reader sizes the section, but nothing
+requires the entries to differ and nothing uploads that block: `host/scene_bank.py`
+pools palettes by value while building the scene bank, `compact_resident` strips
+the whole palette section out of HKSCNE02, and `bootstrap_atlases` uploads the
+scene's pooled words. A region's slot cost is therefore the number of distinct
+words its textures name, checked against the 416-slot budget, while the record
+count is checked separately against the 640 the table can address.
+
+The two used to be the same number, so counting textures was right until frames
+began tiling. `Atlas.add_tiled` quantizes a whole frame once, which is what keeps
+colours identical across a tile seam, so every tile of a frame carries
+byte-identical palette words. Measured on the False Knight's whole clip set: 110
+unique sprites cook to 499 tiles carrying 499 palette entries and **107 distinct
+palette values**, so counting records overstated its slot cost by 4.7x. Measured
+across all 699 cooked regions, 154,615 texture records carry 151,208 distinct
+palettes: 3,407 slots, 2.2%, a median of 3 per view, and the tightest view in the
+world (Tutorial_01 chunk 47) goes from 3 free slots to 14.
+
+A separate palette count in the header was measured and rejected. It would need
+a new magic, a 44-byte header, and a recook of every pack, and the only thing it
+buys over counting distinct values is a shorter block in the host's own
+intermediate files: 3,407 entries, 109,024 bytes, none of it resident, linked or
+in VRAM, because the resident bank carries no palette section at all. The
+accounting is where the saving is; the storage is not.
 
 The renderer reserves 248 dynamic packet positions within its fixed 1,032-packet
 capacity: player/nail/actors, bounded impacts/debris, and up to 128 source-derived

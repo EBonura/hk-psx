@@ -23,6 +23,9 @@ pub const MAX_STREAM_BYTES: usize = 256 * 1024;
 /// rows of consecutive texture IDs in row-major order. Every other streamed
 /// texture keeps 0,0 and is a frame on its own.
 pub const MAX_TILE_GRID: u16 = 8;
+/// Texture records one region may address. The palette block is sized to match,
+/// which is a storage rule and not a VRAM one: see `Texture::palette`.
+pub const MAX_TEXTURES: usize = 640;
 #[derive(Clone, Copy, Debug)]
 pub struct Texture {
     pub page: u16,
@@ -30,6 +33,13 @@ pub struct Texture {
     pub v: u16,
     pub width: u16,
     pub height: u16,
+    /// Index into the region's palette block, which holds one 32-byte entry per
+    /// texture. Nothing requires those entries to differ and nothing requires a
+    /// texture to own one: any number of textures may name the same index, and
+    /// the tiles of one tiled frame always do, because the frame is quantized
+    /// once. A region's VRAM CLUT cost is therefore its distinct palette words
+    /// rather than its texture count, and the scene bank pools those words by
+    /// value before a scene uploads them.
     pub palette: u16,
     pub stream_offset: u32,
 }
@@ -185,7 +195,7 @@ impl<'a> Room<'a> {
             return Err(Error::Header);
         }
         let mut counts = [0; 6];
-        let limits = [20, 640, 1024, 2048, 128, 1024];
+        let limits = [20, MAX_TEXTURES, 1024, 2048, 128, 1024];
         for i in 0..6 {
             counts[i] = u32_at(b, 8 + i * 4) as usize;
             if counts[i] > limits[i] {
@@ -597,6 +607,26 @@ mod tests {
         let untiled = pack(true);
         let plain = Room::parse(&untiled).unwrap();
         assert_eq!(plain.texture(0).tile_grid(), (1, 1));
+    }
+    /// A CLUT slot is a distinct palette, not a texture record. The host counts
+    /// slots that way, so the reader has to keep accepting a region whose
+    /// textures share one palette index; only an index outside the block is an
+    /// error. The tiles of one frame are the case that matters: they are
+    /// quantized together, so their entries are byte-identical.
+    #[test]
+    fn any_number_of_textures_may_name_one_palette() {
+        let mut b = tiled_pack();
+        for i in 0..4 {
+            b[40 + i * 16 + 10..40 + i * 16 + 12].copy_from_slice(&0u16.to_le_bytes());
+        }
+        let room = Room::parse(&b).unwrap();
+        assert!((0..4).all(|i| room.texture(i).palette == 0));
+        // The block is still one entry per texture: sharing changes what the
+        // records point at, never how the reader sizes the section.
+        assert_eq!(room.palettes().len(), 4 * 32);
+        // An index past the block is still refused, shared or not.
+        b[50..52].copy_from_slice(&4u16.to_le_bytes());
+        assert!(matches!(Room::parse(&b), Err(Error::Reference)));
     }
     #[test]
     fn rejects_tile_grids_that_leave_the_slot_cache_or_the_texture_table() {

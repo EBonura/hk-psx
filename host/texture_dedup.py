@@ -14,6 +14,22 @@ from region_delta import layout, textures
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def clut_count(raw):
+    """VRAM CLUT slots a cooked region really needs: its distinct palette words.
+
+    HKROOM02 stores one 32-byte entry per texture, but nothing requires those
+    entries to differ and nothing uploads the block as it stands: the scene bank
+    pools palettes by value and a scene uploads that pool. So a region's slot
+    cost is the number of distinct words among the entries its textures name,
+    not the size of the table. The tiles of one tiled frame always name the same
+    words, which is where the difference is largest.
+    """
+    counts, prefix, _, _ = layout(raw)
+    textures = counts[1]
+    palettes = [raw[prefix+i*32:prefix+(i+1)*32] for i in range(textures)]
+    return len({palettes[struct.unpack_from('<H', raw, 40+i*16+10)[0]] for i in range(textures)})
+
+
 _CODE_KEY=None
 def _code_key():
     """Hash of the code that decides a dedup result, so cached packs never outlive it."""

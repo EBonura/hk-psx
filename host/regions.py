@@ -21,6 +21,7 @@ from actors import actor_sources, postpack_pogo
 from world import postpack_checkpoints, postpack_masks
 from reveal_masks import postpack_reveal_masks
 from quality import SCENE_TABLE, GRID_SCENE_LAYOUTS, REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
+from cook import MAX_ROOM_TEXTURES
 
 SCENES = [dict(scene) for scene in SCENE_TABLE]
 
@@ -579,7 +580,7 @@ def refresh_actors():
         if row['chunk_id']==1:
             shutil.copy2(ROOT/row['path'],ROOT/'data/room.hk')
             shutil.copy2(destination/'scene.json',ROOT/'data/scene.json')
-        for key in ('pages','textures','draws','edges','stream_bytes','alpha_cover_bytes','animation_bytes','format_features','breakables','actors','hazards','edge_sources','texture_request_to_canonical'):
+        for key in ('pages','textures','cluts','draws','edges','stream_bytes','alpha_cover_bytes','animation_bytes','format_features','breakables','actors','hazards','edge_sources','texture_request_to_canonical'):
             row[key]=cooked[key]
         row.update(bytes=cooked['pack_bytes'],sha256=cooked['pack_sha256'])
     for info in SCENES:
@@ -594,7 +595,15 @@ def refresh_actors():
     postpack_masks(report)
     postpack_reveal_masks(report,source,scenes)
     for row in report['regions']:
-        if row['pages']>STATIC_PAGE_BUDGET or row['textures']>TEXTURE_BUDGET or row['bytes']>ROOM_BYTE_BUDGET:
+        # Records and palettes are different limits. A texture record is a slot
+        # in HKROOM02's own table, capped by the format at MAX_ROOM_TEXTURES; a
+        # CLUT slot is a distinct palette value, and any number of records may
+        # name one. They were the same number until frames started tiling, and
+        # gating both on TEXTURE_BUDGET rejected content whose palettes fit
+        # comfortably: the False Knight's phase-one clips are 570 records and
+        # 303 slots.
+        if (row['pages']>STATIC_PAGE_BUDGET or row['textures']>MAX_ROOM_TEXTURES
+                or row.get('cluts',row['textures'])>TEXTURE_BUDGET or row['bytes']>ROOM_BYTE_BUDGET):
             raise ValueError('final region exceeds scenery/RAM admission budget')
     write_provenance(report,source)
     write_report(ROOT/'data/regions.json',report)
@@ -648,7 +657,7 @@ def main():
             shutil.copy2(path,ROOT/'data/room.hk')
             shutil.copy2(destination/'scene.json',ROOT/'data/scene.json')
         row=dict(region,chunk_id=chunk_id,path=str(path.relative_to(ROOT)),bytes=cooked['pack_bytes'],
-                 sha256=cooked['pack_sha256'],pages=cooked['pages'],textures=cooked['textures'],
+                 sha256=cooked['pack_sha256'],pages=cooked['pages'],textures=cooked['textures'],cluts=cooked['cluts'],
                  draws=cooked['draws'],edges=cooked['edges'],stream_bytes=cooked['stream_bytes'],
                  alpha_cover_bytes=cooked['alpha_cover_bytes'],animation_bytes=cooked['animation_bytes'],format_features=cooked['format_features'],
                  grass=cooked['grass'],grass_impact=cooked.get('grass_impact'),door_debris=cooked.get('door_debris',[]),particle_effects=cooked.get('particle_effects'),breakables=cooked['breakables'],actors=cooked['actors'],
@@ -685,7 +694,15 @@ def main():
         from world import generate
         generate(report)
     for row in report['regions']:
-        if row['pages']>STATIC_PAGE_BUDGET or row['textures']>TEXTURE_BUDGET or row['bytes']>ROOM_BYTE_BUDGET:
+        # Records and palettes are different limits. A texture record is a slot
+        # in HKROOM02's own table, capped by the format at MAX_ROOM_TEXTURES; a
+        # CLUT slot is a distinct palette value, and any number of records may
+        # name one. They were the same number until frames started tiling, and
+        # gating both on TEXTURE_BUDGET rejected content whose palettes fit
+        # comfortably: the False Knight's phase-one clips are 570 records and
+        # 303 slots.
+        if (row['pages']>STATIC_PAGE_BUDGET or row['textures']>MAX_ROOM_TEXTURES
+                or row.get('cluts',row['textures'])>TEXTURE_BUDGET or row['bytes']>ROOM_BYTE_BUDGET):
             raise ValueError('final region exceeds scenery/RAM admission budget')
     write_provenance(report,source)
     write_report(ROOT/'data/regions.json',report)
