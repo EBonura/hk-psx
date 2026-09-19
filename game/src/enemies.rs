@@ -80,6 +80,35 @@ struct RunnerContext {
     hero_body: [i32; 4],
 }
 
+/// False Knight standing in its arena: `hk_sim::false_knight::Sentry`, which is
+/// the `Idle` and `Turn R`/`Turn L` states of `FalseyControl` and nothing else.
+///
+/// The source hangs the boss above the arena in `Dormant` and drops it on
+/// `BATTLE START`. Nothing sends `BATTLE START` yet, so the body falls from the
+/// authored transform on its first resident tick and `settled` latches on the
+/// first ground contact. After that the boss is what the source body is between
+/// attacks, a kinematic transform, and this runtime costs one comparison a
+/// tick: that matters because Crossroads_10 carried no actors at all before it.
+#[derive(Clone, Copy)]
+struct FalseKnightRuntime {
+    controller: hk_sim::false_knight::Sentry,
+    animation_tick: u32,
+    settled: bool,
+}
+impl FalseKnightRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        match self.controller.clip() {
+            hk_sim::false_knight::Clip::Turn => spec.turn_clip,
+            _ => spec.walk_clip,
+        }
+    }
+    /// `Turn R` writes the source scale x +1.3 and `Turn L` -1.3, and the cook
+    /// takes the absolute scale, so a positive source scale is the art as
+    /// authored, which this draw path expresses as -1.
+    fn facing(&self) -> i32 {
+        if self.controller.facing_right() { -1 } else { 1 }
+    }
+}
 /// Visible enemy draws, which are tiles rather than actors: a frame past one
 /// 64x64 animation slot contributes one draw and one animation key per tile.
 /// The ceiling is `hk_cache::MAX_FRAME_TILES`, the slots the cache holds beyond
@@ -329,6 +358,7 @@ enum Runtime {
     Aspid(AspidRuntime),
     /// No senses and no body: only the looping clip's clock advances.
     Static { animation_tick: u32 },
+    FalseKnight(FalseKnightRuntime),
 }
 impl Actor {
     fn runner(&self) -> Option<RunnerRuntime> { if let Runtime::Runner(r) = self.runtime { Some(r) } else { None } }
@@ -341,6 +371,7 @@ impl Actor {
     fn baldur_mut(&mut self) -> Option<&mut BaldurRuntime> { if let Runtime::Baldur(b) = &mut self.runtime { Some(b) } else { None } }
     fn aspid(&self) -> Option<AspidRuntime> { if let Runtime::Aspid(a) = self.runtime { Some(a) } else { None } }
     fn immobile(&self) -> Option<u32> { if let Runtime::Static { animation_tick } = self.runtime { Some(animation_tick) } else { None } }
+    fn false_knight(&self) -> Option<FalseKnightRuntime> { if let Runtime::FalseKnight(b) = self.runtime { Some(b) } else { None } }
     fn is_flyer(&self) -> bool { matches!(self.runtime, Runtime::Vengefly(_) | Runtime::Gruzzer(_) | Runtime::Baldur(_) | Runtime::Aspid(_)) }
     fn new(scene: usize, spec: &ActorSpec) -> Self {
         // Stable per-source seed, not a claim to reproduce Unity's global RNG.
@@ -391,6 +422,12 @@ impl Actor {
                     Runtime::Aspid(AspidRuntime { controller, animation_tick: 10, clip: hk_sim::aspid::Clip::Fly })
                 }
                 ActorController::Static { .. } => Runtime::Static { animation_tick: 0 },
+                // `initial_direction` carries the sign the cooker read off the
+                // placement's transform scale, and a positive source scale is
+                // the art as authored, which that field writes as -1.
+                ActorController::FalseKnight => Runtime::FalseKnight(FalseKnightRuntime {
+                    controller: hk_sim::false_knight::Sentry::new(spec.initial_direction < 0),
+                    animation_tick: 0, settled: false }),
             },
         }
     }
@@ -529,6 +566,12 @@ impl Actor {
             self.spawn_state = SpawnState::Ready;
             self.advance_aspid(&mut aspid, spec, count, &edge, context, emit);
             self.runtime = Runtime::Aspid(aspid);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(mut boss) = self.false_knight() {
+            self.advance_false_knight(&mut boss, spec, count, &edge, context);
+            self.runtime = Runtime::FalseKnight(boss);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
@@ -684,6 +727,52 @@ impl Actor {
             else if blocked_x && v[0] < 0 { Some(Side::Left) }
             else { None };
         if let Some(side) = side { fly.controller.bonk(side); }
+    }
+    /// One 60 Hz step of the standing False Knight.
+    ///
+    /// Two different costs, and the `settled` latch is what keeps them apart.
+    /// Before it lands the body is the shared solver under ordinary gravity,
+    /// which is the source's `Start Fall` without its script. After it lands
+    /// the source body is kinematic until an attack moves it, the subset has no
+    /// attacks, and the terrain under it cannot change, so the solver is never
+    /// run again and the tick is one comparison: which side of the boss the
+    /// Knight stands on, exactly what source `Idle` tests every frame.
+    #[inline(never)]
+    fn advance_false_knight(&mut self, boss: &mut FalseKnightRuntime, spec: &ActorSpec,
+                            count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext) {
+        boss.animation_tick = boss.animation_tick.saturating_add(1);
+        if !boss.settled {
+            let b = self.local_bounds(spec);
+            let offset = b[0] + (b[2] - b[0]) / 2;
+            let mut body = Player::spawn(self.x + offset, self.y);
+            body.vy = self.vy;
+            body.grounded = self.grounded;
+            let p = Params { gravity: 60 * ONE, fall: 100 * ONE, half_width: (b[2] - b[0]) / 2,
+                bottom: b[1], top: b[3], ..Params::ZERO };
+            if self.spawn_state == SpawnState::Pending {
+                // The authored transform sits inside the ceiling slab above the
+                // arena, which is where the source hangs it; separate once, as
+                // every other actor does, and then let it fall out.
+                if !hk_sim::resolve_actor_spawn(&mut body, p, count, edge) {
+                    self.spawn_state = SpawnState::Blocked;
+                    return;
+                }
+                self.spawn_state = SpawnState::Ready;
+            }
+            body.step(p, 0, false, count, edge);
+            self.x = body.x - offset;
+            self.y = body.y;
+            self.vy = body.vy;
+            self.grounded = body.grounded;
+            boss.settled = body.grounded;
+            return;
+        }
+        // `Idle` compares the hero's x against its own every frame; `Turn R`
+        // and `Turn L` write the facing on entry and hold for the Turn clip.
+        if boss.controller.tick(context.hero[0] > self.x) {
+            boss.animation_tick = 0;
+        }
+        self.walk.direction = boss.facing();
     }
     /// One 60 Hz step of the Baldur: FSM tick from last frame's contacts, then
     /// the gravity body (scale 0.8) moves at the held x velocity and the
@@ -1107,7 +1196,9 @@ impl EnemyWorld {
                                 Runtime::Gruzzer(f)=>f.controller.die(),
                                 Runtime::Baldur(r)=>r.controller.die(),
                                 Runtime::Aspid(a)=>a.controller.die(),
-                                Runtime::Walker|Runtime::Runner(_)|Runtime::Static {..}=>{}
+                                // The False Knight is admitted invincible, so
+                                // nothing can reach this arm through it.
+                                Runtime::Walker|Runtime::Runner(_)|Runtime::Static {..}|Runtime::FalseKnight(_)=>{}
                             }
                             state.enemy_death_particles(region,actor.source_id,[actor.x,actor.y,0]);
                             if let Some(corpse_spec)=spec.corpse {
@@ -1238,6 +1329,8 @@ impl EnemyWorld {
                 (roller.clip(spec),roller.animation_tick,(actor.x,actor.y),roller.controller.facing())
             } else if let Some(aspid)=actor.aspid() {
                 (aspid.clip(spec),aspid.animation_tick,(actor.x,actor.y),aspid.controller.facing())
+            } else if let Some(boss)=actor.false_knight() {
+                (boss.clip(spec),boss.animation_tick,(actor.x,actor.y),boss.facing())
             } else if let Some(animation_tick)=actor.immobile() {
                 let ActorController::Static {idle_clip}=spec.controller else {panic!("Static runtime with other metadata")};
                 (idle_clip,animation_tick,(actor.x,actor.y),actor.walk.direction)

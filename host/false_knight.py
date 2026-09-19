@@ -389,6 +389,108 @@ def recognize(sc, room):
     }
 
 
+# The standing subset's clip bindings, in the slots an ActorSpec already
+# carries: `walk_clip` holds Idle and `turn_clip` holds Turn, the way the Egg
+# Sac puts its one looping clip in both. Nothing else is cooked, because Idle
+# and Turn are 42 of the 141 CLUT slots Crossroads_10's tightest view has left
+# and the rest of the clip set is 457 more.
+STANDING_ART_BINDINGS = {'walk': 'Idle', 'turn': 'Turn'}
+# `Turn R` writes Facing Right true with SetScale x +1.3, `Turn L` writes false
+# with -1.3, so the facing the placement starts with is the sign of its own
+# transform scale.
+STANDING_CLIPS = ('Idle', 'Turn')
+
+
+def recognize_placement(sc, actor):
+    """Admit the one placed False Knight into the guest actor pool, or refuse.
+
+    `recognize` above is the whole-fight source contract and needs the parent
+    room, because the arena lives there. This is the actor-pool admission, which
+    needs only the boss's own object, and it is deliberately narrower than the
+    fight: the guest binds `shared/hk-sim`'s `false_knight::Sentry`, which is
+    `FalseyControl`'s `Idle` and `Turn R`/`Turn L` states and nothing else.
+
+    The `FalseyControl` digest is checked here too, so a source change fails at
+    admission rather than leaving the guest standing a boss whose behaviour has
+    moved underneath it.
+    """
+    source = sc.source
+    for name, expected in ASSEMBLIES.items():
+        if hashlib.sha256((source.directory / 'Managed' / name).read_bytes()).hexdigest() != expected:
+            raise ValueError('False Knight admission requires a fresh source audit: ' + name)
+    gid = actor['game_object']
+    if sc.gos[gid]['m_Layer'] != 11:
+        raise ValueError('False Knight outside the enemy layer')
+    fsms = _fsms(sc, gid)
+    if set(fsms) != {'FalseyControl', 'Check Health'}:
+        raise ValueError('unsupported False Knight FSM set: ' + ', '.join(sorted(fsms)))
+    for name in ('FalseyControl', 'Check Health'):
+        if not fsms[name]['m_Enabled']:
+            raise ValueError(f'disabled {name!r} FSM')
+        digest = fsm_digest(fsms[name]['fsm'])
+        if digest != FSM_SHA256[name]:
+            raise ValueError(f'unverified {name} FSM variant: {digest}')
+    control = fsms['FalseyControl']['fsm']
+    if control['startState'] != 'State 4':
+        raise ValueError('False Knight starts in an unsupported state')
+    health = actor['health_manager']
+    if health['hp'] != BODY_HEALTH or not _near(health['invulnerableTime'], BODY_INVULNERABLE_TIME) \
+            or not health['hasSpecialDeath'] or health['invincible'] or health['damageOverride']:
+        raise ValueError('unsupported False Knight HealthManager variant')
+    if not all(_near(a, b) for pair in zip(_box(sc, gid), BODY_BOX) for a, b in zip(*pair)):
+        raise ValueError('unsupported False Knight body collider')
+    matrix = sc.world(sc.go_transform[gid])
+    if not _near(abs(matrix[0][0]), BODY_SCALE) or not _near(matrix[1][1], BODY_SCALE) \
+            or abs(matrix[0][1]) > 1e-6 or abs(matrix[1][0]) > 1e-6:
+        raise ValueError('unsupported False Knight rotation or scale')
+    library = clip_contract(sc, gid)
+    by_name = {clip['name']: clip for clip in library['clips']}
+    for name in STANDING_CLIPS:
+        clip = by_name[name]
+        if (clip['frames'], clip['fps'], clip['wrap_mode'], clip['loop_start']) != CLIPS[name]:
+            raise ValueError('unsupported False Knight standing animation: ' + name)
+    facing_right = matrix[0][0] > 0
+    return {
+        'kind': 'FalseKnight', 'guest_enabled': True, 'art_bindings': dict(STANDING_ART_BINDINGS),
+        # Check Health restores the body to 65 rather than letting it die,
+        # and the stagger that consumes that is not implemented, so this is
+        # admitted invincible and nothing of it ever falls.
+        'no_corpse': True,
+        # Crossroads_10 merges Crossroads_10_boss in for this actor; nothing
+        # else that scene carries is admitted with it (see actor_sources).
+        'admit_from_additive_scene': True,
+        'facing_right': facing_right,
+        # The cook takes the absolute transform scale, so a positive source
+        # scale is the art as authored, which the guest's draw expresses as -1.
+        'initial_direction': -1 if facing_right else 1,
+        # `Check Health` restores the body to 65 every time it reaches zero, so
+        # the source body never dies; without the stagger states the guest has
+        # nothing to restore it with, and a killable body would vanish on its
+        # fifth nail hit. Admitted invincible, which is the closer of the two.
+        'invincible': True,
+        'turn_ticks': ticks(CLIPS['Turn'][0] / CLIPS['Turn'][1]),
+        'library_source': library['library_source'],
+        'fsm_sha256': {name: fsm_digest(fsms[name]['fsm']) for name in ('FalseyControl', 'Check Health')},
+        'limitations': [
+            'Standing subset only: Idle and the Turn R/Turn L pair. No attack, no stagger, no'
+            ' rage, no death and no barrels; the arena lifecycle in shared/hk-sim/src/boss.rs is'
+            ' not wired to it either.',
+            'The source hangs the boss above the arena in Dormant and drops it on BATTLE START.'
+            ' Nothing sends BATTLE START yet, so the guest body falls from the authored transform'
+            ' under the shared terrain solver on its first resident tick and stands where it'
+            ' lands; the entrance drop is not the scripted one.',
+            'The body is admitted invincible. The source body is not, but Check Health restores'
+            ' it to 65 rather than letting it die, and the stagger that consumes that is not'
+            ' implemented.',
+            'The fourth turn without an attack forces Move Choice in the source; with no attacks'
+            ' to choose, the guest keeps turning.',
+            'Hitter, Head, Death Head, the staff and every particle, camera shake and audio cue'
+            ' are recorded, not presented.',
+        ],
+        'source_methods': ['HealthManager.Hit', 'tk2dSpriteAnimator.Play'],
+    }
+
+
 def actor_health(sc, gid):
     from actors import _component_records
     records = [tree for _, kind, tree in _component_records(sc, gid) if kind == 'HealthManager']

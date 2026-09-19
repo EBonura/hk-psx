@@ -121,7 +121,13 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
         matrix=sc.world(sc.go_transform[actor['game_object']]);sprite=actor['tk2dSprite']
         sx=abs(matrix[0][0]*sprite['_scale']['x']);sy=abs(matrix[1][1]*sprite['_scale']['y'])
         color=sprite['_color'];alpha=round(color['a']*255)
-        if control['kind']=='ZombieSwipeWalker':
+        # A recognizer that already knows which of its clips are the walk and
+        # turn slots says so, rather than growing this chain a branch per
+        # controller. The False Knight is the first: its subset is Idle and Turn
+        # and it has no walk at all.
+        if 'art_bindings' in control:
+            bindings=dict(control['art_bindings'])
+        elif control['kind']=='ZombieSwipeWalker':
             if control['parameters'].get('attack',{}).get('kind')=='Leap':
                 # Leaper: the Attack clip anticipates and keeps playing through the
                 # jump (lunge slot), Land is the cooldown clip.
