@@ -1113,7 +1113,10 @@ impl EnemyWorld {
                                 actor.corpse=Some(corpse);
                             }
                         }
-                        vitals.gain_soul_on_nail_hit(crate::VITAL_PARAMS);
+                        // Through the live parameter stack, like the damage
+                        // above it: SoulGain adds Soul Catcher and Soul Eater
+                        // to the same 11 the cooked base carries.
+                        vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
                         // HealthManager TOOK DAMAGE precedes Recoil's global
                         // horizontal event. RecoilByDirection ignores a request
                         // while already recoiling; accepted damage still reacts.

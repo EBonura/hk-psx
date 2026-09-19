@@ -387,18 +387,22 @@ def postpack_npc_bank(report, source, scenes):
 
     An NPC stands in one view of one scene, so its clips ride in that view's
     bank rather than in the scene-wide actor bank every view of the scene
-    carries. Town has no supported actor today, so no actor bank rewrites these
-    views; a view that would need both is refused rather than composed untested.
+    carries. This runs after postpack_actor_bank and re-reads the same immutable
+    base, so a view holding both would lose the actor bank; neither Town nor
+    Crossroads_45 has a supported actor, and a view that needs both is refused
+    rather than composed untested.
     """
     from npc_sources import npc_sources, append_npc_art
     from texture_dedup import deduplicate_room
     placed=[]
     for row in report['regions']:
         sc=scenes[row['scene_id']]
-        npcs=npc_sources(sc,row['interaction_bounds'])
+        npcs=npc_sources(row['scene_name'],sc,row['interaction_bounds'])
         row['npcs']=npcs
         if not npcs:continue
-        # The guest reserves one animation-cache slot for the view's NPC.
+        # The guest reserves one animation-cache slot for the view's NPC, and
+        # main.rs reads one record per view. No admitted NPC shares a view with
+        # another today, so the second slot is unwritten rather than untested.
         if len(npcs)>1:raise ValueError(f'view {row["chunk_id"]} holds {len(npcs)} cooked NPCs')
         if any(actor['movement_supported'] for actor in row['actors']):
             raise ValueError(f'view {row["chunk_id"]} would need both an NPC and an actor bank')
@@ -433,7 +437,7 @@ def postpack_npc_bank(report, source, scenes):
         from npc_dialogue import cook as cook_npc_lines
         cook_npc_lines(source,scenes,placed)
     report['total_pack_bytes']=sum(row['bytes'] for row in report['regions'])
-    report['npc_bank_policy']='One ungated NPC per view, cooked into that view alone; its conversation pages link through data/npc_lines.rs'
+    report['npc_bank_policy']='One NPC per view, cooked into that view alone, present under the same fresh-save gate answer as the rest of the world; its conversation chain links through data/npc_lines.rs'
     return placed
 
 

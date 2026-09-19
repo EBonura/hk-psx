@@ -7,25 +7,33 @@ pub const PURE_NAIL_DAMAGE:u16=21;
 pub const MAX_MASKS:u16=9;
 pub const BLUE_CHEAT_CAP:u16=20;
 /// Toggle rows on the Cheats page, ahead of Restore, Add Lifeblood, Reset and Back.
-pub const CHEAT_ROWS:usize=11;
+pub const CHEAT_ROWS:usize=12;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Settings {pub invincible:bool,pub max_nail:bool,pub infinite_soul:bool,pub max_masks:bool,
     /// No admitted scene grants the Mothwing Cloak, Mantis Claw or Monarch
     /// Wings, so these are the only way to reach them until the ability
     /// pickups exist.
-    pub dash:bool,pub claw:bool,pub wings:bool,pub heart:bool,pub cloak:bool,pub dream:bool,pub spell:bool}
+    pub dash:bool,pub claw:bool,pub wings:bool,pub heart:bool,pub cloak:bool,pub dream:bool,pub spell:bool,
+    /// Marks every charm found. Only Grubsong's Shiny is in the admitted
+    /// scenes and it sits inactive, so this is the only route to the board.
+    /// It grants nothing else: the notch budget and every refusal still apply.
+    pub charms:bool}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Action {None,Restore,AddBlue,Reset}
 impl Settings {
-    pub const fn new()->Self {Self{invincible:false,max_nail:false,infinite_soul:false,max_masks:false,dash:false,claw:false,wings:false,heart:false,cloak:false,dream:false,spell:false}}
-    pub fn enabled(&self,row:usize)->bool {match row {0=>self.invincible,1=>self.max_nail,2=>self.infinite_soul,3=>self.max_masks,4=>self.dash,5=>self.claw,6=>self.wings,7=>self.heart,8=>self.cloak,9=>self.dream,10=>self.spell,_=>false}}
+    pub const fn new()->Self {Self{invincible:false,max_nail:false,infinite_soul:false,max_masks:false,dash:false,claw:false,wings:false,heart:false,cloak:false,dream:false,spell:false,charms:false}}
+    pub fn enabled(&self,row:usize)->bool {match row {0=>self.invincible,1=>self.max_nail,2=>self.infinite_soul,3=>self.max_masks,4=>self.dash,5=>self.claw,6=>self.wings,7=>self.heart,8=>self.cloak,9=>self.dream,10=>self.spell,11=>self.charms,_=>false}}
     pub fn adjust(&mut self,row:usize,delta:i8) {
         if delta==0{return;}
-        let value=match row {0=>&mut self.invincible,1=>&mut self.max_nail,2=>&mut self.infinite_soul,3=>&mut self.max_masks,4=>&mut self.dash,5=>&mut self.claw,6=>&mut self.wings,7=>&mut self.heart,8=>&mut self.cloak,9=>&mut self.dream,10=>&mut self.spell,_=>return};
+        let value=match row {0=>&mut self.invincible,1=>&mut self.max_nail,2=>&mut self.infinite_soul,3=>&mut self.max_masks,4=>&mut self.dash,5=>&mut self.claw,6=>&mut self.wings,7=>&mut self.heart,8=>&mut self.cloak,9=>&mut self.dream,10=>&mut self.spell,11=>&mut self.charms,_=>return};
         *value=delta>0;
     }
-    pub fn bits(self)->u32 {u32::from(self.invincible)|(u32::from(self.max_nail)<<1)|(u32::from(self.infinite_soul)<<2)|(u32::from(self.max_masks)<<3)|(u32::from(self.dash)<<4)|(u32::from(self.claw)<<5)|(u32::from(self.wings)<<6)|(u32::from(self.heart)<<7)|(u32::from(self.cloak)<<8)|(u32::from(self.dream)<<9)|(u32::from(self.spell)<<10)}
-    pub fn params(self,mut base:VitalParams)->VitalParams {
+    pub fn bits(self)->u32 {u32::from(self.invincible)|(u32::from(self.max_nail)<<1)|(u32::from(self.infinite_soul)<<2)|(u32::from(self.max_masks)<<3)|(u32::from(self.dash)<<4)|(u32::from(self.claw)<<5)|(u32::from(self.wings)<<6)|(u32::from(self.heart)<<7)|(u32::from(self.cloak)<<8)|(u32::from(self.dream)<<9)|(u32::from(self.spell)<<10)|(u32::from(self.charms)<<11)}
+    /// The live parameter stack: the cooked no-charm base, then the equipped
+    /// charms, then the cheats. Composing here rather than at each consumer is
+    /// what keeps a charm bonus from being applied twice.
+    pub fn params(self,base:VitalParams)->VitalParams {
+        let mut base=crate::charms::vitals(base);
         if self.max_nail {base.nail_damage=PURE_NAIL_DAMAGE;}
         if self.max_masks {base.max_health=MAX_MASKS;}
         base
@@ -39,6 +47,7 @@ impl Settings {
         if self.infinite_soul&&!v.dead {v.soul=base.max_soul;}
     }
     pub fn apply(self,previous:Self,v:&mut Vitals,base:VitalParams,action:Action) {
+        if self.charms!=previous.charms {crate::charms::grant_all(self.charms);}
         let p=self.params(base);
         if self.max_masks!=previous.max_masks&&!v.dead {
             if self.max_masks {v.health=p.max_health;}else{v.health=v.health.min(p.max_health);}
@@ -56,7 +65,14 @@ impl Settings {
         // a Shade Cloak dash passes through a hazard rather than respawning at
         // it. That is deliberately unlike the Invincibility cheat below.
         if shadow {return Hurt::Ignored;}
-        if !self.invincible {return v.hurt(self.params(base),damage,direction,hazard);}
+        if !self.invincible {
+            let p=self.params(base);
+            let hurt=v.hurt(p,damage,direction,hazard);
+            // HeroController::TakeDamage runs TakeDamageCharmEffects only for a
+            // hit that actually landed, so an ignored hit charges no SOUL.
+            if hurt!=Hurt::Ignored {crate::charms::on_damage(v,p);}
+            return hurt;
+        }
         if !hazard||damage==0||v.dead||v.hazard_pending {return Hurt::Ignored;}
         // Invulnerability must not strand the Knight below the room or in
         // spikes: keep the existing safe-position recovery, without damage.

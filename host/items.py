@@ -511,9 +511,10 @@ def source_item_values(source, assembly, scenes):
             'Chest opening, PersistentBoolItem state, grub counts, conversation gates and '
             'dream warps were read but not simulated, so a listed pickup may still sit behind '
             'a precondition the slice cannot satisfy.',
-            'Charm effects are not read here at all. Each charm is catalogued by id, cost and '
-            'PlayerData fields; what a charm does lives in the FSMs that test equippedCharm_N '
-            'and belongs to P16 steps 5 and 6.',
+            'Charm effects are not read here. Each charm is catalogued by id, cost and '
+            'PlayerData fields; the equip contract, the overcharm rule and the effects the '
+            'port can express are read by host/charms.py, which builds on this catalog and '
+            'reports what each remaining charm is missing.',
             'Geo prices are carried as the raw Prices sheet. Binding a price key to a charm or '
             'an item needs the shops ShopItemStats components, and every shop scene is outside '
             'the admitted slice.',

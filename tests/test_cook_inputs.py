@@ -52,7 +52,8 @@ class CookInputsTests(unittest.TestCase):
     def test_the_postpass_code_is_listed_but_not_hashed_per_region(self):
         # These run after the per-region cook, over packs it already wrote.
         above, below = sections()
-        for path in ('host/regions.py', 'host/npc_sources.py', 'host/npc_dialogue.py'):
+        for path in ('host/regions.py', 'host/npc_sources.py', 'host/npc_dialogue.py',
+                     'host/npcs.py'):
             self.assertIn(path, below)
             self.assertNotIn(path, above)
 

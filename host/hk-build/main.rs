@@ -16,6 +16,12 @@ const ASSET_SCRIPTS: &[&str] = &[
     "title_music.py", "cook_audio.py", "cook_hud.py", "ambience.py", "focus_audio.py", "read_points.py",
     "geo.py", "geo_audio.py", "runner_audio.py", "lifeblood.py", "break_effects.py", "great_door.py",
     "shade.py", "ability_art.py",
+    // After read_points.py: the charm catalogue wraps its descriptions against
+    // the glyph advances that cook writes into data/read_points.rs.
+    "charms.py",
+    // The compiled FSM programs. Independent of the others: it reads the source
+    // scenes and .hkpsx/selected-regions.json and writes data/scripts.rs.
+    "cook_scripts.py",
 ];
 /// Route tapes replayed against the final CUE; the ones flagged in ROUTES also run the scene-gate verifier.
 /// Final telemetry a route must reach besides completing its tape.

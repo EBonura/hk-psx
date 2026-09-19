@@ -29,6 +29,7 @@ mod hud;
 mod world;
 mod reveal_masks;
 mod dialogue;
+mod script;
 mod impact;
 mod disc;
 mod room_decode;
@@ -36,6 +37,7 @@ mod texture_upload;
 mod vram_cache;
 mod menu;
 mod pause;
+mod charms;
 mod cheats;
 mod geo;
 mod geo_render;
@@ -368,6 +370,14 @@ fn main() {
     let saved=match slots[profile] {save::Slot::Used(s)=>Some(s),_=>None}
         // A record from another disc build may name a slot this catalogue lacks.
         .filter(|s|(s.region as usize)<world::REGION_SCENES.len()&&world::scene_of(s.region as usize)==s.scene as usize);
+    // The charm board before the first Vitals, because Fragile Heart raises
+    // max_health. Taken from the record itself rather than from `saved`: a
+    // stale spawn point is no reason to throw the collection away.
+    charms::boot(match slots[profile] {save::Slot::Used(s)=>
+        Some((s.charms_owned,s.charms_equipped,s.charm_notches,s.can_overcharm)),_=>None},settings.cheats.charms);
+    // Each NPC's conversation cursor, from the record for the same reason: a
+    // stale spawn point is no reason to make Elderbug introduce himself again.
+    if let save::Slot::Used(s)=slots[profile] {dialogue::restore_met(s.npc_conversations);}
     let cache=unsafe { &mut *(&raw mut ROOM_CACHE) };
     let mut state=world::State::new();
     let geo=unsafe {&mut *(&raw mut GEO_WORLD)};
@@ -577,6 +587,10 @@ fn main() {
                         n.bounds[0]<=body[2] && n.bounds[2]>=body[0] && n.bounds[1]<=body[3] && n.bounds[3]>=body[1]
                     ).map(|n|n.source_id);
                     dialogue::npc_tick(r.scene,npc_in_range,can_inspect,pad.bits());
+                    // The cooked FSM programs. Their trigger volumes take the
+                    // same hero body the NPC range does, so a script and an NPC
+                    // standing in the same place agree on where the Knight is.
+                    script::tick(r.scene,body);
                     ambience::tick();
                     let start=pad.is_held(button::START);
                     let mut ui_consumed=paused;
@@ -614,7 +628,7 @@ fn main() {
                         geo.reset(geo::GEO_PARAMS);unsafe {HK_GEO_LOST=0;}
                         life.reset();
                         door.reset();
-                        dialogue::reset();state=world::State::new();reveals=reveal_masks::State::new();enemies=enemies::EnemyWorld::new();vitals=settings.cheats.new_vitals(VITAL_PARAMS);
+                        dialogue::reset();script::reset();state=world::State::new();reveals=reveal_masks::State::new();enemies=enemies::EnemyWorld::new();vitals=settings.cheats.new_vitals(VITAL_PARAMS);
                         audio::reset_movement();player=Player::spawn(SPAWN.0,SPAWN.1);safe=(SPAWN.0,SPAWN.1,0);safe_facing=1;
                         nail=Nail::new();nail_response=hk_sim::NailResponse::new();focus.interrupt();focus_audio::interrupt();attacks=0;target=Some(0);paused=false;
                         unsafe {HK_BREAK_COUNT=0;HK_DEATHS=0;HK_ENEMY_HITS=0;HK_ENEMY_KILLS=0;HK_HAZARD_RESPAWNS=0;HK_FOCUS_STARTED=0;HK_FOCUS_COMPLETED=0;HK_FOCUS_HEALED=0;HK_FOCUS_DRAINED=0;HK_FOCUS_REFUNDED=0;}
@@ -691,9 +705,12 @@ fn main() {
                                 else if pressed(button::CROSS) {
                                     if row==0 {
                                         let stand=[bench_state.seat()[0],player.y];
+                                        let (owned,equipped,notches,can_overcharm)=charms::record();
                                         save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:player.facing,
                                             region:region_id as u32,geo:geo.wallet(),door_hits:door.hits(),
-                                            shade:shade.record(),sequence:0});
+                                            shade:shade.record(),sequence:0,charms_owned:owned,
+                                            charms_equipped:equipped,charm_notches:notches,can_overcharm,
+                                            npc_conversations:dialogue::met_bits()});
                                     }
                                     save_prompt=None;
                                 } else if pressed(button::CIRCLE) {save_prompt=None;}
