@@ -175,7 +175,29 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("kings-climb", "HK_ENEMY_HITS", 4), ("kings-climb", "HK_BREAK_COUNT", 11),
     ("kings-climb", "HK_SOUL", 44),
     ("ctrl-climb", "HK_CHEATS", 0), ("ctrl-climb", "HK_SCRIPT_FLAGS", 0),
-    ("ctrl-climb", "HK_SCRIPT_WRITES", 0)];
+    ("ctrl-climb", "HK_SCRIPT_WRITES", 0),
+    // Sly's shop, through a door that could not fire until today. town-shop
+    // resumes in Dirtmouth, walks left into door_sly's trigger, presses UP to
+    // take the door, crosses Room_shop to the counter and opens the shelf.
+    //
+    // The door is the half worth pinning: `world::gate` point-tested the
+    // Knight's origin, which sits 1.39 units above his feet, against a collider
+    // that is a strip of floor 0.23 units tall, so no door in this game could
+    // ever fire. SCENE_GATE_LOADS 1 into region 694 is that rule working.
+    //
+    // OPENED 1 with OPEN 0 and CLOSED 1 is a shelf that went up and came down,
+    // rather than a tape that ran out with it still showing. PURCHASES stays 0
+    // on purpose: this card carries 6 Geo and Sly's cheapest stock is a 60-Geo
+    // Rancid Egg, so buying anything needs a route that earns Geo first, which
+    // does not exist yet.
+    //
+    // The route string, since a .pxtape is opaque, through poll_tape at 980:
+    //   9:start:1,12:cross:1,400:left:83,600:up:4,
+    //   720:right:34,800:up:4,860:circle:2
+    ("town-shop", "HK_SCENE_GATE_LOADS", 1), ("town-shop", "HK_REGION_ID", 694),
+    ("town-shop", "HK_SHOP_OPENED", 1), ("town-shop", "HK_SHOP_CLOSED", 1),
+    ("town-shop", "HK_SHOP_OPEN", 0), ("town-shop", "HK_SHOP_PURCHASES", 0),
+    ("town-shop", "HK_SAVE_LOADED", 1), ("town-shop", "HK_DEATHS", 0)];
 /// Telemetry a route must reach at least, rather than exactly.
 ///
 /// Reserved for counters that sit on a knife edge. The frame is stall-bound, so
@@ -208,12 +230,14 @@ const REQUIRED_MIN: &[(&str, &str, u64)] = &[
 const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
     ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd"),
     ("bench-save", "town-continue.mcd"), ("well-drop", "town-continue.mcd"), ("town-reset2", "town-continue.mcd"),
-    ("crossroads-gate", "town-continue.mcd"), ("town-elderbug", "town-continue.mcd")];
+    ("crossroads-gate", "town-continue.mcd"), ("town-elderbug", "town-continue.mcd"),
+    ("town-shop", "town-continue.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-reset2", true),
     ("crossroads-gate", true), ("town-continue", false), ("town-shade", false), ("kings-death", false),
     ("kings-return", false), ("bench-save", false), ("town-elderbug", false),
     ("cheat-spell", false), ("cheat-dash", false), ("cheat-wings", false), ("ctrl-wings", false),
-    ("cheat-heart", false), ("cheat-dream", false), ("kings-climb", false), ("ctrl-climb", false)];
+    ("cheat-heart", false), ("cheat-dream", false), ("kings-climb", false), ("ctrl-climb", false),
+    ("town-shop", true)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
