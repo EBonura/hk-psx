@@ -1,8 +1,12 @@
-//! Source reversible-mask FSM subset, independent of room residency.
+//! Source reveal-mask FSM subset, independent of room residency.
 //! Scene-ready substitutes for Pause's hero-position callback/1- or 2-second
 //! timeout and inverse masks' 0.01-second Idle initialization tween. Inverse
 //! owners start at zero opacity; ordinary owners retain authored full opacity.
 //! Activated is bookkeeping only; it never latches renderer visibility.
+//!
+//! One-way owners are the authored secret masks: their definition declares no
+//! COVER event and no Hero Leave, so the first hero entry uncovers the secret
+//! and nothing puts it back. They latch here for the same reason.
 use hk_sim::{Params, Player};
 pub const MAX_CONTROLLERS: usize = 16;
 const FULL: u32 = 65536;
@@ -13,6 +17,7 @@ pub struct RevealMaskSpec {
     pub trigger: &'static [[i32; 2]],
     pub fade_ticks: u16,
     pub initial_opacity: u8,
+    pub one_way: bool,
 }
 #[derive(Clone, Copy)]
 pub struct RevealMaskBinding {
@@ -27,7 +32,9 @@ struct Slot {
     from: u32,
     target: u32,
     elapsed: u16,
+    /// For a one-way owner this is "has fired", and it never returns to false.
     inside: bool,
+    one_way: bool,
     initial_opacity: u8,
 }
 const EMPTY: Slot = Slot {
@@ -38,6 +45,7 @@ const EMPTY: Slot = Slot {
     target: 0,
     elapsed: 0,
     inside: false,
+    one_way: false,
     initial_opacity: 0,
 };
 
@@ -71,6 +79,7 @@ impl State {
             for (slot, spec) in self.slots[..self.count].iter().zip(specs) {
                 assert_eq!(slot.source_id, spec.source_id);
                 assert_eq!(slot.initial_opacity, spec.initial_opacity);
+                assert_eq!(slot.one_way, spec.one_way);
             }
             return;
         }
@@ -81,6 +90,8 @@ impl State {
         for (index, spec) in specs.iter().enumerate() {
             assert!((3..=16).contains(&spec.trigger.len()));
             assert!(spec.initial_opacity == 0 || spec.initial_opacity == 128);
+            // Every authored one-way reveal starts covered and clears for good.
+            assert!(!spec.one_way || spec.initial_opacity == 128);
             assert!(specs[..index]
                 .iter()
                 .all(|prior| prior.source_id != spec.source_id));
@@ -98,6 +109,7 @@ impl State {
                 from: spec.initial_opacity as u32 * 512,
                 target: spec.initial_opacity as u32 * 512,
                 initial_opacity: spec.initial_opacity,
+                one_way: spec.one_way,
                 ..EMPTY
             };
         }
@@ -125,20 +137,29 @@ impl State {
             player.y.saturating_add(params.top),
         ];
         for (slot, spec) in self.slots[..self.count].iter_mut().zip(specs) {
-            let b = slot.bounds;
-            let inside = body[0] <= b[2]
-                && body[2] >= b[0]
-                && body[1] <= b[3]
-                && body[3] >= b[1]
-                && hk_sim::polygon_hits_box(spec.trigger, body);
-            // Stay is ignored while fading toward the inside target. Exit changes target;
-            // re-entry reverses from the current alpha without a discontinuity.
-            if inside != slot.inside {
-                slot.inside = inside;
-                slot.from = slot.alpha;
-                let outside = slot.initial_opacity as u32 * 512;
-                slot.target = if inside { FULL - outside } else { outside };
-                slot.elapsed = 0;
+            // A one-way owner's source FSM leaves its Fade state only for the
+            // sound branch, so once its trigger has fired no later answer can
+            // change anything. This bool sits beside the alpha the loop already
+            // touches, so a revealed secret costs one load per tick instead of
+            // an AABB and a polygon walk, and a fully revealed one costs that
+            // plus the equality below. That is what keeps the added controllers
+            // off a frame that is stall-bound.
+            if !(slot.one_way && slot.inside) {
+                let b = slot.bounds;
+                let inside = body[0] <= b[2]
+                    && body[2] >= b[0]
+                    && body[1] <= b[3]
+                    && body[3] >= b[1]
+                    && hk_sim::polygon_hits_box(spec.trigger, body);
+                // Stay is ignored while fading toward the inside target. Exit changes target;
+                // re-entry reverses from the current alpha without a discontinuity.
+                if inside != slot.inside {
+                    slot.inside = inside;
+                    slot.from = slot.alpha;
+                    let outside = slot.initial_opacity as u32 * 512;
+                    slot.target = if inside { FULL - outside } else { outside };
+                    slot.elapsed = 0;
+                }
             }
             if slot.alpha == slot.target {
                 continue;
@@ -183,5 +204,117 @@ impl State {
             }
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hk_sim::{Params, Player};
+
+    /// A square trigger around the origin, in the Q16 world units the cook emits.
+    const ONE: i32 = hk_sim::ONE;
+    const BOX: &[[i32; 2]] = &[[-ONE, -ONE], [ONE, -ONE], [ONE, ONE], [-ONE, ONE]];
+
+    fn params() -> Params {
+        Params { half_width: ONE / 4, bottom: -ONE / 2, top: ONE / 2, ..Params::ZERO }
+    }
+
+    fn at(x: i32) -> Player {
+        Player::spawn(x, 0)
+    }
+
+    fn spec(one_way: bool) -> RevealMaskSpec {
+        RevealMaskSpec {
+            source_id: 1,
+            trigger: BOX,
+            fade_ticks: 4,
+            initial_opacity: 128,
+            one_way,
+        }
+    }
+
+    /// The authored secret mask: covered, then clear for good on first entry.
+    /// The reversible neighbour is here to show the difference is only the exit.
+    #[test]
+    fn one_way_owner_never_recovers_and_reversible_one_does() {
+        for one_way in [true, false] {
+            let specs = [spec(one_way)];
+            let mut state = State::new();
+            state.scene_ready(0, &specs);
+            assert_eq!(state.opacity(0), 128);
+            for _ in 0..4 {
+                state.tick(&specs, &at(0), params());
+            }
+            assert_eq!(state.opacity(0), 0, "entry uncovers either way");
+            for _ in 0..4 {
+                state.tick(&specs, &at(40 * ONE), params());
+            }
+            assert_eq!(state.opacity(0), if one_way { 0 } else { 128 });
+        }
+    }
+
+    /// Re-entering a latched owner must not restart the tween, and leaving and
+    /// coming back must not either: the source Fade state is left only for the
+    /// sound branch, so nothing in the definition can fade it back in.
+    #[test]
+    fn latched_owner_ignores_later_crossings() {
+        let specs = [spec(true)];
+        let mut state = State::new();
+        state.scene_ready(0, &specs);
+        for _ in 0..4 {
+            state.tick(&specs, &at(0), params());
+        }
+        for pass in 0..3 {
+            for _ in 0..6 {
+                state.tick(&specs, &at(if pass % 2 == 0 { 40 * ONE } else { 0 }), params());
+            }
+            assert_eq!(state.opacity(0), 0);
+        }
+    }
+
+    /// The fade is the authored one, not an instant swap: a half-elapsed tween
+    /// reads half opacity, which is what the subtractive CLUT draws.
+    #[test]
+    fn one_way_fade_is_gradual_and_completes_once() {
+        let specs = [spec(true)];
+        let mut state = State::new();
+        state.scene_ready(0, &specs);
+        state.tick(&specs, &at(0), params());
+        assert_eq!(state.opacity(0), 96);
+        state.tick(&specs, &at(0), params());
+        assert_eq!(state.opacity(0), 64);
+        // Leaving mid-fade must not reverse it, unlike a reversible owner.
+        state.tick(&specs, &at(40 * ONE), params());
+        state.tick(&specs, &at(40 * ONE), params());
+        assert_eq!(state.opacity(0), 0);
+    }
+
+    /// Scene-ready is the only thing that covers a secret again, which is what
+    /// the missing save system means: a reload re-hides what the source keeps.
+    #[test]
+    fn reset_scene_restores_the_authored_cover() {
+        let specs = [spec(true)];
+        let mut state = State::new();
+        state.scene_ready(0, &specs);
+        for _ in 0..4 {
+            state.tick(&specs, &at(0), params());
+        }
+        assert_eq!(state.opacity(0), 0);
+        state.reset_scene(0);
+        state.scene_ready(0, &specs);
+        assert_eq!(state.opacity(0), 128);
+    }
+
+    /// A one-way owner must be authored covered; the cook refuses anything else
+    /// and this is the guest-side half of that pin.
+    #[test]
+    #[should_panic]
+    fn one_way_owner_cannot_start_uncovered() {
+        let specs = [RevealMaskSpec {
+            initial_opacity: 0,
+            ..spec(true)
+        }];
+        State::new().scene_ready(0, &specs);
     }
 }
