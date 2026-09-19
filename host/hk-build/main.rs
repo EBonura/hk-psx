@@ -414,6 +414,12 @@ fn build(root: &Path, options: &Options) -> Result<()> {
     // `generated_params` broke a fixture and nine builds shipped before anyone
     // noticed. Fail here rather than after ten minutes of cooking.
     run(venv_python(root), &["-m", "unittest", "discover", "-s", "tests", "-q"], root)?;
+    // And the simulation's own suite, for the same reason one build later: the
+    // charm board landed with four hk-sim test targets failing to compile, and
+    // nothing here ran them, so it shipped. These path-include the guest
+    // modules, so they are the only check that the guest's own logic still
+    // holds before ten minutes of cooking.
+    run("cargo", &["test", "-q", "--manifest-path", "shared/hk-sim/Cargo.toml"], root)?;
     let sdk_source = options.sdk_source.clone().unwrap_or_else(|| root.parent().unwrap().join("PSoXide-sdk"));
     sdk(root, &sdk_source)?;
     cook_cached(root, options.recook)?;

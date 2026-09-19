@@ -1,3 +1,13 @@
+// cheats composes the equipped charms into the live parameters and reconciles
+// the all-charms grant. The real module links the cooked catalogue this harness
+// has no manifest directory for, and an empty board composes to the base
+// anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
+// the real one.
+mod charms{
+ pub fn vitals(base:hk_sim::VitalParams)->hk_sim::VitalParams{base}
+ pub fn grant_all(_:bool){}
+ pub fn on_damage(_:&mut hk_sim::Vitals,_:hk_sim::VitalParams){}
+}
 #[path="../../../game/src/cheats.rs"]mod cheats;
 use cheats::{Action,Settings,CHEAT_ROWS};
 use hk_sim::{Hurt,Vitals,VitalParams,Focus,FocusParams,FocusInput};
