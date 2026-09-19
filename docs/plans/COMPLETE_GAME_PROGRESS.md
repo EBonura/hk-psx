@@ -45,7 +45,7 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P13 | in progress | Build 105 admits the five catalog benches (rest, heal, respawn marker; `town-bench` route). Earlier: shared persistent stores now have a versioned `HKSV` fixed-buffer snapshot codec for global and mode owners, with strict length, ordering, checksum and capacity validation; active-scene flags reset on load. Memory-card I/O and actual quit/reload routes remain pending. |
 | P08 | in progress | Tile-coverage event chains now separate back and front owners, preserving front masks through the complete back pass. The first regression and full hk-format coverage suite pass. Material-family completion, black-fill source coverage, dynamic mask invalidation, actor/effect cache expansion and representative visual replay remain. |
 | P09 | in progress | Build 104 runs the source entry sequence (fade, lead, forced walk; hidden top drop) for every gate; build 103 applies the source gate rules (side gates need the Knight facing in, no transition while recoiling, delayed top colliders); build 102 adds the source CameraLockArea limits (world bank kind 11) and a damped camera with look-ahead; per-entry behaviour descriptors (forced walk, fades, control delays) remain. Earlier: Crossroads_01 is scene 2 of a single host scene catalog (`host/quality.py SCENE_TABLE`) that every cooker, generated table and the guest scene count derive from. The authored Town `bot1` gate drops the Knight into Crossroads_01 `top1` and the return gates resolve to Town `bot1`; the `town-well` route tape replays on the final CUE with three scene loads and the Knight walking inside Crossroads. Build 75 adds Crossroads_02 and Crossroads_07 through `GRID_SCENE_LAYOUTS` (one catalog entry per scene); their gates are generated from source and the linked headroom is 376,680 bytes. The `crossroads-floor` route walks the Crossroads_01 floor to the right wall; reaching `right1` needs an authored jump route. Build 78 gives top-side gate entries the source's -12 units/s initial drop (`Gate.entry_vy`, verified for the well; assumed for other top entries). The delayed top-gate collider, source camera locks, the Crossroads enemies beyond the Crawler and return replays remain. |
-| P19/P20 | in progress | `host/remaining_actors.py` measures the roster: 216 placements, 120 admitted, 96 refused across twelve families, with a per-recognizer refusal reason for each. Contracts written for Hatcher, Egg Sac and Mender Bug. Four placements are refused by the recognizer rather than the controller and are being admitted; Crossroads_22 cannot hold a full Hatcher cage against the 32-actor cap; Zombie Myla and one Runner are hidden by the original and must stay out. Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
+| P19/P20 | in progress | 123 of 215 admitted: the Crossroads_39 Runner, the mirrored Crossroads_37 Leaper and the Egg Sac all landed. `host/remaining_actors.py` measures the roster: originally 216 placements, 120 admitted, 96 refused across twelve families, with a per-recognizer refusal reason for each. Contracts written for Hatcher, Egg Sac and Mender Bug. Four placements are refused by the recognizer rather than the controller and are being admitted; Crossroads_22 cannot hold a full Hatcher cage against the 32-actor cap; Zombie Myla and one Runner are hidden by the original and must stay out. Builds 89 to 101: Runners (with Bargers, Hornheads and Leapers through the parameterized Runner), Climbers, Vengeflies, Gruzzers, Baldurs and Aspid Hunters (first projectile pool) are admitted: 120 of 144 placed Crossroads actors. Remaining: Hatchers (runtime spawning), Shields, Guards, Mender, Myla, mirrored placements, Runner dust and death effects, Climber loop audio. |
 | P14 | in progress | Builds 112 to 121. Step 1's audit corrected the jump velocity and added the jump, ledge and head-bump buffers the port was missing. Step 2 implemented the Mothwing Cloak, the Mantis Claw's wall slide and jump, the Monarch Wings, the Crystal Heart and the Shade Cloak, all from source constants and the Superdash FSM. Step 3 catalogued every PlayerData traversal flag and found acid already covered by the generic hazard path, `hasAcidArmour` and `hasLantern` unreachable, and one unimplemented bounce shroom owed to P11. Step 4 took the input priority from the Can* methods. Step 5 added the Dream Nail with its SOUL reward. Step 6 mapped L1, R1 and Triangle and extended the replay schema and the native probe. Step 7's combinations are hk-sim tests. Remaining: no ability has an acquisition route (step 8), and the Wall Slide, Walljump, Dash, Double Jump and four DN clips are not cooked, so an ability plays the Fall or Idle clip. |
 | P15 | in progress | Build 122 adds Vengeful Spirit from `Spell Control`, `Fireball Cast` and the projectile's own FSMs, with the source's one-button cast-versus-Focus split. Remaining: Desolate Dive and Howling Wraiths (catalogued only), nail arts, nail damage tiers, the centralized damage resolution of step 4, the verification matrix of step 7, and the `Ball`/`Ball End` art, which needs a reserved VRAM rectangle. |
 | P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Variables are a caller-owned pool and `GetOwner` resolves at cook time, which between them unblocked 852 instances. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, because an FSM needs every action supported. `PlayerDataBoolTest` is answered too, through the existing persistent store plus a read-only-variable fold, so the first authored behaviour compiles: 246 instances, 7 ops. The next slice is not more opcodes: `Trigger2dEvent` (198), `FindChild` (176), `GetVelocity2d` (122), `Tk2dPlayAnimation` (115) and every other remaining blocker needs a guest object model, which is step 5's scope and reference work. P12, P17, P18 and P23 all wait on this. |
@@ -2131,6 +2131,39 @@ covers it, and the route stops short of it rather than dodging it silently.
 Also recorded: probe tick maps to tape poll only with a memory card inserted,
 since a cardless boot costs 400 extra polls, and the probe and the guest
 disagree about at least one King's Pass breakable.
+
+## P19/P20: the Egg Sac admitted, 123 of 215
+
+The cheapest unadmitted family is in. It is the simplest actor in the game: no
+FSM, no rigidbody, no recoil, no contact damage. It sits, loops one clip, takes
+nail hits and dies. `ActorController::Static` is pure data with no state, and
+recognition refuses anything that is not exactly that shape.
+
+The interesting part was the corpse. Every existing corpse assumes a launch,
+gravity and a landing, and this one has none of the three: it holds a `Death`
+clip for 1.4 s then plays `Burst` where it stands. `CorpseSpec` grew a
+`hold_ticks` that selects a non-physics form, with zero leaving every existing
+corpse on the flung path. Both numbers come from the source rather than being
+restated: the hold is the `Spit` state's `Wait` and the burst length is the
+clip's own four frames at 18 fps.
+
+Texture cost, measured against the real budget rather than the similarity
+staging: the four regions holding the sac each gain exactly 12 textures, the
+4 Idle plus 4 Death plus 4 Burst frames with no dedup, and Crossroads_50's
+tightest region is 265 against the 416 budget. It fits with room to spare,
+unlike the two Climbers.
+
+Three things the contract had wrong, all corrected in `docs/EGG_SAC.md`. The
+`initial_direction` should be -1 rather than 1, because the guest negates the
+frame box by the facing so -1 is the unmirrored orientation. The claim that no
+new cooked field was needed held for `ActorSpec` but not for `CorpseSpec`. And
+the audio numbers in its limitations belonged to the actor, not the corpse.
+
+One smell left alone deliberately: `Static { idle_clip }` duplicates
+`ActorSpec.walk_clip`, since the cook binds walk, turn and idle to the same
+clip. A unit variant reading `walk_clip`, as `Gruzzer` does, would be a field
+lighter. It was built as specified rather than changed silently, and it is a
+small edit on both sides whenever someone is in there anyway.
 
 ## Required package completion record
 
