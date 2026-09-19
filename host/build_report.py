@@ -51,12 +51,24 @@ def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0):
     # sufficient. When it does refuse it says "out of range PC16 fixup" and
     # names nothing, which is a bad thing to meet without warning, so the number
     # is reported every build and the margin is stated in the report.
-    main_size = None
-    entry = re.search(r'^([0-9a-f]+)\s+[0-9a-f]+\s+([0-9a-f]+)\s+\d+\s+main$', text, re.M)
-    if entry:
-        main_size = int(entry[2], 16)
-    return {'main_text_bytes':main_size,'pc16_branch_range_bytes':1<<17,
-            'main_over_pc16_range':bool(main_size and main_size > (1<<17)),
+    # The largest function, not `main`. It was `main` until that 615-line frame
+    # loop was split, and pinning the check to one name would have gone on
+    # reporting a healthy 30 KB while `frame::simulate` grew unwatched. Columns
+    # are VMA, LMA, Size, Align, so the size is the third; symbols are kept to
+    # the code span, because a BSS array is far larger than any function and
+    # says nothing about branch range.
+    functions = []
+    for vma, _lma, size, _align, name in re.findall(
+            r'^([0-9a-f]+)\s+([0-9a-f]+)\s+([0-9a-f]+)\s+(\d+)\s+(\S+)$', text, re.M):
+        at, span = int(vma, 16), int(size, 16)
+        # Skip the section rows (`.text`) and the object-file rows; only
+        # named symbols are functions.
+        if span and code <= at < data and not name.startswith(('/', '.')):
+            functions.append((span, name))
+    biggest_size, biggest_name = max(functions, default=(None, None))
+    return {'largest_text_bytes':biggest_size,'largest_text_symbol':biggest_name,
+            'pc16_branch_range_bytes':1<<17,
+            'main_over_pc16_range':bool(biggest_size and biggest_size > (1<<17)),
             'code_bytes':code_bytes,'data_bytes':data_bytes,'bss_bytes':bss_bytes,
             'code_data_alignment_bytes':data-code-code_bytes,'static_span_bytes':static_end-code,
             'static_end':hex(static_end),'stack_reserved_bytes':stack_bytes,'stack_floor':hex(stack_floor),
@@ -105,7 +117,7 @@ def main():
         # bites is an assembler error that names nothing. Several callees carry
         # inline(never) purely to hold this down; adding a feature to `main`
         # means pinning another one, or splitting the function properly.
-        print(f"WARNING: main is {memory['main_text_bytes']:,} bytes, past the "
+        print(f"WARNING: {memory['largest_text_symbol']} is {memory['largest_text_bytes']:,} bytes, past the "
               f"{memory['pc16_branch_range_bytes']:,} a MIPS PC16 branch reaches. It links only "
               'while no branch pair inside it spans too far.',flush=True)
     print('Build report:',build_report_path(telemetry),flush=True)
