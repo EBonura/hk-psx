@@ -337,3 +337,122 @@ ability to name an object.
 `SendEventByName` to another FSM needs a cross-FSM instance table, which is the
 scoping work and not a missing opcode: the executor already sends synchronously,
 it just has nowhere to look the target up. A send to self compiles today.
+
+## The ceiling
+
+This is a measured conclusion rather than a limitation, and it closes the
+question of how far the script runtime should go. The answer is: no further.
+
+The temptation is to read the blocker list as a ranking and work down it. That
+is the wrong shape. An FSM compiles only when *every* action in it compiles, so
+the real question is a set cover: which set of actions completes the most
+instances that would then do something. "Do something" here means the instance
+can change state or write PlayerData, which is at least one enabled action
+naming an event the definition has a transition for, or one PlayerData write.
+That is the same test `host/cook_scripts.py` applies to the cooked bank. A
+looser definition, any external effect at all, counts nearly every instance and
+says nothing.
+
+Of 1,621 blocked instances, **1,267 would act**. That is the ceiling of the
+whole enterprise. Greedy set cover over those 1,267:
+
+| actions implemented | acting instances | marginal, per action |
+| ---: | ---: | ---: |
+| 1 | 66 | 66 |
+| 2 | 94 | 28 |
+| 5 | 127 | 11 |
+| 10 | 177 | 10 |
+| 20 | 247 | 7.0 |
+| 30 | 342 | 9.5 |
+| 50 | 421 | 4.0 |
+| 75 | 511 | 3.6 |
+| 100 | 677 | 6.6 |
+| 150 | 1,020 | 6.9 |
+| 200 | 1,135 | 2.3 |
+| 302 | 1,267 | 1.7 |
+
+The marginal column is the argument. After the first two entries it sits between
+three and ten and stays there for two hundred actions. There is no knee because
+there is no shared core to collapse onto: **302 distinct actions** appear across
+the missing sets, against 280 action types in the whole measured inventory; the
+median blocked-but-acting instance is missing **seven** of them; and 63% are
+missing five or more. Only 150 of 1,267 are one action short.
+
+### The head of the curve promises 114 and measures 8
+
+The curve assumes that implementing an action makes it compile. For anything
+that names an object, that is false, and the gap is not small:
+
+| rank | action | curve | measured at full depth |
+| ---: | --- | ---: | ---: |
+| 1 | `ActivateAllChildren` | 66 | **1** |
+| 2 | `ActivateGameObject` | 28 | **7** |
+| 3 | `SetFsmBool` | 20 | **0** |
+| 5 | `Trigger2dEvent`, owner with no trigger collider | 6 | **0, permanently** |
+
+The top three are worth 114 on the curve and eight in fact. `SetFsmBool` is
+zero because not one of its twenty instances names a target that resolves to
+exactly one FSM of that name on a fixed object with that variable declared.
+
+The fourth row is a different category and the curve cannot see the difference.
+Those six instances are not waiting for an implementation. Their FSM's own
+GameObject carries no `Collider2D` and no `Rigidbody2D` to forward one from a
+child, so Unity never raises `OnTriggerEnter2D` for them and the action cannot
+fire however much is built. A blocker list mixes "not implemented" with "cannot
+exist", and only the first responds to work.
+
+### The unit price, concretely
+
+`Trigger2dEvent` is what the rate looks like when it is paid. One slice, one
+action, 1,026 action instances compiled, and **three acting instances on the
+disc**. Three slices of this runtime have produced three acting instances
+between them, while the charm board, the shop transaction, the conversation
+chain and the False Knight phase machine all landed natively in the same period
+against extracted source numbers.
+
+Reaching even a tenth of the 1,267 means twenty to thirty actions and most of
+the guest systems they sit on: animation, audio, physics, particles, a cross-FSM
+instance table. At that point the systems underneath are carrying the behaviour
+and can be used directly, which is what the native work already does.
+
+### A caution about the numbers, which is not about scripts
+
+Three forward projections were made while measuring this, and all three
+overshot, in the same direction, for the same reason: each counted cases where
+the data exists *somewhere* as cases where the data resolves into a usable
+answer.
+
+| projected | measured |
+| ---: | ---: |
+| 94 activate instances a runtime flag would unlock | 7 |
+| 333 activate targets a wider resolver would fix | 94 |
+| 1,131 object fields the resolver would resolve | 505 |
+
+The discipline that catches it is asking a third question. Not "does it
+compile", not "would it then act", but "can the port answer the thing the action
+names". Every one of these collapsed on the third question, and none of them
+collapsed on the first two.
+
+### Why this format stays rather than goes
+
+The runtime is frozen, not deleted, for three reasons.
+
+It serves the instances it serves. `Area Resetter` takes its trigger at the
+Dirtmouth well mouth and writes `currentArea` on two validation routes.
+
+It is the apparatus that produced this answer. Every number above came out of
+`host/script_ir.py` compiling the real FSMs and refusing the ones it cannot, and
+that remains the cheapest way to ask what the source actually does before
+implementing it natively.
+
+And **the refusals are an asset, not debris**. `.hkpsx/script-ir-coverage.json`
+is a live, source-derived inventory of what the port cannot answer, named by
+action and by reason, regenerated whenever the cook changes. That is the same
+list a native implementer needs in order to know what a scene expects of them.
+Deleting the compiler would throw away the list along with the runtime.
+
+One piece of sharpening is measured and deliberately not done. `SetGameObject`
+alone disturbs 955 object fields and `gameObject1` on `BoxColliderOffset` and
+`BoundsBoxCollider` another 880, and both are answerable at cook time. Doing that
+work would make the inventory more precise. It would not move the ceiling, so it
+waits until someone needs the precision.

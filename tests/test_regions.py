@@ -69,6 +69,27 @@ class RegionTests(unittest.TestCase):
             self.assertEqual(clamp_y(40,regions[lower]),clamp_y(40,regions[upper]))
         self.assertEqual(regions[102]['camera_bounds'],[216,32,258,68])
 
+    @unittest.skipUnless((Path(__file__).resolve().parents[1]/'data/regions.json').is_file(),
+                         'run host/regions.py first')
+    def test_admitting_a_scene_only_appends_to_the_cooked_catalogue(self):
+        """Every cooked chunk id must still mean the same view.
+
+        The catalogue grows by appending, because `fixed_regions` lays the grid
+        scenes out in `scene_id` order and `cook_fingerprints` leaves the scene
+        table out of the cache key. A row inserted anywhere but the end would
+        renumber chunks the cooked packs, the guest tables and the save records
+        all address by id, and nothing else would notice.
+        """
+        import json
+        cooked=json.loads((Path(__file__).resolve().parents[1]/'data/regions.json').read_text())['regions']
+        planned=fixed_regions()
+        self.assertGreaterEqual(len(planned),len(cooked))
+        for row in cooked:
+            plan=planned[row['chunk_id']-1]
+            self.assertEqual((plan['scene_id'],plan['activation_bounds'],plan['camera_bounds']),
+                             (row['scene_id'],row['activation_bounds'],row['camera_bounds']),
+                             f"chunk {row['chunk_id']} moved")
+
     def test_budget_split_preserves_parent_coverage(self):
         parent=initial_regions()[1]
         a,b=split_region(parent)
