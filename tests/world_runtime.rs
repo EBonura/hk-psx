@@ -255,7 +255,7 @@ fn edge_cache_reuses_immutable_source_and_invalidates_only_actual_mutations() {
 }
 
 #[test]
-fn edge_cache_distinguishes_equal_count_sources_regions_and_large_room_fallback() {
+fn edge_cache_distinguishes_equal_count_sources_regions_and_caches_oversized_room_prefix() {
     let a=edge_room_bytes(&[[1,2,3,2],[4,5,4,6]]);
     let b=edge_room_bytes(&[[11,12,13,12],[14,15,14,16]]);
     let a=hk_format::Room::parse(&a).unwrap();let b=hk_format::Room::parse(&b).unwrap();
@@ -268,11 +268,16 @@ fn edge_cache_distinguishes_equal_count_sources_regions_and_large_room_fallback(
     // Same scene bytes, different authored local bindings.
     assert_eq!(state.edge(&other,&b,1),[14,15,14,16]);
     assert!(state.refresh_edges(&other,&b));assert!(!state.refresh_edges(&other,&b));
+    // 129 is Crossroads_10's chunk 237, the one cooked view in the catalogue
+    // past the cap. It must still get a table for its first EDGE_CACHE edges:
+    // refusing one made every terrain query rescan the bank's breakables, which
+    // lost two VBlanks of pad service a tick and overflowed the queue on the disc.
     let edges=vec![[101,102,103,102];129];let big=edge_room_bytes(&edges);
     let big=hk_format::Room::parse(&big).unwrap();
-    assert!(!state.refresh_edges(&other,&big));
+    assert!(state.refresh_edges(&other,&big));
+    assert!(!state.refresh_edges(&other,&big),"an oversized room caches its prefix once");
     for i in 0..129 {assert_eq!(state.edge(&other,&big,i),edges[i]);}
-    assert!(state.refresh_edges(&r,&a),"return from fallback rebuilds source");
+    assert!(state.refresh_edges(&r,&a),"return from the oversized room rebuilds source");
 }
 
 #[test]

@@ -383,6 +383,15 @@ pub struct Strike {
 /// Filtered terrain retained until its source region or exclusions change.
 /// Coins, Scuttlers, enemies and effects otherwise re-decode and re-filter every
 /// edge per body per tick, which exceeded a VBlank with 16 coins and 7 broken objects.
+///
+/// A room with more edges than this caches its first `EDGE_CACHE` and leaves the
+/// rest to `edge_uncached`, rather than losing the table altogether. That cliff
+/// was reachable: Crossroads_10's view below and right of the False Knight arena
+/// (region slot 236, chunk 237) cooks 129 edges, one over, and it is the only
+/// one of the 693 that passes 128 at all. Walking into it made every terrain
+/// query rescan the bank's breakable objects: each simulation tick then lost two
+/// VBlanks of pad service, the catch-up loop in main could never drain the
+/// queue, and `Fault::QueueFull` panicked the guest into `psx_rt::halt`.
 const EDGE_CACHE:usize=128;
 /// Slots in the scratch the Lifeblood cocoons, the Great Door and the arena
 /// gates share for their exclusions. Eight held two of these; Crossroads_10's
@@ -504,11 +513,13 @@ impl State {
     /// global region ID and the borrowed room view select the local edge
     /// reference list. The view address only disambiguates two immutable room
     /// slices during one generation; world_generation invalidates it whenever
-    /// the reusable arena is replaced.
+    /// the reusable arena is replaced. The count is how far the table reaches
+    /// into this room, not an identity: a room past `EDGE_CACHE` matches at the
+    /// cap and answers the rest uncached.
     #[inline(always)]
     fn edge_cache_matches(&self,region:&Region,room:&Room)->bool {
         self.edge_cache_valid
-            && self.edge_cache_count==room.counts[5]
+            && self.edge_cache_count==room.counts[5].min(EDGE_CACHE)
             && self.edge_cache_generation==self.world_generation
             && self.edge_cache_region_id==region.global_id
             && self.edge_cache_room_key==room as *const Room as usize
@@ -526,20 +537,19 @@ impl State {
         self.edge_epoch=self.edge_epoch.wrapping_add(1);
     }
     /// Rebuild only after an exclusion mutation or source change. Returns true
-    /// when the table was rebuilt; larger future rooms retain the direct path.
+    /// when the table was rebuilt; a room past `EDGE_CACHE` caches its first
+    /// `EDGE_CACHE` edges and leaves the tail to `edge_uncached`.
     pub fn refresh_edges(&mut self,region:&Region,room:&Room)->bool {
         if self.edge_cache_matches(region,room){return false;}
-        let count=room.counts[5];
+        let count=room.counts[5].min(EDGE_CACHE);
         let Self{edge_cache,edge_cache_count,geo_edges,geo_edge_count,lifeblood_edges,lifeblood_edge_count,broken,..}=self;
-        if count<=EDGE_CACHE {
-            fill_edges(&geo_edges[..*geo_edge_count],&lifeblood_edges[..*lifeblood_edge_count],broken,region,room,&mut edge_cache[..count]);
-            *edge_cache_count=count;
-            self.edge_cache_generation=self.world_generation;
-            self.edge_cache_region_id=region.global_id;
-            self.edge_cache_room_key=room as *const Room as usize;
-            self.edge_cache_valid=true;
-            true
-        } else {*edge_cache_count=0;self.edge_cache_valid=false;false}
+        fill_edges(&geo_edges[..*geo_edge_count],&lifeblood_edges[..*lifeblood_edge_count],broken,region,room,&mut edge_cache[..count]);
+        *edge_cache_count=count;
+        self.edge_cache_generation=self.world_generation;
+        self.edge_cache_region_id=region.global_id;
+        self.edge_cache_room_key=room as *const Room as usize;
+        self.edge_cache_valid=true;
+        true
     }
     pub fn tick(&mut self) {
         self.impacts.tick();
@@ -750,7 +760,7 @@ impl State {
     }
     /// Validate the source once for a whole physics query. The returned reader
     /// immutably borrows state/room, so exclusions cannot change while it lives.
-    /// Larger rooms and invalidated caches retain exact uncached filtering.
+    /// Indices past the table and invalidated caches retain exact uncached filtering.
     #[inline(always)]
     pub fn edge_reader<'a>(&'a self,region:&'a Region,room:&'a Room<'a>)
         ->impl Fn(usize)->[i32;4]+'a {
@@ -776,7 +786,9 @@ impl State {
         target:&Region, target_room:&Room, cache:&mut [[i32;4]]) {
         assert!(cache.len()<=target_room.counts[5]);
         if active.global_id==target.global_id {
-            if self.edge_cache_matches(active,active_room) {
+            // The table stops at EDGE_CACHE, so a longer request refills rather
+            // than reading past what was cached for this room.
+            if self.edge_cache_matches(active,active_room) && cache.len()<=self.edge_cache_count {
                 cache.copy_from_slice(&self.edge_cache[..cache.len()]);
             } else {self.fill_edges(active,active_room,cache);}
             return;
