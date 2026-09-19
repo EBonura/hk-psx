@@ -10,7 +10,29 @@ import tempfile
 import unittest
 import wave
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'host'))
-from cook_audio import BANK_LIMIT, EVENTS, convert_wav, decode_zero, death_action_layers, encode, pack_bank
+from cook_audio import (BANK_LIMIT, BOSS_EVENTS, EVENTS, convert_wav, decode_zero,
+                        death_action_layers, encode, encoded_bytes,
+                        false_knight_audio_contract, pack_bank)
+
+# The two clips BOSS_EVENTS admits, keyed by the path id the fixture FSM cites.
+BOSS_CLIP_IDS = {1: 'sharedassets32.assets:131', 2: 'sharedassets48.assets:39'}
+
+
+def audio_state(name, path_id):
+    """One FalseyControl state whose single enabled AudioPlaySimple plays a clip."""
+    data = {'actionNames': ['AudioPlaySimple.AudioPlaySimple'], 'actionEnabled': [1],
+            'actionStartIndex': [0], 'paramName': ['oneShotClip', 'volume'],
+            'paramDataPos': [0, 0], 'paramDataType': [24, 15], 'paramByteDataSize': [0, 5],
+            'byteData': list(struct.pack('<fB', 1.0, 0)),
+            'fsmObjectParams': [{'typeName': 'UnityEngine.AudioClip', 'useVariable': 0,
+                                 'value': {'m_FileID': 10, 'm_PathID': path_id}}]}
+    return {'name': name, 'actionData': data}
+
+
+def false_knight_fsm():
+    return {'name': 'FalseyControl',
+            'states': [audio_state(name, 1) for name in ('S Land', 'State 2', 'Land Noise')]
+                      + [audio_state(name, 2) for name in ('S Attack', 'JA Hit 2')]}
 
 
 def wav(samples, channels=1, rate=44100):
@@ -46,9 +68,13 @@ class AudioTests(unittest.TestCase):
             root=Path(tmp);(root/'game').mkdir();(root/'data').mkdir()
             # Distinct ordered payload markers and gains expose wrong event
             # indices/voices without depending on generated assets or real audio.
-            (root/'data/sfx.adpcm').write_bytes(b''.join(bytes([i])+bytes(31) for i in range(8)))
-            (root/'data/sfx.rs').write_text('const BANK_BYTES:usize=256;const SAMPLES:[(u32,u32,i16);8]=['+
+            (root/'data/sfx.adpcm').write_bytes(b''.join(bytes([i])+bytes(31) for i in range(10)))
+            (root/'data/sfx.rs').write_text('const BANK_BYTES:usize=320;const SAMPLES:[(u32,u32,i16);8]=['+
                 ','.join(f'({0x1010+i*32},{11025 if i==7 else 22050},{(i+1)*1000})' for i in range(8))+
+                # Both boss voices carry the source's own gain, which is the
+                # door's: set_volume drives the shared voice from that one row.
+                '];const BOSS_SAMPLES:[(u32,u32,i16);2]=['+
+                f'({0x1010+8*32},11025,1000),({0x1010+9*32},22050,1000)'+
                 '];const GREAT_DOOR_HIT_PITCH:[u16;2]=[1741,2355];'+
                 'const HARD_FALL_MIN_TICKS:u16=67;const SOFT_LANDING_TICKS:u16=2;const RUN_SEQUENCE_TICKS:u16=4;')
             binary=root/'test';env=dict(os.environ,CARGO_MANIFEST_DIR=str(root/'game'))
@@ -130,14 +156,45 @@ class AudioTests(unittest.TestCase):
 
     def test_budget_is_atomic_and_sample_starts_aligned(self):
         items = [(name, encode([1000] * (i + 1)), {}) for i, name in enumerate(EVENTS)]
-        bank, records = pack_bank(items)
+        boss = [(event[0], encode([1000] * (i + 1)), {}) for i, event in enumerate(BOSS_EVENTS)]
+        bank, records = pack_bank(items, boss)
         self.assertTrue(all(r['offset'] % 16 == 0 for r in records))
         self.assertEqual(sum(r['bytes'] for r in records), len(bank))
+        # The hero events keep the first eight indices, which audio.rs binds
+        # one-to-one to its dedicated voices.
+        self.assertEqual(tuple(r['event'] for r in records), EVENTS + tuple(e[0] for e in BOSS_EVENTS))
         with self.assertRaises(ValueError):
-            pack_bank(items, limit=len(bank) - 1)
+            pack_bank(items, boss, limit=len(bank) - 1)
         with self.assertRaises(ValueError):
-            pack_bank(items[:-1])
+            pack_bank(items[:-1], boss)
+        with self.assertRaises(ValueError):
+            pack_bank(items, boss[:-1])
         self.assertLessEqual(len(bank), BANK_LIMIT)
+
+    def test_encoded_size_is_predicted_exactly_before_a_clip_is_cooked(self):
+        # The refusal table is sized rather than cooked, so the estimator has
+        # to agree with the real path on every shape, including the exact
+        # multiple of 28 and the one sample the resampler may round away.
+        for frames, source_rate, rate in [(28, 44100, 44100), (29, 44100, 44100),
+                                          (100000, 44100, 22050), (60543, 44100, 11025),
+                                          (10884, 44100, 22050), (1, 44100, 8000)]:
+            samples = round(frames * rate / source_rate)
+            self.assertEqual(encoded_bytes(frames, source_rate, rate), len(encode([0] * samples)))
+        with self.assertRaises(ValueError):
+            encoded_bytes(0, 44100, 22050)
+
+    def test_boss_contract_refuses_a_state_that_stopped_playing_its_clip(self):
+        fsm = false_knight_fsm()
+        bindings = false_knight_audio_contract(fsm, lambda ref: BOSS_CLIP_IDS[ref['m_PathID']])
+        self.assertEqual([b['event'] for b in bindings], [e[0] for e in BOSS_EVENTS])
+        self.assertEqual(bindings[0]['states'], ['S Land', 'State 2', 'Land Noise'])
+        for break_it in (lambda f: f['states'].pop(0),
+                         lambda f: f.__setitem__('name', 'Something Else'),
+                         lambda f: f['states'][0]['actionData']['actionEnabled'].__setitem__(0, 0)):
+            broken = copy.deepcopy(fsm)
+            break_it(broken)
+            with self.assertRaises(ValueError):
+                false_knight_audio_contract(broken, lambda ref: BOSS_CLIP_IDS[ref['m_PathID']])
 
 
 if __name__ == '__main__':

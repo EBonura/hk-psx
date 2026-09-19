@@ -13,6 +13,47 @@ SPU_BASE = 0x1010
 # Root layout reserves 0x14000..0x18000 for Geo; ambience begins at0x18000.
 BANK_LIMIT = 0x14000 - SPU_BASE
 EVENTS = ('door', 'jump', 'land', 'nail', 'hurt', 'enemy_hit', 'hard_land', 'footsteps_run')
+# The False Knight's own voices, appended after the hero events in the same
+# resident bank. `FalseyControl` plays each through `AudioPlaySimple` on the
+# states named here, at source volume 1.0 and pitch 1.0. The rate is the
+# category rate this file already uses: 22050 Hz for a short one-shot, 11025 Hz
+# for a clip over a second, exactly as `footsteps_run` is cooked.
+#
+# This bank is spent twice. `game/src/audio.rs` embeds `data/sfx.adpcm` with
+# `include_bytes!`, so every byte admitted here is a byte of SPU RAM *and* a
+# byte off `memory.unallocated_before_stack_bytes` in the build report. The
+# refusal table below is measured against the smaller of the two.
+BOSS_EVENTS = (
+    ('boss_land', 'sharedassets32.assets', 131, 'false_knight_land', 11025,
+     ('S Land', 'State 2', 'Land Noise')),
+    ('boss_swing', 'sharedassets48.assets', 39, 'false_knight_swing', 22050,
+     ('S Attack', 'JA Hit 2')),
+)
+# Every other clip `FalseyControl` reaches, and the state that plays it. None of
+# them is admitted, and `boss_refusals` measures each one rather than asserting
+# it, so the reason stays a number. `false_knight_strike_ground` is the one that
+# hurts: it is the slam's own impact, and the BigShake it shares a state with is
+# all the slam has left.
+BOSS_REFUSED = (
+    ('sharedassets48.assets', 28, 'false_knight_strike_ground', 'Slam, Rage Slam, JA Slam, Floor Break'),
+    ('sharedassets19.assets', 31, 'false_knight_ceiling_break', 'Start Fall, Floor Break'),
+    ('sharedassets46.assets', 22, 'false_knight_damage_armour_final', 'Stun Start'),
+    ('sharedassets48.assets', 45, 'false_knight_jump', 'Jump 2, JA Jump 2'),
+    ('sharedassets6.assets', 171, 'false_knight_land_1st_time', 'Rubble End, Death Land'),
+    ('sharedassets48.assets', 21, 'false_knight_roll', 'Stun Land'),
+    ('sharedassets48.assets', 29, 'zombie_guard_footstep', 'Run'),
+    ('sharedassets32.assets', 143, 'zombie_shield_raise', 'Open Uuup, Death Open'),
+    ('sharedassets32.assets', 87, 'zombie_shield_move', 'Open Uuup, Death Open'),
+    ('sharedassets48.assets', 30, 'FKnight_Rage', 'Jump 2, Esc Jump'),
+    ('sharedassets48.assets', 38, 'FKnight_death', 'Steam'),
+    ('sharedassets32.assets', 135, 'boss_final_hit', 'Death Anim Start'),
+    ('sharedassets32.assets', 62, 'boss_gushing', 'Steam'),
+    ('sharedassets32.assets', 99, 'boss_explode', 'Blow'),
+    ('sharedassets40.assets', 30, 'Boss Defeat', 'Boss Death Sting'),
+    ('sharedassets6.assets', 102, 'breakable_wall_death', 'Floor Break'),
+    ('resources.assets', 1308, 'enemy_death_sword', 'Recover'),
+    ('resources.assets', 1248, 'enemy_damage', 'Recover'),
+)
 # The serialized HeroController tail is not parsed by the cooker. This hash
 # binds its environment0 Dust mapping to the actual-original reflection audit:
 # footstepsRunDust == footStepsRunAudioSource.clip == hero_run_footsteps_stone,
@@ -41,6 +82,109 @@ def great_door_hit_contract(fsm, sample_rate=22050):
     if data['unityObjectParams'] != expected:
         raise ValueError('Great Door hit clip selection changed')
     return [round(sample_rate*4096/44100*v) for v in values]
+
+
+def encoded_bytes(frames, source_rate, rate):
+    """What `encode(convert_wav(...))` will weigh, without spending the encode.
+
+    `convert_wav` lands on `round(frames*rate/source_rate)` samples and `encode`
+    emits one 16-byte block per 28 of them plus the terminator, so a clip's cost
+    is known before it is worth decoding. `main` asserts this against every clip
+    it actually cooks, so a change to either function fails here rather than
+    quietly making the refusal table optimistic.
+    """
+    if frames <= 0 or source_rate <= 0 or rate <= 0:
+        raise ValueError('cannot size a clip without a source duration')
+    return -(-round(frames * rate / source_rate) // 28) * 16 + 16
+
+
+def wav_frames(data):
+    """Source frame count and rate from the WAV header alone, no PCM decode."""
+    with wave.open(io.BytesIO(data)) as w:
+        if w.getsampwidth() != 2 or w.getnchannels() not in (1, 2):
+            raise ValueError('unvalidated source PCM format')
+        return w.getnframes(), w.getframerate()
+
+
+def audio_actions(data, resolve):
+    """Every enabled immediate one-shot in one FSM state, with its clip.
+
+    `resolve` maps a serialized AudioClip PPtr to a source id, so the walk is a
+    pure function of the FSM and stays testable without the Unity install.
+    """
+    out = []
+    for action, name in enumerate(data['actionNames']):
+        short = name.rsplit('.', 1)[-1]
+        if short not in ('AudioPlaySimple', 'AudioPlayerOneShotSingle') or not data['actionEnabled'][action]:
+            continue
+        start = data['actionStartIndex'][action]
+        end = data['actionStartIndex'][action + 1] if action + 1 < len(data['actionNames']) else len(data['paramName'])
+        record = {'action': short, 'index': action, 'clip': None, 'volume': None, 'pitch': [1.0, 1.0]}
+        for i in range(start, end):
+            field = data['paramName'][i]
+            if data['paramDataType'][i] == 24 and field in ('oneShotClip', 'audioClip'):
+                obj = data['fsmObjectParams'][data['paramDataPos'][i]]
+                if obj['useVariable'] or obj['typeName'] != 'UnityEngine.AudioClip':
+                    raise ValueError('dynamic boss clip reference')
+                record['clip'] = resolve(obj['value'])
+            elif data['paramDataType'][i] == 15 and field in ('volume', 'pitchMin', 'pitchMax'):
+                offset, size = data['paramDataPos'][i], data['paramByteDataSize'][i]
+                raw = bytes(data['byteData'][offset:offset + size])
+                if size < 4:
+                    raise ValueError('unvalidated boss audio scalar')
+                value = struct.unpack('<f', raw[:4])[0]
+                if not math.isfinite(value):
+                    raise ValueError('non-finite boss audio scalar')
+                if field == 'volume':
+                    record['volume'] = value
+                else:
+                    record['pitch'][field == 'pitchMax'] = value
+        out.append(record)
+    return out
+
+
+def false_knight_audio_contract(fsm, resolve):
+    """Bind every admitted boss voice to the `FalseyControl` state that plays it.
+
+    A state that stopped playing its clip, gained a second copy of it, or moved
+    off unit gain and pitch fails the cook: the guest plays one voice per event
+    and has no way to reproduce a changed one.
+    """
+    if fsm['name'] != 'FalseyControl':
+        raise ValueError('False Knight audio FSM changed')
+    states = {state['name']: state for state in fsm['states']}
+    bindings = []
+    for event, file, path_id, name, rate, wanted in BOSS_EVENTS:
+        sid = f'{file}:{path_id}'
+        for state in wanted:
+            if state not in states:
+                raise ValueError('missing False Knight audio state: ' + state)
+            played = [a for a in audio_actions(states[state]['actionData'], resolve) if a['clip'] == sid]
+            if len(played) != 1:
+                raise ValueError(f'{state} no longer plays {name} exactly once')
+            if played[0]['volume'] != 1.0 or played[0]['pitch'] != [1.0, 1.0]:
+                raise ValueError(f'{state} changed the {name} gain or pitch')
+        bindings.append({'event': event, 'source': sid, 'name': name, 'sample_rate': rate,
+                         'states': list(wanted), 'action': 'AudioPlaySimple',
+                         'method': 'FalseyControl.' + '/'.join(wanted)})
+    return bindings
+
+
+def boss_refusals(open_clip, free_bytes):
+    """Size every boss clip this bank cannot hold, at each rate the port uses.
+
+    A refusal carries the byte count that produced it rather than a sentence,
+    because the only thing that would change the answer is the number.
+    """
+    out = []
+    for file, path_id, name, states in BOSS_REFUSED:
+        frames, source_rate = open_clip(file, path_id, name)
+        rates = {str(rate): encoded_bytes(frames, source_rate, rate) for rate in (22050, 11025, 8000)}
+        out.append({'source': f'{file}:{path_id}', 'name': name, 'states': states,
+                    'source_frames': frames, 'source_rate': source_rate,
+                    'encoded_bytes': rates, 'free_bytes': free_bytes,
+                    'fits_at': [rate for rate, size in rates.items() if size <= free_bytes]})
+    return out
 
 
 def encode(samples):
@@ -112,13 +256,19 @@ def decode_zero(bank):
     return pcm
 
 
-def pack_bank(items, limit=BANK_LIMIT):
-    """No partial admission: a missing event or over-budget bank is an error."""
+def pack_bank(items, boss_items=(), limit=BANK_LIMIT):
+    """No partial admission: a missing event or over-budget bank is an error.
+
+    The boss voices are appended after the hero events so the eight indices
+    `game/src/audio.rs` binds to its dedicated voices never move.
+    """
     if tuple(name for name, _, _ in items) != EVENTS:
         raise ValueError('resident sound event table is incomplete or reordered')
+    if tuple(name for name, _, _ in boss_items) != tuple(event[0] for event in BOSS_EVENTS):
+        raise ValueError('False Knight sound table is incomplete or reordered')
     out = bytearray()
     records = []
-    for name, encoded, meta in items:
+    for name, encoded, meta in list(items) + list(boss_items):
         decode_zero(encoded)
         records.append(dict(meta, event=name, offset=len(out), bytes=len(encoded)))
         out.extend(encoded)
@@ -265,16 +415,67 @@ def main():
         clip, name, volume = selected[event]
         encoded, meta = cook(clip, name, volume, 11025 if event=='footsteps_run' else 22050, origins[event])
         items.append((event, encoded, meta))
-    bank, records = pack_bank(items)
+
+    # The False Knight lives in level48, the additive boss scene host/scene.py
+    # merges into Crossroads_10; its FalseyControl is read here directly rather
+    # than through that merge, because the clip PPtrs are the file's own.
+    boss_scene = s.file('level48')
+    controls = [o for o in boss_scene.objects.values()
+                if o.type.name == 'MonoBehaviour' and s.typename(o) == 'PlayMakerFSM'
+                and s.read(o)['fsm']['name'] == 'FalseyControl']
+    if len(controls) != 1:
+        raise ValueError('expected one FalseyControl in the boss scene')
+    control = controls[0]
+    boss_bindings = false_knight_audio_contract(
+        s.read(control)['fsm'], lambda ref: s.sid(s.ref(boss_scene, ref)))
+    boss_items = []
+    for (event, file, path_id, name, rate, _states), binding in zip(BOSS_EVENTS, boss_bindings, strict=True):
+        clip = s.file(file).objects[path_id]
+        encoded, meta = cook(clip, name, 1.0, rate,
+                             {'component': s.sid(control), 'states': binding['states'],
+                              'action': binding['action'], 'method': binding['method']})
+        # The refusal table is sized rather than cooked, so prove the estimator
+        # against a clip that went through the real path before trusting it.
+        predicted = encoded_bytes(meta['source_frames'], meta['source_rate'], rate)
+        if predicted != len(encoded):
+            raise ValueError(f'{name}: predicted {predicted} encoded bytes, cooked {len(encoded)}')
+        boss_items.append((event, encoded, meta))
+    bank, records = pack_bank(items, boss_items)
+
+    # What the fight asked for and this bank could not hold, in bytes. Sized
+    # from each clip's own WAV header through the estimator just proven above.
+    def open_clip(file, path_id, name):
+        audio = s.file(file).objects[path_id].read()
+        if audio.m_Name != name:
+            raise ValueError(f'changed boss clip mapping: {name}')
+        decoded = audio.samples
+        if len(decoded) != 1:
+            raise ValueError('source clip decode did not yield one WAV')
+        return wav_frames(next(iter(decoded.values())))
+    refused = boss_refusals(open_clip, BANK_LIMIT - len(bank))
+    admitted_names = {name for _, _, name, _ in BOSS_REFUSED} & {e[3] for e in BOSS_EVENTS}
+    if admitted_names:
+        raise ValueError('a clip is both admitted and refused: ' + ', '.join(sorted(admitted_names)))
+    fitting = [r for r in refused if r['fits_at']]
+    print(f'False Knight: {len(boss_items)} voices admitted, {len(refused)} refused, '
+          f'{BANK_LIMIT - len(bank)} bank bytes free', flush=True)
+    for r in fitting:
+        print(f'  note: {r["name"]} would now fit at {"/".join(r["fits_at"])} Hz '
+              f'({r["encoded_bytes"]}) against {r["free_bytes"]} free', flush=True)
+
     great_door = s.file('level6').objects[12139]
     great_door_pitch = great_door_hit_contract(s.read(great_door)['fsm'])
     (ROOT / 'data/sfx.adpcm').write_bytes(bank)
     # Preserve the existing artifact/API for diagnostics and old build helpers.
     (ROOT / 'data/door.adpcm').write_bytes(items[0][1])
+    def rows(selected):
+        return ''.join(f'    ({SPU_BASE + r["offset"]},{r["sample_rate"]},{r["volume_q14"]}), // {r["event"]}\n'
+                       for r in records if r['event'] in selected)
     rust = f'pub const BANK_BYTES: usize = {len(bank)};\n'
-    rust += f'pub const SAMPLES: [(u32,u32,i16);{len(EVENTS)}] = [\n'
-    rust += ''.join(f'    ({SPU_BASE + r["offset"]},{r["sample_rate"]},{r["volume_q14"]}), // {r["event"]}\n' for r in records)
-    rust += '];\n'
+    rust += f'pub const SAMPLES: [(u32,u32,i16);{len(EVENTS)}] = [\n{rows(EVENTS)}];\n'
+    boss = tuple(event[0] for event in BOSS_EVENTS)
+    rust += f'/// False Knight one-shots, on the shared voice: {", ".join(boss)}.\n'
+    rust += f'pub const BOSS_SAMPLES: [(u32,u32,i16);{len(boss)}] = [\n{rows(boss)}];\n'
     rust += f'pub const GREAT_DOOR_HIT_PITCH:[u16;2]={great_door_pitch};\n'
     by_event={r['event']:r for r in records}
     # Complete nonlooping sequences restart on the first60Hz tick after end.
@@ -322,6 +523,9 @@ def main():
     assembly = s.directory / 'Managed/Assembly-CSharp.dll'
     inputs['Managed/Assembly-CSharp.dll'] = {'bytes': assembly.stat().st_size,
         'sha256': hashlib.file_digest(assembly.open('rb'), 'sha256').hexdigest()}
+    boss_path = s.directory / 'level48'
+    inputs['level48'] = {'bytes': boss_path.stat().st_size,
+        'sha256': hashlib.file_digest(boss_path.open('rb'), 'sha256').hexdigest()}
     dump(ROOT / '.hkpsx/audio-provenance.json', {
         'environment_omissions': environment_omissions,
         'source': str(s.directory), 'inputs': inputs,
@@ -334,6 +538,22 @@ def main():
             'resident_variant': 'sharedassets6.assets:92', 'voice': 15,
             'pitch_register_bounds': great_door_pitch,
             'missing_variants': ['sharedassets6.assets:99', 'sharedassets6.assets:102']},
+        'false_knight': {'component': s.sid(control), 'scene': 'level48',
+            'admitted': boss_bindings, 'refused': refused,
+            # Voice 15 is shared with the Great Door: every one of the 24 SPU
+            # voices is allocated (0..5,16..17 SFX, 6..11 ambience, 12..14 Geo,
+            # 18..20 Focus, 21..23 Runner), and no scene holds both the door
+            # (Tutorial_01) and the fight (Crossroads_10).
+            'voice': 15, 'bank_free_bytes': BANK_LIMIT - len(bank),
+            'limitations': [
+                'The resident bank is include_bytes! into the EXE, so these bytes are spent'
+                ' twice: once in SPU RAM and once against memory.unallocated_before_stack_bytes.',
+                'false_knight_strike_ground, the slam impact itself, is refused at every rate'
+                ' this port uses; the slam keeps its BigShake and its swing and has no boom.',
+                '`Stun Land` plays false_knight_land through AudioPlayerOneShotSingle at pitch'
+                ' 1.15 rather than AudioPlaySimple at 1.0; the pitched variant is not admitted.',
+                'The boss shares one voice, so a swing retriggers over a landing tail the way'
+                ' every other event class here does, rather than mixing as the source does.']},
         'movement_audio': {'hard_fall_min_ticks':hard_ticks,'hard_fall_seconds':constants['BIG_FALL_TIME'],
             'simulation_hz':60,'short_sfx_rate':22050,'long_movement_rate':11025,
             'methods':['HeroController.FallCheck','HeroController.ShouldHardLand',
