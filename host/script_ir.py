@@ -445,6 +445,12 @@ def compile_fsm(fsm, owner_id=None, objects=None):
     Variables are a span in the caller's pool, so there is no slot cap here.
     Raises Unsupported on the first action this slice does not implement.
     """
+    if fsm['globalTransitions']:
+        # A global transition fires from any state, so dropping one turns an
+        # event that leaves the FSM into an event that goes nowhere: a silent
+        # wrong answer with no symptom at the seam. No FSM that compiles today
+        # has one, which is why this refuses rather than models them.
+        raise Unsupported('<global transitions>', 'the definition has global transitions')
     events = Events()
     constants = Constants()
     fields = Fields()
