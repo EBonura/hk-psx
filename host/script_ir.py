@@ -242,11 +242,43 @@ def compile_action(action, args, events, constants, variables, owner_id=None, fi
         return out
     raise Unsupported(action)
 
+def unsupported_actions(fsm, owner_id=None):
+    """Every action in this FSM the slice cannot compile, not just the first.
+
+    Ranking by the first refusal is a treadmill: an FSM compiles only when all
+    of its actions do, so what matters is the whole set an FSM is missing.
+    """
+    events, constants, fields = Events(), Constants(), Fields()
+    variables = _variables(fsm)
+    mentions = _variable_mentions(fsm)
+    folded = {name: value for name, value in _variable_values(fsm).items()
+              if mentions[name] == 1}
+    missing = set()
+    for state in fsm['states']:
+        data = state['actionData']
+        for i, raw in enumerate(data['actionNames']):
+            if not data['actionEnabled'][i]:
+                continue
+            action = raw.rsplit('.', 1)[-1]
+            try:
+                compile_action(action, action_fields(data, i, objects=True), events, constants,
+                               variables, owner_id, fields, folded)
+            except Unsupported as refusal:
+                missing.add(refusal.action)
+            except Exception:
+                missing.add(action)
+    return missing
+
 def survey(source, scene_files):
     """How much of the admitted scenes' authored behaviour this slice compiles."""
     compiled = collections.Counter()
     blockers = collections.Counter()
     blocking_fsms = collections.Counter()
+    # Instances keyed by the exact set of actions they still need, so the
+    # ranking answers "what would make whole FSMs run" rather than "what
+    # refuses first".
+    missing_sets = collections.Counter()
+    action_unlocks = collections.Counter()
     for name, scene in scene_files.items():
         file = source.file(name)
         for obj in file.objects.values():
@@ -266,13 +298,20 @@ def survey(source, scene_files):
             except Unsupported as refusal:
                 blockers[refusal.action] += 1
                 blocking_fsms[fsm['name']] += 1
+                missing = unsupported_actions(fsm, owner_id=obj.path_id & 0x7fffffff)
+                missing_sets[tuple(sorted(missing))] += 1
+                if len(missing) == 1:
+                    action_unlocks[next(iter(missing))] += 1
                 continue
             compiled['compiled'] += 1
             compiled['ops'] += len(program['ops'])
     return {'instances': compiled['instances'], 'compiled': compiled['compiled'],
             'compiled_ops': compiled['ops'],
             'first_blocking_action': dict(blockers.most_common(25)),
-            'blocked_fsms': dict(blocking_fsms.most_common(20))}
+            'blocked_fsms': dict(blocking_fsms.most_common(20)),
+            'one_action_from_compiling': dict(action_unlocks.most_common(20)),
+            'missing_sets': [{'actions': list(k), 'instances': n}
+                             for k, n in missing_sets.most_common(15)]}
 
 if __name__ == '__main__':
     import json
@@ -293,6 +332,9 @@ if __name__ == '__main__':
     dump(ROOT / '.hkpsx/script-ir-coverage.json', out)
     print(f"{out['compiled']} of {out['instances']} FSM instances compile "
           f"({out['compiled'] / max(1, out['instances']):.1%}), {out['compiled_ops']} ops")
-    print('first blocking action:')
-    for action, n in list(out['first_blocking_action'].items())[:12]:
-        print(f'  {action:32} blocks {n}')
+    print('one action away from compiling:')
+    for action, n in list(out['one_action_from_compiling'].items())[:12]:
+        print(f'  {action:32} would complete {n} instances')
+    print('most common missing sets:')
+    for row in out['missing_sets'][:8]:
+        print(f"  {row['instances']:4}  {', '.join(row['actions'])[:90]}")
