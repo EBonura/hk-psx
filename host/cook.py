@@ -153,12 +153,15 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
             raise ValueError('unsupported actor art controller: '+control['kind'])
         # Actor sampling is never reduced: a frame the animation cache cannot
         # hold makes the actor an explicit unsupported record for this cook.
-        # NPC art already binds a rectangle of slots through Atlas.add_tiled;
-        # actors still take one slot per frame because enemies.rs draws a frame
-        # as one quad and enemy_draws.append_needed declares one key per actor,
-        # so a tiled actor would silently show only its top-left corner. The
-        # refusal reports the slots the frame would need, which is the number
-        # that has to fit beside every other actor a view can show at once.
+        # A frame past one slot binds a rectangle of them through
+        # Atlas.add_tiled, the same route NPC art takes, and
+        # enemies.rs::prepare_draws submits one quad per tile with
+        # Room::frame_tile's share of the frame's world box.
+        #
+        # Two frames are still refused, and the refusal is a whole-actor
+        # pre-pass so a rejected actor never leaves half a clip in the atlas:
+        # one past the tile budget, and one past the axis clamp, which would
+        # otherwise resize the art silently.
         def frame_dims(name):
             clip=next(c for c in library['clips'] if c['name']==name)
             for frame in clip['frames']:
@@ -166,14 +169,18 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
                 if sid not in collections:collections[sid]=s.read(collection_o)
                 _,box=tk_sprite(s,collection_o.assets_file,collections[sid],frame['spriteId'],textures);scale=FOCAL/-CAM_Z
                 yield math.ceil((box[2]-box[0])*sx*scale),math.ceil((box[3]-box[1])*sy*scale)
-        oversized=sorted((w,h) for name in bindings.values() for w,h in frame_dims(name)
-                         if w>SLOT_PIXELS or h>SLOT_PIXELS)
-        if oversized:
-            w,h=oversized[-1];slots=-(-w//SLOT_PIXELS)*-(-h//SLOT_PIXELS)
+        def frame_tiles(w,h):return -(-w//SLOT_PIXELS)*-(-h//SLOT_PIXELS)
+        refused=sorted((w,h) for name in bindings.values() for w,h in frame_dims(name)
+                       if frame_tiles(w,h)>MAX_FRAME_TILES
+                       or w>MAX_TEXTURE_AXIS or h>MAX_TEXTURE_AXIS)
+        if refused:
+            w,h=refused[-1]
+            reason=(f'exceeds the {MAX_TEXTURE_AXIS}-pixel texture axis and would be resampled'
+                    if w>MAX_TEXTURE_AXIS or h>MAX_TEXTURE_AXIS else
+                    f'binds {frame_tiles(w,h)} of the {MAX_FRAME_TILES} animation slots a frame may hold')
             actor['movement_supported']=False
             actor.setdefault('limitations',[]).append(
-                f'actor frame {w}x{h} binds {slots} of the {MAX_FRAME_TILES} animation slots '
-                'a frame may hold, and the guest draws an actor frame as one quad; art not cooked')
+                f'actor frame {w}x{h} {reason}; art not cooked')
             continue
         for kind,name in bindings.items():
             clip_key=(s.sid(library_o),name,sx,sy,alpha)
@@ -188,7 +195,10 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
                         image.putalpha(image.getchannel('A').point(lambda a:round(a*color['a'])))
                         box=(box[0]*sx,box[1]*sy,box[2]*sx,box[3]*sy)
                         scale=FOCAL/-CAM_Z
-                        texture=atlas.add(image,(box[2]-box[0])*scale,(box[3]-box[1])*scale,streamed=True)
+                        # add_tiled returns the frame's first texture; a frame
+                        # inside one slot is still a single streamed texture, so
+                        # every actor that cooked before cooks byte for byte.
+                        texture=atlas.add_tiled(image,(box[2]-box[0])*scale,(box[3]-box[1])*scale)
                         cache[key]=(texture,box)
                     texture,box=cache[key]
                     frames.append({'texture':texture,'box':box,'sprite':f'{sid}:{index}','event':frame})
@@ -211,6 +221,11 @@ SLOT_PIXELS=64
 ANIMATION_SLOTS=24
 RESERVED_SLOTS=4
 MAX_FRAME_TILES=ANIMATION_SLOTS-RESERVED_SLOTS
+# The largest axis a cooked texture can express, and the size add()/add_tiled()
+# silently clamp to. Scenery is resampled to fit on purpose; actor art is not,
+# so the actor path refuses a frame this clamp would resize rather than ship a
+# squashed one.
+MAX_TEXTURE_AXIS=252
 
 
 class Atlas:
@@ -267,7 +282,7 @@ class Atlas:
                 pixels[yy*stride+xx//2]|=plane[row+xx]<<((xx&1)*4)
         return pixels
     def add(self,im,w,h,streamed=False):
-        w=max(1,min(252,math.ceil(w)));h=max(1,min(252,math.ceil(h)))
+        w=max(1,min(MAX_TEXTURE_AXIS,math.ceil(w)));h=max(1,min(MAX_TEXTURE_AXIS,math.ceil(h)))
         if streamed and (w>SLOT_PIXELS or h>SLOT_PIXELS):
             raise ValueError(f'animation cache dimensions exceed {SLOT_PIXELS}x{SLOT_PIXELS}: {w}x{h}')
         im,palette,plane=self._quantize(im,w,h)
@@ -285,7 +300,7 @@ class Atlas:
         Tiles are emitted row-major as consecutive texture IDs and the first
         carries the grid, which is what hk_format::Room::frame_grid reads back.
         """
-        w=max(1,min(252,math.ceil(w)));h=max(1,min(252,math.ceil(h)))
+        w=max(1,min(MAX_TEXTURE_AXIS,math.ceil(w)));h=max(1,min(MAX_TEXTURE_AXIS,math.ceil(h)))
         cols=-(-w//SLOT_PIXELS);rows=-(-h//SLOT_PIXELS)
         if cols*rows>MAX_FRAME_TILES:
             raise ValueError(f'frame {w}x{h} binds {cols*rows} of the {MAX_FRAME_TILES} '
