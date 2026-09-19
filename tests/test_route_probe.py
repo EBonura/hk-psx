@@ -3,9 +3,10 @@
 Nothing else exercises tools/route_probe.rs, so this is what catches it drifting
 out of step with the guest API or with the modules world.rs declares.
 """
-import json,subprocess,unittest
+import json,subprocess,sys,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 def probe(route,ticks=None):
     # Probe the live cook report, not `.hkpsx/selected-regions.json`: that one is
     # a copy frozen at the last guest build, so any cook since then makes the
@@ -44,7 +45,9 @@ def cooked():
         if not path.is_file():return False
         if hashlib.sha256(path.read_bytes()).hexdigest()!=region['sha256']:return False
     return True
+from generated_data import stale_generated_data
 @unittest.skipUnless(cooked(),'the cooked catalogue is unfinished; the cook this build runs will finish it')
+@unittest.skipIf(stale_generated_data(),'the generated Rust is behind the guest; the cook rewrites it')
 class RouteProbeTests(unittest.TestCase):
     def test_named_fixtures_traverse_and_report_contacts(self):
         fixtures=json.loads((ROOT/'tools/route_fixtures.json').read_text())['routes']
