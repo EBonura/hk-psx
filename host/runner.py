@@ -164,12 +164,26 @@ def _one(records, kind):
     return matches[0]
 
 
+def driving_fsm(records):
+    """The Walker's own FSM, chosen by name.
+
+    A placement may carry a second FSM that drives no movement (`enemy_corpse`,
+    a death effect), so the number of PlayMakerFSM components is not the
+    contract; exactly one movement FSM is.
+    """
+    matches = [data for _, typ, data in records
+               if typ == 'PlayMakerFSM' and data['fsm']['name'] in ('Zombie Swipe', 'Zombie Leap')]
+    if len(matches) != 1:
+        raise ValueError('Runner requires exactly one Zombie Swipe or Zombie Leap FSM')
+    return matches[0]
+
+
 def recognize(sc, actor):
     from actors import _component_records
     source = sc.source
     records = _component_records(sc, actor['game_object'])
     walker_id, walker = _one(records, 'Walker')
-    _, fsm_component = _one(records, 'PlayMakerFSM')
+    fsm_component = driving_fsm(records)
     fsm = fsm_component['fsm']
     variables = {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
                  for v in group if isinstance(v, dict) and 'name' in v and 'value' in v and not isinstance(v['value'], dict)}
