@@ -344,6 +344,20 @@ pub struct Event {
 /// The source's own list scrolls a spawned row per item and `ShopItemStats`
 /// colours a row it cannot afford; this keeps the cursor and the refusal, and
 /// `presentation::panel` draws them in the port's shared text panel.
+/// What a route can see of the counter. Without these the shop is a feature no
+/// replay can prove: it has no position of its own to assert, because the Knight
+/// stands still while the shelf is up, and a purchase moves only the wallet,
+/// which a Geo rock also moves.
+#[no_mangle] pub static mut HK_SHOP_OPENED: u32 = 0;
+#[no_mangle] pub static mut HK_SHOP_CLOSED: u32 = 0;
+#[no_mangle] pub static mut HK_SHOP_PURCHASES: u32 = 0;
+#[no_mangle] pub static mut HK_SHOP_GEO_SPENT: u32 = 0;
+/// The shelf is up right now, which is what says a close actually closed.
+#[no_mangle] pub static mut HK_SHOP_OPEN: u32 = 0;
+/// The prompt is showing, so the trigger was reached even on a run that never
+/// presses UP.
+#[no_mangle] pub static mut HK_SHOP_PROMPT: u32 = 0;
+
 pub struct Screen {
     pub open: bool,
     pub row: usize,
@@ -384,7 +398,19 @@ impl Screen {
     /// counter trigger, `eligible` is the same grounded-and-unlocked test the
     /// NPC prompt answers, and `bits` is the held pad word rather than a
     /// pressed one, because the release hold has to watch a button stay down.
+    /// Mirrors the live flags a replay reads, then runs the step. `step_inner`
+    /// has several exits and catching each one separately is how one of them
+    /// ends up not mirroring.
     pub fn step(&mut self, in_region: bool, eligible: bool, bits: u16, geo: &mut u32,
+                state: &mut State, charms: &mut charms::State) -> Event {
+        let event = self.step_inner(in_region, eligible, bits, geo, state, charms);
+        unsafe {
+            HK_SHOP_OPEN = u32::from(self.open);
+            HK_SHOP_PROMPT = u32::from(self.prompt);
+        }
+        event
+    }
+    fn step_inner(&mut self, in_region: bool, eligible: bool, bits: u16, geo: &mut u32,
                 state: &mut State, charms: &mut charms::State) -> Event {
         let pressed = bits & !self.previous;
         self.previous = bits;
@@ -398,6 +424,7 @@ impl Screen {
             if self.prompt && pressed & UP != 0 {
                 self.open = true;
                 self.row = 0;
+                unsafe { HK_SHOP_OPENED += 1; }
                 self.message = None;
                 self.last = None;
                 self.prompt = false;
@@ -415,6 +442,7 @@ impl Screen {
         if rows == 0 || !in_region || pressed & BACK != 0 {
             self.cancel();
             event.closed = true;
+            unsafe { HK_SHOP_CLOSED += 1; }
             return event;
         }
         // A purchase shortens the shelf under the cursor, and so does arriving
@@ -434,6 +462,8 @@ impl Screen {
                     self.last = Some(receipt);
                     self.message = None;
                     event.bought = Some(receipt);
+                    unsafe { HK_SHOP_PURCHASES += 1;
+                        HK_SHOP_GEO_SPENT += u32::from(receipt.paid); }
                     // The bought row left the shelf, so keeping the cursor
                     // where it was would move it onto whatever slid up.
                     self.row = self.row.saturating_sub(1);
