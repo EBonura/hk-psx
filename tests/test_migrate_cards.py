@@ -11,19 +11,35 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 
-from migrate_cards import BLOCK, ENTRY, IN_USE, fnv, layout, migrate
+from migrate_cards import BLOCK, CONTAINER, CONTAINER_LEN, ENTRY, IN_USE, fnv, layout, migrate
 
 OLD_MAGIC, OLD_LEN = b'HKS1', 56
 
 
+PAYLOAD = 272  # where psx-mc's payload starts inside a block, container at 256
+
+
 def card(records):
-    """A 16-block card image holding one old record per named block."""
+    """A 16-block card image holding one old record per named block.
+
+    The psx-mc container ahead of each payload is part of the fixture, not
+    scenery: it carries the length the guest reads back, and leaving it behind
+    is exactly how the first attempt at this produced valid records no route
+    could load.
+    """
     data = bytearray(BLOCK * 16)
     for block, body in records.items():
         data[block * ENTRY] = IN_USE
         struct.pack_into('<I', data, block * ENTRY + 4, BLOCK)
-        data[block * BLOCK + 272:block * BLOCK + 272 + len(body)] = body
+        at = block * BLOCK + PAYLOAD
+        data[at - CONTAINER_LEN:at - CONTAINER_LEN + 4] = CONTAINER
+        struct.pack_into('<II', data, at - CONTAINER_LEN + 8, len(body), len(body))
+        data[at:at + len(body)] = body
     return bytes(data)
+
+
+def container_lengths(image, at):
+    return struct.unpack_from('<II', image, at - CONTAINER_LEN + 8)
 
 
 def old_record(geo=6, sequence=3, door_hits=13):
@@ -63,6 +79,30 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(fnv(out[at:at + self.length - 4]),
                          struct.unpack_from('<I', out, at + self.length - 4)[0])
 
+    def test_the_container_length_moves_with_the_record(self):
+        # The failure this test exists for: the record migrates, its checksum
+        # holds, and the guest still rejects it, because psx-mc reads back the
+        # old stored_len bytes and Save::decode wants LEN of them.
+        out, _ = self.run_one(card({1: old_record()}))
+        self.assertEqual(container_lengths(out, out.find(self.magic)),
+                         (self.length, self.length))
+
+    def test_a_card_whose_records_moved_but_whose_headers_did_not_is_repaired(self):
+        # Exactly the state the first run left the committed fixtures in, so
+        # re-running has to fix it rather than report nothing to do.
+        half = bytearray(self.run_one(card({1: old_record()}))[0])
+        at = half.find(self.magic)
+        struct.pack_into('<II', half, at - CONTAINER_LEN + 8, OLD_LEN, OLD_LEN)
+        out, moved = self.run_one(bytes(half))
+        self.assertEqual(moved, 1)
+        self.assertEqual(container_lengths(out, at), (self.length, self.length))
+
+    def test_a_migrated_card_is_left_alone(self):
+        once, _ = self.run_one(card({1: old_record()}))
+        twice, moved = self.run_one(once)
+        self.assertEqual(twice, once)
+        self.assertEqual(moved, 0)
+
     def test_a_record_that_fails_its_own_checksum_is_refused(self):
         # Rewriting it would turn a card the guest correctly rejects into one it
         # trusts, which is worse than leaving it broken.
@@ -92,10 +132,15 @@ class MigrationTests(unittest.TestCase):
         # tools/migrate_cards.py.
         for path in sorted((ROOT / 'tools/cards').glob('*.mcd')):
             with self.subTest(card=path.name):
+                image = path.read_bytes()
                 # assertIn would print the whole 131 KB image on failure.
-                self.assertTrue(self.magic in path.read_bytes(),
+                self.assertTrue(self.magic in image,
                                 f'{path.name} predates the current save record; '
                                 'run tools/migrate_cards.py')
+                at = -1
+                while (at := image.find(self.magic, at + 1)) >= 0:
+                    self.assertEqual(container_lengths(image, at), (self.length, self.length),
+                                     f'{path.name} record at {at} has a stale container length')
 
 
 if __name__ == '__main__':

@@ -32,6 +32,16 @@ SAVE_RS = ROOT / 'game/src/save.rs'
 BLOCK = 8192
 ENTRY = 128
 IN_USE = 0x51
+# psx-mc writes a self-describing container ahead of every payload: "PMC1", a
+# flags byte whose bit 0 means LZSS, three reserved, then raw_len and stored_len
+# as little-endian u32. Both lengths have to move with the record. Missing them
+# is silent in the worst way: the record itself is valid and correctly
+# checksummed, the guest just reads back the old number of bytes and rejects it
+# for being too short, so every card-booting route stops resuming and nothing
+# says why.
+CONTAINER = b'PMC1'
+CONTAINER_LEN = 16
+FLAG_COMPRESSED = 1
 
 
 def fnv(data):
@@ -51,36 +61,62 @@ def layout():
     return magic.group(1).encode(), int(length.group(1))
 
 
+def container_of(data, at, block_start):
+    """The psx-mc container header that describes the payload starting at `at`."""
+    hdr = data.rfind(CONTAINER, block_start, at)
+    if hdr < 0 or at - hdr != CONTAINER_LEN:
+        raise SystemExit(f'no psx-mc container immediately ahead of the record at {at}')
+    if data[hdr + 4] & FLAG_COMPRESSED:
+        raise SystemExit('the payload is compressed; this rewrites plain records only')
+    return hdr
+
+
 def migrate(data, old_magic, old_len, magic, length):
-    """Every record in one card image, carried forward. Returns (bytes, count)."""
+    """Every record in one card image, carried forward. Returns (bytes, count).
+
+    Idempotent: a record already on the new format still has its container
+    header checked and repaired, because the two are rewritten separately and a
+    run that did one without the other leaves a card that looks migrated and
+    does not load.
+    """
     out = bytearray(data)
     moved = 0
     for block in range(1, 16):
         entry = data[block * ENTRY:(block + 1) * ENTRY]
         if entry[0] != IN_USE:
             continue
+        touched = False
         start = block * BLOCK
         at = data.find(old_magic, start, start + BLOCK)
-        if at < 0:
-            continue
-        # Refuse a record whose own checksum does not hold: rewriting a corrupt
-        # save would turn a card the guest correctly rejects into one it trusts.
-        body = data[at:at + old_len - 4]
-        if fnv(body) != struct.unpack_from('<I', data, at + old_len - 4)[0]:
-            raise SystemExit(f'block {block}: {old_magic.decode()} record fails its own checksum')
-        if at + length > start + BLOCK:
-            raise SystemExit(f'block {block}: the longer record would leave its block')
-        # The old checksum sits where the first new field now goes, and the
-        # bytes beyond it are the file's zero padding, so both are overwritten.
-        if any(data[at + old_len:at + length]):
-            raise SystemExit(f'block {block}: the space the new fields need is not padding')
-        record = bytearray(length)
-        record[:old_len - 4] = body
-        record[:4] = magic
-        checksum = fnv(record[:length - 4])
-        struct.pack_into('<I', record, length - 4, checksum)
-        out[at:at + length] = record
-        moved += 1
+        if at >= 0:
+            # Refuse a record whose own checksum does not hold: rewriting a
+            # corrupt save would turn a card the guest correctly rejects into
+            # one it trusts.
+            body = data[at:at + old_len - 4]
+            if fnv(body) != struct.unpack_from('<I', data, at + old_len - 4)[0]:
+                raise SystemExit(f'block {block}: {old_magic.decode()} record fails its own checksum')
+            if at + length > start + BLOCK:
+                raise SystemExit(f'block {block}: the longer record would leave its block')
+            # The old checksum sits where the first new field now goes, and the
+            # bytes beyond it are the file's zero padding, so both are overwritten.
+            if any(data[at + old_len:at + length]):
+                raise SystemExit(f'block {block}: the space the new fields need is not padding')
+            record = bytearray(length)
+            record[:old_len - 4] = body
+            record[:4] = magic
+            struct.pack_into('<I', record, length - 4, fnv(record[:length - 4]))
+            out[at:at + length] = record
+            touched = True
+        else:
+            at = data.find(magic, start, start + BLOCK)
+            if at < 0:
+                continue
+        hdr = container_of(data, at, start)
+        raw, stored = struct.unpack_from('<II', out, hdr + 8)
+        if (raw, stored) != (length, length):
+            struct.pack_into('<II', out, hdr + 8, length, length)
+            touched = True
+        moved += touched
     return bytes(out), moved
 
 
@@ -101,14 +137,13 @@ def main():
     total = 0
     for path in cards:
         data = path.read_bytes()
-        if magic in data:
-            print(f'{path.name}: already {magic.decode()}')
-            continue
         out, moved = migrate(data, old_magic, a.from_len, magic, length)
         total += moved
-        print(f'{path.name}: {moved} record(s) {a.from_magic} {a.from_len}B '
-              f'to {magic.decode()} {length}B' + (' (dry run)' if a.dry_run else ''))
-        if not a.dry_run:
+        state = 'up to date' if out == data else (
+            f'{moved} record(s) to {magic.decode()} {length}B'
+            + (' (dry run)' if a.dry_run else ''))
+        print(f'{path.name}: {state}')
+        if not a.dry_run and out != data:
             path.write_bytes(out)
     print(f'{total} record(s) across {len(cards)} card(s)')
     return 0
