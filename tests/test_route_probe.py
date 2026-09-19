@@ -36,3 +36,21 @@ class RouteProbeTests(unittest.TestCase):
         ticks=int(contact[-1].split('hazard_contact_ticks=')[1])
         self.assertGreater(ticks,0,'the probe no longer reports King\'s Pass hazard contact')
         self.assertEqual(fixture['ticks'],1450)
+    def test_the_tablet_route_crosses_the_focus_tablet_volume(self):
+        # Set Seen Focus Tablet waits in Tutorial_01 at x 102.0 to 103.7, y 27.98
+        # to 37.9, and its Trigger2dEvent takes the hero body rather than a point.
+        # This is the geometry tools/tapes/kings-climb.pxtape rides on the CUE, so
+        # a terrain change that stops the climb reaching the platform shows here
+        # instead of only in a 4,800-poll replay.
+        run=probe('kings_pass_tablet')
+        self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        half_width,bottom,top=16384/65536,-91136/65536,-7168/65536
+        inside=0
+        for line in run.stdout.splitlines():
+            fields=line.split(',')
+            if not fields[0].isdigit():
+                continue
+            x,y=float(fields[1]),float(fields[2])
+            if x-half_width<=103.7 and x+half_width>=102.0 and y+bottom<=37.9 and y+top>=27.98:
+                inside+=1
+        self.assertGreater(inside,0,'the climb no longer puts the hero body in the tablet volume')

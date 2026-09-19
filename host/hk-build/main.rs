@@ -119,7 +119,54 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // kings-return passes underneath at y 11.4. That needs the King's Pass
     // climb, which no route does yet.
     ("kings-death", "HK_SCRIPT_ACTIVE", 1),
-    ("town-elderbug", "HK_SCRIPT_ACTIVE", 2), ("town-elderbug", "HK_SCRIPT_HALTS", 0)];
+    ("town-elderbug", "HK_SCRIPT_ACTIVE", 2), ("town-elderbug", "HK_SCRIPT_HALTS", 0),
+    // The ability routes. Every one boots fresh and grants its ability from the
+    // pause Cheats page, because no admitted scene holds an ability pickup, and
+    // every one presses exactly one ability button. HK_ABILITY_DRAWN counts
+    // frames an ability clip owned the Knight's body, so paired with the cheat
+    // bit it says the ability ran rather than that the Knight moved.
+    //
+    // Vengeful Spirit: Restore fills SOUL to 99 and exactly FIREBALL_PARAMS.cost
+    // leaves the pool. The only other consumer of 33 is Focus, which the zero
+    // rules out.
+    ("cheat-spell", "HK_CHEATS", 1024), ("cheat-spell", "HK_SOUL", 66),
+    ("cheat-spell", "HK_FOCUS_STARTED", 0), ("cheat-spell", "HK_ABILITY_DRAWN", 22),
+    // Mothwing Cloak: the tape presses no direction at all, so the alternative
+    // to a dash is X unchanged. The delta is dash_speed times dash_ticks exactly.
+    ("cheat-dash", "HK_CHEATS", 16), ("cheat-dash", "HK_PLAYER_X", 2651581),
+    ("cheat-dash", "HK_ABILITY_DRAWN", 5),
+    // Monarch Wings against ctrl-wings, the same tape with the grant removed.
+    // The Knight lands on the same floor either way, so the double jump shows
+    // only in the clip count, which is why this route had no assertion at all
+    // until HK_ABILITY_DRAWN was watched.
+    ("cheat-wings", "HK_CHEATS", 64), ("cheat-wings", "HK_ABILITY_DRAWN", 6),
+    ("ctrl-wings", "HK_CHEATS", 0), ("ctrl-wings", "HK_ABILITY_DRAWN", 0),
+    // Crystal Heart: 48 polls of charge, then 23.3 units of travel with no
+    // direction pressed, which is not an ordinary dash's 5.0.
+    ("cheat-heart", "HK_CHEATS", 128), ("cheat-heart", "HK_PLAYER_X", 3851091),
+    ("cheat-heart", "HK_ABILITY_DRAWN", 55),
+    // Dream Nail: SOUL on this port comes from a nail hit, a Focus refund or
+    // DREAM_NAIL_PARAMS.soul. Enemy hits and Focus are both zero, so the 33 is
+    // EnemyDreamnailReaction on the Crawler and nothing else. Invincibility is
+    // granted so Crawler contact cannot interrupt the take-control sequence.
+    ("cheat-dream", "HK_CHEATS", 513), ("cheat-dream", "HK_SOUL", 33),
+    ("cheat-dream", "HK_ENEMY_HITS", 0), ("cheat-dream", "HK_ENEMY_KILLS", 0),
+    ("cheat-dream", "HK_HEALTH", 5), ("cheat-dream", "HK_BREAK_COUNT", 5),
+    ("cheat-dream", "HK_ABILITY_DRAWN", 445),
+    // The King's Pass climb, which reproduced in the probe and had never been
+    // done on the disc, and the first cooked script to fire in Tutorial_01:
+    // FLAGS bit 0 is seenFocusTablet. The climb needs no ability, it needs to
+    // survive two Crawler hits, which is what the Invincibility grant buys;
+    // ctrl-climb is the same tape without the grant and reaches none of it.
+    ("kings-climb", "HK_CHEATS", 1), ("kings-climb", "HK_SCRIPT_TRANSITIONS", 1),
+    ("kings-climb", "HK_SCRIPT_WRITES", 1), ("kings-climb", "HK_SCRIPT_FLAGS", 1),
+    ("kings-climb", "HK_SCRIPT_HALTS", 0), ("kings-climb", "HK_SCRIPT_NATIVE", 0),
+    ("kings-climb", "HK_REGION_ID", 30), ("kings-climb", "HK_DEATHS", 0),
+    ("kings-climb", "HK_HEALTH", 5), ("kings-climb", "HK_ENEMY_KILLS", 2),
+    ("kings-climb", "HK_ENEMY_HITS", 4), ("kings-climb", "HK_BREAK_COUNT", 11),
+    ("kings-climb", "HK_SOUL", 44),
+    ("ctrl-climb", "HK_CHEATS", 0), ("ctrl-climb", "HK_SCRIPT_FLAGS", 0),
+    ("ctrl-climb", "HK_SCRIPT_WRITES", 0)];
 /// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
 /// fresh formatted card when the fixture is absent (the run writes it back there).
 const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
@@ -128,7 +175,9 @@ const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
     ("crossroads-gate", "town-continue.mcd"), ("town-elderbug", "town-continue.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-reset2", true),
     ("crossroads-gate", true), ("town-continue", false), ("town-shade", false), ("kings-death", false),
-    ("kings-return", false), ("bench-save", false), ("town-elderbug", false)];
+    ("kings-return", false), ("bench-save", false), ("town-elderbug", false),
+    ("cheat-spell", false), ("cheat-dash", false), ("cheat-wings", false), ("ctrl-wings", false),
+    ("cheat-heart", false), ("cheat-dream", false), ("kings-climb", false), ("ctrl-climb", false)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
