@@ -54,7 +54,14 @@ pub enum Code {
     /// action is one step, so this is too: no compiler temporary is needed.
     PlayerDataBoolTest,
 }
-/// `IntCompare` selectors, in the order the cooker emits them.
+/// An op with this flag bit set re-runs every tick for as long as its state is
+/// current, which is what PlayMaker's `everyFrame` means: the action's OnEnter
+/// runs once with the rest of the state, then its OnUpdate runs each frame.
+/// Without it a condition authored to be watched would be tested once and the
+/// state would sit there for ever.
+pub const REPEAT: u8 = 0x80;
+/// `IntCompare` selectors, in the order the cooker emits them. They share the
+/// flags byte with `REPEAT`, so a selector never uses the high bit.
 pub const CMP_LT: u8 = 0;
 pub const CMP_LE: u8 = 1;
 pub const CMP_EQ: u8 = 2;
@@ -201,7 +208,9 @@ impl Instance {
         loop {
             let Some(state) = p.states.get(self.state as usize) else { return Halt::BadProgram };
             if self.cursor >= state.op_count {
-                return Halt::Ran;
+                // The state's one-shot pass is done, so from here only the ops
+                // authored everyFrame keep running, once each per tick.
+                return self.repeat(p, *state, vars, host, &mut budget);
             }
             if budget == 0 {
                 return Halt::OpBudget;
@@ -221,6 +230,37 @@ impl Instance {
             }
         }
     }
+    /// The everyFrame pass for a state whose ops have all run once.
+    fn repeat(&mut self, p: Program, state: State, vars: &mut [i32],
+              host: &mut impl Host, budget: &mut u16) -> Halt {
+        for i in 0..state.op_count {
+            let Some(op) = p.ops.get(state.first_op as usize + i as usize).copied()
+                else { return Halt::BadProgram };
+            if op.flags & REPEAT == 0 {
+                continue;
+            }
+            if *budget == 0 {
+                return Halt::OpBudget;
+            }
+            *budget -= 1;
+            match self.run(p, op, vars, host, 0) {
+                // A repeated op that transitions leaves this state at once, and
+                // the ops after it do not get their repeat this tick.
+                Ok(Some(target)) => {
+                    self.enter(target);
+                    return Halt::Ran;
+                }
+                Ok(None) if self.wait > 0 => return Halt::Ran,
+                Ok(None) => {}
+                Err(halt) => return halt,
+            }
+            if self.cursor == 0 {
+                // `run` entered a new state through a synchronous send.
+                return Halt::Ran;
+            }
+        }
+        Halt::Ran
+    }
     /// Run one op. `Ok(Some(state))` means it transitioned.
     fn run(&mut self, p: Program, op: Op, vars: &mut [i32],
            host: &mut impl Host, depth: u8) -> Result<Option<u16>, Halt> {
@@ -235,7 +275,8 @@ impl Instance {
                 Ok(None)
             }
             Code::SetBool => {
-                *vars.get_mut(op.a as usize).ok_or(Halt::BadProgram)? = i32::from(op.flags != 0);
+                *vars.get_mut(op.a as usize).ok_or(Halt::BadProgram)? =
+                    i32::from(op.flags & !REPEAT != 0);
                 Ok(None)
             }
             Code::SetInt => {
@@ -250,7 +291,7 @@ impl Instance {
             Code::IntCompare => {
                 let left = var(op.a)?;
                 let right = *p.constants.get(op.b as usize).ok_or(Halt::BadProgram)?;
-                let holds = match op.flags {
+                let holds = match op.flags & !REPEAT {
                     CMP_LT => left < right,
                     CMP_LE => left <= right,
                     CMP_EQ => left == right,
@@ -274,14 +315,14 @@ impl Instance {
                 Ok(None)
             }
             Code::Native => {
-                host.native(NativeCall { id: op.flags, args: [var(op.a)?, var(op.b)?, var(op.c)?] });
+                host.native(NativeCall { id: op.flags & !REPEAT, args: [var(op.a)?, var(op.b)?, var(op.c)?] });
                 Ok(None)
             }
             Code::NativeConst => {
                 let konst = |i: u16| -> Result<i32, Halt> {
                     p.constants.get(i as usize).copied().ok_or(Halt::BadProgram)
                 };
-                host.native(NativeCall { id: op.flags, args: [konst(op.a)?, konst(op.b)?, konst(op.c)?] });
+                host.native(NativeCall { id: op.flags & !REPEAT, args: [konst(op.a)?, konst(op.b)?, konst(op.c)?] });
                 Ok(None)
             }
             Code::PlayerDataGet => {
@@ -503,6 +544,28 @@ mod tests {
         i.tick(p, &mut [], &mut host);
         assert_eq!(host.calls[0], Some(NativeCall { id: ACTIVATE, args: [4242, 1, 4242] }));
         assert_eq!(host.calls[1], Some(NativeCall { id: ACTIVATE, args: [4243, 1, 4242] }));
+    }
+    #[test]
+    fn an_every_frame_condition_keeps_being_tested_after_its_state_settles() {
+        // The Superdash's ground charge watches Y Speed every frame; without
+        // the repeat pass a state like this would test once and sit for ever.
+        let ops = [op(Code::SetBool, 1, 0, 0, 0),
+                   op(Code::IntCompare, CMP_GE | REPEAT, 1, 0, YES)];
+        let states = [State { first_op: 0, op_count: 2, first_transition: 0, transition_count: 1 },
+                      State { first_op: 2, op_count: 0, first_transition: 1, transition_count: 0 }];
+        let transitions = [Transition { event: YES, target: DONE }];
+        let p = Program { states: &states, transitions: &transitions, ops: &ops,
+                          constants: &[5], var_count: 2 };
+        let mut i = Instance::new();
+        let mut vars = [0i32; 2];
+        for tick in 0..4 {
+            assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::Ran);
+            assert_eq!(i.state, START, "tick {tick}: the watched value is still low");
+            assert_eq!(vars[0], 1, "the one-shot op ran once and stays run");
+        }
+        vars[1] = 9;
+        i.tick(p, &mut vars, &mut Recorder::default());
+        assert_eq!(i.state, DONE, "the repeated compare caught it");
     }
     #[test]
     fn a_bad_index_refuses_rather_than_reading_past_the_program() {
