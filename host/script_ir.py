@@ -53,16 +53,15 @@ def _variables(fsm):
                 out.setdefault(v['name'], len(out))
     return out
 
-def compile_fsm(fsm, max_vars=16):
+def compile_fsm(fsm, owner_id=None):
     """One FSM definition to (states, transitions, ops, constants, events).
 
+    Variables are a span in the caller's pool, so there is no slot cap here.
     Raises Unsupported on the first action this slice does not implement.
     """
     events = Events()
     constants = Constants()
     variables = _variables(fsm)
-    if len(variables) > max_vars:
-        raise Unsupported('<variables>', f'{len(variables)} exceeds the {max_vars} slots')
     names = [s['name'] for s in fsm['states']]
     index_of = {name: i for i, name in enumerate(names)}
     states, transitions, ops = [], [], []
@@ -78,13 +77,13 @@ def compile_fsm(fsm, max_vars=16):
         for i, raw in enumerate(data['actionNames']):
             if not data['actionEnabled'][i]:
                 continue
-            ops.extend(compile_action(raw.rsplit('.', 1)[-1], action_fields(data, i),
-                                      events, constants, variables))
+            ops.extend(compile_action(raw.rsplit('.', 1)[-1], action_fields(data, i, objects=True),
+                                      events, constants, variables, owner_id))
         states.append((first_op, len(ops) - first_op, first_transition,
                        len(transitions) - first_transition))
     return {'states': states, 'transitions': transitions, 'ops': ops,
             'constants': constants.values, 'events': events.ids,
-            'state_names': names, 'variables': variables}
+            'state_names': names, 'variables': variables, 'var_count': len(variables)}
 
 def _scalar(value):
     """A compact FSM scalar, or None when it is a variable reference."""
@@ -101,8 +100,16 @@ def _var(value, variables, action):
         raise Unsupported(action, f"unknown variable {value['name']!r}")
     return slot
 
-def compile_action(action, fields, events, constants, variables):
+def compile_action(action, fields, events, constants, variables, owner_id=None):
     """Ops for one enabled action, or Unsupported."""
+    if action == 'GetOwner':
+        # The owner of an FSM never changes, so this resolves at cook time into
+        # the object's stable id rather than needing an object reference at
+        # runtime. A caller that cannot supply one is refused, not defaulted.
+        if owner_id is None:
+            raise Unsupported(action, 'no stable owner id supplied')
+        return [(SET_INT, 0, _var(fields.get('storeGameObject'), variables, action),
+                 constants.index(owner_id), 0)]
     if action == 'Wait':
         time = _scalar(fields.get('time'))
         if time is None:
@@ -165,7 +172,9 @@ def survey(source, scene_files):
                 continue
             compiled['instances'] += 1
             try:
-                program = compile_fsm(fsm)
+                # The FSM's own path id is its stable owner identity here; the
+                # cooked bank uses the same source id the world metadata does.
+                program = compile_fsm(fsm, owner_id=obj.path_id & 0x7fffffff)
             except Unsupported as refusal:
                 blockers[refusal.action] += 1
                 blocking_fsms[fsm['name']] += 1

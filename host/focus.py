@@ -7,7 +7,7 @@ import hashlib,json,struct
 from combat import ticks
 FOCUS_CLIPS=('Focus','Focus Get','Focus End','Focus Get Once')
 
-def action_fields(data,index):
+def action_fields(data,index,objects=False):
     """Read compact scalar fields used by this observed PlayMaker version."""
     start=data['actionStartIndex'][index]
     end=data['actionStartIndex'][index+1] if index+1<len(data['actionNames']) else len(data['paramName'])
@@ -22,6 +22,12 @@ def action_fields(data,index):
             value={'value':struct.unpack({15:'<f',16:'<i',17:'<?'}[kind],raw[:n])[0],
                    'useVariable':bool(raw[n]),'name':raw[n+1:].decode('utf8')}
         elif kind==23:value=raw.decode('utf8')
+        elif kind==19 and objects:
+            # An FsmGameObject reference: the same {value, useVariable, name}
+            # shape as the compact scalars. Off by default, because the actor
+            # recognizers match on the exact field set an action decodes to and
+            # a new field changes what they see.
+            value=data['fsmGameObjectParams'][pos]
         elif kind in (18,20,21,31,39):
             value=data[{18:'fsmStringParams',20:'fsmOwnerDefaultParams',21:'functionCallParams',31:'fsmEventTargetParams',39:'fsmVarParams'}[kind]][pos]
         elif kind==1 and size==1:value=bool(raw[0])
