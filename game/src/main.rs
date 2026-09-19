@@ -176,16 +176,20 @@ fn draw_frame(room: &Room, frame: usize, player: &Player, camera: (i32, i32)) {
 /// One room frame drawn at a fixed world point on the gameplay plane, for a
 /// scene fixture that stands where it was authored rather than moving.
 fn draw_at(room: &Room, frame: usize, position: [i32; 2], camera: (i32, i32)) -> u32 {
-    let f = room.frame(frame);
-    let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
-    let coords = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
-    let mut v = [(0i16, 0i16); 4];
-    for (k, (x, y)) in coords.iter().enumerate() {
-        v[k] = ((160 + ((((position[0] + x - camera.0) >> 8) * KNIGHT_SCALE) >> 20)) as i16,
-                (120 - ((((position[1] + y - camera.1) >> 8) * KNIGHT_SCALE) >> 20)) as i16);
+    // A frame too large for one animation slot is drawn as its tiles, each
+    // covering its own share of the frame's world box.
+    let (_, cols, rows) = room.frame_grid(frame);
+    for tile in 0..cols * rows {
+        let (texture, b) = room.frame_tile(frame, tile);
+        let coords = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
+        let mut v = [(0i16, 0i16); 4];
+        for (k, (x, y)) in coords.iter().enumerate() {
+            v[k] = ((160 + ((((position[0] + x - camera.0) >> 8) * KNIGHT_SCALE) >> 20)) as i16,
+                    (120 - ((((position[1] + y - camera.1) >> 8) * KNIGHT_SCALE) >> 20)) as i16);
+        }
+        render::texture(texture, v, (128, 128, 128));
     }
-    render::texture(u32_at(f, 0) as usize, v, (128, 128, 128));
-    1
+    (cols * rows) as u32
 }
 #[cfg(feature = "emulator-telemetry")]
 fn log_state(frame: u32, p: &Player, prims: u32) {
@@ -526,8 +530,9 @@ fn main() {
                 needed[needed_len]=u32_at(room.frame(f),0)as u16;needed_len+=1;
             }
             if let Some((_,f))=npc_frame {
-                assert!(needed_len<needed.len(),"NPC animation working set");
-                needed[needed_len]=u32_at(room.frame(f),0)as u16;needed_len+=1;
+                // An NPC frame larger than one 64x64 slot binds a rectangle of
+                // them, so it can contribute several keys.
+                render::append_frame_keys(&room,f,&mut needed,&mut needed_len);
             }
             render::begin(&room,&needed[..needed_len],fb.buffer_y(fb.drawing));
             fb.clear(9,13,20);let mut prims=render::scenery(camera,false);prims+=enemy_draws.draw();render::kick_ready();prims+=state.draw_impacts(r,&room,camera);

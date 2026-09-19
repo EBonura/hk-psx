@@ -13,6 +13,18 @@ pub const GEO_RECTS:[(usize,usize,usize,usize);5]=[
 ];
 /// Lifeblood and independent break-effect atlases, including their CLUTs.
 pub const LIFE_RECTS:[(usize,usize,usize,usize);1]=[(352,96,32,80)];
+/// The 32x256 halfword animation strip at x320: two 64x64 4bpp slots across
+/// and four down. A 64x64 4bpp slot is 16 halfwords wide and 64 rows tall.
+pub const ANIMATION_STRIP:(usize,usize,usize,usize)=(320,0,32,256);
+pub const SLOT_HALFWORDS:(usize,usize)=(16,64);
+/// Slots the strip physically holds, which is what `crate::SLOTS` must equal.
+pub const ANIMATION_SLOTS:usize=(ANIMATION_STRIP.2/SLOT_HALFWORDS.0)*(ANIMATION_STRIP.3/SLOT_HALFWORDS.1);
+/// Halfwords `all_vram_allocations_are_disjoint` leaves unclaimed. Measured,
+/// not budgeted: the two free fragments are 16x14 and 16x5 halfwords, both in
+/// the CLUT rows below y480, and one animation slot is 16x64. The strip
+/// therefore cannot grow, and `crate::SLOTS` cannot rise, without taking a
+/// static scenery page.
+pub const SPARE_HALFWORDS:usize=304;
 pub const BREAK_RECTS:[(usize,usize,usize,usize);3]=[(352,176,32,64),(360,32,24,32),(352,64,32,32)];
 #[derive(Clone,Copy)]
 struct Entry {region:Option<usize>,ready:bool,stamp:u32}
@@ -161,13 +173,17 @@ pub fn clut_xy(bank:usize,palette:usize)->(u16,u16) {
             }
         }
     }
-    #[test] fn all_vram_allocations_are_disjoint() {
+    /// Every VRAM claim in the build, as the disjointness and spare-space
+    /// tests both need the same map.
+    fn vram_map()->std::vec::Vec<bool> {
         let mut used=std::vec![false;1024*512];
-        let mut claim=|x:usize,y:usize,w:usize,h:usize| {
+        {
+        let used=&mut used;
+        let mut claim=move|x:usize,y:usize,w:usize,h:usize| {
             assert!(x+w<=1024&&y+h<=512);
             for yy in y..y+h {for xx in x..x+w {assert!(!used[yy*1024+xx],"overlap at {xx},{yy}");used[yy*1024+xx]=true;}}
         };
-        claim(0,0,320,480);claim(320,0,32,256);
+        claim(0,0,320,480);claim(ANIMATION_STRIP.0,ANIMATION_STRIP.1,ANIMATION_STRIP.2,ANIMATION_STRIP.3);
         claim(352,0,4,32);claim(352,480,16,2);
         // Source SOUL frame, masked fill and eyes; their three CLUTs remain
         // below bank 0 and outside the vertical scenery-palette strips.
@@ -185,6 +201,40 @@ pub fn clut_xy(bank:usize,palette:usize)->(u16,u16) {
                 let(x,y)=clut_xy(bank,palette);claim(x as usize,y as usize,16,1);
             }}
         }
+        }
+        used
+    }
+    #[test] fn all_vram_allocations_are_disjoint() {vram_map();}
+    /// The strip holds exactly the slots the cache declares, and what is left
+    /// over cannot hold another one. This is the measurement behind
+    /// `crate::MAX_FRAME_TILES`: a frame binds more slots instead of the strip
+    /// growing, because there is nowhere for it to grow into.
+    #[test] fn the_animation_strip_is_full_and_nothing_spare_can_hold_another_slot() {
+        let(_sx,_sy,sw,sh)=ANIMATION_STRIP;
+        assert_eq!(ANIMATION_SLOTS,8);
+        assert_eq!(sw*sh,ANIMATION_SLOTS*SLOT_HALFWORDS.0*SLOT_HALFWORDS.1);
+        for slot in 0..ANIMATION_SLOTS {
+            // animation_cache::uv lays the slots out two across and four down.
+            let(u,v)=((slot%2)*64,(slot/2)*64);
+            assert!(u/4+SLOT_HALFWORDS.0<=sw&&v+SLOT_HALFWORDS.1<=sh,"slot {slot} leaves the strip");
+        }
+        let used=vram_map();
+        assert_eq!(used.iter().filter(|&&u|!u).count(),SPARE_HALFWORDS);
+        // Widest free run on any row, which bounds every free rectangle.
+        let widest=(0..512).map(|y|{
+            let(mut best,mut run)=(0,0);
+            for x in 0..1024 {if used[y*1024+x]{run=0}else{run+=1;if run>best{best=run}}}
+            best
+        }).max().unwrap();
+        assert_eq!(widest,16);
+        // Tallest free run in any column, likewise.
+        let tallest=(0..1024).map(|x|{
+            let(mut best,mut run)=(0,0);
+            for y in 0..512 {if used[y*1024+x]{run=0}else{run+=1;if run>best{best=run}}}
+            best
+        }).max().unwrap();
+        assert_eq!(tallest,14);
+        assert!(tallest<64,"a ninth slot would need 64 free rows");
     }
     #[test] fn soul_hud_slots_fit_reserved_strip_and_encodable_uvs() {
         let mut used=[false;28*32];

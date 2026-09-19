@@ -17,6 +17,12 @@ pub const STREAMED_PAGE: u16 = u16::MAX;
 pub const HAS_ALPHA_COVERS: u32 = 1;
 pub const ALPHA_COVER_BYTES: usize = 20;
 pub const MAX_STREAM_BYTES: usize = 256 * 1024;
+/// A streamed texture's VRAM origin is the animation slot it lands in, so its
+/// `u`/`v` never describe a placement. The first tile of a frame too large for
+/// one slot carries the frame's tile grid there instead: `u` columns by `v`
+/// rows of consecutive texture IDs in row-major order. Every other streamed
+/// texture keeps 0,0 and is a frame on its own.
+pub const MAX_TILE_GRID: u16 = 8;
 #[derive(Clone, Copy, Debug)]
 pub struct Texture {
     pub page: u16,
@@ -33,6 +39,14 @@ impl Texture {
     }
     pub fn stream_stride(self) -> usize {
         ((self.width as usize + 3) & !3) / 2
+    }
+    /// Tile columns and rows this texture's frame binds. One tile unless the
+    /// cooker had to split a frame across several 64x64 slots.
+    pub fn tile_grid(self) -> (usize, usize) {
+        if !self.is_streamed() || self.u == 0 {
+            return (1, 1);
+        }
+        (self.u as usize, self.v as usize)
     }
 }
 impl core::ops::Index<usize> for Texture {
@@ -227,14 +241,36 @@ impl<'a> Room<'a> {
                     return Err(Error::Reference);
                 }
                 if t.is_streamed() {
-                    if t.u != 0
-                        || t.v != 0
-                        || t.width > 64
+                    if t.width > 64
                         || t.height > 64
                         || t.stream_offset & 3 != 0
                         || room.stream_pixels(t).is_none()
                     {
                         return Err(Error::Reference);
+                    }
+                    // A tile grid is the frame's, so it must name at least two
+                    // tiles, stay inside the slot cache and have every tile
+                    // present as a streamed texture of its own.
+                    let (cols, rows) = (t.u, t.v);
+                    if cols != 0 || rows != 0 {
+                        if cols == 0
+                            || rows == 0
+                            || cols > MAX_TILE_GRID
+                            || rows > MAX_TILE_GRID
+                            || cols as usize * rows as usize <= 1
+                        {
+                            return Err(Error::Reference);
+                        }
+                        let end = i.checked_add(cols as usize * rows as usize);
+                        if end.is_none_or(|end| end > counts[1]) {
+                            return Err(Error::Reference);
+                        }
+                        for tile in 1..cols as usize * rows as usize {
+                            let t = room.texture(i + tile);
+                            if !t.is_streamed() || t.u != 0 || t.v != 0 {
+                                return Err(Error::Reference);
+                            }
+                        }
                     }
                 } else if t.page as usize >= counts[0]
                     || t.u as u32 + t.width as u32 > 256
@@ -346,8 +382,12 @@ impl<'a> Room<'a> {
             || t.width > 64
             || t.height == 0
             || t.height > 64
-            || t.u != 0
-            || t.v != 0
+            // u/v carry the frame's tile grid, never a VRAM origin; a
+            // malformed one means the record is not a texture this reader
+            // understands, so refuse rather than stream half a frame.
+            || (t.u == 0) != (t.v == 0)
+            || t.u > MAX_TILE_GRID
+            || t.v > MAX_TILE_GRID
             || t.stream_offset & 3 != 0
         {
             return None;
@@ -397,6 +437,52 @@ impl<'a> Room<'a> {
     pub fn frame(&self, i: usize) -> &'a [u8] {
         self.record(2, i, 20)
     }
+    /// A frame's first texture ID and the tile grid it binds. The remaining
+    /// tiles are the consecutive IDs after it, row-major, left to right and
+    /// top to bottom, which is the order `host/cook.py` emits them in.
+    pub fn frame_grid(&self, i: usize) -> (usize, usize, usize) {
+        let base = u32_at(self.frame(i), 0) as usize;
+        let (cols, rows) = self.texture(base).tile_grid();
+        (base, cols, rows)
+    }
+    /// Whole-frame pixel size recovered from the tiles: every tile but the last
+    /// in its row or column is a full 64, so only the far edges are measured.
+    pub fn frame_pixels(&self, i: usize) -> (usize, usize) {
+        let (base, cols, rows) = self.frame_grid(i);
+        let right = self.texture(base + cols - 1);
+        let bottom = self.texture(base + (rows - 1) * cols);
+        (
+            (cols - 1) * 64 + right.width as usize,
+            (rows - 1) * 64 + bottom.height as usize,
+        )
+    }
+    /// One tile of a frame: its texture ID and the part of the frame's world
+    /// box it covers, in the record's own `[x0, y0, x1, y1]` order. Tiles are
+    /// cut on 64-pixel boundaries, so a tile's share of the box is its share of
+    /// the pixels. Art row 0 is the top of the box, which is `b[3]`.
+    pub fn frame_tile(&self, i: usize, tile: usize) -> (usize, [i32; 4]) {
+        let (base, cols, rows) = self.frame_grid(i);
+        let f = self.frame(i);
+        let b: [i32; 4] = core::array::from_fn(|k| i32_at(f, 4 + k * 4));
+        if cols * rows == 1 {
+            return (base, b);
+        }
+        let (width, height) = self.frame_pixels(i);
+        let t = self.texture(base + tile);
+        let (px, py) = ((tile % cols) * 64, (tile / cols) * 64);
+        let lerp = |from: i32, to: i32, at: usize, of: usize| {
+            from + ((to - from) as i64 * at as i64 / of as i64) as i32
+        };
+        (
+            base + tile,
+            [
+                lerp(b[0], b[2], px, width),
+                lerp(b[3], b[1], py + t.height as usize, height),
+                lerp(b[0], b[2], px + t.width as usize, width),
+                lerp(b[3], b[1], py, height),
+            ],
+        )
+    }
     pub fn clip(&self, i: usize) -> [u32; 4] {
         let r = self.record(3, i, 16);
         core::array::from_fn(|k| u32_at(r, k * 4))
@@ -437,6 +523,105 @@ mod tests {
             b[32] = 4;
         }
         b
+    }
+    /// One frame split across a 2x2 slot rectangle, sized like Crossroads_47's
+    /// Stag: 91x89 pixels becomes 64+27 by 64+25.
+    fn tiled_pack() -> std::vec::Vec<u8> {
+        let tiles = [(64u16, 64u16), (27, 64), (64, 25), (27, 25)];
+        let mut stream = 0usize;
+        let mut b = vec![0u8; 40 + tiles.len() * 16 + 20 + tiles.len() * 32];
+        b[..8].copy_from_slice(b"HKROOM02");
+        b[12] = tiles.len() as u8;
+        b[20] = 1;
+        for (i, &(w, h)) in tiles.iter().enumerate() {
+            let p = 40 + i * 16;
+            b[p..p + 2].copy_from_slice(&STREAMED_PAGE.to_le_bytes());
+            if i == 0 {
+                b[p + 2..p + 4].copy_from_slice(&2u16.to_le_bytes());
+                b[p + 4..p + 6].copy_from_slice(&2u16.to_le_bytes());
+            }
+            b[p + 6..p + 8].copy_from_slice(&w.to_le_bytes());
+            b[p + 8..p + 10].copy_from_slice(&h.to_le_bytes());
+            b[p + 10..p + 12].copy_from_slice(&(i as u16).to_le_bytes());
+            b[p + 12..p + 16].copy_from_slice(&(stream as u32).to_le_bytes());
+            stream += ((((w as usize + 3) & !3) / 2) * h as usize).next_multiple_of(4);
+        }
+        b[32..36].copy_from_slice(&(stream as u32).to_le_bytes());
+        b.resize(b.len() + stream, 0);
+        b
+    }
+    #[test]
+    fn a_frame_may_bind_a_rectangle_of_slots() {
+        let b = tiled_pack();
+        let room = Room::parse(&b).unwrap();
+        assert_eq!(room.frame_grid(0), (0, 2, 2));
+        assert_eq!(room.frame_pixels(0), (91, 89));
+        // Only the frame's first tile carries the grid; the rest are plain
+        // streamed textures, so nothing double counts them.
+        for i in 1..4 {
+            assert_eq!(room.texture(i).tile_grid(), (1, 1));
+        }
+        assert!(room.stream_pixels(room.texture(3)).is_some());
+    }
+    #[test]
+    fn tiles_partition_the_frames_world_box_without_gap_or_overlap() {
+        let mut b = tiled_pack();
+        // A 6x4 world box, the record's [x0, y0, x1, y1] in 16.16 units. Art
+        // row 0 is the top, so y1 is where the first tile row starts.
+        let at = 40 + 4 * 16;
+        for (k, v) in [-3i32, -2, 3, 2].iter().enumerate() {
+            b[at + 4 + k * 4..at + 8 + k * 4].copy_from_slice(&(v * 65536).to_le_bytes());
+        }
+        let room = Room::parse(&b).unwrap();
+        let (_, cols, rows) = room.frame_grid(0);
+        assert_eq!((cols, rows), (2, 2));
+        let whole = core::array::from_fn::<_, 4, _>(|k| i32_at(room.frame(0), 4 + k * 4));
+        let tiles: std::vec::Vec<_> = (0..4).map(|t| room.frame_tile(0, t).1).collect();
+        // The union is the whole box.
+        assert_eq!(tiles.iter().map(|t| t[0]).min(), Some(whole[0]));
+        assert_eq!(tiles.iter().map(|t| t[1]).min(), Some(whole[1]));
+        assert_eq!(tiles.iter().map(|t| t[2]).max(), Some(whole[2]));
+        assert_eq!(tiles.iter().map(|t| t[3]).max(), Some(whole[3]));
+        // Neighbours meet exactly: the 64-pixel cut is one world coordinate.
+        assert_eq!(tiles[0][2], tiles[1][0]);
+        assert_eq!(tiles[2][2], tiles[3][0]);
+        assert_eq!(tiles[0][1], tiles[2][3]);
+        assert_eq!(tiles[1][1], tiles[3][3]);
+        // The split follows the pixels: 64 of 91 across, 64 of 89 down.
+        assert_eq!(tiles[0][2] - tiles[0][0], (whole[2] - whole[0]) * 64 / 91);
+        assert_eq!(tiles[0][3] - tiles[0][1], (whole[3] - whole[1]) * 64 / 89);
+        // Areas sum to the whole, in the same proportion as the texels.
+        let area = |t: [i32; 4]| (t[2] - t[0]) as i64 * (t[3] - t[1]) as i64;
+        assert_eq!(tiles.iter().map(|&t| area(t)).sum::<i64>(), area(whole));
+        // An untiled frame is one tile and the whole box.
+        let untiled = pack(true);
+        let plain = Room::parse(&untiled).unwrap();
+        assert_eq!(plain.texture(0).tile_grid(), (1, 1));
+    }
+    #[test]
+    fn rejects_tile_grids_that_leave_the_slot_cache_or_the_texture_table() {
+        // A grid naming more textures than the pack holds.
+        let mut b = tiled_pack();
+        b[42..44].copy_from_slice(&3u16.to_le_bytes());
+        assert!(matches!(Room::parse(&b), Err(Error::Reference)));
+        // A grid wider than the whole slot cache.
+        let mut b = tiled_pack();
+        b[42..44].copy_from_slice(&(MAX_TILE_GRID + 1).to_le_bytes());
+        assert!(matches!(Room::parse(&b), Err(Error::Reference)));
+        // Half a grid: columns without rows names no tile at all.
+        let mut b = tiled_pack();
+        b[44..46].copy_from_slice(&0u16.to_le_bytes());
+        assert!(matches!(Room::parse(&b), Err(Error::Reference)));
+        // A one-tile grid, which is what an untiled texture already says with
+        // 0,0; two spellings of the same frame would let a pack disagree.
+        let mut b = tiled_pack();
+        b[42..44].copy_from_slice(&1u16.to_le_bytes());
+        b[44..46].copy_from_slice(&1u16.to_le_bytes());
+        assert!(matches!(Room::parse(&b), Err(Error::Reference)));
+        // A tile that carries a grid of its own.
+        let mut b = tiled_pack();
+        b[58..60].copy_from_slice(&2u16.to_le_bytes());
+        assert!(matches!(Room::parse(&b), Err(Error::Reference)));
     }
     #[test]
     fn rejects_truncation_and_bad_refs() {

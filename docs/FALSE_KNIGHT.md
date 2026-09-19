@@ -34,8 +34,8 @@ per frame) rather than estimating it.
 | Unique animation sprites | 110 | | |
 | Sprites larger than 64x64 | 77 | 0 | no |
 | Widest frame / tallest frame | 204 px / 188 px | 64 / 64 | no |
-| 64x64 slots for the largest single frame (198x169) | 12 | 8 | no |
-| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 113,636 B unallocated RAM | no |
+| 64x64 slots for the largest single frame (198x169) | 12 | 4 per frame, 8 total | no |
+| 4bpp texels, all frames | 716,110 B (699.3 KiB) | 73,876 B unallocated RAM | no |
 | CLUT slots, one palette per frame | 110 | 141 free in Crossroads_10 | yes |
 
 The CLUT number is the only one that fits. `tools/texture_headroom.py` reports
@@ -47,14 +47,17 @@ The binding constraint is the animation cache. `hk_cache::SLOTS` is 8 slots of
 64x64 4bpp in a 32x256 halfword VRAM strip at x 320, each slot upload capped at
 2,048 bytes and the whole frame capped at `MAX_UPLOAD_BYTES` 16,384. The False
 Knight's largest frame alone is 16,900 bytes across 12 tiles: one frame is
-bigger than the entire cache. `host/cook.py` already refuses it, dropping the
-actor with `actor frame 204x155 exceeds the 64x64 animation cache`.
+bigger than the entire cache. A frame may now bind a rectangle of slots, but
+only `hk_cache::MAX_FRAME_TILES` of them, which is 4; `host/cook.py` still
+refuses this actor, now with the slot count rather than the pixel size.
 
 Per-clip figures, since they are what a streaming route would have to hold:
-the heaviest clip is `Stun Recover` at 6 unique frames and 55.1 KiB; `Rage`,
-`Idle`, `Jump Attack Up`, `Run` and `Attack Recover` are each 52 to 55 KiB. The
+the heaviest clip is `Stun Recover` at 6 unique frames and 56,406 bytes; `Rage`,
+`Idle`, `Jump Attack Up`, `Run` and `Attack Recover` are 52,844 to 56,050. The
 clips reachable in phase one without a stagger come to 44 unique frames and
-454,616 bytes.
+454,616 bytes. Splitting a frame into 64x64 tiles costs no extra bytes: 64 is a
+multiple of the four pixels a padded 4bpp row rounds to, so the tiles of a
+198x169 frame come to the same 16,900 bytes the whole frame does.
 
 ## Why the Hollow Shade route does not solve it
 
@@ -63,10 +66,11 @@ and stream them through the same shared slots. That removes the room pack and
 CLUT cost, and `host/shade.py` shows the palette trick: one resident 16-colour
 CLUT for a whole clip set, which would take the False Knight from 110 CLUTs to a
 handful. It does not change the slot geometry. `game/src/animation_cache.rs`
-still rejects any payload over 2,048 bytes and still writes one 64x64 rect, so a
-198x169 frame is no more uploadable from linked RAM than from a room pack. The
-RAM does not stretch either: `docs/BUDGET.md` records 113,636 unallocated bytes
-before the reserved stack, against 699 KiB of texels, short by a factor of six.
+still rejects any payload over 2,048 bytes per slot, so a 198x169 frame needs
+the same twelve slots from linked RAM as from a room pack. The RAM does not
+stretch either: `.hkpsx/build.json` reports 73,876 unallocated bytes before the
+reserved stack, against 699 KiB of texels, short by a factor of ten. Read that
+figure from the build report; `docs/BUDGET.md` has been stale about it before.
 
 ## The route past it
 
@@ -76,23 +80,55 @@ scenery-grade cap, and a 3.2x linear reduction of the largest frame is exactly
 that.
 
 1. **Multi-slot frames.** A frame binds a rectangle of 64x64 slots instead of
-   one, and the draw submits the tiles. The False Knight needs 12 for its worst
-   frame, so `hk_cache::SLOTS` and `MAX_REQUESTS` rise from 8 to at least 12, the
-   VRAM strip at x 320 grows past its current 32x256 halfwords, and
-   `MAX_UPLOAD_BYTES` rises from 16,384 to at least 20,480. The strip's
-   neighbours at x 352 to 384 (SOUL HUD, Geo, Lifeblood and break-effect
-   atlases, all claimed in `hk_cache::residency`) are dense, so growing it is a
-   VRAM repack, not a constant change. That repack is unmeasured; the disjoint
-   allocation test in `residency.rs` is the place to establish what is free.
+   one, and the draw submits the tiles. This is implemented for room frames:
+   `Atlas.add_tiled` splits an oversized frame into consecutive streamed
+   textures, the first carries the grid in the two fields a streamed texture
+   never uses for a VRAM origin, and `hk_format::Room::frame_grid`/`frame_tile`
+   read it back. The NPC path uses it; the actor path does not, because
+   `enemies.rs` draws a frame as one quad.
+
+   The strip did **not** grow, and cannot. `residency::SPARE_HALFWORDS` records
+   the measurement: the disjoint allocation test leaves 304 of 524,288
+   halfwords unclaimed, 608 bytes, in two fragments 16 halfwords wide at rows
+   480 to 495. The widest free run on any row is 16 halfwords and the tallest
+   free run in any column is 14 rows; one slot needs 16 by 64. Every other
+   halfword is a framebuffer, a static scenery page, a CLUT bank, the font, or
+   one of the Geo, Lifeblood, SOUL and break-effect atlases. So `SLOTS` stays
+   at 8 and `MAX_UPLOAD_BYTES` stays at 16,384, which is exactly the strip.
+
+   That caps a frame at `hk_cache::MAX_FRAME_TILES`, 4: the other four keys
+   `main.rs` can request in one frame are the Knight's body or ability pose,
+   the nail effect, the Hollow Shade and the Vengeful Spirit ball. The False
+   Knight's 198x169 frame binds 12, and 12 plus those four is 16 slots, 32,768
+   bytes against 16,384 allocated and 608 free. Multi-slot frames therefore do
+   not admit the boss, and no repack of the current VRAM map will: the room has
+   to come out of the 20 static scenery pages, which is a scenery capacity
+   decision, not a constant change.
 2. **One palette for the boss.** Quantize all 110 frames against a shared
    16-colour palette the way the Shade does, so the whole fight costs a few CLUT
    slots instead of 110 and can be resident in every view of the arena.
-3. **Per-clip residency.** 699 KiB never fits main RAM, but a clip does: the
-   heaviest is 55.1 KiB and the controller always knows the next clip a beat
-   ahead (`Jump Antic` is 0.3 s, `S Attack Antic` 1.2 s). Holding the current
-   clip and prefetching the next bounds the cost at roughly 110 KiB, which is
-   the whole unallocated gap, so this needs its own budget decision rather than
-   assuming the gap is free.
+
+   A shared palette cannot reduce the CLUT count inside HKROOM02 as it stands.
+   The pack's palette block is exactly one 32-byte entry per texture, the region
+   uploads that block whole, and `tools/texture_headroom.py` counts a view's
+   CLUT slots as its texture count. Two textures pointing at one palette index
+   still cost two slots. `Atlas.add_tiled` quantizes a whole frame once anyway,
+   because that is what keeps the colours identical across a tile seam, but the
+   saving needs a separate palette count in the format, which is its own work.
+   Measured: the Stag's Idle cooks to 200 textures, four tiles on each of 50
+   frames, and the region carrying it reaches 358 of 416 CLUT slots.
+3. **Per-clip residency, with no prefetch room.** 699 KiB never fits main RAM,
+   and against the live gap the prefetch does not either. Measured per clip
+   against 73,876 unallocated bytes: no single clip exceeds the gap, but the
+   heaviest, `Stun Recover`, is 56,406 bytes, 76.4% of it, leaving 17,470 bytes
+   for everything else the project has left; and the heaviest adjacent pair is
+   112,456 bytes, 152.2% of the gap. Nine of the 33 clips pair with the next
+   heaviest to more than the gap. So holding the current clip and prefetching
+   the next, which is what made the plan's timing work, does not fit: the
+   controller's beat of warning (`Jump Antic` 0.3 s, `S Attack Antic` 1.2 s)
+   would have to cover a blocking load of up to 56,406 compressed bytes rather
+   than an overlapped one. Whether a load that size lands inside 0.3 s is not
+   measured here; the byte figures are.
 
 Only after those does `MAX_SCENE_ACTORS` matter. The arena's worst concurrent
 set is the boss, its Hitter overlay and its Head, the three pre-battle enemies

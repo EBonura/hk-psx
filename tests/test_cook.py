@@ -58,6 +58,85 @@ class CookTests(unittest.TestCase):
         # Packing is reproducible when called again and does not append pages.
         before=(a.entries.copy(),bytes(a.stream),a.palettes.copy());a.pack()
         self.assertEqual(before,(a.entries,bytes(a.stream),a.palettes))
+    def test_an_oversized_frame_binds_a_rectangle_of_slots(self):
+        # Crossroads_47's Stag, whose Idle frames measure 91x89 through
+        # host/cook.py's own actor art path, is the smallest real case.
+        a=Atlas(max_pages=0)
+        im=Image.new('RGBA',(91,89),(200,100,30,255))
+        for x in range(91):
+            for y in range(89):im.putpixel((x,y),((x*2)%256,(y*2)%256,60,255))
+        base=a.add_tiled(im,91,89)
+        self.assertEqual(base,0)
+        self.assertEqual(a.grids,{0:(2,2)})
+        a.pack()
+        # Row-major tiles: 64+27 across by 64+25 down, each one slot at most.
+        self.assertEqual([e[3:5] for e in a.entries],[(64,64),(27,64),(64,25),(27,25)])
+        # The grid rides in the two fields a streamed texture never uses for a
+        # VRAM origin, and only on the frame's first tile.
+        self.assertEqual([e[1:3] for e in a.entries],[(2,2),(0,0),(0,0),(0,0)])
+        self.assertEqual([e[0] for e in a.entries],[65535]*4)
+        # One quantization for the whole frame, so the tiles hold identical
+        # colours and the seams do not shift. HKROOM02 still sizes its palette
+        # block at one entry per texture and the guest uploads it whole, so the
+        # frame costs four CLUT slots, not one: a shared palette cannot reduce
+        # that count without a format change.
+        self.assertEqual([e[5] for e in a.entries],[0,1,2,3])
+        self.assertEqual(len(a.palettes),4)
+        self.assertEqual(len(set(a.palettes)),1)
+
+    def test_the_refusal_boundary_is_the_slot_budget_not_sixty_four_pixels(self):
+        from cook import MAX_FRAME_TILES
+        self.assertEqual(MAX_FRAME_TILES,4)
+        a=Atlas(max_pages=0)
+        # What used to be refused outright now costs two slots.
+        self.assertEqual(a.add_tiled(Image.new('RGBA',(65,1)),65,1),0)
+        self.assertEqual(a.grids[0],(2,1))
+        # A frame inside one slot still costs one texture and no grid.
+        one=a.add_tiled(Image.new('RGBA',(64,64)),64,64)
+        self.assertNotIn(one,a.grids)
+        # The False Knight's largest frame, 198x169, needs twelve.
+        with self.assertRaisesRegex(ValueError,'binds 12 of the 4 animation slots'):
+            a.add_tiled(Image.new('RGBA',(198,169)),198,169)
+        # add() still refuses on its own: a single streamed texture is one slot.
+        with self.assertRaisesRegex(ValueError,'64x64'):
+            a.add(Image.new('RGBA',(65,1)),65,1,streamed=True)
+
+    def test_tiles_survive_the_canonical_dedup_postpass_consecutive(self):
+        from texture_dedup import _deduplicate_room
+        from regions import append_room_bank
+        a=Atlas(max_pages=0)
+        im=Image.new('RGBA',(91,89))
+        for x in range(91):
+            for y in range(89):im.putpixel((x,y),((x*3)%256,(y*5)%256,90,255))
+        base=a.add_tiled(im,91,89)
+        # Two frames of the same clip, so a naive dedup would merge tile runs.
+        second=a.add_tiled(im,91,89)
+        a.pack()
+        empty=bytearray(b'HKROOM02'+struct.pack('<8I',0,1,0,0,0,0,4,0))
+        empty+=struct.pack('<6HI',65535,0,0,1,1,0,0)+bytes(32)+bytes(4)
+        frames=[{'texture':i,'box':(0,0,1,1)} for i in (base,second)]
+        pack,_nf=append_room_bank(bytes(empty),a,frames,[],0,'tile test')
+        result,report=_deduplicate_room(bytes(pack))
+        count=struct.unpack_from('<I',result,12)[0]
+        records=[struct.unpack_from('<6HI',result,40+i*16) for i in range(count)]
+        grids=[(i,r[1],r[2]) for i,r in enumerate(records) if r[1] or r[2]]
+        self.assertEqual(len(grids),2)
+        # Header counts: no draws, two frames, no clips or edges, so the palette
+        # block follows the textures and the frames.
+        at=40+count*16
+        clut=at+2*20
+        for start,cols,rows in grids:
+            self.assertEqual((cols,rows),(2,2))
+            palettes={result[clut+records[start+t][5]*32:clut+(records[start+t][5]+1)*32]
+                      for t in range(cols*rows)}
+            self.assertEqual(len(palettes),1,'a frame\'s tiles must keep one palette')
+            for t in range(cols*rows):
+                self.assertEqual(records[start+t][0],65535)
+                self.assertEqual(records[start+t][1:3],(cols,rows) if t==0 else (0,0))
+        # Each frame still points at its own first tile.
+        for k,(start,_c,_r) in enumerate(grids):
+            self.assertEqual(struct.unpack_from('<I',result,at+k*20)[0],start)
+
     def test_exact_quantized_duplicates_share_texture_not_draw_geometry(self):
         a=Atlas();one=Image.new('RGBA',(5,3),(9,16,24,255));two=Image.new('RGBA',(5,3),(10,17,25,255))
         self.assertEqual(a.add(one,5,3),0)
