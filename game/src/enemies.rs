@@ -321,6 +321,8 @@ enum Runtime {
     Gruzzer(GruzzerRuntime),
     Baldur(BaldurRuntime),
     Aspid(AspidRuntime),
+    /// No senses and no body: only the looping clip's clock advances.
+    Static { animation_tick: u32 },
 }
 impl Actor {
     fn runner(&self) -> Option<RunnerRuntime> { if let Runtime::Runner(r) = self.runtime { Some(r) } else { None } }
@@ -332,6 +334,7 @@ impl Actor {
     fn baldur(&self) -> Option<BaldurRuntime> { if let Runtime::Baldur(b) = self.runtime { Some(b) } else { None } }
     fn baldur_mut(&mut self) -> Option<&mut BaldurRuntime> { if let Runtime::Baldur(b) = &mut self.runtime { Some(b) } else { None } }
     fn aspid(&self) -> Option<AspidRuntime> { if let Runtime::Aspid(a) = self.runtime { Some(a) } else { None } }
+    fn immobile(&self) -> Option<u32> { if let Runtime::Static { animation_tick } = self.runtime { Some(animation_tick) } else { None } }
     fn is_flyer(&self) -> bool { matches!(self.runtime, Runtime::Vengefly(_) | Runtime::Gruzzer(_) | Runtime::Baldur(_) | Runtime::Aspid(_)) }
     fn new(scene: usize, spec: &ActorSpec) -> Self {
         // Stable per-source seed, not a claim to reproduce Unity's global RNG.
@@ -381,6 +384,7 @@ impl Actor {
                         else { hk_sim::aspid::Aspid::new([spec.x, spec.y], seed) };
                     Runtime::Aspid(AspidRuntime { controller, animation_tick: 10, clip: hk_sim::aspid::Clip::Fly })
                 }
+                ActorController::Static { .. } => Runtime::Static { animation_tick: 0 },
             },
         }
     }
@@ -520,6 +524,13 @@ impl Actor {
             self.advance_aspid(&mut aspid, spec, count, &edge, context, emit);
             self.runtime = Runtime::Aspid(aspid);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(animation_tick) = self.immobile() {
+            // No Rigidbody2D, so the source object cannot be pushed out of
+            // terrain or fall: it keeps its authored transform and loops.
+            self.spawn_state = SpawnState::Ready;
+            self.runtime = Runtime::Static { animation_tick: animation_tick.saturating_add(1) };
             return;
         }
         let b = self.local_bounds(spec);
@@ -1090,7 +1101,7 @@ impl EnemyWorld {
                                 Runtime::Gruzzer(f)=>f.controller.die(),
                                 Runtime::Baldur(r)=>r.controller.die(),
                                 Runtime::Aspid(a)=>a.controller.die(),
-                                Runtime::Walker|Runtime::Runner(_)=>{}
+                                Runtime::Walker|Runtime::Runner(_)|Runtime::Static {..}=>{}
                             }
                             state.enemy_death_particles(region,actor.source_id,[actor.x,actor.y,0]);
                             if let Some(corpse_spec)=spec.corpse {
@@ -1218,6 +1229,9 @@ impl EnemyWorld {
                 (roller.clip(spec),roller.animation_tick,(actor.x,actor.y),roller.controller.facing())
             } else if let Some(aspid)=actor.aspid() {
                 (aspid.clip(spec),aspid.animation_tick,(actor.x,actor.y),aspid.controller.facing())
+            } else if let Some(animation_tick)=actor.immobile() {
+                let ActorController::Static {idle_clip}=spec.controller else {panic!("Static runtime with other metadata")};
+                (idle_clip,animation_tick,(actor.x,actor.y),actor.walk.direction)
             } else {
                 (if actor.walk.turn_remaining!=0 {spec.turn_clip}else{spec.walk_clip},
                     actor.walk.animation_tick,(actor.x,actor.y),actor.walk.direction)
@@ -1383,7 +1397,7 @@ mod runner_runtime_tests {
         walk:hk_sim::WalkParams {speed:ONE+ONE/2,turn_ticks:10,turn_cooldown_ticks:60},
         initial_direction:-1,random_start_direction:false,walk_clip:0,turn_clip:1,
         corpse:Some(hk_sim::CorpseSpec {air_clip:2,land_clip:2,bounds:[-ONE/2,-ONE,ONE/2,0],
-            spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0}),
+            spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0, hold_ticks: 0}),
         recoil_speed:10*ONE,recoil_ticks:9, dream_soul: 0
     };
     // Source-free six-clip bank with the real Runner rates/lengths. Each clip's

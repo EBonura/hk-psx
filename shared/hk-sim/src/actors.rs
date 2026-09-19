@@ -49,6 +49,9 @@ pub enum ActorController {
         /// FSM `startAlert`: skips Idle on the first frame.
         start_alert: bool,
     },
+    /// Source object with no FSM and no Rigidbody2D: `playAutomatically` loops
+    /// the default clip where it stands, so the nail is the only interaction.
+    Static { idle_clip: u16 },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ActorSpec {

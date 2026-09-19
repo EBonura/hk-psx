@@ -59,8 +59,12 @@ There is no behaviour to port. The controller is "play Idle, do not move". The
 cheapest shape is a new `ActorController` variant with no state at all (an
 `ActorController::Static { idle_clip }`), reusing the existing walk-clip binding
 for the idle loop and leaving `WalkParams` at zero speed with
-`initial_direction` 1 and `random_start_direction` false. The body box and
+`initial_direction` -1 and `random_start_direction` false. The body box and
 health flow through the fields `generated_actor_specs` already emits.
+
+`initial_direction` is -1, not 1: the guest draw negates the frame box by the
+actor facing, so -1 is the unmirrored orientation (the same convention the
+Crawler and the Buzzer use) and the world basis here is the identity.
 
 ## Death
 
@@ -100,10 +104,43 @@ corpse path cannot express today (it assumes fling speed, gravity and a landing)
   further 20) are the fling arc the shiny would use.
 - `PersistentBoolItem` is recorded, not honoured: a killed Egg Sac reappears on
   scene reload.
-- The `AudioSource` is `playOnAwake` with `Loop` true at volume 0.75 and pitch
-  1.53; the idle loop is not presented, and `AudioStop` in the corpse's `Burst`
-  has nothing to stop in the port.
+- The actor's `AudioSource` is `playOnAwake` with `Loop` true at volume 0.75 and
+  pitch 1.53 (the corpse carries its own at volume 1 and pitch 1); the idle loop
+  is not presented, and `AudioStop` in the corpse's `Burst` has nothing to stop
+  in the port.
 - `EnemyDreamnailReaction` soul is already generic; nothing Egg Sac specific is
   needed for it.
 - The particle emitters (`Particle 1`, `Pt Death`) and the `Spit Point` child
   marker are not presented.
+
+## What was built
+
+`actors.egg_sac_control` recognizes the placement behind a name and "no FSM"
+gate, matching the serialized component multiset, world basis, collider, clip
+table and HealthManager flags exactly, because the family has one placement.
+`effects._egg_sac_corpse_source` validates `Corpse Egg Sac` the same way and
+reads the hold out of the `Spit` state's `Wait` (1.4 s, 84 ticks) and the burst
+length out of the clip itself (four frames at 18 fps, 14 ticks) rather than
+restating them. The Shiny's `Trinket Num` is read from the `Init` state and
+carried as `shiny_trinket_num`; nothing spawns it yet.
+
+`CorpseSpec` gained one field, `hold_ticks`. Non-zero selects the non-physics
+form: `Corpse::spawn` never launches, `Corpse::tick` never touches terrain, the
+corpse holds `air_clip` for `hold_ticks` and then plays `land_clip` until
+`remove_after_land` removes it. Zero leaves every existing corpse on the flung
+path, and the existing corpse tests cover that.
+
+The claim that no new field was needed held for `ActorSpec` and `EnemyParams`,
+not for `CorpseSpec`: the flung form assumes a launch, gravity and a landing,
+and this corpse has none of the three.
+
+One change is still outstanding in `host/cook.py`, which this pass could not
+write. `append_actor_art` dispatches its clip bindings on the controller kind
+and raises on an unknown one, so the region cook needs:
+
+```python
+        elif control['kind']=='EggSac':
+            bindings={'walk':'Idle','turn':'Idle','idle':'Idle'}
+```
+
+next to the `Aspid` branch. Without it every Crossroads_50 region cook aborts.

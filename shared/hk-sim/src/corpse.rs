@@ -24,6 +24,10 @@ pub struct CorpseSpec {
     /// Ticks after landing until the corpse is removed (0 keeps it): the
     /// source Roller corpse rolls out, shrinks and destroys itself.
     pub remove_after_land: u16,
+    /// Non-zero selects the corpse prefab without a Rigidbody2D: it never
+    /// launches or falls, holds `air_clip` for this many ticks and then plays
+    /// `land_clip` until `remove_after_land`. Zero keeps the flung body above.
+    pub hold_ticks: u16,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CorpsePhase {
@@ -97,6 +101,9 @@ impl Corpse {
             bounces: 0,
             rng: seed,
         };
+        if spec.hold_ticks != 0 {
+            return corpse; // No Rigidbody2D on this prefab: nothing launches it.
+        }
         assert!((ONE..=64 * ONE).contains(&spec.fling_speed), "invalid corpse fling speed");
         let v = match kind {
             2 => UP[(corpse.random() % 31) as usize],
@@ -123,11 +130,29 @@ impl Corpse {
     pub fn visible(self) -> bool {
         self.phase != CorpsePhase::Removed
     }
+    /// Source `Corpse Egg Sac` Control FSM without its physics: Spit plays the
+    /// first clip and waits, Burst plays the second to completion and End
+    /// deactivates the object. With no body there is no terrain to solve
+    /// against, so the corpse rests on the spawn point for its whole life.
+    fn hold(&mut self, spec: CorpseSpec) {
+        self.animation_tick = self.animation_tick.saturating_add(1);
+        if self.phase == CorpsePhase::Air {
+            if self.animation_tick >= spec.hold_ticks as u32 {
+                self.phase = CorpsePhase::Land;
+                self.animation_tick = 0;
+            }
+        } else if spec.remove_after_land != 0 && self.animation_tick >= spec.remove_after_land as u32 {
+            self.phase = CorpsePhase::Removed;
+        }
+    }
     /// Terrain-apron residency is checked by the caller. No extra allocation,
     /// timer-based corpse deletion, contact damage, or Geo gameplay is added.
     pub fn tick(&mut self, spec: CorpseSpec, count: usize, edge: impl Fn(usize) -> [i32; 4]) {
         if self.phase == CorpsePhase::Removed {
             return;
+        }
+        if spec.hold_ticks != 0 {
+            return self.hold(spec);
         }
         self.animation_tick = self.animation_tick.saturating_add(1);
         if matches!(self.phase, CorpsePhase::Land | CorpsePhase::Rest) {

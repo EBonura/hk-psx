@@ -16,6 +16,7 @@ def corpse_source(source, scene, actor):
     if kind in ('Vengefly','Gruzzer'):return _breaker_corpse_source(source,scene,actor,kind)
     if kind=='Baldur':return _roller_corpse_source(source,scene,actor)
     if kind=='Aspid':return _aspid_corpse_source(source,scene,actor)
+    if kind=='EggSac':return _egg_sac_corpse_source(source,scene,actor)
     if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber'):
         raise ValueError('unvalidated corpse controller family')
     runner=kind=='ZombieSwipeWalker';climber=kind=='Climber'
@@ -179,6 +180,82 @@ def _roller_corpse_source(source,scene,actor):
             'limitations':['Circle body as its bounding box; the solver .2 slide replaces 0.7 linear damping; no spin',
                            'Removed 120 ticks after landing instead of the source slow-down/shrink/destroy sequence']}
 
+def _egg_sac_corpse_source(source,scene,actor):
+    """`Corpse Egg Sac`: no Rigidbody2D, no collider and no Corpse component.
+
+    Its `Control` FSM is the whole lifetime: Spit plays one clip and waits, then
+    Burst plays a second to completion and End deactivates the object. Nothing
+    launches or falls, so this is the non-physics corpse form (`hold_ticks`)
+    rather than the flung body every other family uses.
+    """
+    from combat import ticks
+    from focus import action_fields
+    def scalar(value):
+        if isinstance(value,dict):
+            if value.get('useVariable'):raise ValueError('dynamic Egg Sac corpse parameter')
+            return value['value']
+        return value
+    components=list(_components(scene,actor['game_object']))
+    deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
+    if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
+    death=deaths[0]
+    # rotateCorpse is set here, but it only copies the owner's z rotation onto a
+    # corpse the guest draws upright; there is no launch arc to rotate.
+    if not death['m_Enabled'] or any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','recycle')) \
+            or death['corpseFlingSpeed']!=0 or death['corpseSpawnPoint']!={'x':0.,'y':0.,'z':0.} \
+            or death['enemyDeathType']!=0 or death['playerDataName']!='EggSac':
+        raise ValueError('unsupported Egg Sac corpse launch')
+    obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
+    if go['m_Name']!='Corpse Egg Sac':raise ValueError('unvalidated Egg Sac corpse identity')
+    parts={}
+    for ref in go['m_Component']:
+        component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
+        if typ in parts:raise ValueError('duplicate corpse component')
+        parts[typ]=(component,source.read(component))
+    if sorted(parts)!=sorted(('Transform','MeshFilter','MeshRenderer','tk2dSprite','tk2dSpriteAnimator',
+                              'SetZ','PlayMakerFSM','AudioSource','PreInstantiateGameObject')):
+        raise ValueError('unsupported Egg Sac corpse prefab')
+    sprite=parts['tk2dSprite'][1];transform=parts['Transform'][1]
+    if sprite['_color']!={'r':1.0,'g':1.0,'b':1.0,'a':1.0} or sprite['_scale']!={'x':1.0,'y':1.0,'z':1.0} or transform['m_LocalScale']!={'x':1.0,'y':1.0,'z':1.0}:
+        raise ValueError('unsupported corpse scale/color')
+    fsm=parts['PlayMakerFSM'][1]['fsm'];states={st['name']:st for st in fsm['states']}
+    if fsm['name']!='Control' or fsm['startState']!='Init' or [st['name'] for st in fsm['states']]!=['Init','Spit','Burst','End'] \
+            or [(t['fsmEvent']['name'],t['toState']) for st in fsm['states'] for t in st['transitions']]!=[('FINISHED','Spit'),('FINISHED','Burst'),('FINISHED','End')]:
+        raise ValueError('unsupported Egg Sac corpse FSM')
+    def only(state,action):
+        data=states[state]['actionData']
+        found=[i for i,n in enumerate(data['actionNames']) if n.rsplit('.',1)[-1]==action and data['actionEnabled'][i]]
+        if len(found)!=1:raise ValueError(f'unsupported Egg Sac corpse action {state}/{action}')
+        return action_fields(data,found[0])
+    wait=only('Spit','Wait');hold=scalar(wait['time'])
+    if wait['realTime'] or scalar(wait['finishEvent'])!='FINISHED' or not 0<hold<=10:
+        raise ValueError('unsupported Egg Sac corpse hold')
+    burst=only('Burst','Tk2dPlayAnimationWithEvents')
+    if scalar(burst['animationCompleteEvent'])!='FINISHED' or scalar(burst['animationTriggerEvent']):
+        raise ValueError('unsupported Egg Sac corpse burst completion')
+    names=[scalar(only('Spit','Tk2dPlayAnimation')['clipName']),scalar(burst['clipName'])]
+    # The Shiny the burst releases is recorded, not presented: its item resolves
+    # through the ordinary Shiny Control routing, which nothing spawns yet.
+    trinket=only('Init','SetFsmInt')
+    if scalar(trinket['fsmName'])!='Shiny Control' or scalar(trinket['variableName'])!='Trinket Num':
+        raise ValueError('unsupported Egg Sac corpse drop')
+    anim=parts['tk2dSpriteAnimator'][1];library_o=source.ref(obj.assets_file,anim['library']);library=source.read(library_o)
+    if source.sid(library_o)!=actor['movement_control']['library_source']:
+        raise ValueError('Egg Sac corpse animation library differs from the actor library')
+    selected=[next(c for c in library['clips'] if c['name']==name) for name in names]
+    if [(c['fps'],c['wrapMode'],len(c['frames'])) for c in selected]!=[(12,1,4),(18,2,4)]:
+        raise ValueError('unvalidated Egg Sac corpse clip timing')
+    if selected[0].get('loopStart',0)!=1 or selected[1].get('loopStart',0)!=0 \
+            or any(f.get('triggerEvent',False) for c in selected for f in c['frames']):
+        raise ValueError('unsupported Egg Sac corpse animation events/loop start')
+    matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
+    burst_seconds=len(selected[1]['frames'])/selected[1]['fps']
+    return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],
+            'bounds':[0,0,0,0],'spawn_offset':[0,0],'gravity':0,'breaker':False,'smash_bounces':0,'fling_speed':0,'bounce_factor':0,
+            'hold_ticks':ticks(hold),'remove_after_land':ticks(burst_seconds),'shiny_trinket_num':scalar(trinket['setValue']),
+            'limitations':['No rigid body or collider: the corpse holds the first clip in place and is removed when the second completes',
+                           'The Shiny it releases is recorded as its Trinket Num and never spawned; the EnemyKillShake, one shot, looping audio and particles are not presented']}
+
 class _ClipCooker:
     """Append tk2d clips from any library into the region frame/clip tables,
     sharing identical (library, clip, scale) entries."""
@@ -277,6 +354,7 @@ def generated_corpse(record):
     fields['breaker']=str(bool(record.get('breaker',False))).lower()
     fields['smash_bounces']=int(record.get('smash_bounces',0))
     fields['remove_after_land']=int(record.get('remove_after_land',0))
+    fields['hold_ticks']=int(record.get('hold_ticks',0))
     fields.update({k:'['+','.join(map(str,record[k]))+']'for k in ('bounds','spawn_offset')})
     return 'Some(hk_sim::CorpseSpec {'+','.join(f'{k}:{v}'for k,v in fields.items())+'})'
 
