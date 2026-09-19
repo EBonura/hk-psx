@@ -360,9 +360,12 @@ impl Actor {
             runtime: match spec.controller {
                 ActorController::Crawler => Runtime::Walker,
                 ActorController::Runner { params, .. } => {
-                    assert!(spec.initial_direction == -1 && !spec.random_start_direction,
+                    // A mirrored placement starts facing right; the cooker takes
+                    // the sign from the transform, so both are supported now.
+                    assert!(spec.initial_direction.abs() == 1 && !spec.random_start_direction,
                         "unsupported Runner initial facing variant");
-                    Runtime::Runner(RunnerRuntime { controller: hk_sim::runner::Runner::with_params(params), rng: seed,
+                    Runtime::Runner(RunnerRuntime {
+                        controller: hk_sim::runner::Runner::with_facing(params, spec.initial_direction as i8), rng: seed,
                         vx: 0, animation_tick: 0 })
                 }
                 ActorController::Climber { start_right, .. } => Runtime::Climber(ClimberRuntime {

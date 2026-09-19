@@ -215,17 +215,24 @@ impl Default for Runner {
     }
 }
 impl Runner {
-    /// The level37 Runner variant; every supported placement starts facing left.
+    /// The level37 Runner variant, which starts facing left like most.
     pub const fn new() -> Self {
         Self::with_params(Params::RUNNER)
     }
+    /// Facing left, which is how every placement was authored until
+    /// Crossroads_37's Leaper, whose transform carries a plain x mirror.
     pub const fn with_params(params: Params) -> Self {
+        Self::with_facing(params, -1)
+    }
+    /// `facing` is the placement's authored direction: the mirror in its
+    /// transform decides it, not the controller.
+    pub const fn with_facing(params: Params, facing: i8) -> Self {
         Self {
             params,
             walker: Walker::Waiting,
             swipe: Swipe::Ready,
-            facing: -1,
-            turning_facing: -1,
+            facing,
+            turning_facing: facing,
             wait: 0,
             turn_cooldown: 0,
             animation: None,

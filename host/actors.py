@@ -402,7 +402,8 @@ def generated_actor_specs(region):
             # Legacy Walker fields remain populated for the common ActorSpec;
             # the Runner runtime uses its separately verified native controller.
             speed, turn_ticks, turn_cooldown_ticks = p['walk_speed'], 10, 60
-            initial_direction, random_start_direction = -1, False
+            # Taken from the placement's transform mirror, not assumed.
+            initial_direction, random_start_direction = p['initial_direction'], False
         elif control['kind'] == 'Climber':
             if 'stun_clip' not in actor or not actor.get('corpse'):
                 raise ValueError(f'Climber is missing cooked clips or corpse: {actor["source"]}')
