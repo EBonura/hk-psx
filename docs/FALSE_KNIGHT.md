@@ -502,6 +502,34 @@ so the overlay's clip plays on the body and the `Blank` that would have hidden i
 is dropped; the overlay's DamageHero trigger is reproduced as a box reaching
 nearly eight units ahead, mirrored onto the side the body faces.
 
+**The shake and the two voices ride one action.** `Action::Effect` carries both
+the `SendEventByName` shakes and the `AudioPlaySimple` one-shots, because a
+state that shakes and plays at once is one event to the caller and the caller
+owns the camera and the SPU alike. `game/src/enemies.rs` answers it with
+`camera::request` and `audio::boss_land` / `boss_swing`, which is the only
+caller either of them has.
+
+| Source state | Sends |
+| --- | --- |
+| `Start Fall`, `Slam`, `JA Slam`, `Stun Start` | BigShake |
+| `S Land`, `State 2` | AverageShake and `false_knight_land` |
+| `Rage Slam` | AverageShake |
+| `Jump`, `S Jump`, `JA Jump`, `Jump 2` | EnemyKillShake |
+| `Land Noise` | `false_knight_land` |
+| `S Attack`, `JA Hit 2` | `false_knight_swing` |
+
+Two of those sit where the phase names do not suggest. `JA Slam` is entered the
+moment the jump attack reaches the floor, five ticks before `JA Hit 2` swings
+the mace back out of it, so its BigShake is pushed in the landing branch rather
+than beside that swing. And `JA Jump 2`, the last jump of the fight, shares this
+port's launch arm with `Jump`, `S Jump` and `Jump 2` while sending no shake at
+all, so the effect rides the launch table instead of the arm around it.
+
+Priority is what keeps this from turning into one long tremor: the source's
+`CameraShake` refuses a request while a higher-priority shake is live, so the
+slam's BigShake outlasts the jump that set it up and three slams in a row do not
+stack. `game/src/camera.rs` reproduces that refusal and counts it.
+
 ## The gates, and the half of them that is a recook
 
 `game/src/battle_gates.rs` is the `great_door.rs` shape the plan asked for: a
@@ -605,7 +633,13 @@ writes one.
   no target. The arena counts only the boss, which is what the source does.
 - **Everything the fight emits that has no object.** Barrels
   (`FK Barrel Summon`'s pool), the shockwave, the floor crack and break, the
-  staff, the Death Head, particles, camera shake and audio.
+  staff, the Death Head and particles.
+- **Two of the shakes, and every clip but two.** `Floor Break` and `Death Anim
+  Start` send BigShake and EnemyKillShake in the source and reach neither here.
+  `false_knight_land` and `false_knight_swing` are the whole of the resident
+  audio; the slam's own `false_knight_strike_ground` and every other clip the
+  fight reaches are refused for size, which `host/cook_audio.py` measures in
+  bytes rather than asserting.
 - **Twenty-eight of the thirty-four clips.** Substituted, not missing: every
   airborne and anticipating clip borrows `Jump Antic`, every impact and the whole
   roll borrow `Land`, the open-armour window borrows `Stun Opened`, `Rage`

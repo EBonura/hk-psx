@@ -994,7 +994,8 @@ impl Actor {
     }
     /// One `FalseyControl` action list against the guest body.
     fn apply_false_knight(&mut self, boss: &mut FalseKnightRuntime, actions: hk_sim::false_knight::Actions) {
-        use hk_sim::false_knight::Action;
+        use crate::camera::Shake;
+        use hk_sim::false_knight::{Action, Effect};
         for action in actions.iter() {
             match action {
                 // The source splits the attack art between the body, which
@@ -1031,6 +1032,23 @@ impl Actor {
                 }
                 Action::Staggered(_) => unsafe {
                     HK_FK_CONVERSIONS = HK_FK_CONVERSIONS.saturating_add(1)
+                },
+                // The `SendEventByName` and the `AudioPlaySimple` that the same
+                // source states carry. The actor loop in `tick` skips every
+                // actor whose `scene` is not the active region's, so the only
+                // fight that can reach the one camera is the one the hero is in
+                // the scene of, which is the source's own reach: its
+                // `CameraShake` is a single object under `_GameCameras`.
+                Action::Effect(effect) => match effect {
+                    Effect::LandingShake => {
+                        crate::camera::request(Shake::Average);
+                        crate::audio::boss_land();
+                    }
+                    Effect::Landing => crate::audio::boss_land(),
+                    Effect::Swing => crate::audio::boss_swing(),
+                    Effect::BigShake => crate::camera::request(Shake::Big),
+                    Effect::RageSlam => crate::camera::request(Shake::Average),
+                    Effect::JumpShake => crate::camera::request(Shake::Kill),
                 },
                 // `Invincible` and `HeadExposed` are read back off the phase
                 // rather than latched, so there is one source of truth for

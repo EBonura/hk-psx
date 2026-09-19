@@ -236,6 +236,30 @@ pub enum Phase {
     Dying(u8),
     Dead,
 }
+/// The `CameraShake` sends and the `AudioPlaySimple` one-shots the controller
+/// fires on the same states it changes phase on. They are named after what the
+/// source state does rather than after a clip or a shake, because a state that
+/// shakes and plays at once is one event to the caller and the caller owns both
+/// the camera and the SPU.
+///
+/// `Slam`'s and `Rage Slam`'s own `false_knight_strike_ground` is not resident
+/// (host/cook_audio.py's refusal table carries its measured size), so those two
+/// carry their shake alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// `S Land` and `State 2`: AverageShake with the landing voice.
+    LandingShake,
+    /// `Land Noise`: the landing voice with no shake.
+    Landing,
+    /// `S Attack` and `JA Hit 2`: the mace swing.
+    Swing,
+    /// `Slam`, `JA Slam`, `Stun Start` and `Start Fall`: BigShake.
+    BigShake,
+    /// `Rage Slam`: AverageShake.
+    RageSlam,
+    /// `Jump`, `S Jump`, `JA Jump` and `Jump 2`: EnemyKillShake.
+    JumpShake,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Play(Clip),
@@ -267,6 +291,10 @@ pub enum Action {
     Died,
     /// `Pause Long` sets falseKnightFirstPlop, which shortens every later plop.
     SetFirstPlop,
+    /// A `CameraShake` send, an `AudioPlaySimple`, or both, from the state this
+    /// transition entered. Pushed last in every list, because nothing else in
+    /// the list depends on it and the position then never has to be argued.
+    Effect(Effect),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Actions {
@@ -426,6 +454,7 @@ impl FalseKnight {
         // `Start Fall`: the boss is hanging kinematic above the arena until here.
         out.push(Action::Kinematic(false));
         out.push(Action::Gravity(GRAVITY_STUN));
+        out.push(Action::Effect(Effect::BigShake));
         out
     }
     /// `Check Health`: the body reached zero, so it staggers and restores to 65.
@@ -445,6 +474,7 @@ impl FalseKnight {
         let speed = if self.facing_right { -STUN_ROLL_SPEED } else { STUN_ROLL_SPEED };
         out.push(Action::Velocity([speed, STUN_JUMP_SPEED_Y]));
         self.play(Clip::StunRoll, &mut out);
+        out.push(Action::Effect(Effect::BigShake));
         out
     }
     /// The exposed Head took a nail hit without dying.
@@ -628,6 +658,9 @@ impl FalseKnight {
                     self.timer = LAND_TICKS;
                     out.push(Action::VelocityX(0));
                     self.play(Clip::Land, &mut out);
+                    // `State 2` is the entrance's own landing state, which this
+                    // transition enters ahead of `Rubble End`.
+                    out.push(Action::Effect(Effect::LandingShake));
                 }
             }
             Phase::Landing => {
@@ -687,16 +720,23 @@ impl FalseKnight {
             Phase::JumpAntic | Phase::SlamAntic | Phase::RageJumpAntic | Phase::DeathJumpAntic => {
                 self.timer -= 1;
                 if self.timer == 0 {
-                    let (gravity, speed, clip, next) = match self.phase {
-                        Phase::JumpAntic => (GRAVITY_JUMP, JUMP_SPEED_Y, Clip::Jump, Phase::Airborne),
-                        Phase::SlamAntic => (GRAVITY_JUMP, SLAM_JUMP_SPEED_Y, Clip::Jump, Phase::SlamAir),
-                        Phase::RageJumpAntic => (GRAVITY_RAGE_JUMP, SLAM_JUMP_SPEED_Y, Clip::Jump, Phase::RageAir),
-                        _ => (GRAVITY_DEATH_JUMP, JUMP_SPEED_Y, Clip::JumpAttackUp, Phase::DeathAir),
+                    // `Jump`, `S Jump` and `Jump 2` each send EnemyKillShake.
+                    // The last jump of the fight, `JA Jump 2`, is the one launch
+                    // that sends nothing, so the effect rides the same table
+                    // rather than the shared tail below.
+                    let (gravity, speed, clip, next, effect) = match self.phase {
+                        Phase::JumpAntic => (GRAVITY_JUMP, JUMP_SPEED_Y, Clip::Jump, Phase::Airborne, Some(Effect::JumpShake)),
+                        Phase::SlamAntic => (GRAVITY_JUMP, SLAM_JUMP_SPEED_Y, Clip::Jump, Phase::SlamAir, Some(Effect::JumpShake)),
+                        Phase::RageJumpAntic => (GRAVITY_RAGE_JUMP, SLAM_JUMP_SPEED_Y, Clip::Jump, Phase::RageAir, Some(Effect::JumpShake)),
+                        _ => (GRAVITY_DEATH_JUMP, JUMP_SPEED_Y, Clip::JumpAttackUp, Phase::DeathAir, None),
                     };
                     self.phase = next;
                     out.push(Action::Gravity(gravity));
                     out.push(Action::Velocity([self.jump_x, speed]));
                     self.play(clip, &mut out);
+                    if let Some(effect) = effect {
+                        out.push(Action::Effect(effect));
+                    }
                 }
             }
             Phase::JumpAttackAntic => {
@@ -706,6 +746,8 @@ impl FalseKnight {
                     out.push(Action::Gravity(GRAVITY_JUMP_ATTACK));
                     out.push(Action::Velocity([self.jump_x, JUMP_SPEED_Y]));
                     self.play(Clip::JumpAttackUp, &mut out);
+                    // `JA Jump`, the fourth of the four launches that shake.
+                    out.push(Action::Effect(Effect::JumpShake));
                 }
             }
             Phase::Airborne | Phase::SlamAir | Phase::RageAir => {
@@ -717,11 +759,18 @@ impl FalseKnight {
                     out.push(Action::VelocityX(0));
                     self.timer = LAND_TICKS;
                     self.play(Clip::Land, &mut out);
-                    self.phase = match self.phase {
-                        Phase::Airborne => Phase::Landing,
-                        Phase::SlamAir => Phase::SlamLand,
-                        _ => Phase::RageLand,
+                    // `Land Noise` plays the landing voice alone and `S Land`
+                    // adds AverageShake to it; the rage landing state plays no
+                    // clip and sends no shake, so it is the one that gets none.
+                    let (next, effect) = match self.phase {
+                        Phase::Airborne => (Phase::Landing, Some(Effect::Landing)),
+                        Phase::SlamAir => (Phase::SlamLand, Some(Effect::LandingShake)),
+                        _ => (Phase::RageLand, None),
                     };
+                    self.phase = next;
+                    if let Some(effect) = effect {
+                        out.push(Action::Effect(effect));
+                    }
                 }
             }
             Phase::JumpAttackAir | Phase::DeathAir => {
@@ -741,6 +790,10 @@ impl FalseKnight {
                     self.phase = Phase::JumpAttackSlam;
                     self.timer = JA_SLAM_TICKS;
                     out.push(Action::VelocityX(0));
+                    // This transition is the entry to `JA Slam`, whose own wait
+                    // the phase below holds, so the impact shake belongs here
+                    // rather than five ticks later with `JA Hit 2`'s swing.
+                    out.push(Action::Effect(Effect::BigShake));
                 }
             }
             Phase::JumpAttackSlam => {
@@ -756,6 +809,8 @@ impl FalseKnight {
                     out.push(Action::Hitter(false));
                     out.push(Action::VelocityX(self.recoil_speed));
                     self.play(Clip::JumpAttackHit2, &mut out);
+                    // `JA Hit 2` swings the mace back out of the floor.
+                    out.push(Action::Effect(Effect::Swing));
                 }
             }
             Phase::JumpAttackRecoil => {
@@ -798,6 +853,8 @@ impl FalseKnight {
                     out.push(Action::Hitter(true));
                     out.push(Action::Play(Clip::Blank));
                     out.push(Action::PlayHitter(Clip::Attack));
+                    // `S Attack` is the swing itself, ahead of the `Slam` below.
+                    out.push(Action::Effect(Effect::Swing));
                 }
             }
             Phase::SlamStrike => {
@@ -812,6 +869,9 @@ impl FalseKnight {
                     out.push(Action::Shockwave { x: origin, right: self.shockwave_right });
                     out.push(Action::Hitter(false));
                     self.play(Clip::AttackRecover, &mut out);
+                    // `Slam`, which this transition passes through on its way to
+                    // `S Attack Recover`, is where the mace reaches the floor.
+                    out.push(Action::Effect(Effect::BigShake));
                 }
             }
             Phase::SlamRecover => {
@@ -958,6 +1018,9 @@ impl FalseKnight {
                     }
                     self.phase = Phase::RageTurn;
                     self.timer = RAGE_PARTICLE_TICKS;
+                    // The state this leaves is `Rage`; `Rage Slam` is the one it
+                    // enters, and its AverageShake is all of it this port has.
+                    out.push(Action::Effect(Effect::RageSlam));
                 }
             }
             Phase::RageTurn => {
