@@ -52,18 +52,24 @@ That is not a typo worth fixing in isolation. It is what a duplicated response
 block produces: five copies, and the fifth drifted. The centralization step 4
 asks for is the fix, because a new damage source then cannot forget a step.
 
-## The shape to centralize on
+## What it centralizes on
 
-One `apply_hurt(source, amount, direction, hazard)` that performs the debit and
-the entire response, returning the `Hurt` for the caller's own bookkeeping. The
-per-source differences are all inputs to it, not variations of it:
+Two functions in `main.rs`, and no damage path outside them.
 
-- the amount and direction, which every caller already computes,
-- `hazard`, which routes to the respawn marker,
-- `player.shadow_dashing`, which every caller already passes and none may forget.
+`respond_to_hurt(hurt, ...)` owns everything that follows a hit the Knight
+actually took, including the `HK_DEATHS` count. The enemy paths compute their
+`Hurt` inside `EnemyWorld::tick`, so they reach the response through this
+directly.
 
-`HK_DEATHS` belongs inside it too: today four call sites increment it and the
-fifth would be easy to miss.
+`apply_hurt(..., damage, direction, hazard)` is the debit plus that response,
+and it is what every other source calls. The per-source differences are inputs,
+not variations: the amount and direction the caller already computes, `hazard`
+to route to the respawn marker, and `player.shadow_dashing`, which is read off
+the player rather than passed because no caller may forget it.
+
+Grepping `main.rs` for `cheats.hurt(` or `HK_DEATHS` now returns two lines, both
+inside these helpers. The fall-out-of-the-world path cancels dialogue like every
+other, because it no longer has its own copy to drift.
 
 ## Not in this audit
 
