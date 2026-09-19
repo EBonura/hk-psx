@@ -189,13 +189,42 @@ so Unity never raises the callback for them: six `Area Title Controller`
 instances are authored exactly that way, with no collider and no `Rigidbody2D`
 to forward one from a child. That leaves 470 compiling and 556 refused, and the
 compiling ones are 56 proven by the tag and 414 by the layer matrix, over 226
-distinct objects that will need cooked trigger bounds.
+distinct objects that would need cooked trigger bounds if every compiling FSM
+shipped. Nine of them do, which is the next section.
 
 Whole FSM instances move much less than that, because an FSM compiles only when
 every action in it does: 246 to 255. The ranking is what actually moved.
 `Trigger2dEvent` refuses first for 196 instances now rather than 274, and the
 instances one action short of compiling regrouped behind `SetFsmBool`, which is
 scoping work rather than a missing opcode.
+
+## On the disc
+
+`host/cook_scripts.py` is the cooker and `game/src/script.rs` is the runtime.
+Between them they close the loop the measurement was for: the programs reach
+`data/scripts.rs`, the guest links them, and the resident scene's instances tick
+at 60 Hz against the hero body.
+
+The shipped bank is much smaller than the compiled set, and the gap is the
+number worth keeping. 255 instances compile; **245 of them compile to nothing**.
+`Spawn Offset`, `PlayMaker Unity 2D`, `RespawnTriggerFSM` and the Hollow Shade
+markers are single empty states, so they are not cooked: putting them in the
+pool would tick zero ops for ever and would report as coverage. Ten instances
+have ops. Three of those ten can act; the other seven are `Area Title
+Controller`, one state with no transitions at all, whose `Trigger2dEvent` sends
+an event the definition has nowhere to take. That is what the source does too,
+so they are cooked and reproduced, and they are never counted as behaviour.
+
+The three that act are `Set` on King's Pass's Set Seen Focus Tablet, which
+writes `seenFocusTablet` when the Knight enters its box, `Area Resetter` in
+Dirtmouth, which writes `currentArea`, and `Set NPC Leave` in Crossroads_06. The
+first two are in the only two scenes the disc holds.
+
+Bounds for the nine watched volumes ride in the generated table rather than in
+the world metadata bank. The bank is the right home and needs a `KIND_` of its
+own; what it also needs is `host/regions.py` to emit the rows, which is where
+the region records are built. Until then an instance is bound to its source
+scene rather than to a region, which is sound while no scene has more than two.
 
 Two things about the runtime. The op always carries `REPEAT`, because the source
 action listens for as long as its state is current; sampled once on state entry

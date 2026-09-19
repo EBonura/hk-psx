@@ -73,6 +73,20 @@ class CompilerTests(unittest.TestCase):
                              variables={'soul': 0, 'cost': 1})
 
 
+class GlobalTransitionTests(unittest.TestCase):
+    def test_a_definition_with_a_global_transition_refuses(self):
+        # A global transition fires from any state. Compiling the FSM without it
+        # would turn an event that leaves into an event that goes nowhere, which
+        # nothing downstream could tell from a state with nothing to do.
+        states = [state('Idle', [])]
+        definition = fsm(states)
+        definition['globalTransitions'] = [{'fsmEvent': {'name': 'HERO LEAVE'},
+                                            'toState': 'Idle'}]
+        with self.assertRaises(Unsupported) as caught:
+            compile_fsm(definition)
+        self.assertIn('global transitions', caught.exception.detail)
+
+
 class ReadOnlyFoldTests(unittest.TestCase):
     """A variable mentioned by exactly one action is only read, so its initial
     value is constant for the run. A second mention might be the write."""
