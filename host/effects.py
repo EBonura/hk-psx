@@ -512,6 +512,15 @@ def append_door_debris_art(source,scene,atlas,frames):
     """Cooked rigid fragments for this scene; see fragment_records."""
     return fragment_records(source,scene,atlas,frames)
 
+# How many distinct door-debris variants the catalogue may hold. Not a format
+# limit: the world bank carries the index as a full i32 payload word and the
+# guest indexes a slice with it. It is a guard against the table growing without
+# anyone looking, and it was written in two places, `host/world.py` and
+# `tools/world_metadata.py`, which is why raising one of them did not help.
+# Measured at 11 once rigid fragments cooked beyond Tutorial_01, because a
+# region's fragment set differs per region rather than per scene.
+DEBRIS_VARIANT_LIMIT = 12
+
 def generated_debris(records,scene):
     if len(records)>28:raise ValueError('door fragment pool budget')
     result=[];seen=set()
