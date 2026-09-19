@@ -14,7 +14,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / 'data/charms.rs'
+ICONS = ROOT / 'data/charm-icons.hk'
 REPORT = ROOT / '.hkpsx/charm-catalog.json'
+BUILD = ROOT / '.hkpsx/build.json'
 
 
 def cooked():
@@ -65,17 +67,60 @@ class CookedCatalogueTests(unittest.TestCase):
         # The pause screen is reachable from every view, so the number that
         # applies is the tightest view in the world, not any one scene's.
         self.assertEqual(icons['texture_budget'], 416)
-        self.assertLess(icons['global_clut_headroom'], 40)
         self.assertEqual(len(icons['source_sprite_pixels']), 40)
         self.assertGreater(icons['animation_slots'], 0)
         # The slot half of the refusal is derived, not asserted, because it
         # stopped being true: reclaiming an unused scenery page took the cache
         # from 8 slots to 24, and the recorded verdict went on interpolating the
         # new number into the old argument. The atlas route above is refused on
-        # a number that cannot move; this one is a live comparison.
+        # a reason that cannot move; this one is a live comparison.
         self.assertEqual(icons['shade_route_slots_needed'], icons['rows_on_screen'] + 4)
         self.assertEqual(icons['shade_route_fits'],
                          icons['shade_route_slots_needed'] <= icons['animation_slots'])
+        # The atlas route needs somewhere resident to put the texels as well as
+        # a CLUT slot, and that half does not turn on a CLUT count at all.
+        self.assertGreater(min(icons['resident_vram_halfwords'].values()),
+                           icons['spare_halfwords'])
+
+    @unittest.skipUnless(REPORT.is_file(), 'run host/charms.py first')
+    def test_the_icon_size_is_the_largest_the_screen_can_seat(self):
+        icons = json.loads(REPORT.read_text())['icons']
+        layouts = icons['panel_layouts']
+        seatable = [int(side) for side, layout in layouts.items() if layout['fits']]
+        self.assertTrue(seatable, icons['verdict'])
+        self.assertEqual(icons['icon_px'], max(seatable))
+        for side, layout in layouts.items():
+            self.assertEqual(layout['fits'], layout['scanlines_needed'] <= icons['panel_scanlines'])
+        # The size is not a RAM decision. Every offered size is affordable in
+        # linked RAM against what the build has left; the screen is what refuses
+        # the larger two, and a trimmed row count or a shorter description is
+        # what this must not buy a bigger icon with.
+        self.assertEqual(icons['rows_on_screen'], 6)
+        if BUILD.is_file():
+            headroom = json.loads(BUILD.read_text())['memory']['unallocated_before_stack_bytes']
+            for side, cost in icons['shade_route_linked_bytes'].items():
+                self.assertLess(cost, headroom, f'{side} no longer fits linked RAM either')
+
+    @unittest.skipUnless(ICONS.is_file(), 'run host/charms.py first')
+    def test_the_cooked_icons_are_one_square_frame_each(self):
+        text = cooked()
+        def const(name, pattern=r'(\d+)'):
+            return int(re.search(rf'{name}:\w+={pattern};', text).group(1))
+        side = const('ICON_PX')
+        palettes = const('ICON_PALETTE_COUNT')
+        # A 4bpp row rounds the width up to four pixels, and the whole frame has
+        # to reach VRAM in one 64x64 animation slot upload.
+        self.assertEqual(const('ICON_BYTES'), (side + 3) // 4 * 2 * side)
+        self.assertLessEqual(const('ICON_BYTES'), 2048)
+        self.assertEqual(const('ICON_PALETTE_BYTES'), palettes * 32)
+        self.assertEqual(ICONS.stat().st_size, palettes * 32 + 40 * const('ICON_BYTES'))
+        table = re.search(r'ICON_PALETTE:\[u8;CHARM_COUNT\]=\[([0-9,]+)\];', text).group(1)
+        rows = [int(v) for v in table.split(',')]
+        self.assertEqual(len(rows), 40)
+        self.assertTrue(all(0 <= r < palettes for r in rows))
+        # Every palette is used, or a resident CLUT row is being held for
+        # nothing; the rows come out of the block the Shade reserved.
+        self.assertEqual(sorted(set(rows)), list(range(palettes)))
 
 
 class CharmRuntimeTests(unittest.TestCase):
