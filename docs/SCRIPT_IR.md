@@ -77,6 +77,14 @@ condition would test it once and sit there for ever, which is a silent wrong
 answer rather than a refusal, so the compiler must set the flag or refuse the
 action.
 
+A state's actions are a priority list, not a set of independent tests.
+`FsmState::ActivateActions` in the shipped PlayMaker.dll returns as soon as
+`Fsm.IsSwitchingState`, so once one action has transitioned the remaining
+actions of that state never run. Every conditional dialogue branch depends on
+it: Elderbug's 21 branches are ordered, and each is a said-once flag, so
+evaluating them as independent tests would pick the wrong line. The executor
+leaves a state the moment an op transitions, and a test names the reason.
+
 Events are synchronous and nested, matching PlayMaker: `SendEventByName` runs
 the target's transition inside the sending op, up to the depth bound, and only
 then returns. Delayed sends go on a pending queue drained at the start of the
