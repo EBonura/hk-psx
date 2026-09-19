@@ -68,7 +68,12 @@ def corpse_source(source, scene, actor):
     if runner:
         if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead','ZombieLeaper'):
             raise ValueError('unvalidated Runner corpse identity')
-        if any(abs(matrix[i][j]-(1 if i==j else 0))>1e-6 for i in range(2)for j in range(2)):
+        # A mirrored placement is admitted (Crossroads_37's Leaper), so accept a
+        # plain x mirror here too. sx/sy above already take the magnitude, and
+        # the corpse's own facing comes from the actor at spawn, so only the
+        # basis shape needs checking: unit magnitude, no rotation, no y flip.
+        if (abs(sx-1)>1e-6 or abs(matrix[1][1]-1)>1e-6
+                or abs(matrix[0][1])>1e-6 or abs(matrix[1][0])>1e-6):
             raise ValueError('unsupported Runner corpse actor transform')
         if not box['m_Enabled'] or box['m_IsTrigger'] or box['m_EdgeRadius']!=0 or not (0<size['x']<4 and 0<size['y']<4):
             raise ValueError('unsupported Runner corpse collider')
