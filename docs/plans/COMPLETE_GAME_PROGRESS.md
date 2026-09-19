@@ -50,7 +50,9 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | P15 | in progress | Build 122 adds Vengeful Spirit from `Spell Control`, `Fireball Cast` and the projectile's own FSMs, with the source's one-button cast-versus-Focus split. Remaining: Desolate Dive and Howling Wraiths (catalogued only), nail arts, nail damage tiers, the centralized damage resolution of step 4, the verification matrix of step 7, and the `Ball`/`Ball End` art, which needs a reserved VRAM rectangle. |
 | P10 | in progress | Steps 1 and 2 done, step 4 started. `tools/playmaker_inventory.py` ranks 48,037 enabled actions of 280 types across 2,028 FSM instances in the admitted scenes, and separates the third already covered by native families. docs/SCRIPT_IR.md is the chosen IR; `hk_sim::script` runs its first slice with bounded, refusing semantics and 8 tests; `host/script_ir.py` compiles to it and refuses unsupported actions by name. Variables are a caller-owned pool and `GetOwner` resolves at cook time, which between them unblocked 852 instances. Measured coverage today: 245 of 2,028 instances compile and all of them are empty, because an FSM needs every action supported. `PlayerDataBoolTest` is answered too, through the existing persistent store plus a read-only-variable fold, so the first authored behaviour compiles: 246 instances, 7 ops. The next slice is not more opcodes: `Trigger2dEvent` (198), `FindChild` (176), `GetVelocity2d` (122), `Tk2dPlayAnimation` (115) and every other remaining blocker needs a guest object model, which is step 5's scope and reference work. P12, P17, P18 and P23 all wait on this. |
 | P11 | in progress | Steps 1 and 4 done for the admitted world. `tools/physics_catalog.py` shows terrain is boxes, polygons and edge colliders only, all exactly representable; no one-way platforms exist in the admitted world; and `LiftPlatform` is a 0.09-unit cosmetic dip rather than a moving platform, so step 3 has nothing to implement here. The `BounceShroom` in Crossroads_38 is implemented as the down slash target it actually is, with its `fatGrubKing` gate recorded rather than evaluated. Owed: the 127 of 166 TinkEffect surfaces the static pogo pool does not cover, each excluded for a recorded reason. |
-| P12, P16-P18, P21-P31 | pending | Follow dependency order in the master plan. |
+| P16 | in progress | Step 1 done. `host/items.py` catalogs 40 charms with notch costs and PlayerData fields, 26 equipment entries, and the fragment fusion rules from the prefabs the pickups spawn. The slice contains 6 charms, 1 notch, 3 mask shards, 1 vessel fragment, 3 relics and the City Crest, none of it implemented. Charm effects belong to steps 5 and 6 and are not read. |
+| P17 | in progress | Step 1 done. `host/shops.py` catalogs Sly's stock and the stag rules, and found that prices come from an encrypted sheet rather than the serialized `cost`, which is stale on 9 of 14 items. Every `ShopMenuStock` is in an unadmitted scene, so no purchase is reachable; the whole economy loop in the slice is 1,177 Geo earned against 230 Geo of sinks. |
+| P12, P18, P21-P31 | pending | Follow dependency order in the master plan. |
 
 ## P01 evidence
 
@@ -1850,6 +1852,63 @@ minutes of cooking and a clean route sweep. All 431 host tests pass.
 
 That is the third time this session that a suite with no runner had quietly
 rotted. The pattern is worth naming: a test that nothing executes is not a test.
+
+## P16 and P17 step 1: what the shipped slice actually contains
+
+Both catalogs are extraction only, and both corrected an assumption in their
+brief.
+
+### Prices are not where they are serialized
+
+`ShopItemStats::Awake` throws away the serialized `cost` and reparses it from
+the `Prices` language sheet, which ships AES-256-ECB encrypted. **Nine of Sly's
+fourteen items have a stale serialized cost.** The Lumafly Lantern serializes
+1500 and sells for 1800, the Rancid Egg serializes 500 and sells for 60, the
+Simple Key serializes 500 and sells for 950. Anyone who binds
+`ShopItemStats.cost` ships wrong prices throughout. The catalog carries both
+values and a `cost_is_serialized` flag on every row so the trap cannot be walked
+into twice, and the sheet values match the retail game.
+
+The same trap caught the stag toll: the Crossroads bell's FSM serializes
+`Toll Cost` 80 and actually charges the sheet's 50.
+
+### Dirtmouth's shop is a door, not a shop
+
+`Sly_shop` in Town is the building front, and the shop is `Room_shop`, which is
+not admitted. Same for `Stag_station`, whose interior is another unadmitted
+scene. The station that *is* in the slice is Crossroads_47's, and its rules came
+out cleanly: 50 Geo to ring the bell, and travel itself is free, which was
+proven by the absence of any `TakeGeo` in `Stag Control` rather than assumed.
+Every `ShopMenuStock` in the game is in an unadmitted scene, so no purchase is
+reachable at all today.
+
+### The economy loop, whole
+
+1,177 Geo per clear of the admitted scenes (487 from 33 rocks, once, and 690
+from 216 enemy payouts, farmable) against 230 Geo of things to spend it on:
+Cornifer's map for 30, the stag bell for 50, and the City lift toll for 150.
+That is the entire loop.
+
+### Items
+
+40 charms with notch costs and their four or five PlayerData fields each, 26
+equipment entries, mask shards fusing four to one mask and vessel fragments
+three to one vessel, all taken from the prefabs the pickups spawn rather than
+from prose. Of that catalog the slice contains 6 charms, 1 notch, 3 mask shards,
+1 vessel fragment, 3 relics, the City Crest and a Pale Ore. So the slice is one
+shard short of a mask and two fragments short of a vessel, and none of it is
+implemented: no pickup, no inventory, no charm, no notch exists in the port.
+
+One find worth keeping: Tutorial_01's chest holds Fury of the Fallen, and a byte
+scan of every level file shows `gotCharm_6` appears only there and in the menu
+scene. In this install King's Pass is the only pickup for that charm.
+
+### A sharp edge both agents hit
+
+`action_fields` names unnamed array parameters by their index, so array-shaped
+actions like `IntSwitch`'s compareTo and sendEvent pairs have to be read
+positionally. Both catalogs worked around it locally. It is worth a named helper
+before a third reader gets it wrong.
 
 ## Required package completion record
 
