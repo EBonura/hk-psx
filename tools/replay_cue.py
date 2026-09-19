@@ -38,6 +38,10 @@ WATCHES+=['HK_ABILITY_DRAWN']
 # moves only the wallet, which a Geo rock also moves, so without these the
 # shop has nothing a replay can assert.
 WATCHES+='HK_SHOP_OPENED HK_SHOP_CLOSED HK_SHOP_PURCHASES HK_SHOP_GEO_SPENT HK_SHOP_OPEN HK_SHOP_PROMPT'.split()
+# The False Knight. Deaths and conversions are separate on purpose: the last
+# exposure empties the Head too, and only the tail after it is a death.
+WATCHES+='HK_FK_TRIGGERED HK_FK_DROPPED HK_FK_STAGGERS HK_FK_CONVERSIONS HK_FK_DEATHS HK_FK_HP HK_FK_HEAD_HP HK_FK_ACTIVE HK_FK_EXPOSED HK_FK_STUNNED HK_FK_ARENA HK_FK_ACTIVATED'.split()
+WATCHES+='HK_ARENA_GATES HK_ARENA_GATE_CLOSES HK_ARENA_GATE_OPENS'.split()
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def main():

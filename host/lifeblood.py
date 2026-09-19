@@ -162,7 +162,12 @@ def cook():
         scene=json.loads((ROOT/r.get('base_path',f'data/regions/region-{r["chunk_id"]:03}/room.hk')).with_name('scene.json').read_text())
         off=[i for i,d in enumerate(scene['draws'])if d['source']in off_ids]
         edges=[i for i,e in enumerate(r['edge_sources'])if(e if isinstance(e,str)else e.get('source'))in('level6:8165','level6:8330')]
-        if len(edges)>8:raise ValueError('Lifeblood edge binding capacity')
+        # The bound is `world::SCRIPT_EDGE_SLOTS`, read rather than repeated: it
+        # was 8 here and moved to 12 when the arena gates needed room, and a
+        # second copy of a number that moves is how a generator goes on
+        # refusing work the guest would have taken.
+        from battle_gates import edge_scratch_slots
+        if len(edges)>edge_scratch_slots():raise ValueError('Lifeblood edge binding capacity')
         bindings.append(dict(off=off,edges=edges))
     spec=dict(scene=0,origin=sc.point(973)[:2],bounds=bounds,fling_speed=[fling['minSpeed'],fling['maxSpeed']],fling_angle=[fling['minAngle'],fling['maxAngle']],spread=[fling['originVariation'][k]for k in'xy'],scale=[1.35,1.5],speed=[6.,9.],body=body_box,gravity=gravity,acceleration=.3,activate_ticks=15,heal_ticks=72,land_ticks=15,bounce_ticks=30)
     rust=['// Generated source Lifeblood art and behavior; no embedded retail source dump.','pub const LIFE_SPEC:Spec=Spec{']
