@@ -7,15 +7,15 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |634,000|
-| Code-to-data alignment |0|
-| Linked data, including menu and HUD |406,384|
+| Linked code |645,100|
+| Code-to-data alignment |4|
+| Linked data, including menu and HUD |409,616|
 | BSS, including shared scene arena and runtime pools |858,444|
-| Total static span |1,898,828|
+| Total static span |1,913,164|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |83,380|
+| Unallocated gap before reserved stack |69,044|
 
 Every figure above is the current build's, read out of `.hkpsx/build.json`, and
 `tests/test_budget_doc.py` fails when this table drifts from it. The table stood
@@ -24,7 +24,7 @@ separate agent briefings after it had fallen to 73,876. A budget
 document nobody can trust is worse than none, because work gets planned against
 it.
 
-Static data ends at `0x801df94c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801e314c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 417,748 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -40,7 +40,7 @@ its 32,768-byte reservation before nested calls. `host/stack_budget.py` now
 derives a project linker script from the unchanged pinned SDK, protects 48 KiB,
 and checks the actual final main prologue before packaging. The generated
 script's content hash is part of its filename so budget changes force a relink.
-The current main frame is 18,472 bytes, leaving 30,680 reserved bytes for nested
+The current main frame is 18,504 bytes, leaving 30,648 reserved bytes for nested
 calls and other stack use; this is **not** an observed high-water measurement.
 It was 35,688 at build 154, and moving the 12,112-byte particle pool out to a
 static took 17,256 off the frame rather than 12,112, because constructor
