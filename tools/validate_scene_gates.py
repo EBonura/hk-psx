@@ -7,6 +7,12 @@ import argparse,csv,hashlib,json,re
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
+# The queue's own capacity, from the module that enforces it. Written here as a
+# bare 16 with a `>` test, which no peak can satisfy: input_sampler faults with
+# Fault::QueueFull once pending_count() reaches CAPACITY, so the queue never
+# holds more than CAPACITY and the gate below never fired.
+INPUT_QUEUE_CAPACITY=int(re.search(r'pub const CAPACITY: usize = (\d+);',
+                                   (ROOT/'game/src/input_queue.rs').read_text()).group(1))
 def source_path(value):
     p=Path(value);return p if p.is_absolute() else ROOT/p
 
@@ -54,7 +60,7 @@ def verify(directory,minimum_loads=1,town_x=None):
     if state['HK_SCENE_GATE_LOADS']<minimum_loads:raise ValueError('Required scene replacements not observed')
     if state['HK_SCENE_LOADS']!=state['HK_SCENE_GATE_LOADS']+1:raise ValueError('Unexpected scene admission count')
     if state['HK_INPUT_LOADING_TICKS']==0 or state['HK_INPUT_LOADING_SAMPLES']==0:raise ValueError('Loading input service not observed')
-    if state['HK_INPUT_QUEUE_PEAK']>16:raise ValueError('Input queue exceeded capacity')
+    if state['HK_INPUT_QUEUE_PEAK']>=INPUT_QUEUE_CAPACITY:raise ValueError('Input queue reached capacity')
     rows=list(csv.DictReader((directory/'route.csv').open()))
     def value(row,name):return int(row['ram_'+command['watches'][name][2:]])
     regions={r['chunk_id']:s['scene_id']for s in pack['scenes']for r in s['source_rooms']}

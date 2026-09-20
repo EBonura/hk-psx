@@ -28,7 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
 
-MAX_ROOM_TEXTURES = 640
+from cook import MAX_ROOM_TEXTURES  # the format's own limit, not a second copy of it
 
 
 def view_cluts(report):

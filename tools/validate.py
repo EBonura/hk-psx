@@ -5,6 +5,20 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'host'))
 from paths import DISC_LIBRARY, artifacts
+
+
+def _hk_cache_const(name):
+    """A `hk_cache` budget read from the crate that enforces it, not copied here.
+
+    `MAX_UPLOAD_BYTES` was written into this file as 16384 and stayed there when
+    the animation cache tripled to 49152, so the gate below would have refused
+    exactly the frames that change was made to admit.
+    """
+    text=(ROOT/'shared/hk-cache/src/lib.rs').read_text()
+    return int(re.search(rf'pub const {name}: u32 = (\d+);',text).group(1))
+
+
+MAX_UPLOAD_BYTES=_hk_cache_const('MAX_UPLOAD_BYTES')
 # The previous route-clock fixtures had a 16-tick boot offset. Express the
 # same movement durations on the guest poll clock, which pauses during CD reads.
 ROUTE='9:start:1,54:right:120,89:cross:30,214:left:90,229:cross:3'
@@ -137,7 +151,7 @@ def main():
             raise ValueError(f'Unexpected region bytes or incomplete initial CD load: {values}')
         if not values['cache_hits'] or not values['cache_misses']:
             raise ValueError(f'Animation cache route did not exercise hits and misses: {values}')
-        if not 0<values['peak_frame_upload_bytes']<=16384 or not values['upload_bytes']:
+        if not 0<values['peak_frame_upload_bytes']<=MAX_UPLOAD_BYTES or not values['upload_bytes']:
             raise ValueError(f'Animation upload budget failed: {values}')
         return values
     title=launch('final-title',paths['cue'],['--stop-at-poll',120,'--dump-display',out/'title.ppm','--dump-ram',state/'title-ram.bin'],presses='')
