@@ -188,6 +188,98 @@ SCENE_TABLE = (
     # 8,032 contiguous.
     {'scene_id': 46, 'scene_name': 'Fungus1_01', 'file': 'level128',
      'runtime_bounds': [-2, -5, 172, 31], 'camera_global_bounds': [0, 0, 170, 30]},
+    # Greenpath's entrance corridor and the loop it opens onto: thirteen more
+    # scenes, 220 views, every one of them reachable on foot from Fungus1_01.
+    # Each row's envelope and camera are the ones tools/cook_scene_pack.py
+    # derived, and every scene was recooked against the current cooker rather
+    # than read off the packs that were on disc, which were from 16 September
+    # and predate several cook changes. All thirteen cook: decoder and packet
+    # bound PASS, worst view 5 of 5 pages, 373 of 416 CLUT slots (Fungus1_02),
+    # 399 of 640 texture records, 249,560 of 393,216 room bytes.
+    #
+    # Those per-view figures are read after the scene actor bank, not before
+    # it, because the bank is appended to every view of a scene once the views
+    # have already been priced, and it is the one thing that can spend a view's
+    # remaining CLUT slots all at once. Only Fungus1_01b has one here: its
+    # Pigeons cost 16 slots, taking its tightest view from 308 to 324, and that
+    # figure held while the placement count went from 11 to 13, which is the
+    # per-type catalogue behaving as advertised. An actor bank is also what
+    # keeps Fungus1_03 out. Free slots at each scene's tightest view, which is
+    # what a new enemy family has to fit inside: Fungus1_02 43, Fungus1_19 62,
+    # Fungus1_05 76, Fungus1_01b 92, Fungus1_08 107, Fungus1_30 116,
+    # Fungus1_17 118, Fungus1_10 127, Fungus1_07 141, Fungus1_06 155,
+    # Fungus1_15 171, Fungus1_09 198, Fungus1_14 211. For scale, the three
+    # Crossroads types Fungus1_03 carries cost 115.
+    #
+    # The arena does not move. It is max(scene raw) + max(meta bank) + 4 and
+    # both maxima are still Tutorial_01: the largest resident scene here is
+    # Fungus1_10 at 174,088 against scene 0's 349,032, and the largest metadata
+    # bank is Fungus1_09 at 27,396 in isolation against scene 0's 69,640.
+    # Isolated banks understate the cooked one, because the pack has no
+    # resolved gates to carry: Fungus1_01 measured 9,344 alone and 15,824 in
+    # the world, about 1.7x, which puts Fungus1_09 near 47,000. Nothing here
+    # reaches scene 0 on either term, so SCENE_ARENA_BYTES stays 418,676 and no
+    # admitted scene pays for this batch. Fungus1_09 is the one to re-measure
+    # first if that ever stops being true.
+    #
+    # Nor do the generated working-set constants grow: the widest scene bank
+    # here is Fungus1_05 at 612 textures against SCENE_TEXTURE_CAPACITY 1152,
+    # and the busiest view is Fungus1_08 at 671 draws against
+    # SCENE_DRAW_CAPACITY 704. Per-scene VRAM peaks at 9 of 19 pages and 569 of
+    # 1248 palettes (Fungus1_05).
+    #
+    # What stops a batch being larger is the region catalogue, not RAM.
+    # `world.generate` refuses above 1024 chunks, these thirteen take the world
+    # from 723 to 943, and the twenty-four Greenpath scenes that cook on the
+    # plain grid would have needed 404. The bound is called a sanity bound in
+    # host/regions.py and the only linked cost per view left is one byte of
+    # REGION_SCENES plus four of REGION_SCENE_LOCAL, so raising it is a
+    # decision someone can make on evidence; this batch does not need it.
+    #
+    # What stops this one is reach. Every scene here is walkable from
+    # Crossroads_11_alt, and the rest of the region sits behind four doors,
+    # each refused by a different clause:
+    #   Fungus1_03 by the CLUT budget, but only once its actor bank is on.
+    #     The bank is three Crossroads types and costs 115 slots in every view,
+    #     which takes chunk 8 of its pack from 346 to 461 and chunk 3 from 305
+    #     to 420, both over 416. Its views fit until then.
+    #   Fungus1_11 by STATIC_PAGE_BUDGET: four of its grid views cook 6 pages.
+    #   Fungus1_22 and Fungus1_31 by the draw-packet reservation, which is a
+    #     fifth per-view limit and not one of the four in `over_budget`:
+    #     `scenery_geometry` reserves ACTOR_RESERVE 264 of CAP 1032 and six of
+    #     Fungus1_22's grid views and seven of Fungus1_31's leave less than
+    #     that, the worst being Fungus1_22 [-2, 26, 22, 42] at 1018 + 264.
+    # Fungus1_12, Fungus1_13, Fungus1_16_alt, Fungus1_20_v02, Fungus1_25,
+    # Fungus1_26, Fungus1_29, Fungus1_34, Fungus1_35, Fungus1_36, Fungus1_37
+    # and Fungus1_Slug all cook on the plain grid and wait only on those four.
+    # Fungus1_23 waits on something else: its two exits both name Fungus3
+    # rooms, so no Greenpath scene reaches it at all.
+    {'scene_id': 47, 'scene_name': 'Fungus1_01b', 'file': 'level129',
+     'runtime_bounds': [-2, -5, 47, 46], 'camera_global_bounds': [0, 0, 45, 45]},
+    {'scene_id': 48, 'scene_name': 'Fungus1_02', 'file': 'level130',
+     'runtime_bounds': [-2, -5, 48, 72], 'camera_global_bounds': [0, 0, 46, 71]},
+    {'scene_id': 49, 'scene_name': 'Fungus1_05', 'file': 'level134',
+     'runtime_bounds': [-1, -6, 33, 90], 'camera_global_bounds': [0, 0, 31, 85]},
+    {'scene_id': 50, 'scene_name': 'Fungus1_06', 'file': 'level135',
+     'runtime_bounds': [-2, -6, 171, 31], 'camera_global_bounds': [0, 0, 170, 30]},
+    {'scene_id': 51, 'scene_name': 'Fungus1_07', 'file': 'level136',
+     'runtime_bounds': [-2, -5, 72, 63], 'camera_global_bounds': [0, 0, 70, 58]},
+    {'scene_id': 52, 'scene_name': 'Fungus1_08', 'file': 'level137',
+     'runtime_bounds': [-2, -5, 81, 56], 'camera_global_bounds': [0, 0, 80, 55]},
+    {'scene_id': 53, 'scene_name': 'Fungus1_09', 'file': 'level138',
+     'runtime_bounds': [-2, -5, 252, 35], 'camera_global_bounds': [0, 0, 250, 34]},
+    {'scene_id': 54, 'scene_name': 'Fungus1_10', 'file': 'level139',
+     'runtime_bounds': [-2, -5, 182, 30], 'camera_global_bounds': [0, 0, 180, 25]},
+    {'scene_id': 55, 'scene_name': 'Fungus1_14', 'file': 'level143',
+     'runtime_bounds': [-2, -5, 101, 26], 'camera_global_bounds': [0, 0, 100, 25]},
+    {'scene_id': 56, 'scene_name': 'Fungus1_15', 'file': 'level144',
+     'runtime_bounds': [-1, -5, 59, 51], 'camera_global_bounds': [0, 0, 57, 50]},
+    {'scene_id': 57, 'scene_name': 'Fungus1_17', 'file': 'level146',
+     'runtime_bounds': [-2, -5, 82, 36], 'camera_global_bounds': [0, 0, 80, 35]},
+    {'scene_id': 58, 'scene_name': 'Fungus1_19', 'file': 'level147',
+     'runtime_bounds': [-2, -6, 92, 25], 'camera_global_bounds': [0, 0, 90, 24]},
+    {'scene_id': 59, 'scene_name': 'Fungus1_30', 'file': 'level157',
+     'runtime_bounds': [-2, -5, 102, 37], 'camera_global_bounds': [0, 0, 100, 32]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)
@@ -305,8 +397,49 @@ def grid_layout(runtime_bounds, step=(24, 16)):
     left, bottom, right, top = runtime_bounds
     return tuple([x, y, min(x + step[0], right), min(y + step[1], top)]
                  for y in range(bottom, top, step[1]) for x in range(left, right, step[0]))
+# Two scenes the 24x16 grid cannot hold, at the layout the cook chose instead.
+#
+# STATIC_PAGE_BUDGET is 5, and pages are what these two reach first. Six of
+# Fungus1_02's fifteen grid views and one of Fungus1_19's eight cook 6 pages;
+# CLUT slots, texture records and room bytes all still have room, and so does
+# the draw-packet reservation that refuses Fungus1_22 and Fungus1_31.
+#
+# The 6 is not the conservative pre-similarity reading that
+# tools/cook_scene_pack.py splits on: cooking the plain grid with that gate
+# removed still ends at `Similarity result exceeds runtime budget in region8:
+# 6pages/396textures/363cluts/281308bytes`, which is the postpass refusing its
+# own output. So the grid is not a measurement that carries over for these two,
+# and nothing about them would have been learned by admitting them and watching
+# a whole-world recook fail twelve minutes in.
+#
+# What is recorded here is the layout `cook_scene` reached by halving an
+# over-budget view along its longer axis and recooking, verbatim, for the two
+# scenes in this batch that needed it. Both cover their envelope exactly, with
+# no hole and no overlap, which is what `tests/test_regions.py` checks of every
+# scene; both cook at 5 pages or fewer per view; and both are pinned by
+# `test_greenpath_records_the_two_layouts_the_grid_could_not_hold` so a later
+# cooker that would choose different boxes is caught here rather than trusted.
+#
+# Fungus1_02 costs 21 views where the grid wanted 15 and Fungus1_19 9 where it
+# wanted 8. Both earn it by being doors rather than rooms: Fungus1_02 is the
+# only way out of Fungus1_01b and so the only way into the region at all, and
+# Fungus1_19 is the only admitted way through to Fungus1_10, Fungus1_30,
+# Fungus1_05 and Fungus1_14, since the other route runs through Fungus1_03.
+MEASURED_VIEW_LAYOUTS = {
+    'Fungus1_02': ((-2, -5, 22, 11), (22, -5, 46, 11), (46, -5, 48, 11),
+                   (-2, 11, 22, 27), (22, 11, 46, 27), (46, 11, 48, 27),
+                   (-2, 27, 10, 43), (10, 27, 22, 35), (10, 35, 22, 43),
+                   (22, 27, 34, 35), (22, 35, 34, 43), (34, 27, 46, 43), (46, 27, 48, 43),
+                   (-2, 43, 10, 59), (10, 43, 22, 51), (10, 51, 22, 59),
+                   (22, 43, 46, 59), (46, 43, 48, 59),
+                   (-2, 59, 22, 72), (22, 59, 46, 72), (46, 59, 48, 72)),
+    'Fungus1_19': ((-2, -6, 22, 10), (22, -6, 46, 10), (46, -6, 58, 10),
+                   (58, -6, 70, 10), (70, -6, 92, 10),
+                   (-2, 10, 22, 25), (22, 10, 46, 25), (46, 10, 70, 25), (70, 10, 92, 25)),
+}
 # Scenes after the two hand-tuned ones use the grid over their catalog envelope.
-GRID_SCENE_LAYOUTS = {scene['scene_id']: grid_layout(scene['runtime_bounds']) for scene in SCENE_TABLE[2:]}
+GRID_SCENE_LAYOUTS = {scene['scene_id']: MEASURED_VIEW_LAYOUTS.get(scene['scene_name'])
+                      or grid_layout(scene['runtime_bounds']) for scene in SCENE_TABLE[2:]}
 TOWN_EXTENSION_LAYOUT = (
     ((48, -5, 96, 40), (40, 15, 96, 42)),
     ((96, -5, 168, 40), (96, 15, 168, 42)),
