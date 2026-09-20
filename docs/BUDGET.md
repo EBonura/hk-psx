@@ -222,35 +222,39 @@ The24 animation slots retain an independent48KiB maximum per frame. Animation
 frames come from resident RAM, with no traversal CD reads or decoding. This is
 the current two-scene subset, not full-game residency or hardware timing.
 
-Current SPU allocations, re-read at build159 from the banks' own generated
-constants (`data/sfx.rs`, `data/geo-audio.rs`, `data/ambience.rs`,
+Current SPU allocations, re-read from the banks' own generated constants
+(`data/sfx.rs`, `data/geo-audio.rs`, `data/ambience.rs`,
 `data/focus-audio.rs`, `data/runner-audio.rs`) rather than from the last
 paragraph that quoted them: player SFX 75,184B at 0x1010..0x135C0,
-Geo 13,888B at 0x14000..0x17640, ambience 297,200B at 0x18000..0x608F0,
-Focus 108,208B at 0x608F0..0x7AFA0 and Runner 20,464B at 0x7AFA0..0x7FF90.
-That leaves **112B** contiguous free above Runner, plus two gaps of 2,624B and
-2,496B below ambience: 5,232B free in total, none of it in one piece large
-enough for anything. Ambience grew 7,920B when atmos channel 15 joined the
-resident set, and Focus and Runner moved up with it: their bases are hardcoded
-in `host/focus_audio.py` and `host/runner_audio.py`, and `host/ambience.py`
-now refuses to finish a cook that leaves either of them stale, naming the base
-each one has to take. Until one of those three is spent, **the Focus and Runner
-banks cannot grow by a single block**; the cheapest margin priced but not taken
-is 8,192B from halving the streamed clip's SPU ring, which is still sized for
-the 8 kHz era and gives the cave bed 3.58-second halves rather than the 1.79 s
-`game/src/audio_stream.rs` is written and commented for. The figures this
+Geo 13,888B at 0x14000..0x17640, ambience 280,928B at 0x18000..0x5C960,
+Focus 108,208B at 0x5C960..0x77010 and Runner 20,464B at 0x77010..0x7C000.
+That leaves **16,384B** contiguous free above Runner, plus two gaps of 2,624B
+and 2,496B below ambience: 21,504B free in total. Ambience *shrank* 16,272B
+when the resident atmos set went from six channels to eight, because eight
+loops only fit at 4 kHz and the set that covers the game is cheaper at that
+rate than six were at 8 kHz; Focus and Runner moved down with it. Their bases
+are hardcoded in `host/focus_audio.py` and `host/runner_audio.py`, and
+`host/ambience.py` refuses to finish a cook that leaves either of them stale,
+naming the base each one has to take. The cheapest further margin priced but
+not taken is still 8,192B from halving the streamed clip's SPU ring, which is
+sized for the 8 kHz era and gives the streamed loop 3.58-second halves rather
+than the 1.79 s `game/src/audio_stream.rs` is written and commented for. The figures this
 paragraph's first version quoted were wrong in three ways and omitted the
 Runner bank entirely, which put the free figure 20,464B too high on its own;
 `host/ambience.py::spu_ceiling` computes the ceiling the cook actually
 enforces. The SDK silent loop is at 0x1000. Player short effects/heal
 use 22,050Hz mono; running and Geo use 11,025Hz mono; sustained Focus charging
-uses 8,000Hz mono. Ambience is per channel: four loops at 8,000Hz and the two
-whose energy sits under 2kHz, `cave_noises` and `cave_atmos_misc_3`, at
-4,000Hz, where both measure a better SNR than at 8. All admitted source clips
-are complete.
+uses 8,000Hz mono. Ambience is one rate now: all eight resident loops are
+4,000Hz mono, because eight do not fit SPU at 8,000. Only
+`cave_atmos_misc_3` measures better there than at 8,000; the rest pay between
+0.45 and 4.93dB for the coverage, channel by channel beside
+`cook_music.RESIDENT_ATMOS_CHANNELS`. All admitted source clips are complete.
 
-The full199,872-byte cave-noises clip is resident in main RAM, feeding a16KiB
-SPU ring through8KiB scratch. Other ambience and Focus payloads stay in SPU;
+The full99,936-byte `cave_noises` is resident in main RAM, feeding a16KiB SPU
+ring through8KiB scratch. It keeps the streamed slot under the eight-channel
+set: a streamed clip only occupies the ring whatever its length, so which
+channel streams is chosen for what stays exercised on hardware rather than for
+bytes, and the Cave cue keys this one on in 41 admitted scenes. Other ambience and Focus payloads stay in SPU;
 startup uses the scene arena and adds no permanent staging buffer. Focus uses
 voice18 and alternating19/20 heals. No playback-time CD read is needed for
 these effects. CD-DA title music uses44,100Hz stereo directly from the disc,
@@ -295,8 +299,10 @@ Headroom before the stack is 68,988 bytes, down from 246 KB at build 94 and
 | `enemies::Actor::advance_in_view` | 29,656 | text |
 | `render::SCISSOR_CACHE` | 28,160 | bss |
 
-Build 109 halved that stream's rate, so the table's 199,872 is now 99,936 and
-headroom is 166,876. The rest of this section is the analysis that led there.
+Build 109 halved that stream's rate, so the table's 199,872 became 99,936 and
+headroom 166,876, which is still the reservation: raising the resident set to
+eight channels left `cave_noises` streaming and did not move it. The rest of
+this section is the analysis that led there.
 
 The one disproportionate entry is `HK_AMBIENCE_STREAM_SOURCE`: 199,872 bytes,
 nearly three times the remaining headroom, holding one scene's streamed

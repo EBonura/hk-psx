@@ -9,9 +9,10 @@ from ambience import fnv, loop_payload, validate_blocks, validate_loop
 from focus_audio import oneshot_payload, fields
 
 # Immediately above the Focus bank, which sits immediately above ambience, so
-# this moves by whatever either of them grows. It was 495792 until atmos
-# channel 15 joined the resident set and pushed both up by 7,920 bytes.
-SPU_BASE = 503712
+# this moves by whatever either of them grows or shrinks. It was 503712 until
+# the resident atmos set went from six channels to eight and pulled both down
+# by 16,272 bytes.
+SPU_BASE = 487440
 SPU_END = 524288
 GAIN = 5461
 SOURCES = (('walk_loop', 'sharedassets32.assets:63', 8000, True),

@@ -7,9 +7,10 @@ uses22,050Hz mono. This follows sustained-loop and short-effect categories,
 without truncation. `host/focus_audio.py` validates Windows Spell Control FSMs,
 AudioSources, clips and inspected assembly hashes. Local provenance and cooked
 assets remain ignored. The108,208-byte bank loads through scene scratch once at
-startup into0x608F0..0x7AFA0, immediately above ambience and immediately below
+startup into0x5C960..0x77010, immediately above ambience and immediately below
 Runner. Its base is hardcoded in `host/focus_audio.py` and moves by whatever
-ambience grows; `host/ambience.py` refuses a cook that leaves it stale. Main RAM
+ambience grows or shrinks; `host/ambience.py` refuses a cook that leaves it
+stale. Main RAM
 has53,132B before the protected stack; Focus adds no persistent sample bank there.
 
 Voice18 loops charging;19/20 alternate heals from shared data so tails survive
@@ -84,10 +85,12 @@ complete nonlooping rhythm sequence: stop outside running, restart after clip
 completion, and defer a new start while soft landing plays. At build64 the port still lacked
 music, Focus, many enemy/break/death/UI effects and original hard-land recovery.
 
-All six full ambience payloads are retained. Cave noises live in main RAM
-rather than occupying their full length in SPU, and since build 109 cook at
-4,000 Hz rather than 8,000, which halves that cache to 99,936B. The clip is a
-low rumble bed: 99% of its energy is below 637 Hz and 0.06% above 2 kHz. The
+All eight full ambience payloads are retained. `cave_noises` lives in main RAM
+rather than occupying its full length in SPU: at 43.72 s it is the longest
+resident loop and costs 99,936B of cache at 4,000 Hz. It keeps the streamed
+slot under the eight-channel set, because a streamed clip occupies only the
+ring whatever its length, so which channel streams is a question of which one
+stays exercised rather than of bytes. The
 SPU ring's boundary sanity window is derived from the cooked pitch rather than
 fixed, since a half lasts twice as long at the lower rate. A continuous16KiB SPU
 ring plus8KiB aligned refill scratch uses hardware playback IRQ boundaries,
@@ -98,19 +101,21 @@ not used. There is no playback-time CD traffic. Late/missing/early boundaries
 stop the streamed voice and increment HK_AUDIO_STREAM_UNDERRUNS.
 
 Allocation: player SFX0x1010..0x135C0 (75,184B), Geo0x14000..0x17640
-(13,888B), ambience0x18000..0x608F0 (297,200B), Focus0x608F0..0x7AFA0
-(108,208B) and Runner0x7AFA0..0x7FF90 (20,464B). That leaves **112B**
+(13,888B), ambience0x18000..0x5C960 (280,928B), Focus0x5C960..0x77010
+(108,208B) and Runner0x77010..0x7C000 (20,464B). That leaves **16,384B**
 contiguous, not the136,704B a previous version of this paragraph claimed, which
-counted the Focus and Runner banks above ambience as free. There is no room for
-a music ring of any size; `docs/BUDGET.md` prices the three places margin could
-come back from. Main RAM still has63,448B before the reserved stack. This does
-not implement music transport or reserve reverb workspace; future CD-read
-arbitration and stereo refill deadlines need separate validation.
+counted the Focus and Runner banks above ambience as free. Ambience shrank
+16,272B when the resident set went from six channels to eight, because eight
+only fit at4,000Hz; that is where the margin came from, and it is still not
+room for a music ring of any useful size. `docs/BUDGET.md` prices what is left.
+This does not implement music transport or reserve reverb workspace; future
+CD-read arbitration and stereo refill deadlines need separate validation.
 
 Quality categories:22,050Hz mono player one-shots;11,025Hz mono longer running
-sequence;11,025Hz Geo. Ambience is no longer one category: it is8,000Hz mono
-except for the two channels measured better at4,000, which is a per-channel
-decision recorded beside `cook_music.RESIDENT_ATMOS_CHANNELS`. Hurt was raised from11,025 to22,050Hz to match its short-effect
+sequence;11,025Hz Geo. Ambience is its own category and is now one rate:
+all eight resident loops are4,000Hz mono, because eight do not fit SPU
+at8,000. What each channel pays for that is recorded beside
+`cook_music.RESIDENT_ATMOS_CHANNELS`. Hurt was raised from11,025 to22,050Hz to match its short-effect
 category. The user permits lower long-sample rates when necessary, consistently
 within categories. Music profiles below remain preparation only.
 
@@ -175,7 +180,7 @@ Serialized data and inspected Assembly-CSharp methods agree on these details:
 - ApplyAtmosCue starts enabled channels only if they are not already playing,
   applies the mixer transition, and stops disabled channels after that transition.
   Shared rain should therefore retain playback phase across Cave/Surface changes.
-- All six referenced ambient AudioSources loop, play on awake, have volume/pitch
+- All eight referenced ambient AudioSources loop, play on awake, have volume/pitch
   1, and are nonspatial. In this Unity version their direct clip reference is
   `m_Resource`; the legacy `m_audioClip` field is null.
 
@@ -222,10 +227,12 @@ rate, so a clip whose energy is already under the lower Nyquist gains resolution
 where the content is and loses a band that holds nothing. Measured as the cooked
 payload's SNR against its own resampled source: `cave_atmos_misc_3`, 99.999% of
 its energy below 2 kHz, reconstructs at 16.70 dB at 8 kHz and **24.47 dB at
-4 kHz**, and `cave_noises` at 30.28 and 31.05. Every other resident clip is
-better at 8 kHz, `dirtmouth_wind_loop_c_gate` by 12.5 dB. The rate is therefore
-a per-channel decision recorded beside the channel set, not a property of which
-clip streams.
+4 kHz**. It is the only resident clip better at the lower rate. The other seven
+pay between 0.45 dB (`fog_canyon_atmos_loop`) and 4.93 dB
+(`green_path_atmos_loop`), and they are at 4 kHz anyway because eight loops do
+not fit SPU at 8. The rate stays a per-channel decision recorded beside the
+channel set rather than a property of which clip streams, and the table there
+is what a future channel would have to argue against.
 
 The original host encoder tests all five predictors and shifts 0..12 per block.
 Its initial block uses filter 0 to define decoder history. Experimental payloads
@@ -270,12 +277,13 @@ SPU `[0x8D00, 0x7C3C0)` and voices 6..11, above the actual effects bank
 workspace is reserved. The host checks the current effects-bank size and refuses
 an overlap rather than silently trusting this address forever.
 
-Mono conversion removes stereo detail and an 8 kHz sample rate reduces audio
-bandwidth. No source stem or clip duration was deliberately removed. Pitch 743
-plays at approximately 7,999.585 Hz; the six clips have 2..24 padding samples in
-their final ADPCM block. The production flag changes preserve independently
-measured decode quality. The measured decoded end-to-start differences are at
-most five PCM units, but this is not proof of click-free physical playback.
+Mono conversion removes stereo detail and a 4 kHz sample rate reduces audio
+bandwidth further. No source stem or clip duration was deliberately removed.
+Pitch 372 plays at approximately 4,005.176 Hz; the eight clips have 1..24
+padding samples in their final ADPCM block. The production flag changes
+preserve independently measured decode quality. The measured decoded
+end-to-start differences reach 250 PCM units on the widest-band clip, which is
+not proof of click-free physical playback either way.
 
 ## Historical all-SPU startup and cue lifecycle (before build64)
 
@@ -305,12 +313,23 @@ that is still fading.
 
 The resident channel set is a cook-time budget decision and moves; it is
 `cook_music.RESIDENT_ATMOS_CHANNELS` and the figures below are whatever the last
-cook wrote into `data/ambience.rs`, not a second place to maintain it. At build
-159 it is channels 0, 1, 3, 4, 7 and 15. With full-scale voice volume 16,383,
-the Cave target volumes are
-`[16383, 2, 2, 16383, 2, 2]`; Surface uses `[2, 16383, 12588, 2, 2, 2]` and
-MiscWind `[2, 2, 2, 2, 2, 16383]`. Cave enables bank mask 9, Surface 6,
-MiscWind 32.
+cook wrote into `data/ambience.rs`, not a second place to maintain it. It is now
+channels 0, 1, 4, 5, 7, 9, 10 and 15. Eight channels are enough to leave no
+catalogue scene without an audible stem, but neither covering set includes 4,
+and dropping 4 would take a full-gain layer out of the 41 admitted Cave scenes
+and stop the SPU ring from ever starting on this disc. Deepnest's 18 catalogue
+scenes stay silent instead; the trade is recorded beside the tuple. With
+full-scale voice volume 16,383, the Cave target volumes are
+`[16383, 2, 16383, 16, 2, 2, 2, 2]`; Surface uses `[2, 16383, 2, 16, 2, 2, 2, 2]`,
+Greenpath `[2, 2, 2, 2, 16383, 2, 2, 2]` and MiscWind
+`[2, 2, 2, 2, 2, 2, 2, 16383]`. Cave enables bank mask 13, Surface 10,
+Greenpath 16, MiscWind 128.
+
+Two of the eight, channels 9 and 10, are enabled by no admitted scene: Fog
+Canyon and the Waterways are both outside the current catalogue. Their loops
+are on the disc and in SPU for scenes not yet admitted, and no cooked cue keys
+them on, which is why the clip table is read off the persistent AudioManager
+rather than off whichever scene happens to enable a channel.
 Disabled stems stop and become silent after the 30-tick transition. Already-playing
 shared stems keep their phase; repeated cues for the same scene do not restart loops.
 The mixer ticks independently of gameplay pause, and settled loops need no

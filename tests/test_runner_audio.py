@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'host'))
-from runner_audio import SOURCES, SPU_BASE, GAIN, assemble, validate_bank, verify_outputs
+from runner_audio import SOURCES, SPU_BASE, SPU_END, GAIN, assemble, validate_bank, verify_outputs
 from ambience import fnv
 
 
@@ -65,10 +65,14 @@ class RunnerAudioTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'ignored storage'):assemble(self.profiles,self.root,self.contract)
 
     def test_complete_bank_overflow_fails_without_trimming(self):
-        p=self.profiles[0];raw=(bytes([12,0])+bytes(14))*1800
+        # One block more than the whole tail above the Focus bank, derived
+        # rather than written down: this read 1800 blocks, which stopped being
+        # an overflow the moment ambience shrank and the tail grew under it.
+        blocks=(SPU_END-SPU_BASE)//16+1
+        p=self.profiles[0];raw=(bytes([12,0])+bytes(14))*blocks
         path=self.root/p['planes'][0]['path'];path.write_bytes(raw)
-        p.update(frames=1800*28,source_pcm_frames=1800*28,padding_samples=0,bytes=len(raw))
-        self.contract['clips'][0]['source_length_seconds']=1800*28/SOURCES[0][2]
+        p.update(frames=blocks*28,source_pcm_frames=blocks*28,padding_samples=0,bytes=len(raw))
+        self.contract['clips'][0]['source_length_seconds']=blocks*28/SOURCES[0][2]
         p['planes'][0].update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
         with self.assertRaisesRegex(ValueError,'no samples trimmed'):assemble(self.profiles,self.root,self.contract)
         with self.assertRaisesRegex(ValueError,'tail changed'):assemble(self.profiles,self.root,self.contract,SPU_BASE+16)

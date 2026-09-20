@@ -170,22 +170,24 @@ SCENE_TABLE = (
     # Mossman_Runner as an unverified Runner FSM variant. Unsupported actors
     # stay records and cook nothing, so the scene is walkable and empty.
     #
-    # And it is silent, which is a region-wide gap rather than a scene one. The
-    # SceneManager's atmos cue is `Greenpath`; the only channel it enables is 7,
-    # `green_path_atmos_loop`, and `cook_music.RESIDENT_ATMOS_CHANNELS` is
-    # (0,1,3,4,5,6), so the scene cooked a zero mask and the region had no
-    # sound. Channel 6 gave way to 7 for it. Both clips are 10.00 s and both
-    # cook to exactly 45,728 bytes, so the swap cost nothing and Greenpath plays
-    # at full 8 kHz; see the decision written above
-    # `cook_music.RESIDENT_ATMOS_CHANNELS`, which is the only thing that picks
-    # the set.
+    # And it was silent, which was a region-wide gap rather than a scene one.
+    # The SceneManager's atmos cue is `Greenpath`; the only channel it enables
+    # is 7, `green_path_atmos_loop`, and the resident set at the time did not
+    # carry it, so the scene cooked a zero mask and the region had no sound.
+    # Channel 6 gave way to 7 for it, at no cost: both clips are 10.00 s and
+    # both cooked to exactly 45,728 bytes. The set has since been raised to
+    # eight channels and 7 is still in it, at 4 kHz rather than 8 now, which is
+    # the one place Greenpath pays for the raise. The set itself is only ever
+    # `cook_music.RESIDENT_ATMOS_CHANNELS`; the decision written above it is the
+    # current one and this comment is not.
     #
     # Two figures that used to sit here were both wrong and are worth recording
-    # as wrong, because they were quoted while scoping this. There is no seventh
-    # SPU voice to take: all 24 are allocated and the cook names each one's
-    # owner. And free SPU was reported as 136,704 bytes by a cook that counted
-    # the Focus and Runner banks above ambience as headroom; the real figure is
-    # 8,032 contiguous.
+    # as wrong, because they were quoted while scoping this. There was never a
+    # seventh SPU voice to take: all 24 are allocated and the cook names each
+    # one's owner, and what made a longer set possible was pooling ambience's
+    # own six rather than finding another. And free SPU was reported as 136,704
+    # bytes by a cook that counted the Focus and Runner banks above ambience as
+    # headroom, when the contiguous figure was 8,032.
     {'scene_id': 46, 'scene_name': 'Fungus1_01', 'file': 'level128',
      'runtime_bounds': [-2, -5, 172, 31], 'camera_global_bounds': [0, 0, 170, 30]},
     # Greenpath's entrance corridor and the loop it opens onto: thirteen more

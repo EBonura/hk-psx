@@ -3,16 +3,19 @@
 How many loops there are, and which source atmos channels they are, is
 `cook_music.RESIDENT_ATMOS_CHANNELS` and nothing else: the clip table, the cue
 gain arrays, the SPU voices and the streamed clip's index all follow from it.
-What rate each one is cooked at is `cook_music.RESIDENT_ATMOS_RATES`, which is
-a separate decision and no longer inferred from which clip streams.
+What rate each one is cooked at is `cook_music.DEFAULT_ATMOS_RATE` and the
+per-channel exceptions beside it, which is a separate decision and no longer
+inferred from which clip streams. Which clip each channel plays is read off the
+persistent AudioManager, so a channel can be resident ahead of any scene that
+enables it.
 
-The catalogue's 456 scenes with an atmos cue between them name all 16 channels,
-so no resident set covers the game; the set is a budget decision per disc,
-priced by the pool in `pool_pressure` and the SPU ceiling in `spu_ceiling`.
-Eight of the sixteen would leave no scene without an audible stem, and at the
-rates measured next to that tuple they fit both the ceiling and main RAM.
+The catalogue's 456 scenes with an atmos cue between them name all 16 channels.
+Eight would be enough to leave none of them without an audible stem; the eight
+resident today are deliberately not that set, and what they leave silent is
+Deepnest. The trade is recorded beside the tuple. What still has to be priced
+per disc is the pool in `pool_pressure` and the SPU ceiling in `spu_ceiling`.
 
-They used to not fit the voices, because a clip owned one for the life of the
+Eight used to not fit the voices, because a clip owned one for the life of the
 disc and ambience owns six. A stem now takes a voice when it keys on and gives
 it back when it has finished fading out, so what the set has to fit is not how
 many loops are resident but how many of them can be audible at the same moment.
@@ -25,6 +28,13 @@ from quality import SCENE_FILES
 
 from cook_music import RESIDENT_ATMOS_CHANNELS as CHANNELS
 SPU_START=0x18000
+# The longest resident loop, which is what the stream exists for: 43.72 s of
+# cave_noises is 99,936 bytes at 4 kHz and the set has 16,384 spare, so it
+# cannot be held whole. Which channel streams is also which one stays exercised
+# on hardware, because the ring only runs when a cue keys that stem on, and the
+# Cave cue keys this one on in 41 admitted scenes. Whichever channel this is
+# must be the only clip the cook truncates, because the guest finds it by
+# looking for that one row.
 STREAM_CHANNEL=4
 # The one clip cached in RAM rather than held whole in SPU. Its position in the
 # table follows the channel set, and the guest derives the same index from the
@@ -51,16 +61,17 @@ STREAM_VOICE=VOICES[0]
 # are voices, and it is why `assemble` prices the set on how many stems can be
 # audible at once rather than on how many clips there are.
 POOL_VOICES=VOICES[1:]
-# The banks stacked above ambience in SPU RAM, which move up by whatever
-# ambience grows. Their sizes do not depend on ambience, so the last build's
+# The banks stacked above ambience in SPU RAM, which move by whatever ambience
+# grows or shrinks. Their sizes do not depend on ambience, so the last build's
 # generated manifests are the right source for what the tail costs. Their base
 # addresses do depend on it, and are hardcoded in focus_audio.py and
 # runner_audio.py, which both have to move in the same change.
 TAIL_BANKS=('data/focus-audio.rs','data/runner-audio.rs')
 # What rate each resident channel is cooked at, and why, is
-# `cook_music.RESIDENT_ATMOS_RATES`. It is not the same question as which
-# channel streams: the cave bed happens to be both the streamed clip and a
-# 4 kHz one, and reading either from the other put a literal in five places.
+# `cook_music.DEFAULT_ATMOS_RATE` and the per-channel exceptions beside it. It
+# is not the same question as which channel streams: the streamed clip happens
+# also to be a 4 kHz one, and reading either from the other put a literal in
+# five places.
 RATE=DEFAULT_ATMOS_RATE
 RATES=tuple(sorted({atmos_rate(ch) for ch in CHANNELS}))
 
@@ -176,7 +187,17 @@ def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
     if sfx_end>SFX_END:raise ValueError("ambience overlaps resident SFX bank")
     if len(CHANNELS)>8:
         raise ValueError(f'{len(CHANNELS)} resident atmos channels do not fit the one-bit-per-stem cue mask')
-    channels={};cues=[]
+    # Which clip each resident channel plays comes from the persistent
+    # AudioManager, not from the admitted scenes, because a resident channel no
+    # admitted scene enables still has a loop to load. Two of the current eight
+    # are in that position: Fog Canyon and the Waterways are both outside the
+    # admitted 60, so channels 9 and 10 are on the disc for scenes not yet in
+    # the catalogue and no cue keys them on yet.
+    residents={r['channel']:r for r in report['resident_atmos']}
+    if set(residents)!=set(CHANNELS):raise ValueError('source report resolves a different resident atmos set')
+    channels={ch:residents[ch]['clip'] for ch in CHANNELS};cues=[]
+    for resident in residents.values():
+        if not resident['loop'] or resident['pitch']!=1 or resident['volume']!=1:raise ValueError('unsupported AudioSource settings')
     for scene in report['scenes']:
         if scene['scene_file'] not in SCENE_FILES:continue
         if len(scene['managers'])!=1:raise ValueError('ambiguous scene audio manager')
@@ -190,8 +211,7 @@ def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
         gains=[volume(db) for db in used];mask=0
         for entry in manager['ambience']:
             ch=entry['channel'];idx=CHANNELS.index(ch)
-            if ch in channels and channels[ch]!=entry['clip']:raise ValueError('shared channel changes clip')
-            channels[ch]=entry['clip']
+            if channels[ch]!=entry['clip']:raise ValueError('shared channel changes clip')
             if not entry['loop'] or entry['pitch']!=1 or entry['volume']!=1:raise ValueError('unsupported AudioSource settings')
             snapshot=entry['snapshot']
             if snapshot['effects'] or any(x['mute'] or x['solo'] or x['pitch']!=1 for x in snapshot['chain']):
@@ -204,7 +224,7 @@ def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
             'name':manager['atmos_cue']['name'],'source':manager['source'],'mask':mask,'gains':gains,
             'fade_ticks':round(seconds*60),'source_fade_seconds':seconds,'source_ambience':manager['ambience'],
             'clamped_boost_db':boosts(CHANNELS,used),'all_channel_snapshot_gains':all_snapshot})
-    if set(channels)!=set(CHANNELS) or {c['scene']for c in cues}!=set(range(len(SCENE_FILES))):raise ValueError('missing source ambience channels/scenes')
+    if {c['scene']for c in cues}!=set(range(len(SCENE_FILES))):raise ValueError('missing source ambience scenes')
     live=pool_pressure(cues)
     if live>len(POOL_VOICES):
         raise ValueError(f'{live} stems can be audible at once across a transition and ambience pools '
@@ -289,6 +309,7 @@ def cached_report(path):
     for name,value in report['tool_hashes'].items():
         if sha(ROOT/'host'/name)!=value:raise ValueError('music conversion code changed: '+name)
     if [scene['scene_file'] for scene in report['scenes']]!=list(SCENE_FILES):raise ValueError('music report covers a different scene catalog')
+    if [r['channel'] for r in report['resident_atmos']]!=list(CHANNELS):raise ValueError('music report resolves a different resident atmos set')
     if sha(ROOT/report['source_methods']['path'])!=report['source_methods']['sha256']:raise ValueError('source methods hash mismatch')
     # Every rate the resident set actually reads, not just the default one: a
     # channel cooked at 4 kHz used to reach `assemble` unverified and fail there
