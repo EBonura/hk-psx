@@ -95,38 +95,52 @@ def survey(source, scene_files):
         'unrepresentable_terrain': unrepresentable,
     }
 
-def tink_coverage(source, scene_files):
-    """How many TinkEffect surfaces the static pogo pool already covers, and why
-    the rest do not qualify. `pogo_sources` owns that policy; this only measures
-    it, so tightening or widening the policy stays one decision in one place."""
+def pogo_coverage(source, scene_files):
+    """What the down slash can bounce off, what the cooker refuses, and why.
+
+    `NailSlash.OnTriggerEnter2D` reads `other.gameObject.layer`, then
+    `GetComponent<NonBouncer>`, `<BigBouncer>` and `<BounceShroom>` on that same
+    object. It never reads `TinkEffect`, so a tink surface is not a pogo surface
+    and the two populations are counted apart here. `TinkEffect` is the spark:
+    its own `OnTriggerEnter2D` answers a collider tagged `Nail Attack` with a
+    camera shake, a flash and a sound on a 0.25 s throttle, and never touches
+    hero velocity.
+
+    `pogo_sources` owns the policy. This reads that function's own refusals
+    rather than re-deriving them, so the measurement cannot drift from the
+    policy it measures; an earlier version re-derived them and mis-ordered the
+    checks, which reported the wrong reason for six objects.
+    """
     from scene import Scene
-    from actors import pogo_sources, _colliders
+    from actors import pogo_sources
     counts = collections.Counter()
+    refused = collections.Counter()
+    peak = 0
     for name in scene_files:
         sc = Scene(source, name)
+        records = pogo_sources(sc)
+        targets = records['targets']
+        # Compare the `file:id` strings pogo_sources emits. Scene.sid names the
+        # file an object was serialized in, so parsing an int out of it and
+        # matching that against a merged path id silently misses every object
+        # an additive scene contributed.
+        counts['covered_targets'] += len(targets)
+        counts['covered_objects'] += len({t['game_object'] for t in targets})
+        peak = max(peak, len(targets))
+        for entry in records['unsupported']:
+            refused[entry.get('reason') or entry['unsupported']] += 1
         tink = {t['m_GameObject']['m_PathID'] for typ, t in sc.objects.values() if typ == 'TinkEffect'}
-        if not tink:
-            continue
-        targets = {int(t['game_object'].split(':')[1]) for t in pogo_sources(sc)['targets']}
-        counts['total'] += len(tink)
-        counts['covered'] += len(tink & targets)
-        by_go = {}
-        for sid, (typ, tree) in sc.objects.items():
-            gid = tree.get('m_GameObject', {}).get('m_PathID')
-            if gid:
-                by_go.setdefault(gid, []).append((sid, typ, tree))
-        for gid in tink - targets:
-            records = by_go.get(gid, [])
-            types = {t for _, t, _ in records}
-            if sc.gos[gid]['m_Layer'] not in (11, 17, 19):
-                counts['excluded: on the Terrain layer, outside the pogo layer policy'] += 1
-            elif types & {'BigBouncer', 'BounceShroom', 'PlayMakerFSM'}:
-                counts['excluded: an FSM owns the object, so it may move or vanish'] += 1
-            elif not _colliders(sc, gid, records):
-                counts['excluded: the collider is on a child, not the tink owner'] += 1
-            else:
-                counts['excluded: other'] += 1
-    return dict(counts)
+        counts['tink_effect_owners'] += len(tink)
+        counts['tink_effect_owners_that_pogo'] += len(
+            {sc.sid(gid) for gid in tink} & {t['game_object'] for t in targets})
+    grouped = collections.Counter()
+    for reason, count in refused.items():
+        grouped[reason.split(': ', 1)[-1] if reason.startswith('special/dynamic') else reason] += count
+    # `pogo_sources` raises past its per-scene bound rather than dropping a
+    # target, so a refusal on capacity cannot exist; the peak below is what
+    # says how much room is left under it.
+    return {**counts, 'refused': dict(grouped), 'refused_total': sum(grouped.values()),
+            'peak_targets_in_one_scene': peak, 'cooker_bound_per_scene': 128}
 
 def report(source, scene_files):
     out = survey(source, scene_files)
@@ -149,16 +163,24 @@ def report(source, scene_files):
         'Contact damage and hazard recovery already run through the cooked DamageHero '
         'volumes and HazardRespawnTriggers, which is how acid gets its behaviour too.',
     ]
-    # The nail's tink surfaces are the one family that is only partly cooked, so
-    # the split is measured rather than described.
-    out['tink_coverage'] = tink_coverage(source, scene_files)
+    # Pogo is the one family that is only partly cooked, so the split is
+    # measured rather than described.
+    out['pogo_coverage'] = pogo_coverage(source, scene_files)
+    out['findings'].append(
+        'TinkEffect is not the pogo population. NailSlash.OnTriggerEnter2D reads '
+        'the collider layer and then NonBouncer, BigBouncer and BounceShroom on '
+        'that object, and never reads TinkEffect; TinkEffect is the spark, sound '
+        'and camera shake. Counting pogo coverage against TinkEffect surfaces '
+        'measures the overlap of two unrelated sets.')
     out['owed'] = [
         'BounceShroom: the one bouncy target in the admitted world. Its hero-side '
         'response is SHROOM_BOUNCE_VELOCITY and BOUNCE_SHROOM_TIME on HeroController, '
         'next to the pogo it shares machinery with.',
-        'TinkEffect surfaces: only the ones that already qualify as pogo targets '
-        'recoil the nail. See tink_coverage for the measured split and why each '
-        'excluded group is excluded.',
+        'Pogo targets an FSM owns. The source bounces off them regardless of the '
+        'FSM; the cooker refuses them because it cannot tell a cosmetic FSM from '
+        'one that moves or removes the object. See pogo_coverage.refused.',
+        'Pogo targets whose only collider is a circle: CircleCollider2D has no '
+        'exact segment form, and the cooked contact model is polygon-only.',
     ]
     dump(ROOT / '.hkpsx/physics-catalog.json', out)
     return out
@@ -174,3 +196,12 @@ if __name__ == '__main__':
           f"one-way {out['one_way'] or 'none'}")
     for key in ('interactions',):
         print(f'  {key}: {out[key]}')
+    pogo = out['pogo_coverage']
+    print(f"  pogo: {pogo['covered_targets']} targets cooked from "
+          f"{pogo['covered_objects']} objects, {pogo['refused_total']} refused, "
+          f"peak {pogo['peak_targets_in_one_scene']} of {pogo['cooker_bound_per_scene']} in one scene")
+    for reason, count in sorted(pogo['refused'].items(), key=lambda pair: -pair[1]):
+        print(f'    {count:4d} refused: {reason}')
+    print(f"    TinkEffect owners: {pogo['tink_effect_owners']}, of which "
+          f"{pogo['tink_effect_owners_that_pogo']} are also pogo targets "
+          '(unrelated populations; see findings)')
