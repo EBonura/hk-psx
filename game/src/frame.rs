@@ -384,7 +384,21 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
         presentation::checkpoint();
         let blue=game.life.tick(r.scene,game.player.x,r.collision_bounds,room.counts[5],game.state.edge_reader(r,room));
         game.vitals.add_blue_health(blue);
-        if strike_lifeblood(game.life,r.scene,&game.nail,&game.player).opened {lifeblood::apply(game.life,&mut game.state,game.region_id);}
+        // lifeblood::apply sets the shared scripted-edge scratch rather than
+        // appending to it, so the door's exclusions and the gates' are gone for
+        // the rest of this tick and only come back on the next render. Both are
+        // re-applied here in render's own order, which is the order the other
+        // three call sites already use.
+        //
+        // Unreachable today: no catalogue slot carries both a struck cocoon and
+        // an arena gate, and none carries a cocoon and the Great Door. It is
+        // written anyway because the symptom is a wall that exists for one
+        // simulation tick, which is close to undiagnosable from a bug report.
+        if strike_lifeblood(game.life,r.scene,&game.nail,&game.player).opened {
+            lifeblood::apply(game.life,&mut game.state,game.region_id);
+            great_door::apply(&game.door,&mut game.state,game.region_id);
+            battle_gates::apply(&mut game.state,game.region_id);
+        }
         let door_hit=strike_great_door(&mut game.door,r.scene,&game.nail,&game.player);
         if door_hit.hit {audio::great_door_hit();}
         if door_hit.opened {
