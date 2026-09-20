@@ -1403,6 +1403,17 @@ def infected_vine(sc, gid, tree):
                             'returns when the scene reloads']}
 
 
+class SourceInert(ValueError):
+    """The original disables this object too, so no port gap is being reported.
+
+    Counting these next to real refusals overstates the work left. Five of the
+    thirteen infected vines are in this state: `Start` turns off their
+    AudioSource, their Collider2D and the component itself, so they are
+    un-hittable background art in the original as well. They can never be
+    admitted and they are not owed to anyone.
+    """
+
+
 def infected_vines(sc, errors=None, contract=True):
     """Every BreakableInfectedVine in the scene that the source leaves hittable.
 
@@ -1424,8 +1435,8 @@ def infected_vines(sc, errors=None, contract=True):
             record = infected_vine(sc, gid, tree)
             record['source'] = f'{file}:{index}'
             if record['inert_by_depth']:
-                raise ValueError('vine is outside the authored depth band and Start disables it: '
-                                 f"z {record['position'][2]:.3f}")
+                raise SourceInert('vine is outside the authored depth band and Start disables it: '
+                                  f"z {record['position'][2]:.3f}")
             if contract and record['destruction']['refused_outputs']:
                 raise ValueError('authored destruction output the port cannot produce: '
                                  + '; '.join(f"{item['output']} ({item['reason']})"
@@ -1435,7 +1446,8 @@ def infected_vines(sc, errors=None, contract=True):
         except Exception as error:
             if errors is None:
                 raise
-            errors.append({'id': f'{file}:{index}', 'type': VINE_COMPONENT, 'error': str(error)})
+            errors.append({'id': f'{file}:{index}', 'type': VINE_COMPONENT, 'error': str(error),
+                           'source_inert': isinstance(error, SourceInert)})
     return result
 
 
