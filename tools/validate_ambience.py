@@ -59,7 +59,13 @@ def main():
         return dict({name:word(name) for name in names},gains=[word('HK_AMBIENCE_GAINS',i) for i in range(len(clips))])
     commands=[]
     def launch(label,cue,polls,audio=False):
-        tape=out/(label+'.pxtape');poll_tape(tape,'9:start:1',polls+1)
+        # Two presses: the first dismisses the boot screen and the second
+        # starts the game. One at poll 9 was enough until the disc grew to 60
+        # scenes and the pack directory moved to a bootstrap read, and it has
+        # been reaching a title that is not up yet since. A third press would
+        # start the game and then pause it, which the stationary-gameplay check
+        # below would read as a fault.
+        tape=out/(label+'.pxtape');poll_tape(tape,'9:start:1,200:start:1',polls+1)
         command=[str(a.emulator.resolve()),'launch','--path',str(cue),'--embedded-playtest',
                  '--config-dir',str(out/'emulator'),'--steps','6000000000','--input-tape',str(tape),
                  '--stop-at-poll',str(polls),'--dump-ram',str(out/(label+'-ram.bin')),
@@ -86,9 +92,16 @@ def main():
     # The cue the replay settles on, and everything that follows from it. These
     # were 63, 57, 4 and 30: the resident channel set written out a fourth time,
     # in a file that only runs on a disc and so only fails on one.
+    #
+    # A fifth copy of that same 4 survived below, in the stationary-gameplay
+    # loop, and was wrong through two later swaps of the resident set: it read 2
+    # under (0,1,3,4,7,15) and 3 under the current set. It is bound here instead
+    # of read off `expected`, because `expected` is rebound to a byte buffer in
+    # the SPU comparison between the two uses.
     cue=build['ambience']['cues'][0]
+    cave_stems=bin(cue['mask']).count('1')
     expected={'HK_AMBIENCE_READY':1,'HK_AMBIENCE_LOADED_MASK':(1<<len(clips))-1,'HK_AMBIENCE_PLAYING_MASK':cue['mask'],
-              'HK_AMBIENCE_START_COUNT':bin(cue['mask']).count('1'),'HK_AMBIENCE_TRANSITIONS':1,'HK_AMBIENCE_SCENE':cue['scene'],
+              'HK_AMBIENCE_START_COUNT':cave_stems,'HK_AMBIENCE_TRANSITIONS':1,'HK_AMBIENCE_SCENE':cue['scene'],
               'HK_AMBIENCE_FADE_TICKS':cue['fade_ticks'],'HK_AMBIENCE_VOICE_DENIALS':0,
               'HK_GAME_MODE':1,'HK_PAD_POLL_MAX_VBLANK_GAP':1}
     if any(normal[k]!=v for k,v in expected.items()):raise ValueError('Ambience lifecycle mismatch: '+str(normal))
@@ -103,7 +116,14 @@ def main():
     streamed=[i for i,c in enumerate(clips) if c.get('spu_bytes',c['byte_len'])!=c['byte_len']]
     if (stream in driven)!=bool(cue['mask']>>streamed[0]&1):
         raise ValueError('The streamed stem is not on the voice that is never pooled: '+str(normal))
-    if normal['HK_AUDIO_STREAM_STARTS']!=1 or normal['HK_AUDIO_STREAM_SOURCE_WRAPS']<2 or normal['HK_AUDIO_STREAM_REFILLS']<48:
+    # Two wraps of the source, counted in ring halves. This was 48, which is two
+    # wraps at the ring size and sample rate of the time; the streamed clip
+    # cooks at 4 kHz now and the same two wraps are 24 refills. The wrap count
+    # already asserts the loops, so this floor only catches a ring being
+    # refilled without advancing, and it has to be in the ring's own units.
+    streamed_clip=clips[streamed[0]]
+    refills=2*streamed_clip['byte_len']//(streamed_clip['spu_bytes']//2)
+    if normal['HK_AUDIO_STREAM_STARTS']!=1 or normal['HK_AUDIO_STREAM_SOURCE_WRAPS']<2 or normal['HK_AUDIO_STREAM_REFILLS']<refills:
         raise ValueError('Stream did not cross two complete source loops: '+str(normal))
     expected_gains=[g if cue['mask']&(1<<i) else 0 for i,g in enumerate(cue['gains'])]
     if normal['gains']!=expected_gains:raise ValueError('Source mixer endpoint mismatch')
@@ -143,7 +163,7 @@ def main():
     with (out/'loops-route.csv').open() as source:rows=list(csv.DictReader(source))
     for row in rows:
         if int(row['ram_'+f'{addresses["HK_GAME_MODE"]:08x}'])==1:
-            if int(row['ram_'+f'{addresses["HK_AMBIENCE_START_COUNT"]:08x}'])!=4:
+            if int(row['ram_'+f'{addresses["HK_AMBIENCE_START_COUNT"]:08x}'])!=cave_stems:
                 raise ValueError('Cave loops were restarted during stationary gameplay')
     for path,digest in inputs.items():
         if sha(path)!=digest:raise ValueError('Input changed during validation: '+path)
