@@ -89,6 +89,17 @@ pub enum ActorController {
         /// whose bool is authored true with nothing to lower it.
         sleeps: bool,
     },
+    /// Greenpath Pigeon, driven by `crate::pigeon::Pigeon`. A critter rather
+    /// than an enemy: one hit point, no contact damage, no Geo, no corpse, and
+    /// a trigger-only collider on the `Interactive Object` layer, so it never
+    /// touches terrain and the caller moves it by velocity alone.
+    ///
+    /// `walk_clip` is `Idle 01` and `turn_clip` is `Fly`; the other two idle
+    /// loops ride here in `pigeon::Clip::slot` order. Its `Hero Range` circle
+    /// is a prefab constant in `crate::pigeon` rather than a spec field, for
+    /// the reason the Blocker's boxes are: every placement carries the same
+    /// child, and the recognizer proves it before admitting one.
+    Pigeon { clips: [u16; crate::pigeon::Clip::COUNT] },
     /// Source object with no FSM and no Rigidbody2D: `playAutomatically` loops
     /// the default clip where it stands, so the nail is the only interaction.
     Static { idle_clip: u16 },

@@ -455,6 +455,21 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        # The Pigeon never reaches `walker_control`'s FSM test: it refuses on
+        # the layer first, because the family sits on 19, `Interactive Object`,
+        # rather than on the enemy layer. Widening that test would not have
+        # admitted one either, and the gate here is the name plus the pair of
+        # range children every placement carries, which nothing else has.
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Pigeon') \
+                and any(kind == 'EnemyDeathEffectsNoEffect' for _, kind, _ in records):
+            from pigeon import recognize as recognize_pigeon
+            try:
+                control = recognize_pigeon(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Egg Sac') and not fsms:
             try:
                 control = egg_sac_control(sc, actor)
@@ -620,11 +635,17 @@ def generated_actor_records(region):
             raise ValueError('guest actor pool exceeds 32')
         # Placement defaults every controller that authors none of them keeps.
         start_alert, start_right, rotation_q16 = False, False, 0
-        colliders = [collider for collider in actor['colliders'] if 'bounds' in collider and not collider.get('trigger')]
-        if not colliders or any(collider['bounds'] != colliders[0]['bounds'] for collider in colliders):
-            raise ValueError('actor requires unsupported distinct body colliders')
         health = actor['health_manager']
         control = actor['movement_control']
+        # A family whose whole hurt surface is a trigger says so, because the
+        # default filter would leave it with no bounds rather than with its own.
+        # The Pigeon is the first: one trigger box on `Interactive Object`, no
+        # solid body anywhere on the object, and so nothing to stand on either.
+        wanted = bool(control.get('trigger_body'))
+        colliders = [collider for collider in actor['colliders']
+                     if 'bounds' in collider and bool(collider.get('trigger')) == wanted]
+        if not colliders or any(collider['bounds'] != colliders[0]['bounds'] for collider in colliders):
+            raise ValueError('actor requires unsupported distinct body colliders')
         # A controller may answer the nail differently from its HealthManager,
         # and the False Knight does: `Check Health` restores the body instead of
         # letting it die, and `hasSpecialDeath` is the death sequence its own
@@ -740,6 +761,18 @@ def generated_actor_records(region):
             # the common spec and are never read.
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = control['initial_direction'], False
+        elif control['kind'] == 'Pigeon':
+            from pigeon import CLIP_SLOTS as PIGEON_SLOTS
+            pigeon_clips = tuple(slot + '_clip' for slot in PIGEON_SLOTS)
+            if any(key not in actor for key in pigeon_clips):
+                raise ValueError(f'Pigeon is missing cooked clips: {actor["source"]}')
+            clips = '[' + ','.join(str(actor[slot + '_clip']) for slot in PIGEON_SLOTS) + ']'
+            controller = 'hk_sim::ActorController::Pigeon {' + f'clips:{clips}' + '}'
+            # It has no Walker and no ground: the controller owns the one
+            # velocity it ever has, so the walk fields are carried for the
+            # common spec and are never read.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = control['initial_direction'], False
         elif control['kind'] == 'EggSac':
             if 'idle_clip' not in actor or not actor.get('corpse'):
                 raise ValueError(f'Egg Sac is missing cooked clips or corpse: {actor["source"]}')
@@ -778,6 +811,7 @@ def generated_actor_records(region):
             + (('fire_clip',) if control['kind'] == 'Hatcher' else ()) \
             + (shield_clips if control['kind'] == 'ZombieShield' else ()) \
             + (blocker_clips if control['kind'] == 'Blocker' else ()) \
+            + (pigeon_clips if control['kind'] == 'Pigeon' else ()) \
             + (false_knight_clips if control['kind'] == 'FalseKnight' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')
