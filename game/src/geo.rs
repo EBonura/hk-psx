@@ -332,3 +332,15 @@ mod tests {
 
 #[cfg(not(test))]
 include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/geo.rs"));
+
+/// Rocks bound into a catalogue region, or nothing. `GEO_BINDINGS` is sparse
+/// and sorted so the linked table grows with the bound rocks rather than with
+/// every view the catalogue admits.
+#[cfg(not(test))]
+pub fn region_bindings(region:usize)->&'static [GeoDrawBinding] {
+    let Ok(key)=u16::try_from(region) else {return &[];};
+    match GEO_BINDINGS.binary_search_by_key(&key,|&(r,_)|r) {
+        Ok(at)=>GEO_BINDINGS[at].1,
+        Err(_)=>&[],
+    }
+}

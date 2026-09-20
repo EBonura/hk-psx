@@ -17,7 +17,7 @@ pub fn upload() {
 /// their region; only depleted source colliders are disabled.
 pub fn apply(geo:&geo::World,state:&mut world::State,region:usize) {
     let mut edges=[0u16;32];let mut len=0;
-    for binding in geo::GEO_BINDINGS[region] {
+    for binding in geo::region_bindings(region) {
         if geo.rock_depleted(world::scene_of(region),binding.state as usize) {
             for &draw in binding.off {render::set_visible(draw as usize,false);}
             for &edge in binding.edges {
@@ -43,7 +43,7 @@ fn draw_art(index:usize,world:[[i32;2];4],camera:(i32,i32))->bool {
 #[inline(never)]
 pub fn draw(geo:&geo::World,region:usize,camera:(i32,i32))->u32 {
     let scene=world::scene_of(region);let mut drawn=0;
-    for binding in geo::GEO_BINDINGS[region] {
+    for binding in geo::region_bindings(region) {
         let (art,vertices,extra)=if geo.rock_depleted(scene,binding.state as usize) {(binding.broken_art,binding.vertices,binding.broken_extra)}
             else {(binding.intact_art,binding.intact_vertices,binding.intact_extra)};
         drawn+=u32::from(draw_art(art as usize,vertices,camera));
