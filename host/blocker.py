@@ -28,7 +28,7 @@ Blocker has byte-identical child transforms and colliders and a mirrored root,
 so the three trigger boxes are constants in `blocker.rs` and this module proves
 the placement's own world boxes against them, the way `aspid.py` proves its
 alert radii. That keeps `ActorController` inside the Zombie Shield's 56 bytes
-and `ActorSpec` at 172, which every placement in the world pays.
+and `ActorSpec` at 152, which every enemy type in the world pays.
 """
 from pathlib import Path
 import hashlib

@@ -19,17 +19,10 @@ pub enum ActorController {
         /// Alert trigger box relative to the actor origin (facing-left frame).
         alert: [i32; 4],
     },
-    /// Surface-following Tiktik driven by `crate::climber::Climber`.
-    Climber {
-        stun_clip: u16,
-        start_right: bool,
-        /// Authored `transform.rotation.eulerAngles.z` in Q16 degrees, which
-        /// `Climber::new` reads for its starting direction. Cardinal: a floor
-        /// placement is 0 and a ceiling one 180. `ActorSpec::bounds` is the
-        /// collider in this pose, so the runtime rotates the box by the turns
-        /// taken since, not by the absolute rotation.
-        rotation_q16: i32,
-    },
+    /// Surface-following Tiktik driven by `crate::climber::Climber`. Its
+    /// authored rotation and handedness are placement words
+    /// (`ActorPlacement::rotation_q16`, `start_right`).
+    Climber { stun_clip: u16 },
     /// Gravity-free Buzzer driven by `crate::vengefly::Vengefly`; `walk_clip`
     /// is Idle and `turn_clip` TurnToIdle.
     Vengefly {
@@ -52,23 +45,18 @@ pub enum ActorController {
         fire_clip: u16,
         shot_clip: u16,
         impact_clip: u16,
-        /// FSM `startAlert`: skips Idle on the first frame.
-        start_alert: bool,
     },
     /// Hatcher, driven by `crate::hatcher::Hatcher`; `walk_clip` is Fly and
     /// `turn_clip` holds it too, because neither of its two facing actions
     /// plays a turn. It releases the scene's reserved `HatcherBaby` actors.
-    Hatcher {
-        fire_clip: u16,
-        /// FSM `startAlert`: skips Idle on the first frame.
-        start_alert: bool,
-    },
+    Hatcher { fire_clip: u16 },
     /// One member of a Hatcher's cage, driven by `crate::hatcher::Baby`. It is
     /// seated with the rest of the scene's actors and parked until a Hatcher
     /// releases it, which is the whole of the port's runtime spawning: the
     /// source never instantiates one either. `walk_clip` is Fly, and so is
-    /// `turn_clip`. `ActorSpec::x`/`y` are the authored cage position, which is
-    /// off the map by design, so a parked baby never draws and never senses.
+    /// `turn_clip`. `ActorPlacement::x`/`y` are the authored cage position,
+    /// which is off the map by design, so a parked baby never draws and never
+    /// senses.
     HatcherBaby,
     /// Zombie Shield, driven by `crate::zombie_shield::ZombieShield`. The
     /// `Walker` underneath it is the Runner's own component authored with
@@ -125,18 +113,18 @@ pub enum ActorController {
         barrel_spawn_y: i32,
     },
 }
+/// What one enemy type is, with nothing of where it stands in it.
+///
+/// Everything here is a property of the source prefab and its cooked clips, so
+/// two placements of the same enemy in a scene share one of these. What tells
+/// them apart is the `ActorPlacement` beside them.
 #[derive(Clone, Copy, Debug)]
 pub struct ActorSpec {
-    pub source_id: u32,
     pub controller: ActorController,
-    pub x: i32,
-    pub y: i32,
     /// Spawn-orientation collider bounds relative to the actor transform.
     pub bounds: [i32; 4],
     pub health: EnemyParams,
     pub walk: WalkParams,
-    pub initial_direction: i32,
-    pub random_start_direction: bool,
     pub walk_clip: u16,
     pub turn_clip: u16,
     pub corpse: Option<crate::CorpseSpec>,
@@ -146,12 +134,41 @@ pub struct ActorSpec {
     /// source carries no `EnemyDreamnailReaction`, or one that pays nothing.
     pub dream_soul: u16,
 }
-// Every admitted placement in the world is one of these in linked STATIC, so a
-// controller variant wider than the widest one already here grows all of them
-// at once rather than only its own family. That is the cost worth holding, and
-// it is easier to hold here than to rediscover from a link map later.
-const _: () = assert!(core::mem::size_of::<ActorSpec>() == 172,
-    "a wider actor spec costs its difference times every placement in the world");
+// One of these is linked per distinct enemy type per scene, not per placement,
+// so a controller variant wider than the widest one already here grows every
+// type in the world at once rather than only its own family. That is the cost
+// worth holding, and it is easier to hold here than to rediscover from a link
+// map later.
+const _: () = assert!(core::mem::size_of::<ActorSpec>() == 152,
+    "a wider actor spec costs its difference times every enemy type in the world");
+
+/// Where one placement of an `ActorSpec` stands, and the handful of authored
+/// switches the source keeps on the object rather than on the prefab.
+///
+/// None of this is linked. It is read out of the scene's metadata bank, which
+/// already carries an object per placement, so the world pays per enemy here
+/// and per enemy *type* in `ActorSpec`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActorPlacement {
+    /// Scene-unique source object id, which for an object merged in from an
+    /// additive scene is its shifted id rather than the one in its own file.
+    pub source_id: u32,
+    pub x: i32,
+    pub y: i32,
+    pub initial_direction: i32,
+    pub random_start_direction: bool,
+    /// FSM `startAlert` on the Aspid and the Hatcher: skips Idle on the first
+    /// frame. False for every other controller.
+    pub start_alert: bool,
+    /// The Climber's authored handedness, which `climber::Climber::new` reads.
+    pub start_right: bool,
+    /// The Climber's authored `transform.rotation.eulerAngles.z` in Q16
+    /// degrees, which `climber::Climber::new` reads for its starting
+    /// direction. Cardinal: a floor placement is 0 and a ceiling one 180.
+    /// `ActorSpec::bounds` is the collider in this pose, so the runtime rotates
+    /// the box by the turns taken since, not by the absolute rotation.
+    pub rotation_q16: i32,
+}
 #[derive(Clone, Copy, Debug)]
 pub struct EnemyParams {
     pub health: i16,

@@ -177,13 +177,31 @@ pub fn grass<'a>(region: meta::Region<'a>) -> impl Iterator<Item = Patch> + 'a {
 pub fn region_grass(region: &Region) -> impl Iterator<Item = Patch> {
     bank_region(region).into_iter().flat_map(grass)
 }
-/// Supported actor specs of a catalogue region: bank actor objects flagged
-/// with a `SCENE_ACTORS[scene]` index.
-pub fn region_actors(region: &Region) -> impl Iterator<Item = &'static hk_sim::ActorSpec> {
+/// Supported actor placements of a catalogue region, each with the
+/// `SCENE_ACTORS[scene]` type it places. The type is linked once per scene and
+/// the placement comes out of the bank object, so a scene pays for the enemy
+/// types it introduces rather than for the enemies it stands up.
+pub fn region_actors(
+    region: &Region,
+) -> impl Iterator<Item = (hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)> {
     let specs: &'static [hk_sim::ActorSpec] = SCENE_ACTORS[region.scene];
     bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
         .filter(|o| o.kind() == KIND_ACTOR && o.flags() & 64 != 0)
-        .map(move |o| &specs[o.extra(0) as usize])
+        .map(move |o| (actor_placement(&o), &specs[o.extra(0) as usize]))
+}
+/// The placement words of one `KIND_ACTOR` object (hk-format world_meta.rs).
+fn actor_placement(object: &meta::Object<'_>) -> hk_sim::ActorPlacement {
+    let flags = object.flags();
+    hk_sim::ActorPlacement {
+        source_id: object.state_id(),
+        x: object.extra(1),
+        y: object.extra(2),
+        initial_direction: if flags & 1 != 0 { 1 } else { -1 },
+        random_start_direction: flags & 2 != 0,
+        start_alert: flags & 4 != 0,
+        start_right: flags & 8 != 0,
+        rotation_q16: ((flags >> 8) & 3) as i32 * 90 * hk_sim::ONE,
+    }
 }
 /// Reveal mask draw bindings of a catalogue region: (controller, draw) pairs
 /// from the region's single `KIND_REVEAL_BINDINGS` object.

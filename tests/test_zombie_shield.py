@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
 import zombie_shield
-from actors import generated_actor_specs
+from actors import actor_placements, generated_actor_specs
 
 CONTROLLER = ROOT / 'shared/hk-sim/src/zombie_shield.rs'
 
@@ -80,14 +80,16 @@ def actor(**extra):
 
 class ZombieShieldSpecTests(unittest.TestCase):
     def test_the_spec_carries_the_clip_array_and_the_attack_trigger(self):
-        text = generated_actor_specs({'actors': [actor()]})[0]
+        region = {'actors': [actor()]}
+        text = generated_actor_specs(region)[0]
         clips = ','.join(str(10 + index) for index in range(len(zombie_shield.CLIP_SLOTS)))
         self.assertIn('hk_sim::ActorController::ZombieShield {clips:[' + clips + ']', text)
         self.assertIn('attack:[-278200,62259,278200,608174]}', text)
         # No corpse is presented, and the walk fields ride along unread.
         self.assertIn('corpse:None', text)
-        self.assertIn('initial_direction:-1', text)
-        self.assertIn('random_start_direction:false', text)
+        placement = actor_placements(region)[0]
+        self.assertEqual((placement['initial_direction'], placement['random_start_direction']),
+                         (-1, False))
 
     def test_a_shield_missing_one_cooked_clip_is_refused_rather_than_shifted(self):
         record = actor()

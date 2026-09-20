@@ -25,6 +25,15 @@ pub const KIND_BREAKABLE: u16 = 1;
 pub const KIND_GRASS: u16 = 2;
 pub const KIND_HAZARD: u16 = 3;
 pub const KIND_CHECKPOINT: u16 = 4;
+/// One enemy placement. Flag 32 marks any recorded actor; flag 64 means the
+/// guest has a controller for it, and then the object carries the whole
+/// placement, because `SCENE_ACTORS[scene]` is a catalogue of enemy *types*
+/// shared by every placement of one: payload word 0 is the index into it,
+/// words 1 and 2 are the world x and y, and `state` is the scene-unique source
+/// id, which for an object merged in from an additive scene is its shifted id
+/// rather than the object's own. The remaining flag bits are the authored
+/// switches: 1 initial facing right, 2 random start direction, 4 `startAlert`,
+/// 8 the Climber's `start_right`, and bits 8..9 its rotation in quarter turns.
 pub const KIND_ACTOR: u16 = 5;
 /// A breakable's own mask fade; follows its breakable in the region's objects.
 pub const KIND_MASK_FADE: u16 = 6;

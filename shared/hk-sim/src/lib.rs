@@ -30,7 +30,7 @@ pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
 pub mod persistent;
 pub use nail_response::{NailResponse, NailResponseParams};
-pub use actors::{resolve_actor_spawn, walker_senses, ActorController, ActorHealth, ActorSpec, EnemyParams, Hit, WalkParams, WalkState, MAX_ACTORS};
+pub use actors::{resolve_actor_spawn, walker_senses, ActorController, ActorHealth, ActorPlacement, ActorSpec, EnemyParams, Hit, WalkParams, WalkState, MAX_ACTORS};
 pub use vitals::{Hurt, VitalParams, Vitals};
 pub use combat::polygon_hits_box;
 pub use combat::{AttackParams, Grass, Nail};

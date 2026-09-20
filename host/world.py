@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 from source import ROOT
-from actors import generated_actor_specs
+from actors import scene_actor_bank
 import sys
 sys.path.insert(0, str(ROOT / 'tools'))
 from world_metadata import damagehero_respawns, persistent_object
@@ -209,8 +209,10 @@ def resolve_gates(report, regions, scene):
     A gate names its destination by scene name and entry point, and its spawn
     lands in some region of that other scene, so this cannot be done inside the
     per-scene bank encoder. `generate` runs it once per scene and hangs the
-    result on the scene, the way it already hands the encoder `statics` and
-    `spec_index`.
+    result on the scene, the way it already hands the encoder `statics`. The
+    actor spec index went the other way: the encoder derives it from the same
+    `scene_actor_bank` pass this module links, rather than reading back a
+    number the report happened to be carrying.
     """
     by_name = {other['scene_name']: other for other in report['scenes']}
     integer(scene['scene_id'], SCENES, 'gate scene')
@@ -311,22 +313,13 @@ def generate(report, out_path=None):
             arrays=['&['+','.join('['+','.join(map(str,v))+']'for v in group)+']'for group in frames]
             out.append(f'static {name}: particles::Bank = particles::Bank '+'{frames:['+','.join(arrays)+f'],styles:PARTICLE_STYLES_{scene},death_offset:'+str(data['death_offset'])+'};')
     if len(particle_banks)>8:raise ValueError('particle metadata variant budget')
-    # One static per distinct actor spec per scene; the bank's actor objects
-    # carry the scene-local index (`spec_index`) into SCENE_ACTORS[scene].
-    scene_actor_specs = {scene: [] for scene in range(SCENES)}
-    for region in regions:
-        supported = [actor for actor in region.get('actors', []) if actor['movement_supported']]
-        texts = generated_actor_specs(region)
-        if len(supported) != len(texts):
-            raise ValueError('supported actor records and generated specs disagree')
-        specs = scene_actor_specs[region['scene_id']]
-        for actor, text in zip(supported, texts):
-            if text not in specs:
-                specs.append(text)
-            actor['spec_index'] = specs.index(text)
-    for scene, specs in scene_actor_specs.items():
-        if len(specs) > 32:
-            raise ValueError('scene actor pool exceeds 32')
+    # One static per distinct actor *type* per scene. Where a placement stands
+    # and how it was authored is not in here: that rides in the scene's own
+    # metadata bank, which already carries an object per placement, and
+    # tools/world_metadata.py stamps the index into this list from the same
+    # `scene_actor_bank` pass rather than from anything recorded here.
+    for scene in range(SCENES):
+        specs, _ = scene_actor_bank([r for r in regions if r['scene_id'] == scene])
         out.append(f'static SCENE_ACTORS_{scene}: &[hk_sim::ActorSpec] = &[' + ','.join(specs) + '];')
     out.append('pub static SCENE_ACTORS: &[&[hk_sim::ActorSpec]] = &[' + ','.join(f'SCENE_ACTORS_{scene}' for scene in range(SCENES)) + '];')
     # Per-scene statics the runtime Region value borrows, and small variant

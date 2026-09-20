@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'host'))
-from actors import generated_actor_region
+from actors import actor_placements, generated_actor_region
 from cook import append_actor_art
 from regions import remap_actor_clips
 
@@ -134,7 +134,10 @@ class RunnerActorArtTests(unittest.TestCase):
                       'attack:hk_sim::runner::Attack::Swipe,gravity:3932160},'
                       'alert:[-365036,-144507,365036,12730]}', text)
         self.assertIn('speed:98304,turn_ticks:10,turn_cooldown_ticks:60', text)
-        self.assertIn('initial_direction:-1,random_start_direction:false', text)
+        # Facing and the random-start switch are the placement's, not the type's.
+        placement = actor_placements({'actors': [actor]})[0]
+        self.assertEqual((placement['initial_direction'], placement['random_start_direction']),
+                         (-1, False))
         self.assertIn('health:15,contact_damage:1', text)
         for key in ['idle_clip', 'anticipate_clip', 'lunge_clip', 'cooldown_clip', 'corpse']:
             with self.subTest(key=key):

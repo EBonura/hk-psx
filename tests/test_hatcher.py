@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'host'))
 import hatcher
-from actors import generated_actor_specs
+from actors import actor_placements, generated_actor_specs
 
 
 def scene(babies, hatchers, others, file='level57', tag=hatcher.CAGE_TAG, cages=1):
@@ -117,12 +117,19 @@ def actor(kind, **extra):
 
 
 class HatcherSpecTests(unittest.TestCase):
-    def test_the_hatcher_spec_carries_its_fire_clip_and_start_alert(self):
-        text = generated_actor_specs({'actors': [actor('Hatcher')]})[0]
-        self.assertIn('hk_sim::ActorController::Hatcher {fire_clip:9,start_alert:false}', text)
+    def test_the_hatcher_spec_carries_its_fire_clip_and_the_placement_start_alert(self):
+        region = {'actors': [actor('Hatcher')]}
+        text = generated_actor_specs(region)[0]
+        self.assertIn('hk_sim::ActorController::Hatcher {fire_clip:9}', text)
         self.assertIn('corpse:None', text)
         # The controller owns every velocity the body has.
         self.assertIn('hk_sim::WalkParams {speed:0,turn_ticks:0,turn_cooldown_ticks:0}', text)
+        # `startAlert` is authored per placement, so it rides in the scene bank
+        # and two Hatchers that differ only in it are still one linked type.
+        self.assertIs(actor_placements(region)[0]['start_alert'], False)
+        alert = {'actors': [actor('Hatcher', movement_control={'kind': 'Hatcher', 'start_alert': True})]}
+        self.assertEqual(generated_actor_specs(alert), [text])
+        self.assertIs(actor_placements(alert)[0]['start_alert'], True)
 
     def test_a_hatcher_without_a_cooked_fire_clip_is_refused(self):
         record = actor('Hatcher')

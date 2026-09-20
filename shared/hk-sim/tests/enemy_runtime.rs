@@ -58,9 +58,13 @@ mod world {
         pub scene: usize,
         pub bounds: [i32; 4],
         pub collision_bounds: [i32; 4],
-        pub actors: &'static [&'static hk_sim::ActorSpec],
+        /// One entry per placement: where it stands, and the scene-shared
+        /// `ActorSpec` type it is a placement of.
+        pub actors: &'static [(hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)],
     }
-    pub fn region_actors(region: &Region) -> impl Iterator<Item = &'static hk_sim::ActorSpec> {
+    pub fn region_actors(
+        region: &Region,
+    ) -> impl Iterator<Item = (hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)> {
         region.actors.iter().copied()
     }
     /// One fixture spike: a down-slash-only target owned by breakable 0.
@@ -177,11 +181,19 @@ mod audio {
 }
 #[path = "../../../game/src/enemies.rs"]
 mod enemies;
-const SPEC: ActorSpec = ActorSpec {
-    controller: ActorController::Crawler,
+/// The one placement every fixture that does not need its own stands at.
+const PLACEMENT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
     source_id: 12546,
     x: 0,
     y: ONE,
+    initial_direction: -1,
+    random_start_direction: false,
+    start_alert: false,
+    start_right: false,
+    rotation_q16: 0,
+};
+const SPEC: ActorSpec = ActorSpec {
+    controller: ActorController::Crawler,
     bounds: [-ONE / 2, -ONE, ONE / 2, 0],
     health: EnemyParams {
         health: 8,
@@ -195,8 +207,6 @@ const SPEC: ActorSpec = ActorSpec {
         turn_ticks: 10,
         turn_cooldown_ticks: 60,
     },
-    initial_direction: -1,
-    random_start_direction: false,
     walk_clip: 0,
     turn_clip: 0,
     corpse: None,
@@ -208,7 +218,7 @@ fn region() -> world::Region {
         scene: 0,
         bounds: [-20 * ONE, -5 * ONE, 20 * ONE, 20 * ONE],
         collision_bounds: [-23 * ONE, -10 * ONE, 23 * ONE, 25 * ONE],
-        actors: &[&SPEC],
+        actors: &[(PLACEMENT, &SPEC)],
     }
 }
 fn room() -> Vec<u8> {
@@ -424,13 +434,13 @@ fn grid_swap_keeps_position_and_dead_health_until_scene_reset() {
     w.take_geo_deaths(1,|_,_,_|panic!("Wrong scene paid Geo"));
     w.take_geo_deaths(0,|_,_,_|false); // A full emitter must remain retryable.
     w.take_geo_deaths(0,|id,x,y|{payouts.push((id,x,y));true});
-    assert_eq!(payouts.len(),1);assert_eq!(payouts[0].0,SPEC.source_id);
+    assert_eq!(payouts.len(),1);assert_eq!(payouts[0].0,PLACEMENT.source_id);
     w.sync_region(&r);
     w.take_geo_deaths(0,|_,_,_|panic!("Grid swap paid the same death twice"));
     assert!(w.actor_state(0, 12546).unwrap().2 <= 0);
     w.reset_scene(0);
     w.sync_region(&r);
-    assert_eq!(w.actor_state(0, 12546), Some((SPEC.x, SPEC.y, 8)));
+    assert_eq!(w.actor_state(0, 12546), Some((PLACEMENT.x, PLACEMENT.y, 8)));
     w.take_geo_deaths(0,|_,_,_|panic!("New living actor paid Geo"));
 }
 #[test]
@@ -456,7 +466,7 @@ fn contact_is_debounced_and_unloaded_collision_freezes_position() {
         scene: 0,
         bounds: [100 * ONE, 0, 120 * ONE, 20 * ONE],
         collision_bounds: [97 * ONE, -5 * ONE, 123 * ONE, 25 * ONE],
-        actors: &[&SPEC],
+        actors: &[(PLACEMENT, &SPEC)],
     };
     for _ in 0..60 {
         tick(&mut w, &remote, &room, &mut p, &mut v, &n);
@@ -541,14 +551,14 @@ fn actor_outside_activation_grid_still_moves_and_contacts_in_collision_apron() {
 
 #[test]
 fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
-    const OVERLAPPING: ActorSpec = ActorSpec {
-        y: ONE - ONE / 8,
-        dream_soul: 0, ..SPEC
+    const OVERLAPPING_SPEC: ActorSpec = ActorSpec { dream_soul: 0, ..SPEC };
+    const OVERLAPPING: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+        y: ONE - ONE / 8, ..PLACEMENT
     };
     let bytes = room();
     let floor = hk_format::Room::parse(&bytes).unwrap();
     let mut r = region();
-    r.actors = &[&OVERLAPPING];
+    r.actors = &[(OVERLAPPING, &OVERLAPPING_SPEC)];
     let remote = world::Region {
         collision_bounds: [97 * ONE, -5 * ONE, 123 * ONE, 25 * ONE],
         ..r
@@ -558,9 +568,9 @@ fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
     let mut v = Vitals::new(VITAL_PARAMS);
     let n = Nail::new();
     tick(&mut w, &remote, &floor, &mut p, &mut v, &n);
-    assert_eq!(w.actor_state(0, SPEC.source_id).unwrap().1, OVERLAPPING.y);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, OVERLAPPING.y);
     tick(&mut w, &r, &floor, &mut p, &mut v, &n);
-    assert_eq!(w.actor_state(0, SPEC.source_id).unwrap().1, ONE);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE);
     // A new grid's intersecting edge must not trigger the initial placement
     // correction again. Ordinary movement retains the existing sweep rules.
     let mut changed = room();
@@ -573,12 +583,12 @@ fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
     w.sync_region(&remote);
     w.sync_region(&r);
     tick(&mut w, &r, &changed, &mut p, &mut v, &n);
-    assert!(w.actor_state(0, SPEC.source_id).unwrap().1 < ONE);
+    assert!(w.actor_state(0, PLACEMENT.source_id).unwrap().1 < ONE);
 }
 
 #[test]
 fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
-    const EMBEDDED: ActorSpec = ActorSpec { y: ONE / 2, ..SPEC };
+    const EMBEDDED: hk_sim::ActorPlacement = hk_sim::ActorPlacement { y: ONE / 2, ..PLACEMENT };
     let mut bytes = room();
     bytes[28..32].copy_from_slice(&40u32.to_le_bytes());
     let edge_offset = 40 + 16 + 20 + 16;
@@ -591,22 +601,22 @@ fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
     bytes.splice(edge_offset..edge_offset + 16, edges);
     let dense = hk_format::Room::parse(&bytes).unwrap();
     let mut r = region();
-    r.actors = &[&EMBEDDED];
+    r.actors = &[(EMBEDDED, &SPEC)];
     let mut w = enemies::EnemyWorld::new();
     let mut p = Player::spawn(10 * ONE, ONE);
     let mut v = Vitals::new(VITAL_PARAMS);
     let n = Nail::new();
     tick(&mut w, &r, &dense, &mut p, &mut v, &n);
-    assert_eq!(w.actor_state(0, SPEC.source_id).unwrap().1, EMBEDDED.y);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, EMBEDDED.y);
     let clear = room();
     let clear = hk_format::Room::parse(&clear).unwrap();
     for _ in 0..5 {
         tick(&mut w, &r, &clear, &mut p, &mut v, &n);
     }
-    assert_eq!(w.actor_state(0, SPEC.source_id).unwrap().1, EMBEDDED.y);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, EMBEDDED.y);
     w.reset_scene(0);
     tick(&mut w, &r, &clear, &mut p, &mut v, &n);
-    assert_eq!(w.actor_state(0, SPEC.source_id).unwrap().1, ONE);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE);
 }
 
 #[test]
@@ -614,7 +624,7 @@ fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
     const WITH_CORPSE:ActorSpec=ActorSpec {health:EnemyParams{health:5,..SPEC.health},
         corpse:Some(CorpseSpec{air_clip:0,land_clip:0,bounds:SPEC.bounds,spawn_offset:[0,ONE/2],bounce_factor:19661, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0, hold_ticks: 0}),..SPEC};
     let bytes=room();let room=hk_format::Room::parse(&bytes).unwrap();
-    let r=world::Region{actors:&[&WITH_CORPSE],..region()};
+    let r=world::Region{actors:&[(PLACEMENT, &WITH_CORPSE)],..region()};
     let mut w=enemies::EnemyWorld::new();let mut p=Player::spawn(0,ONE);
     let mut v=Vitals::new(VITAL_PARAMS);let mut n=Nail::new();n.active=true;n.age=1;
     let hit=tick(&mut w,&r,&room,&mut p,&mut v,&n);
@@ -635,9 +645,11 @@ fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
 /// Source Egg Sac (level81:4050): hp 20, no Rigidbody2D, no DamageHero and no
 /// Recoil, so it holds its authored transform above the floor and answers only
 /// the nail. Its corpse holds one clip for 84 ticks, then plays the other.
+const EGG_SAC_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 4050, x: 3 * ONE, y: 5 * ONE, ..PLACEMENT
+};
 const EGG_SAC: ActorSpec = ActorSpec {
     controller: ActorController::Static { idle_clip: 0 },
-    source_id: 4050, x: 3 * ONE, y: 5 * ONE,
     health: EnemyParams { health: 20, contact_damage: 0, ..SPEC.health },
     walk: WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
     corpse: Some(CorpseSpec { air_clip: 0, land_clip: 0, bounds: [0; 4], spawn_offset: [0, 0],
@@ -649,16 +661,16 @@ const EGG_SAC: ActorSpec = ActorSpec {
 fn static_actor_never_falls_or_hurts_and_its_corpse_bursts_where_it_stood() {
     let bytes = room();
     let room = hk_format::Room::parse(&bytes).unwrap();
-    let r = world::Region { actors: &[&EGG_SAC], ..region() };
+    let r = world::Region { actors: &[(EGG_SAC_AT, &EGG_SAC)], ..region() };
     let mut w = enemies::EnemyWorld::new();
-    let mut p = Player::spawn(EGG_SAC.x, EGG_SAC.y);
+    let mut p = Player::spawn(EGG_SAC_AT.x, EGG_SAC_AT.y);
     let mut v = Vitals::new(VITAL_PARAMS);
     let mut n = Nail::new();
     for _ in 0..120 {
         assert_eq!(tick(&mut w, &r, &room, &mut p, &mut v, &n).hurt, Hurt::Ignored);
     }
     // Four units above the fixture floor, overlapping the Knight the whole time.
-    assert_eq!(w.actor_state(0, EGG_SAC.source_id), Some((EGG_SAC.x, EGG_SAC.y, 20)));
+    assert_eq!(w.actor_state(0, EGG_SAC_AT.source_id), Some((EGG_SAC_AT.x, EGG_SAC_AT.y, 20)));
     assert_eq!(v.health, 5);
     assert_eq!(w.prepare_draws(&r, &room, (0, 0)).draw(), 1);
     for round in 0..4 {
@@ -671,7 +683,7 @@ fn static_actor_never_falls_or_hurts_and_its_corpse_bursts_where_it_stood() {
             for _ in 0..12 { tick(&mut w, &r, &room, &mut p, &mut v, &n); }
         }
     }
-    assert_eq!(w.actor_state(0, EGG_SAC.source_id).unwrap().2, 0);
+    assert_eq!(w.actor_state(0, EGG_SAC_AT.source_id).unwrap().2, 0);
     assert_eq!(world::DEATHS.with(|v| v.borrow().len()), 1);
     for _ in 0..97 {
         tick(&mut w, &r, &room, &mut p, &mut v, &n);
@@ -690,10 +702,10 @@ fn cheat_nail_and_contact_protection_use_actual_enemy_runtime() {
   let polygons=[&[[-ONE,-2*ONE],[ONE,-2*ONE],[ONE,ONE],[-ONE,ONE]][..];4];
   let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&hk_sim::DreamNail::new(),None,&mut NailResponse::new(),no_attack(),polygons,settings,[0,0,-2496922],|_| panic!("Crawler event"),|_,_,_|None);
   assert_eq!(hit.hurt,if enabled{Hurt::Ignored}else{Hurt::Recoiling});assert_eq!(v.health,if enabled{5}else{4});
-  p.x=w.actor_state(0,SPEC.source_id).unwrap().0;n.active=true;n.age=1;
+  p.x=w.actor_state(0,PLACEMENT.source_id).unwrap().0;n.active=true;n.age=1;
   let hit=w.tick(&r,&room,&mut world::State,&mut p,&mut v,&n,&hk_sim::DreamNail::new(),None,&mut NailResponse::new(),no_attack(),polygons,settings,[0,0,-2496922],|_| panic!("Crawler event"),|_,_,_|None);
   assert_eq!(hit.hits,1);assert_eq!(hit.kills,u16::from(enabled));
-  assert_eq!(w.actor_state(0,SPEC.source_id).unwrap().2,if enabled{-13}else{3});
+  assert_eq!(w.actor_state(0,PLACEMENT.source_id).unwrap().2,if enabled{-13}else{3});
  }
 }
 
@@ -721,8 +733,8 @@ fn resident_actor_view_matches_unpartitioned_patrol_across_knight_apron() {
                 assert!(world::contains(complete.collision_bounds,x,y));
                 Some((complete,hk_format::Room::parse(&bytes).unwrap()))
             });
-        assert_eq!(actual.actor_state(0,SPEC.source_id),expected.actor_state(0,SPEC.source_id));
-        farthest=farthest.max(actual.actor_state(0,SPEC.source_id).unwrap().0.abs());
+        assert_eq!(actual.actor_state(0,PLACEMENT.source_id),expected.actor_state(0,PLACEMENT.source_id));
+        farthest=farthest.max(actual.actor_state(0,PLACEMENT.source_id).unwrap().0.abs());
     }
     assert!(farthest>10*ONE);
 }
@@ -738,7 +750,7 @@ fn unrelated_scene_view_cannot_activate_suspended_actor() {
         &mut Vitals::new(VITAL_PARAMS),&Nail::new(),&hk_sim::DreamNail::new(),None,&mut NailResponse::new(),
         no_attack(),[&[];4],cheats::Settings::new(),[0,0,-2496922],|_| panic!("Crawler event"),
         |_,_,_|Some((foreign,hk_format::Room::parse(&bytes).unwrap())));
-    assert_eq!(actors.actor_state(0,SPEC.source_id),Some((SPEC.x,SPEC.y,8)));
+    assert_eq!(actors.actor_state(0,PLACEMENT.source_id),Some((PLACEMENT.x,PLACEMENT.y,8)));
 }
 
 #[test]
@@ -755,7 +767,7 @@ fn oversized_actor_terrain_retains_exact_direct_fallback() {
     for _ in 0..600 {
         tick(&mut a,&r,&small,&mut p,&mut v,&Nail::new());
         tick(&mut b,&r,&big,&mut p,&mut v,&Nail::new());
-        assert_eq!(a.actor_state(0,SPEC.source_id),b.actor_state(0,SPEC.source_id));
+        assert_eq!(a.actor_state(0,PLACEMENT.source_id),b.actor_state(0,PLACEMENT.source_id));
     }
 }
 
@@ -771,16 +783,17 @@ const FALSE_KNIGHT: ActorSpec = ActorSpec {
         // the fixture drops barrels from above the boss's own spawn height.
         barrel_clip: 6, barrel_spawn_y: 22 * ONE,
     },
-    source_id: 100040, x: 0, y: 8 * ONE,
     // Asymmetric on purpose: a symmetric box would hide which way it faces.
     bounds: [-ONE, -2 * ONE, ONE / 2, 0],
     health: EnemyParams { health: 65, contact_damage: 1, evasion_ticks: 15,
         invincible: false, damage_override: false },
     walk: WalkParams { speed: 0, turn_ticks: 10, turn_cooldown_ticks: 0 },
-    // `Turn L` writes the source scale -1.3, which the cook takes the absolute
-    // of, so the one authored placement, which faces left, starts at +1 here.
-    initial_direction: 1,
     walk_clip: 0, turn_clip: 1, corpse: None, recoil_speed: 0, recoil_ticks: 0, ..SPEC
+};
+/// `Turn L` writes the source scale -1.3, which the cook takes the absolute of,
+/// so the one authored placement, which faces left, starts at +1 here.
+const FALSE_KNIGHT_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 100040, x: 0, y: 8 * ONE, initial_direction: 1, ..PLACEMENT
 };
 /// Wide enough that the fight's own jumps stay inside one collision view: the
 /// slam leaps up to eighteen units past the hero.
@@ -789,7 +802,7 @@ fn boss_region() -> world::Region {
         scene: 0,
         bounds: [-60 * ONE, -5 * ONE, 60 * ONE, 40 * ONE],
         collision_bounds: [-64 * ONE, -10 * ONE, 64 * ONE, 44 * ONE],
-        actors: &[&FALSE_KNIGHT],
+        actors: &[(FALSE_KNIGHT_AT, &FALSE_KNIGHT)],
     }
 }
 /// The six cooked clips over six textures, plus the barrel's own one-frame
@@ -832,7 +845,7 @@ fn boss_room() -> Vec<u8> {
 /// under test, not how survivable it is.
 fn swing(w: &mut enemies::EnemyWorld, r: &world::Region, room: &hk_format::Room,
          p: &mut Player, n: &mut Nail) -> enemies::Events {
-    let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+    let (x, y, _) = w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap();
     p.x = x;
     p.y = y + ONE;
     n.active = true;
@@ -856,7 +869,7 @@ fn nothing_of_the_boss_runs_until_the_hero_crosses_the_battle_trigger() {
     }
     // `Dormant` runs no solver: the body holds the authored transform, and it
     // is not drawn either, because the source hides it inside the ceiling slab.
-    assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap(), (0, 8 * ONE, 65));
+    assert_eq!(w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap(), (0, 8 * ONE, 65));
     assert!(submitted(&w, &r, &room).is_empty());
     // `Detect` -> `Start`: BATTLE START, and `Start Fall` drops it.
     p.x = 0;
@@ -865,7 +878,7 @@ fn nothing_of_the_boss_runs_until_the_hero_crosses_the_battle_trigger() {
     }
     // Body bottom is two units below the transform, so a boss standing on the
     // fixture floor at y 0 rests at y 2.
-    let (_, y, health) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+    let (_, y, health) = w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap();
     assert_eq!(y, 2 * ONE);
     assert_eq!(health, 65);
     assert_eq!(submitted(&w, &r, &room).len(), 1, "it is drawn once it has dropped");
@@ -888,7 +901,7 @@ fn the_body_staggers_at_zero_instead_of_dying_and_opens_its_armour() {
     for _ in 0..500 {
         let events = swing(&mut w, &r, &room, &mut p, &mut n);
         assert_eq!(events.kills, 0, "the body is not killable");
-        assert!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap().2 > 0);
+        assert!(w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap().2 > 0);
         if submitted(&w, &r, &room).iter().any(|(id, _)| *id == 4) {
             opened = true;
             break;
@@ -921,7 +934,7 @@ fn three_conversions_take_it_through_the_death_sequence() {
     let mut was_open = false;
     let mut hold = 0u32;
     for _ in 0..30000 {
-        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap();
         // The camera follows the boss so the open-armour clip is never culled.
         render::QUADS.with(|q| q.borrow_mut().clear());
         w.prepare_draws(&r, &room, (x, y)).draw();
@@ -995,7 +1008,7 @@ fn a_persisted_arena_quick_opens_its_gates_and_refuses_to_fight() {
     }
     assert_eq!(battle_gates::EVENTS.with(|e| e.borrow().clone()), vec![("quick open", 0)]);
     // Still hanging in the ceiling slab at its authored transform, undrawn.
-    assert_eq!(w.actor_state(0, FALSE_KNIGHT.source_id).unwrap(), (0, 8 * ONE, 65));
+    assert_eq!(w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap(), (0, 8 * ONE, 65));
     assert!(submitted(&w, &r, &room).is_empty());
 }
 
@@ -1076,7 +1089,7 @@ fn the_fight_drops_barrels_the_hero_can_be_hit_by() {
     let mut phase_one_barrels = 0u32;
     let mut conversions = 0u32;
     for _ in 0..30000 {
-        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap();
         render::QUADS.with(|q| q.borrow_mut().clear());
         w.prepare_draws(&r, &room, (x, y)).draw();
         let open = render::QUADS.with(|q| q.borrow().iter().any(|(id, _)| *id == 4));
@@ -1117,13 +1130,13 @@ fn the_fight_drops_barrels_the_hero_can_be_hit_by() {
     // A barrel's box is a trigger, so terrain ends it rather than stopping it,
     // and the pool has to come back or the next burst evicts a live barrel.
     for _ in 0..600 {
-        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+        let (x, y, _) = w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap();
         p.x = x;
         p.y = y + ONE;
         tick(&mut w, &r, &room, &mut p, &mut Vitals::new(VITAL_PARAMS), &n);
         let _ = barrels(&w, x, y);
     }
-    let (x, y, _) = w.actor_state(0, FALSE_KNIGHT.source_id).unwrap();
+    let (x, y, _) = w.actor_state(0, FALSE_KNIGHT_AT.source_id).unwrap();
     assert!(barrels(&w, x, y).is_empty(), "every barrel of the burst reached the floor");
 }
 
@@ -1187,24 +1200,23 @@ const BLOCKER: ActorSpec = ActorSpec {
         impact_clip: 9,
         sleeps: true,
     },
-    source_id: 504585,
-    x: 0,
-    y: 4 * ONE,
     // The source body box, which is also its `Terrain Block`.
     bounds: [-128000, -145408, 54272, 61440],
     health: EnemyParams { health: 60, contact_damage: 0, evasion_ticks: 12,
         invincible: false, damage_override: false },
     walk: WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
-    initial_direction: 1,
     walk_clip: 0, turn_clip: 1, corpse: None, recoil_speed: 0, recoil_ticks: 0,
     ..SPEC
+};
+const BLOCKER_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 504585, x: 0, y: 4 * ONE, initial_direction: 1, ..PLACEMENT
 };
 fn blocker_region() -> world::Region {
     world::Region {
         scene: 0,
         bounds: [-20 * ONE, -5 * ONE, 20 * ONE, 20 * ONE],
         collision_bounds: [-23 * ONE, -10 * ONE, 23 * ONE, 25 * ONE],
-        actors: &[&BLOCKER],
+        actors: &[(BLOCKER_AT, &BLOCKER)],
     }
 }
 /// A room carrying the Blocker's ten clips at their source frame counts and
