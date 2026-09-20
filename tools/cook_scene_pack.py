@@ -36,6 +36,16 @@ PAD = (1, 5, 1, 1)
 VIEW = (24, 16)  # canonical initial_regions stepping
 DEFAULT_ROOT = ROOT / '.hkpsx/scene-packs'
 WORLD_REPORT = ROOT / '.hkpsx/world-import/report.json'
+# The two ignored cook caches, which a pack cook is allowed to fill because both
+# are content-addressed pure-function stores rather than reports: an entry either
+# run adds is the same bytes the other would have computed, and both write
+# through a pid-suffixed temp file so concurrent cooks cannot tear one.
+# `texture_dedup` keys on the input pack, the replacements and a hash of the code
+# that decides the result; `alpha_covers` keys on the image itself. They have to
+# be named here because the guard below denies by default, and without them every
+# cook died in the similarity pass on its first cache write, which is why no pack
+# under .hkpsx/scene-packs had been recooked since the caches landed.
+COOK_CACHES = (ROOT / '.hkpsx/dedup-cache', ROOT / '.hkpsx/alpha-covers-cache.json')
 BUDGET_ERRORS = ('budget exceeded', 'pool exceeds', 'cache dimensions', 'bank exceeds', 'slot guest pool')
 SCENE_ROOM_LIMIT = 128  # shared/hk-format/src/scene.rs header limit
 PACK_RESTARTS = 3
@@ -130,18 +140,29 @@ def failing_region(error):
     return int(match.group(1)) if match else None
 
 
-def install_guard(allowed):
+def install_guard(allowed, caches=COOK_CACHES):
     """Abort on any write outside the allowed roots (plus /dev/null and temp)."""
     allowed = [Path(p).resolve() for p in allowed] + [Path(tempfile.gettempdir()).resolve()]
+    caches = [Path(p).resolve() for p in caches]
 
     def permitted(path):
         path = Path(os.fsdecode(path)).resolve()
         if path == Path('/dev/null') or 'target' in path.parts:
             return True
+        # A cache file and the `<stem>.<pid>.tmp` it is renamed from.
+        if any(path.is_relative_to(c) or (path.parent == c.parent and path.name.startswith(c.stem))
+               for c in caches):
+            return True
         return any(path.is_relative_to(root) for root in allowed)
 
     def guard(event, args):
         paths = []
+        # `mkdir(parents=True, exist_ok=True)` on a cache reaches for .hkpsx
+        # itself first. Creating a directory that is already there changes
+        # nothing, so it is the write that never happens rather than one to
+        # forgive; every other event still goes through `permitted`.
+        if event == 'os.mkdir' and Path(os.fsdecode(args[0])).is_dir():
+            return
         if event == 'open':
             path, mode, flags = args
             if isinstance(path, (str, bytes, os.PathLike)) and (

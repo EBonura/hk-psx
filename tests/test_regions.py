@@ -102,9 +102,44 @@ class RegionTests(unittest.TestCase):
         regions=fixed_regions()
         greenpath=[r for r in regions if r['scene_name']=='Fungus1_01']
         self.assertEqual(len(greenpath),24)
-        self.assertEqual(regions[699:],greenpath)
+        self.assertEqual(regions[699:723],greenpath)
         self.assertEqual(greenpath[0]['activation_bounds'],[-2,-5,22,11])
         self.assertEqual(greenpath[-1]['activation_bounds'],[166,27,172,31])
+
+    def test_greenpath_records_the_two_layouts_the_grid_could_not_hold(self):
+        """Fungus1_02 and Fungus1_19 carry the boxes their cook chose, not a grid.
+
+        Both hold a 24x16 view that cooks 6 pages against STATIC_PAGE_BUDGET 5,
+        so the plain grid is not a layout either scene can be admitted at and
+        the packs that priced them were laid out by halving the offending view.
+        Those boxes are recorded in `quality.MEASURED_VIEW_LAYOUTS` rather than
+        derived, which makes them the one thing in the catalogue that a later
+        cooker could silently disagree with. This is what notices: the recorded
+        layout has to be what the catalogue lays out, it has to cover the
+        envelope with no hole and no overlap, and it has to still be finer than
+        the grid it replaces.
+        """
+        from quality import MEASURED_VIEW_LAYOUTS,grid_layout
+        regions=fixed_regions()
+        self.assertEqual(set(MEASURED_VIEW_LAYOUTS),{'Fungus1_02','Fungus1_19'})
+        for name,boxes in MEASURED_VIEW_LAYOUTS.items():
+            scene=next(s for s in SCENES if s['scene_name']==name)
+            laid=[r['activation_bounds'] for r in regions if r['scene_name']==name]
+            self.assertEqual(laid,[list(b) for b in boxes],name)
+            self.assertGreater(len(boxes),len(grid_layout(scene['runtime_bounds'])),name)
+            x0,y0,x1,y1=scene['runtime_bounds']
+            self.assertEqual(sum((b[2]-b[0])*(b[3]-b[1]) for b in boxes),(x1-x0)*(y1-y0),name)
+            for x in range(x0,x1):
+                for y in range(y0,y1):
+                    self.assertTrue(any(b[0]<=x+.5<=b[2] and b[1]<=y+.5<=b[3] for b in boxes),
+                                    f'{name} leaves ({x}, {y}) in no view')
+
+    def test_greenpath_stays_inside_the_catalogue_chunk_bound(self):
+        """`world.generate` refuses above 1024 chunks, and that is what limits
+        how much of Greenpath a batch can admit. It is the region catalogue and
+        not RAM: the twenty-four Greenpath scenes that cook on the plain grid
+        would need 404 more views against the 301 free at build 159."""
+        self.assertLessEqual(len(fixed_regions()),1024)
 
     def test_budget_split_preserves_parent_coverage(self):
         parent=initial_regions()[1]
