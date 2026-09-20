@@ -139,6 +139,52 @@ SCENE_TABLE = (
     # data/regions.json moved. Compare hashes rather than assuming either way.
     {'scene_id': 45, 'scene_name': 'Room_shop', 'file': 'level17',
      'runtime_bounds': [-1, -5, 34, 31], 'camera_global_bounds': [0, 0, 33, 30]},
+    # Greenpath begins here. Thirteen unadmitted scenes sit behind an enabled
+    # serialized gate from the other 46, and Fungus1_01 (level128) was the only
+    # one of them in Greenpath. Its pair needs nothing the shop's door needed:
+    # Crossroads_11_alt `left1` names `Fungus1_01/right1` and Fungus1_01
+    # `right1` names it back, both enabled, both colliders on from frame one, no
+    # `Door Control` and no runtime destination. Replaying `scene_metadata` plus
+    # `world.generate`'s gate rule over the 723-region layout resolves both
+    # directions: in at spawn (169.5, 9.5) as a side-1 gate landing in the new
+    # chunk 707, out at spawn (0.5, 19.0) as a side-2 gate landing in the
+    # existing chunk 336. No other admitted scene has a gate into Greenpath, so
+    # this row adds exactly one new dangling exit, `left1` into Fungus1_01b.
+    #
+    # Measured by tools/cook_scene_pack.py before admission, and the 24x16 grid
+    # over this envelope reproduces that run's 24 views exactly: 24 views,
+    # tightest view 300 of 416 CLUT slots and 309 of 640 texture records, 4 of 5
+    # pages, 205,860 of 393,216 room bytes, 167,572 resident bytes against the
+    # 417,748-byte arena so the arena does not move, 482,100-byte scene bank,
+    # 647 textures and 613 palettes against SCENE_TEXTURE_CAPACITY 1152, 1,842
+    # draws against the world's current 3,040, decoder and packet bound PASS,
+    # 51.9 s to cook. Its eight cook refusals are all classes the Crossroads
+    # already refuse: seven rotated GrassCut boxes and one reveal controller.
+    #
+    # Two things it does not bring, recorded rather than discovered later.
+    # Sixteen actor placements and none of them admitted: four Moss Walkers and
+    # eight Pigeons that `walker_control` refuses as a Crawler nail response
+    # variant, a Plant Trap with no Crawler FSM, and three that carry a `Walker`
+    # and so do reach the Runner recognizer, which refuses two Mossman_Shakers
+    # for having no single Zombie Swipe or Zombie Leap FSM and the
+    # Mossman_Runner as an unverified Runner FSM variant. Unsupported actors
+    # stay records and cook nothing, so the scene is walkable and empty.
+    #
+    # And it is silent, which is a region-wide gap rather than a scene one. The
+    # SceneManager's atmos cue is `Greenpath`; the only channel it enables is 7,
+    # `green_path_atmos_loop`, and `cook_music.RESIDENT_ATMOS_CHANNELS` is
+    # (0,1,3,4,5,6). So `ambience_omitted_channels` records channel 7 and the
+    # scene cooks a zero mask, which the guest already handles: `set_scene`
+    # fades the previous stems out and keys nothing on. Its `at Greenpath`
+    # snapshot puts all six resident channels at -80 dB, so there is nothing
+    # else to hear either, and the five Fungus1 scenes sampled all carry the
+    # same cue. Nothing raises; the region simply has no sound until a seventh
+    # resident loop exists, which is a voice past `AmbienceClip` 0..5 on SPU
+    # voices 6..11 plus room in the 136,704 free SPU bytes. The clip is 10.0 s,
+    # the same length as `ruins_rain_outdoor_loop`, which cooks to 45,728 bytes
+    # at 8 kHz; that is a comparison, not a measurement of this clip.
+    {'scene_id': 46, 'scene_name': 'Fungus1_01', 'file': 'level128',
+     'runtime_bounds': [-2, -5, 172, 31], 'camera_global_bounds': [0, 0, 170, 30]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)
