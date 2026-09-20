@@ -1329,3 +1329,146 @@ fn a_blocker_opens_for_the_hero_shuts_underneath_and_lobs_one_goop() {
     assert_eq!(landed, 1, "an opened Blocker answers the nail from behind");
     assert_eq!(w.actor_state(0, 504585), Some((0, 4 * ONE, 55)));
 }
+
+/// Source Fungus1_01 Pigeon (`level128:7965`). One hit point, no contact
+/// damage, no corpse, and a collider that is a trigger rather than a body, so
+/// the hero walks through it and it walks through the floor.
+const PIGEON: ActorSpec = ActorSpec {
+    // `Idle 01` and `Fly` are the shared slots; these two are `Clip::slot`
+    // order, which is `Idle 02` then `Idle 03`.
+    controller: ActorController::Pigeon { clips: [2, 3] },
+    // The source trigger box, measured off the placement at its 0.8 scale.
+    bounds: [-11600, 10813, 23724, 58327],
+    health: EnemyParams { health: 1, contact_damage: 0, evasion_ticks: 12,
+        invincible: false, damage_override: false },
+    walk: WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
+    walk_clip: 0, turn_clip: 1, corpse: None, recoil_speed: 0, recoil_ticks: 0,
+    dream_soul: 0,
+    ..SPEC
+};
+const PIGEON_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 1287965, x: 0, y: 4 * ONE, initial_direction: -1, ..PLACEMENT
+};
+fn pigeon_region() -> world::Region {
+    world::Region {
+        scene: 0,
+        bounds: [-20 * ONE, -5 * ONE, 20 * ONE, 20 * ONE],
+        collision_bounds: [-23 * ONE, -10 * ONE, 23 * ONE, 25 * ONE],
+        actors: &[(PIGEON_AT, &PIGEON)],
+    }
+}
+/// A room carrying the family's four clips at their source frame counts, all
+/// looping at 12 fps. The counts matter because `Set Frame` seeks into them.
+fn pigeon_room() -> Vec<u8> {
+    let clips: [(u32, u32, u32); 4] = [(67, 12, 0), (4, 12, 0), (41, 12, 0), (61, 12, 0)];
+    let frames = 67;
+    let mut b = Vec::from(*b"HKROOM02");
+    for n in [1u32, 1, 0, frames, clips.len() as u32, 1, 0, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for n in [0u16, 0, 0, 4, 4, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.extend(0u32.to_le_bytes());
+    for _ in 0..frames {
+        // The frame's world box, which `prepare_draws` mirrors by the facing.
+        for n in [0i32, -11600, 10813, 23724, 58327] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    for (count, fps, wrap) in clips {
+        for n in [0u32, count, fps * 65536, wrap] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    for n in [-20 * ONE, 0, 20 * ONE, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.resize(b.len() + 32 + 32768, 0);
+    b
+}
+/// The whole of a Pigeon through the real runtime: it sits, the hero walking up
+/// lifts it away from him, and the floor never touches it on the way.
+///
+/// The hero stands eight units off, which is outside the 5.072-unit `Hero
+/// Range` circle `hk_sim::pigeon` carries, and then closes to two, which is
+/// inside it. That circle is the constant `host/pigeon.py` proves each
+/// placement's own child against, so this fixture is also what keeps the
+/// recognizer's geometry and the runtime's the same number.
+#[test]
+fn a_pigeon_sits_until_the_hero_is_close_and_then_leaves_the_other_way() {
+    let bytes = pigeon_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = pigeon_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    let before = v.health;
+    // Outside the circle: it perches, draws, and never moves.
+    let mut far = Player::spawn(8 * ONE, 4 * ONE);
+    for _ in 0..120 {
+        tick(&mut w, &r, &room, &mut far, &mut v, &n);
+    }
+    assert_eq!(w.actor_state(0, 1287965), Some((0, 4 * ONE, 1)));
+    let perched = submitted(&w, &r, &room);
+    assert_eq!(perched.len(), 1, "a perched bird is one quad");
+    let facing_left = span(&perched[0].1);
+    // Contact costs the hero nothing: the source object has no `DamageHero`.
+    assert_eq!(v.health, before, "a Pigeon cannot hurt the hero");
+    // Close in on the right. `CheckTargetDirection` answers that with `Left`.
+    let mut near = Player::spawn(2 * ONE, 4 * ONE);
+    tick(&mut w, &r, &room, &mut near, &mut v, &n);
+    let (x, y, _) = w.actor_state(0, 1287965).expect("the bird is still seated");
+    assert!(x < 0, "it leaves away from the hero, not towards him");
+    // `Fly`'s `Translate` lifts it half a unit before the force does anything.
+    assert!(y >= 4 * ONE + ONE / 2, "the takeoff lift is missing");
+    // The mirror follows the flight direction, which reaches the drawn box.
+    let flying = submitted(&w, &r, &room);
+    assert_eq!(flying.len(), 1);
+    assert_ne!(span(&flying[0].1), facing_left, "the flight mirror never reached the draw");
+    // It accelerates the whole way out, and the floor at y=0 never stops it:
+    // its one collider is a trigger, so there is no body to solve.
+    let mut last = x;
+    let mut held = 0;
+    for _ in 0..90 {
+        tick(&mut w, &r, &room, &mut near, &mut v, &n);
+        let (x, y, _) = w.actor_state(0, 1287965).expect("still seated while it flies");
+        assert!(x <= last, "it never turns round");
+        assert!(y >= 4 * ONE + ONE / 2, "it never falls back through the floor");
+        if x == last { held += 1; }
+        last = x;
+    }
+    assert!(last < -20 * ONE, "a second and a half should clear the room, reached {last}");
+    // And then it holds where it is, because it has left the fixture's own
+    // collision bounds. That is the actor neighbourhood gate rather than
+    // anything the controller does; see the recognizer's limitations.
+    assert!(held > 0, "the gate outside the room never took hold");
+    assert_eq!(v.health, before);
+}
+
+/// One nail hit is the whole fight, and nothing is left behind afterwards.
+#[test]
+fn a_pigeon_dies_to_one_hit_and_leaves_no_corpse() {
+    let bytes = pigeon_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = pigeon_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut nail = Nail::new();
+    nail.active = true;
+    nail.age = 1;
+    // Standing in it, which is where a trigger body lets the hero stand.
+    let mut hero = Player::spawn(0, 4 * ONE);
+    let quiet = Nail::new();
+    tick(&mut w, &r, &room, &mut hero, &mut v, &quiet);
+    assert_eq!(submitted(&w, &r, &room).len(), 1);
+    let events = tick(&mut w, &r, &room, &mut hero, &mut v, &nail);
+    assert_eq!((events.hits, events.kills), (1, 1), "one hit point is one hit");
+    // `EnemyDeathEffectsNoEffect` names no corpse prefab, so the body goes.
+    assert!(submitted(&w, &r, &room).is_empty(), "a dead Pigeon leaves nothing");
+    for _ in 0..60 {
+        let events = tick(&mut w, &r, &room, &mut hero, &mut v, &nail);
+        assert_eq!(events.hits, 0, "there is nothing left to hit");
+    }
+    assert!(submitted(&w, &r, &room).is_empty());
+}

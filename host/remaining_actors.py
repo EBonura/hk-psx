@@ -39,6 +39,8 @@ RECOGNIZERS = (
     ('hatcher', lambda sc, gid, kinds, name: name.startswith('Hatcher')
         and not name.startswith('Hatcher Baby') and 'LineOfSightDetector' in kinds),
     ('zombie_shield', lambda sc, gid, kinds, name: name.startswith('Zombie Shield') and 'Walker' in kinds),
+    ('pigeon', lambda sc, gid, kinds, name: name.startswith('Pigeon')
+        and 'EnemyDeathEffectsNoEffect' in kinds),
     ('runner', lambda sc, gid, kinds, name: 'Walker' in kinds),
 )
 # The recognizer entry point, where it is not `<module>.recognize`.
@@ -68,6 +70,7 @@ FAMILY_PREFIXES = (
     ('Zombie Guard', 'Zombie Guard'), ('Zombie Leaper', 'Zombie Leaper'), ('Zombie Runner', 'Zombie Runner'),
     ('Zombie Myla', 'Zombie Myla'), ('Mender Bug', 'Mender Bug'), ('Climber', 'Climber'),
     ('Egg Sac', 'Egg Sac'), ('Blocker', 'Blocker'), ('Giant Fly', 'Giant Fly'), ('Mawlek', 'Mawlek'),
+    ('Pigeon', 'Pigeon'),
 )
 
 

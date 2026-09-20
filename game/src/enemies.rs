@@ -436,6 +436,26 @@ impl BlockerRuntime {
         lo + (*rng % (hi - lo + 1) as u32) as i32
     }
 }
+/// Greenpath Pigeon: a critter with one hit point, a trigger-only collider and
+/// nothing to solve against. Perched it costs one circle test a tick and a
+/// raycast only on the frames the hero is already inside the circle, which is
+/// what the source's own trigger gates its raycast on.
+#[derive(Clone, Copy)]
+struct PigeonRuntime {
+    controller: hk_sim::pigeon::Pigeon,
+    animation_tick: u32,
+}
+impl PigeonRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::Pigeon { clips } = spec.controller
+            else { panic!("Pigeon runtime with other metadata") };
+        match self.controller.clip().slot() {
+            Some(slot) => clips[slot],
+            None if self.controller.clip() == hk_sim::pigeon::Clip::Fly => spec.turn_clip,
+            None => spec.walk_clip,
+        }
+    }
+}
 /// One member of a Hatcher's cage. `Inert` is the parked state and costs one
 /// test a tick: no senses, no body, no clip clock and no draw.
 #[derive(Clone, Copy)]
@@ -658,6 +678,7 @@ enum Runtime {
     HatcherBaby(BabyRuntime),
     ZombieShield(ZombieShieldRuntime),
     Blocker(BlockerRuntime),
+    Pigeon(PigeonRuntime),
     /// No senses and no body: only the looping clip's clock advances.
     Static { animation_tick: u32 },
     FalseKnight(FalseKnightRuntime),
@@ -682,6 +703,7 @@ impl Actor {
     fn baby(&self) -> Option<BabyRuntime> { if let Runtime::HatcherBaby(b) = self.runtime { Some(b) } else { None } }
     fn zombie_shield(&self) -> Option<ZombieShieldRuntime> { if let Runtime::ZombieShield(z) = self.runtime { Some(z) } else { None } }
     fn blocker(&self) -> Option<BlockerRuntime> { if let Runtime::Blocker(b) = self.runtime { Some(b) } else { None } }
+    fn pigeon(&self) -> Option<PigeonRuntime> { if let Runtime::Pigeon(p) = self.runtime { Some(p) } else { None } }
     /// A cage member still in the cage: `Control`'s `Inert`.
     fn parked_baby(&self) -> bool {
         self.baby().is_some_and(|b| b.controller.phase() == hk_sim::hatcher::BabyPhase::Inert)
@@ -817,6 +839,12 @@ impl Actor {
                 // it, for the sprite.
                 ActorController::Blocker { sleeps, .. } => Runtime::Blocker(BlockerRuntime {
                     controller: hk_sim::blocker::Blocker::new(sleeps), rng: seed, animation_tick: 0 }),
+                // Which idle loop it plays and which frame of it are draws off
+                // this seed, and so is the mirror, which `Set Frame` flips from
+                // the placement's authored one rather than writing outright.
+                ActorController::Pigeon { .. } => Runtime::Pigeon(PigeonRuntime {
+                    controller: hk_sim::pigeon::Pigeon::new(seed, placement.initial_direction as i8),
+                    animation_tick: 0 }),
                 ActorController::Static { .. } => Runtime::Static { animation_tick: 0 },
                 // `initial_direction` carries the sign the cooker read off the
                 // placement's transform scale, and a positive source scale is
@@ -1081,6 +1109,17 @@ impl Actor {
             self.runtime = Runtime::Blocker(blocker);
             return;
         }
+        if let Some(mut bird) = self.pigeon() {
+            // Bodiless for a different reason from the Blocker's: the Pigeon
+            // has a Rigidbody2D, but its only collider is a trigger, so the
+            // source body never touches terrain either and there is nothing
+            // here for the solver to do.
+            self.spawn_state = SpawnState::Ready;
+            self.advance_pigeon(&mut bird, count, &edge, context);
+            self.runtime = Runtime::Pigeon(bird);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
         if let Some(animation_tick) = self.immobile() {
             // No Rigidbody2D, so the source object cannot be pushed out of
             // terrain or fall: it keeps its authored transform and loops.
@@ -1250,6 +1289,64 @@ impl Actor {
             else if blocked_x && v[0] < 0 { Some(Side::Left) }
             else { None };
         if let Some(side) = side { fly.controller.bonk(side); }
+    }
+    /// The Pigeon's senses: the `Hero Range` child's circle against the hero
+    /// body box, and the raycast its FSM only runs while something is inside
+    /// that circle. `line_of_sight` short-circuits on `in_range`, so a perched
+    /// bird pays one squared distance a tick and visits no terrain at all.
+    ///
+    /// `Enemy Range`, the second trigger child, is not read. Its own raycast
+    /// writes the same hero visibility into the same FSM, and its circle is
+    /// contained in this one (centres 0.0544 apart, radii 2.824 and 5.072), so
+    /// geometrically it can add nothing. What it would add is *who* may trip
+    /// it, which is the flock cascade named in the recognizer's limitations.
+    fn pigeon_senses(&self, context: RunnerContext, count: usize, edge: &impl Fn(usize) -> [i32; 4]) -> hk_sim::pigeon::Senses {
+        use hk_sim::pigeon as p;
+        use hk_sim::runner_senses as q;
+        let eye = [self.x + p::HERO_RANGE_CENTER[0], self.y + p::HERO_RANGE_CENTER[1]];
+        let hb = context.hero_body;
+        let dx = (eye[0].clamp(hb[0], hb[2]) - eye[0]) as i64;
+        let dy = (eye[1].clamp(hb[1], hb[3]) - eye[1]) as i64;
+        let radius = p::HERO_RANGE_RADIUS as i64;
+        let in_range = dx * dx + dy * dy <= radius * radius;
+        let can_see_hero = match q::line_of_sight(eye, context.hero, in_range, count, edge) {
+            Ok(value) => value,
+            Err(q::QueryError::ZeroLengthSight) => false,
+            Err(_) => panic!("Pigeon LOS outside validated coordinates"),
+        };
+        p::Senses { can_see_hero, hero_right: context.hero[0] > self.x }
+    }
+    /// One 60 Hz step of the Pigeon: the circle and its gated raycast, the FSM
+    /// tick, then a trigger body that moves by its own velocity and by nothing
+    /// else. No terrain solve, no gravity, no Recoil: the source object has
+    /// none of the three.
+    fn advance_pigeon(&mut self, bird: &mut PigeonRuntime, count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext) {
+        use hk_sim::pigeon::{Action, Phase, WORLD_EDGE};
+        if matches!(bird.controller.phase(), Phase::Gone | Phase::Dead) {
+            return;
+        }
+        bird.animation_tick = bird.animation_tick.saturating_add(1);
+        let senses = self.pigeon_senses(context, count, edge);
+        for action in bird.controller.tick(senses).iter() {
+            match action {
+                Action::Play(_, tick) => bird.animation_tick = tick,
+                Action::Rise(dy) => self.y += dy,
+            }
+        }
+        // `Invert Scale` and the flight direction are the same mirror the
+        // cooked box is measured against, so the hurt box follows the sprite.
+        self.walk.direction = bird.controller.facing();
+        let v = bird.controller.velocity();
+        self.x += v[0] / 60;
+        self.y += v[1] / 60;
+        // The source keeps the object for five seconds, by which point it is
+        // hundreds of units outside the room. Take it off the board at the edge
+        // of the validated coordinate range rather than let it leave it.
+        if self.x.abs() > WORLD_EDGE || self.y.abs() > WORLD_EDGE {
+            self.x = self.x.clamp(-WORLD_EDGE, WORLD_EDGE);
+            self.y = self.y.clamp(-WORLD_EDGE, WORLD_EDGE);
+            bird.controller.leave();
+        }
     }
     /// `Battle Control`'s own actions. The camera lock is the one this port
     /// already answers, because `CameraLockArea B` is an authored lock area the
@@ -2056,6 +2153,13 @@ impl EnemyWorld {
                 // here rather than paying the resident-view lookup below.
                 if actor.parked_baby() { continue; }
             }
+            // `Destroy`'s `DestroySelf` removed the source object, so a bird
+            // that has flown does not advance, draw or answer the nail. It is
+            // taken here rather than in `advance` because the nail pass below
+            // would otherwise keep hitting a body nothing can see.
+            if actor.pigeon().is_some_and(|b| b.controller.phase() == hk_sim::pigeon::Phase::Gone) {
+                continue;
+            }
             // WalkLeftRight keeps running independently of the Knight/camera.
             // A cooked view boundary is not a source scene or FSM boundary.
             let (x,y)=actor.corpse.map_or((actor.x,actor.y),|c|(c.x,c.y));
@@ -2199,6 +2303,7 @@ impl EnemyWorld {
                                 Runtime::HatcherBaby(_)=>{}
                                 Runtime::ZombieShield(z)=>z.controller.die(),
                                 Runtime::Blocker(b)=>b.controller.die(),
+                                Runtime::Pigeon(p)=>p.controller.die(),
                                 // The False Knight answers the nail through its
                                 // own branch above and never reaches this one.
                                 Runtime::Walker|Runtime::Runner(_)|Runtime::Static {..}|Runtime::FalseKnight(_)=>{}
@@ -2386,6 +2491,11 @@ impl EnemyWorld {
                 // The Blocker never turns: the sprite keeps the mirror the cook
                 // read off its transform for as long as it lives.
                 (blocker.clip(spec),blocker.animation_tick,(actor.x,actor.y),actor.initial_direction as i32)
+            } else if let Some(bird)=actor.pigeon() {
+                // `Destroy` removes the GameObject, so a flown bird draws
+                // nothing rather than hanging wherever its last tick left it.
+                if bird.controller.phase()==hk_sim::pigeon::Phase::Gone {continue;}
+                (bird.clip(spec),bird.animation_tick,(actor.x,actor.y),bird.controller.facing())
             } else if let Some(animation_tick)=actor.immobile() {
                 let ActorController::Static {idle_clip}=spec.controller else {panic!("Static runtime with other metadata")};
                 (idle_clip,animation_tick,(actor.x,actor.y),actor.walk.direction)

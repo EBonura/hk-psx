@@ -14,6 +14,7 @@ pub mod baldur;
 pub mod hatcher;
 pub mod zombie_shield;
 pub mod blocker;
+pub mod pigeon;
 pub mod boss;
 pub mod false_knight;
 pub mod shade;
