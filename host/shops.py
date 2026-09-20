@@ -544,8 +544,17 @@ def stag_station(catalog, prices, menu_fsm):
 
 
 def admitted_scenes():
-    scenes = json.loads(ADMITTED.read_text())['scenes']
-    return {s['file']: s['scene_name'] for s in scenes}
+    """The scene table, not the last build's snapshot of it.
+
+    `.hkpsx/selected-regions.json` is written by the guest build, which runs
+    after this script, so on the build that admits a scene it still holds the
+    previous run's set. Reading it here made the Geo economy refuse a rock in
+    the scene the same build had just cooked, reporting it as not admitted.
+    `host/quality.py`'s SCENE_TABLE is what admission means, and this module
+    already reads it elsewhere.
+    """
+    from quality import SCENE_TABLE
+    return {row['file']: row['scene_name'] for row in SCENE_TABLE}
 
 
 def geo_sources(admitted):
