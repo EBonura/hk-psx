@@ -45,7 +45,11 @@ def corpse_source(source, scene, actor):
     obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
     # Runner, Barger and Hornhead corpses (Corpse Zombie Basic One/Three/Five)
     # share one structure; identity is checked below by name and player data.
-    if runner and not (go['m_Name'].startswith('Corpse Zombie Basic ') or go['m_Name']=='Corpse Zombie Leaper'):raise ValueError('unvalidated corpse prefab for controller')
+    # The Shield's own corpse is the same structure under its own name, which is
+    # why it reads against the Runner's expectations at all.
+    if runner and not (go['m_Name'].startswith('Corpse Zombie Basic ')
+                       or go['m_Name'] in ('Corpse Zombie Leaper','Corpse Zombie Shield')):
+        raise ValueError(f'unvalidated corpse prefab for controller: {kind} spawns {go["m_Name"]!r}')
     parts={}
     for ref in go['m_Component']:
         component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
@@ -76,7 +80,7 @@ def corpse_source(source, scene, actor):
     matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
     box=parts['BoxCollider2D'][1];off=box['m_Offset'];size=box['m_Size']
     if runner:
-        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead','ZombieLeaper'):
+        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead','ZombieLeaper','ZombieShield'):
             raise ValueError('unvalidated Runner corpse identity')
         # A mirrored placement is admitted (Crossroads_37's Leaper), so accept a
         # plain x mirror here too. sx/sy above already take the magnitude, and
