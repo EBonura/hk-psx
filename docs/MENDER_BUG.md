@@ -8,8 +8,13 @@ in fifty, and only after an unrelated PlayerData flag is set.
 
 ## Why actor_sources refuses it
 
-`walker_control` raises `unsupported Crawler nail response variant` on its first
-check, because the GameObject sits on layer 19 rather than layer 11. No other
+`walker_control` raises `Crawler outside the enemy layer: layer 19` on its first
+check, because the GameObject sits on layer 19 rather than layer 11. That check
+used to share a message with the bouncer one below it; the two are reported
+apart now, because the layer is not what keeps this family out. Widening the
+layer set to the three `NailSlash` gives its normal bounce on (11, 17, 19)
+changes nothing here: the second check then refuses the Mender Bug on
+`no single supported Crawler FSM`, since its FSM is `Mender Bug Ctrl`. No other
 gate in `actor_sources` selects a recognizer: no `Climber`, no `Walker`, no
 `LineOfSightDetector`, no `PersonalObjectPool`, and the name matches none of the
 `Buzzer`/`Fly`/`Roller`/`Spitter` prefixes.

@@ -38,6 +38,7 @@ RECOGNIZERS = (
     ('hatcher_baby', lambda sc, gid, kinds, name: name.startswith('Hatcher Baby') and 'ObjectBounce' in kinds),
     ('hatcher', lambda sc, gid, kinds, name: name.startswith('Hatcher')
         and not name.startswith('Hatcher Baby') and 'LineOfSightDetector' in kinds),
+    ('zombie_shield', lambda sc, gid, kinds, name: name.startswith('Zombie Shield') and 'Walker' in kinds),
     ('runner', lambda sc, gid, kinds, name: 'Walker' in kinds),
 )
 # The recognizer entry point, where it is not `<module>.recognize`.

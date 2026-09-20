@@ -161,15 +161,31 @@ def walker_control(sc, actor):
     """Recognize the observed Crawler Walk state and original C# action."""
     source = sc.source
     records = _component_records(sc, actor['game_object'])
-    if sc.gos[actor['game_object']]['m_Layer'] != 11 or any(
-            typ in ('BigBouncer', 'BounceShroom') or (typ == 'NonBouncer' and tree['active'])
-            for _, typ, tree in records):
-        raise ValueError('unsupported Crawler nail response variant')
+    # Two different refusals used to share one message, and the shared message
+    # made the count look like one generalisation waiting to be made. Measured
+    # over Greenpath's 241 placements it is not: 62 are off the enemy layer and
+    # 68 carry a bouncer, and widening the layer set to the three NailSlash
+    # gives its normal bounce on (11, 17, 19) admits none of the 62, because
+    # every one of them then refuses on the Crawler FSM instead. So they are
+    # reported apart, and each says which of the two it is.
+    layer = sc.gos[actor['game_object']]['m_Layer']
+    if layer != 11:
+        raise ValueError(f'Crawler outside the enemy layer: layer {layer}')
+    for _, typ, tree in records:
+        if typ in ('BigBouncer', 'BounceShroom') or (typ == 'NonBouncer' and tree['active']):
+            raise ValueError('unsupported Crawler nail response variant: ' + typ)
+    # Read the FSMs off the scene's own merged object table, not by resolving
+    # `fsm_ids` against the base file. `actor['fsm_ids']` are display ids under
+    # the file each object was serialized in, and for anything merged in from an
+    # additive scene that is not this file: `level48:307` looked up id 307 of
+    # level46 and read whatever happened to be there. Usually that had no `fsm`
+    # key, which surfaced as a refusal reading `'fsm'` rather than a reason, and
+    # on a different id it would have matched a Crawler belonging to some other
+    # object. Every other recognizer already goes through `_component_records`.
     matching = []
-    for sid in actor['fsm_ids']:
-        fsm = source.read(sc.file.objects[int(sid.rsplit(':', 1)[1])])['fsm']
-        if fsm['name'] == 'Crawler':
-            matching.append((sid, fsm))
+    for cid, typ, data in records:
+        if typ == 'PlayMakerFSM' and data['fsm']['name'] == 'Crawler':
+            matching.append((sc.sid(cid), data['fsm']))
     if len(matching) != 1:
         raise ValueError('no single supported Crawler FSM')
     sid, fsm = matching[0]
@@ -443,6 +459,21 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        # The Zombie Shield carries the same `Walker` as the Runner, so it has
+        # to be taken off that gate before it reaches it: its Walker is
+        # authored with `pauses = 0`, which `walker_parameters` refuses, and
+        # its FSM is its own. The name is the discriminator because the two
+        # component sets are otherwise the same shape.
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Zombie Shield') \
+                and any(kind == 'Walker' for _, kind, _ in records):
+            from zombie_shield import recognize as recognize_shield
+            try:
+                control = recognize_shield(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and any(kind == 'Walker' for _, kind, _ in records):
             from runner import recognize
             try:
@@ -605,6 +636,18 @@ def generated_actor_specs(region):
             controller = 'hk_sim::ActorController::HatcherBaby'
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'ZombieShield':
+            from zombie_shield import CLIP_SLOTS
+            shield_clips = tuple(slot + '_clip' for slot in CLIP_SLOTS)
+            if any(key not in actor for key in shield_clips):
+                raise ValueError(f'Zombie Shield is missing cooked clips: {actor["source"]}')
+            clips = '[' + ','.join(str(actor[key]) for key in shield_clips) + ']'
+            attack = '[' + ','.join(map(str, control['attack_bounds_q16'])) + ']'
+            controller = 'hk_sim::ActorController::ZombieShield {' + f'clips:{clips},attack:{attack}' + '}'
+            # The controller owns every velocity and the turn; the walk fields
+            # are carried for the common spec and are not read.
+            speed, turn_ticks, turn_cooldown_ticks = control['walk_speed'], control['turn_ticks'], control['turn_cooldown_ticks']
+            initial_direction, random_start_direction = control['initial_direction'], False
         elif control['kind'] == 'EggSac':
             if 'idle_clip' not in actor or not actor.get('corpse'):
                 raise ValueError(f'Egg Sac is missing cooked clips or corpse: {actor["source"]}')
@@ -641,6 +684,7 @@ def generated_actor_specs(region):
             + (vengefly_clips if control['kind'] == 'Vengefly' else ()) + (baldur_clips if control['kind'] == 'Baldur' else ()) \
             + (aspid_clips if control['kind'] == 'Aspid' else ()) + (('idle_clip',) if control['kind'] == 'EggSac' else ()) \
             + (('fire_clip',) if control['kind'] == 'Hatcher' else ()) \
+            + (shield_clips if control['kind'] == 'ZombieShield' else ()) \
             + (false_knight_clips if control['kind'] == 'FalseKnight' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')

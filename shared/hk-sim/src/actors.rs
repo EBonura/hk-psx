@@ -70,6 +70,19 @@ pub enum ActorController {
     /// `turn_clip`. `ActorSpec::x`/`y` are the authored cage position, which is
     /// off the map by design, so a parked baby never draws and never senses.
     HatcherBaby,
+    /// Zombie Shield, driven by `crate::zombie_shield::ZombieShield`. The
+    /// `Walker` underneath it is the Runner's own component authored with
+    /// `pauses = 0`, so `walk_clip` and `turn_clip` are its walk and turn and
+    /// every other clip of the shield and the two attack chains rides here, in
+    /// `zombie_shield::Clip::slot` order.
+    ///
+    /// `attack` is the `Attack Range` trigger box relative to the actor origin
+    /// in the facing-left frame, which is the one `AlertRange` both the Walker
+    /// and `ZombieShieldControl` read.
+    ZombieShield {
+        clips: [u16; crate::zombie_shield::Clip::COUNT],
+        attack: [i32; 4],
+    },
     /// Source object with no FSM and no Rigidbody2D: `playAutomatically` loops
     /// the default clip where it stands, so the nail is the only interaction.
     Static { idle_clip: u16 },
@@ -115,6 +128,12 @@ pub struct ActorSpec {
     /// source carries no `EnemyDreamnailReaction`, or one that pays nothing.
     pub dream_soul: u16,
 }
+// Every admitted placement in the world is one of these in linked STATIC, so a
+// controller variant wider than the widest one already here grows all of them
+// at once rather than only its own family. That is the cost worth holding, and
+// it is easier to hold here than to rediscover from a link map later.
+const _: () = assert!(core::mem::size_of::<ActorSpec>() == 172,
+    "a wider actor spec costs its difference times every placement in the world");
 #[derive(Clone, Copy, Debug)]
 pub struct EnemyParams {
     pub health: i16,

@@ -354,6 +354,45 @@ impl HatcherRuntime {
         match self.clip { hk_sim::hatcher::Clip::Fly => spec.walk_clip, hk_sim::hatcher::Clip::Fire => fire_clip }
     }
 }
+/// Zombie Shield: the controller owns the Walker underneath it, the shield,
+/// the two attack chains and every clip; this runtime runs the gravity body
+/// and answers the nail through the controller's own direction guard.
+#[derive(Clone, Copy)]
+struct ZombieShieldRuntime {
+    controller: hk_sim::zombie_shield::ZombieShield,
+    rng: u32,
+    animation_tick: u32,
+}
+impl ZombieShieldRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::ZombieShield { clips, .. } = spec.controller
+            else { panic!("Zombie Shield runtime with other metadata") };
+        match self.controller.clip().slot() {
+            Some(slot) => clips[slot],
+            None if self.controller.clip() == hk_sim::zombie_shield::Clip::Turn => spec.turn_clip,
+            None => spec.walk_clip,
+        }
+    }
+    fn completed(&self, spec: &ActorSpec, room: &Room) -> Option<hk_sim::zombie_shield::Animation> {
+        let token = self.controller.animation()?;
+        let id = self.clip(spec) as usize;
+        assert!(id < room.counts[4], "Zombie Shield clip not resident");
+        let clip = room.clip(id);
+        assert!(clip[1] != 0 && clip[2] != 0, "empty Zombie Shield clip");
+        // Only Once clips complete; the walk and idle loops never do, which is
+        // what keeps the two attack chains on their own cooked frame counts.
+        if clip[3] & 65535 == 2
+            && self.animation_tick as u64 * clip[2] as u64 >= clip[1] as u64 * 60 * 65536 {
+            Some(token)
+        } else { None }
+    }
+    /// `Shield Start`'s `RandomInt(60, 100)`, inclusive at both ends, from the
+    /// per-actor generator rather than a claim on Unity's global sequence.
+    fn counter(rng: &mut u32, [hi, lo]: [u16; 2]) -> u16 {
+        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        lo + (*rng % (hi - lo + 1) as u32) as u16
+    }
+}
 /// One member of a Hatcher's cage. `Inert` is the parked state and costs one
 /// test a tick: no senses, no body, no clip clock and no draw.
 #[derive(Clone, Copy)]
@@ -549,6 +588,7 @@ enum Runtime {
     Aspid(AspidRuntime),
     Hatcher(HatcherRuntime),
     HatcherBaby(BabyRuntime),
+    ZombieShield(ZombieShieldRuntime),
     /// No senses and no body: only the looping clip's clock advances.
     Static { animation_tick: u32 },
     FalseKnight(FalseKnightRuntime),
@@ -571,6 +611,7 @@ impl Actor {
     fn aspid(&self) -> Option<AspidRuntime> { if let Runtime::Aspid(a) = self.runtime { Some(a) } else { None } }
     fn hatcher(&self) -> Option<HatcherRuntime> { if let Runtime::Hatcher(h) = self.runtime { Some(h) } else { None } }
     fn baby(&self) -> Option<BabyRuntime> { if let Runtime::HatcherBaby(b) = self.runtime { Some(b) } else { None } }
+    fn zombie_shield(&self) -> Option<ZombieShieldRuntime> { if let Runtime::ZombieShield(z) = self.runtime { Some(z) } else { None } }
     /// A cage member still in the cage: `Control`'s `Inert`.
     fn parked_baby(&self) -> bool {
         self.baby().is_some_and(|b| b.controller.phase() == hk_sim::hatcher::BabyPhase::Inert)
@@ -687,6 +728,15 @@ impl Actor {
                 // `Init` parks it where the cooker found it, which is the cage.
                 ActorController::HatcherBaby => Runtime::HatcherBaby(BabyRuntime {
                     controller: hk_sim::hatcher::Baby::new(seed), animation_tick: 0 }),
+                ActorController::ZombieShield { .. } => {
+                    // Its Walker carries the Runner's own `rightScale` of -1,
+                    // so the cooked sign is the placement's transform mirror.
+                    assert!(spec.initial_direction.abs() == 1 && !spec.random_start_direction,
+                        "unsupported Zombie Shield initial facing variant");
+                    Runtime::ZombieShield(ZombieShieldRuntime {
+                        controller: hk_sim::zombie_shield::ZombieShield::with_facing(spec.initial_direction as i8),
+                        rng: seed, animation_tick: 0 })
+                }
                 ActorController::Static { .. } => Runtime::Static { animation_tick: 0 },
                 // `initial_direction` carries the sign the cooker read off the
                 // placement's transform scale, and a positive source scale is
@@ -964,7 +1014,11 @@ impl Actor {
         // grounded clearance in the bounded solver; contact/Sweep/draw bounds
         // remain the source box. Otherwise its lowest horizontal Sweep lies
         // exactly on Terrain and the segment model invents a perpetual wall.
-        let foot_skin=if self.runner().is_some() {983}else{0};
+        //
+        // The Zombie Shield carries the same `Walker` and is read by the same
+        // Sweep model, so it takes the same clearance. That is the one number
+        // here borrowed rather than measured on this placement.
+        let foot_skin=if self.runner().is_some()||self.zombie_shield().is_some() {983}else{0};
         let gravity = if let ActorController::Runner { params, .. } = spec.controller { params.gravity } else { 60 * ONE };
         let mut p = Params { gravity, fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1]-foot_skin, top: b[3], ..Params::ZERO };
         if self.spawn_state == SpawnState::Pending {
@@ -987,6 +1041,19 @@ impl Actor {
             self.apply_runner_actions(&mut runner, actions, emit);
             let vx = runner.vx;
             self.runtime = Runtime::Runner(runner);
+            vx
+        } else if let Some(mut shield) = self.zombie_shield() {
+            shield.animation_tick = shield.animation_tick.saturating_add(1);
+            let senses = self.shield_senses(&shield, spec, room, context, count, &edge);
+            let actions = shield.controller.tick(senses, |e| ZombieShieldRuntime::counter(&mut shield.rng, e));
+            for action in actions.iter() {
+                // Velocity and facing are read back off the controller; the
+                // Walker's own loop is the only sound this FSM asks for.
+                if let hk_sim::zombie_shield::Action::Play(_) = action { shield.animation_tick = 0; }
+            }
+            self.walk.direction = shield.controller.facing();
+            let vx = shield.controller.velocity_x();
+            self.runtime = Runtime::ZombieShield(shield);
             vx
         } else {
             let senses = hk_sim::walker_senses(self.bounds(spec), self.walk.direction, count, &edge);
@@ -1507,6 +1574,34 @@ impl Actor {
             completed:runner.completed(spec,room), grounded:self.grounded,
         }
     }
+    /// The Zombie Shield's senses, which are the Runner's: the same `Walker`
+    /// Sweep pair, the same `LineOfSightDetector`, and one `AlertRange` that
+    /// both the Walker's turn-to-face-hero and `ZombieShieldControl` read.
+    fn shield_senses(&self, shield:&ZombieShieldRuntime, spec:&ActorSpec, room:&Room,
+        context:RunnerContext, count:usize, edge:impl Fn(usize)->[i32;4]) -> hk_sim::zombie_shield::Senses {
+        use hk_sim::runner_senses as q;
+        let pos = [self.x,self.y];
+        let ActorController::ZombieShield { attack, .. } = spec.controller
+            else { panic!("Zombie Shield senses without Zombie Shield metadata") };
+        let shape = q::Shape::from_boxes(spec.bounds, attack);
+        let facing = shield.controller.facing();
+        let expected = q::body_bounds_of(shape, pos, facing).expect("Zombie Shield bounds");
+        assert_eq!(self.bounds(spec), expected, "unsupported Zombie Shield collider variant");
+        let in_attack_range = q::alert_overlap_of(shape,pos,context.hero_body).expect("Zombie Shield alert bounds");
+        let can_see_hero = match q::line_of_sight(pos,context.hero,in_attack_range,count,&edge) {
+            Ok(value) => value,
+            Err(q::QueryError::ZeroLengthSight) => false,
+            Err(_) => panic!("Zombie Shield LOS outside validated coordinates"),
+        };
+        let probes = q::walker_queries_of(shape,pos,facing,count,edge)
+            .expect("Zombie Shield Sweep outside validated coordinates");
+        hk_sim::zombie_shield::Senses {
+            camera_in_start_range: hk_sim::runner::camera_in_start_range(context.camera,[self.x,self.y,66]),
+            position: pos, hero: context.hero, in_attack_range, can_see_hero,
+            wall: probes.wall, floor_ahead: probes.floor_ahead,
+            completed: shield.completed(spec,room),
+        }
+    }
     fn emit_runner(&self, kind:RunnerEventKind, emit:&mut impl FnMut(RunnerEvent)) {
         emit(RunnerEvent { scene:self.scene,source_id:self.source_id,
             position:[self.x,self.y],facing:self.walk.direction,kind });
@@ -1854,7 +1949,8 @@ impl EnemyWorld {
                 actor.advance_in_view(spec,state,region,room,terrain_region,terrain_room,context,&mut runner_event);
             }
             if actor.health.dead {continue;}
-            if actor.runner().is_some() && (!available || actor.spawn_state==SpawnState::Blocked) {
+            if (actor.runner().is_some() || actor.zombie_shield().is_some())
+                && (!available || actor.spawn_state==SpawnState::Blocked) {
                 continue; // no attack/recoil sensing against an unavailable terrain owner
             }
             let bounds = actor.bounds(spec);
@@ -1930,9 +2026,25 @@ impl EnemyWorld {
                         player,
                     );
                 }
+                // `HealthManager::Hit` tests `IsBlockingByDirection` after the
+                // evasion window and before `TakeDamage`, which is where
+                // `ActorHealth::hit` already puts the invincible test. So the
+                // Zombie Shield's live `SetInvincible` rides in as that flag,
+                // with the cardinal `DirectionUtils::GetCardinalDirection`
+                // would have produced: 0 right, 1 up, 2 left, 3 down. A raised
+                // front shield leaves the down one open, which is the pogo.
+                let cardinal = match nail.kind {
+                    2 => 1u8,
+                    3 => 3,
+                    _ => if player.facing > 0 { 0 } else { 2 },
+                };
+                let health_params = match actor.zombie_shield() {
+                    Some(shield) => hk_sim::EnemyParams { invincible: shield.controller.blocks(cardinal), ..spec.health },
+                    None => spec.health,
+                };
                 match actor
                     .health
-                    .hit(spec.health, cheats.params(crate::VITAL_PARAMS).nail_damage)
+                    .hit(health_params, cheats.params(crate::VITAL_PARAMS).nail_damage)
                 {
                     Hit::Damaged | Hit::Killed => {
                         events.hits += 1;
@@ -1953,6 +2065,7 @@ impl EnemyWorld {
                                 // the cage, which the next tick does through
                                 // `park_baby` so the kill is counted first.
                                 Runtime::HatcherBaby(_)=>{}
+                                Runtime::ZombieShield(z)=>z.controller.die(),
                                 // The False Knight answers the nail through its
                                 // own branch above and never reaches this one.
                                 Runtime::Walker|Runtime::Runner(_)|Runtime::Static {..}|Runtime::FalseKnight(_)=>{}
@@ -2029,6 +2142,14 @@ impl EnemyWorld {
                             3 => [0, -spec.recoil_speed],
                             _ => [player.facing * spec.recoil_speed, 0],
                         };
+                        }
+                    }
+                    // `HealthManager::Invincible` sends BLOCKED HIT, which only
+                    // the four Shield states answer: the bump, then the chain.
+                    Hit::Blocked => {
+                        if let Runtime::ZombieShield(shield) = &mut actor.runtime {
+                            let actions = shield.controller.blocked_hit();
+                            if !actions.is_empty() { shield.animation_tick = 0; }
                         }
                     }
                     _ => {}
@@ -2117,6 +2238,8 @@ impl EnemyWorld {
                 // closer answer is to draw nothing until it drops.
                 if boss.controller.phase()==hk_sim::false_knight::Phase::Dormant {continue;}
                 (boss.clip(spec),boss.animation_tick,(actor.x,actor.y),boss.facing())
+            } else if let Some(shield)=actor.zombie_shield() {
+                (shield.clip(spec),shield.animation_tick,(actor.x,actor.y),shield.controller.facing())
             } else if let Some(animation_tick)=actor.immobile() {
                 let ActorController::Static {idle_clip}=spec.controller else {panic!("Static runtime with other metadata")};
                 (idle_clip,animation_tick,(actor.x,actor.y),actor.walk.direction)
