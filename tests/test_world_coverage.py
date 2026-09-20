@@ -28,11 +28,21 @@ def report():
 
 
 def graph():
-    return {'room_count':2,'edge_count':2,'rooms':[], 'unresolved':[], 'edges':[
+    # `unresolved` is what host/room_graph.py::finalize returns: every
+    # non-mapped_gate edge, plus the rows that have no edge at all.
+    empty_target={'source_scene':'B','source_file':'level1','source_id':'level1:4',
+                  'gate_name':'door1','target_scene':'','entry_point':'',
+                  'resolution':'empty_target'}
+    return {'room_count':2,'edge_count':2,'rooms':[],
+        'unresolved':[{'source_scene':'C','source_file':'level2',
+                       'reason':'room graph scan unavailable'},
+                      {'source_scene':'A','source_file':'level0','source_id':'level0:9',
+                       'stage':'TransitionPoint','error':'unreadable'},
+                      dict(empty_target)],
+        'edges':[
         {'source_scene':'A','source_file':'level0','source_id':'level0:4','gate_name':'right1',
          'target_scene':'B','entry_point':'left1','resolution':'mapped_gate'},
-        {'source_scene':'B','source_file':'level1','source_id':'level1:4','gate_name':'door1',
-         'target_scene':'','entry_point':'','resolution':'empty_target'}]}
+        empty_target]}
 
 
 class CoverageTests(unittest.TestCase):
@@ -46,11 +56,16 @@ class CoverageTests(unittest.TestCase):
         signals=role_signals(report()['scenes'][1])
         self.assertEqual([x['role'] for x in signals],['bench','gameplay_candidate'])
 
-    def test_transition_summary_preserves_every_nonmapped_edge(self):
+    def test_transition_summary_passes_through_the_graph_unresolved_list(self):
         value=transition_summary(graph())
         self.assertEqual(value['resolutions'],{'empty_target':1,'mapped_gate':1})
         self.assertEqual(value['mapped_gate_percent'],50.0)
-        self.assertEqual(value['unresolved_edges'][0]['source_scene'],'B')
+        # The scan-unavailable room and the TransitionPoint read error have no
+        # edge to rebuild from; rebuilding this list dropped both.
+        self.assertEqual(len(value['unresolved_edges']),3)
+        self.assertEqual(value['unresolved_without_an_edge'],2)
+        self.assertEqual([row['source_scene'] for row in value['unresolved_edges']],
+                         ['C','A','B'])
 
     def test_build_rejects_unverified_source_import(self):
         source=report();source['inputs_unchanged']=False

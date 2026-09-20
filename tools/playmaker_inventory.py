@@ -17,30 +17,8 @@ from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'host'))
 
 import collections, json
+import script_ir
 from source import Source, ROOT, dump
-
-# Families the port already runs natively, so their FSMs are not script work.
-# Each name is the FSM's own, matched exactly.
-NATIVE_FSMS = {
-    'Superdash', 'Spell Control', 'Dream Nail', 'Nail Arts', 'Fireball Cast',
-    'Fireball Control', 'damages_enemy', 'Roar Lock', 'Spore Cooldown',
-    'ProxyFSM', 'Globalise', 'Control Interpolation', 'Surface Water',
-    'Dream Return', 'Map Control',
-}
-# Actions whose behaviour the guest already provides through a native system,
-# so an FSM built only from these is a candidate for the first script slice.
-COVERED_HINT = {
-    'Wait', 'SetBoolValue', 'SetIntValue', 'SetFloatValue', 'BoolTest', 'IntCompare',
-    'FloatCompare', 'SendEventByName', 'NextFrameEvent',
-    'GetPlayerDataBool', 'SetPlayerDataBool', 'GetPlayerDataInt', 'SetPlayerDataInt',
-    'PlayerDataBoolTest', 'Tk2dPlayAnimation', 'Tk2dPlayAnimationWithEvents',
-    'Tk2dWatchAnimationEvents', 'SetVelocity2d', 'SetGravity2dScale',
-}
-# `ActivateGameObject` was in the list above until the script work established
-# that a cooked object has no runtime active flag: its `state_id` is a
-# persistence key and nothing in the renderer consults one. Counting it as
-# covered overstated the share by 707 action instances.
-assert 'ActivateGameObject' not in COVERED_HINT
 
 def inventory(source, scene_files):
     actions = collections.Counter()
@@ -80,34 +58,60 @@ def inventory(source, scene_files):
         'distinct_fsm_names': len(fsm_names),
         'enabled_actions': sum(actions.values()),
         'distinct_actions': len(actions),
-        'actions': [{'action': a, 'instances': n, 'scenes': len(action_scenes[a]),
-                     'covered_family': a in COVERED_HINT}
+        'actions': [{'action': a, 'instances': n, 'scenes': len(action_scenes[a])}
                     for a, n in actions.most_common()],
         'disabled_actions': dict(disabled.most_common(20)),
-        'fsms': [{'fsm': f, 'instances': n, 'scenes': len(fsm_scenes[f]),
-                  'native': f in NATIVE_FSMS}
+        'fsms': [{'fsm': f, 'instances': n, 'scenes': len(fsm_scenes[f])}
                  for f, n in fsm_names.most_common()],
         'fsms_per_scene': dict(per_scene.most_common()),
         'read_errors': errors,
     }
 
 def report(source, scene_files):
+    """The census, with script_ir's own coverage measurement attached.
+
+    Support is not a property of an action name. `compile_action` answers per
+    instance: the same action compiles in one FSM and refuses in the next
+    depending on what it names and what the cook can resolve, so any name-level
+    list can only overstate. The numbers below are survey()'s, not a second
+    opinion on them.
+    """
     out = inventory(source, scene_files)
-    covered = sum(a['instances'] for a in out['actions'] if a['covered_family'])
+    survey = script_ir.survey(source, scene_files)
+    compiled = {row['action']: row for row in survey['per_action']}
+    native = set(survey['native_actor_fsms'])
+    for row in out['actions']:
+        seen = compiled.get(row['action'])
+        row['script_instances'] = seen['instances'] if seen else 0
+        row['compiles'] = seen['compiled'] if seen else 0
+    for row in out['fsms']:
+        row['native'] = row['fsm'] in native
     out['coverage'] = {
-        'instances_in_covered_families': covered,
-        'share_of_enabled': round(covered / max(1, out['enabled_actions']), 4),
-        'note': 'A covered family means the guest already has a native system for that '
-                'operation, not that the action is implemented in a script runtime. '
-                'It is the ranking P10 step 1 asks for, not a completion claim.',
+        'compiled_action_instances': survey['compiled_action_instances'],
+        'script_action_instances': survey['action_instances'],
+        'share_of_script_actions': round(survey['compiled_action_instances']
+                                         / max(1, survey['action_instances']), 4),
+        'compiled_fsm_instances': survey['compiled'],
+        'script_fsm_instances': survey['instances'],
+        'fsm_instances_on_native_actors': survey['on_native_actors'],
+        'unparsed_scenes': sorted(survey['unparsed_scenes']),
+        'note': 'From host/script_ir.py::survey. An action instance compiles when '
+                'compile_action emits ops for it; an FSM runs only when every action '
+                'in the definition compiles, so compiled_fsm_instances moves in steps '
+                'and the action counts are what show whether work landed.',
     }
     out['limitations'] = [
         'Only the admitted scenes are walked. Prefab FSMs reached through '
         'SpawnObjectFromGlobalPool are counted only where a scene holds the prefab.',
         'State reachability is not analysed: an action in an unreachable state counts '
         'as enabled. Disabled actions are counted separately.',
-        'No action is implemented by this inventory. It ranks what a script runtime '
-        'would have to support, and which FSMs a native controller already covers.',
+        'enabled_actions counts every FSM in the scenes; script_action_instances counts '
+        'only the ones script_ir treats as script work, which leaves out the FSMs sitting '
+        'on native actor controllers. The two denominators are not interchangeable.',
+        'The native flag comes from survey()\'s native_actor_fsms, which lists the twenty '
+        'widest such definitions, so a rarer one can be on a native actor without the flag.',
+        'No action is implemented by this inventory. It ranks what the script runtime '
+        'would have to support and reports what the compiler currently answers for.',
     ]
     dump(ROOT / '.hkpsx/playmaker-inventory.json', out)
     return out
@@ -119,13 +123,16 @@ if __name__ == '__main__':
     out = report(s, scenes)
     print(f"{out['fsm_instances']} FSM instances ({out['distinct_fsm_names']} distinct names) "
           f"across {out['scene_count']} scenes")
+    c = out['coverage']
     print(f"{out['enabled_actions']} enabled actions, {out['distinct_actions']} distinct; "
-          f"{out['coverage']['instances_in_covered_families']} "
-          f"({out['coverage']['share_of_enabled']:.1%}) in families the guest already has")
-    print('top actions:')
+          f"of the {c['script_action_instances']} script_ir treats as script work, "
+          f"{c['compiled_action_instances']} ({c['share_of_script_actions']:.1%}) compile")
+    print(f"{c['compiled_fsm_instances']} of {c['script_fsm_instances']} FSM instances compile; "
+          f"{c['fsm_instances_on_native_actors']} more sit on native actor controllers")
+    print('top actions (compiled of the instances script_ir measures):')
     for row in out['actions'][:15]:
-        mark = ' *' if row['covered_family'] else '  '
-        print(f"{mark} {row['action']:34} {row['instances']:5}  in {row['scenes']} scenes")
+        print(f"   {row['action']:34} {row['instances']:5}  in {row['scenes']} scenes"
+              f"   {row['compiles']:5} of {row['script_instances']} compile")
     print('top FSM names:')
     for row in out['fsms'][:12]:
         mark = ' native' if row['native'] else '       '
