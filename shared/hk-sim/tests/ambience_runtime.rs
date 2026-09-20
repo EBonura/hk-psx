@@ -136,6 +136,25 @@ fn malformed_flags_headers_truncation_and_checksum_cannot_be_admitted() {
     assert!(valid_clip(&single, 16, hash(&single)));
 }
 
+/// One `pub const <name>...=<integer>;` out of a generated audio manifest. The
+/// banks stacked above ambience declare their own base, and reading it beats
+/// restating it here, which is how this test came to assert an address the cook
+/// had already moved.
+fn bank_const(file: &str, name: &str) -> u32 {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data").join(file);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let tail = text.split(&format!("const {name}")).nth(1).unwrap_or_else(|| panic!("no {name} in {file}"));
+    let digits: String = tail
+        .split('=')
+        .nth(1)
+        .unwrap()
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.parse().unwrap()
+}
+
 #[test]
 fn actual_complete_bank_is_contiguous_above_sfx_and_all_checksums_match() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/ambience");
@@ -145,9 +164,12 @@ fn actual_complete_bank_is_contiguous_above_sfx_and_all_checksums_match() {
     // set as a literal, so it failed for naming the answer rather than the
     // rule. What holds at any set is that the clips arrive in channel order.
     let mut previous: Option<u8> = None;
-    // The streamed bed is cooked at a lower rate and is the one clip whose SPU
-    // reservation is a ring rather than its whole payload, which is how the
-    // guest finds it too, rather than by a hardcoded index.
+    // Which clip streams is the one whose SPU reservation is a ring rather than
+    // its whole payload, which is how the guest finds it; this used to read
+    // `i == 3`. Its cook rate is a separate decision from streaming and both
+    // used to be asserted as the one pitch pair they happened to produce, so a
+    // resident clip cooked below the default rate failed here for being right.
+    let mut streamed = None;
     for (i, c) in data::AMBIENCE_CLIPS.iter().enumerate() {
         assert_eq!(c.spu_address, end);
         assert_eq!(c.voice, 6 + i as u8);
@@ -155,19 +177,28 @@ fn actual_complete_bank_is_contiguous_above_sfx_and_all_checksums_match() {
             assert!(c.source_channel > last, "clips must arrive in channel order");
         }
         previous = Some(c.source_channel);
-        let streamed = c.spu_bytes != c.byte_len;
-        assert_eq!(c.pitch, if streamed { 372 } else { 743 });
+        // A pitch of 0 never advances the decoder and anything above 0x1000
+        // resamples the clip above its 44.1 kHz source.
+        assert!(c.pitch > 0 && c.pitch <= 0x1000, "clip {i} pitch {} is unplayable", c.pitch);
         assert_eq!(c.byte_len % 16, 0);
         let bytes = std::fs::read(root.join(format!("clip_{i}.adpcm"))).unwrap();
         assert!(valid_clip(&bytes, c.byte_len, c.checksum));
-        if i == 3 {
+        if c.spu_bytes != c.byte_len {
+            assert!(streamed.is_none(), "more than one streamed clip");
+            streamed = Some(i);
             assert_eq!(c.spu_bytes, data::AMBIENCE_STREAM_BYTES);
             assert_eq!(c.byte_len, data::AMBIENCE_STREAM_SOURCE_BYTES);
-        } else {
-            assert_eq!(c.spu_bytes, c.byte_len);
+            assert!(c.byte_len > c.spu_bytes, "a ring only pays for itself on a clip too big for SPU");
         }
         end += c.spu_bytes as u32;
     }
-    assert_eq!(end, 0x5EA00);
-    assert_eq!(data::AMBIENCE_SPU_END-end, 136704);
+    assert!(streamed.is_some(), "no streamed clip");
+    // Ambience ends exactly where the first bank above it says it begins, and
+    // the whole stack ends inside SPU RAM. Both were literals, and the second
+    // of them, 136,704 free, counted the Focus and Runner banks as headroom.
+    let focus = bank_const("focus-audio.rs", "SPU_BASE");
+    let runner = bank_const("runner-audio.rs", "BANK_BASE");
+    assert_eq!(end, focus, "the Focus bank no longer abuts ambience");
+    assert_eq!(focus + bank_const("focus-audio.rs", "BANK_BYTES"), runner);
+    assert!(runner + bank_const("runner-audio.rs", "BANK_BYTES") <= data::AMBIENCE_SPU_END);
 }

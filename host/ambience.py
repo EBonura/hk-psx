@@ -3,14 +3,21 @@
 How many loops there are, and which source atmos channels they are, is
 `cook_music.RESIDENT_ATMOS_CHANNELS` and nothing else: the clip table, the cue
 gain arrays, the SPU voices and the streamed clip's index all follow from it.
+What rate each one is cooked at is `cook_music.RESIDENT_ATMOS_RATES`, which is
+a separate decision and no longer inferred from which clip streams.
+
 The catalogue's 456 scenes with an atmos cue between them name all 16 channels,
 so no resident set covers the game; the set is a budget decision per disc,
 priced by the voice budget in `assemble` and the SPU ceiling in `spu_ceiling`.
+Eight of the sixteen would leave no scene without an audible stem, and at the
+rates measured next to that tuple they fit both the ceiling and main RAM. What
+they do not fit is six voices, which is the wall that re-picking the set never
+moves.
 """
 import argparse,array,hashlib,json,math,re,struct,subprocess,sys
 from pathlib import Path
 from source import ROOT,Source,dump
-from cook_music import sha,source_snapshot
+from cook_music import sha,source_snapshot,atmos_rate,DEFAULT_ATMOS_RATE
 from quality import SCENE_FILES
 
 from cook_music import RESIDENT_ATMOS_CHANNELS as CHANNELS
@@ -36,10 +43,12 @@ VOICES=tuple(range(6,12))
 # addresses do depend on it, and are hardcoded in focus_audio.py and
 # runner_audio.py, which both have to move in the same change.
 TAIL_BANKS=('data/focus-audio.rs','data/runner-audio.rs')
-RATE=8000
-# The cave bed is the one clip whose 8 kHz copy will not fit SPU; halving its
-# rate halves the RAM cache it streams from. 99% of its energy is below 637 Hz.
-STREAM_RATE=4000
+# What rate each resident channel is cooked at, and why, is
+# `cook_music.RESIDENT_ATMOS_RATES`. It is not the same question as which
+# channel streams: the cave bed happens to be both the streamed clip and a
+# 4 kHz one, and reading either from the other put a literal in five places.
+RATE=DEFAULT_ATMOS_RATE
+RATES=tuple(sorted({atmos_rate(ch) for ch in CHANNELS}))
 
 def fnv(data):
     value=0x811c9dc5
@@ -65,9 +74,21 @@ def validate_loop(data):
         expected=(4 if i==0 else 0)|(3 if i==len(data)-16 else 0)
         if data[i+1]!=expected:raise ValueError('invalid loop start/end flags')
 
+# A source Atmos gain above unity clamps to full scale rather than lifting one
+# stem's ceiling above the 16,383 every other bank in this port mixes against.
+# The largest boost anywhere in the catalogue is channel 1's +5.15 dB in the
+# WindTunnel cue, so a gain past this ceiling means the snapshot's parent chain
+# was read wrong rather than that a stem is loud, and the cook still refuses it.
+BOOST_CEILING_DB=6.0
+
 def volume(db):
-    if not math.isfinite(db) or db>0:raise ValueError('unsupported mixer gain')
-    return round(16383*10**(db/20))
+    """One source mixer gain as an SPU voice volume; 16,383 is full scale."""
+    if not math.isfinite(db) or db>BOOST_CEILING_DB:raise ValueError('unsupported mixer gain')
+    return round(16383*10**(min(db,0.0)/20))
+
+def boosts(channels,gains_db):
+    """Which channels sit above unity, and by how much, for the report."""
+    return {str(ch):round(db,5) for ch,db in zip(channels,gains_db) if db>0}
 
 def bank_bytes(path):
     """BANK_BYTES out of one generated Rust audio manifest.
@@ -75,9 +96,39 @@ def bank_bytes(path):
     The generators do not agree on spacing, so the pattern tolerates it rather
     than each caller carrying its own copy.
     """
-    match=re.search(r'pub\s+const\s+BANK_BYTES\s*:\s*usize\s*=\s*(\d+)\s*;',Path(path).read_text())
-    if not match:raise ValueError('no BANK_BYTES in '+str(path))
+    return bank_constant(path,'BANK_BYTES','usize')
+
+def bank_constant(path,name,kind):
+    """One `pub const <name>:<kind>=<integer>;` out of a generated manifest."""
+    match=re.search(r'pub\s+const\s+%s\s*:\s*%s\s*=\s*(\d+)\s*;'%(name,kind),Path(path).read_text())
+    if not match:raise ValueError(f'no {name} in '+str(path))
     return int(match[1])
+
+def tail_base(root,name):
+    """Where one bank stacked above ambience currently says it starts.
+
+    The two generators spell it differently, so ask for both rather than
+    teaching each caller which is which.
+    """
+    for constant in ('SPU_BASE','BANK_BASE'):
+        try:return bank_constant(root/name,constant,'u32')
+        except ValueError:continue
+    raise ValueError('no SPU_BASE or BANK_BASE in '+name)
+
+def tail_drift(root,end):
+    """Tail banks whose declared base no longer abuts the bank below it.
+
+    Ambience growing moves every bank above it, and those bases are hardcoded
+    in focus_audio.py and runner_audio.py. Their own cooks refuse an overlap
+    but not a gap, and neither runs unless someone remembers to run it, so the
+    ambience cook says which base is now wrong and what it should be.
+    """
+    drift={};expected=end
+    for name in TAIL_BANKS:
+        declared=tail_base(root,name)
+        if declared!=expected:drift[name]={'declared':declared,'required':expected}
+        expected+=bank_bytes(root/name)
+    return drift
 
 def spu_ceiling(root):
     """Highest SPU address ambience may reach, and what the tail above costs.
@@ -102,7 +153,12 @@ def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
         if len(scene['managers'])!=1:raise ValueError('ambiguous scene audio manager')
         manager=scene['managers'][0]
         all_snapshot=snapshots[scene['scene_file']]
-        gains=[volume(x['internal_volume_db']) for x in all_snapshot];mask=0
+        # The scene's own atmosSnapshot sets every resident channel; an enabled
+        # channel is then overridden by the atmos cue's snapshot, which is a
+        # different object and can disagree. Keep the dB that wins so the
+        # clamp record cannot name a level the bank does not play.
+        used=[x['internal_volume_db'] for x in all_snapshot]
+        gains=[volume(db) for db in used];mask=0
         for entry in manager['ambience']:
             ch=entry['channel'];idx=CHANNELS.index(ch)
             if ch in channels and channels[ch]!=entry['clip']:raise ValueError('shared channel changes clip')
@@ -111,17 +167,18 @@ def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
             snapshot=entry['snapshot']
             if snapshot['effects'] or any(x['mute'] or x['solo'] or x['pitch']!=1 for x in snapshot['chain']):
                 raise ValueError('unsupported mixer processing')
-            gains[idx]=volume(snapshot['internal_volume_db']);mask|=1<<idx
+            used[idx]=snapshot['internal_volume_db']
+            gains[idx]=volume(used[idx]);mask|=1<<idx
         seconds=transitions[scene['scene_file']]
         if not math.isfinite(seconds) or not 0<=seconds<=60:raise ValueError('invalid atmosphere transition')
         cues.append({'scene':SCENE_FILES.index(scene['scene_file']),'source_scene':scene['scene_file'],
             'name':manager['atmos_cue']['name'],'source':manager['source'],'mask':mask,'gains':gains,
             'fade_ticks':round(seconds*60),'source_fade_seconds':seconds,'source_ambience':manager['ambience'],
-            'all_channel_snapshot_gains':all_snapshot})
+            'clamped_boost_db':boosts(CHANNELS,used),'all_channel_snapshot_gains':all_snapshot})
     if set(channels)!=set(CHANNELS) or {c['scene']for c in cues}!=set(range(len(SCENE_FILES))):raise ValueError('missing source ambience channels/scenes')
     clips=[];address=SPU_START
     for index,ch in enumerate(CHANNELS):
-        rate=STREAM_RATE if ch==STREAM_CHANNEL else RATE
+        rate=atmos_rate(ch)
         matches=[c for c in report['clips']if c['source']==channels[ch] and c['rate']==rate and c['channels']==1]
         if len(matches)!=1:raise ValueError(f'missing or duplicate {rate}Hz mono profile')
         c=matches[0]
@@ -151,7 +208,9 @@ def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
 
 def decoder_quality(clip,path):
     payload=path.read_bytes();vag=path.with_suffix('.vag');decoded=path.with_suffix('.decoded.s16le')
-    vag.write_bytes(b'VAGp'+struct.pack('>4I',0x20,0,len(payload),RATE)+bytes(28)+payload)
+    # The clip's own rate, not the default: VAG playback rate does not change
+    # the decoded samples this compares, so a wrong one here stayed invisible.
+    vag.write_bytes(b'VAGp'+struct.pack('>4I',0x20,0,len(payload),clip['rate'])+bytes(28)+payload)
     subprocess.run(['ffmpeg','-v','error','-y','-i',str(vag),'-f','s16le',str(decoded)],check=True)
     pcm=array.array('h');pcm.frombytes(decoded.read_bytes())
     source=array.array('h');source.frombytes((ROOT/clip['profile']['planes'][0]['path']).with_suffix('.s16le').read_bytes())
@@ -190,12 +249,17 @@ def cached_report(path):
         if sha(ROOT/'host'/name)!=value:raise ValueError('music conversion code changed: '+name)
     if [scene['scene_file'] for scene in report['scenes']]!=list(SCENE_FILES):raise ValueError('music report covers a different scene catalog')
     if sha(ROOT/report['source_methods']['path'])!=report['source_methods']['sha256']:raise ValueError('source methods hash mismatch')
+    # Every rate the resident set actually reads, not just the default one: a
+    # channel cooked at 4 kHz used to reach `assemble` unverified and fail there
+    # on the payload hash instead of here on the stale cache.
     for c in report['clips']:
-        if c['rate']==RATE and c['channels']==1:
+        if c['rate']in RATES and c['channels']==1:
             for plane in c['planes']:
                 path=ROOT/plane['path']
                 if sha(path)!=plane['sha256'] or not path.with_suffix('.s16le').is_file():raise ValueError('missing/stale converted profile')
-    if len([c for c in report['clips']if c['rate']==RATE and c['channels']==1])!=len(CHANNELS):raise ValueError('missing ambient profile')
+    for rate in RATES:
+        if len([c for c in report['clips']if c['rate']==rate and c['channels']==1])<len([ch for ch in CHANNELS if atmos_rate(ch)==rate]):
+            raise ValueError('missing ambient profile')
     return report
 
 def ensure_music(path):
@@ -244,13 +308,24 @@ def main():
         # Free below the banks stacked above ambience, not below SPU RAM's end.
         'spu_free_bytes':tail['ceiling']-end,'spu_ceiling':tail['ceiling'],
         'spu_tail_reserved_bytes':tail['reserved_bytes'],'spu_tail_banks':tail['banks'],
+        'spu_tail_bases':{name:tail_base(ROOT,name)for name in TAIL_BANKS},
         'resident_atmos_channels':list(CHANNELS),'voices':list(VOICES[:len(clips)]),
+        'resident_atmos_rates':{str(ch):atmos_rate(ch)for ch in CHANNELS},
+        'clamped_boosts':{c['source_scene']:c['clamped_boost_db']for c in cues if c['clamped_boost_db']},
+        'clamped_boost_scope':f'Source Atmos gains above unity play at full scale instead. Refused above {BOOST_CEILING_DB} dB.',
         'source_report_sha256':sha(a.source_report),'source_method_sha256':sha(methods),
         'tool_sha256':sha(Path(__file__)),'rust_manifest_sha256':sha(manifest),
         'mixer_scope':'Source internal Atmos group and parent gains; downstream output mixers/player settings separate.',
         'transport':f'{len(clips)} complete source chunks loaded at boot; channel{STREAM_CHANNEL} cached in RAM and fed to a {STREAM_BYTES//1024}KiB SPU ring. The other {len(clips)-1} loops are resident in SPU. No event-time CD reads. Sector padding is outside checksum/byte_len.',
         'omitted_atmos_channels':'Every source atmos channel outside resident_atmos_channels; cook_music records them per scene in ambience_omitted_channels and the scene cooks a zero mask.'}
+    drift=tail_drift(ROOT,end);result['spu_tail_drift']=drift
     dump(ROOT/'.hkpsx/ambience.json',result)
     print(f'{len(clips)} loops:',result['total_bytes'],'bytes, SPU end',hex(end),'free',result['spu_free_bytes'],
           f"below the {tail['ceiling']:#x} ceiling ({tail['reserved_bytes']} bytes of Focus and Runner bank sit above)")
+    if drift:
+        # The bank is written either way; what is stale is the tail above it,
+        # and saying so beats leaving the next cook to find the overlap.
+        for name,move in drift.items():
+            print(f'  {name} declares base {move["declared"]:#x} and must be {move["required"]:#x}; re-run its cook')
+        raise SystemExit('SPU tail banks no longer abut ambience')
 if __name__=='__main__':main()

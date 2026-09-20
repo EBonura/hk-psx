@@ -7,8 +7,10 @@ uses22,050Hz mono. This follows sustained-loop and short-effect categories,
 without truncation. `host/focus_audio.py` validates Windows Spell Control FSMs,
 AudioSources, clips and inspected assembly hashes. Local provenance and cooked
 assets remain ignored. The108,208-byte bank loads through scene scratch once at
-startup into0x5EA00..0x790B0, leaving28,496B contiguous SPU free. Main RAM has
-53,132B before the protected stack; Focus adds no persistent sample bank there.
+startup into0x608F0..0x7AFA0, immediately above ambience and immediately below
+Runner. Its base is hardcoded in `host/focus_audio.py` and moves by whatever
+ambience grows; `host/ambience.py` refuses a cook that leaves it stale. Main RAM
+has53,132B before the protected stack; Focus adds no persistent sample bank there.
 
 Voice18 loops charging;19/20 alternate heals from shared data so tails survive
 release and cancellation. The actual Focus state supplies start/repeat/end phases;
@@ -95,16 +97,20 @@ is rearmed for the next playback boundary afterward. ENDX is read-only and is
 not used. There is no playback-time CD traffic. Late/missing/early boundaries
 stop the streamed voice and increment HK_AUDIO_STREAM_UNDERRUNS.
 
-Allocation: player SFX0x1010..0x107A0 (63,376B), Geo0x14000..0x17650
-(13,904B), ambience0x18000..0x5EA00 (289,280B). The contiguous136,704B above
-ambience is available for a future128KiB music ring. Main RAM still has63,448B
-before the reserved stack. This does not implement music transport or reserve
-reverb workspace; future CD-read arbitration and stereo refill deadlines need
-separate validation.
+Allocation: player SFX0x1010..0x135C0 (75,184B), Geo0x14000..0x17640
+(13,888B), ambience0x18000..0x608F0 (297,200B), Focus0x608F0..0x7AFA0
+(108,208B) and Runner0x7AFA0..0x7FF90 (20,464B). That leaves **112B**
+contiguous, not the136,704B a previous version of this paragraph claimed, which
+counted the Focus and Runner banks above ambience as free. There is no room for
+a music ring of any size; `docs/BUDGET.md` prices the three places margin could
+come back from. Main RAM still has63,448B before the reserved stack. This does
+not implement music transport or reserve reverb workspace; future CD-read
+arbitration and stereo refill deadlines need separate validation.
 
 Quality categories:22,050Hz mono player one-shots;11,025Hz mono longer running
-sequence;11,025Hz Geo;8,000Hz mono ambience. Existing ambience quality is
-unchanged. Hurt was raised from11,025 to22,050Hz to match its short-effect
+sequence;11,025Hz Geo. Ambience is no longer one category: it is8,000Hz mono
+except for the two channels measured better at4,000, which is a per-channel
+decision recorded beside `cook_music.RESIDENT_ATMOS_CHANNELS`. Hurt was raised from11,025 to22,050Hz to match its short-effect
 category. The user permits lower long-sample rates when necessary, consistently
 within categories. Music profiles below remain preparation only.
 
@@ -201,12 +207,25 @@ output hashes and encoder source hashes. Cached WAV data is reused only when
 both source identity and decoded-file hash match. Resource traversal and
 truncation fail explicitly.
 
-There are eight unique clips and 28 profile conversions: 22,050 Hz stereo and
-11,025 Hz mono for every clip, plus 10,000 and 8,000 Hz mono for the six ambience
-clips. Complete clips are preserved; lower rates and mono are explicit quality
+There are 17 unique clips and 52 profile conversions: 22,050 Hz stereo and
+11,025 Hz mono for every clip, plus 10,000, 8,000 and 4,000 Hz mono for the six
+resident ambience clips. Both of the last two are cooked for every resident clip
+whatever `cook_music.RESIDENT_ATMOS_RATES` currently picks, so re-rating a
+channel is an `host/ambience.py` run rather than a source re-conversion.
+Complete clips are preserved; lower rates and mono are explicit quality
 experiments. No silence replacement or length truncation is used. Each channel
 is a separate PSX ADPCM plane, with at most 27 zero samples in its final block;
 valid frame counts are retained separately.
+
+Lower is not uniformly worse. PSX ADPCM spends four bits per sample whatever the
+rate, so a clip whose energy is already under the lower Nyquist gains resolution
+where the content is and loses a band that holds nothing. Measured as the cooked
+payload's SNR against its own resampled source: `cave_atmos_misc_3`, 99.999% of
+its energy below 2 kHz, reconstructs at 16.70 dB at 8 kHz and **24.47 dB at
+4 kHz**, and `cave_noises` at 30.28 and 31.05. Every other resident clip is
+better at 8 kHz, `dirtmouth_wind_loop_c_gate` by 12.5 dB. The rate is therefore
+a per-channel decision recorded beside the channel set, not a property of which
+clip streams.
 
 The original host encoder tests all five predictors and shifts 0..12 per block.
 Its initial block uses filter 0 to define decoder history. Experimental payloads
@@ -272,12 +291,16 @@ Until then, no ambient voice can start. Retry silences the voices and clears ban
 readiness before replacing any SPU bytes. Per-clip SPU ranges, voices, pitch,
 headers and loop flags are checked in addition to the payload checksum.
 
-The source channel order is 0, 1, 3, 4, 5, 6, mapped to SPU voices 6..11. With
-full-scale voice volume 16,383, the Cave target volumes are
-`[16383, 2, 2, 16383, 16, 16]`; Surface uses
-`[2, 16383, 12588, 2, 16, 16]`. Cave enables bank mask 57, Surface mask 54.
+The resident channel set is a cook-time budget decision and moves; it is
+`cook_music.RESIDENT_ATMOS_CHANNELS` and the figures below are whatever the last
+cook wrote into `data/ambience.rs`, not a second place to maintain it. At build
+159 it is channels 0, 1, 3, 4, 7 and 15, mapped in that order to SPU voices
+6..11. With full-scale voice volume 16,383, the Cave target volumes are
+`[16383, 2, 2, 16383, 2, 2]`; Surface uses `[2, 16383, 12588, 2, 2, 2]` and
+MiscWind `[2, 2, 2, 2, 2, 16383]`. Cave enables bank mask 9, Surface 6,
+MiscWind 32.
 Disabled stems stop and become silent after the 30-tick transition. Already-playing
-shared rain keeps its phase; repeated cues for the same scene do not restart loops.
+shared stems keep their phase; repeated cues for the same scene do not restart loops.
 The mixer ticks independently of gameplay pause, and settled loops need no
 per-tick volume writes. These are source endpoints and lifecycle with an explicit
 linear-ramp approximation, not complete AudioMixer parity or player audio settings.

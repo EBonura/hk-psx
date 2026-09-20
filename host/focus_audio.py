@@ -9,7 +9,10 @@ from cook_music import compile_encoder,cook_clip,sha
 from ambience import fnv,loop_payload,validate_blocks
 from focus import action_fields
 
-SPU_BASE=0x5EA00
+# Immediately above the ambience bank, so it moves by whatever ambience grows.
+# host/ambience.py prints the base this has to be and refuses to leave a gap or
+# an overlap; it was 0x5EA00 until atmos channel 15 joined the resident set.
+SPU_BASE=0x608F0
 SPU_END=0x80000
 CHARGE_RATE=8000
 HEAL_RATE=22050

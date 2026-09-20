@@ -222,20 +222,32 @@ The24 animation slots retain an independent48KiB maximum per frame. Animation
 frames come from resident RAM, with no traversal CD reads or decoding. This is
 the current two-scene subset, not full-game residency or hardware timing.
 
-Current SPU allocations, re-read at build158 from the banks' own generated
+Current SPU allocations, re-read at build159 from the banks' own generated
 constants (`data/sfx.rs`, `data/geo-audio.rs`, `data/ambience.rs`,
 `data/focus-audio.rs`, `data/runner-audio.rs`) rather than from the last
 paragraph that quoted them: player SFX 75,184B at 0x1010..0x135C0,
-Geo 13,888B at 0x14000..0x17640, ambience 289,280B at 0x18000..0x5EA00,
-Focus 108,208B at 0x5EA00..0x790B0 and Runner 20,464B at 0x790B0..0x7E060.
-That leaves 8,032B contiguous free above Runner, plus two gaps of 2,624B and
-2,496B below ambience: 13,152B free in total, none of it in one piece large
-enough for a bank. The figures this replaces were wrong in three ways and
-omitted the Runner bank entirely, which put the free figure 20,464B too high
-on its own; `host/ambience.py::spu_ceiling` computes the ceiling the cook
-actually enforces. The SDK silent loop is at 0x1000. Player short effects/heal
-use 22,050Hz mono; running and Geo use 11,025Hz mono; ambience and sustained
-Focus charging use 8,000Hz mono. All admitted source clips are complete.
+Geo 13,888B at 0x14000..0x17640, ambience 297,200B at 0x18000..0x608F0,
+Focus 108,208B at 0x608F0..0x7AFA0 and Runner 20,464B at 0x7AFA0..0x7FF90.
+That leaves **112B** contiguous free above Runner, plus two gaps of 2,624B and
+2,496B below ambience: 5,232B free in total, none of it in one piece large
+enough for anything. Ambience grew 7,920B when atmos channel 15 joined the
+resident set, and Focus and Runner moved up with it: their bases are hardcoded
+in `host/focus_audio.py` and `host/runner_audio.py`, and `host/ambience.py`
+now refuses to finish a cook that leaves either of them stale, naming the base
+each one has to take. Until one of those three is spent, **the Focus and Runner
+banks cannot grow by a single block**; the cheapest margin priced but not taken
+is 8,192B from halving the streamed clip's SPU ring, which is still sized for
+the 8 kHz era and gives the cave bed 3.58-second halves rather than the 1.79 s
+`game/src/audio_stream.rs` is written and commented for. The figures this
+paragraph's first version quoted were wrong in three ways and omitted the
+Runner bank entirely, which put the free figure 20,464B too high on its own;
+`host/ambience.py::spu_ceiling` computes the ceiling the cook actually
+enforces. The SDK silent loop is at 0x1000. Player short effects/heal
+use 22,050Hz mono; running and Geo use 11,025Hz mono; sustained Focus charging
+uses 8,000Hz mono. Ambience is per channel: four loops at 8,000Hz and the two
+whose energy sits under 2kHz, `cave_noises` and `cave_atmos_misc_3`, at
+4,000Hz, where both measure a better SNR than at 8. All admitted source clips
+are complete.
 
 The full199,872-byte cave-noises clip is resident in main RAM, feeding a16KiB
 SPU ring through8KiB scratch. Other ambience and Focus payloads stay in SPU;
