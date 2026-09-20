@@ -203,6 +203,62 @@ def locate_region(regions, scene_id, xy):
     return None
 
 
+def resolve_gates(report, regions, scene):
+    """Admitted TransitionPoints of one scene, resolved against the whole world.
+
+    A gate names its destination by scene name and entry point, and its spawn
+    lands in some region of that other scene, so this cannot be done inside the
+    per-scene bank encoder. `generate` runs it once per scene and hangs the
+    result on the scene, the way it already hands the encoder `statics` and
+    `spec_index`.
+    """
+    by_name = {other['scene_name']: other for other in report['scenes']}
+    integer(scene['scene_id'], SCENES, 'gate scene')
+    resolved = []
+    for gate in scene['gates']:
+        if not gate['enabled'] or gate['target_scene'] not in by_name or 'trigger_bounds' not in gate:
+            continue
+        target = by_name[gate['target_scene']]
+        matches = [g for g in target['gates'] if g['name'] == gate['entry_point']]
+        if len(matches) != 1:
+            continue
+        destination = matches[0]
+        xy = list(destination['position'][:2]); offset = destination.get('entry_offset', {})
+        xy[0] += offset.get('x', 0); xy[1] += offset.get('y', 0)
+        # Development placement inside the authored destination entry side;
+        # the complete retail walk-in state machine is not yet implemented.
+        if destination['name'].startswith('left'):
+            xy[0] += 1
+        elif destination['name'].startswith('right'):
+            xy[0] -= 1
+        target_region = locate_region(regions, target['scene_id'], xy)
+        if target_region is None:
+            continue
+        # Source HeroController top entries (the Dirtmouth well is the verified
+        # case) start the drop at -12 units per second; other sides keep rest.
+        entry_vy = -12 * 65536 if destination['name'].startswith('top') else 0
+        # TransitionPoint.TryDoTransition: side gates need the Knight facing
+        # into them, a recoiling Knight is pushed back out instead, and the
+        # collider of a delayed top gate turns on `collider_delay` seconds
+        # after the scene starts. Source GatePosition: right 1, left 2.
+        side = {'left': 1, 'right': 2, 'top': 3, 'bot': 4}.get(''.join(c for c in gate['name'].split(' ')[0] if c.isalpha()), 0)
+        # A door is 5, and the guest enters it on UP with the hero body
+        # rather than by walking a point through it, because that is what
+        # its `Door Control` FSM does. Its collider is a strip of floor
+        # about a quarter of a unit tall, so a point test taken at the
+        # Knight's own origin passes over it and never enters.
+        if gate.get('door_control') and side == 0:
+            side = 5
+        delay = gate.get('collider_delay', 0.)
+        if not gate.get('collider_initially_enabled', True) and delay <= 0:
+            raise ValueError('gate collider starts disabled without a Delay Collider FSM: ' + gate['source'])
+        delay_ticks = integer(round(delay * 60), 65536, 'gate collider delay')
+        resolved.append({'source': gate['source'], 'target_scene': target['scene_id'],
+                         'target_region': target_region, 'bounds': gate['trigger_bounds'],
+                         'spawn': xy, 'entry_vy': entry_vy, 'side': side, 'delay_ticks': delay_ticks})
+    return resolved
+
+
 def generate(report, out_path=None):
     """Write the guest region metadata. `out_path` diverts it for a dry run,
     so a catalogue change can be checked without touching the shared table."""
@@ -214,30 +270,17 @@ def generate(report, out_path=None):
     floors = flat_floor_catalog(report, root=ROOT)
     # The guest sizes its per-scene persistent state tables from the catalog.
     out = [f'pub const SCENES: usize = {SCENES};\n', rust_catalog(floors)]
+    # Reveal-mask controllers are not linked: each scene's ride in its own
+    # metadata bank, where the trigger polygon the guest tests against is one
+    # of the bank's own polygons. Only the per-scene pool bound is checked
+    # here; tools/world_metadata.py owns the rest of the contract now.
     reveal_scenes=report.get('reveal_mask_scenes',{})
     for scene in range(SCENES):
         records=reveal_scenes.get(str(scene),{}).get('controllers',[])
         if len(records)>16:raise ValueError('reveal scene pool exceeds16')
-        seen=set();specs=[]
-        for index,record in enumerate(records):
-            source=integer(record['source_id'],1<<32,'reveal source ID')
-            if source in seen or record['controller']!=index:raise ValueError('reveal source aliases or noncanonical index')
-            seen.add(source)
+        for record in records:
             polygon=record['trigger']
             if not 3<=len(polygon)<=16 or any(len(point)!=2 for point in polygon):raise ValueError('reveal polygon bound')
-            ticks=integer(record['fade_ticks'],601,'reveal fade ticks')
-            if not ticks:raise ValueError('reveal duration must be positive')
-            opacity=record['initial_opacity']
-            if type(opacity)is not int or opacity not in (0,128):raise ValueError('invalid reveal initial opacity')
-            # An authored secret mask: covered on load, uncovered for good on the
-            # first hero entry, because its FSM declares no COVER event.
-            one_way=record.get('one_way',False)
-            if type(one_way)is not bool:raise ValueError('invalid reveal one-way flag')
-            if one_way and opacity!=128:raise ValueError('one-way reveal must start covered')
-            specs.append('crate::reveal_masks::RevealMaskSpec {source_id:'+str(source)+',trigger:&['+
-                ','.join(arr(map(q,point))for point in polygon)+f'],fade_ticks:{ticks},initial_opacity:{opacity}'
-                +f',one_way:{str(one_way).lower()}'+'}')
-        out.append(f'static REVEAL_MASKS_SCENE_{scene}: &[crate::reveal_masks::RevealMaskSpec] = &['+','.join(specs)+'];')
     from effects import generated_debris
     debris_catalog={}
     for region in regions:
@@ -288,7 +331,6 @@ def generate(report, out_path=None):
     out.append('pub static SCENE_ACTORS: &[&[hk_sim::ActorSpec]] = &[' + ','.join(f'SCENE_ACTORS_{scene}' for scene in range(SCENES)) + '];')
     # Per-scene statics the runtime Region value borrows, and small variant
     # catalogues the bank's KIND_REGION_STATICS object indexes per region.
-    out.append('pub static SCENE_REVEAL_MASKS: &[&[crate::reveal_masks::RevealMaskSpec]] = &[' + ','.join(f'REVEAL_MASKS_SCENE_{scene}' for scene in range(SCENES)) + '];')
     scene_emitters = {}
     for region in regions:
         if region.get('particle_effects'):
@@ -316,51 +358,11 @@ def generate(report, out_path=None):
     out.append('pub static IMPACT_CATALOG: &[crate::impact::Spec] = &[' + ','.join(impact_catalog) + '];')
     # Scene owner per catalogue slot: the only per-view table left in the guest.
     out.append('pub static REGION_SCENES: &[u8] = &[' + ','.join(str(integer(r['scene_id'], min(SCENES, 256), 'scene index')) for r in regions) + '];')
-    out.append('pub static GATES: &[Gate] = &[')
-    by_name = {scene['scene_name']: scene for scene in report['scenes']}
+    # Gates ride in each scene's metadata bank rather than a linked table; the
+    # resolution is attached to the scene here because it needs every scene and
+    # every region at once, which the per-scene encoder never sees.
     for scene in report['scenes']:
-        integer(scene['scene_id'], SCENES, 'gate scene')
-        for gate in scene['gates']:
-            if not gate['enabled'] or gate['target_scene'] not in by_name or 'trigger_bounds' not in gate:
-                continue
-            target = by_name[gate['target_scene']]
-            matches = [g for g in target['gates'] if g['name'] == gate['entry_point']]
-            if len(matches) != 1:
-                continue
-            destination = matches[0]
-            xy = list(destination['position'][:2]); offset = destination.get('entry_offset', {})
-            xy[0] += offset.get('x', 0); xy[1] += offset.get('y', 0)
-            # Development placement inside the authored destination entry side;
-            # the complete retail walk-in state machine is not yet implemented.
-            if destination['name'].startswith('left'):
-                xy[0] += 1
-            elif destination['name'].startswith('right'):
-                xy[0] -= 1
-            target_region = locate_region(regions, target['scene_id'], xy)
-            if target_region is None:
-                continue
-            # Source HeroController top entries (the Dirtmouth well is the verified
-            # case) start the drop at -12 units per second; other sides keep rest.
-            entry_vy = -12 * 65536 if destination['name'].startswith('top') else 0
-            # TransitionPoint.TryDoTransition: side gates need the Knight facing
-            # into them, a recoiling Knight is pushed back out instead, and the
-            # collider of a delayed top gate turns on `collider_delay` seconds
-            # after the scene starts. Source GatePosition: right 1, left 2.
-            side = {'left': 1, 'right': 2, 'top': 3, 'bot': 4}.get(''.join(c for c in gate['name'].split(' ')[0] if c.isalpha()), 0)
-            # A door is 5, and the guest enters it on UP with the hero body
-            # rather than by walking a point through it, because that is what
-            # its `Door Control` FSM does. Its collider is a strip of floor
-            # about a quarter of a unit tall, so a point test taken at the
-            # Knight's own origin passes over it and never enters.
-            if gate.get('door_control') and side == 0:
-                side = 5
-            delay = gate.get('collider_delay', 0.)
-            if not gate.get('collider_initially_enabled', True) and delay <= 0:
-                raise ValueError('gate collider starts disabled without a Delay Collider FSM: ' + gate['source'])
-            delay_ticks = integer(round(delay * 60), 65536, 'gate collider delay')
-            out.append(f'Gate {{scene:{scene["scene_id"]},target_scene:{target["scene_id"]},target_region:{target_region},bounds:' +
-                       rect(gate['trigger_bounds']) + ',spawn:' + arr(map(q, xy)) + f',entry_vy:{entry_vy},side:{side},delay_ticks:{delay_ticks}' + '},')
-    out.append('];')
+        scene['resolved_gates'] = resolve_gates(report, regions, scene)
     result = '\n'.join(out) + '\n'
     Path(out_path or ROOT/'data/regions.rs').write_text(result)
     return result

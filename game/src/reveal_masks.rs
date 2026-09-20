@@ -11,7 +11,11 @@ use hk_sim::{Params, Player};
 pub const MAX_CONTROLLERS: usize = 16;
 const FULL: u32 = 65536;
 
+/// The shape the controller catalogue had while it linked. Nothing reads one
+/// any more; it stays only so a `data/regions.rs` cooked before the catalogue
+/// moved into the metadata bank still compiles, and goes with the next recook.
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub struct RevealMaskSpec {
     pub source_id: u32,
     pub trigger: &'static [[i32; 2]],
@@ -24,6 +28,17 @@ pub struct RevealMaskBinding {
     pub controller: u8,
     pub draw: u16,
 }
+/// One controller as the admitted bank records it. The trigger polygon is not
+/// here: the bank keeps it, `bounds` is the AABB it cooked for that polygon, and
+/// the exact shape is only asked for when the hero's box has reached that AABB.
+#[derive(Clone, Copy)]
+pub struct RevealMask {
+    pub source_id: u32,
+    pub bounds: [i32; 4],
+    pub fade_ticks: u16,
+    pub initial_opacity: u8,
+    pub one_way: bool,
+}
 #[derive(Clone, Copy)]
 struct Slot {
     source_id: u32,
@@ -32,6 +47,7 @@ struct Slot {
     from: u32,
     target: u32,
     elapsed: u16,
+    fade_ticks: u16,
     /// For a one-way owner this is "has fired", and it never returns to false.
     inside: bool,
     one_way: bool,
@@ -44,6 +60,7 @@ const EMPTY: Slot = Slot {
     from: 0,
     target: 0,
     elapsed: 0,
+    fade_ticks: 0,
     inside: false,
     one_way: false,
     initial_opacity: 0,
@@ -72,46 +89,42 @@ impl State {
     }
     /// Every region supplies the same ordered scene-wide controller catalogue.
     /// Rebinding a draw after a grid change must not restart its source tween.
-    pub fn scene_ready(&mut self, scene: usize, specs: &[RevealMaskSpec]) {
-        assert!(specs.len() <= MAX_CONTROLLERS);
+    pub fn scene_ready(&mut self, scene: usize, masks: impl Iterator<Item = RevealMask>) {
         if self.scene == Some(scene) {
-            assert_eq!(self.count, specs.len());
-            for (slot, spec) in self.slots[..self.count].iter().zip(specs) {
-                assert_eq!(slot.source_id, spec.source_id);
-                assert_eq!(slot.initial_opacity, spec.initial_opacity);
-                assert_eq!(slot.one_way, spec.one_way);
+            let mut seen = 0;
+            for (slot, mask) in self.slots[..self.count].iter().zip(masks) {
+                assert_eq!(slot.source_id, mask.source_id);
+                assert_eq!(slot.initial_opacity, mask.initial_opacity);
+                assert_eq!(slot.one_way, mask.one_way);
+                seen += 1;
             }
+            assert_eq!(self.count, seen);
             return;
         }
         *self = Self::new();
         self.scene = Some(scene);
         self.running = true;
-        self.count = specs.len();
-        for (index, spec) in specs.iter().enumerate() {
-            assert!((3..=16).contains(&spec.trigger.len()));
-            assert!(spec.initial_opacity == 0 || spec.initial_opacity == 128);
+        for mask in masks {
+            let index = self.count;
+            assert!(index < MAX_CONTROLLERS);
+            assert!(mask.initial_opacity == 0 || mask.initial_opacity == 128);
             // Every authored one-way reveal starts covered and clears for good.
-            assert!(!spec.one_way || spec.initial_opacity == 128);
-            assert!(specs[..index]
+            assert!(!mask.one_way || mask.initial_opacity == 128);
+            assert!(self.slots[..index]
                 .iter()
-                .all(|prior| prior.source_id != spec.source_id));
-            let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
-            for &[x, y] in spec.trigger {
-                bounds[0] = bounds[0].min(x);
-                bounds[1] = bounds[1].min(y);
-                bounds[2] = bounds[2].max(x);
-                bounds[3] = bounds[3].max(y);
-            }
+                .all(|prior| prior.source_id != mask.source_id));
             self.slots[index] = Slot {
-                source_id: spec.source_id,
-                bounds,
-                alpha: spec.initial_opacity as u32 * 512,
-                from: spec.initial_opacity as u32 * 512,
-                target: spec.initial_opacity as u32 * 512,
-                initial_opacity: spec.initial_opacity,
-                one_way: spec.one_way,
+                source_id: mask.source_id,
+                bounds: mask.bounds,
+                alpha: mask.initial_opacity as u32 * 512,
+                from: mask.initial_opacity as u32 * 512,
+                target: mask.initial_opacity as u32 * 512,
+                fade_ticks: mask.fade_ticks,
+                initial_opacity: mask.initial_opacity,
+                one_way: mask.one_way,
                 ..EMPTY
             };
+            self.count = index + 1;
         }
     }
     /// Source global HERO LEAVE enters an actionless state, stopping its tween.
@@ -124,19 +137,22 @@ impl State {
         }
     }
     /// Call once per unpaused simulation tick. The exact trigger polygon sees
-    /// the entire hero collider, not just the hero origin or trigger AABB.
-    pub fn tick(&mut self, specs: &[RevealMaskSpec], player: &Player, params: Params) {
+    /// the entire hero collider, not just the hero origin or trigger AABB, so
+    /// `reaches` answers that polygon test for one controller against the hero
+    /// box. It is only ever called after the slot's own AABB has admitted the
+    /// box, and a tick that touches no trigger never reads the bank's points.
+    pub fn tick(&mut self, player: &Player, params: Params,
+                mut reaches: impl FnMut(usize, [i32; 4]) -> bool) {
         if !self.running {
             return;
         }
-        assert_eq!(specs.len(), self.count);
         let body = [
             player.x.saturating_sub(params.half_width),
             player.y.saturating_add(params.bottom),
             player.x.saturating_add(params.half_width),
             player.y.saturating_add(params.top),
         ];
-        for (slot, spec) in self.slots[..self.count].iter_mut().zip(specs) {
+        for (index, slot) in self.slots[..self.count].iter_mut().enumerate() {
             // A one-way owner's source FSM leaves its Fade state only for the
             // sound branch, so once its trigger has fired no later answer can
             // change anything. This bool sits beside the alpha the loop already
@@ -150,7 +166,7 @@ impl State {
                     && body[2] >= b[0]
                     && body[1] <= b[3]
                     && body[3] >= b[1]
-                    && hk_sim::polygon_hits_box(spec.trigger, body);
+                    && reaches(index, body);
                 // Stay is ignored while fading toward the inside target. Exit changes target;
                 // re-entry reverses from the current alpha without a discontinuity.
                 if inside != slot.inside {
@@ -164,15 +180,15 @@ impl State {
             if slot.alpha == slot.target {
                 continue;
             }
-            if spec.fade_ticks == 0 {
+            if slot.fade_ticks == 0 {
                 slot.alpha = slot.target;
                 continue;
             }
-            slot.elapsed = slot.elapsed.saturating_add(1).min(spec.fade_ticks);
+            slot.elapsed = slot.elapsed.saturating_add(1).min(slot.fade_ticks);
             // Q16 linear interpolation. u32 product is at most65536*65535,
             // including a reversed fade; no float, heap, or wide division.
             let distance =
-                slot.target.abs_diff(slot.from) * slot.elapsed as u32 / spec.fade_ticks as u32;
+                slot.target.abs_diff(slot.from) * slot.elapsed as u32 / slot.fade_ticks as u32;
             slot.alpha = if slot.target >= slot.from {
                 slot.from + distance
             } else {
@@ -186,13 +202,15 @@ impl State {
     }
     /// Apply after world::State::apply resets renderer state for this frame.
     /// Counts describe bound draws, allowing route checks without another scan.
-    pub fn apply(&self, specs: &[RevealMaskSpec], bindings: impl Iterator<Item = RevealMaskBinding>) -> Applied {
+    /// `authored` gives a controller's Idle opacity from the admitted bank. It
+    /// is read only while no scene is bound, so a settled frame never asks.
+    pub fn apply(&self, authored: impl Fn(usize) -> u8, bindings: impl Iterator<Item = RevealMaskBinding>) -> Applied {
         let mut result = Applied::default();
         for binding in bindings {
             // During a requested full reset the old region may render once
             // before activation. Restore this controller's authored Idle state.
             let alpha = if self.scene.is_none() {
-                specs[binding.controller as usize].initial_opacity
+                authored(binding.controller as usize)
             } else {
                 self.opacity(binding.controller as usize)
             };
@@ -224,14 +242,19 @@ mod tests {
         Player::spawn(x, 0)
     }
 
-    fn spec(one_way: bool) -> RevealMaskSpec {
-        RevealMaskSpec {
+    fn mask(one_way: bool) -> RevealMask {
+        RevealMask {
             source_id: 1,
-            trigger: BOX,
+            bounds: [-ONE, -ONE, ONE, ONE],
             fade_ticks: 4,
             initial_opacity: 128,
             one_way,
         }
+    }
+
+    /// Stands in for the bank's polygon lookup, against this module's square.
+    fn reaches(_: usize, body: [i32; 4]) -> bool {
+        hk_sim::polygon_hits_box(BOX, body)
     }
 
     /// The authored secret mask: covered, then clear for good on first entry.
@@ -239,16 +262,15 @@ mod tests {
     #[test]
     fn one_way_owner_never_recovers_and_reversible_one_does() {
         for one_way in [true, false] {
-            let specs = [spec(one_way)];
             let mut state = State::new();
-            state.scene_ready(0, &specs);
+            state.scene_ready(0, [mask(one_way)].into_iter());
             assert_eq!(state.opacity(0), 128);
             for _ in 0..4 {
-                state.tick(&specs, &at(0), params());
+                state.tick(&at(0), params(), reaches);
             }
             assert_eq!(state.opacity(0), 0, "entry uncovers either way");
             for _ in 0..4 {
-                state.tick(&specs, &at(40 * ONE), params());
+                state.tick(&at(40 * ONE), params(), reaches);
             }
             assert_eq!(state.opacity(0), if one_way { 0 } else { 128 });
         }
@@ -259,15 +281,14 @@ mod tests {
     /// sound branch, so nothing in the definition can fade it back in.
     #[test]
     fn latched_owner_ignores_later_crossings() {
-        let specs = [spec(true)];
         let mut state = State::new();
-        state.scene_ready(0, &specs);
+        state.scene_ready(0, [mask(true)].into_iter());
         for _ in 0..4 {
-            state.tick(&specs, &at(0), params());
+            state.tick(&at(0), params(), reaches);
         }
         for pass in 0..3 {
             for _ in 0..6 {
-                state.tick(&specs, &at(if pass % 2 == 0 { 40 * ONE } else { 0 }), params());
+                state.tick(&at(if pass % 2 == 0 { 40 * ONE } else { 0 }), params(), reaches);
             }
             assert_eq!(state.opacity(0), 0);
         }
@@ -277,16 +298,15 @@ mod tests {
     /// reads half opacity, which is what the subtractive CLUT draws.
     #[test]
     fn one_way_fade_is_gradual_and_completes_once() {
-        let specs = [spec(true)];
         let mut state = State::new();
-        state.scene_ready(0, &specs);
-        state.tick(&specs, &at(0), params());
+        state.scene_ready(0, [mask(true)].into_iter());
+        state.tick(&at(0), params(), reaches);
         assert_eq!(state.opacity(0), 96);
-        state.tick(&specs, &at(0), params());
+        state.tick(&at(0), params(), reaches);
         assert_eq!(state.opacity(0), 64);
         // Leaving mid-fade must not reverse it, unlike a reversible owner.
-        state.tick(&specs, &at(40 * ONE), params());
-        state.tick(&specs, &at(40 * ONE), params());
+        state.tick(&at(40 * ONE), params(), reaches);
+        state.tick(&at(40 * ONE), params(), reaches);
         assert_eq!(state.opacity(0), 0);
     }
 
@@ -294,15 +314,14 @@ mod tests {
     /// the missing save system means: a reload re-hides what the source keeps.
     #[test]
     fn reset_scene_restores_the_authored_cover() {
-        let specs = [spec(true)];
         let mut state = State::new();
-        state.scene_ready(0, &specs);
+        state.scene_ready(0, [mask(true)].into_iter());
         for _ in 0..4 {
-            state.tick(&specs, &at(0), params());
+            state.tick(&at(0), params(), reaches);
         }
         assert_eq!(state.opacity(0), 0);
         state.reset_scene(0);
-        state.scene_ready(0, &specs);
+        state.scene_ready(0, [mask(true)].into_iter());
         assert_eq!(state.opacity(0), 128);
     }
 
@@ -311,10 +330,6 @@ mod tests {
     #[test]
     #[should_panic]
     fn one_way_owner_cannot_start_uncovered() {
-        let specs = [RevealMaskSpec {
-            initial_opacity: 0,
-            ..spec(true)
-        }];
-        State::new().scene_ready(0, &specs);
+        State::new().scene_ready(0, [RevealMask { initial_opacity: 0, ..mask(true) }].into_iter());
     }
 }

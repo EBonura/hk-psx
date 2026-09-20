@@ -250,10 +250,10 @@ def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,her
         polys='&['+','.join('&['+','.join(rust_array([q16(v)for v in p])for p in poly)+']'for poly in r['polygons'])+']'
         fields={k:r[k]for k in ('source_id','scene','state','hits','per_hit','final_payout','hit_cooldown','broken_frame')}
         lines.append('RockSpec{'+','.join(f'{k}:{v}'for k,v in fields.items())+',x:'+str(q16(r['x']))+',y:'+str(q16(r['y']))+',bounds:'+rust_array([q16(v)for v in r['bounds']])+',polygons:'+polys+',fling:'+rust_fling(r['fling'])+'},')
-    lines.append('];\npub const GEO_ENEMIES:&[EnemySpec]=&[')
-    for e in enemies:
-        fling={'speed':[30,45]if e['mega']else[15,30],'angle':[65,115]if e['mega']else[80,100],'spread':[0,0]}
-        lines.append(f'EnemySpec{{source_id:{e["source_id"]},scene:{e["scene"]},drops:'+rust_array(e['drops'])+',fling:'+rust_fling(fling)+',offset:'+rust_array([q16(e['effect_origin'][k])for k in 'xy'])+'},')
+    # Enemy payouts are not linked: every one of them rides in its own scene's
+    # metadata bank, which host/pack_scenes.py fills from this cook's report.
+    # Only `megaFlingGeo` survives the move, because the two fling profiles it
+    # chooses between are the guest's own `geo::FLING` pair.
     lines.append('];\n#[derive(Clone,Copy)] pub struct GeoArt{pub u:u8,pub v:u8,pub w:u8,pub h:u8,pub clut:u16,pub tpage:u16,pub bounds:[i32;4]}\npub const GEO_ART:&[GeoArt]=&[')
     for a,tid in zip(art,mapping):
         t=textures[tid];lines.append('GeoArt{'+','.join(f'{k}:{t[k]}'for k in ('u','v','w','h','clut','tpage'))+',bounds:'+rust_array([q16(v)for v in a['box']])+'},')

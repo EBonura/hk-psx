@@ -25,7 +25,25 @@ SCENE_ARENA_BYTES=354032
 MAX_PAGES=19
 MAX_PALETTES=1248  # Final legacy CLUT strip is reserved for independent Geo art.
 
+GEO_REPORT=ROOT/'.hkpsx/geo-provenance.json'
+
 def sha(data):return hashlib.sha256(data).hexdigest()
+
+def geo_enemies():
+    """Enemy Geo payouts per scene id, out of host/geo.py's report.
+
+    These used to link as one flat GEO_ENEMIES table covering every scene at
+    once. Each scene's bank carries its own now, and this is the only place the
+    Geo cook and the metadata cook meet, so an absent report is an error rather
+    than a scene that silently drops no Geo.
+    """
+    if not GEO_REPORT.is_file():
+        raise FileNotFoundError('run host/geo.py first; its report is the enemy payout evidence')
+    report=json.loads(GEO_REPORT.read_text())
+    if report['format']!='HKGEO01':raise ValueError('the Geo report format changed')
+    per_scene={}
+    for enemy in report['enemies']:per_scene.setdefault(enemy['scene'],[]).append(enemy)
+    return per_scene
 
 def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
     """Cook the checked HKWMTA01 banks that belong to each packed scene.
@@ -50,11 +68,15 @@ def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
         source_scenes=[{'scene_id':scene,'scene_name':f'Scene {scene}','file':f'scene-{scene}'}
                        for scene in sorted({row['scene_id'] for row in meta['regions']})]
     scene_raw_fnv=scene_raw_fnv or {}
+    enemies=geo_enemies()
     for scene in sorted(source_scenes,key=lambda value:value['scene_id']):
         rows=[row for row in meta['regions'] if row['scene_id']==scene['scene_id']]
         source_scene=dict(scene)
         if scene['scene_id'] in scene_raw_fnv: source_scene['raw_fnv']=scene_raw_fnv[scene['scene_id']]
-        source_scene['reveal_controllers']=len(meta.get('reveal_mask_scenes',{}).get(str(scene['scene_id']),{}).get('controllers',[]))
+        controllers=meta.get('reveal_mask_scenes',{}).get(str(scene['scene_id']),{}).get('controllers',[])
+        source_scene['reveal_controllers']=len(controllers)
+        source_scene['reveal_mask_controllers']=controllers
+        source_scene['geo_enemies']=enemies.get(scene['scene_id'],[])
         raw,descriptor=encode_scene(source_scene,rows)
         stored=compressed(raw)
         path=output_dir/f"scene_{scene['scene_id']}"

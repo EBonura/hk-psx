@@ -8,7 +8,7 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GRASS, KIND_MASK_FADE, KIND_NPC, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_SHROOM};
+use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GATE, KIND_GEO_ENEMY, KIND_GRASS, KIND_MASK_FADE, KIND_NPC, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_REVEAL_MASK, KIND_SHROOM};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -322,7 +322,6 @@ pub struct Region {
     pub particle_bank: Option<particles::Bank>,
     pub grass_emitters: &'static [particles::EmitterSpec],
     pub door_debris: &'static [debris::Spec],
-    pub reveal_masks: &'static [crate::reveal_masks::RevealMaskSpec],
 }
 /// Scene owner of a catalogue slot.
 pub fn scene_of(region_id: usize) -> usize {
@@ -351,9 +350,9 @@ pub fn resident(region_id: usize) -> Option<Region> {
         particle_bank: catalogue(statics.extra(1), PARTICLE_BANKS.len()).map(|i| PARTICLE_BANKS[i]),
         grass_emitters: SCENE_EMITTERS[scene],
         door_debris: DEBRIS_CATALOG[statics.extra(0) as usize],
-        reveal_masks: SCENE_REVEAL_MASKS[scene],
     })
 }
+#[derive(Clone, Copy)]
 pub struct Gate {
     pub scene: usize,
     pub target_scene: usize,
@@ -1037,9 +1036,107 @@ pub fn upcoming(
 /// and a delayed collider only once `scene_ticks` has passed its delay.
 /// `Gate::side` for a TransitionPoint that carries a `Door Control` FSM.
 pub const DOOR: u8 = 5;
+/// The scene's reveal-mask controllers, in binding order, from the first
+/// region of the admitted bank. Empty while another scene's bank is admitted.
+pub fn reveal_masks(scene: usize) -> impl Iterator<Item = crate::reveal_masks::RevealMask> {
+    reveal_objects(scene).map(|o| crate::reveal_masks::RevealMask {
+        source_id: o.source_id(),
+        bounds: o.bounds(),
+        fade_ticks: o.extra(0) as u16,
+        initial_opacity: if o.flags() & 2 != 0 { 128 } else { 0 },
+        one_way: o.flags() & 1 != 0,
+    })
+}
+/// The authored Idle opacity of one controller, for the frames that render
+/// before a scene is bound. Zero when the bank does not cover it.
+pub fn reveal_initial_opacity(scene: usize, controller: usize) -> u8 {
+    reveal_objects(scene).find(|o| o.state_id() as usize == controller)
+        .map_or(0, |o| if o.flags() & 2 != 0 { 128 } else { 0 })
+}
+/// The exact trigger test the reveal tick falls through to once its own AABB
+/// has admitted the hero box. The polygon is copied into a bounded local
+/// because the bank hands out points rather than a slice; admission already
+/// held every reveal polygon to three through sixteen of them.
+pub fn reveal_trigger_reaches(scene: usize, controller: usize, body: [i32; 4]) -> bool {
+    let Some(object) = reveal_objects(scene).find(|o| o.state_id() as usize == controller) else {
+        return false;
+    };
+    let Some(Ok(trigger)) = object.polygons().next() else { return false };
+    let mut points = [[0i32; 2]; 16];
+    let mut count = 0;
+    for point in trigger.points().flatten() {
+        if count == points.len() {
+            return false;
+        }
+        points[count] = point;
+        count += 1;
+    }
+    count >= 3 && hk_sim::polygon_hits_box(&points[..count], body)
+}
+fn reveal_objects(scene: usize) -> impl Iterator<Item = meta::Object<'static>> {
+    admitted_bank()
+        .filter(move |bank| bank.scene_id() as usize == scene)
+        .into_iter()
+        .flat_map(|bank| {
+            bank.region(0).into_iter().flat_map(|region| {
+                region.objects().flatten().filter(|o| o.kind() == KIND_REVEAL_MASK)
+            })
+        })
+}
+/// The Geo an enemy of this scene drops, by its source id. The fling profile
+/// is not carried: `mega` selects one of the guest's own `geo::FLING` pair,
+/// which is the whole reason this costs one bank object instead of six more
+/// constant Q16 words per enemy.
+#[derive(Clone, Copy)]
+pub struct GeoEnemy {
+    pub source_id: u32,
+    pub drops: [u16; 3],
+    pub offset: [i32; 2],
+    pub mega: bool,
+}
+/// The payout the admitted bank records for one enemy, or None when this scene
+/// has no Geo for that source. Reads the first region, where the cooker puts
+/// every scene-level object.
+pub fn geo_enemy(scene: usize, source: u32) -> Option<GeoEnemy> {
+    let bank = admitted_bank().filter(|bank| bank.scene_id() as usize == scene)?;
+    let object = bank.region(0)?.objects().flatten()
+        .find(|o| o.kind() == KIND_GEO_ENEMY && o.source_id() == source)?;
+    let drops = object.state_id();
+    Some(GeoEnemy {
+        source_id: source,
+        drops: [drops as u16, (drops >> 16) as u16, object.extra(2) as u16],
+        offset: [object.extra(0), object.extra(1)],
+        mega: object.flags() & 1 != 0,
+    })
+}
+/// Every admitted gate of a scene, read from the first region of that scene's
+/// metadata bank. Empty while another scene's bank is the admitted one, which
+/// is the same answer the linked table gave for a scene it did not cover.
+pub fn gates(scene: usize) -> impl Iterator<Item = Gate> {
+    admitted_bank()
+        .filter(move |bank| bank.scene_id() as usize == scene)
+        .into_iter()
+        .flat_map(move |bank| {
+            bank.region(0).into_iter().flat_map(move |region| {
+                region.objects().flatten().filter(|o| o.kind() == KIND_GATE).map(move |o| {
+                    let destination = o.state_id();
+                    Gate {
+                        scene,
+                        target_scene: (destination >> 16 & 0xFF) as usize,
+                        target_region: (destination & 0xFFFF) as usize,
+                        bounds: o.bounds(),
+                        spawn: [o.extra(0), o.extra(1)],
+                        entry_vy: o.extra(2),
+                        side: (destination >> 24 & 0xF) as u8,
+                        delay_ticks: o.flags(),
+                    }
+                })
+            })
+        })
+}
 pub fn gate(scene: usize, player: &Player, body: [i32; 4], up: bool, recoiling: bool,
-            scene_ticks: u32) -> Option<&'static Gate> {
-    GATES.iter().find(|g| {
+            scene_ticks: u32) -> Option<Gate> {
+    gates(scene).find(|g| {
         g.scene == scene
             && !recoiling
             && scene_ticks >= g.delay_ticks as u32
