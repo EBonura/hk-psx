@@ -122,8 +122,14 @@ def migrate(data, old_magic, old_len, magic, length):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--from-magic', default='HKS1', help='the tag the fixtures carry now')
-    p.add_argument('--from-len', type=int, default=56, help='that format\'s record length')
+    # These two are the format the committed fixtures are on right now, so a
+    # bare run carries them to whatever game/src/save.rs currently defines.
+    # They move with each growth: HKS1/56, then HKS2/78, then HKS3/146, and
+    # HKS4/156 since Sly's half of PlayerData joined the record. Leaving them
+    # behind is how they came to say HKS1 while every fixture carried HKS3,
+    # which makes a bare run report nothing to do and find nothing wrong.
+    p.add_argument('--from-magic', default='HKS4', help='the tag the fixtures carry now')
+    p.add_argument('--from-len', type=int, default=156, help='that format\'s record length')
     p.add_argument('--dry-run', action='store_true')
     p.add_argument('cards', nargs='*', type=Path,
                    help='card images; defaults to every fixture under tools/cards')

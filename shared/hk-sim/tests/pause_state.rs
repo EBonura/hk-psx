@@ -32,6 +32,13 @@ mod charms{
  pub fn grant_all(_:bool){}
  pub fn on_damage(_:&mut hk_sim::Vitals,_:hk_sim::VitalParams){}
 }
+// And the shop's half of PlayerData, which `cheats::params` composes under
+// the charms. The real module `include!`s the cooked stock relative to its own
+// crate, which this one is not, and a shop nobody has visited composes to the
+// base anyway; tests/shop_runtime.rs exercises the real one.
+mod shop{
+ pub fn vitals(base:hk_sim::VitalParams)->hk_sim::VitalParams{base}
+}
 #[path="../../../game/src/cheats.rs"]mod cheats;
 #[path="../../../game/src/pause.rs"]mod pause;
 fn step(p:&mut pause::State,c:&mut cheats::Settings,b:u16)->bool{p.step(b,&mut 10,&mut 10,&mut 10,c)}

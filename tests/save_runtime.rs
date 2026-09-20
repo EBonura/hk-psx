@@ -11,6 +11,8 @@
 //!
 //! Only `encode`/`decode` are exercised here, which is the whole of what the
 //! gap covered: they are pure functions of the record and never touch the card.
+//! HKS3 to HKS4 added Sly's half of PlayerData, which is the growth that made
+//! a shop purchase survive a quit.
 //! The `psx_mc` surface below exists solely so the module compiles, and the
 //! stubs panic rather than pretend, so a future test that strays into card I/O
 //! fails loudly instead of passing against a fiction.
@@ -60,7 +62,7 @@ pub mod input {
 #[path = "../game/src/save.rs"]
 pub mod save;
 
-use save::{Save, LEN, SCRIPT_FIELD_SLOTS};
+use save::{Save, LEN, SCRIPT_FIELD_SLOTS, SHOP_COUNTERS};
 
 fn record() -> Save {
     Save {
@@ -72,6 +74,8 @@ fn record() -> Save {
         npc_conversations: 0xdead_beef,
         script_fields: core::array::from_fn(|i| (i as i32 + 1) * -3),
         script_field_fnv: 814_805_480,
+        shop_slots: 0x0000_0d6b,
+        shop_counters: [3, 2, 4, 1, 1, 1],
     }
 }
 
@@ -99,6 +103,8 @@ fn every_field_survives_the_round_trip() {
     assert_eq!(back.npc_conversations, save.npc_conversations);
     assert_eq!(back.script_fields, save.script_fields);
     assert_eq!(back.script_field_fnv, save.script_field_fnv);
+    assert_eq!(back.shop_slots, save.shop_slots);
+    assert_eq!(back.shop_counters, save.shop_counters);
     let s = back.shade;
     assert_eq!((s.present, s.scene, s.position, s.hp, s.geo_pool),
                (true, 2, [-131072, 65536], 10, 77));
@@ -123,8 +129,12 @@ fn no_two_fields_share_an_offset() {
     mutate.push(("charm_notches", Box::new(|s: &mut Save| s.charm_notches ^= 0x55)));
     mutate.push(("npc_conversations", Box::new(|s: &mut Save| s.npc_conversations ^= 0x5555_5555)));
     mutate.push(("script_field_fnv", Box::new(|s: &mut Save| s.script_field_fnv ^= 0x5555_5555)));
+    mutate.push(("shop_slots", Box::new(|s: &mut Save| s.shop_slots ^= 0x0000_0555)));
     for slot in 0..SCRIPT_FIELD_SLOTS {
         mutate.push(("script_field", Box::new(move |s: &mut Save| s.script_fields[slot] ^= 0x5555_5555)));
+    }
+    for slot in 0..SHOP_COUNTERS {
+        mutate.push(("shop_counter", Box::new(move |s: &mut Save| s.shop_counters[slot] ^= 0x55)));
     }
     for (name, change) in mutate {
         let mut save = record();
@@ -147,7 +157,7 @@ fn a_shorter_or_differently_tagged_record_is_refused() {
     // what carries the fixtures forward.
     let bytes = record().encode();
     assert!(Save::decode(&bytes[..LEN - 1]).is_none(), "a truncated record must not decode");
-    for older in [*b"HKS1", *b"HKS2"] {
+    for older in [*b"HKS1", *b"HKS2", *b"HKS3"] {
         let mut stale = bytes;
         stale[0..4].copy_from_slice(&older);
         assert!(Save::decode(&stale).is_none(), "an older tag must not decode");
@@ -159,7 +169,7 @@ fn a_single_flipped_bit_anywhere_is_refused() {
     // The checksum covers the whole record, so corruption in the newest fields
     // has to be caught as surely as corruption in the oldest.
     let bytes = record().encode();
-    for byte in [0usize, 24, 52, 70, 74, LEN - 9, LEN - 5] {
+    for byte in [0usize, 24, 52, 70, 74, LEN - 19, LEN - 14, LEN - 9, LEN - 5] {
         let mut corrupt = bytes;
         corrupt[byte] ^= 1;
         assert!(Save::decode(&corrupt).is_none(), "a flipped bit at {byte} must not decode");
@@ -170,6 +180,7 @@ fn a_single_flipped_bit_anywhere_is_refused() {
 fn the_length_is_exactly_what_the_fields_need() {
     // A reserve that drifts from the record length is how a slot ends up
     // overlapping the checksum. 74 bytes of fields before the reserve, then the
-    // reserve, then the identity word and the checksum.
-    assert_eq!(LEN, 74 + SCRIPT_FIELD_SLOTS * 4 + 8);
+    // reserve, then the identity word, then the shop bools and their counters,
+    // then the checksum.
+    assert_eq!(LEN, 74 + SCRIPT_FIELD_SLOTS * 4 + 4 + 4 + SHOP_COUNTERS + 4);
 }

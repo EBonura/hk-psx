@@ -31,10 +31,15 @@
 //! What this module still does not own: `Shop Region` also walks the Knight to
 //! the counter, turns him, plays Sly's intro conversation and raises the shop
 //! window art. None of that is reproduced; the trigger opens the shelf directly.
-//! A mask shard or vessel fragment purchase is counted here and fuses here, but
-//! nothing applies the mask or the SOUL reserve to the hero yet, because the
-//! port has no PlayerData `maxHealthBase` for a purchase to move.
+//!
+//! The two fuse branches now land on the hero. `Heart Container Control` calls
+//! `AddToMaxHealth(1)` and `Vessel Fragment Control` calls
+//! `AddToMaxMPReserve(33)`, and both write PlayerData rather than the hero: the
+//! source recomputes `maxHealth` from `maxHealthBase` plus the equipped charms
+//! every time either moves. `State` is that PlayerData and `vitals` below is
+//! that recompute, composed ahead of the charms by `cheats::Settings::params`.
 use crate::charms;
+use hk_sim::VitalParams;
 
 /// One cooked stock row. `lines` is its localized description, already wrapped
 /// by the host against the same glyph advances the guest draws with.
@@ -110,9 +115,10 @@ impl Refusal {
 }
 
 /// What one purchase handed over, above the bool the transaction always sets.
-/// The shop counts shards and fragments because the source's own fuse FSMs do;
-/// the masks and SOUL reserve they turn into are the caller's to apply, since
-/// the hero's vitals are `hk_sim`'s and not this module's.
+/// The shop counts shards and fragments because the source's own fuse FSMs do,
+/// and a fuse moves the PlayerData `State` below holds. `masks` and
+/// `soul_reserve` are what that fuse awarded this purchase, for a caller that
+/// wants to react to the moment; the standing values come from `vitals`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Delivered {
     pub charm: Option<usize>,
@@ -151,13 +157,25 @@ pub struct State {
     pub vessel_fragments: u8,
     /// `maxHealthBase` in masks, so a shard purchase can stop at the cap.
     pub masks: u8,
+    /// `MPReserveMax`, in whole vessels rather than in SOUL. Counting fuses is
+    /// what `Vessel Fragment Control` actually does; multiplying by
+    /// `SOUL_PER_VESSEL` is this module's own arithmetic and cannot drift into
+    /// a reserve that is not a whole number of vessels. The source's own clamp
+    /// on `MPReserveMax` was not read, so nothing here restates one: the bound
+    /// is the stock, one fuse per `FRAGMENTS_PER_VESSEL` fragments sold.
+    pub vessels: u8,
     pub simple_keys: u8,
     pub rancid_eggs: u8,
 }
 impl State {
     pub const fn new() -> Self {
         Self { slots: 0, mask_shards: 0, vessel_fragments: 0, masks: STARTING_MASKS,
-               simple_keys: 0, rancid_eggs: 0 }
+               vessels: 0, simple_keys: 0, rancid_eggs: 0 }
+    }
+    /// `PlayerData.MPReserveMax`: the SOUL the fused vessels hold above the
+    /// Knight's own `maxMP`.
+    pub fn soul_reserve(&self) -> u16 {
+        u16::from(self.vessels).saturating_mul(SOUL_PER_VESSEL)
     }
     pub fn item(index: usize) -> &'static Item {
         &ITEMS[index]
@@ -258,6 +276,8 @@ impl State {
                 self.vessel_fragments += 1;
                 if self.vessel_fragments >= FRAGMENTS_PER_VESSEL {
                     self.vessel_fragments = 0;
+                    // `Vessel Fragment Control` awards AddToMaxMPReserve(33).
+                    self.vessels = self.vessels.saturating_add(1);
                     delivered.soul_reserve = SOUL_PER_VESSEL;
                 }
             }
@@ -272,27 +292,39 @@ impl State {
         }
         Ok(Receipt { paid, delivered })
     }
-    /// The save record. `save::Save` does not carry it yet, so a purchase does
-    /// not survive a quit; the shape is here so adopting it is a field, not a
-    /// redesign. Charms are absent on purpose: the charm half of a purchase is
-    /// already in `charms::State`'s own record.
-    pub fn record(&self) -> (u32, [u8; 5]) {
-        (self.slots, [self.mask_shards, self.vessel_fragments, self.masks,
+    /// The save record, as `save::Save` carries it. Charms are absent on
+    /// purpose: the charm half of a purchase is already in `charms::State`'s
+    /// own record.
+    ///
+    /// Masks are stored as the count above `STARTING_MASKS` rather than as
+    /// `maxHealthBase` itself, and that is a record decision rather than a
+    /// semantic one. `tools/migrate_cards.py` carries an older fixture forward
+    /// by copying what it had and leaving every new byte zero, which is only
+    /// correct when zero is what the old save genuinely held. A pre-shop save
+    /// bought nothing and stood on the starting five, so zero extra masks is
+    /// true of it and a zero `maxHealthBase` would not be. Keeping the offset
+    /// here is what lets that tool stay ignorant of the fields it moves.
+    pub fn record(&self) -> (u32, [u8; 6]) {
+        (self.slots, [self.mask_shards, self.vessel_fragments,
+                      self.masks.saturating_sub(STARTING_MASKS), self.vessels,
                       self.simple_keys, self.rancid_eggs])
     }
     /// Refuse a record that contradicts itself rather than half-decoding it.
-    pub fn restore(slots: u32, counters: [u8; 5]) -> Option<Self> {
-        let [mask_shards, vessel_fragments, masks, simple_keys, rancid_eggs] = counters;
+    pub fn restore(slots: u32, counters: [u8; 6]) -> Option<Self> {
+        let [mask_shards, vessel_fragments, extra_masks, vessels, simple_keys, rancid_eggs]
+            = counters;
         let named = if FLAG_COUNT >= 32 { u32::MAX } else { (1u32 << FLAG_COUNT) - 1 };
+        let masks = STARTING_MASKS.checked_add(extra_masks)?;
         // A shard count that reached the fuse would already have fused, so a
         // record holding one is a record that never ran the delivery branch.
         if slots & !named != 0
             || mask_shards >= SHARDS_PER_MASK
             || vessel_fragments >= FRAGMENTS_PER_VESSEL
-            || !(STARTING_MASKS..=MASK_CAP).contains(&masks) {
+            || masks > MASK_CAP {
             return None;
         }
-        Some(Self { slots, mask_shards, vessel_fragments, masks, simple_keys, rancid_eggs })
+        Some(Self { slots, mask_shards, vessel_fragments, masks, vessels,
+                    simple_keys, rancid_eggs })
     }
 }
 
@@ -303,6 +335,65 @@ impl State {
 static mut STATE: State = State::new();
 pub fn state() -> &'static mut State {
     unsafe { &mut *core::ptr::addr_of_mut!(STATE) }
+}
+/// The profile's shop half of PlayerData, or a fresh one when the record does
+/// not validate. Returns whether the record was taken, the way `charms::boot`
+/// does. Must run before the first `Vitals`, because a mask a shard fuse
+/// bought raises `max_health` the same way Fragile Heart does.
+pub fn boot(saved: Option<(u32, [u8; 6])>) -> bool {
+    let restored = saved.and_then(|(slots, counters)| State::restore(slots, counters));
+    *state() = restored.unwrap_or_else(State::new);
+    publish(state());
+    restored.is_some()
+}
+/// The PlayerData a route can read back. Without these a fused mask is
+/// invisible to a replay: `HK_SHOP_PURCHASES` says a row was bought and
+/// nothing says what the fuse branch did with it, and the two counters are
+/// what a run that stops partway through a set has to show instead.
+#[no_mangle] pub static mut HK_SHOP_MASKS: u32 = 0;
+#[no_mangle] pub static mut HK_SHOP_SHARDS: u32 = 0;
+#[no_mangle] pub static mut HK_SHOP_SOUL_RESERVE: u32 = 0;
+#[no_mangle] pub static mut HK_SHOP_FRAGMENTS: u32 = 0;
+/// Takes the state it mirrors rather than reaching for the static: `Screen`
+/// is handed the `State` to move, and a publisher that read the global instead
+/// would be reporting a different board from the one the purchase landed in.
+fn publish(s: &State) {
+    unsafe {
+        HK_SHOP_MASKS = u32::from(s.masks);
+        HK_SHOP_SHARDS = u32::from(s.mask_shards);
+        HK_SHOP_SOUL_RESERVE = u32::from(s.soul_reserve());
+        HK_SHOP_FRAGMENTS = u32::from(s.vessel_fragments);
+    }
+}
+pub fn record() -> (u32, [u8; 6]) {
+    state().record()
+}
+/// `PlayerData.maxHealthBase` and `MPReserveMax` composed onto the cooked
+/// no-charm parameters. `cheats::Settings::params` calls this ahead of
+/// `charms::vitals`, which is the source's own order: `PlayerData::MaxHealth`
+/// recomputes `maxHealth` as `maxHealthBase` plus the equipped charm bonuses,
+/// so a charm bonus is added to the mask total and never the other way round.
+///
+/// What this does not reproduce: the source keeps the reserve as a second pool
+/// behind `MPCharge`, filling it only once the vessel is full and spending it
+/// only once the vessel is empty. `hk_sim::Vitals` has one SOUL pool, and gain
+/// and spend across the pair are indistinguishable from one pool of the two
+/// capacities added, so the reserve is expressed as ceiling here. The HUD is
+/// where the two differ: `hud_state::SoulSpec` clamps the orb at the source's
+/// own 99, so the reserve reads as a full vessel and its own vessels are not
+/// drawn.
+pub fn vitals(base: VitalParams) -> VitalParams {
+    player_data(state(), base)
+}
+fn player_data(s: &State, mut base: VitalParams) -> VitalParams {
+    // `params` runs several times a tick, so this stays two field writes and
+    // takes the multiply only on a board that has actually fused a vessel; see
+    // the same note over `charms::compose`.
+    base.max_health = u16::from(s.masks);
+    if s.vessels != 0 {
+        base.max_soul = base.max_soul.saturating_add(s.soul_reserve());
+    }
+    base
 }
 
 /// The hero body inside `Shop Region`'s own trigger, which is the
@@ -407,6 +498,12 @@ impl Screen {
         unsafe {
             HK_SHOP_OPEN = u32::from(self.open);
             HK_SHOP_PROMPT = u32::from(self.prompt);
+        }
+        // A purchase is the only thing that moves the PlayerData above, so the
+        // counters are republished here rather than every frame the counter is
+        // on screen. `boot` publishes the record's own values.
+        if event.bought.is_some() {
+            publish(state);
         }
         event
     }
@@ -882,9 +979,67 @@ mod tests {
         assert_eq!(back, state);
         assert_eq!(back.rancid_eggs, 1);
         // A shard count that should already have fused, and a bool with no name.
-        assert_eq!(State::restore(slots, [SHARDS_PER_MASK, 0, STARTING_MASKS, 0, 0]), None);
+        assert_eq!(State::restore(slots, [SHARDS_PER_MASK, 0, 0, 0, 0, 0]), None);
         assert_eq!(State::restore(1 << FLAG_COUNT, counters), None);
-        assert_eq!(State::restore(slots, [0, 0, MASK_CAP + 1, 0, 0]), None);
+        assert_eq!(State::restore(slots, [0, 0, MASK_CAP - STARTING_MASKS + 1, 0, 0, 0]), None);
+        assert_eq!(State::restore(slots, [0, 0, u8::MAX, 0, 0, 0]), None,
+                   "an extra-mask count that overflows the starting total is not a mask total");
+    }
+
+    #[test]
+    fn a_migrated_record_reads_back_as_a_shop_nobody_has_visited() {
+        // `tools/migrate_cards.py` copies what an older record carried and
+        // leaves every byte the new fields need at zero, so the zero record is
+        // the one every committed card fixture will arrive as. It has to mean
+        // "bought nothing, standing on the starting five", not "no masks".
+        let fresh = State::restore(0, [0; 6]).expect("a migrated record must load");
+        assert_eq!(fresh, State::new());
+        assert_eq!(fresh.masks, STARTING_MASKS);
+        assert_eq!(fresh.record(), (0, [0; 6]), "and it has to write back unchanged");
+    }
+
+    const BASE: hk_sim::VitalParams = hk_sim::VitalParams {
+        max_health: STARTING_MASKS as u16, max_soul: 99, nail_damage: 5, soul_per_hit: 11,
+        invulnerable_ticks: 79, hazard_invulnerable_ticks: 40, recoil_ticks: 12,
+        freeze_ticks: 19, death_ticks: 171, recoil_speed: 983040,
+    };
+
+    #[test]
+    fn a_fused_mask_reaches_the_parameters_the_hero_is_built_from() {
+        let (mut geo, mut state, mut charms) = rich();
+        assert_eq!(player_data(&state, BASE).max_health, u16::from(STARTING_MASKS),
+                   "an untouched board is the cooked maxHealthBase");
+        state.set_bool(ALTERNATE_WHEN[0], &mut charms);
+        for row in rows_delivering(ALTERNATE_STOCK, Delivery::MaskShard) {
+            state.buy(row, &mut geo, &mut charms).expect("affordable");
+        }
+        assert_eq!(state.masks, STARTING_MASKS + 1);
+        assert_eq!(player_data(&state, BASE).max_health, u16::from(STARTING_MASKS) + 1,
+                   "four shards are a mask the hero actually carries");
+        // And the shards alone are not: three of four move nothing.
+        let mut partial = State::new();
+        partial.mask_shards = SHARDS_PER_MASK - 1;
+        assert_eq!(player_data(&partial, BASE).max_health, u16::from(STARTING_MASKS));
+    }
+
+    #[test]
+    fn a_fused_vessel_raises_the_soul_ceiling_and_a_loose_fragment_does_not() {
+        // Sly stocks two of the three a vessel needs, so this is the state no
+        // purchase in this shop can reach; `vessels` is still what a fuse
+        // moves, and the ceiling is still what it has to move.
+        let mut state = State::new();
+        state.vessel_fragments = FRAGMENTS_PER_VESSEL - 1;
+        assert_eq!(state.soul_reserve(), 0);
+        assert_eq!(player_data(&state, BASE).max_soul, BASE.max_soul);
+        state.vessels = 1;
+        state.vessel_fragments = 0;
+        assert_eq!(state.soul_reserve(), SOUL_PER_VESSEL);
+        assert_eq!(player_data(&state, BASE).max_soul, BASE.max_soul + SOUL_PER_VESSEL);
+        // The reserve is whole vessels, which is why it is counted rather than
+        // accumulated: a record can hold no partial one.
+        let (slots, counters) = state.record();
+        assert_eq!(State::restore(slots, counters).expect("round trip").soul_reserve(),
+                   SOUL_PER_VESSEL);
     }
 
     #[test]

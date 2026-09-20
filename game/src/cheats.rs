@@ -29,11 +29,14 @@ impl Settings {
         *value=delta>0;
     }
     pub fn bits(self)->u32 {u32::from(self.invincible)|(u32::from(self.max_nail)<<1)|(u32::from(self.infinite_soul)<<2)|(u32::from(self.max_masks)<<3)|(u32::from(self.dash)<<4)|(u32::from(self.claw)<<5)|(u32::from(self.wings)<<6)|(u32::from(self.heart)<<7)|(u32::from(self.cloak)<<8)|(u32::from(self.dream)<<9)|(u32::from(self.spell)<<10)|(u32::from(self.charms)<<11)}
-    /// The live parameter stack: the cooked no-charm base, then the equipped
+    /// The live parameter stack: the cooked base, then the PlayerData Sly's
+    /// counter moves (`maxHealthBase` and the SOUL reserve), then the equipped
     /// charms, then the cheats. Composing here rather than at each consumer is
-    /// what keeps a charm bonus from being applied twice.
+    /// what keeps a bonus from being applied twice, and the shop comes before
+    /// the charms because the source recomputes `maxHealth` as `maxHealthBase`
+    /// plus the charm bonuses rather than the other way round.
     pub fn params(self,base:VitalParams)->VitalParams {
-        let mut base=crate::charms::vitals(base);
+        let mut base=crate::charms::vitals(crate::shop::vitals(base));
         if self.max_nail {base.nail_damage=PURE_NAIL_DAMAGE;}
         if self.max_masks {base.max_health=MAX_MASKS;}
         base

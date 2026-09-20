@@ -146,7 +146,10 @@ pub fn render(game: &mut Game, r: &world::Region, room: &Room, fb: &mut FrameBuf
     if let Some(i)=ball_frame {
         prims+=ability_art::draw(i,game.cast.ball.x,game.cast.ball.y,game.cast.ball.facing,camera);
     }
-    prims+=render::scenery(camera,true);dialogue::prepare(camera,game.geo.wallet(),game.paused.then_some((&game.pause_menu,&game.settings)),game.settings.cheats.params(VITAL_PARAMS).max_health.saturating_add(game.vitals.blue_health),game.save_prompt);shop::prepare(&game.shop_screen,camera,game.paused);render::submit(game.vitals.health,game.settings.cheats.params(VITAL_PARAMS).max_health,game.vitals.soul,soul_cap(&game.shade),game.paused,game.vitals.blue_health,game.door.shade());
+    // Hoisted because the HUD needs three fields of it and `params` composes
+    // the shop's PlayerData, the equipped charms and the cheats on each call.
+    let vitals=game.settings.cheats.params(VITAL_PARAMS);
+    prims+=render::scenery(camera,true);dialogue::prepare(camera,game.geo.wallet(),game.paused.then_some((&game.pause_menu,&game.settings)),vitals.max_health.saturating_add(game.vitals.blue_health),game.save_prompt);shop::prepare(&game.shop_screen,camera,game.paused);render::submit(game.vitals.health,vitals.max_health,game.vitals.soul,soul_cap(&game.shade,vitals.max_soul),game.paused,game.vitals.blue_health,game.door.shade());
     prims
 }
 
@@ -193,7 +196,7 @@ pub fn interact(game: &mut Game, r: &world::Region, npc: Option<world::Npc>,
     if game.paused || dialogue::open() || game.shop_screen.open || (game.door.pending() && !game.door.entering()) || game.vitals.dead || !game.vitals.can_control() || game.focus.locks_control() {audio::stop_footsteps();}
     game.settings.cheats.maintain(&mut game.vitals,VITAL_PARAMS);cheats::publish(game.settings.cheats,VITAL_PARAMS);
     // StartSoulLimiter lowers maxMP itself while a Shade is owed.
-    game.vitals.soul=game.vitals.soul.min(soul_cap(&game.shade));
+    game.vitals.soul=game.vitals.soul.min(soul_cap(&game.shade,game.settings.cheats.params(VITAL_PARAMS).max_soul));
     unsafe {HK_PAUSED=u32::from(game.paused);HK_PAUSE_CONTROLS=u32::from(game.paused&&game.pause_menu.controls);
         HK_SFX_LEVEL=game.settings.sfx as u32;HK_AMBIENCE_LEVEL=game.settings.ambience as u32;}
     ui_consumed
@@ -306,11 +309,13 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
                     let stand=[game.bench.seat()[0],game.player.y];
                     let (owned,equipped,notches,can_overcharm)=charms::record();
                     let (script_fields,script_field_fnv)=script::record();
+                    let (shop_slots,shop_counters)=shop::record();
                     game.save_requested=Some(save::Save{scene:r.scene as u32,seat:stand,facing:game.player.facing,
                         region:game.region_id as u32,geo:game.geo.wallet(),door_hits:game.door.hits(),
                         shade:game.shade.record(),sequence:0,charms_owned:owned,
                         charms_equipped:equipped,charm_notches:notches,can_overcharm,
-                        npc_conversations:dialogue::met_bits(),script_fields,script_field_fnv});
+                        npc_conversations:dialogue::met_bits(),script_fields,script_field_fnv,
+                        shop_slots,shop_counters});
                 }
                 game.save_prompt=None;
             } else if pressed(button::CIRCLE) {game.save_prompt=None;}
