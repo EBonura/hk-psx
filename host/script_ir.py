@@ -29,6 +29,12 @@ CMP_LT, CMP_LE, CMP_EQ, CMP_NE, CMP_GE, CMP_GT = range(6)
 TRIGGER_ENTER, TRIGGER_STAY, TRIGGER_EXIT = range(3)
 # The flag bit marking an op that re-runs every tick while its state is current.
 REPEAT = 0x80
+# PlayMaker's FsmEventTarget.EventTarget, in declaration order. Only the three
+# the scenes actually use are named. The order is confirmed by the data rather
+# than assumed: all 214 instances carrying an `fsmName` are mode 2 and no
+# instance of any other mode carries one, which is true of `GameObjectFSM` and
+# of no other member.
+TARGET_SELF, TARGET_GAME_OBJECT, TARGET_GAME_OBJECT_FSM = 0, 1, 2
 
 def _check_opcodes():
     """Fail the import when these numbers drift from hk_sim::script.
@@ -172,6 +178,22 @@ class SceneObjects:
         self.named_objects = collections.defaultdict(list)
         for gid, go in scene.gos.items():
             self.named_objects[go['m_Name']].append(gid)
+        self.object_fsms = collections.defaultdict(list)
+        for typename, tree in scene.objects.values():
+            if typename == 'PlayMakerFSM' and 'fsm' in tree:
+                self.object_fsms[tree['m_GameObject']['m_PathID']].append(tree['fsm']['name'])
+
+    def fsm_names(self, gid):
+        """Every PlayMakerFSM component on one object, by authored name.
+
+        Counted whatever the component's enabled flag says and whatever the port
+        does with the FSM, because this answers "who would receive an event sent
+        at this object", and an extra name here only ever makes the compiler
+        refuse. A native actor's own FSM counts: the port running that behaviour
+        in Rust does not stop the component being a second receiver in the
+        source, and this question is about the source.
+        """
+        return self.object_fsms.get(gid, [])
 
     def child(self, gid, path):
         """`Transform.Find`: a direct child by name, or a slash-separated path.
@@ -271,9 +293,14 @@ class SceneObjects:
         return {names[i] for i in range(len(names)) if mask >> i & 1 and names[i]}
 
 # The reference actions that store an object, and the field each stores into.
+# `SetGameObject` is a reference action like the rest: it copies one object
+# field into an object variable, so wherever the source resolves at cook time
+# the destination is fixed too. It was the single largest disturber of the
+# variables this cook can fix, which is why every one of its 195 enabled
+# instances used to poison the variable it writes for the whole FSM.
 OBJECT_STORE = {'GetOwner': 'storeGameObject', 'GetHero': 'storeResult',
                 'FindChild': 'storeResult', 'GetParent': 'storeResult',
-                'FindGameObject': 'store'}
+                'FindGameObject': 'store', 'SetGameObject': 'variable'}
 # Fields that only read the object they name. PlayMaker's convention is that an
 # output field is a `store...`, and the measured actions keep to it, but the
 # cost of missing a write is a reference resolved from a value something else
@@ -284,6 +311,24 @@ OBJECT_STORE = {'GetOwner': 'storeGameObject', 'GetHero': 'storeResult',
 OBJECT_READS = frozenset({'gameObject', 'spawnPoint', 'parent', 'target', 'Target',
                           'targetObject', 'containerObject', 'objectA', 'objectB',
                           'setValue', 'eventTarget'})
+
+def _owner_default(value):
+    """Whether a decoded field is an FsmOwnerDefault, which is always a read.
+
+    This is a rule read off the field's own type rather than another name on the
+    list above, and it is the stronger statement. An FsmOwnerDefault exists to
+    say *which* object an action operates on: it is `ownerOption` plus a
+    GameObject, and an action with something to store uses a plain FsmGameObject
+    instead, because there is nothing to store an owner option into.
+
+    Measured over the admitted scenes before trusting it: 23,047 occurrences
+    across 133 (action, field) pairs, carried by six field names, and not one of
+    them is the store field of a reference action or is even named like an
+    output. Three were being counted as writes for want of a name on the list,
+    `gameObject1` on `BoxColliderOffset` and `BoundsBoxCollider` among them,
+    which is the pair docs/SCRIPT_IR.md flagged as inputs counted as writes.
+    """
+    return isinstance(value, dict) and 'ownerOption' in value
 # Actions that can neither transition nor block, so a run of them at the top of
 # a state is guaranteed to have finished whenever that state has run at all.
 # That guarantee is what makes a reference set there safe to read elsewhere.
@@ -333,10 +378,11 @@ def _fixed_object_variables(fsm):
                 # out, so nothing in this FSM is fixed.
                 return {}
             for key, value in args.items():
+                reads = key in OBJECT_READS or _owner_default(value)
                 for name in _named_variables(value):
                     if key == OBJECT_STORE.get(action):
                         stores[name].append(action)
-                    elif key not in OBJECT_READS:
+                    elif not reads:
                         disturbed.add(name)
     # Two stores disagree unless both are the constants: the owner and the hero
     # answer the same everywhere in one FSM, so repeating them is harmless.
@@ -577,7 +623,7 @@ def compile_fsm(fsm, owner_id=None, objects=None):
             action = raw.rsplit('.', 1)[-1]
             args = decoded_action(data, i)
             ops.extend(compile_action(action, args, events, constants, variables, owner_id,
-                                      fields, folded, objects, visible))
+                                      fields, folded, objects, visible, fsm['name']))
             _reference(action, args, owner_id, objects, visible, folded, fixed)
         states.append((first_op, len(ops) - first_op, first_transition,
                        len(transitions) - first_transition))
@@ -676,6 +722,10 @@ def _resolve_object(action, args, owner_id, objects, env, folded):
             raise Unsupported(action, 'name is not one active object of this scene')
         return found
     target = _object(args.get('gameObject'), action, owner_id, env)
+    if action == 'SetGameObject':
+        # A copy, so the source is the answer. No tree walk and no resolver
+        # needed: whatever `_object` could name, this stores.
+        return target
     if objects is None:
         raise Unsupported(action, 'no scene resolver supplied')
     if action == 'FindChild':
@@ -755,7 +805,15 @@ def _trigger(action, args, events, constants, owner_id, folded, objects):
         # PlayMaker stores the colliding object before it sends, so the write
         # belongs inside the op rather than beside it: emitted as its own op it
         # would leave the Knight in that variable on every tick the volume is
-        # empty. The op has no fourth operand to carry the slot.
+        # empty.
+        #
+        # This used to say the op had no operand to carry the slot, which is not
+        # true: `HeroTrigger` reads `a` and `c` and leaves `b` at zero, and the
+        # guest could take `b` as slot-plus-one the way an event id takes zero
+        # for none. What stops it is worth less than the operand: 49 blocked
+        # instances name a storeCollider and not one of them is blocked by
+        # anything else this cook could answer, so the work moves the action
+        # count and no FSM at all. Left refused rather than left misdescribed.
         raise Unsupported(action, 'stores the colliding object')
     event = events.id(args.get('sendEvent'))
     if not event:
@@ -767,8 +825,53 @@ def _trigger(action, args, events, constants, owner_id, folded, objects):
     # Always REPEAT: the action listens for as long as its state is current.
     return [(HERO_TRIGGER, phase | REPEAT, constants.index(source_id(owner_id)), 0, event)]
 
+def _sends_to_self(action, args, owner_id, objects, env, folded, fsm_name):
+    """Whether this send lands exactly where a send to `Self` lands.
+
+    PlayMaker names the sending FSM in more than one way, and the executor
+    already implements the meaning; what was missing is the cook-time step that
+    recognises the other spellings. `Self` is one. A send to `GameObject`
+    delivers to every PlayMakerFSM on that object, so where the object is the
+    sender's own and carries no other FSM, the two name the same single
+    receiver. A send to `GameObjectFSM` names one FSM on one object, so it is
+    the sender when both halves match.
+
+    Anything else is refused by what is actually in the way, which is worth more
+    to the inventory than one blanket reason: a target this cook cannot name is
+    a different problem from a target it named and found to be somebody else.
+    """
+    target = args.get('eventTarget')
+    mode = target.get('target') if isinstance(target, dict) else None
+    if mode in (None, TARGET_SELF):
+        return
+    if mode not in (TARGET_GAME_OBJECT, TARGET_GAME_OBJECT_FSM):
+        # Broadcast, the host FSM and the sub-FSMs. Each names a receiver set
+        # the cook cannot close, so none of them reduces to a send to self.
+        raise Unsupported(action, 'send to a target this slice does not model')
+    try:
+        found = _object(target.get('gameObject'), action, owner_id, env)
+    except Unsupported:
+        raise Unsupported(action, 'send to an object this cook cannot fix')
+    if found != owner_id:
+        raise Unsupported(action, 'send to another object')
+    named = _folded_scalar(target.get('fsmName'), folded)
+    if mode == TARGET_GAME_OBJECT_FSM:
+        if not isinstance(named, str) or not named:
+            raise Unsupported(action, 'send to an FSM name this cook cannot fix')
+        if named != fsm_name:
+            raise Unsupported(action, 'send to another FSM on this object')
+        return
+    if objects is None:
+        raise Unsupported(action, 'no scene resolver supplied')
+    others = objects.fsm_names(owner_id)
+    if len(others) != 1:
+        # The event would reach every FSM on the object, and the port has no
+        # instance table to reach the rest with. Refusing names the receiver
+        # count, because that is the thing that would have to change.
+        raise Unsupported(action, f'send to all {len(others)} FSMs on this object')
+
 def compile_action(action, args, events, constants, variables, owner_id=None, fields=None,
-                   folded=None, objects=None, env=None):
+                   folded=None, objects=None, env=None, fsm_name=None):
     """Ops for one enabled action, or Unsupported."""
     if action in OBJECT_STORE:
         # A resolved reference is a constant, so an `everyFrame` one would store
@@ -801,7 +904,12 @@ def compile_action(action, args, events, constants, variables, owner_id=None, fi
     if action == 'Trigger2dEvent':
         return _trigger(action, args, events, constants, owner_id, folded, objects)
     if action == 'Wait':
-        time = _scalar(args.get('time'))
+        # Read through a read-only variable, the way the object, tag and event
+        # name fields already are. A variable no other action in the FSM
+        # mentions cannot have been written, so its serialized value is the
+        # whole of its run: 235 blocked instances were refusing a wait whose
+        # length the cook could read off the definition.
+        time = _folded_scalar(args.get('time'), folded)
         if time is None:
             raise Unsupported(action, 'variable wait time')
         if args.get('realTime'):
@@ -810,11 +918,21 @@ def compile_action(action, args, events, constants, variables, owner_id=None, fi
     if action == 'NextFrameEvent':
         return [(NEXT_FRAME, 0, events.id(args.get('sendEvent')), 0, 0)]
     if action == 'SendEventByName':
-        target = args.get('eventTarget')
-        # Only a send to self is in this slice; a send to another FSM needs the
-        # instance table that step 5's scope work builds.
-        if isinstance(target, dict) and target.get('target') not in (None, 0):
-            raise Unsupported(action, 'send to another FSM')
+        # Only a send that reaches the sending FSM and nothing else is in this
+        # slice; reaching another FSM needs the instance table that step 5's
+        # scope work builds.
+        _sends_to_self(action, args, owner_id, objects, env, folded, fsm_name)
+        delay = args.get('delay')
+        if delay is not None:
+            # A delayed send goes on PlayMaker's own queue and arrives later.
+            # The executor has a pending queue but no op that schedules into it,
+            # so a delay was being dropped and the send fired on the wrong
+            # frame: six instances authored 0.5, 1.0 and 4.0 seconds.
+            seconds = _folded_scalar(delay, folded)
+            if seconds is None:
+                raise Unsupported(action, 'delay from a variable this cook cannot fix')
+            if seconds:
+                raise Unsupported(action, 'delayed send')
         # This action names its event with an FsmString, not the interned
         # FsmEvent the rest carry, so it can be a variable and has to be read as
         # one. Handing the raw field to the event table instead raised TypeError,
@@ -823,14 +941,19 @@ def compile_action(action, args, events, constants, variables, owner_id=None, fi
         name = _folded_scalar(args.get('sendEvent'), folded)
         if not isinstance(name, str) or not name:
             raise Unsupported(action, 'event name from a variable this cook cannot fix')
-        return [(SEND_EVENT, 0, events.id(name), 0, 0)]
+        # An `everyFrame` send re-sends for as long as the state is current,
+        # which is what REPEAT means, and the executor already runs flagged ops
+        # that way. One instance is authored so, and it was compiling to a
+        # single send.
+        return [(SEND_EVENT, REPEAT if args.get('everyFrame') else 0,
+                 events.id(name), 0, 0)]
     if action == 'SetBoolValue':
-        value = _scalar(args.get('boolValue'))
+        value = _folded_scalar(args.get('boolValue'), folded)
         if value is None:
             raise Unsupported(action, 'variable source')
         return [(SET_BOOL, int(bool(value)), _var(args.get('boolVariable'), variables, action), 0, 0)]
     if action == 'SetIntValue':
-        value = _scalar(args.get('intValue'))
+        value = _folded_scalar(args.get('intValue'), folded)
         if value is None:
             raise Unsupported(action, 'variable source')
         return [(SET_INT, 0, _var(args.get('intVariable'), variables, action),
@@ -840,7 +963,7 @@ def compile_action(action, args, events, constants, variables, owner_id=None, fi
                  events.id(args.get('isTrue')), events.id(args.get('isFalse')))]
     if action == 'IntCompare':
         slot = _var(args.get('integer1'), variables, action)
-        right = _scalar(args.get('integer2'))
+        right = _folded_scalar(args.get('integer2'), folded)
         if right is None:
             raise Unsupported(action, 'variable right-hand side')
         index = constants.index(right)
@@ -890,7 +1013,7 @@ def unsupported_actions(fsm, owner_id=None, objects=None, reasons=None):
             try:
                 args = decoded_action(data, i)
                 compile_action(action, args, events, constants, variables, owner_id, fields,
-                               folded, objects, visible)
+                               folded, objects, visible, fsm['name'])
             except Unsupported as refusal:
                 missing[refusal.action] += 1
                 if reasons is not None:
@@ -1028,7 +1151,17 @@ if __name__ == '__main__':
         'Only the first slice compiles: waits, bool and int sets, BoolTest, IntCompare, '
         'SendEventByName to self, NextFrameEvent, the PlayerData accessors, the '
         'cook-time object references (GetOwner, GetHero, FindChild, GetParent, '
-        'FindGameObject) and the hero half of Trigger2dEvent.',
+        'FindGameObject, SetGameObject) and the hero half of Trigger2dEvent.',
+        'A scalar field reads through a variable no other action in the FSM mentions, '
+        'because nothing can then have written it and its serialized value is the whole '
+        'of its run. That is how an object name, a tag and an event name were already '
+        'read, and Wait, SetBoolValue, SetIntValue and IntCompare now read the same way.',
+        'SendEventByName compiles every spelling that reaches the sending FSM and nothing '
+        'else: PlayMaker\'s Self, a send to a GameObject that resolves to the sender\'s '
+        'own and carries no other FSM, and a send to GameObjectFSM naming this FSM on it. '
+        'A send that would reach a second FSM is refused with the receiver count, because '
+        'the receiver is what would have to change. A non-zero delay is refused rather '
+        'than dropped: the executor has a pending queue but no op that schedules into it.',
         'Trigger2dEvent compiles only where the hero body is the one collider that can '
         'be in the volume: either the action filters on the Player tag, or it filters on '
         'nothing and the project Physics2D matrix lets no named layer but Player reach '
