@@ -300,7 +300,27 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("boss-death", "HK_FK_STAGGERS", 0), ("boss-death", "HK_ARENA_GATE_CLOSES", 2),
     ("boss-death", "HK_SCENE_LOADS", 1), ("boss-death", "HK_ENEMY_KILLS", 0),
     ("boss-death", "HK_SAVE_LOADED", 1), ("boss-death", "HK_SAVE_ERRORS", 0),
-    ("boss-death", "HK_REGION_ID", 239)];
+    ("boss-death", "HK_REGION_ID", 239),
+    // Greenpath, walked rather than cooked. The Knight boots from a seeded card
+    // ten units inside Fungus1_01 and holds left, crossing into Fungus1_01b and
+    // then into Fungus1_02, which is the room every other Greenpath scene is
+    // reached through. Two scene gates, three scene loads, five masks, no
+    // faults.
+    //
+    // The region trail is the assertion worth having beyond the gate count.
+    // Inside Fungus1_02 he crosses five distinct regions, and that scene is one
+    // of the two in the catalogue carrying a recorded view layout rather than
+    // the derived grid, because six of its fifteen grid views want a sixth
+    // static page. So this route is what says those hand-recorded boxes hold up
+    // on hardware, not just in the cook.
+    //
+    // The route string, since a .pxtape is opaque, through poll_tape at 3000:
+    //   9:start:1,12:cross:1,150:left:260,600:left:400,1100:left:400,
+    //   1600:left:400,2100:left:400,2600:left:350
+    ("greenpath-walk", "HK_SCENE_GATE_LOADS", 2), ("greenpath-walk", "HK_SCENE_LOADS", 3),
+    ("greenpath-walk", "HK_REGION_ID", 742), ("greenpath-walk", "HK_HEALTH", 5),
+    ("greenpath-walk", "HK_DEATHS", 0), ("greenpath-walk", "HK_SAVE_LOADED", 1),
+    ("greenpath-walk", "HK_ROOM_LOAD_ERROR", 0), ("greenpath-walk", "HK_CD_STREAM_ERROR", 0)];
 /// Telemetry a route must reach at least, rather than exactly.
 ///
 /// Reserved for counters that sit on a knife edge. The frame is stall-bound, so
@@ -339,13 +359,13 @@ const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
     ("bench-save", "town-continue.mcd"), ("well-drop", "town-continue.mcd"), ("town-reset2", "town-continue.mcd"),
     ("crossroads-gate", "town-continue.mcd"), ("town-elderbug", "town-continue.mcd"),
     ("town-shop", "town-shop.mcd"), ("boss-fight", "boss-fight.mcd"),
-    ("boss-death", "boss-fight.mcd")];
+    ("boss-death", "boss-fight.mcd"), ("greenpath-walk", "greenpath.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-reset2", true),
     ("crossroads-gate", true), ("town-continue", false), ("town-shade", false), ("kings-death", false),
     ("kings-return", false), ("bench-save", false), ("town-elderbug", false),
     ("cheat-spell", false), ("cheat-dash", false), ("cheat-wings", false), ("ctrl-wings", false),
     ("cheat-heart", false), ("cheat-dream", false), ("kings-climb", false), ("ctrl-climb", false),
-    ("town-shop", true), ("boss-fight", false), ("boss-death", false)];
+    ("town-shop", true), ("boss-fight", false), ("boss-death", false), ("greenpath-walk", true)];
 
 struct Options {
     hollow_knight: Option<PathBuf>,
