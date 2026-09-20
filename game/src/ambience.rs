@@ -1,6 +1,9 @@
-//! Complete source ambience loops, loaded from CD once for SPU voices 6..11.
-//! The longest loop lives in main RAM, feeding a bounded SPU ring.
-//! Call after audio::init. This module never resets the shared SPU or owns CD IO.
+//! Complete source ambience loops, loaded from CD once into the voices
+//! ambience owns. The longest loop lives in main RAM, feeding a bounded SPU
+//! ring on a voice of its own; every other stem borrows one of the pooled
+//! voices for as long as it is audible, so the resident set may be longer than
+//! the pool. Call after audio::init. This module never resets the shared SPU
+//! or owns CD IO.
 use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
 #[path="volume.rs"]mod volume;
 static mut LEVEL:u8=10;
@@ -8,35 +11,15 @@ static mut LEVEL:u8=10;
 mod state;
 #[path = "audio_stream.rs"]
 mod stream;
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/ambience.rs"));
+// The cooked table, which is where the stem count, the streamed clip's index
+// and the whole voice budget come from.
+pub use state::{data::*, STREAM_INDEX};
 pub const CLIPS: &[AmbienceClip] = &AMBIENCE_CLIPS;
-// How many loops there are is the cook's decision, taken from the resident
-// atmos channel set; this is the guest half of it agreeing.
-const _: () = assert!(state::STEMS == AMBIENCE_CLIPS.len());
-/// The one clip held in SPU as a ring refilled from RAM rather than whole.
-/// Derived from the cooked table rather than written down, so changing which
-/// source channels are resident cannot silently point the stream at another
-/// loop's voice, pitch and RAM buffer.
-const fn stream_index() -> usize {
-    let mut found = usize::MAX;
-    let mut i = 0;
-    while i < AMBIENCE_CLIPS.len() {
-        if AMBIENCE_CLIPS[i].spu_bytes != AMBIENCE_CLIPS[i].byte_len {
-            assert!(found == usize::MAX, "more than one streamed ambience clip");
-            found = i;
-        }
-        i += 1;
-    }
-    assert!(found != usize::MAX, "no streamed ambience clip");
-    found
-}
-const STREAM_INDEX: usize = stream_index();
 #[repr(align(4))]
 struct Source([u8; AMBIENCE_STREAM_SOURCE_BYTES]);
 #[no_mangle]
 pub static mut HK_AMBIENCE_STREAM_SOURCE: Source = Source([0; AMBIENCE_STREAM_SOURCE_BYTES]);
 static mut MIXER: state::Mixer = state::Mixer::new();
-const VOICE_MASK: u32 = (state::ALL as u32) << 6;
 
 #[no_mangle]
 pub static mut HK_AMBIENCE_READY: u32 = 0;
@@ -54,6 +37,14 @@ pub static mut HK_AMBIENCE_SCENE: u32 = u32::MAX;
 pub static mut HK_AMBIENCE_FADE_TICKS: u32 = 0;
 #[no_mangle]
 pub static mut HK_AMBIENCE_GAINS: [u32; state::STEMS] = [0; state::STEMS];
+/// Which SPU voices the bank is driving, and how many stems a cue could not
+/// key on because the pool was dry. A replay reads both: the first is the
+/// evidence that a stem is on the voice the mixer says it is, the second is
+/// zero for every cue pair the catalogue contains.
+#[no_mangle]
+pub static mut HK_AMBIENCE_VOICE_MASK: u32 = 0;
+#[no_mangle]
+pub static mut HK_AMBIENCE_VOICE_DENIALS: u32 = 0;
 
 fn publish() {
     unsafe {
@@ -66,6 +57,8 @@ fn publish() {
             MIXER.scene as u32
         };
         HK_AMBIENCE_FADE_TICKS = MIXER.elapsed as u32;
+        HK_AMBIENCE_VOICE_MASK = MIXER.voice_mask();
+        HK_AMBIENCE_VOICE_DENIALS = MIXER.denied as u32;
         for i in 0..state::STEMS {
             HK_AMBIENCE_GAINS[i] = if MIXER.playing & (1 << i) != 0 {
                 MIXER.gains[i] as u32
@@ -76,13 +69,20 @@ fn publish() {
     }
 }
 
+/// Every voice ambience owns, silenced. Which stem is on which of them is not
+/// fixed, so the bank is quietened by voice rather than by clip.
+fn silence() {
+    Voice::new(AMBIENCE_STREAM_VOICE).set_volume(Volume::SILENCE, Volume::SILENCE);
+    for &voice in AMBIENCE_POOL_VOICES.iter() {
+        Voice::new(voice).set_volume(Volume::SILENCE, Volume::SILENCE);
+    }
+}
+
 /// Startup/retry only: silence before replacing any resident bytes.
 pub fn begin_load() {
     stream::stop();
-    for clip in CLIPS {
-        Voice::new(clip.voice).set_volume(Volume::SILENCE, Volume::SILENCE);
-    }
-    Voice::key_off(VOICE_MASK);
+    silence();
+    Voice::key_off(state::VOICE_MASK);
     unsafe {
         MIXER = state::Mixer::new();
         HK_AMBIENCE_START_COUNT = 0;
@@ -112,8 +112,7 @@ pub fn upload(index: usize, bytes: &[u8]) -> bool {
     let Some(end) = start.checked_add(clip.spu_bytes as u32) else {
         return false;
     };
-    if clip.voice != 6 + index as u8
-        || clip.spu_address != start
+    if clip.spu_address != start
         || start % 16 != 0
         || start < AMBIENCE_SPU_START
         || end > AMBIENCE_SPU_END
@@ -149,17 +148,12 @@ pub fn finish_load() -> bool {
     if unsafe { MIXER.loaded } != state::ALL {
         return false;
     }
-    for clip in CLIPS {
-        let voice = Voice::new(clip.voice);
-        voice.set_volume(Volume::SILENCE, Volume::SILENCE);
-        voice.set_pitch(Pitch::raw(clip.pitch));
-        voice.set_start_addr(SpuAddr::new(clip.spu_address));
-        voice.set_loop_addr(SpuAddr::new(clip.spu_address));
-        // This preset holds full sustain like sample(), but releases promptly
-        // on key-off. END+REPEAT loops do not enter release. The authored mixer
-        // controls fades; explicit volume zero guarantees disabled stems mute.
-        voice.set_adsr(Adsr::sample_one_shot());
-    }
+    silence();
+    // The streamed stem's voice is its own for the life of the bank, so its
+    // envelope is set once here; audio_stream::start writes the rest of its
+    // registers. A pooled voice is configured at key-on instead, because the
+    // stem that had it last configured it for a different loop.
+    Voice::new(AMBIENCE_STREAM_VOICE).set_adsr(Adsr::sample_one_shot());
     unsafe {
         MIXER.finish();
     }
@@ -177,10 +171,27 @@ pub fn set_scene(scene: u8) -> bool {
     }
     let cue = AMBIENCE_SCENES[scene as usize];
     let start = unsafe { MIXER.cue(scene, cue.mask, cue.gains, cue.fade_ticks) };
+    let mut keyed = 0u32;
     for i in 0..state::STEMS {
-        if start & (1 << i) != 0 {
-            let gain = Volume(volume::scale(unsafe { MIXER.gains[i] },unsafe {LEVEL}));
-            Voice::new(CLIPS[i].voice).set_volume(gain, gain);
+        if start & (1 << i) == 0 {
+            continue;
+        }
+        // Silence first: a pooled voice was driving another loop the last time
+        // it was used, and nothing it is still releasing should be heard at
+        // this stem's volume.
+        let voice = Voice::new(unsafe { MIXER.voice(i) });
+        voice.set_volume(Volume::SILENCE, Volume::SILENCE);
+        if i != STREAM_INDEX {
+            // Everything that selects this loop rather than the last one, set
+            // here because the voice is not this stem's between cues. This
+            // preset holds full sustain like sample(), but releases promptly
+            // on key-off. END+REPEAT loops do not enter release. The authored
+            // mixer controls fades; explicit volume zero guarantees disabled
+            // stems mute.
+            voice.set_pitch(Pitch::raw(CLIPS[i].pitch));
+            voice.set_start_addr(SpuAddr::new(CLIPS[i].spu_address));
+            voice.set_adsr(Adsr::sample_one_shot());
+            keyed |= voice.mask();
         }
     }
     if start != 0 {
@@ -190,11 +201,20 @@ pub fn set_scene(scene: u8) -> bool {
                 return false;
             }
         }
-        Voice::key_on(((start & !(1 << STREAM_INDEX)) as u32) << 6);
+        Voice::key_on(keyed);
+        // The loop point and the gain only after key-on: key-on latches the
+        // repeat address from the ADPCM loop flag, and a stem that is audible
+        // for the register write between the two is audible at silence.
         for i in 0..state::STEMS {
-            if i != STREAM_INDEX && start & (1 << i) != 0 {
-                Voice::new(CLIPS[i].voice).set_loop_addr(SpuAddr::new(CLIPS[i].spu_address));
+            if start & (1 << i) == 0 {
+                continue;
             }
+            let voice = Voice::new(unsafe { MIXER.voice(i) });
+            if i != STREAM_INDEX {
+                voice.set_loop_addr(SpuAddr::new(CLIPS[i].spu_address));
+            }
+            let gain = Volume(volume::scale(unsafe { MIXER.gains[i] },unsafe {LEVEL}));
+            voice.set_volume(gain, gain);
         }
     }
     unsafe {
@@ -214,7 +234,7 @@ pub fn service() {
     if unsafe { !MIXER.ready || MIXER.playing & (1 << STREAM_INDEX) == 0 } { return; }
     let source = unsafe { &*(&raw const HK_AMBIENCE_STREAM_SOURCE.0) };
     if matches!(stream::service(source, psx_rt::interrupts::vblank_count()), stream::Service::Fault) {
-        let voice = Voice::new(CLIPS[STREAM_INDEX].voice);
+        let voice = Voice::new(AMBIENCE_STREAM_VOICE);
         voice.set_volume(Volume::SILENCE, Volume::SILENCE);
         Voice::key_off(voice.mask());
     }
@@ -228,6 +248,12 @@ pub fn tick() {
     }
     let stop = unsafe { MIXER.tick() };
     for i in 0..state::STEMS {
+        // A stem holding no voice has nothing to write to, and the voice it
+        // would have written to before now belongs to another stem.
+        let voice = unsafe { MIXER.voice(i) };
+        if voice == state::NO_VOICE {
+            continue;
+        }
         let gain = unsafe {
             if MIXER.playing & (1 << i) != 0 {
                 MIXER.gains[i]
@@ -236,11 +262,20 @@ pub fn tick() {
             }
         };
         let gain=Volume(volume::scale(gain,unsafe {LEVEL}));
-        Voice::new(CLIPS[i].voice).set_volume(gain,gain);
+        Voice::new(voice).set_volume(gain,gain);
     }
     if stop != 0 {
         if stop & (1 << STREAM_INDEX) != 0 { stream::stop(); }
-        Voice::key_off((stop as u32) << 6);
+        let mut keyed = 0u32;
+        for i in 0..state::STEMS {
+            if stop & (1 << i) != 0 && i != STREAM_INDEX {
+                keyed |= Voice::new(unsafe { MIXER.voice(i) }).mask();
+            }
+        }
+        Voice::key_off(keyed);
+        // Only now that the SPU has been told, so no cue this frame can hand a
+        // pooled voice to another stem while the old one is still keying off.
+        unsafe { MIXER.release(stop); }
     }
     publish();
 }
@@ -249,8 +284,10 @@ pub fn tick() {
 pub fn set_volume(level:u8) {
     unsafe {LEVEL=level.min(10);}
     for i in 0..state::STEMS {
+        let voice=unsafe {MIXER.voice(i)};
+        if voice==state::NO_VOICE {continue;}
         let source=unsafe {if MIXER.playing&(1<<i)!=0 {MIXER.gains[i]}else{0}};
         let gain=Volume(volume::scale(source,level));
-        Voice::new(CLIPS[i].voice).set_volume(gain,gain);
+        Voice::new(voice).set_volume(gain,gain);
     }
 }

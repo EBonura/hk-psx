@@ -8,11 +8,14 @@ a separate decision and no longer inferred from which clip streams.
 
 The catalogue's 456 scenes with an atmos cue between them name all 16 channels,
 so no resident set covers the game; the set is a budget decision per disc,
-priced by the voice budget in `assemble` and the SPU ceiling in `spu_ceiling`.
+priced by the pool in `pool_pressure` and the SPU ceiling in `spu_ceiling`.
 Eight of the sixteen would leave no scene without an audible stem, and at the
-rates measured next to that tuple they fit both the ceiling and main RAM. What
-they do not fit is six voices, which is the wall that re-picking the set never
-moves.
+rates measured next to that tuple they fit both the ceiling and main RAM.
+
+They used to not fit the voices, because a clip owned one for the life of the
+disc and ambience owns six. A stem now takes a voice when it keys on and gives
+it back when it has finished fading out, so what the set has to fit is not how
+many loops are resident but how many of them can be audible at the same moment.
 """
 import argparse,array,hashlib,json,math,re,struct,subprocess,sys
 from pathlib import Path
@@ -34,9 +37,20 @@ SPU_END=0x80000
 SFX_END=0x14000 # Geo occupies 0x14000..0x18000, below ambience.
 # The SPU voices ambience owns. The other 18 are spoken for: 0..5 and 16..17
 # player SFX, 12..14 Geo, 15 shared by the Great Door and the False Knight,
-# 18..20 Focus, 21..23 Runner. A longer resident set has nowhere to key on, so
-# the cook refuses rather than taking a voice another bank is already driving.
+# 18..20 Focus, 21..23 Runner. The cook never takes a voice another bank is
+# already driving, so these six are the whole budget however long the set is.
 VOICES=tuple(range(6,12))
+# The streamed clip's voice cannot be pooled. audio_stream.rs owns the SPU IRQ
+# address register exclusively while it runs and there is one of those on this
+# hardware, so the stream keeps one voice for the life of the disc. It is the
+# first voice ambience owns rather than whichever slot the streamed channel
+# happens to occupy, so re-picking the resident set does not move it.
+STREAM_VOICE=VOICES[0]
+# The rest are a pool: a stem takes one when it keys on and returns it once it
+# has finished fading out. This is what lets more loops be resident than there
+# are voices, and it is why `assemble` prices the set on how many stems can be
+# audible at once rather than on how many clips there are.
+POOL_VOICES=VOICES[1:]
 # The banks stacked above ambience in SPU RAM, which move up by whatever
 # ambience grows. Their sizes do not depend on ambience, so the last build's
 # generated manifests are the right source for what the tail costs. Their base
@@ -142,11 +156,26 @@ def spu_ceiling(root):
     reserved=sum(banks.values())
     return {'ceiling':SPU_END-reserved,'reserved_bytes':reserved,'banks':banks}
 
+def pool_pressure(cues):
+    """Most pooled stems that can be keyed on at once, over the cooked cues.
+
+    A transition fades the outgoing cue's stems out while the incoming cue's
+    rise, so both sets hold a voice at the same time and the pool is sized on
+    the union of two cues rather than on the largest single cue. Any scene can
+    follow any scene, so the bound is over every pair of them. The streamed stem
+    is excluded because its voice is never in the pool.
+
+    Over all 456 catalogue scenes with an atmos cue this is 5 for either of the
+    two eight-channel covering sets, against 3 for the largest single cue. The
+    admitted scenes are a subset, so what this returns is usually smaller.
+    """
+    masks={c['mask'] for c in cues};stream=1<<STREAM_INDEX
+    return max(bin((a|b)&~stream).count('1') for a in masks for b in masks)
+
 def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
     if sfx_end>SFX_END:raise ValueError("ambience overlaps resident SFX bank")
-    if len(CHANNELS)>len(VOICES):
-        raise ValueError(f'{len(CHANNELS)} resident atmos channels need {len(CHANNELS)} SPU voices; '
-                         f'ambience owns {len(VOICES)} ({VOICES[0]}..{VOICES[-1]}) and every other voice is allocated')
+    if len(CHANNELS)>8:
+        raise ValueError(f'{len(CHANNELS)} resident atmos channels do not fit the one-bit-per-stem cue mask')
     channels={};cues=[]
     for scene in report['scenes']:
         if scene['scene_file'] not in SCENE_FILES:continue
@@ -176,8 +205,12 @@ def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
             'fade_ticks':round(seconds*60),'source_fade_seconds':seconds,'source_ambience':manager['ambience'],
             'clamped_boost_db':boosts(CHANNELS,used),'all_channel_snapshot_gains':all_snapshot})
     if set(channels)!=set(CHANNELS) or {c['scene']for c in cues}!=set(range(len(SCENE_FILES))):raise ValueError('missing source ambience channels/scenes')
+    live=pool_pressure(cues)
+    if live>len(POOL_VOICES):
+        raise ValueError(f'{live} stems can be audible at once across a transition and ambience pools '
+                         f'{len(POOL_VOICES)} SPU voices ({POOL_VOICES}); every other voice is allocated')
     clips=[];address=SPU_START
-    for index,ch in enumerate(CHANNELS):
+    for ch in CHANNELS:
         rate=atmos_rate(ch)
         matches=[c for c in report['clips']if c['source']==channels[ch] and c['rate']==rate and c['channels']==1]
         if len(matches)!=1:raise ValueError(f'missing or duplicate {rate}Hz mono profile')
@@ -198,7 +231,10 @@ def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
                              f'past the {ceiling:#x} ceiling')
         pitch=round(rate*4096/44100)
         if pitch!=c['spu_pitch']:raise ValueError('pitch/profile mismatch')
-        clips.append({'source':c['source'],'name':c['name'],'source_channel':ch,'voice':VOICES[index],
+        clips.append({'source':c['source'],'name':c['name'],'source_channel':ch,
+            # Only the streamed clip owns a voice; the rest are handed one out
+            # of the pool when they key on, so naming one here would be a guess.
+            'voice':STREAM_VOICE if ch==STREAM_CHANNEL else None,
             'rate':rate,'pitch':pitch,'actual_rate':pitch*44100/4096,'spu_address':address,
             'byte_len':len(payload),'spu_bytes':spu_bytes,'checksum':fnv(payload),'sha256':hashlib.sha256(payload).hexdigest(),
             'valid_frames':c['frames'],'padding_samples':c['padding_samples'],
@@ -229,11 +265,16 @@ def decoder_quality(clip,path):
 
 def rust_manifest(clips,cues):
     lines=['// Generated by host/ambience.py; descriptors only, no embedded audio.',
-        '#[derive(Clone,Copy)] pub struct AmbienceClip {pub byte_len:usize,pub spu_bytes:usize,pub checksum:u32,pub spu_address:u32,pub pitch:u16,pub voice:u8,pub source_channel:u8}',
+        '#[derive(Clone,Copy)] pub struct AmbienceClip {pub byte_len:usize,pub spu_bytes:usize,pub checksum:u32,pub spu_address:u32,pub pitch:u16,pub source_channel:u8}',
         f'#[derive(Clone,Copy)] pub struct AmbienceCue {{pub mask:u8,pub gains:[i16;{len(clips)}],pub fade_ticks:u16}}',
         f'pub const AMBIENCE_CLIPS:[AmbienceClip;{len(clips)}]=[']
-    for c in clips:lines.append('AmbienceClip{byte_len:%d,spu_bytes:%d,checksum:%d,spu_address:%d,pitch:%d,voice:%d,source_channel:%d},'%tuple(c[k]for k in ('byte_len','spu_bytes','checksum','spu_address','pitch','voice','source_channel')))
-    lines.extend(['];',f'pub const AMBIENCE_SPU_START:u32={SPU_START};',f'pub const AMBIENCE_SPU_END:u32={SPU_END};',f'pub const AMBIENCE_STREAM_BYTES:usize={STREAM_BYTES};',f'pub const AMBIENCE_STREAM_SOURCE_BYTES:usize={clips[STREAM_INDEX]["byte_len"]};',f'pub const AMBIENCE_SCENES:[AmbienceCue;{len(cues)}]=['])
+    for c in clips:lines.append('AmbienceClip{byte_len:%d,spu_bytes:%d,checksum:%d,spu_address:%d,pitch:%d,source_channel:%d},'%tuple(c[k]for k in ('byte_len','spu_bytes','checksum','spu_address','pitch','source_channel')))
+    lines.extend(['];',f'pub const AMBIENCE_SPU_START:u32={SPU_START};',f'pub const AMBIENCE_SPU_END:u32={SPU_END};',f'pub const AMBIENCE_STREAM_BYTES:usize={STREAM_BYTES};',f'pub const AMBIENCE_STREAM_SOURCE_BYTES:usize={clips[STREAM_INDEX]["byte_len"]};',
+        '// The streamed clip keeps this voice for the life of the disc; the pool is',
+        '// handed out when a stem keys on and returned when it finishes fading out.',
+        f'pub const AMBIENCE_STREAM_VOICE:u8={STREAM_VOICE};',
+        f'pub const AMBIENCE_POOL_VOICES:[u8;{len(POOL_VOICES)}]={list(POOL_VOICES)};',
+        f'pub const AMBIENCE_SCENES:[AmbienceCue;{len(cues)}]=['])
     for c in cues:lines.append('AmbienceCue{mask:%d,gains:%s,fade_ticks:%d},'%(c['mask'],str(c['gains']),c['fade_ticks']))
     lines.append('];');return '\n'.join(lines)+'\n'
 
@@ -309,7 +350,13 @@ def main():
         'spu_free_bytes':tail['ceiling']-end,'spu_ceiling':tail['ceiling'],
         'spu_tail_reserved_bytes':tail['reserved_bytes'],'spu_tail_banks':tail['banks'],
         'spu_tail_bases':{name:tail_base(ROOT,name)for name in TAIL_BANKS},
-        'resident_atmos_channels':list(CHANNELS),'voices':list(VOICES[:len(clips)]),
+        'resident_atmos_channels':list(CHANNELS),'voices':list(VOICES),
+        'stream_voice':STREAM_VOICE,'pool_voices':list(POOL_VOICES),
+        'stems_live_across_a_transition':pool_pressure(cues),
+        'voice_pool_scope':f'Ambience owns voices {VOICES[0]}..{VOICES[-1]}. Voice {STREAM_VOICE} is the '
+            f'stream\'s for the life of the disc; the other {len(POOL_VOICES)} are taken when a stem keys on '
+            'and returned once it has finished fading out, so the resident set is bounded by how many stems '
+            'can be audible at once rather than by how many clips there are.',
         'resident_atmos_rates':{str(ch):atmos_rate(ch)for ch in CHANNELS},
         'clamped_boosts':{c['source_scene']:c['clamped_boost_db']for c in cues if c['clamped_boost_db']},
         'clamped_boost_scope':f'Source Atmos gains above unity play at full scale instead. Refused above {BOOST_CEILING_DB} dB.',
