@@ -190,17 +190,31 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // ever fire. SCENE_GATE_LOADS 1 into region 694 is that rule working.
     //
     // OPENED 1 with OPEN 0 and CLOSED 1 is a shelf that went up and came down,
-    // rather than a tape that ran out with it still showing. PURCHASES stays 0
-    // on purpose: this card carries 6 Geo and Sly's cheapest stock is a 60-Geo
-    // Rancid Egg, so buying anything needs a route that earns Geo first, which
-    // does not exist yet.
+    // rather than a tape that ran out with it still showing.
+    //
+    // The Knight buys twice. He boots from town-shop.mcd, which is
+    // town-continue seeded with a 1,000 Geo wallet against the 6 that card
+    // carries, because Sly's cheapest stock is a 60-Geo Rancid Egg and nothing
+    // in the admitted slice earns enough to reach it. Six bytes separate the
+    // two cards: the wallet word and the checksum.
+    //
+    // Neither press moves the cursor. On a fresh board row 0 is the 150-Geo
+    // Mask Shard, and buying it slides the 500-Geo second shard onto row 0, so
+    // two presses in place spend 650. A third would reach the 550-Geo Vessel
+    // Fragment and refuse TooPoor at 350, so an overrun cannot silently spend.
+    //
+    // SHARDS 2 with MASKS 5 is the pair worth asserting together: shards fuse
+    // into a mask at four, so two of them must raise the count and must not
+    // raise the mask total.
     //
     // The route string, since a .pxtape is opaque, through poll_tape at 980:
-    //   9:start:1,12:cross:1,400:left:83,600:up:4,
-    //   720:right:34,800:up:4,860:circle:2
+    //   9:start:1,12:cross:1,400:left:83,600:up:4,720:right:34,
+    //   800:up:4,812:cross:2,832:cross:2,860:circle:2
     ("town-shop", "HK_SCENE_GATE_LOADS", 1), ("town-shop", "HK_REGION_ID", 694),
     ("town-shop", "HK_SHOP_OPENED", 1), ("town-shop", "HK_SHOP_CLOSED", 1),
-    ("town-shop", "HK_SHOP_OPEN", 0), ("town-shop", "HK_SHOP_PURCHASES", 0),
+    ("town-shop", "HK_SHOP_OPEN", 0), ("town-shop", "HK_SHOP_PURCHASES", 2),
+    ("town-shop", "HK_SHOP_GEO_SPENT", 650), ("town-shop", "HK_SHOP_SHARDS", 2),
+    ("town-shop", "HK_SHOP_MASKS", 5), ("town-shop", "HK_SHOP_FRAGMENTS", 0),
     ("town-shop", "HK_SAVE_LOADED", 1), ("town-shop", "HK_DEATHS", 0),
     // The False Knight, fought fairly and killed. No cheats, five masks at the
     // end and not one of them lost: HK_CHEATS 0 and HK_HEALTH 5 hold at every
@@ -324,7 +338,7 @@ const MEMCARDS: &[(&str, &str)] = &[("town-continue", "town-continue.mcd"),
     ("town-shade", "town-shade.mcd"), ("kings-death", "kings-death.mcd"), ("kings-return", "kings-return.mcd"),
     ("bench-save", "town-continue.mcd"), ("well-drop", "town-continue.mcd"), ("town-reset2", "town-continue.mcd"),
     ("crossroads-gate", "town-continue.mcd"), ("town-elderbug", "town-continue.mcd"),
-    ("town-shop", "town-continue.mcd"), ("boss-fight", "boss-fight.mcd"),
+    ("town-shop", "town-shop.mcd"), ("boss-fight", "boss-fight.mcd"),
     ("boss-death", "boss-fight.mcd")];
 const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-reset2", true),
     ("crossroads-gate", true), ("town-continue", false), ("town-shade", false), ("kings-death", false),
