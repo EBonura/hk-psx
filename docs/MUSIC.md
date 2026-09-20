@@ -288,14 +288,26 @@ returns to room streaming afterward; there is no permanent main-RAM audio buffer
 
 All six clips must validate and finish uploading before the bank is ready.
 Until then, no ambient voice can start. Retry silences the voices and clears bank
-readiness before replacing any SPU bytes. Per-clip SPU ranges, voices, pitch,
-headers and loop flags are checked in addition to the payload checksum.
+readiness before replacing any SPU bytes. Per-clip SPU ranges, pitch, headers
+and loop flags are checked in addition to the payload checksum.
+
+Ambience owns six SPU voices. A clip no longer owns one of them: `AMBIENCE_POOL_VOICES`
+is taken when a stem keys on and given back once it has finished fading out, and
+only `AMBIENCE_STREAM_VOICE` is held for the life of the disc, because
+`audio_stream.rs` owns the single SPU IRQ address register while it runs. So what
+bounds the resident set is not how many loops are resident but how many stems can
+be audible at the same moment: a transition fades the outgoing cue's stems out
+while the incoming cue's rise, and across all 456 catalogue scenes with an atmos
+cue the widest such union is five. `host/ambience.py` refuses a set whose cooked
+cues can outrun the pool, and a cue the pool cannot serve leaves the stem unplayed
+and counts it in `HK_AMBIENCE_VOICE_DENIALS` rather than taking a voice from a stem
+that is still fading.
 
 The resident channel set is a cook-time budget decision and moves; it is
 `cook_music.RESIDENT_ATMOS_CHANNELS` and the figures below are whatever the last
 cook wrote into `data/ambience.rs`, not a second place to maintain it. At build
-159 it is channels 0, 1, 3, 4, 7 and 15, mapped in that order to SPU voices
-6..11. With full-scale voice volume 16,383, the Cave target volumes are
+159 it is channels 0, 1, 3, 4, 7 and 15. With full-scale voice volume 16,383,
+the Cave target volumes are
 `[16383, 2, 2, 16383, 2, 2]`; Surface uses `[2, 16383, 12588, 2, 2, 2]` and
 MiscWind `[2, 2, 2, 2, 2, 16383]`. Cave enables bank mask 9, Surface 6,
 MiscWind 32.

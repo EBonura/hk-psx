@@ -66,7 +66,13 @@ class AmbienceTests(unittest.TestCase):
             self.assertEqual([c['mask']for c in cues],[57,54,57])
             self.assertEqual(cues[0]['gains'],[16383,2,2,16383,16383,16383])
             self.assertEqual([c['fade_ticks']for c in cues],[30,30,30])
-            self.assertEqual([c['voice']for c in clips],list(ambience.VOICES[:len(clips)]))
+            # Only the streamed clip owns a voice. Every other stem is handed
+            # one out of the pool when it keys on, so a clip that named one
+            # here would be naming a binding the guest no longer makes.
+            self.assertEqual([c['voice']for c in clips],
+                [ambience.STREAM_VOICE if c['source_channel']==ambience.STREAM_CHANNEL else None for c in clips])
+            self.assertEqual(clips[ambience.STREAM_INDEX]['voice'],ambience.STREAM_VOICE)
+            self.assertNotIn(ambience.STREAM_VOICE,ambience.POOL_VOICES)
             for i,c in enumerate(clips):
                 self.assertEqual(c['spu_address'],ambience.SPU_START+i*16)
                 self.assertEqual(c['checksum'],ambience.fnv(c['payload']))
@@ -88,13 +94,33 @@ class AmbienceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,r'ends 16 bytes past'):
                 self.assemble(report,root,ceiling=ceiling)
 
-    def test_resident_set_longer_than_the_voices_ambience_owns_is_refused(self):
-        """Every other SPU voice belongs to another bank, so the cook stops here."""
+    def test_more_stems_audible_at_once_than_the_pool_holds_is_refused(self):
+        """What a longer resident set costs is voices while stems are audible.
+
+        A transition fades the outgoing cue's stems out while the incoming
+        cue's rise, so the pool is sized on the union of two cues rather than
+        on the largest single one or on the number of clips. Every SPU voice
+        outside the pool belongs to another bank, so the cook stops here.
+        """
+        with tempfile.TemporaryDirectory()as temp:
+            root=pathlib.Path(temp);report,_=self.fixture(root)
+            clips,cues=self.assemble(report,root)
+            live=ambience.pool_pressure(cues)
+            # The fixture's two cue shapes share only the stream and one stem,
+            # so their union is wider than either: that union is the number.
+            self.assertGreater(live,max(bin(c['mask']).count('1')for c in cues))
+            self.assertLessEqual(live,len(ambience.POOL_VOICES))
+            with patch.object(ambience,'POOL_VOICES',ambience.POOL_VOICES[:live-1]):
+                with self.assertRaisesRegex(ValueError,f'{live} stems can be audible at once.*SPU voices'):
+                    self.assemble(report,root)
+
+    def test_a_resident_set_wider_than_the_cue_mask_is_refused(self):
+        """One bit per stem in a u8, on both sides of the manifest."""
         with tempfile.TemporaryDirectory()as temp:
             root=pathlib.Path(temp)
-            with patch.object(ambience,'VOICES',ambience.VOICES[:len(ambience.CHANNELS)-1]):
-                report,_=self.fixture(root)
-                with self.assertRaisesRegex(ValueError,'SPU voices'):self.assemble(report,root)
+            with patch.object(ambience,'CHANNELS',tuple(range(9))):
+                with self.assertRaisesRegex(ValueError,'cue mask'):
+                    ambience.assemble({'clips':[],'scenes':[]},root,{},{},ambience.SFX_END,ambience.SPU_END)
 
     def test_spu_ceiling_excludes_the_banks_stacked_above_ambience(self):
         with tempfile.TemporaryDirectory()as temp:
@@ -183,7 +209,7 @@ class AmbienceTests(unittest.TestCase):
     def test_manifest_lengths_and_stream_row_follow_the_resident_channel_set(self):
         """The table used to say 6 and index the stream at 3 whatever the set was."""
         clips=[{'byte_len':16*(i+1),'spu_bytes':16,'checksum':i,'spu_address':ambience.SPU_START+16*i,
-                'pitch':743,'voice':ambience.VOICES[i],'source_channel':ch}
+                'pitch':743,'source_channel':ch}
                for i,ch in enumerate(ambience.CHANNELS)]
         cues=[{'mask':1,'gains':[0]*len(clips),'fade_ticks':30}]
         text=ambience.rust_manifest(clips,cues)
@@ -192,6 +218,12 @@ class AmbienceTests(unittest.TestCase):
         stream=clips[ambience.STREAM_INDEX]
         self.assertEqual(stream['source_channel'],ambience.STREAM_CHANNEL)
         self.assertIn(f'pub const AMBIENCE_STREAM_SOURCE_BYTES:usize={stream["byte_len"]};',text)
+        # The voice budget is stated once, as a stream voice and a pool, rather
+        # than once per clip: that is what lets the table be longer than the
+        # number of voices ambience owns.
+        self.assertNotIn('voice:',text)
+        self.assertIn(f'pub const AMBIENCE_STREAM_VOICE:u8={ambience.STREAM_VOICE};',text)
+        self.assertIn(f'pub const AMBIENCE_POOL_VOICES:[u8;{len(ambience.POOL_VOICES)}]={list(ambience.POOL_VOICES)};',text)
 
     def test_fresh_or_stale_cache_invokes_reproducible_source_cooker(self):
         path=pathlib.Path('/ignored/music/provenance.json')

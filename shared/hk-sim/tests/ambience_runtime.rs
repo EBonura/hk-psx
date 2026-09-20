@@ -1,14 +1,9 @@
-#[path = "../../../data/ambience.rs"]
-mod data;
 #[path = "../../../game/src/ambience_state.rs"]
 mod state;
-use state::*;
-
-// The mixer's stem count is hand-written and the clip table is cooked from
-// `cook_music.RESIDENT_ATMOS_CHANNELS`. Widening the resident set has to move
-// both, so a set that outgrew the mixer fails here rather than indexing a cue's
-// gains off the end of a stem array.
-const _: () = assert!(STEMS == data::AMBIENCE_CLIPS.len());
+// The cooked table comes through the mixer rather than beside it: the stem
+// count, the streamed clip's index and the voice budget are all read from it
+// there, so this cannot test a set the guest is not compiled against.
+use state::{data, *};
 
 fn loaded() -> Mixer {
     let mut mixer = Mixer::new();
@@ -111,6 +106,154 @@ fn reversal_during_fade_preserves_running_stems_and_current_volume() {
     assert_eq!(m.gains, data::AMBIENCE_SCENES[0].gains);
 }
 
+/// Every stem holds a voice exactly while it is audible, no two hold the same
+/// one, and the streamed stem holds its own for the life of the bank because
+/// audio_stream.rs owns the single SPU IRQ address register while it runs.
+/// Returns which stems hold what, so a caller can check that the pool is being
+/// recycled rather than bound.
+fn assignment(m: &Mixer) -> [u8; STEMS] {
+    let mut held = [NO_VOICE; STEMS];
+    for stem in 0..STEMS {
+        let voice = m.voice(stem);
+        assert_eq!(
+            voice != NO_VOICE,
+            m.playing & (1 << stem) != 0,
+            "stem {stem} holds a voice it is not playing on, or plays on none"
+        );
+        if voice == NO_VOICE {
+            continue;
+        }
+        if stem == STREAM_INDEX {
+            assert_eq!(voice, data::AMBIENCE_STREAM_VOICE);
+        } else {
+            assert!(
+                data::AMBIENCE_POOL_VOICES.contains(&voice),
+                "stem {stem} is on voice {voice}, which ambience does not pool"
+            );
+        }
+        assert!(
+            !held.contains(&voice),
+            "two stems are keyed on to voice {voice}"
+        );
+        held[stem] = voice;
+    }
+    let mut mask = 0u32;
+    for voice in held.iter().filter(|v| **v != NO_VOICE) {
+        mask |= 1 << *voice as u32;
+    }
+    assert_eq!(m.voice_mask(), mask, "the published voice mask is not the one being driven");
+    assert_eq!(mask & !VOICE_MASK, 0, "a stem is on a voice ambience does not own");
+    held
+}
+
+/// Settle one cue, giving each stopped stem's voice back only once the caller
+/// would have keyed it off, which is the order ambience::tick uses.
+fn settle(m: &mut Mixer, scene: usize) -> [u8; STEMS] {
+    for _ in 0..=data::AMBIENCE_SCENES[scene].fade_ticks {
+        let stop = m.tick();
+        if stop != 0 {
+            for stem in 0..STEMS {
+                if stop & (1 << stem) != 0 {
+                    assert_ne!(m.voice(stem), NO_VOICE, "a stopped stem was on no voice");
+                }
+            }
+            m.release(stop);
+        }
+        assignment(m);
+    }
+    assignment(m)
+}
+
+/// The change this whole file exists for: a voice belongs to a stem only while
+/// that stem is audible, so walking the cooked cue table hands the same voice
+/// to more than one stem. Under the old table it was the same voice for the
+/// life of the disc, which is what capped the resident set at the voice count.
+#[test]
+fn a_pooled_voice_serves_more_than_one_stem_over_the_cooked_cues() {
+    let mut m = loaded();
+    let mut users = [0u8; STEMS];
+    for scene in 0..data::AMBIENCE_SCENES.len() {
+        cue(&mut m, scene as u8);
+        let held = settle(&mut m, scene);
+        assert_eq!(m.playing, data::AMBIENCE_SCENES[scene].mask);
+        for stem in 0..STEMS {
+            if held[stem] != NO_VOICE && stem != STREAM_INDEX {
+                let index = data::AMBIENCE_POOL_VOICES
+                    .iter()
+                    .position(|v| *v == held[stem])
+                    .unwrap();
+                users[index] |= 1 << stem;
+            }
+        }
+    }
+    // No cue pair in the cooked table can outrun the pool, so nothing is lost.
+    assert_eq!(m.denied, 0);
+    assert!(
+        users.iter().any(|stems| stems.count_ones() > 1),
+        "no pooled voice was ever handed to a second stem: {users:?}"
+    );
+}
+
+/// The pool is sized on how many stems can be audible at the same moment, not
+/// on how many are resident. A transition fades the outgoing cue's stems out
+/// while the incoming cue's rise, so both sets hold voices at once; this is the
+/// guest half of the check host/ambience.py makes before it writes the bank.
+#[test]
+fn no_pair_of_cooked_cues_can_ask_for_more_voices_than_the_pool_holds() {
+    let stream = 1u8 << STREAM_INDEX;
+    let mut worst = 0;
+    for a in data::AMBIENCE_SCENES.iter() {
+        for b in data::AMBIENCE_SCENES.iter() {
+            worst = worst.max(((a.mask | b.mask) & !stream).count_ones() as usize);
+        }
+    }
+    assert!(
+        worst <= POOL,
+        "{worst} stems can be live across a transition and the pool holds {POOL}"
+    );
+}
+
+/// A stem keeps its voice until the caller has keyed it off, and only then does
+/// the pool hand it out again. Keying a second stem on to a voice the SPU has
+/// not been told about yet is the one ordering this split exists to prevent.
+#[test]
+fn a_voice_comes_back_to_the_pool_only_after_its_stem_is_released() {
+    let mut m = loaded();
+    let stem = (0..STEMS).find(|i| *i != STREAM_INDEX).unwrap();
+    let other = (0..STEMS).find(|i| *i != STREAM_INDEX && *i != stem).unwrap();
+    assert_eq!(m.cue(0, 1 << stem, [10; STEMS], 0), 1 << stem);
+    let voice = m.voice(stem);
+    assert_ne!(voice, NO_VOICE);
+    assert_eq!(m.tick(), 0);
+    assert_eq!(m.cue(1, 1 << other, [10; STEMS], 0), 1 << other);
+    let stop = m.tick();
+    assert_eq!(stop, 1 << stem);
+    assert_eq!(m.voice(stem), voice, "the voice was recycled before key-off");
+    assert_ne!(m.voice(other), voice);
+    m.release(stop);
+    assert_eq!(m.voice(stem), NO_VOICE);
+}
+
+/// With every pooled voice out, a cue leaves the stem unplayed and counts it
+/// rather than taking a voice another stem has not finished fading out on. The
+/// streamed stem is not in the pool, so a dry pool never silences it.
+#[test]
+fn a_cue_the_pool_cannot_serve_drops_the_stem_and_says_so() {
+    let mut m = loaded();
+    assert_eq!(m.exhaust_pool(), POOL);
+    let stem = (0..STEMS).find(|i| *i != STREAM_INDEX).unwrap();
+    assert_eq!(m.cue(0, 1 << stem, [10; STEMS], 30), 0);
+    assert_eq!(m.playing, 0);
+    assert_eq!(m.voice(stem), NO_VOICE);
+    assert_eq!(m.denied, 1);
+    assert_eq!(
+        m.cue(1, 1 << STREAM_INDEX, [10; STEMS], 30),
+        1 << STREAM_INDEX
+    );
+    assert_eq!(m.voice(STREAM_INDEX), data::AMBIENCE_STREAM_VOICE);
+    assert_eq!(m.denied, 1);
+}
+
 fn hash(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c9dc5u32, |h, b| {
         (h ^ *b as u32).wrapping_mul(0x01000193)
@@ -172,7 +315,6 @@ fn actual_complete_bank_is_contiguous_above_sfx_and_all_checksums_match() {
     let mut streamed = None;
     for (i, c) in data::AMBIENCE_CLIPS.iter().enumerate() {
         assert_eq!(c.spu_address, end);
-        assert_eq!(c.voice, 6 + i as u8);
         if let Some(last) = previous {
             assert!(c.source_channel > last, "clips must arrive in channel order");
         }

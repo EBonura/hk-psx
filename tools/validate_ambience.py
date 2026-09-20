@@ -41,7 +41,8 @@ def main():
     if previous and previous['inputs']!=inputs:raise ValueError('Existing capture belongs to different inputs')
     names=('HK_AMBIENCE_READY','HK_AMBIENCE_LOADED_MASK','HK_AMBIENCE_PLAYING_MASK',
            'HK_AMBIENCE_START_COUNT','HK_AMBIENCE_TRANSITIONS','HK_AMBIENCE_SCENE',
-           'HK_AMBIENCE_FADE_TICKS','HK_GAME_MODE','HK_ROOM_LOAD_ERROR','HK_REGION_ACTIVATIONS',
+           'HK_AMBIENCE_FADE_TICKS','HK_AMBIENCE_VOICE_MASK','HK_AMBIENCE_VOICE_DENIALS',
+           'HK_GAME_MODE','HK_ROOM_LOAD_ERROR','HK_REGION_ACTIVATIONS',
            'HK_CD_SECTORS_READ','HK_BOUNDARY_WAIT_TICKS','HK_PAD_POLL_MAX_VBLANK_GAP',
            '__psx_rt_fault_count','HK_AUDIO_STREAM_STARTS','HK_AUDIO_STREAM_REFILLS',
            'HK_AUDIO_STREAM_SOURCE_WRAPS','HK_AUDIO_STREAM_MAX_SERVICE_GAP','HK_AUDIO_STREAM_UNDERRUNS')
@@ -55,7 +56,7 @@ def main():
         def word(name,index=0):
             offset=addresses[name]-0x80000000+index*4
             return struct.unpack_from('<I',ram,offset)[0]
-        return dict({name:word(name) for name in names},gains=[word('HK_AMBIENCE_GAINS',i) for i in range(6)])
+        return dict({name:word(name) for name in names},gains=[word('HK_AMBIENCE_GAINS',i) for i in range(len(clips))])
     commands=[]
     def launch(label,cue,polls,audio=False):
         tape=out/(label+'.pxtape');poll_tape(tape,'9:start:1',polls+1)
@@ -82,13 +83,29 @@ def main():
     normal=launch('loops',build['artifacts']['cue'],polls,True)
     if any(normal[n] for n in ('HK_ROOM_LOAD_ERROR','HK_BOUNDARY_WAIT_TICKS','__psx_rt_fault_count','HK_AUDIO_STREAM_UNDERRUNS')):
         raise ValueError('Fault or loading hold during ambience playback: '+str(normal))
-    expected={'HK_AMBIENCE_READY':1,'HK_AMBIENCE_LOADED_MASK':63,'HK_AMBIENCE_PLAYING_MASK':57,
-              'HK_AMBIENCE_START_COUNT':4,'HK_AMBIENCE_TRANSITIONS':1,'HK_AMBIENCE_SCENE':0,
-              'HK_AMBIENCE_FADE_TICKS':30,'HK_GAME_MODE':1,'HK_PAD_POLL_MAX_VBLANK_GAP':1}
+    # The cue the replay settles on, and everything that follows from it. These
+    # were 63, 57, 4 and 30: the resident channel set written out a fourth time,
+    # in a file that only runs on a disc and so only fails on one.
+    cue=build['ambience']['cues'][0]
+    expected={'HK_AMBIENCE_READY':1,'HK_AMBIENCE_LOADED_MASK':(1<<len(clips))-1,'HK_AMBIENCE_PLAYING_MASK':cue['mask'],
+              'HK_AMBIENCE_START_COUNT':bin(cue['mask']).count('1'),'HK_AMBIENCE_TRANSITIONS':1,'HK_AMBIENCE_SCENE':cue['scene'],
+              'HK_AMBIENCE_FADE_TICKS':cue['fade_ticks'],'HK_AMBIENCE_VOICE_DENIALS':0,
+              'HK_GAME_MODE':1,'HK_PAD_POLL_MAX_VBLANK_GAP':1}
     if any(normal[k]!=v for k,v in expected.items()):raise ValueError('Ambience lifecycle mismatch: '+str(normal))
+    # A voice per audible stem, all of them ambience's own, and the stream on
+    # the one voice that is never pooled. Which pooled voice a stem took is a
+    # runtime decision, so what is checked is the count and the ownership.
+    owned=set(build['ambience']['voices']);stream=build['ambience']['stream_voice']
+    driven={v for v in owned if normal['HK_AMBIENCE_VOICE_MASK']>>v&1}
+    if normal['HK_AMBIENCE_VOICE_MASK']!=sum(1<<v for v in driven):
+        raise ValueError('Ambience is driving a voice it does not own: '+str(normal))
+    if len(driven)!=bin(cue['mask']).count('1'):raise ValueError('Voices driven do not match audible stems: '+str(normal))
+    streamed=[i for i,c in enumerate(clips) if c.get('spu_bytes',c['byte_len'])!=c['byte_len']]
+    if (stream in driven)!=bool(cue['mask']>>streamed[0]&1):
+        raise ValueError('The streamed stem is not on the voice that is never pooled: '+str(normal))
     if normal['HK_AUDIO_STREAM_STARTS']!=1 or normal['HK_AUDIO_STREAM_SOURCE_WRAPS']<2 or normal['HK_AUDIO_STREAM_REFILLS']<48:
         raise ValueError('Stream did not cross two complete source loops: '+str(normal))
-    expected_gains=[g if 57&(1<<i) else 0 for i,g in enumerate(build['ambience']['cues'][0]['gains'])]
+    expected_gains=[g if cue['mask']&(1<<i) else 0 for i,g in enumerate(cue['gains'])]
     if normal['gains']!=expected_gains:raise ValueError('Source mixer endpoint mismatch')
     spu=(out/'loops-spu.bin').read_bytes()
     for clip in clips:

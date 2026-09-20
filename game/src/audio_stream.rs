@@ -13,7 +13,9 @@
 pub const SOURCE_BYTES: usize = super::AMBIENCE_STREAM_SOURCE_BYTES;
 pub const HALF_BYTES: usize = 8_192;
 pub const RING_BYTES: usize = HALF_BYTES * 2;
-pub const VOICE: u8 = super::AMBIENCE_CLIPS[super::STREAM_INDEX].voice;
+// The one voice the cook does not pool, because this module owns the SPU IRQ
+// address register exclusively while it runs and there is one of those.
+pub const VOICE: u8 = super::AMBIENCE_STREAM_VOICE;
 pub const PITCH: u16 = super::AMBIENCE_CLIPS[super::STREAM_INDEX].pitch;
 // 512 blocks * 28 samples at 44100*PITCH/4096 Hz per half.
 // PAL and NTSC give about 89 and 107 VBlanks. Eight missed checkpoints
@@ -212,7 +214,8 @@ mod hardware {
         true
     }
     /// Main-thread only; no nested service. Root configures ADSR/volume before
-    /// calling. Owns voice9 KON/pitch/start/loop: exclude it from generic KON.
+    /// calling. Owns the streamed voice's KON/pitch/start/loop: it is excluded
+    /// from the pooled key-on the mixer performs for every other stem.
     /// `source` is the immutable, checksum-validated boot cache.
     pub fn start(source: &[u8], base: u32, _now: u32) -> bool {
         stop();
