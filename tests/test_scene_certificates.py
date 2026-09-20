@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'host'))
-from scene_certificates import (ARENA_BYTES,NO_CERT,atlas_fingerprint,build_bundle,
+from scene_certificates import (ARENA_CEILING,NO_CERT,atlas_fingerprint,build_bundle,
     parse_bundle,verify_equivalence,verify_region_bindings,read_legacy,rust_manifest,cook)
 
 
@@ -37,7 +37,7 @@ class SceneCertificates(unittest.TestCase):
         self.assertEqual(parsed['group']['groups'],group['groups'])
         self.assertEqual((parsed['scene_id'],parsed['scene_raw_fnv'],parsed['atlas_fnv'],parsed['pool_count']),(3,123,456,5))
         self.assertEqual(proof['status'],'PASS');self.assertEqual(proof['pool_bindings'],5)
-        self.assertLessEqual(len(raw),ARENA_BYTES)
+        self.assertLessEqual(len(raw),ARENA_CEILING)
 
     def test_empty_certificates_and_groups_still_preserve_complete_pool_map(self):
         empty=dict(certificates=[],bits=[])
@@ -100,8 +100,11 @@ class SceneCertificates(unittest.TestCase):
 
     def test_manifest_carries_predecode_inventory_and_pack_indices(self):
         entry=dict(scene_id=1,scene_raw_fnv=2,atlas_fnv=3,draw_pool_count=17,chunk_id=37,raw_len=88,raw_fnv=4,stored_len=55,stored_fnv=6)
-        text=rust_manifest([entry],17)
-        self.assertIn('COVERAGE_ARENA_BYTES:usize=83700;',text)
+        text=rust_manifest([entry,dict(entry,scene_id=2,chunk_id=38,raw_len=40)],17)
+        # The reservation is the largest proof, four-byte aligned, not the
+        # ceiling: slack under ARENA_CEILING must cost the guest no BSS.
+        self.assertIn('COVERAGE_ARENA_BYTES:usize=88;',text)
+        self.assertIn('COVERAGE_ARENA_BYTES:usize=92;',rust_manifest([dict(entry,raw_len=89)],17))
         self.assertIn('COVERAGE_GROUP_POOL_CAPACITY:usize=17;',text)
         self.assertIn('scene_id:1,scene_raw_fnv:2,atlas_fnv:3,draw_pool_count:17,chunk_id:37',text)
 
