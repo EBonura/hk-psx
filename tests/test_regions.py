@@ -90,6 +90,22 @@ class RegionTests(unittest.TestCase):
                              (row['scene_id'],row['activation_bounds'],row['camera_bounds']),
                              f"chunk {row['chunk_id']} moved")
 
+    def test_greenpath_appends_the_views_its_isolated_pack_measured(self):
+        """Scene 46 is the 24 views `tools/cook_scene_pack.py` priced, appended.
+
+        Fungus1_01's numbers were measured on an isolated pack laid out by the
+        same 24x16 stepping, so they only carry over if the catalog envelope
+        reproduces that pack's views exactly. It does, and this pins it: 24
+        views, appended after the Crossroads and the shop as chunks 700 to 723,
+        with the first and last boxes the pack cooked.
+        """
+        regions=fixed_regions()
+        greenpath=[r for r in regions if r['scene_name']=='Fungus1_01']
+        self.assertEqual(len(greenpath),24)
+        self.assertEqual(regions[699:],greenpath)
+        self.assertEqual(greenpath[0]['activation_bounds'],[-2,-5,22,11])
+        self.assertEqual(greenpath[-1]['activation_bounds'],[166,27,172,31])
+
     def test_budget_split_preserves_parent_coverage(self):
         parent=initial_regions()[1]
         a,b=split_region(parent)
