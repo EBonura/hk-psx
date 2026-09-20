@@ -30,6 +30,7 @@ the placement's own world boxes against them, the way `aspid.py` proves its
 alert radii. That keeps `ActorController` inside the Zombie Shield's 56 bytes
 and `ActorSpec` at 172, which every placement in the world pays.
 """
+from pathlib import Path
 import hashlib
 
 from focus import action_fields
@@ -346,9 +347,27 @@ def _corpse(source, sc, records):
     return source.sid(obj)
 
 
+# Scenes whose tightest view cannot hold this family's palettes, with the
+# measured figure that refused them. The per-view CLUT budget is only knowable
+# after the atlas cook and the similarity postpass, which run long after this
+# recognizer, so a scene that overflows is recorded here rather than discovered
+# as a failed build. Crossroads_ShamanTemple came to 427 of 416 in region 661
+# with the Blocker's 26 palettes in its bank, and 401 without them.
+#
+# This is a per-scene list and not a rule, which is honest about what it is: the
+# general answer is for the actor bank to drop an actor and record the omission
+# when the postpass finds the view over budget, the way append_actor_art already
+# does for a frame that will not fit an animation slot.
+CLUT_REFUSED = {'level76': 'Crossroads_ShamanTemple reaches 427 of 416 CLUT slots in its '
+                           'tightest view with the Blocker bank, and 401 without it'}
+
+
 def recognize(sc, actor):
     """A stationary shell that opens, lobs a goop and shuts again."""
     source = sc.source
+    over = CLUT_REFUSED.get(Path(sc.file.name).stem)
+    if over:
+        raise ValueError('the scene cannot hold the Blocker art: ' + over)
     from actors import _component_records
     _assemblies(source)
     gid = actor['game_object']
