@@ -441,6 +441,20 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        # The Blocker reaches here only because it has no Walker and no
+        # Climber: it is a turret with one FSM and a `PersonalObjectPool`, and
+        # the pool is what tells it apart from the Aspid, which shares the
+        # component but is named `Spitter` and gated above.
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Blocker') \
+                and any(kind == 'PersonalObjectPool' for _, kind, _ in records):
+            from blocker import recognize as recognize_blocker
+            try:
+                control = recognize_blocker(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Egg Sac') and not fsms:
             try:
                 control = egg_sac_control(sc, actor)
@@ -648,6 +662,19 @@ def generated_actor_specs(region):
             # are carried for the common spec and are not read.
             speed, turn_ticks, turn_cooldown_ticks = control['walk_speed'], control['turn_ticks'], control['turn_cooldown_ticks']
             initial_direction, random_start_direction = control['initial_direction'], False
+        elif control['kind'] == 'Blocker':
+            from blocker import CLIP_SLOTS as BLOCKER_SLOTS
+            blocker_clips = tuple(slot + '_clip' for slot in BLOCKER_SLOTS) + ('shot_clip', 'impact_clip')
+            if any(key not in actor for key in blocker_clips):
+                raise ValueError(f'Blocker is missing cooked clips: {actor["source"]}')
+            clips = '[' + ','.join(str(actor[slot + '_clip']) for slot in BLOCKER_SLOTS) + ']'
+            controller = ('hk_sim::ActorController::Blocker {' + f'clips:{clips},'
+                          + f'shot_clip:{actor["shot_clip"]},impact_clip:{actor["impact_clip"]},'
+                          + f'sleeps:{str(bool(control["sleeps"])).lower()}' + '}')
+            # It never moves and never turns, so the walk fields are carried for
+            # the common spec and are never read.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = control['initial_direction'], False
         elif control['kind'] == 'EggSac':
             if 'idle_clip' not in actor or not actor.get('corpse'):
                 raise ValueError(f'Egg Sac is missing cooked clips or corpse: {actor["source"]}')
@@ -685,6 +712,7 @@ def generated_actor_specs(region):
             + (aspid_clips if control['kind'] == 'Aspid' else ()) + (('idle_clip',) if control['kind'] == 'EggSac' else ()) \
             + (('fire_clip',) if control['kind'] == 'Hatcher' else ()) \
             + (shield_clips if control['kind'] == 'ZombieShield' else ()) \
+            + (blocker_clips if control['kind'] == 'Blocker' else ()) \
             + (false_knight_clips if control['kind'] == 'FalseKnight' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')

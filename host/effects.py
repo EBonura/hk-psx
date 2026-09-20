@@ -347,11 +347,16 @@ def append_corpse_art(source,scene,actors,atlas,frames,clips):
     append_shot_art(source,actors,cooker)
 
 def append_shot_art(source,actors,cooker):
-    """Aspid `Spitter Shot R` Idle/Impact clips at the prefab scale times the
-    EnemyBullet scale; the source stretch and rotation are not cooked."""
+    """Pooled-projectile Idle/Impact clips at the prefab scale times the
+    EnemyBullet scale; the source stretch and rotation are not cooked.
+
+    Two families share this path because they share the pool: the Aspid's
+    `Spitter Shot R` and the Blocker's `Shot Mawlek`. Both carry the same two
+    clip names at the same timings, and each recognizer has already refused a
+    prefab whose body or box the pool would get wrong."""
     for actor in actors:
         control=actor.get('movement_control',{})
-        if not actor['movement_supported'] or control.get('kind')!='Aspid':continue
+        if not actor['movement_supported'] or control.get('kind')not in('Aspid','Blocker'):continue
         shot=control['shot'];library_o=shot.pop('library_object');library=source.read(library_o)
         scale=shot['scale']
         for kind,name in (('shot','Idle'),('impact','Impact')):

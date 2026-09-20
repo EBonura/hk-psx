@@ -1173,3 +1173,147 @@ fn the_barrel_pool_is_paid_for_in_padding_and_twenty_bytes() {
             "EnemyWorld is {} bytes of the 11,556 unallocated in build.json",
             size_of::<enemies::EnemyWorld>());
 }
+
+/// Source Crossroads_11_alt Blocker (`level50:4585`), which is the placement
+/// that can sleep. It stands where the fixture's floor is, faces right because
+/// its transform is mirrored, and deals no contact damage at all: the source
+/// object carries no `DamageHero`, which is why the hero can stand on it.
+const BLOCKER: ActorSpec = ActorSpec {
+    controller: ActorController::Blocker {
+        // Idle and Closed are the shared slots; these six are `Clip::slot`
+        // order, and the last two belong to the pooled `Shot Mawlek`.
+        clips: [2, 3, 4, 5, 6, 7],
+        shot_clip: 8,
+        impact_clip: 9,
+        sleeps: true,
+    },
+    source_id: 504585,
+    x: 0,
+    y: 4 * ONE,
+    // The source body box, which is also its `Terrain Block`.
+    bounds: [-128000, -145408, 54272, 61440],
+    health: EnemyParams { health: 60, contact_damage: 0, evasion_ticks: 12,
+        invincible: false, damage_override: false },
+    walk: WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
+    initial_direction: 1,
+    walk_clip: 0, turn_clip: 1, corpse: None, recoil_speed: 0, recoil_ticks: 0,
+    ..SPEC
+};
+fn blocker_region() -> world::Region {
+    world::Region {
+        scene: 0,
+        bounds: [-20 * ONE, -5 * ONE, 20 * ONE, 20 * ONE],
+        collision_bounds: [-23 * ONE, -10 * ONE, 23 * ONE, 25 * ONE],
+        actors: &[&BLOCKER],
+    }
+}
+/// A room carrying the Blocker's ten clips at their source frame counts and
+/// rates, because the controller leaves five of its states on clip completion
+/// and completion is measured off these numbers.
+fn blocker_room() -> Vec<u8> {
+    // (frames, fps, wrap): Idle and Closed loop, the rest play once, and the
+    // last two are `Shot Mawlek`'s own Idle and Impact.
+    let clips: [(u32, u32, u32); 10] = [
+        (7, 12, 0), (1, 30, 0), (4, 15, 2), (2, 15, 2), (4, 15, 2),
+        (3, 15, 2), (4, 15, 2), (7, 12, 2), (4, 20, 0), (6, 20, 2),
+    ];
+    let frames = 7;
+    let mut b = Vec::from(*b"HKROOM02");
+    for n in [1u32, 1, 0, frames, clips.len() as u32, 1, 0, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for n in [0u16, 0, 0, 4, 4, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.extend(0u32.to_le_bytes());
+    for _ in 0..frames {
+        for n in [0i32, -ONE / 2, -ONE, ONE / 2, 0] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    for (count, fps, wrap) in clips {
+        for n in [0u32, count, fps * 65536, wrap] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    for n in [-20 * ONE, 0, 20 * ONE, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.resize(b.len() + 32 + 32768, 0);
+    b
+}
+/// The whole Blocker cycle through the real runtime: the shell, the nail, the
+/// shot and the fact that none of it ever moves the body.
+///
+/// The hero stands inside `Alert Range New` and outside `Attack Range`, which
+/// is the only band where the Blocker opens and stays open. Those two boxes are
+/// `hk_sim::blocker` constants, so this fixture is also what proves the
+/// recognizer's geometry and the runtime's agree.
+#[test]
+fn a_blocker_opens_for_the_hero_shuts_underneath_and_lobs_one_goop() {
+    let bytes = blocker_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = blocker_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut n = Nail::new();
+    // Out of every box: the shell stays up, so the nail is blocked outright.
+    let mut far = Player::spawn(-18 * ONE, 4 * ONE);
+    n.active = true;
+    n.age = 1;
+    for _ in 0..3 {
+        let events = tick(&mut w, &r, &room, &mut far, &mut v, &n);
+        assert_eq!(events.hits, 0, "a shut Blocker takes no damage from anywhere");
+    }
+    n.active = false;
+    assert_eq!(w.actor_state(0, 504585), Some((0, 4 * ONE, 60)));
+    // Inside the alert band and clear of the attack box underneath it.
+    let mut hero = Player::spawn(10 * ONE, 4 * ONE);
+    let mut fired = None;
+    for t in 0..240u32 {
+        tick(&mut w, &r, &room, &mut hero, &mut v, &n);
+        let quads = submitted(&w, &r, &room);
+        // The Blocker's own quad is always there; a second one is the shot.
+        assert!(!quads.is_empty(), "the Blocker always draws");
+        if quads.len() > 1 && fired.is_none() {
+            fired = Some(t);
+        }
+    }
+    let fired = fired.expect("the Blocker lobs a goop within four seconds");
+    // `Open` is sixteen ticks and `Shoot Antic` twelve, with a WaitRandom of
+    // 48..72 between them, so the first shot cannot beat this and the whole
+    // chain has to have run for it to arrive at all.
+    assert!((29..=101).contains(&fired), "first shot at tick {fired}");
+    // Which gravity the pool gave it is `blocker_goop_arcs_over_where_an_aspid_shot_would_not`
+    // in `enemies`; this fixture only proves one came out.
+    // Nothing above moved the body.
+    assert_eq!(w.actor_state(0, 504585).map(|s| (s.0, s.1)), Some((0, 4 * ONE)));
+    let mut hit = Nail::new();
+    hit.active = true;
+    hit.age = 1;
+    // Walk underneath: `Attack Range` reaches 6.5 units to its right, so the
+    // shell comes up and the nail cannot touch it from that side at all.
+    let mut under = Player::spawn(ONE, 4 * ONE);
+    for _ in 0..40 {
+        tick(&mut w, &r, &room, &mut under, &mut v, &n);
+    }
+    let mut blocked = 0;
+    for _ in 0..3 {
+        blocked += tick(&mut w, &r, &room, &mut under, &mut v, &hit).hits;
+    }
+    assert_eq!(blocked, 0, "a shut Blocker blocks every direction, the pogo included");
+    // Past it on the left, where `Attack Range` stops 2.475 units out. `Closed`
+    // watches only that box, so it opens again even though the hero is now
+    // behind `Alert Range New` as well, and there the nail reaches it. That
+    // narrow left-hand window is the whole of the Blocker's melee surface.
+    let mut behind = Player::spawn(-28 * ONE / 10, 4 * ONE);
+    for _ in 0..40 {
+        tick(&mut w, &r, &room, &mut behind, &mut v, &n);
+    }
+    let mut landed = 0;
+    for _ in 0..3 {
+        landed += tick(&mut w, &r, &room, &mut behind, &mut v, &hit).hits;
+    }
+    assert_eq!(landed, 1, "an opened Blocker answers the nail from behind");
+    assert_eq!(w.actor_state(0, 504585), Some((0, 4 * ONE, 55)));
+}

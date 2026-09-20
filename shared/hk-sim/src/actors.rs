@@ -83,6 +83,24 @@ pub enum ActorController {
         clips: [u16; crate::zombie_shield::Clip::COUNT],
         attack: [i32; 4],
     },
+    /// Blocker, driven by `crate::blocker::Blocker`. A turret: no Rigidbody2D,
+    /// no Walker and no Recoil, so it keeps its authored transform for its
+    /// whole life and `ActorSpec::walk` is unread. `walk_clip` is Idle and
+    /// `turn_clip` is Closed; the other six ride here in `blocker::Clip::slot`
+    /// order, and the two shot clips belong to the pooled `Shot Mawlek`.
+    ///
+    /// Its three trigger boxes are prefab constants in `crate::blocker` rather
+    /// than spec fields, because every admitted placement carries the same
+    /// child transforms and the recognizer proves it before admitting one.
+    Blocker {
+        clips: [u16; crate::blocker::Clip::COUNT],
+        shot_clip: u16,
+        impact_clip: u16,
+        /// Whether `Unalert Range`'s trigger child can clear the bool, which is
+        /// the difference between a Blocker that returns to `Dormant` and one
+        /// whose bool is authored true with nothing to lower it.
+        sleeps: bool,
+    },
     /// Source object with no FSM and no Rigidbody2D: `playAutomatically` loops
     /// the default clip where it stands, so the nail is the only interaction.
     Static { idle_clip: u16 },
