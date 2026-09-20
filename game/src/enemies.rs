@@ -20,8 +20,12 @@ pub enum RunnerEventKind {
     DustStop,
     /// GameObject lifetime cleanup, not a fabricated Swipe FSM transition.
     Destroy,
-    /// Aspid FireAtTarget: spawn a shot at the actor with this velocity.
-    Fire { velocity: [i32; 2], shot_clip: u16, impact_clip: u16 },
+    /// Aspid FireAtTarget, or the Blocker's `SpawnObjectFromGlobalPool`: one
+    /// pooled projectile with this velocity, at the event position offset by
+    /// `offset` (the Blocker's `Shot Origin`; zero for the Aspid, which spawns
+    /// on its own transform). `goop` picks `Shot Mawlek`'s gravity over the
+    /// Aspid bullet's.
+    Fire { velocity: [i32; 2], offset: [i32; 2], goop: bool, shot_clip: u16, impact_clip: u16 },
     /// The Hatcher's `Fire`: wake one of the scene's parked cage members at the
     /// event position with this velocity. The event carries no identity for the
     /// baby because the source picks one at random from whatever is still in
@@ -393,6 +397,45 @@ impl ZombieShieldRuntime {
         lo + (*rng % (hi - lo + 1) as u32) as u16
     }
 }
+/// Blocker: a turret with no body of its own. It never moves, never falls and
+/// never recoils, so this runtime is the controller, its clip clock and the
+/// generator the two `Random` draws come out of, and nothing else.
+#[derive(Clone, Copy)]
+struct BlockerRuntime {
+    controller: hk_sim::blocker::Blocker,
+    rng: u32,
+    animation_tick: u32,
+}
+impl BlockerRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::Blocker { clips, .. } = spec.controller
+            else { panic!("Blocker runtime with other metadata") };
+        match self.controller.clip().slot() {
+            Some(slot) => clips[slot],
+            None if self.controller.clip() == hk_sim::blocker::Clip::Closed => spec.turn_clip,
+            None => spec.walk_clip,
+        }
+    }
+    fn completed(&self, spec: &ActorSpec, room: &Room) -> Option<hk_sim::blocker::Animation> {
+        let token = self.controller.animation()?;
+        let id = self.clip(spec) as usize;
+        assert!(id < room.counts[4], "Blocker clip not resident");
+        let clip = room.clip(id);
+        assert!(clip[1] != 0 && clip[2] != 0, "empty Blocker clip");
+        // Only Once clips complete. Idle and Closed are the two loops, and both
+        // are left on a sense rather than on a `Tk2dWatchAnimationEvents`.
+        if clip[3] & 65535 == 2
+            && self.animation_tick as u64 * clip[2] as u64 >= clip[1] as u64 * 60 * 65536 {
+            Some(token)
+        } else { None }
+    }
+    /// `WaitRandom(0.8, 1.2)` and `RandomFloat(X Speed Min, X Speed Max)`, both
+    /// inclusive, from the per-actor generator rather than Unity's own.
+    fn sample(rng: &mut u32, [lo, hi]: [i32; 2]) -> i32 {
+        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        lo + (*rng % (hi - lo + 1) as u32) as i32
+    }
+}
 /// One member of a Hatcher's cage. `Inert` is the parked state and costs one
 /// test a tick: no senses, no body, no clip clock and no draw.
 #[derive(Clone, Copy)]
@@ -419,8 +462,24 @@ pub const SHOTS: usize = 8;
 const _: () = assert!(SHOTS >= hk_sim::false_knight::BARREL_POOL,
     "the shared projectile pool must hold FK Barrel Summon's whole reserve");
 const SHOT_GRAVITY: i32 = 3 * ONE; // .05 * 60
+/// The Blocker's `Shot Mawlek`: the same box and the same damage as the Aspid's
+/// bullet, on twelve times the gravity, which is the whole of the difference
+/// between a spit that flies flat and a goop that is lobbed over a gap.
+const GOOP_GRAVITY: i32 = 36 * ONE; // .6 * 60
 const SHOT_HALF: [i32; 2] = [20992, 18432]; // .640625 x .5625 box at scale .7 * .8... kept at source size
 const IMPACT_TICKS: u32 = 18; // six frames at 20 fps
+/// Which source prefab a pooled projectile is. All three are a box on a
+/// dynamic body that damages the hero and ends on terrain; they differ in
+/// gravity, and the barrel also in size, damage and having no Impact clip.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ShotKind {
+    /// `Spitter Shot R`, the Aspid's.
+    Spit,
+    /// `Shot Mawlek`, the Blocker's.
+    Goop,
+    /// `Falling Barrel`, `FK Barrel Summon`'s.
+    Barrel,
+}
 #[derive(Clone, Copy)]
 struct Shot {
     scene: u8,
@@ -430,22 +489,23 @@ struct Shot {
     vy: i32,
     animation_tick: u32,
     impact: bool,
-    /// A `Falling Barrel` rather than an Aspid bullet: heavier, wider, and with
-    /// no Impact clip, because `Break` hides the sprite and everything left of
-    /// that state is particles and a one-shot.
-    barrel: bool,
+    kind: ShotKind,
     shot_clip: u16,
     impact_clip: u16,
 }
 impl Shot {
     fn gravity(&self) -> i32 {
-        if self.barrel { hk_sim::false_knight::BARREL_GRAVITY } else { SHOT_GRAVITY }
+        match self.kind {
+            ShotKind::Spit => SHOT_GRAVITY,
+            ShotKind::Goop => GOOP_GRAVITY,
+            ShotKind::Barrel => hk_sim::false_knight::BARREL_GRAVITY,
+        }
     }
     fn half(&self) -> [i32; 2] {
-        if self.barrel { hk_sim::false_knight::BARREL_HALF } else { SHOT_HALF }
+        if self.kind == ShotKind::Barrel { hk_sim::false_knight::BARREL_HALF } else { SHOT_HALF }
     }
     fn damage(&self) -> u16 {
-        if self.barrel { hk_sim::false_knight::BARREL_DAMAGE } else { 1 }
+        if self.kind == ShotKind::Barrel { hk_sim::false_knight::BARREL_DAMAGE } else { 1 }
     }
 }
 /// Does the movement segment cross any terrain edge (closed endpoints)?
@@ -589,6 +649,7 @@ enum Runtime {
     Hatcher(HatcherRuntime),
     HatcherBaby(BabyRuntime),
     ZombieShield(ZombieShieldRuntime),
+    Blocker(BlockerRuntime),
     /// No senses and no body: only the looping clip's clock advances.
     Static { animation_tick: u32 },
     FalseKnight(FalseKnightRuntime),
@@ -612,6 +673,7 @@ impl Actor {
     fn hatcher(&self) -> Option<HatcherRuntime> { if let Runtime::Hatcher(h) = self.runtime { Some(h) } else { None } }
     fn baby(&self) -> Option<BabyRuntime> { if let Runtime::HatcherBaby(b) = self.runtime { Some(b) } else { None } }
     fn zombie_shield(&self) -> Option<ZombieShieldRuntime> { if let Runtime::ZombieShield(z) = self.runtime { Some(z) } else { None } }
+    fn blocker(&self) -> Option<BlockerRuntime> { if let Runtime::Blocker(b) = self.runtime { Some(b) } else { None } }
     /// A cage member still in the cage: `Control`'s `Inert`.
     fn parked_baby(&self) -> bool {
         self.baby().is_some_and(|b| b.controller.phase() == hk_sim::hatcher::BabyPhase::Inert)
@@ -737,6 +799,13 @@ impl Actor {
                         controller: hk_sim::zombie_shield::ZombieShield::with_facing(spec.initial_direction as i8),
                         rng: seed, animation_tick: 0 })
                 }
+                // `Init` plays `Closed` and raises the shell; `Direction` then
+                // branches on the FSM's own `Facing Right`, not on the
+                // transform, so nothing of the placement's mirror reaches the
+                // controller. `spec.initial_direction` still carries it, for
+                // the sprite.
+                ActorController::Blocker { sleeps, .. } => Runtime::Blocker(BlockerRuntime {
+                    controller: hk_sim::blocker::Blocker::new(sleeps), rng: seed, animation_tick: 0 }),
                 ActorController::Static { .. } => Runtime::Static { animation_tick: 0 },
                 // `initial_direction` carries the sign the cooker read off the
                 // placement's transform scale, and a positive source scale is
@@ -992,6 +1061,15 @@ impl Actor {
             self.advance_false_knight(&mut boss, spec, count, &edge, context, emit);
             self.seat_false_knight(boss);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(mut blocker) = self.blocker() {
+            // Also bodiless: the Blocker has no Rigidbody2D and no Recoil, so
+            // it keeps its authored transform for its whole life and never
+            // reaches the terrain solver below.
+            self.spawn_state = SpawnState::Ready;
+            self.advance_blocker(&mut blocker, spec, room, context, emit);
+            self.runtime = Runtime::Blocker(blocker);
             return;
         }
         if let Some(animation_tick) = self.immobile() {
@@ -1430,6 +1508,40 @@ impl Actor {
     }
     /// One 60 Hz step of the Aspid: senses (alert circle plus sight, unalert
     /// circle, clear ray), FSM tick, gravity-free body against terrain, recoil.
+    /// One 60 Hz step of the Blocker, which is three box overlaps and a clip.
+    ///
+    /// `CheckAlertRangeByName` reads an `AlertRange` child, and `AlertRange`
+    /// is driven by `PlayMakerTriggerStay` on the child's own trigger box, so
+    /// the sense is the hero's collider against that box. All three boxes are
+    /// `crate::blocker` constants in the actor's own frame; they are never
+    /// mirrored by facing, because the placement's transform mirror does not
+    /// reach this FSM at all and `host/blocker.py` proves the authored boxes
+    /// against those constants before a placement is admitted.
+    fn advance_blocker(&mut self, blocker: &mut BlockerRuntime, spec: &ActorSpec, room: &Room,
+        context: RunnerContext, emit: &mut impl FnMut(RunnerEvent)) {
+        use hk_sim::blocker::Action;
+        blocker.animation_tick = blocker.animation_tick.saturating_add(1);
+        let at = |b: [i32; 4]| overlap(
+            [self.x + b[0], self.y + b[1], self.x + b[2], self.y + b[3]], context.hero_body);
+        let senses = hk_sim::blocker::Senses {
+            in_alert_range: at(hk_sim::blocker::ALERT),
+            in_attack_range: at(hk_sim::blocker::ATTACK),
+            in_unalert_range: at(hk_sim::blocker::UNALERT),
+            completed: blocker.completed(spec, room),
+        };
+        let actions = blocker.controller.tick(senses, |r| BlockerRuntime::sample(&mut blocker.rng, r));
+        let ActorController::Blocker { shot_clip, impact_clip, .. } = spec.controller
+            else { panic!("Blocker runtime with other metadata") };
+        for action in actions.iter() {
+            match action {
+                Action::Play(_) => blocker.animation_tick = 0,
+                Action::Fire { offset, velocity } => emit(RunnerEvent {
+                    scene: self.scene, source_id: self.source_id, position: [self.x, self.y],
+                    facing: self.walk.direction,
+                    kind: RunnerEventKind::Fire { velocity, offset, goop: true, shot_clip, impact_clip } }),
+            }
+        }
+    }
     fn advance_aspid(&mut self, aspid: &mut AspidRuntime, spec: &ActorSpec, count: usize, edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext, emit: &mut impl FnMut(RunnerEvent)) {
         use hk_sim::aspid::Action;
         use hk_sim::runner_senses as q;
@@ -1457,7 +1569,8 @@ impl Actor {
                 Action::Play(clip, tick) => { aspid.clip = clip; aspid.animation_tick = tick; }
                 Action::Facing(f) => self.walk.direction = f,
                 Action::Fire(velocity) => emit(RunnerEvent { scene: self.scene, source_id: self.source_id, position: pos,
-                    facing: self.walk.direction, kind: RunnerEventKind::Fire { velocity, shot_clip, impact_clip } }),
+                    facing: self.walk.direction, kind: RunnerEventKind::Fire { velocity, offset: [0; 2],
+                        goop: false, shot_clip, impact_clip } }),
                 Action::Velocity(_) => {}
             }
         }
@@ -1662,17 +1775,19 @@ pub struct EnemyWorld {
     summon_site: Option<(u8, i32, u16)>,
 }
 impl EnemyWorld {
-    /// Source shots are pooled per Aspid (two each); the oldest live shot
-    /// yields when the shared pool is full.
-    fn spawn_shot(&mut self, scene: usize, position: [i32; 2], velocity: [i32; 2], shot_clip: u16, impact_clip: u16) {
+    /// Source shots are pooled per Aspid (two each) and per Blocker (two goop
+    /// and one roller); the oldest live shot yields when the shared pool is
+    /// full.
+    fn spawn_shot(&mut self, scene: usize, position: [i32; 2], velocity: [i32; 2], kind: ShotKind,
+        shot_clip: u16, impact_clip: u16) {
         self.spawn_projectile(Shot { scene: scene as u8, x: position[0], y: position[1], vx: velocity[0],
-            vy: velocity[1], animation_tick: 0, impact: false, barrel: false, shot_clip, impact_clip });
+            vy: velocity[1], animation_tick: 0, impact: false, kind, shot_clip, impact_clip });
     }
     /// `summon`'s `Spawn`: one `Falling Barrel` at the chosen x and the
     /// summoner's own y, at rest, with the pool's own recycling rule.
     fn spawn_barrel(&mut self, scene: usize, position: [i32; 2], clip: u16) {
         self.spawn_projectile(Shot { scene: scene as u8, x: position[0], y: position[1], vx: 0, vy: 0,
-            animation_tick: 0, impact: false, barrel: true, shot_clip: clip, impact_clip: clip });
+            animation_tick: 0, impact: false, kind: ShotKind::Barrel, shot_clip: clip, impact_clip: clip });
     }
     fn spawn_projectile(&mut self, shot: Shot) {
         let slot = self.shots.iter().position(|s| s.is_none())
@@ -1714,13 +1829,13 @@ impl EnemyWorld {
             if hit_hero {
                 // A barrel falls straight down, so the recoil side is the side
                 // of the hero it landed on rather than the side it came from.
-                let outcome = hurt(shot.damage(), if shot.barrel {
+                let outcome = hurt(shot.damage(), if shot.kind == ShotKind::Barrel {
                     if shot.x < (hero_body[0] + hero_body[2]) / 2 { -1 } else { 1 }
                 } else if shot.vx < 0 { -1 } else { 1 });
                 if outcome != Hurt::Ignored { result = outcome; }
             }
             if hit_terrain || hit_hero {
-                if shot.barrel {
+                if shot.kind == ShotKind::Barrel {
                     unsafe { HK_FK_BARRELS_BROKEN = HK_FK_BARRELS_BROKEN.saturating_add(1) }
                     *slot = None;
                     continue;
@@ -1882,8 +1997,9 @@ impl EnemyWorld {
         // while something is still in it.
         let parked = core::cell::Cell::new(self.actors.iter().flatten()
             .filter(|a| a.scene == region.scene && a.parked_baby()).count() as u16);
-        // Aspid shots spawn after the actor pass (the pool is a sibling field).
-        let mut fires: [Option<(usize, [i32; 2], [i32; 2], u16, u16)>; 4] = [None; 4];
+        // Aspid and Blocker shots spawn after the actor pass (the pool is a
+        // sibling field).
+        let mut fires: [Option<(usize, [i32; 2], [i32; 2], ShotKind, u16, u16)>; 4] = [None; 4];
         // The same deferral for a release: the baby that answers one is another
         // actor in the pool this loop already holds.
         let mut releases: [Option<([i32; 2], [i32; 2])>; RELEASES] = [None; RELEASES];
@@ -1891,9 +2007,11 @@ impl EnemyWorld {
         // these per state change.
         let mut summoned: Option<(usize, u8, i32, u16)> = None;
         let mut runner_event = |event: RunnerEvent| {
-            if let RunnerEventKind::Fire { velocity, shot_clip, impact_clip } = event.kind {
+            if let RunnerEventKind::Fire { velocity, offset, goop, shot_clip, impact_clip } = event.kind {
                 if let Some(slot) = fires.iter_mut().find(|f| f.is_none()) {
-                    *slot = Some((event.scene, event.position, velocity, shot_clip, impact_clip));
+                    let origin = [event.position[0] + offset[0], event.position[1] + offset[1]];
+                    let kind = if goop { ShotKind::Goop } else { ShotKind::Spit };
+                    *slot = Some((event.scene, origin, velocity, kind, shot_clip, impact_clip));
                 }
             } else if let RunnerEventKind::Summon { spawns, spawn_y, barrel_clip } = event.kind {
                 summoned = Some((event.scene, spawns, spawn_y, barrel_clip));
@@ -2038,9 +2156,14 @@ impl EnemyWorld {
                     3 => 3,
                     _ => if player.facing > 0 { 0 } else { 2 },
                 };
-                let health_params = match actor.zombie_shield() {
-                    Some(shield) => hk_sim::EnemyParams { invincible: shield.controller.blocks(cardinal), ..spec.health },
-                    None => spec.health,
+                let health_params = match (actor.zombie_shield(), actor.blocker()) {
+                    (Some(shield), _) => hk_sim::EnemyParams { invincible: shield.controller.blocks(cardinal), ..spec.health },
+                    // The Blocker's shell is the same live `SetInvincible`, but
+                    // it leaves `invincibleFromDirection` at the authored 0 and
+                    // `IsBlockingByDirection` answers true for every cardinal in
+                    // that case, so a shut Blocker blocks the pogo too.
+                    (_, Some(blocker)) => hk_sim::EnemyParams { invincible: blocker.controller.invincible(), ..spec.health },
+                    _ => spec.health,
                 };
                 match actor
                     .health
@@ -2066,6 +2189,7 @@ impl EnemyWorld {
                                 // `park_baby` so the kill is counted first.
                                 Runtime::HatcherBaby(_)=>{}
                                 Runtime::ZombieShield(z)=>z.controller.die(),
+                                Runtime::Blocker(b)=>b.controller.die(),
                                 // The False Knight answers the nail through its
                                 // own branch above and never reaches this one.
                                 Runtime::Walker|Runtime::Runner(_)|Runtime::Static {..}|Runtime::FalseKnight(_)=>{}
@@ -2099,6 +2223,15 @@ impl EnemyWorld {
                                     actor.apply_runner_actions(&mut runner,actions,&mut runner_event);
                                 }
                                 actor.runtime=Runtime::Runner(runner);
+                            }
+                        }
+                        // `HealthManager::TakeDamage` sends TOOK DAMAGE, which
+                        // `Blocker Control` answers with a global transition
+                        // into `Hit` from wherever it was. A blocked hit never
+                        // reaches TakeDamage, so a shut Blocker is untouched.
+                        if let Runtime::Blocker(blocker) = &mut actor.runtime {
+                            if !actor.health.dead && !blocker.controller.took_damage().is_empty() {
+                                blocker.animation_tick = 0;
                             }
                         }
                         if let Some(mut fly)=actor.vengefly() {
@@ -2164,8 +2297,8 @@ impl EnemyWorld {
                 }
             }
         }
-        for (scene, position, velocity, shot_clip, impact_clip) in fires.into_iter().flatten() {
-            self.spawn_shot(scene, position, velocity, shot_clip, impact_clip);
+        for (scene, position, velocity, kind, shot_clip, impact_clip) in fires.into_iter().flatten() {
+            self.spawn_shot(scene, position, velocity, kind, shot_clip, impact_clip);
         }
         for (position, velocity) in releases.into_iter().flatten() {
             self.release_baby(region.scene, position, velocity);
@@ -2240,6 +2373,10 @@ impl EnemyWorld {
                 (boss.clip(spec),boss.animation_tick,(actor.x,actor.y),boss.facing())
             } else if let Some(shield)=actor.zombie_shield() {
                 (shield.clip(spec),shield.animation_tick,(actor.x,actor.y),shield.controller.facing())
+            } else if let Some(blocker)=actor.blocker() {
+                // The Blocker never turns: the sprite keeps the mirror the cook
+                // read off its transform for as long as it lives.
+                (blocker.clip(spec),blocker.animation_tick,(actor.x,actor.y),spec.initial_direction)
             } else if let Some(animation_tick)=actor.immobile() {
                 let ActorController::Static {idle_clip}=spec.controller else {panic!("Static runtime with other metadata")};
                 (idle_clip,animation_tick,(actor.x,actor.y),actor.walk.direction)
@@ -2807,4 +2944,36 @@ mod runner_runtime_tests {
         assert_eq!(resumed.runner().unwrap().animation_tick,before.runner().unwrap().animation_tick+1);
     }
 
+}
+
+#[cfg(test)]
+mod blocker_shot_tests {
+    use super::*;
+    /// `Shot Mawlek` and `Spitter Shot R` are the same box on the same pool and
+    /// differ only in gravity, which is exactly the kind of thing a shared pool
+    /// gets wrong quietly. The Blocker lobs its goop over a gap at 20 up; the
+    /// Aspid's bullet at the same speed would still be climbing long after.
+    #[test]
+    fn blocker_goop_arcs_over_where_an_aspid_shot_would_not() {
+        let mut world = EnemyWorld::new();
+        world.spawn_shot(0, [0, 0], [0, 20 * ONE], ShotKind::Goop, 0, 0);
+        world.spawn_shot(0, [0, 0], [0, 20 * ONE], ShotKind::Spit, 0, 0);
+        // `tick_shots` needs a region and terrain; a scene with no edges and
+        // wide bounds leaves gravity as the only thing acting on either.
+        let region = crate::world::Region { scene: 0,
+            bounds: [-400 * ONE, -400 * ONE, 400 * ONE, 400 * ONE],
+            collision_bounds: [-400 * ONE, -400 * ONE, 400 * ONE, 400 * ONE], actors: &[] };
+        let mut peaks = [None; 2];
+        for t in 1..=60u32 {
+            world.tick_shots(&region, [i32::MIN / 2; 4], 0, &|_| [0; 4], |_, _| Hurt::Ignored);
+            for (slot, peak) in world.shots.iter().zip(peaks.iter_mut()) {
+                let shot = slot.expect("neither shot ends without terrain or a hero");
+                if shot.vy <= 0 && peak.is_none() { *peak = Some(t); }
+            }
+        }
+        // 20 / (.6 * 60) seconds in ticks, against 20 / (.05 * 60), which is
+        // more than six seconds and so has not turned over inside this run.
+        assert_eq!(peaks[0], Some(34), "goop apex");
+        assert_eq!(peaks[1], None, "an Aspid shot is still climbing after a second");
+    }
 }

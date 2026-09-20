@@ -13,6 +13,7 @@ pub mod gruzzer;
 pub mod baldur;
 pub mod hatcher;
 pub mod zombie_shield;
+pub mod blocker;
 pub mod boss;
 pub mod false_knight;
 pub mod shade;
