@@ -15,12 +15,18 @@ spatial partitions do not implement source scripts.
 # and cook_fingerprints() deliberately leaves this file out of the cache key.
 #
 # Room_shop (level17), Sly's shop and the only scene that makes P17's purchases
-# reachable, was measured before admission and fits with room to spare: 6 views,
-# worst view 90 of 416 CLUT slots, 1 of 5 pages, 70,372 of 393,216 room bytes, a
+# reachable, fits with room to spare: 6 views, chunks 694 to 699, tightest view
+# 87 of 416 CLUT slots, 1 of 5 pages, 70,372 of 393,216 room bytes, a
 # 71,656-byte scene bank, decoder and packet bound PASS, 7.8 s to cook. Its way
 # in is Dirtmouth's door_sly, whose serialized targetScene is empty because its
 # Door Control FSM holds the destination; `regions.door_destination` reads it,
 # so the gate cooks. See out_of_reach in .hkpsx/shop-catalog.json.
+#
+# That 87 was written here as 90 until it was re-measured against the cooked
+# packs. 90 is the view's texture count, which is bounded separately at 640 by
+# what HKROOM02's table can address; the 416 below counts distinct palettes.
+# The two were the same number before frames started tiling and are not now, so
+# read tools/texture_headroom.py's `cluts` column and not its `textures` one.
 SCENE_TABLE = (
     {'scene_id': 0, 'scene_name': 'Tutorial_01', 'file': 'level6',
      'runtime_bounds': [0,-5,210,100], 'camera_global_bounds': [14,0,196,92]},
