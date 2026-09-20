@@ -7,15 +7,15 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |622,184|
-| Code-to-data alignment |8|
-| Linked data, including menu and HUD |397,712|
-| BSS, including shared scene arena and runtime pools |846,316|
-| Total static span |1,866,220|
+| Linked code |619,524|
+| Code-to-data alignment |12|
+| Linked data, including menu and HUD |398,320|
+| BSS, including shared scene arena and runtime pools |858,428|
+| Total static span |1,876,284|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |115,988|
+| Unallocated gap before reserved stack |105,924|
 
 Every figure above is the current build's, read out of `.hkpsx/build.json`, and
 `tests/test_budget_doc.py` fails when this table drifts from it. The table stood
@@ -24,7 +24,7 @@ separate agent briefings after it had fallen to 73,876. A budget
 document nobody can trust is worse than none, because work gets planned against
 it.
 
-Static data ends at `0x801d79ec`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801da13c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 417,748 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -40,8 +40,11 @@ its 32,768-byte reservation before nested calls. `host/stack_budget.py` now
 derives a project linker script from the unchanged pinned SDK, protects 48 KiB,
 and checks the actual final main prologue before packaging. The generated
 script's content hash is part of its filename so budget changes force a relink.
-The current main frame is 32,208 bytes, leaving 16,944 reserved bytes for nested
+The current main frame is 18,432 bytes, leaving 30,720 reserved bytes for nested
 calls and other stack use; this is **not** an observed high-water measurement.
+It was 35,688 at build 154, and moving the 12,112-byte particle pool out to a
+static took 17,256 off the frame rather than 12,112, because constructor
+temporaries shared its lifetime. Do not read a frame delta as a struct size.
 The linker also excludes the 256 bytes above its initial SP from static RAM.
 Current evidence: `.hkpsx/build.json` and `.hkpsx/game69/build-provisional.log`.
 The outlined enemy terrain helper has a2,336-byte final binary frame, including
