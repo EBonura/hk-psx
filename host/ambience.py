@@ -1,4 +1,12 @@
-"""Package complete source ambience as six raw disc chunks, never EXE samples."""
+"""Package the resident source ambience as raw disc chunks, never EXE samples.
+
+How many loops there are, and which source atmos channels they are, is
+`cook_music.RESIDENT_ATMOS_CHANNELS` and nothing else: the clip table, the cue
+gain arrays, the SPU voices and the streamed clip's index all follow from it.
+The catalogue's 456 scenes with an atmos cue between them name all 16 channels,
+so no resident set covers the game; the set is a budget decision per disc,
+priced by the voice budget in `assemble` and the SPU ceiling in `spu_ceiling`.
+"""
 import argparse,array,hashlib,json,math,re,struct,subprocess,sys
 from pathlib import Path
 from source import ROOT,Source,dump
@@ -8,10 +16,26 @@ from quality import SCENE_FILES
 from cook_music import RESIDENT_ATMOS_CHANNELS as CHANNELS
 SPU_START=0x18000
 STREAM_CHANNEL=4
+# The one clip cached in RAM rather than held whole in SPU. Its position in the
+# table follows the channel set, and the guest derives the same index from the
+# cooked clips, so re-membering the set cannot point the stream at another
+# loop's voice and RAM buffer.
+STREAM_INDEX=CHANNELS.index(STREAM_CHANNEL)
 STREAM_BYTES=16384
 STREAM_RAM_LIMIT=200000
 SPU_END=0x80000
 SFX_END=0x14000 # Geo occupies 0x14000..0x18000, below ambience.
+# The SPU voices ambience owns. The other 18 are spoken for: 0..5 and 16..17
+# player SFX, 12..14 Geo, 15 shared by the Great Door and the False Knight,
+# 18..20 Focus, 21..23 Runner. A longer resident set has nowhere to key on, so
+# the cook refuses rather than taking a voice another bank is already driving.
+VOICES=tuple(range(6,12))
+# The banks stacked above ambience in SPU RAM, which move up by whatever
+# ambience grows. Their sizes do not depend on ambience, so the last build's
+# generated manifests are the right source for what the tail costs. Their base
+# addresses do depend on it, and are hardcoded in focus_audio.py and
+# runner_audio.py, which both have to move in the same change.
+TAIL_BANKS=('data/focus-audio.rs','data/runner-audio.rs')
 RATE=8000
 # The cave bed is the one clip whose 8 kHz copy will not fit SPU; halving its
 # rate halves the RAM cache it streams from. 99% of its energy is below 637 Hz.
@@ -45,8 +69,33 @@ def volume(db):
     if not math.isfinite(db) or db>0:raise ValueError('unsupported mixer gain')
     return round(16383*10**(db/20))
 
-def assemble(report,root,transitions,snapshots,sfx_end):
+def bank_bytes(path):
+    """BANK_BYTES out of one generated Rust audio manifest.
+
+    The generators do not agree on spacing, so the pattern tolerates it rather
+    than each caller carrying its own copy.
+    """
+    match=re.search(r'pub\s+const\s+BANK_BYTES\s*:\s*usize\s*=\s*(\d+)\s*;',Path(path).read_text())
+    if not match:raise ValueError('no BANK_BYTES in '+str(path))
+    return int(match[1])
+
+def spu_ceiling(root):
+    """Highest SPU address ambience may reach, and what the tail above costs.
+
+    This used to be SPU_END, which counted the Focus and Runner banks above
+    ambience as free space and reported a figure 128KiB too generous. Nothing
+    raised on it, because focus_audio.py catches the overlap later from its own
+    side; what it cost was every budget note that quoted the free figure.
+    """
+    banks={name:bank_bytes(root/name) for name in TAIL_BANKS}
+    reserved=sum(banks.values())
+    return {'ceiling':SPU_END-reserved,'reserved_bytes':reserved,'banks':banks}
+
+def assemble(report,root,transitions,snapshots,sfx_end,ceiling):
     if sfx_end>SFX_END:raise ValueError("ambience overlaps resident SFX bank")
+    if len(CHANNELS)>len(VOICES):
+        raise ValueError(f'{len(CHANNELS)} resident atmos channels need {len(CHANNELS)} SPU voices; '
+                         f'ambience owns {len(VOICES)} ({VOICES[0]}..{VOICES[-1]}) and every other voice is allocated')
     channels={};cues=[]
     for scene in report['scenes']:
         if scene['scene_file'] not in SCENE_FILES:continue
@@ -86,10 +135,13 @@ def assemble(report,root,transitions,snapshots,sfx_end):
         payload=loop_payload(data)
         spu_bytes=min(len(payload),STREAM_BYTES) if ch==STREAM_CHANNEL else len(payload)
         if spu_bytes<len(payload) and len(payload)>STREAM_RAM_LIMIT:raise ValueError('ambient stream exceeds RAM cache')
-        if address%16 or address<SPU_START or address+spu_bytes>SPU_END:raise ValueError('ambience SPU capacity overflow')
+        if address%16 or address<SPU_START:raise ValueError('ambience SPU capacity overflow')
+        if address+spu_bytes>ceiling:
+            raise ValueError(f'ambience SPU capacity overflow: {c["name"]} ends {address+spu_bytes-ceiling} bytes '
+                             f'past the {ceiling:#x} ceiling')
         pitch=round(rate*4096/44100)
         if pitch!=c['spu_pitch']:raise ValueError('pitch/profile mismatch')
-        clips.append({'source':c['source'],'name':c['name'],'source_channel':ch,'voice':6+index,
+        clips.append({'source':c['source'],'name':c['name'],'source_channel':ch,'voice':VOICES[index],
             'rate':rate,'pitch':pitch,'actual_rate':pitch*44100/4096,'spu_address':address,
             'byte_len':len(payload),'spu_bytes':spu_bytes,'checksum':fnv(payload),'sha256':hashlib.sha256(payload).hexdigest(),
             'valid_frames':c['frames'],'padding_samples':c['padding_samples'],
@@ -119,10 +171,10 @@ def decoder_quality(clip,path):
 def rust_manifest(clips,cues):
     lines=['// Generated by host/ambience.py; descriptors only, no embedded audio.',
         '#[derive(Clone,Copy)] pub struct AmbienceClip {pub byte_len:usize,pub spu_bytes:usize,pub checksum:u32,pub spu_address:u32,pub pitch:u16,pub voice:u8,pub source_channel:u8}',
-        '#[derive(Clone,Copy)] pub struct AmbienceCue {pub mask:u8,pub gains:[i16;6],pub fade_ticks:u16}',
-        'pub const AMBIENCE_CLIPS:[AmbienceClip;6]=[']
+        f'#[derive(Clone,Copy)] pub struct AmbienceCue {{pub mask:u8,pub gains:[i16;{len(clips)}],pub fade_ticks:u16}}',
+        f'pub const AMBIENCE_CLIPS:[AmbienceClip;{len(clips)}]=[']
     for c in clips:lines.append('AmbienceClip{byte_len:%d,spu_bytes:%d,checksum:%d,spu_address:%d,pitch:%d,voice:%d,source_channel:%d},'%tuple(c[k]for k in ('byte_len','spu_bytes','checksum','spu_address','pitch','voice','source_channel')))
-    lines.extend(['];',f'pub const AMBIENCE_SPU_START:u32={SPU_START};',f'pub const AMBIENCE_SPU_END:u32={SPU_END};',f'pub const AMBIENCE_STREAM_BYTES:usize={STREAM_BYTES};',f'pub const AMBIENCE_STREAM_SOURCE_BYTES:usize={clips[3]["byte_len"]};',f'pub const AMBIENCE_SCENES:[AmbienceCue;{len(cues)}]=['])
+    lines.extend(['];',f'pub const AMBIENCE_SPU_START:u32={SPU_START};',f'pub const AMBIENCE_SPU_END:u32={SPU_END};',f'pub const AMBIENCE_STREAM_BYTES:usize={STREAM_BYTES};',f'pub const AMBIENCE_STREAM_SOURCE_BYTES:usize={clips[STREAM_INDEX]["byte_len"]};',f'pub const AMBIENCE_SCENES:[AmbienceCue;{len(cues)}]=['])
     for c in cues:lines.append('AmbienceCue{mask:%d,gains:%s,fade_ticks:%d},'%(c['mask'],str(c['gains']),c['fade_ticks']))
     lines.append('];');return '\n'.join(lines)+'\n'
 
@@ -143,7 +195,7 @@ def cached_report(path):
             for plane in c['planes']:
                 path=ROOT/plane['path']
                 if sha(path)!=plane['sha256'] or not path.with_suffix('.s16le').is_file():raise ValueError('missing/stale converted profile')
-    if len([c for c in report['clips']if c['rate']==RATE and c['channels']==1])!=6:raise ValueError('missing ambient profile')
+    if len([c for c in report['clips']if c['rate']==RATE and c['channels']==1])!=len(CHANNELS):raise ValueError('missing ambient profile')
     return report
 
 def ensure_music(path):
@@ -154,9 +206,8 @@ def ensure_music(path):
         return cached_report(path)
 
 def sfx_reservation(root):
-    data=(root/'data/sfx.adpcm').read_bytes();manifest=(root/'data/sfx.rs').read_text()
-    match=re.search(r'pub const BANK_BYTES: usize = (\d+);',manifest)
-    if not match or int(match[1])!=len(data) or len(data)%16:raise ValueError('SFX bank/manifest mismatch')
+    data=(root/'data/sfx.adpcm').read_bytes()
+    if bank_bytes(root/'data/sfx.rs')!=len(data) or len(data)%16:raise ValueError('SFX bank/manifest mismatch')
     end=0x1010+len(data)
     if end>SFX_END:raise ValueError('ambience overlaps resident SFX bank')
     return {'start':0x1010,'end':end,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),
@@ -178,8 +229,8 @@ def main():
             audio=s.ref(resource,manager['atmosSources'][channel]);tree=s.read(audio)
             group=s.ref(audio.assets_file,tree['OutputAudioMixerGroup'])
             snapshots[file].append(source_snapshot(s,snapshot,group))
-    sfx=sfx_reservation(ROOT)
-    clips,cues=assemble(report,ROOT,transitions,snapshots,sfx['end'])
+    sfx=sfx_reservation(ROOT);tail=spu_ceiling(ROOT)
+    clips,cues=assemble(report,ROOT,transitions,snapshots,sfx['end'],tail['ceiling'])
     out=ROOT/'data/ambience';out.mkdir(parents=True,exist_ok=True)
     work=ROOT/'.hkpsx/ambience';work.mkdir(parents=True,exist_ok=True)
     for i,c in enumerate(clips):
@@ -187,13 +238,19 @@ def main():
         c['path']=str(path);quality_path=work/f'clip_{i}.adpcm';quality_path.write_bytes(payload)
         c['quality']=decoder_quality(c,quality_path)
     manifest=ROOT/'data/ambience.rs';manifest.write_text(rust_manifest(clips,cues))
+    end=clips[-1]['spu_address']+clips[-1]['spu_bytes']
     result={'format':'raw-psx-adpcm-loops-v1','clips':clips,'cues':cues,
-        'sfx_reservation':sfx,'total_bytes':sum(c['byte_len']for c in clips),'spu_bytes':sum(c['spu_bytes']for c in clips),'ram_cache_bytes':sum(c['byte_len']for c in clips if c['spu_bytes']<c['byte_len']),'spu_start':SPU_START,'spu_end':clips[-1]['spu_address']+clips[-1]['spu_bytes'],
-        'spu_free_bytes':SPU_END-clips[-1]['spu_address']-clips[-1]['spu_bytes'],
+        'sfx_reservation':sfx,'total_bytes':sum(c['byte_len']for c in clips),'spu_bytes':sum(c['spu_bytes']for c in clips),'ram_cache_bytes':sum(c['byte_len']for c in clips if c['spu_bytes']<c['byte_len']),'spu_start':SPU_START,'spu_end':end,
+        # Free below the banks stacked above ambience, not below SPU RAM's end.
+        'spu_free_bytes':tail['ceiling']-end,'spu_ceiling':tail['ceiling'],
+        'spu_tail_reserved_bytes':tail['reserved_bytes'],'spu_tail_banks':tail['banks'],
+        'resident_atmos_channels':list(CHANNELS),'voices':list(VOICES[:len(clips)]),
         'source_report_sha256':sha(a.source_report),'source_method_sha256':sha(methods),
         'tool_sha256':sha(Path(__file__)),'rust_manifest_sha256':sha(manifest),
         'mixer_scope':'Source internal Atmos group and parent gains; downstream output mixers/player settings separate.',
-        'transport':'Six complete source chunks loaded at boot; channel4 cached in RAM and fed to a 16KiB SPU ring. Other five loops resident in SPU. No event-time CD reads. Sector padding is outside checksum/byte_len.'}
+        'transport':f'{len(clips)} complete source chunks loaded at boot; channel{STREAM_CHANNEL} cached in RAM and fed to a {STREAM_BYTES//1024}KiB SPU ring. The other {len(clips)-1} loops are resident in SPU. No event-time CD reads. Sector padding is outside checksum/byte_len.',
+        'omitted_atmos_channels':'Every source atmos channel outside resident_atmos_channels; cook_music records them per scene in ambience_omitted_channels and the scene cooks a zero mask.'}
     dump(ROOT/'.hkpsx/ambience.json',result)
-    print('6 loops:',result['total_bytes'],'bytes, SPU end',hex(result['spu_end']),'free',result['spu_free_bytes'])
+    print(f'{len(clips)} loops:',result['total_bytes'],'bytes, SPU end',hex(end),'free',result['spu_free_bytes'],
+          f"below the {tail['ceiling']:#x} ceiling ({tail['reserved_bytes']} bytes of Focus and Runner bank sit above)")
 if __name__=='__main__':main()

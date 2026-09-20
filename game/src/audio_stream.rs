@@ -13,7 +13,7 @@
 pub const SOURCE_BYTES: usize = super::AMBIENCE_STREAM_SOURCE_BYTES;
 pub const HALF_BYTES: usize = 8_192;
 pub const RING_BYTES: usize = HALF_BYTES * 2;
-pub const VOICE: u8 = 9;
+pub const VOICE: u8 = super::AMBIENCE_CLIPS[super::STREAM_INDEX].voice;
 pub const PITCH: u16 = super::AMBIENCE_CLIPS[super::STREAM_INDEX].pitch;
 // 512 blocks * 28 samples at 44100*PITCH/4096 Hz per half.
 // PAL and NTSC give about 89 and 107 VBlanks. Eight missed checkpoints

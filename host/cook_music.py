@@ -10,7 +10,27 @@ from scene import Scene
 from breakables import _components,collider_polygons
 
 
-# Atmos channels with a resident guest loop; host/ambience.py CHANNELS mirrors this.
+# Atmos channels with a resident guest loop. This tuple is the whole decision:
+# host/ambience.py derives the clip table length, the cue gain arrays, the SPU
+# voices and the streamed clip's index from it, and the guest derives its own
+# half from the cooked table.
+#
+# It cannot be sized once for the game. The AudioManager declares 16 atmos
+# channels and the 456 catalogue scenes that carry an atmos cue name all 16
+# between them, which at 8 kHz mono is about 1.4 MB against 512 KB of SPU RAM,
+# on six voices; every other SPU voice belongs to another bank. So the resident
+# set is a per-disc budget decision, and adding a channel costs three things
+# worth checking before editing this line:
+#   - SPU RAM, against the ceiling host/ambience.py computes (the Focus and
+#     Runner banks sit above ambience and move up with it),
+#   - one of ambience's six voices, which host/ambience.py refuses to exceed,
+#   - WORLD.PAK chunk ids, because host/pack_scenes.py numbers the atlas and
+#     metadata chunks after the ambience clips.
+# A channel left out is not an error: the scene records it in
+# ambience_omitted_channels and cooks a zero mask, which the guest handles by
+# fading the previous stems out and keying nothing on. Three admitted scenes
+# are silent that way today: Fungus1_01 (Greenpath, channel 7) and
+# Crossroads_46b and Crossroads_50 (MiscWind, channel 15).
 RESIDENT_ATMOS_CHANNELS=(0,1,3,4,5,6)
 
 def sha(path):
@@ -80,8 +100,8 @@ def inventory(source):
                 for channel,enabled in enumerate(atmos['isChannelEnabled']):
                     if not enabled:continue
                     if channel not in RESIDENT_ATMOS_CHANNELS:
-                        # The guest keeps six resident loops (SPU voices 6..11); a
-                        # stem outside that set is an explicit omission for the scene.
+                        # The guest keeps one loop per resident channel; a stem
+                        # outside that set is an explicit omission for the scene.
                         record['ambience_omitted_channels'].append(channel);continue
                     audio_obj=source.ref(resource,manager['atmosSources'][channel]);audio=source.read(audio_obj)
                     group=source.ref(audio_obj.assets_file,audio['OutputAudioMixerGroup'])
