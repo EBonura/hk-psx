@@ -4,6 +4,12 @@ mod data;
 mod state;
 use state::*;
 
+// The mixer's stem count is hand-written and the clip table is cooked from
+// `cook_music.RESIDENT_ATMOS_CHANNELS`. Widening the resident set has to move
+// both, so a set that outgrew the mixer fails here rather than indexing a cue's
+// gains off the end of a stem array.
+const _: () = assert!(STEMS == data::AMBIENCE_CLIPS.len());
+
 fn loaded() -> Mixer {
     let mut mixer = Mixer::new();
     mixer.loaded = ALL;

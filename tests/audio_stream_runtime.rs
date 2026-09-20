@@ -3,7 +3,22 @@
 //! literal. The include stands in for game/src/ambience.rs, which supplies
 //! these to the stream module in the guest.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/ambience.rs"));
-pub const STREAM_INDEX: usize = 3;
+/// Same derivation game/src/ambience.rs uses: the streamed clip is the one
+/// whose SPU residency is a ring rather than its whole payload, so this test
+/// follows the resident channel set instead of a written-down index.
+pub const STREAM_INDEX: usize = {
+    let mut found = usize::MAX;
+    let mut i = 0;
+    while i < AMBIENCE_CLIPS.len() {
+        if AMBIENCE_CLIPS[i].spu_bytes != AMBIENCE_CLIPS[i].byte_len {
+            assert!(found == usize::MAX, "more than one streamed ambience clip");
+            found = i;
+        }
+        i += 1;
+    }
+    assert!(found != usize::MAX, "no streamed ambience clip");
+    found
+};
 #[path = "../game/src/audio_stream.rs"]
 mod stream;
 use stream::*;

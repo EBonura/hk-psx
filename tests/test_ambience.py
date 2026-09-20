@@ -43,29 +43,61 @@ class AmbienceTests(unittest.TestCase):
             snapshots[file]=[{'internal_volume_db':0 if ch in enabled else -80}for ch in ambience.CHANNELS]
             scenes.append({'scene_file':file,'managers':[{'source':file+':1','atmos_cue':{'name':file},
                 'ambience':[entries[ch]for ch in enabled]}]})
+        self.snapshots=snapshots
         return {'clips':clips,'scenes':scenes},snapshots
+
+    def assemble(self,report,root,sfx_end=None,ceiling=ambience.SPU_END):
+        return ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},
+            self.snapshots,ambience.SFX_END if sfx_end is None else sfx_end,ceiling)
 
     def test_bank_preserves_source_channel_masks_gains_and_disjoint_addresses(self):
         with tempfile.TemporaryDirectory()as temp:
-            root=pathlib.Path(temp);report,snapshots=self.fixture(root)
-            clips,cues=ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
+            root=pathlib.Path(temp);report,_=self.fixture(root)
+            clips,cues=self.assemble(report,root)
             self.assertEqual([c['mask']for c in cues],[57,54,57])
             self.assertEqual(cues[0]['gains'],[16383,2,2,16383,16383,16383])
             self.assertEqual([c['fade_ticks']for c in cues],[30,30,30])
-            self.assertEqual([c['voice']for c in clips],list(range(6,12)))
+            self.assertEqual([c['voice']for c in clips],list(ambience.VOICES[:len(clips)]))
             for i,c in enumerate(clips):
                 self.assertEqual(c['spu_address'],ambience.SPU_START+i*16)
                 self.assertEqual(c['checksum'],ambience.fnv(c['payload']))
                 self.assertEqual(c['byte_len'],16)
                 self.assertEqual(c['valid_frames'],27)
-            with patch.object(ambience,'SPU_END',ambience.SPU_START+80):
-                with self.assertRaisesRegex(ValueError,'capacity overflow'):
-                    ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
+            with self.assertRaisesRegex(ValueError,'capacity overflow'):
+                self.assemble(report,root,ceiling=ambience.SPU_START+80)
             with self.assertRaisesRegex(ValueError,'overlaps'):
-                ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END+16)
+                self.assemble(report,root,sfx_end=ambience.SFX_END+16)
             (root/report['clips'][0]['planes'][0]['path']).write_bytes(bytes(16))
             with self.assertRaisesRegex(ValueError,'hash mismatch'):
-                ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
+                self.assemble(report,root)
+
+    def test_capacity_overflow_names_the_clip_and_the_shortfall(self):
+        with tempfile.TemporaryDirectory()as temp:
+            root=pathlib.Path(temp);report,_=self.fixture(root)
+            # Room for five of the six 16-byte payloads, so the sixth is 16 over.
+            ceiling=ambience.SPU_START+16*(len(ambience.CHANNELS)-1)
+            with self.assertRaisesRegex(ValueError,r'ends 16 bytes past'):
+                self.assemble(report,root,ceiling=ceiling)
+
+    def test_resident_set_longer_than_the_voices_ambience_owns_is_refused(self):
+        """Every other SPU voice belongs to another bank, so the cook stops here."""
+        with tempfile.TemporaryDirectory()as temp:
+            root=pathlib.Path(temp)
+            with patch.object(ambience,'VOICES',ambience.VOICES[:len(ambience.CHANNELS)-1]):
+                report,_=self.fixture(root)
+                with self.assertRaisesRegex(ValueError,'SPU voices'):self.assemble(report,root)
+
+    def test_spu_ceiling_excludes_the_banks_stacked_above_ambience(self):
+        with tempfile.TemporaryDirectory()as temp:
+            root=pathlib.Path(temp);(root/'data').mkdir()
+            for name,size in zip(ambience.TAIL_BANKS,(1024,2048)):
+                (root/name).write_text(f'pub const BANK_BYTES: usize = {size};\n')
+            tail=ambience.spu_ceiling(root)
+            self.assertEqual(tail['reserved_bytes'],3072)
+            self.assertEqual(tail['ceiling'],ambience.SPU_END-3072)
+            self.assertEqual(tail['banks'],dict(zip(ambience.TAIL_BANKS,(1024,2048))))
+            (root/ambience.TAIL_BANKS[0]).write_text('nothing useful\n')
+            with self.assertRaisesRegex(ValueError,'no BANK_BYTES'):ambience.spu_ceiling(root)
 
     def test_sfx_overlap_and_manifest_drift_rejected(self):
         with tempfile.TemporaryDirectory()as temp:
@@ -81,21 +113,37 @@ class AmbienceTests(unittest.TestCase):
 
     def test_long_cave_loop_keeps_payload_but_reserves_only_ring_in_spu(self):
         with tempfile.TemporaryDirectory() as temp:
-            root=pathlib.Path(temp);report,snapshots=self.fixture(root)
-            clip=report['clips'][3]
+            root=pathlib.Path(temp);report,_=self.fixture(root)
+            # The streamed clip's row follows the resident channel set, so the
+            # fixture finds it the same way the cook and the guest do.
+            index=ambience.STREAM_INDEX
+            clip=report['clips'][index]
             payload=bytes([12,0]+[0x45]*14)*12492
             path=root/clip['planes'][0]['path'];path.write_bytes(payload)
             clip.update(frames=len(payload)//16*28,padding_samples=0)
             clip['planes'][0].update(bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
-            clips,_=ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
-            self.assertEqual(clips[3]['byte_len'],199872)
-            self.assertEqual(clips[3]['spu_bytes'],16384)
-            self.assertEqual(clips[3]['payload'],ambience.loop_payload(payload))
-            self.assertEqual(clips[4]['spu_address'],clips[3]['spu_address']+16384)
+            clips,_=self.assemble(report,root)
+            self.assertEqual(clips[index]['source_channel'],ambience.STREAM_CHANNEL)
+            self.assertEqual(clips[index]['byte_len'],199872)
+            self.assertEqual(clips[index]['spu_bytes'],16384)
+            self.assertEqual(clips[index]['payload'],ambience.loop_payload(payload))
+            self.assertEqual(clips[index+1]['spu_address'],clips[index]['spu_address']+16384)
             self.assertEqual(sum(c['byte_len']-c['spu_bytes'] for c in clips),183488)
             with patch.object(ambience,'STREAM_RAM_LIMIT',199856):
-                with self.assertRaisesRegex(ValueError,'RAM cache'):
-                    ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},snapshots,ambience.SFX_END)
+                with self.assertRaisesRegex(ValueError,'RAM cache'):self.assemble(report,root)
+
+    def test_manifest_lengths_and_stream_row_follow_the_resident_channel_set(self):
+        """The table used to say 6 and index the stream at 3 whatever the set was."""
+        clips=[{'byte_len':16*(i+1),'spu_bytes':16,'checksum':i,'spu_address':ambience.SPU_START+16*i,
+                'pitch':743,'voice':ambience.VOICES[i],'source_channel':ch}
+               for i,ch in enumerate(ambience.CHANNELS)]
+        cues=[{'mask':1,'gains':[0]*len(clips),'fade_ticks':30}]
+        text=ambience.rust_manifest(clips,cues)
+        self.assertIn(f'pub const AMBIENCE_CLIPS:[AmbienceClip;{len(clips)}]=[',text)
+        self.assertIn(f'pub gains:[i16;{len(clips)}]',text)
+        stream=clips[ambience.STREAM_INDEX]
+        self.assertEqual(stream['source_channel'],ambience.STREAM_CHANNEL)
+        self.assertIn(f'pub const AMBIENCE_STREAM_SOURCE_BYTES:usize={stream["byte_len"]};',text)
 
     def test_fresh_or_stale_cache_invokes_reproducible_source_cooker(self):
         path=pathlib.Path('/ignored/music/provenance.json')

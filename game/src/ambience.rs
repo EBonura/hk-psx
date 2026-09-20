@@ -10,7 +10,27 @@ mod state;
 mod stream;
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/ambience.rs"));
 pub const CLIPS: &[AmbienceClip] = &AMBIENCE_CLIPS;
-const STREAM_INDEX: usize = 3;
+// How many loops there are is the cook's decision, taken from the resident
+// atmos channel set; this is the guest half of it agreeing.
+const _: () = assert!(state::STEMS == AMBIENCE_CLIPS.len());
+/// The one clip held in SPU as a ring refilled from RAM rather than whole.
+/// Derived from the cooked table rather than written down, so changing which
+/// source channels are resident cannot silently point the stream at another
+/// loop's voice, pitch and RAM buffer.
+const fn stream_index() -> usize {
+    let mut found = usize::MAX;
+    let mut i = 0;
+    while i < AMBIENCE_CLIPS.len() {
+        if AMBIENCE_CLIPS[i].spu_bytes != AMBIENCE_CLIPS[i].byte_len {
+            assert!(found == usize::MAX, "more than one streamed ambience clip");
+            found = i;
+        }
+        i += 1;
+    }
+    assert!(found != usize::MAX, "no streamed ambience clip");
+    found
+}
+const STREAM_INDEX: usize = stream_index();
 #[repr(align(4))]
 struct Source([u8; AMBIENCE_STREAM_SOURCE_BYTES]);
 #[no_mangle]
@@ -33,7 +53,7 @@ pub static mut HK_AMBIENCE_SCENE: u32 = u32::MAX;
 #[no_mangle]
 pub static mut HK_AMBIENCE_FADE_TICKS: u32 = 0;
 #[no_mangle]
-pub static mut HK_AMBIENCE_GAINS: [u32; 6] = [0; 6];
+pub static mut HK_AMBIENCE_GAINS: [u32; state::STEMS] = [0; state::STEMS];
 
 fn publish() {
     unsafe {
