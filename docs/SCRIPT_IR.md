@@ -159,15 +159,30 @@ widening it to dominance is worth 505 more resolved object fields, 1,579 to
 that opening run out of `states[0]` rather than out of the authored start state,
 so an FSM that begins elsewhere got the wrong state's writes.
 
-What is left is not this rule. 6,792 object fields still go through a variable
-the cook will not fix at all, and 4,338 of those are written by an action
-outside the reference set: `SetGameObject`, `SpawnObjectFromGlobalPool`,
-`CreateObject`, `GetEventSender`. A spawned object genuinely has no cook-time
-identity, but `SetGameObject` alone accounts for 955 and does. Another 2,138 are
-disturbed rather than unwritten, and the top two disturbers, `gameObject1` on
-`BoxColliderOffset` and on `BoundsBoxCollider`, look like inputs counted as
-writes, 440 each. `OBJECT_READS` is a closed list on purpose, so widening it is
-evidence work rather than a guess.
+Two of the things that used to disturb a variable were not writes at all, and
+both are now settled by evidence rather than by a name on a list.
+
+The first is a rule read off the field's own type. An `FsmOwnerDefault` says
+*which* object an action operates on: it is an owner option plus a GameObject,
+and an action with something to store uses a plain `FsmGameObject`, because
+there is nothing to store an owner option into. Measured over the admitted
+scenes before it was trusted: 23,047 occurrences across 133 (action, field)
+pairs, carried by six field names, and not one of them is the store field of a
+reference action or is even named like an output. Three of the six were being
+counted as writes for want of a name on the list, `gameObject1` on
+`BoxColliderOffset` and on `BoundsBoxCollider` among them. That is worth 46 more
+resolved `GetParent` instances, 144 to 190 of 350.
+
+The second is `SetGameObject`, the largest single disturber, and it is a
+reference action like the rest: it copies one object field into an object
+variable, so wherever the source resolves the destination is fixed too. It now
+compiles as one, and **it resolves nothing at all**: 0 of its 193 enabled
+instances, 66 refused because the pointer is into another file and 127 because
+the source is itself a variable this cook cannot fix. That is the answer to the
+question the earlier note left open. The chain does not bottom out in a rule the
+compiler was missing; it bottoms out in cross-file prefab pointers and in other
+unfixable variables. What it buys is a named reason in place of 193 silent
+refusals, which is what the inventory is for.
 
 ## Triggers
 
@@ -336,7 +351,31 @@ ability to name an object.
 
 `SendEventByName` to another FSM needs a cross-FSM instance table, which is the
 scoping work and not a missing opcode: the executor already sends synchronously,
-it just has nowhere to look the target up. A send to self compiles today.
+it just has nowhere to look the target up.
+
+A send to self compiles today, and "to self" is a larger set than the `Self`
+option, because PlayMaker spells the sending FSM more than one way. A send to
+`GameObject` delivers to every `PlayMakerFSM` on that object, so where the
+object resolves to the sender's own and carries no other FSM, it names the same
+single receiver; a send to `GameObjectFSM` is the sender when both halves match.
+Recognising those is cook-time resolution with no new opcode and no runtime
+lookup, the same shape as `GetOwner`, and it is worth 144 action instances: 58
+to 202 of 2,381.
+
+The rest now refuse by what is actually in the way rather than under one
+blanket reason, which is the difference between a target the cook cannot name
+and a target it named and found to be somebody else. 1,315 send at an object
+this cook cannot fix, 513 at a broadcast or a host FSM, 251 at the sender's own
+object alongside other FSMs, 92 at another object.
+
+Two fields of this action were being dropped rather than refused, which is the
+failure mode the format exists to avoid, and both are now closed. A non-zero
+`delay` goes on PlayMaker's own queue and arrives later; the executor has a
+pending queue but no op that schedules into it, so six instances authored 0.5,
+1.0 and 4.0 seconds were compiling to a send on the wrong frame, and a delay is
+refused until an op can carry it. An `everyFrame` send re-sends for as long as
+the state is current, which is exactly `REPEAT`, so the one instance authored
+that way now carries the flag instead of compiling to a single send.
 
 ## The ceiling
 
@@ -388,13 +427,24 @@ that names an object, that is false, and the gap is not small:
 | 1 | `ActivateAllChildren` | 66 | **1** |
 | 2 | `ActivateGameObject` | 28 | **7** |
 | 3 | `SetFsmBool` | 20 | **0** |
+| 3 | `SendEventByName` to a sibling FSM | 23 | **0** |
 | 5 | `Trigger2dEvent`, owner with no trigger collider | 6 | **0, permanently** |
 
 The top three are worth 114 on the curve and eight in fact. `SetFsmBool` is
 zero because not one of its twenty instances names a target that resolves to
 exactly one FSM of that name on a fixed object with that variable declared.
 
-The fourth row is a different category and the curve cannot see the difference.
+The cross-FSM row is the newest and the cleanest, because the third question
+has a countable answer here. Once the sends that are really sends to self are
+recognised, 23 instances are left one unit short of compiling, each blocked
+only by a send reaching the other FSMs on its own GameObject. Building the
+instance table would unblock all 23. Those 23 send to 46 sibling FSMs between
+them, and **all 46 are themselves blocked**, so every one of those events would
+land on a receiver that is not in the bank. That is a send compiled into a
+silent no-op, which is the one outcome this format exists to refuse. The
+scoping work is not gated on the instance table; it is gated on the receivers.
+
+The fifth row is a different category and the curve cannot see the difference.
 Those six instances are not waiting for an implementation. Their FSM's own
 GameObject carries no `Collider2D` and no `Rigidbody2D` to forward one from a
 child, so Unity never raises `OnTriggerEnter2D` for them and the action cannot
@@ -451,8 +501,20 @@ action and by reason, regenerated whenever the cook changes. That is the same
 list a native implementer needs in order to know what a scene expects of them.
 Deleting the compiler would throw away the list along with the runtime.
 
-One piece of sharpening is measured and deliberately not done. `SetGameObject`
-alone disturbs 955 object fields and `gameObject1` on `BoxColliderOffset` and
-`BoundsBoxCollider` another 880, and both are answerable at cook time. Doing that
-work would make the inventory more precise. It would not move the ceiling, so it
-waits until someone needs the precision.
+That piece of sharpening has since been done, and it is worth recording what it
+cost and what it bought, because the prediction attached to it was exactly
+right. Four cook-time widenings landed: the `FsmOwnerDefault` rule,
+`SetGameObject` as a reference action, the sends to self that PlayMaker spells
+another way, and constant folding in `Wait`, `SetBoolValue`, `SetIntValue` and
+`IntCompare`, which were reading their scalar without the folding every other
+field already used. Together they are **375 more compiled action instances,
+8,882 to 9,257 of 41,603, 21.3% to 22.3%**.
+
+They moved the FSM instance count by **nothing**: 256 of 1,821 before and 256
+after, with the cooked bank identical at 10 instances, 27 ops and 2,565 linked
+bytes. Four independent widenings, each landing the action-instance gain it
+predicted to the unit, and not one of them completed a single further FSM. That
+is the ceiling measured a second time, from a different direction, by work that
+was chosen precisely because it was the cheapest remaining. An FSM needs every
+one of its actions before any of it runs, the median blocked instance is missing
+seven, and widening the cook does not change that arithmetic.
