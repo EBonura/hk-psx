@@ -305,8 +305,13 @@ def refuse_partial_one_way(by_scene,scene_hits):
                     reasons=[]
                     if absent:reasons.append(f"{len(absent)} of {len(record['renderer_sources'])} "
                                              'renderers are not cooked into any draw')
-                    if unfadeable:reasons.append(f'{len(unfadeable)} draw with a palette the '
-                                                 'subtractive fade cannot use')
+                    # Counted per renderer, not per draw: `unfadeable` is a set of
+                    # renderer sources and the same renderer is cooked into one
+                    # draw per region it is resident in. Crossroads_37's Mask
+                    # Bottom is 4 renderers over 16 draws, and reading that 4 as
+                    # a draw count understates the offending art fourfold.
+                    if unfadeable:reasons.append(f"{len(unfadeable)} of {len(record['renderer_sources'])} "
+                                                 'renderers draw with a palette the subtractive fade cannot use')
                     entry.setdefault('unsupported',[]).append({'source':record.get('source'),'name':record.get('name'),
                         'error':'one-way reveal cannot fade its whole authored group: '+'; '.join(reasons)})
                     continue

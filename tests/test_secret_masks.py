@@ -130,6 +130,15 @@ class OneWayFadeContract(unittest.TestCase):
         self.assertEqual(by_scene[0]['controllers'], [])
         self.assertIn('subtractive fade cannot use', by_scene[0]['unsupported'][0]['error'])
 
+    def test_the_unfadeable_count_is_renderers_not_draws(self):
+        # One renderer resident in three regions is three hits of the same
+        # source. Reporting that as three would name art that is not there.
+        by_scene = self.scene(controller('a', renderers=('f:1', 'f:2')))
+        refuse_partial_one_way(by_scene, {0: [(0, 'f:1', 'bad'), (0, 'f:1', 'bad'),
+                                              (0, 'f:1', 'bad'), (0, 'f:2', None)]})
+        self.assertIn('1 of 2 renderers draw with a palette',
+                      by_scene[0]['unsupported'][0]['error'])
+
     def test_survivors_are_renumbered_so_the_guest_pool_stays_contiguous(self):
         first = controller('a', renderers=('f:1',))
         second = dict(controller('b', renderers=('f:2',)), controller=1)
