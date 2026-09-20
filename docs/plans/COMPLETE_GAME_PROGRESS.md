@@ -24,9 +24,9 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | --- | --- | --- |
 | M0: recover import | P00-P03 | validated |
 | M1: scalable content | P04-P08 | in progress |
-| M2: connected world | P09-P12 | pending |
-| M3: persistent adventure | P13-P18 | pending |
-| M4: full combat roster | P19-P22 | pending |
+| M2: connected world | P09-P12 | in progress |
+| M3: persistent adventure | P13-P18 | in progress |
+| M4: full combat roster | P19-P22 | in progress |
 | M5: complete content | P23-P27 | pending |
 | M6: release proof | P28-P31 | pending |
 
