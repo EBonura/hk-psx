@@ -222,12 +222,20 @@ The24 animation slots retain an independent48KiB maximum per frame. Animation
 frames come from resident RAM, with no traversal CD reads or decoding. This is
 the current two-scene subset, not full-game residency or hardware timing.
 
-Current SPU allocations: player SFX63,376B at0x1010..0x107A0,
-Geo13,904B at0x14000..0x17650, ambience289,280B at0x18000..0x5EA00,
-and Focus108,208B at0x5EA00..0x790B0. There are28,496B contiguous free above
-Focus. The SDK silent loop is at0x1000. Player short effects/heal use22,050Hz
-mono; running and Geo use11,025Hz mono; ambience and sustained Focus charging
-use8,000Hz mono. All admitted source clips are complete.
+Current SPU allocations, re-read at build158 from the banks' own generated
+constants (`data/sfx.rs`, `data/geo-audio.rs`, `data/ambience.rs`,
+`data/focus-audio.rs`, `data/runner-audio.rs`) rather than from the last
+paragraph that quoted them: player SFX 75,184B at 0x1010..0x135C0,
+Geo 13,888B at 0x14000..0x17640, ambience 289,280B at 0x18000..0x5EA00,
+Focus 108,208B at 0x5EA00..0x790B0 and Runner 20,464B at 0x790B0..0x7E060.
+That leaves 8,032B contiguous free above Runner, plus two gaps of 2,624B and
+2,496B below ambience: 13,152B free in total, none of it in one piece large
+enough for a bank. The figures this replaces were wrong in three ways and
+omitted the Runner bank entirely, which put the free figure 20,464B too high
+on its own; `host/ambience.py::spu_ceiling` computes the ceiling the cook
+actually enforces. The SDK silent loop is at 0x1000. Player short effects/heal
+use 22,050Hz mono; running and Geo use 11,025Hz mono; ambience and sustained
+Focus charging use 8,000Hz mono. All admitted source clips are complete.
 
 The full199,872-byte cave-noises clip is resident in main RAM, feeding a16KiB
 SPU ring through8KiB scratch. Other ambience and Focus payloads stay in SPU;
@@ -318,6 +326,17 @@ together with the 4 kHz clip fits, but it relocates every audio bank's base
 address and changes the cue mask layout, so it is its own change rather than a
 tail on this one.
 
+Re-priced at build158 against the SPU map above, because the two numbers in
+that paragraph were both wrong. SPU residency needs the clip's own 99,936
+bytes, not 119,000, and the two gaps below ambience are 5,120 bytes, not
+16,912. Against 8,032 contiguous free, 13,152 counting both gaps, and the
+16,384 the ring gives back, a repacked SPU is still 70,400 bytes short. The
+shortfall is almost exactly the two Ruins loops, so the trade has not moved:
+99,936 bytes of main RAM for two source ambience channels, a recook of every
+clip from the licensed install, and new base addresses for the Focus and
+Runner banks. It is a content decision before it is a budget one, and nobody
+has taken it.
+
 ## What bounded the P14 and P15 work (build 133)
 
 Linked headroom was 113,636 bytes at build 133, down from 166,876 at build 107, and is
@@ -356,3 +375,31 @@ rather than dropping a row or a description line to make a bigger icon fit.
 **The scene arena is 421,128 bytes** and the ambience clip's
 4 kHz recook freed the last large block. Taking the remaining SPU half still
 needs the relocation described above, and nothing this session touched it.
+
+## The coverage arena, and why it cannot share the scene arena (build 158)
+
+`disc::COVERAGE_BUFFER` reserved 83,700 bytes because that was the largest
+proof when the constant was written. The largest proof is 80,972 now, so
+`host/scene_certificates.py` reserves what the cook actually wrote and keeps
+83,700 as `ARENA_CEILING`, the size a proof may not exceed. A ceiling nothing
+re-reads goes stale silently; a reservation derived from the manifest beside it
+cannot. That returns 2,728 bytes to linked BSS at the next cook.
+
+Merging it into the scene arena was the obvious next question and the answer is
+no, twice over. The proof is not admission-only: `render::prepare_back_prefix`
+takes a fresh `Cache::coverage()` view every frame the camera moves and reads
+the tile and group certificates and bitmaps straight out of the buffer, so its
+bytes are live for as long as the scene's are. And the arena has no room. It is
+417,748 bytes, which is Tutorial_01's 349,032-byte scene plus the 68,712-byte
+world metadata bank plus a four-byte guard, so four bytes of tail survive the
+scene that sizes both. An arena holding scene, bank and proof together would
+have to be 498,716 bytes to delete an 83,700-byte buffer, a net 2,732 bytes
+before the decoder's relocation margin eats into it. That is the same 2,728 the
+stale ceiling gives up for nothing, so the risk buys nothing.
+
+Splitting the proof by lifetime does not pay either. The pool map and the
+group list are read once in `render::init`, the four certificate and bitmap
+sections every frame, and dropping the admission-only pair from the resident
+copy would save 6,932 bytes on the scene that sizes the buffer. They cannot be
+consumed early, because `bind_tile_groups` needs the admitted `Room` and the
+scene decode has already taken the arena by then.

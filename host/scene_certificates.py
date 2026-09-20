@@ -13,10 +13,13 @@ from scene_bank import compressed, fnv
 
 ROOT=Path(__file__).resolve().parents[1]
 MAGIC=b'HKOCSC01'
-# The largest current proof is 83,692 bytes. Keep four-byte alignment while
-# sizing this overlay to the measured maximum instead of reserving a whole
-# 84 KiB page; the saved RAM is needed by the scene admission code.
-ARENA_BYTES=83_700
+# What a proof may not outgrow. This is the cook's refusal, not the guest's
+# reservation: `reserved_arena` sizes the linked buffer from the proofs the
+# cook actually wrote, so slack under the ceiling costs no RAM. Reserving the
+# ceiling directly stranded 2,728 bytes of BSS once the 83,692-byte proof it
+# was cut for stopped being the largest, and a ceiling nothing re-reads is
+# exactly the kind of figure that goes stale unnoticed.
+ARENA_CEILING=83_700
 HEADER_BYTES=80
 NO_CERT=65535
 STRIDES=(12,4,2,12,4,10)
@@ -100,12 +103,12 @@ def build_bundle(scene_id,scene_raw_fnv,atlas_fnv,pool_count,tile,group):
     for index,(payload,stride)in enumerate(zip(sections,STRIDES)):
         out+=bytes(aligned(len(out))-len(out));struct.pack_into('<2I',out,32+index*8,len(out),len(payload)//stride);out+=payload
     out+=bytes(aligned(len(out))-len(out))
-    if len(out)>ARENA_BYTES:raise ValueError('Per-scene coverage exceeds fixed auxiliary arena')
+    if len(out)>ARENA_CEILING:raise ValueError('Per-scene coverage exceeds fixed auxiliary arena')
     raw=bytes(out);proof=verify_equivalence(raw,tile,group)
     return raw,proof
 
 def parse_bundle(raw):
-    if len(raw)<HEADER_BYTES or len(raw)>ARENA_BYTES or raw[:8]!=MAGIC:raise ValueError('Invalid coverage header')
+    if len(raw)<HEADER_BYTES or len(raw)>ARENA_CEILING or raw[:8]!=MAGIC:raise ValueError('Invalid coverage header')
     scene_id,scene_raw_fnv,atlas_fnv,pools,shift,reserved=struct.unpack_from('<6I',raw,8)
     if not 1<=pools<=4096 or shift!=2 or reserved:raise ValueError('Invalid coverage configuration')
     sections=[];end=HEADER_BYTES
@@ -192,12 +195,23 @@ def _read_bound(root,path,digest):
     if sha(data)!=digest:raise ValueError('Stale coverage input: '+str(path))
     return data
 
+def reserved_arena(bundles):
+    """Linked bytes the guest reserves for the admitted scene's proof.
+
+    The largest proof the cook wrote, four-byte aligned, rather than
+    ARENA_CEILING: the buffer holds one scene at a time and every scene's
+    exact length is in the manifest beside it, so reserving the ceiling only
+    strands the difference. The ceiling still refuses a proof that outgrows
+    the budget, so this cannot grow BSS quietly.
+    """
+    return max((aligned(b['raw_len'])for b in bundles),default=0)
+
 def rust_manifest(bundles,pool_capacity):
     fields=[('scene_id','u32'),('scene_raw_fnv','u32'),('atlas_fnv','u32'),('draw_pool_count','u32'),('chunk_id','usize'),
             ('raw_len','usize'),('raw_fnv','u32'),('stored_len','usize'),('stored_fnv','u32')]
     text='// Exact scene-local coverage relocation; generated from licensed local inputs.\n'
     text+='#[derive(Clone,Copy,Debug)]\npub struct CoverageDesc{'+','.join('pub '+n+':'+t for n,t in fields)+'}\n'
-    text+=f'pub const COVERAGE_ARENA_BYTES:usize={ARENA_BYTES};\npub const COVERAGE_GRID_SHIFT:u32=2;\npub const COVERAGE_GROUP_POOL_CAPACITY:usize={pool_capacity};\n'
+    text+=f'pub const COVERAGE_ARENA_BYTES:usize={reserved_arena(bundles)};\npub const COVERAGE_GRID_SHIFT:u32=2;\npub const COVERAGE_GROUP_POOL_CAPACITY:usize={pool_capacity};\n'
     text+='pub const COVERAGE_MANIFEST:&[CoverageDesc]=&[\n'+''.join('CoverageDesc{'+','.join(n+':'+str(b[n])for n,_ in fields)+'},\n'for b in bundles)+'];\n'
     return text
 
@@ -228,14 +242,16 @@ def cook(root=ROOT,output_dir=None,report_path=None,manifest_path=None):
         full_scene=_read_bound(root,Path(scene['raw_path']),scene['raw_sha256'])
         proof['regions']=verify_region_bindings(raw,scene,full_scene,old_tile,old_group,tr['region_bindings'])
         stored=compressed(raw)
-        if aligned(len(raw))>ARENA_BYTES or (len(stored)+2047)//2048*2048>packed['arena_bytes']:raise ValueError('Coverage staging exceeds arena')
+        if aligned(len(raw))>ARENA_CEILING or (len(stored)+2047)//2048*2048>packed['arena_bytes']:raise ValueError('Coverage staging exceeds arena')
         path=output_dir/f"scene_{scene['scene_id']}"
         bundles.append(dict(scene_index=index,scene_id=scene['scene_id'],scene_raw_fnv=scene['resident_raw_fnv'],atlas_fnv=atlas_fingerprint(owner_atlases),
                             draw_pool_count=scene['pools']['draws'],chunk_id=first_chunk+index,raw_len=len(raw),raw_fnv=fnv(raw),raw_sha256=sha(raw),stored_len=len(stored),stored_fnv=fnv(stored),stored_sha256=sha(stored),
                             raw_path=str(path)+'.hk',stored_path=str(path)+'.hlzc',path=str(path)+'.hlzc',equivalence=proof))
         bodies.append((raw,stored))
     rust=rust_manifest(bundles,max(s['pools']['draws']for s in scenes))
-    report=dict(format='HKOCSC01',arena_bytes=ARENA_BYTES,header_bytes=HEADER_BYTES,grid_shift=2,
+    # arena_bytes is what the guest links and what the map is checked against;
+    # arena_ceiling is what the cook refuses above.
+    report=dict(format='HKOCSC01',arena_bytes=reserved_arena(bundles),arena_ceiling=ARENA_CEILING,header_bytes=HEADER_BYTES,grid_shift=2,
                 source_sha256={str(p):sha(p.read_bytes())for p in paths},
                 code_sha256=sha(Path(__file__).read_bytes()),bundles=bundles,manifest_path=str(manifest_path),manifest_sha256=sha(rust.encode()),
                 proof='Every scene pool binding and selected ordered seam group resolves to identical legacy geometry, dimensions and all bitmap words; only certificate IDs and offsets relocate.')
@@ -249,4 +265,5 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path);parser.add_argument('--report',type=Path);parser.add_argument('--manifest',type=Path)
     args=parser.parse_args();report=cook(output_dir=args.output,report_path=args.report,manifest_path=args.manifest)
-    print(json.dumps({'arena_bytes':ARENA_BYTES,'bundles':[{k:b[k]for k in ('scene_id','raw_len','stored_len','chunk_id','equivalence')}for b in report['bundles']]},indent=2))
+    print(json.dumps({'arena_bytes':report['arena_bytes'],'arena_ceiling':ARENA_CEILING,
+        'bundles':[{k:b[k]for k in ('scene_id','raw_len','stored_len','chunk_id','equivalence')}for b in report['bundles']]},indent=2))
