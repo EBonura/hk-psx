@@ -15,88 +15,115 @@ from breakables import _components,collider_polygons
 # voices and the streamed clip's index from it, and the guest derives its own
 # half from the cooked table.
 #
-# It cannot be sized once for the game. The AudioManager declares 16 atmos
-# channels and the 456 catalogue scenes that carry an atmos cue name all 16
-# between them, which at 8 kHz mono is about 1.4 MB against 512 KB of SPU RAM,
-# on six voices; every other SPU voice belongs to another bank. So the resident
-# set is a per-disc budget decision, and adding a channel costs three things
-# worth checking before editing this line:
+# Eight of the sixteen, one short of covering the game on purpose. The
+# AudioManager declares 16 atmos channels and the 456 catalogue scenes that
+# carry an atmos cue name all 16 between them, but 401 of those scenes reduce
+# to only 18 distinct sets of audibly enabled channels, and the smallest set
+# meeting all 18 is eight. There are exactly two such covering sets,
+# {0,1,5,7,9,10,14,15} and {0,3,5,7,9,10,14,15}, and this is neither of them;
+# see the trade recorded below. What this set leaves silent is Deepnest's 18
+# scenes, against the 78 the six-channel set it replaces left silent: 33 City
+# of Tears rain, 18 Waterways, 18 Deepnest, 9 Fog Canyon.
+#
+# Moving or widening the set still costs three things worth checking before
+# editing this line:
 #   - SPU RAM, against the ceiling host/ambience.py computes (the Focus and
-#     Runner banks sit above ambience and move up with it),
-#   - one of ambience's six voices, which host/ambience.py refuses to exceed,
+#     Runner banks sit above ambience and move with it),
+#   - one of the five pooled voices, for as long as the stem is audible. A long
+#     set is no longer what host/ambience.py refuses; what it refuses is a set
+#     where more stems than that can be audible at the same moment.
 #   - WORLD.PAK chunk ids, because host/pack_scenes.py numbers the atlas and
 #     metadata chunks after the ambience clips.
 # A channel left out is not an error: the scene records it in
 # ambience_omitted_channels and cooks a zero mask, which the guest handles by
 # fading the previous stems out and keying nothing on.
 #
-# Channel 6, ruins_rain_outdoor_loop, gave way to 7 so Greenpath could be heard.
-# The swap is exactly free: both clips are 10.00 s and both cook to precisely
-# 45,728 bytes, so the six clips, the six voices, the Focus and Runner bases and
-# the WORLD.PAK chunk numbering all stay where they were, and Greenpath plays at
-# full 8 kHz for 25.77 dB. What it costs is measured rather than assumed: across
-# every admitted scene, channel 6's highest enabled gain is 16 of 16,383, about
-# -60.2 dB, and its indoor sibling on channel 5 stays at the same level, so the
-# rain layer halves at a gain nothing can hear rather than disappearing.
+# Channel 4 rather than 14, which is the whole difference between this set and
+# a covering one, and it is not a budget concession: both price at exactly
+# 280,928 bytes of SPU against 297,312 available, because whichever channel
+# streams costs the ring's 16,384 and nothing more. What 14 would buy is
+# Deepnest's 18 catalogue scenes. What it costs is two things the disc has now:
+#   - channel 4, cave_noises, plays at 0.0 dB beside cave_wind_loop in the Cave
+#     cue, which is Tutorial_01 and 40 admitted Crossroads rooms. Dropping it
+#     takes a full-gain layer out of 41 scenes a player can walk through today
+#     to prepare 18 that are not on the disc and will not be for a long time.
+#   - no admitted scene enables 14, so with 14 streamed the SPU ring never
+#     starts on this disc and the streaming transport, the most hardware
+#     sensitive part of the audio system, goes unexercised. Keeping 4 keeps it
+#     running in every Cave scene.
+# This is a cook-time knob so that it can be revisited: when Deepnest is
+# admitted its own scenes enable 14, and the trade inverts.
 #
-# Channel 5 has now given way to 15 on the same measurement. Its highest enabled
-# gain across every admitted scene is that same 16 of 16,383, so the last rain
-# bed leaves at a level nothing can hear, and cave_atmos_misc_3 arrives for the
-# 113 catalogue scenes whose cue, MiscWind, enables channel 15 and nothing else.
-# Crossroads_46b and Crossroads_50 were two of them and were completely silent.
-# What that costs and what it buys, counted over all 456 catalogue scenes with a
-# cue: scenes with every enabled channel resident go from 109 to 222, and scenes
-# with no audible resident channel at all go from 158 to 78.
+# Channel 1 rather than 3, the same question the covering sets pose. Dirtmouth
+# is admitted and reachable and its Surface cue plays both, channel 1 at 0.0 dB
+# and channel 3 at -2.29 dB. Only one fits, and 1 is both the louder and the
+# one that survives the 4 kHz cook: 25.34 dB at 8 kHz falling to 22.03 at 4,
+# against 33.58 falling to 21.07 for 3, which is the worst rate penalty of any
+# of the sixteen. Room_shop, the only other admitted scene on a Dirtmouth cue,
+# plays both at exactly -10.0 dB and cannot tell them apart.
 #
-# The bill is 7,920 bytes of SPU and it leaves 112 free below the ceiling, which
-# is not a margin. It is a hard, named cook-time error rather than a silent
-# overflow, but it does freeze the Focus and Runner banks, which stack above
-# ambience and whose growth lowers that ceiling byte for byte. Three measured
-# places to get margin back, none of them taken here:
-#   - channel 1 at 4 kHz returns 28,864 bytes for 3.3 dB (25.34 to 22.03) on a
-#     clip that is 99.3% below 2 kHz and never the only audible stem in a scene,
+# What the raise costs over the admitted 60, measured by name rather than
+# inferred: two scenes, Town and Room_shop, each losing the Dirtmouth loop
+# above. The other 58 keep every stem they had. What every admitted scene pays
+# instead is rate, priced beside RESIDENT_ATMOS_RATES below.
+#
+# Two earlier swaps this supersedes, kept for the measurement in them. Channel
+# 6 gave way to 7 so Greenpath could be heard, and channel 5 then gave way to
+# 15 for the 113 MiscWind scenes; both were priced on the same reading, that
+# the rain layers' highest enabled gain across every admitted scene is 16 of
+# 16,383, about -60.2 dB. Channel 5 is resident again here and 6 is still out,
+# and that reading is why 6 costs nothing: no admitted scene can hear it.
+#
+# Two measured places to get further margin back, neither taken here:
 #   - the stream's SPU ring is still sized for the 8 kHz era: two 8,192-byte
-#     halves last 3.58 s at the cave bed's 4 kHz, not the 1.79 s the transport
-#     was written and commented for, so halving it returns 8,192 bytes of SPU
-#     and 4,096 of main RAM at the cadence the design was validated at,
+#     halves last 3.58 s at the streamed clip's 4 kHz, not the 1.79 s the
+#     transport was written and commented for, so halving it returns 8,192
+#     bytes of SPU and 4,096 of main RAM at the cadence the design was
+#     validated at,
 #   - ambience starts at 0x18000 while the Geo bank above 0x14000 ends at
 #     0x17640, so 2,496 bytes sit unused between them; taking them couples the
 #     ambience base to Geo's exact size, which is why they are still there.
-#
-# The seam this set exists to hide does not close by re-picking it, and what
-# stops it is not what this file's header has said since it was written.
-# Twenty-two distinct cues cover the 456 scenes and reduce to 18 distinct sets
-# of audibly enabled channels. The smallest set that leaves none of them without
-# an audible stem is eight, and there are exactly two of them:
-# {0,1,5,7,9,10,14,15} and {0,3,5,7,9,10,14,15}. At 4 kHz with channel 14
-# streamed, either costs 280,928 bytes of SPU against 297,312 available, and
-# 135,840 of main RAM against 217,884. So neither SPU nor main RAM is the wall.
-# Voices are. Ambience owns six and this needs eight, because one voice is tied
-# to one resident clip for the bank's life.
-#
-# Nothing in the source needs that tie. No cue enables more than five atmos
-# channels at once, and of the eight above no cue enables more than three, with
-# at most five live across any transition between two cues. Six voices would
-# serve all eight if residency and voice assignment were separated. That is a
-# guest change to ambience.rs and ambience_state.rs, not a cook-time knob, and
-# it is the one that actually covers the game.
-RESIDENT_ATMOS_CHANNELS=(0,1,3,4,7,15)
+RESIDENT_ATMOS_CHANNELS=(0,1,4,5,7,9,10,15)
 
-# Cook rate per resident channel, defaulting to 8 kHz. Lower is not always
-# worse: PSX ADPCM fits a 4-bit residual per sample whatever the rate, so a clip
-# whose energy is already below 2 kHz spends half its blocks describing an empty
-# band at 8 kHz and measures better at 4. Both exceptions here are measured, as
-# the SNR of the cooked payload against its own resampled source:
-#   channel 4, cave_noises, 99.94% below 2 kHz: 30.28 dB at 8 kHz, 31.05 at 4,
-#   channel 15, cave_atmos_misc_3, 99.999% below 2 kHz: 16.70 at 8 kHz, 24.47
-#   at 4, which is the largest gap of any of the sixteen and the reason this
-#   channel is affordable at all.
-# This used to read "4 kHz if it is the streamed channel", which was true by
-# accident: the cave bed was moved to 4 kHz because its 8 kHz copy would not fit
-# SPU, and only afterwards measured as the better of the two. Rate and streaming
-# are separate decisions and the code no longer derives one from the other.
-RESIDENT_ATMOS_RATES={4:4000,15:4000}
-DEFAULT_ATMOS_RATE=8000
+# Cook rate per resident channel. Eight loops do not fit SPU at 8 kHz, so 4 kHz
+# is the whole set's rate and the default below is a budget decision rather than
+# a per-clip one. RESIDENT_ATMOS_RATES is where a channel that earns a rate of
+# its own goes; nothing does today.
+#
+# Lower is not always worse: PSX ADPCM fits a 4-bit residual per sample whatever
+# the rate, so a clip whose energy is already below 2 kHz spends half its blocks
+# describing an empty band at 8 kHz. What each resident channel pays for 4 kHz,
+# as the SNR of the cooked payload against its own resampled source, 8 kHz then
+# 4 kHz:
+#    0 cave_wind_loop           24.52 -> 21.59      7 green_path_atmos_loop 25.77 -> 20.84
+#    1 dirtmouth_wind_loop_a    25.34 -> 22.03      9 fog_canyon_atmos_loop 23.21 -> 22.76
+#    4 cave_noises              30.28 -> 31.05     10 waterways_atmos_loop  26.24 -> 25.23
+#    5 ruins_rain_indoor_loop   23.41 -> 19.80     15 cave_atmos_misc_3     16.70 -> 24.47
+# Two channels gain rather than pay. Channel 15 is 99.999% below 2 kHz and is
+# better at 4 kHz by 7.77 dB, the largest gap of any of the sixteen and the
+# reason it is affordable at all; channel 4 is 99.94% below 2 kHz and better by
+# 0.77. Channel 4's rate is nearly free in SPU either way, because a streamed
+# clip only ever occupies the ring, but 8 kHz would double its RAM cache to
+# 199,872 bytes to make it measurably worse, so 4 kHz wins twice.
+#
+# Channel 7 pays the most, 4.93 dB, and it is the only audible stem in all 31
+# Greenpath scenes including the 14 admitted ones, which makes it the largest
+# remaining audible regression in the playable world and the first candidate if
+# margin is ever spent on rate. It does not fit: 8 kHz costs 22,864 more bytes
+# against 16,384 free, over the ceiling by 6,480. The only resident channel
+# that does fit at 8 kHz is 5, at 15,920, and it would leave 464 bytes and buy
+# 3.61 dB for the 33 City of Tears rain scenes, none of which is admitted and
+# in all of which channel 5 is the only audible stem, while in every admitted
+# scene it is enabled at 16 of 16,383. Spending the whole margin on scenes a
+# player cannot reach is the wrong way round, so neither is taken.
+#
+# The default used to read "4 kHz if it is the streamed channel", which was true
+# by accident: the cave bed was moved to 4 kHz because its 8 kHz copy would not
+# fit SPU, and only afterwards measured as the better of the two. Rate and
+# streaming are separate decisions and the code does not derive one from the
+# other.
+RESIDENT_ATMOS_RATES={}
+DEFAULT_ATMOS_RATE=4000
 
 def atmos_rate(channel):
     """The cook rate for one resident atmos channel."""
@@ -153,6 +180,21 @@ def inventory(source):
             record['alternatives'].append({'player_data_bool':alternative['PlayerDataBoolKey'],
                 'cue':cue(obj.assets_file,alternative['Cue'])})
         return sid
+    # Which clip each resident channel plays, read once off the persistent
+    # AudioManager rather than off whichever admitted scene happens to enable
+    # the channel. The two are the same answer, but only this one exists for a
+    # channel no admitted scene enables, and the current set has two of those:
+    # nothing in the 60 is in Fog Canyon or the Waterways, so channels 9 and 10
+    # are resident for scenes not yet admitted. Reading the table from the
+    # scenes made the resident set silently uncookable the moment it named a
+    # channel ahead of the world.
+    resident=[]
+    for channel in RESIDENT_ATMOS_CHANNELS:
+        audio_obj=source.ref(resource,manager['atmosSources'][channel]);audio=source.read(audio_obj)
+        resident.append({'channel':channel,'audio_source':source.sid(audio_obj),
+            'clip':clip(audio_obj.assets_file,source_audio_ref(audio)),
+            'loop':audio['Loop'],'pitch':audio['m_Pitch'],'volume':audio['m_Volume'],
+            'play_on_awake':audio['m_PlayOnAwake']})
     from quality import SCENE_FILES
     for file in SCENE_FILES:
         scene=Scene(source,file);row={'scene_file':file,'managers':[],'music_regions':[],'music_fsm_actions':[]}
@@ -197,7 +239,8 @@ def inventory(source):
                     for action in state['actionData']['actionNames']:
                         if 'Music'in action:row['music_fsm_actions'].append({'source':f'{file}:{index}','state':state['name'],'action':action})
         scenes.append(row)
-    return {'scenes':scenes,'music_cues':list(cues.values()),'audio_manager':source.sid(managers[0])},clips
+    return {'scenes':scenes,'resident_atmos':resident,'music_cues':list(cues.values()),
+        'audio_manager':source.sid(managers[0])},clips
 
 
 def compile_encoder(out):
@@ -282,10 +325,12 @@ def capacity(report,clips):
                 'mono8000_complete_loop_bytes':sum(by[(sid,8000,1)]['bytes']for sid in ids),
                 'stereo22050_combined_bps':len(ids)*25200,'mono11025_complete_loop_bytes':sum(by[(sid,11025,1)]['bytes']for sid in ids),
                 'note':'Each enabled stem retained; very quiet rain is not silently removed. Output mixer/player gains unresolved.'})
-    all_ambient=set(sid for a in ambient for sid in a['clips'])
+    # Every resident loop, not just the ones an admitted scene enables, which
+    # is what the bank actually pays for.
+    all_ambient={r['clip'] for r in report['resident_atmos']}
     return {'stream_profiles':candidates,'ambience':ambient,
-        'all_six_ambient_loops_8000_mono_bytes':sum(by[(sid,8000,1)]['bytes']for sid in all_ambient),
-        'all_six_ambient_loops_10000_mono_bytes':sum(by[(sid,10000,1)]['bytes']for sid in all_ambient),
+        'all_resident_ambient_loops_8000_mono_bytes':sum(by[(sid,8000,1)]['bytes']for sid in all_ambient),
+        'all_resident_ambient_loops_10000_mono_bytes':sum(by[(sid,10000,1)]['bytes']for sid in all_ambient),
         'ram_staging_proposal_bytes':8192,'cd_sector_bytes':2048,'double_speed_sectors_per_second':150,
         'staging_4_sector_fill_seconds':4/150,'spu_capacity_bytes':512*1024,
         'reserved_sdk_low_spu_bytes':0x1010,'separate_sfx_budget_bytes':32*1024,
@@ -304,7 +349,7 @@ def main():
     if not out.resolve().is_relative_to((ROOT/'.hkpsx').resolve()):raise ValueError('music assets must remain ignored under .hkpsx')
     out.mkdir(parents=True,exist_ok=True);s=Source();report,objects=inventory(s);encoder=compile_encoder(out)
     cooked=[]
-    ambience={a['clip'] for scene in report['scenes'] for manager in scene['managers'] for a in manager['ambience']}
+    ambience={r['clip'] for r in report['resident_atmos']}
     for sid,obj in sorted(objects.items()):
         print('AUDIO',sid,s.read(obj)['m_Name'],flush=True)
         # Every resident clip is cooked at both 8000 and 4000 whatever

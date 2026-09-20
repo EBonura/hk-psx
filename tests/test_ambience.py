@@ -45,15 +45,35 @@ class AmbienceTests(unittest.TestCase):
         # Pick the enabled sets out of the resident channels by position rather
         # than by number, so a swap in RESIDENT_ATMOS_CHANNELS moves the fixture
         # with it. Hardcoding the numbers made four of these raise KeyError the
-        # first time the set changed.
-        by_slot=lambda *slots:[ambience.CHANNELS[s]for s in slots]
-        for file,enabled in [('level6',by_slot(0,3,4,5)),('level7',by_slot(1,2,4,5)),
-                             ('level37',by_slot(0,3,4,5))]:
+        # first time the set changed, and a fixed pair of shapes priced the pool
+        # at six stems the first time the set grew past the pool's width.
+        #
+        # Three disjoint shapes, because `assemble` refuses a report that leaves
+        # a resident channel unenabled everywhere and two shapes cannot both
+        # cover eight slots and keep any pair of them inside the pool. Dealt
+        # round robin so each pair's union is as even as the set allows, which
+        # is what `pool_pressure` measures and why this fixture has more than
+        # one shape at all. The streamed slot is in all three, so the stream's
+        # voice is exercised and then excluded from the pressure the way the
+        # cook excludes it.
+        pooled=[s for s in range(len(ambience.CHANNELS))if s!=ambience.STREAM_INDEX]
+        shapes=[sorted(pooled[i::3]+[ambience.STREAM_INDEX])for i in range(3)]
+        self.slots=dict(zip(('level6','level7','level37'),shapes))
+        for file,slots in self.slots.items():
+            enabled=[ambience.CHANNELS[s]for s in slots]
             snapshots[file]=[{'internal_volume_db':0 if ch in enabled else -80}for ch in ambience.CHANNELS]
             scenes.append({'scene_file':file,'managers':[{'source':file+':1','atmos_cue':{'name':file},
                 'ambience':[entries[ch]for ch in enabled]}]})
         self.snapshots=snapshots
-        return {'clips':clips,'scenes':scenes},snapshots
+        # The resident clip table, which the cook reads off the AudioManager
+        # rather than off the scenes: every resident channel has a row here
+        # whether or not any scene enables it.
+        resident=[{'channel':ch,'clip':str(ch),'loop':True,'pitch':1,'volume':1}for ch in ambience.CHANNELS]
+        return {'clips':clips,'scenes':scenes,'resident_atmos':resident},snapshots
+
+    def mask(self,file):
+        """The cue mask the fixture's enabled slots have to produce."""
+        return sum(1<<s for s in self.slots[file])
 
     def assemble(self,report,root,sfx_end=None,ceiling=ambience.SPU_END):
         return ambience.assemble(report,root,{'level6':.5,'level7':.5,'level37':.5},
@@ -63,8 +83,9 @@ class AmbienceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory()as temp:
             root=pathlib.Path(temp);report,_=self.fixture(root)
             clips,cues=self.assemble(report,root)
-            self.assertEqual([c['mask']for c in cues],[57,54,57])
-            self.assertEqual(cues[0]['gains'],[16383,2,2,16383,16383,16383])
+            self.assertEqual([c['mask']for c in cues],[self.mask(f)for f in('level6','level7','level37')])
+            self.assertEqual(cues[0]['gains'],
+                [16383 if s in self.slots['level6']else 2 for s in range(len(ambience.CHANNELS))])
             self.assertEqual([c['fade_ticks']for c in cues],[30,30,30])
             # Only the streamed clip owns a voice. Every other stem is handed
             # one out of the pool when it keys on, so a clip that named one
@@ -106,8 +127,8 @@ class AmbienceTests(unittest.TestCase):
             root=pathlib.Path(temp);report,_=self.fixture(root)
             clips,cues=self.assemble(report,root)
             live=ambience.pool_pressure(cues)
-            # The fixture's two cue shapes share only the stream and one stem,
-            # so their union is wider than either: that union is the number.
+            # The fixture's cue shapes share only the stream, so the union of
+            # any two is wider than either: that union is the number.
             self.assertGreater(live,max(bin(c['mask']).count('1')for c in cues))
             self.assertLessEqual(live,len(ambience.POOL_VOICES))
             with patch.object(ambience,'POOL_VOICES',ambience.POOL_VOICES[:live-1]):
@@ -188,23 +209,24 @@ class AmbienceTests(unittest.TestCase):
             self.assertEqual(cues[1]['clamped_boost_db'],{})
 
     def test_cook_rate_is_per_channel_and_not_read_off_the_streamed_clip(self):
-        """A resident channel below RATE that does not stream still resolves."""
-        lowered=ambience.CHANNELS[-1]
-        self.assertNotEqual(lowered,ambience.STREAM_CHANNEL)
-        rates=lambda ch:4000 if ch==lowered else ambience.RATE
+        """A resident channel off RATE that does not stream still resolves."""
+        exception=ambience.CHANNELS[-1]
+        self.assertNotEqual(exception,ambience.STREAM_CHANNEL)
+        other=8000 if ambience.RATE!=8000 else 4000
+        rates=lambda ch:other if ch==exception else ambience.RATE
         with patch.object(ambience,'atmos_rate',rates):
             with tempfile.TemporaryDirectory()as temp:
                 root=pathlib.Path(temp);report,_=self.fixture(root)
                 clips,_=self.assemble(report,root)
-                low=clips[-1]
-                self.assertEqual(low['source_channel'],lowered)
-                self.assertEqual(low['rate'],4000)
-                self.assertEqual(low['pitch'],round(4000*4096/44100))
-                # Rated down, not streamed: the whole payload stays in SPU.
-                self.assertEqual(low['spu_bytes'],low['byte_len'])
+                odd=clips[-1]
+                self.assertEqual(odd['source_channel'],exception)
+                self.assertEqual(odd['rate'],other)
+                self.assertEqual(odd['pitch'],round(other*4096/44100))
+                # Re-rated, not streamed: the whole payload stays in SPU.
+                self.assertEqual(odd['spu_bytes'],odd['byte_len'])
                 stream=clips[ambience.STREAM_INDEX]
                 self.assertEqual(stream['rate'],ambience.RATE)
-                self.assertNotEqual(stream['pitch'],low['pitch'])
+                self.assertNotEqual(stream['pitch'],odd['pitch'])
 
     def test_manifest_lengths_and_stream_row_follow_the_resident_channel_set(self):
         """The table used to say 6 and index the stream at 3 whatever the set was."""
