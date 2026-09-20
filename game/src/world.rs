@@ -416,7 +416,6 @@ pub struct State {
     lifeblood_edges:[u16;SCRIPT_EDGE_SLOTS],
     lifeblood_edge_count:usize,
     debris: debris::Pool,
-    particles: particles::Pool,
     pub effect_draw_dropped: u32,
     impacts: crate::impact::Pool,
     broken: [u32; SCENES * BREAKABLES_PER_SCENE / 32],
@@ -448,7 +447,6 @@ impl State {
             lifeblood_edges:[0;SCRIPT_EDGE_SLOTS],lifeblood_edge_count:0,
             impacts: crate::impact::Pool::new(),
             debris: debris::Pool::new(),
-            particles: particles::Pool::new(),
             effect_draw_dropped: 0,
             broken: [0; SCENES * BREAKABLES_PER_SCENE / 32],
             grass: [0; GRASS_PER_SCENE / 32],
@@ -491,13 +489,11 @@ impl State {
         self.effect_draw_dropped = self.effect_draw_dropped.saturating_add(skipped);
         debris
             + impacts
-            + self
-                .particles
-                .draw(region.scene, region.particle_bank, room, camera)
+            + particles::pool().draw(region.scene, region.particle_bank, room, camera)
     }
     #[inline(never)]
     pub fn tick_debris(&mut self, region: &Region, room: &Room) {
-        self.particles.tick(region.scene, region.particle_bank);
+        particles::pool().tick(region.scene, region.particle_bank);
         self.refresh_edges(region,room);
         let count=room.counts[5];
         let broken = &self.broken;
@@ -506,7 +502,7 @@ impl State {
         // Future larger rooms retain the direct path rather than dropping terrain.
         let cached=&self.edge_cache[..self.edge_cache_count];
         let edge=|i:usize| if i<cached.len() {cached[i]} else if geo.contains(&(i as u16))||life.contains(&(i as u16))||broken_edge(broken,region,i) {[0;4]}else{room.edge(i)};
-        self.particles.tick_break(region.scene,region.collision_bounds,count,&edge);
+        particles::pool().tick_break(region.scene,region.collision_bounds,count,&edge);
         self.debris.tick(region.scene,region.door_debris,region.collision_bounds,count,edge);
     }
     /// The resident scene payload is immutable. Explicit world generation plus
@@ -567,15 +563,14 @@ impl State {
     }
     pub fn enemy_death_particles(&mut self, region: &Region, source: u32, position: [i32; 3]) {
         if let Some(bank) = region.particle_bank {
-            self.particles
-                .spawn_death(region.scene, source, position, bank);
+            particles::pool().spawn_death(region.scene, source, position, bank);
         }
     }
     pub fn reset_scene(&mut self, scene: usize) {
         self.begin_world_admission();
         self.impacts.clear_scene(scene);
         self.debris.clear_scene(scene);
-        self.particles.clear_scene(scene);
+        particles::pool().clear_scene(scene);
         assert!(scene < SCENES);
         self.grass.fill(0);
         // The scene being reset is the admitted one: both callers pass the
@@ -629,7 +624,7 @@ impl State {
                 && object.hit_by(polygon)
                 && self.break_object(id, object.fade_ticks())
             {
-                self.particles.spawn_break(region.scene,id,nail.kind as u8,player.facing);
+                particles::pool().spawn_break(region.scene,id,nail.kind as u8,player.facing);
                 self.debris.spawn(
                     region.scene,
                     region.door_debris,
@@ -654,7 +649,7 @@ impl State {
                         .iter()
                         .find(|e| e.state as usize == patch.state % GRASS_PER_SCENE)
                     {
-                        self.particles.spawn_grass(region.scene, emitter, bank);
+                        particles::pool().spawn_grass(region.scene, emitter, bank);
                     }
                 }
                 if region.grass_impact.is_some() {

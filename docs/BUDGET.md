@@ -57,6 +57,17 @@ Exact particle tracks add399,432 bytes plus142 bytes of emitter bases. Each of
 1,513 source-seeded particles has33 two-word phases. The live pool adds256 bytes
 for128 track IDs, making it6,416 bytes; Particle remains48 bytes. Tutorial emitters use these tracks; four Town emitters retain scalar evaluation.
 These are main-RAM values, not extra VRAM/SPU data or traversal transfers.
+
+Both paragraphs above describe a pool that lived in main's stack frame. It no
+longer does. The pool is now a static in `game/src/particles.rs` reached through
+`particles::pool()`, so its bytes are linked data and a capacity change costs
+main's frame nothing. It is 224 slots of a 52-byte Particle plus a u16 track ID
+each, 12,112 bytes, and that much should move out of the main frame and into BSS
+at the next cook. The stack figures in this file predate the move and the
+224-slot widening; refresh them from `.hkpsx/build.json` rather than from here.
+One stack cost did not move: `break_effects::tick_specs` still holds a
+per-capacity swept-bounds scratch, 16 bytes a slot, 3,584 at 224.
+
 The main frame increased beyond the pool's256 bytes because compiler-generated
 constructor temporaries share its lifetime; do not equate pool and frame growth.
 Pass56 reduced main to18,168 bytes by outlining construction, but regressed frame

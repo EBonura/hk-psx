@@ -208,6 +208,9 @@ pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
     game.door.reset();
     battle_gates::reset();
     dialogue::reset();script::reset();game.state=world::State::new();game.reveals=reveal_masks::State::new();game.enemies=enemies::EnemyWorld::new();game.vitals=game.settings.cheats.new_vitals(VITAL_PARAMS);
+    // The pool is resident rather than a field of the world state, so replacing
+    // that state no longer empties it. Same clearing, now said out loud.
+    *world::particles::pool()=world::particles::Pool::new();
     audio::reset_movement();game.player=Player::spawn(SPAWN.0,SPAWN.1);game.safe=(SPAWN.0,SPAWN.1,0);game.safe_facing=1;
     game.nail=Nail::new();game.nail_response=hk_sim::NailResponse::new();game.focus.interrupt();focus_audio::interrupt();game.attacks=0;*target=Some(0);game.paused=false;
     unsafe {HK_BREAK_COUNT=0;HK_DEATHS=0;HK_ENEMY_HITS=0;HK_ENEMY_KILLS=0;HK_HAZARD_RESPAWNS=0;HK_FOCUS_STARTED=0;HK_FOCUS_COMPLETED=0;HK_FOCUS_HEALED=0;HK_FOCUS_DRAINED=0;HK_FOCUS_REFUNDED=0;}

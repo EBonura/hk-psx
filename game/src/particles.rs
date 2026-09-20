@@ -9,8 +9,8 @@ use core::num::NonZeroU16;
 /// Slots shared by the grass, death and break families. Must stay a multiple of
 /// 32, which `break_effects::tick_specs` assumes for its pending bitmap, and
 /// must agree with `POOL_CAPACITY` in host/break_effects.py, which refuses any
-/// source emitter authored above it. The pool is a field of `world::State`, so
-/// this is stack rather than BSS: each slot costs 50 bytes of main's frame.
+/// source emitter authored above it. The pool is static, so each slot costs
+/// linked RAM rather than main's stack frame.
 pub const CAPACITY: usize = 224;
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {
@@ -77,6 +77,24 @@ pub struct Pool {
     pub dropped: u32,
     pub drawn: u32,
 }
+/// The one live pool, resident rather than carried.
+///
+/// It used to be a by-value field of `world::State`, which is a field of
+/// `frame::Game`, which is a local of `main`: all of it sat in main's stack
+/// frame, against a 48 KiB reservation whose high-water is unmeasured. Here it
+/// is static, so it spends the linked gap the budget report actually tracks and
+/// a capacity change costs main's frame nothing.
+///
+/// `geo::World` and `lifeblood::World` solve the same problem by handing `main`
+/// a `&'static mut` to keep in `frame::Game`. That shape does not transfer:
+/// `frame::Game` is built once, but `world::State` is replaced wholesale on
+/// reset, and a reference field would need a second aliasing `&'static mut` at
+/// every one. So this follows `shop::state()` and `charms::state()` instead,
+/// which exist for the same reason: one resident copy nothing can duplicate.
+static mut POOL: Pool = Pool::new();
+pub fn pool() -> &'static mut Pool {
+    unsafe { &mut *core::ptr::addr_of_mut!(POOL) }
+}
 #[no_mangle]
 pub static mut HK_PARTICLES_ACTIVE: u32 = 0;
 #[no_mangle]
@@ -126,11 +144,6 @@ impl Pool {
     }
     pub fn spawn_break(&mut self,scene:usize,owner:usize,kind:u8,facing:i32) {
         break_effects::spawn_specs(self,scene,owner,kind,facing,break_effects::scene_emitters(scene),break_effects::scene_styles(scene));
-    }
-    pub fn needs_break_collision(&self,scene:usize,bounds:[i32;4])->bool {
-        self.particles.iter().flatten().any(|p|p.scene as usize==scene&&p.kind>=2&&p.delay==0&&p.age+1<p.life.get()
-            &&break_effects::scene_styles(p.scene as usize)[(p.kind-2)as usize].collision&&p.position[0]>=bounds[0]&&p.position[0]<=bounds[2]
-            &&p.position[1]>=bounds[1]&&p.position[1]<=bounds[3])
     }
     pub fn tick_break(&mut self,scene:usize,coverage:[i32;4],count:usize,edge:impl Fn(usize)->[i32;4]) {
         break_effects::tick_specs(self,scene,break_effects::scene_styles(scene),coverage,count,edge);
