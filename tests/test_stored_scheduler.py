@@ -201,6 +201,9 @@ impl<'a> Scene<'a>{
 struct Cache{loaded_scenes:usize,resident_scene:usize,selected:usize,entries:[usize;2],coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize,effect_scene:usize}
 impl Cache{
  fn new()->Self{Self{loaded_scenes:0,resident_scene:EMPTY,selected:EMPTY,entries:[0,1],coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0,effect_scene:EMPTY}}
+ // Production rebuilds each directory entry from the manifests instead of
+ // keeping the table; the harness only needs a chunk index to stand in for one.
+ fn entry(&self,index:usize)->Result<usize,LoadError>{Ok(self.entries[index])}
  fn prepare_metadata(&mut self,_wanted:usize)->Result<(),LoadError>{Ok(())}
  fn prepare_effect_art(&mut self,wanted:usize)->Result<(),LoadError>{
   if SCENE_GATE_LOAD{assert_eq!(self.coverage_scene,wanted,"effect art follows proof admission");}
@@ -354,6 +357,7 @@ struct Cache{entries:[usize;12],loaded_scenes:usize,coverage_scene:usize,coverag
 impl Cache{
  fn new()->Self{Self{entries:core::array::from_fn(|i|i),loaded_scenes:0,coverage_scene:EMPTY,coverage_len:0}}
  fn init(&mut self)->Result<(),LoadError>{Ok(())}
+ fn entry(&self,index:usize)->Result<usize,LoadError>{Ok(self.entries[index])}
  fn read(&mut self,entry:usize,offset:usize)->Result<(),LoadError>{
   assert_eq!(offset,0);assert_eq!(self.loaded_scenes,0);
   assert_eq!((self.coverage_scene,self.coverage_len),(EMPTY,0));
