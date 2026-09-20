@@ -15,7 +15,7 @@ mod world {
 }
 #[path = "../../../game/src/particles.rs"]
 mod particles;
-use particles::{Bank, EmitterSpec, Pool, Sample, Style};
+use particles::{Bank, EmitterSpec, Pool, Sample, Style, CAPACITY};
 static CURVES: [Sample; 65] = [Sample {
     size: ONE,
     alpha: [255, 255],
@@ -109,7 +109,12 @@ fn exact_source_counts_are_spread_over_six_ticks_not_one_generic_burst() {
         assert_eq!(death.draw(0, Some(BANK), &r, (0, 0)), frame * 50 / 6);
         death.tick(0, Some(BANK));
     }
-    assert!(core::mem::size_of::<Pool>() <= 7200);
+    // A per-slot bound rather than a total, because the total was a stack
+    // budget and the pool is no longer on the stack: it is a static, so its
+    // bytes come out of the linked gap instead of main's frame. What is still
+    // worth guarding is the slot, since every capacity change multiplies it and
+    // Particle is exactly packed, so one stray byte costs a whole word.
+    assert!(core::mem::size_of::<Pool>() <= CAPACITY * 56 + 64);
 }
 #[test]
 fn source_lifetimes_expire_and_grid_residency_does_not_restart() {
@@ -137,24 +142,29 @@ fn source_lifetimes_expire_and_grid_residency_does_not_restart() {
 }
 #[test]
 fn overflow_is_exact_counted_and_never_overwrites_existing_particles() {
+    // Written against CAPACITY rather than against a literal, because the
+    // capacity is a budget that moves: it went 128 to 224 so one authored
+    // emitter of 210 could be admitted. What this pins is that a spawn past the
+    // pool drops exactly the excess and leaves every live particle alone, which
+    // is true at any capacity. Pinning the number instead made this test fail
+    // for saying 128 when the answer was 150.
+    let death = 50usize; // spawn_death's authored count
+    let grass = 25usize; // spawn_grass's
+    let whole = CAPACITY / death;
     let mut p = Pool::new();
-    p.spawn_death(0, 12546, [0; 3], BANK);
-    p.spawn_death(0, 12547, [0; 3], BANK);
+    for burst in 0..whole {
+        p.spawn_death(0, 12546 + burst as u32, [0; 3], BANK);
+    }
+    assert_eq!(p.active(), whole * death);
+    // One burst more than fits. The pool takes the room it has and counts the
+    // rest as dropped rather than overwriting anything already flying.
+    p.spawn_death(0, 12546 + whole as u32, [0; 3], BANK);
+    let spilled = whole * death + death - CAPACITY;
+    assert_eq!((p.active(), p.spawned, p.dropped), (CAPACITY, CAPACITY as u32, spilled as u32));
     p.spawn_grass(0, EMITTER, BANK);
-    assert_eq!(p.active(), 125);
-    p.spawn_grass(
-        0,
-        EmitterSpec {
-            source: 12290,
-            ..EMITTER
-        },
-        BANK,
-    );
-    assert_eq!((p.active(), p.spawned, p.dropped), (128, 128, 22));
-    p.spawn_grass(0, EMITTER, BANK);
-    assert_eq!(p.dropped, 47);
+    assert_eq!(p.dropped, (spilled + grass) as u32);
     p.clear_scene(1);
-    assert_eq!(p.active(), 128);
+    assert_eq!(p.active(), CAPACITY);
     p.clear_scene(0);
     assert_eq!(p.active(), 0);
     p.spawn_grass(0, EMITTER, BANK);
