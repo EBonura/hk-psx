@@ -185,7 +185,13 @@ def cook():
             vals.append('Art{'+','.join(f'{k}:{t[k]}'for k in('u','v','w','h','clut','tpage'))+',bounds:'+rust_array([q16(x)for x in b])+'}')
         rust.append('Frame{parts:&['+','.join(vals)+']},')
     rust.append('];\npub const LIFE_UPLOADS:&[Upload]=&['+','.join('Upload{'+','.join(f'{k}:{v}'for k,v in u.items())+'}'for u in uploads)+'];')
-    rust.append('pub const LIFE_BINDINGS:&[Binding]=&['+','.join('Binding{off:&'+rust_array(b['off'])+',edges:&'+rust_array(b['edges'])+'}'for b in bindings)+'];')
+    # One entry per catalogue region cost 16 linked bytes per view to carry
+    # nothing: eleven of 723 regions see the cocoon. The sorted sparse list the
+    # Great Door bindings already use grows with the cocoons, not the world.
+    bound=[(i,b)for i,b in enumerate(bindings)if b['off']or b['edges']]
+    if bound and bound[-1][0]>0xFFFF:raise ValueError('Lifeblood binding region index exceeds u16')
+    rust.append('/// Regions that see the cocoon, sorted by catalogue region index.')
+    rust.append('pub const LIFE_BINDINGS:&[(u16,Binding)]=&['+','.join(f'({i},Binding{{off:&'+rust_array(b['off'])+',edges:&'+rust_array(b['edges'])+'})'for i,b in bound)+'];')
     rust.extend([f'pub const INTACT:usize={intact};',f'pub const SPLAT:usize={splat};',f'pub const BLUE_HUD:usize={hud};','pub const SPLAT_ORIGIN:[i32;2]='+rust_array([q16(x)for x in splat_pos])+';'])
     text='\n'.join(rust)+'\n';(ROOT/'data/lifeblood.rs').write_text(text);(ROOT/'data/lifeblood.hk').write_bytes(blob)
     report={'bytes':len(blob),'vram_limit':BUDGET,'rectangles':LIFE_RECTS,'spec':spec,'clips':clips,'source_art':art_sources,'image_dimensions':[im.size for im in images], 'textures':tex,'uploads':uploads,'bindings':bindings,'cocoon_source':'level6:12337','scuttler_source':'sharedassets6.assets:1353','hud_fsm':'resources.assets:20959','cil':cil,

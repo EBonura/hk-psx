@@ -75,10 +75,10 @@ def neighbour_edges():
     counts = {}
     life = ROOT / 'data/lifeblood.rs'
     if life.is_file():
-        # One binding per catalogue slot, in slot order.
-        for slot, body in enumerate(re.findall(r'Binding\{off:&\[[^\]]*\],edges:&\[([^\]]*)\]\}',
-                                               life.read_text())):
-            counts[slot] = counts.get(slot, 0) + _count(body)
+        # Only the slots that see a cocoon carry a row, so the slot is written.
+        for slot, body in re.findall(r'\((\d+),Binding\{off:&\[[^\]]*\],edges:&\[([^\]]*)\]\}\)',
+                                     life.read_text()):
+            counts[int(slot)] = counts.get(int(slot), 0) + _count(body)
     door = ROOT / 'data/great_door.rs'
     if door.is_file():
         # Only the slots that see the door carry a row, so the slot is written.

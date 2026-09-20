@@ -173,9 +173,17 @@ mod presentation {
             upload_bytes(VramRect::new(entry.x,entry.y,entry.w,entry.h),&DATA[entry.offset..entry.offset+len]);
         }
     }
+    /// The cocoon's bindings in a catalogue region, or nothing. `LIFE_BINDINGS`
+    /// is sparse and sorted so the linked table grows with the cocoons rather
+    /// than with every view the catalogue admits.
+    fn region_binding(region:usize)->Option<&'static Binding> {
+        let key=u16::try_from(region).ok()?;
+        let at=LIFE_BINDINGS.binary_search_by_key(&key,|&(r,_)|r).ok()?;
+        Some(&LIFE_BINDINGS[at].1)
+    }
     pub fn apply(life:&World,state:&mut world::State,region:usize) {
-        let b=&LIFE_BINDINGS[region];
-        if life.opened() {
+        let bound=region_binding(region).filter(|_|life.opened());
+        if let Some(b)=bound {
             for &draw in b.off {render::set_visible(draw as usize,false);}
             state.set_lifeblood_edges(b.edges);
         } else {state.set_lifeblood_edges(&[]);}

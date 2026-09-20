@@ -267,11 +267,15 @@ def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,her
         lines.append('['+','.join(vals)+'],')
     lines.append('];\n#[derive(Clone,Copy)] pub struct GeoUpload{pub offset:usize,pub x:u16,pub y:u16,pub w:u16,pub h:u16}\npub const GEO_UPLOADS:&[GeoUpload]=&[')
     for u in uploads:lines.append('GeoUpload{'+','.join(f'{k}:{v}'for k,v in u.items())+'},')
-    lines.append('];\npub struct GeoPart{pub art:u16,pub vertices:[[i32;2];4]}\npub struct GeoDrawBinding{pub state:u8,pub off:&\'static[u16],pub edges:&\'static[u16],pub broken_art:u16,pub vertices:[[i32;2];4],pub intact_art:u16,pub intact_vertices:[[i32;2];4],pub intact_extra:&\'static[GeoPart],pub broken_extra:&\'static[GeoPart]}\npub const GEO_BINDINGS:&[&[GeoDrawBinding]]=&[')
-    for row in bindings:
-        lines.append('&[')
+    # A slot per catalogue region spent eight linked bytes on every view that
+    # never sees a rock. The sparse sorted list grows with the bound rocks.
+    lines.append('];\npub struct GeoPart{pub art:u16,pub vertices:[[i32;2];4]}\npub struct GeoDrawBinding{pub state:u8,pub off:&\'static[u16],pub edges:&\'static[u16],pub broken_art:u16,pub vertices:[[i32;2];4],pub intact_art:u16,pub intact_vertices:[[i32;2];4],pub intact_extra:&\'static[GeoPart],pub broken_extra:&\'static[GeoPart]}\n/// Regions with at least one bound rock, sorted by catalogue region index.\npub const GEO_BINDINGS:&[(u16,&[GeoDrawBinding])]=&[')
+    for index,row in enumerate(bindings):
+        if not row:continue
+        if index>0xFFFF:raise ValueError('geo binding region index exceeds u16')
+        lines.append(f'({index},&[')
         for b in row:lines.append('GeoDrawBinding{state:'+str(b['state'])+',off:&'+rust_array(b['off'])+',edges:&'+rust_array(b['edges'])+',broken_art:'+str(b['broken_art'])+',vertices:['+','.join(rust_array([q16(v)for v in p])for p in b['vertices'])+'],intact_art:'+str(b['intact_art'])+',intact_vertices:['+','.join(rust_array([q16(v)for v in p])for p in b['intact_vertices'])+'],intact_extra:'+rust_parts(b['intact_extra'])+',broken_extra:'+rust_parts(b['broken_extra'])+'},')
-        lines.append('],')
+        lines.append(']),')
     lines.append('];\n');return '\n'.join(lines)
 
 def bind_regions(rocks,metadata):
