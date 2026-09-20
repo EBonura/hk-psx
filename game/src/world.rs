@@ -327,8 +327,11 @@ fn region_breakables(region: &Region) -> Breakables<'static> {
 }
 /// The selected region as a runtime value: identity and bounds from the
 /// admitted bank, effect tables from the per-scene statics and the variant
-/// catalogues the bank's `KIND_REGION_STATICS` object indexes. Nothing per
-/// view is linked; `REGION_SCENES` is the only per-slot table left.
+/// catalogues the bank's `KIND_REGION_STATICS` object indexes. No region
+/// *content* is linked. Three small tables are still indexed by catalogue
+/// slot, and they are the whole per-slot cost of the catalogue, seven bytes:
+/// `REGION_SCENES` here (1), `disc::REGION_SCENE_LOCAL` (4) and
+/// `render::SCENERY_PACKET_BUDGETS` (2).
 #[derive(Clone, Copy)]
 pub struct Region {
     pub global_id: usize,

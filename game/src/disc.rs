@@ -46,6 +46,17 @@ const PACK_HEADER_SECTORS:usize=(28+PACK_CHUNKS*24).div_ceil(SECTOR_BYTES);
 // The directory is staged in the scene arena, so a catalogue whose directory
 // outgrew the arena must fail the build, not the boot.
 const _:()=assert!(PACK_HEADER_SECTORS*SECTOR_BYTES<=SCENE_ARENA_BYTES);
+// A gate names its destination as one u32 of its scene's world metadata bank,
+// with the catalogue slot in the low sixteen bits and the target scene above
+// it (`crate::world::gates`). A catalogue longer than that field can address
+// would hand out slots a gate cannot name, and the wrap would be silent, so it
+// fails the build here as well as at the cook. host/world.py MAX_REGIONS is the
+// host half of the same ceiling and refuses first; this is the guest's own.
+const _:()=assert!(REGION_SCENE_LOCAL.len()<=1<<16);
+// The owner half of a REGION_SCENE_LOCAL slot is a u16. Its other half, the
+// scene-local room index, is a u8, which caps one scene at 256 regions;
+// host/pack_scenes.py refuses that one, where the mapping is built.
+const _:()=assert!(SCENE_COUNT<=1<<16);
 const EMPTY:usize=usize::MAX;
 const SEEK_POLL:u32=4_000_000;
 #[repr(C,align(4))]

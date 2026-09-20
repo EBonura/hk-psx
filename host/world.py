@@ -13,6 +13,31 @@ from quality import SCENE_COUNT as SCENES
 BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 
+# Catalogue slots the disc format can address, and the reason it is this many.
+# A scene's gates carry their destination inside one u32 of that scene's world
+# metadata bank: tools/world_metadata.py packs `region | target_scene << 16 |
+# side << 24`, and game/src/world.rs reads the slot back out as `destination &
+# 0xFFFF`. Sixteen bits is all a slot gets there, so 65536 is the catalogue's
+# real ceiling. The two linked tables that name slots directly agree at that
+# width: data/great_door.rs and data/battle_gates.rs are both `(u16, ...)` and
+# both refuse above 65535 in their own generators.
+#
+# This replaces a 1024 that was called a sanity bound and was never measured.
+# It bit at 943 regions with 99,716 bytes of linked headroom still free, and a
+# slot costs seven linked bytes, read out of build 161's link map rather than
+# estimated: REGION_SCENES 1 byte (data/regions.rs), REGION_SCENE_LOCAL 4
+# (data/scene_manifest.rs), SCENERY_PACKET_BUDGETS 2 (data/scenery_budgets.rs).
+# Those three are the whole per-slot cost; nothing else in the guest is sized
+# per slot, and the scene arena and the metadata bank are per scene, so neither
+# moves when the catalogue grows. RAM needs no bound of its own here either:
+# the linker's RAM region is LOAD_ADDR..STACK_INIT less STACK_RESERVE (see
+# host/stack_budget.py), so a catalogue that does not fit fails the link.
+#
+# What this does not raise: a scene may still hold only 256 regions, because
+# REGION_SCENE_LOCAL stores the scene-local index in a u8. host/pack_scenes.py
+# refuses that one. The busiest scene at build 161 is Tutorial_01 with 86.
+MAX_REGIONS = 65536
+
 
 def q(value):
     if not math.isfinite(value) or abs(value) > 512:
@@ -267,8 +292,8 @@ def generate(report, out_path=None):
     regions = report['regions']
     if [r['chunk_id'] for r in regions] != list(range(1, len(regions) + 1)):
         raise ValueError('region chunks must be contiguous and start at one')
-    if len(regions) > 1024:
-        raise ValueError('region count exceeds the 1024-slot sanity bound')
+    if len(regions) > MAX_REGIONS:
+        raise ValueError(f'region count exceeds the {MAX_REGIONS}-slot gate destination field')
     floors = flat_floor_catalog(report, root=ROOT)
     # The guest sizes its per-scene persistent state tables from the catalog.
     out = [f'pub const SCENES: usize = {SCENES};\n', rust_catalog(floors)]

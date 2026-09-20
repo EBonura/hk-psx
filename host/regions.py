@@ -18,7 +18,7 @@ from source import ROOT, Source, dump
 from scene import Scene
 from cook import cook, CAM_X, CAM_Y, Atlas, append_actor_art
 from actors import actor_sources, postpack_pogo
-from world import postpack_checkpoints, postpack_masks
+from world import postpack_checkpoints, postpack_masks, MAX_REGIONS
 from reveal_masks import postpack_reveal_masks
 from quality import SCENE_TABLE, GRID_SCENE_LAYOUTS, REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
 from cook import MAX_ROOM_TEXTURES
@@ -661,7 +661,10 @@ def main():
             scenes[scene_id]=Scene(source,region['scene_file'])
             report['scenes'].append(scene_metadata(scenes[scene_id],SCENES[scene_id]))
         chunk_id=len(regions)+1
-        if chunk_id>1024:raise ValueError('Region chunk table exceeds 1024 slots')  # sanity bound; static RAM per view is the real limit
+        # The same ceiling world.generate refuses at, applied while cooking so a
+        # long batch fails on the slot that breaks it instead of at the end. The
+        # basis for the number is written beside world.MAX_REGIONS.
+        if chunk_id>MAX_REGIONS:raise ValueError(f'Region chunk table exceeds {MAX_REGIONS} slots')
         destination=out/f'region-{chunk_id:03}'
         key=cook_cache_key(region,fingerprints);cooked=cached_cook(destination,key);cached=cooked is not None
         if cached:
