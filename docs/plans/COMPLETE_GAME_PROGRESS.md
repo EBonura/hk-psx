@@ -1849,6 +1849,54 @@ minutes of cooking and a clean route sweep. All 431 host tests pass.
 That is the third time this session that a suite with no runner had quietly
 rotted. The pattern is worth naming: a test that nothing executes is not a test.
 
+## P11: the pogo debt was counting the wrong set (build 155)
+
+The P11 row owed "the 127 of 166 TinkEffect surfaces the static pogo pool does
+not cover". Re-measuring it found that none of that sentence survives contact
+with the source, and the way it failed is worth keeping.
+
+**`NailSlash` never reads `TinkEffect`.** Disassembling
+`NailSlash::OnTriggerEnter2D` and resolving its `GetComponent` MethodSpec tokens
+gives `NonBouncer`, `BigBouncer` and `BounceShroom`, and nothing else. The down
+slash branch tests `other.gameObject.layer` against 11, 19 and 17, returns early
+on an active `NonBouncer`, answers a `BigBouncer` with `BounceHigh` and a
+`BounceShroom` with `ShroomBounce`, and otherwise falls through to a plain
+`heroCtrl.Bounce()`. No component is required for the ordinary pogo.
+`TinkEffect` is a separate behaviour: its own `OnTriggerEnter2D` answers a
+collider tagged `Nail Attack` with a camera shake, a flash and a sound on a
+0.25 s throttle, and never touches hero velocity. So the old ratio was the
+overlap of two unrelated sets, and `pogo_sources` was never trying to cover
+the tink population in the first place.
+
+**Nothing is excluded on capacity.** "Static pogo pool" reads like an array that
+filled up. There is no array. `world::pogo_targets` filters the streamed bank in
+place and `enemies::pogo_contact` consumes that iterator, so a target costs no
+`static`, no field of `world::State` or `frame::Game`, and no `.bss`; its only
+stack is a fixed 16-point buffer that does not grow with the target count. The
+128-per-scene bound in `pogo_sources` is a cooker assertion, and the busiest
+scene uses 34 of it. "Static" there means not moving, not statically allocated.
+
+**Measured at build 155:** 282 targets cooked from 281 objects, 161 refused.
+The refusals are 128 objects a PlayMakerFSM owns, 18 with a moving
+`Rigidbody2D`, and 15 `InfectedBurstLarge` blobs in Crossroads_22 whose only
+collider is a circle. All three are modelling limits.
+
+**Two bugs in the measuring tool, both of the kind that reports a true-looking
+wrong reason.** `tink_coverage` matched targets by parsing an int out of
+`Scene.sid`, which names the file an object was serialized in, so every object
+an additive scene contributed was counted as excluded no matter what the cooker
+did with it. And it re-derived the refusal policy instead of reading
+`pogo_sources`' own output, in a different order, so six objects that refuse
+first on having no collider of their own were reported as refusing on their FSM,
+and its `excluded: other` bucket of 2 was hiding one such object and one
+inactive one. It now reads the refusals the cooker actually emitted, which is
+also one policy in one place rather than two that can drift.
+
+What is still owed is the 128 FSM-owned targets. The source bounces off them
+regardless of the FSM, so the refusal is the cooker's inability to tell a
+cosmetic FSM from one that moves or removes the object, not a source rule. That
+is `host/actors.py:717`, the `blockers` set in `pogo_sources`.
+
 ## P16 and P17 step 1: what the shipped slice actually contains
 
 Both catalogs are extraction only, and both corrected an assumption in their
