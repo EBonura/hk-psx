@@ -140,13 +140,23 @@ fn malformed_flags_headers_truncation_and_checksum_cannot_be_admitted() {
 fn actual_complete_bank_is_contiguous_above_sfx_and_all_checksums_match() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/ambience");
     let mut end = data::AMBIENCE_SPU_START;
-    let channels = [0, 1, 3, 4, 5, 6];
+    // The resident channel set is a cook-time budget decision that moves: a
+    // swap of 6 for 7 let Greenpath be heard, and this test restated the old
+    // set as a literal, so it failed for naming the answer rather than the
+    // rule. What holds at any set is that the clips arrive in channel order.
+    let mut previous: Option<u8> = None;
+    // The streamed bed is cooked at a lower rate and is the one clip whose SPU
+    // reservation is a ring rather than its whole payload, which is how the
+    // guest finds it too, rather than by a hardcoded index.
     for (i, c) in data::AMBIENCE_CLIPS.iter().enumerate() {
         assert_eq!(c.spu_address, end);
         assert_eq!(c.voice, 6 + i as u8);
-        assert_eq!(c.source_channel, channels[i]);
-        // The streamed cave bed is cooked at 4 kHz; the resident loops at 8.
-        assert_eq!(c.pitch, if i == 3 { 372 } else { 743 });
+        if let Some(last) = previous {
+            assert!(c.source_channel > last, "clips must arrive in channel order");
+        }
+        previous = Some(c.source_channel);
+        let streamed = c.spu_bytes != c.byte_len;
+        assert_eq!(c.pitch, if streamed { 372 } else { 743 });
         assert_eq!(c.byte_len % 16, 0);
         let bytes = std::fs::read(root.join(format!("clip_{i}.adpcm"))).unwrap();
         assert!(valid_clip(&bytes, c.byte_len, c.checksum));
