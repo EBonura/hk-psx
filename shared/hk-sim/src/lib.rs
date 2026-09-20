@@ -11,6 +11,7 @@ pub mod aspid;
 pub mod vengefly;
 pub mod gruzzer;
 pub mod baldur;
+pub mod hatcher;
 pub mod boss;
 pub mod false_knight;
 pub mod shade;

@@ -73,9 +73,10 @@ fn runner_event(event: enemies::RunnerEvent) {
         AudioStop | Destroy => runner_audio::loop_stop(event.source_id),
         ChaseSound { pitch_q16, variant } => runner_audio::call(pitch_q16, variant),
         DustStart | DustStop => unsafe { HK_RUNNER_DUST_EVENTS = HK_RUNNER_DUST_EVENTS.saturating_add(1); },
-        // Both are drained inside EnemyWorld::tick, where the projectile pool
-        // they fill is a sibling field of the actors that ask for them.
-        Fire { .. } | Summon { .. } => {}
+        // All three are drained inside EnemyWorld::tick, where the projectile
+        // pool and the actor pool they reach are sibling fields of the actors
+        // that ask for them.
+        Fire { .. } | Summon { .. } | Release { .. } => {}
     }
 }
 /// Read-only marker: 0 title, 1 gameplay, 2 loading, 3 disc error.

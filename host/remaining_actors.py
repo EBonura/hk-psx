@@ -35,8 +35,13 @@ RECOGNIZERS = (
     ('gruzzer', lambda sc, gid, kinds, name: name.startswith('Fly') and 'PlayMakerCollisionStay2D' in kinds),
     ('baldur', lambda sc, gid, kinds, name: name.startswith('Roller') and 'LineOfSightDetector' in kinds),
     ('aspid', lambda sc, gid, kinds, name: name.startswith('Spitter') and 'PersonalObjectPool' in kinds),
+    ('hatcher_baby', lambda sc, gid, kinds, name: name.startswith('Hatcher Baby') and 'ObjectBounce' in kinds),
+    ('hatcher', lambda sc, gid, kinds, name: name.startswith('Hatcher')
+        and not name.startswith('Hatcher Baby') and 'LineOfSightDetector' in kinds),
     ('runner', lambda sc, gid, kinds, name: 'Walker' in kinds),
 )
+# The recognizer entry point, where it is not `<module>.recognize`.
+ENTRY_POINTS = {'hatcher_baby': ('hatcher', 'recognize_baby')}
 
 # Serialized components whose fields a controller would have to honour. Each one
 # is reported through component_fields, which keeps the authored numbers.
@@ -240,7 +245,8 @@ def refusals(sc, actor):
             if label == 'walker_control':
                 from actors import walker_control as recognize
             else:
-                recognize = __import__(label).recognize
+                module, entry = ENTRY_POINTS.get(label, (label, 'recognize'))
+                recognize = getattr(__import__(module), entry)
             recognize(sc, actor)
             results.append({'recognizer': label, 'attempted': True, 'error': None})
         except (ValueError, KeyError, StopIteration) as error:

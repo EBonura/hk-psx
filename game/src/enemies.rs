@@ -22,6 +22,11 @@ pub enum RunnerEventKind {
     Destroy,
     /// Aspid FireAtTarget: spawn a shot at the actor with this velocity.
     Fire { velocity: [i32; 2], shot_clip: u16, impact_clip: u16 },
+    /// The Hatcher's `Fire`: wake one of the scene's parked cage members at the
+    /// event position with this velocity. The event carries no identity for the
+    /// baby because the source picks one at random from whatever is still in
+    /// the cage; `EnemyWorld` owns the reservation and answers it.
+    Release { velocity: [i32; 2] },
     /// `SUMMON` to `FK Barrel Summon`, with `Spawns` already written. The
     /// summoner is a different source object from the boss and keeps its own
     /// clock, so this only hands over the count and where the barrels come
@@ -83,6 +88,11 @@ struct RunnerContext {
     camera: [i32; 3],
     hero: [i32; 2],
     hero_body: [i32; 4],
+    /// `GetChildCount(Cage)` for the scene being ticked: how many Hatcher
+    /// Babies are still parked. Every Hatcher in a scene reads the one cage, so
+    /// this falls as the frame's releases are taken and a second Hatcher on the
+    /// same frame sees what the first one left.
+    cage_children: u16,
 }
 
 /// The False Knight fight: `hk_sim::false_knight::FalseKnight` is `FalseyControl`
@@ -330,6 +340,33 @@ impl AspidRuntime {
         match self.clip { Clip::Fly => spec.walk_clip, Clip::TurnToFly => spec.turn_clip, Clip::FireLong => fire_clip }
     }
 }
+/// Hatcher: the controller owns velocity, facing, clips and the release cue.
+#[derive(Clone, Copy)]
+struct HatcherRuntime {
+    controller: hk_sim::hatcher::Hatcher,
+    animation_tick: u32,
+    clip: hk_sim::hatcher::Clip,
+}
+impl HatcherRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::Hatcher { fire_clip, .. } = spec.controller
+            else { panic!("Hatcher runtime with other metadata") };
+        match self.clip { hk_sim::hatcher::Clip::Fly => spec.walk_clip, hk_sim::hatcher::Clip::Fire => fire_clip }
+    }
+}
+/// One member of a Hatcher's cage. `Inert` is the parked state and costs one
+/// test a tick: no senses, no body, no clip clock and no draw.
+#[derive(Clone, Copy)]
+struct BabyRuntime {
+    controller: hk_sim::hatcher::Baby,
+    animation_tick: u32,
+}
+/// Releases a scene may make on one frame. A Hatcher's own cycle is at least
+/// 140 ticks, so this is only reachable with five Hatchers in one scene, and
+/// the most any admitted scene has is the three in Crossroads_27. A Hatcher
+/// that finds the buffer full is told the cage is empty, so it takes the
+/// source's own `CANCEL` path back to Distance Fly instead of losing a spawn.
+const RELEASES: usize = 4;
 /// Source `Spitter Shot R`: a gravity 0.05 dynamic body that damages the hero
 /// on contact and plays Impact where it hits terrain or the hero.
 ///
@@ -510,10 +547,18 @@ enum Runtime {
     Gruzzer(GruzzerRuntime),
     Baldur(BaldurRuntime),
     Aspid(AspidRuntime),
+    Hatcher(HatcherRuntime),
+    HatcherBaby(BabyRuntime),
     /// No senses and no body: only the looping clip's clock advances.
     Static { animation_tick: u32 },
     FalseKnight(FalseKnightRuntime),
 }
+// `EnemyWorld` is a field of `frame::Game`, which is a local of `main`, so the
+// widest `Runtime` variant is paid thirty-two times inside main's stack frame.
+// The Hatcher and its cage member are both far narrower than the boss; this
+// holds the pair to that promise rather than leaving it to a later measurement.
+const _: () = assert!(core::mem::size_of::<Runtime>() == 84,
+    "a controller runtime wider than the False Knight's grows main's stack frame by 32 of the difference");
 impl Actor {
     fn runner(&self) -> Option<RunnerRuntime> { if let Runtime::Runner(r) = self.runtime { Some(r) } else { None } }
     fn runner_mut(&mut self) -> Option<&mut RunnerRuntime> { if let Runtime::Runner(r) = &mut self.runtime { Some(r) } else { None } }
@@ -524,6 +569,31 @@ impl Actor {
     fn baldur(&self) -> Option<BaldurRuntime> { if let Runtime::Baldur(b) = self.runtime { Some(b) } else { None } }
     fn baldur_mut(&mut self) -> Option<&mut BaldurRuntime> { if let Runtime::Baldur(b) = &mut self.runtime { Some(b) } else { None } }
     fn aspid(&self) -> Option<AspidRuntime> { if let Runtime::Aspid(a) = self.runtime { Some(a) } else { None } }
+    fn hatcher(&self) -> Option<HatcherRuntime> { if let Runtime::Hatcher(h) = self.runtime { Some(h) } else { None } }
+    fn baby(&self) -> Option<BabyRuntime> { if let Runtime::HatcherBaby(b) = self.runtime { Some(b) } else { None } }
+    /// A cage member still in the cage: `Control`'s `Inert`.
+    fn parked_baby(&self) -> bool {
+        self.baby().is_some_and(|b| b.controller.phase() == hk_sim::hatcher::BabyPhase::Inert)
+    }
+    /// The `Death` state, which recycles instead of removing: hp back to five,
+    /// the dead flag cleared, the body reparented to the cage and moved to the
+    /// cage's own origin, which is where `ActorSpec` already puts it.
+    ///
+    /// `geo_paid` and `dream_taken` deliberately survive, because `Death` does
+    /// not reset either source component: the baby drops no Geo at all, and its
+    /// `EnemyDreamnailReaction` pays once and stays paid until the scene reloads.
+    fn park_baby(&mut self, spec: &ActorSpec) {
+        self.x = spec.x;
+        self.y = spec.y;
+        self.vy = 0;
+        self.recoil_left = 0;
+        self.recoil = [0; 2];
+        self.health = ActorHealth::new(spec.health);
+        if let Runtime::HatcherBaby(baby) = &mut self.runtime {
+            baby.controller.park();
+            baby.animation_tick = 0;
+        }
+    }
     fn immobile(&self) -> Option<u32> { if let Runtime::Static { animation_tick } = self.runtime { Some(animation_tick) } else { None } }
     fn false_knight(&self) -> Option<FalseKnightRuntime> { if let Runtime::FalseKnight(b) = self.runtime { Some(b) } else { None } }
     /// Write the boss back and mirror what a route reads off it.
@@ -556,7 +626,8 @@ impl Actor {
             HK_FK_ACTIVATED = u32::from(boss.arena.activated());
         }
     }
-    fn is_flyer(&self) -> bool { matches!(self.runtime, Runtime::Vengefly(_) | Runtime::Gruzzer(_) | Runtime::Baldur(_) | Runtime::Aspid(_)) }
+    fn is_flyer(&self) -> bool { matches!(self.runtime, Runtime::Vengefly(_) | Runtime::Gruzzer(_) | Runtime::Baldur(_)
+        | Runtime::Aspid(_) | Runtime::Hatcher(_) | Runtime::HatcherBaby(_)) }
     fn new(scene: usize, spec: &ActorSpec) -> Self {
         // Stable per-source seed, not a claim to reproduce Unity's global RNG.
         let seed = spec
@@ -607,6 +678,15 @@ impl Actor {
                         else { hk_sim::aspid::Aspid::new([spec.x, spec.y], seed) };
                     Runtime::Aspid(AspidRuntime { controller, animation_tick: 10, clip: hk_sim::aspid::Clip::Fly })
                 }
+                ActorController::Hatcher { start_alert, .. } => {
+                    let controller = if start_alert { hk_sim::hatcher::Hatcher::new_alert([spec.x, spec.y], seed) }
+                        else { hk_sim::hatcher::Hatcher::new([spec.x, spec.y], seed) };
+                    Runtime::Hatcher(HatcherRuntime { controller, animation_tick: hk_sim::hatcher::FLY_START_TICKS,
+                        clip: hk_sim::hatcher::Clip::Fly })
+                }
+                // `Init` parks it where the cooker found it, which is the cage.
+                ActorController::HatcherBaby => Runtime::HatcherBaby(BabyRuntime {
+                    controller: hk_sim::hatcher::Baby::new(seed), animation_tick: 0 }),
                 ActorController::Static { .. } => Runtime::Static { animation_tick: 0 },
                 // `initial_direction` carries the sign the cooker read off the
                 // placement's transform scale, and a positive source scale is
@@ -841,6 +921,20 @@ impl Actor {
             self.spawn_state = SpawnState::Ready;
             self.advance_aspid(&mut aspid, spec, count, &edge, context, emit);
             self.runtime = Runtime::Aspid(aspid);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(mut hatcher) = self.hatcher() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_hatcher(&mut hatcher, spec, count, &edge, context, emit);
+            self.runtime = Runtime::Hatcher(hatcher);
+            assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
+            return;
+        }
+        if let Some(mut baby) = self.baby() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_baby(&mut baby, spec, count, &edge, context);
+            self.runtime = Runtime::HatcherBaby(baby);
             assert!(self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE, "enemy left validated Q16 scene bounds");
             return;
         }
@@ -1316,6 +1410,76 @@ impl Actor {
         self.x = body.x - offset;
         self.y = body.y;
     }
+    /// The gravity-free dynamic body the Hatcher and its babies share with the
+    /// Aspid: the controller owns the velocity and the bounded solver carries it
+    /// against the resident terrain, then the Recoil displacement if one is due.
+    fn fly_body(&mut self, spec: &ActorSpec, v: [i32; 2], count: usize, edge: &impl Fn(usize) -> [i32; 4]) {
+        let b = spec.bounds;
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let mut body = Player::spawn(self.x + offset, self.y);
+        let mut p = Params { speed: v[0].abs(), fall: 100 * ONE, half_width: (b[2] - b[0]) / 2,
+            bottom: b[1], top: b[3], ..Params::ZERO };
+        body.vy = v[1];
+        body.step(p, v[0].signum(), false, count, edge);
+        if self.recoil_left != 0 {
+            self.recoil_left -= 1;
+            p.speed = self.recoil[0].abs();
+            body.vy = self.recoil[1];
+            body.step(p, self.recoil[0].signum(), false, count, edge);
+        }
+        self.x = body.x - offset;
+        self.y = body.y;
+    }
+    /// One 60 Hz step of the Hatcher: the `alert_range` sense (the 7.804 circle
+    /// and an unobstructed line), the FSM tick, then the shared flying body.
+    /// A `Release` leaves as an event because the baby that answers it is
+    /// another actor in the same pool, which this borrow cannot reach.
+    fn advance_hatcher(&mut self, hatcher: &mut HatcherRuntime, spec: &ActorSpec, count: usize,
+        edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext, emit: &mut impl FnMut(RunnerEvent)) {
+        use hk_sim::hatcher::Action;
+        use hk_sim::runner_senses as q;
+        hatcher.animation_tick = hatcher.animation_tick.saturating_add(1);
+        let pos = [self.x, self.y];
+        let hb = context.hero_body;
+        let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
+        let dy = (pos[1].clamp(hb[1], hb[3]) - pos[1]) as i64;
+        const ALERT: i64 = hk_sim::hatcher::ALERT_RADIUS as i64;
+        let in_alert = dx * dx + dy * dy <= ALERT * ALERT;
+        let clear = match q::line_of_sight(pos, context.hero, true, count, edge) {
+            Ok(value) => value,
+            Err(q::QueryError::ZeroLengthSight) => false,
+            Err(_) => panic!("Hatcher LOS outside validated coordinates"),
+        };
+        let senses = hk_sim::hatcher::Senses { position: pos, hero: context.hero,
+            alert_range: in_alert && clear, cage_children: context.cage_children };
+        for action in hatcher.controller.tick(senses).iter() {
+            match action {
+                Action::Play(clip, tick) => { hatcher.clip = clip; hatcher.animation_tick = tick; }
+                Action::Facing(f) => self.walk.direction = f,
+                Action::Release { position, velocity } => emit(RunnerEvent { scene: self.scene,
+                    source_id: self.source_id, position, facing: self.walk.direction,
+                    kind: RunnerEventKind::Release { velocity } }),
+                Action::Velocity(_) => {}
+            }
+        }
+        let v = hatcher.controller.velocity();
+        self.fly_body(spec, v, count, edge);
+    }
+    /// One 60 Hz step of a released baby. A parked one never reaches here: the
+    /// tick skips it before the terrain its cage sits outside is even resolved.
+    fn advance_baby(&mut self, baby: &mut BabyRuntime, spec: &ActorSpec, count: usize,
+        edge: &impl Fn(usize) -> [i32; 4], context: RunnerContext) {
+        use hk_sim::hatcher::BabyAction;
+        baby.animation_tick = baby.animation_tick.saturating_add(1);
+        for action in baby.controller.tick([self.x, self.y], context.hero).iter() {
+            match action {
+                BabyAction::Facing(f) => self.walk.direction = f,
+                BabyAction::Velocity(_) => {}
+            }
+        }
+        let v = baby.controller.velocity();
+        self.fly_body(spec, v, count, edge);
+    }
     fn runner_senses(&self, runner:&RunnerRuntime, spec:&ActorSpec, room:&Room,
         context:RunnerContext, count:usize, edge:impl Fn(usize)->[i32;4]) -> hk_sim::runner::Senses {
         use hk_sim::runner_senses as q;
@@ -1473,6 +1637,28 @@ impl EnemyWorld {
         }
         result
     }
+    /// The Hatcher's `Fire`, finished: `SetPosition` the cage child it drew,
+    /// `SPAWN` it and `SetVelocity2d(y = -5)`. The pool is a cook-time
+    /// reservation, so this only ever changes an actor already seated in the
+    /// scene, and the controller only asks while `GetChildCount(Cage)` is
+    /// positive, so a release cannot fail to find one.
+    ///
+    /// The source draws uniformly with `GetRandomChild`; the guest takes the
+    /// first parked slot, which is a divergence in which baby answers and in
+    /// nothing else, because every member of a cage is the same object.
+    fn release_baby(&mut self, scene: usize, position: [i32; 2], velocity: [i32; 2]) {
+        let Some(actor) = self.actors.iter_mut().flatten()
+            .find(|a| a.scene == scene && a.parked_baby()) else { return };
+        actor.x = position[0];
+        actor.y = position[1];
+        actor.vy = velocity[1];
+        actor.recoil_left = 0;
+        actor.recoil = [0; 2];
+        if let Runtime::HatcherBaby(baby) = &mut actor.runtime {
+            baby.controller.release(velocity);
+            baby.animation_tick = 0;
+        }
+    }
     pub fn clear_shots(&mut self, scene: usize) {
         for slot in self.shots.iter_mut() {
             if slot.is_some_and(|s| s.scene as usize == scene) { *slot = None; }
@@ -1595,9 +1781,17 @@ impl EnemyWorld {
             player.x + crate::PARAMS.half_width,
             player.y + crate::PARAMS.top,
         ];
-        let context=RunnerContext {camera,hero:[player.x,player.y],hero_body:body};
+        let mut context=RunnerContext {camera,hero:[player.x,player.y],hero_body:body,cage_children:0};
+        // `GetChildCount(Cage)`: the scene's parked cage members. One pass over
+        // the pool, because the cage is scene-wide and a Hatcher only fires
+        // while something is still in it.
+        let parked = core::cell::Cell::new(self.actors.iter().flatten()
+            .filter(|a| a.scene == region.scene && a.parked_baby()).count() as u16);
         // Aspid shots spawn after the actor pass (the pool is a sibling field).
         let mut fires: [Option<(usize, [i32; 2], [i32; 2], u16, u16)>; 4] = [None; 4];
+        // The same deferral for a release: the baby that answers one is another
+        // actor in the pool this loop already holds.
+        let mut releases: [Option<([i32; 2], [i32; 2])>; RELEASES] = [None; RELEASES];
         // At most one SUMMON a tick: one boss, and `Actions` carries one of
         // these per state change.
         let mut summoned: Option<(usize, u8, i32, u16)> = None;
@@ -1608,6 +1802,15 @@ impl EnemyWorld {
                 }
             } else if let RunnerEventKind::Summon { spawns, spawn_y, barrel_clip } = event.kind {
                 summoned = Some((event.scene, spawns, spawn_y, barrel_clip));
+            } else if let RunnerEventKind::Release { velocity } = event.kind {
+                // The controller only fires while it can see a parked baby, so
+                // this take is the one the cage just lost. host/hatcher.py
+                // refuses a scene with more than RELEASES Hatchers, which is
+                // what makes the slot search below always find one.
+                parked.set(parked.get().saturating_sub(1));
+                let slot = releases.iter_mut().find(|r| r.is_none());
+                debug_assert!(slot.is_some(), "more Hatchers fired on one frame than the cook admits");
+                if let Some(slot) = slot { *slot = Some((event.position, velocity)); }
             } else { runner_event(event); }
         };
         for actor in self
@@ -1621,6 +1824,16 @@ impl EnemyWorld {
             else {
                 continue;
             };
+            if actor.baby().is_some() {
+                // `Death` recycles instead of removing, on the frame after the
+                // one the kill was counted on: a dead baby has no corpse, so it
+                // draws nothing and its contact damage is already zero there.
+                if actor.health.dead { actor.park_baby(spec); }
+                // A parked baby is `Inert` inside a cage the source parks off
+                // the map. It has no senses, no body and no draw, so it stops
+                // here rather than paying the resident-view lookup below.
+                if actor.parked_baby() { continue; }
+            }
             // WalkLeftRight keeps running independently of the Knight/camera.
             // A cooked view boundary is not a source scene or FSM boundary.
             let (x,y)=actor.corpse.map_or((actor.x,actor.y),|c|(c.x,c.y));
@@ -1637,6 +1850,7 @@ impl EnemyWorld {
                 && crate::world::contains(terrain_region.collision_bounds,x,y);
             if !actor.health.dead {actor.health.tick();}
             if available {
+                context.cage_children=parked.get();
                 actor.advance_in_view(spec,state,region,room,terrain_region,terrain_room,context,&mut runner_event);
             }
             if actor.health.dead {continue;}
@@ -1734,6 +1948,11 @@ impl EnemyWorld {
                                 Runtime::Gruzzer(f)=>f.controller.die(),
                                 Runtime::Baldur(r)=>r.controller.die(),
                                 Runtime::Aspid(a)=>a.controller.die(),
+                                Runtime::Hatcher(h)=>h.controller.die(),
+                                // A baby is not removed: `Death` puts it back in
+                                // the cage, which the next tick does through
+                                // `park_baby` so the kill is counted first.
+                                Runtime::HatcherBaby(_)=>{}
                                 // The False Knight answers the nail through its
                                 // own branch above and never reaches this one.
                                 Runtime::Walker|Runtime::Runner(_)|Runtime::Static {..}|Runtime::FalseKnight(_)=>{}
@@ -1827,6 +2046,9 @@ impl EnemyWorld {
         for (scene, position, velocity, shot_clip, impact_clip) in fires.into_iter().flatten() {
             self.spawn_shot(scene, position, velocity, shot_clip, impact_clip);
         }
+        for (position, velocity) in releases.into_iter().flatten() {
+            self.release_baby(region.scene, position, velocity);
+        }
         if let Some((scene, spawns, spawn_y, barrel_clip)) = summoned {
             self.summon_site = Some((scene as u8, spawn_y, barrel_clip));
             self.summon.summon(spawns);
@@ -1880,6 +2102,14 @@ impl EnemyWorld {
                 (roller.clip(spec),roller.animation_tick,(actor.x,actor.y),roller.controller.facing())
             } else if let Some(aspid)=actor.aspid() {
                 (aspid.clip(spec),aspid.animation_tick,(actor.x,actor.y),aspid.controller.facing())
+            } else if let Some(hatcher)=actor.hatcher() {
+                (hatcher.clip(spec),hatcher.animation_tick,(actor.x,actor.y),hatcher.controller.facing())
+            } else if let Some(baby)=actor.baby() {
+                // A parked baby is inside the cage, which the source keeps off
+                // the map. Nothing draws it there, and skipping it here is also
+                // what keeps a full cage inside the per-frame animation budget.
+                if actor.parked_baby() {continue;}
+                (spec.walk_clip,baby.animation_tick,(actor.x,actor.y),baby.controller.facing())
             } else if let Some(boss)=actor.false_knight() {
                 // `Dormant` hangs the body inside the ceiling slab above the
                 // arena, where the room's own scenery covers it in the source.
@@ -2059,6 +2289,177 @@ pub fn pogo_contact(
     false
 }
 
+/// The spawning contract, which is a reservation rather than an allocation:
+/// the cage is seated with the scene and a release only changes state.
+#[cfg(test)]
+mod hatcher_pool_tests {
+    use super::*;
+    const CAGE: [i32; 2] = [100 * ONE, 100 * ONE];
+    const HATCHER: ActorSpec = ActorSpec {
+        controller: ActorController::Hatcher { fire_clip: 1, start_alert: true },
+        source_id: 5007, x: 20 * ONE, y: 20 * ONE,
+        bounds: [-51200, -71680, 34816, 49152],
+        health: hk_sim::EnemyParams { health: 20, contact_damage: 1, evasion_ticks: 12,
+            invincible: false, damage_override: false },
+        walk: hk_sim::WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
+        initial_direction: -1, random_start_direction: false, walk_clip: 0, turn_clip: 0,
+        corpse: None, recoil_speed: 20 * ONE, recoil_ticks: 9, dream_soul: 33,
+    };
+    const BABY: ActorSpec = ActorSpec {
+        controller: ActorController::HatcherBaby,
+        source_id: 5010, x: CAGE[0], y: CAGE[1],
+        bounds: [-13312, -14336, 10240, 10240],
+        health: hk_sim::EnemyParams { health: 5, contact_damage: 1, evasion_ticks: 12,
+            invincible: false, damage_override: false },
+        walk: hk_sim::WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
+        initial_direction: -1, random_start_direction: false, walk_clip: 0, turn_clip: 0,
+        corpse: None, recoil_speed: 0, recoil_ticks: 0, dream_soul: 33,
+    };
+    const BABY_1: ActorSpec = ActorSpec { source_id: 5011, ..BABY };
+    const BABY_2: ActorSpec = ActorSpec { source_id: 5012, ..BABY };
+    static SPECS: [&ActorSpec; 4] = [&HATCHER, &BABY, &BABY_1, &BABY_2];
+    /// Two clips over two textures: Fly (six frames, 12 fps, loop from 2) and
+    /// Fire (one frame, once), which is all the draw path reads.
+    fn bytes() -> Vec<u8> {
+        let lengths = [6u32, 1];
+        let mut b = Vec::from(*b"HKROOM02");
+        for n in [1u32, 2, 0, 7, 2, 1, 0, 0] { b.extend(n.to_le_bytes()); }
+        for _ in 0..2 { for n in [0u16, 0, 0, 4, 4, 0] { b.extend(n.to_le_bytes()); }
+            b.extend(0u32.to_le_bytes()); }
+        for (clip, len) in lengths.iter().enumerate() {
+            for _ in 0..*len { for n in [clip as i32, -ONE / 2, -ONE, ONE / 2, 0] { b.extend(n.to_le_bytes()); } }
+        }
+        let mut first = 0;
+        for (i, len) in lengths.iter().enumerate() {
+            let wrap = if i == 0 { (2 << 16) | 1 } else { 2 };
+            for n in [first, *len, 12 * 65536, wrap] { b.extend(n.to_le_bytes()); }
+            first += len;
+        }
+        for n in [0, 0, 0, 0] { b.extend((n as i32).to_le_bytes()); }
+        b.resize(b.len() + 2 * 32 + 32768, 0);
+        b
+    }
+    fn region() -> Region {
+        Region { scene: 0, bounds: [-100 * ONE, -10 * ONE, 100 * ONE, 60 * ONE],
+            collision_bounds: [-100 * ONE, -10 * ONE, 100 * ONE, 60 * ONE], actors: &SPECS }
+    }
+    fn context(cage_children: u16) -> RunnerContext {
+        let hero = [20 * ONE, 18 * ONE];
+        RunnerContext { camera: [0, 0, -2496922], hero,
+            hero_body: [hero[0] - ONE / 2, hero[1] - ONE, hero[0] + ONE / 2, hero[1] + ONE],
+            cage_children }
+    }
+    fn world() -> EnemyWorld {
+        let mut world = EnemyWorld::new();
+        world.sync_region(&region());
+        world
+    }
+    fn parked(world: &EnemyWorld) -> usize {
+        world.actors.iter().flatten().filter(|a| a.parked_baby()).count()
+    }
+    /// Drive the Hatcher until it asks for a release, then answer it the way
+    /// `tick` does. Returns the release position and where the Hatcher was.
+    fn fire(world: &mut EnemyWorld, room: &Room) -> ([i32; 2], [i32; 2]) {
+        for _ in 0..600 {
+            let mut asked = None;
+            let free = parked(world) as u16;
+            let actor = world.actors.iter_mut().flatten()
+                .find(|a| a.source_id == HATCHER.source_id).expect("the Hatcher is seated");
+            actor.advance(&HATCHER, room, 1, |_| [0; 4], context(free), &mut |event| {
+                if let RunnerEventKind::Release { velocity } = event.kind {
+                    asked = Some((event.position, velocity));
+                }
+            });
+            let at = [actor.x, actor.y];
+            if let Some((position, velocity)) = asked {
+                world.release_baby(0, position, velocity);
+                return (position, at);
+            }
+        }
+        panic!("the Hatcher never released with a full cage");
+    }
+    #[test]
+    fn the_cage_is_seated_with_the_scene_and_starts_parked() {
+        let world = world();
+        assert_eq!(world.actors.iter().flatten().count(), 4);
+        assert_eq!(parked(&world), 3);
+        // A parked member sits where the cooker found the cage, off the map.
+        for actor in world.actors.iter().flatten().filter(|a| a.parked_baby()) {
+            assert_eq!((actor.x, actor.y), (CAGE[0], CAGE[1]));
+            assert_eq!(actor.health.hp, 5);
+        }
+    }
+    #[test]
+    fn a_release_wakes_one_reserved_member_below_the_hatcher() {
+        let b = bytes();
+        let room = Room::parse(&b).unwrap();
+        let mut world = world();
+        let (position, at) = fire(&mut world, &room);
+        // `Fire` reads the Hatcher's own transform, which Distance Fly has
+        // been moving, and drops the baby one unit under it.
+        assert_ne!(at, [HATCHER.x, HATCHER.y]);
+        assert_eq!(position, [at[0], at[1] - ONE]);
+        assert_eq!(parked(&world), 2);
+        let live: Vec<_> = world.actors.iter().flatten()
+            .filter(|a| a.baby().is_some() && !a.parked_baby()).collect();
+        assert_eq!(live.len(), 1);
+        assert_eq!((live[0].x, live[0].y), (position[0], position[1]));
+        assert_eq!(live[0].vy, -5 * ONE);
+        // No slot was created: the pool is the same four actors it started as.
+        assert_eq!(world.actors.iter().flatten().count(), 4);
+    }
+    #[test]
+    fn an_empty_cage_releases_nothing_and_creates_nothing() {
+        let b = bytes();
+        let room = Room::parse(&b).unwrap();
+        let mut world = world();
+        for _ in 0..3 { fire(&mut world, &room); }
+        assert_eq!(parked(&world), 0);
+        // With the cage empty the controller never asks, so 600 frames of
+        // Distance Fly pass without a release and the pool does not move.
+        for _ in 0..600 {
+            let actor = world.actors.iter_mut().flatten()
+                .find(|a| a.source_id == HATCHER.source_id).expect("the Hatcher is seated");
+            actor.advance(&HATCHER, &room, 1, |_| [0; 4], context(0), &mut |event| {
+                assert!(!matches!(event.kind, RunnerEventKind::Release { .. }),
+                    "released from an empty cage");
+            });
+        }
+        assert_eq!(world.actors.iter().flatten().count(), 4);
+        // And a release the runtime is asked for anyway finds nothing to wake.
+        world.release_baby(0, [0, 0], [0, -5 * ONE]);
+        assert_eq!(parked(&world), 0);
+        assert_eq!(world.actors.iter().flatten().filter(|a| a.baby().is_some()).count(), 3);
+    }
+    #[test]
+    fn death_returns_a_baby_to_the_cage_rather_than_removing_it() {
+        let b = bytes();
+        let room = Room::parse(&b).unwrap();
+        let mut world = world();
+        fire(&mut world, &room);
+        let actor = world.actors.iter_mut().flatten()
+            .find(|a| a.baby().is_some() && !a.parked_baby()).expect("one baby is out");
+        assert_eq!(actor.health.hit(BABY.health, 5), Hit::Killed);
+        assert!(actor.health.dead);
+        actor.park_baby(&BABY);
+        assert!(!actor.health.dead);
+        assert_eq!(actor.health.hp, 5);
+        assert_eq!((actor.x, actor.y, actor.vy), (CAGE[0], CAGE[1], 0));
+        assert_eq!(parked(&world), 3);
+    }
+    #[test]
+    fn a_parked_member_never_draws_and_a_released_one_does() {
+        let b = bytes();
+        let room = Room::parse(&b).unwrap();
+        let mut world = world();
+        let camera = (HATCHER.x, HATCHER.y);
+        // Only the Hatcher is anywhere the camera can see it.
+        assert_eq!(world.prepare_draws(&region(), &room, camera).len, 1);
+        fire(&mut world, &room);
+        assert_eq!(world.prepare_draws(&region(), &room, camera).len, 2);
+    }
+}
+
 #[cfg(test)]
 mod runner_runtime_tests {
     use super::*;
@@ -2103,7 +2504,7 @@ mod runner_runtime_tests {
         let y=SPEC.y;
         RunnerContext {camera:[0,2*ONE,-2496922],hero:[hero_x,y],
             hero_body:[hero_x-crate::PARAMS.half_width,y+crate::PARAMS.bottom,
-                hero_x+crate::PARAMS.half_width,y+crate::PARAMS.top]}
+                hero_x+crate::PARAMS.half_width,y+crate::PARAMS.top],cage_children:0}
     }
     fn advance(actor:&mut Actor,room:&Room,c:RunnerContext,events:&mut Vec<RunnerEvent>) {
         actor.advance(&SPEC,room,room.counts[5],|i|room.edge(i),c,&mut |e|events.push(e));
