@@ -1,0 +1,73 @@
+{
+  "note": "Captured from a tools/replay_cue.py run of the tape below against the real disc. tests/test_boss_sim.py replays the same tape through tools/boss_sim.py and asserts the fight it predicts is this one. See capture() in tools/boss_sim.py to regenerate after a disc change.",
+  "tape": "tools/tapes/boss-sim-brawl.pxtape",
+  "tape_sha256": "88ec4f480d97870374e685b9b4419a01a286cce71bc143780263b03dd71605a1",
+  "hero_died_at_poll": null,
+  "disc_sha256": {
+    "/Users/ebonura/Desktop/repos/hk-psx/.claude/worktrees/hk-psx-codex-conversations-0c6dd0/dist/hk-psx.exe": "421fdfa554089ba7b1bc8f89cdb73533ab84d16268a9ef805dcbdc289e2ef4c6",
+    "/Users/ebonura/Downloads/ps1 games/hk-psx.bin": "48b3896e64001f3729bd91c64de1772ed7e4bc12c050501a31b1f683613ec7f3",
+    "/Users/ebonura/Downloads/ps1 games/hk-psx.cue": "bf428a15c4ace2435afccb59ff42b30a51cdd8a93f33348267e8a4488ebc758c"
+  },
+  "completed": true,
+  "faults": [],
+  "hero_start": {
+    "poll": 34,
+    "x": 786432,
+    "y": 1798268
+  },
+  "final": {
+    "HK_CHEATS": 0,
+    "HK_DEATHS": 0,
+    "HK_HEALTH": 3,
+    "HK_FK_STAGGERS": 0,
+    "HK_FK_CONVERSIONS": 0,
+    "HK_FK_DEATHS": 0,
+    "HK_FK_ARENA": 2,
+    "HK_INPUT_FAULT": 0,
+    "HK_FK_HP": 45,
+    "HK_FK_HEAD_HP": 40,
+    "HK_FK_ACTIVATED": 0,
+    "HK_ARENA_GATE_CLOSES": 1,
+    "HK_ARENA_GATE_OPENS": 0,
+    "HK_FK_BARRELS": 0,
+    "HK_FK_BARRELS_BROKEN": 0,
+    "HK_SOUL": 44
+  },
+  "transitions": {
+    "fk_hp": [
+      [
+        214,
+        65,
+        60
+      ],
+      [
+        239,
+        60,
+        55
+      ],
+      [
+        266,
+        55,
+        50
+      ],
+      [
+        398,
+        50,
+        45
+      ]
+    ],
+    "head_hp": [],
+    "health": [
+      [
+        580,
+        5,
+        4
+      ],
+      [
+        938,
+        4,
+        3
+      ]
+    ]
+  }
+}
