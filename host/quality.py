@@ -173,16 +173,19 @@ SCENE_TABLE = (
     # And it is silent, which is a region-wide gap rather than a scene one. The
     # SceneManager's atmos cue is `Greenpath`; the only channel it enables is 7,
     # `green_path_atmos_loop`, and `cook_music.RESIDENT_ATMOS_CHANNELS` is
-    # (0,1,3,4,5,6). So `ambience_omitted_channels` records channel 7 and the
-    # scene cooks a zero mask, which the guest already handles: `set_scene`
-    # fades the previous stems out and keys nothing on. Its `at Greenpath`
-    # snapshot puts all six resident channels at -80 dB, so there is nothing
-    # else to hear either, and the five Fungus1 scenes sampled all carry the
-    # same cue. Nothing raises; the region simply has no sound until a seventh
-    # resident loop exists, which is a voice past `AmbienceClip` 0..5 on SPU
-    # voices 6..11 plus room in the 136,704 free SPU bytes. The clip is 10.0 s,
-    # the same length as `ruins_rain_outdoor_loop`, which cooks to 45,728 bytes
-    # at 8 kHz; that is a comparison, not a measurement of this clip.
+    # (0,1,3,4,5,6), so the scene cooked a zero mask and the region had no
+    # sound. Channel 6 gave way to 7 for it. Both clips are 10.00 s and both
+    # cook to exactly 45,728 bytes, so the swap cost nothing and Greenpath plays
+    # at full 8 kHz; see the decision written above
+    # `cook_music.RESIDENT_ATMOS_CHANNELS`, which is the only thing that picks
+    # the set.
+    #
+    # Two figures that used to sit here were both wrong and are worth recording
+    # as wrong, because they were quoted while scoping this. There is no seventh
+    # SPU voice to take: all 24 are allocated and the cook names each one's
+    # owner. And free SPU was reported as 136,704 bytes by a cook that counted
+    # the Focus and Runner banks above ambience as headroom; the real figure is
+    # 8,032 contiguous.
     {'scene_id': 46, 'scene_name': 'Fungus1_01', 'file': 'level128',
      'runtime_bounds': [-2, -5, 172, 31], 'camera_global_bounds': [0, 0, 170, 30]},
 )
