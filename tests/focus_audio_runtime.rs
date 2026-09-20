@@ -23,8 +23,11 @@ impl Voice {
 }
 pub mod ambience {
  pub struct Clip {pub spu_address:u32,pub spu_bytes:usize}
- // The generated Focus bank begins exactly after the current ambience bank.
- pub const CLIPS:[Clip;1]=[Clip {spu_address:0x18000,spu_bytes:0x5ea00-0x18000}];
+ // The generated Focus bank begins exactly where ambience ends, and where that
+ // is moves whenever the resident atmos set does. Take it from the Focus
+ // manifest rather than restating an address ambience has already left behind,
+ // which also keeps `focus_audio::ready`'s overlap check on its boundary.
+ pub const CLIPS:[Clip;1]=[Clip {spu_address:0x18000,spu_bytes:(crate::audio::SPU_BASE-0x18000) as usize}];
 }
 #[path="../game/src/focus_audio.rs"]mod audio;
 use hk_sim::{Focus,FocusEvents,FocusInput,FocusParams,VitalParams,Vitals};

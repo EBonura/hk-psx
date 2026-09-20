@@ -39,12 +39,68 @@ from breakables import _components,collider_polygons
 # -60.2 dB, and its indoor sibling on channel 5 stays at the same level, so the
 # rain layer halves at a gain nothing can hear rather than disappearing.
 #
-# Crossroads_46b and Crossroads_50 are still silent, on channel 15, and have
-# been since before Greenpath existed. Fixing them too was priced and costs both
-# rain loops for 112 bytes of remaining headroom, which is not a margin. This
-# set is a cook-time knob, so that trade stays available on any later build,
-# and the Ruins loops matter when City of Tears is admitted rather than now.
-RESIDENT_ATMOS_CHANNELS=(0,1,3,4,5,7)
+# Channel 5 has now given way to 15 on the same measurement. Its highest enabled
+# gain across every admitted scene is that same 16 of 16,383, so the last rain
+# bed leaves at a level nothing can hear, and cave_atmos_misc_3 arrives for the
+# 113 catalogue scenes whose cue, MiscWind, enables channel 15 and nothing else.
+# Crossroads_46b and Crossroads_50 were two of them and were completely silent.
+# What that costs and what it buys, counted over all 456 catalogue scenes with a
+# cue: scenes with every enabled channel resident go from 109 to 222, and scenes
+# with no audible resident channel at all go from 158 to 78.
+#
+# The bill is 7,920 bytes of SPU and it leaves 112 free below the ceiling, which
+# is not a margin. It is a hard, named cook-time error rather than a silent
+# overflow, but it does freeze the Focus and Runner banks, which stack above
+# ambience and whose growth lowers that ceiling byte for byte. Three measured
+# places to get margin back, none of them taken here:
+#   - channel 1 at 4 kHz returns 28,864 bytes for 3.3 dB (25.34 to 22.03) on a
+#     clip that is 99.3% below 2 kHz and never the only audible stem in a scene,
+#   - the stream's SPU ring is still sized for the 8 kHz era: two 8,192-byte
+#     halves last 3.58 s at the cave bed's 4 kHz, not the 1.79 s the transport
+#     was written and commented for, so halving it returns 8,192 bytes of SPU
+#     and 4,096 of main RAM at the cadence the design was validated at,
+#   - ambience starts at 0x18000 while the Geo bank above 0x14000 ends at
+#     0x17640, so 2,496 bytes sit unused between them; taking them couples the
+#     ambience base to Geo's exact size, which is why they are still there.
+#
+# The seam this set exists to hide does not close by re-picking it, and what
+# stops it is not what this file's header has said since it was written.
+# Twenty-two distinct cues cover the 456 scenes and reduce to 18 distinct sets
+# of audibly enabled channels. The smallest set that leaves none of them without
+# an audible stem is eight, and there are exactly two of them:
+# {0,1,5,7,9,10,14,15} and {0,3,5,7,9,10,14,15}. At 4 kHz with channel 14
+# streamed, either costs 280,928 bytes of SPU against 297,312 available, and
+# 135,840 of main RAM against 217,884. So neither SPU nor main RAM is the wall.
+# Voices are. Ambience owns six and this needs eight, because one voice is tied
+# to one resident clip for the bank's life.
+#
+# Nothing in the source needs that tie. No cue enables more than five atmos
+# channels at once, and of the eight above no cue enables more than three, with
+# at most five live across any transition between two cues. Six voices would
+# serve all eight if residency and voice assignment were separated. That is a
+# guest change to ambience.rs and ambience_state.rs, not a cook-time knob, and
+# it is the one that actually covers the game.
+RESIDENT_ATMOS_CHANNELS=(0,1,3,4,7,15)
+
+# Cook rate per resident channel, defaulting to 8 kHz. Lower is not always
+# worse: PSX ADPCM fits a 4-bit residual per sample whatever the rate, so a clip
+# whose energy is already below 2 kHz spends half its blocks describing an empty
+# band at 8 kHz and measures better at 4. Both exceptions here are measured, as
+# the SNR of the cooked payload against its own resampled source:
+#   channel 4, cave_noises, 99.94% below 2 kHz: 30.28 dB at 8 kHz, 31.05 at 4,
+#   channel 15, cave_atmos_misc_3, 99.999% below 2 kHz: 16.70 at 8 kHz, 24.47
+#   at 4, which is the largest gap of any of the sixteen and the reason this
+#   channel is affordable at all.
+# This used to read "4 kHz if it is the streamed channel", which was true by
+# accident: the cave bed was moved to 4 kHz because its 8 kHz copy would not fit
+# SPU, and only afterwards measured as the better of the two. Rate and streaming
+# are separate decisions and the code no longer derives one from the other.
+RESIDENT_ATMOS_RATES={4:4000,15:4000}
+DEFAULT_ATMOS_RATE=8000
+
+def atmos_rate(channel):
+    """The cook rate for one resident atmos channel."""
+    return RESIDENT_ATMOS_RATES.get(channel,DEFAULT_ATMOS_RATE)
 
 def sha(path):
     with Path(path).open('rb')as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
@@ -251,7 +307,10 @@ def main():
     ambience={a['clip'] for scene in report['scenes'] for manager in scene['managers'] for a in manager['ambience']}
     for sid,obj in sorted(objects.items()):
         print('AUDIO',sid,s.read(obj)['m_Name'],flush=True)
-        # 4000 exists for the long cave bed, whose 8 kHz copy does not fit SPU.
+        # Every resident clip is cooked at both 8000 and 4000 whatever
+        # RESIDENT_ATMOS_RATES currently says, so re-rating a channel is a
+        # host/ambience.py run rather than a full source re-conversion. 10000
+        # feeds the capacity table below and nothing in the bank.
         for rate,channels in ((22050,2),(11025,1))+(((10000,1),(8000,1),(4000,1))if sid in ambience else ()):
             cooked.append(cook_clip(s,obj,out,encoder,rate,channels))
     report['clips']=cooked;report['capacity']=capacity(report,cooked)

@@ -32,8 +32,11 @@ class AmbienceTests(unittest.TestCase):
         clips=[];entries={};snapshots={};scenes=[]
         for i,ch in enumerate(ambience.CHANNELS):
             data=bytes([12,0])+bytes([i]*14);path=root/'.hkpsx'/f'{i}.adpcm';path.parent.mkdir(exist_ok=True);path.write_bytes(data)
-            # The streamed cave bed is cooked at its own lower rate; the rest stay at RATE.
-            rate=ambience.STREAM_RATE if ch==ambience.STREAM_CHANNEL else ambience.RATE
+            # Each channel's own cook rate, the same way assemble asks for it.
+            # This used to read "the streamed channel's rate, else RATE", which
+            # was the answer rather than the rule and went wrong the moment a
+            # resident channel that does not stream was cooked below RATE.
+            rate=ambience.atmos_rate(ch)
             clips.append({'source':str(ch),'name':str(ch),'rate':rate,'channels':1,'frames':27,'padding_samples':1,
                 'spu_pitch':round(rate*4096/44100),
                 'planes':[{'path':str(path.relative_to(root)),'bytes':16,'sha256':hashlib.sha256(data).hexdigest()}]})
@@ -137,6 +140,45 @@ class AmbienceTests(unittest.TestCase):
             self.assertEqual(sum(c['byte_len']-c['spu_bytes'] for c in clips),183488)
             with patch.object(ambience,'STREAM_RAM_LIMIT',199856):
                 with self.assertRaisesRegex(ValueError,'RAM cache'):self.assemble(report,root)
+
+    def test_source_gain_above_unity_clamps_to_full_scale_and_is_recorded(self):
+        """MiscWind lifts channel 15 by 1.36 dB; 16,383 stays the ceiling."""
+        self.assertEqual(ambience.volume(0),16383)
+        self.assertEqual(ambience.volume(1.35545),16383)
+        self.assertEqual(ambience.volume(ambience.BOOST_CEILING_DB),16383)
+        with self.assertRaisesRegex(ValueError,'unsupported mixer gain'):
+            ambience.volume(ambience.BOOST_CEILING_DB+0.001)
+        with self.assertRaisesRegex(ValueError,'unsupported mixer gain'):
+            ambience.volume(float('inf'))
+        self.assertEqual(ambience.boosts((3,7),[-6.0,1.5]),{'7':1.5})
+        with tempfile.TemporaryDirectory()as temp:
+            root=pathlib.Path(temp);report,_=self.fixture(root)
+            boosted=ambience.CHANNELS[0]
+            self.snapshots['level6'][0]['internal_volume_db']=1.35545
+            report['scenes'][0]['managers'][0]['ambience'][0]['snapshot']['internal_volume_db']=1.35545
+            _,cues=self.assemble(report,root)
+            self.assertEqual(cues[0]['gains'][0],16383)
+            self.assertEqual(cues[0]['clamped_boost_db'],{str(boosted):1.35545})
+            self.assertEqual(cues[1]['clamped_boost_db'],{})
+
+    def test_cook_rate_is_per_channel_and_not_read_off_the_streamed_clip(self):
+        """A resident channel below RATE that does not stream still resolves."""
+        lowered=ambience.CHANNELS[-1]
+        self.assertNotEqual(lowered,ambience.STREAM_CHANNEL)
+        rates=lambda ch:4000 if ch==lowered else ambience.RATE
+        with patch.object(ambience,'atmos_rate',rates):
+            with tempfile.TemporaryDirectory()as temp:
+                root=pathlib.Path(temp);report,_=self.fixture(root)
+                clips,_=self.assemble(report,root)
+                low=clips[-1]
+                self.assertEqual(low['source_channel'],lowered)
+                self.assertEqual(low['rate'],4000)
+                self.assertEqual(low['pitch'],round(4000*4096/44100))
+                # Rated down, not streamed: the whole payload stays in SPU.
+                self.assertEqual(low['spu_bytes'],low['byte_len'])
+                stream=clips[ambience.STREAM_INDEX]
+                self.assertEqual(stream['rate'],ambience.RATE)
+                self.assertNotEqual(stream['pitch'],low['pitch'])
 
     def test_manifest_lengths_and_stream_row_follow_the_resident_channel_set(self):
         """The table used to say 6 and index the stream at 3 whatever the set was."""

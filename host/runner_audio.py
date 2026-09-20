@@ -8,7 +8,10 @@ from cook_music import compile_encoder, cook_clip, sha
 from ambience import fnv, loop_payload, validate_blocks, validate_loop
 from focus_audio import oneshot_payload, fields
 
-SPU_BASE = 495792
+# Immediately above the Focus bank, which sits immediately above ambience, so
+# this moves by whatever either of them grows. It was 495792 until atmos
+# channel 15 joined the resident set and pushed both up by 7,920 bytes.
+SPU_BASE = 503712
 SPU_END = 524288
 GAIN = 5461
 SOURCES = (('walk_loop', 'sharedassets32.assets:63', 8000, True),
