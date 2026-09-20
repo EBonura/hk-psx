@@ -28,10 +28,23 @@ from breakables import _components,collider_polygons
 #     metadata chunks after the ambience clips.
 # A channel left out is not an error: the scene records it in
 # ambience_omitted_channels and cooks a zero mask, which the guest handles by
-# fading the previous stems out and keying nothing on. Three admitted scenes
-# are silent that way today: Fungus1_01 (Greenpath, channel 7) and
-# Crossroads_46b and Crossroads_50 (MiscWind, channel 15).
-RESIDENT_ATMOS_CHANNELS=(0,1,3,4,5,6)
+# fading the previous stems out and keying nothing on.
+#
+# Channel 6, ruins_rain_outdoor_loop, gave way to 7 so Greenpath could be heard.
+# The swap is exactly free: both clips are 10.00 s and both cook to precisely
+# 45,728 bytes, so the six clips, the six voices, the Focus and Runner bases and
+# the WORLD.PAK chunk numbering all stay where they were, and Greenpath plays at
+# full 8 kHz for 25.77 dB. What it costs is measured rather than assumed: across
+# every admitted scene, channel 6's highest enabled gain is 16 of 16,383, about
+# -60.2 dB, and its indoor sibling on channel 5 stays at the same level, so the
+# rain layer halves at a gain nothing can hear rather than disappearing.
+#
+# Crossroads_46b and Crossroads_50 are still silent, on channel 15, and have
+# been since before Greenpath existed. Fixing them too was priced and costs both
+# rain loops for 112 bytes of remaining headroom, which is not a margin. This
+# set is a cook-time knob, so that trade stays available on any later build,
+# and the Ruins loops matter when City of Tears is admitted rather than now.
+RESIDENT_ATMOS_CHANNELS=(0,1,3,4,5,7)
 
 def sha(path):
     with Path(path).open('rb')as stream:return hashlib.file_digest(stream,'sha256').hexdigest()

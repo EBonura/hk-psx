@@ -39,7 +39,13 @@ class AmbienceTests(unittest.TestCase):
                 'planes':[{'path':str(path.relative_to(root)),'bytes':16,'sha256':hashlib.sha256(data).hexdigest()}]})
             entries[ch]={'channel':ch,'clip':str(ch),'loop':True,'pitch':1,'volume':1,
                 'snapshot':{'internal_volume_db':0,'effects':[],'chain':[{'mute':False,'solo':False,'pitch':1}]}}
-        for file,enabled in [('level6',[0,4,5,6]),('level7',[1,3,5,6]),('level37',[0,4,5,6])]:
+        # Pick the enabled sets out of the resident channels by position rather
+        # than by number, so a swap in RESIDENT_ATMOS_CHANNELS moves the fixture
+        # with it. Hardcoding the numbers made four of these raise KeyError the
+        # first time the set changed.
+        by_slot=lambda *slots:[ambience.CHANNELS[s]for s in slots]
+        for file,enabled in [('level6',by_slot(0,3,4,5)),('level7',by_slot(1,2,4,5)),
+                             ('level37',by_slot(0,3,4,5))]:
             snapshots[file]=[{'internal_volume_db':0 if ch in enabled else -80}for ch in ambience.CHANNELS]
             scenes.append({'scene_file':file,'managers':[{'source':file+':1','atmos_cue':{'name':file},
                 'ambience':[entries[ch]for ch in enabled]}]})
