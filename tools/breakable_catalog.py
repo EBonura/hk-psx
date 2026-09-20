@@ -427,7 +427,11 @@ def main():
             print(f'  {group:4d} colliders  {definition[0]:34s} {definition[1]}')
     admitted, doors = recognized(SCENE_TABLE) if args.recognize else ({}, {})
     for name, result in admitted.items():
-        print(f"\n{name}: {len(result['admitted'])} admitted, {len(result['refused'])} refused")
+        inert = [row for row in result['refused'] if row.get('source_inert')]
+        # An object the original disables too is not a port gap, and counting it
+        # as one has the catalogue reporting work that can never be done.
+        line = f"\n{name}: {len(result['admitted'])} admitted, {len(result['refused']) - len(inert)} refused"
+        print(line + (f', {len(inert)} inert in the source' if inert else ''))
         for scene in sorted({row['scene'] for row in result['admitted']}):
             rows = sorted((row for row in result['admitted'] if row['scene'] == scene),
                           key=lambda row: row.get('box', row['position'])[0])
