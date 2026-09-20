@@ -1,10 +1,16 @@
 # Hatcher and Hatcher Baby source contract
 
-Nothing implements this yet. `host/remaining_actors.py` extracted the contract
-below; `level57:5007` (Crossroads_19) is the reference placement and
-`level57:5010` the reference baby. The Hatcher is the one unadmitted family in
-the P19/P20 package whose blocker is a missing runtime capability rather than a
-missing controller, so read the pool section before the flight section.
+`host/remaining_actors.py` extracted the contract below; `level57:5007`
+(Crossroads_19) is the reference placement and `level57:5010` the reference
+baby. The Hatcher was the one unadmitted family in the P19/P20 package whose
+blocker was a missing runtime capability rather than a missing controller, so
+read the pool section before the flight section.
+
+This is implemented now, in `host/hatcher.py`, `shared/hk-sim/src/hatcher.rs`
+and `game/src/enemies.rs`. Five of the six placed Hatchers and 45 of the 68
+babies are admitted: Crossroads_19, Crossroads_27 and Crossroads_35. Read
+"What was implemented" at the end for what the three parts below turned into,
+including the two claims in the pool section that did not survive re-measuring.
 
 ## Placements
 
@@ -233,3 +239,49 @@ The capability the port lacks is the pool, and it has three separate parts:
   collider twice, so a recognizer built on `runner._one` refuses it the way
   `host/climber.py` refuses the duplicate box Climbers; use `runner.body_box`,
   which already accepts one or two identical boxes.
+
+## What was implemented
+
+The spawning contract is a **cook-time reservation**, not an allocator. Every
+baby a Hatcher can ever release is seated with the rest of the scene's actors
+before the scene loads, parked in `Control`'s `Inert` state at the cage's own
+authored position. A release moves one of them and clears its parked flag; a
+death restores its hp and puts it back. Nothing is created or destroyed, which
+is also what the source does, so the bounded 32-slot pool is an invariant of the
+cook rather than something a release has to test at runtime.
+
+A parked member costs one branch a tick: `EnemyWorld::tick` skips it before the
+resident-view lookup, and `prepare_draws` skips it before the clip lookup.
+
+Two of the three parts the pool section above asks for did not survive
+re-measuring:
+
+1. **Cook-time membership needed no new plumbing.**
+   `regions.py::postpack_actor_bank` calls `actor_sources(sc)` with no bounds
+   and then replaces every region row's supported actors with that scene-wide
+   list, so a recognized baby at (100, 100) already reaches every region of its
+   scene. The claim that `cook.py` filters it out is true only of the
+   intermediate per-region pack, which the postpass overwrites.
+2. **The pool budget re-measures as stated**, and Crossroads_22 really does not
+   fit: 12 admitted Aspids plus 1 Hatcher plus a cage of 23 is 36 of 32. It is
+   refused on a different clause first, though (see below), and the cage was
+   never truncated: `host/hatcher.py::family_budget` refuses the scene's whole
+   family, because a shorter cage silently changes how many babies that Hatcher
+   can release.
+3. **Runtime activation and reset** is `hk_sim::hatcher::Baby::release` and
+   `::park`, plus `EnemyWorld::release_baby` and `Actor::park_baby`.
+
+A third bound joined the two above. `enemies.rs::prepare_draws` asserts on
+`MAX_VISIBLE`, which is the 20 animation slots a frame may bind, and a cage is
+the only thing that has ever taken a scene near it: Crossroads_19 and
+Crossroads_27 both reach 18. Every Hatcher and baby frame measures inside one
+64x64 slot (worst frames 37x36 and 31x30), as do Crossroads_19's existing Aspid
+and Zombie Leaper, so the scene's actor count is its worst-case tile count and
+`family_budget` refuses a family that would push it past 20.
+
+Crossroads_22 is refused on its FSM set, not its budget: its Hatcher and all 23
+of its cage carry a third FSM, `Remove on battle start`, which takes them out of
+the room when the arena begins and which nothing here runs. Its four `Hatcher NP`
+copies are refused separately, for standing outside the room's own runtime
+bounds under `Hatcher Summon` parents; they are arena content for P22, not
+placements.

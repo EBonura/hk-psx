@@ -55,6 +55,21 @@ pub enum ActorController {
         /// FSM `startAlert`: skips Idle on the first frame.
         start_alert: bool,
     },
+    /// Hatcher, driven by `crate::hatcher::Hatcher`; `walk_clip` is Fly and
+    /// `turn_clip` holds it too, because neither of its two facing actions
+    /// plays a turn. It releases the scene's reserved `HatcherBaby` actors.
+    Hatcher {
+        fire_clip: u16,
+        /// FSM `startAlert`: skips Idle on the first frame.
+        start_alert: bool,
+    },
+    /// One member of a Hatcher's cage, driven by `crate::hatcher::Baby`. It is
+    /// seated with the rest of the scene's actors and parked until a Hatcher
+    /// releases it, which is the whole of the port's runtime spawning: the
+    /// source never instantiates one either. `walk_clip` is Fly, and so is
+    /// `turn_clip`. `ActorSpec::x`/`y` are the authored cage position, which is
+    /// off the map by design, so a parked baby never draws and never senses.
+    HatcherBaby,
     /// Source object with no FSM and no Rigidbody2D: `playAutomatically` loops
     /// the default clip where it stands, so the nail is the only interaction.
     Static { idle_clip: u16 },

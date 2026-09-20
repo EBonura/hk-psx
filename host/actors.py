@@ -399,6 +399,32 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        # The cage first: a baby is named `Hatcher Baby Spawner`, so it matches
+        # the Hatcher's own prefix and has to be taken off it before the Hatcher
+        # gate sees it. A cage member is the only enemy this port admits that is
+        # not where it stands: it is parked outside the room until a Hatcher
+        # releases it, which is the one thing the guest pool reserves slots for.
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Hatcher Baby') \
+                and any(kind == 'ObjectBounce' for _, kind, _ in records):
+            from hatcher import recognize_baby
+            try:
+                control = recognize_baby(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Hatcher') \
+                and not sc.gos[gid]['m_Name'].startswith('Hatcher Baby') \
+                and any(kind == 'LineOfSightDetector' for _, kind, _ in records):
+            from hatcher import recognize as recognize_hatcher
+            try:
+                control = recognize_hatcher(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Egg Sac') and not fsms:
             try:
                 control = egg_sac_control(sc, actor)
@@ -564,6 +590,21 @@ def generated_actor_specs(region):
             controller = 'hk_sim::ActorController::Gruzzer'
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'Hatcher':
+            if 'fire_clip' not in actor:
+                raise ValueError(f'Hatcher is missing cooked clips: {actor["source"]}')
+            controller = ('hk_sim::ActorController::Hatcher {' + f'fire_clip:{actor["fire_clip"]},'
+                          + f'start_alert:{str(bool(control["start_alert"])).lower()}' + '}')
+            # The controller owns velocity and facing; the walk fields are unused.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'HatcherBaby':
+            # No parameters at all: the cage member is the same object wherever
+            # it is placed, and the only thing that varies is which Hatcher
+            # releases it, which is a runtime question, not a cooked one.
+            controller = 'hk_sim::ActorController::HatcherBaby'
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
         elif control['kind'] == 'EggSac':
             if 'idle_clip' not in actor or not actor.get('corpse'):
                 raise ValueError(f'Egg Sac is missing cooked clips or corpse: {actor["source"]}')
@@ -599,6 +640,7 @@ def generated_actor_specs(region):
         clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ()) \
             + (vengefly_clips if control['kind'] == 'Vengefly' else ()) + (baldur_clips if control['kind'] == 'Baldur' else ()) \
             + (aspid_clips if control['kind'] == 'Aspid' else ()) + (('idle_clip',) if control['kind'] == 'EggSac' else ()) \
+            + (('fire_clip',) if control['kind'] == 'Hatcher' else ()) \
             + (false_knight_clips if control['kind'] == 'FalseKnight' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')
