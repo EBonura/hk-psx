@@ -28,12 +28,26 @@ const AUDIO_BANKS:[(usize,u32);3]=[
     (crate::geo_audio::BANK_BYTES,crate::geo_audio::BANK_CHECKSUM),
     (crate::runner_audio::BANK_BYTES,crate::runner_audio::BANK_CHECKSUM),
 ];
-const PACK_CHUNKS:usize=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()+WORLD_META_MANIFEST.len()+EFFECT_ART_MANIFEST.len()+AUDIO_BANKS.len();
+// The cook writes the pack as these contiguous runs of chunks, and the entry
+// for chunk `i` carries id `i+1`. Naming each boundary once keeps `init`'s
+// validation, `entry`'s reconstruction and the per-chunk call sites below
+// reading the same arithmetic instead of three copies of it.
+const CLIP_COUNT:usize=crate::ambience::CLIPS.len();
+const ATLAS_INDEX:usize=SCENE_COUNT+CLIP_COUNT;
+const FOCUS_INDEX:usize=ATLAS_INDEX+ATLASES.len();
+const COVERAGE_INDEX:usize=FOCUS_INDEX+1;
+const METADATA_INDEX:usize=COVERAGE_INDEX+COVERAGE_MANIFEST.len();
+const EFFECT_INDEX:usize=METADATA_INDEX+WORLD_META_MANIFEST.len();
+const BANK_INDEX:usize=EFFECT_INDEX+EFFECT_ART_MANIFEST.len();
+const PACK_CHUNKS:usize=BANK_INDEX+AUDIO_BANKS.len();
+/// First chunk index of each run above, in pack order.
+const CHUNK_STARTS:[usize;8]=[0,SCENE_COUNT,ATLAS_INDEX,FOCUS_INDEX,COVERAGE_INDEX,METADATA_INDEX,EFFECT_INDEX,BANK_INDEX];
 const PACK_HEADER_SECTORS:usize=(28+PACK_CHUNKS*24).div_ceil(SECTOR_BYTES);
-const PACK_HEADER_WORDS:usize=PACK_HEADER_SECTORS*SECTOR_WORDS;
+// The directory is staged in the scene arena, so a catalogue whose directory
+// outgrew the arena must fail the build, not the boot.
+const _:()=assert!(PACK_HEADER_SECTORS*SECTOR_BYTES<=SCENE_ARENA_BYTES);
 const EMPTY:usize=usize::MAX;
 const SEEK_POLL:u32=4_000_000;
-const EMPTY_ENTRY:PackEntry=PackEntry {chunk_id:0,sector_offset:0,sector_count:0,byte_size:0,checksum:0};
 #[repr(C,align(4))]
 struct Buffer {words:[u32;SCENE_ARENA_BYTES/4]}
 // Preserve the linked symbol so build memory accounting measures actual bytes.
@@ -69,12 +83,34 @@ pub const fn scene_region(scene:usize)->usize {SCENE_REGIONS[scene]}
 /// Chunk-table index of one bootstrap audio bank, after the effect art chunks.
 /// The host packer appends them in the same order, so existing chunk ids are
 /// unchanged.
-const fn audio_bank_index(bank:usize)->usize {
-    SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()
-        +WORLD_META_MANIFEST.len()+EFFECT_ART_MANIFEST.len()+bank
+const fn audio_bank_index(bank:usize)->usize {BANK_INDEX+bank}
+/// Stored byte length, payload checksum and staging capacity of one pack chunk,
+/// by chunk index. Every field of that chunk's directory entry except its
+/// sector offset follows from this triple and the index itself, which is why
+/// `init` can check the whole directory against the generated manifests and
+/// then let go of it.
+fn chunk_spec(index:usize)->Option<(usize,u32,usize)> {
+    Some(if index<SCENE_COUNT {
+        let d=&SCENE_MANIFEST[index];(d.stored_len,d.stored_fnv,d.arena_capacity)
+    } else if index<ATLAS_INDEX {
+        let clip=&crate::ambience::CLIPS[index-SCENE_COUNT];(clip.byte_len,clip.checksum,SCENE_ARENA_BYTES)
+    } else if index<FOCUS_INDEX {
+        let a=&ATLASES[index-ATLAS_INDEX];(a.stored_len,a.stored_fnv,SCENE_ARENA_BYTES)
+    } else if index<COVERAGE_INDEX {(crate::focus_audio::BANK_BYTES,crate::focus_audio::BANK_CHECKSUM,SCENE_ARENA_BYTES)}
+    else if index<METADATA_INDEX {let c=&COVERAGE_MANIFEST[index-COVERAGE_INDEX];(c.stored_len,c.stored_fnv,SCENE_ARENA_BYTES)}
+    else if index<EFFECT_INDEX {let m=&WORLD_META_MANIFEST[index-METADATA_INDEX];(m.stored_len,m.stored_fnv,SCENE_ARENA_BYTES)}
+    else if index<BANK_INDEX {let f=&EFFECT_ART_MANIFEST[index-EFFECT_INDEX];(f.stored_len,f.stored_fnv,SCENE_ARENA_BYTES)}
+    else if index<PACK_CHUNKS {let (size,checksum)=AUDIO_BANKS[index-BANK_INDEX];(size,checksum,SCENE_ARENA_BYTES)}
+    else {return None})
 }
 pub struct Cache {
-    entries:[PackEntry;PACK_CHUNKS],header:[u32;PACK_HEADER_WORDS],reader:SectorReader,
+    /// Sector offset of the first chunk of each run in `CHUNK_STARTS`, taken
+    /// from the directory `init` validated. Together with `chunk_spec` this is
+    /// the whole directory: `entry` rebuilds any of its entries on demand, so
+    /// the 20-byte-per-chunk table and the sectors it was read from do not stay
+    /// resident. At 47 scenes that table and its header were 21,888 bytes of
+    /// `.data`; at the full catalogue they would be about 221,000.
+    chunk_bases:[u32;CHUNK_STARTS.len()],reader:SectorReader,
     ready:bool,loaded_scenes:usize,loaded_atlases:usize,selected:usize,
     resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,
     metadata_scene:usize,metadata_len:usize,
@@ -151,25 +187,30 @@ fn sector(reader: &mut SectorReader, dst: &mut [u32]) -> bool {
     unsafe { HK_CD_SECTORS_READ = HK_CD_SECTORS_READ.saturating_add(1) };
     true
 }
+/// Read directory sector `index` into the scene arena. The arena is the port's
+/// staging area for bytes that are checked and then dropped, the same deal the
+/// ADPCM banks and the per-scene effect art make; `init` is the only caller and
+/// refuses to run while a scene owns the arena.
+fn header_sector(reader:&mut SectorReader,index:usize)->bool {
+    if (index+1)*SECTOR_BYTES>SCENE_ARENA_BYTES {return false;}
+    let words=unsafe {core::slice::from_raw_parts_mut(
+        (&raw mut BUFFERS.words).cast::<u32>().add(index*SECTOR_WORDS),SECTOR_WORDS)};
+    sector(reader,words)
+}
 impl Cache {
     /// Safety: exactly one Cache owns BUFFERS and the CD controller.
     pub const unsafe fn new()->Self {
-        Self {entries:[EMPTY_ENTRY;PACK_CHUNKS],header:[0;PACK_HEADER_WORDS],reader:SectorReader::new(),
+        Self {chunk_bases:[0;CHUNK_STARTS.len()],reader:SectorReader::new(),
             ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY,coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0,effect_scene:EMPTY}
     }
     fn init(&mut self)->Result<(),LoadError> {
         if self.ready {return Ok(());}
-        let focus_index=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len();
-        let metadata_index=focus_index+1+COVERAGE_MANIFEST.len();
-        let effect_index=metadata_index+WORLD_META_MANIFEST.len();
-        let bank_index=effect_index+EFFECT_ART_MANIFEST.len();
-        let chunks=bank_index+AUDIO_BANKS.len();
         if !SCENE_GATE_LOAD || COVERAGE_MANIFEST.len()!=SCENE_COUNT || WORLD_META_MANIFEST.len()!=SCENE_COUNT
             || COVERAGE_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES%4!=0 || WORLD_META_ARENA_BYTES==0
             || COVERAGE_GRID_SHIFT!=2 || COVERAGE_GROUP_POOL_CAPACITY>4096 {return Err(LoadError::Coverage);}
         if EFFECT_ART_MANIFEST.len()!=SCENE_COUNT || EFFECT_ART_MANIFEST.iter().any(|f|f.raw_len==0||f.raw_len%4!=0||f.raw_len>SCENE_ARENA_BYTES||f.stored_len==0
             ||f.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES) {return Err(LoadError::RoomMismatch);}
-        if SCENE_COUNT==0 || chunks!=PACK_CHUNKS || SCENE_ARENA_BYTES%4!=0
+        if SCENE_COUNT==0 || SCENE_ARENA_BYTES%4!=0
             || SCENE_REGIONS.len()!=SCENE_COUNT {return Err(LoadError::RoomMismatch);}
         let mut offset=0usize;
         for (i,d) in SCENE_MANIFEST.iter().enumerate() {
@@ -210,7 +251,7 @@ impl Cache {
         for (scene,c) in COVERAGE_MANIFEST.iter().enumerate() {
             let d=SCENE_MANIFEST[scene];
             if c.scene_id!=d.scene_id as u32 || c.scene_raw_fnv!=d.raw_fnv
-                || c.atlas_fnv!=atlas_fingerprint(scene) || c.chunk_id!=focus_index+2+scene
+                || c.atlas_fnv!=atlas_fingerprint(scene) || c.chunk_id!=COVERAGE_INDEX+scene+1
                 || c.draw_pool_count==0 || c.draw_pool_count as usize>COVERAGE_GROUP_POOL_CAPACITY
                 || c.raw_len<80 || c.raw_len>COVERAGE_ARENA_BYTES || c.raw_len%4!=0
                 || c.raw_len>SCENE_ARENA_BYTES || c.stored_len==0
@@ -221,37 +262,39 @@ impl Cache {
             if m.scene_id!=d.scene_id as u32 || m.raw_len<160 || m.raw_len>WORLD_META_ARENA_BYTES
                 || m.raw_len%4!=0 || m.stored_len==0
                 || m.stored_len.div_ceil(SECTOR_BYTES)>SCENE_ARENA_BYTES/SECTOR_BYTES
-                || m.chunk_id!=metadata_index+scene+1 {return Err(LoadError::WorldMeta);}
+                || m.chunk_id!=METADATA_INDEX+scene+1 {return Err(LoadError::WorldMeta);}
         }
         if !unsafe {self.reader.prepare_single_speed()} {return Err(LoadError::Prepare);}
+        // The directory is staged in the scene arena and dropped once checked,
+        // like the ADPCM banks and the per-scene effect art. Refuse if anything
+        // is admitted; bootstrap calls this through `prepare_ambience`, which
+        // makes the same refusal, long before the first scene is read.
+        if self.loaded_scenes!=0 {return Err(LoadError::HeaderRead);}
         if !unsafe {self.reader.start_read_seek_first(WORLD_PACK_DEFAULT_LBA,SEEK_POLL)}
-            || !sector(&mut self.reader,&mut self.header[..SECTOR_WORDS]) {return Err(LoadError::HeaderRead);}
-        let first=unsafe {core::slice::from_raw_parts(self.header.as_ptr().cast::<u8>(),SECTOR_BYTES)};
-        let h=parse_header(first).ok_or(LoadError::HeaderInvalid)?;
-        let header_sectors=(28+chunks*24).div_ceil(SECTOR_BYTES);
-        if h.chunk_count as usize!=chunks || h.header_sectors as usize!=header_sectors
-            || h.table_bytes as usize!=chunks*24 || header_sectors!=PACK_HEADER_SECTORS {
+            || !header_sector(&mut self.reader,0) {return Err(LoadError::HeaderRead);}
+        let h={
+            let first=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),SECTOR_BYTES)};
+            parse_header(first).ok_or(LoadError::HeaderInvalid)?
+        };
+        if h.chunk_count as usize!=PACK_CHUNKS || h.header_sectors as usize!=PACK_HEADER_SECTORS
+            || h.table_bytes as usize!=PACK_CHUNKS*24 {
             return Err(LoadError::HeaderInvalid);
         }
-        for i in 1..header_sectors {
-            if !sector(&mut self.reader,&mut self.header[i*SECTOR_WORDS..(i+1)*SECTOR_WORDS]) {return Err(LoadError::HeaderRead);}
+        for i in 1..PACK_HEADER_SECTORS {
+            if !header_sector(&mut self.reader,i) {return Err(LoadError::HeaderRead);}
         }
         unsafe {self.reader.stop();}
-        let bytes=unsafe {core::slice::from_raw_parts(self.header.as_ptr().cast::<u8>(),header_sectors*SECTOR_BYTES)};
-        let mut next=header_sectors;
-        for i in 0..chunks {
-            let(size,checksum,capacity)=if i<SCENE_COUNT {
-                let d=&SCENE_MANIFEST[i];(d.stored_len,d.stored_fnv,d.arena_capacity)
-            } else if i<SCENE_COUNT+crate::ambience::CLIPS.len() {
-                let clip=&crate::ambience::CLIPS[i-SCENE_COUNT];(clip.byte_len,clip.checksum,SCENE_ARENA_BYTES)
-            } else if i<focus_index {
-                let a=&ATLASES[i-SCENE_COUNT-crate::ambience::CLIPS.len()];
-                (a.stored_len,a.stored_fnv,SCENE_ARENA_BYTES)
-            } else if i==focus_index {(crate::focus_audio::BANK_BYTES,crate::focus_audio::BANK_CHECKSUM,SCENE_ARENA_BYTES)}
-            else if i<metadata_index {let c=&COVERAGE_MANIFEST[i-focus_index-1];(c.stored_len,c.stored_fnv,SCENE_ARENA_BYTES)}
-            else if i<effect_index {let m=&WORLD_META_MANIFEST[i-metadata_index];(m.stored_len,m.stored_fnv,SCENE_ARENA_BYTES)}
-            else if i<bank_index {let f=&EFFECT_ART_MANIFEST[i-effect_index];(f.stored_len,f.stored_fnv,SCENE_ARENA_BYTES)}
-            else {let (size,checksum)=AUDIO_BANKS[i-bank_index];(size,checksum,SCENE_ARENA_BYTES)};
+        // Every field of every entry is checked against the generated manifests
+        // and the running sector cursor, exactly as when the parsed table was
+        // kept: an entry that passes is bit-for-bit what `entry` reconstructs,
+        // so dropping the table below loses no proof, only the bytes. All that
+        // survives is where each run of chunks starts, which the cursor has.
+        let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),PACK_HEADER_SECTORS*SECTOR_BYTES)};
+        let mut next=PACK_HEADER_SECTORS;
+        let mut run=0usize;
+        for i in 0..PACK_CHUNKS {
+            while run<CHUNK_STARTS.len() && CHUNK_STARTS[run]==i {self.chunk_bases[run]=next as u32;run+=1;}
+            let (size,checksum,capacity)=chunk_spec(i).ok_or(LoadError::HeaderInvalid)?;
             let e=parse_entry(bytes,i).ok_or(LoadError::HeaderInvalid)?;
             if size==0 || size.div_ceil(SECTOR_BYTES)>capacity/SECTOR_BYTES
                 || e.chunk_id as usize!=i+1 || e.byte_size as usize!=size || e.checksum!=checksum
@@ -259,10 +302,31 @@ impl Cache {
                 return Err(LoadError::RoomMismatch);
             }
             next=next.checked_add(e.sector_count as usize).ok_or(LoadError::HeaderInvalid)?;
-            self.entries[i]=e;
         }
-        if next!=h.total_sectors as usize {return Err(LoadError::HeaderInvalid);}
+        if next!=h.total_sectors as usize || run!=CHUNK_STARTS.len() {return Err(LoadError::HeaderInvalid);}
         cd_stream::install();self.ready=true;Ok(())
+    }
+    /// Rebuild one directory entry. `init` compared this exact reconstruction
+    /// against the directory the cook wrote, chunk by chunk, before `ready`
+    /// was set, so the entry returned here is the checked one; the payload it
+    /// points at is still checked again by its own decoder or hash on read.
+    fn entry(&self,index:usize)->Result<PackEntry,LoadError> {
+        if !self.ready {return Err(LoadError::HeaderInvalid);}
+        let (size,checksum,_)=chunk_spec(index).ok_or(LoadError::HeaderInvalid)?;
+        let mut run=0;
+        while run+1<CHUNK_STARTS.len() && CHUNK_STARTS[run+1]<=index {run+=1;}
+        // Sector offsets are a prefix sum, so add up the chunks before this one
+        // inside its own run; the runs above cost nothing. The longest run is
+        // the atlas inventory, and this is only reached at bootstrap and at a
+        // blacked-out scene gate, never during a tick.
+        let mut sector_offset=self.chunk_bases[run] as usize;
+        let mut earlier=CHUNK_STARTS[run];
+        while earlier<index {
+            sector_offset+=chunk_spec(earlier).ok_or(LoadError::HeaderInvalid)?.0.div_ceil(SECTOR_BYTES);
+            earlier+=1;
+        }
+        Ok(PackEntry {chunk_id:index as u32+1,sector_offset:sector_offset as u32,
+            sector_count:size.div_ceil(SECTOR_BYTES) as u32,byte_size:size as u32,checksum})
     }
     /// The destination is a private suffix; terminal Done includes Pause so
     /// no IRQ can continue writing when decoding or SPU upload begins.
@@ -294,7 +358,7 @@ impl Cache {
         self.init()?;
         if self.loaded_scenes!=0 {return Err(LoadError::Ambience);}
         let (size,checksum)=AUDIO_BANKS[bank];
-        let entry=self.entries[audio_bank_index(bank)];
+        let entry=self.entry(audio_bank_index(bank))?;
         if entry.byte_size as usize!=size {return Err(LoadError::RoomMismatch);}
         self.read(entry,0)?;
         let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),size)};
@@ -327,13 +391,13 @@ impl Cache {
             if !crate::audio::ready() {let bank=self.audio_bank(0)?;crate::audio::upload(bank);}
             crate::ambience::begin_load();
             for index in 0..crate::ambience::CLIPS.len() {
-                let entry=self.entries[SCENE_COUNT+index];self.read(entry,0)?;
+                let entry=self.entry(SCENE_COUNT+index)?;self.read(entry,0)?;
                 let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),entry.byte_size as usize)};
                 if !crate::ambience::upload(index,bytes) {return Err(LoadError::Ambience);}
             }
             if !crate::ambience::finish_load() {return Err(LoadError::Ambience);}
             if !crate::focus_audio::ready() {
-                let entry=self.entries[SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()];
+                let entry=self.entry(FOCUS_INDEX)?;
                 self.read(entry,0)?;
                 let bytes=unsafe {core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(),entry.byte_size as usize)};
                 if !crate::focus_audio::upload(bytes) {return Err(LoadError::Ambience);}
@@ -353,7 +417,7 @@ impl Cache {
         if self.loaded_scenes!=0 {return Err(LoadError::Coverage);}
         self.coverage_scene=EMPTY;self.coverage_len=0;
         unsafe {HK_COVERAGE_SCENE=0;HK_COVERAGE_BYTES=0;}
-        self.read(self.entries[c.chunk_id-1],0)?;
+        let entry=self.entry(c.chunk_id-1)?;self.read(entry,0)?;
         let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
         let mut decoder=Decoder::new_bytes(c.stored_len,c.stored_fnv,c.raw_len,c.raw_fnv);
         loop {
@@ -388,8 +452,8 @@ impl Cache {
         if self.effect_scene==scene {return Ok(());}
         if self.loaded_scenes!=0 {return Err(LoadError::EffectArt);}
         self.effect_scene=EMPTY;
-        let effect_index=SCENE_COUNT+crate::ambience::CLIPS.len()+ATLASES.len()+1+COVERAGE_MANIFEST.len()+WORLD_META_MANIFEST.len();
-        self.read(self.entries[effect_index+SCENE_MANIFEST[scene].scene_id as usize],0)?;
+        let entry=self.entry(EFFECT_INDEX+SCENE_MANIFEST[scene].scene_id as usize)?;
+        self.read(entry,0)?;
         let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
         let mut decoder=Decoder::new_bytes(f.stored_len,f.stored_fnv,f.raw_len,f.raw_fnv);
         loop {
@@ -422,7 +486,7 @@ impl Cache {
         }
         // Read and decode in place within the tail: the decoder relocates the
         // compressed bytes to the end of this slice, never over the scene.
-        self.read(self.entries[m.chunk_id-1],scene_tail)?;
+        let entry=self.entry(m.chunk_id-1)?;self.read(entry,scene_tail)?;
         let tail=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>().add(scene_tail),SCENE_ARENA_BYTES-scene_tail)};
         let mut decoder=Decoder::new_bytes(m.stored_len,m.stored_fnv,m.raw_len,m.bank_fnv);
         loop {
@@ -472,7 +536,7 @@ impl Cache {
         if self.atlas_scene!=scene {self.loaded_atlases=start;self.atlas_scene=scene;}
         while self.loaded_atlases<end {
             let a=&ATLASES[self.loaded_atlases];
-            let entry=self.entries[SCENE_COUNT+crate::ambience::CLIPS.len()+self.loaded_atlases];
+            let entry=self.entry(ATLAS_INDEX+self.loaded_atlases)?;
             self.read(entry,0)?;
             let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(),SCENE_ARENA_BYTES)};
             let mut decoder=Decoder::new_bytes(a.stored_len,a.stored_fnv,a.raw_len,a.raw_fnv);
@@ -526,7 +590,7 @@ impl Cache {
         while self.loaded_scenes<if SCENE_GATE_LOAD {1}else{SCENE_COUNT} {
             let index=if SCENE_GATE_LOAD {wanted}else{self.loaded_scenes};let d=SCENE_MANIFEST[index];
             unsafe {HK_SCENE_READ_ID=index as u32+1;}
-            self.read(self.entries[index],d.ram_offset)?;
+            let entry=self.entry(index)?;self.read(entry,d.ram_offset)?;
             unsafe {HK_SCENE_READ_ID=0;HK_SCENE_DECODE_ID=index as u32+1;}
             let arena=unsafe {core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>().add(d.ram_offset),d.arena_capacity)};
             let mut decoder=Decoder::new_scene(d.stored_len,d.stored_fnv,d.raw_len,d.raw_fnv);
