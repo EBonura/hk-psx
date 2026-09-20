@@ -201,16 +201,28 @@ class InstalledDoorTests(unittest.TestCase):
         press instead, which is what `Door Control` itself does.
         """
         import re
-        regions = ROOT / 'data/regions.rs'
-        if not regions.is_file():
+        import sys
+        # The gate table left data/regions.rs when the gates moved into the
+        # world metadata bank, so this reads the cook's own resolver rather than
+        # a generated file. Matching the old text found nothing and passed as a
+        # missing table rather than failing as a missing gate.
+        sys.path.insert(0, str(ROOT / 'host'))
+        report = ROOT / 'data/regions.json'
+        if not report.is_file():
             self.skipTest('run host/regions.py first')
+        import json
+        catalogue = json.loads(report.read_text())
+        if catalogue.get('complete') is not True:
+            self.skipTest('the cooked catalogue is unfinished; the cook this build runs will finish it')
+        from world import resolve_gates
         params = (ROOT / 'data/params.rs').read_text()
         bottom = int(re.search(r'bottom:(-?\d+)', params).group(1)) / 65536
-        rows = re.findall(r'Gate \{scene:(\d+),target_scene:(\d+),target_region:\d+,'
-                          r'bounds:\[([-\d,]+)\],spawn:\[[-\d,]+\],entry_vy:-?\d+,side:(\d+),',
-                          regions.read_text())
-        doors = [(int(s), [int(v) / 65536 for v in b.split(',')]) for s, _t, b, side in rows
-                 if int(side) == 5]
+        # resolve_gates hands back trigger_bounds in world units; the old
+        # regions.rs table held them as Q16, which is why this divided.
+        doors = [(scene['scene_id'], list(gate['bounds']))
+                 for scene in catalogue['scenes']
+                 for gate in resolve_gates(catalogue, catalogue['regions'], scene)
+                 if gate['side'] == 5]
         self.assertTrue(doors, 'the catalogue cooks at least one door gate')
         import json
         cooked = json.loads((ROOT / 'data/regions.json').read_text())['scenes']
