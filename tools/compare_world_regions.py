@@ -13,8 +13,13 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'host'))
+from cook import cooked_edge
+from scene import ADDITIVE_ID_BASE
+
 SCENES = {'Tutorial_01': 'level6', 'Town': 'level7'}
 
 
@@ -92,15 +97,39 @@ def quad_key(points):
     return tuple(sorted(point_key(point) for point in points))
 
 
-def cooked_edge_key(edge):
-    a = list(edge['a'][:2]); b = list(edge['b'][:2])
-    # host/cook.py intentionally snaps source-authored near-axis edges so the
-    # fixed-point guest receives stable horizontal/vertical support.
-    if abs(a[0] - b[0]) <= .005:
-        b[0] = a[0]
-    elif abs(a[1] - b[1]) <= .005:
-        b[1] = a[1]
-    return edge['source'], tuple(a), tuple(b)
+def stored_edge_key(edge):
+    """One already-cooked edge, keyed as host/cook.py wrote it."""
+    return edge['source'], tuple(edge['a'][:2]), tuple(edge['b'][:2])
+
+
+def imported_edge_keys(edge, regions):
+    """The cooked forms of one imported source segment, over the regions of a scene.
+
+    The clip, the slope refusal and the snap are host/cook.py::cooked_edge, so
+    this reproduces nothing: an edge outside every region's collision_bounds, or
+    sloped in a region that refuses slopes, is never cooked and must not be
+    counted as an extra.
+    """
+    keys = set()
+    for region in regions:
+        segment, _ = cooked_edge(edge['a'], edge['b'], region)
+        if segment is not None:
+            keys.add((edge['source'], tuple(segment[0]), tuple(segment[1])))
+    return keys
+
+
+def merged_origin(source, level):
+    """True when the two sides cannot name this object the same way.
+
+    host/cook.py records an edge under `Scene.sid`, which is the file the object
+    was really serialized in; host/world_geometry.py records it under the room's
+    own file name and the merged id. For an object that came in through an
+    additive load those two strings never match, and the import output keeps no
+    origin to translate between them. Counting such an edge as both missing and
+    extra is what the pogo measurement did, so they are named instead.
+    """
+    file, _, ident = source.rpartition(':')
+    return file != level or (ident.isdigit() and int(ident) >= ADDITIVE_ID_BASE)
 
 
 def close_tuple(left, right, tolerance=1e-8):
@@ -108,7 +137,7 @@ def close_tuple(left, right, tolerance=1e-8):
                                            for a, b in zip(left, right))
 
 
-def compare_scene(scene_name, level, geometry, cooked_scenes):
+def compare_scene(scene_name, level, geometry, cooked_scenes, regions):
     imported_quads = defaultdict(list)
     for row in geometry.get('sprites', []):
         if row.get('world_quad') is not None:
@@ -125,7 +154,7 @@ def compare_scene(scene_name, level, geometry, cooked_scenes):
         for draw in cooked['draws']:
             cooked_quads[(draw['source'], quad_key(draw['points']))] = draw
         for edge in cooked['edges']:
-            cooked_edges[cooked_edge_key(edge)] = edge
+            cooked_edges[stored_edge_key(edge)] = edge
 
     missing_draws = []
     changed_draws = []
@@ -137,11 +166,22 @@ def compare_scene(scene_name, level, geometry, cooked_scenes):
                      for candidate in candidates):
             changed_draws.append(source)
 
-    imported_edges = {cooked_edge_key(edge) for edge in geometry.get('terrain_edges', [])}
-    missing_edges = sorted(cooked_edges.keys() - imported_edges)
+    imported_edges = set()
+    merged_imported = set()
+    for edge in geometry.get('terrain_edges', []):
+        (merged_imported if merged_origin(edge['source'], level) else imported_edges).update(
+            imported_edge_keys(edge, regions))
+    merged_cooked = {key for key in cooked_edges if merged_origin(key[0], level)}
+    missing_edges = sorted(cooked_edges.keys() - imported_edges - merged_cooked)
     extra_edges = sorted(imported_edges - cooked_edges.keys())
     return {'scene_name': scene_name, 'scene_file': level,
             'region_count': len(cooked_scenes),
+            'additive_merge_identity_gaps': {
+                'cooked_edges': len(merged_cooked), 'imported_edges': len(merged_imported),
+                'reason': 'host/cook.py names these under the file they were serialized in and '
+                          'host/world_geometry.py under this room and the merged id; the import '
+                          'output keeps no origin to translate between them, so they are excluded '
+                          'rather than counted as missing and extra at once'},
             'cooked_draw_occurrences': draw_occurrences,
             'cooked_unique_draw_geometry': len(cooked_quads),
             'imported_draw_sources': len(imported_quads),
@@ -170,6 +210,7 @@ def build(root=ROOT, world_dir=None):
 
     resolved = []
     scene_metadata = defaultdict(list)
+    scene_regions = defaultdict(list)
     inputs = {}
     for region in regions['regions']:
         if region.get('scene_name') not in SCENES:
@@ -178,6 +219,8 @@ def build(root=ROOT, world_dir=None):
         resolved.append(row)
         metadata_path = root / row['metadata']
         scene_metadata[region['scene_name']].append(json.loads(metadata_path.read_text()))
+        # cooked_edge reads collision_bounds and allow_slopes off this row.
+        scene_regions[region['scene_name']].append(region)
         inputs[row['metadata']] = row['metadata_sha256']
         inputs[row['pack']] = row['pack_sha256']
 
@@ -193,7 +236,8 @@ def build(root=ROOT, world_dir=None):
         inputs[str(geometry_path.relative_to(root))] = digest
         with gzip.open(geometry_path, 'rt') as stream:
             geometry = json.load(stream)
-        scenes.append(compare_scene(scene_name, level, geometry, scene_metadata[scene_name]))
+        scenes.append(compare_scene(scene_name, level, geometry, scene_metadata[scene_name],
+                                    scene_regions[scene_name]))
 
     expected = {r['chunk_id'] for r in regions['regions'] if r.get('scene_name') in SCENES}
     observed = {r['chunk_id'] for r in resolved}
@@ -212,7 +256,8 @@ def build(root=ROOT, world_dir=None):
             'comparison_passed': passed,
             'limitations': [
                 'Cooked scenery is spatially repeated across resident views; unique source geometry is compared once.',
-                'Near-axis collision snapping reproduces the canonical cooker policy before edge comparison.',
+                'Imported terrain edges go through host/cook.py::cooked_edge before comparison, so the collision-bounds clip, the slope refusal and the near-axis snap are the cooker policy itself rather than a copy of it.',
+                'An edge whose object reached the room through an additive load is counted in additive_merge_identity_gaps, not compared: the two sides name it under different files and the import output carries no origin to translate.',
                 'Explicit TextMesh/TextMeshPro runtime glyph gaps are retained and are not scenery or terrain mismatches.',
                 'This comparison does not establish guest memory fit, rendering parity or gameplay behavior.',
             ]}

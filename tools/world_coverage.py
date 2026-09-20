@@ -74,18 +74,17 @@ def role_signals(scene):
 
 
 def transition_summary(graph):
+    # host/room_graph.py::finalize already decides what is unresolved, and its
+    # list is wider than the edges: a room whose graph scan was unavailable and
+    # every per-TransitionPoint read error are in it too, and neither has an
+    # edge to rebuild from. Rebuilding this from graph['edges'] dropped both.
+    unresolved = graph['unresolved']
     resolutions = Counter(edge['resolution'] for edge in graph['edges'])
-    unresolved = []
-    for edge in graph['edges']:
-        if edge['resolution'] == 'mapped_gate':
-            continue
-        unresolved.append({key: edge.get(key) for key in
-            ('source_scene', 'source_file', 'source_id', 'gate_name', 'target_scene',
-             'entry_point', 'resolution', 'gate_resolution_reason')})
     return {'room_count': graph['room_count'], 'edge_count': graph['edge_count'],
             'resolutions': dict(sorted(resolutions.items())),
             'mapped_gate_percent': round(100*resolutions['mapped_gate']/max(1, graph['edge_count']), 3),
-            'unresolved_edges': unresolved}
+            'unresolved_edges': unresolved,
+            'unresolved_without_an_edge': sum('resolution' not in row for row in unresolved)}
 
 
 def system_inventory(report):

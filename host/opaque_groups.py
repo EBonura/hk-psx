@@ -23,6 +23,22 @@ def group_phases(xy):
 def axis(xy):
     return xy[1]==xy[3]and xy[0]==xy[4]and xy[2]==xy[6]and xy[5]==xy[7]
 
+def flat_opaque_record(src,front,scale,xy,black_average,mutated_sources):
+    """Whether one cooked draw is an immutable flat opaque Tilemap quad.
+
+    Six clauses, every one of them load-bearing: the source is a tilemap rect,
+    the draw is a front draw at a positive scale carrying the BLACK_AVERAGE
+    material, its quad is axis-aligned, and nothing mutates the source at
+    runtime. The seventh test, that the palette is solid word1, needs the pack's
+    pixels and stays in `solid_word_one`.
+
+    tools/gpu_census.py bills a flat quad at a fifth of the textured rate, so it
+    asks this rather than keeping a looser copy: billing every tilemap draw flat
+    under-reports the raster cost of all the ones refused here.
+    """
+    return ('tilemap_rect'in src and front==1 and black_average==1 and scale>0
+            and src['source']not in mutated_sources and axis(xy))
+
 def connected_groups(records):
     """Stable2–4-member groups with common scale and touching source bounds."""
     ids=sorted(records);boxes={i:(min(records[i]['xy'][::2]),min(records[i]['xy'][1::2]),max(records[i]['xy'][::2]),max(records[i]['xy'][1::2]))for i in ids}
@@ -105,7 +121,7 @@ def cook(root=ROOT):
             for draw,src in enumerate(source):
                 gid=struct.unpack_from('<H',raw,desc[5]+draw*2)[0];tex,front,scale,*values=struct.unpack_from('<HHi8i4B',raw,sections['draws']['offset']+gid*44);xy=values[:8]
                 if draw in exclusions[region-1]:mutated_records.add((bank_index,gid))
-                if 'tilemap_rect'not in src or front!=1 or values[-1]!=1 or src['source']in mutated_sources or not axis(xy)or scale<=0:continue
+                if not flat_opaque_record(src,front,scale,xy,values[-1],mutated_sources):continue
                 if tex not in solid:solid[tex]=solid_word_one(raw,sections,tex)
                 if not solid[tex]:continue
                 record={'xy':xy,'scale':scale,'texture':tex};existing=records.setdefault((bank_index,gid),record)

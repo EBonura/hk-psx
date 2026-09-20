@@ -52,6 +52,30 @@ def native_draw_range(scale,points):
     if any(abs(round(p[k]*scale*256))>8_000_000 for p in points for k in (0,1)):return 'draw coordinate exceeds native Q24.8 range'
     return None
 
+EDGE_SNAP=0.005
+
+def cooked_edge(a,b,region):
+    """One source terrain segment as the cook stores it, or why it is refused.
+
+    Returns `(segment,None)` for an admitted `([ax,ay],[bx,by])`, or
+    `(None,reason)`. The three steps are in the order the cook applies them: the
+    region's collision_bounds clip, the slope refusal, then the near-axis snap
+    that gives the fixed-point guest stable horizontal/vertical support.
+
+    This is the whole policy. tools/compare_world_regions.py reads source
+    geometry back and has to reproduce the cook exactly to compare it, so the
+    rule lives here once rather than in both.
+    """
+    bounds=region['collision_bounds']
+    if max(a[0],b[0])<bounds[0] or min(a[0],b[0])>bounds[2] or max(a[1],b[1])<bounds[1] or min(a[1],b[1])>bounds[3]:
+        return None,'outside collision bounds'
+    if abs(a[0]-b[0])>EDGE_SNAP and abs(a[1]-b[1])>EDGE_SNAP and not region.get('allow_slopes'):
+        return None,'sloped terrain edge'
+    a=list(a);b=list(b)
+    if abs(a[0]-b[0])<=EDGE_SNAP:b[0]=a[0]
+    elif abs(a[1]-b[1])<=EDGE_SNAP:b[1]=a[1]
+    return (a[:2],b[:2]),None
+
 def unsupported_sprite_behavior(name,parent_name,component_types):
     # This named scene helper is driven by a PlayMaker fade/cover state machine.
     # Its ordinary Sprites/Lit material is also used by valid room scenery, so
@@ -424,7 +448,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     out=Path(output or ROOT/'data');out.mkdir(parents=True,exist_ok=True)
     s=source or Source();sc=scene or Scene(s,'level6');scene_file=Path(sc.file.name).name
     region=region or {'camera_x':CAM_X,'camera_y':CAM_Y,'collision_bounds':(15,-5,78,35),'activation_bounds':(15,-5,62,25)}
-    cam_x,cam_y=region['camera_x'],region['camera_y'];collision_bounds=region['collision_bounds']
+    cam_x,cam_y=region['camera_x'],region['camera_y']
     atlas=Atlas(max_pages=20 if stage_for_similarity else STATIC_PAGE_BUDGET,max_textures=MAX_ROOM_TEXTURES,
                 max_cluts=MAX_ROOM_TEXTURES if stage_for_similarity else TEXTURE_BUDGET);draws=[];images={};unsupported=list(sc.errors);rendered=[]
     reveal=reveal_mask_sources(sc)
@@ -670,14 +694,10 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         for path in paths:
             pts=[sc.point(gid,p['x']+off['x'],p['y']+off['y']) for p in path]
             for a,b in zip(pts,pts[1:]):
-                if max(a[0],b[0])<collision_bounds[0] or min(a[0],b[0])>collision_bounds[2] or max(a[1],b[1])<collision_bounds[1] or min(a[1],b[1])>collision_bounds[3]:continue
-                if abs(a[0]-b[0])>0.005 and abs(a[1]-b[1])>0.005:
-                    if not region.get('allow_slopes'):
-                        unsupported.append({'id':sc.sid(i),'type':'sloped terrain edge','points':[a,b]});continue
-                a=list(a);b=list(b)
-                if abs(a[0]-b[0])<=0.005:b[0]=a[0]
-                elif abs(a[1]-b[1])<=0.005:b[1]=a[1]
-                edges.append({'source':sc.sid(i),'a':a[:2],'b':b[:2]})
+                segment,refusal=cooked_edge(a,b,region)
+                if refusal=='sloped terrain edge':unsupported.append({'id':sc.sid(i),'type':refusal,'points':[a,b]})
+                if segment is None:continue
+                edges.append({'source':sc.sid(i),'a':segment[0],'b':segment[1]})
     draws.sort(key=lambda d:(d['layer'],d['order'],-d['z'],d['source']))
     breakables=bind_breakables(breakables,draws,edges)
     params+=generated_params(constants,dt,nails,grass,draws)

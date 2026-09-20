@@ -45,7 +45,15 @@ def metrics(a,b):
     return dict(similarity=score,coverage_mismatch=coverage,stp_mismatch=stp,changed_texels=changed)
 
 
-def inventory(meta):
+def inventory(meta,guards=None):
+    """Byte-distinct textures of every cooked room.
+
+    `guards`, when given, is filled with the three things the cooker's replacement
+    guards need from the same pass: the raw packs, each room's local texture index
+    to global id, and the protected ids `host/similarity_dedup.protected_textures`
+    names. Reading the packs twice to get them would double the expensive step.
+    """
+    if guards is not None:from similarity_dedup import protected_textures
     items=[];byblob={};refs=0
     for room in meta['regions']:
         raw=(ROOT/room['path']).read_bytes()
@@ -61,6 +69,8 @@ def inventory(meta):
                 old=d['texture']
                 if old<len(mp):
                     names[mp[old]].add(d.get('name',d.get('sprite','unknown')));sprites[mp[old]].add(d.get('sprite','unknown'))
+        guarded=protected_textures(raw,room) if guards is not None else ()
+        local=[]
         for i,blob in enumerate(blobs):
             stream=struct.unpack_from('<H',raw,40+i*16)[0]==65535;refs+=1
             key=(stream,blob)
@@ -68,8 +78,11 @@ def inventory(meta):
                 tid=len(items);byblob[key]=tid;w,h=struct.unpack_from('<HH',blob)
                 items.append(dict(id=tid,blob=blob,words=words(blob),w=w,h=h,stream=stream,black=binary_black_palette(blob[4:36]),modes=set(),names=set(),sprites=set(),rooms=set(),references=[],covers=set()))
             t=items[byblob[key]];t['modes'].update(modes[i]);t['names'].update(names[i]);t['sprites'].update(sprites[i]);t['rooms'].add(room['scene_id']);t['references'].append([room['chunk_id'],i])
+            local.append(t['id'])
+            if i in guarded:guards['protected'].add(t['id'])
             if not stream:
                 cover=struct.unpack_from('<I',raw,40+i*16+12)[0];t['covers'].add(raw[ss+cover:ss+cover+20])
+        if guards is not None:guards['packs'][room['chunk_id']]=raw;guards['local_ids'][room['chunk_id']]=local
     for t in items:t['modes']=tuple(sorted(t['modes']));t['covers']=tuple(sorted(t['covers']))
     return items,refs
 
@@ -125,10 +138,13 @@ def normalized(t):
 
 
 def normalized_audit(items,output):
+    # texture_match_groups imports this module at its top, so the cooker's own
+    # eligibility test is imported here rather than at module scope.
+    from texture_match_groups import eligible
     norm=[normalized(t) for t in items]
     groups=collections.defaultdict(set)
     for t in items:
-        if t['stream'] or t['black'] or np.all((t['words']&32767)<=1) or len(t['modes'])!=1:continue
+        if not eligible(t):continue
         for sprite in t['sprites']:groups[(sprite,t['modes'])].add(t['id'])
     pairs={}
     for ids in groups.values():
@@ -171,41 +187,39 @@ def normalized_audit(items,output):
 
 
 def run(output):
+    # Deferred: both of these import this module at their own top.
+    from texture_match_groups import all_static_matches,review_groups
+    from similarity_dedup import packet_protected,reservation_guard
     output.mkdir(parents=True,exist_ok=True);metadata=(ROOT/'data/regions.json').read_bytes();meta=json.loads(metadata)
-    items,refs=inventory(meta);exact={};aliases={};exactpairs=[]
+    guards={'packs':{},'local_ids':{},'protected':set()}
+    items,refs=inventory(meta,guards);exact={};aliases={};exactpairs=[]
     for t in items:
         k=exactkey(t)
         if k in exact:
             aliases[t['id']]=exact[k];exactpairs.append(dict(a=exact[k],b=t['id'],**metrics(items[exact[k]],t)))
         else:exact[k]=t['id']
-    groups=collections.defaultdict(list)
-    for t in items:
-        if t['id'] not in aliases:groups[safeclass(t)].append(t['id'])
-    candidates=[]
-    for ids in groups.values():
-        for n,a in enumerate(ids):
-            for b in ids[n+1:]:
-                m=metrics(items[a],items[b])
-                if m['similarity']>=95:candidates.append(dict(a=a,b=b,**m))
-    candidates.sort(key=lambda p:(-p['similarity'],p['a'],p['b']))
+    # The cooker's pool: never a protected animation/effect/mask texture, and
+    # never an exact alias, which texture_dedup already removes losslessly.
+    candidate_pool=[t for t in items if t['id'] not in guards['protected'] and t['id'] not in aliases]
+    thresholds=(100,99.9,99.5,99,98,97,95)
+    # One exhaustive matching pass at the sweep's floor. review_groups takes the
+    # threshold of its own, so the higher rows are a filter, not another pass.
+    matches=all_static_matches(candidate_pool,min(thresholds))
+    candidates=matches['candidates']
     stats=[]
-    for threshold in (100,99.9,99.5,99,98,97,95):
-        mapping=dict(aliases);kept=[]
-        for t in items:
-            i=t['id']
-            if i in mapping:continue
-            # Direct comparisons to the final representative, never chained
-            # A~B~C clustering that can exceed the requested error threshold.
-            chosen=None
-            if not t['stream'] and not t['black'] and len(t['modes'])==1:
-                for j in kept:
-                    other=items[j]
-                    if safeclass(t)!=safeclass(other) or t['covers']!=other['covers']:continue
-                    m=metrics(t,other)
-                    if m['similarity']>=threshold and m['coverage_mismatch']==0 and m['stp_mismatch']==0:
-                        chosen=j;break
-            if chosen is None:kept.append(i)
-            else:mapping[i]=chosen
+    for threshold in thresholds:
+        mapping=dict(aliases)
+        for group in review_groups(candidates,candidate_pool,threshold):
+            for member in group['members']:
+                if member['id']!=group['representative'] and member['id'] not in mapping:
+                    mapping[member['id']]=group['representative']
+        # A smaller representative must keep every referencing draw inside the
+        # native grid-repair packet bound, and every region must keep its
+        # mandatory packet reservation, exactly as postpack_similarity requires.
+        packet_guard=packet_protected(mapping,items,guards['packs'])
+        for tid in packet_guard:del mapping[tid]
+        reservation=reservation_guard(meta['regions'],guards['packs'],guards['local_ids'],items,mapping,
+                                      {r['chunk_id']:{} for r in meta['regions']})
         rows=[]
         for scene in sorted({r['scene_id']for r in meta['regions']}):
             original={t['id'] for t in items if scene in t['rooms']};ids={mapping.get(i,i)for i in original}
@@ -213,11 +227,15 @@ def run(output):
             pages,_=dense_pack(rectangles(items,ids));oldpages,_=dense_pack(rectangles(items,original))
             pixelbytes=lambda ids:sum(aligned(items[i]['w'])//2*items[i]['h'] for i in ids if not items[i]['stream'])
             rows.append(dict(scene_id=scene,baseline_pages=oldpages,pages=pages,removed_textures=len(original)-len(ids),static_pixel_bytes_saved=pixelbytes(original)-pixelbytes(ids)))
-        stats.append(dict(threshold=threshold,removed_textures=len(mapping),scenes=rows))
+        stats.append(dict(threshold=threshold,removed_textures=len(mapping),
+                          packet_protected_texture_ids=packet_guard,reservation_protected=reservation,scenes=rows))
     def select(pool,count=4):
         result=[];seen=set()
         for p in pool:
             if p['a']in seen or p['b']in seen:continue
+            # The sheets draw both members on a common grid, so a normalized
+            # cross-size candidate has no single difference image to show.
+            if p.get('comparison')=='normalized':continue
             if min(items[p['a']]['w'],items[p['a']]['h'])<12:continue
             result.append(p);seen.update((p['a'],p['b']))
             if len(result)==count:break
@@ -228,7 +246,7 @@ def run(output):
     for name,pairs in selections.items():
         if pairs:sheet(output/(name+'.png'),{'exact':'Exact render duplicates','conservative':'Very close static textures: at least 99.5%','threshold_99':'Static textures: 99% to 99.5%','risky':'High similarity can still hide meaningful differences'}[name],pairs,items)
     normreport=normalized_audit(items,output)
-    report=dict(normalized=normreport,metadata_sha256=hashlib.sha256(metadata).hexdigest(),cooker_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),room_count=len(meta['regions']),texture_references=refs,byte_distinct_textures=len(items),exact_render_distinct=len(exact),exact_aliases=aliases,thresholds=stats,samples=selections,candidates=candidates,textures=[brief(t)for t in items],method='Same dimensions/storage/material. 100*(1 - worst-background foreground-union RGB RMSE/31), PSX additive or average blend, neutral tint. Threshold savings require identical transparency and STP masks and alpha covers; static non-black only; direct final-representative comparisons. Exact aliases preserve all 16 texel bits. Estimates are repacked offline and do not measure PS1 performance.')
+    report=dict(normalized=normreport,metadata_sha256=hashlib.sha256(metadata).hexdigest(),cooker_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),room_count=len(meta['regions']),texture_references=refs,byte_distinct_textures=len(items),exact_render_distinct=len(exact),exact_aliases=aliases,protected_global_texture_ids=sorted(guards['protected']),eligible_textures=matches['eligible_textures'],compared_pairs=matches['compared_pairs'],thresholds=stats,samples=selections,candidates=candidates,textures=[brief(t)for t in items],method='The cooker\'s own selection, at a sweep of thresholds instead of the single 95: host/similarity_dedup.protected_textures for the pool, texture_match_groups.all_static_matches and review_groups for the replacements, then similarity_dedup.packet_protected and reservation_guard. 100*(1 - worst-background foreground-union RGB RMSE/31), PSX additive or average blend, neutral tint; native pixels at equal dimensions, 48x48 nearest normalization otherwise. Exact aliases preserve all 16 texel bits and are counted separately. The lossless constant-index collapse the cooker also runs is not modelled, so the reservation guard here sees slightly less packet pressure than a real pass would. Estimates are repacked offline and do not measure PS1 performance.')
     (output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:report[k]for k in ('room_count','texture_references','byte_distinct_textures','exact_render_distinct','thresholds')},indent=2))
     print('Normalized thresholds:',json.dumps([{k:v for k,v in r.items()if k!='mapping'}for r in normreport['thresholds']],indent=2))

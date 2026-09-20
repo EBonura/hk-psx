@@ -4,17 +4,21 @@ The package plan lists ten families from the whole game. This measures which of
 them the admitted catalogue holds, and in what form, so the work is sized
 against the world the port ships rather than against the list.
 
-Families are recognized by the components an instance carries, never by its
-scene or object name: the same barrel appears under a dozen names and the same
-name appears with different parts. Reads the cached per-scene component
-inventories under `.hkpsx/world-import/<file>/components.json.gz`, so it runs
-without the Windows source. `--fsm` additionally compiles the PlayMaker-authored
-families through host/script_ir.py, which does need the source.
+Family sizes are the compiled per-family subsets' own answers. Every family
+host/breakables.py has a subset for is counted by running it, which selects by
+FSM definition and by the reachability `Scene.active` answers, and every other
+component family is counted against that same reachability. Both need the
+Windows source. Without it the report falls back to the name census over the
+cached per-scene component inventories under
+`.hkpsx/world-import/<file>/components.json.gz` and marks every line, because
+that census is wider on both counts: it selects an FSM family by the object's
+name and it counts objects the source loads switched off. `--fsm` additionally
+compiles the PlayMaker-authored families through host/script_ir.py.
 
-The `secret_mask` and `hidden_wall` name rules below are a census of names and
+The `secret_mask` and `hidden_wall` name rules below are that fallback and
 nothing more. Both behaviours are one FSM structure that ships under two
 definition names and under object names the rules do not match, so the counts
-they give are not the family sizes; `--recognize` reports the structural ones.
+they give are not the family sizes.
 
 `--terrain` asks the question that turned out to matter more than the counts:
 which FSM definitions own a collider host/world_geometry.py bakes into terrain?
@@ -109,6 +113,16 @@ def scene_inventory(file):
     return json.loads(gzip.open(path).read())
 
 
+# The families host/breakables.py has a compiled subset for, and the name
+# `recognized()` files each one under. Wherever a family appears here its size
+# is that function's answer, never a name rule: breakables.py selects by FSM
+# definition and by the reachability the cooker uses, and the name rules below
+# both miss definitions and count objects the source leaves switched off.
+RECOGNIZED_FAMILIES = {'multi_hit_gate': 'arena gates', 'hidden_wall': 'hidden walls',
+                       'cracked_floor': 'cracked floors', 'infected_vine': 'infected vines',
+                       'secret_mask': 'secret masks'}
+
+
 def census(scenes):
     """(family -> instances, family -> scenes, breakable name -> count)."""
     wanted = {name: family for family, names in COMPONENT_FAMILIES.items() for name in names}
@@ -133,11 +147,41 @@ def census(scenes):
     return counts, where
 
 
-def report(scenes):
+def report(scenes, recognition=None, active=None):
+    """The catalogue, with every family host/breakables.py owns taken from it.
+
+    `recognition` is `recognized()`'s result and `active` its per-family counts
+    over the reachability `Scene.active` answers. Without the Windows source
+    neither exists and the name census stands in, which is a wider number: it
+    counts an object the source loads switched off, and it selects an FSM family
+    by the object's name rather than by the definition the FSM carries.
+    """
     counts, where = census(scenes)
-    lines = [f'{len(scenes)} admitted scenes', '', 'families present:']
+    sourced = set()
+    for family, name in RECOGNIZED_FAMILIES.items():
+        result = (recognition or {}).get(name)
+        if result is None:
+            continue
+        rows = result['admitted'] + result['refused']
+        counts[family] = len(rows)
+        where[family] = collections.Counter(row['scene'] for row in rows)
+        sourced.add(family)
+    if active is not None:
+        for family in COMPONENT_FAMILIES:
+            if family in sourced:
+                continue
+            rooms = active.get(family, collections.Counter())
+            counts[family] = sum(rooms.values())
+            where[family] = rooms
+            sourced.add(family)
+    for family in [f for f, total in counts.items() if not total]:
+        del counts[family]
+    lines = [f'{len(scenes)} admitted scenes', '',
+             'families present (* is a serialized-instance name census: the source may load it '
+             'switched off, and an FSM family is selected by object name):']
     for family, total in counts.most_common():
-        lines.append(f'  {total:5d} in {len(where[family]):2d} scenes  {family}')
+        mark = ' ' if family in sourced else '*'
+        lines.append(f'{mark} {total:5d} in {len(where[family]):2d} scenes  {family}')
     lines += ['', "the package plan's list:"]
     for plan, families in PLAN_FAMILIES.items():
         found = [(family, counts[family], len(where[family])) for family in families if counts[family]]
@@ -368,6 +412,26 @@ def secret_mask_fade_contract(scenes):
     return kept, dropped
 
 
+def live_component_families(sc):
+    """COMPONENT_FAMILIES instances one scene actually loads switched on.
+
+    `Scene.active` is the reachability the cooker itself asks, so this asks it
+    too. The cached component inventory carries only the object's own
+    `m_IsActive`, which says nothing about a disabled parent: 148 scenes-wide
+    BreakableInfectedVine components are 14 by the self flag and 8 by this.
+    """
+    wanted = {name: family for family, names in COMPONENT_FAMILIES.items() for name in names}
+    counts = collections.Counter()
+    for typ, tree in sc.objects.values():
+        family = wanted.get(typ)
+        if family is None or not tree.get('m_Enabled', 1):
+            continue
+        gid = tree.get('m_GameObject', {}).get('m_PathID')
+        if gid in sc.gos and sc.active(gid):
+            counts[family] += 1
+    return counts
+
+
 def recognized(scenes):
     """What the compiled per-family subsets admit and refuse, whole catalogue."""
     from source import Source
@@ -381,6 +445,7 @@ def recognized(scenes):
                 'secret masks': (secret_masks, {})}
     out = {name: {'admitted': [], 'refused': []} for name in families}
     doors = {}
+    active = collections.defaultdict(collections.Counter)
     for desc in scenes:
         loaded = Scene(source, desc['file'])
         for name, (recognize, options) in families.items():
@@ -388,20 +453,31 @@ def recognized(scenes):
             for row in recognize(loaded, errors=errors, **options):
                 out[name]['admitted'].append(dict(row, scene=desc['scene_name']))
             out[name]['refused'] += [dict(error, scene=desc['scene_name']) for error in errors]
+        for family, total in live_component_families(loaded).items():
+            active[family][desc['scene_name']] += total
         if any(row['scene'] == desc['scene_name'] for row in out['arena gates']['admitted']):
             doors[desc['scene_name']] = scene_doors(loaded)
-    return out, doors
+    return out, doors, active
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fsm', action='store_true', help='also compile the FSM-authored families')
     parser.add_argument('--terrain', action='store_true', help='FSM definitions that own terrain colliders')
-    parser.add_argument('--recognize', action='store_true', help='run the compiled per-family subsets')
+    parser.add_argument('--recognize', action='store_true',
+                        help='also list what each compiled per-family subset admits and refuses')
     parser.add_argument('--json', type=Path, help='write the full report here')
     args = parser.parse_args()
     from quality import SCENE_TABLE
-    counts, where, text = report(SCENE_TABLE)
+    # The family sizes come from the compiled subsets whenever the Windows
+    # source is there to run them. Without it the name census stands in, which
+    # is a wider and differently selected number, so the report says which.
+    try:
+        admitted, doors, active = recognized(SCENE_TABLE)
+    except (ImportError, FileNotFoundError, OSError) as error:
+        admitted, doors, active = {}, {}, None
+        print(f'no Windows source ({error}); every family below is the name census\n')
+    counts, where, text = report(SCENE_TABLE, admitted, active)
     print(text)
     terrain = fsm_owned_terrain(SCENE_TABLE) if args.terrain else []
     if terrain:
@@ -432,8 +508,7 @@ def main():
                                                       for name in row2['load_path_mutators']})))
                 for row in reached).items(), key=lambda kv: -kv[1]):
             print(f'  {group:4d} colliders  {definition[0]:34s} {definition[1]}')
-    admitted, doors = recognized(SCENE_TABLE) if args.recognize else ({}, {})
-    for name, result in admitted.items():
+    for name, result in (admitted if args.recognize else {}).items():
         inert = [row for row in result['refused'] if row.get('source_inert')]
         # An object the original disables too is not a port gap, and counting it
         # as one has the catalogue reporting work that can never be done.
