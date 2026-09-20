@@ -23,6 +23,10 @@ def world_banks(output):
     from world_metadata import encode_scene
     report = json.loads((ROOT/'data/regions.json').read_text())
     scene0 = next(s for s in report['scenes'] if s['scene_id'] == 0)
+    # host/pack_scenes.py hands the encoder the scene's reveal-mask controllers;
+    # the tests read that catalogue out of this bank, so supply it the same way.
+    controllers = report.get('reveal_mask_scenes', {}).get('0', {}).get('controllers', [])
+    scene0 = dict(scene0, reveal_mask_controllers=controllers, reveal_controllers=len(controllers))
     payload, _ = encode_scene(scene0, [r for r in report['regions'] if r['scene_id'] == 0])
     (output/'scene0.hkwm').write_bytes(payload)
     triangle = [[100, 0], [200, 0], [100, 100]]

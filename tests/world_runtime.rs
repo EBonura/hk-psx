@@ -72,7 +72,6 @@ fn region() -> Region {
     door_debris:&[],
     particle_bank:None,
     grass_emitters:&[],
-        reveal_masks: &[],
     }
 }
 #[test]
@@ -535,39 +534,43 @@ fn actual_crawler_spawn_resolves_against_complete_cooked_terrain() {
 #[test]
 fn authored_inverse_remask_bindings_preserve_one_controller_across_regions() {
     use hk_sim::{Params, ONE};
-    let first=scene0_regions()[0].1;
-    let index=first.reveal_masks.iter().position(|s|s.source_id==12038).expect("source inverse_remask_right FSM");
-    let spec=first.reveal_masks[index];
-    assert_eq!(spec.fade_ticks,30);
-    assert_eq!(spec.initial_opacity,0);
-    assert_eq!(spec.trigger,&[[13202367,2153911],[10462305,2153911],[10462305,822671],[13202367,822671]]);
+    // The catalogue belongs to the scene, so it is read once from the admitted
+    // bank rather than borrowed from whichever region happens to be resident.
+    use_bank(SCENE0_BANK);
+    let masks:Vec<_>=world::reveal_masks(0).collect();
+    let index=masks.iter().position(|m|m.source_id==12038).expect("source inverse_remask_right FSM");
+    assert_eq!(masks[index].fade_ticks,30);
+    assert_eq!(masks[index].initial_opacity,0);
+    // The cooked AABB of the authored trigger, which is what the tick tests
+    // before it asks the bank for the polygon itself.
+    assert_eq!(masks[index].bounds,[10462305,822671,13202367,2153911]);
     let p=Params { half_width:ONE/4, bottom:-ONE, ..Params::ZERO };
     let inside=Player::spawn(180*ONE,20*ONE);
     let outside=Player::spawn(154*ONE,20*ONE);
-    let mut controller=reveal_masks::State::new();controller.scene_ready(0,first.reveal_masks);
-    for _ in 0..30 {controller.tick(first.reveal_masks,&outside,p);}
+    let reaches=|c:usize,body:[i32;4]|world::reveal_trigger_reaches(0,c,body);
+    let mut controller=reveal_masks::State::new();controller.scene_ready(0,world::reveal_masks(0));
+    for _ in 0..30 {controller.tick(&outside,p,reaches);}
     assert_eq!(controller.opacity(index),0);
-    for _ in 0..15 {controller.tick(first.reveal_masks,&inside,p);}
+    for _ in 0..15 {controller.tick(&inside,p,reaches);}
     assert_eq!(controller.opacity(index),64);
+    // Idle opacity still answers per controller while no scene is bound.
+    assert_eq!(world::reveal_initial_opacity(0,index),0);
     let mut binding_count=0;
-    use_bank(SCENE0_BANK);
     for (id,region) in scene0_regions() {
         let region=&region;
-        assert_eq!(region.reveal_masks.len(),first.reveal_masks.len());
-        for (a,b) in region.reveal_masks.iter().zip(first.reveal_masks) {
-            assert_eq!(a.source_id,b.source_id);assert_eq!(a.trigger,b.trigger);assert_eq!(a.fade_ticks,b.fade_ticks);
-        }
-        controller.scene_ready(0,region.reveal_masks);assert_eq!(controller.opacity(index),64);
+        // Re-readying mid-tween must not restart it, however many regions of
+        // the scene the hero walks through while a mask is fading.
+        controller.scene_ready(0,world::reveal_masks(0));assert_eq!(controller.opacity(index),64);
         let path=format!("{}/../data/regions/chunk_{}.hk",env!("CARGO_MANIFEST_DIR"),id+1);
         let bytes=std::fs::read(path).unwrap();let room=hk_format::Room::parse(&bytes).unwrap();
         for binding in world::reveal_bindings(region) {
-            assert!((binding.controller as usize)<region.reveal_masks.len());
+            assert!((binding.controller as usize)<masks.len());
             assert!((binding.draw as usize)<room.counts[2]);
             if binding.controller as usize==index {binding_count+=1;}
         }
     }
     assert!(binding_count>1,"revealed source sprite spans several residency regions");
-    for _ in 0..30 {controller.tick(first.reveal_masks,&outside,p);}
+    for _ in 0..30 {controller.tick(&outside,p,reaches);}
     assert_eq!(controller.opacity(index),0);
 }
 

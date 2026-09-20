@@ -27,7 +27,7 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17}
 MAX_REVEAL_CONTROLLERS = 16
 MAX_SCENE_ACTORS = 32
 
@@ -136,7 +136,7 @@ def encode_scene(scene, rows):
 
     stable_breakables = {}
     stable_grass = {}
-    for row in sorted(rows, key=lambda value: value["chunk_id"]):
+    for row_index, row in enumerate(sorted(rows, key=lambda value: value["chunk_id"])):
         object_first = len(objects)
         region_polygon_first = len(polygons)
         draw_count = row.get("draws", 0)
@@ -266,6 +266,59 @@ def encode_scene(scene, rows):
                        (bounded(statics["door_debris"], DEBRIS_VARIANT_LIMIT, "debris variant"),
                         statics["particle_bank"] if statics["particle_bank"] < 0 else bounded(statics["particle_bank"], 8, "particle bank variant"),
                         statics["grass_impact"] if statics["grass_impact"] < 0 else bounded(statics["grass_impact"], 32, "impact variant")))
+        if row_index == 0:
+            # A gate belongs to its scene, not to one region: the guest's
+            # transition test has always searched every gate of the scene it
+            # stands in, so they all ride in the first region and one bounded
+            # object scan answers the set the linked table used to hold.
+            for gate in scene.get("resolved_gates", []):
+                region = bounded(gate["target_region"], 65536, "gate target region")
+                target = bounded(gate["target_scene"], 256, "gate target scene")
+                side = bounded(gate["side"], 16, "gate side")
+                add_object("gate", gate, region | (target << 16) | (side << 24),
+                           bounded(gate["delay_ticks"], 65536, "gate collider delay"),
+                           gate["bounds"], None,
+                           (q(gate["spawn"][0]), q(gate["spawn"][1]), int(gate["entry_vy"])))
+            # Geo payouts are keyed by enemy source id across the whole scene,
+            # never by view, so they sit beside the gates in the first region.
+            # The object's bounds are unread; `flags` bit 1 is `megaFlingGeo`,
+            # which is all that is left of the six constant fling words.
+            for enemy in scene.get("geo_enemies", []):
+                drops = [bounded(value, 65536, "geo drop count") for value in enemy["drops"]]
+                add_object("geo_enemy", enemy, drops[0] | (drops[1] << 16),
+                           1 if enemy["mega"] else 0, row["activation_bounds"], None,
+                           (q(enemy["effect_origin"]["x"]), q(enemy["effect_origin"]["y"]), drops[2]))
+            # The scene's reveal-mask controllers, in the order the per-region
+            # KIND_REVEAL_BINDINGS pairs index them. `state` is that index, the
+            # object's bounds are the trigger's own AABB so the guest's per-tick
+            # box test needs no polygon walk, and the polygon itself is the
+            # exact shape the hero collider is measured against on a hit.
+            seen_reveal = set()
+            for index, record in enumerate(scene.get("reveal_mask_controllers", [])):
+                source = bounded(record["source_id"], 1 << 32, "reveal source ID")
+                if source in seen_reveal or record["controller"] != index:
+                    raise ValueError("reveal source aliases or noncanonical index")
+                seen_reveal.add(source)
+                opacity = record["initial_opacity"]
+                if type(opacity) is not int or opacity not in (0, 128):
+                    raise ValueError("invalid reveal initial opacity")
+                one_way = record.get("one_way", False)
+                if type(one_way) is not bool:
+                    raise ValueError("invalid reveal one-way flag")
+                # An authored secret mask: covered on load, uncovered for good on
+                # the first hero entry, because its FSM declares no COVER event.
+                if one_way and opacity != 128:
+                    raise ValueError("one-way reveal must start covered")
+                ticks = bounded(record["fade_ticks"], 601, "reveal fade ticks")
+                if not ticks:
+                    raise ValueError("reveal duration must be positive")
+                trigger = record["trigger"]
+                box = [min(p[0] for p in trigger), min(p[1] for p in trigger),
+                       max(p[0] for p in trigger), max(p[1] for p in trigger)]
+                add_object("reveal_mask", {"source": f"{scene['file']}:{source}", "trigger": [trigger]},
+                           bounded(index, MAX_REVEAL_CONTROLLERS, "reveal controller"),
+                           (1 if one_way else 0) | (2 if opacity == 128 else 0),
+                           box, "trigger", (ticks, 0, 0))
         region_polygon_count = len(polygons) - region_polygon_first
         neighbour_first = len(points)
         neighbours = [int(value) for value in row.get("neighbour_chunks", [])]

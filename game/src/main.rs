@@ -102,7 +102,7 @@ pub static mut HK_NAIL_ATTACK_COUNT: u32 = 0;
 // it now, so the attributes are gone from this file: an inlining hint has to
 // earn its place on its own, not stand in for a function that was too big.
 fn apply_reveal_masks(state:&reveal_masks::State,region:&world::Region) {
-    let counts=state.apply(region.reveal_masks,world::reveal_bindings(region));
+    let counts=state.apply(|c|world::reveal_initial_opacity(region.scene,c),world::reveal_bindings(region));
     unsafe {HK_REVEAL_MASKS_HIDDEN=counts.hidden;HK_REVEAL_MASKS_PARTIAL=counts.partial;HK_REVEAL_MASKS_VISIBLE=counts.visible;}
 }
 /// The ability clip that owns the Knight's body this frame, if any, and how
@@ -498,7 +498,7 @@ fn main() {
         // One per view, which host/regions.py refuses to exceed.
         let region_npc=world::npcs(r).next();
         game.enemies.sync_region(r);
-        game.reveals.scene_ready(r.scene,r.reveal_masks);
+        game.reveals.scene_ready(r.scene,world::reveal_masks(r.scene));
         input::checkpoint();
         let bank=vram.activate(game.region_id);
         render::init(&cache.room(),bank,game.region_id,cache.coverage());

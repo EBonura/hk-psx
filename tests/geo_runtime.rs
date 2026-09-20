@@ -40,33 +40,33 @@ fn ticks(w:&mut World,n:usize,hero:[i32;4])->Tick {let mut last=Tick::default();
  assert_eq!(w.hits_remaining(0,0),None);
 }
 #[test]fn pickup_uses_post_lock_trigger_entry_not_stay_and_never_credits_twice(){
- let mut w=World::new();assert!(w.spawn_enemy(0,1,[0,0],&[enemy(1,[1,0,0])]));
+ let mut w=World::new();assert!(w.spawn_enemy(0,1,[0,0],enemy(1,[1,0,0])));
  ticks(&mut w,30,NEAR);assert_eq!(w.wallet(),0);assert_eq!(w.active(),1);
  ticks(&mut w,1,FAR);assert_eq!(ticks(&mut w,1,NEAR).collected,1);
  assert_eq!(w.wallet(),1);assert_eq!(w.active(),0);ticks(&mut w,30,NEAR);assert_eq!(w.wallet(),1);
- let mut w=World::new();w.spawn_enemy(0,2,[0,0],&[enemy(2,[1,0,0])]);ticks(&mut w,14,FAR);
+ let mut w=World::new();w.spawn_enemy(0,2,[0,0],enemy(2,[1,0,0]));ticks(&mut w,14,FAR);
  assert_eq!(ticks(&mut w,1,NEAR).collected,1);assert_eq!(w.wallet(),1);
 }
 #[test]fn pool_overflow_defers_coins_without_early_wallet_credit_or_value_loss(){
- let mut w=World::new();let e=enemy(1,[70,0,0]);assert!(w.spawn_enemy(0,1,[0,0],&[e]));
- assert!(!w.spawn_enemy(0,1,[0,0],&[e]));ticks(&mut w,15,FAR);
+ let mut w=World::new();let e=enemy(1,[70,0,0]);assert!(w.spawn_enemy(0,1,[0,0],e));
+ assert!(!w.spawn_enemy(0,1,[0,0],e));ticks(&mut w,15,FAR);
  assert_eq!(w.active(),MAX_COINS);assert_eq!(w.pending_value(P),6);assert_eq!(w.spawned_value,64);assert_eq!(w.wallet(),0);
  assert_eq!(ticks(&mut w,1,NEAR).collected,64);ticks(&mut w,15,FAR);
  assert_eq!(w.pending_value(P),0);assert_eq!(ticks(&mut w,1,NEAR).collected,6);
  assert_eq!(w.wallet(),70);assert_eq!(w.spawned_value,70);assert_eq!(w.collected_value,70);
- assert_eq!(w.death(),70);assert_eq!(w.wallet(),0);assert!(!w.spawn_enemy(0,1,[0,0],&[e]));
- w.reset_enemies(0);assert!(w.spawn_enemy(0,1,[0,0],&[e]));
+ assert_eq!(w.death(),70);assert_eq!(w.wallet(),0);assert!(!w.spawn_enemy(0,1,[0,0],e));
+ w.reset_enemies(0);assert!(w.spawn_enemy(0,1,[0,0],e));
 }
 #[test]fn queue_capacity_failure_remains_retryable_and_scene_exit_discards_only_loose_value(){
  let mut w=World::new();
- for id in 1..=16 {assert!(w.spawn_enemy(0,id,[0,0],&[enemy(id,[1,0,0])]));}
- assert!(!w.spawn_enemy(0,17,[0,0],&[enemy(17,[1,0,0])]));assert_eq!(w.pending_value(P),16);
- ticks(&mut w,1,FAR);assert!(w.spawn_enemy(0,17,[0,0],&[enemy(17,[1,0,0])]));
+ for id in 1..=16 {assert!(w.spawn_enemy(0,id,[0,0],enemy(id,[1,0,0])));}
+ assert!(!w.spawn_enemy(0,17,[0,0],enemy(17,[1,0,0])));assert_eq!(w.pending_value(P),16);
+ ticks(&mut w,1,FAR);assert!(w.spawn_enemy(0,17,[0,0],enemy(17,[1,0,0])));
  assert_eq!(w.active(),16);assert_eq!(w.pending_value(P),1);w.leave_scene(1,P);assert_eq!(w.active(),16);
  w.leave_scene(0,P);assert_eq!(w.active(),0);assert_eq!(w.pending_value(P),0);assert_eq!(w.discarded_value,17);assert_eq!(w.wallet(),0);
 }
 #[test]fn denominations_wallet_cap_and_acid_never_invent_credit(){
- let mut w=World::new();w.spawn_enemy(0,1,[0,0],&[enemy(1,[1,1,1])]);ticks(&mut w,15,FAR);
+ let mut w=World::new();w.spawn_enemy(0,1,[0,0],enemy(1,[1,1,1]));ticks(&mut w,15,FAR);
  let index=w.indexed_coins().find(|(_,c)|c.denomination==0).unwrap().0;
  assert!(w.acid(index,P));assert!(!w.acid(index,P));assert_eq!(w.wallet(),0);
  let p=Params{wallet_max:20,..P};let result=w.tick(0,p,NEAR,COVER,0,|_|[0;4]);
@@ -75,16 +75,16 @@ fn ticks(w:&mut World,n:usize,hero:[i32;4])->Tick {let mut last=Tick::default();
 #[test]fn authored_physics_clock_and_fling_are_deterministic(){
  let p=Params{coins:[CoinSpec{gravity:-45*ONE,..COIN};3],..P};
  let e=EnemySpec{fling:Fling{speed:[15*ONE,30*ONE],angle:[80*ONE,100*ONE],spread:[ONE/4;2]},..enemy(1,[2,0,0])};
- let mut a=World::new();let mut b=World::new();for w in [&mut a,&mut b]{w.spawn_enemy(0,1,[0,20*ONE],&[e]);}
+ let mut a=World::new();let mut b=World::new();for w in [&mut a,&mut b]{w.spawn_enemy(0,1,[0,20*ONE],e);}
  for _ in 0..60 {a.tick(0,p,FAR,COVER,0,|_|[0;4]);b.tick(0,p,FAR,COVER,0,|_|[0;4]);}
  let pose=|w:&World|w.coins().map(|c|(c.x,c.y,c.vx,c.vy,c.age)).collect::<Vec<_>>();assert_eq!(pose(&a),pose(&b));
- let mut w=World::new();w.spawn_enemy(0,2,[0,20*ONE],&[enemy(2,[1,0,0])]);
+ let mut w=World::new();w.spawn_enemy(0,2,[0,20*ONE],enemy(2,[1,0,0]));
  for _ in 0..60 {w.tick(0,p,FAR,COVER,0,|_|[0;4]);}
  assert_eq!(w.coins().next().unwrap().vy,-(45*ONE/50)*50);
 }
 #[test]fn floor_bounce_settles_and_cached_support_removal_wakes_without_losing_coin(){
  let p=Params{coins:[CoinSpec{gravity:-45*ONE,..COIN};3],..P};
- let mut w=World::new();w.spawn_enemy(0,1,[0,3*ONE],&[enemy(1,[1,0,0])]);let mut bounces=0;
+ let mut w=World::new();w.spawn_enemy(0,1,[0,3*ONE],enemy(1,[1,0,0]));let mut bounces=0;
  for _ in 0..1200 {bounces+=w.tick(0,p,FAR,COVER,1,|_|[-20*ONE,0,20*ONE,0]).bounces;}
  assert!(bounces>0);let c=w.coins().next().unwrap();assert!(c.grounded);assert_eq!((c.vx,c.vy),(0,0));assert_eq!(c.y,ONE/4);
  let y=c.y;for _ in 0..6 {w.tick(0,p,FAR,COVER,1,|_|[0;4]);}
@@ -96,7 +96,7 @@ fn ticks(w:&mut World,n:usize,hero:[i32;4])->Tick {let mut last=Tick::default();
  let p=Params{coins:[CoinSpec{gravity:-90*ONE,..COIN};3],..P};
  let spec=EnemySpec{fling:Fling{speed:[15*ONE,30*ONE],angle:[80*ONE,100*ONE],spread:[ONE/4;2]},..enemy(1,[MAX_COINS as u16,0,0])};
  let(mut small,mut large)=(World::new(),World::new());
- for w in [&mut small,&mut large]{assert!(w.spawn_enemy(0,1,[0,3*ONE],&[spec]));}
+ for w in [&mut small,&mut large]{assert!(w.spawn_enemy(0,1,[0,3*ONE],spec));}
  let floor=[-80*ONE,0,80*ONE,0];
  for _ in 0..120 {
   let a=small.tick(0,p,FAR,COVER,1,|_|floor);

@@ -409,7 +409,12 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
         let enemy_events=game.enemies.tick(r,room,&mut game.state,&mut game.player,&mut game.vitals,&game.nail,&game.dream,game.cast.ball_bounds(FIREBALL_PARAMS).map(|b|(b,FIREBALL_PARAMS.damage)),&mut game.nail_response,ATTACK_PARAMS,NAIL_POLYGONS,game.settings.cheats,
             [camera.0,camera.1,-2496922],runner_event,
             |scene,x,y| {let i=cache.locate(scene,x,y)?;Some((world::resident(i)?,cache.room_for(i)?))});
-        game.enemies.take_geo_deaths(r.scene,|source,x,y|game.geo.spawn_enemy(r.scene,source,[x,y],geo::GEO_ENEMIES));
+        game.enemies.take_geo_deaths(r.scene,|source,x,y|{
+            let Some(e)=world::geo_enemy(r.scene,source) else {return false;};
+            game.geo.spawn_enemy(r.scene,source,[x,y],geo::EnemySpec{
+                source_id:e.source_id,scene:r.scene as u8,drops:e.drops,
+                fling:geo::FLING[e.mega as usize],offset:e.offset})
+        });
         let h=geo::HERO_BOX;
         let collected=game.geo.tick(r.scene,geo::GEO_PARAMS,[game.player.x+h[0],game.player.y+h[1],game.player.x+h[2],game.player.y+h[3]],
             r.collision_bounds,room.counts[5],game.state.edge_reader(r,room));
@@ -430,7 +435,7 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
         }
         if game.gate_cooldown==0 && (door_exit || !game.door.pending()) && !game.vitals.dead && !game.vitals.hazard_pending {
             let gate=if door_exit {
-                Some(world::GATES.iter().find(|g|g.scene==r.scene&&g.target_scene==great_door::TARGET_SCENE).expect("Great Door exit gate"))
+                Some(world::gates(r.scene).find(|g|g.target_scene==great_door::TARGET_SCENE).expect("Great Door exit gate"))
             } else {
                 // A door answers UP against the hero body; every other
                 // gate keeps the point test it has always used.
@@ -471,5 +476,5 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
             }
         }
     }
-    game.reveals.tick(r.reveal_masks,&game.player,PARAMS);
+    game.reveals.tick(&game.player,PARAMS,|controller,body|world::reveal_trigger_reaches(r.scene,controller,body));
 }

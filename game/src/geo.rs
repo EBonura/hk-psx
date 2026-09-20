@@ -35,6 +35,14 @@ pub struct RockSpec {
 }
 #[derive(Clone,Copy,Debug)]
 pub struct EnemySpec {pub source_id:u32,pub scene:u8,pub drops:[u16;3],pub fling:Fling,pub offset:[i32;2]}
+/// The two authored enemy fling profiles, indexed by the source enemy's
+/// `megaFlingGeo`. Every enemy in the catalogue carries one of exactly these
+/// two, so the metadata bank spends a flag bit on the choice rather than six
+/// constant Q16 words on each of the 236 payouts.
+pub const FLING:[Fling;2]=[
+    Fling{speed:[15*ONE,30*ONE],angle:[80*ONE,100*ONE],spread:[0,0]},
+    Fling{speed:[30*ONE,45*ONE],angle:[65*ONE,115*ONE],spread:[0,0]},
+];
 #[derive(Clone,Copy,Debug)]
 pub struct Coin {
     pub scene:u8,pub x:i32,pub y:i32,pub vx:i32,pub vy:i32,pub age:u32,
@@ -134,9 +142,9 @@ impl World {
     /// Called by EnemyWorld's explicit one-time death event. The ledger also
     /// rejects duplicate calls; reset_enemies is tied to real actor respawn.
     #[inline(never)]
-    pub fn spawn_enemy(&mut self,scene:usize,source:u32,position:[i32;2],specs:&[EnemySpec])->bool {
+    pub fn spawn_enemy(&mut self,scene:usize,source:u32,position:[i32;2],spec:EnemySpec)->bool {
         if self.enemies.iter().flatten().any(|e|e.scene as usize==scene&&e.source==source) {return false;}
-        let Some(spec)=specs.iter().find(|e|e.scene as usize==scene&&e.source_id==source)else{return false;};
+        if spec.scene as usize!=scene||spec.source_id!=source {return false;}
         let Some(slot)=self.enemies.iter().position(Option::is_none)else{return false;};
         let origin=[position[0].saturating_add(spec.offset[0]),position[1].saturating_add(spec.offset[1])];
         if !self.queue(source,spec.scene,origin,spec.fling,spec.drops) {self.deferred_events+=1;return false;}

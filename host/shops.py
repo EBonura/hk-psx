@@ -881,7 +881,7 @@ def generated_shop_rs(table, rules):
         f"/// `Shop Region` in {region['scene']}: the strip of floor in front of the",
         '/// counter its `Out Of Range`/`In Range` pair watches, the `Prompt Marker`',
         '/// child `ShowPromptMarker` raises over it and the label it raises. Q16 world',
-        '/// units, the same units world::GATES and the NPC talk triggers use.',
+        '/// units, the same units world::Gate and the NPC talk triggers use.',
         f"pub const SHOP_SCENE:usize={region['scene_id']};",
         'pub const SHOP_REGION:[i32;4]=[' + ','.join(str(_q16(v)) for v in region['bounds']) + '];',
         'pub const SHOP_MARKER:[i32;2]=[' + ','.join(str(_q16(v)) for v in region['marker']) + '];',

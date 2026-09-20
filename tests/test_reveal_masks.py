@@ -72,11 +72,14 @@ class RevealTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'ordinary fade'):verify_ordinary_states(inverse,{'Fade Time':.5})
         data['Pause'][1][1]['time']=value(2)
         with self.assertRaisesRegex(ValueError,'ordinary pause'):verify_ordinary_states(data,{'Fade Time':.5})
+        # The authored cover survives into the bank as flag 2; nothing links.
         fixture=report();record=controller();record['initial_opacity']=128
         fixture['reveal_mask_scenes']={'0':{'controllers':[record]}}
-        self.assertIn('initial_opacity:128',test_world.WorldMetadata().generate(fixture))
+        masks=lambda: [o for o in test_world.WorldMetadata().bank(
+            dict(fixture,scenes=[dict(fixture['scenes'][0],reveal_mask_controllers=[record])])) if o['kind']==17]
+        self.assertEqual([o['flags'] for o in masks()],[2])
         record['initial_opacity']=127
-        with self.assertRaisesRegex(ValueError,'initial opacity'):test_world.WorldMetadata().generate(fixture)
+        with self.assertRaisesRegex(ValueError,'initial opacity'):masks()
 
     def test_palette_guard_rejects_color_and_opaque_zero(self):
         raw=room();validate_palette(raw,0);validate_palette(raw,1)
@@ -92,11 +95,15 @@ class RevealTests(unittest.TestCase):
         bind_regions(data,by_scene,{1:['floor','level6:mask'],2:['level6:mask','rock']},{1:room(),2:room()})
         self.assertEqual([r['reveal_mask_bindings'][0]['draw']for r in data['regions']],[1,0])
         rust=test_world.WorldMetadata().generate(data)
-        self.assertIn('source_id:77,trigger:&[[65536,65536]',rust)
-        self.assertIn('pub static SCENE_REVEAL_MASKS: &[&[crate::reveal_masks::RevealMaskSpec]] = &[REVEAL_MASKS_SCENE_0,',rust)
-        # Bindings live in the bank as one interleaved (controller, draw) list per region.
+        # Controllers and bindings both live in the bank; neither links.
+        self.assertNotIn('RevealMaskSpec',rust)
+        self.assertNotIn('SCENE_REVEAL_MASKS',rust)
         self.assertNotIn('RevealMaskBinding',rust)
-        objects=test_world.WorldMetadata().bank(dict(data,scenes=[dict(data['scenes'][0],reveal_controllers=1)]))
+        scene=dict(data['scenes'][0],reveal_controllers=1,reveal_mask_controllers=[controller()])
+        objects=test_world.WorldMetadata().bank(dict(data,scenes=[scene]))
+        # The controller keeps its binding index as state and its duration as
+        # the payload word; an uncovered ordinary mask carries no flag.
+        self.assertEqual([(o['state'],o['flags'],o['extra'][0]) for o in objects if o['kind']==17],[(0,0,30)])
         bindings=[o for o in objects if o['kind']==8]
         self.assertEqual([o['lists'][0] for o in bindings],[[0,1],[0,0]])
         distant['reveal_mask_bindings'][0]['controller']=1

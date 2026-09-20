@@ -50,6 +50,23 @@ pub const KIND_SHROOM: u16 = 13;
 /// Talk Right. Its conversation pages live in the guest's own cooked table,
 /// found by this object's source id.
 pub const KIND_NPC: u16 = 14;
+/// A scene's TransitionPoints, all of them in the bank's first region because
+/// a gate belongs to the scene rather than to one view. The object's bounds are
+/// the gate's trigger, `flags` is the `Delay Collider` tick count, `state` packs
+/// the destination as region | scene << 16 | side << 24, and the payload is the
+/// destination spawn x, y and the entry velocity.
+pub const KIND_GATE: u16 = 15;
+/// A scene's enemy Geo payouts, beside the gates in the first region because
+/// they are keyed by enemy source id across the whole scene. `state` packs the
+/// small and medium drop counts, the payload is the effect origin x, y and the
+/// large drop count, flag 1 is `megaFlingGeo`, and the bounds are unread.
+pub const KIND_GEO_ENEMY: u16 = 16;
+/// A scene's reveal-mask controllers, in the order the per-region
+/// `KIND_REVEAL_BINDINGS` pairs index them, in the first region. `state` is
+/// that controller index, the bounds are the trigger's AABB, the one polygon
+/// is the exact trigger, the payload word is the fade duration in ticks, and
+/// flag 1 is one-way while flag 2 means the mask starts covered.
+pub const KIND_REVEAL_MASK: u16 = 17;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {

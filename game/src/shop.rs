@@ -863,7 +863,7 @@ mod tests {
 
     #[test]
     fn the_cooked_trigger_is_the_one_the_hero_body_can_stand_in() {
-        // Q16 world units, the same as world::GATES. The strip is the floor in
+        // Q16 world units, the same as world::Gate. The strip is the floor in
         // front of the counter, so a hero body standing on that floor overlaps
         // it and one standing a room away does not.
         assert_eq!(SHOP_SCENE, 45);
