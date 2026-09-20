@@ -22,9 +22,13 @@ def corpse_source(source, scene, actor):
     # restores its body rather than letting it die, so nothing of it ever falls.
     if actor.get('movement_control',{}).get('no_corpse'):
         return None
-    if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber'):
+    if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber','ZombieShield'):
         raise ValueError('unvalidated corpse controller family')
-    runner=kind=='ZombieSwipeWalker';climber=kind=='Climber'
+    # The Shield's EnemyDeathEffects is the conventional Zombie corpse, so it is
+    # read against the Runner's expectations rather than its own. If its bounce
+    # or spawn offset turn out to differ, the checks below name the field and
+    # the value, which is the point of validating rather than trusting the name.
+    runner=kind in ('ZombieSwipeWalker','ZombieShield');climber=kind=='Climber'
     expected_offset={'x':0.,'y':0. if (runner or climber) else .5,'z':0.}
     expected_bounce=.2 if runner else .45 if climber else .3
     # Climber corpse (.hkpsx/climber70/references.json): Death Air loops eight

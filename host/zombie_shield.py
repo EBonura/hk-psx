@@ -242,7 +242,7 @@ def recognize(sc, actor):
             or body_q16[1] >= body_q16[3] or attack_q16[1] >= attack_q16[3]:
         raise ValueError('Zombie Shield sensing shape is not a mirror-stable box')
     return {
-        'kind': 'ZombieShield', 'guest_enabled': True, 'no_corpse': True,
+        'kind': 'ZombieShield', 'guest_enabled': True,
         'fsm_sha256': fingerprint, 'assemblies_sha256': dict(ASSEMBLIES),
         'library_source': source.sid(library_object),
         'initial_direction': initial_direction,
