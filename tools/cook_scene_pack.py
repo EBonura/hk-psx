@@ -186,8 +186,7 @@ def cook_scene(source, entry, out, log=print, forced_boxes=None, restarts=PACK_R
     from world import postpack_checkpoints, postpack_masks
     from pack_scenes import pack_scenes
     from scenery_geometry import CAP, ACTOR_RESERVE
-    from quality import STATIC_PAGE_BUDGET, TEXTURE_BUDGET
-    from similarity_dedup import RUNTIME_ROOM_BYTES
+    from regions import over_budget
 
     started = time.time()
     out = Path(out).resolve()
@@ -236,9 +235,14 @@ def cook_scene(source, entry, out, log=print, forced_boxes=None, restarts=PACK_R
                 if packets + ACTOR_RESERVE > CAP:
                     raise ValueError(f'packet budget exceeded: {packets}+{ACTOR_RESERVE} > {CAP}')
                 # Similarity only shrinks a view, so the post-similarity runtime
-                # budget is checked conservatively on the fresh cook.
-                if c['pages'] > STATIC_PAGE_BUDGET or c['textures'] > TEXTURE_BUDGET or c['pack_bytes'] > RUNTIME_ROOM_BYTES:
-                    raise ValueError(f'view budget exceeded: {c["pages"]} pages/{c["textures"]} textures/{c["pack_bytes"]} bytes')
+                # budget is checked conservatively on the fresh cook. The rule is
+                # `regions.over_budget` rather than a copy of it: this restated it
+                # with records gated on the 416-slot CLUT budget and palettes not
+                # counted at all, which split views that fit and reported a
+                # texture count where a reader expected a CLUT figure.
+                if over_budget(c['pages'], c['textures'], c['cluts'], c['pack_bytes']):
+                    raise ValueError(f'view budget exceeded: {c["pages"]} pages/{c["textures"]} textures/'
+                                     f'{c["cluts"]} cluts/{c["pack_bytes"]} bytes')
             except ValueError as error:
                 halves = split(box) if any(text in str(error) for text in BUDGET_ERRORS) else None
                 if halves is None:
@@ -251,7 +255,7 @@ def cook_scene(source, entry, out, log=print, forced_boxes=None, restarts=PACK_R
             row = dict(r, chunk_id=i, path=str(path), base_path=str(region_out / 'room.hk'),
                        bytes=c['pack_bytes'], sha256=c['pack_sha256'])
             row['mandatory_packets'] = packets
-            for k in ['pages', 'textures', 'draws', 'edges', 'stream_bytes', 'animation_bytes', 'alpha_cover_bytes',
+            for k in ['pages', 'textures', 'cluts', 'draws', 'edges', 'stream_bytes', 'animation_bytes', 'alpha_cover_bytes',
                       'format_features', 'grass', 'grass_impact', 'door_debris', 'particle_effects', 'breakables',
                       'actors', 'hazards', 'edge_sources', 'texture_request_to_canonical']:
                 row[k] = c[k]

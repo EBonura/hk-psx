@@ -165,7 +165,10 @@ def build(world, inventory, graph, artifact_root=None, scene_packs=None):
                                                  or rooms[value].get("unresolved_behavior_types")),
             },
             "cooking": {
-                "source_geometry_ready": source.get("status") in ("imported", "complete"),
+                # world_import.import_one emits exactly imported/partial/failed,
+                # and summarize's `all_geometry_resolved` counts only 'imported'.
+                # "complete" was a fourth status no code path produces.
+                "source_geometry_ready": source.get("status") == "imported",
                 "source_dependencies_ready": not room.get("scan_failed"),
                 **_cooking(scene_packs.get(name)),
             },

@@ -951,15 +951,27 @@ def admission_cost(name):
     if summary.get('status') != 'cooked':
         return {'scene': name, 'measured': True, 'status': summary.get('status'),
                 'error': summary.get('error')}
+    from pathlib import Path
     from quality import TEXTURE_BUDGET, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET
+    from cook import MAX_ROOM_TEXTURES
+    from texture_dedup import clut_count
     views = json.loads((root / 'regions.json').read_text())['regions']
-    worst = max(views, key=lambda v: v['textures'])
+    # TEXTURE_BUDGET counts distinct palettes, so the number reported against it
+    # has to be the palette count. Reporting the texture-record count beside it
+    # is how Room_shop's 87 slots were written into host/quality.py as 90. A
+    # pack cooked before cook_scene_pack recorded `cluts` is measured, not
+    # assumed, the same way tools/texture_headroom.py does it.
+    cluts = {v['chunk_id']: v['cluts'] if 'cluts' in v else clut_count(Path(v['path']).read_bytes())
+             for v in views}
+    worst = max(views, key=lambda v: cluts[v['chunk_id']])
     return {
         'scene': name, 'measured': True, 'status': 'cooked',
         'file': summary['file'], 'views': len(views),
         'runtime_bounds': summary['envelope'],
         'camera_global_bounds': summary['camera_global_bounds'],
-        'worst_view_textures': worst['textures'], 'texture_budget': TEXTURE_BUDGET,
+        'worst_view_cluts': cluts[worst['chunk_id']], 'texture_budget': TEXTURE_BUDGET,
+        'worst_view_textures': max(v['textures'] for v in views),
+        'texture_table_limit': MAX_ROOM_TEXTURES,
         'worst_view_pages': max(v['pages'] for v in views), 'page_budget': STATIC_PAGE_BUDGET,
         'worst_view_bytes': max(v['bytes'] for v in views), 'room_byte_budget': ROOM_BYTE_BUDGET,
         'scene_bank_bytes': summary['scene_bank_bytes'],
@@ -1049,10 +1061,12 @@ def collect():
             'Mask shard and vessel fragment counting happens inside a prefab the '
             'branch spawns, not in the branch, so the guest counts them from the '
             'fuse rules in the item catalog rather than from the branch itself.',
-            'A purchase does not survive a quit. game/src/shop.rs carries a record '
-            'and a restore that refuses a contradictory one, but save::Save has no '
-            'field for it yet; the charm half of a purchase does persist, because '
-            'charms::State is already in the record.',
+            'A purchase survives a quit: save::Save carries the shop bools and the '
+            'counters as of HKS4, and shop::State::restore refuses a record that '
+            'contradicts itself rather than half-decoding it. What it does not '
+            'carry is a reserve vessel on the HUD: the fuse raises the SOUL ceiling '
+            'and the orb is drawn against the source\'s own 99, so a reserve reads '
+            'as a full vessel with no vessels of its own beside it.',
             'Cornifer scales his sheet price by 0.75 and converts back to an int. '
             'The Crossroads product is exact, so which way PlayMaker rounds a '
             'fractional map price is untested here.',

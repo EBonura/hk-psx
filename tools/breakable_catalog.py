@@ -51,7 +51,14 @@ COMPONENT_FAMILIES = {
     'town_grass': ('TownGrass',),
     'grass_sprite': ('GrassSpriteBehaviour',),
     'geo_rock': ('GeoRock',),
-    'pogo_target': ('TinkEffect',),
+    # Named for the component, not for a behaviour it does not drive. This read
+    # `pogo_target` until the pogo population was re-measured: NailSlash resolves
+    # NonBouncer, BigBouncer and BounceShroom and never reads TinkEffect, which
+    # answers a nail collider with a shake, a flash and a sound and never touches
+    # hero velocity. host/actors.py::pogo_sources owns that population and
+    # tools/physics_catalog.py::pogo_coverage reports it from that function's own
+    # output; the 166 below is a count of spark owners and nothing more.
+    'tink_effect': ('TinkEffect',),
     'persistent_flag': ('PersistentBoolItem',),
     'persistent_counter': ('PersistentIntItem',),
     'stalactite': ('StalactiteControl',),

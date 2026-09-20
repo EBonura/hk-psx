@@ -9,6 +9,8 @@ from pathlib import Path, PurePosixPath
 import re
 import sqlite3
 
+from world_metadata import persistent_object
+
 ROOT = Path(__file__).resolve().parents[1]
 FORMAT = 'HKWORLDIDENTITY01'
 SCHEMA_VERSION = 1
@@ -141,10 +143,19 @@ def component_scope(component_type,tree):
                           'InputHandler','CameraController'}:
         return 'global_runtime_non_save'
     if component_type=='GrassCut': return 'active_scene'
-    if component_type=='Breakable':
-        if tree.get('dontSave'): return 'active_scene'
-        if tree.get('semiPersistent'): return 'mode_session'
-        return 'global_persistent'
+    # `dontSave` and `semiPersistent` are fields of PersistentBoolItem, not of
+    # Breakable: a Breakable typetree carries neither, so asking it for them
+    # returned None twice and scoped every breakable in the world
+    # `global_persistent`. world_metadata.persistent_object is the authority and
+    # says the opposite for a Breakable with no PersistentBoolItem beside it,
+    # because `any()` over an empty persistence list is False. Each
+    # PersistentBoolItem gets its own registry row, so the durable state is
+    # scoped there and the Breakable itself resets with the scene.
+    if component_type=='PersistentBoolItem':
+        record={'persistence':[{'dont_save':bool(tree.get('dontSave')),
+                                'semi_persistent':bool(tree.get('semiPersistent'))}]}
+        if persistent_object(record): return 'global_persistent'
+        return 'active_scene' if tree.get('dontSave') else 'mode_session'
     # Unity scene components are reconstructed from source on scene admission.
     # Durable values they read/write are separate PlayerData registry entries.
     return 'active_scene'
@@ -230,7 +241,10 @@ def build(report,world_catalog,room_inventory,component_root,database_path,regio
             'challenge_reset':'clear mode-session and active-scene owners',
             'mode_reset/new_game':'clear global, mode-session and active-scene owners',
             'global_reload':'replace the global snapshot and clear active-scene owners',
-            'breakable':'dontSave -> active scene; semiPersistent -> mode session; otherwise global persistent',
+            'breakable':'active scene; a Breakable with no PersistentBoolItem beside it resets, '
+                        'per world_metadata.persistent_object',
+            'persistent_bool_item':'dontSave -> active scene; semiPersistent -> mode session; '
+                                   'otherwise global persistent',
             'grass':'active scene',
             'ordinary_actor':'active scene; persistent defeat flags remain separate PlayerData owners'}})
     metadata['database_bytes']=database_path.stat().st_size

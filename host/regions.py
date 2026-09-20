@@ -26,6 +26,31 @@ from cook import MAX_ROOM_TEXTURES
 SCENES = [dict(scene) for scene in SCENE_TABLE]
 
 
+def over_budget(pages, textures, cluts, packed_bytes):
+    """Whether one view is outside the runtime admission budget.
+
+    Records and palettes are different limits. A texture record is a slot in
+    HKROOM02's own table, capped by the format at MAX_ROOM_TEXTURES; a CLUT slot
+    is a distinct palette value, and any number of records may name one. They
+    were the same number until frames started tiling, and gating both on
+    TEXTURE_BUDGET rejected content whose palettes fit comfortably: the False
+    Knight's phase-one clips are 570 records and 303 slots.
+
+    This is the whole rule, and it lives here so a tool that reports on
+    admission does not restate it. Restating it is how a texture count came to
+    be quoted as a CLUT figure: `tools/cook_scene_pack.py` gated records on
+    TEXTURE_BUDGET and never counted palettes at all.
+    """
+    return (pages > STATIC_PAGE_BUDGET or textures > MAX_ROOM_TEXTURES
+            or cluts > TEXTURE_BUDGET or packed_bytes > ROOM_BYTE_BUDGET)
+
+
+def row_over_budget(row):
+    """`over_budget` for a cooked report row, which may predate the `cluts` field."""
+    return over_budget(row['pages'], row['textures'],
+                       row.get('cluts', row['textures']), row['bytes'])
+
+
 def intersects(a, b):
     return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
 
@@ -595,15 +620,7 @@ def refresh_actors():
     postpack_masks(report)
     postpack_reveal_masks(report,source,scenes)
     for row in report['regions']:
-        # Records and palettes are different limits. A texture record is a slot
-        # in HKROOM02's own table, capped by the format at MAX_ROOM_TEXTURES; a
-        # CLUT slot is a distinct palette value, and any number of records may
-        # name one. They were the same number until frames started tiling, and
-        # gating both on TEXTURE_BUDGET rejected content whose palettes fit
-        # comfortably: the False Knight's phase-one clips are 570 records and
-        # 303 slots.
-        if (row['pages']>STATIC_PAGE_BUDGET or row['textures']>MAX_ROOM_TEXTURES
-                or row.get('cluts',row['textures'])>TEXTURE_BUDGET or row['bytes']>ROOM_BYTE_BUDGET):
+        if row_over_budget(row):
             raise ValueError('final region exceeds scenery/RAM admission budget')
     write_provenance(report,source)
     write_report(ROOT/'data/regions.json',report)
@@ -694,15 +711,7 @@ def main():
         from world import generate
         generate(report)
     for row in report['regions']:
-        # Records and palettes are different limits. A texture record is a slot
-        # in HKROOM02's own table, capped by the format at MAX_ROOM_TEXTURES; a
-        # CLUT slot is a distinct palette value, and any number of records may
-        # name one. They were the same number until frames started tiling, and
-        # gating both on TEXTURE_BUDGET rejected content whose palettes fit
-        # comfortably: the False Knight's phase-one clips are 570 records and
-        # 303 slots.
-        if (row['pages']>STATIC_PAGE_BUDGET or row['textures']>MAX_ROOM_TEXTURES
-                or row.get('cluts',row['textures'])>TEXTURE_BUDGET or row['bytes']>ROOM_BYTE_BUDGET):
+        if row_over_budget(row):
             raise ValueError('final region exceeds scenery/RAM admission budget')
     write_provenance(report,source)
     write_report(ROOT/'data/regions.json',report)
