@@ -513,18 +513,18 @@ fn actual_crawler_spawn_resolves_against_complete_cooked_terrain() {
     use hk_sim::{resolve_actor_spawn, Params, ONE};
     use_bank(SCENE0_BANK);
     for source_id in [12546,12548] {
-        let (index,region,spec)=scene0_regions().into_iter().find_map(|(index,r)| {
-            world::region_actors(&r).find(|s| s.source_id==source_id &&
-                world::contains(r.bounds,s.x,s.y)).map(|s|(index,r,s))
+        let (index,region,placement,spec)=scene0_regions().into_iter().find_map(|(index,r)| {
+            world::region_actors(&r).find(|(p,_)| p.source_id==source_id &&
+                world::contains(r.bounds,p.x,p.y)).map(|(p,s)|(index,r,p,s))
         }).expect("authored Tutorial crawler activation region");
         let region=&region;
         let path=format!("{}/../data/regions/chunk_{}.hk",env!("CARGO_MANIFEST_DIR"),index+1);
         let bytes=std::fs::read(path).unwrap();let room=hk_format::Room::parse(&bytes).unwrap();
         let state=State::new();let b=spec.bounds;
         let p=Params { speed:spec.walk.speed, gravity:60*ONE, fall:100*ONE, half_width:(b[2]-b[0])/2, bottom:b[1], top:b[3], ..Params::ZERO };
-        let mut body=Player::spawn(spec.x+b[0]+p.half_width,spec.y);
+        let mut body=Player::spawn(placement.x+b[0]+p.half_width,placement.y);
         assert!(resolve_actor_spawn(&mut body,p,room.counts[5],|i|state.edge(region,&room,i)));
-        assert_eq!(body.y,if source_id==12548 {331776} else {spec.y});
+        assert_eq!(body.y,if source_id==12548 {331776} else {placement.y});
         for _ in 0..60 {body.step(p,0,false,room.counts[5],|i|state.edge(region,&room,i));}
         assert!(body.grounded);
         if source_id==12548 {assert_eq!(body.y,331776);}

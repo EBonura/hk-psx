@@ -538,13 +538,77 @@ def actor_sources(sc, bounds=None):
     return result
 
 
+# The guest's actor pool: how many placements of a scene it can seat at once,
+# and so also the ceiling on the scene's spec catalogue, which the split makes
+# the shorter of the two. tools/world_metadata.py bounds the bank index on it.
+MAX_SCENE_ACTORS = 32
+
+
 def generated_actor_region(region):
     """Inline `&[ActorSpec,...]` form of a region's supported actors (fixtures/tests)."""
     return '&[' + ','.join(generated_actor_specs(region)) + ']'
 
 
 def generated_actor_specs(region):
-    """Generate bounded ActorSpec expressions only after their source clips are cooked."""
+    """The ActorSpec expression of each supported actor of a region, in order."""
+    return [text for text, _ in generated_actor_records(region)]
+
+
+def actor_placements(region):
+    """The placement words of each supported actor of a region, in order."""
+    return [placement for _, placement in generated_actor_records(region)]
+
+
+def scene_actor_bank(rows):
+    """One scene's distinct ActorSpec expressions and what each placement takes.
+
+    Returns the spec list in cooked order, and per supported actor `source` its
+    index into that list with its placement words. `host/world.py` links the
+    list and `tools/world_metadata.py` stamps the index and the placement into
+    the scene bank; both derive from this one pass, so the linked catalogue and
+    the bank cannot disagree about which type a placement is a placement of.
+
+    A view whose supported actors have no cooked clips belongs to a report that
+    never appended a scene actor bank, which tools/cook_scene_pack.py says it
+    does not: those stay records rather than becoming placements, and their bank
+    objects carry no guest spec, exactly as they did when the index was passed
+    in from the region report. Half a cooked view is still refused.
+    """
+    specs, placed = [], {}
+    for row in sorted(rows, key=lambda value: value['chunk_id']):
+        supported = [actor for actor in row.get('actors', []) if actor['movement_supported']]
+        cooked = [actor for actor in supported if 'walk_clip' in actor]
+        if not cooked:
+            continue
+        if len(cooked) != len(supported):
+            raise ValueError('view carries both cooked and uncooked supported actors')
+        records = generated_actor_records(row)
+        if len(supported) != len(records):
+            raise ValueError('supported actor records and generated specs disagree')
+        for actor, (text, placement) in zip(supported, records):
+            if text not in specs:
+                specs.append(text)
+            placed[actor['source']] = (specs.index(text), placement)
+    # Placements, not specs, are what the runtime pool holds. The spec list used
+    # to be one per placement and so stood in for this count; dedup makes it the
+    # shorter of the two, so the bound has to be taken on the placements.
+    if len(placed) > MAX_SCENE_ACTORS:
+        raise ValueError('scene actor placements exceed the 32-slot guest pool')
+    return specs, placed
+
+
+def generated_actor_records(region):
+    """(ActorSpec expression, placement words) per supported actor of a region.
+
+    The split is what keeps the linked table a catalogue of types: every value
+    the source authors on the placement rather than on the prefab leaves the
+    spec here and rides in the scene's metadata bank, which already carries an
+    object per placement. Two Tiktiks of one prefab in a scene are therefore
+    one linked spec and two bank objects, and admitting a scene costs specs for
+    the enemy types it introduces rather than for the enemies it places.
+
+    Only generate after the source clips are cooked.
+    """
     from effects import generated_corpse
     output = []
     for actor in region.get('actors', []):
@@ -552,8 +616,10 @@ def generated_actor_specs(region):
             continue
         if 'walk_clip' not in actor or 'turn_clip' not in actor:
             raise ValueError(f'supported actor is missing cooked clips: {actor["source"]}')
-        if len(output) == 32:
+        if len(output) == MAX_SCENE_ACTORS:
             raise ValueError('guest actor pool exceeds 32')
+        # Placement defaults every controller that authors none of them keeps.
+        start_alert, start_right, rotation_q16 = False, False, 0
         colliders = [collider for collider in actor['colliders'] if 'bounds' in collider and not collider.get('trigger')]
         if not colliders or any(collider['bounds'] != colliders[0]['bounds'] for collider in colliders):
             raise ValueError('actor requires unsupported distinct body colliders')
@@ -600,12 +666,11 @@ def generated_actor_specs(region):
         elif control['kind'] == 'Climber':
             if 'stun_clip' not in actor or not actor.get('corpse'):
                 raise ValueError(f'Climber is missing cooked clips or corpse: {actor["source"]}')
-            controller = ('hk_sim::ActorController::Climber {'
-                          f'stun_clip:{actor["stun_clip"]},start_right:{str(control["start_right"]).lower()},'
-                          f'rotation_q16:{control["rotation_q16"]}' + '}')
+            controller = 'hk_sim::ActorController::Climber {' + f'stun_clip:{actor["stun_clip"]}' + '}'
             # The controller owns speed and turns; the walker fields are unused.
             speed, turn_ticks, turn_cooldown_ticks = 2.0, 15, 0
             initial_direction, random_start_direction = 1, False
+            start_right, rotation_q16 = bool(control['start_right']), control['rotation_q16']
         elif control['kind'] == 'Vengefly':
             vengefly_clips = ('startle_clip', 'chase_clip', 'turn_fly_clip')
             if any(key not in actor for key in vengefly_clips) or not actor.get('corpse'):
@@ -625,10 +690,10 @@ def generated_actor_specs(region):
             aspid_clips = ('fire_clip', 'shot_clip', 'impact_clip')
             if any(key not in actor for key in aspid_clips) or not actor.get('corpse'):
                 raise ValueError(f'Aspid is missing cooked clips or corpse: {actor["source"]}')
-            controller = ('hk_sim::ActorController::Aspid {' + ','.join(f'{key}:{actor[key]}' for key in aspid_clips)
-                          + f',start_alert:{str(bool(control.get("start_alert"))).lower()}' + '}')
+            controller = 'hk_sim::ActorController::Aspid {' + ','.join(f'{key}:{actor[key]}' for key in aspid_clips) + '}'
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
+            start_alert = bool(control.get('start_alert'))
         elif control['kind'] == 'Gruzzer':
             if not actor.get('corpse'):
                 raise ValueError(f'Gruzzer is missing validated corpse: {actor["source"]}')
@@ -638,11 +703,11 @@ def generated_actor_specs(region):
         elif control['kind'] == 'Hatcher':
             if 'fire_clip' not in actor:
                 raise ValueError(f'Hatcher is missing cooked clips: {actor["source"]}')
-            controller = ('hk_sim::ActorController::Hatcher {' + f'fire_clip:{actor["fire_clip"]},'
-                          + f'start_alert:{str(bool(control["start_alert"])).lower()}' + '}')
+            controller = 'hk_sim::ActorController::Hatcher {' + f'fire_clip:{actor["fire_clip"]}' + '}'
             # The controller owns velocity and facing; the walk fields are unused.
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
+            start_alert = bool(control['start_alert'])
         elif control['kind'] == 'HatcherBaby':
             # No parameters at all: the cage member is the same object wherever
             # it is placed, and the only thing that varies is which Hatcher
@@ -723,25 +788,35 @@ def generated_actor_specs(region):
         dream = actor.get('EnemyDreamnailReaction')
         dream_soul = 33 if dream and not dream['noSoul'] and not dream['startSuppressed'] else 0
         fields = {
-            # Scene-unique, which for an object merged in from an additive scene
-            # is its shifted id rather than the one in its own file.
-            'source_id': actor.get('spec_source_id', int(actor['source'].rsplit(':', 1)[1])),
-            'x': round(x * 65536), 'y': round(y * 65536),
             'bounds': '[' + ','.join(map(str, bounds)) + ']',
             'health': ('hk_sim::EnemyParams {' + f'health:{actor["health"]},contact_damage:{damage},evasion_ticks:12,' +
                        f'invincible:{str(invincible).lower()},damage_override:{str(bool(health["damageOverride"])).lower()}' + '}'),
             'controller': controller,
             'walk': ('hk_sim::WalkParams {' + f'speed:{round(speed * 65536)},turn_ticks:{turn_ticks},' +
                      f'turn_cooldown_ticks:{turn_cooldown_ticks}' + '}'),
-            'initial_direction': initial_direction,
-            'random_start_direction': str(random_start_direction).lower(),
             'walk_clip': actor['walk_clip'], 'turn_clip': actor['turn_clip'],
             'corpse': generated_corpse(actor.get('corpse')),
             'recoil_speed': round(recoil.get('recoilSpeedBase', 0) * 65536),
             'recoil_ticks': ticks(recoil.get('recoilDuration', 0)),
             'dream_soul': dream_soul,
         }
-        output.append('hk_sim::ActorSpec {' + ','.join(f'{key}:{value}' for key, value in fields.items()) + '}')
+        if rotation_q16 % (90 * 65536):
+            raise ValueError('Climber rotation is not a quarter turn: ' + actor['source'])
+        placement = {
+            # Scene-unique, which for an object merged in from an additive scene
+            # is its shifted id rather than the one in its own file.
+            'source_id': actor.get('spec_source_id', int(actor['source'].rsplit(':', 1)[1])),
+            'x': round(x * 65536), 'y': round(y * 65536),
+            'initial_direction': initial_direction,
+            'random_start_direction': bool(random_start_direction),
+            'start_alert': start_alert,
+            'start_right': start_right,
+            'rotation_quarter': (rotation_q16 // (90 * 65536)) % 4,
+        }
+        if placement['initial_direction'] not in (-1, 1):
+            raise ValueError('actor initial direction is not a facing: ' + actor['source'])
+        output.append(('hk_sim::ActorSpec {' + ','.join(f'{key}:{value}' for key, value in fields.items()) + '}',
+                       placement))
     return output
 
 

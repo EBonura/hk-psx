@@ -624,6 +624,14 @@ struct Actor {
     y: i32,
     vy: i32,
     grounded: bool,
+    /// The placement's authored facing, which never changes: `local_bounds`
+    /// mirrors the cooked box against it and the Blocker's sprite reads it.
+    /// It is held here rather than looked up again because the placement lives
+    /// in the scene bank while `ActorSpec` is the shared type.
+    initial_direction: i8,
+    /// A Climber placement's authored rotation in quarter turns, which the
+    /// same box rotation is measured from.
+    spawn_quarter: i8,
     spawn_state: SpawnState,
     health: ActorHealth,
     walk: WalkState,
@@ -680,14 +688,14 @@ impl Actor {
     }
     /// The `Death` state, which recycles instead of removing: hp back to five,
     /// the dead flag cleared, the body reparented to the cage and moved to the
-    /// cage's own origin, which is where `ActorSpec` already puts it.
+    /// cage's own origin, which is where the placement already puts it.
     ///
     /// `geo_paid` and `dream_taken` deliberately survive, because `Death` does
     /// not reset either source component: the baby drops no Geo at all, and its
     /// `EnemyDreamnailReaction` pays once and stays paid until the scene reloads.
-    fn park_baby(&mut self, spec: &ActorSpec) {
-        self.x = spec.x;
-        self.y = spec.y;
+    fn park_baby(&mut self, placement: &hk_sim::ActorPlacement, spec: &ActorSpec) {
+        self.x = placement.x;
+        self.y = placement.y;
         self.vy = 0;
         self.recoil_left = 0;
         self.recoil = [0; 2];
@@ -731,24 +739,26 @@ impl Actor {
     }
     fn is_flyer(&self) -> bool { matches!(self.runtime, Runtime::Vengefly(_) | Runtime::Gruzzer(_) | Runtime::Baldur(_)
         | Runtime::Aspid(_) | Runtime::Hatcher(_) | Runtime::HatcherBaby(_)) }
-    fn new(scene: usize, spec: &ActorSpec) -> Self {
+    fn new(scene: usize, placement: &hk_sim::ActorPlacement, spec: &ActorSpec) -> Self {
         // Stable per-source seed, not a claim to reproduce Unity's global RNG.
-        let seed = spec
+        let seed = placement
             .source_id
             .wrapping_mul(1664525)
             .wrapping_add(1013904223);
         Self {
             scene,
-            source_id: spec.source_id,
-            x: spec.x,
-            y: spec.y,
+            source_id: placement.source_id,
+            x: placement.x,
+            y: placement.y,
             vy: 0,
             grounded: false,
+            initial_direction: placement.initial_direction as i8,
+            spawn_quarter: ((placement.rotation_q16 + 45 * ONE).div_euclid(90 * ONE)).rem_euclid(4) as i8,
             spawn_state: SpawnState::Pending,
             health: ActorHealth::new(spec.health),
             walk: WalkState::new(
-                spec.initial_direction,
-                spec.random_start_direction && seed & 0x80000000 != 0,
+                placement.initial_direction,
+                placement.random_start_direction && seed & 0x80000000 != 0,
             ),
             recoil_left: 0,
             recoil: [0; 2],
@@ -760,30 +770,31 @@ impl Actor {
                 ActorController::Runner { params, .. } => {
                     // A mirrored placement starts facing right; the cooker takes
                     // the sign from the transform, so both are supported now.
-                    assert!(spec.initial_direction.abs() == 1 && !spec.random_start_direction,
+                    assert!(placement.initial_direction.abs() == 1 && !placement.random_start_direction,
                         "unsupported Runner initial facing variant");
                     Runtime::Runner(RunnerRuntime {
-                        controller: hk_sim::runner::Runner::with_facing(params, spec.initial_direction as i8), rng: seed,
+                        controller: hk_sim::runner::Runner::with_facing(params, placement.initial_direction as i8), rng: seed,
                         vx: 0, animation_tick: 0 })
                 }
-                ActorController::Climber { start_right, rotation_q16, .. } => Runtime::Climber(ClimberRuntime {
+                ActorController::Climber { .. } => Runtime::Climber(ClimberRuntime {
                     // Unit positive scale is the recognizer's contract, so the
                     // authored rotation is the whole of the starting pose.
-                    controller: hk_sim::climber::Climber::new([spec.x, spec.y], rotation_q16, 1, start_right).expect("validated Climber placement"),
+                    controller: hk_sim::climber::Climber::new([placement.x, placement.y], placement.rotation_q16, 1, placement.start_right)
+                        .expect("validated Climber placement"),
                     velocity: [0; 2], animation_tick: 0, clip: hk_sim::climber::Clip::Walk, end_token: None }),
                 ActorController::Vengefly { .. } => Runtime::Vengefly(VengeflyRuntime {
-                    controller: hk_sim::vengefly::Vengefly::new([spec.x, spec.y], seed), animation_tick: 0, clip: hk_sim::vengefly::Clip::Idle }),
+                    controller: hk_sim::vengefly::Vengefly::new([placement.x, placement.y], seed), animation_tick: 0, clip: hk_sim::vengefly::Clip::Idle }),
                 ActorController::Gruzzer => Runtime::Gruzzer(GruzzerRuntime { controller: hk_sim::gruzzer::Gruzzer::new(seed), animation_tick: 0 }),
                 ActorController::Baldur { .. } => Runtime::Baldur(BaldurRuntime { controller: hk_sim::baldur::Baldur::new(seed), animation_tick: 0,
                     clip: hk_sim::baldur::Clip::Idle, vx: 0, wall: false }),
-                ActorController::Aspid { start_alert, .. } => {
-                    let controller = if start_alert { hk_sim::aspid::Aspid::new_alert([spec.x, spec.y], seed) }
-                        else { hk_sim::aspid::Aspid::new([spec.x, spec.y], seed) };
+                ActorController::Aspid { .. } => {
+                    let controller = if placement.start_alert { hk_sim::aspid::Aspid::new_alert([placement.x, placement.y], seed) }
+                        else { hk_sim::aspid::Aspid::new([placement.x, placement.y], seed) };
                     Runtime::Aspid(AspidRuntime { controller, animation_tick: 10, clip: hk_sim::aspid::Clip::Fly })
                 }
-                ActorController::Hatcher { start_alert, .. } => {
-                    let controller = if start_alert { hk_sim::hatcher::Hatcher::new_alert([spec.x, spec.y], seed) }
-                        else { hk_sim::hatcher::Hatcher::new([spec.x, spec.y], seed) };
+                ActorController::Hatcher { .. } => {
+                    let controller = if placement.start_alert { hk_sim::hatcher::Hatcher::new_alert([placement.x, placement.y], seed) }
+                        else { hk_sim::hatcher::Hatcher::new([placement.x, placement.y], seed) };
                     Runtime::Hatcher(HatcherRuntime { controller, animation_tick: hk_sim::hatcher::FLY_START_TICKS,
                         clip: hk_sim::hatcher::Clip::Fly })
                 }
@@ -793,17 +804,17 @@ impl Actor {
                 ActorController::ZombieShield { .. } => {
                     // Its Walker carries the Runner's own `rightScale` of -1,
                     // so the cooked sign is the placement's transform mirror.
-                    assert!(spec.initial_direction.abs() == 1 && !spec.random_start_direction,
+                    assert!(placement.initial_direction.abs() == 1 && !placement.random_start_direction,
                         "unsupported Zombie Shield initial facing variant");
                     Runtime::ZombieShield(ZombieShieldRuntime {
-                        controller: hk_sim::zombie_shield::ZombieShield::with_facing(spec.initial_direction as i8),
+                        controller: hk_sim::zombie_shield::ZombieShield::with_facing(placement.initial_direction as i8),
                         rng: seed, animation_tick: 0 })
                 }
                 // `Init` plays `Closed` and raises the shell; `Direction` then
                 // branches on the FSM's own `Facing Right`, not on the
                 // transform, so nothing of the placement's mirror reaches the
-                // controller. `spec.initial_direction` still carries it, for
-                // the sprite.
+                // controller. The placement's `initial_direction` still carries
+                // it, for the sprite.
                 ActorController::Blocker { sleeps, .. } => Runtime::Blocker(BlockerRuntime {
                     controller: hk_sim::blocker::Blocker::new(sleeps), rng: seed, animation_tick: 0 }),
                 ActorController::Static { .. } => Runtime::Static { animation_tick: 0 },
@@ -847,14 +858,12 @@ impl Actor {
             // The cooked box is already in the spawn pose, so only the turns
             // taken since spawn rotate it: a ceiling placement starts at 180
             // and its authored box is the upside-down one.
-            let ActorController::Climber { rotation_q16, .. } = spec.controller
-                else { panic!("Climber runtime with other metadata") };
-            let q = climber.quarter() - ((rotation_q16 + 45 * ONE).div_euclid(90 * ONE)).rem_euclid(4);
+            let q = climber.quarter() - self.spawn_quarter as i32;
             let corners = [rotate_quarter([b[0], b[1]], q), rotate_quarter([b[2], b[3]], q)];
             return [corners[0][0].min(corners[1][0]), corners[0][1].min(corners[1][1]),
                 corners[0][0].max(corners[1][0]), corners[0][1].max(corners[1][1])];
         }
-        if self.is_flyer() || self.walk.direction == spec.initial_direction {
+        if self.is_flyer() || self.walk.direction == self.initial_direction as i32 {
             b
         } else {
             [-b[2], b[1], -b[0], b[3]]
@@ -1913,12 +1922,12 @@ impl EnemyWorld {
         self.clear_shots(scene);
     }
     pub fn sync_region(&mut self, region: &Region) {
-        for spec in crate::world::region_actors(region) {
+        for (placement, spec) in crate::world::region_actors(region) {
             if self
                 .actors
                 .iter()
                 .flatten()
-                .any(|a| a.scene == region.scene && a.source_id == spec.source_id)
+                .any(|a| a.scene == region.scene && a.source_id == placement.source_id)
             {
                 continue;
             }
@@ -1927,7 +1936,7 @@ impl EnemyWorld {
                 .iter_mut()
                 .find(|a| a.is_none())
                 .expect("enemy source pool exceeds 32");
-            *slot = Some(Actor::new(region.scene, spec));
+            *slot = Some(Actor::new(region.scene, &placement, spec));
             // A boss reports its load-time state before anything advances it,
             // so a route that never crosses the trigger still reads 65 hp and a
             // dormant fight rather than the zeros a fresh session starts with.
@@ -2032,8 +2041,8 @@ impl EnemyWorld {
             .flatten()
             .filter(|a| a.scene == region.scene)
         {
-            let Some(spec) = crate::world::region_actors(region)
-                .find(|s| s.source_id == actor.source_id)
+            let Some((placement, spec)) = crate::world::region_actors(region)
+                .find(|(p, _)| p.source_id == actor.source_id)
             else {
                 continue;
             };
@@ -2041,7 +2050,7 @@ impl EnemyWorld {
                 // `Death` recycles instead of removing, on the frame after the
                 // one the kill was counted on: a dead baby has no corpse, so it
                 // draws nothing and its contact damage is already zero there.
-                if actor.health.dead { actor.park_baby(spec); }
+                if actor.health.dead { actor.park_baby(&placement, spec); }
                 // A parked baby is `Inert` inside a cage the source parks off
                 // the map. It has no senses, no body and no draw, so it stops
                 // here rather than paying the resident-view lookup below.
@@ -2334,8 +2343,8 @@ impl EnemyWorld {
             .flatten()
             .filter(|a| a.scene == region.scene)
         {
-            let Some(spec) = crate::world::region_actors(region)
-                .find(|s| s.source_id == actor.source_id)
+            let Some((_, spec)) = crate::world::region_actors(region)
+                .find(|(p, _)| p.source_id == actor.source_id)
             else {
                 continue;
             };
@@ -2376,7 +2385,7 @@ impl EnemyWorld {
             } else if let Some(blocker)=actor.blocker() {
                 // The Blocker never turns: the sprite keeps the mirror the cook
                 // read off its transform for as long as it lives.
-                (blocker.clip(spec),blocker.animation_tick,(actor.x,actor.y),spec.initial_direction)
+                (blocker.clip(spec),blocker.animation_tick,(actor.x,actor.y),actor.initial_direction as i32)
             } else if let Some(animation_tick)=actor.immobile() {
                 let ActorController::Static {idle_clip}=spec.controller else {panic!("Static runtime with other metadata")};
                 (idle_clip,animation_tick,(actor.x,actor.y),actor.walk.direction)
@@ -2555,29 +2564,38 @@ pub fn pogo_contact(
 mod hatcher_pool_tests {
     use super::*;
     const CAGE: [i32; 2] = [100 * ONE, 100 * ONE];
+    /// Where the fixture's placements stand; only the Hatcher wakes alert.
+    const AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+        source_id: 0, x: 0, y: 0, initial_direction: -1, random_start_direction: false,
+        start_alert: false, start_right: false, rotation_q16: 0,
+    };
+    const HATCHER_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+        source_id: 5007, x: 20 * ONE, y: 20 * ONE, start_alert: true, ..AT };
+    const BABY_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+        source_id: 5010, x: CAGE[0], y: CAGE[1], ..AT };
+    const BABY_1_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement { source_id: 5011, ..BABY_AT };
+    const BABY_2_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement { source_id: 5012, ..BABY_AT };
     const HATCHER: ActorSpec = ActorSpec {
-        controller: ActorController::Hatcher { fire_clip: 1, start_alert: true },
-        source_id: 5007, x: 20 * ONE, y: 20 * ONE,
+        controller: ActorController::Hatcher { fire_clip: 1 },
         bounds: [-51200, -71680, 34816, 49152],
         health: hk_sim::EnemyParams { health: 20, contact_damage: 1, evasion_ticks: 12,
             invincible: false, damage_override: false },
         walk: hk_sim::WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
-        initial_direction: -1, random_start_direction: false, walk_clip: 0, turn_clip: 0,
+        walk_clip: 0, turn_clip: 0,
         corpse: None, recoil_speed: 20 * ONE, recoil_ticks: 9, dream_soul: 33,
     };
     const BABY: ActorSpec = ActorSpec {
         controller: ActorController::HatcherBaby,
-        source_id: 5010, x: CAGE[0], y: CAGE[1],
         bounds: [-13312, -14336, 10240, 10240],
         health: hk_sim::EnemyParams { health: 5, contact_damage: 1, evasion_ticks: 12,
             invincible: false, damage_override: false },
         walk: hk_sim::WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
-        initial_direction: -1, random_start_direction: false, walk_clip: 0, turn_clip: 0,
+        walk_clip: 0, turn_clip: 0,
         corpse: None, recoil_speed: 0, recoil_ticks: 0, dream_soul: 33,
     };
-    const BABY_1: ActorSpec = ActorSpec { source_id: 5011, ..BABY };
-    const BABY_2: ActorSpec = ActorSpec { source_id: 5012, ..BABY };
-    static SPECS: [&ActorSpec; 4] = [&HATCHER, &BABY, &BABY_1, &BABY_2];
+    // Three cage members of one type: one spec, three placements.
+    static SPECS: [(hk_sim::ActorPlacement, &ActorSpec); 4] = [(HATCHER_AT, &HATCHER),
+        (BABY_AT, &BABY), (BABY_1_AT, &BABY), (BABY_2_AT, &BABY)];
     /// Two clips over two textures: Fly (six frames, 12 fps, loop from 2) and
     /// Fire (one frame, once), which is all the draw path reads.
     fn bytes() -> Vec<u8> {
@@ -2624,7 +2642,7 @@ mod hatcher_pool_tests {
             let mut asked = None;
             let free = parked(world) as u16;
             let actor = world.actors.iter_mut().flatten()
-                .find(|a| a.source_id == HATCHER.source_id).expect("the Hatcher is seated");
+                .find(|a| a.source_id == HATCHER_AT.source_id).expect("the Hatcher is seated");
             actor.advance(&HATCHER, room, 1, |_| [0; 4], context(free), &mut |event| {
                 if let RunnerEventKind::Release { velocity } = event.kind {
                     asked = Some((event.position, velocity));
@@ -2657,7 +2675,7 @@ mod hatcher_pool_tests {
         let (position, at) = fire(&mut world, &room);
         // `Fire` reads the Hatcher's own transform, which Distance Fly has
         // been moving, and drops the baby one unit under it.
-        assert_ne!(at, [HATCHER.x, HATCHER.y]);
+        assert_ne!(at, [HATCHER_AT.x, HATCHER_AT.y]);
         assert_eq!(position, [at[0], at[1] - ONE]);
         assert_eq!(parked(&world), 2);
         let live: Vec<_> = world.actors.iter().flatten()
@@ -2679,7 +2697,7 @@ mod hatcher_pool_tests {
         // Distance Fly pass without a release and the pool does not move.
         for _ in 0..600 {
             let actor = world.actors.iter_mut().flatten()
-                .find(|a| a.source_id == HATCHER.source_id).expect("the Hatcher is seated");
+                .find(|a| a.source_id == HATCHER_AT.source_id).expect("the Hatcher is seated");
             actor.advance(&HATCHER, &room, 1, |_| [0; 4], context(0), &mut |event| {
                 assert!(!matches!(event.kind, RunnerEventKind::Release { .. }),
                     "released from an empty cage");
@@ -2701,7 +2719,7 @@ mod hatcher_pool_tests {
             .find(|a| a.baby().is_some() && !a.parked_baby()).expect("one baby is out");
         assert_eq!(actor.health.hit(BABY.health, 5), Hit::Killed);
         assert!(actor.health.dead);
-        actor.park_baby(&BABY);
+        actor.park_baby(&BABY_AT, &BABY);
         assert!(!actor.health.dead);
         assert_eq!(actor.health.hp, 5);
         assert_eq!((actor.x, actor.y, actor.vy), (CAGE[0], CAGE[1], 0));
@@ -2712,7 +2730,7 @@ mod hatcher_pool_tests {
         let b = bytes();
         let room = Room::parse(&b).unwrap();
         let mut world = world();
-        let camera = (HATCHER.x, HATCHER.y);
+        let camera = (HATCHER_AT.x, HATCHER_AT.y);
         // Only the Hatcher is anywhere the camera can see it.
         assert_eq!(world.prepare_draws(&region(), &room, camera).len, 1);
         fire(&mut world, &room);
@@ -2729,15 +2747,18 @@ mod runner_runtime_tests {
             idle_clip: 2, anticipate_clip: 3, lunge_clip: 4, cooldown_clip: 5,
             params: hk_sim::runner::Params::RUNNER, alert: hk_sim::runner_senses::ALERT_LOCAL,
         },
-        source_id: 5196, x: 0, y: 94208,
         bounds: [-51200,-94208,28672,12288],
         health: hk_sim::EnemyParams {health:15,contact_damage:1,evasion_ticks:12,
             invincible:false,damage_override:false},
         walk:hk_sim::WalkParams {speed:ONE+ONE/2,turn_ticks:10,turn_cooldown_ticks:60},
-        initial_direction:-1,random_start_direction:false,walk_clip:0,turn_clip:1,
+        walk_clip:0,turn_clip:1,
         corpse:Some(hk_sim::CorpseSpec {air_clip:2,land_clip:2,bounds:[-ONE/2,-ONE,ONE/2,0],
             spawn_offset:[0,ONE/2],bounce_factor:13107, fling_speed: 15 * hk_sim::ONE, gravity: 48 * hk_sim::ONE, breaker: false, smash_bounces: 0, remove_after_land: 0, hold_ticks: 0}),
         recoil_speed:10*ONE,recoil_ticks:9, dream_soul: 0
+    };
+    const AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+        source_id: 5196, x: 0, y: 94208, initial_direction: -1, random_start_direction: false,
+        start_alert: false, start_right: false, rotation_q16: 0,
     };
     // Source-free six-clip bank with the real Runner rates/lengths. Each clip's
     // frames reference a distinct texture so draw selection is independently visible.
@@ -2761,7 +2782,7 @@ mod runner_runtime_tests {
         b.resize(b.len()+6*32+32768,0); b
     }
     fn context(hero_x:i32) -> RunnerContext {
-        let y=SPEC.y;
+        let y=AT.y;
         RunnerContext {camera:[0,2*ONE,-2496922],hero:[hero_x,y],
             hero_body:[hero_x-crate::PARAMS.half_width,y+crate::PARAMS.bottom,
                 hero_x+crate::PARAMS.half_width,y+crate::PARAMS.top],cage_children:0}
@@ -2772,12 +2793,12 @@ mod runner_runtime_tests {
     fn phase(actor:&Actor)->Swipe {actor.runner().unwrap().controller.swipe()}
     fn region()->Region {
         Region {scene:0,bounds:[-100*ONE,-10*ONE,100*ONE,30*ONE],
-            collision_bounds:[-100*ONE,-10*ONE,100*ONE,30*ONE],actors:&[&SPEC]}
+            collision_bounds:[-100*ONE,-10*ONE,100*ONE,30*ONE],actors:&[(AT,&SPEC)]}
     }
     #[test]
     fn actual_runner_clock_motion_clips_and_ordered_effects() {
         let b=bytes();let room=Room::parse(&b).unwrap();
-        let mut actor=Actor::new(0,&SPEC);let mut events=Vec::new();let c=context(3*ONE);
+        let mut actor=Actor::new(0,&AT,&SPEC);let mut events=Vec::new();let c=context(3*ONE);
         advance(&mut actor,&room,c,&mut events);
         assert_eq!(phase(&actor),Swipe::Anticipate);
         assert_eq!(actor.walk.direction,1);
@@ -2817,12 +2838,12 @@ mod runner_runtime_tests {
     #[test]
     fn true_camera_depth_gates_start_and_live_terrain_blocks_los() {
         let b=bytes();let room=Room::parse(&b).unwrap();
-        let mut actor=Actor::new(0,&SPEC);let mut events=Vec::new();
-        let mut c=context(30*ONE);c.camera=[50*ONE,SPEC.y,-40*ONE];
+        let mut actor=Actor::new(0,&AT,&SPEC);let mut events=Vec::new();
+        let mut c=context(30*ONE);c.camera=[50*ONE,AT.y,-40*ONE];
         advance(&mut actor,&room,c,&mut events);
         assert_eq!(actor.runner().unwrap().controller.walker(),Walker::Waiting);
-        assert_eq!(actor.x,SPEC.x);assert!(events.is_empty());
-        c.camera=[0,SPEC.y,-40*ONE];advance(&mut actor,&room,c,&mut events);
+        assert_eq!(actor.x,AT.x);assert!(events.is_empty());
+        c.camera=[0,AT.y,-40*ONE];advance(&mut actor,&room,c,&mut events);
         assert_eq!(actor.runner().unwrap().controller.walker(),Walker::Walking);
         assert_eq!(actor.y,-SPEC.bounds[1]+983);
         let before=actor.x;
@@ -2832,7 +2853,7 @@ mod runner_runtime_tests {
         assert_eq!(actor.y,-SPEC.bounds[1]+983);
         c.camera=[200*ONE,200*ONE,-40*ONE];advance(&mut actor,&room,c,&mut events);
         assert_eq!(actor.runner().unwrap().controller.walker(),Walker::Walking);
-        let actor=Actor::new(0,&SPEC);let runner=actor.runner().unwrap();
+        let actor=Actor::new(0,&AT,&SPEC);let runner=actor.runner().unwrap();
         let floor=room.edge(0);let wall=[ONE,0,ONE,5*ONE];
         let blocked=actor.runner_senses(&runner,&SPEC,&room,context(3*ONE),2,
             |i|if i==0 {floor}else{wall});
@@ -2844,7 +2865,7 @@ mod runner_runtime_tests {
     #[test]
     fn accepted_hits_reset_in_order_and_death_owns_single_corpse_geo_event() {
         let b=bytes();let room=Room::parse(&b).unwrap();let r=region();
-        let mut world=EnemyWorld::new();let mut player=Player::spawn(0,SPEC.y);
+        let mut world=EnemyWorld::new();let mut player=Player::spawn(0,AT.y);
         let mut vitals=Vitals::new(crate::VITAL_PARAMS);let mut nail=Nail::new();
         let attack=AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8, ..AttackParams::ZERO };
         let poly=&[[-3*ONE,-3*ONE],[3*ONE,-3*ONE],[3*ONE,3*ONE],[-3*ONE,3*ONE]][..];
@@ -2854,7 +2875,7 @@ mod runner_runtime_tests {
         // nevertheless enter anticipation BEFORE its horizontal reset restarts Walk.
         world.sync_region(&r);nail.active=true;nail.age=1;
         let hit=world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&hk_sim::DreamNail::new(),None,&mut response,
-            attack,[poly;4],cheats,[0,SPEC.y,-2496922],|e|events.push(e),|_,_,_|None);
+            attack,[poly;4],cheats,[0,AT.y,-2496922],|e|events.push(e),|_,_,_|None);
         assert_eq!((hit.hits,hit.kills),(1,0));
         assert_eq!(world.actors[0].unwrap().health.hp,10);
         let chase=events.iter().position(|e|matches!(e.kind,RunnerEventKind::ChaseSound {..})).unwrap();
@@ -2862,7 +2883,7 @@ mod runner_runtime_tests {
         assert_eq!(world.actors[0].unwrap().recoil_left,9);
         let after_first=events.len();
         world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&hk_sim::DreamNail::new(),None,&mut response,
-            attack,[poly;4],cheats,[0,SPEC.y,-2496922],|e|events.push(e),|_,_,_|None);
+            attack,[poly;4],cheats,[0,AT.y,-2496922],|e|events.push(e),|_,_,_|None);
         assert_eq!(world.actors[0].unwrap().health.hp,10); // evaded overlap
         assert!(!events[after_first..].iter().any(|e|matches!(e.kind,RunnerEventKind::ChaseSound {..})));
         // Isolate two further accepted health events from traversal/recoil timing.
@@ -2870,7 +2891,7 @@ mod runner_runtime_tests {
             let actor=world.actors[0].as_mut().unwrap();
             actor.health.evasion_ticks=0;actor.recoil_left=0;player.x=actor.x;player.y=actor.y;
             let result=world.tick(&r,&room,&mut state,&mut player,&mut vitals,&nail,&hk_sim::DreamNail::new(),None,&mut response,
-                attack,[poly;4],cheats,[0,SPEC.y,-2496922],|e|events.push(e),|_,_,_|None);
+                attack,[poly;4],cheats,[0,AT.y,-2496922],|e|events.push(e),|_,_,_|None);
             assert_eq!(world.actors[0].unwrap().health.hp,expected);
             assert_eq!(result.kills,u16::from(expected==0));
         }
@@ -2880,13 +2901,13 @@ mod runner_runtime_tests {
         let mut paid=Vec::new();
         world.take_geo_deaths(0,|id,_,_|{paid.push(id);true});
         world.take_geo_deaths(0,|id,_,_|{paid.push(id);true});
-        assert_eq!(paid,[SPEC.source_id]);
+        assert_eq!(paid,[AT.source_id]);
         assert_eq!(vitals.soul,33);
     }
     #[test]
     fn source_seed_and_effect_pitch_sequence_are_deterministic() {
         let b=bytes();let room=Room::parse(&b).unwrap();
-        let mut a=Actor::new(0,&SPEC);let mut b=Actor::new(0,&SPEC);
+        let mut a=Actor::new(0,&AT,&SPEC);let mut b=Actor::new(0,&AT,&SPEC);
         let mut ea=Vec::new();let mut eb=Vec::new();
         for _ in 0..180 {
             advance(&mut a,&room,context(3*ONE),&mut ea);
@@ -2900,7 +2921,7 @@ mod runner_runtime_tests {
     #[test]
     fn runner_vertical_hit_does_not_emit_horizontal_restart() {
         let b=bytes();let room=Room::parse(&b).unwrap();let r=region();
-        let mut world=EnemyWorld::new();let mut player=Player::spawn(0,SPEC.y);
+        let mut world=EnemyWorld::new();let mut player=Player::spawn(0,AT.y);
         let mut vitals=Vitals::new(crate::VITAL_PARAMS);let mut nail=Nail::new();
         nail.active=true;nail.age=1;nail.kind=2;
         let attack=AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8, ..AttackParams::ZERO };
@@ -2909,7 +2930,7 @@ mod runner_runtime_tests {
         let hit=world.tick(&r,&room,&mut State,&mut player,&mut vitals,&nail,&hk_sim::DreamNail::new(),None,
             &mut hk_sim::NailResponse::new(),attack,[poly;4],
             crate::cheats::Settings {invincible:true,..crate::cheats::Settings::new()},
-            [0,SPEC.y,-2496922],|e|events.push(e),|_,_,_|None);
+            [0,AT.y,-2496922],|e|events.push(e),|_,_,_|None);
         assert_eq!(hit.hits,1);
         let actor=world.actors[0].unwrap();
         assert_eq!(phase(&actor),Swipe::Anticipate);
@@ -2923,11 +2944,11 @@ mod runner_runtime_tests {
             collision_bounds:[110*ONE,0,120*ONE,5*ONE],..region()};
         let mut world=EnemyWorld::new();let mut events=Vec::new();
         let tick=|world:&mut EnemyWorld,r:&Region,events:&mut Vec<RunnerEvent>| {
-            world.tick(r,&room,&mut State,&mut Player::spawn(30*ONE,SPEC.y),
+            world.tick(r,&room,&mut State,&mut Player::spawn(30*ONE,AT.y),
                 &mut Vitals::new(crate::VITAL_PARAMS),&Nail::new(),&hk_sim::DreamNail::new(),None,
                 &mut hk_sim::NailResponse::new(),
                 AttackParams {duration:20,cooldown:24,alternate_reset:30,hit_start:1,hit_end:8, ..AttackParams::ZERO },
-                [&[];4],crate::cheats::Settings::new(),[0,SPEC.y,-2496922],
+                [&[];4],crate::cheats::Settings::new(),[0,AT.y,-2496922],
                 |e|events.push(e),|_,_,_|None);
         };
         tick(&mut world,&r,&mut events);

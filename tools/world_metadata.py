@@ -14,6 +14,9 @@ sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'host'))
 # beside the function that produces them. Two copies of this number is what
 # made the last build fail after the other copy had already been raised.
 from effects import DEBRIS_VARIANT_LIMIT
+# And the one definition of the guest actor pool, beside the pass that dedups a
+# scene's ActorSpecs and hands this encoder the index each placement takes.
+from actors import MAX_SCENE_ACTORS, scene_actor_bank
 import json
 import math
 import struct
@@ -29,7 +32,6 @@ MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
 KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17}
 MAX_REVEAL_CONTROLLERS = 16
-MAX_SCENE_ACTORS = 32
 
 
 def damagehero_respawns(hit_type):
@@ -99,6 +101,11 @@ def polygon_list(record, key):
 
 
 def encode_scene(scene, rows):
+    # The scene's actor types and, per placement, which of them it places and
+    # where it stands. Derived here from the same host pass that emits the
+    # linked SCENE_ACTORS list rather than read back out of the region report,
+    # so the index in the bank always belongs to the catalogue the guest links.
+    _, scene_placements = scene_actor_bank(rows)
     objects = []
     polygons = []
     points = []
@@ -198,11 +205,28 @@ def encode_scene(scene, rows):
                        (q(record["spawn"][0]), q(record["spawn"][1]), 1 if record["respawn_facing_right"] else -1))
         for record in row.get("actors", []):
             bounds = record.get("bounds", row["activation_bounds"])
-            # Supported actors carry their SCENE_ACTORS[scene] index (flag 64);
-            # unsupported ones stay recorded without a guest spec.
-            if "spec_index" in record:
-                add_object("actor", record, 0xFFFFFFFF, 32 | 64, bounds, None,
-                           (bounded(record["spec_index"], MAX_SCENE_ACTORS, "scene actor index"), 0, 0))
+            # A supported actor is a placement of one of the scene's linked
+            # types: flag 64, the type's SCENE_ACTORS[scene] index in the first
+            # payload word, and the placement itself in `state` (the
+            # scene-unique source id, which is not the object's own for an
+            # object merged in from an additive scene), the other two payload
+            # words and the flag bits below. An unsupported one stays a
+            # recorded object with no guest spec.
+            placed = scene_placements.get(record["source"])
+            if placed is not None:
+                index, place = placed
+                flags = (32 | 64
+                         | (1 if place["initial_direction"] > 0 else 0)
+                         | (2 if place["random_start_direction"] else 0)
+                         | (4 if place["start_alert"] else 0)
+                         | (8 if place["start_right"] else 0)
+                         | bounded(place["rotation_quarter"], 4, "climber rotation quarter") << 8)
+                if any(abs(place[axis]) > MAX_Q16 for axis in "xy"):
+                    raise ValueError("actor placement outside Q16 world bounds: " + record["source"])
+                add_object("actor", record, bounded(place["source_id"], 1 << 32, "actor source id"),
+                           flags, bounds, None,
+                           (bounded(index, MAX_SCENE_ACTORS, "scene actor index"),
+                            place["x"], place["y"]))
             else:
                 add_object("actor", record, 0xFFFFFFFF, 32, bounds)
         bindings = row.get("reveal_mask_bindings", [])
