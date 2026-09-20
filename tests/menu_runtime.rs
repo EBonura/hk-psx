@@ -45,6 +45,12 @@ mod charms{
  pub fn grant_all(_:bool){}
  pub fn on_damage(_:&mut hk_sim::Vitals,_:hk_sim::VitalParams){}
 }
+// And the shop's half of PlayerData sits under the charms in the same stack,
+// for the same reason: the real module links the cooked stock. Its own
+// composition is exercised by tests/shop_runtime.rs.
+mod shop{
+ pub fn vitals(base:hk_sim::VitalParams)->hk_sim::VitalParams{base}
+}
 #[path="../game/src/cheats.rs"]mod cheats;
 // menu_state indexes the save screen by the profile count.
 mod save{pub const PROFILES:usize=4;}

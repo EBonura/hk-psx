@@ -19,12 +19,17 @@ use psx_mc::{Block, Card, HardwareCard, FRAME_SIZE};
 pub const PROFILES: usize = 4;
 const TITLE: &str = "HOLLOW KNIGHT PSX";
 /// Bumped from HKS1 when the charm board and the NPC conversation cursors
-/// joined the record, and from HKS2 when the script runtime's PlayerData did. An
-/// older file is both shorter and differently tagged, so it reads back as
-/// Corrupt rather than decoding into a save whose notch board, conversations or
-/// progression flags would be invented.
-const MAGIC: [u8; 4] = *b"HKS3";
-pub const LEN: usize = 146;
+/// joined the record, from HKS2 when the script runtime's PlayerData did, and
+/// from HKS3 when Sly's half of PlayerData did. An older file is both shorter
+/// and differently tagged, so it reads back as Corrupt rather than decoding
+/// into a save whose notch board, conversations, progression flags or shop
+/// purchases would be invented.
+const MAGIC: [u8; 4] = *b"HKS4";
+pub const LEN: usize = 156;
+/// The shop counters `shop::State::record` packs, which is the one field here
+/// whose width is another module's to choose. Named so the length arithmetic
+/// below reads as the fields rather than as a number.
+pub const SHOP_COUNTERS: usize = 6;
 /// PlayerData slots reserved for the cooked script bank. A fixed reserve rather
 /// than the bank's own count, because the record length cannot follow a
 /// generated table: every change to it invalidates every card fixture. The
@@ -115,6 +120,17 @@ pub struct Save {
     /// this with the bank it is running and drops the values when they disagree,
     /// which is the one failure a checksum cannot catch.
     pub script_field_fnv: u32,
+    /// The shop half of PlayerData: the cooked shop bools Sly's stock reads and
+    /// writes, as `shop::State`'s own bitmask. The charm half of a purchase is
+    /// absent because it is already in `charms_owned`: a charm row's bool *is*
+    /// `gotCharm_N`, which is why a charm bought at Sly's survived a quit while
+    /// everything else on the shelf did not.
+    pub shop_slots: u32,
+    /// `heartPieces`, `vesselFragments`, `maxHealthBase` above the starting
+    /// five, the fused vessels, `simpleKeys` and `rancidEggs`, in that order.
+    /// `shop::State::restore` is what decides whether they agree with each
+    /// other; this only carries them.
+    pub shop_counters: [u8; SHOP_COUNTERS],
 }
 fn fnv(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c9dc5u32, |h, &b| (h ^ b as u32).wrapping_mul(16777619))
@@ -147,6 +163,8 @@ impl Save {
         }
         let after = 74 + SCRIPT_FIELD_SLOTS * 4;
         out[after..after + 4].copy_from_slice(&self.script_field_fnv.to_le_bytes());
+        out[after + 4..after + 8].copy_from_slice(&self.shop_slots.to_le_bytes());
+        out[after + 8..after + 8 + SHOP_COUNTERS].copy_from_slice(&self.shop_counters);
         let sum = fnv(&out[..LEN - 4]);
         out[LEN - 4..].copy_from_slice(&sum.to_le_bytes());
         out
@@ -180,6 +198,8 @@ impl Save {
             npc_conversations: u32::from_le_bytes(bytes[70..74].try_into().unwrap()),
             script_fields: core::array::from_fn(|slot| word(74 + slot * 4)),
             script_field_fnv: word(74 + SCRIPT_FIELD_SLOTS * 4) as u32,
+            shop_slots: word(78 + SCRIPT_FIELD_SLOTS * 4) as u32,
+            shop_counters: core::array::from_fn(|i| bytes[82 + SCRIPT_FIELD_SLOTS * 4 + i]),
         })
     }
 }
@@ -318,20 +338,23 @@ mod tests {
             sequence: 9, charms_owned: 0x0000_00ff_0000_1005, charms_equipped: 0x0000_0000_0000_1001,
             charm_notches: 5, can_overcharm: true, npc_conversations: 0x0000_0009,
             script_fields: core::array::from_fn(|slot| slot as i32 - 3),
-            script_field_fnv: 0x1234_5678 };
+            script_field_fnv: 0x1234_5678,
+            shop_slots: 0x0000_0a95, shop_counters: [3, 2, 1, 1, 1, 1] };
         let bytes = save.encode();
         assert_eq!(Save::decode(&bytes), Some(save));
-        // The last script slot and the field identity are the two fields most
-        // likely to be left out of a layout change, so they are named here.
+        // The last script slot, the field identity and the last shop counter
+        // are the fields most likely to be left out of a layout change, so they
+        // are named here.
         for at in [24, 29, 33, 37, 41, 45, 49, 53, 61, 68, 69, 70, 73, 74,
-                   74 + (SCRIPT_FIELD_SLOTS - 1) * 4, 74 + SCRIPT_FIELD_SLOTS * 4] {
+                   74 + (SCRIPT_FIELD_SLOTS - 1) * 4, 74 + SCRIPT_FIELD_SLOTS * 4,
+                   78 + SCRIPT_FIELD_SLOTS * 4, 82 + SCRIPT_FIELD_SLOTS * 4, LEN - 5] {
             let mut bad = bytes;
             bad[at] ^= 1;
             assert_eq!(Save::decode(&bad), None, "byte {at} is outside the checksum");
         }
         assert_eq!(Save::decode(&bytes[..LEN - 1]), None);
         // An older record is both shorter and differently tagged.
-        for tag in [b"HKS1", b"HKS2"] {
+        for tag in [b"HKS1", b"HKS2", b"HKS3"] {
             let mut old = bytes;
             old[..4].copy_from_slice(tag);
             assert_eq!(Save::decode(&old), None);
@@ -342,7 +365,7 @@ mod tests {
         // A card file is one 8,192-byte block and the migrator refuses a record
         // that would leave it, so the reserve has to be checked against that
         // bound here rather than discovered when a fixture stops migrating.
-        assert_eq!(LEN, 74 + SCRIPT_FIELD_SLOTS * 4 + 8);
+        assert_eq!(LEN, 74 + SCRIPT_FIELD_SLOTS * 4 + 8 + 4 + SHOP_COUNTERS);
         assert!(LEN < 8192);
     }
 }

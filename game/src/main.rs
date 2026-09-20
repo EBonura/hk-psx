@@ -330,9 +330,25 @@ fn apply_hurt(cheats:&cheats::Settings,vitals:&mut hk_sim::Vitals,player:&Player
     respond_to_hurt(hurt,nail,response,focus);
     hurt
 }
+// `VITAL_PARAMS.max_health` and `shop::STARTING_MASKS` are two cooks of the
+// same source number, and `shop::vitals` replaces the first with the shop's
+// own mask total. A board nobody has touched therefore has to compose back to
+// exactly the cooked base; if the two ever disagreed, every new game would
+// start on the wrong number of masks and nothing else would say so.
+const _:()=assert!(VITAL_PARAMS.max_health==shop::STARTING_MASKS as u16);
 /// StartSoulLimiter caps the vessel at 66 while a Shade is owed.
-fn soul_cap(shade:&shade::World)->u16 {
-    if shade.soul_limited() {66} else {VITAL_PARAMS.max_soul}
+const SOUL_LIMITED:u16=66;
+/// The SOUL ceiling: the live `max_soul`, which carries whatever reserve a
+/// fused vessel added to the Knight's own vessel, or the limiter's figure
+/// while a Shade is owed.
+///
+/// The limited figure is the vessel's alone, not the vessel's plus the
+/// reserve: the source's rule for a limiter running against a reserve was not
+/// read here, and no run can reach that pair anyway, because Sly stocks two of
+/// the three fragments a vessel needs and nothing else in the admitted slice
+/// sells one.
+fn soul_cap(shade:&shade::World,max_soul:u16)->u16 {
+    if shade.soul_limited() {SOUL_LIMITED.min(max_soul)} else {max_soul}
 }
 fn strike_geo(geo:&mut geo::World,scene:usize,nail:&Nail,player:&Player)->geo::Strike {
     if !nail.hitting(ATTACK_PARAMS) {return geo::Strike::default();}
@@ -382,9 +398,13 @@ fn main() {
     let saved=match slots[profile] {save::Slot::Used(s)=>Some(s),_=>None}
         // A record from another disc build may name a slot this catalogue lacks.
         .filter(|s|(s.region as usize)<world::REGION_SCENES.len()&&world::scene_of(s.region as usize)==s.scene as usize);
-    // The charm board before the first Vitals, because Fragile Heart raises
-    // max_health. Taken from the record itself rather than from `saved`: a
-    // stale spawn point is no reason to throw the collection away.
+    // Sly's half of PlayerData before the charm board, and both before the
+    // first Vitals: a mask a shard fuse bought is `maxHealthBase` and Fragile
+    // Heart adds to it, so the base has to be in place before anything reads
+    // the composed max_health. Taken from the record itself rather than from
+    // `saved`, for the same reason the board is: a stale spawn point is no
+    // reason to un-buy what the player paid for.
+    shop::boot(match slots[profile] {save::Slot::Used(s)=>Some((s.shop_slots,s.shop_counters)),_=>None});
     charms::boot(match slots[profile] {save::Slot::Used(s)=>
         Some((s.charms_owned,s.charms_equipped,s.charm_notches,s.can_overcharm)),_=>None},settings.cheats.charms);
     // Each NPC's conversation cursor, from the record for the same reason: a
