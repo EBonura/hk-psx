@@ -657,7 +657,7 @@ fn build(root: &Path, options: &Options) -> Result<()> {
     // modules, so they are the only check that the guest's own logic still
     // holds before ten minutes of cooking.
     run("cargo", &["test", "-q", "--manifest-path", "shared/hk-sim/Cargo.toml"], root)?;
-    let sdk_source = options.sdk_source.clone().unwrap_or_else(|| root.parent().unwrap().join("PSoXide-sdk"));
+    let sdk_source = options.sdk_source.clone().unwrap_or_else(|| root.parent().unwrap().join("PSoXide"));
     sdk(root, &sdk_source)?;
     cook_cached(root, options.recook)?;
     menu_cached(root, options.recook)?;

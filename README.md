@@ -61,7 +61,7 @@ alternate candidate or telemetry discs; every build updates this same entry.
 ## Build locally
 
 Prerequisites: Python 3.11+, Rust/rustup, Git, mipsel-none-elf-objdump, the Windows
-Steam install, and the sibling PSoXide-sdk checkout containing the pinned revision.
+Steam install, and the sibling PSoXide checkout containing the pinned revision.
 The first build installs pinned host Python packages in .venv. Rust selects
 nightly-2026-03-25 and uses SDK components without the 3D engine.
 
@@ -73,7 +73,7 @@ cargo run --release -- build
 cargo run --release -- build --no-validate
 cargo run --release -- validate --frontend ../PSoXide-emulator/target/release/frontend
 # Explicit Windows installation and SDK source overrides:
-cargo run --release -- build --hollow-knight "/path/to/Hollow Knight" --sdk-source "../PSoXide-sdk"
+cargo run --release -- build --hollow-knight "/path/to/Hollow Knight" --sdk-source "../PSoXide"
 ```
 
 The driver is the root Rust package (`host/hk-build/main.rs`); it orders the
