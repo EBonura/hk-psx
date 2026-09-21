@@ -11,4 +11,9 @@ name = "hk-sim"
 version = "0.1.0"
 dependencies = [
  "hk-format",
+ "psx-math",
 ]
+
+[[package]]
+name = "psx-math"
+version = "0.1.0"

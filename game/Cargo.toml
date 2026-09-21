@@ -13,6 +13,7 @@ trim-paths = "all"
 [features]
 emulator-telemetry = ["psx-telemetry/emit"]
 [dependencies]
+psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
 psx-rt = { path = "../.psoxide/sdk/crates/psx-rt" }
 psx-gpu = { path = "../.psoxide/sdk/crates/psx-gpu" }
 psx-pad = { path = "../.psoxide/sdk/crates/psx-pad" }

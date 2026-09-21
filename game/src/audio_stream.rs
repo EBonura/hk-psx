@@ -159,10 +159,6 @@ pub fn fill_half(
 mod hardware {
     use super::*;
     use psx_spu::{Pitch, SpuAddr, Voice};
-    const CONTROL: u32 = 0x1f80_1daa;
-    const STATUS: u32 = 0x1f80_1dae;
-    const IRQ_ADDRESS: u32 = 0x1f80_1da4;
-    const IRQ_ENABLE: u16 = 1 << 6;
     const IRQ_MASK: u32 = 1 << psx_io::irq::source::SPU;
     #[repr(C, align(4))]
     struct Scratch([u8; HALF_BYTES]);
@@ -184,16 +180,12 @@ mod hardware {
     pub static mut HK_AUDIO_STREAM_UNDERRUNS: u32 = 0;
 
     fn disable_irq() {
-        unsafe {
-            psx_io::write16(CONTROL, psx_io::read16(CONTROL) & !IRQ_ENABLE);
-        }
+        psx_spu::enable_irq(false);
         psx_io::irq::ack(IRQ_MASK);
     }
     fn arm(address: u32) {
-        unsafe {
-            psx_io::write16(IRQ_ADDRESS, (address >> 3) as u16);
-            psx_io::write16(CONTROL, psx_io::read16(CONTROL) | IRQ_ENABLE);
-        }
+        psx_spu::set_irq_address(SpuAddr::new(address));
+        psx_spu::enable_irq(true);
     }
     fn upload(source: &[u8], half: usize) -> bool {
         unsafe {
@@ -273,7 +265,7 @@ mod hardware {
             if !(*(&raw const STATE)).running || now == (*(&raw const STATE)).last_poll {
                 return Service::Idle;
             }
-            let irq = ARMED && psx_io::read16(STATUS) & IRQ_ENABLE != 0;
+            let irq = ARMED && psx_spu::irq_pending();
             let action = (*(&raw mut STATE)).poll(now, irq);
             HK_AUDIO_STREAM_MAX_SERVICE_GAP = (*(&raw const STATE)).max_gap;
             if action == Poll::Idle

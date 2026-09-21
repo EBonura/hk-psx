@@ -381,26 +381,13 @@ impl Shade {
         out
     }
 }
-/// Integer square root of a non-negative i64 (Newton from a power-of-two seed).
+/// Floor square root using the shared SDK restoring algorithm.
 fn isqrt(n: i64) -> i64 {
     if n <= 0 {
-        return 0;
+        0
+    } else {
+        psx_math::int32::isqrt_u64(n as u64) as i64
     }
-    let mut x = 1i64 << ((64 - n.leading_zeros() as i64 + 1) / 2);
-    loop {
-        let next = (x + n / x) / 2;
-        if next >= x {
-            break;
-        }
-        x = next;
-    }
-    while x * x > n {
-        x -= 1;
-    }
-    while (x + 1) * (x + 1) <= n {
-        x += 1;
-    }
-    x
 }
 /// Vector2.ClampMagnitude: scale down only when longer than `max`.
 fn clamp_magnitude(v: &mut [i32; 2], max: i32) {
