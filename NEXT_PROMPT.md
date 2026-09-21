@@ -340,7 +340,7 @@ themselves. Never control its GUI as part of testing this task.
 
 Keep320x240, existing camera framing/layers/effects,48px scenery cap and approved
 95% static texture dedup. Windows Steam CrossOver input only, read-only, Unity
-6000.0.61f1. SDK7b929ce473ed44b10b0ffca08f413eebf4eeeec4, nightly2026-03-25,
+6000.0.61f1. SDKa67052ac61b1e9caf078f570dbf238011d3958b6, nightly2026-03-25,
 R3000 load-hazard mitigation and final binary checks. Converted assets, CIL,
 captures and generated tables stay ignored. User authorized source-only push
 main to the private EBonura/hk-psx remote, not burns or retail uploads.
