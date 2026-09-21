@@ -40,7 +40,7 @@ All are siblings under `~/Desktop/repos/`:
   See `sdk/README.md`, `sdk/examples/hello-input/`,
   `engine/examples/game-breakout/`, `docs/playtest-profiling.md`, and
   `tools/hazard_scan.py`.
-- `PSoXide-editor`, `PSoXide-emulator`, `PSoXide-sdk`: also present. hl-psx's
+- `PSoXide-editor`, `PSoXide-emulator`, `PSoXide`: also present. hl-psx's
   README describes a repository split. Resolve ownership and tested revisions
   before choosing dependencies; do not assume every checkout is interchangeable.
 - `pico8-psx` / `psxcel`: potential 2D/controller examples, to inspect as needed.

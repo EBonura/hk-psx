@@ -108,7 +108,7 @@ def main():
         "host_tools": {name: shutil.which(name) for name in
                        ("python3", "cargo", "rustup", "mipsel-none-elf-objdump", "ffmpeg", "dotnet")},
         "sibling_checkouts": {name: (ROOT.parent / name).is_dir() for name in
-                              ("PSoXide", "PSoXide-editor", "PSoXide-emulator", "PSoXide-sdk", "hl-psx")},
+                              ("PSoXide", "PSoXide-editor", "PSoXide-emulator", "hl-psx")},
     }
     output = ROOT / ".hkpsx/doctor.json"
     output.parent.mkdir(parents=True, exist_ok=True)
