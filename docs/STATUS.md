@@ -1,3 +1,11 @@
+## Shared-runtime harmonisation, 2026-09-21
+
+The runtime uses SDK integer roots, aligned texture uploads and SPU IRQ control while
+preserving the source simulation, room residency and input-observation policies.
+Existing build 107 assets and the last library disc remain the controls. Host and
+headless route results are recorded in the harmonisation audit; no new hardware
+validation or gameplay completion is implied by this maintenance change.
+
 ## Build 107: the whole Forgotten Crossroads on the actual disc
 
 The sole disc pair is build 107 (45 scenes, 693 views; death costs the Geo a

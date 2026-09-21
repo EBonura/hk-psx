@@ -244,7 +244,7 @@ fn spawn_specs_with_bases(pool:&mut Pool,scene:usize,owner:usize,kind:u8,facing:
     pool.publish();
 }
 fn ordered(p:[i32;2])->[i32;2]{[p[0].min(p[1]),p[0].max(p[1])]}
-fn integer_sqrt(mut n:u64)->u64 {let(mut root,mut bit)=(0,1u64<<62);while bit>n {bit>>=2;}while bit!=0 {if n>=root+bit {n-=root+bit;root=(root>>1)+bit;}else{root>>=1;}bit>>=2;}root}
+fn integer_sqrt(n:u64)->u64 { psx_math::int32::isqrt_u64(n) as u64 }
 /// Non-empty edges are decoded once per tick into this bounded scratch; the
 /// callback returns 16 bytes through memory and a burst visits ~10k edges per
 /// tick. Larger future rooms keep the direct callback rather than dropping terrain.

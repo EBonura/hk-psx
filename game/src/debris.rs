@@ -431,23 +431,7 @@ fn kinetic(v: [i32; 2], omega: i32, spec: Spec) -> i64 {
     let inv_i = mulq(spec.torque, 14298).max(1) as i64;
     v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64 + radians * radians * ONE as i64 / inv_i
 }
-fn sqrt(mut n: u64) -> u32 {
-    let mut root = 0u64;
-    let mut bit = 1u64 << 62;
-    while bit > n {
-        bit >>= 2;
-    }
-    while bit != 0 {
-        if n >= root + bit {
-            n -= root + bit;
-            root = (root >> 1) + bit;
-        } else {
-            root >>= 1;
-        }
-        bit >>= 2;
-    }
-    root as u32
-}
+fn sqrt(n: u64) -> u32 { psx_math::int32::isqrt_u64(n) }
 fn length(v: [i32; 2]) -> i32 {
     sqrt((v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64) as u64) as i32
 }
