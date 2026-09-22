@@ -660,6 +660,10 @@ fn build(root: &Path, options: &Options, pgo: bool) -> Result<()> {
     }
     run("python3", &args, root)?;
     ensure_python(root)?;
+    // Hydrate the pinned SDK before either suite: both compile guest modules
+    // against its crates, so after a pin bump they would fail on a missing
+    // .psoxide rather than on anything in this checkout.
+    sdk(root, &sdk_source(root, options))?;
     // The host suite is cheap and nothing else ran it, so a cooker regression
     // used to survive whole builds: adding a required constant to
     // `generated_params` broke a fixture and nine builds shipped before anyone
@@ -671,7 +675,6 @@ fn build(root: &Path, options: &Options, pgo: bool) -> Result<()> {
     // modules, so they are the only check that the guest's own logic still
     // holds before ten minutes of cooking.
     run("cargo", &["test", "-q", "--manifest-path", "shared/hk-sim/Cargo.toml"], root)?;
-    sdk(root, &sdk_source(root, options))?;
     cook_cached(root, options.recook)?;
     menu_cached(root, options.recook)?;
     let assets_hit = assets_cached(root, options.recook)?;

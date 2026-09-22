@@ -28,18 +28,18 @@ def _module(name,path):
     return mod
 
 def patch(exe,map_path):
-    """Trampoline every hazardous branch in exe's .text, in place.
-
-    host/hazard_patch.py is the SDK's patcher plus two consumers it cannot
-    see: a function's own `jr ra` whose slot loads the return value (cs-psx
-    31517d4), and an indirect `jalr` whose slot loads something the unknown
-    callee may read first. The SDK scanner only warns about the second.
+    """Trampoline every hazardous branch in exe's .text, in place, with the
+    pinned SDK's patcher (.psoxide/tools/hazard_patch.py). It covers every
+    delay-slot consumer class, including a function's own `jr ra` whose slot
+    loads the return value (cs-psx 31517d4) and an indirect `jalr` whose slot
+    loads something the unknown callee may read first (core::fmt's
+    Formatter::pad), which HK used to carry in a vendored copy.
     Returns the patcher's summary; raises when a site cannot be patched, the
     array is full or anything is left."""
     symbols=_symbols(map_path);lo,hi=symbols['__text_start'],symbols['__text_end']
-    mod=_module('hk_hazard_patch',ROOT/'host/hazard_patch.py')
+    mod=_module('sdk_hazard_patch',ROOT/'.psoxide/tools/hazard_patch.py')
     full=mod.disassemble
-    mod.disassemble=lambda path:{a:v for a,v in full(path).items() if lo<=a<hi}
+    mod.disassemble=lambda path,base=mod.LOAD_ADDR:{a:v for a,v in full(path,base).items() if lo<=a<hi}
     text=Path(map_path).read_text()
     array=re.search(r'^([0-9a-f]+)\s+[0-9a-f]+\s+([0-9a-f]+)\s+\d+\s+HAZARD_TRAMPOLINES$',text,re.M)
     if not array:raise ValueError('HAZARD_TRAMPOLINES is not in the link map')
@@ -60,22 +60,20 @@ def patch(exe,map_path):
     m=re.search(r'(\d+) patched, (\d+) remaining, (\d+)/(\d+) trampoline words used',log)
     summary={'sites':int(m[1]),'trampoline_words':int(m[3]),'capacity_words':int(m[4])} if m else \
         {'sites':0,'trampoline_words':0,'capacity_words':int.from_bytes(data[first+4:first+8],'little')}
-    summary['returns']=log.count('patched return ');summary['calls']=log.count('patched call ');summary['log']=log
+    summary['returns']=log.count('patched jr ra at ');summary['calls']=log.count('patched jalr ')
+    summary['register_jumps']=len(re.findall(r'^patched jr (?!ra )',log,re.M));summary['log']=log
     return summary
 
 def scan(exe,map_path,report_path=None,patched=None):
     mod=_module('sdk_hazard',ROOT/'.psoxide/tools/hazard_scan.py')
     symbols=_symbols(map_path);lo,hi=symbols['__text_start'],symbols['__text_end']
     listing=mod.disassemble(str(exe));code={a:v for a,v in listing.items() if lo<=a<hi}
-    mod.disassemble=lambda _:code
+    mod.disassemble=lambda *_:code
     mod.looks_like_code=lambda *a,**k:True
     warnings=io.StringIO()
     with contextlib.redirect_stdout(warnings):hazards=mod.scan(str(exe))
-    # The SDK scanner skips `jr ra` and `jalr` slots; the vendored patcher does not.
-    check=_module('hk_hazard_check',ROOT/'host/hazard_patch.py')
-    with contextlib.redirect_stdout(io.StringIO()):returns=[hex(h[0]) for h in check.find_hazards(code) if h[1] in ('jr','jalr')]
-    report={'exe_sha256':hashlib.file_digest(Path(exe).open('rb'),'sha256').hexdigest(),'code_start':lo,'code_end':hi,'symbols':symbols,'branch_hazards':hazards,'return_and_call_hazards':returns,'warnings':warnings.getvalue(),'post_link_patch':patched,'scope':'final EXE .text, exact link-map bounds, after host/hazard_patch.py; its trampolines are in .data and hazard-free by construction'}
+    report={'exe_sha256':hashlib.file_digest(Path(exe).open('rb'),'sha256').hexdigest(),'code_start':lo,'code_end':hi,'symbols':symbols,'branch_hazards':hazards,'warnings':warnings.getvalue(),'post_link_patch':patched,'scope':'final EXE .text, exact link-map bounds, after the SDK hazard_patch.py; its trampolines are in .data and hazard-free by construction'}
     (Path(report_path) if report_path is not None else ROOT/'.hkpsx/hazards.json').write_text(json.dumps(report,indent=2))
-    if hazards or returns or warnings.getvalue():raise ValueError(f'Final code hazard scan failed: {hazards} {returns} {warnings.getvalue()}')
+    if hazards or warnings.getvalue():raise ValueError(f'Final code hazard scan failed: {hazards} {warnings.getvalue()}')
     print(f'0 hazards in final EXE code {lo:#x}..{hi:#x}',flush=True)
     return report
