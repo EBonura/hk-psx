@@ -44,8 +44,21 @@ def prepass(residency="scene_gate"):
     # The compressor uses pinned host dependencies from the build environment.
     run([ROOT/'.venv/bin/python',ROOT/'host/scene_certificates.py'],cwd=ROOT)
 
-def build(telemetry=False, candidate=False, residency="scene_gate", package_disc=True, run_prepass=True):
+# Emulator-driven PGO (the SDK's tools/psoxide-pgo): line tables and
+# discriminators for sample profiling. The flat image drops them at link time.
+PROFILE_FLAGS=' -Cdebuginfo=1 -Zdebug-info-for-profiling -Cstrip=none'
+def build(telemetry=False, candidate=False, residency="scene_gate", package_disc=True, run_prepass=True, profile=None, work=None):
+    """profile: None for the ordinary build, 'collect' for the profiling flat
+    image, 'elf' for the same code linked as an ELF that keeps its DWARF
+    (work/hk-psx.elf, no disc or scans), or the path of an LLVM sample profile
+    to optimise with. work: put the map, hazard report, EXE and disc in this
+    directory instead of the canonical ones."""
     if residency!="scene_gate":raise ValueError('Guest coverage residency requires scene_gate')
+    spaced=[str(p) for p in (ROOT,work or '',profile or '') if re.search(r'\s',str(p))]
+    if profile is not None and spaced:
+        # RUSTFLAGS is split on whitespace, and a profile only matches the
+        # checkout path that built it, so there is no quoting around this.
+        raise ValueError('PGO needs paths without spaces (RUSTFLAGS is split on whitespace): '+', '.join(spaced))
     # The driver skips the prepass when its inputs and outputs are unchanged.
     if run_prepass:prepass(residency)
     packed=json.loads((ROOT/'.hkpsx/packed-scenes.json').read_text())
@@ -74,12 +87,21 @@ def build(telemetry=False, candidate=False, residency="scene_gate", package_disc
             raise ValueError('Ambience payload changed after cooking: '+str(path))
         if (len(payload)+2047)//2048*2048>arena:
             raise ValueError('Ambience clip does not fit the startup room arena: '+str(path))
-    out=build_directory(telemetry,candidate);out.mkdir(parents=True,exist_ok=True)
+    out=Path(work).resolve() if work else build_directory(telemetry,candidate);out.mkdir(parents=True,exist_ok=True)
     env=dict(os.environ,CARGO_TARGET_DIR=str(out/'guest'))
-    link_map=link_map_path(telemetry,candidate)
+    link_map=out/'hk-psx-link.map' if work else link_map_path(telemetry,candidate)
     from stack_budget import prepare_linker, check_main_frame
     linker=prepare_linker(ROOT,out)
     env['RUSTFLAGS']=f'-Cllvm-args=-disable-mips-df-backward-search -Clink-arg=-T{linker} -Clink-arg=--oformat=binary -Clink-arg=-Map={link_map}'
+    if profile=='elf':
+        env['RUSTFLAGS']=env['RUSTFLAGS'].replace(' -Clink-arg=--oformat=binary','')+PROFILE_FLAGS
+    elif profile=='collect':
+        env['RUSTFLAGS']+=PROFILE_FLAGS
+    elif profile is not None:
+        # -profile-sample-accurate treats code the tapes never reached as cold
+        # rather than unknown, which keeps the optimised image from growing
+        # into the little RAM this game has left.
+        env['RUSTFLAGS']+=PROFILE_FLAGS+f' -Zprofile-sample-use={Path(profile).resolve()} -Cllvm-args=-profile-sample-accurate'
     # Cargo restores cached EXEs without rerunning the linker. Each feature
     # variant must retain its own map; a missing map requires a fresh guest link.
     if not link_map.exists():
@@ -88,18 +110,22 @@ def build(telemetry=False, candidate=False, residency="scene_gate", package_disc
     if telemetry:cmd+=['--features','emulator-telemetry']
     run(cmd,cwd=ROOT/'game',env=env)
     exe=out/'guest/mipsel-sony-psx/release/hk-psx.exe'
+    if profile=='elf':
+        shutil.copy2(exe,out/'hk-psx.elf')
+        return {'elf':out/'hk-psx.elf'}
     from hazards import scan
-    scan(exe,link_map,report_path=hazard_report_path(telemetry,candidate))
+    scan(exe,link_map,report_path=out/'hazards.json' if work else hazard_report_path(telemetry,candidate))
     check_main_frame(exe,link_map.read_text())
     shutil.copy2(link_map,out/'hk-psx.map')
-    outputs = artifacts(telemetry,candidate)
+    outputs = {'exe':out/'hk-psx.exe','bin':out/'disc/hk-psx.bin','cue':out/'disc/hk-psx.cue'} if work else artifacts(telemetry,candidate)
+    library = out/'disc' if work else DISC_LIBRARY
     outputs['exe'].parent.mkdir(parents=True,exist_ok=True)
     if package_disc:
-        DISC_LIBRARY.mkdir(parents=True,exist_ok=True)
+        library.mkdir(parents=True,exist_ok=True)
         # Build the complete pair before replacing the library's last good
         # image. Even temporary BIN/CUE files remain inside the one disc
         # library.
-        with tempfile.TemporaryDirectory(prefix='.hk-psx-',dir=DISC_LIBRARY) as temp, \
+        with tempfile.TemporaryDirectory(prefix='.hk-psx-',dir=library) as temp, \
              tempfile.TemporaryDirectory(prefix='disc-chunks-',dir=out) as chunk_temp:
             staged=Path(temp)/outputs['bin'].name
             chunks = Path(chunk_temp)
@@ -142,5 +168,7 @@ if __name__=='__main__':
     parser.add_argument('--residency',choices=('joint','scene_gate'),default='scene_gate')
     parser.add_argument('--no-disc',action='store_true',help='build and validate the guest EXE without replacing the playable BIN/CUE')
     parser.add_argument('--no-prepass',action='store_true',help='reuse the packed scenes, tile certificates and coverage bundles already on disk')
+    parser.add_argument('--profile',help="PGO stage: 'collect', 'elf', or the sample profile to optimise with")
+    parser.add_argument('--work',type=Path,help='write the map, hazards, EXE and disc here instead of the canonical outputs')
     args=parser.parse_args()
-    build(args.telemetry,candidate=args.candidate,residency=args.residency,package_disc=not args.no_disc,run_prepass=not args.no_prepass)
+    build(args.telemetry,candidate=args.candidate,residency=args.residency,package_disc=not args.no_disc,run_prepass=not args.no_prepass,profile=args.profile,work=args.work)

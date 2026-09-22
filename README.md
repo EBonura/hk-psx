@@ -72,6 +72,10 @@ cargo run --release -- build
 # Skip the replays, or point at another emulator frontend:
 cargo run --release -- build --no-validate
 cargo run --release -- validate --frontend ../PSoXide-emulator/target/release/frontend
+# The same build with the guest profile-guided by emulator replays of
+# tools/tapes/kings-climb and crossroads-gate (or each --tape PATH given).
+# Needs a checkout path without spaces; the profile is rebuilt every run:
+cargo run --release -- pgo
 # Explicit Windows installation and SDK source overrides:
 cargo run --release -- build --hollow-knight "/path/to/Hollow Knight" --sdk-source "../PSoXide"
 ```

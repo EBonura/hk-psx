@@ -367,6 +367,12 @@ const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-
     ("cheat-heart", false), ("cheat-dream", false), ("kings-climb", false), ("ctrl-climb", false),
     ("town-shop", true), ("boss-fight", false), ("boss-death", false), ("greenpath-walk", true)];
 
+/// Tapes `pgo` profiles when none is given: the King's Pass climb and the
+/// Crossroads gate walk. Against the ordinary build at a261a97 this recipe
+/// measured 19.77 to 21.79 rendered FPS on the first and 14.82 to 15.71 on the
+/// second, leaving 19,808 bytes free below the stack reservation.
+const PGO_TAPES: &[&str] = &["kings-climb", "crossroads-gate"];
+
 struct Options {
     hollow_knight: Option<PathBuf>,
     sdk_source: Option<PathBuf>,
@@ -374,6 +380,7 @@ struct Options {
     telemetry: bool,
     recook: bool,
     validate: bool,
+    tapes: Vec<PathBuf>,
 }
 
 fn root() -> PathBuf {
@@ -637,7 +644,8 @@ fn python_step_module(root: &Path, module: &str, function: &str) -> Result<()> {
     run(venv_python(root), &["-c", &code], root)
 }
 
-fn build(root: &Path, options: &Options) -> Result<()> {
+/// `pgo` is `build` with a profile-guided guest in place of the ordinary one.
+fn build(root: &Path, options: &Options, pgo: bool) -> Result<()> {
     std::fs::create_dir_all(root.join(".hkpsx"))?;
     let doctor = root.join("tools/doctor.py");
     let mut args = vec![doctor.to_str().unwrap()];
@@ -667,7 +675,11 @@ fn build(root: &Path, options: &Options) -> Result<()> {
     if assets_hit {
         guest_args.push("--no-prepass");
     }
-    python_step(root, "host/build_guest.py", &guest_args)?;
+    if pgo {
+        profile_guided_guest(root, options, &guest_args)?;
+    } else {
+        python_step(root, "host/build_guest.py", &guest_args)?;
+    }
     python_step(root, "host/build_report.py", telemetry)?;
     if options.validate {
         validate(root, options)?;
@@ -675,8 +687,102 @@ fn build(root: &Path, options: &Options) -> Result<()> {
     Ok(())
 }
 
-/// Replay every route tape against the final CUE; a fault or an incomplete tape fails the build.
-fn validate(root: &Path, options: &Options) -> Result<()> {
+/// Build the canonical guest optimised with the emulator's own instruction counts.
+///
+/// PSoXide counts every guest instruction exactly, so no instrumented build is
+/// needed: a build with profiling line tables replays each tape, the pinned
+/// SDK's psoxide-pgo turns the PC histogram into an LLVM sample profile through
+/// the matching ELF's DWARF, and the canonical build is compiled with it.
+/// Profile names carry crate hashes that depend on the checkout path, so the
+/// profile is rebuilt here every time and never committed.
+fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> Result<()> {
+    if root.to_string_lossy().chars().any(char::is_whitespace) {
+        return Err(format!(
+            "pgo cannot run from {}: the guest RUSTFLAGS are split on whitespace, so the profile \
+             and linker paths inside this checkout cannot be passed. Use a checkout path without spaces.",
+            root.display()
+        )
+        .into());
+    }
+    let frontend = frontend(root, options)?;
+    let tapes: Vec<PathBuf> = if options.tapes.is_empty() {
+        PGO_TAPES.iter().map(|name| root.join(format!("tools/tapes/{name}.pxtape"))).collect()
+    } else {
+        options.tapes.clone()
+    };
+    let work = root.join(".hkpsx/pgo");
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work)?;
+    let (collect, elf) = (work.join("collect"), work.join("elf"));
+    let telemetry: &[&str] = if options.telemetry { &["--telemetry"] } else { &[] };
+    let mut args = guest_args.to_vec();
+    args.extend(["--profile", "collect", "--work", collect.to_str().unwrap()]);
+    python_step(root, "host/build_guest.py", &args)?;
+    let mut args = telemetry.to_vec();
+    args.extend(["--no-prepass", "--no-disc", "--profile", "elf", "--work", elf.to_str().unwrap()]);
+    python_step(root, "host/build_guest.py", &args)?;
+
+    let mut samples: BTreeMap<String, u64> = BTreeMap::new();
+    for (index, tape) in tapes.iter().enumerate() {
+        let data = std::fs::read(tape)?;
+        if data.len() < 16 || &data[..8] != b"PXITAPE2" {
+            return Err(format!("{} is not a poll-bound tape", tape.display()).into());
+        }
+        // Stop where the tape ends, as tools/replay_cue.py does.
+        let count = u32::from_le_bytes(data[8..12].try_into()?);
+        let start = u32::from_le_bytes(data[12..16].try_into()?);
+        let log = work.join(format!("pc-{index}.csv"));
+        let mut command = Command::new(&frontend);
+        command
+            .args(["launch", "--path"])
+            .arg(collect.join("disc/hk-psx.cue"))
+            .args(["--embedded-playtest", "--config-dir"])
+            .arg(work.join(format!("emulator-{index}")))
+            .args(["--steps", "6000000000", "--input-tape"])
+            .arg(tape)
+            .args(["--stop-at-poll", &(start + count).to_string(), "--pc-sample-log"])
+            .arg(&log)
+            // Prime, so the sampler cannot fall into step with a loop.
+            .args(["--pc-sample-instructions", "61"]);
+        let stem = tape.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        if let Some((_, card)) = MEMCARDS.iter().find(|(route, _)| *route == stem) {
+            // The replay writes the card back: use a scratch copy so the fixture stays put.
+            let scratch = work.join(format!("{stem}.mcd"));
+            std::fs::copy(root.join("tools/cards").join(card), &scratch)?;
+            command.arg("--memcard").arg(scratch);
+        }
+        println!("+ {command:?}");
+        if !command.status()?.success() {
+            return Err(format!("profiling replay of {} failed", tape.display()).into());
+        }
+        for line in std::fs::read_to_string(&log)?.lines().skip(1) {
+            let mut fields = line.split(',');
+            if let (Some(pc), Some(Ok(count))) = (fields.next(), fields.next().map(str::parse::<u64>)) {
+                *samples.entry(pc.to_string()).or_default() += count;
+            }
+        }
+        std::fs::remove_file(&log)?;
+    }
+    if samples.is_empty() {
+        return Err("the profiling replays recorded no samples".into());
+    }
+    let merged = work.join("pc.csv");
+    let mut text = String::from("pc,samples\n");
+    for (pc, count) in &samples {
+        text.push_str(&format!("{pc},{count}\n"));
+    }
+    std::fs::write(&merged, text)?;
+    let profile = work.join("hk-psx.prof");
+    let tool = root.join(".psoxide/tools/psoxide-pgo/Cargo.toml");
+    run("cargo", &["run", "--locked", "--release", "--manifest-path", tool.to_str().unwrap(), "--",
+        elf.join("hk-psx.elf").to_str().unwrap(), merged.to_str().unwrap(), profile.to_str().unwrap()], root)?;
+    std::fs::remove_file(&merged)?;
+    let mut args = telemetry.to_vec();
+    args.extend(["--no-prepass", "--profile", profile.to_str().unwrap()]);
+    python_step(root, "host/build_guest.py", &args)
+}
+
+fn frontend(root: &Path, options: &Options) -> Result<PathBuf> {
     let frontend = options
         .frontend
         .clone()
@@ -685,6 +791,12 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     if !frontend.is_file() {
         return Err(format!("emulator frontend not found at {} (pass --frontend)", frontend.display()).into());
     }
+    Ok(frontend)
+}
+
+/// Replay every route tape against the final CUE; a fault or an incomplete tape fails the build.
+fn validate(root: &Path, options: &Options) -> Result<()> {
+    let frontend = frontend(root, options)?;
     let out = root.join(".hkpsx/validate");
     let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(&out)?;
@@ -777,9 +889,11 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo run --release -- <build|validate|help> [--recook] [--telemetry] [--no-validate]\n       \
-         [--hollow-knight DIR] [--sdk-source DIR] [--frontend PATH]\n\
+        "usage: cargo run --release -- <build|pgo|validate|help> [--recook] [--telemetry] [--no-validate]\n       \
+         [--hollow-knight DIR] [--sdk-source DIR] [--frontend PATH] [--tape PATH]...\n\
          build     cook (cached), build the guest, replace the sole hk-psx.bin/.cue, report, then validate\n\
+         pgo       build, with the guest optimised by a profile of --tape replays (default: kings-climb\n          \
+         and crossroads-gate); needs a checkout path without spaces\n\
          validate  replay the route tapes in tools/tapes against the current CUE"
     );
     std::process::exit(2)
@@ -788,7 +902,9 @@ fn usage() -> ! {
 fn main() {
     let mut args = std::env::args().skip(1);
     let action = args.next().unwrap_or_else(|| "build".into());
-    let mut options = Options { hollow_knight: None, sdk_source: None, frontend: None, telemetry: false, recook: false, validate: true };
+    let mut options = Options {
+        hollow_knight: None, sdk_source: None, frontend: None, telemetry: false, recook: false, validate: true, tapes: Vec::new(),
+    };
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--recook" => options.recook = true,
@@ -797,12 +913,14 @@ fn main() {
             "--hollow-knight" => options.hollow_knight = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--sdk-source" => options.sdk_source = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--frontend" => options.frontend = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
+            "--tape" => options.tapes.push(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             _ => usage(),
         }
     }
     let root = root();
     let result = match action.as_str() {
-        "build" => build(&root, &options),
+        "build" => build(&root, &options, false),
+        "pgo" => build(&root, &options, true),
         "validate" => validate(&root, &options),
         _ => usage(),
     };
