@@ -546,19 +546,13 @@ fn segment_hits_terrain(a: [i32; 2], b: [i32; 2], count: usize, edge: &impl Fn(u
     }
     false
 }
-/// `GetDistance` between two transforms, Q16. World coordinates stay inside
-/// +/-512 units, so the squares stay well below the i64 range.
+/// `GetDistance` between two transforms, Q16: the exact floor root. World
+/// coordinates stay inside +/-512 units, so the squares stay well below the
+/// i64 range.
 fn distance_q16(dx: i32, dy: i32) -> i32 {
     let square = (dx as i64) * (dx as i64) + (dy as i64) * (dy as i64);
     if square <= 0 { return 0; }
-    let mut x = 1i64 << ((64 - square.leading_zeros() as i64 + 1) / 2);
-    loop {
-        let next = (x + square / x) / 2;
-        if next >= x { break; }
-        x = next;
-    }
-    while x * x > square { x -= 1; }
-    x as i32
+    psx_math::int32::isqrt_u64(square as u64) as i32
 }
 /// Rotate a local offset by quarter turns counter-clockwise.
 fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {

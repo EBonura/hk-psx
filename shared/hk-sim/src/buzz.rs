@@ -34,7 +34,7 @@ impl IdleBuzz {
             let high = position[axis] > self.start[axis] + ROAMING_RANGE;
             if (low && v[axis] < 0) || (high && v[axis] > 0) {
                 self.accel[axis] = if low { IDLE_ACCELERATION_MAX } else { -IDLE_ACCELERATION_MAX } / 2000;
-                v[axis] = ((v[axis] as i64) * 8 / 9) as i32; // /= 1.125
+                v[axis] = psx_math::int32::mul_div_i32(v[axis], 8, 9); // /= 1.125
                 self.wait = range(WAIT_MIN, WAIT_MAX);
             }
         }

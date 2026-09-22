@@ -378,9 +378,8 @@ fn main() {
         if let save::Slot::Used(save)=slot {
             let line=&mut slot_text[i];let mut at=0;
             for b in b"Geo " {line[at]=*b;at+=1;}
-            let mut geo=save.geo.min(9999);let mut digits=[0u8;4];let mut n=0;
-            loop {digits[n]=b'0'+(geo%10) as u8;geo/=10;n+=1;if geo==0 {break;}}
-            while n>0 {n-=1;line[at]=digits[n];at+=1;}
+            let mut digits=[0u8;psx_math::fmt::U32_DEC_MAX];
+            for b in psx_math::fmt::u32_dec(&mut digits,save.geo.min(9999)).bytes() {line[at]=b;at+=1;}
             slot_used[i]=at;
         }
     }

@@ -14,9 +14,10 @@ class GeoRuntime(unittest.TestCase):
         libs={}
         for line in built.stdout.splitlines():
             record=json.loads(line)
-            if record.get('reason')=='compiler-artifact' and record['target']['name']in('hk_sim','hk_format'):
+            if record.get('reason')=='compiler-artifact' and record['target']['name']in('hk_sim','hk_format','psx_math'):
                 libs[record['target']['name']]=next(Path(p)for p in record['filenames']if p.endswith('.rlib'))
-        self.assertEqual(set(libs),{'hk_sim','hk_format'})
+        # game/src/geo.rs calls psx-math directly, as the guest does.
+        self.assertEqual(set(libs),{'hk_sim','hk_format','psx_math'})
         cmd=['rustc','--edition=2021','-Awarnings','--test',str(ROOT/'tests/geo_runtime.rs')]
         for name,path in libs.items():cmd+=['--extern',f'{name}={path}']
         cmd+=['-L',f'dependency={output/"cargo/debug/deps"}','-o',str(output/'geo-tests')]

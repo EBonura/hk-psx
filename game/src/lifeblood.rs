@@ -122,7 +122,7 @@ impl Bug {
         }
     }
 }
-fn mul(a:i32,b:i32)->i32 {((i64::from(a)*i64::from(b))>>16)as i32}
+fn mul(a:i32,b:i32)->i32 {psx_math::int32::mul_shr_i32(a,b,16)}
 fn range(rng:&mut u32,span:[i32;2])->i32 {
     assert!(span[1]>=span[0]);*rng=rng.wrapping_mul(1664525).wrapping_add(1013904223);
     span[0]+((u64::from(*rng)*(span[1]-span[0])as u64)>>32)as i32

@@ -78,7 +78,8 @@ impl State {
             Phase::Sitting(t) => {
                 // Start Rest slides the Knight onto the seat; it stays put after.
                 if t < SEAT_SLIDE_TICKS {
-                    player.x = self.start_x + ((self.seat[0] as i64 - self.start_x as i64) * (t as i64 + 1) / SEAT_SLIDE_TICKS as i64) as i32;
+                    // seat - start fits i32 while positions stay inside +/-2^30.
+                    player.x = self.start_x + psx_math::int32::mul_div_i32(self.seat[0] - self.start_x, t as i32 + 1, SEAT_SLIDE_TICKS as i32);
                 }
                 player.vy = 0;
                 player.jumping = false;
