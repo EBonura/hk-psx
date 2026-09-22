@@ -47,6 +47,15 @@ def prepass(residency="scene_gate"):
 # Emulator-driven PGO (the SDK's tools/psoxide-pgo): line tables and
 # discriminators for sample profiling. The flat image drops them at link time.
 PROFILE_FLAGS=' -Cdebuginfo=1 -Zdebug-info-for-profiling -Cstrip=none'
+def delay_slot_flags():
+    """Every MIPS delay-slot filler search on, as the pinned SDK defines it
+    (tools/sdk-examples.mk PSX_DELAY_SLOT_FLAGS). Slots get useful work instead
+    of the nops -disable-mips-df-backward-search left; hazards.patch then
+    trampolines the few loads whose consumer lands inside their delay."""
+    text=(ROOT/'.psoxide/tools/sdk-examples.mk').read_text()
+    m=re.search(r'^PSX_DELAY_SLOT_FLAGS\s*:=\s*(.+)$',text,re.M)
+    if not m:raise ValueError('The pinned SDK does not define PSX_DELAY_SLOT_FLAGS')
+    return m[1].strip()
 def build(telemetry=False, candidate=False, residency="scene_gate", package_disc=True, run_prepass=True, profile=None, work=None):
     """profile: None for the ordinary build, 'collect' for the profiling flat
     image, 'elf' for the same code linked as an ELF that keeps its DWARF
@@ -92,7 +101,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", package_disc
     link_map=out/'hk-psx-link.map' if work else link_map_path(telemetry,candidate)
     from stack_budget import prepare_linker, check_main_frame
     linker=prepare_linker(ROOT,out)
-    env['RUSTFLAGS']=f'-Cllvm-args=-disable-mips-df-backward-search -Clink-arg=-T{linker} -Clink-arg=--oformat=binary -Clink-arg=-Map={link_map}'
+    env['RUSTFLAGS']=f'{delay_slot_flags()} -Clink-arg=-T{linker} -Clink-arg=--oformat=binary -Clink-arg=-Map={link_map}'
     if profile=='elf':
         env['RUSTFLAGS']=env['RUSTFLAGS'].replace(' -Clink-arg=--oformat=binary','')+PROFILE_FLAGS
     elif profile=='collect':
@@ -109,12 +118,16 @@ def build(telemetry=False, candidate=False, residency="scene_gate", package_disc
     cmd=['cargo','build','--locked','--release']
     if telemetry:cmd+=['--features','emulator-telemetry']
     run(cmd,cwd=ROOT/'game',env=env)
-    exe=out/'guest/mipsel-sony-psx/release/hk-psx.exe'
+    linked=out/'guest/mipsel-sony-psx/release/hk-psx.exe'
     if profile=='elf':
-        shutil.copy2(exe,out/'hk-psx.elf')
+        shutil.copy2(linked,out/'hk-psx.elf')
         return {'elf':out/'hk-psx.elf'}
-    from hazards import scan
-    scan(exe,link_map,report_path=out/'hazards.json' if work else hazard_report_path(telemetry,candidate))
+    # Patch a copy, so a cached link is patched from the linker's own bytes.
+    exe=out/'hk-psx-patched.exe'
+    shutil.copy2(linked,exe)
+    from hazards import patch, scan
+    patched=patch(exe,link_map)
+    scan(exe,link_map,report_path=out/'hazards.json' if work else hazard_report_path(telemetry,candidate),patched=patched)
     check_main_frame(exe,link_map.read_text())
     shutil.copy2(link_map,out/'hk-psx.map')
     outputs = {'exe':out/'hk-psx.exe','bin':out/'disc/hk-psx.bin','cue':out/'disc/hk-psx.cue'} if work else artifacts(telemetry,candidate)

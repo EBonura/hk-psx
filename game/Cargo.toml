@@ -14,7 +14,9 @@ trim-paths = "all"
 emulator-telemetry = ["psx-telemetry/emit"]
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
-psx-rt = { path = "../.psoxide/sdk/crates/psx-rt" }
+# 256 trampoline words: with every delay-slot filler search on, the ordinary
+# guest needs 117 and pgo's profiling build 147; psx-rt's default holds 96.
+psx-rt = { path = "../.psoxide/sdk/crates/psx-rt", features = ["hazard-trampolines-256"] }
 psx-gpu = { path = "../.psoxide/sdk/crates/psx-gpu" }
 psx-pad = { path = "../.psoxide/sdk/crates/psx-pad" }
 psx-vram = { path = "../.psoxide/sdk/crates/psx-vram" }
