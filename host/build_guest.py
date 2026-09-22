@@ -114,6 +114,11 @@ def build(telemetry=False, candidate=False, residency="scene_gate", package_disc
         # -profile-sample-accurate treats code the tapes never reached as cold
         # rather than unknown, which keeps the optimised image from growing
         # into the little RAM this game has left.
+        # -pgso=false was measured on SDK 6da88d92d with the same profile
+        # (2026-09-23): gameplay fps moved by under 0.1% on both routes while
+        # code grew 26,344 bytes and free RAM fell from 52,576 to 25,952.
+        # Profile-guided size optimisation of cold code stays on here, though
+        # turning it off was Cortex's win.
         env['RUSTFLAGS']+=PROFILE_FLAGS+f' -Zprofile-sample-use={Path(profile).resolve()} -Cllvm-args=-profile-sample-accurate'
     # Cargo restores cached EXEs without rerunning the linker. Each feature
     # variant must retain its own map; a missing map requires a fresh guest link.
