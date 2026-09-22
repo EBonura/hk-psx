@@ -100,8 +100,12 @@ def main():
             raise ValueError('probe no longer declares mod '+module)
         main = main.replace(old_decl, '#[path='+json.dumps(str(ROOT/'game/src'/(module+'.rs')))+']mod '+module+';', 1)
     (src/'main.rs').write_text(main)
+    # The guest modules call psx-math directly (debris.rs, break_effects.rs),
+    # so the probe depends on the same SDK crate game/Cargo.toml does.
+    crates = {crate: ROOT/'shared'/crate for crate in ('hk-sim', 'hk-format')}
+    crates['psx-math'] = ROOT/'.psoxide/sdk/crates/psx-math'
     (work/'Cargo.toml').write_text('[package]\nname="hk-native-route-probe"\nversion="0.1.0"\nedition="2021"\n[workspace]\n[dependencies]\n'+
-        ''.join(f'{crate}={{path={json.dumps(str(ROOT/"shared"/crate))}}}\n' for crate in ('hk-sim', 'hk-format')))
+        ''.join(f'{crate}={{path={json.dumps(str(path))}}}\n' for crate, path in crates.items()))
     (work/'inputs.json').write_text(json.dumps({'metadata':str(args.metadata),'route':route,'ticks':args.ticks,'sha256':hashes}, indent=2)+'\n')
     # The guest already keeps its PS1 presentation behind cfg(test) and reads
     # its world bank from a thread local there, which is exactly the native
