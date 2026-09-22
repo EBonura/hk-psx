@@ -5,7 +5,6 @@ use hk_sim::ONE;
 use core::num::NonZeroU16;
 #[path="break_effects.rs"]pub mod break_effects;
 #[path="particle_perspective.rs"]mod perspective;
-#[path="particle_division.rs"]mod division;
 /// Slots shared by the grass, death and break families. Must stay a multiple of
 /// 32, which `break_effects::tick_specs` assumes for its pending bitmap, and
 /// must agree with `POOL_CAPACITY` in host/break_effects.py, which refuses any
@@ -375,10 +374,10 @@ fn range(seed: &mut u32, b: [i32; 2]) -> i32 {
     b[0] + ((random(seed) as u64 * (b[1] as i64 - b[0] as i64 + 1) as u64) >> 32) as i32
 }
 fn mulq(a: i32, b: i32) -> i32 {
-    ((a as i64 * b as i64) / ONE as i64) as i32
+    psx_math::int32::mul_shr_trunc_i32(a, b, 16)
 }
 fn divq(a: i32, b: i32) -> i32 {
-    ((a as i64 * ONE as i64) / b as i64) as i32
+    psx_math::int32::mul_div_i32(a, ONE, b)
 }
 fn dot3(a: [i32; 3], b: [i32; 3]) -> i32 {
     mulq(a[0], b[0]) + mulq(a[1], b[1]) + mulq(a[2], b[2])
@@ -386,104 +385,14 @@ fn dot3(a: [i32; 3], b: [i32; 3]) -> i32 {
 fn length_squared(v:[i32;3])->u64 {
     v.iter().map(|x|*x as i64 * *x as i64).sum::<i64>()as u64
 }
-const fn root8_table()->[u8;256] {
-    let mut out=[0;256];let mut n=0;
-    while n<256 {let mut r=0;while (r+1)*(r+1)<=n {r+=1;}out[n]=r as u8;n+=1;}
-    out
-}
-static ROOT8:[u8;256]=root8_table();
-/// General wide fallback, retaining the previous complete-u64 root semantics.
-fn root_wide(n:u64)->u32 {
-    if n==0 {return 0;}
-    let mut bit=1u32<<((63-n.leading_zeros())/2);let mut root=0u32;
-    while bit!=0 {let candidate=root|bit;if u64::from(candidate)*u64::from(candidate)<=n{root=candidate;}bit>>=1;}
-    root
-}
-/// Exact floor square root. Authored speeds fit below sqrt(2^48). Seed the
-/// upper word with a tiny integer table, then consume four input bits per step.
-/// The invariant is prefix=root²+remainder, 0<=remainder<2*root+1. A nibble
-/// selects 4*root+[0..3]: test the +2 threshold (16*root+4), then +1 against
-/// the updated root. Before any nibble root<2^22; the expanded remainder is
-/// <2^27 and the threshold<2^26. Their wrapping difference therefore has the
-/// exact comparison in its sign bit, avoiding LLVM's duplicated select branches.
-/// Every intermediate fits u32; the full-u64 fallback remains unchanged.
-/// Outline once: both legacy and break particles use this hot path.
+/// Exact floor length. Outlined once: legacy and break particles share this
+/// hot path, and psx-math's root inlines about 1 KB of unrolled code.
 #[inline(never)]
-fn integer_root(n:u64)->u32 {
-    if n==0 {return 0;}
-    if n>>48!=0 {return root_wide(n);}
-    let high=(n>>32)as u32;
-    let mut root=if high<256 {ROOT8[high as u8 as usize]as u32}else {
-        let mut r=ROOT8[(high>>8)as u8 as usize]as u32;
-        let mut remainder=(high>>8)-r*r;
-        for shift in [6,4,2,0] {
-            remainder=(remainder<<2)|((high>>shift)&3);
-            let trial=(r<<2)|1;let take=u32::from(remainder>=trial);
-            remainder-=trial&take.wrapping_neg();r=(r<<1)|take;
-        }
-        r
-    };
-    let mut remainder=high-root*root;let mut low=n as u32;
-    for _ in 0..8 {
-        remainder=(remainder<<4)|(low>>28);low<<=4;
-        let mid=(root<<4)|4;let upper=(remainder.wrapping_sub(mid)>>31)^1;
-        remainder-=mid&upper.wrapping_neg();root=(root<<2)|(upper<<1);
-        let trial=(root<<1)|1;let lower=u32::from(remainder>=trial);
-        remainder-=trial&lower.wrapping_neg();root|=lower;
-    }
-    root
-}
-fn length3(v:[i32;3])->i32 {integer_root(length_squared(v))as i32}
+fn length3(v:[i32;3])->i32 {psx_math::int32::isqrt_u64(length_squared(v))as i32}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn digit_root_matches_wide_squares_and_complete_u64_domain() {
-        let mut state=0xd1b54a32d192ed03u64;
-        for i in 0..200000 {
-            state=state.wrapping_mul(6364136223846793005).wrapping_add(1);
-            let n=match i%3 {0=>state,1=>state&((1<<48)-1),_=>state&((1<<40)-1)};
-            assert_eq!(integer_root(n),root_wide(n),"{n}");
-        }
-        for r in (0..(1u64<<24)).step_by(4093) {
-            let n=r*r;
-            for v in [n.saturating_sub(1),n,n+1] {assert_eq!(integer_root(v),root_wide(v),"{v}");}
-        }
-        for n in [0,1,2,3,4,(1<<32)-1,1<<32,(1<<40)-1,1<<40,(1<<48)-1,1<<48,
-            (1<<60)-1,1<<60,(1<<63)-1,1<<63,u64::MAX] {
-            assert_eq!(integer_root(n),root_wide(n),"{n}");
-        }
-    }
-    #[test]
-    fn paired_root_digits_preserve_remainder_at_all_fast_domain_boundaries() {
-        for root in [0u32,1,2,3,15,16,255,256,4095,65535,(1<<20)-1,(1<<22)-1] {
-            for prior_remainder in [0,root,root*2] {
-                for nibble in 0..16 {
-                    let expanded=(prior_remainder<<4)|nibble;
-                    let mid=(root<<4)|4;
-                    let upper=(expanded.wrapping_sub(mid)>>31)^1;
-                    assert_eq!(upper,u32::from(expanded>=mid));
-                    let remainder=expanded-(mid&upper.wrapping_neg());
-                    let partial=(root<<2)|(upper<<1);
-                    let trial=(partial<<1)|1;
-                    let lower=u32::from(remainder>=trial);
-                    let next=partial|lower;
-                    let remaining=remainder-(trial&lower.wrapping_neg());
-                    let value=(root as u64*root as u64+prior_remainder as u64)*16+nibble as u64;
-                    assert_eq!(next,root_wide(value));
-                    assert_eq!(value,next as u64*next as u64+remaining as u64);
-                    assert!(remaining<2*next+1);
-                }
-            }
-        }
-        for root in 0u64..65536 {
-            let square=root*root;
-            for n in [square.saturating_sub(1),square,square+1] {
-                assert_eq!(integer_root(n),root_wide(n));
-            }
-        }
-    }
     /// Keep the prior full legacy update as the differential oracle: compare
     /// every surviving particle and lifecycle field after every fixed tick.
     fn legacy_reference(pool:&mut Pool,scene:usize,bank:Option<Bank>,paths:&mut [usize;2]) {

@@ -111,10 +111,8 @@ fn text(x:i16,y:i16,text:&str){
     }
 }
 fn number(x:i16,y:i16,value:u32) {
-    let mut digits=[b'0';10];let mut start=9;let mut value=value;
-    digits[start]+= (value%10)as u8;value/=10;
-    while value!=0 {start-=1;digits[start]+=(value%10)as u8;value/=10;}
-    text(x,y,core::str::from_utf8(&digits[start..]).unwrap());
+    let mut digits=[0u8;psx_math::fmt::U32_DEC_MAX];
+    text(x,y,psx_math::fmt::u32_dec(&mut digits,value));
 }
 // The charm board composes into this same glyph and box budget, so it borrows
 // the panel primitives rather than keeping a second copy of the font strip.

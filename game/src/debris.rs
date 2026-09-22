@@ -166,7 +166,7 @@ impl Body {
                 .clamp(-360 * ONE as i64, 360 * ONE as i64) as i32;
         }
         self.steps = (self.steps + 1).min(2);
-        self.omega = (self.omega as i64 * 1000 / 1001) as i32;
+        self.omega = psx_math::int32::mul_div_i32(self.omega, 1000, 1001);
         let energy_before = kinetic(self.velocity, self.omega, spec);
         self.velocity[1] = (self.velocity[1] - 60 * ONE / 50).max(-100 * ONE);
         self.center[0] += self.velocity[0] / 50;
@@ -396,10 +396,10 @@ impl Body {
     }
 }
 fn mulq(a: i32, b: i32) -> i32 {
-    ((a as i64 * b as i64) / ONE as i64) as i32
+    psx_math::int32::mul_shr_trunc_i32(a, b, 16)
 }
 fn divq(a: i32, b: i32) -> i32 {
-    ((a as i64 * ONE as i64) / b as i64) as i32
+    psx_math::int32::mul_div_i32(a, ONE, b)
 }
 fn dot(a: [i32; 2], b: [i32; 2]) -> i32 {
     mulq(a[0], b[0]) + mulq(a[1], b[1])
@@ -474,10 +474,10 @@ fn crossing(a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32; 2]) -> Option<i32> {
     Some((((t >> shift) * ONE as i64) / den).min((ONE - 1) as i64) as i32)
 }
 fn scaled(p: [i32; 2], s: [i32; 2]) -> [i32; 2] {
-    core::array::from_fn(|i| ((p[i] as i64 * s[i] as i64) / 65536) as i32)
+    core::array::from_fn(|i| psx_math::int32::mul_shr_trunc_i32(p[i], s[i], 16))
 }
 fn mul_trig(v: i32, q14: i32) -> i32 {
-    ((v as i64 * q14 as i64) / 16384) as i32
+    psx_math::int32::mul_shr_trunc_i32(v, q14, 14)
 }
 #[derive(Clone,Copy)]
 struct Rotation {sin:i32,cos:i32}

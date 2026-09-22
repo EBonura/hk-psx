@@ -111,7 +111,7 @@ impl Corpse {
             _ => [facing * 491520, 851338], // cos/sin60deg *15, rounded Q16.
         };
         // The table is authored for the common 15 units/s launch.
-        let scale = |q: i32| ((q as i64 * spec.fling_speed as i64) / (15 * ONE as i64)) as i32;
+        let scale = |q: i32| psx_math::int32::mul_div_i32(q, spec.fling_speed, 15 * ONE);
         corpse.vx = scale(v[0]);
         corpse.vy = scale(v[1]);
         corpse
@@ -228,7 +228,10 @@ impl Corpse {
             // Source corpse PhysicsMaterial2D 'Geo Small' friction0.2. Coulomb
             // step uses that coefficient; arbitrary terrain material mixing is
             // not represented by the cooked edge format.
-            self.vx = self.vx.signum() * (self.vx.abs() - ((spec.gravity as i64 * 13107 / 60) >> 16) as i32).max(0); // friction .2 * g / 60
+            // friction .2 * g / 60. The quotient fits i32 (so matches the i64
+            // form) for |gravity| below 2^31 * 60 / 13107, about 150 units/s^2
+            // in Q16; cooked corpses use 42 and 48.
+            self.vx = self.vx.signum() * (self.vx.abs() - (psx_math::int32::mul_div_i32(spec.gravity, 13107, 60) >> 16)).max(0);
         }
         // Source Corpse.Update only destroys an airborne corpse below y=-10.
         if self.phase == CorpsePhase::Air && self.y < -10 * ONE {

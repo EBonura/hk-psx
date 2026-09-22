@@ -500,8 +500,7 @@ impl Player {
             // Sample the authored segment under the character centre. Clamp at
             // endpoints while the box overlaps so the floor does not develop
             // gaps between a ramp and its adjoining horizontal segment.
-            let height = |x: i32| y0 + (((x.clamp(x0.min(x1), x0.max(x1)) - x0) as i64
-                * (y1 - y0) as i64) / (x1 - x0) as i64) as i32;
+            let height = |x: i32| y0 + psx_math::int32::mul_div_i32(x.clamp(x0.min(x1), x0.max(x1)) - x0, y1 - y0, x1 - x0);
             let old_surface = height(ox);
             let surface = height(nx);
             let follows_slope = was_ground && !self.jumping && y0 != y1

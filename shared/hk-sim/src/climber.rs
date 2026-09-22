@@ -357,13 +357,13 @@ impl Climber {
         };
         if self.elapsed < duration {
             self.rotation = (self.turn_rotation
-                + (angle as i64 * self.elapsed as i64 / duration as i64) as i32)
+                + psx_math::int32::mul_div_i32(angle, self.elapsed as i32, duration as i32))
                 .rem_euclid(360 * ONE);
             out.push(Action::Rotation(self.rotation));
             if self.tween {
                 out.push(Action::Position(core::array::from_fn(|i| {
                     self.turn_origin[i]
-                        + (self.turn_delta[i] as i64 * self.elapsed as i64 / duration as i64) as i32
+                        + psx_math::int32::mul_div_i32(self.turn_delta[i], self.elapsed as i32, duration as i32)
                 })));
             }
         } else {

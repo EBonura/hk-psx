@@ -195,8 +195,9 @@ impl Shade {
         let dy = (senses.hero[1] as i64 - senses.position[1] as i64) >> 8;
         let length = isqrt(dx * dx + dy * dy);
         if length > 0 {
-            v[0] += ((dx * CHASE_FORCE as i64) / length) as i32;
-            v[1] += ((dy * CHASE_FORCE as i64) / length) as i32;
+            // dx and dy are i32 differences shifted by 8, so they and length fit i32.
+            v[0] += psx_math::int32::mul_div_i32(dx as i32, CHASE_FORCE, length as i32);
+            v[1] += psx_math::int32::mul_div_i32(dy as i32, CHASE_FORCE, length as i32);
         }
         clamp_magnitude(&mut v, CHASE_SPEED_MAX);
         self.velocity = v;
@@ -345,7 +346,8 @@ impl Shade {
                 self.timer -= 1;
                 let done = RETREAT_TICKS - self.timer;
                 let at = |from: i32, to: i32| {
-                    from + (((to as i64 - from as i64) * done as i64) / RETREAT_TICKS as i64) as i32
+                    // to - from fits i32 while positions stay inside +/-2^30.
+                    from + psx_math::int32::mul_div_i32(to - from, done as i32, RETREAT_TICKS as i32)
                 };
                 out.push(Action::MoveTo([at(self.retreat_from[0], self.start[0]), at(self.retreat_from[1], self.start[1])]));
                 if self.timer == 0 {
@@ -401,8 +403,9 @@ fn clamp_magnitude(v: &mut [i32; 2], max: i32) {
     // The truncated >>8 magnitude underestimates, so bias the divisor up by one
     // to keep the scaled result at or under `max` when it is measured again.
     let length = isqrt(square).max(1) + 1;
-    v[0] = ((v[0] as i64 * limit) / length) as i32;
-    v[1] = ((v[1] as i64 * limit) / length) as i32;
+    // limit and length come from i32 values shifted by 8, so both fit i32.
+    v[0] = psx_math::int32::mul_div_i32(v[0], limit as i32, length as i32);
+    v[1] = psx_math::int32::mul_div_i32(v[1], limit as i32, length as i32);
 }
 
 #[cfg(test)]

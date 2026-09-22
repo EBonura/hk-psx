@@ -159,7 +159,7 @@ pub(super) fn scale_velocity(v:i32,scale:i32,speed:i32)->i32 {
             // unsigned quotient fits32 bits; signed restoration preserves the
             // old truncation toward zero without a software wide divider.
             let numerator=v.unsigned_abs()as u64*scale as u64;
-            let q=super::division::quotient32(numerator,speed as u32);
+            let q=psx_math::int32::div_u64_by_u32((numerator>>32)as u32,numerator as u32,speed as u32);
             if v<0 {q.wrapping_neg()as i32}else{q as i32}
         },
         None=>(v as i64*scale as i64/speed as i64)as i32,

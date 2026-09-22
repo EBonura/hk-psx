@@ -36,6 +36,9 @@ class LifebloodTests(unittest.TestCase):
    for crate in ['hk-sim','hk-cache']:
     deps=ROOT/f'shared/{crate}/target/debug/deps';lib=max(deps.glob('lib'+crate.replace('-','_')+'-*.rlib'),key=lambda p:p.stat().st_mtime)
     args+=['--extern',crate.replace('-','_')+'='+str(lib),'-L','dependency='+str(deps)]
+   # game/src/lifeblood.rs calls psx-math directly; hk-sim's build leaves it in its deps.
+   deps=ROOT/'shared/hk-sim/target/debug/deps';lib=max(deps.glob('libpsx_math-*.rlib'),key=lambda p:p.stat().st_mtime)
+   args+=['--extern','psx_math='+str(lib)]
    result=subprocess.run(args,env=dict(os.environ,CARGO_MANIFEST_DIR=str(ROOT/'game')),capture_output=True,text=True)
    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
    result=subprocess.run([temp+'/run'],capture_output=True,text=True);self.assertEqual(result.returncode,0,result.stdout+result.stderr)

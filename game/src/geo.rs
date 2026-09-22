@@ -240,17 +240,14 @@ impl World {
     }}
 }
 fn value(counts:[u16;3],p:Params)->u32 {(0..3).map(|i|counts[i]as u32*p.coins[i].value).sum()}
-fn mul(a:i32,b:i32)->i32 {((a as i64*b as i64)/ONE as i64)as i32}
+fn mul(a:i32,b:i32)->i32 {psx_math::int32::mul_shr_trunc_i32(a,b,16)}
 fn random(seed:&mut u32)->u32 {*seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);*seed}
 fn range(seed:&mut u32,b:[i32;2])->i32 {assert!(b[0]<=b[1]);b[0]+(random(seed)as u64%((b[1]as i64-b[0]as i64+1)as u64))as i32}
 fn inside(p:[i32;2],b:[i32;4])->bool {p[0]>=b[0]&&p[0]<=b[2]&&p[1]>=b[1]&&p[1]<=b[3]}
 fn overlap(a:[i32;4],b:[i32;4])->bool {a[0]<=b[2]&&a[2]>=b[0]&&a[1]<=b[3]&&a[3]>=b[1]}
 fn length(v:[i32;2])->i32 {
     let n=(v[0]as i64*v[0]as i64+v[1]as i64*v[1]as i64)as u64;
-    let(mut rem,mut root,mut bit)=(n,0u64,1u64<<62);
-    while bit>rem {bit>>=2;}
-    while bit!=0 {if rem>=root+bit {rem-=root+bit;root=(root>>1)+bit;}else{root>>=1;}bit>>=2;}
-    root.min(i32::MAX as u64)as i32
+    psx_math::int32::isqrt_u64(n).min(i32::MAX as u32)as i32
 }
 impl Coin {
     #[inline(never)]
@@ -274,7 +271,7 @@ impl Coin {
         for i in 0..count {
             if i&31==0 {checkpoint();}
             let[x0,y0,x1,y1]=edge(i);if x0==x1||nx+s.half[0]<=x0.min(x1)||nx-s.half[0]>=x0.max(x1){continue;}
-            let height=|x:i32|y0+(((x.clamp(x0.min(x1),x0.max(x1))-x0)as i64*(y1-y0)as i64)/(x1-x0)as i64)as i32;
+            let height=|x:i32|y0+psx_math::int32::mul_div_i32(x.clamp(x0.min(x1),x0.max(x1))-x0,y1-y0,x1-x0);
             let old=height(ox);let surface=height(nx);
             if ny<oy&&oy-s.half[1]>=old-32&&ny-s.half[1]<=surface {ny=surface+s.half[1];normal=[-(y1-y0),x1-x0];if normal[1]<0 {normal=[-normal[0],-normal[1]];}self.grounded=true;self.support=Some(i);self.support_edge=[x0,y0,x1,y1];}
             else if ny>oy&&oy+s.half[1]<=old&&ny+s.half[1]>=surface {ny=surface-s.half[1];normal=[y1-y0,-(x1-x0)];if normal[1]>0 {normal=[-normal[0],-normal[1]];}}
@@ -283,8 +280,8 @@ impl Coin {
         if normal==[0,0] {self.touching=false;return false;}
         self.landed=true;let entered=!self.touching;self.touching=true;
         if entered && self.speed>s.threshold && self.direction!=[0,0] {
-            let n=length(normal);let normal=[(normal[0]as i64*ONE as i64/n as i64)as i32,(normal[1]as i64*ONE as i64/n as i64)as i32];
-            let norm=length(self.direction);let d=[(self.direction[0]as i64*ONE as i64/norm as i64)as i32,(self.direction[1]as i64*ONE as i64/norm as i64)as i32];
+            let n=length(normal);let normal=[psx_math::int32::mul_div_i32(normal[0],ONE,n),psx_math::int32::mul_div_i32(normal[1],ONE,n)];
+            let norm=length(self.direction);let d=[psx_math::int32::mul_div_i32(self.direction[0],ONE,norm),psx_math::int32::mul_div_i32(self.direction[1],ONE,norm)];
             let dot=mul(d[0],normal[0])+mul(d[1],normal[1]);
             let reflected=[d[0]-2*mul(dot,normal[0]),d[1]-2*mul(dot,normal[1])];
             let speed=mul(mul(self.speed,s.bounce),range(&mut self.rng,[52429,78643]));

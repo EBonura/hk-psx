@@ -244,7 +244,9 @@ impl Aspid {
                     let dx = senses.hero[0] as i64 - senses.position[0] as i64;
                     let dy = senses.hero[1] as i64 - senses.position[1] as i64;
                     let length = isqrt(dx * dx + dy * dy).max(1);
-                    let v = [((dx * SHOT_SPEED as i64) / length) as i32, ((dy * SHOT_SPEED as i64) / length) as i32];
+                    // dx, dy and length fit i32 while positions stay inside +/-2^30 (Q16 +/-16384 units).
+                    let v = [psx_math::int32::mul_div_i32(dx as i32, SHOT_SPEED, length as i32),
+                        psx_math::int32::mul_div_i32(dy as i32, SHOT_SPEED, length as i32)];
                     out.push(Action::Fire(v));
                     self.face_hero(senses, false, &mut out);
                     self.phase = Phase::FireDribble;
