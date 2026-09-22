@@ -17,8 +17,11 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 | Space above initial stack pointer |256|
 | Unallocated gap before reserved stack |101,764|
 
-Every figure above is the current build's, read out of `.hkpsx/build.json`, and
-`tests/test_budget_doc.py` fails when this table drifts from it. The table stood
+Every figure above is the current ordinary build's, read out of
+`.hkpsx/build-normal.json`, and `tests/test_budget_doc.py` fails when this table
+drifts from it. `pgo` writes `.hkpsx/build-pgo-normal.json` instead, because its
+code size follows the profile; `.hkpsx/build.json` is whichever image is on the
+disc. The table stood
 at 113,636 bytes of headroom for long enough that it was quoted in three
 separate agent briefings after it had fallen to 73,876. A budget
 document nobody can trust is worse than none, because work gets planned against

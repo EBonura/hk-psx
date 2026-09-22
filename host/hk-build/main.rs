@@ -680,7 +680,12 @@ fn build(root: &Path, options: &Options, pgo: bool) -> Result<()> {
     } else {
         python_step(root, "host/build_guest.py", &guest_args)?;
     }
-    python_step(root, "host/build_report.py", telemetry)?;
+    let mut report_args = telemetry.to_vec();
+    if pgo {
+        // Its own report file: docs/BUDGET.md pins the ordinary build's figures.
+        report_args.push("--pgo");
+    }
+    python_step(root, "host/build_report.py", &report_args)?;
     if options.validate {
         validate(root, options)?;
     }

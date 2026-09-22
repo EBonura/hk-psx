@@ -7,15 +7,19 @@ plainly, and work gets scoped against it.
 
 Only the headline allocation table is pinned. The prose below it is a record of
 what particular builds measured and is meant to age.
+
+The figures are the ordinary build's, from build-normal.json. build.json is
+whatever image is on the disc, and after `pgo` that is the profile-guided one,
+whose code size depends on the profile; `pgo` writes its own report beside it.
 """
 import json, re, unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / 'docs/BUDGET.md'
-BUILD = ROOT / '.hkpsx/build.json'
+BUILD = ROOT / '.hkpsx/build-normal.json'
 
-# Table row label to the `memory` key in .hkpsx/build.json it must equal.
+# Table row label to the `memory` key in .hkpsx/build-normal.json it must equal.
 ROWS = {
     'Linked code': 'code_bytes',
     'Code-to-data alignment': 'code_data_alignment_bytes',
