@@ -376,6 +376,7 @@ const PGO_TAPES: &[&str] = &["kings-climb", "crossroads-gate"];
 struct Options {
     hollow_knight: Option<PathBuf>,
     sdk_source: Option<PathBuf>,
+    emulator_source: Option<PathBuf>,
     frontend: Option<PathBuf>,
     telemetry: bool,
     recook: bool,
@@ -432,6 +433,10 @@ fn ensure_python(root: &Path) -> Result<()> {
         std::fs::write(&stamp, current)?;
     }
     Ok(())
+}
+
+fn sdk_source(root: &Path, options: &Options) -> PathBuf {
+    options.sdk_source.clone().unwrap_or_else(|| root.parent().unwrap().join("PSoXide"))
 }
 
 /// Hydrate the pinned PSoXide SDK snapshot once; a changed cache is an error, never silently replaced.
@@ -665,8 +670,7 @@ fn build(root: &Path, options: &Options, pgo: bool) -> Result<()> {
     // modules, so they are the only check that the guest's own logic still
     // holds before ten minutes of cooking.
     run("cargo", &["test", "-q", "--manifest-path", "shared/hk-sim/Cargo.toml"], root)?;
-    let sdk_source = options.sdk_source.clone().unwrap_or_else(|| root.parent().unwrap().join("PSoXide"));
-    sdk(root, &sdk_source)?;
+    sdk(root, &sdk_source(root, options))?;
     cook_cached(root, options.recook)?;
     menu_cached(root, options.recook)?;
     let assets_hit = assets_cached(root, options.recook)?;
@@ -709,7 +713,7 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
         )
         .into());
     }
-    let frontend = frontend(root, options)?;
+    let (frontend, emulator_revision) = pinned_frontend(root, options)?;
     let tapes: Vec<PathBuf> = if options.tapes.is_empty() {
         PGO_TAPES.iter().map(|name| root.join(format!("tools/tapes/{name}.pxtape"))).collect()
     } else {
@@ -782,9 +786,63 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
     run("cargo", &["run", "--locked", "--release", "--manifest-path", tool.to_str().unwrap(), "--",
         elf.join("hk-psx.elf").to_str().unwrap(), merged.to_str().unwrap(), profile.to_str().unwrap()], root)?;
     std::fs::remove_file(&merged)?;
+    // What the profile came from, so two runs can be compared by hash.
+    let provenance = serde_json::json!({
+        "emulator_revision": emulator_revision,
+        "frontend_sha256": sha256_file(&frontend)?,
+        "tapes": tapes.iter().map(|t| Ok(serde_json::json!({"path": t, "sha256": sha256_file(t)?})))
+            .collect::<Result<Vec<_>>>()?,
+        "profile_sha256": sha256_file(&profile)?,
+    });
+    std::fs::write(work.join("provenance.json"), serde_json::to_string_pretty(&provenance)?)?;
     let mut args = telemetry.to_vec();
     args.extend(["--no-prepass", "--profile", profile.to_str().unwrap()]);
     python_step(root, "host/build_guest.py", &args)
+}
+
+/// The emulator `pgo` profiles with: the revision in emulator.lock.json,
+/// exported from the sibling PSoXide-emulator checkout (or --emulator-source)
+/// and built once under .hkpsx/emulator/<revision>.
+///
+/// The PC histogram is the emulator's instruction stream, so it moves with the
+/// emulator's timing: vblank waits, CD and DMA latencies all change how often a
+/// loop runs. Two runs profiled by two different frontends produced two
+/// different PGO images from the same commit. Pinning the emulator makes the
+/// profile, and so the image, a function of this checkout alone. --frontend
+/// still picks the emulator the validation routes replay on.
+fn pinned_frontend(root: &Path, options: &Options) -> Result<(PathBuf, String)> {
+    let pin = read_json(&root.join("emulator.lock.json"))?;
+    let revision = pin["revision"].as_str().ok_or("emulator.lock.json lacks revision")?.to_string();
+    let tree = root.join(".hkpsx/emulator").join(&revision);
+    let target = tree.join("target");
+    let binary = target.join("release/frontend");
+    let stamp = tree.join(".hk-frontend.json");
+    if let (Ok(record), true) = (read_json(&stamp), binary.is_file()) {
+        if record["revision"] == revision.as_str() && record["sha256"].as_str() == Some(&sha256_file(&binary)?) {
+            return Ok((binary, revision));
+        }
+    }
+    let source = options.emulator_source.clone().unwrap_or_else(|| root.parent().unwrap().join("PSoXide-emulator"));
+    std::fs::create_dir_all(&tree)?;
+    let archive = root.join(".hkpsx/emulator-archive.tar");
+    run("git", &["-C", source.to_str().unwrap(), "archive", &revision, "-o", archive.to_str().unwrap()], root)?;
+    run("tar", &["-xf", archive.to_str().unwrap(), "-C", tree.to_str().unwrap()], root)?;
+    std::fs::remove_file(&archive)?;
+    // Its SDK component comes from the same checkout this build's SDK does.
+    let sdk = format!("sdk={}", sdk_source(root, options).display());
+    run("python3", &["tools/bootstrap-components.py", "--root", tree.to_str().unwrap(), "--source", &sdk], &tree)?;
+    println!("+ cargo build --locked --release -p frontend (CARGO_TARGET_DIR={})", target.display());
+    let status = Command::new("cargo")
+        .args(["build", "--locked", "--release", "-p", "frontend"])
+        .env("CARGO_TARGET_DIR", &target)
+        .current_dir(&tree)
+        .status()?;
+    if !status.success() {
+        return Err(format!("building the pinned frontend at {revision} failed with {status}").into());
+    }
+    std::fs::write(&stamp, serde_json::to_string_pretty(&serde_json::json!({
+        "revision": revision, "sha256": sha256_file(&binary)?}))?)?;
+    Ok((binary, revision))
 }
 
 fn frontend(root: &Path, options: &Options) -> Result<PathBuf> {
@@ -895,10 +953,11 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
 fn usage() -> ! {
     eprintln!(
         "usage: cargo run --release -- <build|pgo|validate|help> [--recook] [--telemetry] [--no-validate]\n       \
-         [--hollow-knight DIR] [--sdk-source DIR] [--frontend PATH] [--tape PATH]...\n\
+         [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]...\n\
          build     cook (cached), build the guest, replace the sole hk-psx.bin/.cue, report, then validate\n\
          pgo       build, with the guest optimised by a profile of --tape replays (default: kings-climb\n          \
-         and crossroads-gate); needs a checkout path without spaces\n\
+         and crossroads-gate), replayed on the emulator pinned in emulator.lock.json (built once\n          \
+         from --emulator-source, default ../PSoXide-emulator); needs a checkout path without spaces\n\
          validate  replay the route tapes in tools/tapes against the current CUE"
     );
     std::process::exit(2)
@@ -908,7 +967,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let action = args.next().unwrap_or_else(|| "build".into());
     let mut options = Options {
-        hollow_knight: None, sdk_source: None, frontend: None, telemetry: false, recook: false, validate: true, tapes: Vec::new(),
+        hollow_knight: None, sdk_source: None, emulator_source: None, frontend: None, telemetry: false, recook: false, validate: true, tapes: Vec::new(),
     };
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -917,6 +976,7 @@ fn main() {
             "--no-validate" => options.validate = false,
             "--hollow-knight" => options.hollow_knight = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--sdk-source" => options.sdk_source = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
+            "--emulator-source" => options.emulator_source = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--frontend" => options.frontend = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--tape" => options.tapes.push(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             _ => usage(),

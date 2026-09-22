@@ -74,6 +74,9 @@ cargo run --release -- build --no-validate
 cargo run --release -- validate --frontend ../PSoXide-emulator/target/release/frontend
 # The same build with the guest profile-guided by emulator replays of
 # tools/tapes/kings-climb and crossroads-gate (or each --tape PATH given).
+# The replays run on the emulator pinned in emulator.lock.json, exported from
+# ../PSoXide-emulator (or --emulator-source DIR) and built once under
+# .hkpsx/emulator, so a given pin always yields the same profile and image.
 # Needs a checkout path without spaces; the profile is rebuilt every run:
 cargo run --release -- pgo
 # Explicit Windows installation and SDK source overrides:
