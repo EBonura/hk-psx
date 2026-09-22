@@ -368,9 +368,10 @@ const ROUTES: &[(&str, bool)] = &[("focus", false), ("well-drop", true), ("town-
     ("town-shop", true), ("boss-fight", false), ("boss-death", false), ("greenpath-walk", true)];
 
 /// Tapes `pgo` profiles when none is given: the King's Pass climb and the
-/// Crossroads gate walk. Against the ordinary build at a261a97 this recipe
-/// measured 19.77 to 21.79 rendered FPS on the first and 14.82 to 15.71 on the
-/// second, leaving 19,808 bytes free below the stack reservation.
+/// Crossroads gate walk. With every delay-slot filler search on, this recipe
+/// took the ordinary build from 20.80 to 22.74 fps on the first and from 19.57
+/// to 20.79 on the second, counting gameplay frames only (boot and scene-gate
+/// loads excluded), and left 89,440 bytes free below the stack reservation.
 const PGO_TAPES: &[&str] = &["kings-climb", "crossroads-gate"];
 
 struct Options {
