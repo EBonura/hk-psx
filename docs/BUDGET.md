@@ -7,15 +7,15 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |682,688|
-| Code-to-data alignment |0|
-| Linked data, including menu and HUD |343,360|
+| Linked code |681,596|
+| Code-to-data alignment |4|
+| Linked data, including menu and HUD |342,400|
 | BSS, including shared scene arena and runtime pools |856,444|
-| Total static span |1,882,492|
+| Total static span |1,880,444|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |99,716|
+| Unallocated gap before reserved stack |101,764|
 
 Every figure above is the current build's, read out of `.hkpsx/build.json`, and
 `tests/test_budget_doc.py` fails when this table drifts from it. The table stood
@@ -24,7 +24,7 @@ separate agent briefings after it had fallen to 73,876. A budget
 document nobody can trust is worse than none, because work gets planned against
 it.
 
-Static data ends at `0x801db97c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801db17c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 418,628 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
