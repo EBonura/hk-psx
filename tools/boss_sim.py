@@ -181,11 +181,19 @@ def build():
     result = subprocess.run(['cargo', 'build', '--offline', '--locked', '--manifest-path',
                              str(ROOT/'shared/hk-sim/Cargo.toml'), '--message-format=json'],
                             cwd=ROOT, env=env, check=True, capture_output=True, text=True)
-    libraries = {}
+    # hk_sim itself is uplifted to the profile directory while its
+    # dependencies (hk_format, psx_math) stay in deps/, so rustc needs every
+    # directory an rlib was written to, not just hk_sim's.
+    libraries, directories = {}, set()
     for line in result.stdout.splitlines():
         record = json.loads(line)
-        if record.get('reason') == 'compiler-artifact' and record['target']['name'] in ('hk_sim', 'hk_format'):
-            libraries[record['target']['name']] = next(p for p in record['filenames'] if p.endswith('.rlib'))
+        if record.get('reason') != 'compiler-artifact':
+            continue
+        rlib = next((p for p in record['filenames'] if p.endswith('.rlib')), None)
+        if rlib:
+            directories.add(str(Path(rlib).parent))
+        if record['target']['name'] in ('hk_sim', 'hk_format'):
+            libraries[record['target']['name']] = rlib
     for crate in ('hk_sim', 'hk_format'):
         if crate not in libraries:
             raise ValueError('shared/hk-sim did not produce '+crate)
@@ -194,7 +202,8 @@ def build():
                '-o', str(binary)]
     for name, path in sorted(libraries.items()):
         command += ['--extern', f'{name}={path}']
-    command += ['-L', f'dependency={Path(libraries["hk_sim"]).parent}']
+    for directory in sorted(directories):
+        command += ['-L', f'dependency={directory}']
     # params.rs is included as CARGO_MANIFEST_DIR/../data/params.rs, the same
     # relation the guest crate has to it.
     subprocess.run(command, cwd=ROOT, env=dict(env, CARGO_MANIFEST_DIR=str(ROOT/'game')), check=True)
