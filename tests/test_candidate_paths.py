@@ -55,5 +55,17 @@ class CandidatePaths(unittest.TestCase):
                 build_tool.write_build_report({'telemetry':False},False,latest=True)
                 self.assertEqual(json.loads(latest.read_text()),{'telemetry':False})
 
+    def test_a_pgo_build_leaves_the_ordinary_report_alone(self):
+        # docs/BUDGET.md pins build-normal.json, and a pgo image is a different
+        # size, so writing over it failed the next build's test step.
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'.hkpsx').mkdir()
+            ordinary=root/'.hkpsx/build-normal.json';ordinary.write_text('ordinary')
+            with patch.object(paths,'ROOT',root),patch.object(build_tool,'ROOT',root):
+                build_tool.write_build_report({'build_kind':'pgo'},False,latest=True,pgo=True)
+            self.assertEqual(ordinary.read_text(),'ordinary')
+            self.assertEqual(json.loads((root/'.hkpsx/build-pgo-normal.json').read_text()),{'build_kind':'pgo'})
+            self.assertEqual(json.loads((root/'.hkpsx/build.json').read_text()),{'build_kind':'pgo'})
+
 
 if __name__=='__main__':unittest.main()

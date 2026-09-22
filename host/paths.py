@@ -15,9 +15,9 @@ def link_map_path(telemetry=False, candidate=False):
     return build_directory(telemetry, candidate) / ('hk-psx-telemetry.map' if telemetry else 'hk-psx-normal.map')
 
 
-def build_report_path(telemetry=False, candidate=False):
+def build_report_path(telemetry=False, candidate=False, pgo=False):
     variant = 'telemetry' if telemetry else 'normal'
-    prefix = 'build-candidate' if candidate else 'build'
+    prefix = 'build-candidate' if candidate else 'build-pgo' if pgo else 'build'
     return ROOT / '.hkpsx' / f'{prefix}-{variant}.json'
 
 

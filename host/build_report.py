@@ -8,11 +8,15 @@ from paths import build_report_path
 
 def sha(p):
     with Path(p).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
-def write_build_report(report,telemetry,candidate=False,latest=False):
-    """Publish a variant's evidence without touching stable reports for candidates."""
+def write_build_report(report,telemetry,candidate=False,latest=False,pgo=False):
+    """Publish a variant's evidence without touching stable reports for candidates.
+
+    A pgo build keeps its own variant file, so the ordinary build's figures,
+    which docs/BUDGET.md pins, survive it. build.json is always the image on
+    disc, whichever kind built it."""
     from paths import build_report_path
     payload=json.dumps(report,indent=2)
-    build_report_path(telemetry,candidate).write_text(payload)
+    build_report_path(telemetry,candidate,pgo).write_text(payload)
     if latest and not candidate:
         (ROOT/'.hkpsx/build.json').write_text(payload)
 
@@ -80,11 +84,13 @@ def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0):
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--telemetry',action='store_true');args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--telemetry',action='store_true')
+    p.add_argument('--pgo',action='store_true',help='the guest was built by `pgo`: write build-pgo-*.json, not build-normal.json')
+    args=p.parse_args()
     telemetry=args.telemetry
     from paths import link_map_path,hazard_report_path,artifacts
     outputs=artifacts(telemetry)
-    report={'candidate':False,'delivery_policy':'Single canonical disc',
+    report={'candidate':False,'build_kind':'pgo' if args.pgo else 'plain','delivery_policy':'Single canonical disc',
             'sdk':json.load(open(ROOT/'sdk.lock.json')),'telemetry':telemetry,
             'artifacts':{k:str(f) for k,f in outputs.items()},
             'outputs':{str(f):{'bytes':f.stat().st_size,'sha256':sha(f)} for f in outputs.values()},
@@ -109,7 +115,7 @@ def main():
     report['focus_audio']=json.load(open(ROOT/'.hkpsx/focus-audio.json'))
     report['title_music']=json.load(open(ROOT/'.hkpsx/title-music.json'))
     report['disc_chunk_count']=len(report['packed_scenes']['scenes'])+len(report['ambience']['clips'])+len(report['packed_scenes']['atlases'])+1+len(report['scene_coverage']['bundles'])+len(report['packed_scenes'].get('world_metadata',[]))
-    write_build_report(report,telemetry,latest=True)
+    write_build_report(report,telemetry,latest=True,pgo=args.pgo)
     shutil.copy2(link_map,ROOT/'build/hk-psx.map')
     memory=report['memory']
     if memory.get('main_over_pc16_range'):
@@ -120,6 +126,6 @@ def main():
         print(f"WARNING: {memory['largest_text_symbol']} is {memory['largest_text_bytes']:,} bytes, past the "
               f"{memory['pc16_branch_range_bytes']:,} a MIPS PC16 branch reaches. It links only "
               'while no branch pair inside it spans too far.',flush=True)
-    print('Build report:',build_report_path(telemetry),flush=True)
+    print('Build report:',build_report_path(telemetry,pgo=args.pgo),flush=True)
 
 if __name__=='__main__':main()
