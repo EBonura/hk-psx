@@ -51,11 +51,15 @@ def delay_slot_flags():
     """Every MIPS delay-slot filler search on, as the pinned SDK defines it
     (tools/sdk-examples.mk PSX_DELAY_SLOT_FLAGS). Slots get useful work instead
     of the nops -disable-mips-df-backward-search left; hazards.patch then
-    trampolines the few loads whose consumer lands inside their delay."""
+    trampolines the few loads whose consumer lands inside their delay.
+    The SDK writes them as a TOML list body ("-Cflag","-Cflag") for its
+    --config rustflags; plain space-separated flags are accepted too."""
     text=(ROOT/'.psoxide/tools/sdk-examples.mk').read_text()
     m=re.search(r'^PSX_DELAY_SLOT_FLAGS\s*:=\s*(.+)$',text,re.M)
     if not m:raise ValueError('The pinned SDK does not define PSX_DELAY_SLOT_FLAGS')
-    return m[1].strip()
+    flags=re.findall(r'"([^"]+)"',m[1]) or m[1].split()
+    if not flags or any(re.search(r'[\s",]',f) for f in flags):raise ValueError('Unreadable PSX_DELAY_SLOT_FLAGS: '+m[1])
+    return ' '.join(flags)
 def build(telemetry=False, candidate=False, residency="scene_gate", package_disc=True, run_prepass=True, profile=None, work=None):
     """profile: None for the ordinary build, 'collect' for the profiling flat
     image, 'elf' for the same code linked as an ELF that keeps its DWARF
