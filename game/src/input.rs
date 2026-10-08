@@ -152,26 +152,50 @@ pub fn bound_lag(now: u32) -> Option<u32> {
     skipped
 }
 /// The original reads input in Update and moves the Hero in the next
-/// FixedUpdate, so a walk or jump starts one frame after the press there,
-/// while its menus, dialogue and shop answer in Update, at once. With
-/// `original-latency` (on by default) the Knight's simulation takes LEFT,
-/// RIGHT and CROSS from the tick before (`hero_latency`) while no menu, panel
-/// or prompt reads the pad (frame::menu_reads_pad); everything else, and the
-/// Knight while one does, reads the pad as polled. Side by side, the port's walking
-/// lead over the original falls from 0.25 units to the 50 Hz physics phase
-/// (0.11 units). After a scene load the previous tick is the last loading
-/// poll (`seed_latency`).
+/// FixedUpdate, which runs at 50 Hz while the screen refreshes at 60: five of
+/// every six frames hold a FixedUpdate and one holds none. A press read in a
+/// frame therefore moves the Knight on the next frame when that one has a
+/// step and a frame later when it has not, 1 or 2 ticks, 7/6 on average. Its
+/// menus, dialogue and shop answer in Update, at once. With `original-latency`
+/// (on by default) the Knight's simulation takes LEFT, RIGHT and CROSS from the
+/// tick before (`hero_latency`) on the ticks that hold a step (`STEP_PHASE`)
+/// and keeps what the last step took on the one that holds none, while no menu,
+/// panel or prompt reads the pad (frame::menu_reads_pad); everything else, and
+/// the Knight while one does, reads the pad as polled. The phase starts at a
+/// step after every scene load, as the original's accumulator carries none
+/// across a load that is worth copying. After a scene load the previous tick
+/// is the last loading poll (`seed_latency`).
 #[cfg(feature = "original-latency")]
 const ORIGINAL_LATE: u16 = psx_pad::button::LEFT | psx_pad::button::RIGHT | psx_pad::button::CROSS;
 #[cfg(feature = "original-latency")]
 static mut LATE_PREVIOUS: u16 = 0;
+/// What the last FixedUpdate-holding tick took, held through a tick with none.
+#[cfg(feature = "original-latency")]
+static mut LATE_TAKEN: u16 = 0;
+/// Sixths of a fixed 50 Hz step accumulated: each 60 Hz tick adds five, a step
+/// is due at six.
+#[cfg(feature = "original-latency")]
+static mut STEP_PHASE: u8 = PHASE_AT_LOAD;
+/// Where the phase stands after a load: zero has no step on the first tick, then
+/// five ticks with one. Any of 0..=5 is as good as the others,
+/// a live original's accumulator being wherever its frame times left it; the
+/// route tapes, which are open-loop, pin one that keeps their fights going
+/// (`HK_LATENCY_PHASE` overrides it for the build, to find such a one; the
+/// even phases carry journey-kings through, the odd ones do not).
+#[cfg(feature = "original-latency")]
+const PHASE_AT_LOAD: u8 = match option_env!("HK_LATENCY_PHASE") { Some(s) => (s.as_bytes()[0] - b'0') % 6, None => 0 };
 /// The Knight's view of this tick's pad: `raw` with the late buttons of the
 /// previous consumed tick. Call once per consumed tick, before anything skips it.
 #[inline]
 pub fn hero_latency(raw: u16) -> u16 {
     #[cfg(feature = "original-latency")]
     unsafe {
-        let out = (raw & !ORIGINAL_LATE) | (LATE_PREVIOUS & ORIGINAL_LATE);
+        STEP_PHASE += 5;
+        if STEP_PHASE >= 6 {
+            STEP_PHASE -= 6;
+            LATE_TAKEN = LATE_PREVIOUS;
+        }
+        let out = (raw & !ORIGINAL_LATE) | (LATE_TAKEN & ORIGINAL_LATE);
         LATE_PREVIOUS = raw;
         return out;
     }
@@ -185,6 +209,8 @@ pub fn seed_latency() {
     #[cfg(feature = "original-latency")]
     unsafe {
         LATE_PREVIOUS = SAMPLER.held_buttons();
+        LATE_TAKEN = LATE_PREVIOUS;
+        STEP_PHASE = PHASE_AT_LOAD;
     }
 }
 /// Route re-encoding telemetry (`tick-log`): per consumed tick, the poll
