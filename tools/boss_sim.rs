@@ -50,7 +50,7 @@
 //!    seed decides both the 9-to-15-tick gaps and the spawn x of all eight
 //!    barrels of a rage, so getting it wrong dodges the wrong barrels.
 //! 4. **A tape sample reaches the simulation one tick after the pad was polled
-//!    with it.** Tape index `N` is consumed on tick `N + DELAY`. The guest also
+//!    with it.** Tape index `N` is consumed on tick `N + delay()`. The guest also
 //!    catches its simulation up in bursts, so `route.csv` can report a state one
 //!    tick early or late at a given poll; that is log sampling, not a different
 //!    simulation, which is why the drift test allows one poll of slack and no
@@ -80,9 +80,12 @@ const B_SQUARE: u16 = 32768;
 /// neighbourhood gate that decides whether an actor advances at all.
 const SHOTS: usize = 8;
 const NEAR: [i32; 2] = [24 * ONE, 16 * ONE];
-/// Tape sample N reaches the simulation on tick N + DELAY. Measured against a
+/// Tape sample N reaches the simulation on tick N + delay(). Measured against a
 /// replay, not assumed; see the fourth note above.
-const DELAY: usize = 1;
+fn delay() -> usize {
+    static DELAY: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *DELAY.get_or_init(|| std::env::var("BOSS_SIM_DELAY").ok().and_then(|v| v.parse().ok()).unwrap_or(1))
+}
 
 /// The `Head`'s own HealthManager, as `enemies.rs`'s `FALSE_KNIGHT_HEAD`.
 const FK_HEAD: EnemyParams = EnemyParams {
@@ -185,6 +188,11 @@ struct Shot { x: i32, y: i32, vy: i32, animation_tick: u32, live: bool }
 
 #[derive(Clone, Copy)]
 struct Sim {
+    /// `game/src/input.rs` `hero_latency`: the previous tick's pad, what the last
+    /// FixedUpdate-holding tick took of it, and the 50 Hz phase in sixths.
+    lat_previous: u16,
+    lat_taken: u16,
+    lat_phase: u8,
     player: Player,
     response: NailResponse,
     nail: Nail,
@@ -239,6 +247,7 @@ impl Sim {
             .position(|r| contains(r.bounds, world.start[0], world.start[1]))
             .expect("the hero's start is inside a catalogue slot of the boss scene");
         Self {
+            lat_previous: 0, lat_taken: 0, lat_phase: phase_at_load(),
             player,
             response: NailResponse::new(),
             nail: Nail::new(),
@@ -341,7 +350,15 @@ impl Sim {
 
     /// One 60 Hz tick: `frame::simulate`'s hero path, then the False Knight
     /// branch of `EnemyWorld::tick`, in that order.
-    fn step(&mut self, world: &World, m: u16) {
+    fn step(&mut self, world: &World, raw: u16) {
+        // The Knight's view of the pad: left, right and cross from the tick
+        // before on the ticks that hold a 50 Hz step, from the last step's on
+        // the one that holds none. Every tick passes through here, a frozen
+        // Knight's too, as in the guest.
+        self.lat_phase += 5;
+        if self.lat_phase >= 6 { self.lat_phase -= 6; self.lat_taken = self.lat_previous; }
+        let m = (raw & !LATE) | (self.lat_taken & LATE);
+        self.lat_previous = raw;
         let held = |b: u16| m & b != 0;
         if self.vitals.tick() { return; }
         if self.vitals.needs_death_respawn() { self.deaths += 1; return; }
@@ -770,19 +787,21 @@ fn load_world(path: &str) -> World {
 /// the original does (`game/src/input.rs` `hero_latency`).
 const LATE: u16 = (1 << 7) | (1 << 5) | (1 << 14);
 
-/// A tape's samples as the Knight sees them: each carries the three late
-/// buttons of the sample before. Masks given as text (`run`, the search's
-/// prefix and its output) are already in this form; `tools/boss_sim.py`
-/// `tape_masks` turns them back into a tape's.
+/// A tape's samples as polled. The latency (`Sim::step`) is the simulation's.
 fn read_tape(path: &str) -> Vec<u16> {
     let tape = std::fs::read(path).unwrap();
     assert_eq!(&tape[..8], b"PXITAPE2", "not a poll-bound tape");
     let count = u32::from_le_bytes(tape[8..12].try_into().unwrap()) as usize;
-    let polled: Vec<u16> = (0..count)
+    (0..count)
         .map(|n| u16::from_le_bytes(tape[16 + n * 6..18 + n * 6].try_into().unwrap()))
-        .collect();
-    let mut previous = 0;
-    polled.iter().map(|&m| { let seen = (m & !LATE) | (previous & LATE); previous = m; seen }).collect()
+        .collect()
+}
+/// Where the 50 Hz phase stands before the first simulated tick: the disc's
+/// `PHASE_AT_LOAD` plus the ticks of load the simulation does not model. Found
+/// by replaying a tape and matching the Knight's trace, then given here as
+/// `BOSS_SIM_PHASE`.
+fn phase_at_load() -> u8 {
+    std::env::var("BOSS_SIM_PHASE").ok().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0) % 6
 }
 
 const HEADER: &str = "poll,hx,hy,grounded,health,soul,fkx,fky,fkhp,headhp,phase,stunned,exposed,staggers,conversions,deaths,barrels,facing\n";
@@ -812,8 +831,8 @@ fn replay(world: &World, masks: &[u16], trace: Option<&str>, summary: Option<&st
     let mut out = String::from(HEADER);
     let mut t = Transitions::default();
     let (mut fk_hp, mut head_hp, mut health) = (s.body.hp as i32, s.head.hp as i32, s.vitals.health as i32);
-    for poll in 0..masks.len() + DELAY {
-        let m = if poll >= DELAY && poll - DELAY < masks.len() { masks[poll - DELAY] } else { 0 };
+    for poll in 0..masks.len() + delay() {
+        let m = if poll >= delay() && poll - delay() < masks.len() { masks[poll - delay()] } else { 0 };
         s.step(world, m);
         if trace.is_some() { trace_line(&mut out, poll, &s); }
         if s.body.hp as i32 != fk_hp { t.fk_hp.push((poll, fk_hp, s.body.hp as i32)); fk_hp = s.body.hp as i32; }
@@ -909,7 +928,7 @@ fn search(world: &World, prefix: &[u16], segment: usize, horizon: usize, beam: u
           alphabet: &[u16]) -> (Vec<u16>, Sim) {
     let mut seed = Sim::new(world);
     for poll in 0..prefix.len() {
-        let m = if poll >= DELAY { prefix[poll - DELAY] } else { 0 };
+        let m = if poll >= delay() { prefix[poll - delay()] } else { 0 };
         seed.step(world, m);
     }
     let mut history: Vec<(i32, u16)> = Vec::new();
@@ -970,10 +989,10 @@ fn search(world: &World, prefix: &[u16], segment: usize, horizon: usize, beam: u
         cursor = parent;
     }
     tail.reverse();
-    // The seed consumed tape samples 0 .. prefix.len()-DELAY, because a sample
-    // reaches the simulation DELAY ticks after the pad was polled with it. The
+    // The seed consumed tape samples 0 .. prefix.len()-delay(), because a sample
+    // reaches the simulation delay() ticks after the pad was polled with it. The
     // search's first action therefore belongs at that index, not at prefix.len().
-    let mut masks = prefix[..prefix.len() - DELAY].to_vec();
+    let mut masks = prefix[..prefix.len() - delay()].to_vec();
     masks.extend(tail);
     (masks, best.sim)
 }
