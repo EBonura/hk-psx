@@ -1,0 +1,21 @@
+{
+  "name": "kp-playtest",
+  "port": {
+    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "map": "build/hk-psx-normal.map",
+    "tape": "tools/tapes/kp-playtest.pxtape",
+    "polls": 1500,
+    "shot_interval": 6,
+    "watch": [
+      {"chan": "crawler.x", "symbol": "HK_CRAWLER_X", "scale": 65536, "signed": true},
+      {"chan": "crawler.y", "symbol": "HK_CRAWLER_Y", "scale": 65536, "signed": true},
+      {"chan": "crawler.hp", "symbol": "HK_CRAWLER_HP"}
+    ],
+    "counters": [
+      {"symbol": "HK_NAIL_ATTACK_COUNT", "event": "hero.attack"},
+      {"symbol": "HK_ENEMY_HITS", "event": "enemy.hit"}
+    ]
+  },
+  "window": {"ticks": 900},
+  "og": {"scene": "", "gate": "", "enemies": [{"match": "Crawler", "chan": "crawler"}], "timeout": 200}
+}

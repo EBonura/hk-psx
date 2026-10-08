@@ -1,0 +1,78 @@
+{
+  "name": "gruz-mother",
+  "port": {
+    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "map": "build/hk-psx-normal.map",
+    "card": "tools/cards/gruz-fight.mcd",
+    "events": "9:start:1,12:cross:1,140:right:45,210:square:3,226:square:3,242:square:3,258:square:3,274:square:3,290:square:3,306:square:3,322:square:3,338:square:3,354:square:3,370:square:3,386:square:3,402:square:3,418:square:3,434:square:3,450:square:3,466:square:3,482:square:3,498:square:3,514:square:3,530:square:3,546:square:3,562:square:3,578:square:3,594:square:3,610:square:3,626:square:3,642:square:3,658:square:3,674:square:3,690:square:3,706:square:3,722:square:3,738:square:3,754:square:3,770:square:3,786:square:3,802:square:3,818:square:3,834:square:3,850:square:3,866:square:3,882:square:3,898:square:3,914:square:3,930:square:3,946:square:3,962:square:3,978:square:3,994:square:3,1010:square:3,1026:square:3,1042:square:3,1058:square:3,1074:square:3,1090:square:3,1106:square:3,1122:square:3,1138:square:3,1154:square:3,1170:square:3,1186:square:3,1202:square:3,1218:square:3,1234:square:3,1250:square:3,1266:square:3,1282:square:3,1298:square:3,300:cross:24,396:cross:24,492:cross:24,588:cross:24,684:cross:24,780:cross:24,876:cross:24,972:cross:24,1068:cross:24,1164:cross:24,1260:cross:24,560:left:30,760:left:30,960:left:30,1160:left:30",
+    "polls": 1400,
+    "shot_interval": 6,
+    "watch": [
+      {
+        "chan": "gruz.phase",
+        "symbol": "HK_GZ_PHASE"
+      },
+      {
+        "chan": "gruz.charges",
+        "symbol": "HK_GZ_CHARGES"
+      },
+      {
+        "chan": "gruz.slams",
+        "symbol": "HK_GZ_SLAMS"
+      },
+      {
+        "chan": "gruz.hits",
+        "symbol": "HK_GZ_HITS"
+      },
+      {
+        "chan": "gruz.woken",
+        "symbol": "HK_GZ_WOKEN"
+      }
+    ],
+    "counters": [
+      {
+        "symbol": "HK_NAIL_ATTACK_COUNT",
+        "event": "hero.attack"
+      },
+      {
+        "symbol": "HK_ENEMY_HITS",
+        "event": "enemy.hit"
+      },
+      {
+        "symbol": "HK_GZ_CHARGES",
+        "event": "gruz.charge"
+      },
+      {
+        "symbol": "HK_GZ_SLAMS",
+        "event": "gruz.slam"
+      },
+      {
+        "symbol": "HK_GZ_HITS",
+        "event": "gruz.hit"
+      },
+      {
+        "symbol": "HK_GZ_WOKEN",
+        "event": "gruz.woken"
+      }
+    ]
+  },
+  "window": {
+    "ticks": 1100
+  },
+  "og": {
+    "scene": "Crossroads_04",
+    "gate": "left1",
+    "enemies": [
+      {
+        "match": "Giant Fly",
+        "chan": "gruz",
+        "events": {
+          "Wake": "gruz.woken",
+          "Charge Antic": "gruz.charge",
+          "Slam Antic": "gruz.slam"
+        }
+      }
+    ],
+    "timeout": 260
+  }
+}
