@@ -228,7 +228,7 @@ pub fn render(game: &mut Game, r: &world::Region, view: &world::Region, room: &R
     // The original's HeroLight sits just behind the Knight: everything drawn
     // so far brightens, the Knight and the front scenery do not.
     #[cfg(feature="hero-light")]
-    {if !game.vitals.dead && !game.door.hidden() {prims+=crate::hero_light::draw_light(r.scene,game.player.x,game.player.y,game.player.grounded,camera);}}
+    {if !game.vitals.dead && !game.door.hidden() {prims+=crate::hero_light::draw_light(r.scene,game.player.x,game.player.y,camera);}}
     // InvulnerablePulse darkens the Knight toward black and back on simulation
     // time (Vitals::invulnerable_pulse), whatever the frame rate.
     let pulse=game.vitals.invulnerable_pulse();

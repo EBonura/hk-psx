@@ -53,6 +53,7 @@ mod disc;
 mod room_decode;
 mod texture_upload;
 mod vram_cache;
+mod display;
 mod menu;
 mod pause;
 mod charms;

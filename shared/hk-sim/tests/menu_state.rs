@@ -40,7 +40,7 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  for _ in 0..100{assert!(!s.step(CROSS));assert_eq!(s.page,Page::Controls);}
  tap(&mut s,START);assert_eq!(s.page,Page::Main);assert_eq!(s.selected,2);
  for _ in 0..100{assert!(!s.step(START));assert_eq!(s.page,Page::Main);}
- assert_eq!(MAIN_ITEMS.len(),4);assert_eq!(OPTION_ITEMS.len(),4);assert_eq!(CONTROL_LINES.len(),12);
+ assert_eq!(MAIN_ITEMS.len(),4);assert_eq!(OPTION_ITEMS.len(),7);assert_eq!(CONTROL_LINES.len(),12);
 }
 #[test]fn held_directions_repeat_at_bounded_cadence_and_opposites_cancel(){
  let mut s=State::new();s.step(DOWN);assert_eq!(s.selected,1);
@@ -56,7 +56,7 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  for _ in 0..20{s.adjust(0,-1);}assert_eq!(s.sfx,0);assert!(!s.adjust(0,-1));assert_eq!(s.ambience,10);
  assert!(s.adjust(0,127));assert_eq!(s.sfx,10);assert!(s.adjust(1,-128));assert_eq!(s.ambience,0);
  let mut m=State::new();tap(&mut m,DOWN);tap(&mut m,CROSS);tap(&mut m,UP);
- assert_eq!(m.selected,3);let old=m.settings;tap(&mut m,LEFT);assert_eq!(m.settings,old);tap(&mut m,CROSS);assert_eq!(m.page,Page::Main);
+ assert_eq!(m.selected,OPTION_BACK);let old=m.settings;tap(&mut m,LEFT);assert_eq!(m.settings,old);tap(&mut m,CROSS);assert_eq!(m.page,Page::Main);
 }
 
 #[test]fn title_cheats_are_explicit_and_confirm_does_not_start_game(){
@@ -76,8 +76,29 @@ fn tap(s:&mut State,b:u16)->bool{assert!(!s.step(0));s.step(b)}
  assert_eq!((s.settings.sfx,s.settings.ambience),(10,10));
  tap(&mut s,RIGHT);assert_eq!(s.settings.music,1);
  tap(&mut s,CROSS);assert_eq!(s.page,Page::Options);assert_eq!(s.settings.music,1);
- tap(&mut s,DOWN);assert_eq!(OPTION_ITEMS[s.selected],"Back");
+ tap(&mut s,DOWN);assert_eq!(OPTION_ITEMS[s.selected],"Brightness");
+ for _ in 0..3{tap(&mut s,DOWN);}assert_eq!(OPTION_ITEMS[s.selected],"Back");
  assert!(!tap(&mut s,CROSS));assert_eq!(s.page,Page::Main);assert_eq!(s.selected,1);
  tap(&mut s,CROSS);tap(&mut s,CIRCLE);tap(&mut s,UP);
  assert!(!tap(&mut s,START));assert!(tap(&mut s,CROSS));assert_eq!(s.settings.music,1);
+}
+
+#[test]fn brightness_and_screen_position_step_within_their_limits_and_print_signed(){
+ let mut s=Settings::new();assert_eq!((s.brightness,s.screen_x,s.screen_y),(0,0,0));
+ assert!(s.adjust(3,1));assert_eq!(s.brightness,1);assert!(s.adjust(3,-127));assert_eq!(s.brightness,-BRIGHT_STEPS);
+ assert!(!s.adjust(3,-1));assert!(s.adjust(3,127));assert_eq!(s.brightness,BRIGHT_STEPS);assert!(!s.adjust(3,1));
+ for row in [4,5]{
+  for _ in 0..40{s.adjust(row,1);}assert!(!s.adjust(row,1));
+  for _ in 0..40{s.adjust(row,-1);}assert!(!s.adjust(row,-1));
+ }
+ assert_eq!((s.screen_x,s.screen_y),(-SCREEN_RANGE,-SCREEN_RANGE));
+ // Nothing but its own row moves a value.
+ assert_eq!((s.sfx,s.ambience,s.music),(10,10,10));assert!(!s.adjust(6,1));
+ let mut out=[0u8;3];
+ assert_eq!(signed(0,&mut out),"0");assert_eq!(signed(3,&mut out),"+3");assert_eq!(signed(-2,&mut out),"-2");
+ assert_eq!(signed(16,&mut out),"+16");assert_eq!(signed(-16,&mut out),"-16");assert_eq!(signed(-10,&mut out),"-10");
+ // Through the page: Down to Brightness, Right twice.
+ let mut m=State::new();tap(&mut m,DOWN);tap(&mut m,CROSS);for _ in 0..3{tap(&mut m,DOWN);}
+ assert_eq!(OPTION_ITEMS[m.selected],"Brightness");tap(&mut m,RIGHT);tap(&mut m,RIGHT);assert_eq!(m.settings.brightness,2);
+ assert_eq!((m.settings.sfx,m.settings.ambience,m.settings.music),(10,10,10));
 }
