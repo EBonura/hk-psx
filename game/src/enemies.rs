@@ -3505,7 +3505,8 @@ impl EnemyWorld {
     /// dead, 2 hit flash) as `scene << 24 | kind << 16 | flags`; x; y; hit
     /// points (low half) and evasion ticks (high half); vertical velocity;
     /// walk direction; walk animation tick. Returns (live actors, slots written).
-    #[optimize(size)]
+    #[cfg(not(test))]
+    #[cfg_attr(not(test),optimize(size))]
     pub fn trace(&self, out: &mut [u32], max: usize) -> (u32, u32) {
         let (mut live, mut written) = (0u32, 0usize);
         for a in self.actors.iter().flatten() {
@@ -3544,7 +3545,7 @@ impl EnemyWorld {
         // A death or a gate leaves the arena: no roar or arena end outlives it.
         unsafe { ROAR_LOCK = false; MW_PIECE_WAIT = false; }
     }
-    #[optimize(size)]
+    #[cfg_attr(not(test),optimize(size))]
     pub fn sync_region(&mut self, region: &Region) {
         let key = crate::world::actors_key(region);
         if key.is_some() && key == self.placed_key {

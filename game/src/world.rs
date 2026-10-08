@@ -806,7 +806,7 @@ impl State {
             particles::pool().spawn_death(region.scene, source, position, bank);
         }
     }
-    #[optimize(size)]
+    #[cfg_attr(not(test),optimize(size))]
     pub fn reset_scene(&mut self, scene: usize) {
         self.begin_world_admission();
         self.impacts.clear_scene(scene);
