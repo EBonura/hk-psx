@@ -1,0 +1,17 @@
+[package]
+name = "hkref"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-2.0-or-later"
+description = "Side-by-side harness for the original Hollow Knight and the PS1 port: drive both, trace both, diff both."
+
+# Its own workspace, like the other host tools.
+[workspace]
+
+[dependencies]
+serde_json = "1"
+png = "0.17"
+
+[profile.release]
+opt-level = 2

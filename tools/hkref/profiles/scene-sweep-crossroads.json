@@ -1,0 +1,22 @@
+{
+  "name": "scene-sweep-crossroads",
+  "port": {
+    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "map": "build/hk-psx-normal.map",
+    "polls": 1
+  },
+  "og": {
+    "scene": "Crossroads_05",
+    "gate": "zzz",
+    "sweep": [
+      "Tutorial_01",
+      "Town",
+      "Crossroads_01",
+      "Crossroads_04",
+      "Crossroads_10",
+      "Crossroads_09"
+    ],
+    "sweep_frames": 300,
+    "timeout": 400
+  }
+}
