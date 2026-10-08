@@ -1170,6 +1170,15 @@ fn draw_scenery_xy(draw:usize,xy:[i32;8],camera:(i32,i32))->u32 {
     }
 }
 /// Small, independently resident Geo art uses the same bounded DMA packet pool.
+/// A quad drawn over everything the scenery drew, the HUD's Geo coin: never
+/// hidden by an occluder, because it is drawn after them all.
+pub fn hud_quad(template:&QuadTextured,verts:[(i16,i16);4]) {
+    unsafe {
+        assert!(USED<CAP);
+        PACKETS[USED].write_plain(quad_words(template,verts,(128,128,128),None,128));
+        USED+=1;
+    }
+}
 pub fn resident_quad(template:&QuadTextured,verts:[(i16,i16);4]) {
     resident_quad_tinted(template,verts,(128,128,128));
 }

@@ -247,6 +247,7 @@ pub fn render(game: &mut Game, r: &world::Region, view: &world::Region, room: &R
     // the shop's PlayerData, the equipped charms and the cheats on each call.
     let vitals=game.settings.cheats.params(VITAL_PARAMS);
     if !veiled {prims+=unsafe {spstack::sim(||render::scenery(camera,true))};prims+=game.state.draw_secrets(view,camera,true);}
+    prims+=geo_render::hud_coin(dialogue::GEO_COIN_X,hud::geo_y(vitals.max_health.saturating_add(game.vitals.blue_health))-1);
     dialogue::prepare(camera,game.geo.wallet(),game.paused.then_some((&game.pause_menu,&game.settings)),vitals.max_health.saturating_add(game.vitals.blue_health),game.save_prompt);game_map::prepare(r.scene,[game.player.x,game.player.y]);if crate::modules::loaded(crate::modules::SHOP) {shop::prepare(&game.shop_screen,camera,game.paused);}title_card::prepare();render::submit(game.vitals.health,vitals.max_health,game.vitals.soul,soul_cap(&game.shade,vitals.max_soul),game.paused,game.vitals.blue_health,game.door.shade().max(game.exit_shade()));
     prims
 }
