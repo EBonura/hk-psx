@@ -6,9 +6,12 @@
 //! of eight additive textured triangles over a 64-texel radial ramp that holds
 //! the sprite's own falloff (one VRAM row in the spare CLUT strip), tinted by
 //! the scene's colour (`host/scene_grading.py`), drawn right before the Knight.
-//! On the ground the fan is clipped at the Knight's feet with the drawing area:
-//! the floor is drawn over that part anyway, and the GPU skips clipped pixels.
-//! Pixels cost the GPU about one clock each, so the fan is all the light is.
+//! The whole fan is drawn, below the Knight's feet too: a floor in front of the
+//! Knight is drawn over that part, and a thin platform has background there
+//! that the original's light does fall on. (The fan used to be clipped at the
+//! feet while the Knight stood, which cut the light off in a straight line
+//! under any platform.) Pixels cost the GPU about one clock each, so the fan
+//! is all the light is.
 //!
 //! The vignette is `vignette_large_v01` (black, a soft hole) on the Knight at
 //! the scale the Darkness Control FSM picks for the scene's darkness level:
@@ -89,10 +92,9 @@ pub fn upload() {
     psx_vram::upload_bytes(VramRect::new(RAMP_CLUT_XY.0, RAMP_CLUT_XY.1, 16, 1), &clut);
 }
 
-/// The hero light, drawn immediately before the Knight. `grounded` clips it
-/// at the Knight's feet.
+/// The hero light, drawn immediately before the Knight.
 #[cfg(feature = "hero-light")]
-pub fn draw_light(scene: usize, x: i32, y: i32, grounded: bool, camera: (i32, i32)) -> u32 {
+pub fn draw_light(scene: usize, x: i32, y: i32, camera: (i32, i32)) -> u32 {
     let Some(light) = scene_light(scene) else { return 0 };
     if light.rgb == [0, 0, 0] {
         return 0;
@@ -110,24 +112,17 @@ pub fn draw_light(scene: usize, x: i32, y: i32, grounded: bool, camera: (i32, i3
     let tpage = Tpage::new(320, 256, TexDepth::Bit4).uv_tpage_word(1) as u32;
     let vertex = |p: (i32, i32)| ((p.1.clamp(-1023, 1023) as u32 & 0xffff) << 16) | (p.0.clamp(-1023, 1023) as u32 & 0xffff);
     let rim = |k: usize| (centre.0 + (r * DIRS[k & 7].0 >> 12), centre.1 - (r * DIRS[k & 7].1 >> 12));
-    let feet = if grounded { Some(screen(x, y + crate::PARAMS.bottom, camera).1) } else { None };
     let mut tris = [[0u32; 7]; 8];
     let mut n = 0;
     for k in 0..8 {
         let (a, b) = (rim(k), rim(k + 1));
-        // On the ground the floor covers everything below the feet.
-        if let Some(f) = feet {
-            if a.1 >= f && b.1 >= f && centre.1 >= f {
-                continue;
-            }
-        }
         let uv0 = (RAMP_U0 as u32) | (RAMP_V as u32) << 8;
         let uv_rim = ((RAMP_U0 + 63) as u32) | (RAMP_V as u32) << 8;
         // GP0(26h): textured triangle, semi-transparent, modulated.
         tris[n] = [0x2600_0000 | colour, vertex(centre), uv0 | clut << 16, vertex(a), uv_rim | tpage << 16, vertex(b), uv_rim];
         n += 1;
     }
-    crate::render::light_fan(&tris[..n], feet.map(|f| f.clamp(0, 240) as i16))
+    crate::render::light_fan(&tris[..n])
 }
 
 /// 1-alpha (0..256) of the vignette by screen distance in 8-pixel steps, for

@@ -35,7 +35,8 @@ an old handoff snapshot and is marked as such.
   since HKS5 the world: beaten bosses, broken walls, mined rocks, opened
   cocoons, revealed secrets and the ability bits (`game/src/persist.rs`).
   An HKS4 save still loads.
-- Title, Options (separate SFX, ambience and music levels), Controls and a
+- Title, Options (separate SFX, ambience and music levels, brightness and screen
+  position), Controls and a
   Cheats page. Abilities (Mothwing Cloak, Mantis Claw, Monarch Wings, Crystal
   Heart, Shade Cloak, Dream Nail, Vengeful Spirit) are implemented but only the
   Cheats page grants them; no pickup does yet.
@@ -120,7 +121,10 @@ map and disc hashes. Run gameplay and traversal validators separately; building
 does not claim those checks pass. See `docs/STATUS.md` for known failures.
 
 On the title, Up/Down selects Start Game, Options, Controls or Cheats;
-Cross/Start opens the selection and Circle returns. Start Game lists the four
+Cross/Start opens the selection and Circle returns. Options also sets
+brightness (five steps either way, one blended quad over the frame, free at the
+default) and the screen position (16 pixels either way in the display range);
+like the volumes they last for the session. Start Game lists the four
 save profiles: an empty one starts a new game at the opening marker (there is
 no opening cinematic) and a used one continues from its bench. In gameplay, D-pad moves, Cross jumps, Square swings
 the nail, and holding Circle focuses to heal with SOUL. Up + Square attacks

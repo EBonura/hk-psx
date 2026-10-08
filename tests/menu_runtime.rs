@@ -45,6 +45,17 @@ pub mod audio{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volume
  pub fn ui_select(){}pub fn ui_slider(){}
  // Confirm/cancel and start, from the world bank.
  pub fn ui_confirm(){}pub fn ui_start(){}}
+// display.rs drives the GPU (brightness quad, GP1 display range); here it is a
+// record of what the title asked for.
+pub mod display{
+ use std::cell::RefCell;
+ thread_local!{pub static STATE:RefCell<(i8,(i8,i8),Vec<u8>)>=RefCell::new((0,(0,0),Vec::new()));}
+ pub fn brightness()->i8{STATE.with(|s|s.borrow().0)}
+ pub fn screen()->(i8,i8){STATE.with(|s|s.borrow().1)}
+ pub fn set_brightness(v:i8){STATE.with(|s|s.borrow_mut().0=v)}
+ pub fn set_screen(x:i8,y:i8){STATE.with(|s|s.borrow_mut().1=(x,y))}
+ pub fn draw_direct(gain:u8){STATE.with(|s|s.borrow_mut().2.push(gain))}
+}
 pub mod ambience{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((1,v)));}}
 pub mod music{pub fn begin(){}pub fn tick(){}pub fn stop()->bool{true}pub fn set_fade(_:u8){}pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((2,v)));}}
 // cheats composes the equipped charms into the live parameters and reconciles
@@ -113,4 +124,16 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
  let lines=["Geo 42","Empty","Damaged","Empty"];
  let (_,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&lines,"Memory card full");assert_eq!(p,0);
+}
+#[test]fn brightness_and_screen_position_reach_the_display_and_carry_to_gameplay(){
+ let _guard=LOCK.lock().unwrap();use menu::state::*;
+ display::STATE.with(|s|*s.borrow_mut()=(0,(0,0),Vec::new()));
+ // Options, down to Brightness (+2), Screen X (-3), Screen Y (+1), back, then start slot 1.
+ let mut samples=Vec::new();for b in [DOWN,CROSS,DOWN,DOWN,DOWN,RIGHT,RIGHT,DOWN,LEFT,LEFT,LEFT,DOWN,RIGHT,CIRCLE,UP,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");
+ assert_eq!((s.brightness,s.screen_x,s.screen_y),(2,-3,1));assert_eq!(s,menu::Settings{brightness:2,screen_x:-3,screen_y:1,..menu::Settings::new()});
+ display::STATE.with(|d|{let d=d.borrow();assert_eq!((d.0,d.1),(2,(-3,1)));assert!(!d.2.is_empty()&&d.2.iter().all(|&g|g<=128));});
+ // The next visit to the title starts from what is set now.
+ let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!((s.brightness,s.screen_x,s.screen_y),(2,-3,1));
 }

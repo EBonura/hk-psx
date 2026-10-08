@@ -973,33 +973,20 @@ pub fn texture_sub(id: usize, verts: [(i16, i16); 4], tint: (u8, u8, u8), rect: 
 #[no_mangle] pub static mut HK_GLOW_QUADS: u32 = 0;
 #[cfg(feature="hero-light")]
 #[no_mangle] pub static mut HK_GLOW_SKIPPED: u32 = 0;
-/// The hero light's fan (hero_light.rs): GP0(26h) textured triangles, each
-/// clipped at `clip_bottom` with the drawing area when the Knight stands, so
-/// the GPU never fills the part the floor covers. Like the hit flash it only
-/// spends the frame's optional allowance and is skipped, counted, without it.
+/// The hero light's fan (hero_light.rs): GP0(26h) textured triangles. Like the
+/// hit flash it only spends the frame's optional allowance and is skipped,
+/// counted, without it.
 #[cfg(feature="hero-light")]
-pub fn light_fan(tris:&[[u32;7]],clip_bottom:Option<i16>)->u32 {
+pub fn light_fan(tris:&[[u32;7]])->u32 {
     unsafe {
         if tris.is_empty() {return 0;}
         if EXTRA_USED+tris.len()>EXTRA_ALLOWANCE || USED+tris.len()>=CAP {
             HK_GLOW_SKIPPED=HK_GLOW_SKIPPED.wrapping_add(1);
             return 0;
         }
-        let y=FRAMEBUFFER_Y as u32;
         for tri in tris {
             let p=&mut PACKETS[USED];
-            match clip_bottom {
-                Some(bottom) if bottom>0 && bottom<240 => {
-                    p.tag=11<<24;
-                    p.words[0]=0xe300_0000|(y<<10);
-                    p.words[1]=0xe400_0000|319|((bottom as u32-1+y)<<10);
-                    p.words[2..9].copy_from_slice(tri);
-                    p.words[9]=0xe300_0000|(y<<10);
-                    p.words[10]=0xe400_0000|319|((y+239)<<10);
-                }
-                Some(_) => continue,
-                None => {p.tag=7<<24;p.words[..7].copy_from_slice(tri);}
-            }
+            p.tag=7<<24;p.words[..7].copy_from_slice(tri);
             USED+=1;EXTRA_USED+=1;
         }
         HK_GLOW_QUADS=HK_GLOW_QUADS.wrapping_add(tris.len() as u32);
@@ -1586,6 +1573,8 @@ pub fn submit(health:u16,max_health:u16,soul:u16,max_soul:u16,paused:bool,blue_h
                 [(transition,transition,transition);4],gpu::material::BlendMode::Subtract);
             ot.add(0,&mut *(&raw mut TRANSITION),gpu::prim::QuadGouraudBlended::WORDS);
         }
+        // BRIGHTNESS (display.rs): over everything below, under the fade to black.
+        crate::display::append(ot);
         crate::dialogue::append(ot);
         // Between the HUD and the panel text: the map's backdrop and rooms go
         // over the world and the HUD, its area name over them.

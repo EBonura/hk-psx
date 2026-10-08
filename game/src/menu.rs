@@ -64,6 +64,9 @@ fn text(x:i16,y:i16,value:&str,gain:u8){
 }
 fn centered(y:i16,value:&str,gain:u8){text(160-text_width(value)/2,y,value,gain);}
 pub const SLOT_LABELS:[&str;4]=["Slot 1","Slot 2","Slot 3","Slot 4"];
+// For size, like `run`: the title is not a gameplay frame, and the resident code
+// budget (docs/BUDGET.md) is what the Options rows would otherwise be spent from.
+#[cfg_attr(not(test),optimize(size))]
 fn draw_menu(menu:&State,gain:u8,slots:&[&str;4],fault:&str){
     draw(gain);
     match menu.page {
@@ -86,14 +89,21 @@ fn draw_menu(menu:&State,gain:u8,slots:&[&str;4],fault:&str){
             centered(218,if fault.is_empty(){"X: select    O: back"}else{fault},gain);
         }
         Page::Options=>{
-            centered(136,"OPTIONS",gain);
+            // No heading: the logo's flourish reaches y 142, and seven rows need the space under it.
             for (i,label)in state::OPTION_ITEMS.iter().enumerate(){
-                let y=154+i as i16*17;let g=if i==menu.selected{gain}else{gain-gain/4};
+                let y=134+i as i16*12;let g=if i==menu.selected{gain}else{gain-gain/4};
                 text(86,y,label,g);
-                if i<3{text(215,y,LEVELS[[menu.settings.sfx,menu.settings.ambience,menu.settings.music][i]as usize],g);}
+                let mut sign=[0u8;3];
+                let s=&menu.settings;
+                let value=match i{
+                    0..=2=>LEVELS[[s.sfx,s.ambience,s.music][i]as usize],
+                    3..=5=>state::signed([s.brightness,s.screen_x,s.screen_y][i-3],&mut sign),
+                    _=>"",
+                };
+                if !value.is_empty(){text(215,y,value,g);}
                 if i==menu.selected{text(70,y,">",gain);}
             }
-            centered(221,"Left/Right: volume    O: back",gain);
+            centered(221,"Left/Right: adjust    O: back",gain);
         }
         Page::Controls=>{
             let border=gain/2;
@@ -117,6 +127,8 @@ fn draw_menu(menu:&State,gain:u8,slots:&[&str;4],fault:&str){
             centered(218,"X: toggle    Left/Right: off/on    O: back",gain);
         }
     }
+    // BRIGHTNESS over the whole screen, text included (display.rs).
+    crate::display::draw_direct(gain);
 }
 fn present_samples(fb:&mut FrameBuffer,mut sample:impl FnMut(u16)) {
     // The menu draws through the command port; GP0(1Fh) after it is what lets
@@ -143,6 +155,9 @@ fn present(fb:&mut FrameBuffer)->u16 {
 #[cfg_attr(not(test),optimize(size))]
 pub fn run(fb:&mut FrameBuffer,art:Option<&[u8]>,slots:&[&str;4],fault:&str)->(Settings,usize) {
     restore(art);crate::music::begin();let mut menu=State::new();let mut gain=0u8;
+    // The page starts from what is set now: the title comes back after a session reset.
+    menu.settings.brightness=crate::display::brightness();
+    (menu.settings.screen_x,menu.settings.screen_y)=crate::display::screen();
     loop {
         gain=gain.saturating_add(8).min(128);draw_menu(&menu,gain,slots,fault);
         let mut start=false;
@@ -160,6 +175,8 @@ pub fn run(fb:&mut FrameBuffer,art:Option<&[u8]>,slots:&[&str;4],fault:&str)->(S
             if old.sfx!=menu.settings.sfx{crate::audio::set_volume(menu.settings.sfx);}
             if old.ambience!=menu.settings.ambience{crate::ambience::set_volume(menu.settings.ambience);}
             if old.music!=menu.settings.music{crate::music::set_volume(menu.settings.music);}
+            if old.brightness!=menu.settings.brightness{crate::display::set_brightness(menu.settings.brightness);}
+            if (old.screen_x,old.screen_y)!=(menu.settings.screen_x,menu.settings.screen_y){crate::display::set_screen(menu.settings.screen_x,menu.settings.screen_y);}
             unsafe{HK_MENU_PAGE=match menu.page{Page::Main=>0,Page::Options=>1,Page::Controls=>2,Page::Cheats=>3,Page::Profiles=>4};HK_MENU_ROW=menu.selected as u32;HK_MENU_SFX=menu.settings.sfx as u32;HK_MENU_AMBIENCE=menu.settings.ambience as u32;HK_MENU_MUSIC=menu.settings.music as u32;}
         });
         if start{break;}
