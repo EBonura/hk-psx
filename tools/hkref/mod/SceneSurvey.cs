@@ -34,6 +34,8 @@ namespace HKReference
         private string loadStatus = "ok";
         private List<Target> targets = new List<Target>();
         private bool invincible;
+        private string sceneGates = "";
+        private readonly List<Vector2> gatePositions = new List<Vector2>();
         private string windowName = "";
         private float windowX, windowY;
 
@@ -125,13 +127,14 @@ namespace HKReference
                     File.WriteAllText(Path.Combine(stateDir, "survey-current.txt"), current);
                     Driver.Write(gm, "entryGateName", "zzz");
                     ReplayDevice.SetButtons(0);
+                    Freeze(hero, true);
                     Driver.Call(gm, "LoadScene", current);
                     phase = Phase.Loading; phaseStart = frame; stable = 0; loadStatus = "ok";
                     return false;
                 case Phase.Loading:
                 {
                     // Loaded, not necessarily playing: with no real entry gate the game waits in
-                    // ENTERING_LEVEL for a hero animation that never comes (see ForcePlaying).
+                    // ENTERING_LEVEL for a hero animation that never comes (see SetPlaying).
                     bool ok = active == current && hero != null && Driver.Number(Driver.Read(gm, "isLoading")) == "False";
                     stable = ok ? stable + 1 : 0;
                     if (stable >= 20 || frame - phaseStart > loadTimeout)
@@ -140,8 +143,8 @@ namespace HKReference
                         loadFrames = frame - phaseStart;
                         phase = Phase.Settle; phaseStart = frame;
                         BeginWindow("idle", "", 0, 0, frame);
+                        Freeze(hero, true);
                         if (!invincible && ok) MakeInvincible(gm);
-                        if (ok) ForcePlaying(gm, hero);
                     }
                     return false;
                 }
@@ -151,9 +154,10 @@ namespace HKReference
                     try { Census(current, hero, gm); }
                     catch (Exception e) { loadStatus += "+census_error:" + e.GetType().Name; Debug.Log("HKReference census failed in " + current + ": " + e); }
                     if (loadStatus != "ok" || targets.Count == 0) { Finish(); return false; }
-                    tourIndex = 0; phase = Phase.Tour; StartTarget(frame, hero);
+                    tourIndex = 0; phase = Phase.Tour; SetPlaying(gm); StartTarget(frame, hero);
                     return false;
                 case Phase.Tour:
+                    if (active != current) { EndWindow(frame); loadStatus += "+left_scene"; Finish(); return false; }
                     if (frame - targetStart < tourFrames) return false;
                     EndWindow(frame);
                     tourIndex++;
@@ -165,34 +169,28 @@ namespace HKReference
         }
 
         // The scene was entered through a gate that does not exist, so the game sits in
-        // ENTERING_LEVEL. Put it in PLAYING and the hero on the scene's first gate.
-        private void ForcePlaying(object gm, Component hero)
+        // ENTERING_LEVEL. Put it in PLAYING when the tour starts (never before: a hero
+        // standing in a gate's trigger would leave the scene).
+        // A frozen hero has no physics and so no trigger events: it cannot walk into a gate
+        // (or fall into a pit) while a scene settles. Thawed per tour target.
+        private static void Freeze(Component hero, bool on)
+        {
+            if (hero == null) return;
+            Rigidbody2D body = hero.GetComponent<Rigidbody2D>();
+            if (body == null) return;
+            if (on) body.velocity = Vector2.zero;
+            body.simulated = !on;
+        }
+
+        private void SetPlaying(object gm)
         {
             try
             {
-                if (Driver.Number(Driver.Read(gm, "gameState")) != "PLAYING")
-                {
-                    Type state = Type.GetType("GlobalEnums.GameState, Assembly-CSharp");
-                    if (state != null) Driver.Call(gm, "SetState", Enum.Parse(state, "PLAYING"));
-                }
-                Type tp = Type.GetType("TransitionPoint, Assembly-CSharp");
-                Component gate = null;
-                if (tp != null)
-                    foreach (UnityEngine.Object o in UnityEngine.Object.FindObjectsOfType(tp, true))
-                    {
-                        Component c = o as Component;
-                        if (c == null || c.gameObject.scene.name != current) continue;
-                        if (gate == null || String.CompareOrdinal(c.name, gate.name) < 0) gate = c;
-                    }
-                if (gate != null)
-                {
-                    Vector3 p = hero.transform.position;
-                    hero.transform.position = new Vector3(gate.transform.position.x, gate.transform.position.y + 0.5f, p.z);
-                    Rigidbody2D body = hero.GetComponent<Rigidbody2D>();
-                    if (body != null) body.velocity = Vector2.zero;
-                }
+                if (Driver.Number(Driver.Read(gm, "gameState")) == "PLAYING") return;
+                Type state = Type.GetType("GlobalEnums.GameState, Assembly-CSharp");
+                if (state != null) Driver.Call(gm, "SetState", Enum.Parse(state, "PLAYING"));
             }
-            catch (Exception e) { loadStatus += "+force_playing_error:" + e.GetType().Name; }
+            catch (Exception e) { loadStatus += "+set_playing_error:" + e.GetType().Name; }
         }
 
         private void MakeInvincible(object gm)
@@ -205,9 +203,10 @@ namespace HKReference
         {
             Component hero = Driver.Singleton("HeroController") as Component;
             scenesOut.WriteLine(String.Join(",", new string[] { current, loadStatus, loadFrames.ToString(CultureInfo.InvariantCulture),
-                hero != null ? F(hero.transform.position.x) : "", hero != null ? F(hero.transform.position.y) : "", Quote(Gates(current)) }));
+                hero != null ? F(hero.transform.position.x) : "", hero != null ? F(hero.transform.position.y) : "", Quote(sceneGates) }));
             File.AppendAllText(Path.Combine(stateDir, "survey-done.txt"), current + "\t" + loadStatus + "\n");
             File.Delete(Path.Combine(stateDir, "survey-current.txt"));
+            Freeze(hero, true);
             phase = Phase.Idle;
         }
 
@@ -222,6 +221,7 @@ namespace HKReference
                 hero.transform.position = new Vector3(t.X, t.Y + 0.5f, p.z);
                 Rigidbody2D body = hero.GetComponent<Rigidbody2D>();
                 if (body != null) body.velocity = Vector2.zero;
+                Freeze(hero, false);
             }
         }
 
@@ -234,8 +234,9 @@ namespace HKReference
                 windowStart.ToString(CultureInfo.InvariantCulture), frame.ToString(CultureInfo.InvariantCulture) }));
         }
 
-        private static string Gates(string scene)
+        private string Gates(string scene)
         {
+            gatePositions.Clear();
             Type type = Type.GetType("TransitionPoint, Assembly-CSharp");
             if (type == null) return "";
             StringBuilder sb = new StringBuilder();
@@ -243,6 +244,7 @@ namespace HKReference
             {
                 Component c = o as Component;
                 if (c == null || c.gameObject.scene.name != scene) continue;
+                gatePositions.Add(new Vector2(c.transform.position.x, c.transform.position.y));
                 sb.Append(c.name).Append('@').Append(F(c.transform.position.x)).Append(' ').Append(F(c.transform.position.y))
                   .Append("->").Append(Driver.Number(Driver.Read(c, "targetScene"))).Append(':').Append(Driver.Number(Driver.Read(c, "entryPoint"))).Append(';');
             }
@@ -264,6 +266,7 @@ namespace HKReference
         private void Census(string scene, Component hero, object gm)
         {
             targets = new List<Target>();
+            sceneGates = Gates(scene);
             HashSet<string> seen = new HashSet<string>();
             List<Target> picked = new List<Target>();
             foreach (HealthManager m in UnityEngine.Object.FindObjectsOfType<HealthManager>(true))
@@ -284,7 +287,7 @@ namespace HKReference
                 actorsOut.WriteLine(String.Join(",", new string[] { scene, m.GetInstanceID().ToString(CultureInfo.InvariantCulture), Quote(m.name), Quote(PathOf(m.transform)),
                     F(p.x), F(p.y), F(p.z), m.hp.ToString(CultureInfo.InvariantCulture), m.gameObject.activeInHierarchy ? "1" : "0", m.gameObject.activeSelf ? "1" : "0",
                     Driver.Number(Driver.Read(m, "enemyType")), Quote(fsms.ToString()), Quote(String.Join("|", clips.ToArray())), Quote(allStates.ToString()) }));
-                if (m.hp > 0 && !m.isDead && seen.Add(BaseName(m.name))) picked.Add(new Target { Name = BaseName(m.name), X = p.x, Y = p.y });
+                if (m.hp > 0 && !m.isDead && !NearGate(p) && seen.Add(BaseName(m.name))) picked.Add(new Target { Name = BaseName(m.name), X = p.x, Y = p.y });
             }
             picked.Sort((a, b) => a.X.CompareTo(b.X));
             targets = picked.Count <= maxTargets ? picked : Spread(picked, maxTargets);
@@ -296,6 +299,13 @@ namespace HKReference
                     F(s.volume), F(s.spatialBlend), F(s.minDistance), F(s.maxDistance), Quote(s.outputAudioMixerGroup != null ? s.outputAudioMixerGroup.name : ""),
                     s.gameObject.activeInHierarchy ? "1" : "0", s.enabled ? "1" : "0" }));
             }
+        }
+
+        // A hero teleported into a gate's trigger leaves the scene; keep clear of them.
+        private bool NearGate(Vector3 p)
+        {
+            foreach (Vector2 g in gatePositions) if (Mathf.Abs(g.x - p.x) < 5f && Mathf.Abs(g.y - p.y) < 8f) return true;
+            return false;
         }
 
         private static List<Target> Spread(List<Target> all, int n)

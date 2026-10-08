@@ -15,7 +15,7 @@
 //!   sheet PROFILE                 side-by-side PNG sheets at matched ticks
 //!   all PROFILE                   port, og, diff, sheet
 //!   imgstat PNG...                mean RGB of each PNG (a black-frame check)
-//!   montage OUT.png COLS PNG...   contact sheet, each image scaled to 480 wide
+//!   montage OUT.png COLS PNG...   contact sheet, each image scaled to HKREF_MONTAGE_WIDTH (default 480)
 
 mod diff;
 mod img;
@@ -267,8 +267,9 @@ fn real_main() -> Result<(), String> {
         }
         ["montage", out, cols, files @ ..] => {
             let cols: usize = cols.parse().map_err(|_| "cols")?;
-            let imgs: Vec<img::Img> = files.iter().map(|f| img::Img::load_png(Path::new(f)).map(|i| { let h = i.h * 480 / i.w; i.resize(480, h) })).collect::<Result<_, _>>()?;
-            let (cw, ch) = (480usize, imgs.iter().map(|i| i.h).max().unwrap_or(0) + 18);
+            let cw: usize = std::env::var("HKREF_MONTAGE_WIDTH").ok().and_then(|v| v.parse().ok()).unwrap_or(480);
+            let imgs: Vec<img::Img> = files.iter().map(|f| img::Img::load_png(Path::new(f)).map(|i| { let h = i.h * cw / i.w; i.resize(cw, h) })).collect::<Result<_, _>>()?;
+            let (cw, ch) = (cw, imgs.iter().map(|i| i.h).max().unwrap_or(0) + 18);
             let rows = (imgs.len() + cols - 1) / cols;
             let mut sheet = img::Img::new(cols * (cw + 4), rows * (ch + 4), [24, 24, 24]);
             for (k, (i, f)) in imgs.iter().zip(files.iter()).enumerate() {
