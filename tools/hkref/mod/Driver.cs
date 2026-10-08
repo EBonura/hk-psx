@@ -2,6 +2,7 @@
 // user's own Hollow Knight by tools/hkref; never shipped with the PS1 guest and
 // never written into the Steam install.
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -425,8 +426,30 @@ namespace HKReference
                         else if (typeof(UnityEngine.Object).IsAssignableFrom(f.FieldType)) sb.Append(f.Name).Append('=').Append(f.GetValue(b) == null ? "null" : "set").Append(' ');
                     }
                     Note("POST " + camera.name + " " + n + " enabled=" + b.enabled + " " + sb);
+                    if (n == "ColorCorrectionCurves") DumpCurves(b);
                 }
             Note("SCREEN " + Screen.width + "x" + Screen.height + " dpi=" + Screen.dpi);
+        }
+
+        // The curve effect's three channel curves and the LUT texture built from them.
+        private void DumpCurves(MonoBehaviour b)
+        {
+            foreach (string field in new string[] { "redChannel", "greenChannel", "blueChannel" })
+            {
+                AnimationCurve c = Read(b, field) as AnimationCurve;
+                if (c == null) { Note("CURVE " + field + " null"); continue; }
+                Note("CURVE " + field + " keys=" + c.length + " f(0)=" + c.Evaluate(0f).ToString("F3", CultureInfo.InvariantCulture)
+                    + " f(.25)=" + c.Evaluate(.25f).ToString("F3", CultureInfo.InvariantCulture) + " f(.5)=" + c.Evaluate(.5f).ToString("F3", CultureInfo.InvariantCulture)
+                    + " f(.75)=" + c.Evaluate(.75f).ToString("F3", CultureInfo.InvariantCulture) + " f(1)=" + c.Evaluate(1f).ToString("F3", CultureInfo.InvariantCulture));
+            }
+            Texture2D lut = Read(b, "rgbChannelTex") as Texture2D;
+            if (lut == null) { Note("LUT null"); return; }
+            Note("LUT " + lut.width + "x" + lut.height + " format=" + lut.format + " readable=" + lut.isReadable + " mips=" + lut.mipmapCount + " filter=" + lut.filterMode + " wrap=" + lut.wrapMode);
+            if (lut.isReadable)
+                foreach (int x in new int[] { 0, 64, 128, 192, 255 })
+                    Note("LUT x=" + x + " " + lut.GetPixel(x, 0).ToString("F3") + " " + lut.GetPixel(x, 1).ToString("F3") + " " + lut.GetPixel(x, 2).ToString("F3") + " " + lut.GetPixel(x, 3).ToString("F3"));
+            Material m = Read(b, "ccMaterial") as Material;
+            if (m != null) Note("CCMAT shader=" + (m.shader != null ? m.shader.name : "null") + " supported=" + (m.shader != null && m.shader.isSupported) + " passes=" + m.passCount + " sat=" + (m.HasProperty("_Saturation") ? m.GetFloat("_Saturation").ToString("F3") : "-"));
         }
 
         // Entry gates of the loaded scene, so a scene warp can name a real one.
@@ -518,6 +541,17 @@ namespace HKReference
             Shot(frame, "-nolight");
             if (lightOn) light.enabled = true;
             Shot(frame, "-nopost");
+            foreach (Behaviour only in post)
+            {
+                foreach (Behaviour b in post) b.enabled = (b == only);
+                Shot(frame, "-only-" + only.GetType().Name);
+            }
+            foreach (Behaviour without in post)
+            {
+                foreach (Behaviour b in post) b.enabled = (b != without);
+                Shot(frame, "-all-but-" + without.GetType().Name);
+            }
+            foreach (Behaviour b in post) b.enabled = false;
             if (lightOn) light.enabled = false;
             foreach (Renderer r in vignette) r.enabled = false;
             Shot(frame, "-raw");
@@ -587,7 +621,44 @@ namespace HKReference
                     if (b != null && b.enabled && Array.IndexOf(names, b.GetType().Name) >= 0) { b.enabled = false; Note("FX switched off: " + b.GetType().Name + " on " + camera.name); }
         }
 
+        // FastNoise redraws its grain only on every Nth Time.frameCount (Quarter in the
+        // game) and keeps it in a private RenderTexture that it re-creates, empty,
+        // whenever the render size changes. A screenshot is rendered at a size of
+        // its own, so on three frames in four the grain texture was a fresh empty one
+        // and the whole picture went black. Forcing a redraw for the shot fixes it.
+        // The grain draws from UnityEngine.Random, so the caller keeps the RNG state.
+        private static void NoiseEveryFrame(bool on, List<KeyValuePair<MonoBehaviour, object>> saved)
+        {
+            if (on)
+            {
+                foreach (Camera camera in Camera.allCameras)
+                    foreach (MonoBehaviour b in camera.GetComponents<MonoBehaviour>())
+                    {
+                        if (b == null || b.GetType().Name != "FastNoise") continue;
+                        FieldInfo f = b.GetType().GetField("frameRateMultiplier", Members);
+                        if (f == null) continue;
+                        saved.Add(new KeyValuePair<MonoBehaviour, object>(b, f.GetValue(b)));
+                        f.SetValue(b, Enum.Parse(f.FieldType, "Always"));
+                    }
+            }
+            else
+            {
+                foreach (KeyValuePair<MonoBehaviour, object> kv in saved)
+                    if (kv.Key != null) kv.Key.GetType().GetField("frameRateMultiplier", Members).SetValue(kv.Key, kv.Value);
+                saved.Clear();
+            }
+        }
+
         private void Shot(int frame, string suffix)
+        {
+            UnityEngine.Random.State rng = UnityEngine.Random.state;
+            List<KeyValuePair<MonoBehaviour, object>> noise = new List<KeyValuePair<MonoBehaviour, object>>();
+            NoiseEveryFrame(true, noise);
+            try { ShotInner(frame, suffix); }
+            finally { NoiseEveryFrame(false, noise); UnityEngine.Random.state = rng; }
+        }
+
+        private void ShotInner(int frame, string suffix)
         {
             ApplyFxSwitches();
             if (Environment.GetEnvironmentVariable("HK_REFERENCE_DUMP_POST") == "1") DumpPost();
