@@ -619,6 +619,7 @@ const ART_LATE_ALLOWED: &[(&str, u64)] = &[("kings-death", 44), ("boss-death", 4
 /// the debt against the 30 fps rule and only ever goes down; a route not listed
 /// has none to spare, and no boss route has more than a view bind's one frame.
 const PACING_CEILINGS: &[(&str, u64)] = &[
+    ("boss-fight", 2), ("boss-wave", 2),
     ("cornifer-map", 1), ("focus", 1), ("cheat-spell", 1), ("cheat-dash", 1), ("cheat-wings", 1), ("ctrl-wings", 1), ("cheat-heart", 1), ("c37-stand", 6), ("journey-false-knight", 475), ("journey-reload", 327), ("journey-kings", 301), ("kings-climb", 264), ("journey-crossroads", 233),
     ("ctrl-climb", 202), ("f17-charger", 154), ("secret-f08a", 154), ("secret-c03", 151), ("crossroads-gate", 137),
     ("kings-return", 136), ("kp-playtest", 131), ("cheat-dream", 124), ("kings-death", 123), ("mound-spell", 118),
