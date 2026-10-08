@@ -135,10 +135,14 @@ pub(crate) fn panel_pages(pages:&[&'static [&'static str]],page:usize){panel(pag
 pub(crate) fn panel_frame(x:i16,y:i16,w:u16,h:u16){
     unsafe{BOXES[0]=RectFlat::new(x,y,w,h,150,150,150);BOXES[1]=RectFlat::new(x+2,y+2,w-4,h-4,0,0,0);BOX_COUNT=2;}
 }
+/// The Geo count sits right of the coin the HUD draws at `GEO_COIN_X`
+/// (geo_render::hud_coin), under the masks as the original's does.
+pub(crate) const GEO_COIN_X:i16=56;
+const GEO_NUMBER_X:i16=GEO_COIN_X+14;
 #[inline(never)] // UI composition must not expand main beyond MIPS branch reach.
 pub fn prepare(camera:(i32,i32),geo:u32,pause:Option<(&crate::pause::State,&crate::menu::Settings)>,total_masks:u16,save_prompt:Option<u8>){
     unsafe{USED=0;BOX_COUNT=0;
-      let geo_y=crate::hud::geo_y(total_masks);text(18,geo_y,"Geo");number(43,geo_y,geo);
+      let geo_y=crate::hud::geo_y(total_masks);number(GEO_NUMBER_X,geo_y,geo);
       if let Some((p,settings))=pause {
         BOXES[0]=RectFlat::new(38,61,244,162,150,150,150);BOXES[1]=RectFlat::new(40,63,240,158,0,0,0);BOX_COUNT=2;
         if p.charms.open {
