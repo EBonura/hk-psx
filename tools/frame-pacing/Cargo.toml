@@ -1,0 +1,17 @@
+# Frame pacing of replay runs: presented fps and the frames that took more than
+# two vblanks, over gameplay ticks only. Its own workspace.
+[package]
+name = "hk-frame-pacing"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-2.0-or-later"
+
+[workspace]
+
+[[bin]]
+name = "hk-frame-pacing"
+path = "main.rs"
+
+[dependencies]
+serde_json = "1"

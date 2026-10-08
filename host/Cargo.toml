@@ -1,0 +1,10 @@
+# The host tool workspace: the build driver and the Rust cookers that replace
+# host/*.py. Its own workspace because the repository root is the PS1 game's
+# (see ../Cargo.toml), which cannot even load before the builder has hydrated
+# .psoxide. Run the driver from the repository root with `cargo hk-build ...`.
+[workspace]
+resolver = "2"
+members  = ["hk-build", "hk-cook", "hk-dotnet", "hk-lz4", "hk-pil", "hk-unity"]
+
+[profile.release]
+codegen-units = 1

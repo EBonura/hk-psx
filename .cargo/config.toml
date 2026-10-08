@@ -1,0 +1,6 @@
+# The build driver lives in the host tool workspace (host/Cargo.toml), so the
+# game's workspace at this root never has to load for it. From the repository root:
+#   cargo hk-build build
+#   cargo hk-build help
+[alias]
+hk-build = "run --release --manifest-path host/hk-build/Cargo.toml --"

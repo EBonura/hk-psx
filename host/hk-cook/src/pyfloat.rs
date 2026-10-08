@@ -1,0 +1,54 @@
+//! Python's `repr(float)`: the shortest round-trip digits, fixed notation for
+//! decimal exponents in [-4, 16), otherwise `d.ddde+XX`.
+
+pub fn repr(v: f64) -> String {
+    if v.is_nan() {
+        return "nan".into();
+    }
+    if v.is_infinite() {
+        return if v > 0.0 { "inf".into() } else { "-inf".into() };
+    }
+    if v == 0.0 {
+        return if v.is_sign_negative() { "-0.0".into() } else { "0.0".into() };
+    }
+    // Rust's LowerExp prints the shortest round-trip digits: "d.ddde-N".
+    // Of the strings that short, Python's dtoa takes the one nearest the
+    // exact value (ties to even), which the shortest search need not: for
+    // 226.350006103515625 it gives ...563 where Python gives ...562. The exact
+    // formatter rounds to that length correctly, so keep it when it still
+    // reads back as `v`.
+    let shortest = format!("{v:e}");
+    let n = shortest.split_once('e').unwrap().0.chars().filter(char::is_ascii_digit).count();
+    let exact = format!("{v:.prec$e}", prec = n - 1);
+    let e = if exact.parse::<f64>() == Ok(v) { exact } else { shortest };
+    let (mant, exp) = e.split_once('e').unwrap();
+    let exp: i32 = exp.parse().unwrap();
+    let neg = mant.starts_with('-');
+    let digits: String = mant.chars().filter(|c| c.is_ascii_digit()).collect();
+    let sign = if neg { "-" } else { "" };
+    if (-4..16).contains(&exp) {
+        let point = exp + 1; // digits before the decimal point
+        let s = if point <= 0 {
+            format!("0.{}{}", "0".repeat((-point) as usize), digits)
+        } else if point as usize >= digits.len() {
+            format!("{}{}.0", digits, "0".repeat(point as usize - digits.len()))
+        } else {
+            format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
+        };
+        format!("{sign}{s}")
+    } else {
+        let m = if digits.len() > 1 { format!("{}.{}", &digits[..1], &digits[1..]) } else { digits.clone() };
+        format!("{sign}{m}e{}{:02}", if exp < 0 { '-' } else { '+' }, exp.abs())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repr;
+    #[test]
+    fn matches_python() {
+        for (v, s) in [(0.1, "0.1"), (1.0, "1.0"), (1e-5, "1e-05"), (1e16, "1e+16"), (123456.789, "123456.789"), (0.0001, "0.0001"), (-2.5e-7, "-2.5e-07"), (1.5e300, "1.5e+300"), (9999999999999998.0, "9999999999999998.0"), (0.20000000298023224, "0.20000000298023224"), (226.350006103515625, "226.35000610351562")] {
+            assert_eq!(repr(v), s);
+        }
+    }
+}

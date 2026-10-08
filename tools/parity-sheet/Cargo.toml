@@ -1,0 +1,20 @@
+# Approval sheets for parity work: original | PS1 before | PS1 after at one matched
+# moment, with an optional zoom on one world point. Its own workspace.
+[package]
+name = "hk-parity-sheet"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-2.0-or-later"
+
+[workspace]
+
+[[bin]]
+name = "hk-parity-sheet"
+path = "main.rs"
+
+[dependencies]
+png = "0.17"
+
+[profile.release]
+codegen-units = 1

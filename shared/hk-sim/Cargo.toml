@@ -1,0 +1,8 @@
+[package]
+name="hk-sim"
+version="0.1.0"
+edition="2021"
+[workspace]
+[dependencies]
+psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }
+hk-format={path="../hk-format"}

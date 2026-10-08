@@ -1,0 +1,15 @@
+[package]
+name = "hk-cook"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "hk-psx's cookers in Rust: the original install to cooked PS1 data"
+
+[dependencies]
+hk-lz4 = { path = "../hk-lz4" }
+hk-pil = { path = "../hk-pil" }
+hk-unity = { path = "../hk-unity" }
+png = "0.17"
+rayon = "1"
+serde_json = "1"
+sha2 = "0.10"

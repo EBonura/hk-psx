@@ -1,0 +1,22 @@
+# Parity census: what each shipped room of the original can draw, against what
+# the cook put in the room packs. Read-only over ignored build outputs; writes
+# one JSON report. Its own workspace, like host/hk-build.
+[package]
+name = "hk-parity-census"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-2.0-or-later"
+
+[workspace]
+
+[[bin]]
+name = "hk-parity-census"
+path = "main.rs"
+
+[dependencies]
+serde_json = "1"
+flate2 = "1"
+
+[profile.release]
+codegen-units = 1

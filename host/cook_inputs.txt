@@ -1,0 +1,90 @@
+# Code whose change invalidates cooked regions. Shared by host/hk-build/main.rs
+# (whole-cook cache) and host/regions.py (per-region reuse).
+host/cook.py
+# The texel quantiser every cooked texture goes through.
+host/quantize.py
+host/actors.py
+# Imported by actors.py, breakables.py and reveal_masks.py, and what it
+# returns decides the False Knight's clip bindings, its refusals and its
+# barrel art. It was in neither section, so a change here changed cooked
+# bytes while every region's reuse key said it had not, which is the
+# failure this file's own comment calls silent in one direction.
+host/false_knight.py
+# Imported by actors.py: it admits Brooding Mawlek and decides its ActorSpec.
+host/mawlek.py
+host/runner.py
+host/climber.py
+host/vengefly.py
+host/gruzzer.py
+host/baldur.py
+host/aspid.py
+host/husk_guard.py
+host/benches.py
+host/shade.py
+host/particles.py
+host/effects.py
+host/breakables.py
+# Hidden walls and cracked floors: which art, colliders and masks a secret
+# takes with it, and the tk2d wall draw cook.py adds for it.
+host/secret_breaks.py
+host/combat.py
+host/scene.py
+# Imported by scene.py: its load-time gate answers decide which objects a
+# region cooks at all (Scene.active), so a change here changes cooked bytes.
+host/activation.py
+host/source.py
+host/flat_support.py
+host/reveal_masks.py
+host/texture_dedup.py
+host/similarity_dedup.py
+host/constant_textures.py
+host/region_delta.py
+host/focus.py
+host/alpha_covers.py
+host/materials.py
+host/tilemap_fill.py
+host/break_effects.py
+host/great_door.py
+host/polygons.py
+tools/audit_texture_similarity.py
+tools/texture_match_groups.py
+tools/audit_resident_bank.py
+host/requirements.lock
+
+# --- postpass only ---
+# Below this line: code the cook run depends on but a single region's cooked
+# bytes do not, so the build hashes it and a region's reuse key does not.
+# Placing a file wrongly is silent in one direction and expensive in the other.
+# Leave it out of this file entirely and the whole-cook cache hits, the code
+# never runs and the change is quietly ignored. Put it above the divider and
+# three lines of NPC dialogue recook all 693 regions.
+#
+# regions.py decides which regions cook, not what they contain. world.py turns
+# the finished report into data/regions.rs. npc_sources.py and npc_dialogue.py
+# are postpasses over immutable base packs, and npcs.py is where the second one
+# reads the conversation chain it cooks. quality.py is the catalog, and the four
+# budget constants a region actually depends on are hashed by value.
+host/regions.py
+host/world.py
+# The HKWMTA metadata banks are encoded from the finished report by the
+# prepass (host/pack_scenes.py); no region cook imports this.
+tools/world_metadata.py
+# The False Knight's own bank, appended by postpack_actor_bank to its scene's
+# views and to nothing a single region cooks.
+host/false_knight_art.py
+# Chests and pickups, appended the same way, and what they read their grants,
+# names and FSM helpers from.
+host/pickups.py
+host/items.py
+host/title_cards.py
+# The arena gates' art, appended to the same bank (append_art), and the
+# BG Control reader it shares with the gate table.
+host/battle_gates.py
+host/props.py
+host/language.py
+# Brooding Mawlek's contract check and bank, the same postpass for Crossroads_09.
+host/mawlek_art.py
+host/npc_sources.py
+host/npc_dialogue.py
+host/npcs.py
+host/quality.py

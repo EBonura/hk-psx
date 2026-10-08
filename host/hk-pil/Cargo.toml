@@ -1,0 +1,8 @@
+[package]
+name = "hk-pil"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "The Pillow 12.3.0 image operations hk-psx's cookers use, ported to give identical pixels"
+
+[dependencies]
