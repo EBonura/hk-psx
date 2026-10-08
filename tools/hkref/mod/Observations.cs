@@ -1,4 +1,4 @@
-// Read-only, sampled observations of the isolated Windows reference game.
+// Read-only, sampled observations of the isolated reference game copy.
 // A sample can miss intermediate FSM states and short-lived/spawned objects.
 // AudioSource configuration/isPlaying is NOT an interception of PlayOneShot.
 using System;
@@ -59,9 +59,9 @@ namespace HKReference
             if (dirty || captures % RescanInterval == 0)
             {
                 dirty = false;
-                Discover(UnityEngine.Object.FindObjectsByType<PlayMakerFSM>(FindObjectsInactive.Include, FindObjectsSortMode.None), "fsm", FsmLimit, testFrame);
-                Discover(UnityEngine.Object.FindObjectsByType<HealthManager>(FindObjectsInactive.Include, FindObjectsSortMode.None), "actor", ActorLimit, testFrame);
-                Discover(UnityEngine.Object.FindObjectsByType<AudioSource>(FindObjectsInactive.Include, FindObjectsSortMode.None), "audio", AudioLimit, testFrame);
+                Discover(UnityEngine.Object.FindObjectsOfType<PlayMakerFSM>(true), "fsm", FsmLimit, testFrame);
+                Discover(UnityEngine.Object.FindObjectsOfType<HealthManager>(true), "actor", ActorLimit, testFrame);
+                Discover(UnityEngine.Object.FindObjectsOfType<AudioSource>(true), "audio", AudioLimit, testFrame);
             }
             foreach (Entry entry in Entries.Values)
             {
