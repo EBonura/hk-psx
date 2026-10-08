@@ -1,5 +1,7 @@
 # hk-psx
 
+> **Built with agentic coding.** AI coding agents write most of the code in PSoXide and in this game. I direct them, review what they produce, and test the results in the emulator and on a real PlayStation.
+
 A native Hollow Knight port experiment for original PlayStation, built from the
 user's Windows Steam copy in CrossOver. Nothing is hand-authored: rooms, sprites,
 text, audio and gameplay numbers are cooked from the local install by the
