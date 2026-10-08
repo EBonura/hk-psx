@@ -81,7 +81,10 @@ const LIMITATIONS: [&str; 2] = [
     "Arena gate sounds are cooked only for the arena the port drives (the False Knight).",
 ];
 
-/// How a row cuts its clip's tail (`trim_tail`).
+/// How a row cuts its clip's tail (`trim_tail`). No catalogue row trims since
+/// 2026-10-08: a Hollow Knight sound is never cut short to save SPU RAM. A row
+/// whose full tail does not fit its scene's bank gets a lower sample rate from
+/// the allocator instead (the rate ladder), as the shared resampler is for.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Trim {
     /// Drop everything after the last 20 ms window whose RMS is within this
@@ -139,21 +142,21 @@ pub const EVENTS: &[Event] = &[
     //   FKnight_death 3000 Hz: loss -18.2 dB, cut to `Steam`'s own 3.0 s: the
     //                  source's `Blow` follows with its own explosion.
     //   ceiling_break 3000 Hz: loss -22.2 dB (-24.9 at 4000); tail 2.42 -> 2.30 s.
-    ev("false_knight_strike_ground", "sharedassets48.assets", 28, "false_knight_strike_ground", 3000, &["scene", "Crossroads_10"], 0, Some(Trim::Db(-40))),
+    ev("false_knight_strike_ground", "sharedassets48.assets", 28, "false_knight_strike_ground", 3000, &["scene", "Crossroads_10"], 0, None),
     ev("false_knight_rage", "sharedassets48.assets", 30, "FKnight_Rage", 3000, &["scene", "Crossroads_10"], 1, None),
-    ev("boss_final_hit", "sharedassets32.assets", 135, "boss_final_hit", 5512, &["scene", "Crossroads_10", "Crossroads_09"], 2, Some(Trim::Db(-40))),
-    ev("false_knight_jump", "sharedassets48.assets", 45, "false_knight_jump", 5512, &["scene", "Crossroads_10"], 3, Some(Trim::Db(-40))),
-    ev("false_knight_land_1st_time", "sharedassets6.assets", 171, "false_knight_land_1st_time", 5512, &["scene", "Crossroads_10"], 4, Some(Trim::Db(-40))),
-    ev("false_knight_damage_armour_final", "sharedassets46.assets", 22, "false_knight_damage_armour_final", 5512, &["scene", "Crossroads_10"], 5, Some(Trim::Db(-40))),
+    ev("boss_final_hit", "sharedassets32.assets", 135, "boss_final_hit", 5512, &["scene", "Crossroads_10", "Crossroads_09"], 2, None),
+    ev("false_knight_jump", "sharedassets48.assets", 45, "false_knight_jump", 5512, &["scene", "Crossroads_10"], 3, None),
+    ev("false_knight_land_1st_time", "sharedassets6.assets", 171, "false_knight_land_1st_time", 5512, &["scene", "Crossroads_10"], 4, None),
+    ev("false_knight_damage_armour_final", "sharedassets46.assets", 22, "false_knight_damage_armour_final", 5512, &["scene", "Crossroads_10"], 5, None),
     ev("false_knight_roll", "sharedassets48.assets", 21, "false_knight_roll", 4000, &["scene", "Crossroads_10"], 6, None),
-    ev("false_knight_death", "sharedassets48.assets", 38, "FKnight_death", 3000, &["scene", "Crossroads_10"], 8, Some(Trim::Seconds(3.0))),
-    ev("false_knight_ceiling_break", "sharedassets19.assets", 31, "false_knight_ceiling_break", 3000, &["scene", "Crossroads_10"], 9, Some(Trim::Db(-40))),
+    ev("false_knight_death", "sharedassets48.assets", 38, "FKnight_death", 3000, &["scene", "Crossroads_10"], 8, None),
+    ev("false_knight_ceiling_break", "sharedassets19.assets", 31, "false_knight_ceiling_break", 3000, &["scene", "Crossroads_10"], 9, None),
     ev("zombie_shield_raise", "sharedassets32.assets", 143, "zombie_shield_raise", 5512, &["scene", "Crossroads_10"], 13, None),
     ev("zombie_shield_move", "sharedassets32.assets", 87, "zombie_shield_move", 5512, &["scene", "Crossroads_10"], 14, None),
     ev("zombie_guard_footstep", "sharedassets48.assets", 29, "zombie_guard_footstep", 5512, &["scene", "Crossroads_10"], 15, None),
     // `BG Control`'s own clips, only where the port drives the arena.
-    ev("gate_slam", "sharedassets27.assets", 35, "gate_slam", 3000, &["arena", "Crossroads_10", "Crossroads_09"], 7, Some(Trim::Db(-40))),
-    ev("gate_open", "sharedassets27.assets", 41, "gate_open", 5512, &["arena", "Crossroads_10", "Crossroads_09"], 10, Some(Trim::Db(-40))),
+    ev("gate_slam", "sharedassets27.assets", 35, "gate_slam", 3000, &["arena", "Crossroads_10", "Crossroads_09"], 7, None),
+    ev("gate_open", "sharedassets27.assets", 41, "gate_open", 5512, &["arena", "Crossroads_10", "Crossroads_09"], 10, None),
     // Brooding Mawlek's (Crossroads_09), in the order the fight leans on them:
     // every landing's club, the leap, the Head's spit every half second, the
     // arm swipe's whip and call, the super spit, the wake roar, the nail
@@ -163,18 +166,18 @@ pub const EVENTS: &[Event] = &[
     // bank's usual 5512 Hz for the short percussive clips and 3000 to 4000 Hz
     // for the long ones, not measured per clip as the False Knight's were;
     // boss_final_hit and the gates share the False Knight's rows above.
-    ev("zombie_guard_club", "sharedassets34.assets", 107, "zombie_guard_club", 5512, &["scene", "Crossroads_09"], 0, Some(Trim::Db(-40))),
-    ev("mawlek_jump", "sharedassets34.assets", 79, "mawlek_jump", 5512, &["scene", "Crossroads_09"], 1, Some(Trim::Db(-40))),
-    ev("mawlek_spit", "sharedassets33.assets", 73, "mawlek_spit", 5512, &["scene", "Crossroads_09"], 3, Some(Trim::Db(-40))),
+    ev("zombie_guard_club", "sharedassets34.assets", 107, "zombie_guard_club", 5512, &["scene", "Crossroads_09"], 0, None),
+    ev("mawlek_jump", "sharedassets34.assets", 79, "mawlek_jump", 5512, &["scene", "Crossroads_09"], 1, None),
+    ev("mawlek_spit", "sharedassets33.assets", 73, "mawlek_spit", 5512, &["scene", "Crossroads_09"], 3, None),
     ev("mawlek_whip", "sharedassets34.assets", 80, "mawlek_whip", 5512, &["scene", "Crossroads_09"], 4, None),
-    ev("mawlek_call", "sharedassets34.assets", 100, "mawlek_call", 5512, &["scene", "Crossroads_09"], 5, Some(Trim::Db(-40))),
-    ev("mawlek_big_spit", "sharedassets34.assets", 58, "mawlek_big_spit", 5512, &["scene", "Crossroads_09"], 6, Some(Trim::Db(-40))),
-    ev("mawlek_scream", "sharedassets45.assets", 9, "mawlek_scream", 4000, &["scene", "Crossroads_09"], 8, Some(Trim::Db(-40))),
-    ev("hero_parry", "resources.assets", 1154, "hero_parry", 5512, &["scene", "Crossroads_09"], 9, Some(Trim::Db(-40))),
-    ev("boss_explode", "sharedassets32.assets", 99, "boss_explode", 3000, &["scene", "Crossroads_09"], 11, Some(Trim::Db(-40))),
-    ev("boss_gushing", "sharedassets32.assets", 62, "boss_gushing", 3000, &["scene", "Crossroads_09"], 12, Some(Trim::Db(-40))),
-    ev("mawlek_jump_offscreen", "sharedassets34.assets", 74, "mawlek_jump_offscreen", 3000, &["scene", "Crossroads_09"], 13, Some(Trim::Db(-40))),
-    ev("mawlek_spit_b", "sharedassets34.assets", 91, "mawlek_spit_b", 5512, &["scene", "Crossroads_09"], 14, Some(Trim::Db(-40))),
+    ev("mawlek_call", "sharedassets34.assets", 100, "mawlek_call", 5512, &["scene", "Crossroads_09"], 5, None),
+    ev("mawlek_big_spit", "sharedassets34.assets", 58, "mawlek_big_spit", 5512, &["scene", "Crossroads_09"], 6, None),
+    ev("mawlek_scream", "sharedassets45.assets", 9, "mawlek_scream", 4000, &["scene", "Crossroads_09"], 8, None),
+    ev("hero_parry", "resources.assets", 1154, "hero_parry", 5512, &["scene", "Crossroads_09"], 9, None),
+    ev("boss_explode", "sharedassets32.assets", 99, "boss_explode", 3000, &["scene", "Crossroads_09"], 11, None),
+    ev("boss_gushing", "sharedassets32.assets", 62, "boss_gushing", 3000, &["scene", "Crossroads_09"], 12, None),
+    ev("mawlek_jump_offscreen", "sharedassets34.assets", 74, "mawlek_jump_offscreen", 3000, &["scene", "Crossroads_09"], 13, None),
+    ev("mawlek_spit_b", "sharedassets34.assets", 91, "mawlek_spit_b", 5512, &["scene", "Crossroads_09"], 14, None),
     // `Bench Control` `Start Rest`.
     ev("bench_rest", "sharedassets7.assets", 105, "bench_rest", 5512, &["benches"], 20, None),
     // The one-way reveal controllers' sound branch (`unmasker`), and the second
@@ -183,7 +186,7 @@ pub const EVENTS: &[Event] = &[
     // -40 dB tail (3.68 of 4.03 s) and costs 6,336 bytes instead of 12,720,
     // which is what lets it into King's Pass beside the chest and the shiny.
     // Admitted after them (24): placed first, it took the gap the shiny needs.
-    ev("secret_discovered", "sharedassets6.assets", 157, "secret_discovered_temp", 3000, &["secrets"], 24, Some(Trim::Db(-40))),
+    ev("secret_discovered", "sharedassets6.assets", 157, "secret_discovered_temp", 3000, &["secrets"], 24, None),
     // Hidden walls and cracked floors (host/secret_breaks.py), admitted after
     // everything a scene already had so no earlier sound loses its place. A
     // wall's `AudioPlayRandom` picks breakable_wall_hit_1 or _2 at 1:1; _1 is
@@ -193,9 +196,9 @@ pub const EVENTS: &[Event] = &[
     // Energy above the new Nyquist (source WAV): barrel_death_1 -9.6 dB at
     // 8000 Hz, breakable_wall_hit_2 -11.8 dB at 8000, breakable_wall_death
     // -17.5 dB at 4000 (-16.1 at 5512, so the lower rate costs little).
-    ev("barrel_death_1", "sharedassets6.assets", 107, "barrel_death_1", 8000, &["secret_floors"], 40, Some(Trim::Db(-40))),
-    ev("breakable_wall_death", "sharedassets6.assets", 102, "breakable_wall_death", 4000, &["secret_breaks"], 41, Some(Trim::Db(-40))),
-    ev("breakable_wall_hit_2", "sharedassets6.assets", 99, "breakable_wall_hit_2", 8000, &["secret_walls"], 42, Some(Trim::Db(-40))),
+    ev("barrel_death_1", "sharedassets6.assets", 107, "barrel_death_1", 8000, &["secret_floors"], 40, None),
+    ev("breakable_wall_death", "sharedassets6.assets", 102, "breakable_wall_death", 4000, &["secret_breaks"], 41, None),
+    ev("breakable_wall_hit_2", "sharedassets6.assets", 99, "breakable_wall_hit_2", 8000, &["secret_walls"], 42, None),
     // Soul totem `Hit` (soul_totem, mini_soul_totem), where a totem stands.
     ev("soul_totem_slash", "sharedassets56.assets", 14, "soul_totem_slash", 11025, &["totems"], 25, None),
     // `Chest Control` `Open`: the lid's clip (its second, barrel_death_2, would
@@ -211,7 +214,7 @@ pub const EVENTS: &[Event] = &[
     // Knight's clips, so its chest and the City Crest stay silent.
     ev("chest_open", "sharedassets6.assets", 158, "chest_open", 11025, &["chests"], 22, None),
     ev("shiny_item_pickup", "resources.assets", 1337, "shiny_item_pickup", 11025, &["shinies"], 23, None),
-    ev("heartpiece_collect", "sharedassets10.assets", 31, "heartpiece_collect", 8000, &["pieces"], 23, Some(Trim::Db(-40))),
+    ev("heartpiece_collect", "sharedassets10.assets", 31, "heartpiece_collect", 8000, &["pieces"], 23, None),
     // Aspid Hunter `spitter` Fire.
     ev("aspid_spit", "sharedassets32.assets", 118, "spitter_spit", 22050, &["family", "Spitter"], 30, None),
     // Gruz Mother's (Crossroads_04), after its arena's two gate sounds
@@ -226,22 +229,22 @@ pub const EVENTS: &[Event] = &[
     // event names, so those rows keep their priorities in their scenes.
     // The flying, charge and snore loops are AudioSource loops, which the one
     // scene voice does not hold.
-    ev("big_fly_wall_hit", "sharedassets32.assets", 66, "big_fly_wall_hit", 5512, &["scene", "Crossroads_04"], 62, Some(Trim::Db(-40))),
-    ev("big_fly_snore_startle", "sharedassets32.assets", 78, "big_fly_snore_startle", 5512, &["scene", "Crossroads_04"], 63, Some(Trim::Db(-40))),
-    ev("gruz_final_hit", "sharedassets32.assets", 135, "boss_final_hit", 5512, &["scene", "Crossroads_04"], 64, Some(Trim::Db(-40))),
-    ev("gruz_explode", "sharedassets32.assets", 99, "boss_explode", 3000, &["scene", "Crossroads_04"], 65, Some(Trim::Db(-40))),
-    ev("gruz_gushing", "sharedassets32.assets", 62, "boss_gushing", 3000, &["scene", "Crossroads_04"], 66, Some(Trim::Db(-40))),
-    ev("big_fly_stomache_problems_1", "sharedassets40.assets", 25, "big_fly_stomache_problems_1", 4000, &["scene", "Crossroads_04"], 67, Some(Trim::Db(-40))),
-    ev("big_fly_stomache_problems_2", "sharedassets40.assets", 26, "big_fly_stomache_problems_2", 4000, &["scene", "Crossroads_04"], 68, Some(Trim::Db(-40))),
-    ev("big_fly_stomache_problems_final_and_explode", "sharedassets40.assets", 29, "big_fly_stomache_problems_final_and_explode", 4000, &["scene", "Crossroads_04"], 69, Some(Trim::Db(-40))),
+    ev("big_fly_wall_hit", "sharedassets32.assets", 66, "big_fly_wall_hit", 5512, &["scene", "Crossroads_04"], 62, None),
+    ev("big_fly_snore_startle", "sharedassets32.assets", 78, "big_fly_snore_startle", 5512, &["scene", "Crossroads_04"], 63, None),
+    ev("gruz_final_hit", "sharedassets32.assets", 135, "boss_final_hit", 5512, &["scene", "Crossroads_04"], 64, None),
+    ev("gruz_explode", "sharedassets32.assets", 99, "boss_explode", 3000, &["scene", "Crossroads_04"], 65, None),
+    ev("gruz_gushing", "sharedassets32.assets", 62, "boss_gushing", 3000, &["scene", "Crossroads_04"], 66, None),
+    ev("big_fly_stomache_problems_1", "sharedassets40.assets", 25, "big_fly_stomache_problems_1", 4000, &["scene", "Crossroads_04"], 67, None),
+    ev("big_fly_stomache_problems_2", "sharedassets40.assets", 26, "big_fly_stomache_problems_2", 4000, &["scene", "Crossroads_04"], 68, None),
+    ev("big_fly_stomache_problems_final_and_explode", "sharedassets40.assets", 29, "big_fly_stomache_problems_final_and_explode", 4000, &["scene", "Crossroads_04"], 69, None),
     // StalactiteControl (Tutorial_01 and six Crossroads scenes): the up-slash
     // break (`breakSound`), a side or down hit (`hitSound`) and the fall
     // starting (`startFallSound`), in that order of priority. Late rows, so
     // they only take what every earlier clip leaves and never move one. 5512 Hz
     // like the bank's other short percussive clips, not measured per clip.
-    ev("stalactite_death", "sharedassets6.assets", 112, "stalactite_death", 5512, &["stalactites"], 70, Some(Trim::Db(-40))),
-    ev("stalactite_impact", "sharedassets6.assets", 95, "stalactite_impact", 5512, &["stalactites"], 71, Some(Trim::Db(-40))),
-    ev("stalactite_break", "sharedassets6.assets", 161, "stalactite_break", 5512, &["stalactites"], 72, Some(Trim::Db(-40))),
+    ev("stalactite_death", "sharedassets6.assets", 112, "stalactite_death", 5512, &["stalactites"], 70, None),
+    ev("stalactite_impact", "sharedassets6.assets", 95, "stalactite_impact", 5512, &["stalactites"], 71, None),
+    ev("stalactite_break", "sharedassets6.assets", 161, "stalactite_break", 5512, &["stalactites"], 72, None),
 ];
 
 /// Gruz Mother's arena gates sound like every other arena's.
