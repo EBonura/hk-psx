@@ -21,6 +21,7 @@ mod input_queue;
 mod input_sampler;
 mod input;
 mod presentation;
+mod trace;
 mod scene_transition;
 mod gate_probe;
 mod exit_fade;
@@ -300,7 +301,7 @@ static mut PICKUPS_WORLD:pickups::World=pickups::World::new();
 /// position at the end of each simulated tick so a trace row never pairs one
 /// tick's count with another's position: the Knight's facing (1 right, -1
 /// left), samples consumed so far (one per tick) and the last one's buttons.
-/// tools/og_compare.py ties the count to the tape.
+/// tools/hkref ties the count to the tape; `trace` carries the rest of the state.
 #[no_mangle] pub static mut HK_PLAYER_FACING:i32=0;
 #[no_mangle] pub static mut HK_SIM_TICKS:u32=0;
 #[no_mangle] pub static mut HK_SIM_PAD:u32=0;
@@ -806,6 +807,7 @@ fn main() {
                     if let Some((x,y,hp))=game.enemies.actor_state(2,5145) {unsafe {HK_CLIMBER_X=x;HK_CLIMBER_Y=y;HK_CLIMBER_HP=hp as i32;}}
                     let mut cut=0u32;for (i,p) in world::region_grass(r).take(32).enumerate(){if game.state.cut(p.state){cut|=1<<i;}}
                     unsafe {HK_GRASS_CUT_MASK=cut;HK_NAIL_ATTACK_COUNT=game.attacks;HK_HEALTH=game.vitals.health as u32;HK_BLUE_HEALTH=game.vitals.blue_health as u32;HK_SOUL=game.vitals.soul as u32;HK_SIM_TICKS=input::CONSUMED;HK_SIM_PAD=input::CONSUMED_PAD;HK_PLAYER_X=game.player.x;HK_PLAYER_Y=game.player.y;HK_PLAYER_FACING=game.player.facing;HK_FOCUS_LOCKED=u32::from(game.focus.locks_control());}
+                    trace::publish(&game,r.scene,game.region_id);
                     game.prev_pad=hero;
                     music::tick_regions(game.player.x,game.player.y);
                     emit::stage_end(stage::UPDATE);emit::task_end(task::FIXED_UPDATE);ticks+=1;
