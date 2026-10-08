@@ -369,6 +369,7 @@ impl Cache {
         Self {group_bases:[0;GROUPS],reader:SectorReader::new(),
             ready:false,loaded_scenes:0,loaded_atlases:0,selected:EMPTY,resident_scene:EMPTY,atlas_scene:EMPTY,coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0,split_b:None,metadata_view:None,effect_scene:EMPTY}
     }
+    #[optimize(size)]
     fn init(&mut self)->Result<(),LoadError> {
         if self.ready {return Ok(());}
         if !SCENE_GATE_LOAD || COVERAGE_MANIFEST.len()!=SCENE_COUNT || WORLD_META_MANIFEST.len()!=SCENE_COUNT
@@ -926,6 +927,7 @@ impl Cache {
     /// loaded yet, while the arena is still free to stage them. Most gates
     /// stay inside one area and read nothing here.
     #[inline(never)]
+    #[optimize(size)]
     fn prepare_scene_ambience(&mut self,scene:usize)->Result<(),LoadError> {
         self.init()?;
         let wanted=crate::ambience::missing(SCENE_MANIFEST[scene].scene_id);
@@ -960,6 +962,7 @@ impl Cache {
     /// installed now from the group's first chunk. Nothing of the outgoing
     /// scene runs during an admission, and nothing of this one yet.
     #[inline(never)]
+    #[optimize(size)]
     fn prepare_code(&mut self,scene:usize,st:Stage)->Result<(),LoadError> {
         let Some(k)=crate::modules::code_chunk(scene) else {crate::modules::admit(scene,||None);return Ok(())};
         let len=crate::modules::chunk_len(k);
@@ -973,6 +976,7 @@ impl Cache {
     /// Stages proofs only while no geometry view is admitted, then preserves
     /// their checked bytes in the separate scene-owned coverage arena.
     #[inline(never)]
+    #[optimize(size)]
     fn prepare_coverage(&mut self,scene:usize,st:Stage)->Result<(),LoadError> {
         self.init()?;let c=COVERAGE_MANIFEST[scene];
         if self.coverage_scene==scene && self.coverage_len==c.raw_len {return Ok(());}
@@ -1039,6 +1043,7 @@ impl Cache {
     /// the admitted scene arena; the scene decoder only writes the scene's
     /// raw prefix and later CD scratch reads stay in the arena's front.
     #[inline(never)]
+    #[optimize(size)]
     fn prepare_metadata(&mut self,scene:usize,st:Stage)->Result<(),LoadError> {
         self.init()?;let m=WORLD_META_MANIFEST[scene];
         if self.metadata_scene==scene && self.metadata_len==m.raw_len {return Ok(());}
@@ -1106,6 +1111,7 @@ impl Cache {
     /// Exclusive atlas admission. No Scene/Room view may exist while this
     /// buffer is scratch; completed chunks remain in VRAM across retries.
     #[inline(never)]
+    #[optimize(size)]
     fn prepare_atlases(&mut self,scene:usize,st:Stage)->Result<(),LoadError> {
         self.init()?;
         if self.atlases_ready() && (!SCENE_GATE_LOAD || self.atlas_scene==scene) {return Ok(());}
@@ -1170,6 +1176,7 @@ impl Cache {
 
     // Keep the large startup decoder outside main's bounded MIPS branch span.
     #[inline(never)]
+    #[optimize(size)]
     fn admit_scenes(&mut self,wanted:usize)->Result<(),LoadError> {
         // Before any read or slide moves the prefetched bytes: finish a
         // background code install for this room, or drop one for another.

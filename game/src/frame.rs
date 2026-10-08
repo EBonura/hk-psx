@@ -334,6 +334,7 @@ pub fn menu_reads_pad(game: &Game) -> bool {
 /// SELECT: the development reset, back to the new-game spawn with every
 /// counter the route tables read cleared.
 #[inline(never)]
+#[optimize(size)]
 pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
     game.geo.reset(geo::GEO_PARAMS);unsafe {HK_GEO_LOST=0;}
     game.life.reset();
@@ -799,6 +800,7 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
 }
 /// A hidden wall's or cracked floor's answer to an accepted hit, or to its
 /// break (host/secret_breaks.py has the states each comes from).
+#[optimize(size)]
 fn secret_feedback(game:&mut Game,r:&world::Region,e:world::SecretEvent) {
     use crate::secret_breaks::{FAMILY_WALL,FAMILY_WALL_TK2D};
     let wall=matches!(e.family,FAMILY_WALL|FAMILY_WALL_TK2D);
@@ -829,6 +831,7 @@ fn secret_feedback(game:&mut Game,r:&world::Region,e:world::SecretEvent) {
 /// Leave the scene through gate `g` (after its exit fade): the source scene's
 /// state resets, the Knight spawns at the destination entry and `target`
 /// names the destination region, which the main loop loads.
+#[optimize(size)]
 fn take_gate(game:&mut Game,r:&world::Region,g:world::Gate,door_exit:bool,target:&mut Option<usize>) {
     let side_entry=(g.scene==0&&g.target_scene==great_door::TARGET_SCENE)
         ||(g.scene==great_door::TARGET_SCENE&&g.target_scene==0);

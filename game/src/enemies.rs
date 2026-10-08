@@ -3544,6 +3544,7 @@ impl EnemyWorld {
         // A death or a gate leaves the arena: no roar or arena end outlives it.
         unsafe { ROAR_LOCK = false; MW_PIECE_WAIT = false; }
     }
+    #[optimize(size)]
     pub fn sync_region(&mut self, region: &Region) {
         let key = crate::world::actors_key(region);
         if key.is_some() && key == self.placed_key {

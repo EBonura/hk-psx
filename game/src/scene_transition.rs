@@ -5,6 +5,7 @@
 #[inline(never)]
 /// `shown` and `other` are the framebuffer rows of the frame on screen and of
 /// the other buffer: an exit fade still running finishes from them.
+#[optimize(size)]
 pub fn load(cache:&mut crate::disc::Cache,vram:&mut crate::vram_cache::Cache,
             region:usize,clock:u32,shown:u16,other:u16)->Result<u32,crate::disc::LoadError> {
     assert!(!crate::render::dma_pending()&&!psx_rt::interrupts::gp1_queue_pending());
