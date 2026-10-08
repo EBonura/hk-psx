@@ -15,6 +15,8 @@ namespace HKReference
         private static StreamWriter writer;
         private static readonly List<HealthManager> actors = new List<HealthManager>();
         private static int captures;
+        /// <summary>Sample every Nth frame (the survey tours thousands of frames).</summary>
+        public static int Stride = 1;
         private const float Radius = 400f;
 
         public static void Initialize(string output)
@@ -25,7 +27,7 @@ namespace HKReference
 
         public static void Capture(int frame, Component hero)
         {
-            if (writer == null) return;
+            if (writer == null || frame % Stride != 0) return;
             if (captures++ % 30 == 0) { actors.Clear(); actors.AddRange(UnityEngine.Object.FindObjectsOfType<HealthManager>(true)); }
             Vector3 h = hero == null ? Vector3.zero : hero.transform.position;
             foreach (HealthManager m in actors)

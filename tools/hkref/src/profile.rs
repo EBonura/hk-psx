@@ -23,7 +23,7 @@ pub struct Profile {
     pub start_tick: Option<i64>, pub ticks: usize,
     // original
     pub scene: String, pub gate: String, pub player_data: String, pub hide: Vec<String>, pub enemies: Vec<EnemyMatch>,
-    pub og_timeout: u64, pub fx_off: Vec<String>, pub seed: u32, pub sweep: Vec<String>, pub sweep_frames: usize,
+    pub og_timeout: u64, pub fx_off: Vec<String>, pub seed: u32, pub sweep: Vec<String>, pub sweep_frames: usize, pub tour_frames: usize, pub tour_targets: usize,
 }
 
 fn s(v: &Value, k: &str) -> String { v.get(k).and_then(Value::as_str).unwrap_or("").to_string() }
@@ -60,9 +60,11 @@ impl Profile {
             watch, counters,
             start_tick: win.get("start").and_then(Value::as_i64), ticks: win.get("ticks").and_then(Value::as_u64).unwrap_or(600) as usize,
             scene: s(og, "scene"), gate: s(og, "gate"), player_data: s(og, "player_data"), hide, enemies,
-            fx_off: og.get("fx_off").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_else(|| ["BloomOptimized", "FastNoise", "ColorCorrectionCurves", "BrightnessEffect"].iter().map(|s| s.to_string()).collect()),
+            fx_off: og.get("fx_off").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
             sweep: og.get("sweep").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
-            sweep_frames: og.get("sweep_frames").and_then(Value::as_u64).unwrap_or(300) as usize,
+            sweep_frames: og.get("sweep_frames").and_then(Value::as_u64).unwrap_or(60) as usize,
+            tour_frames: og.get("tour_frames").and_then(Value::as_u64).unwrap_or(75) as usize,
+            tour_targets: og.get("tour_targets").and_then(Value::as_u64).unwrap_or(12) as usize,
             seed: og.get("seed").and_then(Value::as_u64).unwrap_or(1) as u32,
             og_timeout: og.get("timeout").and_then(Value::as_u64).unwrap_or(300),
         })

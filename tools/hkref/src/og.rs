@@ -129,7 +129,6 @@ pub fn run(env: &Env, p: &Profile, w: &Window) -> Result<PathBuf, String> {
         c.env("HK_REFERENCE_TELEPORT", format!("{x:.4},{y:.4}")).env("HK_REFERENCE_FACE", if f < 0.0 { "-1" } else { "1" });
     }
     c.env("HK_REFERENCE_SEED", p.seed.to_string());
-    if !p.sweep.is_empty() { c.env("HK_REFERENCE_SWEEP", p.sweep.join(",")).env("HK_REFERENCE_SWEEP_FRAMES", p.sweep_frames.to_string()); }
     if !p.fx_off.is_empty() { c.env("HK_REFERENCE_DISABLE_FX", p.fx_off.join(",")); }
     if !p.player_data.is_empty() { c.env("HK_REFERENCE_PD", &p.player_data); }
     if !p.hide.is_empty() { c.env("HK_REFERENCE_HIDE", p.hide.join(",")); }
@@ -144,6 +143,53 @@ pub fn run(env: &Env, p: &Profile, w: &Window) -> Result<PathBuf, String> {
     let ok = util::wait_with_timeout(child, p.og_timeout + 60)?;
     if !ok { return Err(format!("original exited non-zero or timed out; see {}", out.join("driver.log").display())); }
     Ok(out)
+}
+
+/// Run the scene survey in as many original processes as it takes. Each process
+/// writes into its own `a<N>` directory (test frames restart at 0) and shares one
+/// state directory, so a scene that crashed the player is recorded and skipped and a
+/// process that hit its wall-clock budget is followed by one that resumes.
+pub fn survey(env: &Env, p: &Profile) -> Result<Vec<PathBuf>, String> {
+    let base = p.dir.join("og-survey");
+    fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    let state = base.join("state");
+    fs::create_dir_all(&state).map_err(|e| e.to_string())?;
+    let home = env.work.join("og/fakehome"); fs::create_dir_all(&home).map_err(|e| e.to_string())?;
+    let exe = env.app().join("Contents/MacOS/Hollow Knight");
+    let done_file = state.join("survey-done.txt");
+    let count = |f: &Path| fs::read_to_string(f).map(|t| t.lines().count()).unwrap_or(0);
+    let mut attempts = vec![];
+    let mut stalled = 0;
+    for n in 1..=60 {
+        let before = count(&done_file);
+        let out = base.join(format!("a{n:02}"));
+        if out.exists() { attempts.push(out); continue; }
+        fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+        let mut c = Command::new("sandbox-exec");
+        c.args(["-p", SANDBOX]).arg(&exe).args(["-batchmode", "-logFile"]).arg(out.join("unity.log"))
+            .current_dir(env.work.join("og"))
+            .env("SteamAppId", "367520").env("SteamGameId", "367520")
+            .env("HOME", &home).env("CFFIXED_USER_HOME", &home)
+            .env("HK_REFERENCE_OUTPUT", &out).env("HK_REFERENCE_SURVEY_STATE", &state)
+            .env("HK_REFERENCE_MAX_FRAMES", "100000000").env("HK_REFERENCE_MAX_SECONDS", p.og_timeout.to_string())
+            .env("HK_REFERENCE_SEED", p.seed.to_string())
+            .env("HK_REFERENCE_SURVEY", p.sweep.join(","))
+            .env("HK_REFERENCE_SURVEY_FRAMES", p.sweep_frames.to_string())
+            .env("HK_REFERENCE_SURVEY_TOUR_FRAMES", p.tour_frames.to_string())
+            .env("HK_REFERENCE_SURVEY_TARGETS", p.tour_targets.to_string());
+        let log = fs::File::create(out.join("stdout.txt")).map_err(|e| e.to_string())?;
+        let child = c.stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?)).stderr(Stdio::from(log)).spawn().map_err(|e| format!("original: {e}"))?;
+        append_pid(&env.work, &format!("og-survey-{}-{n}", p.name), child.id());
+        eprintln!("[survey] attempt {n}: original pid {} (muted), {} scenes done so far", child.id(), before);
+        let ok = util::wait_with_timeout(child, p.og_timeout + 600)?;
+        attempts.push(out.clone());
+        let after = count(&done_file);
+        // Zero exit: the survey list is exhausted.
+        if ok { break; }
+        stalled = if after == before { stalled + 1 } else { 0 };
+        if stalled >= 3 { return Err(format!("no progress in 3 attempts; see {}", out.join("driver.log").display())); }
+    }
+    Ok(attempts)
 }
 
 fn split_csv(line: &str) -> Vec<String> {
