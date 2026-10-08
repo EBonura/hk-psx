@@ -26,6 +26,9 @@ pub fn run(p: &Profile, work: &Path) -> Result<(), String> {
 
 /// Fold the attempt directories into the output files in the profile's run dir.
 pub fn summarise(p: &Profile, attempts: &[PathBuf]) -> Result<(), String> {
+    // Each attempt's tables are parsed once, not once per scene.
+    let mut cache: BTreeMap<PathBuf, std::rc::Rc<Vec<Row>>> = BTreeMap::new();
+    let mut load = |path: PathBuf| -> std::rc::Rc<Vec<Row>> { cache.entry(path.clone()).or_insert_with(|| std::rc::Rc::new(table(&path))).clone() };
     // Which attempt finished each scene (the last one wins: a scene cut short by a
     // watchdog stop is redone by the next process and its partial rows are ignored).
     let mut owner: BTreeMap<String, (usize, Row)> = BTreeMap::new();
@@ -49,17 +52,17 @@ pub fn summarise(p: &Profile, attempts: &[PathBuf]) -> Result<(), String> {
         let status = g(srow, "status");
         if status.starts_with("ok") { n_ok += 1 } else { n_bad += 1 }
         // census rows
-        let actors: Vec<Row> = table(&dir.join("survey-actors.csv")).into_iter().filter(|r| g(r, "scene") == scene).collect();
+        let actors: Vec<Row> = load(dir.join("survey-actors.csv")).iter().filter(|r| g(r, "scene") == scene).cloned().collect();
         for r in &actors {
             actors_raw.push_str(&line(&["scene", "id", "name", "path", "x", "y", "z", "hp", "active_in_hierarchy", "active_self", "enemy_type", "fsms", "clips", "fsm_states"].map(|k| g(r, k))));
         }
-        let fsm: Vec<Row> = table(&dir.join("survey-fsm-audio.csv")).into_iter().filter(|r| g(r, "scene") == scene).collect();
+        let fsm: Vec<Row> = load(dir.join("survey-fsm-audio.csv")).iter().filter(|r| g(r, "scene") == scene).cloned().collect();
         for r in &fsm { fsm_raw.push_str(&line(&["scene", "kind", "object", "fsm", "state", "action", "clips_or_objects", "params", "incoming_events"].map(|k| g(r, k)))); }
-        let srcs: Vec<Row> = table(&dir.join("survey-audiosources.csv")).into_iter().filter(|r| g(r, "scene") == scene).collect();
+        let srcs: Vec<Row> = load(dir.join("survey-audiosources.csv")).iter().filter(|r| g(r, "scene") == scene).cloned().collect();
         for r in &srcs { src_raw.push_str(&line(&["scene", "object", "clip", "loop", "play_on_awake", "volume", "spatial_blend", "min_distance", "max_distance", "mixer_group", "active_in_hierarchy", "enabled"].map(|k| g(r, k)))); }
         // actor types: group census rows by name stripped of its instance suffix, add the
         // FSM states the periodic samples saw
-        let samples = table(&dir.join("actors.csv"));
+        let samples = load(dir.join("actors.csv"));
         let mut seen_by_id: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for s in samples.iter().filter(|s| g(s, "scene") == scene) {
             let set = seen_by_id.entry(g(s, "id").to_string()).or_default();
@@ -78,14 +81,14 @@ pub fn summarise(p: &Profile, attempts: &[PathBuf]) -> Result<(), String> {
                 &start.into_iter().collect::<Vec<_>>().join(" "), &seen.into_iter().collect::<Vec<_>>().join(" "), g(list[0], "fsm_states"), &clips.into_iter().collect::<Vec<_>>().join("|")]));
         }
         // sounds: every Play / PlayOneShot / snapshot transition inside the scene's windows
-        let tl: Vec<(i64, i64, String)> = table(&dir.join("survey-timeline.csv")).into_iter().filter(|r| g(r, "scene") == scene).map(|r| {
-            let label = if g(&r, "phase") == "idle" { "idle".to_string() } else { format!("near {}", g(&r, "target")) };
-            (g(&r, "start_frame").parse().unwrap_or(0), g(&r, "end_frame").parse().unwrap_or(0), label)
+        let tl: Vec<(i64, i64, String)> = load(dir.join("survey-timeline.csv")).iter().filter(|r| g(r, "scene") == scene).map(|r| {
+            let label = if g(r, "phase") == "idle" { "idle".to_string() } else { format!("near {}", g(r, "target")) };
+            (g(r, "start_frame").parse().unwrap_or(0), g(r, "end_frame").parse().unwrap_or(0), label)
         }).collect();
         let mut agg: BTreeMap<(String, String), (usize, BTreeSet<String>, String, String)> = BTreeMap::new();
         if let (Some(lo), Some(hi)) = (tl.iter().map(|t| t.0).min(), tl.iter().map(|t| t.1).max()) {
-            for r in table(&dir.join("audio-calls.csv")) {
-                let f: i64 = g(&r, "queued_test_frame").parse().unwrap_or(-1);
+            for r in load(dir.join("audio-calls.csv")).iter() {
+                let f: i64 = g(r, "queued_test_frame").parse().unwrap_or(-1);
                 let op = g(&r, "operation");
                 if f < lo || f >= hi || !matches!(op, "Play" | "PlayOneShot" | "PlayClipAtPoint" | "TransitionTo") { continue; }
                 let win = tl.iter().find(|t| f >= t.0 && f < t.1).map(|t| t.2.clone()).unwrap_or_else(|| "other".into());
