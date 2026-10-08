@@ -44,9 +44,8 @@ namespace HKReference
         private string playerDataSpec;
         private int shotEvery;
         private int[] shotAt = new int[0];
-        // Scene sweep: after READY load each listed scene in turn, sweepFrames test frames apart.
-        private string[] sweep = new string[0];
-        private int sweepIndex, sweepFrames = 300;
+        // Scene survey (HK_REFERENCE_SURVEY): visit scenes, record their contents.
+        private SceneSurvey survey;
         private int shotWidth = 640;
         private int shotHeight = 360;
         private Texture2D shotTexture;
@@ -116,9 +115,7 @@ namespace HKReference
             if (!String.IsNullOrEmpty(fxSpec))
                 fxFrames = Array.ConvertAll(fxSpec.Split(','), v => Int32.Parse(v.Trim(), CultureInfo.InvariantCulture));
             shotEvery = IntSetting("HK_REFERENCE_SHOT_EVERY", 0);
-            string sweepSpec = Environment.GetEnvironmentVariable("HK_REFERENCE_SWEEP");
-            if (!String.IsNullOrEmpty(sweepSpec)) sweep = sweepSpec.Split(',');
-            sweepFrames = IntSetting("HK_REFERENCE_SWEEP_FRAMES", 300);
+            survey = SceneSurvey.FromEnvironment(output);
             string shotAtSpec = Environment.GetEnvironmentVariable("HK_REFERENCE_SHOT_AT");
             if (!String.IsNullOrEmpty(shotAtSpec))
                 shotAt = Array.ConvertAll(shotAtSpec.Split(','), v => Int32.Parse(v.Trim(), CultureInfo.InvariantCulture));
@@ -183,7 +180,8 @@ namespace HKReference
                 }
                 PollCommand(gm);
                 if (stopping) return;
-                if (clock.Elapsed.TotalSeconds >= maxSeconds || (!ready && frames >= 60000))
+                bool graceful = survey != null && survey.Busy && clock.Elapsed.TotalSeconds < maxSeconds + 300; // finish the scene in progress
+                if ((clock.Elapsed.TotalSeconds >= maxSeconds && !graceful) || (!ready && frames >= 60000))
                     Stop("startup/test watchdog without completed frame budget", 4);
             }
             catch (Exception error) { Note("ERROR " + error); Stop("driver error", 3); }
@@ -283,14 +281,7 @@ namespace HKReference
                     if ((shotEvery > 0 && testFrame % shotEvery == 0) || Array.IndexOf(shotAt, testFrame) >= 0) Shot(testFrame);
                     if (Array.IndexOf(fxFrames, testFrame) >= 0) EffectShots(testFrame, hero);
                     if (Array.IndexOf(censusFrames, testFrame) >= 0) Census(testFrame);
-                    if (sweepIndex < sweep.Length && testFrame > 0 && testFrame % sweepFrames == 0)
-                    {
-                        string next = sweep[sweepIndex++];
-                        Write(gm, "entryGateName", "zzz");
-                        ReplayDevice.SetButtons(0);
-                        Note("SWEEP " + next);
-                        Call(gm, "LoadScene", next);
-                    }
+                    if (survey != null && survey.Step(testFrame, gm, hero as Component)) { Stop("survey complete", 0); return; }
                     if (testFrame + 1 >= maxFrames) { Stop("completed input frames", 0); return; }
                     scheduledFrame++;
                     ReplayDevice.TestFrame = scheduledFrame;
@@ -704,6 +695,7 @@ namespace HKReference
             Debug.Log("HK_REFERENCE_STOP code=" + code + " reason=" + reason);
             if (states != null) { states.Flush(); states.Dispose(); states = null; }
             Observations.Dispose();
+            if (survey != null) { survey.Dispose(); survey = null; }
             EnemyTrace.Dispose();
             ActorTrace.Dispose();
             AudioTrace.Dispose();
@@ -714,14 +706,14 @@ namespace HKReference
 
         private void OnDestroy() { EnemyTrace.Dispose(); AudioTrace.Dispose(); CameraTrace.Dispose(); if (states != null) { states.Dispose(); states = null; } }
         private void Note(string text) { File.AppendAllText(Path.Combine(output, "driver.log"), DateTime.UtcNow.ToString("o") + " frame=" + Time.frameCount + " test_frame=" + testFrame + " " + text + Environment.NewLine); }
-        private static string Number(object value) { return value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture); }
+        internal static string Number(object value) { return value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture); }
         private static int IntSetting(string name, int fallback) { int value; return Int32.TryParse(Environment.GetEnvironmentVariable(name), out value) && value > 0 ? value : fallback; }
         private static Type FindType(string name)
         {
             foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies()) { Type type = assembly.GetType(name); if (type != null) return type; }
             return null;
         }
-        private static object Singleton(string name)
+        internal static object Singleton(string name)
         {
             Type type = FindType(name); if (type == null) return null;
             foreach (string member in new string[] { "_instance", "instance", "Instance" })
@@ -733,7 +725,7 @@ namespace HKReference
             }
             return null;
         }
-        private static object Read(object target, string name)
+        internal static object Read(object target, string name)
         {
             if (target == null) return null;
             Type type = target.GetType(); FieldInfo field = type.GetField(name, Members);
@@ -741,13 +733,13 @@ namespace HKReference
             PropertyInfo property = type.GetProperty(name, Members);
             return property == null ? null : property.GetValue(target, null);
         }
-        private static void Write(object target, string name, object value)
+        internal static void Write(object target, string name, object value)
         {
             FieldInfo field = target.GetType().GetField(name, Members);
             if (field == null) throw new MissingFieldException(target.GetType().FullName, name);
             field.SetValue(target, value);
         }
-        private static object Call(object target, string name, params object[] arguments)
+        internal static object Call(object target, string name, params object[] arguments)
         {
             foreach (MethodInfo method in target.GetType().GetMethods(Members))
                 if (method.Name == name && method.GetParameters().Length == arguments.Length) return method.Invoke(target, arguments);

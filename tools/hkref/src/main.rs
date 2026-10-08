@@ -9,16 +9,20 @@
 //!   port PROFILE                  replay on the port, write traces + window
 //!   og PROFILE                    replay the same inputs on the original
 //!   sweep PROFILE 1,2,3           original under several RNG seeds vs the port
-//!   scenes PROFILE                visit og.sweep scenes in one process, list SFX and actors per scene
+//!   scenes PROFILE                survey og.sweep scenes (names, Prefix_* or *): actors, FSM audio, sounds
+//!   scenes-summary PROFILE        rebuild the survey files from the runs already on disk
 //!   diff PROFILE                  channel/event diff + plots
 //!   sheet PROFILE                 side-by-side PNG sheets at matched ticks
 //!   all PROFILE                   port, og, diff, sheet
+//!   imgstat PNG...                mean RGB of each PNG (a black-frame check)
+//!   montage OUT.png COLS PNG...   contact sheet, each image scaled to 480 wide
 
 mod diff;
 mod img;
 mod og;
 mod port;
 mod profile;
+mod survey;
 mod tape;
 mod trace;
 mod util;
@@ -175,60 +179,6 @@ fn cmd_sweep(p: &Profile, work: &Path, seeds: &[u32]) -> Result<(), String> {
     Ok(())
 }
 
-/// Visit a list of scenes in one original process and record, per scene, every
-/// sound the game plays and every actor with hit points near the hero. Ground
-/// truth for the per-scene SFX and enemy audit.
-fn cmd_scenes(p: &Profile, work: &Path) -> Result<(), String> {
-    if p.sweep.is_empty() { return Err("profile needs og.sweep (scene list)".into()); }
-    let total = p.sweep_frames * (p.sweep.len() + 1);
-    let env = og::Env::detect(work);
-    let win = og::Window { frames: total, rows: vec![(0, 0)], start: None, shot_frames: vec![] };
-    let mut attempt = 1;
-    while let Err(e) = og::run(&env, p, &win) {
-        if attempt >= 3 { return Err(e); }
-        eprintln!("[og] attempt {attempt} failed ({e}); retrying");
-        attempt += 1;
-    }
-    let dir = p.dir.join("og");
-    let mut scene_at: std::collections::BTreeMap<i64, String> = Default::default();
-    for r in og::table(&dir.join("state.csv")) {
-        if let Some(f) = r.get("test_frame").and_then(|v| v.parse::<i64>().ok()) { if f >= 0 { scene_at.insert(f, r["scene"].clone()); } }
-    }
-    let scene_of = |f: i64| scene_at.range(..=f).next_back().map(|(_, s)| s.clone()).unwrap_or_default();
-    let mut sfx: std::collections::BTreeMap<(String, String), usize> = Default::default();
-    for r in og::table(&dir.join("audio-calls.csv")) {
-        let q: i64 = r.get("queued_test_frame").and_then(|v| v.parse().ok()).unwrap_or(-1);
-        let op = r.get("operation").map(String::as_str).unwrap_or("");
-        if q >= 0 && (op == "Play" || op == "PlayOneShot") {
-            let clip = r.get("clip_or_snapshot").cloned().unwrap_or_default();
-            if clip.is_empty() { continue; }
-            *sfx.entry((scene_of(q), clip)).or_default() += 1;
-        }
-    }
-    let mut actors: std::collections::BTreeMap<(String, String), (String, usize)> = Default::default();
-    for r in og::table(&dir.join("actors.csv")) {
-        let key = (r.get("scene").cloned().unwrap_or_default(), r.get("name").cloned().unwrap_or_default());
-        let e = actors.entry(key).or_insert((r.get("hp").cloned().unwrap_or_default(), 0));
-        e.1 += 1;
-    }
-    let mut csv = String::from("scene,clip,calls\n");
-    for ((s, c), n) in &sfx { csv.push_str(&format!("{s},{},{n}\n", c.replace(',', ";"))); }
-    fs::write(p.dir.join("scenes-sfx.csv"), csv).map_err(|e| e.to_string())?;
-    let mut csv = String::from("scene,actor,hp,frames_seen\n");
-    for ((s, a), (hp, n)) in &actors { csv.push_str(&format!("{s},{},{hp},{n}\n", a.replace(',', ";"))); }
-    fs::write(p.dir.join("scenes-actors.csv"), csv).map_err(|e| e.to_string())?;
-    let mut md = format!("# Scene sweep: {}\n\n{} scenes, {} frames each, hero at the scene's default spawn (fake entry gate), no input.\n\n| scene | distinct clips played | calls | actors with hit points |\n|---|---|---|---|\n", p.name, p.sweep.len() + 1, p.sweep_frames);
-    let scenes: std::collections::BTreeSet<&String> = scene_at.values().collect();
-    for sc in scenes {
-        let clips: Vec<_> = sfx.iter().filter(|((s, _), _)| s == sc).collect();
-        let na = actors.keys().filter(|(s, _)| s == sc).count();
-        md.push_str(&format!("| {sc} | {} | {} | {na} |\n", clips.len(), clips.iter().map(|(_, n)| **n).sum::<usize>()));
-    }
-    fs::write(p.dir.join("scenes.md"), &md).map_err(|e| e.to_string())?;
-    println!("{md}");
-    Ok(())
-}
-
 fn cmd_diff(p: &Profile) -> Result<(), String> {
     let w = read_window(p)?;
     let (t0, n) = (w["t0"].as_i64().unwrap(), w["ticks"].as_u64().unwrap() as usize);
@@ -305,7 +255,37 @@ fn real_main() -> Result<(), String> {
             let list: Vec<u32> = seeds.split(',').filter_map(|x| x.parse().ok()).collect();
             cmd_sweep(&load(pr, &work)?, &work, &list)
         }
-        ["scenes", pr] => cmd_scenes(&load(pr, &work)?, &work),
+        ["imgstat", files @ ..] => {
+            for f in files {
+                let i = img::Img::load_png(Path::new(f))?;
+                let mut s = [0u64; 3];
+                for p in i.px.chunks(3) { for k in 0..3 { s[k] += p[k] as u64; } }
+                let n = (i.w * i.h) as f64;
+                println!("{f} {:.1} {:.1} {:.1}", s[0] as f64 / n, s[1] as f64 / n, s[2] as f64 / n);
+            }
+            Ok(())
+        }
+        ["montage", out, cols, files @ ..] => {
+            let cols: usize = cols.parse().map_err(|_| "cols")?;
+            let imgs: Vec<img::Img> = files.iter().map(|f| img::Img::load_png(Path::new(f)).map(|i| { let h = i.h * 480 / i.w; i.resize(480, h) })).collect::<Result<_, _>>()?;
+            let (cw, ch) = (480usize, imgs.iter().map(|i| i.h).max().unwrap_or(0) + 18);
+            let rows = (imgs.len() + cols - 1) / cols;
+            let mut sheet = img::Img::new(cols * (cw + 4), rows * (ch + 4), [24, 24, 24]);
+            for (k, (i, f)) in imgs.iter().zip(files.iter()).enumerate() {
+                let (x, y) = ((k % cols) * (cw + 4), (k / cols) * (ch + 4));
+                sheet.blit(i, x as i64, (y + 18) as i64);
+                let name = Path::new(f).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                sheet.text(x as i64 + 2, y as i64 + 3, &name.to_uppercase(), 1, [255, 255, 255]);
+            }
+            sheet.save_png(Path::new(out))
+        }
+        ["scenes", pr] => survey::run(&load(pr, &work)?, &work),
+        ["scenes-summary", pr] => {
+            let p = load(pr, &work)?;
+            let mut dirs: Vec<_> = fs::read_dir(p.dir.join("og-survey")).map_err(|e| e.to_string())?.flatten().map(|e| e.path()).filter(|d| d.file_name().map_or(false, |n| n.to_string_lossy().starts_with('a'))).collect();
+            dirs.sort();
+            survey::summarise(&p, &dirs)
+        }
         ["diff", pr] => cmd_diff(&load(pr, &work)?),
         ["sheet", pr] => {
             let p = load(pr, &work)?;

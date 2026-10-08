@@ -1,0 +1,11 @@
+{
+  "name": "survey-crossroads",
+  "port": {"disc": "~/Downloads/ps1 games/hk-psx.cue", "map": "build/hk-psx-normal.map", "polls": 1},
+  "og": {
+    "sweep": ["Crossroads_*"],
+    "sweep_frames": 60,
+    "tour_frames": 75,
+    "tour_targets": 14,
+    "timeout": 1800
+  }
+}
