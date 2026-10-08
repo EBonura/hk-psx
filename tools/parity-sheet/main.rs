@@ -6,7 +6,7 @@
 //! displayed after the tick that consumed tape sample ANCHOR+K: the tick count
 //! (`HK_SIM_TICKS`) is tied to the tape by the median offset between the
 //! frontend's poll count and the tick count around the anchor, which is the
-//! first step of tools/og_compare.py `align_ticks` without its button check.
+//! first step of the old tools/og_compare.py `align_ticks` (removed; hkref does the same alignment) without its button check.
 //!
 //! With `--zoom X,Y` (world units) a box around that point, projected with each
 //! PS1 run's own camera (`HK_CAMERA_X/Y`), is outlined and shown 3x below.

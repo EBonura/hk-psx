@@ -235,7 +235,7 @@ source wrap away from ring boundaries and identical decoded PCM. Silicon timing
 is still untested. Evidence: `.hkpsx/audio64/` and `.hkpsx/audio-stream-tests/`.
 
 The original runner now records playback/stop/mixer requests at217 managed
-call sites. See ORIGINAL_REFERENCE.md for coverage limits and commands. Requests
+call sites. See tools/hkref/README.md for coverage limits and commands. Requests
 and sampled isPlaying still do not prove final audibility; NullGfx permits audio
 but the original's mixed waveform has not been captured. Traced movement confirms
 stone footsteps, jump, soft landing, grass movement, water drips and hits.
