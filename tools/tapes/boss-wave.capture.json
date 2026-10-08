@@ -1,0 +1,59 @@
+{
+  "note": "Captured from a tools/replay_cue.py run of the tape below against the real disc. tests/test_boss_sim.py replays the same tape through tools/boss_sim.py and asserts the fight it predicts is this one. See capture() in tools/boss_sim.py to regenerate after a disc change.",
+  "tape": "tools/tapes/boss-wave.pxtape",
+  "tape_sha256": "bb7cee3493633eb1bafbbb6d1f004e3875d8fd3991246fa5c9fa3c9a8b2b27ec",
+  "hero_died_at_poll": null,
+  "disc_sha256": {
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/hk-fk/fk/dist/hk-psx.exe": "c6682386f116ae1ec322b1c9e7daa4744d6c5b6ea13dfaafd6ba83793f58e540",
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/hk-fk/home/Downloads/ps1 games/hk-psx.bin": "9e671fc8e4fe93a305e2aa91176eb98a8fd3e6d6431f0a449f6c6484146b2120",
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/hk-fk/home/Downloads/ps1 games/hk-psx.cue": "b67ef68421f5717a4af44973721bfb2c9b5b5e8e2188a9f9660ab0877fda3537"
+  },
+  "completed": true,
+  "faults": [],
+  "hero_start": {
+    "poll": 32,
+    "x": 786432,
+    "y": 1798268
+  },
+  "final": {
+    "HK_CHEATS": 0,
+    "HK_DEATHS": 0,
+    "HK_HEALTH": 2,
+    "HK_FK_STAGGERS": 0,
+    "HK_FK_CONVERSIONS": 0,
+    "HK_FK_DEATHS": 0,
+    "HK_FK_ARENA": 2,
+    "HK_INPUT_FAULT": 0,
+    "HK_FK_HP": 65,
+    "HK_FK_HEAD_HP": 40,
+    "HK_FK_ACTIVATED": 0,
+    "HK_ARENA_GATE_CLOSES": 1,
+    "HK_ARENA_GATE_OPENS": 0,
+    "HK_FK_BARRELS": 0,
+    "HK_FK_BARRELS_BROKEN": 0,
+    "HK_SOUL": 0,
+    "HK_FK_WAVES": 4,
+    "HK_FK_WAVE_HITS": 1
+  },
+  "transitions": {
+    "fk_hp": [],
+    "head_hp": [],
+    "health": [
+      [
+        675,
+        5,
+        4
+      ],
+      [
+        987,
+        4,
+        3
+      ],
+      [
+        2294,
+        3,
+        2
+      ]
+    ]
+  }
+}

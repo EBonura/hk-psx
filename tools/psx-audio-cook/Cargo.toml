@@ -1,0 +1,18 @@
+# The SDK's shared SPU-ADPCM cooker (psx-audio-cook) as a command line for
+# the Python cookers (host/spu_cook.py). The crate comes from the hydrated
+# .psoxide tree; it is not a member of that tree's root workspace, so this
+# binary lives in its own.
+[package]
+name = "psx-audio-cook-cli"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "psx-audio-cook"
+path = "main.rs"
+
+[dependencies]
+psx-audio-cook = { path = "../../.psoxide/crates/psx-audio-cook" }

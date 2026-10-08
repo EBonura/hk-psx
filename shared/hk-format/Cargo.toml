@@ -1,0 +1,7 @@
+[package]
+name="hk-format"
+version="0.1.0"
+edition="2021"
+[workspace]
+[dev-dependencies]
+psx-pack = { path = "../../.psoxide/sdk/crates/psx-pack" }

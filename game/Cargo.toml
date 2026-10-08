@@ -1,0 +1,46 @@
+[package]
+name = "hk-psx"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+[features]
+emulator-telemetry = ["psx-telemetry/emit"]
+# Console probes for the music transport instead of the game (audio_probe.rs).
+audio-probe = []
+# Seamless-transition study: scripted gate tour and per-phase gate timing.
+gate-tour = []
+# Tour builds only: prefetch the tour's next scene instead of predicting it.
+prefetch-oracle = ["gate-tour"]
+# The original's HeroLight behind the Knight and the hero vignette
+# (hero_light.rs). On the 49 builder routes the two together cost 0.71% of
+# presented fps on average and 3.90% at worst (boss-fight); the palette
+# grade is free and always on.
+default = ["hero-light", "hero-vignette", "original-latency"]
+hero-light = []
+hero-vignette = []
+# The original's one-frame walk/jump latency in the Knight's simulation
+# (input.rs hero_latency); menus stay immediate. The route tapes are encoded
+# for it; a build without it needs the tapes as of e3cbd87.
+original-latency = []
+# Per-tick poll ordinal and consumer, for re-encoding route tapes (input.rs).
+tick-log = []
+[dependencies]
+psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
+# 256 trampoline words: with every delay-slot filler search on, the ordinary
+# guest needs 117 and pgo's profiling build 147; psx-rt's default holds 96.
+psx-rt = { path = "../.psoxide/sdk/crates/psx-rt", features = ["hazard-trampolines-256"] }
+psx-tick = { path = "../.psoxide/sdk/crates/psx-tick" }
+psx-gpu = { path = "../.psoxide/sdk/crates/psx-gpu" }
+psx-pad = { path = "../.psoxide/sdk/crates/psx-pad" }
+psx-vram = { path = "../.psoxide/sdk/crates/psx-vram" }
+psx-telemetry = { path = "../.psoxide/sdk/crates/psx-telemetry" }
+psx-pack = { path = "../.psoxide/sdk/crates/psx-pack" }
+psx-spu = { path = "../.psoxide/sdk/crates/psx-spu" }
+psx-mc = { path = "../.psoxide/sdk/crates/psx-mc" }
+
+hk-format = {path="../shared/hk-format"}
+hk-sim = {path="../shared/hk-sim"}
+hk-cache = {path="../shared/hk-cache"}
+psx-io = { path = "../.psoxide/sdk/crates/psx-io" }
+psx-hw = { path = "../.psoxide/crates/psx-hw" }
+psx-fmv = { path = "../.psoxide/sdk/crates/psx-fmv" }

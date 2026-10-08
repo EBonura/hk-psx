@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/EBonura/PSoXide.git",
+  "revision": "ae6e1ef1065e4147b1f6740913ee0d8f98e1fd9a",
+  "purpose": "The SDK revision the XA music encoder (psx-audio-cook xa-encode) is built from, on the host only. The guest's own pin is sdk.lock.json; it cannot move to a revision with the XA player until host/stack_budget.py and host/code_modules.py are ported to the SDK's single-region linker script and Rust hazard patcher.",
+  "license": "GPL-2.0-or-later"
+}

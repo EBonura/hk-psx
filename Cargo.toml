@@ -1,0 +1,30 @@
+# `trim-paths` is still a nightly cargo feature; the game is nightly-pinned
+# anyway (bare-metal MIPS needs build-std), so the gate costs nothing.
+cargo-features = ["trim-paths"]
+
+# The PS1 game's workspace. Its root is the repository root, not game/, so
+# every path dependency (the hydrated .psoxide crates, shared/hk-*) sits
+# inside it. Cargo hashes a path package by its path relative to the workspace
+# root when it can and by its absolute path otherwise, and that hash seeds
+# every crate disambiguator, so with the root at game/ the image's symbols and
+# layout changed with where the repository was checked out.
+#
+# The build driver is in the host tool workspace (host/Cargo.toml); run it with
+# `cargo hk-build ...` (.cargo/config.toml). The PS1 target config stays in
+# game/.cargo/config.toml, so it only applies to builds run from game/, as the
+# driver's are.
+[workspace]
+resolver = "2"
+members  = ["game"]
+# .psoxide is a generated tree with its own host workspace, and shared/ and
+# host/ hold crates with their own [workspace]. Excluded crates are still
+# hashed by their path relative to this root.
+exclude  = [".psoxide", "shared", "host"]
+
+[profile.release]
+# no_std has no unwinder; abort keeps the binary small.
+panic         = "abort"
+codegen-units = 1
+lto           = true
+# Keep absolute host paths out of the image (panic Locations).
+trim-paths    = "all"

@@ -1,0 +1,13 @@
+[package]
+name = "hk-unity"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Read-only reader for the Unity serialized files of the Windows Hollow Knight install"
+
+[dependencies]
+hk-dotnet = { path = "../hk-dotnet" }
+hk-pil = { path = "../hk-pil" }
+memmap2 = "0.9"
+rayon = "1"
+sha2 = "0.10"

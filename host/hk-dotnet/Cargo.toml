@@ -1,0 +1,8 @@
+[package]
+name = "hk-dotnet"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Read-only reader for .NET assemblies: PE, CLI metadata tables, signatures and method bodies"
+
+[dependencies]
