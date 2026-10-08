@@ -240,8 +240,10 @@ impl World {
     /// Append this frame's animation key, as the actors do.
     pub fn append_needed(&self, needed: &mut [u16], len: &mut usize) {
         // Not in the pool (a read failed or is still due): nothing to upload.
-        if data().is_none() { return; }
+        // Asked only when a Shade is live, so a miss counts as late art
+        // (modules::HK_MODULE_ART_LATE) and a frame without one does not.
         if let Some(index) = self.frame_index() {
+            if data().is_none() { return; }
             assert!(*len < needed.len(), "animation working set exceeded");
             needed[*len] = KEY_BASE + index as u16;
             *len += 1;
