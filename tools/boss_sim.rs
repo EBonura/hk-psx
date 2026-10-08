@@ -798,10 +798,10 @@ fn read_tape(path: &str) -> Vec<u16> {
 }
 /// Where the 50 Hz phase stands before the first simulated tick: the disc's
 /// `PHASE_AT_LOAD` plus the ticks of load the simulation does not model. Found
-/// by replaying a tape and matching the Knight's trace, then given here as
-/// `BOSS_SIM_PHASE`.
+/// by replaying a tape and matching the Knight's trace (phase 4 for a disc at
+/// phase 0, the default; add the disc's phase), overridden by `BOSS_SIM_PHASE`.
 fn phase_at_load() -> u8 {
-    std::env::var("BOSS_SIM_PHASE").ok().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0) % 6
+    std::env::var("BOSS_SIM_PHASE").ok().and_then(|v| v.parse::<u8>().ok()).unwrap_or(4) % 6
 }
 
 const HEADER: &str = "poll,hx,hy,grounded,health,soul,fkx,fky,fkhp,headhp,phase,stunned,exposed,staggers,conversions,deaths,barrels,facing\n";
