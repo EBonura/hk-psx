@@ -3500,6 +3500,39 @@ impl EnemyWorld {
             .find(|a| a.scene == scene && a.source_id == source_id)
             .map(|a| (a.x, a.y, a.health.hp))
     }
+    /// The first `max` live actors for `HK_TRACE`, `trace::ENEMY_WORDS` words
+    /// each: source id; scene, controller kind and flags (bit 0 grounded, 1
+    /// dead, 2 hit flash) as `scene << 24 | kind << 16 | flags`; x; y; hit
+    /// points (low half) and evasion ticks (high half); vertical velocity;
+    /// walk direction; walk animation tick. Returns (live actors, slots written).
+    #[optimize(size)]
+    pub fn trace(&self, out: &mut [u32], max: usize) -> (u32, u32) {
+        let (mut live, mut written) = (0u32, 0usize);
+        for a in self.actors.iter().flatten() {
+            live += 1;
+            if written >= max { continue; }
+            let w = &mut out[written * crate::trace::ENEMY_WORDS..][..crate::trace::ENEMY_WORDS];
+            let kind = match a.runtime {
+                Runtime::Walker => 0u32, Runtime::Runner(_) => 1, Runtime::Climber(_) => 2, Runtime::Vengefly(_) => 3,
+                Runtime::Gruzzer(_) => 4, Runtime::AcidFlyer(_) => 5, Runtime::Mosquito(_) => 6, Runtime::MossWalker(_) => 7,
+                Runtime::Baldur(_) => 8, Runtime::Aspid(_) => 9, Runtime::Hatcher(_) => 10, Runtime::HatcherBaby(_) => 11,
+                Runtime::ZombieShield(_) => 12, Runtime::HuskGuard(_) => 13, Runtime::Blocker(_) => 14, Runtime::Pigeon(_) => 15,
+                Runtime::Static { .. } => 16, Runtime::FalseKnight(_) => 17, Runtime::Mawlek(_) => 18, Runtime::GruzMother(_) => 19,
+            };
+            let flags = a.grounded as u32 | (a.health.dead as u32) << 1 | ((a.flash_left > 0) as u32) << 2;
+            w[0] = a.source_id;
+            w[1] = (a.scene as u32) << 24 | kind << 16 | flags;
+            w[2] = a.x as u32;
+            w[3] = a.y as u32;
+            w[4] = a.health.hp as u16 as u32 | (a.health.evasion_ticks as u32) << 16;
+            w[5] = a.vy as u32;
+            w[6] = a.walk.direction as u32;
+            w[7] = a.walk.animation_tick;
+            written += 1;
+        }
+        for w in out[written * crate::trace::ENEMY_WORDS..max * crate::trace::ENEMY_WORDS].iter_mut() { *w = 0; }
+        (live, written as u32)
+    }
     pub fn reset_scene(&mut self, scene: usize) {
         for slot in &mut self.actors {
             if slot.as_ref().is_some_and(|a| a.scene == scene) {
