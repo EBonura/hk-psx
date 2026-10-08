@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |811,960|
+| Linked code |804,760|
 | Code-to-data alignment |8|
-| Linked data, including menu and HUD |273,472|
-| BSS, including shared scene arena and runtime pools |796,972|
-| Total static span |1,882,412|
+| Linked data, including menu and HUD |272,480|
+| BSS, including shared scene arena and runtime pools |797,500|
+| Total static span |1,874,748|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |99,796|
+| Unallocated gap before reserved stack |107,460|
 | Room module pool, inside that gap |94,208|
-| Free RAM below the module pool |5,588|
+| Free RAM below the module pool |13,252|
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -44,6 +44,13 @@ position on the title's Options page (game/src/display.rs, 2026-10-05) took 12 o
 `menu::draw_menu` compiled for size too (it grew by 1,512 bytes with three more rows before that) and
 the hero light's clip at the Knight's feet, which a platform showed to be wrong, gone: 5,588 are free
 below the pool.
+
+The per-tick `HK_TRACE` block for the replay harness (game/src/trace.rs, 2026-10-08) took 512 bytes of
+BSS and 1,260 of code, and compiling seventeen functions that only run on a scene change,
+a gate, a save or a debug reset for size (`optimize(size)`: the disc cache's init and
+prepare_*, enemy sync_region, persist, the save survey, take_gate and the like) gave back
+8.2 KB: 13,252 are free below the pool now. The HUD's Geo coin replaced the word "Geo"
+(three glyphs), and the render policy and the audio start added a few words.
 
 Every figure above is the current ordinary build's, read out of
 `.hkpsx/build-normal.json`, and `tests/test_budget_doc.py` fails when this table
@@ -87,7 +94,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801db92c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d9b3c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
