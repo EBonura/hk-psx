@@ -7,8 +7,15 @@ if (args.Length != 4) throw new ArgumentException("source-dll copied-managed-dir
 var source = Path.GetFullPath(args[0]);
 var managed = Path.GetFullPath(args[1]);
 var destination = Path.Combine(managed, "Assembly-CSharp.dll");
-if (source == destination || !managed.Contains(Path.DirectorySeparatorChar + ".hkpsx" + Path.DirectorySeparatorChar))
-    throw new ArgumentException("Only an isolated .hkpsx copy may be patched");
+// Only a private copy made by hkref may be patched: it drops a .hkref-copy marker
+// at the top of the clone. The Steam install never carries one.
+static bool IsHkrefCopy(string dir) {
+    for (var d = new DirectoryInfo(dir); d != null; d = d.Parent)
+        if (File.Exists(Path.Combine(d.FullName, ".hkref-copy"))) return true;
+    return false;
+}
+if (source == destination || managed.Contains("steamapps") || !IsHkrefCopy(managed))
+    throw new ArgumentException("Only an isolated hkref copy of the game (marked .hkref-copy) may be patched");
 var resolver = new DefaultAssemblyResolver();
 resolver.AddSearchDirectory(managed);
 using var original = AssemblyDefinition.ReadAssembly(source, new ReaderParameters { AssemblyResolver = resolver });

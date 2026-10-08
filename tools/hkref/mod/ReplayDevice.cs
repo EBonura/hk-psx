@@ -1,4 +1,4 @@
-// Reference-driver input for the user's isolated Windows game copy. The
+// Reference-driver input for the user's isolated copy of the game. The
 // installed Assembly-CSharp.dll contains these InControl APIs; no OS input,
 // HeroController methods, physics, or action edge flags are replaced here.
 using InControl;
@@ -43,7 +43,11 @@ namespace HKReference
         // pads to a platform layout, overwriting our explicit bindings on the
         // first press. Their verified unknown-device guard leaves this device
         // alone. DeviceBindingSource reads its controls directly in either case.
-        public override bool IsKnown { get { return false; } }
+        // The macOS build's InputManager.AttachDevice rejects unknown devices
+        // outright, so the device claims to be known only while attaching.
+        private static bool attaching;
+        public static string AttachNote = "";
+        public override bool IsKnown { get { return attaching; } }
 
         private ReplayDevice() : base("HK reference replay")
         {
@@ -65,8 +69,26 @@ namespace HKReference
             if (!InputManager.IsSetup || InputHandler.Instance == null ||
                 InputHandler.Instance.inputActions == null)
                 return false;
-            Attach(InputHandler.Instance.inputActions);
+            HeroActions actions = InputHandler.Instance.inputActions;
+            // The first real press makes InControl activate this device, and
+            // InputHandler then remaps every action to a platform gamepad layout,
+            // replacing our bindings. Detect that and bind again.
+            if (boundActions != null && object.ReferenceEquals(boundActions, actions) && !BindingsIntact(actions)) boundActions = null;
+            Attach(actions);
             return true;
+        }
+
+        private static bool BindingsIntact(HeroActions a)
+        {
+            return Has(a.jump, InputControlType.Action1) && Has(a.attack, InputControlType.Action2) && Has(a.cast, InputControlType.Action3)
+                && Has(a.right, InputControlType.DPadRight) && Has(a.left, InputControlType.DPadLeft);
+        }
+
+        private static bool Has(PlayerAction action, InputControlType control)
+        {
+            if (action.Bindings.Count != 1) return false;
+            DeviceBindingSource source = action.Bindings[0] as DeviceBindingSource;
+            return source != null && source.Control == control;
         }
 
         public static void Attach(HeroActions actions)
@@ -74,9 +96,11 @@ namespace HKReference
             if (device == null)
             {
                 device = new ReplayDevice();
-                InputManager.AttachDevice(device);
+                attaching = true; try { InputManager.AttachDevice(device); } finally { attaching = false; }
+                AttachNote = "attach: isAttached=" + device.IsAttached + " known=" + device.IsKnown + " unknown=" + device.IsUnknown + " supported=" + device.IsSupportedOnThisPlatform + " devices=" + InputManager.Devices.Count + " setup=" + InputManager.IsSetup;
             }
             InputManager.SuspendInBackground = false;
+            ForceFocus();
             if (object.ReferenceEquals(boundActions, actions))
                 return;
 
@@ -106,6 +130,26 @@ namespace HKReference
         // Consumed on the next real InControl update. Send 0 for neutral;
         // holding Jump for several updates and releasing it generates the
         // genuine WasPressed/IsPressed/WasReleased sequence through Commit.
+        // A macOS player launched in batch mode never receives a focus-gained
+        // event, so InControl's applicationIsFocused stays false and it skips
+        // every device update. Mark it focused each frame.
+        public static void ForceFocus()
+        {
+            System.Reflection.FieldInfo f = typeof(InputManager).GetField("applicationIsFocused",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            if (f != null) f.SetValue(null, true);
+        }
+
+        public static string Diag()
+        {
+            System.Reflection.BindingFlags bf = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+            return "enabled=" + typeof(InputManager).GetField("enabled", bf).GetValue(null)
+                + " focused=" + typeof(InputManager).GetField("applicationIsFocused", bf).GetValue(null)
+                + " suspendBg=" + InputManager.SuspendInBackground + " tick=" + InputManager.CurrentTick
+                + " devices=" + InputManager.Devices.Count + " ours=" + (device != null && device.IsAttached) + " ourUpdates=" + UpdateCount
+                + " " + AttachNote + " active=" + (InputManager.ActiveDevice != null ? InputManager.ActiveDevice.Name : "none");
+        }
+
         public static void SetButtons(uint mask)
         {
             requestedMask = mask & SupportedMask;

@@ -1,8 +1,10 @@
-// Local reference harness only. Injected into an isolated retail copy by the
-// reference runner; never shipped with the PS1 guest or written into Steam.
+// Local reference harness only. Injected into an isolated, local copy of the
+// user's own Hollow Knight by tools/hkref; never shipped with the PS1 guest and
+// never written into the Steam install.
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -40,6 +42,10 @@ namespace HKReference
         private bool teleported;
         private string playerDataSpec;
         private int shotEvery;
+        private int[] shotAt = new int[0];
+        // Scene sweep: after READY load each listed scene in turn, sweepFrames test frames apart.
+        private string[] sweep = new string[0];
+        private int sweepIndex, sweepFrames = 300;
         private int shotWidth = 640;
         private int shotHeight = 360;
         private Texture2D shotTexture;
@@ -75,12 +81,13 @@ namespace HKReference
             maxFrames = IntSetting("HK_REFERENCE_MAX_FRAMES", 12000);
             maxSeconds = IntSetting("HK_REFERENCE_MAX_SECONDS", 120);
             states = new StreamWriter(Path.Combine(output, "state.csv"), false);
-            states.WriteLine("test_frame,frame,unity_frame,wall_seconds,time,fixed_time,scene,x,y,vx,vy,health,game_state,loading,transitioning,input_attached,buttons,input_tick,input_updates,on_ground,accepting_input,delta_time,fixed_delta_time,time_scale,physics_steps,facing_right");
+            states.WriteLine("test_frame,frame,unity_frame,wall_seconds,time,fixed_time,scene,x,y,vx,vy,health,game_state,loading,transitioning,input_attached,buttons,input_tick,input_updates,on_ground,accepting_input,delta_time,fixed_delta_time,time_scale,physics_steps,facing_right,hero_state,attacking,jumping,falling,dashing,recoiling,invulnerable,casting,clip,clip_frame,attack_cooldown,soul,relinquished,attack_queuing,attack_queue_steps,attack_time,vertical_input");
             states.AutoFlush = true;
             string tapePath = Path.Combine(output, "input.csv");
             if (File.Exists(tapePath)) tape = Tape.Load(tapePath);
             Observations.Initialize(output);
             EnemyTrace.Initialize(output);
+            ActorTrace.Initialize(output);
             AudioTrace.Initialize(output);
             CameraTrace.Initialize(output);
             ReplayDevice.OpenLog(output);
@@ -108,6 +115,12 @@ namespace HKReference
             if (!String.IsNullOrEmpty(fxSpec))
                 fxFrames = Array.ConvertAll(fxSpec.Split(','), v => Int32.Parse(v.Trim(), CultureInfo.InvariantCulture));
             shotEvery = IntSetting("HK_REFERENCE_SHOT_EVERY", 0);
+            string sweepSpec = Environment.GetEnvironmentVariable("HK_REFERENCE_SWEEP");
+            if (!String.IsNullOrEmpty(sweepSpec)) sweep = sweepSpec.Split(',');
+            sweepFrames = IntSetting("HK_REFERENCE_SWEEP_FRAMES", 300);
+            string shotAtSpec = Environment.GetEnvironmentVariable("HK_REFERENCE_SHOT_AT");
+            if (!String.IsNullOrEmpty(shotAtSpec))
+                shotAt = Array.ConvertAll(shotAtSpec.Split(','), v => Int32.Parse(v.Trim(), CultureInfo.InvariantCulture));
             string size = Environment.GetEnvironmentVariable("HK_REFERENCE_SHOT_SIZE");
             if (!String.IsNullOrEmpty(size))
             {
@@ -115,7 +128,7 @@ namespace HKReference
                 shotWidth = Int32.Parse(wh[0], CultureInfo.InvariantCulture);
                 shotHeight = Int32.Parse(wh[1], CultureInfo.InvariantCulture);
             }
-            if (shotEvery > 0) Directory.CreateDirectory(Path.Combine(output, "frames"));
+            if (shotEvery > 0 || shotAt.Length > 0) Directory.CreateDirectory(Path.Combine(output, "frames"));
             Note("installed; scene=" + (startScene ?? "Tutorial_01") + " gate=" + (startGate ?? "") + " shots=" + shotEvery + " graphics=" + SystemInfo.graphicsDeviceType + "; bootstrap=" + (Environment.GetEnvironmentVariable("HK_REFERENCE_BOOTSTRAP") ?? "tutorial"));
         }
 
@@ -130,7 +143,7 @@ namespace HKReference
                 if (Environment.GetEnvironmentVariable("HK_REFERENCE_MUTE") != "0" && AudioListener.volume != 0f) AudioListener.volume = 0f;
                 if (!languageConfirmed && frames >= 30)
                 {
-                    StartManager start = FindFirstObjectByType<StartManager>();
+                    StartManager start = FindObjectOfType<StartManager>();
                     if (start != null)
                     {
                         Call(start, "ConfirmLanguage");
@@ -147,6 +160,9 @@ namespace HKReference
                     if (config != null) Write(config, "disableSaveGame", true);
                 }
                 inputAttached = ReplayDevice.TryAttach();
+                if (inputAttached) ReplayDevice.ForceFocus();
+                ApplyFxSwitches();
+                if (frames % 600 == 0) Note("input " + (inputAttached ? ReplayDevice.Diag() : "unattached"));
                 if (!bootstrapped && knightLoad == null && gm != null && Singleton("UIManager") != null
                     && UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "Menu_Title")
                 {
@@ -190,6 +206,11 @@ namespace HKReference
                         && Number(Read(Read(hero, "cState"), "transitioning")) == "False"
                         && Number(Read(hero, "acceptingInput")) == "True";
                     readyFrames = eligible ? readyFrames + 1 : 0;
+                    // Make this device the active one before the tape starts, so the
+                    // remap InputHandler does on activation happens now, not on the
+                    // tape's first press.
+                    if (eligible && readyFrames == 3) ReplayDevice.SetButtons(ReplayDevice.Up);
+                    if (eligible && readyFrames == 8) ReplayDevice.SetButtons(0);
                     if (startScene != null && !sceneRequested && readyFrames >= 30)
                     {
                         // TEST SETUP: PlayerData the PS1 card carries, then a direct
@@ -210,7 +231,7 @@ namespace HKReference
                         Vector3 position = body.transform.position;
                         body.transform.position = new Vector3(teleport[0], teleport[1], position.z);
                         Rigidbody2D rigid = body.GetComponent<Rigidbody2D>();
-                        if (rigid != null) rigid.linearVelocity = Vector2.zero;
+                        if (rigid != null) rigid.velocity = Vector2.zero;
                         if (face > 0) Call(hero, "FaceRight");
                         else if (face < 0) Call(hero, "FaceLeft");
                         foreach (string name in hide)
@@ -243,6 +264,13 @@ namespace HKReference
                         scheduledAfter = ReplayDevice.UpdateCount;
                         if (tape != null) tape.Apply(0);
                         Note("READY; input frame 0 scheduled for next original InControl update");
+                        ListGates();
+                        // PlayMaker's random states draw from UnityEngine.Random: seed it at the
+                        // same point of every run so boss choices repeat.
+                        int seed = IntSetting("HK_REFERENCE_SEED", 1);
+                        UnityEngine.Random.InitState(seed);
+                        Note("UnityEngine.Random seeded " + seed);
+                        DumpPost();
                     }
                 }
                 else if (ReplayDevice.UpdateCount > scheduledAfter)
@@ -251,9 +279,17 @@ namespace HKReference
                         Note("extra original input updates in observed frame: " + (ReplayDevice.UpdateCount - scheduledAfter));
                     testFrame = scheduledFrame;
                     Capture(gm);
-                    if (shotEvery > 0 && testFrame % shotEvery == 0) Shot(testFrame);
+                    if ((shotEvery > 0 && testFrame % shotEvery == 0) || Array.IndexOf(shotAt, testFrame) >= 0) Shot(testFrame);
                     if (Array.IndexOf(fxFrames, testFrame) >= 0) EffectShots(testFrame, hero);
                     if (Array.IndexOf(censusFrames, testFrame) >= 0) Census(testFrame);
+                    if (sweepIndex < sweep.Length && testFrame > 0 && testFrame % sweepFrames == 0)
+                    {
+                        string next = sweep[sweepIndex++];
+                        Write(gm, "entryGateName", "zzz");
+                        ReplayDevice.SetButtons(0);
+                        Note("SWEEP " + next);
+                        Call(gm, "LoadScene", next);
+                    }
                     if (testFrame + 1 >= maxFrames) { Stop("completed input frames", 0); return; }
                     scheduledFrame++;
                     ReplayDevice.TestFrame = scheduledFrame;
@@ -268,7 +304,7 @@ namespace HKReference
 
         private void BootstrapTutorial(object gm)
         {
-            // Windows source LoadFirstScene's body after WaitForEndOfFrame.
+            // The shipped LoadFirstScene's body after WaitForEndOfFrame.
             // End-of-frame yields are unsuitable for batch/nographics. This
             // starts a test scene; it does not claim opening/new-game parity.
             bootstrapped = true;
@@ -303,11 +339,6 @@ namespace HKReference
                     : UInt32.Parse(value, CultureInfo.InvariantCulture);
                 ReplayDevice.SetButtons(mask);
             }
-            else if (command == "particle-probe" && words.Length == offset + 1)
-            {
-                ParticleProbe.Run(output);
-                Note("TEST SETUP synthetic native particle scaling probe; retail objects unchanged");
-            }
             else if (command == "scene" && words.Length == offset + 3 && gm != null)
             {
                 string scene = words[offset + 1];
@@ -331,7 +362,7 @@ namespace HKReference
                 Vector3 position = hero.transform.position;
                 hero.transform.position = new Vector3(x, y, position.z);
                 Rigidbody2D body = hero.GetComponent<Rigidbody2D>();
-                if (body != null) body.linearVelocity = Vector2.zero;
+                if (body != null) body.velocity = Vector2.zero;
                 Note("TEST SETUP teleport; subsequent motion remains native");
             }
             else throw new ArgumentException("Unsupported command: " + text);
@@ -344,9 +375,10 @@ namespace HKReference
             EnemyTrace.Capture(testFrame, physicsSteps);
             CameraTrace.Late(testFrame);
             Component hero = Singleton("HeroController") as Component;
+            if (testFrame >= 0) ActorTrace.Capture(testFrame, hero);
             Vector3 position = hero == null ? Vector3.zero : hero.transform.position;
             Rigidbody2D body = hero == null ? null : hero.GetComponent<Rigidbody2D>();
-            Vector2 velocity = body == null ? Vector2.zero : body.linearVelocity;
+            Vector2 velocity = body == null ? Vector2.zero : body.velocity;
             object data = Read(gm, "playerData");
             states.WriteLine(String.Join(",", new string[] {
                 Number(testFrame), Number(frames), Number(Time.frameCount), Number(clock.Elapsed.TotalSeconds), Number(Time.time), Number(Time.fixedTime),
@@ -356,10 +388,59 @@ namespace HKReference
                 Number(ReplayDevice.LastUpdateTick), Number(ReplayDevice.UpdateCount),
                 Number(Read(Read(hero,"cState"),"onGround")), Number(Read(hero,"acceptingInput")),
                 Number(Time.deltaTime), Number(Time.fixedDeltaTime), Number(Time.timeScale), Number(physicsSteps),
-                Number(Read(Read(hero,"cState"),"facingRight")) }));
+                Number(Read(Read(hero,"cState"),"facingRight")) }.Concat(HeroExtra(hero, data)).ToArray()));
             if (frames % 30 == 0) states.Flush();
             if (frames % 120 == 0) File.WriteAllText(Path.Combine(output, "heartbeat.txt"),
                 "frame=" + frames + " scene=" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + " wall=" + Number(clock.Elapsed.TotalSeconds));
+        }
+
+        // Hero state the port's trace is compared against: ActorStates name,
+        // the cState flags that drive animation, the current tk2d clip and
+        // frame, and the attack cooldown timer.
+        private static string[] HeroExtra(object hero, object data)
+        {
+            object cs = Read(hero, "cState");
+            object anim = Read(Read(hero, "animCtrl"), "animator");
+            object clip = Read(anim, "CurrentClip");
+            return new string[] {
+                Number(Read(hero, "hero_state")), Number(Read(cs, "attacking")), Number(Read(cs, "jumping")), Number(Read(cs, "falling")),
+                Number(Read(cs, "dashing")), Number(Read(cs, "recoiling")), Number(Read(cs, "invulnerable")), Number(Read(cs, "casting")),
+                Number(Read(clip, "name")), Number(Read(anim, "CurrentFrame")), Number(Read(hero, "attack_cooldown")), Number(Read(data, "MPCharge")),
+                Number(Read(hero, "controlReqlinquished")), Number(Read(hero, "attackQueuing")), Number(Read(hero, "attackQueueSteps")), Number(Read(hero, "attack_time")), Number(Read(hero, "vertical_input")) };
+        }
+
+        // Field values of the camera image effects, to explain a dark shot.
+        private void DumpPost()
+        {
+            foreach (Camera camera in Camera.allCameras)
+                foreach (MonoBehaviour b in camera.GetComponents<MonoBehaviour>())
+                {
+                    string n = b.GetType().Name;
+                    if (n != "BloomOptimized" && n != "ColorCorrectionCurves" && n != "BrightnessEffect" && n != "FastNoise" && n != "DebandEffect") continue;
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                    foreach (FieldInfo f in b.GetType().GetFields(Members))
+                    {
+                        if (f.FieldType.IsPrimitive || f.FieldType.IsEnum || f.FieldType == typeof(string) || f.FieldType == typeof(Color))
+                            sb.Append(f.Name).Append('=').Append(Number(f.GetValue(b))).Append(' ');
+                        else if (typeof(UnityEngine.Object).IsAssignableFrom(f.FieldType)) sb.Append(f.Name).Append('=').Append(f.GetValue(b) == null ? "null" : "set").Append(' ');
+                    }
+                    Note("POST " + camera.name + " " + n + " enabled=" + b.enabled + " " + sb);
+                }
+            Note("SCREEN " + Screen.width + "x" + Screen.height + " dpi=" + Screen.dpi);
+        }
+
+        // Entry gates of the loaded scene, so a scene warp can name a real one.
+        private void ListGates()
+        {
+            Type type = FindType("TransitionPoint");
+            if (type == null) return;
+            foreach (UnityEngine.Object o in UnityEngine.Object.FindObjectsOfType(type, true))
+            {
+                Component c = o as Component;
+                if (c == null) continue;
+                Note("GATE " + c.gameObject.scene.name + " " + c.name + " " + c.transform.position.x.ToString("F2", CultureInfo.InvariantCulture)
+                    + " " + c.transform.position.y.ToString("F2", CultureInfo.InvariantCulture) + " to=" + Number(Read(c, "targetScene")) + ":" + Number(Read(c, "entryPoint")));
+            }
         }
 
         private void ApplyPlayerData(object data)
@@ -465,7 +546,7 @@ namespace HKReference
                     w.WriteLine(String.Join(",", new string[] { "Camera", Quote(c.name), "", Number(c.gameObject.activeInHierarchy), Number(c.enabled), "", "",
                         Number(c.transform.position.x), Number(c.transform.position.y), Number(c.transform.position.z),
                         Number(c.nearClipPlane), Number(c.farClipPlane), Number(c.fieldOfView), Number(c.depth), Number(c.cullingMask), "", "" }));
-                foreach (Renderer r in FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                foreach (Renderer r in FindObjectsOfType<Renderer>(true))
                 {
                     if (r is ParticleSystemRenderer) continue;
                     Transform t = r.transform;
@@ -491,8 +572,25 @@ namespace HKReference
         // writes it as a PNG. Needs a graphics device (not -nographics).
         private void Shot(int frame) { Shot(frame, ""); }
 
+        // Camera image effects named in HK_REFERENCE_DISABLE_FX stay off (comma list).
+        private void ApplyFxSwitches()
+        {
+            if (Environment.GetEnvironmentVariable("HK_REFERENCE_REFRESH_CURVES") == "1")
+                foreach (Camera camera in Camera.allCameras)
+                    foreach (MonoBehaviour b in camera.GetComponents<MonoBehaviour>())
+                        if (b != null && b.GetType().Name == "ColorCorrectionCurves") { Call(b, "UpdateParameters"); }
+            string spec = Environment.GetEnvironmentVariable("HK_REFERENCE_DISABLE_FX");
+            if (String.IsNullOrEmpty(spec)) return;
+            string[] names = spec.Split(',');
+            foreach (Camera camera in Camera.allCameras)
+                foreach (MonoBehaviour b in camera.GetComponents<MonoBehaviour>())
+                    if (b != null && b.enabled && Array.IndexOf(names, b.GetType().Name) >= 0) { b.enabled = false; Note("FX switched off: " + b.GetType().Name + " on " + camera.name); }
+        }
+
         private void Shot(int frame, string suffix)
         {
+            ApplyFxSwitches();
+            if (Environment.GetEnvironmentVariable("HK_REFERENCE_DUMP_POST") == "1") DumpPost();
             if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null) return;
             RenderTexture target = RenderTexture.GetTemporary(shotWidth, shotHeight, 24);
             RenderTexture previous = RenderTexture.active;
@@ -536,6 +634,7 @@ namespace HKReference
             if (states != null) { states.Flush(); states.Dispose(); states = null; }
             Observations.Dispose();
             EnemyTrace.Dispose();
+            ActorTrace.Dispose();
             AudioTrace.Dispose();
             CameraTrace.Dispose();
             ReplayDevice.CloseLog();

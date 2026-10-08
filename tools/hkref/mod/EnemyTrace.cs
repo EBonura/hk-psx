@@ -57,7 +57,7 @@ namespace HKReference
         {
             Type type = typeof(HealthManager).Assembly.GetType(name);
             if (type == null) { Note("missing controller type " + name); return; }
-            UnityEngine.Object[] found = UnityEngine.Object.FindObjectsByType(type, FindObjectsInactive.Include, FindObjectsSortMode.InstanceID);
+            UnityEngine.Object[] found = UnityEngine.Object.FindObjectsOfType(type, true);
             int loaded = 0;
             foreach (UnityEngine.Object obj in found)
             {
@@ -99,7 +99,7 @@ namespace HKReference
             Vector3 p = actor.transform.position; set("x", p.x); set("y", p.y); set("z", p.z); set("scale_x", actor.transform.localScale.x); set("rotation_z", actor.transform.eulerAngles.z);
             Rigidbody2D body = actor.GetComponent<Rigidbody2D>();
             if (body == null) missing.Add("Rigidbody2D:null_component");
-            else { set("body_x", body.position.x); set("body_y", body.position.y); set("body_rotation", body.rotation); set("vx", body.linearVelocity.x); set("vy", body.linearVelocity.y); }
+            else { set("body_x", body.position.x); set("body_y", body.position.y); set("body_rotation", body.rotation); set("vx", body.velocity.x); set("vy", body.velocity.y); }
             // Avoid linking another retail assembly: the animator is already held by each controller.
             bool walker = actor.GetType().Name == "Walker";
             object animator = read(actor, walker ? "animator" : "anim");
