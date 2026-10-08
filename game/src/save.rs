@@ -216,6 +216,7 @@ impl Save {
     }
     /// The record and its SceneData item bytes (four per item, validated and
     /// sorted), or None. An HKS4 record decodes with an empty world.
+    #[optimize(size)]
     pub fn decode(bytes: &[u8]) -> Option<(Self, &[u8])> {
         let (len, version) = if bytes.get(0..4)? == MAGIC_HKS4 {
             (LEN_HKS4, 4)
@@ -399,6 +400,7 @@ fn read_profile<B: Block>(card: &mut Card<B>, profile: usize) -> Result<Slot, Fa
 /// Every profile, for the selection screen. Boot-time, before the pad sampler
 /// starts (nothing else uses SIO0).
 #[inline(never)]
+#[optimize(size)]
 pub fn survey() -> ([Slot; PROFILES], Option<Fault>) {
     let mut card = Card::new(HardwareCard::new(psx_mc::Slot::One));
     let mut slots = [Slot::Empty; PROFILES];

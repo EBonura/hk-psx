@@ -351,6 +351,7 @@ fn migrate_hks4(save: &crate::save::Save, s: &mut Store) -> usize {
 /// Lifeblood. Secret masks and arenas read the store when their scene seats.
 #[cfg(not(test))]
 #[inline(never)]
+#[optimize(size)]
 pub fn apply(state: &mut crate::world::State, geo: &mut crate::geo::World, life: &mut crate::lifeblood::World) {
     let s = store();
     for (scene, local, _) in s.all(Kind::Breakable) {
@@ -376,6 +377,7 @@ pub fn restore_cocoon(life: &mut crate::lifeblood::World) {
 /// still broken in the world's table and have to be told apart by the bank.
 #[cfg(not(test))]
 #[inline(never)]
+#[optimize(size)]
 pub fn snapshot(state: &crate::world::State, geo: &crate::geo::World, scene: usize) {
     let s = store();
     s.clear_kind(Kind::Breakable);
