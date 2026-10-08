@@ -242,6 +242,8 @@ mod hardware {
     static mut BASE: u32 = 0;
     static mut FIRST_ARM_TICK: u32 = 0;
     static mut ARMED: bool = false;
+    /// Half B of a start is uploaded at the first service of a later VBlank.
+    static mut SECOND_HALF_DUE: bool = false;
     #[no_mangle]
     pub static mut HK_AUDIO_STREAM_STARTS: u32 = 0;
     #[no_mangle]
@@ -295,8 +297,15 @@ mod hardware {
         unsafe {
             BASE = base;
         }
-        if !upload(fifo, 0) || !upload(fifo, 1) {
+        // Half A now, half B at the next VBlank's service: both at once was a
+        // 16 KiB upload that carried a boss-song start past two VBlanks
+        // (mawlek-fight). The voice plays A for 0.37 s before it reaches B, and
+        // the sectors of B stay buffered (unread, so not free) until it is up.
+        if !upload(fifo, 0) {
             return false;
+        }
+        unsafe {
+            SECOND_HALF_DUE = true;
         }
         let voice = Voice::new(VOICE);
         voice.set_start_addr(SpuAddr::new(base));
@@ -321,6 +330,7 @@ mod hardware {
         unsafe {
             (*(&raw mut STATE)).stop();
             ARMED = false;
+            SECOND_HALF_DUE = false;
         }
     }
     fn fault() -> Service {
@@ -336,6 +346,12 @@ mod hardware {
             // status read per tick is needed for a 0.65-second half-buffer.
             if !(*(&raw const STATE)).running || now == (*(&raw const STATE)).last_poll {
                 return Service::Idle;
+            }
+            if SECOND_HALF_DUE {
+                SECOND_HALF_DUE = false;
+                if !upload(fifo, 1) {
+                    return fault();
+                }
             }
             let irq = ARMED && psx_spu::irq_pending();
             let action = (*(&raw mut STATE)).poll(now, irq);
