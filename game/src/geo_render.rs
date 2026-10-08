@@ -56,14 +56,16 @@ pub fn hud_coin(x:i16,y:i16)->u32 {
     let index=geo::GEO_COIN_CLIPS[0][0].start as usize;
     let art=&geo::GEO_ART[index];
     let b=art.bounds;
-    let w=((i64::from(b[2])-i64::from(b[0]))*i64::from(crate::KNIGHT_SCALE)>>28)as i16;
-    let h=((i64::from(b[3])-i64::from(b[1]))*i64::from(crate::KNIGHT_SCALE)>>28)as i16;
+    // One and a half times its world size, and at twice the texel's colour: a
+    // coin in the world is 9 pixels and dim, and the HUD's has to read.
+    let w=((i64::from(b[2])-i64::from(b[0]))*i64::from(crate::KNIGHT_SCALE)*3>>29)as i16;
+    let h=((i64::from(b[3])-i64::from(b[1]))*i64::from(crate::KNIGHT_SCALE)*3>>29)as i16;
     let right=(u16::from(art.u)+u16::from(art.w)-1)as u8;
     let bottom=(u16::from(art.v)+u16::from(art.h)-1)as u8;
     let uv=[(art.u,art.v),(right,art.v),(art.u,bottom),(right,bottom)];
     let template=QuadTextured::with_material([(0,0);4],uv,
         TextureMaterial::blended(art.clut,art.tpage,(128,128,128),BlendMode::Average));
-    render::hud_quad(&template,[(x,y),(x+w,y),(x,y+h),(x+w,y+h)]);1
+    render::hud_quad(&template,[(x,y),(x+w,y),(x,y+h),(x+w,y+h)],(255,255,255));1
 }
 #[inline(never)]
 pub fn draw(geo:&geo::World,region:usize,camera:(i32,i32))->u32 {
