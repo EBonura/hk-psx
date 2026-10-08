@@ -608,6 +608,26 @@ const REQUIRED: &[(&str, &str, u64)] = &[
 /// The perf-regression signal this table gives up is not lost: fourteen routes
 /// still hold exact positions, and nine of them stayed byte-identical through
 /// the change that moved these.
+/// Frames a route may still show late art for (`HK_MODULE_ART_LATE`). Both deaths
+/// leave a Shade whose art package is not resident at the respawn for 44 frames:
+/// pop-in, which the rule forbids, listed so a new case fails instead.
+const ART_LATE_ALLOWED: &[(&str, u64)] = &[("kings-death", 44), ("boss-death", 44)];
+/// Frames over two vblanks a route may still have (see `pacing`): the 2026-10-08
+/// measurement (hkperf sweep and this replay, the larger of the two) plus 30%,
+/// four frames for the counts that matter and one for a single stray, since frame
+/// pacing moves by tens of frames between builds with no relevant change. This is
+/// the debt against the 30 fps rule and only ever goes down; a route not listed
+/// has none to spare, and no boss route has more than a view bind's one frame.
+const PACING_CEILINGS: &[(&str, u64)] = &[
+    ("journey-false-knight", 475), ("journey-reload", 327), ("journey-kings", 301), ("kings-climb", 264), ("journey-crossroads", 233),
+    ("ctrl-climb", 202), ("f17-charger", 154), ("secret-f08a", 154), ("secret-c03", 151), ("crossroads-gate", 137),
+    ("kings-return", 136), ("kp-playtest", 131), ("cheat-dream", 124), ("kings-death", 123), ("mound-spell", 118),
+    ("secret-c03-reload", 115), ("gruz-fight", 108), ("secret-kp", 73), ("f01-moss", 66), ("greenpath-walk", 64), ("well-drop", 60),
+    ("secret-c37", 55), ("secret-c04", 28), ("baldur-spell", 25), ("secret-c13", 25), ("secret-c07", 24), ("secret-c08", 24),
+    ("secret-c10", 23), ("secret-c21", 23), ("spell-exit", 20), ("secret-c18", 13), ("c37-stand", 4), ("grub-jar", 3),
+    ("husk-guard", 3), ("secret-f08b", 3), ("bench-save", 2), ("mawlek-fight", 2), ("secret-c09", 2), ("secret-c10-reload", 2),
+    ("secret-c18-reload", 2), ("secret-c46-eggs", 2),
+];
 const REQUIRED_MIN: &[(&str, &str, u64)] = &[
     // Survived the traversal at all. HK_DEATHS 0 above is the real assertion;
     // this only says the Knight was not left on one mask by something new.
@@ -1391,6 +1411,46 @@ fn ram_word(root: &Path, output: &Path, symbol: &str) -> Result<u32> {
     Ok(u32::from_le_bytes(bytes.try_into()?))
 }
 
+/// Frame pacing of one replay: gameplay frames (the run of vblanks between two
+/// display flips) over the 30 fps bar of two vblanks. Only gameplay ticks count:
+/// `HK_GAME_MODE` at its most common value and `HK_ROOM_LOAD_STATE` at its
+/// most common (resident) value, so the title screen, loads and gates stay
+/// out (the same rule as tools/frame-pacing). Returns (frames, over two
+/// vblanks, longest frame in vblanks, longest run of consecutive over frames).
+fn pacing(output: &Path) -> Result<(u64, u64, u64, u64)> {
+    let command: Value = serde_json::from_slice(&std::fs::read(output.join("command.json"))?)?;
+    let column = |name: &str| command["watches"][name].as_str().map(|a| format!("ram_{:0>8}", a.trim_start_matches("0x")));
+    let text = std::fs::read_to_string(output.join("route.csv"))?;
+    let mut lines = text.lines();
+    let header: Vec<&str> = lines.next().ok_or("route.csv is empty")?.split(',').collect();
+    let at = |name: &str| header.iter().position(|h| *h == name);
+    let flip = at("display_start_changed").ok_or("route.csv has no display_start_changed")?;
+    let (game, load) = (column("HK_GAME_MODE").and_then(|c| at(&c)), column("HK_ROOM_LOAD_STATE").and_then(|c| at(&c)));
+    let rows: Vec<Vec<&str>> = lines.map(|l| l.split(',').collect()).collect();
+    let mode = |index: Option<usize>| -> Option<&str> {
+        let index = index?;
+        let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for r in &rows { *counts.entry(r[index]).or_default() += 1; }
+        counts.into_iter().max_by_key(|&(_, n)| n).map(|(v, _)| v)
+    };
+    let (play, ready) = (mode(game), mode(load));
+    let gameplay = |r: &Vec<&str>| game.is_none_or(|g| Some(r[g]) == play) && load.is_none_or(|l| Some(r[l]) == ready);
+    let (mut frames, mut over, mut longest, mut streak, mut worst_streak, mut since) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    for r in &rows {
+        if !gameplay(r) { since = 0; continue; }
+        since += 1;
+        if r[flip] == "1" {
+            if since > 0 {
+                frames += 1;
+                longest = longest.max(since);
+                if since > 2 { over += 1; streak += 1; worst_streak = worst_streak.max(streak); } else { streak = 0; }
+            }
+            since = 0;
+        }
+    }
+    Ok((frames, over, longest, worst_streak))
+}
+
 /// Replay every route tape against the final CUE; a fault or an incomplete tape fails the build.
 fn validate(root: &Path, options: &Options) -> Result<()> {
     let frontend = frontend(root, options)?;
@@ -1464,6 +1524,25 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                 ok = false;
             }
         }
+        // Every route: the camera never sat outside the cooked range of the view
+        // being drawn (render::HK_CAMERA_VIEW_MISS), and no prop's art arrived
+        // after its first visible frame (modules::HK_MODULE_ART_LATE). Either
+        // one is scenery that vanishes or pops in while walking (Manny's King's
+        // Pass tape, 2026-10-03).
+        for symbol in ["HK_CAMERA_VIEW_MISS", "HK_MODULE_ART_LATE"] {
+            match ram_word(root, &output, symbol) {
+                Ok(0) => {}
+                Ok(count) if symbol == "HK_MODULE_ART_LATE" && ART_LATE_ALLOWED.iter().any(|(route, most)| *route == name && count as u64 <= *most) => {}
+                Ok(count) => {
+                    println!("{name}: {symbol}={count} expected 0");
+                    ok = false;
+                }
+                Err(e) => {
+                    println!("{name}: {symbol} unreadable: {e}");
+                    ok = false;
+                }
+            }
+        }
         for (route, key, expected) in REQUIRED {
             if *route == name && ram[*key].as_u64() != Some(*expected) {
                 println!("{name}: {key}={} expected {expected}", ram[*key]);
@@ -1473,6 +1552,22 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         for (route, key, least) in REQUIRED_MIN {
             if *route == name && ram[*key].as_u64().is_none_or(|v| v < *least) {
                 println!("{name}: {key}={} expected at least {least}", ram[*key]);
+                ok = false;
+            }
+        }
+        // The 30 fps bar: no gameplay frame over two vblanks. A route may not
+        // exceed its ceiling in PACING_CEILINGS (zero when unlisted); the list
+        // is the debt that remains and only ever goes down.
+        match pacing(&output) {
+            Ok((frames, over, longest, streak)) => {
+                let ceiling = PACING_CEILINGS.iter().find(|(route, _)| *route == name).map_or(0, |c| c.1);
+                println!("{name}: pacing {over} of {frames} frames over 2 vblanks (ceiling {ceiling}), longest {longest}, worst streak {streak}");
+                if over > ceiling {
+                    ok = false;
+                }
+            }
+            Err(e) => {
+                println!("{name}: pacing unreadable: {e}");
                 ok = false;
             }
         }
