@@ -53,7 +53,13 @@ fn service() {
         Action::None=>{},
         Action::KickFinal=>crate::render::kick_front(),
         Action::Queue(display)=>{
-            unsafe {QUEUED_AT=psx_rt::interrupts::vblank_count();}
+            unsafe {
+                let now=psx_rt::interrupts::vblank_count();
+                // The vblanks between this frame's flip and the last one's: the
+                // flip follows the queue by one vblank either way.
+                HK_FRAME_VBLANKS=now.wrapping_sub(QUEUED_AT);
+                QUEUED_AT=now;
+            }
             psx_rt::interrupts::queue_gp1_at_vblank(display);
             unsafe {crate::render::HK_FRAME_FLIP_LINES=crate::render::frame_lines();}
         }
@@ -70,6 +76,10 @@ pub const FLIP_TIMEOUT_VBLANKS:u32=30;
 #[no_mangle]pub static mut HK_FLIP_TIMEOUTS:u32=0;
 #[cfg(not(test))]
 static mut QUEUED_AT:u32=0;
+/// Vblanks the last presented frame took (flip to flip); the renderer reads it
+/// to see which resource a slow frame ran out of (render::begin_frame).
+#[cfg(not(test))]
+#[no_mangle]pub static mut HK_FRAME_VBLANKS:u32=0;
 /// The main loop's queued flip has waited FLIP_TIMEOUT_VBLANKS for its GPU.
 #[cfg(not(test))]
 pub fn flip_overdue()->bool {

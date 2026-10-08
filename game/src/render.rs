@@ -259,6 +259,7 @@ pub fn init(room: &Room, bank: usize, region:usize,coverage:CoverageView<'_>) {
     crate::input::checkpoint();
     unsafe {
         BOUND_VIEW=region;EARLY_BACK=EARLY_UNKNOWN;
+        TRIMMING=!CPU_VIEWS.contains(&(bank,region));
         // The vignette words belong to the old view's draws: remake them all.
         #[cfg(feature="hero-vignette")] {VIGNETTE_ON=false;}
         (&mut *(&raw mut BACK_PREFIX)).invalidate();
@@ -776,7 +777,21 @@ pub fn begin_frame(framebuffer_y:u16) {
         // A tail of about 15 to 23 lines is the last chunk's own drawing, not
         // a GPU-bound frame: the occluder holes and tile runs cost more CPU
         // than they spare there (secret-kp, measured with 16, 24 and 32).
-        CPU_BOUND=!(HK_FRAME_FLIP_LINES>HK_FRAME_LAST_KICK_LINES && HK_FRAME_FLIP_LINES-HK_FRAME_LAST_KICK_LINES>=24);
+        // Which resource the last slow frame ran out of decides whether the
+        // exact trimming below (occluder holes, tile runs, alpha scissors, flat
+        // cores) is worth its CPU time. It saves GPU pixels and spends CPU
+        // cycles. A frame past two vblanks whose GPU kept working well after the
+        // CPU's last kick (a long tail) was GPU-bound: trim. One whose tail was
+        // short was CPU-bound: stop trimming, since the GPU has room for the
+        // pixels (Crossroads_04 runs the GPU at about 0.7 vblank). Frames inside
+        // the budget change nothing, and a loading gap is not a slow frame.
+        let tail=HK_FRAME_FLIP_LINES.saturating_sub(HK_FRAME_LAST_KICK_LINES);
+        let vblanks=crate::presentation::HK_FRAME_VBLANKS;
+        if vblanks>2 && vblanks<=8 {
+            if TRIMMING && tail<TRIM_OFF_TAIL {TRIMMING=false;remember_cpu_view(true);}
+            else if !TRIMMING && tail>=TRIM_ON_TAIL {TRIMMING=true;remember_cpu_view(false);}
+        }
+        CPU_BOUND=!TRIMMING;
         Scratch::initialize_at(occlusion_scratch::base());
         USED = 0;KICKED = 0;CHUNK_COUNT = 0;
         EXTRA_USED=0;FRAMEBUFFER_Y=framebuffer_y;
@@ -796,6 +811,27 @@ pub fn begin_frame(framebuffer_y:u16) {
 /// for the scene, so crossing back and forth between views pays once.
 static mut EARLY_BACK:u8=EARLY_UNKNOWN;
 static mut CPU_BOUND:bool=false;
+/// Whether the last slow frame was GPU-bound (see `begin_frame`), and the GPU
+/// tails in lines after the CPU's last kick that tell the two apart: under
+/// TRIM_OFF_TAIL the CPU was the limit, from TRIM_ON_TAIL the GPU was.
+static mut TRIMMING:bool=true;
+/// Views (bank, view) found CPU-bound, so they start without trimming when
+/// they are bound again instead of paying a slow frame to find out.
+static mut CPU_VIEWS:[(usize,usize);8]=[(usize::MAX,0);8];
+static mut CPU_VIEW_NEXT:usize=0;
+#[inline(never)]
+fn remember_cpu_view(cpu:bool) {
+    unsafe {
+        let key=(ACTIVE_BANK,BOUND_VIEW);
+        if cpu {
+            if !CPU_VIEWS.contains(&key) {CPU_VIEWS[CPU_VIEW_NEXT]=key;CPU_VIEW_NEXT=(CPU_VIEW_NEXT+1)%CPU_VIEWS.len();}
+        } else {
+            for v in CPU_VIEWS.iter_mut() {if *v==key {*v=(usize::MAX,0);}}
+        }
+    }
+}
+const TRIM_OFF_TAIL:u32=60;
+const TRIM_ON_TAIL:u32=140;
 const EARLY_UNKNOWN:u8=0;
 const EARLY_NO:u8=1;
 const EARLY_YES:u8=2;
