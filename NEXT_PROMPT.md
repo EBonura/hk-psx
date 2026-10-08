@@ -156,12 +156,11 @@ The user playtested63 and reported slow Great Door progression, missing SFX,
 odd enemy behaviour, and a Town boundary that sends the hero back to the gate.
 They explicitly requested a controllable HEADLESS original-game runner instead
 of GUI testing/manual feedback. That runner now works; use it for reproducible
-comparisons. Read docs/ORIGINAL_REFERENCE.md and the top of docs/STATUS.md.
+comparisons. Read tools/hkref/README.md and the top of docs/STATUS.md.
 Do not resume generic FPS work. The full-game goal remains unfinished.
 
-Reference command: `python3 tools/reference_game.py run --name NEW_NAME
---frames 300 --tape tools/reference/tapes/movement.csv --timeout 90` (one line).
-Prepare again after managed-driver changes. All original inputs/saves are read
+Reference command: `tools/hkref/target/release/hkref --work DIR all PROFILE`
+(see tools/hkref/README.md). Run `build` again after managed-driver changes. All original inputs/saves are read
 only; instruments and captures stay ignored. The original startup/load/landing
 sequence has specific prerequisites documented there. Do not force hero control
 or misread an unready test as failed original movement.
@@ -188,7 +187,7 @@ Runner controller/sensing tests pass; current trace proves two original attack
 cycles and exposes player-hit scaled-time pauses. The reference audio clock
 validator now accepts the evidenced frame-to-fixed callback switch; original
 run623 frames revalidates without changing raw evidence. Read docs/RUNNER.md
-and docs/ORIGINAL_REFERENCE.md. A separate source-derived Climber controller
+and tools/hkref/README.md. A separate source-derived Climber controller
 models corner motion and stun with scaled-time support; see docs/CLIMBER.md.
 Neither new enemy is integrated into guest actors or the disc. Preserve the
 remaining physics, scheduling and RNG gaps when binding art, sound and combat.
@@ -229,7 +228,7 @@ validated with original native simulation/BakeMesh probes. All four Town emitter
 cook; they use the existing scalar particle path while Tutorial tracks remain
 399,432B. A disjoint unused2KiB Geo strip moved to break effects: Geo5,154B within
 6,336B and break art6,330B within7,680B. No resolution reduction was introduced.
-Read docs/ORIGINAL_REFERENCE.md for probe evidence and the documented watchdog
+Read tools/hkref/README.md for probe evidence and the documented watchdog
 failure after the second probe's samples had completed.
 
 NEXT: keep actual-CUE Tutorial/Town/return/Select validation green.

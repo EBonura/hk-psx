@@ -76,10 +76,10 @@ policy; their absence must not erase in-game unlocks or completion conditions.
 
 - Work in this repository. Read `AGENTS.md`, `README.md`, `docs/BOOTSTRAP.md`,
   `NEXT_PROMPT.md` and the top of `docs/STATUS.md` before editing.
-- Windows Steam CrossOver source only, read-only. Never fall back to macOS.
-  Re-run `python3 tools/doctor.py` after resuming or source updates.
+- The original is the macOS Steam build, read-only; the harness runs a private
+  copy-on-write clone of it (see `tools/hkref/README.md`).
 - Original reference runs use the isolated copy and isolated saves created by
-  `tools/reference_game.py`. Never instrument the retail installation itself.
+  `tools/hkref`. Never instrument the retail installation itself.
 - Use Rust and the existing SDK for the guest; keep Unity/Python/extraction
   libraries entirely on the host.
 - Current tested SDK revision is `7b929ce473ed44b10b0ffca08f413eebf4eeeec4`;
@@ -246,7 +246,7 @@ Compressed geometry/components are host records, not PS1 packs.
 | Audio/music | `host/cook_audio.py`, `cook_music.py`, `ambience.py`, `focus_audio.py`, `runner_audio.py`, `title_music.py`; guest `audio*`, `ambience*`, `focus_audio*`, `music.rs` |
 | Menus/text | `host/cook_menu.py`, `cook_hud.py`, `read_points.py`; guest `menu*`, `pause.rs`, `cheats.rs`, `hud*`, `dialogue.rs` |
 | Builds/validation | `host/hk-build/main.rs` (root Cargo driver), `host/build_guest.py`, `host/build_report.py`, `host/stack_budget.py`, `tools/replay_cue.py`, `tools/validate_scene_gates.py`, `tools/validate.py`, `Makefile` |
-| Original oracle | `tools/reference_game.py`, `tools/reference/Driver.cs`, `EnemyTrace.cs`, other managed probes, `docs/ORIGINAL_REFERENCE.md` |
+| Original oracle | `tools/hkref` (Rust runner), `tools/hkref/mod/Driver.cs`, `EnemyTrace.cs`, other managed probes, `tools/hkref/README.md` |
 
 Paths mentioned later as **proposed** do not exist yet. Create them deliberately;
 do not call hypothetical CLIs or claim their checks already ran.
@@ -1330,19 +1330,17 @@ categories from being forgotten while implementing it.
 
 ### 10.1 Original-game oracle
 
-Read `docs/ORIGINAL_REFERENCE.md` before using the reference harness.
+Read `tools/hkref/README.md` before using the reference harness.
 
 Existing commands (run from the repository root):
 
 ```sh
-python3 tools/doctor.py
-python3 tools/reference_game.py prepare
-python3 tools/reference_game.py run --name UNIQUE_RUN_NAME --frames 300 --tape tools/reference/tapes/movement.csv --timeout 90
-python3 tools/reference_game.py compare --left FIRST_RUN_NAME --right SECOND_RUN_NAME
+cd tools/hkref && cargo build --release --offline
+target/release/hkref --work ~/hkref-work build
+target/release/hkref --work ~/hkref-work all profiles/kp-playtest.json
 ```
 
-Replace uppercase names with new concrete run directory names. Prepare again
-after managed-driver changes; the preparer binds the source and driver hashes.
+Run `build` again after managed-driver changes.
 For live control, use the documented `command` mailbox and wait for actual
 acknowledgement before sending the next command. File creation does not prove
 Unity executed the action. The mailbox holds the latest command, not a queue.

@@ -323,7 +323,7 @@ the three-ray Sweep, mirrored body bounds, AlertRange and terrain LOS, with
 The isolated original run `runner-crossroads70` now passes revalidation with623
 gameplay frames. Both Runners and both Climbers have578 complete samples; two
 attack cycles expose synchronous restart/Ready behavior and player-hit slowdown
-in the lunge clock. See ORIGINAL_REFERENCE.md for evidence and limitations.
+in the lunge clock. See tools/hkref/README.md for evidence and limitations.
 The original audio validation failure was a frame/fixed-clock context switch;
 raw logs and the failed report are retained alongside hash-bound revalidation.
 
@@ -599,7 +599,7 @@ build; actual playback/mixer event tracing and long-clip streaming are next.
 The user requested an original-game runner controlled through scripts so future
 fixes can be compared against repeatable original behaviour. The Windows
 Unity 6000.0.61f1 original now runs under CrossOver with a NullGfxDevice, isolated
-from the Steam bottle/install/saves. See [ORIGINAL_REFERENCE.md](ORIGINAL_REFERENCE.md).
+from the Steam bottle/install/saves. See [tools/hkref/README.md](../tools/hkref/README.md).
 
 Two final 300-input-frame movement runs pass: every consumed mask matches the
 tape. Despite different startup frames, velocities, health, control/input states

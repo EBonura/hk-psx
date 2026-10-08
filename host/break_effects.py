@@ -49,7 +49,7 @@ def particle_scale(ps,matrix):
     # The guest carries one scalar world scale that multiplies launch speed,
     # size, force and velocity, so only a uniform scale is expressible; the
     # measured Local emitters are nonuniform in XY, and no native ParticleProbe
-    # case covers Local at all. See tools/reference/ParticleProbe.cs.
+    # case covers Local at all (the probe went with the Windows reference driver).
     columns=[[matrix[i][j]for i in range(3)]for j in range(3)]
     lengths=[math.sqrt(sum(v*v for v in col))for col in columns]
     if mode!=0:raise ValueError(f'unsupported particle scaling mode {mode} at scale '
