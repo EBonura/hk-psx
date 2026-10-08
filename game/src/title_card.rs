@@ -80,9 +80,14 @@ pub fn tick(body: [i32; 4]) {
     if area.only_on_revisit && !seen { return; }
     show(area.title, Style::Area);
 }
-fn line(text: &str, y: i16, scale: i16, level: u8) {
+/// The horizontal centre of a card's lines: mid-screen for an area or item,
+/// and for a boss the original's lower left, never so far left that a long
+/// name starts off screen (`BOSS_CENTRE`, `BOSS_MARGIN`).
+const BOSS_CENTRE: i16 = 56;
+const BOSS_MARGIN: i16 = 12;
+fn line(text: &str, y: i16, scale: i16, level: u8, centre: i16) {
     let width: i16 = text.bytes().map(|b| crate::dialogue::advance(b) * scale).sum();
-    let mut x = 160 - width / 2;
+    let mut x = if centre < 160 { (centre - width / 2).max(BOSS_MARGIN) } else { centre - width / 2 };
     for b in text.bytes() {
         let i = (b - 32) as usize;
         if b != b' ' && unsafe { USED } < GLYPHS {
@@ -111,14 +116,16 @@ pub fn prepare() {
         else if s.age < FADE + HOLD { 128 } else { (FADE * 2 + HOLD - s.age) * 128 / FADE } as u16;
     let level = level as u8;
     if s.style == Style::Item {
-        line(unsafe { ITEM_NAME }, 104, 1, level);
+        line(unsafe { ITEM_NAME }, 104, 1, level, 160);
         return;
     }
     let [sup, main, sub] = TITLES[s.showing as usize];
-    let y = if s.style == Style::Area { 52 } else { 160 };
-    if !sup.is_empty() { line(sup, y, 1, level); }
-    line(main, y + 14, 2, level);
-    if !sub.is_empty() { line(sub, y + 42, 1, level); }
+    // The original's boss card sits at the lower left of the screen; its area
+    // card is the one at the top centre.
+    let (y, centre) = if s.style == Style::Area { (52, 160) } else { (170, BOSS_CENTRE) };
+    if !sup.is_empty() { line(sup, y, 1, level, centre); }
+    line(main, y + 14, 2, level, centre);
+    if !sub.is_empty() { line(sub, y + 42, 1, level, centre); }
 }
 pub fn append(ot: &mut OrderingTable<1>) {
     unsafe { for i in (0..USED).rev() { ot.add(0, &mut QUADS[i], QuadTextured::WORDS); } }
