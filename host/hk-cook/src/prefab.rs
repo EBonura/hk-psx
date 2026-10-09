@@ -193,3 +193,22 @@ impl MultiPrefab {
         self.go.get("m_Name").and_then(Value::str).unwrap_or_default()
     }
 }
+
+/// `focus.action_parameters(data, index)`: an action's fields in declaration order, with their real names.
+pub(crate) fn action_parameters(data: &Value, index: usize) -> Result<Vec<(Option<String>, Value)>> {
+    let fields = u(action_fields(data, index, false))?;
+    let ints = |k: &str| -> Vec<i64> { data.get(k).and_then(Value::list).unwrap_or(&[]).iter().map(|x| x.int().unwrap_or(0)).collect() };
+    let starts = ints("actionStartIndex");
+    let names = get(data, "paramName")?.list().unwrap_or(&[]);
+    let count = get(data, "actionNames")?.list().unwrap_or(&[]).len();
+    let end = if index + 1 < count { starts[index + 1] as usize } else { names.len() };
+    let mut out = Vec::new();
+    for i in starts[index] as usize..end {
+        let name = names[i].str().unwrap_or_default();
+        let key = if name.is_empty() { i.to_string() } else { name.clone() };
+        if let Some(v) = field(&fields, &key) {
+            out.push((if name.is_empty() { None } else { Some(name) }, v.clone()));
+        }
+    }
+    Ok(out)
+}

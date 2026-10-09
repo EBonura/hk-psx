@@ -127,12 +127,12 @@ impl Contract {
 }
 
 /// `_near`: within 1e-5.
-fn near(a: f64, b: f64) -> bool {
+pub(crate) fn near(a: f64, b: f64) -> bool {
     (a - b).abs() <= 1e-5
 }
 
 /// `_require(what, got, want)`.
-fn require(what: &str, got: &[f64], want: &[f64]) -> Result<()> {
+pub(crate) fn require(what: &str, got: &[f64], want: &[f64]) -> Result<()> {
     if got.len() == want.len() && got.iter().zip(want).all(|(g, w)| near(*g, *w)) {
         Ok(())
     } else {
@@ -140,15 +140,15 @@ fn require(what: &str, got: &[f64], want: &[f64]) -> Result<()> {
     }
 }
 
-fn req1(what: &str, got: f64, want: f64) -> Result<()> {
+pub(crate) fn req1(what: &str, got: f64, want: f64) -> Result<()> {
     require(what, &[got], &[want])
 }
 
-fn flt(v: &Value, k: &str) -> Result<f64> {
+pub(crate) fn flt(v: &Value, k: &str) -> Result<f64> {
     num(get(v, k)?).ok_or_else(|| format!("{k} is not a number"))
 }
 
-fn fields_of_fsms(sc: &Scene, gid: i64) -> Vec<(String, Value)> {
+pub(crate) fn fields_of_fsms(sc: &Scene, gid: i64) -> Vec<(String, Value)> {
     let mut out: Vec<(String, Value)> = Vec::new();
     for (_, kind, data) in component_records(sc, gid) {
         if kind == "PlayMakerFSM" {
@@ -164,7 +164,7 @@ fn fields_of_fsms(sc: &Scene, gid: i64) -> Vec<(String, Value)> {
     out
 }
 
-fn fsm_in(list: &[(String, Value)], name: &str) -> Result<Value> {
+pub(crate) fn fsm_in(list: &[(String, Value)], name: &str) -> Result<Value> {
     list.iter().find(|f| f.0 == name).map(|f| f.1.clone()).ok_or_else(|| format!("missing FSM {name}"))
 }
 
@@ -264,11 +264,11 @@ pub fn sources(sc: &Scene, source: &Source) -> Result<Sources> {
     Ok(Sources { body, children, fsms, components, shot, corpse, battle })
 }
 
-fn st<'a>(sts: &[(String, &'a Value)], name: &str) -> Result<&'a Value> {
+pub(crate) fn st<'a>(sts: &[(String, &'a Value)], name: &str) -> Result<&'a Value> {
     state(sts, name).ok_or_else(|| format!("no state {name}"))
 }
 
-fn fval(fields: &hk_unity::playmaker::Fields, k: &str) -> Result<f64> {
+pub(crate) fn fval(fields: &hk_unity::playmaker::Fields, k: &str) -> Result<f64> {
     value_of(hk_unity::playmaker::field(fields, k).ok_or_else(|| format!("missing {k}"))?)
 }
 
@@ -396,7 +396,7 @@ pub fn check_contract(sc: &Scene, source: &Source, src: &Sources) -> Result<Vec<
 }
 
 /// `_box(tree, matrix)`: a BoxCollider2D under a world matrix, as a world box.
-fn world_box(tree: &Value, m: &[[f64; 4]; 4]) -> Result<[f64; 4]> {
+pub(crate) fn world_box(tree: &Value, m: &[[f64; 4]; 4]) -> Result<[f64; 4]> {
     let (off, size) = (xy(tree, "m_Offset")?, xy(tree, "m_Size")?);
     let cx = m[0][3] + off[0] * m[0][0];
     let cy = m[1][3] + off[1] * m[1][1];
@@ -404,11 +404,11 @@ fn world_box(tree: &Value, m: &[[f64; 4]; 4]) -> Result<[f64; 4]> {
     Ok([cx - hw, cy - hh, cx + hw, cy + hh])
 }
 
-fn fl2(v: [f64; 2]) -> Json {
+pub(crate) fn fl2(v: [f64; 2]) -> Json {
     Json::List(v.iter().map(|&f| Json::Float(f)).collect())
 }
 
-fn fl4(v: [f64; 4]) -> Json {
+pub(crate) fn fl4(v: [f64; 4]) -> Json {
     Json::List(v.iter().map(|&f| Json::Float(f)).collect())
 }
 
@@ -579,7 +579,7 @@ impl ArtBuilder<'_> {
     }
 }
 
-fn clip_in(library: &Value, name: &str) -> Result<Value> {
+pub(crate) fn clip_in(library: &Value, name: &str) -> Result<Value> {
     get(library, "clips")?.list().unwrap_or(&[]).iter().find(|c| c.get("name").and_then(Value::str).as_deref() == Some(name)).cloned().ok_or_else(|| format!("no clip {name}"))
 }
 
