@@ -477,11 +477,9 @@ fn settle(c: &Cooked, edges: &[[i32; 4]]) -> Option<Rest> {
     ];
     let (x, y) = (round(c.pos[0] * SCALE), round(c.pos[1] * SCALE));
     let offset = bounds[0] + (bounds[2] - bounds[0]) / 2;
-    let foot_skin = if matches!(c.kind.as_str(), "ZombieSwipeWalker" | "ZombieShield") {
-        983
-    } else {
-        0
-    };
+    // The Rigidbody2D contact offset: every falling body rests this far above
+    // its floor in the original (0.015 world units), and the guest keeps it.
+    let foot_skin = 983;
     let gravity = if c.kind == "ZombieSwipeWalker" {
         round(c.control_gravity.unwrap_or(1.0) * 60.0 * SCALE)
     } else {
@@ -631,7 +629,7 @@ fn parse_args() -> Args {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut a = Args {
         root: PathBuf::from("."),
-        tol: 0.25,
+        tol: 0.02,
         ..Default::default()
     };
     let mut i = 0;

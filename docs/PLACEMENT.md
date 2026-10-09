@@ -24,7 +24,7 @@ Every enemy the original has active in a scene is `ok`, `snap`, `unadmitted` or 
 - `ok`: the cook places it, a controller drives it and, for the gravity-bound families (Walker, Runner,
   Zombie Shield, Husk Guard), the guest's own spawn solver (`hk_sim::resolve_actor_spawn` then
   `Player::step`, run over the region's terrain) rests it where the original rests it, within
-  `--snap-tol` (0.25 world units; every placement agrees to within 0.015).
+  `--snap-tol` (0.02 world units; every placement agrees to within a few thousandths).
 - `snap`: placed and driven, but it floats, sinks, lands on another floor or never lands.
 - `unadmitted`: the cook lists it and refuses it a controller. The refusal is the cook's own reason.
 - `absent`: the cook does not list it.
