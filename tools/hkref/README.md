@@ -92,6 +92,24 @@ Timing: the original's physics step is 50 Hz and the port's sim is 60 Hz, so
 comparisons are in sim ticks of the port; the original's input latency is one or two
 ticks depending on where a press falls against its fixed step.
 
+### Survey modes (behaviour comparison)
+
+`scenes` visits scenes of the original one at a time. Besides the tour it has two modes that give the
+enemy-behaviour comparison in `tools/behaviour-parity` something to compare against, switched on by
+`og.env` in the profile (`og.actor_stride` 1 writes every frame):
+
+* poke: `{"HK_REFERENCE_SURVEY_POKE": "60"}` strikes each distinct enemy through the game's own
+  `HealthManager.Hit` with the no-charm nail (5 damage, from the left unless
+  `HK_REFERENCE_POKE_DIRECTION` says otherwise), every `HK_REFERENCE_POKE_GAP` (30) frames from
+  `HK_REFERENCE_POKE_FIRST` (30), and writes `survey-pokes.csv` (frame, hit points before and after).
+* approach: `{"HK_REFERENCE_SURVEY_APPROACH": "480"}` stands the Knight on the terrain
+  `HK_REFERENCE_APPROACH_DISTANCE` (14) units to the left of each distinct enemy (the right if the left has
+  none) and walks him toward it at `HK_REFERENCE_APPROACH_SPEED` (4) units per second, so detection ranges
+  and first reactions are measured at a real distance.
+
+Both replace the tour; the idle settle (`sweep_frames`) comes first. The Knight is invincible and frozen
+while the scene settles (no trigger events), which is what `behaviour-parity` models on the port side.
+
 ## Limits
 
 * The port exports little state; the guest's `HK_TRACE` block (game/src/trace.rs, built with `HK_GUEST_FEATURES=trace`) would widen it.

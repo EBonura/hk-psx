@@ -2583,6 +2583,43 @@ items spans more 128-byte frames than HKS4's two, so the write takes longer and
 the power-cut window grows with the list. Worth watching on hardware: a
 continue from an HKS5 card, a save with a dozen items, and a pull during that save.
 
+## Enemy behaviour against the original, measured (2026-10-09)
+
+`tools/behaviour-parity` compiles the guest's `game/src/enemies.rs` natively over the cooked rooms, scene
+banks and actor catalogue and compares it with per-frame traces of the original that `tools/hkref scenes`
+records, in three ways. **Idle**: every enemy of 60 scenes left alone for 15 seconds, judged on the
+envelope and speed of its motion. **Strike**: each distinct enemy struck through the game's own
+`HealthManager.Hit` with the no-charm nail every half second, judged on hit points, hits to kill and recoil.
+**Approach**: the Knight walks up to each enemy from 14 units, judged on whether it reacts and how far away.
+A catalogue check (hit points, contact damage, recoil, flags, body box against the source records), a scan of
+every placement alone for 40 seconds, a harassment run (Knight pacing and swinging past each placement for 50
+seconds) and a check that the guest's column index over each room's edges answers every wall, ledge and sight
+query as visiting all of them does (7.6 million queries over 943 rooms) run without an original.
+
+Where it agrees: the idle family means are within 4 percent for Crawler (3.78 u/s against 3.79), Climber,
+Runner, Zombie Shield, Mosquito, Acid Flyer and Moss Walker; all 64 strike series agree on hit points and on how
+many hits kill; recoil displacement after a strike agrees (within a quarter, or half a unit) on 62 of 64; no placement
+panics, falls out of its world or jumps across it under the scan and the harassment run.
+
+Two causes found and fixed:
+
+- A Climber's nearest-hit test compared two ray parameters by cross-multiplication, which reaches about 6e20 for
+  a two-unit ray against a six-unit edge and wraps `i64`. On the thin blocks Crossroads_07 puts Tiktiks on, the
+  wrap ranked the underside nearer than the top face, so four of its seven Climbers attached to the wrong side of
+  the block and walked it backwards over a path 0.34 units too high. Hits are ranked by the Q16 ray fraction now.
+- A dormant Husk Guard woke inside `Alert Range New` (17 units either side). `Dormant` answers only ATTACK ALERT, and
+  `Wake` rescales `Attack Range` from its authored 16.29 wide to 10, so the original sleeps until the hero is
+  within 8.1 units. On the Crossroads_48 approach it woke at 7.9 units where the port woke at 14; with the
+  authored box both wake on the same frame. The cook proves the authored box too.
+
+Known and left: `FSMActivator` is recorded and not run. Hatchers, Aspids, Gruzzers, Moss Walkers, Acid Flyers and the
+Fat Flies start with their FSMs disabled until an `ActiveRegion` trigger overlaps them, so the original's Hatchers
+sit still until the Knight is within roughly 20 units and the port's drift from the moment the room loads. The
+guest also advances only the enemies within a view of the Knight's, where the original runs them all. Enemy
+families the original has in these scenes with no controller here: Moss Charger, Mossman Runner, Mossman
+Shaker and Fat Fly. One Zombie Shield on a ledge in Crossroads_15 turns at the edge
+where the original stops and attacks downward.
+
 ## Required package completion record
 
 For every validated package, add source contract/version, covered instances and
