@@ -72,14 +72,14 @@ scene/reset cleanup. Native tests do not establish audible/visual parity.
 Footstep/chase playback, Charge Dust, source death effects and the well connection
 remain required before canonical admission.
 
-`host/runner_audio.py` prepares a full20,464B source bank in ignored storage.
+`host/hk-cook/src/runner_audio.rs` prepares a full20,464B source bank in ignored storage.
 Movement uses8kHz; both creature calls use11.025kHz. At the current SPU tail
 495,792 it ends516,256, leaving8,032B. Source pitch/gain, full sample counts,
 transport flags, hashes and layout are verified; no trimming is used to fit.
 This is not installed guest audio. Proposed voices21/22/23 and any resulting
 simultaneous-call arbitration still require an explicit playback policy.
 Evidence: .hkpsx/runner71/audio/report.json; regenerate or verify with
-`.venv/bin/python host/runner_audio.py [--verify]`.
+`cargo run --release --manifest-path host/Cargo.toml -p hk-cook -- runner-audio [--verify]`.
 
 The controlled original run `runner-crossroads70` supplies578 complete samples
 per Runner, including two full attack cycles for the first actor. Anticipation

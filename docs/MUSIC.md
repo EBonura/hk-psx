@@ -222,7 +222,7 @@ Quality categories:22,050Hz mono player one-shots;11,025Hz mono longer running
 sequence;11,025Hz Geo. Ambience is its own category and is now one rate:
 all eight resident loops are4,000Hz mono, because eight do not fit SPU
 at8,000. What each channel pays for that is recorded beside
-`cook_music.RESIDENT_ATMOS_CHANNELS`. Hurt was raised from11,025 to22,050Hz to match its short-effect
+`RESIDENT_ATMOS_CHANNELS` (host/hk-cook/src/music_report.rs). Hurt was raised from11,025 to22,050Hz to match its short-effect
 category. The user permits lower long-sample rates when necessary, consistently
 within categories. Music profiles below remain preparation only.
 
@@ -322,7 +322,7 @@ truncation fail explicitly.
 There are 17 unique clips and 52 profile conversions: 22,050 Hz stereo and
 11,025 Hz mono for every clip, plus 10,000, 8,000 and 4,000 Hz mono for the six
 resident ambience clips. Both of the last two are cooked for every resident clip
-whatever `cook_music.RESIDENT_ATMOS_RATES` currently picks, so re-rating a
+whatever `DEFAULT_ATMOS_RATE` (host/hk-cook/src/music_report.rs) currently picks, so re-rating a
 channel is an `host/hk-cook/src/ambience.rs` run rather than a source re-conversion.
 Complete clips are preserved; lower rates and mono are explicit quality
 experiments. No silence replacement or length truncation is used. Each channel
@@ -419,7 +419,7 @@ and counts it in `HK_AMBIENCE_VOICE_DENIALS` rather than taking a voice from a s
 that is still fading.
 
 The resident channel set is a cook-time budget decision and moves; it is
-`cook_music.RESIDENT_ATMOS_CHANNELS` and the figures below are whatever the last
+`RESIDENT_ATMOS_CHANNELS` (host/hk-cook/src/music_report.rs) and the figures below are whatever the last
 cook wrote into `data/ambience.rs`, not a second place to maintain it. It is now
 channels 0, 1, 4, 5, 7, 9, 10 and 15. Eight channels are enough to leave no
 catalogue scene without an audible stem, but neither covering set includes 4,
@@ -526,7 +526,7 @@ Geo samples pass through, used a box average for integer rate factors and a
 rational box integration for the 48000 to 11025 footsteps. A boxcar is a poor
 lowpass: it rolls off inside the band it keeps and barely rejects above the new
 Nyquist, so content folded back as aliasing. It now calls the same ffmpeg
-polyphase resampler that `cook_music.cook_clip` already used for music,
+polyphase resampler that `cook_clip` (host/hk-cook/src/music.rs) already used for music,
 ambience, Focus and Runner, so the whole game shares one conversion rather than
 two, and the hand-written filter is gone rather than replaced by another.
 

@@ -22,6 +22,8 @@ pub mod region_delta;
 pub mod props;
 pub mod pyfloat;
 pub mod pyjson;
+pub mod runner;
+pub mod runner_audio;
 pub mod scene_certificates;
 pub mod scene_sfx;
 pub mod spu;
