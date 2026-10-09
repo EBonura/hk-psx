@@ -388,6 +388,83 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "fkart" => {
+            // hk-cook-parity fkart <source dir> <oracle-fkart.json> <regions.json>: the pure parts of
+            // false_knight_art.py (frame decomposition, shockwave and placement facts, generated tables).
+            use hk_cook::false_knight_art as fka;
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            let source = lazy_source();
+            let oracle = parse(&std::fs::read_to_string(&args[3]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let ints = |j: &Json| -> Vec<i64> { let Json::List(l) = j else { panic!("list") }; l.iter().map(|v| if let Json::Int(i) = v { *i } else { panic!("int") }).collect() };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let mut bad = 0;
+            let (mut cut, mut refused) = (0, 0);
+            for case in list(field(&oracle, "decompose")) {
+                let (Json::Int(w), Json::Int(h), Json::Bool(streamed), Json::Str(plane)) = (field(&case, "w"), field(&case, "h"), field(&case, "streamed"), field(&case, "plane")) else { panic!("case") };
+                let plane: Vec<u8> = plane.bytes().map(|b| b - b'0').collect();
+                match (fka::decompose(&plane, w as usize, h as usize, streamed), field(&case, "error")) {
+                    (Ok(parts), Json::Null) => {
+                        let mine = Json::List(parts.iter().map(|p| Json::List(p.iter().map(|&v| Json::Int(v)).collect())).collect());
+                        if mine == field(&case, "parts") { cut += 1 } else { bad += 1; println!("decompose {w}x{h} streamed={streamed}: parts differ") }
+                    }
+                    (Err(e), Json::Str(want)) if e == want => refused += 1,
+                    (r, want) => { bad += 1; println!("decompose {w}x{h}: rust ok {}, python error {want:?}", r.is_ok()) }
+                }
+            }
+            for case in list(field(&oracle, "part_box")) {
+                let b = ints(&field(&case, "box"));
+                let (Json::Int(w), Json::Int(h)) = (field(&case, "w"), field(&case, "h")) else { panic!("w h") };
+                let r = ints(&field(&case, "rect"));
+                let mine = fka::part_box([b[0], b[1], b[2], b[3]], w, h, [r[0], r[1], r[2], r[3]]);
+                if mine.to_vec() != ints(&field(&case, "out")) { bad += 1; println!("part_box differs") }
+            }
+            // The False Knight's scene.
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let Json::List(scenes) = field(&regions, "scenes") else { panic!("scenes") };
+            let catalogue: Vec<(String, [f64; 4], String)> = scenes.iter().map(|s| {
+                let (Json::Str(file), Json::Str(name)) = (field(s, "file"), field(s, "scene_name")) else { panic!("scene") };
+                let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                let Json::List(b) = field(s, "runtime_bounds") else { panic!("bounds") };
+                (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])], name)
+            }).collect();
+            let sc = Scene::new(&source, "level46").unwrap();
+            let rows = hk_cook::actors::scan(&sc, &source, &catalogue).unwrap();
+            let fk = rows.iter().find(|r| r.control.as_ref().is_some_and(|c| c.0 == "FalseKnight")).expect("False Knight");
+            let wave = fka::shockwave_source(&sc, &source, fk.game_object).unwrap();
+            let want_wave = field(&oracle, "wave");
+            if wave.params != field(&want_wave, "params") || Json::Str(wave.clip_name.clone()) != field(&want_wave, "clip") || Json::Str(wave.library.sid()) != field(&want_wave, "library") {
+                bad += 1;
+                println!("shockwave differs");
+            }
+            let objects = fka::source_objects(&sc, &source, fk).unwrap();
+            if objects != field(&oracle, "objects") { bad += 1; println!("objects differ: {}", hk_cook::pyjson::dumps(&objects)); }
+            let ti = field(&oracle, "table_inputs");
+            let sprite_rows: Vec<(i64, i64, bool)> = list(field(&ti, "sprite_rows")).iter().map(|r| { let v = ints(r); (v[0], v[1], v[2] != 0) }).collect();
+            let clip_rows: Vec<fka::ClipRow> = list(field(&ti, "clip_rows")).iter().map(|r| { let Json::List(l) = r else { panic!("row") }; let v = ints(&Json::List(l[..5].to_vec())); let Json::Str(n) = &l[5] else { panic!("name") }; (v[0], v[1], v[2], v[3], v[4], n.clone()) }).collect();
+            let floor_rows: Vec<(String, Vec<i64>)> = list(field(&ti, "floor_rows")).iter().map(|r| { let Json::List(l) = r else { panic!("row") }; let Json::Str(n) = &l[0] else { panic!("state") }; (n.clone(), ints(&l[1])) }).collect();
+            let table = fka::rust_table(123, &sprite_rows, &clip_rows, &ints(&field(&ti, "sequence")), &floor_rows, &objects).unwrap();
+            if Json::Str(table) != field(&oracle, "rust_table") { bad += 1; println!("rust_table differs"); }
+            let bindings = vec![
+                fka::Binding { name: "FK_A".into(), doc: "first doc".into(), rows: vec![(1, 2), (3, 4)], boxes: None },
+                fka::Binding { name: "FK_B".into(), doc: "boxes doc".into(), rows: vec![], boxes: Some(vec![[1, 2, 3, 4], [5, 6, 7, 8]]) },
+            ];
+            if Json::Str(fka::rust_bindings(&bindings, 7)) != field(&oracle, "rust_bindings") { bad += 1; println!("rust_bindings differs"); }
+            let rb = field(&oracle, "region_bindings");
+            let rows_in: Vec<(i64, Vec<String>)> = list(field(&rb, "rows")).iter().map(|r| { let Json::Int(c) = field(r, "chunk_id") else { panic!("chunk") }; (c, list(field(r, "edge_sources")).into_iter().map(|s| if let Json::Str(s) = s { s } else { panic!("src") }).collect()) }).collect();
+            let draws = field(&rb, "draws");
+            let result = fka::region_bindings(&rows_in, &objects, &|c| Ok(list(field(&draws, &c.to_string())).iter().map(|d| if let Json::Str(s) = field(d, "source") { s } else { panic!("src") }).collect())).unwrap();
+            let mine = Json::Obj(result.iter().map(|b| (b.name.clone(), match &b.boxes {
+                Some(boxes) => Json::Obj(vec![("doc".into(), Json::Str(b.doc.clone())), ("boxes".into(), Json::List(boxes.iter().map(|x| Json::List(x.iter().map(|&v| Json::Int(v)).collect())).collect()))]),
+                None => Json::Obj(vec![("doc".into(), Json::Str(b.doc.clone())), ("rows".into(), Json::List(b.rows.iter().map(|&(a, c)| Json::List(vec![Json::Int(a), Json::Int(c)])).collect()))]),
+            })).collect());
+            if mine != field(&rb, "result") { bad += 1; println!("region_bindings differ"); }
+            println!("checked {cut} cuts, {refused} refusals, wave, objects and tables, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
