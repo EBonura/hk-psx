@@ -25,9 +25,10 @@
 //! cook listed it and refused it a controller; the reason is the cook's own) or
 //! `absent` (the cook does not list it). Cooked actors the original does not
 //! have active are `extra`. On top of those, each placement the port spawns is
-//! held to four contract checks (bank agrees with the cook, facing, scale,
-//! persistence) and each DamageHero shape the source can hurt with to one
-//! (hazard cooked). The report ends in pass/fail counts per scene and in total.
+//! held to five contract checks (bank agrees with the cook, hit points,
+//! facing, scale, persistence), and each scene to three more (the actor pool,
+//! every DamageHero shape the source can hurt with, every pickup). The report
+//! ends in pass/fail counts per scene and in total.
 //!
 //! Usage (from the repository root):
 //!   cargo run --release --manifest-path tools/placement-census/Cargo.toml -- \
