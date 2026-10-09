@@ -242,3 +242,18 @@ pub fn clips_ok(library: &Value, table: &[(&str, usize, f64, i64, Option<i64>)])
     }
     Ok(None)
 }
+
+/// Python `{name: (gid, tid)}` over a transform's `m_Children`, the last of a name winning.
+pub fn child_map(sc: &hk_unity::scene::Scene, tid: i64) -> Result<Vec<(String, (i64, i64))>> {
+    let mut children: Vec<(String, (i64, i64))> = Vec::new();
+    for child in get(sc.transform(tid).ok_or("transform missing")?, "m_Children")?.list().unwrap_or(&[]) {
+        let ctid = get(child, "m_PathID")?.int().unwrap_or(0);
+        let kid = get(get(sc.transform(ctid).ok_or("child transform missing")?, "m_GameObject")?, "m_PathID")?.int().unwrap_or(0);
+        let name = get(sc.go(kid).ok_or("child without a GameObject")?, "m_Name")?.str().unwrap_or_default();
+        match children.iter_mut().find(|c| c.0 == name) {
+            Some(slot) => slot.1 = (kid, ctid),
+            None => children.push((name, (kid, ctid))),
+        }
+    }
+    Ok(children)
+}

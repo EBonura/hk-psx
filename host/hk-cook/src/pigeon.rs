@@ -266,16 +266,7 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3], heal
     if !get(sprite, "_color")?.py_eq(&one4) || !get(sprite, "_scale")?.py_eq(&one3) {
         return err("unsupported Pigeon sprite scale/color");
     }
-    let mut children: Vec<(String, (i64, i64))> = Vec::new();
-    for child in get(sc.transform(tid).ok_or("transform missing")?, "m_Children")?.list().unwrap_or(&[]) {
-        let ctid = get(child, "m_PathID")?.int().unwrap_or(0);
-        let kid = get(get(sc.transform(ctid).ok_or("child transform missing")?, "m_GameObject")?, "m_PathID")?.int().unwrap_or(0);
-        let name = get(sc.go(kid).ok_or("child without a GameObject")?, "m_Name")?.str().unwrap_or_default();
-        match children.iter_mut().find(|c| c.0 == name) {
-            Some(slot) => slot.1 = (kid, ctid),
-            None => children.push((name, (kid, ctid))),
-        }
-    }
+    let children = crate::recog::child_map(sc, tid)?;
     let mut names: Vec<&str> = children.iter().map(|c| c.0.as_str()).collect();
     names.sort();
     let mut want = CHILDREN.to_vec();
