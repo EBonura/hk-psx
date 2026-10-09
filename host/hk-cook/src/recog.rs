@@ -210,3 +210,21 @@ pub fn check_actions(sts: &[(String, &Value)], table: &[(&str, &str, &[(&str, Wa
     }
     Ok(())
 }
+
+/// The children of a game object by name, in object order (the last of a name wins).
+pub fn children_of(sc: &hk_unity::scene::Scene, gid: i64) -> Result<Vec<(String, i64)>> {
+    let tid = *sc.go_transform.get(&gid).ok_or("object has no transform")?;
+    let mut out: Vec<(String, i64)> = Vec::new();
+    for o in sc.objects.iter().filter(|o| o.typename == "Transform") {
+        if get(get(&o.tree, "m_Father")?, "m_PathID")?.int() != Some(tid) {
+            continue;
+        }
+        let g = get(get(&o.tree, "m_GameObject")?, "m_PathID")?.int().unwrap_or(0);
+        let name = get(sc.go(g).ok_or("child without a GameObject")?, "m_Name")?.str().unwrap_or_default();
+        match out.iter_mut().find(|c| c.0 == name) {
+            Some(slot) => slot.1 = g,
+            None => out.push((name, g)),
+        }
+    }
+    Ok(out)
+}

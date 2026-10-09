@@ -234,7 +234,7 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, catalogue: &[(String, [f
 }
 
 /// Python's `repr()` of `sorted((name, tuple(action names)))` over the states.
-fn fsm_state_signature(control: &Value) -> Result<String> {
+pub(crate) fn fsm_state_signature(control: &Value) -> Result<String> {
     let mut rows: Vec<(String, Vec<String>)> = Vec::new();
     for s in get(control, "states")?.list().ok_or("states is not a list")? {
         let names = get(get(s, "actionData")?, "actionNames")?.list().unwrap_or(&[]).iter().map(|x| x.str().unwrap_or_default()).collect();
