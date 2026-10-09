@@ -1,0 +1,31 @@
+# Behaviour parity: the guest enemy module (game/src/enemies.rs, compiled natively over the real
+# cooked rooms and actor catalogue) against per-frame traces of the original. Read-only over
+# ignored build outputs. Its own workspace, like the other host tools.
+[package]
+name = "hk-behaviour-parity"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-2.0-or-later"
+build = "build.rs"
+autobins = false
+
+[workspace]
+
+# A test target without the libtest harness: the guest modules it compiles carry the `cfg(test)`
+# seams their own tests use (a per-thread scene bank, no hardware calls), and this is how to get
+# them without a `#[test]` per run. Run it with `cargo test --release --test behaviour -- <args>`.
+[[test]]
+name = "behaviour"
+path = "src/main.rs"
+harness = false
+
+[dependencies]
+hk-sim = { path = "../../shared/hk-sim" }
+hk-format = { path = "../../shared/hk-format" }
+psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }
+serde_json = "1"
+
+[profile.release]
+opt-level = 2
+debug = false

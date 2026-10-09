@@ -5268,3 +5268,87 @@ mod climber_ray_tests {
         assert_eq!(climber_ray_hit(ray, reversed.len(), &|i| reversed[i]), Some(top));
     }
 }
+
+/// What an actor is doing, for tools/behaviour-parity, which runs this module natively and
+/// compares it with traces of the original. Host builds only: the guest never links it.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub struct ActorDebug {
+    pub x: i32,
+    pub y: i32,
+    pub hp: i16,
+    pub dead: bool,
+    pub grounded: bool,
+    pub vy: i32,
+    pub recoil_left: u16,
+    pub flash_left: u8,
+    /// The clip the actor is drawn with and the way it faces, as `prepare_draws` picks them.
+    pub clip: u16,
+    pub facing: i32,
+}
+#[cfg(test)]
+impl EnemyWorld {
+    /// Stand an actor where the original's counterpart stands, to start a comparison from the
+    /// same place. Its controller keeps whatever it was doing.
+    pub fn debug_place(&mut self, scene: usize, source_id: u32, x: i32, y: i32) {
+        if let Some(a) = self.actors.iter_mut().flatten().find(|a| a.scene == scene && a.source_id == source_id) {
+            a.x = x;
+            a.y = y;
+        }
+    }
+    pub fn debug_actor(&self, scene: usize, source_id: u32) -> Option<ActorDebug> {
+        let (slot, actor) = self
+            .actors
+            .iter()
+            .enumerate()
+            .find_map(|(i, a)| a.as_ref().filter(|a| a.scene == scene && a.source_id == source_id).map(|a| (i, a)))?;
+        let spec = self.placed_spec[slot]?;
+        let (clip, facing) = if actor.health.dead {
+            (u16::MAX, actor.walk.direction)
+        } else if let Some(r) = actor.runner() {
+            (r.clip(spec), r.controller.facing())
+        } else if let Some(c) = actor.climber() {
+            (c.clip(spec), actor.walk.direction)
+        } else if let Some(f) = actor.vengefly() {
+            (f.clip(spec), f.controller.facing())
+        } else if let Some(f) = actor.gruzzer() {
+            (spec.walk_clip, f.controller.facing())
+        } else if let Some(m) = actor.moss_walker() {
+            (m.clip(spec), m.controller.facing())
+        } else if let Some(m) = actor.mosquito() {
+            (m.clip(spec), m.controller.facing())
+        } else if let Some(f) = actor.acid_flyer() {
+            (f.clip(spec), actor.walk.direction)
+        } else if let Some(b) = actor.baldur() {
+            (b.clip(spec), b.controller.facing())
+        } else if let Some(a) = actor.aspid() {
+            (a.clip(spec), a.controller.facing())
+        } else if let Some(h) = actor.hatcher() {
+            (h.clip(spec), h.controller.facing())
+        } else if let Some(b) = actor.baby() {
+            (spec.walk_clip, b.controller.facing())
+        } else if let Some(s) = actor.zombie_shield() {
+            (s.clip(spec), s.controller.facing())
+        } else if let Some(g) = actor.husk_guard() {
+            (g.clip(spec), g.controller.facing())
+        } else if let Some(b) = actor.blocker() {
+            (b.clip(spec), actor.initial_direction as i32)
+        } else if let Some(p) = actor.pigeon() {
+            (p.clip(spec), p.controller.facing())
+        } else {
+            (if actor.walk.turn_remaining != 0 { spec.turn_clip } else { spec.walk_clip }, actor.walk.direction)
+        };
+        Some(ActorDebug {
+            x: actor.x,
+            y: actor.y,
+            hp: actor.health.hp,
+            dead: actor.health.dead,
+            grounded: actor.grounded,
+            vy: actor.vy,
+            recoil_left: actor.recoil_left,
+            flash_left: actor.flash_left,
+            clip,
+            facing,
+        })
+    }
+}
