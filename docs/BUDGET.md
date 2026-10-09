@@ -325,7 +325,7 @@ each cue's loops and bytes. Before per-area loading, ambience *shrank* 16,272B
 when the resident atmos set went from six channels to eight, because eight
 loops only fit at 4 kHz and the set that covers the game is cheaper at that
 rate than six were at 8 kHz; Focus and Runner moved down with it. Their bases
-are hardcoded in `host/focus_audio.py` and `host/runner_audio.py`, and
+are hardcoded in `host/hk-cook/src/focus_audio.rs` and `host/runner_audio.py`, and
 `host/ambience.py` refuses to finish a cook that leaves either of them stale,
 naming the base each one has to take. The cheapest further margin priced but
 not taken is still 8,192B from halving the streamed clip's SPU ring, which is

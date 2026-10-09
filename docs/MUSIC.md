@@ -111,11 +111,11 @@ gates within an area read none.
 
 The full19.345-second charging loop uses8,000Hz mono; the full1.567-second heal
 uses22,050Hz mono. This follows sustained-loop and short-effect categories,
-without truncation. `host/focus_audio.py` validates Windows Spell Control FSMs,
+without truncation. `host/hk-cook/src/focus_audio.rs` validates Windows Spell Control FSMs,
 AudioSources, clips and inspected assembly hashes. Local provenance and cooked
 assets remain ignored. The108,208-byte bank loads through scene scratch once at
 startup into0x5C960..0x77010, immediately above ambience and immediately below
-Runner. Its base is hardcoded in `host/focus_audio.py` and moves by whatever
+Runner. Its base is hardcoded in `host/hk-cook/src/focus_audio.rs` and moves by whatever
 ambience grows or shrinks; `host/ambience.py` refuses a cook that leaves it
 stale. Main RAM
 has53,132B before the protected stack; Focus adds no persistent sample bank there.

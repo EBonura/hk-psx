@@ -22,7 +22,7 @@ const ASSET_SCRIPTS: &[&str] = &[
     // bases and sizes from data/focus-audio.rs and data/runner-audio.rs to
     // place itself below them (and refuses an overlap), and neither bank's
     // size depends on ambience.
-    "focus_audio.py", "runner_audio.py", "ambience.py", "read_points.py",
+    "rust:focus-audio", "runner_audio.py", "ambience.py", "read_points.py",
     "geo.py", "rust:geo-audio", "lifeblood.py",
     // Breakable and secret particle effects, ported to Rust (hk-cook).
     "rust:break-effects",
@@ -1051,6 +1051,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "xa-music" => hk_cook::xa_music::main(root, None)?,
         "cook-audio" => hk_cook::cook_audio::main(root, None)?,
         "geo-audio" => hk_cook::geo_audio::main(root, None)?,
+        "focus-audio" => hk_cook::focus_audio::main(root, None)?,
         "opaque-tiles" => hk_cook::opaque_tiles::cook(root, 2, false)?,
         "opaque-groups" => hk_cook::opaque_groups::main(root)?,
         "scene-certificates" => hk_cook::scene_certificates::main(root, &[])?,

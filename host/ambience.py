@@ -72,7 +72,7 @@ POOL_VOICES=VOICES[1:]
 # The banks stacked above ambience in SPU RAM, lowest first. Their sizes do not
 # depend on ambience, so the last build's generated manifests are the right
 # source for what the tail costs. Focus and Runner are pinned to the top of SPU
-# RAM (focus_audio.py, runner_audio.py) and the world bank is cooked to end
+# RAM (host/hk-cook/src/focus_audio.rs, runner_audio.py) and the world bank is cooked to end
 # where Focus begins, so the ring and ambience's ceiling are what move.
 TAIL_BANKS=('data/world-sfx.rs','data/focus-audio.rs','data/runner-audio.rs')
 # What rate each resident channel is cooked at, and why, is
@@ -161,7 +161,7 @@ def tail_drift(root,end):
     """Tail banks whose declared base now sits inside the bank below it.
 
     Ambience growing moves every bank above it, and those bases are hardcoded
-    in focus_audio.py and runner_audio.py. Their own cooks refuse an overlap
+    in host/hk-cook/src/focus_audio.rs and runner_audio.py. Their own cooks refuse an overlap
     and neither runs unless someone remembers to run it, so the ambience cook
     says which base is now wrong and the lowest it may be. A gap is not drift:
     per-area residency shrank ambience below the bases the tail was cooked at,
@@ -179,7 +179,7 @@ def spu_ceiling(root):
 
     This used to be SPU_END, which counted the Focus and Runner banks above
     ambience as free space and reported a figure 128KiB too generous. Nothing
-    raised on it, because focus_audio.py catches the overlap later from its own
+    raised on it, because the Focus cook catches the overlap later from its own
     side; what it cost was every budget note that quoted the free figure.
     """
     banks={name:bank_bytes(root/name) for name in TAIL_BANKS}
