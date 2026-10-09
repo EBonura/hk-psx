@@ -13,6 +13,7 @@ use crate::baldur;
 use crate::gruzzer;
 use crate::mawlek;
 use crate::blocker;
+use crate::hatcher;
 use crate::husk_guard;
 use crate::pigeon;
 use crate::zombie_shield;
@@ -31,6 +32,8 @@ pub struct Row {
     pub game_object: i64,
     pub name: String,
     pub control: Option<(String, Json)>,
+    /// `movement_supported`: a control that is not an additive-scene merge the controller refuses.
+    pub supported: bool,
 }
 
 /// `dict(control, guest_enabled=True)`: the key keeps its position.
@@ -50,6 +53,29 @@ fn guest_enabled(control: Json) -> Json {
 pub type Catalogue = [(String, [f64; 4], String)];
 
 pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Row>> {
+    scan_with(sc, source, catalogue, true)
+}
+
+/// `hatcher._others`: the supported actors of the scene with the Hatcher family refused.
+fn supported_others(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<usize> {
+    let count = scan_with(sc, source, catalogue, false)?.iter().filter(|r| r.supported).count();
+    if count > 32 {
+        return err("actor region exceeds bounded 32-slot guest pool");
+    }
+    Ok(count)
+}
+
+/// `actor_sources`; `family` is false while the Hatcher's own scene budget is measured.
+fn scan_with(sc: &Scene, source: &Source, catalogue: &Catalogue, family: bool) -> Result<Vec<Row>> {
+    let others_cache = std::cell::Cell::new(None::<usize>);
+    let others = || -> Result<usize> {
+        if let Some(n) = others_cache.get() {
+            return Ok(n);
+        }
+        let n = supported_others(sc, source, catalogue)?;
+        others_cache.set(Some(n));
+        Ok(n)
+    };
     let mut rows = Vec::new();
     for o in &sc.objects {
         if o.typename != "HealthManager" || !get(&o.tree, "m_Enabled")?.truthy() {
@@ -92,6 +118,17 @@ pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Ro
         if control.is_none() && name.starts_with("Spitter") && records.iter().any(|r| r.1 == "PersonalObjectPool") {
             if let Ok(found) = aspid::recognize(sc, source, gid) {
                 control = Some(("Aspid".to_string(), found));
+            }
+        }
+        if family && control.is_none() && name.starts_with("Hatcher Baby") && records.iter().any(|r| r.1 == "ObjectBounce") {
+            if let Ok(found) = hatcher::recognize_baby(sc, source, gid, catalogue, &others) {
+                control = Some(("HatcherBaby".to_string(), found));
+            }
+        }
+        if family && control.is_none() && name.starts_with("Hatcher") && !name.starts_with("Hatcher Baby") && records.iter().any(|r| r.1 == "LineOfSightDetector") {
+            let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+            if let Ok(found) = hatcher::recognize(sc, source, gid, position, catalogue, &others) {
+                control = Some(("Hatcher".to_string(), found));
             }
         }
         if control.is_none() && name.starts_with("False Knight") && records.iter().any(|r| r.1 == "EnemyHitEffectsArmoured") {
@@ -167,7 +204,9 @@ pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Ro
                 control = Some(("ZombieSwipeWalker".to_string(), guest_enabled(found.control)));
             }
         }
-        rows.push(Row { source: sc.sid(o.id), game_object: gid, name, control });
+        // Content merged in from an additive scene is admitted one controller at a time.
+        let supported = control.as_ref().is_some_and(|c| o.id < 100000 || matches!(&c.1, Json::Obj(f) if f.iter().any(|k| k.0 == "admit_from_additive_scene" && matches!(k.1, Json::Bool(true)))));
+        rows.push(Row { source: sc.sid(o.id), game_object: gid, name, control, supported });
     }
     Ok(rows)
 }
