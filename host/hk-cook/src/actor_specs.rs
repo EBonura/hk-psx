@@ -580,3 +580,18 @@ pub fn scene_actor_bank(regions: &[Region]) -> Result<(Vec<String>, Vec<(String,
     }
     Ok((specs, placed))
 }
+
+/// `generated_actor_specs(region)`: the ActorSpec expression of each supported actor, in order.
+pub fn generated_actor_specs(actors: &[SpecActor]) -> Result<Vec<String>> {
+    Ok(generated_actor_records(actors)?.into_iter().map(|(text, _)| text).collect())
+}
+
+/// `actor_placements(region)`: the placement words of each supported actor, in order.
+pub fn actor_placements(actors: &[SpecActor]) -> Result<Vec<Placement>> {
+    Ok(generated_actor_records(actors)?.into_iter().map(|(_, placement)| placement).collect())
+}
+
+/// `generated_actor_region(region)`: the inline `&[ActorSpec,...]` form (fixtures and tests).
+pub fn generated_actor_region(actors: &[SpecActor]) -> Result<String> {
+    Ok(format!("&[{}]", generated_actor_specs(actors)?.join(",")))
+}
