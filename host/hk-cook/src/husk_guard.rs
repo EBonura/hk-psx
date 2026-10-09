@@ -22,7 +22,7 @@ const CLIPS: [(&str, usize, f64, i64, Option<i64>); 17] = [
     ("Walk", 10, 12.0, 0, None), ("Turn", 2, 12.0, 2, None), ("Dormant", 1, 30.0, 6, None), ("Wake", 6, 12.0, 2, None), ("Idle", 7, 12.0, 0, None), ("Run", 6, 10.0, 0, None), ("Stop Run", 6, 12.0, 2, None), ("Stop Walk", 2, 12.0, 2, None), ("Anticipate", 6, 12.0, 2, None), ("Attack2", 7, 15.0, 2, None), ("Startle", 4, 12.0, 2, None), ("Stomp Antic", 3, 12.0, 1, None), ("Stomp Jump", 4, 12.0, 2, None), ("Stomp Land", 6, 12.0, 2, None), ("Death Stun", 1, 30.0, 6, None), ("Death Air", 3, 12.0, 2, None), ("Death Land", 9, 12.0, 2, None),
 ];
 /// `husk_guard::Clip::slot` order with the clip each names; Walk and Turn are the shared slots.
-const CLIP_SLOTS: [(&str, &str); 12] = [("dormant", "Dormant"), ("wake", "Wake"), ("idle", "Idle"), ("run", "Run"), ("stop_run", "Stop Run"), ("stop_walk", "Stop Walk"), ("anticipate", "Anticipate"), ("attack", "Attack2"), ("startle", "Startle"), ("stomp_antic", "Stomp Antic"), ("stomp_jump", "Stomp Jump"), ("stomp_land", "Stomp Land")];
+pub(crate) const CLIP_SLOTS: [(&str, &str); 12] = [("dormant", "Dormant"), ("wake", "Wake"), ("idle", "Idle"), ("run", "Run"), ("stop_run", "Stop Run"), ("stop_walk", "Stop Walk"), ("anticipate", "Anticipate"), ("attack", "Attack2"), ("startle", "Startle"), ("stomp_antic", "Stomp Antic"), ("stomp_jump", "Stomp Jump"), ("stomp_land", "Stomp Land")];
 const ALERT_Q16: [i64; 4] = [-1102971, -259850, 1102971, 181207];
 const ATTACK_Q16: [i64; 4] = [-327680, -246088, 327680, 172687];
 const OVERHEAD_Q16: [i64; 4] = [-101253, 12880, 101253, 244406];

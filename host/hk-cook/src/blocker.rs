@@ -34,7 +34,7 @@ const CLIPS: [(&str, usize, f64, i64, Option<i64>); 8] = [
     ("Idle", 7, 12.0, 0, Some(0)), ("Closed", 1, 30.0, 0, Some(0)), ("Open", 4, 15.0, 2, Some(0)), ("Close1", 2, 15.0, 2, Some(0)), ("Close2", 4, 15.0, 2, Some(0)), ("Shoot Antic", 3, 15.0, 2, Some(0)), ("Shoot CD", 4, 15.0, 2, Some(0)), ("Hit", 7, 12.0, 2, Some(0)),
 ];
 /// `blocker::Clip::slot()` order with the clip each names.
-const CLIP_SLOTS: [(&str, &str); 6] = [("open", "Open"), ("close1", "Close1"), ("close2", "Close2"), ("antic", "Shoot Antic"), ("cooldown", "Shoot CD"), ("hit", "Hit")];
+pub(crate) const CLIP_SLOTS: [(&str, &str); 6] = [("open", "Open"), ("close1", "Close1"), ("close2", "Close2"), ("antic", "Shoot Antic"), ("cooldown", "Shoot CD"), ("hit", "Hit")];
 const SHOT_CLIPS: [(&str, usize, f64, i64, Option<i64>); 2] = [("Idle", 4, 20.0, 0, None), ("Impact", 6, 20.0, 2, None)];
 const SHOT_NAME: &str = "Shot Mawlek";
 const SHOT_GRAVITY: f64 = 0.6;

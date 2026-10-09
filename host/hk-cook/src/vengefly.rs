@@ -468,7 +468,7 @@ const MOSQUITO_FSM_SHA256: [(&str, &str); 2] = [
 ];
 const MOSQUITO_CLIPS: [(&str, usize, f64, i64, Option<i64>); 6] = [("Idle", 8, 10.0, 0, Some(0)), ("TurnToIdle", 10, 12.0, 1, Some(2)), ("Startle", 4, 12.0, 2, Some(0)), ("Attack Antic", 6, 10.0, 2, Some(0)), ("Attack", 3, 12.0, 0, Some(0)), ("Death Air", 3, 12.0, 2, Some(0))];
 /// Slot order of `ActorController::Mosquito::clips`, after walk (Idle) and turn (TurnToIdle).
-const MOSQUITO_SLOTS: [(&str, &str); 4] = [("startle", "Startle"), ("antic", "Attack Antic"), ("attack", "Attack"), ("pull_out", "Death Air")];
+pub(crate) const MOSQUITO_SLOTS: [(&str, &str); 4] = [("startle", "Startle"), ("antic", "Attack Antic"), ("attack", "Attack"), ("pull_out", "Death Air")];
 const MOSQUITO_BODY: [[f64; 2]; 2] = [[1.40625, 0.265625], [-0.453125, -0.0703125]];
 const MOSQUITO_ALERT_RADIUS: f64 = 0.41109946370124817 * 21.115947723388672;
 /// `TileDetector`: a second solid box (terrain and nail), until `Attack Antic`.

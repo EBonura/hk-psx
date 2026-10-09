@@ -172,6 +172,120 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "specs" => {
+            // hk-cook-parity specs <source dir> <oracle dir> <regions.json>: the ActorSpec text,
+            // placements and scene bank against actors.py, over synthetic clip bindings and corpses.
+            use hk_cook::actor_specs::{generated_actor_records, scene_actor_bank, Region, SpecActor};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            let source = lazy_source();
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let Some(Json::List(scenes)) = (if let Json::Obj(f) = &regions { f.iter().find(|k| k.0 == "scenes").map(|k| k.1.clone()) } else { None }) else { panic!("no scenes") };
+            let get = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
+            let catalogue: Vec<(String, [f64; 4], String)> = scenes
+                .iter()
+                .map(|s| {
+                    let Some(Json::Str(file)) = get(s, "file") else { panic!("scene file") };
+                    let Some(Json::Str(name)) = get(s, "scene_name") else { panic!("scene name") };
+                    let Some(Json::List(b)) = get(s, "runtime_bounds") else { panic!("runtime_bounds") };
+                    let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                    (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])], name)
+                })
+                .collect();
+            let Json::List(keys) = parse(&std::fs::read_to_string(format!("{}/_keys.json", args[3])).unwrap()).unwrap() else { panic!("keys") };
+            let keys: Vec<String> = keys.into_iter().map(|k| if let Json::Str(s) = k { s } else { panic!("key") }).collect();
+            // The oracle's synthetic bindings (oracle_specs.py): deterministic in the actor index.
+            let v = |idx: i64, key: &str| (idx * 131 + key.bytes().map(i64::from).sum::<i64>() * 7 + key.len() as i64) % 60000;
+            let corpse = |idx: i64| {
+                let mut c = vec![
+                    ("air_clip", Json::Int(v(idx, "air"))),
+                    ("land_clip", Json::Int(v(idx, "land"))),
+                    ("bounds", Json::List(["b0", "b1", "b2", "b3"].iter().map(|k| Json::Int(v(idx, k))).collect())),
+                    ("spawn_offset", Json::List(["s0", "s1"].iter().map(|k| Json::Int(v(idx, k))).collect())),
+                    ("bounce_factor", Json::Int((idx * 977) % 65537)),
+                ];
+                if idx % 3 == 1 {
+                    c.extend([("breaker", Json::Bool(true)), ("smash_bounces", Json::Int(2)), ("hold_ticks", Json::Int(7))]);
+                }
+                if idx % 3 == 2 {
+                    c.extend([("fling_speed", Json::Int(983040)), ("gravity", Json::Int(3145728)), ("remove_after_land", Json::Int(1))]);
+                }
+                Json::Obj(c.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+            };
+            let nocorpse = ["WalkLeftRight", "GruzMother", "Hatcher", "HatcherBaby", "ZombieShield", "Blocker", "Pigeon", "Mawlek", "FalseKnight"];
+            let (mut checked, mut bad) = (std::collections::BTreeMap::<String, usize>::new(), 0usize);
+            for s in &scenes {
+                let Some(Json::Str(name)) = get(s, "scene_name") else { panic!("scene row") };
+                let Some(Json::Str(file)) = get(s, "file") else { panic!("scene row") };
+                let Some(oracle) = parse(&std::fs::read_to_string(format!("{}/{name}.json", args[3])).unwrap()).ok() else { panic!("oracle") };
+                let sc = Scene::new(&source, &file).unwrap();
+                let rows = hk_cook::actors::scan(&sc, &source, &catalogue).unwrap();
+                let clips: Vec<Vec<(String, i64)>> = (0..rows.len()).map(|i| keys.iter().map(|k| (k.clone(), v(i as i64, k))).collect()).collect();
+                let corpses: Vec<Option<Json>> = rows
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        let kind = r.control.as_ref().map(|c| c.0.as_str());
+                        if i % 2 == 0 && kind.is_some_and(|k| nocorpse.contains(&k)) { None } else { Some(corpse(i as i64)) }
+                    })
+                    .collect();
+                let actor = |i: usize| SpecActor { row: &rows[i], clips: &clips[i], corpse: corpses[i].as_ref() };
+                let mut chunks: Vec<(i64, Vec<usize>)> = Vec::new();
+                for i in 0..rows.len() {
+                    let c = (i as i64 * 5) % 4;
+                    match chunks.iter_mut().find(|k| k.0 == c) {
+                        Some(k) => k.1.push(i),
+                        None => chunks.push((c, vec![i])),
+                    }
+                }
+                let Some(Json::List(want_regions)) = get(&oracle, "regions") else { panic!("regions") };
+                for (chunk, members) in &chunks {
+                    let want = want_regions.iter().find(|r| get(r, "chunk_id") == Some(Json::Int(*chunk))).expect("oracle region");
+                    let actors: Vec<SpecActor> = members.iter().map(|&i| actor(i)).collect();
+                    let got = generated_actor_records(&actors);
+                    let python_error = !matches!(get(want, "error"), Some(Json::Null));
+                    match (&got, python_error) {
+                        (Ok(g), false) => {
+                            let mine = Json::List(g.iter().map(|(t, p)| Json::List(vec![Json::Str(t.clone()), p.to_json()])).collect());
+                            *checked.entry("records".into()).or_default() += g.len();
+                            if get(want, "records") != Some(mine) {
+                                bad += 1;
+                                println!("{name} chunk {chunk}: records differ");
+                            }
+                        }
+                        (Err(_), true) => *checked.entry("agreed errors".into()).or_default() += 1,
+                        _ => {
+                            bad += 1;
+                            println!("{name} chunk {chunk}: error disagreement (rust ok: {}, python error: {python_error})", got.is_ok());
+                        }
+                    }
+                }
+                let regions: Vec<Region> = chunks.iter().map(|(c, m)| Region { chunk_id: *c, actors: m.iter().map(|&i| actor(i)).collect() }).collect();
+                let want = get(&oracle, "bank").unwrap();
+                match (scene_actor_bank(&regions), get(&want, "error")) {
+                    (Ok((specs, placed)), None) => {
+                        let mine = Json::Obj(vec![
+                            ("specs".into(), Json::List(specs.into_iter().map(Json::Str).collect())),
+                            ("placed".into(), Json::Obj(placed.into_iter().map(|(k, (i, p))| (k, Json::List(vec![Json::Int(i as i64), p.to_json()]))).collect())),
+                        ]);
+                        *checked.entry("banks".into()).or_default() += 1;
+                        if want != mine {
+                            bad += 1;
+                            println!("{name}: bank differs");
+                        }
+                    }
+                    (Err(_), Some(_)) => *checked.entry("agreed bank errors".into()).or_default() += 1,
+                    (r, _) => {
+                        bad += 1;
+                        println!("{name}: bank error disagreement (rust ok: {})", r.is_ok());
+                    }
+                }
+            }
+            println!("checked {checked:?}, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }

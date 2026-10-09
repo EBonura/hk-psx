@@ -29,7 +29,7 @@ const CLIPS: [(&str, usize, f64, i64); 22] = [
 ];
 /// The `ActorController::ZombieShield::clips` array, in `Clip::slot()` order,
 /// with the source clip each reads.
-const SLOT_CLIPS: [(&str, &str); 20] = [
+pub(crate) const SLOT_CLIPS: [(&str, &str); 20] = [
     ("idle", "Idle"), ("shield_front", "Shield Front"), ("shield_top", "Shield Top"), ("bump_front", "Shield Front Bump"), ("bump_top", "Shield Top Bump"), ("unshield_front", "Unshield Front"), ("unshield_top", "Unshield Top"), ("a1_antic", "Attack1 A"), ("a1_lunge", "Attack1 L"),
     ("a1_slash", "Attack1 S"), ("a1_cooldown", "Attack1 CD"), ("a3_antic", "Attack3 A1"), ("a3_lunge1", "Attack3 L1"), ("a3_slash1", "Attack3 S1"), ("a3_cooldown1", "Attack3 CD1"), ("a3_lunge2", "Attack3 L2"), ("a3_cooldown2", "Attack3 CD2"), ("a3_lunge3", "Attack3 L3"),
     ("a3_slash3", "Attack3 S3"), ("a3_cooldown3", "Attack3 CD3"),

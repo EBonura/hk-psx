@@ -124,7 +124,7 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64) -> Result<Json> {
 const MOSS_WALKER_FSM_SHA256: &str = "9f9a1cd537e40cf2e0e8e3a0a0012a456ceb87ff51760ca16871dca16049d2b4";
 const MOSS_WAKE_FSM_SHA256: &str = "155198314430555fbfb03504d4a5075efc0578491226ff08583e2c7d6c285e29";
 const MOSS_WALKER_CLIPS: [(&str, usize, f64, i64); 6] = [("Walk", 4, 12.0, 0), ("Turn", 3, 12.0, 2), ("Rest", 1, 30.0, 6), ("Shake", 3, 12.0, 0), ("Appear", 5, 10.0, 2), ("Bury", 5, 12.0, 2)];
-const MOSS_WALKER_SLOTS: [(&str, &str); 4] = [("rest", "Rest"), ("shake", "Shake"), ("appear", "Appear"), ("bury", "Bury")];
+pub(crate) const MOSS_WALKER_SLOTS: [(&str, &str); 4] = [("rest", "Rest"), ("shake", "Shake"), ("appear", "Appear"), ("bury", "Bury")];
 const MOSS_WALKER_BODY: [[f64; 2]; 2] = [[1.261925458908081, 1.250787377357483], [-0.056549072265625, -0.2771453857421875]];
 /// Child point rays and the wake circle, as shared/hk-sim/src/moss_walker.rs
 /// carries them (EDGE/WALL/GROUND_ORIGIN, WAKE_RADIUS).
