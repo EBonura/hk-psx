@@ -19,6 +19,7 @@ pub mod blas;
 pub mod break_effects;
 pub mod cook;
 pub mod coverage;
+pub mod effects_art;
 pub mod false_knight;
 pub mod false_knight_art;
 pub mod fmod;
