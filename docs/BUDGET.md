@@ -325,7 +325,7 @@ each cue's loops and bytes. Before per-area loading, ambience *shrank* 16,272B
 when the resident atmos set went from six channels to eight, because eight
 loops only fit at 4 kHz and the set that covers the game is cheaper at that
 rate than six were at 8 kHz; Focus and Runner moved down with it. Their bases
-are hardcoded in `host/hk-cook/src/focus_audio.rs` and `host/runner_audio.py`, and
+are hardcoded in `host/hk-cook/src/focus_audio.rs` and `host/hk-cook/src/runner_audio.rs`, and
 `host/hk-cook/src/ambience.rs` refuses to finish a cook that leaves either of them stale,
 naming the base each one has to take. The cheapest further margin priced but
 not taken is still 8,192B from halving the streamed clip's SPU ring, which is
@@ -340,7 +340,7 @@ uses 8,000Hz mono. Ambience is one rate now: all eight resident loops are
 4,000Hz mono, because eight do not fit SPU at 8,000. Only
 `cave_atmos_misc_3` measures better there than at 8,000; the rest pay between
 0.45 and 4.93dB for the coverage, channel by channel beside
-`cook_music.RESIDENT_ATMOS_CHANNELS`. All admitted source clips are complete.
+`RESIDENT_ATMOS_CHANNELS` (host/hk-cook/src/music_report.rs). All admitted source clips are complete.
 
 The full99,936-byte `cave_noises` is resident in main RAM, feeding a16KiB SPU
 ring through8KiB scratch. It keeps the streamed slot under the eight-channel
