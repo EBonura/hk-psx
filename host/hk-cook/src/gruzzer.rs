@@ -57,10 +57,10 @@ fn strings(v: &[&str]) -> Json {
 
 /// `hatcher.scene_bounds`: the scene's own runtime bounds, which is what makes a
 /// placement a placement (an enemy the room does not contain is not standing
-/// anywhere the player goes). `catalogue` is (file, runtime_bounds) per scene.
-pub fn scene_bounds(sc: &Scene, catalogue: &[(String, [f64; 4])]) -> Result<[f64; 4]> {
+/// anywhere the player goes). `catalogue` is (file, runtime_bounds, scene_name) per scene.
+pub fn scene_bounds(sc: &Scene, catalogue: &crate::actors::Catalogue) -> Result<[f64; 4]> {
     let name = hk_unity::base_name(&sc.base.name);
-    catalogue.iter().find(|(file, _)| name == file).map(|c| c.1).ok_or_else(|| "Hatcher placement outside the admitted scene table".to_string())
+    catalogue.iter().find(|(file, ..)| name == file).map(|c| c.1).ok_or_else(|| "Hatcher placement outside the admitted scene table".to_string())
 }
 
 // --- Gruz Mother (`Giant Fly`, Crossroads_04) and its reserve flies ------------------
@@ -106,7 +106,7 @@ fn reserve_origin(sc: &Scene, gid: i64) -> Result<Option<[f64; 2]>> {
 }
 
 /// Admit the Gruzzer (or Gruz Mother reserve fly) placement at `gid`.
-pub fn recognize(sc: &Scene, source: &Source, gid: i64, catalogue: &[(String, [f64; 4])]) -> Result<Json> {
+pub fn recognize(sc: &Scene, source: &Source, gid: i64, catalogue: &crate::actors::Catalogue) -> Result<Json> {
     let records = component_records(sc, gid);
     // Gruz Mother's reserve (Crossroads_04 `Fly Spawn/Fly`..`Fly 6`) waits below
     // the room until the burster moves `Fly Spawn` to itself. Any other Fly

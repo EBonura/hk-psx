@@ -13,6 +13,7 @@ use crate::baldur;
 use crate::gruzzer;
 use crate::mawlek;
 use crate::blocker;
+use crate::husk_guard;
 use crate::pigeon;
 use crate::zombie_shield;
 use crate::vengefly;
@@ -45,8 +46,8 @@ fn guest_enabled(control: Json) -> Json {
     }
 }
 
-/// The catalogue: each scene's file and runtime bounds (quality.SCENE_TABLE).
-pub type Catalogue = [(String, [f64; 4])];
+/// The catalogue: each scene's file, runtime bounds and name (quality.SCENE_TABLE).
+pub type Catalogue = [(String, [f64; 4], String)];
 
 pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
@@ -137,6 +138,14 @@ pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Ro
             let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
             if let Ok(found) = zombie_shield::recognize(sc, source, gid, position) {
                 control = Some(("ZombieShield".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Zombie Guard") {
+            let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+            let file = hk_unity::base_name(&sc.base.name);
+            let scene_name = catalogue.iter().find(|c| c.0 == file).map(|c| c.2.as_str());
+            if let Ok(found) = husk_guard::recognize(sc, source, gid, position, scene_name) {
+                control = Some(("HuskGuard".to_string(), found));
             }
         }
         if control.is_none() && name.starts_with("Blocker") && records.iter().any(|r| r.1 == "PersonalObjectPool") {
