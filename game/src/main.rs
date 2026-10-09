@@ -17,10 +17,12 @@ mod save;
 mod persist;
 mod shade;
 mod ability_art;
+mod focus_fx;
 mod input_queue;
 mod input_sampler;
 mod input;
 mod presentation;
+#[cfg(feature="trace")]
 mod trace;
 mod scene_transition;
 mod gate_probe;
@@ -807,6 +809,7 @@ fn main() {
                     if let Some((x,y,hp))=game.enemies.actor_state(2,5145) {unsafe {HK_CLIMBER_X=x;HK_CLIMBER_Y=y;HK_CLIMBER_HP=hp as i32;}}
                     let mut cut=0u32;for (i,p) in world::region_grass(r).take(32).enumerate(){if game.state.cut(p.state){cut|=1<<i;}}
                     unsafe {HK_GRASS_CUT_MASK=cut;HK_NAIL_ATTACK_COUNT=game.attacks;HK_HEALTH=game.vitals.health as u32;HK_BLUE_HEALTH=game.vitals.blue_health as u32;HK_SOUL=game.vitals.soul as u32;HK_SIM_TICKS=input::CONSUMED;HK_SIM_PAD=input::CONSUMED_PAD;HK_PLAYER_X=game.player.x;HK_PLAYER_Y=game.player.y;HK_PLAYER_FACING=game.player.facing;HK_FOCUS_LOCKED=u32::from(game.focus.locks_control());}
+                    #[cfg(feature="trace")]
                     trace::publish(&game,r.scene,game.region_id);
                     game.prev_pad=hero;
                     music::tick_regions(game.player.x,game.player.y);
