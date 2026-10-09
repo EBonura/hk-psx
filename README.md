@@ -108,8 +108,11 @@ sets the validation's wall time. `--recook` bypasses the caches.
 The cookers are moving from Python (`host/*.py`) to Rust, one tool at a time,
 each port byte-identical to the Python it replaces before the Python goes.
 The Rust side is `host/hk-unity` (the reader for the install's Unity files,
-with `hk-dotnet` for the managed assemblies), `host/hk-pil` (the Pillow image
-operations the cookers use, ported pixel for pixel) and `host/hk-cook` (the
+with `hk-dotnet` for the managed assemblies), `host/hk-pil` (the image
+operations the cookers use, written from the textbook definitions and matching
+the earlier Pillow output pixel for pixel), `host/hk-lz4` (the LZ4 block codec,
+written from the published format; its blocks decode to the same bytes as the
+Python lz4 module's but are about 0.8 percent smaller on the real cook files) and `host/hk-cook` (the
 cookers; `props` so far), which the driver runs in-process.
 
 Outputs: dist/hk-psx.exe and `~/Downloads/ps1 games/hk-psx.bin` plus

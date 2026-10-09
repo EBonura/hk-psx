@@ -448,7 +448,7 @@ plus five depleted rock references. The five reserved rectangles total 9,920
 bytes. Upload ranges and UV/CLUT bounds are checked before gameplay; no mining
 or pickup event reads the CD or allocates another VRAM slot.
 
-`host/geo_audio.py` emits six complete 11,025Hz mono ADPCM clips plus descriptors.
+`host/hk-cook/src/geo_audio.rs` emits six complete 11,025Hz mono ADPCM clips plus descriptors.
 The 13,904-byte resident bank occupies SPU `0x7c3c0..0x7fa10`. Voices 12–14
 serve pickup, hit and destruction; destruction reuses the existing first source
 clip. The second original destruction variant does not fit and remains omitted.

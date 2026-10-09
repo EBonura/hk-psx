@@ -120,7 +120,7 @@ also moves Focus and Runner to end at 0x7FFF0, so the eleven are withdrawn
 rather than landed on SPU another branch owns. Their place is a bank loaded
 with Crossroads_10 at its gate, in SPU the area's ambience does not use there;
 until then every state that would play one keeps its shake. Refused, with
-sizes in `.hkpsx/audio-provenance.json` (`host/cook_audio.py` `BOSS_REFUSED`):
+sizes in `.hkpsx/audio-provenance.json` (`host/hk-cook/src/cook_audio.rs` `BOSS_REFUSED`):
 all of the above, the ceiling break, the Run footsteps, the rage and death
 roars (`FKnight_Rage` is 90,736 bytes at 22 kHz), `boss_gushing`,
 `boss_explode`, the defeat sting and `breakable_wall_death`.
@@ -600,7 +600,7 @@ what the arena has been waiting on.
 
 ### The music
 
-`Music` applies the `Boss1` cue, which `host/area_music.py` cooks as CD-DA
+`Music` applies the `Boss1` cue, which `host/hk-cook/src/area_music.rs` cooks as CD-DA
 track 3; the guest starts it with `KILL ALL ENEMIES` after the entrance drop,
 and a death reload stops it. The same state activates `Area Title` with
 `FALSE_KNIGHT`, which the guest shows as the boss title card

@@ -3,6 +3,6 @@ name = "hk-lz4"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-2.0-or-later"
-description = "LZ4 HC block compression, level 9, byte-identical to liblz4 1.9.4 (python-lz4 4.4.5)"
+description = "LZ4 block compression and decompression, written from the published block format"
 
 [dependencies]

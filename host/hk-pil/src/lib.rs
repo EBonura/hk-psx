@@ -1,17 +1,19 @@
-//! The Pillow 12.3.0 operations hk-psx's cookers use, ported from Pillow's C
-//! (libImaging) so that every pixel comes out the same. Pillow is under the
-//! MIT-CMU (HPND) licence, Copyright (c) 1997-2011 Secret Labs AB, (c) 1995-2011
-//! Fredrik Lundh and contributors, (c) 2010 Jeffrey A. Clark and contributors;
-//! BcnDecode.c is CC0. Where Pillow's arm64 build fuses a multiply and add
-//! (clang's default contraction), the port uses `mul_add` in the same place.
+//! The image operations hk-psx's cookers use, written from the textbook
+//! definitions of each operation: separable filtered resampling, bilinear
+//! affine sampling, S3TC/BPTC block decoding, scanline polygon fill and
+//! median-cut colour quantisation.
+//!
+//! Pixel layout follows the cookers' needs: single-band modes take one byte
+//! per pixel and multi-band modes four (RGB carries a 255 pad byte).
 
 pub mod bcn;
+mod bcn_tables;
 pub mod draw;
 pub mod quant;
 pub mod resample;
 
-/// Pillow modes in use. Multi-band modes store four bytes per pixel, as
-/// libImaging does (RGB carries a 255 pad byte).
+/// Pixel modes in use. Multi-band modes store four bytes per pixel
+/// (RGB carries a 255 pad byte).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     /// "1": one byte per pixel, 0 or nonzero.
@@ -41,109 +43,115 @@ pub struct Image {
     pub data: Vec<u8>,
 }
 
-/// Python's `round` (half to even) on an f64, then `int`.
+/// Round half to even, as an integer.
 pub fn py_round(v: f64) -> i64 {
     v.round_ties_even() as i64
 }
 
+/// `x / 255` rounded to nearest, for `x` up to 255 * 255.
+pub(crate) fn div255(x: u32) -> u32 {
+    (x + 127) / 255
+}
+
 impl Image {
-    /// `Image.new(mode, size)`: zero filled.
+    /// A zero-filled image.
     pub fn new(mode: Mode, width: usize, height: usize) -> Image {
         Image { mode, width, height, data: vec![0; width * height * mode.pixel_size()] }
     }
 
+    /// The bytes of the pixel at (`x`, `y`).
     pub fn pixel(&self, x: usize, y: usize) -> &[u8] {
         let n = self.mode.pixel_size();
         let at = (y * self.width + x) * n;
         &self.data[at..at + n]
     }
 
-    /// `Image.crop(box)`: the box is rounded half to even, and the area outside
-    /// the source is zero.
+    /// The sub-image inside `b` = [left, upper, right, lower]; each edge is
+    /// rounded half to even and any area outside the source is zero.
     pub fn crop(&self, b: [f64; 4]) -> Image {
-        let [x0, y0, x1, y1] = b.map(py_round);
-        self.crop_int(x0, y0, x1, y1)
+        self.crop_int(py_round(b[0]), py_round(b[1]), py_round(b[2]), py_round(b[3]))
     }
 
+    /// `crop` with integer edges.
     pub fn crop_int(&self, x0: i64, y0: i64, x1: i64, y1: i64) -> Image {
-        let w = (x1 - x0).max(0) as usize;
-        let h = (y1 - y0).max(0) as usize;
-        let mut out = Image::new(self.mode, w, h);
+        let (w, h) = ((x1 - x0).max(0) as usize, (y1 - y0).max(0) as usize);
         let n = self.mode.pixel_size();
-        for y in 0..h as i64 {
-            let sy = y + y0;
+        let mut out = Image::new(self.mode, w, h);
+        for y in 0..h {
+            let sy = y0 + y as i64;
             if sy < 0 || sy >= self.height as i64 {
                 continue;
             }
-            for x in 0..w as i64 {
-                let sx = x + x0;
-                if sx < 0 || sx >= self.width as i64 {
-                    continue;
-                }
-                let src = (sy as usize * self.width + sx as usize) * n;
-                let dst = (y as usize * w + x as usize) * n;
-                out.data[dst..dst + n].copy_from_slice(&self.data[src..src + n]);
+            // Columns of this row that fall inside the source.
+            let first = (-x0).max(0) as usize;
+            let last = ((self.width as i64 - x0).max(0) as usize).min(w);
+            if first >= last {
+                continue;
             }
+            let src = (sy as usize * self.width + (x0 + first as i64) as usize) * n;
+            let dst = (y * w + first) * n;
+            let len = (last - first) * n;
+            out.data[dst..dst + len].copy_from_slice(&self.data[src..src + len]);
         }
         out
     }
 
+    /// Mirror about the horizontal axis.
     pub fn flip_top_bottom(&self) -> Image {
         let row = self.width * self.mode.pixel_size();
-        let mut out = Image::new(self.mode, self.width, self.height);
+        let mut out = self.clone();
         for y in 0..self.height {
-            let dst = (self.height - 1 - y) * row;
-            out.data[dst..dst + row].copy_from_slice(&self.data[y * row..(y + 1) * row]);
+            let from = (self.height - 1 - y) * row;
+            out.data[y * row..(y + 1) * row].copy_from_slice(&self.data[from..from + row]);
         }
         out
     }
 
+    /// Mirror about the vertical axis.
     pub fn flip_left_right(&self) -> Image {
         let n = self.mode.pixel_size();
-        let mut out = Image::new(self.mode, self.width, self.height);
+        let mut out = self.clone();
         for y in 0..self.height {
             for x in 0..self.width {
-                let s = (y * self.width + x) * n;
-                let d = (y * self.width + (self.width - 1 - x)) * n;
-                out.data[d..d + n].copy_from_slice(&self.data[s..s + n]);
+                let from = (y * self.width + self.width - 1 - x) * n;
+                let to = (y * self.width + x) * n;
+                out.data[to..to + n].copy_from_slice(&self.data[from..from + n]);
             }
         }
         out
     }
 
-    /// `paste(src, (x, y), mask)` for a same-mode source and a "1" or "L" mask
-    /// of the source's size: a pixel is copied where the mask is nonzero ("1")
-    /// or blended by it ("L", Pillow's paste_mask_L).
+    /// Paste a same-mode `src` with its top-left corner at (`x0`, `y0`),
+    /// clipped to this image. A mask of the source's size selects pixels: a
+    /// "1" mask copies where nonzero, an "L" mask blends each byte as
+    /// `(src * m + dst * (255 - m)) / 255`, rounded to nearest.
     pub fn paste(&mut self, src: &Image, x0: i64, y0: i64, mask: Option<&Image>) {
-        assert_eq!(self.mode.pixel_size(), src.mode.pixel_size());
         let n = self.mode.pixel_size();
-        for y in 0..src.height as i64 {
-            let dy = y + y0;
+        for sy in 0..src.height {
+            let dy = y0 + sy as i64;
             if dy < 0 || dy >= self.height as i64 {
                 continue;
             }
-            for x in 0..src.width as i64 {
-                let dx = x + x0;
+            for sx in 0..src.width {
+                let dx = x0 + sx as i64;
                 if dx < 0 || dx >= self.width as i64 {
                     continue;
                 }
-                let s = (y as usize * src.width + x as usize) * n;
-                let d = (dy as usize * self.width + dx as usize) * n;
+                let s = &src.data[(sy * src.width + sx) * n..][..n];
+                let d = &mut self.data[(dy as usize * self.width + dx as usize) * n..][..n];
                 match mask {
-                    None => self.data[d..d + n].copy_from_slice(&src.data[s..s + n]),
-                    Some(m) if m.mode == Mode::One => {
-                        if m.data[y as usize * m.width + x as usize] != 0 {
-                            self.data[d..d + n].copy_from_slice(&src.data[s..s + n]);
-                        }
-                    }
+                    None => d.copy_from_slice(s),
                     Some(m) => {
-                        let a = m.data[y as usize * m.width + x as usize] as u32;
-                        for k in 0..n {
-                            // BLEND(mask, out, in) = DIV255(out * (255 - mask) + in * mask)
-                            let o = self.data[d + k] as u32;
-                            let i = src.data[s + k] as u32;
-                            let tmp = o * (255 - a) + i * a + 128;
-                            self.data[d + k] = ((tmp + (tmp >> 8)) >> 8) as u8;
+                        let m_value = m.data[sy * m.width + sx];
+                        if m.mode == Mode::One {
+                            if m_value != 0 {
+                                d.copy_from_slice(s);
+                            }
+                        } else {
+                            let m_value = m_value as u32;
+                            for (db, &sb) in d.iter_mut().zip(s) {
+                                *db = div255(sb as u32 * m_value + *db as u32 * (255 - m_value)) as u8;
+                            }
                         }
                     }
                 }
@@ -151,19 +159,15 @@ impl Image {
         }
     }
 
-    /// `convert("RGBA")` from RGB or RGBA (RGB gains alpha 255).
+    /// RGB or RGBA as RGBA (RGB gains alpha 255).
     pub fn to_rgba(&self) -> Image {
-        match self.mode {
-            Mode::Rgba => self.clone(),
-            Mode::Rgb => {
-                let mut out = self.clone();
-                out.mode = Mode::Rgba;
-                for px in out.data.chunks_exact_mut(4) {
-                    px[3] = 255;
-                }
-                out
+        let mut out = self.clone();
+        out.mode = Mode::Rgba;
+        if self.mode == Mode::Rgb {
+            for px in out.data.chunks_exact_mut(4) {
+                px[3] = 255;
             }
-            other => panic!("to_rgba from {other:?} is not ported"),
         }
+        out
     }
 }
