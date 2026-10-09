@@ -36,6 +36,7 @@ pub mod scene_certificates;
 pub mod scene_sfx;
 pub mod spu;
 pub mod vengefly;
+pub mod zombie_shield;
 pub mod xa_music;
 
 /// Recorded where a Python cooker recorded the sha256 of its own source:

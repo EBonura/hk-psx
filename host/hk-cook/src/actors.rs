@@ -12,6 +12,7 @@ use crate::aspid;
 use crate::baldur;
 use crate::gruzzer;
 use crate::mawlek;
+use crate::zombie_shield;
 use crate::vengefly;
 use crate::climber;
 use crate::false_knight;
@@ -128,6 +129,12 @@ pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Ro
         if control.is_none() && name == "Mawlek Body" && records.iter().any(|r| r.1 == "Walker") {
             if let Ok(found) = mawlek::recognize_placement(sc, gid, &o.tree) {
                 control = Some(("Mawlek".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Zombie Shield") && records.iter().any(|r| r.1 == "Walker") {
+            let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+            if let Ok(found) = zombie_shield::recognize(sc, source, gid, position) {
+                control = Some(("ZombieShield".to_string(), found));
             }
         }
         // The Runner gate comes after the named gates in actor_sources; the
