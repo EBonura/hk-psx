@@ -6,7 +6,25 @@ from pathlib import Path
 from source import ROOT, Source, dump, rel
 from cook_music import compile_encoder, cook_clip, sha
 from ambience import fnv, loop_payload, validate_blocks, validate_loop
-from focus_audio import oneshot_payload, fields
+from focus import action_fields
+
+
+def oneshot_payload(data):
+    """Flagless ADPCM blocks and the silent END block (the Rust Focus cook has its own)."""
+    validate_blocks(data)
+    require(not any(data[i+1] for i in range(0, len(data), 16)), 'one-shot input contains transport flags')
+    return data + bytes([12, 1]) + bytes(14)
+
+
+def fields(data, index):
+    """The compact scalar fields of one action, plus its game-object, object and unity-object parameters."""
+    result = action_fields(data, index); start = data['actionStartIndex'][index]
+    end = data['actionStartIndex'][index+1] if index+1 < len(data['actionNames']) else len(data['paramName'])
+    for i in range(start, end):
+        kind = data['paramDataType'][i]
+        if kind in (19, 24, 11):
+            result[data['paramName'][i] or str(i)] = data[{19: 'fsmGameObjectParams', 24: 'fsmObjectParams', 11: 'unityObjectParams'}[kind]][data['paramDataPos'][i]]
+    return result
 
 # Immediately above the Focus bank and ending at 0x7FFF0, below the 16 bytes
 # psx_spu::init parks the disabled reverb work area on. It was 487440, which
@@ -167,7 +185,7 @@ def main():
     source = Source(); contract = source_contract(source)
     focus_path = ROOT/'.hkpsx/focus-audio.json'; focus = json.loads(focus_path.read_text())
     # The Focus bank (with the ability sounds above it) ends at or below this
-    # bank's base; focus_audio.py records the free bytes between them.
+    # bank's base; the Focus cook records the free bytes between them.
     require(focus['spu_base']+focus['byte_len'] == focus['spu_end'] <= SPU_BASE
             and sha(ROOT/focus['path']) == focus['sha256'] and sha(ROOT/'data/focus-audio.rs') == focus['manifest_sha256'], 'Focus bank/tail integrity mismatch')
     paths = {source.directory/'globalgamemanagers',source.directory/'level37',focus_path,ROOT/focus['path'],ROOT/'data/focus-audio.rs'}
@@ -176,7 +194,7 @@ def main():
     for spec in contract['clips']:
         file,pid = spec['source'].split(':'); obj=source.file(file).objects[int(pid)]
         paths.update((source.directory/file,source.directory/source.read(obj)['m_Resource']['m_Source']))
-    paths.update(ROOT/'host'/name for name in ('runner_audio.py','runner.py','actors.py','source.py','cook_music.py','spu_encode.py','spu_cook.py','focus_audio.py','ambience.py'))
+    paths.update(ROOT/'host'/name for name in ('runner_audio.py','runner.py','actors.py','source.py','cook_music.py','spu_encode.py','spu_cook.py','ambience.py'))
     identity = {rel(path):sha(path) for path in sorted(paths)}
     out.mkdir(parents=True, exist_ok=True); encoder = compile_encoder(out); profiles=[]
     for spec in contract['clips']:

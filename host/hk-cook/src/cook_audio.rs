@@ -32,8 +32,8 @@ use std::path::Path;
 const SPU_BASE: i64 = 0x1010;
 /// Root layout reserves 0x14000..0x18000 for Geo; ambience begins at 0x18000.
 const BANK_LIMIT: i64 = 0x14000 - SPU_BASE;
-/// host/focus_audio.py `SPU_BASE`: the world bank sits directly below it.
-const FOCUS_SPU_BASE: i64 = 0x60950;
+/// The world bank sits directly below the Focus bank.
+const FOCUS_SPU_BASE: i64 = crate::focus_audio::SPU_BASE;
 const EVENTS: [&str; 8] = ["door", "jump", "land", "nail", "hurt", "enemy_hit", "hard_land", "footsteps_run"];
 /// Hero one-shots never go above the rate they shipped at; Manny's rule is to
 /// halve the rate where room is needed, never to trim a clip.

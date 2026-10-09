@@ -600,7 +600,7 @@ what the arena has been waiting on.
 
 ### The music
 
-`Music` applies the `Boss1` cue, which `host/area_music.py` cooks as CD-DA
+`Music` applies the `Boss1` cue, which `host/hk-cook/src/area_music.rs` cooks as CD-DA
 track 3; the guest starts it with `KILL ALL ENEMIES` after the entrance drop,
 and a death reload stops it. The same state activates `Area Title` with
 `FALSE_KNIGHT`, which the guest shows as the boss title card

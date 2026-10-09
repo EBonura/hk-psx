@@ -69,6 +69,60 @@ pub fn decode_oneshot(bank: &[u8]) -> Result<Vec<i32>> {
     decode(&bank[..bank.len() - 16])
 }
 
+/// ambience.py `validate_blocks`: whole ADPCM blocks with a zero initial
+/// predictor and legal headers.
+pub fn validate_blocks(data: &[u8]) -> Result<()> {
+    if data.is_empty() || !data.len().is_multiple_of(16) {
+        return err("partial or empty ADPCM blocks");
+    }
+    if data[0] >> 4 != 0 {
+        return err("initial ADPCM predictor must be zero");
+    }
+    if data.chunks_exact(16).any(|b| b[0] >> 4 > 4 || b[0] & 15 > 12) {
+        return err("invalid ADPCM header");
+    }
+    Ok(())
+}
+
+/// ambience.py `validate_loop`: loop-start on the first block, loop-end and
+/// repeat on the last, nothing else.
+pub fn validate_loop(data: &[u8]) -> Result<()> {
+    validate_blocks(data)?;
+    for (i, block) in data.chunks_exact(16).enumerate() {
+        let expected = (if i == 0 { 4 } else { 0 }) | (if (i + 1) * 16 == data.len() { 3 } else { 0 });
+        if block[1] != expected {
+            return err("invalid loop start/end flags");
+        }
+    }
+    Ok(())
+}
+
+/// ambience.py `loop_payload`: flagless blocks made into a looping sample.
+pub fn loop_payload(data: &[u8]) -> Result<Vec<u8>> {
+    validate_blocks(data)?;
+    if data.chunks_exact(16).any(|b| b[1] != 0) {
+        return err("input contains transport flags");
+    }
+    let mut result = data.to_vec();
+    result[1] = 4;
+    let n = result.len();
+    result[n - 15] |= 3;
+    validate_loop(&result)?;
+    Ok(result)
+}
+
+/// focus_audio.py `oneshot_payload`: flagless blocks and the silent END block.
+pub fn oneshot_payload(data: &[u8]) -> Result<Vec<u8>> {
+    validate_blocks(data)?;
+    if data.chunks_exact(16).any(|b| b[1] != 0) {
+        return err("one-shot input contains transport flags");
+    }
+    let mut out = data.to_vec();
+    out.extend_from_slice(&[12, 1]);
+    out.extend_from_slice(&[0; 14]);
+    Ok(out)
+}
+
 // ---------------------------------------------------------------- WAV
 
 pub struct Wav {
@@ -162,6 +216,12 @@ pub struct Tool {
 }
 
 impl Tool {
+    /// A scratch file of this thread's own, so conversions can run in parallel.
+    fn tmp(&self, name: &str) -> PathBuf {
+        let id: String = format!("{:?}", std::thread::current().id()).chars().filter(char::is_ascii_alphanumeric).collect();
+        self.scratch.join(format!("{id}-{name}"))
+    }
+
     pub fn build(root: &Path, scratch_name: &str) -> Result<Tool> {
         let crate_dir = root.join("tools/psx-audio-cook");
         let target = crate_dir.join("target");
@@ -180,7 +240,7 @@ impl Tool {
         let mut out = if pcm.is_empty() {
             Vec::new()
         } else {
-            let (input, output) = (self.scratch.join("in.wav"), self.scratch.join("out.adpcm"));
+            let (input, output) = (self.tmp("in.wav"), self.tmp("out.adpcm"));
             std::fs::write(&input, mono_wav(NOMINAL_RATE, pcm)).map_err(|x| x.to_string())?;
             run(
                 Command::new(&self.binary)
@@ -201,10 +261,37 @@ impl Tool {
         Ok(out)
     }
 
+    /// spu_cook.py `encode_pcm(samples, mode)` for the loop modes `none`,
+    /// `restart` and `whole` (a ring): ADPCM blocks with every flag zero and
+    /// no terminator. Empty input gives empty output.
+    pub fn encode(&self, pcm: &[i16], mode: &str) -> Result<Vec<u8>> {
+        if pcm.is_empty() {
+            return Ok(Vec::new());
+        }
+        if mode == "whole" && !pcm.len().is_multiple_of(28) {
+            return err("a ring loop must be whole ADPCM blocks");
+        }
+        let (input, output) = (self.tmp("in.wav"), self.tmp("out.adpcm"));
+        std::fs::write(&input, mono_wav(NOMINAL_RATE, pcm)).map_err(|x| x.to_string())?;
+        run(
+            Command::new(&self.binary)
+                .arg("encode")
+                .arg(&input)
+                .arg(&output)
+                .args(["--rate", &NOMINAL_RATE.to_string(), "--format", "raw", "--no-normalize", "--no-flags", "--loop", mode]),
+            None,
+        )?;
+        let data = std::fs::read(&output).map_err(|x| x.to_string())?;
+        if data.len() != pcm.len().div_ceil(28) * 16 {
+            return err(format!("encoded {} bytes for {} samples", data.len(), pcm.len()));
+        }
+        Ok(data)
+    }
+
     /// spu_cook.py `resample`: mono 16-bit PCM at `rate` through the SDK's
     /// shared resampler.
     pub fn resample(&self, wav: &[u8], rate: i64) -> Result<Vec<i16>> {
-        let (input, output) = (self.scratch.join("resample-in.wav"), self.scratch.join("resample-out.wav"));
+        let (input, output) = (self.tmp("resample-in.wav"), self.tmp("resample-out.wav"));
         std::fs::write(&input, wav).map_err(|x| x.to_string())?;
         run(Command::new(&self.binary).arg("resample").arg(&input).arg(&output).args(["--rate", &rate.to_string()]), None)?;
         let out = read_wav(&std::fs::read(&output).map_err(|x| x.to_string())?)?;
@@ -216,7 +303,7 @@ impl Tool {
 
     /// The SDK rate allocator over a request file's text (`plan`).
     pub fn plan(&self, request: &str) -> Result<String> {
-        let path = self.scratch.join("plan.txt");
+        let path = self.tmp("plan.txt");
         std::fs::write(&path, request).map_err(|x| x.to_string())?;
         String::from_utf8(run(Command::new(&self.binary).arg("plan").arg(&path), None)?).map_err(|x| x.to_string())
     }
