@@ -9,7 +9,7 @@
 //!   HKBP_DATA    cooked data directory holding regions.json and regions/chunk_N.hk
 //!   HKBP_BANKS   directory of scene_N.hkwm world-metadata banks
 //!   HKBP_REGIONS_RS (build time) the cooked regions.rs the actor catalogue is lifted from
-#![allow(dead_code, unused_imports, unused_variables, unused_mut)]
+#![allow(dead_code, unused_imports, unused_variables, unused_mut, unexpected_cfgs)]
 use hk_sim::*;
 include!("../../../shared/hk-sim/tests/common/enemy_stubs.rs");
 #[path = "../../../game/src/enemies.rs"]
