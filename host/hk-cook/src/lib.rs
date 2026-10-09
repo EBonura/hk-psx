@@ -5,6 +5,7 @@ pub mod climber;
 pub mod colliders;
 pub mod common;
 pub mod cook_audio;
+pub mod actor_persistence;
 pub mod actor_specs;
 pub mod actors;
 pub mod ambience;
