@@ -411,7 +411,7 @@ fn capacity(report: &Json, clips: &[Json]) -> Result<Json> {
 // ---------------------------------------------------------------- IL
 
 /// Python's `repr(str)`.
-fn py_repr(s: &str) -> String {
+pub(crate) fn py_repr(s: &str) -> String {
     let quote = if s.contains('\'') && !s.contains('"') { '"' } else { '\'' };
     let mut out = String::from(quote);
     for c in s.chars() {
