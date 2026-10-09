@@ -10,6 +10,7 @@
 
 use crate::aspid;
 use crate::baldur;
+use crate::false_knight;
 use crate::common::{component_records, err, get, path_id, Result};
 use crate::pyjson::Json;
 use crate::runner;
@@ -58,6 +59,11 @@ pub fn scan(sc: &Scene, source: &Source) -> Result<Vec<Row>> {
         if control.is_none() && name.starts_with("Spitter") && records.iter().any(|r| r.1 == "PersonalObjectPool") {
             if let Ok(found) = aspid::recognize(sc, source, gid) {
                 control = Some(("Aspid".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("False Knight") && records.iter().any(|r| r.1 == "EnemyHitEffectsArmoured") {
+            if let Ok(found) = false_knight::recognize_placement(sc, source, gid, &o.tree) {
+                control = Some(("FalseKnight".to_string(), found));
             }
         }
         // The Runner gate comes after the named gates in actor_sources; the
