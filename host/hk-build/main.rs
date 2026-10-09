@@ -619,10 +619,9 @@ const ART_LATE_ALLOWED: &[(&str, u64)] = &[("kings-death", 44), ("boss-death", 4
 /// four frames for the counts that matter and one for a single stray, since frame
 /// pacing moves by tens of frames between builds with no relevant change. This is
 /// the debt against the 30 fps rule and only ever goes down; a route not listed
-/// has none to spare, and no boss route has more than a view bind's one frame.
+/// has none to spare. The view bind after each load is counted apart (`pacing`), so no route carries one.
 const PACING_CEILINGS: &[(&str, u64)] = &[
-    ("boss-fight", 2), ("boss-wave", 2),
-    ("cornifer-map", 1), ("focus", 1), ("cheat-spell", 1), ("cheat-dash", 1), ("cheat-wings", 1), ("ctrl-wings", 1), ("cheat-heart", 1), ("c37-stand", 6), ("journey-false-knight", 475), ("journey-reload", 327), ("journey-kings", 301), ("kings-climb", 264), ("journey-crossroads", 233),
+    ("journey-false-knight", 475), ("journey-reload", 327), ("journey-kings", 301), ("kings-climb", 264), ("journey-crossroads", 233),
     ("ctrl-climb", 202), ("f17-charger", 154), ("secret-f08a", 154), ("secret-c03", 151), ("crossroads-gate", 137),
     ("kings-return", 136), ("kp-playtest", 131), ("cheat-dream", 124), ("kings-death", 123), ("mound-spell", 118),
     ("secret-c03-reload", 115), ("gruz-fight", 108), ("secret-kp", 73), ("f01-moss", 66), ("greenpath-walk", 64), ("well-drop", 60),
@@ -1418,9 +1417,16 @@ fn ram_word(root: &Path, output: &Path, symbol: &str) -> Result<u32> {
 /// display flips) over the 30 fps bar of two vblanks. Only gameplay ticks count:
 /// `HK_GAME_MODE` at its most common value and `HK_ROOM_LOAD_STATE` at its
 /// most common (resident) value, so the title screen, loads and gates stay
-/// out (the same rule as tools/frame-pacing). Returns (frames, over two
-/// vblanks, longest frame in vblanks, longest run of consecutive over frames).
-fn pacing(output: &Path) -> Result<(u64, u64, u64, u64)> {
+/// out (the same rule as tools/frame-pacing). The first frame after the game
+/// re-enters those states is the view bind (render::init, the template and
+/// vignette rebuild and the first cold scenery pass, five or six vblanks of
+/// `hkperf ticks` samples spread over the last load row and the first frames):
+/// it is load work (so is the bind of a new view inside a scene, `HK_VIEW_BINDS`, which costs the same) whether the load flag happens to read ready a row before or
+/// after it, which moved by one row between builds with no relevant change and
+/// turned a 2-vblank bind into a 3-vblank gameplay frame on ten routes. It is
+/// counted apart. Returns (frames, over two vblanks, longest frame in vblanks,
+/// longest run of consecutive over frames, bind frames, longest bind frame).
+fn pacing(output: &Path) -> Result<(u64, u64, u64, u64, u64, u64)> {
     let command: Value = serde_json::from_slice(&std::fs::read(output.join("command.json"))?)?;
     let column = |name: &str| command["watches"][name].as_str().map(|a| format!("ram_{:0>8}", a.trim_start_matches("0x")));
     let text = std::fs::read_to_string(output.join("route.csv"))?;
@@ -1436,14 +1442,26 @@ fn pacing(output: &Path) -> Result<(u64, u64, u64, u64)> {
         for r in &rows { *counts.entry(r[index]).or_default() += 1; }
         counts.into_iter().max_by_key(|&(_, n)| n).map(|(v, _)| v)
     };
+    let binds = column("HK_VIEW_BINDS").and_then(|c| at(&c));
     let (play, ready) = (mode(game), mode(load));
     let gameplay = |r: &Vec<&str>| game.is_none_or(|g| Some(r[g]) == play) && load.is_none_or(|l| Some(r[l]) == ready);
     let (mut frames, mut over, mut longest, mut streak, mut worst_streak, mut since) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut bind, mut bind_longest, mut fresh, mut seen_binds) = (0u64, 0u64, true, None::<&str>);
     for r in &rows {
-        if !gameplay(r) { since = 0; continue; }
+        if let Some(b) = binds {
+            // A bind inside a scene (the camera crossing into another view) is the same work without a load.
+            if seen_binds.is_some_and(|s| s != r[b]) && gameplay(r) { fresh = true; }
+            seen_binds = Some(r[b]);
+        }
+        if !gameplay(r) { since = 0; fresh = true; continue; }
         since += 1;
         if r[flip] == "1" {
-            if since > 0 {
+            if fresh {
+                bind += 1;
+                bind_longest = bind_longest.max(since);
+                fresh = false;
+            } else if since > 0 {
+                fresh = false;
                 frames += 1;
                 longest = longest.max(since);
                 if since > 2 { over += 1; streak += 1; worst_streak = worst_streak.max(streak); } else { streak = 0; }
@@ -1451,7 +1469,7 @@ fn pacing(output: &Path) -> Result<(u64, u64, u64, u64)> {
             since = 0;
         }
     }
-    Ok((frames, over, longest, worst_streak))
+    Ok((frames, over, longest, worst_streak, bind, bind_longest))
 }
 
 /// Replay every route tape against the final CUE; a fault or an incomplete tape fails the build.
@@ -1562,9 +1580,9 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         // exceed its ceiling in PACING_CEILINGS (zero when unlisted); the list
         // is the debt that remains and only ever goes down.
         match pacing(&output) {
-            Ok((frames, over, longest, streak)) => {
+            Ok((frames, over, longest, streak, bind, bind_longest)) => {
                 let ceiling = PACING_CEILINGS.iter().find(|(route, _)| *route == name).map_or(0, |c| c.1);
-                println!("{name}: pacing {over} of {frames} frames over 2 vblanks (ceiling {ceiling}), longest {longest}, worst streak {streak}");
+                println!("{name}: pacing {over} of {frames} frames over 2 vblanks (ceiling {ceiling}), longest {longest}, worst streak {streak}; view binds {bind}, longest {bind_longest}");
                 if over > ceiling {
                     ok = false;
                 }

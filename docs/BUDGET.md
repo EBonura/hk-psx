@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |808,228|
-| Code-to-data alignment |12|
-| Linked data, including menu and HUD |281,296|
-| BSS, including shared scene arena and runtime pools |797,548|
-| Total static span |1,887,084|
+| Linked code |807,608|
+| Code-to-data alignment |8|
+| Linked data, including menu and HUD |273,728|
+| BSS, including shared scene arena and runtime pools |797,028|
+| Total static span |1,878,372|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |95,124|
+| Unallocated gap before reserved stack |103,836|
 | Room module pool, inside that gap |94,208|
-| Free RAM below the module pool |916|
+| Free RAM below the module pool |9,628|
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -49,7 +49,16 @@ The per-tick `HK_TRACE` block for the replay harness (game/src/trace.rs, 2026-10
 BSS and 1,260 of code, and compiling seventeen functions that only run on a scene change,
 a gate, a save or a debug reset for size (`optimize(size)`: the disc cache's init and
 prepare_*, enemy sync_region, persist, the save survey, take_gate and the like) gave back
-8.2 KB; the Focus effects (23 frames in the ability art, the Burst at half resolution, the focus_fx module) took 12.3 KB of that back, and 916 are free below the pool now. The HUD's Geo coin replaced the word "Geo"
+8.2 KB; the Focus effects (23 frames in the ability art, the Burst at half resolution, the focus_fx module) took 12.3 KB of that back, and 924 were free below the pool.
+Three changes since returned 8.7 KB without touching a pixel. The `HK_TRACE` block is built only
+with the `trace` feature (game/Cargo.toml), which no shipped disc enables: 2,560 bytes. The ability
+art is run-length coded per frame and decoded straight into the GPU port when the animation cache
+uploads a frame (game/src/ability_art.rs `upload_frame`, no staging buffer): its payload went from
+42,600 to 33,729 bytes while the Focus Burst went from half to full resolution (5,424 bytes of
+texels raw, 2,520 coded) and the Burst's two bright frames took a palette of their own in the
+ability block's spare CLUT row. The Knight's Focus dust (Dust L and Dust R cooked into every
+scene, raised every six ticks while Focus runs) cost a style and an emitter row of room in the
+effect tables (styles 18, emitters 100) and a few words of code: 9,628 are free below the pool now. The HUD's Geo coin replaced the word "Geo"
 (three glyphs), and the render policy and the audio start added a few words.
 
 Every figure above is the current ordinary build's, read out of
@@ -94,7 +103,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801dcb6c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801da964`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
