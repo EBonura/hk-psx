@@ -1,10 +1,11 @@
 //! LZ4 block compression and decompression, written from the published LZ4
 //! block format description (one block, no frame, no dictionary).
 //!
-//! The compressor is a high-compression hash-chain parser of our own: every
-//! position is indexed by its next four bytes, each candidate chain is walked
-//! to a fixed depth for the longest (then nearest) match, and a match is
-//! deferred by one byte when the next position holds a longer one.
+//! The compressor is a shortest-path parser of our own. A binary search tree
+//! of suffixes, one tree per hash of the next four bytes, yields the longest
+//! earlier match at every position; since a match costs the same bytes at any
+//! distance, a dynamic program over positions then picks the cheapest cut of
+//! the input into literals and matches.
 //!
 //! The block format only fixes what a valid block looks like, not how the
 //! input is cut into sequences, so the compressed bytes are this crate's own
@@ -18,9 +19,12 @@ const LAST_MATCH_START: usize = 12;
 const TRAILING_LITERALS: usize = 5;
 /// Largest back-reference distance (the offset field is 16 bits, zero invalid).
 const MAX_OFFSET: usize = 65535;
-/// Candidates examined per position.
-const CHAIN_DEPTH: usize = 512;
-const HASH_BITS: u32 = 15;
+/// Tree nodes visited per position at most.
+const SEARCH_DEPTH: usize = 1024;
+/// Matches this long are taken whole, and the tree stops comparing here.
+const NICE_LEN: usize = 256;
+const HASH_BITS: u32 = 16;
+const NIL: u32 = u32::MAX;
 
 fn read32(src: &[u8], i: usize) -> u32 {
     u32::from_le_bytes([src[i], src[i + 1], src[i + 2], src[i + 3]])
@@ -30,67 +34,90 @@ fn hash4(v: u32) -> usize {
     (v.wrapping_mul(2_654_435_761) >> (32 - HASH_BITS)) as usize
 }
 
-/// Hash chains over the input: `head[h]` is the latest indexed position with
-/// hash `h` plus one (zero is empty), `prev[p]` the earlier position it chains to.
-struct Chains<'a> {
+/// Suffix trees over the input. Every indexed position is a node whose left
+/// subtree holds the earlier suffixes that sort below it and whose right
+/// subtree holds those above; inserting a position walks the tree, which
+/// meets the longest matching earlier suffix on the way down.
+struct Matcher<'a> {
     src: &'a [u8],
+    /// Root of the tree for each hash.
     head: Vec<u32>,
-    prev: Vec<u32>,
-    /// Positions below this are indexed.
-    indexed: usize,
+    /// `kids[2 * p]` and `kids[2 * p + 1]`: left and right child of `p`.
+    kids: Vec<u32>,
     /// One past the last position where a match may start.
     match_end: usize,
 }
 
-impl<'a> Chains<'a> {
+impl<'a> Matcher<'a> {
     fn new(src: &'a [u8]) -> Self {
         let match_end = if src.len() > LAST_MATCH_START { src.len() - LAST_MATCH_START + 1 } else { 0 };
-        Chains { src, head: vec![0; 1 << HASH_BITS], prev: vec![0; src.len()], indexed: 0, match_end }
+        Matcher { src, head: vec![NIL; 1 << HASH_BITS], kids: vec![NIL; 2 * src.len()], match_end }
     }
 
-    fn index_up_to(&mut self, end: usize) {
-        let end = end.min(self.match_end);
-        while self.indexed < end {
-            let p = self.indexed;
-            let h = hash4(read32(self.src, p));
-            self.prev[p] = self.head[h];
-            self.head[h] = p as u32 + 1;
-            self.indexed += 1;
-        }
-    }
-
-    /// Longest match for position `i` (longer than `floor`, nearest on ties):
-    /// (length, distance).
-    fn best(&mut self, i: usize, floor: usize) -> Option<(usize, usize)> {
-        if i >= self.match_end {
+    /// Index position `cur` (positions must come in order) and return the
+    /// longest match behind it as (length, distance), the nearest one on a
+    /// tie. Lengths are exact.
+    fn insert(&mut self, cur: usize) -> Option<(usize, usize)> {
+        if cur >= self.match_end {
             return None;
         }
-        self.index_up_to(i);
-        let max_len = self.src.len() - TRAILING_LITERALS - i;
-        let mut best_len = floor.max(MIN_MATCH - 1);
-        let mut best = None;
-        let mut cand = self.head[hash4(read32(self.src, i))];
-        let mut left = CHAIN_DEPTH;
-        while cand != 0 && left > 0 {
-            let c = cand as usize - 1;
-            if i - c > MAX_OFFSET {
+        let src = self.src;
+        let room = src.len() - TRAILING_LITERALS - cur;
+        let cap = room.min(NICE_LEN);
+        let h = hash4(read32(src, cur));
+        let mut cand = self.head[h];
+        self.head[h] = cur as u32;
+        // The slots waiting for the root of everything below / above `cur`.
+        let (mut below, mut above) = (2 * cur, 2 * cur + 1);
+        let (mut below_len, mut above_len) = (0, 0);
+        let mut best = (0, 0);
+        for _ in 0..SEARCH_DEPTH {
+            if cand == NIL || cur - cand as usize > MAX_OFFSET {
                 break;
             }
-            // A longer match must agree at the byte just past the current best.
-            if best_len < max_len && self.src[c + best_len] == self.src[i + best_len] {
-                let mut l = 0;
-                while l < max_len && self.src[c + l] == self.src[i + l] {
-                    l += 1;
-                }
-                if l > best_len {
-                    best_len = l;
-                    best = Some((l, i - c));
-                }
+            let c = cand as usize;
+            let mut len = below_len.min(above_len);
+            while len < cap && src[c + len] == src[cur + len] {
+                len += 1;
             }
-            cand = self.prev[c];
-            left -= 1;
+            if len > best.0 {
+                best = (len, cur - c);
+            }
+            if len >= cap {
+                // `cur` takes this node's place: its children become ours.
+                self.kids[below] = self.kids[2 * c];
+                self.kids[above] = self.kids[2 * c + 1];
+                return self.finish(cur, best, room);
+            }
+            if src[c + len] < src[cur + len] {
+                self.kids[below] = cand;
+                below = 2 * c + 1;
+                below_len = len;
+                cand = self.kids[below];
+            } else {
+                self.kids[above] = cand;
+                above = 2 * c;
+                above_len = len;
+                cand = self.kids[above];
+            }
         }
-        best
+        self.kids[below] = NIL;
+        self.kids[above] = NIL;
+        self.finish(cur, best, room)
+    }
+
+    /// Settle the reported match: below `NICE_LEN` it is exact already, at
+    /// `NICE_LEN` it is measured out to its real end.
+    fn finish(&self, cur: usize, (mut len, dist): (usize, usize), room: usize) -> Option<(usize, usize)> {
+        if len < MIN_MATCH {
+            return None;
+        }
+        if len >= NICE_LEN {
+            while len < room && self.src[cur - dist + len] == self.src[cur + len] {
+                len += 1;
+            }
+        }
+        Some((len, dist))
     }
 }
 
@@ -120,25 +147,86 @@ fn put_sequence(out: &mut Vec<u8>, literals: &[u8], m: Option<(usize, usize)>) {
     }
 }
 
+/// Bytes a length field costs beyond its nibble: nothing below 15, then one
+/// byte per 255 more (a final byte under 255 ends the field).
+fn extra_bytes(n: usize) -> usize {
+    if n < 15 { 0 } else { (n - 15) / 255 + 1 }
+}
+
+const INF: u32 = u32::MAX / 2;
+
+/// How a position was reached by a match: where it started, how long it was
+/// and how far back it copied.
+#[derive(Clone, Copy)]
+struct Arrival {
+    start: u32,
+    len: u32,
+    dist: u32,
+}
+
 /// Compress `src` into one LZ4 block (no size header).
+///
+/// A match costs the same bytes whatever its distance, so for each position
+/// only the longest match matters, and every shorter cut of it is usable too.
+/// The parse is a shortest path over positions: `reach[i]` is the cheapest
+/// byte count of a block prefix that ends with a match finishing at `i`, and
+/// `open[i]` the cheapest prefix that has arrived at `i` and may start a
+/// match there (the bytes since the last match being literals). Costs leave
+/// out the final sequence's token.
 pub fn compress_hc(src: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(src.len() / 2 + 16);
-    let mut chains = Chains::new(src);
-    let (mut anchor, mut i) = (0, 0);
-    while i < src.len() {
-        let Some(first) = chains.best(i, 0) else {
-            i += 1;
-            continue;
-        };
-        // Defer by a byte while the next position starts a longer match.
-        let (mut at, mut found) = (i, first);
-        while let Some(next) = chains.best(at + 1, found.0) {
-            at += 1;
-            found = next;
+    let n = src.len();
+    let mut matcher = Matcher::new(src);
+    let mut reach = vec![INF; n + 1];
+    let mut came = vec![Arrival { start: 0, len: 0, dist: 0 }; n + 1];
+    let mut open = vec![INF; n + 1];
+    // Literal run that `open[i]` ends with (zero when it comes from a match).
+    let mut run = vec![0u32; n + 1];
+    reach[0] = 0;
+    // Matches taken whole leave their interior without match starts.
+    let mut taken_until = 0;
+    for i in 0..=n {
+        open[i] = reach[i];
+        if i > 0 {
+            let r = run[i - 1] + 1;
+            let step = 1 + (r >= 15 && (r - 15) % 255 == 0) as u32;
+            if open[i - 1] + step < open[i] {
+                open[i] = open[i - 1] + step;
+                run[i] = r;
+            }
         }
-        put_sequence(&mut out, &src[anchor..at], Some(found));
-        anchor = at + found.0;
-        i = anchor;
+        // Every position goes into the trees, whether or not it can start a match.
+        let found = if i < n { matcher.insert(i) } else { None };
+        if open[i] >= INF || i < taken_until {
+            continue;
+        }
+        let Some((len, dist)) = found else { continue };
+        if len >= NICE_LEN {
+            taken_until = i + len;
+        }
+        let base = open[i] + 3;
+        let shortest = if len >= NICE_LEN { len } else { MIN_MATCH };
+        for l in shortest..=len {
+            let cost = base + extra_bytes(l - MIN_MATCH) as u32;
+            if cost < reach[i + l] {
+                reach[i + l] = cost;
+                came[i + l] = Arrival { start: i as u32, len: l as u32, dist: dist as u32 };
+            }
+        }
+    }
+    // Walk back from the end collecting the matches and their literal runs.
+    let mut seqs: Vec<(usize, Arrival)> = Vec::new();
+    let mut at = n - run[n] as usize;
+    while at > 0 {
+        let a = came[at];
+        let before = a.start as usize - run[a.start as usize] as usize;
+        seqs.push((before, a));
+        at = before;
+    }
+    let mut out = Vec::with_capacity(n / 2 + 16);
+    let mut anchor = 0;
+    for &(before, a) in seqs.iter().rev() {
+        put_sequence(&mut out, &src[before..a.start as usize], Some((a.len as usize, a.dist as usize)));
+        anchor = a.start as usize + a.len as usize;
     }
     put_sequence(&mut out, &src[anchor..], None);
     out
