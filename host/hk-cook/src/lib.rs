@@ -1,6 +1,7 @@
 //! hk-psx's cookers in Rust, replacing host/*.py one tool at a time with
 //! byte-identical output.
 
+pub mod climber;
 pub mod common;
 pub mod cook_audio;
 pub mod actors;
@@ -11,12 +12,14 @@ pub mod baldur;
 pub mod break_effects;
 pub mod cook;
 pub mod coverage;
+pub mod false_knight;
 pub mod fmod;
 pub mod focus_audio;
 pub mod music;
 pub mod music_report;
 pub mod geo_audio;
 pub mod gpu_census;
+pub mod gruzzer;
 pub mod materials;
 pub mod opaque_groups;
 pub mod opaque_tiles;
@@ -31,6 +34,7 @@ pub mod runner_audio;
 pub mod scene_certificates;
 pub mod scene_sfx;
 pub mod spu;
+pub mod vengefly;
 pub mod xa_music;
 
 /// Recorded where a Python cooker recorded the sha256 of its own source:

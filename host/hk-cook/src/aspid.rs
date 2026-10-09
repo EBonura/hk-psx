@@ -7,9 +7,8 @@
 use crate::common::{component_records, err, get, Result};
 use crate::cook_audio::{jobj, js, u};
 use crate::pyjson::Json;
-use crate::recog::{check_assemblies, clip_is, clips_by_name, near, only, scalar, state, states, transitions, variables, xy};
+use crate::recog::{check_actions, check_assemblies, clip_is, clips_by_name, near, only, state, states, transitions, variables, xy};
 use crate::runner::axis_aligned_bounds;
-use hk_unity::playmaker::action_fields;
 use hk_unity::scene::Scene;
 use hk_unity::{Source, Value};
 
@@ -21,14 +20,9 @@ const BODY_OFFSET: [f64; 2] = [-0.0625, -0.0390625];
 const ALERT_RADIUS: f64 = 0.5 * 15.608528137207031;
 const UNALERT_RADIUS: f64 = 12.100000381469727;
 
-enum Want {
-    F(f64),
-    S(&'static str),
-    B(bool),
-}
-use Want::{B, F, S};
+use crate::recog::Want::{B, F, S};
 #[rustfmt::skip]
-const ACTIONS: &[(&str, &str, &[(&str, Want)])] = &[
+const ACTIONS: &[(&str, &str, &[(&str, crate::recog::Want)])] = &[
     ("Idle", "IdleBuzz", &[("waitMin", F(0.75)), ("waitMax", F(1.0)), ("speedMax", F(1.75)), ("accelerationMax", F(15.0)), ("roamingRange", F(1.0))]),
     ("Idle", "FaceDirection", &[("newAnimationClip", S("TurnToFly")), ("pauseTime", F(0.5)), ("pauseBetweenTurns", B(true)), ("spriteFacesRight", B(false))]),
     ("Distance Fly", "DistanceFly", &[("distance", F(7.0)), ("speedMax", F(4.0)), ("acceleration", F(0.1)), ("targetsHeight", B(false))]),
@@ -78,30 +72,7 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64) -> Result<Json> {
             return err(format!("unsupported Aspid transitions: {name}"));
         }
     }
-    for &(st, action, expected) in ACTIONS {
-        let data = get(state(&sts, st).ok_or("missing state")?, "actionData")?;
-        let names = get(data, "actionNames")?.list().unwrap_or(&[]);
-        let enabled = get(data, "actionEnabled")?.list().unwrap_or(&[]);
-        let matches: Vec<usize> = names.iter().enumerate().filter(|(i, n)| n.str().is_some_and(|n| n.rsplit('.').next() == Some(action)) && enabled.get(*i).is_some_and(Value::truthy)).map(|(i, _)| i).collect();
-        if matches.len() != 1 {
-            return err(format!("unsupported Aspid action set: {st}/{action}"));
-        }
-        let fields = u(action_fields(data, matches[0], false))?;
-        for (key, want) in expected {
-            let actual = fields.iter().find(|f| f.0 == *key).map(|f| scalar(&f.1));
-            let ok = match want {
-                F(v) => match &actual {
-                    Some(a) if matches!(a, Value::Int(_) | Value::UInt(_) | Value::F32(_) | Value::F64(_)) => near(Some(a), *v),
-                    other => other.as_ref().is_some_and(|a| a.py_eq(&f64v(*v))),
-                },
-                S(s) => actual.as_ref().and_then(Value::str).as_deref() == Some(*s),
-                B(b) => actual.as_ref().is_some_and(|a| a.py_eq(&Value::Bool(*b))),
-            };
-            if !ok {
-                return err(format!("unsupported Aspid parameter: {st}/{action}.{key}"));
-            }
-        }
-    }
+    check_actions(&sts, ACTIONS, "Aspid")?;
     let fire = get(state(&sts, "Fire").ok_or("missing state")?, "actionData")?;
     let shot_ref = get(fire, "fsmGameObjectParams")?.list().unwrap_or(&[]).iter().find(|p| !p.get("useVariable").is_some_and(Value::truthy) && p.get("value").and_then(|v| v.get("m_PathID")).and_then(Value::int).unwrap_or(0) != 0).and_then(|p| p.get("value")).ok_or("Aspid shot prefab reference missing")?;
     let shot_obj = u(sc.deref(shot_ref))?;
