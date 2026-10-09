@@ -20,7 +20,7 @@ namespace HKReference
 {
     public sealed class SceneSurvey
     {
-        private enum Phase { Idle, Loading, Settle, Tour, Poke }
+        private enum Phase { Idle, Loading, Settle, Tour, Poke, Approach }
 
         private sealed class Target { public string Name; public float X, Y; public HealthManager Hm; }
 
@@ -28,6 +28,12 @@ namespace HKReference
         private readonly string stateDir;
         private readonly int settleFrames, tourFrames, maxTargets, loadTimeout, pokeFrames, pokeFirst, pokeGap, pokeMaxHits;
         private readonly float pokeDirection;
+        // Approach mode: the Knight is stood on the ground APPROACH_DISTANCE units to one side of each
+        // distinct enemy and walks toward it at APPROACH_SPEED, so its detection range and its first
+        // reaction are measured at a realistic distance instead of with the Knight on top of it.
+        private readonly int approachFrames, approachSettle;
+        private readonly float approachDistance, approachSpeed;
+        private int approachIndex, approachStart;
         private readonly StreamWriter timeline, actorsOut, fsmOut, sourcesOut, scenesOut, pokesOut;
         private int pokeIndex, pokeStart, pokeHits, pokeLength;
         private Phase phase = Phase.Idle;
@@ -64,6 +70,10 @@ namespace HKReference
             pokeFirst = Setting("HK_REFERENCE_POKE_FIRST", 30);
             pokeGap = Setting("HK_REFERENCE_POKE_GAP", 30);
             pokeMaxHits = Setting("HK_REFERENCE_POKE_MAX_HITS", 8);
+            approachFrames = Setting("HK_REFERENCE_SURVEY_APPROACH", 0);
+            approachSettle = Setting("HK_REFERENCE_APPROACH_SETTLE", 30);
+            float ad; approachDistance = Single.TryParse(Environment.GetEnvironmentVariable("HK_REFERENCE_APPROACH_DISTANCE"), NumberStyles.Float, CultureInfo.InvariantCulture, out ad) ? ad : 14f;
+            float asp; approachSpeed = Single.TryParse(Environment.GetEnvironmentVariable("HK_REFERENCE_APPROACH_SPEED"), NumberStyles.Float, CultureInfo.InvariantCulture, out asp) ? asp : 4f;
             float dir; pokeDirection = Single.TryParse(Environment.GetEnvironmentVariable("HK_REFERENCE_POKE_DIRECTION"), NumberStyles.Float, CultureInfo.InvariantCulture, out dir) ? dir : 0f;
             ActorTrace.Stride = Setting("HK_REFERENCE_SURVEY_ACTOR_STRIDE", 5);
             HashSet<string> done = new HashSet<string>();
@@ -165,9 +175,35 @@ namespace HKReference
                     try { Census(current, hero, gm); }
                     catch (Exception e) { loadStatus += "+census_error:" + e.GetType().Name; Debug.Log("HKReference census failed in " + current + ": " + e); }
                     if (loadStatus != "ok" || targets.Count == 0) { Finish(); return false; }
+                    if (approachFrames > 0)
+                    {
+                        approachIndex = 0; phase = Phase.Approach; SetPlaying(gm);
+                        while (approachIndex < targets.Count && !StartApproach(frame, hero)) approachIndex++;
+                        if (approachIndex >= targets.Count) Finish();
+                        return false;
+                    }
                     if (pokeFrames > 0) { pokeIndex = 0; phase = Phase.Poke; SetPlaying(gm); StartPoke(frame, hero); return false; }
                     tourIndex = 0; phase = Phase.Tour; SetPlaying(gm); StartTarget(frame, hero);
                     return false;
+                case Phase.Approach:
+                {
+                    if (active != current) { EndWindow(frame); loadStatus += "+left_scene"; Finish(); return false; }
+                    int rel = frame - approachStart;
+                    Target at = targets[approachIndex];
+                    if (hero != null && rel >= approachSettle)
+                    {
+                        float tx = at.Hm != null && at.Hm.gameObject.activeInHierarchy ? at.Hm.transform.position.x : at.X;
+                        Vector3 hp = hero.transform.position;
+                        if (Mathf.Abs(tx - hp.x) > 1.0f)
+                            hero.transform.position = new Vector3(hp.x + Mathf.Sign(tx - hp.x) * approachSpeed / 60f, hp.y, hp.z);
+                    }
+                    if (rel < approachFrames) return false;
+                    EndWindow(frame);
+                    approachIndex++;
+                    while (approachIndex < targets.Count && !StartApproach(frame, hero)) approachIndex++;
+                    if (approachIndex >= targets.Count) Finish();
+                    return false;
+                }
                 case Phase.Poke:
                 {
                     if (active != current) { EndWindow(frame); loadStatus += "+left_scene"; Finish(); return false; }
@@ -249,6 +285,28 @@ namespace HKReference
                 if (body != null) body.velocity = Vector2.zero;
                 Freeze(hero, false);
             }
+        }
+
+        // Stand the Knight on the terrain to the left of the target (the right if the left has none).
+        private bool StartApproach(int frame, Component hero)
+        {
+            Target t = targets[approachIndex];
+            if (hero == null) return false;
+            foreach (float side in new float[] { -1f, 1f })
+            {
+                float x0 = t.X + side * approachDistance;
+                RaycastHit2D hit = Physics2D.Raycast(new Vector2(x0, t.Y + 3f), Vector2.down, 40f, 1 << 8);
+                if (hit.collider == null) continue;
+                approachStart = frame;
+                BeginWindow("approach", t.Name, t.X, t.Y, frame);
+                Vector3 p = hero.transform.position;
+                hero.transform.position = new Vector3(x0, hit.point.y + 1.2f, p.z);
+                Rigidbody2D body = hero.GetComponent<Rigidbody2D>();
+                if (body != null) body.velocity = Vector2.zero;
+                Freeze(hero, false);
+                return true;
+            }
+            return false;
         }
 
         private void StartPoke(int frame, Component hero)
