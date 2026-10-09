@@ -25,7 +25,7 @@ SPU_END=0x80000
 # The Runner bank's fixed base (host/runner_audio.py): this bank, ability
 # sounds included, must end at or below it.
 RUNNER_BASE=0x7B000
-CHARGE_RATE=4000
+CHARGE_RATE=3200
 HEAL_RATE=11025
 # The Knight's sounds that ride the Focus range (source: the Superdash FSM on
 # the Knight and Fireball Top's Fireball Cast FSM, resources.assets). Order is
@@ -39,6 +39,7 @@ ABILITY=(
     ('super_wall',1314,'hero_super_dash_impact_wall'),
     ('super_brake',1351,'hero_super_dash_air_brake'),
     ('fireball',1361,'hero_fireball'),
+    ('focus_ready',1271,'focus_ready'),
 )
 # The port's categories: a one-shot under a second ships at 22,050 Hz, a longer
 # clip at 11,025 Hz (the footsteps' precedent); the allocator may halve a clip

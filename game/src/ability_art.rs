@@ -23,6 +23,11 @@ pub const SD_HIT_WALL: usize = 13;
 /// Vengeful Spirit's projectile, from its own sprite collection.
 pub const BALL: usize = 14;
 pub const BALL_END: usize = 15;
+/// The Focus effects (additive): Lines Anim's Focus Effect and Focus Effect End, then
+/// Heal Anim's Burst Effect, appended by `host/ability_art.py` after the ball clips.
+pub const FOCUS_EFFECT: usize = 16;
+pub const FOCUS_EFFECT_END: usize = 17;
+pub const BURST_EFFECT: usize = 18;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;
@@ -60,6 +65,15 @@ mod presentation {
     /// Draw one ability frame at the Knight, mirrored by its facing.
     #[inline(never)]
     pub fn draw(index: usize, x: i32, y: i32, facing: i32, camera: (i32, i32), tint: u8) -> u32 {
+        draw_with(index, x, y, facing, camera, tint, BlendMode::Average)
+    }
+    /// A Focus effect frame: the original's Screen blend is the GPU's Add.
+    #[inline(never)]
+    pub fn draw_additive(index: usize, x: i32, y: i32, facing: i32, camera: (i32, i32), tint: u8) -> u32 {
+        draw_with(index, x, y, facing, camera, tint, BlendMode::Add)
+    }
+    #[inline(always)]
+    fn draw_with(index: usize, x: i32, y: i32, facing: i32, camera: (i32, i32), tint: u8, blend: BlendMode) -> u32 {
         let Some(frame) = ABILITY_FRAMES.get(index) else { return 0 };
         let (u, v) = crate::render::animation_uv(KEY_BASE + index as u16);
         let b = frame.bounds;
@@ -81,11 +95,11 @@ mod presentation {
         let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
         let template = QuadTextured::with_material([(0, 0); 4],
             [(u, v), (right, v), (u, bottom), (right, bottom)],
-            TextureMaterial::blended(clut, tpage, (tint, tint, tint), BlendMode::Average));
+            TextureMaterial::blended(clut, tpage, (tint, tint, tint), blend));
         crate::render::resident_quad(&template, vertices.map(|(x, y)| (x as i16, y as i16)));
         unsafe { HK_ABILITY_DRAWN = HK_ABILITY_DRAWN.saturating_add(1); }
         1
     }
 }
 #[cfg(not(test))]
-pub use presentation::{draw, upload};
+pub use presentation::{draw, draw_additive, upload};

@@ -39,6 +39,9 @@ BALL_CLIPS = ('Ball', 'Ball End')
 # a heal). Each child's own local position and scale are baked into the frame
 # bounds, so a frame draws at the Knight like any other ability frame. Both
 # animators share one tk2d library; the path ids are asserted by name.
+# The Burst is drawn at three times its sprite size over a screen-wide area; its texture
+# is cooked at half resolution so the frames fit the RAM left (docs/BUDGET.md).
+BURST_SHRINK = 2
 EFFECT_CLIPS = (('Focus Effect', 'Lines Anim', 6629), ('Focus Effect End', 'Lines Anim', 6629),
                 ('Burst Effect', 'Heal Anim', 6375))
 
@@ -149,10 +152,10 @@ def cook():
     scale = FOCAL / -CAM_Z
     textures, images, boxes, art_sources = {}, [], [], []
 
-    def sprite(collection_ref, index, place=None):
+    def sprite(collection_ref, index, place=None, shrink=1):
         obj = source.ref(resources, collection_ref)
         image, box = tk_sprite(source, obj.assets_file, source.read(obj), index, textures)
-        dims = tuple(max(1, math.ceil((box[i + 2] - box[i]) * scale)) for i in (0, 1))
+        dims = tuple(max(1, math.ceil((box[i + 2] - box[i]) * scale / shrink)) for i in (0, 1))
         images.append(image.resize(dims, Image.Resampling.LANCZOS))
         if place:
             # A child's local transform: the texture stays at the unit scale
@@ -180,7 +183,7 @@ def cook():
         clip, lx, ly, k = effects[name]
         start = len(images)
         for frame in clip['frames']:
-            sprite(frame['spriteCollection'], frame['spriteId'], (lx, ly, k))
+            sprite(frame['spriteCollection'], frame['spriteId'], (lx, ly, k), BURST_SHRINK if name == 'Burst Effect' else 1)
         clips.append(dict(name=name, start=start, count=len(clip['frames']),
                           fps=int(clip['fps']), wrap=clip['wrapMode']))
         if name == 'Focus Effect':

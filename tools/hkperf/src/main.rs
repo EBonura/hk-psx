@@ -129,7 +129,7 @@ fn watches(build: &str) -> BTreeMap<String, u32> {
             out.insert(n, *a);
         }
     }
-    for (array, n) in [("HK_SCENE_SFX", 36), ("HK_HERO_EXTRA_SFX", 7), ("HK_ABILITY_SFX", 6), ("HK_SFX_EVENT_COUNTS", 8)] {
+    for (array, n) in [("HK_SCENE_SFX", 36), ("HK_HERO_EXTRA_SFX", 7), ("HK_ABILITY_SFX", 7), ("HK_SFX_EVENT_COUNTS", 8)] {
         if let Some(a) = syms.get(array) {
             for i in 0..n {
                 out.insert(format!("{array}[{i}]"), a + 4 * i);
