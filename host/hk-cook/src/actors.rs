@@ -10,6 +10,7 @@
 
 use crate::aspid;
 use crate::baldur;
+use crate::gruzzer;
 use crate::vengefly;
 use crate::climber;
 use crate::false_knight;
@@ -40,7 +41,10 @@ fn guest_enabled(control: Json) -> Json {
     }
 }
 
-pub fn scan(sc: &Scene, source: &Source) -> Result<Vec<Row>> {
+/// The catalogue: each scene's file and runtime bounds (quality.SCENE_TABLE).
+pub type Catalogue = [(String, [f64; 4])];
+
+pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
     for o in &sc.objects {
         if o.typename != "HealthManager" || !get(&o.tree, "m_Enabled")?.truthy() {
@@ -56,6 +60,23 @@ pub fn scan(sc: &Scene, source: &Source) -> Result<Vec<Row>> {
         if control.is_none() && name.starts_with("Roller") && records.iter().any(|r| r.1 == "LineOfSightDetector") {
             if let Ok(found) = baldur::recognize(sc, source, gid) {
                 control = Some(("Baldur".to_string(), found));
+            }
+        }
+        if control.is_none() && name == "Giant Fly" && records.iter().any(|r| r.1 == "PlayMakerCollisionStay2D") {
+            if let Ok(found) = gruzzer::recognize_giant_fly(sc, gid, &o.tree) {
+                control = Some(("GruzMother".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Fly") && records.iter().any(|r| r.1 == "PlayMakerCollisionStay2D") {
+            if let Ok(found) = gruzzer::recognize(sc, source, gid, catalogue) {
+                let kind = match &found {
+                    Json::Obj(f) => match f.iter().find(|k| k.0 == "kind") {
+                        Some((_, Json::Str(k))) => k.clone(),
+                        _ => "Gruzzer".to_string(),
+                    },
+                    _ => "Gruzzer".to_string(),
+                };
+                control = Some((kind, found));
             }
         }
         if control.is_none() && name.starts_with("Spitter") && records.iter().any(|r| r.1 == "PersonalObjectPool") {

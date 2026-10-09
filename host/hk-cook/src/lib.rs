@@ -19,6 +19,7 @@ pub mod music;
 pub mod music_report;
 pub mod geo_audio;
 pub mod gpu_census;
+pub mod gruzzer;
 pub mod materials;
 pub mod opaque_groups;
 pub mod opaque_tiles;
