@@ -96,7 +96,7 @@ fn main() {
             let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
             let Some(Json::List(scenes)) = (if let Json::Obj(f) = &regions { f.iter().find(|k| k.0 == "scenes").map(|k| k.1.clone()) } else { None }) else { panic!("no scenes") };
             let get = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
-            let ported = ["ZombieSwipeWalker", "Baldur"];
+            let ported = ["ZombieSwipeWalker", "Baldur", "Aspid"];
             let (mut checked, mut bad) = (std::collections::BTreeMap::<String, usize>::new(), 0usize);
             for s in &scenes {
                 let (Some(Json::Str(name)), Some(Json::Str(file))) = (get(s, "scene_name"), get(s, "file")) else { panic!("scene row") };

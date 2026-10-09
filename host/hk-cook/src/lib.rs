@@ -6,6 +6,7 @@ pub mod cook_audio;
 pub mod actors;
 pub mod ambience;
 pub mod area_music;
+pub mod aspid;
 pub mod baldur;
 pub mod break_effects;
 pub mod cook;
