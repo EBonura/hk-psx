@@ -1419,7 +1419,7 @@ fn ram_word(root: &Path, output: &Path, symbol: &str) -> Result<u32> {
 /// re-enters those states is the view bind (render::init, the template and
 /// vignette rebuild and the first cold scenery pass, five or six vblanks of
 /// `hkperf ticks` samples spread over the last load row and the first frames):
-/// it is load work whether the load flag happens to read ready a row before or
+/// it is load work (so is the bind of a new view inside a scene, `HK_VIEW_BINDS`, which costs the same) whether the load flag happens to read ready a row before or
 /// after it, which moved by one row between builds with no relevant change and
 /// turned a 2-vblank bind into a 3-vblank gameplay frame on ten routes. It is
 /// counted apart. Returns (frames, over two vblanks, longest frame in vblanks,
@@ -1440,11 +1440,17 @@ fn pacing(output: &Path) -> Result<(u64, u64, u64, u64, u64, u64)> {
         for r in &rows { *counts.entry(r[index]).or_default() += 1; }
         counts.into_iter().max_by_key(|&(_, n)| n).map(|(v, _)| v)
     };
+    let binds = column("HK_VIEW_BINDS").and_then(|c| at(&c));
     let (play, ready) = (mode(game), mode(load));
     let gameplay = |r: &Vec<&str>| game.is_none_or(|g| Some(r[g]) == play) && load.is_none_or(|l| Some(r[l]) == ready);
     let (mut frames, mut over, mut longest, mut streak, mut worst_streak, mut since) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
-    let (mut bind, mut bind_longest, mut fresh) = (0u64, 0u64, true);
+    let (mut bind, mut bind_longest, mut fresh, mut seen_binds) = (0u64, 0u64, true, None::<&str>);
     for r in &rows {
+        if let Some(b) = binds {
+            // A bind inside a scene (the camera crossing into another view) is the same work without a load.
+            if seen_binds.is_some_and(|s| s != r[b]) && gameplay(r) { fresh = true; }
+            seen_binds = Some(r[b]);
+        }
         if !gameplay(r) { since = 0; fresh = true; continue; }
         since += 1;
         if r[flip] == "1" {
@@ -1453,6 +1459,7 @@ fn pacing(output: &Path) -> Result<(u64, u64, u64, u64, u64, u64)> {
                 bind_longest = bind_longest.max(since);
                 fresh = false;
             } else if since > 0 {
+                fresh = false;
                 frames += 1;
                 longest = longest.max(since);
                 if since > 2 { over += 1; streak += 1; worst_streak = worst_streak.max(streak); } else { streak = 0; }
