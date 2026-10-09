@@ -11,6 +11,7 @@
 use crate::aspid;
 use crate::baldur;
 use crate::gruzzer;
+use crate::mawlek;
 use crate::vengefly;
 use crate::climber;
 use crate::false_knight;
@@ -122,6 +123,11 @@ pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Ro
         if control.is_none() && name.starts_with("Egg Sac") && !records.iter().any(|r| r.1 == "PlayMakerFSM") {
             if let Ok(found) = egg_sac_control(sc, source, gid, &o.tree) {
                 control = Some(("EggSac".to_string(), found));
+            }
+        }
+        if control.is_none() && name == "Mawlek Body" && records.iter().any(|r| r.1 == "Walker") {
+            if let Ok(found) = mawlek::recognize_placement(sc, gid, &o.tree) {
+                control = Some(("Mawlek".to_string(), found));
             }
         }
         // The Runner gate comes after the named gates in actor_sources; the
