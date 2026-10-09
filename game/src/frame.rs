@@ -441,6 +441,9 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
             shade::death_health(params.max_health,params.nail_damage),game.geo.wallet());
         unsafe {HK_GEO_LOST=HK_GEO_LOST.saturating_add(game.geo.death());}
         game.geo.leave_scene(r.scene,geo::GEO_PARAMS);game.geo.reset_enemies(r.scene);
+        // `GameManager.PlayerDead` resets every semi-persistent item: the enemies
+        // the Knight killed this life are back when the scene is seated below.
+        actor_persistence::rest();
         game.life.reset();persist::restore_cocoon(game.life);game.props.leave();game.pickups.leave();
         if !game.door.opened() {game.door.reset();}
         blocker_roller::reset();

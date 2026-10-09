@@ -5,7 +5,7 @@
 //! of play whenever its scene next loads: `HealthManager` answers the saved
 //! state by setting `isDead` and deactivating the object. The item is keyed by
 //! its owner's name and scene, so placements that share a name share one
-//! state, and `semiPersistent` ones are forgotten when the Knight rests.
+//! state, and `semiPersistent` ones are forgotten when the Knight rests or dies.
 //!
 //! `host/hk-cook/src/actor_persistence.rs` cooks which placements those are
 //! (`data/actor_persistence.rs`: scene, source id, state group). This module
@@ -47,7 +47,8 @@ pub fn killed(scene: usize, source_id: u32) {
     }
 }
 
-/// A bench rest: `ResetSemiPersistentItems`.
+/// A bench rest or the Knight's death: `ResetSemiPersistentItems`, which
+/// `GameManager.PlayerDead` calls as well as the bench.
 #[inline(never)]
 #[optimize(size)]
 pub fn rest() {
