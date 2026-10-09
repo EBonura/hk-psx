@@ -6,8 +6,8 @@ controller, and proves that the prefab constants the controller carries are
 this placement's own.
 
 `Zombie Guard` has no Walker: one 48-state FSM owns every velocity. Asleep
-(`Dormant`) until the hero is in `Alert Range New` with a line of sight or it is
-hit; then `Wake`, and from `Idle` it roams within `Roam Distance` of its spawn,
+(`Dormant`) until the hero is in `Attack Range` as authored (8.1 units either side;
+`Dormant`'s only alert event is ATTACK ALERT) with a line of sight, or it is hit; then `Wake`, and from `Idle` it roams within `Roam Distance` of its spawn,
 chases (walking inside `Chase Distance`, running beyond it), and in `Attack
 Range` turns to face the hero and picks a club slam (3 in 4) or a backward
 stomp hop (1 in 4), never more than four clubs or two stomps in a row. The club
@@ -54,9 +54,11 @@ SLOT_CLIPS = {'dormant': 'Dormant', 'wake': 'Wake', 'idle': 'Idle', 'run': 'Run'
 # is drawn unmirrored (its face and club toward -x), exactly as husk_guard.rs
 # carries them. Refused if a placement's own children differ.
 ALERT_Q16 = [-1102971, -259850, 1102971, 181207]
-# `Attack Range` after `Wake`'s SetScale x 10 (it is authored 16.29 wide, and
-# only the woken states read it).
+# `Attack Range` after `Wake`'s SetScale x 10; and as authored (16.29 wide), which is
+# what a `Dormant` guard wakes on, because Dormant's only ATTACK ALERT arrives before Wake
+# has rescaled the box.
 ATTACK_Q16 = [-327680, -246088, 327680, 172687]
+DORMANT_ATTACK_Q16 = [-533791, -246088, 533791, 172687]
 OVERHEAD_Q16 = [-101253, 12880, 101253, 244406]
 # `Swipe`'s PolygonCollider2D, as its bounding box.
 SWIPE_Q16 = [-323584, -70656, 142336, 299008]
@@ -233,6 +235,7 @@ def recognize(sc, actor):
     boxes = {
         'alert': _local_box(sc, kids['Alert Range New'], None, None),
         'attack': _local_box(sc, kids['Attack Range'], None, None, scale_x=10.),
+        'dormant_attack': _local_box(sc, kids['Attack Range'], None, None),
         'overhead': _local_box(sc, kids['Overhead Detect'], None, None),
     }
     swipe = kids['Swipe']
@@ -246,7 +249,7 @@ def recognize(sc, actor):
     points = polys[0]['m_Points']['m_Paths'][0]
     boxes['swipe'] = [_q(min(p['x'] for p in points)), _q(min(p['y'] for p in points)),
                       _q(max(p['x'] for p in points)), _q(max(p['y'] for p in points))]
-    for key, constant in (('alert', ALERT_Q16), ('attack', ATTACK_Q16), ('overhead', OVERHEAD_Q16),
+    for key, constant in (('alert', ALERT_Q16), ('attack', ATTACK_Q16), ('dormant_attack', DORMANT_ATTACK_Q16), ('overhead', OVERHEAD_Q16),
                           ('swipe', SWIPE_Q16)):
         if boxes[key] != constant:
             raise ValueError(f'Husk Guard {key} box {boxes[key]} is not the audited prefab one')

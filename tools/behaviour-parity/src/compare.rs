@@ -25,6 +25,30 @@ pub struct Tick {
     pub clip: u16,
     pub facing: i32,
     pub phase: [u8; 2],
+    /// Index into `DETAILS`: the controller's phase as text.
+    pub detail: u16,
+}
+
+thread_local! {
+    pub static DETAILS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Intern a phase string, so a tick stays `Copy`.
+pub fn detail_id(text: &str) -> u16 {
+    DETAILS.with(|d| {
+        let mut d = d.borrow_mut();
+        match d.iter().position(|t| t == text) {
+            Some(i) => i as u16,
+            None => {
+                d.push(text.to_string());
+                (d.len() - 1) as u16
+            }
+        }
+    })
+}
+
+pub fn detail_text(id: u16) -> String {
+    DETAILS.with(|d| d.borrow().get(id as usize).cloned().unwrap_or_default())
 }
 
 pub fn family_of(spec: &ActorSpec) -> String {
@@ -73,15 +97,15 @@ pub fn run_port_scene_with(scene: usize, trace: &SceneTrace, ticks: usize, camer
                 // read his position, such as the Walker's turn toward him, need it even frozen.
                 let f = trace.origin + t as i64;
                 if let Some(h) = trace.hero.range(..=f).next_back().map(|(_, h)| h) {
-                    player.x = (h[0] * 65536.0).round() as i32;
-                    player.y = (h[1] * 65536.0).round() as i32;
+                    player.x = (h[0].clamp(-500.0, 500.0) * 65536.0).round() as i32;
+                    player.y = (h[1].clamp(-500.0, 500.0) * 65536.0).round() as i32;
                     player.facing = trace.face.range(..=f).next_back().map_or(1, |(_, v)| *v);
                 }
                 let cam = camera.map_or_else(|| camera_at(t), |f| f(here));
                 step(&mut w, here, &regions, &mut player, &mut vitals, cam);
                 let tick = match w.debug_actor(scene, rec.source_id) {
-                    Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase },
-                    None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2] },
+                    Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase, detail: crate::compare::detail_id(&d.detail) },
+                    None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2], detail: 0 },
                 };
                 if tick.x.is_finite() {
                     let (x, y) = ((tick.x * 65536.0) as i32, (tick.y * 65536.0) as i32);
@@ -219,6 +243,7 @@ pub fn report(run: &std::path::Path, scenes_filter: Option<&str>, names: &BTreeM
     let mut by_family: BTreeMap<String, [u32; 5]> = BTreeMap::new();
     let mut fails: Vec<String> = Vec::new();
     let mut near_count = BTreeMap::<String, u32>::new();
+    let mut agg: BTreeMap<String, (u32, f64, f64, f64, f64, f64, f64)> = BTreeMap::new();
     let (mut og_missing, mut port_extra) = (BTreeMap::<String, u32>::new(), BTreeMap::<String, u32>::new());
     for (id, name) in names {
         if scenes_filter.map_or(false, |f| f != name) {
@@ -233,6 +258,14 @@ pub fn report(run: &std::path::Path, scenes_filter: Option<&str>, names: &BTreeM
                 *near_count.entry(p.port.family.clone()).or_default() += 1;
                 continue;
             }
+            let a = agg.entry(p.port.family.clone()).or_default();
+            a.0 += 1;
+            a.1 += p.og_stats.speed;
+            a.2 += p.port_stats.speed;
+            a.3 += p.og_stats.moving;
+            a.4 += p.port_stats.moving;
+            a.5 += p.og_stats.turns as f64 * 60.0 / (p.og.samples.len().max(1) as f64 / 60.0);
+            a.6 += p.port_stats.turns as f64 * 60.0 / (p.port.ticks.len().max(1) as f64 / 60.0);
             let v = judge(p);
             let row = by_family.entry(p.port.family.clone()).or_default();
             row[0] += 1;
@@ -258,6 +291,13 @@ pub fn report(run: &std::path::Path, scenes_filter: Option<&str>, names: &BTreeM
     println!("family        pairs   hp  x-env  y-env  speed");
     for (f, r) in &by_family {
         println!("{f:<12} {:>5} {:>5} {:>6} {:>6} {:>6}", r[0], r[1], r[2], r[3], r[4]);
+    }
+    // Family means of the random flyers' idle motion, which a single 15-second window cannot judge
+    // per actor: speed, the share of the time it moves, and how often it turns around.
+    println!("\nfamily means (og | port): speed u/s, moving share, turns per minute");
+    for (f, a) in &agg {
+        let n = a.0 as f64;
+        println!("{f:<12} {:>3} speed {:.2} | {:.2}   moving {:.2} | {:.2}   turns {:.1} | {:.1}", a.0, a.1 / n, a.2 / n, a.3 / n, a.4 / n, a.5 / n, a.6 / n);
     }
     println!("set apart (Knight stood within 12 units while the scene settled): {near_count:?}");
     println!("\nfailures:");
@@ -295,8 +335,8 @@ pub fn dump(run: &std::path::Path, names: &BTreeMap<usize, String>, args: &[Stri
         let p = &pair.port.ticks[t];
         let hero = trace.hero.get(&f).map(|h| format!("hero({:.1},{:.1})", h[0], h[1])).unwrap_or_default();
         match o {
-            Some(o) => println!("{t:5}  og ({:8.3},{:8.3}) {:<34} | port ({:8.3},{:8.3}) clip {:3} face {:2} ph {}/{} {hero}", o.x, o.y, o.fsm.chars().take(34).collect::<String>(), p.x, p.y, p.clip, p.facing, p.phase[0], p.phase[1]),
-            None => println!("{t:5}  og (none)                                              | port ({:8.3},{:8.3}) clip {:3} face {:2} ph {}/{} {hero}", p.x, p.y, p.clip, p.facing, p.phase[0], p.phase[1]),
+            Some(o) => println!("{t:5}  og ({:8.3},{:8.3}) {:<34} | port ({:8.3},{:8.3}) clip {:3} face {:2} [{}] {hero}", o.x, o.y, o.fsm.chars().take(34).collect::<String>(), p.x, p.y, p.clip, p.facing, detail_text(p.detail)),
+            None => println!("{t:5}  og (none)                                              | port ({:8.3},{:8.3}) clip {:3} face {:2} [{}] {hero}", p.x, p.y, p.clip, p.facing, detail_text(p.detail)),
         }
     }
 }

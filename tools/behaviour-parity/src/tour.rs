@@ -77,8 +77,8 @@ pub(crate) fn run_visits(scene: usize, trace: &SceneTrace, visits: &[(usize, u32
         for t in 0..end.min((w.end - trace.origin) as usize) {
             let f = trace.origin + t as i64;
             if let Some(h) = trace.hero.range(..=f).next_back().map(|(_, h)| h) {
-                player.x = (h[0] * 65536.0).round() as i32;
-                player.y = (h[1] * 65536.0).round() as i32;
+                player.x = (h[0].clamp(-500.0, 500.0) * 65536.0).round() as i32;
+                player.y = (h[1].clamp(-500.0, 500.0) * 65536.0).round() as i32;
                 player.facing = trace.face.range(..=f).next_back().map_or(1, |(_, v)| *v);
             }
             if t == sync {
@@ -88,7 +88,7 @@ pub(crate) fn run_visits(scene: usize, trace: &SceneTrace, visits: &[(usize, u32
             let cam = [(c[0] * 65536.0).round() as i32, (c[1] * 65536.0).round() as i32, (c[2] * 65536.0).round() as i32];
             step(&mut world_, here, &regions, &mut player, &mut vitals, cam);
             let d = world_.debug_actor(scene, *source_id);
-            if let Some(d) = d {
+            if let Some(d) = &d {
                 if !world::contains(here.bounds, d.x, d.y) {
                     if let Some(next) = regions.iter().find(|r| world::contains(r.bounds, d.x, d.y)) {
                         here = next;
@@ -96,8 +96,8 @@ pub(crate) fn run_visits(scene: usize, trace: &SceneTrace, visits: &[(usize, u32
                 }
             }
             ticks.push(match d {
-                Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase },
-                None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2] },
+                Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase, detail: crate::compare::detail_id(&d.detail) },
+                None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2], detail: 0 },
             });
         }
         out.insert(*window, ticks);

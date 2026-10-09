@@ -122,8 +122,8 @@ pub fn run_port_pokes(scene: usize, trace: &SceneTrace, targets: &[(u32, Vec<i64
         for t in 0..end.min((hit_frames.last().unwrap() - trace.origin) as usize + 120) {
             let f = trace.origin + t as i64;
             if let Some(h) = trace.hero.range(..=f).next_back().map(|(_, h)| h) {
-                player.x = (h[0] * 65536.0).round() as i32;
-                player.y = (h[1] * 65536.0).round() as i32;
+                player.x = (h[0].clamp(-500.0, 500.0) * 65536.0).round() as i32;
+                player.y = (h[1].clamp(-500.0, 500.0) * 65536.0).round() as i32;
             }
             if t as i64 == sync_tick {
                 w.debug_place(scene, *source_id, (sync_at.0 * 65536.0).round() as i32, (sync_at.1 * 65536.0).round() as i32);
@@ -144,7 +144,7 @@ pub fn run_port_pokes(scene: usize, trace: &SceneTrace, targets: &[(u32, Vec<i64
             }
             step_with(&mut w, here, &regions, &mut player, &mut vitals, camera_at(t), &nail, strike);
             let d = w.debug_actor(scene, *source_id);
-            if let Some(d) = d {
+            if let Some(d) = &d {
                 if !world::contains(here.bounds, d.x, d.y) {
                     if let Some(next) = regions.iter().find(|r| world::contains(r.bounds, d.x, d.y)) {
                         here = next;
@@ -152,8 +152,8 @@ pub fn run_port_pokes(scene: usize, trace: &SceneTrace, targets: &[(u32, Vec<i64
                 }
             }
             ticks.push(match d {
-                Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase },
-                None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2] },
+                Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase, detail: crate::compare::detail_id(&d.detail) },
+                None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2], detail: 0 },
             });
         }
         out.push((*source_id, ticks));
