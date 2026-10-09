@@ -192,3 +192,47 @@ pub fn median_cut(pixels: &[Px], colors: u32) -> Option<(Vec<Px>, Vec<u8>)> {
         .collect();
     Some((palette, index))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Eight reds 0, 3 .. 21, one pixel each: the palettes the reference tool
+    /// gives for 2 to 8 colours. They fix which of several equally populated
+    /// boxes is split next.
+    #[test]
+    fn equal_boxes_split_in_the_reference_order() {
+        let px: Vec<Px> = (0..8).map(|i| [i * 3, 0, 0]).collect();
+        let expected: [(u32, &[u8]); 7] = [
+            (2, &[15, 3]),
+            (3, &[18, 11, 3]),
+            (4, &[18, 11, 5, 0]),
+            (5, &[20, 15, 11, 5, 0]),
+            (6, &[20, 15, 12, 9, 5, 0]),
+            (7, &[21, 18, 15, 12, 9, 5, 0]),
+            (8, &[21, 18, 15, 12, 9, 6, 3, 0]),
+        ];
+        for (colors, reds) in expected {
+            let (palette, _) = median_cut(&px, colors).unwrap();
+            assert_eq!(palette.iter().map(|p| p[0]).collect::<Vec<_>>(), reds, "{colors} colours");
+        }
+    }
+
+    #[test]
+    fn every_pixel_takes_a_nearest_entry() {
+        let px: Vec<Px> = vec![[0, 0, 0], [3, 0, 0], [5, 0, 0], [8, 0, 0], [2, 0, 0]];
+        let (palette, index) = median_cut(&px, 3).unwrap();
+        for (p, &i) in px.iter().zip(&index) {
+            let d = |q: &Px| (p[0] as i32 - q[0] as i32).abs();
+            assert_eq!(d(&palette[i as usize]), palette.iter().map(d).min().unwrap());
+        }
+    }
+
+    #[test]
+    fn degenerate_inputs() {
+        assert!(median_cut(&[], 4).is_none());
+        assert!(median_cut(&[[1, 2, 3]], 0).is_none());
+        let (palette, index) = median_cut(&[[9, 9, 9]; 5], 16).unwrap();
+        assert_eq!((palette, index), (vec![[9, 9, 9]], vec![0; 5]));
+    }
+}
