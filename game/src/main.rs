@@ -17,6 +17,7 @@ mod save;
 mod persist;
 mod shade;
 mod ability_art;
+mod focus_fx;
 mod input_queue;
 mod input_sampler;
 mod input;

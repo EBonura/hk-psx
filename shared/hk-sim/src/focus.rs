@@ -30,6 +30,9 @@ impl Focus {
             start_soul:0,refocusing:false,was_held:false,blocked:false}
     }
     pub fn locks_control(&self)->bool {matches!(self.phase,Phase::Start|Phase::Drain|Phase::Heal|Phase::Cancel|Phase::Finish)}
+    /// The original's `Lines Anim` plays from the `Focus` state (the drain, and the heal
+    /// between two drains) until a cancel or the finish.
+    pub fn lines_active(&self)->bool {matches!(self.phase,Phase::Drain|Phase::Heal)}
     pub fn animation(&self)->Option<(FocusClip,u32)> {
         let clip=match self.phase {
             Phase::Start=>FocusClip::Focus,
