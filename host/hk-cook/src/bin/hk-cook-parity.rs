@@ -856,7 +856,7 @@ fn main() {
                     let fallback = |_: &hk_pil::Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
                     hk_cook::quantize::quantize(im, w, h, Some(&fallback))
                 };
-                let run = append_actor_art_bodies(&sc, &source, &mut actors, &mut bank, &quantize).and_then(|_| append_barrel_art(&source, &mut actors, &mut bank, &quantize));
+                let run = append_actor_art_bodies(&sc, &source, &mut actors, &mut bank, &quantize).and_then(|_| hk_cook::effects_art::append_corpse_art(&source, &sc, &mut actors, &mut bank, &quantize)).and_then(|_| append_barrel_art(&source, &mut actors, &mut bank, &quantize));
                 if let Err(e) = run { bad += 1; println!("{name}: rust failed: {e}"); continue; }
                 let mut mine_actors: Vec<(String, Json)> = Vec::new();
                 for a in &actors {
@@ -867,6 +867,7 @@ fn main() {
                         ("limitations".into(), Json::List(a.limitations.iter().map(|l| Json::Str(l.clone())).collect())),
                         ("clips".into(), Json::Obj(clips)),
                         ("visual_scale".into(), a.visual_scale.map_or(Json::Null, |v| Json::List(vec![Json::Float(v[0]), Json::Float(v[1])]))),
+                        ("corpse".into(), a.corpse.clone().unwrap_or(Json::Null)),
                     ])));
                 }
                 let want_actors = get(&oracle, "actors").unwrap();

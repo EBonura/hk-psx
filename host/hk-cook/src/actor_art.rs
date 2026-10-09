@@ -46,11 +46,13 @@ pub struct ArtActor<'a> {
     /// `<slot>_clip` bindings in the order they were written.
     pub clips: Vec<(String, i64)>,
     pub visual_scale: Option<[f64; 2]>,
+    /// `actor['corpse']`, once the corpse art is cooked.
+    pub corpse: Option<Json>,
 }
 
 impl<'a> ArtActor<'a> {
     pub fn new(row: &'a Row) -> ArtActor<'a> {
-        ArtActor { row, supported: row.supported, limitations: row.limitations.clone(), clips: Vec::new(), visual_scale: None }
+        ArtActor { row, supported: row.supported, limitations: row.limitations.clone(), clips: Vec::new(), visual_scale: None, corpse: None }
     }
 
     pub fn set_clip(&mut self, key: &str, value: i64) {
