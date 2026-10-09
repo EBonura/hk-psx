@@ -176,7 +176,9 @@ pub fn survey(env: &Env, p: &Profile) -> Result<Vec<PathBuf>, String> {
             .env("HK_REFERENCE_SURVEY", p.sweep.join(","))
             .env("HK_REFERENCE_SURVEY_FRAMES", p.sweep_frames.to_string())
             .env("HK_REFERENCE_SURVEY_TOUR_FRAMES", p.tour_frames.to_string())
-            .env("HK_REFERENCE_SURVEY_TARGETS", p.tour_targets.to_string());
+            .env("HK_REFERENCE_SURVEY_TARGETS", p.tour_targets.to_string())
+            .env("HK_REFERENCE_SURVEY_ACTOR_STRIDE", p.actor_stride.to_string())
+            .envs(p.env.iter().cloned());
         let log = fs::File::create(out.join("stdout.txt")).map_err(|e| e.to_string())?;
         let child = c.stdout(Stdio::from(log.try_clone().map_err(|e| e.to_string())?)).stderr(Stdio::from(log)).spawn().map_err(|e| format!("original: {e}"))?;
         append_pid(&env.work, &format!("og-survey-{}-{n}", p.name), child.id());

@@ -20,14 +20,16 @@ namespace HKReference
 {
     public sealed class SceneSurvey
     {
-        private enum Phase { Idle, Loading, Settle, Tour }
+        private enum Phase { Idle, Loading, Settle, Tour, Poke }
 
-        private sealed class Target { public string Name; public float X, Y; }
+        private sealed class Target { public string Name; public float X, Y; public HealthManager Hm; }
 
         private readonly Queue<string> pending = new Queue<string>();
         private readonly string stateDir;
-        private readonly int settleFrames, tourFrames, maxTargets, loadTimeout;
-        private readonly StreamWriter timeline, actorsOut, fsmOut, sourcesOut, scenesOut;
+        private readonly int settleFrames, tourFrames, maxTargets, loadTimeout, pokeFrames, pokeFirst, pokeGap, pokeMaxHits;
+        private readonly float pokeDirection;
+        private readonly StreamWriter timeline, actorsOut, fsmOut, sourcesOut, scenesOut, pokesOut;
+        private int pokeIndex, pokeStart, pokeHits, pokeLength;
         private Phase phase = Phase.Idle;
         private string current;
         private int phaseStart, stable, loadFrames, targetStart, tourIndex;
@@ -55,6 +57,14 @@ namespace HKReference
             tourFrames = Setting("HK_REFERENCE_SURVEY_TOUR_FRAMES", 75);
             maxTargets = Setting("HK_REFERENCE_SURVEY_TARGETS", 12);
             loadTimeout = Setting("HK_REFERENCE_SURVEY_LOAD_TIMEOUT", 900);
+            // Poke mode: instead of touring, strike each distinct enemy with the Knight's nail (5 damage,
+            // from the left unless HK_REFERENCE_POKE_DIRECTION says otherwise) every POKE_GAP frames and
+            // record what it does. The strikes go through the game's own HealthManager.Hit.
+            pokeFrames = Setting("HK_REFERENCE_SURVEY_POKE", 0);
+            pokeFirst = Setting("HK_REFERENCE_POKE_FIRST", 30);
+            pokeGap = Setting("HK_REFERENCE_POKE_GAP", 30);
+            pokeMaxHits = Setting("HK_REFERENCE_POKE_MAX_HITS", 8);
+            float dir; pokeDirection = Single.TryParse(Environment.GetEnvironmentVariable("HK_REFERENCE_POKE_DIRECTION"), NumberStyles.Float, CultureInfo.InvariantCulture, out dir) ? dir : 0f;
             ActorTrace.Stride = Setting("HK_REFERENCE_SURVEY_ACTOR_STRIDE", 5);
             HashSet<string> done = new HashSet<string>();
             string donePath = Path.Combine(stateDir, "survey-done.txt");
@@ -97,6 +107,7 @@ namespace HKReference
             fsmOut = Open(output, "survey-fsm-audio.csv", "scene,kind,object,fsm,state,action,clips_or_objects,params,incoming_events");
             sourcesOut = Open(output, "survey-audiosources.csv", "scene,object,clip,loop,play_on_awake,volume,spatial_blend,min_distance,max_distance,mixer_group,active_in_hierarchy,enabled");
             scenesOut = Open(output, "survey-scenes.csv", "scene,status,load_frames,hero_x,hero_y,gates");
+            pokesOut = Open(output, "survey-pokes.csv", "scene,target,id,frame,rel,direction,hp_before,hp_after,dead,x,y");
         }
 
         private static StreamWriter Open(string dir, string name, string header)
@@ -154,8 +165,23 @@ namespace HKReference
                     try { Census(current, hero, gm); }
                     catch (Exception e) { loadStatus += "+census_error:" + e.GetType().Name; Debug.Log("HKReference census failed in " + current + ": " + e); }
                     if (loadStatus != "ok" || targets.Count == 0) { Finish(); return false; }
+                    if (pokeFrames > 0) { pokeIndex = 0; phase = Phase.Poke; SetPlaying(gm); StartPoke(frame, hero); return false; }
                     tourIndex = 0; phase = Phase.Tour; SetPlaying(gm); StartTarget(frame, hero);
                     return false;
+                case Phase.Poke:
+                {
+                    if (active != current) { EndWindow(frame); loadStatus += "+left_scene"; Finish(); return false; }
+                    Target pt = targets[pokeIndex];
+                    int rel = frame - pokeStart;
+                    if (pt.Hm != null && pokeHits < pokeMaxHits && rel >= pokeFirst && (rel - pokeFirst) % pokeGap == 0)
+                        Poke(pt, frame, rel, hero);
+                    if (rel < pokeLength) return false;
+                    EndWindow(frame);
+                    pokeIndex++;
+                    if (pokeIndex >= targets.Count) { Finish(); return false; }
+                    StartPoke(frame, hero);
+                    return false;
+                }
                 case Phase.Tour:
                     if (active != current) { EndWindow(frame); loadStatus += "+left_scene"; Finish(); return false; }
                     if (frame - targetStart < tourFrames) return false;
@@ -225,6 +251,37 @@ namespace HKReference
             }
         }
 
+        private void StartPoke(int frame, Component hero)
+        {
+            Target t = targets[pokeIndex];
+            pokeStart = frame; pokeHits = 0;
+            // Enough hits to kill it plus one, but no more than the cap; then time for the corpse.
+            int hp = t.Hm != null ? Math.Max(1, t.Hm.hp) : 1;
+            int hits = Math.Min(pokeMaxHits, (hp + 4) / 5 + 1);
+            pokeLength = pokeFirst + hits * pokeGap + pokeFrames;
+            Freeze(hero, true);
+            BeginWindow("poke", t.Name, t.X, t.Y, frame);
+        }
+
+        private void Poke(Target t, int frame, int rel, Component hero)
+        {
+            HealthManager hm = t.Hm;
+            if (hm == null || hm.gameObject == null || !hm.gameObject.activeInHierarchy) return;
+            Vector3 p = hm.transform.position;
+            int before = hm.hp;
+            HitInstance hit = new HitInstance();
+            hit.Source = hero != null ? hero.gameObject : null;
+            hit.AttackType = AttackTypes.Nail;
+            hit.DamageDealt = 5;
+            hit.Direction = pokeDirection;
+            hit.MagnitudeMultiplier = 1f;
+            hit.Multiplier = 1f;
+            hm.Hit(hit);
+            pokeHits++;
+            pokesOut.WriteLine(String.Join(",", new string[] { current, Quote(t.Name), hm.GetInstanceID().ToString(CultureInfo.InvariantCulture), frame.ToString(CultureInfo.InvariantCulture),
+                rel.ToString(CultureInfo.InvariantCulture), F(pokeDirection), before.ToString(CultureInfo.InvariantCulture), hm.hp.ToString(CultureInfo.InvariantCulture), hm.isDead ? "1" : "0", F(p.x), F(p.y) }));
+        }
+
         private void BeginWindow(string name, string target, float x, float y, int frame) { windowName = name + "|" + target; windowX = x; windowY = y; windowStart = frame; }
         private int windowStart;
         private void EndWindow(int frame)
@@ -287,7 +344,7 @@ namespace HKReference
                 actorsOut.WriteLine(String.Join(",", new string[] { scene, m.GetInstanceID().ToString(CultureInfo.InvariantCulture), Quote(m.name), Quote(PathOf(m.transform)),
                     F(p.x), F(p.y), F(p.z), m.hp.ToString(CultureInfo.InvariantCulture), m.gameObject.activeInHierarchy ? "1" : "0", m.gameObject.activeSelf ? "1" : "0",
                     Driver.Number(Driver.Read(m, "enemyType")), Quote(fsms.ToString()), Quote(String.Join("|", clips.ToArray())), Quote(allStates.ToString()) }));
-                if (m.hp > 0 && !m.isDead && !NearGate(p) && seen.Add(BaseName(m.name))) picked.Add(new Target { Name = BaseName(m.name), X = p.x, Y = p.y });
+                if (m.hp > 0 && !m.isDead && !NearGate(p) && seen.Add(BaseName(m.name))) picked.Add(new Target { Name = BaseName(m.name), X = p.x, Y = p.y, Hm = m });
             }
             picked.Sort((a, b) => a.X.CompareTo(b.X));
             targets = picked.Count <= maxTargets ? picked : Spread(picked, maxTargets);
@@ -423,6 +480,7 @@ namespace HKReference
             if (fsmOut != null) fsmOut.Dispose();
             if (sourcesOut != null) sourcesOut.Dispose();
             if (scenesOut != null) scenesOut.Dispose();
+            if (pokesOut != null) pokesOut.Dispose();
         }
     }
 }
