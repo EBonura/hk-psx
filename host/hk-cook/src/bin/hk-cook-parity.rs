@@ -96,14 +96,23 @@ fn main() {
             let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
             let Some(Json::List(scenes)) = (if let Json::Obj(f) = &regions { f.iter().find(|k| k.0 == "scenes").map(|k| k.1.clone()) } else { None }) else { panic!("no scenes") };
             let get = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
-            let ported = ["ZombieSwipeWalker", "Baldur", "Aspid", "FalseKnight", "Climber", "MossWalker", "Vengefly", "AcidFlyer", "Mosquito"];
+            let catalogue: Vec<(String, [f64; 4])> = scenes
+                .iter()
+                .map(|s| {
+                    let Some(Json::Str(file)) = get(s, "file") else { panic!("scene file") };
+                    let Some(Json::List(b)) = get(s, "runtime_bounds") else { panic!("runtime_bounds") };
+                    let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                    (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])])
+                })
+                .collect();
+            let ported = ["ZombieSwipeWalker", "Baldur", "Aspid", "FalseKnight", "Climber", "MossWalker", "Vengefly", "AcidFlyer", "Mosquito", "Gruzzer", "GruzzerReserve", "GruzMother"];
             let (mut checked, mut bad) = (std::collections::BTreeMap::<String, usize>::new(), 0usize);
             for s in &scenes {
                 let (Some(Json::Str(name)), Some(Json::Str(file))) = (get(s, "scene_name"), get(s, "file")) else { panic!("scene row") };
                 let oracle = parse(&std::fs::read_to_string(format!("{}/{name}.json", args[3])).unwrap()).unwrap();
                 let Json::List(oracle) = oracle else { panic!("oracle shape") };
                 let sc = Scene::new(&source, &file).unwrap();
-                let rows = hk_cook::actors::scan(&sc, &source).unwrap();
+                let rows = hk_cook::actors::scan(&sc, &source, &catalogue).unwrap();
                 for row in &oracle {
                     let Some(Json::Str(src)) = get(row, "source") else { continue };
                     let control = get(row, "movement_control");
