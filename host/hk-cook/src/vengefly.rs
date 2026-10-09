@@ -11,7 +11,7 @@ use crate::cook_audio::{jobj, js, u};
 use crate::false_knight::fsm_digest;
 use crate::pyjson::Json;
 use crate::recog::Want::{B, F, I, S};
-use crate::recog::{body_box, check_actions, check_assemblies, clip_is, clips_by_name, near, only, state, states, transitions, variables, variables_strict, xy};
+use crate::recog::{body_box, check_actions, check_assemblies, clips_ok, near, only, state, states, transitions, variables, variables_strict, xy};
 use crate::runner::axis_aligned_bounds;
 use hk_unity::playmaker::{action_fields, Fields};
 use hk_unity::scene::Scene;
@@ -41,17 +41,6 @@ fn zero2() -> Value {
 fn body_ok(body: &Value, size: [f64; 2], offset: [f64; 2]) -> Result<bool> {
     let (s, o) = (xy(body, "m_Size")?, xy(body, "m_Offset")?);
     Ok(get(body, "m_Enabled")?.truthy() && !get(body, "m_IsTrigger")?.truthy() && get(body, "m_EdgeRadius")?.float() == Some(0.0) && (0..2).all(|k| near(Some(&n(s[k])), size[k]) && near(Some(&n(o[k])), offset[k])))
-}
-fn clips_ok(library: &Value, table: &[(&str, usize, f64, i64, Option<i64>)]) -> Result<Option<String>> {
-    let by_name = clips_by_name(library)?;
-    for &(name, frames, fps, wrap, loop_start) in table {
-        let clip = by_name.iter().find(|(k, _)| k == name).map(|(_, v)| *v);
-        let ok = clip_is(clip, frames, fps, wrap) && loop_start.is_none_or(|l| clip.and_then(|c| c.get("loopStart")).map_or(0, |v| v.int().unwrap_or(-1)) == l);
-        if !ok {
-            return Ok(Some(name.to_string()));
-        }
-    }
-    Ok(None)
 }
 fn health_is(h: &Value, hp: i64) -> bool {
     h.get("hp").and_then(Value::int) == Some(hp)

@@ -12,6 +12,7 @@ use crate::aspid;
 use crate::baldur;
 use crate::gruzzer;
 use crate::mawlek;
+use crate::pigeon;
 use crate::zombie_shield;
 use crate::vengefly;
 use crate::climber;
@@ -135,6 +136,12 @@ pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Ro
             let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
             if let Ok(found) = zombie_shield::recognize(sc, source, gid, position) {
                 control = Some(("ZombieShield".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Pigeon") && records.iter().any(|r| r.1 == "EnemyDeathEffectsNoEffect") {
+            let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+            if let Ok(found) = pigeon::recognize(sc, source, gid, position, &o.tree) {
+                control = Some(("Pigeon".to_string(), found));
             }
         }
         // The Runner gate comes after the named gates in actor_sources; the

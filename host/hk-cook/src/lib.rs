@@ -24,6 +24,7 @@ pub mod materials;
 pub mod mawlek;
 pub mod opaque_groups;
 pub mod opaque_tiles;
+pub mod pigeon;
 pub mod png;
 pub mod region_delta;
 pub mod props;

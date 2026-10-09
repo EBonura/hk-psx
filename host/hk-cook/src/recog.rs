@@ -228,3 +228,17 @@ pub fn children_of(sc: &hk_unity::scene::Scene, gid: i64) -> Result<Vec<(String,
     }
     Ok(out)
 }
+
+/// The audited clips (name, frames, fps, wrap mode, optional loop start) a library must carry;
+/// the first one that differs.
+pub fn clips_ok(library: &Value, table: &[(&str, usize, f64, i64, Option<i64>)]) -> Result<Option<String>> {
+    let by_name = clips_by_name(library)?;
+    for &(name, frames, fps, wrap, loop_start) in table {
+        let clip = by_name.iter().find(|(k, _)| k == name).map(|(_, v)| *v);
+        let ok = clip_is(clip, frames, fps, wrap) && loop_start.is_none_or(|l| clip.and_then(|c| c.get("loopStart")).map_or(0, |v| v.int().unwrap_or(-1)) == l);
+        if !ok {
+            return Ok(Some(name.to_string()));
+        }
+    }
+    Ok(None)
+}
