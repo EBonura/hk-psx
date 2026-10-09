@@ -37,6 +37,7 @@ class HuskGuardContractTests(unittest.TestCase):
 
     def test_the_boxes_are_the_ones_the_controller_carries(self):
         for name, value in (('ALERT', husk_guard.ALERT_Q16), ('ATTACK', husk_guard.ATTACK_Q16),
+                            ('DORMANT_ATTACK', husk_guard.DORMANT_ATTACK_Q16),
                             ('OVERHEAD', husk_guard.OVERHEAD_Q16), ('SWIPE', husk_guard.SWIPE_Q16)):
             self.assertEqual(rust_array(name), value, name)
 

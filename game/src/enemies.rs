@@ -1838,6 +1838,8 @@ impl Actor {
         let senses = g::Senses {
             position: pos, hero: context.hero, can_see_hero, in_alert_range,
             in_attack_range: overlap(world(g::ATTACK), context.hero_body),
+            // `Dormant` listens to the attack range as it was authored, before `Wake` rescales it.
+            in_dormant_range: guard.controller.phase() == g::Phase::Dormant && overlap(world(g::DORMANT_ATTACK), context.hero_body),
             hero_above: overlap(world(g::OVERHEAD), context.hero_body),
             completed: guard.completed(spec, room),
         };
@@ -5272,7 +5274,7 @@ mod climber_ray_tests {
 /// What an actor is doing, for tools/behaviour-parity, which runs this module natively and
 /// compares it with traces of the original. Host builds only: the guest never links it.
 #[cfg(test)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ActorDebug {
     pub x: i32,
     pub y: i32,
@@ -5287,6 +5289,8 @@ pub struct ActorDebug {
     pub facing: i32,
     /// A Runner's Walker and Swipe states (`hk_sim::runner::{Walker, Swipe}` as numbers); zero for the rest.
     pub phase: [u8; 2],
+    /// The controller's own phase, as its `Debug` prints it.
+    pub detail: std::string::String,
 }
 #[cfg(test)]
 impl EnemyWorld {
@@ -5352,6 +5356,20 @@ impl EnemyWorld {
             clip,
             facing,
             phase: actor.runner().map_or([0; 2], |r| [r.controller.walker() as u8, r.controller.swipe() as u8]),
+            detail: if let Some(r) = actor.runner() { std::format!("{:?}/{:?}", r.controller.walker(), r.controller.swipe()) }
+                else if let Some(v) = actor.vengefly() { std::format!("{:?}", v.controller.phase()) }
+                else if let Some(a) = actor.aspid() { std::format!("{:?}", a.controller.phase()) }
+                else if let Some(g) = actor.husk_guard() { std::format!("{:?}", g.controller.phase()) }
+                else if let Some(z) = actor.zombie_shield() { std::format!("{:?}", z.controller.phase()) }
+                else if let Some(m) = actor.mosquito() { std::format!("{:?}", m.controller.phase()) }
+                else if let Some(m) = actor.moss_walker() { std::format!("{:?}", m.controller.phase()) }
+                else if let Some(b) = actor.blocker() { std::format!("{:?}", b.controller.phase()) }
+                else if let Some(b) = actor.baldur() { std::format!("{:?}", b.controller.phase()) }
+                else if let Some(h) = actor.hatcher() { std::format!("{:?}", h.controller.phase()) }
+                else if let Some(g) = actor.gruzzer() { std::format!("{:?}", g.controller.phase()) }
+                else if let Some(p) = actor.pigeon() { std::format!("{:?}", p.controller.phase()) }
+                else if let Some(c) = actor.climber() { std::format!("{:?}", c.controller.phase()) }
+                else { std::string::String::new() },
         })
     }
 }
