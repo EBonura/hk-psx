@@ -1,5 +1,5 @@
 """Read-only Unity source adapter. Retail structures are never written back."""
-import json
+import hashlib,json,os
 from pathlib import Path
 import UnityPy
 from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
@@ -52,7 +52,65 @@ def repair_string_arrays(node):
     visit(node)
     return changed
 
+TYPETREE_CACHE=ROOT/'.hkpsx/typetree-cache.json'
+
+
 class Generator(TypeTreeGenerator):
+    """The UnityPy generator with its answers kept on disk.
+
+    The native library (libTypeTreeGeneratorAPI, a .NET NativeAOT build) crashed
+    with SIGSEGV, a call through a null pointer in its own code, in about one
+    cook worker in six when many started together under load: at start, inside
+    `loadDLL`, or a moment later in a node query (crash reports of 2026-10-03,
+    -08 and -09, all in the library's frames and none in Python's). A node list
+    is a pure function of the Managed assemblies, so each is recorded by the
+    assemblies' content hash the first time it is asked for and served from
+    `.hkpsx/typetree-cache.json` afterwards. The library is neither loaded nor
+    initialised until a type the file lacks is asked for, so a warm cache runs
+    no native code at all.
+    """
+    def __init__(self,unity_version):
+        # Deliberately not the base __init__: it initialises the native library.
+        self.unity_version=unity_version;self.cache={};self.dlls=[];self.native=False
+        self.recorded=None;self.fresh={}
+    def load_local_dll_folder(self,dll_dir):
+        self.dlls=sorted(p for p in Path(dll_dir).iterdir() if p.suffix=='.dll')
+    def key(self):
+        if self.recorded is None:
+            digest=hashlib.sha256(self.unity_version.encode())
+            for path in self.dlls:digest.update(path.name.encode());digest.update(hashlib.sha256(path.read_bytes()).digest())
+            self.digest=digest.hexdigest()
+            try:self.recorded=json.loads(TYPETREE_CACHE.read_text()).get(self.digest,{})
+            except (OSError,ValueError):self.recorded={}
+        return self.digest
+    def start(self):
+        if not self.native:
+            super().__init__(self.unity_version)
+            for path in self.dlls:self.load_dll(path.read_bytes())
+            self.native=True
+    def get_nodes(self,assembly,fullname):
+        from TypeTreeGeneratorAPI import TypeTreeNode
+        self.key();name=f'{assembly}|{fullname}'
+        rows=self.recorded.get(name)
+        if rows is None:
+            self.start()
+            rows=[[n.m_Type,n.m_Name,n.m_Level,n.m_MetaFlag] for n in super().get_nodes(assembly,fullname)]
+            self.recorded[name]=rows;self.fresh[name]=rows;self.save()
+        return [TypeTreeNode(m_Type=a,m_Name=b,m_Level=c,m_MetaFlag=d) for a,b,c,d in rows]
+    def save(self):
+        """Merge what this process learnt into the file; atomic, and safe beside other workers."""
+        import fcntl
+        TYPETREE_CACHE.parent.mkdir(parents=True,exist_ok=True)
+        with open(str(TYPETREE_CACHE)+'.lock','w') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            try:data=json.loads(TYPETREE_CACHE.read_text())
+            except (OSError,ValueError):data={}
+            data.setdefault(self.digest,{}).update(self.fresh)
+            temp=TYPETREE_CACHE.with_suffix(f'.{os.getpid()}.tmp')
+            temp.write_text(json.dumps(data,sort_keys=True));temp.replace(TYPETREE_CACHE)
+        self.fresh={}
+    def __del__(self):
+        if self.native:super().__del__()
     def get_nodes_up(self,*args):
         node=super().get_nodes_up(*args)
         # Generated MonoBehaviour headers must align the byte flag before PPtr.
