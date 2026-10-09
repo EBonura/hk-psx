@@ -40,6 +40,56 @@ pub fn layout(raw: &[u8]) -> Result<Layout> {
     Ok(Layout { counts, prefix, pages: page_start, stream })
 }
 
+/// `read_row`: one row of compact texels, even when the image begins on an odd nibble.
+fn read_row(raw: &[u8], at: usize, odd: bool, width: usize) -> Vec<u8> {
+    let pairs = width / 2;
+    if odd {
+        let mut row: Vec<u8> = (0..pairs).map(|i| (raw[at + i] >> 4) | ((raw[at + i + 1] & 15) << 4)).collect();
+        if width & 1 != 0 {
+            row.push(raw[at + pairs] >> 4);
+        }
+        row
+    } else {
+        let mut row = raw[at..at + pairs].to_vec();
+        if width & 1 != 0 {
+            row.push(raw[at + pairs] & 15);
+        }
+        row
+    }
+}
+
+/// `textures(raw)`: every texture as `width, height, palette, texels`, extracted from the pages and the stream.
+pub fn textures(raw: &[u8]) -> Result<Vec<Vec<u8>>> {
+    let l = layout(raw)?;
+    let mut result = Vec::new();
+    for i in 0..l.counts[1] as usize {
+        let at = 40 + i * 16;
+        let h = |k: usize| u16::from_le_bytes([raw[at + 2 * k], raw[at + 2 * k + 1]]) as usize;
+        let (page, u, v, width, height, palette) = (h(0), h(1), h(2), h(3), h(4), h(5));
+        let offset = word(raw, at + 12) as usize;
+        if width == 0 || height == 0 || palette >= l.counts[1] as usize {
+            return err("Invalid texture");
+        }
+        let (stride, base, x) = if page == 65535 {
+            (((width + 3) & !3) / 2, l.stream + offset, 0)
+        } else {
+            if page >= l.counts[0] as usize || u + width > 256 || v + height > 256 {
+                return err("Invalid atlas texture");
+            }
+            (128, l.pages + page * 32768 + v * 128, u)
+        };
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&(width as u16).to_le_bytes());
+        blob.extend_from_slice(&(height as u16).to_le_bytes());
+        blob.extend_from_slice(&raw[l.prefix + palette * 32..l.prefix + (palette + 1) * 32]);
+        for yy in 0..height {
+            blob.extend(read_row(raw, base + yy * stride + x / 2, x & 1 != 0, width));
+        }
+        result.push(blob);
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
