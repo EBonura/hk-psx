@@ -927,7 +927,7 @@ fn climber_ray_hit(ray: hk_sim::climber::Ray, count: usize, edge: &impl Fn(usize
     let end = [origin[0] as i64 + (d[0] as i64 * ray.length as i64 >> 16), origin[1] as i64 + (d[1] as i64 * ray.length as i64 >> 16)];
     let (ox, oy) = (origin[0] as i64, origin[1] as i64);
     let (rx, ry) = (end[0] - ox, end[1] - oy);
-    let mut best: Option<(i64, i64, [i32; 2])> = None;
+    let mut best: Option<(i64, [i32; 2])> = None;
     // A hit point is on the ray, so only edges whose x range meets the ray's
     // can hit; the column index skips the rest, in the same index order.
     let bounds = [ox.min(end[0]).clamp(i32::MIN as i64, i32::MAX as i64) as i32, oy.min(end[1]).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
@@ -945,15 +945,19 @@ fn climber_ray_hit(ray: hk_sim::climber::Ray, count: usize, edge: &impl Fn(usize
         let u_num = qx * ry - qy * rx;
         let (t_num, u_num, den) = if denominator < 0 { (-t_num, -u_num, -denominator) } else { (t_num, u_num, denominator) };
         if t_num < 0 || t_num > den || u_num < 0 || u_num > den { return Ok(()); }
-        // Compare the ray parameter as a fraction t_num/den across edges.
-        let nearer = best.is_none_or(|(t, d, _): (i64, i64, [i32; 2])| t_num * d < t * den);
-        if nearer {
+        // Order the hits by the ray parameter as a Q16 fraction. Cross-multiplying the two
+        // fractions (t_num * den) reaches ~1e20 for a ray two units long against an edge a few
+        // units long, which wraps i64 and picked the farther of two hits: a Tiktik on a thin
+        // block attached to the underside instead of the top. t_num <= den, and den is at most
+        // |ray| * |edge| (~4e12 across the whole world), so the shift cannot overflow.
+        let fraction = (t_num << 16) / den;
+        if best.is_none_or(|(f, _): (i64, [i32; 2])| fraction < f) {
             let point = [(ox + rx * t_num / den) as i32, (oy + ry * t_num / den) as i32];
-            best = Some((t_num, den, point));
+            best = Some((fraction, point));
         }
         Ok(())
     });
-    best.map(|(_, _, p)| p)
+    best.map(|(_, p)| p)
 }
 const EDGES:usize=128;
 /// Simulation neighbourhood around the active view, in Q16 units (one view).
@@ -5231,5 +5235,36 @@ mod placement_table_tests {
             }
         }
         assert!(checked > 1000, "{checked}");
+    }
+}
+
+#[cfg(test)]
+mod climber_ray_tests {
+    use super::*;
+    /// The block under 'Climber 4' of Crossroads_07: 5.99 units wide and 0.88 tall, in the cooked
+    /// room's own Q16 words, its top edge wound the other way from its bottom one.
+    fn block() -> [[i32; 4]; 4] {
+        let (left, right, bottom, top) = (1_536_749, 1_929_310, 3_136_140, 3_193_608);
+        [[left, bottom, right, bottom], [right, bottom, right, top], [right, top, left, top], [left, top, left, bottom]]
+    }
+    #[test]
+    fn a_ray_through_a_thin_block_reports_the_nearer_face_whichever_way_the_edges_wind() {
+        let edges = block();
+        let reversed = [edges[3], edges[2], edges[1], edges[0]];
+        // The Tiktik is authored on the block's top face. For this ray the two hits' parameters
+        // cross-multiplied to ~6e20, which wrapped i64 and ranked the underside nearer, so it
+        // attached there and walked the block the wrong way round.
+        let ray = hk_sim::climber::Ray {
+            position: [1_735_329, 3_194_868],
+            rotation_degrees_q16: 0,
+            scale_x_sign: 1,
+            local_origin: hk_sim::climber::BODY_OFFSET,
+            local_direction: [0, -ONE],
+            length: 2 * ONE,
+            layer_mask: 256,
+        };
+        let top = climber_ray_hit(ray, edges.len(), &|i| edges[i]).expect("the ray meets the block");
+        assert_eq!(top[1], edges[2][1], "the top face is nearer than the underside");
+        assert_eq!(climber_ray_hit(ray, reversed.len(), &|i| reversed[i]), Some(top));
     }
 }
