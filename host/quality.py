@@ -178,7 +178,7 @@ SCENE_TABLE = (
     # both cooked to exactly 45,728 bytes. The set has since been raised to
     # eight channels and 7 is still in it, at 4 kHz rather than 8 now, which is
     # the one place Greenpath pays for the raise. The set itself is only ever
-    # `cook_music.RESIDENT_ATMOS_CHANNELS`; the decision written above it is the
+    # `RESIDENT_ATMOS_CHANNELS` in host/hk-cook/src/music_report.rs; the decision written above it is the
     # current one and this comment is not.
     #
     # Two figures that used to sit here were both wrong and are worth recording
