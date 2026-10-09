@@ -15,9 +15,12 @@ AUDIO_BANKS=('sfx.adpcm','geo-audio.adpcm','runner-audio.adpcm','world-sfx.adpcm
 def bank_manifest(name):
     """The generated .rs carrying a streamed bank's BANK_BYTES and BANK_CHECKSUM."""
     return re.sub(r'\.(adpcm|bin)$','.rs',name)
+def fnv(data):
+    value=0x811c9dc5
+    for byte in data:value=((value^byte)*0x01000193)&0xffffffff
+    return value
 def check_audio_banks():
     """Each streamed bank's payload against the constants the guest links."""
-    from ambience import fnv
     for name in AUDIO_BANKS:
         payload=(ROOT/'data'/name).read_bytes()
         manifest=(ROOT/'data'/bank_manifest(name)).read_text()
