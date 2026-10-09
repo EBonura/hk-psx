@@ -1,0 +1,26 @@
+# Placement census: every enemy the original places in a scene against what
+# the cook put in that scene's regions, and where the port's spawn solver lets
+# the grounded ones come to rest. Read-only over ignored build outputs and the
+# hkref scene survey; writes a JSON report and a markdown table. Its own
+# workspace, like parity-census.
+[package]
+name = "hk-placement-census"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-2.0-or-later"
+
+[workspace]
+
+[[bin]]
+name = "hk-placement-census"
+path = "main.rs"
+
+[dependencies]
+serde_json = "1"
+flate2 = "1"
+hk-sim = { path = "../../shared/hk-sim" }
+hk-format = { path = "../../shared/hk-format" }
+
+[profile.release]
+codegen-units = 1
