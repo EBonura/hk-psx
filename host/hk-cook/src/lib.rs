@@ -1,6 +1,7 @@
 //! hk-psx's cookers in Rust, replacing host/*.py one tool at a time with
 //! byte-identical output.
 
+pub mod climber;
 pub mod common;
 pub mod cook_audio;
 pub mod actors;
