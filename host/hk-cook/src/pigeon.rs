@@ -86,7 +86,7 @@ fn trigger_circle(sc: &Scene, children: &[(String, (i64, i64))], name: &str, ori
 
 /// `_containment`: prove the smaller circle lies inside the one the guest carries.
 fn containment(inner: [i64; 3], outer: [i64; 3]) -> Result<()> {
-    let span = ((inner[0] - outer[0]) as f64).hypot((inner[1] - outer[1]) as f64);
+    let span = crate::pyfloat::hypot((inner[0] - outer[0]) as f64, (inner[1] - outer[1]) as f64);
     if span + inner[2] as f64 > outer[2] as f64 {
         return err(format!("Pigeon {inner:?} is not inside the admitted {outer:?}"));
     }

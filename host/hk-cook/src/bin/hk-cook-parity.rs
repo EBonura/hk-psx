@@ -546,6 +546,695 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "atlas" => {
+            // hk-cook-parity atlas <oracle-atlas.json>: dense_pack, alpha covers, canonical_black and Atlas.pack.
+            use hk_cook::atlas::{canonical_black, Atlas};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_cook::{alpha_cover, packer};
+            let oracle = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let hex = |j: &Json| -> Vec<u8> { let Json::Str(s) = j else { panic!("hex") }; (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect() };
+            let tohex = |b: &[u8]| Json::Str(b.iter().map(|x| format!("{x:02x}")).collect());
+            let mut bad = 0;
+            let mut counts = std::collections::BTreeMap::<&str, usize>::new();
+            for case in list(field(&oracle, "dense_pack")) {
+                let rects: Vec<(i64, i64, usize)> = list(field(&case, "rects")).iter().map(|r| { let v = list(r.clone()); (int(&v[0]), int(&v[1]), int(&v[2]) as usize) }).collect();
+                match (packer::dense_pack(&rects), field(&case, "error")) {
+                    (Ok((pages, placements)), Json::Null) => {
+                        let mine = Json::List(placements.iter().map(|p| Json::List(vec![Json::Int(p.0 as i64), Json::Int(p.1 as i64), Json::Int(p.2), Json::Int(p.3), Json::Int(p.4), Json::Int(p.5)])).collect());
+                        *counts.entry("dense_pack").or_default() += 1;
+                        if int(&field(&case, "pages")) != pages as i64 || mine != field(&case, "placements") { bad += 1; println!("dense_pack differs"); }
+                    }
+                    (Err(_), Json::Str(_)) => *counts.entry("dense_pack refusals").or_default() += 1,
+                    (r, _) => { bad += 1; println!("dense_pack error disagreement (rust ok {})", r.is_ok()); }
+                }
+            }
+            for case in list(field(&oracle, "covers")) {
+                let (w, h) = (int(&field(&case, "w")) as usize, int(&field(&case, "h")) as usize);
+                match (alpha_cover::compute_record(w, h, &hex(&field(&case, "palette")), &hex(&field(&case, "pixels"))), field(&case, "error")) {
+                    (Ok(rec), Json::Null) => { *counts.entry("covers").or_default() += 1; if tohex(&rec) != field(&case, "record") { bad += 1; println!("cover {w}x{h} differs"); } }
+                    (Err(_), Json::Str(_)) => *counts.entry("cover refusals").or_default() += 1,
+                    (r, _) => { bad += 1; println!("cover error disagreement (rust ok {})", r.is_ok()); }
+                }
+            }
+            for case in list(field(&oracle, "canonical_black")) {
+                let (p, x) = canonical_black(&hex(&field(&case, "palette")), &hex(&field(&case, "pixels")));
+                *counts.entry("canonical_black").or_default() += 1;
+                if tohex(&p) != field(&case, "out_palette") || tohex(&x) != field(&case, "out_pixels") { bad += 1; println!("canonical_black differs"); }
+            }
+            for (n, case) in list(field(&oracle, "atlas")).iter().enumerate() {
+                let params = field(case, "params");
+                let max_cluts = match field(&params, "max_cluts") { Json::Int(i) => Some(i as usize), _ => None };
+                let b = |k: &str| matches!(field(&params, k), Json::Bool(true));
+                let mut atlas = Atlas::new(b("deduplicate"), int(&field(&params, "max_pages")) as usize, int(&field(&params, "max_textures")) as usize, b("alpha_covers"), max_cluts);
+                for op in list(field(case, "ops")) {
+                    let r = atlas.add_quantized(int(&field(&op, "w")) as usize, int(&field(&op, "h")) as usize, &hex(&field(&op, "palette")), &hex(&field(&op, "pixels")), matches!(field(&op, "streamed"), Json::Bool(true)), matches!(field(&op, "unique"), Json::Bool(true)));
+                    match (r, field(&op, "index")) {
+                        (Ok(i), Json::Int(want)) if i as i64 == want => {}
+                        (Err(_), Json::Null) => {}
+                        _ => { bad += 1; println!("atlas {n}: add_quantized differs"); }
+                    }
+                }
+                if let Json::Obj(grids) = field(case, "grids") {
+                    for (k, v) in grids { let v = list(v); atlas.grids.insert(k.parse().unwrap(), (int(&v[0]) as usize, int(&v[1]) as usize)); }
+                }
+                let rm = Json::List(atlas.request_map.iter().map(|&i| Json::Int(i as i64)).collect());
+                let qz = Json::List(atlas.quantized.iter().map(|q| Json::List(vec![Json::Int(q.0 as i64), Json::Int(q.1 as i64), tohex(&q.2), tohex(&q.3)])).collect());
+                if rm != field(case, "request_map") || qz != field(case, "quantized") { bad += 1; println!("atlas {n}: canonical textures differ"); }
+                match (atlas.pack(), field(case, "error")) {
+                    (Ok(()), Json::Null) => {
+                        *counts.entry("atlas packs").or_default() += 1;
+                        let entries = Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&v| Json::Int(v)).collect())).collect());
+                        let palettes = Json::List(atlas.palettes.iter().map(|p| tohex(p)).collect());
+                        let sha = |d: &[u8]| { use sha2::{Digest, Sha256}; Json::Str(Sha256::digest(d).iter().map(|x| format!("{x:02x}")).collect()) };
+                        let pages = Json::List(atlas.pages.iter().map(|p| sha(p)).collect());
+                        let ok = entries == field(case, "entries") && palettes == field(case, "palettes") && pages == field(case, "pages") && sha(&atlas.stream) == field(case, "stream")
+                            && int(&field(case, "stream_len")) as usize == atlas.stream.len() && int(&field(case, "cluts")) as usize == atlas.cluts && int(&field(case, "animation_bytes")) as usize == atlas.animation_bytes && int(&field(case, "alpha_cover_bytes")) as usize == atlas.alpha_cover_bytes;
+                        if !ok { bad += 1; println!("atlas {n}: pack differs"); }
+                    }
+                    (Err(e), Json::Str(want)) => { *counts.entry("atlas refusals").or_default() += 1; if e != want { bad += 1; println!("atlas {n}: refusal {e:?}, python {want:?}"); } }
+                    (r, want) => { bad += 1; println!("atlas {n}: rust ok {}, python error {want:?}", r.is_ok()); }
+                }
+            }
+            println!("checked {counts:?}, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "rng" => {
+            // hk-cook-parity rng <oracle-rng.json>: numpy's default_rng stream and choice().
+            use hk_cook::numpy_rng::Pcg64;
+            use hk_cook::pyjson::{parse, Json};
+            let Json::List(cases) = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap() else { panic!("cases") };
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let (mut ok, mut bad) = (0, 0);
+            for case in &cases {
+                let Json::Str(seed) = field(case, "seed") else { panic!("seed") };
+                let seed: u64 = seed.parse().unwrap();
+                let mut rng = Pcg64::new(seed);
+                let randoms = Json::List((0..6).map(|_| Json::Float(rng.random())).collect());
+                if randoms == field(case, "randoms") { ok += 1 } else { bad += 1; println!("seed {seed}: random() differs"); }
+                let mut rng = Pcg64::new(seed);
+                let probs = list(field(case, "probs"));
+                let picks = list(field(case, "picks"));
+                for (p, want) in probs.iter().zip(&picks) {
+                    let p: Vec<f64> = list(p.clone()).iter().map(|v| if let Json::Float(f) = v { *f } else { panic!("p") }).collect();
+                    let mine = Json::List((0..5).map(|_| Json::Int(rng.choice_p(&p) as i64)).collect());
+                    if &mine == want { ok += 1 } else { bad += 1; println!("seed {seed}: choice(p) over {} differs", p.len()); }
+                }
+                let Json::Obj(wor) = field(case, "wor") else { panic!("wor") };
+                for (key, want) in wor {
+                    let (n, size) = key.split_once(',').unwrap();
+                    let mut rng = Pcg64::new(seed);
+                    let r = rng.choice_without_replacement(n.parse().unwrap(), size.parse().unwrap());
+                    let mut mine: Vec<Json> = r.iter().take(40).map(|&v| Json::Int(v)).collect();
+                    mine.push(Json::Int(r.iter().sum()));
+                    mine.push(Json::Int(*r.last().unwrap()));
+                    if Json::List(mine) == want { ok += 1 } else { bad += 1; println!("seed {seed}: choice({key}, replace=False) differs"); }
+                }
+            }
+            println!("checked {ok} streams, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "numeric" => {
+            use hk_cook::numpy_math as nm;
+            use hk_cook::pyjson::{parse, Json};
+            let oracle = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let f = |j: &Json| -> f64 { match j { Json::Float(x) => *x, Json::Int(i) => *i as f64, _ => panic!("num") } };
+            let fl = |j: Json| -> Vec<f64> { list(j).iter().map(f).collect() };
+            let rows3 = |j: Json| -> Vec<[f64; 3]> { list(j).iter().map(|r| { let v = fl(r.clone()); [v[0], v[1], v[2]] }).collect() };
+            let luma = [0.299, 0.587, 0.114];
+            let report = |name: &str, hits: usize, total: usize| println!("{name}: {hits}/{total}");
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "sum1d")) { t += 1; if nm::sum(&fl(field(&c, "x"))) == f(&field(&c, "sum")) { h += 1 } }
+            report("np.sum 1-D (pairwise)", h, t);
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "rowsum")) { let x = rows3(field(&c, "x")); for (r, w) in x.iter().zip(fl(field(&c, "sum"))) { t += 1; if nm::row_sum3([r[0] * r[0], r[1] * r[1], r[2] * r[2]]) == w { h += 1 } } }
+            report("(x*x).sum(1)", h, t);
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "colsum")) { let x = rows3(field(&c, "x")); let want = fl(field(&c, "sum")); for k in 0..3 { t += 1; let mut acc = x[0][k]; for r in &x[1..] { acc += r[k]; } if acc == want[k] { h += 1 } } }
+            report("x.sum(0) sequential", h, t);
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "average")) { let x = rows3(field(&c, "x")); let w = fl(field(&c, "w")); let want = fl(field(&c, "avg")); let got = nm::average3(&x, &w); for k in 0..3 { t += 1; if got[k] == want[k] { h += 1 } } }
+            report("np.average(axis 0, weights)", h, t);
+            for (name, g) in [("x @ LUMA plain", nm::dot3_plain as fn([f64; 3], [f64; 3]) -> f64), ("x @ LUMA fma chain", nm::dot3)] {
+                let (mut h, mut t) = (0, 0);
+                for c in list(field(&oracle, "luma")) { let x = rows3(field(&c, "x")); for (r, w) in x.iter().zip(fl(field(&c, "dot"))) { t += 1; if g(*r, luma) == w { h += 1 } } }
+                let gray = field(&oracle, "gray"); let x = rows3(field(&gray, "x"));
+                let (mut gh, mut gt) = (0, 0);
+                for (r, w) in x.iter().zip(fl(field(&gray, "dot"))) { gt += 1; if g(*r, luma) == w { gh += 1 } }
+                report(name, h, t); report(&format!("{name} (gray ramp)"), gh, gt);
+            }
+            let (mut h, mut t) = (0, 0);
+            let mut by_k = std::collections::BTreeMap::<usize, (usize, usize)>::new();
+            for c in list(field(&oracle, "dot")) {
+                let x = rows3(field(&c, "x")); let cc = rows3(field(&c, "c")); let r = list(field(&c, "r"));
+                for (i, row) in x.iter().enumerate() { let want = fl(r[i].clone()); for (j, cj) in cc.iter().enumerate() {
+                    t += 1; let e = by_k.entry(cc.len()).or_default(); e.1 += 1;
+                    if nm::matmul_entry([2.0 * row[0], 2.0 * row[1], 2.0 * row[2]], *cj, cc.len(), j) == want[j] { h += 1; e.0 += 1 } } }
+            }
+            report("(2x) @ c.T by observed rule", h, t);
+            println!("by k: {by_k:?}");
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "dot")) {
+                let x = rows3(field(&c, "x")); let cc = rows3(field(&c, "c")); let r = list(field(&c, "r"));
+                let doubled: Vec<[f64; 3]> = x.iter().map(|v| [2.0 * v[0], 2.0 * v[1], 2.0 * v[2]]).collect();
+                let got = hk_cook::blas::matmul_abt(&doubled, &cc);
+                for i in 0..x.len() { let want = fl(r[i].clone()); for j in 0..cc.len() { t += 1; if got[i * cc.len() + j] == want[j] { h += 1 } } }
+            }
+            report("(2x) @ c.T via cblas_dgemm", h, t);
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "luma")) {
+                let x = rows3(field(&c, "x")); let want = fl(field(&c, "dot")); let got = hk_cook::blas::matvec(&x, luma);
+                for (g, w) in got.iter().zip(&want) { t += 1; if g == w { h += 1 } }
+            }
+            report("x @ LUMA via cblas_dgemv", h, t);
+        }
+        "quant" => {
+            // hk-cook-parity quant <oracle-quant dir>: host/quantize.py over real actor sprites.
+            use hk_cook::pyjson::{parse, Json};
+            use hk_pil::{Image, Mode};
+            use sha2::{Digest, Sha256};
+            let dir = &args[2];
+            let index = parse(&std::fs::read_to_string(format!("{dir}/index.json")).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
+            let Some(Json::List(cases)) = field(&index, "cases") else { panic!("cases") };
+            let int = |j: Option<Json>| -> usize { if let Some(Json::Int(i)) = j { i as usize } else { panic!("int") } };
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let (mut ok, mut fallback, mut skipped, mut bad) = (0, 0, 0, 0);
+            for case in &cases {
+                if field(case, "error").is_some() { skipped += 1; continue; }
+                let idx = int(field(case, "idx"));
+                let (iw, ih, w, h) = (int(field(case, "iw")), int(field(case, "ih")), int(field(case, "w")), int(field(case, "h")));
+                let data = std::fs::read(format!("{dir}/{idx}.rgba")).unwrap();
+                let image = Image { mode: Mode::Rgba, width: iw, height: ih, data };
+                let marker = |_: &Image, _: usize, _: usize| -> Result<hk_cook::atlas::Quantized, String> { Err("fallback".to_string()) };
+                let got = hk_cook::quantize::quantize(&image, w, h, Some(&marker));
+                match (got, field(case, "fallback")) {
+                    (Err(e), Some(Json::Bool(true))) if e == "fallback" => fallback += 1,
+                    (Ok(q), Some(Json::Bool(false))) => {
+                        let same = Json::Str(hexs(&q.palette)) == field(case, "palette").unwrap()
+                            && Json::Str(hexs(&Sha256::digest(&q.plane))) == field(case, "plane").unwrap()
+                            && Json::Str(hexs(&Sha256::digest(&q.image.data))) == field(case, "image").unwrap();
+                        if same { ok += 1 } else { bad += 1; println!("case {idx} ({iw}x{ih} -> {w}x{h}): output differs"); }
+                    }
+                    (r, _) => { bad += 1; println!("case {idx}: rust {:?}", r.map(|_| "ok")); }
+                }
+            }
+            println!("checked {ok} quantizations, {fallback} fallbacks, {skipped} skipped, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "atlas2" => {
+            // hk-cook-parity atlas2 <oracle-atlas2.json> <oracle-quant dir>: Atlas.add, add_tiled,
+            // add_frames_shared and pack over real sprite images.
+            use hk_cook::atlas::{Atlas, Quantized};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_pil::{Image, Mode};
+            use sha2::{Digest, Sha256};
+            let trials = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
+            let qdir = &args[3];
+            let index = parse(&std::fs::read_to_string(format!("{qdir}/index.json")).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let flt = |j: &Json| -> f64 { match j { Json::Int(i) => *i as f64, Json::Float(f) => *f, _ => panic!("num") } };
+            let cases = list(field(&index, "cases"));
+            let load = |idx: i64| -> Image {
+                let c = cases.iter().find(|c| matches!(field(c, "idx"), Json::Int(i) if i == idx)).unwrap();
+                Image { mode: Mode::Rgba, width: int(&field(c, "iw")) as usize, height: int(&field(c, "ih")) as usize, data: std::fs::read(format!("{qdir}/{idx}.rgba")).unwrap() }
+            };
+            let sha = |d: &[u8]| Json::Str(Sha256::digest(d).iter().map(|x| format!("{x:02x}")).collect());
+            let quantize = |im: &Image, w: usize, h: usize| -> Result<Quantized, String> {
+                let fallback = |_: &Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
+                hk_cook::quantize::quantize(im, w, h, Some(&fallback))
+            };
+            let (mut ok, mut bad) = (0, 0);
+            for (n, trial) in list(trials).iter().enumerate() {
+                let mut atlas = Atlas::new(true, 20, 640, true, None);
+                let mut firsts = Vec::new();
+                let mut failure = None;
+                for op in list(field(trial, "ops")) {
+                    let Json::Str(kind) = field(&op, "kind") else { panic!("kind") };
+                    let result = match kind.as_str() {
+                        "add" => atlas.add(&load(int(&field(&op, "idx"))), flt(&field(&op, "w")), flt(&field(&op, "h")), matches!(field(&op, "streamed"), Json::Bool(true)), &quantize).map(|i| vec![i]),
+                        "tiled" => atlas.add_tiled(&load(int(&field(&op, "idx"))), flt(&field(&op, "w")), flt(&field(&op, "h")), &quantize).map(|i| vec![i]),
+                        _ => {
+                            let items: Vec<(Image, f64, f64)> = list(field(&op, "items")).iter().map(|it| (load(int(&field(it, "idx"))), flt(&field(it, "w")), flt(&field(it, "h")))).collect();
+                            atlas.add_frames_shared(&items, &quantize)
+                        }
+                    };
+                    match result {
+                        Ok(r) => firsts.push(r),
+                        Err(e) => { failure = Some(e); break; }
+                    }
+                }
+                let want_error = field(trial, "error");
+                if failure.is_none() { if let Err(e) = atlas.pack() { failure = Some(e); } }
+                match (failure, want_error) {
+                    (None, Json::Null) => {
+                        let want_results: Vec<Vec<i64>> = list(field(trial, "ops")).iter().map(|op| match field(op, "result") { Json::List(l) => l.iter().map(|v| int(v)).collect(), v => vec![int(&v)] }).collect();
+                        let got_results: Vec<Vec<i64>> = firsts.iter().map(|f| f.iter().map(|&v| v as i64).collect()).collect();
+                        let entries = Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&v| Json::Int(v)).collect())).collect());
+                        let palettes = Json::List(atlas.palettes.iter().map(|p| Json::Str(p.iter().map(|x| format!("{x:02x}")).collect())).collect());
+                        let pages = Json::List(atlas.pages.iter().map(|p| sha(p)).collect());
+                        let images = Json::List(atlas.images.iter().map(|i| i.as_ref().map_or(Json::Null, |im| sha(&im.data))).collect());
+                        let grids = { let mut g: Vec<_> = atlas.grids.iter().collect(); g.sort(); Json::Obj(g.into_iter().map(|(k, v)| (k.to_string(), Json::List(vec![Json::Int(v.0 as i64), Json::Int(v.1 as i64)]))).collect()) };
+                        let same_grids = { let Json::Obj(want) = field(trial, "grids") else { panic!("grids") }; let Json::Obj(mine) = &grids else { unreachable!() }; want.len() == mine.len() && want.iter().all(|w| mine.iter().any(|m| m == w)) };
+                        let good = want_results.len() == got_results.len() && want_results == got_results && entries == field(trial, "entries") && palettes == field(trial, "palettes") && pages == field(trial, "pages") && sha(&atlas.stream) == field(trial, "stream") && images == field(trial, "images") && same_grids && int(&field(trial, "cluts")) as usize == atlas.cluts;
+                        if good { ok += 1 } else { bad += 1; println!("trial {n}: atlas differs (results {} entries {} palettes {} pages {} stream {} images {} grids {})", want_results == got_results, entries == field(trial, "entries"), palettes == field(trial, "palettes"), pages == field(trial, "pages"), sha(&atlas.stream) == field(trial, "stream"), images == field(trial, "images"), same_grids); }
+                    }
+                    (Some(e), Json::Str(want)) if e == want => ok += 1,
+                    (f, want) => { bad += 1; println!("trial {n}: rust error {f:?}, python {want:?}"); }
+                }
+            }
+            println!("checked {ok} atlases, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "actorart" => {
+            // hk-cook-parity actorart <source dir> <oracle dir> <regions.json>: append_actor_art (without
+            // the corpse pass) and append_barrel_art over every scene's actors, then Atlas.pack.
+            use hk_cook::actor_art::{append_actor_art_bodies, append_barrel_art, ArtActor, ArtBank};
+            use hk_cook::atlas::{Atlas, Quantized};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            use sha2::{Digest, Sha256};
+            let source = lazy_source();
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let Some(Json::List(scenes)) = (if let Json::Obj(f) = &regions { f.iter().find(|k| k.0 == "scenes").map(|k| k.1.clone()) } else { None }) else { panic!("no scenes") };
+            let get = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
+            let catalogue: Vec<(String, [f64; 4], String)> = scenes.iter().map(|s| {
+                let (Some(Json::Str(file)), Some(Json::Str(name)), Some(Json::List(b))) = (get(s, "file"), get(s, "scene_name"), get(s, "runtime_bounds")) else { panic!("scene row") };
+                let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])], name)
+            }).collect();
+            let only: Option<String> = args.get(5).cloned();
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let sha = |d: &[u8]| Json::Str(hexs(&Sha256::digest(d)));
+            let (mut checked, mut bad) = (0, 0);
+            for s in &scenes {
+                let (Some(Json::Str(name)), Some(Json::Str(file))) = (get(s, "scene_name"), get(s, "file")) else { panic!("scene row") };
+                if only.as_ref().is_some_and(|o| *o != name) { continue; }
+                let Ok(text) = std::fs::read_to_string(format!("{}/{name}.json", args[3])) else { continue };
+                let oracle = parse(&text).unwrap();
+                if get(&oracle, "error").is_some() { println!("{name}: python failed: {:?}", get(&oracle, "error")); continue; }
+                let sc = Scene::new(&source, &file).unwrap();
+                let rows = hk_cook::actors::scan(&sc, &source, &catalogue).unwrap();
+                let mut actors: Vec<ArtActor> = rows.iter().map(ArtActor::new).collect();
+                let mut bank = ArtBank::new(Atlas::new(true, 20, 640, true, None));
+                let quantize = |im: &hk_pil::Image, w: usize, h: usize| -> Result<Quantized, String> {
+                    let fallback = |_: &hk_pil::Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
+                    hk_cook::quantize::quantize(im, w, h, Some(&fallback))
+                };
+                let run = append_actor_art_bodies(&sc, &source, &mut actors, &mut bank, &quantize).and_then(|_| hk_cook::effects_art::append_corpse_art(&source, &sc, &mut actors, &mut bank, &quantize)).and_then(|_| append_barrel_art(&source, &mut actors, &mut bank, &quantize));
+                if let Err(e) = run { bad += 1; println!("{name}: rust failed: {e}"); continue; }
+                let mut mine_actors: Vec<(String, Json)> = Vec::new();
+                for a in &actors {
+                    let mut clips: Vec<(String, Json)> = a.clips.iter().map(|c| (c.0.clone(), Json::Int(c.1))).collect();
+                    clips.sort_by(|x, y| x.0.cmp(&y.0));
+                    mine_actors.push((a.row.source.clone(), Json::Obj(vec![
+                        ("supported".into(), Json::Bool(a.supported)),
+                        ("limitations".into(), Json::List(a.limitations.iter().map(|l| Json::Str(l.clone())).collect())),
+                        ("clips".into(), Json::Obj(clips)),
+                        ("visual_scale".into(), a.visual_scale.map_or(Json::Null, |v| Json::List(vec![Json::Float(v[0]), Json::Float(v[1])]))),
+                        ("corpse".into(), a.corpse.clone().unwrap_or(Json::Null)),
+                    ])));
+                }
+                let want_actors = get(&oracle, "actors").unwrap();
+                let Json::Obj(want_list) = &want_actors else { panic!("actors") };
+                let sorted_clips = |j: &Json| -> Json { let mut j = j.clone(); if let Json::Obj(f) = &mut j { for x in f.iter_mut() { if x.0 == "clips" { if let Json::Obj(c) = &mut x.1 { c.sort_by(|a, b| a.0.cmp(&b.0)); } } } } j };
+                let actors_ok = want_list.len() == mine_actors.len() && mine_actors.iter().all(|(k, v)| want_list.iter().find(|w| w.0 == *k).is_some_and(|w| sorted_clips(&w.1) == *v));
+                if !actors_ok { bad += 1; println!("{name}: actor records differ"); }
+                let frames = Json::List(bank.frames.iter().map(|f| Json::Obj(vec![("texture".into(), Json::Int(f.texture as i64)), ("box".into(), Json::List(f.box_.iter().map(|&v| Json::Float(v)).collect())), ("sprite".into(), Json::Str(f.sprite.clone())), ("event".into(), hk_cook::music::value_json(&f.event))])).collect());
+                if frames != get(&oracle, "frames").unwrap() { bad += 1; println!("{name}: frames differ"); }
+                let clips = Json::List(bank.clips.iter().map(|c| Json::Obj(vec![("name".into(), Json::Str(c.name.clone())), ("start".into(), Json::Int(c.start as i64)), ("count".into(), Json::Int(c.count as i64)), ("fps".into(), Json::Float(c.fps)), ("wrap".into(), Json::Int(c.wrap)), ("loopStart".into(), Json::Int(c.loop_start))])).collect());
+                if clips != get(&oracle, "clips").unwrap() { bad += 1; println!("{name}: clips differ"); }
+                let quantized = Json::List(bank.atlas.quantized.iter().map(|q| Json::List(vec![Json::Int(q.0 as i64), Json::Int(q.1 as i64), Json::Str(hexs(&q.2)), sha(&q.3)])).collect());
+                let images = Json::List(bank.atlas.images.iter().map(|i| i.as_ref().map_or(Json::Null, |im| sha(&im.data))).collect());
+                if quantized != get(&oracle, "quantized").unwrap() || images != get(&oracle, "images").unwrap() || Json::List(bank.atlas.request_map.iter().map(|&i| Json::Int(i as i64)).collect()) != get(&oracle, "request_map").unwrap() { bad += 1; println!("{name}: atlas textures differ"); }
+                let pack = bank.atlas.pack();
+                let want_pack = get(&oracle, "pack").unwrap();
+                match (pack, get(&want_pack, "error")) {
+                    (Ok(()), None) => {
+                        let entries = Json::List(bank.atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&v| Json::Int(v)).collect())).collect());
+                        let palettes = Json::List(bank.atlas.palettes.iter().map(|p| Json::Str(hexs(p))).collect());
+                        let pages = Json::List(bank.atlas.pages.iter().map(|p| sha(p)).collect());
+                        if entries != get(&want_pack, "entries").unwrap() || palettes != get(&want_pack, "palettes").unwrap() || pages != get(&want_pack, "pages").unwrap() || sha(&bank.atlas.stream) != get(&want_pack, "stream").unwrap() { bad += 1; println!("{name}: packed atlas differs"); }
+                    }
+                    (Err(e), Some(Json::Str(want))) if e == want => {}
+                    (r, w) => { bad += 1; println!("{name}: pack rust {:?} python {w:?}", r.map(|_| "ok")); }
+                }
+                checked += 1;
+            }
+            println!("checked {checked} scenes, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "fkbank" => {
+            // hk-cook-parity fkbank <source dir> <oracle-fkbank.json> <regions.json>: the False Knight's
+            // source_art, plan and append_bank against host/false_knight_art.py.
+            use hk_cook::atlas::{Atlas, Quantized};
+            use hk_cook::fk_bank::{append_bank, art_clips, plan, source_art, PRIORITY};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            use sha2::{Digest, Sha256};
+            let source = lazy_source();
+            let oracle = parse(&std::fs::read_to_string(&args[3]).unwrap()).unwrap();
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let Json::List(scenes) = field(&regions, "scenes") else { panic!("scenes") };
+            let catalogue: Vec<(String, [f64; 4], String)> = scenes.iter().map(|s| {
+                let (Json::Str(file), Json::Str(name)) = (field(s, "file"), field(s, "scene_name")) else { panic!("scene") };
+                let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                let Json::List(b) = field(s, "runtime_bounds") else { panic!("bounds") };
+                (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])], name)
+            }).collect();
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let sha = |d: &[u8]| Json::Str(hexs(&Sha256::digest(d)));
+            let sc = Scene::new(&source, "level46").unwrap();
+            let rows = hk_cook::actors::scan(&sc, &source, &catalogue).unwrap();
+            let fk = rows.iter().find(|r| r.control.as_ref().is_some_and(|c| c.0 == "FalseKnight")).expect("False Knight");
+            let art = source_art(&sc, &source, fk).unwrap();
+            let mut bad = 0;
+            let mine_sprites = Json::List(art.sprites.iter().map(|(k, s)| Json::List(vec![Json::Str(k.repr()), Json::Int(s.w as i64), Json::Int(s.h as i64), Json::List(s.box_.iter().map(|&v| Json::Float(v)).collect()), sha(&s.image.data)])).collect());
+            if mine_sprites != field(&oracle, "sprites") { bad += 1; println!("source sprites differ"); }
+            let mine_clips = Json::Obj(art.clips.iter().map(|(n, c)| (n.clone(), Json::Obj(vec![("keys".into(), Json::List(c.keys.iter().map(|k| Json::Str(k.repr())).collect())), ("fps".into(), Json::Float(c.record.get("fps").and_then(|v| v.float()).unwrap()))]))).collect());
+            if mine_clips != field(&oracle, "clips") { bad += 1; println!("art clips differ"); }
+            let mine_floor = Json::Obj(art.floor_frames.iter().map(|(n, ks)| (n.clone(), Json::List(ks.iter().map(|k| Json::Str(k.repr())).collect()))).collect());
+            if mine_floor != field(&oracle, "floor_frames") { bad += 1; println!("floor frames differ"); }
+            if art.objects != field(&oracle, "objects") { bad += 1; println!("objects differ"); }
+            let quantize = |im: &hk_pil::Image, w: usize, h: usize| -> Result<Quantized, String> {
+                let fallback = |_: &hk_pil::Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
+                hk_cook::quantize::quantize(im, w, h, Some(&fallback))
+            };
+            let names = art_clips();
+            let mut ok_variants = 0;
+            for v in list(field(&oracle, "variants")) {
+                let Json::Str(label) = field(&v, "label") else { panic!("label") };
+                let scenery: Vec<(i64, i64)> = list(field(&v, "scenery")).iter().map(|r| { let l = list(r.clone()); (int(&l[0]), int(&l[1])) }).collect();
+                let limit = int(&field(&v, "stream_limit"));
+                let mut atlas = Atlas::new(true, 40, 640, true, None);
+                let (mut frames, mut clips) = (Vec::new(), Vec::new());
+                let result = plan(&art, &scenery, &quantize, &PRIORITY, 18, limit, "False Knight").and_then(|p| append_bank(&mut atlas, &mut frames, &mut clips, &art, &p, &names, "False Knight parts").map(|t| (p, t))).and_then(|r| atlas.pack().map(|_| r));
+                match (result, field(&v, "error")) {
+                    (Ok((p, t)), Json::Null) => {
+                        ok_variants += 1;
+                        let cut = Json::List(p.cut.iter().map(|(k, c)| Json::List(vec![Json::Str(k.repr()), Json::Bool(c.0), Json::List(c.1.iter().map(|r| Json::List(r.iter().map(|&x| Json::Int(x)).collect())).collect())])).collect());
+                        let rows3 = Json::List(t.sprite_rows.iter().map(|r| Json::List(vec![Json::Int(r.0), Json::Int(r.1), Json::Int(r.2 as i64)])).collect());
+                        let crow = Json::List(t.clip_rows.iter().map(|r| Json::List(vec![Json::Int(r.0), Json::Int(r.1), Json::Int(r.2), Json::Int(r.3), Json::Int(r.4), Json::Str(r.5.clone())])).collect());
+                        let seq = Json::List(t.sequence.iter().map(|&x| Json::Int(x)).collect());
+                        let floor = Json::List(t.floor_rows.iter().map(|(a, b)| Json::List(vec![Json::Str(a.clone()), Json::List(b.iter().map(|&x| Json::Int(x)).collect())])).collect());
+                        let fr = Json::List(frames.iter().map(|f: &hk_cook::actor_art::Frame| Json::Obj(vec![("texture".into(), Json::Int(f.texture as i64)), ("box".into(), Json::List(f.box_.iter().map(|&x| Json::Float(x)).collect())), ("box_q16".into(), Json::List(f.box_q16.unwrap().iter().map(|&x| Json::Int(x)).collect())), ("sprite".into(), Json::Str(f.sprite.clone()))])).collect());
+                        let cl = Json::List(clips.iter().map(|c: &hk_cook::actor_art::Clip| Json::Obj(vec![("name".into(), Json::Str(c.name.clone())), ("start".into(), Json::Int(c.start as i64)), ("count".into(), Json::Int(c.count as i64)), ("fps".into(), Json::Float(c.fps)), ("wrap".into(), Json::Int(c.wrap)), ("loopStart".into(), Json::Int(c.loop_start))])).collect());
+                        let pack = Json::Obj(vec![
+                            ("entries".into(), Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&x| Json::Int(x)).collect())).collect())),
+                            ("palettes".into(), Json::List(atlas.palettes.iter().map(|x| Json::Str(hexs(x))).collect())),
+                            ("pages".into(), Json::List(atlas.pages.iter().map(|x| sha(x)).collect())),
+                            ("stream".into(), sha(&atlas.stream)),
+                        ]);
+                        let good = p.decisions == list(field(&v, "decisions")) && p.totals == field(&v, "totals") && cut == field(&v, "cut") && int(&field(&v, "anchor")) as usize == t.anchor && rows3 == field(&v, "sprite_rows") && crow == field(&v, "clip_rows") && seq == field(&v, "sequence") && floor == field(&v, "floor_rows") && fr == field(&v, "frames") && cl == field(&v, "clips") && pack == field(&v, "pack");
+                        if !good { bad += 1; println!("variant {label}: bank differs (decisions {} totals {} cut {} rows {} clips {} seq {} floor {} frames {} clips {} pack {})", p.decisions == list(field(&v, "decisions")), p.totals == field(&v, "totals"), cut == field(&v, "cut"), rows3 == field(&v, "sprite_rows"), crow == field(&v, "clip_rows"), seq == field(&v, "sequence"), floor == field(&v, "floor_rows"), fr == field(&v, "frames"), cl == field(&v, "clips"), pack == field(&v, "pack")); }
+                    }
+                    (Err(e), Json::Str(want)) => { if e != want { bad += 1; println!("variant {label}: refusal {e:?}, python {want:?}"); } }
+                    (r, want) => { bad += 1; println!("variant {label}: rust {:?}, python {want:?}", r.map(|_| "ok")); }
+                }
+            }
+            println!("checked source art and {ok_variants} cooked banks (plus refusals), {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "fkscene" => {
+            // hk-cook-parity fkscene <source dir> <oracle-fkscene dir> <regions.json>: cook_scene_bank over
+            // synthetic region files, including the generated Rust tables and art report.
+            use hk_cook::atlas::{Atlas, Quantized};
+            use hk_cook::fk_bank::{cook_scene_bank, BankRegion};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            use sha2::{Digest, Sha256};
+            let source = lazy_source();
+            let dir = std::path::PathBuf::from(&args[3]);
+            let oracle = parse(&std::fs::read_to_string(dir.join("expected.json")).unwrap()).unwrap();
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let Json::List(scenes) = field(&regions, "scenes") else { panic!("scenes") };
+            let catalogue: Vec<(String, [f64; 4], String)> = scenes.iter().map(|s| {
+                let (Json::Str(file), Json::Str(name)) = (field(s, "file"), field(s, "scene_name")) else { panic!("scene") };
+                let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                let Json::List(b) = field(s, "runtime_bounds") else { panic!("bounds") };
+                (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])], name)
+            }).collect();
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let sha = |d: &[u8]| Json::Str(hexs(&Sha256::digest(d)));
+            let sc = Scene::new(&source, "level46").unwrap();
+            let scan = hk_cook::actors::scan(&sc, &source, &catalogue).unwrap();
+            let fk = scan.iter().find(|r| r.control.as_ref().is_some_and(|c| c.0 == "FalseKnight")).expect("False Knight");
+            let rows: Vec<BankRegion> = list(field(&oracle, "rows")).iter().map(|r| BankRegion { chunk_id: int(&field(r, "chunk_id")), scene_id: int(&field(r, "scene_id")), edge_sources: list(field(r, "edge_sources")).into_iter().map(|s| if let Json::Str(s) = s { s } else { panic!("src") }).collect() }).collect();
+            let quantize = |im: &hk_pil::Image, w: usize, h: usize| -> Result<Quantized, String> {
+                let fallback = |_: &hk_pil::Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
+                hk_cook::quantize::quantize(im, w, h, Some(&fallback))
+            };
+            let mut atlas = Atlas::standard();
+            let (mut frames, mut clips) = (Vec::new(), Vec::new());
+            let mut writer = cook_scene_bank(&sc, &source, fk, &rows, &dir, &mut atlas, &mut frames, &mut clips, &quantize).unwrap();
+            writer.write(&dir, 11).unwrap();
+            atlas.pack().unwrap();
+            let mut bad = 0;
+            let text = |p: &str| std::fs::read_to_string(dir.join(p)).unwrap();
+            let files = field(&oracle, "files");
+            for n in ["false_knight_art.rs", "false_knight_floor.rs"] {
+                if Json::Str(text(&format!("data/{n}"))) != field(&files, n) { bad += 1; println!("{n} differs"); }
+            }
+            let Json::Obj(mut report) = parse(&text(".hkpsx/false-knight/art.json")).unwrap() else { panic!("report") };
+            report.retain(|f| f.0 != "code_sha256");
+            if Json::Obj(report) != field(&oracle, "report") { bad += 1; println!("art report differs"); }
+            let fr = Json::List(frames.iter().map(|f: &hk_cook::actor_art::Frame| Json::Obj(vec![("texture".into(), Json::Int(f.texture as i64)), ("box".into(), Json::List(f.box_.iter().map(|&x| Json::Float(x)).collect())), ("box_q16".into(), Json::List(f.box_q16.unwrap().iter().map(|&x| Json::Int(x)).collect())), ("sprite".into(), Json::Str(f.sprite.clone()))])).collect());
+            if fr != field(&oracle, "frames") { bad += 1; println!("frames differ"); }
+            let cl = Json::List(clips.iter().map(|c: &hk_cook::actor_art::Clip| Json::Obj(vec![("name".into(), Json::Str(c.name.clone())), ("start".into(), Json::Int(c.start as i64)), ("count".into(), Json::Int(c.count as i64)), ("fps".into(), Json::Float(c.fps)), ("wrap".into(), Json::Int(c.wrap)), ("loopStart".into(), Json::Int(c.loop_start))])).collect());
+            if cl != field(&oracle, "clips") { bad += 1; println!("clips differ"); }
+            let pack = Json::Obj(vec![
+                ("entries".into(), Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&x| Json::Int(x)).collect())).collect())),
+                ("palettes".into(), Json::List(atlas.palettes.iter().map(|x| Json::Str(hexs(x))).collect())),
+                ("pages".into(), Json::List(atlas.pages.iter().map(|x| sha(x)).collect())),
+                ("stream".into(), sha(&atlas.stream)),
+            ]);
+            if pack != field(&oracle, "pack") { bad += 1; println!("packed atlas differs"); }
+            let _ = std::fs::remove_dir_all(dir.join(".hkpsx"));
+            for n in ["false_knight_art.rs", "false_knight_floor.rs"] { let _ = std::fs::remove_file(dir.join("data").join(n)); }
+            println!("checked the False Knight scene bank, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "mawlek" => {
+            // hk-cook-parity mawlek <source dir> <oracle-mawlek dir>: host/mawlek_art.py over Crossroads_09.
+            use hk_cook::atlas::{Atlas, Quantized};
+            use hk_cook::mawlek_art as ma;
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            use sha2::{Digest, Sha256};
+            let source = lazy_source();
+            let dir = std::path::PathBuf::from(&args[3]);
+            let oracle = parse(&std::fs::read_to_string(dir.join("expected.json")).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let sha = |d: &[u8]| Json::Str(hexs(&Sha256::digest(d)));
+            let sc = Scene::new(&source, "level45").unwrap();
+            let mut bad = 0;
+            let src = ma::sources(&sc, &source).unwrap();
+            let digests = ma::check_contract(&sc, &source, &src).unwrap();
+            if Json::Obj(digests.iter().map(|(k, v)| (k.clone(), Json::Str(v.clone()))).collect()) != field(&oracle, "digests") { bad += 1; println!("fsm digests differ"); }
+            ma::check_rust(&dir).unwrap();
+            let geo = ma::geometry(&sc, &src).unwrap();
+            if geo.to_json() != field(&oracle, "geometry") { bad += 1; println!("geometry differs: {}", hk_cook::pyjson::dumps(&geo.to_json())); }
+            let (art, turn) = ma::source_art(&sc, &source, &src).unwrap();
+            if Json::Obj(vec![("spit_turn_degrees".into(), Json::Int(turn))]) != field(&oracle, "extra") { bad += 1; println!("spit turn differs"); }
+            let mine_sprites = Json::List(art.sprites.iter().map(|(k, s)| Json::List(vec![Json::Str(k.repr()), Json::Int(s.w as i64), Json::Int(s.h as i64), Json::List(s.box_.iter().map(|&v| Json::Float(v)).collect()), sha(&s.image.data)])).collect());
+            if mine_sprites != field(&oracle, "sprites") {
+                bad += 1;
+                let (a, b) = (list(mine_sprites.clone()), list(field(&oracle, "sprites")));
+                println!("source sprites differ ({} vs {})", a.len(), b.len());
+                for (x, y) in a.iter().zip(&b) { if x != y { println!(" mine   {}\n python {}", hk_cook::pyjson::dumps_sorted_compact(x), hk_cook::pyjson::dumps_sorted_compact(y)); break; } }
+            }
+            let mine_clips = Json::Obj(art.clips.iter().map(|(n, c)| (n.clone(), Json::Obj(vec![("keys".into(), Json::List(c.keys.iter().map(|k| Json::Str(k.repr())).collect())), ("fps".into(), Json::Float(c.record.get("fps").and_then(|v| v.float()).unwrap()))]))).collect());
+            if mine_clips != field(&oracle, "clips") { bad += 1; println!("art clips differ"); }
+            let quantize = |im: &hk_pil::Image, w: usize, h: usize| -> Result<Quantized, String> {
+                let fallback = |_: &hk_pil::Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
+                hk_cook::quantize::quantize(im, w, h, Some(&fallback))
+            };
+            let names = ma::art_clips();
+            let bank_json = |frames: &Vec<hk_cook::actor_art::Frame>, clips: &Vec<hk_cook::actor_art::Clip>, atlas: &Atlas| {
+                let fr = Json::List(frames.iter().map(|f| Json::Obj(vec![("texture".into(), Json::Int(f.texture as i64)), ("box".into(), Json::List(f.box_.iter().map(|&x| Json::Float(x)).collect())), ("box_q16".into(), Json::List(f.box_q16.unwrap().iter().map(|&x| Json::Int(x)).collect())), ("sprite".into(), Json::Str(f.sprite.clone()))])).collect());
+                let cl = Json::List(clips.iter().map(|c| Json::Obj(vec![("name".into(), Json::Str(c.name.clone())), ("start".into(), Json::Int(c.start as i64)), ("count".into(), Json::Int(c.count as i64)), ("fps".into(), Json::Float(c.fps)), ("wrap".into(), Json::Int(c.wrap)), ("loopStart".into(), Json::Int(c.loop_start))])).collect());
+                let pack = Json::Obj(vec![
+                    ("entries".into(), Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&x| Json::Int(x)).collect())).collect())),
+                    ("palettes".into(), Json::List(atlas.palettes.iter().map(|x| Json::Str(hexs(x))).collect())),
+                    ("pages".into(), Json::List(atlas.pages.iter().map(|x| sha(x)).collect())),
+                    ("stream".into(), sha(&atlas.stream)),
+                ]);
+                (fr, cl, pack)
+            };
+            let mut ok_variants = 0;
+            for v in list(field(&oracle, "variants")) {
+                let Json::Str(label) = field(&v, "label") else { panic!("label") };
+                let scenery: Vec<(i64, i64)> = list(field(&v, "scenery")).iter().map(|r| { let l = list(r.clone()); (int(&l[0]), int(&l[1])) }).collect();
+                let mut atlas = Atlas::new(true, 40, 640, true, None);
+                let (mut frames, mut clips) = (Vec::new(), Vec::new());
+                let result = hk_cook::fk_bank::plan(&art, &scenery, &quantize, &ma::PRIORITY, ma::SCENE_PAGE_LIMIT, ma::STREAM_BYTES_LIMIT, "Mawlek").and_then(|p| hk_cook::fk_bank::append_bank(&mut atlas, &mut frames, &mut clips, &art, &p, &names, "Mawlek parts").map(|t| (p, t))).and_then(|r| atlas.pack().map(|_| r));
+                match (result, field(&v, "error")) {
+                    (Ok((p, t)), Json::Null) => {
+                        ok_variants += 1;
+                        let cut = Json::List(p.cut.iter().map(|(k, c)| Json::List(vec![Json::Str(k.repr()), Json::Bool(c.0), Json::List(c.1.iter().map(|r| Json::List(r.iter().map(|&x| Json::Int(x)).collect())).collect())])).collect());
+                        let rows3 = Json::List(t.sprite_rows.iter().map(|r| Json::List(vec![Json::Int(r.0), Json::Int(r.1), Json::Int(r.2 as i64)])).collect());
+                        let crow = Json::List(t.clip_rows.iter().map(|r| Json::List(vec![Json::Int(r.0), Json::Int(r.1), Json::Int(r.2), Json::Int(r.3), Json::Int(r.4), Json::Str(r.5.clone())])).collect());
+                        let seq = Json::List(t.sequence.iter().map(|&x| Json::Int(x)).collect());
+                        let (fr, cl, pack) = bank_json(&frames, &clips, &atlas);
+                        let table = Json::Str(ma::rust_table(t.anchor as i64 + 5, &t, &geo, 9));
+                        let good = p.decisions == list(field(&v, "decisions")) && p.totals == field(&v, "totals") && cut == field(&v, "cut") && int(&field(&v, "anchor")) as usize == t.anchor && rows3 == field(&v, "sprite_rows") && crow == field(&v, "clip_rows") && seq == field(&v, "sequence") && fr == field(&v, "frames") && cl == field(&v, "clips") && pack == field(&v, "pack") && table == field(&v, "table");
+                        if !good { bad += 1; println!("variant {label}: bank differs"); }
+                    }
+                    (Err(e), Json::Str(want)) => { if e != want { bad += 1; println!("variant {label}: refusal {e:?}, python {want:?}"); } }
+                    (r, want) => { bad += 1; println!("variant {label}: rust {:?}, python {want:?}", r.map(|_| "ok")); }
+                }
+            }
+            // The whole scene bank over synthetic region files.
+            let scene = field(&oracle, "scene");
+            let rows: Vec<ma::MawlekRegion> = list(field(&scene, "rows")).iter().map(|r| ma::MawlekRegion { chunk_id: int(&field(r, "chunk_id")), scene_id: int(&field(r, "scene_id")) }).collect();
+            let mut atlas = Atlas::standard();
+            let (mut frames, mut clips) = (Vec::new(), Vec::new());
+            let mut writer = ma::cook_scene_bank(&sc, &source, &rows, &dir, &mut atlas, &mut frames, &mut clips, &quantize).unwrap();
+            writer.write(&dir, 7).unwrap();
+            atlas.pack().unwrap();
+            let text = |p: &str| std::fs::read_to_string(dir.join(p)).unwrap();
+            if Json::Str(text("data/mawlek_art.rs")) != field(&scene, "file") { bad += 1; println!("data/mawlek_art.rs differs"); }
+            let Json::Obj(mut report) = parse(&text(".hkpsx/mawlek/art.json")).unwrap() else { panic!("report") };
+            report.retain(|f| f.0 != "code_sha256");
+            if Json::Obj(report) != field(&scene, "report") { bad += 1; println!("art report differs"); }
+            let (fr, cl, pack) = bank_json(&frames, &clips, &atlas);
+            if fr != field(&scene, "frames") || cl != field(&scene, "clips") || pack != field(&scene, "pack") { bad += 1; println!("scene bank differs"); }
+            let _ = std::fs::remove_dir_all(dir.join(".hkpsx"));
+            let _ = std::fs::remove_file(dir.join("data/mawlek_art.rs"));
+            println!("checked the contract, geometry, source art, {ok_variants} cooked banks and the scene bank, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "gruz" => {
+            // hk-cook-parity gruz <source dir> <oracle-gruz dir>: the Gruz Mother bank of host/false_knight_art.py over Crossroads_04.
+            use hk_cook::atlas::{Atlas, Quantized};
+            use hk_cook::gruz_art as ma;
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            use sha2::{Digest, Sha256};
+            let source = lazy_source();
+            let dir = std::path::PathBuf::from(&args[3]);
+            let oracle = parse(&std::fs::read_to_string(dir.join("expected.json")).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let sha = |d: &[u8]| Json::Str(hexs(&Sha256::digest(d)));
+            let sc = Scene::new(&source, "level40").unwrap();
+            let mut bad = 0;
+            let src = ma::sources(&sc, &source).unwrap();
+            let digests = ma::check_contract(&sc, &source, &src).unwrap();
+            if Json::Obj(digests.iter().map(|(k, v)| (k.clone(), Json::Str(v.clone()))).collect()) != field(&oracle, "digests") { bad += 1; println!("fsm digests differ"); }
+            ma::check_rust(&dir).unwrap();
+            let geo = ma::geometry(&sc, &src).unwrap();
+            if geo.to_json() != field(&oracle, "geometry") { bad += 1; println!("geometry differs: {}", hk_cook::pyjson::dumps(&geo.to_json())); }
+            let (art, boxes) = ma::source_art(&sc, &source, &src).unwrap();
+            let mut order: Vec<hk_cook::fk_bank::SpriteKey> = Vec::new();
+            for name in ma::CLIPS { for k in &art.clip(name).unwrap().keys { if !order.contains(k) { order.push(k.clone()); } } }
+            let mine_boxes = Json::List(order.iter().map(|k| boxes.iter().find(|b| &b.0 == k).and_then(|b| b.1).map_or(Json::Null, |b| Json::List(b.iter().map(|&v| Json::Float(v)).collect()))).collect());
+            if mine_boxes != field(&oracle, "boxes") { bad += 1; println!("sprite boxes differ"); }
+            let mine_sprites = Json::List(art.sprites.iter().map(|(k, s)| Json::List(vec![Json::Str(k.repr()), Json::Int(s.w as i64), Json::Int(s.h as i64), Json::List(s.box_.iter().map(|&v| Json::Float(v)).collect()), sha(&s.image.data)])).collect());
+            if mine_sprites != field(&oracle, "sprites") {
+                bad += 1;
+                let (a, b) = (list(mine_sprites.clone()), list(field(&oracle, "sprites")));
+                println!("source sprites differ ({} vs {})", a.len(), b.len());
+                for (x, y) in a.iter().zip(&b) { if x != y { println!(" mine   {}\n python {}", hk_cook::pyjson::dumps_sorted_compact(x), hk_cook::pyjson::dumps_sorted_compact(y)); break; } }
+            }
+            let mine_clips = Json::Obj(art.clips.iter().map(|(n, c)| (n.clone(), Json::Obj(vec![("keys".into(), Json::List(c.keys.iter().map(|k| Json::Str(k.repr())).collect())), ("fps".into(), Json::Float(c.record.get("fps").and_then(|v| v.float()).unwrap())), ("wrap".into(), Json::Int(c.record.get("wrapMode").and_then(|v| v.int()).unwrap()))]))).collect());
+            if mine_clips != field(&oracle, "clips") { bad += 1; println!("art clips differ"); }
+            let quantize = |im: &hk_pil::Image, w: usize, h: usize| -> Result<Quantized, String> {
+                let fallback = |_: &hk_pil::Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
+                hk_cook::quantize::quantize(im, w, h, Some(&fallback))
+            };
+            let names: Vec<String> = ma::CLIPS.iter().map(|s| s.to_string()).collect();
+            let bank_json = |frames: &Vec<hk_cook::actor_art::Frame>, clips: &Vec<hk_cook::actor_art::Clip>, atlas: &Atlas| {
+                let fr = Json::List(frames.iter().map(|f| Json::Obj(vec![("texture".into(), Json::Int(f.texture as i64)), ("box".into(), Json::List(f.box_.iter().map(|&x| Json::Float(x)).collect())), ("box_q16".into(), Json::List(f.box_q16.unwrap().iter().map(|&x| Json::Int(x)).collect())), ("sprite".into(), Json::Str(f.sprite.clone()))])).collect());
+                let cl = Json::List(clips.iter().map(|c| Json::Obj(vec![("name".into(), Json::Str(c.name.clone())), ("start".into(), Json::Int(c.start as i64)), ("count".into(), Json::Int(c.count as i64)), ("fps".into(), Json::Float(c.fps)), ("wrap".into(), Json::Int(c.wrap)), ("loopStart".into(), Json::Int(c.loop_start))])).collect());
+                let pack = Json::Obj(vec![
+                    ("entries".into(), Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&x| Json::Int(x)).collect())).collect())),
+                    ("palettes".into(), Json::List(atlas.palettes.iter().map(|x| Json::Str(hexs(x))).collect())),
+                    ("pages".into(), Json::List(atlas.pages.iter().map(|x| sha(x)).collect())),
+                    ("stream".into(), sha(&atlas.stream)),
+                ]);
+                (fr, cl, pack)
+            };
+            let mut ok_variants = 0;
+            for v in list(field(&oracle, "variants")) {
+                let Json::Str(label) = field(&v, "label") else { panic!("label") };
+                let scenery: Vec<(i64, i64)> = list(field(&v, "scenery")).iter().map(|r| { let l = list(r.clone()); (int(&l[0]), int(&l[1])) }).collect();
+                let mut atlas = Atlas::new(true, 40, 640, true, None);
+                let (mut frames, mut clips) = (Vec::new(), Vec::new());
+                let result = hk_cook::fk_bank::plan(&art, &scenery, &quantize, &ma::PRIORITY, ma::SCENE_PAGE_LIMIT, ma::STREAM_BYTES_LIMIT, "Gruz Mother").and_then(|p| hk_cook::fk_bank::append_bank(&mut atlas, &mut frames, &mut clips, &art, &p, &names, "Gruz Mother parts").map(|t| (p, t))).and_then(|r| atlas.pack().map(|_| r));
+                match (result, field(&v, "error")) {
+                    (Ok((p, t)), Json::Null) => {
+                        ok_variants += 1;
+                        let cut = Json::List(p.cut.iter().map(|(k, c)| Json::List(vec![Json::Str(k.repr()), Json::Bool(c.0), Json::List(c.1.iter().map(|r| Json::List(r.iter().map(|&x| Json::Int(x)).collect())).collect())])).collect());
+                        let rows3 = Json::List(t.sprite_rows.iter().map(|r| Json::List(vec![Json::Int(r.0), Json::Int(r.1), Json::Int(r.2 as i64)])).collect());
+                        let crow = Json::List(t.clip_rows.iter().map(|r| Json::List(vec![Json::Int(r.0), Json::Int(r.1), Json::Int(r.2), Json::Int(r.3), Json::Int(r.4), Json::Str(r.5.clone())])).collect());
+                        let seq = Json::List(t.sequence.iter().map(|&x| Json::Int(x)).collect());
+                        let (fr, cl, pack) = bank_json(&frames, &clips, &atlas);
+                        let sprite_boxes: Vec<Option<[f64; 4]>> = order.iter().map(|k| boxes.iter().find(|b| &b.0 == k).and_then(|b| b.1)).collect();
+                        let table = Json::Str(ma::rust_table(t.anchor as i64 + 5, &t, &geo, 9, &sprite_boxes));
+                        let good = p.decisions == list(field(&v, "decisions")) && p.totals == field(&v, "totals") && cut == field(&v, "cut") && int(&field(&v, "anchor")) as usize == t.anchor && rows3 == field(&v, "sprite_rows") && crow == field(&v, "clip_rows") && seq == field(&v, "sequence") && fr == field(&v, "frames") && cl == field(&v, "clips") && pack == field(&v, "pack") && table == field(&v, "table");
+                        if !good { bad += 1; println!("variant {label}: bank differs"); }
+                    }
+                    (Err(e), Json::Str(want)) => { if e != want { bad += 1; println!("variant {label}: refusal {e:?}, python {want:?}"); } }
+                    (r, want) => { bad += 1; println!("variant {label}: rust {:?}, python {want:?}", r.map(|_| "ok")); }
+                }
+            }
+            // The whole scene bank over synthetic region files.
+            let scene = field(&oracle, "scene");
+            let rows: Vec<ma::GruzRegion> = list(field(&scene, "rows")).iter().map(|r| ma::GruzRegion { chunk_id: int(&field(r, "chunk_id")), scene_id: int(&field(r, "scene_id")) }).collect();
+            let mut atlas = Atlas::standard();
+            let (mut frames, mut clips) = (Vec::new(), Vec::new());
+            let mut writer = ma::cook_scene_bank(&sc, &source, &rows, &dir, &mut atlas, &mut frames, &mut clips, &quantize).unwrap();
+            writer.write(&dir, 7).unwrap();
+            atlas.pack().unwrap();
+            let text = |p: &str| std::fs::read_to_string(dir.join(p)).unwrap();
+            if Json::Str(text("data/gruz_art.rs")) != field(&scene, "file") { bad += 1; println!("data/gruz_art.rs differs"); }
+            let Json::Obj(mut report) = parse(&text(".hkpsx/gruz-mother/art.json")).unwrap() else { panic!("report") };
+            report.retain(|f| f.0 != "code_sha256");
+            if Json::Obj(report) != field(&scene, "report") { bad += 1; println!("art report differs"); }
+            let (fr, cl, pack) = bank_json(&frames, &clips, &atlas);
+            if fr != field(&scene, "frames") || cl != field(&scene, "clips") || pack != field(&scene, "pack") { bad += 1; println!("scene bank differs"); }
+            let _ = std::fs::remove_dir_all(dir.join(".hkpsx"));
+            let _ = std::fs::remove_file(dir.join("data/gruz_art.rs"));
+            println!("checked the contract, geometry, source art, {ok_variants} cooked banks and the scene bank, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }

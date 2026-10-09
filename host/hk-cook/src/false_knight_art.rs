@@ -35,11 +35,11 @@ const MAX_STATIC_PARTS: usize = 16;
 /// The first page ids of host/pack_scenes: additive-scene objects carry shifted ids from here.
 const ADDITIVE_ID_BASE: i64 = 100000;
 
-fn aligned(n: i64) -> i64 {
+pub(crate) fn aligned(n: i64) -> i64 {
     (n + 3) / 4 * 4
 }
 
-fn rect_bytes(rect: &[i64; 4]) -> i64 {
+pub(crate) fn rect_bytes(rect: &[i64; 4]) -> i64 {
     aligned(rect[2]) / 2 * rect[3]
 }
 
@@ -116,7 +116,7 @@ pub fn part_box(b: [i64; 4], w: i64, h: i64, rect: [i64; 4]) -> [i64; 4] {
     [lerp(b[0], b[2], x, w), lerp(b[3], b[1], y + ph, h), lerp(b[0], b[2], x + pw, w), lerp(b[3], b[1], y, h)]
 }
 
-fn q(v: f64) -> i64 {
+pub(crate) fn q(v: f64) -> i64 {
     py_round(v * 65536.0)
 }
 
@@ -140,9 +140,10 @@ pub struct Shockwave {
     pub params: Json,
     pub library: Obj,
     pub clip_name: String,
+    pub clip: Value,
 }
 
-fn falsey_control<'a>(sc: &'a Scene, gid: i64) -> Result<&'a Value> {
+pub(crate) fn falsey_control<'a>(sc: &'a Scene, gid: i64) -> Result<&'a Value> {
     component_records(sc, gid)
         .into_iter()
         .rev()
@@ -286,13 +287,13 @@ pub fn shockwave_source(sc: &Scene, source: &Source, fk_gid: i64) -> Result<Shoc
         ("silence_ticks", int_json(t(literal(&snap, "transitionTime")?))),
         ("sources", jobj(vec![("wave", Json::Str(wave_o.sid())), ("spurt", Json::Str(spurt_o.sid())), ("library", Json::Str(library.sid()))])),
     ]);
-    Ok(Shockwave { params, library, clip_name })
+    Ok(Shockwave { params, library, clip_name, clip: clip.clone() })
 }
 
 // --- placement facts ----------------------------------------------------------------------
 
 /// `_children(sc, gid)`: name to game object over every transform parented to it, the last winning.
-fn children(sc: &Scene, gid: i64) -> Result<Vec<(String, i64)>> {
+pub(crate) fn children(sc: &Scene, gid: i64) -> Result<Vec<(String, i64)>> {
     let tid = *sc.go_transform.get(&gid).ok_or("object has no transform")?;
     let mut out: Vec<(String, i64)> = Vec::new();
     for o in sc.objects.iter().filter(|o| o.typename == "Transform") {
@@ -309,12 +310,12 @@ fn children(sc: &Scene, gid: i64) -> Result<Vec<(String, i64)>> {
     Ok(out)
 }
 
-fn child(kids: &[(String, i64)], name: &str) -> Result<i64> {
+pub(crate) fn child(kids: &[(String, i64)], name: &str) -> Result<i64> {
     kids.iter().find(|k| k.0 == name).map(|k| k.1).ok_or_else(|| format!("missing child {name}"))
 }
 
 /// `_component(sc, gid, kind)`: the one component of a kind on a game object.
-fn component<'a>(sc: &'a Scene, gid: i64, kind: &str) -> Result<&'a Value> {
+pub(crate) fn component<'a>(sc: &'a Scene, gid: i64, kind: &str) -> Result<&'a Value> {
     let found: Vec<&Value> = component_records(sc, gid).into_iter().filter(|r| r.1 == kind).map(|r| r.2).collect();
     if found.len() != 1 {
         return err(format!("expected one {kind} on {}", get(sc.go(gid).ok_or("no GameObject")?, "m_Name")?.str().unwrap_or_default()));
@@ -323,7 +324,7 @@ fn component<'a>(sc: &'a Scene, gid: i64, kind: &str) -> Result<&'a Value> {
 }
 
 /// `_component_ids(sc, gid, kind)`: the game object's components of a kind, in component order.
-fn component_ids(sc: &Scene, gid: i64, kind: &str) -> Result<Vec<i64>> {
+pub(crate) fn component_ids(sc: &Scene, gid: i64, kind: &str) -> Result<Vec<i64>> {
     let mut out = Vec::new();
     for c in get(sc.go(gid).ok_or("no GameObject")?, "m_Component")?.list().unwrap_or(&[]) {
         let id = get(get(c, "component")?, "m_PathID")?.int().unwrap_or(0);
@@ -334,7 +335,7 @@ fn component_ids(sc: &Scene, gid: i64, kind: &str) -> Result<Vec<i64>> {
     Ok(out)
 }
 
-fn component_id(sc: &Scene, gid: i64, kind: &str) -> Result<i64> {
+pub(crate) fn component_id(sc: &Scene, gid: i64, kind: &str) -> Result<i64> {
     let found = component_ids(sc, gid, kind)?;
     if found.len() != 1 {
         return err(format!("expected one {kind} on {}", get(sc.go(gid).ok_or("no GameObject")?, "m_Name")?.str().unwrap_or_default()));
@@ -343,7 +344,7 @@ fn component_id(sc: &Scene, gid: i64, kind: &str) -> Result<i64> {
 }
 
 /// The first additive-scene game object of a name, in object order.
-fn additive_named(sc: &Scene, name: &str) -> Result<i64> {
+pub(crate) fn additive_named(sc: &Scene, name: &str) -> Result<i64> {
     sc.objects
         .iter()
         .filter(|o| o.typename == "GameObject" && o.id >= ADDITIVE_ID_BASE)
@@ -352,7 +353,7 @@ fn additive_named(sc: &Scene, name: &str) -> Result<i64> {
         .ok_or_else(|| format!("no {name} in an additive scene"))
 }
 
-fn local(sc: &Scene, gid: i64) -> Result<([f64; 2], [f64; 2])> {
+pub(crate) fn local(sc: &Scene, gid: i64) -> Result<([f64; 2], [f64; 2])> {
     let t = sc.transform(*sc.go_transform.get(&gid).ok_or("no transform")?).ok_or("transform missing")?;
     Ok((xy(t, "m_LocalPosition")?, xy(t, "m_LocalScale")?))
 }
@@ -631,4 +632,9 @@ pub fn neutral_actor(control: &Json, limitations: &[String]) -> (Json, Vec<Strin
     let mut limits: Vec<String> = limitations.iter().filter(|t| !t.contains("clips are cooked")).cloned().collect();
     limits.push("Every clip FalseyControl plays, the Head, the Death Head, the empty armour and the floor states are cooked by host/false_knight_art.py into this scene alone; the ActorSpec clip fields point at Blank.".into());
     (control, limits)
+}
+
+/// `additive_named` for the bank cook.
+pub(crate) fn additive_named_pub(sc: &Scene, name: &str) -> Result<i64> {
+    additive_named(sc, name)
 }
