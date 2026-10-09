@@ -18,7 +18,7 @@
 //! offset). The Python computed and could refuse on the rest of each record
 //! (audio, mask fades, hit polygons) without using it here.
 
-use crate::common::{err, get, py_round, Result};
+use crate::common::{component_records, err, get, kid, kids, py_round, Result};
 use crate::cook::{focal, CAM_Z};
 use crate::materials::quantize_alpha_coverage;
 use crate::pyjson::{dumps, Json};
@@ -1474,9 +1474,10 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
     Ok(c)
 }
 
-/// Stalactite effect owners: `STALACTITE_OWNER | slot << 1 | kind`, the slot
+/// Stalactite effect owners: `STALACTITE_OWNER | slot << 2 | kind`, the slot
 /// being the stalactite's order in its scene (game/src/props.rs) and the kind
-/// 0 for an upward slash's `hitUpEffectPrefabs`, 1 for `landEffectPrefabs`.
+/// 0 for an upward slash's `hitUpEffectPrefabs`, 1 for `landEffectPrefabs`, 2 for
+/// the fallen version's Breakable debris.
 pub const STALACTITE_OWNER: i64 = 0xC000;
 
 /// StalactiteControl's particle prefabs, spawned with `Spawn(prefab, position)`
@@ -1499,7 +1500,7 @@ fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64,
                 if i(reference, "m_PathID")? == 0 {
                     continue;
                 }
-                let owner = STALACTITE_OWNER | slot << 1 | kind;
+                let owner = STALACTITE_OWNER | slot << 2 | kind;
                 let found = match prefab_emitters(source, &sc.base, sc, reference, gravity, origin, None) {
                     Ok(found) => found,
                     Err(e) => {
@@ -1521,6 +1522,43 @@ fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64,
                         ("shader".into(), Json::Str(e.shader.clone())),
                         ("scaling_mode".into(), Json::Int(e.scaling_mode)),
                         ("ps_sha256".into(), Json::Str(e.ps_sha256.clone())),
+                    ]));
+                }
+            }
+        }
+        // Kind 2: the fallen stalactite is its `Embedded` child, a Breakable
+        // whose debris parts a nail hit breaks into (cooked at the child's
+        // place, moved by the guest to where the stalactite lies).
+        if let Some(embedded) = kid(&kids(sc, gid).map_err(|e| e.to_string())?, "Embedded") {
+            let owner = STALACTITE_OWNER | slot << 2 | 2;
+            for record in component_records(sc, embedded).into_iter().filter(|r| r.1 == "Breakable") {
+                let angle_offset = f(record.2, "angleOffset")?;
+                for r in get(record.2, "debrisParts")?.list().unwrap_or(&[]) {
+                    if i(r, "m_PathID")? == 0 {
+                        continue;
+                    }
+                    let part = i(r, "m_PathID")?;
+                    let found = match part_emitter(source, sc, part, gravity, false, false, None) {
+                        Ok(Found::Emitter(e)) => e,
+                        Ok(_) => continue,
+                        Err(e) => {
+                            c.ignored.push(ignore(Json::Str(sc.sid(o.id)), Json::Str("embedded debris".into()), format!("unsupported stalactite particle: {e}")));
+                            continue;
+                        }
+                    };
+                    let (origin, basis) = placement(&found.matrix)?;
+                    let style = c.style_index(found.style.clone());
+                    c.emitters.push(EmitterRow { scene: scene_id, owner, source: found.system.path_id(), style, angle_offset: q(angle_offset)?, origin, basis });
+                    c.texture(&found.texture_id, &found.texture);
+                    c.records.push(Json::Obj(vec![
+                        ("owner".into(), Json::Str(sc.sid(o.id))),
+                        ("name".into(), Json::Str("embedded Breakable debrisParts".into())),
+                        ("part".into(), Json::Str(format!("{}:{part}", hk_unity::base_name(&sc.base.name)))),
+                        ("system".into(), Json::Str(found.system.sid())),
+                        ("texture".into(), Json::Str(found.texture_id.clone())),
+                        ("shader".into(), Json::Str(found.shader.clone())),
+                        ("scaling_mode".into(), Json::Int(found.scaling_mode)),
+                        ("ps_sha256".into(), Json::Str(found.ps_sha256.clone())),
                     ]));
                 }
             }
