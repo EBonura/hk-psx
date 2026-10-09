@@ -53,7 +53,7 @@ const SECRET_BREAK_BUDGET: i64 = 96;
 /// `Emit(n)` releases its n at once.
 const EMIT_RATE: f64 = 10000.0;
 const FX_MAGIC: &[u8] = b"HKFX0001";
-const FX_LIMITS: [(&str, usize); 5] = [("styles", 16), ("emitters", 96), ("art", 48), ("uploads", 48), ("frames", 96)];
+const FX_LIMITS: [(&str, usize); 5] = [("styles", 18), ("emitters", 100), ("art", 48), ("uploads", 48), ("frames", 96)];
 const FAMILY_WALL: i64 = 1;
 const FAMILY_WALL_TK2D: i64 = 2;
 const FAMILY_FLOOR: i64 = 3;
@@ -811,7 +811,7 @@ fn pair<'a>(list: &'a Value, key: &str) -> Result<&'a Value> {
 /// `part_emitter`: one debrisPart's emitter, Silent when a played system
 /// provably emits nothing, or None when the part is not a particle system.
 #[allow(clippy::too_many_arguments)]
-fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played: bool, relaxed: bool, emit: Option<i64>) -> Result<Found> {
+fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played: bool, relaxed: bool, emit: Option<i64>, unloop: bool) -> Result<Found> {
     let mut cs: Vec<(String, Obj, Value)> = Vec::new();
     for r in view.component_refs(gid)? {
         let o = view.deref(source, &r)?;
@@ -849,6 +849,10 @@ fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played
     let sid = texture.sid();
     let mut matrix = view.world_of(gid)?;
     let mut ps = ps;
+    if unloop {
+        // An FSM-driven loop (rate set while a state runs) cooked as its repeating burst.
+        set(&mut ps, "looping", Value::Int(0));
+    }
     if relaxed {
         (ps, matrix) = secret_relax(&ps, &matrix, emit)?;
     }
@@ -961,7 +965,7 @@ fn prefab_emitters(source: &Source, file: &Arc<SerializedFile>, view_of: &dyn Vi
     let view = PrefabView::new(source, prefab.file.clone(), prefab.path_id(), origin, rotation)?;
     let mut found = Vec::new();
     for gid in view.subtree()? {
-        if let Found::Emitter(mut e) = part_emitter(source, &view, gid, gravity, true, true, None)? {
+        if let Found::Emitter(mut e) = part_emitter(source, &view, gid, gravity, true, true, None, false)? {
             e.part = Some(format!("{}:{gid}", hk_unity::base_name(&view.file.name)));
             found.push(*e);
         }
@@ -1398,7 +1402,7 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         for b in breakable_sources(source, &sc, &wanted)? {
             for &gid in &b.debris {
                 let part = format!("{file}:{gid}");
-                let found = match part_emitter(source, &sc, gid, gravity, false, false, None) {
+                let found = match part_emitter(source, &sc, gid, gravity, false, false, None, false) {
                     Ok(x) => x,
                     Err(e) => {
                         c.ignored.push(ignore(Json::Str(b.source.clone()), Json::Str(part), format!("unsupported particle style: {e}")));
@@ -1468,10 +1472,74 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         let sc = Scene::new(source, &file).map_err(|e| e.to_string())?;
         collect_stalactites(source, &sc, scene_id, gravity, &mut c)?;
     }
+    let scenes: Vec<i64> = metadata["scenes"].as_array().ok_or("no scenes")?.iter().filter_map(|d| d["scene_id"].as_i64()).collect();
+    collect_hero_dust(source, gravity, &scenes, &mut c)?;
     if c.styles.len() > 253 {
         return err("particle style IDs");
     }
     Ok(c)
+}
+
+/// The Knight's Focus dust: `Dust L` and `Dust R`, children of the Knight's `Focus Effects`,
+/// which the Spell Control FSM sets to 60 particles a second while Focus runs and back to
+/// none when it ends. Cooked as the 0.1 s burst of six the loop repeats, in every scene (the
+/// Knight can focus anywhere), at the Knight's own place; the guest raises one burst every six
+/// ticks while Focus runs, moved to the Knight (game/src/frame.rs). Optional like the
+/// stalactites' effects: a scene whose art budget has no room for the dust texture goes without.
+pub const HERO_DUST_OWNER: i64 = 0xFFFF;
+const HERO_DUST_BURST: i64 = 6;
+fn collect_hero_dust(source: &Source, gravity: f64, scenes: &[i64], c: &mut Collected) -> Result<()> {
+    let file = source.file("resources.assets").map_err(|e| e.to_string())?;
+    let read = |id: i64| -> Result<Value> {
+        let o = source.object(&file, id).map_err(|e| e.to_string())?;
+        source.read(&o).map_err(|e| e.to_string())
+    };
+    let transform_of = |gid: i64| -> Result<Value> {
+        for comp in get(&read(gid)?, "m_Component")?.list().unwrap_or(&[]) {
+            let o = source.deref(&file, get(comp, "component")?).map_err(|e| e.to_string())?;
+            if o.class_id() == 4 {
+                return source.read(&o).map_err(|e| e.to_string());
+            }
+        }
+        err("no Transform")
+    };
+    const DUST: [(i64, &str); 2] = [(4650, "Dust L"), (5097, "Dust R")];
+    let father = i(get(&transform_of(DUST[0].0)?, "m_Father")?, "m_PathID")?;
+    let focus_effects = i(get(&read(father)?, "m_GameObject")?, "m_PathID")?;
+    let mut found = Vec::new();
+    {
+        let view = PrefabView::new(source, file.clone(), focus_effects, [0.0, 0.0, 0.0], Some([0.0, 0.0, 0.0]))?;
+        for (gid, name) in DUST {
+            if get(&read(gid)?, "m_Name")?.str().as_deref() != Some(name) {
+                return err(format!("Focus dust {gid} is not {name}"));
+            }
+            match part_emitter(source, &view, gid, gravity, true, true, Some(HERO_DUST_BURST), true)? {
+                Found::Emitter(e) => found.push(*e),
+                _ => return err(format!("{name} is not a particle system")),
+            }
+        }
+    }
+    for &scene in scenes {
+        for e in &found {
+            let style = c.style_index(e.style.clone());
+            let (origin, basis) = placement(&e.matrix)?;
+            c.emitters.push(EmitterRow { scene, owner: HERO_DUST_OWNER, source: e.system.path_id(), style, angle_offset: 0, origin, basis });
+            c.texture(&e.texture_id, &e.texture);
+        }
+    }
+    for e in &found {
+        c.records.push(Json::Obj(vec![
+            ("owner".into(), Json::Str("Knight / Focus Effects".into())),
+            ("name".into(), Json::Str("Dust L and Dust R, per Focus tick".into())),
+            ("part".into(), Json::Str(format!("resources.assets:{}", e.system.path_id()))),
+            ("system".into(), Json::Str(e.system.sid())),
+            ("texture".into(), Json::Str(e.texture_id.clone())),
+            ("shader".into(), Json::Str(e.shader.clone())),
+            ("scaling_mode".into(), Json::Int(e.scaling_mode)),
+            ("ps_sha256".into(), Json::Str(e.ps_sha256.clone())),
+        ]));
+    }
+    Ok(())
 }
 
 /// Stalactite effect owners: `STALACTITE_OWNER | slot << 2 | kind`, the slot
@@ -1538,7 +1606,7 @@ fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64,
                         continue;
                     }
                     let part = i(r, "m_PathID")?;
-                    let found = match part_emitter(source, sc, part, gravity, false, false, None) {
+                    let found = match part_emitter(source, sc, part, gravity, false, false, None, false) {
                         Ok(Found::Emitter(e)) => e,
                         Ok(_) => continue,
                         Err(e) => {
@@ -1586,7 +1654,7 @@ fn collect_secret(source: &Source, sc: &Scene, scene_id: i64, secret: &J, gravit
                     if !sc.active(child) {
                         return Ok(());
                     }
-                    if let Found::Emitter(e) = part_emitter(source, sc, child, gravity, true, true, entry.2)? {
+                    if let Found::Emitter(e) = part_emitter(source, sc, child, gravity, true, true, entry.2, false)? {
                         found.push((*e, entry.2, sc.sid(child)));
                     }
                 } else {

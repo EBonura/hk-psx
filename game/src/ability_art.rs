@@ -38,12 +38,35 @@ pub fn frame_index(clip: usize, age: u32) -> usize {
     let frame = (u64::from(age) * u64::from(c.fps) / 60) as usize;
     c.start + if c.wrap == 0 { frame % c.count } else { frame.min(c.count - 1) }
 }
-/// Texels for one ability frame, for the animation cache's upload closure.
-pub fn texels(index: usize) -> Option<(&'static [u8], u16, u16)> {
+/// Width and height of one ability frame's texels.
+pub fn size(index: usize) -> Option<(u16, u16)> {
     let frame = ABILITY_FRAMES.get(index)?;
-    let start = PALETTE_BYTES + frame.offset;
-    let len = (frame.width as usize + 3) / 4 * 2 * frame.height as usize;
-    Some((&DATA[start..start + len], frame.width, frame.height))
+    Some((frame.width, frame.height))
+}
+/// Decoded texel bytes of one ability frame: 4 bpp, rows padded to whole halfwords.
+pub fn texel_bytes(index: usize) -> Option<usize> {
+    let frame = ABILITY_FRAMES.get(index)?;
+    Some((frame.width as usize + 3) / 4 * 2 * frame.height as usize)
+}
+/// The frame's run-length coded texels (host/ability_art.py `packbits`), running to the
+/// end of the blob at worst: the decoder stops at `texel_bytes`.
+fn coded(index: usize) -> Option<&'static [u8]> {
+    Some(&DATA[PALETTE_BYTES + ABILITY_FRAMES.get(index)?.offset..])
+}
+/// Bytes of a frame in order, decoded from its run-length code. A token below 0x80 is a
+/// literal of token + 1 bytes; from 0x80 it is a run of (token & 0x7f) + 2 copies of the
+/// next byte.
+struct Unpack { src: &'static [u8], at: usize, literal: usize, run: usize, value: u8 }
+impl Unpack {
+    fn new(src: &'static [u8]) -> Self { Unpack { src, at: 0, literal: 0, run: 0, value: 0 } }
+    fn next(&mut self) -> u8 {
+        if self.run == 0 && self.literal == 0 {
+            let token = self.src[self.at];
+            self.at += 1;
+            if token < 0x80 { self.literal = token as usize + 1 } else { self.run = (token & 0x7f) as usize + 2; self.value = self.src[self.at]; self.at += 1 }
+        }
+        if self.run != 0 { self.run -= 1; self.value } else { self.literal -= 1; let b = self.src[self.at]; self.at += 1; b }
+    }
 }
 
 #[cfg(not(test))]
@@ -55,6 +78,28 @@ mod presentation {
     pub static mut HK_ABILITY_DRAWN: u32 = 0;
     /// One resident CLUT row per cooked palette, inside the block shade.py
     /// reserved at y482 and does not use.
+    /// Decode one frame's texels into `rect` of VRAM, straight into the GPU's data port,
+    /// so no staging buffer is needed. The caller has drained the GPU's DMA channel.
+    /// Returns the decoded byte count.
+    pub fn upload_frame(index: usize, rect: VramRect) -> Option<u32> {
+        let len = texel_bytes(index)?;
+        let mut stream = Unpack::new(coded(index)?);
+        psx_io::gpu::wait_cmd_ready();
+        psx_io::gpu::write_gp0(psx_hw::gpu::gp0::COPY_CPU_TO_VRAM);
+        psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.x, rect.y));
+        psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.w, rect.h));
+        let mut left = len;
+        while left > 0 {
+            let mut word = 0u32;
+            for shift in 0..4 {
+                if left == 0 { break; }
+                word |= u32::from(stream.next()) << (shift * 8);
+                left -= 1;
+            }
+            psx_io::gpu::write_gp0(word);
+        }
+        Some(len as u32)
+    }
     pub fn upload() {
         assert!(DATA.len() >= PALETTE_BYTES && PALETTE_BYTES == PALETTE_COUNT * 32);
         for i in 0..PALETTE_COUNT {
@@ -102,4 +147,4 @@ mod presentation {
     }
 }
 #[cfg(not(test))]
-pub use presentation::{draw, draw_additive, upload};
+pub use presentation::{draw, draw_additive, upload, upload_frame};
