@@ -23,7 +23,9 @@ pub struct Profile {
     pub start_tick: Option<i64>, pub ticks: usize,
     // original
     pub scene: String, pub gate: String, pub player_data: String, pub hide: Vec<String>, pub enemies: Vec<EnemyMatch>,
-    pub og_timeout: u64, pub fx_off: Vec<String>, pub seed: u32, pub sweep: Vec<String>, pub sweep_frames: usize, pub tour_frames: usize, pub tour_targets: usize,
+    pub og_timeout: u64, pub fx_off: Vec<String>, pub seed: u32, pub sweep: Vec<String>, pub sweep_frames: usize, pub tour_frames: usize, pub tour_targets: usize, pub actor_stride: usize,
+    /// Extra environment for the original's process (`og.env`), e.g. the survey's poke mode.
+    pub env: Vec<(String, String)>,
 }
 
 fn s(v: &Value, k: &str) -> String { v.get(k).and_then(Value::as_str).unwrap_or("").to_string() }
@@ -65,6 +67,8 @@ impl Profile {
             sweep_frames: og.get("sweep_frames").and_then(Value::as_u64).unwrap_or(60) as usize,
             tour_frames: og.get("tour_frames").and_then(Value::as_u64).unwrap_or(75) as usize,
             tour_targets: og.get("tour_targets").and_then(Value::as_u64).unwrap_or(12) as usize,
+            env: og.get("env").and_then(Value::as_object).map(|m| m.iter().map(|(k, v)| (k.clone(), v.as_str().map(String::from).unwrap_or_else(|| v.to_string()))).collect()).unwrap_or_default(),
+            actor_stride: og.get("actor_stride").and_then(Value::as_u64).unwrap_or(5) as usize,
             seed: og.get("seed").and_then(Value::as_u64).unwrap_or(1) as u32,
             og_timeout: og.get("timeout").and_then(Value::as_u64).unwrap_or(300),
         })
