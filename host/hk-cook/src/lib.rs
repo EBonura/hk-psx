@@ -3,10 +3,15 @@
 
 pub mod common;
 pub mod cook_audio;
+pub mod ambience;
+pub mod area_music;
 pub mod break_effects;
 pub mod cook;
 pub mod coverage;
 pub mod fmod;
+pub mod focus_audio;
+pub mod music;
+pub mod music_report;
 pub mod geo_audio;
 pub mod gpu_census;
 pub mod materials;

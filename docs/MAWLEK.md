@@ -73,7 +73,7 @@ mirrored.
 ## Audio
 
 - `EnemyBattle` (the OST's Decisive Battle, per the HK wiki) is CD-DA track 4
-  and Boss Defeat track 5, played once (host/area_music.py). Boss Defeat is
+  and Boss Defeat track 5, played once (host/hk-cook/src/area_music.rs). Boss Defeat is
   25 s of stereo music, which no scene bank has room for.
 - Fifteen one-shots in Crossroads_09's scene bank (host/hk-cook/src/scene_sfx.rs): the
   fight's twelve plus `boss_final_hit` and the two gate clips, shared rows

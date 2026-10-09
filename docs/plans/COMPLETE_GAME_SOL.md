@@ -243,7 +243,7 @@ Compressed geometry/components are host records, not PS1 packs.
 | Actors/corpses | `host/actors.py`, `host/runner.py`, `host/effects.py`; shared `actors.rs`, `corpse.rs`, `runner*`, `climber.rs`; guest `enemies.rs` |
 | World interactions | `host/world.py`, `breakables.py`, `hazards.py`, `geo.py`, `lifeblood.py`, `great_door.py`; guest matching modules plus `world.rs` |
 | Effects | `host/particles.py`, `break_effects.py`; guest `particles.rs`, `debris.rs`, `impact.rs`, `break_effects.rs` |
-| Audio/music | `host/hk-cook/src/cook_audio.rs`, `cook_music.py`, `ambience.py`, `focus_audio.py`, `runner_audio.py`, `title_music.py`; guest `audio*`, `ambience*`, `focus_audio*`, `music.rs` |
+| Audio/music | `host/hk-cook/src/cook_audio.rs`, `host/hk-cook/src/music_report.rs`, `host/hk-cook/src/ambience.rs`, `host/hk-cook/src/focus_audio.rs`, `runner_audio.py`, `title_music.py`; guest `audio*`, `ambience*`, `focus_audio*`, `music.rs` |
 | Menus/text | `host/cook_menu.py`, `cook_hud.py`, `read_points.py`; guest `menu*`, `pause.rs`, `cheats.rs`, `hud*`, `dialogue.rs` |
 | Builds/validation | `host/hk-build/main.rs` (root Cargo driver), `host/build_guest.py`, `host/build_report.py`, `host/stack_budget.py`, `tools/replay_cue.py`, `tools/validate_scene_gates.py`, `tools/validate.py`, `Makefile` |
 | Original oracle | `tools/hkref` (Rust runner), `tools/hkref/mod/Driver.cs`, `EnemyTrace.cs`, other managed probes, `tools/hkref/README.md` |
