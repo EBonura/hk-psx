@@ -32,14 +32,15 @@ SDK it links. The GNU GPL text is in LICENSE.
   AssetsTools.NET's MonoCecilTempGenerator and CommonMonoTemplateHelper
   (https://github.com/nesrak1/AssetsTools.NET, MIT, Copyright (c) 2020 nesrak1),
   the backend TypeTreeGeneratorAPI 0.0.10 uses.
-- host/hk-pil ports image operations from Pillow 12.3.0's libImaging
-  (https://github.com/python-pillow/Pillow), MIT-CMU (HPND) licence,
-  Copyright (c) 1997-2011 Secret Labs AB, (c) 1995-2011 Fredrik Lundh and
-  contributors, (c) 2010 Jeffrey A. Clark and contributors. Its BCn decoder
-  follows BcnDecode.c, which is CC0. host/hk-unity/src/texture.rs follows
+- host/hk-pil and host/hk-lz4 are original work. hk-pil is written from the
+  textbook definitions of resampling, bilinear sampling, polygon fill and
+  median-cut quantisation and from the published BC1, BC3 and BC7 block
+  layouts; hk-lz4 is written from the published LZ4 block format. Neither
+  contains or derives from the source of Pillow, liblz4 or any other library.
+  Where the cookers' outputs depend on a rounding or tie-breaking choice the
+  format does not fix, that choice was fitted by comparing outputs with the
+  earlier implementation as a black box. host/hk-unity/src/texture.rs follows
   UnityPy's Texture2DConverter, SpriteHelper and MeshHelper (MIT).
-- host/hk-lz4 ports liblz4 1.9.4's HC block compressor (lz4hc.c,
-  https://github.com/lz4/lz4, BSD 2-Clause, Copyright (c) Yann Collet).
 - Pillow and transitive host dependencies retain their own licenses and
   installed notices. Exact tested package versions are in host/requirements.lock.
   These extraction and assembly-inspection dependencies are host-only.
