@@ -35,13 +35,17 @@ use std::path::{Path, PathBuf};
 
 /// host/cook.py's camera constants: FOCAL = 120 / tan(12 deg), CAM_Z = -38.1.
 const CAM_Z: f64 = -38.1;
-fn focal() -> f64 { 120.0 / 12f64.to_radians().tan() }
+fn focal() -> f64 {
+    120.0 / 12f64.to_radians().tan()
+}
 
 fn read_json(path: &Path) -> Value {
     let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let mut text = String::new();
     if path.extension().map_or(false, |x| x == "gz") {
-        GzDecoder::new(BufReader::new(file)).read_to_string(&mut text).unwrap();
+        GzDecoder::new(BufReader::new(file))
+            .read_to_string(&mut text)
+            .unwrap();
     } else {
         BufReader::new(file).read_to_string(&mut text).unwrap();
     }
@@ -56,12 +60,20 @@ fn scan_ids(value: &Value, label: &str, out: &mut HashMap<String, BTreeSet<Strin
 
 /// As `scan_ids`, also reading bare integer `game_object`/`gid` fields as
 /// objects of `file` (the actor and breakable rows store them that way).
-fn scan_ids_in(value: &Value, label: &str, file: Option<&str>, out: &mut HashMap<String, BTreeSet<String>>) {
+fn scan_ids_in(
+    value: &Value,
+    label: &str,
+    file: Option<&str>,
+    out: &mut HashMap<String, BTreeSet<String>>,
+) {
     match value {
         Value::String(s) => {
             if let Some((file, id)) = s.split_once(':') {
-                if file.starts_with("level") && file[5..].bytes().all(|b| b.is_ascii_digit())
-                    && !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) {
+                if file.starts_with("level")
+                    && file[5..].bytes().all(|b| b.is_ascii_digit())
+                    && !id.is_empty()
+                    && id.bytes().all(|b| b.is_ascii_digit())
+                {
                     out.entry(s.clone()).or_default().insert(label.to_string());
                 }
             }
@@ -69,8 +81,12 @@ fn scan_ids_in(value: &Value, label: &str, file: Option<&str>, out: &mut HashMap
         Value::Array(items) => items.iter().for_each(|v| scan_ids_in(v, label, file, out)),
         Value::Object(map) => {
             for (k, v) in map {
-                if let (Some(file), true, Some(id)) = (file, k == "game_object" || k == "gid", v.as_i64()) {
-                    out.entry(format!("{file}:{id}")).or_default().insert(label.to_string());
+                if let (Some(file), true, Some(id)) =
+                    (file, k == "game_object" || k == "gid", v.as_i64())
+                {
+                    out.entry(format!("{file}:{id}"))
+                        .or_default()
+                        .insert(label.to_string());
                 }
                 scan_ids_in(v, label, file, out);
             }
@@ -79,11 +95,15 @@ fn scan_ids_in(value: &Value, label: &str, file: Option<&str>, out: &mut HashMap
     }
 }
 
-fn file_of(sid: &str) -> &str { sid.split_once(':').map_or(sid, |(f, _)| f) }
+fn file_of(sid: &str) -> &str {
+    sid.split_once(':').map_or(sid, |(f, _)| f)
+}
 
 fn local_id(file: &str, ptr: &Value) -> Option<String> {
     let id = ptr.get("m_PathID")?.as_i64()?;
-    if id == 0 { return None; }
+    if id == 0 {
+        return None;
+    }
     Some(format!("{file}:{id}"))
 }
 
@@ -95,25 +115,68 @@ fn family_name(name: &str) -> String {
         let before = s.clone();
         if s.ends_with(')') {
             if let Some(open) = s.rfind(" (") {
-                if s[open + 2..s.len() - 1].bytes().all(|b| b.is_ascii_digit()) { s.truncate(open); }
+                if s[open + 2..s.len() - 1].bytes().all(|b| b.is_ascii_digit()) {
+                    s.truncate(open);
+                }
             }
         }
-        s = s.trim_end_matches(|c: char| c.is_ascii_digit() || c == ' ' || c == '_' || c == '-' || c == '.').to_string();
-        if s == before { break; }
+        s = s
+            .trim_end_matches(|c: char| {
+                c.is_ascii_digit() || c == ' ' || c == '_' || c == '-' || c == '.'
+            })
+            .to_string();
+        if s == before {
+            break;
+        }
     }
-    if s.is_empty() { name.to_string() } else { s }
+    if s.is_empty() {
+        name.to_string()
+    } else {
+        s
+    }
 }
 
 /// Component types that say nothing about what drives an object.
 const PLAIN: &[&str] = &[
-    "GameObject", "Transform", "RectTransform", "SpriteRenderer", "MeshRenderer", "MeshFilter",
-    "tk2dSprite", "tk2dSpriteAnimator", "tk2dSlicedSprite", "tk2dClippedSprite", "Animator",
-    "PlayFromRandomFrameMecanim", "SetZ", "SetZRandom", "AudioSource", "BoxCollider2D",
-    "CircleCollider2D", "PolygonCollider2D", "EdgeCollider2D", "Rigidbody2D", "ParticleSystem",
-    "ParticleSystemRenderer", "ParticleSystemAutoRecycle", "ParticleSystemCollisionLagFix",
-    "ReduceParticleEffects", "VibrationPlayer", "NonBouncer", "NonThunker", "SpriteFlash",
-    "ObjectBounce", "SpinSelfSimple", "Animation", "CanvasRenderer", "LineRenderer",
-    "TrailRenderer", "AudioSourceGamePause", "RandomScale", "RandomRotation", "Light",
+    "GameObject",
+    "Transform",
+    "RectTransform",
+    "SpriteRenderer",
+    "MeshRenderer",
+    "MeshFilter",
+    "tk2dSprite",
+    "tk2dSpriteAnimator",
+    "tk2dSlicedSprite",
+    "tk2dClippedSprite",
+    "Animator",
+    "PlayFromRandomFrameMecanim",
+    "SetZ",
+    "SetZRandom",
+    "AudioSource",
+    "BoxCollider2D",
+    "CircleCollider2D",
+    "PolygonCollider2D",
+    "EdgeCollider2D",
+    "Rigidbody2D",
+    "ParticleSystem",
+    "ParticleSystemRenderer",
+    "ParticleSystemAutoRecycle",
+    "ParticleSystemCollisionLagFix",
+    "ReduceParticleEffects",
+    "VibrationPlayer",
+    "NonBouncer",
+    "NonThunker",
+    "SpriteFlash",
+    "ObjectBounce",
+    "SpinSelfSimple",
+    "Animation",
+    "CanvasRenderer",
+    "LineRenderer",
+    "TrailRenderer",
+    "AudioSourceGamePause",
+    "RandomScale",
+    "RandomRotation",
+    "Light",
 ];
 
 struct Scene {
@@ -133,14 +196,20 @@ fn load_components(path: &Path) -> Scene {
     let doc = read_json(path);
     let mut types: HashMap<String, (String, Value)> = HashMap::new();
     for o in doc["objects"].as_array().unwrap() {
-        types.insert(o["source"].as_str().unwrap().to_string(),
-                     (o["type"].as_str().unwrap().to_string(), o["data"].clone()));
+        types.insert(
+            o["source"].as_str().unwrap().to_string(),
+            (o["type"].as_str().unwrap().to_string(), o["data"].clone()),
+        );
     }
     let mut gos = HashMap::new();
     let mut comp_go = HashMap::new();
     for (sid, (typ, data)) in &types {
-        if typ == "GameObject" { continue; }
-        if let Some(go) = local_id(file_of(sid), &data["m_GameObject"]) { comp_go.insert(sid.clone(), go); }
+        if typ == "GameObject" {
+            continue;
+        }
+        if let Some(go) = local_id(file_of(sid), &data["m_GameObject"]) {
+            comp_go.insert(sid.clone(), go);
+        }
     }
     let mut tf_go: HashMap<String, String> = HashMap::new();
     let mut go_father_tf: HashMap<String, String> = HashMap::new();
@@ -149,18 +218,28 @@ fn load_components(path: &Path) -> Scene {
         if typ == "Transform" || typ == "RectTransform" {
             if let Some(go) = local_id(file, &data["m_GameObject"]) {
                 tf_go.insert(sid.clone(), go.clone());
-                if let Some(father) = local_id(file, &data["m_Father"]) { go_father_tf.insert(go, father); }
+                if let Some(father) = local_id(file, &data["m_Father"]) {
+                    go_father_tf.insert(go, father);
+                }
             }
         }
     }
     for (sid, (typ, data)) in &types {
-        if typ != "GameObject" { continue; }
+        if typ != "GameObject" {
+            continue;
+        }
         let file = file_of(sid);
         let mut scripts = Vec::new();
         for c in data["m_Component"].as_array().into_iter().flatten() {
-            let Some(cid) = local_id(file, &c["component"]) else { continue };
-            let Some((ctyp, cdata)) = types.get(&cid) else { continue };
-            if PLAIN.contains(&ctyp.as_str()) { continue; }
+            let Some(cid) = local_id(file, &c["component"]) else {
+                continue;
+            };
+            let Some((ctyp, cdata)) = types.get(&cid) else {
+                continue;
+            };
+            if PLAIN.contains(&ctyp.as_str()) {
+                continue;
+            }
             if ctyp == "PlayMakerFSM" {
                 let name = cdata["fsm"]["name"].as_str().unwrap_or("");
                 scripts.push(format!("FSM:{name}"));
@@ -170,14 +249,23 @@ fn load_components(path: &Path) -> Scene {
         }
         scripts.sort();
         scripts.dedup();
-        gos.insert(sid.clone(), Go {
-            name: data["m_Name"].as_str().unwrap_or("").to_string(),
-            scripts,
-        });
+        gos.insert(
+            sid.clone(),
+            Go {
+                name: data["m_Name"].as_str().unwrap_or("").to_string(),
+                scripts,
+            },
+        );
     }
-    let parent = go_father_tf.into_iter()
-        .filter_map(|(go, tf)| tf_go.get(&tf).map(|p| (go, p.clone()))).collect();
-    Scene { gos, comp_go, parent }
+    let parent = go_father_tf
+        .into_iter()
+        .filter_map(|(go, tf)| tf_go.get(&tf).map(|p| (go, p.clone())))
+        .collect();
+    Scene {
+        gos,
+        comp_go,
+        parent,
+    }
 }
 
 impl Scene {
@@ -185,7 +273,9 @@ impl Scene {
         let mut out = vec![go.to_string()];
         let mut at = go.to_string();
         while let Some(p) = self.parent.get(&at) {
-            if out.len() > 64 { break; }
+            if out.len() > 64 {
+                break;
+            }
             out.push(p.clone());
             at = p.clone();
         }
@@ -194,7 +284,9 @@ impl Scene {
     /// The nearest object on the chain that carries a behaviour, which is what
     /// decides whether and how the renderer shows.
     fn owner(&self, go: &str) -> Option<String> {
-        self.chain(go).into_iter().find(|g| self.gos.get(g).map_or(false, |o| !o.scripts.is_empty()))
+        self.chain(go)
+            .into_iter()
+            .find(|g| self.gos.get(g).map_or(false, |o| !o.scripts.is_empty()))
     }
 }
 
@@ -208,7 +300,9 @@ struct Cooked {
     files: BTreeSet<String>,
 }
 
-fn f(v: &Value) -> f64 { v.as_f64().unwrap_or(0.0) }
+fn f(v: &Value) -> f64 {
+    v.as_f64().unwrap_or(0.0)
+}
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -236,8 +330,17 @@ fn main() {
     // host/activation.py's fresh-save PlayerData gates: per scene, the objects
     // the cook removed and the authored-inactive objects the original turns on.
     let gates = activation.as_deref().map(read_json).unwrap_or(Value::Null);
-    let file_scene: HashMap<String, String> = catalog.as_array().unwrap().iter()
-        .map(|e| (e["file"].as_str().unwrap().to_string(), e["scene_name"].as_str().unwrap().to_string())).collect();
+    let file_scene: HashMap<String, String> = catalog
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e["file"].as_str().unwrap().to_string(),
+                e["scene_name"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
 
     // Extra cooker reports apply to whichever scene owns the id's file.
     let mut extra_ids: HashMap<String, BTreeSet<String>> = HashMap::new();
@@ -248,28 +351,54 @@ fn main() {
 
     let mut scenes: Vec<(String, String)> = Vec::new();
     for s in meta["scenes"].as_array().unwrap() {
-        scenes.push((s["scene_name"].as_str().unwrap().to_string(), s["file"].as_str().unwrap().to_string()));
+        scenes.push((
+            s["scene_name"].as_str().unwrap().to_string(),
+            s["file"].as_str().unwrap().to_string(),
+        ));
     }
     let mut cooked: BTreeMap<String, Cooked> = BTreeMap::new();
     for r in meta["regions"].as_array().unwrap() {
         let scene = r["scene_name"].as_str().unwrap().to_string();
         let chunk = r["chunk_id"].as_u64().unwrap();
         let c = cooked.entry(scene.clone()).or_default();
-        c.views.push(([f(&r["camera_x"][0]), f(&r["camera_x"][1])], [f(&r["camera_y"][0]), f(&r["camera_y"][1])]));
+        c.views.push((
+            [f(&r["camera_x"][0]), f(&r["camera_x"][1])],
+            [f(&r["camera_y"][0]), f(&r["camera_y"][1])],
+        ));
         if let Value::Object(map) = r {
             for (k, v) in map {
-                if k == "edge_sources" || k == "texture_request_to_canonical" { continue; }
-                scan_ids_in(v, &format!("meta:{k}"), r["scene_file"].as_str(), &mut c.referenced);
+                if k == "edge_sources" || k == "texture_request_to_canonical" {
+                    continue;
+                }
+                scan_ids_in(
+                    v,
+                    &format!("meta:{k}"),
+                    r["scene_file"].as_str(),
+                    &mut c.referenced,
+                );
             }
         }
         let dir = regions_dir.join(format!("region-{chunk:03}"));
         let scene_json = read_json(&dir.join("scene.json"));
         for d in scene_json["draws"].as_array().into_iter().flatten() {
-            if let Some(s) = d["source"].as_str() { c.drawn.insert(s.to_string()); c.files.insert(file_of(s).to_string()); }
+            if let Some(s) = d["source"].as_str() {
+                c.drawn.insert(s.to_string());
+                c.files.insert(file_of(s).to_string());
+            }
         }
         if let Value::Object(map) = &scene_json {
             for (k, v) in map {
-                if matches!(k.as_str(), "draws" | "atlas" | "texture_request_to_canonical" | "edges" | "frames" | "clips") { continue; }
+                if matches!(
+                    k.as_str(),
+                    "draws"
+                        | "atlas"
+                        | "texture_request_to_canonical"
+                        | "edges"
+                        | "frames"
+                        | "clips"
+                ) {
+                    continue;
+                }
                 scan_ids(v, &format!("view:{k}"), &mut c.referenced);
             }
         }
@@ -284,7 +413,13 @@ fn main() {
             if let Some(id) = e["id"].as_str() {
                 c.refused.entry(id.to_string()).or_insert((
                     e["type"].as_str().unwrap_or("").to_string(),
-                    e["error"].as_str().unwrap_or("").chars().take(200).collect()));
+                    e["error"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(200)
+                        .collect(),
+                ));
             }
         }
     }
@@ -298,50 +433,92 @@ fn main() {
         let mut removed: HashMap<String, String> = HashMap::new();
         let mut activates: HashMap<String, String> = HashMap::new();
         for (list, into) in [("removed", &mut removed), ("activates", &mut activates)] {
-            for g in gates["scenes"][scene_name.as_str()][list].as_array().into_iter().flatten() {
+            for g in gates["scenes"][scene_name.as_str()][list]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
                 // `removed` names the object; `activates` names the FSM, whose
                 // owner's direct children it turns on.
-                let key = if list == "removed" { "object_id" } else { "source" };
+                let key = if list == "removed" {
+                    "object_id"
+                } else {
+                    "source"
+                };
                 let id = g[key].as_i64().unwrap_or(0);
-                into.insert(format!("{scene_file}:{id}"), format!("{}:{}", g["gate"].as_str().unwrap_or(""), g["field"].as_str().unwrap_or("")));
+                into.insert(
+                    format!("{scene_file}:{id}"),
+                    format!(
+                        "{}:{}",
+                        g["gate"].as_str().unwrap_or(""),
+                        g["field"].as_str().unwrap_or("")
+                    ),
+                );
             }
         }
         let mut files: BTreeSet<String> = c.files.clone();
         files.insert(scene_file.clone());
-        for id in c.referenced.keys() { files.insert(file_of(id).to_string()); }
+        for id in c.referenced.keys() {
+            files.insert(file_of(id).to_string());
+        }
         let mut counts: BTreeMap<String, u64> = BTreeMap::new();
         let mut items = Vec::new();
         for file in &files {
             let gpath = world.join(file).join("geometry.json.gz");
-            if !gpath.is_file() { continue; }
+            if !gpath.is_file() {
+                continue;
+            }
             let geo = read_json(&gpath);
             let comps = load_components(&world.join(file).join("components.json.gz"));
             let additive = file != scene_file;
             // tk2d sprites render through a MeshRenderer on the same object;
             // that renderer is the tk2d record, not a second item.
-            let tk2d_gos: HashSet<String> = geo["tk2d_sprites"].as_array().into_iter().flatten()
-                .filter_map(|t| t["game_object"].as_str().map(str::to_string)).collect();
-            for (kind, list) in [("sprite", "sprites"), ("tk2d", "tk2d_sprites"), ("mesh", "meshes"), ("particles", "particle_systems")] {
+            let tk2d_gos: HashSet<String> = geo["tk2d_sprites"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|t| t["game_object"].as_str().map(str::to_string))
+                .collect();
+            for (kind, list) in [
+                ("sprite", "sprites"),
+                ("tk2d", "tk2d_sprites"),
+                ("mesh", "meshes"),
+                ("particles", "particle_systems"),
+            ] {
                 for rec in geo[list].as_array().into_iter().flatten() {
                     let src = rec["source"].as_str().unwrap().to_string();
                     let go = rec["game_object"].as_str().unwrap_or("").to_string();
-                    if kind == "mesh" && tk2d_gos.contains(&go) { continue; }
+                    if kind == "mesh" && tk2d_gos.contains(&go) {
+                        continue;
+                    }
                     let active = rec["active_hierarchy"].as_bool().unwrap_or(false);
                     let enabled = rec["enabled"].as_bool().unwrap_or(false);
                     let chain = comps.chain(&go);
                     let owner = comps.owner(&go);
                     let owner_go = owner.as_ref().and_then(|o| comps.gos.get(o));
-                    let own_name = comps.gos.get(&go).map(|g| g.name.clone()).unwrap_or_default();
+                    let own_name = comps
+                        .gos
+                        .get(&go)
+                        .map(|g| g.name.clone())
+                        .unwrap_or_default();
                     let family = match owner_go {
-                        Some(o) => format!("{kind}|{}|{}", family_name(&o.name), o.scripts.join("+")),
+                        Some(o) => {
+                            format!("{kind}|{}|{}", family_name(&o.name), o.scripts.join("+"))
+                        }
                         None => format!("{kind}|{}|", family_name(&own_name)),
                     };
                     let mut system: BTreeSet<String> = BTreeSet::new();
                     for id in std::iter::once(&src).chain(chain.iter()) {
-                        if let Some(l) = c.referenced.get(id) { system.extend(l.iter().cloned()); }
-                        if let Some(l) = extra_ids.get(id) { system.extend(l.iter().cloned()); }
+                        if let Some(l) = c.referenced.get(id) {
+                            system.extend(l.iter().cloned());
+                        }
+                        if let Some(l) = extra_ids.get(id) {
+                            system.extend(l.iter().cloned());
+                        }
                     }
-                    let refused = std::iter::once(&src).chain(chain.iter()).find_map(|id| c.refused.get(id));
+                    let refused = std::iter::once(&src)
+                        .chain(chain.iter())
+                        .find_map(|id| c.refused.get(id));
                     // Screen size estimate in PS1 pixels at the view's scale.
                     let (z, area) = match kind {
                         "sprite" => {
@@ -353,12 +530,25 @@ fn main() {
                             (a.2, w * h)
                         }
                         "tk2d" => {
-                            let v = rec["world_vertices"].as_array().cloned().unwrap_or_default();
+                            let v = rec["world_vertices"]
+                                .as_array()
+                                .cloned()
+                                .unwrap_or_default();
                             let xs: Vec<f64> = v.iter().map(|p| f(&p[0])).collect();
                             let ys: Vec<f64> = v.iter().map(|p| f(&p[1])).collect();
                             let z = v.first().map_or(0.0, |p| f(&p[2]));
-                            let span = |s: &[f64]| s.iter().cloned().fold(f64::MIN, f64::max) - s.iter().cloned().fold(f64::MAX, f64::min);
-                            (z, if xs.is_empty() { 0.0 } else { span(&xs) * span(&ys) })
+                            let span = |s: &[f64]| {
+                                s.iter().cloned().fold(f64::MIN, f64::max)
+                                    - s.iter().cloned().fold(f64::MAX, f64::min)
+                            };
+                            (
+                                z,
+                                if xs.is_empty() {
+                                    0.0
+                                } else {
+                                    span(&xs) * span(&ys)
+                                },
+                            )
                         }
                         _ => (f(&rec["position"][2]), 0.0),
                     };
@@ -367,7 +557,10 @@ fn main() {
                     let gated = chain.iter().find_map(|g| removed.get(g));
                     // A child of an object whose fresh-save gate activates its children.
                     let turned_on = chain.get(1).and_then(|p| {
-                        activates.iter().find(|(fsm, _)| comps.comp_go.get(*fsm) == Some(p)).map(|(_, v)| v)
+                        activates
+                            .iter()
+                            .find(|(fsm, _)| comps.comp_go.get(*fsm) == Some(p))
+                            .map(|(_, v)| v)
                     });
                     let status = if c.drawn.contains(&src) {
                         "drawn".to_string()
@@ -394,15 +587,23 @@ fn main() {
                         let q = &rec["world_quad"];
                         let xs: Vec<f64> = (0..4).map(|i| f(&q[i][0])).collect();
                         let ys: Vec<f64> = (0..4).map(|i| f(&q[i][1])).collect();
-                        let (x0, x1) = (xs.iter().cloned().fold(f64::MAX, f64::min), xs.iter().cloned().fold(f64::MIN, f64::max));
-                        let (y0, y1) = (ys.iter().cloned().fold(f64::MAX, f64::min), ys.iter().cloned().fold(f64::MIN, f64::max));
+                        let (x0, x1) = (
+                            xs.iter().cloned().fold(f64::MAX, f64::min),
+                            xs.iter().cloned().fold(f64::MIN, f64::max),
+                        );
+                        let (y0, y1) = (
+                            ys.iter().cloned().fold(f64::MAX, f64::min),
+                            ys.iter().cloned().fold(f64::MIN, f64::max),
+                        );
                         if z <= CAM_Z + 2.0 {
                             "culled:near-camera".to_string()
                         } else if pixels < 0.25 {
                             "culled:tiny".to_string()
                         } else if c.views.iter().all(|(cx, cy)| {
-                            x1 < cx[0] - 160.0 / scale || x0 > cx[1] + 160.0 / scale
-                                || y1 < cy[0] - 120.0 / scale || y0 > cy[1] + 120.0 / scale
+                            x1 < cx[0] - 160.0 / scale
+                                || x0 > cx[1] + 160.0 / scale
+                                || y1 < cy[0] - 120.0 / scale
+                                || y0 > cy[1] + 120.0 / scale
                         }) {
                             "culled:outside-views".to_string()
                         } else {
@@ -418,10 +619,24 @@ fn main() {
                     let n = e.get(&key).and_then(Value::as_u64).unwrap_or(0) + 1;
                     e[&key] = json!(n);
                     let sc = fam.entry("scenes").or_insert(json!([]));
-                    if !sc.as_array().unwrap().iter().any(|s| s == scene_name) { sc.as_array_mut().unwrap().push(json!(scene_name)); }
-                    if status != "drawn" && status != "inactive" && status != "disabled" && !status.starts_with("empty") && status != "gated" {
-                        let px = fam.get("missing_pixels").and_then(Value::as_f64).unwrap_or(0.0)
-                            + if status.starts_with("missing") { pixels } else { 0.0 };
+                    if !sc.as_array().unwrap().iter().any(|s| s == scene_name) {
+                        sc.as_array_mut().unwrap().push(json!(scene_name));
+                    }
+                    if status != "drawn"
+                        && status != "inactive"
+                        && status != "disabled"
+                        && !status.starts_with("empty")
+                        && status != "gated"
+                    {
+                        let px = fam
+                            .get("missing_pixels")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0)
+                            + if status.starts_with("missing") {
+                                pixels
+                            } else {
+                                0.0
+                            };
                         fam.insert("missing_pixels".into(), json!(px));
                         items.push(json!({
                             "source": src, "game_object": go, "name": own_name, "kind": kind,
@@ -448,11 +663,17 @@ fn main() {
     for r in meta["regions"].as_array().unwrap() {
         let scene = r["scene_name"].as_str().unwrap().to_string();
         let t = r["textures"].as_u64().unwrap_or(0);
-        let e = headroom.entry(scene).or_insert(json!({"max_textures": 0, "views": 0}));
-        if t > e["max_textures"].as_u64().unwrap() { e["max_textures"] = json!(t); }
+        let e = headroom
+            .entry(scene)
+            .or_insert(json!({"max_textures": 0, "views": 0}));
+        if t > e["max_textures"].as_u64().unwrap() {
+            e["max_textures"] = json!(t);
+        }
         e["views"] = json!(e["views"].as_u64().unwrap() + 1);
     }
-    for (_, e) in headroom.iter_mut() { e["free_records"] = json!(640 - e["max_textures"].as_u64().unwrap() as i64); }
+    for (_, e) in headroom.iter_mut() {
+        e["free_records"] = json!(640 - e["max_textures"].as_u64().unwrap() as i64);
+    }
     let report = json!({
         "format": "HKPARITY01",
         "texture_headroom": headroom,

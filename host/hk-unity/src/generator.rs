@@ -20,18 +20,45 @@ use std::path::Path;
 const SERIALIZATION_LIMIT: i32 = 10;
 
 const SPECIAL: &[&str] = &[
-    "UnityEngine.Color", "UnityEngine.Color32", "UnityEngine.Gradient", "UnityEngine.Vector2", "UnityEngine.Vector3",
-    "UnityEngine.Vector4", "UnityEngine.LayerMask", "UnityEngine.Quaternion", "UnityEngine.Bounds", "UnityEngine.Rect",
-    "UnityEngine.RectOffset", "UnityEngine.Matrix4x4", "UnityEngine.AnimationCurve", "UnityEngine.GUIStyle",
-    "UnityEngine.Vector2Int", "UnityEngine.Vector3Int", "UnityEngine.PropertyName", "UnityEngine.BoundsInt",
+    "UnityEngine.Color",
+    "UnityEngine.Color32",
+    "UnityEngine.Gradient",
+    "UnityEngine.Vector2",
+    "UnityEngine.Vector3",
+    "UnityEngine.Vector4",
+    "UnityEngine.LayerMask",
+    "UnityEngine.Quaternion",
+    "UnityEngine.Bounds",
+    "UnityEngine.Rect",
+    "UnityEngine.RectOffset",
+    "UnityEngine.Matrix4x4",
+    "UnityEngine.AnimationCurve",
+    "UnityEngine.GUIStyle",
+    "UnityEngine.Vector2Int",
+    "UnityEngine.Vector3Int",
+    "UnityEngine.PropertyName",
+    "UnityEngine.BoundsInt",
 ];
 const BLACKLISTED: &[&str] = &[
-    "mscorlib", "mscorlib.dll", "netstandard", "netstandard.dll", "System.Core", "System.Core.dll", "System", "System.dll",
-    "System.Private.CoreLib", "System.Private.CoreLib.dll", "System.Collections", "System.Collections.dll",
-    "System.Collections.NonGeneric", "System.Collections.NonGeneric.dll",
+    "mscorlib",
+    "mscorlib.dll",
+    "netstandard",
+    "netstandard.dll",
+    "System.Core",
+    "System.Core.dll",
+    "System",
+    "System.dll",
+    "System.Private.CoreLib",
+    "System.Private.CoreLib.dll",
+    "System.Collections",
+    "System.Collections.dll",
+    "System.Collections.NonGeneric",
+    "System.Collections.NonGeneric.dll",
 ];
-const PRIMITIVE_NAMES: &[&str] =
-    &["Boolean", "Char", "IntPtr", "UIntPtr", "SByte", "Byte", "Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64", "Single", "Double"];
+const PRIMITIVE_NAMES: &[&str] = &[
+    "Boolean", "Char", "IntPtr", "UIntPtr", "SByte", "Byte", "Int16", "UInt16", "Int32", "UInt32",
+    "Int64", "UInt64", "Single", "Double",
+];
 
 fn base_to_primitive(full: &str) -> String {
     match full {
@@ -55,7 +82,18 @@ fn base_to_primitive(full: &str) -> String {
 
 /// AssetTypeValueField.GetValueTypeByTypeName then CommonMonoTemplateHelper.TypeAligns.
 fn type_aligns(ty: &str) -> bool {
-    matches!(ty, "bool" | "SInt8" | "char" | "UInt8" | "unsigned char" | "SInt16" | "short" | "UInt16" | "unsigned short")
+    matches!(
+        ty,
+        "bool"
+            | "SInt8"
+            | "char"
+            | "UInt8"
+            | "unsigned char"
+            | "SInt16"
+            | "short"
+            | "UInt16"
+            | "unsigned short"
+    )
 }
 
 fn nerr(what: &str) -> Error {
@@ -72,13 +110,26 @@ struct F {
 }
 
 fn f(name: &str, ty: &str, aligned: bool, children: Vec<F>) -> F {
-    F { name: name.into(), ty: ty.into(), aligned, children }
+    F {
+        name: name.into(),
+        ty: ty.into(),
+        aligned,
+        children,
+    }
 }
 fn leaf(name: &str, ty: &str) -> F {
     f(name, ty, false, vec![])
 }
 fn array(field: &F) -> Vec<F> {
-    vec![f("Array", "Array", true, vec![leaf("size", "int"), f("data", &field.ty, false, field.children.clone())])]
+    vec![f(
+        "Array",
+        "Array",
+        true,
+        vec![
+            leaf("size", "int"),
+            f("data", &field.ty, false, field.children.clone()),
+        ],
+    )]
 }
 fn vector(field: F) -> F {
     let children = array(&field);
@@ -110,10 +161,20 @@ fn rgbaf(name: &str) -> F {
     f(name, "ColorRGBA", false, floats(&["r", "g", "b", "a"]))
 }
 fn rect_offset(name: &str) -> F {
-    f(name, "RectOffset", false, ints(&["m_Left", "m_Right", "m_Top", "m_Bottom"]))
+    f(
+        name,
+        "RectOffset",
+        false,
+        ints(&["m_Left", "m_Right", "m_Top", "m_Bottom"]),
+    )
 }
 fn gui_style_state(name: &str) -> F {
-    f(name, "GUIStyleState", false, vec![pptr("m_Background", "Texture2D"), rgbaf("m_TextColor")])
+    f(
+        name,
+        "GUIStyleState",
+        false,
+        vec![pptr("m_Background", "Texture2D"), rgbaf("m_TextColor")],
+    )
 }
 
 fn special_unity(name: &str) -> Option<Vec<F>> {
@@ -132,17 +193,37 @@ fn special_unity(name: &str) -> Option<Vec<F>> {
             let mut key = floats(&["time", "value", "inSlope", "outSlope"]);
             key.push(leaf("weightedMode", "int"));
             key.extend(floats(&["inWeight", "outWeight"]));
-            vec![vector(f("m_Curve", "Keyframe", false, key)), leaf("m_PreInfinity", "int"), leaf("m_PostInfinity", "int"), leaf("m_RotationOrder", "int")]
+            vec![
+                vector(f("m_Curve", "Keyframe", false, key)),
+                leaf("m_PreInfinity", "int"),
+                leaf("m_PostInfinity", "int"),
+                leaf("m_RotationOrder", "int"),
+            ]
         }
         "LayerMask" => vec![leaf("m_Bits", "unsigned int")],
-        "Bounds" => vec![f("m_Center", "Vector3f", false, floats(&["x", "y", "z"])), f("m_Extent", "Vector3f", false, floats(&["x", "y", "z"]))],
-        "BoundsInt" => vec![f("m_Position", "int3_storage", false, ints(&["x", "y", "z"])), f("m_Size", "int3_storage", false, ints(&["x", "y", "z"]))],
+        "Bounds" => vec![
+            f("m_Center", "Vector3f", false, floats(&["x", "y", "z"])),
+            f("m_Extent", "Vector3f", false, floats(&["x", "y", "z"])),
+        ],
+        "BoundsInt" => vec![
+            f("m_Position", "int3_storage", false, ints(&["x", "y", "z"])),
+            f("m_Size", "int3_storage", false, ints(&["x", "y", "z"])),
+        ],
         "Rect" => floats(&["x", "y", "width", "height"]),
         "RectOffset" => ints(&["m_Left", "m_Right", "m_Top", "m_Bottom"]),
         "Color32" => vec![leaf("rgba", "unsigned int")],
         "GUIStyle" => {
             let mut v = vec![string("m_Name")];
-            for s in ["m_Normal", "m_Hover", "m_Active", "m_Focused", "m_OnNormal", "m_OnHover", "m_OnActive", "m_OnFocused"] {
+            for s in [
+                "m_Normal",
+                "m_Hover",
+                "m_Active",
+                "m_Focused",
+                "m_OnNormal",
+                "m_OnHover",
+                "m_OnActive",
+                "m_OnFocused",
+            ] {
                 v.push(gui_style_state(s));
             }
             for s in ["m_Border", "m_Margin", "m_Padding", "m_Overflow"] {
@@ -162,7 +243,9 @@ fn special_unity(name: &str) -> Option<Vec<F>> {
         "Vector2Int" => ints(&["x", "y"]),
         "Vector3Int" => ints(&["x", "y", "z"]),
         "PropertyName" => vec![string("id")],
-        "SphericalHarmonicsL2" => (0..27).map(|i| leaf(&format!("sh[{i:2}]"), "float")).collect(),
+        "SphericalHarmonicsL2" => (0..27)
+            .map(|i| leaf(&format!("sh[{i:2}]"), "float"))
+            .collect(),
         _ => return None,
     })
 }
@@ -205,13 +288,17 @@ pub struct Generator {
 
 impl Generator {
     pub fn load(managed: &Path, _unity_version: &str) -> Result<Generator> {
-        Ok(Generator { managed: Managed::new(managed) })
+        Ok(Generator {
+            managed: Managed::new(managed),
+        })
     }
 
     fn name_of(&self, t: &TRef) -> String {
         match t {
             TRef::Def(id, _) => self.managed.name(*id),
-            TRef::Array(e, vector) => format!("{}{}", self.name_of(e), if *vector { "[]" } else { "[,]" }),
+            TRef::Array(e, vector) => {
+                format!("{}{}", self.name_of(e), if *vector { "[]" } else { "[,]" })
+            }
             TRef::Wrap(e, suffix) => format!("{}{suffix}", self.name_of(e)),
             TRef::Param(n) | TRef::Unresolved(n) => n.clone(),
         }
@@ -227,7 +314,11 @@ impl Generator {
 
     fn td(&self, tref: TRef) -> TD {
         let def = Self::resolve(&tref);
-        let mut td = TD { tref: tref.clone(), def, map: Vec::new() };
+        let mut td = TD {
+            tref: tref.clone(),
+            def,
+            map: Vec::new(),
+        };
         let inner = match &tref {
             TRef::Array(e, _) => (**e).clone(),
             other => other.clone(),
@@ -249,10 +340,14 @@ impl Generator {
         if parent.map.is_empty() {
             return;
         }
-        let (TRef::Def(_, Some(args)), Some(d)) = (td.tref.clone(), td.def) else { return };
+        let (TRef::Def(_, Some(args)), Some(d)) = (td.tref.clone(), td.def) else {
+            return;
+        };
         let params = self.managed.generic_params(d);
         for (i, arg) in args.iter().enumerate() {
-            let Some(p) = params.get(i).cloned() else { continue };
+            let Some(p) = params.get(i).cloned() else {
+                continue;
+            };
             if let TRef::Param(name) = arg {
                 if let Some(mapped) = parent.lookup(name) {
                     td.set(p, mapped.clone());
@@ -280,7 +375,11 @@ impl Generator {
                 Some(id) => TRef::Def(id, None),
                 None => TRef::Unresolved(hk_dotnet::sig::builtin_name(*e).into()),
             },
-            Type::Named { table: Table::TypeSpec, rid, .. } => match self.managed.type_spec(asm, *rid) {
+            Type::Named {
+                table: Table::TypeSpec,
+                rid,
+                ..
+            } => match self.managed.type_spec(asm, *rid) {
                 Ok(spec) => self.tref(asm, owner, &spec),
                 Err(_) => TRef::Unresolved("?".into()),
             },
@@ -289,14 +388,24 @@ impl Generator {
                 None => TRef::Unresolved(self.row_name(asm, *table, *rid)),
             },
             Type::GenericInst { base, args } => match self.tref(asm, owner, base) {
-                TRef::Def(id, _) => TRef::Def(id, Some(args.iter().map(|a| self.tref(asm, owner, a)).collect())),
+                TRef::Def(id, _) => TRef::Def(
+                    id,
+                    Some(args.iter().map(|a| self.tref(asm, owner, a)).collect()),
+                ),
                 other => other,
             },
             Type::SzArray(e) => TRef::Array(Box::new(self.tref(asm, owner, e)), true),
             Type::Array(e, _) => TRef::Array(Box::new(self.tref(asm, owner, e)), false),
             Type::Var(n) => {
-                let names = owner.map(|o| self.managed.generic_params(o)).unwrap_or_default();
-                TRef::Param(names.get(*n as usize).cloned().unwrap_or_else(|| format!("!{n}")))
+                let names = owner
+                    .map(|o| self.managed.generic_params(o))
+                    .unwrap_or_default();
+                TRef::Param(
+                    names
+                        .get(*n as usize)
+                        .cloned()
+                        .unwrap_or_else(|| format!("!{n}")),
+                )
             }
             Type::Ptr(e) => TRef::Wrap(Box::new(self.tref(asm, owner, e)), "*"),
             Type::ByRef(e) => TRef::Wrap(Box::new(self.tref(asm, owner, e)), "&"),
@@ -319,7 +428,9 @@ impl Generator {
     /// Cecil's BaseType.FullName (generic instances carry their arguments, so
     /// they never equal a plain name); None when the type has no base.
     fn base(&self, id: TypeId) -> Result<Option<(String, TRef)>> {
-        let Some(t) = self.managed.base(id).map_err(|e| nerr(&e.0))? else { return Ok(None) };
+        let Some(t) = self.managed.base(id).map_err(|e| nerr(&e.0))? else {
+            return Ok(None);
+        };
         let tref = self.tref(id.asm, Some(id), &t);
         let name = match &tref {
             TRef::Def(d, None) => self.full_name(*d),
@@ -345,15 +456,21 @@ impl Generator {
         self.base_is(id, "System.Enum")
     }
     fn is_value_type(&self, id: TypeId) -> bool {
-        self.is_enum(id) || (self.base_is(id, "System.ValueType") && self.full_name(id) != "System.Enum")
+        self.is_enum(id)
+            || (self.base_is(id, "System.ValueType") && self.full_name(id) != "System.Enum")
     }
     fn is_primitive(&self, id: TypeId) -> bool {
-        self.managed.namespace(id) == "System" && self.managed.enclosing(id).is_none() && PRIMITIVE_NAMES.contains(&self.managed.name(id).as_str())
+        self.managed.namespace(id) == "System"
+            && self.managed.enclosing(id).is_none()
+            && PRIMITIVE_NAMES.contains(&self.managed.name(id).as_str())
     }
     fn enum_underlying(&self, id: TypeId) -> Result<String> {
         for rid in self.managed.fields(id) {
             if self.managed.field_flags(id.asm, rid) & 0x10 == 0 {
-                let t = self.managed.field_type(id.asm, rid).map_err(|e| nerr(&e.0))?;
+                let t = self
+                    .managed
+                    .field_type(id.asm, rid)
+                    .map_err(|e| nerr(&e.0))?;
                 return Ok(match self.tref(id.asm, Some(id), &t) {
                     TRef::Def(d, None) => self.full_name(d),
                     other => self.name_of(&other),
@@ -363,7 +480,9 @@ impl Generator {
         Err(nerr("enum without an instance field"))
     }
     fn derives_from_ue_object(&self, id: TypeId) -> Result<bool> {
-        let Some((base, tref)) = self.base(id)? else { return Ok(false) };
+        let Some((base, tref)) = self.base(id)? else {
+            return Ok(false);
+        };
         if self.is_interface(id) {
             return Ok(false);
         }
@@ -371,7 +490,8 @@ impl Generator {
             return Ok(true);
         }
         if base != "System.Object" {
-            let next = Self::resolve(&tref).ok_or_else(|| nerr(&format!("cannot resolve base {base}")))?;
+            let next =
+                Self::resolve(&tref).ok_or_else(|| nerr(&format!("cannot resolve base {base}")))?;
             return self.derives_from_ue_object(next);
         }
         Ok(false)
@@ -379,17 +499,32 @@ impl Generator {
 
     /// The fields after the MonoBehaviour header, as AssetsTools' Read builds them.
     fn read(&self, assembly: &str, full_name: &str) -> Result<(String, Vec<F>)> {
-        let asm = self.managed.assembly(assembly).ok_or_else(|| nerr(&format!("{assembly} not found")))?;
+        let asm = self
+            .managed
+            .assembly(assembly)
+            .ok_or_else(|| nerr(&format!("{assembly} not found")))?;
         let (ns, name) = full_name.rsplit_once('.').unwrap_or(("", full_name));
         let mut parts = name.split('/');
-        let mut id = self.managed.find(asm, ns, parts.next().unwrap()).ok_or_else(|| nerr(&format!("{full_name} not found")))?;
+        let mut id = self
+            .managed
+            .find(asm, ns, parts.next().unwrap())
+            .ok_or_else(|| nerr(&format!("{full_name} not found")))?;
         for inner in parts {
-            id = self.managed.nested(id, inner).ok_or_else(|| nerr(&format!("{full_name} not found")))?;
+            id = self
+                .managed
+                .nested(id, inner)
+                .ok_or_else(|| nerr(&format!("{full_name} not found")))?;
         }
         let mut uses_reference = false;
         let mut out = Vec::new();
         let td = self.td(TRef::Def(id, None));
-        self.type_load(&td, &mut out, SERIALIZATION_LIMIT, true, &mut uses_reference)?;
+        self.type_load(
+            &td,
+            &mut out,
+            SERIALIZATION_LIMIT,
+            true,
+            &mut uses_reference,
+        )?;
         // A [SerializeReference] field anywhere in the tree adds the registry
         // at the end, but TypeTreeGeneratorAPI 0.0.10 only does so for a root
         // that is a UnityEngine.Object (VisualTreeAsset gets one, the plain
@@ -401,23 +536,58 @@ impl Generator {
                 false,
                 vec![
                     leaf("rid", "SInt64"),
-                    f("type", "ReferencedManagedType", false, vec![string("class"), string("ns"), string("asm")]),
+                    f(
+                        "type",
+                        "ReferencedManagedType",
+                        false,
+                        vec![string("class"), string("ns"), string("asm")],
+                    ),
                     leaf("data", "ReferencedObjectData"),
                 ],
             );
-            let ref_ids = f("RefIds", "vector", false, vec![f("Array", "Array", true, vec![leaf("size", "int"), referenced])]);
-            out.push(f("references", "ManagedReferencesRegistry", false, vec![leaf("version", "int"), ref_ids]));
+            let ref_ids = f(
+                "RefIds",
+                "vector",
+                false,
+                vec![f(
+                    "Array",
+                    "Array",
+                    true,
+                    vec![leaf("size", "int"), referenced],
+                )],
+            );
+            out.push(f(
+                "references",
+                "ManagedReferencesRegistry",
+                false,
+                vec![leaf("version", "int"), ref_ids],
+            ));
         }
         Ok((self.managed.name(id), out))
     }
 
-    fn type_load(&self, td: &TD, out: &mut Vec<F>, mut depth: i32, recursive_call: bool, uses_reference: &mut bool) -> Result<()> {
+    fn type_load(
+        &self,
+        td: &TD,
+        out: &mut Vec<F>,
+        mut depth: i32,
+        recursive_call: bool,
+        uses_reference: &mut bool,
+    ) -> Result<()> {
         if !recursive_call {
             depth -= 1;
         }
         let id = td.def.ok_or_else(|| nerr("type does not resolve"))?;
-        let (base, base_ref) = self.base(id)?.ok_or_else(|| nerr(&format!("{} has no base type", self.full_name(id))))?;
-        if !matches!(base.as_str(), "System.Object" | "UnityEngine.Object" | "UnityEngine.MonoBehaviour" | "UnityEngine.ScriptableObject") {
+        let (base, base_ref) = self
+            .base(id)?
+            .ok_or_else(|| nerr(&format!("{} has no base type", self.full_name(id))))?;
+        if !matches!(
+            base.as_str(),
+            "System.Object"
+                | "UnityEngine.Object"
+                | "UnityEngine.MonoBehaviour"
+                | "UnityEngine.ScriptableObject"
+        ) {
             let mut base_td = self.td(base_ref);
             self.assign(&mut base_td, td);
             self.type_load(&base_td, out, depth, true, uses_reference)?;
@@ -432,14 +602,21 @@ impl Generator {
         }
         if let (TRef::Def(_, Some(_)), Some(d)) = (&t.tref, t.def) {
             if self.full_name(d) == "System.Collections.Generic.List`1" {
-                return t.lookup("T").cloned().map(Some).ok_or_else(|| nerr("List`1 without T"));
+                return t
+                    .lookup("T")
+                    .cloned()
+                    .map(Some)
+                    .ok_or_else(|| nerr("List`1 without T"));
             }
         }
         Ok(None)
     }
 
     fn field_tref(&self, owner: TypeId, rid: u32) -> Result<TRef> {
-        let t = self.managed.field_type(owner.asm, rid).map_err(|e| nerr(&e.0))?;
+        let t = self
+            .managed
+            .field_type(owner.asm, rid)
+            .map_err(|e| nerr(&e.0))?;
         Ok(self.tref(owner.asm, Some(owner), &t))
     }
 
@@ -450,10 +627,18 @@ impl Generator {
             let flags = self.managed.field_flags(id.asm, rid);
             let attrs = self.managed.field_attributes(id.asm, rid);
             let public = flags & 6 == 6;
-            if !(public || attrs.iter().any(|(_, full)| full == "UnityEngine.SerializeField" || full == "UnityEngine.SerializeReference")) {
+            if !(public
+                || attrs.iter().any(|(_, full)| {
+                    full == "UnityEngine.SerializeField" || full == "UnityEngine.SerializeReference"
+                }))
+            {
                 continue;
             }
-            if flags & 0x10 != 0 || flags & 0x80 != 0 || flags & 0x20 != 0 || self.managed.field_has_constant(id.asm, rid) {
+            if flags & 0x10 != 0
+                || flags & 0x80 != 0
+                || flags & 0x20 != 0
+                || self.managed.field_has_constant(id.asm, rid)
+            {
                 continue;
             }
             let mut sft = self.solidify(td, self.td(self.field_tref(id, rid)?));
@@ -490,7 +675,8 @@ impl Generator {
             return Ok(u != "System.Int64" && u != "System.UInt64");
         }
         if depth < 0 {
-            return Ok(self.is_value_type(t) && (self.is_serializable(t) || SPECIAL.contains(&full.as_str())));
+            return Ok(self.is_value_type(t)
+                && (self.is_serializable(t) || SPECIAL.contains(&full.as_str())));
         }
         if self.derives_from_ue_object(t)? || SPECIAL.contains(&full.as_str()) {
             return Ok(true);
@@ -515,9 +701,16 @@ impl Generator {
                 if vector {
                     ft = self.solidify(td, self.td(*e));
                 }
-            } else if ft.def.is_some_and(|d| self.full_name(d) == "System.Collections.Generic.List`1") {
+            } else if ft
+                .def
+                .is_some_and(|d| self.full_name(d) == "System.Collections.Generic.List`1")
+            {
                 is_array = true;
-                ft = ft.map.first().map(|(_, v)| v.clone()).ok_or_else(|| nerr("List`1 without an argument"))?;
+                ft = ft
+                    .map
+                    .first()
+                    .map(|(_, v)| v.clone())
+                    .ok_or_else(|| nerr("List`1 without an argument"))?;
             }
             let d = ft.def.ok_or_else(|| nerr("field type does not resolve"))?;
             let full = self.full_name(d);
@@ -599,7 +792,12 @@ impl Generator {
             (1, "string".into(), "m_Name".into(), ALIGN),
         ];
         fn walk(x: &F, level: u32, rows: &mut Vec<(u32, String, String, u32)>) {
-            rows.push((level, x.ty.clone(), x.name.clone(), if x.aligned { ALIGN } else { 0 }));
+            rows.push((
+                level,
+                x.ty.clone(),
+                x.name.clone(),
+                if x.aligned { ALIGN } else { 0 },
+            ));
             for c in &x.children {
                 walk(c, level + 1, rows);
             }
@@ -607,7 +805,10 @@ impl Generator {
         for x in &fields {
             walk(x, 1, &mut rows);
         }
-        let borrowed: Vec<(u32, &str, &str, u32)> = rows.iter().map(|(l, t, n, m)| (*l, t.as_str(), n.as_str(), *m)).collect();
+        let borrowed: Vec<(u32, &str, &str, u32)> = rows
+            .iter()
+            .map(|(l, t, n, m)| (*l, t.as_str(), n.as_str(), *m))
+            .collect();
         Node::from_rows(&borrowed)
     }
 }

@@ -26,9 +26,16 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/shade.rs"));
 /// The Shade's palettes and frames: a carried data package (modules.rs
 /// `carry`), in the pool only while the Shade's scene is, not linked.
 #[cfg(not(test))]
-fn data() -> Option<&'static [u8]> { crate::modules::data(crate::modules::ART_SHADE) }
+fn data() -> Option<&'static [u8]> {
+    crate::modules::data(crate::modules::ART_SHADE)
+}
 #[cfg(test)]
-fn data() -> Option<&'static [u8]> { Some(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/shade.hk"))) }
+fn data() -> Option<&'static [u8]> {
+    Some(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../data/shade.hk"
+    )))
+}
 /// Animation-cache keys start above every room's texture table.
 pub const KEY_BASE: u16 = crate::disc::SCENE_TEXTURE_CAPACITY as u16;
 #[no_mangle]
@@ -83,7 +90,17 @@ pub fn death_health(max_health: u16, nail_damage: u16) -> u16 {
 }
 impl World {
     pub const fn new() -> Self {
-        Self { record: Record { present: false, scene: 0, position: [0; 2], hp: 0, geo_pool: 0 }, live: None, seed: 0x5ade }
+        Self {
+            record: Record {
+                present: false,
+                scene: 0,
+                position: [0; 2],
+                hp: 0,
+                geo_pool: 0,
+            },
+            live: None,
+            seed: 0x5ade,
+        }
     }
     pub fn record(&self) -> Record {
         self.record
@@ -100,9 +117,15 @@ impl World {
     /// so a Shade born in it must find its art already in.
     #[cfg(not(test))]
     pub fn carry(&self, current: Option<usize>) {
-        let scene = if self.record.present { Some(self.record.scene as usize) }
-            else { current.filter(|_| crate::music::boss_active()) };
-        crate::modules::carry(crate::modules::ART_SHADE, scene.and_then(crate::disc::manifest_index));
+        let scene = if self.record.present {
+            Some(self.record.scene as usize)
+        } else {
+            current.filter(|_| crate::music::boss_active())
+        };
+        crate::modules::carry(
+            crate::modules::ART_SHADE,
+            scene.and_then(crate::disc::manifest_index),
+        );
     }
     pub fn soul_limited(&self) -> bool {
         self.record.present
@@ -110,7 +133,13 @@ impl World {
     /// Hero Death Anim's Remove Geo and Set Shade, in that order. A second
     /// death overwrites the pool, so the earlier Shade's Geo is forfeit.
     pub fn record_death(&mut self, scene: usize, position: [i32; 2], hp: u16, wallet: u32) {
-        self.record = Record { present: true, scene: scene as u32, position, hp, geo_pool: wallet };
+        self.record = Record {
+            present: true,
+            scene: scene as u32,
+            position,
+            hp,
+            geo_pool: wallet,
+        };
         self.live = None;
         self.publish();
     }
@@ -118,8 +147,15 @@ impl World {
     pub fn enter_scene(&mut self, scene: usize) {
         self.live = if self.record.present && self.record.scene as usize == scene {
             self.seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-            Some(Live { control: Shade::new(self.record.position, self.seed), position: self.record.position,
-                hp: self.record.hp, clip: CLIP_IDLE, age: 0, facing: -1, hit_cooldown: 0 })
+            Some(Live {
+                control: Shade::new(self.record.position, self.seed),
+                position: self.record.position,
+                hp: self.record.hp,
+                clip: CLIP_IDLE,
+                age: 0,
+                facing: -1,
+                hit_cooldown: 0,
+            })
         } else {
             None
         };
@@ -132,8 +168,12 @@ impl World {
         self.live.as_ref().map(|l| l.position)
     }
     fn body(position: [i32; 2]) -> [i32; 4] {
-        [position[0] + BODY_BOUNDS[0], position[1] + BODY_BOUNDS[1],
-         position[0] + BODY_BOUNDS[2], position[1] + BODY_BOUNDS[3]]
+        [
+            position[0] + BODY_BOUNDS[0],
+            position[1] + BODY_BOUNDS[1],
+            position[0] + BODY_BOUNDS[2],
+            position[1] + BODY_BOUNDS[3],
+        ]
     }
     /// The Slash child's box, mirrored with the facing.
     fn slash_box(position: [i32; 2], facing: i32) -> [i32; 4] {
@@ -142,19 +182,36 @@ impl World {
         } else {
             (position[0] - SLASH_BOUNDS[2], position[0] - SLASH_BOUNDS[0])
         };
-        [x0, position[1] + SLASH_BOUNDS[1], x1, position[1] + SLASH_BOUNDS[3]]
+        [
+            x0,
+            position[1] + SLASH_BOUNDS[1],
+            x1,
+            position[1] + SLASH_BOUNDS[3],
+        ]
     }
     /// One 60 Hz step against the scene terrain.
-    pub fn tick(&mut self, hero: [i32; 2], hero_body: [i32; 4], count: usize, edge: impl Fn(usize) -> [i32; 4]) -> Events {
+    pub fn tick(
+        &mut self,
+        hero: [i32; 2],
+        hero_body: [i32; 4],
+        count: usize,
+        edge: impl Fn(usize) -> [i32; 4],
+    ) -> Events {
         let mut events = Events::default();
-        let Some(live) = self.live.as_mut() else { return events };
+        let Some(live) = self.live.as_mut() else {
+            return events;
+        };
         live.age = live.age.saturating_add(1);
         let dx = (live.position[0].clamp(hero_body[0], hero_body[2]) - live.position[0]) as i64;
         let dy = (live.position[1].clamp(hero_body[1], hero_body[3]) - live.position[1]) as i64;
         let radius = ALERT_RADIUS as i64;
         let in_range = dx * dx + dy * dy <= radius * radius;
         let can_see_hero = in_range && !segment_hits_terrain(live.position, hero, count, &edge);
-        let senses = Senses { position: live.position, hero, can_see_hero };
+        let senses = Senses {
+            position: live.position,
+            hero,
+            can_see_hero,
+        };
         let actions = live.control.tick(senses);
         for action in actions.iter() {
             match action {
@@ -170,7 +227,14 @@ impl World {
         let v = live.control.velocity();
         if v != [0; 2] && live.control.phase() != Phase::Retreat {
             let mut body = Player::spawn(live.position[0], live.position[1]);
-            let params = Params { speed: v[0].abs(), fall: 100 * ONE, half_width: (BODY_BOUNDS[2] - BODY_BOUNDS[0]) / 2, bottom: BODY_BOUNDS[1], top: BODY_BOUNDS[3], ..Params::ZERO };
+            let params = Params {
+                speed: v[0].abs(),
+                fall: 100 * ONE,
+                half_width: (BODY_BOUNDS[2] - BODY_BOUNDS[0]) / 2,
+                bottom: BODY_BOUNDS[1],
+                top: BODY_BOUNDS[3],
+                ..Params::ZERO
+            };
             body.vy = v[1];
             body.step(params, v[0].signum(), false, count, &edge);
             live.position = [body.x, body.y];
@@ -179,15 +243,23 @@ impl World {
             live.hit_cooldown -= 1;
         }
         if live.control.vulnerable() {
-            let box_ = if live.control.slashing() { Self::slash_box(live.position, live.facing) } else { Self::body(live.position) };
-            events.touched = box_[0] <= hero_body[2] && box_[2] >= hero_body[0]
-                && box_[1] <= hero_body[3] && box_[3] >= hero_body[1];
+            let box_ = if live.control.slashing() {
+                Self::slash_box(live.position, live.facing)
+            } else {
+                Self::body(live.position)
+            };
+            events.touched = box_[0] <= hero_body[2]
+                && box_[2] >= hero_body[0]
+                && box_[1] <= hero_body[3]
+                && box_[3] >= hero_body[1];
         }
         if live.control.phase() == Phase::Gone {
             events.returned_geo = self.record.geo_pool;
             self.record = Record::default();
             self.live = None;
-            unsafe { HK_SHADE_KILLS = HK_SHADE_KILLS.saturating_add(1); }
+            unsafe {
+                HK_SHADE_KILLS = HK_SHADE_KILLS.saturating_add(1);
+            }
         } else {
             self.record.position = live.position;
             self.record.hp = live.hp;
@@ -197,7 +269,9 @@ impl World {
     }
     /// A nail strike. Returns whether it connected.
     pub fn strike(&mut self, polygon: &[[i32; 2]], damage: u16) -> bool {
-        let Some(live) = self.live.as_mut() else { return false };
+        let Some(live) = self.live.as_mut() else {
+            return false;
+        };
         if !live.control.vulnerable() || live.hit_cooldown != 0 {
             return false;
         }
@@ -211,7 +285,11 @@ impl World {
             // Death Start credits the pool; the caller adds it on the Gone tick.
             live.control.die()
         } else {
-            live.control.took_damage(Senses { position, hero: position, can_see_hero: false })
+            live.control.took_damage(Senses {
+                position,
+                hero: position,
+                can_see_hero: false,
+            })
         };
         for action in actions.iter() {
             if let Action::Play(pose, frame) = action {
@@ -235,7 +313,14 @@ impl World {
         let live = self.live.as_ref()?;
         let clip = SHADE_CLIPS[live.clip];
         let frame = (u64::from(live.age) * u64::from(clip.fps) / 60) as usize;
-        Some(clip.start + if clip.wrap == 0 { frame % clip.count } else { frame.min(clip.count - 1) })
+        Some(
+            clip.start
+                + if clip.wrap == 0 {
+                    frame % clip.count
+                } else {
+                    frame.min(clip.count - 1)
+                },
+        )
     }
     /// Append this frame's animation key, as the actors do.
     pub fn append_needed(&self, needed: &mut [u16], len: &mut usize) {
@@ -243,7 +328,9 @@ impl World {
         // Asked only when a Shade is live, so a miss counts as late art
         // (modules::HK_MODULE_ART_LATE) and a frame without one does not.
         if let Some(index) = self.frame_index() {
-            if data().is_none() { return; }
+            if data().is_none() {
+                return;
+            }
             assert!(*len < needed.len(), "animation working set exceeded");
             needed[*len] = KEY_BASE + index as u16;
             *len += 1;
@@ -276,7 +363,12 @@ pub fn texels(index: usize) -> Option<(&'static [u8], u16, u16)> {
     Some((data.get(start..start + len)?, frame.width, frame.height))
 }
 /// Straight-line terrain occlusion, as the flying actors use for sight.
-fn segment_hits_terrain(a: [i32; 2], b: [i32; 2], count: usize, edge: &impl Fn(usize) -> [i32; 4]) -> bool {
+fn segment_hits_terrain(
+    a: [i32; 2],
+    b: [i32; 2],
+    count: usize,
+    edge: &impl Fn(usize) -> [i32; 4],
+) -> bool {
     let (ox, oy) = (a[0] as i64, a[1] as i64);
     let (rx, ry) = (b[0] as i64 - ox, b[1] as i64 - oy);
     for i in 0..count {
@@ -301,7 +393,10 @@ fn segment_hits_terrain(a: [i32; 2], b: [i32; 2], count: usize, edge: &impl Fn(u
 #[cfg(not(test))]
 mod presentation {
     use super::*;
-    use psx_gpu::{material::{BlendMode, TextureMaterial}, prim::QuadTextured};
+    use psx_gpu::{
+        material::{BlendMode, TextureMaterial},
+        prim::QuadTextured,
+    };
     use psx_vram::{upload_bytes, Clut, VramRect};
     #[no_mangle]
     pub static mut HK_SHADE_DRAWN: u32 = 0;
@@ -309,20 +404,39 @@ mod presentation {
     /// One resident CLUT row per cooked palette, above the dialogue palette:
     /// uploaded the first time the Shade's art is in, and again after
     /// `upload` (boot, retry) forgets them.
-    pub fn upload() { unsafe { PALETTES_UP = false; } }
-    pub(super) fn palettes(data: &[u8]) {
-        if unsafe { PALETTES_UP } || data.len() < PALETTE_BYTES { return; }
-        for i in 0..PALETTE_COUNT {
-            upload_bytes(VramRect::new(CLUT_RECT.0, CLUT_RECT.1 + i as u16, CLUT_RECT.2, CLUT_RECT.3),
-                &data[i * 32..i * 32 + 32]);
+    pub fn upload() {
+        unsafe {
+            PALETTES_UP = false;
         }
-        unsafe { PALETTES_UP = true; }
+    }
+    pub(super) fn palettes(data: &[u8]) {
+        if unsafe { PALETTES_UP } || data.len() < PALETTE_BYTES {
+            return;
+        }
+        for i in 0..PALETTE_COUNT {
+            upload_bytes(
+                VramRect::new(
+                    CLUT_RECT.0,
+                    CLUT_RECT.1 + i as u16,
+                    CLUT_RECT.2,
+                    CLUT_RECT.3,
+                ),
+                &data[i * 32..i * 32 + 32],
+            );
+        }
+        unsafe {
+            PALETTES_UP = true;
+        }
     }
     impl World {
         #[inline(never)]
         pub fn draw(&self, camera: (i32, i32)) -> u32 {
-            let (Some(index), Some(live)) = (self.frame_index(), self.live.as_ref()) else { return 0 };
-            if data().is_none() { return 0; }
+            let (Some(index), Some(live)) = (self.frame_index(), self.live.as_ref()) else {
+                return 0;
+            };
+            if data().is_none() {
+                return 0;
+            }
             let frame = SHADE_FRAMES[index];
             let (u, v) = crate::render::animation_uv(KEY_BASE + index as u16);
             let b = frame.bounds;
@@ -330,21 +444,33 @@ mod presentation {
             let vertices = world.map(|[x, y]| {
                 let x = live.position[0] + x * live.facing;
                 let y = live.position[1] + y;
-                (160 + (((i64::from(x) - i64::from(camera.0)) * i64::from(crate::KNIGHT_SCALE)) >> 28) as i32,
-                 120 - (((i64::from(y) - i64::from(camera.1)) * i64::from(crate::KNIGHT_SCALE)) >> 28) as i32)
+                (
+                    160 + (((i64::from(x) - i64::from(camera.0)) * i64::from(crate::KNIGHT_SCALE))
+                        >> 28) as i32,
+                    120 - (((i64::from(y) - i64::from(camera.1)) * i64::from(crate::KNIGHT_SCALE))
+                        >> 28) as i32,
+                )
             });
-            if vertices.iter().all(|p| p.0 < 0) || vertices.iter().all(|p| p.0 >= 320)
-                || vertices.iter().all(|p| p.1 < 0) || vertices.iter().all(|p| p.1 >= 240) {
+            if vertices.iter().all(|p| p.0 < 0)
+                || vertices.iter().all(|p| p.0 >= 320)
+                || vertices.iter().all(|p| p.1 < 0)
+                || vertices.iter().all(|p| p.1 >= 240)
+            {
                 return 0;
             }
             let right = (u16::from(u) + frame.width - 1) as u8;
             let bottom = (u16::from(v) + frame.height - 1) as u8;
             let clut = Clut::new(CLUT_RECT.0, CLUT_RECT.1 + frame.clut as u16).uv_clut_word();
             let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
-            let template = QuadTextured::with_material([(0, 0); 4], [(u, v), (right, v), (u, bottom), (right, bottom)],
-                TextureMaterial::blended(clut, tpage, (128, 128, 128), BlendMode::Average));
+            let template = QuadTextured::with_material(
+                [(0, 0); 4],
+                [(u, v), (right, v), (u, bottom), (right, bottom)],
+                TextureMaterial::blended(clut, tpage, (128, 128, 128), BlendMode::Average),
+            );
             crate::render::resident_quad(&template, vertices.map(|(x, y)| (x as i16, y as i16)));
-            unsafe { HK_SHADE_DRAWN = HK_SHADE_DRAWN.saturating_add(1); }
+            unsafe {
+                HK_SHADE_DRAWN = HK_SHADE_DRAWN.saturating_add(1);
+            }
             1
         }
     }

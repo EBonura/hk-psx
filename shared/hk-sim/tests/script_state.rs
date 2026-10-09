@@ -32,11 +32,17 @@ fn walk(path: &[i32]) -> (Vec<bool>, Vec<bool>, Vec<bool>) {
 fn enter_fires_once_at_the_edge_and_exit_once_on_the_way_out() {
     // Walk in from the left, stand still for two ticks, walk out to the right.
     let (enters, stays, exits) = walk(&[8, 9, 11, 11, 11, 14, 15]);
-    assert_eq!(enters, [false, false, true, false, false, false, false],
-               "Enter is the tick the overlap begins, not every tick inside it");
+    assert_eq!(
+        enters,
+        [false, false, true, false, false, false, false],
+        "Enter is the tick the overlap begins, not every tick inside it"
+    );
     assert_eq!(stays, [false, false, true, true, true, false, false]);
-    assert_eq!(exits, [false, false, false, false, false, true, false],
-               "Exit is the tick it ends, and does not repeat afterwards");
+    assert_eq!(
+        exits,
+        [false, false, false, false, false, true, false],
+        "Exit is the tick it ends, and does not repeat afterwards"
+    );
 }
 
 #[test]
@@ -46,7 +52,10 @@ fn a_scene_load_with_the_knight_already_inside_reads_as_an_entry() {
     let mut inside = Overlaps::<1>::new();
     inside.refresh(|_| true);
     inside.refresh(|_| true);
-    assert!(!inside.holds(0, TRIGGER_ENTER), "a continuing overlap is not an entry");
+    assert!(
+        !inside.holds(0, TRIGGER_ENTER),
+        "a continuing overlap is not an entry"
+    );
     inside.clear();
     inside.refresh(|_| true);
     assert!(inside.holds(0, TRIGGER_ENTER));
@@ -57,7 +66,10 @@ fn a_volume_the_bank_does_not_have_is_never_in_any_phase() {
     let mut inside = Overlaps::<1>::new();
     inside.refresh(|_| true);
     for phase in [TRIGGER_ENTER, TRIGGER_STAY, TRIGGER_EXIT, 9] {
-        assert!(!inside.holds(1, phase), "phase {phase} of an index off the end");
+        assert!(
+            !inside.holds(1, phase),
+            "phase {phase} of an index off the end"
+        );
     }
     assert!(!inside.holds(0, 9), "a phase this runtime does not know");
 }
@@ -68,6 +80,8 @@ fn a_touching_edge_counts_as_inside() {
     // trigger whose edge the hero body just reaches has to agree with them.
     assert!(overlaps(VOLUME, [12 * ONE, 0, 13 * ONE, ONE]));
     assert!(!overlaps(VOLUME, [12 * ONE + 1, 0, 13 * ONE, ONE]));
-    assert!(!overlaps(VOLUME, [10 * ONE, 5 * ONE, 12 * ONE, 6 * ONE]),
-            "above the volume is outside it");
+    assert!(
+        !overlaps(VOLUME, [10 * ONE, 5 * ONE, 12 * ONE, 6 * ONE]),
+        "above the volume is outside it"
+    );
 }

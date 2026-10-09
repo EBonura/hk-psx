@@ -35,8 +35,11 @@ pub fn quantize_alpha_coverage(image: &Image, opacity128: u32) -> Result<Quantiz
         return Err("4bpp texture dimensions".into());
     }
     let px = |i: usize| -> [u8; 4] { image.data[i * 4..i * 4 + 4].try_into().unwrap() };
-    let levels: Vec<u32> = (0..w * h).map(|i| alpha_coverage(px(i)[3] as u32, opacity128, i % w, i / w)).collect();
-    let groups: [Vec<usize>; 2] = [1u32, 2].map(|level| (0..w * h).filter(|&i| levels[i] == level).collect());
+    let levels: Vec<u32> = (0..w * h)
+        .map(|i| alpha_coverage(px(i)[3] as u32, opacity128, i % w, i / w))
+        .collect();
+    let groups: [Vec<usize>; 2] =
+        [1u32, 2].map(|level| (0..w * h).filter(|&i| levels[i] == level).collect());
     let budgets = if !groups[0].is_empty() && !groups[1].is_empty() {
         let (n1, n2) = (groups[0].len() as f64, groups[1].len() as f64);
         let half = ((15.0 * n1 / (n1 + n2)).round_ties_even() as i64).clamp(1, 14) as u32;
@@ -50,7 +53,10 @@ pub fn quantize_alpha_coverage(image: &Image, opacity128: u32) -> Result<Quantiz
         if positions.is_empty() {
             continue;
         }
-        let strip: Vec<[u8; 3]> = positions.iter().map(|&i| [px(i)[0], px(i)[1], px(i)[2]]).collect();
+        let strip: Vec<[u8; 3]> = positions
+            .iter()
+            .map(|&i| [px(i)[0], px(i)[1], px(i)[2]])
+            .collect();
         let (colors, q) = quant::median_cut(&strip, budgets[g]).ok_or("median cut failed")?;
         let mut used: Vec<u8> = q.clone();
         used.sort_unstable();
@@ -60,7 +66,13 @@ pub fn quantize_alpha_coverage(image: &Image, opacity128: u32) -> Result<Quantiz
             let [r, gg, b] = colors[original as usize];
             let word = (r as u16 >> 3) | ((gg as u16 >> 3) << 5) | ((b as u16 >> 3) << 10);
             mapping[original as usize] = palette.len() as u8;
-            palette.push(if g == 0 { word | 0x8000 } else if word == 0 { 1 } else { word });
+            palette.push(if g == 0 {
+                word | 0x8000
+            } else if word == 0 {
+                1
+            } else {
+                word
+            });
         }
         for (&position, &index) in positions.iter().zip(&q) {
             indices[position] = mapping[index as usize];
@@ -78,7 +90,12 @@ pub fn quantize_alpha_coverage(image: &Image, opacity128: u32) -> Result<Quantiz
     for (i, word) in palette.iter().enumerate() {
         bytes[i * 2..i * 2 + 2].copy_from_slice(&word.to_le_bytes());
     }
-    Ok(Quantized { width: w, height: h, palette: bytes, packed })
+    Ok(Quantized {
+        width: w,
+        height: h,
+        palette: bytes,
+        packed,
+    })
 }
 
 /// Pixels as `Image.new("RGB", (n, 1)).putdata(...)` would hold them.
@@ -99,7 +116,9 @@ mod tests {
         // Opaque at full opacity is level 2, transparent is 0, half alpha dithers.
         assert_eq!(alpha_coverage(255, 128, 0, 0), 2);
         assert_eq!(alpha_coverage(0, 128, 3, 1), 0);
-        let half: Vec<u32> = (0..16).map(|i| alpha_coverage(128, 128, i % 4, i / 4)).collect();
+        let half: Vec<u32> = (0..16)
+            .map(|i| alpha_coverage(128, 128, i % 4, i / 4))
+            .collect();
         assert!(half.contains(&1) && half.iter().all(|&l| l <= 2));
     }
 

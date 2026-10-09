@@ -14,7 +14,10 @@
 //! session (the title's page starts from what is set now). The save record is
 //! per profile and written only at a bench; a display setting belongs to the
 //! television, not to a save.
-use psx_gpu::{self as gpu, material::BlendMode, ot::OrderingTable, prim::QuadGouraudBlended, Resolution, VideoMode};
+use psx_gpu::{
+    self as gpu, material::BlendMode, ot::OrderingTable, prim::QuadGouraudBlended, Resolution,
+    VideoMode,
+};
 
 /// Brightness steps either side of the picture as drawn.
 pub const BRIGHT_STEPS: i8 = 5;
@@ -27,7 +30,11 @@ const DOWN: u32 = 6;
 
 static mut LEVEL: i8 = 0;
 static mut SCREEN: (i8, i8) = (0, 0);
-static mut OVERLAY: QuadGouraudBlended = QuadGouraudBlended::new([(0, 0), (320, 0), (0, 240), (320, 240)], [(0, 0, 0); 4], BlendMode::Subtract);
+static mut OVERLAY: QuadGouraudBlended = QuadGouraudBlended::new(
+    [(0, 0), (320, 0), (0, 240), (320, 240)],
+    [(0, 0, 0); 4],
+    BlendMode::Subtract,
+);
 
 /// The brightness step in force: -BRIGHT_STEPS (darker) to BRIGHT_STEPS.
 pub fn brightness() -> i8 {
@@ -43,7 +50,14 @@ pub fn set_brightness(level: i8) {
 fn grey(level: i8, gain: u32) -> (BlendMode, u8) {
     let per = if level > 0 { UP } else { DOWN };
     let grey = (level.unsigned_abs() as u32 * per * gain / 128).min(255) as u8;
-    (if level > 0 { BlendMode::Add } else { BlendMode::Subtract }, grey)
+    (
+        if level > 0 {
+            BlendMode::Add
+        } else {
+            BlendMode::Subtract
+        },
+        grey,
+    )
 }
 
 /// The overlay at the front of the frame's final list, behind only the fade to
@@ -57,7 +71,11 @@ pub fn append(ot: &mut OrderingTable<1>) {
     }
     let (mode, g) = grey(level, 128);
     unsafe {
-        OVERLAY = QuadGouraudBlended::new([(0, 0), (320, 0), (0, 240), (320, 240)], [(g, g, g); 4], mode);
+        OVERLAY = QuadGouraudBlended::new(
+            [(0, 0), (320, 0), (0, 240), (320, 240)],
+            [(g, g, g); 4],
+            mode,
+        );
         ot.add(0, &mut *(&raw mut OVERLAY), QuadGouraudBlended::WORDS);
     }
 }
@@ -89,7 +107,10 @@ pub fn screen() -> (i8, i8) {
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
 pub fn set_screen(x: i8, y: i8) {
-    let (x, y) = (x.clamp(-SCREEN_RANGE, SCREEN_RANGE), y.clamp(-SCREEN_RANGE, SCREEN_RANGE));
+    let (x, y) = (
+        x.clamp(-SCREEN_RANGE, SCREEN_RANGE),
+        y.clamp(-SCREEN_RANGE, SCREEN_RANGE),
+    );
     unsafe { SCREEN = (x, y) };
     gpu::set_display_offset(VideoMode::Ntsc, Resolution::R320X240, x as i16, y as i16);
 }

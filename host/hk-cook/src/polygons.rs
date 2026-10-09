@@ -29,7 +29,10 @@ struct Big {
 
 impl Big {
     fn zero() -> Big {
-        Big { neg: false, mag: Vec::new() }
+        Big {
+            neg: false,
+            mag: Vec::new(),
+        }
     }
 
     fn from_u128(v: u128, neg: bool) -> Big {
@@ -39,7 +42,10 @@ impl Big {
             mag.push(v as u32);
             v >>= 32;
         }
-        Big { neg: neg && !mag.is_empty(), mag }
+        Big {
+            neg: neg && !mag.is_empty(),
+            mag,
+        }
     }
 
     fn shl(mut self, bits: u32) -> Big {
@@ -111,17 +117,29 @@ impl Big {
 
     fn add(&self, other: &Big) -> Big {
         if self.neg == other.neg {
-            return Big { neg: self.neg && !self.mag.is_empty(), mag: Big::add_mag(&self.mag, &other.mag) };
+            return Big {
+                neg: self.neg && !self.mag.is_empty(),
+                mag: Big::add_mag(&self.mag, &other.mag),
+            };
         }
         match Big::cmp_mag(&self.mag, &other.mag) {
             Ordering::Equal => Big::zero(),
-            Ordering::Greater => Big { neg: self.neg, mag: Big::sub_mag(&self.mag, &other.mag) },
-            Ordering::Less => Big { neg: other.neg, mag: Big::sub_mag(&other.mag, &self.mag) },
+            Ordering::Greater => Big {
+                neg: self.neg,
+                mag: Big::sub_mag(&self.mag, &other.mag),
+            },
+            Ordering::Less => Big {
+                neg: other.neg,
+                mag: Big::sub_mag(&other.mag, &self.mag),
+            },
         }
     }
 
     fn negate(&self) -> Big {
-        Big { neg: !self.neg && !self.mag.is_empty(), mag: self.mag.clone() }
+        Big {
+            neg: !self.neg && !self.mag.is_empty(),
+            mag: self.mag.clone(),
+        }
     }
 
     fn sub(&self, other: &Big) -> Big {
@@ -151,7 +169,10 @@ impl Big {
         while out.last() == Some(&0) {
             out.pop();
         }
-        Big { neg: self.neg != other.neg, mag: out }
+        Big {
+            neg: self.neg != other.neg,
+            mag: out,
+        }
     }
 
     /// -1, 0 or 1.
@@ -173,7 +194,11 @@ fn decompose(v: f64) -> Option<(u64, i32, bool)> {
     }
     let bits = v.to_bits();
     let (exp, frac) = (((bits >> 52) & 0x7ff) as i32, bits & ((1u64 << 52) - 1));
-    let (mant, e) = if exp == 0 { (frac, -1074) } else { (frac | (1u64 << 52), exp - 1075) };
+    let (mant, e) = if exp == 0 {
+        (frac, -1074)
+    } else {
+        (frac | (1u64 << 52), exp - 1075)
+    };
     Some((mant, e, v < 0.0))
 }
 
@@ -188,18 +213,28 @@ impl Exact {
         if points.iter().any(|p| !p.0.is_finite() || !p.1.is_finite()) {
             return err("polygon has a non-finite vertex");
         }
-        let min_exp = points.iter().flat_map(|p| [p.0, p.1]).filter_map(decompose).map(|d| d.1).min().unwrap_or(0);
+        let min_exp = points
+            .iter()
+            .flat_map(|p| [p.0, p.1])
+            .filter_map(decompose)
+            .map(|d| d.1)
+            .min()
+            .unwrap_or(0);
         let scaled = |v: f64| match decompose(v) {
             None => Big::zero(),
             Some((m, e, neg)) => Big::from_u128(m as u128, neg).shl((e - min_exp) as u32),
         };
-        Ok(Exact { pts: points.iter().map(|p| (scaled(p.0), scaled(p.1))).collect() })
+        Ok(Exact {
+            pts: points.iter().map(|p| (scaled(p.0), scaled(p.1))).collect(),
+        })
     }
 
     /// `_area2(a, b, c)`: twice the signed area, as an exact integer (scaled).
     fn area2(&self, a: usize, b: usize, c: usize) -> Big {
         let (pa, pb, pc) = (&self.pts[a], &self.pts[b], &self.pts[c]);
-        pb.0.sub(&pa.0).mul(&pc.1.sub(&pa.1)).sub(&pb.1.sub(&pa.1).mul(&pc.0.sub(&pa.0)))
+        pb.0.sub(&pa.0)
+            .mul(&pc.1.sub(&pa.1))
+            .sub(&pb.1.sub(&pa.1).mul(&pc.0.sub(&pa.0)))
     }
 
     /// `_area2((0, 0), b, c)`.
@@ -214,7 +249,11 @@ impl Exact {
 
     /// `_inside_triangle(p, a, b, c)`.
     fn inside(&self, p: usize, a: usize, b: usize, c: usize) -> bool {
-        let d = [self.area2(a, b, p).sign(), self.area2(b, c, p).sign(), self.area2(c, a, p).sign()];
+        let d = [
+            self.area2(a, b, p).sign(),
+            self.area2(b, c, p).sign(),
+            self.area2(c, a, p).sign(),
+        ];
         !(d.iter().any(|&v| v < 0) && d.iter().any(|&v| v > 0))
     }
 }
@@ -252,7 +291,10 @@ pub fn triangulate(points: &[(f64, f64)]) -> Result<Vec<[usize; 3]>> {
                 clipped = true;
                 break;
             }
-            if idx.iter().any(|&o| o != a && o != b && o != c && ex.inside(o, a, b, c)) {
+            if idx
+                .iter()
+                .any(|&o| o != a && o != b && o != c && ex.inside(o, a, b, c))
+            {
                 continue;
             }
             triangles.push([a, b, c]);
@@ -285,7 +327,10 @@ struct PySet<K: Clone + PartialEq> {
 
 impl<K: Clone + PartialEq> PySet<K> {
     fn new() -> Self {
-        PySet { table: vec![None; MIN_SIZE], fill: 0 }
+        PySet {
+            table: vec![None; MIN_SIZE],
+            fill: 0,
+        }
     }
 
     fn mask(&self) -> usize {
@@ -297,7 +342,10 @@ impl<K: Clone + PartialEq> PySet<K> {
     }
 
     fn contains(&self, key: &K, hash: u64) -> bool {
-        self.table.iter().flatten().any(|e| e.0 == hash && e.1 == *key)
+        self.table
+            .iter()
+            .flatten()
+            .any(|e| e.0 == hash && e.1 == *key)
     }
 
     /// `set_insert_clean`: the key is known to be absent.
@@ -319,7 +367,11 @@ impl<K: Clone + PartialEq> PySet<K> {
                 }
             }
             perturb >>= PERTURB_SHIFT;
-            i = (i.wrapping_mul(5).wrapping_add(1).wrapping_add(perturb as usize)) & mask;
+            i = (i
+                .wrapping_mul(5)
+                .wrapping_add(1)
+                .wrapping_add(perturb as usize))
+                & mask;
         }
     }
 
@@ -341,7 +393,11 @@ impl<K: Clone + PartialEq> PySet<K> {
         let mut perturb = hash;
         let mut i = (hash as usize) & mask;
         loop {
-            let probes = if i + LINEAR_PROBES <= mask { LINEAR_PROBES } else { 0 };
+            let probes = if i + LINEAR_PROBES <= mask {
+                LINEAR_PROBES
+            } else {
+                0
+            };
             for j in 0..=probes {
                 match &self.table[i + j] {
                     None => {
@@ -357,7 +413,11 @@ impl<K: Clone + PartialEq> PySet<K> {
                 }
             }
             perturb >>= PERTURB_SHIFT;
-            i = (i.wrapping_mul(5).wrapping_add(1).wrapping_add(perturb as usize)) & mask;
+            i = (i
+                .wrapping_mul(5)
+                .wrapping_add(1)
+                .wrapping_add(perturb as usize))
+                & mask;
         }
     }
 
@@ -456,7 +516,10 @@ pub fn bounded_polygons(points: &[(f64, f64)], limit: usize) -> Result<Vec<Vec<(
     for &t in order.iter().rev() {
         let Some(Some(p)) = parent[t] else { continue };
         let (mine, theirs) = (group[t], group[p]);
-        let (a, b) = (members[mine].as_ref().unwrap().len(), members[theirs].as_ref().unwrap().len());
+        let (a, b) = (
+            members[mine].as_ref().unwrap().len(),
+            members[theirs].as_ref().unwrap().len(),
+        );
         if a + b <= limit - 2 {
             let moved = members[mine].take().unwrap();
             for &m in moved.iter() {

@@ -34,7 +34,12 @@ pub struct Gruzzer {
 }
 impl Gruzzer {
     pub fn new(seed: u32) -> Self {
-        Self { phase: Phase::Waiting, angle: 0, facing_right: false, rng: seed }
+        Self {
+            phase: Phase::Waiting,
+            angle: 0,
+            facing_right: false,
+            rng: seed,
+        }
     }
     pub fn phase(self) -> Phase {
         self.phase
@@ -45,7 +50,11 @@ impl Gruzzer {
     /// FaceDirection every frame: +1 when the x velocity is positive.
     pub fn facing(self) -> i32 {
         let a = self.angle.rem_euclid(360 * ONE);
-        if self.phase == Phase::Flying && (a < 90 * ONE || a > 270 * ONE) { 1 } else { -1 }
+        if self.phase == Phase::Flying && (a < 90 * ONE || a > 270 * ONE) {
+            1
+        } else {
+            -1
+        }
     }
     pub fn die(&mut self) {
         self.phase = Phase::Dead;
@@ -60,7 +69,8 @@ impl Gruzzer {
     /// `Left or Right?`: FloatSwitch below 90 RIGHT, below 270 LEFT, below 360 RIGHT.
     fn aim(&mut self, low_degrees: i32, high_degrees: i32) {
         self.angle = self.range(low_degrees * ONE, high_degrees * ONE);
-        self.facing_right = self.angle < 90 * ONE || (self.angle >= 270 * ONE && self.angle < 360 * ONE);
+        self.facing_right =
+            self.angle < 90 * ONE || (self.angle >= 270 * ONE && self.angle < 360 * ONE);
     }
     /// Initialise: GetDistance(owner, MainCamera) < 44 every frame, then Aim.
     pub fn tick(&mut self, camera: [i32; 3], position: [i32; 3]) {

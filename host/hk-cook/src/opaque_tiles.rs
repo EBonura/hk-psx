@@ -22,12 +22,18 @@ pub const RASTER_SOURCE: [(&str, &str); 5] = [
     ("repository", "https://github.com/EBonura/PSoXide-emulator"),
     ("revision", "38af605ac5a6961f3798d432bcfb7cceacece239"),
     ("path", "emu/crates/emulator-core/src/gpu/raster.rs"),
-    ("sha256", "eb24fcaa17fb0a6f7f876b9c20466c9268d2c5c8bf35950fc39d5b91319ef6b6"),
+    (
+        "sha256",
+        "eb24fcaa17fb0a6f7f876b9c20466c9268d2c5c8bf35950fc39d5b91319ef6b6",
+    ),
     ("license", "GPL-2.0-or-later"),
 ];
 
 pub fn sha(data: &[u8]) -> String {
-    Sha256::digest(data).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(data)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 pub fn read(path: &Path) -> Result<Vec<u8>> {
     std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
@@ -61,47 +67,82 @@ pub fn helper(sources: &[&str], root: &Path) -> Result<Json> {
     }
     Ok(Json::Obj(vec![
         ("source_sha256".into(), Json::Obj(hashes)),
-        ("upstream".into(), Json::Obj(RASTER_SOURCE.iter().map(|(k, v)| (k.to_string(), Json::Str(v.to_string()))).collect())),
+        (
+            "upstream".into(),
+            Json::Obj(
+                RASTER_SOURCE
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), Json::Str(v.to_string())))
+                    .collect(),
+            ),
+        ),
     ]))
 }
 
 pub fn int(v: &J, key: &str) -> Result<i64> {
-    v.get(key).and_then(J::as_i64).ok_or_else(|| format!("missing integer {key}"))
+    v.get(key)
+        .and_then(J::as_i64)
+        .ok_or_else(|| format!("missing integer {key}"))
 }
 pub fn text(v: &J, key: &str) -> Result<String> {
-    v.get(key).and_then(J::as_str).map(str::to_string).ok_or_else(|| format!("missing string {key}"))
+    v.get(key)
+        .and_then(J::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| format!("missing string {key}"))
 }
 pub fn list<'a>(v: &'a J, key: &str) -> Result<&'a Vec<J>> {
-    v.get(key).and_then(J::as_array).ok_or_else(|| format!("missing list {key}"))
+    v.get(key)
+        .and_then(J::as_array)
+        .ok_or_else(|| format!("missing list {key}"))
 }
 fn empty() -> &'static Vec<J> {
     static EMPTY: Vec<J> = Vec::new();
     &EMPTY
 }
 pub fn u16_at(raw: &[u8], at: usize) -> Result<u16> {
-    raw.get(at..at + 2).map(|b| u16::from_le_bytes([b[0], b[1]])).ok_or_else(|| "bank read outside its bytes".into())
+    raw.get(at..at + 2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .ok_or_else(|| "bank read outside its bytes".into())
 }
 pub fn u32_at(raw: &[u8], at: usize) -> Result<u32> {
-    raw.get(at..at + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).ok_or_else(|| "bank read outside its bytes".into())
+    raw.get(at..at + 4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .ok_or_else(|| "bank read outside its bytes".into())
 }
 pub fn i32_at(raw: &[u8], at: usize) -> Result<i32> {
     Ok(u32_at(raw, at)? as i32)
 }
 /// A bank section's byte offset (`bank['sections'][name]['offset']`).
 pub fn section(bank: &J, name: &str) -> Result<usize> {
-    bank.get("sections").and_then(|s| s.get(name)).and_then(|s| s.get("offset")).and_then(J::as_u64).map(|v| v as usize)
+    bank.get("sections")
+        .and_then(|s| s.get(name))
+        .and_then(|s| s.get("offset"))
+        .and_then(J::as_u64)
+        .map(|v| v as usize)
         .ok_or_else(|| format!("bank without section {name}"))
 }
 /// One pooled draw record: texture, front, scale, the eight Q8 coordinates and
 /// the four flag bytes (`<HHi8i4B` at `draws + gid * 44`).
-pub fn draw_record(raw: &[u8], draws: usize, gid: usize) -> Result<(u16, u16, i32, [i64; 8], [u8; 4])> {
+pub fn draw_record(
+    raw: &[u8],
+    draws: usize,
+    gid: usize,
+) -> Result<(u16, u16, i32, [i64; 8], [u8; 4])> {
     let at = draws + gid * 44;
     let mut xy = [0i64; 8];
     for (k, v) in xy.iter_mut().enumerate() {
         *v = i64::from(i32_at(raw, at + 8 + 4 * k)?);
     }
-    let flags = raw.get(at + 40..at + 44).ok_or("bank read outside its bytes")?;
-    Ok((u16_at(raw, at)?, u16_at(raw, at + 2)?, i32_at(raw, at + 4)?, xy, [flags[0], flags[1], flags[2], flags[3]]))
+    let flags = raw
+        .get(at + 40..at + 44)
+        .ok_or("bank read outside its bytes")?;
+    Ok((
+        u16_at(raw, at)?,
+        u16_at(raw, at + 2)?,
+        i32_at(raw, at + 4)?,
+        xy,
+        [flags[0], flags[1], flags[2], flags[3]],
+    ))
 }
 /// A room descriptor's ten words (`<10I` at `rooms + 40 * local`).
 pub fn room_desc(raw: &[u8], rooms: usize, local: usize) -> Result<[u32; 10]> {
@@ -134,13 +175,24 @@ pub fn mutable_draws(metadata: &J, geo: &J, life: &J) -> Result<Vec<HashSet<i64>
                 ids.extend(list(f, "draw_indices")?);
             }
         }
-        for b in row.get("remote_mask_bindings").and_then(J::as_array).unwrap_or(empty()) {
+        for b in row
+            .get("remote_mask_bindings")
+            .and_then(J::as_array)
+            .unwrap_or(empty())
+        {
             ids.extend(list(&b["fade"], "draw_indices")?);
         }
-        for b in row.get("reveal_mask_bindings").and_then(J::as_array).unwrap_or(empty()) {
+        for b in row
+            .get("reveal_mask_bindings")
+            .and_then(J::as_array)
+            .unwrap_or(empty())
+        {
             ids.push(&b["draw"]);
         }
-        for b in geo_rows[index].as_array().ok_or("Geo bindings row is not a list")? {
+        for b in geo_rows[index]
+            .as_array()
+            .ok_or("Geo bindings row is not a list")?
+        {
             ids.extend(list(b, "off")?);
         }
         ids.extend(list(&life_rows[index], "off")?);
@@ -170,7 +222,13 @@ pub fn phase_variants(xy: &[i64; 8]) -> Result<Vec<[(i64, i64); 4]>> {
         xs.insert([0, 2, 4, 6].map(|k| ((xy[k] - p) >> 8) - ((xy[0] - p) >> 8)));
         ys.insert([1, 3, 5, 7].map(|k| -(((xy[k] - p) >> 8) - ((xy[1] - p) >> 8))));
     }
-    let variants: Vec<[(i64, i64); 4]> = xs.iter().flat_map(|x| ys.iter().map(move |y| core::array::from_fn(|i| (x[i], y[i])))).collect();
+    let variants: Vec<[(i64, i64); 4]> = xs
+        .iter()
+        .flat_map(|x| {
+            ys.iter()
+                .map(move |y| core::array::from_fn(|i| (x[i], y[i])))
+        })
+        .collect();
     if variants.len() > 16 {
         return err("Opaque tiles: phase bound exceeded");
     }
@@ -180,7 +238,9 @@ pub fn phase_variants(xy: &[i64; 8]) -> Result<Vec<[(i64, i64); 4]>> {
 /// The guest's source-only `legal_extent_q8`: after viewport rejection, every
 /// original vertex and edge is legal in every phase.
 pub fn legal_source(xy: &[i64; 8]) -> bool {
-    let span = |o: usize| (0..4).map(|k| xy[2 * k + o]).max().unwrap() - (0..4).map(|k| xy[2 * k + o]).min().unwrap();
+    let span = |o: usize| {
+        (0..4).map(|k| xy[2 * k + o]).max().unwrap() - (0..4).map(|k| xy[2 * k + o]).min().unwrap()
+    };
     span(0) <= 703 * 256 && span(1) <= 511 * 256
 }
 
@@ -210,7 +270,9 @@ pub fn read_certificates(data: &[u8], count: usize) -> Result<Vec<Cert>> {
         if ident != expected || n != cells.div_ceil(32) || (w != 0) != (h != 0) {
             return err("Opaque tiles: native proof descriptor mismatch");
         }
-        let words = (0..n).map(|k| u32_at(data, pos + 4 * k)).collect::<Result<Vec<_>>>()?;
+        let words = (0..n)
+            .map(|k| u32_at(data, pos + 4 * k))
+            .collect::<Result<Vec<_>>>()?;
         pos += 4 * n;
         if n > 0 && cells % 32 != 0 && words[n - 1] >> (cells % 32) != 0 {
             return err("Opaque tiles: nonzero unused proof bits");
@@ -218,7 +280,13 @@ pub fn read_certificates(data: &[u8], count: usize) -> Result<Vec<Cert>> {
         if n > 0 && words.iter().all(|&w| w == 0) {
             return err("Opaque tiles: all-zero mask was not rejected");
         }
-        out.push(Cert { gx, gy, width: w, height: h, words });
+        out.push(Cert {
+            gx,
+            gy,
+            width: w,
+            height: h,
+            words,
+        });
     }
     if pos != data.len() {
         return err("Opaque tiles: trailing native proof output");
@@ -261,15 +329,40 @@ fn cert_json(c: &Cert, offset: usize) -> Json {
 /// `TileCert{gx:..,..,offset:..}` / `GroupCert{..}` rows and the `0x%08x`
 /// bitmap words, eight to a line, as both generated tables write them.
 pub fn cert_rows(name: &str, certs: &[(Cert, usize)]) -> String {
-    certs.iter().map(|(c, offset)| format!("{name}{{gx:{},gy:{},width:{},height:{},offset:{offset}}},\n", c.gx, c.gy, c.width, c.height)).collect()
+    certs
+        .iter()
+        .map(|(c, offset)| {
+            format!(
+                "{name}{{gx:{},gy:{},width:{},height:{},offset:{offset}}},\n",
+                c.gx, c.gy, c.width, c.height
+            )
+        })
+        .collect()
 }
 pub fn bit_rows(bits: &[u32]) -> String {
-    bits.chunks(8).map(|row| row.iter().map(|v| format!("0x{v:08x}")).collect::<Vec<_>>().join(",") + ",\n").collect()
+    bits.chunks(8)
+        .map(|row| {
+            row.iter()
+                .map(|v| format!("0x{v:08x}"))
+                .collect::<Vec<_>>()
+                .join(",")
+                + ",\n"
+        })
+        .collect()
 }
 
 /// Run what `python3 host/opaque_tiles.py [--grid-shift N] [--variant]` runs.
 pub fn main(root: &Path, args: &[String]) -> Result<()> {
-    let shift = args.iter().position(|a| a == "--grid-shift").map(|i| args.get(i + 1).and_then(|v| v.parse().ok()).ok_or("--grid-shift 2|3")).transpose()?.unwrap_or(2);
+    let shift = args
+        .iter()
+        .position(|a| a == "--grid-shift")
+        .map(|i| {
+            args.get(i + 1)
+                .and_then(|v| v.parse().ok())
+                .ok_or("--grid-shift 2|3")
+        })
+        .transpose()?
+        .unwrap_or(2);
     cook(root, shift, args.iter().any(|a| a == "--variant"))
 }
 
@@ -277,7 +370,11 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
     if grid_shift != 2 && grid_shift != 3 {
         return err("Opaque tiles: supported grid shifts are2and3");
     }
-    let cache = root.join(if variant { ".hkpsx/opaque-tiles-grid4" } else { ".hkpsx/opaque-tiles" });
+    let cache = root.join(if variant {
+        ".hkpsx/opaque-tiles-grid4"
+    } else {
+        ".hkpsx/opaque-tiles"
+    });
     std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
     let packed = read_json(&root.join(".hkpsx/packed-scenes.json"))?;
     let metadata_path = root.join("data/regions.json");
@@ -289,14 +386,21 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
     // SCENE_COUNT, the scene table regions.json carries).
     let scene_count = list(&metadata, "scenes")?.len();
     let window = 16 + (1i64 << grid_shift) - 1;
-    let table_budget = scene_count * if grid_shift == 2 { 104 * 1024 } else { MAX_TABLE_BYTES };
+    let table_budget = scene_count
+        * if grid_shift == 2 {
+            104 * 1024
+        } else {
+            MAX_TABLE_BYTES
+        };
     if text(&packed, "source_metadata_sha256")? != metadata_hash {
         return err("Opaque tiles: packed scene metadata is stale");
     }
     let geo = read_json(&root.join(".hkpsx/geo-provenance.json"))?;
     let life = read_json(&root.join(".hkpsx/lifeblood-provenance.json"))?;
     for (report, path) in [(&geo, "data/geo.rs"), (&life, "data/lifeblood.rs")] {
-        if text(report, "rust_sha256")? != file_sha(&root.join(path))? || text(report, "region_metadata_sha256")? != metadata_hash {
+        if text(report, "rust_sha256")? != file_sha(&root.join(path))?
+            || text(report, "region_metadata_sha256")? != metadata_hash
+        {
             return err("Opaque tiles: generated mutable bindings are stale");
         }
     }
@@ -315,9 +419,18 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
         inputs.push((name.clone(), file_sha(&root.join(&name))?));
     }
     for path in [
-        "data/regions.json", "data/regions.rs", "data/geo.rs", "data/lifeblood.rs", "host/hk-cook/src/opaque_tiles.rs",
-        "host/hk-cook/src/coverage.rs", "host/coverage_raster.rs", "game/src/world.rs", "game/src/reveal_masks.rs",
-        "game/src/geo_render.rs", "game/src/lifeblood.rs", "game/src/great_door.rs",
+        "data/regions.json",
+        "data/regions.rs",
+        "data/geo.rs",
+        "data/lifeblood.rs",
+        "host/hk-cook/src/opaque_tiles.rs",
+        "host/hk-cook/src/coverage.rs",
+        "host/coverage_raster.rs",
+        "game/src/world.rs",
+        "game/src/reveal_masks.rs",
+        "game/src/geo_render.rs",
+        "game/src/lifeblood.rs",
+        "game/src/great_door.rs",
     ] {
         inputs.push((path.into(), file_sha(&root.join(path))?));
     }
@@ -333,15 +446,32 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
             let row = &regions[(int(sr, "chunk_id")? - 1) as usize];
             let raw = read(&root.join(text(row, "path")?))?;
             let digest = sha(&raw);
-            if digest != text(row, "sha256")? || digest != text(sr, "sha256")? || u32_at(&raw, 12)? as usize != list(sr, "texture_map")?.len() {
+            if digest != text(row, "sha256")?
+                || digest != text(sr, "sha256")?
+                || u32_at(&raw, 12)? as usize != list(sr, "texture_map")?.len()
+            {
                 return err("Opaque tiles: final room texture map changed");
             }
         }
     }
-    let helper = helper(&["host/hk-cook/src/coverage.rs", "host/coverage_raster.rs"], root)?;
+    let helper = helper(
+        &["host/hk-cook/src/coverage.rs", "host/coverage_raster.rs"],
+        root,
+    )?;
     let key = sha(dumps_sorted_compact(&Json::Obj(vec![
-        ("inputs".into(), Json::Obj(inputs.iter().map(|(k, v)| (k.clone(), Json::Str(v.clone()))).collect())),
-        ("scene_order".into(), int_list(banks.iter().map(|b| b["scene_id"].as_i64().unwrap_or(-1)))),
+        (
+            "inputs".into(),
+            Json::Obj(
+                inputs
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Json::Str(v.clone())))
+                    .collect(),
+            ),
+        ),
+        (
+            "scene_order".into(),
+            int_list(banks.iter().map(|b| b["scene_id"].as_i64().unwrap_or(-1))),
+        ),
         ("helper".into(), helper.clone()),
         ("format".into(), Json::Str("HKOPAQUETILES01".into())),
         ("grid_shift".into(), Json::Int(grid_shift.into())),
@@ -351,13 +481,22 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
     let report_path = cache.join("report.json");
     if let Ok(old) = read_json(&report_path) {
         let outputs = old.get("outputs").and_then(J::as_object);
-        let current = outputs.is_some_and(|o| !o.is_empty() && o.iter().all(|(p, h)| file_sha(&root.join(p)).ok().as_deref() == h.as_str()));
+        let current = outputs.is_some_and(|o| {
+            !o.is_empty()
+                && o.iter()
+                    .all(|(p, h)| file_sha(&root.join(p)).ok().as_deref() == h.as_str())
+        });
         if old.get("input_key").and_then(J::as_str) == Some(key.as_str()) && current {
-            println!("Opaque tiles: cached {} certificates, {} bytes", old["certificate_count"], old["table_bytes"]);
+            println!(
+                "Opaque tiles: cached {} certificates, {} bytes",
+                old["certificate_count"], old["table_bytes"]
+            );
             return Ok(());
         }
     }
-    let mutated_sources: HashSet<String> = exclusions.iter().enumerate()
+    let mutated_sources: HashSet<String> = exclusions
+        .iter()
+        .enumerate()
         .flat_map(|(i, ids)| ids.iter().map(move |&d| (i, d)))
         .map(|(i, d)| sources[&(i as i64 + 1)][d as usize]["source"].to_string())
         .collect();
@@ -367,7 +506,11 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
     for bank in banks {
         let sid = int(bank, "scene_id")?;
         let raw = read(&root.join(text(bank, "raw_path")?))?;
-        let (textures, palettes, pages) = (section(bank, "textures")?, section(bank, "palettes")?, section(bank, "pages")?);
+        let (textures, palettes, pages) = (
+            section(bank, "textures")?,
+            section(bank, "palettes")?,
+            section(bank, "pages")?,
+        );
         for t in 0..int(bank, "textures")? as usize {
             let at = textures + t * 16;
             let [page, u, v, w, h, pal] = core::array::from_fn(|k| u16_at(&raw, at + 2 * k));
@@ -375,12 +518,16 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
             if page == 65535 || !(1..=252).contains(&w) || !(1..=252).contains(&h) {
                 continue;
             }
-            let palette = (0..16).map(|k| u16_at(&raw, palettes + pal * 32 + 2 * k)).collect::<Result<Vec<_>>>()?;
+            let palette = (0..16)
+                .map(|k| u16_at(&raw, palettes + pal * 32 + 2 * k))
+                .collect::<Result<Vec<_>>>()?;
             let base = pages + usize::from(page) * 32768;
             let mut mask = Vec::with_capacity(usize::from(w) * usize::from(h));
             for y in 0..usize::from(h) {
                 for x in 0..usize::from(w) {
-                    let byte = *raw.get(base + (v + y) * 128 + (u + x) / 2).ok_or("bank read outside its bytes")?;
+                    let byte = *raw
+                        .get(base + (v + y) * 128 + (u + x) / 2)
+                        .ok_or("bank read outside its bytes")?;
                     let word = palette[usize::from((byte >> (4 * ((u + x) & 1))) & 15)];
                     mask.push(u8::from(word != 0 && word & 0x8000 == 0));
                 }
@@ -408,15 +555,30 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
                 if exclusions[(region - 1) as usize].contains(&(draw as i64)) {
                     mutated_records.insert((sid, gid));
                 }
-                instances.push(Instance { scene: sid, region, draw, bank_draw: gid, texture: tex, source: d["source"].clone(), front: front != 0, xy, pose: None });
+                instances.push(Instance {
+                    scene: sid,
+                    region,
+                    draw,
+                    bank_draw: gid,
+                    texture: tex,
+                    source: d["source"].clone(),
+                    front: front != 0,
+                    xy,
+                    pose: None,
+                });
             }
         }
     }
     let mut poses: Vec<Pose> = Vec::new();
     let mut lookup: HashMap<(String, [i64; 8]), usize> = HashMap::new();
     for d in &mut instances {
-        let Some((w, h, pixels, digest)) = masks.get(&(d.scene, d.texture)) else { continue };
-        if !legal_source(&d.xy) || mutated_sources.contains(&d.source.to_string()) || mutated_records.contains(&(d.scene, d.bank_draw)) {
+        let Some((w, h, pixels, digest)) = masks.get(&(d.scene, d.texture)) else {
+            continue;
+        };
+        if !legal_source(&d.xy)
+            || mutated_sources.contains(&d.source.to_string())
+            || mutated_records.contains(&(d.scene, d.bank_draw))
+        {
             continue;
         }
         let relative: [i64; 8] = core::array::from_fn(|i| d.xy[i] - d.xy[i % 2]);
@@ -434,7 +596,14 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
                 continue;
             }
             lookup.insert(key.clone(), poses.len());
-            poses.push(Pose { width: *w, height: *h, mask: pixels.clone(), variants, relative, digest: digest.clone() });
+            poses.push(Pose {
+                width: *w,
+                height: *h,
+                mask: pixels.clone(),
+                variants,
+                relative,
+                digest: digest.clone(),
+            });
         }
         d.pose = Some(lookup[&key]);
     }
@@ -482,8 +651,20 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
             bindings[(d.region - 1) as usize].push((d.draw, c));
         }
     }
-    let mut bank_bindings: Vec<Vec<u16>> = banks.iter().map(|b| b["pools"]["draws"].as_u64().map(|n| vec![65535u16; n as usize]).ok_or("bank without a draw pool")).collect::<std::result::Result<_, _>>()?;
-    let bank_index: HashMap<i64, usize> = banks.iter().enumerate().map(|(i, b)| (b["scene_id"].as_i64().unwrap_or(-1), i)).collect();
+    let mut bank_bindings: Vec<Vec<u16>> = banks
+        .iter()
+        .map(|b| {
+            b["pools"]["draws"]
+                .as_u64()
+                .map(|n| vec![65535u16; n as usize])
+                .ok_or("bank without a draw pool")
+        })
+        .collect::<std::result::Result<_, _>>()?;
+    let bank_index: HashMap<i64, usize> = banks
+        .iter()
+        .enumerate()
+        .map(|(i, b)| (b["scene_id"].as_i64().unwrap_or(-1), i))
+        .collect();
     for d in &instances {
         if let Some(ident) = certified(d) {
             let slot = &mut bank_bindings[bank_index[&d.scene]][d.bank_draw];
@@ -495,23 +676,44 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
     }
     // Includes 32-bit target slice descriptors and generated arrays, not text size.
     let binding_bytes = 2 * bank_bindings.iter().map(Vec::len).sum::<usize>();
-    let table_bytes = 12 * descriptors.len() + 4 * bits.len() + binding_bytes + 8 * bank_bindings.len() + 24;
+    let table_bytes =
+        12 * descriptors.len() + 4 * bits.len() + binding_bytes + 8 * bank_bindings.len() + 24;
     if table_bytes > table_budget {
         return err(format!("Opaque tiles: generated tables need {table_bytes} bytes, budget {table_budget}; refusing to truncate"));
     }
-    let mut rust = format!("// Generated exact{}px-grid/{window}x{window} opaque certificates. Local licensed data.\n", 1 << grid_shift);
+    let mut rust = format!(
+        "// Generated exact{}px-grid/{window}x{window} opaque certificates. Local licensed data.\n",
+        1 << grid_shift
+    );
     rust += &format!("pub const TILE_CERT_SHIFT:u32={grid_shift};\n");
-    rust += &format!("pub static TILE_CERTS:&[TileCert]=&[\n{}];\n", cert_rows("TileCert", &descriptors));
-    rust += &format!("pub static TILE_CERT_BITS:&[u32]=&[\n{}];\n", bit_rows(&bits));
+    rust += &format!(
+        "pub static TILE_CERTS:&[TileCert]=&[\n{}];\n",
+        cert_rows("TileCert", &descriptors)
+    );
+    rust += &format!(
+        "pub static TILE_CERT_BITS:&[u32]=&[\n{}];\n",
+        bit_rows(&bits)
+    );
     rust += "pub static SCENE_DRAW_CERTS:&[&[u16]]=&[\n";
     for row in &bank_bindings {
-        rust += &format!("&[{}],\n", row.iter().map(u16::to_string).collect::<Vec<_>>().join(","));
+        rust += &format!(
+            "&[{}],\n",
+            row.iter().map(u16::to_string).collect::<Vec<_>>().join(",")
+        );
     }
     rust += "];\n";
-    let destination = if variant { cache.join("opaque_tiles.rs") } else { root.join("data/opaque_tiles.rs") };
+    let destination = if variant {
+        cache.join("opaque_tiles.rs")
+    } else {
+        root.join("data/opaque_tiles.rs")
+    };
     write_changed(&destination, rust.as_bytes())?;
     let maximum = bindings.iter().map(Vec::len).max().unwrap_or(0);
-    let destination_name = destination.strip_prefix(root).unwrap_or(&destination).to_string_lossy().into_owned();
+    let destination_name = destination
+        .strip_prefix(root)
+        .unwrap_or(&destination)
+        .to_string_lossy()
+        .into_owned();
     let report = Json::Obj(vec![
         ("format".into(), Json::Str("HKOPAQUETILES01".into())),
         ("input_key".into(), Json::Str(key)),
@@ -568,18 +770,39 @@ mod tests {
     fn a_pixel_aligned_quad_has_one_shape_per_axis() {
         // Every vertex on a whole pixel: no camera phase changes the shape.
         let xy = [0, 0, 64 * 256, 0, 0, 32 * 256, 64 * 256, 32 * 256];
-        assert_eq!(phase_variants(&xy).unwrap(), vec![[(0, 0), (64, 0), (0, -32), (64, -32)]]);
+        assert_eq!(
+            phase_variants(&xy).unwrap(),
+            vec![[(0, 0), (64, 0), (0, -32), (64, -32)]]
+        );
     }
     #[test]
     fn half_pixel_offsets_give_two_shapes_per_axis() {
-        let xy = [0, 0, 64 * 256 + 128, 0, 0, 32 * 256, 64 * 256 + 128, 32 * 256];
+        let xy = [
+            0,
+            0,
+            64 * 256 + 128,
+            0,
+            0,
+            32 * 256,
+            64 * 256 + 128,
+            32 * 256,
+        ];
         let v = phase_variants(&xy).unwrap();
         assert_eq!(v.len(), 2);
         assert_eq!(v.iter().map(|q| q[1].0).collect::<Vec<_>>(), [64, 65]);
     }
     #[test]
     fn legal_extent_matches_the_guest() {
-        assert!(legal_source(&[0, 0, 703 * 256, 0, 0, 511 * 256, 703 * 256, 511 * 256]));
+        assert!(legal_source(&[
+            0,
+            0,
+            703 * 256,
+            0,
+            0,
+            511 * 256,
+            703 * 256,
+            511 * 256
+        ]));
         assert!(!legal_source(&[0, 0, 703 * 256 + 1, 0, 0, 0, 0, 0]));
     }
     #[test]
@@ -593,8 +816,17 @@ mod tests {
     }
     #[test]
     fn generated_rows_keep_the_python_text() {
-        let c = Cert { gx: -1, gy: 2, width: 3, height: 1, words: vec![5] };
-        assert_eq!(cert_rows("TileCert", &[(c, 32)]), "TileCert{gx:-1,gy:2,width:3,height:1,offset:32},\n");
+        let c = Cert {
+            gx: -1,
+            gy: 2,
+            width: 3,
+            height: 1,
+            words: vec![5],
+        };
+        assert_eq!(
+            cert_rows("TileCert", &[(c, 32)]),
+            "TileCert{gx:-1,gy:2,width:3,height:1,offset:32},\n"
+        );
         assert_eq!(bit_rows(&[1, 2, 3, 4, 5, 6, 7, 8, 9]), "0x00000001,0x00000002,0x00000003,0x00000004,0x00000005,0x00000006,0x00000007,0x00000008,\n0x00000009,\n");
     }
 
@@ -611,7 +843,10 @@ mod tests {
         let geo = serde_json::json!({"bindings": [[{"off": [7]}]]});
         let life = serde_json::json!({"bindings": [{"off": [8]}]});
         let expected: HashSet<i64> = (0..9).collect();
-        assert_eq!(mutable_draws(&serde_json::json!({"regions": [row.clone()]}), &geo, &life).unwrap(), vec![expected]);
+        assert_eq!(
+            mutable_draws(&serde_json::json!({"regions": [row.clone()]}), &geo, &life).unwrap(),
+            vec![expected]
+        );
         row["reveal_mask_bindings"][0]["draw"] = serde_json::json!(12);
         assert!(mutable_draws(&serde_json::json!({"regions": [row]}), &geo, &life).is_err());
     }
@@ -626,13 +861,24 @@ mod tests {
         };
         for _ in 0..30 {
             let xy: [i64; 8] = core::array::from_fn(|_| next(-200000, 200000));
-            let actual: HashSet<Vec<(i64, i64)>> = phase_variants(&xy).unwrap().into_iter().map(|v| v.to_vec()).collect();
+            let actual: HashSet<Vec<(i64, i64)>> = phase_variants(&xy)
+                .unwrap()
+                .into_iter()
+                .map(|v| v.to_vec())
+                .collect();
             assert!(actual.len() <= 16);
             for _ in 0..200 {
-                let (camera, scale) = ([next(-10000000, 10000000), next(-10000000, 10000000)], next(1, 200000));
+                let (camera, scale) = (
+                    [next(-10000000, 10000000), next(-10000000, 10000000)],
+                    next(1, 200000),
+                );
                 let (cx, cy) = ((camera[0] * scale) >> 12, (camera[1] * scale) >> 12);
-                let v: Vec<(i64, i64)> = (0..8).step_by(2).map(|i| ((xy[i] - cx) >> 8, -((xy[i + 1] - cy) >> 8))).collect();
-                let relative: Vec<(i64, i64)> = v.iter().map(|&(x, y)| (x - v[0].0, y - v[0].1)).collect();
+                let v: Vec<(i64, i64)> = (0..8)
+                    .step_by(2)
+                    .map(|i| ((xy[i] - cx) >> 8, -((xy[i + 1] - cy) >> 8)))
+                    .collect();
+                let relative: Vec<(i64, i64)> =
+                    v.iter().map(|&(x, y)| (x - v[0].0, y - v[0].1)).collect();
                 assert!(actual.contains(&relative));
             }
         }

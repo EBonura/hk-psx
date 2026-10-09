@@ -18,11 +18,25 @@ fn line(source: &Source, obj: &Obj, key: &str) -> String {
             v.canonical(&mut s);
             let hash = Sha256::digest(s.as_bytes());
             let hex: String = hash.iter().take(12).map(|b| format!("{b:02x}")).collect();
-            format!("{key}\t{}\t{}\t{t}\t{hex}\t{}\n", obj.path_id(), obj.class_id(), s.len())
+            format!(
+                "{key}\t{}\t{}\t{t}\t{hex}\t{}\n",
+                obj.path_id(),
+                obj.class_id(),
+                s.len()
+            )
         }
         (t, v) => {
-            let err = v.err().map(|e| e.to_string()).or(t.err().map(|e| e.to_string())).unwrap_or_default();
-            format!("{key}\t{}\t{}\t?\tERR {}\t0\n", obj.path_id(), obj.class_id(), &err[..err.len().min(120)])
+            let err = v
+                .err()
+                .map(|e| e.to_string())
+                .or(t.err().map(|e| e.to_string()))
+                .unwrap_or_default();
+            format!(
+                "{key}\t{}\t{}\t?\tERR {}\t0\n",
+                obj.path_id(),
+                obj.class_id(),
+                &err[..err.len().min(120)]
+            )
         }
     }
 }
@@ -32,14 +46,28 @@ fn main() {
     let source = Source::new(&args[2]).expect("source");
     match args[1].as_str() {
         "objects" => {
-            let files: Vec<String> = std::fs::read_to_string(&args[3]).unwrap().lines().map(str::to_string).collect();
+            let files: Vec<String> = std::fs::read_to_string(&args[3])
+                .unwrap()
+                .lines()
+                .map(str::to_string)
+                .collect();
             let start = Instant::now();
             let chunks: Vec<String> = files
                 .par_iter()
                 .map(|key| {
                     let file = source.file(key).expect("file");
-                    let objs: Vec<Obj> = file.objects.iter().map(|i| Obj { file: file.clone(), info: *i }).collect();
-                    objs.par_iter().map(|o| line(&source, o, key)).collect::<Vec<_>>().concat()
+                    let objs: Vec<Obj> = file
+                        .objects
+                        .iter()
+                        .map(|i| Obj {
+                            file: file.clone(),
+                            info: *i,
+                        })
+                        .collect();
+                    objs.par_iter()
+                        .map(|o| line(&source, o, key))
+                        .collect::<Vec<_>>()
+                        .concat()
                 })
                 .collect();
             let elapsed = start.elapsed();
@@ -52,7 +80,11 @@ fn main() {
         "generated" => {
             // Compare the generator with TypeTreeGeneratorAPI's dump (oracle `generated` mode).
             let text = std::fs::read_to_string(&args[3]).unwrap();
-            let generator = hk_unity::generator::Generator::load(&std::path::Path::new(&args[2]).join("Managed"), "").unwrap();
+            let generator = hk_unity::generator::Generator::load(
+                &std::path::Path::new(&args[2]).join("Managed"),
+                "",
+            )
+            .unwrap();
             let mut lines = text.lines();
             let (mut same, mut differ, mut both_fail, mut we_fail, mut they_fail) = (0, 0, 0, 0, 0);
             let start = Instant::now();
@@ -71,7 +103,8 @@ fn main() {
                     continue;
                 }
                 let n: usize = f[3].parse().unwrap();
-                let expected: Vec<String> = (0..n).map(|_| lines.next().unwrap().to_string()).collect();
+                let expected: Vec<String> =
+                    (0..n).map(|_| lines.next().unwrap().to_string()).collect();
                 match ours {
                     Err(e) => {
                         we_fail += 1;
@@ -80,16 +113,28 @@ fn main() {
                         }
                     }
                     Ok(node) => {
-                        let got: Vec<String> = node.rows().into_iter().map(|(l, t, n, m)| format!("{l}\t{t}\t{n}\t{m}")).collect();
+                        let got: Vec<String> = node
+                            .rows()
+                            .into_iter()
+                            .map(|(l, t, n, m)| format!("{l}\t{t}\t{n}\t{m}"))
+                            .collect();
                         if got == expected {
                             same += 1;
                         } else {
                             differ += 1;
                             if differ <= 6 {
                                 println!("DIFFER: {} {}", f[1], f[2]);
-                                let i = got.iter().zip(&expected).position(|(a, b)| a != b).unwrap_or(got.len().min(expected.len()));
+                                let i = got
+                                    .iter()
+                                    .zip(&expected)
+                                    .position(|(a, b)| a != b)
+                                    .unwrap_or(got.len().min(expected.len()));
                                 for k in i.saturating_sub(2)..(i + 4) {
-                                    println!("   ours {:<50} theirs {}", got.get(k).map_or("-", |s| s), expected.get(k).map_or("-", |s| s));
+                                    println!(
+                                        "   ours {:<50} theirs {}",
+                                        got.get(k).map_or("-", |s| s),
+                                        expected.get(k).map_or("-", |s| s)
+                                    );
                                 }
                             }
                         }
@@ -145,8 +190,21 @@ fn main() {
                     let act: Vec<i64> = gos.into_iter().filter(|&g| sc.active(g)).collect();
                     let mut off: Vec<i64> = sc.gated_off.iter().copied().collect();
                     off.sort();
-                    let pylist = |v: &[i64]| format!("[{}]", v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "));
-                    let short = |d: &[u8]| d.iter().take(8).map(|b| format!("{b:02x}")).collect::<String>();
+                    let pylist = |v: &[i64]| {
+                        format!(
+                            "[{}]",
+                            v.iter()
+                                .map(|x| x.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    };
+                    let short = |d: &[u8]| {
+                        d.iter()
+                            .take(8)
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>()
+                    };
                     let sids: Vec<String> = sc.objects.iter().map(|o| sc.sid(o.id)).collect();
                     format!(
                         "{name}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
@@ -170,24 +228,46 @@ fn main() {
             // Pixel parity with the oracle's Texture2D / Sprite modes: <data dir> <file list> <out>
             let kind = args[1].clone();
             let class = if kind == "Texture2D" { 28 } else { 213 };
-            let files: Vec<String> = std::fs::read_to_string(&args[3]).unwrap().lines().map(str::to_string).collect();
+            let files: Vec<String> = std::fs::read_to_string(&args[3])
+                .unwrap()
+                .lines()
+                .map(str::to_string)
+                .collect();
             let start = Instant::now();
             let chunks: Vec<String> = files
                 .par_iter()
                 .map(|key| {
                     let file = source.file(key).expect("file");
-                    let objs: Vec<Obj> = file.objects.iter().filter(|i| i.class_id == class).map(|i| Obj { file: file.clone(), info: *i }).collect();
+                    let objs: Vec<Obj> = file
+                        .objects
+                        .iter()
+                        .filter(|i| i.class_id == class)
+                        .map(|i| Obj {
+                            file: file.clone(),
+                            info: *i,
+                        })
+                        .collect();
                     objs.par_iter()
                         .map(|o| {
                             let img = if class == 28 {
-                                hk_unity::texture::texture_image(&source, o, true).map(|i| i.to_rgba())
+                                hk_unity::texture::texture_image(&source, o, true)
+                                    .map(|i| i.to_rgba())
                             } else {
                                 hk_unity::texture::sprite_image(&source, o).map(|(i, _)| i)
                             };
                             match img {
                                 Ok(i) => {
-                                    let hash: String = Sha256::digest(&i.data).iter().take(12).map(|b| format!("{b:02x}")).collect();
-                                    format!("{key}\t{}\tRGBA\t{}x{}\t{hash}\n", o.path_id(), i.width, i.height)
+                                    let hash: String = Sha256::digest(&i.data)
+                                        .iter()
+                                        .take(12)
+                                        .map(|b| format!("{b:02x}"))
+                                        .collect();
+                                    format!(
+                                        "{key}\t{}\tRGBA\t{}x{}\t{hash}\n",
+                                        o.path_id(),
+                                        i.width,
+                                        i.height
+                                    )
                                 }
                                 Err(e) => format!("{key}\t{}\tERR {e}\n", o.path_id()),
                             }

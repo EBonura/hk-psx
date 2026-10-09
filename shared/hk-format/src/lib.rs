@@ -2,9 +2,11 @@
 #![no_std]
 pub mod coverage;
 mod scene;
-pub use scene::{Scene,SceneValidation};
+pub use scene::{Scene, SceneValidation};
 pub mod world_meta;
-pub use world_meta::{Object as WorldObject, Polygon as WorldPolygon, Region as WorldRegion, WorldMeta};
+pub use world_meta::{
+    Object as WorldObject, Polygon as WorldPolygon, Region as WorldRegion, WorldMeta,
+};
 #[derive(Debug, PartialEq)]
 pub enum Error {
     Header,
@@ -290,7 +292,8 @@ impl<'a> Room<'a> {
                 } else if room.has_alpha_covers() {
                     let cover = room.alpha_cover(t).ok_or(Error::Reference)?;
                     let count = cover[0] as usize;
-                    if count > 4 || cover[1..4].iter().any(|&x| x != 0)
+                    if count > 4
+                        || cover[1..4].iter().any(|&x| x != 0)
                         || cover[4 + count * 4..].iter().any(|&x| x != 0)
                     {
                         return Err(Error::Reference);
@@ -371,9 +374,11 @@ impl<'a> Room<'a> {
     pub fn byte_len(&self) -> usize {
         self.bytes.len()
     }
-    pub fn scene_resident(&self) -> bool { self.references.is_some() }
+    pub fn scene_resident(&self) -> bool {
+        self.references.is_some()
+    }
     fn has_alpha_covers(&self) -> bool {
-        u32_at(self.bytes, if self.scene_resident() {52} else {36}) & HAS_ALPHA_COVERS != 0
+        u32_at(self.bytes, if self.scene_resident() { 52 } else { 36 }) & HAS_ALPHA_COVERS != 0
     }
     fn record(&self, section: usize, index: usize, size: usize) -> &'a [u8] {
         let index = match self.references {
@@ -414,15 +419,16 @@ impl<'a> Room<'a> {
     /// textures have no cover. Records are validated with their texture once,
     /// without rescanning pixel data on the guest.
     pub fn alpha_cover(&self, t: Texture) -> Option<&'a [u8]> {
-        if t.is_streamed() || !self.has_alpha_covers()
-            || t.stream_offset & 3 != 0
-        {
+        if t.is_streamed() || !self.has_alpha_covers() || t.stream_offset & 3 != 0 {
             return None;
         }
         let start = t.stream_offset as usize;
         let end = start.checked_add(ALPHA_COVER_BYTES)?;
-        if end > self.stream_bytes { return None; }
-        self.bytes.get(self.offsets[7] + start..self.offsets[7] + end)
+        if end > self.stream_bytes {
+            return None;
+        }
+        self.bytes
+            .get(self.offsets[7] + start..self.offsets[7] + end)
     }
     pub fn texture(&self, i: usize) -> Texture {
         let p = self.offsets[0] + i * 16;
@@ -442,7 +448,11 @@ impl<'a> Room<'a> {
     /// How many draws the shared pool behind `draw_pool_index` holds: the scene
     /// bank's draw section for a scene-resident view, else this room's own.
     pub fn pool_draw_count(&self) -> usize {
-        if self.references.is_some() { (self.offsets[2] - self.offsets[1]) / 44 } else { self.counts[2] }
+        if self.references.is_some() {
+            (self.offsets[2] - self.offsets[1]) / 44
+        } else {
+            self.counts[2]
+        }
     }
     /// Pool draw `p` (`draw(i)` is `pool_draw(draw_pool_index(i))` for a scene view).
     pub fn pool_draw(&self, p: usize) -> &'a [u8] {
@@ -452,7 +462,8 @@ impl<'a> Room<'a> {
     /// Shared scene draw identity for immutable cooked side tables. Standalone
     /// legacy rooms have no scene pool and cannot use those certificates.
     pub fn draw_pool_index(&self, i: usize) -> Option<usize> {
-        self.references.map(|refs|u16_at(self.bytes,refs[0]+i*2)as usize)
+        self.references
+            .map(|refs| u16_at(self.bytes, refs[0] + i * 2) as usize)
     }
     pub fn frame(&self, i: usize) -> &'a [u8] {
         self.record(2, i, 20)
@@ -514,14 +525,20 @@ impl<'a> Room<'a> {
     /// Compact resident scenes keep logical atlas references; their payload
     /// was uploaded separately at bootstrap and is not part of this view.
     pub fn has_atlas_payload(&self) -> bool {
-        !self.scene_resident() || &self.bytes[..8]!=b"HKSCNE02"
+        !self.scene_resident() || &self.bytes[..8] != b"HKSCNE02"
     }
     pub fn palettes(&self) -> &'a [u8] {
-        assert!(self.has_atlas_payload(),"compact scene has no palette payload");
+        assert!(
+            self.has_atlas_payload(),
+            "compact scene has no palette payload"
+        );
         &self.bytes[self.offsets[5]..self.offsets[6]]
     }
     pub fn page(&self, i: usize) -> &'a [u8] {
-        assert!(self.has_atlas_payload(),"compact scene has no page payload");
+        assert!(
+            self.has_atlas_payload(),
+            "compact scene has no page payload"
+        );
         let p = self.offsets[6] + i * 32768;
         &self.bytes[p..p + 32768]
     }
@@ -762,12 +779,16 @@ mod tests {
     }
     #[test]
     fn draw_material_legacy_and_black_average_are_bounded() {
-        let mut b=records_pack([1,1,1,0,0,0]);
+        let mut b = records_pack([1, 1, 1, 0, 0, 0]);
         for mode in 0..=255 {
-            b[40+16+43]=mode;
-            let expected=if mode<=1 {Ok(())} else {Err(Error::Reference)};
-            assert_eq!(Room::parse(&b).map(|_|()),expected);
-            assert_eq!(incremental(&b,1),expected);
+            b[40 + 16 + 43] = mode;
+            let expected = if mode <= 1 {
+                Ok(())
+            } else {
+                Err(Error::Reference)
+            };
+            assert_eq!(Room::parse(&b).map(|_| ()), expected);
+            assert_eq!(incremental(&b, 1), expected);
         }
     }
     #[test]
@@ -873,16 +894,27 @@ mod tests {
     fn alpha_covers_accept_empty_full_256_and_touching_rectangles() {
         let mut b = covered_pack();
         let tail = b.len() - ALPHA_COVER_BYTES;
-        assert_eq!(Room::parse(&b).unwrap().alpha_cover(Room::parse(&b).unwrap().texture(0)), Some(&b[tail..]));
+        assert_eq!(
+            Room::parse(&b)
+                .unwrap()
+                .alpha_cover(Room::parse(&b).unwrap().texture(0)),
+            Some(&b[tail..])
+        );
         b[tail] = 0;
         assert!(Room::parse(&b).is_ok());
         b[46..48].copy_from_slice(&256u16.to_le_bytes());
         b[48..50].copy_from_slice(&256u16.to_le_bytes());
-        b[tail] = 1; b[tail + 6] = 255; b[tail + 7] = 255;
+        b[tail] = 1;
+        b[tail + 6] = 255;
+        b[tail + 7] = 255;
         assert!(Room::parse(&b).is_ok());
-        b[tail..].copy_from_slice(&[4,0,0,0, 0,0,127,127, 128,0,127,127, 0,128,127,127, 128,128,127,127]);
+        b[tail..].copy_from_slice(&[
+            4, 0, 0, 0, 0, 0, 127, 127, 128, 0, 127, 127, 0, 128, 127, 127, 128, 128, 127, 127,
+        ]);
         assert!(Room::parse(&b).is_ok());
-        for budget in [1, 8, 31] { assert_eq!(incremental(&b, budget), Ok(())); }
+        for budget in [1, 8, 31] {
+            assert_eq!(incremental(&b, budget), Ok(()));
+        }
         for streamed in [false, true] {
             let mut legacy = pack(streamed);
             let room = Room::parse(&legacy).unwrap();
@@ -899,34 +931,43 @@ mod tests {
         let valid = covered_pack();
         let tail = valid.len() - ALPHA_COVER_BYTES;
         for (at, value, error) in [
-            (36, 2, Error::Header), (52, 1, Error::Reference),
-            (52, 4, Error::Reference), (52, u32::MAX, Error::Reference),
-            (tail, 5, Error::Reference), (tail + 1, 1, Error::Reference),
-            (tail + 8, 1, Error::Reference), (tail + 4, 1, Error::Geometry),
+            (36, 2, Error::Header),
+            (52, 1, Error::Reference),
+            (52, 4, Error::Reference),
+            (52, u32::MAX, Error::Reference),
+            (tail, 5, Error::Reference),
+            (tail + 1, 1, Error::Reference),
+            (tail + 8, 1, Error::Reference),
+            (tail + 4, 1, Error::Geometry),
             (tail + 6, 1, Error::Geometry),
         ] {
             let mut b = valid.clone();
             b[at..at + 4].copy_from_slice(&(value as u32).to_le_bytes());
             assert_eq!(Room::parse(&b).err(), Some(error), "offset {at}");
-            for budget in [1, 8] { assert_eq!(incremental(&b, budget).err(), Room::parse(&b).err()); }
+            for budget in [1, 8] {
+                assert_eq!(incremental(&b, budget).err(), Room::parse(&b).err());
+            }
         }
-        let mut overlap = valid.clone(); overlap[tail] = 2;
+        let mut overlap = valid.clone();
+        overlap[tail] = 2;
         assert_eq!(Room::parse(&overlap).err(), Some(Error::Geometry));
-        let mut truncated = valid.clone(); truncated.pop();
+        let mut truncated = valid.clone();
+        truncated.pop();
         assert_eq!(Room::parse(&truncated).err(), Some(Error::Truncated));
         // A bad cover on a later texture is reached only on its budgeted step.
         let mut later = records_pack([1, 10, 0, 0, 0, 0]);
-        later[36] = 1; later[32] = 200;
+        later[36] = 1;
+        later[32] = 200;
         for i in 0..10 {
             later[52 + i * 16..56 + i * 16].copy_from_slice(&((i * 20) as u32).to_le_bytes());
             later.extend_from_slice(&valid[tail..]);
         }
-        let end = later.len(); later[end - 20] = 5;
+        let end = later.len();
+        later[end - 20] = 5;
         let mut cursor = Validation::new(&later).unwrap();
         assert_eq!(cursor.step(&later, 8), Ok(false));
         assert_eq!(cursor.step(&later, 1), Ok(false));
         assert_eq!(cursor.step(&later, 1), Err(Error::Reference));
         assert_eq!(Room::parse(&later).err(), Some(Error::Reference));
     }
-
 }

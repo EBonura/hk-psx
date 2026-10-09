@@ -84,7 +84,8 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                     return crate::ability_art::upload_frame(index, dest(slot, width, height));
                 }
                 if key >= crate::shade::KEY_BASE {
-                    let (bytes, width, height) = crate::shade::texels((key - crate::shade::KEY_BASE) as usize)?;
+                    let (bytes, width, height) =
+                        crate::shade::texels((key - crate::shade::KEY_BASE) as usize)?;
                     if bytes.len() > 2048 {
                         return None;
                     }

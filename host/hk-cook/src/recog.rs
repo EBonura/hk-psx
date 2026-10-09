@@ -30,7 +30,11 @@ pub fn scalar(v: &Value) -> Value {
 }
 
 /// `_only`: the single record of a kind, or a refusal naming `who`.
-pub fn only<'a>(records: &[(i64, &str, &'a Value)], kind: &str, who: &str) -> Result<(i64, &'a Value)> {
+pub fn only<'a>(
+    records: &[(i64, &str, &'a Value)],
+    kind: &str,
+    who: &str,
+) -> Result<(i64, &'a Value)> {
     let matches: Vec<_> = records.iter().filter(|r| r.1 == kind).collect();
     if matches.len() != 1 {
         return err(format!("{who} requires exactly one {kind}"));
@@ -41,9 +45,12 @@ pub fn only<'a>(records: &[(i64, &str, &'a Value)], kind: &str, who: &str) -> Re
 /// The audited managed assemblies still hash as audited.
 pub fn check_assemblies(source: &Source, who: &str) -> Result<()> {
     for (name, expected) in ASSEMBLIES {
-        let bytes = std::fs::read(source.directory.join("Managed").join(name)).map_err(|e| format!("{name}: {e}"))?;
+        let bytes = std::fs::read(source.directory.join("Managed").join(name))
+            .map_err(|e| format!("{name}: {e}"))?;
         if sha(&bytes) != expected {
-            return err(format!("{who} methods require a fresh source audit: {name}"));
+            return err(format!(
+                "{who} methods require a fresh source audit: {name}"
+            ));
         }
     }
     Ok(())
@@ -91,7 +98,12 @@ pub fn transitions(state: &Value) -> Result<Vec<(String, String)>> {
         .list()
         .unwrap_or(&[])
         .iter()
-        .map(|t| Ok((get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(), get(t, "toState")?.str().unwrap_or_default())))
+        .map(|t| {
+            Ok((
+                get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(),
+                get(t, "toState")?.str().unwrap_or_default(),
+            ))
+        })
         .collect()
 }
 
@@ -125,13 +137,24 @@ pub fn clip_is(clip: Option<&Value>, frames: usize, fps: f64, wrap: i64) -> bool
 
 pub fn xy(v: &Value, key: &str) -> Result<[f64; 2]> {
     let p = get(v, key)?;
-    Ok([get(p, "x")?.float().ok_or("not a number")?, get(p, "y")?.float().ok_or("not a number")?])
+    Ok([
+        get(p, "x")?.float().ok_or("not a number")?,
+        get(p, "y")?.float().ok_or("not a number")?,
+    ])
 }
 
 /// `body_box`: the actor's own BoxCollider2D; some placements carry the same box twice.
 pub fn body_box<'a>(records: &[(i64, &str, &'a Value)], who: &str) -> Result<&'a Value> {
-    let boxes: Vec<&Value> = records.iter().filter(|r| r.1 == "BoxCollider2D").map(|r| r.2).collect();
-    let same = |a: &Value, b: &Value| ["m_Size", "m_Offset", "m_IsTrigger", "m_Enabled"].iter().all(|k| a.get(k).zip(b.get(k)).is_some_and(|(x, y)| x.py_eq(y)));
+    let boxes: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "BoxCollider2D")
+        .map(|r| r.2)
+        .collect();
+    let same = |a: &Value, b: &Value| {
+        ["m_Size", "m_Offset", "m_IsTrigger", "m_Enabled"]
+            .iter()
+            .all(|k| a.get(k).zip(b.get(k)).is_some_and(|(x, y)| x.py_eq(y)))
+    };
     if !(1..=2).contains(&boxes.len()) || boxes.iter().any(|b| !same(b, boxes[0])) {
         return err(format!("unsupported {who} body colliders"));
     }
@@ -157,7 +180,10 @@ pub fn variables_strict<'a>(fsm: &'a Value) -> Result<Vec<(String, Option<&'a Va
                             _ => true,
                         };
                         if differs {
-                            return err(format!("FSM {:?} declares {name:?} twice with different values", fsm.get("name").and_then(Value::str).unwrap_or_default()));
+                            return err(format!(
+                                "FSM {:?} declares {name:?} twice with different values",
+                                fsm.get("name").and_then(Value::str).unwrap_or_default()
+                            ));
                         }
                         slot.1 = value;
                     }
@@ -181,19 +207,38 @@ pub enum Want {
 /// `(state, action)` must have exactly one enabled action of that name, whose
 /// compact parameters equal the audited values (numbers within 1e-6 when the
 /// audit recorded a float).
-pub fn check_actions(sts: &[(String, &Value)], table: &[(&str, &str, &[(&str, Want)])], who: &str) -> Result<()> {
+pub fn check_actions(
+    sts: &[(String, &Value)],
+    table: &[(&str, &str, &[(&str, Want)])],
+    who: &str,
+) -> Result<()> {
     for &(st, action, expected) in table {
         let data = get(state(sts, st).ok_or("missing state")?, "actionData")?;
         let names = get(data, "actionNames")?.list().unwrap_or(&[]);
         let enabled = get(data, "actionEnabled")?.list().unwrap_or(&[]);
-        let matches: Vec<usize> = names.iter().enumerate().filter(|(i, n)| n.str().is_some_and(|n| n.rsplit('.').next() == Some(action)) && enabled.get(*i).is_some_and(Value::truthy)).map(|(i, _)| i).collect();
+        let matches: Vec<usize> = names
+            .iter()
+            .enumerate()
+            .filter(|(i, n)| {
+                n.str()
+                    .is_some_and(|n| n.rsplit('.').next() == Some(action))
+                    && enabled.get(*i).is_some_and(Value::truthy)
+            })
+            .map(|(i, _)| i)
+            .collect();
         if matches.len() != 1 {
             return err(format!("unsupported {who} action set: {st}/{action}"));
         }
-        let fields = hk_unity::playmaker::action_fields(data, matches[0], false).map_err(|e| e.to_string())?;
+        let fields = hk_unity::playmaker::action_fields(data, matches[0], false)
+            .map_err(|e| e.to_string())?;
         for (key, want) in expected {
             let actual = fields.iter().find(|f| f.0 == *key).map(|f| scalar(&f.1));
-            let numeric = |a: &Value| matches!(a, Value::Int(_) | Value::UInt(_) | Value::F32(_) | Value::F64(_));
+            let numeric = |a: &Value| {
+                matches!(
+                    a,
+                    Value::Int(_) | Value::UInt(_) | Value::F32(_) | Value::F64(_)
+                )
+            };
             let ok = match want {
                 Want::F(v) => match &actual {
                     Some(a) if numeric(a) => near(Some(a), *v),
@@ -219,8 +264,12 @@ pub fn children_of(sc: &hk_unity::scene::Scene, gid: i64) -> Result<Vec<(String,
         if get(get(&o.tree, "m_Father")?, "m_PathID")?.int() != Some(tid) {
             continue;
         }
-        let g = get(get(&o.tree, "m_GameObject")?, "m_PathID")?.int().unwrap_or(0);
-        let name = get(sc.go(g).ok_or("child without a GameObject")?, "m_Name")?.str().unwrap_or_default();
+        let g = get(get(&o.tree, "m_GameObject")?, "m_PathID")?
+            .int()
+            .unwrap_or(0);
+        let name = get(sc.go(g).ok_or("child without a GameObject")?, "m_Name")?
+            .str()
+            .unwrap_or_default();
         match out.iter_mut().find(|c| c.0 == name) {
             Some(slot) => slot.1 = g,
             None => out.push((name, g)),
@@ -231,11 +280,19 @@ pub fn children_of(sc: &hk_unity::scene::Scene, gid: i64) -> Result<Vec<(String,
 
 /// The audited clips (name, frames, fps, wrap mode, optional loop start) a library must carry;
 /// the first one that differs.
-pub fn clips_ok(library: &Value, table: &[(&str, usize, f64, i64, Option<i64>)]) -> Result<Option<String>> {
+pub fn clips_ok(
+    library: &Value,
+    table: &[(&str, usize, f64, i64, Option<i64>)],
+) -> Result<Option<String>> {
     let by_name = clips_by_name(library)?;
     for &(name, frames, fps, wrap, loop_start) in table {
         let clip = by_name.iter().find(|(k, _)| k == name).map(|(_, v)| *v);
-        let ok = clip_is(clip, frames, fps, wrap) && loop_start.is_none_or(|l| clip.and_then(|c| c.get("loopStart")).map_or(0, |v| v.int().unwrap_or(-1)) == l);
+        let ok = clip_is(clip, frames, fps, wrap)
+            && loop_start.is_none_or(|l| {
+                clip.and_then(|c| c.get("loopStart"))
+                    .map_or(0, |v| v.int().unwrap_or(-1))
+                    == l
+            });
         if !ok {
             return Ok(Some(name.to_string()));
         }
@@ -246,10 +303,23 @@ pub fn clips_ok(library: &Value, table: &[(&str, usize, f64, i64, Option<i64>)])
 /// Python `{name: (gid, tid)}` over a transform's `m_Children`, the last of a name winning.
 pub fn child_map(sc: &hk_unity::scene::Scene, tid: i64) -> Result<Vec<(String, (i64, i64))>> {
     let mut children: Vec<(String, (i64, i64))> = Vec::new();
-    for child in get(sc.transform(tid).ok_or("transform missing")?, "m_Children")?.list().unwrap_or(&[]) {
+    for child in get(sc.transform(tid).ok_or("transform missing")?, "m_Children")?
+        .list()
+        .unwrap_or(&[])
+    {
         let ctid = get(child, "m_PathID")?.int().unwrap_or(0);
-        let kid = get(get(sc.transform(ctid).ok_or("child transform missing")?, "m_GameObject")?, "m_PathID")?.int().unwrap_or(0);
-        let name = get(sc.go(kid).ok_or("child without a GameObject")?, "m_Name")?.str().unwrap_or_default();
+        let kid = get(
+            get(
+                sc.transform(ctid).ok_or("child transform missing")?,
+                "m_GameObject",
+            )?,
+            "m_PathID",
+        )?
+        .int()
+        .unwrap_or(0);
+        let name = get(sc.go(kid).ok_or("child without a GameObject")?, "m_Name")?
+            .str()
+            .unwrap_or_default();
         match children.iter_mut().find(|c| c.0 == name) {
             Some(slot) => slot.1 = (kid, ctid),
             None => children.push((name, (kid, ctid))),

@@ -37,14 +37,21 @@ pub fn layout(raw: &[u8]) -> Result<Layout> {
     if stream + word(raw, 32) as usize != raw.len() {
         return err("Invalid room length");
     }
-    Ok(Layout { counts, prefix, pages: page_start, stream })
+    Ok(Layout {
+        counts,
+        prefix,
+        pages: page_start,
+        stream,
+    })
 }
 
 /// `read_row`: one row of compact texels, even when the image begins on an odd nibble.
 fn read_row(raw: &[u8], at: usize, odd: bool, width: usize) -> Vec<u8> {
     let pairs = width / 2;
     if odd {
-        let mut row: Vec<u8> = (0..pairs).map(|i| (raw[at + i] >> 4) | ((raw[at + i + 1] & 15) << 4)).collect();
+        let mut row: Vec<u8> = (0..pairs)
+            .map(|i| (raw[at + i] >> 4) | ((raw[at + i + 1] & 15) << 4))
+            .collect();
         if width & 1 != 0 {
             row.push(raw[at + pairs] >> 4);
         }
@@ -101,7 +108,13 @@ mod tests {
             raw[8 + 4 * k..12 + 4 * k].copy_from_slice(&v.to_le_bytes());
         }
         raw[32..36].copy_from_slice(&stream.to_le_bytes());
-        raw.resize(40 + textures as usize * 48 + draws as usize * 44 + pages as usize * 32768 + stream as usize, 0);
+        raw.resize(
+            40 + textures as usize * 48
+                + draws as usize * 44
+                + pages as usize * 32768
+                + stream as usize,
+            0,
+        );
         raw
     }
     #[test]

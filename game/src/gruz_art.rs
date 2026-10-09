@@ -3,8 +3,14 @@
 //! are `hk_sim::gruz_mother::Clip` in order.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/gruz_art.rs"));
 
-const _: () = assert!(GZ_ART_CLIPS.len() == hk_sim::gruz_mother::CLIPS, "the cooked clip table and hk_sim::gruz_mother::Clip disagree");
+const _: () = assert!(
+    GZ_ART_CLIPS.len() == hk_sim::gruz_mother::CLIPS,
+    "the cooked clip table and hk_sim::gruz_mother::Clip disagree"
+);
 
 pub const BANK: crate::boss_art::Bank = crate::boss_art::Bank {
-    anchor: GZ_ART_ANCHOR_CLIP, sprites: &GZ_ART_SPRITES, clips: &GZ_ART_CLIPS, sequence: &GZ_ART_SEQUENCE,
+    anchor: GZ_ART_ANCHOR_CLIP,
+    sprites: &GZ_ART_SPRITES,
+    clips: &GZ_ART_CLIPS,
+    sequence: &GZ_ART_SEQUENCE,
 };

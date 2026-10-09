@@ -77,7 +77,12 @@ pub enum Attack {
     /// Zombie Leap (Leaper): the Attack clip's trigger frame launches at
     /// ((hero x - self x) * factor, jump_speed_y); the airborne clip keeps
     /// playing; bottom contact plays Land; Idle waits, then StartWalker.
-    Leap { trigger_ticks: u16, jump_speed_y: i32, jump_x_factor: i32, idle_ticks: u16 },
+    Leap {
+        trigger_ticks: u16,
+        jump_speed_y: i32,
+        jump_x_factor: i32,
+        idle_ticks: u16,
+    },
 }
 /// Per-variant Walker fields and the FSM `Lunge Speed`: the Zombie Swipe FSM
 /// is otherwise identical across Runner, Barger and Hornhead placements.
@@ -96,11 +101,29 @@ pub struct Params {
     pub gravity: i32,
 }
 impl Params {
-    pub const RUNNER: Self = Self { walk_speed: ONE + ONE / 2, lunge_speed: 6 * ONE, walking_wait: [240, 90], paused_wait: [150, 90], attack: Attack::Swipe, gravity: 60 * ONE };
+    pub const RUNNER: Self = Self {
+        walk_speed: ONE + ONE / 2,
+        lunge_speed: 6 * ONE,
+        walking_wait: [240, 90],
+        paused_wait: [150, 90],
+        attack: Attack::Swipe,
+        gravity: 60 * ONE,
+    };
     /// The level57 Leaper: trigger frame 3 of the 12 fps Attack clip, jump
     /// (1.25 * dx, 20), Idle Time .5 s, gravity scale .8.
-    pub const LEAPER: Self = Self { walk_speed: 2 * ONE + ONE / 4, lunge_speed: 0, walking_wait: [240, 90], paused_wait: [150, 90],
-        attack: Attack::Leap { trigger_ticks: 15, jump_speed_y: 20 * ONE, jump_x_factor: ONE + ONE / 4, idle_ticks: 30 }, gravity: 48 * ONE };
+    pub const LEAPER: Self = Self {
+        walk_speed: 2 * ONE + ONE / 4,
+        lunge_speed: 0,
+        walking_wait: [240, 90],
+        paused_wait: [150, 90],
+        attack: Attack::Leap {
+            trigger_ticks: 15,
+            jump_speed_y: 20 * ONE,
+            jump_x_factor: ONE + ONE / 4,
+            idle_ticks: 30,
+        },
+        gravity: 48 * ONE,
+    };
     const fn endpoints(self, wait: Wait) -> [u16; 2] {
         match wait {
             Wait::Walking => self.walking_wait,
@@ -273,7 +296,10 @@ impl Runner {
     fn sample(&self, wait: Wait, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16) -> u16 {
         let [hi, lo] = self.params.endpoints(wait);
         let value = choose(wait, [hi, lo]);
-        assert!(value >= lo && value <= hi, "Runner wait outside source endpoints");
+        assert!(
+            value >= lo && value <= hi,
+            "Runner wait outside source endpoints"
+        );
         value
     }
     fn walk(&mut self, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
@@ -303,7 +329,12 @@ impl Runner {
         out.push(Action::AudioStop);
         self.facing = if hero_x > actor_x { 1 } else { -1 };
         self.swipe = Swipe::Anticipate;
-        if let Attack::Leap { jump_x_factor, trigger_ticks, .. } = self.params.attack {
+        if let Attack::Leap {
+            jump_x_factor,
+            trigger_ticks,
+            ..
+        } = self.params.attack
+        {
             // Left or Right?: Jump X Speed = (Hero X - Self X) * 1.25; Anticipate
             // stops, plays Attack (one random-pitch sample) and waits for its
             // trigger frame.
@@ -317,7 +348,12 @@ impl Runner {
         });
         self.play(Clip::Anticipate, out);
     }
-    fn reset(&mut self, senses: Senses, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
+    fn reset(
+        &mut self,
+        senses: Senses,
+        choose: &mut impl FnMut(Wait, [u16; 2]) -> u16,
+        out: &mut Actions,
+    ) {
         // StartMoving only begins walking from stopped/waiting states. A global
         // recoil while already walking/turning must not restart that clip.
         if matches!(
@@ -369,7 +405,11 @@ impl Runner {
     /// Convenience guest schedule, Walker then Swipe. This ordering is a
     /// deterministic policy, not established original execution order. A
     /// reference-driven caller can invoke the two callbacks in observed order.
-    pub fn step(&mut self, senses: Senses, mut choose: impl FnMut(Wait, [u16; 2]) -> u16) -> Actions {
+    pub fn step(
+        &mut self,
+        senses: Senses,
+        mut choose: impl FnMut(Wait, [u16; 2]) -> u16,
+    ) -> Actions {
         let mut out = self.step_walker(senses, &mut choose);
         for action in self.step_swipe(senses, &mut choose).iter() {
             out.push(action);
@@ -378,7 +418,11 @@ impl Runner {
     }
     /// Walker Update only. Call once per 60 Hz tick, including while stopped,
     /// so turn cooldown advances. Independently callable from Swipe Update.
-    pub fn step_walker(&mut self, senses: Senses, mut choose: impl FnMut(Wait, [u16; 2]) -> u16) -> Actions {
+    pub fn step_walker(
+        &mut self,
+        senses: Senses,
+        mut choose: impl FnMut(Wait, [u16; 2]) -> u16,
+    ) -> Actions {
         let mut out = Actions::new();
         if self.walker == Walker::Dead {
             return out;
@@ -389,20 +433,32 @@ impl Runner {
     /// Swipe Update only, with the guest's FixedUpdate lunge X write. Call once
     /// per 60 Hz tick. Source FixedUpdate scheduling needs a reference trace;
     /// clip completion always comes from the caller's real animation clock.
-    pub fn step_swipe(&mut self, senses: Senses, mut choose: impl FnMut(Wait, [u16; 2]) -> u16) -> Actions {
+    pub fn step_swipe(
+        &mut self,
+        senses: Senses,
+        mut choose: impl FnMut(Wait, [u16; 2]) -> u16,
+    ) -> Actions {
         let mut out = Actions::new();
         if self.swipe == Swipe::Dead {
             return out;
         }
         let complete = self.animation.is_some() && senses.completed == self.animation;
-        if let Attack::Leap { jump_speed_y, idle_ticks, .. } = self.params.attack {
+        if let Attack::Leap {
+            jump_speed_y,
+            idle_ticks,
+            ..
+        } = self.params.attack
+        {
             match self.swipe {
                 Swipe::Anticipate => {
                     self.wait = self.wait.saturating_sub(1);
                     if self.wait == 0 {
                         // Launch, then Lunge until bottom contact; the Attack clip keeps playing.
                         self.swipe = Swipe::Lunge;
-                        out.push(Action::Velocity { x: Some(self.jump_x), y: Some(jump_speed_y) });
+                        out.push(Action::Velocity {
+                            x: Some(self.jump_x),
+                            y: Some(jump_speed_y),
+                        });
                     }
                 }
                 Swipe::Lunge if senses.grounded => {
@@ -420,7 +476,10 @@ impl Runner {
                     if self.wait == 0 {
                         // Reset: Idle clip and StartWalker.
                         self.play(Clip::Idle, &mut out);
-                        if matches!(self.walker, Walker::StoppedForAttack | Walker::Paused | Walker::Waiting) {
+                        if matches!(
+                            self.walker,
+                            Walker::StoppedForAttack | Walker::Paused | Walker::Waiting
+                        ) {
                             self.walk(&mut choose, &mut out);
                         }
                         self.turn_cooldown = 0;

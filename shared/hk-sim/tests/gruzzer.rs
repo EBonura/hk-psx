@@ -24,10 +24,24 @@ fn bonks_re_aim_from_the_authored_ranges() {
         g.bonk(Side::Down);
         let a = deg(g.angle());
         let right = g.facing() == 1;
-        assert!(if right { (10..=40).contains(&a) } else { (140..=170).contains(&a) }, "{a} {right}");
+        assert!(
+            if right {
+                (10..=40).contains(&a)
+            } else {
+                (140..=170).contains(&a)
+            },
+            "{a} {right}"
+        );
         g.bonk(Side::Up);
         let a = deg(g.angle());
-        assert!(if right { (320..=350).contains(&a) } else { (190..=220).contains(&a) }, "{a} {right}");
+        assert!(
+            if right {
+                (320..=350).contains(&a)
+            } else {
+                (190..=220).contains(&a)
+            },
+            "{a} {right}"
+        );
         // Now heading down (angle >= 180): a wall bonk sends it down-away.
         g.bonk(Side::Right);
         assert!((190..=220).contains(&deg(g.angle())));

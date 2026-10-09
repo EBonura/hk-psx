@@ -46,7 +46,11 @@ const MUSIC_VOICE: i64 = VOICES[0];
 /// has finished fading out.
 const POOL_VOICES: [i64; 4] = [7, 8, 9, 10];
 /// The banks stacked above ambience in SPU RAM, lowest first.
-const TAIL_BANKS: [&str; 3] = ["data/world-sfx.rs", "data/focus-audio.rs", "data/runner-audio.rs"];
+const TAIL_BANKS: [&str; 3] = [
+    "data/world-sfx.rs",
+    "data/focus-audio.rs",
+    "data/runner-audio.rs",
+];
 /// A source Atmos gain above unity clamps to full scale rather than lifting one
 /// stem's ceiling above the 16,383 every other bank in this port mixes against.
 const BOOST_CEILING_DB: f64 = 6.0;
@@ -104,7 +108,10 @@ fn ilist(v: &[i64]) -> Json {
 }
 /// Python's `str(list_of_ints)`.
 fn py_list(v: &[i64]) -> String {
-    format!("[{}]", v.iter().map(i64::to_string).collect::<Vec<_>>().join(", "))
+    format!(
+        "[{}]",
+        v.iter().map(i64::to_string).collect::<Vec<_>>().join(", ")
+    )
 }
 
 // ---------------------------------------------------------------- helpers
@@ -124,14 +131,22 @@ fn boosts(gains_db: &[f64]) -> Json {
             .iter()
             .zip(gains_db)
             .filter(|(_, &db)| db > 0.0)
-            .map(|(ch, &db)| (ch.to_string(), Json::Float(format!("{db:.5}").parse::<f64>().unwrap())))
+            .map(|(ch, &db)| {
+                (
+                    ch.to_string(),
+                    Json::Float(format!("{db:.5}").parse::<f64>().unwrap()),
+                )
+            })
             .collect(),
     )
 }
 
 /// `bank_constant`: one `pub const <name>:<kind>=<integer>;` out of a generated manifest.
 fn bank_constant(path: &Path, name: &str, kind: &str) -> Result<i64> {
-    let text: String = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?.split_whitespace().collect();
+    let text: String = std::fs::read_to_string(path)
+        .map_err(|e| format!("{}: {e}", path.display()))?
+        .split_whitespace()
+        .collect();
     let needle = format!("pubconst{name}:{kind}=");
     let mut from = 0;
     while let Some(at) = text[from..].find(&needle) {
@@ -185,7 +200,11 @@ fn spu_ceiling(root: &Path) -> Result<(i64, Vec<(String, i64)>)> {
 /// `pool_pressure`: most pooled stems that can be keyed on at once, over the cooked cues.
 fn pool_pressure(cues: &[Cue]) -> i64 {
     let masks: BTreeSet<i64> = cues.iter().map(|c| c.mask).collect();
-    masks.iter().flat_map(|a| masks.iter().map(move |b| (a | b).count_ones() as i64)).max().unwrap_or(0)
+    masks
+        .iter()
+        .flat_map(|a| masks.iter().map(move |b| (a | b).count_ones() as i64))
+        .max()
+        .unwrap_or(0)
 }
 
 /// `neighbour_masks`: per scene, the stems of every scene one resolved gate away.
@@ -205,8 +224,17 @@ fn neighbour_masks(cues: &[Cue], edges: &BTreeSet<(i64, i64)>) -> HashMap<i64, i
 fn conflicts(cues: &[Cue], edges: &BTreeSet<(i64, i64)>) -> BTreeSet<(usize, usize)> {
     let mask: HashMap<i64, i64> = cues.iter().map(|c| (c.scene, c.mask)).collect();
     let mut together: BTreeSet<i64> = cues.iter().map(|c| c.mask).collect();
-    together.extend(edges.iter().filter(|(a, b)| mask.contains_key(a) && mask.contains_key(b)).map(|(a, b)| mask[a] | mask[b]));
-    together.extend(neighbour_masks(cues, edges).iter().map(|(s, n)| mask[s] | n));
+    together.extend(
+        edges
+            .iter()
+            .filter(|(a, b)| mask.contains_key(a) && mask.contains_key(b))
+            .map(|(a, b)| mask[a] | mask[b]),
+    );
+    together.extend(
+        neighbour_masks(cues, edges)
+            .iter()
+            .map(|(s, n)| mask[s] | n),
+    );
     let mut pairs = BTreeSet::new();
     for m in together {
         let stems: Vec<usize> = (0..CHANNELS.len()).filter(|s| m >> s & 1 == 1).collect();
@@ -228,7 +256,11 @@ fn allocate(sizes: &[i64], pairs: &BTreeSet<(usize, usize)>, start: i64) -> Vec<
     let mut order: Vec<usize> = (0..sizes.len()).collect();
     order.sort_by_key(|&s| (-sizes[s], s));
     for stem in order {
-        let mut taken: Vec<(i64, i64)> = address.iter().filter(|(o, _)| pairs.contains(&(stem, **o))).map(|(&o, &a)| (a, a + sizes[o])).collect();
+        let mut taken: Vec<(i64, i64)> = address
+            .iter()
+            .filter(|(o, _)| pairs.contains(&(stem, **o)))
+            .map(|(&o, &a)| (a, a + sizes[o]))
+            .collect();
         taken.sort();
         let mut at = start;
         for (lo, hi) in taken {
@@ -281,7 +313,17 @@ struct Cue {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &HashMap<String, f64>, snapshots: &HashMap<String, Vec<Json>>, sfx_end: i64, ceiling: i64, edges: &BTreeSet<(i64, i64)>, pool_voices: usize) -> Result<(Vec<Clip>, Vec<Cue>)> {
+fn assemble(
+    report: &Json,
+    root: &Path,
+    scene_files: &[String],
+    transitions: &HashMap<String, f64>,
+    snapshots: &HashMap<String, Vec<Json>>,
+    sfx_end: i64,
+    ceiling: i64,
+    edges: &BTreeSet<(i64, i64)>,
+    pool_voices: usize,
+) -> Result<(Vec<Clip>, Vec<Cue>)> {
     if sfx_end > SFX_END {
         return err("ambience overlaps resident SFX bank");
     }
@@ -300,7 +342,10 @@ fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &Ha
         return err("source report resolves a different resident atmos set");
     }
     let resident = |ch: i64| residents.iter().find(|r| r.0 == ch).unwrap().1;
-    let channels: HashMap<i64, String> = CHANNELS.iter().map(|&ch| Ok((ch, js_of(resident(ch), "clip")?))).collect::<Result<_>>()?;
+    let channels: HashMap<i64, String> = CHANNELS
+        .iter()
+        .map(|&ch| Ok((ch, js_of(resident(ch), "clip")?)))
+        .collect::<Result<_>>()?;
     for (_, r) in &residents {
         if !jtruthy(jv(r, "loop")?) || !is_one(jv(r, "pitch")?) || !is_one(jv(r, "volume")?) {
             return err("unsupported AudioSource settings");
@@ -309,7 +354,9 @@ fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &Ha
     let mut cues = Vec::new();
     for scene in jl(report, "scenes")? {
         let file = js_of(scene, "scene_file")?;
-        let Some(scene_id) = scene_files.iter().position(|f| *f == file) else { continue };
+        let Some(scene_id) = scene_files.iter().position(|f| *f == file) else {
+            continue;
+        };
         let managers = jl(scene, "managers")?;
         if managers.len() != 1 {
             return err("ambiguous scene audio manager");
@@ -320,23 +367,44 @@ fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &Ha
         // channel is then overridden by the atmos cue's snapshot, which is a
         // different object and can disagree. Keep the dB that wins so the
         // clamp record cannot name a level the bank does not play.
-        let mut used: Vec<f64> = all_snapshot.iter().map(|x| jv(x, "internal_volume_db").ok().and_then(num).ok_or("snapshot without a gain")).collect::<std::result::Result<_, _>>()?;
+        let mut used: Vec<f64> = all_snapshot
+            .iter()
+            .map(|x| {
+                jv(x, "internal_volume_db")
+                    .ok()
+                    .and_then(num)
+                    .ok_or("snapshot without a gain")
+            })
+            .collect::<std::result::Result<_, _>>()?;
         let mut gains: Vec<i64> = used.iter().map(|&db| volume(db)).collect::<Result<_>>()?;
         let mut mask = 0i64;
         for entry in jl(manager, "ambience")? {
             let ch = ji(entry, "channel")?;
-            let idx = CHANNELS.iter().position(|&c| c == ch).ok_or("ambience entry outside the resident set")?;
+            let idx = CHANNELS
+                .iter()
+                .position(|&c| c == ch)
+                .ok_or("ambience entry outside the resident set")?;
             if channels[&ch] != js_of(entry, "clip")? {
                 return err("shared channel changes clip");
             }
-            if !jtruthy(jv(entry, "loop")?) || !is_one(jv(entry, "pitch")?) || !is_one(jv(entry, "volume")?) {
+            if !jtruthy(jv(entry, "loop")?)
+                || !is_one(jv(entry, "pitch")?)
+                || !is_one(jv(entry, "volume")?)
+            {
                 return err("unsupported AudioSource settings");
             }
             let snapshot = jv(entry, "snapshot")?;
-            if jtruthy(jv(snapshot, "effects")?) || jl(snapshot, "chain")?.iter().any(|x| jtruthy(jv(x, "mute").unwrap_or(&Json::Null)) || jtruthy(jv(x, "solo").unwrap_or(&Json::Null)) || !is_one(jv(x, "pitch").unwrap_or(&Json::Null))) {
+            if jtruthy(jv(snapshot, "effects")?)
+                || jl(snapshot, "chain")?.iter().any(|x| {
+                    jtruthy(jv(x, "mute").unwrap_or(&Json::Null))
+                        || jtruthy(jv(x, "solo").unwrap_or(&Json::Null))
+                        || !is_one(jv(x, "pitch").unwrap_or(&Json::Null))
+                })
+            {
                 return err("unsupported mixer processing");
             }
-            used[idx] = num(jv(snapshot, "internal_volume_db")?).ok_or("snapshot without a gain")?;
+            used[idx] =
+                num(jv(snapshot, "internal_volume_db")?).ok_or("snapshot without a gain")?;
             gains[idx] = volume(used[idx])?;
             mask |= 1 << idx;
         }
@@ -360,7 +428,9 @@ fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &Ha
             unloaded: None,
         });
     }
-    if cues.iter().map(|c| c.scene).collect::<BTreeSet<_>>() != (0..scene_files.len() as i64).collect() {
+    if cues.iter().map(|c| c.scene).collect::<BTreeSet<_>>()
+        != (0..scene_files.len() as i64).collect()
+    {
         return err("missing source ambience scenes");
     }
     let live = pool_pressure(&cues);
@@ -370,7 +440,14 @@ fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &Ha
     let mut clips = Vec::new();
     for &ch in &CHANNELS {
         let rate = atmos_rate(ch);
-        let matches: Vec<&Json> = jl(report, "clips")?.iter().filter(|c| js_of(c, "source").ok().as_deref() == Some(channels[&ch].as_str()) && jint(c, "rate") == Some(rate) && jint(c, "channels") == Some(1)).collect();
+        let matches: Vec<&Json> = jl(report, "clips")?
+            .iter()
+            .filter(|c| {
+                js_of(c, "source").ok().as_deref() == Some(channels[&ch].as_str())
+                    && jint(c, "rate") == Some(rate)
+                    && jint(c, "channels") == Some(1)
+            })
+            .collect();
         if matches.len() != 1 {
             return err(format!("missing or duplicate {rate}Hz mono profile"));
         }
@@ -382,15 +459,24 @@ fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &Ha
         }
         let plane = &planes[0];
         let path = root.join(js_of(plane, "path")?);
-        let hk = root.join(".hkpsx").canonicalize().map_err(|e| e.to_string())?;
-        if !path.canonicalize().map_err(|e| format!("{}: {e}", path.display()))?.starts_with(hk) {
+        let hk = root
+            .join(".hkpsx")
+            .canonicalize()
+            .map_err(|e| e.to_string())?;
+        if !path
+            .canonicalize()
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .starts_with(hk)
+        {
             return err("converted payload outside ignored source cache");
         }
         let data = std::fs::read(&path).map_err(|e| e.to_string())?;
         if data.len() as i64 != ji(plane, "bytes")? || sha(&data) != js_of(plane, "sha256")? {
             return err("converted payload hash mismatch");
         }
-        if data.len() as i64 != (frames + 27) / 28 * 16 || ji(c, "padding_samples")? != (-frames).rem_euclid(28) {
+        if data.len() as i64 != (frames + 27) / 28 * 16
+            || ji(c, "padding_samples")? != (-frames).rem_euclid(28)
+        {
             return err("encoded length does not preserve valid sample count");
         }
         let payload = loop_payload(&data)?;
@@ -430,9 +516,15 @@ fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &Ha
             if c.source_scene != scene {
                 continue;
             }
-            let stem = clips.iter().position(|k| k.name == name).ok_or("unloaded stem is not resident")?;
+            let stem = clips
+                .iter()
+                .position(|k| k.name == name)
+                .ok_or("unloaded stem is not resident")?;
             if c.gains[stem] > INAUDIBLE_GAIN {
-                return err(format!("{name} is audible in {}; it may not be dropped from residency", c.source_scene));
+                return err(format!(
+                    "{name} is audible in {}; it may not be dropped from residency",
+                    c.source_scene
+                ));
             }
             c.mask &= !(1 << stem);
             c.prefetch &= !(1 << stem);
@@ -445,13 +537,25 @@ fn assemble(report: &Json, root: &Path, scene_files: &[String], transitions: &Ha
             return err("ambience SPU capacity overflow");
         }
         if address + clip.byte_len > ceiling {
-            return err(format!("ambience SPU capacity overflow: {} ends {} bytes past the {ceiling:#x} ceiling", clip.name, address + clip.byte_len - ceiling));
+            return err(format!(
+                "ambience SPU capacity overflow: {} ends {} bytes past the {ceiling:#x} ceiling",
+                clip.name,
+                address + clip.byte_len - ceiling
+            ));
         }
         clip.spu_address = address;
     }
-    let spans: Vec<(i64, i64, i64)> = clips.iter().map(|c| (c.source_channel, c.spu_address, c.spu_address + c.byte_len)).collect();
+    let spans: Vec<(i64, i64, i64)> = clips
+        .iter()
+        .map(|c| (c.source_channel, c.spu_address, c.spu_address + c.byte_len))
+        .collect();
     for (i, clip) in clips.iter_mut().enumerate() {
-        clip.shares_spu_with = spans.iter().enumerate().filter(|(j, o)| *j != i && o.1 < spans[i].2 && spans[i].1 < o.2).map(|(_, o)| o.0).collect();
+        clip.shares_spu_with = spans
+            .iter()
+            .enumerate()
+            .filter(|(j, o)| *j != i && o.1 < spans[i].2 && spans[i].1 < o.2)
+            .map(|(_, o)| o.0)
+            .collect();
     }
     cues.sort_by_key(|c| c.scene);
     Ok((clips, cues))
@@ -471,19 +575,38 @@ fn decoder_quality(root: &Path, clip: &Clip, path: &Path) -> Result<Json> {
     header.extend_from_slice(&[0; 28]);
     header.extend_from_slice(&payload);
     std::fs::write(&vag, header).map_err(|e| e.to_string())?;
-    run(Command::new("ffmpeg").args(["-v", "error", "-y", "-i"]).arg(&vag).args(["-f", "s16le"]).arg(&decoded_path), None)?;
+    run(
+        Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-i"])
+            .arg(&vag)
+            .args(["-f", "s16le"])
+            .arg(&decoded_path),
+        None,
+    )?;
     let pcm = crate::spu::samples_of(&std::fs::read(&decoded_path).map_err(|e| e.to_string())?);
     let plane_path = root.join(js_of(&jl(&clip.profile, "planes")?[0], "path")?);
-    let source = crate::spu::samples_of(&std::fs::read(plane_path.with_extension("s16le")).map_err(|e| e.to_string())?);
+    let source = crate::spu::samples_of(
+        &std::fs::read(plane_path.with_extension("s16le")).map_err(|e| e.to_string())?,
+    );
     if pcm.len() != payload.len() / 16 * 28 || source.len() as i64 != clip.valid_frames {
         return err("decoder length mismatch");
     }
-    let error: i64 = source.iter().zip(&pcm).map(|(&a, &b)| (a as i64 - b as i64).pow(2)).sum();
+    let error: i64 = source
+        .iter()
+        .zip(&pcm)
+        .map(|(&a, &b)| (a as i64 - b as i64).pow(2))
+        .sum();
     let signal: i64 = source.iter().map(|&x| (x as i64).pow(2)).sum();
     let snr = (signal != 0 && error != 0).then(|| 10.0 * (signal as f64 / error as f64).log10());
     let expected = jv(&jl(&clip.profile, "planes")?[0], "ffmpeg_snr_db")?;
-    let expected = if matches!(expected, Json::Null) { None } else { num(expected) };
-    if snr.is_some() != expected.is_some() || snr.is_some_and(|s| (s - expected.unwrap()).abs() > 0.000001) {
+    let expected = if matches!(expected, Json::Null) {
+        None
+    } else {
+        num(expected)
+    };
+    if snr.is_some() != expected.is_some()
+        || snr.is_some_and(|s| (s - expected.unwrap()).abs() > 0.000001)
+    {
         return err("loop flags changed decoded sample quality");
     }
     Ok(jobj(vec![
@@ -506,39 +629,68 @@ fn rust_manifest(clips: &[Clip], cues: &[Cue], ring_base: i64) -> String {
     for c in clips {
         lines.push(format!("AmbienceClip{{byte_len:{},spu_bytes:{},checksum:{},spu_address:{},pitch:{},source_channel:{}}},", c.byte_len, c.byte_len, c.checksum, c.spu_address, c.pitch, c.source_channel));
     }
-    let end = clips.iter().map(|c| c.spu_address + c.byte_len).max().unwrap_or(0);
+    let end = clips
+        .iter()
+        .map(|c| c.spu_address + c.byte_len)
+        .max()
+        .unwrap_or(0);
     lines.extend([
         "];".into(),
         format!("pub const AMBIENCE_SPU_START:u32={SPU_START};"),
-        "// The end of the widest set any cue or gate keeps resident, not of every clip at once.".into(),
+        "// The end of the widest set any cue or gate keeps resident, not of every clip at once."
+            .into(),
         format!("pub const AMBIENCE_SPU_END:u32={end};"),
         "// Area music keeps this voice and this ring for the life of the disc; the".into(),
         "// pool is handed out when a stem keys on and returned when it finishes fading.".into(),
         format!("pub const MUSIC_VOICE:u8={MUSIC_VOICE};"),
         format!("pub const MUSIC_RING_BASE:u32={ring_base};"),
         format!("pub const MUSIC_RING_BYTES:usize={MUSIC_RING_BYTES};"),
-        format!("pub const AMBIENCE_POOL_VOICES:[u8;{}]={};", POOL_VOICES.len(), py_list(&POOL_VOICES)),
+        format!(
+            "pub const AMBIENCE_POOL_VOICES:[u8;{}]={};",
+            POOL_VOICES.len(),
+            py_list(&POOL_VOICES)
+        ),
         "// The per-scene one-shot banks' voice (host/scene_sfx.py), outside the pool.".into(),
         format!("pub const SCENE_SFX_VOICE:u8={SCENE_SFX_VOICE};"),
         format!("pub const AMBIENCE_SCENES:[AmbienceCue;{}]=[", cues.len()),
     ]);
     for c in cues {
-        lines.push(format!("AmbienceCue{{mask:{},gains:{},fade_ticks:{}}},", c.mask, py_list(&c.gains), c.fade_ticks));
+        lines.push(format!(
+            "AmbienceCue{{mask:{},gains:{},fade_ticks:{}}},",
+            c.mask,
+            py_list(&c.gains),
+            c.fade_ticks
+        ));
     }
     lines.push("];".into());
-    lines.push("/// Per scene: stems of the scenes one gate away that its own cue does not play,".into());
+    lines.push(
+        "/// Per scene: stems of the scenes one gate away that its own cue does not play,".into(),
+    );
     lines.push("/// which the drive loads in the background while it is idle.".into());
-    lines.push(format!("pub const AMBIENCE_PREFETCH:[u8;{}]={};", cues.len(), py_list(&cues.iter().map(|c| c.prefetch).collect::<Vec<_>>())));
+    lines.push(format!(
+        "pub const AMBIENCE_PREFETCH:[u8;{}]={};",
+        cues.len(),
+        py_list(&cues.iter().map(|c| c.prefetch).collect::<Vec<_>>())
+    ));
     lines.join("\n") + "\n"
 }
 
 /// `gate_edges`: scene-id pairs joined by a resolved gate, from the region cook's report.
 pub(crate) fn gate_edges(root: &Path, scene_files: &[String]) -> Result<BTreeSet<(i64, i64)>> {
     let path = root.join("data/regions.json");
-    let report = parse(&std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?)?;
+    let report =
+        parse(&std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?)?;
     let scenes = jl(&report, "scenes")?;
-    let files: Vec<String> = scenes.iter().map(|s| js_of(s, "file")).collect::<Result<_>>()?;
-    if files != scene_files || scenes.iter().enumerate().any(|(i, s)| ji(s, "scene_id").ok() != Some(i as i64)) {
+    let files: Vec<String> = scenes
+        .iter()
+        .map(|s| js_of(s, "file"))
+        .collect::<Result<_>>()?;
+    if files != scene_files
+        || scenes
+            .iter()
+            .enumerate()
+            .any(|(i, s)| ji(s, "scene_id").ok() != Some(i as i64))
+    {
         return err("region report covers a different scene catalog");
     }
     let mut edges = BTreeSet::new();
@@ -556,12 +708,18 @@ pub(crate) fn gate_edges(root: &Path, scene_files: &[String]) -> Result<BTreeSet
 
 /// `cached_report`: the music report, if it still describes this install and these conversions.
 fn cached_report(root: &Path, path: &Path, scene_files: &[String]) -> Result<Json> {
-    let report = parse(&std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?)?;
-    let doctor = std::fs::read_to_string(root.join(".hkpsx/doctor.json")).map_err(|e| e.to_string())?;
+    let report =
+        parse(&std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?)?;
+    let doctor =
+        std::fs::read_to_string(root.join(".hkpsx/doctor.json")).map_err(|e| e.to_string())?;
     let doctor = parse(&doctor)?;
     let current = js_of(&jl(&doctor, "installs")?[0], "data_directory")?;
     let dir = js_of(&report, "source_directory")?;
-    let resolve = |p: &str| Path::new(p).canonicalize().unwrap_or_else(|_| Path::new(p).to_path_buf());
+    let resolve = |p: &str| {
+        Path::new(p)
+            .canonicalize()
+            .unwrap_or_else(|_| Path::new(p).to_path_buf())
+    };
     if resolve(&dir) != resolve(&current) {
         return err("music cache belongs to a different selected Windows install");
     }
@@ -586,11 +744,17 @@ fn cached_report(root: &Path, path: &Path, scene_files: &[String]) -> Result<Jso
             }
         }
     }
-    let scenes: Vec<String> = jl(&report, "scenes")?.iter().map(|s| js_of(s, "scene_file")).collect::<Result<_>>()?;
+    let scenes: Vec<String> = jl(&report, "scenes")?
+        .iter()
+        .map(|s| js_of(s, "scene_file"))
+        .collect::<Result<_>>()?;
     if scenes != scene_files {
         return err("music report covers a different scene catalog");
     }
-    let resident: Vec<i64> = jl(&report, "resident_atmos")?.iter().map(|r| ji(r, "channel")).collect::<Result<_>>()?;
+    let resident: Vec<i64> = jl(&report, "resident_atmos")?
+        .iter()
+        .map(|r| ji(r, "channel"))
+        .collect::<Result<_>>()?;
     if resident != CHANNELS {
         return err("music report resolves a different resident atmos set");
     }
@@ -604,14 +768,18 @@ fn cached_report(root: &Path, path: &Path, scene_files: &[String]) -> Result<Jso
         if rates.contains(&ji(c, "rate")?) && ji(c, "channels")? == 1 {
             for plane in jl(c, "planes")? {
                 let p = root.join(js_of(plane, "path")?);
-                if sha_file(&p)? != js_of(plane, "sha256")? || !p.with_extension("s16le").is_file() {
+                if sha_file(&p)? != js_of(plane, "sha256")? || !p.with_extension("s16le").is_file()
+                {
                     return err("missing/stale converted profile");
                 }
             }
         }
     }
     for rate in &rates {
-        let have = jl(&report, "clips")?.iter().filter(|c| jint(c, "rate") == Some(*rate) && jint(c, "channels") == Some(1)).count();
+        let have = jl(&report, "clips")?
+            .iter()
+            .filter(|c| jint(c, "rate") == Some(*rate) && jint(c, "channels") == Some(1))
+            .count();
         if have < CHANNELS.iter().filter(|&&c| atmos_rate(c) == *rate).count() {
             return err("missing ambient profile");
         }
@@ -631,7 +799,8 @@ fn ensure_music(root: &Path, source: &Source, path: &Path, scene_files: &[String
 }
 
 fn sfx_reservation(root: &Path) -> Result<(i64, Json)> {
-    let data = std::fs::read(root.join("data/sfx.adpcm")).map_err(|e| format!("data/sfx.adpcm: {e}"))?;
+    let data =
+        std::fs::read(root.join("data/sfx.adpcm")).map_err(|e| format!("data/sfx.adpcm: {e}"))?;
     if bank_bytes(&root.join("data/sfx.rs"))? != data.len() as i64 || data.len() % 16 != 0 {
         return err("SFX bank/manifest mismatch");
     }
@@ -646,15 +815,24 @@ fn sfx_reservation(root: &Path) -> Result<(i64, Json)> {
             ("end", Json::Int(end)),
             ("bytes", Json::Int(data.len() as i64)),
             ("sha256", Json::Str(sha(&data))),
-            ("manifest_sha256", Json::Str(sha_file(&root.join("data/sfx.rs"))?)),
+            (
+                "manifest_sha256",
+                Json::Str(sha_file(&root.join("data/sfx.rs"))?),
+            ),
         ]),
     ))
 }
 
 pub fn cook(root: &Path, source: &Source) -> Result<()> {
     let report_path = root.join(".hkpsx/music/provenance.json");
-    let regions = parse(&std::fs::read_to_string(root.join("data/regions.json")).map_err(|e| format!("data/regions.json: {e}"))?)?;
-    let scene_files: Vec<String> = jl(&regions, "scenes")?.iter().map(|s| js_of(s, "file")).collect::<Result<_>>()?;
+    let regions = parse(
+        &std::fs::read_to_string(root.join("data/regions.json"))
+            .map_err(|e| format!("data/regions.json: {e}"))?,
+    )?;
+    let scene_files: Vec<String> = jl(&regions, "scenes")?
+        .iter()
+        .map(|s| js_of(s, "file"))
+        .collect::<Result<_>>()?;
     let report = ensure_music(root, source, &report_path, &scene_files)?;
     let methods = root.join(js_of(jv(&report, "source_methods")?, "path")?);
     let s = u(Source::new(js_of(&report, "source_directory")?))?;
@@ -666,7 +844,10 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         let scene_file = u(s.file(file))?;
         let mut found = Vec::new();
         for info in scene_file.objects.iter().filter(|i| i.class_id == 114) {
-            let o = Obj { file: scene_file.clone(), info: *info };
+            let o = Obj {
+                file: scene_file.clone(),
+                info: *info,
+            };
             if u(s.typename(&o))? == "SceneManager" {
                 found.push(o);
             }
@@ -675,14 +856,27 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
             return err(format!("ambiguous SceneManager in {file}"));
         }
         let scene_manager = u(s.read(&found[0]))?;
-        let snapshot = u(s.deref(&scene_file, crate::common::get(&scene_manager, "atmosSnapshot")?))?;
-        transitions.insert(file.clone(), crate::common::get(&scene_manager, "transitionTime")?.float().ok_or("transitionTime is not a number")?);
+        let snapshot = u(s.deref(
+            &scene_file,
+            crate::common::get(&scene_manager, "atmosSnapshot")?,
+        ))?;
+        transitions.insert(
+            file.clone(),
+            crate::common::get(&scene_manager, "transitionTime")?
+                .float()
+                .ok_or("transitionTime is not a number")?,
+        );
         let mut list = Vec::new();
         for channel in CHANNELS {
-            let sources = crate::common::get(&manager, "atmosSources")?.list().ok_or("atmosSources is not a list")?;
+            let sources = crate::common::get(&manager, "atmosSources")?
+                .list()
+                .ok_or("atmosSources is not a list")?;
             let audio = u(s.deref(&resources, &sources[channel as usize]))?;
             let tree = u(s.read(&audio))?;
-            let group = u(s.deref(&audio.file, crate::common::get(&tree, "OutputAudioMixerGroup")?))?;
+            let group = u(s.deref(
+                &audio.file,
+                crate::common::get(&tree, "OutputAudioMixerGroup")?,
+            ))?;
             list.push(source_snapshot(&s, &snapshot, &group)?);
         }
         snapshots.insert(file.clone(), list);
@@ -691,7 +885,17 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
     let (tail_reserved, tail_banks) = spu_ceiling(root)?;
     let edges = gate_edges(root, &scene_files)?;
     let ring_base = tail_base(root, TAIL_BANKS[0])? - MUSIC_RING_BYTES;
-    let (mut clips, cues) = assemble(&report, root, &scene_files, &transitions, &snapshots, sfx_end, ring_base, &edges, POOL_VOICES.len())?;
+    let (mut clips, cues) = assemble(
+        &report,
+        root,
+        &scene_files,
+        &transitions,
+        &snapshots,
+        sfx_end,
+        ring_base,
+        &edges,
+        POOL_VOICES.len(),
+    )?;
     let out = root.join("data/ambience");
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     let work = root.join(".hkpsx/ambience");
@@ -709,14 +913,20 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
             ("source_channel", Json::Int(c.source_channel)),
             ("rate", Json::Int(c.rate)),
             ("pitch", Json::Int(c.pitch)),
-            ("actual_rate", Json::Float((c.pitch * 44100) as f64 / 4096.0)),
+            (
+                "actual_rate",
+                Json::Float((c.pitch * 44100) as f64 / 4096.0),
+            ),
             ("byte_len", Json::Int(c.byte_len)),
             ("spu_bytes", Json::Int(c.byte_len)),
             ("checksum", Json::Int(c.checksum as i64)),
             ("sha256", Json::Str(c.sha256.clone())),
             ("valid_frames", Json::Int(c.valid_frames)),
             ("padding_samples", Json::Int(c.padding_samples)),
-            ("converted_payload_sha256", Json::Str(c.converted_payload_sha256.clone())),
+            (
+                "converted_payload_sha256",
+                Json::Str(c.converted_payload_sha256.clone()),
+            ),
             ("profile", c.profile.clone()),
             ("spu_address", Json::Int(c.spu_address)),
             ("shares_spu_with", ilist(&c.shares_spu_with)),
@@ -725,8 +935,13 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         ]));
     }
     let manifest = root.join("data/ambience.rs");
-    std::fs::write(&manifest, rust_manifest(&clips, &cues, ring_base)).map_err(|e| e.to_string())?;
-    let end = clips.iter().map(|c| c.spu_address + c.byte_len).max().unwrap_or(0);
+    std::fs::write(&manifest, rust_manifest(&clips, &cues, ring_base))
+        .map_err(|e| e.to_string())?;
+    let end = clips
+        .iter()
+        .map(|c| c.spu_address + c.byte_len)
+        .max()
+        .unwrap_or(0);
     let cue_json: Vec<Json> = cues
         .iter()
         .map(|c| {
@@ -741,7 +956,10 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
                 ("source_fade_seconds", Json::Float(c.source_fade_seconds)),
                 ("source_ambience", c.source_ambience.clone()),
                 ("clamped_boost_db", c.clamped_boost_db.clone()),
-                ("all_channel_snapshot_gains", c.all_channel_snapshot_gains.clone()),
+                (
+                    "all_channel_snapshot_gains",
+                    c.all_channel_snapshot_gains.clone(),
+                ),
                 ("prefetch", Json::Int(c.prefetch)),
             ];
             if let Some(u) = c.unloaded {
@@ -757,14 +975,44 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         let stems: Vec<usize> = (0..clips.len()).filter(|i| c.mask >> i & 1 == 1).collect();
         match by_cue.iter_mut().find(|e| e.0 == key) {
             Some(e) => e.3.push(c.source_scene.clone()),
-            None => by_cue.push((key, stems.iter().map(|&i| clips[i].source_channel).collect(), stems.iter().map(|&i| clips[i].byte_len).sum(), vec![c.source_scene.clone()])),
+            None => by_cue.push((
+                key,
+                stems.iter().map(|&i| clips[i].source_channel).collect(),
+                stems.iter().map(|&i| clips[i].byte_len).sum(),
+                vec![c.source_scene.clone()],
+            )),
         }
     }
-    let resident_by_cue = Json::Obj(by_cue.iter().map(|e| (e.0.clone(), jobj(vec![("channels", ilist(&e.1)), ("spu_bytes", Json::Int(e.2)), ("scenes", Json::List(e.3.iter().map(|s| Json::Str(s.clone())).collect()))]))).collect());
+    let resident_by_cue = Json::Obj(
+        by_cue
+            .iter()
+            .map(|e| {
+                (
+                    e.0.clone(),
+                    jobj(vec![
+                        ("channels", ilist(&e.1)),
+                        ("spu_bytes", Json::Int(e.2)),
+                        (
+                            "scenes",
+                            Json::List(e.3.iter().map(|s| Json::Str(s.clone())).collect()),
+                        ),
+                    ]),
+                )
+            })
+            .collect(),
+    );
     let drift = tail_drift(root, end)?;
     let total: i64 = clips.iter().map(|c| c.byte_len).sum();
-    let ram_cache: i64 = clips.iter().filter(|c| c.byte_len < c.byte_len).map(|c| c.byte_len).sum();
-    let clamped: Vec<(String, Json)> = cues.iter().filter(|c| matches!(&c.clamped_boost_db, Json::Obj(o) if !o.is_empty())).map(|c| (c.source_scene.clone(), c.clamped_boost_db.clone())).collect();
+    let ram_cache: i64 = clips
+        .iter()
+        .filter(|c| c.byte_len < c.byte_len)
+        .map(|c| c.byte_len)
+        .sum();
+    let clamped: Vec<(String, Json)> = cues
+        .iter()
+        .filter(|c| matches!(&c.clamped_boost_db, Json::Obj(o) if !o.is_empty()))
+        .map(|c| (c.source_scene.clone(), c.clamped_boost_db.clone()))
+        .collect();
     let result = jobj(vec![
         ("format", js("raw-psx-adpcm-loops-v1")),
         ("clips", Json::List(clip_json)),
@@ -825,7 +1073,9 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         // The bank is written either way; what is stale is the tail above it,
         // and saying so beats leaving the next cook to find the overlap.
         for (name, declared, required) in &drift {
-            println!("  {name} declares base {declared:#x} and must be {required:#x}; re-run its cook");
+            println!(
+                "  {name} declares base {declared:#x} and must be {required:#x}; re-run its cook"
+            );
         }
         return err("SPU tail banks no longer abut ambience");
     }
@@ -880,8 +1130,18 @@ mod tests {
                 ("channels", Json::Int(1)),
                 ("frames", Json::Int(27)),
                 ("padding_samples", Json::Int(1)),
-                ("spu_pitch", Json::Int(py_round((rate * 4096) as f64 / 44100.0))),
-                ("planes", Json::List(vec![jobj(vec![("path", Json::Str(format!(".hkpsx/{i}.adpcm"))), ("bytes", Json::Int(16)), ("sha256", Json::Str(sha(&data)))])])),
+                (
+                    "spu_pitch",
+                    Json::Int(py_round((rate * 4096) as f64 / 44100.0)),
+                ),
+                (
+                    "planes",
+                    Json::List(vec![jobj(vec![
+                        ("path", Json::Str(format!(".hkpsx/{i}.adpcm"))),
+                        ("bytes", Json::Int(16)),
+                        ("sha256", Json::Str(sha(&data))),
+                    ])]),
+                ),
             ]));
             entries.push(jobj(vec![
                 ("channel", Json::Int(ch)),
@@ -889,31 +1149,107 @@ mod tests {
                 ("loop", Json::Bool(true)),
                 ("pitch", Json::Int(1)),
                 ("volume", Json::Int(1)),
-                ("snapshot", jobj(vec![("internal_volume_db", Json::Int(0)), ("effects", Json::List(vec![])), ("chain", Json::List(vec![jobj(vec![("mute", Json::Bool(false)), ("solo", Json::Bool(false)), ("pitch", Json::Int(1))])]))])),
+                (
+                    "snapshot",
+                    jobj(vec![
+                        ("internal_volume_db", Json::Int(0)),
+                        ("effects", Json::List(vec![])),
+                        (
+                            "chain",
+                            Json::List(vec![jobj(vec![
+                                ("mute", Json::Bool(false)),
+                                ("solo", Json::Bool(false)),
+                                ("pitch", Json::Int(1)),
+                            ])]),
+                        ),
+                    ]),
+                ),
             ]));
         }
         let pooled: Vec<usize> = (0..CHANNELS.len()).collect();
-        let slots: Vec<Vec<usize>> = (0..3).map(|i| pooled.iter().copied().skip(i).step_by(3).collect()).collect();
+        let slots: Vec<Vec<usize>> = (0..3)
+            .map(|i| pooled.iter().copied().skip(i).step_by(3).collect())
+            .collect();
         let mut snapshots = HashMap::new();
         let mut scenes = Vec::new();
         for (file, shape) in FILES.iter().zip(&slots) {
-            snapshots.insert(file.to_string(), (0..CHANNELS.len()).map(|s| jobj(vec![("internal_volume_db", if shape.contains(&s) { Json::Int(0) } else { Json::Int(-80) })])).collect());
+            snapshots.insert(
+                file.to_string(),
+                (0..CHANNELS.len())
+                    .map(|s| {
+                        jobj(vec![(
+                            "internal_volume_db",
+                            if shape.contains(&s) {
+                                Json::Int(0)
+                            } else {
+                                Json::Int(-80)
+                            },
+                        )])
+                    })
+                    .collect(),
+            );
             scenes.push(jobj(vec![
                 ("scene_file", js(file)),
-                ("managers", Json::List(vec![jobj(vec![("source", Json::Str(format!("{file}:1"))), ("atmos_cue", jobj(vec![("name", js(file))])), ("ambience", Json::List(shape.iter().map(|&s| entries[s].clone()).collect()))])])),
+                (
+                    "managers",
+                    Json::List(vec![jobj(vec![
+                        ("source", Json::Str(format!("{file}:1"))),
+                        ("atmos_cue", jobj(vec![("name", js(file))])),
+                        (
+                            "ambience",
+                            Json::List(shape.iter().map(|&s| entries[s].clone()).collect()),
+                        ),
+                    ])]),
+                ),
             ]));
         }
-        let resident = CHANNELS.iter().map(|&ch| jobj(vec![("channel", Json::Int(ch)), ("clip", Json::Str(ch.to_string())), ("loop", Json::Bool(true)), ("pitch", Json::Int(1)), ("volume", Json::Int(1))])).collect();
-        let report = jobj(vec![("clips", Json::List(clips)), ("scenes", Json::List(scenes)), ("resident_atmos", Json::List(resident))]);
-        Fixture { root, report, snapshots, slots }
+        let resident = CHANNELS
+            .iter()
+            .map(|&ch| {
+                jobj(vec![
+                    ("channel", Json::Int(ch)),
+                    ("clip", Json::Str(ch.to_string())),
+                    ("loop", Json::Bool(true)),
+                    ("pitch", Json::Int(1)),
+                    ("volume", Json::Int(1)),
+                ])
+            })
+            .collect();
+        let report = jobj(vec![
+            ("clips", Json::List(clips)),
+            ("scenes", Json::List(scenes)),
+            ("resident_atmos", Json::List(resident)),
+        ]);
+        Fixture {
+            root,
+            report,
+            snapshots,
+            slots,
+        }
     }
     impl Fixture {
         fn mask(&self, scene: usize) -> i64 {
             self.slots[scene].iter().map(|s| 1 << s).sum()
         }
-        fn assemble(&self, sfx_end: i64, ceiling: i64, edges: &[(i64, i64)], pool: usize) -> Result<(Vec<Clip>, Vec<Cue>)> {
+        fn assemble(
+            &self,
+            sfx_end: i64,
+            ceiling: i64,
+            edges: &[(i64, i64)],
+            pool: usize,
+        ) -> Result<(Vec<Clip>, Vec<Cue>)> {
             let transitions = FILES.iter().map(|f| (f.to_string(), 0.5)).collect();
-            assemble(&self.report, &self.root, &files(), &transitions, &self.snapshots, sfx_end, ceiling, &edges.iter().copied().collect(), pool)
+            assemble(
+                &self.report,
+                &self.root,
+                &files(),
+                &transitions,
+                &self.snapshots,
+                sfx_end,
+                ceiling,
+                &edges.iter().copied().collect(),
+                pool,
+            )
         }
         fn ok(&self, edges: &[(i64, i64)]) -> (Vec<Clip>, Vec<Cue>) {
             // Three shapes cannot cover eight channels with every pair's union
@@ -922,7 +1258,15 @@ mod tests {
         }
     }
     fn disjoint(clips: &[Clip], stems: &[usize]) -> bool {
-        let mut spans: Vec<(i64, i64)> = stems.iter().map(|&s| (clips[s].spu_address, clips[s].spu_address + clips[s].byte_len)).collect();
+        let mut spans: Vec<(i64, i64)> = stems
+            .iter()
+            .map(|&s| {
+                (
+                    clips[s].spu_address,
+                    clips[s].spu_address + clips[s].byte_len,
+                )
+            })
+            .collect();
         spans.sort();
         spans.windows(2).all(|w| w[0].1 <= w[1].0)
     }
@@ -930,7 +1274,12 @@ mod tests {
     #[test]
     fn loop_flags_preserve_every_encoded_sample_nibble() {
         for blocks in [1usize, 2, 17] {
-            let original: Vec<u8> = [vec![12, 0], vec![0x12; 14], [vec![0x2a, 0], vec![0x34; 14]].concat().repeat(blocks - 1)].concat();
+            let original: Vec<u8> = [
+                vec![12, 0],
+                vec![0x12; 14],
+                [vec![0x2a, 0], vec![0x34; 14]].concat().repeat(blocks - 1),
+            ]
+            .concat();
             let looped = loop_payload(&original).unwrap();
             validate_loop(&looped).unwrap();
             assert_eq!(looped.len(), original.len());
@@ -952,7 +1301,14 @@ mod tests {
 
     #[test]
     fn invalid_block_headers_and_input_flags_fail_closed() {
-        for data in [vec![], vec![0; 15], [vec![0x10], vec![0; 15]].concat(), [vec![13], vec![0; 15]].concat(), [vec![0; 16], vec![0x50], vec![0; 15]].concat(), [vec![0, 1], vec![0; 14]].concat()] {
+        for data in [
+            vec![],
+            vec![0; 15],
+            [vec![0x10], vec![0; 15]].concat(),
+            [vec![13], vec![0; 15]].concat(),
+            [vec![0; 16], vec![0x50], vec![0; 15]].concat(),
+            [vec![0, 1], vec![0; 14]].concat(),
+        ] {
             assert!(loop_payload(&data).is_err(), "{data:?}");
         }
     }
@@ -961,9 +1317,20 @@ mod tests {
     fn bank_preserves_source_channel_masks_gains_and_disjoint_addresses() {
         let f = fixture("bank");
         let (clips, cues) = f.ok(&[]);
-        assert_eq!(cues.iter().map(|c| c.mask).collect::<Vec<_>>(), [f.mask(0), f.mask(1), f.mask(2)]);
-        assert_eq!(cues[0].gains, (0..CHANNELS.len()).map(|s| if f.slots[0].contains(&s) { 16383 } else { 2 }).collect::<Vec<_>>());
-        assert_eq!(cues.iter().map(|c| c.fade_ticks).collect::<Vec<_>>(), [30, 30, 30]);
+        assert_eq!(
+            cues.iter().map(|c| c.mask).collect::<Vec<_>>(),
+            [f.mask(0), f.mask(1), f.mask(2)]
+        );
+        assert_eq!(
+            cues[0].gains,
+            (0..CHANNELS.len())
+                .map(|s| if f.slots[0].contains(&s) { 16383 } else { 2 })
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            cues.iter().map(|c| c.fade_ticks).collect::<Vec<_>>(),
+            [30, 30, 30]
+        );
         assert!(!POOL_VOICES.contains(&MUSIC_VOICE));
         for c in &clips {
             assert_eq!(c.checksum, fnv(&c.payload));
@@ -975,26 +1342,53 @@ mod tests {
         for shape in &f.slots {
             assert!(disjoint(&clips, shape));
         }
-        let end = clips.iter().map(|c| c.spu_address + c.byte_len).max().unwrap();
-        assert_eq!(end, SPU_START + 16 * f.slots.iter().map(Vec::len).max().unwrap() as i64);
+        let end = clips
+            .iter()
+            .map(|c| c.spu_address + c.byte_len)
+            .max()
+            .unwrap();
+        assert_eq!(
+            end,
+            SPU_START + 16 * f.slots.iter().map(Vec::len).max().unwrap() as i64
+        );
         assert!(end < SPU_START + 16 * clips.len() as i64);
-        assert!(f.assemble(SFX_END, SPU_START + 32, &[], 6).unwrap_err().contains("capacity overflow"));
-        assert!(f.assemble(SFX_END + 16, 0x80000, &[], 6).unwrap_err().contains("overlaps"));
+        assert!(f
+            .assemble(SFX_END, SPU_START + 32, &[], 6)
+            .unwrap_err()
+            .contains("capacity overflow"));
+        assert!(f
+            .assemble(SFX_END + 16, 0x80000, &[], 6)
+            .unwrap_err()
+            .contains("overlaps"));
         std::fs::write(f.root.join(".hkpsx/0.adpcm"), [0u8; 16]).unwrap();
-        assert!(f.assemble(SFX_END, 0x80000, &[], 6).unwrap_err().contains("hash mismatch"));
+        assert!(f
+            .assemble(SFX_END, 0x80000, &[], 6)
+            .unwrap_err()
+            .contains("hash mismatch"));
     }
 
     #[test]
     fn capacity_overflow_names_the_clip_and_the_shortfall() {
         // The widest cue holds three 16-byte payloads; room for two leaves its last one 16 over.
         let f = fixture("overflow");
-        assert!(f.assemble(SFX_END, SPU_START + 32, &[], 6).unwrap_err().contains("ends 16 bytes past"));
+        assert!(f
+            .assemble(SFX_END, SPU_START + 32, &[], 6)
+            .unwrap_err()
+            .contains("ends 16 bytes past"));
     }
 
     #[test]
     fn a_gate_keeps_both_scenes_stems_apart() {
         let f = fixture("gate");
-        let shared = |clips: &[Clip]| f.slots[0].iter().any(|&a| f.slots[1].iter().any(|&b| a != b && clips[a].spu_address < clips[b].spu_address + 16 && clips[b].spu_address < clips[a].spu_address + 16));
+        let shared = |clips: &[Clip]| {
+            f.slots[0].iter().any(|&a| {
+                f.slots[1].iter().any(|&b| {
+                    a != b
+                        && clips[a].spu_address < clips[b].spu_address + 16
+                        && clips[b].spu_address < clips[a].spu_address + 16
+                })
+            })
+        };
         assert!(shared(&f.ok(&[]).0));
         let joined = f.ok(&[(0, 1)]).0;
         assert!(!shared(&joined));
@@ -1010,7 +1404,10 @@ mod tests {
         assert_eq!(cues[0].prefetch, (f.mask(1) | f.mask(2)) & !f.mask(0));
         assert_eq!(cues[1].prefetch, f.mask(0) & !f.mask(1));
         let text = rust_manifest(&clips, &cues, 0x4e1b0);
-        assert!(text.contains(&format!("pub const AMBIENCE_PREFETCH:[u8;3]={};", py_list(&cues.iter().map(|c| c.prefetch).collect::<Vec<_>>()))));
+        assert!(text.contains(&format!(
+            "pub const AMBIENCE_PREFETCH:[u8;3]={};",
+            py_list(&cues.iter().map(|c| c.prefetch).collect::<Vec<_>>())
+        )));
     }
 
     #[test]
@@ -1018,10 +1415,17 @@ mod tests {
         let root = std::env::temp_dir().join(format!("hk-ambience-drift-{}", std::process::id()));
         std::fs::create_dir_all(root.join("data")).unwrap();
         for (name, base) in TAIL_BANKS.iter().zip([0x40000, 0x50000, 0x60000]) {
-            std::fs::write(root.join(name), format!("pub const BANK_BYTES: usize = 4096;\npub const SPU_BASE: u32 = {base};\n")).unwrap();
+            std::fs::write(
+                root.join(name),
+                format!("pub const BANK_BYTES: usize = 4096;\npub const SPU_BASE: u32 = {base};\n"),
+            )
+            .unwrap();
         }
         assert!(tail_drift(&root, 0x30000).unwrap().is_empty());
-        assert_eq!(tail_drift(&root, 0x40010).unwrap(), [(TAIL_BANKS[0].to_string(), 0x40000, 0x40010)]);
+        assert_eq!(
+            tail_drift(&root, 0x40010).unwrap(),
+            [(TAIL_BANKS[0].to_string(), 0x40000, 0x40010)]
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1031,10 +1435,22 @@ mod tests {
         let (_, cues) = f.ok(&[]);
         let live = pool_pressure(&cues);
         // The fixture's cue shapes share nothing, so the union of any two is wider than either.
-        assert!(live > cues.iter().map(|c| c.mask.count_ones() as i64).max().unwrap());
+        assert!(
+            live > cues
+                .iter()
+                .map(|c| c.mask.count_ones() as i64)
+                .max()
+                .unwrap()
+        );
         assert!(live <= 6);
-        let message = f.assemble(SFX_END, 0x80000, &[], live as usize - 1).unwrap_err();
-        assert!(message.contains(&format!("{live} stems can be audible at once")) && message.contains("SPU voices"), "{message}");
+        let message = f
+            .assemble(SFX_END, 0x80000, &[], live as usize - 1)
+            .unwrap_err();
+        assert!(
+            message.contains(&format!("{live} stems can be audible at once"))
+                && message.contains("SPU voices"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -1042,11 +1458,18 @@ mod tests {
         let root = std::env::temp_dir().join(format!("hk-ambience-ceiling-{}", std::process::id()));
         std::fs::create_dir_all(root.join("data")).unwrap();
         for (name, size) in TAIL_BANKS.iter().zip([1024, 2048, 512]) {
-            std::fs::write(root.join(name), format!("pub const BANK_BYTES: usize = {size};\n")).unwrap();
+            std::fs::write(
+                root.join(name),
+                format!("pub const BANK_BYTES: usize = {size};\n"),
+            )
+            .unwrap();
         }
         let (reserved, banks) = spu_ceiling(&root).unwrap();
         assert_eq!(reserved, 3584);
-        assert_eq!(banks.iter().map(|b| b.1).collect::<Vec<_>>(), [1024, 2048, 512]);
+        assert_eq!(
+            banks.iter().map(|b| b.1).collect::<Vec<_>>(),
+            [1024, 2048, 512]
+        );
         std::fs::write(root.join(TAIL_BANKS[0]), "nothing useful\n").unwrap();
         assert!(spu_ceiling(&root).unwrap_err().contains("no BANK_BYTES"));
         let _ = std::fs::remove_dir_all(&root);
@@ -1057,13 +1480,25 @@ mod tests {
         let root = std::env::temp_dir().join(format!("hk-ambience-sfx-{}", std::process::id()));
         std::fs::create_dir_all(root.join("data")).unwrap();
         std::fs::write(root.join("data/sfx.adpcm"), [0u8; 16]).unwrap();
-        std::fs::write(root.join("data/sfx.rs"), "pub const BANK_BYTES: usize = 16;").unwrap();
+        std::fs::write(
+            root.join("data/sfx.rs"),
+            "pub const BANK_BYTES: usize = 16;",
+        )
+        .unwrap();
         assert_eq!(sfx_reservation(&root).unwrap().0, 0x1020);
-        std::fs::write(root.join("data/sfx.rs"), "pub const BANK_BYTES: usize = 32;").unwrap();
+        std::fs::write(
+            root.join("data/sfx.rs"),
+            "pub const BANK_BYTES: usize = 32;",
+        )
+        .unwrap();
         assert!(sfx_reservation(&root).unwrap_err().contains("mismatch"));
         let size = SFX_END - 0x1010 + 16;
         std::fs::write(root.join("data/sfx.adpcm"), vec![0u8; size as usize]).unwrap();
-        std::fs::write(root.join("data/sfx.rs"), format!("pub const BANK_BYTES: usize = {size};")).unwrap();
+        std::fs::write(
+            root.join("data/sfx.rs"),
+            format!("pub const BANK_BYTES: usize = {size};"),
+        )
+        .unwrap();
         assert!(sfx_reservation(&root).unwrap_err().contains("overlaps"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1075,19 +1510,30 @@ mod tests {
         assert_eq!(volume(BOOST_CEILING_DB).unwrap(), 16383);
         assert!(volume(BOOST_CEILING_DB + 0.001).is_err());
         assert!(volume(f64::INFINITY).is_err());
-        assert_eq!(boosts(&[-6.0, 1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), Json::Obj(vec![("1".into(), Json::Float(1.5))]));
+        assert_eq!(
+            boosts(&[-6.0, 1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            Json::Obj(vec![("1".into(), Json::Float(1.5))])
+        );
         let mut f = fixture("boost");
         let first = CHANNELS[0];
-        f.snapshots.get_mut("level6").unwrap()[0] = jobj(vec![("internal_volume_db", Json::Float(1.35545))]);
+        f.snapshots.get_mut("level6").unwrap()[0] =
+            jobj(vec![("internal_volume_db", Json::Float(1.35545))]);
         if let Json::Obj(top) = &mut f.report {
             if let Some((_, Json::List(scenes))) = top.iter_mut().find(|k| k.0 == "scenes") {
                 if let Json::Obj(s) = &mut scenes[0] {
                     if let Some((_, Json::List(m))) = s.iter_mut().find(|k| k.0 == "managers") {
                         if let Json::Obj(mm) = &mut m[0] {
-                            if let Some((_, Json::List(a))) = mm.iter_mut().find(|k| k.0 == "ambience") {
+                            if let Some((_, Json::List(a))) =
+                                mm.iter_mut().find(|k| k.0 == "ambience")
+                            {
                                 if let Json::Obj(e) = &mut a[0] {
-                                    if let Some((_, Json::Obj(sn))) = e.iter_mut().find(|k| k.0 == "snapshot") {
-                                        sn.iter_mut().find(|k| k.0 == "internal_volume_db").unwrap().1 = Json::Float(1.35545);
+                                    if let Some((_, Json::Obj(sn))) =
+                                        e.iter_mut().find(|k| k.0 == "snapshot")
+                                    {
+                                        sn.iter_mut()
+                                            .find(|k| k.0 == "internal_volume_db")
+                                            .unwrap()
+                                            .1 = Json::Float(1.35545);
                                     }
                                 }
                             }
@@ -1098,7 +1544,10 @@ mod tests {
         }
         let (_, cues) = f.ok(&[]);
         assert_eq!(cues[0].gains[0], 16383);
-        assert_eq!(cues[0].clamped_boost_db, Json::Obj(vec![(first.to_string(), Json::Float(1.35545))]));
+        assert_eq!(
+            cues[0].clamped_boost_db,
+            Json::Obj(vec![(first.to_string(), Json::Float(1.35545))])
+        );
         assert_eq!(cues[1].clamped_boost_db, Json::Obj(vec![]));
     }
 
@@ -1141,7 +1590,10 @@ mod tests {
             unloaded: None,
         }];
         let text = rust_manifest(&clips, &cues, 0x4e1b0);
-        assert!(text.contains(&format!("pub const AMBIENCE_CLIPS:[AmbienceClip;{}]=[", clips.len())));
+        assert!(text.contains(&format!(
+            "pub const AMBIENCE_CLIPS:[AmbienceClip;{}]=[",
+            clips.len()
+        )));
         assert!(text.contains(&format!("pub gains:[i16;{}]", clips.len())));
         assert!(!text.contains("voice:"));
         assert!(text.contains(&format!("pub const MUSIC_VOICE:u8={MUSIC_VOICE};")));
@@ -1152,10 +1604,26 @@ mod tests {
     fn the_cache_cannot_silently_use_another_windows_install() {
         let root = std::env::temp_dir().join(format!("hk-ambience-cache-{}", std::process::id()));
         std::fs::create_dir_all(root.join(".hkpsx")).unwrap();
-        std::fs::write(root.join(".hkpsx/doctor.json"), format!("{{\"installs\": [{{\"data_directory\": \"{}\"}}]}}", root.join("selected").display())).unwrap();
+        std::fs::write(
+            root.join(".hkpsx/doctor.json"),
+            format!(
+                "{{\"installs\": [{{\"data_directory\": \"{}\"}}]}}",
+                root.join("selected").display()
+            ),
+        )
+        .unwrap();
         let path = root.join("provenance.json");
-        std::fs::write(&path, format!("{{\"source_directory\": \"{}\"}}", root.join("old").display())).unwrap();
-        assert!(cached_report(&root, &path, &files()).unwrap_err().contains("different selected Windows install"));
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"source_directory\": \"{}\"}}",
+                root.join("old").display()
+            ),
+        )
+        .unwrap();
+        assert!(cached_report(&root, &path, &files())
+            .unwrap_err()
+            .contains("different selected Windows install"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

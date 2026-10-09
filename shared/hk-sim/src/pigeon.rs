@@ -127,14 +127,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { commands: [None; 3], len: 0 }
+        Self {
+            commands: [None; 3],
+            len: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.commands[self.len as usize] = Some(action);
         self.len += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.commands[..self.len as usize].iter().map(|a| a.unwrap())
+        self.commands[..self.len as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
     pub fn len(&self) -> usize {
         self.len as usize
@@ -350,7 +355,10 @@ mod tests {
             mirrors[usize::from(bird.facing() > 0)] = true;
         }
         assert!(clips.iter().all(|seen| *seen), "every `Set Anim` branch");
-        assert!(mirrors.iter().all(|seen| *seen), "both `Set Frame` branches");
+        assert!(
+            mirrors.iter().all(|seen| *seen),
+            "both `Set Frame` branches"
+        );
     }
 
     #[test]
@@ -358,7 +366,10 @@ mod tests {
         for hero_right in [false, true] {
             let mut bird = Pigeon::new(11, -1);
             bird.tick(Senses::default());
-            let senses = Senses { can_see_hero: true, hero_right };
+            let senses = Senses {
+                can_see_hero: true,
+                hero_right,
+            };
             let actions = bird.tick(senses);
             assert_eq!(actions.len(), 2);
             assert_eq!(actions.iter().next(), Some(Action::Rise(TAKEOFF_RISE)));
@@ -385,10 +396,17 @@ mod tests {
     fn the_five_second_wait_is_the_whole_of_a_flight() {
         let mut bird = Pigeon::new(3, -1);
         bird.tick(Senses::default());
-        let senses = Senses { can_see_hero: true, hero_right: true };
+        let senses = Senses {
+            can_see_hero: true,
+            hero_right: true,
+        };
         bird.tick(senses);
         run(&mut bird, senses, LIFE_TICKS as usize);
-        assert_eq!(bird.phase(), Phase::Flying, "still airborne on the last frame");
+        assert_eq!(
+            bird.phase(),
+            Phase::Flying,
+            "still airborne on the last frame"
+        );
         bird.tick(senses);
         assert_eq!(bird.phase(), Phase::Gone);
         assert_eq!(bird.velocity(), [0; 2]);
@@ -398,7 +416,10 @@ mod tests {
 
     #[test]
     fn a_bird_taken_off_the_board_or_killed_stops_for_good() {
-        let senses = Senses { can_see_hero: true, hero_right: false };
+        let senses = Senses {
+            can_see_hero: true,
+            hero_right: false,
+        };
         let mut left = Pigeon::new(5, -1);
         left.tick(Senses::default());
         left.tick(senses);
@@ -421,7 +442,10 @@ mod tests {
         // `Idle`'s tests are `everyFrame`, so the entry frame runs them too and
         // a bird spawned with the hero already beside it never sits down.
         let mut bird = Pigeon::new(29, -1);
-        let actions = bird.tick(Senses { can_see_hero: true, hero_right: true });
+        let actions = bird.tick(Senses {
+            can_see_hero: true,
+            hero_right: true,
+        });
         // The idle loop is still played and seeked, and `Fly` then replaces it
         // on the same frame, which is the order the source runs them in.
         assert_eq!(actions.len(), 3);
@@ -434,7 +458,10 @@ mod tests {
             }
         }
         assert_eq!(count, 2);
-        assert!(matches!(played[0], Some(Clip::Idle1 | Clip::Idle2 | Clip::Idle3)));
+        assert!(matches!(
+            played[0],
+            Some(Clip::Idle1 | Clip::Idle2 | Clip::Idle3)
+        ));
         assert_eq!(played[1], Some(Clip::Fly));
         assert_eq!(bird.phase(), Phase::Flying);
         assert_eq!(bird.clip(), Clip::Fly);
