@@ -246,7 +246,15 @@ struct Import {
     damage_hero: Vec<(i64, String)>,
     /// GameObject source id to its colliders' (active, enabled).
     colliders: HashMap<String, Vec<(bool, bool)>>,
+    /// GameObject path id to its own `m_IsActive`.
+    go_active: HashMap<i64, bool>,
+    /// Every pickup-family FSM: (GameObject path id, FSM name).
+    pickups: Vec<(i64, String)>,
 }
+
+/// The FSMs that hand the Knight something in the slice (host/pickups.py).
+const CHEST: &str = "Chest Control";
+const PICKUP_FSMS: &[&str] = &["Chest Control", "Shiny Control", "Heart Container Control", "Vessel Fragment Control"];
 
 fn gz_json(path: &Path) -> Option<Value> {
     let f = fs::File::open(path).ok()?;
@@ -259,7 +267,7 @@ fn load_import(dir: &Path, file: &str) -> Option<Import> {
     let base = dir.join(file);
     let comps = gz_json(&base.join("components.json.gz"))?;
     let geo = gz_json(&base.join("geometry.json.gz"))?;
-    let mut imp = Import { objects: HashMap::new(), transform_of: HashMap::new(), pbi_of: HashMap::new(), hm_gos: BTreeSet::new(), damage_hero: Vec::new(), colliders: HashMap::new() };
+    let mut imp = Import { objects: HashMap::new(), transform_of: HashMap::new(), pbi_of: HashMap::new(), hm_gos: BTreeSet::new(), damage_hero: Vec::new(), colliders: HashMap::new(), go_active: HashMap::new(), pickups: Vec::new() };
     for o in comps["objects"].as_array()? {
         let id = source_number(o["source"].as_str().unwrap_or("")) as i64;
         let ty = o["type"].as_str().unwrap_or("");
@@ -274,6 +282,15 @@ fn load_import(dir: &Path, file: &str) -> Option<Import> {
             }
             "HealthManager" => {
                 imp.hm_gos.insert(go);
+            }
+            "GameObject" => {
+                imp.go_active.insert(id, o["data"]["m_IsActive"].as_bool().unwrap_or_else(|| o["data"]["m_IsActive"].as_i64().unwrap_or(1) != 0));
+            }
+            "PlayMakerFSM" => {
+                let name = o["data"]["fsm"]["name"].as_str().unwrap_or("");
+                if PICKUP_FSMS.contains(&name) {
+                    imp.pickups.push((go, name.to_string()));
+                }
             }
             "DamageHero" => {
                 if o["data"]["m_Enabled"].as_i64().unwrap_or(1) != 0 && o["data"]["damageDealt"].as_i64().unwrap_or(0) > 0 {
@@ -292,6 +309,21 @@ fn load_import(dir: &Path, file: &str) -> Option<Import> {
 }
 
 impl Import {
+    /// Whether a GameObject and every ancestor are active (`activeInHierarchy`).
+    fn active(&self, go: i64) -> bool {
+        let mut go = go;
+        for _ in 0..64 {
+            if !self.go_active.get(&go).copied().unwrap_or(true) {
+                return false;
+            }
+            let Some(t) = self.transform_of.get(&go).and_then(|t| self.objects.get(t)) else { return true };
+            let Some(father) = t["data"]["m_Father"]["m_PathID"].as_i64().filter(|f| *f != 0) else { return true };
+            let Some(parent) = self.objects.get(&father).and_then(|o| o["data"]["m_GameObject"]["m_PathID"].as_i64()) else { return true };
+            go = parent;
+        }
+        true
+    }
+
     /// The world scale of a GameObject: its Transform's local scale times every
     /// ancestor's.
     fn world_scale(&self, go: i64) -> Option<[f64; 2]> {
@@ -519,6 +551,17 @@ fn main() {
         }
     }
 
+    // Cooked chests and pickups per scene (a chest's own shiny is a pickup too).
+    let mut pickups: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for r in regions["regions"].as_array().unwrap() {
+        let p = &r["pickups"];
+        for kind in ["chests", "pickups"] {
+            for x in p[kind].as_array().into_iter().flatten() {
+                pickups.entry(r["scene_name"].as_str().unwrap_or("").to_string()).or_default().insert(x["source"].as_str().unwrap_or("").to_string());
+            }
+        }
+    }
+
     let mut report_scenes = Vec::new();
     let mut totals: BTreeMap<&str, u64> = BTreeMap::new();
     let mut checks: Checks = BTreeMap::new();
@@ -689,6 +732,19 @@ fn main() {
                 if !ok {
                     issues.push(json!({"scene": scene, "name": source, "status": "check_hazard", "detail": "DamageHero with an active collider is not cooked"}));
                 }
+            }
+        }
+
+        // 5. Pickups: every chest, shiny, heart piece and vessel fragment the
+        // scene shows is cooked, and so is the shiny inside each chest.
+        if let Some(imp) = &imp {
+            let live = imp.pickups.iter().filter(|(go, _)| imp.active(*go)).count();
+            let chests = imp.pickups.iter().filter(|(go, name)| name == CHEST && imp.active(*go)).count();
+            let want = live + chests;
+            let have = pickups.get(scene).map_or(0, |p| p.len());
+            note(&mut scene_checks, "pickup", want == have);
+            if want != have {
+                issues.push(json!({"scene": scene, "name": "(scene)", "status": "check_pickup", "detail": format!("the source shows {want} pickups ({chests} chests with a shiny inside), the cook has {have}")}));
             }
         }
 
