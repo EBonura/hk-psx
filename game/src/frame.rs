@@ -180,6 +180,11 @@ pub fn render(game: &mut Game, r: &world::Region, view: &world::Region, room: &R
         assert!(needed_len<needed.len(),"Vengeful Spirit animation working set");
         needed[needed_len]=ability_art::KEY_BASE+i as u16;needed_len+=1;
     }
+    let fx_frames=if game.vitals.dead {[None,None]} else {focus_fx::frames()};
+    for i in fx_frames.into_iter().flatten() {
+        assert!(needed_len<needed.len(),"Focus effect animation working set");
+        needed[needed_len]=ability_art::KEY_BASE+i as u16;needed_len+=1;
+    }
     if let Some(f)=door_frame {
         // A door pose is a rectangle of slots (host/great_door.py DOOR_MAX_AXIS).
         render::append_frame_keys(room,f,&mut needed,&mut needed_len);
@@ -239,6 +244,8 @@ pub fn render(game: &mut Game, r: &world::Region, view: &world::Region, room: &R
             None=>{draw_frame(room,body_frame,&game.player,camera,tint);1}
         };
     }
+    // Lines Anim and Heal Anim sit just in front of the Knight, additive.
+    for i in fx_frames.into_iter().flatten() {prims+=ability_art::draw_additive(i,game.player.x,game.player.y,game.player.facing,camera,128);}
     if let Some(f)=effect_frame {draw_frame(room,f,&game.player,camera,128);prims+=1;}
     if let Some(i)=ball_frame {
         prims+=ability_art::draw(i,game.cast.ball.x,game.cast.ball.y,game.cast.ball.facing,camera,128);
@@ -473,6 +480,10 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
             can_start:game.vitals.can_control() && !game.door.pending() && (!game.nail.active || game.nail.age>=FOCUS_PARAMS.attack_recovery_ticks),
         },&mut game.vitals);
         focus_audio::tick(&game.focus,focus_events);
+        if focus_fx::tick(game.focus.lines_active(),focus_events.completed,game.vitals.soul as u16,FOCUS_PARAMS.cost as u16,
+            game.vitals.health>=game.settings.cheats.params(VITAL_PARAMS).max_health) {ability_sound(audio::FOCUS_READY);}
+        // Dust L and Dust R at the Knight's feet, in world space, while Focus runs.
+        if focus_fx::dust_due() {world::particles::pool().spawn_break_at(r.scene,focus_fx::DUST_OWNER,[game.player.x,game.player.y]);}
         game.settings.cheats.maintain(&mut game.vitals,VITAL_PARAMS);
         unsafe {
             HK_FOCUS_STARTED+=u32::from(focus_events.started);HK_FOCUS_COMPLETED+=u32::from(focus_events.completed);
@@ -648,6 +659,7 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
             else if struck|props_strike.freed>0 {audio::enemy_hit();}
             if let Some(b)=props_strike.impact {game.state.hit_impact(r,game.attacks as usize,b,game.player.x);}
             if let Some((slot,index,at))=props_strike.shattered {props::stalactite_dust(r.scene,slot,index,0,at);game.props.fling(game.geo,at);}
+            if let Some((slot,index,at))=props_strike.embedded {props::stalactite_dust(r.scene,slot,index,2,at);}
             // `Chest Control`'s `Open`: saved at once, and `Spawn Items` flings
             // its Geo through the coin pool.
             if let Some(chest)=strike_chests(game.pickups,&game.nail,&game.player,hero_body) {open_chest(game.geo,r.scene,chest);}

@@ -29,18 +29,19 @@ const SPU_END: i64 = 0x80000;
 /// The Runner bank's fixed base (host/runner_audio.py): this bank, ability
 /// sounds included, must end at or below it.
 const RUNNER_BASE: i64 = 0x7B000;
-const CHARGE_RATE: i64 = 4000;
+const CHARGE_RATE: i64 = 3200;
 const HEAL_RATE: i64 = 11025;
 /// The Knight's sounds that ride the Focus range (source: the Superdash FSM on
 /// the Knight and Fireball Top's Fireball Cast FSM, resources.assets). Order is
 /// the guest's ABILITY index. Rates come from the SDK's rate allocator.
-const ABILITY: [(&str, i64, &str); 6] = [
+const ABILITY: [(&str, i64, &str); 7] = [
     ("super_charge", 1289, "hero_super_dash_charge"),
     ("super_ready", 1214, "hero_super_dash_ready"),
     ("super_burst", 1321, "hero_super_dash_burst"),
     ("super_wall", 1314, "hero_super_dash_impact_wall"),
     ("super_brake", 1351, "hero_super_dash_air_brake"),
     ("fireball", 1361, "hero_fireball"),
+    ("focus_ready", 1271, "focus_ready"),
 ];
 /// The port's categories: a one-shot under a second ships at 22,050 Hz, a longer
 /// clip at 11,025 Hz; the allocator may halve a clip once and never further.

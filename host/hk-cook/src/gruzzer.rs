@@ -78,7 +78,7 @@ const GIANT_FLY_CHILDREN: [&str; 3] = ["Hero Damager", "Snore", "Battle Range"];
 const SPAWN_NAME: &str = "Fly Spawn";
 
 /// `giant_fly`: the scene's one active `Giant Fly`, if any.
-fn giant_fly(sc: &Scene) -> Result<Option<i64>> {
+pub(crate) fn giant_fly(sc: &Scene) -> Result<Option<i64>> {
     let mut found: Vec<i64> = sc.gos.keys().copied().filter(|g| sc.go(*g).and_then(|go| go.get("m_Name")).and_then(Value::str).as_deref() == Some(GIANT_FLY_NAME) && sc.active(*g)).collect();
     found.sort();
     if found.len() > 1 {

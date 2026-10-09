@@ -76,13 +76,12 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                 if key >= crate::ability_art::KEY_BASE {
                     // The Knight's ability clips sit above the Shade's keys and
                     // stream from linked RAM the same way.
-                    let (bytes, width, height) =
-                        crate::ability_art::texels((key - crate::ability_art::KEY_BASE) as usize)?;
-                    if bytes.len() > 2048 {
+                    let index = (key - crate::ability_art::KEY_BASE) as usize;
+                    let (width, height) = crate::ability_art::size(index)?;
+                    if crate::ability_art::texel_bytes(index)? > 2048 {
                         return None;
                     }
-                    crate::texture_upload::upload(dest(slot, width, height), bytes);
-                    return Some(bytes.len() as u32);
+                    return crate::ability_art::upload_frame(index, dest(slot, width, height));
                 }
                 if key >= crate::shade::KEY_BASE {
                     let (bytes, width, height) = crate::shade::texels((key - crate::shade::KEY_BASE) as usize)?;

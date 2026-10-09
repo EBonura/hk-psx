@@ -68,6 +68,10 @@ pub struct Stalactite {
     pub position: [i32; 2],
     pub frame: u16,
     pub embedded: u16,
+    /// The fallen version's hit box (a `Breakable`), relative to the position
+    /// the stalactite landed at, and its drawn offset from it (Q16).
+    pub embedded_hit: [i32; 4],
+    pub embedded_dy: i32,
     /// Damage box relative to the position.
     pub hurt: [i32; 4],
     pub trigger: [i32; 4],
@@ -180,6 +184,8 @@ pub struct Strike {
     /// A stalactite an upward slash broke: its slot in the scene, its
     /// STALACTITES index and where. The caller flings its rocks (`fling`).
     pub shattered: Option<(u8, u16, [i32; 2])>,
+    /// A fallen stalactite a nail hit broke: slot, index, where it lies.
+    pub embedded: Option<(u8, u16, [i32; 2])>,
 }
 
 pub struct World {
@@ -202,6 +208,9 @@ pub static mut HK_PROPS_DRAWN: u32 = 0;
 pub static mut HK_STALACTITE_ROCKS: u32 = 0;
 #[no_mangle]
 pub static mut HK_STALACTITE_ROCKS_DROPPED: u32 = 0;
+/// Fallen stalactites a nail hit broke.
+#[no_mangle]
+pub static mut HK_STALACTITE_EMBEDDED_BREAKS: u32 = 0;
 
 fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
@@ -466,6 +475,19 @@ impl World {
         for slot in 0..MAX_STALACTITES {
             let Some(s) = self.stalactites[slot].as_mut() else { continue };
             let spec = STALACTITES[s.index as usize];
+            // A fallen one is the embedded version, a `Breakable`: any nail hit
+            // breaks it, whatever the direction (`Breakable.Hit`).
+            if s.phase == Fall::Embedded {
+                let hit = offset(spec.embedded_hit, [s.x, s.y]);
+                if spec.embedded != NONE && polygon_hits_box(polygon, hit) {
+                    s.phase = Fall::Broken;
+                    out.broken += 1;
+                    out.impact = Some(hit);
+                    out.embedded = Some((slot as u8, s.index, [s.x, s.y]));
+                    unsafe { HK_STALACTITE_EMBEDDED_BREAKS = HK_STALACTITE_EMBEDDED_BREAKS.wrapping_add(1); }
+                }
+                continue;
+            }
             // The trigger fires while the nail overlaps it; a batted one that
             // is still inside the swing is not struck again.
             let hurt = offset(spec.hurt, [s.x, s.y]);
@@ -521,7 +543,7 @@ impl World {
             match s.phase {
                 Fall::Broken => {}
                 Fall::Embedded if spec.embedded == NONE => {}
-                Fall::Embedded => f(spec.embedded as usize, [s.x, s.y], s.turn(), hk_sim::ONE),
+                Fall::Embedded => f(spec.embedded as usize, [s.x, s.y + spec.embedded_dy], s.turn(), hk_sim::ONE),
                 _ => f(spec.frame as usize, [s.x, s.y], s.turn(), hk_sim::ONE),
             }
         }
@@ -555,8 +577,8 @@ impl World {
 }
 
 /// Stalactite effect owners in the cooked break effects:
-/// `STALACTITE_EFFECT_OWNER | slot << 1 | kind` (host/hk-cook/src/break_effects.rs
-/// `STALACTITE_OWNER`), kind 0 an upward slash's dust and 1 the landing's.
+/// `STALACTITE_EFFECT_OWNER | slot << 2 | kind` (host/hk-cook/src/break_effects.rs
+/// `STALACTITE_OWNER`), kind 0 an upward slash's dust, 1 the landing's and 2 a fallen one's break.
 pub const STALACTITE_EFFECT_OWNER: usize = 0xC000;
 /// Raise one stalactite's dust where it is now: its emitters are cooked at
 /// its hanging position.
@@ -564,7 +586,7 @@ pub const STALACTITE_EFFECT_OWNER: usize = 0xC000;
 #[inline(never)]
 pub fn stalactite_dust(scene: usize, slot: u8, index: u16, kind: usize, at: [i32; 2]) {
     let s = STALACTITES[index as usize].position;
-    let owner = STALACTITE_EFFECT_OWNER | (slot as usize) << 1 | kind;
+    let owner = STALACTITE_EFFECT_OWNER | (slot as usize) << 2 | kind;
     crate::world::particles::pool().spawn_break_at(scene, owner, [at[0] - s[0], at[1] - s[1]]);
 }
 /// The cooked draws the drawn view shows for props this module draws itself.

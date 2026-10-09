@@ -18,7 +18,7 @@
 //! offset). The Python computed and could refuse on the rest of each record
 //! (audio, mask fades, hit polygons) without using it here.
 
-use crate::common::{err, get, py_round, Result};
+use crate::common::{component_records, err, get, kid, kids, py_round, Result};
 use crate::cook::{focal, CAM_Z};
 use crate::materials::quantize_alpha_coverage;
 use crate::pyjson::{dumps, Json};
@@ -53,7 +53,7 @@ const SECRET_BREAK_BUDGET: i64 = 96;
 /// `Emit(n)` releases its n at once.
 const EMIT_RATE: f64 = 10000.0;
 const FX_MAGIC: &[u8] = b"HKFX0001";
-const FX_LIMITS: [(&str, usize); 5] = [("styles", 16), ("emitters", 96), ("art", 48), ("uploads", 48), ("frames", 96)];
+const FX_LIMITS: [(&str, usize); 5] = [("styles", 18), ("emitters", 100), ("art", 48), ("uploads", 48), ("frames", 96)];
 const FAMILY_WALL: i64 = 1;
 const FAMILY_WALL_TK2D: i64 = 2;
 const FAMILY_FLOOR: i64 = 3;
@@ -811,7 +811,7 @@ fn pair<'a>(list: &'a Value, key: &str) -> Result<&'a Value> {
 /// `part_emitter`: one debrisPart's emitter, Silent when a played system
 /// provably emits nothing, or None when the part is not a particle system.
 #[allow(clippy::too_many_arguments)]
-fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played: bool, relaxed: bool, emit: Option<i64>) -> Result<Found> {
+fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played: bool, relaxed: bool, emit: Option<i64>, unloop: bool) -> Result<Found> {
     let mut cs: Vec<(String, Obj, Value)> = Vec::new();
     for r in view.component_refs(gid)? {
         let o = view.deref(source, &r)?;
@@ -849,6 +849,10 @@ fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played
     let sid = texture.sid();
     let mut matrix = view.world_of(gid)?;
     let mut ps = ps;
+    if unloop {
+        // An FSM-driven loop (rate set while a state runs) cooked as its repeating burst.
+        set(&mut ps, "looping", Value::Int(0));
+    }
     if relaxed {
         (ps, matrix) = secret_relax(&ps, &matrix, emit)?;
     }
@@ -919,7 +923,7 @@ fn secret_relax(ps: &Value, matrix: &M4, emit: Option<i64>) -> Result<(Value, M4
         let angle = if angle_v.is_map() { f(&angle_v, "value")? } else { num(&angle_v)? };
         let start = axis[1].atan2(axis[0]).to_degrees() - angle;
         let (c, s) = (start.to_radians().cos(), start.to_radians().sin());
-        let sx = matrix[0][0].hypot(matrix[1][0]);
+        let sx = crate::pyfloat::hypot(matrix[0][0], matrix[1][0]);
         let sx = if sx == 0.0 { 1.0 } else { sx };
         m = [
             [c * sx, -s * sx, 0.0, matrix[0][3]],
@@ -961,7 +965,7 @@ fn prefab_emitters(source: &Source, file: &Arc<SerializedFile>, view_of: &dyn Vi
     let view = PrefabView::new(source, prefab.file.clone(), prefab.path_id(), origin, rotation)?;
     let mut found = Vec::new();
     for gid in view.subtree()? {
-        if let Found::Emitter(mut e) = part_emitter(source, &view, gid, gravity, true, true, None)? {
+        if let Found::Emitter(mut e) = part_emitter(source, &view, gid, gravity, true, true, None, false)? {
             e.part = Some(format!("{}:{gid}", hk_unity::base_name(&view.file.name)));
             found.push(*e);
         }
@@ -1398,7 +1402,7 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         for b in breakable_sources(source, &sc, &wanted)? {
             for &gid in &b.debris {
                 let part = format!("{file}:{gid}");
-                let found = match part_emitter(source, &sc, gid, gravity, false, false, None) {
+                let found = match part_emitter(source, &sc, gid, gravity, false, false, None, false) {
                     Ok(x) => x,
                     Err(e) => {
                         c.ignored.push(ignore(Json::Str(b.source.clone()), Json::Str(part), format!("unsupported particle style: {e}")));
@@ -1468,15 +1472,80 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         let sc = Scene::new(source, &file).map_err(|e| e.to_string())?;
         collect_stalactites(source, &sc, scene_id, gravity, &mut c)?;
     }
+    let scenes: Vec<i64> = metadata["scenes"].as_array().ok_or("no scenes")?.iter().filter_map(|d| d["scene_id"].as_i64()).collect();
+    collect_hero_dust(source, gravity, &scenes, &mut c)?;
     if c.styles.len() > 253 {
         return err("particle style IDs");
     }
     Ok(c)
 }
 
-/// Stalactite effect owners: `STALACTITE_OWNER | slot << 1 | kind`, the slot
+/// The Knight's Focus dust: `Dust L` and `Dust R`, children of the Knight's `Focus Effects`,
+/// which the Spell Control FSM sets to 60 particles a second while Focus runs and back to
+/// none when it ends. Cooked as the 0.1 s burst of six the loop repeats, in every scene (the
+/// Knight can focus anywhere), at the Knight's own place; the guest raises one burst every six
+/// ticks while Focus runs, moved to the Knight (game/src/frame.rs). Optional like the
+/// stalactites' effects: a scene whose art budget has no room for the dust texture goes without.
+pub const HERO_DUST_OWNER: i64 = 0xFFFF;
+const HERO_DUST_BURST: i64 = 6;
+fn collect_hero_dust(source: &Source, gravity: f64, scenes: &[i64], c: &mut Collected) -> Result<()> {
+    let file = source.file("resources.assets").map_err(|e| e.to_string())?;
+    let read = |id: i64| -> Result<Value> {
+        let o = source.object(&file, id).map_err(|e| e.to_string())?;
+        source.read(&o).map_err(|e| e.to_string())
+    };
+    let transform_of = |gid: i64| -> Result<Value> {
+        for comp in get(&read(gid)?, "m_Component")?.list().unwrap_or(&[]) {
+            let o = source.deref(&file, get(comp, "component")?).map_err(|e| e.to_string())?;
+            if o.class_id() == 4 {
+                return source.read(&o).map_err(|e| e.to_string());
+            }
+        }
+        err("no Transform")
+    };
+    const DUST: [(i64, &str); 2] = [(4650, "Dust L"), (5097, "Dust R")];
+    let father = i(get(&transform_of(DUST[0].0)?, "m_Father")?, "m_PathID")?;
+    let focus_effects = i(get(&read(father)?, "m_GameObject")?, "m_PathID")?;
+    let mut found = Vec::new();
+    {
+        let view = PrefabView::new(source, file.clone(), focus_effects, [0.0, 0.0, 0.0], Some([0.0, 0.0, 0.0]))?;
+        for (gid, name) in DUST {
+            if get(&read(gid)?, "m_Name")?.str().as_deref() != Some(name) {
+                return err(format!("Focus dust {gid} is not {name}"));
+            }
+            match part_emitter(source, &view, gid, gravity, true, true, Some(HERO_DUST_BURST), true)? {
+                Found::Emitter(e) => found.push(*e),
+                _ => return err(format!("{name} is not a particle system")),
+            }
+        }
+    }
+    for &scene in scenes {
+        for e in &found {
+            let style = c.style_index(e.style.clone());
+            let (origin, basis) = placement(&e.matrix)?;
+            c.emitters.push(EmitterRow { scene, owner: HERO_DUST_OWNER, source: e.system.path_id(), style, angle_offset: 0, origin, basis });
+            c.texture(&e.texture_id, &e.texture);
+        }
+    }
+    for e in &found {
+        c.records.push(Json::Obj(vec![
+            ("owner".into(), Json::Str("Knight / Focus Effects".into())),
+            ("name".into(), Json::Str("Dust L and Dust R, per Focus tick".into())),
+            ("part".into(), Json::Str(format!("resources.assets:{}", e.system.path_id()))),
+            ("system".into(), Json::Str(e.system.sid())),
+            ("texture".into(), Json::Str(e.texture_id.clone())),
+            ("shader".into(), Json::Str(e.shader.clone())),
+            ("scaling_mode".into(), Json::Int(e.scaling_mode)),
+            ("ps_sha256".into(), Json::Str(e.ps_sha256.clone())),
+        ]));
+    }
+    Ok(())
+}
+
+/// Stalactite effect owners: `STALACTITE_OWNER | slot << 2 | kind`, the slot
 /// being the stalactite's order in its scene (game/src/props.rs) and the kind
-/// 0 for an upward slash's `hitUpEffectPrefabs`, 1 for `landEffectPrefabs`.
+/// 0 for an upward slash's `hitUpEffectPrefabs`, 1 for `landEffectPrefabs`, 2 for
+/// the fallen version's Breakable debris.
 pub const STALACTITE_OWNER: i64 = 0xC000;
 
 /// StalactiteControl's particle prefabs, spawned with `Spawn(prefab, position)`
@@ -1499,7 +1568,7 @@ fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64,
                 if i(reference, "m_PathID")? == 0 {
                     continue;
                 }
-                let owner = STALACTITE_OWNER | slot << 1 | kind;
+                let owner = STALACTITE_OWNER | slot << 2 | kind;
                 let found = match prefab_emitters(source, &sc.base, sc, reference, gravity, origin, None) {
                     Ok(found) => found,
                     Err(e) => {
@@ -1521,6 +1590,43 @@ fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64,
                         ("shader".into(), Json::Str(e.shader.clone())),
                         ("scaling_mode".into(), Json::Int(e.scaling_mode)),
                         ("ps_sha256".into(), Json::Str(e.ps_sha256.clone())),
+                    ]));
+                }
+            }
+        }
+        // Kind 2: the fallen stalactite is its `Embedded` child, a Breakable
+        // whose debris parts a nail hit breaks into (cooked at the child's
+        // place, moved by the guest to where the stalactite lies).
+        if let Some(embedded) = kid(&kids(sc, gid).map_err(|e| e.to_string())?, "Embedded") {
+            let owner = STALACTITE_OWNER | slot << 2 | 2;
+            for record in component_records(sc, embedded).into_iter().filter(|r| r.1 == "Breakable") {
+                let angle_offset = f(record.2, "angleOffset")?;
+                for r in get(record.2, "debrisParts")?.list().unwrap_or(&[]) {
+                    if i(r, "m_PathID")? == 0 {
+                        continue;
+                    }
+                    let part = i(r, "m_PathID")?;
+                    let found = match part_emitter(source, sc, part, gravity, false, false, None, false) {
+                        Ok(Found::Emitter(e)) => e,
+                        Ok(_) => continue,
+                        Err(e) => {
+                            c.ignored.push(ignore(Json::Str(sc.sid(o.id)), Json::Str("embedded debris".into()), format!("unsupported stalactite particle: {e}")));
+                            continue;
+                        }
+                    };
+                    let (origin, basis) = placement(&found.matrix)?;
+                    let style = c.style_index(found.style.clone());
+                    c.emitters.push(EmitterRow { scene: scene_id, owner, source: found.system.path_id(), style, angle_offset: q(angle_offset)?, origin, basis });
+                    c.texture(&found.texture_id, &found.texture);
+                    c.records.push(Json::Obj(vec![
+                        ("owner".into(), Json::Str(sc.sid(o.id))),
+                        ("name".into(), Json::Str("embedded Breakable debrisParts".into())),
+                        ("part".into(), Json::Str(format!("{}:{part}", hk_unity::base_name(&sc.base.name)))),
+                        ("system".into(), Json::Str(found.system.sid())),
+                        ("texture".into(), Json::Str(found.texture_id.clone())),
+                        ("shader".into(), Json::Str(found.shader.clone())),
+                        ("scaling_mode".into(), Json::Int(found.scaling_mode)),
+                        ("ps_sha256".into(), Json::Str(found.ps_sha256.clone())),
                     ]));
                 }
             }
@@ -1548,7 +1654,7 @@ fn collect_secret(source: &Source, sc: &Scene, scene_id: i64, secret: &J, gravit
                     if !sc.active(child) {
                         return Ok(());
                     }
-                    if let Found::Emitter(e) = part_emitter(source, sc, child, gravity, true, true, entry.2)? {
+                    if let Found::Emitter(e) = part_emitter(source, sc, child, gravity, true, true, entry.2, false)? {
                         found.push((*e, entry.2, sc.sid(child)));
                     }
                 } else {
