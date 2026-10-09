@@ -1,18 +1,15 @@
 //! An actor's own colliders in world space. Ported from host/actors.py `_colliders`.
 //!
-//! Boxes and polygons become world polygons plus their bounding box; a circle is
-//! recorded as unsupported. A polygon of more than 16 vertices would be split into
-//! bounded pieces by host/polygons.py, which is not ported: `bounded_polygons`
-//! refuses it loudly rather than guess the piece order.
+//! Boxes and polygons become world polygons plus their bounding box (a polygon of
+//! more than 16 vertices is split into bounded pieces); a circle is recorded as
+//! unsupported.
 
 use crate::common::{err, get, Result};
 use crate::cook_audio::u;
+use crate::polygons::{bounded_polygons, POLYGON_VERTEX_LIMIT};
 use crate::pyjson::Json;
 use hk_unity::scene::Scene;
 use hk_unity::Value;
-
-/// `POLYGON_VERTEX_LIMIT`.
-const POLYGON_VERTEX_LIMIT: usize = 16;
 
 fn jf(v: f64) -> Json {
     Json::Float(v)
@@ -20,14 +17,6 @@ fn jf(v: f64) -> Json {
 
 fn jobj(fields: Vec<(&str, Json)>) -> Json {
     Json::Obj(fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
-}
-
-/// `bounded_polygons`: pieces of at most 16 vertices whose union is the polygon.
-fn bounded_polygons(points: Vec<(f64, f64)>) -> Result<Vec<Vec<(f64, f64)>>> {
-    if points.len() <= POLYGON_VERTEX_LIMIT {
-        return Ok(vec![points]);
-    }
-    err("polygon splitting (host/polygons.py bounded_polygons) is not ported")
 }
 
 fn pair(p: (f64, f64)) -> Json {
@@ -74,9 +63,22 @@ pub fn colliders(sc: &Scene, gid: i64, records: &[(i64, &str, &Value)]) -> Resul
             }
             polygons.push(world);
         }
+        // Guest records hold at most 16 vertices; the pieces tile the source shape exactly.
         let mut pieces = Vec::new();
+        let mut refused = None;
         for polygon in polygons {
-            pieces.extend(bounded_polygons(polygon)?);
+            match bounded_polygons(&polygon, POLYGON_VERTEX_LIMIT) {
+                Ok(split) => pieces.extend(split),
+                Err(e) if e.starts_with("KeyError") => return Err(e),
+                Err(e) => {
+                    refused = Some(e);
+                    break;
+                }
+            }
+        }
+        if let Some(reason) = refused {
+            result.push(jobj(vec![("source", Json::Str(sc.sid(sid))), ("type", Json::Str(typ.to_string())), ("unsupported", Json::Str(format!("collider polygon: {reason}")))]));
+            continue;
         }
         let points: Vec<(f64, f64)> = pieces.iter().flatten().copied().collect();
         if points.is_empty() || points.iter().any(|p| !p.0.is_finite() || !p.1.is_finite() || p.0.abs() > 512.0 || p.1.abs() > 512.0) {
