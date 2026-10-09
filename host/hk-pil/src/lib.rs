@@ -121,6 +121,23 @@ impl Image {
         out
     }
 
+    /// A quarter turn: counter-clockwise when `counter_clockwise`, clockwise otherwise. The result is
+    /// `height` wide and `width` tall, the way an expanding rotation by 90 degrees lays it out.
+    pub fn quarter_turn(&self, counter_clockwise: bool) -> Image {
+        let n = self.mode.pixel_size();
+        let mut out = Image { mode: self.mode, width: self.height, height: self.width, data: vec![0; self.data.len()] };
+        for y in 0..self.height {
+            for x in 0..self.width {
+                // Counter-clockwise sends the right edge to the top; clockwise sends the left edge to the top.
+                let (ox, oy) = if counter_clockwise { (y, self.width - 1 - x) } else { (self.height - 1 - y, x) };
+                let from = (y * self.width + x) * n;
+                let to = (oy * out.width + ox) * n;
+                out.data[to..to + n].copy_from_slice(&self.data[from..from + n]);
+            }
+        }
+        out
+    }
+
     /// Paste a same-mode `src` with its top-left corner at (`x0`, `y0`),
     /// clipped to this image. A mask of the source's size selects pixels: a
     /// "1" mask copies where nonzero, an "L" mask blends each byte as

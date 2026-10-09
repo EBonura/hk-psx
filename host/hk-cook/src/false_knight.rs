@@ -55,7 +55,7 @@ const CHECK_HEALTH_SHA256: &str = "4f68e313367ba807b5659ab8b8e6e3a623a3f662acfa2
 const SCALAR_PARAM_TABLES: [&str; 8] = ["fsmFloatParams", "fsmIntParams", "fsmBoolParams", "fsmStringParams", "fsmVector2Params", "fsmVector3Params", "fsmColorParams", "fsmRectParams"];
 
 /// `_scalar_param`: a typed PlayMaker parameter without its per-scene object reference.
-fn scalar_param(v: &Value) -> Json {
+pub(crate) fn scalar_param(v: &Value) -> Json {
     if !v.is_map() {
         return value_json(v);
     }
@@ -141,7 +141,7 @@ pub fn fsm_digest(fsm: &Value, ignore: &[&str]) -> Result<String> {
 }
 
 /// `_fsms`: the game object's PlayMakerFSM components by FSM name (the last of a name wins).
-fn fsms<'a>(sc: &'a Scene, gid: i64) -> Vec<(String, &'a Value)> {
+pub(crate) fn fsms<'a>(sc: &'a Scene, gid: i64) -> Vec<(String, &'a Value)> {
     let mut out: Vec<(String, &Value)> = Vec::new();
     for (_, kind, data) in component_records(sc, gid) {
         if kind == "PlayMakerFSM" {
@@ -164,7 +164,7 @@ fn box_of(sc: &Scene, gid: i64, index: usize) -> Result<[[f64; 2]; 2]> {
 }
 
 /// `_named`: the one game object of the scene with this name.
-fn named(sc: &Scene, name: &str) -> Result<i64> {
+pub(crate) fn named(sc: &Scene, name: &str) -> Result<i64> {
     let mut ids: Vec<i64> = sc.gos.keys().copied().filter(|g| sc.go(*g).and_then(|go| go.get("m_Name")).and_then(Value::str).as_deref() == Some(name)).collect();
     ids.sort();
     if ids.len() != 1 {
