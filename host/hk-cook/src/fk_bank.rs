@@ -46,6 +46,8 @@ pub enum SpriteKey {
     Floor(String),
     /// Mawlek's keys: sprite, scales, quarter turn and the repr of the tint.
     Part(String, i64, u64, u64, i64, String),
+    /// The Gruz Mother's keys: sprite and the one scale all three objects draw at.
+    Gruz(String, i64, u64),
 }
 
 /// Python's `repr` of a string.
@@ -85,6 +87,7 @@ impl SpriteKey {
         match self {
             SpriteKey::Tk(sid, id, a, b, c) => format!("('{sid}', {id}, {}, {}, {})", pyfloat::repr(f64::from_bits(*a)), pyfloat::repr(f64::from_bits(*b)), pyfloat::repr(f64::from_bits(*c))),
             SpriteKey::Floor(name) => format!("('floor', '{name}')"),
+            SpriteKey::Gruz(sid, id, s) => format!("('{sid}', {id}, {})", pyfloat::repr(f64::from_bits(*s))),
             SpriteKey::Part(sid, id, a, b, turn, tint) => format!("('{sid}', {id}, {}, {}, {turn}, {})", pyfloat::repr(f64::from_bits(*a)), pyfloat::repr(f64::from_bits(*b)), py_str_repr(tint)),
         }
     }

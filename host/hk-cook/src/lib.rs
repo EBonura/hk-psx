@@ -30,6 +30,7 @@ pub mod music;
 pub mod music_report;
 pub mod geo_audio;
 pub mod gpu_census;
+pub mod gruz_art;
 pub mod gruzzer;
 pub mod hatcher;
 pub mod husk_guard;
