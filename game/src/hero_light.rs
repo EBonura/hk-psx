@@ -34,6 +34,22 @@ const LIGHT_PROFILE: [(i32, i32); 9] = [(0, 198), (256, 181), (512, 145), (768, 
 /// routes the light alone cost 0.44% of presented fps on average and at most
 /// 2.95%; with the vignette too, 0.71% and 3.90% (boss-fight).
 pub const LIGHT_RADIUS_Q8: i32 = 896;
+/// How much of the scene's light colour the fan adds, in percent. The fan is an
+/// Add blend of the sprite's whole falloff, which reads far brighter than the
+/// original's Linear Light blend of the same sprite; this brings it down.
+/// `HK_GLOW_PERCENT` overrides it at build time for side-by-side trials.
+#[cfg(feature = "hero-light")]
+const GLOW_PERCENT: u32 = match option_env!("HK_GLOW_PERCENT") { Some(s) => parse_percent(s), None => 60 };
+#[cfg(feature = "hero-light")]
+const fn parse_percent(s: &str) -> u32 {
+    let b = s.as_bytes();
+    let (mut i, mut n) = (0, 0u32);
+    while i < b.len() {
+        n = n * 10 + (b[i] - b'0') as u32;
+        i += 1;
+    }
+    n
+}
 /// The ramp texel row and its grey CLUT in the spare CLUT strip
 /// (hk_cache::residency: rows 480-481 at x 368 are claimed by nothing).
 const RAMP_XY: (u16, u16) = (368, 480);
@@ -106,7 +122,7 @@ pub fn draw_light(scene: usize, x: i32, y: i32, camera: (i32, i32)) -> u32 {
     }
     // Ramp texel 63 is 15/15 of the CLUT's white, which modulates to 248 at
     // a tint of 128: scale the tint so the peak lands on the scene's colour.
-    let tint = light.rgb.map(|c| (c as u32 * 128 / 248).min(255));
+    let tint = light.rgb.map(|c| (c as u32 * 128 / 248 * GLOW_PERCENT / 100).min(255));
     let colour = tint[0] | tint[1] << 8 | tint[2] << 16;
     let clut = Clut::new(RAMP_CLUT_XY.0, RAMP_CLUT_XY.1).uv_clut_word() as u32;
     let tpage = Tpage::new(320, 256, TexDepth::Bit4).uv_tpage_word(1) as u32;
