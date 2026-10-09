@@ -385,3 +385,101 @@ pub fn append_bank(atlas: &mut Atlas, frames: &mut Vec<Frame>, clips: &mut Vec<C
     let floor_rows: Vec<(String, Vec<i64>)> = art.floor_frames.iter().map(|(state, keys)| (state.clone(), keys.iter().map(|k| sprite_index.iter().find(|s| &s.0 == k).unwrap().1 as i64).collect())).collect();
     Ok(BankTables { anchor, sprite_rows, clip_rows, sequence, floor_rows })
 }
+
+
+/// `scenery_rects(base_packs)`: the distinct static textures of a scene's views, as the scene bank packs them.
+pub fn scenery_rects(base_packs: &[Vec<u8>]) -> Result<Vec<(i64, i64)>> {
+    let mut seen: Vec<Vec<u8>> = Vec::new();
+    let mut rects = Vec::new();
+    for raw in base_packs {
+        for (i, blob) in crate::region_delta::textures(raw)?.into_iter().enumerate() {
+            let page = u16::from_le_bytes([raw[40 + i * 16], raw[41 + i * 16]]);
+            if page == 65535 || seen.contains(&blob) {
+                continue;
+            }
+            let (w, h) = (u16::from_le_bytes([blob[0], blob[1]]) as i64, u16::from_le_bytes([blob[2], blob[3]]) as i64);
+            seen.push(blob);
+            rects.push((aligned(w), h));
+        }
+    }
+    Ok(rects)
+}
+
+/// A region of the False Knight's scene, as the cook's report rows describe it.
+pub struct BankRegion {
+    pub chunk_id: i64,
+    pub scene_id: i64,
+    pub edge_sources: Vec<String>,
+}
+
+/// What `cook_scene_bank` hands back for the caller to finish once the bank's clip base is known.
+pub struct BankWriter {
+    anchor: usize,
+    tables: BankTables,
+    objects: Json,
+    bindings: Vec<crate::false_knight_art::Binding>,
+    scene_id: i64,
+    report: Vec<(String, Json)>,
+}
+
+impl BankWriter {
+    pub fn report(&self) -> Json {
+        Json::Obj(self.report.clone())
+    }
+
+    /// `write(clip_base)`: data/false_knight_art.rs, data/false_knight_floor.rs and the art report.
+    pub fn write(&mut self, root: &std::path::Path, clip_base: usize) -> Result<()> {
+        let table = crate::false_knight_art::rust_table(self.anchor as i64 + clip_base as i64, &self.tables.sprite_rows, &self.tables.clip_rows, &self.tables.sequence, &self.tables.floor_rows, &self.objects)?;
+        let floor = crate::false_knight_art::rust_bindings(&self.bindings, self.scene_id);
+        for (name, text) in [("false_knight_art.rs", table), ("false_knight_floor.rs", floor)] {
+            let path = root.join("data").join(name);
+            if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+                std::fs::create_dir_all(root.join("data")).map_err(|e| e.to_string())?;
+                std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+            }
+        }
+        match self.report.iter_mut().find(|f| f.0 == "anchor_clip") {
+            Some(slot) => slot.1 = Json::Int((self.anchor + clip_base) as i64),
+            None => self.report.push(("anchor_clip".into(), Json::Int((self.anchor + clip_base) as i64))),
+        }
+        let dir = root.join(".hkpsx/false-knight");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("art.json"), crate::pyjson::dumps(&Json::Obj(self.report.clone())) + "\n").map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+/// `cook_scene_bank(s, sc, actor, rows, atlas, frames, clips)`: append the whole bank to the scene's shared actor atlas.
+#[allow(clippy::too_many_arguments)]
+pub fn cook_scene_bank(sc: &Scene, source: &Source, fk: &Row, rows: &[BankRegion], root: &std::path::Path, atlas: &mut Atlas, frames: &mut Vec<Frame>, clips: &mut Vec<Clip>, quantize: Quantizer) -> Result<BankWriter> {
+    let art = source_art(sc, source, fk)?;
+    let mut base = Vec::new();
+    for r in rows {
+        let path = root.join(format!("data/regions/region-{:03}/room.hk", r.chunk_id));
+        base.push(std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?);
+    }
+    let scenery = scenery_rects(&base)?;
+    let planned = plan(&art, &scenery, quantize, &PRIORITY, SCENE_PAGE_LIMIT, STREAM_BYTES_LIMIT, "False Knight")?;
+    let names = art_clips();
+    let tables = append_bank(atlas, frames, clips, &art, &planned, &names, "False Knight parts")?;
+    let region_rows: Vec<(i64, Vec<String>)> = rows.iter().map(|r| (r.chunk_id, r.edge_sources.clone())).collect();
+    let bindings = crate::false_knight_art::region_bindings(&region_rows, &art.objects, &|chunk| {
+        let path = root.join(format!("data/regions/region-{chunk:03}/scene.json"));
+        let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let scene = crate::pyjson::parse(&text)?;
+        let Json::Obj(fields) = scene else { return err("scene.json is not an object") };
+        let Some((_, Json::List(draws))) = fields.into_iter().find(|f| f.0 == "draws") else { return err("scene.json lacks draws") };
+        Ok(draws.into_iter().map(|d| if let Json::Obj(f) = d { f.into_iter().find(|x| x.0 == "source").map(|x| if let Json::Str(s) = x.1 { s } else { String::new() }).unwrap_or_default() } else { String::new() }).collect())
+    })?;
+    let mut report: Vec<(String, Json)> = vec![("decisions".into(), Json::List(planned.decisions))];
+    if let Json::Obj(totals) = planned.totals {
+        report.extend(totals);
+    }
+    report.push(("art_clips".into(), Json::List(names.iter().map(|n| Json::Str(n.clone())).collect())));
+    report.push(("anchor_clip_in_bank".into(), Json::Int(tables.anchor as i64)));
+    report.push(("bindings".into(), Json::Obj(bindings.iter().map(|b| (b.name.clone(), Json::Int(b.boxes.as_ref().map_or(b.rows.len(), Vec::len) as i64))).collect())));
+    // Python recorded the hash of host/false_knight_art.py; the identity of this cooker is its own source.
+    report.push(("code_sha256".into(), Json::Str(crate::cook_audio::sha(&[include_bytes!("false_knight_art.rs").as_slice(), include_bytes!("fk_bank.rs").as_slice()].concat()))));
+    let scene_id = rows.first().map(|r| r.scene_id).ok_or("a False Knight bank needs at least one region")?;
+    Ok(BankWriter { anchor: tables.anchor, tables, objects: art.objects, bindings, scene_id, report })
+}
