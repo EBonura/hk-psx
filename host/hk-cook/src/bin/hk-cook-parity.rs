@@ -546,6 +546,83 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "atlas" => {
+            // hk-cook-parity atlas <oracle-atlas.json>: dense_pack, alpha covers, canonical_black and Atlas.pack.
+            use hk_cook::atlas::{canonical_black, Atlas};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_cook::{alpha_cover, packer};
+            let oracle = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let hex = |j: &Json| -> Vec<u8> { let Json::Str(s) = j else { panic!("hex") }; (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect() };
+            let tohex = |b: &[u8]| Json::Str(b.iter().map(|x| format!("{x:02x}")).collect());
+            let mut bad = 0;
+            let mut counts = std::collections::BTreeMap::<&str, usize>::new();
+            for case in list(field(&oracle, "dense_pack")) {
+                let rects: Vec<(i64, i64, usize)> = list(field(&case, "rects")).iter().map(|r| { let v = list(r.clone()); (int(&v[0]), int(&v[1]), int(&v[2]) as usize) }).collect();
+                match (packer::dense_pack(&rects), field(&case, "error")) {
+                    (Ok((pages, placements)), Json::Null) => {
+                        let mine = Json::List(placements.iter().map(|p| Json::List(vec![Json::Int(p.0 as i64), Json::Int(p.1 as i64), Json::Int(p.2), Json::Int(p.3), Json::Int(p.4), Json::Int(p.5)])).collect());
+                        *counts.entry("dense_pack").or_default() += 1;
+                        if int(&field(&case, "pages")) != pages as i64 || mine != field(&case, "placements") { bad += 1; println!("dense_pack differs"); }
+                    }
+                    (Err(_), Json::Str(_)) => *counts.entry("dense_pack refusals").or_default() += 1,
+                    (r, _) => { bad += 1; println!("dense_pack error disagreement (rust ok {})", r.is_ok()); }
+                }
+            }
+            for case in list(field(&oracle, "covers")) {
+                let (w, h) = (int(&field(&case, "w")) as usize, int(&field(&case, "h")) as usize);
+                match (alpha_cover::compute_record(w, h, &hex(&field(&case, "palette")), &hex(&field(&case, "pixels"))), field(&case, "error")) {
+                    (Ok(rec), Json::Null) => { *counts.entry("covers").or_default() += 1; if tohex(&rec) != field(&case, "record") { bad += 1; println!("cover {w}x{h} differs"); } }
+                    (Err(_), Json::Str(_)) => *counts.entry("cover refusals").or_default() += 1,
+                    (r, _) => { bad += 1; println!("cover error disagreement (rust ok {})", r.is_ok()); }
+                }
+            }
+            for case in list(field(&oracle, "canonical_black")) {
+                let (p, x) = canonical_black(&hex(&field(&case, "palette")), &hex(&field(&case, "pixels")));
+                *counts.entry("canonical_black").or_default() += 1;
+                if tohex(&p) != field(&case, "out_palette") || tohex(&x) != field(&case, "out_pixels") { bad += 1; println!("canonical_black differs"); }
+            }
+            for (n, case) in list(field(&oracle, "atlas")).iter().enumerate() {
+                let params = field(case, "params");
+                let max_cluts = match field(&params, "max_cluts") { Json::Int(i) => Some(i as usize), _ => None };
+                let b = |k: &str| matches!(field(&params, k), Json::Bool(true));
+                let mut atlas = Atlas::new(b("deduplicate"), int(&field(&params, "max_pages")) as usize, int(&field(&params, "max_textures")) as usize, b("alpha_covers"), max_cluts);
+                for op in list(field(case, "ops")) {
+                    let r = atlas.add_quantized(int(&field(&op, "w")) as usize, int(&field(&op, "h")) as usize, &hex(&field(&op, "palette")), &hex(&field(&op, "pixels")), matches!(field(&op, "streamed"), Json::Bool(true)), matches!(field(&op, "unique"), Json::Bool(true)));
+                    match (r, field(&op, "index")) {
+                        (Ok(i), Json::Int(want)) if i as i64 == want => {}
+                        (Err(_), Json::Null) => {}
+                        _ => { bad += 1; println!("atlas {n}: add_quantized differs"); }
+                    }
+                }
+                if let Json::Obj(grids) = field(case, "grids") {
+                    for (k, v) in grids { let v = list(v); atlas.grids.insert(k.parse().unwrap(), (int(&v[0]) as usize, int(&v[1]) as usize)); }
+                }
+                let rm = Json::List(atlas.request_map.iter().map(|&i| Json::Int(i as i64)).collect());
+                let qz = Json::List(atlas.quantized.iter().map(|q| Json::List(vec![Json::Int(q.0 as i64), Json::Int(q.1 as i64), tohex(&q.2), tohex(&q.3)])).collect());
+                if rm != field(case, "request_map") || qz != field(case, "quantized") { bad += 1; println!("atlas {n}: canonical textures differ"); }
+                match (atlas.pack(), field(case, "error")) {
+                    (Ok(()), Json::Null) => {
+                        *counts.entry("atlas packs").or_default() += 1;
+                        let entries = Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&v| Json::Int(v)).collect())).collect());
+                        let palettes = Json::List(atlas.palettes.iter().map(|p| tohex(p)).collect());
+                        let sha = |d: &[u8]| { use sha2::{Digest, Sha256}; Json::Str(Sha256::digest(d).iter().map(|x| format!("{x:02x}")).collect()) };
+                        let pages = Json::List(atlas.pages.iter().map(|p| sha(p)).collect());
+                        let ok = entries == field(case, "entries") && palettes == field(case, "palettes") && pages == field(case, "pages") && sha(&atlas.stream) == field(case, "stream")
+                            && int(&field(case, "stream_len")) as usize == atlas.stream.len() && int(&field(case, "cluts")) as usize == atlas.cluts && int(&field(case, "animation_bytes")) as usize == atlas.animation_bytes && int(&field(case, "alpha_cover_bytes")) as usize == atlas.alpha_cover_bytes;
+                        if !ok { bad += 1; println!("atlas {n}: pack differs"); }
+                    }
+                    (Err(e), Json::Str(want)) => { *counts.entry("atlas refusals").or_default() += 1; if e != want { bad += 1; println!("atlas {n}: refusal {e:?}, python {want:?}"); } }
+                    (r, want) => { bad += 1; println!("atlas {n}: rust ok {}, python error {want:?}", r.is_ok()); }
+                }
+            }
+            println!("checked {counts:?}, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
