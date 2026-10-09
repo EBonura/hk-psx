@@ -216,6 +216,12 @@ pub struct Tool {
 }
 
 impl Tool {
+    /// A scratch file of this thread's own, so conversions can run in parallel.
+    fn tmp(&self, name: &str) -> PathBuf {
+        let id: String = format!("{:?}", std::thread::current().id()).chars().filter(char::is_ascii_alphanumeric).collect();
+        self.scratch.join(format!("{id}-{name}"))
+    }
+
     pub fn build(root: &Path, scratch_name: &str) -> Result<Tool> {
         let crate_dir = root.join("tools/psx-audio-cook");
         let target = crate_dir.join("target");
@@ -234,7 +240,7 @@ impl Tool {
         let mut out = if pcm.is_empty() {
             Vec::new()
         } else {
-            let (input, output) = (self.scratch.join("in.wav"), self.scratch.join("out.adpcm"));
+            let (input, output) = (self.tmp("in.wav"), self.tmp("out.adpcm"));
             std::fs::write(&input, mono_wav(NOMINAL_RATE, pcm)).map_err(|x| x.to_string())?;
             run(
                 Command::new(&self.binary)
@@ -265,7 +271,7 @@ impl Tool {
         if mode == "whole" && !pcm.len().is_multiple_of(28) {
             return err("a ring loop must be whole ADPCM blocks");
         }
-        let (input, output) = (self.scratch.join("in.wav"), self.scratch.join("out.adpcm"));
+        let (input, output) = (self.tmp("in.wav"), self.tmp("out.adpcm"));
         std::fs::write(&input, mono_wav(NOMINAL_RATE, pcm)).map_err(|x| x.to_string())?;
         run(
             Command::new(&self.binary)
@@ -285,7 +291,7 @@ impl Tool {
     /// spu_cook.py `resample`: mono 16-bit PCM at `rate` through the SDK's
     /// shared resampler.
     pub fn resample(&self, wav: &[u8], rate: i64) -> Result<Vec<i16>> {
-        let (input, output) = (self.scratch.join("resample-in.wav"), self.scratch.join("resample-out.wav"));
+        let (input, output) = (self.tmp("resample-in.wav"), self.tmp("resample-out.wav"));
         std::fs::write(&input, wav).map_err(|x| x.to_string())?;
         run(Command::new(&self.binary).arg("resample").arg(&input).arg(&output).args(["--rate", &rate.to_string()]), None)?;
         let out = read_wav(&std::fs::read(&output).map_err(|x| x.to_string())?)?;
@@ -297,7 +303,7 @@ impl Tool {
 
     /// The SDK rate allocator over a request file's text (`plan`).
     pub fn plan(&self, request: &str) -> Result<String> {
-        let path = self.scratch.join("plan.txt");
+        let path = self.tmp("plan.txt");
         std::fs::write(&path, request).map_err(|x| x.to_string())?;
         String::from_utf8(run(Command::new(&self.binary).arg("plan").arg(&path), None)?).map_err(|x| x.to_string())
     }
