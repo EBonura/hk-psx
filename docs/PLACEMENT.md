@@ -32,11 +32,12 @@ Every enemy the original has active in a scene is `ok`, `snap`, `unadmitted` or 
 Cooked actors the original does not have active are `extra`: refused by the cook (never spawned), a boss
 placed dormant for its arena, or a difference in play (state-gated in the original, or unknown).
 
-Each placement the port spawns is also held to contract checks, and each source scene to two more:
+Each placement the port spawns is also held to contract checks, and each source scene to three more:
 
 | check | what |
 |---|---|
 | bank | the packed bank carries an admitted object at the cooked position |
+| hp | the cooked hit points are the original's (read after its own start-up scaling) |
 | facing | for families that read the transform mirror, the bank's direction is the source scale's sign |
 | scale | the cooked sprite scale is the source world scale times the tk2dSprite's own |
 | persistence | an enemy whose `PersistentBoolItem` saves is in `data/actor_persistence.rs` |
