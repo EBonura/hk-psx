@@ -34,6 +34,9 @@ const ASSET_SCRIPTS: &[&str] = &[
     // scratch: it reads data/lifeblood.rs and data/great_door.rs to check the
     // union in one catalogue slot rather than its own rows alone.
     "battle_gates.py",
+    // Which killed enemies the source keeps dead (data/actor_persistence.rs).
+    // Reads the source scenes and the region report.
+    "rust:actor-persistence",
     // The Blockers' Terrain Block edges, after the gates: its scratch budget
     // check adds the gates' rows in the same catalogue slot.
     "blocker_terrain.py",
@@ -1045,6 +1048,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
     println!("+ hk-cook {tool}");
     let start = std::time::Instant::now();
     match tool {
+        "actor-persistence" => hk_cook::actor_persistence::main(root, None)?,
         "props" => hk_cook::props::main(root, None)?,
         "break-effects" => hk_cook::break_effects::main(root, None)?,
         "scene-sfx" => hk_cook::scene_sfx::main(root, None)?,
