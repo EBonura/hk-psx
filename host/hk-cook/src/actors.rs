@@ -10,6 +10,7 @@
 
 use crate::aspid;
 use crate::baldur;
+use crate::vengefly;
 use crate::climber;
 use crate::false_knight;
 use crate::common::{component_records, err, get, path_id, Result};
@@ -75,6 +76,21 @@ pub fn scan(sc: &Scene, source: &Source) -> Result<Vec<Row>> {
         if control.is_none() && name.starts_with("Moss Walker") && records.iter().any(|r| r.1 == "NonBouncer") {
             if let Ok(found) = climber::recognize_moss_walker(sc, source, gid, &o.tree) {
                 control = Some(("MossWalker".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Buzzer") && records.iter().any(|r| r.1 == "LineOfSightDetector") {
+            if let Ok(found) = vengefly::recognize(sc, source, gid) {
+                control = Some(("Vengefly".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Acid Flyer") && records.iter().any(|r| r.1 == "BigBouncer") {
+            if let Ok(found) = vengefly::recognize_acid_flyer(sc, source, gid, &o.tree) {
+                control = Some(("AcidFlyer".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Mosquito") && records.iter().any(|r| r.1 == "LineOfSightDetector") {
+            if let Ok(found) = vengefly::recognize_mosquito(sc, source, gid, &o.tree) {
+                control = Some(("Mosquito".to_string(), found));
             }
         }
         // The Runner gate comes after the named gates in actor_sources; the
