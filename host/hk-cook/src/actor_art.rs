@@ -22,6 +22,8 @@ pub struct Frame {
     pub texture: usize,
     pub box_: [f64; 4],
     pub sprite: String,
+    /// The Q16 box, for the frame records `false_knight_art` writes beside the float one.
+    pub box_q16: Option<[i64; 4]>,
     /// The tk2d frame record (`{}` for a frame with none).
     pub event: Value,
 }
@@ -244,7 +246,7 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
                 let items: Vec<(Image, f64, f64)> = pending.iter().map(|p| (p.0.clone(), p.1, p.2)).collect();
                 let textures_out = bank.atlas.add_frames_shared(&items, quantize)?;
                 for (texture, p) in textures_out.iter().zip(&pending) {
-                    bank.frames.push(Frame { texture: *texture, box_: p.3, sprite: p.4.clone(), event: p.5.clone() });
+                    bank.frames.push(Frame { texture: *texture, box_: p.3, sprite: p.4.clone(), box_q16: None, event: p.5.clone() });
                 }
                 clip_cache.insert(clip_key.clone(), bank.clips.len());
                 bank.clips.push(Clip { name: format!("{library_sid}/{name}"), start, count: get(clip, "frames")?.list().map_or(0, <[Value]>::len), fps: num(get(clip, "fps")?)?, wrap: guest_wrap(clip)?, loop_start: clip.get("loopStart").and_then(Value::int).unwrap_or(0) });
@@ -274,7 +276,7 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
                         cache.insert(key.clone(), (texture, b));
                     }
                     let (texture, b) = cache[&key];
-                    bank.frames.push(Frame { texture, box_: b, sprite: format!("{sid}:{index}"), event: frame.clone() });
+                    bank.frames.push(Frame { texture, box_: b, sprite: format!("{sid}:{index}"), box_q16: None, event: frame.clone() });
                 }
                 clip_cache.insert(clip_key.clone(), bank.clips.len());
                 let wrap = guest_wrap_of(source_clip, frame_list.len())?;
@@ -304,7 +306,7 @@ pub fn append_barrel_art(source: &Source, actors: &mut [ArtActor], bank: &mut Ar
         actor.set_clip("barrel_clip", bank.clips.len() as i64);
         bank.clips.push(Clip { name: format!("{}/{BARREL_CLIP}", jstr(barrel, "source")?), start: bank.frames.len(), count: 1, fps: 1.0, wrap: 2, loop_start: 0 });
         let texture = bank.atlas.add(&image, (b[2] - b[0]) * scale, (b[3] - b[1]) * scale, true, quantize)?;
-        bank.frames.push(Frame { texture, box_: b, sprite, event: Value::Map(Vec::new()) });
+        bank.frames.push(Frame { texture, box_: b, sprite, box_q16: None, event: Value::Map(Vec::new()) });
     }
     Ok(())
 }

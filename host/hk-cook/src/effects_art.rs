@@ -789,7 +789,7 @@ impl ClipCooker {
                     self.images.insert(image_key.clone(), (texture, b));
                 }
                 let (texture, b) = self.images[&image_key];
-                bank.frames.push(Frame { texture, box_: b, sprite: format!("{sid}:{index}"), event: frame.clone() });
+                bank.frames.push(Frame { texture, box_: b, sprite: format!("{sid}:{index}"), box_q16: None, event: frame.clone() });
             }
             self.cooked.insert(key.clone(), bank.clips.len());
             bank.clips.push(Clip { name: format!("{library_sid}/{name}"), start, count: get(clip, "frames")?.list().map_or(0, <[Value]>::len), fps: flt(clip, "fps")?, wrap: guest_wrap(clip)?, loop_start: loop_start(clip) });

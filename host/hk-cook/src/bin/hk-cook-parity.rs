@@ -901,6 +901,82 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "fkbank" => {
+            // hk-cook-parity fkbank <source dir> <oracle-fkbank.json> <regions.json>: the False Knight's
+            // source_art, plan and append_bank against host/false_knight_art.py.
+            use hk_cook::atlas::{Atlas, Quantized};
+            use hk_cook::fk_bank::{append_bank, art_clips, plan, source_art, PRIORITY};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            use sha2::{Digest, Sha256};
+            let source = lazy_source();
+            let oracle = parse(&std::fs::read_to_string(&args[3]).unwrap()).unwrap();
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let Json::List(scenes) = field(&regions, "scenes") else { panic!("scenes") };
+            let catalogue: Vec<(String, [f64; 4], String)> = scenes.iter().map(|s| {
+                let (Json::Str(file), Json::Str(name)) = (field(s, "file"), field(s, "scene_name")) else { panic!("scene") };
+                let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                let Json::List(b) = field(s, "runtime_bounds") else { panic!("bounds") };
+                (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])], name)
+            }).collect();
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let sha = |d: &[u8]| Json::Str(hexs(&Sha256::digest(d)));
+            let sc = Scene::new(&source, "level46").unwrap();
+            let rows = hk_cook::actors::scan(&sc, &source, &catalogue).unwrap();
+            let fk = rows.iter().find(|r| r.control.as_ref().is_some_and(|c| c.0 == "FalseKnight")).expect("False Knight");
+            let art = source_art(&sc, &source, fk).unwrap();
+            let mut bad = 0;
+            let mine_sprites = Json::List(art.sprites.iter().map(|(k, s)| Json::List(vec![Json::Str(k.repr()), Json::Int(s.w as i64), Json::Int(s.h as i64), Json::List(s.box_.iter().map(|&v| Json::Float(v)).collect()), sha(&s.image.data)])).collect());
+            if mine_sprites != field(&oracle, "sprites") { bad += 1; println!("source sprites differ"); }
+            let mine_clips = Json::Obj(art.clips.iter().map(|(n, c)| (n.clone(), Json::Obj(vec![("keys".into(), Json::List(c.keys.iter().map(|k| Json::Str(k.repr())).collect())), ("fps".into(), Json::Float(c.record.get("fps").and_then(|v| v.float()).unwrap()))]))).collect());
+            if mine_clips != field(&oracle, "clips") { bad += 1; println!("art clips differ"); }
+            let mine_floor = Json::Obj(art.floor_frames.iter().map(|(n, ks)| (n.clone(), Json::List(ks.iter().map(|k| Json::Str(k.repr())).collect()))).collect());
+            if mine_floor != field(&oracle, "floor_frames") { bad += 1; println!("floor frames differ"); }
+            if art.objects != field(&oracle, "objects") { bad += 1; println!("objects differ"); }
+            let quantize = |im: &hk_pil::Image, w: usize, h: usize| -> Result<Quantized, String> {
+                let fallback = |_: &hk_pil::Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
+                hk_cook::quantize::quantize(im, w, h, Some(&fallback))
+            };
+            let names = art_clips();
+            let mut ok_variants = 0;
+            for v in list(field(&oracle, "variants")) {
+                let Json::Str(label) = field(&v, "label") else { panic!("label") };
+                let scenery: Vec<(i64, i64)> = list(field(&v, "scenery")).iter().map(|r| { let l = list(r.clone()); (int(&l[0]), int(&l[1])) }).collect();
+                let limit = int(&field(&v, "stream_limit"));
+                let mut atlas = Atlas::new(true, 40, 640, true, None);
+                let (mut frames, mut clips) = (Vec::new(), Vec::new());
+                let result = plan(&art, &scenery, &quantize, &PRIORITY, 18, limit, "False Knight").and_then(|p| append_bank(&mut atlas, &mut frames, &mut clips, &art, &p, &names, "False Knight parts").map(|t| (p, t))).and_then(|r| atlas.pack().map(|_| r));
+                match (result, field(&v, "error")) {
+                    (Ok((p, t)), Json::Null) => {
+                        ok_variants += 1;
+                        let cut = Json::List(p.cut.iter().map(|(k, c)| Json::List(vec![Json::Str(k.repr()), Json::Bool(c.0), Json::List(c.1.iter().map(|r| Json::List(r.iter().map(|&x| Json::Int(x)).collect())).collect())])).collect());
+                        let rows3 = Json::List(t.sprite_rows.iter().map(|r| Json::List(vec![Json::Int(r.0), Json::Int(r.1), Json::Int(r.2 as i64)])).collect());
+                        let crow = Json::List(t.clip_rows.iter().map(|r| Json::List(vec![Json::Int(r.0), Json::Int(r.1), Json::Int(r.2), Json::Int(r.3), Json::Int(r.4), Json::Str(r.5.clone())])).collect());
+                        let seq = Json::List(t.sequence.iter().map(|&x| Json::Int(x)).collect());
+                        let floor = Json::List(t.floor_rows.iter().map(|(a, b)| Json::List(vec![Json::Str(a.clone()), Json::List(b.iter().map(|&x| Json::Int(x)).collect())])).collect());
+                        let fr = Json::List(frames.iter().map(|f: &hk_cook::actor_art::Frame| Json::Obj(vec![("texture".into(), Json::Int(f.texture as i64)), ("box".into(), Json::List(f.box_.iter().map(|&x| Json::Float(x)).collect())), ("box_q16".into(), Json::List(f.box_q16.unwrap().iter().map(|&x| Json::Int(x)).collect())), ("sprite".into(), Json::Str(f.sprite.clone()))])).collect());
+                        let cl = Json::List(clips.iter().map(|c: &hk_cook::actor_art::Clip| Json::Obj(vec![("name".into(), Json::Str(c.name.clone())), ("start".into(), Json::Int(c.start as i64)), ("count".into(), Json::Int(c.count as i64)), ("fps".into(), Json::Float(c.fps)), ("wrap".into(), Json::Int(c.wrap)), ("loopStart".into(), Json::Int(c.loop_start))])).collect());
+                        let pack = Json::Obj(vec![
+                            ("entries".into(), Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&x| Json::Int(x)).collect())).collect())),
+                            ("palettes".into(), Json::List(atlas.palettes.iter().map(|x| Json::Str(hexs(x))).collect())),
+                            ("pages".into(), Json::List(atlas.pages.iter().map(|x| sha(x)).collect())),
+                            ("stream".into(), sha(&atlas.stream)),
+                        ]);
+                        let good = p.decisions == list(field(&v, "decisions")) && p.totals == field(&v, "totals") && cut == field(&v, "cut") && int(&field(&v, "anchor")) as usize == t.anchor && rows3 == field(&v, "sprite_rows") && crow == field(&v, "clip_rows") && seq == field(&v, "sequence") && floor == field(&v, "floor_rows") && fr == field(&v, "frames") && cl == field(&v, "clips") && pack == field(&v, "pack");
+                        if !good { bad += 1; println!("variant {label}: bank differs (decisions {} totals {} cut {} rows {} clips {} seq {} floor {} frames {} clips {} pack {})", p.decisions == list(field(&v, "decisions")), p.totals == field(&v, "totals"), cut == field(&v, "cut"), rows3 == field(&v, "sprite_rows"), crow == field(&v, "clip_rows"), seq == field(&v, "sequence"), floor == field(&v, "floor_rows"), fr == field(&v, "frames"), cl == field(&v, "clips"), pack == field(&v, "pack")); }
+                    }
+                    (Err(e), Json::Str(want)) => { if e != want { bad += 1; println!("variant {label}: refusal {e:?}, python {want:?}"); } }
+                    (r, want) => { bad += 1; println!("variant {label}: rust {:?}, python {want:?}", r.map(|_| "ok")); }
+                }
+            }
+            println!("checked source art and {ok_variants} cooked banks (plus refusals), {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
