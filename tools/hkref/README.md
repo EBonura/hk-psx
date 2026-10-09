@@ -94,7 +94,7 @@ ticks depending on where a press falls against its fixed step.
 
 ## Limits
 
-* The port exports little state; a `HK_TRACE` block in the guest would widen it.
+* The port exports little state; the guest's `HK_TRACE` block (game/src/trace.rs, built with `HK_GUEST_FEATURES=trace`) would widen it.
 * Random AI choices differ by seed: compare against a spread (`sweep`), not one run.
   The driver seeds `UnityEngine.Random` (`HK_REFERENCE_SEED`) so a run repeats.
 * Open-loop tapes diverge after the first hit.
