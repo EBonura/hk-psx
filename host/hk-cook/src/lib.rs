@@ -3,6 +3,7 @@
 
 pub mod common;
 pub mod cook_audio;
+pub mod ambience;
 pub mod break_effects;
 pub mod cook;
 pub mod coverage;
