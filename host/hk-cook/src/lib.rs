@@ -11,6 +11,7 @@ pub mod baldur;
 pub mod break_effects;
 pub mod cook;
 pub mod coverage;
+pub mod false_knight;
 pub mod fmod;
 pub mod focus_audio;
 pub mod music;
