@@ -923,7 +923,7 @@ fn secret_relax(ps: &Value, matrix: &M4, emit: Option<i64>) -> Result<(Value, M4
         let angle = if angle_v.is_map() { f(&angle_v, "value")? } else { num(&angle_v)? };
         let start = axis[1].atan2(axis[0]).to_degrees() - angle;
         let (c, s) = (start.to_radians().cos(), start.to_radians().sin());
-        let sx = matrix[0][0].hypot(matrix[1][0]);
+        let sx = crate::pyfloat::hypot(matrix[0][0], matrix[1][0]);
         let sx = if sx == 0.0 { 1.0 } else { sx };
         m = [
             [c * sx, -s * sx, 0.0, matrix[0][3]],

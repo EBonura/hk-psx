@@ -44,10 +44,34 @@ pub fn art_clips() -> Vec<String> {
 pub enum SpriteKey {
     Tk(String, i64, u64, u64, u64),
     Floor(String),
+    /// Mawlek's keys: sprite, scales, quarter turn and the repr of the tint.
+    Part(String, i64, u64, u64, i64, String),
+}
+
+/// Python's `repr` of a string.
+pub fn py_str_repr(s: &str) -> String {
+    let quote = if s.contains('\'') && !s.contains('"') { '"' } else { '\'' };
+    let mut out = String::new();
+    out.push(quote);
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
 }
 
 /// Python's `round(v, 6)`: the double nearest the six-decimal rendering of the exact value.
-fn round6(v: f64) -> f64 {
+pub fn round6(v: f64) -> f64 {
     format!("{v:.6}").parse().unwrap_or(v)
 }
 
@@ -61,6 +85,7 @@ impl SpriteKey {
         match self {
             SpriteKey::Tk(sid, id, a, b, c) => format!("('{sid}', {id}, {}, {}, {})", pyfloat::repr(f64::from_bits(*a)), pyfloat::repr(f64::from_bits(*b)), pyfloat::repr(f64::from_bits(*c))),
             SpriteKey::Floor(name) => format!("('floor', '{name}')"),
+            SpriteKey::Part(sid, id, a, b, turn, tint) => format!("('{sid}', {id}, {}, {}, {turn}, {})", pyfloat::repr(f64::from_bits(*a)), pyfloat::repr(f64::from_bits(*b)), py_str_repr(tint)),
         }
     }
 }
