@@ -105,7 +105,7 @@ fn main() {
                     (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])])
                 })
                 .collect();
-            let ported = ["ZombieSwipeWalker", "Baldur", "Aspid", "FalseKnight", "Climber", "MossWalker", "Vengefly", "AcidFlyer", "Mosquito", "Gruzzer", "GruzzerReserve", "GruzMother", "WalkLeftRight", "EggSac", "Mawlek", "ZombieShield", "Pigeon"];
+            let ported = ["ZombieSwipeWalker", "Baldur", "Aspid", "FalseKnight", "Climber", "MossWalker", "Vengefly", "AcidFlyer", "Mosquito", "Gruzzer", "GruzzerReserve", "GruzMother", "WalkLeftRight", "EggSac", "Mawlek", "ZombieShield", "Pigeon", "Blocker"];
             let (mut checked, mut bad) = (std::collections::BTreeMap::<String, usize>::new(), 0usize);
             for s in &scenes {
                 let (Some(Json::Str(name)), Some(Json::Str(file))) = (get(s, "scene_name"), get(s, "file")) else { panic!("scene row") };
