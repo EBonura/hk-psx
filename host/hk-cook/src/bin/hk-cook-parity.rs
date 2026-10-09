@@ -286,6 +286,37 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "vitals" => {
+            // hk-cook-parity vitals <source dir> <oracle-vitals.json>: the CIL-read vital values and
+            // the parameter blocks generated from them, against actors.py.
+            use hk_cook::pyjson::{parse, Json};
+            let source = lazy_source();
+            let oracle = parse(&std::fs::read_to_string(&args[3]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let Json::Obj(consts) = field(&oracle, "constants") else { panic!("constants") };
+            let constants: Vec<(String, f64)> = consts.into_iter().map(|(k, v)| (k, match v { Json::Int(i) => i as f64, Json::Float(f) => f, _ => panic!("constant") })).collect();
+            let mut bad = 0;
+            let values = hk_cook::vitals::source_vital_values(&source, &constants).unwrap();
+            if values != field(&oracle, "values") {
+                bad += 1;
+                println!("vital values differ");
+            }
+            if Json::Str(hk_cook::vitals::generated_vital_params(&values).unwrap()) != field(&oracle, "vital") {
+                bad += 1;
+                println!("vital params differ");
+            }
+            let Json::Obj(nails) = field(&oracle, "nail") else { panic!("nail") };
+            for (dt, text) in nails {
+                if Json::Str(hk_cook::vitals::generated_nail_response_params(&constants, dt.parse().unwrap()).unwrap()) != text {
+                    bad += 1;
+                    println!("nail params differ at dt {dt}");
+                }
+            }
+            println!("checked vitals, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
