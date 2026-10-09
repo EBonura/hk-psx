@@ -484,8 +484,10 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("journey-false-knight", "HK_FK_TRIGGERED", 1), ("journey-false-knight", "HK_FK_DEATHS", 1),
     ("journey-false-knight", "HK_FK_KILL_CHEATS", 0), ("journey-false-knight", "HK_FK_STAGGERS", 3),
     ("journey-false-knight", "HK_FK_CONVERSIONS", 3), ("journey-false-knight", "HK_FK_ARENA", 4),
-    ("journey-false-knight", "HK_FK_ACTIVATED", 1), ("journey-false-knight", "HK_FK_BARRELS", 24),
-    ("journey-false-knight", "HK_FK_BARRELS_BROKEN", 24),
+    ("journey-false-knight", "HK_FK_ACTIVATED", 1), ("journey-false-knight", "HK_FK_BARRELS", 26),
+    // 26 barrels: what the rage phases of the boss_sim fight (BOSS_SIM_RELOAD=205: the arena
+    // trigger reloads the region and reseeds the 50 Hz phase) drop.
+    ("journey-false-knight", "HK_FK_BARRELS_BROKEN", 26),
     ("journey-false-knight", "HK_ARENA_GATE_CLOSES", 1), ("journey-false-knight", "HK_ARENA_GATE_OPENS", 1),
     ("journey-false-knight", "HK_DEATHS", 0), ("journey-false-knight", "HK_SAVE_WRITES", 1),
     ("journey-false-knight", "HK_SAVE_ERRORS", 0), ("journey-false-knight", "HK_WORLD_ITEMS", 10),
