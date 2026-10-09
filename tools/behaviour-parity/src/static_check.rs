@@ -25,7 +25,7 @@ pub fn run(names: &BTreeMap<usize, String>) {
             }
         }
     }
-    let mut rows: BTreeMap<String, [u32; 7]> = BTreeMap::new();
+    let mut rows: BTreeMap<String, [u32; 8]> = BTreeMap::new();
     let mut fails = Vec::new();
     for scene in names.keys() {
         let mut seen = Vec::new();
@@ -36,7 +36,7 @@ pub fn run(names: &BTreeMap<usize, String>) {
                 }
                 seen.push(p.source_id);
                 let Some(src) = source.get(&(*scene, p.source_id)) else {
-                    rows.entry(family_of(spec)).or_default()[6] += 1;
+                    rows.entry(family_of(spec)).or_default()[7] += 1;
                     continue;
                 };
                 let fam = family_of(spec);
@@ -58,12 +58,26 @@ pub fn run(names: &BTreeMap<usize, String>) {
                 };
                 let flags_ok = (hm["invincible"].as_i64().unwrap_or(0) != 0) == spec.health.invincible
                     && (hm["damageOverride"].as_i64().unwrap_or(0) != 0) == spec.health.damage_override;
-                for (i, ok) in [hp_ok, dmg_ok, rec_speed_ok, rec_ticks_ok, flags_ok].into_iter().enumerate() {
+                // The body box: the source's first collider, relative to the actor, either way round
+                // (a mirrored placement flips x), to within two Q16 units.
+                let bounds_ok = match (src["colliders"][0]["bounds"].as_array(), src["position"].as_array()) {
+                    (Some(b), Some(pos)) => {
+                        let v: Vec<f64> = b.iter().map(|n| n.as_f64().unwrap_or(f64::NAN)).collect();
+                        let (px, py) = (pos[0].as_f64().unwrap_or(f64::NAN), pos[1].as_f64().unwrap_or(f64::NAN));
+                        let rel = [v[0] - px, v[1] - py, v[2] - px, v[3] - py];
+                        let got = spec.bounds.map(|n| n as f64 / 65536.0);
+                        let near = |a: [f64; 4], b: [f64; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 2.5 / 65536.0 + 1e-4);
+                        near(got, rel) || near(got, [-rel[2], rel[1], -rel[0], rel[3]])
+                            || near(got, [rel[0], -rel[3], rel[2], -rel[1]]) || near(got, [-rel[3], rel[0], -rel[1], rel[2]])
+                    }
+                    _ => true,
+                };
+                for (i, ok) in [hp_ok, dmg_ok, rec_speed_ok, rec_ticks_ok, flags_ok, bounds_ok].into_iter().enumerate() {
                     row[1 + i] += ok as u32;
                 }
-                if !(hp_ok && dmg_ok && rec_speed_ok && rec_ticks_ok && flags_ok) {
+                if !(hp_ok && dmg_ok && rec_speed_ok && rec_ticks_ok && flags_ok && bounds_ok) {
                     fails.push(format!(
-                        "{} {} {fam}: hp {}/{} dmg {dmg}/{} recoil {rs:?}/{} ticks {rd:?}/{} inv {}/{} override {}/{}",
+                        "{} {} {fam}: hp {}/{} dmg {dmg}/{} recoil {rs:?}/{} ticks {rd:?}/{} inv {}/{} override {}/{} bounds {bounds_ok}",
                         names[scene], p.source_id, hm["hp"], spec.health.health, spec.health.contact_damage, spec.recoil_speed as f64 / 65536.0,
                         spec.recoil_ticks, hm["invincible"], spec.health.invincible, hm["damageOverride"], spec.health.damage_override
                     ));
@@ -71,9 +85,9 @@ pub fn run(names: &BTreeMap<usize, String>) {
             }
         }
     }
-    println!("family         types   hp  dmg  rec-v rec-t flags  (no source record)");
+    println!("family         types   hp  dmg  rec-v rec-t flags bounds  (no source record)");
     for (f, r) in &rows {
-        println!("{f:<14} {:>4} {:>5} {:>4} {:>6} {:>5} {:>5}  {}", r[0], r[1], r[2], r[3], r[4], r[5], r[6]);
+        println!("{f:<14} {:>4} {:>5} {:>4} {:>6} {:>5} {:>5} {:>6}  {}", r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
     }
     for f in &fails {
         println!("FAIL {f}");

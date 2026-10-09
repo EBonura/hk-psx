@@ -104,7 +104,7 @@ pub fn run_port_pokes(scene: usize, trace: &SceneTrace, targets: &[(u32, Vec<i64
     let mut out: Vec<(u32, Vec<Tick>)> = Vec::new();
     for (source_id, hit_frames, sync_at) in targets {
         // The region the actor starts in, as the idle comparison uses.
-        let Some(here) = regions.iter().find(|r| r.actors.iter().any(|(p, _)| p.source_id == *source_id) && r.actors.iter().any(|(p, _)| {
+        let Some(mut here) = regions.iter().find(|r| r.actors.iter().any(|(p, _)| p.source_id == *source_id) && r.actors.iter().any(|(p, _)| {
             p.source_id == *source_id && world::contains(r.bounds, p.x, p.y)
         })) else { continue };
         let mut w = enemies::EnemyWorld::new();
@@ -131,19 +131,29 @@ pub fn run_port_pokes(scene: usize, trace: &SceneTrace, targets: &[(u32, Vec<i64
             // The tick a strike lands on: the Knight beside the enemy, facing right, swinging.
             let hit_now = hit_frames.iter().any(|h| h - trace.origin == t as i64);
             let mut nail = Nail::new();
+            let mut strike = None;
             if hit_now {
+                // The original struck from the left with the Knight where he stood (frozen at the
+                // entrance), so he stays there and the nail reaches the actor's body wherever it is.
                 if let Some(d) = w.debug_actor(scene, *source_id) {
-                    player.x = d.x - 5 * ONE / 4;
-                    player.y = d.y;
                     player.facing = 1;
                     nail.active = true;
                     nail.age = 0;
+                    strike = Some([d.x - 2 * ONE, d.y - 2 * ONE, d.x + 2 * ONE, d.y + 2 * ONE]);
                 }
             }
-            step_with(&mut w, here, &regions, &mut player, &mut vitals, camera_at(t), &nail, hit_now);
-            ticks.push(match w.debug_actor(scene, *source_id) {
-                Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing },
-                None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0 },
+            step_with(&mut w, here, &regions, &mut player, &mut vitals, camera_at(t), &nail, strike);
+            let d = w.debug_actor(scene, *source_id);
+            if let Some(d) = d {
+                if !world::contains(here.bounds, d.x, d.y) {
+                    if let Some(next) = regions.iter().find(|r| world::contains(r.bounds, d.x, d.y)) {
+                        here = next;
+                    }
+                }
+            }
+            ticks.push(match d {
+                Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase },
+                None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2] },
             });
         }
         out.push((*source_id, ticks));
