@@ -2,10 +2,17 @@
 //! byte-identical output.
 
 pub mod common;
+pub mod cook_audio;
+pub mod ambience;
+pub mod area_music;
 pub mod break_effects;
 pub mod cook;
 pub mod coverage;
 pub mod fmod;
+pub mod focus_audio;
+pub mod music;
+pub mod music_report;
+pub mod geo_audio;
 pub mod gpu_census;
 pub mod materials;
 pub mod opaque_groups;
@@ -17,6 +24,7 @@ pub mod pyfloat;
 pub mod pyjson;
 pub mod scene_certificates;
 pub mod scene_sfx;
+pub mod spu;
 pub mod xa_music;
 
 /// Recorded where a Python cooker recorded the sha256 of its own source:

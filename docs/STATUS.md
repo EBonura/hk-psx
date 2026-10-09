@@ -444,7 +444,7 @@ The108,208-byte bank loads once through startup scene scratch into SPU; Focus
 adds no playback-time CD reads or persistent main-RAM sample bank. Two alternating
 heal voices preserve overlapping tails. SFX volume applies to active voices.
 Cancellation/damage stop charging; the existing Focus lifecycle controls fades.
-Source FSMs, clip IDs and assembly hashes are checked by `host/focus_audio.py`.
+Source FSMs, clip IDs and assembly hashes are checked by `host/hk-cook/src/focus_audio.rs`.
 Original mixer DSP and full pause-audio parity remain unverified.
 
 The Great Door retains its13 authored hits. The instant blackout and two-frame

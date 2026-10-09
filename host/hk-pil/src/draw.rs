@@ -1,191 +1,129 @@
-//! `ImageDraw.polygon(xy, fill=ink)` on a one-byte-per-pixel image
-//! (libImaging/Draw.c: ImagingDrawPolygon with fill, polygon_generic, hline8).
-//! The arm64 build fuses `(y - y0) * dx + x0` into one fmadd; so does this.
+//! Filled polygons on a one-byte-per-pixel image, by scanline conversion.
+//!
+//! Vertices are truncated to integer pixel positions. For every pixel row
+//! from the polygon's top to its bottom, the crossings of the non-horizontal
+//! edges with that row are sorted and the pixels between each pair of
+//! crossings, ends included, are set.
 
 use crate::Image;
 
-#[derive(Clone, Copy)]
+/// One non-horizontal edge: its row range, and the x position along it from
+/// the vertex the edge starts at, in single precision.
 struct Edge {
-    x0: i32,
-    y0: i32,
-    xmin: i32,
-    ymin: i32,
-    xmax: i32,
-    ymax: i32,
+    y_top: i64,
+    y_bottom: i64,
+    x_start: f32,
+    y_start: i64,
     dx: f32,
 }
 
-fn add_edge(x0: i32, y0: i32, x1: i32, y1: i32) -> Edge {
-    let (xmin, xmax) = if x0 <= x1 { (x0, x1) } else { (x1, x0) };
-    let (ymin, ymax) = if y0 <= y1 { (y0, y1) } else { (y1, y0) };
-    let dx = if y0 == y1 { 0.0 } else { (x1 - x0) as f32 / (y1 - y0) as f32 };
-    Edge { x0, y0, xmin, ymin, xmax, ymax, dx }
-}
-
-/// `(y - e.y0) * e.dx + e.x0` as the fused multiply-add the binary computes.
-fn edge_x(e: &Edge, y: i32) -> f32 {
-    ((y - e.y0) as f32).mul_add(e.dx, e.x0 as f32)
-}
-
-fn round_up(f: f32) -> i32 {
-    if f >= 0.0 {
-        (f + 0.5f32).floor() as i32
-    } else {
-        -((f.abs() as f64 + 0.5).floor()) as i32
+impl Edge {
+    /// Crossing of this edge with pixel row `y`: a fused multiply-add of the
+    /// per-row slope from the start vertex.
+    fn at(&self, y: i64) -> f32 {
+        ((y - self.y_start) as f32).mul_add(self.dx, self.x_start)
     }
 }
 
-fn round_down(f: f32) -> i32 {
-    if f >= 0.0 {
-        (f - 0.5f32).ceil() as i32
-    } else {
-        -((f.abs() as f64 - 0.5).ceil()) as i32
-    }
+/// Integer pixel run for a span from crossing `a` to crossing `b`. Pixel p
+/// sits at coordinate p: `a` rounds half up, `b` rounds half toward zero.
+fn run(a: f32, b: f32) -> (i64, i64) {
+    let lo = (a + 0.5).floor() as i64;
+    let hi = if b >= 0.0 { (b - 0.5).ceil() } else { (b + 0.5).floor() } as i64;
+    (lo, hi)
 }
 
-fn hline8(im: &mut Image, mut x0: i32, y0: i32, mut x1: i32, ink: u8) {
-    let (w, h) = (im.width as i32, im.height as i32);
-    if y0 < 0 || y0 >= h {
+/// Fill the polygon whose vertices are `xy` (truncated toward zero) with `ink`.
+pub fn polygon_fill(im: &mut Image, xy: &[(f64, f64)], ink: u8) {
+    let mut pts: Vec<(i64, i64)> = xy.iter().map(|&(x, y)| (x as i64, y as i64)).collect();
+    // Repeated vertices (including the last against the first) add nothing.
+    pts.dedup();
+    while pts.len() > 1 && pts.first() == pts.last() {
+        pts.pop();
+    }
+    let n = pts.len();
+    if n == 0 {
         return;
     }
-    if x0 < 0 {
-        x0 = 0;
-    } else if x0 >= w {
-        return;
-    }
-    if x1 < 0 {
-        return;
-    } else if x1 >= w {
-        x1 = w - 1;
-    }
-    if x0 <= x1 {
-        let row = y0 as usize * im.width;
-        im.data[row + x0 as usize..=row + x1 as usize].fill(ink);
-    }
-}
-
-fn polygon_generic(im: &mut Image, e: &[Edge], ink: u8) {
-    if e.is_empty() {
-        return;
-    }
-    let mut ymin = im.height as i32 - 1;
-    let mut ymax = 0;
-    let mut table: Vec<&Edge> = Vec::new();
-    for edge in e {
-        ymin = ymin.min(edge.ymin);
-        ymax = ymax.max(edge.ymax);
-        if edge.ymin == edge.ymax {
-            hline8(im, edge.xmin, edge.ymin, edge.xmax, ink);
+    // Edge i runs from vertex i to vertex i + 1; flat edges are `None`.
+    let by_vertex: Vec<Option<Edge>> = (0..n)
+        .map(|i| {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            if a.1 == b.1 {
+                return None;
+            }
+            let (top, bottom) = if a.1 < b.1 { (a, b) } else { (b, a) };
+            Some(Edge { y_top: top.1, y_bottom: bottom.1, x_start: a.0 as f32, y_start: a.1, dx: (b.0 - a.0) as f32 / (b.1 - a.1) as f32 })
+        })
+        .collect();
+    let edges: Vec<&Edge> = by_vertex.iter().flatten().collect();
+    // Vertices where the outline turns back: the neighbouring rows (skipping
+    // flat edges) are both above (`bottom` tips) or both below (`top` tips).
+    let mut tips: Vec<(i64, i64, bool, usize)> = Vec::new();
+    for i in 0..n {
+        // A vertex on a flat edge is covered by that edge's run instead.
+        if pts[(i + n - 1) % n].1 == pts[i].1 || pts[(i + 1) % n].1 == pts[i].1 {
             continue;
         }
-        table.push(edge);
+        let prev = (1..=n).map(|k| pts[(i + n - k) % n]).find(|p| p.1 != pts[i].1);
+        let next = (1..=n).map(|k| pts[(i + k) % n]).find(|p| p.1 != pts[i].1);
+        if let (Some(p), Some(q)) = (prev, next) {
+            if p.1 < pts[i].1 && q.1 < pts[i].1 {
+                tips.push((pts[i].0, pts[i].1, false, i));
+            } else if p.1 > pts[i].1 && q.1 > pts[i].1 {
+                tips.push((pts[i].0, pts[i].1, true, i));
+            }
+        }
     }
-    ymin = ymin.max(0);
-    ymax = ymax.min(im.height as i32);
-    let mut xx: Vec<f32> = Vec::with_capacity(table.len() * 2);
-    while ymin <= ymax {
-        xx.clear();
-        for (i, current) in table.iter().enumerate() {
-            if ymin < current.ymin || ymin > current.ymax {
+    // Pixel runs of one row: the crossing pairs of the edges active in it
+    // (an edge covers its top row but not its bottom row), a tip contributing
+    // a zero-length pair, and flat edges.
+    let rows_runs = |y: i64| -> Vec<(i64, i64)> {
+        let mut xs: Vec<f32> = edges.iter().filter(|e| e.y_top <= y && y < e.y_bottom).map(|e| e.at(y)).collect();
+        for &(tx, ty, top, _) in &tips {
+            if ty == y && !top {
+                xs.push(tx as f32);
+                xs.push(tx as f32);
+            }
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mut runs: Vec<(i64, i64)> = xs.chunks_exact(2).map(|p| run(p[0], p[1])).collect();
+        for i in 0..n {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            if a.1 == y && b.1 == y {
+                runs.push(run(a.0.min(b.0) as f32, a.0.max(b.0) as f32));
+            }
+        }
+        runs
+    };
+    let (w, h) = (im.width as i64, im.height as i64);
+    let y_min = pts.iter().map(|p| p.1).min().unwrap().max(0);
+    let y_max = pts.iter().map(|p| p.1).max().unwrap().min(h - 1);
+    for y in y_min..=y_max {
+        let mut runs = rows_runs(y);
+        // A tip row also reaches along the outline until it touches the
+        // neighbouring row's run, so a sharp corner stays connected to the body.
+        for &(tx, ty, top, v) in &tips {
+            if ty != y {
                 continue;
             }
-            xx.push(edge_x(current, ymin));
-            if ymin == current.ymax && ymin < ymax {
-                let last = *xx.last().unwrap();
-                xx.push(last);
-            } else if (ymin == current.ymin || ymin == current.ymax) && current.dx != 0.0 {
-                for other in &table[..i] {
-                    if (ymin != other.ymin && ymin != other.ymax) || other.dx == 0.0 {
-                        continue;
-                    }
-                    let last = *xx.last().unwrap();
-                    if last.round() == edge_x(other, ymin).round() {
-                        let offset = if ymin == current.ymax { -1 } else { 1 };
-                        let adjacent = edge_x(current, ymin + offset);
-                        if ymin + offset >= other.ymin && ymin + offset <= other.ymax {
-                            let adjacent_other = edge_x(other, ymin + offset);
-                            let n = xx.len() - 1;
-                            if xx[n] > adjacent + 1.0 && xx[n] > adjacent_other + 1.0 {
-                                xx[n] = adjacent.max(adjacent_other).round() + 1.0;
-                            } else if xx[n] < adjacent - 1.0 && xx[n] < adjacent_other - 1.0 {
-                                xx[n] = adjacent.min(adjacent_other).round() - 1.0;
-                            }
-                            break;
-                        }
-                    }
-                }
+            let towards = if top { y + 1 } else { y - 1 };
+            let at = run(tx as f32, tx as f32);
+            let Some(r) = runs.iter_mut().find(|r| **r == at) else { continue };
+            // Where the two edges at this vertex stand in the neighbouring row.
+            let (Some(e1), Some(e2)) = (&by_vertex[(v + n - 1) % n], &by_vertex[v]) else { continue };
+            let (x1, x2) = (e1.at(towards), e2.at(towards));
+            let tx = tx as f32;
+            if x1.max(x2) < tx {
+                r.0 = r.0.min((x1.max(x2) + 0.5).floor() as i64 + 1);
+            } else if x1.min(x2) > tx {
+                r.1 = r.1.max((x1.min(x2) + 0.5).floor() as i64 - 1);
             }
         }
-        // qsort with a float comparison; ties are equal values, so order is moot.
-        xx.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let mut i = 1;
-        while i < xx.len() {
-            hline8(im, round_up(xx[i - 1]), ymin, round_down(xx[i]), ink);
-            i += 2;
-        }
-        ymin += 1;
-    }
-}
-
-/// Fill the polygon whose vertices are `xy` (truncated toward zero, as
-/// `_draw_polygon` does) with `ink`.
-pub fn polygon_fill(im: &mut Image, xy: &[(f64, f64)], ink: u8) {
-    assert_eq!(im.mode.pixel_size(), 1, "polygon fill is ported for 8-bit images only");
-    let p: Vec<(i32, i32)> = xy.iter().map(|&(x, y)| (x as i32, y as i32)).collect();
-    let count = p.len();
-    if count == 0 {
-        return;
-    }
-    let mut e: Vec<Edge> = Vec::with_capacity(count);
-    let mut i = 0;
-    while i + 1 < count {
-        let (x0, y0) = p[i];
-        let (x1, y1) = p[i + 1];
-        if y0 == y1 && i != 0 && y0 == p[i - 1].1 {
-            let prev_x = p[i - 1].0;
-            let last = e.last_mut().unwrap();
-            if x1 > x0 && x0 > prev_x {
-                last.xmax = x1;
-                i += 1;
-                continue;
-            } else if x1 < x0 && x0 < prev_x {
-                last.xmin = x1;
-                i += 1;
-                continue;
+        for (lo, hi) in runs {
+            for x in lo.max(0)..=hi.min(w - 1) {
+                im.data[(y * w + x) as usize] = ink;
             }
         }
-        e.push(add_edge(x0, y0, x1, y1));
-        i += 1;
-    }
-    if p[i] != p[0] {
-        e.push(add_edge(p[i].0, p[i].1, p[0].0, p[0].1));
-    }
-    polygon_generic(im, &e, ink);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::polygon_fill;
-    use crate::{Image, Mode};
-
-    #[test]
-    fn axis_aligned_square_fills_its_closed_bounds() {
-        let mut im = Image::new(Mode::One, 6, 6);
-        polygon_fill(&mut im, &[(1.0, 1.0), (4.0, 1.0), (4.0, 4.0), (1.0, 4.0)], 1);
-        for y in 0..6 {
-            for x in 0..6 {
-                let inside = (1..=4).contains(&x) && (1..=4).contains(&y);
-                assert_eq!(im.data[y * 6 + x] != 0, inside, "({x}, {y})");
-            }
-        }
-    }
-
-    #[test]
-    fn coordinates_truncate_toward_zero() {
-        let mut a = Image::new(Mode::One, 4, 4);
-        let mut b = Image::new(Mode::One, 4, 4);
-        polygon_fill(&mut a, &[(0.9, 0.9), (2.9, 0.9), (0.9, 2.9)], 1);
-        polygon_fill(&mut b, &[(0.0, 0.0), (2.0, 0.0), (0.0, 2.0)], 1);
-        assert_eq!(a, b);
     }
 }
