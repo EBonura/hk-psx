@@ -242,9 +242,9 @@ pub const EVENTS: &[Event] = &[
     // starting (`startFallSound`), in that order of priority. Late rows, so
     // they only take what every earlier clip leaves and never move one. 5512 Hz
     // like the bank's other short percussive clips, not measured per clip.
-    ev("stalactite_death", "sharedassets6.assets", 112, "stalactite_death", 5512, &["stalactites"], 70, None),
-    ev("stalactite_impact", "sharedassets6.assets", 95, "stalactite_impact", 5512, &["stalactites"], 71, None),
-    ev("stalactite_break", "sharedassets6.assets", 161, "stalactite_break", 5512, &["stalactites"], 72, None),
+    ev("stalactite_death", "sharedassets6.assets", 112, "stalactite_death", 5512, &["stalactites"], 55, None),
+    ev("stalactite_impact", "sharedassets6.assets", 95, "stalactite_impact", 5512, &["stalactites"], 56, None),
+    ev("stalactite_break", "sharedassets6.assets", 161, "stalactite_break", 5512, &["stalactites"], 57, None),
 ];
 
 /// Gruz Mother's arena gates sound like every other arena's.
