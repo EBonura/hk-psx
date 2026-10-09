@@ -15,14 +15,15 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// Cooker inputs, one repo-relative path per line; shared with host/regions.py.
 const COOK_INPUTS: &str = include_str!("../cook_inputs.txt");
 const ASSET_SCRIPTS: &[&str] = &[
-    // The title and fight songs as XA-ADPCM, ported to Rust (hk-cook src/xa_music.rs).
-    "rust:xa-music", "cook_audio.py", "cook_hud.py",
+    // The title and fight songs as XA-ADPCM, and the resident one-shots, ported to Rust
+    // (hk-cook src/xa_music.rs, src/cook_audio.rs).
+    "rust:xa-music", "rust:cook-audio", "cook_hud.py",
     // The two SPU banks stacked above ambience, before it: ambience reads their
     // bases and sizes from data/focus-audio.rs and data/runner-audio.rs to
     // place itself below them (and refuses an overlap), and neither bank's
     // size depends on ambience.
     "focus_audio.py", "runner_audio.py", "ambience.py", "read_points.py",
-    "geo.py", "geo_audio.py", "lifeblood.py",
+    "geo.py", "rust:geo-audio", "lifeblood.py",
     // Breakable and secret particle effects, ported to Rust (hk-cook).
     "rust:break-effects",
     "great_door.py",
@@ -1048,6 +1049,8 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "break-effects" => hk_cook::break_effects::main(root, None)?,
         "scene-sfx" => hk_cook::scene_sfx::main(root, None)?,
         "xa-music" => hk_cook::xa_music::main(root, None)?,
+        "cook-audio" => hk_cook::cook_audio::main(root, None)?,
+        "geo-audio" => hk_cook::geo_audio::main(root, None)?,
         "opaque-tiles" => hk_cook::opaque_tiles::cook(root, 2, false)?,
         "opaque-groups" => hk_cook::opaque_groups::main(root)?,
         "scene-certificates" => hk_cook::scene_certificates::main(root, &[])?,

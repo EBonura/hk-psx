@@ -521,7 +521,7 @@ the existing CD exception wrapper and preserve ADPCM history and heal tails.
 
 ## Sound effect and Geo resampling (build 108)
 
-`cook_audio.convert_wav`, which the eight effects, the footstep set and the six
+`convert_wav` in `host/hk-cook/src/cook_audio.rs`, which the eight effects, the footstep set and the six
 Geo samples pass through, used a box average for integer rate factors and a
 rational box integration for the 48000 to 11025 footsteps. A boxcar is a poor
 lowpass: it rolls off inside the band it keeps and barely rejects above the new
