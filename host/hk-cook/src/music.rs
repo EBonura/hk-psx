@@ -87,9 +87,23 @@ pub struct Profile {
     pub json: Json,
 }
 
+/// spu_encode.py's one line of JSON: the samples, their energy and the energy of
+/// the error against the exact SPU decode of `data`, and the SNR.
+pub fn encoder_metric(samples: &[i16], data: &[u8]) -> Result<Json> {
+    let decoded = decode(data)?;
+    let signal: i64 = samples.iter().map(|&s| s as i64 * s as i64).sum();
+    let error: i64 = samples.iter().zip(&decoded).map(|(&s, &d)| (s as i64 - d as i64).pow(2)).sum();
+    Ok(Json::Obj(vec![
+        ("samples".into(), Json::Int(samples.len() as i64)),
+        ("signal_energy".into(), Json::Float(signal as f64)),
+        ("error_energy".into(), Json::Float(error as f64)),
+        ("snr_db".into(), Json::Float(if error > 0 && signal > 0 { 10.0 * (signal as f64 / error as f64).log10() } else { 999.0 })),
+    ]))
+}
+
 /// `decoded_source`: the clip's WAV under `folder` and its identity (metadata
 /// and encoded-resource hashes).
-fn decoded_source(root: &Path, source: &Source, tree: &Value, folder: &Path) -> Result<(PathBuf, Vec<u8>, Json)> {
+pub(crate) fn decoded_source(root: &Path, source: &Source, tree: &Value, folder: &Path) -> Result<(PathBuf, Vec<u8>, Json)> {
     let r = tree.get("m_Resource").ok_or("AudioClip without m_Resource")?;
     let name = r.get("m_Source").and_then(Value::str).ok_or("m_Resource without m_Source")?;
     let path = source.directory.join(&name);
@@ -165,15 +179,7 @@ pub fn cook_clip(root: &Path, tool: &Tool, source: &Source, obj: &Obj, out: &Pat
         // spu_encode.py: the SDK encoder, a restartable stream, its own metric.
         let data = tool.encode(&mono, "restart")?;
         std::fs::write(&encoded, &data).map_err(|e| e.to_string())?;
-        let decoded = decode(&data)?;
-        let signal: i64 = mono.iter().map(|&s| s as i64 * s as i64).sum();
-        let error: i64 = mono.iter().zip(&decoded).map(|(&s, &d)| (s as i64 - d as i64).pow(2)).sum();
-        let metric = Json::Obj(vec![
-            ("samples".into(), Json::Int(mono.len() as i64)),
-            ("signal_energy".into(), Json::Float(signal as f64)),
-            ("error_energy".into(), Json::Float(error as f64)),
-            ("snr_db".into(), Json::Float(if error > 0 && signal > 0 { 10.0 * (signal as f64 / error as f64).log10() } else { 999.0 })),
-        ]);
+        let metric = encoder_metric(&mono, &data)?;
         if data.len() as i64 != (frames + 27) / 28 * 16 || data.chunks_exact(16).any(|b| b[1] != 0) {
             return err("invalid encoded payload");
         }

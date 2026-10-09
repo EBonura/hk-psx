@@ -49,9 +49,9 @@ const ASSET_SCRIPTS: &[&str] = &[
     // report and the cooked scene draws regions.py wrote. Ported to Rust
     // (hk-cook), so it runs in-process.
     "rust:props",
-    // Area music premixes. After ambience.py,
-    // whose report it reads for the gate graph through host/ambience.py.
-    "area_music.py",
+    // Area music premixes, ported to Rust (hk-cook src/area_music.rs). After
+    // ambience, whose gate graph it reads from the region report.
+    "rust:area-music",
     // After read_points.py: the charm catalogue wraps its descriptions against
     // the glyph advances that cook writes into data/read_points.rs.
     "charms.py",
@@ -1053,6 +1053,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "geo-audio" => hk_cook::geo_audio::main(root, None)?,
         "focus-audio" => hk_cook::focus_audio::main(root, None)?,
         "ambience" => hk_cook::ambience::main(root, None)?,
+        "area-music" => hk_cook::area_music::main(root, None)?,
         "opaque-tiles" => hk_cook::opaque_tiles::cook(root, 2, false)?,
         "opaque-groups" => hk_cook::opaque_groups::main(root)?,
         "scene-certificates" => hk_cook::scene_certificates::main(root, &[])?,
