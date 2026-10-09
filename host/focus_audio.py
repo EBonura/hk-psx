@@ -16,7 +16,7 @@ from focus import action_fields
 
 # Focus and Runner are the top of SPU RAM: Runner ends at 0x7FFF0, the last
 # 16 bytes being where psx_spu::init parks the (disabled) reverb work area, and
-# Focus sits directly below it. The world one-shots (cook_audio.py), the music
+# Focus sits directly below it. The world one-shots (host/hk-cook/src/cook_audio.rs), the music
 # ring and ambience's ceiling stack downward from here, so this base is what
 # moves when either bank grows; host/ambience.py refuses an overlap. It was
 # 0x5C960, with 16,368 bytes above Runner that nothing ever wrote.

@@ -15,14 +15,15 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// Cooker inputs, one repo-relative path per line; shared with host/regions.py.
 const COOK_INPUTS: &str = include_str!("../cook_inputs.txt");
 const ASSET_SCRIPTS: &[&str] = &[
-    // The title and fight songs as XA-ADPCM, ported to Rust (hk-cook src/xa_music.rs).
-    "rust:xa-music", "cook_audio.py", "cook_hud.py",
+    // The title and fight songs as XA-ADPCM, and the resident one-shots, ported to Rust
+    // (hk-cook src/xa_music.rs, src/cook_audio.rs).
+    "rust:xa-music", "rust:cook-audio", "cook_hud.py",
     // The two SPU banks stacked above ambience, before it: ambience reads their
     // bases and sizes from data/focus-audio.rs and data/runner-audio.rs to
     // place itself below them (and refuses an overlap), and neither bank's
     // size depends on ambience.
     "focus_audio.py", "runner_audio.py", "ambience.py", "read_points.py",
-    "geo.py", "geo_audio.py", "lifeblood.py",
+    "geo.py", "rust:geo-audio", "lifeblood.py",
     // Breakable and secret particle effects, ported to Rust (hk-cook).
     "rust:break-effects",
     "great_door.py",
@@ -1048,6 +1049,8 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "break-effects" => hk_cook::break_effects::main(root, None)?,
         "scene-sfx" => hk_cook::scene_sfx::main(root, None)?,
         "xa-music" => hk_cook::xa_music::main(root, None)?,
+        "cook-audio" => hk_cook::cook_audio::main(root, None)?,
+        "geo-audio" => hk_cook::geo_audio::main(root, None)?,
         "opaque-tiles" => hk_cook::opaque_tiles::cook(root, 2, false)?,
         "opaque-groups" => hk_cook::opaque_groups::main(root)?,
         "scene-certificates" => hk_cook::scene_certificates::main(root, &[])?,
@@ -1287,7 +1290,7 @@ fn pinned_frontend(root: &Path, options: &Options) -> Result<(PathBuf, String)> 
     std::fs::remove_file(&archive)?;
     // Its SDK component comes from the same checkout this build's SDK does.
     let sdk = format!("sdk={}", sdk_source(root, options).display());
-    run("python3", &["tools/bootstrap-components.py", "--root", tree.to_str().unwrap(), "--source", &sdk], &tree)?;
+    hydrate_components(&tree, &sdk)?;
     println!("+ cargo build --locked --release -p frontend (CARGO_TARGET_DIR={})", target.display());
     let status = Command::new("cargo")
         .args(["build", "--locked", "--release", "-p", "frontend"])
@@ -1300,6 +1303,48 @@ fn pinned_frontend(root: &Path, options: &Options) -> Result<(PathBuf, String)> 
     std::fs::write(&stamp, serde_json::to_string_pretty(&serde_json::json!({
         "revision": revision, "sha256": sha256_file(&binary)?}))?)?;
     Ok((binary, revision))
+}
+
+/// Where the SDK's `psoxide-link` package is installed from, as in the
+/// emulator's Makefile.
+const SDK_GIT: &str = "https://github.com/EBonura/PSoXide";
+
+/// The program and arguments that hydrate an exported emulator tree from the
+/// local SDK (`sdk` is a `sdk=<checkout>` source). A pin that still ships
+/// `tools/bootstrap-components.py` is hydrated by it, as before; a newer pin
+/// dropped the script for the SDK's `psoxide-components`, which is built once
+/// per locked SDK revision into the tree's `.tools/` and given the same flags.
+fn components_command(tree: &Path, sdk: &str) -> Result<(PathBuf, Vec<String>)> {
+    let root = tree.to_str().ok_or("the emulator tree path is not UTF-8")?.to_string();
+    if tree.join("tools/bootstrap-components.py").is_file() {
+        let args = ["tools/bootstrap-components.py", "--root", &root, "--source", sdk];
+        return Ok(("python3".into(), args.iter().map(|a| a.to_string()).collect()));
+    }
+    let lock = read_json(&tree.join("components.lock.json"))?;
+    let revision = lock["components"]["sdk"]["revision"].as_str()
+        .ok_or("the emulator's components.lock.json lacks the sdk revision")?;
+    let binary = tree.join(".tools").join(format!("sdk-{revision}")).join("bin/psoxide-components");
+    Ok((binary, ["--root", &root, "--source", sdk].iter().map(|a| a.to_string()).collect()))
+}
+
+/// Hydrate an exported emulator tree's locked components from the local SDK,
+/// installing `psoxide-components` first when the pin needs it and it is not
+/// there yet.
+fn hydrate_components(tree: &Path, sdk: &str) -> Result<()> {
+    let (program, args) = components_command(tree, sdk)?;
+    if !program.is_absolute() {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        return run(program, &args, tree);
+    }
+    if !program.is_file() {
+        let install = program.parent().and_then(Path::parent).ok_or("bad psoxide-components path")?;
+        let revision = install.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_prefix("sdk-"))
+            .ok_or("bad psoxide-components path")?;
+        run("cargo", &["install", "--locked", "--git", SDK_GIT, "--rev", revision, "--root",
+            install.to_str().ok_or("the emulator tree path is not UTF-8")?, "psoxide-link"], tree)?;
+    }
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(program, &args, tree)
 }
 
 /// The emulator the route replays run on: --frontend or HK_PSX_FRONTEND when
@@ -1682,5 +1727,38 @@ fn main() {
     if let Err(error) = result {
         eprintln!("error: {error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tree(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("hk-build-test-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("tools")).unwrap();
+        std::fs::write(dir.join("components.lock.json"),
+            r#"{"components": {"sdk": {"revision": "0123456789abcdef0123456789abcdef01234567"}}}"#).unwrap();
+        dir
+    }
+
+    #[test]
+    fn an_old_pin_is_hydrated_by_its_python_script() {
+        let dir = tree("old");
+        std::fs::write(dir.join("tools/bootstrap-components.py"), "").unwrap();
+        let (program, args) = components_command(&dir, "sdk=/sdk").unwrap();
+        assert_eq!(program, PathBuf::from("python3"));
+        assert_eq!(args, ["tools/bootstrap-components.py", "--root", dir.to_str().unwrap(), "--source", "sdk=/sdk"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_new_pin_is_hydrated_by_psoxide_components_for_its_locked_sdk() {
+        let dir = tree("new");
+        let (program, args) = components_command(&dir, "sdk=/sdk").unwrap();
+        assert_eq!(program, dir.join(".tools/sdk-0123456789abcdef0123456789abcdef01234567/bin/psoxide-components"));
+        assert_eq!(args, ["--root", dir.to_str().unwrap(), "--source", "sdk=/sdk"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
