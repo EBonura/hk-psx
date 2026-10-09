@@ -3,8 +3,11 @@
 
 pub mod common;
 pub mod cook_audio;
+pub mod actors;
 pub mod ambience;
 pub mod area_music;
+pub mod aspid;
+pub mod baldur;
 pub mod break_effects;
 pub mod cook;
 pub mod coverage;
@@ -21,6 +24,7 @@ pub mod png;
 pub mod region_delta;
 pub mod props;
 pub mod pyfloat;
+pub mod recog;
 pub mod pyjson;
 pub mod runner;
 pub mod runner_audio;

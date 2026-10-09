@@ -87,6 +87,49 @@ fn main() {
             eprintln!("{} files in {:.2?}", files.len(), start.elapsed());
             std::fs::write(&args[4], lines.concat()).unwrap();
         }
+        "actors" => {
+            // hk-cook-parity actors <source dir> <oracle dir> <regions.json>: the controls the
+            // ported recognizers give each actor against the Python actor_sources dump.
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            let source = lazy_source();
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let Some(Json::List(scenes)) = (if let Json::Obj(f) = &regions { f.iter().find(|k| k.0 == "scenes").map(|k| k.1.clone()) } else { None }) else { panic!("no scenes") };
+            let get = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
+            let ported = ["ZombieSwipeWalker", "Baldur", "Aspid"];
+            let (mut checked, mut bad) = (std::collections::BTreeMap::<String, usize>::new(), 0usize);
+            for s in &scenes {
+                let (Some(Json::Str(name)), Some(Json::Str(file))) = (get(s, "scene_name"), get(s, "file")) else { panic!("scene row") };
+                let oracle = parse(&std::fs::read_to_string(format!("{}/{name}.json", args[3])).unwrap()).unwrap();
+                let Json::List(oracle) = oracle else { panic!("oracle shape") };
+                let sc = Scene::new(&source, &file).unwrap();
+                let rows = hk_cook::actors::scan(&sc, &source).unwrap();
+                for row in &oracle {
+                    let Some(Json::Str(src)) = get(row, "source") else { continue };
+                    let control = get(row, "movement_control");
+                    let kind = control.as_ref().and_then(|c| get(c, "kind"));
+                    let mine = rows.iter().find(|r| r.source == src).and_then(|r| r.control.as_ref());
+                    match (&kind, mine) {
+                        (Some(Json::Str(k)), m) if ported.contains(&k.as_str()) => {
+                            *checked.entry(k.clone()).or_default() += 1;
+                            if m.map(|m| &m.1) != control.as_ref() {
+                                bad += 1;
+                                println!("{name} {src}: {k} control differs{}", if m.is_none() { " (not recognized)" } else { "" });
+                            }
+                        }
+                        (_, Some((k, _))) => {
+                            bad += 1;
+                            println!("{name} {src}: recognized as {k}, oracle has {:?}", kind);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            println!("checked {checked:?}, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
