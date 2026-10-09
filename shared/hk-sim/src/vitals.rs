@@ -83,9 +83,13 @@ impl Vitals {
         if self.invulnerable_ticks == 0 || self.dead {
             return 0;
         }
-        let elapsed = self.invulnerable_from.saturating_sub(self.invulnerable_ticks);
+        let elapsed = self
+            .invulnerable_from
+            .saturating_sub(self.invulnerable_ticks);
         // Updates since startInvulnerablePulse: the first tick is the freeze-down.
-        let Some(step) = elapsed.checked_sub(1) else { return 0 };
+        let Some(step) = elapsed.checked_sub(1) else {
+            return 0;
+        };
         // Timer after `step` Updates: 1..=P up, P again (clamped), P-1..=0
         // down, 0 again (clamped); period 2P+2.
         let p = PULSE_TICKS;
@@ -161,10 +165,14 @@ impl Vitals {
     }
     /// Original ADD BLUE HEALTH adds one, independent of max normal health.
     pub fn add_blue_health(&mut self, amount: u16) {
-        if !self.dead { self.blue_health = self.blue_health.saturating_add(amount); }
+        if !self.dead {
+            self.blue_health = self.blue_health.saturating_add(amount);
+        }
     }
     /// No-charm PlayerData.UpdateBlueHealth, called at bench/full reset.
-    pub fn reset_blue_health(&mut self) { self.blue_health = 0; }
+    pub fn reset_blue_health(&mut self) {
+        self.blue_health = 0;
+    }
     pub fn gain_soul_on_nail_hit(&mut self, p: VitalParams) {
         if !self.dead {
             self.soul = self.soul.saturating_add(p.soul_per_hit).min(p.max_soul);
@@ -268,32 +276,45 @@ mod tests {
     }
     #[test]
     fn lifeblood_absorbs_before_normal_health_and_preserves_recoil() {
-        let mut v=Vitals::new(P);v.add_blue_health(2);
-        assert_eq!(v.hurt(P,1,1,false),Hurt::Recoiling);
-        assert_eq!((v.health,v.blue_health),(5,1));
-        assert_eq!(v.hurt(P,1,1,false),Hurt::Ignored);
-        assert_eq!((v.health,v.blue_health),(5,1));
-        assert_eq!(v.hurt(P,2,1,true),Hurt::Hazard);
-        assert_eq!((v.health,v.blue_health),(4,0));
-        v.finish_hazard_respawn(P);assert_eq!(v.blue_health,0);
+        let mut v = Vitals::new(P);
+        v.add_blue_health(2);
+        assert_eq!(v.hurt(P, 1, 1, false), Hurt::Recoiling);
+        assert_eq!((v.health, v.blue_health), (5, 1));
+        assert_eq!(v.hurt(P, 1, 1, false), Hurt::Ignored);
+        assert_eq!((v.health, v.blue_health), (5, 1));
+        assert_eq!(v.hurt(P, 2, 1, true), Hurt::Hazard);
+        assert_eq!((v.health, v.blue_health), (4, 0));
+        v.finish_hazard_respawn(P);
+        assert_eq!(v.blue_health, 0);
     }
     #[test]
     fn lifeblood_cannot_be_focus_healed_and_resets_independently() {
-        let mut v=Vitals::new(P);v.health=3;v.add_blue_health(2);v.heal(P,1);
-        assert_eq!((v.health,v.blue_health),(4,2));
-        v.reset_blue_health();assert_eq!((v.health,v.blue_health),(4,0));
-        v.add_blue_health(2);assert_eq!(v.hurt(P,6,0,true),Hurt::Died);
-        assert_eq!((v.health,v.blue_health),(0,0));
-        v.add_blue_health(1);assert_eq!(v.blue_health,0);
+        let mut v = Vitals::new(P);
+        v.health = 3;
+        v.add_blue_health(2);
+        v.heal(P, 1);
+        assert_eq!((v.health, v.blue_health), (4, 2));
+        v.reset_blue_health();
+        assert_eq!((v.health, v.blue_health), (4, 0));
+        v.add_blue_health(2);
+        assert_eq!(v.hurt(P, 6, 0, true), Hurt::Died);
+        assert_eq!((v.health, v.blue_health), (0, 0));
+        v.add_blue_health(1);
+        assert_eq!(v.blue_health, 0);
     }
     #[test]
     fn every_small_damage_matches_source_two_pool_subtraction() {
-        for health in 1u16..=5 {for blue in 0u16..=5 {for damage in 0u16..=12 {
-            let mut v=Vitals::new(P);v.health=health;v.blue_health=blue;
-            v.hurt(P,damage,1,false);
-            assert_eq!(v.blue_health,blue.saturating_sub(damage));
-            assert_eq!(v.health,health.saturating_sub(damage.saturating_sub(blue)));
-        }}}
+        for health in 1u16..=5 {
+            for blue in 0u16..=5 {
+                for damage in 0u16..=12 {
+                    let mut v = Vitals::new(P);
+                    v.health = health;
+                    v.blue_health = blue;
+                    v.hurt(P, damage, 1, false);
+                    assert_eq!(v.blue_health, blue.saturating_sub(damage));
+                    assert_eq!(v.health, health.saturating_sub(damage.saturating_sub(blue)));
+                }
+            }
+        }
     }
-
 }

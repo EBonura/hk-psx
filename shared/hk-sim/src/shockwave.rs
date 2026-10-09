@@ -62,11 +62,24 @@ pub struct Wave {
 
 impl Wave {
     pub fn new(position: [i32; 2], dir: i32, p: &Params) -> Self {
-        Self { dir: if dir > 0 { 1 } else { -1 }, moving: true, x: position[0], y: position[1],
-            speed: p.start_speed, x0: position[0], tick: 0, born: 0, spurts: [0; SPURTS] }
+        Self {
+            dir: if dir > 0 { 1 } else { -1 },
+            moving: true,
+            x: position[0],
+            y: position[1],
+            speed: p.start_speed,
+            x0: position[0],
+            tick: 0,
+            born: 0,
+            spurts: [0; SPURTS],
+        }
     }
-    pub fn age(&self) -> u16 { self.tick }
-    fn spurt_x(&self, i: u16) -> i32 { self.x0 + ((self.spurts[i as usize % SPURTS] as i32) << 8) }
+    pub fn age(&self) -> u16 {
+        self.tick
+    }
+    fn spurt_x(&self, i: u16) -> i32 {
+        self.x0 + ((self.spurts[i as usize % SPURTS] as i32) << 8)
+    }
     /// One 60 Hz step of `Move`. `hits` answers whether a segment crosses
     /// terrain; returns true once the wave and every spurt it left are gone.
     pub fn step(&mut self, p: &Params, hits: impl Fn([i32; 2], [i32; 2]) -> bool) -> bool {
@@ -77,9 +90,16 @@ impl Wave {
             let x = self.x + dir * (self.speed / 60);
             // `Trigger2dEventLayer` on layer 8: the trigger box's leading side
             // swept across the step, just inside its bottom and top.
-            let lead = |at: i32| at + if dir > 0 { p.wave_box[2] } else { -p.wave_box[0] };
+            let lead = |at: i32| {
+                at + if dir > 0 {
+                    p.wave_box[2]
+                } else {
+                    -p.wave_box[0]
+                }
+            };
             let inset = crate::ONE / 16;
-            let wall = [p.wave_box[1] + inset, p.wave_box[3] - inset].iter()
+            let wall = [p.wave_box[1] + inset, p.wave_box[3] - inset]
+                .iter()
                 .any(|&h| hits([lead(self.x), self.y + h], [lead(x), self.y + h]));
             // The 1.6-unit ground ray. The spawn point sits a fifth of a unit
             // inside the floor, where Physics2D reports the collider the ray
@@ -104,11 +124,19 @@ impl Wave {
         let first = self.born.saturating_sub(p.damage_to);
         (first..self.born).any(|i| {
             let age = now - i;
-            if !(p.damage_from..p.damage_to).contains(&age) { return false; }
+            if !(p.damage_from..p.damage_to).contains(&age) {
+                return false;
+            }
             let (x, b) = (self.spurt_x(i), p.spurt_box);
-            let bounds = if self.dir > 0 { [x + b[0], self.y + b[1], x + b[2], self.y + b[3]] }
-                else { [x - b[2], self.y + b[1], x - b[0], self.y + b[3]] };
-            bounds[0] <= hero[2] && bounds[2] >= hero[0] && bounds[1] <= hero[3] && bounds[3] >= hero[1]
+            let bounds = if self.dir > 0 {
+                [x + b[0], self.y + b[1], x + b[2], self.y + b[3]]
+            } else {
+                [x - b[2], self.y + b[1], x - b[0], self.y + b[3]]
+            };
+            bounds[0] <= hero[2]
+                && bounds[2] >= hero[0]
+                && bounds[1] <= hero[3]
+                && bounds[3] >= hero[1]
         })
     }
     /// Live spurts as (x, age in ticks), every `stride`th one, newest last.
@@ -116,7 +144,8 @@ impl Wave {
         let first = self.born.saturating_sub(p.spurt_ticks);
         let now = self.tick;
         let life = p.spurt_ticks;
-        (first..self.born).filter(move |i| i % stride == 0)
+        (first..self.born)
+            .filter(move |i| i % stride == 0)
             .map(move |i| (self.spurt_x(i), now - i))
             .filter(move |&(_, age)| age < life)
     }

@@ -28,7 +28,10 @@ pub const VOICE_MASK: u32 = {
     let mut i = 0;
     while i < POOL {
         let bit = 1u32 << AMBIENCE_POOL_VOICES[i];
-        assert!(mask & bit == 0 && AMBIENCE_POOL_VOICES[i] != data::MUSIC_VOICE, "a pooled voice repeats or is music's");
+        assert!(
+            mask & bit == 0 && AMBIENCE_POOL_VOICES[i] != data::MUSIC_VOICE,
+            "a pooled voice repeats or is music's"
+        );
         mask |= bit;
         i += 1;
     }
@@ -238,7 +241,12 @@ pub fn valid_clip(bytes: &[u8], length: usize, checksum: u32) -> bool {
 
 /// `valid_clip` with `poll` called every 4 KiB, for a scene gate, where the
 /// pad sampler still wants every VBlank while a clip is checked.
-pub fn valid_clip_polled(bytes: &[u8], length: usize, checksum: u32, poll: &mut dyn FnMut()) -> bool {
+pub fn valid_clip_polled(
+    bytes: &[u8],
+    length: usize,
+    checksum: u32,
+    poll: &mut dyn FnMut(),
+) -> bool {
     if bytes.len() != length {
         return false;
     }
@@ -262,7 +270,10 @@ pub struct ClipCheck {
 }
 impl ClipCheck {
     pub const fn new() -> Self {
-        Self { hash: 0x811c9dc5, index: 0 }
+        Self {
+            hash: 0x811c9dc5,
+            index: 0,
+        }
     }
     /// The headers and transport flags of the next piece, then FNV-1a over its
     /// bytes. A false answer leaves the check half fed; callers drop it.
@@ -292,7 +303,8 @@ impl ClipCheck {
         let mut k = (17 - start % 16) % 16;
         while k < bytes.len() {
             let index = start + k;
-            let expected = if index == 1 { 4 } else { 0 } | if index == length - 15 { 3 } else { 0 };
+            let expected =
+                if index == 1 { 4 } else { 0 } | if index == length - 15 { 3 } else { 0 };
             if bytes[k] != expected {
                 return false;
             }
@@ -302,7 +314,12 @@ impl ClipCheck {
         let mut hash = self.hash;
         for &byte in bytes {
             let h = hash ^ byte as u32;
-            hash = h.wrapping_add(h << 1).wrapping_add(h << 4).wrapping_add(h << 7).wrapping_add(h << 8).wrapping_add(h << 24);
+            hash = h
+                .wrapping_add(h << 1)
+                .wrapping_add(h << 4)
+                .wrapping_add(h << 7)
+                .wrapping_add(h << 8)
+                .wrapping_add(h << 24);
         }
         self.hash = hash;
         self.index = start + bytes.len();

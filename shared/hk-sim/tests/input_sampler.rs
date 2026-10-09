@@ -105,7 +105,8 @@ fn full_queue_drops_its_oldest_sample_and_keeps_its_presses() {
     s.start(0).unwrap();
     // Tick 1 presses 0x40 for that one poll only, then nothing is held.
     for tick in 1..=16 {
-        s.checkpoint(tick, || (tick, if tick == 1 { 0x40 } else { 0 })).unwrap();
+        s.checkpoint(tick, || (tick, if tick == 1 { 0x40 } else { 0 }))
+            .unwrap();
     }
     assert_eq!(s.checkpoint(17, || (17, 0x10)), Ok(true));
     assert_eq!(s.fault(), None);
@@ -142,7 +143,13 @@ fn bound_lag_skips_ticks_keeps_presses_and_the_hold() {
     s.start(0).unwrap();
     // Press 0x40 on tick 2 only, and start holding 0x10 on tick 5.
     for tick in 1..=12 {
-        let buttons = if tick == 2 { 0x40 } else if tick >= 5 { 0x10 } else { 0 };
+        let buttons = if tick == 2 {
+            0x40
+        } else if tick >= 5 {
+            0x10
+        } else {
+            0
+        };
         s.checkpoint(tick, || (tick, buttons)).unwrap();
     }
     // Within the limit: nothing happens.
@@ -212,9 +219,15 @@ fn fast_guard_preserves_backwards_clock_and_latched_fault_validation() {
     s.checkpoint(11, || (11, 0)).unwrap();
     assert!(!s.poll_due(11));
     assert!(s.poll_due(10));
-    assert_eq!(s.checkpoint(10, || panic!("backwards clock must not poll")),Err(Fault::ClockOrder));
+    assert_eq!(
+        s.checkpoint(10, || panic!("backwards clock must not poll")),
+        Err(Fault::ClockOrder)
+    );
     assert!(s.poll_due(11));
-    assert_eq!(s.checkpoint(11, || panic!("latched fault must not poll")),Err(Fault::ClockOrder));
+    assert_eq!(
+        s.checkpoint(11, || panic!("latched fault must not poll")),
+        Err(Fault::ClockOrder)
+    );
 }
 
 #[test]
@@ -231,9 +244,13 @@ fn explicit_scene_load_drains_bounded_queue_preserves_history_and_resumes_edges(
     s.begin_scene_load(101).unwrap();
     assert_eq!(s.pending_count(), 0);
     for tick in 118..=717 {
-        assert!(s.checkpoint(tick, || (tick, if tick % 2 == 0 { 0x4000 } else { 0 })).unwrap());
+        assert!(s
+            .checkpoint(tick, || (tick, if tick % 2 == 0 { 0x4000 } else { 0 }))
+            .unwrap());
         assert_eq!(s.pending_count(), 0);
-        assert!(!s.checkpoint(tick, || panic!("same VBlank must not poll")).unwrap());
+        assert!(!s
+            .checkpoint(tick, || panic!("same VBlank must not poll"))
+            .unwrap());
     }
     assert_eq!(s.end_scene_load(), Ok(717));
     assert_eq!(s.held_buttons(), 0);
@@ -285,10 +302,20 @@ fn scene_load_retains_missed_polls_wrap_and_transfer_completion_boundary() {
     s.begin_scene_load(1).unwrap();
     s.begin_blocking_transfer().unwrap();
     s.checkpoint(4, || (4, 0)).unwrap();
-    assert_eq!((s.stats().missed_vblanks, s.stats().blocked_vblanks, s.stats().max_poll_gap), (0, 2, 0));
+    assert_eq!(
+        (
+            s.stats().missed_vblanks,
+            s.stats().blocked_vblanks,
+            s.stats().max_poll_gap
+        ),
+        (0, 2, 0)
+    );
     assert_eq!(s.end_scene_load(), Ok(4));
     s.checkpoint(7, || (7, 0)).unwrap();
-    assert_eq!((s.stats().missed_vblanks, s.stats().blocked_vblanks), (2, 2));
+    assert_eq!(
+        (s.stats().missed_vblanks, s.stats().blocked_vblanks),
+        (2, 2)
+    );
 }
 
 #[test]
@@ -311,5 +338,8 @@ fn scene_load_ownership_never_masks_faults_or_allows_simulation_during_pause() {
     s.begin_scene_load(10).unwrap();
     s.checkpoint(11, || (11, 0)).unwrap();
     assert_eq!(s.consume(11), Err(Fault::SceneLoadActive));
-    assert_eq!(s.checkpoint(12, || panic!("fault must remain latched")), Err(Fault::SceneLoadActive));
+    assert_eq!(
+        s.checkpoint(12, || panic!("fault must remain latched")),
+        Err(Fault::SceneLoadActive)
+    );
 }

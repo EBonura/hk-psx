@@ -1,6 +1,7 @@
 //! Bounded animation working set on the pinned SDK's slot cache.
 #![no_std]
-#[cfg(test)] extern crate std;
+#[cfg(test)]
+extern crate std;
 pub mod residency;
 use psx_cache::SlotCache;
 
@@ -185,17 +186,31 @@ mod tests {
     }
     #[test]
     fn global_scene_keys_remain_distinct_and_reusable_across_frame_sets() {
-        let mut c=Cache::new();
-        assert_eq!(frame(&mut c,&[0,640,1114,2047]).misses,4);
-        let stats=c.prepare(&[2047,640,0,1114],|_,_|panic!("resident global key uploaded again")).unwrap();
-        assert_eq!(stats.hits,4);assert_eq!(stats.upload_bytes,0);
-        let slots=[c.slot(0),c.slot(640),c.slot(1114),c.slot(2047)];
-        for i in 0..slots.len(){for j in 0..i{assert_ne!(slots[i],slots[j]);}}
-        c.submit().unwrap();c.complete().unwrap();
-        assert_eq!(c.prepare(&[u16::MAX],|_,_|panic!()),Err(Error::WorkingSet));
-        assert_eq!(frame(&mut c,&[2047]).hits,1);
+        let mut c = Cache::new();
+        assert_eq!(frame(&mut c, &[0, 640, 1114, 2047]).misses, 4);
+        let stats = c
+            .prepare(&[2047, 640, 0, 1114], |_, _| {
+                panic!("resident global key uploaded again")
+            })
+            .unwrap();
+        assert_eq!(stats.hits, 4);
+        assert_eq!(stats.upload_bytes, 0);
+        let slots = [c.slot(0), c.slot(640), c.slot(1114), c.slot(2047)];
+        for i in 0..slots.len() {
+            for j in 0..i {
+                assert_ne!(slots[i], slots[j]);
+            }
+        }
+        c.submit().unwrap();
+        c.complete().unwrap();
+        assert_eq!(
+            c.prepare(&[u16::MAX], |_, _| panic!()),
+            Err(Error::WorkingSet)
+        );
+        assert_eq!(frame(&mut c, &[2047]).hits, 1);
         // A real scene replacement clears global IDs before new bytes reuse them.
-        c=Cache::new();assert_eq!(frame(&mut c,&[2047]).misses,1);
+        c = Cache::new();
+        assert_eq!(frame(&mut c, &[2047]).misses, 1);
     }
     #[test]
     fn incoming_hit_is_pinned_before_lru_miss() {
@@ -289,19 +304,23 @@ mod tests {
         assert!(frame_tiles(204, 188) + RESERVED_SLOTS <= SLOTS);
     }
     #[test]
-    fn every_slot_of_a_full_frame_fits_one_prepare(){
-        let mut c=Cache::new();
+    fn every_slot_of_a_full_frame_fits_one_prepare() {
+        let mut c = Cache::new();
         // The largest tile rectangle plus the four reserved keys is the whole
         // cache, and the tile keys are consecutive because the cooker emits
         // them that way.
-        let mut keys=[0u16;SLOTS];
-        for (i,k) in keys.iter_mut().enumerate(){*k=i as u16;}
-        let stats=frame(&mut c,&keys);
-        assert_eq!(stats.misses,SLOTS as u32);
-        assert_eq!(stats.upload_bytes,MAX_UPLOAD_BYTES);
-        let mut over=[0u16;SLOTS+1];
-        for (i,k) in over.iter_mut().enumerate(){*k=i as u16;}
-        assert_eq!(c.prepare(&over,|_,_|panic!()),Err(Error::WorkingSet));
+        let mut keys = [0u16; SLOTS];
+        for (i, k) in keys.iter_mut().enumerate() {
+            *k = i as u16;
+        }
+        let stats = frame(&mut c, &keys);
+        assert_eq!(stats.misses, SLOTS as u32);
+        assert_eq!(stats.upload_bytes, MAX_UPLOAD_BYTES);
+        let mut over = [0u16; SLOTS + 1];
+        for (i, k) in over.iter_mut().enumerate() {
+            *k = i as u16;
+        }
+        assert_eq!(c.prepare(&over, |_, _| panic!()), Err(Error::WorkingSet));
     }
     #[test]
     fn failed_upload_is_not_resident_and_can_be_retried() {

@@ -214,8 +214,13 @@ impl Instance {
     /// An event the current state has no transition for is ignored, exactly as
     /// PlayMaker ignores it. That is not a silent drop: the state genuinely has
     /// nothing to do with it.
-    pub fn receive(&mut self, p: Program, vars: &mut [i32], host: &mut impl Host, event: u16)
-        -> Halt {
+    pub fn receive(
+        &mut self,
+        p: Program,
+        vars: &mut [i32],
+        host: &mut impl Host,
+        event: u16,
+    ) -> Halt {
         if vars.len() < p.var_count as usize {
             return Halt::BadProgram;
         }
@@ -258,7 +263,9 @@ impl Instance {
         }
         let mut budget = MAX_OPS_PER_TICK;
         loop {
-            let Some(state) = p.states.get(self.state as usize) else { return Halt::BadProgram };
+            let Some(state) = p.states.get(self.state as usize) else {
+                return Halt::BadProgram;
+            };
             if self.cursor >= state.op_count {
                 // The state's one-shot pass is done, so from here only the ops
                 // authored everyFrame keep running, once each per tick.
@@ -269,7 +276,9 @@ impl Instance {
             }
             budget -= 1;
             let index = state.first_op as usize + self.cursor as usize;
-            let Some(op) = p.ops.get(index).copied() else { return Halt::BadProgram };
+            let Some(op) = p.ops.get(index).copied() else {
+                return Halt::BadProgram;
+            };
             self.cursor += 1;
             match self.run(p, op, vars, host, 0) {
                 Ok(Some(target)) => self.enter(target),
@@ -283,11 +292,18 @@ impl Instance {
         }
     }
     /// The everyFrame pass for a state whose ops have all run once.
-    fn repeat(&mut self, p: Program, state: State, vars: &mut [i32],
-              host: &mut impl Host, budget: &mut u16) -> Halt {
+    fn repeat(
+        &mut self,
+        p: Program,
+        state: State,
+        vars: &mut [i32],
+        host: &mut impl Host,
+        budget: &mut u16,
+    ) -> Halt {
         for i in 0..state.op_count {
-            let Some(op) = p.ops.get(state.first_op as usize + i as usize).copied()
-                else { return Halt::BadProgram };
+            let Some(op) = p.ops.get(state.first_op as usize + i as usize).copied() else {
+                return Halt::BadProgram;
+            };
             if op.flags & REPEAT == 0 {
                 continue;
             }
@@ -314,11 +330,16 @@ impl Instance {
         Halt::Ran
     }
     /// Run one op. `Ok(Some(state))` means it transitioned.
-    fn run(&mut self, p: Program, op: Op, vars: &mut [i32],
-           host: &mut impl Host, depth: u8) -> Result<Option<u16>, Halt> {
-        let var = |i: u16| -> Result<i32, Halt> {
-            vars.get(i as usize).copied().ok_or(Halt::BadProgram)
-        };
+    fn run(
+        &mut self,
+        p: Program,
+        op: Op,
+        vars: &mut [i32],
+        host: &mut impl Host,
+        depth: u8,
+    ) -> Result<Option<u16>, Halt> {
+        let var =
+            |i: u16| -> Result<i32, Halt> { vars.get(i as usize).copied().ok_or(Halt::BadProgram) };
         match op.code {
             Code::Nop => Ok(None),
             Code::Wait => {
@@ -352,7 +373,11 @@ impl Instance {
                     CMP_GT => left > right,
                     _ => return Err(Halt::BadProgram),
                 };
-                if holds { self.send(p, op.c, vars, host, depth) } else { Ok(None) }
+                if holds {
+                    self.send(p, op.c, vars, host, depth)
+                } else {
+                    Ok(None)
+                }
             }
             Code::SendEvent => self.send(p, op.a, vars, host, depth),
             Code::NextFrameEvent => {
@@ -367,14 +392,20 @@ impl Instance {
                 Ok(None)
             }
             Code::Native => {
-                host.native(NativeCall { id: op.flags & !REPEAT, args: [var(op.a)?, var(op.b)?, var(op.c)?] });
+                host.native(NativeCall {
+                    id: op.flags & !REPEAT,
+                    args: [var(op.a)?, var(op.b)?, var(op.c)?],
+                });
                 Ok(None)
             }
             Code::NativeConst => {
                 let konst = |i: u16| -> Result<i32, Halt> {
                     p.constants.get(i as usize).copied().ok_or(Halt::BadProgram)
                 };
-                host.native(NativeCall { id: op.flags & !REPEAT, args: [konst(op.a)?, konst(op.b)?, konst(op.c)?] });
+                host.native(NativeCall {
+                    id: op.flags & !REPEAT,
+                    args: [konst(op.a)?, konst(op.b)?, konst(op.c)?],
+                });
                 Ok(None)
             }
             Code::PlayerDataGet => {
@@ -388,7 +419,11 @@ impl Instance {
                 Ok(None)
             }
             Code::PlayerDataBoolTest => {
-                let event = if host.player_data(op.a) != 0 { op.b } else { op.c };
+                let event = if host.player_data(op.a) != 0 {
+                    op.b
+                } else {
+                    op.c
+                };
                 self.send(p, event, vars, host, depth)
             }
             Code::HeroTrigger => {
@@ -407,21 +442,32 @@ impl Instance {
     }
     /// A synchronous send: the target state is entered inside the sending op,
     /// as PlayMaker does, and its own ops run before this one returns.
-    fn send(&mut self, p: Program, event: u16, vars: &mut [i32],
-            host: &mut impl Host, depth: u8) -> Result<Option<u16>, Halt> {
+    fn send(
+        &mut self,
+        p: Program,
+        event: u16,
+        vars: &mut [i32],
+        host: &mut impl Host,
+        depth: u8,
+    ) -> Result<Option<u16>, Halt> {
         if event == 0 {
             return Ok(None);
         }
         if depth >= MAX_DEPTH {
             return Err(Halt::Depth);
         }
-        let Some(target) = transition_for(p, self.state, event) else { return Ok(None) };
+        let Some(target) = transition_for(p, self.state, event) else {
+            return Ok(None);
+        };
         // Enter here rather than returning, so a nested send inside the target
         // sees the state it actually landed in.
         self.enter(target);
         let state = *p.states.get(target as usize).ok_or(Halt::BadProgram)?;
         for i in 0..state.op_count {
-            let op = *p.ops.get(state.first_op as usize + i as usize).ok_or(Halt::BadProgram)?;
+            let op = *p
+                .ops
+                .get(state.first_op as usize + i as usize)
+                .ok_or(Halt::BadProgram)?;
             self.cursor = i + 1;
             match self.run(p, op, vars, host, depth + 1)? {
                 Some(next) => return Ok(Some(next)),
@@ -436,7 +482,11 @@ fn transition_for(p: Program, state: u16, event: u16) -> Option<u16> {
     let s = p.states.get(state as usize)?;
     let first = s.first_transition as usize;
     let end = first + s.transition_count as usize;
-    p.transitions.get(first..end)?.iter().find(|t| t.event == event).map(|t| t.target)
+    p.transitions
+        .get(first..end)?
+        .iter()
+        .find(|t| t.event == event)
+        .map(|t| t.target)
 }
 
 #[cfg(test)]
@@ -449,7 +499,13 @@ mod tests {
     const YES: u16 = 2;
 
     fn op(code: Code, flags: u8, a: u16, b: u16, c: u16) -> Op {
-        Op { code, flags, a, b, c }
+        Op {
+            code,
+            flags,
+            a,
+            b,
+            c,
+        }
     }
     /// A host that records native calls and keeps four PlayerData fields.
     #[derive(Default)]
@@ -487,10 +543,31 @@ mod tests {
     #[test]
     fn a_wait_blocks_for_its_ticks_then_takes_its_transition() {
         let ops = [op(Code::Wait, 0, 3, FINISHED, 0)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
-                      State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: FINISHED, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 1,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 1,
+                op_count: 0,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: FINISHED,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[],
+            var_count: 2,
+        };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
         for tick in 0..3 {
@@ -503,10 +580,31 @@ mod tests {
     #[test]
     fn a_bool_test_sends_the_branch_its_variable_selects() {
         let ops = [op(Code::BoolTest, 0, 0, YES, 0)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
-                      State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 1,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 1,
+                op_count: 0,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: YES,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[],
+            var_count: 2,
+        };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
         i.tick(p, &mut vars, &mut Recorder::default());
@@ -520,13 +618,34 @@ mod tests {
     #[test]
     fn an_int_compare_uses_its_selector_and_the_constant_pool() {
         let ops = [op(Code::IntCompare, CMP_GE, 0, 0, YES)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
-                      State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[33], var_count: 2 };
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 1,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 1,
+                op_count: 0,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: YES,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[33],
+            var_count: 2,
+        };
         for (soul, expected) in [(32, START), (33, DONE), (99, DONE)] {
             let mut i = Instance::new();
-        let mut vars = [0i32; 2];
+            let mut vars = [0i32; 2];
             vars[0] = soul;
             i.tick(p, &mut vars, &mut Recorder::default());
             assert_eq!(i.state, expected, "soul {soul}");
@@ -536,12 +655,35 @@ mod tests {
     fn a_send_runs_the_target_state_inside_the_sending_op() {
         // START sends YES; DONE then calls native 7 in the same tick, which is
         // the synchronous nesting PlayMaker has and a queue would not give.
-        let ops = [op(Code::SendEvent, 0, YES, 0, 0),
-                   op(Code::Native, 7, 0, 1, 2)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
-                      State { first_op: 1, op_count: 1, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 3 };
+        let ops = [
+            op(Code::SendEvent, 0, YES, 0, 0),
+            op(Code::Native, 7, 0, 1, 2),
+        ];
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 1,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 1,
+                op_count: 1,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: YES,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[],
+            var_count: 3,
+        };
         let mut i = Instance::new();
         let mut vars = [0i32; 3];
         vars[0] = 11;
@@ -550,15 +692,42 @@ mod tests {
         let mut host = Recorder::default();
         i.tick(p, &mut vars, &mut host);
         assert_eq!(i.state, DONE);
-        assert_eq!(host.calls[0], Some(NativeCall { id: 7, args: [11, 22, 33] }));
+        assert_eq!(
+            host.calls[0],
+            Some(NativeCall {
+                id: 7,
+                args: [11, 22, 33]
+            })
+        );
     }
     #[test]
     fn a_next_frame_event_waits_for_the_next_tick() {
         let ops = [op(Code::NextFrameEvent, 0, YES, 0, 0)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
-                      State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 1,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 1,
+                op_count: 0,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: YES,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[],
+            var_count: 2,
+        };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
         i.tick(p, &mut vars, &mut Recorder::default());
@@ -570,25 +739,65 @@ mod tests {
     fn a_self_transition_loop_hits_the_op_budget_rather_than_hanging() {
         // One state that sends itself back to itself for ever.
         let ops = [op(Code::SendEvent, 0, YES, 0, 0)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 }];
-        let transitions = [Transition { event: YES, target: START }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops, constants: &[], var_count: 2 };
+        let states = [State {
+            first_op: 0,
+            op_count: 1,
+            first_transition: 0,
+            transition_count: 1,
+        }];
+        let transitions = [Transition {
+            event: YES,
+            target: START,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[],
+            var_count: 2,
+        };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
-        assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::Depth, "the nesting bound catches it first");
+        assert_eq!(
+            i.tick(p, &mut vars, &mut Recorder::default()),
+            Halt::Depth,
+            "the nesting bound catches it first"
+        );
     }
     #[test]
     fn player_data_reads_and_writes_the_hosts_progression_flags() {
         const HAS_DASH: u16 = 2;
         // Read the flag, branch on it, and record having done so.
-        let ops = [op(Code::PlayerDataBoolTest, 0, HAS_DASH, YES, 0),
-                   op(Code::PlayerDataSet, 0, HAS_DASH, 0, 0),
-                   op(Code::PlayerDataGet, 0, 1, HAS_DASH, 0)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
-                      State { first_op: 1, op_count: 2, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops,
-                          constants: &[], var_count: 2 };
+        let ops = [
+            op(Code::PlayerDataBoolTest, 0, HAS_DASH, YES, 0),
+            op(Code::PlayerDataSet, 0, HAS_DASH, 0, 0),
+            op(Code::PlayerDataGet, 0, 1, HAS_DASH, 0),
+        ];
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 1,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 1,
+                op_count: 2,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: YES,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[],
+            var_count: 2,
+        };
         let mut host = Recorder::default();
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
@@ -599,7 +808,10 @@ mod tests {
         let mut i = Instance::new();
         i.tick(p, &mut vars, &mut host);
         assert_eq!(i.state, DONE);
-        assert_eq!(host.fields[HAS_DASH as usize], 7, "the write went to the host");
+        assert_eq!(
+            host.fields[HAS_DASH as usize], 7,
+            "the write went to the host"
+        );
         assert_eq!(vars[1], 7, "and the read came back from it");
     }
     #[test]
@@ -608,33 +820,82 @@ mod tests {
         // the child's cooked id and the active flag straight from the pool, so
         // no compiler temporary is needed for a fixed set of objects.
         const ACTIVATE: u8 = 3;
-        let ops = [op(Code::NativeConst, ACTIVATE, 0, 2, 0),
-                   op(Code::NativeConst, ACTIVATE, 1, 2, 0)];
-        let states = [State { first_op: 0, op_count: 2, first_transition: 0, transition_count: 0 }];
-        let p = Program { states: &states, transitions: &[], ops: &ops,
-                          constants: &[4242, 4243, 1], var_count: 0 };
+        let ops = [
+            op(Code::NativeConst, ACTIVATE, 0, 2, 0),
+            op(Code::NativeConst, ACTIVATE, 1, 2, 0),
+        ];
+        let states = [State {
+            first_op: 0,
+            op_count: 2,
+            first_transition: 0,
+            transition_count: 0,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &[],
+            ops: &ops,
+            constants: &[4242, 4243, 1],
+            var_count: 0,
+        };
         let mut host = Recorder::default();
         let mut i = Instance::new();
         i.tick(p, &mut [], &mut host);
-        assert_eq!(host.calls[0], Some(NativeCall { id: ACTIVATE, args: [4242, 1, 4242] }));
-        assert_eq!(host.calls[1], Some(NativeCall { id: ACTIVATE, args: [4243, 1, 4242] }));
+        assert_eq!(
+            host.calls[0],
+            Some(NativeCall {
+                id: ACTIVATE,
+                args: [4242, 1, 4242]
+            })
+        );
+        assert_eq!(
+            host.calls[1],
+            Some(NativeCall {
+                id: ACTIVATE,
+                args: [4243, 1, 4242]
+            })
+        );
     }
     #[test]
     fn an_every_frame_condition_keeps_being_tested_after_its_state_settles() {
         // The Superdash's ground charge watches Y Speed every frame; without
         // the repeat pass a state like this would test once and sit for ever.
-        let ops = [op(Code::SetBool, 1, 0, 0, 0),
-                   op(Code::IntCompare, CMP_GE | REPEAT, 1, 0, YES)];
-        let states = [State { first_op: 0, op_count: 2, first_transition: 0, transition_count: 1 },
-                      State { first_op: 2, op_count: 0, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops,
-                          constants: &[5], var_count: 2 };
+        let ops = [
+            op(Code::SetBool, 1, 0, 0, 0),
+            op(Code::IntCompare, CMP_GE | REPEAT, 1, 0, YES),
+        ];
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 2,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 2,
+                op_count: 0,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: YES,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[5],
+            var_count: 2,
+        };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
         for tick in 0..4 {
             assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::Ran);
-            assert_eq!(i.state, START, "tick {tick}: the watched value is still low");
+            assert_eq!(
+                i.state, START,
+                "tick {tick}: the watched value is still low"
+            );
             assert_eq!(vars[0], 1, "the one-shot op ran once and stays run");
         }
         vars[1] = 9;
@@ -649,14 +910,47 @@ mod tests {
         // branch in the game depends on that: Elderbug's 21 branches are a
         // priority list in declaration order, not independent tests.
         const NO: u16 = 3;
-        let ops = [op(Code::BoolTest, 0, 0, YES, 0),
-                   op(Code::BoolTest, 0, 1, NO, 0)];
-        let states = [State { first_op: 0, op_count: 2, first_transition: 0, transition_count: 2 },
-                      State { first_op: 2, op_count: 0, first_transition: 2, transition_count: 0 },
-                      State { first_op: 2, op_count: 0, first_transition: 2, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: 1 }, Transition { event: NO, target: 2 }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops,
-                          constants: &[], var_count: 2 };
+        let ops = [
+            op(Code::BoolTest, 0, 0, YES, 0),
+            op(Code::BoolTest, 0, 1, NO, 0),
+        ];
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 2,
+                first_transition: 0,
+                transition_count: 2,
+            },
+            State {
+                first_op: 2,
+                op_count: 0,
+                first_transition: 2,
+                transition_count: 0,
+            },
+            State {
+                first_op: 2,
+                op_count: 0,
+                first_transition: 2,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [
+            Transition {
+                event: YES,
+                target: 1,
+            },
+            Transition {
+                event: NO,
+                target: 2,
+            },
+        ];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[],
+            var_count: 2,
+        };
         // Both conditions hold, so declaration order decides.
         let mut i = Instance::new();
         let mut vars = [1i32, 1];
@@ -675,11 +969,31 @@ mod tests {
         // compiler still refuses, and all of them arrive this way.
         const ACTED: u8 = 9;
         let ops = [op(Code::Native, ACTED, 0, 0, 0)];
-        let states = [State { first_op: 0, op_count: 0, first_transition: 0, transition_count: 1 },
-                      State { first_op: 0, op_count: 1, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops,
-                          constants: &[], var_count: 1 };
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 0,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 0,
+                op_count: 1,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: YES,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[],
+            var_count: 1,
+        };
         let mut host = Recorder::default();
         let mut i = Instance::new();
         let mut vars = [0i32; 1];
@@ -699,19 +1013,42 @@ mod tests {
         // rather than the refusal.
         const VOLUME: i32 = 4242;
         let ops = [op(Code::HeroTrigger, TRIGGER_STAY | REPEAT, 0, 0, YES)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 1 },
-                      State { first_op: 1, op_count: 0, first_transition: 1, transition_count: 0 }];
-        let transitions = [Transition { event: YES, target: DONE }];
-        let p = Program { states: &states, transitions: &transitions, ops: &ops,
-                          constants: &[VOLUME], var_count: 0 };
+        let states = [
+            State {
+                first_op: 0,
+                op_count: 1,
+                first_transition: 0,
+                transition_count: 1,
+            },
+            State {
+                first_op: 1,
+                op_count: 0,
+                first_transition: 1,
+                transition_count: 0,
+            },
+        ];
+        let transitions = [Transition {
+            event: YES,
+            target: DONE,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &transitions,
+            ops: &ops,
+            constants: &[VOLUME],
+            var_count: 0,
+        };
         let mut host = Recorder::default();
         let mut i = Instance::new();
         for tick in 0..3 {
             assert_eq!(i.tick(p, &mut [], &mut host), Halt::Ran);
             assert_eq!(i.state, START, "tick {tick}: the hero is somewhere else");
         }
-        assert_eq!(host.last_ask, Some((VOLUME, TRIGGER_STAY)),
-                   "the volume is the cooked object id, the phase the authored one");
+        assert_eq!(
+            host.last_ask,
+            Some((VOLUME, TRIGGER_STAY)),
+            "the volume is the cooked object id, the phase the authored one"
+        );
         // Four asks for three ticks: the entry tick runs the op in the one-shot
         // pass and again in that same tick's repeat pass, then every later tick
         // runs only the repeat.
@@ -726,31 +1063,71 @@ mod tests {
         // the bank and this executor disagree, which must stop rather than pick
         // a phase.
         let ops = [op(Code::HeroTrigger, TRIGGER_EXIT + 1, 0, 0, YES)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 0 }];
-        let p = Program { states: &states, transitions: &[], ops: &ops,
-                          constants: &[4242], var_count: 0 };
+        let states = [State {
+            first_op: 0,
+            op_count: 1,
+            first_transition: 0,
+            transition_count: 0,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &[],
+            ops: &ops,
+            constants: &[4242],
+            var_count: 0,
+        };
         let mut i = Instance::new();
-        assert_eq!(i.tick(p, &mut [], &mut Recorder::default()), Halt::BadProgram);
+        assert_eq!(
+            i.tick(p, &mut [], &mut Recorder::default()),
+            Halt::BadProgram
+        );
     }
     #[test]
     fn a_bad_index_refuses_rather_than_reading_past_the_program() {
         let ops = [op(Code::SetInt, 0, 0, 9, 0)];
-        let states = [State { first_op: 0, op_count: 1, first_transition: 0, transition_count: 0 }];
-        let p = Program { states: &states, transitions: &[], ops: &ops, constants: &[1], var_count: 2 };
+        let states = [State {
+            first_op: 0,
+            op_count: 1,
+            first_transition: 0,
+            transition_count: 0,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &[],
+            ops: &ops,
+            constants: &[1],
+            var_count: 2,
+        };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
-        assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::BadProgram);
+        assert_eq!(
+            i.tick(p, &mut vars, &mut Recorder::default()),
+            Halt::BadProgram
+        );
     }
     #[test]
     fn the_pending_queue_refuses_rather_than_dropping_an_event() {
         // The queue drains at the start of every tick, so overflowing it takes
         // one state that queues more than the bound within a single tick.
         let many = [op(Code::NextFrameEvent, 0, YES, 0, 0); MAX_PENDING + 1];
-        let states = [State { first_op: 0, op_count: many.len() as u16,
-                              first_transition: 0, transition_count: 0 }];
-        let p = Program { states: &states, transitions: &[], ops: &many, constants: &[], var_count: 2 };
+        let states = [State {
+            first_op: 0,
+            op_count: many.len() as u16,
+            first_transition: 0,
+            transition_count: 0,
+        }];
+        let p = Program {
+            states: &states,
+            transitions: &[],
+            ops: &many,
+            constants: &[],
+            var_count: 2,
+        };
         let mut i = Instance::new();
         let mut vars = [0i32; 2];
-        assert_eq!(i.tick(p, &mut vars, &mut Recorder::default()), Halt::PendingFull);
+        assert_eq!(
+            i.tick(p, &mut vars, &mut Recorder::default()),
+            Halt::PendingFull
+        );
     }
 }

@@ -53,14 +53,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 5], count: 0 }
+        Self {
+            values: [None; 5],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,8 +101,17 @@ fn isqrt(n: i64) -> i64 {
 }
 impl Aspid {
     pub fn new(position: [i32; 2], seed: u32) -> Self {
-        Self { phase: Phase::Idle, velocity: [0; 2], buzz: IdleBuzz::new(position), timer: 0, range_out: 0,
-            face_pause: 0, facing: -1, fixed_accumulator: 0, rng: seed }
+        Self {
+            phase: Phase::Idle,
+            velocity: [0; 2],
+            buzz: IdleBuzz::new(position),
+            timer: 0,
+            range_out: 0,
+            face_pause: 0,
+            facing: -1,
+            fixed_accumulator: 0,
+            rng: seed,
+        }
     }
     /// FSM variable `startAlert`: Idle's BoolTest sends ALERT on its first frame.
     pub fn new_alert(position: [i32; 2], seed: u32) -> Self {
@@ -142,7 +156,11 @@ impl Aspid {
         }
     }
     fn face_hero(&mut self, senses: Senses, turn: bool, out: &mut Actions) {
-        let want = if senses.hero[0] > senses.position[0] { 1 } else { -1 };
+        let want = if senses.hero[0] > senses.position[0] {
+            1
+        } else {
+            -1
+        };
         self.face(want, turn, out);
     }
     fn begin_distance_fly(&mut self, out: &mut Actions) {
@@ -164,7 +182,14 @@ impl Aspid {
     fn fly(&mut self, senses: Senses, fixed: bool, params: (i32, i32, i32), out: &mut Actions) {
         if fixed {
             let mut v = self.velocity;
-            distance_fly(senses.position, senses.hero, params.0, params.1, params.2, &mut v);
+            distance_fly(
+                senses.position,
+                senses.hero,
+                params.0,
+                params.1,
+                params.2,
+                &mut v,
+            );
             self.velocity = v;
             out.push(Action::Velocity(self.velocity));
         }
@@ -245,8 +270,10 @@ impl Aspid {
                     let dy = senses.hero[1] as i64 - senses.position[1] as i64;
                     let length = isqrt(dx * dx + dy * dy).max(1);
                     // dx, dy and length fit i32 while positions stay inside +/-2^30 (Q16 +/-16384 units).
-                    let v = [psx_math::int32::mul_div_i32(dx as i32, SHOT_SPEED, length as i32),
-                        psx_math::int32::mul_div_i32(dy as i32, SHOT_SPEED, length as i32)];
+                    let v = [
+                        psx_math::int32::mul_div_i32(dx as i32, SHOT_SPEED, length as i32),
+                        psx_math::int32::mul_div_i32(dy as i32, SHOT_SPEED, length as i32),
+                    ];
                     out.push(Action::Fire(v));
                     self.face_hero(senses, false, &mut out);
                     self.phase = Phase::FireDribble;

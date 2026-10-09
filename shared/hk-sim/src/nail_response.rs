@@ -120,7 +120,17 @@ mod tests {
         down_speed: 0,
     };
     fn p() -> Params {
-        Params { speed: 8 * ONE, jump: 16 * ONE, gravity: 48 * ONE, fall: 20 * ONE, hold_ticks: 12, min_ticks: 5, half_width: ONE / 4, bottom: -ONE, ..Params::ZERO }
+        Params {
+            speed: 8 * ONE,
+            jump: 16 * ONE,
+            gravity: 48 * ONE,
+            fall: 20 * ONE,
+            hold_ticks: 12,
+            min_ticks: 5,
+            half_width: ONE / 4,
+            bottom: -ONE,
+            ..Params::ZERO
+        }
     }
     #[test]
     fn downslash_holds_source_velocity_then_stops_instead_of_ballistic_jump() {

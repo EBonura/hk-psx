@@ -20,13 +20,24 @@ struct Reader<'a> {
 impl Reader<'_> {
     fn take<const N: usize>(&mut self) -> [u8; N] {
         let end = self.at.checked_add(N).expect("input offset");
-        let a = self.bytes.get(self.at..end).expect("truncated certificate input").try_into().unwrap();
+        let a = self
+            .bytes
+            .get(self.at..end)
+            .expect("truncated certificate input")
+            .try_into()
+            .unwrap();
         self.at = end;
         a
     }
-    fn u32(&mut self) -> u32 { u32::from_le_bytes(self.take()) }
-    fn i32(&mut self) -> i32 { i32::from_le_bytes(self.take()) }
-    fn u16(&mut self) -> u16 { u16::from_le_bytes(self.take()) }
+    fn u32(&mut self) -> u32 {
+        u32::from_le_bytes(self.take())
+    }
+    fn i32(&mut self) -> i32 {
+        i32::from_le_bytes(self.take())
+    }
+    fn u16(&mut self) -> u16 {
+        u16::from_le_bytes(self.take())
+    }
 }
 fn integral(a: &[u8], w: usize, h: usize) -> Vec<u32> {
     let mut p = vec![0; (w + 1) * (h + 1)];
@@ -46,7 +57,15 @@ type Proof = ([i16; 2], [u16; 2], Vec<u32>);
 
 /// The grid bits whose `window` is wholly set in `ok`, cropped to the set
 /// bits, minus any window `refuse` says to leave out.
-fn erode(bounds: [i32; 4], w: usize, h: usize, shift: u32, window: i32, ok: &[u32], refuse: impl Fn(usize, usize, usize, usize) -> bool) -> Proof {
+fn erode(
+    bounds: [i32; 4],
+    w: usize,
+    h: usize,
+    shift: u32,
+    window: i32,
+    ok: &[u32],
+    refuse: impl Fn(usize, usize, usize, usize) -> bool,
+) -> Proof {
     let step = 1i32 << shift;
     let gx = bounds[0] >> shift;
     let gy = bounds[1] >> shift;
@@ -60,8 +79,12 @@ fn erode(bounds: [i32; 4], w: usize, h: usize, shift: u32, window: i32, ok: &[u3
             let t = (gy + y as i32) * step - bounds[1];
             let r = l + window;
             let b = t + window;
-            if l >= 0 && t >= 0 && r <= w as i32 && b <= h as i32
-                && sum(ok, w, l as usize, t as usize, r as usize, b as usize) == (window * window) as u32
+            if l >= 0
+                && t >= 0
+                && r <= w as i32
+                && b <= h as i32
+                && sum(ok, w, l as usize, t as usize, r as usize, b as usize)
+                    == (window * window) as u32
                 && !refuse(l as usize, t as usize, r as usize, b as usize)
             {
                 bits[y * gw + x] = true;
@@ -86,7 +109,11 @@ fn erode(bounds: [i32; 4], w: usize, h: usize, shift: u32, window: i32, ok: &[u3
             }
         }
     }
-    ([(gx + x0 as i32) as i16, (gy + y0 as i32) as i16], [width as u16, height as u16], packed)
+    (
+        [(gx + x0 as i32) as i16, (gy + y0 as i32) as i16],
+        [width as u16, height as u16],
+        packed,
+    )
 }
 fn bounds_of<'a>(points: impl Iterator<Item = &'a (i32, i32)>) -> [i32; 4] {
     let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
@@ -99,7 +126,9 @@ fn bounds_of<'a>(points: impl Iterator<Item = &'a (i32, i32)>) -> [i32; 4] {
     bounds
 }
 fn legal_quad(q: &[(i32, i32)]) {
-    assert!(q.iter().all(|&(x, y)| (-1024..=1023).contains(&x) && (-1024..=1023).contains(&y)));
+    assert!(q
+        .iter()
+        .all(|&(x, y)| (-1024..=1023).contains(&x) && (-1024..=1023).contains(&y)));
     for (a, b) in [(0, 1), (1, 2), (2, 0), (1, 3), (3, 2)] {
         assert!((q[a].0 - q[b].0).abs() <= 1023 && (q[a].1 - q[b].1).abs() <= 511);
     }
@@ -108,7 +137,13 @@ fn legal_quad(q: &[(i32, i32)]) {
 /// One textured quad's certificate: the 4 px (shift 2) or 8 px (shift 3) grid
 /// bits whose 19x19 or 23x23 window samples an opaque, STP-clear texel in
 /// every phase. Unknown neighbouring atlas samples never certify.
-pub fn certify_tile(phases: &[[(i32, i32); 4]], tw: usize, th: usize, words: &[u16], shift: u32) -> Proof {
+pub fn certify_tile(
+    phases: &[[(i32, i32); 4]],
+    tw: usize,
+    th: usize,
+    words: &[u16],
+    shift: u32,
+) -> Proof {
     assert!(shift == 2 || shift == 3);
     let window = 16 + (1i32 << shift) - 1;
     assert!(!phases.is_empty() && phases.len() <= 16 && tw > 0 && th > 0 && tw <= 252 && th <= 252);
@@ -122,16 +157,28 @@ pub fn certify_tile(phases: &[[(i32, i32); 4]], tw: usize, th: usize, words: &[u
     let h = (bounds[3] - bounds[1]) as usize;
     assert!(w <= 1025 && h <= 513);
     let mut opaque = vec![1u8; w * h];
-    let uv = [(0, 0), (tw as i32 - 1, 0), (0, th as i32 - 1), (tw as i32 - 1, th as i32 - 1)];
+    let uv = [
+        (0, 0),
+        (tw as i32 - 1, 0),
+        (0, th as i32 - 1),
+        (tw as i32 - 1, th as i32 - 1),
+    ];
     for v in phases {
         let mut here = vec![0u8; w * h];
         for ids in [[0, 1, 2], [1, 3, 2]] {
-            let Some(t) = tri_raster_setup(ids.map(|i| v[i]), [(0, 0, 0); 3], ids.map(|i| uv[i]), true) else { continue };
+            let Some(t) =
+                tri_raster_setup(ids.map(|i| v[i]), [(0, 0, 0); 3], ids.map(|i| uv[i]), true)
+            else {
+                continue;
+            };
             for (y0, y1, l, dl, r, dr) in t.parts {
                 for y in y0..y1 {
                     let k = (y - y0) as i64;
                     for x in tri_span_x(l + k * dl)..tri_span_x(r + k * dr) {
-                        assert!(x >= bounds[0] && x < bounds[2] && y >= bounds[1] && y < bounds[3], "raster escaped proven bounds");
+                        assert!(
+                            x >= bounds[0] && x < bounds[2] && y >= bounds[1] && y < bounds[3],
+                            "raster escaped proven bounds"
+                        );
                         let u = tri_plane_eval(t.planes[3], x, y) as usize;
                         let v = tri_plane_eval(t.planes[4], x, y) as usize;
                         if u >= tw || v >= th {
@@ -149,7 +196,15 @@ pub fn certify_tile(phases: &[[(i32, i32); 4]], tw: usize, th: usize, words: &[u
             *a &= b;
         }
     }
-    erode(bounds, w, h, shift, window, &integral(&opaque, w, h), |_, _, _, _| false)
+    erode(
+        bounds,
+        w,
+        h,
+        shift,
+        window,
+        &integral(&opaque, w, h),
+        |_, _, _, _| false,
+    )
 }
 
 /// One group's seam certificate: the 4 px grid bits whose 19x19 window the
@@ -177,12 +232,19 @@ pub fn certify_group(phases: &[Vec<(i32, i32)>], shift: u32) -> Proof {
         for (member, q) in v.chunks_exact(4).enumerate() {
             let mut one = vec![0u8; w * h];
             for ids in [[0, 1, 2], [1, 3, 2]] {
-                let Some(t) = tri_raster_setup(ids.map(|i| q[i]), [(0, 0, 0); 3], [(0, 0); 3], false) else { continue };
+                let Some(t) =
+                    tri_raster_setup(ids.map(|i| q[i]), [(0, 0, 0); 3], [(0, 0); 3], false)
+                else {
+                    continue;
+                };
                 for (y0, y1, l, dl, r, dr) in t.parts {
                     for y in y0..y1 {
                         let k = (y - y0) as i64;
                         for x in tri_span_x(l + k * dl)..tri_span_x(r + k * dr) {
-                            assert!(x >= bounds[0] && x < bounds[2] && y >= bounds[1] && y < bounds[3], "group raster escaped bounds");
+                            assert!(
+                                x >= bounds[0] && x < bounds[2] && y >= bounds[1] && y < bounds[3],
+                                "group raster escaped bounds"
+                            );
                             let at = (y - bounds[1]) as usize * w + (x - bounds[0]) as usize;
                             one[at] = 1;
                             here[at] = 1;
@@ -202,7 +264,15 @@ pub fn certify_group(phases: &[Vec<(i32, i32)>], shift: u32) -> Proof {
     // ordinary per-source certificates continue to provide their own coverage.
     let single: Vec<_> = single.iter().map(|mask| integral(mask, w, h)).collect();
     let full = (window * window) as u32;
-    erode(bounds, w, h, shift, window, &integral(&opaque, w, h), |l, t, r, b| single.iter().any(|p| sum(p, w, l, t, r, b) == full))
+    erode(
+        bounds,
+        w,
+        h,
+        shift,
+        window,
+        &integral(&opaque, w, h),
+        |l, t, r, b| single.iter().any(|p| sum(p, w, l, t, r, b) == full),
+    )
 }
 
 fn proofs(count: u32, mut next: impl FnMut() -> (u32, Proof)) -> Vec<u8> {
@@ -230,7 +300,10 @@ fn proofs(count: u32, mut next: impl FnMut() -> (u32, Proof)) -> Vec<u8> {
 /// keeps their order.
 pub fn tile_proofs(input: &[u8], shift: u32) -> Vec<u8> {
     use rayon::prelude::*;
-    let mut r = Reader { bytes: input, at: 0 };
+    let mut r = Reader {
+        bytes: input,
+        at: 0,
+    };
     assert_eq!(&r.take::<8>(), b"HKTCIN01");
     let count = r.u32();
     assert!(count <= 65535);
@@ -243,12 +316,17 @@ pub fn tile_proofs(input: &[u8], shift: u32) -> Vec<u8> {
         let w = r.u16() as usize;
         let h = r.u16() as usize;
         assert!(w > 0 && h > 0 && w <= 252 && h <= 252);
-        let phases = (0..n).map(|_| core::array::from_fn(|_| (r.i32(), r.i32()))).collect::<Vec<[(i32, i32); 4]>>();
+        let phases = (0..n)
+            .map(|_| core::array::from_fn(|_| (r.i32(), r.i32())))
+            .collect::<Vec<[(i32, i32); 4]>>();
         let words = (0..w * h).map(|_| r.u16()).collect::<Vec<_>>();
         poses.push((id, phases, w, h, words));
     }
     assert_eq!(r.at, r.bytes.len(), "trailing certificate input");
-    let done: Vec<(u32, Proof)> = poses.par_iter().map(|(id, phases, w, h, words)| (*id, certify_tile(phases, *w, *h, words, shift))).collect();
+    let done: Vec<(u32, Proof)> = poses
+        .par_iter()
+        .map(|(id, phases, w, h, words)| (*id, certify_tile(phases, *w, *h, words, shift)))
+        .collect();
     let mut it = done.into_iter();
     proofs(count, || it.next().unwrap())
 }
@@ -257,7 +335,10 @@ pub fn tile_proofs(input: &[u8], shift: u32) -> Vec<u8> {
 /// `main`).
 pub fn group_proofs(input: &[u8]) -> Vec<u8> {
     use rayon::prelude::*;
-    let mut r = Reader { bytes: input, at: 0 };
+    let mut r = Reader {
+        bytes: input,
+        at: 0,
+    };
     assert_eq!(&r.take::<8>(), b"HKGPIN01");
     let count = r.u32();
     assert!(count <= 65535);
@@ -268,11 +349,16 @@ pub fn group_proofs(input: &[u8]) -> Vec<u8> {
         let n = r.u32() as usize;
         let members = r.u32() as usize;
         assert!((1..=256).contains(&n) && (2..=4).contains(&members));
-        let phases = (0..n).map(|_| (0..members * 4).map(|_| (r.i32(), r.i32())).collect()).collect::<Vec<Vec<_>>>();
+        let phases = (0..n)
+            .map(|_| (0..members * 4).map(|_| (r.i32(), r.i32())).collect())
+            .collect::<Vec<Vec<_>>>();
         poses.push((id, phases));
     }
     assert_eq!(r.at, r.bytes.len(), "trailing group input");
-    let done: Vec<(u32, Proof)> = poses.par_iter().map(|(id, phases)| (*id, certify_group(phases, 2))).collect();
+    let done: Vec<(u32, Proof)> = poses
+        .par_iter()
+        .map(|(id, phases)| (*id, certify_group(phases, 2)))
+        .collect();
     let mut it = done.into_iter();
     proofs(count, || it.next().unwrap())
 }
@@ -280,7 +366,9 @@ pub fn group_proofs(input: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn square() -> [[(i32, i32); 4]; 1] { [[(0, 0), (48, 0), (0, 48), (48, 48)]] }
+    fn square() -> [[(i32, i32); 4]; 1] {
+        [[(0, 0), (48, 0), (0, 48), (48, 48)]]
+    }
     #[test]
     fn transparent_and_soft_never_certify() {
         for word in [0, 0x8000, 0xffff] {
@@ -306,7 +394,18 @@ mod tests {
         let p = [square()[0], [(0, 0), (16, 0), (0, 16), (16, 16)]];
         assert!(certify_tile(&p, 2, 2, &[1; 4], 3).2.is_empty());
     }
-    fn pair() -> Vec<(i32, i32)> { vec![(0, 0), (16, 0), (0, 48), (16, 48), (16, 0), (32, 0), (16, 48), (32, 48)] }
+    fn pair() -> Vec<(i32, i32)> {
+        vec![
+            (0, 0),
+            (16, 0),
+            (0, 48),
+            (16, 48),
+            (16, 0),
+            (32, 0),
+            (16, 48),
+            (32, 48),
+        ]
+    }
     #[test]
     fn union_before_erosion_fills_seam() {
         let c = certify_group(&[pair()], 2);
@@ -340,9 +439,15 @@ mod tests {
     fn the_byte_formats_round_trip_an_empty_input() {
         let mut input = b"HKTCIN01".to_vec();
         input.extend(0u32.to_le_bytes());
-        assert_eq!(tile_proofs(&input, 2), [b"HKTCOT01".as_slice(), &[0; 4]].concat());
+        assert_eq!(
+            tile_proofs(&input, 2),
+            [b"HKTCOT01".as_slice(), &[0; 4]].concat()
+        );
         let mut input = b"HKGPIN01".to_vec();
         input.extend(0u32.to_le_bytes());
-        assert_eq!(group_proofs(&input), [b"HKTCOT01".as_slice(), &[0; 4]].concat());
+        assert_eq!(
+            group_proofs(&input),
+            [b"HKTCOT01".as_slice(), &[0; 4]].concat()
+        );
     }
 }

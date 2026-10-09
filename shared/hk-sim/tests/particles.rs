@@ -160,7 +160,10 @@ fn overflow_is_exact_counted_and_never_overwrites_existing_particles() {
     // rest as dropped rather than overwriting anything already flying.
     p.spawn_death(0, 12546 + whole as u32, [0; 3], BANK);
     let spilled = whole * death + death - CAPACITY;
-    assert_eq!((p.active(), p.spawned, p.dropped), (CAPACITY, CAPACITY as u32, spilled as u32));
+    assert_eq!(
+        (p.active(), p.spawned, p.dropped),
+        (CAPACITY, CAPACITY as u32, spilled as u32)
+    );
     p.spawn_grass(0, EMITTER, BANK);
     assert_eq!(p.dropped, (spilled + grass) as u32);
     p.clear_scene(1);

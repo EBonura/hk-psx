@@ -26,8 +26,13 @@ impl AttackParams {
     /// Every field zero, so a caller that only needs a swing's shape (the
     /// enemy nails, the test fixtures) does not restate the hero's buffers.
     pub const ZERO: Self = Self {
-        duration: 0, cooldown: 0, alternate_reset: 0, hit_start: 0, hit_end: 0,
-        queue_ticks: 0, recovery_ticks: 0,
+        duration: 0,
+        cooldown: 0,
+        alternate_reset: 0,
+        hit_start: 0,
+        hit_end: 0,
+        queue_ticks: 0,
+        recovery_ticks: 0,
     };
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,7 +92,9 @@ impl Nail {
         self.was_button = button;
         // CanAttack refuses a swing while dashing; the source keeps the press
         // queued across that, so it fires the moment the dash releases.
-        let legal = !self.active && self.cooldown == 0 && player.dash_left == 0
+        let legal = !self.active
+            && self.cooldown == 0
+            && player.dash_left == 0
             && !matches!(player.super_dash, crate::SuperDash::Travelling(_));
         let start = self.queuing && button && legal;
         if self.queuing {
@@ -235,7 +242,8 @@ pub fn polygon_hits_box(poly: &[[i32; 2]], bounds: [i32; 4]) -> bool {
     // scan to reject them once, before four segment tests per polygon edge.
     // Strict separation preserves all touching cases. Reversed legacy bounds
     // retain the old exact path rather than changing their interpretation.
-    if x0 <= x1 && y0 <= y1
+    if x0 <= x1
+        && y0 <= y1
         && (extent[2] < x0 || extent[0] > x1 || extent[3] < y0 || extent[1] > y1)
     {
         return false;
@@ -268,7 +276,9 @@ mod tests {
         cooldown: 25,
         alternate_reset: 30,
         hit_start: 2,
-        hit_end: 6, ..AttackParams::ZERO };
+        hit_end: 6,
+        ..AttackParams::ZERO
+    };
     #[test]
     fn press_edges_cooldown_alternate_and_reset() {
         let mut n = Nail::new();

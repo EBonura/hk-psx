@@ -9,18 +9,25 @@
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/decor.rs"));
 
 /// Decor groups shown, summed over drawn frames.
-#[no_mangle] pub static mut HK_DECOR_GROUPS: u32 = 0;
+#[no_mangle]
+pub static mut HK_DECOR_GROUPS: u32 = 0;
 
 /// Show one frame of every decor group of `view`, `ticks` (60 Hz) after its
 /// scene started. Runs after the view's visibility reset, beside props::apply.
 #[inline(never)]
 pub fn apply(view: usize, ticks: u32) {
-    let Ok(at) = VIEWS.binary_search_by_key(&(view as u16), |&(slot, _, _)| slot) else { return };
+    let Ok(at) = VIEWS.binary_search_by_key(&(view as u16), |&(slot, _, _)| slot) else {
+        return;
+    };
     let (_, first, count) = VIEWS[at];
-    for &(draw, draws, fps, wrap, loop_start, step, steps) in &GROUPS[first as usize..(first + count) as usize] {
+    for &(draw, draws, fps, wrap, loop_start, step, steps) in
+        &GROUPS[first as usize..(first + count) as usize]
+    {
         let shown = STEPS[step as usize + frame(ticks, fps, wrap, loop_start, steps)] as usize;
         for k in 0..draws as usize {
-            if k != shown { crate::render::set_visible(draw as usize + k, false); }
+            if k != shown {
+                crate::render::set_visible(draw as usize + k, false);
+            }
         }
     }
     unsafe { HK_DECOR_GROUPS = HK_DECOR_GROUPS.wrapping_add(count as u32) }
@@ -34,7 +41,9 @@ fn frame(ticks: u32, fps_x256: u16, wrap: u8, loop_start: u8, steps: u8) -> usiz
     let loop_start = loop_start as u32;
     let index = match wrap {
         0 => time % steps,
-        1 if time >= steps && loop_start < steps => loop_start + (time - loop_start) % (steps - loop_start),
+        1 if time >= steps && loop_start < steps => {
+            loop_start + (time - loop_start) % (steps - loop_start)
+        }
         _ => time.min(steps - 1),
     };
     index as usize

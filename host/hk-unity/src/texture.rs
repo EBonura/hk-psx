@@ -12,7 +12,9 @@ fn image_data(source: &Source, obj: &Obj, tex: &Value) -> Result<Vec<u8>> {
             return Ok(b.clone());
         }
     }
-    let stream = tex.get("m_StreamData").ok_or_else(|| Error::Format("Texture2D has no image data".into()))?;
+    let stream = tex
+        .get("m_StreamData")
+        .ok_or_else(|| Error::Format("Texture2D has no image data".into()))?;
     let path = stream.get("path").and_then(Value::str).unwrap_or_default();
     if path.is_empty() {
         return Err(Error::Format("Texture2D has no image data".into()));
@@ -23,7 +25,10 @@ fn image_data(source: &Source, obj: &Obj, tex: &Value) -> Result<Vec<u8>> {
     let _ = obj;
     let file = source.directory.join(&base);
     let bytes = source.resource(&file)?;
-    bytes.get(offset..offset + size).map(<[u8]>::to_vec).ok_or_else(|| Error::Format(format!("{base}: stream out of range")))
+    bytes
+        .get(offset..offset + size)
+        .map(<[u8]>::to_vec)
+        .ok_or_else(|| Error::Format(format!("{base}: stream out of range")))
 }
 
 /// `Texture2D.image` (flip=true) or the unflipped image SpriteHelper reads.
@@ -31,7 +36,10 @@ pub fn texture_image(source: &Source, obj: &Obj, flip: bool) -> Result<Image> {
     let tex = source.read(obj)?;
     let w = tex.get("m_Width").and_then(Value::int).unwrap_or(0) as usize;
     let h = tex.get("m_Height").and_then(Value::int).unwrap_or(0) as usize;
-    let format = tex.get("m_TextureFormat").and_then(Value::int).unwrap_or(-1);
+    let format = tex
+        .get("m_TextureFormat")
+        .and_then(Value::int)
+        .unwrap_or(-1);
     // UnityPy fetches the data before it looks at the size, so an empty texture
     // without data fails rather than coming back empty.
     let data = image_data(source, obj, &tex)?;
@@ -58,7 +66,12 @@ pub fn texture_image(source: &Source, obj: &Obj, flip: bool) -> Result<Image> {
             let px = data.get(..w * h * 2).ok_or_else(short)?;
             for (i, c) in px.chunks_exact(2).enumerate() {
                 let p = c[0] as u32 | (c[1] as u32) << 8;
-                let (r, g, b, a) = ((p & 15) * 17, ((p >> 4) & 15) * 17, ((p >> 8) & 15) * 17, ((p >> 12) & 15) * 17);
+                let (r, g, b, a) = (
+                    (p & 15) * 17,
+                    ((p >> 4) & 15) * 17,
+                    ((p >> 8) & 15) * 17,
+                    ((p >> 12) & 15) * 17,
+                );
                 img.data[i * 4..i * 4 + 4].copy_from_slice(&[b as u8, g as u8, r as u8, a as u8]);
             }
             img
@@ -72,7 +85,12 @@ pub fn texture_image(source: &Source, obj: &Obj, flip: bool) -> Result<Image> {
             }
             img
         }
-        4 => Image { mode: Mode::Rgba, width: w, height: h, data: data.get(..w * h * 4).ok_or_else(short)?.to_vec() },
+        4 => Image {
+            mode: Mode::Rgba,
+            width: w,
+            height: h,
+            data: data.get(..w * h * 4).ok_or_else(short)?.to_vec(),
+        },
         10 | 12 | 25 => {
             let (pw, ph) = (w.div_ceil(4) * 4, h.div_ceil(4) * 4);
             let n = match format {
@@ -81,14 +99,23 @@ pub fn texture_image(source: &Source, obj: &Obj, flip: bool) -> Result<Image> {
                 _ => 7,
             };
             let decoded = bcn::decode(n, &data, pw, ph).ok_or_else(short)?;
-            let full = Image { mode: Mode::Rgba, width: pw, height: ph, data: decoded };
+            let full = Image {
+                mode: Mode::Rgba,
+                width: pw,
+                height: ph,
+                data: decoded,
+            };
             if (pw, ph) != (w, h) {
                 full.crop_int(0, 0, w as i64, h as i64)
             } else {
                 full
             }
         }
-        other => return Err(Error::Format(format!("Not implemented texture format: {other}"))),
+        other => {
+            return Err(Error::Format(format!(
+                "Not implemented texture format: {other}"
+            )))
+        }
     };
     Ok(if flip { img.flip_top_bottom() } else { img })
 }
@@ -115,7 +142,9 @@ fn format_size(format: i64) -> Result<(usize, char)> {
 }
 
 pub fn sprite_mesh(rd: &Value) -> Result<SpriteMesh> {
-    let vd = rd.get("m_VertexData").ok_or_else(|| Error::Format("sprite without vertex data".into()))?;
+    let vd = rd
+        .get("m_VertexData")
+        .ok_or_else(|| Error::Format("sprite without vertex data".into()))?;
     let count = vd.get("m_VertexCount").and_then(Value::int).unwrap_or(0) as usize;
     let channels: Vec<(i64, i64, i64, i64)> = vd
         .get("m_Channels")
@@ -171,10 +200,16 @@ pub fn sprite_mesh(rd: &Value) -> Result<SpriteMesh> {
     let mut uv0 = Vec::new();
     if count > 0 && !data.is_empty() {
         if channels.first().is_some_and(|c| c.3 > 0) {
-            vertices = read(0)?.into_iter().map(|v| [v[0], *v.get(1).unwrap_or(&0.0), *v.get(2).unwrap_or(&0.0)]).collect();
+            vertices = read(0)?
+                .into_iter()
+                .map(|v| [v[0], *v.get(1).unwrap_or(&0.0), *v.get(2).unwrap_or(&0.0)])
+                .collect();
         }
         if channels.get(4).is_some_and(|c| c.3 > 0) {
-            uv0 = read(4)?.into_iter().map(|v| [v[0], *v.get(1).unwrap_or(&0.0)]).collect();
+            uv0 = read(4)?
+                .into_iter()
+                .map(|v| [v[0], *v.get(1).unwrap_or(&0.0)])
+                .collect();
         }
     }
     let raw: Vec<u8> = match rd.get("m_IndexBuffer") {
@@ -182,13 +217,18 @@ pub fn sprite_mesh(rd: &Value) -> Result<SpriteMesh> {
         Some(Value::List(l)) => l.iter().map(|v| v.int().unwrap_or(0) as u8).collect(),
         _ => Vec::new(),
     };
-    let indices: Vec<usize> = raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]]) as usize).collect();
+    let indices: Vec<usize> = raw
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]) as usize)
+        .collect();
     let mut triangles = Vec::new();
     for sm in rd.get("m_SubMeshes").and_then(Value::list).unwrap_or(&[]) {
         let first = sm.get("firstByte").and_then(Value::int).unwrap_or(0) as usize / 2;
         let n = sm.get("indexCount").and_then(Value::int).unwrap_or(0) as usize;
         if sm.get("topology").and_then(Value::int).unwrap_or(0) != 0 {
-            return Err(Error::Format("sprite submesh is not a triangle list".into()));
+            return Err(Error::Format(
+                "sprite submesh is not a triangle list".into(),
+            ));
         }
         let mut i = first;
         while i < first + n {
@@ -197,7 +237,11 @@ pub fn sprite_mesh(rd: &Value) -> Result<SpriteMesh> {
             i += 3;
         }
     }
-    Ok(SpriteMesh { vertices, uv0, triangles })
+    Ok(SpriteMesh {
+        vertices,
+        uv0,
+        triangles,
+    })
 }
 
 /// `Sprite.image` for an unpacked tight sprite without UVs (every sprite of
@@ -205,16 +249,30 @@ pub fn sprite_mesh(rd: &Value) -> Result<SpriteMesh> {
 /// ImageDraw, flipped to top-down. Converted to RGBA as cook.py does.
 pub fn sprite_image(source: &Source, sprite_obj: &Obj) -> Result<(Image, SpriteMesh)> {
     let sp = source.read(sprite_obj)?;
-    let rd = sp.get("m_RD").ok_or_else(|| Error::Format("sprite without render data".into()))?;
+    let rd = sp
+        .get("m_RD")
+        .ok_or_else(|| Error::Format("sprite without render data".into()))?;
     let atlas_data = atlas_render_data(source, sprite_obj, &sp)?;
     let data = atlas_data.as_ref().unwrap_or(rd);
     let settings = data.get("settingsRaw").and_then(Value::int).unwrap_or(0);
-    let tex = source.deref(&sprite_obj.file, data.get("texture").ok_or_else(|| Error::Format("sprite without texture".into()))?)?;
-    if data.get("alphaTexture").and_then(Value::pptr).is_some_and(|p| p.1 != 0) {
-        return Err(Error::Format("sprites with an alpha texture are not ported".into()));
+    let tex = source.deref(
+        &sprite_obj.file,
+        data.get("texture")
+            .ok_or_else(|| Error::Format("sprite without texture".into()))?,
+    )?;
+    if data
+        .get("alphaTexture")
+        .and_then(Value::pptr)
+        .is_some_and(|p| p.1 != 0)
+    {
+        return Err(Error::Format(
+            "sprites with an alpha texture are not ported".into(),
+        ));
     }
     let original = source.texture_cached(&sprite_obj.file.name, &tex)?;
-    let r = data.get("textureRect").ok_or_else(|| Error::Format("sprite without textureRect".into()))?;
+    let r = data
+        .get("textureRect")
+        .ok_or_else(|| Error::Format("sprite without textureRect".into()))?;
     let f = |k: &str| r.get(k).and_then(Value::float).unwrap_or(0.0);
     let (x, y, w, h) = (f("x"), f("y"), f("width"), f("height"));
     let mut image = original.crop([x, y, x + w, y + h]);
@@ -224,22 +282,48 @@ pub fn sprite_image(source: &Source, sprite_obj: &Obj) -> Result<(Image, SpriteM
             1 => image.flip_left_right(),
             2 => image.flip_top_bottom(),
             3 => image.flip_left_right().flip_top_bottom(),
-            r => return Err(Error::Format(format!("sprite packing rotation {r} is not ported"))),
+            r => {
+                return Err(Error::Format(format!(
+                    "sprite packing rotation {r} is not ported"
+                )))
+            }
         };
     }
     let mesh = sprite_mesh(rd)?;
     let tight = (settings >> 1) & 1 == 0;
     if tight {
         if mesh.uv0.iter().any(|uv| uv[0] != 0.0 || uv[1] != 0.0) {
-            return Err(Error::Format("sprites with mesh UVs (render_sprite_mesh) are not ported".into()));
+            return Err(Error::Format(
+                "sprites with mesh UVs (render_sprite_mesh) are not ported".into(),
+            ));
         }
         if mesh.vertices.is_empty() {
             return Err(Error::Format("No vertices found in sprite mesh!".into()));
         }
-        let min_x = mesh.vertices.iter().map(|v| v[0] as f64).fold(f64::INFINITY, f64::min);
-        let min_y = mesh.vertices.iter().map(|v| v[1] as f64).fold(f64::INFINITY, f64::min);
-        let factor = sp.get("m_PixelsToUnits").and_then(Value::float).unwrap_or(0.0);
-        let pts: Vec<(f64, f64)> = mesh.vertices.iter().map(|v| ((v[0] as f64 - min_x) * factor, (v[1] as f64 - min_y) * factor)).collect();
+        let min_x = mesh
+            .vertices
+            .iter()
+            .map(|v| v[0] as f64)
+            .fold(f64::INFINITY, f64::min);
+        let min_y = mesh
+            .vertices
+            .iter()
+            .map(|v| v[1] as f64)
+            .fold(f64::INFINITY, f64::min);
+        let factor = sp
+            .get("m_PixelsToUnits")
+            .and_then(Value::float)
+            .unwrap_or(0.0);
+        let pts: Vec<(f64, f64)> = mesh
+            .vertices
+            .iter()
+            .map(|v| {
+                (
+                    (v[0] as f64 - min_x) * factor,
+                    (v[1] as f64 - min_y) * factor,
+                )
+            })
+            .collect();
         let mut mask = Image::new(Mode::One, image.width, image.height);
         for t in &mesh.triangles {
             hk_pil::draw::polygon_fill(&mut mask, &[pts[t[0]], pts[t[1]], pts[t[2]]], 1);
@@ -260,7 +344,11 @@ pub fn sprite_image(source: &Source, sprite_obj: &Obj) -> Result<(Image, SpriteM
                 }
                 out
             }
-            _ => return Err(Error::Format("tight sprite from this texture mode is not ported".into())),
+            _ => {
+                return Err(Error::Format(
+                    "tight sprite from this texture mode is not ported".into(),
+                ))
+            }
         };
     }
     Ok((image.flip_top_bottom().to_rgba(), mesh))
@@ -269,13 +357,29 @@ pub fn sprite_image(source: &Source, sprite_obj: &Obj) -> Result<(Image, SpriteM
 /// The SpriteAtlasData a packed sprite draws from, found through its atlas
 /// pointer or, failing that, the first atlas tag (SpriteHelper.get_image_from_sprite).
 fn atlas_render_data(source: &Source, sprite_obj: &Obj, sp: &Value) -> Result<Option<Value>> {
-    let atlas = if sp.get("m_SpriteAtlas").and_then(Value::pptr).is_some_and(|p| p.1 != 0) {
+    let atlas = if sp
+        .get("m_SpriteAtlas")
+        .and_then(Value::pptr)
+        .is_some_and(|p| p.1 != 0)
+    {
         let obj = source.deref(&sprite_obj.file, sp.get("m_SpriteAtlas").unwrap())?;
         Some(source.read(&obj)?)
-    } else if let Some(tag) = sp.get("m_AtlasTags").and_then(Value::list).and_then(|l| l.first()) {
+    } else if let Some(tag) = sp
+        .get("m_AtlasTags")
+        .and_then(Value::list)
+        .and_then(|l| l.first())
+    {
         let mut found = None;
-        for info in sprite_obj.file.objects.iter().filter(|i| i.class_id == 687078895) {
-            let atlas = source.read(&Obj { file: sprite_obj.file.clone(), info: *info })?;
+        for info in sprite_obj
+            .file
+            .objects
+            .iter()
+            .filter(|i| i.class_id == 687078895)
+        {
+            let atlas = source.read(&Obj {
+                file: sprite_obj.file.clone(),
+                info: *info,
+            })?;
             if atlas.get("m_Name").is_some_and(|n| n.py_eq(tag)) {
                 found = Some(atlas);
                 break;
@@ -286,8 +390,14 @@ fn atlas_render_data(source: &Source, sprite_obj: &Obj, sp: &Value) -> Result<Op
         None
     };
     let Some(atlas) = atlas else { return Ok(None) };
-    let key = sp.get("m_RenderDataKey").ok_or_else(|| Error::Format("sprite without m_RenderDataKey".into()))?;
-    for pair in atlas.get("m_RenderDataMap").and_then(Value::list).unwrap_or(&[]) {
+    let key = sp
+        .get("m_RenderDataKey")
+        .ok_or_else(|| Error::Format("sprite without m_RenderDataKey".into()))?;
+    for pair in atlas
+        .get("m_RenderDataMap")
+        .and_then(Value::list)
+        .unwrap_or(&[])
+    {
         if let Value::List(kv) = pair {
             if kv.len() == 2 && kv[0].py_eq(key) {
                 return Ok(Some(kv[1].clone()));

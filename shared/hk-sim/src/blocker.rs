@@ -109,9 +109,13 @@ pub enum Phase {
     Cooldown,
     /// `Close` or `Sleep 1`, which share the `Close1` clip and differ only in
     /// where the pair ends up.
-    Close1 { sleep: bool },
+    Close1 {
+        sleep: bool,
+    },
     /// `Close2` or `Sleep 2`.
-    Close2 { sleep: bool },
+    Close2 {
+        sleep: bool,
+    },
     /// `Closed`: shut and invincible, waiting for the hero to leave `Attack
     /// Range` so it can open again.
     Shut,
@@ -124,11 +128,17 @@ pub enum Action {
     Play(Animation),
     /// `Fire`: one `Shot Mawlek` at the actor's position plus `offset`, with
     /// the launch velocity `SetVelocity2d` writes.
-    Fire { offset: [i32; 2], velocity: [i32; 2] },
+    Fire {
+        offset: [i32; 2],
+        velocity: [i32; 2],
+    },
     /// `Fire` from the `Roller` branch: a `Spawn Roller v2` at the same point
     /// with the same launch, told to roll the way the Blocker faces
     /// (`Roller Assign`).
-    Roller { offset: [i32; 2], velocity: [i32; 2] },
+    Roller {
+        offset: [i32; 2],
+        velocity: [i32; 2],
+    },
 }
 /// Ordered commands of one callback. The longest is a `Fire` that both spawns
 /// the shot and starts `Shoot CD` on the same tick.
@@ -139,14 +149,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { commands: [None; 2], len: 0 }
+        Self {
+            commands: [None; 2],
+            len: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.commands[self.len as usize] = Some(action);
         self.len += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.commands[..self.len as usize].iter().map(|a| a.unwrap())
+        self.commands[..self.len as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
     pub fn len(&self) -> usize {
         self.len as usize
@@ -202,7 +217,14 @@ impl Blocker {
     /// the invincibility, the `Closed` clip and the four `FindChild` lookups,
     /// all of which are the state below rather than anything to run.
     pub const fn new(sleeps: bool) -> Self {
-        Self { phase: Phase::Dormant, sleeps, wait: 0, animation: None, serial: 0, rollering: false }
+        Self {
+            phase: Phase::Dormant,
+            sleeps,
+            wait: 0,
+            animation: None,
+            serial: 0,
+            rollering: false,
+        }
     }
     pub fn phase(&self) -> Phase {
         self.phase
@@ -243,7 +265,10 @@ impl Blocker {
     }
     fn play(&mut self, clip: Clip, out: &mut Actions) {
         self.serial = self.serial.wrapping_add(1);
-        let token = Animation { clip, serial: self.serial };
+        let token = Animation {
+            clip,
+            serial: self.serial,
+        };
         self.animation = Some(token);
         out.push(Action::Play(token));
     }
@@ -370,8 +395,17 @@ impl Blocker {
             "Blocker shot speed outside RandomFloat(X Speed Min, X Speed Max)"
         );
         self.phase = Phase::Cooldown;
-        out.push(if self.rollering { Action::Roller { offset: SHOT_ORIGIN, velocity: [vx, SHOT_VY] } }
-                 else { Action::Fire { offset: SHOT_ORIGIN, velocity: [vx, SHOT_VY] } });
+        out.push(if self.rollering {
+            Action::Roller {
+                offset: SHOT_ORIGIN,
+                velocity: [vx, SHOT_VY],
+            }
+        } else {
+            Action::Fire {
+                offset: SHOT_ORIGIN,
+                velocity: [vx, SHOT_VY],
+            }
+        });
         self.play(Clip::Cooldown, out);
     }
 }
@@ -404,7 +438,10 @@ mod tests {
         assert_eq!(blocker.clip(), Clip::Closed);
         // Nothing in range: it stays shut and hands out no work at all.
         assert!(blocker.tick(Senses::default(), mid).is_empty());
-        let senses = Senses { in_alert_range: true, ..Senses::default() };
+        let senses = Senses {
+            in_alert_range: true,
+            ..Senses::default()
+        };
         let actions = blocker.tick(senses, mid);
         assert_eq!(actions.len(), 1);
         assert_eq!(blocker.phase(), Phase::Opening);
@@ -416,7 +453,10 @@ mod tests {
     #[test]
     fn a_full_shot_cycle_waits_anticipates_and_fires_once() {
         let mut blocker = Blocker::new(true);
-        let senses = Senses { in_alert_range: true, ..Senses::default() };
+        let senses = Senses {
+            in_alert_range: true,
+            ..Senses::default()
+        };
         blocker.tick(senses, mid);
         // Open completes, Idle starts its WaitRandom.
         let mut senses = senses;
@@ -424,21 +464,40 @@ mod tests {
         blocker.tick(senses, mid);
         assert_eq!(blocker.phase(), Phase::Idle);
         let wait = mid(IDLE_TICKS) as usize;
-        let idle = run(&mut blocker, Senses { in_alert_range: true, ..Senses::default() }, wait);
+        let idle = run(
+            &mut blocker,
+            Senses {
+                in_alert_range: true,
+                ..Senses::default()
+            },
+            wait,
+        );
         // The wait is spent in Idle and nothing else plays while it runs.
         assert_eq!(idle, 0);
         assert_eq!(blocker.phase(), Phase::Idle);
-        let actions = blocker.tick(Senses { in_alert_range: true, ..Senses::default() }, mid);
+        let actions = blocker.tick(
+            Senses {
+                in_alert_range: true,
+                ..Senses::default()
+            },
+            mid,
+        );
         assert_eq!(actions.len(), 1);
         assert_eq!(blocker.phase(), Phase::Antic);
         // The antic runs out and the shot leaves with `Shoot CD` behind it.
-        let mut senses = Senses { in_alert_range: true, ..Senses::default() };
+        let mut senses = Senses {
+            in_alert_range: true,
+            ..Senses::default()
+        };
         senses.completed = blocker.animation();
         let actions = blocker.tick(senses, mid);
         assert_eq!(actions.len(), 2);
         assert_eq!(
             actions.iter().next(),
-            Some(Action::Fire { offset: SHOT_ORIGIN, velocity: [mid(SHOT_VX), SHOT_VY] })
+            Some(Action::Fire {
+                offset: SHOT_ORIGIN,
+                velocity: [mid(SHOT_VX), SHOT_VY]
+            })
         );
         assert_eq!(blocker.phase(), Phase::Cooldown);
         assert_eq!(blocker.clip(), Clip::Cooldown);
@@ -449,7 +508,11 @@ mod tests {
     #[test]
     fn the_hero_underneath_shuts_it_and_leaving_opens_it_again() {
         let mut blocker = Blocker::new(true);
-        let mut senses = Senses { in_alert_range: true, in_attack_range: true, ..Senses::default() };
+        let mut senses = Senses {
+            in_alert_range: true,
+            in_attack_range: true,
+            ..Senses::default()
+        };
         blocker.tick(senses, mid);
         senses.completed = blocker.animation();
         // `Idle`'s entry test sees the hero underneath and closes at once.
@@ -467,7 +530,13 @@ mod tests {
         assert!(blocker.invincible());
         // It stays shut while the hero is still there, then reopens.
         assert!(blocker.tick(senses, mid).is_empty());
-        let actions = blocker.tick(Senses { in_alert_range: true, ..Senses::default() }, mid);
+        let actions = blocker.tick(
+            Senses {
+                in_alert_range: true,
+                ..Senses::default()
+            },
+            mid,
+        );
         assert_eq!(actions.len(), 1);
         assert_eq!(blocker.phase(), Phase::Opening);
     }
@@ -502,12 +571,22 @@ mod tests {
     #[test]
     fn took_damage_interrupts_the_attack_and_restarts_the_wait() {
         let mut blocker = Blocker::new(true);
-        let senses = Senses { in_alert_range: true, ..Senses::default() };
+        let senses = Senses {
+            in_alert_range: true,
+            ..Senses::default()
+        };
         blocker.tick(senses, mid);
         let mut senses = senses;
         senses.completed = blocker.animation();
         blocker.tick(senses, mid);
-        run(&mut blocker, Senses { in_alert_range: true, ..Senses::default() }, mid(IDLE_TICKS) as usize + 1);
+        run(
+            &mut blocker,
+            Senses {
+                in_alert_range: true,
+                ..Senses::default()
+            },
+            mid(IDLE_TICKS) as usize + 1,
+        );
         assert_eq!(blocker.phase(), Phase::Antic);
         let actions = blocker.took_damage();
         assert_eq!(actions.len(), 1);
@@ -515,7 +594,10 @@ mod tests {
         assert_eq!(blocker.clip(), Clip::Hit);
         // A hit lands only while the shell is down, and `Hit` does not raise it.
         assert!(!blocker.invincible());
-        let mut senses = Senses { in_alert_range: true, ..Senses::default() };
+        let mut senses = Senses {
+            in_alert_range: true,
+            ..Senses::default()
+        };
         senses.completed = blocker.animation();
         blocker.tick(senses, mid);
         assert_eq!(blocker.phase(), Phase::Idle);
@@ -523,7 +605,10 @@ mod tests {
         // never fires: the source's own answer to being stood next to.
         for _ in 0..4 {
             blocker.took_damage();
-            let mut senses = Senses { in_alert_range: true, ..Senses::default() };
+            let mut senses = Senses {
+                in_alert_range: true,
+                ..Senses::default()
+            };
             senses.completed = blocker.animation();
             blocker.tick(senses, mid);
             assert_eq!(blocker.phase(), Phase::Idle);
@@ -533,7 +618,10 @@ mod tests {
     #[test]
     fn death_stops_every_clip_and_every_later_tick() {
         let mut blocker = Blocker::new(true);
-        let senses = Senses { in_alert_range: true, ..Senses::default() };
+        let senses = Senses {
+            in_alert_range: true,
+            ..Senses::default()
+        };
         blocker.tick(senses, mid);
         blocker.die();
         assert_eq!(blocker.phase(), Phase::Dead);
@@ -545,7 +633,14 @@ mod tests {
 
     #[test]
     fn clip_slots_cover_the_controller_array_exactly_once() {
-        let carried = [Clip::Open, Clip::Close1, Clip::Close2, Clip::Antic, Clip::Cooldown, Clip::Hit];
+        let carried = [
+            Clip::Open,
+            Clip::Close1,
+            Clip::Close2,
+            Clip::Antic,
+            Clip::Cooldown,
+            Clip::Hit,
+        ];
         let mut seen = [false; Clip::COUNT];
         for clip in carried {
             let slot = clip.slot().expect("carried clip has a controller slot");
@@ -563,7 +658,11 @@ mod tests {
     fn the_roller_branch_needs_can_roller_and_keeps_the_goop_launch() {
         for (can_roller, pick, rolls) in [(false, 1, false), (true, 0, false), (true, 1, true)] {
             let mut blocker = Blocker::new(true);
-            let awake = Senses { in_alert_range: true, can_roller, ..Senses::default() };
+            let awake = Senses {
+                in_alert_range: true,
+                can_roller,
+                ..Senses::default()
+            };
             let mut sample = |r: [i32; 2]| if r == [0, 1] { pick } else { mid(r) };
             blocker.tick(awake, &mut sample);
             let mut fired = None;

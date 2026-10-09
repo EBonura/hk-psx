@@ -89,7 +89,11 @@ pub struct Shape {
     pub alert_local: [i32; 4],
 }
 impl Shape {
-    pub const RUNNER: Self = Self { body_offset_left: BODY_OFFSET_LEFT, body_extents: BODY_EXTENTS, alert_local: ALERT_LOCAL };
+    pub const RUNNER: Self = Self {
+        body_offset_left: BODY_OFFSET_LEFT,
+        body_extents: BODY_EXTENTS,
+        alert_local: ALERT_LOCAL,
+    };
     /// From a facing-left body box and alert box relative to the actor origin.
     pub const fn from_boxes(body: [i32; 4], alert: [i32; 4]) -> Self {
         Self {
@@ -104,14 +108,22 @@ impl Shape {
     /// facing-left box `from_boxes` wants. The alert box is mirror-stable
     /// (the cooker refuses one that is not), so it is taken as it is.
     pub const fn from_placement(body: [i32; 4], alert: [i32; 4], initial_direction: i32) -> Self {
-        let left = if initial_direction > 0 { [-body[2], body[1], -body[0], body[3]] } else { body };
+        let left = if initial_direction > 0 {
+            [-body[2], body[1], -body[0], body[3]]
+        } else {
+            body
+        };
         Self::from_boxes(left, alert)
     }
 }
 pub fn body_bounds(actor: [i32; 2], direction: i32) -> Result<[i32; 4], QueryError> {
     body_bounds_of(Shape::RUNNER, actor, direction)
 }
-pub fn body_bounds_of(shape: Shape, actor: [i32; 2], direction: i32) -> Result<[i32; 4], QueryError> {
+pub fn body_bounds_of(
+    shape: Shape,
+    actor: [i32; 2],
+    direction: i32,
+) -> Result<[i32; 4], QueryError> {
     facing(direction)?;
     let ox = -direction * shape.body_offset_left[0];
     translated(
@@ -134,7 +146,11 @@ pub fn alert_bounds(actor: [i32; 2]) -> Result<[i32; 4], QueryError> {
 pub fn alert_overlap(actor: [i32; 2], hero_body: [i32; 4]) -> Result<bool, QueryError> {
     alert_overlap_of(Shape::RUNNER, actor, hero_body)
 }
-pub fn alert_overlap_of(shape: Shape, actor: [i32; 2], hero_body: [i32; 4]) -> Result<bool, QueryError> {
+pub fn alert_overlap_of(
+    shape: Shape,
+    actor: [i32; 2],
+    hero_body: [i32; 4],
+) -> Result<bool, QueryError> {
     let a = translated(shape.alert_local, actor)?;
     bounds(hero_body)?;
     Ok(
@@ -173,7 +189,12 @@ pub fn line_of_sight_near(
     if actor == hero {
         return Err(QueryError::ZeroLengthSight);
     }
-    let mask = near([actor[0].min(hero[0]), actor[1].min(hero[1]), actor[0].max(hero[0]), actor[1].max(hero[1])]);
+    let mask = near([
+        actor[0].min(hero[0]),
+        actor[1].min(hero[1]),
+        actor[0].max(hero[0]),
+        actor[1].max(hero[1]),
+    ]);
     let mut blocked = false;
     each_edge(count, mask, |i| {
         let e = edge(i);
@@ -211,19 +232,37 @@ pub struct EdgeColumns {
 impl EdgeColumns {
     pub const COLUMNS: usize = 16;
     /// Selects every edge until built.
-    pub const ALL: Self = Self { left: 0, shift: 31, columns: [ALL_EDGES; Self::COLUMNS] };
+    pub const ALL: Self = Self {
+        left: 0,
+        shift: 31,
+        columns: [ALL_EDGES; Self::COLUMNS],
+    };
     #[inline(never)]
     pub fn build(edges: &[[i32; 4]]) -> Self {
         let edges = &edges[..edges.len().min(128)];
         let live = |e: &[i32; 4]| !crate::empty_edge(e) && terrain(*e).is_ok();
-        let left = edges.iter().filter(|e| live(e)).map(|e| e[0].min(e[2])).min().unwrap_or(0);
-        let right = edges.iter().filter(|e| live(e)).map(|e| e[0].max(e[2])).max().unwrap_or(0);
+        let left = edges
+            .iter()
+            .filter(|e| live(e))
+            .map(|e| e[0].min(e[2]))
+            .min()
+            .unwrap_or(0);
+        let right = edges
+            .iter()
+            .filter(|e| live(e))
+            .map(|e| e[0].max(e[2]))
+            .max()
+            .unwrap_or(0);
         // Columns a power of two wide, so a lookup is a shift and a clamp.
         let mut shift = 0;
         while shift < 31 && ((right as i64 - left as i64) >> shift) >= Self::COLUMNS as i64 {
             shift += 1;
         }
-        let mut index = Self { left, shift, columns: [[0; 4]; Self::COLUMNS] };
+        let mut index = Self {
+            left,
+            shift,
+            columns: [[0; 4]; Self::COLUMNS],
+        };
         for (i, e) in edges.iter().enumerate() {
             if crate::empty_edge(e) {
                 continue;
@@ -283,7 +322,11 @@ pub fn each_edge(
 /// instead of two (the masked words and the tail past 128), where code size
 /// matters more than the tail's speed.
 pub fn selected(count: usize, mask: EdgeMask) -> Selected {
-    Selected { mask, next: 0, count }
+    Selected {
+        mask,
+        next: 0,
+        count,
+    }
 }
 pub struct Selected {
     mask: EdgeMask,
@@ -387,7 +430,12 @@ impl Sweep {
             let end = [origin[0] + d[0] * reach, origin[1] + d[1] * reach];
             point(end)?;
             for p in [*origin, end] {
-                bounds = [bounds[0].min(p[0]), bounds[1].min(p[1]), bounds[2].max(p[0]), bounds[3].max(p[1])];
+                bounds = [
+                    bounds[0].min(p[0]),
+                    bounds[1].min(p[1]),
+                    bounds[2].max(p[0]),
+                    bounds[3].max(p[1]),
+                ];
             }
         }
         Ok(Self {
@@ -504,7 +552,10 @@ pub fn walker_queries_near(
     near: fn([i32; 4]) -> EdgeMask,
 ) -> Result<WalkerQueries, QueryError> {
     facing(direction)?;
-    let offset = [-direction * shape.body_offset_left[0], shape.body_offset_left[1]];
+    let offset = [
+        -direction * shape.body_offset_left[0],
+        shape.body_offset_left[1],
+    ];
     let forward = shape.body_extents[0] + ONE / 2;
     let wall = Sweep::new(
         actor,
@@ -532,7 +583,12 @@ pub fn walker_queries_near(
         floor_ahead: false,
     };
     let (a, b) = (wall.bounds, floor.bounds);
-    let mask = near([a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])]);
+    let mask = near([
+        a[0].min(b[0]),
+        a[1].min(b[1]),
+        a[2].max(b[2]),
+        a[3].max(b[3]),
+    ]);
     each_edge(count, mask, |i| {
         let e = edge(i);
         if terrain(e)? {

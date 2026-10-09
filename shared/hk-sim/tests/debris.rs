@@ -263,21 +263,45 @@ fn fourth_step_cached_speed_causes_source_bounce_once_per_contact() {
 fn bulk_pose_and_manifold_preserve_recorded_fixed_point_trajectories() {
     // Golden captured before transform/manifold hoisting: 64 launch seeds,
     // mirrored/nonuniform parents, floor/walls/slopes, 600 source callbacks.
-    let terrain=[[-20*ONE,0,20*ONE,0],[-20*ONE,0,-20*ONE,20*ONE],
-        [20*ONE,0,20*ONE,20*ONE],[-6*ONE,4*ONE,6*ONE,7*ONE]];
-    let mut hash=0xcbf29ce484222325u64;
+    let terrain = [
+        [-20 * ONE, 0, 20 * ONE, 0],
+        [-20 * ONE, 0, -20 * ONE, 20 * ONE],
+        [20 * ONE, 0, 20 * ONE, 20 * ONE],
+        [-6 * ONE, 4 * ONE, 6 * ONE, 7 * ONE],
+    ];
+    let mut hash = 0xcbf29ce484222325u64;
     for seed in 0..64 {
-        let spec=Spec{source:10618+seed,centroid:[ONE/7,-ONE/9],
-            scale:[if seed&1==0{ONE}else{-ONE},ONE+((seed%3)as i32)*ONE/3],..SPEC};
-        let mut body=Body::launch(spec,(seed%4)as u8,if seed&2==0{1}else{-1});
-        body.center=[((seed%13)as i32-6)*ONE,8*ONE];
+        let spec = Spec {
+            source: 10618 + seed,
+            centroid: [ONE / 7, -ONE / 9],
+            scale: [
+                if seed & 1 == 0 { ONE } else { -ONE },
+                ONE + ((seed % 3) as i32) * ONE / 3,
+            ],
+            ..SPEC
+        };
+        let mut body = Body::launch(spec, (seed % 4) as u8, if seed & 2 == 0 { 1 } else { -1 });
+        body.center = [((seed % 13) as i32 - 6) * ONE, 8 * ONE];
         for _ in 0..600 {
-            body.step(spec,terrain.len(),|i|terrain[i]);
-            for word in [body.center[0],body.center[1],body.velocity[0],body.velocity[1],
-                body.angle,body.omega,i32::from(body.stopped),i32::from(body.bounces)] {
-                for byte in word.to_le_bytes(){hash=(hash^u64::from(byte)).wrapping_mul(0x100000001b3);}
+            body.step(spec, terrain.len(), |i| terrain[i]);
+            for word in [
+                body.center[0],
+                body.center[1],
+                body.velocity[0],
+                body.velocity[1],
+                body.angle,
+                body.omega,
+                i32::from(body.stopped),
+                i32::from(body.bounces),
+            ] {
+                for byte in word.to_le_bytes() {
+                    hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+                }
             }
         }
     }
-    assert_eq!(hash,0xe18f1fc7929a0772,"every trajectory word must match the pre-hoist reference");
+    assert_eq!(
+        hash, 0xe18f1fc7929a0772,
+        "every trajectory word must match the pre-hoist reference"
+    );
 }

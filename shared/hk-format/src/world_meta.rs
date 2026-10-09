@@ -138,14 +138,28 @@ impl<'a> WorldMeta<'a> {
         if u32_at(bytes, 52) as usize != bytes.len()
             || u32_at(bytes, 56) != 0
             || u32_at(bytes, 60) as usize != SECTIONS
-            || bytes[64 + SECTIONS * 12..HEADER].iter().any(|&byte| byte != 0)
+            || bytes[64 + SECTIONS * 12..HEADER]
+                .iter()
+                .any(|&byte| byte != 0)
         {
             return Err(Error::Header);
         }
         let mut offsets = [0; SECTIONS];
         let mut counts = [0; SECTIONS];
-        let strides = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE];
-        let limits = [MAX_REGIONS, MAX_OBJECTS, MAX_POLYGONS, MAX_POINTS, MAX_INDICES];
+        let strides = [
+            REGION_STRIDE,
+            OBJECT_STRIDE,
+            POLYGON_STRIDE,
+            POINT_STRIDE,
+            INDEX_STRIDE,
+        ];
+        let limits = [
+            MAX_REGIONS,
+            MAX_OBJECTS,
+            MAX_POLYGONS,
+            MAX_POINTS,
+            MAX_INDICES,
+        ];
         let mut next = HEADER;
         for section in 0..SECTIONS {
             let offset = u32_at(bytes, 64 + section * 12) as usize;
@@ -190,7 +204,13 @@ impl<'a> WorldMeta<'a> {
         {
             return Err(Error::Reference);
         }
-        let stride = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE][section];
+        let stride = [
+            REGION_STRIDE,
+            OBJECT_STRIDE,
+            POLYGON_STRIDE,
+            POINT_STRIDE,
+            INDEX_STRIDE,
+        ][section];
         let start = self.offsets[section]
             .checked_add(first.checked_mul(stride).ok_or(Error::Reference)?)
             .ok_or(Error::Reference)?;
@@ -230,7 +250,11 @@ impl<'a> WorldMeta<'a> {
                 self.span(4, first, count)?;
             }
             // A camera lock's single "polygon" is its two limit points.
-            let minimum = if object.kind() == KIND_CAMERA_LOCK { 2 } else { 3 };
+            let minimum = if object.kind() == KIND_CAMERA_LOCK {
+                2
+            } else {
+                3
+            };
             for polygon in object.polygons() {
                 let polygon = polygon?;
                 if polygon.count() < minimum || polygon.count() > 16 {
@@ -509,7 +533,10 @@ impl<'a> Iterator for Indices<'a> {
         if index >= self.meta.counts[4] {
             return None;
         }
-        Some(u16_at(self.meta.bytes, self.meta.offsets[4] + index * INDEX_STRIDE))
+        Some(u16_at(
+            self.meta.bytes,
+            self.meta.offsets[4] + index * INDEX_STRIDE,
+        ))
     }
 }
 
@@ -600,7 +627,13 @@ mod tests {
     }
     fn fixture() -> Vec<u8> {
         let counts = [1, 1, 1, 3, 2];
-        let strides = [REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE];
+        let strides = [
+            REGION_STRIDE,
+            OBJECT_STRIDE,
+            POLYGON_STRIDE,
+            POINT_STRIDE,
+            INDEX_STRIDE,
+        ];
         let mut offsets = [0; SECTIONS];
         let mut end = HEADER;
         for i in 0..SECTIONS {

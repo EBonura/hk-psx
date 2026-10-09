@@ -86,9 +86,13 @@ pub fn parse(text: &str) -> Result<Json, String> {
             }
         }
         fn hex4(&mut self) -> Result<u32, String> {
-            let h = self.s.get(self.i..self.i + 4).ok_or("truncated \\u escape")?;
+            let h = self
+                .s
+                .get(self.i..self.i + 4)
+                .ok_or("truncated \\u escape")?;
             self.i += 4;
-            u32::from_str_radix(std::str::from_utf8(h).map_err(|e| e.to_string())?, 16).map_err(|e| e.to_string())
+            u32::from_str_radix(std::str::from_utf8(h).map_err(|e| e.to_string())?, 16)
+                .map_err(|e| e.to_string())
         }
         fn string(&mut self) -> Result<String, String> {
             self.i += 1;
@@ -112,10 +116,14 @@ pub fn parse(text: &str) -> Result<Json, String> {
                             b't' => '\t',
                             b'u' => {
                                 let mut cp = self.hex4()?;
-                                if (0xd800..0xdc00).contains(&cp) && self.s[self.i..].starts_with(b"\\u") {
+                                if (0xd800..0xdc00).contains(&cp)
+                                    && self.s[self.i..].starts_with(b"\\u")
+                                {
                                     self.i += 2;
                                     let lo = self.hex4()?;
-                                    cp = 0x10000 + ((cp - 0xd800) << 10) + (lo.wrapping_sub(0xdc00) & 0x3ff);
+                                    cp = 0x10000
+                                        + ((cp - 0xd800) << 10)
+                                        + (lo.wrapping_sub(0xdc00) & 0x3ff);
                                 }
                                 char::from_u32(cp).unwrap_or('\u{fffd}')
                             }
@@ -193,20 +201,33 @@ pub fn parse(text: &str) -> Result<Json, String> {
                 _ if self.lit("-Infinity") => Ok(Json::Float(f64::NEG_INFINITY)),
                 _ => {
                     let start = self.i;
-                    while self.i < self.s.len() && matches!(self.s[self.i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
+                    while self.i < self.s.len()
+                        && matches!(
+                            self.s[self.i],
+                            b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9'
+                        )
+                    {
                         self.i += 1;
                     }
-                    let n = std::str::from_utf8(&self.s[start..self.i]).map_err(|e| e.to_string())?;
+                    let n =
+                        std::str::from_utf8(&self.s[start..self.i]).map_err(|e| e.to_string())?;
                     if n.contains(['.', 'e', 'E']) {
-                        n.parse::<f64>().map(Json::Float).map_err(|e| format!("{n}: {e}"))
+                        n.parse::<f64>()
+                            .map(Json::Float)
+                            .map_err(|e| format!("{n}: {e}"))
                     } else {
-                        n.parse::<i64>().map(Json::Int).map_err(|e| format!("{n}: {e}"))
+                        n.parse::<i64>()
+                            .map(Json::Int)
+                            .map_err(|e| format!("{n}: {e}"))
                     }
                 }
             }
         }
     }
-    let mut p = P { s: text.as_bytes(), i: 0 };
+    let mut p = P {
+        s: text.as_bytes(),
+        i: 0,
+    };
     let v = p.value()?;
     p.ws();
     if p.i != p.s.len() {
@@ -259,7 +280,10 @@ pub fn from_serde(v: &serde_json::Value) -> Json {
     match v {
         J::Null => Json::Null,
         J::Bool(b) => Json::Bool(*b),
-        J::Number(n) => n.as_i64().map(Json::Int).unwrap_or_else(|| Json::Float(n.as_f64().unwrap_or(f64::NAN))),
+        J::Number(n) => n
+            .as_i64()
+            .map(Json::Int)
+            .unwrap_or_else(|| Json::Float(n.as_f64().unwrap_or(f64::NAN))),
         J::String(s) => Json::Str(s.clone()),
         J::Array(a) => Json::List(a.iter().map(from_serde).collect()),
         J::Object(o) => Json::Obj(o.iter().map(|(k, x)| (k.clone(), from_serde(x))).collect()),
@@ -274,7 +298,13 @@ mod tests {
     fn matches_json_dumps_indent_2() {
         let v = Json::Obj(vec![
             ("a".into(), Json::Int(1)),
-            ("b".into(), Json::List(vec![Json::List(vec![Json::Str("x".into()), Json::Str("é\"".into())])])),
+            (
+                "b".into(),
+                Json::List(vec![Json::List(vec![
+                    Json::Str("x".into()),
+                    Json::Str("é\"".into()),
+                ])]),
+            ),
             ("c".into(), Json::List(vec![])),
             ("d".into(), Json::Obj(vec![])),
             ("e".into(), Json::Null),
@@ -287,13 +317,25 @@ mod tests {
     fn parse_reads_back_what_dumps_wrote_in_the_same_order() {
         let v = Json::Obj(vec![
             ("z".into(), Json::Int(-3)),
-            ("a".into(), Json::List(vec![Json::Float(0.1), Json::Float(1e22), Json::Null, Json::Bool(true), Json::Float(2.0)])),
+            (
+                "a".into(),
+                Json::List(vec![
+                    Json::Float(0.1),
+                    Json::Float(1e22),
+                    Json::Null,
+                    Json::Bool(true),
+                    Json::Float(2.0),
+                ]),
+            ),
             ("s".into(), Json::Str("é\"\\\n\u{1f600}".into())),
             ("e".into(), Json::Obj(vec![])),
         ]);
         assert_eq!(parse(&dumps(&v)).unwrap(), v);
         assert!(parse("{\"a\": 1,}").is_err());
-        assert_eq!(parse("{\"k\": 1, \"j\": 2, \"k\": 3}").unwrap(), Json::Obj(vec![("k".into(), Json::Int(3)), ("j".into(), Json::Int(2))]));
+        assert_eq!(
+            parse("{\"k\": 1, \"j\": 2, \"k\": 3}").unwrap(),
+            Json::Obj(vec![("k".into(), Json::Int(3)), ("j".into(), Json::Int(2))])
+        );
     }
 }
 
@@ -303,7 +345,11 @@ pub fn float(f: f64) -> String {
     if f.is_nan() {
         "NaN".into()
     } else if f.is_infinite() {
-        if f > 0.0 { "Infinity".into() } else { "-Infinity".into() }
+        if f > 0.0 {
+            "Infinity".into()
+        } else {
+            "-Infinity".into()
+        }
     } else {
         crate::pyfloat::repr(f)
     }
