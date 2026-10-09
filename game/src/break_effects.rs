@@ -53,14 +53,25 @@ struct Resident {
     /// Each soft palette and its copy, every coloured entry semi-transparent,
     /// that soft draws use instead.
     soft_cluts:[(u16,u16);SOFT_CLUT_SLOTS.len()],soft_clut_count:usize,
+    /// The style of the Knight's Focus dust emitters (`HERO_DUST_OWNER`), drawn brighter than the
+    /// rest of the soft styles; `NO_STYLE` where the scene has none.
+    hero_dust:u8,
 }
+/// Owner the cook gives the Knight's Focus dust emitters (host/hk-cook break_effects.rs `HERO_DUST_OWNER`).
+pub const HERO_DUST_OWNER:u16=0xFFFF;
+const NO_STYLE:u8=u8::MAX;
+/// A soft particle adds a quarter of its tinted texel (`B + F/4`), which is right for a smoke that
+/// piles up in dozens but made the Focus dust, faint puffs that overlap a few at a time, read
+/// a fraction of the original's brightness. The dust's tint is scaled by this (the GPU's
+/// texture modulation reaches 2x, so the quarter is 3x brighter for the same palette: its brightest pixels match the original's (99.9th percentile 114 against 105 on the same view)).
+const HERO_DUST_GAIN:u32=3;
 const EMPTY_STYLE:Style=Style{life:[0;2],speed:[0;2],size:[0;2],rotation:[0;2],colors:[[0;3];2],start_alpha:[255;2],count:0,rate:0,shape:0,radius:0,arc:0,
     shape_scale:[0;3],force:[[0;2];3],velocity:[[0;2];3],limit:0,dampen:0,spin_speed:[0;2],spin_range:[0;2],collision:false,bounce:0,
     collision_dampen:0,life_loss:0,kill_speed:0,radius_scale:0,samples:&[],frames:&[]};
 const EMPTY_EMITTER:Emitter=Emitter{scene:0,owner:0,source:0,style:0,angle_offset:0,origin:[0;3],basis:[[0;3];3]};
 static mut RESIDENT:Resident=Resident{scene:usize::MAX,styles:[EMPTY_STYLE;FX_MAX_STYLES],style_count:0,
     emitters:[EMPTY_EMITTER;FX_MAX_EMITTERS],emitter_count:0,art:[Art{u:0,v:0,w:0,h:0,clut:0,tpage:0};FX_MAX_ART],art_count:0,
-    frames:[[0;3];FX_MAX_FRAMES],soft:[false;FX_MAX_STYLES],soft_cluts:[(0,0);SOFT_CLUT_SLOTS.len()],soft_clut_count:0};
+    frames:[[0;3];FX_MAX_FRAMES],soft:[false;FX_MAX_STYLES],soft_cluts:[(0,0);SOFT_CLUT_SLOTS.len()],soft_clut_count:0,hero_dust:NO_STYLE};
 /// Styles and emitters of a catalogue scene; only the resident scene has any.
 pub fn scene_styles(scene:usize)->&'static [Style] {
     let r=unsafe {&*(&raw const RESIDENT)};if r.scene==scene {&r.styles[..r.style_count]}else{&[]}
@@ -198,6 +209,7 @@ pub fn load_scene(scene:usize,data:&[u8])->bool {
     // Every copy a soft style draws through must exist, or none is used.
     if copied<r.soft_clut_count {r.soft=[false;FX_MAX_STYLES];r.soft_clut_count=0;}
     unsafe {HK_SOFT_PALETTES=r.soft_clut_count as u32;}
+    r.hero_dust=r.emitters[..emitters].iter().find(|e|e.owner==HERO_DUST_OWNER).map_or(NO_STYLE,|e|e.style);
     r.style_count=styles;r.emitter_count=emitters;r.art_count=art;r.scene=scene;
     true
 }
@@ -452,7 +464,8 @@ pub(super) fn draw_particle(p:&Particle,track:u16,camera:(i32,i32))->bool {
         let sample=sample(p,s);
         let alpha=lerp([0,lerp(sample.alpha.map(i32::from),p.gradient)],p.start_alpha) as u32;
         if alpha==0 {return false;}
-        let c=p.color.map(|v|(u32::from(v)*alpha/255)as u8);
+        let gain=if resident.hero_dust==p.kind-2 {HERO_DUST_GAIN} else {1};
+        let c=p.color.map(|v|(u32::from(v)*alpha*gain/255).min(255)as u8);
         unsafe {HK_SOFT_PARTICLES_DRAWN=HK_SOFT_PARTICLES_DRAWN.wrapping_add(1);}
         (3,(c[0],c[1],c[2]),BlendMode::AddQuarter)
     } else {
@@ -826,7 +839,7 @@ fn length3_reference(v: [i32; 3]) -> i32 {
         // The effects share palettes across textures: rock and dust art on one.
         static ROCK_FRAMES:[[u16;3];1]=[[0,1,2]];static DUST_FRAMES:[[u16;3];1]=[[0,1,2]];
         let mut r=Resident{scene:0,styles:[EMPTY_STYLE;FX_MAX_STYLES],style_count:3,emitters:[EMPTY_EMITTER;FX_MAX_EMITTERS],emitter_count:0,
-            art:[Art{u:0,v:0,w:0,h:0,clut:0,tpage:0};FX_MAX_ART],art_count:3,frames:[[0;3];FX_MAX_FRAMES],soft:[false;FX_MAX_STYLES],soft_cluts:[(0,0);SOFT_CLUT_SLOTS.len()],soft_clut_count:0};
+            art:[Art{u:0,v:0,w:0,h:0,clut:0,tpage:0};FX_MAX_ART],art_count:3,frames:[[0;3];FX_MAX_FRAMES],soft:[false;FX_MAX_STYLES],soft_cluts:[(0,0);SOFT_CLUT_SLOTS.len()],soft_clut_count:0,hero_dust:NO_STYLE};
         for (i,clut) in [(0,clut_word(368,62)),(1,clut_word(368,63)),(2,clut_word(368,194))] {r.art[i].clut=clut;}
         r.styles[0]=Style{samples:&OPAQUE,frames:&ROCK_FRAMES,..EMPTY_STYLE};
         r.styles[1]=Style{samples:&FAINT,frames:&DUST_FRAMES,..EMPTY_STYLE};
