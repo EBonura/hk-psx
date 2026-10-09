@@ -753,6 +753,74 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "atlas2" => {
+            // hk-cook-parity atlas2 <oracle-atlas2.json> <oracle-quant dir>: Atlas.add, add_tiled,
+            // add_frames_shared and pack over real sprite images.
+            use hk_cook::atlas::{Atlas, Quantized};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_pil::{Image, Mode};
+            use sha2::{Digest, Sha256};
+            let trials = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
+            let qdir = &args[3];
+            let index = parse(&std::fs::read_to_string(format!("{qdir}/index.json")).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let int = |j: &Json| -> i64 { if let Json::Int(i) = j { *i } else { panic!("int") } };
+            let flt = |j: &Json| -> f64 { match j { Json::Int(i) => *i as f64, Json::Float(f) => *f, _ => panic!("num") } };
+            let cases = list(field(&index, "cases"));
+            let load = |idx: i64| -> Image {
+                let c = cases.iter().find(|c| matches!(field(c, "idx"), Json::Int(i) if i == idx)).unwrap();
+                Image { mode: Mode::Rgba, width: int(&field(c, "iw")) as usize, height: int(&field(c, "ih")) as usize, data: std::fs::read(format!("{qdir}/{idx}.rgba")).unwrap() }
+            };
+            let sha = |d: &[u8]| Json::Str(Sha256::digest(d).iter().map(|x| format!("{x:02x}")).collect());
+            let quantize = |im: &Image, w: usize, h: usize| -> Result<Quantized, String> {
+                let fallback = |_: &Image, _: usize, _: usize| -> Result<Quantized, String> { Err("octree fallback is not ported".into()) };
+                hk_cook::quantize::quantize(im, w, h, Some(&fallback))
+            };
+            let (mut ok, mut bad) = (0, 0);
+            for (n, trial) in list(trials).iter().enumerate() {
+                let mut atlas = Atlas::new(true, 20, 640, true, None);
+                let mut firsts = Vec::new();
+                let mut failure = None;
+                for op in list(field(trial, "ops")) {
+                    let Json::Str(kind) = field(&op, "kind") else { panic!("kind") };
+                    let result = match kind.as_str() {
+                        "add" => atlas.add(&load(int(&field(&op, "idx"))), flt(&field(&op, "w")), flt(&field(&op, "h")), matches!(field(&op, "streamed"), Json::Bool(true)), &quantize).map(|i| vec![i]),
+                        "tiled" => atlas.add_tiled(&load(int(&field(&op, "idx"))), flt(&field(&op, "w")), flt(&field(&op, "h")), &quantize).map(|i| vec![i]),
+                        _ => {
+                            let items: Vec<(Image, f64, f64)> = list(field(&op, "items")).iter().map(|it| (load(int(&field(it, "idx"))), flt(&field(it, "w")), flt(&field(it, "h")))).collect();
+                            atlas.add_frames_shared(&items, &quantize)
+                        }
+                    };
+                    match result {
+                        Ok(r) => firsts.push(r),
+                        Err(e) => { failure = Some(e); break; }
+                    }
+                }
+                let want_error = field(trial, "error");
+                if failure.is_none() { if let Err(e) = atlas.pack() { failure = Some(e); } }
+                match (failure, want_error) {
+                    (None, Json::Null) => {
+                        let want_results: Vec<Vec<i64>> = list(field(trial, "ops")).iter().map(|op| match field(op, "result") { Json::List(l) => l.iter().map(|v| int(v)).collect(), v => vec![int(&v)] }).collect();
+                        let got_results: Vec<Vec<i64>> = firsts.iter().map(|f| f.iter().map(|&v| v as i64).collect()).collect();
+                        let entries = Json::List(atlas.entries.iter().map(|e| Json::List(e.unwrap().iter().map(|&v| Json::Int(v)).collect())).collect());
+                        let palettes = Json::List(atlas.palettes.iter().map(|p| Json::Str(p.iter().map(|x| format!("{x:02x}")).collect())).collect());
+                        let pages = Json::List(atlas.pages.iter().map(|p| sha(p)).collect());
+                        let images = Json::List(atlas.images.iter().map(|i| i.as_ref().map_or(Json::Null, |im| sha(&im.data))).collect());
+                        let grids = { let mut g: Vec<_> = atlas.grids.iter().collect(); g.sort(); Json::Obj(g.into_iter().map(|(k, v)| (k.to_string(), Json::List(vec![Json::Int(v.0 as i64), Json::Int(v.1 as i64)]))).collect()) };
+                        let same_grids = { let Json::Obj(want) = field(trial, "grids") else { panic!("grids") }; let Json::Obj(mine) = &grids else { unreachable!() }; want.len() == mine.len() && want.iter().all(|w| mine.iter().any(|m| m == w)) };
+                        let good = want_results.len() == got_results.len() && want_results == got_results && entries == field(trial, "entries") && palettes == field(trial, "palettes") && pages == field(trial, "pages") && sha(&atlas.stream) == field(trial, "stream") && images == field(trial, "images") && same_grids && int(&field(trial, "cluts")) as usize == atlas.cluts;
+                        if good { ok += 1 } else { bad += 1; println!("trial {n}: atlas differs (results {} entries {} palettes {} pages {} stream {} images {} grids {})", want_results == got_results, entries == field(trial, "entries"), palettes == field(trial, "palettes"), pages == field(trial, "pages"), sha(&atlas.stream) == field(trial, "stream"), images == field(trial, "images"), same_grids); }
+                    }
+                    (Some(e), Json::Str(want)) if e == want => ok += 1,
+                    (f, want) => { bad += 1; println!("trial {n}: rust error {f:?}, python {want:?}"); }
+                }
+            }
+            println!("checked {ok} atlases, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
