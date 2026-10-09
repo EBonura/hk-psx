@@ -72,7 +72,7 @@ class StreamedBankManifestTests(unittest.TestCase):
         self.build_guest.check_audio_banks()
 
     def test_a_recooked_payload_without_its_manifest_is_refused(self):
-        from ambience import fnv
+        fnv = self.build_guest.fnv
         for name in self.build_guest.AUDIO_BANKS:
             payload = (ROOT / 'data' / name).read_bytes()
             manifest = (ROOT / 'data' / self.build_guest.bank_manifest(name)).read_text()
