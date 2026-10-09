@@ -135,7 +135,7 @@ fn walker_parameters(walker: &Value, lunge_speed: Option<&Value>) -> Result<Vec<
 
 /// `fsm_fingerprint`: structure and scalar parameters of the Zombie Swipe FSM,
 /// without the per-scene object references and the placement's Lunge Speed.
-fn fsm_fingerprint(fsm: &Value) -> Result<String> {
+pub(crate) fn fsm_fingerprint(fsm: &Value) -> Result<String> {
     let scalar = |v: &Value| -> String {
         if v.is_map() {
             if v.get("useVariable").is_some_and(Value::truthy) {
@@ -258,7 +258,7 @@ fn clip_contract(clips: &[Value], expected: &Clips) -> Result<Vec<Json>> {
 }
 
 /// `body_contract`: reject physics variants the pending actor integration cannot honor.
-fn body_contract(rigid: &Value) -> Result<()> {
+pub(crate) fn body_contract(rigid: &Value) -> Result<()> {
     let bits = |_: ()| Value::Map(vec![("m_Bits".into(), Value::Int(0))]);
     let expected: [(&str, Value); 12] = [
         ("m_BodyType", Value::Int(0)),
