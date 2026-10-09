@@ -63,7 +63,7 @@ pub fn init() {
     assert!(UI.len()==UI_BYTES && UI_SAMPLES[0].0 as usize==0x1010+BANK_BYTES && 0x1010+BANK_BYTES+UI_BYTES<=0x14000);
     spu::upload_adpcm(SpuAddr::new(UI_SAMPLES[0].0), UI);
     unsafe {GREAT_DOOR_RANDOM=0x47524452;HK_GREAT_DOOR_HIT_SFX=0;HK_BOSS_SFX_COUNTS=[0;2];
-        WORLD_RANDOM=0x574f524c;HK_WORLD_SFX=[0;5];HK_HERO_EXTRA_SFX=[0;7];HK_ABILITY_SFX=[0;6];
+        WORLD_RANDOM=0x574f524c;HK_WORLD_SFX=[0;5];HK_HERO_EXTRA_SFX=[0;7];HK_ABILITY_SFX=[0;7];
         HK_FOOTSTEP_STARTS=0;HK_HARD_LAND_SFX=0;MOVEMENT=movement::State::new();}
 }
 
@@ -202,8 +202,8 @@ fn play(index: usize) {
 #[no_mangle]pub static mut HK_HERO_EXTRA_SFX:[u32;7]=[0;7];
 /// Plays per ability one-shot riding the Focus bank (host/focus_audio.py
 /// ABILITY order): Crystal Heart charge, ready, burst, wall hit, air brake,
-/// and Vengeful Spirit's cast.
-#[no_mangle]pub static mut HK_ABILITY_SFX:[u32;6]=[0;6];
+/// Vengeful Spirit's cast, and the soul orb's focus_ready.
+#[no_mangle]pub static mut HK_ABILITY_SFX:[u32;7]=[0;7];
 pub const NAIL_ALT:usize=0;
 pub const NAIL_DOWN:usize=1;
 pub const DASH:usize=2;
@@ -217,6 +217,8 @@ pub const SUPER_BURST:usize=2;
 pub const SUPER_WALL:usize=3;
 pub const SUPER_BRAKE:usize=4;
 pub const FIREBALL:usize=5;
+/// The soul orb's cue when the SOUL reaches a heal's cost (`Soul Orb Control`).
+pub const FOCUS_READY:usize=6;
 
 /// Point `voice` at one clip and key it on. For the voices whose clip changes
 /// from play to play (the nail's swings, voice 0's movement one-shots), so the

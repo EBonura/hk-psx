@@ -4,7 +4,8 @@
 //! the port with the original per tick: the same quantities the original's
 //! reference mod exports (hero state, clip and frame, positions, hit points).
 //!
-//! The block costs `WORDS * 4` bytes of RAM and a few hundred cycles a tick.
+//! The block costs `WORDS * 4` bytes of RAM, 1,260 of code and a few hundred cycles a tick, so it
+//! is built only with the `trace` feature (`HK_GUEST_FEATURES=trace` for host/build_guest.py).
 //! Layout (all words little-endian, positions and velocities Q16 world units):
 //!
 //! | words | meaning |

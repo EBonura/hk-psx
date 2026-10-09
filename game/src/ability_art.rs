@@ -23,6 +23,11 @@ pub const SD_HIT_WALL: usize = 13;
 /// Vengeful Spirit's projectile, from its own sprite collection.
 pub const BALL: usize = 14;
 pub const BALL_END: usize = 15;
+/// The Focus effects (additive): Lines Anim's Focus Effect and Focus Effect End, then
+/// Heal Anim's Burst Effect, appended by `host/ability_art.py` after the ball clips.
+pub const FOCUS_EFFECT: usize = 16;
+pub const FOCUS_EFFECT_END: usize = 17;
+pub const BURST_EFFECT: usize = 18;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;
@@ -33,12 +38,35 @@ pub fn frame_index(clip: usize, age: u32) -> usize {
     let frame = (u64::from(age) * u64::from(c.fps) / 60) as usize;
     c.start + if c.wrap == 0 { frame % c.count } else { frame.min(c.count - 1) }
 }
-/// Texels for one ability frame, for the animation cache's upload closure.
-pub fn texels(index: usize) -> Option<(&'static [u8], u16, u16)> {
+/// Width and height of one ability frame's texels.
+pub fn size(index: usize) -> Option<(u16, u16)> {
     let frame = ABILITY_FRAMES.get(index)?;
-    let start = PALETTE_BYTES + frame.offset;
-    let len = (frame.width as usize + 3) / 4 * 2 * frame.height as usize;
-    Some((&DATA[start..start + len], frame.width, frame.height))
+    Some((frame.width, frame.height))
+}
+/// Decoded texel bytes of one ability frame: 4 bpp, rows padded to whole halfwords.
+pub fn texel_bytes(index: usize) -> Option<usize> {
+    let frame = ABILITY_FRAMES.get(index)?;
+    Some((frame.width as usize + 3) / 4 * 2 * frame.height as usize)
+}
+/// The frame's run-length coded texels (host/ability_art.py `packbits`), running to the
+/// end of the blob at worst: the decoder stops at `texel_bytes`.
+fn coded(index: usize) -> Option<&'static [u8]> {
+    Some(&DATA[PALETTE_BYTES + ABILITY_FRAMES.get(index)?.offset..])
+}
+/// Bytes of a frame in order, decoded from its run-length code. A token below 0x80 is a
+/// literal of token + 1 bytes; from 0x80 it is a run of (token & 0x7f) + 2 copies of the
+/// next byte.
+struct Unpack { src: &'static [u8], at: usize, literal: usize, run: usize, value: u8 }
+impl Unpack {
+    fn new(src: &'static [u8]) -> Self { Unpack { src, at: 0, literal: 0, run: 0, value: 0 } }
+    fn next(&mut self) -> u8 {
+        if self.run == 0 && self.literal == 0 {
+            let token = self.src[self.at];
+            self.at += 1;
+            if token < 0x80 { self.literal = token as usize + 1 } else { self.run = (token & 0x7f) as usize + 2; self.value = self.src[self.at]; self.at += 1 }
+        }
+        if self.run != 0 { self.run -= 1; self.value } else { self.literal -= 1; let b = self.src[self.at]; self.at += 1; b }
+    }
 }
 
 #[cfg(not(test))]
@@ -50,6 +78,28 @@ mod presentation {
     pub static mut HK_ABILITY_DRAWN: u32 = 0;
     /// One resident CLUT row per cooked palette, inside the block shade.py
     /// reserved at y482 and does not use.
+    /// Decode one frame's texels into `rect` of VRAM, straight into the GPU's data port,
+    /// so no staging buffer is needed. The caller has drained the GPU's DMA channel.
+    /// Returns the decoded byte count.
+    pub fn upload_frame(index: usize, rect: VramRect) -> Option<u32> {
+        let len = texel_bytes(index)?;
+        let mut stream = Unpack::new(coded(index)?);
+        psx_io::gpu::wait_cmd_ready();
+        psx_io::gpu::write_gp0(psx_hw::gpu::gp0::COPY_CPU_TO_VRAM);
+        psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.x, rect.y));
+        psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.w, rect.h));
+        let mut left = len;
+        while left > 0 {
+            let mut word = 0u32;
+            for shift in 0..4 {
+                if left == 0 { break; }
+                word |= u32::from(stream.next()) << (shift * 8);
+                left -= 1;
+            }
+            psx_io::gpu::write_gp0(word);
+        }
+        Some(len as u32)
+    }
     pub fn upload() {
         assert!(DATA.len() >= PALETTE_BYTES && PALETTE_BYTES == PALETTE_COUNT * 32);
         for i in 0..PALETTE_COUNT {
@@ -60,6 +110,15 @@ mod presentation {
     /// Draw one ability frame at the Knight, mirrored by its facing.
     #[inline(never)]
     pub fn draw(index: usize, x: i32, y: i32, facing: i32, camera: (i32, i32), tint: u8) -> u32 {
+        draw_with(index, x, y, facing, camera, tint, BlendMode::Average)
+    }
+    /// A Focus effect frame: the original's Screen blend is the GPU's Add.
+    #[inline(never)]
+    pub fn draw_additive(index: usize, x: i32, y: i32, facing: i32, camera: (i32, i32), tint: u8) -> u32 {
+        draw_with(index, x, y, facing, camera, tint, BlendMode::Add)
+    }
+    #[inline(always)]
+    fn draw_with(index: usize, x: i32, y: i32, facing: i32, camera: (i32, i32), tint: u8, blend: BlendMode) -> u32 {
         let Some(frame) = ABILITY_FRAMES.get(index) else { return 0 };
         let (u, v) = crate::render::animation_uv(KEY_BASE + index as u16);
         let b = frame.bounds;
@@ -81,11 +140,11 @@ mod presentation {
         let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
         let template = QuadTextured::with_material([(0, 0); 4],
             [(u, v), (right, v), (u, bottom), (right, bottom)],
-            TextureMaterial::blended(clut, tpage, (tint, tint, tint), BlendMode::Average));
+            TextureMaterial::blended(clut, tpage, (tint, tint, tint), blend));
         crate::render::resident_quad(&template, vertices.map(|(x, y)| (x as i16, y as i16)));
         unsafe { HK_ABILITY_DRAWN = HK_ABILITY_DRAWN.saturating_add(1); }
         1
     }
 }
 #[cfg(not(test))]
-pub use presentation::{draw, upload};
+pub use presentation::{draw, draw_additive, upload, upload_frame};
