@@ -15,6 +15,15 @@ static mut WAS_SOUL: u16 = 0;
 pub static mut HK_FOCUS_BURSTS: u32 = 0;
 #[no_mangle]
 pub static mut HK_FOCUS_READY_CUES: u32 = 0;
+/// Bursts of Focus dust raised so far (`dust_due`).
+#[no_mangle]
+pub static mut HK_FOCUS_DUST_BURSTS: u32 = 0;
+/// The owner the cook gives the Knight's `Dust L` and `Dust R` emitters in every scene
+/// (host/hk-cook break_effects.rs `HERO_DUST_OWNER`).
+pub const DUST_OWNER: usize = 0xFFFF;
+/// Each cooked burst is six particles over six ticks (60 a second, the rate the Spell Control
+/// FSM sets while Focus runs), so a burst every six ticks is the continuous emission.
+const DUST_PERIOD: u32 = 6;
 
 fn ticks(clip: usize) -> u32 { ABILITY_CLIPS[clip].count as u32 * 60 / ABILITY_CLIPS[clip].fps }
 
@@ -37,6 +46,15 @@ pub fn tick(active: bool, completed: bool, soul: u16, cost: u16, health_full: bo
         WAS_SOUL = soul;
         if ready { HK_FOCUS_READY_CUES = HK_FOCUS_READY_CUES.wrapping_add(1); }
         ready
+    }
+}
+/// True on the ticks Focus dust is due: from the drain until a cancel or the finish, every
+/// `DUST_PERIOD` ticks. Counts the burst.
+pub fn dust_due() -> bool {
+    unsafe {
+        let due = LINES.is_some_and(|age| age % DUST_PERIOD == 0);
+        if due { HK_FOCUS_DUST_BURSTS = HK_FOCUS_DUST_BURSTS.wrapping_add(1); }
+        due
     }
 }
 /// Stop everything at once (a load or a reset).
