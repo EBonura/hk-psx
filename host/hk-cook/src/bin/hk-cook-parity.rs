@@ -317,6 +317,77 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "polygons" => {
+            // hk-cook-parity polygons <oracle-polygons.json>: bounded_polygons against host/polygons.py.
+            use hk_cook::pyjson::{parse, Json};
+            let Json::List(cases) = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap() else { panic!("cases") };
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap() } else { panic!("not an object") } };
+            let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("coordinate") };
+            let (mut ok, mut agreed, mut bad) = (0, 0, 0);
+            for (n, case) in cases.iter().enumerate() {
+                let Json::List(points) = field(case, "points") else { panic!("points") };
+                let points: Vec<(f64, f64)> = points.iter().map(|p| { let Json::List(p) = p else { panic!("pt") }; (f(&p[0]), f(&p[1])) }).collect();
+                let Json::Int(limit) = field(case, "limit") else { panic!("limit") };
+                let got = hk_cook::polygons::bounded_polygons(&points, limit as usize);
+                match (got, field(case, "error")) {
+                    (Ok(pieces), Json::Null) => {
+                        let mine = Json::List(pieces.iter().map(|p| Json::List(p.iter().map(|q| Json::List(vec![Json::Float(q.0), Json::Float(q.1)])).collect())).collect());
+                        if mine == field(case, "pieces") { ok += 1 } else { bad += 1; println!("case {n}: pieces differ") }
+                    }
+                    (Err(e), Json::Str(want)) => {
+                        if e == want || (want == "KeyError" && e.starts_with("KeyError")) { agreed += 1 } else { bad += 1; println!("case {n}: error {e:?}, python {want:?}") }
+                    }
+                    (r, want) => { bad += 1; println!("case {n}: rust ok {}, python error {want:?}", r.is_ok()) }
+                }
+            }
+            println!("checked {ok} splits and {agreed} refusals, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "static" => {
+            // hk-cook-parity static <source dir> <oracle dir> <regions.json>: hazard_sources,
+            // shroom_sources and pogo_sources against actors.py.
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            let source = lazy_source();
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let Some(Json::List(scenes)) = (if let Json::Obj(f) = &regions { f.iter().find(|k| k.0 == "scenes").map(|k| k.1.clone()) } else { None }) else { panic!("no scenes") };
+            let get = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
+            let (mut checked, mut bad) = (std::collections::BTreeMap::<String, usize>::new(), 0usize);
+            for s in &scenes {
+                let (Some(Json::Str(name)), Some(Json::Str(file))) = (get(s, "scene_name"), get(s, "file")) else { panic!("scene row") };
+                let oracle = parse(&std::fs::read_to_string(format!("{}/{name}.json", args[3])).unwrap()).unwrap();
+                let sc = Scene::new(&source, &file).unwrap();
+                let results = [
+                    ("hazards", hk_cook::static_sources::hazard_sources(&sc, None).map(Json::List)),
+                    ("shrooms", hk_cook::static_sources::shroom_sources(&sc, None).map(Json::List)),
+                    ("pogo", hk_cook::static_sources::pogo_sources(&sc)),
+                ];
+                for (key, got) in results {
+                    let want = get(&oracle, key).unwrap();
+                    let python_error = get(&want, "error");
+                    match (got, python_error) {
+                        (Ok(g), None) => {
+                            *checked.entry(key.into()).or_default() += 1;
+                            if g != want {
+                                bad += 1;
+                                println!("{name}: {key} differs");
+                            }
+                        }
+                        (Err(_), Some(_)) => *checked.entry(format!("{key} agreed errors")).or_default() += 1,
+                        (r, _) => {
+                            bad += 1;
+                            println!("{name}: {key} error disagreement (rust ok: {})", r.is_ok());
+                        }
+                    }
+                }
+            }
+            println!("checked {checked:?}, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
