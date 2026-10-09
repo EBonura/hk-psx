@@ -53,7 +53,8 @@ use serde_json::Value as J;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use crate::spu::{check_oneshot, fnv, mono_wav, read_wav, run, samples_of};
+use std::process::Command;
 
 /// Gain the scene voice plays every clip at: the source's volume 1.0 scaled
 /// by a third for mix headroom, as every other bank here (cook_audio volume_q14).
@@ -278,11 +279,6 @@ fn level_db(samples: &[i16]) -> f64 {
     let power = div(sum, samples.len() as i64);
     10.0 * (power.max(1e-12) / 1073741824.0).log10()
 }
-/// scene_bank.py / ambience.py `fnv`.
-fn fnv(data: &[u8]) -> u32 {
-    data.iter().fold(0x811c9dc5u32, |v, &b| (v ^ b as u32).wrapping_mul(0x01000193))
-}
-
 /// `trim_tail`: a clip's tail cut by `trim`, ending in a linear fade, with the
 /// energy of what was dropped relative to the whole, in dB.
 fn trim_tail(pcm: Vec<i16>, rate: i64, trim: Option<Trim>) -> (Vec<i16>, Option<f64>) {
@@ -343,81 +339,6 @@ fn ship6_encode(samples: &[i16]) -> Vec<u8> {
     out
 }
 
-/// cook_audio.py `decode_oneshot`'s framing check: no flags but the silent
-/// END terminator.
-fn check_oneshot(bank: &[u8]) -> Result<()> {
-    if bank.is_empty() || !bank.len().is_multiple_of(16) {
-        return err("ADPCM block alignment");
-    }
-    for start in (0..bank.len()).step_by(16) {
-        let (header, flags) = (bank[start], bank[start + 1]);
-        if header >> 4 > 4 || header & 15 > 12 || flags != if start + 16 == bank.len() { 1 } else { 0 } {
-            return err("unsupported predictor/shift or unsafe loop flags");
-        }
-    }
-    if bank[bank.len() - 14..].iter().any(|&b| b != 0) {
-        return err("one-shot terminator must be silent");
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------- WAV
-
-struct Wav {
-    channels: u16,
-    rate: u32,
-    width: u16,
-    data: Vec<u8>,
-}
-/// What Python's `wave` module reads: the fmt chunk and the data chunk.
-fn read_wav(bytes: &[u8]) -> Result<Wav> {
-    if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        return err("not a RIFF WAVE");
-    }
-    let (mut at, mut fmt, mut data) = (12, None, None);
-    while at + 8 <= bytes.len() {
-        let id = &bytes[at..at + 4];
-        let size = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
-        let body = &bytes[at + 8..(at + 8 + size).min(bytes.len())];
-        match id {
-            b"fmt " => fmt = Some(body.to_vec()),
-            b"data" => {
-                data = Some(body.to_vec());
-                break;
-            }
-            _ => {}
-        }
-        at += 8 + size + (size & 1);
-    }
-    let (fmt, data) = (fmt.ok_or("WAV without fmt")?, data.ok_or("WAV without data")?);
-    let u16_at = |i: usize| u16::from_le_bytes([fmt[i], fmt[i + 1]]);
-    Ok(Wav { channels: u16_at(2), rate: u32::from_le_bytes(fmt[4..8].try_into().unwrap()), width: u16_at(14) / 8, data })
-}
-/// Python `wave` writing 16-bit mono at `rate`.
-fn mono_wav(rate: u32, samples: &[i16]) -> Vec<u8> {
-    let data_len = samples.len() * 2;
-    let mut out = Vec::with_capacity(44 + data_len);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&((36 + data_len) as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&rate.to_le_bytes());
-    out.extend_from_slice(&(rate * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(data_len as u32).to_le_bytes());
-    for s in samples {
-        out.extend_from_slice(&s.to_le_bytes());
-    }
-    out
-}
-fn samples_of(data: &[u8]) -> Vec<i16> {
-    data.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect()
-}
-
 // ---------------------------------------------------------------- clips
 
 #[derive(Clone)]
@@ -448,25 +369,6 @@ struct Check {
     fwsnrseg: f64,
     ship6_level_off_db: f64,
     level_off_db: f64,
-}
-
-fn run(cmd: &mut Command, input: Option<Vec<u8>>) -> Result<Vec<u8>> {
-    let mut child = cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).spawn().map_err(|e| format!("{cmd:?}: {e}"))?;
-    let writer = input.map(|data| {
-        let mut stdin = child.stdin.take().unwrap();
-        std::thread::spawn(move || {
-            use std::io::Write;
-            let _ = stdin.write_all(&data);
-        })
-    });
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    if let Some(w) = writer {
-        let _ = w.join();
-    }
-    if !out.status.success() {
-        return err(format!("{cmd:?} failed with {}", out.status));
-    }
-    Ok(out.stdout)
 }
 
 /// What `assemble` and `fit` need of the clip pipeline: payloads and sizes at
@@ -534,25 +436,7 @@ impl<'s> Clips<'s> {
         if name != e.clip {
             return err(format!("changed scene sound mapping: {}:{} is {name}, not {}", e.file, e.path_id, e.clip));
         }
-        let data = match t.get("m_AudioData") {
-            Some(Value::Bytes(b)) if !b.is_empty() => b.clone(),
-            _ => {
-                let r = t.get("m_Resource").ok_or("AudioClip with neither m_AudioData nor m_Resource")?;
-                let path = r.get("m_Source").and_then(Value::str).unwrap_or_default();
-                let base = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
-                let offset = r.get("m_Offset").and_then(Value::int).unwrap_or(0) as usize;
-                let size = r.get("m_Size").and_then(Value::int).unwrap_or(0) as usize;
-                let bytes = self.source.resource(&self.source.directory.join(&base)).map_err(|x| x.to_string())?;
-                bytes.get(offset..offset + size).ok_or("audio resource out of range")?.to_vec()
-            }
-        };
-        let wav = if data.starts_with(b"RIFF") {
-            data
-        } else {
-            let channels = t.get("m_Channels").and_then(Value::int).filter(|&c| c != 0).unwrap_or(2) as i32;
-            let frequency = t.get("m_Frequency").and_then(Value::int).filter(|&c| c != 0).unwrap_or(44100) as i32;
-            crate::fmod::raw_to_wav(&self.root, &data, channels, frequency)?
-        };
+        let wav = crate::fmod::clip_wav(&self.root, self.source, &t)?;
         self.wavs.insert(key, wav.clone());
         Ok(wav)
     }

@@ -261,7 +261,7 @@ def mask_fades(sc, receiver_gid):
 #   OUTPUT_AUDIO      164 of 338 catalogue instances name one of four clips that
 #                     are not resident. Their serialized lengths need 50,864 SPU
 #                     bytes against the 14,432 free below the 0x14000 bank limit
-#                     in host/cook_audio.py, so no cook can satisfy them.
+#                     in host/hk-cook/src/cook_audio.rs, so no cook can satisfy them.
 #   OUTPUT_FRAGMENTS  193 instances fling 355 rigid parts; only Tutorial_01's 28
 #                     are cooked. The definition below recognizes all 355, but
 #                     every Spec links, so admitting them is a measured cost
