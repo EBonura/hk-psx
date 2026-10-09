@@ -482,6 +482,8 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
         focus_audio::tick(&game.focus,focus_events);
         if focus_fx::tick(game.focus.lines_active(),focus_events.completed,game.vitals.soul as u16,FOCUS_PARAMS.cost as u16,
             game.vitals.health>=game.settings.cheats.params(VITAL_PARAMS).max_health) {ability_sound(audio::FOCUS_READY);}
+        // Dust L and Dust R at the Knight's feet, in world space, while Focus runs.
+        if focus_fx::dust_due() {world::particles::pool().spawn_break_at(r.scene,focus_fx::DUST_OWNER,[game.player.x,game.player.y]);}
         game.settings.cheats.maintain(&mut game.vitals,VITAL_PARAMS);
         unsafe {
             HK_FOCUS_STARTED+=u32::from(focus_events.started);HK_FOCUS_COMPLETED+=u32::from(focus_events.completed);
