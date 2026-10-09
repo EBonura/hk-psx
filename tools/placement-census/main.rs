@@ -602,10 +602,14 @@ fn main() {
             rows.push(json!({"name": o.name, "status": status, "detail": detail, "original": [o.pos[0], o.pos[1]], "cooked": c.map(|c| [c.pos[0], c.pos[1]]), "kind": c.map(|c| c.kind.clone()), "fsms": o.fsms}));
         }
 
-        // 2. Cooked actors the original does not have active.
+        // 2. Cooked actors the original does not have active. A refused one is
+        // never spawned, and a boss the arena script owns is placed dormant on
+        // purpose, so neither is a difference in play; the rest are.
         for (ci, c) in cs.iter().enumerate() {
             let status = match og_to_c.iter().position(|m| *m == Some(ci)) {
                 Some(oi) if ogs[oi].active => continue,
+                _ if !c.supported => "extra_refused",
+                _ if own_persistence(&c.kind) => "extra_arena",
                 Some(_) => "extra_gated",
                 None => "extra_unknown",
             };
@@ -730,8 +734,8 @@ fn markdown(report: &Value, summary: &Value) -> String {
     let g = |k: &str| t[k].as_u64().unwrap_or(0);
     let exp = summary["expected_active_enemies"].as_u64().unwrap_or(0);
     m.push_str(&format!(
-        "{} of {} scenes pass. {} active enemies in the original: {} ok, {} snap, {} unadmitted, {} absent. Cooked actors the original does not have active: {} gated in the original, {} unknown. Contract checks: {} pass, {} fail.\n\n",
-        summary["scenes_pass"], summary["scenes"], exp, g("ok"), g("snap"), g("unadmitted"), g("absent"), g("extra_gated"), g("extra_unknown"), summary["checks_pass"], summary["checks_fail"]
+        "{} of {} scenes pass. {} active enemies in the original: {} ok, {} snap, {} unadmitted, {} absent. Cooked actors the original does not have active: {} gated in the original and {} unknown (a difference in play); {} refused by the cook and {} boss arenas (not one). Contract checks: {} pass, {} fail.\n\n",
+        summary["scenes_pass"], summary["scenes"], exp, g("ok"), g("snap"), g("unadmitted"), g("absent"), g("extra_gated"), g("extra_unknown"), g("extra_refused"), g("extra_arena"), summary["checks_pass"], summary["checks_fail"]
     ));
     m.push_str("| contract check | pass | fail |\n|---|---|---|\n");
     for (k, v) in summary["checks"].as_object().unwrap() {
