@@ -25,6 +25,7 @@ hk-sim = { path = "../../shared/hk-sim" }
 hk-format = { path = "../../shared/hk-format" }
 psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }
 serde_json = "1"
+png = "0.17"
 
 [profile.release]
 opt-level = 2

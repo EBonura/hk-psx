@@ -29,6 +29,7 @@ mod tour;
 mod index_check;
 mod approach;
 mod harass;
+mod plot;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -51,6 +52,12 @@ fn main() {
             let raw: std::collections::BTreeMap<String, String> = serde_json::from_str(&std::fs::read_to_string(names_path).unwrap()).unwrap();
             let names = raw.into_iter().map(|(k, v)| (k.parse::<usize>().unwrap(), v)).collect();
             approach::report(std::path::Path::new(&args[1]), &names, args.get(2).map(String::as_str));
+        }
+        Some("plot") => {
+            let names_path = std::env::var("HKBP_SCENE_NAMES").expect("HKBP_SCENE_NAMES");
+            let raw: std::collections::BTreeMap<String, String> = serde_json::from_str(&std::fs::read_to_string(names_path).unwrap()).unwrap();
+            let names = raw.into_iter().map(|(k, v)| (k.parse::<usize>().unwrap(), v)).collect();
+            plot::run(std::path::Path::new(&args[1]), &names, &args[2..]);
         }
         Some("harass") => {
             let names_path = std::env::var("HKBP_SCENE_NAMES").expect("HKBP_SCENE_NAMES");
