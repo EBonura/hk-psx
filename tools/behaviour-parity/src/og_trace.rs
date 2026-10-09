@@ -65,6 +65,8 @@ pub struct Window {
     pub tour: bool,
     /// The window of a strike series on `target`.
     pub poke: bool,
+    pub x: f64,
+    pub y: f64,
     pub target: String,
     pub start: i64,
     pub end: i64,
@@ -144,6 +146,8 @@ pub fn load_run(run: &Path) -> BTreeMap<String, SceneTrace> {
             windows.entry(r["scene"].clone()).or_default().push(Window {
                 tour: matches!(r.get("phase").map(String::as_str), Some("tour") | Some("poke")),
                 poke: r.get("phase").map(String::as_str) == Some("poke"),
+                x: num(&r, "x"),
+                y: num(&r, "y"),
                 target: r.get("target").cloned().unwrap_or_default(),
                 start: num(&r, "start_frame") as i64,
                 end: num(&r, "end_frame") as i64,

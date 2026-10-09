@@ -24,6 +24,7 @@ pub struct Tick {
     pub dead: bool,
     pub clip: u16,
     pub facing: i32,
+    pub phase: [u8; 2],
 }
 
 pub fn family_of(spec: &ActorSpec) -> String {
@@ -37,53 +38,63 @@ fn q(v: i32) -> f64 {
 
 /// Runs every placement of `scene` in the region that contains it, with the og camera.
 pub fn run_port_scene(scene: usize, trace: &SceneTrace, ticks: usize) -> Vec<PortActor> {
+    run_port_scene_with(scene, trace, ticks, None)
+}
+
+/// `run_port_scene`, with the camera held at `camera(region)` instead of the original's trace.
+pub fn run_port_scene_with(scene: usize, trace: &SceneTrace, ticks: usize, camera: Option<&dyn Fn(&RegionData) -> [i32; 3]>) -> Vec<PortActor> {
     let regions = load_scene(scene);
     let mut out: Vec<PortActor> = Vec::new();
-    let mut taken: Vec<u32> = Vec::new();
     let camera_at = |k: usize| -> [i32; 3] {
         let f = trace.origin + k as i64;
         let c = trace.camera.range(..=f).next_back().map(|(_, c)| *c).or_else(|| trace.camera.values().next().copied()).unwrap_or([0.0, 0.0, -38.1]);
         [(c[0] * 65536.0).round() as i32, (c[1] * 65536.0).round() as i32, (c[2] * 65536.0).round() as i32]
     };
-    for here in &regions {
-        let mine: Vec<usize> = (0..here.actors.len())
-            .filter(|&k| world::contains(here.bounds, here.actors[k].0.x, here.actors[k].0.y) && !taken.contains(&here.actors[k].0.source_id))
-            .collect();
-        if mine.is_empty() {
-            continue;
-        }
-        let mut w = enemies::EnemyWorld::new();
-        let mut player = Player::spawn(-150 * ONE, -150 * ONE);
-        let mut vitals = Vitals::new(VITAL_PARAMS);
-        let mut recs: Vec<PortActor> = mine
-            .iter()
-            .map(|&k| {
-                let (p, spec) = here.actors[k];
-                PortActor { source_id: p.source_id, family: family_of(spec), spec_hp: spec.health.health, start: (q(p.x), q(p.y)), ticks: Vec::with_capacity(ticks) }
-            })
-            .collect();
-        for t in 0..ticks {
-            // The Knight stands where the original's did: frozen at the entrance while the scene
-            // settles (no trigger events there, which the port cannot tell from a standing
-            // Knight, so pairs he stands near are set apart below), then beside each enemy.
-            let f = trace.origin + t as i64;
-            // (Position-driven rules such as the Walker's turn toward the Knight read it even
-            // while he is frozen, so he is not parked out of the room.)
-            if let Some(h) = trace.hero.range(..=f).next_back().map(|(_, h)| h) {
-                player.x = (h[0] * 65536.0).round() as i32;
-                player.y = (h[1] * 65536.0).round() as i32;
-                player.facing = trace.face.range(..=f).next_back().map_or(1, |(_, v)| *v);
+    // One world per placement, the active view always the one the enemy stands in. The guest
+    // advances only what is within a view of the Knight's own, so an enemy that wanders off while he
+    // is elsewhere stops where it is; that is a property of the port's activation, not of the
+    // controller, and a comparison of controllers must not inherit it.
+    let mut seen: Vec<u32> = Vec::new();
+    for first in &regions {
+        for (p0, spec0) in first.actors.iter() {
+            if !world::contains(first.bounds, p0.x, p0.y) || seen.contains(&p0.source_id) {
+                continue;
             }
-            step(&mut w, here, &regions, &mut player, &mut vitals, camera_at(t));
-            for r in recs.iter_mut() {
-                r.ticks.push(match w.debug_actor(scene, r.source_id) {
-                    Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing },
-                    None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0 },
-                });
+            seen.push(p0.source_id);
+            let mut w = enemies::EnemyWorld::new();
+            let mut player = Player::spawn(-150 * ONE, -150 * ONE);
+            let mut vitals = Vitals::new(VITAL_PARAMS);
+            let mut rec = PortActor { source_id: p0.source_id, family: family_of(spec0), spec_hp: spec0.health.health, start: (q(p0.x), q(p0.y)), ticks: Vec::with_capacity(ticks) };
+            let mut here = first;
+            for t in 0..ticks {
+                // The Knight stands where the original's did: frozen at the entrance while the
+                // scene settles (no trigger events there, which the port cannot tell from a standing
+                // Knight, so pairs he stands near are set apart), then beside each enemy. Rules that
+                // read his position, such as the Walker's turn toward him, need it even frozen.
+                let f = trace.origin + t as i64;
+                if let Some(h) = trace.hero.range(..=f).next_back().map(|(_, h)| h) {
+                    player.x = (h[0] * 65536.0).round() as i32;
+                    player.y = (h[1] * 65536.0).round() as i32;
+                    player.facing = trace.face.range(..=f).next_back().map_or(1, |(_, v)| *v);
+                }
+                let cam = camera.map_or_else(|| camera_at(t), |f| f(here));
+                step(&mut w, here, &regions, &mut player, &mut vitals, cam);
+                let tick = match w.debug_actor(scene, rec.source_id) {
+                    Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase },
+                    None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2] },
+                };
+                if tick.x.is_finite() {
+                    let (x, y) = ((tick.x * 65536.0) as i32, (tick.y * 65536.0) as i32);
+                    if !world::contains(here.bounds, x, y) {
+                        if let Some(next) = regions.iter().find(|r| world::contains(r.bounds, x, y)) {
+                            here = next;
+                        }
+                    }
+                }
+                rec.ticks.push(tick);
             }
+            out.push(rec);
         }
-        taken.extend(recs.iter().map(|r| r.source_id));
-        out.extend(recs);
     }
     out
 }
@@ -284,8 +295,8 @@ pub fn dump(run: &std::path::Path, names: &BTreeMap<usize, String>, args: &[Stri
         let p = &pair.port.ticks[t];
         let hero = trace.hero.get(&f).map(|h| format!("hero({:.1},{:.1})", h[0], h[1])).unwrap_or_default();
         match o {
-            Some(o) => println!("{t:5}  og ({:8.3},{:8.3}) {:<34} | port ({:8.3},{:8.3}) clip {:3} face {:2} {hero}", o.x, o.y, o.fsm.chars().take(34).collect::<String>(), p.x, p.y, p.clip, p.facing),
-            None => println!("{t:5}  og (none)                                              | port ({:8.3},{:8.3}) clip {:3} face {:2} {hero}", p.x, p.y, p.clip, p.facing),
+            Some(o) => println!("{t:5}  og ({:8.3},{:8.3}) {:<34} | port ({:8.3},{:8.3}) clip {:3} face {:2} ph {}/{} {hero}", o.x, o.y, o.fsm.chars().take(34).collect::<String>(), p.x, p.y, p.clip, p.facing, p.phase[0], p.phase[1]),
+            None => println!("{t:5}  og (none)                                              | port ({:8.3},{:8.3}) clip {:3} face {:2} ph {}/{} {hero}", p.x, p.y, p.clip, p.facing, p.phase[0], p.phase[1]),
         }
     }
 }

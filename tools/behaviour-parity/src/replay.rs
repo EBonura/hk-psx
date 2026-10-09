@@ -7,8 +7,6 @@ fn no_attack() -> AttackParams {
     AttackParams { duration: 20, cooldown: 24, alternate_reset: 30, hit_start: 0, hit_end: 1, ..AttackParams::ZERO }
 }
 
-/// A box swung at the right of the Knight (he faces right), large enough to reach the actor beside him.
-const STRIKE: &[[i32; 2]] = &[[-4 * ONE, -2 * ONE], [0, -2 * ONE], [0, 2 * ONE], [-4 * ONE, 2 * ONE]];
 
 /// One simulation step with the Knight idle.
 pub fn step(
@@ -19,10 +17,10 @@ pub fn step(
     vitals: &mut Vitals,
     camera: [i32; 3],
 ) -> enemies::Events {
-    step_with(world, here, all, player, vitals, camera, &Nail::new(), false)
+    step_with(world, here, all, player, vitals, camera, &Nail::new(), None)
 }
 
-/// One simulation step; `strike` makes the nail hit this tick (the box above, at the Knight).
+/// One simulation step; `strike` is a world box the nail reaches this tick (wherever the Knight is).
 pub fn step_with(
     world: &mut enemies::EnemyWorld,
     here: &RegionData,
@@ -31,8 +29,14 @@ pub fn step_with(
     vitals: &mut Vitals,
     camera: [i32; 3],
     nail: &Nail,
-    strike: bool,
+    strike: Option<[i32; 4]>,
 ) -> enemies::Events {
+    // The nail's polygon is in the Knight's frame and he faces right (x mirrored), so a world box
+    // is its corners taken from where he stands.
+    let strike_polygon: [[i32; 2]; 4] = match strike {
+        Some(b) => [[player.x - b[0], b[1] - player.y], [player.x - b[2], b[1] - player.y], [player.x - b[2], b[3] - player.y], [player.x - b[0], b[3] - player.y]],
+        None => [[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]],
+    };
     let region = here.region();
     let room = here.room();
     let rooms: Vec<(world::Region, hk_format::Room<'static>)> = all.iter().map(|r| (r.region(), r.room())).collect();
@@ -47,7 +51,7 @@ pub fn step_with(
         None,
         &mut NailResponse::new(),
         no_attack(),
-        [if strike { STRIKE } else { &[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]] }; 4],
+        [&strike_polygon[..]; 4],
         cheats::Settings::new(),
         camera,
         |_| {},
@@ -72,6 +76,23 @@ pub fn edges(args: &[String]) {
                 println!("   edge {i:4} ({:8.3},{:8.3}) -> ({:8.3},{:8.3})", e[0], e[1], e[2], e[3]);
             }
         }
+    }
+}
+
+/// `clips SCENE SOURCE_ID`: the actor's spec and the clip rows (first frame, frames, fps, mode) of its region's room.
+pub fn clips(args: &[String]) {
+    let scene: usize = args[0].parse().unwrap();
+    let id: u32 = args[1].parse().unwrap();
+    for here in load_scene(scene) {
+        let Some((p, spec)) = here.actors.iter().find(|(p, _)| p.source_id == id && world::contains(here.bounds, p.x, p.y)) else { continue };
+        let room = here.room();
+        println!("region {} clips {} spec {:?}", here.global_id, room.counts[4], spec.controller);
+        println!("walk_clip {} turn_clip {} bounds {:?}", spec.walk_clip, spec.turn_clip, spec.bounds);
+        for c in 0..room.counts[4] {
+            let k = room.clip(c);
+            println!("  clip {c:3}: first {:5} frames {:3} fps_q16 {:8} ({:.1} fps) mode {} start {}", k[0], k[1], k[2], k[2] as f64 / 65536.0, k[3] & 65535, k[3] >> 16);
+        }
+        break;
     }
 }
 

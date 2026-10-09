@@ -5285,6 +5285,8 @@ pub struct ActorDebug {
     /// The clip the actor is drawn with and the way it faces, as `prepare_draws` picks them.
     pub clip: u16,
     pub facing: i32,
+    /// A Runner's Walker and Swipe states (`hk_sim::runner::{Walker, Swipe}` as numbers); zero for the rest.
+    pub phase: [u8; 2],
 }
 #[cfg(test)]
 impl EnemyWorld {
@@ -5349,6 +5351,7 @@ impl EnemyWorld {
             flash_left: actor.flash_left,
             clip,
             facing,
+            phase: actor.runner().map_or([0; 2], |r| [r.controller.walker() as u8, r.controller.swipe() as u8]),
         })
     }
 }
