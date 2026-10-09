@@ -648,6 +648,7 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
             else if struck|props_strike.freed>0 {audio::enemy_hit();}
             if let Some(b)=props_strike.impact {game.state.hit_impact(r,game.attacks as usize,b,game.player.x);}
             if let Some((slot,index,at))=props_strike.shattered {props::stalactite_dust(r.scene,slot,index,0,at);game.props.fling(game.geo,at);}
+            if let Some((slot,index,at))=props_strike.embedded {props::stalactite_dust(r.scene,slot,index,2,at);}
             // `Chest Control`'s `Open`: saved at once, and `Spawn Items` flings
             // its Geo through the coin pool.
             if let Some(chest)=strike_chests(game.pickups,&game.nail,&game.player,hero_body) {open_chest(game.geo,r.scene,chest);}
