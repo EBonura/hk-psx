@@ -35,7 +35,7 @@ const BODY_OFFSET: [f64; 2] = [0.116851806640625, 0.6600000262260437];
 /// name: (frames, fps, wrapMode).
 const CLIPS: [(&str, usize, f64, i64); 4] = [("Fly", 4, 12.0, 0), ("Idle 01", 67, 12.0, 0), ("Idle 02", 41, 12.0, 0), ("Idle 03", 61, 12.0, 0)];
 /// `pigeon::Clip::slot()` order; `Idle 01` and `Fly` are the shared `ActorSpec` slots.
-const CLIP_SLOTS: [(&str, &str); 2] = [("idle2", "Idle 02"), ("idle3", "Idle 03")];
+pub(crate) const CLIP_SLOTS: [(&str, &str); 2] = [("idle2", "Idle 02"), ("idle3", "Idle 03")];
 const CHILDREN: [&str; 3] = ["Hero Range", "Enemy Range", "Waker"];
 /// The range circles as (centre x, centre y, radius) relative to the actor origin in Q16.
 const HERO_RANGE_Q16: [i64; 3] = [0, 39426, 332399];
