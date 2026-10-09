@@ -27,6 +27,8 @@ mod poke;
 mod scan;
 mod tour;
 mod index_check;
+mod approach;
+mod harass;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -43,6 +45,17 @@ fn main() {
             let names_path = std::env::var("HKBP_SCENE_NAMES").expect("HKBP_SCENE_NAMES");
             let raw: std::collections::BTreeMap<String, String> = serde_json::from_str(&std::fs::read_to_string(names_path).unwrap()).unwrap();
             index_check::run(&raw.into_iter().map(|(k, v)| (k.parse::<usize>().unwrap(), v)).collect());
+        }
+        Some("approach") => {
+            let names_path = std::env::var("HKBP_SCENE_NAMES").expect("HKBP_SCENE_NAMES");
+            let raw: std::collections::BTreeMap<String, String> = serde_json::from_str(&std::fs::read_to_string(names_path).unwrap()).unwrap();
+            let names = raw.into_iter().map(|(k, v)| (k.parse::<usize>().unwrap(), v)).collect();
+            approach::report(std::path::Path::new(&args[1]), &names, args.get(2).map(String::as_str));
+        }
+        Some("harass") => {
+            let names_path = std::env::var("HKBP_SCENE_NAMES").expect("HKBP_SCENE_NAMES");
+            let raw: std::collections::BTreeMap<String, String> = serde_json::from_str(&std::fs::read_to_string(names_path).unwrap()).unwrap();
+            harass::run(&raw.into_iter().map(|(k, v)| (k.parse::<usize>().unwrap(), v)).collect(), args.get(1).map_or(3000, |t| t.parse().unwrap()));
         }
         Some("tour") => {
             let names_path = std::env::var("HKBP_SCENE_NAMES").expect("HKBP_SCENE_NAMES");

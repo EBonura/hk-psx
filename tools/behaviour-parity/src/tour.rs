@@ -62,7 +62,7 @@ fn reaction(points: &[(f64, f64)], hero: &[(f64, f64)]) -> Reaction {
 }
 
 /// The port's actors for `scene`, run again with each visit's target stood where the original's was.
-fn run_visits(scene: usize, trace: &SceneTrace, visits: &[(usize, u32, (f64, f64))]) -> BTreeMap<usize, Vec<Tick>> {
+pub(crate) fn run_visits(scene: usize, trace: &SceneTrace, visits: &[(usize, u32, (f64, f64))]) -> BTreeMap<usize, Vec<Tick>> {
     let regions = load_scene(scene);
     let mut out = BTreeMap::new();
     let end = (trace.last_frame - trace.origin).max(0) as usize;
@@ -119,7 +119,7 @@ pub fn report(run: &std::path::Path, names: &BTreeMap<usize, String>, only: Opti
         // One visit per tour window: the pair of the visited type nearest the window's target.
         let mut visits: Vec<(usize, u32, (f64, f64))> = Vec::new();
         let mut chosen: Vec<(usize, &OgActor, &PortActor)> = Vec::new();
-        for (wi, w) in trace.windows.iter().enumerate().filter(|(_, w)| w.tour && !w.poke) {
+        for (wi, w) in trace.windows.iter().enumerate().filter(|(_, w)| w.tour && !w.poke && !w.approach) {
             let near = pairs
                 .iter()
                 .filter(|p| base_name(&p.og.name) == w.target)

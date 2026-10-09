@@ -65,6 +65,8 @@ pub struct Window {
     pub tour: bool,
     /// The window of a strike series on `target`.
     pub poke: bool,
+    /// The Knight walking up to `target` from a distance.
+    pub approach: bool,
     pub x: f64,
     pub y: f64,
     pub target: String,
@@ -144,7 +146,8 @@ pub fn load_run(run: &Path) -> BTreeMap<String, SceneTrace> {
         let mut windows: BTreeMap<String, Vec<Window>> = BTreeMap::new();
         for r in table(&dir.join("survey-timeline.csv")) {
             windows.entry(r["scene"].clone()).or_default().push(Window {
-                tour: matches!(r.get("phase").map(String::as_str), Some("tour") | Some("poke")),
+                tour: matches!(r.get("phase").map(String::as_str), Some("tour") | Some("poke") | Some("approach")),
+                approach: r.get("phase").map(String::as_str) == Some("approach"),
                 poke: r.get("phase").map(String::as_str) == Some("poke"),
                 x: num(&r, "x"),
                 y: num(&r, "y"),
