@@ -73,6 +73,7 @@ mod battle_gate_art;
 mod decor;
 mod drip;
 mod blocker_terrain;
+mod actor_persistence;
 mod scene_sfx;
 mod modules;
 mod fk_art;
