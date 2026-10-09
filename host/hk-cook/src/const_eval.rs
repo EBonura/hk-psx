@@ -55,7 +55,14 @@ impl Parser<'_> {
     }
 
     fn bin(&mut self, level: usize) -> Result<Num> {
-        const OPS: [&[&str]; 6] = [&["|"], &["^"], &["&"], &["<<", ">>"], &["+", "-"], &["//", "*", "/", "%"]];
+        const OPS: [&[&str]; 6] = [
+            &["|"],
+            &["^"],
+            &["&"],
+            &["<<", ">>"],
+            &["+", "-"],
+            &["//", "*", "/", "%"],
+        ];
         if level == OPS.len() {
             return self.unary();
         }
@@ -64,7 +71,10 @@ impl Parser<'_> {
             self.ws();
             for op in OPS[level] {
                 // `*` must not swallow `**`, and `/` must not swallow `//`.
-                if self.t[self.at..].starts_with(op.as_bytes()) && !(*op == "*" && self.t[self.at..].starts_with(b"**")) && !(*op == "/" && self.t[self.at..].starts_with(b"//")) {
+                if self.t[self.at..].starts_with(op.as_bytes())
+                    && !(*op == "*" && self.t[self.at..].starts_with(b"**"))
+                    && !(*op == "/" && self.t[self.at..].starts_with(b"//"))
+                {
                     self.at += op.len();
                     let right = self.bin(level + 1)?;
                     left = apply(op, left, right)?;
@@ -117,10 +127,16 @@ impl Parser<'_> {
             }
         }
         let start = self.at;
-        while self.at < self.t.len() && (self.t[self.at].is_ascii_alphanumeric() || self.t[self.at] == b'_' || self.t[self.at] == b'.') {
+        while self.at < self.t.len()
+            && (self.t[self.at].is_ascii_alphanumeric()
+                || self.t[self.at] == b'_'
+                || self.t[self.at] == b'.')
+        {
             self.at += 1;
         }
-        let word = std::str::from_utf8(&self.t[start..self.at]).unwrap().replace('_', "");
+        let word = std::str::from_utf8(&self.t[start..self.at])
+            .unwrap()
+            .replace('_', "");
         if word.is_empty() {
             return err("expected a value");
         }
@@ -132,12 +148,16 @@ impl Parser<'_> {
                 return Ok(Num::Int(i));
             }
         }
-        word.parse::<f64>().map(Num::Float).map_err(|_| "not a numeric literal".to_string())
+        word.parse::<f64>()
+            .map(Num::Float)
+            .map_err(|_| "not a numeric literal".to_string())
     }
 }
 
 fn apply(op: &str, a: Num, b: Num) -> Result<Num> {
-    let (Some(x), Some(y)) = (a.as_f64(), b.as_f64()) else { return err("list arithmetic") };
+    let (Some(x), Some(y)) = (a.as_f64(), b.as_f64()) else {
+        return err("list arithmetic");
+    };
     if let (Num::Int(p), Num::Int(q)) = (&a, &b) {
         let (p, q) = (*p, *q);
         return Ok(match op {
@@ -167,7 +187,10 @@ fn apply(op: &str, a: Num, b: Num) -> Result<Num> {
 /// `eval(raw.replace('ONE', '65536'))`.
 fn evaluate(raw: &str) -> Result<Num> {
     let text = raw.replace("ONE", "65536");
-    let mut p = Parser { t: text.as_bytes(), at: 0 };
+    let mut p = Parser {
+        t: text.as_bytes(),
+        at: 0,
+    };
     let v = p.bin(0)?;
     p.ws();
     if p.at != p.t.len() {
@@ -218,7 +241,11 @@ pub fn rust_constants(text: &str) -> Vec<(String, Num)> {
         if i == expr_start || i >= bytes.len() {
             continue;
         }
-        let raw: String = text[expr_start..i].lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+        let raw: String = text[expr_start..i]
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
         if let Ok(v) = evaluate(raw.trim()) {
             match found.iter_mut().find(|f| f.0 == name) {
                 Some(slot) => slot.1 = v,

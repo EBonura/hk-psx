@@ -203,8 +203,8 @@ pub(crate) fn action_parameters(data: &Value, index: usize) -> Result<Vec<(Optio
     let count = get(data, "actionNames")?.list().unwrap_or(&[]).len();
     let end = if index + 1 < count { starts[index + 1] as usize } else { names.len() };
     let mut out = Vec::new();
-    for i in starts[index] as usize..end {
-        let name = names[i].str().unwrap_or_default();
+    for (i, param) in names.iter().enumerate().take(end).skip(starts[index] as usize) {
+        let name = param.str().unwrap_or_default();
         let key = if name.is_empty() { i.to_string() } else { name.clone() };
         if let Some(v) = field(&fields, &key) {
             out.push((if name.is_empty() { None } else { Some(name) }, v.clone()));

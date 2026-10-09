@@ -19,7 +19,9 @@ fn hashmix(value: u32, hash_const: &mut u32) -> u32 {
 }
 
 fn mix(x: u32, y: u32) -> u32 {
-    let r = MIX_MULT_L.wrapping_mul(x).wrapping_sub(MIX_MULT_R.wrapping_mul(y));
+    let r = MIX_MULT_L
+        .wrapping_mul(x)
+        .wrapping_sub(MIX_MULT_R.wrapping_mul(y));
     r ^ (r >> XSHIFT)
 }
 
@@ -78,7 +80,12 @@ impl Pcg64 {
         let v = seed_state(seed);
         let initstate = (v[0] as u128) << 64 | v[1] as u128;
         let initseq = (v[2] as u128) << 64 | v[3] as u128;
-        let mut rng = Pcg64 { state: 0, inc: (initseq << 1) | 1, has_uint32: false, uinteger: 0 };
+        let mut rng = Pcg64 {
+            state: 0,
+            inc: (initseq << 1) | 1,
+            has_uint32: false,
+            uinteger: 0,
+        };
         rng.step();
         rng.state = rng.state.wrapping_add(initstate);
         rng.step();

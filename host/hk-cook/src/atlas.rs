@@ -36,8 +36,17 @@ const BINARY_BLACK_WORDS: [u16; 2] = [0x0001, 0x8000];
 
 /// `canonical_black(palette, pixels, w, h)`: a binary black palette with its opaque sentinel at index 1.
 pub fn canonical_black(palette: &[u8], pixels: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    let mut words: Vec<u16> = palette.chunks(2).take(16).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
-    if words.len() != 16 || words[0] != 0 || !words[1..].iter().all(|w| BINARY_BLACK_WORDS.contains(w)) || !words[1..].contains(&1) || words[1] == 1 {
+    let mut words: Vec<u16> = palette
+        .chunks(2)
+        .take(16)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    if words.len() != 16
+        || words[0] != 0
+        || !words[1..].iter().all(|w| BINARY_BLACK_WORDS.contains(w))
+        || !words[1..].contains(&1)
+        || words[1] == 1
+    {
         return (palette.to_vec(), pixels.to_vec());
     }
     let k = 1 + words[1..].iter().position(|&w| w == 1).unwrap();
@@ -51,7 +60,10 @@ pub fn canonical_black(palette: &[u8], pixels: &[u8]) -> (Vec<u8>, Vec<u8>) {
             v
         }
     };
-    let out = pixels.iter().map(|&b| swap(b & 15) | (swap(b >> 4) << 4)).collect();
+    let out = pixels
+        .iter()
+        .map(|&b| swap(b & 15) | (swap(b >> 4) << 4))
+        .collect();
     (words.iter().flat_map(|w| w.to_le_bytes()).collect(), out)
 }
 
@@ -86,7 +98,13 @@ fn clamp_axis(v: f64) -> usize {
 }
 
 impl Atlas {
-    pub fn new(deduplicate: bool, max_pages: usize, max_textures: usize, alpha_covers: bool, max_cluts: Option<usize>) -> Atlas {
+    pub fn new(
+        deduplicate: bool,
+        max_pages: usize,
+        max_textures: usize,
+        alpha_covers: bool,
+        max_cluts: Option<usize>,
+    ) -> Atlas {
         Atlas {
             flags: if alpha_covers { HAS_ALPHA_COVERS } else { 0 },
             animation_bytes: 0,
@@ -117,16 +135,34 @@ impl Atlas {
     }
 
     /// `add_quantized`: admit exact final texels; different palettes/storage classes never alias.
-    pub fn add_quantized(&mut self, w: usize, h: usize, palette: &[u8], pixels: &[u8], streamed: bool, unique: bool) -> Result<usize> {
-        if !(1..=256).contains(&w) || !(1..=256).contains(&h) || palette.len() != 32 || pixels.len() != w.div_ceil(2) * h {
+    pub fn add_quantized(
+        &mut self,
+        w: usize,
+        h: usize,
+        palette: &[u8],
+        pixels: &[u8],
+        streamed: bool,
+        unique: bool,
+    ) -> Result<usize> {
+        if !(1..=256).contains(&w)
+            || !(1..=256).contains(&h)
+            || palette.len() != 32
+            || pixels.len() != w.div_ceil(2) * h
+        {
             return err("invalid canonical texture dimensions/palette/texels");
         }
         if streamed && (w > SLOT_PIXELS || h > SLOT_PIXELS) {
-            return err(format!("animation cache dimensions exceed {SLOT_PIXELS}x{SLOT_PIXELS}: {w}x{h}"));
+            return err(format!(
+                "animation cache dimensions exceed {SLOT_PIXELS}x{SLOT_PIXELS}: {w}x{h}"
+            ));
         }
         let (palette, pixels) = canonical_black(palette, pixels);
         let key: CanonicalKey = (streamed, w, h, palette.clone(), pixels.clone());
-        let found = if self.deduplicate && !unique { self.canonical.get(&key).copied() } else { None };
+        let found = if self.deduplicate && !unique {
+            self.canonical.get(&key).copied()
+        } else {
+            None
+        };
         let index = match found {
             Some(i) => i,
             None => {
@@ -147,7 +183,14 @@ impl Atlas {
     }
 
     /// `_pack_plane`: a rectangle of an index plane as packed 4bpp rows.
-    pub fn pack_plane(plane: &[u8], plane_width: usize, x0: usize, y0: usize, w: usize, h: usize) -> Vec<u8> {
+    pub fn pack_plane(
+        plane: &[u8],
+        plane_width: usize,
+        x0: usize,
+        y0: usize,
+        w: usize,
+        h: usize,
+    ) -> Vec<u8> {
         let stride = w.div_ceil(2);
         let mut pixels = vec![0u8; stride * h];
         for yy in 0..h {
@@ -160,13 +203,29 @@ impl Atlas {
     }
 
     /// `add`: quantize one frame to the size it is drawn at and admit it.
-    pub fn add(&mut self, im: &Image, w: f64, h: f64, streamed: bool, quantize: Quantizer) -> Result<usize> {
+    pub fn add(
+        &mut self,
+        im: &Image,
+        w: f64,
+        h: f64,
+        streamed: bool,
+        quantize: Quantizer,
+    ) -> Result<usize> {
         let (w, h) = (clamp_axis(w), clamp_axis(h));
         if streamed && (w > SLOT_PIXELS || h > SLOT_PIXELS) {
-            return err(format!("animation cache dimensions exceed {SLOT_PIXELS}x{SLOT_PIXELS}: {w}x{h}"));
+            return err(format!(
+                "animation cache dimensions exceed {SLOT_PIXELS}x{SLOT_PIXELS}: {w}x{h}"
+            ));
         }
         let q = quantize(im, w, h)?;
-        let index = self.add_quantized(w, h, &q.palette, &Atlas::pack_plane(&q.plane, w, 0, 0, w, h), streamed, false)?;
+        let index = self.add_quantized(
+            w,
+            h,
+            &q.palette,
+            &Atlas::pack_plane(&q.plane, w, 0, 0, w, h),
+            streamed,
+            false,
+        )?;
         self.images[index] = Some(q.image);
         Ok(index)
     }
@@ -176,7 +235,10 @@ impl Atlas {
         let (w, h) = (clamp_axis(w), clamp_axis(h));
         let (cols, rows) = (w.div_ceil(SLOT_PIXELS), h.div_ceil(SLOT_PIXELS));
         if cols * rows > MAX_FRAME_TILES {
-            return err(format!("frame {w}x{h} binds {} of the {MAX_FRAME_TILES} animation slots a frame may hold", cols * rows));
+            return err(format!(
+                "frame {w}x{h} binds {} of the {MAX_FRAME_TILES} animation slots a frame may hold",
+                cols * rows
+            ));
         }
         if cols * rows == 1 {
             return self.add(im, w as f64, h as f64, true, quantize);
@@ -187,24 +249,42 @@ impl Atlas {
             for col in 0..cols {
                 let (x0, y0) = (col * SLOT_PIXELS, row * SLOT_PIXELS);
                 let (tw, th) = (SLOT_PIXELS.min(w - x0), SLOT_PIXELS.min(h - y0));
-                let index = self.add_quantized(tw, th, &q.palette, &Atlas::pack_plane(&q.plane, w, x0, y0, tw, th), true, true)?;
+                let index = self.add_quantized(
+                    tw,
+                    th,
+                    &q.palette,
+                    &Atlas::pack_plane(&q.plane, w, x0, y0, tw, th),
+                    true,
+                    true,
+                )?;
                 match base {
                     None => {
                         base = Some(index);
                         self.grids.insert(index, (cols, rows));
                     }
-                    Some(b) if index != b + row * cols + col => return err("a frame's tiles are no longer consecutive texture IDs"),
+                    Some(b) if index != b + row * cols + col => {
+                        return err("a frame's tiles are no longer consecutive texture IDs")
+                    }
                     _ => {}
                 }
                 self.tile_owner.insert(index, base.unwrap());
-                self.images[index] = Some(q.image.crop_int(x0 as i64, y0 as i64, (x0 + tw) as i64, (y0 + th) as i64));
+                self.images[index] = Some(q.image.crop_int(
+                    x0 as i64,
+                    y0 as i64,
+                    (x0 + tw) as i64,
+                    (y0 + th) as i64,
+                ));
             }
         }
         Ok(base.unwrap())
     }
 
     /// `add_frames_shared`: several streamed frames on one shared palette, the first texture of each.
-    pub fn add_frames_shared(&mut self, items: &[(Image, f64, f64)], quantize: Quantizer) -> Result<Vec<usize>> {
+    pub fn add_frames_shared(
+        &mut self,
+        items: &[(Image, f64, f64)],
+        quantize: Quantizer,
+    ) -> Result<Vec<usize>> {
         let gap = EDGE_REACH * 2 + 2;
         struct Sized {
             im: Image,
@@ -220,7 +300,13 @@ impl Atlas {
             if cols * rows > MAX_FRAME_TILES {
                 return err(format!("frame {w}x{h} binds {} of the {MAX_FRAME_TILES} animation slots a frame may hold", cols * rows));
             }
-            sized.push(Sized { im: im.to_rgba().resize(w, h, Filter::Lanczos), w, h, cols, rows });
+            sized.push(Sized {
+                im: im.to_rgba().resize(w, h, Filter::Lanczos),
+                w,
+                h,
+                cols,
+                rows,
+            });
         }
         let width: usize = sized.iter().map(|s| s.w).sum::<usize>() + gap * (sized.len() - 1);
         let height = sized.iter().map(|s| s.h).max().unwrap_or(0);
@@ -241,7 +327,14 @@ impl Atlas {
                 }
             }
             if s.cols * s.rows == 1 {
-                let index = self.add_quantized(s.w, s.h, &q.palette, &Atlas::pack_plane(&sub, s.w, 0, 0, s.w, s.h), true, false)?;
+                let index = self.add_quantized(
+                    s.w,
+                    s.h,
+                    &q.palette,
+                    &Atlas::pack_plane(&sub, s.w, 0, 0, s.w, s.h),
+                    true,
+                    false,
+                )?;
                 self.images[index] = Some(s.im.clone());
                 firsts.push(index);
                 continue;
@@ -251,17 +344,31 @@ impl Atlas {
                 for col in 0..s.cols {
                     let (tx, ty) = (col * SLOT_PIXELS, row * SLOT_PIXELS);
                     let (tw, th) = (SLOT_PIXELS.min(s.w - tx), SLOT_PIXELS.min(s.h - ty));
-                    let index = self.add_quantized(tw, th, &q.palette, &Atlas::pack_plane(&sub, s.w, tx, ty, tw, th), true, true)?;
+                    let index = self.add_quantized(
+                        tw,
+                        th,
+                        &q.palette,
+                        &Atlas::pack_plane(&sub, s.w, tx, ty, tw, th),
+                        true,
+                        true,
+                    )?;
                     match base {
                         None => {
                             base = Some(index);
                             self.grids.insert(index, (s.cols, s.rows));
                         }
-                        Some(b) if index != b + row * s.cols + col => return err("a frame's tiles are no longer consecutive texture IDs"),
+                        Some(b) if index != b + row * s.cols + col => {
+                            return err("a frame's tiles are no longer consecutive texture IDs")
+                        }
                         _ => {}
                     }
                     self.tile_owner.insert(index, base.unwrap());
-                    self.images[index] = Some(s.im.crop_int(tx as i64, ty as i64, (tx + tw) as i64, (ty + th) as i64));
+                    self.images[index] = Some(s.im.crop_int(
+                        tx as i64,
+                        ty as i64,
+                        (tx + tw) as i64,
+                        (ty + th) as i64,
+                    ));
                 }
             }
             firsts.push(base.unwrap());
@@ -276,15 +383,30 @@ impl Atlas {
         self.palettes = Vec::new();
         self.stream = Vec::new();
         let mut distinct: BTreeSet<Vec<u8>> = BTreeSet::new();
-        let rects: Vec<(i64, i64, usize)> = self.quantized.iter().enumerate().filter(|(i, _)| !self.streamed.contains(i)).map(|(i, q)| (aligned(q.0 as i64), q.1 as i64, i)).collect();
+        let rects: Vec<(i64, i64, usize)> = self
+            .quantized
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !self.streamed.contains(i))
+            .map(|(i, q)| (aligned(q.0 as i64), q.1 as i64, i))
+            .collect();
         let (page_count, placements) = dense_pack(&rects)?;
         if page_count > self.max_pages {
             return err("4bpp VRAM page budget exceeded");
         }
         self.pages = vec![vec![0u8; 32768]; page_count];
-        let positions: HashMap<usize, (usize, i64, i64)> = placements.iter().map(|&(i, page, x, y, _, _)| (i, (page, x, y))).collect();
+        let positions: HashMap<usize, (usize, i64, i64)> = placements
+            .iter()
+            .map(|&(i, page, x, y, _, _)| (i, (page, x, y)))
+            .collect();
         let mut order: Vec<usize> = (0..n).collect();
-        order.sort_by_key(|&i| (std::cmp::Reverse(self.quantized[i].1), std::cmp::Reverse(self.quantized[i].0), i));
+        order.sort_by_key(|&i| {
+            (
+                std::cmp::Reverse(self.quantized[i].1),
+                std::cmp::Reverse(self.quantized[i].0),
+                i,
+            )
+        });
         for i in order {
             let (w, h, palette, pixels) = self.quantized[i].clone();
             let streamed = self.streamed.contains(&i);
@@ -322,9 +444,17 @@ impl Atlas {
                 for xx in 0..w {
                     let v = (pixels[yy * w.div_ceil(2) + xx / 2] >> ((xx & 1) * 4)) & 15;
                     let (k, shift, target): (usize, usize, &mut Vec<u8>) = if streamed {
-                        (stream_offset + yy * stride + xx / 2, (xx & 1) * 4, &mut self.stream)
+                        (
+                            stream_offset + yy * stride + xx / 2,
+                            (xx & 1) * 4,
+                            &mut self.stream,
+                        )
                     } else {
-                        ((((y as usize + yy) * 256 + x as usize + xx) / 2), ((x as usize + xx) & 1) * 4, &mut self.pages[p as usize])
+                        (
+                            (((y as usize + yy) * 256 + x as usize + xx) / 2),
+                            ((x as usize + xx) & 1) * 4,
+                            &mut self.pages[p as usize],
+                        )
                     };
                     target[k] = (target[k] & !(15 << shift)) | (v << shift);
                 }

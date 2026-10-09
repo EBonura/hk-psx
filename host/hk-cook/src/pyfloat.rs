@@ -42,17 +42,6 @@ pub fn repr(v: f64) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::repr;
-    #[test]
-    fn matches_python() {
-        for (v, s) in [(0.1, "0.1"), (1.0, "1.0"), (1e-5, "1e-05"), (1e16, "1e+16"), (123456.789, "123456.789"), (0.0001, "0.0001"), (-2.5e-7, "-2.5e-07"), (1.5e300, "1.5e+300"), (9999999999999998.0, "9999999999999998.0"), (0.20000000298023224, "0.20000000298023224"), (226.350006103515625, "226.35000610351562")] {
-            assert_eq!(repr(v), s);
-        }
-    }
-}
-
 /// CPython's `math.hypot(x, y)` (3.10 and later): the Euclidean norm computed with an extended-precision
 /// accumulation, which differs from a C library `hypot` in the last place for some inputs.
 pub fn hypot(a: f64, b: f64) -> f64 {
@@ -102,4 +91,15 @@ pub fn hypot(a: f64, b: f64) -> f64 {
     let x2 = csum - 1.0 + (frac1 + frac2);
     h += x2 / (2.0 * h);
     h / scale
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repr;
+    #[test]
+    fn matches_python() {
+        for (v, s) in [(0.1, "0.1"), (1.0, "1.0"), (1e-5, "1e-05"), (1e16, "1e+16"), (123456.789, "123456.789"), (0.0001, "0.0001"), (-2.5e-7, "-2.5e-07"), (1.5e300, "1.5e+300"), (9999999999999998.0, "9999999999999998.0"), (0.20000000298023224, "0.20000000298023224"), (226.350006103515625, "226.35000610351562")] {
+            assert_eq!(repr(v), s);
+        }
+    }
 }
