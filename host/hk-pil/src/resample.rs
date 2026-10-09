@@ -1,10 +1,16 @@
-//! `Image.resize` (libImaging/Resample.c, 8 bits per channel) and
-//! `Image.transform(AFFINE, BILINEAR)` (Geometry.c), with the RGBA
-//! premultiply round trip Image.py wraps both in.
+//! Separable filtered resizing and bilinear affine sampling of 8-bit images.
+//!
+//! Resizing runs a horizontal pass and then a vertical pass (the other way
+//! round for very tall images that shrink), each an independent 1-D
+//! convolution whose kernel is the chosen filter stretched by the shrink
+//! factor and normalised to unit sum. Weights are held in fixed
+//! point and each pass rounds back to 8 bits. Colour images with alpha are
+//! premultiplied before either operation and divided back out afterwards.
 
-#![allow(clippy::needless_range_loop)] // kept in the shape of the C it ports
+use crate::{div255, Image, Mode};
 
-use crate::{Image, Mode};
+/// Fixed-point fraction bits of a weight.
+const WEIGHT_BITS: u32 = 22;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Filter {
@@ -13,7 +19,17 @@ pub enum Filter {
     Lanczos,
 }
 
+fn sinc(x: f64) -> f64 {
+    if x == 0.0 {
+        1.0
+    } else {
+        let px = std::f64::consts::PI * x;
+        px.sin() / px
+    }
+}
+
 impl Filter {
+    /// Half-width of the kernel in output-scale pixels.
     fn support(self) -> f64 {
         match self {
             Filter::Box => 0.5,
@@ -21,6 +37,8 @@ impl Filter {
             Filter::Lanczos => 3.0,
         }
     }
+
+    /// Kernel value at distance `x` from the centre; the box covers (-0.5, 0.5].
     fn eval(self, x: f64) -> f64 {
         match self {
             Filter::Box => {
@@ -39,13 +57,6 @@ impl Filter {
                 }
             }
             Filter::Lanczos => {
-                fn sinc(x: f64) -> f64 {
-                    if x == 0.0 {
-                        return 1.0;
-                    }
-                    let x = x * std::f64::consts::PI;
-                    x.sin() / x
-                }
                 if (-3.0..3.0).contains(&x) {
                     sinc(x) * sinc(x / 3.0)
                 } else {
@@ -56,217 +67,176 @@ impl Filter {
     }
 }
 
-const PRECISION_BITS: u32 = 32 - 8 - 2;
-
-fn clip8(v: i32) -> u8 {
-    (v >> PRECISION_BITS).clamp(0, 255) as u8
+/// The taps of one output sample: first source index and fixed-point weights.
+struct Taps {
+    first: usize,
+    weights: Vec<i32>,
 }
 
-/// precompute_coeffs + normalize_coeffs_8bpc: (bounds, fixed-point weights, ksize).
-fn coeffs(in_size: usize, in0: f32, in1: f32, out_size: usize, filter: Filter) -> (Vec<(usize, usize)>, Vec<i32>, usize) {
-    // (in1 - in0) is a float subtraction in the C, widened after.
-    let scale = (in1 - in0) as f64 / out_size as f64;
-    let filterscale = if scale < 1.0 { 1.0 } else { scale };
-    let support = filter.support() * filterscale;
-    let ksize = support.ceil() as usize * 2 + 1;
-    let inv = 1.0 / filterscale;
-    let mut bounds = Vec::with_capacity(out_size);
-    let mut kk = vec![0i32; out_size * ksize];
-    for xx in 0..out_size {
-        let center = (xx as f64 + 0.5).mul_add(scale, in0 as f64);
-        let mut xmin = (center - support + 0.5) as i32;
-        if xmin < 0 {
-            xmin = 0;
-        }
-        let mut xmax = (center + support + 0.5) as i32;
-        if xmax > in_size as i32 {
-            xmax = in_size as i32;
-        }
-        xmax -= xmin;
-        let mut k = vec![0f64; ksize];
-        let mut ww = 0.0;
-        for x in 0..xmax.max(0) as usize {
-            let w = filter.eval(((x as i32 + xmin) as f64 - center + 0.5) * inv);
-            k[x] = w;
-            ww += w;
-        }
-        if ww != 0.0 {
-            for v in k.iter_mut().take(xmax.max(0) as usize) {
-                *v /= ww;
-            }
-        }
-        for (x, v) in k.iter().enumerate() {
-            let scaled = v * (1u32 << PRECISION_BITS) as f64;
-            kk[xx * ksize + x] = if *v < 0.0 { (-0.5 + scaled) as i32 } else { (0.5 + scaled) as i32 };
-        }
-        bounds.push((xmin as usize, xmax.max(0) as usize));
-    }
-    (bounds, kk, ksize)
+/// Taps for every output sample of a pass from `n_in` samples to `n_out`.
+fn taps(n_in: usize, n_out: usize, filter: Filter) -> Vec<Taps> {
+    let scale = n_in as f64 / n_out as f64;
+    let stretch = scale.max(1.0);
+    let support = filter.support() * stretch;
+    (0..n_out)
+        .map(|o| {
+            let center = (o as f64 + 0.5) * scale;
+            // Source pixels whose centres lie in (center - support, center + support].
+            let first = (center - support + 0.5).floor().max(0.0) as usize;
+            let end = ((center + support + 0.5).floor() as usize).min(n_in);
+            let raw: Vec<f64> = (first..end).map(|i| filter.eval((i as f64 + 0.5 - center) / stretch)).collect();
+            let sum: f64 = raw.iter().sum();
+            let weights = raw
+                .iter()
+                .map(|&w| {
+                    let w = if sum != 0.0 { w / sum } else { w };
+                    // Round half away from zero.
+                    (w * (1u64 << WEIGHT_BITS) as f64).round() as i32
+                })
+                .collect();
+            Taps { first, weights }
+        })
+        .collect()
 }
 
-fn bands(mode: Mode) -> usize {
-    match mode {
-        Mode::Rgb => 3,
-        Mode::Rgba | Mode::RgbaPre => 4,
-        _ => 1,
-    }
+fn to_u8(acc: i64) -> u8 {
+    (acc >> WEIGHT_BITS).clamp(0, 255) as u8
 }
 
-fn horizontal(im: &Image, out_w: usize, rows: std::ops::Range<usize>, bounds: &[(usize, usize)], kk: &[i32], ksize: usize) -> Image {
-    let n = im.mode.pixel_size();
-    let b = bands(im.mode);
-    let mut out = Image::new(im.mode, out_w, rows.len());
-    for (yy, y) in rows.enumerate() {
-        let line = &im.data[y * im.width * n..(y + 1) * im.width * n];
-        for (xx, &(xmin, xmax)) in bounds.iter().enumerate() {
-            let k = &kk[xx * ksize..];
-            for c in 0..n {
-                let o = (yy * out_w + xx) * n + c;
-                if c >= b {
-                    out.data[o] = 0;
-                    continue;
+/// One resampling pass along x (`horizontal`) or y.
+fn pass(src: &[u8], width: usize, height: usize, bands: usize, n_out: usize, horizontal: bool, filter: Filter) -> Vec<u8> {
+    let n_in = if horizontal { width } else { height };
+    let taps = taps(n_in, n_out, filter);
+    let (out_w, out_h) = if horizontal { (n_out, height) } else { (width, n_out) };
+    let mut out = vec![0u8; out_w * out_h * bands];
+    let half = 1i64 << (WEIGHT_BITS - 1);
+    for y in 0..out_h {
+        for x in 0..out_w {
+            let (t, fixed) = if horizontal { (&taps[x], y) } else { (&taps[y], x) };
+            for b in 0..bands {
+                let mut acc = half;
+                for (k, &w) in t.weights.iter().enumerate() {
+                    let at = if horizontal { (fixed * width + t.first + k) * bands + b } else { ((t.first + k) * width + fixed) * bands + b };
+                    acc += w as i64 * src[at] as i64;
                 }
-                let mut ss: i32 = 1 << (PRECISION_BITS - 1);
-                for x in 0..xmax {
-                    ss = ss.wrapping_add(line[(x + xmin) * n + c] as i32 * k[x]);
-                }
-                out.data[o] = clip8(ss);
+                out[(y * out_w + x) * bands + b] = to_u8(acc);
             }
         }
     }
     out
-}
-
-fn vertical(im: &Image, out_h: usize, bounds: &[(usize, usize)], kk: &[i32], ksize: usize) -> Image {
-    let n = im.mode.pixel_size();
-    let b = bands(im.mode);
-    let w = im.width;
-    let mut out = Image::new(im.mode, w, out_h);
-    for (yy, &(ymin, ymax)) in bounds.iter().enumerate() {
-        let k = &kk[yy * ksize..];
-        for xx in 0..w {
-            for c in 0..n {
-                let o = (yy * w + xx) * n + c;
-                if c >= b {
-                    out.data[o] = 0;
-                    continue;
-                }
-                let mut ss: i32 = 1 << (PRECISION_BITS - 1);
-                for y in 0..ymax {
-                    ss = ss.wrapping_add(im.data[((y + ymin) * w + xx) * n + c] as i32 * k[y]);
-                }
-                out.data[o] = clip8(ss);
-            }
-        }
-    }
-    out
-}
-
-/// ImagingResample with the full box.
-fn resample(im: &Image, w: usize, h: usize, filter: Filter) -> Image {
-    let need_h = w != im.width;
-    let need_v = h != im.height;
-    let (mut bv, kv, ksv) = coeffs(im.height, 0.0, im.height as f32, h, filter);
-    let first = bv[0].0;
-    let last = bv[h - 1].0 + bv[h - 1].1;
-    let mut cur: Option<Image> = None;
-    if need_h {
-        let (bh, kh, ksh) = coeffs(im.width, 0.0, im.width as f32, w, filter);
-        for b in bv.iter_mut() {
-            b.0 -= first;
-        }
-        cur = Some(horizontal(im, w, first..last, &bh, &kh, ksh));
-    }
-    if need_v {
-        let src = cur.as_ref().unwrap_or(im);
-        return vertical(src, h, &bv, &kv, ksv);
-    }
-    cur.unwrap_or_else(|| im.clone())
 }
 
 impl Image {
-    /// RGBA -> RGBa (Convert.c rgbA2rgba).
+    /// RGBA to premultiplied: each colour byte becomes `c * a / 255`, rounded.
     pub fn premultiply(&self) -> Image {
         let mut out = self.clone();
         out.mode = Mode::RgbaPre;
         for px in out.data.chunks_exact_mut(4) {
             let a = px[3] as u32;
-            for c in px.iter_mut().take(3) {
-                let tmp = *c as u32 * a + 128;
-                *c = ((tmp + (tmp >> 8)) >> 8) as u8;
+            for c in &mut px[..3] {
+                *c = div255(*c as u32 * a) as u8;
             }
         }
         out
     }
 
-    /// RGBa -> RGBA (Convert.c rgba2rgbA).
+    /// Premultiplied back to RGBA: each colour byte becomes `c * 255 / a`,
+    /// rounded and capped at 255; pixels with zero alpha keep their bytes.
     pub fn unpremultiply(&self) -> Image {
         let mut out = self.clone();
         out.mode = Mode::Rgba;
         for px in out.data.chunks_exact_mut(4) {
             let a = px[3] as u32;
-            if a != 255 && a != 0 {
-                for c in px.iter_mut().take(3) {
-                    *c = ((255 * *c as u32) / a).min(255) as u8;
-                }
+            if a == 0 {
+                continue;
+            }
+            for c in &mut px[..3] {
+                *c = (*c as u32 * 255 / a).min(255) as u8;
             }
         }
         out
     }
 
-    /// `Image.resize((w, h), filter)` for L, RGB and RGBA.
+    /// Resize to `w` x `h` for L, RGB and RGBA images.
     pub fn resize(&self, w: usize, h: usize, filter: Filter) -> Image {
         if (w, h) == (self.width, self.height) {
             return self.clone();
         }
-        assert!(w >= 1 && h >= 1, "height and width must be > 0");
-        if self.mode == Mode::Rgba {
-            return self.premultiply().resize(w, h, filter).unpremultiply();
+        let alpha = self.mode == Mode::Rgba;
+        let src = if alpha { self.premultiply() } else { self.clone() };
+        let bands = self.mode.pixel_size();
+        // Rows first, except when the image is more than 100 times taller than
+        // wide and loses height: then columns first.
+        let columns_first = h < src.height && src.height > 100 * src.width;
+        let data = if columns_first {
+            let tall = pass(&src.data, src.width, src.height, bands, h, false, filter);
+            pass(&tall, src.width, h, bands, w, true, filter)
+        } else {
+            let wide = pass(&src.data, src.width, src.height, bands, w, true, filter);
+            pass(&wide, w, src.height, bands, h, false, filter)
+        };
+        let mut out = Image { mode: src.mode, width: w, height: h, data };
+        out.clear_pad();
+        if alpha {
+            out.unpremultiply()
+        } else {
+            out
         }
-        if self.height > self.width * 100 && h < self.height {
-            let step = resample(self, self.width, h, filter);
-            return resample(&step, w, h, filter);
-        }
-        resample(self, w, h, filter)
     }
 
-    /// `Image.transform((w, h), AFFINE, a, BILINEAR)` with the default fill.
+    /// Sample this image into a `w` x `h` image through the affine map
+    /// `a = [a, b, c, d, e, f]`: output pixel (x, y), taken at its centre
+    /// (x + 0.5, y + 0.5), reads the source at
+    /// (a*x + b*y + c, d*x + e*y + f), source pixel centres at integer + 0.5,
+    /// interpolating bilinearly. Positions outside the source give zero.
     pub fn affine_bilinear(&self, w: usize, h: usize, a: [f64; 6]) -> Image {
-        if self.mode == Mode::Rgba {
-            return self.premultiply().affine_bilinear(w, h, a).unpremultiply();
-        }
-        let n = self.mode.pixel_size();
-        let b = bands(self.mode);
-        let mut out = Image::new(self.mode, w, h);
-        let (sw, sh) = (self.width as i32, self.height as i32);
+        let alpha = self.mode == Mode::Rgba;
+        let src = if alpha { self.premultiply() } else { self.clone() };
+        let bands = self.mode.pixel_size();
+        let mut out = Image::new(src.mode, w, h);
+        let (sw, sh) = (src.width as f64, src.height as f64);
+        let at = |x: i64, y: i64, b: usize| -> f64 {
+            let x = x.clamp(0, src.width as i64 - 1) as usize;
+            let y = y.clamp(0, src.height as i64 - 1) as usize;
+            src.data[(y * src.width + x) * bands + b] as f64
+        };
         for y in 0..h {
             for x in 0..w {
-                let (xin, yin) = ((x as i32) as f64 + 0.5, (y as i32) as f64 + 0.5);
-                // affine_transform: a2 + fma(a0, xin, a1 * yin), as the arm64 build computes it.
-                let xx = a[2] + a[0].mul_add(xin, a[1] * yin);
-                let yy = a[5] + a[3].mul_add(xin, a[4] * yin);
-                let o = (y * w + x) * n;
-                if xx < 0.0 || xx >= sw as f64 || yy < 0.0 || yy >= sh as f64 {
-                    continue; // fill: zero
+                let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+                // Per axis: one fused multiply-add of the x term onto the y term, then the offset.
+                let xin = a[0].mul_add(px, a[1] * py) + a[2];
+                let yin = a[3].mul_add(px, a[4] * py) + a[5];
+                if xin < 0.0 || xin >= sw || yin < 0.0 || yin >= sh {
+                    continue;
                 }
-                let (xin, yin) = (xx - 0.5, yy - 0.5);
-                let floor = |v: f64| if v < 0.0 { v.floor() as i32 } else { v as i32 };
-                let (ix, iy) = (floor(xin), floor(yin));
-                let (dx, dy) = (xin - ix as f64, yin - iy as f64);
-                let xclip = |v: i32| v.clamp(0, sw - 1) as usize;
-                let yclip = |v: i32| v.clamp(0, sh - 1) as usize;
-                let (x0, x1) = (xclip(ix), xclip(ix + 1));
-                for c in 0..b {
-                    let px = |row: usize, col: usize| self.data[(row * self.width + col) * n + c] as i32;
-                    let r0 = yclip(iy);
-                    let lerp_int = |a: i32, bb: i32| ((bb - a) as f64).mul_add(dx, a as f64);
-                    let v1 = lerp_int(px(r0, x0), px(r0, x1));
-                    let v2 = if iy + 1 >= 0 && iy + 1 < sh { lerp_int(px((iy + 1) as usize, x0), px((iy + 1) as usize, x1)) } else { v1 };
-                    let v = (v2 - v1).mul_add(dy, v1);
-                    out.data[o + c] = v as i32 as u8;
+                let (u, v) = (xin - 0.5, yin - 0.5);
+                let (x0, y0) = (u.floor(), v.floor());
+                let (fx, fy) = (u - x0, v - y0);
+                let (x0, y0) = (x0 as i64, y0 as i64);
+                for b in 0..bands {
+                    let (p00, p10, p01, p11) = (at(x0, y0, b), at(x0 + 1, y0, b), at(x0, y0 + 1, b), at(x0 + 1, y0 + 1, b));
+                    // Two fused linear interpolations: p0 + t * (p1 - p0).
+                    let top = fx.mul_add(p10 - p00, p00);
+                    let bottom = fx.mul_add(p11 - p01, p01);
+                    let value = fy.mul_add(bottom - top, top);
+                    out.data[(y * w + x) * bands + b] = value.clamp(0.0, 255.0) as u8;
                 }
             }
         }
-        out
+        out.clear_pad();
+        if alpha {
+            out.unpremultiply()
+        } else {
+            out
+        }
+    }
+
+    /// RGB's fourth byte carries no data and resampling leaves it zero.
+    fn clear_pad(&mut self) {
+        if self.mode == Mode::Rgb {
+            for px in self.data.chunks_exact_mut(4) {
+                px[3] = 0;
+            }
+        }
     }
 }

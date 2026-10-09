@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |807,744|
-| Code-to-data alignment |0|
-| Linked data, including menu and HUD |273,600|
-| BSS, including shared scene arena and runtime pools |797,036|
-| Total static span |1,878,380|
+| Linked code |807,608|
+| Code-to-data alignment |8|
+| Linked data, including menu and HUD |273,728|
+| BSS, including shared scene arena and runtime pools |797,028|
+| Total static span |1,878,372|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |103,828|
+| Unallocated gap before reserved stack |103,836|
 | Room module pool, inside that gap |94,208|
-| Free RAM below the module pool |9,620|
+| Free RAM below the module pool |9,628|
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -58,7 +58,7 @@ uploads a frame (game/src/ability_art.rs `upload_frame`, no staging buffer): its
 texels raw, 2,520 coded) and the Burst's two bright frames took a palette of their own in the
 ability block's spare CLUT row. The Knight's Focus dust (Dust L and Dust R cooked into every
 scene, raised every six ticks while Focus runs) cost a style and an emitter row of room in the
-effect tables (styles 18, emitters 100) and a few words of code: 9,620 are free below the pool now (the 50 Hz input phase merged in). The HUD's Geo coin replaced the word "Geo"
+effect tables (styles 18, emitters 100) and a few words of code: 9,628 are free below the pool now. The HUD's Geo coin replaced the word "Geo"
 (three glyphs), and the render policy and the audio start added a few words.
 
 Every figure above is the current ordinary build's, read out of
@@ -103,7 +103,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801da96c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801da964`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -314,7 +314,7 @@ Lifeblood cocoon) 59,296B at 0x521B0..0x60950, Focus 108,208B at
 0x60950..0x7B000 and Runner 20,464B at 0x7B000..0x7FFF0, below the 16 bytes
 `psx_spu::init` parks the disabled reverb work area on. Focus and Runner are
 pinned to the top; the world bank is cooked to end where Focus begins, and
-`host/ambience.py` stacks the ring and its own ceiling below it.
+`host/hk-cook/src/ambience.rs` stacks the ring and its own ceiling below it.
 Ambience is loaded per area since 2026-09-23: a clip is read at the scene gate
 that first needs it, into an address it shares with clips of other areas, and
 two clips share bytes only when no cue plays both and no gate joins scenes
@@ -334,22 +334,22 @@ each cue's loops and bytes. Before per-area loading, ambience *shrank* 16,272B
 when the resident atmos set went from six channels to eight, because eight
 loops only fit at 4 kHz and the set that covers the game is cheaper at that
 rate than six were at 8 kHz; Focus and Runner moved down with it. Their bases
-are hardcoded in `host/focus_audio.py` and `host/runner_audio.py`, and
-`host/ambience.py` refuses to finish a cook that leaves either of them stale,
+are hardcoded in `host/hk-cook/src/focus_audio.rs` and `host/hk-cook/src/runner_audio.rs`, and
+`host/hk-cook/src/ambience.rs` refuses to finish a cook that leaves either of them stale,
 naming the base each one has to take. The cheapest further margin priced but
 not taken is still 8,192B from halving the streamed clip's SPU ring, which is
 sized for the 8 kHz era and gives the streamed loop 3.58-second halves rather
 than the 1.79 s `game/src/audio_stream.rs` is written and commented for. The figures this
 paragraph's first version quoted were wrong in three ways and omitted the
 Runner bank entirely, which put the free figure 20,464B too high on its own;
-`host/ambience.py::spu_ceiling` computes the ceiling the cook actually
+`host/hk-cook/src/ambience.rs `spu_ceiling`` computes the ceiling the cook actually
 enforces. The SDK silent loop is at 0x1000. Player short effects/heal
 use 22,050Hz mono; running and Geo use 11,025Hz mono; sustained Focus charging
 uses 8,000Hz mono. Ambience is one rate now: all eight resident loops are
 4,000Hz mono, because eight do not fit SPU at 8,000. Only
 `cave_atmos_misc_3` measures better there than at 8,000; the rest pay between
 0.45 and 4.93dB for the coverage, channel by channel beside
-`cook_music.RESIDENT_ATMOS_CHANNELS`. All admitted source clips are complete.
+`RESIDENT_ATMOS_CHANNELS` (host/hk-cook/src/music_report.rs). All admitted source clips are complete.
 
 The full99,936-byte `cave_noises` is resident in main RAM, feeding a16KiB SPU
 ring through8KiB scratch. It keeps the streamed slot under the eight-channel

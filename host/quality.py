@@ -123,8 +123,8 @@ SCENE_TABLE = (
     #
     # This row stays last. A row inserted anywhere else renumbers the chunk ids
     # the packs, the guest tables and the save records all address by;
-    # tests/test_regions.py is what guards that. Re-run host/cook_music.py, then
-    # host/ambience.py, then host/regions.py after any change here: the first two
+    # tests/test_regions.py is what guards that. Re-run hk-cook cook-music, then
+    # hk-cook ambience, then host/regions.py after any change here: the first two
     # are keyed on this table (ambience checks the music provenance covers the
     # same scene list, and AMBIENCE_SCENES is indexed by scene id), so running
     # them out of order raises instead of indexing off the end. Room_shop needs
@@ -178,7 +178,7 @@ SCENE_TABLE = (
     # both cooked to exactly 45,728 bytes. The set has since been raised to
     # eight channels and 7 is still in it, at 4 kHz rather than 8 now, which is
     # the one place Greenpath pays for the raise. The set itself is only ever
-    # `cook_music.RESIDENT_ATMOS_CHANNELS`; the decision written above it is the
+    # `RESIDENT_ATMOS_CHANNELS` in host/hk-cook/src/music_report.rs; the decision written above it is the
     # current one and this comment is not.
     #
     # Two figures that used to sit here were both wrong and are worth recording

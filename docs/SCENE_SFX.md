@@ -22,7 +22,7 @@ resident banks, which are full. The model is ambience's.
   next wants it.
 - Playback is on SPU voice 11 (`ambience::SCENE_SFX_VOICE`), which left the
   ambience pool for this: the admitted cues keep at most four stems audible
-  across a transition, and `host/ambience.py` refuses a catalogue that needs
+  across a transition, and `host/hk-cook/src/ambience.rs` refuses a catalogue that needs
   five. A new play retriggers the voice.
 
 ## API (guest)

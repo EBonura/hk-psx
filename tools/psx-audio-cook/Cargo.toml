@@ -1,5 +1,5 @@
 # The SDK's shared SPU-ADPCM cooker (psx-audio-cook) as a command line for
-# the Python cookers (host/spu_cook.py). The crate comes from the hydrated
+# the Rust cookers (host/hk-cook/src/spu.rs). The crate comes from the hydrated
 # .psoxide tree; it is not a member of that tree's root workspace, so this
 # binary lives in its own.
 [package]

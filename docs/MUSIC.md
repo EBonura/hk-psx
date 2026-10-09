@@ -44,7 +44,7 @@ read would cut the song. See the measurements in the 2026-10-04 hand-back.
 
 Area music streams mono from main RAM into an SPU ring, so it keeps playing
 through room loads; the False Knight's fight plays full-quality CD-DA, because
-a fight reads nothing. `host/area_music.py` reads each admitted scene's
+a fight reads nothing. `host/hk-cook/src/area_music.rs` reads each admitted scene's
 SceneManager music cue and snapshot, the MusicRegion colliders (as bounding
 boxes) and the persistent AudioManager's music mixer groups. A cue is up to six
 looping layers and a snapshot picks the audible ones (Crossroads Normal: bass
@@ -85,7 +85,7 @@ audio ahead of it has played, not as a layer fade; the Dirtmouth accordion
 Ambience SPU residency follows the area. Boot loads only `cave_noises`' RAM
 source; every other loop is read at the scene gate whose cue first plays it
 (`disc::Cache::prepare_scene_ambience`, before the scene takes the arena) and
-uploaded in 4 KiB slices with a pad checkpoint between them. `host/ambience.py`
+uploaded in 4 KiB slices with a pad checkpoint between them. `host/hk-cook/src/ambience.rs`
 `allocate` gives each clip an SPU address it shares with clips that are never
 resident together: two clips conflict when one cue plays both, or when a
 resolved gate joins a scene playing one to a scene playing the other, because
@@ -111,12 +111,12 @@ gates within an area read none.
 
 The full19.345-second charging loop uses8,000Hz mono; the full1.567-second heal
 uses22,050Hz mono. This follows sustained-loop and short-effect categories,
-without truncation. `host/focus_audio.py` validates Windows Spell Control FSMs,
+without truncation. `host/hk-cook/src/focus_audio.rs` validates Windows Spell Control FSMs,
 AudioSources, clips and inspected assembly hashes. Local provenance and cooked
 assets remain ignored. The108,208-byte bank loads through scene scratch once at
 startup into0x5C960..0x77010, immediately above ambience and immediately below
-Runner. Its base is hardcoded in `host/focus_audio.py` and moves by whatever
-ambience grows or shrinks; `host/ambience.py` refuses a cook that leaves it
+Runner. Its base is hardcoded in `host/hk-cook/src/focus_audio.rs` and moves by whatever
+ambience grows or shrinks; `host/hk-cook/src/ambience.rs` refuses a cook that leaves it
 stale. Main RAM
 has53,132B before the protected stack; Focus adds no persistent sample bank there.
 
@@ -222,7 +222,7 @@ Quality categories:22,050Hz mono player one-shots;11,025Hz mono longer running
 sequence;11,025Hz Geo. Ambience is its own category and is now one rate:
 all eight resident loops are4,000Hz mono, because eight do not fit SPU
 at8,000. What each channel pays for that is recorded beside
-`cook_music.RESIDENT_ATMOS_CHANNELS`. Hurt was raised from11,025 to22,050Hz to match its short-effect
+`RESIDENT_ATMOS_CHANNELS` (host/hk-cook/src/music_report.rs). Hurt was raised from11,025 to22,050Hz to match its short-effect
 category. The user permits lower long-sample rates when necessary, consistently
 within categories. Music profiles below remain preparation only.
 
@@ -298,15 +298,15 @@ cue alternatives, mixer fields and the relevant method dump hash.
 ## Reproduction and provenance
 
 ```sh
-.venv/bin/python host/ambience.py
-.venv/bin/python -m unittest discover -s tests -p 'test_music.py'
-.venv/bin/python -m unittest discover -s tests -p 'test_ambience.py'
+cargo run --release --manifest-path host/Cargo.toml -p hk-cook -- cook-music
+cargo run --release --manifest-path host/Cargo.toml -p hk-cook -- ambience
+cargo test --release --manifest-path host/Cargo.toml -p hk-cook ambience
 ```
 
-The normal build runs `host/ambience.py` after cooking the effects bank. It
+The normal build runs `host/hk-cook/src/ambience.rs` after cooking the effects bank. It
 regenerates music conversions automatically when source selection, source hashes,
-conversion code or required output files change. `host/cook_music.py` remains the
-standalone full-profile experiment. Production outputs are the descriptor-only
+conversion code or required output files change. `hk-cook cook-music`
+(`host/hk-cook/src/music_report.rs`) is the standalone full-profile run. Production outputs are the descriptor-only
 `data/ambience.rs`, six raw `data/ambience/clip_*.adpcm` files and ignored
 `.hkpsx/ambience.json` provenance. Current WORLD.PAK chunks 1..98 are rooms and
 99..104 are ambience. Direct guest builds verify the descriptor and effects-bank
@@ -322,8 +322,8 @@ truncation fail explicitly.
 There are 17 unique clips and 52 profile conversions: 22,050 Hz stereo and
 11,025 Hz mono for every clip, plus 10,000, 8,000 and 4,000 Hz mono for the six
 resident ambience clips. Both of the last two are cooked for every resident clip
-whatever `cook_music.RESIDENT_ATMOS_RATES` currently picks, so re-rating a
-channel is an `host/ambience.py` run rather than a source re-conversion.
+whatever `DEFAULT_ATMOS_RATE` (host/hk-cook/src/music_report.rs) currently picks, so re-rating a
+channel is an `host/hk-cook/src/ambience.rs` run rather than a source re-conversion.
 Complete clips are preserved; lower rates and mono are explicit quality
 experiments. No silence replacement or length truncation is used. Each channel
 is a separate PSX ADPCM plane, with at most 27 zero samples in its final block;
@@ -413,13 +413,13 @@ only `AMBIENCE_STREAM_VOICE` is held for the life of the disc, because
 bounds the resident set is not how many loops are resident but how many stems can
 be audible at the same moment: a transition fades the outgoing cue's stems out
 while the incoming cue's rise, and across all 456 catalogue scenes with an atmos
-cue the widest such union is five. `host/ambience.py` refuses a set whose cooked
+cue the widest such union is five. `host/hk-cook/src/ambience.rs` refuses a set whose cooked
 cues can outrun the pool, and a cue the pool cannot serve leaves the stem unplayed
 and counts it in `HK_AMBIENCE_VOICE_DENIALS` rather than taking a voice from a stem
 that is still fading.
 
 The resident channel set is a cook-time budget decision and moves; it is
-`cook_music.RESIDENT_ATMOS_CHANNELS` and the figures below are whatever the last
+`RESIDENT_ATMOS_CHANNELS` (host/hk-cook/src/music_report.rs) and the figures below are whatever the last
 cook wrote into `data/ambience.rs`, not a second place to maintain it. It is now
 channels 0, 1, 4, 5, 7, 9, 10 and 15. Eight channels are enough to leave no
 catalogue scene without an audible stem, but neither covering set includes 4,
@@ -521,12 +521,12 @@ the existing CD exception wrapper and preserve ADPCM history and heal tails.
 
 ## Sound effect and Geo resampling (build 108)
 
-`cook_audio.convert_wav`, which the eight effects, the footstep set and the six
+`convert_wav` in `host/hk-cook/src/cook_audio.rs`, which the eight effects, the footstep set and the six
 Geo samples pass through, used a box average for integer rate factors and a
 rational box integration for the 48000 to 11025 footsteps. A boxcar is a poor
 lowpass: it rolls off inside the band it keeps and barely rejects above the new
 Nyquist, so content folded back as aliasing. It now calls the same ffmpeg
-polyphase resampler that `cook_music.cook_clip` already used for music,
+polyphase resampler that `cook_clip` (host/hk-cook/src/music.rs) already used for music,
 ambience, Focus and Runner, so the whole game shares one conversion rather than
 two, and the hand-written filter is gone rather than replaced by another.
 
