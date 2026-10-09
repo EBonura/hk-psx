@@ -3505,7 +3505,7 @@ impl EnemyWorld {
     /// dead, 2 hit flash) as `scene << 24 | kind << 16 | flags`; x; y; hit
     /// points (low half) and evasion ticks (high half); vertical velocity;
     /// walk direction; walk animation tick. Returns (live actors, slots written).
-    #[cfg(not(test))]
+    #[cfg(all(not(test),feature="trace"))]
     #[cfg_attr(not(test),optimize(size))]
     pub fn trace(&self, out: &mut [u32], max: usize) -> (u32, u32) {
         let (mut live, mut written) = (0u32, 0usize);
