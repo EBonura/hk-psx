@@ -127,3 +127,44 @@ pub fn xy(v: &Value, key: &str) -> Result<[f64; 2]> {
     let p = get(v, key)?;
     Ok([get(p, "x")?.float().ok_or("not a number")?, get(p, "y")?.float().ok_or("not a number")?])
 }
+
+/// `body_box`: the actor's own BoxCollider2D; some placements carry the same box twice.
+pub fn body_box<'a>(records: &[(i64, &str, &'a Value)], who: &str) -> Result<&'a Value> {
+    let boxes: Vec<&Value> = records.iter().filter(|r| r.1 == "BoxCollider2D").map(|r| r.2).collect();
+    let same = |a: &Value, b: &Value| ["m_Size", "m_Offset", "m_IsTrigger", "m_Enabled"].iter().all(|k| a.get(k).zip(b.get(k)).is_some_and(|(x, y)| x.py_eq(y)));
+    if !(1..=2).contains(&boxes.len()) || boxes.iter().any(|b| !same(b, boxes[0])) {
+        return err(format!("unsupported {who} body colliders"));
+    }
+    Ok(boxes[0])
+}
+
+/// `focus.fsm_variables`: name to serialized value, refusing a repeated name whose values differ.
+pub fn variables_strict<'a>(fsm: &'a Value) -> Result<Vec<(String, Option<&'a Value>)>> {
+    let mut out: Vec<(String, Option<&Value>)> = Vec::new();
+    if let Some(Value::Map(groups)) = fsm.get("variables") {
+        for (_, group) in groups {
+            for v in group.list().unwrap_or(&[]) {
+                if !v.is_map() || v.get("name").is_none() {
+                    continue;
+                }
+                let name = v.get("name").and_then(Value::str).unwrap_or_default();
+                let value = v.get("value");
+                match out.iter_mut().find(|(k, _)| *k == name) {
+                    Some(slot) => {
+                        let differs = match (slot.1, value) {
+                            (Some(a), Some(b)) => !a.py_eq(b),
+                            (None, None) => false,
+                            _ => true,
+                        };
+                        if differs {
+                            return err(format!("FSM {:?} declares {name:?} twice with different values", fsm.get("name").and_then(Value::str).unwrap_or_default()));
+                        }
+                        slot.1 = value;
+                    }
+                    None => out.push((name, value)),
+                }
+            }
+        }
+    }
+    Ok(out)
+}

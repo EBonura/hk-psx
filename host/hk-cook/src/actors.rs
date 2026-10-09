@@ -10,6 +10,7 @@
 
 use crate::aspid;
 use crate::baldur;
+use crate::climber;
 use crate::false_knight;
 use crate::common::{component_records, err, get, path_id, Result};
 use crate::pyjson::Json;
@@ -64,6 +65,16 @@ pub fn scan(sc: &Scene, source: &Source) -> Result<Vec<Row>> {
         if control.is_none() && name.starts_with("False Knight") && records.iter().any(|r| r.1 == "EnemyHitEffectsArmoured") {
             if let Ok(found) = false_knight::recognize_placement(sc, source, gid, &o.tree) {
                 control = Some(("FalseKnight".to_string(), found));
+            }
+        }
+        if control.is_none() && records.iter().any(|r| r.1 == "Climber") {
+            if let Ok(found) = climber::recognize(sc, source, gid) {
+                control = Some(("Climber".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Moss Walker") && records.iter().any(|r| r.1 == "NonBouncer") {
+            if let Ok(found) = climber::recognize_moss_walker(sc, source, gid, &o.tree) {
+                control = Some(("MossWalker".to_string(), found));
             }
         }
         // The Runner gate comes after the named gates in actor_sources; the
