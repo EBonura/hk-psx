@@ -137,6 +137,8 @@ struct Cooked {
     /// The tk2dSprite component's own `_scale`, which multiplies the transform's.
     sprite_scale: [f64; 2],
     game_object: i64,
+    /// The HealthManager's hit points as cooked.
+    health: i64,
 }
 
 fn f64s(v: &Value, n: usize) -> Option<Vec<f64>> {
@@ -239,6 +241,7 @@ fn load_cooked(regions: &Value) -> BTreeMap<String, Vec<Cooked>> {
                         a["tk2dSprite"]["_scale"]["y"].as_f64().unwrap_or(1.0),
                     ],
                     game_object: a["game_object"].as_i64().unwrap_or(0),
+                    health: a["health"].as_i64().unwrap_or(-1),
                 },
             );
         }
@@ -811,6 +814,21 @@ fn main() {
                     }
                 }
             };
+            // The hit points the original's HealthManager holds after its own
+            // start-up scaling, against the cooked ones.
+            if let Some(c) = c.filter(|c| c.supported) {
+                let ok = c.health == o.hp;
+                note(&mut scene_checks, "hp", ok);
+                if !ok {
+                    check_issue(
+                        &mut issues,
+                        scene,
+                        c,
+                        "hp",
+                        format!("cooked {} hit points, the original {}", c.health, o.hp),
+                    );
+                }
+            }
             *counts.entry(status).or_default() += 1;
             *totals.entry(status).or_default() += 1;
             *by_name
@@ -1170,13 +1188,15 @@ mod tests {
             visual_scale: None,
             sprite_scale: [1.0, 1.0],
             game_object: 1,
+            health: 8,
         };
         let floor = [[-10 * Q, Q, 10 * Q, Q]];
         let rest = settle(&c, &floor).unwrap();
         assert!(rest.grounded);
+        // Its box bottom sits the 0.015 contact clearance above the floor.
         assert!(
-            (rest.y - 2.0).abs() < 0.01,
-            "rests with its box bottom on y = 1, got {}",
+            (rest.y - 2.015).abs() < 0.002,
+            "rests 0.015 over a floor at y = 1, got {}",
             rest.y
         );
         // No floor: it never lands.
