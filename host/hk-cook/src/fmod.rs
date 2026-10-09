@@ -7,6 +7,7 @@
 //! cooked clip downstream depends on it bit for bit.
 
 use crate::common::{err, Result};
+use hk_unity::{Source, Value};
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_uint, c_void, CString};
 use std::path::{Path, PathBuf};
@@ -20,6 +21,7 @@ extern "C" {
 type Handle = *mut c_void;
 struct Api {
     system_create: unsafe extern "C" fn(*mut Handle, c_uint) -> c_int,
+    system_set_output: unsafe extern "C" fn(Handle, c_int) -> c_int,
     system_init: unsafe extern "C" fn(Handle, c_int, c_uint, *mut c_void) -> c_int,
     create_sound: unsafe extern "C" fn(Handle, *const c_char, c_uint, *mut c_void, *mut Handle) -> c_int,
     num_subsounds: unsafe extern "C" fn(Handle, *mut c_int) -> c_int,
@@ -37,6 +39,8 @@ unsafe impl Sync for Api {}
 
 /// pyfmodex's `header_version`.
 const HEADER_VERSION: c_uint = 0x0002_0230;
+/// FMOD_OUTPUTTYPE_NOSOUND.
+const OUTPUT_NOSOUND: c_int = 2;
 const MODE_OPENMEMORY: c_uint = 0x0000_0800;
 const TIMEUNIT_PCMBYTES: c_uint = 4;
 const FORMAT_PCMFLOAT: c_int = 5;
@@ -88,6 +92,7 @@ fn api(root: &Path) -> Result<&'static Api> {
             };
             Ok(Api {
                 system_create: entry(sym("FMOD_System_Create")?),
+                system_set_output: entry(sym("FMOD_System_SetOutput")?),
                 system_init: entry(sym("FMOD_System_Init")?),
                 create_sound: entry(sym("FMOD_System_CreateSound")?),
                 num_subsounds: entry(sym("FMOD_Sound_GetNumSubSounds")?),
@@ -123,6 +128,9 @@ pub fn raw_to_wav(root: &Path, data: &[u8], channels: i32, frequency: i32) -> Re
             None => {
                 let mut s: Handle = std::ptr::null_mut();
                 check("System_Create", (api.system_create)(&mut s, HEADER_VERSION))?;
+                // Offline decoding never plays anything: mix to NOSOUND so a host
+                // without an audio device decodes too.
+                check("System_SetOutput", (api.system_set_output)(s, OUTPUT_NOSOUND))?;
                 check("System_Init", (api.system_init)(s, channels, 0, std::ptr::null_mut()))?;
                 systems.insert(channels, s as usize);
                 s
@@ -199,4 +207,28 @@ pub fn raw_to_wav(root: &Path, data: &[u8], channels: i32, frequency: i32) -> Re
         (api.release)(sound);
         Ok(wav)
     }
+}
+
+/// UnityPy's `AudioClip.samples` for a clip whose tree `t` was read: the WAV
+/// of its one sound. `m_AudioData` is the FSB bank, or, when empty, the slice
+/// of the `.resS` file `m_Resource` names; a RIFF payload is taken as is.
+pub fn clip_wav(root: &Path, source: &Source, t: &Value) -> Result<Vec<u8>> {
+    let data = match t.get("m_AudioData") {
+        Some(Value::Bytes(b)) if !b.is_empty() => b.clone(),
+        _ => {
+            let r = t.get("m_Resource").ok_or("AudioClip with neither m_AudioData nor m_Resource")?;
+            let path = r.get("m_Source").and_then(Value::str).unwrap_or_default();
+            let base = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
+            let offset = r.get("m_Offset").and_then(Value::int).unwrap_or(0) as usize;
+            let size = r.get("m_Size").and_then(Value::int).unwrap_or(0) as usize;
+            let bytes = source.resource(&source.directory.join(&base)).map_err(|x| x.to_string())?;
+            bytes.get(offset..offset + size).ok_or("audio resource out of range")?.to_vec()
+        }
+    };
+    if data.starts_with(b"RIFF") {
+        return Ok(data);
+    }
+    let channels = t.get("m_Channels").and_then(Value::int).filter(|&c| c != 0).unwrap_or(2) as i32;
+    let frequency = t.get("m_Frequency").and_then(Value::int).filter(|&c| c != 0).unwrap_or(44100) as i32;
+    raw_to_wav(root, &data, channels, frequency)
 }

@@ -44,7 +44,7 @@ SPU_START=0x18000
 # used to stream from a RAM copy through a 16 KiB ring because all eight loops
 # had to fit at once, and per-area residency made room for it. The ring, its
 # RAM buffer and its voice belong to area music (game/src/audio_stream.rs).
-# The ring sits directly below the world one-shot bank (cook_audio.py), which
+# The ring sits directly below the world one-shot bank (host/hk-cook/src/cook_audio.rs), which
 # sits directly below Focus; ambience must end at or below the ring.
 MUSIC_RING_BYTES=16384
 SPU_END=0x80000
