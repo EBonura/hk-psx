@@ -506,6 +506,46 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "bounded" => {
+            // hk-cook-parity bounded <source dir> <oracle dir> <regions.json>: actor_sources(sc, bounds)
+            // over every region's interaction bounds.
+            use hk_cook::pyjson::{parse, Json};
+            use hk_unity::scene::Scene;
+            let source = lazy_source();
+            let regions = parse(&std::fs::read_to_string(&args[4]).unwrap()).unwrap();
+            let Some(Json::List(scenes)) = (if let Json::Obj(f) = &regions { f.iter().find(|k| k.0 == "scenes").map(|k| k.1.clone()) } else { None }) else { panic!("no scenes") };
+            let get = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
+            let catalogue: Vec<(String, [f64; 4], String)> = scenes
+                .iter()
+                .map(|s| {
+                    let (Some(Json::Str(file)), Some(Json::Str(name)), Some(Json::List(b))) = (get(s, "file"), get(s, "scene_name"), get(s, "runtime_bounds")) else { panic!("scene row") };
+                    let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                    (file, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])], name)
+                })
+                .collect();
+            let (mut regions_checked, mut actors_checked, mut bad) = (0, 0, 0);
+            for s in &scenes {
+                let (Some(Json::Str(name)), Some(Json::Str(file))) = (get(s, "scene_name"), get(s, "file")) else { panic!("scene row") };
+                let Json::List(oracle) = parse(&std::fs::read_to_string(format!("{}/{name}.json", args[3])).unwrap()).unwrap() else { panic!("oracle") };
+                let sc = Scene::new(&source, &file).unwrap();
+                for region in &oracle {
+                    let Some(Json::List(b)) = get(region, "bounds") else { panic!("bounds") };
+                    let f = |j: &Json| match j { Json::Int(i) => *i as f64, Json::Float(x) => *x, _ => panic!("bound") };
+                    let rows = hk_cook::actors::scan_in(&sc, &source, &catalogue, [f(&b[0]), f(&b[1]), f(&b[2]), f(&b[3])]).unwrap();
+                    let mine = Json::List(rows.iter().map(|r| Json::List(vec![Json::Str(r.source.clone()), Json::Bool(r.supported), r.control.as_ref().map_or(Json::Null, |c| Json::Str(c.0.clone()))])).collect());
+                    regions_checked += 1;
+                    actors_checked += rows.len();
+                    if get(region, "actors") != Some(mine) {
+                        bad += 1;
+                        println!("{name} chunk {:?}: actors differ", get(region, "chunk_id"));
+                    }
+                }
+            }
+            println!("checked {regions_checked} regions, {actors_checked} actors, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
