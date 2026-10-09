@@ -331,6 +331,32 @@ impl WalkState {
     }
 }
 
+/// One row of the cooked table of enemies whose source object keeps a death:
+/// (catalogue scene, scene-unique source id, group word). The source gives an
+/// enemy a `PersistentBoolItem` keyed by the owner's name and its scene, so two
+/// placements of one name share a state; the group word numbers those states
+/// (low fifteen bits) and carries `SEMI_PERSISTENT` for the ones a bench rest
+/// resets. The cook sorts the table by scene, then source id.
+pub type PersistentActor = (u16, u32, u16);
+/// `PersistentBoolItem.semiPersistent`: a bench rest forgets the death.
+pub const SEMI_PERSISTENT: u16 = 0x8000;
+
+/// The state an enemy's death is kept under, and whether a rest resets it, or
+/// None for an enemy the source does not persist. A scan: the table holds a
+/// few dozen rows and is read when an actor is seated or killed, so the code
+/// that searches it matters more than the search.
+pub fn persistent_actor(table: &[PersistentActor], scene: usize, source_id: u32) -> Option<(u16, bool)> {
+    let mut i = 0;
+    while i < table.len() {
+        let (s, id, word) = table[i];
+        if s as usize == scene && id == source_id {
+            return Some((word & !SEMI_PERSISTENT, word & SEMI_PERSISTENT != 0));
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Resolve only an actor's initial overlap with resident Terrain segments.
 ///
 /// HKROOM02 stores two-sided edges, not polygon interiors or one-way normals.
@@ -476,6 +502,21 @@ pub fn walker_senses(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_persistent_enemy_is_found_by_scene_and_source_id() {
+        const TABLE: &[PersistentActor] = &[(2, 100, 0), (2, 140, 1 | SEMI_PERSISTENT), (4, 100, 2), (4, 140, 2)];
+        assert_eq!(persistent_actor(TABLE, 2, 100), Some((0, false)));
+        assert_eq!(persistent_actor(TABLE, 2, 140), Some((1, true)));
+        // The same source id in another scene is another enemy, and two
+        // placements of one name share the group.
+        assert_eq!(persistent_actor(TABLE, 4, 100), Some((2, false)));
+        assert_eq!(persistent_actor(TABLE, 4, 140), Some((2, false)));
+        assert_eq!(persistent_actor(TABLE, 3, 100), None);
+        assert_eq!(persistent_actor(TABLE, 2, 101), None);
+        assert_eq!(persistent_actor(&[], 2, 100), None);
+        assert_eq!(persistent_actor(TABLE, 70_000, 100), None);
+    }
+
     const P: EnemyParams = EnemyParams {
         health: 8,
         contact_damage: 1,
