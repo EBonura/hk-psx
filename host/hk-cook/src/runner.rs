@@ -16,7 +16,8 @@
 //! Guard), which are excluded here the same way.
 
 use crate::common::{component_records, err, get, path_id, py_round, Result};
-use crate::cook_audio::{sha, u};
+use crate::cook_audio::{jobj, js, sha, u};
+use crate::music::value_json;
 use crate::pyjson::{dumps_sorted_compact, Json};
 use hk_unity::playmaker::action_fields;
 use hk_unity::scene::Scene;
@@ -69,11 +70,16 @@ pub fn py_value_repr(v: &Value) -> String {
     }
 }
 
+/// Python's `ceil(seconds * 60 - 1e-5)` (combat.py `ticks`).
+pub fn ticks(seconds: f64) -> i64 {
+    (seconds * 60.0 - 1e-5).ceil() as i64
+}
+
 /// `walker_parameters`: reject C# controller variants the runner model does not
-/// represent. Walk speed, the pause wait/time ranges and the FSM `Lunge Speed`
-/// are the placement parameters; every other Walker field must match the
-/// audited Runner.
-fn walker_parameters(walker: &Value, lunge_speed: Option<&Value>) -> Result<()> {
+/// represent, and return the placement parameters. Walk speed, the pause
+/// wait/time ranges and the FSM `Lunge Speed` are the placement parameters;
+/// every other Walker field must match the audited Runner.
+fn walker_parameters(walker: &Value, lunge_speed: Option<&Value>) -> Result<Vec<(String, Json)>> {
     let expected: [(&str, Value); 16] = [
         ("rightScale", Value::F64(-1.0)),
         ("edgeXAdjuster", Value::F64(0.0)),
@@ -98,20 +104,33 @@ fn walker_parameters(walker: &Value, lunge_speed: Option<&Value>) -> Result<()> 
         }
     }
     let speed = float_in(walker.get("walkSpeedR"), 0.0, 16.0).filter(|s| walker.get("walkSpeedL").and_then(Value::float) == Some(-s));
-    if speed.is_none() {
-        return err("unsupported Runner Walker field: walkSpeedL");
-    }
-    if float_in(lunge_speed, 0.0, 32.0).is_none() {
-        return err("unsupported Runner lunge speed");
-    }
+    let Some(speed) = speed else { return err("unsupported Runner Walker field: walkSpeedL") };
+    let Some(lunge) = float_in(lunge_speed, 0.0, 32.0) else { return err("unsupported Runner lunge speed") };
+    let mut waits = Vec::new();
     for (low, high) in [("pauseWaitMin", "pauseWaitMax"), ("pauseTimeMin", "pauseTimeMax")] {
+        let mut values = Vec::new();
         for key in [low, high] {
-            if float_in(walker.get(key), 0.0, 10.0).is_none() {
-                return err(format!("unsupported Runner Walker field: {low}"));
-            }
+            let Some(v) = float_in(walker.get(key), 0.0, 10.0) else { return err(format!("unsupported Runner Walker field: {low}")) };
+            values.push(v);
         }
+        // Random.Range accepts either argument order; the guest samples [hi, lo].
+        let mut pair = [ticks(values[0]), ticks(values[1])];
+        pair.sort_by(|a, b| b.cmp(a));
+        waits.push(Json::List(pair.iter().map(|&t| Json::Int(t)).collect()));
     }
-    Ok(())
+    let q = |s: f64| py_round(s * 65536.0);
+    let ints = |a: i64, b: i64| Json::List(vec![Json::Int(a), Json::Int(b)]);
+    Ok(vec![
+        ("walk_speed".into(), Json::Float(speed)),
+        ("lunge_speed".into(), Json::Float(lunge)),
+        ("walk_velocity_q16".into(), ints(-q(speed), q(speed))),
+        ("lunge_velocity_q16".into(), ints(-q(lunge), q(lunge))),
+        ("walking_wait_endpoints_ticks".into(), waits[0].clone()),
+        ("pause_endpoints_ticks".into(), waits[1].clone()),
+        ("turn_cooldown_ticks".into(), Json::Int(60)),
+        ("idle_ticks".into(), Json::Int(15)),
+        ("initial_direction".into(), Json::Int(-1)),
+    ])
 }
 
 /// `fsm_fingerprint`: structure and scalar parameters of the Zombie Swipe FSM,
@@ -177,10 +196,25 @@ fn fsm_fingerprint(fsm: &Value) -> Result<String> {
     Ok(sha(dumps_sorted_compact(&summary).as_bytes()))
 }
 
+/// CPython's float `//`.
+fn py_floordiv(a: f64, b: f64) -> f64 {
+    let m = a % b;
+    let mut div = (a - m) / b;
+    if m != 0.0 && ((b < 0.0) != (m < 0.0)) {
+        div -= 1.0;
+    }
+    if div != 0.0 {
+        let fl = div.floor();
+        if div - fl > 0.5 { fl + 1.0 } else { fl }
+    } else {
+        0.0f64.copysign(a / b)
+    }
+}
+
 /// `clip_contract`: every Zombie Swipe library carries the same clip set with
 /// the same wrap modes; frame counts and rates differ per variant. `Fall` is
-/// optional (the controller never plays it).
-fn clip_contract(clips: &[Value], expected: &Clips) -> Result<()> {
+/// optional (the controller never plays it). Returns the cooked clip rows.
+fn clip_contract(clips: &[Value], expected: &Clips) -> Result<Vec<Json>> {
     let names: Vec<String> = clips.iter().map(|c| get(c, "name").ok().and_then(Value::str).unwrap_or_default()).collect();
     let mut unique = names.clone();
     unique.sort();
@@ -189,10 +223,12 @@ fn clip_contract(clips: &[Value], expected: &Clips) -> Result<()> {
     if unique.len() != names.len() || !required.clone().all(|e| names.iter().any(|n| n == e.0)) || !names.iter().all(|n| expected.iter().any(|e| e.0 == n)) {
         return err("unsupported Runner animation inventory");
     }
+    let mut out = Vec::new();
     for (name, wrap) in expected {
         let Some(clip) = clips.iter().zip(&names).find(|(_, n)| n == name).map(|(c, _)| c) else { continue };
         let frames = get(clip, "frames")?.list().unwrap_or(&[]);
-        let fps = get(clip, "fps")?.float().unwrap_or(0.0);
+        let fps_value = get(clip, "fps")?;
+        let fps = fps_value.float().unwrap_or(0.0);
         if get(clip, "wrapMode")?.int() != Some(*wrap) || frames.is_empty() || fps <= 0.0 {
             return err(format!("unsupported Runner animation: {name}"));
         }
@@ -204,8 +240,21 @@ fn clip_contract(clips: &[Value], expected: &Clips) -> Result<()> {
         if !(0 <= loop_start && (loop_start as usize) < frames.len()) {
             return err(format!("invalid Runner loop start: {name}"));
         }
+        let n = frames.len() as i64;
+        let ticks = match fps_value {
+            Value::Int(i) => Json::Int(n * 60 / i),
+            _ => Json::Float(py_floordiv((n * 60) as f64, fps)),
+        };
+        out.push(Json::Obj(vec![
+            ("name".into(), Json::Str(name.to_string())),
+            ("frames".into(), Json::Int(n)),
+            ("fps".into(), value_json(fps_value)),
+            ("wrap_mode".into(), Json::Int(*wrap)),
+            ("loop_start".into(), Json::Int(loop_start)),
+            ("nominal_duration_ticks".into(), ticks),
+        ]));
     }
-    Ok(())
+    Ok(out)
 }
 
 /// `body_contract`: reject physics variants the pending actor integration cannot honor.
@@ -302,6 +351,12 @@ pub struct Audio {
     pub play_on_awake: bool,
 }
 
+/// What `recognize` found: the audio bindings and the whole control record.
+pub struct Recognized {
+    pub audio: Audio,
+    pub control: Json,
+}
+
 fn local_ref(r: &Value) -> Result<i64> {
     let (file, path) = r.pptr().ok_or("not a PPtr")?;
     if file != 0 || path == 0 {
@@ -310,8 +365,15 @@ fn local_ref(r: &Value) -> Result<i64> {
     Ok(path)
 }
 
-/// `recognize`: the Runner's audio bindings, or the first source check it fails.
-pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> Result<Audio> {
+fn set_field(fields: &mut Vec<(String, Json)>, key: &str, value: Json) {
+    match fields.iter_mut().find(|(k, _)| k == key) {
+        Some(slot) => slot.1 = value,
+        None => fields.push((key.to_string(), value)),
+    }
+}
+
+/// `recognize`: the Runner's control record, or the first source check it fails.
+pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> Result<Recognized> {
     let records = component_records(sc, gid);
     let (walker_id, walker) = one(&records, "Walker")?;
     let fsm_component = driving_fsm(&records)?;
@@ -336,16 +398,27 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let variable = |name: &str| variables.iter().find(|(k, _)| k == name).map(|(_, v)| *v);
     let leap = get(fsm, "name")?.str().as_deref() == Some("Zombie Leap");
     let one_float = Value::F64(1.0);
-    walker_parameters(walker, if leap { Some(&one_float) } else { variable("Lunge Speed") })?;
-    let _ = walker_id;
+    let mut parameters = walker_parameters(walker, if leap { Some(&one_float) } else { variable("Lunge Speed") })?;
     // The serialized FSM embeds owner references, so the fingerprint covers its
     // structure and scalar parameters.
     let fingerprint = fsm_fingerprint(fsm)?;
     if !get(fsm_component, "m_Enabled")?.truthy() || fingerprint != if leap { LEAP_FSM_SHA256 } else { FSM_SHA256 } {
         return err("unverified Runner FSM variant");
     }
-    if leap && !eq_num(variable("Idle Time"), 0.5) {
-        return err("unsupported Leaper idle time");
+    if leap {
+        set_field(&mut parameters, "lunge_speed", Json::Float(0.0));
+        set_field(&mut parameters, "lunge_velocity_q16", Json::List(vec![Json::Int(0), Json::Int(0)]));
+        let idle = variable("Idle Time");
+        set_field(
+            &mut parameters,
+            "attack",
+            jobj(vec![("kind", js("Leap")), ("jump_speed_y", Json::Float(20.0)), ("jump_x_factor", Json::Float(1.25)), ("idle_time", idle.map_or(Json::Null, value_json))]),
+        );
+        if !eq_num(idle, 0.5) {
+            return err("unsupported Leaper idle time");
+        }
+    } else {
+        set_field(&mut parameters, "attack", jobj(vec![("kind", js("Swipe"))]));
     }
     for (name, expected) in ASSEMBLIES {
         let bytes = std::fs::read(source.directory.join("Managed").join(name)).map_err(|e| format!("{name}: {e}"))?;
@@ -355,21 +428,25 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     }
     let matrix = u(sc.world(*sc.go_transform.get(&gid).ok_or("actor has no transform")?))?;
     // Placements are authored facing left, except where the transform carries a
-    // plain x mirror; anything else (a rotation, a non-unit magnitude, a y flip)
-    // stays refused.
+    // plain x mirror, which faces them right. Anything else (a rotation, a
+    // non-unit magnitude, a y flip) stays refused.
     if position[2].abs() > 0.01 {
         return err("Runner depth differs from guest source plane");
     }
+    let mirror = if matrix[0][0] < 0.0 { -1 } else { 1 };
     let layer = get(sc.go(gid).ok_or("no such GameObject")?, "m_Layer")?.int();
     if layer != Some(11) || (matrix[0][0].abs() - 1.0).abs() > 1e-6 || (matrix[1][1] - 1.0).abs() > 1e-6 || matrix[0][1].abs() > 1e-6 || matrix[1][0].abs() > 1e-6 {
         return err("unsupported Runner layer or initial scale");
     }
+    // rightScale is -1, so a mirrored transform starts the walker facing right.
+    set_field(&mut parameters, "initial_direction", Json::Int(-mirror));
     let (_, body) = one(&records, "BoxCollider2D")?;
     let (_, rigid) = one(&records, "Rigidbody2D")?;
     if !get(body, "m_Enabled")?.truthy() || get(body, "m_IsTrigger")?.truthy() || !eq_num(body.get("m_EdgeRadius"), 0.0) {
         return err("unsupported Runner body collider");
     }
     body_contract(rigid)?;
+    set_field(&mut parameters, "gravity_scale", value_json(get(rigid, "m_GravityScale")?));
     let xy = |v: &Value, key: &str| -> Result<[f64; 2]> {
         let p = get(v, key)?;
         Ok([get(p, "x")?.float().ok_or("not a number")?, get(p, "y")?.float().ok_or("not a number")?])
@@ -402,12 +479,16 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let library = u(sc.deref(get(animator, "library")?))?;
     let library_tree = u(source.read(&library))?;
     let clips = get(&library_tree, "clips")?.list().ok_or("clips is not a list")?;
-    clip_contract(clips, if leap { LEAP_CLIPS } else { CLIPS })?;
+    let animation = clip_contract(clips, if leap { LEAP_CLIPS } else { CLIPS })?;
     if leap {
         let attack = clips.iter().find(|c| c.get("name").and_then(Value::str).as_deref() == Some("Attack")).ok_or("no Attack clip")?;
-        let triggers = get(attack, "frames")?.list().unwrap_or(&[]).iter().filter(|f| f.get("triggerEvent").is_some_and(Value::truthy)).count();
-        if triggers != 1 {
+        let triggers: Vec<usize> = get(attack, "frames")?.list().unwrap_or(&[]).iter().enumerate().filter(|(_, f)| f.get("triggerEvent").is_some_and(Value::truthy)).map(|(i, _)| i).collect();
+        if triggers.len() != 1 {
             return err("Leaper Attack clip needs exactly one trigger frame");
+        }
+        let fps = get(attack, "fps")?.float().unwrap_or(0.0);
+        if let Some((_, Json::Obj(attack_fields))) = parameters.iter_mut().find(|(k, _)| k == "attack") {
+            attack_fields.push(("trigger_ticks".into(), Json::Int(py_round((triggers[0] * 60) as f64 / fps))));
         }
     }
     let mut sprites = std::collections::BTreeSet::new();
@@ -452,7 +533,37 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     if alert_q16[0] != -alert_q16[2] || body_q16[0] >= body_q16[2] || body_q16[1] >= body_q16[3] || alert_q16[1] >= alert_q16[3] {
         return err("Runner sensing shape is not a mirror-stable box");
     }
-    Ok(audio)
+    let ints = |a: [i64; 4]| Json::List(a.iter().map(|&v| Json::Int(v)).collect());
+    let control = jobj(vec![
+        ("kind", js("ZombieSwipeWalker")),
+        ("guest_enabled", Json::Bool(false)),
+        ("parameters", Json::Obj(parameters)),
+        ("walker_source", Json::Str(format!("{}:{walker_id}", hk_unity::base_name(&sc.base.name)))),
+        ("fsm_sha256", Json::Str(fingerprint)),
+        ("assembly_sha256", js(ASSEMBLIES[0].1)),
+        ("assemblies_sha256", Json::Obj(ASSEMBLIES.iter().map(|(n, h)| (n.to_string(), js(h))).collect())),
+        ("library_source", Json::Str(library.sid())),
+        ("clips", Json::List(animation)),
+        ("unique_sprite_sources", Json::List(sprites.into_iter().map(|(s, i)| Json::List(vec![Json::Str(s), Json::Int(i)])).collect())),
+        (
+            "audio_sources",
+            jobj(vec![
+                ("walk_loop", Json::Str(audio.walk_loop.clone())),
+                ("chase", Json::List(audio.chase.iter().map(|c| Json::Str(c.clone())).collect())),
+                ("loop", Json::Bool(audio.looped)),
+                ("volume", value_json(get(audio_source, "m_Volume")?)),
+                ("initial_pitch", value_json(get(audio_source, "m_Pitch")?)),
+                ("play_on_awake", Json::Bool(audio.play_on_awake)),
+            ]),
+        ),
+        ("body_bounds_q16", ints(body_q16)),
+        ("alert_bounds_q16", ints(alert_q16)),
+        (
+            "limitations",
+            Json::List(vec![js("Guest actor/clip/sensing/audio bindings are not yet enabled."), js("Unity component/physics ordering, synchronous Walker reentry and RNG require reference comparison.")]),
+        ),
+    ]);
+    Ok(Recognized { audio, control })
 }
 
 /// A recognized Zombie Swipe actor.
@@ -460,6 +571,30 @@ pub struct RunnerActor {
     pub source: String,
     pub game_object: i64,
     pub audio: Audio,
+    pub control: Json,
+}
+
+/// The Runner gate of `actor_sources` for one HealthManager object: the actor
+/// if it is an enabled, active placement the Runner recognizer accepts.
+pub fn candidate(sc: &Scene, source: &Source, o: &hk_unity::scene::SceneObject) -> Result<Option<RunnerActor>> {
+    if o.typename != "HealthManager" || !get(&o.tree, "m_Enabled")?.truthy() {
+        return Ok(None);
+    }
+    let gid = path_id(get(&o.tree, "m_GameObject")?).unwrap_or(0);
+    if !sc.active(gid) {
+        return Ok(None);
+    }
+    let records = component_records(sc, gid);
+    if !records.iter().any(|r| r.1 == "Walker") {
+        return Ok(None);
+    }
+    // Taken off the Runner's gate by name, as in actor_sources.
+    let name = get(sc.go(gid).ok_or("no such GameObject")?, "m_Name")?.str().unwrap_or_default();
+    if name == "Mawlek Body" || name.starts_with("Zombie Shield") || name.starts_with("Zombie Guard") {
+        return Ok(None);
+    }
+    let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+    Ok(recognize(sc, source, gid, position).ok().map(|found| RunnerActor { source: sc.sid(o.id), game_object: gid, audio: found.audio, control: found.control }))
 }
 
 /// `actor_sources(scene)` filtered to the actors whose movement control is a
@@ -468,26 +603,7 @@ pub struct RunnerActor {
 pub fn runner_actors(sc: &Scene, source: &Source) -> Result<Vec<RunnerActor>> {
     let mut out = Vec::new();
     for o in &sc.objects {
-        if o.typename != "HealthManager" || !get(&o.tree, "m_Enabled")?.truthy() {
-            continue;
-        }
-        let gid = path_id(get(&o.tree, "m_GameObject")?).unwrap_or(0);
-        if !sc.active(gid) {
-            continue;
-        }
-        let records = component_records(sc, gid);
-        if !records.iter().any(|r| r.1 == "Walker") {
-            continue;
-        }
-        // Taken off the Runner's gate by name, as in actor_sources.
-        let name = get(sc.go(gid).ok_or("no such GameObject")?, "m_Name")?.str().unwrap_or_default();
-        if name == "Mawlek Body" || name.starts_with("Zombie Shield") || name.starts_with("Zombie Guard") {
-            continue;
-        }
-        let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
-        if let Ok(audio) = recognize(sc, source, gid, position) {
-            out.push(RunnerActor { source: sc.sid(o.id), game_object: gid, audio });
-        }
+        out.extend(candidate(sc, source, o)?);
     }
     Ok(out)
 }
