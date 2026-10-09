@@ -1,10 +1,13 @@
 //! Median-cut colour quantisation of RGB pixels.
 //!
 //! Distinct colours are counted, then boxes of colours are split until the
-//! requested number of boxes exists: always the most populated box that can
-//! still be split, along its widest channel, at the median pixel.
-//! Each box becomes the average of its pixels, and every pixel takes the
-//! nearest palette colour.
+//! requested number of boxes exists: the most populated box first, along its
+//! widest channel, at the median pixel. Each box becomes the average of its
+//! pixels, and every pixel takes the nearest palette colour.
+//!
+//! Where several palette colours are equally near, the order of preference is
+//! fixed by the tables below. The rules were fitted to the behaviour of the
+//! tool this crate stands in for, observed from its outputs alone.
 
 use std::collections::HashMap;
 
@@ -51,8 +54,11 @@ impl BoxOf {
     }
 }
 
-/// Max-heap of (pixel count, box id), strict comparisons throughout, so among
-/// equal counts the box that has been waiting longer is served first.
+/// Binary max-heap of (pixel count, box id). Which of several equally
+/// populated boxes comes out first follows from how the heap is kept:
+/// a new item rises only past a strictly smaller parent, the larger child
+/// (the left one on a tie) is picked by a strict comparison, and an item sinks
+/// past a child that is larger or equal.
 struct Heap {
     items: Vec<(u64, usize)>,
 }
@@ -86,14 +92,8 @@ impl Heap {
             if l >= n {
                 break;
             }
-            let mut child = l;
-            if r < n {
-                let right_wins = self.items[l].0 < self.items[r].0;
-                if right_wins {
-                    child = r;
-                }
-            }
-            if self.items[at].0 < self.items[child].0 {
+            let child = if r < n && self.items[l].0 < self.items[r].0 { r } else { l };
+            if self.items[at].0 <= self.items[child].0 {
                 self.items.swap(at, child);
                 at = child;
             } else {
@@ -102,6 +102,10 @@ impl Heap {
         }
         top
     }
+}
+
+fn dist(a: &Px, b: &Px) -> u32 {
+    (0..3).map(|c| (a[c] as i32 - b[c] as i32).pow(2) as u32).sum()
 }
 
 /// Median-cut quantization of RGB pixels into at most `colors` entries:
@@ -123,13 +127,14 @@ pub fn median_cut(pixels: &[Px], colors: u32) -> Option<(Vec<Px>, Vec<u8>)> {
     // palette, a split box giving way to its two halves in place.
     let mut arena = vec![BoxOf { entries }];
     let mut order = vec![0usize];
-    let mut heap = Heap { items: Vec::new() };
-    if arena[0].entries.len() > 1 {
-        heap.push((arena[0].pixels(), 0));
-    }
-    // Boxes of a single colour cannot be split and stay out of the heap.
+    let mut heap = Heap { items: vec![(arena[0].pixels(), 0)] };
     while (order.len() as u32) < colors {
         let Some((_, id)) = heap.pop() else { break };
+        // A box of one colour waits in the heap like any other and is passed
+        // over when its turn comes.
+        if arena[id].entries.len() < 2 {
+            continue;
+        }
         let axis = arena[id].widest();
         let mut sorted = std::mem::take(&mut arena[id].entries);
         sorted.sort_by_key(|e| std::cmp::Reverse(e.color[axis]));
@@ -159,11 +164,8 @@ pub fn median_cut(pixels: &[Px], colors: u32) -> Option<(Vec<Px>, Vec<u8>)> {
         let (first, second) = (arena.len(), arena.len() + 1);
         arena.push(BoxOf { entries: sorted });
         arena.push(BoxOf { entries: upper });
-        for id_new in [first, second] {
-            if arena[id_new].entries.len() > 1 {
-                heap.push((arena[id_new].pixels(), id_new));
-            }
-        }
+        heap.push((arena[first].pixels(), first));
+        heap.push((arena[second].pixels(), second));
         let at = order.iter().position(|&o| o == id).unwrap();
         order.splice(at..=at, [first, second]);
     }
@@ -178,14 +180,14 @@ pub fn median_cut(pixels: &[Px], colors: u32) -> Option<(Vec<Px>, Vec<u8>)> {
     let index: Vec<u8> = pixels
         .iter()
         .map(|p| {
-            let dist = |q: &Px| -> u32 { (0..3).map(|c| (p[c] as i32 - q[c] as i32).pow(2) as u32).sum() };
-            let best = palette.iter().map(dist).min().unwrap();
-            let own = home[p];
-            if dist(&palette[own]) == best {
-                return own as u8;
-            }
-            let mut tied = (0..palette.len()).filter(|&k| dist(&palette[k]) == best);
-            tied.next().unwrap() as u8
+            let best = palette.iter().map(|q| dist(p, q)).min().unwrap();
+            // Of the nearest entries the one closest to the entry of the box
+            // the colour came from wins, the lowest slot when those tie too.
+            let from = &palette[home[p]];
+            (0..palette.len())
+                .filter(|&k| dist(p, &palette[k]) == best)
+                .min_by_key(|&k| (dist(from, &palette[k]), k))
+                .unwrap() as u8
         })
         .collect();
     Some((palette, index))
