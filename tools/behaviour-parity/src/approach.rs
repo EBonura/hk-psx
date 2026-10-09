@@ -28,6 +28,12 @@ fn onset(points: &[(f64, f64)], hero: &[(f64, f64)], threshold: f64) -> Option<O
     None
 }
 
+fn vmax(points: &[(f64, f64)]) -> f64 {
+    // Six frames are exactly five of the original's 50 Hz physics steps, so the average is not
+    // pushed up or down by which frames a step fell on.
+    (6..points.len()).map(|i| (points[i].0 - points[i - 6].0).hypot(points[i].1 - points[i - 6].1) * 10.0).fold(0.0, f64::max)
+}
+
 fn mean_speed(points: &[(f64, f64)]) -> f64 {
     let mut len = 0.0;
     for w in points.windows(2) {
@@ -85,7 +91,7 @@ pub fn report(run: &std::path::Path, names: &BTreeMap<usize, String>, only: Opti
             row[2] += (react_ok && range_ok) as u32;
             if std::env::var_os("HKBP_ALL").is_some() || !(react_ok && range_ok) {
                 let show = |o: Option<Onset>| o.map_or("none".to_string(), |o| format!("frame {} at {:.1}", o.frame, o.distance));
-                println!("{name} {:>6} {:<10} '{}' threshold {:.1} u/s | og {} | port {} | react:{} range:{}", pa.source_id, pa.family, og.name, threshold, show(o), show(p), react_ok as u8, range_ok as u8);
+                println!("{name} {:>6} {:<10} '{}' threshold {:.1} u/s | og {} vmax {:.1} | port {} vmax {:.1} | react:{} range:{}", pa.source_id, pa.family, og.name, threshold, show(o), vmax(&o_pts), show(p), vmax(&p_pts), react_ok as u8, range_ok as u8);
             }
         }
     }
