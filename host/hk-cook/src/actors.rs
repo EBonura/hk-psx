@@ -100,12 +100,17 @@ fn guest_enabled(control: Json) -> Json {
 pub type Catalogue = [(String, [f64; 4], String)];
 
 pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Row>> {
-    scan_with(sc, source, catalogue, true)
+    scan_with(sc, source, catalogue, true, None)
+}
+
+/// `actor_sources(sc, bounds)`: only the actors standing inside `bounds` (x0, y0, x1, y1).
+pub fn scan_in(sc: &Scene, source: &Source, catalogue: &Catalogue, bounds: [f64; 4]) -> Result<Vec<Row>> {
+    scan_with(sc, source, catalogue, true, Some(bounds))
 }
 
 /// `hatcher._others`: the supported actors of the scene with the Hatcher family refused.
 fn supported_others(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<usize> {
-    let count = scan_with(sc, source, catalogue, false)?.iter().filter(|r| r.supported).count();
+    let count = scan_with(sc, source, catalogue, false, None)?.iter().filter(|r| r.supported).count();
     if count > 32 {
         return err("actor region exceeds bounded 32-slot guest pool");
     }
@@ -113,7 +118,7 @@ fn supported_others(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Resul
 }
 
 /// `actor_sources`; `family` is false while the Hatcher's own scene budget is measured.
-fn scan_with(sc: &Scene, source: &Source, catalogue: &Catalogue, family: bool) -> Result<Vec<Row>> {
+fn scan_with(sc: &Scene, source: &Source, catalogue: &Catalogue, family: bool, bounds: Option<[f64; 4]>) -> Result<Vec<Row>> {
     let others_cache = std::cell::Cell::new(None::<usize>);
     let others = || -> Result<usize> {
         if let Some(n) = others_cache.get() {
@@ -131,6 +136,12 @@ fn scan_with(sc: &Scene, source: &Source, catalogue: &Catalogue, family: bool) -
         let gid = path_id(get(&o.tree, "m_GameObject")?).unwrap_or(0);
         if !sc.active(gid) {
             continue;
+        }
+        if let Some(b) = bounds {
+            let p = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+            if !(b[0] <= p[0] && p[0] <= b[2] && b[1] <= p[1] && p[1] <= b[3]) {
+                continue;
+            }
         }
         let name = get(sc.go(gid).ok_or_else(|| "no such GameObject".to_string())?, "m_Name")?.str().unwrap_or_default();
         let mut control = None;
