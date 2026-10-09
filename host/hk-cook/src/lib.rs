@@ -22,6 +22,7 @@ pub mod coverage;
 pub mod effects_art;
 pub mod false_knight;
 pub mod false_knight_art;
+pub mod fk_bank;
 pub mod fmod;
 pub mod focus_audio;
 pub mod music;
