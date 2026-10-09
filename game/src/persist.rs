@@ -49,8 +49,10 @@ pub enum Kind {
     Cocoon = 4,
     /// A `Battle Scene`'s `Activated`, value 1 is won. Local id 0.
     BattleScene = 5,
-    /// An enemy's own `PersistentBoolItem`, value 1 is dead. Local id is the
-    /// owning table's index (`blocker_terrain::SOURCES` for the Blockers).
+    /// An enemy's own `PersistentBoolItem`, value 1 is dead and 2 is dead until
+    /// a bench rest (`semiPersistent`). Local id is the owning table's index:
+    /// `blocker_terrain::SOURCES` for the Blockers, below `actor_persistence::
+    /// LOCAL_BASE`, and the cooked state group for every other enemy, above it.
     Enemy = 6,
     /// A grub jar's `PersistentBoolItem`, value 1 is broken and its grub
     /// freed. Local id is the jar's index in its scene (host/hk-cook/src/props.rs), and
@@ -197,6 +199,20 @@ impl Store {
         for at in 0..self.len {
             let item = self.items[at];
             if item >> 28 != kind as u32 {
+                self.items[kept] = item;
+                kept += 1;
+            }
+        }
+        self.len = kept;
+    }
+    /// Drop the items of one kind for which `drop(local, value)` is true: a
+    /// bench rest forgetting what the source marked `semiPersistent`.
+    pub fn clear_matching(&mut self, kind: Kind, mut drop: impl FnMut(usize, u8) -> bool) {
+        let mut kept = 0;
+        for at in 0..self.len {
+            let item = self.items[at];
+            let gone = matches!(unpack(item), Some((k, _, local, value)) if k == kind && drop(local, value));
+            if !gone {
                 self.items[kept] = item;
                 kept += 1;
             }

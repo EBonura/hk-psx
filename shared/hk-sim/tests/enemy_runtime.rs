@@ -397,6 +397,17 @@ mod blocker_terrain {
     pub fn dead(_scene: usize, _source_id: u32) -> bool { false }
     pub fn killed(scene: usize, source_id: u32) { KILLED.with(|k| k.borrow_mut().push((scene, source_id))); }
 }
+/// Which killed enemies the source keeps dead. The real module links the
+/// cooked table and the store; here a placement is dead when a case says so and
+/// every kill is recorded, so the world's two calls are what is checked.
+mod actor_persistence {
+    std::thread_local! {
+        pub static DEAD: std::cell::RefCell<Vec<(usize, u32)>> = const { std::cell::RefCell::new(Vec::new()) };
+        pub static KILLED: std::cell::RefCell<Vec<(usize, u32)>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    pub fn dead(scene: usize, source_id: u32) -> bool { DEAD.with(|d| d.borrow().contains(&(scene, source_id))) }
+    pub fn killed(scene: usize, source_id: u32) { KILLED.with(|k| k.borrow_mut().push((scene, source_id))); }
+}
 mod modules {
     pub const FALSE_KNIGHT: usize = 0;
     pub const MAWLEK: usize = 1;
@@ -683,6 +694,63 @@ fn grid_swap_keeps_position_and_dead_health_until_scene_reset() {
     w.sync_region(&r);
     assert_eq!(w.actor_state(0, 12546), Some((PLACEMENT.x, PLACEMENT.y, 8)));
     w.take_geo_deaths(0,|_,_,_|panic!("New living actor paid Geo"));
+}
+#[test]
+fn a_kill_is_handed_to_the_persistence_table_once() {
+    let bytes = room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(10 * ONE, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut n = Nail::new();
+    tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    // Two hits a window apart wound it; the kill is the third.
+    let mut kills = 0;
+    for _ in 0..8 {
+        p.x = w.actor_state(0, 12546).unwrap().0;
+        p.y = ONE;
+        n.active = true;
+        n.age = 1;
+        kills += tick(&mut w, &r, &room, &mut p, &mut v, &n).kills;
+        n.active = false;
+        for _ in 0..12 {
+            tick(&mut w, &r, &room, &mut p, &mut v, &n);
+        }
+        if kills != 0 { break; }
+    }
+    assert_eq!(kills, 1);
+    actor_persistence::KILLED.with(|k| assert_eq!(*k.borrow(), vec![(0, 12546)]));
+    // A dead actor does not die again.
+    for _ in 0..30 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    actor_persistence::KILLED.with(|k| assert_eq!(k.borrow().len(), 1));
+}
+#[test]
+fn an_enemy_the_source_kept_dead_is_seated_dead() {
+    let bytes = room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = region();
+    actor_persistence::DEAD.with(|d| d.borrow_mut().push((0, 12546)));
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(0, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    let at = Vec::new();
+    for _ in 0..30 {
+        let e = tick(&mut w, &r, &room, &mut p, &mut v, &n);
+        // It neither hurts the Knight standing on it nor counts as a kill.
+        assert_eq!((e.hurt, e.kills), (Hurt::Ignored, 0));
+    }
+    assert!(w.actor_state(0, 12546).unwrap().2 <= 0, "seated dead");
+    assert_eq!(submitted(&w, &r, &room), at, "and draws nothing: no corpse is owed");
+    w.take_geo_deaths(0, |_, _, _| panic!("a death the source already paid for paid Geo again"));
+    // Another scene's placement of the same source id is untouched.
+    actor_persistence::DEAD.with(|d| d.borrow_mut().clear());
+    w.reset_scene(0);
+    w.sync_region(&r);
+    assert_eq!(w.actor_state(0, 12546), Some((PLACEMENT.x, PLACEMENT.y, 8)));
 }
 #[test]
 fn contact_is_debounced_and_unloaded_collision_freezes_position() {

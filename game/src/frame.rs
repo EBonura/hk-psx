@@ -524,6 +524,7 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
         if bench_events.rest {
             // Resting resets every semi-persistent item: the soul totems refill.
             soul_totems::rest();
+            actor_persistence::rest();
             // Rest Burst: HERO REVIVED and the respawn marker, then ask.
             // The source saves here without asking; this port never
             // writes the card unless the player says so.
