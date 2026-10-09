@@ -623,6 +623,136 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "rng" => {
+            // hk-cook-parity rng <oracle-rng.json>: numpy's default_rng stream and choice().
+            use hk_cook::numpy_rng::Pcg64;
+            use hk_cook::pyjson::{parse, Json};
+            let Json::List(cases) = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap() else { panic!("cases") };
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let (mut ok, mut bad) = (0, 0);
+            for case in &cases {
+                let Json::Str(seed) = field(case, "seed") else { panic!("seed") };
+                let seed: u64 = seed.parse().unwrap();
+                let mut rng = Pcg64::new(seed);
+                let randoms = Json::List((0..6).map(|_| Json::Float(rng.random())).collect());
+                if randoms == field(case, "randoms") { ok += 1 } else { bad += 1; println!("seed {seed}: random() differs"); }
+                let mut rng = Pcg64::new(seed);
+                let probs = list(field(case, "probs"));
+                let picks = list(field(case, "picks"));
+                for (p, want) in probs.iter().zip(&picks) {
+                    let p: Vec<f64> = list(p.clone()).iter().map(|v| if let Json::Float(f) = v { *f } else { panic!("p") }).collect();
+                    let mine = Json::List((0..5).map(|_| Json::Int(rng.choice_p(&p) as i64)).collect());
+                    if &mine == want { ok += 1 } else { bad += 1; println!("seed {seed}: choice(p) over {} differs", p.len()); }
+                }
+                let Json::Obj(wor) = field(case, "wor") else { panic!("wor") };
+                for (key, want) in wor {
+                    let (n, size) = key.split_once(',').unwrap();
+                    let mut rng = Pcg64::new(seed);
+                    let r = rng.choice_without_replacement(n.parse().unwrap(), size.parse().unwrap());
+                    let mut mine: Vec<Json> = r.iter().take(40).map(|&v| Json::Int(v)).collect();
+                    mine.push(Json::Int(r.iter().sum()));
+                    mine.push(Json::Int(*r.last().unwrap()));
+                    if Json::List(mine) == want { ok += 1 } else { bad += 1; println!("seed {seed}: choice({key}, replace=False) differs"); }
+                }
+            }
+            println!("checked {ok} streams, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
+        "numeric" => {
+            use hk_cook::numpy_math as nm;
+            use hk_cook::pyjson::{parse, Json};
+            let oracle = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()).unwrap_or_else(|| panic!("no {k}")) } else { panic!("not an object") } };
+            let list = |j: Json| -> Vec<Json> { if let Json::List(l) = j { l } else { panic!("list") } };
+            let f = |j: &Json| -> f64 { match j { Json::Float(x) => *x, Json::Int(i) => *i as f64, _ => panic!("num") } };
+            let fl = |j: Json| -> Vec<f64> { list(j).iter().map(f).collect() };
+            let rows3 = |j: Json| -> Vec<[f64; 3]> { list(j).iter().map(|r| { let v = fl(r.clone()); [v[0], v[1], v[2]] }).collect() };
+            let luma = [0.299, 0.587, 0.114];
+            let report = |name: &str, hits: usize, total: usize| println!("{name}: {hits}/{total}");
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "sum1d")) { t += 1; if nm::sum(&fl(field(&c, "x"))) == f(&field(&c, "sum")) { h += 1 } }
+            report("np.sum 1-D (pairwise)", h, t);
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "rowsum")) { let x = rows3(field(&c, "x")); for (r, w) in x.iter().zip(fl(field(&c, "sum"))) { t += 1; if nm::row_sum3([r[0] * r[0], r[1] * r[1], r[2] * r[2]]) == w { h += 1 } } }
+            report("(x*x).sum(1)", h, t);
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "colsum")) { let x = rows3(field(&c, "x")); let want = fl(field(&c, "sum")); for k in 0..3 { t += 1; let mut acc = x[0][k]; for r in &x[1..] { acc += r[k]; } if acc == want[k] { h += 1 } } }
+            report("x.sum(0) sequential", h, t);
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "average")) { let x = rows3(field(&c, "x")); let w = fl(field(&c, "w")); let want = fl(field(&c, "avg")); let got = nm::average3(&x, &w); for k in 0..3 { t += 1; if got[k] == want[k] { h += 1 } } }
+            report("np.average(axis 0, weights)", h, t);
+            for (name, g) in [("x @ LUMA plain", nm::dot3_plain as fn([f64; 3], [f64; 3]) -> f64), ("x @ LUMA fma chain", nm::dot3)] {
+                let (mut h, mut t) = (0, 0);
+                for c in list(field(&oracle, "luma")) { let x = rows3(field(&c, "x")); for (r, w) in x.iter().zip(fl(field(&c, "dot"))) { t += 1; if g(*r, luma) == w { h += 1 } } }
+                let gray = field(&oracle, "gray"); let x = rows3(field(&gray, "x"));
+                let (mut gh, mut gt) = (0, 0);
+                for (r, w) in x.iter().zip(fl(field(&gray, "dot"))) { gt += 1; if g(*r, luma) == w { gh += 1 } }
+                report(name, h, t); report(&format!("{name} (gray ramp)"), gh, gt);
+            }
+            let (mut h, mut t) = (0, 0);
+            let mut by_k = std::collections::BTreeMap::<usize, (usize, usize)>::new();
+            for c in list(field(&oracle, "dot")) {
+                let x = rows3(field(&c, "x")); let cc = rows3(field(&c, "c")); let r = list(field(&c, "r"));
+                for (i, row) in x.iter().enumerate() { let want = fl(r[i].clone()); for (j, cj) in cc.iter().enumerate() {
+                    t += 1; let e = by_k.entry(cc.len()).or_default(); e.1 += 1;
+                    if nm::matmul_entry([2.0 * row[0], 2.0 * row[1], 2.0 * row[2]], *cj, cc.len(), j) == want[j] { h += 1; e.0 += 1 } } }
+            }
+            report("(2x) @ c.T by observed rule", h, t);
+            println!("by k: {by_k:?}");
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "dot")) {
+                let x = rows3(field(&c, "x")); let cc = rows3(field(&c, "c")); let r = list(field(&c, "r"));
+                let doubled: Vec<[f64; 3]> = x.iter().map(|v| [2.0 * v[0], 2.0 * v[1], 2.0 * v[2]]).collect();
+                let got = hk_cook::blas::matmul_abt(&doubled, &cc);
+                for i in 0..x.len() { let want = fl(r[i].clone()); for j in 0..cc.len() { t += 1; if got[i * cc.len() + j] == want[j] { h += 1 } } }
+            }
+            report("(2x) @ c.T via cblas_dgemm", h, t);
+            let (mut h, mut t) = (0, 0);
+            for c in list(field(&oracle, "luma")) {
+                let x = rows3(field(&c, "x")); let want = fl(field(&c, "dot")); let got = hk_cook::blas::matvec(&x, luma);
+                for (g, w) in got.iter().zip(&want) { t += 1; if g == w { h += 1 } }
+            }
+            report("x @ LUMA via cblas_dgemv", h, t);
+        }
+        "quant" => {
+            // hk-cook-parity quant <oracle-quant dir>: host/quantize.py over real actor sprites.
+            use hk_cook::pyjson::{parse, Json};
+            use hk_pil::{Image, Mode};
+            use sha2::{Digest, Sha256};
+            let dir = &args[2];
+            let index = parse(&std::fs::read_to_string(format!("{dir}/index.json")).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Option<Json> { if let Json::Obj(f) = j { f.iter().find(|x| x.0 == k).map(|x| x.1.clone()) } else { None } };
+            let Some(Json::List(cases)) = field(&index, "cases") else { panic!("cases") };
+            let int = |j: Option<Json>| -> usize { if let Some(Json::Int(i)) = j { i as usize } else { panic!("int") } };
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let (mut ok, mut fallback, mut skipped, mut bad) = (0, 0, 0, 0);
+            for case in &cases {
+                if field(case, "error").is_some() { skipped += 1; continue; }
+                let idx = int(field(case, "idx"));
+                let (iw, ih, w, h) = (int(field(case, "iw")), int(field(case, "ih")), int(field(case, "w")), int(field(case, "h")));
+                let data = std::fs::read(format!("{dir}/{idx}.rgba")).unwrap();
+                let image = Image { mode: Mode::Rgba, width: iw, height: ih, data };
+                let marker = |_: &Image, _: usize, _: usize| -> Result<hk_cook::atlas::Quantized, String> { Err("fallback".to_string()) };
+                let got = hk_cook::quantize::quantize(&image, w, h, Some(&marker));
+                match (got, field(case, "fallback")) {
+                    (Err(e), Some(Json::Bool(true))) if e == "fallback" => fallback += 1,
+                    (Ok(q), Some(Json::Bool(false))) => {
+                        let same = Json::Str(hexs(&q.palette)) == field(case, "palette").unwrap()
+                            && Json::Str(hexs(&Sha256::digest(&q.plane))) == field(case, "plane").unwrap()
+                            && Json::Str(hexs(&Sha256::digest(&q.image.data))) == field(case, "image").unwrap();
+                        if same { ok += 1 } else { bad += 1; println!("case {idx} ({iw}x{ih} -> {w}x{h}): output differs"); }
+                    }
+                    (r, _) => { bad += 1; println!("case {idx}: rust {:?}", r.map(|_| "ok")); }
+                }
+            }
+            println!("checked {ok} quantizations, {fallback} fallbacks, {skipped} skipped, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
