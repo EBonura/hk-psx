@@ -8,7 +8,8 @@
 //! refusal). The parity gate (hk-cook-parity actors) compares the controls of
 //! the kinds ported against the Python oracle's.
 
-use crate::common::{err, get, path_id, Result};
+use crate::baldur;
+use crate::common::{component_records, err, get, path_id, Result};
 use crate::pyjson::Json;
 use crate::runner;
 use hk_unity::scene::Scene;
@@ -47,6 +48,12 @@ pub fn scan(sc: &Scene, source: &Source) -> Result<Vec<Row>> {
         }
         let name = get(sc.go(gid).ok_or_else(|| "no such GameObject".to_string())?, "m_Name")?.str().unwrap_or_default();
         let mut control = None;
+        let records = component_records(sc, gid);
+        if control.is_none() && name.starts_with("Roller") && records.iter().any(|r| r.1 == "LineOfSightDetector") {
+            if let Ok(found) = baldur::recognize(sc, source, gid) {
+                control = Some(("Baldur".to_string(), found));
+            }
+        }
         // The Runner gate comes after the named gates in actor_sources; the
         // recognizers ported so far are disjoint from it by name and component.
         if control.is_none() {

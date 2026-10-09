@@ -292,7 +292,7 @@ fn body_contract(rigid: &Value) -> Result<()> {
 
 /// `axis_aligned_bounds`: transform all four collider corners, retaining child
 /// scaling and offsets.
-fn axis_aligned_bounds(m: &[[f64; 4]; 4], offset: [f64; 2], size: [f64; 2]) -> Result<[f64; 4]> {
+pub(crate) fn axis_aligned_bounds(m: &[[f64; 4]; 4], offset: [f64; 2], size: [f64; 2]) -> Result<[f64; 4]> {
     if m.iter().flatten().any(|v| !v.is_finite()) {
         return err("nonfinite Runner collider transform");
     }
