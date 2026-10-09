@@ -465,6 +465,47 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "pogo" => {
+            // hk-cook-parity pogo <source dir> <regions.json>: postpack_pogo over the report with its
+            // pogo fields removed, against the fields the Python pass left in the report.
+            use hk_cook::pyjson::{parse, Json};
+            let source = lazy_source();
+            let original = parse(&std::fs::read_to_string(&args[3]).unwrap()).unwrap();
+            let mut report = original.clone();
+            let strip = |report: &mut Json| {
+                let Json::Obj(top) = report else { panic!("report") };
+                for (key, list) in top.iter_mut() {
+                    if key == "scenes" || key == "regions" {
+                        let Json::List(items) = list else { panic!("list") };
+                        for item in items {
+                            let Json::Obj(f) = item else { panic!("item") };
+                            f.retain(|x| x.0 != "static_pogo" && x.0 != "pogo_targets");
+                        }
+                    }
+                }
+            };
+            strip(&mut report);
+            let scene_count = { let Json::Obj(top) = &report else { panic!("report") }; let Some((_, Json::List(s))) = top.iter().find(|x| x.0 == "scenes") else { panic!("scenes") }; s.len() };
+            hk_cook::static_sources::postpack_pogo(&mut report, &source, scene_count).unwrap();
+            let pick = |report: &Json, list: &str, key: &str| -> Vec<Option<Json>> {
+                let Json::Obj(top) = report else { panic!("report") };
+                let Some((_, Json::List(items))) = top.iter().find(|x| x.0 == list) else { panic!("list") };
+                items.iter().map(|i| if let Json::Obj(f) = i { f.iter().find(|x| x.0 == key).map(|x| x.1.clone()) } else { None }).collect()
+            };
+            let mut bad = 0;
+            for (list, key) in [("scenes", "static_pogo"), ("regions", "pogo_targets")] {
+                let (mine, want) = (pick(&report, list, key), pick(&original, list, key));
+                bad += mine.iter().zip(&want).filter(|(a, b)| a != b).count();
+                if let Some(i) = mine.iter().zip(&want).position(|(a, b)| a != b) {
+                    println!("first difference at {list}[{i}]:\n rust:   {}\n python: {}", mine[i].as_ref().map(hk_cook::pyjson::dumps_sorted_compact).unwrap_or_default(), want[i].as_ref().map(hk_cook::pyjson::dumps_sorted_compact).unwrap_or_default());
+                }
+                println!("{list}.{key}: {} entries, {} differ", want.len(), mine.iter().zip(&want).filter(|(a, b)| a != b).count());
+            }
+            println!("{bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         other => panic!("unknown mode {other}"),
     }
 }
