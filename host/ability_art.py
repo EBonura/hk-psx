@@ -39,9 +39,14 @@ BALL_CLIPS = ('Ball', 'Ball End')
 # a heal). Each child's own local position and scale are baked into the frame
 # bounds, so a frame draws at the Knight like any other ability frame. Both
 # animators share one tk2d library; the path ids are asserted by name.
-# The Burst is drawn at three times its sprite size over a screen-wide area; its texture
-# is cooked at half resolution so the frames fit the RAM left (docs/BUDGET.md).
-BURST_SHRINK = 2
+# The Burst is drawn at three times its sprite size over a screen-wide area, so a texel
+# covers three screen pixels: it is cooked at the sprite's own unit scale (no shrink).
+BURST_SHRINK = 1
+# The first two Burst frames (the flash and the ring) are the bright, large ones and band
+# on a palette fitted to the thin lines too: they get a palette of their own, fitted down
+# to the faint edge of their halo (`BURST_BRIGHT_THRESHOLD`, the lines use 24).
+BURST_BRIGHT_FRAMES = 2
+BURST_BRIGHT_THRESHOLD = 8
 EFFECT_CLIPS = (('Focus Effect', 'Lines Anim', 6629), ('Focus Effect End', 'Lines Anim', 6629),
                 ('Burst Effect', 'Heal Anim', 6375))
 
@@ -93,7 +98,40 @@ def effect_animation(source):
         out[name] = (clip, local['x'], local['y'], k['x'])
     return out
 
-def quantize_additive(image):
+def packbits(data):
+    """Run-length coding for a frame's texels, which are mostly a few long runs of
+    index 0 and of the halo's flat steps. A token below 0x80 is a literal of token+1
+    bytes; a token from 0x80 is a run of (token & 0x7f) + 2 copies of the next byte.
+    The guest streams it straight into the GPU (game/src/ability_art.rs `upload`)."""
+    out, i, n = bytearray(), 0, len(data)
+    while i < n:
+        j = i
+        while j + 1 < n and data[j + 1] == data[i] and j - i < 128:
+            j += 1
+        if j > i:
+            out += bytes([0x80 | (j - i - 1), data[i]])
+            i = j + 1
+            continue
+        k = i
+        while k < n and k - i < 128 and not (k + 1 < n and data[k] == data[k + 1]):
+            k += 1
+        out += bytes([k - i - 1]) + data[i:k]
+        i = k
+    return bytes(out)
+
+def unpackbits(data):
+    out, i = bytearray(), 0
+    while i < len(data):
+        token = data[i]
+        if token < 0x80:
+            out += data[i + 1:i + 2 + token]
+            i += 2 + token
+        else:
+            out += bytes([data[i + 1]]) * ((token & 0x7f) + 2)
+            i += 2
+    return bytes(out)
+
+def quantize_additive(image, threshold=24):
     """4bpp for an additive draw: the colour is premultiplied by the alpha, a
     texel that adds (almost) nothing is the transparent index 0 and every other
     entry has its semi-transparency bit, so the GPU's Add reads all of them."""
@@ -102,7 +140,7 @@ def quantize_additive(image):
     lit = []
     for r, g, b, a in px:
         r, g, b = (c * a // 255 for c in (r, g, b))
-        lit.append((r, g, b) if max(r, g, b) >= 24 else None)
+        lit.append((r, g, b) if max(r, g, b) >= threshold else None)
     colours = [c for c in lit if c is not None]
     palette, indices = [0], [0] * (w * h)
     if colours:
@@ -210,11 +248,14 @@ def cook():
     # alpha, black adding nothing, so they get palettes of their own that the
     # GPU's Add reads (`quantize_additive`).
     additive_from = len(groups)
+    # The Burst's two bright frames get their own palette, last, fitted to their halo.
+    burst = next(c for c in clips if c['name'] == 'Burst Effect')
+    bright = list(range(burst['start'], burst['start'] + BURST_BRIGHT_FRAMES))
     current = []
     for clip in clips:
         if clip['name'] not in effect_names:
             continue
-        indices = list(range(clip['start'], clip['start'] + clip['count']))
+        indices = [i for i in range(clip['start'], clip['start'] + clip['count']) if i not in bright]
         if shelf([images[i].size for i in current + indices]) is None:
             assert current, f"the {clip['name']} clip alone does not fit one sheet"
             groups.append(current)
@@ -223,15 +264,18 @@ def cook():
             current = current + indices
     if current:
         groups.append(current)
+    bright_clut = len(groups)
+    groups.append(bright)
     assert len(groups) <= CLUT_ROWS, f'{len(groups)} palettes exceed the {CLUT_ROWS} reserved rows'
 
     palettes, blob, frames = [], bytearray(), [None] * len(images)
+    raw_bytes = 0
     for clut_index, group in enumerate(groups):
         positions = shelf([images[i].size for i in group])
         sheet = Image.new('RGBA', (256, 256))
         for i, origin in zip(group, positions):
             sheet.paste(images[i], origin)
-        sw, _, palette, packed = (quantize_additive if clut_index >= additive_from else lambda s: quantize_alpha_coverage(s, 128))(sheet)
+        sw, _, palette, packed = (lambda s: quantize_additive(s, BURST_BRIGHT_THRESHOLD) if clut_index == bright_clut else quantize_additive(s) if clut_index >= additive_from else quantize_alpha_coverage(s, 128))(sheet)
         palettes.append(palette)
         for i, (x0, y0) in zip(group, positions):
             image = images[i]
@@ -243,9 +287,12 @@ def cook():
                     nibble = (byte >> (((x + x0) & 1) * 4)) & 15
                     texels[y * stride + x // 2] |= nibble << ((x & 1) * 4)
             assert len(texels) <= SLOT_BYTES, f'ability frame {i} exceeds one animation slot'
+            coded = packbits(bytes(texels))
+            assert unpackbits(coded) == bytes(texels)
             frames[i] = dict(offset=len(blob), width=image.width, height=image.height,
                              bounds=boxes[i], clut=clut_index)
-            blob.extend(texels)
+            blob.extend(coded)
+            raw_bytes += len(texels)
 
     palette_bytes = b''.join(palettes)
     payload = bytes(palette_bytes) + bytes(blob)
@@ -268,10 +315,10 @@ def cook():
     code = '\n'.join(lines) + '\n'
     (ROOT / 'data/ability-art.rs').write_text(code)
     report = {'clips': clips, 'frames': len(frames), 'palettes': len(palettes),
-              'payload_bytes': len(payload), 'clut_rect': list(CLUT), 'clut_rows': CLUT_ROWS,
+              'payload_bytes': len(payload), 'texel_bytes_uncoded': raw_bytes, 'clut_rect': list(CLUT), 'clut_rows': CLUT_ROWS,
               'animation': source.sid(anim_obj), 'art_sources': art_sources,
               'payload_sha256': hashlib.sha256(payload).hexdigest(),
-              'storage': 'linked RAM; frames reach VRAM through the shared 64x64 animation slots',
+              'storage': 'linked RAM, run-length coded per frame; frames are decoded into VRAM through the shared 64x64 animation slots',
               'limitations': ['The Crystal Heart has no clip here: its SD set is a separate '
                               'charge, dash and wall-hit sequence that P15 has not modelled.']}
     dump(ROOT / '.hkpsx/ability-art.json', report)
