@@ -123,8 +123,8 @@ SCENE_TABLE = (
     #
     # This row stays last. A row inserted anywhere else renumbers the chunk ids
     # the packs, the guest tables and the save records all address by;
-    # tests/test_regions.py is what guards that. Re-run host/cook_music.py, then
-    # host/ambience.py, then host/regions.py after any change here: the first two
+    # tests/test_regions.py is what guards that. Re-run hk-cook cook-music, then
+    # hk-cook ambience, then host/regions.py after any change here: the first two
     # are keyed on this table (ambience checks the music provenance covers the
     # same scene list, and AMBIENCE_SCENES is indexed by scene id), so running
     # them out of order raises instead of indexing off the end. Room_shop needs
