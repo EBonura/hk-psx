@@ -10,6 +10,10 @@
 
 use crate::aspid;
 use crate::baldur;
+use crate::gruzzer;
+use crate::vengefly;
+use crate::climber;
+use crate::false_knight;
 use crate::common::{component_records, err, get, path_id, Result};
 use crate::pyjson::Json;
 use crate::runner;
@@ -37,7 +41,10 @@ fn guest_enabled(control: Json) -> Json {
     }
 }
 
-pub fn scan(sc: &Scene, source: &Source) -> Result<Vec<Row>> {
+/// The catalogue: each scene's file and runtime bounds (quality.SCENE_TABLE).
+pub type Catalogue = [(String, [f64; 4])];
+
+pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
     for o in &sc.objects {
         if o.typename != "HealthManager" || !get(&o.tree, "m_Enabled")?.truthy() {
@@ -55,9 +62,56 @@ pub fn scan(sc: &Scene, source: &Source) -> Result<Vec<Row>> {
                 control = Some(("Baldur".to_string(), found));
             }
         }
+        if control.is_none() && name == "Giant Fly" && records.iter().any(|r| r.1 == "PlayMakerCollisionStay2D") {
+            if let Ok(found) = gruzzer::recognize_giant_fly(sc, gid, &o.tree) {
+                control = Some(("GruzMother".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Fly") && records.iter().any(|r| r.1 == "PlayMakerCollisionStay2D") {
+            if let Ok(found) = gruzzer::recognize(sc, source, gid, catalogue) {
+                let kind = match &found {
+                    Json::Obj(f) => match f.iter().find(|k| k.0 == "kind") {
+                        Some((_, Json::Str(k))) => k.clone(),
+                        _ => "Gruzzer".to_string(),
+                    },
+                    _ => "Gruzzer".to_string(),
+                };
+                control = Some((kind, found));
+            }
+        }
         if control.is_none() && name.starts_with("Spitter") && records.iter().any(|r| r.1 == "PersonalObjectPool") {
             if let Ok(found) = aspid::recognize(sc, source, gid) {
                 control = Some(("Aspid".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("False Knight") && records.iter().any(|r| r.1 == "EnemyHitEffectsArmoured") {
+            if let Ok(found) = false_knight::recognize_placement(sc, source, gid, &o.tree) {
+                control = Some(("FalseKnight".to_string(), found));
+            }
+        }
+        if control.is_none() && records.iter().any(|r| r.1 == "Climber") {
+            if let Ok(found) = climber::recognize(sc, source, gid) {
+                control = Some(("Climber".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Moss Walker") && records.iter().any(|r| r.1 == "NonBouncer") {
+            if let Ok(found) = climber::recognize_moss_walker(sc, source, gid, &o.tree) {
+                control = Some(("MossWalker".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Buzzer") && records.iter().any(|r| r.1 == "LineOfSightDetector") {
+            if let Ok(found) = vengefly::recognize(sc, source, gid) {
+                control = Some(("Vengefly".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Acid Flyer") && records.iter().any(|r| r.1 == "BigBouncer") {
+            if let Ok(found) = vengefly::recognize_acid_flyer(sc, source, gid, &o.tree) {
+                control = Some(("AcidFlyer".to_string(), found));
+            }
+        }
+        if control.is_none() && name.starts_with("Mosquito") && records.iter().any(|r| r.1 == "LineOfSightDetector") {
+            if let Ok(found) = vengefly::recognize_mosquito(sc, source, gid, &o.tree) {
+                control = Some(("Mosquito".to_string(), found));
             }
         }
         // The Runner gate comes after the named gates in actor_sources; the
