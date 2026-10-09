@@ -206,6 +206,10 @@ struct Stalactite {
     position: [f64; 2],
     frame: usize,
     embedded: Option<usize>,
+    /// The embedded version's `PolygonCollider2D` box (a `Breakable`: any nail
+    /// hit breaks it) and its offset from the stalactite, relative to it.
+    embedded_hit: [f64; 4],
+    embedded_dy: f64,
     hazard: Option<J>,
     hurt: [f64; 4],
     trigger: [f64; 4],
@@ -411,7 +415,23 @@ fn stalactites(sc: &Scene, art: &mut Art, hazards: &HashMap<String, J>) -> Resul
         let alert_records = component_records(sc, alert);
         let (_, trigger) = one(&alert_records, "BoxCollider2D")?;
         let mut embedded_frame = None;
+        let (mut embedded_hit, mut embedded_dy) = ([0.0; 4], 0.0);
         if let Some(embedded) = kid(&ks, "Embedded") {
+            // The fallen stalactite: `Breakable` + a trigger polygon, switched on at the landing.
+            let embedded_records = component_records(sc, embedded);
+            if !embedded_records.iter().any(|r| r.1 == "Breakable") {
+                return err("the embedded stalactite is no longer a Breakable");
+            }
+            let (epoly_id, epoly) = one(&embedded_records, "PolygonCollider2D")?;
+            let polygon = collider_polygons(sc, embedded, "PolygonCollider2D", epoly)?.remove(0);
+            let _ = epoly_id;
+            embedded_hit = [
+                py_min(polygon.iter().map(|p| p.0)) - here[0],
+                py_min(polygon.iter().map(|p| p.1)) - here[1],
+                py_max(polygon.iter().map(|p| p.0)) - here[0],
+                py_max(polygon.iter().map(|p| p.1)) - here[1],
+            ];
+            embedded_dy = point2(sc, embedded)?[1] - here[1];
             let er: Vec<&Value> = component_records(sc, embedded).into_iter().filter(|r| r.1 == "SpriteRenderer").map(|r| r.2).collect();
             if let Some(r) = er.first() {
                 embedded_frame = Some(art.unity(sc, get(r, "m_Sprite")?, get(r, "m_FlipX")?.truthy(), "Stalactite embedded")?);
@@ -432,6 +452,8 @@ fn stalactites(sc: &Scene, art: &mut Art, hazards: &HashMap<String, J>) -> Resul
             position: here,
             frame,
             embedded: embedded_frame,
+            embedded_hit,
+            embedded_dy,
             hazard,
             hurt: [
                 py_min(polygon.iter().map(|p| p.0)) - here[0],
@@ -870,11 +892,13 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
     let mut ss = Vec::new();
     for s in &all_stalactites {
         ss.push(format!(
-            "Stalactite{{scene:{},position:{},frame:{},embedded:{},hurt:{},trigger:{},hazard:{}}}",
+            "Stalactite{{scene:{},position:{},frame:{},embedded:{},embedded_hit:{},embedded_dy:{},hurt:{},trigger:{},hazard:{}}}",
             s.scene,
             b4(&s.position)?,
             s.frame,
             s.embedded.map_or(65535, |e| e),
+            b4(&s.embedded_hit)?,
+            q16(s.embedded_dy)?,
             b4(&s.hurt)?,
             b4(&s.trigger)?,
             hazard_id(&s.hazard)
