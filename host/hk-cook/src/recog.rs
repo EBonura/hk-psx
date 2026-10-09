@@ -1,0 +1,129 @@
+//! What the per-enemy recognizers (host/baldur.py, aspid.py, ...) share: the
+//! audited-assembly check, the FSM lookups and the tolerant comparisons they
+//! make against the values the audit recorded.
+
+use crate::common::{err, get, Result};
+use crate::cook_audio::sha;
+use crate::runner::ASSEMBLIES;
+use hk_unity::{Source, Value};
+
+/// Python `abs(float(a) - float(b)) <= 1e-6`; a non-number is a failure.
+pub fn near(a: Option<&Value>, b: f64) -> bool {
+    a.and_then(|v| match v {
+        Value::Bool(x) => Some(*x as i64 as f64),
+        other => other.float(),
+    })
+    .is_some_and(|a| (a - b).abs() <= 1e-6)
+}
+
+/// `_scalar`: a compact FSM parameter's variable name or its value.
+pub fn scalar(v: &Value) -> Value {
+    if v.is_map() {
+        if v.get("useVariable").is_some_and(Value::truthy) {
+            v.get("name").cloned().unwrap_or(Value::Str(Vec::new()))
+        } else {
+            v.get("value").cloned().unwrap_or(Value::Bool(false))
+        }
+    } else {
+        v.clone()
+    }
+}
+
+/// `_only`: the single record of a kind, or a refusal naming `who`.
+pub fn only<'a>(records: &[(i64, &str, &'a Value)], kind: &str, who: &str) -> Result<(i64, &'a Value)> {
+    let matches: Vec<_> = records.iter().filter(|r| r.1 == kind).collect();
+    if matches.len() != 1 {
+        return err(format!("{who} requires exactly one {kind}"));
+    }
+    Ok((matches[0].0, matches[0].2))
+}
+
+/// The audited managed assemblies still hash as audited.
+pub fn check_assemblies(source: &Source, who: &str) -> Result<()> {
+    for (name, expected) in ASSEMBLIES {
+        let bytes = std::fs::read(source.directory.join("Managed").join(name)).map_err(|e| format!("{name}: {e}"))?;
+        if sha(&bytes) != expected {
+            return err(format!("{who} methods require a fresh source audit: {name}"));
+        }
+    }
+    Ok(())
+}
+
+/// `{v['name']: v['value'] for group in fsm['variables'].values() if list for v in group if dict with name and value}`.
+pub fn variables<'a>(fsm: &'a Value) -> Vec<(String, &'a Value)> {
+    let mut out: Vec<(String, &Value)> = Vec::new();
+    if let Some(Value::Map(groups)) = fsm.get("variables") {
+        for (_, group) in groups {
+            for v in group.list().unwrap_or(&[]) {
+                if v.is_map() && v.get("name").is_some() && v.get("value").is_some() {
+                    let n = v.get("name").and_then(Value::str).unwrap_or_default();
+                    match out.iter_mut().find(|(k, _)| *k == n) {
+                        Some(slot) => slot.1 = v.get("value").unwrap(),
+                        None => out.push((n, v.get("value").unwrap())),
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `{st['name']: st for st in fsm['states']}`: the last of a repeated name wins.
+pub fn states<'a>(fsm: &'a Value) -> Result<Vec<(String, &'a Value)>> {
+    let mut out: Vec<(String, &Value)> = Vec::new();
+    for st in get(fsm, "states")?.list().ok_or("states is not a list")? {
+        let n = get(st, "name")?.str().unwrap_or_default();
+        match out.iter_mut().find(|(k, _)| *k == n) {
+            Some(slot) => slot.1 = st,
+            None => out.push((n, st)),
+        }
+    }
+    Ok(out)
+}
+
+pub fn state<'a>(states: &[(String, &'a Value)], name: &str) -> Option<&'a Value> {
+    states.iter().find(|(k, _)| k == name).map(|(_, v)| *v)
+}
+
+/// `[(t['fsmEvent']['name'], t['toState']) for t in state['transitions']]`.
+pub fn transitions(state: &Value) -> Result<Vec<(String, String)>> {
+    get(state, "transitions")?
+        .list()
+        .unwrap_or(&[])
+        .iter()
+        .map(|t| Ok((get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(), get(t, "toState")?.str().unwrap_or_default())))
+        .collect()
+}
+
+/// A tk2d library's clips keyed by name (clips with an empty name left out).
+pub fn clips_by_name(library: &Value) -> Result<Vec<(String, &Value)>> {
+    let mut out: Vec<(String, &Value)> = Vec::new();
+    for c in get(library, "clips")?.list().unwrap_or(&[]) {
+        let n = get(c, "name")?.str().unwrap_or_default();
+        if n.is_empty() {
+            continue;
+        }
+        match out.iter_mut().find(|(k, _)| *k == n) {
+            Some(slot) => slot.1 = c,
+            None => out.push((n, c)),
+        }
+    }
+    Ok(out)
+}
+
+/// `(len(clip['frames']), clip['fps'], clip['wrapMode']) == (frames, fps, wrap)`.
+pub fn clip_is(clip: Option<&Value>, frames: usize, fps: f64, wrap: i64) -> bool {
+    clip.is_some_and(|c| {
+        c.get("frames").and_then(Value::list).map(<[Value]>::len) == Some(frames)
+            && c.get("fps").and_then(|f| match f {
+                Value::Bool(_) => None,
+                other => other.float(),
+            }) == Some(fps)
+            && c.get("wrapMode").and_then(Value::int) == Some(wrap)
+    })
+}
+
+pub fn xy(v: &Value, key: &str) -> Result<[f64; 2]> {
+    let p = get(v, key)?;
+    Ok([get(p, "x")?.float().ok_or("not a number")?, get(p, "y")?.float().ok_or("not a number")?])
+}
