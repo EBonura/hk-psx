@@ -234,6 +234,7 @@ struct Sim {
     entered: bool,
     left_arena: bool,
     gates_closed: bool,
+    ticks: u32,
     floor_broken: bool,
 }
 
@@ -289,6 +290,7 @@ impl Sim {
             entered: false,
             left_arena: false,
             gates_closed: false,
+            ticks: 0,
             floor_broken: false,
         }
     }
@@ -351,6 +353,23 @@ impl Sim {
     /// One 60 Hz tick: `frame::simulate`'s hero path, then the False Knight
     /// branch of `EnemyWorld::tick`, in that order.
     fn step(&mut self, world: &World, raw: u16) {
+        self.step_one(world, raw);
+        // A blocking load inside the run (a region the prefetch had not made
+        // resident: the journey's arena trigger) realigns the guest's clock
+        // one tick ahead and reseeds the 50 Hz phase from the held pad
+        // (`hk_clock.realign(sim_clock + 1); input::seed_latency()`), so one
+        // more tick runs on the pad held now. `BOSS_SIM_RELOAD` lists the
+        // simulated ticks after which that happens.
+        let n = self.ticks;
+        self.ticks += 1;
+        if reload_ticks().contains(&n) {
+            self.lat_phase = phase_at_load_disc();
+            self.lat_previous = raw;
+            self.lat_taken = raw;
+            self.step_one(world, raw);
+        }
+    }
+    fn step_one(&mut self, world: &World, raw: u16) {
         // The Knight's view of the pad: left, right and cross from the tick
         // before on the ticks that hold a 50 Hz step, from the last step's on
         // the one that holds none. Every tick passes through here, a frozen
@@ -800,6 +819,14 @@ fn read_tape(path: &str) -> Vec<u16> {
 /// `PHASE_AT_LOAD` plus the ticks of load the simulation does not model. Found
 /// by replaying a tape and matching the Knight's trace (phase 4 for a disc at
 /// phase 0, the default; add the disc's phase), overridden by `BOSS_SIM_PHASE`.
+fn reload_ticks() -> &'static [u32] {
+    static RELOAD: std::sync::OnceLock<Vec<u32>> = std::sync::OnceLock::new();
+    RELOAD.get_or_init(|| std::env::var("BOSS_SIM_RELOAD").ok().map(|v| v.split(',').filter_map(|x| x.trim().parse().ok()).collect()).unwrap_or_default())
+}
+/// The disc's own `PHASE_AT_LOAD`, which a reseed restores (0 by default).
+fn phase_at_load_disc() -> u8 {
+    std::env::var("BOSS_SIM_DISC_PHASE").ok().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0) % 6
+}
 fn phase_at_load() -> u8 {
     std::env::var("BOSS_SIM_PHASE").ok().and_then(|v| v.parse::<u8>().ok()).unwrap_or(4) % 6
 }
