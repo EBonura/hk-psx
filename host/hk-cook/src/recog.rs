@@ -168,3 +168,45 @@ pub fn variables_strict<'a>(fsm: &'a Value) -> Result<Vec<(String, Option<&'a Va
     }
     Ok(out)
 }
+
+/// What an audited action parameter must be.
+pub enum Want {
+    F(f64),
+    I(i64),
+    S(&'static str),
+    B(bool),
+}
+
+/// The `ACTIONS` table check of the Aspid and Vengefly recognizers: each
+/// `(state, action)` must have exactly one enabled action of that name, whose
+/// compact parameters equal the audited values (numbers within 1e-6 when the
+/// audit recorded a float).
+pub fn check_actions(sts: &[(String, &Value)], table: &[(&str, &str, &[(&str, Want)])], who: &str) -> Result<()> {
+    for &(st, action, expected) in table {
+        let data = get(state(sts, st).ok_or("missing state")?, "actionData")?;
+        let names = get(data, "actionNames")?.list().unwrap_or(&[]);
+        let enabled = get(data, "actionEnabled")?.list().unwrap_or(&[]);
+        let matches: Vec<usize> = names.iter().enumerate().filter(|(i, n)| n.str().is_some_and(|n| n.rsplit('.').next() == Some(action)) && enabled.get(*i).is_some_and(Value::truthy)).map(|(i, _)| i).collect();
+        if matches.len() != 1 {
+            return err(format!("unsupported {who} action set: {st}/{action}"));
+        }
+        let fields = hk_unity::playmaker::action_fields(data, matches[0], false).map_err(|e| e.to_string())?;
+        for (key, want) in expected {
+            let actual = fields.iter().find(|f| f.0 == *key).map(|f| scalar(&f.1));
+            let numeric = |a: &Value| matches!(a, Value::Int(_) | Value::UInt(_) | Value::F32(_) | Value::F64(_));
+            let ok = match want {
+                Want::F(v) => match &actual {
+                    Some(a) if numeric(a) => near(Some(a), *v),
+                    other => other.as_ref().is_some_and(|a| a.py_eq(&Value::F64(*v))),
+                },
+                Want::I(v) => actual.as_ref().is_some_and(|a| a.py_eq(&Value::Int(*v))),
+                Want::S(s) => actual.as_ref().and_then(Value::str).as_deref() == Some(*s),
+                Want::B(b) => actual.as_ref().is_some_and(|a| a.py_eq(&Value::Bool(*b))),
+            };
+            if !ok {
+                return err(format!("unsupported {who} parameter: {st}/{action}.{key}"));
+            }
+        }
+    }
+    Ok(())
+}
