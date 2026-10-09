@@ -2,6 +2,7 @@
 //! byte-identical output.
 
 pub mod climber;
+pub mod colliders;
 pub mod common;
 pub mod cook_audio;
 pub mod actors;

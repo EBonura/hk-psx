@@ -139,6 +139,32 @@ fn main() {
                         }
                         _ => {}
                     }
+                    // The rest of the actor record the cook reads.
+                    if let Some(r) = rows.iter().find(|r| r.source == src) {
+                        let strs = |v: &[String]| Json::List(v.iter().map(|s| Json::Str(s.clone())).collect());
+                        let mine = [
+                            ("position", Json::List(r.position.iter().map(|&f| Json::Float(f)).collect())),
+                            ("health", hk_cook::music::value_json(r.health_manager.get("hp").unwrap())),
+                            ("components", Json::Obj(r.components.iter().map(|c| (c.0.to_string(), Json::Str(c.1.clone()))).collect())),
+                            ("colliders", r.colliders.clone()),
+                            ("fsm_ids", strs(&r.fsm_ids)),
+                            ("limitations", strs(&r.limitations)),
+                        ];
+                        for (key, value) in mine {
+                            if get(row, key).as_ref() != Some(&value) {
+                                bad += 1;
+                                println!("{name} {src}: {key} differs");
+                            }
+                        }
+                        *checked.entry("rows".to_string()).or_default() += 1;
+                    } else {
+                        bad += 1;
+                        println!("{name} {src}: no such actor");
+                    }
+                }
+                if rows.len() != oracle.len() {
+                    bad += 1;
+                    println!("{name}: {} actors, oracle has {}", rows.len(), oracle.len());
                 }
             }
             println!("checked {checked:?}, {bad} mismatches");
