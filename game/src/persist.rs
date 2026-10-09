@@ -445,6 +445,22 @@ mod tests {
         assert_eq!(s.all(Kind::GeoRock).collect::<Vec<_>>(), [(3, 2, 0)]);
     }
     #[test]
+    fn clear_matching_drops_only_what_the_test_names() {
+        let mut s = Store::new();
+        // A Blocker's death below the state groups, a permanent one and two that
+        // a rest forgets, and a totem the rest does not concern.
+        assert!(s.set(Kind::Enemy, 2, 1, 1));
+        assert!(s.set(Kind::Enemy, 2, 16, 1));
+        assert!(s.set(Kind::Enemy, 2, 17, 2));
+        assert!(s.set(Kind::Enemy, 6, 18, 2));
+        assert!(s.set(Kind::SoulTotem, 2, 17, 2));
+        s.clear_matching(Kind::Enemy, |local, value| local >= 16 && value == 2);
+        assert_eq!(s.all(Kind::Enemy).collect::<Vec<_>>(), [(2, 1, 1), (2, 16, 1)]);
+        assert_eq!(s.get(Kind::SoulTotem, 2, 17), Some(2));
+        assert_eq!(s.items().len(), 3);
+        assert!(s.items().windows(2).all(|w| w[0] >> 8 < w[1] >> 8));
+    }
+    #[test]
     fn a_full_store_refuses_and_counts_rather_than_evicting() {
         let mut s = Store::new();
         for local in 0..MAX_ITEMS {
