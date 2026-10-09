@@ -66,11 +66,17 @@ pub fn scene_rows(
         if !actor.supported || actor.spec_source_id >= ADDITIVE_BASE {
             continue;
         }
-        if actor.control.as_ref().is_some_and(|c| OWN_PERSISTENCE.contains(&c.0.as_str())) {
+        if actor
+            .control
+            .as_ref()
+            .is_some_and(|c| OWN_PERSISTENCE.contains(&c.0.as_str()))
+        {
             continue;
         }
         let records = component_records(sc, actor.game_object);
-        let Some(item) = records.iter().find(|r| r.1 == "PersistentBoolItem") else { continue };
+        let Some(item) = records.iter().find(|r| r.1 == "PersistentBoolItem") else {
+            continue;
+        };
         let tree = item.2;
         if flag(tree, "dontSave") {
             continue;
@@ -78,14 +84,31 @@ pub fn scene_rows(
         let semi = flag(tree, "semiPersistent");
         // `persistentBoolData.id` is empty in the scene files and becomes the
         // owner's name; an authored one would be used as it is.
-        let authored = tree.get("persistentBoolData").and_then(|d| d.get("id")).and_then(Value::str).unwrap_or_default();
-        let state = if authored.is_empty() { actor.name.clone() } else { authored };
+        let authored = tree
+            .get("persistentBoolData")
+            .and_then(|d| d.get("id"))
+            .and_then(Value::str)
+            .unwrap_or_default();
+        let state = if authored.is_empty() {
+            actor.name.clone()
+        } else {
+            authored
+        };
         let next = groups.len();
         let (group, was_semi) = *groups.entry((scene, state.clone())).or_insert((next, semi));
         if was_semi != semi {
-            return err(format!("{}: placements named {state} disagree about semiPersistent", sc.base.name));
+            return err(format!(
+                "{}: placements named {state} disagree about semiPersistent",
+                sc.base.name
+            ));
         }
-        rows.push(Row { scene, source_id: actor.spec_source_id, group, name: actor.name.clone(), semi });
+        rows.push(Row {
+            scene,
+            source_id: actor.spec_source_id,
+            group,
+            name: actor.name.clone(),
+            semi,
+        });
     }
     Ok(rows)
 }
@@ -100,7 +123,10 @@ pub fn render(rows: &[Row], groups: usize) -> String {
     out.push_str("pub const PERSISTENT_ACTORS: &[hk_sim::PersistentActor] = &[\n");
     for r in rows {
         let word = r.group as u16 | if r.semi { 0x8000 } else { 0 };
-        out.push_str(&format!("    ({}, {}, {:#06x}), // {}\n", r.scene, r.source_id, word, r.name));
+        out.push_str(&format!(
+            "    ({}, {}, {:#06x}), // {}\n",
+            r.scene, r.source_id, word, r.name
+        ));
     }
     out.push_str("];\n");
     out
@@ -112,24 +138,33 @@ pub fn main(root: &Path, source_dir: Option<&Path>) -> Result<()> {
         None => Source::from_doctor(root),
     }
     .map_err(|e| e.to_string())?;
-    let text = std::fs::read(root.join("data/regions.json")).map_err(|e| format!("data/regions.json: {e}"))?;
+    let text = std::fs::read(root.join("data/regions.json"))
+        .map_err(|e| format!("data/regions.json: {e}"))?;
     let report: J = serde_json::from_slice(&text).map_err(|e| format!("data/regions.json: {e}"))?;
     let scenes = report["scenes"].as_array().ok_or("report without scenes")?;
     let catalogue: Vec<(String, [f64; 4], String)> = scenes
         .iter()
         .map(|s| {
-            let b: Vec<f64> = s["runtime_bounds"].as_array().map(|a| a.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect()).unwrap_or_default();
+            let b: Vec<f64> = s["runtime_bounds"]
+                .as_array()
+                .map(|a| a.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
+                .unwrap_or_default();
             if b.len() != 4 {
                 return err("scene without runtime_bounds");
             }
-            Ok((s["file"].as_str().unwrap_or("").to_string(), [b[0], b[1], b[2], b[3]], s["scene_name"].as_str().unwrap_or("").to_string()))
+            Ok((
+                s["file"].as_str().unwrap_or("").to_string(),
+                [b[0], b[1], b[2], b[3]],
+                s["scene_name"].as_str().unwrap_or("").to_string(),
+            ))
         })
         .collect::<Result<_>>()?;
     let mut groups = HashMap::new();
     let mut rows = Vec::new();
     for (index, s) in scenes.iter().enumerate() {
         let scene = s["scene_id"].as_u64().unwrap_or(index as u64) as usize;
-        let sc = Scene::new(&source, s["file"].as_str().unwrap_or("")).map_err(|e| e.to_string())?;
+        let sc =
+            Scene::new(&source, s["file"].as_str().unwrap_or("")).map_err(|e| e.to_string())?;
         rows.extend(scene_rows(&sc, &source, &catalogue, scene, &mut groups)?);
     }
     rows.sort_by_key(|r| (r.scene, r.source_id));
@@ -137,8 +172,14 @@ pub fn main(root: &Path, source_dir: Option<&Path>) -> Result<()> {
         return err("more persistent states than a group word holds");
     }
     let path = root.join("data/actor_persistence.rs");
-    std::fs::write(&path, render(&rows, groups.len())).map_err(|e| format!("{}: {e}", path.display()))?;
-    println!("actor persistence: {} placements in {} states, {} semi-persistent", rows.len(), groups.len(), rows.iter().filter(|r| r.semi).count());
+    std::fs::write(&path, render(&rows, groups.len()))
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    println!(
+        "actor persistence: {} placements in {} states, {} semi-persistent",
+        rows.len(),
+        groups.len(),
+        rows.iter().filter(|r| r.semi).count()
+    );
     Ok(())
 }
 
@@ -149,8 +190,20 @@ mod tests {
     #[test]
     fn rows_render_as_the_sorted_table_the_guest_searches() {
         let rows = vec![
-            Row { scene: 2, source_id: 125050, group: 0, name: "Zombie Runner 1".into(), semi: false },
-            Row { scene: 19, source_id: 77, group: 1, name: "Hatcher".into(), semi: true },
+            Row {
+                scene: 2,
+                source_id: 125050,
+                group: 0,
+                name: "Zombie Runner 1".into(),
+                semi: false,
+            },
+            Row {
+                scene: 19,
+                source_id: 77,
+                group: 1,
+                name: "Hatcher".into(),
+                semi: true,
+            },
         ];
         let text = render(&rows, 2);
         assert!(text.contains("pub const GROUPS: usize = 2;"));
