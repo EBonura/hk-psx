@@ -314,7 +314,7 @@ Lifeblood cocoon) 59,296B at 0x521B0..0x60950, Focus 108,208B at
 0x60950..0x7B000 and Runner 20,464B at 0x7B000..0x7FFF0, below the 16 bytes
 `psx_spu::init` parks the disabled reverb work area on. Focus and Runner are
 pinned to the top; the world bank is cooked to end where Focus begins, and
-`host/ambience.py` stacks the ring and its own ceiling below it.
+`host/hk-cook/src/ambience.rs` stacks the ring and its own ceiling below it.
 Ambience is loaded per area since 2026-09-23: a clip is read at the scene gate
 that first needs it, into an address it shares with clips of other areas, and
 two clips share bytes only when no cue plays both and no gate joins scenes
@@ -334,15 +334,15 @@ each cue's loops and bytes. Before per-area loading, ambience *shrank* 16,272B
 when the resident atmos set went from six channels to eight, because eight
 loops only fit at 4 kHz and the set that covers the game is cheaper at that
 rate than six were at 8 kHz; Focus and Runner moved down with it. Their bases
-are hardcoded in `host/focus_audio.py` and `host/runner_audio.py`, and
-`host/ambience.py` refuses to finish a cook that leaves either of them stale,
+are hardcoded in `host/hk-cook/src/focus_audio.rs` and `host/runner_audio.py`, and
+`host/hk-cook/src/ambience.rs` refuses to finish a cook that leaves either of them stale,
 naming the base each one has to take. The cheapest further margin priced but
 not taken is still 8,192B from halving the streamed clip's SPU ring, which is
 sized for the 8 kHz era and gives the streamed loop 3.58-second halves rather
 than the 1.79 s `game/src/audio_stream.rs` is written and commented for. The figures this
 paragraph's first version quoted were wrong in three ways and omitted the
 Runner bank entirely, which put the free figure 20,464B too high on its own;
-`host/ambience.py::spu_ceiling` computes the ceiling the cook actually
+`host/hk-cook/src/ambience.rs `spu_ceiling`` computes the ceiling the cook actually
 enforces. The SDK silent loop is at 0x1000. Player short effects/heal
 use 22,050Hz mono; running and Geo use 11,025Hz mono; sustained Focus charging
 uses 8,000Hz mono. Ambience is one rate now: all eight resident loops are

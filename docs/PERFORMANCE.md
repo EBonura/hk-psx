@@ -352,10 +352,10 @@ mask bit) on axis-aligned averaging draws. The measured upper bound was
 to the opaque core's four-piece budget: 257 packets over the whole crash
 tape, none in any final frame, so the code was not kept.
 
-Build note: UnityPy decodes FSB clips through FMOD, whose default output
-needs a usable host audio device and failed with OUTPUT DRIVERCALL in the
-Geo audio cook. `host/fmod_nosound.py` (imported by `cook_audio.py`) forces
-the NOSOUND output; the cooked Geo bank hash is unchanged.
+Build note: FMOD's default output needs a usable host audio device and
+failed with OUTPUT DRIVERCALL in the Geo audio cook. The Rust decode
+(`host/hk-cook/src/fmod.rs`) selects the NOSOUND output; the cooked Geo bank
+hash is unchanged.
 
 ### Parallax layer breakdown
 

@@ -136,6 +136,14 @@ impl Source {
         Err(Error::Missing(format!("Unity external not found: {name}")))
     }
 
+    /// The files loaded so far, by the path relative to the data directory
+    /// (the keys of host/source.py's `files`), sorted.
+    pub fn loaded_files(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.files.lock().unwrap().iter().filter(|(_, slot)| slot.get().is_some()).map(|(k, _)| k.clone()).collect();
+        names.sort();
+        names
+    }
+
     /// A loaded file, parsed once per source even when threads race for it.
     pub fn file(&self, name: &str) -> Result<Arc<SerializedFile>> {
         let (path, key) = self.resolve(name)?;
