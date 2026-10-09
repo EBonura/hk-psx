@@ -1728,9 +1728,12 @@ impl Actor {
         // exactly on Terrain and the segment model invents a perpetual wall.
         //
         // The Zombie Shield carries the same `Walker` and is read by the same
-        // Sweep model, so it takes the same clearance. That is the one number
-        // here borrowed rather than measured on this placement.
-        let foot_skin=if self.runner().is_some()||self.zombie_shield().is_some() {983}else{0};
+        // Sweep model, so it takes the same clearance. Every other body that
+        // falls (the Crawlers, the Husk Guard) rests the same 0.015 above its
+        // floor in the original: tools/placement-census measures it on all of
+        // them against the survey of the original, so the clearance is the
+        // Rigidbody2D contact offset and is not a family's own.
+        let foot_skin=983;
         let gravity = if let ActorController::Runner { params, .. } = spec.controller { params.gravity } else { 60 * ONE };
         let mut p = Params { gravity, fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1]-foot_skin, top: b[3], ..Params::ZERO };
         if self.spawn_state == SpawnState::Pending {

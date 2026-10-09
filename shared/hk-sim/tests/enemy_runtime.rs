@@ -858,6 +858,10 @@ fn actor_outside_activation_grid_still_moves_and_contacts_in_collision_apron() {
     assert_eq!(v.health, 4);
 }
 
+/// The clearance every falling body keeps above its floor, the Rigidbody2D
+/// contact offset (0.015 world units): the census measures it on the original.
+const FOOT_SKIN: i32 = 983;
+
 #[test]
 fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
     const OVERLAPPING_SPEC: ActorSpec = ActorSpec { dream_soul: 0, ..SPEC };
@@ -879,7 +883,7 @@ fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
     tick(&mut w, &remote, &floor, &mut p, &mut v, &n);
     assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, OVERLAPPING.y);
     tick(&mut w, &r, &floor, &mut p, &mut v, &n);
-    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE + FOOT_SKIN);
     // A new grid's intersecting edge must not trigger the initial placement
     // correction again. Ordinary movement retains the existing sweep rules.
     let mut changed = room();
@@ -892,12 +896,14 @@ fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
     w.sync_region(&remote);
     w.sync_region(&r);
     tick(&mut w, &r, &changed, &mut p, &mut v, &n);
-    assert!(w.actor_state(0, PLACEMENT.source_id).unwrap().1 < ONE);
+    assert!(w.actor_state(0, PLACEMENT.source_id).unwrap().1 < ONE + FOOT_SKIN);
 }
 
 #[test]
 fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
-    const EMBEDDED: hk_sim::ActorPlacement = hk_sim::ActorPlacement { y: ONE / 2, ..PLACEMENT };
+    // Three quarters down the box: pushing up is the smaller move with or
+    // without the clearance (at half height the two are a tie it breaks upward).
+    const EMBEDDED: hk_sim::ActorPlacement = hk_sim::ActorPlacement { y: ONE * 3 / 4, ..PLACEMENT };
     let mut bytes = room();
     bytes[28..32].copy_from_slice(&40u32.to_le_bytes());
     let edge_offset = 40 + 16 + 20 + 16;
@@ -925,7 +931,7 @@ fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
     assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, EMBEDDED.y);
     w.reset_scene(0);
     tick(&mut w, &r, &clear, &mut p, &mut v, &n);
-    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE + FOOT_SKIN);
 }
 
 #[test]
