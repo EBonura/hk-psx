@@ -1,8 +1,9 @@
 //! Separable filtered resizing and bilinear affine sampling of 8-bit images.
 //!
-//! Resizing runs a horizontal pass and then a vertical pass, each an
-//! independent 1-D convolution whose kernel is the chosen filter stretched by
-//! the shrink factor and normalised to unit sum. Weights are held in fixed
+//! Resizing runs a horizontal pass and then a vertical pass (the other way
+//! round for very tall images that shrink), each an independent 1-D
+//! convolution whose kernel is the chosen filter stretched by the shrink
+//! factor and normalised to unit sum. Weights are held in fixed
 //! point and each pass rounds back to 8 bits. Colour images with alpha are
 //! premultiplied before either operation and divided back out afterwards.
 
@@ -164,8 +165,16 @@ impl Image {
         let alpha = self.mode == Mode::Rgba;
         let src = if alpha { self.premultiply() } else { self.clone() };
         let bands = self.mode.pixel_size();
-        let wide = pass(&src.data, src.width, src.height, bands, w, true, filter);
-        let data = pass(&wide, w, src.height, bands, h, false, filter);
+        // Rows first, except when the image is more than 100 times taller than
+        // wide and loses height: then columns first.
+        let columns_first = h < src.height && src.height > 100 * src.width;
+        let data = if columns_first {
+            let tall = pass(&src.data, src.width, src.height, bands, h, false, filter);
+            pass(&tall, src.width, h, bands, w, true, filter)
+        } else {
+            let wide = pass(&src.data, src.width, src.height, bands, w, true, filter);
+            pass(&wide, w, src.height, bands, h, false, filter)
+        };
         let mut out = Image { mode: src.mode, width: w, height: h, data };
         out.clear_pad();
         if alpha {
