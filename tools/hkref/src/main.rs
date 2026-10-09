@@ -251,6 +251,7 @@ fn real_main() -> Result<(), String> {
         }
         ["port", pr] => cmd_port(&load(pr, &work)?, &work),
         ["og", pr] => cmd_og(&load(pr, &work)?, &work, 8),
+        ["og", pr, n] => cmd_og(&load(pr, &work)?, &work, n.parse().map_err(|_| "og: shot count".to_string())?),
         ["sweep", pr, seeds] => {
             let list: Vec<u32> = seeds.split(',').filter_map(|x| x.parse().ok()).collect();
             cmd_sweep(&load(pr, &work)?, &work, &list)
