@@ -13,6 +13,7 @@ use crate::baldur;
 use crate::gruzzer;
 use crate::mawlek;
 use crate::blocker;
+use crate::colliders;
 use crate::hatcher;
 use crate::husk_guard;
 use crate::pigeon;
@@ -34,6 +35,52 @@ pub struct Row {
     pub control: Option<(String, Json)>,
     /// `movement_supported`: a control that is not an additive-scene merge the controller refuses.
     pub supported: bool,
+    /// The HealthManager's object id, scene-unique (`spec_source_id`).
+    pub spec_source_id: i64,
+    pub position: [f64; 3],
+    pub health_manager: Value,
+    /// `_colliders`, as the JSON dicts the cook reports hold.
+    pub colliders: Json,
+    /// `components`: object id to kind, in object order.
+    pub components: Vec<(i64, String)>,
+    /// The last component of each kind the cook reads off the actor (`tk2dSprite`,
+    /// `tk2dSpriteAnimator`, `Recoil`, `DamageHero`, `Rigidbody2D`, `EnemyDreamnailReaction`).
+    pub parts: Vec<(String, i64, Value)>,
+    /// `fsm_ids`: the PlayMakerFSM components, as `file:path_id`.
+    pub fsm_ids: Vec<String>,
+    pub limitations: Vec<String>,
+}
+
+impl Row {
+    /// `actor[kind]`: the last component of one of the recorded kinds.
+    pub fn part(&self, kind: &str) -> Option<&Value> {
+        self.parts.iter().find(|p| p.0 == kind).map(|p| &p.2)
+    }
+}
+
+/// `actor['limitations']` as `actor_sources` leaves it for an admitted control.
+fn control_limitations(kind: &str, control: &Json) -> Vec<String> {
+    let listed = || -> Vec<String> {
+        match control {
+            Json::Obj(f) => match f.iter().find(|k| k.0 == "limitations") {
+                Some((_, Json::List(l))) => l.iter().filter_map(|s| if let Json::Str(s) = s { Some(s.clone()) } else { None }).collect(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    };
+    match kind {
+        "WalkLeftRight" => vec![
+            "WalkLeftRight subset: global GO LEFT/RIGHT events and first-crawler activation are not executed.".to_string(),
+            "Initial random direction requires deterministic guest sampling; Unity RNG sequence is not reproduced.".to_string(),
+        ],
+        "ZombieSwipeWalker" => {
+            let mut l: Vec<String> = listed().into_iter().filter(|s| !s.starts_with("Guest actor/clip/sensing/audio bindings")).collect();
+            l.push("Charge Dust and source death effects are not presented; audio uses the resident Runner bank.".to_string());
+            l
+        }
+        _ => listed(),
+    }
 }
 
 /// `dict(control, guest_enabled=True)`: the key keeps its position.
@@ -206,7 +253,41 @@ fn scan_with(sc: &Scene, source: &Source, catalogue: &Catalogue, family: bool) -
         }
         // Content merged in from an additive scene is admitted one controller at a time.
         let supported = control.as_ref().is_some_and(|c| o.id < 100000 || matches!(&c.1, Json::Obj(f) if f.iter().any(|k| k.0 == "admit_from_additive_scene" && matches!(k.1, Json::Bool(true)))));
-        rows.push(Row { source: sc.sid(o.id), game_object: gid, name, control, supported });
+        let limitations = match &control {
+            Some((kind, c)) => control_limitations(kind, c),
+            None => vec!["Enemy PlayMaker movement and state transitions remain unsupported.".to_string()],
+        };
+        let mut parts: Vec<(String, i64, Value)> = Vec::new();
+        for &(id, kind, tree) in &records {
+            if matches!(kind, "tk2dSprite" | "tk2dSpriteAnimator" | "Recoil" | "DamageHero" | "Rigidbody2D" | "EnemyDreamnailReaction") {
+                match parts.iter_mut().find(|p| p.0 == kind) {
+                    Some(slot) => *slot = (kind.to_string(), id, tree.clone()),
+                    None => parts.push((kind.to_string(), id, tree.clone())),
+                }
+            }
+        }
+        let mut fsm_ids = Vec::new();
+        for r in get(sc.go(gid).ok_or("no such GameObject")?, "m_Component")?.list().unwrap_or(&[]) {
+            let obj = u(sc.deref(get(r, "component")?))?;
+            if obj.class_id() == 114 && u(source.typename(&obj))? == "PlayMakerFSM" {
+                fsm_ids.push(obj.sid());
+            }
+        }
+        rows.push(Row {
+            source: sc.sid(o.id),
+            game_object: gid,
+            name,
+            control,
+            supported,
+            spec_source_id: o.id,
+            position: u(sc.point(gid, 0.0, 0.0, 0.0))?,
+            health_manager: o.tree.clone(),
+            colliders: colliders::colliders(sc, gid, &records)?,
+            components: records.iter().map(|r| (r.0, r.1.to_string())).collect(),
+            parts,
+            fsm_ids,
+            limitations,
+        });
     }
     Ok(rows)
 }
