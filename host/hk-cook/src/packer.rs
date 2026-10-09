@@ -12,6 +12,9 @@ pub fn aligned(n: i64) -> i64 {
 /// One free rectangle of a page: (x, y, w, h).
 type Free = (i64, i64, i64, i64);
 
+/// A candidate position: its score key, page, x and y.
+type Candidate = ((i64, i64, usize, i64, i64), usize, i64, i64);
+
 /// A placed rectangle: (index, page, x, y, width, height).
 pub type Placement = (usize, usize, i64, i64, i64, i64);
 
@@ -23,15 +26,24 @@ pub fn dense_pack(rectangles: &[(i64, i64, usize)]) -> Result<(usize, Vec<Placem
     // `reverse=True` on (area, longer side, index).
     sorted.sort_by_key(|r| std::cmp::Reverse((r.0 * r.1, r.0.max(r.1), r.2)));
     for (width, height, index) in sorted {
-        if !(0 < width && width <= 256) || !(0 < height && height <= 256) || width % 4 != 0 {
+        if !(0 < width && width <= 256 && 0 < height && height <= 256) || width % 4 != 0 {
             return err("Invalid page rectangle");
         }
-        let mut best: Option<((i64, i64, usize, i64, i64), usize, i64, i64)> = None;
+        let mut best: Option<Candidate> = None;
         for (pi, free) in pages.iter().enumerate() {
             for &(x, y, w, h) in free {
                 if width <= w && height <= h {
-                    let key = ((w - width).min(h - height), (w - width).max(h - height), pi, y, x);
-                    if best.as_ref().is_none_or(|b| (key, pi, x, y) < (b.0, b.1, b.2, b.3)) {
+                    let key = (
+                        (w - width).min(h - height),
+                        (w - width).max(h - height),
+                        pi,
+                        y,
+                        x,
+                    );
+                    if best
+                        .as_ref()
+                        .is_none_or(|b| (key, pi, x, y) < (b.0, b.1, b.2, b.3))
+                    {
                         best = Some((key, pi, x, y));
                     }
                 }
@@ -67,7 +79,14 @@ pub fn dense_pack(rectangles: &[(i64, i64, usize)]) -> Result<(usize, Vec<Placem
             .iter()
             .enumerate()
             .filter(|&(j, r)| {
-                !changed.iter().enumerate().any(|(k, q)| k != j && q.0 <= r.0 && q.1 <= r.1 && q.0 + q.2 >= r.0 + r.2 && q.1 + q.3 >= r.1 + r.3 && (q != r || k < j))
+                !changed.iter().enumerate().any(|(k, q)| {
+                    k != j
+                        && q.0 <= r.0
+                        && q.1 <= r.1
+                        && q.0 + q.2 >= r.0 + r.2
+                        && q.1 + q.3 >= r.1 + r.3
+                        && (q != r || k < j)
+                })
             })
             .map(|(_, r)| *r)
             .collect();

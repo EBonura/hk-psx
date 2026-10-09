@@ -16,6 +16,9 @@ use std::sync::Arc;
 /// `BARREL_CLIP`.
 const BARREL_CLIP: &str = "Falling Barrel";
 
+/// Cooked frames by (sprite, index, x scale, y scale, alpha): the texture and its box.
+type FrameCache = HashMap<(String, i64, u64, u64, i64), (usize, [f64; 4])>;
+
 /// One cooked frame record: the atlas texture, its world box and the source frame it came from.
 #[derive(Clone, Debug)]
 pub struct Frame {
@@ -54,7 +57,14 @@ pub struct ArtActor<'a> {
 
 impl<'a> ArtActor<'a> {
     pub fn new(row: &'a Row) -> ArtActor<'a> {
-        ArtActor { row, supported: row.supported, limitations: row.limitations.clone(), clips: Vec::new(), visual_scale: None, corpse: None }
+        ArtActor {
+            row,
+            supported: row.supported,
+            limitations: row.limitations.clone(),
+            clips: Vec::new(),
+            visual_scale: None,
+            corpse: None,
+        }
     }
 
     pub fn set_clip(&mut self, key: &str, value: i64) {
@@ -78,7 +88,11 @@ pub struct ArtBank {
 
 impl ArtBank {
     pub fn new(atlas: Atlas) -> ArtBank {
-        ArtBank { atlas, frames: Vec::new(), clips: Vec::new() }
+        ArtBank {
+            atlas,
+            frames: Vec::new(),
+            clips: Vec::new(),
+        }
     }
 }
 
@@ -93,7 +107,13 @@ pub fn guest_wrap_of(clip: &Value, count: usize) -> Result<i64> {
     match mode {
         0..=2 => Ok(mode),
         6 if count == 1 => Ok(2),
-        _ => err(format!("unsupported tk2d wrap mode {mode} for {count}-frame clip {}", get(clip, "name").ok().and_then(Value::str).unwrap_or_default())),
+        _ => err(format!(
+            "unsupported tk2d wrap mode {mode} for {count}-frame clip {}",
+            get(clip, "name")
+                .ok()
+                .and_then(Value::str)
+                .unwrap_or_default()
+        )),
     }
 }
 
@@ -113,7 +133,9 @@ fn jstr(c: &Json, key: &str) -> Result<String> {
 
 /// `image.putalpha(image.getchannel('A').point(lambda a: round(a * alpha)))`.
 pub fn scale_alpha(image: &mut Image, alpha: f64) {
-    let table: Vec<u8> = (0..256).map(|a| py_round(a as f64 * alpha).clamp(0, 255) as u8).collect();
+    let table: Vec<u8> = (0..256)
+        .map(|a| py_round(a as f64 * alpha).clamp(0, 255) as u8)
+        .collect();
     for px in image.data.chunks_exact_mut(4) {
         px[3] = table[px[3] as usize];
     }
@@ -125,35 +147,89 @@ fn frame_tiles(w: i64, h: i64) -> i64 {
 
 /// The slot-to-clip bindings an actor's controller cooks (the chain in `append_actor_art`).
 fn bindings_for(control: &Json, library: &Value) -> Result<Vec<(String, String)>> {
-    let pairs = |p: &[(&str, &str)]| -> Vec<(String, String)> { p.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect() };
+    let pairs = |p: &[(&str, &str)]| -> Vec<(String, String)> {
+        p.iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect()
+    };
     if let Some(Json::Obj(b)) = cj(control, "art_bindings") {
-        return b.iter().map(|(k, v)| if let Json::Str(s) = v { Ok((k.clone(), s.clone())) } else { err("art binding is not a clip name") }).collect();
+        return b
+            .iter()
+            .map(|(k, v)| {
+                if let Json::Str(s) = v {
+                    Ok((k.clone(), s.clone()))
+                } else {
+                    err("art binding is not a clip name")
+                }
+            })
+            .collect();
     }
     let kind = jstr(control, "kind")?;
     Ok(match kind.as_str() {
         "ZombieSwipeWalker" => {
-            let leap = cj(control, "parameters").and_then(|p| cj(p, "attack")).and_then(|a| cj(a, "kind")) == Some(&Json::Str("Leap".into()));
+            let leap = cj(control, "parameters")
+                .and_then(|p| cj(p, "attack"))
+                .and_then(|a| cj(a, "kind"))
+                == Some(&Json::Str("Leap".into()));
             let mut b = if leap {
                 // Leaper: the Attack clip anticipates and keeps playing through the jump (lunge slot), Land is the cooldown clip.
-                pairs(&[("walk", "Walk"), ("turn", "Turn"), ("idle", "Idle"), ("anticipate", "Attack"), ("lunge", "Attack"), ("cooldown", "Land")])
+                pairs(&[
+                    ("walk", "Walk"),
+                    ("turn", "Turn"),
+                    ("idle", "Idle"),
+                    ("anticipate", "Attack"),
+                    ("lunge", "Attack"),
+                    ("cooldown", "Land"),
+                ])
             } else {
-                pairs(&[("walk", "Walk"), ("turn", "Turn"), ("idle", "Idle"), ("anticipate", "Attack Anticipate"), ("lunge", "Attack Lunge"), ("cooldown", "Attack Cooldown")])
+                pairs(&[
+                    ("walk", "Walk"),
+                    ("turn", "Turn"),
+                    ("idle", "Idle"),
+                    ("anticipate", "Attack Anticipate"),
+                    ("lunge", "Attack Lunge"),
+                    ("cooldown", "Attack Cooldown"),
+                ])
             };
             // Barger and Hornhead libraries have no Fall clip; the controller never plays it.
-            if get(library, "clips")?.list().unwrap_or(&[]).iter().any(|c| c.get("name").and_then(Value::str).as_deref() == Some("Fall")) {
+            if get(library, "clips")?
+                .list()
+                .unwrap_or(&[])
+                .iter()
+                .any(|c| c.get("name").and_then(Value::str).as_deref() == Some("Fall"))
+            {
                 b.push(("fall".into(), "Fall".into()));
             }
             b
         }
-        "WalkLeftRight" => vec![("walk".into(), jstr(control, "walk_clip_name")?), ("turn".into(), jstr(control, "turn_clip_name")?)],
+        "WalkLeftRight" => vec![
+            ("walk".into(), jstr(control, "walk_clip_name")?),
+            ("turn".into(), jstr(control, "turn_clip_name")?),
+        ],
         // Walk continues through source turns; the walk clip doubles as `turn_clip`.
         "Climber" => pairs(&[("walk", "Walk"), ("turn", "Walk"), ("stun", "Stun")]),
         // Idle doubles as `walk_clip`; TurnToIdle is the idle-facing turn.
-        "Vengefly" => pairs(&[("walk", "Idle"), ("turn", "TurnToIdle"), ("startle", "Startle"), ("chase", "Chase"), ("turn_fly", "TurnToFly")]),
+        "Vengefly" => pairs(&[
+            ("walk", "Idle"),
+            ("turn", "TurnToIdle"),
+            ("startle", "Startle"),
+            ("chase", "Chase"),
+            ("turn_fly", "TurnToFly"),
+        ]),
         "Gruzzer" => pairs(&[("walk", "Fly"), ("turn", "Fly")]),
         // Idle doubles as `walk_clip`; the turn slot is unused and holds Idle too.
-        "Baldur" => pairs(&[("walk", "Idle"), ("turn", "Idle"), ("start", "Start"), ("roll", "Roll"), ("stop", "Stop")]),
-        "Aspid" => pairs(&[("walk", "Fly"), ("turn", "TurnToFly"), ("fire", "Fire Long")]),
+        "Baldur" => pairs(&[
+            ("walk", "Idle"),
+            ("turn", "Idle"),
+            ("start", "Start"),
+            ("roll", "Roll"),
+            ("stop", "Stop"),
+        ]),
+        "Aspid" => pairs(&[
+            ("walk", "Fly"),
+            ("turn", "TurnToFly"),
+            ("fire", "Fire Long"),
+        ]),
         // One looping Idle and no movement: the walk and turn slots hold it too.
         "EggSac" => pairs(&[("walk", "Idle"), ("turn", "Idle"), ("idle", "Idle")]),
         other => return err(format!("unsupported actor art controller: {other}")),
@@ -161,7 +237,12 @@ fn bindings_for(control: &Json, library: &Value) -> Result<Vec<(String, String)>
 }
 
 fn named_clip<'a>(library: &'a Value, name: &str) -> Result<&'a Value> {
-    get(library, "clips")?.list().unwrap_or(&[]).iter().find(|c| c.get("name").and_then(Value::str).as_deref() == Some(name)).ok_or_else(|| format!("no clip {name}"))
+    get(library, "clips")?
+        .list()
+        .unwrap_or(&[])
+        .iter()
+        .find(|c| c.get("name").and_then(Value::str).as_deref() == Some(name))
+        .ok_or_else(|| format!("no clip {name}"))
 }
 
 fn num(v: &Value) -> Result<f64> {
@@ -170,10 +251,16 @@ fn num(v: &Value) -> Result<f64> {
 
 /// `append_actor_art(s, sc, actors, atlas, frames, clips)` without the corpse and barrel passes
 /// (`append_actor_art_bodies`), which the caller sequences.
-pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtActor], bank: &mut ArtBank, quantize: crate::atlas::Quantizer) -> Result<()> {
+pub fn append_actor_art_bodies(
+    sc: &Scene,
+    source: &Source,
+    actors: &mut [ArtActor],
+    bank: &mut ArtBank,
+    quantize: crate::atlas::Quantizer,
+) -> Result<()> {
     let mut textures: HashMap<String, Arc<Image>> = HashMap::new();
     let mut collections: HashMap<String, Value> = HashMap::new();
-    let mut cache: HashMap<(String, i64, u64, u64, i64), (usize, [f64; 4])> = HashMap::new();
+    let mut cache: FrameCache = HashMap::new();
     let mut clip_cache: HashMap<(String, String, u64, u64, i64), usize> = HashMap::new();
     let scale = focal() / -CAM_Z;
     for actor in actors.iter_mut() {
@@ -181,11 +268,20 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
             continue;
         }
         let row = actor.row;
-        let control = actor.control().ok_or("supported actor without a control")?.clone();
-        let animator = row.part("tk2dSpriteAnimator").ok_or("no tk2dSpriteAnimator")?;
+        let control = actor
+            .control()
+            .ok_or("supported actor without a control")?
+            .clone();
+        let animator = row
+            .part("tk2dSpriteAnimator")
+            .ok_or("no tk2dSpriteAnimator")?;
         let library_o = u(sc.deref(get(animator, "library")?))?;
         let library = u(source.read(&library_o))?;
-        let m = u(sc.world(*sc.go_transform.get(&row.game_object).ok_or("actor has no transform")?))?;
+        let m = u(sc.world(
+            *sc.go_transform
+                .get(&row.game_object)
+                .ok_or("actor has no transform")?,
+        ))?;
         let sprite = row.part("tk2dSprite").ok_or("no tk2dSprite")?;
         let sprite_scale = get(sprite, "_scale")?;
         let sx = (m[0][0] * num(get(sprite_scale, "x")?)?).abs();
@@ -194,7 +290,9 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
         let alpha = py_round(color_a * 255.0);
         let bindings = bindings_for(&control, &library)?;
         let library_sid = library_o.sid();
-        let collection_for = |collections: &mut HashMap<String, Value>, frame: &Value| -> Result<(hk_unity::Obj, String)> {
+        let collection_for = |collections: &mut HashMap<String, Value>,
+                              frame: &Value|
+         -> Result<(hk_unity::Obj, String)> {
             let co = u(source.deref(&library_o.file, get(frame, "spriteCollection")?))?;
             let sid = co.sid();
             if !collections.contains_key(&sid) {
@@ -208,9 +306,21 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
             let clip = named_clip(&library, name)?;
             for frame in get(clip, "frames")?.list().unwrap_or(&[]) {
                 let (co, sid) = collection_for(&mut collections, frame)?;
-                let (_, b) = tk_sprite(source, &co.file, &collections[&sid], get(frame, "spriteId")?.int().unwrap_or(0) as usize, &mut textures)?;
-                let (w, h) = (((b[2] - b[0]) * sx * scale).ceil() as i64, ((b[3] - b[1]) * sy * scale).ceil() as i64);
-                if frame_tiles(w, h) > MAX_FRAME_TILES as i64 || w > MAX_TEXTURE_AXIS as i64 || h > MAX_TEXTURE_AXIS as i64 {
+                let (_, b) = tk_sprite(
+                    source,
+                    &co.file,
+                    &collections[&sid],
+                    get(frame, "spriteId")?.int().unwrap_or(0) as usize,
+                    &mut textures,
+                )?;
+                let (w, h) = (
+                    ((b[2] - b[0]) * sx * scale).ceil() as i64,
+                    ((b[3] - b[1]) * sy * scale).ceil() as i64,
+                );
+                if frame_tiles(w, h) > MAX_FRAME_TILES as i64
+                    || w > MAX_TEXTURE_AXIS as i64
+                    || h > MAX_TEXTURE_AXIS as i64
+                {
                     refused.push((w, h));
                 }
             }
@@ -220,10 +330,15 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
             let reason = if w > MAX_TEXTURE_AXIS as i64 || h > MAX_TEXTURE_AXIS as i64 {
                 format!("exceeds the {MAX_TEXTURE_AXIS}-pixel texture axis and would be resampled")
             } else {
-                format!("binds {} of the {MAX_FRAME_TILES} animation slots a frame may hold", frame_tiles(w, h))
+                format!(
+                    "binds {} of the {MAX_FRAME_TILES} animation slots a frame may hold",
+                    frame_tiles(w, h)
+                )
             };
             actor.supported = false;
-            actor.limitations.push(format!("actor frame {w}x{h} {reason}; art not cooked"));
+            actor
+                .limitations
+                .push(format!("actor frame {w}x{h} {reason}; art not cooked"));
             continue;
         }
         // A recognizer may ask for one palette per clip rather than one per frame (`shared_palette`).
@@ -238,26 +353,62 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
                 for frame in get(clip, "frames")?.list().unwrap_or(&[]) {
                     let (co, sid) = collection_for(&mut collections, frame)?;
                     let index = get(frame, "spriteId")?.int().unwrap_or(0);
-                    let (mut image, b) = tk_sprite(source, &co.file, &collections[&sid], index as usize, &mut textures)?;
+                    let (mut image, b) = tk_sprite(
+                        source,
+                        &co.file,
+                        &collections[&sid],
+                        index as usize,
+                        &mut textures,
+                    )?;
                     scale_alpha(&mut image, color_a);
                     let b = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy];
-                    pending.push((image, (b[2] - b[0]) * scale, (b[3] - b[1]) * scale, b, format!("{sid}:{index}"), frame.clone()));
+                    pending.push((
+                        image,
+                        (b[2] - b[0]) * scale,
+                        (b[3] - b[1]) * scale,
+                        b,
+                        format!("{sid}:{index}"),
+                        frame.clone(),
+                    ));
                 }
-                let items: Vec<(Image, f64, f64)> = pending.iter().map(|p| (p.0.clone(), p.1, p.2)).collect();
+                let items: Vec<(Image, f64, f64)> =
+                    pending.iter().map(|p| (p.0.clone(), p.1, p.2)).collect();
                 let textures_out = bank.atlas.add_frames_shared(&items, quantize)?;
                 for (texture, p) in textures_out.iter().zip(&pending) {
-                    bank.frames.push(Frame { texture: *texture, box_: p.3, sprite: p.4.clone(), box_q16: None, event: p.5.clone() });
+                    bank.frames.push(Frame {
+                        texture: *texture,
+                        box_: p.3,
+                        sprite: p.4.clone(),
+                        box_q16: None,
+                        event: p.5.clone(),
+                    });
                 }
                 clip_cache.insert(clip_key.clone(), bank.clips.len());
-                bank.clips.push(Clip { name: format!("{library_sid}/{name}"), start, count: get(clip, "frames")?.list().map_or(0, <[Value]>::len), fps: num(get(clip, "fps")?)?, wrap: guest_wrap(clip)?, loop_start: clip.get("loopStart").and_then(Value::int).unwrap_or(0) });
+                bank.clips.push(Clip {
+                    name: format!("{library_sid}/{name}"),
+                    start,
+                    count: get(clip, "frames")?.list().map_or(0, <[Value]>::len),
+                    fps: num(get(clip, "fps")?)?,
+                    wrap: guest_wrap(clip)?,
+                    loop_start: clip.get("loopStart").and_then(Value::int).unwrap_or(0),
+                });
             }
             if !clip_cache.contains_key(&clip_key) {
                 let source_clip = named_clip(&library, name)?;
                 let start = bank.frames.len();
                 // A recognizer may keep every `stride`th frame of a clip at the matching fraction of its rate.
-                let stride = cj(&control, "frame_stride").and_then(|s| cj(s, name)).map_or(1, |j| if let Json::Int(i) = j { *i } else { 1 });
-                let mut frame_list: Vec<Value> = get(source_clip, "frames")?.list().unwrap_or(&[]).to_vec();
-                let (mut fps, mut loop_start) = (num(get(source_clip, "fps")?)?, source_clip.get("loopStart").and_then(Value::int).unwrap_or(0));
+                let stride = cj(&control, "frame_stride")
+                    .and_then(|s| cj(s, name))
+                    .map_or(1, |j| if let Json::Int(i) = j { *i } else { 1 });
+                let mut frame_list: Vec<Value> =
+                    get(source_clip, "frames")?.list().unwrap_or(&[]).to_vec();
+                let (mut fps, mut loop_start) = (
+                    num(get(source_clip, "fps")?)?,
+                    source_clip
+                        .get("loopStart")
+                        .and_then(Value::int)
+                        .unwrap_or(0),
+                );
                 if stride != 1 {
                     frame_list = frame_list.into_iter().step_by(stride as usize).collect();
                     fps /= stride as f64;
@@ -268,19 +419,43 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
                     let index = get(frame, "spriteId")?.int().unwrap_or(0);
                     let key = (sid.clone(), index, sx_bits, sy_bits, alpha);
                     if !cache.contains_key(&key) {
-                        let (mut image, b) = tk_sprite(source, &co.file, &collections[&sid], index as usize, &mut textures)?;
+                        let (mut image, b) = tk_sprite(
+                            source,
+                            &co.file,
+                            &collections[&sid],
+                            index as usize,
+                            &mut textures,
+                        )?;
                         scale_alpha(&mut image, color_a);
                         let b = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy];
                         // add_tiled returns the frame's first texture; a frame inside one slot is still a single streamed texture.
-                        let texture = bank.atlas.add_tiled(&image, (b[2] - b[0]) * scale, (b[3] - b[1]) * scale, quantize)?;
+                        let texture = bank.atlas.add_tiled(
+                            &image,
+                            (b[2] - b[0]) * scale,
+                            (b[3] - b[1]) * scale,
+                            quantize,
+                        )?;
                         cache.insert(key.clone(), (texture, b));
                     }
                     let (texture, b) = cache[&key];
-                    bank.frames.push(Frame { texture, box_: b, sprite: format!("{sid}:{index}"), box_q16: None, event: frame.clone() });
+                    bank.frames.push(Frame {
+                        texture,
+                        box_: b,
+                        sprite: format!("{sid}:{index}"),
+                        box_q16: None,
+                        event: frame.clone(),
+                    });
                 }
                 clip_cache.insert(clip_key.clone(), bank.clips.len());
                 let wrap = guest_wrap_of(source_clip, frame_list.len())?;
-                bank.clips.push(Clip { name: format!("{library_sid}/{name}"), start, count: frame_list.len(), fps, wrap, loop_start });
+                bank.clips.push(Clip {
+                    name: format!("{library_sid}/{name}"),
+                    start,
+                    count: frame_list.len(),
+                    fps,
+                    wrap,
+                    loop_start,
+                });
             }
             actor.set_clip(&format!("{kind}_clip"), clip_cache[&clip_key] as i64);
         }
@@ -290,10 +465,17 @@ pub fn append_actor_art_bodies(sc: &Scene, source: &Source, actors: &mut [ArtAct
 }
 
 /// `append_barrel_art(s, actors, atlas, frames, clips)`: `FK Barrel Summon`'s pooled `Falling Barrel`.
-pub fn append_barrel_art(source: &Source, actors: &mut [ArtActor], bank: &mut ArtBank, quantize: crate::atlas::Quantizer) -> Result<()> {
+pub fn append_barrel_art(
+    source: &Source,
+    actors: &mut [ArtActor],
+    bank: &mut ArtBank,
+    quantize: crate::atlas::Quantizer,
+) -> Result<()> {
     let scale = focal() / -CAM_Z;
     for actor in actors.iter_mut() {
-        let Some(control) = actor.control().cloned() else { continue };
+        let Some(control) = actor.control().cloned() else {
+            continue;
+        };
         if !actor.supported || cj(&control, "kind") != Some(&Json::Str("FalseKnight".into())) {
             continue;
         }
@@ -304,9 +486,28 @@ pub fn append_barrel_art(source: &Source, actors: &mut [ArtActor], bank: &mut Ar
         let obj = u(source.object(&file, path_id.parse().map_err(|_| "barrel path id")?))?;
         let (image, b) = native_sprite(source, &obj)?;
         actor.set_clip("barrel_clip", bank.clips.len() as i64);
-        bank.clips.push(Clip { name: format!("{}/{BARREL_CLIP}", jstr(barrel, "source")?), start: bank.frames.len(), count: 1, fps: 1.0, wrap: 2, loop_start: 0 });
-        let texture = bank.atlas.add(&image, (b[2] - b[0]) * scale, (b[3] - b[1]) * scale, true, quantize)?;
-        bank.frames.push(Frame { texture, box_: b, sprite, box_q16: None, event: Value::Map(Vec::new()) });
+        bank.clips.push(Clip {
+            name: format!("{}/{BARREL_CLIP}", jstr(barrel, "source")?),
+            start: bank.frames.len(),
+            count: 1,
+            fps: 1.0,
+            wrap: 2,
+            loop_start: 0,
+        });
+        let texture = bank.atlas.add(
+            &image,
+            (b[2] - b[0]) * scale,
+            (b[3] - b[1]) * scale,
+            true,
+            quantize,
+        )?;
+        bank.frames.push(Frame {
+            texture,
+            box_: b,
+            sprite,
+            box_q16: None,
+            event: Value::Map(Vec::new()),
+        });
     }
     Ok(())
 }

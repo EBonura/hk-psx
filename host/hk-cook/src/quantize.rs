@@ -33,9 +33,15 @@ type Rgb = [f64; 3];
 /// `_assign(x, c)`: for each row of `x`, the nearest row of `c` (first on ties) and its squared distance.
 fn assign(x: &[Rgb], c: &[Rgb]) -> (Vec<usize>, Vec<f64>) {
     let k = c.len();
-    let doubled: Vec<Rgb> = x.iter().map(|v| [2.0 * v[0], 2.0 * v[1], 2.0 * v[2]]).collect();
+    let doubled: Vec<Rgb> = x
+        .iter()
+        .map(|v| [2.0 * v[0], 2.0 * v[1], 2.0 * v[2]])
+        .collect();
     let product = matmul_abt(&doubled, c);
-    let cc: Vec<f64> = c.iter().map(|r| row_sum3([r[0] * r[0], r[1] * r[1], r[2] * r[2]])).collect();
+    let cc: Vec<f64> = c
+        .iter()
+        .map(|r| row_sum3([r[0] * r[0], r[1] * r[1], r[2] * r[2]]))
+        .collect();
     let (mut labels, mut best) = (Vec::with_capacity(x.len()), Vec::with_capacity(x.len()));
     for (i, v) in x.iter().enumerate() {
         let xx = row_sum3([v[0] * v[0], v[1] * v[1], v[2] * v[2]]);
@@ -60,7 +66,9 @@ fn dist2(a: &Rgb, b: &Rgb) -> f64 {
 
 /// `np.allclose(a, b)`.
 fn allclose(a: &[Rgb], b: &[Rgb]) -> bool {
-    a.iter().zip(b).all(|(p, q)| (0..3).all(|k| (p[k] - q[k]).abs() <= 1e-8 + 1e-5 * q[k].abs()))
+    a.iter()
+        .zip(b)
+        .all(|(p, q)| (0..3).all(|k| (p[k] - q[k]).abs() <= 1e-8 + 1e-5 * q[k].abs()))
 }
 
 /// numpy's `kahan_sum`, which `Generator.choice` uses to validate probabilities.
@@ -116,7 +124,13 @@ fn wkmeans(x: &[Rgb], w: &[f64], k: usize, rng: &mut Pcg64) -> Result<(Vec<Rgb>,
         let (labels, _) = assign(x, &c);
         let mut nc = c.clone();
         for (i, slot) in nc.iter_mut().enumerate() {
-            let (members, weights): (Vec<Rgb>, Vec<f64>) = x.iter().zip(w).zip(&labels).filter(|(_, &l)| l == i).map(|((v, wv), _)| (*v, *wv)).unzip();
+            let (members, weights): (Vec<Rgb>, Vec<f64>) = x
+                .iter()
+                .zip(w)
+                .zip(&labels)
+                .filter(|(_, &l)| l == i)
+                .map(|((v, wv), _)| (*v, *wv))
+                .unzip();
             if !members.is_empty() {
                 *slot = average3(&members, &weights);
             }
@@ -136,7 +150,10 @@ fn sample(x: Vec<Rgb>, w: Vec<f64>, rng: &mut Pcg64) -> (Vec<Rgb>, Vec<f64>) {
     if x.len() > SAMPLE {
         let idx = rng.choice_without_replacement(x.len(), SAMPLE);
         let scale = x.len() as f64 / SAMPLE as f64;
-        (idx.iter().map(|&i| x[i as usize]).collect(), idx.iter().map(|&i| w[i as usize] * scale).collect())
+        (
+            idx.iter().map(|&i| x[i as usize]).collect(),
+            idx.iter().map(|&i| w[i as usize] * scale).collect(),
+        )
     } else {
         (x, w)
     }
@@ -150,8 +167,16 @@ fn to15(c: &Rgb) -> u16 {
 
 /// `expand(word)`: a 15-bit word as the colour the GPU displays.
 fn expand(word: u16) -> Rgb {
-    let v = [(word & 31) as f64, ((word >> 5) & 31) as f64, ((word >> 10) & 31) as f64];
-    [v[0] * 8.0 + v[0] / 4.0, v[1] * 8.0 + v[1] / 4.0, v[2] * 8.0 + v[2] / 4.0]
+    let v = [
+        (word & 31) as f64,
+        ((word >> 5) & 31) as f64,
+        ((word >> 10) & 31) as f64,
+    ];
+    [
+        v[0] * 8.0 + v[0] / 4.0,
+        v[1] * 8.0 + v[1] / 4.0,
+        v[2] * 8.0 + v[2] / 4.0,
+    ]
 }
 
 fn sq(v: f64) -> f64 {
@@ -164,18 +189,42 @@ fn mean3(a: f64, b: f64, c: f64) -> f64 {
 
 /// Per-prior costs of dropping a texel, keeping it transparent, or keeping it as Add-blended.
 fn cost_transparent(ae: f64, ce: &Rgb) -> f64 {
-    let s = |b: &Rgb| row_sum3([sq(ae * (ce[0] - b[0])), sq(ae * (ce[1] - b[1])), sq(ae * (ce[2] - b[2]))]);
-    mean3(s(&HK_DARK_PRIOR[0]), s(&HK_DARK_PRIOR[1]), s(&HK_DARK_PRIOR[2]))
+    let s = |b: &Rgb| {
+        row_sum3([
+            sq(ae * (ce[0] - b[0])),
+            sq(ae * (ce[1] - b[1])),
+            sq(ae * (ce[2] - b[2])),
+        ])
+    };
+    mean3(
+        s(&HK_DARK_PRIOR[0]),
+        s(&HK_DARK_PRIOR[1]),
+        s(&HK_DARK_PRIOR[2]),
+    )
 }
 
 fn cost_semi(ae: f64) -> f64 {
     let s = |b: &Rgb| row_sum3([sq(ae * b[0]), sq(ae * b[1]), sq(ae * b[2])]);
-    mean3(s(&HK_DARK_PRIOR[0]), s(&HK_DARK_PRIOR[1]), s(&HK_DARK_PRIOR[2]))
+    mean3(
+        s(&HK_DARK_PRIOR[0]),
+        s(&HK_DARK_PRIOR[1]),
+        s(&HK_DARK_PRIOR[2]),
+    )
 }
 
 fn cost_opaque(ae: f64, bm: &Rgb) -> f64 {
-    let s = |b: &Rgb| row_sum3([sq((1.0 - ae) * (b[0] - bm[0])), sq((1.0 - ae) * (b[1] - bm[1])), sq((1.0 - ae) * (b[2] - bm[2]))]);
-    mean3(s(&HK_DARK_PRIOR[0]), s(&HK_DARK_PRIOR[1]), s(&HK_DARK_PRIOR[2]))
+    let s = |b: &Rgb| {
+        row_sum3([
+            sq((1.0 - ae) * (b[0] - bm[0])),
+            sq((1.0 - ae) * (b[1] - bm[1])),
+            sq((1.0 - ae) * (b[2] - bm[2])),
+        ])
+    };
+    mean3(
+        s(&HK_DARK_PRIOR[0]),
+        s(&HK_DARK_PRIOR[1]),
+        s(&HK_DARK_PRIOR[2]),
+    )
 }
 
 fn pure_black(rgb: &[Rgb], t: &[bool]) -> bool {
@@ -195,11 +244,20 @@ fn pure_black(rgb: &[Rgb], t: &[bool]) -> bool {
 pub type Fallback<'a> = &'a dyn Fn(&Image, usize, usize) -> Result<Quantized>;
 
 /// `quantize(im, w, h, fallback)`.
-pub fn quantize(image: &Image, w: usize, h: usize, fallback: Option<Fallback>) -> Result<Quantized> {
+pub fn quantize(
+    image: &Image,
+    w: usize,
+    h: usize,
+    fallback: Option<Fallback>,
+) -> Result<Quantized> {
     let im = image.to_rgba().resize(w, h, Filter::Lanczos);
     let n = w * h;
     // `a`: the float64 RGBA texels, whose bytes seed the generator.
-    let a: Vec<[f64; 4]> = im.data.chunks_exact(4).map(|p| [p[0] as f64, p[1] as f64, p[2] as f64, p[3] as f64]).collect();
+    let a: Vec<[f64; 4]> = im
+        .data
+        .chunks_exact(4)
+        .map(|p| [p[0] as f64, p[1] as f64, p[2] as f64, p[3] as f64])
+        .collect();
     let al: Vec<f64> = a.iter().map(|p| p[3]).collect();
     let mut rgb: Vec<Rgb> = a.iter().map(|p| [p[0], p[1], p[2]]).collect();
     let mut t: Vec<bool> = al.iter().map(|&v| v < 16.0).collect();
@@ -219,7 +277,12 @@ pub fn quantize(image: &Image, w: usize, h: usize, fallback: Option<Fallback>) -
                 for y in 0..h as i64 {
                     for x in 0..w as i64 {
                         let (sy, sx) = (y + dy, x + dx);
-                        if sy >= 0 && sy < h as i64 && sx >= 0 && sx < w as i64 && o[(sy * w as i64 + sx) as usize] {
+                        if sy >= 0
+                            && sy < h as i64
+                            && sx >= 0
+                            && sx < w as i64
+                            && o[(sy * w as i64 + sx) as usize]
+                        {
                             near[(y * w as i64 + x) as usize] = true;
                         }
                     }
@@ -230,12 +293,20 @@ pub fn quantize(image: &Image, w: usize, h: usize, fallback: Option<Fallback>) -
         if !edge.is_empty() {
             let bm = {
                 let b = &HK_DARK_PRIOR;
-                [((b[0][0] + b[1][0]) + b[2][0]) / 3.0, ((b[0][1] + b[1][1]) + b[2][1]) / 3.0, ((b[0][2] + b[1][2]) + b[2][2]) / 3.0]
+                [
+                    ((b[0][0] + b[1][0]) + b[2][0]) / 3.0,
+                    ((b[0][1] + b[1][1]) + b[2][1]) / 3.0,
+                    ((b[0][2] + b[1][2]) + b[2][2]) / 3.0,
+                ]
             };
             for &i in &edge {
                 let ae = al[i] / 255.0;
                 let ce = rgb[i];
-                let (c_t, c_o, c_s) = (cost_transparent(ae, &ce), cost_opaque(ae, &bm), cost_semi(ae));
+                let (c_t, c_o, c_s) = (
+                    cost_transparent(ae, &ce),
+                    cost_opaque(ae, &bm),
+                    cost_semi(ae),
+                );
                 // argmin over [cT, cO, cS], first on ties.
                 let pick = if c_t <= c_o && c_t <= c_s {
                     0
@@ -286,23 +357,33 @@ pub fn quantize(image: &Image, w: usize, h: usize, fallback: Option<Fallback>) -
     let mut rng = Pcg64::new(u64::from_le_bytes(digest[..8].try_into().unwrap()));
     let xo: Vec<Rgb> = (0..n).filter(|&i| o[i]).map(|i| rgb[i]).collect();
     let luma = matvec(&xo, LUMA);
-    let wo: Vec<f64> = luma.iter().map(|&v| if v < INK_LUMA { INK_WEIGHT } else { 1.0 }).collect();
-    let xs: Vec<Rgb> = (0..n).filter(|&i| s[i]).map(|i| {
-        let f = al[i] / 255.0;
-        [rgb[i][0] * f, rgb[i][1] * f, rgb[i][2] * f]
-    }).collect();
+    let wo: Vec<f64> = luma
+        .iter()
+        .map(|&v| if v < INK_LUMA { INK_WEIGHT } else { 1.0 })
+        .collect();
+    let xs: Vec<Rgb> = (0..n)
+        .filter(|&i| s[i])
+        .map(|i| {
+            let f = al[i] / 255.0;
+            [rgb[i][0] * f, rgb[i][1] * f, rgb[i][2] * f]
+        })
+        .collect();
     let ws = vec![1.0; xs.len()];
     let (so, swo) = sample(xo.clone(), wo, &mut rng);
     let (ss, sws) = sample(xs.clone(), ws, &mut rng);
     let mut curves: HashMap<(bool, usize), (Vec<Rgb>, f64)> = HashMap::new();
     let mut curve = |opaque: bool, k: usize, rng: &mut Pcg64| -> Result<(Vec<Rgb>, f64)> {
-        if !curves.contains_key(&(opaque, k)) {
-            let r = if opaque { wkmeans(&so, &swo, k, rng)? } else { wkmeans(&ss, &sws, k, rng)? };
-            curves.insert((opaque, k), r);
+        if let std::collections::hash_map::Entry::Vacant(slot) = curves.entry((opaque, k)) {
+            let r = if opaque {
+                wkmeans(&so, &swo, k, rng)?
+            } else {
+                wkmeans(&ss, &sws, k, rng)?
+            };
+            slot.insert(r);
         }
         Ok(curves[&(opaque, k)].clone())
     };
-    let mut alloc = [(xo.len() > 0) as usize, (xs.len() > 0) as usize];
+    let mut alloc = [(!xo.is_empty()) as usize, (!xs.is_empty()) as usize];
     let budget = 15 - (alloc[0] + alloc[1]);
     for _ in 0..budget {
         let (mut best, mut gain) = (None, -1.0f64);
@@ -329,7 +410,15 @@ pub fn quantize(image: &Image, w: usize, h: usize, fallback: Option<Fallback>) -
         let cents = curve(cls == 0, alloc[cls], &mut rng)?.0;
         let mut cw: Vec<u16> = cents.iter().map(to15).collect();
         for v in &mut cw {
-            *v = if cls == 0 { if *v == 0 { 1 } else { *v } } else { *v | 0x8000 };
+            *v = if cls == 0 {
+                if *v == 0 {
+                    1
+                } else {
+                    *v
+                }
+            } else {
+                *v | 0x8000
+            };
         }
         let mut uniq: Vec<u16> = Vec::new();
         for v in cw {
@@ -349,5 +438,9 @@ pub fn quantize(image: &Image, w: usize, h: usize, fallback: Option<Fallback>) -
         }
     }
     words.resize(16, 0);
-    Ok(Quantized { image: im, palette: words.iter().flat_map(|v| v.to_le_bytes()).collect(), plane })
+    Ok(Quantized {
+        image: im,
+        palette: words.iter().flat_map(|v| v.to_le_bytes()).collect(),
+        plane,
+    })
 }
