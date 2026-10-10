@@ -263,7 +263,12 @@ pub fn render(
     } else {
         focus_fx::frames()
     };
-    for i in fx_frames.into_iter().flatten() {
+    let flash = if game.vitals.dead {
+        None
+    } else {
+        focus_fx::flash()
+    };
+    for i in fx_frames.into_iter().flatten().chain(flash.map(|(i, _)| i)) {
         assert!(
             needed_len < needed.len(),
             "Focus effect animation working set"
@@ -426,6 +431,17 @@ pub fn render(
     if !veiled {
         prims += unsafe { spstack::sim(|| render::scenery(camera, true)) };
         prims += game.state.draw_secrets(view, camera, true);
+    }
+    // The heal's white flash: over the world, under the HUD.
+    if let Some((i, tint)) = flash {
+        prims += ability_art::draw_additive(
+            i,
+            game.player.x,
+            game.player.y,
+            game.player.facing,
+            camera,
+            tint,
+        );
     }
     prims += geo_render::hud_coin(
         dialogue::GEO_COIN_X,

@@ -36,6 +36,8 @@ pub const FOCUS_EFFECT_END: usize = 17;
 pub const BURST_EFFECT: usize = 18;
 /// The Soul Burst: the star at the Knight when the soul orb can heal (`Can Heal 2`).
 pub const SOUL_BURST: usize = 19;
+/// The heal's `White Flash R`: one frame of greys, faded by the draw's tint.
+pub const HEAL_FLASH: usize = 20;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;
@@ -150,12 +152,7 @@ mod presentation {
         assert!(DATA.len() >= PALETTE_BYTES && PALETTE_BYTES == PALETTE_COUNT * 32);
         for i in 0..PALETTE_COUNT {
             upload_bytes(
-                VramRect::new(
-                    CLUT_RECT.0,
-                    CLUT_RECT.1 + i as u16,
-                    CLUT_RECT.2,
-                    CLUT_RECT.3,
-                ),
+                VramRect::new(CLUT_RECT.0, CLUT_Y[i], CLUT_RECT.2, CLUT_RECT.3),
                 &DATA[i * 32..i * 32 + 32],
             );
         }
@@ -213,14 +210,25 @@ mod presentation {
         }
         let right = (u16::from(u) + frame.width - 1) as u8;
         let bottom = (u16::from(v) + frame.height - 1) as u8;
-        let clut = Clut::new(CLUT_RECT.0, CLUT_RECT.1 + frame.clut as u16).uv_clut_word();
+        let clut = Clut::new(CLUT_RECT.0, CLUT_Y[frame.clut as usize]).uv_clut_word();
         let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
         let template = QuadTextured::with_material(
             [(0, 0); 4],
             [(u, v), (right, v), (u, bottom), (right, bottom)],
             TextureMaterial::blended(clut, tpage, (tint, tint, tint), blend),
         );
-        crate::render::resident_quad(&template, vertices.map(|(x, y)| (x as i16, y as i16)));
+        // `resident_quad` draws at the texel's own level whatever the template's tint: only the
+        // additive (Focus) draws pass theirs on, since the flash fades through it.
+        let level = if matches!(blend, BlendMode::Add) {
+            tint
+        } else {
+            128
+        };
+        crate::render::resident_quad_tinted(
+            &template,
+            vertices.map(|(x, y)| (x as i16, y as i16)),
+            (level, level, level),
+        );
         unsafe {
             HK_ABILITY_DRAWN = HK_ABILITY_DRAWN.saturating_add(1);
         }

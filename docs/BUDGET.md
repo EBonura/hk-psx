@@ -226,11 +226,12 @@ cache's second region. Coordinates are VRAM halfwords:
   (352,32,32,64) strip. The final2KiB transfer admits Town crystal particles.
 - The Hollow Shade reserved 14 CLUT rows at x320..335, y482 and uses two. The
   Knight's ability clips take four of the rest, (320,484,16,1) upward, and use
-  two. The charm board's icons take the next four, (320,488,16,1) upward, and
+  all four. The charm board's icons take the next four, (320,488,16,1) upward, and
   use all four. The hit flash's silhouette palette (game/src/render.rs) is
   y492, and Goams, stalactites and grub jars (host/props.py) take
-  (320,493,16,1) and the row below it. That leaves one row of the fourteen
-  unreserved, y495, and two reserved but unused inside the ability block. No
+  (320,493,16,1) and the row below it. That left one row of the fourteen
+  unreserved, y495, which the heal's white flash takes for its grey palette (the
+  ability art's fifth). The reserved CLUT block is full. No
   art here reserves a texel rectangle: all of it lives in linked RAM and reaches
   VRAM through the shared 64x64 animation slots, because an ability is usable
   in any view, a Shade can be in any scene and a pause screen is reachable from
