@@ -6,11 +6,15 @@
 //! Control, `Can Heal 2`) plays when the SOUL reaches the cost while health is not full.
 use crate::ability_art::{
     ABILITY_CLIPS, BURST_EFFECT, FOCUS_EFFECT, FOCUS_EFFECT_END, FOCUS_EFFECT_LOOP_START,
+    HEAL_FLASH, SOUL_BURST,
 };
 
 static mut LINES: Option<u32> = None;
 static mut END: Option<u32> = None;
 static mut BURST: Option<u32> = None;
+static mut SOUL: Option<u32> = None;
+/// Ticks since the heal's `White Flash R` was spawned.
+static mut FLASH: Option<u32> = None;
 static mut WAS_ACTIVE: bool = false;
 static mut WAS_SOUL: u16 = 0;
 #[no_mangle]
@@ -64,11 +68,19 @@ pub fn tick(active: bool, completed: bool, soul: u16, cost: u16, health_full: bo
                 Some(a + 1)
             };
         }
+        FLASH = if completed {
+            Some(0)
+        } else {
+            FLASH.and_then(|a| (a + 1 < FLASH_TICKS).then_some(a + 1))
+        };
         let ready = WAS_SOUL < cost && soul >= cost && !health_full;
         WAS_SOUL = soul;
-        if ready {
+        SOUL = if ready {
             HK_FOCUS_READY_CUES = HK_FOCUS_READY_CUES.wrapping_add(1);
-        }
+            Some(0)
+        } else {
+            SOUL.and_then(|a| (a + 1 < ticks(SOUL_BURST)).then_some(a + 1))
+        };
         ready
     }
 }
@@ -89,6 +101,8 @@ pub fn reset() {
         LINES = None;
         END = None;
         BURST = None;
+        SOUL = None;
+        FLASH = None;
         WAS_ACTIVE = false;
     }
 }
@@ -104,14 +118,36 @@ fn frame(clip: usize, age: u32, looping: bool) -> usize {
     };
     c.start + f
 }
-/// The ability-art frames to draw now: the lines (or their end), then the burst.
-pub fn frames() -> [Option<usize>; 2] {
+/// The ability-art frames to draw now: the lines (or their end), the heal's burst, then the
+/// soul orb's star.
+pub fn frames() -> [Option<usize>; 3] {
     unsafe {
         let lines = match (LINES, END) {
             (Some(a), _) => Some(frame(FOCUS_EFFECT, a, true)),
             (None, Some(a)) => Some(frame(FOCUS_EFFECT_END, a, false)),
             _ => None,
         };
-        [lines, BURST.map(|a| frame(BURST_EFFECT, a, false))]
+        [
+            lines,
+            BURST.map(|a| frame(BURST_EFFECT, a, false)),
+            SOUL.map(|a| frame(SOUL_BURST, a, false)),
+        ]
+    }
+}
+
+/// `White Flash R`, spawned at the Knight by `Focus Heal` (resources.assets:5267): the `white_light`
+/// disc at scale 10, white at alpha 0.52 and faded to nothing in a second by `SimpleSpriteFade`. The
+/// cooked frame (host/ability_art.py) is the disc at its brightest as greys for the GPU's Add, and the
+/// draw's tint (128 is the texture's own level) takes it down linearly over `FLASH_TICKS`.
+const FLASH_TICKS: u32 = 60;
+/// The flash's frame and tint now, None when none is running.
+pub fn flash() -> Option<(usize, u8)> {
+    unsafe {
+        FLASH.map(|a| {
+            (
+                ABILITY_CLIPS[HEAL_FLASH].start,
+                (128 * (FLASH_TICKS - a) / FLASH_TICKS) as u8,
+            )
+        })
     }
 }

@@ -47,6 +47,8 @@ BURST_SHRINK = 1
 # to the faint edge of their halo (`BURST_BRIGHT_THRESHOLD`, the lines use 24).
 BURST_BRIGHT_FRAMES = 2
 BURST_BRIGHT_THRESHOLD = 8
+# The last palette is emitted into the one row left in the Shade reservation.
+FLASH_CLUT_Y = 495
 EFFECT_CLIPS = (('Focus Effect', 'Lines Anim', 6629), ('Focus Effect End', 'Lines Anim', 6629),
                 ('Burst Effect', 'Heal Anim', 6375))
 
@@ -228,9 +230,28 @@ def cook():
             assert clip['wrapMode'] == 1
             effect_loop = clip['loopStart']
 
+    focus_art = ROOT / '.hkpsx/ability-focus-rust'
+    focus_frames = json.loads((focus_art / 'frames.json').read_text())
+    assert len(focus_frames) == 6
+    soul_start = len(images)
+    for frame in focus_frames[:5]:
+        with Image.open(focus_art / frame['name']) as image:
+            images.append(image.copy())
+        boxes.append(frame['box'])
+        art_sources.append(frame['source'])
+    clips.append(dict(name='Soul Burst', start=soul_start, count=5, fps=20, wrap=2))
+
+    flash_start = len(images)
+    frame = focus_frames[5]
+    with Image.open(focus_art / frame['name']) as image:
+        images.append(image.copy())
+    boxes.append(frame['box'])
+    art_sources.append(frame['source'])
+    clips.append(dict(name='Heal Flash', start=flash_start, count=1, fps=1, wrap=2))
+
     # One CLUT per group of clips that fits a single 256x256 quantizer sheet, so
     # every frame of one animation keeps one palette.
-    effect_names = {name for name, _, _ in EFFECT_CLIPS}
+    effect_names = {name for name, _, _ in EFFECT_CLIPS} | {'Soul Burst', 'Heal Flash'}
     groups, current = [], []
     for clip in clips:
         if clip['name'] in effect_names:
@@ -250,10 +271,10 @@ def cook():
     additive_from = len(groups)
     # The Burst's two bright frames get their own palette, last, fitted to their halo.
     burst = next(c for c in clips if c['name'] == 'Burst Effect')
-    bright = list(range(burst['start'], burst['start'] + BURST_BRIGHT_FRAMES))
+    bright = list(range(burst['start'], burst['start'] + BURST_BRIGHT_FRAMES)) + list(range(soul_start, soul_start + 5))
     current = []
     for clip in clips:
-        if clip['name'] not in effect_names:
+        if clip['name'] not in effect_names or clip['name'] == 'Heal Flash':
             continue
         indices = [i for i in range(clip['start'], clip['start'] + clip['count']) if i not in bright]
         if shelf([images[i].size for i in current + indices]) is None:
@@ -267,6 +288,8 @@ def cook():
     bright_clut = len(groups)
     groups.append(bright)
     assert len(groups) <= CLUT_ROWS, f'{len(groups)} palettes exceed the {CLUT_ROWS} reserved rows'
+    flash_clut = len(groups)
+    groups.append([flash_start])
 
     palettes, blob, frames = [], bytearray(), [None] * len(images)
     raw_bytes = 0
@@ -275,7 +298,14 @@ def cook():
         sheet = Image.new('RGBA', (256, 256))
         for i, origin in zip(group, positions):
             sheet.paste(images[i], origin)
-        sw, _, palette, packed = (lambda s: quantize_additive(s, BURST_BRIGHT_THRESHOLD) if clut_index == bright_clut else quantize_additive(s) if clut_index >= additive_from else quantize_alpha_coverage(s, 128))(sheet)
+        if clut_index == flash_clut:
+            assert group == [flash_start] and positions == [(0, 0)]
+            sw = 256
+            palette = (focus_art / 'flash-pal.bin').read_bytes()
+            packed = (focus_art / 'flash-sheet.4bpp').read_bytes()
+            assert len(palette) == 32 and len(packed) == 256 * 256 // 2
+        else:
+            sw, _, palette, packed = (lambda s: quantize_additive(s, BURST_BRIGHT_THRESHOLD) if clut_index == bright_clut else quantize_additive(s) if clut_index >= additive_from else quantize_alpha_coverage(s, 128))(sheet)
         palettes.append(palette)
         for i, (x0, y0) in zip(group, positions):
             image = images[i]
@@ -302,6 +332,7 @@ def cook():
         f'pub const CLUT_RECT:(u16,u16,u16,u16)=({CLUT[0]},{CLUT[1]},{CLUT[2]},{CLUT[3]});',
         f'pub const PALETTE_BYTES:usize={len(palette_bytes)};',
         f'pub const PALETTE_COUNT:usize={len(palettes)};',
+        'pub const CLUT_Y:&[u16]=&[' + ','.join(str(FLASH_CLUT_Y if i == flash_clut else CLUT[1] + i) for i in range(len(palettes))) + '];',
         'pub const ABILITY_CLIPS:&[Clip]=&[' + ','.join(
             'Clip{' + ','.join(f'{k}:{c[k]}' for k in ('start', 'count', 'fps', 'wrap')) + '}'
             for c in clips) + '];',

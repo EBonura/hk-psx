@@ -1,23 +1,23 @@
 # Shared scene and gameplay budget
 
-The SDK and module build keeps one scene at a time in the RAM
+The current ordinary build keeps one scene at a time in the RAM
 arena and replaces its static VRAM atlases at scene gates. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |808,820|
-| Code-to-data alignment |12|
-| Linked data, including menu and HUD |272,136|
-| BSS, including shared scene arena and runtime pools |797,060|
-| Total static span |1,878,036|
+| Linked code |809,168|
+| Code-to-data alignment |0|
+| Linked data, including menu and HUD |277,112|
+| BSS, including shared scene arena and runtime pools |797,076|
+| Total static span |1,883,364|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |104,172|
+| Unallocated gap before reserved stack |98,844|
 | Room module pool, inside that gap |94,208|
-| Free RAM below the module pool |9,964|
+| Free RAM below the module pool |4,636|
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -58,10 +58,10 @@ uploads a frame (game/src/ability_art.rs `upload_frame`, no staging buffer): its
 texels raw, 2,520 coded) and the Burst's two bright frames took a palette of their own in the
 ability block's spare CLUT row. The Knight's Focus dust (Dust L and Dust R cooked into every
 scene, raised every six ticks while Focus runs) cost a style and an emitter row of room in the
-effect tables (styles 18, emitters 100) and a few words of code: 9,620 are free below the pool now (with the 50 Hz input phase merged in). The HUD's Geo coin replaced the word "Geo"
+effect tables (styles 18, emitters 100) and a few words of code: 9,620 were free below the pool at that stage (with the 50 Hz input phase merged in). The HUD's Geo coin replaced the word "Geo"
 (three glyphs), and the render policy and the audio start added a few words.
 
-Every figure above is the current ordinary build's, read out of
+The allocation table above is the current ordinary build's, read out of
 `.hkpsx/build-normal.json`, and `tests/test_budget_doc.py` fails when this table
 drifts from it. `pgo` writes `.hkpsx/build-pgo-normal.json` instead, because its
 code size follows the profile; `.hkpsx/build.json` is whichever image is on the
@@ -103,7 +103,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801da814`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801dbce4`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -226,11 +226,12 @@ cache's second region. Coordinates are VRAM halfwords:
   (352,32,32,64) strip. The final2KiB transfer admits Town crystal particles.
 - The Hollow Shade reserved 14 CLUT rows at x320..335, y482 and uses two. The
   Knight's ability clips take four of the rest, (320,484,16,1) upward, and use
-  two. The charm board's icons take the next four, (320,488,16,1) upward, and
+  all four. The charm board's icons take the next four, (320,488,16,1) upward, and
   use all four. The hit flash's silhouette palette (game/src/render.rs) is
   y492, and Goams, stalactites and grub jars (host/props.py) take
-  (320,493,16,1) and the row below it. That leaves one row of the fourteen
-  unreserved, y495, and two reserved but unused inside the ability block. No
+  (320,493,16,1) and the row below it. That left one row of the fourteen
+  unreserved, y495, which the heal's white flash takes for its grey palette (the
+  ability art's fifth). The reserved CLUT block is full. No
   art here reserves a texel rectangle: all of it lives in linked RAM and reaches
   VRAM through the shared 64x64 animation slots, because an ability is usable
   in any view, a Shade can be in any scene and a pause screen is reachable from

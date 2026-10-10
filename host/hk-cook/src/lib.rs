@@ -30,6 +30,7 @@ pub mod false_knight_art;
 pub mod fk_bank;
 pub mod fmod;
 pub mod focus;
+pub mod focus_art;
 pub mod focus_audio;
 pub mod geo_audio;
 pub mod gpu_census;

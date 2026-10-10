@@ -54,6 +54,7 @@ const ASSET_SCRIPTS: &[&str] = &[
     // Ported to Rust (hk-cook src/scene_sfx.rs).
     "rust:scene-sfx",
     "shade.py",
+    "rust:focus-art",
     "ability_art.py",
     // Goams, stalactites and grub jars: their placements come from the region
     // report and the cooked scene draws regions.py wrote. Ported to Rust
@@ -1590,6 +1591,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "cook-audio" => hk_cook::cook_audio::main(root, None)?,
         "geo-audio" => hk_cook::geo_audio::main(root, None)?,
         "focus-audio" => hk_cook::focus_audio::main(root, None)?,
+        "focus-art" => hk_cook::focus_art::main(root, None)?,
         "ambience" => hk_cook::ambience::main(root, None)?,
         "runner-audio" => hk_cook::runner_audio::main(root, &[], None)?,
         "area-music" => hk_cook::area_music::main(root, None)?,
