@@ -49,17 +49,16 @@ def _check_opcodes():
     behaviour change rather than a crash.
     """
     from source import ROOT
-    text = (ROOT / 'shared/hk-sim/src/script.rs').read_text()
-    body = text[text.index('pub enum Code {'):]
-    body = body[:body.index('\n}')]
-    variants = [line.strip().rstrip(',') for line in body.splitlines()[1:]
-                if line.startswith('    ') and line.strip()[:1].isupper()]
+    import rustsrc
+    text = rustsrc.source(ROOT / 'shared/hk-sim/src/script.rs')
+    start = text.index('pub enum Code{') + len('pub enum Code{')
+    variants = [v for v in text[start:text.index('}', start)].split(',') if v]
     expected = ['Nop', 'Wait', 'SetBool', 'SetInt', 'BoolTest', 'IntCompare', 'SendEvent',
                 'NextFrameEvent', 'Native', 'NativeConst', 'PlayerDataGet', 'PlayerDataSet',
                 'PlayerDataBoolTest', 'HeroTrigger']
     if variants != expected:
         raise AssertionError(f'hk_sim::script::Code changed: {variants} != {expected}')
-    for name, value in re.findall(r'pub const (\w+): u8 = (\w+);', text):
+    for name, value in re.findall(r'pub const (\w+):u8=(\w+);', text):
         here = globals().get(name)
         if here is not None and here != int(value, 0):
             raise AssertionError(f'hk_sim::script::{name} is {value}, not {here}')
