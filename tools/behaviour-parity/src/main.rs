@@ -41,6 +41,11 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("probe") => replay::probe(&args[1..]),
+        Some("sight") => {
+            let names_path = std::env::var("HKBP_SCENE_NAMES").expect("HKBP_SCENE_NAMES");
+            let raw: std::collections::BTreeMap<String, String> = serde_json::from_str(&std::fs::read_to_string(names_path).unwrap()).unwrap();
+            replay::sight(std::path::Path::new(&args[1]), &raw.into_iter().map(|(k, v)| (k.parse::<usize>().unwrap(), v)).collect(), &args[2..]);
+        }
         Some("clips") => replay::clips(&args[1..]),
         Some("edges") => replay::edges(&args[1..]),
         Some("static") => {
