@@ -326,3 +326,40 @@ pub fn child_map(sc: &hk_unity::scene::Scene, tid: i64) -> Result<Vec<(String, (
     }
     Ok(children)
 }
+
+/// `tree[key] == want` with Python's equality; a missing field is the KeyError.
+pub fn eq_field(tree: &Value, key: &str, want: &Value) -> Result<bool> {
+    Ok(get(tree, key)?.py_eq(want))
+}
+
+/// `bool(tree[key])`.
+pub fn flag(tree: &Value, key: &str) -> Result<bool> {
+    Ok(get(tree, key)?.truthy())
+}
+
+/// `any(abs(matrix[i][j] - (1 if i == j else 0)) > 1e-6 for i in range(2) for j in range(2))`, negated:
+/// the world matrix has an identity 2x2 basis.
+pub fn identity_basis(m: &[[f64; 4]; 4]) -> bool {
+    (0..2).all(|i| (0..2).all(|j| (m[i][j] - if i == j { 1.0 } else { 0.0 }).abs() <= 1e-6))
+}
+
+/// A tk2dSprite with no tint, no scale and no collider of its own to keep in step
+/// (`_color` and `_scale` at one, `boxCollider2D` null, no `polygonCollider2D`).
+pub fn plain_sprite(sprite: &Value) -> Result<bool> {
+    let color = Value::Map(
+        ["r", "g", "b", "a"]
+            .iter()
+            .map(|k| ((*k).into(), Value::F64(1.0)))
+            .collect(),
+    );
+    let scale = Value::Map(
+        ["x", "y", "z"]
+            .iter()
+            .map(|k| ((*k).into(), Value::F64(1.0)))
+            .collect(),
+    );
+    Ok(get(sprite, "_color")?.py_eq(&color)
+        && get(sprite, "_scale")?.py_eq(&scale)
+        && !get(get(sprite, "boxCollider2D")?, "m_PathID")?.truthy()
+        && !get(sprite, "polygonCollider2D")?.truthy())
+}

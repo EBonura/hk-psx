@@ -212,6 +212,9 @@ fn main() {
                 "HuskGuard",
                 "Hatcher",
                 "HatcherBaby",
+                "FatFly",
+                "PlantTrap",
+                "MossCharger",
             ];
             let (mut checked, mut bad) =
                 (std::collections::BTreeMap::<String, usize>::new(), 0usize);

@@ -197,6 +197,10 @@ pub fn generated_corpse(record: Option<&Json>) -> Result<String> {
             to_int("remove_after_land")?.to_string(),
         ),
         ("hold_ticks", to_int("hold_ticks")?.to_string()),
+        (
+            "gas",
+            lower(cj(record, "gas").is_some_and(truthy)).to_string(),
+        ),
         ("bounds", bracket(list(record, "bounds")?)),
         ("spawn_offset", bracket(list(record, "spawn_offset")?)),
     ];
@@ -251,10 +255,13 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 .collect(),
             _ => Vec::new(),
         };
-        if bodies.is_empty()
-            || bodies
-                .iter()
-                .any(|c| cj(c, "bounds") != cj(bodies[0], "bounds"))
+        // A family whose collider tk2d builds from the frame showing has none on the object; its
+        // recognizer names the box the spec needs instead.
+        if cj(control, "bounds_q16").is_none()
+            && (bodies.is_empty()
+                || bodies
+                    .iter()
+                    .any(|c| cj(c, "bounds") != cj(bodies[0], "bounds")))
         {
             return err("actor requires unsupported distinct body colliders");
         }
@@ -272,14 +279,23 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
             return err("actor requires unsupported HealthManager variant");
         }
         let (x, y) = (row.position[0], row.position[1]);
-        let box_ = list(bodies[0], "bounds")?;
-        let b: Vec<f64> = box_.iter().map(num).collect::<Result<_>>()?;
-        let bounds = [
-            py_round((b[0] - x) * 65536.0),
-            py_round((b[1] - y) * 65536.0),
-            py_round((b[2] - x) * 65536.0),
-            py_round((b[3] - y) * 65536.0),
-        ];
+        let bounds: [i64; 4] = if cj(control, "bounds_q16").is_some() {
+            let q = list(control, "bounds_q16")?;
+            let mut four = [0i64; 4];
+            for (slot, v) in four.iter_mut().zip(q) {
+                *slot = num(v)? as i64;
+            }
+            four
+        } else {
+            let box_ = list(bodies[0], "bounds")?;
+            let b: Vec<f64> = box_.iter().map(num).collect::<Result<_>>()?;
+            [
+                py_round((b[0] - x) * 65536.0),
+                py_round((b[1] - y) * 65536.0),
+                py_round((b[2] - x) * 65536.0),
+                py_round((b[3] - y) * 65536.0),
+            ]
+        };
         let clip = |key: &str| -> Result<i64> {
             actor
                 .clip(key)
@@ -332,6 +348,10 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                         py_round(num(need(attack, "jump_x_factor")?)? * 65536.0),
                         ticks(num(need(attack, "idle_time")?)?)
                     )
+                } else if cj(attack, "kind") == Some(&Json::Str("Gas".into())) {
+                    "hk_sim::runner::Attack::Gas".to_string()
+                } else if cj(attack, "kind") == Some(&Json::Str("SwipeCalm".into())) {
+                    "hk_sim::runner::Attack::SwipeCalm".to_string()
                 } else {
                     "hk_sim::runner::Attack::Swipe".to_string()
                 };
@@ -364,6 +384,73 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 turn_cooldown_ticks = 60;
                 initial_direction = num(need(p, "initial_direction")?)? as i64;
                 random_start_direction = false;
+            }
+            "FatFly" => {
+                let keys = keyed(&["attack_clip", "shot_clip", "impact_clip"]);
+                if !all_present(&keys) || !actor.has_corpse() {
+                    return err(format!("Fat Fly is missing cooked clips or corpse: {who}"));
+                }
+                let named = keys
+                    .iter()
+                    .map(|k| clip(k).map(|c| format!("{k}:{c}")))
+                    .collect::<Result<Vec<_>>>()?
+                    .join(",");
+                // The controller owns the velocity and the facing; the walk fields are unused.
+                controller = format!("hk_sim::ActorController::FatFly {{{named}}}");
+                extra_clips = keys;
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
+            }
+            "PlantTrap" => {
+                let keys = crate::plant_trap::CLIP_SLOTS
+                    .iter()
+                    .map(|slot| format!("{slot}_clip"))
+                    .collect::<Vec<_>>();
+                if !all_present(&keys) || !actor.has_corpse() {
+                    return err(format!(
+                        "Plant Trap is missing cooked clips or corpse: {who}"
+                    ));
+                }
+                controller = format!(
+                    "hk_sim::ActorController::PlantTrap {{clips:[{}]}}",
+                    join_clips(&keys)?
+                );
+                extra_clips = keys;
+                // It never moves and never turns: the walk fields are carried for the common spec.
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
+            }
+            "MossCharger" => {
+                let keys = slot_keys(&crate::moss_charger::CLIP_SLOTS);
+                if !all_present(&keys) || !actor.has_corpse() {
+                    return err(format!(
+                        "Moss Charger is missing cooked clips or corpse: {who}"
+                    ));
+                }
+                controller = format!(
+                    "hk_sim::ActorController::MossCharger {{clips:[{}],range:{}}}",
+                    join_clips(&keys)?,
+                    bracket(list(control, "range_q16")?)
+                );
+                extra_clips = keys;
+                // The controller owns every velocity and the facing, which the art authors as right.
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, 1, false);
             }
             "Climber" => {
                 if actor.clip("stun_clip").is_none() || !actor.has_corpse() {
