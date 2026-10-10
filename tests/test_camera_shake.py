@@ -15,6 +15,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 
 # CameraShake on _GameCameras/CameraParent, the FSM every SendEventByName
 # "<name>Shake" in the game reaches.
@@ -29,9 +30,7 @@ EXPECTED = (('SmallShake', 'ShakingSmall', 3.0, 0.5),
 
 def guest_table():
     """The SHAKES rows compiled into the guest, parsed out of the source file."""
-    text = (ROOT / 'game/src/camera.rs').read_text()
-    body = text.split('const SHAKES: [(i32, u16, u8); 4] = [', 1)[1].split('];', 1)[0]
-    return [tuple(int(v) for v in row.strip(' ()').split(',')) for row in body.split('), (')]
+    return [tuple(row) for row in rustsrc.consts(ROOT / 'game/src/camera.rs', private=True)['SHAKES']]
 
 
 class CameraShakeTests(unittest.TestCase):
