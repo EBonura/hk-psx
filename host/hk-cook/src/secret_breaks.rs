@@ -56,7 +56,9 @@ fn children(sc: &Scene, gid: i64) -> Result<Vec<(String, i64)>> {
     let tid = *sc.go_transform.get(&gid).ok_or("'gid'")?;
     let mut out: Vec<(String, i64)> = Vec::new();
     for child in breakables::kl(sc.transform(tid).ok_or("'tid'")?, "m_Children")? {
-        let t = sc.transform(ki(child, "m_PathID")?).ok_or("child transform")?;
+        let t = sc
+            .transform(ki(child, "m_PathID")?)
+            .ok_or("child transform")?;
         let kid = ki(k(t, "m_GameObject")?, "m_PathID")?;
         let name = ks(sc.go(kid).ok_or("child object")?, "m_Name")?;
         if !out.iter().any(|e| e.0 == name) {
@@ -93,7 +95,9 @@ fn renderers(sc: &Scene, gids: &BTreeSet<i64>) -> Result<Vec<Json>> {
 fn solid_colliders(sc: &Scene, gids: &BTreeSet<i64>) -> Result<Vec<Json>> {
     let mut out = Vec::new();
     for &gid in gids {
-        if !sc.active(gid) || ki(sc.go(gid).ok_or("'gid'")?, "m_Layer")? != breakables::TERRAIN_LAYER {
+        if !sc.active(gid)
+            || ki(sc.go(gid).ok_or("'gid'")?, "m_Layer")? != breakables::TERRAIN_LAYER
+        {
             continue;
         }
         for (index, kind, tree) in components(sc, gid)? {
@@ -192,9 +196,21 @@ fn world_rotation(sc: &Scene, mut tid: i64) -> Result<Quat> {
 fn matrix(position: [f64; 3], rotation: Quat, scale: [f64; 3]) -> M4 {
     let [x, y, z, w] = rotation;
     let r = [
-        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-        [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-        [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        [
+            1.0 - 2.0 * (y * y + z * z),
+            2.0 * (x * y - z * w),
+            2.0 * (x * z + y * w),
+        ],
+        [
+            2.0 * (x * y + z * w),
+            1.0 - 2.0 * (x * x + z * z),
+            2.0 * (y * z - x * w),
+        ],
+        [
+            2.0 * (x * z - y * w),
+            2.0 * (y * z + x * w),
+            1.0 - 2.0 * (x * x + y * y),
+        ],
     ];
     let mut m = [[0.0; 4]; 4];
     for i in 0..3 {
@@ -224,7 +240,8 @@ fn mul(a: &M4, b: &M4) -> M4 {
 }
 
 fn det3(c: &[[f64; 3]; 3]) -> f64 {
-    c[0][0] * (c[1][1] * c[2][2] - c[1][2] * c[2][1]) - c[0][1] * (c[1][0] * c[2][2] - c[1][2] * c[2][0])
+    c[0][0] * (c[1][1] * c[2][2] - c[1][2] * c[2][1])
+        - c[0][1] * (c[1][0] * c[2][2] - c[1][2] * c[2][0])
         + c[0][2] * (c[1][0] * c[2][1] - c[1][1] * c[2][0])
 }
 
@@ -345,7 +362,10 @@ fn floor_sag(source: &Source, sc: &Scene, parts: &[(String, i64)]) -> Result<Vec
             }
         }
         for (name, part) in &state {
-            let m = mul(&part.parent, &matrix(part.position, part.rotation, part.scale));
+            let m = mul(
+                &part.parent,
+                &matrix(part.position, part.rotation, part.scale),
+            );
             let [x0, y0, x1, y1] = part.bounds;
             let quad: Vec<Json> = [(x0, y1), (x1, y1), (x0, y0), (x1, y0)]
                 .iter()
@@ -393,7 +413,9 @@ fn wall(sc: &Scene, record: &Json) -> Result<Json> {
         FAMILY_WALL_TK2D
     };
     let subtree: BTreeSet<i64> = descendants(sc, gid)?.into_iter().collect();
-    let mut colliders = vec![jget(record, "collider_source").cloned().unwrap_or(Json::Null)];
+    let mut colliders = vec![jget(record, "collider_source")
+        .cloned()
+        .unwrap_or(Json::Null)];
     let mut locks: Vec<Json> = Vec::new();
     if family == FAMILY_WALL {
         let kids = children(sc, gid)?;
@@ -408,7 +430,9 @@ fn wall(sc: &Scene, record: &Json) -> Result<Json> {
         Some(Json::Float(f)) => *f as i64,
         _ => 0,
     };
-    let renderer_source = jget(record, "renderer_source").cloned().unwrap_or(Json::Null);
+    let renderer_source = jget(record, "renderer_source")
+        .cloned()
+        .unwrap_or(Json::Null);
     let recoil = WALL_RECOIL[facing as usize];
     let origin = point(sc, gid)?;
     let uncovers: Vec<Json> = match jget(record, "uncovers") {
@@ -420,8 +444,14 @@ fn wall(sc: &Scene, record: &Json) -> Result<Json> {
     };
     Ok(jobj(vec![
         ("family", ji(family)),
-        ("hits", jget(record, "nail_hits").cloned().unwrap_or(Json::Null)),
-        ("facing", jget(record, "facing").cloned().unwrap_or(Json::Null)),
+        (
+            "hits",
+            jget(record, "nail_hits").cloned().unwrap_or(Json::Null),
+        ),
+        (
+            "facing",
+            jget(record, "facing").cloned().unwrap_or(Json::Null),
+        ),
         ("spell", jb(true)),
         ("hero_range", Json::Null),
         ("lockout_ticks", ji(WALL_LOCKOUT_TICKS)),
@@ -685,7 +715,11 @@ pub fn secret_sources(
                 "hit_polygons",
                 "box",
             ] {
-                jset(&mut secret, key, jget(&record, key).cloned().unwrap_or(Json::Null));
+                jset(
+                    &mut secret,
+                    key,
+                    jget(&record, key).cloned().unwrap_or(Json::Null),
+                );
             }
             jset(&mut secret, "persistence", jl(persist));
             found.push(secret);
@@ -773,7 +807,9 @@ pub fn bind_secrets(
                         jset(
                             &mut m,
                             "draw",
-                            draw_ids.get(r.as_str()).map_or(Json::Null, |&i| ji(i as i64)),
+                            draw_ids
+                                .get(r.as_str())
+                                .map_or(Json::Null, |&i| ji(i as i64)),
                         );
                         m
                     })

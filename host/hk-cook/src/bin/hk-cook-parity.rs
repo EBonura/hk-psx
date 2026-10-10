@@ -2581,6 +2581,208 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "breakables" => {
+            // hk-cook-parity breakables <data dir> <oracle-breakables.json>: host/breakables.py,
+            // secret_breaks.py and reveal_masks.py over real scenes, record for record.
+            use hk_cook::breakables as bk;
+            use hk_cook::pyjson::{parse, Json};
+            use hk_cook::{reveal_masks, secret_breaks};
+            use hk_unity::scene::Scene;
+            let source = lazy_source();
+            let oracle = parse(&std::fs::read_to_string(&args[3]).unwrap()).unwrap();
+            let Json::List(scenes) = oracle else {
+                panic!("scenes")
+            };
+            let only: Vec<&String> = args.iter().skip(4).collect();
+            fn first_diff(a: &Json, b: &Json, path: &str) -> Option<String> {
+                match (a, b) {
+                    (Json::Obj(x), Json::Obj(y)) => {
+                        for (i, ((kx, vx), (ky, vy))) in x.iter().zip(y).enumerate() {
+                            if kx != ky {
+                                return Some(format!("{path}: key #{i} {kx:?} vs {ky:?}"));
+                            }
+                            if let Some(d) = first_diff(vx, vy, &format!("{path}.{kx}")) {
+                                return Some(d);
+                            }
+                        }
+                        (x.len() != y.len())
+                            .then(|| format!("{path}: {} keys vs {}", x.len(), y.len()))
+                    }
+                    (Json::List(x), Json::List(y)) => {
+                        for (i, (vx, vy)) in x.iter().zip(y).enumerate() {
+                            if let Some(d) = first_diff(vx, vy, &format!("{path}[{i}]")) {
+                                return Some(d);
+                            }
+                        }
+                        (x.len() != y.len())
+                            .then(|| format!("{path}: {} items vs {}", x.len(), y.len()))
+                    }
+                    _ => (a != b).then(|| format!("{path}: {a:?} vs {b:?}")),
+                }
+            }
+            let wrap = |r: hk_cook::common::Result<(Vec<Json>, Vec<Json>)>| -> Json {
+                match r {
+                    Ok((records, errors)) => Json::Obj(vec![
+                        ("records".into(), Json::List(records)),
+                        ("errors".into(), Json::List(errors)),
+                    ]),
+                    Err(e) => Json::Obj(vec![("raised".into(), Json::Str(e))]),
+                }
+            };
+            let (mut ok, mut bad) = (0, 0);
+            for rec in scenes {
+                let Json::Str(file) = hk_cook::music::jget(&rec, "file").cloned().unwrap() else {
+                    panic!("file")
+                };
+                if !only.is_empty() && !only.iter().any(|o| **o == file) {
+                    continue;
+                }
+                let sc = Scene::new(&source, &file).unwrap();
+                macro_rules! check {
+                    ($what:expr, $got:expr $(,)?) => {{
+                        let what: &str = $what;
+                        let got: Json = $got;
+                        let want = hk_cook::music::jget(&rec, what)
+                            .cloned()
+                            .unwrap_or(Json::Null);
+                        // "raised" cases compare only that the call raised.
+                        let raised = |j: &Json| hk_cook::music::jget(j, "raised").is_some();
+                        if raised(&got) && raised(&want) {
+                            ok += 1;
+                        } else {
+                            match first_diff(&got, &want, what) {
+                                None => ok += 1,
+                                Some(d) => {
+                                    bad += 1;
+                                    println!("{file}: {d}");
+                                }
+                            }
+                        }
+                    }};
+                }
+                macro_rules! family {
+                    ($name:expr, $call:expr) => {{
+                        let mut errors = Vec::new();
+                        let r = $call(&mut errors);
+                        check!($name, wrap(r.map(|records| (records, errors))));
+                    }};
+                }
+                family!("battle_gates", |e: &mut Vec<Json>| bk::battle_gates(
+                    &sc,
+                    Some(e)
+                ));
+                family!("hidden_walls", |e: &mut Vec<Json>| bk::hidden_walls(
+                    &sc,
+                    Some(e),
+                    true,
+                    None
+                ));
+                family!("hidden_walls_open", |e: &mut Vec<Json>| bk::hidden_walls(
+                    &sc,
+                    Some(e),
+                    false,
+                    None
+                ));
+                family!("cracked_floors", |e: &mut Vec<Json>| bk::cracked_floors(
+                    &sc,
+                    Some(e),
+                    true
+                ));
+                family!("cracked_floors_open", |e: &mut Vec<Json>| {
+                    bk::cracked_floors(&sc, Some(e), false)
+                });
+                family!("vines", |e: &mut Vec<Json>| bk::infected_vines(
+                    &sc,
+                    Some(e),
+                    true
+                ));
+                family!("vines_open", |e: &mut Vec<Json>| bk::infected_vines(
+                    &sc,
+                    Some(e),
+                    false
+                ));
+                family!("breakables", |e: &mut Vec<Json>| bk::breakable_sources(
+                    &sc,
+                    None,
+                    Some(e),
+                    true
+                ));
+                family!(
+                    "breakables_open",
+                    |e: &mut Vec<Json>| bk::breakable_sources(&sc, None, Some(e), false)
+                );
+                family!(
+                    "secrets",
+                    |e: &mut Vec<Json>| secret_breaks::secret_sources(&source, &sc, None, Some(e))
+                );
+                let pairs = |v: Vec<(i64, Json)>| {
+                    Json::List(
+                        v.into_iter()
+                            .map(|(k, d)| Json::List(vec![Json::Int(k), d]))
+                            .collect(),
+                    )
+                };
+                check!("uncover_drivers", pairs(bk::uncover_drivers(&sc).unwrap()));
+                match secret_breaks::secret_states(&sc) {
+                    Ok(states) => {
+                        check!(
+                            "secret_states",
+                            Json::List(
+                                states
+                                    .iter()
+                                    .map(|(s, v)| {
+                                        Json::List(vec![Json::Str(s.clone()), Json::Int(*v)])
+                                    })
+                                    .collect(),
+                            ),
+                        );
+                        let mut drivers: Vec<(i64, i64)> = secret_breaks::secret_drivers(&sc)
+                            .unwrap()
+                            .into_iter()
+                            .collect();
+                        drivers.sort_unstable();
+                        let mut want: Vec<(i64, i64)> =
+                            match hk_cook::music::jget(&rec, "secret_drivers") {
+                                Some(Json::List(l)) => l
+                                    .iter()
+                                    .map(|p| {
+                                        let Json::List(p) = p else { panic!("pair") };
+                                        let (Json::Int(a), Json::Int(b)) = (&p[0], &p[1]) else {
+                                            panic!("ints")
+                                        };
+                                        (*a, *b)
+                                    })
+                                    .collect(),
+                                _ => vec![],
+                            };
+                        want.sort_unstable();
+                        let same = drivers == want;
+                        if same {
+                            ok += 1
+                        } else {
+                            bad += 1;
+                            println!("{file}: secret_drivers differ");
+                        }
+                    }
+                    Err(_) => check!(
+                        "secret_states",
+                        Json::Obj(vec![("raised".into(), Json::Null)]),
+                    ),
+                }
+                let rm = reveal_masks::reveal_mask_sources(&sc).unwrap();
+                check!(
+                    "reveal",
+                    Json::Obj(vec![
+                        ("controllers".into(), Json::List(rm.controllers)),
+                        ("unsupported".into(), Json::List(rm.unsupported)),
+                    ]),
+                );
+            }
+            println!("checked {ok} results, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         "atlas2" => {
             // hk-cook-parity atlas2 <oracle-atlas2.json> <oracle-quant dir>: Atlas.add, add_tiled,
             // add_frames_shared and pack over real sprite images.
