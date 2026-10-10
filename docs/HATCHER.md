@@ -279,9 +279,37 @@ Crossroads_27 both reach 18. Every Hatcher and baby frame measures inside one
 and Zombie Leaper, so the scene's actor count is its worst-case tile count and
 `family_budget` refuses a family that would push it past 20.
 
-Crossroads_22 is refused on its FSM set, not its budget: its Hatcher and all 23
-of its cage carry a third FSM, `Remove on battle start`, which takes them out of
-the room when the arena begins and which nothing here runs. Its four `Hatcher NP`
-copies are refused separately, for standing outside the room's own runtime
-bounds under `Hatcher Summon` parents; they are arena content for P22, not
-placements.
+## Crossroads_22: the wave arena
+
+The original never has all 36 alive at once. Crossroads_22's `Battle Control`
+runs four waves of ordinary enemies one at a time (host/battle.py,
+shared/hk-sim/src/waves.rs), and its `Remove on battle start` kills what stood
+in the room before. So the pool is sized on the arena's **largest moment**, not
+the sum of its placements (`battle.pool_peak`, in Python and Rust): before the
+fight the placed Hatcher, four Spitters and the cage of 23 stand (28); once it
+starts the cage plus the biggest wave (4) stand (27). Both fit 32, so there is
+no pool growth.
+
+The four `Hatcher NP` copies are wave members, not placements. They differ from
+the placed Hatcher in one gate: its `Hatched Max Check` is the live cap
+`Spawned < Hatched Max` (5) where the placed one tests the cage child count.
+`Hatcher::with_cap` is that variant; every released baby is still one of the
+scene's pooled cage members, recycled on death, so two NP Hatchers in wave four
+release at most ten babies between them and no baby is created.
+
+The guest seats only what stands in the room (`sync_region` skips wave members
+and anything the battle has removed). The hero crossing `Battle Scene`'s trigger
+runs `WaveArena::hero_entered`: `BG CLOSE` shuts the gates, `Remove on battle
+start` drops the placed Hatcher and the Spitters without a corpse or Geo, every
+released cage member goes back to the cage (`CENTIPEDE DEATH`), and wave one is
+summoned. Each member lands 60 to 132 ticks later (`summon`'s `Random Pause`
+then its fly-in), alert, in a slot the last moment freed. When every member of a
+wave is dead the next is summoned after 0.75 s; the dead wave's bodies leave the
+pool at that point. The last wave writes `Activated`, and `BG OPEN` follows 3 s
+later. A scene that loads with `Activated` set quick-opens the gates and never
+fights; what stood there stands again, as in the original.
+
+Not presented: the fly-in itself (a member appears at the place it flies to,
+which is the summoner's authored position if `iTweenMoveBy` returns the
+`Translate` it follows), the Spitter's `InstaDeath` Geo (taken as none), and the
+music cue.

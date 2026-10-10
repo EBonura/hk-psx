@@ -140,6 +140,10 @@ struct Cooked {
     game_object: i64,
     /// The HealthManager's hit points as cooked.
     health: i64,
+    /// 1 based arena wave it is summoned in, or 0 (host/battle.py).
+    wave: u8,
+    /// Killed by the arena's `Remove on battle start`.
+    removable: bool,
 }
 
 fn f64s(v: &Value, n: usize) -> Option<Vec<f64>> {
@@ -243,6 +247,8 @@ fn load_cooked(regions: &Value) -> BTreeMap<String, Vec<Cooked>> {
                     ],
                     game_object: a["game_object"].as_i64().unwrap_or(0),
                     health: a["health"].as_i64().unwrap_or(-1),
+                    wave: a["battle_wave"].as_u64().unwrap_or(0) as u8,
+                    removable: a["battle_removable"].as_bool().unwrap_or(false),
                 },
             );
         }
@@ -931,9 +937,22 @@ fn main() {
             }
         }
         // the guest pool
-        note(&mut scene_checks, "pool", supported.len() <= POOL);
-        if supported.len() > POOL {
-            issues.push(json!({"scene": scene, "name": "(scene)", "status": "check_pool", "detail": format!("{} supported placements for {POOL} slots", supported.len())}));
+        // The pool holds an arena's largest moment: what stands before the
+        // battle, or what survives its `Remove on battle start` plus the
+        // biggest wave (host/battle.py `pool_peak`).
+        let standing = supported.iter().filter(|c| c.wave == 0).count();
+        let kept = supported
+            .iter()
+            .filter(|c| c.wave == 0 && !c.removable)
+            .count();
+        let largest = (1..=u8::MAX)
+            .map(|w| supported.iter().filter(|c| c.wave == w).count())
+            .max()
+            .unwrap_or(0);
+        let peak = standing.max(kept + largest);
+        note(&mut scene_checks, "pool", peak <= POOL);
+        if peak > POOL {
+            issues.push(json!({"scene": scene, "name": "(scene)", "status": "check_pool", "detail": format!("{peak} actors at the busiest moment for {POOL} slots ({} placements)", supported.len())}));
         }
 
         // 4. Hazards: every DamageHero shape with an active collider is cooked.
