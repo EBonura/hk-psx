@@ -59,7 +59,13 @@ impl Cast {
         Self {
             phase: CastPhase::Off,
             tick: 0,
-            ball: Fireball { alive: false, x: 0, y: 0, facing: 1, life: 0 },
+            ball: Fireball {
+                alive: false,
+                x: 0,
+                y: 0,
+                facing: 1,
+                life: 0,
+            },
             has_fireball: false,
             was_button: false,
             held: 0,
@@ -78,8 +84,17 @@ impl Cast {
     /// One tick of the cast. `antic_ticks` and `cast_ticks` are the two clip
     /// lengths; `soul` is the caller's SOUL, debited only when a cast starts.
     /// Returns true on the tick the projectile is launched.
-    pub fn tick(&mut self, p: FireballParams, antic_ticks: u16, cast_ticks: u16,
-                button: bool, soul: &mut u16, player: &Player, blocked: bool) -> bool {
+    #[allow(clippy::too_many_arguments)]
+    pub fn tick(
+        &mut self,
+        p: FireballParams,
+        antic_ticks: u16,
+        cast_ticks: u16,
+        button: bool,
+        soul: &mut u16,
+        player: &Player,
+        blocked: bool,
+    ) -> bool {
         self.fly(p);
         if button {
             self.held = self.held.saturating_add(1);
@@ -93,8 +108,11 @@ impl Cast {
         if self.phase == CastPhase::Off {
             // Can Cast?: HeroController.CanCast, MPCharge >= MP Cost, and
             // Has Fireball? wants fireballLevel above zero.
-            let can = self.has_fireball && !blocked && *soul >= p.cost
-                && player.dash_left == 0 && !player.attack_recovering;
+            let can = self.has_fireball
+                && !blocked
+                && *soul >= p.cost
+                && player.dash_left == 0
+                && !player.attack_recovering;
             if tapped && can {
                 *soul -= p.cost;
                 self.phase = CastPhase::Antic;
@@ -146,8 +164,17 @@ impl Cast {
         }
         let [x0, y0, x1, y1] = p.bounds;
         // The box is authored facing right; a left-flying ball mirrors it.
-        let (left, right) = if self.ball.facing >= 0 { (x0, x1) } else { (-x1, -x0) };
-        Some([self.ball.x + left, self.ball.y + y0, self.ball.x + right, self.ball.y + y1])
+        let (left, right) = if self.ball.facing >= 0 {
+            (x0, x1)
+        } else {
+            (-x1, -x0)
+        };
+        Some([
+            self.ball.x + left,
+            self.ball.y + y0,
+            self.ball.x + right,
+            self.ball.y + y1,
+        ])
     }
     /// Stop the projectile, as a wall or an enemy contact does.
     pub fn extinguish(&mut self) {
@@ -156,8 +183,12 @@ impl Cast {
     /// The projectile's Idle state ends on a terrain-layer contact, so a ball
     /// overlapping a vertical edge stops there rather than passing through.
     /// Enemies do not stop it: `Fireball Control` only listens for the wall.
-    pub fn stop_at_wall(&mut self, p: FireballParams, count: usize,
-                        edge: impl Fn(usize) -> [i32; 4]) {
+    pub fn stop_at_wall(
+        &mut self,
+        p: FireballParams,
+        count: usize,
+        edge: impl Fn(usize) -> [i32; 4],
+    ) {
         let Some(b) = self.ball_bounds(p) else { return };
         for i in 0..count {
             let [x0, y0, x1, y1] = edge(i);
@@ -180,7 +211,11 @@ mod tests {
     use super::*;
     use crate::ONE;
     const P: FireballParams = FireballParams {
-        tap_ticks: 15, cost: 33, speed: 40 * ONE, life_ticks: 27, damage: 15,
+        tap_ticks: 15,
+        cost: 33,
+        speed: 40 * ONE,
+        life_ticks: 27,
+        damage: 15,
         bounds: [-50538, -70792, 120586, 68444],
     };
     const ANTIC: u16 = 8;
@@ -211,7 +246,11 @@ mod tests {
         c.has_fireball = true;
         let mut soul = 99;
         tap(&mut c, &mut soul, &k, P.tap_ticks + 4);
-        assert_eq!(c.phase, CastPhase::Off, "held past Button Down Time, so this is a Focus");
+        assert_eq!(
+            c.phase,
+            CastPhase::Off,
+            "held past Button Down Time, so this is a Focus"
+        );
         assert_eq!(soul, 99);
         tap(&mut c, &mut soul, &k, 3);
         assert_eq!(c.phase, CastPhase::Antic);
@@ -241,7 +280,11 @@ mod tests {
         assert!(c.ball.alive);
         let start = c.ball.x;
         c.tick(P, ANTIC, CAST, false, &mut soul, &k, false);
-        assert_eq!(c.ball.x - start, P.speed / 60, "Fire Speed along the facing");
+        assert_eq!(
+            c.ball.x - start,
+            P.speed / 60,
+            "Fire Speed along the facing"
+        );
         for _ in 0..P.life_ticks {
             c.tick(P, ANTIC, CAST, false, &mut soul, &k, false);
         }

@@ -63,11 +63,11 @@ pub struct AcidFlyer {
 }
 /// sin(pi/2 * i/64), Q16, i = 0..=64: the quarter wave easeInOutSine needs.
 const QUARTER: [u32; 65] = [
-    0, 1608, 3216, 4821, 6424, 8022, 9616, 11204, 12785, 14359, 15924, 17479, 19024, 20557, 22078, 23586,
-    25080, 26558, 28020, 29466, 30893, 32303, 33692, 35062, 36410, 37736, 39040, 40320, 41576, 42806, 44011, 45190,
-    46341, 47464, 48559, 49624, 50660, 51665, 52639, 53581, 54491, 55368, 56212, 57022, 57798, 58538, 59244, 59914,
-    60547, 61145, 61705, 62228, 62714, 63162, 63572, 63944, 64277, 64571, 64827, 65043, 65220, 65358, 65457, 65516,
-    65536,
+    0, 1608, 3216, 4821, 6424, 8022, 9616, 11204, 12785, 14359, 15924, 17479, 19024, 20557, 22078,
+    23586, 25080, 26558, 28020, 29466, 30893, 32303, 33692, 35062, 36410, 37736, 39040, 40320,
+    41576, 42806, 44011, 45190, 46341, 47464, 48559, 49624, 50660, 51665, 52639, 53581, 54491,
+    55368, 56212, 57022, 57798, 58538, 59244, 59914, 60547, 61145, 61705, 62228, 62714, 63162,
+    63572, 63944, 64277, 64571, 64827, 65043, 65220, 65358, 65457, 65516, 65536,
 ];
 /// easeInOutSine as iTween computes it, for p in [0, ONE]: (1 - cos(pi p)) / 2,
 /// which is sin^2(pi p / 2).
@@ -75,13 +75,18 @@ pub fn ease_in_out_sine(p: i32) -> i32 {
     let p = p.clamp(0, ONE) as u32;
     let at = p * 64;
     let (i, frac) = ((at >> 16) as usize, at & 0xffff);
-    let s = if i >= 64 { QUARTER[64] } else { QUARTER[i] + ((QUARTER[i + 1] - QUARTER[i]) * frac >> 16) };
+    let s = if i >= 64 {
+        QUARTER[64]
+    } else {
+        QUARTER[i] + (((QUARTER[i + 1] - QUARTER[i]) * frac) >> 16)
+    };
     ((s as u64 * s as u64) >> 16) as i32
 }
 /// iTween's speed mode: the move takes |amount| / speed seconds.
 fn half_ticks(amount: i32, speed: i32) -> u16 {
     assert!(speed > 0, "Acid Flyer speed must be positive");
-    ((amount.unsigned_abs() as u64 * 60 + speed as u64 / 2) / speed as u64).clamp(1, u16::MAX as u64) as u16
+    ((amount.unsigned_abs() as u64 * 60 + speed as u64 / 2) / speed as u64)
+        .clamp(1, u16::MAX as u64) as u16
 }
 fn eased(amount: i32, tick: u16, ticks: u16) -> i32 {
     let p = (tick.min(ticks) as i64 * ONE as i64 / ticks as i64) as i32;
@@ -96,9 +101,22 @@ impl AcidFlyer {
     /// `lead` is the second, Wait-less `Tween` FSM's `Move Vector` y and
     /// `Speed` (speed 0: the placement has none).
     pub fn with_lead(amount: i32, speed: i32, lead: [i32; 2]) -> Self {
-        let lead_ticks = if lead[1] > 0 { half_ticks(lead[0], lead[1]) } else { 0 };
-        Self { amount, half_ticks: half_ticks(amount, speed), lead_amount: lead[0], lead_ticks, bias: 0, tick: 0,
-            phase: Phase::Wait, facing_right: false, clip: Clip::Fly }
+        let lead_ticks = if lead[1] > 0 {
+            half_ticks(lead[0], lead[1])
+        } else {
+            0
+        };
+        Self {
+            amount,
+            half_ticks: half_ticks(amount, speed),
+            lead_amount: lead[0],
+            lead_ticks,
+            bias: 0,
+            tick: 0,
+            phase: Phase::Wait,
+            facing_right: false,
+            clip: Clip::Fly,
+        }
     }
     pub fn half_ticks(&self) -> u16 {
         self.half_ticks
@@ -120,7 +138,9 @@ impl AcidFlyer {
         match self.phase {
             Phase::Up => self.bias + eased(self.amount, self.tick, self.half_ticks),
             Phase::Down => self.bias + self.amount - eased(self.amount, self.tick, self.half_ticks),
-            Phase::Wait if self.lead_ticks != 0 => eased(self.lead_amount, self.tick, self.lead_ticks),
+            Phase::Wait if self.lead_ticks != 0 => {
+                eased(self.lead_amount, self.tick, self.lead_ticks)
+            }
             Phase::Wait | Phase::Dead => 0,
         }
     }
@@ -173,7 +193,11 @@ mod tests {
         assert_eq!(ease_in_out_sine(0), 0);
         assert_eq!(ease_in_out_sine(ONE), ONE);
         assert!((ease_in_out_sine(ONE / 2) - ONE / 2).abs() <= 2);
-        assert!((ease_in_out_sine(ONE / 4) - 9598).abs() <= 8, "{}", ease_in_out_sine(ONE / 4));
+        assert!(
+            (ease_in_out_sine(ONE / 4) - 9598).abs() <= 8,
+            "{}",
+            ease_in_out_sine(ONE / 4)
+        );
     }
 
     #[test]
@@ -201,7 +225,11 @@ mod tests {
     fn a_disposed_lead_tween_offsets_the_first_cycle_only() {
         // Acid Flyer (1): A +8.5 at 4.0, B +9.5 at 5.25. B runs alone for the
         // half second A waits, which leaves the body ~1.68 up.
-        let mut fly = AcidFlyer::with_lead(8 * ONE + ONE / 2, 4 * ONE, [9 * ONE + ONE / 2, 5 * ONE + ONE / 4]);
+        let mut fly = AcidFlyer::with_lead(
+            8 * ONE + ONE / 2,
+            4 * ONE,
+            [9 * ONE + ONE / 2, 5 * ONE + ONE / 4],
+        );
         for _ in 0..START_WAIT_TICKS {
             fly.tick(0, ONE);
         }

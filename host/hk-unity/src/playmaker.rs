@@ -19,29 +19,51 @@ fn put(fields: &mut Fields, key: String, value: Value) {
 }
 
 fn ints(v: Option<&Value>) -> Vec<i64> {
-    v.and_then(Value::list).map(|l| l.iter().map(|x| x.int().unwrap_or(0)).collect()).unwrap_or_default()
+    v.and_then(Value::list)
+        .map(|l| l.iter().map(|x| x.int().unwrap_or(0)).collect())
+        .unwrap_or_default()
 }
 
 fn compact(value: Value, use_variable: bool, name: String) -> Value {
     let key = |s: &str| -> Arc<str> { s.into() };
-    Value::Map(vec![(key("value"), value), (key("useVariable"), Value::Bool(use_variable)), (key("name"), Value::Str(name.into_bytes()))])
+    Value::Map(vec![
+        (key("value"), value),
+        (key("useVariable"), Value::Bool(use_variable)),
+        (key("name"), Value::Str(name.into_bytes())),
+    ])
 }
 
 /// host/focus.py `action_fields`: the compact scalar fields of one action.
 pub fn action_fields(data: &Value, index: usize, objects: bool) -> Result<Fields> {
-    let get = |k: &str| data.get(k).ok_or_else(|| Error::Format(format!("actionData lacks {k}")));
+    let get = |k: &str| {
+        data.get(k)
+            .ok_or_else(|| Error::Format(format!("actionData lacks {k}")))
+    };
     let names = get("actionNames")?.list().unwrap_or(&[]).len();
     let starts = ints(Some(get("actionStartIndex")?));
     let param_names = get("paramName")?.list().unwrap_or(&[]).to_vec();
     let kinds = ints(Some(get("paramDataType")?));
     let positions = ints(Some(get("paramDataPos")?));
     let sizes = ints(Some(get("paramByteDataSize")?));
-    let bytes: Vec<u8> = ints(Some(get("byteData")?)).into_iter().map(|b| b as u8).collect();
-    let start = *starts.get(index).ok_or_else(|| Error::Format("action index out of range".into()))? as usize;
-    let end = if index + 1 < names { starts[index + 1] as usize } else { param_names.len() };
+    let bytes: Vec<u8> = ints(Some(get("byteData")?))
+        .into_iter()
+        .map(|b| b as u8)
+        .collect();
+    let start = *starts
+        .get(index)
+        .ok_or_else(|| Error::Format("action index out of range".into()))? as usize;
+    let end = if index + 1 < names {
+        starts[index + 1] as usize
+    } else {
+        param_names.len()
+    };
     let mut fields = Fields::new();
     for i in start..end {
-        let name = param_names.get(i).and_then(Value::str).filter(|s| !s.is_empty()).unwrap_or_else(|| i.to_string());
+        let name = param_names
+            .get(i)
+            .and_then(Value::str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| i.to_string());
         let kind = kinds[i];
         let pos = positions[i];
         let size = sizes[i];
@@ -59,11 +81,13 @@ pub fn action_fields(data: &Value, index: usize, objects: bool) -> Result<Fields
                     16 => Value::Int(i32::from_le_bytes(raw[..4].try_into().unwrap()) as i64),
                     _ => Value::Bool(raw[0] != 0),
                 };
-                let text = std::str::from_utf8(&raw[n + 1..]).map_err(|_| Error::Format("compact FSM name is not UTF-8".into()))?;
+                let text = std::str::from_utf8(&raw[n + 1..])
+                    .map_err(|_| Error::Format("compact FSM name is not UTF-8".into()))?;
                 compact(scalar, raw[n] != 0, text.to_string())
             }
             23 => {
-                let text = std::str::from_utf8(raw).map_err(|_| Error::Format("FSM string is not UTF-8".into()))?;
+                let text = std::str::from_utf8(raw)
+                    .map_err(|_| Error::Format("FSM string is not UTF-8".into()))?;
                 Value::Str(text.as_bytes().to_vec())
             }
             19 if objects => list_item(data, "fsmGameObjectParams", pos)?,
@@ -86,15 +110,26 @@ pub fn action_fields(data: &Value, index: usize, objects: bool) -> Result<Fields
 }
 
 fn list_item(data: &Value, key: &str, pos: i64) -> Result<Value> {
-    let list = data.get(key).and_then(Value::list).ok_or_else(|| Error::Format(format!("actionData lacks {key}")))?;
+    let list = data
+        .get(key)
+        .and_then(Value::list)
+        .ok_or_else(|| Error::Format(format!("actionData lacks {key}")))?;
     // Python indexing: a negative position counts from the end.
-    let i = if pos < 0 { list.len() as i64 + pos } else { pos };
-    list.get(i as usize).cloned().ok_or_else(|| Error::Format(format!("{key} index out of range")))
+    let i = if pos < 0 {
+        list.len() as i64 + pos
+    } else {
+        pos
+    };
+    list.get(i as usize)
+        .cloned()
+        .ok_or_else(|| Error::Format(format!("{key} index out of range")))
 }
 
 /// One state's enabled actions as (short name, index), in authored order.
 pub fn enabled(state: &Value) -> Vec<(String, usize)> {
-    let Some(d) = state.get("actionData") else { return vec![] };
+    let Some(d) = state.get("actionData") else {
+        return vec![];
+    };
     let names = d.get("actionNames").and_then(Value::list).unwrap_or(&[]);
     let on = d.get("actionEnabled").and_then(Value::list).unwrap_or(&[]);
     names

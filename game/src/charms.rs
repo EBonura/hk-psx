@@ -38,7 +38,11 @@ pub enum Effect {
     /// is missing. Equipping is refused so nothing silently does nothing.
     None,
     /// Stalwart Shell: `INVUL_TIME_STAL` and `RECOIL_DURATION_STAL`.
-    Shell { invulnerable_ticks: u16, hazard_invulnerable_ticks: u16, recoil_ticks: u16 },
+    Shell {
+        invulnerable_ticks: u16,
+        hazard_invulnerable_ticks: u16,
+        recoil_ticks: u16,
+    },
     /// Soul Catcher and Soul Eater, which `HeroController::SoulGain` adds.
     SoulPerHit(u16),
     /// Fragile Heart: `CharmUpdate` raises `maxHealth` over `maxHealthBase`.
@@ -46,7 +50,11 @@ pub enum Effect {
     /// Fragile Strength: `Set Slash Damage` truncates nail damage times 1.5.
     NailScale { numerator: u16, denominator: u16 },
     /// Grubsong: `TakeDamageCharmEffects` charges SOUL on a damaging hit.
-    SoulOnDamage { alone: u16, combo: u16, combo_charm: u8 },
+    SoulOnDamage {
+        alone: u16,
+        combo: u16,
+        combo_charm: u8,
+    },
 }
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/charms.rs"));
 
@@ -94,7 +102,14 @@ const fn bit(charm: usize) -> u64 {
 }
 impl State {
     pub const fn new() -> Self {
-        Self { owned: 0, equipped: 0, broken: 0, notches: STARTING_NOTCHES, can_overcharm: false, attempts: 0 }
+        Self {
+            owned: 0,
+            equipped: 0,
+            broken: 0,
+            notches: STARTING_NOTCHES,
+            can_overcharm: false,
+            attempts: 0,
+        }
     }
     pub fn charm(charm: usize) -> &'static Charm {
         &CHARMS[charm - 1]
@@ -114,7 +129,10 @@ impl State {
     /// `PlayerData::CalculateNotchesUsed`: the cost of everything equipped.
     /// Derived rather than stored so a save can never disagree with itself.
     pub fn filled(&self) -> u8 {
-        (1..=CHARM_COUNT).filter(|&n| self.equipped(n)).map(|n| Self::charm(n).cost).sum()
+        (1..=CHARM_COUNT)
+            .filter(|&n| self.equipped(n))
+            .map(|n| Self::charm(n).cost)
+            .sum()
     }
     /// `GameManager::RefreshOvercharm`.
     pub fn overcharmed(&self) -> bool {
@@ -175,11 +193,22 @@ impl State {
     /// Reject a record whose equipped set is not a subset of what it owns, or
     /// whose notch count cannot hold it without the overcharm it did not earn.
     pub fn restore(owned: u64, equipped: u64, notches: u8, can_overcharm: bool) -> Option<Self> {
-        let mask = if CHARM_COUNT >= 64 { u64::MAX } else { (1u64 << CHARM_COUNT) - 1 };
+        let mask = if CHARM_COUNT >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << CHARM_COUNT) - 1
+        };
         if owned & !mask != 0 || equipped & !owned != 0 || notches == 0 {
             return None;
         }
-        let state = Self { owned, equipped, broken: 0, notches, can_overcharm, attempts: 0 };
+        let state = Self {
+            owned,
+            equipped,
+            broken: 0,
+            notches,
+            can_overcharm,
+            attempts: 0,
+        };
         if state.overcharmed() && !can_overcharm {
             return None;
         }
@@ -286,15 +315,24 @@ fn compose(s: &State, mut base: VitalParams) -> VitalParams {
             continue;
         }
         match State::charm(charm).effect {
-            Effect::Shell { invulnerable_ticks, hazard_invulnerable_ticks, recoil_ticks } => {
+            Effect::Shell {
+                invulnerable_ticks,
+                hazard_invulnerable_ticks,
+                recoil_ticks,
+            } => {
                 base.invulnerable_ticks = invulnerable_ticks;
                 base.hazard_invulnerable_ticks = hazard_invulnerable_ticks;
                 base.recoil_ticks = recoil_ticks;
             }
-            Effect::SoulPerHit(extra) => base.soul_per_hit = base.soul_per_hit.saturating_add(extra),
+            Effect::SoulPerHit(extra) => {
+                base.soul_per_hit = base.soul_per_hit.saturating_add(extra)
+            }
             Effect::MaxHealth(extra) => base.max_health = base.max_health.saturating_add(extra),
             // `(int)((float)damage * 1.5f)` truncates, so integer division does too.
-            Effect::NailScale { numerator, denominator } => {
+            Effect::NailScale {
+                numerator,
+                denominator,
+            } => {
                 base.nail_damage = base.nail_damage.saturating_mul(numerator) / denominator;
             }
             Effect::None | Effect::SoulOnDamage { .. } => {}
@@ -311,8 +349,17 @@ fn charge_on_damage(s: &State, vitals: &mut Vitals, params: VitalParams) {
         if !s.equipped(charm) {
             continue;
         }
-        if let Effect::SoulOnDamage { alone, combo, combo_charm } = State::charm(charm).effect {
-            let amount = if s.equipped(combo_charm as usize) { combo } else { alone };
+        if let Effect::SoulOnDamage {
+            alone,
+            combo,
+            combo_charm,
+        } = State::charm(charm).effect
+        {
+            let amount = if s.equipped(combo_charm as usize) {
+                combo
+            } else {
+                alone
+            };
             vitals.add_soul(params, amount);
         }
     }
@@ -332,7 +379,11 @@ pub struct Screen {
 }
 impl Screen {
     pub const fn new() -> Self {
-        Self { open: false, row: 0, message: None }
+        Self {
+            open: false,
+            row: 0,
+            message: None,
+        }
     }
     pub fn enter(&mut self) {
         self.open = true;
@@ -370,16 +421,27 @@ impl Screen {
 mod presentation {
     use super::*;
     use crate::dialogue::{panel_frame, panel_number, panel_text, panel_width};
-    use psx_gpu::{material::{BlendMode, TextureMaterial}, ot::OrderingTable, prim::QuadTextured};
+    use psx_gpu::{
+        material::{BlendMode, TextureMaterial},
+        ot::OrderingTable,
+        prim::QuadTextured,
+    };
     use psx_vram::{upload_bytes, Clut, VramRect};
-    static ICON_DATA: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/charm-icons.hk"));
+    static ICON_DATA: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../data/charm-icons.hk"
+    ));
     /// Animation-cache keys above the ability clips', which are themselves
     /// above the Shade's. A pause screen is reachable from every view, so these
     /// icons can no more ride in a room atlas than the Shade can: they stay in
     /// linked RAM and reach VRAM through the shared 64x64 slots on demand.
-    pub const KEY_BASE: u16 = crate::ability_art::KEY_BASE + crate::ability_art::ABILITY_FRAMES.len() as u16;
+    pub const KEY_BASE: u16 =
+        crate::ability_art::KEY_BASE + crate::ability_art::ABILITY_FRAMES.len() as u16;
     const _: () = assert!(KEY_BASE as usize + CHARM_COUNT <= hk_cache::MAX_KEYS);
-    const _: () = assert!(ICON_BYTES <= 2048, "an icon has to reach VRAM in one slot upload");
+    const _: () = assert!(
+        ICON_BYTES <= 2048,
+        "an icon has to reach VRAM in one slot upload"
+    );
     // The board's own claim on the cache. It is not the whole story: the frozen
     // view behind the panel keeps requesting its enemies, whose cap is larger
     // than what is left, so `append_needed` yields rather than asserting.
@@ -401,12 +463,20 @@ mod presentation {
     /// clips took out of the block host/shade.py reserved at y482.
     #[inline(never)]
     pub fn upload() {
-        assert!(ICON_DATA.len() == ICON_PALETTE_BYTES + CHARM_COUNT * ICON_BYTES
-            && ICON_PALETTE_BYTES == ICON_PALETTE_COUNT * 32);
+        assert!(
+            ICON_DATA.len() == ICON_PALETTE_BYTES + CHARM_COUNT * ICON_BYTES
+                && ICON_PALETTE_BYTES == ICON_PALETTE_COUNT * 32
+        );
         for i in 0..ICON_PALETTE_COUNT {
             upload_bytes(
-                VramRect::new(ICON_CLUT_RECT.0, ICON_CLUT_RECT.1 + i as u16, ICON_CLUT_RECT.2, ICON_CLUT_RECT.3),
-                &ICON_DATA[i * 32..i * 32 + 32]);
+                VramRect::new(
+                    ICON_CLUT_RECT.0,
+                    ICON_CLUT_RECT.1 + i as u16,
+                    ICON_CLUT_RECT.2,
+                    ICON_CLUT_RECT.3,
+                ),
+                &ICON_DATA[i * 32..i * 32 + 32],
+            );
         }
     }
     /// Texels for one charm icon, for the animation cache's upload closure.
@@ -465,14 +535,23 @@ mod presentation {
         let (u, v) = crate::render::animation_uv(key);
         let right = (u16::from(u) + ICON_PX - 1) as u8;
         let bottom = (u16::from(v) + ICON_PX - 1) as u8;
-        let clut = Clut::new(ICON_CLUT_RECT.0, ICON_CLUT_RECT.1 + ICON_PALETTE[index] as u16).uv_clut_word();
+        let clut = Clut::new(
+            ICON_CLUT_RECT.0,
+            ICON_CLUT_RECT.1 + ICON_PALETTE[index] as u16,
+        )
+        .uv_clut_word();
         let (x1, y1) = (x + ICON_PX as i16, y + ICON_PX as i16);
         unsafe {
             ICONS[ICON_COUNT] = QuadTextured::with_material(
                 [(x, y), (x1, y), (x, y1), (x1, y1)],
                 [(u, v), (right, v), (u, bottom), (right, bottom)],
-                TextureMaterial::blended(clut, crate::render::animation_tpage_word(key), (128, 128, 128),
-                    BlendMode::Average));
+                TextureMaterial::blended(
+                    clut,
+                    crate::render::animation_tpage_word(key),
+                    (128, 128, 128),
+                    BlendMode::Average,
+                ),
+            );
             ICON_COUNT += 1;
         }
     }
@@ -486,7 +565,11 @@ mod presentation {
         panel_frame(PANEL_RECT.0, PANEL_RECT.1, PANEL_RECT.2, PANEL_RECT.3);
         panel_text(160 - panel_width("Charms") / 2, TITLE_Y, "Charms");
         let s = state();
-        let label = if s.overcharmed() { "Overcharmed" } else { "Notches" };
+        let label = if s.overcharmed() {
+            "Overcharmed"
+        } else {
+            "Notches"
+        };
         panel_text(110, NOTCH_Y, label);
         panel_number(110 + panel_width(label) + 6, NOTCH_Y, u32::from(s.filled()));
         panel_text(110 + panel_width(label) + 18, NOTCH_Y, "/");
@@ -506,7 +589,17 @@ mod presentation {
             if drawable {
                 icon(charm - 1, ICON_X, y);
             }
-            panel_text(MARK_X, text_y, if s.equipped(charm) { "E" } else if s.owns(charm) { "o" } else { "-" });
+            panel_text(
+                MARK_X,
+                text_y,
+                if s.equipped(charm) {
+                    "E"
+                } else if s.owns(charm) {
+                    "o"
+                } else {
+                    "-"
+                },
+            );
             panel_text(NAME_X, text_y, State::charm(charm).name);
             panel_number(COST_X, text_y, u32::from(State::charm(charm).cost));
         }
@@ -527,8 +620,15 @@ pub use presentation::{append_icons, append_needed, panel, texels, upload, KEY_B
 mod tests {
     use super::*;
     const BASE: VitalParams = VitalParams {
-        max_health: 5, max_soul: 99, nail_damage: 5, soul_per_hit: 11, invulnerable_ticks: 79,
-        hazard_invulnerable_ticks: 40, recoil_ticks: 12, freeze_ticks: 19, death_ticks: 171,
+        max_health: 5,
+        max_soul: 99,
+        nail_damage: 5,
+        soul_per_hit: 11,
+        invulnerable_ticks: 79,
+        hazard_invulnerable_ticks: 40,
+        recoil_ticks: 12,
+        freeze_ticks: 19,
+        death_ticks: 171,
         recoil_speed: 983040,
     };
     /// The cooked ids the effects below rely on, so a renumbered catalogue
@@ -635,15 +735,30 @@ mod tests {
     }
     #[test]
     fn effects_compose_onto_the_cooked_no_charm_parameters() {
-        let mut s = owning(&[STALWART, SOUL_CATCHER, SOUL_EATER, FRAGILE_HEART, FRAGILE_STRENGTH]);
+        let mut s = owning(&[
+            STALWART,
+            SOUL_CATCHER,
+            SOUL_EATER,
+            FRAGILE_HEART,
+            FRAGILE_STRENGTH,
+        ]);
         // Owned but not worn changes nothing.
-        assert_eq!(compose(&s, BASE).invulnerable_ticks, BASE.invulnerable_ticks);
+        assert_eq!(
+            compose(&s, BASE).invulnerable_ticks,
+            BASE.invulnerable_ticks
+        );
         // A board wide enough to wear all five at once. Salubra and the other
         // notch sources are outside the admitted slice, so a run cannot reach
         // this yet and the test sets it rather than earning it.
         s.notches = 13;
         s.can_overcharm = true;
-        for charm in [STALWART, SOUL_CATCHER, SOUL_EATER, FRAGILE_HEART, FRAGILE_STRENGTH] {
+        for charm in [
+            STALWART,
+            SOUL_CATCHER,
+            SOUL_EATER,
+            FRAGILE_HEART,
+            FRAGILE_STRENGTH,
+        ] {
             assert_eq!(s.toggle(charm), Ok(true));
         }
         let p = compose(&s, BASE);
@@ -683,7 +798,10 @@ mod tests {
         assert_eq!(state().toggle(SOUL_CATCHER), Ok(true));
         grant_all(false);
         let s = state();
-        assert!(s.owns(GRUBSONG), "a charm the save already held stays owned");
+        assert!(
+            s.owns(GRUBSONG),
+            "a charm the save already held stays owned"
+        );
         assert!(!s.owns(SOUL_CATCHER) && !s.equipped(SOUL_CATCHER));
         assert_eq!(s.filled(), 0, "nothing worn survives losing its charm");
     }
@@ -734,11 +852,16 @@ mod tests {
     #[test]
     fn every_charm_has_an_icon_in_a_cooked_palette() {
         assert_eq!(ICON_PALETTE.len(), CHARM_COUNT);
-        assert!(ICON_PALETTE.iter().all(|&p| (p as usize) < ICON_PALETTE_COUNT));
+        assert!(ICON_PALETTE
+            .iter()
+            .all(|&p| (p as usize) < ICON_PALETTE_COUNT));
         assert_eq!(ICON_PALETTE_BYTES, ICON_PALETTE_COUNT * 32);
         // A 4bpp row is the width rounded up to four pixels, and one icon has
         // to reach VRAM in a single 64x64 animation slot upload.
-        assert_eq!(ICON_BYTES, (ICON_PX as usize + 3) / 4 * 2 * ICON_PX as usize);
+        assert_eq!(
+            ICON_BYTES,
+            (ICON_PX as usize + 3) / 4 * 2 * ICON_PX as usize
+        );
         assert!(ICON_BYTES <= 2048);
     }
     #[test]
@@ -756,10 +879,18 @@ mod tests {
         assert!(TITLE_Y > top && NOTCH_Y >= TITLE_Y + GLYPH);
         assert!(ROW_TOP >= NOTCH_Y + GLYPH);
         let rows_end = ROW_TOP + (VISIBLE as i16 - 1) * ROW_PITCH + ICON_PX as i16;
-        assert!(DESC_TOP >= rows_end, "the last row runs into the description");
-        let lines = (1..=CHARM_COUNT).map(|n| State::charm(n).lines.len()).max().unwrap() as i16;
-        assert!(FOOTER_Y >= DESC_TOP + (lines - 1) * DESC_PITCH + GLYPH,
-            "the longest description runs into the footer");
+        assert!(
+            DESC_TOP >= rows_end,
+            "the last row runs into the description"
+        );
+        let lines = (1..=CHARM_COUNT)
+            .map(|n| State::charm(n).lines.len())
+            .max()
+            .unwrap() as i16;
+        assert!(
+            FOOTER_Y >= DESC_TOP + (lines - 1) * DESC_PITCH + GLYPH,
+            "the longest description runs into the footer"
+        );
         assert!(FOOTER_Y + GLYPH <= bottom);
         // The icon column has to clear the cursor and leave the name its width.
         assert!(ICON_X >= CURSOR_X + GLYPH && MARK_X >= ICON_X + ICON_PX as i16);
@@ -770,15 +901,34 @@ mod tests {
         // `dialogue` draws one glyph per non-space character into a 416-entry
         // table and asserts on overflow, so the worst page has to fit at cook
         // time rather than at the moment the player opens the screen.
-        let fixed = ["Charms", "Overcharmed", "/", ">", "E", "X: equip    O: back"]
-            .iter().map(|s| s.len()).sum::<usize>() + 8;
+        let fixed = [
+            "Charms",
+            "Overcharmed",
+            "/",
+            ">",
+            "E",
+            "X: equip    O: back",
+        ]
+        .iter()
+        .map(|s| s.len())
+        .sum::<usize>()
+            + 8;
         let widest_rows = (0..CHARM_COUNT / VISIBLE)
-            .map(|page| (0..VISIBLE).map(|i| State::charm(page * VISIBLE + i + 1).name.len() + 2).sum::<usize>())
-            .max().unwrap_or(0);
+            .map(|page| {
+                (0..VISIBLE)
+                    .map(|i| State::charm(page * VISIBLE + i + 1).name.len() + 2)
+                    .sum::<usize>()
+            })
+            .max()
+            .unwrap_or(0);
         let widest_text = (1..=CHARM_COUNT)
             .map(|n| State::charm(n).lines.iter().map(|l| l.len()).sum::<usize>())
-            .max().unwrap_or(0);
-        assert!(fixed + widest_rows + widest_text <= crate::dialogue::CAP,
-            "charm panel needs {} glyphs", fixed + widest_rows + widest_text);
+            .max()
+            .unwrap_or(0);
+        assert!(
+            fixed + widest_rows + widest_text <= crate::dialogue::CAP,
+            "charm panel needs {} glyphs",
+            fixed + widest_rows + widest_text
+        );
     }
 }

@@ -12,7 +12,8 @@
 //! inside the executor would instead fire Enter every time a state that watches
 //! a volume is re-entered with the Knight already standing in it.
 use hk_sim::script::{Code, Halt, Host, Instance, NativeCall, Op, Program, State, Transition};
-#[path = "script_state.rs"] mod script_state;
+#[path = "script_state.rs"]
+mod script_state;
 use script_state::{overlaps, Overlaps};
 
 /// One cooked FSM definition. Instances bind to it and own only their variables.
@@ -51,8 +52,10 @@ const FIELDS: usize = SCRIPT_FIELD_NAMES.len();
 /// The whole reserve is the cooked bank's. Until HKS5 the top two slots held
 /// the False Knight's arena and first plop, which the port writes by hand; they
 /// live in `persist` now, and `persist::load` moves them out of an HKS4 record.
-const _: () = assert!(FIELDS <= crate::save::SCRIPT_FIELD_SLOTS,
-                      "the cooked script bank has outgrown the save record's reserve");
+const _: () = assert!(
+    FIELDS <= crate::save::SCRIPT_FIELD_SLOTS,
+    "the cooked script bank has outgrown the save record's reserve"
+);
 
 static mut RUNNING: [Instance; INSTANCES] = [const { Instance::new() }; INSTANCES];
 static mut VARS: [i32; SCRIPT_VARS] = [0; SCRIPT_VARS];
@@ -65,31 +68,45 @@ static mut INSIDE: Overlaps<VOLUMES> = Overlaps::new();
 static mut SEATED: usize = usize::MAX;
 
 /// Instances ticked on the last tick, which is the resident scene's set.
-#[no_mangle] pub static mut HK_SCRIPT_ACTIVE: u32 = 0;
+#[no_mangle]
+pub static mut HK_SCRIPT_ACTIVE: u32 = 0;
 /// State changes taken by a script. The most direct evidence a program ran.
-#[no_mangle] pub static mut HK_SCRIPT_TRANSITIONS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SCRIPT_TRANSITIONS: u32 = 0;
 /// PlayerData writes a script made.
-#[no_mangle] pub static mut HK_SCRIPT_WRITES: u32 = 0;
+#[no_mangle]
+pub static mut HK_SCRIPT_WRITES: u32 = 0;
 /// One bit per cooked field, set while that field is non-zero. The bit order is
 /// SCRIPT_FIELD_NAMES, which .hkpsx/script-bank.json lists.
-#[no_mangle] pub static mut HK_SCRIPT_FLAGS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SCRIPT_FLAGS: u32 = 0;
 /// A tick that stopped on a bound rather than finishing. Never expected; the
 /// counter is here so a bank that trips one is visible rather than quiet.
-#[no_mangle] pub static mut HK_SCRIPT_HALTS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SCRIPT_HALTS: u32 = 0;
 /// `Op::Native` reaching the host. The cooked bank emits none, so this staying
 /// at zero is what says the bank and this module still agree.
-#[no_mangle] pub static mut HK_SCRIPT_NATIVE: u32 = 0;
+#[no_mangle]
+pub static mut HK_SCRIPT_NATIVE: u32 = 0;
 /// Whether a loaded record's PlayerData was taken. Zero after a boot with a
 /// record whose field list is not this bank's, which is the case the loader
 /// refuses rather than mapping onto the wrong fields.
-#[no_mangle] pub static mut HK_SCRIPT_RESTORED: u32 = 0;
+#[no_mangle]
+pub static mut HK_SCRIPT_RESTORED: u32 = 0;
 
 fn program(def: &ScriptDef) -> Program<'static> {
-    Program { states: def.states, transitions: def.transitions, ops: def.ops,
-              constants: def.constants, var_count: def.var_count }
+    Program {
+        states: def.states,
+        transitions: def.transitions,
+        ops: def.ops,
+        constants: def.constants,
+        var_count: def.var_count,
+    }
 }
 fn volume_of(scene: usize, object: i32) -> Option<usize> {
-    SCRIPT_VOLUMES.iter().position(|v| v.scene as usize == scene && v.source_id as i32 == object)
+    SCRIPT_VOLUMES
+        .iter()
+        .position(|v| v.scene as usize == scene && v.source_id as i32 == object)
 }
 
 /// The game behind one running instance. `fields` is its own definition's, so
@@ -120,7 +137,9 @@ impl Host for Game {
         }
     }
     fn hero_trigger(&mut self, object: i32, phase: u8) -> bool {
-        let Some(index) = volume_of(self.scene, object) else { return false };
+        let Some(index) = volume_of(self.scene, object) else {
+            return false;
+        };
         unsafe { INSIDE.holds(index, phase) }
     }
 }
@@ -214,7 +233,10 @@ pub fn tick(scene: usize, body: [i32; 4]) {
             let def = &SCRIPT_DEFS[instance.def as usize];
             let base = instance.var_base as usize;
             let before = RUNNING[index].state;
-            let mut host = Game { scene, fields: def.fields };
+            let mut host = Game {
+                scene,
+                fields: def.fields,
+            };
             let vars = &mut VARS[base..base + def.var_count as usize];
             if RUNNING[index].tick(program(def), vars, &mut host) != Halt::Ran {
                 HK_SCRIPT_HALTS += 1;

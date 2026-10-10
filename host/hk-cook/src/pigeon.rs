@@ -25,7 +25,22 @@ const HERO_RANGE_SHA256: &str = "1049dc3ecf7356b8320a5b3ef07d476ffb84f0ce1ba9ebd
 const ENEMY_RANGE_SHA256: &str = "31f41df6835d30fde2436c6e601e9800205bb58c995162a619f62b26ee03f21b";
 const WAKER_SHA256: &str = "e8e8ffc84583e9c97ffe988a9eb606531456935602c500d9af0fb81d1730684e";
 const COMPONENTS: [&str; 16] = [
-    "AudioSource", "BoxCollider2D", "EnemyDeathEffectsNoEffect", "ExtraDamageable", "HealthManager", "MeshFilter", "MeshRenderer", "PlayMakerCollisionEnter2D", "PlayMakerCollisionStay2D", "PlayMakerFSM", "PlayMakerFixedUpdate", "Rigidbody2D", "SetZ", "Transform", "tk2dSprite", "tk2dSpriteAnimator",
+    "AudioSource",
+    "BoxCollider2D",
+    "EnemyDeathEffectsNoEffect",
+    "ExtraDamageable",
+    "HealthManager",
+    "MeshFilter",
+    "MeshRenderer",
+    "PlayMakerCollisionEnter2D",
+    "PlayMakerCollisionStay2D",
+    "PlayMakerFSM",
+    "PlayMakerFixedUpdate",
+    "Rigidbody2D",
+    "SetZ",
+    "Transform",
+    "tk2dSprite",
+    "tk2dSpriteAnimator",
 ];
 /// The authored uniform scale every placement stands at.
 const SCALE: f64 = 0.800000011920929;
@@ -33,7 +48,12 @@ const LAYER: i64 = 19; // Interactive Object
 const BODY_SIZE: [f64; 2] = [0.6744292974472046, 0.9062597751617432];
 const BODY_OFFSET: [f64; 2] = [0.116851806640625, 0.6600000262260437];
 /// name: (frames, fps, wrapMode).
-const CLIPS: [(&str, usize, f64, i64); 4] = [("Fly", 4, 12.0, 0), ("Idle 01", 67, 12.0, 0), ("Idle 02", 41, 12.0, 0), ("Idle 03", 61, 12.0, 0)];
+const CLIPS: [(&str, usize, f64, i64); 4] = [
+    ("Fly", 4, 12.0, 0),
+    ("Idle 01", 67, 12.0, 0),
+    ("Idle 02", 41, 12.0, 0),
+    ("Idle 03", 61, 12.0, 0),
+];
 /// `pigeon::Clip::slot()` order; `Idle 01` and `Fly` are the shared `ActorSpec` slots.
 pub(crate) const CLIP_SLOTS: [(&str, &str); 2] = [("idle2", "Idle 02"), ("idle3", "Idle 03")];
 const CHILDREN: [&str; 3] = ["Hero Range", "Enemy Range", "Waker"];
@@ -53,18 +73,41 @@ fn n(x: f64) -> Value {
 }
 
 /// `_trigger_circle`: one range child, as a Q16 circle around the actor origin.
-fn trigger_circle(sc: &Scene, children: &[(String, (i64, i64))], name: &str, origin: [f64; 2], expected: [i64; 3], fingerprint: &str, enabled: bool) -> Result<[i64; 3]> {
-    let Some(&(_, (gid, tid))) = children.iter().find(|c| c.0 == name) else { return err(format!("Pigeon is missing its {name} child")) };
+fn trigger_circle(
+    sc: &Scene,
+    children: &[(String, (i64, i64))],
+    name: &str,
+    origin: [f64; 2],
+    expected: [i64; 3],
+    fingerprint: &str,
+    enabled: bool,
+) -> Result<[i64; 3]> {
+    let Some(&(_, (gid, tid))) = children.iter().find(|c| c.0 == name) else {
+        return err(format!("Pigeon is missing its {name} child"));
+    };
     let layer = CHILD_LAYERS.iter().find(|c| c.0 == name).unwrap().1;
-    if !sc.active(gid) || get(sc.go(gid).ok_or("no such GameObject")?, "m_Layer")?.int() != Some(layer) {
+    if !sc.active(gid)
+        || get(sc.go(gid).ok_or("no such GameObject")?, "m_Layer")?.int() != Some(layer)
+    {
         return err(format!("inactive or relayered Pigeon {name} child"));
     }
     let records = component_records(sc, gid);
-    let circles: Vec<&Value> = records.iter().filter(|r| r.1 == "CircleCollider2D").map(|r| r.2).collect();
-    if circles.len() != 1 || get(circles[0], "m_Enabled")?.truthy() != enabled || !get(circles[0], "m_IsTrigger")?.truthy() {
+    let circles: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "CircleCollider2D")
+        .map(|r| r.2)
+        .collect();
+    if circles.len() != 1
+        || get(circles[0], "m_Enabled")?.truthy() != enabled
+        || !get(circles[0], "m_IsTrigger")?.truthy()
+    {
         return err(format!("unsupported Pigeon {name} trigger"));
     }
-    let fsms: Vec<&Value> = records.iter().filter(|r| r.1 == "PlayMakerFSM").filter_map(|r| r.2.get("fsm")).collect();
+    let fsms: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "PlayMakerFSM")
+        .filter_map(|r| r.2.get("fsm"))
+        .collect();
     if fsms.len() != 1 || fsm_fingerprint(fsms[0])? != fingerprint {
         return err(format!("unverified Pigeon {name} trigger FSM"));
     }
@@ -72,30 +115,43 @@ fn trigger_circle(sc: &Scene, children: &[(String, (i64, i64))], name: &str, ori
     let m = u(sc.world(tid))?;
     // A mirrored placement mirrors its children too, and a circle centred on x = 0
     // is unmoved by that; a rotation or a non-uniform scale would not be.
-    if m[0][1].abs() > 1e-6 || m[1][0].abs() > 1e-6 || !near(Some(&n(m[0][0].abs())), m[1][1].abs()) {
+    if m[0][1].abs() > 1e-6 || m[1][0].abs() > 1e-6 || !near(Some(&n(m[0][0].abs())), m[1][1].abs())
+    {
         return err(format!("rotated or non-uniform Pigeon {name} child"));
     }
     let off = xy(circle, "m_Offset")?;
     let radius = get(circle, "m_Radius")?.float().ok_or("m_Radius")?;
-    let actual = [py_round((m[0][3] + m[0][0] * off[0] - origin[0]) * 65536.0), py_round((m[1][3] + m[1][1] * off[1] - origin[1]) * 65536.0), py_round(radius * m[0][0].abs() * 65536.0)];
+    let actual = [
+        py_round((m[0][3] + m[0][0] * off[0] - origin[0]) * 65536.0),
+        py_round((m[1][3] + m[1][1] * off[1] - origin[1]) * 65536.0),
+        py_round(radius * m[0][0].abs() * 65536.0),
+    ];
     if actual != expected {
-        return err(format!("Pigeon {name} circle {actual:?} is not the admitted {expected:?}"));
+        return err(format!(
+            "Pigeon {name} circle {actual:?} is not the admitted {expected:?}"
+        ));
     }
     Ok(actual)
 }
 
 /// `_containment`: prove the smaller circle lies inside the one the guest carries.
 fn containment(inner: [i64; 3], outer: [i64; 3]) -> Result<()> {
-    let span = ((inner[0] - outer[0]) as f64).hypot((inner[1] - outer[1]) as f64);
+    let span = crate::pyfloat::hypot((inner[0] - outer[0]) as f64, (inner[1] - outer[1]) as f64);
     if span + inner[2] as f64 > outer[2] as f64 {
-        return err(format!("Pigeon {inner:?} is not inside the admitted {outer:?}"));
+        return err(format!(
+            "Pigeon {inner:?} is not inside the admitted {outer:?}"
+        ));
     }
     Ok(())
 }
 
 /// `_depth`: `SetZ`, which is why the authored transform z is not checked.
 fn depth(records: &[(i64, &str, &Value)]) -> Result<(f64, f64, bool)> {
-    let sets: Vec<&Value> = records.iter().filter(|r| r.1 == "SetZ").map(|r| r.2).collect();
+    let sets: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "SetZ")
+        .map(|r| r.2)
+        .collect();
     if sets.len() != 1 || !get(sets[0], "m_Enabled")?.truthy() {
         return err("Pigeon needs exactly one enabled SetZ");
     }
@@ -103,9 +159,15 @@ fn depth(records: &[(i64, &str, &Value)]) -> Result<(f64, f64, bool)> {
     if get(d, "randomizeFromStartingValue")?.truthy() {
         return err("a Pigeon that keeps its authored depth is not the admitted variant");
     }
-    let (z, delay) = (get(d, "z")?.float().ok_or("z")?, get(d, "delayBeforeRandomizing")?.float().ok_or("delay")?);
+    let (z, delay) = (
+        get(d, "z")?.float().ok_or("z")?,
+        get(d, "delayBeforeRandomizing")?.float().ok_or("delay")?,
+    );
     if !(0.0..=0.01).contains(&z) || !(0.0..=1.0).contains(&delay) {
-        return err(format!("Pigeon settles at depth {}, off the guest source plane", pyfloat::repr(z)));
+        return err(format!(
+            "Pigeon settles at depth {}, off the guest source plane",
+            pyfloat::repr(z)
+        ));
     }
     Ok((z, delay, !get(d, "dontRandomize")?.truthy()))
 }
@@ -116,9 +178,20 @@ fn literals(st: &Value, action: &str, keys: &[&str]) -> Result<Vec<Value>> {
     let data = get(st, "actionData")?;
     let names = get(data, "actionNames")?.list().unwrap_or(&[]);
     let enabled = get(data, "actionEnabled")?.list().unwrap_or(&[]);
-    let found: Vec<usize> = names.iter().enumerate().filter(|(i, nm)| nm.str().is_some_and(|s| s.rsplit('.').next() == Some(action)) && enabled.get(*i).is_some_and(Value::truthy)).map(|(i, _)| i).collect();
+    let found: Vec<usize> = names
+        .iter()
+        .enumerate()
+        .filter(|(i, nm)| {
+            nm.str()
+                .is_some_and(|s| s.rsplit('.').next() == Some(action))
+                && enabled.get(*i).is_some_and(Value::truthy)
+        })
+        .map(|(i, _)| i)
+        .collect();
     if found.len() != 1 {
-        return err(format!("Pigeon {sname} no longer carries one enabled {action}"));
+        return err(format!(
+            "Pigeon {sname} no longer carries one enabled {action}"
+        ));
     }
     let fields = u(action_fields(data, found[0], false))?;
     let mut out = Vec::new();
@@ -127,7 +200,9 @@ fn literals(st: &Value, action: &str, keys: &[&str]) -> Result<Vec<Value>> {
         if let Some(v) = &value {
             if v.is_map() {
                 if v.get("useVariable").is_some_and(Value::truthy) {
-                    return err(format!("Pigeon {sname}/{action}/{key} is written from a variable"));
+                    return err(format!(
+                        "Pigeon {sname}/{action}/{key} is written from a variable"
+                    ));
                 }
                 value = v.get("value").cloned();
             }
@@ -141,7 +216,12 @@ fn literals(st: &Value, action: &str, keys: &[&str]) -> Result<Vec<Value>> {
 }
 
 fn state_named<'a>(fsm: &'a Value, name: &str) -> Result<&'a Value> {
-    get(fsm, "states")?.list().unwrap_or(&[]).iter().find(|s| s.get("name").and_then(Value::str).as_deref() == Some(name)).ok_or_else(|| format!("no state {name}"))
+    get(fsm, "states")?
+        .list()
+        .unwrap_or(&[])
+        .iter()
+        .find(|s| s.get("name").and_then(Value::str).as_deref() == Some(name))
+        .ok_or_else(|| format!("no state {name}"))
 }
 
 fn q(v: &Value) -> i64 {
@@ -153,7 +233,11 @@ fn flight(fsm: &Value) -> Result<()> {
     let fly = state_named(fsm, "Fly")?;
     let rise = &literals(fly, "Translate", &["y"])?[0];
     if q(rise) != TAKEOFF_RISE_Q16 {
-        return err(format!("Pigeon takeoff lift {} is not the admitted {}", pyfloat::repr(rise.float().unwrap_or(0.0)), pyfloat::repr(TAKEOFF_RISE_Q16 as f64 / 65536.0)));
+        return err(format!(
+            "Pigeon takeoff lift {} is not the admitted {}",
+            pyfloat::repr(rise.float().unwrap_or(0.0)),
+            pyfloat::repr(TAKEOFF_RISE_Q16 as f64 / 65536.0)
+        ));
     }
     let span = literals(fly, "RandomFloat", &["min", "max"])?;
     if [q(&span[0]), q(&span[1])] != RISE_FORCE_Q16 {
@@ -165,17 +249,26 @@ fn flight(fsm: &Value) -> Result<()> {
     let events = literals(fly, "CheckTargetDirection", &["rightEvent", "leftEvent"])?;
     let mut to: Vec<(String, String)> = Vec::new();
     for t in get(fly, "transitions")?.list().unwrap_or(&[]) {
-        let (e, s) = (get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(), get(t, "toState")?.str().unwrap_or_default());
+        let (e, s) = (
+            get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(),
+            get(t, "toState")?.str().unwrap_or_default(),
+        );
         match to.iter_mut().find(|x| x.0 == e) {
             Some(slot) => slot.1 = s,
             None => to.push((e, s)),
         }
     }
-    let dest = |e: &Value| e.str().and_then(|e| to.iter().find(|x| x.0 == e).map(|x| x.1.clone()));
+    let dest = |e: &Value| {
+        e.str()
+            .and_then(|e| to.iter().find(|x| x.0 == e).map(|x| x.1.clone()))
+    };
     if dest(&events[0]).as_deref() != Some("Left") || dest(&events[1]).as_deref() != Some("Right") {
         return err("a Pigeon that flies towards the hero is not the admitted variant");
     }
-    for (state, expected) in [("Right", SIDE_FORCE_Q16), ("Left", [-SIDE_FORCE_Q16[1], -SIDE_FORCE_Q16[0]])] {
+    for (state, expected) in [
+        ("Right", SIDE_FORCE_Q16),
+        ("Left", [-SIDE_FORCE_Q16[1], -SIDE_FORCE_Q16[0]]),
+    ] {
         let st = state_named(fsm, state)?;
         let span = literals(st, "RandomFloat", &["min", "max"])?;
         if [q(&span[0]), q(&span[1])] != expected {
@@ -183,26 +276,62 @@ fn flight(fsm: &Value) -> Result<()> {
         }
         let wait = &literals(st, "Wait", &["time"])?[0];
         if py_round(wait.float().unwrap_or(f64::NAN) * 60.0) != LIFE_TICKS {
-            return err(format!("Pigeon {state} flight lasts {}s, not the admitted {}s", pyfloat::repr(wait.float().unwrap_or(0.0)), pyfloat::repr(LIFE_TICKS as f64 / 60.0)));
+            return err(format!(
+                "Pigeon {state} flight lasts {}s, not the admitted {}s",
+                pyfloat::repr(wait.float().unwrap_or(0.0)),
+                pyfloat::repr(LIFE_TICKS as f64 / 60.0)
+            ));
         }
     }
-    let frame = literals(state_named(fsm, "Set Frame")?, "RandomInt", &["min", "max", "inclusiveMax"])?;
-    if [frame[0].int(), frame[1].int()] != [Some(START_FRAMES[0]), Some(START_FRAMES[1])] || !frame[2].truthy() {
+    let frame = literals(
+        state_named(fsm, "Set Frame")?,
+        "RandomInt",
+        &["min", "max", "inclusiveMax"],
+    )?;
+    if [frame[0].int(), frame[1].int()] != [Some(START_FRAMES[0]), Some(START_FRAMES[1])]
+        || !frame[2].truthy()
+    {
         return err("Pigeon start frame is not the admitted one");
     }
     Ok(())
 }
 
 /// A perched bird that lifts off away from the hero and does not come back.
-pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3], health: &Value) -> Result<Json> {
+pub fn recognize(
+    sc: &Scene,
+    source: &Source,
+    gid: i64,
+    position: [f64; 3],
+    health: &Value,
+) -> Result<Json> {
     check_assemblies(source, "Pigeon")?;
     let records = component_records(sc, gid);
     // The FSM set first, because it is the difference that carries a reason.
-    let fsm_records: Vec<&Value> = records.iter().filter(|r| r.1 == "PlayMakerFSM").map(|r| r.2).collect();
-    if fsm_records.len() != 1 || get(get(fsm_records[0], "fsm")?, "name")?.str().as_deref() != Some(FSM_NAME) {
-        let mut present: Vec<String> = fsm_records.iter().filter_map(|d| d.get("fsm").and_then(|f| f.get("name")).and_then(Value::str)).collect();
+    let fsm_records: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "PlayMakerFSM")
+        .map(|r| r.2)
+        .collect();
+    if fsm_records.len() != 1
+        || get(get(fsm_records[0], "fsm")?, "name")?.str().as_deref() != Some(FSM_NAME)
+    {
+        let mut present: Vec<String> = fsm_records
+            .iter()
+            .filter_map(|d| {
+                d.get("fsm")
+                    .and_then(|f| f.get("name"))
+                    .and_then(Value::str)
+            })
+            .collect();
         present.sort();
-        return err(format!("unsupported Pigeon FSM set: {}", if present.is_empty() { "none".to_string() } else { present.join(", ") }));
+        return err(format!(
+            "unsupported Pigeon FSM set: {}",
+            if present.is_empty() {
+                "none".to_string()
+            } else {
+                present.join(", ")
+            }
+        ));
     }
     let fsm = get(fsm_records[0], "fsm")?;
     if !get(fsm_records[0], "m_Enabled")?.truthy() || fsm_fingerprint(fsm)? != FSM_SHA256 {
@@ -215,54 +344,116 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3], heal
     if kinds != want {
         return err("unsupported Pigeon component set");
     }
-    let layer = get(sc.go(gid).ok_or("no such GameObject")?, "m_Layer")?.int().unwrap_or(-1);
+    let layer = get(sc.go(gid).ok_or("no such GameObject")?, "m_Layer")?
+        .int()
+        .unwrap_or(-1);
     if layer != LAYER {
-        return err(format!("Pigeon outside the Interactive Object layer: layer {layer}"));
+        return err(format!(
+            "Pigeon outside the Interactive Object layer: layer {layer}"
+        ));
     }
     let (set_z, delay, randomized) = depth(&records)?;
     let tid = *sc.go_transform.get(&gid).ok_or("actor has no transform")?;
     let m = u(sc.world(tid))?;
     // The constants are measured at the authored 0.8; a mirror is fine.
-    if m[0][1].abs() > 1e-6 || m[1][0].abs() > 1e-6 || !near(Some(&n(m[0][0].abs())), SCALE) || !near(Some(&n(m[1][1])), SCALE) {
+    if m[0][1].abs() > 1e-6
+        || m[1][0].abs() > 1e-6
+        || !near(Some(&n(m[0][0].abs())), SCALE)
+        || !near(Some(&n(m[1][1])), SCALE)
+    {
         return err("unsupported Pigeon rotation or scale");
     }
     if get(fsm, "startState")?.str().as_deref() != Some("Set Size") {
         return err("Pigeon begins in an unsupported state");
     }
-    if fsm.get("globalTransitions").and_then(Value::list).is_some_and(|l| !l.is_empty()) {
+    if fsm
+        .get("globalTransitions")
+        .and_then(Value::list)
+        .is_some_and(|l| !l.is_empty())
+    {
         return err("unsupported Pigeon global transitions");
     }
     // `_body`: the one trigger box, which is the whole of the Pigeon's hurt surface.
-    let boxes: Vec<&Value> = records.iter().filter(|r| r.1 == "BoxCollider2D").map(|r| r.2).collect();
+    let boxes: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "BoxCollider2D")
+        .map(|r| r.2)
+        .collect();
     if boxes.len() != 1 {
         return err("unsupported Pigeon body colliders");
     }
     let (bs, bo) = (xy(boxes[0], "m_Size")?, xy(boxes[0], "m_Offset")?);
-    if !get(boxes[0], "m_Enabled")?.truthy() || !get(boxes[0], "m_IsTrigger")?.truthy() || get(boxes[0], "m_EdgeRadius")?.float() != Some(0.0) || (0..2).any(|k| !near(Some(&n(bs[k])), BODY_SIZE[k]) || !near(Some(&n(bo[k])), BODY_OFFSET[k])) {
+    if !get(boxes[0], "m_Enabled")?.truthy()
+        || !get(boxes[0], "m_IsTrigger")?.truthy()
+        || get(boxes[0], "m_EdgeRadius")?.float() != Some(0.0)
+        || (0..2)
+            .any(|k| !near(Some(&n(bs[k])), BODY_SIZE[k]) || !near(Some(&n(bo[k])), BODY_OFFSET[k]))
+    {
         return err("unsupported Pigeon body collider");
     }
     let _ = body_box;
     // `_rigid_body`: gravityScale 0, unit mass, no drag.
-    let bodies: Vec<&Value> = records.iter().filter(|r| r.1 == "Rigidbody2D").map(|r| r.2).collect();
+    let bodies: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "Rigidbody2D")
+        .map(|r| r.2)
+        .collect();
     if bodies.len() != 1 {
         return err("unsupported Pigeon rigid body count");
     }
     let b = bodies[0];
-    if get(b, "m_BodyType")?.int() != Some(0) || !get(b, "m_Simulated")?.truthy() || get(b, "m_UseAutoMass")?.truthy() || !near(b.get("m_Mass"), 1.0) || !near(b.get("m_GravityScale"), 0.0) || !near(b.get("m_LinearDamping"), 0.0) {
+    if get(b, "m_BodyType")?.int() != Some(0)
+        || !get(b, "m_Simulated")?.truthy()
+        || get(b, "m_UseAutoMass")?.truthy()
+        || !near(b.get("m_Mass"), 1.0)
+        || !near(b.get("m_GravityScale"), 0.0)
+        || !near(b.get("m_LinearDamping"), 0.0)
+    {
         return err("unsupported Pigeon rigid body");
     }
     if get(health, "hp")?.int() != Some(1)
-        || ["invincible", "invincibleFromDirection", "hasSpecialDeath", "hasAlternateHitAnimation", "damageOverride", "megaFlingGeo", "smallGeoDrops", "mediumGeoDrops", "largeGeoDrops"].iter().any(|k| get(health, k).map(Value::truthy).unwrap_or(true))
+        || [
+            "invincible",
+            "invincibleFromDirection",
+            "hasSpecialDeath",
+            "hasAlternateHitAnimation",
+            "damageOverride",
+            "megaFlingGeo",
+            "smallGeoDrops",
+            "mediumGeoDrops",
+            "largeGeoDrops",
+        ]
+        .iter()
+        .any(|k| get(health, k).map(Value::truthy).unwrap_or(true))
     {
         return err("unsupported Pigeon HealthManager variant");
     }
-    let deaths: Vec<&Value> = records.iter().filter(|r| r.1 == "EnemyDeathEffectsNoEffect").map(|r| r.2).collect();
+    let deaths: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "EnemyDeathEffectsNoEffect")
+        .map(|r| r.2)
+        .collect();
     if deaths.len() != 1 || !get(deaths[0], "m_Enabled")?.truthy() {
         return err("Pigeon needs exactly one enabled EnemyDeathEffectsNoEffect");
     }
-    let sprite = records.iter().rev().find(|r| r.1 == "tk2dSprite").map(|r| r.2).ok_or("no sprite")?;
-    let one4 = Value::Map(["r", "g", "b", "a"].iter().map(|k| ((*k).into(), n(1.0))).collect());
-    let one3 = Value::Map(["x", "y", "z"].iter().map(|k| ((*k).into(), n(1.0))).collect());
+    let sprite = records
+        .iter()
+        .rev()
+        .find(|r| r.1 == "tk2dSprite")
+        .map(|r| r.2)
+        .ok_or("no sprite")?;
+    let one4 = Value::Map(
+        ["r", "g", "b", "a"]
+            .iter()
+            .map(|k| ((*k).into(), n(1.0)))
+            .collect(),
+    );
+    let one3 = Value::Map(
+        ["x", "y", "z"]
+            .iter()
+            .map(|k| ((*k).into(), n(1.0)))
+            .collect(),
+    );
     if !get(sprite, "_color")?.py_eq(&one4) || !get(sprite, "_scale")?.py_eq(&one3) {
         return err("unsupported Pigeon sprite scale/color");
     }
@@ -275,23 +466,61 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3], heal
         return err(format!("unsupported Pigeon children: {}", names.join(", ")));
     }
     let origin = [position[0], position[1]];
-    let hero_range = trigger_circle(sc, &children, "Hero Range", origin, HERO_RANGE_Q16, HERO_RANGE_SHA256, true)?;
-    let enemy_range = trigger_circle(sc, &children, "Enemy Range", origin, ENEMY_RANGE_Q16, ENEMY_RANGE_SHA256, true)?;
+    let hero_range = trigger_circle(
+        sc,
+        &children,
+        "Hero Range",
+        origin,
+        HERO_RANGE_Q16,
+        HERO_RANGE_SHA256,
+        true,
+    )?;
+    let enemy_range = trigger_circle(
+        sc,
+        &children,
+        "Enemy Range",
+        origin,
+        ENEMY_RANGE_Q16,
+        ENEMY_RANGE_SHA256,
+        true,
+    )?;
     // The `Waker` starts disabled: `Activate` only switches it on a quarter second after takeoff.
-    let waker = trigger_circle(sc, &children, "Waker", origin, WAKER_Q16, WAKER_SHA256, false)?;
+    let waker = trigger_circle(
+        sc,
+        &children,
+        "Waker",
+        origin,
+        WAKER_Q16,
+        WAKER_SHA256,
+        false,
+    )?;
     containment(enemy_range, hero_range)?;
     containment(waker, hero_range)?;
     flight(fsm)?;
     // `_clips`.
-    let animator = records.iter().rev().find(|r| r.1 == "tk2dSpriteAnimator").map(|r| r.2).ok_or("no tk2dSpriteAnimator")?;
-    if !get(animator, "m_Enabled")?.truthy() || get(animator, "isRealtime")?.truthy() || !get(animator, "playAutomatically")?.truthy() {
+    let animator = records
+        .iter()
+        .rev()
+        .find(|r| r.1 == "tk2dSpriteAnimator")
+        .map(|r| r.2)
+        .ok_or("no tk2dSpriteAnimator")?;
+    if !get(animator, "m_Enabled")?.truthy()
+        || get(animator, "isRealtime")?.truthy()
+        || !get(animator, "playAutomatically")?.truthy()
+    {
         return err("Pigeon requires enabled scaled-time animation");
     }
     let library_object = u(sc.deref(get(animator, "library")?))?;
     let library = u(source.read(&library_object))?;
     let all = get(&library, "clips")?.list().unwrap_or(&[]);
     let default = get(animator, "defaultClipId")?.int().unwrap_or(-1);
-    if all.get(default as usize).and_then(|c| c.get("name")).and_then(Value::str).as_deref() != Some("Idle 01") {
+    if all
+        .get(default as usize)
+        .and_then(|c| c.get("name"))
+        .and_then(Value::str)
+        .as_deref()
+        != Some("Idle 01")
+    {
         return err("Pigeon does not start on Idle 01");
     }
     let by_name = crate::recog::clips_by_name(&library)?;
@@ -302,7 +531,12 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3], heal
         }
         let c = clip.unwrap();
         // `Set Frame` seeks by frame index and the guest's clip clock is the cooked frame count.
-        if c.get("frames").and_then(Value::list).unwrap_or(&[]).iter().any(|f| f.get("triggerEvent").is_some_and(Value::truthy)) {
+        if c.get("frames")
+            .and_then(Value::list)
+            .unwrap_or(&[])
+            .iter()
+            .any(|f| f.get("triggerEvent").is_some_and(Value::truthy))
+        {
             return err(format!("unsupported Pigeon frame event: {name}"));
         }
         if c.get("loopStart").map_or(0, |l| l.int().unwrap_or(-1)) != 0 {
@@ -310,7 +544,10 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3], heal
         }
     }
     let triple = |a: [i64; 3]| Json::List(a.iter().map(|&v| Json::Int(v)).collect());
-    let mut art = vec![("walk".to_string(), js("Idle 01")), ("turn".to_string(), js("Fly"))];
+    let mut art = vec![
+        ("walk".to_string(), js("Idle 01")),
+        ("turn".to_string(), js("Fly")),
+    ];
     art.extend(CLIP_SLOTS.iter().map(|(k, v)| (k.to_string(), js(v))));
     let (zs, ds) = (pyfloat::repr(set_z), pyfloat::repr(delay));
     let limitations: Vec<String> = vec![
@@ -330,15 +567,36 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3], heal
         // Its one collider is a trigger, so there is no solid body to measure the spec bounds from.
         ("trigger_body", Json::Bool(true)),
         ("fsm_sha256", js(FSM_SHA256)),
-        ("assemblies_sha256", Json::Obj(ASSEMBLIES.iter().map(|(k, v)| (k.to_string(), js(v))).collect())),
+        (
+            "assemblies_sha256",
+            Json::Obj(
+                ASSEMBLIES
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), js(v)))
+                    .collect(),
+            ),
+        ),
         ("library_source", Json::Str(library_object.sid())),
         ("hero_range_q16", triple(hero_range)),
         ("enemy_range_q16", triple(enemy_range)),
         ("waker_q16", triple(waker)),
-        ("set_z", jobj(vec![("z", Json::Float(set_z)), ("delay_seconds", Json::Float(delay)), ("randomized", Json::Bool(randomized))])),
+        (
+            "set_z",
+            jobj(vec![
+                ("z", Json::Float(set_z)),
+                ("delay_seconds", Json::Float(delay)),
+                ("randomized", Json::Bool(randomized)),
+            ]),
+        ),
         // This is the authored pose, which the guest writes as -1.
-        ("initial_direction", Json::Int(if m[0][0] < 0.0 { 1 } else { -1 })),
+        (
+            "initial_direction",
+            Json::Int(if m[0][0] < 0.0 { 1 } else { -1 }),
+        ),
         ("art_bindings", Json::Obj(art)),
-        ("limitations", Json::List(limitations.into_iter().map(Json::Str).collect())),
+        (
+            "limitations",
+            Json::List(limitations.into_iter().map(Json::Str).collect()),
+        ),
     ]))
 }

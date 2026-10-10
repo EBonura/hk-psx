@@ -10,8 +10,8 @@
 use crate::common::{err, Result};
 use crate::coverage;
 use crate::opaque_tiles::{
-    bit_rows, cert_rows, draw_record, file_sha, helper, int, list, mutable_draws, read, read_certificates, read_json, room_desc, section, sha, text,
-    u16_at, write_changed, Cert,
+    bit_rows, cert_rows, draw_record, file_sha, helper, int, list, mutable_draws, read,
+    read_certificates, read_json, room_desc, section, sha, text, u16_at, write_changed, Cert,
 };
 use crate::pyjson::{dumps, dumps_sorted_compact, Json};
 use serde_json::Value as J;
@@ -32,10 +32,26 @@ pub fn group_phases(xy: &[i64]) -> Result<Vec<Vec<(i64, i64)>>> {
     let mut xs = BTreeSet::new();
     let mut ys = BTreeSet::new();
     for p in 0..256 {
-        xs.insert((0..xy.len()).step_by(2).map(|k| ((xy[k] - p) >> 8) - ((xy[0] - p) >> 8)).collect::<Vec<_>>());
-        ys.insert((1..xy.len()).step_by(2).map(|k| -((xy[k] - p) >> 8) + ((xy[1] - p) >> 8)).collect::<Vec<_>>());
+        xs.insert(
+            (0..xy.len())
+                .step_by(2)
+                .map(|k| ((xy[k] - p) >> 8) - ((xy[0] - p) >> 8))
+                .collect::<Vec<_>>(),
+        );
+        ys.insert(
+            (1..xy.len())
+                .step_by(2)
+                .map(|k| -((xy[k] - p) >> 8) + ((xy[1] - p) >> 8))
+                .collect::<Vec<_>>(),
+        );
     }
-    let out: Vec<Vec<(i64, i64)>> = xs.iter().flat_map(|x| ys.iter().map(move |y| x.iter().copied().zip(y.iter().copied()).collect())).collect();
+    let out: Vec<Vec<(i64, i64)>> = xs
+        .iter()
+        .flat_map(|x| {
+            ys.iter()
+                .map(move |y| x.iter().copied().zip(y.iter().copied()).collect())
+        })
+        .collect();
     if out.len() > 256 {
         return err("Opaque groups: phase bound exceeded");
     }
@@ -51,8 +67,20 @@ pub fn axis(xy: &[i64; 8]) -> bool {
 /// an axis-aligned quad, and nothing mutates its source at runtime. The
 /// seventh test, a solid word-1 palette, needs the pack's pixels
 /// (`solid_word_one`).
-pub fn flat_opaque_record(src: &J, front: u16, scale: i32, xy: &[i64; 8], black_average: u8, mutated_sources: &HashSet<String>) -> bool {
-    src.get("tilemap_rect").is_some() && front == 1 && black_average == 1 && scale > 0 && !mutated_sources.contains(&src["source"].to_string()) && axis(xy)
+pub fn flat_opaque_record(
+    src: &J,
+    front: u16,
+    scale: i32,
+    xy: &[i64; 8],
+    black_average: u8,
+    mutated_sources: &HashSet<String>,
+) -> bool {
+    src.get("tilemap_rect").is_some()
+        && front == 1
+        && black_average == 1
+        && scale > 0
+        && !mutated_sources.contains(&src["source"].to_string())
+        && axis(xy)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -66,31 +94,76 @@ struct Record {
 /// bounds, in the Python generator's order.
 fn connected_groups(records: &BTreeMap<usize, Record>) -> Vec<Vec<usize>> {
     let ids: Vec<usize> = records.keys().copied().collect();
-    let boxes: HashMap<usize, [i64; 4]> = ids.iter().map(|&i| {
-        let xy = &records[&i].xy;
-        let even = || (0..4).map(|k| xy[2 * k]);
-        let odd = || (0..4).map(|k| xy[2 * k + 1]);
-        (i, [even().min().unwrap(), odd().min().unwrap(), even().max().unwrap(), odd().max().unwrap()])
-    }).collect();
+    let boxes: HashMap<usize, [i64; 4]> = ids
+        .iter()
+        .map(|&i| {
+            let xy = &records[&i].xy;
+            let even = || (0..4).map(|k| xy[2 * k]);
+            let odd = || (0..4).map(|k| xy[2 * k + 1]);
+            (
+                i,
+                [
+                    even().min().unwrap(),
+                    odd().min().unwrap(),
+                    even().max().unwrap(),
+                    odd().max().unwrap(),
+                ],
+            )
+        })
+        .collect();
     let adjacent = |a: usize, b: usize| {
         let (x, y) = (boxes[&a], boxes[&b]);
-        records[&a].scale == records[&b].scale && x[2].min(y[2]) >= x[0].max(y[0]) && x[3].min(y[3]) >= x[1].max(y[1])
+        records[&a].scale == records[&b].scale
+            && x[2].min(y[2]) >= x[0].max(y[0])
+            && x[3].min(y[3]) >= x[1].max(y[1])
     };
-    let edges: HashMap<usize, Vec<usize>> = ids.iter().map(|&i| (i, ids.iter().copied().filter(|&j| i != j && adjacent(i, j)).collect())).collect();
-    let mut current: BTreeSet<Vec<usize>> = ids.iter().flat_map(|&i| edges[&i].iter().map(move |&j| { let mut g = vec![i, j]; g.sort(); g })).collect();
+    let edges: HashMap<usize, Vec<usize>> = ids
+        .iter()
+        .map(|&i| {
+            (
+                i,
+                ids.iter()
+                    .copied()
+                    .filter(|&j| i != j && adjacent(i, j))
+                    .collect(),
+            )
+        })
+        .collect();
+    let mut current: BTreeSet<Vec<usize>> = ids
+        .iter()
+        .flat_map(|&i| {
+            edges[&i].iter().map(move |&j| {
+                let mut g = vec![i, j];
+                g.sort();
+                g
+            })
+        })
+        .collect();
     let mut out = Vec::new();
     for size in [2, 3, 4] {
         if size > 2 {
-            current = current.iter().flat_map(|g| g.iter().flat_map(|i| edges[i].iter()).filter(|j| !g.contains(j)).map(|&j| {
-                let mut n = g.clone();
-                n.push(j);
-                n.sort();
-                n
-            }).collect::<Vec<_>>()).collect();
+            current = current
+                .iter()
+                .flat_map(|g| {
+                    g.iter()
+                        .flat_map(|i| edges[i].iter())
+                        .filter(|j| !g.contains(j))
+                        .map(|&j| {
+                            let mut n = g.clone();
+                            n.push(j);
+                            n.sort();
+                            n
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect();
         }
         for group in &current {
             let xy: Vec<i64> = group.iter().flat_map(|i| records[i].xy).collect();
-            let span = |o: usize| xy.iter().skip(o).step_by(2).max().unwrap() - xy.iter().skip(o).step_by(2).min().unwrap();
+            let span = |o: usize| {
+                xy.iter().skip(o).step_by(2).max().unwrap()
+                    - xy.iter().skip(o).step_by(2).min().unwrap()
+            };
             if span(0) <= 703 * 256 && span(1) <= 511 * 256 {
                 out.push(group.clone());
             }
@@ -103,16 +176,27 @@ fn connected_groups(records: &BTreeMap<usize, Record>) -> Vec<Vec<usize>> {
 pub fn solid_word_one(raw: &[u8], bank: &J, texture: usize) -> Result<bool> {
     let at = section(bank, "textures")? + texture * 16;
     let [page, u, v, w, h, pal] = core::array::from_fn(|k| u16_at(raw, at + 2 * k));
-    let (page, u, v, w, h, pal) = (page?, u? as usize, v? as usize, w? as usize, h? as usize, pal? as usize);
+    let (page, u, v, w, h, pal) = (
+        page?,
+        u? as usize,
+        v? as usize,
+        w? as usize,
+        h? as usize,
+        pal? as usize,
+    );
     if page == 65535 || w == 0 || h == 0 {
         return Ok(false);
     }
     let (palettes, pages) = (section(bank, "palettes")?, section(bank, "pages")?);
-    let palette = (0..16).map(|k| u16_at(raw, palettes + pal * 32 + 2 * k)).collect::<Result<Vec<_>>>()?;
+    let palette = (0..16)
+        .map(|k| u16_at(raw, palettes + pal * 32 + 2 * k))
+        .collect::<Result<Vec<_>>>()?;
     let base = pages + usize::from(page) * 32768;
     for y in 0..h {
         for x in 0..w {
-            let byte = *raw.get(base + (v + y) * 128 + (u + x) / 2).ok_or("bank read outside its bytes")?;
+            let byte = *raw
+                .get(base + (v + y) * 128 + (u + x) / 2)
+                .ok_or("bank read outside its bytes")?;
             if palette[usize::from((byte >> (4 * ((u + x) & 1))) & 15)] != 1 {
                 return Ok(false);
             }
@@ -129,6 +213,8 @@ struct Candidate {
     regions: Vec<i64>,
 }
 type CertKey = (i16, i16, u16, u16, Vec<u32>);
+/// A pose: its relative coordinates, its phases, and the member count.
+type Pose = (Vec<i64>, Vec<Vec<(i64, i64)>>, usize);
 fn cert_key(c: &Cert) -> CertKey {
     (c.gx, c.gy, c.width, c.height, c.words.clone())
 }
@@ -137,12 +223,20 @@ fn cert_key(c: &Cert) -> CertKey {
 /// bounds. Marginal bytes are recomputed after a shared bitmap is admitted;
 /// region multiplicity weights usefulness across spatial views; ties go to the
 /// lower bank and member IDs, then the later candidate (Python's `max`).
-fn select_groups(candidates: Vec<Candidate>, certificates: &[Cert], bank_count: usize, budget: usize, max_region: usize) -> (Vec<Candidate>, usize, Vec<(i64, usize)>) {
+fn select_groups(
+    candidates: Vec<Candidate>,
+    certificates: &[Cert],
+    bank_count: usize,
+    budget: usize,
+    max_region: usize,
+) -> (Vec<Candidate>, usize, Vec<(i64, usize)>) {
     let mut used = 24 + 8 * bank_count;
     let mut selected = Vec::new();
     let mut admitted: HashSet<CertKey> = HashSet::new();
     let mut per_region: Vec<(i64, usize)> = Vec::new();
-    let count = |per_region: &[(i64, usize)], r: i64| per_region.iter().find(|(k, _)| *k == r).map_or(0, |e| e.1);
+    let count = |per_region: &[(i64, usize)], r: i64| {
+        per_region.iter().find(|(k, _)| *k == r).map_or(0, |e| e.1)
+    };
     let keys: Vec<CertKey> = certificates.iter().map(cert_key).collect();
     let mut pending = candidates;
     loop {
@@ -150,15 +244,28 @@ fn select_groups(candidates: Vec<Candidate>, certificates: &[Cert], bank_count: 
         let mut best: Option<(u128, u128, Vec<i64>, usize, usize)> = None;
         for (index, g) in pending.iter().enumerate() {
             let c = &certificates[g.pose];
-            if c.width == 0 || g.regions.iter().any(|&r| count(&per_region, r) >= max_region) {
+            if c.width == 0
+                || g.regions
+                    .iter()
+                    .any(|&r| count(&per_region, r) >= max_region)
+            {
                 continue;
             }
-            let cost = 10 + if admitted.contains(&keys[g.pose]) { 0 } else { 12 + c.words.len() * 4 };
+            let cost = 10
+                + if admitted.contains(&keys[g.pose]) {
+                    0
+                } else {
+                    12 + c.words.len() * 4
+                };
             if used + cost > budget {
                 continue;
             }
-            let area = c.words.iter().map(|w| w.count_ones() as u128).sum::<u128>() * g.regions.len() as u128;
-            let tie: Vec<i64> = std::iter::once(g.scene).chain(g.members.iter().copied()).map(|x| -(x as i64)).collect();
+            let area = c.words.iter().map(|w| w.count_ones() as u128).sum::<u128>()
+                * g.regions.len() as u128;
+            let tie: Vec<i64> = std::iter::once(g.scene)
+                .chain(g.members.iter().copied())
+                .map(|x| -(x as i64))
+                .collect();
             let better = match &best {
                 None => true,
                 Some((a, k, t, _, _)) => match (area * *k).cmp(&(*a * cost as u128)) {
@@ -172,7 +279,9 @@ fn select_groups(candidates: Vec<Candidate>, certificates: &[Cert], bank_count: 
                 best = Some((area, cost as u128, tie, index, cost));
             }
         }
-        let Some((_, _, _, index, cost)) = best else { break };
+        let Some((_, _, _, index, cost)) = best else {
+            break;
+        };
         let g = pending.remove(index);
         used += cost;
         admitted.insert(keys[g.pose].clone());
@@ -208,7 +317,9 @@ pub fn cook(root: &Path) -> Result<()> {
     let geo = read_json(&root.join(".hkpsx/geo-provenance.json"))?;
     let life = read_json(&root.join(".hkpsx/lifeblood-provenance.json"))?;
     for (report, path) in [(&geo, "data/geo.rs"), (&life, "data/lifeblood.rs")] {
-        if text(report, "rust_sha256")? != file_sha(&root.join(path))? || text(report, "region_metadata_sha256")? != mh {
+        if text(report, "rust_sha256")? != file_sha(&root.join(path))?
+            || text(report, "region_metadata_sha256")? != mh
+        {
             return err("Opaque groups: stale mutable bindings");
         }
     }
@@ -227,9 +338,18 @@ pub fn cook(root: &Path) -> Result<()> {
         sources.insert(chunk, draws);
     }
     for name in [
-        "data/regions.json", "data/geo.rs", "data/lifeblood.rs", "host/hk-cook/src/opaque_groups.rs", "host/hk-cook/src/opaque_tiles.rs",
-        "host/hk-cook/src/coverage.rs", "host/coverage_raster.rs", "game/src/world.rs", "game/src/reveal_masks.rs", "game/src/geo_render.rs",
-        "game/src/lifeblood.rs", "game/src/great_door.rs",
+        "data/regions.json",
+        "data/geo.rs",
+        "data/lifeblood.rs",
+        "host/hk-cook/src/opaque_groups.rs",
+        "host/hk-cook/src/opaque_tiles.rs",
+        "host/hk-cook/src/coverage.rs",
+        "host/coverage_raster.rs",
+        "game/src/world.rs",
+        "game/src/reveal_masks.rs",
+        "game/src/geo_render.rs",
+        "game/src/lifeblood.rs",
+        "game/src/great_door.rs",
     ] {
         inputs.push((name.into(), file_sha(&root.join(name))?));
     }
@@ -244,17 +364,32 @@ pub fn cook(root: &Path) -> Result<()> {
             let row = &rows[(int(sr, "chunk_id")? - 1) as usize];
             let raw = read(&root.join(text(row, "path")?))?;
             let digest = sha(&raw);
-            if digest != text(row, "sha256")? || digest != text(sr, "sha256")?
+            if digest != text(row, "sha256")?
+                || digest != text(sr, "sha256")?
                 || crate::opaque_tiles::u32_at(&raw, 12)? as usize != list(sr, "texture_map")?.len()
             {
                 return err("Opaque groups: final room mapping changed");
             }
         }
     }
-    let helper = helper(&["host/hk-cook/src/coverage.rs", "host/coverage_raster.rs"], root)?;
+    let helper = helper(
+        &["host/hk-cook/src/coverage.rs", "host/coverage_raster.rs"],
+        root,
+    )?;
     let key = sha(dumps_sorted_compact(&Json::Obj(vec![
-        ("inputs".into(), Json::Obj(inputs.iter().map(|(k, v)| (k.clone(), Json::Str(v.clone()))).collect())),
-        ("scene_order".into(), int_list(banks.iter().map(|b| b["scene_id"].as_i64().unwrap_or(-1)))),
+        (
+            "inputs".into(),
+            Json::Obj(
+                inputs
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Json::Str(v.clone())))
+                    .collect(),
+            ),
+        ),
+        (
+            "scene_order".into(),
+            int_list(banks.iter().map(|b| b["scene_id"].as_i64().unwrap_or(-1))),
+        ),
         ("helper".into(), helper.clone()),
         ("format".into(), Json::Str("HKOPAQUEGROUPS01".into())),
         ("budget".into(), Json::Int(MAX_TABLE_BYTES as i64)),
@@ -264,13 +399,22 @@ pub fn cook(root: &Path) -> Result<()> {
     let report_path = cache.join("report.json");
     if let Ok(old) = read_json(&report_path) {
         let outputs = old.get("outputs").and_then(J::as_object);
-        let current = outputs.is_some_and(|o| !o.is_empty() && o.iter().all(|(p, h)| file_sha(&root.join(p)).ok().as_deref() == h.as_str()));
+        let current = outputs.is_some_and(|o| {
+            !o.is_empty()
+                && o.iter()
+                    .all(|(p, h)| file_sha(&root.join(p)).ok().as_deref() == h.as_str())
+        });
         if old.get("input_key").and_then(J::as_str) == Some(key.as_str()) && current {
-            println!("Opaque groups: cached {} groups, {} bytes", old["selected_groups"], old["table_bytes"]);
+            println!(
+                "Opaque groups: cached {} groups, {} bytes",
+                old["selected_groups"], old["table_bytes"]
+            );
             return Ok(());
         }
     }
-    let mutated_sources: HashSet<String> = exclusions.iter().enumerate()
+    let mutated_sources: HashSet<String> = exclusions
+        .iter()
+        .enumerate()
         .flat_map(|(i, ids)| ids.iter().map(move |&d| (i, d)))
         .map(|(i, d)| sources[&(i as i64 + 1)][d as usize]["source"].to_string())
         .collect();
@@ -309,8 +453,14 @@ pub fn cook(root: &Path) -> Result<()> {
                 if !is_solid {
                     continue;
                 }
-                let record = Record { xy, scale, texture: tex };
-                let existing = records.entry((bank_index, gid)).or_insert_with(|| record.clone());
+                let record = Record {
+                    xy,
+                    scale,
+                    texture: tex,
+                };
+                let existing = records
+                    .entry((bank_index, gid))
+                    .or_insert_with(|| record.clone());
                 if *existing != record {
                     return err("Opaque groups: pooled source mismatch");
                 }
@@ -324,21 +474,27 @@ pub fn cook(root: &Path) -> Result<()> {
     }
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut candidate_index: HashMap<(usize, Vec<usize>), usize> = HashMap::new();
-    let mut poses: Vec<(Vec<i64>, Vec<Vec<(i64, i64)>>, usize)> = Vec::new();
+    let mut poses: Vec<Pose> = Vec::new();
     let mut pose_lookup: HashMap<Vec<i64>, usize> = HashMap::new();
     for (bank, region, row) in &regions {
-        let local: BTreeMap<usize, Record> = row.keys().filter_map(|gid| records.get(&(*bank, *gid)).map(|r| (*gid, r.clone()))).collect();
+        let local: BTreeMap<usize, Record> = row
+            .keys()
+            .filter_map(|gid| records.get(&(*bank, *gid)).map(|r| (*gid, r.clone())))
+            .collect();
         for members in connected_groups(&local) {
             let identity = (*bank, members.clone());
             if !candidate_index.contains_key(&identity) {
                 let xy: Vec<i64> = members.iter().flat_map(|i| local[i].xy).collect();
-                let relative: Vec<i64> = xy.iter().enumerate().map(|(i, v)| v - xy[i % 2]).collect();
+                let relative: Vec<i64> =
+                    xy.iter().enumerate().map(|(i, v)| v - xy[i % 2]).collect();
                 let pose = match pose_lookup.get(&relative) {
                     Some(&p) => p,
                     None => {
                         let phases = group_phases(&xy)?;
                         let too_wide = phases.iter().any(|p| {
-                            let span = |f: fn(&(i64, i64)) -> i64| p.iter().map(f).max().unwrap() - p.iter().map(f).min().unwrap();
+                            let span = |f: fn(&(i64, i64)) -> i64| {
+                                p.iter().map(f).max().unwrap() - p.iter().map(f).min().unwrap()
+                            };
                             span(|q| q.0) > 703 || span(|q| q.1) > 511
                         });
                         if too_wide {
@@ -351,7 +507,12 @@ pub fn cook(root: &Path) -> Result<()> {
                     }
                 };
                 candidate_index.insert(identity.clone(), candidates.len());
-                candidates.push(Candidate { scene: *bank, members, pose, regions: Vec::new() });
+                candidates.push(Candidate {
+                    scene: *bank,
+                    members,
+                    pose,
+                    regions: Vec::new(),
+                });
             }
             candidates[candidate_index[&identity]].regions.push(*region);
         }
@@ -374,7 +535,13 @@ pub fn cook(root: &Path) -> Result<()> {
     write_changed(&cache.join("output.bin"), &output)?;
     let certificates = read_certificates(&output, poses.len())?;
     let candidate_count = candidates.len();
-    let (mut selected, total, counts) = select_groups(candidates, &certificates, banks.len(), MAX_TABLE_BYTES, MAX_REGION_GROUPS);
+    let (mut selected, total, counts) = select_groups(
+        candidates,
+        &certificates,
+        banks.len(),
+        MAX_TABLE_BYTES,
+        MAX_REGION_GROUPS,
+    );
     selected.sort_by(|a, b| (a.scene, &a.members).cmp(&(b.scene, &b.members)));
     let mut descriptors: Vec<(Cert, usize)> = Vec::new();
     let mut bits: Vec<u32> = Vec::new();
@@ -393,27 +560,45 @@ pub fn cook(root: &Path) -> Result<()> {
         scene_groups[g.scene].push((ident, members));
         selected_report.push(Json::Obj(vec![
             ("scene".into(), Json::Int(g.scene as i64)),
-            ("members".into(), int_list(g.members.iter().map(|&m| m as i64))),
+            (
+                "members".into(),
+                int_list(g.members.iter().map(|&m| m as i64)),
+            ),
             ("pose".into(), Json::Int(g.pose as i64)),
             ("regions".into(), int_list(g.regions.iter().copied())),
             ("certificate".into(), Json::Int(ident as i64)),
         ]));
     }
-    let actual = 24 + 8 * scene_groups.len() + 10 * selected.len() + 12 * descriptors.len() + 4 * bits.len();
+    let actual =
+        24 + 8 * scene_groups.len() + 10 * selected.len() + 12 * descriptors.len() + 4 * bits.len();
     if actual != total || actual > MAX_TABLE_BYTES {
         return err("Opaque groups: budget accounting differs");
     }
-    let capacities: Vec<i64> = banks.iter().map(|b| b["pools"]["draws"].as_i64().unwrap_or(0)).collect();
+    let capacities: Vec<i64> = banks
+        .iter()
+        .map(|b| b["pools"]["draws"].as_i64().unwrap_or(0))
+        .collect();
     let pool_capacity = capacities.iter().copied().max().unwrap_or(0);
-    let mut rust = String::from("// Generated optional4px/19x19 seam proofs. Local licensed data.\n");
+    let mut rust =
+        String::from("// Generated optional4px/19x19 seam proofs. Local licensed data.\n");
     rust += &format!("pub const GROUP_POOL_CAPACITY:usize={pool_capacity};\n");
-    rust += &format!("pub static GROUP_CERTS:&[GroupCert]=&[\n{}];\n", cert_rows("GroupCert", &descriptors));
+    rust += &format!(
+        "pub static GROUP_CERTS:&[GroupCert]=&[\n{}];\n",
+        cert_rows("GroupCert", &descriptors)
+    );
     rust += &format!("pub static GROUP_BITS:&[u32]=&[\n{}];\n", bit_rows(&bits));
     rust += "pub static SCENE_GROUPS:&[&[Group]]=&[\n";
     for row in &scene_groups {
         rust += "&[\n";
         for (c, members) in row {
-            rust += &format!("Group{{certificate:{c},members:[{}]}},\n", members.iter().map(usize::to_string).collect::<Vec<_>>().join(","));
+            rust += &format!(
+                "Group{{certificate:{c},members:[{}]}},\n",
+                members
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
         }
         rust += "],\n";
     }
@@ -421,13 +606,15 @@ pub fn cook(root: &Path) -> Result<()> {
     let destination = root.join("data/opaque_groups.rs");
     write_changed(&destination, rust.as_bytes())?;
     let maximum = counts.iter().map(|c| c.1).max().unwrap_or(0);
-    let cert_json = |(c, offset): &(Cert, usize)| Json::Obj(vec![
-        ("gx".into(), Json::Int(c.gx.into())),
-        ("gy".into(), Json::Int(c.gy.into())),
-        ("width".into(), Json::Int(c.width.into())),
-        ("height".into(), Json::Int(c.height.into())),
-        ("offset".into(), Json::Int(*offset as i64)),
-    ]);
+    let cert_json = |(c, offset): &(Cert, usize)| {
+        Json::Obj(vec![
+            ("gx".into(), Json::Int(c.gx.into())),
+            ("gy".into(), Json::Int(c.gy.into())),
+            ("width".into(), Json::Int(c.width.into())),
+            ("height".into(), Json::Int(c.height.into())),
+            ("offset".into(), Json::Int(*offset as i64)),
+        ])
+    };
     let report = Json::Obj(vec![
         ("format".into(), Json::Str("HKOPAQUEGROUPS01".into())),
         ("input_key".into(), Json::Str(key)),
@@ -474,13 +661,26 @@ mod tests {
     use super::*;
 
     fn record(x0: i64, x1: i64, scale: i32) -> Record {
-        Record { xy: [x0, 0, x1, 0, x0, 4096, x1, 4096], scale, texture: 0 }
+        Record {
+            xy: [x0, 0, x1, 0, x0, 4096, x1, 4096],
+            scale,
+            texture: 0,
+        }
     }
     #[test]
     fn touching_quads_of_one_scale_group_and_others_do_not() {
-        let records: BTreeMap<usize, Record> = [(1, record(0, 4096, 1)), (2, record(4096, 8192, 1)), (3, record(8192, 12288, 2)), (4, record(8192, 8500, 1))].into();
+        let records: BTreeMap<usize, Record> = [
+            (1, record(0, 4096, 1)),
+            (2, record(4096, 8192, 1)),
+            (3, record(8192, 12288, 2)),
+            (4, record(8192, 8500, 1)),
+        ]
+        .into();
         // 1 touches 2, 2 touches 4 (same scale); 3 is another scale.
-        assert_eq!(connected_groups(&records), vec![vec![1, 2], vec![2, 4], vec![1, 2, 4]]);
+        assert_eq!(
+            connected_groups(&records),
+            vec![vec![1, 2], vec![2, 4], vec![1, 2, 4]]
+        );
     }
     #[test]
     fn an_axis_quad_is_recognised() {
@@ -494,16 +694,49 @@ mod tests {
     }
     #[test]
     fn selection_prefers_area_per_byte_then_lower_ids_and_shares_bitmaps() {
-        let cert = |words: Vec<u32>| Cert { gx: 0, gy: 0, width: 32, height: words.len() as u16, words };
+        let cert = |words: Vec<u32>| Cert {
+            gx: 0,
+            gy: 0,
+            width: 32,
+            height: words.len() as u16,
+            words,
+        };
         let certificates = vec![cert(vec![u32::MAX]), cert(vec![1]), cert(vec![u32::MAX])];
         let candidates = vec![
-            Candidate { scene: 0, members: vec![5, 6], pose: 1, regions: vec![1] },
-            Candidate { scene: 0, members: vec![3, 4], pose: 0, regions: vec![1] },
-            Candidate { scene: 1, members: vec![1, 2], pose: 0, regions: vec![2] },
+            Candidate {
+                scene: 0,
+                members: vec![5, 6],
+                pose: 1,
+                regions: vec![1],
+            },
+            Candidate {
+                scene: 0,
+                members: vec![3, 4],
+                pose: 0,
+                regions: vec![1],
+            },
+            Candidate {
+                scene: 1,
+                members: vec![1, 2],
+                pose: 0,
+                regions: vec![2],
+            },
         ];
-        let (selected, used, counts) = select_groups(candidates, &certificates, 2, MAX_TABLE_BYTES, MAX_REGION_GROUPS);
+        let (selected, used, counts) = select_groups(
+            candidates,
+            &certificates,
+            2,
+            MAX_TABLE_BYTES,
+            MAX_REGION_GROUPS,
+        );
         // Pose 0's bitmap is admitted once and reused at 10 bytes.
-        assert_eq!(selected.iter().map(|g| (g.scene, g.members.clone())).collect::<Vec<_>>(), vec![(0, vec![3, 4]), (1, vec![1, 2]), (0, vec![5, 6])]);
+        assert_eq!(
+            selected
+                .iter()
+                .map(|g| (g.scene, g.members.clone()))
+                .collect::<Vec<_>>(),
+            vec![(0, vec![3, 4]), (1, vec![1, 2]), (0, vec![5, 6])]
+        );
         assert_eq!(used, 24 + 16 + (10 + 16) + 10 + (10 + 16));
         assert_eq!(counts, vec![(1, 2), (2, 1)]);
     }
@@ -525,15 +758,25 @@ mod tests {
             for _ in 0..10 {
                 let mut xy = Vec::new();
                 for _ in 0..count {
-                    let (x, y, w, h) = (rng.range(-30000, 30000), rng.range(-30000, 30000), rng.range(1, 10000), rng.range(1, 10000));
+                    let (x, y, w, h) = (
+                        rng.range(-30000, 30000),
+                        rng.range(-30000, 30000),
+                        rng.range(1, 10000),
+                        rng.range(1, 10000),
+                    );
                     xy.extend([x, y, x + w, y, x, y + h, x + w, y + h]);
                 }
-                let variants: HashSet<Vec<(i64, i64)>> = group_phases(&xy).unwrap().into_iter().collect();
+                let variants: HashSet<Vec<(i64, i64)>> =
+                    group_phases(&xy).unwrap().into_iter().collect();
                 assert!(variants.len() <= 256);
                 for _ in 0..100 {
                     let (cx, cy) = (rng.range(-1000000, 1000000), rng.range(-1000000, 1000000));
-                    let v: Vec<(i64, i64)> = (0..xy.len()).step_by(2).map(|i| ((xy[i] - cx) >> 8, -((xy[i + 1] - cy) >> 8))).collect();
-                    let relative: Vec<(i64, i64)> = v.iter().map(|&(x, y)| (x - v[0].0, y - v[0].1)).collect();
+                    let v: Vec<(i64, i64)> = (0..xy.len())
+                        .step_by(2)
+                        .map(|i| ((xy[i] - cx) >> 8, -((xy[i + 1] - cy) >> 8)))
+                        .collect();
+                    let relative: Vec<(i64, i64)> =
+                        v.iter().map(|&(x, y)| (x - v[0].0, y - v[0].1)).collect();
                     assert!(variants.contains(&relative));
                 }
             }
@@ -542,9 +785,30 @@ mod tests {
     }
     #[test]
     fn connected_members_require_common_scale_and_bounded_extent() {
-        let boxed = |x: i64, w: i64, scale: i32| Record { xy: [x * 256, 0, (x + w) * 256, 0, x * 256, 48 * 256, (x + w) * 256, 48 * 256], scale, texture: 0 };
-        let group = |records: Vec<(usize, Record)>| connected_groups(&records.into_iter().collect());
-        assert_eq!(group(vec![(3, boxed(0, 16, 60693)), (7, boxed(16, 16, 60693)), (9, boxed(100, 16, 2))]), vec![vec![3, 7]]);
+        let boxed = |x: i64, w: i64, scale: i32| Record {
+            xy: [
+                x * 256,
+                0,
+                (x + w) * 256,
+                0,
+                x * 256,
+                48 * 256,
+                (x + w) * 256,
+                48 * 256,
+            ],
+            scale,
+            texture: 0,
+        };
+        let group =
+            |records: Vec<(usize, Record)>| connected_groups(&records.into_iter().collect());
+        assert_eq!(
+            group(vec![
+                (3, boxed(0, 16, 60693)),
+                (7, boxed(16, 16, 60693)),
+                (9, boxed(100, 16, 2))
+            ]),
+            vec![vec![3, 7]]
+        );
         assert!(group(vec![(3, boxed(0, 704, 60693)), (7, boxed(16, 16, 60693))]).is_empty());
         assert!(group(vec![(3, boxed(0, 16, 60693)), (7, boxed(17, 16, 60693))]).is_empty());
     }
@@ -557,25 +821,58 @@ mod tests {
         }
         raw[64] = 0x11;
         raw[64 + 128] = 0x11;
-        for (word, want) in [(1u16, true), (0, false), (0x8001, false), (0x8000, false), (2, false)] {
+        for (word, want) in [
+            (1u16, true),
+            (0, false),
+            (0x8001, false),
+            (0x8000, false),
+            (2, false),
+        ] {
             raw[18..20].copy_from_slice(&word.to_le_bytes());
-            assert_eq!(solid_word_one(&raw, &bank, 0).unwrap(), want, "word {word:#x}");
+            assert_eq!(
+                solid_word_one(&raw, &bank, 0).unwrap(),
+                want,
+                "word {word:#x}"
+            );
         }
         raw[0..2].copy_from_slice(&65535u16.to_le_bytes());
         assert!(!solid_word_one(&raw, &bank, 0).unwrap());
     }
     #[test]
     fn budget_admits_atomic_groups_and_shares_identical_proofs() {
-        let c = Cert { gx: 0, gy: 0, width: 1, height: 1, words: vec![1] };
-        let groups = || -> Vec<Candidate> { (0..2).map(|i| Candidate { scene: 0, members: vec![i * 2, i * 2 + 1], pose: 0, regions: vec![i as i64 + 1] }).collect() };
+        let c = Cert {
+            gx: 0,
+            gy: 0,
+            width: 1,
+            height: 1,
+            words: vec![1],
+        };
+        let groups = || -> Vec<Candidate> {
+            (0..2)
+                .map(|i| Candidate {
+                    scene: 0,
+                    members: vec![i * 2, i * 2 + 1],
+                    pose: 0,
+                    regions: vec![i as i64 + 1],
+                })
+                .collect()
+        };
         let certs = [c];
         let (selected, size, _) = select_groups(groups(), &certs, 1, 68, MAX_REGION_GROUPS);
         assert_eq!((selected.len(), size), (2, 68));
         let (selected, size, _) = select_groups(groups(), &certs, 1, 58, MAX_REGION_GROUPS);
         assert_eq!((selected.len(), size), (1, 58));
-        let same: Vec<Candidate> = groups().into_iter().map(|g| Candidate { regions: vec![1], ..g }).collect();
+        let same: Vec<Candidate> = groups()
+            .into_iter()
+            .map(|g| Candidate {
+                regions: vec![1],
+                ..g
+            })
+            .collect();
         assert_eq!(select_groups(same, &certs, 1, 100, 1).0.len(), 1);
-        assert!(select_groups(groups(), &certs, 1, 57, MAX_REGION_GROUPS).0.is_empty());
+        assert!(select_groups(groups(), &certs, 1, 57, MAX_REGION_GROUPS)
+            .0
+            .is_empty());
     }
 }
 

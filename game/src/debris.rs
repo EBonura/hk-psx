@@ -115,12 +115,18 @@ impl Body {
         }
     }
     pub fn point(&self, local: [i32; 2], centroid: [i32; 2], scale: [i32; 2]) -> [i32; 2] {
-        self.point_rotated(local,centroid,scale,Rotation::new(self.angle))
+        self.point_rotated(local, centroid, scale, Rotation::new(self.angle))
     }
-    fn point_rotated(&self,local:[i32;2],centroid:[i32;2],scale:[i32;2],rotation:Rotation)->[i32;2] {
-        let p=rotation.apply([local[0]-centroid[0],local[1]-centroid[1]]);
-        let p=scaled(p,scale);
-        [self.center[0]+p[0],self.center[1]+p[1]]
+    fn point_rotated(
+        &self,
+        local: [i32; 2],
+        centroid: [i32; 2],
+        scale: [i32; 2],
+        rotation: Rotation,
+    ) -> [i32; 2] {
+        let p = rotation.apply([local[0] - centroid[0], local[1] - centroid[1]]);
+        let p = scaled(p, scale);
+        [self.center[0] + p[0], self.center[1] + p[1]]
     }
     /// One approximately 20ms source physics callback (not one 60Hz game tick).
     pub fn step(&mut self, spec: Spec, count: usize, mut edge: impl FnMut(usize) -> [i32; 4]) {
@@ -180,10 +186,11 @@ impl Body {
         let mut before = [[0; 2]; 16];
         let mut after = [[0; 2]; 16];
         let mut swept = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
-        let old_rotation=Rotation::new(old.angle);let next_rotation=Rotation::new(self.angle);
+        let old_rotation = Rotation::new(old.angle);
+        let next_rotation = Rotation::new(self.angle);
         for (index, &p) in spec.polygon.iter().enumerate() {
-            before[index] = old.point_rotated(p, spec.centroid, spec.scale,old_rotation);
-            after[index] = self.point_rotated(p, spec.centroid, spec.scale,next_rotation);
+            before[index] = old.point_rotated(p, spec.centroid, spec.scale, old_rotation);
+            after[index] = self.point_rotated(p, spec.centroid, spec.scale, next_rotation);
             for q in [before[index], after[index]] {
                 swept[0] = swept[0].min(q[0]);
                 swept[1] = swept[1].min(q[1]);
@@ -260,16 +267,22 @@ impl Body {
             // Velocity impulses do not change center/angle. Reuse the expired
             // sweep array for the unchanged contact points, preserving vertex
             // order and all eight sequential velocity iterations exactly.
-            let contact_rotation=Rotation::new(self.angle);let mut contacts=0;
+            let contact_rotation = Rotation::new(self.angle);
+            let mut contacts = 0;
             for &v in spec.polygon {
-                let q=self.point_rotated(v,spec.centroid,spec.scale,contact_rotation);
-                if dot([q[0]-edge[0],q[1]-edge[1]],normal).abs()<=655 {
-                    after[contacts]=q;contacts+=1;
+                let q = self.point_rotated(v, spec.centroid, spec.scale, contact_rotation);
+                if dot([q[0] - edge[0], q[1] - edge[1]], normal).abs() <= 655 {
+                    after[contacts] = q;
+                    contacts += 1;
                 }
             }
             for _ in 0..8 {
-                for &q in &after[..contacts] {self.contact_impulse(spec,q,normal);}
-                if contacts==0 {self.contact_impulse(spec,point,normal);}
+                for &q in &after[..contacts] {
+                    self.contact_impulse(spec, q, normal);
+                }
+                if contacts == 0 {
+                    self.contact_impulse(spec, point, normal);
+                }
             }
             // Exact source event gate and cached-direction reflection. Native
             // contact impulse happens first, then ObjectBounce overrides v.
@@ -295,9 +308,10 @@ impl Body {
             self.angle = (self.angle + mulq(self.omega / 50, remaining)).rem_euclid(360 * ONE);
             // Nonpenetration along the contacted source plane. Exact Box2D
             // manifold/decomposition and multi-contact iterations are unported.
-            let mut penetration = 0;let resolved_rotation=Rotation::new(self.angle);
+            let mut penetration = 0;
+            let resolved_rotation = Rotation::new(self.angle);
             for &v in spec.polygon {
-                let p = self.point_rotated(v, spec.centroid, spec.scale,resolved_rotation);
+                let p = self.point_rotated(v, spec.centroid, spec.scale, resolved_rotation);
                 penetration = penetration.min(dot([p[0] - edge[0], p[1] - edge[1]], normal));
             }
             for i in 0..2 {
@@ -415,9 +429,9 @@ fn supports(body: Body, spec: Spec, e: [i32; 4]) -> bool {
     let tangent = [-normal[1], normal[0]];
     let mut lo = i32::MAX;
     let mut hi = i32::MIN;
-    let rotation=Rotation::new(body.angle);
+    let rotation = Rotation::new(body.angle);
     for &v in spec.polygon {
-        let q = body.point_rotated(v, spec.centroid, spec.scale,rotation);
+        let q = body.point_rotated(v, spec.centroid, spec.scale, rotation);
         if dot([q[0] - e[0], q[1] - e[1]], normal).abs() <= 655 {
             let t = dot([q[0] - body.center[0], q[1] - body.center[1]], tangent);
             lo = lo.min(t);
@@ -431,7 +445,9 @@ fn kinetic(v: [i32; 2], omega: i32, spec: Spec) -> i64 {
     let inv_i = mulq(spec.torque, 14298).max(1) as i64;
     v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64 + radians * radians * ONE as i64 / inv_i
 }
-fn sqrt(n: u64) -> u32 { psx_math::int32::isqrt_u64(n) }
+fn sqrt(n: u64) -> u32 {
+    psx_math::int32::isqrt_u64(n)
+}
 fn length(v: [i32; 2]) -> i32 {
     sqrt((v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64) as u64) as i32
 }
@@ -481,17 +497,29 @@ fn mul_trig(v: i32, q14: i32) -> i32 {
 }
 /// One angle's sine and cosine, for rotating several points by it: each
 /// `sin` pays a division (`rem_euclid`), so a quad's four corners share them.
-#[derive(Clone,Copy)]
-pub struct Rotation {sin:i32,cos:i32}
+#[derive(Clone, Copy)]
+pub struct Rotation {
+    sin: i32,
+    cos: i32,
+}
 impl Rotation {
-    pub fn new(angle:i32)->Self {Self{sin:sin(angle),cos:sin(angle+90*ONE)}}
-    pub fn apply(self,p:[i32;2])->[i32;2] {
+    pub fn new(angle: i32) -> Self {
+        Self {
+            sin: sin(angle),
+            cos: sin(angle + 90 * ONE),
+        }
+    }
+    pub fn apply(self, p: [i32; 2]) -> [i32; 2] {
         // Keep each signed product's truncation before addition/subtraction.
-        [mul_trig(p[0],self.cos)-mul_trig(p[1],self.sin),
-         mul_trig(p[0],self.sin)+mul_trig(p[1],self.cos)]
+        [
+            mul_trig(p[0], self.cos) - mul_trig(p[1], self.sin),
+            mul_trig(p[0], self.sin) + mul_trig(p[1], self.cos),
+        ]
     }
 }
-pub fn rotate(p: [i32; 2], angle: i32) -> [i32; 2] {Rotation::new(angle).apply(p)}
+pub fn rotate(p: [i32; 2], angle: i32) -> [i32; 2] {
+    Rotation::new(angle).apply(p)
+}
 fn sin(angle: i32) -> i32 {
     let angle = angle.rem_euclid(360 * ONE);
     let index = (angle >> 16) as usize;
@@ -561,15 +589,15 @@ impl Pool {
                 if p.scene as usize != scene || p.body.stopped {
                     continue;
                 }
-                #[cfg(target_arch="mips")]
+                #[cfg(target_arch = "mips")]
                 crate::input::checkpoint();
                 // Check resolved poses against actual resident coverage. A
                 // floor on the apron edge can bounce a candidate that would
                 // otherwise leave coverage; absent floors cannot advance it.
                 let covered = |body: &Body| {
-                    let rotation=Rotation::new(body.angle);
+                    let rotation = Rotation::new(body.angle);
                     s.polygon.iter().all(|&v| {
-                        let q = body.point_rotated(v, s.centroid, s.scale,rotation);
+                        let q = body.point_rotated(v, s.centroid, s.scale, rotation);
                         q[0] >= bounds[0]
                             && q[0] <= bounds[2]
                             && q[1] >= bounds[1]
@@ -600,13 +628,13 @@ impl Pool {
             assert!(!room.texture(texture).is_streamed());
             let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
             let mut verts = [(0i16, 0i16); 4];
-            let rotation=Rotation::new(p.body.angle);
+            let rotation = Rotation::new(p.body.angle);
             for (v, local) in
                 verts
                     .iter_mut()
                     .zip([[b[0], b[3]], [b[2], b[3]], [b[0], b[1]], [b[2], b[1]]])
             {
-                let q = p.body.point_rotated(local, s.centroid, s.scale,rotation);
+                let q = p.body.point_rotated(local, s.centroid, s.scale, rotation);
                 *v = (
                     (160 + ((((q[0] - camera.0) as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20))
                         as i16,

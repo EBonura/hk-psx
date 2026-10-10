@@ -1,35 +1,35 @@
 //! Bounded deterministic chamber movement. Q16.16 world units, 60 Hz steps.
 #![no_std]
 use hk_format::Room;
-mod combat;
-mod actors;
-pub mod runner;
-pub mod runner_senses;
-pub mod climber;
-pub mod buzz;
-pub mod aspid;
-pub mod vengefly;
-pub mod gruzzer;
-pub mod baldur;
-pub mod hatcher;
-pub mod zombie_shield;
-pub mod husk_guard;
-pub mod blocker;
-pub mod pigeon;
-pub mod boss;
-pub mod false_knight;
-pub mod mawlek;
-pub mod gruz_mother;
 pub mod acid_flyer;
+mod actors;
+pub mod aspid;
+pub mod baldur;
+pub mod blocker;
+pub mod boss;
+pub mod buzz;
+pub mod climber;
+mod combat;
+mod corpse;
+pub mod false_knight;
+pub mod gruz_mother;
+pub mod gruzzer;
+pub mod hatcher;
+pub mod husk_guard;
+pub mod mawlek;
 pub mod mosquito;
 pub mod moss_walker;
-pub mod shockwave;
+pub mod pigeon;
+pub mod runner;
+pub mod runner_senses;
 pub mod shade;
-mod corpse;
-pub use corpse::{Corpse,CorpseSpec,CorpsePhase};
-mod vitals;
+pub mod shockwave;
+pub mod vengefly;
+pub mod zombie_shield;
+pub use corpse::{Corpse, CorpsePhase, CorpseSpec};
 mod focus;
-pub use focus::{Focus,FocusParams,FocusInput,FocusClip,FocusEvents};
+mod vitals;
+pub use focus::{Focus, FocusClip, FocusEvents, FocusInput, FocusParams};
 pub mod script;
 mod spell;
 pub use spell::{Cast, CastPhase, Fireball, FireballParams};
@@ -37,11 +37,14 @@ mod dream_nail;
 pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
 pub mod persistent;
-pub use nail_response::{NailResponse, NailResponseParams};
-pub use actors::{resolve_actor_spawn, walker_senses, ActorController, ActorHealth, ActorPlacement, ActorSpec, EnemyParams, Hit, WalkParams, WalkState, MAX_ACTORS};
-pub use vitals::{Hurt, VitalParams, Vitals, PULSE_TICKS};
+pub use actors::{
+    resolve_actor_spawn, walker_senses, ActorController, ActorHealth, ActorPlacement, ActorSpec,
+    EnemyParams, Hit, WalkParams, WalkState, MAX_ACTORS,
+};
 pub use combat::polygon_hits_box;
 pub use combat::{AttackParams, Grass, Nail};
+pub use nail_response::{NailResponse, NailResponseParams};
+pub use vitals::{Hurt, VitalParams, Vitals, PULSE_TICKS};
 pub const ONE: i32 = 65536;
 /// Two terrain edges (or boxes) are equal. The derived `==` on `[i32; 4]` is a
 /// 16-byte `memcmp` call on the R3000, a byte loop; this is four word compares.
@@ -114,15 +117,38 @@ impl Params {
     /// for its collision and only set the handful of fields they care about,
     /// so they spread this instead of restating the hero's ability constants.
     pub const ZERO: Self = Self {
-        speed: 0, jump: 0, gravity: 0, fall: 0, hold_ticks: 0, min_ticks: 0,
-        jump_queue_ticks: 0, dash_speed: 0, dash_ticks: 0, dash_cooldown_ticks: 0,
-        dash_queue_ticks: 0, shadow_dash_cooldown_ticks: 0, wallslide_speed: 0, wall_sticky_ticks: 0,
-        walljump_speed: 0, walljump_decel: 0, wall_lock_short: 0, wall_lock_long: 0,
-        double_jump_speed: 0, double_jump_delay_ticks: 0, double_jump_ticks: 0,
-        double_jump_queue_ticks: 0, super_dash_speed: 0, super_dash_charge_ticks: 0,
-        super_dash_cancel_ticks: 0, super_dash_recover_ticks: 0,
-        ledge_buffer_ticks: 0, head_bump_ticks: 0,
-        half_width: 0, bottom: 0, top: 0, shroom_speed: 0,
+        speed: 0,
+        jump: 0,
+        gravity: 0,
+        fall: 0,
+        hold_ticks: 0,
+        min_ticks: 0,
+        jump_queue_ticks: 0,
+        dash_speed: 0,
+        dash_ticks: 0,
+        dash_cooldown_ticks: 0,
+        dash_queue_ticks: 0,
+        shadow_dash_cooldown_ticks: 0,
+        wallslide_speed: 0,
+        wall_sticky_ticks: 0,
+        walljump_speed: 0,
+        walljump_decel: 0,
+        wall_lock_short: 0,
+        wall_lock_long: 0,
+        double_jump_speed: 0,
+        double_jump_delay_ticks: 0,
+        double_jump_ticks: 0,
+        double_jump_queue_ticks: 0,
+        super_dash_speed: 0,
+        super_dash_charge_ticks: 0,
+        super_dash_cancel_ticks: 0,
+        super_dash_recover_ticks: 0,
+        ledge_buffer_ticks: 0,
+        head_bump_ticks: 0,
+        half_width: 0,
+        bottom: 0,
+        top: 0,
+        shroom_speed: 0,
     };
 }
 /// Crystal Heart, as the Hero's Superdash FSM runs it: hold to charge against
@@ -258,7 +284,9 @@ impl Player {
         // A dash in the air is allowed once until the next landing.
         // CanDash: the cooldown, no dash running, not inside an attack's
         // recovery window, and either footing, an unspent air dash or a wall.
-        let allowed = self.has_dash && self.dash_left == 0 && self.dash_cooldown == 0
+        let allowed = self.has_dash
+            && self.dash_left == 0
+            && self.dash_cooldown == 0
             && !self.attack_recovering
             && (self.grounded || !self.air_dashed || self.wall_sliding);
         if pressed && allowed {
@@ -302,13 +330,17 @@ impl Player {
     /// and letting go once charged launches along the facing.
     pub fn super_dash_input(&mut self, p: Params, held: bool) {
         self.super_dash = match self.super_dash {
-            SuperDash::Off if held && self.has_super_dash && (self.grounded || self.wall_sliding) => {
+            SuperDash::Off
+                if held && self.has_super_dash && (self.grounded || self.wall_sliding) =>
+            {
                 // The entry call is the charge's first tick.
                 SuperDash::Charging(1)
             }
             // Ground Charge also watches Y Speed < -0.1, so walking off the
             // ledge being charged on drops the charge.
-            SuperDash::Charging(_) if !held || (!self.grounded && !self.wall_sliding) => SuperDash::Off,
+            SuperDash::Charging(_) if !held || (!self.grounded && !self.wall_sliding) => {
+                SuperDash::Off
+            }
             SuperDash::Charging(t) if t + 1 >= p.super_dash_charge_ticks => SuperDash::Ready,
             SuperDash::Charging(t) => SuperDash::Charging(t + 1),
             SuperDash::Ready if !held => {
@@ -335,7 +367,8 @@ impl Player {
         self.head_bump = self.head_bump.saturating_sub(1);
         // Source: pressing back out of a wall jump releases the lock once
         // WJLOCK_STEPS_SHORT have passed; otherwise it runs its full length.
-        if self.wall_locked && dir == -self.wall_jumped && self.wall_lock_ticks >= p.wall_lock_short {
+        if self.wall_locked && dir == -self.wall_jumped && self.wall_lock_ticks >= p.wall_lock_short
+        {
             self.wall_locked = false;
         }
         // Source: CanWallSlide wants the Claw, airtime, no dash and a fall
@@ -348,12 +381,21 @@ impl Player {
             } else {
                 self.wall_unstick = 0;
             }
-            if self.grounded || self.dash_left > 0 || self.touching_wall == 0
-                || self.wall_unstick >= p.wall_sticky_ticks {
+            if self.grounded
+                || self.dash_left > 0
+                || self.touching_wall == 0
+                || self.wall_unstick >= p.wall_sticky_ticks
+            {
                 self.wall_sliding = false;
             }
-        } else if self.has_walljump && !self.grounded && self.dash_left == 0 && !self.double_jumping
-            && self.vy < 0 && self.touching_wall != 0 && dir == self.touching_wall {
+        } else if self.has_walljump
+            && !self.grounded
+            && self.dash_left == 0
+            && !self.double_jumping
+            && self.vy < 0
+            && self.touching_wall != 0
+            && dir == self.touching_wall
+        {
             self.wall_sliding = true;
             self.wall_unstick = 0;
             // The slide restores both air abilities and turns into the wall.
@@ -374,10 +416,14 @@ impl Player {
                 && (self.wall_sliding || (self.touching_wall != 0 && !self.grounded));
             // CanJump: not dashing, not already jumping, no head bump, and
             // either on the ground or still inside the ledge buffer.
-            let can_jump = (self.grounded || self.ledge_buffer > 0) && !self.jumping
-                && self.dash_left == 0 && self.head_bump == 0
+            let can_jump = (self.grounded || self.ledge_buffer > 0)
+                && !self.jumping
+                && self.dash_left == 0
+                && self.head_bump == 0
                 && self.jump_queue <= p.jump_queue_ticks;
-            let can_double_jump = self.has_double_jump && !self.double_jumped && !self.grounded
+            let can_double_jump = self.has_double_jump
+                && !self.double_jumped
+                && !self.grounded
                 && self.dash_left == 0;
             // The retry window is the longer of the two the source keeps.
             let window = if self.has_double_jump {
@@ -452,8 +498,10 @@ impl Player {
         // Relinquish Control: a charge, a charged hold and the Hit Wall
         // recovery all pin the Knight horizontally, but gravity keeps running
         // so a ground charge stays on its floor.
-        let pinned = matches!(self.super_dash,
-            SuperDash::Charging(_) | SuperDash::Ready | SuperDash::Recovering(_));
+        let pinned = matches!(
+            self.super_dash,
+            SuperDash::Charging(_) | SuperDash::Ready | SuperDash::Recovering(_)
+        );
         let dashing = self.dash_left > 0;
         let (dir, speed) = if super_dashing {
             // SetGravity2dScale(0): the travel owns velocity outright.
@@ -502,7 +550,11 @@ impl Player {
         let lip = if self.grounded { STEP_LIP } else { 32 };
         for i in 0..count {
             let [x0, y0, x1, y1] = edge(i);
-            if (x0 == x1 && y0 == y1) || x0 != x1 || oy + p.top <= y0.min(y1) + 32 || oy + p.bottom >= y0.max(y1) - lip {
+            if y0 == y1
+                || x0 != x1
+                || oy + p.top <= y0.min(y1) + 32
+                || oy + p.bottom >= y0.max(y1) - lip
+            {
                 continue;
             }
             if nx > ox && ox + p.half_width <= x0 && nx + p.half_width > x0 {
@@ -528,15 +580,27 @@ impl Player {
             // gaps between a ramp and its adjoining horizontal segment.
             // A flat edge's height is y0 everywhere (mul_div_i32(_, 0, _) is 0),
             // without the 64-bit multiply and divide.
-            let height = |x: i32| if y0 == y1 { y0 } else {
-                y0 + psx_math::int32::mul_div_i32(x.clamp(x0.min(x1), x0.max(x1)) - x0, y1 - y0, x1 - x0)
+            let height = |x: i32| {
+                if y0 == y1 {
+                    y0
+                } else {
+                    y0 + psx_math::int32::mul_div_i32(
+                        x.clamp(x0.min(x1), x0.max(x1)) - x0,
+                        y1 - y0,
+                        x1 - x0,
+                    )
+                }
             };
             let old_surface = height(ox);
             let surface = height(nx);
-            let follows_slope = was_ground && !self.jumping && y0 != y1
+            let follows_slope = was_ground
+                && !self.jumping
+                && y0 != y1
                 && (oy + p.bottom - old_surface).abs() <= ONE / 20;
-            if (ny < oy || follows_slope) && oy + p.bottom >= old_surface - ONE / 20
-                && (ny + p.bottom <= surface || follows_slope) {
+            if (ny < oy || follows_slope)
+                && oy + p.bottom >= old_surface - ONE / 20
+                && (ny + p.bottom <= surface || follows_slope)
+            {
                 ny = surface - p.bottom;
                 self.vy = 0;
                 self.grounded = true;
@@ -559,8 +623,11 @@ impl Player {
             const PROBE: i32 = ONE / 16;
             for i in 0..count {
                 let [x0, y0, x1, y1] = edge(i);
-                if x0 != x1 || y0 == y1 || ny + p.top <= y0.min(y1) + 32
-                    || ny + p.bottom >= y0.max(y1) - 32 {
+                if x0 != x1
+                    || y0 == y1
+                    || ny + p.top <= y0.min(y1) + 32
+                    || ny + p.bottom >= y0.max(y1) - 32
+                {
                     continue;
                 }
                 if (nx + p.half_width - x0).abs() <= PROBE {
@@ -592,7 +659,9 @@ impl Player {
             }
             // Cancelable: once the locked window passes, a jump gets out of it.
             // The source consumes that press; here it also feeds the jump queue.
-            SuperDash::Travelling(t) if t >= p.super_dash_cancel_ticks && jump_pressed => SuperDash::Off,
+            SuperDash::Travelling(t) if t >= p.super_dash_cancel_ticks && jump_pressed => {
+                SuperDash::Off
+            }
             SuperDash::Travelling(t) => SuperDash::Travelling(t + 1),
             SuperDash::Recovering(t) if t <= 1 => SuperDash::Off,
             SuperDash::Recovering(t) => SuperDash::Recovering(t - 1),
@@ -633,7 +702,18 @@ impl Player {
 mod tests {
     use super::*;
     fn params() -> Params {
-        Params { speed: 8 * ONE, jump: 16 * ONE, gravity: 48 * ONE, fall: 20 * ONE, hold_ticks: 12, min_ticks: 5, half_width: ONE / 4, bottom: -ONE, top: ONE / 4, ..Params::ZERO }
+        Params {
+            speed: 8 * ONE,
+            jump: 16 * ONE,
+            gravity: 48 * ONE,
+            fall: 20 * ONE,
+            hold_ticks: 12,
+            min_ticks: 5,
+            half_width: ONE / 4,
+            bottom: -ONE,
+            top: ONE / 4,
+            ..Params::ZERO
+        }
     }
     #[test]
     fn swept_floor_wall_and_repeatable_route() {
@@ -685,7 +765,11 @@ mod tests {
     /// King's Pass at x130: a box platform whose top is 0.006 under the floor
     /// it meets, and the floor collider's own vertical face under that floor.
     fn lip_room(lip: i32) -> [[i32; 4]; 3] {
-        [[-10 * ONE, -lip, 2 * ONE, -lip], [2 * ONE, 0, 10 * ONE, 0], [2 * ONE, -2 * ONE, 2 * ONE, 0]]
+        [
+            [-10 * ONE, -lip, 2 * ONE, -lip],
+            [2 * ONE, 0, 10 * ONE, 0],
+            [2 * ONE, -2 * ONE, 2 * ONE, 0],
+        ]
     }
     #[test]
     fn a_grounded_walk_passes_a_lip_the_floor_snap_climbs() {
@@ -693,7 +777,9 @@ mod tests {
         let mut a = Player::spawn(0, ONE - 393);
         a.step(params(), 0, false, 3, |i| room[i]);
         assert!(a.grounded);
-        for _ in 0..60 { a.step(params(), 1, false, 3, |i| room[i]); }
+        for _ in 0..60 {
+            a.step(params(), 1, false, 3, |i| room[i]);
+        }
         assert!(a.x > 4 * ONE, "stopped at x {}", a.x);
         assert!(a.grounded);
         assert_eq!(a.y, ONE);
@@ -703,7 +789,9 @@ mod tests {
         let room = lip_room(ONE / 5);
         let mut a = Player::spawn(0, ONE - ONE / 5);
         a.step(params(), 0, false, 3, |i| room[i]);
-        for _ in 0..60 { a.step(params(), 1, false, 3, |i| room[i]); }
+        for _ in 0..60 {
+            a.step(params(), 1, false, 3, |i| room[i]);
+        }
         assert_eq!(a.x, 2 * ONE - params().half_width);
     }
     #[test]
@@ -712,10 +800,14 @@ mod tests {
         let mut a = Player::spawn(ONE, 2 * ONE);
         a.grounded = true;
         let ramp = [0, 0, 10 * ONE, 10 * ONE];
-        for _ in 0..30 { a.step(p, 1, false, 1, |_| ramp); }
+        for _ in 0..30 {
+            a.step(p, 1, false, 1, |_| ramp);
+        }
         assert!(a.grounded);
         assert!((a.y - a.x - ONE).abs() < 64);
-        for _ in 0..30 { a.step(p, -1, false, 1, |_| ramp); }
+        for _ in 0..30 {
+            a.step(p, -1, false, 1, |_| ramp);
+        }
         assert!(a.grounded);
         assert!((a.x - ONE).abs() < 64);
         assert!((a.y - 2 * ONE).abs() < 64);
@@ -725,7 +817,22 @@ mod tests {
 #[cfg(test)]
 mod dash_tests {
     use super::*;
-    const P: Params = Params { speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE, hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2, half_width: ONE / 2, bottom: -ONE, dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10, ..Params::ZERO };
+    const P: Params = Params {
+        speed: 8 * ONE,
+        jump: 16 * ONE,
+        gravity: 47 * ONE,
+        fall: 20 * ONE,
+        hold_ticks: 12,
+        min_ticks: 5,
+        jump_queue_ticks: 2,
+        half_width: ONE / 2,
+        bottom: -ONE,
+        dash_speed: 20 * ONE,
+        dash_ticks: 15,
+        dash_cooldown_ticks: 36,
+        dash_queue_ticks: 10,
+        ..Params::ZERO
+    };
     fn flat() -> impl Fn(usize) -> [i32; 4] {
         |_| [0, 0, 0, 0]
     }
@@ -787,7 +894,10 @@ mod dash_tests {
             p.dash_input(P, false);
         }
         p.dash_input(P, true);
-        assert_eq!(p.dash_left, 0, "a second dash in the same airtime is refused");
+        assert_eq!(
+            p.dash_left, 0,
+            "a second dash in the same airtime is refused"
+        );
         // Touching down restores it.
         p.grounded = true;
         p.step(P, 0, false, 0, flat());
@@ -808,7 +918,10 @@ mod dash_tests {
         }
         p.grounded = true;
         p.dash_input(P, true);
-        assert_eq!(p.dash_left, P.dash_ticks, "the buffered press fired on landing");
+        assert_eq!(
+            p.dash_left, P.dash_ticks,
+            "the buffered press fired on landing"
+        );
     }
 }
 
@@ -816,14 +929,27 @@ mod dash_tests {
 mod wall_tests {
     use super::*;
     const P: Params = Params {
-        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
-        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
-        wallslide_speed: -8 * ONE, wall_sticky_ticks: 4,
-        walljump_speed: 16 * ONE, walljump_decel: (16 - 8) * ONE / 12,
-        wall_lock_short: 6, wall_lock_long: 12,
-        double_jump_speed: 18 * ONE, double_jump_delay_ticks: 4,
-        double_jump_ticks: 11, double_jump_queue_ticks: 12,
-        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+        speed: 8 * ONE,
+        jump: 16 * ONE,
+        gravity: 47 * ONE,
+        fall: 20 * ONE,
+        hold_ticks: 12,
+        min_ticks: 5,
+        jump_queue_ticks: 2,
+        wallslide_speed: -8 * ONE,
+        wall_sticky_ticks: 4,
+        walljump_speed: 16 * ONE,
+        walljump_decel: (16 - 8) * ONE / 12,
+        wall_lock_short: 6,
+        wall_lock_long: 12,
+        double_jump_speed: 18 * ONE,
+        double_jump_delay_ticks: 4,
+        double_jump_ticks: 11,
+        double_jump_queue_ticks: 12,
+        half_width: ONE / 2,
+        bottom: -ONE,
+        top: ONE,
+        ..Params::ZERO
     };
     /// A floor at y=0 and a wall whose face is at x=4.
     const EDGES: [[i32; 4]; 2] = [[-40 * ONE, 0, 40 * ONE, 0], [4 * ONE, 0, 4 * ONE, 40 * ONE]];
@@ -840,8 +966,14 @@ mod wall_tests {
                 break;
             }
         }
-        assert_eq!(p.touching_wall, 1, "the probe finds the wall it just clamped against");
-        assert!(!p.wall_sliding, "the slide only starts on the step after contact");
+        assert_eq!(
+            p.touching_wall, 1,
+            "the probe finds the wall it just clamped against"
+        );
+        assert!(
+            !p.wall_sliding,
+            "the slide only starts on the step after contact"
+        );
         p
     }
     #[test]
@@ -865,7 +997,10 @@ mod wall_tests {
         assert_eq!(p.facing, 1, "turned into the wall");
         for _ in 0..20 {
             p.step(P, 1, false, 2, room());
-            assert!(p.vy >= P.wallslide_speed, "the slide is a floor on the fall");
+            assert!(
+                p.vy >= P.wallslide_speed,
+                "the slide is a floor on the fall"
+            );
         }
         assert_eq!(p.vy, P.wallslide_speed, "and gravity pins it there");
     }
@@ -876,7 +1011,10 @@ mod wall_tests {
         assert!(p.wall_sliding);
         for _ in 0..10 {
             p.step(P, 0, false, 2, room());
-            assert!(p.wall_sliding, "WALL_STICKY_STEPS only counts the away direction");
+            assert!(
+                p.wall_sliding,
+                "WALL_STICKY_STEPS only counts the away direction"
+            );
         }
         for _ in 0..P.wall_sticky_ticks {
             p.step(P, -1, false, 2, room());
@@ -897,7 +1035,10 @@ mod wall_tests {
         for tick in 0..P.wall_lock_long {
             let before = p.x;
             p.step(P, 0, true, 2, room());
-            assert!(p.x < before, "tick {tick}: the lock owns horizontal velocity");
+            assert!(
+                p.x < before,
+                "tick {tick}: the lock owns horizontal velocity"
+            );
         }
         assert!(!p.wall_locked);
         let before = p.x;
@@ -914,7 +1055,10 @@ mod wall_tests {
             assert!(p.wall_locked);
         }
         p.step(P, 1, true, 2, room());
-        assert!(!p.wall_locked, "holding back past WJLOCK_STEPS_SHORT releases it");
+        assert!(
+            !p.wall_locked,
+            "holding back past WJLOCK_STEPS_SHORT releases it"
+        );
     }
     #[test]
     fn the_double_jump_waits_for_the_wings_and_runs_once_per_airtime() {
@@ -941,16 +1085,25 @@ mod wall_tests {
     }
 }
 
-
 #[cfg(test)]
 mod super_dash_tests {
     use super::*;
     const P: Params = Params {
-        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
-        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
-        super_dash_speed: 30 * ONE, super_dash_charge_ticks: 48,
-        super_dash_cancel_ticks: 12, super_dash_recover_ticks: 30,
-        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+        speed: 8 * ONE,
+        jump: 16 * ONE,
+        gravity: 47 * ONE,
+        fall: 20 * ONE,
+        hold_ticks: 12,
+        min_ticks: 5,
+        jump_queue_ticks: 2,
+        super_dash_speed: 30 * ONE,
+        super_dash_charge_ticks: 48,
+        super_dash_cancel_ticks: 12,
+        super_dash_recover_ticks: 30,
+        half_width: ONE / 2,
+        bottom: -ONE,
+        top: ONE,
+        ..Params::ZERO
     };
     const EDGES: [[i32; 4]; 2] = [[-40 * ONE, 0, 40 * ONE, 0], [4 * ONE, 0, 4 * ONE, 40 * ONE]];
     fn room() -> impl Fn(usize) -> [i32; 4] {
@@ -994,7 +1147,11 @@ mod super_dash_tests {
         p.super_dash = SuperDash::Charging(4);
         p.grounded = false;
         p.super_dash_input(P, true);
-        assert_eq!(p.super_dash, SuperDash::Off, "Ground Charge watches Y Speed");
+        assert_eq!(
+            p.super_dash,
+            SuperDash::Off,
+            "Ground Charge watches Y Speed"
+        );
     }
     #[test]
     fn a_charged_release_travels_at_its_own_speed_until_a_wall() {
@@ -1003,7 +1160,11 @@ mod super_dash_tests {
         assert_eq!(p.super_dash, SuperDash::Travelling(0));
         let start = p.x;
         p.step(P, 0, false, 2, room());
-        assert_eq!(p.x - start, P.super_dash_speed / 60, "the FSM speed, not RUN_SPEED");
+        assert_eq!(
+            p.x - start,
+            P.super_dash_speed / 60,
+            "the FSM speed, not RUN_SPEED"
+        );
         assert_eq!(p.vy, 0, "SetGravity2dScale zeroes it for the travel");
         for _ in 0..200 {
             p.step(P, 0, false, 2, room());
@@ -1011,7 +1172,10 @@ mod super_dash_tests {
                 break;
             }
         }
-        assert!(matches!(p.super_dash, SuperDash::Recovering(_)), "stopped at the wall");
+        assert!(
+            matches!(p.super_dash, SuperDash::Recovering(_)),
+            "stopped at the wall"
+        );
         assert_eq!(p.x, 4 * ONE - P.half_width);
         for _ in 0..P.super_dash_recover_ticks {
             let held = p.x;
@@ -1041,10 +1205,19 @@ mod super_dash_tests {
 mod shade_cloak_tests {
     use super::*;
     const P: Params = Params {
-        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
-        dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10,
+        speed: 8 * ONE,
+        jump: 16 * ONE,
+        gravity: 47 * ONE,
+        fall: 20 * ONE,
+        dash_speed: 20 * ONE,
+        dash_ticks: 15,
+        dash_cooldown_ticks: 36,
+        dash_queue_ticks: 10,
         shadow_dash_cooldown_ticks: 90,
-        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+        half_width: ONE / 2,
+        bottom: -ONE,
+        top: ONE,
+        ..Params::ZERO
     };
     fn flat() -> impl Fn(usize) -> [i32; 4] {
         |_| [0, 0, 0, 0]
@@ -1110,19 +1283,39 @@ mod shade_cloak_tests {
 mod priority_tests {
     use super::*;
     const P: Params = Params {
-        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
-        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
-        dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10,
-        ledge_buffer_ticks: 2, head_bump_ticks: 4,
-        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+        speed: 8 * ONE,
+        jump: 16 * ONE,
+        gravity: 47 * ONE,
+        fall: 20 * ONE,
+        hold_ticks: 12,
+        min_ticks: 5,
+        jump_queue_ticks: 2,
+        dash_speed: 20 * ONE,
+        dash_ticks: 15,
+        dash_cooldown_ticks: 36,
+        dash_queue_ticks: 10,
+        ledge_buffer_ticks: 2,
+        head_bump_ticks: 4,
+        half_width: ONE / 2,
+        bottom: -ONE,
+        top: ONE,
+        ..Params::ZERO
     };
     // A cooldown longer than the swing, so the queue window is reachable.
     const A: AttackParams = AttackParams {
-        duration: 25, cooldown: 32, alternate_reset: 36, hit_start: 1, hit_end: 6,
-        queue_ticks: 6, recovery_ticks: 8,
+        duration: 25,
+        cooldown: 32,
+        alternate_reset: 36,
+        hit_start: 1,
+        hit_end: 6,
+        queue_ticks: 6,
+        recovery_ticks: 8,
     };
     /// A floor that stops at x=0, so walking right leaves it.
-    const EDGES: [[i32; 4]; 2] = [[-40 * ONE, 0, 0, 0], [-6 * ONE, 12 * ONE, 6 * ONE, 12 * ONE]];
+    const EDGES: [[i32; 4]; 2] = [
+        [-40 * ONE, 0, 0, 0],
+        [-6 * ONE, 12 * ONE, 6 * ONE, 12 * ONE],
+    ];
     fn ledge() -> impl Fn(usize) -> [i32; 4] {
         |i| EDGES[i]
     }
@@ -1180,14 +1373,20 @@ mod priority_tests {
         assert!(p.dash_left > 0);
         p.step(P, 0, true, 1, ledge());
         assert!(!p.jumping, "CanJump refuses a jump out of a dash");
-        assert!(!nail.tick(A, true, 0, &mut p), "CanAttack refuses a swing out of a dash");
+        assert!(
+            !nail.tick(A, true, 0, &mut p),
+            "CanAttack refuses a swing out of a dash"
+        );
         // ATTACK_QUEUE_STEPS is shorter than a dash, so that press is lost, as
         // it is in the source. The buffer is for the cooldown's tail instead.
         for _ in 0..p.dash_left {
             p.step(P, 0, false, 1, ledge());
             nail.tick(A, true, 0, &mut p);
         }
-        assert!(!nail.active, "the queue is too short to outlast a whole dash");
+        assert!(
+            !nail.active,
+            "the queue is too short to outlast a whole dash"
+        );
     }
     #[test]
     fn a_swing_pressed_inside_the_queue_window_lands_when_the_cooldown_ends() {
@@ -1233,10 +1432,18 @@ mod priority_tests {
 mod shroom_tests {
     use super::*;
     const P: Params = Params {
-        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
-        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
+        speed: 8 * ONE,
+        jump: 16 * ONE,
+        gravity: 47 * ONE,
+        fall: 20 * ONE,
+        hold_ticks: 12,
+        min_ticks: 5,
+        jump_queue_ticks: 2,
         shroom_speed: 25 * ONE,
-        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+        half_width: ONE / 2,
+        bottom: -ONE,
+        top: ONE,
+        ..Params::ZERO
     };
     /// Open air: nothing but gravity acts on the rise.
     fn free(p: &mut Player, jump: bool) {
@@ -1259,9 +1466,15 @@ mod shroom_tests {
         p.air_dashed = true;
         p.double_jumped = true;
         p.shroom_bounce(P);
-        assert_eq!(p.vy, P.shroom_speed, "the source sets the velocity outright");
+        assert_eq!(
+            p.vy, P.shroom_speed,
+            "the source sets the velocity outright"
+        );
         assert!(p.shroom_bouncing);
-        assert!(!p.air_dashed && !p.double_jumped, "ShroomBounce clears both");
+        assert!(
+            !p.air_dashed && !p.double_jumped,
+            "ShroomBounce clears both"
+        );
     }
     #[test]
     fn the_flag_lasts_exactly_as_long_as_the_rise() {
@@ -1299,7 +1512,11 @@ mod shroom_tests {
         assert!(p.jumping, "the hold is still running");
         p.shroom_bounce(P);
         free(&mut p, true);
-        assert_eq!(p.vy, P.shroom_speed - P.gravity / 60, "the hold cannot re-pin JUMP_SPEED");
+        assert_eq!(
+            p.vy,
+            P.shroom_speed - P.gravity / 60,
+            "the hold cannot re-pin JUMP_SPEED"
+        );
     }
     #[test]
     fn the_shroom_throws_the_knight_higher_than_its_own_jump() {
@@ -1307,8 +1524,10 @@ mod shroom_tests {
         held.grounded = true;
         let mut bounced = Player::spawn(0, 0);
         bounced.shroom_bounce(P);
-        assert!(apex(bounced, false, 120) > apex(held, true, 120),
-                "SHROOM_BOUNCE_VELOCITY beats a fully held JUMP_SPEED");
+        assert!(
+            apex(bounced, false, 120) > apex(held, true, 120),
+            "SHROOM_BOUNCE_VELOCITY beats a fully held JUMP_SPEED"
+        );
     }
 }
 
@@ -1319,19 +1538,38 @@ mod shroom_tests {
 mod combination_tests {
     use super::*;
     const P: Params = Params {
-        speed: 8 * ONE, jump: 16 * ONE, gravity: 47 * ONE, fall: 20 * ONE,
-        hold_ticks: 12, min_ticks: 5, jump_queue_ticks: 2,
-        dash_speed: 20 * ONE, dash_ticks: 15, dash_cooldown_ticks: 36, dash_queue_ticks: 10,
+        speed: 8 * ONE,
+        jump: 16 * ONE,
+        gravity: 47 * ONE,
+        fall: 20 * ONE,
+        hold_ticks: 12,
+        min_ticks: 5,
+        jump_queue_ticks: 2,
+        dash_speed: 20 * ONE,
+        dash_ticks: 15,
+        dash_cooldown_ticks: 36,
+        dash_queue_ticks: 10,
         shadow_dash_cooldown_ticks: 90,
-        wallslide_speed: -8 * ONE, wall_sticky_ticks: 4,
-        walljump_speed: 16 * ONE, walljump_decel: (16 - 8) * ONE / 12,
-        wall_lock_short: 6, wall_lock_long: 12,
-        double_jump_speed: 18 * ONE, double_jump_delay_ticks: 4,
-        double_jump_ticks: 11, double_jump_queue_ticks: 12,
-        super_dash_speed: 30 * ONE, super_dash_charge_ticks: 48,
-        super_dash_cancel_ticks: 12, super_dash_recover_ticks: 30,
-        ledge_buffer_ticks: 2, head_bump_ticks: 4,
-        half_width: ONE / 2, bottom: -ONE, top: ONE, ..Params::ZERO
+        wallslide_speed: -8 * ONE,
+        wall_sticky_ticks: 4,
+        walljump_speed: 16 * ONE,
+        walljump_decel: (16 - 8) * ONE / 12,
+        wall_lock_short: 6,
+        wall_lock_long: 12,
+        double_jump_speed: 18 * ONE,
+        double_jump_delay_ticks: 4,
+        double_jump_ticks: 11,
+        double_jump_queue_ticks: 12,
+        super_dash_speed: 30 * ONE,
+        super_dash_charge_ticks: 48,
+        super_dash_cancel_ticks: 12,
+        super_dash_recover_ticks: 30,
+        ledge_buffer_ticks: 2,
+        head_bump_ticks: 4,
+        half_width: ONE / 2,
+        bottom: -ONE,
+        top: ONE,
+        ..Params::ZERO
     };
     /// A floor at y=0 and a wall whose face is at x=4.
     const EDGES: [[i32; 4]; 2] = [[-40 * ONE, 0, 40 * ONE, 0], [4 * ONE, 0, 4 * ONE, 40 * ONE]];
@@ -1372,7 +1610,10 @@ mod combination_tests {
         assert!(p.wall_locked && p.wall_jumped == -1);
         assert!(!p.air_dashed);
         p.dash_input(P, true);
-        assert_eq!(p.dash_left, P.dash_ticks, "a dash out of a wall jump is allowed");
+        assert_eq!(
+            p.dash_left, P.dash_ticks,
+            "a dash out of a wall jump is allowed"
+        );
     }
     #[test]
     fn a_dash_into_a_wall_stops_at_it_rather_than_tunnelling() {
@@ -1383,7 +1624,11 @@ mod combination_tests {
         for _ in 0..P.dash_ticks {
             p.step(P, 1, false, 2, room());
         }
-        assert_eq!(p.x, 4 * ONE - P.half_width, "flush with the wall, not through it");
+        assert_eq!(
+            p.x,
+            4 * ONE - P.half_width,
+            "flush with the wall, not through it"
+        );
     }
     #[test]
     fn a_spent_air_dash_comes_back_from_a_wall_but_not_from_the_air() {
@@ -1437,4 +1682,3 @@ mod combination_tests {
         assert!(p.double_jumping);
     }
 }
-

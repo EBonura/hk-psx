@@ -18,17 +18,29 @@ macro_rules! read_num {
         pub fn $name(&mut self) -> Result<$t> {
             const N: usize = std::mem::size_of::<$t>();
             let bytes: [u8; N] = self.take(N)?.try_into().unwrap();
-            Ok(if self.big_endian { <$t>::from_be_bytes(bytes) } else { <$t>::from_le_bytes(bytes) })
+            Ok(if self.big_endian {
+                <$t>::from_be_bytes(bytes)
+            } else {
+                <$t>::from_le_bytes(bytes)
+            })
         }
     };
 }
 
 impl<'a> Cursor<'a> {
     pub fn new(data: &'a [u8], big_endian: bool) -> Self {
-        Cursor { data, pos: 0, big_endian }
+        Cursor {
+            data,
+            pos: 0,
+            big_endian,
+        }
     }
     pub fn take(&mut self, n: usize) -> Result<&'a [u8]> {
-        let end = self.pos.checked_add(n).filter(|&e| e <= self.data.len()).ok_or(Error::Eof)?;
+        let end = self
+            .pos
+            .checked_add(n)
+            .filter(|&e| e <= self.data.len())
+            .ok_or(Error::Eof)?;
         let out = &self.data[self.pos..end];
         self.pos = end;
         Ok(out)
@@ -95,7 +107,8 @@ impl SerializedFile {
     pub fn open(path: &Path, name: String) -> Result<Self> {
         let file = File::open(path).map_err(|e| Error::Io(path.display().to_string(), e))?;
         // SAFETY: the install is a read-only build input that nothing rewrites while we run.
-        let data = unsafe { Mmap::map(&file) }.map_err(|e| Error::Io(path.display().to_string(), e))?;
+        let data =
+            unsafe { Mmap::map(&file) }.map_err(|e| Error::Io(path.display().to_string(), e))?;
         Self::parse(data, name)
     }
 
@@ -106,7 +119,9 @@ impl SerializedFile {
         let format = c.u32()?;
         let _data_offset = c.u32()?;
         if format != 22 {
-            return Err(Error::Format(format!("{name}: serialized format {format}, only 22 is supported")));
+            return Err(Error::Format(format!(
+                "{name}: serialized format {format}, only 22 is supported"
+            )));
         }
         let big_endian = c.u8()? != 0;
         c.take(3)?;
@@ -119,7 +134,9 @@ impl SerializedFile {
         let _platform = c.i32()?;
         let type_trees = c.u8()? != 0;
         if type_trees {
-            return Err(Error::Format(format!("{name}: embedded type trees are not supported")));
+            return Err(Error::Format(format!(
+                "{name}: embedded type trees are not supported"
+            )));
         }
         let type_count = c.i32()?;
         let mut types = Vec::with_capacity(type_count.max(0) as usize);
@@ -131,7 +148,10 @@ impl SerializedFile {
                 c.take(16)?; // script id
             }
             c.take(16)?; // old type hash
-            types.push(SerializedType { class_id, script_type_index });
+            types.push(SerializedType {
+                class_id,
+                script_type_index,
+            });
         }
         let object_count = c.i32()?;
         let mut objects = Vec::with_capacity(object_count.max(0) as usize);
@@ -142,13 +162,30 @@ impl SerializedFile {
             let byte_start = c.i64()? as u64 + data_offset;
             let byte_size = c.u32()? as usize;
             let type_index = c.i32()? as usize;
-            let class_id = types.get(type_index).ok_or_else(|| Error::Format(format!("{name}: bad type index")))?.class_id;
+            let class_id = types
+                .get(type_index)
+                .ok_or_else(|| Error::Format(format!("{name}: bad type index")))?
+                .class_id;
             // A duplicate path id replaces the earlier entry in place, as a dict assignment would.
             match index.get(&path_id) {
-                Some(&i) => objects[i] = ObjectInfo { path_id, byte_start: byte_start as usize, byte_size, class_id, type_index },
+                Some(&i) => {
+                    objects[i] = ObjectInfo {
+                        path_id,
+                        byte_start: byte_start as usize,
+                        byte_size,
+                        class_id,
+                        type_index,
+                    }
+                }
                 None => {
                     index.insert(path_id, objects.len());
-                    objects.push(ObjectInfo { path_id, byte_start: byte_start as usize, byte_size, class_id, type_index });
+                    objects.push(ObjectInfo {
+                        path_id,
+                        byte_start: byte_start as usize,
+                        byte_size,
+                        class_id,
+                        type_index,
+                    });
                 }
             }
         }
@@ -167,7 +204,17 @@ impl SerializedFile {
             externals.push(External { path: c.cstr()? });
         }
         // Reference types (format >= 20) carry no trees here; nothing after them is needed.
-        Ok(SerializedFile { name, data, format, unity_version, big_endian, types, objects, index, externals })
+        Ok(SerializedFile {
+            name,
+            data,
+            format,
+            unity_version,
+            big_endian,
+            types,
+            objects,
+            index,
+            externals,
+        })
     }
 
     pub fn object(&self, path_id: i64) -> Option<&ObjectInfo> {
@@ -175,6 +222,8 @@ impl SerializedFile {
     }
 
     pub fn bytes(&self, info: &ObjectInfo) -> Result<&[u8]> {
-        self.data.get(info.byte_start..info.byte_start + info.byte_size).ok_or(Error::Eof)
+        self.data
+            .get(info.byte_start..info.byte_start + info.byte_size)
+            .ok_or(Error::Eof)
     }
 }

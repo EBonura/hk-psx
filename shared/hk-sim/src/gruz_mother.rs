@@ -234,14 +234,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 12], count: 0 }
+        Self {
+            values: [None; 12],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
     pub fn contains(&self, action: Action) -> bool {
         self.iter().any(|a| a == action)
@@ -291,7 +296,8 @@ impl Bouncer {
     fn aim(&mut self, low: i32, high: i32) {
         let span = (high - low) * ONE;
         self.angle = low * ONE + ((self.random() as i64 * span as i64) >> 24) as i32;
-        self.facing_right = self.angle < 90 * ONE || (self.angle >= 270 * ONE && self.angle < 360 * ONE);
+        self.facing_right =
+            self.angle < 90 * ONE || (self.angle >= 270 * ONE && self.angle < 360 * ONE);
     }
     /// WAKE: `Aim` at RandomFloat 0..360 and fly.
     fn wake(&mut self) {
@@ -305,7 +311,11 @@ impl Bouncer {
     /// FaceDirection from the velocity: +1 when x is positive.
     fn facing(&self) -> i32 {
         let a = self.angle.rem_euclid(360 * ONE);
-        if self.flying && (a < 90 * ONE || a > 270 * ONE) { 1 } else { -1 }
+        if self.flying && !(90 * ONE..=270 * ONE).contains(&a) {
+            1
+        } else {
+            -1
+        }
     }
     /// The CheckCollisionSide events of `Fly 2`, the Gruzzer's table.
     fn bonk(&mut self, side: Side) {
@@ -316,11 +326,28 @@ impl Bouncer {
         // whose `jr` the hazard scanner could not bound, and it redirected a
         // neighbouring table's entry, which a code module may not have moved.
         // Up and Down choose by facing, Right and Left by the vertical half.
-        const RANGES: [[i32; 2]; 8] = [[190, 220], [320, 350], [190, 220], [140, 170], [140, 170], [10, 40],
-            [320, 350], [10, 40]];
+        const RANGES: [[i32; 2]; 8] = [
+            [190, 220],
+            [320, 350],
+            [190, 220],
+            [140, 170],
+            [140, 170],
+            [10, 40],
+            [320, 350],
+            [10, 40],
+        ];
         let by_facing = matches!(side, Side::Up | Side::Down);
-        let select = if by_facing { self.facing_right } else { self.angle < 180 * ONE };
-        let index = match side { Side::Up => 0, Side::Right => 2, Side::Down => 4, Side::Left => 6 } + select as usize;
+        let select = if by_facing {
+            self.facing_right
+        } else {
+            self.angle < 180 * ONE
+        };
+        let index = match side {
+            Side::Up => 0,
+            Side::Right => 2,
+            Side::Down => 4,
+            Side::Left => 6,
+        } + select as usize;
         let [low, high] = RANGES[index];
         self.aim(low, high);
     }
@@ -355,7 +382,12 @@ impl GruzMother {
             clip: Clip::Sleep,
             facing_right: false,
             velocity: [0; 2],
-            bouncer: Bouncer { flying: false, angle: 0, facing_right: false, rng: seed ^ 0x5bd1_e995 },
+            bouncer: Bouncer {
+                flying: false,
+                angle: 0,
+                facing_right: false,
+                rng: seed ^ 0x5bd1_e995,
+            },
             charges: 0,
             slams: 0,
             tracking: [0; 2],
@@ -367,7 +399,10 @@ impl GruzMother {
         }
     }
     pub fn gone() -> Self {
-        Self { phase: Phase::Gone, ..Self::new(1) }
+        Self {
+            phase: Phase::Gone,
+            ..Self::new(1)
+        }
     }
     pub fn phase(&self) -> Phase {
         self.phase
@@ -388,15 +423,30 @@ impl GruzMother {
     }
     /// Past the HealthManager death: the corpse or the burster.
     pub fn dead(&self) -> bool {
-        matches!(self.phase, Phase::CorpseInit | Phase::CorpseSteam | Phase::CorpseReady) || self.burster() || self.phase == Phase::Gone
+        matches!(
+            self.phase,
+            Phase::CorpseInit | Phase::CorpseSteam | Phase::CorpseReady
+        ) || self.burster()
+            || self.phase == Phase::Gone
     }
     /// Sunk by `Slam Down`'s Translate for as long as that state lasts.
     pub fn sunk(&self) -> bool {
         self.phase == Phase::SlamHit && self.clip == Clip::SlamDown
     }
     pub fn burster(&self) -> bool {
-        matches!(self.phase, Phase::BursterInit | Phase::BursterAir | Phase::Landed | Phase::StopEmit | Phase::Stop
-            | Phase::Gurg1 | Phase::Gurg2 | Phase::Gurg3 | Phase::Burst | Phase::Spawned)
+        matches!(
+            self.phase,
+            Phase::BursterInit
+                | Phase::BursterAir
+                | Phase::Landed
+                | Phase::StopEmit
+                | Phase::Stop
+                | Phase::Gurg1
+                | Phase::Gurg2
+                | Phase::Gurg3
+                | Phase::Burst
+                | Phase::Spawned
+        )
     }
     /// `Hero Damager` is live from `Fly` until the body dies.
     pub fn hurts(&self) -> bool {
@@ -404,7 +454,10 @@ impl GruzMother {
     }
     pub fn motion(&self) -> Motion {
         if self.phase == Phase::Buzz && self.bouncer.flying {
-            return Motion::Polar { angle: self.bouncer.angle, speed: BUZZ_SPEED };
+            return Motion::Polar {
+                angle: self.bouncer.angle,
+                speed: BUZZ_SPEED,
+            };
         }
         Motion::Vector(self.velocity)
     }
@@ -469,7 +522,10 @@ impl GruzMother {
                 self.face(senses);
                 // GetAngleToTarget2D then 180 degrees round at speed 3.
                 let toward = direction(senses.position, senses.hero);
-                self.velocity = [-scale(toward[0], CHARGE_BACK_SPEED), -scale(toward[1], CHARGE_BACK_SPEED)];
+                self.velocity = [
+                    -scale(toward[0], CHARGE_BACK_SPEED),
+                    -scale(toward[1], CHARGE_BACK_SPEED),
+                ];
                 // The charge angle is taken here and kept for `Charge`.
                 self.charge = toward;
             } else {
@@ -495,8 +551,16 @@ impl GruzMother {
         self.velocity = self.slam_velocity();
     }
     fn slam_velocity(&self) -> [i32; 2] {
-        let x = if self.slam_right { SLAM_DIRECTION[0] } else { -SLAM_DIRECTION[0] };
-        let y = if self.slam_up { SLAM_DIRECTION[1] } else { -SLAM_DIRECTION[1] };
+        let x = if self.slam_right {
+            SLAM_DIRECTION[0]
+        } else {
+            -SLAM_DIRECTION[0]
+        };
+        let y = if self.slam_up {
+            SLAM_DIRECTION[1]
+        } else {
+            -SLAM_DIRECTION[1]
+        };
         [scale(x, SLAM_SPEED), scale(y, SLAM_SPEED)]
     }
     fn super_end(&mut self, ticks: u16, out: &mut Actions) {
@@ -517,7 +581,10 @@ impl GruzMother {
         if self.slam_timer > self.wait {
             self.enter(Phase::SlamEnd);
             self.play(Clip::SlamEnd, out);
-            self.velocity = [scale(self.velocity[0], SLAM_DECEL), scale(self.velocity[1], SLAM_DECEL)];
+            self.velocity = [
+                scale(self.velocity[0], SLAM_DECEL),
+                scale(self.velocity[1], SLAM_DECEL),
+            ];
             return;
         }
         let Some(side) = senses.bonk else { return };
@@ -538,7 +605,11 @@ impl GruzMother {
                 out.push(Action::Sound(Sound::WallHit));
                 out.push(Action::Impact);
                 out.push(Action::Shake(Shake::Average));
-                let clip = if side == Side::Down { Clip::SlamDown } else { Clip::SlamUp };
+                let clip = if side == Side::Down {
+                    Clip::SlamDown
+                } else {
+                    Clip::SlamUp
+                };
                 self.play(clip, out);
             }
         }
@@ -628,7 +699,10 @@ impl GruzMother {
                     self.enter(Phase::Charge);
                     self.play(Clip::Charge, &mut out);
                     out.push(Action::Loop(Loop::Charge));
-                    self.velocity = [scale(self.charge[0], CHARGE_SPEED), scale(self.charge[1], CHARGE_SPEED)];
+                    self.velocity = [
+                        scale(self.charge[0], CHARGE_SPEED),
+                        scale(self.charge[1], CHARGE_SPEED),
+                    ];
                 }
             }
             Phase::Charge => {
@@ -680,7 +754,10 @@ impl GruzMother {
                 }
             }
             Phase::SlamEnd => {
-                self.velocity = [scale(self.velocity[0], SLAM_DECEL), scale(self.velocity[1], SLAM_DECEL)];
+                self.velocity = [
+                    scale(self.velocity[0], SLAM_DECEL),
+                    scale(self.velocity[1], SLAM_DECEL),
+                ];
                 if self.timer >= SLAM_END_TICKS {
                     self.super_end(0, &mut out);
                 }
@@ -708,7 +785,11 @@ impl GruzMother {
                     out.push(Action::Sting);
                     out.push(Action::Blown);
                     self.play(Clip::Fall, &mut out);
-                    let x = if self.facing_right { -BURSTER_SPEED[0] } else { BURSTER_SPEED[0] };
+                    let x = if self.facing_right {
+                        -BURSTER_SPEED[0]
+                    } else {
+                        BURSTER_SPEED[0]
+                    };
                     self.velocity = [x, BURSTER_SPEED[1]];
                 }
             }
@@ -788,7 +869,10 @@ pub fn direction(from: [i32; 2], to: [i32; 2]) -> [i32; 2] {
     if length == 0 {
         return [ONE, 0];
     }
-    [(d[0] * ONE as i64 / length) as i32, (d[1] * ONE as i64 / length) as i32]
+    [
+        (d[0] * ONE as i64 / length) as i32,
+        (d[1] * ONE as i64 / length) as i32,
+    ]
 }
 
 #[cfg(test)]
@@ -800,7 +884,13 @@ mod tests {
     const HERE: [i32; 2] = [100 * ONE, 16 * ONE];
 
     fn senses(hero: [i32; 2], in_range: bool) -> Senses {
-        Senses { position: HERE, hero, hero_in_range: in_range, bonk: None, landed: false }
+        Senses {
+            position: HERE,
+            hero,
+            hero_in_range: in_range,
+            bonk: None,
+            landed: false,
+        }
     }
     fn run(boss: &mut GruzMother, s: Senses, ticks: u16) -> Vec<Action> {
         let mut all = Vec::new();
@@ -814,7 +904,11 @@ mod tests {
         let mut boss = GruzMother::new(seed);
         boss.tick(senses([95 * ONE, 12 * ONE], true));
         boss.took_damage();
-        run(&mut boss, senses([95 * ONE, 12 * ONE], true), WAKE_TICKS + FLY_TICKS);
+        run(
+            &mut boss,
+            senses([95 * ONE, 12 * ONE], true),
+            WAKE_TICKS + FLY_TICKS,
+        );
         assert_eq!(boss.phase(), Phase::Buzz);
         boss
     }
@@ -823,7 +917,10 @@ mod tests {
     fn it_sleeps_invincible_until_the_hero_is_in_range() {
         let mut boss = GruzMother::new(7);
         assert!(boss.invincible() && boss.asleep());
-        assert!(boss.took_damage().is_empty(), "a hit out of range is refused, not a wake");
+        assert!(
+            boss.took_damage().is_empty(),
+            "a hit out of range is refused, not a wake"
+        );
         let actions = boss.tick(senses([90 * ONE, 12 * ONE], true));
         assert!(actions.contains(Action::Invincible(false)));
         assert_eq!(boss.phase(), Phase::Sleep);
@@ -837,8 +934,14 @@ mod tests {
         let mut boss = GruzMother::new(7);
         boss.tick(senses([90 * ONE, 12 * ONE], true));
         let wake = boss.took_damage();
-        for action in [Action::Sound(Sound::Startle), Action::Title, Action::StartBattle, Action::SnoreOff,
-                       Action::Play(Clip::Wake), Action::Shake(Shake::Average)] {
+        for action in [
+            Action::Sound(Sound::Startle),
+            Action::Title,
+            Action::StartBattle,
+            Action::SnoreOff,
+            Action::Play(Clip::Wake),
+            Action::Shake(Shake::Average),
+        ] {
             assert!(wake.contains(action), "{action:?}");
         }
         assert_eq!(boss.motion(), Motion::Vector([0, WAKE_SPEED_Y]));
@@ -850,7 +953,9 @@ mod tests {
         assert!(boss.hurts());
         run(&mut boss, senses([90 * ONE, 12 * ONE], true), FLY_TICKS);
         assert_eq!(boss.phase(), Phase::Buzz);
-        let Motion::Polar { speed, .. } = boss.motion() else { panic!("Buzz flies by the bouncer's angle") };
+        let Motion::Polar { speed, .. } = boss.motion() else {
+            panic!("Buzz flies by the bouncer's angle")
+        };
         assert_eq!(speed, BUZZ_SPEED);
     }
 
@@ -869,11 +974,18 @@ mod tests {
             }
             let mut run_length = 1;
             for pair in kinds.windows(2) {
-                run_length = if pair[0] == pair[1] { run_length + 1 } else { 1 };
+                run_length = if pair[0] == pair[1] {
+                    run_length + 1
+                } else {
+                    1
+                };
                 let limit = if pair[1] == Phase::ChargeAntic { 3 } else { 2 };
                 assert!(run_length <= limit, "seed {seed}: {kinds:?}");
             }
-            assert!(kinds.contains(&Phase::ChargeAntic) && kinds.contains(&Phase::SlamAntic), "seed {seed}");
+            assert!(
+                kinds.contains(&Phase::ChargeAntic) && kinds.contains(&Phase::SlamAntic),
+                "seed {seed}"
+            );
         }
     }
 
@@ -890,22 +1002,34 @@ mod tests {
     #[test]
     fn a_charge_backs_off_rushes_the_hero_and_rebounds_off_the_wall() {
         let hero = [110 * ONE, 16 * ONE];
-        let mut boss = (1..200).map(awake).find(|b| {
-            let mut b = *b;
-            b.timer = b.wait;
-            b.tick(senses(hero, true));
-            b.phase() == Phase::ChargeAntic
-        }).expect("some seed charges first");
+        let mut boss = (1..200)
+            .map(awake)
+            .find(|b| {
+                let mut b = *b;
+                b.timer = b.wait;
+                b.tick(senses(hero, true));
+                b.phase() == Phase::ChargeAntic
+            })
+            .expect("some seed charges first");
         boss.timer = boss.wait;
         boss.tick(senses(hero, true));
         assert_eq!(boss.phase(), Phase::ChargeAntic);
-        assert!(boss.facing_right(), "FaceObject turns to a hero on the right");
+        assert!(
+            boss.facing_right(),
+            "FaceObject turns to a hero on the right"
+        );
         assert_eq!(boss.motion(), Motion::Vector([-CHARGE_BACK_SPEED, 0]));
         run(&mut boss, senses(hero, true), CHARGE_ANTIC_TICKS);
         assert_eq!(boss.phase(), Phase::Charge);
         assert_eq!(boss.motion(), Motion::Vector([CHARGE_SPEED, 0]));
-        let hit = boss.tick(Senses { bonk: Some(Side::Right), ..senses(hero, true) });
-        assert!(hit.contains(Action::Sound(Sound::WallHit)) && hit.contains(Action::Play(Clip::ChargeRecover)));
+        let hit = boss.tick(Senses {
+            bonk: Some(Side::Right),
+            ..senses(hero, true)
+        });
+        assert!(
+            hit.contains(Action::Sound(Sound::WallHit))
+                && hit.contains(Action::Play(Clip::ChargeRecover))
+        );
         assert_eq!(boss.motion(), Motion::Vector([-CHARGE_SPEED / 2, 0]));
         run(&mut boss, senses(hero, true), CHARGE_RECOVER_TICKS);
         assert_eq!(boss.phase(), Phase::SuperEnd);
@@ -917,37 +1041,63 @@ mod tests {
     #[test]
     fn a_slam_bounces_floor_to_ceiling_and_turns_at_walls() {
         let hero = [80 * ONE, 16 * ONE];
-        let mut boss = (1..200).map(awake).find(|b| {
-            let mut b = *b;
-            b.timer = b.wait;
-            b.tick(senses(hero, true));
-            b.phase() == Phase::SlamAntic
-        }).expect("some seed slams first");
+        let mut boss = (1..200)
+            .map(awake)
+            .find(|b| {
+                let mut b = *b;
+                b.timer = b.wait;
+                b.tick(senses(hero, true));
+                b.phase() == Phase::SlamAntic
+            })
+            .expect("some seed slams first");
         boss.timer = boss.wait;
         boss.tick(senses(hero, true));
         assert!(!boss.facing_right());
         run(&mut boss, senses(hero, true), SLAM_ANTIC_TICKS);
         assert_eq!(boss.phase(), Phase::Launch);
         // `Go Left`: up at 100 degrees.
-        assert_eq!(boss.motion(), Motion::Vector([-scale(SLAM_DIRECTION[0], SLAM_SPEED), scale(SLAM_DIRECTION[1], SLAM_SPEED)]));
+        assert_eq!(
+            boss.motion(),
+            Motion::Vector([
+                -scale(SLAM_DIRECTION[0], SLAM_SPEED),
+                scale(SLAM_DIRECTION[1], SLAM_SPEED)
+            ])
+        );
         boss.tick(senses(hero, true));
         assert_eq!(boss.phase(), Phase::Flying);
-        let up = boss.tick(Senses { bonk: Some(Side::Up), ..senses(hero, true) });
+        let up = boss.tick(Senses {
+            bonk: Some(Side::Up),
+            ..senses(hero, true)
+        });
         assert!(up.contains(Action::Play(Clip::SlamUp)));
         run(&mut boss, senses(hero, true), SLAM_HIT_TICKS);
         assert_eq!(boss.phase(), Phase::Launch);
-        let Motion::Vector(v) = boss.motion() else { panic!() };
-        assert!(v[0] < 0 && v[1] < 0, "down and still left after the ceiling: {v:?}");
+        let Motion::Vector(v) = boss.motion() else {
+            panic!()
+        };
+        assert!(
+            v[0] < 0 && v[1] < 0,
+            "down and still left after the ceiling: {v:?}"
+        );
         boss.tick(senses(hero, true));
-        boss.tick(Senses { bonk: Some(Side::Left), ..senses(hero, true) });
+        boss.tick(Senses {
+            bonk: Some(Side::Left),
+            ..senses(hero, true)
+        });
         assert!(boss.facing_right(), "`Turn Right` mirrors it");
-        let Motion::Vector(v) = boss.motion() else { panic!() };
+        let Motion::Vector(v) = boss.motion() else {
+            panic!()
+        };
         assert!(v[0] > 0 && v[1] < 0, "down and now right: {v:?}");
         // Timer runs out: `Slam End` decelerates, then straight back to `Buzz`.
         until(&mut boss, Phase::SlamEnd, senses(hero, true));
-        let Motion::Vector(before) = boss.motion() else { panic!() };
+        let Motion::Vector(before) = boss.motion() else {
+            panic!()
+        };
         boss.tick(senses(hero, true));
-        let Motion::Vector(after) = boss.motion() else { panic!() };
+        let Motion::Vector(after) = boss.motion() else {
+            panic!()
+        };
         assert!(after[0].abs() < before[0].abs());
         run(&mut boss, senses(hero, true), SLAM_END_TICKS);
         assert_eq!(boss.phase(), Phase::Buzz);
@@ -962,17 +1112,30 @@ mod tests {
         assert!(boss.die().is_empty(), "one death");
         let still = senses([90 * ONE, 12 * ONE], true);
         let steam = run(&mut boss, still, CORPSE_TICKS[0]);
-        assert!(steam.contains(&Action::Play(Clip::Death)) && steam.contains(&Action::Rumble(true)));
+        assert!(
+            steam.contains(&Action::Play(Clip::Death)) && steam.contains(&Action::Rumble(true))
+        );
         let blow = run(&mut boss, still, CORPSE_TICKS[1] + CORPSE_TICKS[2]);
         assert!(blow.contains(&Action::Blown) && blow.contains(&Action::Sting));
         assert!(boss.burster());
-        let x = if boss.facing_right() { -BURSTER_SPEED[0] } else { BURSTER_SPEED[0] };
+        let x = if boss.facing_right() {
+            -BURSTER_SPEED[0]
+        } else {
+            BURSTER_SPEED[0]
+        };
         assert_eq!(boss.motion(), Motion::Vector([x, BURSTER_SPEED[1]]));
         let geo = run(&mut boss, still, BURSTER_INIT_TICKS);
         assert!(geo.contains(&Action::Geo));
         run(&mut boss, still, 30);
-        assert_eq!(boss.phase(), Phase::BursterAir, "nothing happens until it lands");
-        boss.tick(Senses { landed: true, ..still });
+        assert_eq!(
+            boss.phase(),
+            Phase::BursterAir,
+            "nothing happens until it lands"
+        );
+        boss.tick(Senses {
+            landed: true,
+            ..still
+        });
         assert_eq!(boss.phase(), Phase::Landed);
         let rest: u16 = BURSTER_TICKS.iter().sum();
         let tail = run(&mut boss, still, rest - 1);

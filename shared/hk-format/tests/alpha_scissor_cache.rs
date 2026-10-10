@@ -1,7 +1,16 @@
-#[path="../../../game/src/alpha_scissor_cache.rs"]mod cached;
-#[path="../../../game/src/alpha_scissor.rs"]mod original;
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
+#[path = "../../../game/src/alpha_scissor_cache.rs"]
+mod cached;
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
+#[path = "../../../game/src/alpha_scissor.rs"]
+mod original;
 use cached::Scissors;
-fn map(v:[(i16,i16);4],w:u16,h:u16,c:&[u8])->Option<Scissors>{{let mut e=cached::Entry::EMPTY;e.map(v,0,w,h,c)}}
+fn map(v: [(i16, i16); 4], w: u16, h: u16, c: &[u8]) -> Option<Scissors> {
+    {
+        let mut e = cached::Entry::EMPTY;
+        e.map(v, 0, w, h, c)
+    }
+}
 fn cover(rects: &[[u16; 4]]) -> [u8; 20] {
     let mut result = [0; 20];
     result[0] = rects.len() as u8;
@@ -239,63 +248,145 @@ fn expansion_threshold_uses_visible_scissor_count_and_strict_comparison() {
     }
 }
 
-fn original_as_cached(v:[(i16,i16);4],w:u16,h:u16,c:&[u8])->Option<Scissors>{original::map(v,w,h,c).map(|s|Scissors{rects:s.rects,count:s.count,saved_pixels:s.saved_pixels})}
-#[test]fn warm_translation_and_key_changes(){
- assert_eq!(std::mem::size_of::<cached::Entry>(),40);
- let zero=cached::Entry::EMPTY;
- let bytes=unsafe{std::slice::from_raw_parts(&zero as *const _ as *const u8,40)};
- assert!(bytes.iter().all(|b|*b==0),"cache must remain zero-filled BSS");
- let mut checks=0;
- for (w,h)in [(1,256),(256,1),(2,3),(11,13),(31,48),(256,256)] {
-  let covers=[cover(&[]),cover(&[[0,0,w,h]]),cover(&[[w/3,h/3,(2*w/3+1).min(w),(2*h/3+1).min(h)]])];
-  for (texture,c)in covers.iter().enumerate(){
-   let mut entry=cached::Entry::EMPTY;
-   for (sx,sy)in [(7,13),(137,143),(511,319),(1023,511),(1023,510),(1022,511),(511,319)] {
-    for flip in 0..4 {
-     for y in [-511,-240,-19,-1,0,37,239,240,511] {
-      for x in [-1023,-320,-319,-17,-1,0,101,319,320,1023] {
-       let v=quad(x,y,sx,sy,flip);
-       assert_eq!(entry.map(v,texture as u16,w,h,c),original_as_cached(v,w,h,c),"warm{v:?} size{w},{h}");checks+=1;
-      }
-     }
-    }
-   }
-  }
- }
- println!("{checks} warm/key parity cases");
+fn original_as_cached(v: [(i16, i16); 4], w: u16, h: u16, c: &[u8]) -> Option<Scissors> {
+    original::map(v, w, h, c).map(|s| Scissors {
+        rects: s.rects,
+        count: s.count,
+        saved_pixels: s.saved_pixels,
+    })
 }
-#[test]fn texture_identity_reset_and_fallbacks(){
- let mut e=cached::Entry::EMPTY;let v=quad(-17,-31,333,277,3);
- let cases=[cover(&[]),cover(&[[0,0,16,16]]),cover(&[[0,0,4,5],[7,8,16,16]])];
- for _ in 0..3 {for (i,c)in cases.iter().enumerate(){assert_eq!(e.map(v,i as u16,16,16,c),original_as_cached(v,16,16,c));}}
- // The same numeric texture ID is a different immutable asset after room init.
- e.invalidate();
- assert_eq!(e.map(v,0,16,16,&cases[2]),original_as_cached(v,16,16,&cases[2]));
- for bad in [vec![],vec![0;19],vec![0;21],vec![5;20],vec![1,0,0,0,15,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0]] {
-  e=cached::Entry::EMPTY;assert_eq!(e.map(v,0,16,16,&bad),original_as_cached(v,16,16,&bad));
- }
- let c=cover(&[[0,0,3,4]]);
- for bad in [quad(0,0,1024,511,0),quad(0,0,320,512,0),quad(0,0,0,12,0),[(0,0),(40,1),(1,40),(40,40)]]{
-  assert_eq!(e.map(bad,2,16,16,&c),original_as_cached(bad,16,16,&c));
- }
+#[test]
+fn warm_translation_and_key_changes() {
+    assert_eq!(std::mem::size_of::<cached::Entry>(), 40);
+    let zero = cached::Entry::EMPTY;
+    let bytes = unsafe { std::slice::from_raw_parts(&zero as *const _ as *const u8, 40) };
+    assert!(
+        bytes.iter().all(|b| *b == 0),
+        "cache must remain zero-filled BSS"
+    );
+    let mut checks = 0;
+    for (w, h) in [(1, 256), (256, 1), (2, 3), (11, 13), (31, 48), (256, 256)] {
+        let covers = [
+            cover(&[]),
+            cover(&[[0, 0, w, h]]),
+            cover(&[[w / 3, h / 3, (2 * w / 3 + 1).min(w), (2 * h / 3 + 1).min(h)]]),
+        ];
+        for (texture, c) in covers.iter().enumerate() {
+            let mut entry = cached::Entry::EMPTY;
+            for (sx, sy) in [
+                (7, 13),
+                (137, 143),
+                (511, 319),
+                (1023, 511),
+                (1023, 510),
+                (1022, 511),
+                (511, 319),
+            ] {
+                for flip in 0..4 {
+                    for y in [-511, -240, -19, -1, 0, 37, 239, 240, 511] {
+                        for x in [-1023, -320, -319, -17, -1, 0, 101, 319, 320, 1023] {
+                            let v = quad(x, y, sx, sy, flip);
+                            assert_eq!(
+                                entry.map(v, texture as u16, w, h, c),
+                                original_as_cached(v, w, h, c),
+                                "warm{v:?} size{w},{h}"
+                            );
+                            checks += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    println!("{checks} warm/key parity cases");
+}
+#[test]
+fn texture_identity_reset_and_fallbacks() {
+    let mut e = cached::Entry::EMPTY;
+    let v = quad(-17, -31, 333, 277, 3);
+    let cases = [
+        cover(&[]),
+        cover(&[[0, 0, 16, 16]]),
+        cover(&[[0, 0, 4, 5], [7, 8, 16, 16]]),
+    ];
+    for _ in 0..3 {
+        for (i, c) in cases.iter().enumerate() {
+            assert_eq!(
+                e.map(v, i as u16, 16, 16, c),
+                original_as_cached(v, 16, 16, c)
+            );
+        }
+    }
+    // The same numeric texture ID is a different immutable asset after room init.
+    e.invalidate();
+    assert_eq!(
+        e.map(v, 0, 16, 16, &cases[2]),
+        original_as_cached(v, 16, 16, &cases[2])
+    );
+    for bad in [
+        vec![],
+        vec![0; 19],
+        vec![0; 21],
+        vec![5; 20],
+        vec![1, 0, 0, 0, 15, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ] {
+        e = cached::Entry::EMPTY;
+        assert_eq!(
+            e.map(v, 0, 16, 16, &bad),
+            original_as_cached(v, 16, 16, &bad)
+        );
+    }
+    let c = cover(&[[0, 0, 3, 4]]);
+    for bad in [
+        quad(0, 0, 1024, 511, 0),
+        quad(0, 0, 320, 512, 0),
+        quad(0, 0, 0, 12, 0),
+        [(0, 0), (40, 1), (1, 40), (40, 40)],
+    ] {
+        assert_eq!(
+            e.map(bad, 2, 16, 16, &c),
+            original_as_cached(bad, 16, 16, &c)
+        );
+    }
 }
 
-#[test]fn immutable_fallback_survives_every_geometry_but_not_texture_lease_reset(){
- let partial=cover(&[[3,2,7,9]]);
- let fallback_covers=[cover(&[[0,0,16,16]]).to_vec(),vec![255;20],vec![0;19],
-  cover(&[[15,0,17,3]]).to_vec(),vec![4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]];
- for c in fallback_covers {
-  let mut e=cached::Entry::EMPTY;
-  let first=quad(0,0,320,240,0);
-  assert_eq!(e.map(first,2,16,16,&c),original_as_cached(first,16,16,&c));
-  for v in [quad(-200,-37,511,319,3),quad(0,0,7,3,0),quad(0,0,1024,512,0),
-   quad(320,240,333,277,0),quad(-1023,-511,1023,511,0),[(0,0),(40,1),(1,40),(40,40)]] {
-   assert_eq!(e.map(v,2,16,16,&c),original_as_cached(v,16,16,&c));
-  }
-  // Changing texture IDs must invalidate cached metadata rejection.
-  assert_eq!(e.map(first,3,16,16,&partial),original_as_cached(first,16,16,&partial));
-  assert!(e.map(first,3,16,16,&partial).is_some());
-  e.invalidate();
-  assert_eq!(e.map(first,2,16,16,&partial),original_as_cached(first,16,16,&partial));
- }
+#[test]
+fn immutable_fallback_survives_every_geometry_but_not_texture_lease_reset() {
+    let partial = cover(&[[3, 2, 7, 9]]);
+    let fallback_covers = [
+        cover(&[[0, 0, 16, 16]]).to_vec(),
+        vec![255; 20],
+        vec![0; 19],
+        cover(&[[15, 0, 17, 3]]).to_vec(),
+        vec![4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ];
+    for c in fallback_covers {
+        let mut e = cached::Entry::EMPTY;
+        let first = quad(0, 0, 320, 240, 0);
+        assert_eq!(
+            e.map(first, 2, 16, 16, &c),
+            original_as_cached(first, 16, 16, &c)
+        );
+        for v in [
+            quad(-200, -37, 511, 319, 3),
+            quad(0, 0, 7, 3, 0),
+            quad(0, 0, 1024, 512, 0),
+            quad(320, 240, 333, 277, 0),
+            quad(-1023, -511, 1023, 511, 0),
+            [(0, 0), (40, 1), (1, 40), (40, 40)],
+        ] {
+            assert_eq!(e.map(v, 2, 16, 16, &c), original_as_cached(v, 16, 16, &c));
+        }
+        // Changing texture IDs must invalidate cached metadata rejection.
+        assert_eq!(
+            e.map(first, 3, 16, 16, &partial),
+            original_as_cached(first, 16, 16, &partial)
+        );
+        assert!(e.map(first, 3, 16, 16, &partial).is_some());
+        e.invalidate();
+        assert_eq!(
+            e.map(first, 2, 16, 16, &partial),
+            original_as_cached(first, 16, 16, &partial)
+        );
+    }
 }

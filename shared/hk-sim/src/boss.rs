@@ -51,14 +51,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 6], count: 0 }
+        Self {
+            values: [None; 6],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
     pub fn contains(&self, action: Action) -> bool {
         self.iter().any(|a| a == action)
@@ -82,7 +87,11 @@ impl Arena {
     /// the `Activate` branch on the first frame and never fights again.
     pub fn new(activated: bool) -> Self {
         Self {
-            phase: if activated { Phase::Open } else { Phase::Waiting },
+            phase: if activated {
+                Phase::Open
+            } else {
+                Phase::Waiting
+            },
             enemies: 0,
             timer: 0,
             end_wait_ticks: END_WAIT_TICKS,
@@ -92,7 +101,10 @@ impl Arena {
     /// Brooding Mawlek's `Battle Control` waits `Blow Wait` then `End Wait`
     /// (10.5 s) between BATTLE END and BG OPEN, where the False Knight's waits 2.
     pub fn with_end_wait(activated: bool, ticks: u16) -> Self {
-        Self { end_wait_ticks: ticks, ..Self::new(activated) }
+        Self {
+            end_wait_ticks: ticks,
+            ..Self::new(activated)
+        }
     }
     /// The actions `Init` performs before its first idle frame. Calling this
     /// exactly once after `new` reproduces the source's load-time branch, so a

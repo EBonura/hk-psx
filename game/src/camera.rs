@@ -61,7 +61,14 @@ struct Shaker {
 }
 impl Shaker {
     const fn new() -> Self {
-        Self { priority: 0, ticks: 0, elapsed: 0, extents: 0, rng: SHAKE_SEED, offset: (0, 0) }
+        Self {
+            priority: 0,
+            ticks: 0,
+            elapsed: 0,
+            extents: 0,
+            rng: SHAKE_SEED,
+            offset: (0, 0),
+        }
     }
 }
 static mut SHAKER: Shaker = Shaker::new();
@@ -99,7 +106,14 @@ pub fn request(kind: Shake) {
         }
         // The outgoing ShakePositionV2's OnExit restores the unshaken position
         // before the new state's first sample, so one tick sits at no offset.
-        *shaker = Shaker { priority, ticks, elapsed: 0, extents, rng: shaker.rng, offset: (0, 0) };
+        *shaker = Shaker {
+            priority,
+            ticks,
+            elapsed: 0,
+            extents,
+            rng: shaker.rng,
+            offset: (0, 0),
+        };
         HK_CAMERA_SHAKES = HK_CAMERA_SHAKES.wrapping_add(1);
     }
 }
@@ -113,14 +127,19 @@ fn advance_shake() {
         }
         shaker.elapsed += 1;
         if shaker.elapsed >= shaker.ticks {
-            *shaker = Shaker { rng: shaker.rng, ..Shaker::new() };
+            *shaker = Shaker {
+                rng: shaker.rng,
+                ..Shaker::new()
+            };
             return;
         }
         // Clamp01(1 - timer / Duration), sampled after the timer advances.
         let amount = ONE - (shaker.elapsed as i32 * ONE / shaker.ticks as i32);
         let extents = shaker.extents;
-        shaker.offset = (shake_axis(&mut shaker.rng, extents, amount),
-                         shake_axis(&mut shaker.rng, extents, amount));
+        shaker.offset = (
+            shake_axis(&mut shaker.rng, extents, amount),
+            shake_axis(&mut shaker.rng, extents, amount),
+        );
     }
 }
 /// `CancelAllShake` / `New Scene Reset`: zero the priority and the displacement.
@@ -181,7 +200,8 @@ pub const LOCK_BATTLE: u16 = 8;
 /// A scene's lock list (Crossroads_ShamanTemple has the most, 23).
 const MAX_SCENE_LOCKS: usize = 24;
 /// CameraTarget `superDashLookAhead`.
-const SUPER_DASH_LOOK_AHEAD: i32 = 6 * ONE;/// Lock areas the Knight can be inside at once, plus the ones he left that are
+const SUPER_DASH_LOOK_AHEAD: i32 = 6 * ONE;
+/// Lock areas the Knight can be inside at once, plus the ones he left that are
 /// still in `lockZoneList`. The densest admitted overlap is three.
 const MAX_AREAS: usize = 8;
 const NONE: u8 = u8::MAX;
@@ -189,18 +209,40 @@ const NONE: u8 = u8::MAX;
 /// CameraController.CameraMode: FADEOUT, FADEIN and PANNING never reach a
 /// gameplay tick here (the gate fade stops the tick), so FROZEN stands in.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode { Frozen, Following, Locked }
+enum Mode {
+    Frozen,
+    Following,
+    Locked,
+}
 /// CameraTarget.TargetMode, less BOSS, which nothing sets.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum TargetMode { Follow, Lock, Free }
+enum TargetMode {
+    Follow,
+    Lock,
+    Free,
+}
 
 /// One CameraLockArea as the camera sees it: its trigger box, its limits (with
 /// `ValidateBounds`' -1 already resolved by the cooker), flags, whether the
 /// Knight's body overlaps it, and its place in `lockZoneList` (0: not listed).
 #[derive(Clone, Copy)]
-struct Area { id: u32, trigger: [i32; 4], limits: [i32; 4], flags: u16, inside: bool, listed: u16 }
+struct Area {
+    id: u32,
+    trigger: [i32; 4],
+    limits: [i32; 4],
+    flags: u16,
+    inside: bool,
+    listed: u16,
+}
 impl Area {
-    const EMPTY: Self = Self { id: 0, trigger: [0; 4], limits: [0; 4], flags: 0, inside: false, listed: 0 };
+    const EMPTY: Self = Self {
+        id: 0,
+        trigger: [0; 4],
+        limits: [0; 4],
+        flags: 0,
+        inside: false,
+        listed: 0,
+    };
 }
 
 /// What the camera reads off the Knight each tick.
@@ -225,7 +267,13 @@ pub struct Hero {
 /// horizontal input past 0.6 (FixedUpdate's ResetLook) and the moves that
 /// call ResetLook (attack, jump, dash, losing control).
 #[derive(Clone, Copy)]
-pub struct LookInput { pub idle: bool, pub up: bool, pub down: bool, pub moving: bool, pub reset: bool }
+pub struct LookInput {
+    pub idle: bool,
+    pub up: bool,
+    pub down: bool,
+    pub moving: bool,
+    pub reset: bool,
+}
 
 #[derive(Clone, Copy)]
 pub struct Camera {
@@ -322,19 +370,29 @@ fn clamp_box(p: (i32, i32), b: [i32; 4]) -> (i32, i32) {
     // The source's two ifs per axis: a lower bound above the upper one leaves
     // the upper one in force (Crossroads_18 authors xMin 26.27 > xMax 25.43).
     let mut x = p.0;
-    if x < b[0] { x = b[0]; }
-    if x > b[1] { x = b[1]; }
+    if x < b[0] {
+        x = b[0];
+    }
+    if x > b[1] {
+        x = b[1];
+    }
     let mut y = p.1;
-    if y < b[2] { y = b[2]; }
-    if y > b[3] { y = b[3]; }
+    if y < b[2] {
+        y = b[2];
+    }
+    if y > b[3] {
+        y = b[3];
+    }
     (x, y)
 }
 /// OnTriggerEnter2D/Exit2D's side tests against the trigger's bounds: within
 /// one unit of the left, right or bottom edge, two of the top.
 fn sides(trigger: [i32; 4], x: i32, y: i32) -> u8 {
     let near = |v: i32, edge: i32, reach: i32| v > edge - reach && v < edge + reach;
-    (near(x, trigger[0], ONE) as u8) | (near(x, trigger[2], ONE) as u8) << 1
-        | (near(y, trigger[3], 2 * ONE) as u8) << 2 | (near(y, trigger[1], ONE) as u8) << 3
+    (near(x, trigger[0], ONE) as u8)
+        | (near(x, trigger[2], ONE) as u8) << 1
+        | (near(y, trigger[3], 2 * ONE) as u8) << 2
+        | (near(y, trigger[1], ONE) as u8) << 3
 }
 const LEFT: u8 = 1;
 const RIGHT: u8 = 2;
@@ -344,12 +402,38 @@ const BOT: u8 = 8;
 impl Camera {
     pub const fn new() -> Self {
         Self {
-            scene: u16::MAX, scene_locks: [0; MAX_SCENE_LOCKS], scene_lock_bounds: [[0; 4]; MAX_SCENE_LOCKS], scene_lock_count: 0, limit: (0, 0), position: (0, 0), velocity: (0, 0), mode: Mode::Following,
-            prev_mode: Mode::Following, frozen: 0, lock: [0; 4], current: NONE, areas: [Area::EMPTY; MAX_AREAS],
-            order: 0, start_locked: 0, target: (0, 0), target_velocity: (0, 0), target_mode: TargetMode::Follow,
-            x_offset: 0, dash_offset: 0, damp: (0, 0), slow: 0, stick: (true, true), fall_catcher: 0,
-            fall_stick: false, hero_prev: (0, 0), target_lock: [0; 4], entered: 0, exited: 0, look_timer: 0,
-            looking: 0, last_hero: None,
+            scene: u16::MAX,
+            scene_locks: [0; MAX_SCENE_LOCKS],
+            scene_lock_bounds: [[0; 4]; MAX_SCENE_LOCKS],
+            scene_lock_count: 0,
+            limit: (0, 0),
+            position: (0, 0),
+            velocity: (0, 0),
+            mode: Mode::Following,
+            prev_mode: Mode::Following,
+            frozen: 0,
+            lock: [0; 4],
+            current: NONE,
+            areas: [Area::EMPTY; MAX_AREAS],
+            order: 0,
+            start_locked: 0,
+            target: (0, 0),
+            target_velocity: (0, 0),
+            target_mode: TargetMode::Follow,
+            x_offset: 0,
+            dash_offset: 0,
+            damp: (0, 0),
+            slow: 0,
+            stick: (true, true),
+            fall_catcher: 0,
+            fall_stick: false,
+            hero_prev: (0, 0),
+            target_lock: [0; 4],
+            entered: 0,
+            exited: 0,
+            look_timer: 0,
+            looking: 0,
+            last_hero: None,
         }
     }
     /// The rendered viewpoint: CameraController's transform, CameraParent's
@@ -363,13 +447,23 @@ impl Camera {
     /// `scene_ticks` counts ticks since the scene loaded (lock lifetimes).
     #[inline(never)]
     #[optimize(size)]
-    pub fn tick(&mut self, region: &crate::world::Region, hero: &Hero, look: LookInput, scene_ticks: u32, broken: &dyn Fn(usize) -> bool) {
+    pub fn tick(
+        &mut self,
+        region: &crate::world::Region,
+        hero: &Hero,
+        look: LookInput,
+        scene_ticks: u32,
+        broken: &dyn Fn(usize) -> bool,
+    ) {
         advance_shake();
         self.look(look);
         let h = (hero.x, hero.y);
         if self.scene != region.scene as u16 || self.last_hero.is_none() {
             self.enter_scene(region, hero, broken);
-        } else if self.last_hero.is_some_and(|p| (p.0 - h.0).abs() > SNAP_DISTANCE || (p.1 - h.1).abs() > SNAP_DISTANCE) {
+        } else if self
+            .last_hero
+            .is_some_and(|p| (p.0 - h.0).abs() > SNAP_DISTANCE || (p.1 - h.1).abs() > SNAP_DISTANCE)
+        {
             // A hazard respawn: the death froze the camera, the Knight's
             // triggers fire where he lands, then CameraRepositionToHero.
             self.mode = Mode::Frozen;
@@ -384,13 +478,24 @@ impl Camera {
         self.update_camera(hero);
         self.last_hero = Some(h);
         publish(self.position);
-        unsafe { HK_CAMERA_LOCK = if self.current == NONE { 0 } else { self.areas[self.current as usize].id }; }
+        unsafe {
+            HK_CAMERA_LOCK = if self.current == NONE {
+                0
+            } else {
+                self.areas[self.current as usize].id
+            };
+        }
     }
     /// The room-entry seat before the first frame renders: a new scene (or the
     /// first one) runs the scene entry now; inside one scene it does nothing.
     #[inline(never)]
     #[optimize(size)]
-    pub fn seat(&mut self, region: &crate::world::Region, hero: &Hero, broken: &dyn Fn(usize) -> bool) {
+    pub fn seat(
+        &mut self,
+        region: &crate::world::Region,
+        hero: &Hero,
+        broken: &dyn Fn(usize) -> bool,
+    ) {
         if self.scene != region.scene as u16 || self.last_hero.is_none() {
             self.enter_scene(region, hero, broken);
             self.last_hero = Some((hero.x, hero.y));
@@ -410,7 +515,9 @@ impl Camera {
             return;
         }
         if input.up || input.down {
-            if (self.looking > 0) != input.up && self.looking != 0 { self.looking = 0; }
+            if (self.looking > 0) != input.up && self.looking != 0 {
+                self.looking = 0;
+            }
             if self.look_timer >= LOOK_DELAY_TICKS {
                 self.looking = if input.up { 1 } else { -1 };
             } else {
@@ -425,10 +532,18 @@ impl Camera {
     /// inside `startLockedTimer` lock instantly), then DoPositionToHero.
     #[inline(never)]
     #[optimize(size)]
-    fn enter_scene(&mut self, region: &crate::world::Region, hero: &Hero, broken: &dyn Fn(usize) -> bool) {
+    fn enter_scene(
+        &mut self,
+        region: &crate::world::Region,
+        hero: &Hero,
+        broken: &dyn Fn(usize) -> bool,
+    ) {
         // OnLevelUnload: ReleaseLock on lockZoneList[0] until it is empty, with
         // the old scene's limits (the target's damping and slow timer carry on).
-        while let Some(first) = (0..MAX_AREAS).filter(|&s| self.areas[s].listed != 0).min_by_key(|&s| self.areas[s].listed) {
+        while let Some(first) = (0..MAX_AREAS)
+            .filter(|&s| self.areas[s].listed != 0)
+            .min_by_key(|&s| self.areas[s].listed)
+        {
             self.release_lock(first, hero);
         }
         let [w, h] = crate::world::SCENE_CAMERA[region.scene];
@@ -463,7 +578,13 @@ impl Camera {
     /// not yet listed).
     #[inline(never)]
     #[optimize(size)]
-    fn triggers(&mut self, region: &crate::world::Region, hero: &Hero, scene_ticks: u32, broken: &dyn Fn(usize) -> bool) {
+    fn triggers(
+        &mut self,
+        region: &crate::world::Region,
+        hero: &Hero,
+        scene_ticks: u32,
+        broken: &dyn Fn(usize) -> bool,
+    ) {
         let mut now = [0u32; MAX_AREAS];
         let mut count = 0;
         let body = hero.body;
@@ -472,13 +593,19 @@ impl Camera {
             if !(b[0] <= body[2] && b[2] >= body[0] && b[1] <= body[3] && b[3] >= body[1]) {
                 continue;
             }
-            let Some(lock) = crate::world::camera_lock(self.scene_locks[i]) else { continue };
-            let known = self.areas.iter().position(|a| a.id == lock.id && (a.inside || a.listed != 0));
+            let Some(lock) = crate::world::camera_lock(self.scene_locks[i]) else {
+                continue;
+            };
+            let known = self
+                .areas
+                .iter()
+                .position(|a| a.id == lock.id && (a.inside || a.listed != 0));
             // Crossroads_01's `Disable` lifetime, and a battle lock outside its
             // fight: the lock is switched off, and OnDisable releases it with no
             // trigger exit.
             if (lock.expires != 0 && scene_ticks >= lock.expires as u32)
-                || (lock.flags & LOCK_BATTLE != 0 && !crate::battle_gates::fighting(region.scene)) {
+                || (lock.flags & LOCK_BATTLE != 0 && !crate::battle_gates::fighting(region.scene))
+            {
                 if let Some(slot) = known {
                     self.areas[slot].inside = false;
                     self.release_lock(slot, hero);
@@ -488,14 +615,24 @@ impl Camera {
             if lock.owner.is_some_and(broken) || !lock.touches(hero.body) {
                 continue;
             }
-            let Some(slot) = known.or_else(|| self.areas.iter().position(|a| !a.inside && a.listed == 0)) else { continue };
+            let Some(slot) =
+                known.or_else(|| self.areas.iter().position(|a| !a.inside && a.listed == 0))
+            else {
+                continue;
+            };
             if count < MAX_AREAS {
                 now[count] = lock.id;
                 count += 1;
             }
             if !self.areas[slot].inside {
-                self.areas[slot] = Area { id: lock.id, trigger: lock.bounds, limits: view_limits(lock.limits), flags: lock.flags, inside: true,
-                                          listed: self.areas[slot].listed };
+                self.areas[slot] = Area {
+                    id: lock.id,
+                    trigger: lock.bounds,
+                    limits: view_limits(lock.limits),
+                    flags: lock.flags,
+                    inside: true,
+                    listed: self.areas[slot].listed,
+                };
                 self.entered = sides(lock.bounds, hero.x, hero.y);
                 self.lock_to_area(slot, hero);
             }
@@ -522,15 +659,21 @@ impl Camera {
         }
         self.order += 1;
         self.areas[slot].listed = self.order;
-        if self.current != NONE && self.areas[self.current as usize].flags & LOCK_MAX_PRIORITY != 0
-            && self.areas[slot].flags & LOCK_MAX_PRIORITY == 0 {
+        if self.current != NONE
+            && self.areas[self.current as usize].flags & LOCK_MAX_PRIORITY != 0
+            && self.areas[slot].flags & LOCK_MAX_PRIORITY == 0
+        {
             return;
         }
         self.current = slot as u8;
         self.set_mode(Mode::Locked);
         let l = self.areas[slot].limits;
-        self.lock = [if l[0] < 0 { X_MIN } else { l[0] }, if l[1] < 0 { self.limit.0 } else { l[1] },
-                     if l[2] < 0 { Y_MIN } else { l[2] }, if l[3] < 0 { self.limit.1 } else { l[3] }];
+        self.lock = [
+            if l[0] < 0 { X_MIN } else { l[0] },
+            if l[1] < 0 { self.limit.0 } else { l[1] },
+            if l[2] < 0 { Y_MIN } else { l[2] },
+            if l[3] < 0 { self.limit.1 } else { l[3] },
+        ];
         if self.start_locked > 0 {
             let p = clamp_box((hero.x, hero.y), self.lock);
             self.target = p;
@@ -549,7 +692,9 @@ impl Camera {
         if self.current as usize != slot {
             return;
         }
-        let next = (0..MAX_AREAS).filter(|&s| self.areas[s].listed != 0).max_by_key(|&s| self.areas[s].listed);
+        let next = (0..MAX_AREAS)
+            .filter(|&s| self.areas[s].listed != 0)
+            .max_by_key(|&s| self.areas[s].listed);
         if let Some(next) = next {
             self.current = next as u8;
             self.lock = self.areas[next].limits;
@@ -588,7 +733,10 @@ impl Camera {
             self.damp.1 = DAMP_SLOW;
         }
         self.slow = SLOW_TICKS;
-        self.stick = ((self.target.0 - hero.x).abs() <= SNAP, (self.target.1 - hero.y).abs() <= SNAP);
+        self.stick = (
+            (self.target.0 - hero.x).abs() <= SNAP,
+            (self.target.1 - hero.y).abs() <= SNAP,
+        );
     }
     fn enter_lock_zone_instant(&mut self, bounds: [i32; 4]) {
         self.target_lock = bounds;
@@ -635,44 +783,89 @@ impl Camera {
         if self.target_mode != TargetMode::Free {
             self.set_damp_time();
             let destination = if locked { clamp_box(h, lock) } else { h };
-            let x = smooth_damp(self.target.0, destination.0, &mut self.target_velocity.0, self.damp.0);
+            let x = smooth_damp(
+                self.target.0,
+                destination.0,
+                &mut self.target_velocity.0,
+                self.damp.0,
+            );
             let y = if !self.fall_stick && self.fall_catcher <= 0 {
-                smooth_damp(self.target.1, destination.1, &mut self.target_velocity.1, self.damp.1)
+                smooth_damp(
+                    self.target.1,
+                    destination.1,
+                    &mut self.target_velocity.1,
+                    self.damp.1,
+                )
             } else {
                 self.target.1
             };
             self.target = (x, y);
             // stickToHero: the target caught (or crossed) the Knight on an axis.
-            let caught = |prev: i32, now: i32, t: i32| (prev < t && now > t) || (prev > t && now < t) || (t >= now - SNAP && t <= now + SNAP);
-            if caught(self.hero_prev.0, h.0, x) { self.stick.0 = true; }
-            if caught(self.hero_prev.1, h.1, y) { self.stick.1 = true; }
+            let caught = |prev: i32, now: i32, t: i32| {
+                (prev < t && now > t)
+                    || (prev > t && now < t)
+                    || (t >= now - SNAP && t <= now + SNAP)
+            };
+            if caught(self.hero_prev.0, h.0, x) {
+                self.stick.0 = true;
+            }
+            if caught(self.hero_prev.1, h.1, y) {
+                self.stick.1 = true;
+            }
             // In a lock, only while the Knight is inside its limits or the
             // target moves toward them.
-            let holds = |now: i32, t: i32, low: i32, high: i32| !locked || (now >= low && now <= high)
-                || (now <= high && now >= t) || (now >= low && now <= t);
-            if self.stick.0 && holds(h.0, x, lock[0], lock[1]) { self.target.0 = h.0; }
-            if self.stick.1 && holds(h.1, y, lock[2], lock[3]) { self.target.1 = h.1; }
+            let holds = |now: i32, t: i32, low: i32, high: i32| {
+                !locked
+                    || (now >= low && now <= high)
+                    || (now <= high && now >= t)
+                    || (now >= low && now <= t)
+            };
+            if self.stick.0 && holds(h.0, x, lock[0], lock[1]) {
+                self.target.0 = h.0;
+            }
+            if self.stick.1 && holds(h.1, y, lock[2], lock[3]) {
+                self.target.1 = h.1;
+            }
         }
         let tx = self.target.0;
         let facing_right = hero.facing > 0;
         if facing_right {
-            if self.x_offset < LOOK_AHEAD { self.x_offset += LOOK_AHEAD_STEP; }
+            if self.x_offset < LOOK_AHEAD {
+                self.x_offset += LOOK_AHEAD_STEP;
+            }
         } else if self.x_offset > -LOOK_AHEAD {
             self.x_offset -= LOOK_AHEAD_STEP;
         }
         self.x_offset = self.x_offset.clamp(-LOOK_AHEAD, LOOK_AHEAD);
         if locked {
-            if h.0 < lock[0] && facing_right { self.x_offset = h.0 - tx + ONE; }
-            if h.0 > lock[1] && !facing_right { self.x_offset = h.0 - tx - ONE; }
-            if tx + self.x_offset > lock[1] { self.x_offset = lock[1] - tx; }
-            if tx + self.x_offset < lock[0] { self.x_offset = lock[0] - tx; }
+            if h.0 < lock[0] && facing_right {
+                self.x_offset = h.0 - tx + ONE;
+            }
+            if h.0 > lock[1] && !facing_right {
+                self.x_offset = h.0 - tx - ONE;
+            }
+            if tx + self.x_offset > lock[1] {
+                self.x_offset = lock[1] - tx;
+            }
+            if tx + self.x_offset < lock[0] {
+                self.x_offset = lock[0] - tx;
+            }
             self.x_offset = self.x_offset.clamp(-LOOK_AHEAD, LOOK_AHEAD);
         }
         self.dash_offset = 0;
         if hero.dashing || hero.super_dashing {
-            let ahead = if hero.dashing { DASH_LOOK_AHEAD } else { SUPER_DASH_LOOK_AHEAD };
+            let ahead = if hero.dashing {
+                DASH_LOOK_AHEAD
+            } else {
+                SUPER_DASH_LOOK_AHEAD
+            };
             self.dash_offset = if facing_right { ahead } else { -ahead };
-            if locked && (tx + self.dash_offset > lock[1] || tx + self.dash_offset < lock[0] || h.0 > lock[1] || h.0 < lock[0]) {
+            if locked
+                && (tx + self.dash_offset > lock[1]
+                    || tx + self.dash_offset < lock[0]
+                    || h.0 > lock[1]
+                    || h.0 < lock[0])
+            {
                 self.dash_offset = 0;
             }
         }
@@ -687,12 +880,23 @@ impl Camera {
         // The fall catcher moves the camera itself (its world transform).
         let shake = unsafe { (*(&raw const SHAKER)).offset.1 };
         let mut camera_y = self.position.1 + shake;
-        let floor = |y: i32| { let y = if locked && y < lock[2] { lock[2] } else { y }; y.max(Y_MIN) };
-        if hero.falling && camera_y > h.1 + FALL_STICK && !self.fall_stick && !hero.transitioning
-            && !(locked && camera_y - FALL_STICK < lock[2]) {
+        let floor = |y: i32| {
+            let y = if locked && y < lock[2] { lock[2] } else { y };
+            y.max(Y_MIN)
+        };
+        if hero.falling
+            && camera_y > h.1 + FALL_STICK
+            && !self.fall_stick
+            && !hero.transitioning
+            && !(locked && camera_y - FALL_STICK < lock[2])
+        {
             camera_y = floor(camera_y - self.fall_catcher / 60);
-            if self.fall_catcher < FALL_CATCH_MAX { self.fall_catcher += FALL_CATCH_STEP; }
-            if camera_y < h.1 + FALL_STICK { self.fall_stick = true; }
+            if self.fall_catcher < FALL_CATCH_MAX {
+                self.fall_catcher += FALL_CATCH_STEP;
+            }
+            if camera_y < h.1 + FALL_STICK {
+                self.fall_stick = true;
+            }
             self.target.1 = camera_y;
         }
         if self.fall_stick {
@@ -729,14 +933,31 @@ impl Camera {
                 -1 => hero.y - self.target.1 - LOOK_OFFSET,
                 _ => 0,
             };
-            let mut destination = (self.target.0 + self.x_offset + self.dash_offset, self.target.1 + look);
+            let mut destination = (
+                self.target.0 + self.x_offset + self.dash_offset,
+                self.target.1 + look,
+            );
             if self.mode == Mode::Locked && self.current != NONE {
                 let area = self.areas[self.current as usize];
-                if look > 0 && area.flags & LOCK_PREVENT_LOOK_UP != 0 && destination.1 > area.limits[3] {
-                    destination.1 = if world.1 > area.limits[3] { destination.1 - look } else { area.limits[3] };
+                if look > 0
+                    && area.flags & LOCK_PREVENT_LOOK_UP != 0
+                    && destination.1 > area.limits[3]
+                {
+                    destination.1 = if world.1 > area.limits[3] {
+                        destination.1 - look
+                    } else {
+                        area.limits[3]
+                    };
                 }
-                if look < 0 && area.flags & LOCK_PREVENT_LOOK_DOWN != 0 && destination.1 < area.limits[2] {
-                    destination.1 = if world.1 < area.limits[2] { destination.1 - look } else { area.limits[2] };
+                if look < 0
+                    && area.flags & LOCK_PREVENT_LOOK_DOWN != 0
+                    && destination.1 < area.limits[2]
+                {
+                    destination.1 = if world.1 < area.limits[2] {
+                        destination.1 - look
+                    } else {
+                        area.limits[2]
+                    };
                 }
             }
             let destination = self.keep_within_scene(destination);
@@ -744,10 +965,18 @@ impl Camera {
             world.1 = smooth_damp(world.1, destination.1, &mut self.velocity.1, CAMERA_DAMP);
         }
         // The scene clamp, which tests the world position plus the parent's.
-        if world.0 + offset.0 < X_MIN { world.0 = X_MIN; }
-        if world.0 + offset.0 > self.limit.0 { world.0 = self.limit.0; }
-        if world.1 + offset.1 < Y_MIN { world.1 = Y_MIN; }
-        if world.1 + offset.1 > self.limit.1 { world.1 = self.limit.1; }
+        if world.0 + offset.0 < X_MIN {
+            world.0 = X_MIN;
+        }
+        if world.0 + offset.0 > self.limit.0 {
+            world.0 = self.limit.0;
+        }
+        if world.1 + offset.1 < Y_MIN {
+            world.1 = Y_MIN;
+        }
+        if world.1 + offset.1 > self.limit.1 {
+            world.1 = self.limit.1;
+        }
         self.position = (world.0 - offset.0, world.1 - offset.1);
         self.start_locked = self.start_locked.saturating_sub(1);
     }
@@ -763,10 +992,18 @@ impl Camera {
         self.x_offset = if facing_right { ONE } else { -ONE };
         let lock = self.target_lock;
         if self.target_mode == TargetMode::Lock {
-            if h.0 < lock[0] && facing_right { self.x_offset = h.0 - old_x + ONE; }
-            if h.0 > lock[1] && !facing_right { self.x_offset = h.0 - old_x - ONE; }
-            if old_x + self.x_offset > lock[1] { self.x_offset = lock[1] - old_x; }
-            if old_x + self.x_offset < lock[0] { self.x_offset = lock[0] - old_x; }
+            if h.0 < lock[0] && facing_right {
+                self.x_offset = h.0 - old_x + ONE;
+            }
+            if h.0 > lock[1] && !facing_right {
+                self.x_offset = h.0 - old_x - ONE;
+            }
+            if old_x + self.x_offset > lock[1] {
+                self.x_offset = lock[1] - old_x;
+            }
+            if old_x + self.x_offset < lock[0] {
+                self.x_offset = lock[0] - old_x;
+            }
         }
         self.x_offset = self.x_offset.clamp(-LOOK_AHEAD, LOOK_AHEAD);
         match self.target_mode {
