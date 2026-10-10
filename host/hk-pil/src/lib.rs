@@ -1,7 +1,7 @@
 //! The image operations hk-psx's cookers use, written from the textbook
 //! definitions of each operation: separable filtered resampling, bilinear
-//! affine sampling, S3TC/BPTC block decoding, scanline polygon fill and
-//! median-cut colour quantisation.
+//! affine sampling, S3TC/BPTC block decoding, scanline polygon fill,
+//! median-cut colour quantisation and the fast-octree RGBA quantiser.
 //!
 //! Pixel layout follows the cookers' needs: single-band modes take one byte
 //! per pixel and multi-band modes four (RGB carries a 255 pad byte).
@@ -9,6 +9,7 @@
 pub mod bcn;
 mod bcn_tables;
 pub mod draw;
+pub mod octree;
 pub mod quant;
 pub mod resample;
 

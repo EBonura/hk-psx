@@ -1806,6 +1806,93 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "octree" => {
+            // hk-cook-parity octree <oracle-octree dir>: Pillow's FASTOCTREE through
+            // Atlas._quantize_octree over real sprite masks, and the raw quantiser over random images.
+            use hk_cook::pyjson::{parse, Json};
+            use hk_pil::{Image, Mode};
+            use sha2::{Digest, Sha256};
+            let dir = &args[2];
+            let index =
+                parse(&std::fs::read_to_string(format!("{dir}/index.json")).unwrap()).unwrap();
+            let field = |j: &Json, k: &str| -> Json {
+                if let Json::Obj(f) = j {
+                    f.iter()
+                        .find(|x| x.0 == k)
+                        .map(|x| x.1.clone())
+                        .unwrap_or_else(|| panic!("no {k}"))
+                } else {
+                    panic!("not an object")
+                }
+            };
+            let list = |j: Json| -> Vec<Json> {
+                if let Json::List(l) = j {
+                    l
+                } else {
+                    panic!("list")
+                }
+            };
+            let int = |j: Json| -> usize {
+                if let Json::Int(i) = j {
+                    i as usize
+                } else {
+                    panic!("int")
+                }
+            };
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let (mut ok, mut bad) = (0, 0);
+            for case in list(field(&index, "cases")) {
+                let idx = int(field(&case, "idx"));
+                let (iw, ih, w, h) = (
+                    int(field(&case, "iw")),
+                    int(field(&case, "ih")),
+                    int(field(&case, "w")),
+                    int(field(&case, "h")),
+                );
+                let image = Image {
+                    mode: Mode::Rgba,
+                    width: iw,
+                    height: ih,
+                    data: std::fs::read(format!("{dir}/{idx}.rgba")).unwrap(),
+                };
+                let q = hk_cook::quantize::octree_fallback(&image, w, h).unwrap();
+                let same = Json::Str(hexs(&q.palette)) == field(&case, "palette")
+                    && Json::Str(hexs(&Sha256::digest(&q.plane))) == field(&case, "plane")
+                    && Json::Str(hexs(&Sha256::digest(&q.image.data))) == field(&case, "image");
+                if same {
+                    ok += 1
+                } else {
+                    bad += 1;
+                    println!("case {idx} ({iw}x{ih} -> {w}x{h}): output differs");
+                }
+            }
+            let sprites = ok;
+            for case in list(field(&index, "raw")) {
+                let idx = int(field(&case, "idx"));
+                let data = std::fs::read(format!("{dir}/raw{idx}.rgba")).unwrap();
+                let pixels: Vec<[u8; 4]> = data
+                    .chunks_exact(4)
+                    .map(|p| [p[0], p[1], p[2], p[3]])
+                    .collect();
+                let (palette, indices) = hk_pil::octree::fast_octree(&pixels, 15);
+                let palette: Vec<u8> = palette.iter().flatten().copied().collect();
+                if Json::Str(hexs(&palette)) == field(&case, "palette")
+                    && Json::Str(hexs(&indices)) == field(&case, "indices")
+                {
+                    ok += 1
+                } else {
+                    bad += 1;
+                    println!("raw case {idx}: output differs");
+                }
+            }
+            println!(
+                "checked {sprites} sprite masks and {} random images, {bad} mismatches",
+                ok - sprites
+            );
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         "atlas2" => {
             // hk-cook-parity atlas2 <oracle-atlas2.json> <oracle-quant dir>: Atlas.add, add_tiled,
             // add_frames_shared and pack over real sprite images.
