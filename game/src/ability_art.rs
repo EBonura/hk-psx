@@ -34,6 +34,8 @@ pub const BALL_END: usize = 15;
 pub const FOCUS_EFFECT: usize = 16;
 pub const FOCUS_EFFECT_END: usize = 17;
 pub const BURST_EFFECT: usize = 18;
+/// The Soul Burst: the star at the Knight when the soul orb can heal (`Can Heal 2`).
+pub const SOUL_BURST: usize = 19;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;

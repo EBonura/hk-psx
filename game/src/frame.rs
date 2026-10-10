@@ -259,7 +259,7 @@ pub fn render(
         needed_len += 1;
     }
     let fx_frames = if game.vitals.dead {
-        [None, None]
+        [None, None, None]
     } else {
         focus_fx::frames()
     };
