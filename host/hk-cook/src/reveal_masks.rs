@@ -190,7 +190,7 @@ fn list_item(data: &Value, key: &str, pos: i64) -> Result<Value> {
 /// `validate_fade(f, time, variables, loop_finish)`.
 fn validate_fade(f: &Fields, time: f64, variables: &Vars, loop_finish: bool) -> Result<()> {
     let t = scalar(f, "time", Some(variables))?;
-    let bad = (num(&t).map_or(true, |t| (t - time).abs() > 1e-5))
+    let bad = (num(&t).is_none_or(|t| (t - time).abs() > 1e-5))
         || !is_num(&scalar(f, "delay", None)?, 0.0)
         || !scalar(f, "includeChildren", None)?.truthy()
         || !is_str(&scalar(f, "namedValueColor", None)?, "_Color")
@@ -376,7 +376,7 @@ pub fn verify_states(states: &States, variables: &Vars) -> Result<i64> {
     let pause_bad = !is_str(fk(wait_hero, "sendEvent")?, "FINISHED")
         || scalar(wait_hero, "skipIfAlreadyPositioned", None)?.truthy()
         || !is_str(fk(wait, "finishEvent")?, "FINISHED")
-        || num(&scalar(wait, "time", None)?).map_or(true, |t| (t - 2.0).abs() > 1e-5)
+        || num(&scalar(wait, "time", None)?).is_none_or(|t| (t - 2.0).abs() > 1e-5)
         || fk(wait, "realTime")?.truthy();
     if pause_bad {
         return err("unsupported pause wait");
@@ -437,7 +437,7 @@ pub fn verify_ordinary_states(states: &States, variables: &Vars) -> Result<i64> 
     if !is_str(fk(hero, "sendEvent")?, "FINISHED")
         || scalar(hero, "skipIfAlreadyPositioned", None)?.truthy()
         || !is_str(fk(wait, "finishEvent")?, "FINISHED")
-        || num(&scalar(wait, "time", None)?).map_or(true, |t| (t - 1.0).abs() > 1e-5)
+        || num(&scalar(wait, "time", None)?).is_none_or(|t| (t - 1.0).abs() > 1e-5)
         || fk(wait, "realTime")?.truthy()
     {
         return err("unsupported ordinary pause wait");
@@ -787,8 +787,8 @@ pub fn reveal_mask_sources(sc: &Scene) -> Result<RevealMasks> {
                 }
             }
             let driver = drivers.get(&gid).copied();
-            let (mut own_trigger, mut replay, mut one_way, mut plays_sound) =
-                (true, false, false, false);
+            let (mut own_trigger, mut replay, mut plays_sound) = (true, false, false);
+            let one_way: bool;
             let shape = if globals.is_empty() {
                 two_state(fsm, &states, &transitions)?
             } else {
@@ -1063,12 +1063,11 @@ pub fn validate_palette(raw: &[u8], draw: usize) -> Result<()> {
 /// with it, or it does not run. Returns scene id to {old index: new index}.
 pub fn refuse_partial_one_way(
     by_scene: &mut [(i64, Json)],
-    scene_hits: &HashMap<i64, Vec<(usize, String, Option<String>)>>,
+    scene_hits: &HashMap<i64, Vec<SceneHit>>,
 ) -> HashMap<i64, HashMap<usize, usize>> {
     let mut renumbered = HashMap::new();
     for (scene, entry) in by_scene.iter_mut() {
-        let hits: &[(usize, String, Option<String>)] =
-            scene_hits.get(scene).map_or(&[], |v| v.as_slice());
+        let hits: &[SceneHit] = scene_hits.get(scene).map_or(&[], |v| v.as_slice());
         let controllers = match jget(entry, "controllers") {
             Some(Json::List(l)) => l.clone(),
             _ => vec![],
@@ -1127,6 +1126,9 @@ pub fn refuse_partial_one_way(
 }
 
 /// A hit found while binding: (controller, draw, renderer source, palette error).
+/// A scene-wide hit: (controller index, renderer source, palette error).
+pub type SceneHit = (usize, String, Option<String>);
+
 pub type Hit = (usize, usize, String, Option<String>);
 
 /// The Python scene-file name for error messages that quote a path.
