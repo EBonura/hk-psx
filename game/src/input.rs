@@ -187,7 +187,10 @@ static mut STEP_PHASE: u8 = PHASE_AT_LOAD;
 /// (`HK_LATENCY_PHASE` overrides it for the build, to find such a one; the
 /// even phases carry journey-kings through, the odd ones do not).
 #[cfg(feature = "original-latency")]
-const PHASE_AT_LOAD: u8 = match option_env!("HK_LATENCY_PHASE") { Some(s) => (s.as_bytes()[0] - b'0') % 6, None => 0 };
+const PHASE_AT_LOAD: u8 = match option_env!("HK_LATENCY_PHASE") {
+    Some(s) => (s.as_bytes()[0] - b'0') % 6,
+    None => 0,
+};
 /// The Knight's view of this tick's pad: `raw` with the late buttons of the
 /// previous consumed tick. Call once per consumed tick, before anything skips it.
 #[inline]
