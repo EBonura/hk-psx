@@ -946,8 +946,9 @@ pub fn region_bindings(
         strings("armour_sources")?,
         strings("break_floor_sources")?,
     );
-    let (mut normal, mut armour, mut edges): (Vec<(i64, i64)>, Vec<(i64, i64)>, Vec<(i64, i64)>) =
-        (Vec::new(), Vec::new(), Vec::new());
+    let mut normal: Vec<(i64, i64)> = Vec::new();
+    let mut armour: Vec<(i64, i64)> = Vec::new();
+    let mut edges: Vec<(i64, i64)> = Vec::new();
     for (chunk_id, edge_sources) in rows {
         // The runtime's catalogue slot is the row's index, which the cook numbers from 1 as chunk ids.
         let slot = chunk_id - 1;

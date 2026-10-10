@@ -588,6 +588,8 @@ fn death_action_layers(data: &Value) -> Result<Vec<Layer>> {
             param_names.len()
         };
         let mut fields: Vec<(&str, usize)> = Vec::new();
+        // Indexing keeps a bad range a panic rather than a silently short loop.
+        #[allow(clippy::needless_range_loop)]
         for i in start..end {
             match fields.iter_mut().find(|(k, _)| *k == param_names[i]) {
                 Some(slot) => slot.1 = i,
@@ -945,13 +947,16 @@ impl Cook<'_> {
     }
 }
 
+/// The converted PCM samples and the conversion's metadata entries.
+pub(crate) type Converted = (Vec<i16>, Vec<(String, Json)>);
+
 /// Mono fold-down and resample, preserving the complete duration.
 pub(crate) fn convert_wav(
     tool: &Tool,
     data: &[u8],
     rate: i64,
     resampler: Resampler,
-) -> Result<(Vec<i16>, Vec<(String, Json)>)> {
+) -> Result<Converted> {
     let wav = read_wav(data)?;
     if wav.width != 2 || !(wav.channels == 1 || wav.channels == 2) {
         return err("unvalidated source PCM format or rate conversion");
@@ -1948,7 +1953,7 @@ pub(crate) mod tests {
         }
         out
     }
-    fn converted(data: &[u8], rate: i64) -> Result<(Vec<i16>, Vec<(String, Json)>)> {
+    fn converted(data: &[u8], rate: i64) -> Result<Converted> {
         convert_wav(&tool(), data, rate, Resampler::Ffmpeg)
     }
     fn meta_int(meta: &[(String, Json)], key: &str) -> i64 {

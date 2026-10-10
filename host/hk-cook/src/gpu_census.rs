@@ -409,11 +409,11 @@ pub fn main(root: &Path, args: &[String]) -> Result<()> {
     let mutated = mutated_sources(root, &metadata)?;
     let mut cache: HashMap<usize, Vec<Draw>> = HashMap::new();
     let region = |i: usize, cache: &mut HashMap<usize, Vec<Draw>>| -> Result<()> {
-        if !cache.contains_key(&i) {
+        if let std::collections::hash_map::Entry::Vacant(slot) = cache.entry(i) {
             let row = meta
                 .get(i.wrapping_sub(1))
                 .ok_or_else(|| format!("no region {i}"))?;
-            cache.insert(i, load(root, row, &mutated)?);
+            slot.insert(load(root, row, &mutated)?);
         }
         Ok(())
     };

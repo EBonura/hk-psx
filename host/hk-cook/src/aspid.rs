@@ -9,7 +9,7 @@ use crate::cook_audio::{jobj, js, u};
 use crate::pyjson::Json;
 use crate::recog::{
     check_actions, check_assemblies, clip_is, clips_by_name, near, only, state, states,
-    transitions, variables, xy,
+    transitions, variables, xy, ActionRow,
 };
 use crate::runner::axis_aligned_bounds;
 use hk_unity::scene::Scene;
@@ -29,7 +29,7 @@ const UNALERT_RADIUS: f64 = 12.100000381469727;
 
 use crate::recog::Want::{B, F, S};
 #[rustfmt::skip]
-const ACTIONS: &[(&str, &str, &[(&str, crate::recog::Want)])] = &[
+const ACTIONS: &[ActionRow] = &[
     ("Idle", "IdleBuzz", &[("waitMin", F(0.75)), ("waitMax", F(1.0)), ("speedMax", F(1.75)), ("accelerationMax", F(15.0)), ("roamingRange", F(1.0))]),
     ("Idle", "FaceDirection", &[("newAnimationClip", S("TurnToFly")), ("pauseTime", F(0.5)), ("pauseBetweenTurns", B(true)), ("spriteFacesRight", B(false))]),
     ("Distance Fly", "DistanceFly", &[("distance", F(7.0)), ("speedMax", F(4.0)), ("acceleration", F(0.1)), ("targetsHeight", B(false))]),

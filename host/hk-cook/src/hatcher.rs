@@ -16,7 +16,7 @@ use crate::pyjson::Json;
 use crate::recog::Want::{B, F, I, S};
 use crate::recog::{
     body_box, check_actions, check_assemblies, clips_ok, near, scalar, state, states, transitions,
-    variables, xy, Want,
+    variables, xy, ActionRow,
 };
 use crate::runner::axis_aligned_bounds;
 use hk_unity::playmaker::{action_fields, field};
@@ -65,7 +65,7 @@ const BABY_TRANSITIONS: [(&str, &[(&str, &str)]); 4] = [
     ("Death", &[("FINISHED", "Inert")]),
 ];
 #[rustfmt::skip]
-const ACTIONS: &[(&str, &str, &[(&str, Want)])] = &[
+const ACTIONS: &[ActionRow] = &[
     ("Idle", "IdleBuzz", &[("waitMin", F(0.75)), ("waitMax", F(1.0)), ("speedMax", F(1.75)), ("accelerationMax", F(15.0)), ("roamingRange", F(1.0))]),
     ("Idle", "FaceDirection", &[("spriteFacesRight", B(false)), ("playNewAnimation", B(false)), ("everyFrame", B(true)), ("pauseBetweenTurns", B(false)), ("pauseTime", F(0.0))]),
     ("Distance Fly", "DistanceFly", &[("distance", F(6.0)), ("speedMax", F(3.5)), ("acceleration", F(0.1)), ("targetsHeight", B(true)), ("height", F(3.5))]),
@@ -79,7 +79,7 @@ const ACTIONS: &[(&str, &str, &[(&str, Want)])] = &[
     ("Fire", "Tk2dWatchAnimationEvents", &[("animationCompleteEvent", S("WAIT"))]),
 ];
 #[rustfmt::skip]
-const BABY_ACTIONS: &[(&str, &str, &[(&str, Want)])] = &[
+const BABY_ACTIONS: &[ActionRow] = &[
     ("Chase", "FaceDirection", &[("spriteFacesRight", B(false)), ("playNewAnimation", B(false)), ("everyFrame", B(true)), ("pauseBetweenTurns", B(true)), ("pauseTime", F(0.4))]),
     ("Chase", "ChaseObject", &[("speedMax", F(5.0)), ("acceleration", F(0.1)), ("targetSpread", F(1.5)), ("spreadResetTimeMin", F(1.0)), ("spreadResetTimeMax", F(2.0))]),
     ("Death", "SetHP", &[("hp", I(5))]),
@@ -130,7 +130,7 @@ fn fsm_named<'a>(records: &[(i64, &str, &'a Value)], name: &str, who: &str) -> R
 fn check_states<'a>(
     fsm: &'a Value,
     trans: &[(&str, &[(&str, &str)])],
-    actions: &[(&str, &str, &[(&str, Want)])],
+    actions: &[ActionRow],
     who: &str,
 ) -> Result<Vec<(String, &'a Value)>> {
     let sts = states(fsm)?;

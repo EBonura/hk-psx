@@ -100,7 +100,7 @@ fn erode(
     }
     let width = x1 - x0;
     let height = y1 - y0;
-    let mut packed = vec![0u32; (width * height + 31) / 32];
+    let mut packed = vec![0u32; (width * height).div_ceil(32)];
     for y in y0..y1 {
         for x in x0..x1 {
             if bits[y * gw + x] {

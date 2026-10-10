@@ -38,6 +38,9 @@ impl SpecActor<'_> {
     }
 }
 
+/// Per supported actor `source`: its index into the spec list and its placement.
+pub type PlacedActors = Vec<(String, (usize, Placement))>;
+
 /// The words that locate and orient one placement in the scene's metadata bank.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Placement {
@@ -761,13 +764,11 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
 
 /// `scene_actor_bank(rows)`: one scene's distinct ActorSpec expressions, and per
 /// supported actor `source` its index into that list with its placement.
-pub fn scene_actor_bank(
-    regions: &[Region],
-) -> Result<(Vec<String>, Vec<(String, (usize, Placement))>)> {
+pub fn scene_actor_bank(regions: &[Region]) -> Result<(Vec<String>, PlacedActors)> {
     let mut order: Vec<&Region> = regions.iter().collect();
     order.sort_by_key(|r| r.chunk_id);
-    let (mut specs, mut placed): (Vec<String>, Vec<(String, (usize, Placement))>) =
-        (Vec::new(), Vec::new());
+    let mut specs: Vec<String> = Vec::new();
+    let mut placed: PlacedActors = Vec::new();
     for region in order {
         let supported: Vec<&SpecActor> = region.actors.iter().filter(|a| a.row.supported).collect();
         let cooked = supported

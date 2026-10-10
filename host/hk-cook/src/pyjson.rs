@@ -290,55 +290,6 @@ pub fn from_serde(v: &serde_json::Value) -> Json {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn matches_json_dumps_indent_2() {
-        let v = Json::Obj(vec![
-            ("a".into(), Json::Int(1)),
-            (
-                "b".into(),
-                Json::List(vec![Json::List(vec![
-                    Json::Str("x".into()),
-                    Json::Str("é\"".into()),
-                ])]),
-            ),
-            ("c".into(), Json::List(vec![])),
-            ("d".into(), Json::Obj(vec![])),
-            ("e".into(), Json::Null),
-        ]);
-        let want = "{\n  \"a\": 1,\n  \"b\": [\n    [\n      \"x\",\n      \"\\u00e9\\\"\"\n    ]\n  ],\n  \"c\": [],\n  \"d\": {},\n  \"e\": null\n}";
-        assert_eq!(dumps(&v), want);
-    }
-
-    #[test]
-    fn parse_reads_back_what_dumps_wrote_in_the_same_order() {
-        let v = Json::Obj(vec![
-            ("z".into(), Json::Int(-3)),
-            (
-                "a".into(),
-                Json::List(vec![
-                    Json::Float(0.1),
-                    Json::Float(1e22),
-                    Json::Null,
-                    Json::Bool(true),
-                    Json::Float(2.0),
-                ]),
-            ),
-            ("s".into(), Json::Str("é\"\\\n\u{1f600}".into())),
-            ("e".into(), Json::Obj(vec![])),
-        ]);
-        assert_eq!(parse(&dumps(&v)).unwrap(), v);
-        assert!(parse("{\"a\": 1,}").is_err());
-        assert_eq!(
-            parse("{\"k\": 1, \"j\": 2, \"k\": 3}").unwrap(),
-            Json::Obj(vec![("k".into(), Json::Int(3)), ("j".into(), Json::Int(2))])
-        );
-    }
-}
-
 /// Python's `json` text for one float: `float.__repr__`, with its names for
 /// the non-finite values.
 pub fn float(f: f64) -> String {
@@ -393,5 +344,54 @@ pub fn dumps_sorted(v: &hk_unity::Value, out: &mut String) {
             }
             out.push('}');
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matches_json_dumps_indent_2() {
+        let v = Json::Obj(vec![
+            ("a".into(), Json::Int(1)),
+            (
+                "b".into(),
+                Json::List(vec![Json::List(vec![
+                    Json::Str("x".into()),
+                    Json::Str("é\"".into()),
+                ])]),
+            ),
+            ("c".into(), Json::List(vec![])),
+            ("d".into(), Json::Obj(vec![])),
+            ("e".into(), Json::Null),
+        ]);
+        let want = "{\n  \"a\": 1,\n  \"b\": [\n    [\n      \"x\",\n      \"\\u00e9\\\"\"\n    ]\n  ],\n  \"c\": [],\n  \"d\": {},\n  \"e\": null\n}";
+        assert_eq!(dumps(&v), want);
+    }
+
+    #[test]
+    fn parse_reads_back_what_dumps_wrote_in_the_same_order() {
+        let v = Json::Obj(vec![
+            ("z".into(), Json::Int(-3)),
+            (
+                "a".into(),
+                Json::List(vec![
+                    Json::Float(0.1),
+                    Json::Float(1e22),
+                    Json::Null,
+                    Json::Bool(true),
+                    Json::Float(2.0),
+                ]),
+            ),
+            ("s".into(), Json::Str("é\"\\\n\u{1f600}".into())),
+            ("e".into(), Json::Obj(vec![])),
+        ]);
+        assert_eq!(parse(&dumps(&v)).unwrap(), v);
+        assert!(parse("{\"a\": 1,}").is_err());
+        assert_eq!(
+            parse("{\"k\": 1, \"j\": 2, \"k\": 3}").unwrap(),
+            Json::Obj(vec![("k".into(), Json::Int(3)), ("j".into(), Json::Int(2))])
+        );
     }
 }

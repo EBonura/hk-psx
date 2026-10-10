@@ -13,7 +13,7 @@ use crate::pyjson::Json;
 use crate::recog::Want::{B, F, I, S};
 use crate::recog::{
     body_box, check_actions, check_assemblies, clips_ok, near, only, state, states, transitions,
-    variables, variables_strict, xy,
+    variables, variables_strict, xy, ActionRow,
 };
 use crate::runner::axis_aligned_bounds;
 use hk_unity::playmaker::{action_fields, Fields};
@@ -74,7 +74,7 @@ const BODY_SIZE: [f64; 2] = [1.25, 0.625];
 const BODY_OFFSET: [f64; 2] = [0.0, -0.1875];
 const ALERT_RADIUS: f64 = 0.5 * 15.608528137207031;
 #[rustfmt::skip]
-const ACTIONS: &[(&str, &str, &[(&str, crate::recog::Want)])] = &[
+const ACTIONS: &[ActionRow] = &[
     ("Idle", "IdleBuzz", &[("waitMin", F(0.75)), ("waitMax", F(1.0)), ("speedMax", F(1.75)), ("accelerationMax", F(15.0)), ("roamingRange", F(1.0))]),
     ("Idle", "FaceDirection", &[("spriteFacesRight", B(false)), ("playNewAnimation", B(true)), ("newAnimationClip", S("TurnToIdle")), ("everyFrame", B(true)), ("pauseBetweenTurns", B(true)), ("pauseTime", F(0.5))]),
     ("Idle", "Tk2dPlayAnimation", &[("clipName", S("Idle"))]),

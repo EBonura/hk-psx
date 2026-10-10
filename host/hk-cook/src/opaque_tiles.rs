@@ -121,13 +121,15 @@ pub fn section(bank: &J, name: &str) -> Result<usize> {
         .map(|v| v as usize)
         .ok_or_else(|| format!("bank without section {name}"))
 }
-/// One pooled draw record: texture, front, scale, the eight Q8 coordinates and
-/// the four flag bytes (`<HHi8i4B` at `draws + gid * 44`).
-pub fn draw_record(
-    raw: &[u8],
-    draws: usize,
-    gid: usize,
-) -> Result<(u16, u16, i32, [i64; 8], [u8; 4])> {
+/// A scene mask: width, height, pixels and digest.
+type Mask = (u16, u16, Vec<u8>, String);
+
+/// A pooled draw record: texture, front, scale, the eight Q8 coordinates and
+/// the four flag bytes.
+pub type DrawRecord = (u16, u16, i32, [i64; 8], [u8; 4]);
+
+/// One pooled draw record (`<HHi8i4B` at `draws + gid * 44`).
+pub fn draw_record(raw: &[u8], draws: usize, gid: usize) -> Result<DrawRecord> {
     let at = draws + gid * 44;
     let mut xy = [0i64; 8];
     for (k, v) in xy.iter_mut().enumerate() {
@@ -502,7 +504,7 @@ pub fn cook(root: &Path, grid_shift: u32, variant: bool) -> Result<()> {
         .collect();
     let mut mutated_records: HashSet<(i64, usize)> = HashSet::new();
     let mut instances: Vec<Instance> = Vec::new();
-    let mut masks: HashMap<(i64, u16), (u16, u16, Vec<u8>, String)> = HashMap::new();
+    let mut masks: HashMap<(i64, u16), Mask> = HashMap::new();
     for bank in banks {
         let sid = int(bank, "scene_id")?;
         let raw = read(&root.join(text(bank, "raw_path")?))?;

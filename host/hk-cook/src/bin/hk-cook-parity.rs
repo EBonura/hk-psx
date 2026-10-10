@@ -1935,7 +1935,7 @@ fn main() {
                         let want_results: Vec<Vec<i64>> = list(field(trial, "ops"))
                             .iter()
                             .map(|op| match field(op, "result") {
-                                Json::List(l) => l.iter().map(|v| int(v)).collect(),
+                                Json::List(l) => l.iter().map(int).collect(),
                                 v => vec![int(&v)],
                             })
                             .collect();
