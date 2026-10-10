@@ -240,6 +240,47 @@ fn pure_black(rgb: &[Rgb], t: &[bool]) -> bool {
     any
 }
 
+/// `Atlas._quantize_octree`: the original octree quantiser, kept for pure-black mask art.
+///
+/// Fifteen entries from the fast-octree quantiser; a semi-transparent entry
+/// (alpha below 224) is premultiplied by its alpha and carries the STP bit,
+/// an opaque one is straight colour with black stored as 0x0001. Index 0 is
+/// the transparent texel; the others follow the octree's palette order, for
+/// texels of alpha 16 and over.
+pub fn octree_fallback(im: &Image, w: usize, h: usize) -> Result<Quantized> {
+    let im = im.resize(w, h, Filter::Lanczos);
+    let pixels: Vec<[u8; 4]> = im
+        .data
+        .chunks_exact(4)
+        .map(|p| [p[0], p[1], p[2], p[3]])
+        .collect();
+    let (palette, indices) = hk_pil::octree::fast_octree(&pixels, 15);
+    let mut words = vec![0u16];
+    for entry in &palette {
+        let semi = entry[3] < 224;
+        let gain = if semi { entry[3] as f64 / 255.0 } else { 1.0 };
+        let [r, g, b] = [0, 1, 2].map(|c| crate::common::py_round(entry[c] as f64 * gain) as u16);
+        let v = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);
+        words.push(if semi {
+            v | 0x8000
+        } else if v == 0 {
+            1
+        } else {
+            v
+        });
+    }
+    let plane = indices
+        .iter()
+        .zip(&pixels)
+        .map(|(&i, p)| if p[3] >= 16 { i + 1 } else { 0 })
+        .collect();
+    Ok(Quantized {
+        image: im,
+        palette: words.iter().flat_map(|v| v.to_le_bytes()).collect(),
+        plane,
+    })
+}
+
 /// The caller's own quantizer for pure-black art.
 pub type Fallback<'a> = &'a dyn Fn(&Image, usize, usize) -> Result<Quantized>;
 
@@ -443,4 +484,43 @@ pub fn quantize(
         palette: words.iter().flat_map(|v| v.to_le_bytes()).collect(),
         plane,
     })
+}
+
+#[cfg(test)]
+mod octree_tests {
+    use super::*;
+    use hk_pil::Mode;
+
+    fn mask(alphas: &[u8]) -> Image {
+        let mut im = Image::new(Mode::Rgba, alphas.len(), 1);
+        for (i, &a) in alphas.iter().enumerate() {
+            im.data[i * 4 + 3] = a;
+        }
+        im
+    }
+
+    #[test]
+    fn opaque_black_is_stored_as_one_and_only_visible_texels_are_indexed() {
+        let q = octree_fallback(&mask(&[255, 255, 0, 8]), 4, 1).unwrap();
+        let words: Vec<u16> = q
+            .palette
+            .chunks(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        assert_eq!(words.len(), 16);
+        assert_eq!(words[0], 0);
+        // The two opaque texels are one entry, black stored as 0x0001; the
+        // texels under alpha 16 stay transparent, whatever their entry.
+        assert_eq!(words[1], 1);
+        assert_eq!(q.plane[..2], [1, 1]);
+        assert_eq!(q.plane[2..], [0, 0]);
+    }
+
+    #[test]
+    fn a_translucent_entry_is_premultiplied_and_carries_the_stp_bit() {
+        let q = octree_fallback(&mask(&[96; 4]), 4, 1).unwrap();
+        // Entry 1 is the only used one: alpha 96 on black.
+        assert_eq!(u16::from_le_bytes([q.palette[2], q.palette[3]]), 0x8000);
+        assert_eq!(q.plane, [1; 4]);
+    }
 }
