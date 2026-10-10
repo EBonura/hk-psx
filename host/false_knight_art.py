@@ -40,6 +40,7 @@ import math
 import struct
 from pathlib import Path
 
+import rustsrc
 from source import ROOT
 from audit_resident_bank import dense_pack, aligned
 from cook import tk_sprite, native_sprite, guest_wrap, FOCAL, CAM_Z, SLOT_PIXELS, MAX_TEXTURE_AXIS
@@ -964,15 +965,7 @@ def gruz_check_contract(s, sc, src):
 
 def gruz_rust_constants(path=ROOT / 'shared/hk-sim/src/gruz_mother.rs'):
     """Every `pub const NAME: type = value;` in the Rust module, evaluated."""
-    import re
-    found = {}
-    for match in re.finditer(r'pub const (\w+)\s*:\s*[^=]+=\s*([^;]+);', path.read_text()):
-        raw = re.sub(r'//.*', '', match.group(2)).strip()
-        try:
-            found[match.group(1)] = eval(raw.replace('ONE', '65536'), {'__builtins__': {}}, {})
-        except Exception:
-            continue
-    return found
+    return rustsrc.consts(path)
 
 
 def gruz_expected_rust():
