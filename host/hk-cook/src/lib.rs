@@ -71,6 +71,7 @@ pub mod spells;
 pub mod spu;
 pub mod static_sources;
 pub mod superdash;
+pub mod tilemap_fill;
 pub mod vengefly;
 pub mod vitals;
 pub mod xa_music;

@@ -3128,6 +3128,144 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "tilemap" => {
+            // hk-cook-parity tilemap <data dir> <oracle-tilemap.json>: tilemap_fill.py over every scene.
+            use hk_cook::atlas::Atlas;
+            use hk_cook::music::jget;
+            use hk_cook::pyjson::{parse, Json};
+            use hk_cook::tilemap_fill;
+            use hk_unity::scene::Scene;
+            let source = lazy_source();
+            let Json::List(scenes) = parse(&std::fs::read_to_string(&args[3]).unwrap()).unwrap()
+            else {
+                panic!("scenes")
+            };
+            fn first_diff(a: &Json, b: &Json, path: &str) -> Option<String> {
+                match (a, b) {
+                    (Json::Obj(x), Json::Obj(y)) => {
+                        for (i, ((kx, vx), (ky, vy))) in x.iter().zip(y).enumerate() {
+                            if kx != ky {
+                                return Some(format!("{path}: key #{i} {kx:?} vs {ky:?}"));
+                            }
+                            if let Some(d) = first_diff(vx, vy, &format!("{path}.{kx}")) {
+                                return Some(d);
+                            }
+                        }
+                        (x.len() != y.len())
+                            .then(|| format!("{path}: {} keys vs {}", x.len(), y.len()))
+                    }
+                    (Json::List(x), Json::List(y)) => {
+                        for (i, (vx, vy)) in x.iter().zip(y).enumerate() {
+                            if let Some(d) = first_diff(vx, vy, &format!("{path}[{i}]")) {
+                                return Some(d);
+                            }
+                        }
+                        (x.len() != y.len())
+                            .then(|| format!("{path}: {} items vs {}", x.len(), y.len()))
+                    }
+                    _ => (a != b).then(|| format!("{path}: {a:?} vs {b:?}")),
+                }
+            }
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let (mut ok, mut bad) = (0usize, 0usize);
+            for rec in scenes {
+                let Json::Str(file) = jget(&rec, "file").cloned().unwrap() else {
+                    panic!("file")
+                };
+                let sc = Scene::new(&source, &file).unwrap();
+                let mut cache: Option<Vec<Json>>;
+                let got = tilemap_fill::tilemap_fill_sources(&sc);
+                let want = jget(&rec, "meshes").cloned();
+                match (&got, &want) {
+                    (Err(_), None) if jget(&rec, "raised").is_some() => ok += 1,
+                    (Ok(m), Some(w)) => {
+                        match first_diff(&Json::List(m.clone()), w, &format!("{file} meshes")) {
+                            None => ok += 1,
+                            Some(d) => {
+                                bad += 1;
+                                println!("{d}");
+                                continue;
+                            }
+                        }
+                    }
+                    other => {
+                        bad += 1;
+                        println!(
+                            "{file}: meshes {:?} vs {:?}",
+                            other.0.as_ref().map(|m| m.len()),
+                            other.1.is_some()
+                        );
+                        continue;
+                    }
+                }
+                let Some(append) = jget(&rec, "append") else {
+                    continue;
+                };
+                cache = Some(got.unwrap());
+                let cam = match jget(&rec, "cam") {
+                    Some(Json::List(c)) => c.clone(),
+                    _ => panic!("cam"),
+                };
+                let pair = |j: &Json| -> (f64, f64) {
+                    let Json::List(v) = j else { panic!("pair") };
+                    let f = |x: &Json| match x {
+                        Json::Float(f) => *f,
+                        Json::Int(i) => *i as f64,
+                        _ => panic!("num"),
+                    };
+                    (f(&v[0]), f(&v[1]))
+                };
+                let mut atlas = Atlas::standard();
+                let mut draws = Vec::new();
+                let summary = tilemap_fill::append_tilemap_fills(
+                    &sc,
+                    &mut cache,
+                    &mut atlas,
+                    &mut draws,
+                    pair(&cam[0]),
+                    pair(&cam[1]),
+                )
+                .unwrap();
+                let mut summary = summary;
+                if let Json::Obj(f) = &mut summary {
+                    f.retain(|e| e.0 != "meshes");
+                }
+                for (name, g) in [
+                    ("summary", summary),
+                    ("draws", Json::List(draws)),
+                    (
+                        "quantized",
+                        Json::List(
+                            atlas
+                                .quantized
+                                .iter()
+                                .map(|(w, h, p, px)| {
+                                    Json::List(vec![
+                                        Json::Int(*w as i64),
+                                        Json::Int(*h as i64),
+                                        Json::Str(hexs(p)),
+                                        Json::Str(hexs(px)),
+                                    ])
+                                })
+                                .collect(),
+                        ),
+                    ),
+                ] {
+                    let w = jget(append, name).cloned().unwrap_or(Json::Null);
+                    match first_diff(&g, &w, &format!("{file} {name}")) {
+                        None => ok += 1,
+                        Some(d) => {
+                            bad += 1;
+                            println!("{d}");
+                        }
+                    }
+                }
+            }
+            println!("checked {ok} results, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         "atlas2" => {
             // hk-cook-parity atlas2 <oracle-atlas2.json> <oracle-quant dir>: Atlas.add, add_tiled,
             // add_frames_shared and pack over real sprite images.

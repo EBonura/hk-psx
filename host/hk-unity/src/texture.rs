@@ -244,6 +244,68 @@ pub fn sprite_mesh(rd: &Value) -> Result<SpriteMesh> {
     })
 }
 
+/// The vertex colours (channel 3) of a mesh's render data as floats; empty when it has none.
+/// Unsigned-normalised byte colours map to value / 255.
+pub fn mesh_colors(rd: &Value) -> Result<Vec<[f32; 4]>> {
+    let vd = rd
+        .get("m_VertexData")
+        .ok_or_else(|| Error::Format("mesh without vertex data".into()))?;
+    let count = vd.get("m_VertexCount").and_then(Value::int).unwrap_or(0) as usize;
+    let channels: Vec<(i64, i64, i64, i64)> = vd
+        .get("m_Channels")
+        .and_then(Value::list)
+        .unwrap_or(&[])
+        .iter()
+        .map(|c| {
+            let g = |k: &str| c.get(k).and_then(Value::int).unwrap_or(0);
+            (g("stream"), g("offset"), g("format"), g("dimension"))
+        })
+        .collect();
+    let data: Vec<u8> = match vd.get("m_DataSize") {
+        Some(Value::Bytes(b)) => b.clone(),
+        Some(Value::List(l)) => l.iter().map(|v| v.int().unwrap_or(0) as u8).collect(),
+        _ => Vec::new(),
+    };
+    let Some(&(stream, off, format, dim)) = channels.get(3) else {
+        return Ok(Vec::new());
+    };
+    if dim == 0 || count == 0 || data.is_empty() {
+        return Ok(Vec::new());
+    }
+    let streams = 1 + channels.iter().map(|c| c.0).max().unwrap_or(0);
+    let mut stream_info = Vec::new();
+    let mut offset = 0usize;
+    for s in 0..streams {
+        let mut stride = 0;
+        for c in &channels {
+            if c.0 == s && c.3 > 0 {
+                stride += (c.3 & 0xf) as usize * format_size(c.2)?.0;
+            }
+        }
+        stream_info.push((offset, stride));
+        offset += count * stride;
+        offset = (offset + 15) & !15;
+    }
+    let (size, kind) = format_size(format)?;
+    let dim = (dim & 0xf) as usize;
+    let (soff, stride) = stream_info[stream as usize];
+    let mut out = Vec::with_capacity(count);
+    for v in 0..count {
+        let mut c = [0.0f32; 4];
+        for (d, slot) in c.iter_mut().enumerate().take(dim.min(4)) {
+            let at = soff + off as usize + stride * v + d * size;
+            let b = data.get(at..at + size).ok_or(Error::Eof)?;
+            *slot = match (kind, size) {
+                ('f', 4) => f32::from_le_bytes(b.try_into().unwrap()),
+                ('B', 1) => b[0] as f32 / 255.0,
+                _ => return Err(Error::Format("unsupported mesh colour format".into())),
+            };
+        }
+        out.push(c);
+    }
+    Ok(out)
+}
+
 /// `Sprite.image` for an unpacked tight sprite without UVs (every sprite of
 /// the install): the texture rect, masked by the mesh triangles drawn with
 /// ImageDraw, flipped to top-down. Converted to RGBA as cook.py does.
