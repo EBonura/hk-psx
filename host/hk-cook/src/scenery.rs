@@ -22,22 +22,7 @@ fn dist(a: &[f64; 3], b: &[f64; 3]) -> f64 {
     crate::pyfloat::hypot_n(&[a[0] - b[0], a[1] - b[1], a[2] - b[2]])
 }
 
-/// quality.py: pages a view's static textures may take.
-pub const STATIC_PAGE_BUDGET: usize = 19;
-/// quality.py: CLUT slots per view (four disjoint banks).
-pub const TEXTURE_BUDGET: usize = 416;
-/// quality.py: the long-axis texel cap of a scenery texture.
-pub const SCENERY_TEXEL_CAP: i64 = 252;
-
-/// `SCENERY_SCENE_CAPS.get(scene_name, SCENERY_TEXEL_CAP)`.
-pub fn scenery_cap(scene_name: &str) -> i64 {
-    match scene_name {
-        "Tutorial_01" => 96,
-        "Town" => 160,
-        "Crossroads_50" | "Fungus1_10" => 48,
-        _ => SCENERY_TEXEL_CAP,
-    }
-}
+pub use crate::quality::{scenery_cap, SCENERY_TEXEL_CAP, STATIC_PAGE_BUDGET, TEXTURE_BUDGET};
 
 /// `scenery_dimensions(width, height, cap)`: one stable integer sampling size.
 pub fn scenery_dimensions(width: f64, height: f64, cap: i64) -> Result<(usize, usize)> {

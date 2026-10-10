@@ -2454,6 +2454,133 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "quality" => {
+            // hk-cook-parity quality <oracle-quality.json>: host/quality.py's tables, value for value.
+            use hk_cook::pyjson::{parse, Json};
+            use hk_cook::quality::*;
+            let oracle = parse(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
+            let want = |k: &str| -> Json {
+                if let Json::Obj(f) = &oracle {
+                    f.iter().find(|x| x.0 == k).unwrap().1.clone()
+                } else {
+                    panic!("object")
+                }
+            };
+            let n = |v: &Num| match v {
+                Num::I(i) => Json::Int(*i),
+                Num::F(f) => Json::Float(*f),
+            };
+            let b = |v: &Bounds| Json::List(v.iter().map(n).collect());
+            let sorted = |j: Json| -> Json {
+                // Object keys in key order, so the comparison does not depend on the writer's order.
+                fn go(j: Json) -> Json {
+                    match j {
+                        Json::Obj(mut f) => {
+                            f.sort_by(|a, c| a.0.cmp(&c.0));
+                            Json::Obj(f.into_iter().map(|(k, v)| (k, go(v))).collect())
+                        }
+                        Json::List(l) => Json::List(l.into_iter().map(go).collect()),
+                        o => o,
+                    }
+                }
+                go(j)
+            };
+            let mut bad = 0;
+            let mut check = |name: &str, got: Json, k: &str| {
+                if sorted(got) != sorted(want(k)) {
+                    bad += 1;
+                    println!("{name} differs");
+                }
+            };
+            check(
+                "scene_table",
+                Json::List(
+                    SCENE_TABLE
+                        .iter()
+                        .map(|r| {
+                            Json::Obj(vec![
+                                ("scene_id".into(), Json::Int(r.scene_id as i64)),
+                                ("scene_name".into(), Json::Str(r.scene_name.into())),
+                                ("file".into(), Json::Str(r.file.into())),
+                                ("runtime_bounds".into(), b(&r.runtime_bounds)),
+                                ("camera_global_bounds".into(), b(&r.camera_global_bounds)),
+                            ])
+                        })
+                        .collect(),
+                ),
+                "scene_table",
+            );
+            check(
+                "consts",
+                Json::List(
+                    [
+                        SCENERY_MAX_AXIS,
+                        SCENERY_TEXEL_CAP,
+                        STATIC_PAGE_BUDGET as i64,
+                        TEXTURE_BUDGET as i64,
+                        ROOM_BYTE_BUDGET as i64,
+                    ]
+                    .iter()
+                    .map(|&v| Json::Int(v))
+                    .collect(),
+                ),
+                "consts",
+            );
+            check(
+                "caps",
+                Json::Obj(
+                    SCENERY_SCENE_CAPS
+                        .iter()
+                        .map(|(k, v)| (k.to_string(), Json::Int(*v)))
+                        .collect(),
+                ),
+                "caps",
+            );
+            check(
+                "region_layout",
+                Json::List(
+                    REGION_LAYOUT
+                        .iter()
+                        .map(|(s, v)| Json::List(vec![Json::Int(*s as i64), b(v)]))
+                        .collect(),
+                ),
+                "region_layout",
+            );
+            check(
+                "measured",
+                Json::Obj(
+                    MEASURED_VIEW_LAYOUTS
+                        .iter()
+                        .map(|(k, v)| (k.to_string(), Json::List(v.iter().map(b).collect())))
+                        .collect(),
+                ),
+                "measured",
+            );
+            check(
+                "town",
+                Json::List(
+                    TOWN_EXTENSION_LAYOUT
+                        .iter()
+                        .map(|(x, c)| Json::List(vec![b(x), b(c)]))
+                        .collect(),
+                ),
+                "town",
+            );
+            check(
+                "grid",
+                Json::Obj(
+                    grid_scene_layouts()
+                        .iter()
+                        .map(|(k, v)| (k.to_string(), Json::List(v.iter().map(b).collect())))
+                        .collect(),
+                ),
+                "grid",
+            );
+            println!("checked the quality tables, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         "atlas2" => {
             // hk-cook-parity atlas2 <oracle-atlas2.json> <oracle-quant dir>: Atlas.add, add_tiled,
             // add_frames_shared and pack over real sprite images.
