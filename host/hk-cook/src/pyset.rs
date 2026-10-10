@@ -28,6 +28,10 @@ impl<K: Clone + PartialEq> PySet<K> {
         self.fill
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.fill == 0
+    }
+
     pub fn contains(&self, key: &K, hash: u64) -> bool {
         self.table
             .iter()

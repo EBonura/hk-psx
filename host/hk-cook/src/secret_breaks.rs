@@ -345,15 +345,15 @@ fn floor_sag(source: &Source, sc: &Scene, parts: &[(String, i64)]) -> Result<Vec
                 let delta = quat_rotate(world_q, [0.0, *dy, 0.0]);
                 let v = [part.position[0], part.position[1], part.position[2], 1.0];
                 let mut world = [0.0; 3];
-                for i in 0..3 {
+                for (i, w) in world.iter_mut().enumerate() {
                     let mut s = 0.0;
                     for (j, vj) in v.iter().enumerate() {
                         s += part.parent[i][j] * vj;
                     }
-                    world[i] = s;
+                    *w = s;
                 }
-                for i in 0..3 {
-                    world[i] += delta[i];
+                for (w, d) in world.iter_mut().zip(delta) {
+                    *w += d;
                 }
                 part.position = inverse_point(&part.parent, world)?;
             }

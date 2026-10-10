@@ -420,7 +420,7 @@ pub(crate) fn literal_action(data: &Value, name: &str, kind: i64, size: i64) -> 
         return Ok(Lit::B(value[0] != 0));
     }
     if value.len() != 4 {
-        return err(format!("unpack requires a buffer of 4 bytes"));
+        return err("unpack requires a buffer of 4 bytes");
     }
     Ok(Lit::I(i32::from_le_bytes(value.try_into().unwrap()) as i64))
 }
@@ -504,8 +504,7 @@ pub fn mask_fades(sc: &Scene, receiver_gid: i64) -> Result<(Vec<Json>, Vec<Json>
             let ease = lit_i(literal_action(data, "easeType", 7, 4)?);
             let looped = lit_i(literal_action(data, "loopType", 7, 4)?);
             let realtime = lit_b(literal_action(data, "realTime", 17, 2)?);
-            if !(0.0..=1.0).contains(&alpha)
-                || !(duration > 0.0 && duration <= 10.0)
+            if !((0.0..=1.0).contains(&alpha) && duration > 0.0 && duration <= 10.0)
                 || delay != 0.0
                 || ease != 21
                 || looped != 0
@@ -635,7 +634,7 @@ pub fn destruction_contract(sc: &Scene, record: &ContractInput, gravity: f64) ->
             .nth(1)
             .and_then(|v| v.parse().ok())
             .ok_or("bad debris part")?;
-        match part_emitter(&sc.source, sc, part_gid, gravity, false, false, None, false) {
+        match part_emitter(sc.source, sc, part_gid, gravity, false, false, None, false) {
             Err(error) => {
                 authored.push(OUTPUT_PARTICLES);
                 missing_list.push(missing(OUTPUT_PARTICLES, Some(part), &error));
@@ -1318,7 +1317,7 @@ fn particle_outputs(
 ) {
     for &gid in gids {
         match part_emitter(
-            &sc.source,
+            sc.source,
             sc,
             gid,
             gravity,
@@ -1783,7 +1782,7 @@ fn prefab_particle_outputs(
             authored.push(OUTPUT_PARTICLES);
             let _ = prefab.particles;
             if let Err(error) = prefab_emitters(
-                &sc.source,
+                sc.source,
                 &sc.base,
                 sc,
                 &prefab.reference,
@@ -2185,7 +2184,7 @@ pub fn hidden_walls(
             let g = match gravity {
                 Some(g) => g,
                 None => {
-                    let g = scene_gravity(&sc.source)?;
+                    let g = scene_gravity(sc.source)?;
                     gravity = Some(g);
                     g
                 }
@@ -2450,7 +2449,7 @@ pub fn cracked_floors(
             let g = match gravity {
                 Some(g) => g,
                 None => {
-                    let g = scene_gravity(&sc.source)?;
+                    let g = scene_gravity(sc.source)?;
                     gravity = Some(g);
                     g
                 }
@@ -2961,7 +2960,7 @@ pub fn breakable_sources(
                 let g = match gravity {
                     Some(g) => g,
                     None => {
-                        let g = scene_gravity(&sc.source)?;
+                        let g = scene_gravity(sc.source)?;
                         gravity = Some(g);
                         g
                     }
@@ -3081,4 +3080,47 @@ pub fn bind_breakables(
         out.push(bound);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn named(name: &str) -> Value {
+        Value::Map(vec![("name".into(), Value::Str(name.as_bytes().to_vec()))])
+    }
+
+    #[test]
+    fn an_editor_copy_suffix_is_not_part_of_a_definition_name() {
+        assert_eq!(definition_name(&named("break_floor (2)")), "break_floor");
+        assert_eq!(definition_name(&named("  FSM  ")), "FSM");
+        assert_eq!(definition_name(&named("Break Wall 2")), "Break Wall 2");
+        assert_eq!(definition_name(&named("x ()")), "x ()");
+    }
+
+    #[test]
+    fn strings_print_as_python_reprs() {
+        assert_eq!(pystr("Hits"), "'Hits'");
+        assert_eq!(pystr("it's"), "\"it's\"");
+        assert_eq!(pystr("a\\b"), "'a\\\\b'");
+    }
+
+    #[test]
+    fn rounding_to_four_places_follows_the_exact_value() {
+        assert_eq!(round4(0.00005), 0.0001);
+        assert_eq!(round4(0.05), 0.05);
+        assert_eq!(round4(2.675), 2.675);
+    }
+
+    #[test]
+    fn a_refused_output_is_only_one_the_port_enforces() {
+        let missing = vec![
+            jobj(vec![("output", js(OUTPUT_AUDIO)), ("reason", js("x"))]),
+            jobj(vec![("output", js(OUTPUT_MASK)), ("reason", js("y"))]),
+        ];
+        assert_eq!(
+            refused_outputs(&missing, &ENFORCED_OUTPUTS),
+            jl(vec![js(OUTPUT_MASK)])
+        );
+    }
 }

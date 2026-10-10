@@ -1256,6 +1256,7 @@ fn secret_relax(ps: &Value, matrix: &M4, emit: Option<i64>) -> Result<(Value, M4
 }
 
 /// `prefab_emitters`: every emitter a fixed CreateObject prefab instantiates.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn prefab_emitters(
     source: &Source,
     file: &Arc<SerializedFile>,
