@@ -31,7 +31,9 @@ def consumers():
         ('Hollow Shade', shade.CLUT[1], generated('data/shade.rs', 'PALETTE_COUNT'),
          generated('data/shade.rs', 'PALETTE_COUNT')),
         ('ability clips', ability_art.CLUT[1], ability_art.CLUT_ROWS,
-         generated('data/ability-art.rs', 'PALETTE_COUNT')),
+         generated_minus('data/ability-art.rs', 'PALETTE_COUNT', 1)),
+        # The heal's flash palette is the last of the ability art's, on the one row left over.
+        ('heal flash', ability_art.FLASH_CLUT_Y, 1, 1),
         ('charm icons', charms.ICON_CLUT[1], generated('data/charms.rs', 'ICON_PALETTE_COUNT'),
          generated('data/charms.rs', 'ICON_PALETTE_COUNT')),
         # game/src/render.rs FLASH_CLUT_Y: one fixed row, uploaded at boot.
@@ -41,7 +43,12 @@ def consumers():
 
 
 def render_row(name):
-    return int(re.search(rf'const {name}:u16=(\d+);', (ROOT / 'game/src/render.rs').read_text()).group(1))
+    return int(re.search(rf'const {name}:\s*u16\s*=\s*(\d+);', (ROOT / 'game/src/render.rs').read_text()).group(1))
+
+
+def generated_minus(path, name, k):
+    value = generated(path, name)
+    return None if value is None else value - k
 
 
 def generated(path, name):
@@ -76,8 +83,11 @@ class ClutRowTests(unittest.TestCase):
         claimed = {row for _, start, reserved, _ in self.consumers
                    for row in range(start, start + reserved)}
         free = sorted(set(range(self.base, self.base + self.rows)) - claimed)
-        self.assertTrue(free, 'the reserved block is full, which the doc should say')
         doc = (ROOT / 'docs/BUDGET.md').read_text()
+        if not free:
+            self.assertIn('The reserved CLUT block is full', doc,
+                          'every row is claimed, which docs/BUDGET.md should say')
+            return
         # assertIn would print the whole document on failure, which buries the
         # one number the failure is about.
         span = f'y{free[0]}' if len(free) == 1 else f'y{free[0]}..{free[-1]}'

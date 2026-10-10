@@ -6,7 +6,7 @@
 //! Control, `Can Heal 2`) plays when the SOUL reaches the cost while health is not full.
 use crate::ability_art::{
     ABILITY_CLIPS, BURST_EFFECT, FOCUS_EFFECT, FOCUS_EFFECT_END, FOCUS_EFFECT_LOOP_START,
-    SOUL_BURST,
+    HEAL_FLASH, SOUL_BURST,
 };
 
 static mut LINES: Option<u32> = None;
@@ -135,58 +135,19 @@ pub fn frames() -> [Option<usize>; 3] {
     }
 }
 
-/// `White Flash R`, spawned at the Knight by `Focus Heal` (resources.assets:5267): a sprite
-/// (`white_light`, a pale disc) scaled to cover the screen, white at alpha 0.52 and faded to
-/// nothing in a second by `SimpleSpriteFade`. Measured in a real run of the original, it lifts a dark
-/// view by 0.29 of what lies between it and white, halving in half a second. The GPU has no
-/// alpha blend, so it is an additive wash of that size: grey 58, falling to nothing in 60 ticks.
+/// `White Flash R`, spawned at the Knight by `Focus Heal` (resources.assets:5267): the `white_light`
+/// disc at scale 10, white at alpha 0.52 and faded to nothing in a second by `SimpleSpriteFade`. The
+/// cooked frame (host/ability_art.py) is the disc at its brightest as greys for the GPU's Add, and the
+/// draw's tint (128 is the texture's own level) takes it down linearly over `FLASH_TICKS`.
 const FLASH_TICKS: u32 = 60;
-const FLASH_GREY: u32 = 58;
-/// The wash covers the top 180 of the screen's 240 rows. The tail of the frame after the CPU's last
-/// kick carries it, and the full 320x240 (0.78 clocks a pixel, 61k clocks) tipped two frames just after
-/// the heal over two vblanks; 210 rows still tipped one, 180 none (every-tick hkref replay of the focus
-/// route). The rows left out are the ground and the black under it.
-const FLASH_ROWS: u16 = 180;
-/// The flash's grey level this tick, 0 when none is running.
-pub fn flash_level() -> u8 {
-    unsafe { FLASH.map_or(0, |a| (FLASH_GREY * (FLASH_TICKS - a) / FLASH_TICKS) as u8) }
-}
-/// The wash as one packet: the draw mode (additive) and a flat semi-transparent rectangle over the
-/// whole screen. A rectangle fills cheaper than the two Gouraud triangles of a quad.
-#[cfg(not(test))]
-#[repr(C, align(4))]
-struct Wash {
-    tag: u32,
-    draw_mode: u32,
-    color_cmd: u32,
-    xy: u32,
-    wh: u32,
-}
-/// Over the world, under the HUD: insertion prepends, so call this right after the HUD's.
-#[cfg(not(test))]
-#[inline(never)]
-pub fn append(ot: &mut psx_gpu::ot::OrderingTable<1>) {
-    use psx_gpu::material::{BlendMode, TextureMaterial};
-    use psx_hw::gpu::{pack_color, pack_vertex, pack_xy};
-    static mut WASH: Wash = Wash {
-        tag: 0,
-        draw_mode: 0,
-        color_cmd: 0,
-        xy: 0,
-        wh: 0,
-    };
-    let g = flash_level();
-    if g == 0 {
-        return;
-    }
+/// The flash's frame and tint now, None when none is running.
+pub fn flash() -> Option<(usize, u8)> {
     unsafe {
-        WASH = Wash {
-            tag: 0,
-            draw_mode: TextureMaterial::blended(0, 0, (0, 0, 0), BlendMode::Add).draw_mode_word(),
-            color_cmd: 0x6200_0000 | pack_color(g, g, g),
-            xy: pack_vertex(0, 0),
-            wh: pack_xy(320, FLASH_ROWS),
-        };
-        ot.add(0, &mut *(&raw mut WASH), 4);
+        FLASH.map(|a| {
+            (
+                ABILITY_CLIPS[HEAL_FLASH].start,
+                (128 * (FLASH_TICKS - a) / FLASH_TICKS) as u8,
+            )
+        })
     }
 }

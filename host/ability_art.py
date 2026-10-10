@@ -54,6 +54,28 @@ SOUL_BURST_SPRITES = (3114, 3559, 3434, 1947, 2426)
 SOUL_BURST_PLACE = (0.0, -0.48, 1.67)
 SOUL_BURST_SHRINK = 2.2
 BURST_BRIGHT_THRESHOLD = 8
+# The heal's `White Flash R` (resources.assets:5267): the `white_light` sprite (1987, a pale disc,
+# 256x216) at scale 10 on the Knight, white at alpha 0.5176, faded out in a second by SimpleSpriteFade.
+# At that scale the disc is 62.6 x 52.8 units, three times the screen, so only the part a screen can
+# reach from the Knight is cooked: one screen's width and height either side of it. The texture holds
+# the flash at its brightest as greys for the GPU's Add (the original is an alpha blend, which lifts a
+# dark view by about the same amount) and the draw's tint fades it. Its palette is a row of its own
+# (`FLASH_CLUT_Y`), the one row the Shade's block left unreserved.
+FLASH_SPRITE = 1987
+FLASH_ALPHA = 0.5176470875740051
+FLASH_TEXELS = (64, 48)
+# Measured on the original (hkref og, profile focus-og: the heal's first frame minus the frame before,
+# over every dark pixel of the view more than eight units from the Knight, so the burst is clear):
+# the disc's lift is the sprite's own profile with these three numbers fitted, mean error 1.8 grey on
+# a lift of about 60. The disc is a tenth larger than the asset's scale of 10 at the 24.8 pixels a
+# unit the original's view gives (the two trade off against that pixel scale), centred one unit below
+# the Knight's origin, at 1.08 of the sprite's brightness (cooked at 1.17: the GPU's 15-bit Add lands
+# about a tenth under the texel, measured on the port). The FSM's spawn offset was not read, so these
+# are the fit, not authored values.
+FLASH_SCALE = 11.0
+FLASH_BELOW = 1.0
+FLASH_GAIN = 1.17
+FLASH_CLUT_Y = 495
 EFFECT_CLIPS = (('Focus Effect', 'Lines Anim', 6629), ('Focus Effect End', 'Lines Anim', 6629),
                 ('Burst Effect', 'Heal Anim', 6375))
 
@@ -169,6 +191,19 @@ def quantize_additive(image, threshold=24):
         packed[(i // w) * ((w + 1) // 2) + (i % w) // 2] |= index << ((i % w & 1) * 4)
     return w, h, struct.pack('<16H', *(palette + [0] * (16 - len(palette)))), bytes(packed)
 
+def quantize_flash(image):
+    """The flash as fifteen greys for an additive draw: the sprite's brightness at the
+    renderer's alpha (`FLASH_ALPHA`) with the brightest texel the top grey, index 0 clear."""
+    w, h = image.size
+    value = [(r + g + b) / 3 * a / 255 * FLASH_ALPHA * FLASH_GAIN for r, g, b, a in image.convert('RGBA').getdata()]
+    peak = max(value)
+    packed = bytearray(((w + 1) // 2) * h)
+    for i, v in enumerate(value):
+        packed[(i // w) * ((w + 1) // 2) + (i % w) // 2] |= round(v / peak * 15) << ((i % w & 1) * 4)
+    greys = [(round(peak * i / 15) + 4) >> 3 for i in range(1, 16)]
+    palette = [0] + [g * 0x0421 | 0x8000 for g in greys]
+    return w, h, struct.pack('<16H', *palette), bytes(packed)
+
 def shelf(sizes, limit=256):
     """Shelf packing into one quantizer sheet; None when the set does not fit."""
     order = sorted(range(len(sizes)), key=lambda i: -sizes[i][1])
@@ -246,9 +281,22 @@ def cook():
         art_sources.append(f'resources.assets:{pid}')
     clips.append(dict(name='Soul Burst', start=soul_start, count=len(SOUL_BURST_SPRITES), fps=20, wrap=2))
 
+    flash_start = len(images)
+    image, box = native_sprite(resources.objects[FLASH_SPRITE])
+    reach = (320 / scale, 240 / scale)
+    half = tuple(r / FLASH_SCALE * n / (box[i + 2] - box[i]) for i, (r, n) in enumerate(zip(reach, image.size)))
+    cx = image.width / 2
+    cy = image.height / 2 - FLASH_BELOW / FLASH_SCALE * image.height / (box[3] - box[1])
+    crop = image.convert('RGBA').crop((round(cx - half[0]), round(cy - half[1]),
+                                       round(cx + half[0]), round(cy + half[1])))
+    images.append(crop.resize(FLASH_TEXELS, Image.Resampling.BOX))
+    boxes.append([-reach[0], -reach[1], reach[0], reach[1]])
+    art_sources.append(f'resources.assets:{FLASH_SPRITE}')
+    clips.append(dict(name='Heal Flash', start=flash_start, count=1, fps=1, wrap=2))
+
     # One CLUT per group of clips that fits a single 256x256 quantizer sheet, so
     # every frame of one animation keeps one palette.
-    effect_names = {name for name, _, _ in EFFECT_CLIPS} | {'Soul Burst'}
+    effect_names = {name for name, _, _ in EFFECT_CLIPS} | {'Soul Burst', 'Heal Flash'}
     groups, current = [], []
     for clip in clips:
         if clip['name'] in effect_names:
@@ -285,6 +333,8 @@ def cook():
     bright_clut = len(groups)
     groups.append(bright)
     assert len(groups) <= CLUT_ROWS, f'{len(groups)} palettes exceed the {CLUT_ROWS} reserved rows'
+    flash_clut = len(groups)
+    groups.append([flash_start])
 
     palettes, blob, frames = [], bytearray(), [None] * len(images)
     raw_bytes = 0
@@ -293,7 +343,7 @@ def cook():
         sheet = Image.new('RGBA', (256, 256))
         for i, origin in zip(group, positions):
             sheet.paste(images[i], origin)
-        sw, _, palette, packed = (lambda s: quantize_additive(s, BURST_BRIGHT_THRESHOLD) if clut_index == bright_clut else quantize_additive(s) if clut_index >= additive_from else quantize_alpha_coverage(s, 128))(sheet)
+        sw, _, palette, packed = (lambda s: quantize_flash(s) if clut_index == flash_clut else quantize_additive(s, BURST_BRIGHT_THRESHOLD) if clut_index == bright_clut else quantize_additive(s) if clut_index >= additive_from else quantize_alpha_coverage(s, 128))(sheet)
         palettes.append(palette)
         for i, (x0, y0) in zip(group, positions):
             image = images[i]
@@ -320,6 +370,7 @@ def cook():
         f'pub const CLUT_RECT:(u16,u16,u16,u16)=({CLUT[0]},{CLUT[1]},{CLUT[2]},{CLUT[3]});',
         f'pub const PALETTE_BYTES:usize={len(palette_bytes)};',
         f'pub const PALETTE_COUNT:usize={len(palettes)};',
+        'pub const CLUT_Y:&[u16]=&[' + ','.join(str(CLUT[1] + i if i < CLUT_ROWS else FLASH_CLUT_Y) for i in range(len(palettes))) + '];',
         'pub const ABILITY_CLIPS:&[Clip]=&[' + ','.join(
             'Clip{' + ','.join(f'{k}:{c[k]}' for k in ('start', 'count', 'fps', 'wrap')) + '}'
             for c in clips) + '];',
