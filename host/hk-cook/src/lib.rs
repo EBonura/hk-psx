@@ -56,6 +56,7 @@ pub mod runner;
 pub mod runner_audio;
 pub mod scene_certificates;
 pub mod scene_sfx;
+pub mod scenery;
 pub mod spu;
 pub mod static_sources;
 pub mod vengefly;

@@ -1893,6 +1893,567 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "scenery" => {
+            // hk-cook-parity scenery <data dir> <oracle-scenery.json>: cook.py's scenery layer
+            // (dimensions, draw ranges, edges, black members, remaskers, texels, decor and wall draws).
+            use hk_cook::atlas::{Atlas, MAX_ROOM_TEXTURES};
+            use hk_cook::pyjson::{parse, Json};
+            use hk_cook::scenery::*;
+            use hk_pil::{Image, Mode};
+            use hk_unity::scene::Scene;
+            use sha2::{Digest, Sha256};
+            use std::collections::HashMap;
+            let source = lazy_source();
+            let oracle = parse(&std::fs::read_to_string(&args[3]).unwrap()).unwrap();
+            fn norm(j: Json) -> Json {
+                match j {
+                    Json::Obj(mut f) => {
+                        for e in &mut f {
+                            e.1 = norm(std::mem::replace(&mut e.1, Json::Null));
+                        }
+                        f.sort_by(|a, b| a.0.cmp(&b.0));
+                        Json::Obj(f)
+                    }
+                    Json::List(l) => Json::List(l.into_iter().map(norm).collect()),
+                    other => other,
+                }
+            }
+            let field = |j: &Json, k: &str| -> Json {
+                if let Json::Obj(f) = j {
+                    f.iter()
+                        .find(|x| x.0 == k)
+                        .map(|x| x.1.clone())
+                        .unwrap_or_else(|| panic!("no {k}"))
+                } else {
+                    panic!("not an object")
+                }
+            };
+            let list = |j: Json| -> Vec<Json> {
+                if let Json::List(l) = j {
+                    l
+                } else {
+                    panic!("list")
+                }
+            };
+            let num = |j: &Json| -> f64 {
+                match j {
+                    Json::Float(f) => *f,
+                    Json::Int(i) => *i as f64,
+                    other => panic!("number {other:?}"),
+                }
+            };
+            let hexs = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
+            let sha = |b: &[u8]| Json::Str(hexs(&Sha256::digest(b)));
+            let (mut ok, mut bad) = (0usize, 0usize);
+            let mut check = |name: &str, same: bool| {
+                if same {
+                    ok += 1
+                } else {
+                    bad += 1;
+                    println!("{name}: differs");
+                }
+            };
+            let pure = field(&oracle, "pure");
+            for (n, c) in list(field(&pure, "dimensions")).iter().enumerate() {
+                let Json::Str(w) = field(c, "w") else {
+                    panic!("w")
+                };
+                let got = scenery_dimensions(
+                    w.parse::<f64>().unwrap(),
+                    num(&field(c, "h")),
+                    num(&field(c, "cap")) as i64,
+                );
+                let want = field(c, "r");
+                let same = match (&got, &want) {
+                    (Ok(g), Json::List(l)) => {
+                        l.iter().map(|v| num(v) as usize).collect::<Vec<_>>() == vec![g.0, g.1]
+                    }
+                    (Err(_), Json::Null) => true,
+                    _ => false,
+                };
+                check(&format!("dimensions {n}"), same);
+            }
+            for (n, c) in list(field(&pure, "range")).iter().enumerate() {
+                let points: Vec<[f64; 3]> = list(field(c, "points"))
+                    .iter()
+                    .map(|p| {
+                        let v = list(p.clone());
+                        [num(&v[0]), num(&v[1]), num(&v[2])]
+                    })
+                    .collect();
+                let got = native_draw_range(num(&field(c, "scale")), &points);
+                let want = match field(c, "r") {
+                    Json::Str(s) => Some(s),
+                    _ => None,
+                };
+                check(&format!("range {n}"), got == want);
+            }
+            for (n, c) in list(field(&pure, "edge")).iter().enumerate() {
+                let two = |j: Json| -> [f64; 2] {
+                    let v = list(j);
+                    [num(&v[0]), num(&v[1])]
+                };
+                let region = field(c, "region");
+                let b = list(field(&region, "collision_bounds"));
+                let slopes = matches!(
+                    region.clone(),
+                    Json::Obj(ref f) if f.iter().any(|e| e.0 == "allow_slopes")
+                );
+                let got = cooked_edge(
+                    two(field(c, "a")),
+                    two(field(c, "b")),
+                    [num(&b[0]), num(&b[1]), num(&b[2]), num(&b[3])],
+                    slopes,
+                );
+                let same = match (got, field(c, "seg"), field(c, "why")) {
+                    (Ok((a, b)), Json::List(s), Json::Null) => {
+                        two(s[0].clone()) == a && two(s[1].clone()) == b
+                    }
+                    (Err(why), Json::Null, Json::Str(w)) => why == w,
+                    _ => false,
+                };
+                check(&format!("edge {n}"), same);
+            }
+            for (n, c) in list(field(&pure, "black")).iter().enumerate() {
+                let Json::Str(px) = field(c, "px") else {
+                    panic!("px")
+                };
+                let data: Vec<u8> = (0..px.len() / 2)
+                    .map(|i| u8::from_str_radix(&px[i * 2..i * 2 + 2], 16).unwrap())
+                    .collect();
+                let image = Image {
+                    mode: Mode::Rgba,
+                    width: num(&field(c, "w")) as usize,
+                    height: num(&field(c, "h")) as usize,
+                    data,
+                };
+                let color = field(c, "color");
+                let got = black_member_image(
+                    &image,
+                    [
+                        num(&field(&color, "r")),
+                        num(&field(&color, "g")),
+                        num(&field(&color, "b")),
+                    ],
+                );
+                let same = match (got, field(c, "r")) {
+                    (Some(g), Json::Str(h)) => hexs(&Sha256::digest(&g.data)) == h,
+                    (None, Json::Null) => true,
+                    _ => false,
+                };
+                check(&format!("black {n}"), same);
+            }
+            for c in list(field(&pure, "behavior")) {
+                let v = list(c);
+                let types: Vec<String> = list(v[2].clone())
+                    .into_iter()
+                    .map(|t| {
+                        if let Json::Str(s) = t {
+                            s
+                        } else {
+                            panic!("type")
+                        }
+                    })
+                    .collect();
+                let (Json::Str(a), Json::Str(b)) = (&v[0], &v[1]) else {
+                    panic!("names")
+                };
+                let got = unsupported_sprite_behavior(a, b, &types);
+                let same = match (&v[3], got) {
+                    (Json::Str(w), Some(g)) => w == g,
+                    (Json::Null, None) => true,
+                    _ => false,
+                };
+                check("behavior", same);
+            }
+            let draw_json = |d: &Draw| -> Json {
+                Json::Obj(vec![
+                    ("source".into(), Json::Str(d.source.clone())),
+                    ("sprite".into(), Json::Str(d.sprite.clone())),
+                    ("name".into(), Json::Str(d.name.clone())),
+                    ("texture".into(), Json::Int(d.texture as i64)),
+                    (
+                        "points".into(),
+                        Json::List(
+                            d.points
+                                .iter()
+                                .map(|p| Json::List(p.iter().map(|&v| Json::Float(v)).collect()))
+                                .collect(),
+                        ),
+                    ),
+                    ("scale".into(), Json::Float(d.scale)),
+                    (
+                        "tint".into(),
+                        Json::List(d.tint.iter().map(|&v| Json::Int(v)).collect()),
+                    ),
+                    ("z".into(), Json::Float(d.z)),
+                    ("order".into(), Json::Int(d.order)),
+                    ("layer".into(), Json::Int(d.layer)),
+                ])
+            };
+            for scene in list(field(&oracle, "scenes")) {
+                let Json::Str(file) = field(&scene, "file") else {
+                    panic!("file")
+                };
+                let Json::Str(name) = field(&scene, "name") else {
+                    panic!("name")
+                };
+                let cap = scenery_cap(&name);
+                assert_eq!(cap, num(&field(&scene, "cap")) as i64, "cap of {name}");
+                let sc = Scene::new(&source, &file).unwrap();
+                let tag = |what: &str| format!("{file} {what}");
+                // texels
+                let mut shared = HashMap::new();
+                let texels = scene_sprite_texels(&source, &sc, cap, &mut shared).unwrap();
+                let got = Json::List(
+                    texels
+                        .iter()
+                        .map(|((sid, a), (w, h))| {
+                            Json::List(vec![
+                                Json::Str(sid.clone()),
+                                Json::Float(f64::from_bits(*a)),
+                                Json::Int(*w as i64),
+                                Json::Int(*h as i64),
+                            ])
+                        })
+                        .collect(),
+                );
+                check(&tag("texels"), got == field(&scene, "texels"));
+                // remaskers and self-disabling effects, by object id
+                let mut want: Vec<(i64, Json)> = list(field(&scene, "remasker"))
+                    .into_iter()
+                    .map(|p| {
+                        let v = list(p);
+                        (num(&v[0]) as i64, norm(v[1].clone()))
+                    })
+                    .collect();
+                want.sort_by_key(|p| p.0);
+                let mut got: Vec<(i64, Json)> = Vec::new();
+                for o in &sc.objects {
+                    if sc.gos.contains_key(&o.id)
+                        && o.tree.get("m_Name").and_then(|n| n.str()).as_deref()
+                            == Some("Inverse Remasker")
+                    {
+                        match unsupported_remasker(&source, &sc, o.id) {
+                            Ok(Some(j)) => got.push((o.id, norm(j))),
+                            other => panic!("{file} remasker {}: {:?}", o.id, other.map(|_| ())),
+                        }
+                    }
+                }
+                got.sort_by_key(|p| p.0);
+                check(&tag("remasker"), got == want);
+                let mut want: Vec<i64> = list(field(&scene, "self_disabling"))
+                    .iter()
+                    .map(|v| num(v) as i64)
+                    .collect();
+                want.sort_unstable();
+                let mut got: Vec<i64> = sc
+                    .gos
+                    .keys()
+                    .copied()
+                    .filter(|&g| self_disabling_effect(&sc, g))
+                    .collect();
+                got.sort_unstable();
+                check(&tag("self_disabling"), got == want);
+                // decor sources
+                let sources = decor_sources(&sc);
+                let got = Json::List(
+                    sources
+                        .iter()
+                        .map(|d| {
+                            norm(Json::Obj(vec![
+                                ("sprite_id".into(), Json::Int(d.sprite_id)),
+                                ("gid".into(), Json::Int(d.gid)),
+                                ("source".into(), Json::Str(d.renderer_source.clone())),
+                                ("family".into(), Json::Str(d.family.to_string())),
+                                ("animator".into(), Json::Bool(d.animator.is_some())),
+                            ]))
+                        })
+                        .collect(),
+                );
+                check(
+                    &tag("decor_sources"),
+                    got == norm(field(&scene, "decor_sources")),
+                );
+                // black members
+                let mut got = Vec::new();
+                for o in &sc.objects {
+                    if o.typename != "SpriteRenderer" || got.len() >= 25 {
+                        continue;
+                    }
+                    let t = &o.tree;
+                    if t.get("m_Sprite")
+                        .and_then(|p| p.get("m_PathID"))
+                        .and_then(|v| v.int())
+                        .unwrap_or(0)
+                        == 0
+                    {
+                        continue;
+                    }
+                    let Ok(obj) = sc.deref(t.get("m_Sprite").unwrap()) else {
+                        continue;
+                    };
+                    let Ok((im, _)) = hk_cook::cook::native_sprite(&source, &obj) else {
+                        continue;
+                    };
+                    let c = t.get("m_Color").unwrap();
+                    let col = |k: &str| c.get(k).and_then(|v| v.float()).unwrap();
+                    let r = black_member_image(&im, [col("r"), col("g"), col("b")]);
+                    got.push(norm(Json::Obj(vec![
+                        ("renderer".into(), Json::Int(o.id)),
+                        ("sprite".into(), Json::Str(obj.sid())),
+                        (
+                            "color".into(),
+                            Json::Obj(vec![
+                                ("r".into(), Json::Float(col("r"))),
+                                ("g".into(), Json::Float(col("g"))),
+                                ("b".into(), Json::Float(col("b"))),
+                            ]),
+                        ),
+                        ("r".into(), r.map_or(Json::Null, |g| sha(&g.data))),
+                    ])));
+                }
+                check(
+                    &tag("black"),
+                    Json::List(got) == norm(field(&scene, "black")),
+                );
+                // the black members through a fresh atlas (the octree path of Atlas.add)
+                {
+                    let mut batlas = Atlas::new(
+                        true,
+                        STATIC_PAGE_BUDGET,
+                        MAX_ROOM_TEXTURES,
+                        true,
+                        Some(TEXTURE_BUDGET),
+                    );
+                    let mut adds = Vec::new();
+                    for b in list(field(&scene, "black")) {
+                        if field(&b, "r") == Json::Null {
+                            continue;
+                        }
+                        let renderer = num(&field(&b, "renderer")) as i64;
+                        let t = &sc.object(renderer).unwrap().tree;
+                        let obj = sc.deref(t.get("m_Sprite").unwrap()).unwrap();
+                        let (im, _) = hk_cook::cook::native_sprite(&source, &obj).unwrap();
+                        let c = t.get("m_Color").unwrap();
+                        let col = |k: &str| c.get(k).and_then(|v| v.float()).unwrap();
+                        let black =
+                            black_member_image(&im, [col("r"), col("g"), col("b")]).unwrap();
+                        let (w, h) = (im.width.clamp(1, 96), im.height.clamp(1, 96));
+                        let index = batlas
+                            .add(
+                                &black,
+                                w as f64,
+                                h as f64,
+                                false,
+                                &hk_cook::quantize::atlas_quantizer,
+                            )
+                            .unwrap();
+                        adds.push(norm(Json::Obj(vec![
+                            ("renderer".into(), Json::Int(renderer)),
+                            ("w".into(), Json::Int(w as i64)),
+                            ("h".into(), Json::Int(h as i64)),
+                            ("index".into(), Json::Int(index as i64)),
+                        ])));
+                    }
+                    check(
+                        &tag("black_adds"),
+                        Json::List(adds) == norm(field(&scene, "black_adds")),
+                    );
+                    let quantized = Json::List(
+                        batlas
+                            .quantized
+                            .iter()
+                            .map(|q| {
+                                Json::List(vec![
+                                    Json::Int(q.0 as i64),
+                                    Json::Int(q.1 as i64),
+                                    Json::Str(hexs(&q.2)),
+                                    sha(&q.3),
+                                ])
+                            })
+                            .collect(),
+                    );
+                    let request = Json::List(
+                        batlas
+                            .request_map
+                            .iter()
+                            .map(|&i| Json::Int(i as i64))
+                            .collect(),
+                    );
+                    let want = field(&scene, "black_atlas");
+                    check(
+                        &tag("black_atlas"),
+                        quantized == field(&want, "quantized")
+                            && request == field(&want, "request_map"),
+                    );
+                }
+                // decor and wall draws share one atlas and its caches
+                let (cx, cy) = {
+                    let cam = field(&scene, "cull");
+                    let v = list(cam);
+                    let a = list(v[0].clone());
+                    let b = list(v[1].clone());
+                    ((num(&a[0]), num(&a[1])), (num(&b[0]), num(&b[1])))
+                };
+                let mut atlas = Atlas::new(
+                    true,
+                    STATIC_PAGE_BUDGET,
+                    MAX_ROOM_TEXTURES,
+                    true,
+                    Some(TEXTURE_BUDGET),
+                );
+                let mut caches = SceneryCaches::default();
+                let view = View {
+                    cull: Some((cx, cy)),
+                    cap,
+                };
+                let mut got = Vec::new();
+                for d in &sources {
+                    got.push(
+                        match decor_draws(&source, &sc, d, &mut atlas, &mut caches, &view) {
+                            Ok(None) => Json::Obj(vec![
+                                ("source".into(), Json::Str(d.renderer_source.clone())),
+                                ("none".into(), Json::Bool(true)),
+                            ]),
+                            Ok(Some(c)) => Json::Obj(vec![
+                                ("source".into(), Json::Str(c.source.clone())),
+                                ("family".into(), Json::Str(c.family.to_string())),
+                                ("fps".into(), Json::Float(c.fps)),
+                                ("wrap".into(), Json::Int(c.wrap)),
+                                ("loop_start".into(), Json::Int(c.loop_start)),
+                                (
+                                    "sequence".into(),
+                                    Json::List(
+                                        c.sequence.iter().map(|&v| Json::Int(v as i64)).collect(),
+                                    ),
+                                ),
+                                (
+                                    "draws".into(),
+                                    Json::List(c.draws.iter().map(&draw_json).collect()),
+                                ),
+                            ]),
+                            Err(_) => Json::Obj(vec![
+                                ("source".into(), Json::Str(d.renderer_source.clone())),
+                                ("error".into(), Json::Bool(true)),
+                            ]),
+                        },
+                    );
+                }
+                // the oracle records the Python repr of an error; only that it failed is compared
+                let want: Vec<Json> = list(field(&scene, "decor"))
+                    .into_iter()
+                    .map(|d| match d {
+                        Json::Obj(f) if f.iter().any(|e| e.0 == "error") => Json::Obj(vec![
+                            (
+                                "source".into(),
+                                f.iter().find(|e| e.0 == "source").unwrap().1.clone(),
+                            ),
+                            ("error".into(), Json::Bool(true)),
+                        ]),
+                        other => other,
+                    })
+                    .collect();
+                if norm(Json::List(got.clone())) != norm(Json::List(want.clone())) {
+                    for (g, w) in got.iter().zip(&want) {
+                        if norm(g.clone()) != norm(w.clone()) {
+                            println!("{file} decor: differs at {:?}", field(w, "source"));
+                            break;
+                        }
+                    }
+                }
+                check(
+                    &tag("decor"),
+                    norm(Json::List(got)) == norm(Json::List(want)),
+                );
+                let mut got = Vec::new();
+                for w in list(field(&scene, "walls")) {
+                    let Json::Str(src) = field(&w, "source") else {
+                        panic!("source")
+                    };
+                    let culled = field(&w, "cull") == Json::Bool(true);
+                    let v = View {
+                        cull: culled.then_some((cx, cy)),
+                        cap,
+                    };
+                    got.push(
+                        match tk2d_wall_draw(&source, &sc, &src, &mut atlas, &mut caches, &v) {
+                            Ok(d) => Json::Obj(vec![
+                                ("source".into(), Json::Str(src.clone())),
+                                ("cull".into(), Json::Bool(culled)),
+                                ("draw".into(), d.as_ref().map_or(Json::Null, &draw_json)),
+                            ]),
+                            Err(_) => Json::Obj(vec![
+                                ("source".into(), Json::Str(src.clone())),
+                                ("cull".into(), Json::Bool(culled)),
+                                ("error".into(), Json::Bool(true)),
+                            ]),
+                        },
+                    );
+                }
+                let want: Vec<Json> = list(field(&scene, "walls"))
+                    .into_iter()
+                    .map(|d| match d {
+                        Json::Obj(f) if f.iter().any(|e| e.0 == "error") => Json::Obj(vec![
+                            (
+                                "source".into(),
+                                f.iter().find(|e| e.0 == "source").unwrap().1.clone(),
+                            ),
+                            (
+                                "cull".into(),
+                                f.iter().find(|e| e.0 == "cull").unwrap().1.clone(),
+                            ),
+                            ("error".into(), Json::Bool(true)),
+                        ]),
+                        other => other,
+                    })
+                    .collect();
+                check(
+                    &tag("walls"),
+                    norm(Json::List(got)) == norm(Json::List(want)),
+                );
+                // the atlas those draws filled
+                let quantized = Json::List(
+                    atlas
+                        .quantized
+                        .iter()
+                        .map(|q| {
+                            Json::List(vec![
+                                Json::Int(q.0 as i64),
+                                Json::Int(q.1 as i64),
+                                Json::Str(hexs(&q.2)),
+                                sha(&q.3),
+                            ])
+                        })
+                        .collect(),
+                );
+                let images = Json::List(
+                    atlas
+                        .images
+                        .iter()
+                        .map(|i| i.as_ref().map_or(Json::Null, |im| sha(&im.data)))
+                        .collect(),
+                );
+                let request = Json::List(
+                    atlas
+                        .request_map
+                        .iter()
+                        .map(|&i| Json::Int(i as i64))
+                        .collect(),
+                );
+                let want = field(&scene, "atlas");
+                check(
+                    &tag("atlas"),
+                    quantized == field(&want, "quantized")
+                        && images == field(&want, "images")
+                        && request == field(&want, "request_map"),
+                );
+            }
+            println!("checked {ok} results, {bad} mismatches");
+            if bad != 0 {
+                std::process::exit(1);
+            }
+        }
         "atlas2" => {
             // hk-cook-parity atlas2 <oracle-atlas2.json> <oracle-quant dir>: Atlas.add, add_tiled,
             // add_frames_shared and pack over real sprite images.
