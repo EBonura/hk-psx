@@ -293,6 +293,40 @@ pub fn body(asm: &Assembly, rva: u32) -> Result<&[u8]> {
         .ok_or_else(|| Error("truncated method body".into()))
 }
 
+/// The whole method body at `rva` as the CIL reader sizes it: header, code and
+/// the exception-handler section. Returns (code size, bytes).
+pub fn whole_body(asm: &Assembly, rva: u32) -> Result<(u32, &[u8])> {
+    let d = asm.data();
+    let at = asm.offset(rva)?;
+    let trunc = || Error("truncated method body".into());
+    let first = *d.get(at).ok_or_else(trunc)?;
+    let (code_size, header, more_sects) = if first & 3 == 2 {
+        ((first >> 2) as u32, 1usize, false)
+    } else {
+        let flags = u16_at(d, at)?;
+        let words = (flags >> 12) as usize;
+        let code = u32_at(d, at + 4)?;
+        // A fat header shorter than three words cannot carry sections.
+        (code, words * 4, flags & 0x8 != 0 && words >= 3)
+    };
+    let mut end = at + header + code_size as usize;
+    if more_sects {
+        let aligned = (end + 3) & !3;
+        let kind = *d.get(aligned).ok_or_else(trunc)?;
+        end = aligned + 1;
+        if kind & 0x3f == 1 {
+            if kind & 0x40 != 0 {
+                let total = u32_at(d, aligned)? >> 8;
+                end = aligned + 4 + (total as usize / 24) * 24;
+            } else {
+                let size = *d.get(aligned + 1).ok_or_else(trunc)? as usize;
+                end = aligned + 4 + (size / 12) * 12;
+            }
+        }
+    }
+    Ok((code_size, d.get(at..end).ok_or_else(trunc)?))
+}
+
 pub fn decode(code: &[u8]) -> Result<Vec<Instruction>> {
     let mut out = Vec::new();
     let mut p = 0usize;
