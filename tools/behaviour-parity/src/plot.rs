@@ -12,7 +12,11 @@ struct Canvas {
 }
 impl Canvas {
     fn new(w: usize, h: usize) -> Self {
-        Self { w, h, rgb: vec![255; w * h * 3] }
+        Self {
+            w,
+            h,
+            rgb: vec![255; w * h * 3],
+        }
     }
     fn dot(&mut self, x: i64, y: i64, r: i64, c: [u8; 3]) {
         for dy in -r..=r {
@@ -33,10 +37,14 @@ impl Canvas {
     }
     fn save(&self, path: &std::path::Path) {
         let file = std::fs::File::create(path).expect("create png");
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), self.w as u32, self.h as u32);
+        let mut enc =
+            png::Encoder::new(std::io::BufWriter::new(file), self.w as u32, self.h as u32);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
-        enc.write_header().unwrap().write_image_data(&self.rgb).unwrap();
+        enc.write_header()
+            .unwrap()
+            .write_image_data(&self.rgb)
+            .unwrap();
     }
 }
 
@@ -52,10 +60,25 @@ pub fn run(run_dir: &std::path::Path, names: &BTreeMap<usize, String>, args: &[S
     let ticks = (trace.last_frame - trace.origin).max(0) as usize;
     let port = run_port_scene(id, trace, ticks);
     let (pairs, _, _) = match_actors(scene_name, trace, &port);
-    let pair = pairs.iter().find(|p| p.port.source_id == source_id).expect("pair");
+    let pair = pairs
+        .iter()
+        .find(|p| p.port.source_id == source_id)
+        .expect("pair");
     let to = to.min(pair.port.ticks.len());
-    let og: Vec<(f64, f64)> = (from..to).filter_map(|t| pair.og.samples.iter().find(|s| s.frame == trace.origin + t as i64).map(|s| (s.x, s.y))).collect();
-    let pt: Vec<(f64, f64)> = pair.port.ticks[from..to].iter().map(|t| (t.x, t.y)).filter(|p| p.0.is_finite()).collect();
+    let og: Vec<(f64, f64)> = (from..to)
+        .filter_map(|t| {
+            pair.og
+                .samples
+                .iter()
+                .find(|s| s.frame == trace.origin + t as i64)
+                .map(|s| (s.x, s.y))
+        })
+        .collect();
+    let pt: Vec<(f64, f64)> = pair.port.ticks[from..to]
+        .iter()
+        .map(|t| (t.x, t.y))
+        .filter(|p| p.0.is_finite())
+        .collect();
     // The view: both paths with a margin.
     let all: Vec<(f64, f64)> = og.iter().chain(pt.iter()).copied().collect();
     let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
@@ -68,7 +91,10 @@ pub fn run(run_dir: &std::path::Path, names: &BTreeMap<usize, String>, args: &[S
     let pad = 2.5;
     let (x0, y0, x1, y1) = (x0 - pad, y0 - pad, x1 + pad, y1 + pad);
     let scale = (900.0 / (x1 - x0)).min(600.0 / (y1 - y0));
-    let (w, h) = (((x1 - x0) * scale) as usize + 1, ((y1 - y0) * scale) as usize + 1);
+    let (w, h) = (
+        ((x1 - x0) * scale) as usize + 1,
+        ((y1 - y0) * scale) as usize + 1,
+    );
     let mut c = Canvas::new(w, h);
     let tx = |x: f64| ((x - x0) * scale) as i64;
     let ty = |y: f64| (h as f64 - 1.0 - (y - y0) * scale) as i64;
@@ -89,5 +115,12 @@ pub fn run(run_dir: &std::path::Path, names: &BTreeMap<usize, String>, args: &[S
         c.dot(tx(p.0), ty(p.1), if k == 0 { 4 } else { 0 }, [220, 40, 40]);
     }
     c.save(out);
-    println!("{} ({}x{}): blue original {} points, red port {} points", out.display(), w, h, og.len(), pt.len());
+    println!(
+        "{} ({}x{}): blue original {} points, red port {} points",
+        out.display(),
+        w,
+        h,
+        og.len(),
+        pt.len()
+    );
 }

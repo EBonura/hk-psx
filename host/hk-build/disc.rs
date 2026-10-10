@@ -13,25 +13,47 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// The ADPCM banks the guest streams from the disc, in the order it uploads
 /// them (the world bank is read before the title, the rest at bootstrap), and
 /// the quick map's room art, which rides the same staged read.
-const AUDIO_BANKS: [&str; 5] = ["sfx.adpcm", "geo-audio.adpcm", "runner-audio.adpcm", "world-sfx.adpcm", "game-map.bin"];
+const AUDIO_BANKS: [&str; 5] = [
+    "sfx.adpcm",
+    "geo-audio.adpcm",
+    "runner-audio.adpcm",
+    "world-sfx.adpcm",
+    "game-map.bin",
+];
 
 fn field<'a>(v: &'a Value, key: &str) -> Result<&'a Value> {
-    v.get(key).ok_or_else(|| format!("missing field {key}").into())
+    v.get(key)
+        .ok_or_else(|| format!("missing field {key}").into())
 }
 fn int(v: &Value, key: &str) -> Result<usize> {
-    field(v, key)?.as_u64().map(|n| n as usize).ok_or_else(|| format!("{key} is not a number").into())
+    field(v, key)?
+        .as_u64()
+        .map(|n| n as usize)
+        .ok_or_else(|| format!("{key} is not a number").into())
 }
 fn path_of(v: &Value, key: &str) -> Result<PathBuf> {
-    Ok(PathBuf::from(field(v, key)?.as_str().ok_or_else(|| format!("{key} is not a path"))?))
+    Ok(PathBuf::from(
+        field(v, key)?
+            .as_str()
+            .ok_or_else(|| format!("{key} is not a path"))?,
+    ))
 }
 fn list<'a>(v: &'a Value, key: &str) -> Result<&'a [Value]> {
-    field(v, key)?.as_array().map(Vec::as_slice).ok_or_else(|| format!("{key} is not a list").into())
+    field(v, key)?
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| format!("{key} is not a list").into())
 }
 fn json(path: &Path) -> Result<Value> {
-    Ok(serde_json::from_slice(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)?)
+    Ok(serde_json::from_slice(
+        &std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?,
+    )?)
 }
 fn sha256(path: &Path) -> Result<String> {
-    Ok(Sha256::digest(std::fs::read(path)?).iter().map(|b| format!("{b:02x}")).collect())
+    Ok(Sha256::digest(std::fs::read(path)?)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// The chunk ids of each kind, numbered by kind as the guest's manifests index them.
@@ -72,7 +94,11 @@ pub struct Plan {
 /// world metadata and its art chunk. Last, the area music premixes, which only
 /// the refill reads, and the carried data packages.
 pub fn disc_order(p: &Plan) -> Result<Vec<usize>> {
-    let ids = Ids { rooms: p.rooms.len(), clips: p.clips, atlases: p.atlases.len() };
+    let ids = Ids {
+        rooms: p.rooms.len(),
+        clips: p.clips,
+        atlases: p.atlases.len(),
+    };
     let (clip_base, atlas_base) = (ids.rooms, ids.rooms + ids.clips);
     let focus = atlas_base + ids.atlases + 1;
     if p.scene_sfx_ids.len() != p.rooms.len() {
@@ -82,7 +108,12 @@ pub fn disc_order(p: &Plan) -> Result<Vec<usize>> {
     let mut order = vec![world, game_map, p.menu_id, boot[0], focus, boot[1], boot[2]];
     order.extend(clip_base + 1..=clip_base + ids.clips);
     for (index, room) in p.rooms.iter().enumerate() {
-        if int(room, "chunk_id")? != index + 1 || room.get("scene_index").map_or(Ok(index), |_| int(room, "scene_index"))? != index {
+        if int(room, "chunk_id")? != index + 1
+            || room
+                .get("scene_index")
+                .map_or(Ok(index), |_| int(room, "scene_index"))?
+                != index
+        {
             return Err("scene chunk ids are not manifest order".into());
         }
         let mut cover = Vec::new();
@@ -91,12 +122,19 @@ pub fn disc_order(p: &Plan) -> Result<Vec<usize>> {
                 cover.push(int(b, "chunk_id")?);
             }
         }
-        let bank = p.world_banks.get(index).ok_or("missing world metadata bank")?;
+        let bank = p
+            .world_banks
+            .get(index)
+            .ok_or("missing world metadata bank")?;
         if cover.len() != 1 || int(bank, "scene_id")? != int(room, "scene_id")? {
             return Err(format!("scene group does not line up: {index}").into());
         }
         order.extend(p.code_ids.iter().filter(|c| c.1 == index).map(|c| c.0));
-        order.extend([p.scene_sfx_ids[index], cover[0], p.effect_base + int(room, "scene_id")? + 1]);
+        order.extend([
+            p.scene_sfx_ids[index],
+            cover[0],
+            p.effect_base + int(room, "scene_id")? + 1,
+        ]);
         for (i, a) in p.atlases.iter().enumerate() {
             if int(a, "scene_index")? == index {
                 order.push(atlas_base + i + 1);
@@ -141,30 +179,58 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
     let coverage = json(&hk.join("scene-certificates.json"))?;
     let bundles = list(&coverage, "bundles")?.to_vec();
     let focus = json(&hk.join("focus-audio.json"))?;
-    let world_banks = packed.get("world_metadata").and_then(Value::as_array).cloned().unwrap_or_default();
+    let world_banks = packed
+        .get("world_metadata")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let (nr, nc) = (rooms.len(), clips.len());
     for room in &rooms {
-        copy(&root.join(path_of(room, "path")?), &chunks.join(format!("chunk_{}.hk", int(room, "chunk_id")?)))?;
+        copy(
+            &root.join(path_of(room, "path")?),
+            &chunks.join(format!("chunk_{}.hk", int(room, "chunk_id")?)),
+        )?;
     }
     for (i, clip) in clips.iter().enumerate() {
-        copy(&root.join(path_of(clip, "path")?), &chunks.join(format!("chunk_{}.adpcm", nr + i + 1)))?;
+        copy(
+            &root.join(path_of(clip, "path")?),
+            &chunks.join(format!("chunk_{}.adpcm", nr + i + 1)),
+        )?;
     }
     for (i, atlas) in atlases.iter().enumerate() {
-        copy(&root.join(path_of(atlas, "path")?), &chunks.join(format!("chunk_{}.atlas", nr + nc + i + 1)))?;
+        copy(
+            &root.join(path_of(atlas, "path")?),
+            &chunks.join(format!("chunk_{}.atlas", nr + nc + i + 1)),
+        )?;
     }
-    copy(&root.join(path_of(&focus, "path")?), &chunks.join(format!("chunk_{}.focus", nr + nc + atlases.len() + 1)))?;
+    copy(
+        &root.join(path_of(&focus, "path")?),
+        &chunks.join(format!("chunk_{}.focus", nr + nc + atlases.len() + 1)),
+    )?;
     for bundle in &bundles {
-        copy(&root.join(path_of(bundle, "path")?), &chunks.join(format!("chunk_{}.coverage", int(bundle, "chunk_id")?)))?;
+        copy(
+            &root.join(path_of(bundle, "path")?),
+            &chunks.join(format!("chunk_{}.coverage", int(bundle, "chunk_id")?)),
+        )?;
     }
     for bank in &world_banks {
-        copy(&root.join(path_of(bank, "path")?), &chunks.join(format!("chunk_{}.worldmeta", int(bank, "chunk_id")?)))?;
+        copy(
+            &root.join(path_of(bank, "path")?),
+            &chunks.join(format!("chunk_{}.worldmeta", int(bank, "chunk_id")?)),
+        )?;
     }
     // One effect-art chunk per catalogue scene id, after the world metadata chunks.
     let effect_base = nr + nc + atlases.len() + 1 + bundles.len() + world_banks.len();
     let effects = json(&hk.join("break-effects/report.json"))?;
     let effect_chunks = list(&effects, "chunks")?;
     for entry in effect_chunks {
-        copy(&root.join(path_of(entry, "path")?), &chunks.join(format!("chunk_{}.effectart", effect_base + int(entry, "scene_id")? + 1)))?;
+        copy(
+            &root.join(path_of(entry, "path")?),
+            &chunks.join(format!(
+                "chunk_{}.effectart",
+                effect_base + int(entry, "scene_id")? + 1
+            )),
+        )?;
     }
     // The SFX, Geo, Runner and world ADPCM banks and the map art, last by kind
     // and in the guest's AUDIO_BANKS order.
@@ -172,36 +238,66 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
     for (i, name) in AUDIO_BANKS.iter().enumerate() {
         let payload = root.join("data").join(name);
         if (std::fs::metadata(&payload)?.len() as usize).div_ceil(2048) * 2048 > arena {
-            return Err(format!("Audio bank does not fit the startup room arena: {}", payload.display()).into());
+            return Err(format!(
+                "Audio bank does not fit the startup room arena: {}",
+                payload.display()
+            )
+            .into());
         }
         bank_ids.push(effect_base + effect_chunks.len() + i + 1);
-        copy(&payload, &chunks.join(format!("chunk_{}.bank", bank_ids[i])))?;
+        copy(
+            &payload,
+            &chunks.join(format!("chunk_{}.bank", bank_ids[i])),
+        )?;
     }
     // The area music premixes, after the banks: streamed, never staged.
     let area = json(&hk.join("area-music.json"))?;
     let mut music_ids = Vec::new();
     for (i, track) in list(&area, "tracks")?.iter().enumerate() {
         music_ids.push(bank_ids[bank_ids.len() - 1] + i + 1);
-        copy(&root.join(path_of(track, "path")?), &chunks.join(format!("chunk_{}.music", music_ids[i])))?;
+        copy(
+            &root.join(path_of(track, "path")?),
+            &chunks.join(format!("chunk_{}.music", music_ids[i])),
+        )?;
     }
     // One one-shot bank per manifest scene, numbered after the music.
     let sfx = json(&hk.join("scene-sfx.json"))?;
     let mut scene_sfx_ids = Vec::new();
-    let sfx_base = music_ids.last().copied().unwrap_or(bank_ids[bank_ids.len() - 1]);
+    let sfx_base = music_ids
+        .last()
+        .copied()
+        .unwrap_or(bank_ids[bank_ids.len() - 1]);
     for (i, room) in rooms.iter().enumerate() {
         let id = int(room, "scene_id")?;
-        let payload = root.join("data/scene-sfx").join(format!("scene_{id}.adpcm"));
-        let expected = field(field(field(&sfx, "scenes")?, &id.to_string())?, "chunk_sha256")?.as_str().unwrap_or("");
+        let payload = root
+            .join("data/scene-sfx")
+            .join(format!("scene_{id}.adpcm"));
+        let expected = field(
+            field(field(&sfx, "scenes")?, &id.to_string())?,
+            "chunk_sha256",
+        )?
+        .as_str()
+        .unwrap_or("");
         if sha256(&payload)? != expected {
-            return Err(format!("Scene sound bank changed after cooking: {}", payload.display()).into());
+            return Err(format!(
+                "Scene sound bank changed after cooking: {}",
+                payload.display()
+            )
+            .into());
         }
         scene_sfx_ids.push(sfx_base + i + 1);
-        copy(&payload, &chunks.join(format!("chunk_{}.scenesfx", scene_sfx_ids[i])))?;
+        copy(
+            &payload,
+            &chunks.join(format!("chunk_{}.scenesfx", scene_sfx_ids[i])),
+        )?;
     }
     // The title art, numbered last so no older chunk id moved, then the rooms'
     // code chunks in manifest scene order.
     let menu_id = scene_sfx_ids[scene_sfx_ids.len() - 1] + 1;
-    copy(&root.join("data/boot-art.hk"), &chunks.join(format!("chunk_{menu_id}.menu")))?;
+    copy(
+        &root.join("data/boot-art.hk"),
+        &chunks.join(format!("chunk_{menu_id}.menu")),
+    )?;
     let (mut code_ids, mut art_ids, mut data_ids) = (Vec::new(), Vec::new(), Vec::new());
     for (c, chunk) in list(modules, "chunks")?.iter().enumerate() {
         let id = menu_id + 1 + c;
@@ -210,9 +306,26 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
             Some("code") => code_ids.push((id, int(chunk, "scene_index")?)),
             _ => art_ids.push((id, int(chunk, "scene_index")?)),
         }
-        copy(&path_of(chunk, "path")?, &chunks.join(format!("chunk_{id}.hkmd")))?;
+        copy(
+            &path_of(chunk, "path")?,
+            &chunks.join(format!("chunk_{id}.hkmd")),
+        )?;
     }
-    Ok(Plan { rooms, clips: nc, atlases, bundles, world_banks, effect_base, bank_ids, music_ids, scene_sfx_ids, menu_id, code_ids, art_ids, data_ids })
+    Ok(Plan {
+        rooms,
+        clips: nc,
+        atlases,
+        bundles,
+        world_banks,
+        effect_base,
+        bank_ids,
+        music_ids,
+        scene_sfx_ids,
+        menu_id,
+        code_ids,
+        art_ids,
+        data_ids,
+    })
 }
 
 /// Build the disc image from the staged guest: the pack chunks, the order they
@@ -226,7 +339,13 @@ pub fn package(root: &Path, exe: &Path, work: &Path, library: &Path, songs: &Son
     std::fs::create_dir_all(&chunks)?;
     let plan = stage(root, &chunks, &modules)?;
     let order = work.join("world-pack-order.txt");
-    std::fs::write(&order, disc_order(&plan)?.iter().map(|i| format!("{i}\n")).collect::<String>())?;
+    std::fs::write(
+        &order,
+        disc_order(&plan)?
+            .iter()
+            .map(|i| format!("{i}\n"))
+            .collect::<String>(),
+    )?;
     std::fs::create_dir_all(library)?;
     let temp = library.join(format!(".hk-psx-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&temp);
@@ -271,11 +390,20 @@ mod tests {
 
     fn plan() -> Plan {
         Plan {
-            rooms: vec![json!({"chunk_id": 1, "scene_id": 5}), json!({"chunk_id": 2, "scene_id": 6})],
+            rooms: vec![
+                json!({"chunk_id": 1, "scene_id": 5}),
+                json!({"chunk_id": 2, "scene_id": 6}),
+            ],
             clips: 0,
             atlases: Vec::new(),
-            bundles: vec![json!({"scene_index": 0, "chunk_id": 10}), json!({"scene_index": 1, "chunk_id": 11})],
-            world_banks: vec![json!({"scene_id": 5, "chunk_id": 20}), json!({"scene_id": 6, "chunk_id": 21})],
+            bundles: vec![
+                json!({"scene_index": 0, "chunk_id": 10}),
+                json!({"scene_index": 1, "chunk_id": 11}),
+            ],
+            world_banks: vec![
+                json!({"scene_id": 5, "chunk_id": 20}),
+                json!({"scene_id": 6, "chunk_id": 21}),
+            ],
             effect_base: 30,
             bank_ids: vec![40, 41, 42, 43, 44],
             music_ids: Vec::new(),

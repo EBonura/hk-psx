@@ -169,7 +169,11 @@ pub struct Summon {
 }
 impl Summon {
     pub const fn new(seed: u32) -> Self {
-        Self { remaining: 0, timer: 0, rng: seed | 1 }
+        Self {
+            remaining: 0,
+            timer: 0,
+            rng: seed | 1,
+        }
     }
     pub fn remaining(self) -> u8 {
         self.remaining
@@ -246,7 +250,8 @@ pub enum Clip {
 /// Recover, Rage, Stun Roll, Stun Roll End, Stun Open, Stun Opened, Stun Hit,
 /// Stun Recover, Death Fall, Death Land, Death Spaz, Blank.
 pub const CLIP_TICKS: [u16; 25] = [
-    25, 10, 18, 20, 30, 25, 10, 25, 10, 10, 10, 30, 12, 25, 25, 25, 20, 20, 5, 15, 30, 15, 25, 15, 2,
+    25, 10, 18, 20, 30, 25, 10, 25, 10, 10, 10, 30, 12, 25, 25, 25, 20, 20, 5, 15, 30, 15, 25, 15,
+    2,
 ];
 impl Clip {
     /// Looping clips report their cycle; nothing waits on their completion.
@@ -407,7 +412,10 @@ pub enum Action {
     HeadExposed(bool),
     Kinematic(bool),
     /// `S Attack Recover`: a ground wave from the given local x, at 22 units/s.
-    Shockwave { x: i32, right: bool },
+    Shockwave {
+        x: i32,
+        right: bool,
+    },
     /// `SUMMON` with the Spawns the phase's RandomInt chose.
     SummonBarrels(u8),
     /// `CRACK` then `DESTROY` to the arena floor.
@@ -440,14 +448,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 8], count: 0 }
+        Self {
+            values: [None; 8],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
     pub fn contains(&self, action: Action) -> bool {
         self.iter().any(|a| a == action)
@@ -536,7 +549,10 @@ impl FalseKnight {
     }
     /// The armour is open, so the nail reaches the Head instead of the body.
     pub fn head_exposed(self) -> bool {
-        matches!(self.phase, Phase::Opened | Phase::StunHit | Phase::DeathOpened | Phase::DeathHit2)
+        matches!(
+            self.phase,
+            Phase::Opened | Phase::StunHit | Phase::DeathOpened | Phase::DeathHit2
+        )
     }
     /// The `Head` child is drawn: `Opened` and `Opened 2` move it into the
     /// armour and it stays until `Recover`, `Stun Fail` or `Blow` takes it away.
@@ -613,7 +629,11 @@ impl FalseKnight {
         out.push(Action::Invincible(true));
         out.push(Action::ContactDamage(0));
         out.push(Action::Gravity(GRAVITY_STUN));
-        let speed = if self.facing_right { -STUN_ROLL_SPEED } else { STUN_ROLL_SPEED };
+        let speed = if self.facing_right {
+            -STUN_ROLL_SPEED
+        } else {
+            STUN_ROLL_SPEED
+        };
         out.push(Action::Velocity([speed, STUN_JUMP_SPEED_Y]));
         self.play(Clip::StunRoll, &mut out);
         out.push(Action::Effect(Effect::StunStart));
@@ -743,10 +763,15 @@ impl FalseKnight {
     fn jump_attack(&mut self, senses: Senses, out: &mut Actions) {
         self.jump_count = 0;
         let hero_right = senses.hero_x > senses.self_x;
-        let (offset, recoil) = if hero_right { (-JA_OFFSET, -JA_RECOIL_SPEED) } else { (JA_OFFSET, JA_RECOIL_SPEED) };
+        let (offset, recoil) = if hero_right {
+            (-JA_OFFSET, -JA_RECOIL_SPEED)
+        } else {
+            (JA_OFFSET, JA_RECOIL_SPEED)
+        };
         self.recoil_speed = recoil;
         let gap = senses.hero_x + offset - senses.self_x;
-        self.jump_x = (((gap as i64 * JA_ANTIC_FACTOR as i64) >> 16) as i32).clamp(-TOWARDS_CLAMP, TOWARDS_CLAMP);
+        self.jump_x = (((gap as i64 * JA_ANTIC_FACTOR as i64) >> 16) as i32)
+            .clamp(-TOWARDS_CLAMP, TOWARDS_CLAMP);
         self.phase = Phase::JumpAttackAntic;
         self.timer = JUMP_ANTIC_TICKS;
         out.push(Action::VelocityX(0));
@@ -783,7 +808,8 @@ impl FalseKnight {
             }
             return true;
         }
-        self.jump_x = (((gap as i64 * TOWARDS_FACTOR as i64) >> 16) as i32).clamp(-TOWARDS_CLAMP, TOWARDS_CLAMP);
+        self.jump_x = (((gap as i64 * TOWARDS_FACTOR as i64) >> 16) as i32)
+            .clamp(-TOWARDS_CLAMP, TOWARDS_CLAMP);
         self.phase = Phase::SlamAntic;
         self.timer = JUMP_ANTIC_TICKS;
         self.play(Clip::JumpAntic, out);
@@ -840,7 +866,11 @@ impl FalseKnight {
                     // `First Idle` jumps straight into `Random`, skipping the
                     // wall rays and the jump budget `Determine Jump` applies.
                     let sampled = self.range(-RANDOM_JUMP_MAX, RANDOM_JUMP_MAX);
-                    self.jump_x = if sampled > 0 { sampled.max(RANDOM_JUMP_MIN) } else { sampled.min(-RANDOM_JUMP_MIN) };
+                    self.jump_x = if sampled > 0 {
+                        sampled.max(RANDOM_JUMP_MIN)
+                    } else {
+                        sampled.min(-RANDOM_JUMP_MIN)
+                    };
                     self.phase = Phase::JumpAntic;
                     self.timer = JUMP_ANTIC_TICKS;
                     self.play(Clip::JumpAntic, &mut out);
@@ -880,10 +910,34 @@ impl FalseKnight {
                     // that sends nothing, so the effect rides the same table
                     // rather than the shared tail below.
                     let (gravity, speed, clip, next, effect) = match self.phase {
-                        Phase::JumpAntic => (GRAVITY_JUMP, JUMP_SPEED_Y, Clip::Jump, Phase::Airborne, Some(Effect::JumpShake)),
-                        Phase::SlamAntic => (GRAVITY_JUMP, SLAM_JUMP_SPEED_Y, Clip::Jump, Phase::SlamAir, Some(Effect::JumpShake)),
-                        Phase::RageJumpAntic => (GRAVITY_RAGE_JUMP, SLAM_JUMP_SPEED_Y, Clip::Jump, Phase::RageAir, Some(Effect::RageJump)),
-                        _ => (GRAVITY_DEATH_JUMP, JUMP_SPEED_Y, Clip::JumpAttackUp, Phase::DeathAir, Some(Effect::Jump)),
+                        Phase::JumpAntic => (
+                            GRAVITY_JUMP,
+                            JUMP_SPEED_Y,
+                            Clip::Jump,
+                            Phase::Airborne,
+                            Some(Effect::JumpShake),
+                        ),
+                        Phase::SlamAntic => (
+                            GRAVITY_JUMP,
+                            SLAM_JUMP_SPEED_Y,
+                            Clip::Jump,
+                            Phase::SlamAir,
+                            Some(Effect::JumpShake),
+                        ),
+                        Phase::RageJumpAntic => (
+                            GRAVITY_RAGE_JUMP,
+                            SLAM_JUMP_SPEED_Y,
+                            Clip::Jump,
+                            Phase::RageAir,
+                            Some(Effect::RageJump),
+                        ),
+                        _ => (
+                            GRAVITY_DEATH_JUMP,
+                            JUMP_SPEED_Y,
+                            Clip::JumpAttackUp,
+                            Phase::DeathAir,
+                            Some(Effect::Jump),
+                        ),
                     };
                     self.phase = next;
                     out.push(Action::Gravity(gravity));
@@ -908,8 +962,15 @@ impl FalseKnight {
             Phase::Airborne | Phase::SlamAir | Phase::RageAir => {
                 // `Rise`/`Fall`: shape the vertical speed, then land.
                 let rising = senses.velocity_y > 0;
-                let factor = if rising { RISE_MULTIPLIER } else { FALL_MULTIPLIER };
-                out.push(Action::Velocity([senses.velocity_x, ((senses.velocity_y as i64 * factor as i64) >> 16) as i32]));
+                let factor = if rising {
+                    RISE_MULTIPLIER
+                } else {
+                    FALL_MULTIPLIER
+                };
+                out.push(Action::Velocity([
+                    senses.velocity_x,
+                    ((senses.velocity_y as i64 * factor as i64) >> 16) as i32,
+                ]));
                 if !rising && senses.grounded {
                     out.push(Action::VelocityX(0));
                     self.timer = LAND_TICKS;
@@ -930,14 +991,25 @@ impl FalseKnight {
             }
             Phase::JumpAttackAir | Phase::DeathAir => {
                 let rising = senses.velocity_y > 0;
-                let factor = if rising { RISE_MULTIPLIER } else { FALL_MULTIPLIER };
-                out.push(Action::Velocity([senses.velocity_x, ((senses.velocity_y as i64 * factor as i64) >> 16) as i32]));
+                let factor = if rising {
+                    RISE_MULTIPLIER
+                } else {
+                    FALL_MULTIPLIER
+                };
+                out.push(Action::Velocity([
+                    senses.velocity_x,
+                    ((senses.velocity_y as i64 * factor as i64) >> 16) as i32,
+                ]));
                 // `JA Fall` commits as soon as terrain is within 9.5 units.
                 if !rising && senses.ground_below {
                     out.push(Action::Hitter(true));
                     out.push(Action::Play(Clip::Blank));
                     out.push(Action::PlayHitter(Clip::JumpAttackHit1));
-                    self.phase = if self.phase == Phase::JumpAttackAir { Phase::JumpAttackHit } else { Phase::DeathHit };
+                    self.phase = if self.phase == Phase::JumpAttackAir {
+                        Phase::JumpAttackHit
+                    } else {
+                        Phase::DeathHit
+                    };
                 }
             }
             Phase::JumpAttackHit => {
@@ -1021,11 +1093,18 @@ impl FalseKnight {
                 if self.timer == 0 {
                     // `S Attack Recover`: the wave, the barrels and the recovery.
                     let count = self.barrels(SLAM_BARRELS);
-                    let origin = if self.shockwave_right { SHOCKWAVE_X_ORIGIN } else { -SHOCKWAVE_X_ORIGIN };
+                    let origin = if self.shockwave_right {
+                        SHOCKWAVE_X_ORIGIN
+                    } else {
+                        -SHOCKWAVE_X_ORIGIN
+                    };
                     self.phase = Phase::SlamRecover;
                     self.timer = SLAM_RECOVER_TICKS;
                     out.push(Action::SummonBarrels(count));
-                    out.push(Action::Shockwave { x: origin, right: self.shockwave_right });
+                    out.push(Action::Shockwave {
+                        x: origin,
+                        right: self.shockwave_right,
+                    });
                     out.push(Action::Hitter(false));
                     self.play(Clip::AttackRecover, &mut out);
                     // `Slam`, which this transition passes through on its way to
@@ -1043,14 +1122,22 @@ impl FalseKnight {
                 self.timer -= 1;
                 if self.timer == 0 {
                     self.phase = Phase::Run;
-                    let speed = if self.facing_right { RUN_SPEED } else { -RUN_SPEED };
+                    let speed = if self.facing_right {
+                        RUN_SPEED
+                    } else {
+                        -RUN_SPEED
+                    };
                     out.push(Action::VelocityX(speed));
                     self.play(Clip::Run, &mut out);
                     out.push(Action::Effect(Effect::RunStart));
                 }
             }
             Phase::Run => {
-                let speed = if self.facing_right { RUN_SPEED } else { -RUN_SPEED };
+                let speed = if self.facing_right {
+                    RUN_SPEED
+                } else {
+                    -RUN_SPEED
+                };
                 out.push(Action::VelocityX(speed));
                 if senses.distance < RUN_STOP_DISTANCE {
                     self.jump_attack(senses, &mut out);
@@ -1080,7 +1167,11 @@ impl FalseKnight {
                 self.timer -= 1;
                 if self.timer == 0 {
                     self.phase = Phase::StunPause;
-                    self.timer = if self.first_plop { PLOP_SHORT_TICKS } else { PLOP_LONG_TICKS };
+                    self.timer = if self.first_plop {
+                        PLOP_SHORT_TICKS
+                    } else {
+                        PLOP_LONG_TICKS
+                    };
                     if !self.first_plop {
                         self.first_plop = true;
                         out.push(Action::SetFirstPlop);

@@ -143,7 +143,9 @@ pub fn discounted(cost: u16) -> u16 {
 /// `PlayerData.charmsOwned`, which is the size of the `gotCharm_N` set rather
 /// than a stored number. `charms::State` derives it the same way.
 pub fn charms_owned(charms: &charms::State) -> u32 {
-    (1..=charms::CHARM_COUNT).filter(|&n| charms.owns(n)).count() as u32
+    (1..=charms::CHARM_COUNT)
+        .filter(|&n| charms.owns(n))
+        .count() as u32
 }
 
 /// The shop half of PlayerData: the `FLAG_COUNT` bools the cook indexed and the
@@ -169,8 +171,15 @@ pub struct State {
 }
 impl State {
     pub const fn new() -> Self {
-        Self { slots: 0, mask_shards: 0, vessel_fragments: 0, masks: STARTING_MASKS,
-               vessels: 0, simple_keys: 0, rancid_eggs: 0 }
+        Self {
+            slots: 0,
+            mask_shards: 0,
+            vessel_fragments: 0,
+            masks: STARTING_MASKS,
+            vessels: 0,
+            simple_keys: 0,
+            rancid_eggs: 0,
+        }
     }
     /// `PlayerData.MPReserveMax`: the SOUL the fused vessels hold above the
     /// Knight's own `maxMP`.
@@ -215,7 +224,9 @@ impl State {
     /// The rows of the current list that are on the shelf, in source order.
     pub fn shelf(&self, charms: &charms::State) -> impl Iterator<Item = usize> + '_ {
         let owned = *charms;
-        self.stock(charms).iter().map(|&i| i as usize)
+        self.stock(charms)
+            .iter()
+            .map(|&i| i as usize)
             .filter(move |&i| self.listed(i, &owned))
     }
     /// `ShopItemStats::OnEnable`: `runningCost` is the sheet price, discounted
@@ -271,8 +282,12 @@ impl State {
     }
     /// `Confirm Control` in its own order: set the item bool, take the Geo,
     /// then run the special-type branch. A refusal moves nothing at all.
-    pub fn buy(&mut self, index: usize, geo: &mut u32, charms: &mut charms::State)
-        -> Result<Receipt, Refusal> {
+    pub fn buy(
+        &mut self,
+        index: usize,
+        geo: &mut u32,
+        charms: &mut charms::State,
+    ) -> Result<Receipt, Refusal> {
         let paid = self.can_buy(index, *geo, charms)?;
         let item = Self::item(index);
         self.set_bool(item.sets, charms);
@@ -312,26 +327,46 @@ impl State {
     /// true of it and a zero `maxHealthBase` would not be. Keeping the offset
     /// here is what lets that tool stay ignorant of the fields it moves.
     pub fn record(&self) -> (u32, [u8; 6]) {
-        (self.slots, [self.mask_shards, self.vessel_fragments,
-                      self.masks.saturating_sub(STARTING_MASKS), self.vessels,
-                      self.simple_keys, self.rancid_eggs])
+        (
+            self.slots,
+            [
+                self.mask_shards,
+                self.vessel_fragments,
+                self.masks.saturating_sub(STARTING_MASKS),
+                self.vessels,
+                self.simple_keys,
+                self.rancid_eggs,
+            ],
+        )
     }
     /// Refuse a record that contradicts itself rather than half-decoding it.
     pub fn restore(slots: u32, counters: [u8; 6]) -> Option<Self> {
-        let [mask_shards, vessel_fragments, extra_masks, vessels, simple_keys, rancid_eggs]
-            = counters;
-        let named = if FLAG_COUNT >= 32 { u32::MAX } else { (1u32 << FLAG_COUNT) - 1 };
+        let [mask_shards, vessel_fragments, extra_masks, vessels, simple_keys, rancid_eggs] =
+            counters;
+        let named = if FLAG_COUNT >= 32 {
+            u32::MAX
+        } else {
+            (1u32 << FLAG_COUNT) - 1
+        };
         let masks = STARTING_MASKS.checked_add(extra_masks)?;
         // A shard count that reached the fuse would already have fused, so a
         // record holding one is a record that never ran the delivery branch.
         if slots & !named != 0
             || mask_shards >= SHARDS_PER_MASK
             || vessel_fragments >= FRAGMENTS_PER_VESSEL
-            || masks > MASK_CAP {
+            || masks > MASK_CAP
+        {
             return None;
         }
-        Some(Self { slots, mask_shards, vessel_fragments, masks, vessels,
-                    simple_keys, rancid_eggs })
+        Some(Self {
+            slots,
+            mask_shards,
+            vessel_fragments,
+            masks,
+            vessels,
+            simple_keys,
+            rancid_eggs,
+        })
     }
 }
 
@@ -357,10 +392,14 @@ pub fn boot(saved: Option<(u32, [u8; 6])>) -> bool {
 /// invisible to a replay: `HK_SHOP_PURCHASES` says a row was bought and
 /// nothing says what the fuse branch did with it, and the two counters are
 /// what a run that stops partway through a set has to show instead.
-#[no_mangle] pub static mut HK_SHOP_MASKS: u32 = 0;
-#[no_mangle] pub static mut HK_SHOP_SHARDS: u32 = 0;
-#[no_mangle] pub static mut HK_SHOP_SOUL_RESERVE: u32 = 0;
-#[no_mangle] pub static mut HK_SHOP_FRAGMENTS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_MASKS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_SHARDS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_SOUL_RESERVE: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_FRAGMENTS: u32 = 0;
 /// Takes the state it mirrors rather than reaching for the static: `Screen`
 /// is handed the `State` to move, and a publisher that read the global instead
 /// would be reporting a different board from the one the purchase landed in.
@@ -413,8 +452,10 @@ fn player_data(s: &State, mut base: VitalParams) -> VitalParams {
 /// `Trigger2dEvent` its `Out Of Range`/`In Range` pair answers.
 pub fn in_region(scene: usize, body: [i32; 4]) -> bool {
     scene == SHOP_SCENE
-        && SHOP_REGION[0] <= body[2] && SHOP_REGION[2] >= body[0]
-        && SHOP_REGION[1] <= body[3] && SHOP_REGION[3] >= body[1]
+        && SHOP_REGION[0] <= body[2]
+        && SHOP_REGION[2] >= body[0]
+        && SHOP_REGION[1] <= body[3]
+        && SHOP_REGION[3] >= body[1]
 }
 
 /// One tick of the counter against the live wallet, returning the Geo the
@@ -422,11 +463,23 @@ pub fn in_region(scene: usize, body: [i32; 4]) -> bool {
 /// moves the real wallet once, with `geo::World::take`, which is the port's
 /// `HeroController::TakeGeo`. Keeping the deduction outside is what stops the
 /// shelf and the wallet from both claiming to have charged for the same row.
-pub fn tick(screen: &mut Screen, scene: usize, body: [i32; 4], eligible: bool,
-            bits: u16, wallet: u32) -> u32 {
+pub fn tick(
+    screen: &mut Screen,
+    scene: usize,
+    body: [i32; 4],
+    eligible: bool,
+    bits: u16,
+    wallet: u32,
+) -> u32 {
     let mut balance = wallet;
-    let event = screen.step(in_region(scene, body), eligible, bits, &mut balance,
-                            state(), crate::charms::state());
+    let event = screen.step(
+        in_region(scene, body),
+        eligible,
+        bits,
+        &mut balance,
+        state(),
+        crate::charms::state(),
+    );
     event.bought.map_or(0, |receipt| u32::from(receipt.paid))
 }
 
@@ -452,15 +505,21 @@ pub struct Event {
 /// replay can prove: it has no position of its own to assert, because the Knight
 /// stands still while the shelf is up, and a purchase moves only the wallet,
 /// which a Geo rock also moves.
-#[no_mangle] pub static mut HK_SHOP_OPENED: u32 = 0;
-#[no_mangle] pub static mut HK_SHOP_CLOSED: u32 = 0;
-#[no_mangle] pub static mut HK_SHOP_PURCHASES: u32 = 0;
-#[no_mangle] pub static mut HK_SHOP_GEO_SPENT: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_OPENED: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_CLOSED: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_PURCHASES: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_GEO_SPENT: u32 = 0;
 /// The shelf is up right now, which is what says a close actually closed.
-#[no_mangle] pub static mut HK_SHOP_OPEN: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_OPEN: u32 = 0;
 /// The prompt is showing, so the trigger was reached even on a run that never
 /// presses UP.
-#[no_mangle] pub static mut HK_SHOP_PROMPT: u32 = 0;
+#[no_mangle]
+pub static mut HK_SHOP_PROMPT: u32 = 0;
 
 pub struct Screen {
     pub open: bool,
@@ -483,8 +542,15 @@ const NAIL: u16 = 0x8000;
 const ACTIONS: u16 = UP | DOWN | CONFIRM | BACK | NAIL;
 impl Screen {
     pub const fn new() -> Self {
-        Self { open: false, row: 0, message: None, last: None, prompt: false,
-               previous: 0, release: false }
+        Self {
+            open: false,
+            row: 0,
+            message: None,
+            last: None,
+            prompt: false,
+            previous: 0,
+            release: false,
+        }
     }
     /// True while the shelf, or the press that closed it, owns the pad.
     pub fn consumes_actions(&self) -> bool {
@@ -505,8 +571,15 @@ impl Screen {
     /// Mirrors the live flags a replay reads, then runs the step. `step_inner`
     /// has several exits and catching each one separately is how one of them
     /// ends up not mirroring.
-    pub fn step(&mut self, in_region: bool, eligible: bool, bits: u16, geo: &mut u32,
-                state: &mut State, charms: &mut charms::State) -> Event {
+    pub fn step(
+        &mut self,
+        in_region: bool,
+        eligible: bool,
+        bits: u16,
+        geo: &mut u32,
+        state: &mut State,
+        charms: &mut charms::State,
+    ) -> Event {
         let event = self.step_inner(in_region, eligible, bits, geo, state, charms);
         unsafe {
             HK_SHOP_OPEN = u32::from(self.open);
@@ -520,8 +593,15 @@ impl Screen {
         }
         event
     }
-    fn step_inner(&mut self, in_region: bool, eligible: bool, bits: u16, geo: &mut u32,
-                state: &mut State, charms: &mut charms::State) -> Event {
+    fn step_inner(
+        &mut self,
+        in_region: bool,
+        eligible: bool,
+        bits: u16,
+        geo: &mut u32,
+        state: &mut State,
+        charms: &mut charms::State,
+    ) -> Event {
         let pressed = bits & !self.previous;
         self.previous = bits;
         if bits & ACTIONS == 0 {
@@ -534,7 +614,9 @@ impl Screen {
             if self.prompt && pressed & UP != 0 {
                 self.open = true;
                 self.row = 0;
-                unsafe { HK_SHOP_OPENED += 1; }
+                unsafe {
+                    HK_SHOP_OPENED += 1;
+                }
                 self.message = None;
                 self.last = None;
                 self.prompt = false;
@@ -552,7 +634,9 @@ impl Screen {
         if rows == 0 || !in_region || pressed & BACK != 0 {
             self.cancel();
             event.closed = true;
-            unsafe { HK_SHOP_CLOSED += 1; }
+            unsafe {
+                HK_SHOP_CLOSED += 1;
+            }
             return event;
         }
         // A purchase shortens the shelf under the cursor, and so does arriving
@@ -566,14 +650,19 @@ impl Screen {
             self.message = None;
         }
         if pressed & CONFIRM != 0 {
-            let index = state.shelf(charms).nth(self.row).expect("cursor is inside the shelf");
+            let index = state
+                .shelf(charms)
+                .nth(self.row)
+                .expect("cursor is inside the shelf");
             match state.buy(index, geo, charms) {
                 Ok(receipt) => {
                     self.last = Some(receipt);
                     self.message = None;
                     event.bought = Some(receipt);
-                    unsafe { HK_SHOP_PURCHASES += 1;
-                        HK_SHOP_GEO_SPENT += u32::from(receipt.paid); }
+                    unsafe {
+                        HK_SHOP_PURCHASES += 1;
+                        HK_SHOP_GEO_SPENT += u32::from(receipt.paid);
+                    }
                     // The bought row left the shelf, so keeping the cursor
                     // where it was would move it onto whatever slid up.
                     self.row = self.row.saturating_sub(1);
@@ -629,7 +718,11 @@ const fn widest_description() -> usize {
 }
 const fn widest_footer() -> usize {
     // Every refusal replaces the footer, so the budget holds the widest of them.
-    let all = [Refusal::NotListed, Refusal::TooPoor, Refusal::NotEnoughCharms];
+    let all = [
+        Refusal::NotListed,
+        Refusal::TooPoor,
+        Refusal::NotEnoughCharms,
+    ];
     let (mut i, mut most) = (0, glyphs(FOOTER));
     while i < all.len() {
         let width = glyphs(all[i].message());
@@ -645,7 +738,8 @@ const fn widest_footer() -> usize {
 /// price, plus the heading and the footer.
 const PANEL_GLYPHS: usize = widest_description()
     + VISIBLE * (widest_name() + 1 + 5)
-    + glyphs(SHOP_PROMPT) + widest_footer();
+    + glyphs(SHOP_PROMPT)
+    + widest_footer();
 /// `dialogue::prepare` has already drawn the HUD wallet by the time the panel
 /// composes, and `dialogue::text` panics rather than truncating, so the two
 /// together have to fit. A longer cooked description would fail here instead of
@@ -668,7 +762,7 @@ mod presentation {
     // size pushes a branch out of range. The assembler reports only "out of
     // range PC16 fixup" when that happens, naming nothing.
     #[inline(never)]
-pub fn prepare(screen: &Screen, camera: (i32, i32), paused: bool) {
+    pub fn prepare(screen: &Screen, camera: (i32, i32), paused: bool) {
         if paused {
             return;
         }
@@ -720,9 +814,12 @@ mod tests {
     /// The cooked row that sets a named PlayerData bool, so a test names an
     /// item the way the source does rather than by a position that could move.
     fn find(field: &str) -> usize {
-        let slot = FLAG_NAMES.iter().position(|&n| n == field)
+        let slot = FLAG_NAMES
+            .iter()
+            .position(|&n| n == field)
             .unwrap_or_else(|| panic!("{field} is not a cooked shop bool"));
-        (0..ITEM_COUNT).find(|&i| ITEMS[i].sets == Flag::Slot(slot))
+        (0..ITEM_COUNT)
+            .find(|&i| ITEMS[i].sets == Flag::Slot(slot))
             .unwrap_or_else(|| panic!("no shop row sets {field}"))
     }
     fn rich() -> (u32, State, Charms) {
@@ -735,10 +832,15 @@ mod tests {
         // Sly opens on the base list, and the second mask shard is behind the
         // first, so it is not on the shelf until the first is bought.
         assert_eq!(state.stock(&charms), BASE_STOCK);
-        assert!(!state.listed(find("slyShellFrag2"), &charms), "a required bool must gate its row");
+        assert!(
+            !state.listed(find("slyShellFrag2"), &charms),
+            "a required bool must gate its row"
+        );
         assert!(state.listed(find("slyShellFrag1"), &charms));
         assert_eq!(state.shelf(&charms).count(), BASE_STOCK.len() - 1);
-        assert!(state.shelf(&charms).all(|i| BASE_STOCK.contains(&(i as u8))));
+        assert!(state
+            .shelf(&charms)
+            .all(|i| BASE_STOCK.contains(&(i as u8))));
     }
 
     #[test]
@@ -749,7 +851,11 @@ mod tests {
         for &flag in ALTERNATE_WHEN {
             let mut with = state;
             with.set_bool(flag, &mut owned);
-            assert_eq!(with.stock(&charms), ALTERNATE_STOCK, "{flag:?} did not swap the list");
+            assert_eq!(
+                with.stock(&charms),
+                ALTERNATE_STOCK,
+                "{flag:?} did not swap the list"
+            );
         }
         assert!(ALTERNATE_STOCK.len() > BASE_STOCK.len());
         // Everything the base list sold is still sold; the key only adds rows.
@@ -762,12 +868,24 @@ mod tests {
     fn a_purchase_pays_the_sheet_price_and_leaves_the_shelf() {
         let (mut geo, mut state, mut charms) = rich();
         let lantern = find("hasLantern");
-        assert_eq!(State::item(lantern).cost, 1800, "the Lantern serializes 1500 and sells for 1800");
-        let receipt = state.buy(lantern, &mut geo, &mut charms).expect("affordable");
+        assert_eq!(
+            State::item(lantern).cost,
+            1800,
+            "the Lantern serializes 1500 and sells for 1800"
+        );
+        let receipt = state
+            .buy(lantern, &mut geo, &mut charms)
+            .expect("affordable");
         assert_eq!(receipt.paid, 1800);
         assert_eq!(geo, 100_000 - 1800);
-        assert!(!state.listed(lantern, &charms), "a bought item is never listed again");
-        assert_eq!(state.buy(lantern, &mut geo, &mut charms), Err(Refusal::NotListed));
+        assert!(
+            !state.listed(lantern, &charms),
+            "a bought item is never listed again"
+        );
+        assert_eq!(
+            state.buy(lantern, &mut geo, &mut charms),
+            Err(Refusal::NotListed)
+        );
         assert_eq!(geo, 100_000 - 1800, "a refused purchase moves no Geo");
     }
 
@@ -776,7 +894,10 @@ mod tests {
         let (_, mut state, mut charms) = rich();
         let lantern = find("hasLantern");
         let mut geo = 1799;
-        assert_eq!(state.buy(lantern, &mut geo, &mut charms), Err(Refusal::TooPoor));
+        assert_eq!(
+            state.buy(lantern, &mut geo, &mut charms),
+            Err(Refusal::TooPoor)
+        );
         assert_eq!(geo, 1799);
         assert!(state.listed(lantern, &charms));
         geo = 1800;
@@ -787,21 +908,33 @@ mod tests {
     #[test]
     fn a_charm_purchase_lands_in_the_charm_inventory() {
         let (mut geo, mut state, mut charms) = rich();
-        let row = (0..ITEM_COUNT).find(|&i| matches!(ITEMS[i].delivery, Delivery::Charm(_)))
+        let row = (0..ITEM_COUNT)
+            .find(|&i| matches!(ITEMS[i].delivery, Delivery::Charm(_)))
             .expect("Sly sells charms");
-        let Delivery::Charm(charm) = State::item(row).delivery else { unreachable!() };
+        let Delivery::Charm(charm) = State::item(row).delivery else {
+            unreachable!()
+        };
         assert!(!charms.owns(charm));
         let receipt = state.buy(row, &mut geo, &mut charms).expect("affordable");
         assert_eq!(receipt.delivered.charm, Some(charm));
-        assert!(charms.owns(charm), "the transaction's own bool is gotCharm_N");
-        assert_eq!(charms_owned(&charms), 1, "charmsOwned counts the set it just joined");
+        assert!(
+            charms.owns(charm),
+            "the transaction's own bool is gotCharm_N"
+        );
+        assert_eq!(
+            charms_owned(&charms),
+            1,
+            "charmsOwned counts the set it just joined"
+        );
         // And the row is gone, because its bool and the charm's are the same one.
         assert!(!state.listed(row, &charms));
     }
 
     /// Every row of a list with a given delivery, in source order.
     fn rows_delivering(list: &'static [u8], kind: Delivery) -> impl Iterator<Item = usize> {
-        list.iter().map(|&i| i as usize).filter(move |&i| State::item(i).delivery == kind)
+        list.iter()
+            .map(|&i| i as usize)
+            .filter(move |&i| State::item(i).delivery == kind)
     }
 
     #[test]
@@ -809,12 +942,23 @@ mod tests {
         let (mut geo, mut state, mut charms) = rich();
         state.set_bool(ALTERNATE_WHEN[0], &mut charms);
         let shards = rows_delivering(ALTERNATE_STOCK, Delivery::MaskShard).count() as u8;
-        assert_eq!(shards, SHARDS_PER_MASK, "Sly sells a whole mask across four rows");
+        assert_eq!(
+            shards, SHARDS_PER_MASK,
+            "Sly sells a whole mask across four rows"
+        );
         let mut masks = 0;
         for (bought, row) in rows_delivering(ALTERNATE_STOCK, Delivery::MaskShard).enumerate() {
-            masks += state.buy(row, &mut geo, &mut charms).expect("affordable").delivered.masks;
+            masks += state
+                .buy(row, &mut geo, &mut charms)
+                .expect("affordable")
+                .delivered
+                .masks;
             let last = bought as u8 + 1 == SHARDS_PER_MASK;
-            assert_eq!(masks, u8::from(last), "a mask arrives only on the fourth shard");
+            assert_eq!(
+                masks,
+                u8::from(last),
+                "a mask arrives only on the fourth shard"
+            );
             assert_eq!(state.mask_shards, if last { 0 } else { bought as u8 + 1 });
         }
         assert_eq!(state.masks, STARTING_MASKS + 1);
@@ -823,7 +967,11 @@ mod tests {
         assert_eq!(fragments, FRAGMENTS_PER_VESSEL - 1);
         let mut soul = 0;
         for row in rows_delivering(ALTERNATE_STOCK, Delivery::VesselFragment) {
-            soul += state.buy(row, &mut geo, &mut charms).expect("affordable").delivered.soul_reserve;
+            soul += state
+                .buy(row, &mut geo, &mut charms)
+                .expect("affordable")
+                .delivered
+                .soul_reserve;
         }
         assert_eq!(soul, 0);
         assert_eq!(state.vessel_fragments, FRAGMENTS_PER_VESSEL - 1);
@@ -847,8 +995,13 @@ mod tests {
     }
 
     /// One frame at the counter, with the pad word held rather than pressed.
-    fn tick(screen: &mut Screen, bits: u16, geo: &mut u32, state: &mut State,
-            charms: &mut Charms) -> Event {
+    fn tick(
+        screen: &mut Screen,
+        bits: u16,
+        geo: &mut u32,
+        state: &mut State,
+        charms: &mut Charms,
+    ) -> Event {
         screen.step(true, true, bits, geo, state, charms)
     }
     /// Standing in the trigger and pressing UP, which is the whole way in.
@@ -862,7 +1015,11 @@ mod tests {
         let (mut geo, mut state, mut charms) = rich();
         let mut screen = Screen::new();
         // Out of the trigger there is no prompt, and UP there opens nothing.
-        assert!(!screen.step(false, true, UP, &mut geo, &mut state, &mut charms).opened);
+        assert!(
+            !screen
+                .step(false, true, UP, &mut geo, &mut state, &mut charms)
+                .opened
+        );
         assert!(!screen.prompt && !screen.open);
         // Inside it but not free to act: `can_inspect` is what the NPC prompt
         // answers too, so a Knight mid-attack or mid-fall gets no prompt.
@@ -887,7 +1044,10 @@ mod tests {
         // his feet there and his body reaches up past the strip.
         assert!(in_region(SHOP_SCENE, at(middle, 5 * 65536 + 91136)));
         assert!(!in_region(SHOP_SCENE + 1, at(middle, 5 * 65536 + 91136)));
-        assert!(!in_region(SHOP_SCENE, at(SHOP_REGION[0] - 65536, 5 * 65536 + 91136)));
+        assert!(!in_region(
+            SHOP_SCENE,
+            at(SHOP_REGION[0] - 65536, 5 * 65536 + 91136)
+        ));
         // And a Knight four world units above the floor is over it, not in it.
         assert!(!in_region(SHOP_SCENE, at(middle, 9 * 65536 + 91136)));
     }
@@ -911,7 +1071,11 @@ mod tests {
         let refused = tick(&mut screen, CONFIRM, &mut geo, &mut state, &mut charms);
         assert_eq!(screen.message, Some(Refusal::TooPoor));
         assert!(refused.bought.is_none() && screen.last.is_none());
-        assert_eq!(state.shelf(&charms).count(), rows, "a refusal sells nothing");
+        assert_eq!(
+            state.shelf(&charms).count(),
+            rows,
+            "a refusal sells nothing"
+        );
         geo = 100_000;
         let bought = state.shelf(&charms).next().expect("a first row");
         tick(&mut screen, 0, &mut geo, &mut state, &mut charms);
@@ -926,7 +1090,10 @@ mod tests {
         assert!(state.listed(find("slyShellFrag2"), &charms));
         assert_eq!(state.shelf(&charms).count(), rows);
         // A row with nothing behind it does shorten the shelf.
-        let egg = state.shelf(&charms).position(|i| i == find("slyRancidEgg")).expect("on sale");
+        let egg = state
+            .shelf(&charms)
+            .position(|i| i == find("slyRancidEgg"))
+            .expect("on sale");
         screen.row = egg;
         tick(&mut screen, 0, &mut geo, &mut state, &mut charms);
         tick(&mut screen, CONFIRM, &mut geo, &mut state, &mut charms);
@@ -976,8 +1143,11 @@ mod tests {
     fn the_panel_fits_the_shared_glyph_budget_with_room_left() {
         // The const assertion above is what fails a build; this reports the
         // headroom, because a cooked description is what would eat it.
-        assert!(PANEL_GLYPHS + HUD_GLYPHS <= crate::dialogue::CAP,
-                "{PANEL_GLYPHS} glyphs against {}", crate::dialogue::CAP);
+        assert!(
+            PANEL_GLYPHS + HUD_GLYPHS <= crate::dialogue::CAP,
+            "{PANEL_GLYPHS} glyphs against {}",
+            crate::dialogue::CAP
+        );
         assert_eq!(widest_name(), glyphs("Vessel Fragment"));
         assert!(VISIBLE <= BASE_STOCK.len());
     }
@@ -985,18 +1155,31 @@ mod tests {
     #[test]
     fn a_record_that_contradicts_itself_is_refused() {
         let (mut geo, mut state, mut charms) = rich();
-        state.buy(find("slyRancidEgg"), &mut geo, &mut charms).expect("affordable");
-        state.buy(find("slyShellFrag1"), &mut geo, &mut charms).expect("affordable");
+        state
+            .buy(find("slyRancidEgg"), &mut geo, &mut charms)
+            .expect("affordable");
+        state
+            .buy(find("slyShellFrag1"), &mut geo, &mut charms)
+            .expect("affordable");
         let (slots, counters) = state.record();
         let back = State::restore(slots, counters).expect("round trip");
         assert_eq!(back, state);
         assert_eq!(back.rancid_eggs, 1);
         // A shard count that should already have fused, and a bool with no name.
-        assert_eq!(State::restore(slots, [SHARDS_PER_MASK, 0, 0, 0, 0, 0]), None);
+        assert_eq!(
+            State::restore(slots, [SHARDS_PER_MASK, 0, 0, 0, 0, 0]),
+            None
+        );
         assert_eq!(State::restore(1 << FLAG_COUNT, counters), None);
-        assert_eq!(State::restore(slots, [0, 0, MASK_CAP - STARTING_MASKS + 1, 0, 0, 0]), None);
-        assert_eq!(State::restore(slots, [0, 0, u8::MAX, 0, 0, 0]), None,
-                   "an extra-mask count that overflows the starting total is not a mask total");
+        assert_eq!(
+            State::restore(slots, [0, 0, MASK_CAP - STARTING_MASKS + 1, 0, 0, 0]),
+            None
+        );
+        assert_eq!(
+            State::restore(slots, [0, 0, u8::MAX, 0, 0, 0]),
+            None,
+            "an extra-mask count that overflows the starting total is not a mask total"
+        );
     }
 
     #[test]
@@ -1008,31 +1191,51 @@ mod tests {
         let fresh = State::restore(0, [0; 6]).expect("a migrated record must load");
         assert_eq!(fresh, State::new());
         assert_eq!(fresh.masks, STARTING_MASKS);
-        assert_eq!(fresh.record(), (0, [0; 6]), "and it has to write back unchanged");
+        assert_eq!(
+            fresh.record(),
+            (0, [0; 6]),
+            "and it has to write back unchanged"
+        );
     }
 
     const BASE: hk_sim::VitalParams = hk_sim::VitalParams {
-        max_health: STARTING_MASKS as u16, max_soul: 99, nail_damage: 5, soul_per_hit: 11,
-        invulnerable_ticks: 79, hazard_invulnerable_ticks: 40, recoil_ticks: 12,
-        freeze_ticks: 19, death_ticks: 171, recoil_speed: 983040,
+        max_health: STARTING_MASKS as u16,
+        max_soul: 99,
+        nail_damage: 5,
+        soul_per_hit: 11,
+        invulnerable_ticks: 79,
+        hazard_invulnerable_ticks: 40,
+        recoil_ticks: 12,
+        freeze_ticks: 19,
+        death_ticks: 171,
+        recoil_speed: 983040,
     };
 
     #[test]
     fn a_fused_mask_reaches_the_parameters_the_hero_is_built_from() {
         let (mut geo, mut state, mut charms) = rich();
-        assert_eq!(player_data(&state, BASE).max_health, u16::from(STARTING_MASKS),
-                   "an untouched board is the cooked maxHealthBase");
+        assert_eq!(
+            player_data(&state, BASE).max_health,
+            u16::from(STARTING_MASKS),
+            "an untouched board is the cooked maxHealthBase"
+        );
         state.set_bool(ALTERNATE_WHEN[0], &mut charms);
         for row in rows_delivering(ALTERNATE_STOCK, Delivery::MaskShard) {
             state.buy(row, &mut geo, &mut charms).expect("affordable");
         }
         assert_eq!(state.masks, STARTING_MASKS + 1);
-        assert_eq!(player_data(&state, BASE).max_health, u16::from(STARTING_MASKS) + 1,
-                   "four shards are a mask the hero actually carries");
+        assert_eq!(
+            player_data(&state, BASE).max_health,
+            u16::from(STARTING_MASKS) + 1,
+            "four shards are a mask the hero actually carries"
+        );
         // And the shards alone are not: three of four move nothing.
         let mut partial = State::new();
         partial.mask_shards = SHARDS_PER_MASK - 1;
-        assert_eq!(player_data(&partial, BASE).max_health, u16::from(STARTING_MASKS));
+        assert_eq!(
+            player_data(&partial, BASE).max_health,
+            u16::from(STARTING_MASKS)
+        );
     }
 
     #[test]
@@ -1047,19 +1250,29 @@ mod tests {
         state.vessels = 1;
         state.vessel_fragments = 0;
         assert_eq!(state.soul_reserve(), SOUL_PER_VESSEL);
-        assert_eq!(player_data(&state, BASE).max_soul, BASE.max_soul + SOUL_PER_VESSEL);
+        assert_eq!(
+            player_data(&state, BASE).max_soul,
+            BASE.max_soul + SOUL_PER_VESSEL
+        );
         // The reserve is whole vessels, which is why it is counted rather than
         // accumulated: a record can hold no partial one.
         let (slots, counters) = state.record();
-        assert_eq!(State::restore(slots, counters).expect("round trip").soul_reserve(),
-                   SOUL_PER_VESSEL);
+        assert_eq!(
+            State::restore(slots, counters)
+                .expect("round trip")
+                .soul_reserve(),
+            SOUL_PER_VESSEL
+        );
     }
 
     #[test]
     fn the_whole_shelf_is_a_bigger_geo_sink_than_the_admitted_slice() {
         // 1,177 Geo per clear of the admitted scenes against 230 of sinks is the
         // measured economy those scenes ship with. Sly alone is the other half.
-        let total: u32 = ALTERNATE_STOCK.iter().map(|&i| u32::from(ITEMS[i as usize].cost)).sum();
+        let total: u32 = ALTERNATE_STOCK
+            .iter()
+            .map(|&i| u32::from(ITEMS[i as usize].cost))
+            .sum();
         assert_eq!(total, 9260);
         assert!(total > 230 * 40);
     }

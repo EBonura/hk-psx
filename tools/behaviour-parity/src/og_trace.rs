@@ -25,9 +25,13 @@ fn split_csv(line: &str) -> Vec<String> {
 }
 
 pub fn table(path: &Path) -> Vec<Row> {
-    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
     let mut lines = text.lines();
-    let Some(header) = lines.next() else { return Vec::new() };
+    let Some(header) = lines.next() else {
+        return Vec::new();
+    };
     let head = split_csv(header);
     lines
         .filter_map(|l| {
@@ -94,7 +98,15 @@ pub struct SceneTrace {
 pub fn attempts(run: &Path) -> Vec<PathBuf> {
     let base = run.join("og-survey");
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(&base)
-        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.file_name().map_or(false, |n| n.to_string_lossy().starts_with('a'))).collect())
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name()
+                        .map_or(false, |n| n.to_string_lossy().starts_with('a'))
+                })
+                .collect()
+        })
         .unwrap_or_default();
     dirs.sort();
     dirs
@@ -146,7 +158,10 @@ pub fn load_run(run: &Path) -> BTreeMap<String, SceneTrace> {
         let mut windows: BTreeMap<String, Vec<Window>> = BTreeMap::new();
         for r in table(&dir.join("survey-timeline.csv")) {
             windows.entry(r["scene"].clone()).or_default().push(Window {
-                tour: matches!(r.get("phase").map(String::as_str), Some("tour") | Some("poke") | Some("approach")),
+                tour: matches!(
+                    r.get("phase").map(String::as_str),
+                    Some("tour") | Some("poke") | Some("approach")
+                ),
                 approach: r.get("phase").map(String::as_str) == Some("approach"),
                 poke: r.get("phase").map(String::as_str) == Some("poke"),
                 x: num(&r, "x"),
@@ -162,22 +177,53 @@ pub fn load_run(run: &Path) -> BTreeMap<String, SceneTrace> {
                 let w = windows.remove(s)?;
                 let first = w.iter().map(|x| x.start).min()?;
                 let last = w.iter().map(|x| x.end).max()?;
-                Some((s.clone(), SceneTrace { scene: s.clone(), first_frame: first, origin: first, last_frame: last, windows: w, face: BTreeMap::new(), camera: BTreeMap::new(), hero: BTreeMap::new(), actors: Vec::new() }))
+                Some((
+                    s.clone(),
+                    SceneTrace {
+                        scene: s.clone(),
+                        first_frame: first,
+                        origin: first,
+                        last_frame: last,
+                        windows: w,
+                        face: BTreeMap::new(),
+                        camera: BTreeMap::new(),
+                        hero: BTreeMap::new(),
+                        actors: Vec::new(),
+                    },
+                ))
             })
             .collect();
         for r in table(&dir.join("camera.csv")) {
-            let Some(t) = r.get("scene").and_then(|s| traces.get_mut(s)) else { continue };
+            let Some(t) = r.get("scene").and_then(|s| traces.get_mut(s)) else {
+                continue;
+            };
             let f = num(&r, "test_frame") as i64;
             if f >= 0 && f < t.last_frame {
                 t.origin = t.origin.min(f);
-                t.camera.insert(f, [num(&r, "camera_x"), num(&r, "camera_y"), num(&r, "camera_z")]);
+                t.camera.insert(
+                    f,
+                    [
+                        num(&r, "camera_x"),
+                        num(&r, "camera_y"),
+                        num(&r, "camera_z"),
+                    ],
+                );
                 t.hero.insert(f, [num(&r, "hero_x"), num(&r, "hero_y")]);
-                t.face.insert(f, if r.get("facing_right").map_or(true, |v| v == "True") { 1 } else { -1 });
+                t.face.insert(
+                    f,
+                    if r.get("facing_right").map_or(true, |v| v == "True") {
+                        1
+                    } else {
+                        -1
+                    },
+                );
             }
         }
         let mut by_id: BTreeMap<(String, String), OgActor> = BTreeMap::new();
         for r in table(&dir.join("actors.csv")) {
-            let Some(t) = r.get("scene").and_then(|s| traces.get(s)) else { continue };
+            let Some(t) = r.get("scene").and_then(|s| traces.get(s)) else {
+                continue;
+            };
             let f = num(&r, "test_frame") as i64;
             if f < t.first_frame || f >= t.last_frame {
                 continue;
@@ -185,7 +231,11 @@ pub fn load_run(run: &Path) -> BTreeMap<String, SceneTrace> {
             let id = r["id"].clone();
             by_id
                 .entry((r["scene"].clone(), id.clone()))
-                .or_insert_with(|| OgActor { id, name: r["name"].clone(), samples: Vec::new() })
+                .or_insert_with(|| OgActor {
+                    id,
+                    name: r["name"].clone(),
+                    samples: Vec::new(),
+                })
                 .samples
                 .push(Sample {
                     frame: f,

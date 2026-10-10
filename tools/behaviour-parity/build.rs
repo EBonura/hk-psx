@@ -15,11 +15,20 @@ fn main() {
     let text = fs::read_to_string(&source).unwrap_or_else(|e| panic!("{}: {e}", source.display()));
     let mut out = String::new();
     for line in text.lines() {
-        if line.starts_with("static SCENE_ACTORS_") || line.starts_with("pub static SCENE_ACTORS:") {
+        if line.starts_with("static SCENE_ACTORS_") || line.starts_with("pub static SCENE_ACTORS:")
+        {
             out.push_str(line);
             out.push('\n');
         }
     }
-    assert!(out.contains("pub static SCENE_ACTORS:"), "no SCENE_ACTORS table in {}", source.display());
-    fs::write(PathBuf::from(env::var("OUT_DIR").unwrap()).join("scene_actors.rs"), out).unwrap();
+    assert!(
+        out.contains("pub static SCENE_ACTORS:"),
+        "no SCENE_ACTORS table in {}",
+        source.display()
+    );
+    fs::write(
+        PathBuf::from(env::var("OUT_DIR").unwrap()).join("scene_actors.rs"),
+        out,
+    )
+    .unwrap();
 }

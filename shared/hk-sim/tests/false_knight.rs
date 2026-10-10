@@ -17,7 +17,14 @@ struct Body {
 }
 impl Body {
     fn new(x: i32, y: i32) -> Self {
-        Self { x, y, vx: 0, vy: 0, gravity: ONE, kinematic: false }
+        Self {
+            x,
+            y,
+            vx: 0,
+            vy: 0,
+            gravity: ONE,
+            kinematic: false,
+        }
     }
     fn step(&mut self) {
         if self.kinematic {
@@ -94,9 +101,13 @@ impl Fight {
             }
             self.step();
         }
-        panic!("phase machine stalled in {:?} after {} ticks", self.boss.phase(), self.ticks);
+        panic!(
+            "phase machine stalled in {:?} after {} ticks",
+            self.boss.phase(),
+            self.ticks
+        );
     }
-    fn to_opened(&mut self) {
+    fn drive_to_opened(&mut self) {
         let actions = self.boss.body_reached_zero();
         for action in actions.iter() {
             match action {
@@ -123,7 +134,10 @@ impl Fight {
     /// the death jump.
     fn through_rage(&mut self) {
         self.until(4000, |f| {
-            matches!(f.boss.phase(), Phase::Idle | Phase::DeathJumpAntic | Phase::Dead)
+            matches!(
+                f.boss.phase(),
+                Phase::Idle | Phase::DeathJumpAntic | Phase::Dead
+            )
         });
     }
 }
@@ -157,9 +171,12 @@ fn three_head_kills_advance_the_phase_table_and_end_the_fight() {
     assert_eq!(IDLE_TICKS[0], [60, 60], "phase one idles for a flat second");
 
     for expected in 1..=STAGGERS {
-        fight.to_opened();
+        fight.drive_to_opened();
         assert!(fight.boss.head_exposed());
-        assert!(fight.boss.invincible(), "the body refuses the nail while open");
+        assert!(
+            fight.boss.invincible(),
+            "the body refuses the nail while open"
+        );
         fight.kill_head();
         assert_eq!(fight.boss.stunned(), expected);
         fight.through_rage();
@@ -187,14 +204,18 @@ fn a_stagger_the_player_lets_time_out_costs_no_phase() {
     let mut fight = Fight::new(3, true);
     fight.boss.battle_start();
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
-    fight.to_opened();
+    fight.drive_to_opened();
     for _ in 0..STUN_WINDOW_TICKS - 1 {
         fight.step();
         assert_eq!(fight.boss.phase(), Phase::Opened);
     }
     fight.step();
     assert_eq!(fight.boss.phase(), Phase::Recovering);
-    assert_eq!(fight.boss.stunned(), 0, "Stun Fail does not increment Stunned Amount");
+    assert_eq!(
+        fight.boss.stunned(),
+        0,
+        "Stun Fail does not increment Stunned Amount"
+    );
     fight.until(200, |f| f.boss.phase() == Phase::Idle);
     assert_eq!(fight.boss.table(), 0);
 }
@@ -204,7 +225,7 @@ fn every_head_hit_restarts_the_five_second_window() {
     let mut fight = Fight::new(5, true);
     fight.boss.battle_start();
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
-    fight.to_opened();
+    fight.drive_to_opened();
     for _ in 0..STUN_WINDOW_TICKS - 30 {
         fight.step();
     }
@@ -228,7 +249,7 @@ fn the_rage_runs_eight_slams_and_only_the_third_phase_cracks_the_floor() {
         fight.boss.battle_start();
         fight.until(600, |f| f.boss.phase() == Phase::Landing);
         for _ in 0..stagger {
-            fight.to_opened();
+            fight.drive_to_opened();
             fight.kill_head();
             if fight.boss.stunned() < stagger {
                 fight.through_rage();
@@ -236,14 +257,20 @@ fn the_rage_runs_eight_slams_and_only_the_third_phase_cracks_the_floor() {
         }
         let before = fight.seen.len();
         fight.until(4000, |f| f.boss.phase() == Phase::RageSlam);
-        fight.until(6000, |f| matches!(f.boss.phase(), Phase::RageEnd | Phase::DeathJumpAntic));
+        fight.until(6000, |f| {
+            matches!(f.boss.phase(), Phase::RageEnd | Phase::DeathJumpAntic)
+        });
         let slams = fight.seen[before..]
             .iter()
             .filter(|a| **a == Action::PlayHitter(Clip::Rage))
             .count();
         assert_eq!(slams, RAGE_SLAMS as usize, "stagger {stagger}");
         let cracked = fight.seen[before..].contains(&Action::CrackFloor);
-        assert_eq!(cracked, stagger == 2, "the floor only cracks before the death jump");
+        assert_eq!(
+            cracked,
+            stagger == 2,
+            "the floor only cracks before the death jump"
+        );
     }
 }
 
@@ -255,7 +282,7 @@ fn the_third_phase_stops_jumping_and_summons_more_barrels() {
     fight.boss.battle_start();
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
     for _ in 0..2 {
-        fight.to_opened();
+        fight.drive_to_opened();
         fight.kill_head();
         fight.through_rage();
     }
@@ -263,8 +290,11 @@ fn the_third_phase_stops_jumping_and_summons_more_barrels() {
     let before = fight.ticks;
     for _ in 0..3000 {
         fight.step();
-        assert_ne!(fight.boss.phase(), Phase::JumpAntic,
-                   "Determine Jump returns outright once Stunned Amount is two");
+        assert_ne!(
+            fight.boss.phase(),
+            Phase::JumpAntic,
+            "Determine Jump returns outright once Stunned Amount is two"
+        );
     }
     assert!(fight.ticks > before);
     let summons: u32 = fight
@@ -291,7 +321,14 @@ fn a_distant_hero_is_chased_rather_than_attacked() {
     fight.until(600, |f| f.boss.phase() == Phase::Run);
     assert!(fight.seen.contains(&Action::Play(Clip::Run)));
     // `Run` plays the footstep clip once on the boss's own AudioSource.
-    assert_eq!(fight.seen.iter().filter(|a| **a == Action::Effect(Effect::RunStart)).count(), 1);
+    assert_eq!(
+        fight
+            .seen
+            .iter()
+            .filter(|a| **a == Action::Effect(Effect::RunStart))
+            .count(),
+        1
+    );
     // Closing to under fourteen units hands straight over to the jump attack.
     fight.hero_x = fight.body.x + 5 * ONE;
     fight.until(600, |f| f.boss.phase() == Phase::JumpAttackAntic);
@@ -302,16 +339,22 @@ fn the_first_plop_is_longer_and_only_happens_once_per_save() {
     let mut first = Fight::new(31, false);
     first.boss.battle_start();
     first.until(600, |f| f.boss.phase() == Phase::Landing);
-    first.to_opened();
+    first.drive_to_opened();
     assert!(first.seen.contains(&Action::SetFirstPlop));
 
     let mut later = Fight::new(31, true);
     later.boss.battle_start();
     later.until(600, |f| f.boss.phase() == Phase::Landing);
-    later.to_opened();
+    later.drive_to_opened();
     assert!(!later.seen.contains(&Action::SetFirstPlop));
-    assert!(later.ticks < first.ticks, "the short plop is 1.2 s against 2.5 s");
-    assert_eq!(PLOP_LONG_TICKS - PLOP_SHORT_TICKS, first.ticks as u16 - later.ticks as u16);
+    assert!(
+        later.ticks < first.ticks,
+        "the short plop is 1.2 s against 2.5 s"
+    );
+    assert_eq!(
+        PLOP_LONG_TICKS - PLOP_SHORT_TICKS,
+        first.ticks as u16 - later.ticks as u16
+    );
 }
 
 /// Source health: 65 on the body, restored after every stagger, and 40 on the
@@ -337,8 +380,17 @@ fn the_turn_writes_its_facing_before_its_clip_plays() {
     let mut boss = FalseKnight::new(7, true);
     boss.battle_start();
     let mut body = Body::new(0, 20 * ONE);
-    let mut senses = Senses { self_x: 0, hero_x: 8 * ONE, distance: 8 * ONE, velocity_y: 0,
-        velocity_x: 0, grounded: false, wall_left: false, wall_right: false, ground_below: false };
+    let mut senses = Senses {
+        self_x: 0,
+        hero_x: 8 * ONE,
+        distance: 8 * ONE,
+        velocity_y: 0,
+        velocity_x: 0,
+        grounded: false,
+        wall_left: false,
+        wall_right: false,
+        ground_below: false,
+    };
     let mut facing_right = false;
     let mut turn_ticks = 0;
     for _ in 0..1200 {
@@ -351,15 +403,23 @@ fn the_turn_writes_its_facing_before_its_clip_plays() {
             match action {
                 Action::Facing(sign) => facing_right = sign > 0,
                 Action::Play(Clip::Turn) => {
-                    assert!(facing_right, "Turn R writes the facing before its clip plays");
+                    assert!(
+                        facing_right,
+                        "Turn R writes the facing before its clip plays"
+                    );
                     turn_ticks = Clip::Turn.ticks();
                 }
                 _ => {}
             }
         }
-        if turn_ticks != 0 { break; }
+        if turn_ticks != 0 {
+            break;
+        }
     }
-    assert_eq!(turn_ticks, TURN_TICKS, "Turn holds for the length of its own clip");
+    assert_eq!(
+        turn_ticks, TURN_TICKS,
+        "Turn holds for the length of its own clip"
+    );
 }
 
 /// Every `Effect` in a list, in order, so a site that moved shows up as a
@@ -378,12 +438,19 @@ fn effects(actions: &[Action]) -> std::vec::Vec<Effect> {
 fn the_slam_swings_before_the_mace_reaches_the_floor() {
     let mut fight = Fight::new(13, true);
     // `Start Fall` is the first BigShake of the fight, before a tick has run.
-    assert!(fight.boss.battle_start().contains(Action::Effect(Effect::Entrance)));
+    assert!(fight
+        .boss
+        .battle_start()
+        .contains(Action::Effect(Effect::Entrance)));
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
     assert_eq!(effects(&fight.seen), [Effect::EntranceLanding], "`State 2`");
     let before = fight.seen.len();
     fight.until(6000, |f| f.boss.phase() == Phase::SlamStrike);
-    assert_eq!(effects(&fight.seen[before..]).last(), Some(&Effect::Swing), "`S Attack`");
+    assert_eq!(
+        effects(&fight.seen[before..]).last(),
+        Some(&Effect::Swing),
+        "`S Attack`"
+    );
     let before = fight.seen.len();
     // `Slam` sits between `S Attack` and the recovery that carries the wave.
     fight.until(600, |f| f.boss.phase() == Phase::SlamRecover);
@@ -401,13 +468,21 @@ fn every_launch_but_the_death_jump_shakes_the_camera() {
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
     let before = fight.seen.len();
     fight.until(600, |f| f.boss.phase() == Phase::Airborne);
-    assert_eq!(effects(&fight.seen[before..]), [Effect::JumpShake], "`Jump`");
+    assert_eq!(
+        effects(&fight.seen[before..]),
+        [Effect::JumpShake],
+        "`Jump`"
+    );
     let before = fight.seen.len();
     // `Land Noise` is the only landing state that plays its voice with no shake.
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
-    assert_eq!(effects(&fight.seen[before..]), [Effect::Landing], "`Land Noise`");
+    assert_eq!(
+        effects(&fight.seen[before..]),
+        [Effect::Landing],
+        "`Land Noise`"
+    );
     for _ in 0..STAGGERS {
-        fight.to_opened();
+        fight.drive_to_opened();
         fight.kill_head();
         fight.through_rage();
     }
@@ -416,7 +491,11 @@ fn every_launch_but_the_death_jump_shakes_the_camera() {
     fight.until(600, |f| f.boss.phase() == Phase::DeathAir);
     // It plays the jump like every other launch, and it is the one launch
     // that plays it with no shake.
-    assert_eq!(effects(&fight.seen[before..]), [Effect::Jump], "`JA Jump 2` sends no shake");
+    assert_eq!(
+        effects(&fight.seen[before..]),
+        [Effect::Jump],
+        "`JA Jump 2` sends no shake"
+    );
 }
 
 #[test]
@@ -424,15 +503,19 @@ fn the_rage_shakes_once_per_slam_and_its_landing_shakes_not_at_all() {
     let mut fight = Fight::new(19, true);
     fight.boss.battle_start();
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
-    fight.to_opened();
+    fight.drive_to_opened();
     fight.kill_head();
     // `Jump 2` launches the rage, and the state it lands in plays no clip and
     // sends no shake, so the next effect is the first `Rage Slam`.
     fight.until(4000, |f| f.boss.phase() == Phase::RageAir);
     let before = fight.seen.len();
-    fight.until(6000, |f| matches!(f.boss.phase(), Phase::RageEnd | Phase::DeathJumpAntic));
-    assert_eq!(effects(&fight.seen[before..]),
-               std::vec::Vec::from([Effect::RageSlam; RAGE_SLAMS as usize]));
+    fight.until(6000, |f| {
+        matches!(f.boss.phase(), Phase::RageEnd | Phase::DeathJumpAntic)
+    });
+    assert_eq!(
+        effects(&fight.seen[before..]),
+        std::vec::Vec::from([Effect::RageSlam; RAGE_SLAMS as usize])
+    );
 }
 
 #[test]
@@ -442,10 +525,19 @@ fn the_two_child_hitboxes_sit_where_the_source_colliders_do() {
     // armour exposes and it sits above the body box rather than inside it; the
     // Hitter reaches nearly eight units ahead, which is the ground the slam
     // covers without the body moving.
-    assert!(HEAD_BOX[1] > -2 * ONE && HEAD_BOX[3] > 0, "the head is above the armour");
+    assert!(
+        HEAD_BOX[1] > -2 * ONE && HEAD_BOX[3] > 0,
+        "the head is above the armour"
+    );
     assert_eq!(HEAD_BOX[0], -HEAD_BOX[2], "the head box is symmetric in x");
-    assert!(HITTER_BOX[0] > 0 && HITTER_BOX[2] > 7 * ONE, "the hitter reaches ahead of the body");
-    assert!(HITTER_BOX[1] < HITTER_BOX[3] && HITTER_BOX[3] < 0, "and below the transform");
+    assert!(
+        HITTER_BOX[0] > 0 && HITTER_BOX[2] > 7 * ONE,
+        "the hitter reaches ahead of the body"
+    );
+    assert!(
+        HITTER_BOX[1] < HITTER_BOX[3] && HITTER_BOX[3] < 0,
+        "and below the transform"
+    );
 }
 
 /// Source `summon` on `FK Barrel Summon`: the loop that turns one SUMMON into a
@@ -466,12 +558,20 @@ fn a_burst_spaces_every_barrel_and_never_starts_on_the_frame_it_was_asked_for() 
             gap = 0;
         }
     }
-    assert_eq!(spawns.len(), 4, "the burst is exactly the count it was given");
+    assert_eq!(
+        spawns.len(),
+        4,
+        "the burst is exactly the count it was given"
+    );
     for (gap, x) in spawns {
-        assert!((BARREL_GAP_TICKS[0]..=BARREL_GAP_TICKS[1]).contains(&gap),
-                "every gap is the source WaitRandom, got {gap}");
-        assert!((BARREL_SPAWN_X[0]..=BARREL_SPAWN_X[1]).contains(&x),
-                "every barrel lands inside Summon Min..Summon Max");
+        assert!(
+            (BARREL_GAP_TICKS[0]..=BARREL_GAP_TICKS[1]).contains(&gap),
+            "every gap is the source WaitRandom, got {gap}"
+        );
+        assert!(
+            (BARREL_SPAWN_X[0]..=BARREL_SPAWN_X[1]).contains(&x),
+            "every barrel lands inside Summon Min..Summon Max"
+        );
     }
     assert_eq!(summon.remaining(), 0);
     assert_eq!(summon.tick(), None, "an emptied summoner is back in Idle");
@@ -489,7 +589,11 @@ fn a_summon_during_a_burst_is_dropped_the_way_the_state_machine_drops_it() {
     }
     assert_eq!(summon.remaining(), 2);
     summon.summon(8);
-    assert_eq!(summon.remaining(), 2, "the second SUMMON found no state that answers it");
+    assert_eq!(
+        summon.remaining(),
+        2,
+        "the second SUMMON found no state that answers it"
+    );
     let mut spawned = 1;
     for _ in 0..600 {
         if summon.tick().is_some() {

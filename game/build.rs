@@ -19,15 +19,24 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=PSOXIDE_LINK_ORDER");
     if let Some(order) = std::env::var_os("PSOXIDE_LINK_ORDER") {
-        println!("cargo:rustc-link-arg=--symbol-ordering-file={}", order.to_string_lossy());
+        println!(
+            "cargo:rustc-link-arg=--symbol-ordering-file={}",
+            order.to_string_lossy()
+        );
         return;
     }
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("hot-text-order.txt");
     println!("cargo:rerun-if-changed={}", source.display());
     let text = std::fs::read(&source).expect("game/hot-text-order.txt");
     // FNV-1a over the list: the copy's name changes whenever its contents do.
-    let hash = text.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
-    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join(format!("hot-text-order-{hash:016x}.txt"));
+    let hash = text.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"))
+        .join(format!("hot-text-order-{hash:016x}.txt"));
     std::fs::write(&out, &text).expect("copy of hot-text-order.txt");
-    println!("cargo:rustc-link-arg=--symbol-ordering-file={}", out.display());
+    println!(
+        "cargo:rustc-link-arg=--symbol-ordering-file={}",
+        out.display()
+    );
 }

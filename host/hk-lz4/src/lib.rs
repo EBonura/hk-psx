@@ -50,8 +50,17 @@ struct Matcher<'a> {
 
 impl<'a> Matcher<'a> {
     fn new(src: &'a [u8]) -> Self {
-        let match_end = if src.len() > LAST_MATCH_START { src.len() - LAST_MATCH_START + 1 } else { 0 };
-        Matcher { src, head: vec![NIL; 1 << HASH_BITS], kids: vec![NIL; 2 * src.len()], match_end }
+        let match_end = if src.len() > LAST_MATCH_START {
+            src.len() - LAST_MATCH_START + 1
+        } else {
+            0
+        };
+        Matcher {
+            src,
+            head: vec![NIL; 1 << HASH_BITS],
+            kids: vec![NIL; 2 * src.len()],
+            match_end,
+        }
     }
 
     /// Index position `cur` (positions must come in order) and return the
@@ -108,7 +117,12 @@ impl<'a> Matcher<'a> {
 
     /// Settle the reported match: below `NICE_LEN` it is exact already, at
     /// `NICE_LEN` it is measured out to its real end.
-    fn finish(&self, cur: usize, (mut len, dist): (usize, usize), room: usize) -> Option<(usize, usize)> {
+    fn finish(
+        &self,
+        cur: usize,
+        (mut len, dist): (usize, usize),
+        room: usize,
+    ) -> Option<(usize, usize)> {
         if len < MIN_MATCH {
             return None;
         }
@@ -150,7 +164,11 @@ fn put_sequence(out: &mut Vec<u8>, literals: &[u8], m: Option<(usize, usize)>) {
 /// Bytes a length field costs beyond its nibble: nothing below 15, then one
 /// byte per 255 more (a final byte under 255 ends the field).
 fn extra_bytes(n: usize) -> usize {
-    if n < 15 { 0 } else { (n - 15) / 255 + 1 }
+    if n < 15 {
+        0
+    } else {
+        (n - 15) / 255 + 1
+    }
 }
 
 const INF: u32 = u32::MAX / 2;
@@ -177,7 +195,14 @@ pub fn compress_hc(src: &[u8]) -> Vec<u8> {
     let n = src.len();
     let mut matcher = Matcher::new(src);
     let mut reach = vec![INF; n + 1];
-    let mut came = vec![Arrival { start: 0, len: 0, dist: 0 }; n + 1];
+    let mut came = vec![
+        Arrival {
+            start: 0,
+            len: 0,
+            dist: 0
+        };
+        n + 1
+    ];
     let mut open = vec![INF; n + 1];
     // Literal run that `open[i]` ends with (zero when it comes from a match).
     let mut run = vec![0u32; n + 1];
@@ -188,7 +213,7 @@ pub fn compress_hc(src: &[u8]) -> Vec<u8> {
         open[i] = reach[i];
         if i > 0 {
             let r = run[i - 1] + 1;
-            let step = 1 + (r >= 15 && (r - 15) % 255 == 0) as u32;
+            let step = 1 + (r >= 15 && (r - 15).is_multiple_of(255)) as u32;
             if open[i - 1] + step < open[i] {
                 open[i] = open[i - 1] + step;
                 run[i] = r;
@@ -209,7 +234,11 @@ pub fn compress_hc(src: &[u8]) -> Vec<u8> {
             let cost = base + extra_bytes(l - MIN_MATCH) as u32;
             if cost < reach[i + l] {
                 reach[i + l] = cost;
-                came[i + l] = Arrival { start: i as u32, len: l as u32, dist: dist as u32 };
+                came[i + l] = Arrival {
+                    start: i as u32,
+                    len: l as u32,
+                    dist: dist as u32,
+                };
             }
         }
     }
@@ -225,7 +254,11 @@ pub fn compress_hc(src: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(n / 2 + 16);
     let mut anchor = 0;
     for &(before, a) in seqs.iter().rev() {
-        put_sequence(&mut out, &src[before..a.start as usize], Some((a.len as usize, a.dist as usize)));
+        put_sequence(
+            &mut out,
+            &src[before..a.start as usize],
+            Some((a.len as usize, a.dist as usize)),
+        );
         anchor = a.start as usize + a.len as usize;
     }
     put_sequence(&mut out, &src[anchor..], None);
@@ -291,7 +324,12 @@ mod tests {
 
     fn round_trip(data: &[u8]) -> usize {
         let z = compress_hc(data);
-        assert_eq!(decompress(&z, data.len()).as_deref(), Some(data), "len {}", data.len());
+        assert_eq!(
+            decompress(&z, data.len()).as_deref(),
+            Some(data),
+            "len {}",
+            data.len()
+        );
         z.len()
     }
 
@@ -313,7 +351,12 @@ mod tests {
 
     #[test]
     fn mixed_inputs_round_trip() {
-        for (n, seed, alpha) in [(70_000, 1, 4), (70_000, 2, 256), (200_000, 3, 2), (1000, 4, 16)] {
+        for (n, seed, alpha) in [
+            (70_000, 1, 4),
+            (70_000, 2, 256),
+            (200_000, 3, 2),
+            (1000, 4, 16),
+        ] {
             round_trip(&pseudo(n, seed, alpha));
         }
         // Matches beyond the 64 KB window must not be used.

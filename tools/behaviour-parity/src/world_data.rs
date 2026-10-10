@@ -17,7 +17,12 @@ impl RegionData {
         hk_format::Room::parse(self.room_bytes).expect("cooked room parses")
     }
     pub fn region(&self) -> world::Region {
-        world::Region { scene: self.scene, bounds: self.bounds, collision_bounds: self.collision_bounds, actors: self.actors }
+        world::Region {
+            scene: self.scene,
+            bounds: self.bounds,
+            collision_bounds: self.collision_bounds,
+            actors: self.actors,
+        }
     }
 }
 
@@ -25,7 +30,9 @@ pub fn data_dir() -> PathBuf {
     PathBuf::from(std::env::var("HKBP_DATA").unwrap_or_else(|_| "data".into()))
 }
 pub fn banks_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HKBP_BANKS").unwrap_or_else(|_| ".hkpsx/world-metadata-packed".into()))
+    PathBuf::from(
+        std::env::var("HKBP_BANKS").unwrap_or_else(|_| ".hkpsx/world-metadata-packed".into()),
+    )
 }
 
 /// `game/src/world.rs::actor_placement`: the placement words of one `KIND_ACTOR` object.
@@ -51,17 +58,21 @@ fn leak(bytes: Vec<u8>) -> &'static [u8] {
 /// Every region of `scene`, in bank order.
 pub fn load_scene(scene: usize) -> Vec<RegionData> {
     let bank_path = banks_dir().join(format!("scene_{scene}.hkwm"));
-    let bank_bytes = leak(std::fs::read(&bank_path).unwrap_or_else(|e| panic!("{}: {e}", bank_path.display())));
+    let bank_bytes =
+        leak(std::fs::read(&bank_path).unwrap_or_else(|e| panic!("{}: {e}", bank_path.display())));
     let bank = WorldMeta::parse(bank_bytes).expect("scene bank parses");
     let specs: &'static [ActorSpec] = catalogue::SCENE_ACTORS[scene];
     let mut out = Vec::new();
     for region in bank.regions() {
         let global_id = region.global_id();
         let chunk = data_dir().join(format!("regions/chunk_{}.hk", global_id));
-        let room_bytes = leak(std::fs::read(&chunk).unwrap_or_else(|e| panic!("{}: {e}", chunk.display())));
+        let room_bytes =
+            leak(std::fs::read(&chunk).unwrap_or_else(|e| panic!("{}: {e}", chunk.display())));
         let mut actors = Vec::new();
         for i in 0..region.object_count() {
-            let Some(object) = region.object(i) else { continue };
+            let Some(object) = region.object(i) else {
+                continue;
+            };
             if object.kind() == KIND_ACTOR && object.flags() & 64 != 0 {
                 actors.push((placement(&object), &specs[object.extra(0) as usize]));
             }

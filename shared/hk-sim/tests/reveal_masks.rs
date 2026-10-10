@@ -1,3 +1,4 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 use hk_sim::{Params, Player, ONE};
 mod render {
     pub static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -12,10 +13,15 @@ mod render {
     }
     pub fn set_gain(_: usize, _: u8) {}
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/reveal_masks.rs"]
 mod reveal_masks;
 use reveal_masks::*;
-const P: Params = Params { half_width: ONE / 4, bottom: -ONE, ..Params::ZERO };
+const P: Params = Params {
+    half_width: ONE / 4,
+    bottom: -ONE,
+    ..Params::ZERO
+};
 const POLYGON: &[[i32; 2]] = &[
     [10 * ONE, 10 * ONE],
     [20 * ONE, 10 * ONE],
@@ -113,7 +119,11 @@ fn overlapping_region_rebinds_preserve_progress_scene_leave_freezes_and_reentry_
 fn trigger_uses_hero_body_and_exact_polygon_not_just_origin_or_aabb() {
     // Same cooked bounds as the square; only the polygon behind them narrows,
     // which is exactly what the bank hands `tick` on an AABB hit.
-    const TRIANGLE: &[[i32; 2]] = &[[10 * ONE, 10 * ONE], [20 * ONE, 10 * ONE], [10 * ONE, 20 * ONE]];
+    const TRIANGLE: &[[i32; 2]] = &[
+        [10 * ONE, 10 * ONE],
+        [20 * ONE, 10 * ONE],
+        [10 * ONE, 20 * ONE],
+    ];
     fn hits_triangle(_: usize, body: [i32; 4]) -> bool {
         hk_sim::polygon_hits_box(TRIANGLE, body)
     }
@@ -208,9 +218,13 @@ fn pool_limit_and_scene_catalogue_mismatch_fail_explicitly() {
         state.tick(&inside(), P, reaches);
     }
     assert_eq!(state.opacity(15), 128);
-    let too_many: [RevealMask; MAX_CONTROLLERS + 1] =
-        core::array::from_fn(|i| RevealMask { source_id: i as u32, ..SPEC });
-    assert!(std::panic::catch_unwind(|| State::new().scene_ready(0, too_many.into_iter())).is_err());
+    let too_many: [RevealMask; MAX_CONTROLLERS + 1] = core::array::from_fn(|i| RevealMask {
+        source_id: i as u32,
+        ..SPEC
+    });
+    assert!(
+        std::panic::catch_unwind(|| State::new().scene_ready(0, too_many.into_iter())).is_err()
+    );
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
         || state.scene_ready(0, [SPEC].into_iter())
     ))
@@ -240,7 +254,7 @@ fn ordinary_mask_starts_opaque_stay_fades_out_exit_restores_and_reentry_reverses
     let spec = RevealMask {
         source_id: 12056,
         one_way: false,
-    initial_opacity: 128,
+        initial_opacity: 128,
         ..SPEC
     };
     let mut state = State::new();
@@ -278,7 +292,7 @@ fn ordinary_mask_progress_survives_region_rebinding_and_reset_apply_uses_authore
     let spec = RevealMask {
         source_id: 12037,
         one_way: false,
-    initial_opacity: 128,
+        initial_opacity: 128,
         ..SPEC
     };
     let mut state = State::new();

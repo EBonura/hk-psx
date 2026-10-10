@@ -24,7 +24,20 @@ fn empty_trace() -> SceneTrace {
 
 /// Families whose members patrol or fly on their own and so must move in 40 seconds.
 fn must_move(family: &str) -> bool {
-    matches!(family, "Crawler" | "Runner" | "Climber" | "MossWalker" | "Vengefly" | "Mosquito" | "AcidFlyer" | "Aspid" | "Gruzzer" | "ZombieShield" | "Pigeon")
+    matches!(
+        family,
+        "Crawler"
+            | "Runner"
+            | "Climber"
+            | "MossWalker"
+            | "Vengefly"
+            | "Mosquito"
+            | "AcidFlyer"
+            | "Aspid"
+            | "Gruzzer"
+            | "ZombieShield"
+            | "Pigeon"
+    )
 }
 
 pub fn run(names: &BTreeMap<usize, String>, ticks: usize) {
@@ -32,8 +45,24 @@ pub fn run(names: &BTreeMap<usize, String>, ticks: usize) {
     let mut findings = Vec::new();
     for (id, name) in names {
         let regions = load_scene(*id);
-        let low = regions.iter().map(|r| r.collision_bounds[1]).min().unwrap_or(0) as f64 / 65536.0;
-        let actors: Vec<PortActor> = run_port_scene_with(*id, &empty_trace(), ticks, Some(&|r| [(r.bounds[0] + r.bounds[2]) / 2, (r.bounds[1] + r.bounds[3]) / 2, -38 * ONE]));
+        let low = regions
+            .iter()
+            .map(|r| r.collision_bounds[1])
+            .min()
+            .unwrap_or(0) as f64
+            / 65536.0;
+        let actors: Vec<PortActor> = run_port_scene_with(
+            *id,
+            &empty_trace(),
+            ticks,
+            Some(&|r| {
+                [
+                    (r.bounds[0] + r.bounds[2]) / 2,
+                    (r.bounds[1] + r.bounds[3]) / 2,
+                    -38 * ONE,
+                ]
+            }),
+        );
         for a in &actors {
             let row = rows.entry(a.family.clone()).or_default();
             row[0] += 1;
@@ -61,7 +90,10 @@ pub fn run(names: &BTreeMap<usize, String>, ticks: usize) {
                 }
             }
             let jitter = turns as f64 / (live.len() - half).max(1) as f64 * 60.0 > 1.5;
-            let teleport = live.windows(2).any(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y) > 3.0 && !matches!(a.family.as_str(), "Static"));
+            let teleport = live.windows(2).any(|w| {
+                (w[1].x - w[0].x).hypot(w[1].y - w[0].y) > 3.0
+                    && !matches!(a.family.as_str(), "Static")
+            });
             row[1] += fell as u32;
             row[2] += frozen as u32;
             row[3] += jitter as u32;
@@ -77,7 +109,10 @@ pub fn run(names: &BTreeMap<usize, String>, ticks: usize) {
     }
     println!("family          actors  fell  frozen  jitter  jump  absent");
     for (f, r) in &rows {
-        println!("{f:<14} {:>7} {:>5} {:>7} {:>7} {:>5} {:>7}", r[0], r[1], r[2], r[3], r[4], r[5]);
+        println!(
+            "{f:<14} {:>7} {:>5} {:>7} {:>7} {:>5} {:>7}",
+            r[0], r[1], r[2], r[3], r[4], r[5]
+        );
     }
     for f in &findings {
         println!("{f}");

@@ -7,7 +7,9 @@
 //! the allocator chose and proves the resident bytes are that source clip.
 
 use crate::common::{err, get, Result};
-use crate::cook_audio::{byte_data, convert_wav, div, hex, ints_of, jobj, js, sha, strs_of, u, Resampler};
+use crate::cook_audio::{
+    byte_data, convert_wav, div, hex, ints_of, jobj, js, sha, strs_of, u, Resampler,
+};
 use crate::pyjson::{dumps, Json};
 use crate::spu::{decode_oneshot, fnv, Tool};
 use hk_unity::{Obj, Source, Value};
@@ -29,12 +31,21 @@ const SOURCES: [(&str, i64, &str); 6] = [
 /// clip PPtrs it plays.
 fn random_audio_action(data: &Value) -> Result<Vec<Value>> {
     let names = strs_of(data, "actionNames")?;
-    let actions: Vec<usize> = names.iter().enumerate().filter(|(_, n)| *n == "HutongGames.PlayMaker.Actions.AudioPlayRandom").map(|(i, _)| i).collect();
+    let actions: Vec<usize> = names
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| *n == "HutongGames.PlayMaker.Actions.AudioPlayRandom")
+        .map(|(i, _)| i)
+        .collect();
     if actions.len() != 1 {
         return err("expected one AudioPlayRandom");
     }
     let a = actions[0];
-    if !get(data, "actionEnabled")?.list().and_then(|l| l.get(a)).is_some_and(Value::truthy) {
+    if !get(data, "actionEnabled")?
+        .list()
+        .and_then(|l| l.get(a))
+        .is_some_and(Value::truthy)
+    {
         return err("disabled audio action");
     }
     let starts = ints_of(data, "actionStartIndex")?;
@@ -44,8 +55,14 @@ fn random_audio_action(data: &Value) -> Result<Vec<Value>> {
     let sizes = ints_of(data, "paramByteDataSize")?;
     let bytes = byte_data(data)?;
     let start = starts[a] as usize;
-    let end = if a + 1 < names.len() { starts[a + 1] as usize } else { param_names.len() };
+    let end = if a + 1 < names.len() {
+        starts[a + 1] as usize
+    } else {
+        param_names.len()
+    };
     let mut fields: Vec<(&str, usize)> = Vec::new();
+    // Indexing keeps a bad range a panic rather than a silently short loop.
+    #[allow(clippy::needless_range_loop)]
     for i in start..end {
         if param_names[i].is_empty() {
             continue;
@@ -57,7 +74,15 @@ fn random_audio_action(data: &Value) -> Result<Vec<Value>> {
     }
     let mut keys: Vec<&str> = fields.iter().map(|f| f.0).collect();
     keys.sort_unstable();
-    if keys != ["audioClips", "gameObject", "pitchMax", "pitchMin", "weights"] {
+    if keys
+        != [
+            "audioClips",
+            "gameObject",
+            "pitchMax",
+            "pitchMin",
+            "weights",
+        ]
+    {
         return err("changed audio action fields");
     }
     let field = |n: &str| fields.iter().find(|(k, _)| *k == n).unwrap().1;
@@ -80,8 +105,13 @@ fn random_audio_action(data: &Value) -> Result<Vec<Value>> {
             return err("changed audio array type");
         }
         let index = positions[i] as usize;
-        let count = *array_sizes.get(index).ok_or("arrayParamSizes index out of range")?;
-        if array_types.get(index).map(String::as_str) != Some(typename) || !(1..=3).contains(&count) || i + count as usize >= end {
+        let count = *array_sizes
+            .get(index)
+            .ok_or("arrayParamSizes index out of range")?;
+        if array_types.get(index).map(String::as_str) != Some(typename)
+            || !(1..=3).contains(&count)
+            || i + count as usize >= end
+        {
             return err("changed audio array");
         }
         let range = i + 1..i + 1 + count as usize;
@@ -94,9 +124,15 @@ fn random_audio_action(data: &Value) -> Result<Vec<Value>> {
     if kinds[i] != 19 {
         return err("changed audio owner type");
     }
-    let owners = get(data, "fsmGameObjectParams")?.list().ok_or("fsmGameObjectParams is not a list")?;
-    let owner = owners.get(positions[i] as usize).ok_or("fsmGameObjectParams index out of range")?;
-    if get(owner, "useVariable")?.int() != Some(1) || get(owner, "name")?.str().as_deref() != Some("Self") {
+    let owners = get(data, "fsmGameObjectParams")?
+        .list()
+        .ok_or("fsmGameObjectParams is not a list")?;
+    let owner = owners
+        .get(positions[i] as usize)
+        .ok_or("fsmGameObjectParams index out of range")?;
+    if get(owner, "useVariable")?.int() != Some(1)
+        || get(owner, "name")?.str().as_deref() != Some("Self")
+    {
         return err("changed audio owner");
     }
     let clip_slots = array("audioClips", "UnityEngine.AudioClip")?;
@@ -105,14 +141,21 @@ fn random_audio_action(data: &Value) -> Result<Vec<Value>> {
         if kinds[j] != 5 {
             return err("dynamic clip reference");
         }
-        let params = get(data, "unityObjectParams")?.list().ok_or("unityObjectParams is not a list")?;
-        let r = params.get(positions[j] as usize).ok_or("unityObjectParams index out of range")?;
+        let params = get(data, "unityObjectParams")?
+            .list()
+            .ok_or("unityObjectParams is not a list")?;
+        let r = params
+            .get(positions[j] as usize)
+            .ok_or("unityObjectParams index out of range")?;
         if get(r, "m_PathID")?.int().unwrap_or(0) == 0 {
             return err("null clip");
         }
         clips.push(r.clone());
     }
-    let weights = array("weights", "HutongGames.PlayMaker.FsmFloat")?.into_iter().map(scalar).collect::<Result<Vec<_>>>()?;
+    let weights = array("weights", "HutongGames.PlayMaker.FsmFloat")?
+        .into_iter()
+        .map(scalar)
+        .collect::<Result<Vec<_>>>()?;
     if clips.len() != weights.len() {
         return err("clip/weight count mismatch");
     }
@@ -144,7 +187,10 @@ fn pack_bank(items: &[Clip], limit: i64) -> Result<(Vec<u8>, Vec<Json>, Vec<i64>
         meta.push(("source".into(), Json::Str(clip.source.clone())));
         meta.push(("offset".into(), Json::Int(bank.len() as i64)));
         meta.push(("bytes".into(), Json::Int(clip.encoded.len() as i64)));
-        meta.push(("spu_address".into(), Json::Int(SPU_BASE + bank.len() as i64)));
+        meta.push((
+            "spu_address".into(),
+            Json::Int(SPU_BASE + bank.len() as i64),
+        ));
         records.push(Json::Obj(meta));
         addresses.push(SPU_BASE + bank.len() as i64);
         bank.extend_from_slice(&clip.encoded);
@@ -160,11 +206,15 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
     let resources = u(source.file("resources.assets"))?;
     let level = u(source.file("level6"))?;
     let read = |o: &Obj| u(source.read(o));
-    let sid_of = |file: &std::sync::Arc<hk_unity::serialized::SerializedFile>, pptr: &Value| -> Result<String> { Ok(u(source.deref(file, pptr))?.sid()) };
+    let sid_of = |file: &std::sync::Arc<hk_unity::serialized::SerializedFile>,
+                  pptr: &Value|
+     -> Result<String> { Ok(u(source.deref(file, pptr))?.sid()) };
 
     // The event's one AudioSource, at unit gain and pitch, unmuted.
     let audio_source = |obj: &Obj| -> Result<String> {
-        let go = read(&u(source.deref(&obj.file, get(&read(obj)?, "m_GameObject")?))?)?;
+        let go = read(&u(
+            source.deref(&obj.file, get(&read(obj)?, "m_GameObject")?)
+        )?)?;
         let mut audio = Vec::new();
         for c in get(&go, "m_Component")?.list().unwrap_or(&[]) {
             audio.push(u(source.deref(&obj.file, get(c, "component")?))?);
@@ -174,13 +224,20 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
             return err("expected one event AudioSource");
         }
         let tree = read(audio[0])?;
-        if get(&tree, "m_Volume")?.float() != Some(1.0) || get(&tree, "m_Pitch")?.float() != Some(1.0) || get(&tree, "Mute")?.truthy() {
+        if get(&tree, "m_Volume")?.float() != Some(1.0)
+            || get(&tree, "m_Pitch")?.float() != Some(1.0)
+            || get(&tree, "Mute")?.truthy()
+        {
             return err("changed event AudioSource gain/pitch/mute");
         }
         Ok(audio[0].sid())
     };
     let mut coins = Vec::new();
-    for (pid, ids) in [(25168, [1179, 1144]), (26170, [1179, 1144]), (27009, [1179, 1352])] {
+    for (pid, ids) in [
+        (25168, [1179, 1144]),
+        (26170, [1179, 1144]),
+        (27009, [1179, 1352]),
+    ] {
         let obj = u(source.object(&resources, pid))?;
         if u(source.typename(&obj))? != "GeoControl" {
             return err("changed GeoControl");
@@ -189,32 +246,69 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         for r in get(&read(&obj)?, "pickupSounds")?.list().unwrap_or(&[]) {
             refs.push(sid_of(&resources, r)?);
         }
-        if refs != ids.iter().map(|i| format!("resources.assets:{i}")).collect::<Vec<_>>() {
+        if refs
+            != ids
+                .iter()
+                .map(|i| format!("resources.assets:{i}"))
+                .collect::<Vec<_>>()
+        {
             return err("changed pickup sound mapping");
         }
-        coins.push(jobj(vec![("component", Json::Str(obj.sid())), ("clips", Json::List(refs.into_iter().map(Json::Str).collect())), ("audio_source", Json::Str(audio_source(&obj)?))]));
+        coins.push(jobj(vec![
+            ("component", Json::Str(obj.sid())),
+            (
+                "clips",
+                Json::List(refs.into_iter().map(Json::Str).collect()),
+            ),
+            ("audio_source", Json::Str(audio_source(&obj)?)),
+        ]));
     }
     let mut rocks = Vec::new();
     for pid in [12121, 12126, 12186, 12227, 12275] {
         let obj = u(source.object(&level, pid))?;
         let tree = read(&obj)?;
-        let states = get(get(&tree, "fsm")?, "states")?.list().ok_or("states is not a list")?;
-        let mut result = vec![("fsm".to_string(), Json::Str(obj.sid())), ("audio_source".into(), Json::Str(audio_source(&obj)?))];
-        for (state, ids) in [("Check Direction", &[149, 173, 103][..]), ("Destroy", &[92, 99][..])] {
-            let found = states.iter().rev().find(|s| s.get("name").and_then(Value::str).as_deref() == Some(state)).ok_or_else(|| format!("missing state {state}"))?;
+        let states = get(get(&tree, "fsm")?, "states")?
+            .list()
+            .ok_or("states is not a list")?;
+        let mut result = vec![
+            ("fsm".to_string(), Json::Str(obj.sid())),
+            ("audio_source".into(), Json::Str(audio_source(&obj)?)),
+        ];
+        for (state, ids) in [
+            ("Check Direction", &[149, 173, 103][..]),
+            ("Destroy", &[92, 99][..]),
+        ] {
+            let found = states
+                .iter()
+                .rev()
+                .find(|s| s.get("name").and_then(Value::str).as_deref() == Some(state))
+                .ok_or_else(|| format!("missing state {state}"))?;
             let mut refs = Vec::new();
             for r in random_audio_action(get(found, "actionData")?)? {
                 refs.push(sid_of(&level, &r)?);
             }
-            if refs != ids.iter().map(|i| format!("sharedassets6.assets:{i}")).collect::<Vec<_>>() {
+            if refs
+                != ids
+                    .iter()
+                    .map(|i| format!("sharedassets6.assets:{i}"))
+                    .collect::<Vec<_>>()
+            {
                 return err("changed rock sound mapping");
             }
-            result.push((state.to_string(), Json::List(refs.into_iter().map(Json::Str).collect())));
+            result.push((
+                state.to_string(),
+                Json::List(refs.into_iter().map(Json::Str).collect()),
+            ));
         }
         rocks.push(Json::Obj(result));
     }
 
-    let cook_clip = |file: &str, pid: i64, name: &str, rate: i64, resampler: Resampler| -> Result<(Clip, Vec<u8>)> {
+    let cook_clip = |file: &str,
+                     pid: i64,
+                     name: &str,
+                     rate: i64,
+                     resampler: Resampler|
+     -> Result<(Clip, Vec<u8>)> {
         let obj = u(source.object(&u(source.file(file))?, pid))?;
         let tree = read(&obj)?;
         if tree.get("m_Name").and_then(Value::str).as_deref() != Some(name) {
@@ -226,18 +320,43 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         let mut decoded = decode_oneshot(&encoded)?;
         decoded.truncate(pcm.len());
         let n = pcm.len().max(1) as i64;
-        let mse = div(pcm.iter().zip(&decoded).map(|(&a, &b)| (a as i64 - b as i64).pow(2)).sum::<i64>(), n);
+        let mse = div(
+            pcm.iter()
+                .zip(&decoded)
+                .map(|(&a, &b)| (a as i64 - b as i64).pow(2))
+                .sum::<i64>(),
+            n,
+        );
         let power = div(pcm.iter().map(|&a| a as i64 * a as i64).sum::<i64>(), n);
-        let int = |k: &str| meta.iter().find(|(n, _)| n == k).and_then(|(_, v)| if let Json::Int(i) = v { Some(*i) } else { None }).unwrap_or(0);
+        let int = |k: &str| {
+            meta.iter()
+                .find(|(n, _)| n == k)
+                .and_then(|(_, v)| if let Json::Int(i) = v { Some(*i) } else { None })
+                .unwrap_or(0)
+        };
         let duration = div(int("source_frames"), int("source_rate"));
         meta.extend([
             ("name".to_string(), js(name)),
             ("source_wav_sha256".into(), Json::Str(sha(&wav))),
             ("encoded_sha256".into(), Json::Str(sha(&encoded))),
-            ("snr_db".into(), if mse != 0.0 && power != 0.0 { Json::Float(10.0 * (power / mse).log10()) } else { Json::Null }),
+            (
+                "snr_db".into(),
+                if mse != 0.0 && power != 0.0 {
+                    Json::Float(10.0 * (power / mse).log10())
+                } else {
+                    Json::Null
+                },
+            ),
             ("source_duration_seconds".into(), Json::Float(duration)),
         ]);
-        Ok((Clip { source: obj.sid(), encoded, meta }, wav))
+        Ok((
+            Clip {
+                source: obj.sid(),
+                encoded,
+                meta,
+            },
+            wav,
+        ))
     };
     let mut items = Vec::new();
     for (file, pid, name) in SOURCES {
@@ -249,26 +368,43 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
     // cook_audio at the rate its allocator chose and with its resampler:
     // re-cook it the same way to prove the bytes are that source clip.
     let path = root.join(".hkpsx/audio-provenance.json");
-    let hero: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?).map_err(|e| e.to_string())?;
-    let door_record = hero["events"].as_array().and_then(|l| l.iter().find(|e| e["event"] == "door")).ok_or("no door event in the resident bank")?;
+    let hero: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?,
+    )
+    .map_err(|e| e.to_string())?;
+    let door_record = hero["events"]
+        .as_array()
+        .and_then(|l| l.iter().find(|e| e["event"] == "door"))
+        .ok_or("no door event in the resident bank")?;
     if door_record["source_id"] != "sharedassets6.assets:92" || door_record["offset"] != 0 {
         return err("resident door sample moved");
     }
-    let door_rate = door_record["sample_rate"].as_i64().ok_or("door without a sample rate")?;
+    let door_rate = door_record["sample_rate"]
+        .as_i64()
+        .ok_or("door without a sample rate")?;
     let door_resampler = match door_record.get("resampler").and_then(|r| r.as_str()) {
         None | Some("ffmpeg") => Resampler::Ffmpeg,
         Some("sdk") => Resampler::Sdk,
         Some(other) => return err(format!("unknown resampler {other}")),
     };
-    let (door, _) = cook_clip("sharedassets6.assets", 92, "breakable_wall_hit_1", door_rate, door_resampler)?;
-    let resident = std::fs::read(root.join("data/sfx.adpcm")).map_err(|e| format!("data/sfx.adpcm: {e}"))?;
+    let (door, _) = cook_clip(
+        "sharedassets6.assets",
+        92,
+        "breakable_wall_hit_1",
+        door_rate,
+        door_resampler,
+    )?;
+    let resident =
+        std::fs::read(root.join("data/sfx.adpcm")).map_err(|e| format!("data/sfx.adpcm: {e}"))?;
     if resident.get(..door.encoded.len()) != Some(&door.encoded[..]) {
         return err("resident door sample no longer equals source rock-break clip");
     }
     std::fs::write(root.join("data/geo-audio.adpcm"), &bank).map_err(|e| e.to_string())?;
     // The guest streams this bank from the disc, so it carries the pack chunk's
     // expected length and FNV-1a checksum rather than the bytes themselves.
-    let mut manifest = String::from("// Generated from complete Windows source clips; see ignored Geo audio provenance.\n");
+    let mut manifest = String::from(
+        "// Generated from complete Windows source clips; see ignored Geo audio provenance.\n",
+    );
     manifest += &format!("pub const BANK_BYTES: usize = {};\n", bank.len());
     manifest += &format!("pub const BANK_CHECKSUM: u32 = {};\n", fnv(&bank));
     manifest += "const SAMPLES: [(u32,u32,i16);6] = [\n";
@@ -279,10 +415,20 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
     std::fs::write(root.join("data/geo-audio.rs"), manifest).map_err(|e| e.to_string())?;
 
     let mut inputs = Vec::new();
-    for file in ["resources.assets", "resources.resource", "sharedassets6.assets", "sharedassets6.resource", "level6", "Managed/Assembly-CSharp.dll"] {
+    for file in [
+        "resources.assets",
+        "resources.resource",
+        "sharedassets6.assets",
+        "sharedassets6.resource",
+        "level6",
+        "Managed/Assembly-CSharp.dll",
+    ] {
         let p = source.directory.join(file);
         if p.is_file() {
-            inputs.push((file.to_string(), Json::Str(sha(&std::fs::read(&p).map_err(|e| e.to_string())?))));
+            inputs.push((
+                file.to_string(),
+                Json::Str(sha(&std::fs::read(&p).map_err(|e| e.to_string())?)),
+            ));
         }
     }
     let mut break_reuse = door.meta.clone();
@@ -334,8 +480,16 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
             ]),
         ),
     ]);
-    std::fs::write(root.join(".hkpsx/geo-audio-provenance.json"), dumps(&provenance)).map_err(|e| e.to_string())?;
-    println!("Geo audio: {}/{BANK_LIMIT} bytes, complete six clips, end {:#x}", bank.len(), SPU_BASE + bank.len() as i64);
+    std::fs::write(
+        root.join(".hkpsx/geo-audio-provenance.json"),
+        dumps(&provenance),
+    )
+    .map_err(|e| e.to_string())?;
+    println!(
+        "Geo audio: {}/{BANK_LIMIT} bytes, complete six clips, end {:#x}",
+        bank.len(),
+        SPU_BASE + bank.len() as i64
+    );
     Ok(())
 }
 
@@ -364,30 +518,104 @@ mod tests {
     fn action(a: &Action) -> Value {
         let pptr = |i: i64| map(vec![("m_FileID", int(2)), ("m_PathID", int(i))]);
         map(vec![
-            ("actionNames", list(vec![text("HutongGames.PlayMaker.Actions.AudioPlayRandom")])),
+            (
+                "actionNames",
+                list(vec![text("HutongGames.PlayMaker.Actions.AudioPlayRandom")]),
+            ),
             ("actionEnabled", list(vec![int(a.enabled)])),
             ("actionStartIndex", list(vec![int(0)])),
-            ("paramName", list(["gameObject", "audioClips", "", "", "weights", "", "", "pitchMin", "pitchMax"].iter().map(|s| text(s)).collect())),
-            ("paramDataType", list([19, 12, 5, a.kind_of_second_slot, 12, 15, 15, 15, 15].iter().map(|&x| int(x)).collect())),
-            ("paramDataPos", list([0, 0, 0, 1, 1, 0, 5, 10, 15].iter().map(|&x| int(x)).collect())),
-            ("paramByteDataSize", list([0, 0, 0, 0, 0, 5, 5, 5, 5].iter().map(|&x| int(x)).collect())),
+            (
+                "paramName",
+                list(
+                    [
+                        "gameObject",
+                        "audioClips",
+                        "",
+                        "",
+                        "weights",
+                        "",
+                        "",
+                        "pitchMin",
+                        "pitchMax",
+                    ]
+                    .iter()
+                    .map(|s| text(s))
+                    .collect(),
+                ),
+            ),
+            (
+                "paramDataType",
+                list(
+                    [19, 12, 5, a.kind_of_second_slot, 12, 15, 15, 15, 15]
+                        .iter()
+                        .map(|&x| int(x))
+                        .collect(),
+                ),
+            ),
+            (
+                "paramDataPos",
+                list(
+                    [0, 0, 0, 1, 1, 0, 5, 10, 15]
+                        .iter()
+                        .map(|&x| int(x))
+                        .collect(),
+                ),
+            ),
+            (
+                "paramByteDataSize",
+                list(
+                    [0, 0, 0, 0, 0, 5, 5, 5, 5]
+                        .iter()
+                        .map(|&x| int(x))
+                        .collect(),
+                ),
+            ),
             ("byteData", bytes_of(&a.bytes)),
             ("arrayParamSizes", list(vec![int(a.sizes), int(2)])),
-            ("arrayParamTypes", list(vec![text("UnityEngine.AudioClip"), text("HutongGames.PlayMaker.FsmFloat")])),
-            ("fsmGameObjectParams", list(vec![map(vec![("useVariable", int(1)), ("name", text(a.owner))])])),
-            ("unityObjectParams", list(vec![pptr(a.first_clip), pptr(99)])),
+            (
+                "arrayParamTypes",
+                list(vec![
+                    text("UnityEngine.AudioClip"),
+                    text("HutongGames.PlayMaker.FsmFloat"),
+                ]),
+            ),
+            (
+                "fsmGameObjectParams",
+                list(vec![map(vec![
+                    ("useVariable", int(1)),
+                    ("name", text(a.owner)),
+                ])]),
+            ),
+            (
+                "unityObjectParams",
+                list(vec![pptr(a.first_clip), pptr(99)]),
+            ),
         ])
     }
     fn observed() -> Action {
         let one: Vec<u8> = [1.0f32.to_le_bytes().to_vec(), vec![0]].concat();
-        Action { enabled: 1, bytes: one.repeat(4), owner: "Self", first_clip: 92, sizes: 2, kind_of_second_slot: 5 }
+        Action {
+            enabled: 1,
+            bytes: one.repeat(4),
+            owner: "Self",
+            first_clip: 92,
+            sizes: 2,
+            kind_of_second_slot: 5,
+        }
     }
 
     #[test]
     fn source_action_only_constant_equal_weight_self() {
         let clips = random_audio_action(&action(&observed())).unwrap();
-        assert_eq!(clips.iter().map(|c| c.get("m_PathID").and_then(Value::int)).collect::<Vec<_>>(), [Some(92), Some(99)]);
-        let breaks: Vec<Box<dyn Fn(&mut Action)>> = vec![
+        assert_eq!(
+            clips
+                .iter()
+                .map(|c| c.get("m_PathID").and_then(Value::int))
+                .collect::<Vec<_>>(),
+            [Some(92), Some(99)]
+        );
+        type Break = Box<dyn Fn(&mut Action)>;
+        let breaks: Vec<Break> = vec![
             Box::new(|a| a.enabled = 0),
             Box::new(|a| a.bytes[4] = 1),
             Box::new(|a| a.bytes[13] = 64),
@@ -399,7 +627,10 @@ mod tests {
         for (i, b) in breaks.iter().enumerate() {
             let mut bad = observed();
             b(&mut bad);
-            assert!(random_audio_action(&action(&bad)).is_err(), "mutation {i} was admitted");
+            assert!(
+                random_audio_action(&action(&bad)).is_err(),
+                "mutation {i} was admitted"
+            );
         }
     }
 
@@ -407,7 +638,11 @@ mod tests {
         sources
             .iter()
             .enumerate()
-            .map(|(i, (file, pid))| Clip { source: format!("{file}:{pid}"), encoded: tool().encode_oneshot(&vec![i as i16 * 1000; 28]).unwrap(), meta: Vec::new() })
+            .map(|(i, (file, pid))| Clip {
+                source: format!("{file}:{pid}"),
+                encoded: tool().encode_oneshot(&[i as i16 * 1000; 28]).unwrap(),
+                meta: Vec::new(),
+            })
             .collect()
     }
     fn ordered() -> Vec<(&'static str, i64)> {

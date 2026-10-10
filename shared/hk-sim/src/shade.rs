@@ -87,14 +87,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 4], count: 0 }
+        Self {
+            values: [None; 4],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,8 +123,16 @@ pub struct Shade {
 impl Shade {
     /// `start` is the spawn position, which Max Roam measures against.
     pub fn new(start: [i32; 2], seed: u32) -> Self {
-        Self { phase: Phase::Idle, velocity: [0; 2], start, retreat_from: start, timer: 0,
-            facing: -1, fixed_accumulator: 0, rng: seed }
+        Self {
+            phase: Phase::Idle,
+            velocity: [0; 2],
+            start,
+            retreat_from: start,
+            timer: 0,
+            facing: -1,
+            fixed_accumulator: 0,
+            rng: seed,
+        }
     }
     pub fn phase(self) -> Phase {
         self.phase
@@ -176,7 +189,11 @@ impl Shade {
     }
     /// FaceObject every frame: the sprite faces the hero, with no pause.
     fn face_hero(&mut self, senses: Senses, out: &mut Actions) {
-        let want = if senses.hero[0] > senses.position[0] { 1 } else { -1 };
+        let want = if senses.hero[0] > senses.position[0] {
+            1
+        } else {
+            -1
+        };
         if want != self.facing {
             self.facing = want;
             out.push(Action::Facing(want));
@@ -186,8 +203,12 @@ impl Shade {
     /// ChaseObject.DoBuzz then ChaseObjectV2.DoChase, in the source order.
     fn chase(&mut self, senses: Senses) {
         let mut v = self.velocity;
-        for axis in 0..2 {
-            v[axis] += if senses.hero[axis] > senses.position[axis] { CHASE_ACCELERATION } else { -CHASE_ACCELERATION };
+        for (axis, slot) in v.iter_mut().enumerate() {
+            *slot += if senses.hero[axis] > senses.position[axis] {
+                CHASE_ACCELERATION
+            } else {
+                -CHASE_ACCELERATION
+            };
         }
         clamp(&mut v, CHASE_SPEED_MAX);
         // ClampMagnitude(hero - self, 1) * accelerationForce, then a magnitude clamp.
@@ -259,7 +280,15 @@ impl Shade {
             Phase::Position => {
                 if fixed {
                     let mut v = self.velocity;
-                    distance_fly_height(senses.position, senses.hero, POSITION_DISTANCE, 0, CHASE_SPEED_MAX, CHASE_ACCELERATION, &mut v);
+                    distance_fly_height(
+                        senses.position,
+                        senses.hero,
+                        POSITION_DISTANCE,
+                        0,
+                        CHASE_SPEED_MAX,
+                        CHASE_ACCELERATION,
+                        &mut v,
+                    );
                     self.velocity = v;
                     out.push(Action::Velocity(self.velocity));
                 }
@@ -288,7 +317,15 @@ impl Shade {
             Phase::SlashAntic => {
                 if fixed {
                     let mut v = self.velocity;
-                    distance_fly_height(senses.position, senses.hero, POSITION_DISTANCE, 0, CHASE_SPEED_MAX, CHASE_ACCELERATION, &mut v);
+                    distance_fly_height(
+                        senses.position,
+                        senses.hero,
+                        POSITION_DISTANCE,
+                        0,
+                        CHASE_SPEED_MAX,
+                        CHASE_ACCELERATION,
+                        &mut v,
+                    );
                     self.velocity = v;
                     out.push(Action::Velocity(self.velocity));
                 }
@@ -347,9 +384,16 @@ impl Shade {
                 let done = RETREAT_TICKS - self.timer;
                 let at = |from: i32, to: i32| {
                     // to - from fits i32 while positions stay inside +/-2^30.
-                    from + psx_math::int32::mul_div_i32(to - from, done as i32, RETREAT_TICKS as i32)
+                    from + psx_math::int32::mul_div_i32(
+                        to - from,
+                        done as i32,
+                        RETREAT_TICKS as i32,
+                    )
                 };
-                out.push(Action::MoveTo([at(self.retreat_from[0], self.start[0]), at(self.retreat_from[1], self.start[1])]));
+                out.push(Action::MoveTo([
+                    at(self.retreat_from[0], self.start[0]),
+                    at(self.retreat_from[1], self.start[1]),
+                ]));
                 if self.timer == 0 {
                     self.phase = Phase::RetreatEnd;
                     self.timer = RETREAT_END_TICKS;
@@ -413,7 +457,11 @@ mod tests {
     use super::*;
     const START: [i32; 2] = [0, 0];
     fn senses(shade: [i32; 2], hero: [i32; 2], see: bool) -> Senses {
-        Senses { position: shade, hero, can_see_hero: see }
+        Senses {
+            position: shade,
+            hero,
+            can_see_hero: see,
+        }
     }
     fn run(s: &mut Shade, at: [i32; 2], hero: [i32; 2], see: bool, ticks: u32) {
         for _ in 0..ticks {
@@ -478,7 +526,13 @@ mod tests {
         assert!(s.slashing());
         run(&mut s, START, [-ONE, 0], true, SLASH_TICKS as u32);
         assert!(!s.slashing());
-        run(&mut s, START, [-ONE, 0], true, (SLASH_BOX_TICKS + SLASH_CD_TICKS) as u32);
+        run(
+            &mut s,
+            START,
+            [-ONE, 0],
+            true,
+            (SLASH_BOX_TICKS + SLASH_CD_TICKS) as u32,
+        );
         assert_eq!(s.phase(), Phase::Fly);
     }
     #[test]
@@ -509,9 +563,16 @@ mod tests {
     fn death_runs_its_sequence_once_and_stops_being_vulnerable() {
         let mut s = Shade::new(START, 9);
         assert!(s.vulnerable());
-        assert!(s.die().iter().any(|a| a == Action::Play(Clip::DeathStart, 0)));
+        assert!(s
+            .die()
+            .iter()
+            .any(|a| a == Action::Play(Clip::DeathStart, 0)));
         assert!(!s.vulnerable());
-        assert_eq!(s.die().iter().count(), 0, "a second death is not a second sequence");
+        assert_eq!(
+            s.die().iter().count(),
+            0,
+            "a second death is not a second sequence"
+        );
         run(&mut s, START, START, false, DEATH_START_TICKS as u32);
         assert_eq!(s.phase(), Phase::Death);
         run(&mut s, START, START, false, DEATH_TICKS as u32);
@@ -522,8 +583,14 @@ mod tests {
     #[test]
     fn taking_damage_only_startles_from_idle() {
         let mut s = Shade::new(START, 2);
-        assert_eq!(s.took_damage(senses(START, [ONE, 0], false)).iter().count(), 1);
+        assert_eq!(
+            s.took_damage(senses(START, [ONE, 0], false)).iter().count(),
+            1
+        );
         assert_eq!(s.phase(), Phase::Startle);
-        assert_eq!(s.took_damage(senses(START, [ONE, 0], false)).iter().count(), 0);
+        assert_eq!(
+            s.took_damage(senses(START, [ONE, 0], false)).iter().count(),
+            0
+        );
     }
 }

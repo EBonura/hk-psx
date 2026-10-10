@@ -48,12 +48,12 @@
 
 use crate::common::{err, py_round, Result};
 use crate::pyjson::{dumps, Json};
+use crate::spu::{check_oneshot, fnv, mono_wav, read_wav, run, samples_of};
 use hk_unity::{Obj, Source, Value};
 use serde_json::Value as J;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use crate::spu::{check_oneshot, fnv, mono_wav, read_wav, run, samples_of};
 use std::process::Command;
 
 /// Gain the scene voice plays every clip at: the source's volume 1.0 scaled
@@ -64,7 +64,10 @@ const EMPTY: [u8; 16] = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 /// A trimmed clip ends in a linear fade this long, so the cut never clicks.
 const TRIM_FADE_SECONDS: f64 = 0.02;
 /// The SDK allocator's rate ladder, high to low (psx_audio_cook::rate::LADDER).
-const LADDER: [i64; 20] = [22050, 18900, 16000, 13000, 11025, 10000, 9000, 8000, 7000, 6000, 5500, 5000, 4500, 4000, 3600, 3200, 2800, 2400, 2000, 1600];
+const LADDER: [i64; 20] = [
+    22050, 18900, 16000, 13000, 11025, 10000, 9000, 8000, 7000, 6000, 5500, 5000, 4500, 4000, 3600,
+    3200, 2800, 2400, 2000, 1600,
+];
 /// How far a cook's level may stray from its source's before the no-worse
 /// check counts it, when ship6's own cook strayed less: fwSNRseg ignores gain.
 const LEVEL_TOLERANCE_DB: f64 = 0.5;
@@ -118,8 +121,26 @@ pub struct Event {
 }
 
 #[allow(clippy::too_many_arguments)]
-const fn ev(name: &'static str, file: &'static str, path_id: i64, clip: &'static str, rate: i64, place: &'static [&'static str], priority: i64, trim: Option<Trim>) -> Event {
-    Event { name, file, path_id, clip, rate, place, priority, trim }
+const fn ev(
+    name: &'static str,
+    file: &'static str,
+    path_id: i64,
+    clip: &'static str,
+    rate: i64,
+    place: &'static [&'static str],
+    priority: i64,
+    trim: Option<Trim>,
+) -> Event {
+    Event {
+        name,
+        file,
+        path_id,
+        clip,
+        rate,
+        place,
+        priority,
+        trim,
+    }
 }
 
 pub const EVENTS: &[Event] = &[
@@ -143,21 +164,147 @@ pub const EVENTS: &[Event] = &[
     //   FKnight_death 3000 Hz: loss -18.2 dB, cut to `Steam`'s own 3.0 s: the
     //                  source's `Blow` follows with its own explosion.
     //   ceiling_break 3000 Hz: loss -22.2 dB (-24.9 at 4000); tail 2.42 -> 2.30 s.
-    ev("false_knight_strike_ground", "sharedassets48.assets", 28, "false_knight_strike_ground", 3000, &["scene", "Crossroads_10"], 0, None),
-    ev("false_knight_rage", "sharedassets48.assets", 30, "FKnight_Rage", 3000, &["scene", "Crossroads_10"], 1, None),
-    ev("boss_final_hit", "sharedassets32.assets", 135, "boss_final_hit", 5512, &["scene", "Crossroads_10", "Crossroads_09"], 2, None),
-    ev("false_knight_jump", "sharedassets48.assets", 45, "false_knight_jump", 5512, &["scene", "Crossroads_10"], 3, None),
-    ev("false_knight_land_1st_time", "sharedassets6.assets", 171, "false_knight_land_1st_time", 5512, &["scene", "Crossroads_10"], 4, None),
-    ev("false_knight_damage_armour_final", "sharedassets46.assets", 22, "false_knight_damage_armour_final", 5512, &["scene", "Crossroads_10"], 5, None),
-    ev("false_knight_roll", "sharedassets48.assets", 21, "false_knight_roll", 4000, &["scene", "Crossroads_10"], 6, None),
-    ev("false_knight_death", "sharedassets48.assets", 38, "FKnight_death", 3000, &["scene", "Crossroads_10"], 8, None),
-    ev("false_knight_ceiling_break", "sharedassets19.assets", 31, "false_knight_ceiling_break", 3000, &["scene", "Crossroads_10"], 9, None),
-    ev("zombie_shield_raise", "sharedassets32.assets", 143, "zombie_shield_raise", 5512, &["scene", "Crossroads_10"], 13, None),
-    ev("zombie_shield_move", "sharedassets32.assets", 87, "zombie_shield_move", 5512, &["scene", "Crossroads_10"], 14, None),
-    ev("zombie_guard_footstep", "sharedassets48.assets", 29, "zombie_guard_footstep", 5512, &["scene", "Crossroads_10"], 15, None),
+    ev(
+        "false_knight_strike_ground",
+        "sharedassets48.assets",
+        28,
+        "false_knight_strike_ground",
+        3000,
+        &["scene", "Crossroads_10"],
+        0,
+        None,
+    ),
+    ev(
+        "false_knight_rage",
+        "sharedassets48.assets",
+        30,
+        "FKnight_Rage",
+        3000,
+        &["scene", "Crossroads_10"],
+        1,
+        None,
+    ),
+    ev(
+        "boss_final_hit",
+        "sharedassets32.assets",
+        135,
+        "boss_final_hit",
+        5512,
+        &["scene", "Crossroads_10", "Crossroads_09"],
+        2,
+        None,
+    ),
+    ev(
+        "false_knight_jump",
+        "sharedassets48.assets",
+        45,
+        "false_knight_jump",
+        5512,
+        &["scene", "Crossroads_10"],
+        3,
+        None,
+    ),
+    ev(
+        "false_knight_land_1st_time",
+        "sharedassets6.assets",
+        171,
+        "false_knight_land_1st_time",
+        5512,
+        &["scene", "Crossroads_10"],
+        4,
+        None,
+    ),
+    ev(
+        "false_knight_damage_armour_final",
+        "sharedassets46.assets",
+        22,
+        "false_knight_damage_armour_final",
+        5512,
+        &["scene", "Crossroads_10"],
+        5,
+        None,
+    ),
+    ev(
+        "false_knight_roll",
+        "sharedassets48.assets",
+        21,
+        "false_knight_roll",
+        4000,
+        &["scene", "Crossroads_10"],
+        6,
+        None,
+    ),
+    ev(
+        "false_knight_death",
+        "sharedassets48.assets",
+        38,
+        "FKnight_death",
+        3000,
+        &["scene", "Crossroads_10"],
+        8,
+        None,
+    ),
+    ev(
+        "false_knight_ceiling_break",
+        "sharedassets19.assets",
+        31,
+        "false_knight_ceiling_break",
+        3000,
+        &["scene", "Crossroads_10"],
+        9,
+        None,
+    ),
+    ev(
+        "zombie_shield_raise",
+        "sharedassets32.assets",
+        143,
+        "zombie_shield_raise",
+        5512,
+        &["scene", "Crossroads_10"],
+        13,
+        None,
+    ),
+    ev(
+        "zombie_shield_move",
+        "sharedassets32.assets",
+        87,
+        "zombie_shield_move",
+        5512,
+        &["scene", "Crossroads_10"],
+        14,
+        None,
+    ),
+    ev(
+        "zombie_guard_footstep",
+        "sharedassets48.assets",
+        29,
+        "zombie_guard_footstep",
+        5512,
+        &["scene", "Crossroads_10"],
+        15,
+        None,
+    ),
     // `BG Control`'s own clips, only where the port drives the arena.
-    ev("gate_slam", "sharedassets27.assets", 35, "gate_slam", 3000, &["arena", "Crossroads_10", "Crossroads_09"], 7, None),
-    ev("gate_open", "sharedassets27.assets", 41, "gate_open", 5512, &["arena", "Crossroads_10", "Crossroads_09"], 10, None),
+    ev(
+        "gate_slam",
+        "sharedassets27.assets",
+        35,
+        "gate_slam",
+        3000,
+        &["arena", "Crossroads_10", "Crossroads_09"],
+        7,
+        None,
+    ),
+    ev(
+        "gate_open",
+        "sharedassets27.assets",
+        41,
+        "gate_open",
+        5512,
+        &["arena", "Crossroads_10", "Crossroads_09"],
+        10,
+        None,
+    ),
     // Brooding Mawlek's (Crossroads_09), in the order the fight leans on them:
     // every landing's club, the leap, the Head's spit every half second, the
     // arm swipe's whip and call, the super spit, the wake roar, the nail
@@ -167,27 +314,153 @@ pub const EVENTS: &[Event] = &[
     // bank's usual 5512 Hz for the short percussive clips and 3000 to 4000 Hz
     // for the long ones, not measured per clip as the False Knight's were;
     // boss_final_hit and the gates share the False Knight's rows above.
-    ev("zombie_guard_club", "sharedassets34.assets", 107, "zombie_guard_club", 5512, &["scene", "Crossroads_09"], 0, None),
-    ev("mawlek_jump", "sharedassets34.assets", 79, "mawlek_jump", 5512, &["scene", "Crossroads_09"], 1, None),
-    ev("mawlek_spit", "sharedassets33.assets", 73, "mawlek_spit", 5512, &["scene", "Crossroads_09"], 3, None),
-    ev("mawlek_whip", "sharedassets34.assets", 80, "mawlek_whip", 5512, &["scene", "Crossroads_09"], 4, None),
-    ev("mawlek_call", "sharedassets34.assets", 100, "mawlek_call", 5512, &["scene", "Crossroads_09"], 5, None),
-    ev("mawlek_big_spit", "sharedassets34.assets", 58, "mawlek_big_spit", 5512, &["scene", "Crossroads_09"], 6, None),
-    ev("mawlek_scream", "sharedassets45.assets", 9, "mawlek_scream", 4000, &["scene", "Crossroads_09"], 8, None),
-    ev("hero_parry", "resources.assets", 1154, "hero_parry", 5512, &["scene", "Crossroads_09"], 9, None),
-    ev("boss_explode", "sharedassets32.assets", 99, "boss_explode", 3000, &["scene", "Crossroads_09"], 11, None),
-    ev("boss_gushing", "sharedassets32.assets", 62, "boss_gushing", 3000, &["scene", "Crossroads_09"], 12, None),
-    ev("mawlek_jump_offscreen", "sharedassets34.assets", 74, "mawlek_jump_offscreen", 3000, &["scene", "Crossroads_09"], 13, None),
-    ev("mawlek_spit_b", "sharedassets34.assets", 91, "mawlek_spit_b", 5512, &["scene", "Crossroads_09"], 14, None),
+    ev(
+        "zombie_guard_club",
+        "sharedassets34.assets",
+        107,
+        "zombie_guard_club",
+        5512,
+        &["scene", "Crossroads_09"],
+        0,
+        None,
+    ),
+    ev(
+        "mawlek_jump",
+        "sharedassets34.assets",
+        79,
+        "mawlek_jump",
+        5512,
+        &["scene", "Crossroads_09"],
+        1,
+        None,
+    ),
+    ev(
+        "mawlek_spit",
+        "sharedassets33.assets",
+        73,
+        "mawlek_spit",
+        5512,
+        &["scene", "Crossroads_09"],
+        3,
+        None,
+    ),
+    ev(
+        "mawlek_whip",
+        "sharedassets34.assets",
+        80,
+        "mawlek_whip",
+        5512,
+        &["scene", "Crossroads_09"],
+        4,
+        None,
+    ),
+    ev(
+        "mawlek_call",
+        "sharedassets34.assets",
+        100,
+        "mawlek_call",
+        5512,
+        &["scene", "Crossroads_09"],
+        5,
+        None,
+    ),
+    ev(
+        "mawlek_big_spit",
+        "sharedassets34.assets",
+        58,
+        "mawlek_big_spit",
+        5512,
+        &["scene", "Crossroads_09"],
+        6,
+        None,
+    ),
+    ev(
+        "mawlek_scream",
+        "sharedassets45.assets",
+        9,
+        "mawlek_scream",
+        4000,
+        &["scene", "Crossroads_09"],
+        8,
+        None,
+    ),
+    ev(
+        "hero_parry",
+        "resources.assets",
+        1154,
+        "hero_parry",
+        5512,
+        &["scene", "Crossroads_09"],
+        9,
+        None,
+    ),
+    ev(
+        "boss_explode",
+        "sharedassets32.assets",
+        99,
+        "boss_explode",
+        3000,
+        &["scene", "Crossroads_09"],
+        11,
+        None,
+    ),
+    ev(
+        "boss_gushing",
+        "sharedassets32.assets",
+        62,
+        "boss_gushing",
+        3000,
+        &["scene", "Crossroads_09"],
+        12,
+        None,
+    ),
+    ev(
+        "mawlek_jump_offscreen",
+        "sharedassets34.assets",
+        74,
+        "mawlek_jump_offscreen",
+        3000,
+        &["scene", "Crossroads_09"],
+        13,
+        None,
+    ),
+    ev(
+        "mawlek_spit_b",
+        "sharedassets34.assets",
+        91,
+        "mawlek_spit_b",
+        5512,
+        &["scene", "Crossroads_09"],
+        14,
+        None,
+    ),
     // `Bench Control` `Start Rest`.
-    ev("bench_rest", "sharedassets7.assets", 105, "bench_rest", 5512, &["benches"], 20, None),
+    ev(
+        "bench_rest",
+        "sharedassets7.assets",
+        105,
+        "bench_rest",
+        5512,
+        &["benches"],
+        20,
+        None,
+    ),
     // The one-way reveal controllers' sound branch (`unmasker`), and the second
     // clip of a hidden wall's `Break`. 3000 Hz: the chime holds -37.9 dB of its
     // energy above 1.5 kHz, so it loses almost nothing against 5512 Hz and a
     // -40 dB tail (3.68 of 4.03 s) and costs 6,336 bytes instead of 12,720,
     // which is what lets it into King's Pass beside the chest and the shiny.
     // Admitted after them (24): placed first, it took the gap the shiny needs.
-    ev("secret_discovered", "sharedassets6.assets", 157, "secret_discovered_temp", 3000, &["secrets"], 24, None),
+    ev(
+        "secret_discovered",
+        "sharedassets6.assets",
+        157,
+        "secret_discovered_temp",
+        3000,
+        &["secrets"],
+        24,
+        None,
+    ),
     // Hidden walls and cracked floors (host/secret_breaks.py), admitted after
     // everything a scene already had so no earlier sound loses its place. A
     // wall's `AudioPlayRandom` picks breakable_wall_hit_1 or _2 at 1:1; _1 is
@@ -197,11 +470,47 @@ pub const EVENTS: &[Event] = &[
     // Energy above the new Nyquist (source WAV): barrel_death_1 -9.6 dB at
     // 8000 Hz, breakable_wall_hit_2 -11.8 dB at 8000, breakable_wall_death
     // -17.5 dB at 4000 (-16.1 at 5512, so the lower rate costs little).
-    ev("barrel_death_1", "sharedassets6.assets", 107, "barrel_death_1", 8000, &["secret_floors"], 40, None),
-    ev("breakable_wall_death", "sharedassets6.assets", 102, "breakable_wall_death", 4000, &["secret_breaks"], 41, None),
-    ev("breakable_wall_hit_2", "sharedassets6.assets", 99, "breakable_wall_hit_2", 8000, &["secret_walls"], 42, None),
+    ev(
+        "barrel_death_1",
+        "sharedassets6.assets",
+        107,
+        "barrel_death_1",
+        8000,
+        &["secret_floors"],
+        40,
+        None,
+    ),
+    ev(
+        "breakable_wall_death",
+        "sharedassets6.assets",
+        102,
+        "breakable_wall_death",
+        4000,
+        &["secret_breaks"],
+        41,
+        None,
+    ),
+    ev(
+        "breakable_wall_hit_2",
+        "sharedassets6.assets",
+        99,
+        "breakable_wall_hit_2",
+        8000,
+        &["secret_walls"],
+        42,
+        None,
+    ),
     // Soul totem `Hit` (soul_totem, mini_soul_totem), where a totem stands.
-    ev("soul_totem_slash", "sharedassets56.assets", 14, "soul_totem_slash", 11025, &["totems"], 25, None),
+    ev(
+        "soul_totem_slash",
+        "sharedassets56.assets",
+        14,
+        "soul_totem_slash",
+        11025,
+        &["totems"],
+        25,
+        None,
+    ),
     // `Chest Control` `Open`: the lid's clip (its second, barrel_death_2, would
     // cut the first on the one scene voice).
     // `Shiny Control`'s Flash/Trink Flash/Big Get Flash all play one pickup
@@ -213,11 +522,47 @@ pub const EVENTS: &[Event] = &[
     // 6,944-byte gap Brooding Mawlek's clips leave in Crossroads_09 for its
     // arena mask shard. Crossroads_10 has no room left after the False
     // Knight's clips, so its chest and the City Crest stay silent.
-    ev("chest_open", "sharedassets6.assets", 158, "chest_open", 11025, &["chests"], 22, None),
-    ev("shiny_item_pickup", "resources.assets", 1337, "shiny_item_pickup", 11025, &["shinies"], 23, None),
-    ev("heartpiece_collect", "sharedassets10.assets", 31, "heartpiece_collect", 8000, &["pieces"], 23, None),
+    ev(
+        "chest_open",
+        "sharedassets6.assets",
+        158,
+        "chest_open",
+        11025,
+        &["chests"],
+        22,
+        None,
+    ),
+    ev(
+        "shiny_item_pickup",
+        "resources.assets",
+        1337,
+        "shiny_item_pickup",
+        11025,
+        &["shinies"],
+        23,
+        None,
+    ),
+    ev(
+        "heartpiece_collect",
+        "sharedassets10.assets",
+        31,
+        "heartpiece_collect",
+        8000,
+        &["pieces"],
+        23,
+        None,
+    ),
     // Aspid Hunter `spitter` Fire.
-    ev("aspid_spit", "sharedassets32.assets", 118, "spitter_spit", 22050, &["family", "Spitter"], 30, None),
+    ev(
+        "aspid_spit",
+        "sharedassets32.assets",
+        118,
+        "spitter_spit",
+        22050,
+        &["family", "Spitter"],
+        30,
+        None,
+    ),
     // Gruz Mother's (Crossroads_04), after its arena's two gate sounds
     // (LATE_IN, priorities 60 and 61). Crossroads_04's own gaps (16,656 bytes)
     // are full with the bench, secret and wall clips this scene had; the room
@@ -230,26 +575,128 @@ pub const EVENTS: &[Event] = &[
     // event names, so those rows keep their priorities in their scenes.
     // The flying, charge and snore loops are AudioSource loops, which the one
     // scene voice does not hold.
-    ev("big_fly_wall_hit", "sharedassets32.assets", 66, "big_fly_wall_hit", 5512, &["scene", "Crossroads_04"], 62, None),
-    ev("big_fly_snore_startle", "sharedassets32.assets", 78, "big_fly_snore_startle", 5512, &["scene", "Crossroads_04"], 63, None),
-    ev("gruz_final_hit", "sharedassets32.assets", 135, "boss_final_hit", 5512, &["scene", "Crossroads_04"], 64, None),
-    ev("gruz_explode", "sharedassets32.assets", 99, "boss_explode", 3000, &["scene", "Crossroads_04"], 65, None),
-    ev("gruz_gushing", "sharedassets32.assets", 62, "boss_gushing", 3000, &["scene", "Crossroads_04"], 66, None),
-    ev("big_fly_stomache_problems_1", "sharedassets40.assets", 25, "big_fly_stomache_problems_1", 4000, &["scene", "Crossroads_04"], 67, None),
-    ev("big_fly_stomache_problems_2", "sharedassets40.assets", 26, "big_fly_stomache_problems_2", 4000, &["scene", "Crossroads_04"], 68, None),
-    ev("big_fly_stomache_problems_final_and_explode", "sharedassets40.assets", 29, "big_fly_stomache_problems_final_and_explode", 4000, &["scene", "Crossroads_04"], 69, None),
+    ev(
+        "big_fly_wall_hit",
+        "sharedassets32.assets",
+        66,
+        "big_fly_wall_hit",
+        5512,
+        &["scene", "Crossroads_04"],
+        62,
+        None,
+    ),
+    ev(
+        "big_fly_snore_startle",
+        "sharedassets32.assets",
+        78,
+        "big_fly_snore_startle",
+        5512,
+        &["scene", "Crossroads_04"],
+        63,
+        None,
+    ),
+    ev(
+        "gruz_final_hit",
+        "sharedassets32.assets",
+        135,
+        "boss_final_hit",
+        5512,
+        &["scene", "Crossroads_04"],
+        64,
+        None,
+    ),
+    ev(
+        "gruz_explode",
+        "sharedassets32.assets",
+        99,
+        "boss_explode",
+        3000,
+        &["scene", "Crossroads_04"],
+        65,
+        None,
+    ),
+    ev(
+        "gruz_gushing",
+        "sharedassets32.assets",
+        62,
+        "boss_gushing",
+        3000,
+        &["scene", "Crossroads_04"],
+        66,
+        None,
+    ),
+    ev(
+        "big_fly_stomache_problems_1",
+        "sharedassets40.assets",
+        25,
+        "big_fly_stomache_problems_1",
+        4000,
+        &["scene", "Crossroads_04"],
+        67,
+        None,
+    ),
+    ev(
+        "big_fly_stomache_problems_2",
+        "sharedassets40.assets",
+        26,
+        "big_fly_stomache_problems_2",
+        4000,
+        &["scene", "Crossroads_04"],
+        68,
+        None,
+    ),
+    ev(
+        "big_fly_stomache_problems_final_and_explode",
+        "sharedassets40.assets",
+        29,
+        "big_fly_stomache_problems_final_and_explode",
+        4000,
+        &["scene", "Crossroads_04"],
+        69,
+        None,
+    ),
     // StalactiteControl (Tutorial_01 and six Crossroads scenes): the up-slash
     // break (`breakSound`), a side or down hit (`hitSound`) and the fall
     // starting (`startFallSound`), in that order of priority. Late rows, so
     // they only take what every earlier clip leaves and never move one. 5512 Hz
     // like the bank's other short percussive clips, not measured per clip.
-    ev("stalactite_death", "sharedassets6.assets", 112, "stalactite_death", 5512, &["stalactites"], 55, None),
-    ev("stalactite_impact", "sharedassets6.assets", 95, "stalactite_impact", 5512, &["stalactites"], 56, None),
-    ev("stalactite_break", "sharedassets6.assets", 161, "stalactite_break", 5512, &["stalactites"], 57, None),
+    ev(
+        "stalactite_death",
+        "sharedassets6.assets",
+        112,
+        "stalactite_death",
+        5512,
+        &["stalactites"],
+        55,
+        None,
+    ),
+    ev(
+        "stalactite_impact",
+        "sharedassets6.assets",
+        95,
+        "stalactite_impact",
+        5512,
+        &["stalactites"],
+        56,
+        None,
+    ),
+    ev(
+        "stalactite_break",
+        "sharedassets6.assets",
+        161,
+        "stalactite_break",
+        5512,
+        &["stalactites"],
+        57,
+        None,
+    ),
 ];
 
 /// Gruz Mother's arena gates sound like every other arena's.
-const LATE_IN: [(&str, &str, i64); 2] = [("gate_slam", "Crossroads_04", 60), ("gate_open", "Crossroads_04", 61)];
+const LATE_IN: [(&str, &str, i64); 2] = [
+    ("gate_slam", "Crossroads_04", 60),
+    ("gate_open", "Crossroads_04", 61),
+];
 
 // ---------------------------------------------------------------- numbers
 
@@ -265,7 +712,9 @@ fn oneshot_bytes(samples: usize) -> usize {
     samples.div_ceil(28) * 16 + 16
 }
 fn candidate_rates(row: i64) -> Vec<i64> {
-    std::iter::once(row).chain(LADDER.iter().copied().filter(|&r| r < row)).collect()
+    std::iter::once(row)
+        .chain(LADDER.iter().copied().filter(|&r| r < row))
+        .collect()
 }
 fn pitch_register(rate: i64) -> i64 {
     py_round(div(rate * 4096, 44100))
@@ -283,7 +732,9 @@ fn level_db(samples: &[i16]) -> f64 {
 /// energy of what was dropped relative to the whole, in dB.
 fn trim_tail(pcm: Vec<i16>, rate: i64, trim: Option<Trim>) -> (Vec<i16>, Option<f64>) {
     let n = pcm.len();
-    let Some(trim) = trim.filter(|_| n > 0) else { return (pcm, None) };
+    let Some(trim) = trim.filter(|_| n > 0) else {
+        return (pcm, None);
+    };
     let keep = match trim {
         Trim::Db(value) => {
             let peak = pcm.iter().map(|&x| (x as i64).abs()).max().unwrap_or(0);
@@ -322,7 +773,10 @@ fn trim_tail(pcm: Vec<i16>, rate: i64, trim: Option<Trim>) -> (Vec<i16>, Option<
 fn ship6_encode(samples: &[i16]) -> Vec<u8> {
     let mut out = Vec::new();
     for start in (0..samples.len()).step_by(28) {
-        let mut block: Vec<i64> = samples[start..(start + 28).min(samples.len())].iter().map(|&x| x as i64).collect();
+        let mut block: Vec<i64> = samples[start..(start + 28).min(samples.len())]
+            .iter()
+            .map(|&x| x as i64)
+            .collect();
         block.resize(28, 0);
         let peak = block.iter().map(|x| x.abs()).max().unwrap();
         let mut shift = 0;
@@ -330,7 +784,10 @@ fn ship6_encode(samples: &[i16]) -> Vec<u8> {
             shift += 1;
         }
         let unit = 4096 >> shift;
-        let n: Vec<u8> = block.iter().map(|&x| (py_round(div(x, unit)).clamp(-8, 7) & 15) as u8).collect();
+        let n: Vec<u8> = block
+            .iter()
+            .map(|&x| (py_round(div(x, unit)).clamp(-8, 7) & 15) as u8)
+            .collect();
         out.extend_from_slice(&[shift as u8, 0]);
         out.extend((0..28).step_by(2).map(|i| n[i] | (n[i + 1] << 4)));
     }
@@ -377,7 +834,11 @@ struct Check {
 trait Audio {
     fn payload(&mut self, e: &Event, rate: i64) -> Result<Vec<u8>>;
     fn size(&mut self, e: &Event, rate: i64) -> Result<usize>;
-    fn allocate(&mut self, rows: &[(Event, Vec<i64>, Vec<usize>, usize)], budget: i64) -> Result<Option<Vec<usize>>>;
+    fn allocate(
+        &mut self,
+        rows: &[(Event, Vec<i64>, Vec<usize>, usize)],
+        budget: i64,
+    ) -> Result<Option<Vec<usize>>>;
     fn check(&mut self, e: &Event, rate: i64) -> Result<Check>;
     /// False for a pipeline without a `Measure`: refusals stand.
     fn can_fit(&self) -> bool {
@@ -392,7 +853,11 @@ impl Audio for Clips<'_> {
     fn size(&mut self, e: &Event, rate: i64) -> Result<usize> {
         Clips::size(self, e, rate)
     }
-    fn allocate(&mut self, rows: &[(Event, Vec<i64>, Vec<usize>, usize)], budget: i64) -> Result<Option<Vec<usize>>> {
+    fn allocate(
+        &mut self,
+        rows: &[(Event, Vec<i64>, Vec<usize>, usize)],
+        budget: i64,
+    ) -> Result<Option<Vec<usize>>> {
         Clips::allocate(self, rows, budget)
     }
     fn check(&mut self, e: &Event, rate: i64) -> Result<Check> {
@@ -406,7 +871,12 @@ impl<'s> Clips<'s> {
         let crate_dir = root.join("tools/psx-audio-cook");
         let target = crate_dir.join("target");
         run(
-            Command::new("cargo").args(["build", "-q", "--release", "--manifest-path"]).arg(crate_dir.join("Cargo.toml")).arg("--target-dir").arg(&target).current_dir(root),
+            Command::new("cargo")
+                .args(["build", "-q", "--release", "--manifest-path"])
+                .arg(crate_dir.join("Cargo.toml"))
+                .arg("--target-dir")
+                .arg(&target)
+                .current_dir(root),
             None,
         )?;
         let scratch = std::env::temp_dir().join(format!("hk-scene-sfx-{}", std::process::id()));
@@ -430,11 +900,17 @@ impl<'s> Clips<'s> {
             return Ok(w.clone());
         }
         let file = self.source.file(e.file).map_err(|x| x.to_string())?;
-        let obj: Obj = self.source.object(&file, e.path_id).map_err(|x| x.to_string())?;
+        let obj: Obj = self
+            .source
+            .object(&file, e.path_id)
+            .map_err(|x| x.to_string())?;
         let t = self.source.read(&obj).map_err(|x| x.to_string())?;
         let name = t.get("m_Name").and_then(Value::str).unwrap_or_default();
         if name != e.clip {
-            return err(format!("changed scene sound mapping: {}:{} is {name}, not {}", e.file, e.path_id, e.clip));
+            return err(format!(
+                "changed scene sound mapping: {}:{} is {name}, not {}",
+                e.file, e.path_id, e.clip
+            ));
         }
         let wav = crate::fmod::clip_wav(&self.root, self.source, &t)?;
         self.wavs.insert(key, wav.clone());
@@ -458,13 +934,28 @@ impl<'s> Clips<'s> {
             Vec::new()
         } else {
             let out = run(
-                Command::new("ffmpeg").args(["-v", "error", "-i", "pipe:0", "-ar", &rate.to_string(), "-ac", "1", "-f", "s16le", "pipe:1"]),
+                Command::new("ffmpeg").args([
+                    "-v",
+                    "error",
+                    "-i",
+                    "pipe:0",
+                    "-ar",
+                    &rate.to_string(),
+                    "-ac",
+                    "1",
+                    "-f",
+                    "s16le",
+                    "pipe:1",
+                ]),
                 Some(data.clone()),
             )?;
             let pcm = samples_of(&out);
             let expected = py_round(div(frames as i64 * rate, wav.rate as i64));
             if (pcm.len() as i64 - expected).abs() > 1 {
-                return err(format!("resampled length {} is not the expected {expected}", pcm.len()));
+                return err(format!(
+                    "resampled length {} is not the expected {expected}",
+                    pcm.len()
+                ));
             }
             pcm
         };
@@ -497,12 +988,25 @@ impl<'s> Clips<'s> {
                     .arg("encode")
                     .arg(&input)
                     .arg(&output)
-                    .args(["--rate", &NOMINAL_RATE.to_string(), "--format", "raw", "--no-normalize", "--no-flags", "--loop", "none"]),
+                    .args([
+                        "--rate",
+                        &NOMINAL_RATE.to_string(),
+                        "--format",
+                        "raw",
+                        "--no-normalize",
+                        "--no-flags",
+                        "--loop",
+                        "none",
+                    ]),
                 None,
             )?;
             let data = std::fs::read(&output).map_err(|x| x.to_string())?;
             if data.len() != pcm.len().div_ceil(28) * 16 {
-                return err(format!("encoded {} bytes for {} samples", data.len(), pcm.len()));
+                return err(format!(
+                    "encoded {} bytes for {} samples",
+                    data.len(),
+                    pcm.len()
+                ));
             }
             data
         };
@@ -530,15 +1034,28 @@ impl<'s> Clips<'s> {
     /// `Measure.score`: fwSNRseg of `payload` played at `rate` against the
     /// source, and the level offset of that playback from the band-limited source.
     fn score(&mut self, e: &Event, payload: &[u8], rate: i64) -> Result<(f64, f64)> {
-        let (path, play, original) = (self.scratch.join("score.adpcm"), self.scratch.join("play.wav"), self.scratch.join("original.wav"));
+        let (path, play, original) = (
+            self.scratch.join("score.adpcm"),
+            self.scratch.join("play.wav"),
+            self.scratch.join("original.wav"),
+        );
         std::fs::write(&path, payload).map_err(|x| x.to_string())?;
         let wav = self.wav_path(e)?;
         let out = run(
-            Command::new(&self.binary).arg("score").arg(&wav).arg(&path).args(["--rate", &rate.to_string(), "--play"]).arg(&play).arg("--original").arg(&original),
+            Command::new(&self.binary)
+                .arg("score")
+                .arg(&wav)
+                .arg(&path)
+                .args(["--rate", &rate.to_string(), "--play"])
+                .arg(&play)
+                .arg("--original")
+                .arg(&original),
             None,
         )?;
         let parsed: J = serde_json::from_slice(&out).map_err(|x| x.to_string())?;
-        let fw = parsed["fwsnrseg"].as_f64().ok_or("score without fwsnrseg")?;
+        let fw = parsed["fwsnrseg"]
+            .as_f64()
+            .ok_or("score without fwsnrseg")?;
         let level = |p: &Path| -> Result<f64> {
             let w = read_wav(&std::fs::read(p).map_err(|x| x.to_string())?)?;
             Ok(level_db(&samples_of(&w.data)))
@@ -548,7 +1065,11 @@ impl<'s> Clips<'s> {
 
     /// `Measure.allocate`: steps from the SDK allocator, or None when the
     /// rows' floors do not fit `budget`.
-    fn allocate(&mut self, rows: &[(Event, Vec<i64>, Vec<usize>, usize)], budget: i64) -> Result<Option<Vec<usize>>> {
+    fn allocate(
+        &mut self,
+        rows: &[(Event, Vec<i64>, Vec<usize>, usize)],
+        budget: i64,
+    ) -> Result<Option<Vec<usize>>> {
         let mut lines = vec![format!("budget\t{budget}")];
         for (e, rates, sizes, max_step) in rows {
             let len = self.resampled(e, e.rate)?.0.len();
@@ -557,18 +1078,35 @@ impl<'s> Clips<'s> {
             lines.push(format!(
                 "{weight:.4}\t{max_step}\t{}\t{}\t{}",
                 wav.display(),
-                rates.iter().map(i64::to_string).collect::<Vec<_>>().join(","),
-                sizes.iter().map(usize::to_string).collect::<Vec<_>>().join(",")
+                rates
+                    .iter()
+                    .map(i64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+                sizes
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
             ));
         }
         let request = self.scratch.join("plan.txt");
         std::fs::write(&request, lines.join("\n") + "\n").map_err(|x| x.to_string())?;
-        let out = String::from_utf8(run(Command::new(&self.binary).arg("plan").arg(&request), None)?).map_err(|x| x.to_string())?;
+        let out = String::from_utf8(run(
+            Command::new(&self.binary).arg("plan").arg(&request),
+            None,
+        )?)
+        .map_err(|x| x.to_string())?;
         let out: Vec<&str> = out.split('\n').collect();
         if out[0].trim() == "none" {
             return Ok(None);
         }
-        Ok(Some(out.iter().filter(|l| !l.trim().is_empty()).map(|l| l.split('\t').next().unwrap().parse().unwrap()).collect()))
+        Ok(Some(
+            out.iter()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.split('\t').next().unwrap().parse().unwrap())
+                .collect(),
+        ))
     }
 
     /// `Measure.check`: whether this cook at `rate` is no worse than ship6's
@@ -584,7 +1122,8 @@ impl<'s> Clips<'s> {
         let payload = self.payload(e, rate)?;
         let (new_score, new_off) = self.score(e, &payload, rate)?;
         let c = Check {
-            pass: new_score >= base_score && new_off.abs() <= base_off.abs().max(LEVEL_TOLERANCE_DB),
+            pass: new_score >= base_score
+                && new_off.abs() <= base_off.abs().max(LEVEL_TOLERANCE_DB),
             ship6_fwsnrseg: base_score,
             fwsnrseg: new_score,
             ship6_level_off_db: round_to(base_off, 2),
@@ -607,50 +1146,102 @@ fn jstr(v: &J, k: &str) -> String {
     v.get(k).and_then(J::as_str).unwrap_or_default().to_string()
 }
 fn read_json(path: &Path) -> Result<J> {
-    serde_json::from_slice(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?).map_err(|e| e.to_string())
+    serde_json::from_slice(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
+        .map_err(|e| e.to_string())
 }
 
 /// `scene_needs`: per scene id, the events its content asks for.
-fn scene_needs(root: &Path, report: &J, gates: &[J], scenes: &[J]) -> Result<BTreeMap<i64, Vec<Event>>> {
-    let by_name: HashMap<String, i64> = scenes.iter().map(|s| (jstr(s, "scene_name"), s["scene_id"].as_i64().unwrap_or(0))).collect();
+fn scene_needs(
+    root: &Path,
+    report: &J,
+    gates: &[J],
+    scenes: &[J],
+) -> Result<BTreeMap<i64, Vec<Event>>> {
+    let by_name: HashMap<String, i64> = scenes
+        .iter()
+        .map(|s| (jstr(s, "scene_name"), s["scene_id"].as_i64().unwrap_or(0)))
+        .collect();
     let regions = report["regions"].as_array().ok_or("no regions")?;
     let scene_of = |r: &J| r["scene_id"].as_i64().unwrap_or(0);
     let secrets_of = |r: &J| r["secrets"].as_array().cloned().unwrap_or_default();
-    let benches: HashSet<i64> = regions.iter().filter(|r| r["benches"].as_array().is_some_and(|b| !b.is_empty())).map(scene_of).collect();
-    let family_in = |r: &J, set: &[i64]| secrets_of(r).iter().any(|x| set.contains(&x["family"].as_i64().unwrap_or(0)));
-    let walls: HashSet<i64> = regions.iter().filter(|r| family_in(r, &[1, 2])).map(scene_of).collect();
-    let floors: HashSet<i64> = regions.iter().filter(|r| family_in(r, &[3, 4])).map(scene_of).collect();
+    let benches: HashSet<i64> = regions
+        .iter()
+        .filter(|r| r["benches"].as_array().is_some_and(|b| !b.is_empty()))
+        .map(scene_of)
+        .collect();
+    let family_in = |r: &J, set: &[i64]| {
+        secrets_of(r)
+            .iter()
+            .any(|x| set.contains(&x["family"].as_i64().unwrap_or(0)))
+    };
+    let walls: HashSet<i64> = regions
+        .iter()
+        .filter(|r| family_in(r, &[1, 2]))
+        .map(scene_of)
+        .collect();
+    let floors: HashSet<i64> = regions
+        .iter()
+        .filter(|r| family_in(r, &[3, 4]))
+        .map(scene_of)
+        .collect();
     // A hidden wall's `Break` plays the reveal chime too.
     let mut secrets: HashSet<i64> = walls.clone();
-    for (k, v) in report["reveal_mask_scenes"].as_object().ok_or("no reveal_mask_scenes")? {
-        if v["controllers"].as_array().into_iter().flatten().any(|c| c.get("plays_sound").is_some_and(|p| p.as_bool().unwrap_or(false) || p.as_i64().unwrap_or(0) != 0)) {
+    for (k, v) in report["reveal_mask_scenes"]
+        .as_object()
+        .ok_or("no reveal_mask_scenes")?
+    {
+        if v["controllers"].as_array().into_iter().flatten().any(|c| {
+            c.get("plays_sound")
+                .is_some_and(|p| p.as_bool().unwrap_or(false) || p.as_i64().unwrap_or(0) != 0)
+        }) {
             secrets.insert(k.parse().map_err(|_| "reveal mask scene id")?);
         }
     }
     let mut families: HashMap<String, HashSet<i64>> = HashMap::new();
     for region in regions {
         for actor in region["actors"].as_array().into_iter().flatten() {
-            if actor.get("movement_supported").is_some_and(|m| m.as_bool().unwrap_or(false)) {
+            if actor
+                .get("movement_supported")
+                .is_some_and(|m| m.as_bool().unwrap_or(false))
+            {
                 let name = jstr(actor, "name");
-                families.entry(name.split(' ').next().unwrap_or("").to_string()).or_default().insert(scene_of(region));
+                families
+                    .entry(name.split(' ').next().unwrap_or("").to_string())
+                    .or_default()
+                    .insert(scene_of(region));
             }
         }
     }
     let stalactites: HashSet<i64> = regions
         .iter()
-        .filter(|r| r["hazards"].as_array().into_iter().flatten().any(|h| jstr(h, "name").starts_with("Stalactite")))
+        .filter(|r| {
+            r["hazards"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|h| jstr(h, "name").starts_with("Stalactite"))
+        })
         .map(scene_of)
         .collect();
     let arena_scenes: HashSet<i64> = gates.iter().filter_map(|g| g["scene"].as_i64()).collect();
     let totems_path = root.join(".hkpsx/soul-totems.json");
     let totems: HashSet<i64> = if totems_path.is_file() {
-        read_json(&totems_path)?["totems"].as_array().into_iter().flatten().filter_map(|t| t["scene"].as_i64()).collect()
+        read_json(&totems_path)?["totems"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|t| t["scene"].as_i64())
+            .collect()
     } else {
         HashSet::new()
     };
     // host/pickups.py runs first and says which scenes hold what.
     let pickups_path = root.join(".hkpsx/pickups.json");
-    let placed = if pickups_path.is_file() { read_json(&pickups_path)? } else { J::Object(Default::default()) };
+    let placed = if pickups_path.is_file() {
+        read_json(&pickups_path)?
+    } else {
+        J::Object(Default::default())
+    };
     let (mut chests, mut shinies, mut pieces) = (HashSet::new(), HashSet::new(), HashSet::new());
     for (k, v) in placed.as_object().into_iter().flatten() {
         let Some(&s) = by_name.get(k) else { continue };
@@ -658,17 +1249,36 @@ fn scene_needs(root: &Path, report: &J, gates: &[J], scenes: &[J]) -> Result<BTr
             chests.insert(s);
         }
         let pickups = v["pickups"].as_array().cloned().unwrap_or_default();
-        if pickups.iter().any(|p| !p["touch"].as_bool().unwrap_or(false)) {
+        if pickups
+            .iter()
+            .any(|p| !p["touch"].as_bool().unwrap_or(false))
+        {
             shinies.insert(s);
         }
-        if pickups.iter().any(|p| p["touch"].as_bool().unwrap_or(false)) {
+        if pickups
+            .iter()
+            .any(|p| p["touch"].as_bool().unwrap_or(false))
+        {
             pieces.insert(s);
         }
     }
-    let mut needs: BTreeMap<i64, Vec<Event>> = scenes.iter().map(|s| (s["scene_id"].as_i64().unwrap_or(0), Vec::new())).collect();
+    let mut needs: BTreeMap<i64, Vec<Event>> = scenes
+        .iter()
+        .map(|s| (s["scene_id"].as_i64().unwrap_or(0), Vec::new()))
+        .collect();
     for event in EVENTS {
         let kind = event.place;
-        let named = || -> Result<HashSet<i64>> { kind[1..].iter().map(|n| by_name.get(*n).copied().ok_or_else(|| format!("no scene {n}"))).collect() };
+        let named = || -> Result<HashSet<i64>> {
+            kind[1..]
+                .iter()
+                .map(|n| {
+                    by_name
+                        .get(*n)
+                        .copied()
+                        .ok_or_else(|| format!("no scene {n}"))
+                })
+                .collect()
+        };
         let ids: HashSet<i64> = match kind[0] {
             "scene" => named()?,
             "arena" => named()?.intersection(&arena_scenes).copied().collect(),
@@ -701,7 +1311,10 @@ fn scene_needs(root: &Path, report: &J, gates: &[J], scenes: &[J]) -> Result<BTr
             let scene = *by_name.get(scene_name).ok_or("late scene")?;
             if let Some(list) = needs.get_mut(&scene) {
                 if !list.contains(event) {
-                    list.push(Event { priority, ..event.clone() });
+                    list.push(Event {
+                        priority,
+                        ..event.clone()
+                    });
                 }
             }
         }
@@ -713,7 +1326,12 @@ fn scene_needs(root: &Path, report: &J, gates: &[J], scenes: &[J]) -> Result<BTr
 /// able to be resident in `scene` occupies. With `unloaded` false, the bytes of
 /// a stem the scene does not keep resident stay taken.
 fn free_gaps(ambience: &J, scene: i64, unloaded: bool) -> Result<Vec<(i64, i64)>> {
-    let cue = ambience["cues"].as_array().into_iter().flatten().find(|c| c["scene"].as_i64() == Some(scene)).ok_or("no cue")?;
+    let cue = ambience["cues"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|c| c["scene"].as_i64() == Some(scene))
+        .ok_or("no cue")?;
     let g = |k: &str| cue.get(k).and_then(J::as_i64).unwrap_or(0);
     let mask = g("mask") | g("prefetch") | if unloaded { 0 } else { g("unloaded") };
     let clips = ambience["clips"].as_array().ok_or("no clips")?;
@@ -727,7 +1345,10 @@ fn free_gaps(ambience: &J, scene: i64, unloaded: bool) -> Result<Vec<(i64, i64)>
         })
         .collect();
     taken.sort();
-    let (mut gaps, mut at) = (Vec::new(), ambience["spu_start"].as_i64().ok_or("spu_start")?);
+    let (mut gaps, mut at) = (
+        Vec::new(),
+        ambience["spu_start"].as_i64().ok_or("spu_start")?,
+    );
     for (lo, hi) in taken {
         if lo > at {
             gaps.push((at, lo));
@@ -746,7 +1367,11 @@ type Placed = Vec<(Event, i64)>;
 type Gaps = Vec<(i64, i64)>;
 /// (rate per event name, refused events, floored clips that moved).
 type Fitted = (Vec<(String, i64)>, Vec<Event>, Moved);
-fn pack(events: &[Event], gaps: &[(i64, i64)], size_of: &mut dyn FnMut(&Event) -> Result<i64>) -> Result<(Placed, Vec<Event>, Gaps)> {
+fn pack(
+    events: &[Event],
+    gaps: &[(i64, i64)],
+    size_of: &mut dyn FnMut(&Event) -> Result<i64>,
+) -> Result<(Placed, Vec<Event>, Gaps)> {
     let mut gaps = gaps.to_vec();
     let (mut placed, mut refused) = (Vec::new(), Vec::new());
     for e in events {
@@ -766,7 +1391,11 @@ fn pack(events: &[Event], gaps: &[(i64, i64)], size_of: &mut dyn FnMut(&Event) -
 fn subtract(gaps: &[(i64, i64)], taken: &[(i64, i64)]) -> Vec<(i64, i64)> {
     let mut out = Vec::new();
     for &(lo, hi) in gaps {
-        let mut cuts: Vec<(i64, i64)> = taken.iter().filter(|&&(a, b)| a < hi && lo < b).map(|&(a, b)| (lo.max(a), hi.min(b))).collect();
+        let mut cuts: Vec<(i64, i64)> = taken
+            .iter()
+            .filter(|&&(a, b)| a < hi && lo < b)
+            .map(|&(a, b)| (lo.max(a), hi.min(b)))
+            .collect();
         cuts.sort();
         let mut at = lo;
         for (a, b) in cuts {
@@ -787,18 +1416,27 @@ type Moved = Vec<(Event, i64, Check)>;
 /// `fit`: rates for a scene whose row rates refuse something, the SDK
 /// allocator's choice under the no-worse floors, placed first-fit by priority
 /// or else largest first.
-fn fit(events: &[Event], gaps: &[(i64, i64)], refused_names: &HashSet<&str>, clips: &mut dyn Audio) -> Result<Fitted> {
+fn fit(
+    events: &[Event],
+    gaps: &[(i64, i64)],
+    refused_names: &HashSet<&str>,
+    clips: &mut dyn Audio,
+) -> Result<Fitted> {
     let budget: i64 = gaps.iter().map(|(lo, hi)| hi - lo).sum();
     let mut events = events.to_vec();
     events.sort_by_key(|e| e.priority);
     let mut dropped = Vec::new();
-    let mut floors: HashMap<&'static str, Option<usize>> = events.iter().map(|e| (e.name, None)).collect();
+    let mut floors: HashMap<&'static str, Option<usize>> =
+        events.iter().map(|e| (e.name, None)).collect();
     while !events.is_empty() {
         let mut options: HashMap<&str, Vec<i64>> = HashMap::new();
         let mut sizes: HashMap<&str, Vec<usize>> = HashMap::new();
         for e in &events {
             let rates = candidate_rates(e.rate);
-            let s = rates.iter().map(|&r| clips.size(e, r)).collect::<Result<Vec<_>>>()?;
+            let s = rates
+                .iter()
+                .map(|&r| clips.size(e, r))
+                .collect::<Result<Vec<_>>>()?;
             options.insert(e.name, rates);
             sizes.insert(e.name, s);
         }
@@ -806,16 +1444,32 @@ fn fit(events: &[Event], gaps: &[(i64, i64)], refused_names: &HashSet<&str>, cli
         while limit > 0 {
             let rows: Vec<(Event, Vec<i64>, Vec<usize>, usize)> = events
                 .iter()
-                .map(|e| (e.clone(), options[e.name].clone(), sizes[e.name].clone(), floors[e.name].unwrap_or(options[e.name].len() - 1)))
+                .map(|e| {
+                    (
+                        e.clone(),
+                        options[e.name].clone(),
+                        sizes[e.name].clone(),
+                        floors[e.name].unwrap_or(options[e.name].len() - 1),
+                    )
+                })
                 .collect();
-            let Some(steps) = clips.allocate(&rows, limit)? else { break };
-            let chosen: Vec<(String, i64)> = events.iter().zip(&steps).map(|(e, &s)| (e.name.to_string(), options[e.name][s])).collect();
+            let Some(steps) = clips.allocate(&rows, limit)? else {
+                break;
+            };
+            let chosen: Vec<(String, i64)> = events
+                .iter()
+                .zip(&steps)
+                .map(|(e, &s)| (e.name.to_string(), options[e.name][s]))
+                .collect();
             let rate_of = |name: &str| chosen.iter().find(|c| c.0 == name).unwrap().1;
             // A clip the scene held at its row rate may only move down as far
             // as it still beats ship6's cook; tighten and ask again.
             let mut failed = false;
             for (e, &s) in events.iter().zip(&steps) {
-                if s != 0 && !refused_names.contains(e.name) && !clips.check(e, rate_of(e.name))?.pass {
+                if s != 0
+                    && !refused_names.contains(e.name)
+                    && !clips.check(e, rate_of(e.name))?.pass
+                {
                     floors.insert(e.name, Some(s - 1));
                     failed = true;
                 }
@@ -835,7 +1489,11 @@ fn fit(events: &[Event], gaps: &[(i64, i64)], refused_names: &HashSet<&str>, cli
                     let mut moved = Vec::new();
                     for e in &events {
                         if !refused_names.contains(e.name) && rate_of(e.name) != e.rate {
-                            moved.push((e.clone(), rate_of(e.name), clips.check(e, rate_of(e.name))?));
+                            moved.push((
+                                e.clone(),
+                                rate_of(e.name),
+                                clips.check(e, rate_of(e.name))?,
+                            ));
                         }
                     }
                     return Ok((chosen, dropped, moved));
@@ -877,12 +1535,24 @@ fn rate_in(rates: &[(String, i64)], name: &str) -> Option<i64> {
 }
 
 /// `assemble`: per scene, its chunk bytes, admitted entries and refusals.
-fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Audio) -> Result<BTreeMap<i64, Bank>> {
+fn assemble(
+    needs: &BTreeMap<i64, Vec<Event>>,
+    ambience: &J,
+    clips: &mut dyn Audio,
+) -> Result<BTreeMap<i64, Bank>> {
     let mut banks = BTreeMap::new();
     for (&scene, events) in needs {
-        let mut late: Vec<Event> = events.iter().filter(|e| e.priority >= LATE_PRIORITY).cloned().collect();
+        let mut late: Vec<Event> = events
+            .iter()
+            .filter(|e| e.priority >= LATE_PRIORITY)
+            .cloned()
+            .collect();
         late.sort_by_key(|e| e.priority);
-        let events: Vec<Event> = events.iter().filter(|e| e.priority < LATE_PRIORITY).cloned().collect();
+        let events: Vec<Event> = events
+            .iter()
+            .filter(|e| e.priority < LATE_PRIORITY)
+            .cloned()
+            .collect();
         let gaps = free_gaps(ambience, scene, false)?;
         let all_gaps = free_gaps(ambience, scene, true)?;
         let free: i64 = gaps.iter().map(|(lo, hi)| hi - lo).sum();
@@ -894,8 +1564,11 @@ fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Aud
         for e in &ordered {
             set_rate(&mut rates, e.name, e.rate);
         }
-        let size_at = |clips: &mut dyn Audio, rates: &[(String, i64)], e: &Event| -> Result<i64> { Ok(clips.payload(e, rate_in(rates, e.name).unwrap())?.len() as i64) };
-        let (mut placed, mut refused, mut left) = pack(&ordered, &gaps, &mut |e| size_at(clips, &rates, e))?;
+        let size_at = |clips: &mut dyn Audio, rates: &[(String, i64)], e: &Event| -> Result<i64> {
+            Ok(clips.payload(e, rate_in(rates, e.name).unwrap())?.len() as i64)
+        };
+        let (mut placed, mut refused, mut left) =
+            pack(&ordered, &gaps, &mut |e| size_at(clips, &rates, e))?;
         let mut fitted = None;
         if !refused.is_empty() && clips.can_fit() {
             let names: HashSet<&str> = refused.iter().map(|e| e.name).collect();
@@ -904,7 +1577,11 @@ fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Aud
                 for (n, r) in &chosen {
                     set_rate(&mut rates, n, *r);
                 }
-                let kept: Vec<Event> = ordered.iter().filter(|e| chosen.iter().any(|c| c.0 == e.name)).cloned().collect();
+                let kept: Vec<Event> = ordered
+                    .iter()
+                    .filter(|e| chosen.iter().any(|c| c.0 == e.name))
+                    .cloned()
+                    .collect();
                 let (p, _, l) = pack(&kept, &gaps, &mut |e| size_at(clips, &rates, e))?;
                 (placed, left) = (p, l);
                 if placed.len() != kept.len() {
@@ -926,8 +1603,11 @@ fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Aud
                 // Nothing fits even alone: keep the plain priority packing.
                 Vec::new()
             };
-            let fitted_rates: Vec<(String, i64)> =
-                ordered.iter().filter(|e| rate_in(&rates, e.name).is_some() && !refused.contains(e)).map(|e| (e.name.to_string(), rate_in(&rates, e.name).unwrap())).collect();
+            let fitted_rates: Vec<(String, i64)> = ordered
+                .iter()
+                .filter(|e| rate_in(&rates, e.name).is_some() && !refused.contains(e))
+                .map(|e| (e.name.to_string(), rate_in(&rates, e.name).unwrap()))
+                .collect();
             fitted = Some((fitted_rates, moved));
         }
         if !late.is_empty() {
@@ -939,7 +1619,8 @@ fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Aud
             for e in &late {
                 set_rate(&mut rates, e.name, e.rate);
             }
-            let (mut got, mut late_refused, _) = pack(&late, &late_gaps, &mut |e| size_at(clips, &rates, e))?;
+            let (mut got, mut late_refused, _) =
+                pack(&late, &late_gaps, &mut |e| size_at(clips, &rates, e))?;
             if !late_refused.is_empty() && clips.can_fit() {
                 let names: HashSet<&str> = late.iter().map(|e| e.name).collect();
                 let (chosen, dropped, _) = fit(&late, &late_gaps, &names, clips)?;
@@ -947,7 +1628,11 @@ fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Aud
                     for (n, r) in &chosen {
                         set_rate(&mut rates, n, *r);
                     }
-                    let kept: Vec<Event> = late.iter().filter(|e| chosen.iter().any(|c| c.0 == e.name)).cloned().collect();
+                    let kept: Vec<Event> = late
+                        .iter()
+                        .filter(|e| chosen.iter().any(|c| c.0 == e.name))
+                        .cloned()
+                        .collect();
                     got = pack(&kept, &late_gaps, &mut |e| size_at(clips, &rates, e))?.0;
                     if got.len() != kept.len() {
                         let mut sized: Vec<(i64, Event)> = Vec::new();
@@ -977,7 +1662,13 @@ fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Aud
         for (e, address) in &placed {
             let rate = rate_in(&rates, e.name).unwrap();
             let payload = clips.payload(e, rate)?;
-            entries.push(Entry { event: e.name, spu_address: *address, offset: chunk.len(), bytes: payload.len(), rate });
+            entries.push(Entry {
+                event: e.name,
+                spu_address: *address,
+                offset: chunk.len(),
+                bytes: payload.len(),
+                rate,
+            });
             chunk.extend_from_slice(&payload);
         }
         let mut refused_rows = Vec::new();
@@ -987,7 +1678,11 @@ fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Aud
         banks.insert(
             scene,
             Bank {
-                chunk: if chunk.is_empty() { EMPTY.to_vec() } else { chunk },
+                chunk: if chunk.is_empty() {
+                    EMPTY.to_vec()
+                } else {
+                    chunk
+                },
                 entries,
                 refused: refused_rows,
                 free_before: free,
@@ -1003,7 +1698,8 @@ fn assemble(needs: &BTreeMap<i64, Vec<Event>>, ambience: &J, clips: &mut dyn Aud
 
 fn rust(banks: &BTreeMap<i64, Bank>) -> String {
     let mut lines = vec![
-        "// Generated by host/scene_sfx.py: per-scene one-shot banks, read at the scene gate.".to_string(),
+        "// Generated by host/scene_sfx.py: per-scene one-shot banks, read at the scene gate."
+            .to_string(),
         format!("pub const EVENTS:usize={};", EVENTS.len()),
     ];
     for (index, e) in EVENTS.iter().enumerate() {
@@ -1014,20 +1710,45 @@ fn rust(banks: &BTreeMap<i64, Bank>) -> String {
     lines.push(format!(
         "pub static EVENT_PARAMS:[(u32,i16,u16);{}]=[{}];",
         EVENTS.len(),
-        EVENTS.iter().map(|e| format!("({},{GAIN},{}),", e.rate, pitch_register(e.rate))).collect::<String>()
+        EVENTS
+            .iter()
+            .map(|e| format!("({},{GAIN},{}),", e.rate, pitch_register(e.rate)))
+            .collect::<String>()
     ));
     let (mut entries, mut rows) = (Vec::new(), Vec::new());
     for bank in banks.values() {
-        rows.push(format!("({},{},{},{}),", bank.chunk.len(), fnv(&bank.chunk), entries.len(), bank.entries.len()));
+        rows.push(format!(
+            "({},{},{},{}),",
+            bank.chunk.len(),
+            fnv(&bank.chunk),
+            entries.len(),
+            bank.entries.len()
+        ));
         for e in &bank.entries {
             let index = EVENTS.iter().position(|x| x.name == e.event).unwrap();
-            entries.push(format!("({index},{},{},{},{},{}),", e.spu_address, e.offset, e.bytes, e.rate, pitch_register(e.rate)));
+            entries.push(format!(
+                "({index},{},{},{},{},{}),",
+                e.spu_address,
+                e.offset,
+                e.bytes,
+                e.rate,
+                pitch_register(e.rate)
+            ));
         }
     }
     lines.push("/// Per guest scene id: (chunk bytes, FNV-1a, first entry, entry count).".into());
-    lines.push(format!("pub static BANKS:[(u32,u32,u16,u8);{}]=[{}];", banks.len(), rows.concat()));
-    lines.push("/// (event, SPU address, offset in the scene chunk, bytes, rate, pitch register).".into());
-    lines.push(format!("pub static ENTRIES:&[(u8,u32,u32,u32,u32,u16)]=&[{}];", entries.concat()));
+    lines.push(format!(
+        "pub static BANKS:[(u32,u32,u16,u8);{}]=[{}];",
+        banks.len(),
+        rows.concat()
+    ));
+    lines.push(
+        "/// (event, SPU address, offset in the scene chunk, bytes, rate, pitch register).".into(),
+    );
+    lines.push(format!(
+        "pub static ENTRIES:&[(u8,u32,u32,u32,u32,u16)]=&[{}];",
+        entries.concat()
+    ));
     lines.join("\n") + "\n"
 }
 
@@ -1046,7 +1767,10 @@ fn check_fields(c: &Check) -> Vec<(String, Json)> {
         ("pass".into(), Json::Bool(c.pass)),
         ("ship6_fwsnrseg".into(), Json::Float(c.ship6_fwsnrseg)),
         ("fwsnrseg".into(), Json::Float(c.fwsnrseg)),
-        ("ship6_level_off_db".into(), Json::Float(c.ship6_level_off_db)),
+        (
+            "ship6_level_off_db".into(),
+            Json::Float(c.ship6_level_off_db),
+        ),
         ("level_off_db".into(), Json::Float(c.level_off_db)),
     ]
 }
@@ -1055,7 +1779,10 @@ fn check_fields(c: &Check) -> Vec<(String, Json)> {
 /// under `root`, and returns the summary it prints.
 pub fn cook(root: &Path, source: &Source) -> Result<String> {
     let ambience = read_json(&root.join(".hkpsx/ambience.json"))?;
-    let gates = read_json(&root.join(".hkpsx/battle-gates.json"))?["gates"].as_array().cloned().unwrap_or_default();
+    let gates = read_json(&root.join(".hkpsx/battle-gates.json"))?["gates"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     let report = read_json(&root.join("data/regions.json"))?;
     let scenes = report["scenes"].as_array().cloned().ok_or("no scenes")?;
     let needs = scene_needs(root, &report, &gates, &scenes)?;
@@ -1064,7 +1791,8 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     let out = root.join("data/scene-sfx");
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     for (scene, bank) in &banks {
-        std::fs::write(out.join(format!("scene_{scene}.adpcm")), &bank.chunk).map_err(|e| e.to_string())?;
+        std::fs::write(out.join(format!("scene_{scene}.adpcm")), &bank.chunk)
+            .map_err(|e| e.to_string())?;
     }
     std::fs::write(root.join("data/scene_sfx.rs"), rust(&banks)).map_err(|e| e.to_string())?;
     let mut events = Vec::new();
@@ -1073,16 +1801,25 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
         let (_, meta) = clips.resampled(e, e.rate)?;
         events.push(Json::Obj(vec![
             ("event".into(), Json::Str(e.name.into())),
-            ("clip".into(), Json::Str(format!("{}:{}", e.file, e.path_id))),
+            (
+                "clip".into(),
+                Json::Str(format!("{}:{}", e.file, e.path_id)),
+            ),
             ("name".into(), Json::Str(e.clip.into())),
             ("rate".into(), Json::Int(e.rate)),
-            ("where".into(), Json::List(e.place.iter().map(|w| Json::Str(w.to_string())).collect())),
+            (
+                "where".into(),
+                Json::List(e.place.iter().map(|w| Json::Str(w.to_string())).collect()),
+            ),
             ("priority".into(), Json::Int(e.priority)),
             ("bytes".into(), Json::Int(bytes as i64)),
             ("seconds".into(), Json::Float(meta.seconds)),
             ("kept_seconds".into(), Json::Float(meta.kept_seconds)),
             ("trim".into(), trim_json(meta.trim)),
-            ("dropped_energy_db".into(), float_or_null(meta.dropped_energy_db)),
+            (
+                "dropped_energy_db".into(),
+                float_or_null(meta.dropped_energy_db),
+            ),
         ]));
     }
     let mut scene_rows = Vec::new();
@@ -1110,12 +1847,26 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
                 Json::List(
                     b.refused
                         .iter()
-                        .map(|(n, bytes, rate)| Json::Obj(vec![("event".into(), Json::Str(n.to_string())), ("bytes".into(), Json::Int(*bytes as i64)), ("rate".into(), Json::Int(*rate))]))
+                        .map(|(n, bytes, rate)| {
+                            Json::Obj(vec![
+                                ("event".into(), Json::Str(n.to_string())),
+                                ("bytes".into(), Json::Int(*bytes as i64)),
+                                ("rate".into(), Json::Int(*rate)),
+                            ])
+                        })
                         .collect(),
                 ),
             ),
             ("chunk_bytes".into(), Json::Int(b.chunk.len() as i64)),
-            ("chunk_sha256".into(), Json::Str(Sha256::digest(&b.chunk).iter().map(|x| format!("{x:02x}")).collect())),
+            (
+                "chunk_sha256".into(),
+                Json::Str(
+                    Sha256::digest(&b.chunk)
+                        .iter()
+                        .map(|x| format!("{x:02x}"))
+                        .collect(),
+                ),
+            ),
             ("free_before".into(), Json::Int(b.free_before)),
             ("free_after".into(), Json::Int(b.free_after)),
         ];
@@ -1123,14 +1874,26 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
             fields.push((
                 "fitted".into(),
                 Json::Obj(vec![
-                    ("rates".into(), Json::Obj(rates.iter().map(|(n, r)| (n.clone(), Json::Int(*r))).collect())),
+                    (
+                        "rates".into(),
+                        Json::Obj(
+                            rates
+                                .iter()
+                                .map(|(n, r)| (n.clone(), Json::Int(*r)))
+                                .collect(),
+                        ),
+                    ),
                     (
                         "moved".into(),
                         Json::List(
                             moved
                                 .iter()
                                 .map(|(e, rate, c)| {
-                                    let mut f = vec![("event".to_string(), Json::Str(e.name.into())), ("row_rate".into(), Json::Int(e.rate)), ("rate".into(), Json::Int(*rate))];
+                                    let mut f = vec![
+                                        ("event".to_string(), Json::Str(e.name.into())),
+                                        ("row_rate".into(), Json::Int(e.rate)),
+                                        ("rate".into(), Json::Int(*rate)),
+                                    ];
                                     f.extend(check_fields(c));
                                     Json::Obj(f)
                                 })
@@ -1146,23 +1909,61 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
         ("voice".into(), Json::Str("ambience SCENE_SFX_VOICE".into())),
         ("events".into(), Json::List(events)),
         ("scenes".into(), Json::Obj(scene_rows)),
-        ("limitations".into(), Json::List(LIMITATIONS.iter().map(|s| Json::Str(s.to_string())).collect())),
+        (
+            "limitations".into(),
+            Json::List(
+                LIMITATIONS
+                    .iter()
+                    .map(|s| Json::Str(s.to_string()))
+                    .collect(),
+            ),
+        ),
     ]);
     std::fs::create_dir_all(root.join(".hkpsx")).map_err(|e| e.to_string())?;
-    std::fs::write(root.join(".hkpsx/scene-sfx.json"), dumps(&report_out) + "\n").map_err(|e| e.to_string())?;
-    let used: Vec<(&i64, &Bank)> = banks.iter().filter(|(_, b)| !b.entries.is_empty() || !b.refused.is_empty()).collect();
-    let mut text = format!("Scene SFX: {} scenes ask for sounds, largest chunk {} bytes", used.len(), banks.values().map(|b| b.chunk.len()).max().unwrap_or(0));
+    std::fs::write(
+        root.join(".hkpsx/scene-sfx.json"),
+        dumps(&report_out) + "\n",
+    )
+    .map_err(|e| e.to_string())?;
+    let used: Vec<(&i64, &Bank)> = banks
+        .iter()
+        .filter(|(_, b)| !b.entries.is_empty() || !b.refused.is_empty())
+        .collect();
+    let mut text = format!(
+        "Scene SFX: {} scenes ask for sounds, largest chunk {} bytes",
+        used.len(),
+        banks.values().map(|b| b.chunk.len()).max().unwrap_or(0)
+    );
     for (scene, bank) in used {
-        let refused: Vec<String> = bank.refused.iter().map(|(n, bytes, _)| format!("{n} {bytes}B")).collect();
+        let refused: Vec<String> = bank
+            .refused
+            .iter()
+            .map(|(n, bytes, _)| format!("{n} {bytes}B"))
+            .collect();
         let admitted: Vec<String> = bank
             .entries
             .iter()
-            .map(|e| format!("{} {}B{}", e.event, e.bytes, if bank.fitted.is_some() { format!(" @{}", e.rate) } else { String::new() }))
+            .map(|e| {
+                format!(
+                    "{} {}B{}",
+                    e.event,
+                    e.bytes,
+                    if bank.fitted.is_some() {
+                        format!(" @{}", e.rate)
+                    } else {
+                        String::new()
+                    }
+                )
+            })
             .collect();
         text += &format!(
             "\n  scene {scene}: {}{}; {} of {} left",
             admitted.join(", "),
-            if refused.is_empty() { String::new() } else { format!("; refused {}", refused.join(", ")) },
+            if refused.is_empty() {
+                String::new()
+            } else {
+                format!("; refused {}", refused.join(", "))
+            },
             bank.free_after,
             bank.free_before
         );
@@ -1193,7 +1994,13 @@ mod tests {
         ev(name, "f", 1, name, rate, &["scene", "x"], priority, None)
     }
     fn check(pass: bool) -> Check {
-        Check { pass, ship6_fwsnrseg: 0.0, fwsnrseg: 0.0, ship6_level_off_db: 0.0, level_off_db: 0.0 }
+        Check {
+            pass,
+            ship6_fwsnrseg: 0.0,
+            fwsnrseg: 0.0,
+            ship6_level_off_db: 0.0,
+            level_off_db: 0.0,
+        }
     }
 
     /// Fixed payload sizes and no measure: refusals stand.
@@ -1205,7 +2012,11 @@ mod tests {
         fn size(&mut self, e: &Event, _: i64) -> Result<usize> {
             Ok(self.0[e.name])
         }
-        fn allocate(&mut self, _: &[(Event, Vec<i64>, Vec<usize>, usize)], _: i64) -> Result<Option<Vec<usize>>> {
+        fn allocate(
+            &mut self,
+            _: &[(Event, Vec<i64>, Vec<usize>, usize)],
+            _: i64,
+        ) -> Result<Option<Vec<usize>>> {
             unreachable!()
         }
         fn check(&mut self, _: &Event, _: i64) -> Result<Check> {
@@ -1229,17 +2040,31 @@ mod tests {
             Ok(vec![0; self.size(e, rate)?])
         }
         fn size(&mut self, e: &Event, rate: i64) -> Result<usize> {
-            Ok(oneshot_bytes(py_round(self.seconds[e.name] * rate as f64) as usize))
+            Ok(oneshot_bytes(
+                py_round(self.seconds[e.name] * rate as f64) as usize
+            ))
         }
-        fn allocate(&mut self, rows: &[(Event, Vec<i64>, Vec<usize>, usize)], budget: i64) -> Result<Option<Vec<usize>>> {
+        fn allocate(
+            &mut self,
+            rows: &[(Event, Vec<i64>, Vec<usize>, usize)],
+            budget: i64,
+        ) -> Result<Option<Vec<usize>>> {
             self.asked.push(budget);
             let mut steps = vec![0usize; rows.len()];
             if rows.iter().map(|r| r.2[r.3] as i64).sum::<i64>() > budget {
                 return Ok(None);
             }
-            let total = |steps: &[usize]| rows.iter().zip(steps).map(|(r, &s)| r.2[s] as i64).sum::<i64>();
+            let total = |steps: &[usize]| {
+                rows.iter()
+                    .zip(steps)
+                    .map(|(r, &s)| r.2[s] as i64)
+                    .sum::<i64>()
+            };
             while total(&steps) > budget {
-                let i = (0..rows.len()).filter(|&i| steps[i] < rows[i].3).max_by_key(|&i| (rows[i].2[steps[i]], std::cmp::Reverse(i))).unwrap();
+                let i = (0..rows.len())
+                    .filter(|&i| steps[i] < rows[i].3)
+                    .max_by_key(|&i| (rows[i].2[steps[i]], std::cmp::Reverse(i)))
+                    .unwrap();
                 steps[i] += 1;
             }
             Ok(Some(steps))
@@ -1249,7 +2074,11 @@ mod tests {
         }
     }
     fn fake(seconds: &[(&'static str, f64)], floor: &[(&'static str, i64)]) -> Fake {
-        Fake { seconds: seconds.iter().copied().collect(), floor: floor.iter().copied().collect(), asked: Vec::new() }
+        Fake {
+            seconds: seconds.iter().copied().collect(),
+            floor: floor.iter().copied().collect(),
+            asked: Vec::new(),
+        }
     }
     fn needs(scene: i64, events: Vec<Event>) -> BTreeMap<i64, Vec<Event>> {
         [(scene, events)].into_iter().collect()
@@ -1257,25 +2086,54 @@ mod tests {
 
     #[test]
     fn gaps_skip_the_scenes_own_and_neighbour_stems() {
-        assert_eq!(free_gaps(&ambience(500), 0, true).unwrap(), [(0, 100), (200, 300), (400, 500)]);
+        assert_eq!(
+            free_gaps(&ambience(500), 0, true).unwrap(),
+            [(0, 100), (200, 300), (400, 500)]
+        );
         assert_eq!(free_gaps(&ambience(500), 1, true).unwrap(), [(0, 500)]);
     }
 
     #[test]
     fn priority_decides_and_a_clip_that_does_not_fit_is_refused_whole() {
-        let mut audio = Fixed([("a", 96), ("b", 96), ("c", 96), ("d", 96)].into_iter().collect());
-        let n = needs(0, vec![rated("d", 8000, 3), rated("a", 8000, 0), rated("c", 8000, 2), rated("b", 8000, 1)]);
+        let mut audio = Fixed(
+            [("a", 96), ("b", 96), ("c", 96), ("d", 96)]
+                .into_iter()
+                .collect(),
+        );
+        let n = needs(
+            0,
+            vec![
+                rated("d", 8000, 3),
+                rated("a", 8000, 0),
+                rated("c", 8000, 2),
+                rated("b", 8000, 1),
+            ],
+        );
         let banks = assemble(&n, &ambience(500), &mut audio).unwrap();
         let bank = &banks[&0];
-        assert_eq!(bank.entries.iter().map(|e| e.event).collect::<Vec<_>>(), ["a", "b", "c"]);
-        assert_eq!(bank.entries.iter().map(|e| e.spu_address).collect::<Vec<_>>(), [0, 200, 400]);
+        assert_eq!(
+            bank.entries.iter().map(|e| e.event).collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
+        assert_eq!(
+            bank.entries
+                .iter()
+                .map(|e| e.spu_address)
+                .collect::<Vec<_>>(),
+            [0, 200, 400]
+        );
         assert_eq!(bank.refused, [("d", 96, 8000)]);
         assert_eq!(bank.chunk.len(), 288);
     }
 
     #[test]
     fn a_scene_without_sounds_still_owns_a_chunk() {
-        let banks = assemble(&needs(1, Vec::new()), &ambience(500), &mut Fixed(HashMap::new())).unwrap();
+        let banks = assemble(
+            &needs(1, Vec::new()),
+            &ambience(500),
+            &mut Fixed(HashMap::new()),
+        )
+        .unwrap();
         assert_eq!(banks[&1].chunk, EMPTY);
         assert!(banks[&1].entries.is_empty());
     }
@@ -1293,7 +2151,19 @@ mod tests {
     fn a_refused_clip_is_fitted_by_lowering_rates() {
         // 500 bytes of gap; each clip is 256 bytes at 8000 Hz.
         let mut m = fake(&[("a", 0.05), ("b", 0.05), ("c", 0.05)], &[]);
-        let banks = assemble(&needs(1, vec![rated("a", 8000, 0), rated("b", 8000, 1), rated("c", 8000, 2)]), &ambience(500), &mut m).unwrap();
+        let banks = assemble(
+            &needs(
+                1,
+                vec![
+                    rated("a", 8000, 0),
+                    rated("b", 8000, 1),
+                    rated("c", 8000, 2),
+                ],
+            ),
+            &ambience(500),
+            &mut m,
+        )
+        .unwrap();
         let bank = &banks[&1];
         assert!(bank.refused.is_empty());
         assert_eq!(bank.entries.len(), 3);
@@ -1301,7 +2171,11 @@ mod tests {
         assert!(bank.entries.iter().any(|e| e.rate < 8000));
         let (rates, _) = bank.fitted.as_ref().unwrap();
         let mut a: Vec<(String, i64)> = rates.clone();
-        let mut b: Vec<(String, i64)> = bank.entries.iter().map(|e| (e.event.to_string(), e.rate)).collect();
+        let mut b: Vec<(String, i64)> = bank
+            .entries
+            .iter()
+            .map(|e| (e.event.to_string(), e.rate))
+            .collect();
         a.sort();
         b.sort();
         assert_eq!(a, b);
@@ -1311,8 +2185,20 @@ mod tests {
     fn a_held_clip_never_drops_below_its_no_worse_floor() {
         // a fits alone at its row rate, b is refused beside it; b must give.
         let mut m = fake(&[("a", 0.05), ("b", 0.05)], &[("a", 8000)]);
-        let banks = assemble(&needs(1, vec![rated("a", 8000, 0), rated("b", 8000, 1)]), &ambience(490), &mut m).unwrap();
-        let rate = |n: &str| banks[&1].entries.iter().find(|e| e.event == n).unwrap().rate;
+        let banks = assemble(
+            &needs(1, vec![rated("a", 8000, 0), rated("b", 8000, 1)]),
+            &ambience(490),
+            &mut m,
+        )
+        .unwrap();
+        let rate = |n: &str| {
+            banks[&1]
+                .entries
+                .iter()
+                .find(|e| e.event == n)
+                .unwrap()
+                .rate
+        };
         assert_eq!(rate("a"), 8000);
         assert!(rate("b") < 8000);
     }
@@ -1321,16 +2207,37 @@ mod tests {
     fn the_lowest_priority_clip_is_refused_when_floors_cannot_fit() {
         // a is 480 bytes at its 8000 Hz floor; b is 112 even at 1600 Hz.
         let mut m = fake(&[("a", 0.1), ("b", 0.1)], &[("a", 8000)]);
-        let banks = assemble(&needs(1, vec![rated("a", 8000, 0), rated("b", 8000, 1)]), &ambience(500), &mut m).unwrap();
-        assert_eq!(banks[&1].entries.iter().map(|e| (e.event, e.rate)).collect::<Vec<_>>(), [("a", 8000)]);
-        assert_eq!(banks[&1].refused.iter().map(|r| r.0).collect::<Vec<_>>(), ["b"]);
+        let banks = assemble(
+            &needs(1, vec![rated("a", 8000, 0), rated("b", 8000, 1)]),
+            &ambience(500),
+            &mut m,
+        )
+        .unwrap();
+        assert_eq!(
+            banks[&1]
+                .entries
+                .iter()
+                .map(|e| (e.event, e.rate))
+                .collect::<Vec<_>>(),
+            [("a", 8000)]
+        );
+        assert_eq!(
+            banks[&1].refused.iter().map(|r| r.0).collect::<Vec<_>>(),
+            ["b"]
+        );
     }
 
     #[test]
     fn the_rust_table_carries_each_entrys_rate_and_pitch() {
         let bank = Bank {
             chunk: vec![0; 32],
-            entries: vec![Entry { event: "bench_rest", spu_address: 64, offset: 0, bytes: 32, rate: 4000 }],
+            entries: vec![Entry {
+                event: "bench_rest",
+                spu_address: 64,
+                offset: 0,
+                bytes: 32,
+                rate: 4000,
+            }],
             refused: Vec::new(),
             free_before: 0,
             free_after: 0,
@@ -1344,7 +2251,9 @@ mod tests {
     #[test]
     fn a_db_trim_keeps_the_body_and_fades_the_cut() {
         // 100 ms at full level, then 100 ms 60 dB down, at 1000 Hz.
-        let pcm: Vec<i16> = std::iter::repeat_n(10000, 100).chain(std::iter::repeat_n(10, 100)).collect();
+        let pcm: Vec<i16> = std::iter::repeat_n(10000, 100)
+            .chain(std::iter::repeat_n(10, 100))
+            .collect();
         let (kept, dropped) = trim_tail(pcm, 1000, Some(Trim::Db(-40)));
         assert_eq!(kept.len(), 100);
         assert_eq!(kept[0], 10000);

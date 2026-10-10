@@ -56,6 +56,9 @@ impl Bank {
         let base = room.clip(self.anchor as usize)[0] as usize;
         let f = room.frame(base + self.sprites[sprite].0 as usize + index);
         let word = |at: usize| u32::from_le_bytes([f[at], f[at + 1], f[at + 2], f[at + 3]]);
-        (word(0) as u16, core::array::from_fn(|k| word(4 + k * 4) as i32))
+        (
+            word(0) as u16,
+            core::array::from_fn(|k| word(4 + k * 4) as i32),
+        )
     }
 }

@@ -49,11 +49,28 @@ pub fn build_settings(source: &Source) -> Result<&'static HashMap<String, String
     static CACHE: OnceLock<std::result::Result<HashMap<String, String>, String>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            let file = source.file("globalgamemanagers").map_err(|e| e.to_string())?;
-            let settings = file.objects.iter().find(|o| o.class_id == 141).ok_or("no BuildSettings")?;
-            let tree = source.read(&Obj { file: file.clone(), info: *settings }).map_err(|e| e.to_string())?;
+            let file = source
+                .file("globalgamemanagers")
+                .map_err(|e| e.to_string())?;
+            let settings = file
+                .objects
+                .iter()
+                .find(|o| o.class_id == 141)
+                .ok_or("no BuildSettings")?;
+            let tree = source
+                .read(&Obj {
+                    file: file.clone(),
+                    info: *settings,
+                })
+                .map_err(|e| e.to_string())?;
             let mut out = HashMap::new();
-            for (i, path) in tree.get("scenes").and_then(Value::list).unwrap_or(&[]).iter().enumerate() {
+            for (i, path) in tree
+                .get("scenes")
+                .and_then(Value::list)
+                .unwrap_or(&[])
+                .iter()
+                .enumerate()
+            {
                 let p = path.str().unwrap_or_default();
                 let name = p.rsplit('/').next().unwrap_or("");
                 let name = name.strip_suffix(".unity").unwrap_or(name).to_string();
@@ -72,10 +89,21 @@ pub fn build_settings(source: &Source) -> Result<&'static HashMap<String, String
 fn retarget(tree: &mut Value, id_base: i64, externals: &HashMap<i32, i32>) {
     match tree {
         Value::Map(fields) => {
-            if fields.len() == 2 && fields.iter().any(|(k, _)| &**k == "m_PathID") && fields.iter().any(|(k, _)| &**k == "m_FileID") {
-                let path = fields.iter().find(|(k, _)| &**k == "m_PathID").and_then(|(_, v)| v.int()).unwrap_or(0);
+            if fields.len() == 2
+                && fields.iter().any(|(k, _)| &**k == "m_PathID")
+                && fields.iter().any(|(k, _)| &**k == "m_FileID")
+            {
+                let path = fields
+                    .iter()
+                    .find(|(k, _)| &**k == "m_PathID")
+                    .and_then(|(_, v)| v.int())
+                    .unwrap_or(0);
                 if path != 0 {
-                    let file = fields.iter().find(|(k, _)| &**k == "m_FileID").and_then(|(_, v)| v.int()).unwrap_or(0);
+                    let file = fields
+                        .iter()
+                        .find(|(k, _)| &**k == "m_FileID")
+                        .and_then(|(_, v)| v.int())
+                        .unwrap_or(0);
                     for (k, v) in fields.iter_mut() {
                         if file != 0 && &**k == "m_FileID" {
                             *v = Value::Int(externals[&(file as i32)] as i64);
@@ -125,16 +153,33 @@ impl<'s> Scene<'s> {
             active_cache: Mutex::default(),
         };
         for info in &base.objects {
-            sc.refs.insert(info.path_id, Obj { file: base.clone(), info: *info });
+            sc.refs.insert(
+                info.path_id,
+                Obj {
+                    file: base.clone(),
+                    info: *info,
+                },
+            );
         }
         sc.read(&base, 0, None);
         sc.reindex();
-        let merged = if merge_additive { sc.merge()? } else { Vec::new() };
+        let merged = if merge_additive {
+            sc.merge()?
+        } else {
+            Vec::new()
+        };
         let mut origins = vec![(0, base_name(&base.name).to_string())];
-        origins.extend(merged.iter().map(|(b, f): &(i64, Arc<SerializedFile>)| (*b, base_name(&f.name).to_string())));
+        origins.extend(
+            merged
+                .iter()
+                .map(|(b, f): &(i64, Arc<SerializedFile>)| (*b, base_name(&f.name).to_string())),
+        );
         origins.sort_by(|a, b| b.cmp(a));
         sc.origins = origins;
-        sc.additive = merged.iter().map(|(_, f)| base_name(&f.name).to_string()).collect();
+        sc.additive = merged
+            .iter()
+            .map(|(_, f)| base_name(&f.name).to_string())
+            .collect();
         if !merged.is_empty() {
             sc.reindex();
         }
@@ -144,13 +189,28 @@ impl<'s> Scene<'s> {
         Ok(sc)
     }
 
-    fn read(&mut self, file: &Arc<SerializedFile>, id_base: i64, externals: Option<&HashMap<i32, i32>>) {
+    fn read(
+        &mut self,
+        file: &Arc<SerializedFile>,
+        id_base: i64,
+        externals: Option<&HashMap<i32, i32>>,
+    ) {
         let source = self.source;
-        let objs: Vec<Obj> = file.objects.iter().filter(|i| i.class_id != 43).map(|i| Obj { file: file.clone(), info: *i }).collect();
+        let objs: Vec<Obj> = file
+            .objects
+            .iter()
+            .filter(|i| i.class_id != 43)
+            .map(|i| Obj {
+                file: file.clone(),
+                info: *i,
+            })
+            .collect();
         // Reading is independent per object; the order is restored after.
         let results: Vec<(Result<String>, Result<Value>)> = {
             use rayon::prelude::*;
-            objs.par_iter().map(|o| (source.typename(o), source.read(o))).collect()
+            objs.par_iter()
+                .map(|o| (source.typename(o), source.read(o)))
+                .collect()
         };
         for (o, (typename, tree)) in objs.into_iter().zip(results) {
             match (typename, tree) {
@@ -160,7 +220,11 @@ impl<'s> Scene<'s> {
                     }
                     let id = o.path_id() + id_base;
                     self.index.insert(id, self.objects.len());
-                    self.objects.push(SceneObject { id, typename: t, tree: v });
+                    self.objects.push(SceneObject {
+                        id,
+                        typename: t,
+                        tree: v,
+                    });
                 }
                 (t, v) => {
                     let t = t.unwrap_or_else(|e| format!("?{e}"));
@@ -188,7 +252,12 @@ impl<'s> Scene<'s> {
         }
         // In object order, so a GameObject with two transforms keeps the later one, as the dict does.
         for o in self.objects.iter().filter(|o| o.typename == "Transform") {
-            if let Some(g) = o.tree.get("m_GameObject").and_then(|p| p.get("m_PathID")).and_then(Value::int) {
+            if let Some(g) = o
+                .tree
+                .get("m_GameObject")
+                .and_then(|p| p.get("m_PathID"))
+                .and_then(Value::int)
+            {
                 self.go_transform.insert(g, o.id);
             }
         }
@@ -205,19 +274,32 @@ impl<'s> Scene<'s> {
     }
 
     fn father_of(&self, tid: i64) -> i64 {
-        self.transform(tid).and_then(|t| t.get("m_Father")).and_then(|f| f.get("m_PathID")).and_then(Value::int).unwrap_or(0)
+        self.transform(tid)
+            .and_then(|t| t.get("m_Father"))
+            .and_then(|f| f.get("m_PathID"))
+            .and_then(Value::int)
+            .unwrap_or(0)
     }
     fn go_of_transform(&self, tid: i64) -> i64 {
-        self.transform(tid).and_then(|t| t.get("m_GameObject")).and_then(|f| f.get("m_PathID")).and_then(Value::int).unwrap_or(0)
+        self.transform(tid)
+            .and_then(|t| t.get("m_GameObject"))
+            .and_then(|f| f.get("m_PathID"))
+            .and_then(Value::int)
+            .unwrap_or(0)
     }
     fn is_active_flag(&self, gid: i64) -> bool {
-        self.go(gid).and_then(|g| g.get("m_IsActive")).is_some_and(Value::truthy)
+        self.go(gid)
+            .and_then(|g| g.get("m_IsActive"))
+            .is_some_and(Value::truthy)
     }
 
     /// `active` without the load-time gates.
     pub fn authored_active(&self, mut gid: i64) -> bool {
         loop {
-            if !self.gos.contains_key(&gid) || !self.go_transform.contains_key(&gid) || !self.is_active_flag(gid) {
+            if !self.gos.contains_key(&gid)
+                || !self.go_transform.contains_key(&gid)
+                || !self.is_active_flag(gid)
+            {
                 return false;
             }
             let father = self.father_of(self.go_transform[&gid]);
@@ -234,35 +316,69 @@ impl<'s> Scene<'s> {
     fn merge(&mut self) -> Result<Vec<(i64, Arc<SerializedFile>)>> {
         let source = self.source;
         let mut merged: Vec<(i64, Arc<SerializedFile>)> = Vec::new();
-        let mut loaders: Vec<i64> = self.objects.iter().filter(|o| o.typename == "SceneAdditiveLoadConditional").map(|o| o.id).collect();
+        let mut loaders: Vec<i64> = self
+            .objects
+            .iter()
+            .filter(|o| o.typename == "SceneAdditiveLoadConditional")
+            .map(|o| o.id)
+            .collect();
         loaders.sort();
         for sid in loaders {
             let tree = self.object(sid).unwrap().tree.clone();
             let f = |k: &str| tree.get(k).cloned().unwrap_or(Value::Bool(false));
-            let go = tree.get("m_GameObject").and_then(|p| p.get("m_PathID")).and_then(Value::int).unwrap_or(0);
+            let go = tree
+                .get("m_GameObject")
+                .and_then(|p| p.get("m_PathID"))
+                .and_then(Value::int)
+                .unwrap_or(0);
             if !f("m_Enabled").truthy() || !self.authored_active(go) {
                 continue;
             }
-            if ["needsPlayerDataInt", "extraBoolTests", "extraIntTests", "isIntValue", "usePersistentBoolItem", "doorTrigger"]
-                .iter()
-                .any(|k| f(k).truthy())
+            if [
+                "needsPlayerDataInt",
+                "extraBoolTests",
+                "extraIntTests",
+                "isIntValue",
+                "usePersistentBoolItem",
+                "doorTrigger",
+            ]
+            .iter()
+            .any(|k| f(k).truthy())
             {
-                return Err(Error::Format(format!("unsupported SceneAdditiveLoadConditional test set: {}:{sid}", base_name(&self.base.name))));
+                return Err(Error::Format(format!(
+                    "unsupported SceneAdditiveLoadConditional test set: {}:{sid}",
+                    base_name(&self.base.name)
+                )));
             }
             let playerdata = source.fresh_save()?;
-            let value = activation::fresh_save_bool(playerdata, &f("needsPlayerDataBool")).map_err(|r| Error::Format(r.0))?;
-            let wanted = if value == f("playerDataBoolValue").truthy() { f("sceneNameToLoad") } else { f("altSceneNameToLoad") };
+            let value = activation::fresh_save_bool(playerdata, &f("needsPlayerDataBool"))
+                .map_err(|r| Error::Format(r.0))?;
+            let wanted = if value == f("playerDataBoolValue").truthy() {
+                f("sceneNameToLoad")
+            } else {
+                f("altSceneNameToLoad")
+            };
             let wanted = wanted.str().unwrap_or_default();
             if wanted.is_empty() {
                 continue;
             }
-            let level = build_settings(source)?.get(&wanted).ok_or_else(|| Error::Missing(format!("no scene {wanted}")))?;
+            let level = build_settings(source)?
+                .get(&wanted)
+                .ok_or_else(|| Error::Missing(format!("no scene {wanted}")))?;
             let file = source.file(level)?;
             let id_base = ADDITIVE_ID_BASE * (merged.len() as i64 + 1);
-            let base_max = self.base.objects.iter().map(|o| o.path_id).max().unwrap_or(0);
+            let base_max = self
+                .base
+                .objects
+                .iter()
+                .map(|o| o.path_id)
+                .max()
+                .unwrap_or(0);
             let file_max = file.objects.iter().map(|o| o.path_id).max().unwrap_or(0);
             if base_max >= id_base || file_max >= ADDITIVE_ID_BASE {
-                return Err(Error::Format("additive merge id base overlaps a source file".into()));
+                return Err(Error::Format(
+                    "additive merge id base overlaps a source file".into(),
+                ));
             }
             let mut paths: Vec<String> = self.externals.clone();
             let mut map = HashMap::new();
@@ -270,11 +386,20 @@ impl<'s> Scene<'s> {
                 if !paths.contains(&e.path) {
                     paths.push(e.path.clone());
                 }
-                map.insert(i as i32 + 1, paths.iter().position(|p| *p == e.path).unwrap() as i32 + 1);
+                map.insert(
+                    i as i32 + 1,
+                    paths.iter().position(|p| *p == e.path).unwrap() as i32 + 1,
+                );
             }
             self.read(&file, id_base, Some(&map));
             for info in &file.objects {
-                self.refs.insert(info.path_id + id_base, Obj { file: file.clone(), info: *info });
+                self.refs.insert(
+                    info.path_id + id_base,
+                    Obj {
+                        file: file.clone(),
+                        info: *info,
+                    },
+                );
             }
             for e in &file.externals {
                 if !self.externals.contains(&e.path) {
@@ -298,14 +423,23 @@ impl<'s> Scene<'s> {
 
     /// host/source.py `ref` against this scene's (possibly merged) file.
     pub fn deref(&self, pptr: &Value) -> Result<Obj> {
-        let (file_id, path_id) = pptr.pptr().ok_or_else(|| Error::Format("not a PPtr".into()))?;
+        let (file_id, path_id) = pptr
+            .pptr()
+            .ok_or_else(|| Error::Format("not a PPtr".into()))?;
         if path_id == 0 {
             return Err(Error::Format("null source reference".into()));
         }
         if file_id == 0 {
-            return self.refs.get(&path_id).cloned().ok_or_else(|| Error::Missing(format!("object {path_id} not in scene")));
+            return self
+                .refs
+                .get(&path_id)
+                .cloned()
+                .ok_or_else(|| Error::Missing(format!("object {path_id} not in scene")));
         }
-        let path = self.externals.get(file_id as usize - 1).ok_or_else(|| Error::Format("bad PPtr file id".into()))?;
+        let path = self
+            .externals
+            .get(file_id as usize - 1)
+            .ok_or_else(|| Error::Format("bad PPtr file id".into()))?;
         let file = self.source.file(path)?;
         self.source.object(&file, path_id)
     }
@@ -315,17 +449,52 @@ impl<'s> Scene<'s> {
         if let Some(m) = self.world_cache.lock().unwrap().get(&tid) {
             return Ok(*m);
         }
-        let t = self.transform(tid).ok_or_else(|| Error::Missing(format!("transform {tid} not in scene")))?;
-        let v = |a: &str, k: &str| t.get(a).and_then(|x| x.get(k)).and_then(Value::float).unwrap_or(0.0);
-        let (x, y, z, w) = (v("m_LocalRotation", "x"), v("m_LocalRotation", "y"), v("m_LocalRotation", "z"), v("m_LocalRotation", "w"));
-        let (px, py, pz) = (v("m_LocalPosition", "x"), v("m_LocalPosition", "y"), v("m_LocalPosition", "z"));
+        let t = self
+            .transform(tid)
+            .ok_or_else(|| Error::Missing(format!("transform {tid} not in scene")))?;
+        let v = |a: &str, k: &str| {
+            t.get(a)
+                .and_then(|x| x.get(k))
+                .and_then(Value::float)
+                .unwrap_or(0.0)
+        };
+        let (x, y, z, w) = (
+            v("m_LocalRotation", "x"),
+            v("m_LocalRotation", "y"),
+            v("m_LocalRotation", "z"),
+            v("m_LocalRotation", "w"),
+        );
+        let (px, py, pz) = (
+            v("m_LocalPosition", "x"),
+            v("m_LocalPosition", "y"),
+            v("m_LocalPosition", "z"),
+        );
         let mut r = [
-            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w), px],
-            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w), py],
-            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y), pz],
+            [
+                1.0 - 2.0 * (y * y + z * z),
+                2.0 * (x * y - z * w),
+                2.0 * (x * z + y * w),
+                px,
+            ],
+            [
+                2.0 * (x * y + z * w),
+                1.0 - 2.0 * (x * x + z * z),
+                2.0 * (y * z - x * w),
+                py,
+            ],
+            [
+                2.0 * (x * z - y * w),
+                2.0 * (y * z + x * w),
+                1.0 - 2.0 * (x * x + y * y),
+                pz,
+            ],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        let sc = [v("m_LocalScale", "x"), v("m_LocalScale", "y"), v("m_LocalScale", "z")];
+        let sc = [
+            v("m_LocalScale", "x"),
+            v("m_LocalScale", "y"),
+            v("m_LocalScale", "z"),
+        ];
         for row in r.iter_mut().take(3) {
             for (col, s) in sc.iter().enumerate() {
                 row[col] *= s;
@@ -351,7 +520,10 @@ impl<'s> Scene<'s> {
     }
 
     pub fn point(&self, gid: i64, x: f64, y: f64, z: f64) -> Result<[f64; 3]> {
-        let tid = *self.go_transform.get(&gid).ok_or_else(|| Error::Missing(format!("object {gid} has no transform")))?;
+        let tid = *self
+            .go_transform
+            .get(&gid)
+            .ok_or_else(|| Error::Missing(format!("object {gid} has no transform")))?;
         let m = self.world(tid)?;
         let v = [x, y, z, 1.0];
         let mut out = [0.0; 3];
@@ -391,7 +563,10 @@ impl Source {
     /// The fresh-save PlayerData defaults, read once per source.
     pub fn fresh_save(&self) -> Result<&HashMap<String, Start>> {
         self.fresh_save
-            .get_or_init(|| crate::fresh_save::playerdata_defaults(&self.directory.join("Managed")).map_err(|e| e.to_string()))
+            .get_or_init(|| {
+                crate::fresh_save::playerdata_defaults(&self.directory.join("Managed"))
+                    .map_err(|e| e.to_string())
+            })
             .as_ref()
             .map_err(|e| Error::Format(e.clone()))
     }

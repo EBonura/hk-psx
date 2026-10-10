@@ -22,7 +22,10 @@ fn onset(points: &[(f64, f64)], hero: &[(f64, f64)], threshold: f64) -> Option<O
     for i in 3..points.len().min(hero.len()) {
         let v = (points[i].0 - points[i - 3].0).hypot(points[i].1 - points[i - 3].1) * 20.0;
         if v > threshold {
-            return Some(Onset { frame: i, distance: (points[i].0 - hero[i].0).hypot(points[i].1 - hero[i].1) });
+            return Some(Onset {
+                frame: i,
+                distance: (points[i].0 - hero[i].0).hypot(points[i].1 - hero[i].1),
+            });
         }
     }
     None
@@ -31,7 +34,9 @@ fn onset(points: &[(f64, f64)], hero: &[(f64, f64)], threshold: f64) -> Option<O
 fn vmax(points: &[(f64, f64)]) -> f64 {
     // Six frames are exactly five of the original's 50 Hz physics steps, so the average is not
     // pushed up or down by which frames a step fell on.
-    (6..points.len()).map(|i| (points[i].0 - points[i - 6].0).hypot(points[i].1 - points[i - 6].1) * 10.0).fold(0.0, f64::max)
+    (6..points.len())
+        .map(|i| (points[i].0 - points[i - 6].0).hypot(points[i].1 - points[i - 6].1) * 10.0)
+        .fold(0.0, f64::max)
 }
 
 fn mean_speed(points: &[(f64, f64)]) -> f64 {
@@ -49,19 +54,37 @@ pub fn report(run: &std::path::Path, names: &BTreeMap<usize, String>, only: Opti
         if only.map_or(false, |o| o != name) {
             continue;
         }
-        let Some(trace) = traces.get(name) else { continue };
+        let Some(trace) = traces.get(name) else {
+            continue;
+        };
         let ticks = (trace.last_frame - trace.origin).max(0) as usize;
         let port = run_port_scene(*id, trace, ticks);
         let (pairs, _, _) = match_actors(name, trace, &port);
         let mut visits: Vec<(usize, u32, (f64, f64))> = Vec::new();
         let mut chosen: Vec<(usize, &OgActor, &PortActor)> = Vec::new();
         for (wi, w) in trace.windows.iter().enumerate().filter(|(_, w)| w.approach) {
-            let near = pairs.iter().filter(|p| base_name(&p.og.name) == w.target).min_by(|a, b| {
-                let d = |p: &&crate::compare::Pair| p.og.samples.iter().find(|s| s.frame >= w.start).map_or(f64::MAX, |s| (s.x - w.x).hypot(s.y - w.y));
-                d(a).partial_cmp(&d(b)).unwrap()
-            });
+            let near = pairs
+                .iter()
+                .filter(|p| base_name(&p.og.name) == w.target)
+                .min_by(|a, b| {
+                    let d = |p: &&crate::compare::Pair| {
+                        p.og.samples
+                            .iter()
+                            .find(|s| s.frame >= w.start)
+                            .map_or(f64::MAX, |s| (s.x - w.x).hypot(s.y - w.y))
+                    };
+                    d(a).partial_cmp(&d(b)).unwrap()
+                });
             let Some(p) = near else { continue };
-            let Some(at) = p.og.samples.iter().filter(|s| s.frame <= w.start - 6).last().map(|s| (s.x, s.y)) else { continue };
+            let Some(at) =
+                p.og.samples
+                    .iter()
+                    .filter(|s| s.frame <= w.start - 6)
+                    .last()
+                    .map(|s| (s.x, s.y))
+            else {
+                continue;
+            };
             visits.push((wi, p.port.source_id, at));
             chosen.push((wi, p.og, p.port));
         }
@@ -69,20 +92,41 @@ pub fn report(run: &std::path::Path, names: &BTreeMap<usize, String>, only: Opti
         for (wi, og, pa) in chosen {
             let w = &trace.windows[wi];
             let Some(pt) = ran.get(&wi) else { continue };
-            let hero: Vec<(f64, f64)> = (w.start..w.end).map(|f| trace.hero.range(..=f).next_back().map_or((0.0, 0.0), |(_, h)| (h[0], h[1]))).collect();
-            let o_pts: Vec<(f64, f64)> = og.samples.iter().filter(|s| s.frame >= w.start && s.frame < w.end).map(|s| (s.x, s.y)).collect();
+            let hero: Vec<(f64, f64)> = (w.start..w.end)
+                .map(|f| {
+                    trace
+                        .hero
+                        .range(..=f)
+                        .next_back()
+                        .map_or((0.0, 0.0), |(_, h)| (h[0], h[1]))
+                })
+                .collect();
+            let o_pts: Vec<(f64, f64)> = og
+                .samples
+                .iter()
+                .filter(|s| s.frame >= w.start && s.frame < w.end)
+                .map(|s| (s.x, s.y))
+                .collect();
             let from = (w.start - trace.origin) as usize;
-            let p_pts: Vec<(f64, f64)> = pt[from.min(pt.len())..].iter().map(|t| (t.x, t.y)).collect();
+            let p_pts: Vec<(f64, f64)> = pt[from.min(pt.len())..]
+                .iter()
+                .map(|t| (t.x, t.y))
+                .collect();
             if o_pts.len() < 60 || p_pts.len() < 60 || p_pts.iter().any(|p| !p.0.is_finite()) {
                 continue;
             }
             // Threshold: well above what the enemy does on its own (a Crawler's 4 u/s stays under it).
             let base = mean_speed(&o_pts[..30]).max(mean_speed(&p_pts[..30]));
             let threshold = (2.5 * base + 1.5).max(5.0);
-            let (o, p) = (onset(&o_pts, &hero, threshold), onset(&p_pts, &hero, threshold));
+            let (o, p) = (
+                onset(&o_pts, &hero, threshold),
+                onset(&p_pts, &hero, threshold),
+            );
             let react_ok = o.is_some() == p.is_some();
             let range_ok = match (o, p) {
-                (Some(a), Some(b)) => (a.distance - b.distance).abs() <= (0.3 * a.distance.max(b.distance)).max(1.5),
+                (Some(a), Some(b)) => {
+                    (a.distance - b.distance).abs() <= (0.3 * a.distance.max(b.distance)).max(1.5)
+                }
                 _ => true,
             };
             let row = by_family.entry(pa.family.clone()).or_default();
@@ -90,7 +134,11 @@ pub fn report(run: &std::path::Path, names: &BTreeMap<usize, String>, only: Opti
             row[1] += react_ok as u32;
             row[2] += (react_ok && range_ok) as u32;
             if std::env::var_os("HKBP_ALL").is_some() || !(react_ok && range_ok) {
-                let show = |o: Option<Onset>| o.map_or("none".to_string(), |o| format!("frame {} at {:.1}", o.frame, o.distance));
+                let show = |o: Option<Onset>| {
+                    o.map_or("none".to_string(), |o| {
+                        format!("frame {} at {:.1}", o.frame, o.distance)
+                    })
+                };
                 println!("{name} {:>6} {:<10} '{}' threshold {:.1} u/s | og {} vmax {:.1} | port {} vmax {:.1} | react:{} range:{}", pa.source_id, pa.family, og.name, threshold, show(o), vmax(&o_pts), show(p), vmax(&p_pts), react_ok as u8, range_ok as u8);
             }
         }
