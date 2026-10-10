@@ -12,6 +12,9 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 
 
 def method(source, name):
@@ -599,6 +602,6 @@ impl Cache{METHODS
 '''.replace('METHODS', methods)
         for exclusive in ('true',):
             with self.subTest(exclusive=exclusive):self.run_rust(code.replace('EXCLUSIVE',exclusive))
-        main = (ROOT / 'game/src/main.rs').read_text()
+        main = rustsrc.source(ROOT / 'game/src/main.rs')
         retry = main[main.index('while cache.prepare_ambience()'):]
         self.assertLess(retry.index('cache.reset_bootstrap()'), retry.index('menu::restore('))

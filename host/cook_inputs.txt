@@ -89,6 +89,8 @@ host/props.py
 host/language.py
 # Brooding Mawlek's contract check and bank, the same postpass for Crossroads_09.
 host/mawlek_art.py
+# What those contract checks and the arena gates read Rust constants with.
+host/rustsrc.py
 host/npc_sources.py
 host/npc_dialogue.py
 host/npcs.py

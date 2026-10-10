@@ -24,6 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 import pigeon
 from actors import actor_placements, generated_actor_specs
 
@@ -33,21 +34,18 @@ ONE = 65536
 
 def rust_clips():
     """The `Clip` variants of the controller, in declaration order."""
-    text = CONTROLLER.read_text()
-    body = re.search(r'pub enum Clip \{(.*?)\n\}', text, re.S)
-    if body is None:
-        raise AssertionError('pigeon.rs no longer declares a Clip enum')
-    return [name for name in re.findall(r'^\s{4}(\w+),$', body.group(1), re.M)]
+    try:
+        return rustsrc.enum_variants(CONTROLLER, 'Clip')
+    except KeyError:
+        raise AssertionError('pigeon.rs no longer declares a Clip enum') from None
 
 
 def rust_const(name):
     """One `pub const` of the controller, as a list of evaluated integers."""
-    text = CONTROLLER.read_text()
-    found = re.search(rf'pub const {name}: [^=]+= ([^;]+);', text)
+    found = rustsrc.consts(CONTROLLER, one=ONE).get(name)
     if found is None:
         raise AssertionError(f'pigeon.rs no longer declares {name}')
-    body = found.group(1).strip().strip('[]')
-    return [eval(term, {'ONE': ONE, '__builtins__': {}}) for term in body.split(',')]
+    return list(found) if isinstance(found, (list, tuple)) else [found]
 
 
 class ClipOrderTests(unittest.TestCase):
@@ -62,8 +60,7 @@ class ClipOrderTests(unittest.TestCase):
         self.assertEqual(list(pigeon.CLIP_SLOTS), snake)
 
     def test_the_controller_counts_exactly_the_slots_the_cooker_fills(self):
-        count = re.search(r'pub const COUNT: usize = (\d+);', CONTROLLER.read_text())
-        self.assertEqual(int(count.group(1)), len(pigeon.CLIP_SLOTS))
+        self.assertEqual(rustsrc.const_int(CONTROLLER, 'COUNT'), len(pigeon.CLIP_SLOTS))
 
     def test_every_slot_names_a_clip_the_recognizer_requires(self):
         self.assertEqual(sorted(pigeon.SLOT_CLIPS), sorted(pigeon.CLIP_SLOTS))

@@ -22,17 +22,31 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 GUEST = ROOT / 'game/src'
 # The two halves of the contract, named by the methods on world::State rather
 # than by the modules that happen to use them today.
 SETTER = 'set_lifeblood_edges'
 APPENDER = 'append_script_edges'
-# Call sites that rebuild the scratch are a short run of statements, not a
-# scope, so the check reads forward a few statements rather than parsing Rust.
-# Comments and blanks do not count towards it: the render path explains itself
-# at length between two of these calls, and a comment must not be able to break
-# the rule it is explaining.
-WINDOW = 4
+# A call site that rebuilds the scratch must re-apply the appenders in the rest
+# of the block it sits in. Read from the compacted source, so neither comments
+# (the render path explains itself at length between two of these calls) nor how
+# `cargo fmt` lays the statements out can change the answer.
+
+
+def rest_of_block(text, start):
+    """`text` from `start` to the `}` that closes the block holding it."""
+    depth = 0
+    for at in range(start, len(text)):
+        if text[at] in '({[':
+            depth += 1
+        elif text[at] in ')}]':
+            depth -= 1
+            if depth < 0:
+                return text[start:at]
+    return text[start:]
 
 
 def modules_calling(method):
@@ -44,7 +58,7 @@ def modules_calling(method):
     """
     found = set()
     for path in sorted(GUEST.rglob('*.rs')):
-        text = path.read_text()
+        text = rustsrc.source(path)
         if f'.{method}(' in text and re.search(r'\bfn apply\b', text):
             found.add(path.stem)
     return found
@@ -64,19 +78,20 @@ class ScriptEdgeScratchTests(unittest.TestCase):
     def test_every_rebuild_of_the_scratch_reapplies_every_appender(self):
         missing = []
         for path in sorted(GUEST.rglob('*.rs')):
-            lines = path.read_text().splitlines()
-            for number, line in enumerate(lines):
-                setter = next((m for m in self.setters if f'{m}::apply(' in line), None)
-                if setter is None:
-                    continue
-                code = [after for after in lines[number:]
-                        if after.strip() and not after.strip().startswith('//')]
-                window = '\n'.join(code[:WINDOW])
-                for appender in sorted(self.appenders):
-                    if f'{appender}::apply(' not in window:
-                        missing.append(f'{path.name}:{number + 1} calls {setter}::apply, '
-                                       f'which discards the scratch, and does not re-apply '
-                                       f'{appender}::apply within {WINDOW} lines')
+            # Comments are gone and layout is irrelevant: the rest of the block
+            # the setter call sits in is what has to re-apply the appenders.
+            text = rustsrc.source(path)
+            for setter in sorted(self.setters):
+                for number, call in enumerate(re.finditer(rf'\b{setter}::apply\(', text), 1):
+                    window = rest_of_block(text, call.start())
+                    # ...and before the next call that rebuilds it, which owns the rest.
+                    later = window.find(f'{setter}::apply(', 1)
+                    window = window if later < 0 else window[:later]
+                    for appender in sorted(self.appenders):
+                        if f'{appender}::apply(' not in window:
+                            missing.append(f'{path.name} call {number} of {setter}::apply '
+                                           f'discards the scratch, and does not re-apply '
+                                           f'{appender}::apply in the rest of its block')
         self.assertFalse(missing, 'the shared scripted-edge scratch is rebuilt without '
                                   'every consumer:\n  ' + '\n  '.join(missing))
 
@@ -86,9 +101,9 @@ class ScriptEdgeScratchTests(unittest.TestCase):
         `SCRIPT_EDGE_SLOTS` is 20 and the worst real slot needs 17, so an
         appender that added a duplicate would overflow a room that fits today.
         """
-        world = (GUEST / 'world.rs').read_text()
-        body = world[world.index(f'pub fn {APPENDER}'):]
-        body = body[:body.index('\n    }')]
+        world = rustsrc.source(GUEST / 'world.rs')
+        body = world[world.index(f'pub fn {APPENDER}') + 1:]
+        body = body[:body.find('pub fn ')]
         self.assertIn('contains(&edge)', body,
                       f'{APPENDER} no longer skips edges it already holds, so re-applying '
                       'after a rebuild would consume a slot per call')

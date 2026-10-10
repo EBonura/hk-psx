@@ -41,6 +41,7 @@ from dncil.clr.token import Token
 from PIL import Image
 
 import items
+import rustsrc
 import language
 from combat import ticks
 from cook import native_sprite
@@ -103,10 +104,10 @@ def advances():
     the font a second time and risking a different answer than the one the
     guest actually draws with, so the cooked table is the authority.
     """
-    text = (ROOT / 'data/read_points.rs').read_text()
-    match = re.search(r'pub const ADVANCES:\[u8;95\]=\[([0-9,]+)\];', text)
-    assert match, 'data/read_points.rs no longer carries the glyph advances'
-    table = [int(v) for v in match.group(1).split(',')]
+    try:
+        table = rustsrc.const_ints(ROOT / 'data/read_points.rs', 'ADVANCES')
+    except KeyError:
+        raise AssertionError('data/read_points.rs no longer carries the glyph advances') from None
     assert len(table) == 95 and all(1 <= v <= 12 for v in table), 'unexpected advance table'
     return table
 
@@ -752,8 +753,7 @@ def _spare_halfwords():
     The other half is somewhere to put the texels, and this is what the
     disjointness map says is left.
     """
-    text = (ROOT / 'shared/hk-cache/src/residency.rs').read_text()
-    return int(re.search(r'pub const SPARE_HALFWORDS\s*:\s*usize\s*=\s*(\d+);', text).group(1))
+    return rustsrc.const_int(ROOT / 'shared/hk-cache/src/residency.rs', 'SPARE_HALFWORDS')
 
 
 def icon_measurement(source, catalogue, rows_on_screen):
@@ -777,8 +777,7 @@ def icon_measurement(source, catalogue, rows_on_screen):
     regions = json.loads((ROOT / 'data/regions.json').read_text())
     budget = headroom(regions, view_cluts(regions))
     tightest = min(budget['scenes'].items(), key=lambda kv: kv[1]['headroom'])
-    slots = int(re.search(r'pub const SLOTS: usize = (\d+);',
-                          (ROOT / 'shared/hk-cache/src/lib.rs').read_text()).group(1))
+    slots = rustsrc.const_int(ROOT / 'shared/hk-cache/src/lib.rs', 'SLOTS')
     _, objects = _charm_icon_sprites(source, catalogue)
     sizes = []
     for charm, obj in zip(catalogue, objects):

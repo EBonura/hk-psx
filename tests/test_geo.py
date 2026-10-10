@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'host'))
+import rustsrc
 from geo import art_bank,place_rectangles,VRAM_RECTS,MAX_VRAM_BYTES,fsm_contract,q16,canonical_images,rock_state,MAX_ROCKS_PER_SCENE
 
 class GeoTests(unittest.TestCase):
@@ -74,7 +75,7 @@ class GeoTests(unittest.TestCase):
         self.assertTrue(all(r['state']<MAX_ROCKS_PER_SCENE for r in rocks))
         with self.assertRaises(ValueError):rock_state(rocks,9)
     def test_host_limit_matches_the_guest(self):
-        text=(Path(__file__).resolve().parents[1]/'game/src/geo.rs').read_text()
-        self.assertIn(f'pub const MAX_ROCKS_PER_SCENE:usize={MAX_ROCKS_PER_SCENE};',text)
+        guest=rustsrc.const_int(Path(__file__).resolve().parents[1]/'game/src/geo.rs','MAX_ROCKS_PER_SCENE')
+        self.assertEqual(guest,MAX_ROCKS_PER_SCENE)
 
 if __name__=='__main__':unittest.main()
