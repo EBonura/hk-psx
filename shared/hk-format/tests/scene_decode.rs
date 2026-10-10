@@ -103,7 +103,14 @@ fn scene_raw_and_hlzc_use_scene_validation_and_identical_bounded_bytes() {
                 raw.len(),
                 psx_pack::fnv1a32(&raw),
             );
-            assert_eq!(finish(d, &mut input, budget), Err(Error::RoomFormat));
+            // (Only when the cook is verified: a trusted cook skips the format
+            // walk, see room_decode::TRUST_COOK.)
+            let verdict = finish(d, &mut input, budget);
+            if room_decode::TRUST_COOK {
+                assert_eq!(verdict, Ok(raw.len()));
+            } else {
+                assert_eq!(verdict, Err(Error::RoomFormat));
+            }
         }
     }
 }
@@ -111,17 +118,30 @@ fn scene_raw_and_hlzc_use_scene_validation_and_identical_bounded_bytes() {
 fn scene_checksums_and_late_indirect_references_never_publish() {
     let raw = fixture();
     let hash = psx_pack::fnv1a32(&raw);
+    // The stored hash is the CD integrity check and always runs. The expanded
+    // hash and the scene walk (late indirect references) only run when the
+    // cook is not trusted (HK_VERIFY_COOK=1 at build time).
     for (stored, decoded) in [(hash ^ 1, hash), (hash, hash ^ 1)] {
         let mut arena = raw.clone();
         let d = Decoder::new_scene(raw.len(), stored, raw.len(), decoded);
-        assert_eq!(finish(d, &mut arena, 31), Err(Error::Checksum));
+        let verdict = finish(d, &mut arena, 31);
+        if stored == hash && room_decode::TRUST_COOK {
+            assert_eq!(verdict, Ok(raw.len()));
+        } else {
+            assert_eq!(verdict, Err(Error::Checksum));
+        }
     }
     let mut bad = raw.clone();
     let end = bad.len();
     bad[end - 4..end - 2].copy_from_slice(&u16::MAX.to_le_bytes());
     let h = psx_pack::fnv1a32(&bad);
     let d = Decoder::new_scene(bad.len(), h, bad.len(), h);
-    assert_eq!(finish(d, &mut bad, 1), Err(Error::RoomFormat));
+    let verdict = finish(d, &mut bad, 1);
+    if room_decode::TRUST_COOK {
+        assert_eq!(verdict, Ok(end));
+    } else {
+        assert_eq!(verdict, Err(Error::RoomFormat));
+    }
 }
 #[test]
 fn sequential_scene_suffix_decode_preserves_admitted_prefix() {

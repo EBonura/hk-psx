@@ -69,12 +69,14 @@ fn full_integer_extremes_and_exact_area_boundaries() {
     assert!(!admission::possible(&square, 2049));
     assert!(!admission::possible(&[0; 8], 1));
 }
+#[cfg(not(cooked_data))]
+#[test]
+#[ignore = "skipped: data/regions is not cooked in this checkout (run `cargo hk-build build`)"]
+fn cooked_source_draws_match_original_projection_for_random_world_cameras() {}
+#[cfg(cooked_data)]
 #[test]
 fn cooked_source_draws_match_original_projection_for_random_world_cameras() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/regions");
-    if !directory.exists() {
-        return;
-    } // Synthetic proof tests require no retail assets.
     let mut paths: Vec<_> = std::fs::read_dir(directory)
         .unwrap()
         .map(|e| e.unwrap().path())

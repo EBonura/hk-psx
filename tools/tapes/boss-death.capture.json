@@ -2,16 +2,16 @@
   "note": "Captured from a tools/replay_cue.py run of the tape below against the real disc. tests/test_boss_sim.py replays the same tape through tools/boss_sim.py and asserts the fight it predicts is this one. See capture() in tools/boss_sim.py to regenerate after a disc change.",
   "tape": "tools/tapes/boss-death.pxtape",
   "tape_sha256": "142d7dfb6122c14aad96428986fb913c6610c083409b8ca34bb185f91698f7bb",
-  "hero_died_at_poll": 1162,
+  "hero_died_at_poll": 1163,
   "disc_sha256": {
-    "/private/tmp/claude-501/-Users-ebonura-Desktop-repos-PSoXide/a99dc269-369a-4cd1-855e-ea254f46d9a7/scratchpad/hkfk/dist/hk-psx.exe": "3f9e4330e436d1323da9fbd5a71f47257bfdec0c67f39adbb729774a642fcbf6",
-    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/hk-fk/home/Downloads/ps1 games/hk-psx.bin": "700aec6ec4ad560fd292423441112885f7b33116ef1e61ef3b0922ed6c480f5f",
-    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/hk-fk/home/Downloads/ps1 games/hk-psx.cue": "8373d7734005e70bce4ef70fa60f8f5d2f0d744027659f7dfe9c8471f62b0579"
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/settings-2026-10-05/hk-psx/dist/hk-psx.exe": "6783d4fd6643441cd95f139a2c2f059ec05aa87e52023c772ddc78918d0d8dd7",
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/settings-2026-10-05/fakehome/Downloads/ps1 games/hk-psx.bin": "415895552168c624afc0f35360ffaa4eed14a3f141c6f237f9af9776cbb7ce83",
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/settings-2026-10-05/fakehome/Downloads/ps1 games/hk-psx.cue": "847e6ea3d0762d2163e0616a19c01b3ae85c469748318c588e14656bbc7f98fb"
   },
   "completed": true,
   "faults": [],
   "hero_start": {
-    "poll": 32,
+    "poll": 31,
     "x": 786432,
     "y": 1798268
   },
@@ -31,7 +31,9 @@
     "HK_ARENA_GATE_OPENS": 0,
     "HK_FK_BARRELS": 0,
     "HK_FK_BARRELS_BROKEN": 0,
-    "HK_SOUL": 0
+    "HK_SOUL": 0,
+    "HK_FK_WAVES": 0,
+    "HK_FK_WAVE_HITS": 0
   },
   "transitions": {
     "fk_hp": [],
@@ -53,12 +55,12 @@
         2
       ],
       [
-        977,
+        978,
         2,
         1
       ],
       [
-        1162,
+        1163,
         1,
         0
       ]
