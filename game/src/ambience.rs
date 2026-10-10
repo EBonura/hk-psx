@@ -4,8 +4,9 @@
 //! borrows one of the pooled voices for as long as it is audible. Call after
 //! audio::init. This module never resets the shared SPU or owns CD IO.
 use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
-#[path="volume.rs"]mod volume;
-static mut LEVEL:u8=10;
+#[path = "volume.rs"]
+mod volume;
+static mut LEVEL: u8 = 10;
 #[path = "ambience_state.rs"]
 mod state;
 // The cooked table, which is where the stem count and the voice budget come
@@ -23,11 +24,29 @@ const STAGE_SECTORS: usize = 2;
 struct Stage([u8; STAGE_SECTORS * 2048]);
 static mut STAGE: Stage = Stage([0; STAGE_SECTORS * 2048]);
 const NO_CLIP: u8 = u8::MAX;
-struct Prefetch { want: u8, skip: u8, clip: u8, offset: usize, reading: usize, check: state::ClipCheck }
-static mut PREFETCH: Prefetch = Prefetch { want: 0, skip: 0, clip: NO_CLIP, offset: 0, reading: 0, check: state::ClipCheck::new() };
+struct Prefetch {
+    want: u8,
+    skip: u8,
+    clip: u8,
+    offset: usize,
+    reading: usize,
+    check: state::ClipCheck,
+}
+static mut PREFETCH: Prefetch = Prefetch {
+    want: 0,
+    skip: 0,
+    clip: NO_CLIP,
+    offset: 0,
+    reading: 0,
+    check: state::ClipCheck::new(),
+};
 /// Where each clip starts on the disc, filled in once the directory is read.
 static mut CLIP_LBA: [u32; AMBIENCE_CLIPS.len()] = [0; AMBIENCE_CLIPS.len()];
-pub fn set_clip_lba(clip: usize, lba: u32) { unsafe { CLIP_LBA[clip] = lba; } }
+pub fn set_clip_lba(clip: usize, lba: u32) {
+    unsafe {
+        CLIP_LBA[clip] = lba;
+    }
+}
 /// Clips loaded in the background, the pieces read for them, and clips
 /// abandoned half way (a gate came first, or a check failed).
 #[no_mangle]
@@ -36,7 +55,9 @@ pub static mut HK_AMBIENCE_PREFETCHED: u32 = 0;
 pub static mut HK_AMBIENCE_PREFETCH_READS: u32 = 0;
 #[no_mangle]
 pub static mut HK_AMBIENCE_PREFETCH_ABORTS: u32 = 0;
-fn prefetch() -> &'static mut Prefetch { unsafe { &mut *(&raw mut PREFETCH) } }
+fn prefetch() -> &'static mut Prefetch {
+    unsafe { &mut *(&raw mut PREFETCH) }
+}
 /// The next piece a free drive should read, as (destination, sectors, LBA).
 pub fn want_prefetch() -> Option<(*mut u32, usize, u32)> {
     let p = prefetch();
@@ -76,7 +97,11 @@ pub fn want_prefetch() -> Option<(*mut u32, usize, u32)> {
     }
     let sectors = (clip.byte_len - p.offset).div_ceil(2048).min(STAGE_SECTORS);
     p.reading = sectors;
-    Some((unsafe { (&raw mut STAGE.0).cast::<u32>() }, sectors, lba + (p.offset / 2048) as u32))
+    Some((
+        unsafe { (&raw mut STAGE.0).cast::<u32>() },
+        sectors,
+        lba + (p.offset / 2048) as u32,
+    ))
 }
 /// The piece `want_prefetch` handed out has landed (or failed).
 pub fn prefetch_done(ok: bool) {
@@ -86,7 +111,9 @@ pub fn prefetch_done(ok: bool) {
     if sectors == 0 || p.clip == NO_CLIP {
         return;
     }
-    unsafe { HK_AMBIENCE_PREFETCH_READS = HK_AMBIENCE_PREFETCH_READS.saturating_add(1); }
+    unsafe {
+        HK_AMBIENCE_PREFETCH_READS = HK_AMBIENCE_PREFETCH_READS.saturating_add(1);
+    }
     let index = p.clip as usize;
     let clip = CLIPS[index];
     let bytes = (sectors * 2048).min(clip.byte_len - p.offset);
@@ -100,7 +127,10 @@ pub fn prefetch_done(ok: bool) {
     let at = clip.spu_address + p.offset as u32;
     crate::scene_sfx::overwritten(at, at + bytes as u32);
     for (i, part) in data.chunks(2048).enumerate() {
-        spu::upload_adpcm(SpuAddr::new(clip.spu_address + (p.offset + i * 2048) as u32), part);
+        spu::upload_adpcm(
+            SpuAddr::new(clip.spu_address + (p.offset + i * 2048) as u32),
+            part,
+        );
         crate::input::poll_only();
     }
     p.offset += bytes;
@@ -113,7 +143,9 @@ pub fn prefetch_done(ok: bool) {
             }
             publish();
         } else {
-            unsafe { HK_AMBIENCE_PREFETCH_ABORTS = HK_AMBIENCE_PREFETCH_ABORTS.saturating_add(1); }
+            unsafe {
+                HK_AMBIENCE_PREFETCH_ABORTS = HK_AMBIENCE_PREFETCH_ABORTS.saturating_add(1);
+            }
         }
     }
 }
@@ -121,7 +153,9 @@ pub fn prefetch_done(ok: bool) {
 pub fn abort_prefetch() {
     let p = prefetch();
     if p.clip != NO_CLIP {
-        unsafe { HK_AMBIENCE_PREFETCH_ABORTS = HK_AMBIENCE_PREFETCH_ABORTS.saturating_add(1); }
+        unsafe {
+            HK_AMBIENCE_PREFETCH_ABORTS = HK_AMBIENCE_PREFETCH_ABORTS.saturating_add(1);
+        }
     }
     p.clip = NO_CLIP;
 }
@@ -237,7 +271,12 @@ pub fn upload(index: usize, bytes: &[u8]) -> bool {
         || clip.spu_bytes != clip.byte_len
         || clip.pitch == 0
         || clip.pitch > 0x3FFF
-        || !state::valid_clip_polled(bytes, clip.byte_len, clip.checksum, &mut crate::input::checkpoint)
+        || !state::valid_clip_polled(
+            bytes,
+            clip.byte_len,
+            clip.checksum,
+            &mut crate::input::checkpoint,
+        )
     {
         return false;
     }
@@ -258,7 +297,9 @@ pub fn upload(index: usize, bytes: &[u8]) -> bool {
             spu::upload_adpcm(SpuAddr::new(start + (slice * UPLOAD_SLICE) as u32), part);
             crate::input::checkpoint();
         }
-        unsafe { HK_AMBIENCE_CLIP_LOADS = HK_AMBIENCE_CLIP_LOADS.saturating_add(1); }
+        unsafe {
+            HK_AMBIENCE_CLIP_LOADS = HK_AMBIENCE_CLIP_LOADS.saturating_add(1);
+        }
     }
     unsafe {
         MIXER.loaded |= 1 << index;
@@ -276,7 +317,9 @@ pub fn forget(lo: u32, hi: u32) {
     let mut stems = 0u8;
     for i in 0..CLIPS.len() {
         let (a, b) = spu_range(i);
-        if a < hi && lo < b { stems |= 1 << i; }
+        if a < hi && lo < b {
+            stems |= 1 << i;
+        }
     }
     let live = stems & unsafe { MIXER.loaded | MIXER.playing };
     if live != 0 {
@@ -372,7 +415,7 @@ pub fn set_scene(scene: u8) -> bool {
             }
             let voice = Voice::new(unsafe { MIXER.voice(i) });
             voice.set_loop_addr(SpuAddr::new(CLIPS[i].spu_address));
-            let gain = Volume(volume::scale(unsafe { MIXER.gains[i] },unsafe {LEVEL}));
+            let gain = Volume(volume::scale(unsafe { MIXER.gains[i] }, unsafe { LEVEL }));
             voice.set_volume(gain, gain);
         }
     }
@@ -409,8 +452,8 @@ pub fn tick() {
                 0
             }
         };
-        let gain=Volume(volume::scale(gain,unsafe {LEVEL}));
-        Voice::new(voice).set_volume(gain,gain);
+        let gain = Volume(volume::scale(gain, unsafe { LEVEL }));
+        Voice::new(voice).set_volume(gain, gain);
     }
     if stop != 0 {
         let mut keyed = 0u32;
@@ -422,19 +465,31 @@ pub fn tick() {
         Voice::key_off(keyed);
         // Only now that the SPU has been told, so no cue this frame can hand a
         // pooled voice to another stem while the old one is still keying off.
-        unsafe { MIXER.release(stop); }
+        unsafe {
+            MIXER.release(stop);
+        }
     }
     publish();
 }
 
 /// Preserve each source stem's fade/mix while changing the user's level.
-pub fn set_volume(level:u8) {
-    unsafe {LEVEL=level.min(10);}
+pub fn set_volume(level: u8) {
+    unsafe {
+        LEVEL = level.min(10);
+    }
     for i in 0..state::STEMS {
-        let voice=unsafe {MIXER.voice(i)};
-        if voice==state::NO_VOICE {continue;}
-        let source=unsafe {if MIXER.playing&(1<<i)!=0 {MIXER.gains[i]}else{0}};
-        let gain=Volume(volume::scale(source,level));
-        Voice::new(voice).set_volume(gain,gain);
+        let voice = unsafe { MIXER.voice(i) };
+        if voice == state::NO_VOICE {
+            continue;
+        }
+        let source = unsafe {
+            if MIXER.playing & (1 << i) != 0 {
+                MIXER.gains[i]
+            } else {
+                0
+            }
+        };
+        let gain = Volume(volume::scale(source, level));
+        Voice::new(voice).set_volume(gain, gain);
     }
 }

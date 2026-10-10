@@ -118,7 +118,10 @@ pub enum Phase {
     Bump(Raised),
     Unshield(Raised),
     /// `Attack 1` (chain false) or `Attack 3` (chain true), by step.
-    Attack { chain: bool, step: u8 },
+    Attack {
+        chain: bool,
+        step: u8,
+    },
     Dead,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,14 +142,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { commands: [None; 8], len: 0 }
+        Self {
+            commands: [None; 8],
+            len: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.commands[self.len as usize] = Some(action);
         self.len += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.commands[..self.len as usize].iter().map(|a| a.unwrap())
+        self.commands[..self.len as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
     pub fn len(&self) -> usize {
         self.len as usize
@@ -263,7 +271,14 @@ impl ZombieShield {
         if let Phase::Shield(raised) = self.phase {
             self.phase = Phase::Bump(raised);
             self.wait = BUMP_TICKS;
-            self.play(if raised.high { Clip::BumpTop } else { Clip::BumpFront }, &mut out);
+            self.play(
+                if raised.high {
+                    Clip::BumpTop
+                } else {
+                    Clip::BumpFront
+                },
+                &mut out,
+            );
         }
         out
     }
@@ -275,7 +290,10 @@ impl ZombieShield {
     }
     fn play(&mut self, clip: Clip, out: &mut Actions) {
         self.serial = self.serial.wrapping_add(1);
-        let token = Animation { clip, serial: self.serial };
+        let token = Animation {
+            clip,
+            serial: self.serial,
+        };
         self.animation = Some(token);
         out.push(Action::Play(token));
     }
@@ -319,24 +337,49 @@ impl ZombieShield {
     /// One of the four Shield states, entered or re-entered.
     fn raise(&mut self, raised: Raised, out: &mut Actions) {
         self.phase = Phase::Shield(raised);
-        self.low_block = if raised.right { GUARD_RIGHT } else { GUARD_LEFT };
-        self.guard = if raised.high { GUARD_ALL } else { self.low_block };
+        self.low_block = if raised.right {
+            GUARD_RIGHT
+        } else {
+            GUARD_LEFT
+        };
+        self.guard = if raised.high {
+            GUARD_ALL
+        } else {
+            self.low_block
+        };
         // `SetWalkerFacing` turns the Walker towards the hero; the transform
         // mirror follows, which is what `SetScale` writes.
         self.facing = if raised.right { 1 } else { -1 };
         self.turning_facing = self.facing;
         self.lunge1 = self.facing as i32 * LUNGE1_SPEED;
         self.lunge3 = self.facing as i32 * LUNGE3_SPEED;
-        self.play(if raised.high { Clip::ShieldTop } else { Clip::ShieldFront }, out);
+        self.play(
+            if raised.high {
+                Clip::ShieldTop
+            } else {
+                Clip::ShieldFront
+            },
+            out,
+        );
     }
     /// `Reset`: `StartWalker` is `Walker::StartMoving` then `ClearTurnCooldown`.
-    fn reset(&mut self, senses: Senses, counter: &mut impl FnMut([u16; 2]) -> u16, out: &mut Actions) {
+    fn reset(
+        &mut self,
+        senses: Senses,
+        counter: &mut impl FnMut([u16; 2]) -> u16,
+        out: &mut Actions,
+    ) {
         self.begin_walking(out);
         self.turn_cooldown = 0;
         self.detect(senses, counter, out);
     }
     /// `Detect`, which runs beside the Walker on every tick it is not shielded.
-    fn detect(&mut self, senses: Senses, counter: &mut impl FnMut([u16; 2]) -> u16, out: &mut Actions) {
+    fn detect(
+        &mut self,
+        senses: Senses,
+        counter: &mut impl FnMut([u16; 2]) -> u16,
+        out: &mut Actions,
+    ) {
         if senses.in_attack_range && senses.can_see_hero {
             let value = counter(SHIELD_TICKS);
             self.shield_start(senses, value, out);
@@ -441,15 +484,32 @@ impl ZombieShield {
             return;
         }
         if !(senses.in_attack_range && senses.can_see_hero) {
-            let current = if let Phase::Shield(r) = self.phase { r } else { raised };
+            let current = if let Phase::Shield(r) = self.phase {
+                r
+            } else {
+                raised
+            };
             self.phase = Phase::Unshield(current);
-            self.play(if current.high { Clip::UnshieldTop } else { Clip::UnshieldFront }, out);
+            self.play(
+                if current.high {
+                    Clip::UnshieldTop
+                } else {
+                    Clip::UnshieldFront
+                },
+                out,
+            );
         }
     }
     /// The two attack chains, one completed clip at a time. Both drop the
     /// shield on their first lunge and neither raises it again.
-    fn advance_attack(&mut self, senses: Senses, chain: bool, step: u8,
-                      counter: &mut impl FnMut([u16; 2]) -> u16, out: &mut Actions) {
+    fn advance_attack(
+        &mut self,
+        senses: Senses,
+        chain: bool,
+        step: u8,
+        counter: &mut impl FnMut([u16; 2]) -> u16,
+        out: &mut Actions,
+    ) {
         let next = step + 1;
         let last = if chain { 8 } else { 3 };
         if step == last {
@@ -521,7 +581,10 @@ mod tests {
     }
     fn walking() -> (ZombieShield, Senses) {
         let mut shield = ZombieShield::new();
-        let senses = Senses { camera_in_start_range: true, ..Senses::default() };
+        let senses = Senses {
+            camera_in_start_range: true,
+            ..Senses::default()
+        };
         shield.tick(senses, counter);
         assert_eq!(shield.phase(), Phase::Walking);
         (shield, senses)
@@ -530,7 +593,13 @@ mod tests {
     /// would report; the controller never invents a completion of its own.
     fn complete(shield: &mut ZombieShield, senses: Senses) -> Actions {
         let token = shield.animation().expect("a clip to complete");
-        shield.tick(Senses { completed: Some(token), ..senses }, counter)
+        shield.tick(
+            Senses {
+                completed: Some(token),
+                ..senses
+            },
+            counter,
+        )
     }
 
     #[test]
@@ -538,7 +607,10 @@ mod tests {
         let mut shield = ZombieShield::new();
         assert_eq!(shield.tick(Senses::default(), counter).len(), 0);
         assert_eq!(shield.phase(), Phase::Waiting);
-        let senses = Senses { camera_in_start_range: true, ..Senses::default() };
+        let senses = Senses {
+            camera_in_start_range: true,
+            ..Senses::default()
+        };
         shield.tick(senses, counter);
         assert_eq!(shield.phase(), Phase::Walking);
         assert_eq!(shield.velocity_x(), -WALK_SPEED);
@@ -552,7 +624,10 @@ mod tests {
     #[test]
     fn a_wall_turns_it_and_the_turn_clip_gates_the_new_facing() {
         let (mut shield, senses) = walking();
-        let blocked = Senses { wall: true, ..senses };
+        let blocked = Senses {
+            wall: true,
+            ..senses
+        };
         shield.tick(blocked, counter);
         assert_eq!(shield.phase(), Phase::Turning);
         assert_eq!(shield.facing(), -1, "the facing waits for the turn clip");
@@ -565,29 +640,63 @@ mod tests {
     #[test]
     fn the_shield_faces_the_hero_and_re_aims_while_it_is_up() {
         let (mut shield, base) = walking();
-        let seen = Senses { in_attack_range: true, can_see_hero: true,
-            hero: [3 * ONE, 0], position: [0; 2], ..base };
+        let seen = Senses {
+            in_attack_range: true,
+            can_see_hero: true,
+            hero: [3 * ONE, 0],
+            position: [0; 2],
+            ..base
+        };
         shield.tick(seen, counter);
-        assert_eq!(shield.phase(), Phase::Shield(Raised { high: false, right: true }));
+        assert_eq!(
+            shield.phase(),
+            Phase::Shield(Raised {
+                high: false,
+                right: true
+            })
+        );
         assert_eq!(shield.facing(), 1);
         assert_eq!(shield.velocity_x(), 0);
         assert!(shield.invincible());
         // Same side, now overhead: the source swaps to the top shield.
-        let above = Senses { hero: [3 * ONE, 4 * ONE], ..seen };
+        let above = Senses {
+            hero: [3 * ONE, 4 * ONE],
+            ..seen
+        };
         shield.tick(above, counter);
-        assert_eq!(shield.phase(), Phase::Shield(Raised { high: true, right: true }));
+        assert_eq!(
+            shield.phase(),
+            Phase::Shield(Raised {
+                high: true,
+                right: true
+            })
+        );
         // And across to the far side.
-        let across = Senses { hero: [-3 * ONE, 0], ..seen };
+        let across = Senses {
+            hero: [-3 * ONE, 0],
+            ..seen
+        };
         shield.tick(across, counter);
-        assert_eq!(shield.phase(), Phase::Shield(Raised { high: false, right: false }));
+        assert_eq!(
+            shield.phase(),
+            Phase::Shield(Raised {
+                high: false,
+                right: false
+            })
+        );
         assert_eq!(shield.facing(), -1);
     }
 
     #[test]
     fn the_front_shield_blocks_the_hero_side_and_an_up_slash_but_not_a_pogo() {
         let (mut shield, base) = walking();
-        let seen = Senses { in_attack_range: true, can_see_hero: true,
-            hero: [3 * ONE, 0], position: [0; 2], ..base };
+        let seen = Senses {
+            in_attack_range: true,
+            can_see_hero: true,
+            hero: [3 * ONE, 0],
+            position: [0; 2],
+            ..base
+        };
         shield.tick(seen, counter);
         // Hero on the right: `invincibleFromDirection` 6 blocks a swing
         // travelling left (cardinal 2) and an up slash (1), not a down one (3).
@@ -595,18 +704,29 @@ mod tests {
         assert!(shield.blocks(1));
         assert!(!shield.blocks(3));
         assert!(!shield.blocks(0));
-        let above = Senses { hero: [3 * ONE, 4 * ONE], ..seen };
+        let above = Senses {
+            hero: [3 * ONE, 4 * ONE],
+            ..seen
+        };
         shield.tick(above, counter);
         for cardinal in 0..4 {
-            assert!(shield.blocks(cardinal), "the overhead shield blocks every direction");
+            assert!(
+                shield.blocks(cardinal),
+                "the overhead shield blocks every direction"
+            );
         }
     }
 
     #[test]
     fn a_blocked_hit_bumps_then_runs_the_three_hit_chain() {
         let (mut shield, base) = walking();
-        let seen = Senses { in_attack_range: true, can_see_hero: true,
-            hero: [3 * ONE, 0], position: [0; 2], ..base };
+        let seen = Senses {
+            in_attack_range: true,
+            can_see_hero: true,
+            hero: [3 * ONE, 0],
+            position: [0; 2],
+            ..base
+        };
         shield.tick(seen, counter);
         shield.blocked_hit();
         assert!(matches!(shield.phase(), Phase::Bump(_)));
@@ -615,7 +735,13 @@ mod tests {
             assert!(matches!(shield.phase(), Phase::Bump(_)));
         }
         shield.tick(seen, counter);
-        assert_eq!(shield.phase(), Phase::Attack { chain: true, step: 0 });
+        assert_eq!(
+            shield.phase(),
+            Phase::Attack {
+                chain: true,
+                step: 0
+            }
+        );
         assert!(shield.invincible(), "the antic keeps the guard up");
         // Three lunges at `Lunge3 Speed`, each followed by a stop.
         let mut lunges = 0;
@@ -628,15 +754,26 @@ mod tests {
         assert_eq!(lunges, 3);
         assert!(!shield.invincible(), "the first lunge drops the shield");
         complete(&mut shield, seen);
-        assert_eq!(shield.phase(), Phase::Shield(Raised { high: false, right: true }),
-            "Reset walks, and Detect shields again with the hero still there");
+        assert_eq!(
+            shield.phase(),
+            Phase::Shield(Raised {
+                high: false,
+                right: true
+            }),
+            "Reset walks, and Detect shields again with the hero still there"
+        );
     }
 
     #[test]
     fn the_counter_runs_out_into_the_single_attack() {
         let (mut shield, base) = walking();
-        let seen = Senses { in_attack_range: true, can_see_hero: true,
-            hero: [3 * ONE, 0], position: [0; 2], ..base };
+        let seen = Senses {
+            in_attack_range: true,
+            can_see_hero: true,
+            hero: [3 * ONE, 0],
+            position: [0; 2],
+            ..base
+        };
         shield.tick(seen, counter);
         // `Shield Start` seeds the counter; every later tick of a Shield state
         // takes one off it, and reaching zero is COUNTER END.
@@ -645,7 +782,13 @@ mod tests {
             assert!(matches!(shield.phase(), Phase::Shield(_)));
         }
         shield.tick(seen, counter);
-        assert_eq!(shield.phase(), Phase::Attack { chain: false, step: 0 });
+        assert_eq!(
+            shield.phase(),
+            Phase::Attack {
+                chain: false,
+                step: 0
+            }
+        );
         complete(&mut shield, seen);
         assert_eq!(shield.velocity_x(), LUNGE1_SPEED);
         assert!(!shield.invincible());
@@ -654,10 +797,18 @@ mod tests {
     #[test]
     fn losing_the_hero_unshields_but_keeps_the_source_invincibility() {
         let (mut shield, base) = walking();
-        let seen = Senses { in_attack_range: true, can_see_hero: true,
-            hero: [3 * ONE, 0], position: [0; 2], ..base };
+        let seen = Senses {
+            in_attack_range: true,
+            can_see_hero: true,
+            hero: [3 * ONE, 0],
+            position: [0; 2],
+            ..base
+        };
         shield.tick(seen, counter);
-        let gone = Senses { in_attack_range: false, ..seen };
+        let gone = Senses {
+            in_attack_range: false,
+            ..seen
+        };
         shield.tick(gone, counter);
         assert!(matches!(shield.phase(), Phase::Unshield(_)));
         complete(&mut shield, gone);

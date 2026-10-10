@@ -22,13 +22,35 @@
 //! background quad that reaches the Knight. Actors keep full brightness.
 #[cfg(feature = "hero-light")]
 use psx_vram::{Clut, TexDepth, Tpage, VramRect};
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/scene_grading.rs"));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../data/scene_grading.rs"
+));
 
 /// Octagon directions, Q12 (cos, sin).
-const DIRS: [(i32, i32); 8] = [(4096, 0), (2896, 2896), (0, 4096), (-2896, 2896), (-4096, 0), (-2896, -2896), (0, -4096), (2896, -2896)];
+const DIRS: [(i32, i32); 8] = [
+    (4096, 0),
+    (2896, 2896),
+    (0, 4096),
+    (-2896, 2896),
+    (-4096, 0),
+    (-2896, -2896),
+    (0, -4096),
+    (2896, -2896),
+];
 /// light_effect_v02's radial mean alpha at the HeroLight's scale of 3:
 /// world radius (Q8 units) and alpha (0..255).
-const LIGHT_PROFILE: [(i32, i32); 9] = [(0, 198), (256, 181), (512, 145), (768, 102), (1024, 63), (1280, 34), (1536, 15), (1792, 4), (2048, 0)];
+const LIGHT_PROFILE: [(i32, i32); 9] = [
+    (0, 198),
+    (256, 181),
+    (512, 145),
+    (768, 102),
+    (1024, 63),
+    (1280, 34),
+    (1536, 15),
+    (1792, 4),
+    (2048, 0),
+];
 /// The fan's radius (Q8 units): 3.5 units, where the sprite's alpha is about
 /// a fifth of its peak; the ramp eases to zero there. Over the 49 builder
 /// routes the light alone cost 0.44% of presented fps on average and at most
@@ -39,7 +61,10 @@ pub const LIGHT_RADIUS_Q8: i32 = 896;
 /// original's Linear Light blend of the same sprite; this brings it down.
 /// `HK_GLOW_PERCENT` overrides it at build time for side-by-side trials.
 #[cfg(feature = "hero-light")]
-const GLOW_PERCENT: u32 = match option_env!("HK_GLOW_PERCENT") { Some(s) => parse_percent(s), None => 60 };
+const GLOW_PERCENT: u32 = match option_env!("HK_GLOW_PERCENT") {
+    Some(s) => parse_percent(s),
+    None => 60,
+};
 #[cfg(feature = "hero-light")]
 const fn parse_percent(s: &str) -> u32 {
     let b = s.as_bytes();
@@ -59,7 +84,14 @@ const RAMP_U0: u8 = ((RAMP_XY.0 - 320) * 4) as u8;
 const RAMP_V: u8 = (RAMP_XY.1 - 256) as u8;
 /// Vignette alpha at scale 5.5 (Darkness Level 0), from vignette_large_v01's
 /// radial mean: world distance (Q8 units) and alpha (0..256).
-const VIGNETTE_PROFILE: [(i32, i32); 6] = [(0, 0), (768, 13), (2048, 79), (3328, 147), (5632, 230), (9216, 250)];
+const VIGNETTE_PROFILE: [(i32, i32); 6] = [
+    (0, 0),
+    (768, 13),
+    (2048, 79),
+    (3328, 147),
+    (5632, 230),
+    (9216, 250),
+];
 const VIGNETTE_BASE_Q8: i32 = 1408; // 5.5
 
 fn interpolate(table: &[(i32, i32)], x: i32) -> i32 {
@@ -80,7 +112,10 @@ fn scene_light(scene: usize) -> Option<SceneLight> {
 }
 
 fn screen(x: i32, y: i32, camera: (i32, i32)) -> (i32, i32) {
-    (160 + (((x - camera.0) >> 8) * crate::KNIGHT_SCALE >> 20), 120 - (((y - camera.1) >> 8) * crate::KNIGHT_SCALE >> 20))
+    (
+        160 + (((x - camera.0) >> 8) * crate::KNIGHT_SCALE >> 20),
+        120 - (((y - camera.1) >> 8) * crate::KNIGHT_SCALE >> 20),
+    )
 }
 
 /// Once, with the other first-room uploads: the 64-texel ramp (the light's
@@ -94,7 +129,8 @@ pub fn upload() {
     let peak = LIGHT_PROFILE[0].1 - rim;
     for j in 0..64 {
         let r = LIGHT_RADIUS_Q8 * j as i32 / 63;
-        let level = (((interpolate(&LIGHT_PROFILE, r) - rim) * 15 + peak / 2) / peak).clamp(0, 15) as u8;
+        let level =
+            (((interpolate(&LIGHT_PROFILE, r) - rim) * 15 + peak / 2) / peak).clamp(0, 15) as u8;
         texels[j / 2] |= level << ((j & 1) * 4);
     }
     let mut clut = [0u8; 32];
@@ -111,7 +147,9 @@ pub fn upload() {
 /// The hero light, drawn immediately before the Knight.
 #[cfg(feature = "hero-light")]
 pub fn draw_light(scene: usize, x: i32, y: i32, camera: (i32, i32)) -> u32 {
-    let Some(light) = scene_light(scene) else { return 0 };
+    let Some(light) = scene_light(scene) else {
+        return 0;
+    };
     if light.rgb == [0, 0, 0] {
         return 0;
     }
@@ -122,12 +160,21 @@ pub fn draw_light(scene: usize, x: i32, y: i32, camera: (i32, i32)) -> u32 {
     }
     // Ramp texel 63 is 15/15 of the CLUT's white, which modulates to 248 at
     // a tint of 128: scale the tint so the peak lands on the scene's colour.
-    let tint = light.rgb.map(|c| (c as u32 * 128 / 248 * GLOW_PERCENT / 100).min(255));
+    let tint = light
+        .rgb
+        .map(|c| (c as u32 * 128 / 248 * GLOW_PERCENT / 100).min(255));
     let colour = tint[0] | tint[1] << 8 | tint[2] << 16;
     let clut = Clut::new(RAMP_CLUT_XY.0, RAMP_CLUT_XY.1).uv_clut_word() as u32;
     let tpage = Tpage::new(320, 256, TexDepth::Bit4).uv_tpage_word(1) as u32;
-    let vertex = |p: (i32, i32)| ((p.1.clamp(-1023, 1023) as u32 & 0xffff) << 16) | (p.0.clamp(-1023, 1023) as u32 & 0xffff);
-    let rim = |k: usize| (centre.0 + (r * DIRS[k & 7].0 >> 12), centre.1 - (r * DIRS[k & 7].1 >> 12));
+    let vertex = |p: (i32, i32)| {
+        ((p.1.clamp(-1023, 1023) as u32 & 0xffff) << 16) | (p.0.clamp(-1023, 1023) as u32 & 0xffff)
+    };
+    let rim = |k: usize| {
+        (
+            centre.0 + (r * DIRS[k & 7].0 >> 12),
+            centre.1 - (r * DIRS[k & 7].1 >> 12),
+        )
+    };
     let mut tris = [[0u32; 7]; 8];
     let mut n = 0;
     for k in 0..8 {
@@ -135,7 +182,15 @@ pub fn draw_light(scene: usize, x: i32, y: i32, camera: (i32, i32)) -> u32 {
         let uv0 = (RAMP_U0 as u32) | (RAMP_V as u32) << 8;
         let uv_rim = ((RAMP_U0 + 63) as u32) | (RAMP_V as u32) << 8;
         // GP0(26h): textured triangle, semi-transparent, modulated.
-        tris[n] = [0x2600_0000 | colour, vertex(centre), uv0 | clut << 16, vertex(a), uv_rim | tpage << 16, vertex(b), uv_rim];
+        tris[n] = [
+            0x2600_0000 | colour,
+            vertex(centre),
+            uv0 | clut << 16,
+            vertex(a),
+            uv_rim | tpage << 16,
+            vertex(b),
+            uv_rim,
+        ];
         n += 1;
     }
     crate::render::light_fan(&tris[..n])
@@ -162,7 +217,8 @@ pub fn vignette_scene(scene: usize) -> bool {
                     // Screen pixels to world units (Q8) on the gameplay plane,
                     // then to the scale-5.5 profile's distance.
                     let d_q8 = ((i as i32 * 8) << 20) / crate::KNIGHT_SCALE;
-                    (256 - interpolate(&VIGNETTE_PROFILE, d_q8 * VIGNETTE_BASE_Q8 / scale)).clamp(0, 256) as u16
+                    (256 - interpolate(&VIGNETTE_PROFILE, d_q8 * VIGNETTE_BASE_Q8 / scale))
+                        .clamp(0, 256) as u16
                 };
             }
         }

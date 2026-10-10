@@ -20,35 +20,60 @@ pub const WAIT_MIN: i32 = 49152; // .75 s
 pub const WAIT_MAX: i32 = ONE;
 impl IdleBuzz {
     pub const fn new(start: [i32; 2]) -> Self {
-        Self { start, accel: [0; 2], wait: 0 }
+        Self {
+            start,
+            accel: [0; 2],
+            wait: 0,
+        }
     }
     /// OnEnter re-samples the roaming origin from the current position.
     pub fn enter(&mut self, position: [i32; 2]) {
         self.start = position;
     }
     /// DoBuzz: `range(low, high)` is the caller's Random.Range over Q16.
-    pub fn step(&mut self, position: [i32; 2], velocity: &mut [i32; 2], range: &mut impl FnMut(i32, i32) -> i32) {
-        self.step_with(position, velocity, IDLE_SPEED_MAX, IDLE_ACCELERATION_MAX, range);
+    pub fn step(
+        &mut self,
+        position: [i32; 2],
+        velocity: &mut [i32; 2],
+        range: &mut impl FnMut(i32, i32) -> i32,
+    ) {
+        self.step_with(
+            position,
+            velocity,
+            IDLE_SPEED_MAX,
+            IDLE_ACCELERATION_MAX,
+            range,
+        );
     }
     /// DoBuzz with a placement's own speedMax and accelerationMax (the
     /// Mosquito's are 3 and 19).
-    pub fn step_with(&mut self, position: [i32; 2], velocity: &mut [i32; 2], speed_max: i32, acceleration_max: i32,
-                     range: &mut impl FnMut(i32, i32) -> i32) {
+    pub fn step_with(
+        &mut self,
+        position: [i32; 2],
+        velocity: &mut [i32; 2],
+        speed_max: i32,
+        acceleration_max: i32,
+        range: &mut impl FnMut(i32, i32) -> i32,
+    ) {
         let v = velocity;
         for axis in 0..2 {
             let low = position[axis] < self.start[axis] - ROAMING_RANGE;
             let high = position[axis] > self.start[axis] + ROAMING_RANGE;
             if (low && v[axis] < 0) || (high && v[axis] > 0) {
-                self.accel[axis] = if low { acceleration_max } else { -acceleration_max } / 2000;
+                self.accel[axis] = if low {
+                    acceleration_max
+                } else {
+                    -acceleration_max
+                } / 2000;
                 v[axis] = psx_math::int32::mul_div_i32(v[axis], 8, 9); // /= 1.125
                 self.wait = range(WAIT_MIN, WAIT_MAX);
             }
         }
         if self.wait <= 0 {
-            for axis in 0..2 {
-                let (lo, hi) = if position[axis] < self.start[axis] - ROAMING_RANGE {
+            for (axis, &at) in position.iter().enumerate() {
+                let (lo, hi) = if at < self.start[axis] - ROAMING_RANGE {
                     (0, acceleration_max)
-                } else if position[axis] > self.start[axis] + ROAMING_RANGE {
+                } else if at > self.start[axis] + ROAMING_RANGE {
                     (-acceleration_max, 0)
                 } else {
                     (-acceleration_max, acceleration_max)
@@ -72,7 +97,14 @@ pub fn clamp(v: &mut [i32; 2], max: i32) {
 }
 /// DistanceFly.DoBuzz (targetsHeight false): farther than `distance` from the
 /// target accelerates toward it on both axes, nearer accelerates away; clamp.
-pub fn distance_fly(position: [i32; 2], target: [i32; 2], distance: i32, speed_max: i32, acceleration: i32, velocity: &mut [i32; 2]) {
+pub fn distance_fly(
+    position: [i32; 2],
+    target: [i32; 2],
+    distance: i32,
+    speed_max: i32,
+    acceleration: i32,
+    velocity: &mut [i32; 2],
+) {
     let dx = (position[0] as i64 - target[0] as i64) >> 8;
     let dy = (position[1] as i64 - target[1] as i64) >> 8;
     let d = distance as i64 >> 8;
@@ -87,13 +119,25 @@ pub fn distance_fly(position: [i32; 2], target: [i32; 2], distance: i32, speed_m
 /// DistanceFly.DoBuzz with `targetsHeight`: only x uses the far/near test,
 /// while y always seeks `target.y + height`. Evidence: DistanceFly::DoBuzz
 /// skips the paired y branch and converges on the height comparison.
-pub fn distance_fly_height(position: [i32; 2], target: [i32; 2], distance: i32, height: i32, speed_max: i32, acceleration: i32, velocity: &mut [i32; 2]) {
+pub fn distance_fly_height(
+    position: [i32; 2],
+    target: [i32; 2],
+    distance: i32,
+    height: i32,
+    speed_max: i32,
+    acceleration: i32,
+    velocity: &mut [i32; 2],
+) {
     let dx = (position[0] as i64 - target[0] as i64) >> 8;
     let dy = (position[1] as i64 - target[1] as i64) >> 8;
     let d = distance as i64 >> 8;
     let far = dx * dx + dy * dy > d * d;
     let toward = position[0] < target[0];
-    velocity[0] += if toward == far { acceleration } else { -acceleration };
+    velocity[0] += if toward == far {
+        acceleration
+    } else {
+        -acceleration
+    };
     let goal = target[1] + height;
     if position[1] < goal {
         velocity[1] += acceleration;

@@ -85,7 +85,14 @@ pub struct Convo {
 }
 impl Convo {
     pub const fn new() -> Self {
-        Self { active: None, entry: 0, prompt: None, page: 0, previous: 0, release: false }
+        Self {
+            active: None,
+            entry: 0,
+            prompt: None,
+            page: 0,
+            previous: 0,
+            release: false,
+        }
     }
     pub fn open(&self) -> bool {
         self.active.is_some()
@@ -104,8 +111,15 @@ impl Convo {
     /// is inside; UP there is npc_control's own CONVO START. Paging and closing
     /// follow the tablet panel exactly, including holding the closing press
     /// until it is released so it cannot also swing the nail.
-    pub fn step(&mut self, lines: &[NpcLines], cursors: &mut Cursors, scene: usize,
-                in_range: Option<u32>, eligible: bool, bits: u16) -> Event {
+    pub fn step(
+        &mut self,
+        lines: &[NpcLines],
+        cursors: &mut Cursors,
+        scene: usize,
+        in_range: Option<u32>,
+        eligible: bool,
+        bits: u16,
+    ) -> Event {
         let pressed = bits & !self.previous;
         self.previous = bits;
         if bits & ACTIONS == 0 {
@@ -129,7 +143,9 @@ impl Convo {
         } else {
             self.prompt = if eligible && !self.release {
                 in_range.and_then(|source| {
-                    lines.iter().position(|n| n.scene == scene && n.source_id == source)
+                    lines
+                        .iter()
+                        .position(|n| n.scene == scene && n.source_id == source)
                 })
             } else {
                 None
@@ -140,7 +156,9 @@ impl Convo {
                     self.active = Some(id);
                     // A cursor past the end of a shorter chain, from a record an
                     // older build wrote, reads as the repeating conversation.
-                    self.entry = cursors.get(lines[id].slot).min(lines[id].conversations.len() - 1);
+                    self.entry = cursors
+                        .get(lines[id].slot)
+                        .min(lines[id].conversations.len() - 1);
                     self.page = 0;
                     event.opened = true;
                 }
@@ -168,15 +186,44 @@ mod tests {
     // Elderbug's cooked shape: an intro whose second page carries the write, a
     // second conversation that writes on its first page, and a terminal one.
     static LINES: [NpcLines; 2] = [
-        NpcLines { scene: 1, source_id: 1001, label: "Listen", marker: [0, 0], slot: 0,
+        NpcLines {
+            scene: 1,
+            source_id: 1001,
+            label: "Listen",
+            marker: [0, 0],
+            slot: 0,
             conversations: &[
-                NpcConversation { pages: &[&["intro a"], &["intro b"]], advance_page: 1 },
-                NpcConversation { pages: &[&["history"]], advance_page: 0 },
-                NpcConversation { pages: &[&["generic"]], advance_page: 1 }] },
-        NpcLines { scene: 35, source_id: 177, label: "Listen", marker: [0, 0], slot: 1,
+                NpcConversation {
+                    pages: &[&["intro a"], &["intro b"]],
+                    advance_page: 1,
+                },
+                NpcConversation {
+                    pages: &[&["history"]],
+                    advance_page: 0,
+                },
+                NpcConversation {
+                    pages: &[&["generic"]],
+                    advance_page: 1,
+                },
+            ],
+        },
+        NpcLines {
+            scene: 35,
+            source_id: 177,
+            label: "Listen",
+            marker: [0, 0],
+            slot: 1,
             conversations: &[
-                NpcConversation { pages: &[&["meet"]], advance_page: 0 },
-                NpcConversation { pages: &[&["repeat"]], advance_page: 1 }] },
+                NpcConversation {
+                    pages: &[&["meet"]],
+                    advance_page: 0,
+                },
+                NpcConversation {
+                    pages: &[&["repeat"]],
+                    advance_page: 1,
+                },
+            ],
+        },
     ];
 
     fn open(convo: &mut Convo, cursors: &mut Cursors, scene: usize, source: u32) -> Event {
@@ -197,7 +244,11 @@ mod tests {
         cursors.set(3, 1);
         assert_eq!(cursors.get(3), 1);
         for slot in (0..MAX_SLOTS as u8).filter(|s| *s != 3) {
-            assert_eq!(cursors.get(slot), MAX_CONVERSATIONS - 1, "slot {slot} moved");
+            assert_eq!(
+                cursors.get(slot),
+                MAX_CONVERSATIONS - 1,
+                "slot {slot} moved"
+            );
         }
         assert_eq!(Cursors::from_bits(cursors.bits()), cursors);
     }
@@ -210,12 +261,20 @@ mod tests {
         assert!(open(&mut convo, &mut cursors, 1, 1001).opened);
         assert_eq!(cursors.get(0), 0);
         convo.step(&LINES, &mut cursors, 1, Some(1001), true, 0);
-        assert!(convo.step(&LINES, &mut cursors, 1, Some(1001), true, CROSS).advanced);
+        assert!(
+            convo
+                .step(&LINES, &mut cursors, 1, Some(1001), true, CROSS)
+                .advanced
+        );
         assert_eq!(cursors.get(0), 1);
         // The pages in front of the player do not change under that write.
         assert_eq!(convo.entry, 0);
         convo.step(&LINES, &mut cursors, 1, Some(1001), true, 0);
-        assert!(convo.step(&LINES, &mut cursors, 1, Some(1001), true, CROSS).closed);
+        assert!(
+            convo
+                .step(&LINES, &mut cursors, 1, Some(1001), true, CROSS)
+                .closed
+        );
         // Second talk: History 1, which advances on its own first page.
         convo.step(&LINES, &mut cursors, 1, Some(1001), true, 0);
         open(&mut convo, &mut cursors, 1, 1001);
@@ -263,11 +322,19 @@ mod tests {
         let mut cursors = Cursors::new();
         let mut convo = Convo::new();
         open(&mut convo, &mut cursors, 1, 1001);
-        assert!(convo.step(&LINES, &mut cursors, 35, Some(1001), true, 0).closed);
+        assert!(
+            convo
+                .step(&LINES, &mut cursors, 35, Some(1001), true, 0)
+                .closed
+        );
         assert!(!convo.open());
         convo.step(&LINES, &mut cursors, 1, Some(1001), true, 0);
         open(&mut convo, &mut cursors, 1, 1001);
-        assert!(convo.step(&LINES, &mut cursors, 1, Some(1001), true, CIRCLE | 0x8000).closed);
+        assert!(
+            convo
+                .step(&LINES, &mut cursors, 1, Some(1001), true, CIRCLE | 0x8000)
+                .closed
+        );
         assert!(convo.consumes_actions());
         convo.step(&LINES, &mut cursors, 1, Some(1001), true, 0x8000);
         assert!(convo.consumes_actions());
@@ -283,10 +350,18 @@ mod tests {
         convo.step(&LINES, &mut cursors, 1, Some(1001), true, 0);
         convo.step(&LINES, &mut cursors, 1, Some(1001), true, CROSS);
         convo.step(&LINES, &mut cursors, 1, Some(1001), true, 0);
-        assert!(convo.step(&LINES, &mut cursors, 1, Some(1001), true, CROSS).closed);
+        assert!(
+            convo
+                .step(&LINES, &mut cursors, 1, Some(1001), true, CROSS)
+                .closed
+        );
         // The close consumed a held CROSS, and UP inside the same trigger must
         // wait for the release before it can start another conversation.
-        assert!(!convo.step(&LINES, &mut cursors, 1, Some(1001), true, UP | CROSS).opened);
+        assert!(
+            !convo
+                .step(&LINES, &mut cursors, 1, Some(1001), true, UP | CROSS)
+                .opened
+        );
         assert!(!convo.open());
     }
 

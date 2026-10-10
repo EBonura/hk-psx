@@ -6,7 +6,10 @@
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let root = std::env::current_dir().expect("cwd");
-    let source = args.iter().position(|a| a == "--source").map(|i| std::path::PathBuf::from(&args[i + 1]));
+    let source = args
+        .iter()
+        .position(|a| a == "--source")
+        .map(|i| std::path::PathBuf::from(&args[i + 1]));
     let result = match args.get(1).map(String::as_str) {
         Some("cook-audio") => hk_cook::cook_audio::main(&root, source.as_deref()),
         Some("geo-audio") => hk_cook::geo_audio::main(&root, source.as_deref()),

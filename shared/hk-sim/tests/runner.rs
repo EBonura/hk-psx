@@ -664,31 +664,119 @@ fn startup_turn_and_ready_attack_fit_ordered_command_bound() {
 fn leaper_launches_on_the_trigger_frame_lands_and_walks_again() {
     use hk_sim::runner::{Animation, Params};
     let mut r = Runner::with_params(Params::LEAPER);
-    let start = Senses { camera_in_start_range: true, ..Senses::default() };
+    let start = Senses {
+        camera_in_start_range: true,
+        ..Senses::default()
+    };
     r.step(start, choose);
     assert_eq!(r.walker(), Walker::Walking);
     // Hero 4 units to the right and in range: StopWalker, face, Attack clip.
-    let seen = Senses { hero_x: 4 * ONE, in_alert_range: true, can_see_hero: true, ..start };
+    let seen = Senses {
+        hero_x: 4 * ONE,
+        in_alert_range: true,
+        can_see_hero: true,
+        ..start
+    };
     let actions: Vec<_> = r.step(seen, choose).iter().collect();
-    assert_eq!((r.walker(), r.swipe(), r.facing()), (Walker::StoppedForAttack, Swipe::Anticipate, 1));
-    assert!(actions.iter().any(|a| matches!(a, Action::Play(Animation { clip: Clip::Anticipate, .. }))));
+    assert_eq!(
+        (r.walker(), r.swipe(), r.facing()),
+        (Walker::StoppedForAttack, Swipe::Anticipate, 1)
+    );
+    assert!(actions.iter().any(|a| matches!(
+        a,
+        Action::Play(Animation {
+            clip: Clip::Anticipate,
+            ..
+        })
+    )));
     // Fourteen frames of anticipation, then the launch with x = 4 * 1.25.
-    for _ in 0..14 { assert_eq!(r.swipe(), Swipe::Anticipate); r.step(Senses { grounded: true, ..seen }, choose); }
-    let actions: Vec<_> = r.step(Senses { grounded: true, ..seen }, choose).iter().collect();
+    for _ in 0..14 {
+        assert_eq!(r.swipe(), Swipe::Anticipate);
+        r.step(
+            Senses {
+                grounded: true,
+                ..seen
+            },
+            choose,
+        );
+    }
+    let actions: Vec<_> = r
+        .step(
+            Senses {
+                grounded: true,
+                ..seen
+            },
+            choose,
+        )
+        .iter()
+        .collect();
     assert_eq!(r.swipe(), Swipe::Lunge);
-    assert!(actions.contains(&Action::Velocity { x: Some(5 * ONE), y: Some(20 * ONE) }));
+    assert!(actions.contains(&Action::Velocity {
+        x: Some(5 * ONE),
+        y: Some(20 * ONE)
+    }));
     // Airborne: no clip change; landing plays Land (cooldown clip) and zeroes x.
-    for _ in 0..10 { assert!(r.step(Senses { grounded: false, ..seen }, choose).iter().next().is_none()); }
-    let actions: Vec<_> = r.step(Senses { grounded: true, ..seen }, choose).iter().collect();
+    for _ in 0..10 {
+        assert!(r
+            .step(
+                Senses {
+                    grounded: false,
+                    ..seen
+                },
+                choose
+            )
+            .iter()
+            .next()
+            .is_none());
+    }
+    let actions: Vec<_> = r
+        .step(
+            Senses {
+                grounded: true,
+                ..seen
+            },
+            choose,
+        )
+        .iter()
+        .collect();
     assert_eq!(r.swipe(), Swipe::Cooldown);
-    assert!(actions.iter().any(|a| matches!(a, Action::Play(Animation { clip: Clip::Cooldown, .. }))));
+    assert!(actions.iter().any(|a| matches!(
+        a,
+        Action::Play(Animation {
+            clip: Clip::Cooldown,
+            ..
+        })
+    )));
     let token = r.animation().unwrap();
-    r.step(Senses { completed: Some(token), ..seen }, choose);
+    r.step(
+        Senses {
+            completed: Some(token),
+            ..seen
+        },
+        choose,
+    );
     assert_eq!(r.swipe(), Swipe::Idle);
-    for _ in 0..29 { r.step(seen, choose); }
-    let actions: Vec<_> = r.step(Senses { in_alert_range: false, ..seen }, choose).iter().collect();
+    for _ in 0..29 {
+        r.step(seen, choose);
+    }
+    let actions: Vec<_> = r
+        .step(
+            Senses {
+                in_alert_range: false,
+                ..seen
+            },
+            choose,
+        )
+        .iter()
+        .collect();
     assert_eq!((r.walker(), r.swipe()), (Walker::Walking, Swipe::Ready));
-    assert!(actions.iter().any(|a| matches!(a, Action::Play(Animation { clip: Clip::Walk, .. }))));
+    assert!(actions.iter().any(|a| matches!(
+        a,
+        Action::Play(Animation {
+            clip: Clip::Walk,
+            ..
+        })
+    )));
     // No damage or recoil transitions in the Leap FSM.
     assert!(r.took_damage(0, 0).iter().next().is_none());
     assert!(r.horizontal_recoil(seen, choose).iter().next().is_none());

@@ -83,9 +83,13 @@ impl Value {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Str(a), Value::Str(b)) | (Value::Bytes(a), Value::Bytes(b)) => a == b,
-            (Value::List(a), Value::List(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.py_eq(y)),
+            (Value::List(a), Value::List(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.py_eq(y))
+            }
             (Value::Map(a), Value::Map(b)) => {
-                a.len() == b.len() && a.iter().all(|(k, v)| b.iter().any(|(k2, v2)| k == k2 && v.py_eq(v2)))
+                a.len() == b.len()
+                    && a.iter()
+                        .all(|(k, v)| b.iter().any(|(k2, v2)| k == k2 && v.py_eq(v2)))
             }
             _ => match (self.number(), other.number()) {
                 (Some(a), Some(b)) => a == b,
@@ -96,7 +100,10 @@ impl Value {
 
     /// (m_FileID, m_PathID) of a PPtr.
     pub fn pptr(&self) -> Option<(i32, i64)> {
-        Some((self.get("m_FileID")?.int()? as i32, self.get("m_PathID")?.int()?))
+        Some((
+            self.get("m_FileID")?.int()? as i32,
+            self.get("m_PathID")?.int()?,
+        ))
     }
 
     /// The canonical text the parity oracle hashes: JSON-like, keys in field
@@ -200,8 +207,14 @@ mod tests {
 
     #[test]
     fn strings_escape_like_python_json() {
-        assert_eq!(canon(&Value::Str(b"a\"b\\\n\x7f".to_vec())), "\"a\\\"b\\\\\\n\\u007f\"");
-        assert_eq!(canon(&Value::Str("é😀".as_bytes().to_vec())), "\"\\u00e9\\ud83d\\ude00\"");
+        assert_eq!(
+            canon(&Value::Str(b"a\"b\\\n\x7f".to_vec())),
+            "\"a\\\"b\\\\\\n\\u007f\""
+        );
+        assert_eq!(
+            canon(&Value::Str("é😀".as_bytes().to_vec())),
+            "\"\\u00e9\\ud83d\\ude00\""
+        );
         // Invalid UTF-8 bytes come through surrogateescape.
         assert_eq!(canon(&Value::Str(vec![b'x', 0xff])), "\"x\\udcff\"");
     }

@@ -1,10 +1,12 @@
 //! Bounded source grass/death particle systems. Source art/curves are cooked;
 //! 60Hz integration, finite RNG precision and native damping remain approximations.
+use core::num::NonZeroU16;
 use hk_format::{u32_at, Room};
 use hk_sim::ONE;
-use core::num::NonZeroU16;
-#[path="break_effects.rs"]pub mod break_effects;
-#[path="particle_perspective.rs"]mod perspective;
+#[path = "break_effects.rs"]
+pub mod break_effects;
+#[path = "particle_perspective.rs"]
+mod perspective;
 /// Slots shared by the grass, death and break families. Must stay a multiple of
 /// 32, which `break_effects::tick_specs` assumes for its pending bitmap, and
 /// must agree with `POOL_CAPACITY` in host/break_effects.py, which refuses any
@@ -70,7 +72,7 @@ pub struct Pool {
     particles: [Option<Particle>; CAPACITY],
     // One-based immutable track IDs; zero means scalar/no particle.
     // Empty slots therefore use the all-zero scalar sentinel.
-    tracks:[u16;CAPACITY],
+    tracks: [u16; CAPACITY],
     /// Every occupied slot is below this one. Spawns fill the lowest free
     /// slots, so the scans stop here instead of stepping over the empty tail
     /// (a quarter of the break particles' tick was that step).
@@ -110,7 +112,7 @@ impl Pool {
     pub const fn new() -> Self {
         Self {
             particles: [None; CAPACITY],
-            tracks:[0;CAPACITY],
+            tracks: [0; CAPACITY],
             high: 0,
             active_count: 0,
             spawned: 0,
@@ -140,7 +142,7 @@ impl Pool {
         // Native tests independently recount every published mutation batch;
         // the guest reads only the exact cached count, even for empty pools.
         #[cfg(test)]
-        assert_eq!(self.active(),self.particles.iter().flatten().count());
+        assert_eq!(self.active(), self.particles.iter().flatten().count());
         #[cfg(target_arch = "mips")]
         unsafe {
             core::ptr::write_volatile(
@@ -153,24 +155,53 @@ impl Pool {
         }
     }
     pub fn clear_scene(&mut self, scene: usize) {
-        let span=self.span();
-        for (i,p) in self.particles[..span].iter_mut().enumerate() {
+        let span = self.span();
+        for (i, p) in self.particles[..span].iter_mut().enumerate() {
             if p.as_ref().is_some_and(|p| p.scene as usize == scene) {
-                *p = None;self.tracks[i]=0;
+                *p = None;
+                self.tracks[i] = 0;
                 self.active_count -= 1;
             }
         }
         self.publish();
     }
-    pub fn spawn_break(&mut self,scene:usize,owner:usize,kind:u8,facing:i32) {
-        break_effects::spawn_specs(self,scene,owner,kind,facing,break_effects::scene_emitters(scene),break_effects::scene_styles(scene));
+    pub fn spawn_break(&mut self, scene: usize, owner: usize, kind: u8, facing: i32) {
+        break_effects::spawn_specs(
+            self,
+            scene,
+            owner,
+            kind,
+            facing,
+            break_effects::scene_emitters(scene),
+            break_effects::scene_styles(scene),
+        );
     }
     /// `spawn_break` with `owner`'s emitters moved by `offset`.
-    pub fn spawn_break_at(&mut self,scene:usize,owner:usize,offset:[i32;2]) {
-        break_effects::spawn_specs_at(self,scene,owner,break_effects::scene_emitters(scene),break_effects::scene_styles(scene),offset);
+    pub fn spawn_break_at(&mut self, scene: usize, owner: usize, offset: [i32; 2]) {
+        break_effects::spawn_specs_at(
+            self,
+            scene,
+            owner,
+            break_effects::scene_emitters(scene),
+            break_effects::scene_styles(scene),
+            offset,
+        );
     }
-    pub fn tick_break(&mut self,scene:usize,coverage:[i32;4],count:usize,edge:impl Fn(usize)->[i32;4]) {
-        break_effects::tick_specs(self,scene,break_effects::scene_styles(scene),coverage,count,edge);
+    pub fn tick_break(
+        &mut self,
+        scene: usize,
+        coverage: [i32; 4],
+        count: usize,
+        edge: impl Fn(usize) -> [i32; 4],
+    ) {
+        break_effects::tick_specs(
+            self,
+            scene,
+            break_effects::scene_styles(scene),
+            coverage,
+            count,
+            edge,
+        );
     }
     pub fn spawn_grass(&mut self, scene: usize, emitter: EmitterSpec, bank: Bank) {
         self.spawn(scene, 0, emitter, bank);
@@ -238,7 +269,7 @@ impl Pool {
                 let n = length3(p);
                 (p, core::array::from_fn(|j| divq(p[j], n)))
             };
-            self.tracks[search]=0;
+            self.tracks[search] = 0;
             self.placed(search);
             self.particles[search] = Some(Particle {
                 position: core::array::from_fn(|j| emitter.origin[j] + offset[j]),
@@ -278,10 +309,10 @@ impl Pool {
             let Some(p) = slot else {
                 continue;
             };
-            if p.scene as usize != scene || p.kind>=2 {
+            if p.scene as usize != scene || p.kind >= 2 {
                 continue;
             }
-            #[cfg(target_arch="mips")]
+            #[cfg(target_arch = "mips")]
             crate::input::checkpoint();
             if p.delay > 0 {
                 p.delay -= 1;
@@ -325,19 +356,22 @@ impl Pool {
     ) -> u32 {
         self.drawn = 0;
         let span = self.span();
-        for (i,slot) in self.particles[..span].iter().enumerate() {
-            let Some(p)=slot.as_ref() else{continue;};
-            if p.scene as usize==scene&&p.kind>=2&&p.delay==0 {self.drawn+=u32::from(break_effects::draw_particle(p,self.tracks[i],camera));}
+        for (i, slot) in self.particles[..span].iter().enumerate() {
+            let Some(p) = slot.as_ref() else {
+                continue;
+            };
+            if p.scene as usize == scene && p.kind >= 2 && p.delay == 0 {
+                self.drawn += u32::from(break_effects::draw_particle(p, self.tracks[i], camera));
+            }
         }
         let Some(bank) = bank else {
             self.publish();
             return self.drawn;
         };
-        for p in self
-            .particles[..span]
+        for p in self.particles[..span]
             .iter()
             .flatten()
-            .filter(|p| p.scene as usize == scene && p.delay == 0 && p.kind<2)
+            .filter(|p| p.scene as usize == scene && p.delay == 0 && p.kind < 2)
         {
             let kind = p.kind as usize;
             let style = bank.styles[kind];
@@ -415,84 +449,176 @@ fn divq(a: i32, b: i32) -> i32 {
 fn dot3(a: [i32; 3], b: [i32; 3]) -> i32 {
     mulq(a[0], b[0]) + mulq(a[1], b[1]) + mulq(a[2], b[2])
 }
-fn length_squared(v:[i32;3])->u64 {
-    v.iter().map(|x|*x as i64 * *x as i64).sum::<i64>()as u64
+fn length_squared(v: [i32; 3]) -> u64 {
+    v.iter().map(|x| *x as i64 * *x as i64).sum::<i64>() as u64
 }
 /// Exact floor length. Outlined once: legacy and break particles share this
 /// hot path, and psx-math's root inlines about 1 KB of unrolled code.
 #[inline(never)]
-fn length3(v:[i32;3])->i32 {psx_math::int32::isqrt_u64(length_squared(v))as i32}
+fn length3(v: [i32; 3]) -> i32 {
+    psx_math::int32::isqrt_u64(length_squared(v)) as i32
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     /// Keep the prior full legacy update as the differential oracle: compare
     /// every surviving particle and lifecycle field after every fixed tick.
-    fn legacy_reference(pool:&mut Pool,scene:usize,bank:Option<Bank>,paths:&mut [usize;2]) {
-        let Some(bank)=bank else{return;};
+    fn legacy_reference(pool: &mut Pool, scene: usize, bank: Option<Bank>, paths: &mut [usize; 2]) {
+        let Some(bank) = bank else {
+            return;
+        };
         for slot in &mut pool.particles {
-            let Some(p)=slot else{continue;};
-            if p.scene as usize!=scene||p.kind>=2 {continue;}
-            if p.delay>0 {p.delay-=1;continue;}
-            p.age+=1;if p.age>=p.life.get() {*slot=None;continue;}
-            let style=bank.styles[p.kind as usize];
-            p.velocity[1]+=p.force/60;
-            let speed=length3(p.velocity);
-            if speed>ONE {
-                let limited=speed-mulq(speed-ONE,style.dampen);
+            let Some(p) = slot else {
+                continue;
+            };
+            if p.scene as usize != scene || p.kind >= 2 {
+                continue;
+            }
+            if p.delay > 0 {
+                p.delay -= 1;
+                continue;
+            }
+            p.age += 1;
+            if p.age >= p.life.get() {
+                *slot = None;
+                continue;
+            }
+            let style = bank.styles[p.kind as usize];
+            p.velocity[1] += p.force / 60;
+            let speed = length3(p.velocity);
+            if speed > ONE {
+                let limited = speed - mulq(speed - ONE, style.dampen);
                 for v in &mut p.velocity {
-                    paths[usize::from(v.checked_mul(limited).is_none())]+=1;
-                    *v=(*v as i64*limited as i64/speed as i64)as i32;
+                    paths[usize::from(v.checked_mul(limited).is_none())] += 1;
+                    *v = (*v as i64 * limited as i64 / speed as i64) as i32;
                 }
             }
-            for j in 0..3 {p.position[j]+=p.velocity[j]/60;}
-            p.angle=(p.angle+style.rotation/60).rem_euclid(360*ONE);
+            for j in 0..3 {
+                p.position[j] += p.velocity[j] / 60;
+            }
+            p.angle = (p.angle + style.rotation / 60).rem_euclid(360 * ONE);
         }
-        pool.active_count=pool.particles.iter().flatten().count()as u32;
+        pool.active_count = pool.particles.iter().flatten().count() as u32;
     }
     #[test]
     fn legacy_full_pool_matches_wide_reference_through_expiry_and_scene_changes() {
-        static CURVES:[Sample;1]=[Sample{size:ONE,alpha:[255;2]}];
-        const STYLE:Style=Style{life:[80,96],speed:[0,ONE],size:[ONE;2],force:[0;2],
-            dampen:19661,rotation:-231*ONE,count:1,duration:1,uv_scale:ONE,
-            colors:[[128;3];2],curves:&CURVES};
-        static STYLES:[Style;2]=[STYLE,Style{dampen:0,rotation:377*ONE,..STYLE}];
-        let bank=Bank{frames:[&[],&[]],styles:&STYLES,death_offset:[0;3]};
-        let mut fast=Pool::new();
+        static CURVES: [Sample; 1] = [Sample {
+            size: ONE,
+            alpha: [255; 2],
+        }];
+        const STYLE: Style = Style {
+            life: [80, 96],
+            speed: [0, ONE],
+            size: [ONE; 2],
+            force: [0; 2],
+            dampen: 19661,
+            rotation: -231 * ONE,
+            count: 1,
+            duration: 1,
+            uv_scale: ONE,
+            colors: [[128; 3]; 2],
+            curves: &CURVES,
+        };
+        static STYLES: [Style; 2] = [
+            STYLE,
+            Style {
+                dampen: 0,
+                rotation: 377 * ONE,
+                ..STYLE
+            },
+        ];
+        let bank = Bank {
+            frames: [&[], &[]],
+            styles: &STYLES,
+            death_offset: [0; 3],
+        };
+        let mut fast = Pool::new();
         for i in 0..CAPACITY {
-            let velocity=match i%7 {
-                0=>[0;3],1=>[-1,7,0],2=>[ONE,0,0],3=>[2*ONE,-ONE,1],
-                4=>[1_000_000_000,-500_000_000,0],
-                5=>[-123_456_789,987_654,31],_=>[7*ONE,-9*ONE,3*ONE],
+            let velocity = match i % 7 {
+                0 => [0; 3],
+                1 => [-1, 7, 0],
+                2 => [ONE, 0, 0],
+                3 => [2 * ONE, -ONE, 1],
+                4 => [1_000_000_000, -500_000_000, 0],
+                5 => [-123_456_789, 987_654, 31],
+                _ => [7 * ONE, -9 * ONE, 3 * ONE],
             };
             fast.placed(i);
-            fast.particles[i]=Some(Particle{position:[i as i32,-12345,765],velocity,size:ONE,
-                force:if i%7==0 {0}else{-137*ONE},angle:if i%2==0 {-1}else{360*ONE+1},
-                scene:(i%3)as u8,kind:(i%5%3)as u8,life:NonZeroU16::new(80+(i%17)as u16).unwrap(),
-                age:(i%11)as u16,delay:(i%4)as u8,cell:(i%9)as u8,gradient:i as u8,color:[37,89,123],start_alpha:255});
+            fast.particles[i] = Some(Particle {
+                position: [i as i32, -12345, 765],
+                velocity,
+                size: ONE,
+                force: if i % 7 == 0 { 0 } else { -137 * ONE },
+                angle: if i % 2 == 0 { -1 } else { 360 * ONE + 1 },
+                scene: (i % 3) as u8,
+                kind: (i % 5 % 3) as u8,
+                life: NonZeroU16::new(80 + (i % 17) as u16).unwrap(),
+                age: (i % 11) as u16,
+                delay: (i % 4) as u8,
+                cell: (i % 9) as u8,
+                gradient: i as u8,
+                color: [37, 89, 123],
+                start_alpha: 255,
+            });
         }
-        fast.active_count=CAPACITY as u32;fast.spawned=CAPACITY as u32;fast.dropped=11;fast.drawn=17;
-        let mut reference=Pool{particles:fast.particles,tracks:[0;CAPACITY],high:fast.high,active_count:CAPACITY as u32,spawned:CAPACITY as u32,dropped:11,drawn:17};
-        let mut paths=[0;2];
+        fast.active_count = CAPACITY as u32;
+        fast.spawned = CAPACITY as u32;
+        fast.dropped = 11;
+        fast.drawn = 17;
+        let mut reference = Pool {
+            particles: fast.particles,
+            tracks: [0; CAPACITY],
+            high: fast.high,
+            active_count: CAPACITY as u32,
+            spawned: CAPACITY as u32,
+            dropped: 11,
+            drawn: 17,
+        };
+        let mut paths = [0; 2];
         for tick in 0..384 {
-            let scene=tick/17%3;let selected=if tick%19==0 {None}else{Some(bank)};
-            fast.tick(scene,selected);legacy_reference(&mut reference,scene,selected,&mut paths);
-            assert_eq!(fast.active(),reference.active(),"tick {tick}");
-            for (index,(actual,expected)) in fast.particles.iter().zip(&reference.particles).enumerate() {
-                match (actual,expected) {
-                    (None,None)=>{},
-                    (Some(a),Some(b))=>{
-                        perspective::assert_vertices(a.position,a.angle,a.size,(tick as i32*7919,-(tick as i32)*3571));
-                        assert_eq!((a.position,a.velocity,a.angle,a.force,a.age,a.delay),
-                            (b.position,b.velocity,b.angle,b.force,b.age,b.delay),"tick {tick},slot {index}");
-                        assert_eq!((a.size,a.scene,a.kind,a.life,a.cell,a.gradient,a.color),
-                            (b.size,b.scene,b.kind,b.life,b.cell,b.gradient,b.color));
-                    },_=>panic!("lifecycle mismatch at tick {tick},slot {index}"),
+            let scene = tick / 17 % 3;
+            let selected = if tick % 19 == 0 { None } else { Some(bank) };
+            fast.tick(scene, selected);
+            legacy_reference(&mut reference, scene, selected, &mut paths);
+            assert_eq!(fast.active(), reference.active(), "tick {tick}");
+            for (index, (actual, expected)) in
+                fast.particles.iter().zip(&reference.particles).enumerate()
+            {
+                match (actual, expected) {
+                    (None, None) => {}
+                    (Some(a), Some(b)) => {
+                        perspective::assert_vertices(
+                            a.position,
+                            a.angle,
+                            a.size,
+                            (tick as i32 * 7919, -(tick as i32) * 3571),
+                        );
+                        assert_eq!(
+                            (a.position, a.velocity, a.angle, a.force, a.age, a.delay),
+                            (b.position, b.velocity, b.angle, b.force, b.age, b.delay),
+                            "tick {tick},slot {index}"
+                        );
+                        assert_eq!(
+                            (a.size, a.scene, a.kind, a.life, a.cell, a.gradient, a.color),
+                            (b.size, b.scene, b.kind, b.life, b.cell, b.gradient, b.color)
+                        );
+                    }
+                    _ => panic!("lifecycle mismatch at tick {tick},slot {index}"),
                 }
             }
-            assert_eq!((fast.spawned,fast.dropped,fast.drawn),(reference.spawned,reference.dropped,reference.drawn));
+            assert_eq!(
+                (fast.spawned, fast.dropped, fast.drawn),
+                (reference.spawned, reference.dropped, reference.drawn)
+            );
         }
-        assert!(paths[0]>100&&paths[1]>100,"exercise native and wide paths: {paths:?}");
-        assert!(fast.particles.iter().flatten().all(|p|p.kind>=2),"all legacy particles expire");
+        assert!(
+            paths[0] > 100 && paths[1] > 100,
+            "exercise native and wide paths: {paths:?}"
+        );
+        assert!(
+            fast.particles.iter().flatten().all(|p| p.kind >= 2),
+            "all legacy particles expire"
+        );
     }
 }

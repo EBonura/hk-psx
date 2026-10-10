@@ -33,7 +33,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-const VRAM_RECTS: [(i64, i64, i64, i64); 3] = [(352, 176, 32, 64), (360, 32, 24, 32), (352, 64, 32, 32)];
+const VRAM_RECTS: [(i64, i64, i64, i64); 3] =
+    [(352, 176, 32, 64), (360, 32, 24, 32), (352, 64, 32, 32)];
 const ALPHAS: [u32; 3] = [43, 85, 128];
 /// Slots in the guest particle pool, game/src/particles.rs CAPACITY. An
 /// emitter authored above this can never finish emitting even into an empty
@@ -53,7 +54,13 @@ const SECRET_BREAK_BUDGET: i64 = 96;
 /// `Emit(n)` releases its n at once.
 const EMIT_RATE: f64 = 10000.0;
 const FX_MAGIC: &[u8] = b"HKFX0001";
-const FX_LIMITS: [(&str, usize); 5] = [("styles", 18), ("emitters", 100), ("art", 48), ("uploads", 48), ("frames", 96)];
+const FX_LIMITS: [(&str, usize); 5] = [
+    ("styles", 18),
+    ("emitters", 100),
+    ("art", 48),
+    ("uploads", 48),
+    ("frames", 96),
+];
 const FAMILY_WALL: i64 = 1;
 const FAMILY_WALL_TK2D: i64 = 2;
 const FAMILY_FLOOR: i64 = 3;
@@ -61,7 +68,11 @@ const FACING_STATES: [&str; 4] = ["Hit Right", "Hit Up", "Hit Left", "Hit Down"]
 const MAX_SCENE_BREAKABLES: usize = 128;
 /// breakables.py: serialized rigid-fling variants measured across every
 /// debrisPart of every Breakable in the admitted scenes.
-const RIGID_BODIES: [(f64, f64, f64, f64, f64); 3] = [(0.0, 1.0, 0.05, 1.0, 0.0), (0.0, 1.0, 0.05, 0.9, 0.0), (0.0, 1.0, 3.0, 1.0, 0.0)];
+const RIGID_BODIES: [(f64, f64, f64, f64, f64); 3] = [
+    (0.0, 1.0, 0.05, 1.0, 0.0),
+    (0.0, 1.0, 0.05, 0.9, 0.0),
+    (0.0, 1.0, 3.0, 1.0, 0.0),
+];
 const RIGID_BOUNCE_FACTORS: [f64; 3] = [0.1, 0.4, 0.5];
 const LIMITATIONS: [&str; 5] = [
     "Deterministic RNG,60Hz integration/damping,33-point curves,radius/edge collision and initial-lifetime collision-loss approximation differ from nativeUnity particle physics.",
@@ -74,14 +85,22 @@ const LIMITATIONS: [&str; 5] = [
 // ---------------------------------------------------------------- values
 
 fn num(v: &Value) -> Result<f64> {
-    v.float().or_else(|| v.int().map(|i| i as f64)).ok_or_else(|| "not a number".to_string())
+    v.float()
+        .or_else(|| v.int().map(|i| i as f64))
+        .ok_or_else(|| "not a number".to_string())
 }
 fn f(v: &Value, key: &str) -> Result<f64> {
     num(get(v, key)?)
 }
 fn i(v: &Value, key: &str) -> Result<i64> {
     let x = get(v, key)?;
-    x.int().or(if let Value::Bool(b) = x { Some(*b as i64) } else { None }).ok_or_else(|| format!("{key} is not an integer"))
+    x.int()
+        .or(if let Value::Bool(b) = x {
+            Some(*b as i64)
+        } else {
+            None
+        })
+        .ok_or_else(|| format!("{key} is not an integer"))
 }
 fn truthy(v: &Value, key: &str) -> Result<bool> {
     Ok(get(v, key)?.truthy())
@@ -97,7 +116,11 @@ fn set(v: &mut Value, key: &str, x: Value) {
 }
 fn get_mut<'a>(v: &'a mut Value, key: &str) -> Result<&'a mut Value> {
     match v {
-        Value::Map(fields) => fields.iter_mut().find(|(k, _)| &**k == key).map(|(_, x)| x).ok_or_else(|| format!("missing {key}")),
+        Value::Map(fields) => fields
+            .iter_mut()
+            .find(|(k, _)| &**k == key)
+            .map(|(_, x)| x)
+            .ok_or_else(|| format!("missing {key}")),
         _ => err(format!("missing {key}")),
     }
 }
@@ -152,7 +175,10 @@ fn gradient_alpha(g: &Value, t: f64) -> Result<f64> {
     let n = i(g, "m_NumAlphaKeys")?;
     let mut keys = Vec::new();
     for k in 0..n {
-        keys.push((f(g, &format!("atime{k}"))? / 65535.0, f(get(g, &format!("key{k}"))?, "a")?));
+        keys.push((
+            f(g, &format!("atime{k}"))? / 65535.0,
+            f(get(g, &format!("key{k}"))?, "a")?,
+        ));
     }
     if i(g, "m_Mode")? != 0 || keys.is_empty() {
         return err("unsupported gradient interpolation");
@@ -179,7 +205,10 @@ fn values(c: &Value, t: f64) -> Result<[f64; 2]> {
         0 => [f(c, "scalar")?; 2],
         3 => [f(c, "minScalar")?, f(c, "scalar")?],
         1 => [curve_value(get(c, "maxCurve")?, t)? * f(c, "scalar")?; 2],
-        2 => [curve_value(get(c, "minCurve")?, t)? * f(c, "minScalar")?, curve_value(get(c, "maxCurve")?, t)? * f(c, "scalar")?],
+        2 => [
+            curve_value(get(c, "minCurve")?, t)? * f(c, "minScalar")?,
+            curve_value(get(c, "maxCurve")?, t)? * f(c, "scalar")?,
+        ],
         _ => return err("unknown particle curve"),
     })
 }
@@ -187,7 +216,11 @@ fn is_zero(v: [f64; 2]) -> bool {
     v == [0.0, 0.0]
 }
 fn sorted2(v: [f64; 2]) -> [f64; 2] {
-    if v[1] < v[0] { [v[1], v[0]] } else { v }
+    if v[1] < v[0] {
+        [v[1], v[0]]
+    } else {
+        v
+    }
 }
 
 // ---------------------------------------------------------------- styles
@@ -235,12 +268,21 @@ fn ints<const N: usize>(v: [i64; N]) -> Json {
 }
 impl Sample {
     fn json(&self) -> Json {
-        Json::Obj(vec![("size".into(), ints(self.size)), ("alpha".into(), ints(self.alpha)), ("spin".into(), ints(self.spin))])
+        Json::Obj(vec![
+            ("size".into(), ints(self.size)),
+            ("alpha".into(), ints(self.alpha)),
+            ("spin".into(), ints(self.spin)),
+        ])
     }
     /// `json.dumps(sample, sort_keys=True)`.
     fn sorted_text(&self) -> String {
         let l = |v: [i64; 2]| format!("[{}, {}]", v[0], v[1]);
-        format!("{{\"alpha\": {}, \"size\": {}, \"spin\": {}}}", l(self.alpha), l(self.size), l(self.spin))
+        format!(
+            "{{\"alpha\": {}, \"size\": {}, \"spin\": {}}}",
+            l(self.alpha),
+            l(self.size),
+            l(self.spin)
+        )
     }
 }
 impl Style {
@@ -251,7 +293,10 @@ impl Style {
             ("speed".into(), ints(self.speed)),
             ("size".into(), ints(self.size)),
             ("rotation".into(), ints(self.rotation)),
-            ("colors".into(), Json::List(self.colors.iter().map(|c| ints(*c)).collect())),
+            (
+                "colors".into(),
+                Json::List(self.colors.iter().map(|c| ints(*c)).collect()),
+            ),
             ("start_alpha".into(), ints(self.start_alpha)),
             ("count".into(), Json::Int(self.count)),
             ("rate".into(), Json::Int(self.rate)),
@@ -271,13 +316,23 @@ impl Style {
             ("life_loss".into(), Json::Int(self.life_loss)),
             ("kill_speed".into(), Json::Int(self.kill_speed)),
             ("radius_scale".into(), Json::Int(self.radius_scale)),
-            ("samples".into(), Json::List(self.samples.iter().map(Sample::json).collect())),
+            (
+                "samples".into(),
+                Json::List(self.samples.iter().map(Sample::json).collect()),
+            ),
             ("cells".into(), Json::Int(self.cells)),
             ("texture".into(), Json::Str(self.texture.clone())),
         ])
     }
     fn samples_key(&self) -> String {
-        format!("[{}]", self.samples.iter().map(Sample::sorted_text).collect::<Vec<_>>().join(", "))
+        format!(
+            "[{}]",
+            self.samples
+                .iter()
+                .map(Sample::sorted_text)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }
 
@@ -289,7 +344,10 @@ fn particle_scale(ps: &Value, m: &[[f64; 4]; 4]) -> Result<f64> {
         return Ok(1.0);
     }
     let columns: Vec<[f64; 3]> = (0..3).map(|j| [m[0][j], m[1][j], m[2][j]]).collect();
-    let lengths: Vec<f64> = columns.iter().map(|c| (0.0 + c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt()).collect();
+    let lengths: Vec<f64> = columns
+        .iter()
+        .map(|c| (0.0 + c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt())
+        .collect();
     if mode != 0 {
         return err(format!(
             "unsupported particle scaling mode {mode} at scale [{:.4},{:.4},{:.4}]",
@@ -300,18 +358,29 @@ fn particle_scale(ps: &Value, m: &[[f64; 4]; 4]) -> Result<f64> {
         return err("Hierarchy particles require world simulation");
     }
     let scale = lengths[0];
-    if !scale.is_finite() || scale <= 0.0 || lengths.iter().any(|v| !v.is_finite() || *v <= 0.0) || (lengths[1] - scale).abs() > scale * 1e-6 {
+    if !scale.is_finite()
+        || scale <= 0.0
+        || lengths.iter().any(|v| !v.is_finite() || *v <= 0.0)
+        || (lengths[1] - scale).abs() > scale * 1e-6
+    {
         return err("Hierarchy particle XY scale must be positive and uniform");
     }
     for a in 0..3 {
         for b in 0..a {
-            let d = 0.0 + columns[a][0] * columns[b][0] + columns[a][1] * columns[b][1] + columns[a][2] * columns[b][2];
+            let d = 0.0
+                + columns[a][0] * columns[b][0]
+                + columns[a][1] * columns[b][1]
+                + columns[a][2] * columns[b][2];
             if d.abs() > scale * scale * 1e-6 {
                 return err("Hierarchy particle transform must not shear");
             }
         }
     }
-    if [(0, 2), (1, 2), (2, 0), (2, 1)].iter().any(|&(a, b)| m[a][b].abs() > 1e-12) || i(get(ps, "ShapeModule")?, "type")? != 10 {
+    if [(0, 2), (1, 2), (2, 0), (2, 1)]
+        .iter()
+        .any(|&(a, b)| m[a][b].abs() > 1e-12)
+        || i(get(ps, "ShapeModule")?, "type")? != 10
+    {
         return err("Hierarchy particle emission must stay in XY plane");
     }
     for module in ["ForceModule", "VelocityModule"] {
@@ -320,7 +389,10 @@ fn particle_scale(ps: &Value, m: &[[f64; 4]; 4]) -> Result<f64> {
             return err("Hierarchy particle motion must stay in XY plane");
         }
     }
-    if !is_zero(values(get(get(ps, "InitialModule")?, "gravityModifier")?, 0.0)?) {
+    if !is_zero(values(
+        get(get(ps, "InitialModule")?, "gravityModifier")?,
+        0.0,
+    )?) {
         return err("Hierarchy particle gravity scaling needs native validation");
     }
     Ok(scale)
@@ -332,27 +404,52 @@ fn emits_nothing(ps: &Value) -> Result<bool> {
     if !truthy(em, "enabled")? {
         return Ok(true);
     }
-    let zero = |c: &Value| -> Result<bool> { Ok(i(c, "minMaxState")? == 0 && f(c, "scalar")? == 0.0) };
-    Ok(i(em, "m_BurstCount")? == 0 && zero(get(em, "rateOverTime")?)? && zero(get(em, "rateOverDistance")?)?)
+    let zero =
+        |c: &Value| -> Result<bool> { Ok(i(c, "minMaxState")? == 0 && f(c, "scalar")? == 0.0) };
+    Ok(i(em, "m_BurstCount")? == 0
+        && zero(get(em, "rateOverTime")?)?
+        && zero(get(em, "rateOverDistance")?)?)
 }
 
-fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: bool) -> Result<Style> {
+fn style(
+    ps: &Value,
+    gravity: f64,
+    scale: f64,
+    played: bool,
+    random_gravity: bool,
+) -> Result<Style> {
     let im = get(ps, "InitialModule")?;
     let shape = get(ps, "ShapeModule")?;
     let uv = get(ps, "UVModule")?;
     let em = get(ps, "EmissionModule")?;
-    let Value::Map(fields) = ps else { return err("particle system is not a map") };
+    let Value::Map(fields) = ps else {
+        return err("particle system is not a map");
+    };
     let mut enabled: Vec<String> = fields
         .iter()
-        .filter(|(k, v)| k.ends_with("Module") && v.is_map() && v.get("enabled").is_some_and(Value::truthy))
+        .filter(|(k, v)| {
+            k.ends_with("Module") && v.is_map() && v.get("enabled").is_some_and(Value::truthy)
+        })
         .map(|(k, _)| k.to_string())
         .collect();
     const SUPPORTED: [&str; 12] = [
-        "InitialModule", "ShapeModule", "EmissionModule", "SizeModule", "RotationModule", "ColorModule", "UVModule", "VelocityModule",
-        "ForceModule", "ClampVelocityModule", "RotationBySpeedModule", "CollisionModule",
+        "InitialModule",
+        "ShapeModule",
+        "EmissionModule",
+        "SizeModule",
+        "RotationModule",
+        "ColorModule",
+        "UVModule",
+        "VelocityModule",
+        "ForceModule",
+        "ClampVelocityModule",
+        "RotationBySpeedModule",
+        "CollisionModule",
     ];
     if enabled.iter().any(|k| k == "SubModule") {
-        let subs = get(get(ps, "SubModule")?, "subEmitters")?.list().unwrap_or(&[]);
+        let subs = get(get(ps, "SubModule")?, "subEmitters")?
+            .list()
+            .unwrap_or(&[]);
         let mut all_null = true;
         for e in subs {
             if get(get(e, "emitter")?, "m_PathID")?.truthy() {
@@ -363,13 +460,19 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
             enabled.retain(|k| k != "SubModule");
         }
     }
-    let unsupported: Vec<&String> = enabled.iter().filter(|k| !SUPPORTED.contains(&k.as_str())).collect();
+    let unsupported: Vec<&String> = enabled
+        .iter()
+        .filter(|k| !SUPPORTED.contains(&k.as_str()))
+        .collect();
     if !unsupported.is_empty() {
         // Python prints the set; with more than one member its order is the
         // string hash order of that run, so a sorted list stands in for it.
         let mut names: Vec<String> = unsupported.iter().map(|k| format!("'{k}'")).collect();
         names.sort();
-        return err(format!("unsupported particle modules: {{{}}}", names.join(", ")));
+        return err(format!(
+            "unsupported particle modules: {{{}}}",
+            names.join(", ")
+        ));
     }
     if truthy(ps, "looping")? {
         return err("looping particle system");
@@ -385,7 +488,12 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
     if space != 0 && space != 1 {
         return err(format!("unsupported particle simulation space {space}"));
     }
-    if truthy(im, "size3D")? || truthy(im, "rotation3D")? || i(im, "gravitySource")? != 0 || i(em, "m_BurstCount")? != 0 || !is_zero(values(get(em, "rateOverDistance")?, 0.0)?) {
+    if truthy(im, "size3D")?
+        || truthy(im, "rotation3D")?
+        || i(im, "gravitySource")? != 0
+        || i(em, "m_BurstCount")? != 0
+        || !is_zero(values(get(em, "rateOverDistance")?, 0.0)?)
+    {
         return err("particle emission mode");
     }
     let shape_type = i(shape, "type")?;
@@ -406,7 +514,12 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
         return err("particle shape random mode");
     }
     let uv_on = truthy(uv, "enabled")?;
-    if uv_on && (i(uv, "tilesX")? != 1 || i(uv, "animationType")? != 1 || i(uv, "rowMode")? != 1 || !(1..=MAX_SHEET_ROWS).contains(&i(uv, "tilesY")?)) {
+    if uv_on
+        && (i(uv, "tilesX")? != 1
+            || i(uv, "animationType")? != 1
+            || i(uv, "rowMode")? != 1
+            || !(1..=MAX_SHEET_ROWS).contains(&i(uv, "tilesY")?))
+    {
         return err("particle random row");
     }
     let start = get(im, "startColor")?;
@@ -414,7 +527,11 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
     if start_mode != 0 && start_mode != 2 {
         return err(format!("particle start color mode {start_mode}"));
     }
-    let ends = if start_mode == 0 { [get(start, "maxColor")?, get(start, "maxColor")?] } else { [get(start, "minColor")?, get(start, "maxColor")?] };
+    let ends = if start_mode == 0 {
+        [get(start, "maxColor")?, get(start, "maxColor")?]
+    } else {
+        [get(start, "minColor")?, get(start, "maxColor")?]
+    };
     let mut colors = [[0i64; 3]; 2];
     for (n, end) in ends.iter().enumerate() {
         for (c, k) in ["r", "g", "b"].iter().enumerate() {
@@ -431,7 +548,10 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
         }
     }
     if start_alpha.iter().any(|v| !(0..=255).contains(v)) {
-        return err(format!("particle start color alpha [{}, {}]", start_alpha[0], start_alpha[1]));
+        return err(format!(
+            "particle start color alpha [{}, {}]",
+            start_alpha[0], start_alpha[1]
+        ));
     }
     if colors.iter().flatten().any(|v| !(0..=255).contains(v)) {
         return err("particle color range");
@@ -439,14 +559,21 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
     let collision = get(ps, "CollisionModule")?;
     let collision_on = truthy(collision, "enabled")?;
     if collision_on
-        && (i(collision, "type")? != 1 || i(collision, "collisionMode")? != 1 || i(get(collision, "collidesWith")?, "m_Bits")? != 256 || truthy(collision, "colliderForce")?)
+        && (i(collision, "type")? != 1
+            || i(collision, "collisionMode")? != 1
+            || i(get(collision, "collidesWith")?, "m_Bits")? != 256
+            || truthy(collision, "colliderForce")?)
     {
         return err("particle terrain collision");
     }
     let force = get(ps, "ForceModule")?;
     let vel = get(ps, "VelocityModule")?;
     let limit = get(ps, "ClampVelocityModule")?;
-    let (force_on, vel_on, limit_on) = (truthy(force, "enabled")?, truthy(vel, "enabled")?, truthy(limit, "enabled")?);
+    let (force_on, vel_on, limit_on) = (
+        truthy(force, "enabled")?,
+        truthy(vel, "enabled")?,
+        truthy(limit, "enabled")?,
+    );
     if force_on && (!truthy(force, "inWorldSpace")? || truthy(force, "randomizePerFrame")?) {
         return err("particle force space");
     }
@@ -454,7 +581,15 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
         return err("particle velocity space");
     }
     if vel_on {
-        for k in ["orbitalX", "orbitalY", "orbitalZ", "orbitalOffsetX", "orbitalOffsetY", "orbitalOffsetZ", "radial"] {
+        for k in [
+            "orbitalX",
+            "orbitalY",
+            "orbitalZ",
+            "orbitalOffsetX",
+            "orbitalOffsetY",
+            "orbitalOffsetZ",
+            "radial",
+        ] {
             if !is_zero(values(get(vel, k)?, 0.0)?) {
                 return err("particle orbital/speed modifier");
             }
@@ -472,7 +607,11 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
     let mut samples = Vec::new();
     for n in 0..33 {
         let t = n as f64 / 32.0;
-        let size = if truthy(size_module, "enabled")? { values(get(size_module, "curve")?, t)? } else { [1.0, 1.0] };
+        let size = if truthy(size_module, "enabled")? {
+            values(get(size_module, "curve")?, t)?
+        } else {
+            [1.0, 1.0]
+        };
         let mut alphas = [1.0, 1.0];
         if truthy(color_module, "enabled")? {
             let g = get(color_module, "gradient")?;
@@ -480,7 +619,11 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
             if mode != 1 && mode != 3 {
                 return err("particle color curve mode");
             }
-            let gs = if mode == 1 { [get(g, "maxGradient")?, get(g, "maxGradient")?] } else { [get(g, "minGradient")?, get(g, "maxGradient")?] };
+            let gs = if mode == 1 {
+                [get(g, "maxGradient")?, get(g, "maxGradient")?]
+            } else {
+                [get(g, "minGradient")?, get(g, "maxGradient")?]
+            };
             for gradient in gs {
                 for k in 0..i(gradient, "m_NumColorKeys")? {
                     let key = get(gradient, &format!("key{k}"))?;
@@ -493,7 +636,11 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
             }
             alphas = [gradient_alpha(gs[0], t)?, gradient_alpha(gs[1], t)?];
         }
-        let rotation = if truthy(rotation_module, "enabled")? { values(get(rotation_module, "curve")?, t)? } else { [0.0, 0.0] };
+        let rotation = if truthy(rotation_module, "enabled")? {
+            values(get(rotation_module, "curve")?, t)?
+        } else {
+            [0.0, 0.0]
+        };
         samples.push(Sample {
             size: [q(size[0])?, q(size[1])?],
             alpha: alphas.map(|a| py_round(a * initial_alpha * 255.0).clamp(0, 255)),
@@ -505,9 +652,14 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
     if rate[0] != rate[1] || rate[0] <= 0.0 {
         return err("particle emission rate");
     }
-    let count = i(im, "maxNumParticles")?.min((rate[0] * f(ps, "lengthInSec")? - 1e-4).ceil() as i64);
+    let count =
+        i(im, "maxNumParticles")?.min((rate[0] * f(ps, "lengthInSec")? - 1e-4).ceil() as i64);
     let speedspin = get(ps, "RotationBySpeedModule")?;
-    let omega = if truthy(speedspin, "enabled")? { values(get(speedspin, "curve")?, 0.0)? } else { [0.0, 0.0] };
+    let omega = if truthy(speedspin, "enabled")? {
+        values(get(speedspin, "curve")?, 0.0)?
+    } else {
+        [0.0, 0.0]
+    };
     let mut forcev = [[0.0f64; 2]; 3];
     for (n, k) in ["x", "y", "z"].iter().enumerate() {
         if force_on {
@@ -524,7 +676,10 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
         let lh = sorted2([gravity * gravityv[0], gravity * gravityv[1]]);
         forcev[1] = [forcev[1][0] + lh[0], forcev[1][1] + lh[1]];
     } else {
-        forcev[1] = [forcev[1][0] + gravity * gravityv[0], forcev[1][1] + gravity * gravityv[0]];
+        forcev[1] = [
+            forcev[1][0] + gravity * gravityv[0],
+            forcev[1][1] + gravity * gravityv[0],
+        ];
     }
     let life = initial("startLifetime")?.map(|v| py_round(v * 60.0).max(1));
     let qs = |v: [f64; 2]| -> Result<[i64; 2]> { Ok([q(v[0])?, q(v[1])?]) };
@@ -550,10 +705,22 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
         shape: shape_type,
         radius: q(f(get(shape, "radius")?, "value")?)?,
         arc: q(f(get(shape, "arc")?, "value")?)?,
-        shape_scale: [q(f(shape_scale, "x")?)?, q(f(shape_scale, "y")?)?, q(f(shape_scale, "z")?)?],
-        force: [qs(forcev[0].map(|v| v * scale))?, qs(forcev[1].map(|v| v * scale))?, qs(forcev[2].map(|v| v * scale))?],
+        shape_scale: [
+            q(f(shape_scale, "x")?)?,
+            q(f(shape_scale, "y")?)?,
+            q(f(shape_scale, "z")?)?,
+        ],
+        force: [
+            qs(forcev[0].map(|v| v * scale))?,
+            qs(forcev[1].map(|v| v * scale))?,
+            qs(forcev[2].map(|v| v * scale))?,
+        ],
         velocity,
-        limit: if limit_on { q(values(get(limit, "magnitude")?, 0.0)?[0])? } else { -1 },
+        limit: if limit_on {
+            q(values(get(limit, "magnitude")?, 0.0)?[0])?
+        } else {
+            -1
+        },
         dampen: if limit_on { q(f(limit, "dampen")?)? } else { 0 },
         spin_speed: qs(omega.map(f64::to_degrees))?,
         spin_range: [q(f(range, "x")?)?, q(f(range, "y")?)?],
@@ -568,11 +735,15 @@ fn style(ps: &Value, gravity: f64, scale: f64, played: bool, random_gravity: boo
         texture: String::new(),
     };
     if !(0 < count && count <= POOL_CAPACITY) {
-        return err(format!("particle source capacity: {count} particles against a {POOL_CAPACITY}-slot pool"));
+        return err(format!(
+            "particle source capacity: {count} particles against a {POOL_CAPACITY}-slot pool"
+        ));
     }
     let longest = st.life[0].max(st.life[1]);
     if longest > 65535 {
-        return err(format!("particle source capacity: lifetime {longest} ticks"));
+        return err(format!(
+            "particle source capacity: lifetime {longest} ticks"
+        ));
     }
     Ok(st)
 }
@@ -590,7 +761,12 @@ trait View {
 impl View for Scene<'_> {
     fn component_refs(&self, gid: i64) -> Result<Vec<Value>> {
         let go = self.go(gid).ok_or("no such GameObject")?;
-        get(go, "m_Component")?.list().unwrap_or(&[]).iter().map(|c| get(c, "component").cloned()).collect::<Result<_>>()
+        get(go, "m_Component")?
+            .list()
+            .unwrap_or(&[])
+            .iter()
+            .map(|c| get(c, "component").cloned())
+            .collect::<Result<_>>()
     }
     fn deref(&self, _: &Source, pptr: &Value) -> Result<Obj> {
         Scene::deref(self, pptr).map_err(|e| e.to_string())
@@ -610,7 +786,11 @@ fn mul4(a: &M4, r: &M4) -> M4 {
             // Python's sum() starts from the integer 0.
             let mut s = 0.0f64;
             for k in 0..4 {
-                s = if k == 0 { a[row][k] * r[k][col] } else { s + a[row][k] * r[k][col] };
+                s = if k == 0 {
+                    a[row][k] * r[k][col]
+                } else {
+                    s + a[row][k] * r[k][col]
+                };
             }
             *cell = s;
         }
@@ -658,12 +838,19 @@ struct PrefabView {
 impl PrefabView {
     /// `rotation` is the spawn's Euler angles, or None for `Spawn(prefab, position)`,
     /// which keeps the prefab root's own rotation.
-    fn new(source: &Source, file: Arc<SerializedFile>, root_gid: i64, origin: [f64; 3], rotation: Option<[f64; 3]>) -> Result<Self> {
+    fn new(
+        source: &Source,
+        file: Arc<SerializedFile>,
+        root_gid: i64,
+        origin: [f64; 3],
+        rotation: Option<[f64; 3]>,
+    ) -> Result<Self> {
         let read = |id: i64| -> Result<Value> {
             let o = source.object(&file, id).map_err(|e| e.to_string())?;
             source.read(&o).map_err(|e| e.to_string())
         };
-        let (mut gos, mut transforms, mut go_transform) = (HashMap::new(), HashMap::new(), HashMap::new());
+        let (mut gos, mut transforms, mut go_transform) =
+            (HashMap::new(), HashMap::new(), HashMap::new());
         let mut pending = vec![root_gid];
         while let Some(gid) = pending.pop() {
             if gos.contains_key(&gid) {
@@ -672,7 +859,9 @@ impl PrefabView {
             let go = read(gid)?;
             let mut tid = None;
             for c in get(&go, "m_Component")?.list().unwrap_or(&[]) {
-                let o = source.deref(&file, get(c, "component")?).map_err(|e| e.to_string())?;
+                let o = source
+                    .deref(&file, get(c, "component")?)
+                    .map_err(|e| e.to_string())?;
                 if o.class_id() == 4 {
                     tid = Some(o.path_id());
                     break;
@@ -682,7 +871,11 @@ impl PrefabView {
             gos.insert(gid, go);
             go_transform.insert(gid, tid);
             let transform = read(tid)?;
-            for child in get(&transform, "m_Children")?.list().unwrap_or(&[]).to_vec() {
+            for child in get(&transform, "m_Children")?
+                .list()
+                .unwrap_or(&[])
+                .to_vec()
+            {
                 let cid = i(&child, "m_PathID")?;
                 let kid = read(cid)?;
                 pending.push(i(get(&kid, "m_GameObject")?, "m_PathID")?);
@@ -698,18 +891,43 @@ impl PrefabView {
                 let q = get(&transforms[&root_tid], "m_LocalRotation")?;
                 let (x, y, z, w) = (f(q, "x")?, f(q, "y")?, f(q, "z")?, f(q, "w")?);
                 [
-                    [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-                    [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-                    [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+                    [
+                        1.0 - 2.0 * (y * y + z * z),
+                        2.0 * (x * y - z * w),
+                        2.0 * (x * z + y * w),
+                    ],
+                    [
+                        2.0 * (x * y + z * w),
+                        1.0 - 2.0 * (x * x + z * z),
+                        2.0 * (y * z - x * w),
+                    ],
+                    [
+                        2.0 * (x * z - y * w),
+                        2.0 * (y * z + x * w),
+                        1.0 - 2.0 * (x * x + y * y),
+                    ],
                 ]
             }
         };
         let scale = [f(&s, "x")?, f(&s, "y")?, f(&s, "z")?];
         let mut spawn = [[0.0, 0.0, 0.0, 1.0]; 4];
         for r in 0..3 {
-            spawn[r] = [basis[r][0] * scale[0], basis[r][1] * scale[1], basis[r][2] * scale[2], origin[r]];
+            spawn[r] = [
+                basis[r][0] * scale[0],
+                basis[r][1] * scale[1],
+                basis[r][2] * scale[2],
+                origin[r],
+            ];
         }
-        Ok(Self { file, gos, transforms, go_transform, root: root_gid, root_tid, spawn })
+        Ok(Self {
+            file,
+            gos,
+            transforms,
+            go_transform,
+            root: root_gid,
+            root_tid,
+            spawn,
+        })
     }
 
     fn local(&self, tid: i64) -> Result<M4> {
@@ -725,9 +943,24 @@ impl PrefabView {
         let (x, y, z, w) = (f(rq, "x")?, f(rq, "y")?, f(rq, "z")?, f(rq, "w")?);
         let (s, p) = (get(t, "m_LocalScale")?, get(t, "m_LocalPosition")?);
         let mut r = [
-            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w), f(p, "x")?],
-            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w), f(p, "y")?],
-            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y), f(p, "z")?],
+            [
+                1.0 - 2.0 * (y * y + z * z),
+                2.0 * (x * y - z * w),
+                2.0 * (x * z + y * w),
+                f(p, "x")?,
+            ],
+            [
+                2.0 * (x * y + z * w),
+                1.0 - 2.0 * (x * x + z * z),
+                2.0 * (y * z - x * w),
+                f(p, "y")?,
+            ],
+            [
+                2.0 * (x * z - y * w),
+                2.0 * (y * z + x * w),
+                1.0 - 2.0 * (x * x + y * y),
+                f(p, "z")?,
+            ],
             [0.0, 0.0, 0.0, 1.0],
         ];
         for row in r.iter_mut().take(3) {
@@ -749,7 +982,10 @@ impl PrefabView {
             let tid = self.go_transform.get(&out[n]).copied();
             n += 1;
             let Some(tid) = tid else { continue };
-            for child in get(&self.transforms[&tid], "m_Children")?.list().unwrap_or(&[]) {
+            for child in get(&self.transforms[&tid], "m_Children")?
+                .list()
+                .unwrap_or(&[])
+            {
                 let cid = i(child, "m_PathID")?;
                 if let Some(kid) = self.transforms.get(&cid) {
                     out.push(i(get(kid, "m_GameObject")?, "m_PathID")?);
@@ -763,7 +999,12 @@ impl PrefabView {
 impl View for PrefabView {
     fn component_refs(&self, gid: i64) -> Result<Vec<Value>> {
         let go = self.gos.get(&gid).ok_or("no such prefab GameObject")?;
-        get(go, "m_Component")?.list().unwrap_or(&[]).iter().map(|c| get(c, "component").cloned()).collect::<Result<_>>()
+        get(go, "m_Component")?
+            .list()
+            .unwrap_or(&[])
+            .iter()
+            .map(|c| get(c, "component").cloned())
+            .collect::<Result<_>>()
     }
     fn deref(&self, source: &Source, pptr: &Value) -> Result<Obj> {
         source.deref(&self.file, pptr).map_err(|e| e.to_string())
@@ -811,7 +1052,16 @@ fn pair<'a>(list: &'a Value, key: &str) -> Result<&'a Value> {
 /// `part_emitter`: one debrisPart's emitter, Silent when a played system
 /// provably emits nothing, or None when the part is not a particle system.
 #[allow(clippy::too_many_arguments)]
-fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played: bool, relaxed: bool, emit: Option<i64>, unloop: bool) -> Result<Found> {
+fn part_emitter(
+    source: &Source,
+    view: &dyn View,
+    gid: i64,
+    gravity: f64,
+    played: bool,
+    relaxed: bool,
+    emit: Option<i64>,
+    unloop: bool,
+) -> Result<Found> {
     let mut cs: Vec<(String, Obj, Value)> = Vec::new();
     for r in view.component_refs(gid)? {
         let o = view.deref(source, &r)?;
@@ -823,20 +1073,34 @@ fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played
             cs.push((name, o, tree));
         }
     }
-    let Some((_, po, ps)) = cs.iter().find(|c| c.0 == "ParticleSystem").cloned() else { return Ok(Found::None) };
-    let (_, _, renderer) = cs.iter().find(|c| c.0 == "ParticleSystemRenderer").ok_or("ParticleSystemRenderer")?;
+    let Some((_, po, ps)) = cs.iter().find(|c| c.0 == "ParticleSystem").cloned() else {
+        return Ok(Found::None);
+    };
+    let (_, _, renderer) = cs
+        .iter()
+        .find(|c| c.0 == "ParticleSystemRenderer")
+        .ok_or("ParticleSystemRenderer")?;
     if played && emits_nothing(&ps)? && emit.is_none() {
         return Ok(Found::Silent);
     }
     let materials = get(renderer, "m_Materials")?.list().unwrap_or(&[]);
     let mo = view.deref(source, materials.first().ok_or("no material")?)?;
     let mat = source.read(&mo).map_err(|e| e.to_string())?;
-    let so = source.deref(&mo.file, get(&mat, "m_Shader")?).map_err(|e| e.to_string())?;
+    let so = source
+        .deref(&mo.file, get(&mat, "m_Shader")?)
+        .map_err(|e| e.to_string())?;
     let shader_tree = source.read(&so).map_err(|e| e.to_string())?;
-    let shader = get(get(&shader_tree, "m_ParsedForm")?, "m_Name")?.str().unwrap_or_default();
-    let (mode, align) = (i(renderer, "m_RenderMode")?, i(renderer, "m_RenderAlignment")?);
+    let shader = get(get(&shader_tree, "m_ParsedForm")?, "m_Name")?
+        .str()
+        .unwrap_or_default();
+    let (mode, align) = (
+        i(renderer, "m_RenderMode")?,
+        i(renderer, "m_RenderAlignment")?,
+    );
     if !(shader == "Sprites/Lit" || shader == "Sprites/Default") || mode != 0 || align != 0 {
-        return err(format!("particle renderer material {shader} mode {mode}/{align}"));
+        return err(format!(
+            "particle renderer material {shader} mode {mode}/{align}"
+        ));
     }
     let props = get(&mat, "m_SavedProperties")?;
     let tint = pair(get(props, "m_Colors")?, "_Color")?;
@@ -871,7 +1135,10 @@ fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played
     }
     let mut text = String::new();
     crate::pyjson::dumps_sorted(&ps, &mut text);
-    let ps_sha256 = Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+    let ps_sha256 = Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     Ok(Found::Emitter(Box::new(Emitter {
         style: st,
         system: po,
@@ -894,15 +1161,37 @@ fn part_emitter(source: &Source, view: &dyn View, gid: i64, gravity: f64, played
 fn secret_relax(ps: &Value, matrix: &M4, emit: Option<i64>) -> Result<(Value, M4)> {
     let mut ps = ps.clone();
     let capped = i(get(&ps, "InitialModule")?, "maxNumParticles")?.min(POOL_CAPACITY);
-    set(get_mut(&mut ps, "InitialModule")?, "maxNumParticles", Value::Int(capped));
+    set(
+        get_mut(&mut ps, "InitialModule")?,
+        "maxNumParticles",
+        Value::Int(capped),
+    );
     if let Some(n) = emit {
         let length = f(&ps, "lengthInSec")?;
         let em = get_mut(&mut ps, "EmissionModule")?;
         set(em, "enabled", Value::Int(1));
         set(em, "m_BurstCount", Value::Int(0));
-        set(em, "rateOverTime", map(vec![("minMaxState", Value::Int(0)), ("scalar", Value::F64(n as f64 / length))]));
-        set(em, "rateOverDistance", map(vec![("minMaxState", Value::Int(0)), ("scalar", Value::Int(0))]));
-        set(get_mut(&mut ps, "InitialModule")?, "maxNumParticles", Value::Int(n));
+        set(
+            em,
+            "rateOverTime",
+            map(vec![
+                ("minMaxState", Value::Int(0)),
+                ("scalar", Value::F64(n as f64 / length)),
+            ]),
+        );
+        set(
+            em,
+            "rateOverDistance",
+            map(vec![
+                ("minMaxState", Value::Int(0)),
+                ("scalar", Value::Int(0)),
+            ]),
+        );
+        set(
+            get_mut(&mut ps, "InitialModule")?,
+            "maxNumParticles",
+            Value::Int(n),
+        );
     }
     if i(&ps, "scalingMode")? == 1 {
         set(&mut ps, "scalingMode", Value::Int(2));
@@ -920,7 +1209,11 @@ fn secret_relax(ps: &Value, matrix: &M4, emit: Option<i64>) -> Result<(Value, M4
             axis = [0.0, 1.0];
         }
         let angle_v = get(get(&ps, "ShapeModule")?, "angle")?.clone();
-        let angle = if angle_v.is_map() { f(&angle_v, "value")? } else { num(&angle_v)? };
+        let angle = if angle_v.is_map() {
+            f(&angle_v, "value")?
+        } else {
+            num(&angle_v)?
+        };
         let start = axis[1].atan2(axis[0]).to_degrees() - angle;
         let (c, s) = (start.to_radians().cos(), start.to_radians().sin());
         let sx = crate::pyfloat::hypot(matrix[0][0], matrix[1][0]);
@@ -948,24 +1241,48 @@ fn secret_relax(ps: &Value, matrix: &M4, emit: Option<i64>) -> Result<(Value, M4
         let radius = f(get(get(&ps, "ShapeModule")?, "radius")?, "value")?;
         let shape = get_mut(&mut ps, "ShapeModule")?;
         set(shape, "type", Value::Int(5));
-        set(shape, "m_Scale", map(vec![("x", Value::F64(2.0 * radius)), ("y", Value::F64(0.0)), ("z", Value::F64(0.0))]));
+        set(
+            shape,
+            "m_Scale",
+            map(vec![
+                ("x", Value::F64(2.0 * radius)),
+                ("y", Value::F64(0.0)),
+                ("z", Value::F64(0.0)),
+            ]),
+        );
         set(get_mut(shape, "radius")?, "mode", Value::Int(0));
     }
     Ok((ps, m))
 }
 
 /// `prefab_emitters`: every emitter a fixed CreateObject prefab instantiates.
-fn prefab_emitters(source: &Source, file: &Arc<SerializedFile>, view_of: &dyn View, reference: &Value, gravity: f64, origin: [f64; 3], rotation: Option<[f64; 3]>) -> Result<Vec<Emitter>> {
+fn prefab_emitters(
+    source: &Source,
+    file: &Arc<SerializedFile>,
+    view_of: &dyn View,
+    reference: &Value,
+    gravity: f64,
+    origin: [f64; 3],
+    rotation: Option<[f64; 3]>,
+) -> Result<Vec<Emitter>> {
     let prefab = view_of.deref(source, reference)?;
     let _ = file;
     let tree = source.read(&prefab).map_err(|e| e.to_string())?;
     if tree.get("m_Component").is_none() {
         return err("CreateObject target is not a GameObject");
     }
-    let view = PrefabView::new(source, prefab.file.clone(), prefab.path_id(), origin, rotation)?;
+    let view = PrefabView::new(
+        source,
+        prefab.file.clone(),
+        prefab.path_id(),
+        origin,
+        rotation,
+    )?;
     let mut found = Vec::new();
     for gid in view.subtree()? {
-        if let Found::Emitter(mut e) = part_emitter(source, &view, gid, gravity, true, true, None, false)? {
+        if let Found::Emitter(mut e) =
+            part_emitter(source, &view, gid, gravity, true, true, None, false)?
+        {
             e.part = Some(format!("{}:{gid}", hk_unity::base_name(&view.file.name)));
             found.push(*e);
         }
@@ -986,12 +1303,19 @@ struct Breakable {
 /// The part of breakables.py `breakable_sources` the effect cook consumes:
 /// every enabled, active Breakable of the scene's own file, with its sorted
 /// ordinal among all of them.
-fn breakable_sources(source: &Source, sc: &Scene, wanted: &std::collections::HashSet<String>) -> Result<Vec<Breakable>> {
+fn breakable_sources(
+    source: &Source,
+    sc: &Scene,
+    wanted: &std::collections::HashSet<String>,
+) -> Result<Vec<Breakable>> {
     let file = hk_unity::base_name(&sc.base.name).to_string();
     let mut ids: Vec<i64> = Vec::new();
     for info in &sc.base.objects {
         if info.class_id == 114 {
-            let o = Obj { file: sc.base.clone(), info: *info };
+            let o = Obj {
+                file: sc.base.clone(),
+                info: *info,
+            };
             if source.typename(&o).map_err(|e| e.to_string())? == "Breakable" {
                 ids.push(info.path_id);
             }
@@ -999,7 +1323,10 @@ fn breakable_sources(source: &Source, sc: &Scene, wanted: &std::collections::Has
     }
     ids.sort();
     if ids.len() > MAX_SCENE_BREAKABLES {
-        return err(format!("Breakable scene state budget exceeded: {} > {MAX_SCENE_BREAKABLES}", ids.len()));
+        return err(format!(
+            "Breakable scene state budget exceeded: {} > {MAX_SCENE_BREAKABLES}",
+            ids.len()
+        ));
     }
     let mut out = Vec::new();
     for (state_index, &index) in ids.iter().enumerate() {
@@ -1007,7 +1334,10 @@ fn breakable_sources(source: &Source, sc: &Scene, wanted: &std::collections::Has
         if !wanted.contains(&source_id) {
             continue;
         }
-        let tree = &sc.object(index).ok_or("Breakable schema was not successfully read")?.tree;
+        let tree = &sc
+            .object(index)
+            .ok_or("Breakable schema was not successfully read")?
+            .tree;
         let gid = local_id(get(tree, "m_GameObject")?)?;
         let mut debris = Vec::new();
         for r in get(tree, "debrisParts")?.list().unwrap_or(&[]) {
@@ -1017,7 +1347,9 @@ fn breakable_sources(source: &Source, sc: &Scene, wanted: &std::collections::Has
         }
         out.push(Breakable {
             source: source_id,
-            name: get(sc.go(gid).ok_or("no GameObject")?, "m_Name")?.str().unwrap_or_default(),
+            name: get(sc.go(gid).ok_or("no GameObject")?, "m_Name")?
+                .str()
+                .unwrap_or_default(),
             state_index,
             angle_offset: f(tree, "angleOffset")?,
             debris,
@@ -1054,29 +1386,61 @@ fn rigid_fragment(sc: &Scene, gid: i64) -> Result<bool> {
     if !has("Rigidbody2D") || !has("SpriteRenderer") {
         return Ok(false);
     }
-    let colliders = components.iter().filter(|c| c.0.ends_with("Collider2D")).count();
-    let spins: Vec<&str> = ["SpinSelf", "SpinSelfSimple"].into_iter().filter(|k| has(k)).collect();
+    let colliders = components
+        .iter()
+        .filter(|c| c.0.ends_with("Collider2D"))
+        .count();
+    let spins: Vec<&str> = ["SpinSelf", "SpinSelfSimple"]
+        .into_iter()
+        .filter(|k| has(k))
+        .collect();
     if colliders != 1 {
-        return err(format!("rigid fragment needs exactly one collider, has {colliders}"));
+        return err(format!(
+            "rigid fragment needs exactly one collider, has {colliders}"
+        ));
     }
     if spins.len() > 1 {
         return err("rigid fragment carries two spin behaviours");
     }
-    let Some(bounce) = comp("ObjectBounce") else { return err("rigid fragment has no ObjectBounce landing behaviour") };
+    let Some(bounce) = comp("ObjectBounce") else {
+        return err("rigid fragment has no ObjectBounce landing behaviour");
+    };
     let body = comp("Rigidbody2D").unwrap();
     let r4 = |v: f64| (v * 10000.0).round_ties_even() / 10000.0;
-    let fields = (num(get(body, "m_BodyType")?)?, num(get(body, "m_Mass")?)?, r4(f(body, "m_AngularDamping")?), r4(f(body, "m_GravityScale")?), num(get(body, "m_Constraints")?)?);
+    let fields = (
+        num(get(body, "m_BodyType")?)?,
+        num(get(body, "m_Mass")?)?,
+        r4(f(body, "m_AngularDamping")?),
+        r4(f(body, "m_GravityScale")?),
+        num(get(body, "m_Constraints")?)?,
+    );
     if truthy(body, "m_UseAutoMass")? || f(body, "m_LinearDamping")? != 0.0 {
         return err("rigid fragment uses auto mass or linear damping");
     }
     let close = |a: f64, b: f64| (a - b).abs() <= 1e-5;
-    if !RIGID_BODIES.iter().any(|v| close(fields.0, v.0) && close(fields.1, v.1) && close(fields.2, v.2) && close(fields.3, v.3) && close(fields.4, v.4)) {
+    if !RIGID_BODIES.iter().any(|v| {
+        close(fields.0, v.0)
+            && close(fields.1, v.1)
+            && close(fields.2, v.2)
+            && close(fields.3, v.3)
+            && close(fields.4, v.4)
+    }) {
         return err(format!("unmeasured rigid fragment body {fields:?}"));
     }
-    if !RIGID_BOUNCE_FACTORS.iter().any(|&v| close(f(bounce, "bounceFactor").unwrap_or(f64::NAN), v)) {
-        return err(format!("unmeasured fragment bounce factor {}", crate::pyfloat::repr(f(bounce, "bounceFactor")?)));
+    if !RIGID_BOUNCE_FACTORS
+        .iter()
+        .any(|&v| close(f(bounce, "bounceFactor").unwrap_or(f64::NAN), v))
+    {
+        return err(format!(
+            "unmeasured fragment bounce factor {}",
+            crate::pyfloat::repr(f(bounce, "bounceFactor")?)
+        ));
     }
-    if f(bounce, "speedThreshold")? != 1.0 || ["playSound", "playAnimationOnBounce", "sendFSMEvent"].iter().any(|k| bounce.get(k).is_some_and(Value::truthy)) {
+    if f(bounce, "speedThreshold")? != 1.0
+        || ["playSound", "playAnimationOnBounce", "sendFSMEvent"]
+            .iter()
+            .any(|k| bounce.get(k).is_some_and(Value::truthy))
+    {
         return err("fragment bounce drives sound, animation or an FSM event");
     }
     if spins.first() == Some(&"SpinSelfSimple") {
@@ -1102,14 +1466,37 @@ fn emitter_plan(family: i64, facing: usize) -> Vec<(i64, Vec<PlanEntry>)> {
     let child = |n: &str, e: Option<i64>| ("child", n.to_string(), e);
     if family == FAMILY_WALL {
         return vec![
-            (3, vec![child("Particle_rocks_small", Some(5)), ("pool", hit, None)]),
-            (0, vec![child("Particle_rocks_large", None), ("create", "Break".into(), None)]),
+            (
+                3,
+                vec![child("Particle_rocks_small", Some(5)), ("pool", hit, None)],
+            ),
+            (
+                0,
+                vec![
+                    child("Particle_rocks_large", None),
+                    ("create", "Break".into(), None),
+                ],
+            ),
         ];
     }
     if family == FAMILY_WALL_TK2D {
         return vec![
-            (3, vec![child("Particle_rocks_small", Some(5)), ("create", hit, None)]),
-            (0, vec![child("Dust Break 1", None), child("Dust Break 2", None), child("Particle_rocks_large", None), ("create", "Break".into(), None)]),
+            (
+                3,
+                vec![
+                    child("Particle_rocks_small", Some(5)),
+                    ("create", hit, None),
+                ],
+            ),
+            (
+                0,
+                vec![
+                    child("Dust Break 1", None),
+                    child("Dust Break 2", None),
+                    child("Particle_rocks_large", None),
+                    ("create", "Break".into(), None),
+                ],
+            ),
         ];
     }
     if family == FAMILY_FLOOR {
@@ -1117,14 +1504,27 @@ fn emitter_plan(family: i64, facing: usize) -> Vec<(i64, Vec<PlanEntry>)> {
             .into_iter()
             .map(|stage| {
                 let n = if stage == 0 { 3 } else { stage };
-                (stage, ["Dust Hit", "Pt Bits", "Pt Wood"].iter().map(|name| child(&format!("{name} {n}"), None)).collect())
+                (
+                    stage,
+                    ["Dust Hit", "Pt Bits", "Pt Wood"]
+                        .iter()
+                        .map(|name| child(&format!("{name} {n}"), None))
+                        .collect(),
+                )
             })
             .collect();
     }
     vec![
         (1, vec![child("Dust Hit 1", None)]),
         (2, vec![child("Dust Hit 2", None)]),
-        (0, vec![child("Dust Hit 3", None), child("Dust Break 1", None), child("Dust Break 2", None)]),
+        (
+            0,
+            vec![
+                child("Dust Hit 3", None),
+                child("Dust Break 1", None),
+                child("Dust Break 2", None),
+            ],
+        ),
     ]
 }
 
@@ -1132,19 +1532,28 @@ fn emitter_plan(family: i64, facing: usize) -> Vec<(i64, Vec<PlanEntry>)> {
 fn entry_repr(e: &PlanEntry) -> String {
     let s = |x: &str| format!("'{}'", x.replace('\\', "\\\\").replace('\'', "\\'"));
     match e.0 {
-        "child" => format!("({}, {}, {})", s(e.0), s(&e.1), e.2.map_or("None".into(), |n| n.to_string())),
+        "child" => format!(
+            "({}, {}, {})",
+            s(e.0),
+            s(&e.1),
+            e.2.map_or("None".into(), |n| n.to_string())
+        ),
         _ => format!("({}, {})", s(e.0), s(&e.1)),
     }
 }
 
 /// secret_breaks.py `_children`: direct children by name, first match.
 fn children(sc: &Scene, gid: i64) -> Result<Vec<(String, i64)>> {
-    let t = sc.transform(*sc.go_transform.get(&gid).ok_or("no transform")?).ok_or("no transform")?;
+    let t = sc
+        .transform(*sc.go_transform.get(&gid).ok_or("no transform")?)
+        .ok_or("no transform")?;
     let mut out: Vec<(String, i64)> = Vec::new();
     for c in get(t, "m_Children")?.list().unwrap_or(&[]) {
         let ct = sc.transform(i(c, "m_PathID")?).ok_or("child transform")?;
         let kid = i(get(ct, "m_GameObject")?, "m_PathID")?;
-        let name = get(sc.go(kid).ok_or("child GameObject")?, "m_Name")?.str().unwrap_or_default();
+        let name = get(sc.go(kid).ok_or("child GameObject")?, "m_Name")?
+            .str()
+            .unwrap_or_default();
         if !out.iter().any(|(n, _)| *n == name) {
             out.push((name, kid));
         }
@@ -1159,10 +1568,15 @@ struct Spawn {
 }
 
 fn list_at<'a>(data: &'a Value, key: &str, n: usize) -> Result<&'a Value> {
-    get(data, key)?.list().and_then(|l| l.get(n)).ok_or_else(|| format!("{key}[{n}]"))
+    get(data, key)?
+        .list()
+        .and_then(|l| l.get(n))
+        .ok_or_else(|| format!("{key}[{n}]"))
 }
 fn int_at(data: &Value, key: &str, n: usize) -> Result<i64> {
-    list_at(data, key, n)?.int().ok_or_else(|| format!("{key}[{n}]"))
+    list_at(data, key, n)?
+        .int()
+        .ok_or_else(|| format!("{key}[{n}]"))
 }
 
 /// breakables.py `_action_slots`: parameter name to flat-run index for one action.
@@ -1170,7 +1584,11 @@ fn action_slots(data: &Value, index: usize) -> Result<Vec<(String, usize)>> {
     let names = get(data, "actionNames")?.list().unwrap_or(&[]);
     let params = get(data, "paramName")?.list().unwrap_or(&[]);
     let start = int_at(data, "actionStartIndex", index)? as usize;
-    let end = if index + 1 < names.len() { int_at(data, "actionStartIndex", index + 1)? as usize } else { params.len() };
+    let end = if index + 1 < names.len() {
+        int_at(data, "actionStartIndex", index + 1)? as usize
+    } else {
+        params.len()
+    };
     let mut out: Vec<(String, usize)> = Vec::new();
     for (k, param) in params.iter().enumerate().take(end).skip(start) {
         let name = param.str().unwrap_or_default();
@@ -1188,7 +1606,8 @@ fn slot(slots: &[(String, usize)], name: &str) -> Option<usize> {
 
 /// breakables.py `_vector_parameter`: one serialized FsmVector3, None when unset.
 fn vector_parameter(data: &Value, slot: usize) -> Result<Option<[f64; 3]>> {
-    if int_at(data, "paramDataType", slot)? != 28 || int_at(data, "paramByteDataSize", slot)? != 13 {
+    if int_at(data, "paramDataType", slot)? != 28 || int_at(data, "paramByteDataSize", slot)? != 13
+    {
         return err("unsupported serialized vector parameter");
     }
     let raw: Vec<u8> = match get(data, "byteData")? {
@@ -1204,7 +1623,9 @@ fn vector_parameter(data: &Value, slot: usize) -> Result<Option<[f64; 3]>> {
     if raw[s + 12] != 0 {
         return Ok(None);
     }
-    let v: [f64; 3] = std::array::from_fn(|k| f32::from_le_bytes(raw[s + 4 * k..s + 4 * k + 4].try_into().unwrap()) as f64);
+    let v: [f64; 3] = std::array::from_fn(|k| {
+        f32::from_le_bytes(raw[s + 4 * k..s + 4 * k + 4].try_into().unwrap()) as f64
+    });
     if !v.iter().all(|x| x.is_finite()) {
         return err("non-finite action vector");
     }
@@ -1215,15 +1636,28 @@ fn vector_parameter(data: &Value, slot: usize) -> Result<Option<[f64; 3]>> {
 fn owner_variable(fsm: &Value) -> Result<Option<String>> {
     for state in get(fsm, "states")?.list().unwrap_or(&[]) {
         let data = get(state, "actionData")?;
-        for (index, raw) in get(data, "actionNames")?.list().unwrap_or(&[]).iter().enumerate() {
-            if !list_at(data, "actionEnabled", index)?.truthy() || !raw.str().unwrap_or_default().ends_with(".GetOwner") {
+        for (index, raw) in get(data, "actionNames")?
+            .list()
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            if !list_at(data, "actionEnabled", index)?.truthy()
+                || !raw.str().unwrap_or_default().ends_with(".GetOwner")
+            {
                 continue;
             }
-            let Some(s) = slot(&action_slots(data, index)?, "storeGameObject") else { continue };
+            let Some(s) = slot(&action_slots(data, index)?, "storeGameObject") else {
+                continue;
+            };
             if int_at(data, "paramDataType", s)? != 19 {
                 continue;
             }
-            let stored = list_at(data, "fsmGameObjectParams", int_at(data, "paramDataPos", s)? as usize)?;
+            let stored = list_at(
+                data,
+                "fsmGameObjectParams",
+                int_at(data, "paramDataPos", s)? as usize,
+            )?;
             let name = stored.get("name").and_then(Value::str).unwrap_or_default();
             if stored.get("useVariable").is_some_and(Value::truthy) && !name.is_empty() {
                 return Ok(Some(name));
@@ -1234,23 +1668,40 @@ fn owner_variable(fsm: &Value) -> Result<Option<String>> {
 }
 
 /// breakables.py `_spawn_transform`: where the spawned object lands.
-fn spawn_transform(sc: &Scene, gid: i64, fsm: &Value, data: &Value, slots: &[(String, usize)]) -> Result<([f64; 3], [f64; 3])> {
-    let point = list_at(data, "fsmGameObjectParams", int_at(data, "paramDataPos", slot(slots, "spawnPoint").unwrap())? as usize)?;
+fn spawn_transform(
+    sc: &Scene,
+    gid: i64,
+    fsm: &Value,
+    data: &Value,
+    slots: &[(String, usize)],
+) -> Result<([f64; 3], [f64; 3])> {
+    let point = list_at(
+        data,
+        "fsmGameObjectParams",
+        int_at(data, "paramDataPos", slot(slots, "spawnPoint").unwrap())? as usize,
+    )?;
     let offset = vector_parameter(data, slot(slots, "position").unwrap())?;
     let rotation = vector_parameter(data, slot(slots, "rotation").unwrap())?;
-    if i(get(point, "value")?, "m_PathID")? != 0 || !point.get("useVariable").is_some_and(Value::truthy) {
+    if i(get(point, "value")?, "m_PathID")? != 0
+        || !point.get("useVariable").is_some_and(Value::truthy)
+    {
         return err("the spawn point is not the FSM object variable this port can resolve");
     }
     let owner = owner_variable(fsm)?;
     let name = point.get("name").and_then(Value::str);
     if owner.is_none() || name != owner {
-        return err(format!("the spawn point {} is not the object GetOwner stores", name.map_or("None".into(), |n| format!("'{n}'"))));
+        return err(format!(
+            "the spawn point {} is not the object GetOwner stores",
+            name.map_or("None".into(), |n| format!("'{n}'"))
+        ));
     }
     let mut origin = sc.point(gid, 0.0, 0.0, 0.0).map_err(|e| e.to_string())?;
     if let Some(o) = offset {
         origin = [origin[0] + o[0], origin[1] + o[1], origin[2] + o[2]];
     }
-    let Some(rotation) = rotation else { return err("the spawn takes its rotation from the spawn point, which is not read") };
+    let Some(rotation) = rotation else {
+        return err("the spawn takes its rotation from the spawn point, which is not read");
+    };
     Ok((origin, rotation))
 }
 
@@ -1261,9 +1712,13 @@ fn prefab_particles(source: &Source, sc: &Scene, reference: &Value) -> Result<bo
     }
     let prefab = sc.deref(reference).map_err(|e| e.to_string())?;
     let tree = source.read(&prefab).map_err(|e| e.to_string())?;
-    let Some(components) = tree.get("m_Component") else { return err("CreateObject target is not a GameObject") };
+    let Some(components) = tree.get("m_Component") else {
+        return err("CreateObject target is not a GameObject");
+    };
     for c in components.list().unwrap_or(&[]) {
-        if let Ok(o) = get(c, "component").and_then(|r| source.deref(&prefab.file, r).map_err(|e| e.to_string())) {
+        if let Ok(o) = get(c, "component")
+            .and_then(|r| source.deref(&prefab.file, r).map_err(|e| e.to_string()))
+        {
             if o.class_id() == 198 {
                 return Ok(true);
             }
@@ -1275,27 +1730,56 @@ fn prefab_particles(source: &Source, sc: &Scene, reference: &Value) -> Result<bo
 /// breakables.py `_create_object_prefabs` (`CreateObject`) and secret_breaks.py
 /// `pool_spawn_prefabs` (`SpawnObjectFromGlobalPool`): every enabled spawn of
 /// one state whose prefab carries particles, with where it lands.
-fn spawn_prefabs(source: &Source, sc: &Scene, gid: i64, fsm: &Value, state_name: &str, pool: bool) -> Result<Vec<Spawn>> {
-    let action = if pool { ".SpawnObjectFromGlobalPool" } else { ".CreateObject" };
+fn spawn_prefabs(
+    source: &Source,
+    sc: &Scene,
+    gid: i64,
+    fsm: &Value,
+    state_name: &str,
+    pool: bool,
+) -> Result<Vec<Spawn>> {
+    let action = if pool {
+        ".SpawnObjectFromGlobalPool"
+    } else {
+        ".CreateObject"
+    };
     let mut out = Vec::new();
     for state in get(fsm, "states")?.list().unwrap_or(&[]) {
         if get(state, "name")?.str().as_deref() != Some(state_name) {
             continue;
         }
         let data = get(state, "actionData")?;
-        for (index, raw) in get(data, "actionNames")?.list().unwrap_or(&[]).iter().enumerate() {
-            if !list_at(data, "actionEnabled", index)?.truthy() || !raw.str().unwrap_or_default().ends_with(action) {
+        for (index, raw) in get(data, "actionNames")?
+            .list()
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            if !list_at(data, "actionEnabled", index)?.truthy()
+                || !raw.str().unwrap_or_default().ends_with(action)
+            {
                 continue;
             }
             let slots = action_slots(data, index)?;
-            if !["gameObject", "spawnPoint", "position", "rotation"].iter().all(|k| slot(&slots, k).is_some()) {
-                return err(if pool { "unsupported serialized SpawnObjectFromGlobalPool parameters" } else { "unsupported serialized CreateObject parameters" });
+            if !["gameObject", "spawnPoint", "position", "rotation"]
+                .iter()
+                .all(|k| slot(&slots, k).is_some())
+            {
+                return err(if pool {
+                    "unsupported serialized SpawnObjectFromGlobalPool parameters"
+                } else {
+                    "unsupported serialized CreateObject parameters"
+                });
             }
             let go_slot = slot(&slots, "gameObject").unwrap();
             if !pool && int_at(data, "paramDataType", go_slot)? != 19 {
                 return err("unsupported serialized CreateObject target");
             }
-            let reference = list_at(data, "fsmGameObjectParams", int_at(data, "paramDataPos", go_slot)? as usize)?;
+            let reference = list_at(
+                data,
+                "fsmGameObjectParams",
+                int_at(data, "paramDataPos", go_slot)? as usize,
+            )?;
             if reference.get("useVariable").is_some_and(Value::truthy) {
                 continue;
             }
@@ -1304,7 +1788,11 @@ fn spawn_prefabs(source: &Source, sc: &Scene, gid: i64, fsm: &Value, state_name:
                 continue;
             }
             let (origin, rotation) = spawn_transform(sc, gid, fsm, data, &slots)?;
-            out.push(Spawn { reference: value.clone(), origin, rotation });
+            out.push(Spawn {
+                reference: value.clone(),
+                origin,
+                rotation,
+            });
         }
     }
     Ok(out)
@@ -1331,7 +1819,10 @@ impl EmitterRow {
             ("style".into(), Json::Int(self.style as i64)),
             ("angle_offset".into(), Json::Int(self.angle_offset)),
             ("origin".into(), ints(self.origin)),
-            ("basis".into(), Json::List(self.basis.iter().map(|r| ints(*r)).collect())),
+            (
+                "basis".into(),
+                Json::List(self.basis.iter().map(|r| ints(*r)).collect()),
+            ),
         ])
     }
 }
@@ -1373,14 +1864,29 @@ impl Collected {
     }
 }
 fn ignore(owner: Json, part: Json, reason: String) -> Json {
-    Json::Obj(vec![("owner".into(), owner), ("part".into(), part), ("reason".into(), Json::Str(reason))])
+    Json::Obj(vec![
+        ("owner".into(), owner),
+        ("part".into(), part),
+        ("reason".into(), Json::Str(reason)),
+    ])
 }
 
 /// `scene_gravity`: PhysicsManager's gravity, which the particle systems use.
 fn scene_gravity(source: &Source) -> Result<f64> {
-    let file = source.file("globalgamemanagers").map_err(|e| e.to_string())?;
-    let info = file.objects.iter().find(|o| o.class_id == 55).ok_or("no PhysicsManager")?;
-    let t = source.read(&Obj { file: file.clone(), info: *info }).map_err(|e| e.to_string())?;
+    let file = source
+        .file("globalgamemanagers")
+        .map_err(|e| e.to_string())?;
+    let info = file
+        .objects
+        .iter()
+        .find(|o| o.class_id == 55)
+        .ok_or("no PhysicsManager")?;
+    let t = source
+        .read(&Obj {
+            file: file.clone(),
+            info: *info,
+        })
+        .map_err(|e| e.to_string())?;
     f(get(&t, "m_Gravity")?, "y")
 }
 
@@ -1391,9 +1897,18 @@ fn jstr(v: &J, k: &str) -> String {
 fn collect(source: &Source, metadata: &J) -> Result<Collected> {
     let gravity = scene_gravity(source)?;
     let regions = metadata["regions"].as_array().ok_or("no regions")?;
-    let wanted: std::collections::HashSet<String> =
-        regions.iter().flat_map(|r| r["breakables"].as_array().into_iter().flatten()).map(|b| jstr(b, "source")).collect();
-    let mut c = Collected { styles: Vec::new(), emitters: Vec::new(), textures: Vec::new(), records: Vec::new(), ignored: Vec::new() };
+    let wanted: std::collections::HashSet<String> = regions
+        .iter()
+        .flat_map(|r| r["breakables"].as_array().into_iter().flatten())
+        .map(|b| jstr(b, "source"))
+        .collect();
+    let mut c = Collected {
+        styles: Vec::new(),
+        emitters: Vec::new(),
+        textures: Vec::new(),
+        records: Vec::new(),
+        ignored: Vec::new(),
+    };
     let mut stalactite_scenes: Vec<(i64, String)> = Vec::new();
     for desc in metadata["scenes"].as_array().ok_or("no scenes")? {
         let scene_id = desc["scene_id"].as_i64().ok_or("scene id")?;
@@ -1402,10 +1917,15 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         for b in breakable_sources(source, &sc, &wanted)? {
             for &gid in &b.debris {
                 let part = format!("{file}:{gid}");
-                let found = match part_emitter(source, &sc, gid, gravity, false, false, None, false) {
+                let found = match part_emitter(source, &sc, gid, gravity, false, false, None, false)
+                {
                     Ok(x) => x,
                     Err(e) => {
-                        c.ignored.push(ignore(Json::Str(b.source.clone()), Json::Str(part), format!("unsupported particle style: {e}")));
+                        c.ignored.push(ignore(
+                            Json::Str(b.source.clone()),
+                            Json::Str(part),
+                            format!("unsupported particle style: {e}"),
+                        ));
                         continue;
                     }
                 };
@@ -1415,7 +1935,8 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
                         Ok(true) => "rigid fragment".into(),
                         Ok(false) => "unhandled nonparticle part".into(),
                     };
-                    c.ignored.push(ignore(Json::Str(b.source.clone()), Json::Str(part), reason));
+                    c.ignored
+                        .push(ignore(Json::Str(b.source.clone()), Json::Str(part), reason));
                     continue;
                 };
                 let (origin, basis) = placement(&e.matrix)?;
@@ -1438,14 +1959,20 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
                     ("texture".into(), Json::Str(e.texture_id.clone())),
                     ("shader".into(), Json::Str(e.shader.clone())),
                     ("scaling_mode".into(), Json::Int(e.scaling_mode)),
-                    ("world_parameter_scale".into(), Json::Float(e.world_parameter_scale)),
+                    (
+                        "world_parameter_scale".into(),
+                        Json::Float(e.world_parameter_scale),
+                    ),
                     ("ps_sha256".into(), Json::Str(e.ps_sha256.clone())),
                 ]));
             }
         }
         // {x['source']: x}: the first occurrence's place, the last one's value.
         let mut secrets: Vec<(String, &J)> = Vec::new();
-        for region in regions.iter().filter(|r| r["scene_id"].as_i64() == Some(scene_id)) {
+        for region in regions
+            .iter()
+            .filter(|r| r["scene_id"].as_i64() == Some(scene_id))
+        {
             for x in region["secrets"].as_array().into_iter().flatten() {
                 let key = jstr(x, "source");
                 if let Some(slot) = secrets.iter_mut().find(|s| s.0 == key) {
@@ -1462,7 +1989,13 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         let stalactites = regions
             .iter()
             .filter(|r| r["scene_id"].as_i64() == Some(scene_id))
-            .any(|r| r["hazards"].as_array().into_iter().flatten().any(|h| jstr(h, "name").starts_with("Stalactite")));
+            .any(|r| {
+                r["hazards"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|h| jstr(h, "name").starts_with("Stalactite"))
+            });
         if stalactites {
             stalactite_scenes.push((scene_id, jstr(desc, "file")));
         }
@@ -1472,7 +2005,12 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         let sc = Scene::new(source, &file).map_err(|e| e.to_string())?;
         collect_stalactites(source, &sc, scene_id, gravity, &mut c)?;
     }
-    let scenes: Vec<i64> = metadata["scenes"].as_array().ok_or("no scenes")?.iter().filter_map(|d| d["scene_id"].as_i64()).collect();
+    let scenes: Vec<i64> = metadata["scenes"]
+        .as_array()
+        .ok_or("no scenes")?
+        .iter()
+        .filter_map(|d| d["scene_id"].as_i64())
+        .collect();
     collect_hero_dust(source, gravity, &scenes, &mut c)?;
     if c.styles.len() > 253 {
         return err("particle style IDs");
@@ -1488,7 +2026,12 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
 /// stalactites' effects: a scene whose art budget has no room for the dust texture goes without.
 pub const HERO_DUST_OWNER: i64 = 0xFFFF;
 const HERO_DUST_BURST: i64 = 6;
-fn collect_hero_dust(source: &Source, gravity: f64, scenes: &[i64], c: &mut Collected) -> Result<()> {
+fn collect_hero_dust(
+    source: &Source,
+    gravity: f64,
+    scenes: &[i64],
+    c: &mut Collected,
+) -> Result<()> {
     let file = source.file("resources.assets").map_err(|e| e.to_string())?;
     let read = |id: i64| -> Result<Value> {
         let o = source.object(&file, id).map_err(|e| e.to_string())?;
@@ -1496,7 +2039,9 @@ fn collect_hero_dust(source: &Source, gravity: f64, scenes: &[i64], c: &mut Coll
     };
     let transform_of = |gid: i64| -> Result<Value> {
         for comp in get(&read(gid)?, "m_Component")?.list().unwrap_or(&[]) {
-            let o = source.deref(&file, get(comp, "component")?).map_err(|e| e.to_string())?;
+            let o = source
+                .deref(&file, get(comp, "component")?)
+                .map_err(|e| e.to_string())?;
             if o.class_id() == 4 {
                 return source.read(&o).map_err(|e| e.to_string());
             }
@@ -1508,12 +2053,27 @@ fn collect_hero_dust(source: &Source, gravity: f64, scenes: &[i64], c: &mut Coll
     let focus_effects = i(get(&read(father)?, "m_GameObject")?, "m_PathID")?;
     let mut found = Vec::new();
     {
-        let view = PrefabView::new(source, file.clone(), focus_effects, [0.0, 0.0, 0.0], Some([0.0, 0.0, 0.0]))?;
+        let view = PrefabView::new(
+            source,
+            file.clone(),
+            focus_effects,
+            [0.0, 0.0, 0.0],
+            Some([0.0, 0.0, 0.0]),
+        )?;
         for (gid, name) in DUST {
             if get(&read(gid)?, "m_Name")?.str().as_deref() != Some(name) {
                 return err(format!("Focus dust {gid} is not {name}"));
             }
-            match part_emitter(source, &view, gid, gravity, true, true, Some(HERO_DUST_BURST), true)? {
+            match part_emitter(
+                source,
+                &view,
+                gid,
+                gravity,
+                true,
+                true,
+                Some(HERO_DUST_BURST),
+                true,
+            )? {
                 Found::Emitter(e) => found.push(*e),
                 _ => return err(format!("{name} is not a particle system")),
             }
@@ -1523,15 +2083,29 @@ fn collect_hero_dust(source: &Source, gravity: f64, scenes: &[i64], c: &mut Coll
         for e in &found {
             let style = c.style_index(e.style.clone());
             let (origin, basis) = placement(&e.matrix)?;
-            c.emitters.push(EmitterRow { scene, owner: HERO_DUST_OWNER, source: e.system.path_id(), style, angle_offset: 0, origin, basis });
+            c.emitters.push(EmitterRow {
+                scene,
+                owner: HERO_DUST_OWNER,
+                source: e.system.path_id(),
+                style,
+                angle_offset: 0,
+                origin,
+                basis,
+            });
             c.texture(&e.texture_id, &e.texture);
         }
     }
     for e in &found {
         c.records.push(Json::Obj(vec![
             ("owner".into(), Json::Str("Knight / Focus Effects".into())),
-            ("name".into(), Json::Str("Dust L and Dust R, per Focus tick".into())),
-            ("part".into(), Json::Str(format!("resources.assets:{}", e.system.path_id()))),
+            (
+                "name".into(),
+                Json::Str("Dust L and Dust R, per Focus tick".into()),
+            ),
+            (
+                "part".into(),
+                Json::Str(format!("resources.assets:{}", e.system.path_id())),
+            ),
             ("system".into(), Json::Str(e.system.sid())),
             ("texture".into(), Json::Str(e.texture_id.clone())),
             ("shader".into(), Json::Str(e.shader.clone())),
@@ -1552,7 +2126,13 @@ pub const STALACTITE_OWNER: i64 = 0xC000;
 /// at the stalactite: cooked at its hanging position, and moved by the guest
 /// to where it is when it breaks or lands. Like a secret's, they run through
 /// `secret_relax` (their dust is a cone).
-fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
+fn collect_stalactites(
+    source: &Source,
+    sc: &Scene,
+    scene_id: i64,
+    gravity: f64,
+    c: &mut Collected,
+) -> Result<()> {
     let mut slot = 0;
     for o in &sc.objects {
         if o.typename != "StalactiteControl" || !truthy(&o.tree, "m_Enabled")? {
@@ -1569,17 +2149,30 @@ fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64,
                     continue;
                 }
                 let owner = STALACTITE_OWNER | slot << 2 | kind;
-                let found = match prefab_emitters(source, &sc.base, sc, reference, gravity, origin, None) {
-                    Ok(found) => found,
-                    Err(e) => {
-                        c.ignored.push(ignore(Json::Str(sc.sid(o.id)), Json::Str(field.into()), format!("unsupported stalactite particle: {e}")));
-                        continue;
-                    }
-                };
+                let found =
+                    match prefab_emitters(source, &sc.base, sc, reference, gravity, origin, None) {
+                        Ok(found) => found,
+                        Err(e) => {
+                            c.ignored.push(ignore(
+                                Json::Str(sc.sid(o.id)),
+                                Json::Str(field.into()),
+                                format!("unsupported stalactite particle: {e}"),
+                            ));
+                            continue;
+                        }
+                    };
                 for e in found {
                     let style = c.style_index(e.style.clone());
                     let (origin, basis) = placement(&e.matrix)?;
-                    c.emitters.push(EmitterRow { scene: scene_id, owner, source: e.system.path_id(), style, angle_offset: 0, origin, basis });
+                    c.emitters.push(EmitterRow {
+                        scene: scene_id,
+                        owner,
+                        source: e.system.path_id(),
+                        style,
+                        angle_offset: 0,
+                        origin,
+                        basis,
+                    });
                     c.texture(&e.texture_id, &e.texture);
                     c.records.push(Json::Obj(vec![
                         ("owner".into(), Json::Str(sc.sid(o.id))),
@@ -1599,29 +2192,51 @@ fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64,
         // place, moved by the guest to where the stalactite lies).
         if let Some(embedded) = kid(&kids(sc, gid).map_err(|e| e.to_string())?, "Embedded") {
             let owner = STALACTITE_OWNER | slot << 2 | 2;
-            for record in component_records(sc, embedded).into_iter().filter(|r| r.1 == "Breakable") {
+            for record in component_records(sc, embedded)
+                .into_iter()
+                .filter(|r| r.1 == "Breakable")
+            {
                 let angle_offset = f(record.2, "angleOffset")?;
                 for r in get(record.2, "debrisParts")?.list().unwrap_or(&[]) {
                     if i(r, "m_PathID")? == 0 {
                         continue;
                     }
                     let part = i(r, "m_PathID")?;
-                    let found = match part_emitter(source, sc, part, gravity, false, false, None, false) {
-                        Ok(Found::Emitter(e)) => e,
-                        Ok(_) => continue,
-                        Err(e) => {
-                            c.ignored.push(ignore(Json::Str(sc.sid(o.id)), Json::Str("embedded debris".into()), format!("unsupported stalactite particle: {e}")));
-                            continue;
-                        }
-                    };
+                    let found =
+                        match part_emitter(source, sc, part, gravity, false, false, None, false) {
+                            Ok(Found::Emitter(e)) => e,
+                            Ok(_) => continue,
+                            Err(e) => {
+                                c.ignored.push(ignore(
+                                    Json::Str(sc.sid(o.id)),
+                                    Json::Str("embedded debris".into()),
+                                    format!("unsupported stalactite particle: {e}"),
+                                ));
+                                continue;
+                            }
+                        };
                     let (origin, basis) = placement(&found.matrix)?;
                     let style = c.style_index(found.style.clone());
-                    c.emitters.push(EmitterRow { scene: scene_id, owner, source: found.system.path_id(), style, angle_offset: q(angle_offset)?, origin, basis });
+                    c.emitters.push(EmitterRow {
+                        scene: scene_id,
+                        owner,
+                        source: found.system.path_id(),
+                        style,
+                        angle_offset: q(angle_offset)?,
+                        origin,
+                        basis,
+                    });
                     c.texture(&found.texture_id, &found.texture);
                     c.records.push(Json::Obj(vec![
                         ("owner".into(), Json::Str(sc.sid(o.id))),
-                        ("name".into(), Json::Str("embedded Breakable debrisParts".into())),
-                        ("part".into(), Json::Str(format!("{}:{part}", hk_unity::base_name(&sc.base.name)))),
+                        (
+                            "name".into(),
+                            Json::Str("embedded Breakable debrisParts".into()),
+                        ),
+                        (
+                            "part".into(),
+                            Json::Str(format!("{}:{part}", hk_unity::base_name(&sc.base.name))),
+                        ),
                         ("system".into(), Json::Str(found.system.sid())),
                         ("texture".into(), Json::Str(found.texture_id.clone())),
                         ("shader".into(), Json::Str(found.shader.clone())),
@@ -1636,9 +2251,21 @@ fn collect_stalactites(source: &Source, sc: &Scene, scene_id: i64, gravity: f64,
     Ok(())
 }
 
-fn collect_secret(source: &Source, sc: &Scene, scene_id: i64, secret: &J, gravity: f64, c: &mut Collected) -> Result<()> {
+fn collect_secret(
+    source: &Source,
+    sc: &Scene,
+    scene_id: i64,
+    secret: &J,
+    gravity: f64,
+    c: &mut Collected,
+) -> Result<()> {
     let wanted = jstr(secret, "source");
-    let fsm_object = sc.objects.iter().filter(|o| o.typename == "PlayMakerFSM").rfind(|o| sc.sid(o.id) == wanted).ok_or("secret FSM")?;
+    let fsm_object = sc
+        .objects
+        .iter()
+        .filter(|o| o.typename == "PlayMakerFSM")
+        .rfind(|o| sc.sid(o.id) == wanted)
+        .ok_or("secret FSM")?;
     let gid = i(get(&fsm_object.tree, "m_GameObject")?, "m_PathID")?;
     let fsm = get(&fsm_object.tree, "fsm")?;
     let base = scene_id * 128 + secret["state_index"].as_i64().ok_or("state_index")?;
@@ -1650,16 +2277,29 @@ fn collect_secret(source: &Source, sc: &Scene, scene_id: i64, secret: &J, gravit
             let step = (|| -> Result<()> {
                 if entry.0 == "child" {
                     let kids = children(sc, gid)?;
-                    let Some(&(_, child)) = kids.iter().find(|k| k.0 == entry.1) else { return Ok(()) };
+                    let Some(&(_, child)) = kids.iter().find(|k| k.0 == entry.1) else {
+                        return Ok(());
+                    };
                     if !sc.active(child) {
                         return Ok(());
                     }
-                    if let Found::Emitter(e) = part_emitter(source, sc, child, gravity, true, true, entry.2, false)? {
+                    if let Found::Emitter(e) =
+                        part_emitter(source, sc, child, gravity, true, true, entry.2, false)?
+                    {
                         found.push((*e, entry.2, sc.sid(child)));
                     }
                 } else {
-                    for prefab in spawn_prefabs(source, sc, gid, fsm, &entry.1, entry.0 == "pool")? {
-                        for e in prefab_emitters(source, &sc.base, sc, &prefab.reference, gravity, prefab.origin, Some(prefab.rotation))? {
+                    for prefab in spawn_prefabs(source, sc, gid, fsm, &entry.1, entry.0 == "pool")?
+                    {
+                        for e in prefab_emitters(
+                            source,
+                            &sc.base,
+                            sc,
+                            &prefab.reference,
+                            gravity,
+                            prefab.origin,
+                            Some(prefab.rotation),
+                        )? {
                             let part = e.part.clone().unwrap_or_default();
                             found.push((e, None, part));
                         }
@@ -1668,24 +2308,47 @@ fn collect_secret(source: &Source, sc: &Scene, scene_id: i64, secret: &J, gravit
                 Ok(())
             })();
             if let Err(e) = step {
-                c.ignored.push(ignore(Json::Str(wanted.clone()), Json::Str(entry_repr(entry)), format!("unsupported secret particle: {e}")));
+                c.ignored.push(ignore(
+                    Json::Str(wanted.clone()),
+                    Json::Str(entry_repr(entry)),
+                    format!("unsupported secret particle: {e}"),
+                ));
             }
         }
         if found.is_empty() {
             continue;
         }
-        let counts: Vec<i64> = found.iter().map(|(e, emit, _)| emit.unwrap_or(e.style.count)).collect();
-        let budget = if stage == 0 { SECRET_BREAK_BUDGET } else { SECRET_HIT_BUDGET };
+        let counts: Vec<i64> = found
+            .iter()
+            .map(|(e, emit, _)| emit.unwrap_or(e.style.count))
+            .collect();
+        let budget = if stage == 0 {
+            SECRET_BREAK_BUDGET
+        } else {
+            SECRET_HIT_BUDGET
+        };
         let factor = (budget as f64 / counts.iter().sum::<i64>() as f64).min(1.0);
         for ((e, emit, part), count) in found.iter().zip(&counts) {
             let mut st = e.style.clone();
             let kept = ((*count as f64 * factor).floor() as i64).max(1);
-            let rate = if emit.is_some() { EMIT_RATE } else { st.rate as f64 / 65536.0 * kept as f64 / st.count as f64 };
+            let rate = if emit.is_some() {
+                EMIT_RATE
+            } else {
+                st.rate as f64 / 65536.0 * kept as f64 / st.count as f64
+            };
             st.count = kept;
             st.rate = q(rate)?;
             let style = c.style_index(st);
             let (origin, basis) = placement(&e.matrix)?;
-            c.emitters.push(EmitterRow { scene: scene_id, owner: base | stage << 13, source: e.system.path_id(), style, angle_offset: 0, origin, basis });
+            c.emitters.push(EmitterRow {
+                scene: scene_id,
+                owner: base | stage << 13,
+                source: e.system.path_id(),
+                style,
+                angle_offset: 0,
+                origin,
+                basis,
+            });
             c.texture(&e.texture_id, &e.texture);
             c.records.push(Json::Obj(vec![
                 ("owner".into(), Json::Str(wanted.clone())),
@@ -1709,12 +2372,18 @@ fn collect_secret(source: &Source, sc: &Scene, scene_id: i64, secret: &J, gravit
 
 /// geo.py `place_rectangles`: bounded deterministic MaxRects search; CLUT X
 /// remains 16-word aligned.
-fn place_rectangles(items: &[Item], rectangles: &[(i64, i64, i64, i64)]) -> Result<HashMap<String, (i64, i64, i64, i64)>> {
+fn place_rectangles(
+    items: &[Item],
+    rectangles: &[(i64, i64, i64, i64)],
+) -> Result<HashMap<String, (i64, i64, i64, i64)>> {
     for (n, &(x, y, w, h)) in rectangles.iter().enumerate() {
         if !(0 <= x && x < x + w && x + w <= 1024 && 0 <= y && y < y + h && y + h <= 512) {
             return err("Geo rectangle outside VRAM");
         }
-        if rectangles[..n].iter().any(|&(ox, oy, ow, oh)| x < ox + ow && x + w > ox && y < oy + oh && y + h > oy) {
+        if rectangles[..n]
+            .iter()
+            .any(|&(ox, oy, ow, oh)| x < ox + ow && x + w > ox && y < oy + oh && y + h > oy)
+        {
             return err("Overlapping Geo rectangles");
         }
     }
@@ -1746,10 +2415,16 @@ fn place_rectangles(items: &[Item], rectangles: &[(i64, i64, i64, i64)]) -> Resu
                         continue;
                     }
                     let (dw, dh) = (rx + rw - x - w, rh - h);
-                    let score = if mode == 0 { (dw.min(dh), dw.max(dh)) } else { (rw * rh - w * h, dw.min(dh)) };
+                    let score = if mode == 0 {
+                        (dw.min(dh), dw.max(dh))
+                    } else {
+                        (rw * rh - w * h, dw.min(dh))
+                    };
                     candidates.push((score.0, score.1, ry, x));
                 }
-                let Some(&(_, _, y, x)) = candidates.iter().min() else { break };
+                let Some(&(_, _, y, x)) = candidates.iter().min() else {
+                    break;
+                };
                 placed.insert(key.clone(), (x, y, w, h));
                 let mut new = Vec::new();
                 for &(rx, ry, rw, rh) in &free {
@@ -1775,7 +2450,15 @@ fn place_rectangles(items: &[Item], rectangles: &[(i64, i64, i64, i64)]) -> Resu
                 unique.dedup();
                 free = unique
                     .into_iter()
-                    .filter(|r| !new.iter().any(|o| r != o && o.0 <= r.0 && o.1 <= r.1 && o.0 + o.2 >= r.0 + r.2 && o.1 + o.3 >= r.1 + r.3))
+                    .filter(|r| {
+                        !new.iter().any(|o| {
+                            r != o
+                                && o.0 <= r.0
+                                && o.1 <= r.1
+                                && o.0 + o.2 >= r.0 + r.2
+                                && o.1 + o.3 >= r.1 + r.3
+                        })
+                    })
                     .collect();
             }
             if placed.len() == items.len() {
@@ -1783,8 +2466,14 @@ fn place_rectangles(items: &[Item], rectangles: &[(i64, i64, i64, i64)]) -> Resu
             }
         }
     }
-    let sizes: Vec<String> = items.iter().map(|&(_, w, h, _)| format!("({w}, {h})")).collect();
-    err(format!("Geo textures do not fit reserved VRAM fragments: {total} bytes [{}]", sizes.join(", ")))
+    let sizes: Vec<String> = items
+        .iter()
+        .map(|&(_, w, h, _)| format!("({w}, {h})"))
+        .collect();
+    err(format!(
+        "Geo textures do not fit reserved VRAM fragments: {total} bytes [{}]",
+        sizes.join(", ")
+    ))
 }
 
 struct Bank {
@@ -1813,12 +2502,21 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
             return err("mixed sheet grid");
         }
         let count = rows[0] as usize;
-        let biggest = group.iter().map(|s| s.size[0].max(s.size[1])).max().unwrap_or(0);
+        let biggest = group
+            .iter()
+            .map(|s| s.size[0].max(s.size[1]))
+            .max()
+            .unwrap_or(0);
         let target = target_size(biggest as f64) as usize;
         let (w, h) = (im.width, im.height / count);
         let start = cells.len();
         for n in 0..count {
-            let cell = im.crop_int(0, ((count - 1 - n) * h) as i64, w as i64, ((count - n) * h) as i64);
+            let cell = im.crop_int(
+                0,
+                ((count - 1 - n) * h) as i64,
+                w as i64,
+                ((count - n) * h) as i64,
+            );
             cells.push(cell.resize(target, target, Filter::Lanczos));
         }
         families.push((sid.clone(), start, count));
@@ -1845,7 +2543,8 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
             for y in 0..c.height {
                 for x in 0..c.width {
                     let (sx, sy) = ((n % 4) * 32 + x, (n / 4) * 32 + y);
-                    let index = (qz.packed[sy * qz.width.div_ceil(2) + sx / 2] >> (4 * (sx & 1))) & 15;
+                    let index =
+                        (qz.packed[sy * qz.width.div_ceil(2) + sx / 2] >> (4 * (sx & 1))) & 15;
                     data[y * stride + x / 2] |= index << (4 * (x & 1));
                 }
             }
@@ -1857,8 +2556,15 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
             mapping.push((plane, pal, c.width as i64, c.height as i64));
         }
     }
-    let mut items: Vec<(String, i64, i64, i64)> = (0..palettes.len()).map(|n| (format!("p{n}"), 16, 1, 16)).collect();
-    items.extend(planes.iter().enumerate().map(|(n, p)| (format!("t{n}"), p.0, p.1, 1)));
+    let mut items: Vec<(String, i64, i64, i64)> = (0..palettes.len())
+        .map(|n| (format!("p{n}"), 16, 1, 16))
+        .collect();
+    items.extend(
+        planes
+            .iter()
+            .enumerate()
+            .map(|(n, p)| (format!("t{n}"), p.0, p.1, 1)),
+    );
     let allocated = place_rectangles(&items, &VRAM_RECTS)?;
     let (mut blob, mut uploads) = (Vec::new(), Vec::new());
     for (key, ..) in &items {
@@ -1876,15 +2582,35 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
         .map(|&(t, p, w, h)| {
             let (x, y, ..) = allocated[&format!("t{t}")];
             let (px, py, ..) = allocated[&format!("p{p}")];
-            [(x % 64) * 4, y % 256, w, h, (py << 6) | (px >> 4), (x / 64) | ((y / 256) << 4)]
+            [
+                (x % 64) * 4,
+                y % 256,
+                w,
+                h,
+                (py << 6) | (px >> 4),
+                (x / 64) | ((y / 256) << 4),
+            ]
         })
         .collect();
     let total = cells.len();
     let frames = families
         .into_iter()
-        .map(|(sid, start, count)| (sid, (0..count).map(|n| std::array::from_fn(|level| (level * total + start + n) as i64)).collect()))
+        .map(|(sid, start, count)| {
+            (
+                sid,
+                (0..count)
+                    .map(|n| std::array::from_fn(|level| (level * total + start + n) as i64))
+                    .collect(),
+            )
+        })
         .collect();
-    Ok(Bank { blob, uploads, art, frames, sheet })
+    Ok(Bank {
+        blob,
+        uploads,
+        art,
+        frames,
+        sheet,
+    })
 }
 
 fn style_art_cost(st: &Style) -> i64 {
@@ -1902,37 +2628,72 @@ struct SceneArt {
 /// fixed VRAM reservation, dropping the costliest style while the bank overflows.
 /// `bank` builds the art for the trimmed styles and their textures (sids in
 /// first-use order).
-fn scene_art(scene: i64, styles: &[Style], all: &[EmitterRow], ignored: &mut Vec<Json>, bank: &mut BankFn) -> Result<SceneArt> {
+fn scene_art(
+    scene: i64,
+    styles: &[Style],
+    all: &[EmitterRow],
+    ignored: &mut Vec<Json>,
+    bank: &mut BankFn,
+) -> Result<SceneArt> {
     let emitters: Vec<&EmitterRow> = all.iter().filter(|e| e.scene == scene).collect();
     let used: std::collections::HashSet<usize> = emitters.iter().map(|e| e.style).collect();
     // A style only stalactite emitters use is added after the scene's own art
     // is settled, and only where it still fits, so it never displaces a style
     // the scene had.
-    let optional = |n: usize| emitters.iter().filter(|e| e.style == n).all(|e| e.owner >= STALACTITE_OWNER);
-    let mut kept: Vec<usize> = (0..styles.len()).filter(|&n| used.contains(&n) && !optional(n)).collect();
-    let extra: Vec<usize> = (0..styles.len()).filter(|&n| used.contains(&n) && optional(n)).collect();
-    let build = |kept: &[usize], bank: &mut BankFn| -> Result<std::result::Result<SceneArt, String>> {
-        let trimmed: Vec<Style> = kept.iter().map(|&n| styles[n].clone()).collect();
-        let trimmed_emitters: Vec<EmitterRow> = emitters
+    let optional = |n: usize| {
+        emitters
             .iter()
-            .filter_map(|e| kept.iter().position(|&k| k == e.style).map(|new| EmitterRow { style: new, ..(*e).clone() }))
-            .collect();
-        if trimmed_emitters.is_empty() {
-            return Ok(Ok(SceneArt { styles: Vec::new(), emitters: Vec::new(), bank: None }));
-        }
-        let mut textures: Vec<String> = Vec::new();
-        for s in &trimmed {
-            if !textures.contains(&s.texture) {
-                textures.push(s.texture.clone());
-            }
-        }
-        match bank(&trimmed, &textures) {
-            Ok(b) => Ok(Ok(SceneArt { styles: trimmed, emitters: trimmed_emitters, bank: Some(b) })),
-            Err(error) if error.contains("VRAM") => Ok(Err(error)),
-            Err(error) => Err(error),
-        }
+            .filter(|e| e.style == n)
+            .all(|e| e.owner >= STALACTITE_OWNER)
     };
-    let mut result = SceneArt { styles: Vec::new(), emitters: Vec::new(), bank: None };
+    let mut kept: Vec<usize> = (0..styles.len())
+        .filter(|&n| used.contains(&n) && !optional(n))
+        .collect();
+    let extra: Vec<usize> = (0..styles.len())
+        .filter(|&n| used.contains(&n) && optional(n))
+        .collect();
+    let build =
+        |kept: &[usize], bank: &mut BankFn| -> Result<std::result::Result<SceneArt, String>> {
+            let trimmed: Vec<Style> = kept.iter().map(|&n| styles[n].clone()).collect();
+            let trimmed_emitters: Vec<EmitterRow> = emitters
+                .iter()
+                .filter_map(|e| {
+                    kept.iter()
+                        .position(|&k| k == e.style)
+                        .map(|new| EmitterRow {
+                            style: new,
+                            ..(*e).clone()
+                        })
+                })
+                .collect();
+            if trimmed_emitters.is_empty() {
+                return Ok(Ok(SceneArt {
+                    styles: Vec::new(),
+                    emitters: Vec::new(),
+                    bank: None,
+                }));
+            }
+            let mut textures: Vec<String> = Vec::new();
+            for s in &trimmed {
+                if !textures.contains(&s.texture) {
+                    textures.push(s.texture.clone());
+                }
+            }
+            match bank(&trimmed, &textures) {
+                Ok(b) => Ok(Ok(SceneArt {
+                    styles: trimmed,
+                    emitters: trimmed_emitters,
+                    bank: Some(b),
+                })),
+                Err(error) if error.contains("VRAM") => Ok(Err(error)),
+                Err(error) => Err(error),
+            }
+        };
+    let mut result = SceneArt {
+        styles: Vec::new(),
+        emitters: Vec::new(),
+        bank: None,
+    };
     while !kept.is_empty() {
         match build(&kept, bank)? {
             Ok(art) => {
@@ -1940,7 +2701,10 @@ fn scene_art(scene: i64, styles: &[Style], all: &[EmitterRow], ignored: &mut Vec
                 break;
             }
             Err(error) => {
-                let dropped = *kept.iter().max_by_key(|&&n| (style_art_cost(&styles[n]), n)).unwrap();
+                let dropped = *kept
+                    .iter()
+                    .max_by_key(|&&n| (style_art_cost(&styles[n]), n))
+                    .unwrap();
                 for e in &emitters {
                     if e.style == dropped {
                         ignored.push(ignore(
@@ -1956,7 +2720,9 @@ fn scene_art(scene: i64, styles: &[Style], all: &[EmitterRow], ignored: &mut Vec
     }
     for n in extra {
         let reason = if kept.len() >= FX_LIMITS[0].1 {
-            Some(format!("particle style budget: style {n} dropped from scene {scene}"))
+            Some(format!(
+                "particle style budget: style {n} dropped from scene {scene}"
+            ))
         } else {
             let mut with = kept.clone();
             with.push(n);
@@ -1967,12 +2733,18 @@ fn scene_art(scene: i64, styles: &[Style], all: &[EmitterRow], ignored: &mut Vec
                     kept = with;
                     None
                 }
-                Err(error) => Some(format!("particle art VRAM budget: style {n} dropped from scene {scene} ({error})")),
+                Err(error) => Some(format!(
+                    "particle art VRAM budget: style {n} dropped from scene {scene} ({error})"
+                )),
             }
         };
         if let Some(reason) = reason {
             for e in emitters.iter().filter(|e| e.style == n) {
-                ignored.push(ignore(Json::Int(e.owner), Json::Int(e.source), reason.clone()));
+                ignored.push(ignore(
+                    Json::Int(e.owner),
+                    Json::Int(e.source),
+                    reason.clone(),
+                ));
             }
         }
     }
@@ -1995,7 +2767,9 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
                 curves.len() - 1
             }
         };
-        let cells = bank.and_then(|b| b.frames.iter().find(|f| f.0 == st.texture)).map_or(&empty_frames, |f| &f.1);
+        let cells = bank
+            .and_then(|b| b.frames.iter().find(|f| f.0 == st.texture))
+            .map_or(&empty_frames, |f| &f.1);
         let first = frames.len();
         frames.extend(cells.iter().copied());
         let mut r = Vec::with_capacity(168);
@@ -2017,7 +2791,12 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
         r.push(0);
         w(&mut r, st.radius);
         w(&mut r, st.arc);
-        for v in st.shape_scale.iter().chain(st.force.iter().flatten()).chain(st.velocity.iter().flatten()) {
+        for v in st
+            .shape_scale
+            .iter()
+            .chain(st.force.iter().flatten())
+            .chain(st.velocity.iter().flatten())
+        {
             w(&mut r, *v);
         }
         w(&mut r, st.limit);
@@ -2026,7 +2805,13 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
             w(&mut r, *v);
         }
         r.extend_from_slice(&(st.collision as u32).to_le_bytes());
-        for v in [st.bounce, st.collision_dampen, st.life_loss, st.kill_speed, st.radius_scale] {
+        for v in [
+            st.bounce,
+            st.collision_dampen,
+            st.life_loss,
+            st.kill_speed,
+            st.radius_scale,
+        ] {
             w(&mut r, v);
         }
         for v in [curve as i64, first as i64, cells.len() as i64, 0] {
@@ -2035,11 +2820,20 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
         debug_assert_eq!(r.len(), 168);
         style_records.push(r);
     }
-    let (art, uploads): (&[[i64; 6]], &[[i64; 5]]) = bank.map_or((&[], &[]), |b| (&b.art, &b.uploads));
-    let counts = [data.styles.len(), data.emitters.len(), art.len(), uploads.len(), frames.len()];
+    let (art, uploads): (&[[i64; 6]], &[[i64; 5]]) =
+        bank.map_or((&[], &[]), |b| (&b.art, &b.uploads));
+    let counts = [
+        data.styles.len(),
+        data.emitters.len(),
+        art.len(),
+        uploads.len(),
+        frames.len(),
+    ];
     for ((name, limit), n) in FX_LIMITS.iter().zip(counts) {
         if n > *limit {
-            return err(format!("scene effect {name} {n} exceed the guest capacity {limit}"));
+            return err(format!(
+                "scene effect {name} {n} exceed the guest capacity {limit}"
+            ));
         }
     }
     let mut out = FX_MAGIC.to_vec();
@@ -2090,7 +2884,9 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
 
 /// scene_bank.py `fnv`.
 pub(crate) fn fnv(data: &[u8]) -> u32 {
-    data.iter().fold(0x811c9dc5u32, |v, &b| (v ^ b as u32).wrapping_mul(0x01000193))
+    data.iter().fold(0x811c9dc5u32, |v, &b| {
+        (v ^ b as u32).wrapping_mul(0x01000193)
+    })
 }
 /// region_delta.py `compressed`: HLZC with LZ4 HC level 9, or the raw bytes
 /// when that is no smaller.
@@ -2098,7 +2894,11 @@ pub(crate) fn compressed(data: &[u8]) -> Vec<u8> {
     let mut packed = b"HLZC".to_vec();
     packed.extend_from_slice(&(data.len() as u32).to_le_bytes());
     packed.extend(hk_lz4::compress_hc(data));
-    if packed.len() < data.len() { packed } else { data.to_vec() }
+    if packed.len() < data.len() {
+        packed
+    } else {
+        data.to_vec()
+    }
 }
 
 struct Chunk {
@@ -2112,22 +2912,57 @@ struct Chunk {
 }
 
 fn generate(curves: &[String], manifest: &[Chunk]) -> Result<String> {
-    let mut out = vec!["// Generated from Windows source; source IDs/hashes in ignored break-effects report.".to_string()];
+    let mut out = vec![
+        "// Generated from Windows source; source IDs/hashes in ignored break-effects report."
+            .to_string(),
+    ];
     for (n, key) in curves.iter().enumerate() {
         let samples: Vec<J> = serde_json::from_str(key).map_err(|e| e.to_string())?;
-        let l = |v: &J| format!("[{}]", v.as_array().unwrap().iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","));
-        let text: Vec<String> = samples.iter().map(|s| format!("Sample{{size:{},alpha:{},spin:{}}}", l(&s["size"]), l(&s["alpha"]), l(&s["spin"]))).collect();
+        let l = |v: &J| {
+            format!(
+                "[{}]",
+                v.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        };
+        let text: Vec<String> = samples
+            .iter()
+            .map(|s| {
+                format!(
+                    "Sample{{size:{},alpha:{},spin:{}}}",
+                    l(&s["size"]),
+                    l(&s["alpha"]),
+                    l(&s["spin"])
+                )
+            })
+            .collect();
         out.push(format!("static CURVE_{n}:&[Sample]=&[{}];", text.join(",")));
     }
-    out.push(format!("pub static CURVES:&[&[Sample]]=&[{}];", (0..curves.len()).map(|n| format!("CURVE_{n}")).collect::<Vec<_>>().join(",")));
+    out.push(format!(
+        "pub static CURVES:&[&[Sample]]=&[{}];",
+        (0..curves.len())
+            .map(|n| format!("CURVE_{n}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    ));
     for (name, limit) in FX_LIMITS {
-        out.push(format!("pub const FX_MAX_{}:usize={limit};", name.to_uppercase()));
+        out.push(format!(
+            "pub const FX_MAX_{}:usize={limit};",
+            name.to_uppercase()
+        ));
     }
     out.push(format!(
         "pub static EFFECT_ART_MANIFEST:&[EffectArtDesc]=&[{}];",
         manifest
             .iter()
-            .map(|m| format!("EffectArtDesc{{raw_len:{},raw_fnv:{},stored_len:{},stored_fnv:{}}}", m.raw_len, m.raw_fnv, m.stored_len, m.stored_fnv))
+            .map(|m| format!(
+                "EffectArtDesc{{raw_len:{},raw_fnv:{},stored_len:{},stored_fnv:{}}}",
+                m.raw_len, m.raw_fnv, m.stored_len, m.stored_fnv
+            ))
             .collect::<Vec<_>>()
             .join(",")
     ));
@@ -2137,32 +2972,70 @@ fn generate(curves: &[String], manifest: &[Chunk]) -> Result<String> {
 }
 
 fn sha_hex(b: &[u8]) -> String {
-    Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
+    Sha256::digest(b)
+        .iter()
+        .map(|x| format!("{x:02x}"))
+        .collect()
 }
 
 fn scene_json(data: &SceneArt) -> Json {
     let bank = data.bank.as_ref();
     let fields = vec![
-        ("styles".into(), Json::List(data.styles.iter().map(Style::json).collect())),
-        ("emitters".into(), Json::List(data.emitters.iter().map(EmitterRow::json).collect())),
+        (
+            "styles".into(),
+            Json::List(data.styles.iter().map(Style::json).collect()),
+        ),
+        (
+            "emitters".into(),
+            Json::List(data.emitters.iter().map(EmitterRow::json).collect()),
+        ),
         (
             "uploads".into(),
             Json::List(bank.map_or(Vec::new(), |b| {
                 b.uploads
                     .iter()
-                    .map(|u| Json::Obj(["offset", "x", "y", "w", "h"].iter().zip(u).map(|(k, v)| (k.to_string(), Json::Int(*v))).collect()))
+                    .map(|u| {
+                        Json::Obj(
+                            ["offset", "x", "y", "w", "h"]
+                                .iter()
+                                .zip(u)
+                                .map(|(k, v)| (k.to_string(), Json::Int(*v)))
+                                .collect(),
+                        )
+                    })
                     .collect()
             })),
         ),
         (
             "art".into(),
             Json::List(bank.map_or(Vec::new(), |b| {
-                b.art.iter().map(|a| Json::Obj(["u", "v", "w", "h", "clut", "tpage"].iter().zip(a).map(|(k, v)| (k.to_string(), Json::Int(*v))).collect())).collect()
+                b.art
+                    .iter()
+                    .map(|a| {
+                        Json::Obj(
+                            ["u", "v", "w", "h", "clut", "tpage"]
+                                .iter()
+                                .zip(a)
+                                .map(|(k, v)| (k.to_string(), Json::Int(*v)))
+                                .collect(),
+                        )
+                    })
+                    .collect()
             })),
         ),
         (
             "frames".into(),
-            Json::Obj(bank.map_or(Vec::new(), |b| b.frames.iter().map(|(sid, cells)| (sid.clone(), Json::List(cells.iter().map(|c| ints(*c)).collect()))).collect())),
+            Json::Obj(bank.map_or(Vec::new(), |b| {
+                b.frames
+                    .iter()
+                    .map(|(sid, cells)| {
+                        (
+                            sid.clone(),
+                            Json::List(cells.iter().map(|c| ints(*c)).collect()),
+                        )
+                    })
+                    .collect()
+            })),
         ),
     ];
     Json::Obj(fields)
@@ -2171,7 +3044,10 @@ fn scene_json(data: &SceneArt) -> Json {
 /// The cook: writes data/break_effects.rs and .hkpsx/break-effects/ under
 /// `root` and returns the summary line.
 pub fn cook(root: &Path, source: &Source) -> Result<String> {
-    let metadata: J = serde_json::from_slice(&std::fs::read(root.join("data/regions.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let metadata: J = serde_json::from_slice(
+        &std::fs::read(root.join("data/regions.json")).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     let mut c = collect(source, &metadata)?;
     let scenes = metadata["scenes"].as_array().ok_or("no scenes")?;
     for (n, s) in scenes.iter().enumerate() {
@@ -2182,22 +3058,31 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     let dest = root.join(".hkpsx/break-effects");
     std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
     let mut ignored = std::mem::take(&mut c.ignored);
-    let (mut manifest, mut curves, mut scene_rows, mut total_vram, mut kept) = (Vec::new(), Vec::new(), Vec::new(), 0usize, 0usize);
+    let (mut manifest, mut curves, mut scene_rows, mut total_vram, mut kept) =
+        (Vec::new(), Vec::new(), Vec::new(), 0usize, 0usize);
     let mut arts: Vec<(i64, SceneArt)> = Vec::new();
     let mut images: HashMap<String, Arc<Image>> = HashMap::new();
     for scene in 0..scenes.len() as i64 {
-        let data = scene_art(scene, &c.styles, &c.emitters, &mut ignored, &mut |styles, sids| {
-            let mut textures = Vec::new();
-            for sid in sids {
-                if !images.contains_key(sid) {
-                    let obj = &c.textures.iter().find(|t| &t.0 == sid).ok_or("texture")?.1;
-                    let im = hk_unity::texture::texture_image(source, obj, true).map_err(|e| e.to_string())?.to_rgba();
-                    images.insert(sid.clone(), Arc::new(im));
+        let data = scene_art(
+            scene,
+            &c.styles,
+            &c.emitters,
+            &mut ignored,
+            &mut |styles, sids| {
+                let mut textures = Vec::new();
+                for sid in sids {
+                    if !images.contains_key(sid) {
+                        let obj = &c.textures.iter().find(|t| &t.0 == sid).ok_or("texture")?.1;
+                        let im = hk_unity::texture::texture_image(source, obj, true)
+                            .map_err(|e| e.to_string())?
+                            .to_rgba();
+                        images.insert(sid.clone(), Arc::new(im));
+                    }
+                    textures.push((sid.clone(), images[sid].clone()));
                 }
-                textures.push((sid.clone(), images[sid].clone()));
-            }
-            art_bank(styles, &textures)
-        })?;
+                art_bank(styles, &textures)
+            },
+        )?;
         kept += data.emitters.len();
         total_vram = total_vram.max(data.bank.as_ref().map_or(0, |b| b.blob.len()));
         arts.push((scene, data));
@@ -2207,7 +3092,11 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     for optional in [false, true] {
         for (_, data) in &arts {
             for (k, st) in data.styles.iter().enumerate() {
-                let only = data.emitters.iter().filter(|e| e.style == k).all(|e| e.owner >= STALACTITE_OWNER);
+                let only = data
+                    .emitters
+                    .iter()
+                    .filter(|e| e.style == k)
+                    .all(|e| e.owner >= STALACTITE_OWNER);
                 let key = st.samples_key();
                 if only == optional && !curves.contains(&key) {
                     curves.push(key);
@@ -2247,21 +3136,46 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     files.push("Managed/Assembly-CSharp.dll".into());
     let mut source_files = Vec::new();
     for name in files {
-        if source_files.iter().any(|(k, _): &(String, Json)| *k == name) {
+        if source_files
+            .iter()
+            .any(|(k, _): &(String, Json)| *k == name)
+        {
             continue;
         }
         let path = source.directory.join(&name);
         let bytes = std::fs::read(&path).map_err(|e| format!("{name}: {e}"))?;
         source_files.push((name, Json::Str(sha_hex(&bytes))));
     }
-    let active = scene_rows.iter().filter(|(_, d)| !d.emitters.is_empty()).count();
+    let active = scene_rows
+        .iter()
+        .filter(|(_, d)| !d.emitters.is_empty())
+        .count();
     let report = Json::Obj(vec![
         ("format".into(), Json::Str("HKBREAK02".into())),
-        ("scenes".into(), Json::Obj(scene_rows.iter().map(|(k, d)| (k.to_string(), scene_json(d))).collect())),
+        (
+            "scenes".into(),
+            Json::Obj(
+                scene_rows
+                    .iter()
+                    .map(|(k, d)| (k.to_string(), scene_json(d)))
+                    .collect(),
+            ),
+        ),
         ("source_records".into(), Json::List(c.records)),
         ("other_parts".into(), Json::List(ignored)),
-        ("largest_scene_vram_bytes".into(), Json::Int(total_vram as i64)),
-        ("vram_rects".into(), Json::List(VRAM_RECTS.iter().map(|r| ints([r.0, r.1, r.2, r.3])).collect())),
+        (
+            "largest_scene_vram_bytes".into(),
+            Json::Int(total_vram as i64),
+        ),
+        (
+            "vram_rects".into(),
+            Json::List(
+                VRAM_RECTS
+                    .iter()
+                    .map(|r| ints([r.0, r.1, r.2, r.3]))
+                    .collect(),
+            ),
+        ),
         (
             "chunks".into(),
             Json::List(
@@ -2291,7 +3205,15 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
             ]),
         ),
         ("source_files".into(), Json::Obj(source_files)),
-        ("limitations".into(), Json::List(LIMITATIONS.iter().map(|s| Json::Str(s.to_string())).collect())),
+        (
+            "limitations".into(),
+            Json::List(
+                LIMITATIONS
+                    .iter()
+                    .map(|s| Json::Str(s.to_string()))
+                    .collect(),
+            ),
+        ),
     ]);
     std::fs::write(dest.join("report.json"), dumps(&report)).map_err(|e| e.to_string())?;
     Ok(format!("Break effects: {kept} source emitters across {active} scenes, largest sheet {total_vram} VRAM bytes"))
@@ -2312,10 +3234,33 @@ mod tests {
 
     fn style(texture: &str, cells: i64, size: [i64; 2]) -> Style {
         Style {
-            life: [1, 1], speed: [0, 0], size, rotation: [0, 0], colors: [[128; 3]; 2], start_alpha: [255, 255], count: 1, rate: 65536, shape: 10,
-            radius: 0, arc: 0, shape_scale: [0; 3], force: [[0; 2]; 3], velocity: [[0; 2]; 3], limit: -1, dampen: 0, spin_speed: [0, 0],
-            spin_range: [0, 0], collision: false, bounce: 0, collision_dampen: 0, life_loss: 0, kill_speed: 0, radius_scale: 0, samples: Vec::new(),
-            cells, texture: texture.into(),
+            life: [1, 1],
+            speed: [0, 0],
+            size,
+            rotation: [0, 0],
+            colors: [[128; 3]; 2],
+            start_alpha: [255, 255],
+            count: 1,
+            rate: 65536,
+            shape: 10,
+            radius: 0,
+            arc: 0,
+            shape_scale: [0; 3],
+            force: [[0; 2]; 3],
+            velocity: [[0; 2]; 3],
+            limit: -1,
+            dampen: 0,
+            spin_speed: [0, 0],
+            spin_range: [0, 0],
+            collision: false,
+            bounce: 0,
+            collision_dampen: 0,
+            life_loss: 0,
+            kill_speed: 0,
+            radius_scale: 0,
+            samples: Vec::new(),
+            cells,
+            texture: texture.into(),
         }
     }
     fn sheet() -> Arc<Image> {
@@ -2323,7 +3268,12 @@ mod tests {
         for y in 0..144 {
             for x in 0..36 {
                 let at = (y * 36 + x) * 4;
-                im.data[at..at + 4].copy_from_slice(&[255, (70 * (y / 36)) as u8, 50, [0, 128, 255][x % 3]]);
+                im.data[at..at + 4].copy_from_slice(&[
+                    255,
+                    (70 * (y / 36)) as u8,
+                    50,
+                    [0, 128, 255][x % 3],
+                ]);
             }
         }
         Arc::new(im)
@@ -2343,7 +3293,9 @@ mod tests {
         let mut cells = std::collections::HashSet::new();
         for u in &bank.uploads {
             let [_, ux, uy, uw, uh] = *u;
-            assert!(VRAM_RECTS.iter().any(|&(x, y, w, h)| x <= ux && y <= uy && ux + uw <= x + w && uy + uh <= y + h));
+            assert!(VRAM_RECTS
+                .iter()
+                .any(|&(x, y, w, h)| x <= ux && y <= uy && ux + uw <= x + w && uy + uh <= y + h));
             for x in ux..ux + uw {
                 for y in uy..uy + uh {
                     assert!(cells.insert((x, y)), "uploads overlap");
@@ -2355,20 +3307,39 @@ mod tests {
             assert!(a[0] + a[2] <= 256 && a[1] + a[3] <= 256);
         }
         let again = art_bank(&styles, &textures).unwrap();
-        assert_eq!((again.blob, again.uploads, again.art, again.frames), (bank.blob, bank.uploads, bank.art, bank.frames));
+        assert_eq!(
+            (again.blob, again.uploads, again.art, again.frames),
+            (bank.blob, bank.uploads, bank.art, bank.frames)
+        );
     }
 
     #[test]
     fn a_mixed_source_sheet_layout_is_refused() {
-        let styles = [style("original:1", 4, [1, 1]), style("original:1", 3, [1, 1])];
-        let e = art_bank(&styles, &[("original:1".to_string(), sheet())]).err().unwrap();
+        let styles = [
+            style("original:1", 4, [1, 1]),
+            style("original:1", 3, [1, 1]),
+        ];
+        let e = art_bank(&styles, &[("original:1".to_string(), sheet())])
+            .err()
+            .unwrap();
         assert!(e.contains("mixed sheet"));
     }
 
     #[test]
     fn an_overflowing_bank_drops_the_costliest_style_not_the_scene() {
-        let styles = [style("a", 1, [65536, 65536]), style("b", 8, [65536 * 4, 65536 * 4])];
-        let row = |style: usize, owner: i64, source: i64| EmitterRow { scene: 0, owner, source, style, angle_offset: 0, origin: [0; 3], basis: [[0; 3]; 3] };
+        let styles = [
+            style("a", 1, [65536, 65536]),
+            style("b", 8, [65536 * 4, 65536 * 4]),
+        ];
+        let row = |style: usize, owner: i64, source: i64| EmitterRow {
+            scene: 0,
+            owner,
+            source,
+            style,
+            angle_offset: 0,
+            origin: [0; 3],
+            basis: [[0; 3]; 3],
+        };
         let emitters = [row(0, 10, 1), row(1, 11, 2)];
         let mut calls = Vec::new();
         let mut ignored = Vec::new();
@@ -2377,11 +3348,20 @@ mod tests {
             if trimmed.len() > 1 {
                 return err("reserved VRAM fragments do not fit");
             }
-            Ok(Bank { blob: Vec::new(), uploads: Vec::new(), art: Vec::new(), frames: vec![("a".into(), vec![[0, 1, 2]])], sheet: Image::new(Mode::Rgba, 1, 1) })
+            Ok(Bank {
+                blob: Vec::new(),
+                uploads: Vec::new(),
+                art: Vec::new(),
+                frames: vec![("a".into(), vec![[0, 1, 2]])],
+                sheet: Image::new(Mode::Rgba, 1, 1),
+            })
         })
         .unwrap();
         assert_eq!(calls, [2, 1]);
-        assert_eq!(data.emitters.iter().map(|e| e.owner).collect::<Vec<_>>(), [10]);
+        assert_eq!(
+            data.emitters.iter().map(|e| e.owner).collect::<Vec<_>>(),
+            [10]
+        );
         assert_eq!(ignored.len(), 1);
         let text = dumps(&ignored[0]);
         assert!(text.contains("\"owner\": 11") && text.contains("style 1 dropped"));
@@ -2389,11 +3369,18 @@ mod tests {
 
     #[test]
     fn rectangles_keep_clut_alignment_and_refuse_what_does_not_fit() {
-        let items = vec![("p0".to_string(), 16, 1, 16), ("t0".to_string(), 8, 30, 1), ("t1".to_string(), 5, 20, 1)];
+        let items = vec![
+            ("p0".to_string(), 16, 1, 16),
+            ("t0".to_string(), 8, 30, 1),
+            ("t1".to_string(), 5, 20, 1),
+        ];
         let placed = place_rectangles(&items, &VRAM_RECTS).unwrap();
         assert_eq!(placed["p0"].0 % 16, 0);
         let big = vec![("t0".to_string(), 65, 64, 1)];
-        assert_eq!(place_rectangles(&big, &VRAM_RECTS).err().unwrap(), "Geo VRAM exceeds8KiB");
+        assert_eq!(
+            place_rectangles(&big, &VRAM_RECTS).err().unwrap(),
+            "Geo VRAM exceeds8KiB"
+        );
     }
 
     #[test]

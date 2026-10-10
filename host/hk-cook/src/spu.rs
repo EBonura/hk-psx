@@ -13,7 +13,9 @@ pub const NOMINAL_RATE: u32 = 22050;
 
 /// scene_bank.py / ambience.py `fnv`.
 pub fn fnv(data: &[u8]) -> u32 {
-    data.iter().fold(0x811c9dc5u32, |v, &b| (v ^ b as u32).wrapping_mul(0x01000193))
+    data.iter().fold(0x811c9dc5u32, |v, &b| {
+        (v ^ b as u32).wrapping_mul(0x01000193)
+    })
 }
 
 /// cook_audio.py `decode_oneshot`'s framing check: no flags but the silent
@@ -24,7 +26,10 @@ pub fn check_oneshot(bank: &[u8]) -> Result<()> {
     }
     for start in (0..bank.len()).step_by(16) {
         let (header, flags) = (bank[start], bank[start + 1]);
-        if header >> 4 > 4 || header & 15 > 12 || flags != if start + 16 == bank.len() { 1 } else { 0 } {
+        if header >> 4 > 4
+            || header & 15 > 12
+            || flags != if start + 16 == bank.len() { 1 } else { 0 }
+        {
             return err("unsupported predictor/shift or unsafe loop flags");
         }
     }
@@ -50,7 +55,11 @@ pub fn decode(adpcm: &[u8]) -> Result<Vec<i32>> {
         let shift = if shift > 12 { 9 } else { shift };
         for &packed in &block[2..] {
             for nibble in [packed & 15, packed >> 4] {
-                let signed = if nibble > 7 { nibble as i32 - 16 } else { nibble as i32 };
+                let signed = if nibble > 7 {
+                    nibble as i32 - 16
+                } else {
+                    nibble as i32
+                };
                 let value = ((signed << 12) >> shift) + ((s1 * f1) >> 6) + ((s2 * f2) >> 6);
                 let value = value.clamp(-32768, 32767);
                 out.push(value);
@@ -78,7 +87,10 @@ pub fn validate_blocks(data: &[u8]) -> Result<()> {
     if data[0] >> 4 != 0 {
         return err("initial ADPCM predictor must be zero");
     }
-    if data.chunks_exact(16).any(|b| b[0] >> 4 > 4 || b[0] & 15 > 12) {
+    if data
+        .chunks_exact(16)
+        .any(|b| b[0] >> 4 > 4 || b[0] & 15 > 12)
+    {
         return err("invalid ADPCM header");
     }
     Ok(())
@@ -89,7 +101,8 @@ pub fn validate_blocks(data: &[u8]) -> Result<()> {
 pub fn validate_loop(data: &[u8]) -> Result<()> {
     validate_blocks(data)?;
     for (i, block) in data.chunks_exact(16).enumerate() {
-        let expected = (if i == 0 { 4 } else { 0 }) | (if (i + 1) * 16 == data.len() { 3 } else { 0 });
+        let expected =
+            (if i == 0 { 4 } else { 0 }) | (if (i + 1) * 16 == data.len() { 3 } else { 0 });
         if block[1] != expected {
             return err("invalid loop start/end flags");
         }
@@ -151,9 +164,17 @@ pub fn read_wav(bytes: &[u8]) -> Result<Wav> {
         }
         at += 8 + size + (size & 1);
     }
-    let (fmt, data) = (fmt.ok_or("WAV without fmt")?, data.ok_or("WAV without data")?);
+    let (fmt, data) = (
+        fmt.ok_or("WAV without fmt")?,
+        data.ok_or("WAV without data")?,
+    );
     let u16_at = |i: usize| u16::from_le_bytes([fmt[i], fmt[i + 1]]);
-    Ok(Wav { channels: u16_at(2), rate: u32::from_le_bytes(fmt[4..8].try_into().unwrap()), width: u16_at(14) / 8, data })
+    Ok(Wav {
+        channels: u16_at(2),
+        rate: u32::from_le_bytes(fmt[4..8].try_into().unwrap()),
+        width: u16_at(14) / 8,
+        data,
+    })
 }
 /// Python `wave` writing 16-bit mono at `rate`.
 pub fn mono_wav(rate: u32, samples: &[i16]) -> Vec<u8> {
@@ -177,13 +198,23 @@ pub fn mono_wav(rate: u32, samples: &[i16]) -> Vec<u8> {
     out
 }
 pub fn samples_of(data: &[u8]) -> Vec<i16> {
-    data.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect()
+    data.chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .collect()
 }
 
 // ---------------------------------------------------------------- processes
 
 pub fn run(cmd: &mut Command, input: Option<Vec<u8>>) -> Result<Vec<u8>> {
-    let mut child = cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).spawn().map_err(|e| format!("{cmd:?}: {e}"))?;
+    let mut child = cmd
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("{cmd:?}: {e}"))?;
     let writer = input.map(|data| {
         let mut stdin = child.stdin.take().unwrap();
         std::thread::spawn(move || {
@@ -204,7 +235,22 @@ pub fn run(cmd: &mut Command, input: Option<Vec<u8>>) -> Result<Vec<u8>> {
 /// ffmpeg's polyphase resampler, folding to mono: `-ar rate -ac 1 -f s16le`
 /// over a WAV on stdin (cook_audio.py `convert_wav`'s default resampler).
 pub fn ffmpeg_mono(wav: &[u8], rate: i64) -> Result<Vec<i16>> {
-    let out = run(Command::new("ffmpeg").args(["-v", "error", "-i", "pipe:0", "-ar", &rate.to_string(), "-ac", "1", "-f", "s16le", "pipe:1"]), Some(wav.to_vec()))?;
+    let out = run(
+        Command::new("ffmpeg").args([
+            "-v",
+            "error",
+            "-i",
+            "pipe:0",
+            "-ar",
+            &rate.to_string(),
+            "-ac",
+            "1",
+            "-f",
+            "s16le",
+            "pipe:1",
+        ]),
+        Some(wav.to_vec()),
+    )?;
     Ok(samples_of(&out))
 }
 
@@ -218,7 +264,10 @@ pub struct Tool {
 impl Tool {
     /// A scratch file of this thread's own, so conversions can run in parallel.
     fn tmp(&self, name: &str) -> PathBuf {
-        let id: String = format!("{:?}", std::thread::current().id()).chars().filter(char::is_ascii_alphanumeric).collect();
+        let id: String = format!("{:?}", std::thread::current().id())
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect();
         self.scratch.join(format!("{id}-{name}"))
     }
 
@@ -226,12 +275,20 @@ impl Tool {
         let crate_dir = root.join("tools/psx-audio-cook");
         let target = crate_dir.join("target");
         run(
-            Command::new("cargo").args(["build", "-q", "--release", "--manifest-path"]).arg(crate_dir.join("Cargo.toml")).arg("--target-dir").arg(&target).current_dir(root),
+            Command::new("cargo")
+                .args(["build", "-q", "--release", "--manifest-path"])
+                .arg(crate_dir.join("Cargo.toml"))
+                .arg("--target-dir")
+                .arg(&target)
+                .current_dir(root),
             None,
         )?;
         let scratch = std::env::temp_dir().join(format!("{scratch_name}-{}", std::process::id()));
         std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
-        Ok(Tool { binary: target.join("release/psx-audio-cook"), scratch })
+        Ok(Tool {
+            binary: target.join("release/psx-audio-cook"),
+            scratch,
+        })
     }
 
     /// spu_cook.py `encode_pcm(samples, 'none')` plus cook_audio.py `encode`'s
@@ -247,12 +304,25 @@ impl Tool {
                     .arg("encode")
                     .arg(&input)
                     .arg(&output)
-                    .args(["--rate", &NOMINAL_RATE.to_string(), "--format", "raw", "--no-normalize", "--no-flags", "--loop", "none"]),
+                    .args([
+                        "--rate",
+                        &NOMINAL_RATE.to_string(),
+                        "--format",
+                        "raw",
+                        "--no-normalize",
+                        "--no-flags",
+                        "--loop",
+                        "none",
+                    ]),
                 None,
             )?;
             let data = std::fs::read(&output).map_err(|x| x.to_string())?;
             if data.len() != pcm.len().div_ceil(28) * 16 {
-                return err(format!("encoded {} bytes for {} samples", data.len(), pcm.len()));
+                return err(format!(
+                    "encoded {} bytes for {} samples",
+                    data.len(),
+                    pcm.len()
+                ));
             }
             data
         };
@@ -278,12 +348,25 @@ impl Tool {
                 .arg("encode")
                 .arg(&input)
                 .arg(&output)
-                .args(["--rate", &NOMINAL_RATE.to_string(), "--format", "raw", "--no-normalize", "--no-flags", "--loop", mode]),
+                .args([
+                    "--rate",
+                    &NOMINAL_RATE.to_string(),
+                    "--format",
+                    "raw",
+                    "--no-normalize",
+                    "--no-flags",
+                    "--loop",
+                    mode,
+                ]),
             None,
         )?;
         let data = std::fs::read(&output).map_err(|x| x.to_string())?;
         if data.len() != pcm.len().div_ceil(28) * 16 {
-            return err(format!("encoded {} bytes for {} samples", data.len(), pcm.len()));
+            return err(format!(
+                "encoded {} bytes for {} samples",
+                data.len(),
+                pcm.len()
+            ));
         }
         Ok(data)
     }
@@ -293,7 +376,14 @@ impl Tool {
     pub fn resample(&self, wav: &[u8], rate: i64) -> Result<Vec<i16>> {
         let (input, output) = (self.tmp("resample-in.wav"), self.tmp("resample-out.wav"));
         std::fs::write(&input, wav).map_err(|x| x.to_string())?;
-        run(Command::new(&self.binary).arg("resample").arg(&input).arg(&output).args(["--rate", &rate.to_string()]), None)?;
+        run(
+            Command::new(&self.binary)
+                .arg("resample")
+                .arg(&input)
+                .arg(&output)
+                .args(["--rate", &rate.to_string()]),
+            None,
+        )?;
         let out = read_wav(&std::fs::read(&output).map_err(|x| x.to_string())?)?;
         if out.channels != 1 || out.width != 2 || out.rate as i64 != rate {
             return err("SDK resampler returned an unexpected WAV");
@@ -305,7 +395,11 @@ impl Tool {
     pub fn plan(&self, request: &str) -> Result<String> {
         let path = self.tmp("plan.txt");
         std::fs::write(&path, request).map_err(|x| x.to_string())?;
-        String::from_utf8(run(Command::new(&self.binary).arg("plan").arg(&path), None)?).map_err(|x| x.to_string())
+        String::from_utf8(run(
+            Command::new(&self.binary).arg("plan").arg(&path),
+            None,
+        )?)
+        .map_err(|x| x.to_string())
     }
 }
 

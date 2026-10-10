@@ -28,7 +28,10 @@ fn gates_close_on_entry_and_open_two_seconds_after_the_last_death() {
     let ending = arena.tick();
     assert_eq!(arena.phase(), Phase::Ending);
     assert!(ending.contains(Action::Persist));
-    assert!(arena.activated(), "the save taken during the wait must count as cleared");
+    assert!(
+        arena.activated(),
+        "the save taken during the wait must count as cleared"
+    );
     for _ in 0..END_WAIT_TICKS - 1 {
         assert!(arena.tick().is_empty());
         assert_eq!(arena.phase(), Phase::Ending);

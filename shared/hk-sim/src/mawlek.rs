@@ -122,7 +122,9 @@ pub enum Clip {
 }
 /// Whole-clip durations at 60 Hz, in `Clip` order, ceilinged as host/combat.py
 /// does: frames / fps. Looping clips report one cycle; nothing waits on them.
-pub const CLIP_TICKS: [u16; 20] = [18, 15, 36, 2, 18, 45, 15, 16, 25, 40, 18, 18, 42, 30, 25, 49, 4, 12, 15, 15];
+pub const CLIP_TICKS: [u16; 20] = [
+    18, 15, 36, 2, 18, 45, 15, 16, 25, 40, 18, 18, 42, 30, 25, 49, 4, 12, 15, 15,
+];
 impl Clip {
     pub fn ticks(self) -> u16 {
         CLIP_TICKS[self as usize]
@@ -210,9 +212,16 @@ pub enum Action {
     ArmHitbox(u8, bool),
     /// FlingObjectsFromGlobalPool from the body: `count` shots, each at a
     /// random speed and angle (degrees) inside these ranges.
-    Spray { count: u8, speed: [i32; 2], angles: [i32; 2] },
+    Spray {
+        count: u8,
+        speed: [i32; 2],
+        angles: [i32; 2],
+    },
     /// The Head's one shot, from the Head.
-    HeadShot { speed: i32, angles: [i32; 2] },
+    HeadShot {
+        speed: i32,
+        angles: [i32; 2],
+    },
     /// PLAY to `Spit Effect`.
     SpitEffect,
     /// `Wake`'s START to `Battle Scene`.
@@ -238,14 +247,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 16], count: 0 }
+        Self {
+            values: [None; 16],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
     pub fn contains(&self, action: Action) -> bool {
         self.iter().any(|a| a == action)
@@ -296,11 +310,36 @@ enum Head {
 }
 /// `(cos, sin)` of whole degrees 75..=105, Q16: every angle the spits use.
 const ANGLES: [[i32; 2]; 31] = [
-    [16962, 63303], [15855, 63589], [14742, 63856], [13626, 64104], [12505, 64332], [11380, 64540],
-    [10252, 64729], [9121, 64898], [7987, 65048], [6850, 65177], [5712, 65287], [4572, 65376],
-    [3430, 65446], [2287, 65496], [1144, 65526], [0, 65536], [-1144, 65526], [-2287, 65496],
-    [-3430, 65446], [-4572, 65376], [-5712, 65287], [-6850, 65177], [-7987, 65048], [-9121, 64898],
-    [-10252, 64729], [-11380, 64540], [-12505, 64332], [-13626, 64104], [-14742, 63856], [-15855, 63589],
+    [16962, 63303],
+    [15855, 63589],
+    [14742, 63856],
+    [13626, 64104],
+    [12505, 64332],
+    [11380, 64540],
+    [10252, 64729],
+    [9121, 64898],
+    [7987, 65048],
+    [6850, 65177],
+    [5712, 65287],
+    [4572, 65376],
+    [3430, 65446],
+    [2287, 65496],
+    [1144, 65526],
+    [0, 65536],
+    [-1144, 65526],
+    [-2287, 65496],
+    [-3430, 65446],
+    [-4572, 65376],
+    [-5712, 65287],
+    [-6850, 65177],
+    [-7987, 65048],
+    [-9121, 64898],
+    [-10252, 64729],
+    [-11380, 64540],
+    [-12505, 64332],
+    [-13626, 64104],
+    [-14742, 63856],
+    [-15855, 63589],
     [-16962, 63303],
 ];
 /// FlingObjectsFromGlobalPool's velocity: `speed` along `angle` degrees, the
@@ -384,11 +423,19 @@ impl Mawlek {
     }
     /// A defeated arena's `Activate` destroys the body before it ever draws.
     pub fn gone() -> Self {
-        Self { phase: Phase::Gone, ..Self::new(1, 0, -1) }
+        Self {
+            phase: Phase::Gone,
+            ..Self::new(1, 0, -1)
+        }
     }
     /// The clips `Init` leaves playing, for the caller to seat once.
-    pub const INITIAL_CLIPS: [(Part, Clip); 5] = [(Part::Body, Clip::DummyBlank), (Part::Dummy, Clip::DummyLurk),
-        (Part::Arm(0), Clip::DummyBlank), (Part::Arm(1), Clip::DummyBlank), (Part::Head, Clip::DummyBlank)];
+    pub const INITIAL_CLIPS: [(Part, Clip); 5] = [
+        (Part::Body, Clip::DummyBlank),
+        (Part::Dummy, Clip::DummyLurk),
+        (Part::Arm(0), Clip::DummyBlank),
+        (Part::Arm(1), Clip::DummyBlank),
+        (Part::Head, Clip::DummyBlank),
+    ];
     pub fn phase(&self) -> Phase {
         self.phase
     }
@@ -421,7 +468,10 @@ impl Mawlek {
         }
     }
     pub fn dead(&self) -> bool {
-        matches!(self.phase, Phase::CorpseInit | Phase::CorpseSteam | Phase::CorpseReady | Phase::Gone)
+        matches!(
+            self.phase,
+            Phase::CorpseInit | Phase::CorpseSteam | Phase::CorpseReady | Phase::Gone
+        )
     }
     /// Out of `Dormant` and not yet dead: the fight is running.
     pub fn active(&self) -> bool {
@@ -430,7 +480,10 @@ impl Mawlek {
     /// The `Active` bools `Super Ready` waits on with BoolNoneTrue.
     fn children_busy(&self) -> bool {
         matches!(self.head, Head::Antic | Head::Shoot)
-            || self.arms.iter().any(|(p, _)| matches!(p, Arm::Antic | Arm::Swipe | Arm::Cooldown))
+            || self
+                .arms
+                .iter()
+                .any(|(p, _)| matches!(p, Arm::Antic | Arm::Swipe | Arm::Cooldown))
     }
     pub fn random(&mut self) -> u32 {
         self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -517,9 +570,17 @@ impl Mawlek {
                 if self.timer >= Clip::DummyShootAntic.ticks() {
                     // `Detect Hero Pos`, `L`/`R`, then `Shoot`.
                     self.enter(Phase::Shoot);
-                    let angles = if senses.self_x >= senses.hero_x { SPIT_ANGLES_LEFT } else { SPIT_ANGLES_RIGHT };
+                    let angles = if senses.self_x >= senses.hero_x {
+                        SPIT_ANGLES_LEFT
+                    } else {
+                        SPIT_ANGLES_RIGHT
+                    };
                     out.push(Action::SpitEffect);
-                    out.push(Action::Spray { count: SPIT_SHOTS, speed: SPIT_SPEED, angles });
+                    out.push(Action::Spray {
+                        count: SPIT_SHOTS,
+                        speed: SPIT_SPEED,
+                        angles,
+                    });
                     out.push(Action::Play(Part::Dummy, Clip::DummyShoot));
                 }
             }
@@ -532,13 +593,24 @@ impl Mawlek {
                 if self.timer >= Clip::DummyJumpAntic.ticks() {
                     // `Detect Hero Pos 3`, `L 3`/`R 3`, then `Jump`.
                     self.x_distance = scale(senses.hero_x - senses.self_x, JUMP_X_FACTOR);
-                    self.face_dummy(if senses.self_x >= senses.hero_x { -1 } else { 1 }, &mut out);
+                    self.face_dummy(
+                        if senses.self_x >= senses.hero_x {
+                            -1
+                        } else {
+                            1
+                        },
+                        &mut out,
+                    );
                     self.launch(Phase::Jump, &mut out);
                 }
             }
             Phase::Jump | Phase::ReturnJump => {
                 if self.timer >= JUMP_TICKS {
-                    let air = if self.phase == Phase::Jump { Phase::JumpAir } else { Phase::ReturnAir };
+                    let air = if self.phase == Phase::Jump {
+                        Phase::JumpAir
+                    } else {
+                        Phase::ReturnAir
+                    };
                     self.enter(air);
                     out.push(Action::VelocityX(self.x_distance));
                 }
@@ -673,7 +745,14 @@ impl Mawlek {
             // `Detect Hero Pos 2`, `L 2`/`R 2`, `Super Spit`.
             self.spits += 1;
             self.jumps = 0;
-            self.face_dummy(if senses.self_x >= senses.hero_x { 1 } else { -1 }, out);
+            self.face_dummy(
+                if senses.self_x >= senses.hero_x {
+                    1
+                } else {
+                    -1
+                },
+                out,
+            );
             self.enter(Phase::SuperSpit);
             self.sleep_children(out);
             out.push(Action::Play(Part::Dummy, Clip::DummyShootAntic));
@@ -845,10 +924,18 @@ impl Mawlek {
                     // `Detect Hero Pos`, `L`/`R`, then `Shoot`, which ends at
                     // whichever comes first of its wait and `Head Spit`'s end.
                     self.head = Head::Shoot;
-                    self.head_timer = HEAD_SHOOT_TICKS.min(Clip::HeadSpit.ticks() - HEAD_ANTIC_TICKS) as u8;
-                    let angles = if senses.head_x >= senses.hero_x { HEAD_ANGLES_LEFT } else { HEAD_ANGLES_RIGHT };
+                    self.head_timer =
+                        HEAD_SHOOT_TICKS.min(Clip::HeadSpit.ticks() - HEAD_ANTIC_TICKS) as u8;
+                    let angles = if senses.head_x >= senses.hero_x {
+                        HEAD_ANGLES_LEFT
+                    } else {
+                        HEAD_ANGLES_RIGHT
+                    };
                     out.push(Action::SpitEffect);
-                    out.push(Action::HeadShot { speed: HEAD_SHOT_SPEED, angles });
+                    out.push(Action::HeadShot {
+                        speed: HEAD_SHOT_SPEED,
+                        angles,
+                    });
                     out.push(Action::Effect(Effect::HeadSpit));
                 }
             }
@@ -866,8 +953,14 @@ mod tests {
     use super::*;
 
     fn senses() -> Senses {
-        Senses { self_x: 61 * ONE, hero_x: 55 * ONE, head_x: 61 * ONE, grounded: true, floor_ahead: true,
-            ..Senses::default() }
+        Senses {
+            self_x: 61 * ONE,
+            hero_x: 55 * ONE,
+            head_x: 61 * ONE,
+            grounded: true,
+            floor_ahead: true,
+            ..Senses::default()
+        }
     }
     /// Run until `phase`, feeding `senses`, and return the ticks it took.
     fn until(m: &mut Mawlek, s: Senses, phase: Phase, limit: u32) -> u32 {
@@ -948,9 +1041,16 @@ mod tests {
                     m.tick(s);
                 }
                 let kind = m.phase();
-                assert!(matches!(kind, Phase::SuperSpit | Phase::JumpAntic), "{kind:?}");
+                assert!(
+                    matches!(kind, Phase::SuperSpit | Phase::JumpAntic),
+                    "{kind:?}"
+                );
                 if Some(kind) == last {
-                    if kind == Phase::SuperSpit { spits_in_row += 1 } else { jumps_in_row += 1 }
+                    if kind == Phase::SuperSpit {
+                        spits_in_row += 1
+                    } else {
+                        jumps_in_row += 1
+                    }
                 } else {
                     spits_in_row = 1;
                     jumps_in_row = 1;
@@ -1010,23 +1110,39 @@ mod tests {
             m.tick(s);
         }
         assert_eq!(m.phase(), Phase::JumpAntic);
-        let launch = (0..30).find_map(|_| m.tick(s).iter().find_map(|a| match a {
-            Action::Velocity(v) if v[1] == JUMP_SPEED_Y => Some(v),
-            _ => None,
-        })).expect("it leaps");
+        let launch = (0..30)
+            .find_map(|_| {
+                m.tick(s).iter().find_map(|a| match a {
+                    Action::Velocity(v) if v[1] == JUMP_SPEED_Y => Some(v),
+                    _ => None,
+                })
+            })
+            .expect("it leaps");
         assert_eq!(launch[0], scale(s.hero_x - s.self_x, JUMP_X_FACTOR));
-        assert_eq!(m.dummy_scale(), -1, "L 3 mirrors the Dummy when the hero is left");
+        assert_eq!(
+            m.dummy_scale(),
+            -1,
+            "L 3 mirrors the Dummy when the hero is left"
+        );
         s.grounded = false;
         until(&mut m, s, Phase::JumpAir, 10);
         s.grounded = true;
         s.self_x = 54 * ONE;
         until(&mut m, s, Phase::Land, 2);
-        let back = (0..40).find_map(|_| m.tick(s).iter().find_map(|a| match a {
-            Action::Velocity(v) if v[1] == JUMP_SPEED_Y => Some(v),
-            _ => None,
-        })).expect("it leaps back");
+        let back = (0..40)
+            .find_map(|_| {
+                m.tick(s).iter().find_map(|a| match a {
+                    Action::Velocity(v) if v[1] == JUMP_SPEED_Y => Some(v),
+                    _ => None,
+                })
+            })
+            .expect("it leaps back");
         assert_eq!(back[0], scale(7 * ONE, JUMP_X_FACTOR));
-        assert_eq!(m.dummy_scale(), -1, "Aim Return takes R 4 for any nonzero distance");
+        assert_eq!(
+            m.dummy_scale(),
+            -1,
+            "Aim Return takes R 4 for any nonzero distance"
+        );
     }
 
     #[test]
@@ -1059,7 +1175,11 @@ mod tests {
         let s = senses();
         let mut shots = 0;
         for _ in 0..(10 * 60) {
-            if let Some(Action::HeadShot { angles, speed }) = m.tick(s).iter().find(|a| matches!(a, Action::HeadShot { .. })) {
+            if let Some(Action::HeadShot { angles, speed }) = m
+                .tick(s)
+                .iter()
+                .find(|a| matches!(a, Action::HeadShot { .. }))
+            {
                 assert_eq!(angles, HEAD_ANGLES_LEFT);
                 assert_eq!(speed, HEAD_SHOT_SPEED);
                 shots += 1;
@@ -1100,7 +1220,10 @@ mod tests {
             let v = shot_velocity(&mut rng, SPIT_SPEED, SPIT_ANGLES_LEFT);
             assert!(v[0] < 0, "92..105 degrees always goes left");
             let speed2 = (v[0] as i64).pow(2) + (v[1] as i64).pow(2);
-            assert!(speed2 <= (35i64 * ONE as i64 + 64).pow(2) && speed2 >= (32i64 * ONE as i64 - 64).pow(2));
+            assert!(
+                speed2 <= (35i64 * ONE as i64 + 64).pow(2)
+                    && speed2 >= (32i64 * ONE as i64 - 64).pow(2)
+            );
         }
     }
 }

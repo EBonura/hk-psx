@@ -83,7 +83,10 @@ pub enum Action {
     /// `Fire`'s `SetPosition` + `SPAWN` + `SetVelocity2d` on the cage child it
     /// drew. The caller picks which reserved baby answers it; the source draws
     /// uniformly with `GetRandomChild` and the guest's order is its own.
-    Release { position: [i32; 2], velocity: [i32; 2] },
+    Release {
+        position: [i32; 2],
+        velocity: [i32; 2],
+    },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Actions {
@@ -92,14 +95,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 4], count: 0 }
+        Self {
+            values: [None; 4],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,8 +132,15 @@ pub struct Hatcher {
 }
 impl Hatcher {
     pub fn new(position: [i32; 2], seed: u32) -> Self {
-        Self { phase: Phase::Idle, velocity: [0; 2], buzz: IdleBuzz::new(position), timer: 0,
-            facing: -1, fixed_accumulator: 0, rng: seed }
+        Self {
+            phase: Phase::Idle,
+            velocity: [0; 2],
+            buzz: IdleBuzz::new(position),
+            timer: 0,
+            facing: -1,
+            fixed_accumulator: 0,
+            rng: seed,
+        }
     }
     /// FSM variable `startAlert`: `Idle`'s first BoolTest sends ALERT at once.
     pub fn new_alert(position: [i32; 2], seed: u32) -> Self {
@@ -214,12 +229,23 @@ impl Hatcher {
             Phase::DistanceFly => {
                 if fixed {
                     let mut v = self.velocity;
-                    distance_fly_height(senses.position, senses.hero, FLY_DISTANCE, FLY_HEIGHT,
-                        FLY_SPEED_MAX, FLY_ACCELERATION, &mut v);
+                    distance_fly_height(
+                        senses.position,
+                        senses.hero,
+                        FLY_DISTANCE,
+                        FLY_HEIGHT,
+                        FLY_SPEED_MAX,
+                        FLY_ACCELERATION,
+                        &mut v,
+                    );
                     self.velocity = v;
                     out.push(Action::Velocity(self.velocity));
                 }
-                let want = if senses.hero[0] > senses.position[0] { 1 } else { -1 };
+                let want = if senses.hero[0] > senses.position[0] {
+                    1
+                } else {
+                    -1
+                };
                 self.face(want, &mut out);
                 self.timer -= 1;
                 if self.timer == 0 {
@@ -272,14 +298,19 @@ pub struct BabyActions {
 }
 impl BabyActions {
     const fn new() -> Self {
-        Self { values: [None; 2], count: 0 }
+        Self {
+            values: [None; 2],
+            count: 0,
+        }
     }
     fn push(&mut self, action: BabyAction) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = BabyAction> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
 }
 /// The Hatcher Baby's `Control` FSM.
@@ -301,8 +332,16 @@ pub struct Baby {
 }
 impl Baby {
     pub const fn new(seed: u32) -> Self {
-        Self { phase: BabyPhase::Inert, velocity: [0; 2], spread: [0; 2], spread_left: 0,
-            facing: -1, face_pause: 0, fixed_accumulator: 0, rng: seed }
+        Self {
+            phase: BabyPhase::Inert,
+            velocity: [0; 2],
+            spread: [0; 2],
+            spread_left: 0,
+            facing: -1,
+            face_pause: 0,
+            fixed_accumulator: 0,
+            rng: seed,
+        }
     }
     pub fn phase(self) -> BabyPhase {
         self.phase
@@ -342,7 +381,10 @@ impl Baby {
     }
     fn chase(&mut self, position: [i32; 2], hero: [i32; 2]) {
         if self.spread_left == 0 {
-            self.spread = [self.range(-CHASE_SPREAD, CHASE_SPREAD), self.range(-CHASE_SPREAD, CHASE_SPREAD)];
+            self.spread = [
+                self.range(-CHASE_SPREAD, CHASE_SPREAD),
+                self.range(-CHASE_SPREAD, CHASE_SPREAD),
+            ];
             self.spread_left = SPREAD_RESET_STEPS.0
                 + (self.random() % (SPREAD_RESET_STEPS.1 - SPREAD_RESET_STEPS.0 + 1) as u32) as u16;
         } else {
@@ -351,7 +393,11 @@ impl Baby {
         let mut v = self.velocity;
         for axis in 0..2 {
             let target = hero[axis] + self.spread[axis];
-            v[axis] += if position[axis] < target { CHASE_ACCELERATION } else { -CHASE_ACCELERATION };
+            v[axis] += if position[axis] < target {
+                CHASE_ACCELERATION
+            } else {
+                -CHASE_ACCELERATION
+            };
         }
         clamp(&mut v, CHASE_SPEED_MAX);
         self.velocity = v;
@@ -388,7 +434,12 @@ mod tests {
     use super::*;
     const HERO: [i32; 2] = [40 * ONE, 30 * ONE];
     fn senses(position: [i32; 2], alert_range: bool, cage_children: u16) -> Senses {
-        Senses { position, hero: HERO, alert_range, cage_children }
+        Senses {
+            position,
+            hero: HERO,
+            alert_range,
+            cage_children,
+        }
     }
     #[test]
     fn idle_roams_until_the_alert_bool_and_never_returns_to_idle() {
@@ -399,7 +450,10 @@ mod tests {
             assert_eq!(hatcher.phase(), Phase::Idle);
         }
         // IdleBuzz stays inside its own roaming speed cap.
-        assert!(hatcher.velocity().iter().all(|v| v.abs() <= crate::buzz::IDLE_SPEED_MAX));
+        assert!(hatcher
+            .velocity()
+            .iter()
+            .all(|v| v.abs() <= crate::buzz::IDLE_SPEED_MAX));
         hatcher.tick(senses(start, true, 15));
         assert_eq!(hatcher.phase(), Phase::DistanceFly);
         // The source Idle has one transition out and nothing sends it back.
@@ -415,7 +469,10 @@ mod tests {
         assert_eq!(hatcher.phase(), Phase::DistanceFly);
         for _ in 0..2000 {
             for action in hatcher.tick(senses(start, true, 0)).iter() {
-                assert!(!matches!(action, Action::Release { .. }), "released from an empty cage");
+                assert!(
+                    !matches!(action, Action::Release { .. }),
+                    "released from an empty cage"
+                );
             }
             assert_eq!(hatcher.phase(), Phase::DistanceFly);
         }
@@ -469,34 +526,52 @@ mod tests {
             assert!(v.iter().all(|value| value.abs() <= FLY_SPEED_MAX));
         }
         // targetsHeight: y converges on the hero's height plus 3.5 units.
-        assert!((position[1] - (HERO[1] + FLY_HEIGHT)).abs() < ONE, "y {}", position[1]);
+        assert!(
+            (position[1] - (HERO[1] + FLY_HEIGHT)).abs() < ONE,
+            "y {}",
+            position[1]
+        );
         let dx = (position[0] - HERO[0]).abs();
-        assert!((FLY_DISTANCE - ONE..=FLY_DISTANCE + ONE).contains(&dx), "dx {dx}");
+        assert!(
+            (FLY_DISTANCE - ONE..=FLY_DISTANCE + ONE).contains(&dx),
+            "dx {dx}"
+        );
     }
     #[test]
     fn a_parked_baby_costs_nothing_and_a_released_one_chases() {
         let mut baby = Baby::new(23);
         let parked = baby;
         for _ in 0..600 {
-            assert!(baby.tick([100 * ONE, 100 * ONE], HERO).iter().next().is_none());
+            assert!(baby
+                .tick([100 * ONE, 100 * ONE], HERO)
+                .iter()
+                .next()
+                .is_none());
         }
         assert_eq!(baby, parked);
         baby.release([0, -5 * ONE]);
         assert_eq!(baby.phase(), BabyPhase::Chase);
         assert_eq!(baby.velocity(), [0, -5 * ONE]);
         let mut position = [30 * ONE, 40 * ONE];
-        let start = (position[0] - HERO[0]).abs().max((position[1] - HERO[1]).abs());
+        let start = (position[0] - HERO[0])
+            .abs()
+            .max((position[1] - HERO[1]).abs());
         let mut far = start;
         for _ in 0..600 {
             baby.tick(position, HERO);
             let v = baby.velocity();
             assert!(v.iter().all(|value| value.abs() <= CHASE_SPEED_MAX));
             position = [position[0] + v[0] / 60, position[1] + v[1] / 60];
-            far = (position[0] - HERO[0]).abs().max((position[1] - HERO[1]).abs());
+            far = (position[0] - HERO[0])
+                .abs()
+                .max((position[1] - HERO[1]).abs());
         }
         // ChaseObject has no braking term, so it closes and then orbits the
         // spread target rather than settling on the hero.
-        assert!(start >= 10 * ONE && far < 5 * ONE, "start {start} far {far}");
+        assert!(
+            start >= 10 * ONE && far < 5 * ONE,
+            "start {start} far {far}"
+        );
     }
     #[test]
     fn a_recycled_baby_starts_from_the_state_init_left() {
@@ -510,7 +585,15 @@ mod tests {
         // facing and the random sequence carry over the way the source's do, so
         // a recycled baby does not repeat the one before it.
         assert_eq!(baby.phase(), BabyPhase::Inert);
-        assert_eq!((baby.velocity(), baby.spread, baby.spread_left, baby.face_pause), ([0; 2], [0; 2], 0, 0));
+        assert_eq!(
+            (
+                baby.velocity(),
+                baby.spread,
+                baby.spread_left,
+                baby.face_pause
+            ),
+            ([0; 2], [0; 2], 0, 0)
+        );
         assert_ne!(baby.rng, Baby::new(29).rng);
     }
     #[test]

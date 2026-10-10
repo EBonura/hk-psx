@@ -27,7 +27,14 @@ pub fn q16(v: f64) -> Result<i64> {
 
 /// geo.py `rust_array`.
 pub fn rust_array<T: std::fmt::Display>(values: &[T]) -> String {
-    format!("[{}]", values.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","))
+    format!(
+        "[{}]",
+        values
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    )
 }
 
 pub fn get<'a>(v: &'a Value, key: &str) -> Result<&'a Value> {
@@ -35,15 +42,21 @@ pub fn get<'a>(v: &'a Value, key: &str) -> Result<&'a Value> {
 }
 
 pub fn f64_of(v: &Value, key: &str) -> Result<f64> {
-    get(v, key)?.float().ok_or_else(|| format!("{key} is not a number"))
+    get(v, key)?
+        .float()
+        .ok_or_else(|| format!("{key} is not a number"))
 }
 
 pub fn int_of(v: &Value, key: &str) -> Result<i64> {
-    get(v, key)?.int().ok_or_else(|| format!("{key} is not an int"))
+    get(v, key)?
+        .int()
+        .ok_or_else(|| format!("{key} is not an int"))
 }
 
 pub fn str_of(v: &Value, key: &str) -> Result<String> {
-    get(v, key)?.str().ok_or_else(|| format!("{key} is not a string"))
+    get(v, key)?
+        .str()
+        .ok_or_else(|| format!("{key} is not a string"))
 }
 
 pub fn path_id(v: &Value) -> Option<i64> {
@@ -56,7 +69,11 @@ pub fn go_of(tree: &Value) -> Option<i64> {
 
 /// actors.py `_component_records`: every object of the scene on GameObject `gid`, in order.
 pub fn component_records<'a>(sc: &'a Scene, gid: i64) -> Vec<(i64, &'a str, &'a Value)> {
-    sc.objects.iter().filter(|o| go_of(&o.tree) == Some(gid)).map(|o| (o.id, o.typename.as_str(), &o.tree)).collect()
+    sc.objects
+        .iter()
+        .filter(|o| go_of(&o.tree) == Some(gid))
+        .map(|o| (o.id, o.typename.as_str(), &o.tree))
+        .collect()
 }
 
 /// breakables.py `_components`: the GameObject's component list, resolved in the scene.
@@ -98,11 +115,23 @@ pub fn fsm<'a>(records: &[(i64, &str, &'a Value)], name: &str) -> Result<&'a Val
 }
 
 pub fn has_fsm(records: &[(i64, &str, &Value)], name: &str) -> bool {
-    records.iter().any(|r| r.1 == "PlayMakerFSM" && r.2.get("fsm").and_then(|f| f.get("name")).and_then(Value::str).as_deref() == Some(name))
+    records.iter().any(|r| {
+        r.1 == "PlayMakerFSM"
+            && r.2
+                .get("fsm")
+                .and_then(|f| f.get("name"))
+                .and_then(Value::str)
+                .as_deref()
+                == Some(name)
+    })
 }
 
 /// props.py `_states`: the states by name, checked against a transition contract.
-pub fn states<'a>(fsm: &'a Value, contract: &[(&str, &[(&str, &str)])], who: &str) -> Result<Vec<(String, &'a Value)>> {
+pub fn states<'a>(
+    fsm: &'a Value,
+    contract: &[(&str, &[(&str, &str)])],
+    who: &str,
+) -> Result<Vec<(String, &'a Value)>> {
     let mut by_name: Vec<(String, &Value)> = Vec::new();
     for s in get(fsm, "states")?.list().unwrap_or(&[]) {
         let n = str_of(s, "name")?;
@@ -120,11 +149,18 @@ pub fn states<'a>(fsm: &'a Value, contract: &[(&str, &[(&str, &str)])], who: &st
             .unwrap_or(&[])
             .iter()
             .map(|t| {
-                let e = t.get("fsmEvent").and_then(|e| e.get("name")).and_then(Value::str).unwrap_or_default();
+                let e = t
+                    .get("fsmEvent")
+                    .and_then(|e| e.get("name"))
+                    .and_then(Value::str)
+                    .unwrap_or_default();
                 (e, t.get("toState").and_then(Value::str).unwrap_or_default())
             })
             .collect();
-        let want: Vec<(String, String)> = expected.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
+        let want: Vec<(String, String)> = expected
+            .iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect();
         if got != want {
             return err(format!("unsupported {who} transitions: {name}"));
         }
@@ -133,7 +169,11 @@ pub fn states<'a>(fsm: &'a Value, contract: &[(&str, &[(&str, &str)])], who: &st
 }
 
 pub fn state<'a>(states: &[(String, &'a Value)], name: &str) -> Result<&'a Value> {
-    states.iter().find(|(k, _)| k == name).map(|(_, v)| *v).ok_or_else(|| format!("no state {name}"))
+    states
+        .iter()
+        .find(|(k, _)| k == name)
+        .map(|(_, v)| *v)
+        .ok_or_else(|| format!("no state {name}"))
 }
 
 /// props.py `_actions`: the enabled actions of one kind, decoded.
@@ -192,7 +232,9 @@ pub fn kids(sc: &Scene, gid: i64) -> Result<Vec<(String, i64)>> {
     let t = sc.transform(tid).ok_or("transform missing")?;
     let mut out: Vec<(String, i64)> = Vec::new();
     for child in get(t, "m_Children")?.list().unwrap_or(&[]) {
-        let ct = sc.transform(path_id(child).unwrap_or(0)).ok_or("child transform missing")?;
+        let ct = sc
+            .transform(path_id(child).unwrap_or(0))
+            .ok_or("child transform missing")?;
         let kid = go_of(ct).unwrap_or(0);
         if let Some(go) = sc.go(kid) {
             let name = str_of(go, "m_Name")?;
@@ -211,24 +253,41 @@ pub fn kid(kids: &[(String, i64)], name: &str) -> Option<i64> {
 
 /// Python's `min`/`max` over floats: the first of equal values wins.
 pub fn py_min(v: impl IntoIterator<Item = f64>) -> f64 {
-    v.into_iter().reduce(|a, b| if b < a { b } else { a }).unwrap()
+    v.into_iter()
+        .reduce(|a, b| if b < a { b } else { a })
+        .unwrap()
 }
 pub fn py_max(v: impl IntoIterator<Item = f64>) -> f64 {
-    v.into_iter().reduce(|a, b| if b > a { b } else { a }).unwrap()
+    v.into_iter()
+        .reduce(|a, b| if b > a { b } else { a })
+        .unwrap()
 }
 
 /// props.py `_box_world`: world bounds of a BoxCollider2D under any quarter turn.
 pub fn box_world(sc: &Scene, gid: i64, b: &Value) -> Result<[f64; 4]> {
-    let (ox, oy) = (f64_of(get(b, "m_Offset")?, "x")?, f64_of(get(b, "m_Offset")?, "y")?);
-    let (hx, hy) = (f64_of(get(b, "m_Size")?, "x")? / 2.0, f64_of(get(b, "m_Size")?, "y")? / 2.0);
+    let (ox, oy) = (
+        f64_of(get(b, "m_Offset")?, "x")?,
+        f64_of(get(b, "m_Offset")?, "y")?,
+    );
+    let (hx, hy) = (
+        f64_of(get(b, "m_Size")?, "x")? / 2.0,
+        f64_of(get(b, "m_Size")?, "y")? / 2.0,
+    );
     let mut pts = Vec::new();
     for dx in [-hx, hx] {
         for dy in [-hy, hy] {
-            let p = sc.point(gid, ox + dx, oy + dy, 0.0).map_err(|e| e.to_string())?;
+            let p = sc
+                .point(gid, ox + dx, oy + dy, 0.0)
+                .map_err(|e| e.to_string())?;
             pts.push((p[0], p[1]));
         }
     }
-    Ok([py_min(pts.iter().map(|p| p.0)), py_min(pts.iter().map(|p| p.1)), py_max(pts.iter().map(|p| p.0)), py_max(pts.iter().map(|p| p.1))])
+    Ok([
+        py_min(pts.iter().map(|p| p.0)),
+        py_min(pts.iter().map(|p| p.1)),
+        py_max(pts.iter().map(|p| p.0)),
+        py_max(pts.iter().map(|p| p.1)),
+    ])
 }
 
 /// props.py `quarter`: (quarter turns, mirror, horizontal stretch) of a 2x2 world matrix.
@@ -236,7 +295,9 @@ pub fn quarter(m: &[[f64; 4]; 4]) -> Result<(i64, i64, f64)> {
     let (a, b, c, d) = (m[0][0], m[0][1], m[1][0], m[1][1]);
     let (cos, sin) = (d, -b);
     if ((cos.abs() + sin.abs()) - 1.0).abs() > 1e-3 || cos.abs().min(sin.abs()) > 1e-3 {
-        return err(format!("prop rotation is not a quarter turn: {a},{b},{c},{d}"));
+        return err(format!(
+            "prop rotation is not a quarter turn: {a},{b},{c},{d}"
+        ));
     }
     let (rc, rs) = (py_round(cos), py_round(sin));
     let q = match (rc, rs) {
@@ -248,25 +309,46 @@ pub fn quarter(m: &[[f64; 4]; 4]) -> Result<(i64, i64, f64)> {
     };
     let x = a * rc as f64 + c * rs as f64;
     if (a * rs as f64 - c * rc as f64).abs() > 1e-3 || x.abs() < 1e-3 {
-        return err(format!("prop matrix is not a mirrored rotation: {a},{b},{c},{d}"));
+        return err(format!(
+            "prop matrix is not a mirrored rotation: {a},{b},{c},{d}"
+        ));
     }
     Ok((q, if x > 0.0 { 1 } else { -1 }, x.abs()))
 }
 
 /// breakables.py `collider_polygons` (MAX_HIT_POINTS 16).
-pub fn collider_polygons(sc: &Scene, gid: i64, kind: &str, tree: &Value) -> Result<Vec<Vec<(f64, f64)>>> {
+pub fn collider_polygons(
+    sc: &Scene,
+    gid: i64,
+    kind: &str,
+    tree: &Value,
+) -> Result<Vec<Vec<(f64, f64)>>> {
     let off = get(tree, "m_Offset")?;
     let (ox, oy) = (f64_of(off, "x")?, f64_of(off, "y")?);
     let paths: Vec<Vec<(f64, f64)>> = match kind {
         "BoxCollider2D" => {
-            let (x, y) = (f64_of(get(tree, "m_Size")?, "x")? / 2.0, f64_of(get(tree, "m_Size")?, "y")? / 2.0);
+            let (x, y) = (
+                f64_of(get(tree, "m_Size")?, "x")? / 2.0,
+                f64_of(get(tree, "m_Size")?, "y")? / 2.0,
+            );
             vec![vec![(-x, -y), (x, -y), (x, y), (-x, y)]]
         }
         "PolygonCollider2D" => get(get(tree, "m_Points")?, "m_Paths")?
             .list()
             .unwrap_or(&[])
             .iter()
-            .map(|p| p.list().unwrap_or(&[]).iter().map(|q| (q.get("x").and_then(Value::float).unwrap_or(0.0), q.get("y").and_then(Value::float).unwrap_or(0.0))).collect())
+            .map(|p| {
+                p.list()
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|q| {
+                        (
+                            q.get("x").and_then(Value::float).unwrap_or(0.0),
+                            q.get("y").and_then(Value::float).unwrap_or(0.0),
+                        )
+                    })
+                    .collect()
+            })
             .collect(),
         other => return err(format!("unsupported Breakable hit collider: {other}")),
     };
@@ -277,7 +359,9 @@ pub fn collider_polygons(sc: &Scene, gid: i64, kind: &str, tree: &Value) -> Resu
         }
         let mut pts = Vec::new();
         for (x, y) in path {
-            let p = sc.point(gid, x + ox, y + oy, 0.0).map_err(|e| e.to_string())?;
+            let p = sc
+                .point(gid, x + ox, y + oy, 0.0)
+                .map_err(|e| e.to_string())?;
             if !p[0].is_finite() || !p[1].is_finite() || p[0].abs() > 512.0 || p[1].abs() > 512.0 {
                 return err("Breakable world coordinate exceeds bounded Q16 range");
             }

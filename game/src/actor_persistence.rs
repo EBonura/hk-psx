@@ -13,14 +13,23 @@
 //! so they ride the bench save with the rest of the world, and `enemies.rs`
 //! seats a placement dead when its state says so, the way it already does for
 //! a Blocker.
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/actor_persistence.rs"));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../data/actor_persistence.rs"
+));
 use crate::persist::{self, Kind};
 
 /// First `Kind::Enemy` local id this module uses. The Blockers keep the ids
 /// below it (their index in `blocker_terrain::SOURCES`).
 pub const LOCAL_BASE: usize = persist::ENEMY_STATE_BASE;
-const _: () = assert!(crate::blocker_terrain::BLOCKERS <= LOCAL_BASE, "the Blockers' ids would reach into the state groups");
-const _: () = assert!(LOCAL_BASE + GROUPS <= persist::MAX_LOCAL, "a state group does not fit a persist id");
+const _: () = assert!(
+    crate::blocker_terrain::BLOCKERS <= LOCAL_BASE,
+    "the Blockers' ids would reach into the state groups"
+);
+const _: () = assert!(
+    LOCAL_BASE + GROUPS <= persist::MAX_LOCAL,
+    "a state group does not fit a persist id"
+);
 /// Stored values: dead for good, and dead until the next reset.
 const DEAD: u8 = 1;
 const DEAD_UNTIL_RESET: u8 = persist::ENEMY_DEAD_UNTIL_RESET;
@@ -36,13 +45,19 @@ fn key(scene: usize, source_id: u32) -> Option<(usize, bool)> {
 /// bring back what the source took out of play.
 #[optimize(size)]
 pub fn dead(scene: usize, source_id: u32) -> bool {
-    key(scene, source_id).is_some_and(|(local, _)| persist::get(Kind::Enemy, scene, local).is_some())
+    key(scene, source_id)
+        .is_some_and(|(local, _)| persist::get(Kind::Enemy, scene, local).is_some())
 }
 
 /// A kill: the source's `PersistentBoolItem` going true.
 #[optimize(size)]
 pub fn killed(scene: usize, source_id: u32) {
     if let Some((local, semi)) = key(scene, source_id) {
-        persist::set(Kind::Enemy, scene, local, if semi { DEAD_UNTIL_RESET } else { DEAD });
+        persist::set(
+            Kind::Enemy,
+            scene,
+            local,
+            if semi { DEAD_UNTIL_RESET } else { DEAD },
+        );
     }
 }

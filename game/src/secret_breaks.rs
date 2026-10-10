@@ -82,7 +82,11 @@ impl<'a> Spec<'a> {
         if stage == 0 || part >= parts {
             return None;
         }
-        let polygon = self.object.polygons().nth((stage as usize - 1).min(1) * parts + part)?.ok()?;
+        let polygon = self
+            .object
+            .polygons()
+            .nth((stage as usize - 1).min(1) * parts + part)?
+            .ok()?;
         let mut quad = [[0; 2]; 4];
         let mut points = polygon.points().flatten();
         for corner in &mut quad {
@@ -91,7 +95,11 @@ impl<'a> Spec<'a> {
         Some(quad)
     }
     fn lockout(&self) -> u8 {
-        if self.wall() { WALL_LOCKOUT } else { FLOOR_LOCKOUT }
+        if self.wall() {
+            WALL_LOCKOUT
+        } else {
+            FLOOR_LOCKOUT
+        }
     }
 }
 
@@ -104,7 +112,12 @@ struct Slot {
     /// target per attack.
     swing: u32,
 }
-const EMPTY: Slot = Slot { taken: 0, lockout: 0, recoil: 0, swing: u32::MAX };
+const EMPTY: Slot = Slot {
+    taken: 0,
+    lockout: 0,
+    recoil: 0,
+    swing: u32::MAX,
+};
 
 pub enum Outcome {
     Refused,
@@ -121,7 +134,9 @@ fn slot(id: usize) -> Option<usize> {
 }
 impl Hits {
     pub const fn new() -> Self {
-        Self { slots: [EMPTY; SLOTS] }
+        Self {
+            slots: [EMPTY; SLOTS],
+        }
     }
     pub fn reset(&mut self) {
         self.slots = [EMPTY; SLOTS];
@@ -136,7 +151,9 @@ impl Hits {
     /// A nail swing that already overlaps the secret's hit polygon. `body` is
     /// the Knight's collider box, for a floor's `Hero Range`.
     pub fn nail(&mut self, id: usize, spec: &Spec, swing: u32, body: [i32; 4]) -> Outcome {
-        let Some(index) = slot(id) else { return Outcome::Refused };
+        let Some(index) = slot(id) else {
+            return Outcome::Refused;
+        };
         let s = &mut self.slots[index];
         if s.lockout != 0 || s.swing == swing {
             return Outcome::Refused;
@@ -173,14 +190,22 @@ impl Hits {
             return None;
         }
         let elapsed = 2 * RECOIL_TICKS - left;
-        let out = if elapsed <= RECOIL_TICKS { elapsed } else { 2 * RECOIL_TICKS - elapsed } as i32;
+        let out = if elapsed <= RECOIL_TICKS {
+            elapsed
+        } else {
+            2 * RECOIL_TICKS - elapsed
+        } as i32;
         let dir = WALL_RECOIL[spec.facing()];
         let d = RECOIL_Q16 * out / RECOIL_TICKS as i32;
         (dir != [0, 0]).then(|| [dir[0] * d, dir[1] * d])
     }
     /// True while this secret's moving art is drawn off its cooked place.
     pub fn displaced(&self, id: usize, spec: &Spec) -> bool {
-        if spec.wall() { self.recoil(id, spec).is_some() } else { self.taken(id) != 0 }
+        if spec.wall() {
+            self.recoil(id, spec).is_some()
+        } else {
+            self.taken(id) != 0
+        }
     }
 }
 
