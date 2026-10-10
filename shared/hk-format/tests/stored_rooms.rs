@@ -97,7 +97,14 @@ fn parked_payload_reuses_original_bytes_and_only_publishes_after_all_validation(
 fn stored_raw_and_format_corruption_cannot_publish_a_parked_payload() {
     for budget in [1, 31, 1024] {
         assert_eq!(scenario(1, budget), Err(Error::Checksum));
-        assert_eq!(scenario(2, budget), Err(Error::Checksum));
-        assert_eq!(scenario(3, budget), Err(Error::RoomFormat));
+        // The expanded hash and the format walk only run when the cook is not
+        // trusted (HK_VERIFY_COOK=1 at build time); the stored hash always does.
+        if room_decode::TRUST_COOK {
+            assert_eq!(scenario(2, budget), Ok(raw_room()));
+            assert!(scenario(3, budget).is_ok());
+        } else {
+            assert_eq!(scenario(2, budget), Err(Error::Checksum));
+            assert_eq!(scenario(3, budget), Err(Error::RoomFormat));
+        }
     }
 }

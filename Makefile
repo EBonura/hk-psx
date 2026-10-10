@@ -8,6 +8,7 @@ run: build
 test:
 	.venv/bin/python -m unittest discover -s tests
 	cargo test --manifest-path shared/hk-format/Cargo.toml --locked
+	HK_VERIFY_COOK=1 cargo test --manifest-path shared/hk-format/Cargo.toml --locked
 	cargo test --manifest-path shared/hk-sim/Cargo.toml --locked
 	cargo test --manifest-path shared/hk-cache/Cargo.toml --locked
 	$(PYTHON) tools/test_world.py
