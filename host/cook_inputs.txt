@@ -18,6 +18,10 @@ host/vengefly.py
 host/gruzzer.py
 host/baldur.py
 host/aspid.py
+host/fat_fly.py
+host/plant_trap.py
+host/moss_charger.py
+host/fsm_pins.py
 host/husk_guard.py
 host/benches.py
 host/shade.py

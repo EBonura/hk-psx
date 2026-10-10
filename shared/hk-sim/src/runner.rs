@@ -47,6 +47,13 @@ pub enum Swipe {
     Cooldown,
     Idle,
     Dead,
+    /// `Fungus Zombie Attack` (the Shaker): `Attack Delay`'s random wait, during
+    /// which the Walker keeps walking, then `Attack Antic`, `Attack` (the gas
+    /// burst), `CD`, all on timers; `Idle Pause` is `Idle`.
+    GasDelay,
+    GasAntic,
+    Gas,
+    GasCool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TurnCause {
@@ -58,6 +65,8 @@ pub enum TurnCause {
 pub enum Wait {
     Walking,
     Paused,
+    /// The Shaker's `Attack Delay`: `WaitRandom` 0 to 0.75 s.
+    Delay,
 }
 impl Wait {
     /// Authored level37 Runner Random.Range argument order, quantized to
@@ -66,6 +75,7 @@ impl Wait {
         match self {
             Self::Walking => [240, 90],
             Self::Paused => [150, 90],
+            Self::Delay => [45, 0],
         }
     }
 }
@@ -77,12 +87,74 @@ pub enum Attack {
     /// Zombie Leap (Leaper): the Attack clip's trigger frame launches at
     /// ((hero x - self x) * factor, jump_speed_y); the airborne clip keeps
     /// playing; bottom contact plays Land; Idle waits, then StartWalker.
+    /// The Greenpath Mossman_Runner: the same lunge from an older, simpler FSM
+    /// (no TOOK DAMAGE transition out of `Ready`) on a Walker with no
+    /// `alertRange`, which therefore never turns round to face a Knight who
+    /// comes up behind it.
+    SwipeCalm,
     Leap {
         trigger_ticks: u16,
         jump_speed_y: i32,
         jump_x_factor: i32,
         idle_ticks: u16,
     },
+    /// Fungus Zombie Attack (the Greenpath Shaker): it does not turn to the Knight
+    /// or lunge; it stops, shakes and bursts into a cloud of gas that hurts.
+    Gas,
+}
+/// The Shaker's gas burst and its timings (`Fungus Zombie Attack`, proven per
+/// placement by host/runner.py `gas_box`).
+pub mod gas {
+    use crate::ONE;
+    /// `Attack Antic` Wait 0.75 s.
+    pub const ANTIC_TICKS: u16 = 45;
+    /// `Attack` Wait 0.8 s, the gas box active throughout.
+    pub const BURST_TICKS: u16 = 48;
+    /// `CD` Wait 0.5 s, then `Idle Pause` 0.5 s.
+    pub const COOL_TICKS: u16 = 30;
+    pub const IDLE_TICKS: u16 = 30;
+    /// `iTweenScaleTo` 0.4 s from `SetScale` 0.2, easeOutCirc (enum 19).
+    pub const TWEEN_TICKS: u16 = 24;
+    pub const START_SCALE: i32 = 13_107;
+    /// The `Gas Hit Box` polygon (local points, collider offset applied) and its
+    /// origin below the Shaker, Q16.
+    pub const POLYGON: [[i32; 2]; 7] = [
+        [-182_559, 250_540],
+        [1_475, 307_541],
+        [183_672, 256_693],
+        [284_184, 104_966],
+        [301_355, -1_375],
+        [-296_176, -80],
+        [-279_846, 114_624],
+    ];
+    pub const ORIGIN: [i32; 2] = [0, -93_061];
+    /// The box's scale `ticks` into the burst, Q16: easeOutCirc from 0.2 to 1.
+    pub fn scale(ticks: u16) -> i32 {
+        let u = (ticks.min(TWEEN_TICKS) as i64 * ONE as i64) / TWEEN_TICKS as i64;
+        let back = ONE as i64 - u;
+        let root =
+            psx_math::int32::isqrt_u64((ONE as i64 * ONE as i64 - back * back) as u64) as i64;
+        START_SCALE + (((ONE - START_SCALE) as i64 * root) >> 16) as i32
+    }
+    /// The polygon in world space for a Shaker at `at` facing `facing`
+    /// (-1 as authored, left; +1 mirrored), `ticks` into the burst.
+    pub fn world(at: [i32; 2], facing: i32, ticks: u16) -> [[i32; 2]; 7] {
+        world_from(at, facing, ticks, ORIGIN[1])
+    }
+    /// The Shaker's corpse carries the same box one unit below it rather than 1.42.
+    pub const CORPSE_ORIGIN_Y: i32 = -65_536;
+    /// `world` for a box whose origin stands `origin_y` from `at`.
+    pub fn world_from(at: [i32; 2], facing: i32, ticks: u16, origin_y: i32) -> [[i32; 2]; 7] {
+        let s = scale(ticks) as i64;
+        let mut out = [[0; 2]; 7];
+        for (o, p) in out.iter_mut().zip(POLYGON) {
+            let x = (p[0] as i64 * s) >> 16;
+            let y = (p[1] as i64 * s) >> 16;
+            o[0] = at[0] + if facing > 0 { -x as i32 } else { x as i32 };
+            o[1] = at[1] + origin_y + y as i32;
+        }
+        out
+    }
 }
 /// Per-variant Walker fields and the FSM `Lunge Speed`: the Zombie Swipe FSM
 /// is otherwise identical across Runner, Barger and Hornhead placements.
@@ -124,10 +196,30 @@ impl Params {
         },
         gravity: 48 * ONE,
     };
+    /// The Greenpath Mossman_Runner (Fungus1_01, 05, 06, 07, 31): Runner pauses and
+    /// walk speed, `Lunge Speed` 9, the calm FSM.
+    pub const MOSSMAN: Self = Self {
+        walk_speed: ONE + ONE / 2,
+        lunge_speed: 9 * ONE,
+        walking_wait: [240, 90],
+        paused_wait: [150, 90],
+        attack: Attack::SwipeCalm,
+        gravity: 60 * ONE,
+    };
+    /// The Greenpath Mossman_Shaker: walks at 2, bursts gas.
+    pub const SHAKER: Self = Self {
+        walk_speed: 2 * ONE,
+        lunge_speed: 0,
+        walking_wait: [240, 90],
+        paused_wait: [150, 90],
+        attack: Attack::Gas,
+        gravity: 60 * ONE,
+    };
     const fn endpoints(self, wait: Wait) -> [u16; 2] {
         match wait {
             Wait::Walking => self.walking_wait,
             Wait::Paused => self.paused_wait,
+            Wait::Delay => Wait::Delay.endpoints(),
         }
     }
 }
@@ -231,6 +323,11 @@ pub struct Runner {
     params: Params,
     /// Leap: chosen jump x velocity; Swipe: unused.
     jump_x: i32,
+    /// Ticks into the Shaker's gas burst.
+    gas_ticks: u16,
+    /// The Shaker's attack timer, apart from `wait`: its Walker keeps running through
+    /// `Attack Delay`, so the two must not share a counter.
+    gas_wait: u16,
 }
 impl Default for Runner {
     fn default() -> Self {
@@ -261,6 +358,8 @@ impl Runner {
             animation: None,
             serial: 0,
             jump_x: 0,
+            gas_ticks: 0,
+            gas_wait: 0,
         }
     }
     pub fn walker(&self) -> Walker {
@@ -367,7 +466,7 @@ impl Runner {
         self.walker_callback(senses, choose, out);
         self.turn_cooldown = 0;
         self.swipe = Swipe::Ready;
-        self.check_ready(senses, out);
+        self.check_ready(senses, choose, out);
         // Source Reset does not stop Charge Dust. Do not invent that event.
     }
     /// An accepted nonlethal HealthManager TOOK DAMAGE event. Ready attacks
@@ -389,7 +488,9 @@ impl Runner {
     ) -> Actions {
         let mut out = Actions::new();
         // The Leap FSM has no RECOIL HORIZONTAL transition.
-        if self.swipe != Swipe::Dead && self.params.attack == Attack::Swipe {
+        if self.swipe != Swipe::Dead
+            && matches!(self.params.attack, Attack::Swipe | Attack::SwipeCalm)
+        {
             self.reset(senses, &mut choose, &mut out);
         }
         out
@@ -443,6 +544,10 @@ impl Runner {
             return out;
         }
         let complete = self.animation.is_some() && senses.completed == self.animation;
+        if self.params.attack == Attack::Gas {
+            self.step_gas(senses, &mut choose, &mut out);
+            return out;
+        }
         if let Attack::Leap {
             jump_speed_y,
             idle_ticks,
@@ -484,10 +589,10 @@ impl Runner {
                         }
                         self.turn_cooldown = 0;
                         self.swipe = Swipe::Ready;
-                        self.check_ready(senses, &mut out);
+                        self.check_ready(senses, &mut choose, &mut out);
                     }
                 }
-                Swipe::Ready => self.check_ready(senses, &mut out),
+                Swipe::Ready => self.check_ready(senses, &mut choose, &mut out),
                 _ => {}
             }
             return out;
@@ -521,18 +626,106 @@ impl Runner {
                 }
             }
             Swipe::Ready => {
-                self.check_ready(senses, &mut out);
+                self.check_ready(senses, &mut choose, &mut out);
             }
             _ => {}
         }
         out
     }
-    fn check_ready(&mut self, senses: Senses, out: &mut Actions) {
+    fn check_ready(
+        &mut self,
+        senses: Senses,
+        choose: &mut impl FnMut(Wait, [u16; 2]) -> u16,
+        out: &mut Actions,
+    ) {
         // GetCanSeeHero and CheckAlertRange both Apply on OnEnter, not only
         // OnUpdate. Coward=false Reset therefore need not spend a tick in Ready.
         if senses.in_alert_range && senses.can_see_hero {
-            self.attack(senses.hero_x, senses.actor_x, out);
+            if self.params.attack == Attack::Gas {
+                // ATTACK ALERT -> `Attack Delay`: the Walker is not stopped yet.
+                self.swipe = Swipe::GasDelay;
+                self.gas_wait = self.sample(Wait::Delay, choose);
+                if self.gas_wait == 0 {
+                    self.gas_antic(out);
+                }
+            } else {
+                self.attack(senses.hero_x, senses.actor_x, out);
+            }
         }
+    }
+    /// `Attack Antic`: StopWalker, the Attack clip, 0.75 s.
+    fn gas_antic(&mut self, out: &mut Actions) {
+        self.walker = Walker::StoppedForAttack;
+        out.push(Action::AudioStop);
+        out.push(Action::Velocity {
+            x: Some(0),
+            y: None,
+        });
+        self.swipe = Swipe::GasAntic;
+        self.gas_wait = gas::ANTIC_TICKS;
+        self.play(Clip::Anticipate, out);
+    }
+    /// The Shaker's `Fungus Zombie Attack`, one tick of the states after `Ready`.
+    fn step_gas(
+        &mut self,
+        senses: Senses,
+        choose: &mut impl FnMut(Wait, [u16; 2]) -> u16,
+        out: &mut Actions,
+    ) {
+        match self.swipe {
+            Swipe::Ready => self.check_ready(senses, choose, out),
+            Swipe::GasDelay => {
+                self.gas_wait = self.gas_wait.saturating_sub(1);
+                if self.gas_wait == 0 {
+                    self.gas_antic(out);
+                }
+            }
+            Swipe::GasAntic => {
+                self.gas_wait = self.gas_wait.saturating_sub(1);
+                if self.gas_wait == 0 {
+                    self.swipe = Swipe::Gas;
+                    self.gas_wait = gas::BURST_TICKS;
+                    self.gas_ticks = 0;
+                }
+            }
+            Swipe::Gas => {
+                self.gas_wait = self.gas_wait.saturating_sub(1);
+                self.gas_ticks = self.gas_ticks.saturating_add(1);
+                if self.gas_wait == 0 {
+                    self.swipe = Swipe::GasCool;
+                    self.gas_wait = gas::COOL_TICKS;
+                }
+            }
+            Swipe::GasCool => {
+                self.gas_wait = self.gas_wait.saturating_sub(1);
+                if self.gas_wait == 0 {
+                    // `Idle Pause`.
+                    self.swipe = Swipe::Idle;
+                    self.gas_wait = gas::IDLE_TICKS;
+                    self.play(Clip::Idle, out);
+                }
+            }
+            Swipe::Idle => {
+                self.gas_wait = self.gas_wait.saturating_sub(1);
+                if self.gas_wait == 0 {
+                    // `Reset`: StartWalker, then `Ready` with its immediate check.
+                    if matches!(
+                        self.walker,
+                        Walker::StoppedForAttack | Walker::Paused | Walker::Waiting
+                    ) {
+                        self.walk(choose, out);
+                    }
+                    self.turn_cooldown = 0;
+                    self.swipe = Swipe::Ready;
+                    self.check_ready(senses, choose, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    /// Ticks into the Shaker's gas burst while its box is live.
+    pub fn gas_ticks(&self) -> Option<u16> {
+        (self.swipe == Swipe::Gas).then_some(self.gas_ticks)
     }
     fn walker_callback(
         &mut self,
@@ -572,7 +765,11 @@ impl Runner {
                     let hero_behind = (senses.hero_x > senses.actor_x) != (self.facing > 0);
                     let cause = if senses.wall {
                         Some(TurnCause::Wall)
-                    } else if hero_behind && senses.in_alert_range && senses.can_see_hero {
+                    } else if self.params.attack != Attack::SwipeCalm
+                        && hero_behind
+                        && senses.in_alert_range
+                        && senses.can_see_hero
+                    {
                         Some(TurnCause::Hero)
                     } else if !senses.floor_ahead {
                         Some(TurnCause::Hole)

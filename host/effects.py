@@ -19,6 +19,8 @@ def corpse_source(source, scene, actor):
     if kind=='Baldur':return _roller_corpse_source(source,scene,actor)
     if kind=='Aspid':return _aspid_corpse_source(source,scene,actor)
     if kind=='AcidFlyer':return _acid_flyer_corpse_source(source,scene,actor)
+    if kind=='FatFly':return _fat_fly_corpse_source(source,scene,actor)
+    if kind=='PlantTrap':return _plant_trap_corpse_source(source,scene,actor)
     if kind=='EggSac':return _egg_sac_corpse_source(source,scene,actor)
     if kind=='HuskGuard':return _guard_corpse_source(source,scene,actor)
     # A controller whose recognizer states it leaves no corpse is answered, not
@@ -26,7 +28,7 @@ def corpse_source(source, scene, actor):
     # restores its body rather than letting it die, so nothing of it ever falls.
     if actor.get('movement_control',{}).get('no_corpse'):
         return None
-    if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber','ZombieShield','MossWalker'):
+    if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber','ZombieShield','MossWalker','MossCharger'):
         raise ValueError('unvalidated corpse controller family')
     # The Shield's EnemyDeathEffects is the conventional Zombie corpse, so it is
     # read against the Runner's expectations rather than its own. If its bounce
@@ -41,7 +43,11 @@ def corpse_source(source, scene, actor):
     expected_bounce=.2 if runner or moss else .45 if climber else .3
     # Climber corpse (.hkpsx/climber70/references.json): Death Air loops eight
     # frames at 30 fps, Death Land holds three frames at 15 fps.
-    expected_timing=[(30,6,1),(12,2,8)] if runner else [(30,0,8),(15,2,3)] if climber else [(12,0,4),(12,2,2)] if moss else [(12,2,3),(12,2,2)]
+    charger=kind=='MossCharger'
+    # The Greenpath mossmen share the Runner's Walker and corpse shape under their own prefabs and clips.
+    variant=actor.get('movement_control',{}).get('variant')
+    shaker=kind=='ZombieSwipeWalker' and variant=='Shaker';mossman=kind=='ZombieSwipeWalker' and variant=='Mossman'
+    expected_timing=[(12,2,3),(12,2,3)] if mossman else [(12,2,3),(12,1,4)] if shaker else [(30,6,1),(12,2,8)] if runner else [(30,0,8),(15,2,3)] if climber else [(12,0,4),(12,2,2)] if moss else [(12,2,2),(12,2,2)] if charger else [(12,2,3),(12,2,2)]
     components=list(_components(scene,actor['game_object']))
     deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
     if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
@@ -56,19 +62,26 @@ def corpse_source(source, scene, actor):
     # The Shield's own corpse is the same structure under its own name, which is
     # why it reads against the Runner's expectations at all.
     if runner and not (go['m_Name'].startswith('Corpse Zombie Basic ')
-                       or go['m_Name'] in ('Corpse Zombie Leaper','Corpse Zombie Shield')):
+                       or go['m_Name'] in ('Corpse Zombie Leaper','Corpse Zombie Shield')
+                       or (mossman and go['m_Name']=='Corpse_Mossman_Runner')
+                       or (shaker and go['m_Name']=='Corpse_Mossman_Shaker')):
         raise ValueError(f'unvalidated corpse prefab for controller: {kind} spawns {go["m_Name"]!r}')
     parts={}
     for ref in go['m_Component']:
         component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
         if typ in parts:raise ValueError('duplicate corpse component')
         parts[typ]=(component,source.read(component))
-    required=('Corpse','tk2dSprite','tk2dSpriteAnimator','Rigidbody2D','BoxCollider2D','ObjectBounce','Transform')
+    # A killed Shaker's corpse is `CorpseFungusExplode`: it lands like any other and then bursts into gas.
+    required=('CorpseFungusExplode' if shaker else 'Corpse','tk2dSprite','tk2dSpriteAnimator','Rigidbody2D','BoxCollider2D','ObjectBounce','Transform')
     if any(k not in parts for k in required):raise ValueError('incomplete corpse prefab')
-    corpse=parts['Corpse'][1];body=parts['Rigidbody2D'][1];bounce=parts['ObjectBounce'][1]
+    corpse=parts[required[0]][1];body=parts['Rigidbody2D'][1];bounce=parts['ObjectBounce'][1]
     # resetRotation only matters for a rotated owner; the guest corpse is drawn
     # upright, which is what the reset produces for the Climber.
     special=('breaker','bigBreaker','chunker','deathStun','fungusExplode','goopExplode','hatcher','instantChunker','massless','spineBurst','zomHive')+(() if climber or moss else ('resetRotation',))
+    if shaker:
+        special=tuple(k for k in special if k!='fungusExplode')
+        if not corpse['fungusExplode']:raise ValueError('Shaker corpse does not explode')
+        _corpse_gas_box(source,obj,parts)
     if any(corpse[k]for k in special):
         raise ValueError('unsupported special corpse')
     if corpse['landEffects']['m_PathID']:raise ValueError('unsupported additional corpse land effects')
@@ -83,12 +96,12 @@ def corpse_source(source, scene, actor):
     selected=[next(c for c in library['clips']if c['name']==name)for name in ('Death Air','Death Land')]
     if runner and source.sid(library_o)!=actor['movement_control'].get('library_source'):raise ValueError('corpse animation library differs from the actor library')
     if [(c['fps'],c['wrapMode'],len(c['frames']))for c in selected]!=expected_timing:raise ValueError('unvalidated corpse clip timing')
-    if any(c.get('loopStart',0)!=0 or any(f.get('triggerEvent',False)for f in c['frames'])for c in selected):
+    if [c.get('loopStart',0) for c in selected]!=([0,1] if shaker else [0,0]) or any(f.get('triggerEvent',False) for c in selected for f in c['frames']):
         raise ValueError('unsupported corpse animation events/loop start')
     matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
     box=parts['BoxCollider2D'][1];off=box['m_Offset'];size=box['m_Size']
     if runner:
-        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead','ZombieLeaper','ZombieShield'):
+        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead','ZombieLeaper','ZombieShield','MossmanRunner','MossmanShaker'):
             raise ValueError('unvalidated Runner corpse identity')
         # A mirrored placement is admitted (Crossroads_37's Leaper), so accept a
         # plain x mirror here too. sx/sy above already take the magnitude, and
@@ -108,9 +121,38 @@ def corpse_source(source, scene, actor):
             raise ValueError('unsupported Runner corpse physics material')
     bounds=[(off['x']-size['x']/2)*sx,(off['y']-size['y']/2)*sy,(off['x']+size['x']/2)*sx,(off['y']+size['y']/2)*sy]
     return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],'bounds':[round(v*65536)for v in bounds],
-            'spawn_offset':[round(offset['x']*65536),round(offset['y']*65536)], 'gravity':48*65536,'breaker':False,'fling_speed':round(death['corpseFlingSpeed']*65536),'bounce_factor':round(expected_bounce*65536),'land_delay_ticks':60,
+            'spawn_offset':[round(offset['x']*65536),round(offset['y']*65536)], 'gravity':48*65536,'breaker':False,'fling_speed':round(death['corpseFlingSpeed']*65536),'bounce_factor':round(expected_bounce*65536),'land_delay_ticks':60,'tiled':charger or mossman or shaker,'gas':shaker,
             'limitations':['Corpse Steam/Flame and infected wave/spatter remain separate particle/effect work',
                             'Fixed-point terrain solver is not complete Box2D; bounce RNG is deterministic per source, not Unity global RNG']}
+
+
+def _corpse_gas_box(source,obj,parts):
+    """A Shaker corpse's `Gas Hit Box` child, proved against the polygon `runner.rs` carries.
+
+    Its `damages_hero` FSM is the shape HeroController looks for on whatever it touches:
+    `damageDealt` and `hazardType` ints and no transitions of its own."""
+    from runner import GAS_POLYGON_Q16
+    found=[]
+    for ref in parts['Transform'][1]['m_Children']:
+        transform=source.read(source.ref(obj.assets_file,ref))
+        go=source.read(source.ref(obj.assets_file,transform['m_GameObject']))
+        if go['m_Name']!='Gas Hit Box':continue
+        comps={}
+        for c in go['m_Component']:
+            co=source.ref(obj.assets_file,c['component']);comps[source.typename(co)]=source.read(co)
+        found.append((go,transform,comps))
+    if len(found)!=1:raise ValueError('Shaker corpse needs exactly one Gas Hit Box')
+    go,transform,comps=found[0]
+    polygon=comps.get('PolygonCollider2D')
+    fsm=comps.get('PlayMakerFSM',{}).get('fsm')
+    if polygon is None or fsm is None or fsm['name']!='damages_hero' or not polygon['m_IsTrigger'] or go['m_IsActive']:
+        raise ValueError('unsupported Shaker corpse Gas Hit Box')
+    ints={v['name']:v['value'] for v in fsm['variables']['intVariables']}
+    paths=polygon['m_Points']['m_Paths']
+    points=[[round(p['x']*65536),round((p['y']+polygon['m_Offset']['y'])*65536)] for p in paths[0]] if len(paths)==1 else None
+    origin=[round(transform['m_LocalPosition']['x']*65536),round(transform['m_LocalPosition']['y']*65536)]
+    if ints.get('damageDealt')!=1 or ints.get('hazardType')!=1 or points!=GAS_POLYGON_Q16 or origin!=[0,-65536]:
+        raise ValueError('Shaker corpse Gas Hit Box is not the admitted polygon')
 
 def _breaker_corpse_source(source,scene,actor,kind):
     # Buzzer: smashes on the first landing, no bounce. Gruzzer (Corpse Fly):
@@ -440,6 +482,98 @@ def _acid_flyer_corpse_source(source,scene,actor):
             'limitations':['Circle body as its bounding box with no spin; it stays where it comes to rest, as the source never removes it',
                            'Corpse Steam is not presented']}
 
+def _plant_trap_corpse_source(source,scene,actor):
+    """`Corpse Plant Trap`: no body. Its `corpse plant trap` FSM plays `Death` to
+    completion where the trap stood and then switches the renderer off, which is
+    the hold form with one clip: held for the clip's length, then removed."""
+    from combat import ticks
+    from fsm_pins import check_action,state
+    components=list(_components(scene,actor['game_object']))
+    deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
+    if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
+    death=deaths[0]
+    # rotateCorpse copies the owner's z rotation onto a corpse that never moves.
+    if not death['m_Enabled'] or any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','recycle')) \
+            or death['corpseSpawnPoint']!={'x':0.,'y':0.,'z':0.} or death['enemyDeathType']!=0 or death['playerDataName']!='SnapperTrap':
+        raise ValueError('unsupported Plant Trap corpse launch')
+    obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
+    if go['m_Name']!='Corpse Plant Trap':raise ValueError('unvalidated Plant Trap corpse identity')
+    parts={}
+    for ref in go['m_Component']:
+        component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
+        if typ in parts:raise ValueError('duplicate corpse component')
+        parts[typ]=(component,source.read(component))
+    if sorted(parts)!=sorted(('Transform','MeshFilter','MeshRenderer','tk2dSprite','tk2dSpriteAnimator','PlayMakerFSM','SpriteFlash')):
+        raise ValueError('unsupported Plant Trap corpse prefab')
+    sprite=parts['tk2dSprite'][1];transform=parts['Transform'][1]
+    if sprite['_color']!={'r':1.0,'g':1.0,'b':1.0,'a':1.0} or sprite['_scale']!={'x':1.0,'y':1.0,'z':1.0} or transform['m_LocalScale']!={'x':1.0,'y':1.0,'z':1.0}:
+        raise ValueError('unsupported corpse scale/color')
+    fsm=parts['PlayMakerFSM'][1]['fsm']
+    if fsm['name']!='corpse plant trap' or fsm['startState']!='Retract' or [st['name'] for st in fsm['states']]!=['Retract','Death'] \
+            or [(t['fsmEvent']['name'],t['toState']) for st in fsm['states'] for t in st['transitions']]!=[('FINISHED','Death')]:
+        raise ValueError('unsupported Plant Trap corpse FSM')
+    check_action('Plant Trap corpse',state(fsm,'Retract'),'Tk2dPlayAnimationWithEvents',
+                 {'clipName':'Death','animationTriggerEvent':'','animationCompleteEvent':'FINISHED'})
+    anim=parts['tk2dSpriteAnimator'][1];library_o=source.ref(obj.assets_file,anim['library']);library=source.read(library_o)
+    if source.sid(library_o)!=actor['movement_control']['library_source']:
+        raise ValueError('Plant Trap corpse animation library differs from the actor library')
+    death_clip=next(c for c in library['clips'] if c['name']=='Death')
+    if (death_clip['fps'],death_clip['wrapMode'],len(death_clip['frames']),death_clip.get('loopStart',0))!=(12,2,7,0) \
+            or any(f.get('triggerEvent',False) for f in death_clip['frames']):
+        raise ValueError('unvalidated Plant Trap corpse clip timing')
+    matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
+    return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':[death_clip,death_clip],'scale':[sx,sy],
+            'bounds':[0,0,0,0],'spawn_offset':[0,0],'gravity':0,'breaker':False,'smash_bounces':0,'fling_speed':0,'bounce_factor':0,
+            'hold_ticks':ticks(len(death_clip['frames'])/death_clip['fps']),'remove_after_land':1,'tiled':True,
+            'limitations':['No body: the corpse plays Death in place and is removed when it completes; the grass and orange puffs are not presented']}
+
+def _fat_fly_corpse_source(source,scene,actor):
+    """`Corpse Fat Fly`: a flung circle body (gravity 0.8, ObjectBounce 0.6, spun by
+    SpinSelfSimple) whose `Corpse` component sets no special flag, so it lands, plays
+    Death Land and stays. The circle stands in as its bounding box, as the Acid Flyer's
+    does."""
+    components=list(_components(scene,actor['game_object']))
+    deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
+    if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
+    death=deaths[0]
+    if any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','rotateCorpse')) or death['corpseFlingSpeed']!=20 \
+            or death['corpseSpawnPoint']!={'x':0.,'y':0.,'z':0.}:
+        raise ValueError('unsupported corpse launch')
+    obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
+    if go['m_Name']!='Corpse Fat Fly':raise ValueError('unvalidated Fat Fly corpse identity')
+    parts={}
+    for ref in go['m_Component']:
+        component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
+        if typ in parts:raise ValueError('duplicate corpse component')
+        parts[typ]=(component,source.read(component))
+    if any(k not in parts for k in ('Corpse','tk2dSprite','tk2dSpriteAnimator','Rigidbody2D','CircleCollider2D','ObjectBounce','Transform')) \
+            or 'BoxCollider2D' in parts or 'PlayMakerFSM' in parts:
+        raise ValueError('unsupported Fat Fly corpse prefab')
+    corpse=parts['Corpse'][1];body=parts['Rigidbody2D'][1];ob=parts['ObjectBounce'][1]
+    if corpse['smashBounces'] or any(corpse[k] for k in ('breaker','bigBreaker','chunker','deathStun','fungusExplode','goopExplode','hatcher','instantChunker','massless','resetRotation','spineBurst','zomHive')) \
+            or corpse['landEffects']['m_PathID']:
+        raise ValueError('unsupported special corpse')
+    if body['m_BodyType']!=0 or body['m_LinearDamping']!=0 or abs(body['m_GravityScale']-.8)>1e-6 or body['m_Constraints']!=0:
+        raise ValueError('unsupported corpse body')
+    if abs(ob['bounceFactor']-.6)>1e-6 or ob['speedThreshold']!=1 or any(ob[k] for k in ('playSound','playAnimationOnBounce','sendFSMEvent')):
+        raise ValueError('unsupported corpse bounce')
+    sprite=parts['tk2dSprite'][1];transform=parts['Transform'][1]
+    if sprite['_color']!={'r':1.0,'g':1.0,'b':1.0,'a':1.0} or sprite['_scale']!={'x':1.0,'y':1.0,'z':1.0} or transform['m_LocalScale']!={'x':1.0,'y':1.0,'z':1.0}:
+        raise ValueError('unsupported corpse scale/color')
+    matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
+    circle=parts['CircleCollider2D'][1];off=circle['m_Offset'];r=circle['m_Radius']
+    if circle['m_IsTrigger'] or abs(r-.6)>1e-6 or abs(off['x']-.02)>1e-6 or abs(off['y']+.01)>1e-6:raise ValueError('unsupported Fat Fly corpse collider')
+    bounds=[(off['x']-r)*sx,(off['y']-r)*sy,(off['x']+r)*sx,(off['y']+r)*sy]
+    anim=parts['tk2dSpriteAnimator'][1];library_o=source.ref(obj.assets_file,anim['library']);library=source.read(library_o)
+    selected=[next(c for c in library['clips']if c['name']==name)for name in ('Death Air','Death Land')]
+    if [(c['fps'],c['wrapMode'],len(c['frames']))for c in selected]!=[(12,2,2),(30,0,1)]:raise ValueError('unvalidated corpse clip timing')
+    if any(c.get('loopStart',0)!=0 or any(f.get('triggerEvent',False)for f in c['frames'])for c in selected):
+        raise ValueError('unsupported corpse animation events/loop start')
+    return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],'bounds':[round(v*65536)for v in bounds],
+            'spawn_offset':[0,0],'gravity':48*65536,'breaker':False,'smash_bounces':0,'remove_after_land':0,'fling_speed':20*65536,'bounce_factor':round(.6*65536),'land_delay_ticks':0,'tiled':True,
+            'limitations':['Circle body as its bounding box with no spin',
+                           'Corpse Flame, Steam and the spore clouds are not presented']}
+
 def append_corpse_art(source,scene,actors,atlas,frames,clips):
     cooker=_ClipCooker(source,atlas,frames,clips)
     for actor in actors:
@@ -464,7 +598,7 @@ def append_shot_art(source,actors,cooker):
     prefab whose body or box the pool would get wrong."""
     for actor in actors:
         control=actor.get('movement_control',{})
-        if not actor['movement_supported'] or control.get('kind')not in('Aspid','Blocker'):continue
+        if not actor['movement_supported'] or control.get('kind')not in('Aspid','Blocker','FatFly'):continue
         shot=control['shot'];library_o=shot.pop('library_object');library=source.read(library_o)
         scale=shot['scale']
         for kind,name in (('shot','Idle'),('impact','Impact')):
@@ -483,6 +617,7 @@ def generated_corpse(record):
     fields['smash_bounces']=int(record.get('smash_bounces',0))
     fields['remove_after_land']=int(record.get('remove_after_land',0))
     fields['hold_ticks']=int(record.get('hold_ticks',0))
+    fields['gas']=str(bool(record.get('gas',False))).lower()
     fields.update({k:'['+','.join(map(str,record[k]))+']'for k in ('bounds','spawn_offset')})
     return 'Some(hk_sim::CorpseSpec {'+','.join(f'{k}:{v}'for k,v in fields.items())+'})'
 
