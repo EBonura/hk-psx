@@ -129,6 +129,12 @@ pub struct Hatcher {
     facing: i32,
     fixed_accumulator: u8,
     rng: u32,
+    /// `Hatched Max` on the arena's `Hatcher NP` variant: its `Hatched Max
+    /// Check` compares its own `Spawned` count against it, where the plain
+    /// Hatcher's live check is "the cage still has a child".
+    cap: Option<u8>,
+    /// The `Spawned` variable: babies this Hatcher has actually released.
+    spawned: u8,
 }
 impl Hatcher {
     pub fn new(position: [i32; 2], seed: u32) -> Self {
@@ -140,7 +146,19 @@ impl Hatcher {
             facing: -1,
             fixed_accumulator: 0,
             rng: seed,
+            cap: None,
+            spawned: 0,
         }
+    }
+    /// The arena's `Hatcher NP`: at most `max` babies over its life, whatever
+    /// the cage holds. Its `Fire` still cancels on an empty cage, after the
+    /// anticipation has played.
+    pub fn with_cap(mut self, max: u8) -> Self {
+        self.cap = Some(max);
+        self
+    }
+    pub fn spawned(self) -> u8 {
+        self.spawned
     }
     /// FSM variable `startAlert`: `Idle`'s first BoolTest sends ALERT at once.
     pub fn new_alert(position: [i32; 2], seed: u32) -> Self {
@@ -192,6 +210,7 @@ impl Hatcher {
             return;
         }
         self.phase = Phase::Fire;
+        self.spawned = self.spawned.saturating_add(1);
         self.timer = FIRE_CLIP_TICKS - ANTICIPATE_TICKS;
         out.push(Action::Release {
             position: [senses.position[0], senses.position[1] - RELEASE_DROP],
@@ -249,9 +268,14 @@ impl Hatcher {
                 self.face(want, &mut out);
                 self.timer -= 1;
                 if self.timer == 0 {
-                    // `Hatched Max Check` is a one-frame state: the live gate is
-                    // `GetChildCount(Cage) > 0`, not the disabled `Spawned` cap.
-                    if senses.cage_children == 0 {
+                    // `Hatched Max Check` is a one-frame state. The plain
+                    // Hatcher's live gate is `GetChildCount(Cage) > 0` (its
+                    // `Spawned` cap is disabled); the NP variant's is the cap.
+                    let fires = match self.cap {
+                        Some(max) => self.spawned < max,
+                        None => senses.cage_children > 0,
+                    };
+                    if !fires {
                         self.begin_distance_fly(&mut out);
                     } else {
                         self.phase = Phase::Anticipate;
@@ -461,6 +485,38 @@ mod tests {
             hatcher.tick(senses(start, false, 15));
             assert_ne!(hatcher.phase(), Phase::Idle);
         }
+    }
+    #[test]
+    fn the_np_variant_stops_at_its_own_cap_whatever_the_cage_holds() {
+        let start = [10 * ONE, 10 * ONE];
+        let mut hatcher = Hatcher::new_alert(start, 5).with_cap(2);
+        let mut released = 0;
+        for _ in 0..6000 {
+            for action in hatcher.tick(senses(start, true, 23)).iter() {
+                if matches!(action, Action::Release { .. }) {
+                    released += 1;
+                }
+            }
+        }
+        assert_eq!(released, 2);
+        assert_eq!(hatcher.spawned(), 2);
+        assert_eq!(hatcher.phase(), Phase::DistanceFly);
+    }
+    #[test]
+    fn the_np_variant_anticipates_into_an_empty_cage_and_does_not_count_it() {
+        let start = [10 * ONE, 10 * ONE];
+        let mut hatcher = Hatcher::new_alert(start, 9).with_cap(5);
+        let mut anticipated = false;
+        for _ in 0..1200 {
+            let actions = hatcher.tick(senses(start, true, 0));
+            anticipated |= hatcher.phase() == Phase::Anticipate;
+            assert!(!actions.iter().any(|a| matches!(a, Action::Release { .. })));
+        }
+        assert!(
+            anticipated,
+            "the cap is not met, so it plays Fire Anticipate"
+        );
+        assert_eq!(hatcher.spawned(), 0);
     }
     #[test]
     fn an_empty_cage_keeps_flying_and_never_releases() {
