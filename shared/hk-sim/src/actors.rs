@@ -223,7 +223,14 @@ pub struct ActorPlacement {
     /// `ActorSpec::bounds` is the collider in this pose, so the runtime rotates
     /// the box by the turns taken since, not by the absolute rotation.
     pub rotation_q16: i32,
+    /// The enemy carries an `FSMActivator`: its FSMs start disabled and run from the first frame
+    /// its collider meets the camera's `ActiveRegion` (`ACTIVE_REGION`), and from then on for the
+    /// scene's life.
+    pub fsm_activator: bool,
 }
+/// The `ActiveRegion` prefab: a kinematic trigger box 50 by 35 units on the main camera, centred on it.
+/// Q16, relative to the camera's x and y.
+pub const ACTIVE_REGION: [i32; 4] = [-25 * crate::ONE, -35 * crate::ONE / 2, 25 * crate::ONE, 35 * crate::ONE / 2];
 #[derive(Clone, Copy, Debug)]
 pub struct EnemyParams {
     pub health: i16,

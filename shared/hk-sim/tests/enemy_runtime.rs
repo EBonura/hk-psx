@@ -14,6 +14,7 @@ const PLACEMENT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
     start_alert: false,
     start_right: false,
     rotation_q16: 0,
+    fsm_activator: false,
 };
 const SPEC: ActorSpec = ActorSpec {
     controller: ActorController::Crawler,
@@ -200,6 +201,17 @@ fn tick(
     v: &mut Vitals,
     n: &Nail,
 ) -> enemies::Events {
+    tick_camera(w, r, room, p, v, n, [0, 0, -2496922])
+}
+fn tick_camera(
+    w: &mut enemies::EnemyWorld,
+    r: &world::Region,
+    room: &hk_format::Room,
+    p: &mut Player,
+    v: &mut Vitals,
+    n: &Nail,
+    camera: [i32; 3],
+) -> enemies::Events {
     w.tick(
         r,
         room,
@@ -213,7 +225,7 @@ fn tick(
         no_attack(),
         [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4],
         cheats::Settings::new(),
-        [0,0,-2496922],
+        camera,
         |_| panic!("Crawler emitted Runner event"),
         |_,_,_,_|None,
     )
@@ -1582,3 +1594,37 @@ fn the_shell_above_the_body_takes_an_ordinary_pogo_and_no_damage() {
     assert_eq!(w.actor_state(0, ACID_AT.source_id).unwrap().2, 30);
 }
 const VITAL_BOUNCE_TICKS: u16 = NAIL_RESPONSE_PARAMS.bounce_ticks;
+
+#[test]
+fn an_fsm_activator_enemy_waits_for_the_cameras_active_region() {
+    static AWAITING: hk_sim::ActorPlacement = hk_sim::ActorPlacement { fsm_activator: true, random_start_direction: false, ..PLACEMENT };
+    static ACTORS: [(hk_sim::ActorPlacement, &ActorSpec); 1] = [(AWAITING, &SPEC)];
+    let bytes = room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = world::Region { actors: &ACTORS, ..region() };
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(10 * ONE, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    let start = {
+        tick_camera(&mut w, &r, &room, &mut p, &mut v, &n, [0, 0, -2496922]);
+        w.actor_state(0, 12546).unwrap().0
+    };
+    // The camera is 60 units away: the 50 wide ActiveRegion stops 35 units short of the enemy.
+    let mut w = enemies::EnemyWorld::new();
+    for _ in 0..120 {
+        tick_camera(&mut w, &r, &room, &mut p, &mut v, &n, [60 * ONE, 0, -2496922]);
+    }
+    assert_eq!(w.actor_state(0, 12546).unwrap().0, PLACEMENT.x, "it must not move before the region reaches it");
+    // The region reaches it: from then on it patrols, and stays active if the camera leaves again.
+    for _ in 0..5 {
+        tick_camera(&mut w, &r, &room, &mut p, &mut v, &n, [20 * ONE, 0, -2496922]);
+    }
+    let woken = w.actor_state(0, 12546).unwrap().0;
+    assert_ne!(woken, PLACEMENT.x);
+    assert!(start != PLACEMENT.x);
+    for _ in 0..30 {
+        tick_camera(&mut w, &r, &room, &mut p, &mut v, &n, [200 * ONE, 0, -2496922]);
+    }
+    assert_ne!(w.actor_state(0, 12546).unwrap().0, woken, "an activated enemy keeps running");
+}

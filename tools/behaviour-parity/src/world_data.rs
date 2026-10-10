@@ -40,6 +40,7 @@ fn placement(object: &hk_format::world_meta::Object<'_>) -> ActorPlacement {
         start_alert: flags & 4 != 0,
         start_right: flags & 8 != 0,
         rotation_q16: ((flags >> 8) & 3) as i32 * 90 * ONE,
+        fsm_activator: flags & 128 != 0,
     }
 }
 

@@ -33,7 +33,8 @@ pub const KIND_CHECKPOINT: u16 = 4;
 /// id, which for an object merged in from an additive scene is its shifted id
 /// rather than the object's own. The remaining flag bits are the authored
 /// switches: 1 initial facing right, 2 random start direction, 4 `startAlert`,
-/// 8 the Climber's `start_right`, and bits 8..9 its rotation in quarter turns.
+/// 8 the Climber's `start_right`, 128 `FSMActivator` (the enemy waits for the camera's ActiveRegion),
+/// and bits 8..9 its rotation in quarter turns.
 pub const KIND_ACTOR: u16 = 5;
 /// A breakable's own mask fade; follows its breakable in the region's objects.
 pub const KIND_MASK_FADE: u16 = 6;

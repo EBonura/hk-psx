@@ -49,6 +49,8 @@ pub struct Placement {
     pub start_alert: bool,
     pub start_right: bool,
     pub rotation_quarter: i64,
+    /// The enemy waits, FSMs disabled, until the camera's ActiveRegion meets its collider.
+    pub fsm_activator: bool,
 }
 
 impl Placement {
@@ -63,6 +65,7 @@ impl Placement {
             ("start_alert".into(), Json::Bool(self.start_alert)),
             ("start_right".into(), Json::Bool(self.start_right)),
             ("rotation_quarter".into(), Json::Int(self.rotation_quarter)),
+            ("fsm_activator".into(), Json::Bool(self.fsm_activator)),
         ])
     }
 }
@@ -512,10 +515,14 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
             start_alert,
             start_right,
             rotation_quarter: rotation_q16.div_euclid(90 * 65536).rem_euclid(4),
+            fsm_activator: row.components.iter().any(|c| c.1 == "FSMActivator")
+                && !controller.contains("GruzzerReserve")
+                && !controller.contains("HatcherBaby"),
         };
         if placement.initial_direction != -1 && placement.initial_direction != 1 {
             return err(format!("actor initial direction is not a facing: {who}"));
         }
+        let (recoil_speed, recoil_ticks) = crate::runner::recoil_fixed(recoil_f("recoilSpeedBase"), recoil_f("recoilDuration"));
         let fields = [
             ("bounds", format!("[{}]", bounds.iter().map(i64::to_string).collect::<Vec<_>>().join(","))),
             (
@@ -533,8 +540,8 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
             ("walk_clip", clip("walk_clip")?.to_string()),
             ("turn_clip", clip("turn_clip")?.to_string()),
             ("corpse", generated_corpse(actor.corpse)?),
-            ("recoil_speed", py_round(recoil_f("recoilSpeedBase") * 65536.0).to_string()),
-            ("recoil_ticks", ticks(recoil_f("recoilDuration")).to_string()),
+            ("recoil_speed", recoil_speed.to_string()),
+            ("recoil_ticks", recoil_ticks.to_string()),
             ("dream_soul", dream_soul.to_string()),
         ];
         output.push((format!("hk_sim::ActorSpec {{{}}}", fields.iter().map(|(k, v)| format!("{k}:{v}")).collect::<Vec<_>>().join(",")), placement));

@@ -1059,6 +1059,8 @@ struct Actor {
     /// A Dream Nail slash pays SOUL once per actor, as the source's
     /// `EnemyDreamnailReaction` clears its state after the first impact.
     dream_taken: bool,
+    /// False while an `FSMActivator` enemy waits for the camera's `ActiveRegion` to reach it.
+    activated: bool,
     /// Where the off-view resolver last found this actor's view, and the box
     /// it holds for, so a lookup scans the bank only on leaving that box.
     located: crate::disc::Located,
@@ -1274,6 +1276,7 @@ impl Actor {
             corpse: None,
             geo_paid: false,
             dream_taken: false,
+            activated: !placement.fsm_activator,
             located: crate::disc::Located::NONE,
             runtime: match spec.controller {
                 ActorController::Crawler => Runtime::Walker,
@@ -3809,7 +3812,15 @@ impl EnemyWorld {
                 && crate::world::contains(terrain_region.collision_bounds,x,y);
             if !actor.health.dead {actor.health.tick();}
             actor.flash_left = actor.flash_left.saturating_sub(1);
-            if available {
+            // `FSMActivator`: the FSMs start disabled, and the camera's `ActiveRegion` trigger enables
+            // them when it meets the enemy's collider. It stays enabled after that, and until then the
+            // enemy neither moves nor animates (it is still hit and still hurts).
+            if !actor.activated {
+                let c = context.camera;
+                let r = hk_sim::ACTIVE_REGION;
+                actor.activated = overlap([c[0] + r[0], c[1] + r[1], c[0] + r[2], c[1] + r[3]], actor.bounds(spec));
+            }
+            if available && actor.activated {
                 context.cage_children=parked.get();
                 actor.advance_in_view(spec,state,region,room,terrain_region,terrain_room,context,&mut runner_event);
             }
@@ -4753,7 +4764,7 @@ mod hatcher_pool_tests {
     /// Where the fixture's placements stand; only the Hatcher wakes alert.
     const AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
         source_id: 0, x: 0, y: 0, initial_direction: -1, random_start_direction: false,
-        start_alert: false, start_right: false, rotation_q16: 0,
+        start_alert: false, start_right: false, rotation_q16: 0, fsm_activator: false,
     };
     const HATCHER_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
         source_id: 5007, x: 20 * ONE, y: 20 * ONE, start_alert: true, ..AT };
@@ -4944,7 +4955,7 @@ mod runner_runtime_tests {
     };
     pub(super) const AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
         source_id: 5196, x: 0, y: 94208, initial_direction: -1, random_start_direction: false,
-        start_alert: false, start_right: false, rotation_q16: 0,
+        start_alert: false, start_right: false, rotation_q16: 0, fsm_activator: false,
     };
     // Source-free six-clip bank with the real Runner rates/lengths. Each clip's
     // frames reference a distinct texture so draw selection is independently visible.

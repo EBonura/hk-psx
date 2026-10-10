@@ -235,6 +235,7 @@ fn actor_placement(object: &meta::Object<'_>) -> hk_sim::ActorPlacement {
         start_alert: flags & 4 != 0,
         start_right: flags & 8 != 0,
         rotation_q16: ((flags >> 8) & 3) as i32 * 90 * hk_sim::ONE,
+        fsm_activator: flags & 128 != 0,
     }
 }
 /// Reveal mask draw bindings of a catalogue region: (controller, draw) pairs
