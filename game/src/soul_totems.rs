@@ -45,8 +45,3 @@ pub fn strike(scene: usize, polygon: &[[i32; 2]], swing: u32) -> u16 {
 pub fn tick() {
     unsafe { for c in (*(&raw mut COOLDOWN)).iter_mut() { *c = c.saturating_sub(1); } }
 }
-/// A bench rest: every `semiPersistent` totem is full again.
-pub fn rest() {
-    persist::store().clear_kind(Kind::SoulTotem);
-    persist::publish();
-}

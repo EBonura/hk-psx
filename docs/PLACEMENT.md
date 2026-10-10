@@ -53,7 +53,7 @@ Each placement the port spawns is also held to contract checks, and each source 
 (`EnemyDeathEffects.RecieveDeathEvent` calls its `SaveState`), and a scene that loads with the item set
 marks the enemy dead and deactivates it. Its identity is the owner's name and the scene, so placements
 that share a name share a state. `semiPersistent` items (every Crossroads husk) are reset by a bench rest
-and by the Knight's death (`GameManager.PlayerDead` calls `ResetSemiPersistentItems`).
+and by the Knight's death (`GameManager.PlayerDead` calls `ResetSemiPersistentItems`). The soul totems are semi-persistent too, so one `persist::reset_semi_persistent` serves both resets.
 
 `host/hk-cook/src/actor_persistence.rs` cooks which placements those are into `data/actor_persistence.rs`.
 `game/src/actor_persistence.rs` keeps the deaths in `persist` (kind `Enemy`, local ids from 16 up, below
