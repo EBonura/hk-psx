@@ -113,6 +113,9 @@ struct Resident {
     /// Styles drawn as soft additive light rather than dithered coverage
     /// (`soft_styles`): the smoke and dust ones.
     soft: [bool; FX_MAX_STYLES],
+    /// Styles of `Legacy Shaders/Particles/Additive (Soft)` (the Knight's rising motes): soft, and
+    /// drawn as the full `B + F` of their texel rather than a quarter of it.
+    additive: [bool; FX_MAX_STYLES],
     /// Each soft palette and its copy, every coloured entry semi-transparent,
     /// that soft draws use instead.
     soft_cluts: [(u16, u16); SOFT_CLUT_SLOTS.len()],
@@ -185,6 +188,7 @@ static mut RESIDENT: Resident = Resident {
     art_count: 0,
     frames: [[0; 3]; FX_MAX_FRAMES],
     soft: [false; FX_MAX_STYLES],
+    additive: [false; FX_MAX_STYLES],
     soft_cluts: [(0, 0); SOFT_CLUT_SLOTS.len()],
     soft_clut_count: 0,
     hero_dust: NO_STYLE,
@@ -271,6 +275,7 @@ fn soft_styles(r: &mut Resident, styles: usize, uploads: &[[u16; 4]]) {
     for i in 0..styles {
         let s = &r.styles[i];
         let faint = s.start_alpha[0] < 255
+            || r.additive[i]
             || s.samples
                 .iter()
                 .any(|x| x.alpha[0] < 255 || x.alpha[1] < 255);
@@ -391,6 +396,7 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
             samples: CURVES[curve],
             frames: frame_pool,
         };
+        r.additive[i] = b[43] != 0;
         if r.styles[i].count == 0
             || r.styles[i].count as usize > super::CAPACITY
             || r.styles[i].rate <= 0
@@ -1069,6 +1075,7 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32)) -> boo
         if alpha == 0 {
             return false;
         }
+        let additive = resident.additive[(p.kind - 2) as usize];
         let gain = if resident.hero_dust == p.kind - 2 {
             HERO_DUST_GAIN_HALVES
         } else {
@@ -1080,7 +1087,12 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32)) -> boo
         unsafe {
             HK_SOFT_PARTICLES_DRAWN = HK_SOFT_PARTICLES_DRAWN.wrapping_add(1);
         }
-        (3, (c[0], c[1], c[2]), BlendMode::AddQuarter)
+        let blend = if additive {
+            BlendMode::Add
+        } else {
+            BlendMode::AddQuarter
+        };
+        (3, (c[0], c[1], c[2]), blend)
     } else {
         if level == 0 {
             return false;
@@ -2112,6 +2124,7 @@ mod tests {
             art_count: 3,
             frames: [[0; 3]; FX_MAX_FRAMES],
             soft: [false; FX_MAX_STYLES],
+            additive: [false; FX_MAX_STYLES],
             soft_cluts: [(0, 0); SOFT_CLUT_SLOTS.len()],
             soft_clut_count: 0,
             hero_dust: NO_STYLE,
