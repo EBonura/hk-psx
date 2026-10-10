@@ -152,7 +152,7 @@ def room_scenes():
     out = {}
     root = Path(__file__).resolve().parents[1] / 'data'
     for name, (file, const) in ROOM_MODULES.items():
-        m = re.search(rf'pub const {const}:usize=(\d+);', (root / file).read_text())
+        m = re.search(rf'pub const {const}\s*:\s*usize\s*=\s*(\d+);', (root / file).read_text())
         out.setdefault(int(m[1]), set()).add(name)
     return out
 
