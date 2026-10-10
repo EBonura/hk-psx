@@ -68,26 +68,31 @@ pub fn repr(v: f64) -> String {
     }
 }
 
-/// CPython's `math.hypot(x, y)` (3.10 and later): the Euclidean norm computed with an extended-precision
-/// accumulation, which differs from a C library `hypot` in the last place for some inputs.
+/// CPython's `math.hypot(x, y)` (3.10 and later).
 pub fn hypot(a: f64, b: f64) -> f64 {
-    let (x, y) = (a.abs(), b.abs());
-    if x.is_infinite() || y.is_infinite() {
+    hypot_n(&[a, b])
+}
+
+/// CPython's `math.hypot(*v)` and `math.dist` (3.10 and later): the Euclidean norm computed with an
+/// extended-precision accumulation, which differs from a C library `hypot` in the last place for some inputs.
+pub fn hypot_n(v: &[f64]) -> f64 {
+    let vals: Vec<f64> = v.iter().map(|x| x.abs()).collect();
+    if vals.iter().any(|x| x.is_infinite()) {
         return f64::INFINITY;
     }
-    if x.is_nan() || y.is_nan() {
+    if vals.iter().any(|x| x.is_nan()) {
         return f64::NAN;
     }
-    let max = x.max(y);
-    if max == 0.0 {
+    let max = vals.iter().copied().fold(0.0, f64::max);
+    if max == 0.0 || vals.len() <= 1 {
         return max;
     }
     // frexp: max = m * 2^e with 0.5 <= m < 1.
     let bits = max.to_bits();
     let exp_field = ((bits >> 52) & 0x7ff) as i64;
     if exp_field == 0 {
-        // Subnormal inputs: no scaling trick; fall back to the library.
-        return x.hypot(y);
+        // Subnormal inputs: no scaling trick; the plain norm.
+        return vals.iter().map(|x| x * x).sum::<f64>().sqrt();
     }
     let e = exp_field - 1022;
     let scale = f64::from_bits(((1023 - e) as u64) << 52);
@@ -100,9 +105,9 @@ pub fn hypot(a: f64, b: f64) -> f64 {
         (s, (p - s) + q)
     };
     let (mut csum, mut frac1, mut frac2) = (1.0f64, 0.0f64, 0.0f64);
-    for v in [x, y] {
-        let v = v * scale;
-        let (phi, plo) = mul(v, v);
+    for x in vals {
+        let x = x * scale;
+        let (phi, plo) = mul(x, x);
         let (shi, slo) = fast_sum(csum, phi);
         csum = shi;
         frac1 += plo;

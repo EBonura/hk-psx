@@ -13,6 +13,9 @@ import os, re, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 SAVE_RS = ROOT / 'game/src/save.rs'
 HARNESS = ROOT / 'tests/save_runtime.rs'
 
@@ -31,10 +34,7 @@ class SaveRecordTests(unittest.TestCase):
     def test_the_harness_covers_every_field_the_record_carries(self):
         # A field added to `Save` without a line here would round trip untested,
         # which is exactly how a wrong offset survives.
-        source = SAVE_RS.read_text()
-        body = source[source.index('pub struct Save {'):]
-        body = body[:body.index('\n}')]
-        fields = set(re.findall(r'^\s*pub (\w+):', body, re.M))
+        fields = set(rustsrc.struct_fields(SAVE_RS, 'Save'))
         harness = HARNESS.read_text()
         missing = sorted(f for f in fields if f not in harness)
         self.assertEqual(missing, [], f'tests/save_runtime.rs does not mention {missing}')
@@ -48,7 +48,7 @@ class SaveRecordTests(unittest.TestCase):
         magic, length = layout()
         self.assertEqual(len(magic), 4)
         self.assertGreater(length, 4)
-        self.assertIn(f'pub const LEN: usize = {length};', SAVE_RS.read_text())
+        self.assertEqual(rustsrc.const_int(SAVE_RS, 'LEN'), length)
 
 
 if __name__ == '__main__':
