@@ -13,24 +13,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 import husk_guard
 
-RUST = (ROOT / 'shared/hk-sim/src/husk_guard.rs').read_text()
+RUST = ROOT / 'shared/hk-sim/src/husk_guard.rs'
 
 
 def rust_array(name):
-    found = re.search(rf'pub const {name}: \[i32; 4\] = \[([^\]]*)\];', RUST)
-    return [int(v) for v in found.group(1).split(',')]
+    return rustsrc.const_ints(RUST, name)
 
 
 class HuskGuardContractTests(unittest.TestCase):
     def test_clip_slots_follow_the_clip_enum(self):
-        body = re.search(r'pub enum Clip \{(.*?)\}', RUST, re.S).group(1)
-        variants = [v.strip().rstrip(',') for v in body.split('\n') if v.strip() and not v.strip().startswith('//')]
+        variants = rustsrc.enum_variants(RUST, 'Clip')
         snake = [re.sub(r'(?<!^)([A-Z])', r'_\1', v).lower() for v in variants[2:]]
         self.assertEqual(variants[:2], ['Walk', 'Turn'])
         self.assertEqual(list(husk_guard.CLIP_SLOTS), snake)
-        count = int(re.search(r'pub const COUNT: usize = (\d+);', RUST).group(1))
+        count = rustsrc.const_int(RUST, 'COUNT')
         self.assertEqual(count, len(husk_guard.CLIP_SLOTS))
         for slot in husk_guard.CLIP_SLOTS:
             self.assertIn(husk_guard.SLOT_CLIPS[slot], husk_guard.CLIPS)
