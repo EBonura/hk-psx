@@ -604,6 +604,56 @@ mod actor_persistence {
         KILLED.with(|k| k.borrow_mut().push((scene, source_id)));
     }
 }
+/// A waves arena with one fixture scene (30): the real module links the cooked
+/// table, so this holds the table's own shape with a small arena in it. Two
+/// waves, of one member and of two, and one removed enemy among the standing.
+mod battle_waves {
+    pub struct Arena {
+        pub scene: u16,
+        pub trigger: [i32; 4],
+        pub sizes: &'static [u8],
+    }
+    pub const REMOVED: u8 = 0x80;
+    pub const ARENAS: &[Arena] = &[Arena {
+        scene: 30,
+        trigger: [
+            8 * hk_sim::ONE,
+            -2 * hk_sim::ONE,
+            20 * hk_sim::ONE,
+            6 * hk_sim::ONE,
+        ],
+        sizes: &[1, 2],
+    }];
+    pub const MEMBERS: &[(u16, u32, u8)] = &[
+        (30, 9001, REMOVED),
+        (30, 9003, 1),
+        (30, 9004, 2),
+        (30, 9005, 2),
+    ];
+    pub fn arena(scene: usize) -> Option<&'static Arena> {
+        ARENAS.iter().find(|a| a.scene as usize == scene)
+    }
+    pub fn members(scene: usize) -> &'static [(u16, u32, u8)] {
+        let first = MEMBERS.partition_point(|m| (m.0 as usize) < scene);
+        let len = MEMBERS[first..]
+            .iter()
+            .take_while(|m| m.0 as usize == scene)
+            .count();
+        &MEMBERS[first..first + len]
+    }
+    fn word(scene: usize, source_id: u32) -> u8 {
+        members(scene)
+            .iter()
+            .find(|m| m.1 == source_id)
+            .map_or(0, |m| m.2)
+    }
+    pub fn wave_of(scene: usize, source_id: u32) -> u8 {
+        word(scene, source_id) & 7
+    }
+    pub fn removed(scene: usize, source_id: u32) -> bool {
+        word(scene, source_id) & REMOVED != 0
+    }
+}
 mod modules {
     pub const FALSE_KNIGHT: usize = 0;
     pub const MAWLEK: usize = 1;
@@ -2179,8 +2229,10 @@ fn the_barrel_pool_is_paid_for_in_padding_and_twenty_bytes() {
     // `Shockwave Wave` slots, 64 bytes each, once on the world. 8,264 with the
     // shot pool at 32 slots (28 bytes each) so Brooding Mawlek's 25-shot spit
     // is on screen whole; main.rs's frame grew by the same 672 on the guest.
+    // 8,320 with the waves arena's `Battle Control` (56 bytes, once on the world):
+    // the order of the fight, four seats for the wave's members and a word of rng.
     assert!(
-        size_of::<enemies::EnemyWorld>() <= 8264,
+        size_of::<enemies::EnemyWorld>() <= 8320,
         "EnemyWorld is {} bytes of the 11,556 unallocated in build.json",
         size_of::<enemies::EnemyWorld>()
     );
@@ -2992,3 +3044,147 @@ fn the_shell_above_the_body_takes_an_ordinary_pogo_and_no_damage() {
     assert_eq!(w.actor_state(0, ACID_AT.source_id).unwrap().2, 30);
 }
 const VITAL_BOUNCE_TICKS: u16 = NAIL_RESPONSE_PARAMS.bounce_ticks;
+
+const fn arena_member(source_id: u32, x: i32) -> (hk_sim::ActorPlacement, &'static ActorSpec) {
+    (
+        hk_sim::ActorPlacement {
+            source_id,
+            x,
+            y: ONE,
+            initial_direction: -1,
+            random_start_direction: false,
+            start_alert: false,
+            start_right: false,
+            rotation_q16: 0,
+        },
+        &SPEC,
+    )
+}
+/// Scene 30: a removed enemy (9001) and one that stays (9002), then waves of
+/// one (9003) and of two (9004, 9005).
+static ARENA_ACTORS: [(hk_sim::ActorPlacement, &ActorSpec); 5] = [
+    arena_member(9001, -8 * ONE),
+    arena_member(9002, -12 * ONE),
+    arena_member(9003, 4 * ONE),
+    arena_member(9004, 6 * ONE),
+    arena_member(9005, -4 * ONE),
+];
+fn arena_region() -> world::Region {
+    world::Region {
+        scene: 30,
+        bounds: [-20 * ONE, -5 * ONE, 20 * ONE, 20 * ONE],
+        collision_bounds: [-23 * ONE, -10 * ONE, 23 * ONE, 25 * ONE],
+        actors: &ARENA_ACTORS,
+    }
+}
+fn arena_events() -> Vec<(&'static str, usize)> {
+    battle_gates::EVENTS.with(|e| e.borrow().clone())
+}
+fn standing(w: &enemies::EnemyWorld) -> Vec<u32> {
+    (9001..=9005)
+        .filter(|&id| w.actor_state(30, id).is_some())
+        .collect()
+}
+/// Hit `id` until it falls, standing the Knight on it each time.
+fn arena_kill(
+    w: &mut enemies::EnemyWorld,
+    r: &world::Region,
+    room: &hk_format::Room,
+    p: &mut Player,
+    id: u32,
+) {
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut n = Nail::new();
+    for _ in 0..8 {
+        if w.actor_state(30, id).unwrap().2 <= 0 {
+            return;
+        }
+        p.x = w.actor_state(30, id).unwrap().0;
+        p.y = ONE;
+        n.active = true;
+        n.age = 1;
+        tick(w, r, room, p, &mut v, &n);
+        n.active = false;
+        for _ in 0..12 {
+            tick(w, r, room, p, &mut v, &n);
+        }
+    }
+    assert!(w.actor_state(30, id).unwrap().2 <= 0, "{id} did not fall");
+}
+#[test]
+fn a_waves_arena_summons_one_wave_at_a_time_into_the_slots_the_last_moment_freed() {
+    let bytes = room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = arena_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(0, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    // Before the fight only what stood in the room is seated.
+    tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    assert_eq!(standing(&w), [9001, 9002]);
+    assert_eq!(arena_events(), [("placement", 30)]);
+    for _ in 0..300 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert_eq!(
+        standing(&w),
+        [9001, 9002],
+        "nothing is summoned before the trigger"
+    );
+    // The hero crosses the trigger: the gates shut, the removed enemy goes.
+    p.x = 12 * ONE;
+    tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    assert_eq!(arena_events().last(), Some(&("close", 30)));
+    assert_eq!(standing(&w), [9002]);
+    // Wave one lands within the summon's own 60 to 132 ticks, and wave two does not.
+    for _ in 0..59 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert_eq!(standing(&w), [9002], "the fly-in takes at least a second");
+    for _ in 0..80 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert_eq!(standing(&w), [9002, 9003]);
+    // Killing it ends the wave; the next is summoned after the 0.75 s pause.
+    arena_kill(&mut w, &r, &room, &mut p, 9003);
+    p.x = 12 * ONE;
+    for _ in 0..200 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert_eq!(
+        standing(&w),
+        [9002, 9004, 9005],
+        "wave one's body left the pool"
+    );
+    // Wave two's deaths win the arena: Activated is written at once, the gates
+    // open three seconds later.
+    arena_kill(&mut w, &r, &room, &mut p, 9004);
+    arena_kill(&mut w, &r, &room, &mut p, 9005);
+    p.x = 12 * ONE;
+    tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    persist::STORE.with(|s| {
+        assert!(s.borrow().get(persist::Kind::BattleScene, 30, 0).is_some());
+    });
+    assert!(!arena_events().contains(&("open", 30)));
+    for _ in 0..200 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert_eq!(arena_events().last(), Some(&("open", 30)));
+}
+#[test]
+fn a_won_arena_reseats_what_stood_there_and_never_summons_again() {
+    let bytes = room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = arena_region();
+    persist::STORE.with(|s| s.borrow_mut().set(persist::Kind::BattleScene, 30, 0, 1));
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(12 * ONE, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    for _ in 0..400 {
+        tick(&mut w, &r, &room, &mut p, &mut v, &n);
+    }
+    assert_eq!(arena_events(), [("quick open", 30)]);
+    assert_eq!(standing(&w), [9001, 9002]);
+}

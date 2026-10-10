@@ -63,8 +63,17 @@ deaths they already had (the arena's `Activated`, the terrain block).
 
 Before this a husk killed in Crossroads_01 was back the next time the scene loaded.
 
+## Pool budget and the wave arena
+
+The 32-slot pool is checked on an arena's largest moment, not on the placement count
+(`host/battle.py` and `host/hk-cook/src/battle.rs` agree; the census uses the same rule).
+Crossroads_22 has 40 placements and never more than 28 alive. `hk-cook battle-waves` writes
+`data/battle_waves.rs` (trigger box, wave sizes, per member wave or removal) after reading the
+`Battle Control`, `summon` and `Remove on battle start` FSMs and refusing any other shape.
+Crossroads_08 has a different, two wave `Battle Control` that nothing drives, so its enemies are
+not arena members and stand with the scene. See docs/HATCHER.md for the fight.
+
 ## Open
 
-See the placement census report for the current list. The families that need a controller, the Hatcher
-cage that does not fit the 32 slots, and the story-state gates (`Activate Infected`) are behaviour and
+See the placement census report for the current list. The families that need a controller and the story-state gates (`Activate Infected`) are behaviour and
 capacity work, not placement.
