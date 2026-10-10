@@ -258,6 +258,8 @@ fn shot(sc: &Scene, source: &Source, fsm: &Value) -> Result<Json> {
     };
     let gos = get(data, "fsmGameObjectParams")?.list().unwrap_or(&[]);
     let mut literal: Vec<&Value> = Vec::new();
+    // Indexing keeps a bad range a panic rather than a silently short loop.
+    #[allow(clippy::needless_range_loop)]
     for k in start..end {
         if types.get(k) == Some(&19) {
             let r = gos.get(pos[k] as usize).ok_or("param index")?;

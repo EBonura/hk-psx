@@ -241,7 +241,7 @@ pub fn cook_clip(
             samples_of(&std::fs::read(&raw_path).map_err(|e| e.to_string())?)
         }
     };
-    if pcm.len() % channels as usize != 0 {
+    if !pcm.len().is_multiple_of(channels as usize) {
         return err("partial PCM frame");
     }
     let frames = (pcm.len() / channels as usize) as i64;

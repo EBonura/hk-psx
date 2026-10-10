@@ -823,6 +823,9 @@ fn sfx_reservation(root: &Path) -> Result<(i64, Json)> {
     ))
 }
 
+/// Every ambience loop loads whole into SPU, so nothing is RAM-cached.
+const RAM_CACHE_BYTES: i64 = 0;
+
 pub fn cook(root: &Path, source: &Source) -> Result<()> {
     let report_path = root.join(".hkpsx/music/provenance.json");
     let regions = parse(
@@ -1003,11 +1006,6 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
     );
     let drift = tail_drift(root, end)?;
     let total: i64 = clips.iter().map(|c| c.byte_len).sum();
-    let ram_cache: i64 = clips
-        .iter()
-        .filter(|c| c.byte_len < c.byte_len)
-        .map(|c| c.byte_len)
-        .sum();
     let clamped: Vec<(String, Json)> = cues
         .iter()
         .filter(|c| matches!(&c.clamped_boost_db, Json::Obj(o) if !o.is_empty()))
@@ -1020,7 +1018,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         ("sfx_reservation", sfx),
         ("total_bytes", Json::Int(total)),
         ("spu_bytes", Json::Int(total)),
-        ("ram_cache_bytes", Json::Int(ram_cache)),
+        ("ram_cache_bytes", Json::Int(RAM_CACHE_BYTES)),
         ("spu_start", Json::Int(SPU_START)),
         ("spu_end", Json::Int(end)),
         // Free between ambience's widest resident set and the first bank
@@ -1297,6 +1295,14 @@ mod tests {
             }
         }
         assert_eq!(fnv(b"hello"), 0x4f9f2cab);
+    }
+
+    #[test]
+    fn every_loop_loads_whole_into_spu_so_nothing_is_ram_cached() {
+        let f = fixture("ramcache");
+        let (clips, _) = f.ok(&[]);
+        assert_eq!(RAM_CACHE_BYTES, 0);
+        assert!(clips.iter().all(|c| c.byte_len == 16));
     }
 
     #[test]

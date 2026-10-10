@@ -32,10 +32,10 @@ impl BoxOf {
     fn widest(&self) -> usize {
         const WEIGHT: [u32; 3] = [77, 150, 29];
         let mut best = (0, 0u32);
-        for c in 0..3 {
+        for (c, &weight) in WEIGHT.iter().enumerate() {
             let lo = self.entries.iter().map(|e| e.color[c]).min().unwrap();
             let hi = self.entries.iter().map(|e| e.color[c]).max().unwrap();
-            let span = (hi - lo) as u32 * WEIGHT[c];
+            let span = (hi - lo) as u32 * weight;
             if span > best.1 {
                 best = (c, span);
             }
@@ -46,13 +46,13 @@ impl BoxOf {
     fn average(&self) -> Px {
         let n = self.pixels();
         let mut out = [0u8; 3];
-        for c in 0..3 {
+        for (c, slot) in out.iter_mut().enumerate() {
             let sum: u64 = self
                 .entries
                 .iter()
                 .map(|e| e.color[c] as u64 * e.count)
                 .sum();
-            out[c] = ((sum + n / 2) / n) as u8;
+            *slot = ((sum + n / 2) / n) as u8;
         }
         out
     }

@@ -57,7 +57,7 @@ pub fn check_assemblies(source: &Source, who: &str) -> Result<()> {
 }
 
 /// `{v['name']: v['value'] for group in fsm['variables'].values() if list for v in group if dict with name and value}`.
-pub fn variables<'a>(fsm: &'a Value) -> Vec<(String, &'a Value)> {
+pub fn variables(fsm: &Value) -> Vec<(String, &Value)> {
     let mut out: Vec<(String, &Value)> = Vec::new();
     if let Some(Value::Map(groups)) = fsm.get("variables") {
         for (_, group) in groups {
@@ -76,7 +76,7 @@ pub fn variables<'a>(fsm: &'a Value) -> Vec<(String, &'a Value)> {
 }
 
 /// `{st['name']: st for st in fsm['states']}`: the last of a repeated name wins.
-pub fn states<'a>(fsm: &'a Value) -> Result<Vec<(String, &'a Value)>> {
+pub fn states(fsm: &Value) -> Result<Vec<(String, &Value)>> {
     let mut out: Vec<(String, &Value)> = Vec::new();
     for st in get(fsm, "states")?.list().ok_or("states is not a list")? {
         let n = get(st, "name")?.str().unwrap_or_default();
@@ -162,7 +162,7 @@ pub fn body_box<'a>(records: &[(i64, &str, &'a Value)], who: &str) -> Result<&'a
 }
 
 /// `focus.fsm_variables`: name to serialized value, refusing a repeated name whose values differ.
-pub fn variables_strict<'a>(fsm: &'a Value) -> Result<Vec<(String, Option<&'a Value>)>> {
+pub fn variables_strict(fsm: &Value) -> Result<Vec<(String, Option<&Value>)>> {
     let mut out: Vec<(String, Option<&Value>)> = Vec::new();
     if let Some(Value::Map(groups)) = fsm.get("variables") {
         for (_, group) in groups {
@@ -203,15 +203,14 @@ pub enum Want {
     B(bool),
 }
 
+/// One audited `(state, action, expected parameters)` row of an `ACTIONS` table.
+pub type ActionRow<'a> = (&'a str, &'a str, &'a [(&'a str, Want)]);
+
 /// The `ACTIONS` table check of the Aspid and Vengefly recognizers: each
 /// `(state, action)` must have exactly one enabled action of that name, whose
 /// compact parameters equal the audited values (numbers within 1e-6 when the
 /// audit recorded a float).
-pub fn check_actions(
-    sts: &[(String, &Value)],
-    table: &[(&str, &str, &[(&str, Want)])],
-    who: &str,
-) -> Result<()> {
+pub fn check_actions(sts: &[(String, &Value)], table: &[ActionRow], who: &str) -> Result<()> {
     for &(st, action, expected) in table {
         let data = get(state(sts, st).ok_or("missing state")?, "actionData")?;
         let names = get(data, "actionNames")?.list().unwrap_or(&[]);

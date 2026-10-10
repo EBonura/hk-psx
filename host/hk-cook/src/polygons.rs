@@ -100,8 +100,8 @@ impl Big {
     fn sub_mag(a: &[u32], b: &[u32]) -> Vec<u32> {
         let mut out = Vec::with_capacity(a.len());
         let mut borrow = 0i64;
-        for i in 0..a.len() {
-            let mut d = a[i] as i64 - *b.get(i).unwrap_or(&0) as i64 - borrow;
+        for (i, &ai) in a.iter().enumerate() {
+            let mut d = ai as i64 - *b.get(i).unwrap_or(&0) as i64 - borrow;
             borrow = 0;
             if d < 0 {
                 d += 1 << 32;

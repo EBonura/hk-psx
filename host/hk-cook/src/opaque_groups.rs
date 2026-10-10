@@ -213,6 +213,8 @@ struct Candidate {
     regions: Vec<i64>,
 }
 type CertKey = (i16, i16, u16, u16, Vec<u32>);
+/// A pose: its relative coordinates, its phases, and the member count.
+type Pose = (Vec<i64>, Vec<Vec<(i64, i64)>>, usize);
 fn cert_key(c: &Cert) -> CertKey {
     (c.gx, c.gy, c.width, c.height, c.words.clone())
 }
@@ -472,7 +474,7 @@ pub fn cook(root: &Path) -> Result<()> {
     }
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut candidate_index: HashMap<(usize, Vec<usize>), usize> = HashMap::new();
-    let mut poses: Vec<(Vec<i64>, Vec<Vec<(i64, i64)>>, usize)> = Vec::new();
+    let mut poses: Vec<Pose> = Vec::new();
     let mut pose_lookup: HashMap<Vec<i64>, usize> = HashMap::new();
     for (bank, region, row) in &regions {
         let local: BTreeMap<usize, Record> = row

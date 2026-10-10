@@ -899,17 +899,18 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
             .iter()
             .filter_map(|l| jint(l, "channel"))
             .collect();
+        let layer_list = format!(
+            "[{}]",
+            layers
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         println!(
             "track {i}: {} layers {} {:.2}s {} bytes headroom {:.2} dB rate error {:+.4}%",
             jstring(t, "family")?,
-            format!(
-                "[{}]",
-                layers
-                    .iter()
-                    .map(i64::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+            layer_list,
             jfloat(t, "seconds")?,
             jint(t, "byte_len").unwrap_or(0),
             jfloat(t, "headroom_db")?,

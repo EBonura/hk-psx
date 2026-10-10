@@ -295,11 +295,14 @@ fn shape(cert: &Desc, bits: &[u32]) -> Result<Shape> {
     }
     Ok(((gx, gy, w, h), words))
 }
+/// Relocated descriptors and bit words, and the old-to-new id map.
+type Relocated = (Vec<Desc>, Vec<u32>, HashMap<usize, usize>);
+
 fn relocate(
     certificates: &[Desc],
     bits: &[u32],
     ids: impl IntoIterator<Item = usize>,
-) -> Result<(Vec<Desc>, Vec<u32>, HashMap<usize, usize>)> {
+) -> Result<Relocated> {
     let ids: Vec<usize> = ids
         .into_iter()
         .collect::<std::collections::BTreeSet<_>>()
@@ -982,14 +985,16 @@ pub fn cook(
 mod tests {
     use super::*;
 
-    fn owner_parts() -> (
+    type OwnerParts = (
         Vec<Desc>,
         Vec<u32>,
         Vec<usize>,
         Vec<Desc>,
         Vec<u32>,
         Vec<Group>,
-    ) {
+    );
+
+    fn owner_parts() -> OwnerParts {
         let tile = vec![
             Desc {
                 gx: 0,

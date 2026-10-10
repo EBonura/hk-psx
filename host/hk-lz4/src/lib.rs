@@ -213,7 +213,7 @@ pub fn compress_hc(src: &[u8]) -> Vec<u8> {
         open[i] = reach[i];
         if i > 0 {
             let r = run[i - 1] + 1;
-            let step = 1 + (r >= 15 && (r - 15) % 255 == 0) as u32;
+            let step = 1 + (r >= 15 && (r - 15).is_multiple_of(255)) as u32;
             if open[i - 1] + step < open[i] {
                 open[i] = open[i - 1] + step;
                 run[i] = r;

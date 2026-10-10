@@ -874,7 +874,8 @@ mod tests {
     #[test]
     fn wrong_rate_source_pitch_and_duration_rejected() {
         let f = fixture("wrong");
-        let changes: Vec<Box<dyn Fn(&mut Profile)>> = vec![
+        type Change = Box<dyn Fn(&mut Profile)>;
+        let changes: Vec<Change> = vec![
             Box::new(|p| p.rate = 8000),
             Box::new(|p| p.source = SOURCES[0].1.to_string()),
             Box::new(|p| p.channels = 2),

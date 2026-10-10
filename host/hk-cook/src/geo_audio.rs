@@ -61,6 +61,8 @@ fn random_audio_action(data: &Value) -> Result<Vec<Value>> {
         param_names.len()
     };
     let mut fields: Vec<(&str, usize)> = Vec::new();
+    // Indexing keeps a bad range a panic rather than a silently short loop.
+    #[allow(clippy::needless_range_loop)]
     for i in start..end {
         if param_names[i].is_empty() {
             continue;
@@ -612,7 +614,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [Some(92), Some(99)]
         );
-        let breaks: Vec<Box<dyn Fn(&mut Action)>> = vec![
+        type Break = Box<dyn Fn(&mut Action)>;
+        let breaks: Vec<Break> = vec![
             Box::new(|a| a.enabled = 0),
             Box::new(|a| a.bytes[4] = 1),
             Box::new(|a| a.bytes[13] = 64),
@@ -637,7 +640,7 @@ mod tests {
             .enumerate()
             .map(|(i, (file, pid))| Clip {
                 source: format!("{file}:{pid}"),
-                encoded: tool().encode_oneshot(&vec![i as i16 * 1000; 28]).unwrap(),
+                encoded: tool().encode_oneshot(&[i as i16 * 1000; 28]).unwrap(),
                 meta: Vec::new(),
             })
             .collect()
