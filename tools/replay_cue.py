@@ -88,10 +88,11 @@ def main():
     p.add_argument('--tape',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--screenshot-interval',type=int,default=60)
     p.add_argument('--frontend',type=Path,default=ROOT.parent/'PSoXide-emulator/target/release/frontend')
+    p.add_argument('--cue',type=Path,help='disc pair selected by the build report')
     p.add_argument('--memcard',type=Path,help='port 1 card image; a missing file boots freshly formatted and is written back')
     a=p.parse_args();r=json.loads((ROOT/'.hkpsx/build.json').read_text())
     cue=Path(r['artifacts']['cue']);exe=Path(r['artifacts']['exe']);mp=Path(r['link_map']['path'])
-    if cue.resolve()!=(Path.home()/'Downloads/ps1 games/hk-psx.cue').resolve():raise ValueError('Not the canonical disc')
+    if a.cue and a.cue.resolve()!=cue.resolve():raise ValueError('Selected CUE differs from the build report')
     for path,info in r['outputs'].items():
         if digest(Path(path))!=info['sha256']:raise ValueError('Build artifact changed: '+path)
     if digest(mp)!=r['link_map']['sha256']:raise ValueError('Build map changed')

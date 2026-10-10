@@ -1,8 +1,9 @@
 """Single local disc-library destination. Never stage disc images in the repo."""
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DISC_LIBRARY = Path.home() / 'Downloads' / 'ps1 games'
+DISC_LIBRARY = Path(os.environ['HK_DISC_LIBRARY']) if 'HK_DISC_LIBRARY' in os.environ else Path.home() / 'Downloads' / 'ps1 games'
 
 
 def build_directory(telemetry=False, candidate=False):

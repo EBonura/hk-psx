@@ -10,8 +10,10 @@ import copy
 import hashlib
 import json
 import math
+import os
 import shutil
 import struct
+import subprocess
 from pathlib import Path
 
 from source import ROOT, Source, dump
@@ -430,13 +432,24 @@ def cook_fingerprints(source):
         if not line or line.startswith('#'):continue
         code.update(f'{line}:{sha(ROOT/line)}\n'.encode())
     code.update(json.dumps([SCENERY_MAX_AXIS,STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET,SCENERY_TEXEL_CAP,sorted(SCENERY_SCENE_CAPS.items())]).encode())
-    inputs={};provenance=ROOT/'.hkpsx/regions-provenance.json'
-    if not provenance.exists():return None
-    for name in sorted(json.loads(provenance.read_text())['inputs']):
+    inputs={};interim=ROOT/'.hkpsx/regions-source-inputs.json'
+    provenance=ROOT/'.hkpsx/regions-provenance.json'
+    raw=interim.read_bytes() if interim.exists() else None
+    checked=raw is not None and hashlib.sha256(raw).hexdigest()==os.environ.get('HK_SOURCE_FINGERPRINT_CHECKED')
+    if checked:
+        manifest=json.loads(raw)
+        if manifest['source']!=str(source.directory.resolve()):raise ValueError('region source fingerprint has a different retail root')
+        names=manifest['inputs']
+    elif provenance.exists():
+        manifest=json.loads(provenance.read_text());names=manifest['inputs']
+    elif interim.exists():raise ValueError('interrupted-cook source fingerprint requires a checked build driver')
+    else:return None
+    for name in sorted(names):
         path=source.directory/name
         if not path.is_file():return None
-        inputs[name]=sha(path)
-    return {'code':code.hexdigest(),'inputs':inputs}
+        inputs[name]=names[name] if checked else sha(path)
+    return {'code':code.hexdigest(),'inputs':inputs,'source':str(source.directory.resolve()),
+            'interim':checked,'established':provenance.exists()}
 
 
 def inputs_digest(shas, names):
@@ -457,7 +470,10 @@ def cook_cache_key(region, fingerprints):
     if not fingerprints:return None
     shas=fingerprints['inputs'];names=sorted(shas)
     key=lambda value:hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
-    return {'key':key({'region':region,'code':fingerprints['code']}),'names':names,'shas':shas,
+    return {'key':key({'region':region,'code':fingerprints['code'],'source':fingerprints.get('source')}),
+            'names':names,'shas':shas,'source':fingerprints.get('source'),
+            'interim':fingerprints.get('interim',False),
+            'established':fingerprints.get('established',True),
             'inputs':inputs_digest(shas,names),
             # What a cook written before this keyed on, so those packs are kept.
             'legacy':key({'region':region,'fingerprints':{'code':fingerprints['code'],'inputs':inputs_digest(shas,names)}})}
@@ -465,6 +481,10 @@ def cook_cache_key(region, fingerprints):
 
 def cached_cook(destination, key):
     """Return the earlier cook report when its key and cooked files are intact."""
+    if key is not None and key.get('interim'):
+        result=subprocess.run([os.environ['HK_REGION_CACHE_HELPER'],'region-cache-check',destination.name],
+                              input=json.dumps({'key':key}),text=True,capture_output=True,check=True)
+        return json.loads(result.stdout)
     cache=destination/'cook-cache.json'
     if key is None or not cache.is_file():return None
     try:old=json.loads(cache.read_text())
@@ -481,8 +501,12 @@ def cached_cook(destination, key):
 
 
 def record_cook(destination, key, cooked):
-    try:(destination/'cook-cache.json').write_text(json.dumps({'key':key['key'],'input_names':key['names'],'inputs':key['inputs'],'cooked':cooked}))
-    except TypeError:pass  # a report that is not JSON simply is not reused
+    if key.get('interim'):
+        subprocess.run([os.environ['HK_REGION_CACHE_HELPER'],'region-cache-record',destination.name],
+                       input=json.dumps({'key':key,'cooked':cooked}),text=True,check=True)
+    else:
+        try:(destination/'cook-cache.json').write_text(json.dumps({'key':key['key'],'input_names':key['names'],'inputs':key['inputs'],'cooked':cooked}))
+        except TypeError:pass  # a report that is not JSON simply is not reused
 
 
 def cook_region(source,sc,region,chunk_id,destination,key,pixels,geometry):
@@ -527,7 +551,8 @@ def precook_parallel(pending,fingerprints,out):
     # Region 1 writes the shared knight/gameplay files: cook its scene first
     # so the other workers never race it, then the rest in parallel.
     order=sorted(misses,key=lambda scene:(-(scene==pending[0]['scene_id']),-misses[scene]))
-    workers=max(1,min(len(order),(os.cpu_count() or 4)-2,8))
+    workers=max(1,min(len(order),(os.cpu_count() or 4)-2,8,
+                      int(os.environ.get('CARGO_BUILD_JOBS','8'))))
     print(f'Precooking {sum(misses.values())} regions across {len(order)} scenes with {workers} workers',flush=True)
     logs=ROOT/'.hkpsx'/'precook-logs';logs.mkdir(parents=True,exist_ok=True)
     def spawn(scene):

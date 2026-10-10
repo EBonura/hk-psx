@@ -112,7 +112,8 @@ def main():
     # shape this probe needs; no guest file is edited to suit the probe.
     env = dict(os.environ, RUSTFLAGS=os.environ.get('RUSTFLAGS', '')+' --cfg test')
     subprocess.run(['cargo', 'build', '--offline', '--release', '--manifest-path', str(work/'Cargo.toml')], check=True, env=env)
-    probe = [str(work/'target/release/hk-native-route-probe'), route, str(args.ticks)]
+    target = Path(env['CARGO_TARGET_DIR']) if env.get('CARGO_TARGET_DIR') else work/'target'
+    probe = [str(target/'release/hk-native-route-probe'), route, str(args.ticks)]
     subprocess.run(probe + (['--claw'] if args.claw else []), check=True)
 
 

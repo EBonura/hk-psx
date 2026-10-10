@@ -145,7 +145,11 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
         if (len(payload)+2047)//2048*2048>arena:
             raise ValueError('Ambience clip does not fit the startup room arena: '+str(path))
     out=Path(work).resolve() if work else build_directory(telemetry,candidate);out.mkdir(parents=True,exist_ok=True)
-    env=dict(os.environ,CARGO_TARGET_DIR=str(out/'guest'))
+    # Keep each output variant's guest cache private when the orchestrator
+    # supplies a target directory, including builds from a managed worktree.
+    base_target=os.environ.get('CARGO_TARGET_DIR')
+    guest_target=(Path(base_target)/'hk-guest'/hashlib.sha256(str(out).encode()).hexdigest()[:12]) if base_target else out/'guest'
+    env=dict(os.environ,CARGO_TARGET_DIR=str(guest_target))
     link_map=out/'hk-psx-link.map' if work else link_map_path(telemetry,candidate)
     from stack_budget import prepare_linker, check_main_frame
     import code_modules
@@ -192,7 +196,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     features=(['emulator-telemetry'] if telemetry else [])+[f for f in os.environ.get('HK_GUEST_FEATURES','').split(',') if f]+(['audio-probe'] if os.environ.get('HK_AUDIO_PROBE') else [])
     if features:cmd+=['--features',','.join(features)]
     run(cmd,cwd=ROOT/'game',env=env)
-    linked=out/'guest/mipsel-sony-psx/release/hk-psx.exe'
+    linked=guest_target/'mipsel-sony-psx/release/hk-psx.exe'
     if profile=='elf':
         shutil.copy2(linked,out/'hk-psx.elf')
         return {'elf':out/'hk-psx.elf'}

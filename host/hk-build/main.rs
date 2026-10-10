@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod disc;
+mod region_cache;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -1237,12 +1238,57 @@ fn code_fingerprint(root: &Path) -> Result<Value> {
     Ok(Value::Object(code))
 }
 
+/// Bind an interrupted region cook to every file in the selected retail data
+/// directory before any region is reused. The final provenance remains a
+/// separate completion record and is never synthesised here.
+fn source_input_fingerprints(source: &Path) -> Result<Value> {
+    fn visit(root: &Path, dir: &Path, inputs: &mut BTreeMap<String, String>) -> Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let kind = entry.file_type()?;
+            if kind.is_dir() {
+                visit(root, &path, inputs)?;
+            } else if kind.is_file() {
+                let relative = path
+                    .strip_prefix(root)?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                inputs.insert(relative, sha256_file(&path)?);
+            } else {
+                return Err(format!("unsupported source entry: {}", path.display()).into());
+            }
+        }
+        Ok(())
+    }
+    let source = source.canonicalize()?;
+    let mut inputs = BTreeMap::new();
+    visit(&source, &source, &mut inputs)?;
+    Ok(serde_json::json!({"source": source, "inputs": inputs}))
+}
+
+fn write_source_input_fingerprints(root: &Path, source: &Path) -> Result<Value> {
+    let value = source_input_fingerprints(source)?;
+    let path = root.join(".hkpsx/regions-source-inputs.json");
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, serde_json::to_vec(&value)?)?;
+    std::fs::rename(temp, path)?;
+    std::env::set_var(
+        "HK_SOURCE_FINGERPRINT_CHECKED",
+        sha256_file(&root.join(".hkpsx/regions-source-inputs.json"))?,
+    );
+    std::env::set_var("HK_REGION_CACHE_HELPER", std::env::current_exe()?);
+    Ok(value)
+}
+
 /// Recook only when the Windows inputs, the cooker code or the generated outputs changed.
 fn cook_cached(root: &Path, force: bool) -> Result<()> {
     let provenance = root.join(".hkpsx/regions-provenance.json");
     let cache = root.join(".hkpsx/regions-cook-cache.json");
     let code = code_fingerprint(root)?;
     let source = selected_source(root)?;
+    let source_inputs = write_source_input_fingerprints(root, &source)?;
+    let source_manifest_sha256 = sha256_file(&root.join(".hkpsx/regions-source-inputs.json"))?;
     if !force && provenance.exists() && cache.exists() {
         let prov = read_json(&provenance)?;
         let old = read_json(&cache)?;
@@ -1254,6 +1300,7 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
         });
         if prov["source"].as_str() == source.to_str()
             && old["code"] == code
+            && old["source_manifest_sha256"].as_str() == Some(&source_manifest_sha256)
             && inputs_unchanged(&source, &prov)
             && outputs_intact
         {
@@ -1261,7 +1308,10 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
             return Ok(());
         }
     }
-    python_step(root, "host/regions.py", &[])?;
+    python_step(root, "host/regions.py", region_cook_args(&provenance))?;
+    if source_input_fingerprints(&source)? != source_inputs || code_fingerprint(root)? != code {
+        return Err("retail source or cooker code changed during region cook".into());
+    }
     let mut outputs: BTreeMap<String, String> = BTreeMap::new();
     for name in ["data/room.hk", "data/params.rs", "data/regions.json"] {
         outputs.insert(name.into(), sha256_file(&root.join(name))?);
@@ -1275,9 +1325,25 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     }
     std::fs::write(
         &cache,
-        serde_json::to_string_pretty(&serde_json::json!({"code": code, "outputs": outputs}))?,
+        serde_json::to_string_pretty(
+            &serde_json::json!({"code": code, "source_manifest_sha256": source_manifest_sha256, "outputs": outputs}),
+        )?,
     )?;
     Ok(())
+}
+
+/// A fresh worktree can precook in parallel once the build driver has hashed
+/// the selected retail source into an interrupted-cook input manifest.
+fn region_cook_args(provenance: &Path) -> &'static [&'static str] {
+    if provenance.exists()
+        || provenance
+            .with_file_name("regions-source-inputs.json")
+            .exists()
+    {
+        &[]
+    } else {
+        &["--serial"]
+    }
 }
 
 fn menu_cached(root: &Path, force: bool) -> Result<()> {
@@ -1492,6 +1558,10 @@ fn disc_library() -> PathBuf {
         .join("ps1 games")
 }
 
+fn selected_library(options: &Options) -> PathBuf {
+    options.library.clone().unwrap_or_else(disc_library)
+}
+
 /// Pack the disc from the guest build in `work` (its patched EXE, `modules.json`
 /// and the cooked chunks): WORLD.PAK in read order and the XA song file.
 fn package_disc(root: &Path, work: &Path, library: &Path) -> Result<()> {
@@ -1539,8 +1609,7 @@ fn python_step_module(root: &Path, module: &str, function: &str) -> Result<()> {
     run_python(root, &["-c", &code])
 }
 
-/// `pgo` is `build` with a profile-guided guest in place of the ordinary one.
-fn build(root: &Path, options: &Options, pgo: bool) -> Result<()> {
+fn prepare_cook(root: &Path, options: &Options) -> Result<()> {
     std::fs::create_dir_all(root.join(".hkpsx"))?;
     let doctor = root.join("tools/doctor.py");
     let mut args = vec![doctor.to_str().unwrap()];
@@ -1556,6 +1625,29 @@ fn build(root: &Path, options: &Options, pgo: bool) -> Result<()> {
     // The XA encoder is exported from the same checkout (hk-cook xa_music).
     std::env::set_var("HK_SDK_SOURCE", sdk_source(root, options));
     cook_cached(root, options.recook)?;
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BuildMode {
+    CookOnly,
+    Normal,
+    Pgo,
+}
+
+impl BuildMode {
+    fn runs_guest(self) -> bool {
+        self != Self::CookOnly
+    }
+}
+
+/// `pgo` is `build` with a profile-guided guest in place of the ordinary one.
+fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
+    prepare_cook(root, options)?;
+    if !mode.runs_guest() {
+        return Ok(());
+    }
+    let pgo = mode == BuildMode::Pgo;
     // The asset cookers (charms, items, shops, NPCs, scripts) read the admitted
     // scene list from .hkpsx/selected-regions.json, which the prepass used to
     // write only after them: a fresh clone had none, and every other build fed
@@ -1617,7 +1709,7 @@ fn build(root: &Path, options: &Options, pgo: bool) -> Result<()> {
         profile_guided_guest(root, options, &guest_args)?;
     } else {
         python_step(root, "host/build_guest.py", &guest_args)?;
-        package_disc(root, &root.join("build"), &disc_library())?;
+        package_disc(root, &root.join("build"), &selected_library(options))?;
     }
     let mut report_args = telemetry.to_vec();
     if pgo {
@@ -1783,7 +1875,7 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
     let mut args = telemetry.to_vec();
     args.extend(["--no-prepass", "--profile", profile.to_str().unwrap()]);
     python_step(root, "host/build_guest.py", &args)?;
-    package_disc(root, &root.join("build"), &disc_library())
+    package_disc(root, &root.join("build"), &selected_library(options))
 }
 
 /// The emulator `pgo` profiles with: the revision in emulator.lock.json,
@@ -1981,6 +2073,7 @@ fn replay_command(
     root: &Path,
     frontend: &Path,
     out: &Path,
+    library: &Path,
     name: &str,
     card: Option<PathBuf>,
 ) -> Command {
@@ -1995,6 +2088,8 @@ fn replay_command(
         "400".into(),
         "--frontend".into(),
         frontend.to_path_buf(),
+        "--cue".into(),
+        library.join("hk-psx.cue"),
     ];
     if let Some(card) = card {
         args.extend(["--memcard".into(), card]);
@@ -2008,8 +2103,8 @@ fn replay_command(
     command
 }
 
-/// The renderer's I-cache placement (game/build.rs, game/hot-text-order.txt)
-/// took effect: every listed symbol's section is in the link map, at
+/// If a built-in renderer I-cache order is selected (game/build.rs,
+/// game/hot-text-order.txt), verify every listed symbol's section is in the link map, at
 /// ascending addresses in list order, with nothing else between them. A
 /// renamed or inlined function would otherwise drop out of the list silently
 /// and the layout would drift again. The names are mangled, so they carry the
@@ -2222,12 +2317,13 @@ fn pacing(output: &Path) -> Result<(u64, u64, u64, u64, u64, u64)> {
 /// Replay every route tape against the final CUE; a fault or an incomplete tape fails the build.
 fn validate(root: &Path, options: &Options) -> Result<()> {
     let frontend = frontend(root, options)?;
+    let library = selected_library(options);
     let out = root.join(".hkpsx/validate");
     let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(&out)?;
     // Replays are independent deterministic emulator runs: by default spawn
-    // them all at once and collect in route order, so the wall time is the
-    // longest route. `--jobs N` runs N at a time and `--prune` deletes each
+    // the independent routes at once and collect in route order. `--jobs N`
+    // caps all replay concurrency, including the journey. `--prune` deletes each
     // passing route's dumps once it is judged (keeping its command.json), for a disk that cannot hold
     // every route's dumps at once (about 50 MB each).
     let jobs = options.jobs.unwrap_or(ROUTES.len()).max(1);
@@ -2241,30 +2337,13 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                 let _ = std::fs::copy(root.join("tools/cards").join(card), &scratch);
                 scratch
             });
-        replay_command(root, &frontend, &out, name, card).spawn()
+        replay_command(root, &frontend, &out, &library, name, card).spawn()
     };
     // The journey is one save carried through power cycles, so its segments
-    // run in order beside the independent routes: the first boots with no card
+    // run in order after the independent routes: the first boots with no card
     // at all and every later one boots from a copy of the card its predecessor
     // wrote. A segment whose predecessor failed still runs, against whatever
     // that predecessor left, and fails on its own pins.
-    let journey = {
-        let (root, frontend, out) = (root.to_path_buf(), frontend.clone(), out.clone());
-        std::thread::spawn(move || {
-            let mut results = Vec::new();
-            for (index, name) in JOURNEY.iter().enumerate() {
-                let card = out.join(format!("{name}.mcd"));
-                if index > 0 {
-                    let _ = std::fs::copy(out.join(format!("{}.mcd", JOURNEY[index - 1])), &card);
-                }
-                results.push((
-                    *name,
-                    replay_command(&root, &frontend, &out, name, Some(card)).output(),
-                ));
-            }
-            results
-        })
-    };
     let mut summary = serde_json::Map::new();
     let mut failed = Vec::new();
     let mut evaluate = |name: &'static str,
@@ -2412,10 +2491,12 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
             evaluate(name, *gates, child.and_then(|c| c.wait_with_output()))?;
         }
     }
-    for (name, output) in journey
-        .join()
-        .map_err(|_| "the journey replay thread panicked")?
-    {
+    for (index, name) in JOURNEY.iter().enumerate() {
+        let card = out.join(format!("{name}.mcd"));
+        if index > 0 {
+            let _ = std::fs::copy(out.join(format!("{}.mcd", JOURNEY[index - 1])), &card);
+        }
+        let output = replay_command(root, &frontend, &out, &library, name, Some(card)).output();
         evaluate(name, true, output)?;
     }
     let bin = root.join("dist/hk-psx.exe");
@@ -2467,16 +2548,18 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <build|pgo|validate|disc|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|disc|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
-         build     cook (cached), build the guest, replace the sole hk-psx.bin/.cue, report, then validate\n\
+         cook      verify source and SDK, then cook regions only; stop before guest work\n\
+         build     cook (cached), build the guest, replace hk-psx.bin/.cue in --library, report, then validate\n\
          pgo       build, with the guest optimised by a profile of --tape replays (default: kings-climb\n          \
          and crossroads-gate), replayed on the emulator pinned in emulator.lock.json (built once\n          \
          from --emulator-source, default ../PSoXide-emulator); needs a checkout path without spaces\n\
          validate  replay the route tapes in tools/tapes against the current CUE, on the pinned\n          \
          emulator unless --frontend (or HK_PSX_FRONTEND) names another\n\
          disc      pack the disc from the guest build in --work (default build/) into --library\n          \
-         (default the disc library): WORLD.PAK and the XA songs, plus any --cdda-track"
+         (default the disc library): WORLD.PAK and the XA songs, plus any --cdda-track\n          \
+         --library applies to build, pgo, validate and disc"
     );
     std::process::exit(2)
 }
@@ -2484,6 +2567,17 @@ fn usage() -> ! {
 fn main() {
     let mut args = std::env::args().skip(1);
     let action = args.next().unwrap_or_else(|| "build".into());
+    if action == "region-cache-check" || action == "region-cache-record" {
+        let region = args.next().unwrap_or_else(|| usage());
+        if args.next().is_some() {
+            usage();
+        }
+        if let Err(error) = region_cache::run(&root(), &action, &region) {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let mut options = Options {
         hollow_knight: None,
         sdk_source: None,
@@ -2539,13 +2633,15 @@ fn main() {
         }
     }
     let root = root();
+    std::env::set_var("HK_DISC_LIBRARY", selected_library(&options));
     let result = match action.as_str() {
-        "build" => build(&root, &options, false),
-        "pgo" => build(&root, &options, true),
+        "cook" => build(&root, &options, BuildMode::CookOnly),
+        "build" => build(&root, &options, BuildMode::Normal),
+        "pgo" => build(&root, &options, BuildMode::Pgo),
         "validate" => validate(&root, &options),
         "disc" => {
             let work = options.work.clone().unwrap_or_else(|| root.join("build"));
-            let library = options.library.clone().unwrap_or_else(disc_library);
+            let library = selected_library(&options);
             let songs = disc::Songs {
                 xa: vec![root.join("data/music.xa")],
                 cdda: options.cdda.clone(),
@@ -2569,6 +2665,109 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cook_action_stops_before_guest_stage() {
+        assert!(!BuildMode::CookOnly.runs_guest());
+        assert!(BuildMode::Normal.runs_guest());
+        assert!(BuildMode::Pgo.runs_guest());
+    }
+
+    #[test]
+    fn fresh_region_cook_uses_fingerprinted_parallel_workers() {
+        let dir = tree("region-cook-args");
+        let provenance = dir.join(".hkpsx/regions-provenance.json");
+        assert_eq!(region_cook_args(&provenance), &["--serial"]);
+        std::fs::create_dir_all(provenance.parent().unwrap()).unwrap();
+        std::fs::write(
+            provenance.with_file_name("regions-source-inputs.json"),
+            "{}",
+        )
+        .unwrap();
+        assert!(region_cook_args(&provenance).is_empty());
+        std::fs::write(&provenance, "{}\n").unwrap();
+        assert!(region_cook_args(&provenance).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn source_fingerprints_change_with_content_and_reject_symlinks() {
+        let dir = tree("source-inputs");
+        let source = dir.join("retail");
+        std::fs::create_dir_all(source.join("sub")).unwrap();
+        std::fs::write(source.join("sub/data"), b"first").unwrap();
+        let first = source_input_fingerprints(&source).unwrap();
+        assert_eq!(first["inputs"].as_object().unwrap().len(), 1);
+        std::fs::write(source.join("sub/data"), b"other").unwrap();
+        assert_ne!(source_input_fingerprints(&source).unwrap(), first);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(source.join("sub/data"), source.join("alias")).unwrap();
+            assert!(source_input_fingerprints(&source).is_err());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn selected_library_reaches_report_paths_and_replay_without_canonical_disc() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let library =
+            std::env::temp_dir().join(format!("hk-library-test-{}-{nonce}", std::process::id()));
+        let options = Options {
+            hollow_knight: None,
+            sdk_source: None,
+            emulator_source: None,
+            frontend: None,
+            telemetry: false,
+            recook: false,
+            validate: false,
+            tapes: Vec::new(),
+            jobs: Some(2),
+            prune: false,
+            work: None,
+            library: Some(library.clone()),
+            cdda: Vec::new(),
+        };
+        assert_eq!(selected_library(&options), library);
+        assert_ne!(selected_library(&options), disc_library());
+        let command = replay_command(
+            &root(),
+            Path::new("/unused/frontend"),
+            Path::new("/unused/output"),
+            &library,
+            "focus",
+            None,
+        );
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let cue_arg = args.iter().position(|arg| arg == "--cue").unwrap();
+        assert_eq!(
+            args[cue_arg + 1],
+            library.join("hk-psx.cue").to_string_lossy()
+        );
+        let python = std::process::Command::new("python3")
+            .arg("-c")
+            .arg("import sys;sys.path.insert(0,'host');from paths import artifacts;print(artifacts()['cue'])")
+            .current_dir(root())
+            .env("HK_DISC_LIBRARY", &library)
+            .output()
+            .unwrap();
+        assert!(
+            python.status.success(),
+            "{}",
+            String::from_utf8_lossy(&python.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(python.stdout).unwrap().trim(),
+            library.join("hk-psx.cue").to_string_lossy()
+        );
+        assert!(!library.exists(), "path selection must not write a disc");
+    }
 
     fn tree(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("hk-build-test-{}-{name}", std::process::id()));

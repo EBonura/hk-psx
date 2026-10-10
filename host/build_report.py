@@ -100,7 +100,7 @@ def main():
     telemetry=args.telemetry
     from paths import link_map_path,hazard_report_path,artifacts
     outputs=artifacts(telemetry)
-    report={'candidate':False,'build_kind':'pgo' if args.pgo else 'plain','delivery_policy':'Single canonical disc',
+    report={'candidate':False,'build_kind':'pgo' if args.pgo else 'plain','delivery_policy':'Single selected disc',
             'sdk':json.load(open(ROOT/'sdk.lock.json')),'telemetry':telemetry,
             'artifacts':{k:str(f) for k,f in outputs.items()},
             'outputs':{str(f):{'bytes':f.stat().st_size,'sha256':sha(f)} for f in outputs.values()},
