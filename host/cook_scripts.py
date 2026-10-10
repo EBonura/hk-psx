@@ -32,6 +32,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'tools'))
 import collections, json, math, re
 from pathlib import Path
 
+import rustsrc
 from source import Source, ROOT, dump
 from scene import Scene
 from script_ir import (BOOL_TEST, HERO_TRIGGER, INT_COMPARE, NATIVE, NATIVE_CONST, NEXT_FRAME,
@@ -72,11 +73,10 @@ def field_slots():
     than shipping a record that silently holds some of the fields. Read rather
     than repeated, the way tools/migrate_cards.py reads the same file.
     """
-    text = (ROOT / 'game/src/save.rs').read_text()
-    found = re.search(r'pub const SCRIPT_FIELD_SLOTS: usize = (\d+);', text)
-    if not found:
-        raise ValueError('cannot read SCRIPT_FIELD_SLOTS out of game/src/save.rs')
-    return int(found.group(1))
+    try:
+        return rustsrc.const_int(ROOT / 'game/src/save.rs', 'SCRIPT_FIELD_SLOTS')
+    except KeyError:
+        raise ValueError('cannot read SCRIPT_FIELD_SLOTS out of game/src/save.rs') from None
 
 
 def field_identity(names):

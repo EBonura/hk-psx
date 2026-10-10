@@ -16,6 +16,9 @@ import json, os, re, unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 DOC = ROOT / 'docs/BUDGET.md'
 BUILD = ROOT / '.hkpsx/build-normal.json'
 
@@ -115,8 +118,7 @@ class VramTableTests(unittest.TestCase):
     def test_the_animation_row_is_the_cache_upload_cap(self):
         # MAX_UPLOAD_BYTES is the whole cache, so the two are the same number
         # stated in two places, which is the only reason the doc can be checked.
-        source = (ROOT / 'shared/hk-cache/src/lib.rs').read_text()
-        cap = int(re.search(r'pub const MAX_UPLOAD_BYTES: u32 = (\d+);', source).group(1))
+        cap = rustsrc.const_int(ROOT / 'shared/hk-cache/src/lib.rs', 'MAX_UPLOAD_BYTES')
         label, bytes_ = self.row('4bpp animation slots')
         self.assertEqual(bytes_, cap, f'{label} disagrees with hk_cache::MAX_UPLOAD_BYTES')
         self.assertEqual(bytes_ % (64 * 64 // 2), 0, 'not a whole number of 64x64 4bpp slots')
@@ -124,9 +126,9 @@ class VramTableTests(unittest.TestCase):
     def test_the_scenery_row_is_a_whole_number_of_pages_the_layout_can_address(self):
         label, bytes_ = self.row('4bpp scenery pages')
         self.assertEqual(bytes_ % self.PAGE_BYTES, 0, f'{label} is not a whole number of pages')
-        source = (ROOT / 'shared/hk-cache/src/residency.rs').read_text()
-        banks = int(re.search(r'pub const BANKS:usize=(\d+);', source).group(1))
-        per_bank = int(re.search(r'pub const PAGES:usize=(\d+);', source).group(1))
+        residency = ROOT / 'shared/hk-cache/src/residency.rs'
+        banks = rustsrc.const_int(residency, 'BANKS')
+        per_bank = rustsrc.const_int(residency, 'PAGES')
         self.assertLessEqual(bytes_ // self.PAGE_BYTES, banks * per_bank,
                              'more pages than page_xy can address')
 

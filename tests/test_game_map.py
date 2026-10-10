@@ -4,10 +4,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 import sys
 sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 
 
 def residency():
-    text = (ROOT / 'shared/hk-cache/src/residency.rs').read_text()
+    text = rustsrc.source(ROOT / 'shared/hk-cache/src/residency.rs')
     return re.search(r'pub const MAP_PAGE:\(usize,usize,usize,usize\)=\(384\+\(18%10\)\*64,\(18/10\)\*256,64,256\);', text)
 
 

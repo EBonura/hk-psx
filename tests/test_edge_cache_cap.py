@@ -19,6 +19,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 
 # Slot, scene and why this one is tolerated. Crossroads_10's arena floor view
 # carries the False Knight's terrain plus, since every BG Control gate is baked,
@@ -28,11 +31,10 @@ ACCEPTED = {236: 'Crossroads_10'}
 
 
 def cap():
-    text = (ROOT / 'game/src/world.rs').read_text()
-    found = re.search(r'const EDGE_CACHE:usize=(\d+);', text)
-    if not found:
-        raise ValueError('cannot read EDGE_CACHE out of game/src/world.rs')
-    return int(found.group(1))
+    try:
+        return rustsrc.const_int(ROOT / 'game/src/world.rs', 'EDGE_CACHE')
+    except KeyError:
+        raise ValueError('cannot read EDGE_CACHE out of game/src/world.rs') from None
 
 
 class EdgeCacheCapTests(unittest.TestCase):
