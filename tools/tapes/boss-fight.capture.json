@@ -1,17 +1,17 @@
 {
   "note": "Captured from a tools/replay_cue.py run of the tape below against the real disc. tests/test_boss_sim.py replays the same tape through tools/boss_sim.py and asserts the fight it predicts is this one. See capture() in tools/boss_sim.py to regenerate after a disc change.",
   "tape": "tools/tapes/boss-fight.pxtape",
-  "tape_sha256": "6ed1e50b69aee911527202112298f13c735d4aa4b9afdaf4761f672b9b90aadf",
+  "tape_sha256": "a8fff9e820d5ef3ff83c9eedb30b0a7eed2f6d4d8cb2730b0dfbc77670bcdf3f",
   "hero_died_at_poll": null,
   "disc_sha256": {
-    "/private/tmp/claude-501/-Users-ebonura-Desktop-repos-PSoXide/a99dc269-369a-4cd1-855e-ea254f46d9a7/scratchpad/hkfk/dist/hk-psx.exe": "3f9e4330e436d1323da9fbd5a71f47257bfdec0c67f39adbb729774a642fcbf6",
-    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/hk-fk/home/Downloads/ps1 games/hk-psx.bin": "700aec6ec4ad560fd292423441112885f7b33116ef1e61ef3b0922ed6c480f5f",
-    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/hk-fk/home/Downloads/ps1 games/hk-psx.cue": "8373d7734005e70bce4ef70fa60f8f5d2f0d744027659f7dfe9c8471f62b0579"
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/settings-2026-10-05/hk-psx/dist/hk-psx.exe": "6783d4fd6643441cd95f139a2c2f059ec05aa87e52023c772ddc78918d0d8dd7",
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/settings-2026-10-05/fakehome/Downloads/ps1 games/hk-psx.bin": "415895552168c624afc0f35360ffaa4eed14a3f141c6f237f9af9776cbb7ce83",
+    "/Users/ebonura/Library/Application Support/PSoXide-perf/work/settings-2026-10-05/fakehome/Downloads/ps1 games/hk-psx.cue": "847e6ea3d0762d2163e0616a19c01b3ae85c469748318c588e14656bbc7f98fb"
   },
   "completed": true,
   "faults": [],
   "hero_start": {
-    "poll": 32,
+    "poll": 31,
     "x": 786432,
     "y": 1798268
   },
@@ -31,7 +31,9 @@
     "HK_ARENA_GATE_OPENS": 1,
     "HK_FK_BARRELS": 24,
     "HK_FK_BARRELS_BROKEN": 24,
-    "HK_SOUL": 99
+    "HK_SOUL": 99,
+    "HK_FK_WAVES": 0,
+    "HK_FK_WAVE_HITS": 0
   },
   "transitions": {
     "fk_hp": [
@@ -56,12 +58,12 @@
         45
       ],
       [
-        292,
+        283,
         45,
         40
       ],
       [
-        347,
+        350,
         40,
         35
       ],
@@ -91,339 +93,339 @@
         10
       ],
       [
-        531,
+        533,
         10,
         5
       ],
       [
-        553,
+        558,
         5,
         65
       ],
       [
-        1094,
+        1083,
         65,
         60
       ],
       [
-        1117,
+        1108,
         60,
         55
       ],
       [
-        1142,
+        1133,
         55,
         50
       ],
       [
-        1193,
+        1180,
         50,
         45
       ],
       [
-        1217,
+        1203,
         45,
         40
       ],
       [
-        1243,
+        1228,
         40,
         35
       ],
       [
-        1267,
+        1253,
         35,
         30
       ],
       [
-        1498,
+        1483,
         30,
         25
       ],
       [
-        1523,
+        1508,
         25,
         20
       ],
       [
-        1548,
+        1533,
         20,
         15
       ],
       [
-        1573,
+        1558,
         15,
         10
       ],
       [
-        1597,
+        1583,
         10,
         5
       ],
       [
-        1682,
+        1668,
         5,
         65
       ],
       [
-        2173,
+        2143,
         65,
         60
       ],
       [
-        2197,
+        2168,
         60,
         55
       ],
       [
-        2222,
+        2193,
         55,
         50
       ],
       [
-        2272,
+        2243,
         50,
         45
       ],
       [
-        2297,
+        2268,
         45,
         40
       ],
       [
-        2322,
+        2293,
         40,
         35
       ],
       [
-        2347,
+        2318,
         35,
         30
       ],
       [
-        2572,
+        2548,
         30,
         25
       ],
       [
-        2597,
+        2573,
         25,
         20
+      ],
+      [
+        2598,
+        20,
+        15
       ],
       [
         2623,
-        20,
-        15
-      ],
-      [
-        2648,
         15,
         10
       ],
       [
-        2672,
+        2648,
         10,
         5
       ],
       [
-        2740,
+        2710,
         5,
         65
       ],
       [
-        3142,
+        3099,
         65,
         60
       ],
       [
-        3168,
+        3123,
         60,
         55
       ],
       [
-        3193,
+        3148,
         55,
         50
       ],
       [
-        3242,
+        3198,
         50,
         45
       ],
       [
-        3267,
+        3223,
         45,
         40
       ],
       [
-        3292,
+        3248,
         40,
         35
       ],
       [
-        3317,
+        3273,
         35,
         30
       ]
     ],
     "head_hp": [
       [
-        782,
+        798,
         40,
         35
       ],
       [
-        822,
+        829,
         35,
         30
       ],
       [
-        862,
+        868,
         30,
         25
       ],
       [
-        902,
+        900,
         25,
         20
       ],
       [
-        942,
+        953,
         20,
         15
       ],
       [
-        983,
+        980,
         15,
         10
       ],
       [
-        1023,
+        1018,
         10,
         5
       ],
       [
-        1064,
+        1053,
         5,
         40
       ],
       [
-        1864,
+        1863,
         40,
         35
       ],
       [
-        1904,
+        1903,
         35,
         30
       ],
       [
-        1944,
+        1943,
         30,
         25
       ],
       [
-        1982,
+        1969,
         25,
         20
       ],
       [
-        2023,
+        2018,
         20,
         15
       ],
       [
-        2063,
+        2048,
         15,
         10
       ],
       [
-        2103,
+        2079,
         10,
         5
       ],
       [
-        2143,
+        2113,
         5,
         40
       ],
       [
-        2898,
+        2868,
         40,
         35
       ],
       [
-        2927,
+        2893,
         35,
         30
       ],
       [
-        2952,
+        2918,
         30,
         25
       ],
       [
-        2987,
+        2948,
         25,
         20
       ],
       [
-        3017,
+        2973,
         20,
         15
       ],
       [
-        3042,
+        2998,
         15,
         10
       ],
       [
-        3073,
+        3029,
         10,
         5
       ],
       [
-        3113,
+        3069,
         5,
         40
       ],
       [
-        3945,
+        3758,
         40,
         35
       ],
       [
-        3996,
+        3788,
         35,
         30
       ],
       [
-        4045,
+        3828,
         30,
         25
       ],
       [
-        4095,
+        3860,
         25,
         20
       ],
       [
-        4145,
+        3908,
         20,
         15
       ],
       [
-        4170,
+        3938,
         15,
         10
       ],
       [
-        4195,
+        3969,
         10,
         5
       ],
       [
-        4245,
+        4000,
         5,
         40
       ]
