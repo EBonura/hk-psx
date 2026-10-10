@@ -217,17 +217,30 @@ pub fn probe(args: &[String]) {
 pub fn sight(run: &std::path::Path, names: &BTreeMap<usize, String>, args: &[String]) {
     use crate::compare::{match_actors, run_port_scene};
     let (scene_name, source_id) = (&args[0], args[1].parse::<u32>().unwrap());
-    let (from, to, step): (usize, usize, usize) = (args[2].parse().unwrap(), args[3].parse().unwrap(), args[4].parse().unwrap());
+    let (from, to, step): (usize, usize, usize) = (
+        args[2].parse().unwrap(),
+        args[3].parse().unwrap(),
+        args[4].parse().unwrap(),
+    );
     let traces = crate::og_trace::load_run(run);
     let trace = &traces[scene_name];
     let id = *names.iter().find(|(_, n)| *n == scene_name).unwrap().0;
     let port = run_port_scene(id, trace, (trace.last_frame - trace.origin) as usize);
     let (pairs, _, _) = match_actors(scene_name, trace, &port);
-    let pair = pairs.iter().find(|p| p.port.source_id == source_id).unwrap();
+    let pair = pairs
+        .iter()
+        .find(|p| p.port.source_id == source_id)
+        .unwrap();
     let regions = load_scene(id);
     for t in (from..to).step_by(step) {
         let f = trace.origin + t as i64;
-        let (Some(h), Some(o), p) = (trace.hero.get(&f), pair.og.samples.iter().find(|s| s.frame == f), &pair.port.ticks[t]) else { continue };
+        let (Some(h), Some(o), p) = (
+            trace.hero.get(&f),
+            pair.og.samples.iter().find(|s| s.frame == f),
+            &pair.port.ticks[t],
+        ) else {
+            continue;
+        };
         let seg = |a: (f64, f64), b: (f64, f64)| -> Vec<String> {
             let mut out = Vec::new();
             for r in &regions {
@@ -236,12 +249,16 @@ pub fn sight(run: &std::path::Path, names: &BTreeMap<usize, String>, args: &[Str
                     let e = room.edge(i).map(|v| v as f64 / 65536.0);
                     let (ax, ay, bx, by) = (a.0, a.1, b.0, b.1);
                     let d = (bx - ax) * (e[3] - e[1]) - (by - ay) * (e[2] - e[0]);
-                    if d.abs() < 1e-9 { continue; }
+                    if d.abs() < 1e-9 {
+                        continue;
+                    }
                     let tt = ((e[0] - ax) * (e[3] - e[1]) - (e[1] - ay) * (e[2] - e[0])) / d;
                     let uu = ((e[0] - ax) * (by - ay) - (e[1] - ay) * (bx - ax)) / d;
                     if (0.0..=1.0).contains(&tt) && (0.0..=1.0).contains(&uu) {
                         let s = format!("({:.2},{:.2})-({:.2},{:.2})", e[0], e[1], e[2], e[3]);
-                        if !out.contains(&s) { out.push(s); }
+                        if !out.contains(&s) {
+                            out.push(s);
+                        }
                     }
                 }
             }
