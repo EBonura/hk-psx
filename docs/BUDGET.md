@@ -1,15 +1,15 @@
 # Shared scene and gameplay budget
 
-The provisional69 build from 2026-09-15 keeps one scene at a time in the RAM
+The ordinary-layout build keeps one scene at a time in the RAM
 arena and replaces its static VRAM atlases at scene gates. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |807,980|
-| Code-to-data alignment |4|
-| Linked data, including menu and HUD |273,360|
+| Linked code |807,944|
+| Code-to-data alignment |8|
+| Linked data, including menu and HUD |273,392|
 | BSS, including shared scene arena and runtime pools |797,036|
 | Total static span |1,878,380|
 | BIOS/kernel reservation |65,536|
@@ -119,7 +119,7 @@ its 32,768-byte reservation before nested calls. `host/stack_budget.py` now
 derives a project linker script from the unchanged pinned SDK, protects 48 KiB,
 and checks the actual final main prologue before packaging. The generated
 script's content hash is part of its filename so budget changes force a relink.
-The current main frame is 19,032 bytes, leaving 30,120 reserved bytes for nested
+The current main frame is 24,824 bytes, leaving 24,328 reserved bytes for nested
 calls and other stack use; this is **not** an observed high-water measurement.
 It was 35,688 at build 154, and moving the 12,112-byte particle pool out to a
 static took 17,256 off the frame rather than 12,112, because constructor

@@ -2116,8 +2116,12 @@ fn check_hot_order(root: &Path, strict: bool) -> Result<()> {
     let wanted: Vec<&str> = order
         .lines()
         .map(str::trim)
-        .filter(|l| !l.is_empty())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect();
+    if wanted.is_empty() {
+        println!("No built-in hot text order selected; ordinary linker placement selected, route pacing checked separately");
+        return Ok(());
+    }
     let build: Value = serde_json::from_slice(&std::fs::read(root.join(".hkpsx/build.json"))?)?;
     let map = build["link_map"]["path"]
         .as_str()
