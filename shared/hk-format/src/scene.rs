@@ -95,7 +95,7 @@ impl<'a> Scene<'a> {
         let attributes = u32_at(bytes, 104) as usize;
         if attributes != 0
             && (attributes < offsets[9]
-                || attributes % 4 != 0
+                || !attributes.is_multiple_of(4)
                 || attributes
                     .checked_add(counts[1] * ATTRIBUTE_STRIDE)
                     .is_none_or(|end| end > bytes.len()))

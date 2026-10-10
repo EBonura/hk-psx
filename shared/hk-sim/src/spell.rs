@@ -84,6 +84,7 @@ impl Cast {
     /// One tick of the cast. `antic_ticks` and `cast_ticks` are the two clip
     /// lengths; `soul` is the caller's SOUL, debited only when a cast starts.
     /// Returns true on the tick the projectile is launched.
+    #[allow(clippy::too_many_arguments)]
     pub fn tick(
         &mut self,
         p: FireballParams,

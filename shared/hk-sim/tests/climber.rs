@@ -1,5 +1,6 @@
-// Direct module inclusion allows this bounded module to be validated before
-// parent integration adds the public hk-sim export.
+#![allow(dead_code)] // includes game modules by path and exercises part of each
+                     // Direct module inclusion allows this bounded module to be validated before
+                     // parent integration adds the public hk-sim export.
 const ONE: i32 = hk_sim::ONE;
 #[path = "../src/climber.rs"]
 mod climber;

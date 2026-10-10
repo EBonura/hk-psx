@@ -1,3 +1,4 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 use hk_sim::ONE;
 const KNIGHT_SCALE: i32 = 60693;
 mod render {
@@ -8,11 +9,13 @@ mod render {
         DRAWS.with(|d| d.borrow_mut().push((id, material)));
     }
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/debris.rs"]
 pub mod debris;
 mod world {
     pub use crate::debris;
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/particles.rs"]
 mod particles;
 use particles::{Bank, EmitterSpec, Pool, Sample, Style, CAPACITY};

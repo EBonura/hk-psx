@@ -1,3 +1,4 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 use hk_sim::ONE;
 const KNIGHT_SCALE: i32 = 60693;
 mod render {
@@ -6,8 +7,10 @@ mod render {
         VERTS.with(|a| a.borrow_mut().push(v));
     }
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/debris.rs"]
 mod debris;
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/impact.rs"]
 mod impact;
 use debris::{Body, Pool, Spec};

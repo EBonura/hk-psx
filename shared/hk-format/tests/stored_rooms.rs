@@ -1,6 +1,8 @@
 //! A completed CD transfer is reusable compressed data, never a validated Room.
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/room_decode.rs"]
 mod room_decode;
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/room_residency.rs"]
 mod room_residency;
 use room_decode::{Decoder, Error};

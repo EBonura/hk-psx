@@ -19,6 +19,11 @@ pub struct NailResponse {
     pub bounce_left: u16,
     finish_bounce: bool,
 }
+impl Default for NailResponse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl NailResponse {
     pub const fn new() -> Self {
         Self {
@@ -56,6 +61,7 @@ impl NailResponse {
     }
     /// Wrap normal movement only. Damage recoil uses its own path and clears
     /// this state. Gravity still runs after the source's per-tick bounce speed.
+    #[allow(clippy::too_many_arguments)]
     pub fn step(
         &mut self,
         response: NailResponseParams,

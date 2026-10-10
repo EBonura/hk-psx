@@ -90,6 +90,9 @@ impl<const N: usize> Store<N> {
     pub fn len(&self) -> usize {
         self.len
     }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
     pub fn entries(&self) -> &[Entry] {
         &self.entries[..self.len]
     }

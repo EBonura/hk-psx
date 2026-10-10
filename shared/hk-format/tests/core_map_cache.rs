@@ -1,5 +1,7 @@
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/core_map_cache.rs"]
 mod cache;
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/alpha_scissor_cache.rs"]
 mod oracle;
 use cache::Cache;

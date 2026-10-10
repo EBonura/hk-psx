@@ -1,4 +1,5 @@
 //! Verify the exact shipped sequential resident-scene allocation. No disc IO.
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/room_decode.rs"]
 mod room_decode;
 fn main() {

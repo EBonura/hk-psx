@@ -175,7 +175,7 @@ impl MossWalker {
             wake_range: matches!(self.phase, Phase::Rest)
                 || (matches!(self.phase, Phase::WalkStart | Phase::Walking)
                     && self.hide_timer <= 1),
-            walk_rays: self.phase == Phase::Walking && self.ray_clock % RAY_INTERVAL == 0,
+            walk_rays: self.phase == Phase::Walking && self.ray_clock.is_multiple_of(RAY_INTERVAL),
             ground_ray: self.phase == Phase::TurnCheck,
         }
     }
@@ -274,7 +274,7 @@ impl MossWalker {
                     }
                     return step;
                 }
-                if self.ray_clock % RAY_INTERVAL == 0 {
+                if self.ray_clock.is_multiple_of(RAY_INTERVAL) {
                     self.edge = senses.edge;
                     self.wall = senses.wall;
                 }

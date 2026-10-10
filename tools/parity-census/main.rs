@@ -42,7 +42,7 @@ fn focal() -> f64 {
 fn read_json(path: &Path) -> Value {
     let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let mut text = String::new();
-    if path.extension().map_or(false, |x| x == "gz") {
+    if path.extension().is_some_and(|x| x == "gz") {
         GzDecoder::new(BufReader::new(file))
             .read_to_string(&mut text)
             .unwrap();
@@ -286,7 +286,7 @@ impl Scene {
     fn owner(&self, go: &str) -> Option<String> {
         self.chain(go)
             .into_iter()
-            .find(|g| self.gos.get(g).map_or(false, |o| !o.scripts.is_empty()))
+            .find(|g| self.gos.get(g).is_some_and(|o| !o.scripts.is_empty()))
     }
 }
 
@@ -613,7 +613,7 @@ fn main() {
                         "missing".to_string()
                     };
                     *counts.entry(format!("{kind}:{status}")).or_default() += 1;
-                    let fam = families.entry(family.clone()).or_insert_with(Map::new);
+                    let fam = families.entry(family.clone()).or_default();
                     let key = format!("{}{}", if additive { "add:" } else { "" }, status);
                     let e = fam.entry("statuses").or_insert(json!({}));
                     let n = e.get(&key).and_then(Value::as_u64).unwrap_or(0) + 1;

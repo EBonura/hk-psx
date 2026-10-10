@@ -1,3 +1,5 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/ambience_state.rs"]
 mod state;
 // The cooked table comes through the mixer rather than beside it: the stem
@@ -179,11 +181,11 @@ fn a_pooled_voice_serves_more_than_one_stem_over_the_cooked_cues() {
         cue(&mut m, scene as u8);
         let held = settle(&mut m, scene);
         assert_eq!(m.playing, data::AMBIENCE_SCENES[scene].mask);
-        for stem in 0..STEMS {
-            if held[stem] != NO_VOICE {
+        for (stem, &voice) in held.iter().enumerate().take(STEMS) {
+            if voice != NO_VOICE {
                 let index = data::AMBIENCE_POOL_VOICES
                     .iter()
-                    .position(|v| *v == held[stem])
+                    .position(|v| *v == voice)
                     .unwrap();
                 users[index] |= 1 << stem;
             }
@@ -406,7 +408,7 @@ fn a_clip_checked_in_pieces_agrees_with_the_whole_clip_check() {
 
 /// The byte-wise check `ClipCheck::feed` replaced, kept as its oracle.
 fn reference_feed(hash: &mut u32, index: &mut usize, bytes: &[u8], length: usize) -> bool {
-    if length == 0 || length % 16 != 0 {
+    if length == 0 || !length.is_multiple_of(16) {
         return false;
     }
     for &byte in bytes {
@@ -414,7 +416,7 @@ fn reference_feed(hash: &mut u32, index: &mut usize, bytes: &[u8], length: usize
         if i >= length || (i == 0 && byte >> 4 != 0) {
             return false;
         }
-        if i % 16 == 0 && (byte >> 4 > 4 || byte & 15 > 12) {
+        if i.is_multiple_of(16) && (byte >> 4 > 4 || byte & 15 > 12) {
             return false;
         }
         if i % 16 == 1
@@ -458,7 +460,7 @@ fn piecewise_clip_checks_match_the_byte_wise_reference() {
             clip[at] ^= 1 << next(8);
         }
         let extra = if next(8) == 0 { 16 } else { 0 };
-        clip.extend(std::iter::repeat(0).take(extra));
+        clip.extend(std::iter::repeat_n(0, extra));
         let (mut hash, mut index) = (0x811c9dc5u32, 0usize);
         let mut check = ClipCheck::new();
         let mut at = 0;

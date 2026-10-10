@@ -942,7 +942,7 @@ mod tests {
             (tail + 6, 1, Error::Geometry),
         ] {
             let mut b = valid.clone();
-            b[at..at + 4].copy_from_slice(&(value as u32).to_le_bytes());
+            b[at..at + 4].copy_from_slice(&value.to_le_bytes());
             assert_eq!(Room::parse(&b).err(), Some(error), "offset {at}");
             for budget in [1, 8] {
                 assert_eq!(incremental(&b, budget).err(), Room::parse(&b).err());

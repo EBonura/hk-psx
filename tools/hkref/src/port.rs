@@ -109,7 +109,10 @@ fn signed(v: u32) -> f64 {
 
 /// Collapse the per-vblank rows to one row per sim tick (the last row that shows
 /// that tick count is the state at its end) and name the channels.
-pub fn normalise(p: &Profile) -> Result<(Trace, Vec<Event>, BTreeMap<i64, u32>), String> {
+/// The tick-collapsed trace, its events and the tick-to-frame map.
+pub type Normalised = (Trace, Vec<Event>, BTreeMap<i64, u32>);
+
+pub fn normalise(p: &Profile) -> Result<Normalised, String> {
     let out = p.dir.join("port");
     let sym = symbols(&p.map)?;
     let text = fs::read_to_string(out.join("route.csv")).map_err(|e| e.to_string())?;

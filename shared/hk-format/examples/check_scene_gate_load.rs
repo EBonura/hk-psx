@@ -1,5 +1,6 @@
 //! Host proof of repeated scene replacement using the actual guest decoder.
 //! No CD/GPU timing claim: uploads are copied into a bounded physical atlas model.
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/room_decode.rs"]
 mod room_decode;
 struct Blob {
@@ -63,7 +64,7 @@ fn decode(arena: &mut [u8], b: &Blob, budget: usize, scene: bool) {
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let capacity: usize = a[0].parse().unwrap();
-    assert!(capacity > 0 && capacity % 4 == 0);
+    assert!(capacity > 0 && capacity.is_multiple_of(4));
     let mut banks: Vec<Bank> = Vec::new();
     let mut i = 1;
     while i < a.len() {

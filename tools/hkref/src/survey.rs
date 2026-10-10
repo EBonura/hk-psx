@@ -21,6 +21,9 @@ fn q(s: &str) -> String {
 fn line(f: &[&str]) -> String {
     f.iter().map(|x| q(x)).collect::<Vec<_>>().join(",") + "\n"
 }
+/// Per (operation, clip): count, windows, callsite and hierarchy.
+type AudioAgg = (usize, BTreeSet<String>, String, String);
+
 fn g<'a>(r: &'a Row, k: &str) -> &'a str {
     r.get(k).map(String::as_str).unwrap_or("")
 }
@@ -228,12 +231,11 @@ pub fn summarise(p: &Profile, attempts: &[PathBuf]) -> Result<(), String> {
                 )
             })
             .collect();
-        let mut agg: BTreeMap<(String, String), (usize, BTreeSet<String>, String, String)> =
-            BTreeMap::new();
+        let mut agg: BTreeMap<(String, String), AudioAgg> = BTreeMap::new();
         if let (Some(lo), Some(hi)) = (tl.iter().map(|t| t.0).min(), tl.iter().map(|t| t.1).max()) {
             for r in load(dir.join("audio-calls.csv")).iter() {
                 let f: i64 = g(r, "queued_test_frame").parse().unwrap_or(-1);
-                let op = g(&r, "operation");
+                let op = g(r, "operation");
                 if f < lo
                     || f >= hi
                     || !matches!(
@@ -248,16 +250,16 @@ pub fn summarise(p: &Profile, attempts: &[PathBuf]) -> Result<(), String> {
                     .find(|t| f >= t.0 && f < t.1)
                     .map(|t| t.2.clone())
                     .unwrap_or_else(|| "other".into());
-                let clip = if g(&r, "clip_or_snapshot").is_empty() {
-                    format!("(source clip) {}", g(&r, "hierarchy"))
+                let clip = if g(r, "clip_or_snapshot").is_empty() {
+                    format!("(source clip) {}", g(r, "hierarchy"))
                 } else {
-                    g(&r, "clip_or_snapshot").to_string()
+                    g(r, "clip_or_snapshot").to_string()
                 };
                 let e = agg.entry((op.to_string(), clip)).or_insert((
                     0,
                     BTreeSet::new(),
-                    g(&r, "callsite").to_string(),
-                    g(&r, "hierarchy").to_string(),
+                    g(r, "callsite").to_string(),
+                    g(r, "hierarchy").to_string(),
                 ));
                 e.0 += 1;
                 e.1.insert(win);
@@ -298,7 +300,7 @@ pub fn summarise(p: &Profile, attempts: &[PathBuf]) -> Result<(), String> {
             srcs.len()
         ));
     }
-    for (s, _) in &crashed {
+    for s in crashed.keys() {
         if !owner.contains_key(s) {
             scenes_csv.push_str(&line(&[s, "crash", "", "", "", "", "", "", ""]));
             md.push_str(&format!("| {s} | crash (player died) | | | | | | |\n"));

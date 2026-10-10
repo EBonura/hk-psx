@@ -48,8 +48,8 @@ fn main() {
         let play = game.map(|g| mode(rows.iter().map(|r| r[g])));
         let ready = load.map(|l| mode(rows.iter().map(|r| r[l])));
         let gameplay = |r: &Vec<&str>| {
-            game.map_or(true, |g| Some(r[g]) == play.as_deref())
-                && load.map_or(true, |l| Some(r[l]) == ready.as_deref())
+            game.is_none_or(|g| Some(r[g]) == play.as_deref())
+                && load.is_none_or(|l| Some(r[l]) == ready.as_deref())
         };
         let (mut ticks, mut flips, mut longest, mut over, mut since) =
             (0u64, 0u64, 0u64, 0u64, 0u64);

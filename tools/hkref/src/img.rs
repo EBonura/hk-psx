@@ -113,12 +113,12 @@ impl Img {
                     (fy - y0 as f64).clamp(0.0, 1.0),
                 );
                 let mut c = [0u8; 3];
-                for k in 0..3 {
+                for (k, slot) in c.iter_mut().enumerate() {
                     let v = self.get(x0, y0)[k] as f64 * (1.0 - ax) * (1.0 - ay)
                         + self.get(x1, y0)[k] as f64 * ax * (1.0 - ay)
                         + self.get(x0, y1)[k] as f64 * (1.0 - ax) * ay
                         + self.get(x1, y1)[k] as f64 * ax * ay;
-                    c[k] = v.round() as u8;
+                    *slot = v.round() as u8;
                 }
                 o.put(x as i64, y as i64, c);
             }

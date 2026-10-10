@@ -311,7 +311,7 @@ impl Bouncer {
     /// FaceDirection from the velocity: +1 when x is positive.
     fn facing(&self) -> i32 {
         let a = self.angle.rem_euclid(360 * ONE);
-        if self.flying && (a < 90 * ONE || a > 270 * ONE) {
+        if self.flying && !(90 * ONE..=270 * ONE).contains(&a) {
             1
         } else {
             -1

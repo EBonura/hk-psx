@@ -1,3 +1,4 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 //! Trigger overlap for the script runtime.
 //!
 //! The phases are edges, and an edge kept in the wrong place is the failure
@@ -5,6 +6,7 @@
 //! never firing at all because the state was entered with the Knight already
 //! inside. These pin the sequencing that decides it.
 use hk_sim::script::{TRIGGER_ENTER, TRIGGER_EXIT, TRIGGER_STAY};
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/script_state.rs"]
 mod script_state;
 use script_state::{overlaps, Overlaps};
