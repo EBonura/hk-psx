@@ -48,7 +48,7 @@ def scene(babies, hatchers, others, file='level57', tag=hatcher.CAGE_TAG, cages=
                            point=lambda gid: points[gid])
     # The probe that counts the scene's other supported actors is answered here
     # rather than run, so the arithmetic is the only thing under test.
-    stub.hatcher_others = others
+    stub.hatcher_others = [(0, False)] * others
     return stub
 
 
@@ -66,14 +66,14 @@ class HatcherBudgetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'cage of 23 needs 36 of the 32 guest actor slots'):
             hatcher.family_budget(scene(babies=23, hatchers=1, others=12))
 
-    def test_a_cage_past_the_frame_budget_refuses_before_it_can_panic(self):
-        # Inside the 32-slot pool but past the 20 animation slots prepare_draws
-        # asserts on, which a cage is the only thing that gets a scene near.
-        with self.assertRaisesRegex(ValueError, 'cage of 15 needs 21 of the 20 animation slots'):
-            hatcher.family_budget(scene(babies=15, hatchers=1, others=5))
+    def test_a_cage_past_the_animation_slots_is_admitted_because_parked_members_draw_nothing(self):
+        # Twenty-one placements is past the 20 animation slots a frame binds, but
+        # a parked baby never draws and `prepare_draws` drops a quad past the
+        # budget instead of stopping, so only the 32 actor slots refuse a family.
+        self.assertEqual(hatcher.family_budget(scene(babies=15, hatchers=1, others=5)), 15)
 
     def test_more_hatchers_than_the_runtime_releases_on_a_frame_are_refused(self):
-        with self.assertRaisesRegex(ValueError, '5 Hatchers in one scene exceeds the 4 releases'):
+        with self.assertRaisesRegex(ValueError, '5 Hatchers in one scene at once exceeds the 4 releases'):
             hatcher.family_budget(scene(babies=5, hatchers=5, others=0))
 
     def test_the_scene_needs_exactly_one_tagged_cage(self):
@@ -120,7 +120,7 @@ class HatcherSpecTests(unittest.TestCase):
     def test_the_hatcher_spec_carries_its_fire_clip_and_the_placement_start_alert(self):
         region = {'actors': [actor('Hatcher')]}
         text = generated_actor_specs(region)[0]
-        self.assertIn('hk_sim::ActorController::Hatcher {fire_clip:9}', text)
+        self.assertIn('hk_sim::ActorController::Hatcher {fire_clip:9,max_hatched:0}', text)
         self.assertIn('corpse:None', text)
         # The controller owns every velocity the body has.
         self.assertIn('hk_sim::WalkParams {speed:0,turn_ticks:0,turn_cooldown_ticks:0}', text)

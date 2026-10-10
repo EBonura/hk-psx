@@ -9,6 +9,7 @@
 //! actor dict carried them after the clips were cooked.
 
 use crate::actors::Row;
+use crate::battle::{pool_peak, Member};
 use crate::common::{err, get, py_round, Result};
 use crate::pyfloat;
 use crate::pyjson::Json;
@@ -127,6 +128,10 @@ fn num(j: &Json) -> Result<f64> {
     }
 }
 
+fn control_int_or(c: &Json, key: &str, default: i64) -> i64 {
+    int(c, key).unwrap_or(default)
+}
+
 fn int(c: &Json, key: &str) -> Result<i64> {
     match need(c, key)? {
         Json::Int(i) => Ok(*i),
@@ -217,6 +222,14 @@ fn hm_flag(health: &Value, key: &str) -> Result<bool> {
 /// `generated_actor_records(region)`: (ActorSpec expression, placement) per supported actor.
 pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Placement)>> {
     let mut output: Vec<(String, Placement)> = Vec::new();
+    let members: Vec<_> = actors
+        .iter()
+        .filter(|a| a.row.supported)
+        .map(|a| a.row.member())
+        .collect();
+    if pool_peak(&members) > MAX_SCENE_ACTORS {
+        return err("guest actor pool exceeds 32");
+    }
     for actor in actors {
         let row = actor.row;
         if !row.supported {
@@ -225,9 +238,6 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
         let who = &row.source;
         if actor.clip("walk_clip").is_none() || actor.clip("turn_clip").is_none() {
             return err(format!("supported actor is missing cooked clips: {who}"));
-        }
-        if output.len() == MAX_SCENE_ACTORS {
-            return err("guest actor pool exceeds 32");
         }
         let (mut start_alert, mut start_right, mut rotation_q16) = (false, false, 0i64);
         let health = &row.health_manager;
@@ -512,8 +522,9 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                     return err(format!("Hatcher is missing cooked clips: {who}"));
                 }
                 controller = format!(
-                    "hk_sim::ActorController::Hatcher {{fire_clip:{}}}",
-                    clip("fire_clip")?
+                    "hk_sim::ActorController::Hatcher {{fire_clip:{},max_hatched:{}}}",
+                    clip("fire_clip")?,
+                    control_int_or(control, "hatched_max", 0)
                 );
                 extra_clips = keyed(&["fire_clip"]);
                 (
@@ -713,6 +724,11 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
         if rotation_q16.rem_euclid(90 * 65536) != 0 {
             return err(format!("Climber rotation is not a quarter turn: {who}"));
         }
+        // A summoned wave member is told ALERT by its `summon` the moment it lands,
+        // and the guest seats it at that moment, so it is born alert.
+        if row.battle_wave != 0 {
+            start_alert = true;
+        }
         let placement = Placement {
             source_id: row.spec_source_id,
             x: py_round(x * 65536.0),
@@ -769,6 +785,7 @@ pub fn scene_actor_bank(regions: &[Region]) -> Result<(Vec<String>, PlacedActors
     order.sort_by_key(|r| r.chunk_id);
     let mut specs: Vec<String> = Vec::new();
     let mut placed: PlacedActors = Vec::new();
+    let mut members: Vec<(String, Member)> = Vec::new();
     for region in order {
         let supported: Vec<&SpecActor> = region.actors.iter().filter(|a| a.row.supported).collect();
         let cooked = supported
@@ -793,13 +810,18 @@ pub fn scene_actor_bank(regions: &[Region]) -> Result<(Vec<String>, PlacedActors
                     specs.len() - 1
                 }
             };
+            match members.iter_mut().find(|p| p.0 == actor.row.source) {
+                Some(slot) => slot.1 = actor.row.member(),
+                None => members.push((actor.row.source.clone(), actor.row.member())),
+            }
             match placed.iter_mut().find(|p| p.0 == actor.row.source) {
                 Some(slot) => slot.1 = (index, placement),
                 None => placed.push((actor.row.source.clone(), (index, placement))),
             }
         }
     }
-    if placed.len() > MAX_SCENE_ACTORS {
+    let held: Vec<Member> = members.iter().map(|m| m.1).collect();
+    if pool_peak(&held) > MAX_SCENE_ACTORS {
         return err("scene actor placements exceed the 32-slot guest pool");
     }
     Ok((specs, placed))

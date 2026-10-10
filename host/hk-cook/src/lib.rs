@@ -11,6 +11,8 @@ pub mod area_music;
 pub mod aspid;
 pub mod atlas;
 pub mod baldur;
+pub mod battle;
+pub mod battle_waves;
 pub mod blas;
 pub mod blocker;
 pub mod break_effects;

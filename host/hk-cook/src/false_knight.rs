@@ -304,7 +304,7 @@ fn near_all(a: &[[f64; 2]; 2], b: &[[f64; 2]; 2]) -> bool {
 }
 
 /// `arena_trigger_world_box`: the Battle Scene trigger as a world box.
-fn arena_trigger_world_box(sc: &Scene) -> Result<Vec<f64>> {
+pub(crate) fn arena_trigger_world_box(sc: &Scene) -> Result<Vec<f64>> {
     let battle = named(sc, "Battle Scene")?;
     let m = u(sc.world(
         *sc.go_transform

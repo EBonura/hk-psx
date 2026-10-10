@@ -295,6 +295,8 @@ fn main() {
                             ("colliders", r.colliders.clone()),
                             ("fsm_ids", strs(&r.fsm_ids)),
                             ("limitations", strs(&r.limitations)),
+                            ("battle_wave", Json::Int(r.battle_wave as i64)),
+                            ("battle_removable", Json::Bool(r.battle_removable)),
                         ];
                         for (key, value) in mine {
                             if get(row, key).as_ref() != Some(&value) {

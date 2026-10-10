@@ -4,6 +4,11 @@ host/cook.py
 # The texel quantiser every cooked texture goes through.
 host/quantize.py
 host/actors.py
+# Which enemies an arena brings in waves and removes, and the pool peak the
+# actors.py and hatcher.py budgets measure.
+host/battle.py
+# Admits the Hatcher and its cage; it decides which scenes keep a Hatcher at all.
+host/hatcher.py
 # Imported by actors.py, breakables.py and reveal_masks.py, and what it
 # returns decides the False Knight's clip bindings, its refusals and its
 # barrel art. It was in neither section, so a change here changed cooked

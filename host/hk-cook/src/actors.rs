@@ -10,6 +10,7 @@
 
 use crate::aspid;
 use crate::baldur;
+use crate::battle::{self, pool_peak, Member};
 use crate::blocker;
 use crate::climber;
 use crate::colliders;
@@ -49,9 +50,17 @@ pub struct Row {
     /// `fsm_ids`: the PlayMakerFSM components, as `file:path_id`.
     pub fsm_ids: Vec<String>,
     pub limitations: Vec<String>,
+    /// 1 based arena wave the enemy is summoned in, or 0 (host/battle.py).
+    pub battle_wave: u8,
+    /// Killed by the arena's `Remove on battle start`.
+    pub battle_removable: bool,
 }
 
 impl Row {
+    /// `battle.actor_member`: (wave, removable) for the pool budget.
+    pub fn member(&self) -> Member {
+        (self.battle_wave, self.battle_removable)
+    }
     /// `actor[kind]`: the last component of one of the recorded kinds.
     pub fn part(&self, kind: &str) -> Option<&Value> {
         self.parts.iter().find(|p| p.0 == kind).map(|p| &p.2)
@@ -123,15 +132,17 @@ pub fn scan_in(
 }
 
 /// `hatcher._others`: the supported actors of the scene with the Hatcher family refused.
-fn supported_others(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<usize> {
-    let count = scan_with(sc, source, catalogue, false, None)?
+fn supported_others(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Member>> {
+    let members: Vec<Member> = scan_with(sc, source, catalogue, false, None)?
         .iter()
         .filter(|r| r.supported)
-        .count();
-    if count > 32 {
+        .map(Row::member)
+        .collect();
+    // The pool holds the arena's largest moment, not every placement of it.
+    if pool_peak(&members) > 32 {
         return err("actor region exceeds bounded 32-slot guest pool");
     }
-    Ok(count)
+    Ok(members)
 }
 
 /// `actor_sources`; `family` is false while the Hatcher's own scene budget is measured.
@@ -142,13 +153,13 @@ fn scan_with(
     family: bool,
     bounds: Option<[f64; 4]>,
 ) -> Result<Vec<Row>> {
-    let others_cache = std::cell::Cell::new(None::<usize>);
-    let others = || -> Result<usize> {
-        if let Some(n) = others_cache.get() {
-            return Ok(n);
+    let others_cache = std::cell::RefCell::new(None::<Vec<Member>>);
+    let others = || -> Result<Vec<Member>> {
+        if let Some(n) = others_cache.borrow().as_ref() {
+            return Ok(n.clone());
         }
         let n = supported_others(sc, source, catalogue)?;
-        others_cache.set(Some(n));
+        *others_cache.borrow_mut() = Some(n.clone());
         Ok(n)
     };
     let mut rows = Vec::new();
@@ -376,6 +387,7 @@ fn scan_with(
                 fsm_ids.push(obj.sid());
             }
         }
+        let (battle_wave, battle_removable) = battle::membership(sc, gid, &records)?;
         rows.push(Row {
             source: sc.sid(o.id),
             game_object: gid,
@@ -390,6 +402,8 @@ fn scan_with(
             parts,
             fsm_ids,
             limitations,
+            battle_wave,
+            battle_removable,
         });
     }
     Ok(rows)

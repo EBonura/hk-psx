@@ -44,6 +44,8 @@ const ASSET_SCRIPTS: &[&str] = &[
     // Which killed enemies the source keeps dead (data/actor_persistence.rs).
     // Reads the source scenes and the region report.
     "rust:actor-persistence",
+    // The wave arena's trigger, wave sizes and members (data/battle_waves.rs).
+    "rust:battle-waves",
     // The Blockers' Terrain Block edges, after the gates: its scratch budget
     // check adds the gates' rows in the same catalogue slot.
     "blocker_terrain.py",
@@ -1517,6 +1519,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
     let start = std::time::Instant::now();
     match tool {
         "actor-persistence" => hk_cook::actor_persistence::main(root, None)?,
+        "battle-waves" => hk_cook::battle_waves::main(root, None)?,
         "props" => hk_cook::props::main(root, None)?,
         "break-effects" => hk_cook::break_effects::main(root, None)?,
         "scene-sfx" => hk_cook::scene_sfx::main(root, None)?,

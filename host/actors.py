@@ -10,6 +10,7 @@ from pathlib import Path
 from polygons import bounded_polygons
 from combat import HIT_EVASION_SECONDS, ticks
 from scene import ADDITIVE_ID_BASE
+from battle import actor_member, membership, pool_peak
 
 
 def _literal(instruction):
@@ -356,6 +357,11 @@ def actor_sources(sc, bounds=None):
                         'EnemyDreamnailReaction'):
                 actor[kind] = component
                 actor[kind + '_source'] = sc.sid(component_id)
+        wave, removable = membership(sc, gid, records)
+        if wave:
+            actor['battle_wave'] = wave
+        if removable:
+            actor['battle_removable'] = True
         fsms = []
         for ref in sc.gos[gid]['m_Component']:
             obj = source.ref(sc.file, ref['component'])
@@ -620,7 +626,8 @@ def actor_sources(sc, bounds=None):
                 ' controller that opts in is admitted from one')
         result.append(actor)
     # Only supported actors enter the guest pool; unsupported ones stay records.
-    if sum(1 for actor in result if actor['movement_supported']) > 32:
+    # The pool holds the arena's largest moment, not every placement of it.
+    if pool_peak(actor_member(actor) for actor in result if actor['movement_supported']) > MAX_SCENE_ACTORS:
         raise ValueError('actor region exceeds bounded 32-slot guest pool')
     return result
 
@@ -661,7 +668,7 @@ def scene_actor_bank(rows):
     objects carry no guest spec, exactly as they did when the index was passed
     in from the region report. Half a cooked view is still refused.
     """
-    specs, placed = [], {}
+    specs, placed, members = [], {}, {}
     for row in sorted(rows, key=lambda value: value['chunk_id']):
         supported = [actor for actor in row.get('actors', []) if actor['movement_supported']]
         cooked = [actor for actor in supported if 'walk_clip' in actor]
@@ -676,10 +683,11 @@ def scene_actor_bank(rows):
             if text not in specs:
                 specs.append(text)
             placed[actor['source']] = (specs.index(text), placement)
+            members[actor['source']] = actor_member(actor)
     # Placements, not specs, are what the runtime pool holds. The spec list used
     # to be one per placement and so stood in for this count; dedup makes it the
     # shorter of the two, so the bound has to be taken on the placements.
-    if len(placed) > MAX_SCENE_ACTORS:
+    if pool_peak(members.values()) > MAX_SCENE_ACTORS:
         raise ValueError('scene actor placements exceed the 32-slot guest pool')
     return specs, placed
 
@@ -698,13 +706,14 @@ def generated_actor_records(region):
     """
     from effects import generated_corpse
     output = []
+    if pool_peak(actor_member(actor) for actor in region.get('actors', [])
+                 if actor['movement_supported']) > MAX_SCENE_ACTORS:
+        raise ValueError('guest actor pool exceeds 32')
     for actor in region.get('actors', []):
         if not actor['movement_supported']:
             continue
         if 'walk_clip' not in actor or 'turn_clip' not in actor:
             raise ValueError(f'supported actor is missing cooked clips: {actor["source"]}')
-        if len(output) == MAX_SCENE_ACTORS:
-            raise ValueError('guest actor pool exceeds 32')
         # Placement defaults every controller that authors none of them keeps.
         start_alert, start_right, rotation_q16 = False, False, 0
         health = actor['health_manager']
@@ -845,7 +854,8 @@ def generated_actor_records(region):
         elif control['kind'] == 'Hatcher':
             if 'fire_clip' not in actor:
                 raise ValueError(f'Hatcher is missing cooked clips: {actor["source"]}')
-            controller = 'hk_sim::ActorController::Hatcher {' + f'fire_clip:{actor["fire_clip"]}' + '}'
+            controller = ('hk_sim::ActorController::Hatcher {'
+                          + f'fire_clip:{actor["fire_clip"]},max_hatched:{control.get("hatched_max", 0)}' + '}')
             # The controller owns velocity and facing; the walk fields are unused.
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
@@ -981,6 +991,10 @@ def generated_actor_records(region):
         }
         if rotation_q16 % (90 * 65536):
             raise ValueError('Climber rotation is not a quarter turn: ' + actor['source'])
+        # A summoned wave member is told ALERT by its `summon` the moment it lands,
+        # and the guest seats it at that moment, so it is born alert.
+        if actor.get('battle_wave'):
+            start_alert = True
         placement = {
             # Scene-unique, which for an object merged in from an additive scene
             # is its shifted id rather than the one in its own file.
