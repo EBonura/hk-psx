@@ -125,8 +125,8 @@ class VramTableTests(unittest.TestCase):
         label, bytes_ = self.row('4bpp scenery pages')
         self.assertEqual(bytes_ % self.PAGE_BYTES, 0, f'{label} is not a whole number of pages')
         source = (ROOT / 'shared/hk-cache/src/residency.rs').read_text()
-        banks = int(re.search(r'pub const BANKS:usize=(\d+);', source).group(1))
-        per_bank = int(re.search(r'pub const PAGES:usize=(\d+);', source).group(1))
+        banks = int(re.search(r'pub const BANKS\s*:\s*usize\s*=\s*(\d+);', source).group(1))
+        per_bank = int(re.search(r'pub const PAGES\s*:\s*usize\s*=\s*(\d+);', source).group(1))
         self.assertLessEqual(bytes_ // self.PAGE_BYTES, banks * per_bank,
                              'more pages than page_xy can address')
 

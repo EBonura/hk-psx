@@ -995,7 +995,7 @@ def generated_actor_records(region):
             # FSMActivator: the FSMs start disabled and an ActiveRegion trigger (a 50 x 35 box on the
             # main camera) enables them when the enemy's collider meets it. The parked cage and
             # reserve members are not placed enemies, so they never wait.
-            'fsm_activator': ('FSMActivator' in actor['components'].values()
+            'fsm_activator': ('FSMActivator' in actor.get('components', {}).values()
                               and 'GruzzerReserve' not in controller and 'HatcherBaby' not in controller),
         }
         if placement['initial_direction'] not in (-1, 1):
