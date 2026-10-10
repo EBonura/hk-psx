@@ -26,6 +26,8 @@ import argparse, re, struct, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 SAVE_RS = ROOT / 'game/src/save.rs'
 # A PSX card is 16 blocks of 8192 bytes; block 0 holds the 128-byte directory
 # entries and blocks 1 to 15 hold files. 0x51 marks an entry in use.
@@ -85,12 +87,15 @@ def layout():
     """(magic, length) as the guest currently defines them. For HKS5 onward the
     length is the shortest record, the one with an empty SceneData list, which
     is what a migrated fixture becomes."""
-    text = SAVE_RS.read_text()
-    magic = re.search(r'const MAGIC: \[u8; 4\] = \*b"(\w{4})"', text)
-    length = re.search(r'pub const LEN: usize = (\d+);', text)
-    if not magic or not length:
+    text = rustsrc.source(SAVE_RS)
+    magic = re.search(r'const MAGIC:\[u8;4\]=\*b"(\w{4})"', text)
+    try:
+        length = rustsrc.const_int(text, 'LEN')
+    except KeyError:
+        length = None
+    if not magic or length is None:
         raise SystemExit('cannot read MAGIC/LEN out of game/src/save.rs')
-    return magic.group(1).encode(), int(length.group(1))
+    return magic.group(1).encode(), length
 
 
 def container_of(data, at, block_start):

@@ -31,6 +31,7 @@ from pathlib import Path
 
 from PIL import Image
 
+import rustsrc
 from source import ROOT
 from cook import tk_sprite, FOCAL, CAM_Z, MAX_TEXTURE_AXIS, guest_wrap
 import false_knight as fk
@@ -467,14 +468,7 @@ def source_art(s, sc, src):
 
 def rust_constants(path=ROOT / 'shared/hk-sim/src/mawlek.rs'):
     """Every `pub const NAME: type = value;` in the Rust module, as ints or lists."""
-    found = {}
-    for match in re.finditer(r'pub const (\w+)\s*:\s*[^=]+=\s*([^;]+);', path.read_text()):
-        raw = re.sub(r'//.*', '', match.group(2)).strip()
-        try:
-            found[match.group(1)] = eval(raw.replace('ONE', '65536'), {'__builtins__': {}}, {})
-        except Exception:
-            continue
-    return found
+    return rustsrc.consts(path)
 
 
 def expected_rust():
