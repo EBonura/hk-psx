@@ -459,7 +459,7 @@ def main():
                     ','.join(str(m) for m in masks), trace, summary], check=True, cwd=ROOT)
     if args.route:
         chosen = [int(v) for v in args.out.read_text().split()]
-        args.route.write_text(masks_to_route(tape_masks(chosen)))
+        args.route.write_text(masks_to_route(chosen))
 
 
 if __name__ == '__main__':
