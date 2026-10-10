@@ -31,10 +31,17 @@ fn q(v: i32) -> f64 {
     v as f64 / 65536.0
 }
 
-fn series(hits: &[i64], start: i64, positions: impl Fn(i64) -> Option<(f64, f64, i32, bool)>, end: i64) -> Series {
+fn series(
+    hits: &[i64],
+    start: i64,
+    positions: impl Fn(i64) -> Option<(f64, f64, i32, bool)>,
+    end: i64,
+) -> Series {
     let mut s = Series::default();
     let Some(&first) = hits.first() else { return s };
-    let (px, py, _, _) = positions(first - 1).or_else(|| positions(first)).unwrap_or((f64::NAN, f64::NAN, 0, false));
+    let (px, py, _, _) = positions(first - 1)
+        .or_else(|| positions(first))
+        .unwrap_or((f64::NAN, f64::NAN, 0, false));
     // The walk goes on under the recoil (and resumes after it) in whichever direction the enemy
     // was going, which the two sides need not share, so the displacement is measured against
     // that walk carried on from the five frames before the strike.
@@ -78,10 +85,16 @@ fn series(hits: &[i64], start: i64, positions: impl Fn(i64) -> Option<(f64, f64,
 }
 
 pub fn og_series(actor: &OgActor, hits: &[&PokeHit], end: i64) -> Series {
-    let by_frame: BTreeMap<i64, &crate::og_trace::Sample> = actor.samples.iter().map(|s| (s.frame, s)).collect();
+    let by_frame: BTreeMap<i64, &crate::og_trace::Sample> =
+        actor.samples.iter().map(|s| (s.frame, s)).collect();
     let frames: Vec<i64> = hits.iter().map(|h| h.frame).collect();
     // The original's driver stamps the frame it struck on; the strike lands that frame's physics.
-    let mut s = series(&frames, frames.first().copied().unwrap_or(0), |f| by_frame.get(&f).map(|s| (s.x, s.y, s.hp, s.dead)), end);
+    let mut s = series(
+        &frames,
+        frames.first().copied().unwrap_or(0),
+        |f| by_frame.get(&f).map(|s| (s.x, s.y, s.hp, s.dead)),
+        end,
+    );
     s.hp = hits.iter().map(|h| h.hp_after).collect();
     // The original keeps an enemy in its trace only while it is active: when it vanishes it is dead.
     if s.death.is_none() {
@@ -98,23 +111,41 @@ pub struct PortSeries {
 
 /// Run the scene's strike windows natively. Returns the port actors' ticks (index = tick since the
 /// trace origin) for the matched targets, with the strikes landed.
-pub fn run_port_pokes(scene: usize, trace: &SceneTrace, targets: &[(u32, Vec<i64>, (f64, f64))]) -> Vec<(u32, Vec<Tick>)> {
+pub fn run_port_pokes(
+    scene: usize,
+    trace: &SceneTrace,
+    targets: &[(u32, Vec<i64>, (f64, f64))],
+) -> Vec<(u32, Vec<Tick>)> {
     let regions = load_scene(scene);
     let end = (trace.last_frame - trace.origin).max(0) as usize;
     let mut out: Vec<(u32, Vec<Tick>)> = Vec::new();
     for (source_id, hit_frames, sync_at) in targets {
         // The region the actor starts in, as the idle comparison uses.
-        let Some(mut here) = regions.iter().find(|r| r.actors.iter().any(|(p, _)| p.source_id == *source_id) && r.actors.iter().any(|(p, _)| {
-            p.source_id == *source_id && world::contains(r.bounds, p.x, p.y)
-        })) else { continue };
+        let Some(mut here) = regions.iter().find(|r| {
+            r.actors.iter().any(|(p, _)| p.source_id == *source_id)
+                && r.actors
+                    .iter()
+                    .any(|(p, _)| p.source_id == *source_id && world::contains(r.bounds, p.x, p.y))
+        }) else {
+            continue;
+        };
         let mut w = enemies::EnemyWorld::new();
         let mut vitals = Vitals::new(VITAL_PARAMS);
         let mut player = Player::spawn(-150 * ONE, -150 * ONE);
         let first_hit = hit_frames[0] - trace.origin;
         let camera_at = |k: usize| -> [i32; 3] {
             let f = trace.origin + k as i64;
-            let c = trace.camera.range(..=f).next_back().map(|(_, c)| *c).unwrap_or([0.0, 0.0, -38.1]);
-            [(c[0] * 65536.0).round() as i32, (c[1] * 65536.0).round() as i32, (c[2] * 65536.0).round() as i32]
+            let c = trace
+                .camera
+                .range(..=f)
+                .next_back()
+                .map(|(_, c)| *c)
+                .unwrap_or([0.0, 0.0, -38.1]);
+            [
+                (c[0] * 65536.0).round() as i32,
+                (c[1] * 65536.0).round() as i32,
+                (c[2] * 65536.0).round() as i32,
+            ]
         };
         let mut ticks = Vec::new();
         // Settle a little before the first strike, from the original's position at the same moment.
@@ -126,7 +157,12 @@ pub fn run_port_pokes(scene: usize, trace: &SceneTrace, targets: &[(u32, Vec<i64
                 player.y = (h[1].clamp(-500.0, 500.0) * 65536.0).round() as i32;
             }
             if t as i64 == sync_tick {
-                w.debug_place(scene, *source_id, (sync_at.0 * 65536.0).round() as i32, (sync_at.1 * 65536.0).round() as i32);
+                w.debug_place(
+                    scene,
+                    *source_id,
+                    (sync_at.0 * 65536.0).round() as i32,
+                    (sync_at.1 * 65536.0).round() as i32,
+                );
             }
             // The tick a strike lands on: the Knight beside the enemy, facing right, swinging.
             let hit_now = hit_frames.iter().any(|h| h - trace.origin == t as i64);
@@ -142,18 +178,46 @@ pub fn run_port_pokes(scene: usize, trace: &SceneTrace, targets: &[(u32, Vec<i64
                     strike = Some([d.x - 2 * ONE, d.y - 2 * ONE, d.x + 2 * ONE, d.y + 2 * ONE]);
                 }
             }
-            step_with(&mut w, here, &regions, &mut player, &mut vitals, camera_at(t), &nail, strike);
+            step_with(
+                &mut w,
+                here,
+                &regions,
+                &mut player,
+                &mut vitals,
+                camera_at(t),
+                &nail,
+                strike,
+            );
             let d = w.debug_actor(scene, *source_id);
             if let Some(d) = &d {
                 if !world::contains(here.bounds, d.x, d.y) {
-                    if let Some(next) = regions.iter().find(|r| world::contains(r.bounds, d.x, d.y)) {
+                    if let Some(next) = regions.iter().find(|r| world::contains(r.bounds, d.x, d.y))
+                    {
                         here = next;
                     }
                 }
             }
             ticks.push(match d {
-                Some(d) => Tick { x: q(d.x), y: q(d.y), hp: d.hp, dead: d.dead, clip: d.clip, facing: d.facing, phase: d.phase, detail: crate::compare::detail_id(&d.detail) },
-                None => Tick { x: f64::NAN, y: f64::NAN, hp: 0, dead: true, clip: u16::MAX, facing: 0, phase: [0; 2], detail: 0 },
+                Some(d) => Tick {
+                    x: q(d.x),
+                    y: q(d.y),
+                    hp: d.hp,
+                    dead: d.dead,
+                    clip: d.clip,
+                    facing: d.facing,
+                    phase: d.phase,
+                    detail: crate::compare::detail_id(&d.detail),
+                },
+                None => Tick {
+                    x: f64::NAN,
+                    y: f64::NAN,
+                    hp: 0,
+                    dead: true,
+                    clip: u16::MAX,
+                    facing: 0,
+                    phase: [0; 2],
+                    detail: 0,
+                },
             });
         }
         out.push((*source_id, ticks));
@@ -170,7 +234,9 @@ pub fn report(run: &std::path::Path, names: &BTreeMap<usize, String>, only: Opti
         if only.map_or(false, |o| o != name) {
             continue;
         }
-        let Some(trace) = traces.get(name) else { continue };
+        let Some(trace) = traces.get(name) else {
+            continue;
+        };
         let ticks = (trace.last_frame - trace.origin).max(0) as usize;
         let port = run_port_scene(*id, trace, ticks);
         let (pairs, _, _) = match_actors(name, trace, &port);
@@ -182,27 +248,49 @@ pub fn report(run: &std::path::Path, names: &BTreeMap<usize, String>, only: Opti
         let mut targets: Vec<(u32, Vec<i64>, (f64, f64))> = Vec::new();
         let mut meta: Vec<(&PortActor, &OgActor, Vec<&PokeHit>)> = Vec::new();
         for p in &pairs {
-            let Some(hs) = hits.get(&p.og.id) else { continue };
+            let Some(hs) = hits.get(&p.og.id) else {
+                continue;
+            };
             let first = hs[0].frame;
-            let at = p.og.samples.iter().filter(|s| s.frame <= first - 20).last().or(p.og.samples.first()).map(|s| (s.x, s.y)).unwrap_or(p.port.start);
+            let at =
+                p.og.samples
+                    .iter()
+                    .filter(|s| s.frame <= first - 20)
+                    .last()
+                    .or(p.og.samples.first())
+                    .map(|s| (s.x, s.y))
+                    .unwrap_or(p.port.start);
             targets.push((p.port.source_id, hs.iter().map(|h| h.frame).collect(), at));
             meta.push((p.port, p.og, hs.clone()));
         }
         let results = run_port_pokes(*id, trace, &targets);
         for (source_id, ticks) in &results {
-            let Some((port_actor, og, hs)) = meta.iter().find(|m| m.0.source_id == *source_id) else { continue };
+            let Some((port_actor, og, hs)) = meta.iter().find(|m| m.0.source_id == *source_id)
+            else {
+                continue;
+            };
             let hit_frames: Vec<i64> = hs.iter().map(|h| h.frame).collect();
             let end = hit_frames.last().unwrap() + 100;
             let o = og_series(og, hs, end);
-            let p = series(&hit_frames, hit_frames[0], |f| {
-                let t = (f - trace.origin) as usize;
-                ticks.get(t).map(|k| (k.x, k.y, k.hp as i32, k.dead))
-            }, end);
+            let p = series(
+                &hit_frames,
+                hit_frames[0],
+                |f| {
+                    let t = (f - trace.origin) as usize;
+                    ticks.get(t).map(|k| (k.x, k.y, k.hp as i32, k.dead))
+                },
+                end,
+            );
             total += 1;
-            let hp_ok = o.hp.iter().zip(&p.hp).all(|(a, b)| (*a).max(-1) == (*b).max(-1)) && o.hp.len() <= p.hp.len() + 1;
+            let hp_ok =
+                o.hp.iter()
+                    .zip(&p.hp)
+                    .all(|(a, b)| (*a).max(-1) == (*b).max(-1))
+                    && o.hp.len() <= p.hp.len() + 1;
             let kill_ok = o.death.is_some() == p.death.is_some();
             // The recoil, 12 frames on, within a quarter of the original's travel or half a unit.
-            let r_ok = (o.dx[1] - p.dx[1]).abs() <= (0.25 * o.dx[1].abs()).max(0.5) && (o.dy[1] - p.dy[1]).abs() <= 0.5;
+            let r_ok = (o.dx[1] - p.dx[1]).abs() <= (0.25 * o.dx[1].abs()).max(0.5)
+                && (o.dy[1] - p.dy[1]).abs() <= 0.5;
             ok_hp += hp_ok as u32;
             ok_kill += kill_ok as u32;
             ok_recoil += r_ok as u32;

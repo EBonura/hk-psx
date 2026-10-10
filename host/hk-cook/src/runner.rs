@@ -30,14 +30,44 @@ const FSM_SHA256: &str = "73f11594e0115a43a66c8d1695a65916b81bfe6057c180636eed33
 /// Zombie Leap (Leaper): same Walker, a leap attack instead of the swipe.
 const LEAP_FSM_SHA256: &str = "15ecb1c0984cd4955e5412dfae354441eb9a9d19c6b2bff9d7b6fc564dc7fe47";
 type Clips = [(&'static str, i64)];
-const LEAP_CLIPS: &Clips = &[("Idle", 0), ("Walk", 0), ("Turn", 2), ("Attack", 2), ("Land", 2), ("Death Air", 6), ("Death Land", 2)];
-const CLIPS: &Clips = &[("Idle", 0), ("Walk", 0), ("Turn", 2), ("Attack Anticipate", 2), ("Attack Lunge", 2), ("Attack Cooldown", 2), ("Fall", 1), ("Death Air", 6), ("Death Land", 2)];
+const LEAP_CLIPS: &Clips = &[
+    ("Idle", 0),
+    ("Walk", 0),
+    ("Turn", 2),
+    ("Attack", 2),
+    ("Land", 2),
+    ("Death Air", 6),
+    ("Death Land", 2),
+];
+const CLIPS: &Clips = &[
+    ("Idle", 0),
+    ("Walk", 0),
+    ("Turn", 2),
+    ("Attack Anticipate", 2),
+    ("Attack Lunge", 2),
+    ("Attack Cooldown", 2),
+    ("Fall", 1),
+    ("Death Air", 6),
+    ("Death Land", 2),
+];
 /// The managed assemblies the recognized methods were audited against.
 pub const ASSEMBLIES: [(&str, &str); 4] = [
-    ("Assembly-CSharp.dll", "e9048ef6a633970f735e01ec166d3959f610eaea7a88d827d48d67b1e5fb87bd"),
-    ("PlayMaker.dll", "0ef0e7829d125e1f632c8a189260ec6c6882630be6932c8c7ae032efbc53469a"),
-    ("TeamCherry.TK2D.dll", "b443474e6cf6eb03debe5346884a51893621cc39a9b2666c160034fbd5783da7"),
-    ("Assembly-CSharp-firstpass.dll", "2c9b97488f3f8d2e29c8af2e3200e378216652904be22c2678eb5d2cdaa95499"),
+    (
+        "Assembly-CSharp.dll",
+        "e9048ef6a633970f735e01ec166d3959f610eaea7a88d827d48d67b1e5fb87bd",
+    ),
+    (
+        "PlayMaker.dll",
+        "0ef0e7829d125e1f632c8a189260ec6c6882630be6932c8c7ae032efbc53469a",
+    ),
+    (
+        "TeamCherry.TK2D.dll",
+        "b443474e6cf6eb03debe5346884a51893621cc39a9b2666c160034fbd5783da7",
+    ),
+    (
+        "Assembly-CSharp-firstpass.dll",
+        "2c9b97488f3f8d2e29c8af2e3200e378216652904be22c2678eb5d2cdaa95499",
+    ),
 ];
 
 fn is_float(v: &Value) -> bool {
@@ -64,9 +94,21 @@ pub fn py_value_repr(v: &Value) -> String {
         Value::F32(f) => crate::pyfloat::repr(*f as f64),
         Value::F64(f) => crate::pyfloat::repr(*f),
         Value::Str(s) => crate::music_report::py_repr(&String::from_utf8_lossy(s)),
-        Value::Bytes(b) => format!("b'{}'", b.iter().map(|x| format!("\\x{x:02x}")).collect::<String>()),
-        Value::List(l) => format!("[{}]", l.iter().map(py_value_repr).collect::<Vec<_>>().join(", ")),
-        Value::Map(m) => format!("{{{}}}", m.iter().map(|(k, x)| format!("{}: {}", crate::music_report::py_repr(k), py_value_repr(x))).collect::<Vec<_>>().join(", ")),
+        Value::Bytes(b) => format!(
+            "b'{}'",
+            b.iter().map(|x| format!("\\x{x:02x}")).collect::<String>()
+        ),
+        Value::List(l) => format!(
+            "[{}]",
+            l.iter().map(py_value_repr).collect::<Vec<_>>().join(", ")
+        ),
+        Value::Map(m) => format!(
+            "{{{}}}",
+            m.iter()
+                .map(|(k, x)| format!("{}: {}", crate::music_report::py_repr(k), py_value_repr(x)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 
@@ -84,7 +126,10 @@ pub fn recoil_fixed(speed: f64, duration: f64) -> (i64, i64) {
     if n <= 0 {
         return (crate::common::py_round(speed * 65536.0), 0);
     }
-    (crate::common::py_round(speed * seconds * 60.0 / n as f64 * 65536.0), n)
+    (
+        crate::common::py_round(speed * seconds * 60.0 / n as f64 * 65536.0),
+        n,
+    )
 }
 
 /// `walker_parameters`: reject C# controller variants the runner model does not
@@ -115,14 +160,24 @@ fn walker_parameters(walker: &Value, lunge_speed: Option<&Value>) -> Result<Vec<
             return err(format!("unsupported Runner Walker field: {name}"));
         }
     }
-    let speed = float_in(walker.get("walkSpeedR"), 0.0, 16.0).filter(|s| walker.get("walkSpeedL").and_then(Value::float) == Some(-s));
-    let Some(speed) = speed else { return err("unsupported Runner Walker field: walkSpeedL") };
-    let Some(lunge) = float_in(lunge_speed, 0.0, 32.0) else { return err("unsupported Runner lunge speed") };
+    let speed = float_in(walker.get("walkSpeedR"), 0.0, 16.0)
+        .filter(|s| walker.get("walkSpeedL").and_then(Value::float) == Some(-s));
+    let Some(speed) = speed else {
+        return err("unsupported Runner Walker field: walkSpeedL");
+    };
+    let Some(lunge) = float_in(lunge_speed, 0.0, 32.0) else {
+        return err("unsupported Runner lunge speed");
+    };
     let mut waits = Vec::new();
-    for (low, high) in [("pauseWaitMin", "pauseWaitMax"), ("pauseTimeMin", "pauseTimeMax")] {
+    for (low, high) in [
+        ("pauseWaitMin", "pauseWaitMax"),
+        ("pauseTimeMin", "pauseTimeMax"),
+    ] {
         let mut values = Vec::new();
         for key in [low, high] {
-            let Some(v) = float_in(walker.get(key), 0.0, 10.0) else { return err(format!("unsupported Runner Walker field: {low}")) };
+            let Some(v) = float_in(walker.get(key), 0.0, 10.0) else {
+                return err(format!("unsupported Runner Walker field: {low}"));
+            };
             values.push(v);
         }
         // Random.Range accepts either argument order; the guest samples [hi, lo].
@@ -151,7 +206,10 @@ pub(crate) fn fsm_fingerprint(fsm: &Value) -> Result<String> {
     let scalar = |v: &Value| -> String {
         if v.is_map() {
             if v.get("useVariable").is_some_and(Value::truthy) {
-                format!("VAR:{}", v.get("name").and_then(Value::str).unwrap_or_default())
+                format!(
+                    "VAR:{}",
+                    v.get("name").and_then(Value::str).unwrap_or_default()
+                )
             } else {
                 match v.get("value").or_else(|| v.get("name")) {
                     Some(x) => py_value_repr(x),
@@ -168,8 +226,15 @@ pub(crate) fn fsm_fingerprint(fsm: &Value) -> Result<String> {
     if let Some(Value::Map(groups)) = fsm.get("variables") {
         for (_, group) in groups {
             for v in group.list().unwrap_or(&[]) {
-                if v.is_map() && v.get("name").is_some() && v.get("value").is_some_and(|x| !x.is_map()) && v.get("name").and_then(Value::str).as_deref() != Some("Lunge Speed") {
-                    variables.push((v.get("name").and_then(Value::str).unwrap_or_default(), py_value_repr(v.get("value").unwrap())));
+                if v.is_map()
+                    && v.get("name").is_some()
+                    && v.get("value").is_some_and(|x| !x.is_map())
+                    && v.get("name").and_then(Value::str).as_deref() != Some("Lunge Speed")
+                {
+                    variables.push((
+                        v.get("name").and_then(Value::str).unwrap_or_default(),
+                        py_value_repr(v.get("value").unwrap()),
+                    ));
                 }
             }
         }
@@ -179,7 +244,12 @@ pub(crate) fn fsm_fingerprint(fsm: &Value) -> Result<String> {
         list.and_then(Value::list)
             .unwrap_or(&[])
             .iter()
-            .map(|t| Ok(pair(get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(), get(t, "toState")?.str().unwrap_or_default())))
+            .map(|t| {
+                Ok(pair(
+                    get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(),
+                    get(t, "toState")?.str().unwrap_or_default(),
+                ))
+            })
             .collect()
     };
     let mut states = Vec::new();
@@ -190,19 +260,43 @@ pub(crate) fn fsm_fingerprint(fsm: &Value) -> Result<String> {
         let mut actions = Vec::new();
         for (index, name) in names.iter().enumerate() {
             let mut fields: Vec<(String, String)> = match action_fields(data, index, false) {
-                Ok(f) => f.into_iter().filter(|(k, _)| k != "gameObject").map(|(k, v)| (k, scalar(&v))).collect(),
+                Ok(f) => f
+                    .into_iter()
+                    .filter(|(k, _)| k != "gameObject")
+                    .map(|(k, v)| (k, scalar(&v)))
+                    .collect(),
                 Err(e) => vec![("error".into(), e.to_string())],
             };
             fields.sort();
-            actions.push(Json::List(vec![js(name.str().unwrap_or_default()), Json::Int(enabled.get(index).and_then(Value::int).unwrap_or(0)), Json::List(fields.into_iter().map(|(k, v)| pair(k, v)).collect())]));
+            actions.push(Json::List(vec![
+                js(name.str().unwrap_or_default()),
+                Json::Int(enabled.get(index).and_then(Value::int).unwrap_or(0)),
+                Json::List(fields.into_iter().map(|(k, v)| pair(k, v)).collect()),
+            ]));
         }
-        states.push(Json::List(vec![js(get(state, "name")?.str().unwrap_or_default()), Json::List(transitions(state.get("transitions"))?), Json::List(actions)]));
+        states.push(Json::List(vec![
+            js(get(state, "name")?.str().unwrap_or_default()),
+            Json::List(transitions(state.get("transitions"))?),
+            Json::List(actions),
+        ]));
     }
     let summary = Json::Obj(vec![
-        ("name".into(), js(get(fsm, "name")?.str().unwrap_or_default())),
-        ("start".into(), js(get(fsm, "startState")?.str().unwrap_or_default())),
-        ("variables".into(), Json::List(variables.into_iter().map(|(a, b)| pair(a, b)).collect())),
-        ("globals".into(), Json::List(transitions(fsm.get("globalTransitions"))?)),
+        (
+            "name".into(),
+            js(get(fsm, "name")?.str().unwrap_or_default()),
+        ),
+        (
+            "start".into(),
+            js(get(fsm, "startState")?.str().unwrap_or_default()),
+        ),
+        (
+            "variables".into(),
+            Json::List(variables.into_iter().map(|(a, b)| pair(a, b)).collect()),
+        ),
+        (
+            "globals".into(),
+            Json::List(transitions(fsm.get("globalTransitions"))?),
+        ),
         ("states".into(), Json::List(states)),
     ]);
     Ok(sha(dumps_sorted_compact(&summary).as_bytes()))
@@ -217,7 +311,11 @@ fn py_floordiv(a: f64, b: f64) -> f64 {
     }
     if div != 0.0 {
         let fl = div.floor();
-        if div - fl > 0.5 { fl + 1.0 } else { fl }
+        if div - fl > 0.5 {
+            fl + 1.0
+        } else {
+            fl
+        }
     } else {
         0.0f64.copysign(a / b)
     }
@@ -227,17 +325,30 @@ fn py_floordiv(a: f64, b: f64) -> f64 {
 /// the same wrap modes; frame counts and rates differ per variant. `Fall` is
 /// optional (the controller never plays it). Returns the cooked clip rows.
 fn clip_contract(clips: &[Value], expected: &Clips) -> Result<Vec<Json>> {
-    let names: Vec<String> = clips.iter().map(|c| get(c, "name").ok().and_then(Value::str).unwrap_or_default()).collect();
+    let names: Vec<String> = clips
+        .iter()
+        .map(|c| get(c, "name").ok().and_then(Value::str).unwrap_or_default())
+        .collect();
     let mut unique = names.clone();
     unique.sort();
     unique.dedup();
     let required = expected.iter().filter(|e| e.0 != "Fall");
-    if unique.len() != names.len() || !required.clone().all(|e| names.iter().any(|n| n == e.0)) || !names.iter().all(|n| expected.iter().any(|e| e.0 == n)) {
+    if unique.len() != names.len()
+        || !required.clone().all(|e| names.iter().any(|n| n == e.0))
+        || !names.iter().all(|n| expected.iter().any(|e| e.0 == n))
+    {
         return err("unsupported Runner animation inventory");
     }
     let mut out = Vec::new();
     for (name, wrap) in expected {
-        let Some(clip) = clips.iter().zip(&names).find(|(_, n)| n == name).map(|(c, _)| c) else { continue };
+        let Some(clip) = clips
+            .iter()
+            .zip(&names)
+            .find(|(_, n)| n == name)
+            .map(|(c, _)| c)
+        else {
+            continue;
+        };
         let frames = get(clip, "frames")?.list().unwrap_or(&[]);
         let fps_value = get(clip, "fps")?;
         let fps = fps_value.float().unwrap_or(0.0);
@@ -245,7 +356,11 @@ fn clip_contract(clips: &[Value], expected: &Clips) -> Result<Vec<Json>> {
             return err(format!("unsupported Runner animation: {name}"));
         }
         // The Leaper's Attack trigger frame is the launch cue.
-        if *name != "Attack" && frames.iter().any(|f| f.get("triggerEvent").is_some_and(Value::truthy)) {
+        if *name != "Attack"
+            && frames
+                .iter()
+                .any(|f| f.get("triggerEvent").is_some_and(Value::truthy))
+        {
             return err(format!("unsupported Runner frame event: {name}"));
         }
         let loop_start = get(clip, "loopStart")?.int().unwrap_or(-1);
@@ -282,7 +397,13 @@ pub(crate) fn body_contract(rigid: &Value) -> Result<()> {
         ("m_Interpolate", Value::Int(0)),
         ("m_SleepingMode", Value::Int(1)),
         ("m_Constraints", Value::Int(4)),
-        ("m_Material", Value::Map(vec![("m_FileID".into(), Value::Int(0)), ("m_PathID".into(), Value::Int(0))])),
+        (
+            "m_Material",
+            Value::Map(vec![
+                ("m_FileID".into(), Value::Int(0)),
+                ("m_PathID".into(), Value::Int(0)),
+            ]),
+        ),
         ("m_IncludeLayers", bits(())),
         ("m_ExcludeLayers", bits(())),
     ];
@@ -292,11 +413,19 @@ pub(crate) fn body_contract(rigid: &Value) -> Result<()> {
         }
     }
     // Hornheads use continuous collision detection; the swept solver covers both.
-    if !rigid.get("m_CollisionDetection").and_then(Value::int).is_some_and(|v| v == 0 || v == 1) {
+    if !rigid
+        .get("m_CollisionDetection")
+        .and_then(Value::int)
+        .is_some_and(|v| v == 0 || v == 1)
+    {
         return err("unsupported Runner rigid body field: m_CollisionDetection");
     }
     // Runners fall at gravity scale 1, Leapers at .8.
-    if !rigid.get("m_GravityScale").and_then(Value::float).is_some_and(|g| g == 1.0 || g == 0.800000011920929) {
+    if !rigid
+        .get("m_GravityScale")
+        .and_then(Value::float)
+        .is_some_and(|g| g == 1.0 || g == 0.800000011920929)
+    {
         return err("unsupported Runner rigid body field: m_GravityScale");
     }
     Ok(())
@@ -304,11 +433,18 @@ pub(crate) fn body_contract(rigid: &Value) -> Result<()> {
 
 /// `axis_aligned_bounds`: transform all four collider corners, retaining child
 /// scaling and offsets.
-pub(crate) fn axis_aligned_bounds(m: &[[f64; 4]; 4], offset: [f64; 2], size: [f64; 2]) -> Result<[f64; 4]> {
+pub(crate) fn axis_aligned_bounds(
+    m: &[[f64; 4]; 4],
+    offset: [f64; 2],
+    size: [f64; 2],
+) -> Result<[f64; 4]> {
     if m.iter().flatten().any(|v| !v.is_finite()) {
         return err("nonfinite Runner collider transform");
     }
-    if [(0, 1), (1, 0), (0, 2), (1, 2)].iter().any(|&(r, c)| m[r][c].abs() > 1e-6) {
+    if [(0, 1), (1, 0), (0, 2), (1, 2)]
+        .iter()
+        .any(|&(r, c)| m[r][c].abs() > 1e-6)
+    {
         return err("rotated Runner collider unsupported");
     }
     if m[0][0] == 0.0 || m[1][1] == 0.0 {
@@ -325,7 +461,12 @@ pub(crate) fn axis_aligned_bounds(m: &[[f64; 4]; 4], offset: [f64; 2], size: [f6
         })
         .collect();
     let min = |i: usize| points.iter().map(|p| p[i]).fold(f64::INFINITY, f64::min);
-    let max = |i: usize| points.iter().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
+    let max = |i: usize| {
+        points
+            .iter()
+            .map(|p| p[i])
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
     Ok([min(0), min(1), max(0), max(1)])
 }
 
@@ -343,7 +484,14 @@ fn one<'a>(records: &[(i64, &str, &'a Value)], kind: &str) -> Result<(i64, &'a V
 fn driving_fsm<'a>(records: &[(i64, &str, &'a Value)]) -> Result<&'a Value> {
     let matches: Vec<&Value> = records
         .iter()
-        .filter(|r| r.1 == "PlayMakerFSM" && r.2.get("fsm").and_then(|f| f.get("name")).and_then(Value::str).is_some_and(|n| n == "Zombie Swipe" || n == "Zombie Leap"))
+        .filter(|r| {
+            r.1 == "PlayMakerFSM"
+                && r.2
+                    .get("fsm")
+                    .and_then(|f| f.get("name"))
+                    .and_then(Value::str)
+                    .is_some_and(|n| n == "Zombie Swipe" || n == "Zombie Leap")
+        })
         .map(|r| r.2)
         .collect();
     if matches.len() != 1 {
@@ -395,7 +543,10 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
         if let Some(Value::Map(groups)) = fsm.get("variables") {
             for (_, group) in groups {
                 for v in group.list().unwrap_or(&[]) {
-                    if v.is_map() && v.get("name").is_some() && v.get("value").is_some_and(|x| !x.is_map()) {
+                    if v.is_map()
+                        && v.get("name").is_some()
+                        && v.get("value").is_some_and(|x| !x.is_map())
+                    {
                         let n = v.get("name").and_then(Value::str).unwrap_or_default();
                         match out.iter_mut().find(|(k, _)| *k == n) {
                             Some(slot) => slot.1 = v.get("value").unwrap(),
@@ -410,21 +561,39 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let variable = |name: &str| variables.iter().find(|(k, _)| k == name).map(|(_, v)| *v);
     let leap = get(fsm, "name")?.str().as_deref() == Some("Zombie Leap");
     let one_float = Value::F64(1.0);
-    let mut parameters = walker_parameters(walker, if leap { Some(&one_float) } else { variable("Lunge Speed") })?;
+    let mut parameters = walker_parameters(
+        walker,
+        if leap {
+            Some(&one_float)
+        } else {
+            variable("Lunge Speed")
+        },
+    )?;
     // The serialized FSM embeds owner references, so the fingerprint covers its
     // structure and scalar parameters.
     let fingerprint = fsm_fingerprint(fsm)?;
-    if !get(fsm_component, "m_Enabled")?.truthy() || fingerprint != if leap { LEAP_FSM_SHA256 } else { FSM_SHA256 } {
+    if !get(fsm_component, "m_Enabled")?.truthy()
+        || fingerprint != if leap { LEAP_FSM_SHA256 } else { FSM_SHA256 }
+    {
         return err("unverified Runner FSM variant");
     }
     if leap {
         set_field(&mut parameters, "lunge_speed", Json::Float(0.0));
-        set_field(&mut parameters, "lunge_velocity_q16", Json::List(vec![Json::Int(0), Json::Int(0)]));
+        set_field(
+            &mut parameters,
+            "lunge_velocity_q16",
+            Json::List(vec![Json::Int(0), Json::Int(0)]),
+        );
         let idle = variable("Idle Time");
         set_field(
             &mut parameters,
             "attack",
-            jobj(vec![("kind", js("Leap")), ("jump_speed_y", Json::Float(20.0)), ("jump_x_factor", Json::Float(1.25)), ("idle_time", idle.map_or(Json::Null, value_json))]),
+            jobj(vec![
+                ("kind", js("Leap")),
+                ("jump_speed_y", Json::Float(20.0)),
+                ("jump_x_factor", Json::Float(1.25)),
+                ("idle_time", idle.map_or(Json::Null, value_json)),
+            ]),
         );
         if !eq_num(idle, 0.5) {
             return err("unsupported Leaper idle time");
@@ -433,9 +602,12 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
         set_field(&mut parameters, "attack", jobj(vec![("kind", js("Swipe"))]));
     }
     for (name, expected) in ASSEMBLIES {
-        let bytes = std::fs::read(source.directory.join("Managed").join(name)).map_err(|e| format!("{name}: {e}"))?;
+        let bytes = std::fs::read(source.directory.join("Managed").join(name))
+            .map_err(|e| format!("{name}: {e}"))?;
         if sha(&bytes) != expected {
-            return err(format!("Runner methods require a fresh source audit: {name}"));
+            return err(format!(
+                "Runner methods require a fresh source audit: {name}"
+            ));
         }
     }
     let matrix = u(sc.world(*sc.go_transform.get(&gid).ok_or("actor has no transform")?))?;
@@ -447,30 +619,55 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     }
     let mirror = if matrix[0][0] < 0.0 { -1 } else { 1 };
     let layer = get(sc.go(gid).ok_or("no such GameObject")?, "m_Layer")?.int();
-    if layer != Some(11) || (matrix[0][0].abs() - 1.0).abs() > 1e-6 || (matrix[1][1] - 1.0).abs() > 1e-6 || matrix[0][1].abs() > 1e-6 || matrix[1][0].abs() > 1e-6 {
+    if layer != Some(11)
+        || (matrix[0][0].abs() - 1.0).abs() > 1e-6
+        || (matrix[1][1] - 1.0).abs() > 1e-6
+        || matrix[0][1].abs() > 1e-6
+        || matrix[1][0].abs() > 1e-6
+    {
         return err("unsupported Runner layer or initial scale");
     }
     // rightScale is -1, so a mirrored transform starts the walker facing right.
     set_field(&mut parameters, "initial_direction", Json::Int(-mirror));
     let (_, body) = one(&records, "BoxCollider2D")?;
     let (_, rigid) = one(&records, "Rigidbody2D")?;
-    if !get(body, "m_Enabled")?.truthy() || get(body, "m_IsTrigger")?.truthy() || !eq_num(body.get("m_EdgeRadius"), 0.0) {
+    if !get(body, "m_Enabled")?.truthy()
+        || get(body, "m_IsTrigger")?.truthy()
+        || !eq_num(body.get("m_EdgeRadius"), 0.0)
+    {
         return err("unsupported Runner body collider");
     }
     body_contract(rigid)?;
-    set_field(&mut parameters, "gravity_scale", value_json(get(rigid, "m_GravityScale")?));
+    set_field(
+        &mut parameters,
+        "gravity_scale",
+        value_json(get(rigid, "m_GravityScale")?),
+    );
     let xy = |v: &Value, key: &str| -> Result<[f64; 2]> {
         let p = get(v, key)?;
-        Ok([get(p, "x")?.float().ok_or("not a number")?, get(p, "y")?.float().ok_or("not a number")?])
+        Ok([
+            get(p, "x")?.float().ok_or("not a number")?,
+            get(p, "y")?.float().ok_or("not a number")?,
+        ])
     };
     let body_bounds = axis_aligned_bounds(&matrix, xy(body, "m_Offset")?, xy(body, "m_Size")?)?;
     let (los_id, los) = one(&records, "LineOfSightDetector")?;
     let range_id = local_ref(get(walker, "alertRange")?)?;
-    let ranges: Vec<i64> = get(los, "alertRanges")?.list().unwrap_or(&[]).iter().map(local_ref).collect::<Result<_>>()?;
-    if local_ref(get(walker, "lineOfSightDetector")?)? != los_id || !get(los, "m_Enabled")?.truthy() || ranges != [range_id] {
+    let ranges: Vec<i64> = get(los, "alertRanges")?
+        .list()
+        .unwrap_or(&[])
+        .iter()
+        .map(local_ref)
+        .collect::<Result<_>>()?;
+    if local_ref(get(walker, "lineOfSightDetector")?)? != los_id
+        || !get(los, "m_Enabled")?.truthy()
+        || ranges != [range_id]
+    {
         return err("Runner sensing references differ");
     }
-    let alert_object = sc.object(range_id).ok_or("alert range is not in the scene")?;
+    let alert_object = sc
+        .object(range_id)
+        .ok_or("alert range is not in the scene")?;
     if alert_object.typename != "AlertRange" || !get(&alert_object.tree, "m_Enabled")?.truthy() {
         return err("Runner alert component disabled or changed");
     }
@@ -480,27 +677,55 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     }
     let range_records = component_records(sc, range_go);
     let (_, collider) = one(&range_records, "BoxCollider2D")?;
-    if !get(collider, "m_Enabled")?.truthy() || !get(collider, "m_IsTrigger")?.truthy() || !eq_num(collider.get("m_EdgeRadius"), 0.0) {
+    if !get(collider, "m_Enabled")?.truthy()
+        || !get(collider, "m_IsTrigger")?.truthy()
+        || !eq_num(collider.get("m_EdgeRadius"), 0.0)
+    {
         return err("unsupported Runner alert trigger");
     }
-    let alert_bounds = axis_aligned_bounds(&u(sc.world(*sc.go_transform.get(&range_go).ok_or("alert object has no transform")?))?, xy(collider, "m_Offset")?, xy(collider, "m_Size")?)?;
+    let alert_bounds = axis_aligned_bounds(
+        &u(sc.world(
+            *sc.go_transform
+                .get(&range_go)
+                .ok_or("alert object has no transform")?,
+        ))?,
+        xy(collider, "m_Offset")?,
+        xy(collider, "m_Size")?,
+    )?;
     let (_, animator) = one(&records, "tk2dSpriteAnimator")?;
     if !get(animator, "m_Enabled")?.truthy() || get(animator, "isRealtime")?.truthy() {
         return err("Runner requires enabled scaled-time animation");
     }
     let library = u(sc.deref(get(animator, "library")?))?;
     let library_tree = u(source.read(&library))?;
-    let clips = get(&library_tree, "clips")?.list().ok_or("clips is not a list")?;
+    let clips = get(&library_tree, "clips")?
+        .list()
+        .ok_or("clips is not a list")?;
     let animation = clip_contract(clips, if leap { LEAP_CLIPS } else { CLIPS })?;
     if leap {
-        let attack = clips.iter().find(|c| c.get("name").and_then(Value::str).as_deref() == Some("Attack")).ok_or("no Attack clip")?;
-        let triggers: Vec<usize> = get(attack, "frames")?.list().unwrap_or(&[]).iter().enumerate().filter(|(_, f)| f.get("triggerEvent").is_some_and(Value::truthy)).map(|(i, _)| i).collect();
+        let attack = clips
+            .iter()
+            .find(|c| c.get("name").and_then(Value::str).as_deref() == Some("Attack"))
+            .ok_or("no Attack clip")?;
+        let triggers: Vec<usize> = get(attack, "frames")?
+            .list()
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.get("triggerEvent").is_some_and(Value::truthy))
+            .map(|(i, _)| i)
+            .collect();
         if triggers.len() != 1 {
             return err("Leaper Attack clip needs exactly one trigger frame");
         }
         let fps = get(attack, "fps")?.float().unwrap_or(0.0);
-        if let Some((_, Json::Obj(attack_fields))) = parameters.iter_mut().find(|(k, _)| k == "attack") {
-            attack_fields.push(("trigger_ticks".into(), Json::Int(py_round((triggers[0] * 60) as f64 / fps))));
+        if let Some((_, Json::Obj(attack_fields))) =
+            parameters.iter_mut().find(|(k, _)| k == "attack")
+        {
+            attack_fields.push((
+                "trigger_ticks".into(),
+                Json::Int(py_round((triggers[0] * 60) as f64 / fps)),
+            ));
         }
     }
     let mut sprites = std::collections::BTreeSet::new();
@@ -517,11 +742,25 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     // Unity 6 stores the assigned loop in m_Resource; m_audioClip is null here.
     let looped = u(sc.deref(get(audio_source, "m_Resource")?))?;
     let anticipate = get(
-        get(fsm, "states")?.list().unwrap_or(&[]).iter().find(|s| s.get("name").and_then(Value::str).as_deref() == Some("Anticipate")).ok_or("no Anticipate state")?,
+        get(fsm, "states")?
+            .list()
+            .unwrap_or(&[])
+            .iter()
+            .find(|s| s.get("name").and_then(Value::str).as_deref() == Some("Anticipate"))
+            .ok_or("no Anticipate state")?,
         "actionData",
     )?;
-    let chase: Vec<Obj> = get(anticipate, "unityObjectParams")?.list().unwrap_or(&[]).iter().map(|r| u(sc.deref(r))).collect::<Result<_>>()?;
-    if chase.len() != 2 || [&looped, &chase[0], &chase[1]].iter().any(|o| o.class_id() != 83) {
+    let chase: Vec<Obj> = get(anticipate, "unityObjectParams")?
+        .list()
+        .unwrap_or(&[])
+        .iter()
+        .map(|r| u(sc.deref(r)))
+        .collect::<Result<_>>()?;
+    if chase.len() != 2
+        || [&looped, &chase[0], &chase[1]]
+            .iter()
+            .any(|o| o.class_id() != 83)
+    {
         return err("Runner audio references differ from the verified FSM");
     }
     let audio = Audio {
@@ -542,7 +781,11 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     };
     let (body_q16, alert_q16) = (relative_q16(body_bounds)?, relative_q16(alert_bounds)?);
     // The level37 Runner shape is hk_sim::runner_senses::Shape::RUNNER.
-    if alert_q16[0] != -alert_q16[2] || body_q16[0] >= body_q16[2] || body_q16[1] >= body_q16[3] || alert_q16[1] >= alert_q16[3] {
+    if alert_q16[0] != -alert_q16[2]
+        || body_q16[0] >= body_q16[2]
+        || body_q16[1] >= body_q16[3]
+        || alert_q16[1] >= alert_q16[3]
+    {
         return err("Runner sensing shape is not a mirror-stable box");
     }
     let ints = |a: [i64; 4]| Json::List(a.iter().map(|&v| Json::Int(v)).collect());
@@ -588,7 +831,11 @@ pub struct RunnerActor {
 
 /// The Runner gate of `actor_sources` for one HealthManager object: the actor
 /// if it is an enabled, active placement the Runner recognizer accepts.
-pub fn candidate(sc: &Scene, source: &Source, o: &hk_unity::scene::SceneObject) -> Result<Option<RunnerActor>> {
+pub fn candidate(
+    sc: &Scene,
+    source: &Source,
+    o: &hk_unity::scene::SceneObject,
+) -> Result<Option<RunnerActor>> {
     if o.typename != "HealthManager" || !get(&o.tree, "m_Enabled")?.truthy() {
         return Ok(None);
     }
@@ -601,12 +848,24 @@ pub fn candidate(sc: &Scene, source: &Source, o: &hk_unity::scene::SceneObject) 
         return Ok(None);
     }
     // Taken off the Runner's gate by name, as in actor_sources.
-    let name = get(sc.go(gid).ok_or("no such GameObject")?, "m_Name")?.str().unwrap_or_default();
-    if name == "Mawlek Body" || name.starts_with("Zombie Shield") || name.starts_with("Zombie Guard") {
+    let name = get(sc.go(gid).ok_or("no such GameObject")?, "m_Name")?
+        .str()
+        .unwrap_or_default();
+    if name == "Mawlek Body"
+        || name.starts_with("Zombie Shield")
+        || name.starts_with("Zombie Guard")
+    {
         return Ok(None);
     }
     let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
-    Ok(recognize(sc, source, gid, position).ok().map(|found| RunnerActor { source: sc.sid(o.id), game_object: gid, audio: found.audio, control: found.control }))
+    Ok(recognize(sc, source, gid, position)
+        .ok()
+        .map(|found| RunnerActor {
+            source: sc.sid(o.id),
+            game_object: gid,
+            audio: found.audio,
+            control: found.control,
+        }))
 }
 
 /// `actor_sources(scene)` filtered to the actors whose movement control is a
@@ -631,7 +890,10 @@ mod tests {
         assert_eq!(py_value_repr(&Value::F32(0.85)), "0.8500000238418579");
         assert_eq!(py_value_repr(&text("Idle")), "'Idle'");
         assert_eq!(py_value_repr(&list(vec![int(1), text("a")])), "[1, 'a']");
-        assert_eq!(py_value_repr(&map(vec![("m_FileID", int(0))])), "{'m_FileID': 0}");
+        assert_eq!(
+            py_value_repr(&map(vec![("m_FileID", int(0))])),
+            "{'m_FileID': 0}"
+        );
     }
 
     #[test]
@@ -665,10 +927,14 @@ mod tests {
         assert!(walker_parameters(&map(fields.clone()), None).is_err());
         assert!(walker_parameters(&map(fields.clone()), Some(&int(6))).is_err());
         fields[4] = ("pauses", int(0));
-        assert!(walker_parameters(&map(fields.clone()), Some(&lunge)).unwrap_err().contains("pauses"));
+        assert!(walker_parameters(&map(fields.clone()), Some(&lunge))
+            .unwrap_err()
+            .contains("pauses"));
         fields[4] = ("pauses", int(1));
         fields[17] = ("walkSpeedL", Value::F32(-1.0));
-        assert!(walker_parameters(&map(fields), Some(&lunge)).unwrap_err().contains("walkSpeedL"));
+        assert!(walker_parameters(&map(fields), Some(&lunge))
+            .unwrap_err()
+            .contains("walkSpeedL"));
     }
 
     #[test]
@@ -676,13 +942,20 @@ mod tests {
         let clip = |name: &str, wrap: i64, trigger: bool| {
             map(vec![
                 ("name", text(name)),
-                ("frames", list(vec![map(vec![("triggerEvent", Value::Bool(trigger))])])),
+                (
+                    "frames",
+                    list(vec![map(vec![("triggerEvent", Value::Bool(trigger))])]),
+                ),
                 ("fps", Value::F32(12.0)),
                 ("wrapMode", int(wrap)),
                 ("loopStart", int(0)),
             ])
         };
-        let full: Vec<Value> = CLIPS.iter().filter(|c| c.0 != "Fall").map(|c| clip(c.0, c.1, false)).collect();
+        let full: Vec<Value> = CLIPS
+            .iter()
+            .filter(|c| c.0 != "Fall")
+            .map(|c| clip(c.0, c.1, false))
+            .collect();
         assert!(clip_contract(&full, CLIPS).is_ok());
         let mut missing = full.clone();
         missing.pop();
@@ -692,7 +965,9 @@ mod tests {
         assert!(clip_contract(&wrong_wrap, CLIPS).is_err());
         let mut eventful = full.clone();
         eventful[0] = clip("Idle", 0, true);
-        assert!(clip_contract(&eventful, CLIPS).unwrap_err().contains("frame event"));
+        assert!(clip_contract(&eventful, CLIPS)
+            .unwrap_err()
+            .contains("frame event"));
         let mut extra = full;
         extra.push(clip("Dance", 0, false));
         assert!(clip_contract(&extra, CLIPS).is_err());
@@ -700,8 +975,16 @@ mod tests {
 
     #[test]
     fn collider_corners_follow_the_transform() {
-        let identity = [[1.0, 0.0, 0.0, 10.0], [0.0, 1.0, 0.0, 20.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
-        assert_eq!(axis_aligned_bounds(&identity, [1.0, 0.0], [2.0, 4.0]).unwrap(), [10.0, 18.0, 12.0, 22.0]);
+        let identity = [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        assert_eq!(
+            axis_aligned_bounds(&identity, [1.0, 0.0], [2.0, 4.0]).unwrap(),
+            [10.0, 18.0, 12.0, 22.0]
+        );
         let mut rotated = identity;
         rotated[0][1] = 0.5;
         assert!(axis_aligned_bounds(&rotated, [0.0; 2], [1.0; 2]).is_err());

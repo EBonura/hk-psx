@@ -12,7 +12,9 @@ pub enum ActorController {
     /// Brooding Mawlek, driven by `crate::mawlek::Mawlek`, whose numbers
     /// host/mawlek_art.py asserts against the source. The spec carries only
     /// `Alert Range New`'s box, relative to the body, that wakes it.
-    Mawlek { wake: [i32; 4] },
+    Mawlek {
+        wake: [i32; 4],
+    },
     /// Gruz Mother (`Giant Fly`), driven by `crate::gruz_mother::GruzMother`,
     /// whose numbers host/gruz_mother_art.py asserts against the source. The
     /// `Battle Range` polygon, the boxes and the art are that cook's
@@ -31,7 +33,9 @@ pub enum ActorController {
     /// Surface-following Tiktik driven by `crate::climber::Climber`. Its
     /// authored rotation and handedness are placement words
     /// (`ActorPlacement::rotation_q16`, `start_right`).
-    Climber { stun_clip: u16 },
+    Climber {
+        stun_clip: u16,
+    },
     /// Gravity-free Buzzer driven by `crate::vengefly::Vengefly`; `walk_clip`
     /// is Idle and `turn_clip` TurnToIdle.
     Vengefly {
@@ -47,25 +51,37 @@ pub enum ActorController {
     /// parks it, below the room, until the burster moves `Fly Spawn` to
     /// itself. `origin` is `Fly Spawn`'s authored position, so a released fly
     /// lands at the burster plus its own offset from it.
-    GruzzerReserve { origin: [i32; 2] },
+    GruzzerReserve {
+        origin: [i32; 2],
+    },
     /// Acid Flyer (Duranda), driven by `crate::acid_flyer::AcidFlyer`: a
     /// pogo platform on a vertical tween. `amount`/`speed` are its `Tween`
     /// FSM's `Move Vector` y and `Speed`, `lead` the second, Wait-less one's
     /// (speed 0: none). `shell` is the detached `Shell` child's box relative
     /// to the body origin; unlike `bounds` it never mirrors. `walk_clip` is
     /// Fly and `turn_clip` TurnToFly.
-    AcidFlyer { amount: i32, speed: i32, lead: [i32; 2], shell: [i32; 4] },
+    AcidFlyer {
+        amount: i32,
+        speed: i32,
+        lead: [i32; 2],
+        shell: [i32; 4],
+    },
     /// Mosquito (Squit), driven by `crate::mosquito::Mosquito`. `walk_clip` is
     /// Idle and `turn_clip` TurnToIdle; `clips` are Startle, Attack Antic,
     /// Attack and Death Air (`Pull Out`). `tile` is the `TileDetector` child's
     /// box relative to the body origin in the facing-left frame: a second
     /// solid, nail-reachable box until the first wind-up.
-    Mosquito { clips: [u16; 4], tile: [i32; 4] },
+    Mosquito {
+        clips: [u16; 4],
+        tile: [i32; 4],
+    },
     /// Moss Walker (Mosscreep), a floor placement, driven by
     /// `crate::moss_walker::MossWalker`. `walk_clip`/`turn_clip` are Walk and
     /// Turn; `clips` are Rest, Shake, Appear and Bury. The `Roams` bool rides
     /// `ActorPlacement::start_alert`.
-    MossWalker { clips: [u16; 4] },
+    MossWalker {
+        clips: [u16; 4],
+    },
     /// Rolling Baldur driven by `crate::baldur::Baldur`; `walk_clip` is Idle.
     Baldur {
         start_clip: u16,
@@ -82,7 +98,9 @@ pub enum ActorController {
     /// Hatcher, driven by `crate::hatcher::Hatcher`; `walk_clip` is Fly and
     /// `turn_clip` holds it too, because neither of its two facing actions
     /// plays a turn. It releases the scene's reserved `HatcherBaby` actors.
-    Hatcher { fire_clip: u16 },
+    Hatcher {
+        fire_clip: u16,
+    },
     /// One member of a Hatcher's cage, driven by `crate::hatcher::Baby`. It is
     /// seated with the rest of the scene's actors and parked until a Hatcher
     /// releases it, which is the whole of the port's runtime spawning: the
@@ -143,10 +161,14 @@ pub enum ActorController {
     /// is a prefab constant in `crate::pigeon` rather than a spec field, for
     /// the reason the Blocker's boxes are: every placement carries the same
     /// child, and the recognizer proves it before admitting one.
-    Pigeon { clips: [u16; crate::pigeon::Clip::COUNT] },
+    Pigeon {
+        clips: [u16; crate::pigeon::Clip::COUNT],
+    },
     /// Source object with no FSM and no Rigidbody2D: `playAutomatically` loops
     /// the default clip where it stands, so the nail is the only interaction.
-    Static { idle_clip: u16 },
+    Static {
+        idle_clip: u16,
+    },
     /// False Knight, driven by `crate::false_knight::FalseKnight` and the
     /// `crate::boss::Arena` its `Battle Scene` owns. `walk_clip` is Idle and
     /// `turn_clip` is Turn; these four are the rest of the clip set that fits
@@ -194,8 +216,10 @@ pub struct ActorSpec {
 // type in the world at once rather than only its own family. That is the cost
 // worth holding, and it is easier to hold here than to rediscover from a link
 // map later.
-const _: () = assert!(core::mem::size_of::<ActorSpec>() == 152,
-    "a wider actor spec costs its difference times every enemy type in the world");
+const _: () = assert!(
+    core::mem::size_of::<ActorSpec>() == 152,
+    "a wider actor spec costs its difference times every enemy type in the world"
+);
 
 /// Where one placement of an `ActorSpec` stands, and the handful of authored
 /// switches the source keeps on the object rather than on the prefab.
@@ -230,7 +254,12 @@ pub struct ActorPlacement {
 }
 /// The `ActiveRegion` prefab: a kinematic trigger box 50 by 35 units on the main camera, centred on it.
 /// Q16, relative to the camera's x and y.
-pub const ACTIVE_REGION: [i32; 4] = [-25 * crate::ONE, -35 * crate::ONE / 2, 25 * crate::ONE, 35 * crate::ONE / 2];
+pub const ACTIVE_REGION: [i32; 4] = [
+    -25 * crate::ONE,
+    -35 * crate::ONE / 2,
+    25 * crate::ONE,
+    35 * crate::ONE / 2,
+];
 #[derive(Clone, Copy, Debug)]
 pub struct EnemyParams {
     pub health: i16,
@@ -436,15 +465,18 @@ fn spawn_separation(b: [i32; 4], e: [i32; 4]) -> Option<[i32; 2]> {
 /// already proves the edge crosses the ray's supporting axis; only the edge's
 /// two orientation signs remain. Q16.16 world coordinates are within ±512, so
 /// differences fit i32 and signed32×32 products fit i64.
-fn axis_ray_hits(ray:[i32;4],edge:[i32;4])->bool {
-    let [left,bottom,right,top]=ray;
-    let [x0,y0,x1,y1]=edge;
-    debug_assert!(left==right || bottom==top);
-    if x0.max(x1)<left || x0.min(x1)>right || y0.max(y1)<bottom || y0.min(y1)>top {return false;}
-    let dx=x1-x0;let dy=y1-y0;
-    let a=dx as i64*(bottom-y0)as i64-dy as i64*(left-x0)as i64;
-    let b=dx as i64*(top-y0)as i64-dy as i64*(right-x0)as i64;
-    a==0 || b==0 || (a<0)!=(b<0)
+fn axis_ray_hits(ray: [i32; 4], edge: [i32; 4]) -> bool {
+    let [left, bottom, right, top] = ray;
+    let [x0, y0, x1, y1] = edge;
+    debug_assert!(left == right || bottom == top);
+    if x0.max(x1) < left || x0.min(x1) > right || y0.max(y1) < bottom || y0.min(y1) > top {
+        return false;
+    }
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let a = dx as i64 * (bottom - y0) as i64 - dy as i64 * (left - x0) as i64;
+    let b = dx as i64 * (top - y0) as i64 - dy as i64 * (right - x0) as i64;
+    a == 0 || b == 0 || (a < 0) != (b < 0)
 }
 
 /// Source probes against the cooked Terrain edges, including sloped segments.
@@ -461,9 +493,9 @@ pub fn walker_senses(
     let y = bottom + crate::ONE / 2;
     let reach = (right - left) / 2 + crate::ONE / 10;
     let front = x + direction * reach;
-    let ground_ray = [x, y-crate::ONE, x, y];
+    let ground_ray = [x, y - crate::ONE, x, y];
     let wall_ray = [x.min(front), y, x.max(front), y];
-    let floor_ray = [front, y-crate::ONE, front, y];
+    let floor_ray = [front, y - crate::ONE, front, y];
     let mut found = [false; 3];
     for i in 0..count {
         let [x0, y0, x1, y1] = edge(i);
@@ -473,7 +505,7 @@ pub fn walker_senses(
         for (index, ray) in [ground_ray, wall_ray, floor_ray].iter().enumerate() {
             // Each sense is existential: a later edge cannot undo a hit.
             if !found[index] {
-                found[index] = axis_ray_hits(*ray,[x0,y0,x1,y1]);
+                found[index] = axis_ray_hits(*ray, [x0, y0, x1, y1]);
             }
         }
     }
@@ -491,7 +523,15 @@ mod tests {
         damage_override: false,
     };
     fn body_params() -> crate::Params {
-        crate::Params { speed: crate::ONE, gravity: 60 * crate::ONE, fall: 100 * crate::ONE, half_width: crate::ONE / 2, bottom: -crate::ONE, top: crate::ONE, ..crate::Params::ZERO }
+        crate::Params {
+            speed: crate::ONE,
+            gravity: 60 * crate::ONE,
+            fall: 100 * crate::ONE,
+            half_width: crate::ONE / 2,
+            bottom: -crate::ONE,
+            top: crate::ONE,
+            ..crate::Params::ZERO
+        }
     }
     #[test]
     fn spawn_crossing_floor_and_ceiling_uses_nearest_separation() {
@@ -671,43 +711,74 @@ mod tests {
     }
     #[test]
     fn axis_rays_match_general_exact_intersections() {
-        let check=|a:[i32;2],b:[i32;2],c:[i32;2],d:[i32;2]| {
-            let ray=[a[0].min(b[0]),a[1].min(b[1]),a[0].max(b[0]),a[1].max(b[1])];
-            assert_eq!(axis_ray_hits(ray,[c[0],c[1],d[0],d[1]]),
-                crate::combat::segments_intersect(a,b,c,d),"{a:?} {b:?} {c:?} {d:?}");
+        let check = |a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32; 2]| {
+            let ray = [
+                a[0].min(b[0]),
+                a[1].min(b[1]),
+                a[0].max(b[0]),
+                a[1].max(b[1]),
+            ];
+            assert_eq!(
+                axis_ray_hits(ray, [c[0], c[1], d[0], d[1]]),
+                crate::combat::segments_intersect(a, b, c, d),
+                "{a:?} {b:?} {c:?} {d:?}"
+            );
         };
-        let points:[[i32;2];25]=core::array::from_fn(|i|[(i%5)as i32-2,(i/5)as i32-2]);
-        for &a in &points {for &b in &points {
-            if a[0]!=b[0] && a[1]!=b[1] {continue;}
-            for &c in &points {for &d in &points {check(a,b,c,d);}}
-        }}
-        let mut seed=18u32;
-        let mut next=||{seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);(seed%(1024*crate::ONE)as u32)as i32-512*crate::ONE};
+        let points: [[i32; 2]; 25] =
+            core::array::from_fn(|i| [(i % 5) as i32 - 2, (i / 5) as i32 - 2]);
+        for &a in &points {
+            for &b in &points {
+                if a[0] != b[0] && a[1] != b[1] {
+                    continue;
+                }
+                for &c in &points {
+                    for &d in &points {
+                        check(a, b, c, d);
+                    }
+                }
+            }
+        }
+        let mut seed = 18u32;
+        let mut next = || {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed % (1024 * crate::ONE) as u32) as i32 - 512 * crate::ONE
+        };
         for i in 0..100000 {
-            let a=[next(),next()];let mut b=[next(),next()];b[i&1]=a[i&1];
-            check(a,b,[next(),next()],[next(),next()]);
+            let a = [next(), next()];
+            let mut b = [next(), next()];
+            b[i & 1] = a[i & 1];
+            check(a, b, [next(), next()], [next(), next()]);
         }
     }
     #[test]
     fn repeated_probe_hits_preserve_all_senses_and_edge_checkpoints() {
-        let q=crate::ONE;
-        let bounds=[-q/2,0,q/2,q];
-        let edges=[[0;4],[-4*q,0,4*q,0],[q/2,-q,q/2,q],
-            [-q,-q,q,q],[-q,q,q,-q],[-q/2,-q,-q/2,q],
-            [10*q,10*q,11*q,11*q]];
-        for direction in [-1,1] {
+        let q = crate::ONE;
+        let bounds = [-q / 2, 0, q / 2, q];
+        let edges = [
+            [0; 4],
+            [-4 * q, 0, 4 * q, 0],
+            [q / 2, -q, q / 2, q],
+            [-q, -q, q, q],
+            [-q, q, q, -q],
+            [-q / 2, -q, -q / 2, q],
+            [10 * q, 10 * q, 11 * q, 11 * q],
+        ];
+        for direction in [-1, 1] {
             for shift in 0..edges.len() {
-                let mut expected=(false,false,true);
+                let mut expected = (false, false, true);
                 for e in edges {
-                    let one=walker_senses(bounds,direction,1,|_|e);
-                    expected.0|=one.0;expected.1|=one.1;expected.2&=one.2;
+                    let one = walker_senses(bounds, direction, 1, |_| e);
+                    expected.0 |= one.0;
+                    expected.1 |= one.1;
+                    expected.2 &= one.2;
                 }
-                let calls=core::cell::Cell::new(0);
-                let actual=walker_senses(bounds,direction,edges.len()*3,|i| {
-                    calls.set(calls.get()+1);edges[(i+shift)%edges.len()]
+                let calls = core::cell::Cell::new(0);
+                let actual = walker_senses(bounds, direction, edges.len() * 3, |i| {
+                    calls.set(calls.get() + 1);
+                    edges[(i + shift) % edges.len()]
                 });
-                assert_eq!(actual,expected);
-                assert_eq!(calls.get(),edges.len()*3);
+                assert_eq!(actual, expected);
+                assert_eq!(calls.get(), edges.len() * 3);
             }
         }
     }

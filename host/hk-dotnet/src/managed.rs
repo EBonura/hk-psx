@@ -59,8 +59,14 @@ fn build_index(asm: &Assembly) -> Index {
     let mut params: Vec<(u32, u16, String)> = Vec::new();
     for rid in 1..=asm.rows(Table::GenericParam) {
         let number = asm.get(Table::GenericParam, rid, 0) as u16;
-        if let Some((Table::TypeDef, owner)) = Coded::TypeOrMethodDef.decode(asm.get(Table::GenericParam, rid, 2)) {
-            params.push((owner, number, asm.string(asm.get(Table::GenericParam, rid, 3)).to_string()));
+        if let Some((Table::TypeDef, owner)) =
+            Coded::TypeOrMethodDef.decode(asm.get(Table::GenericParam, rid, 2))
+        {
+            params.push((
+                owner,
+                number,
+                asm.string(asm.get(Table::GenericParam, rid, 3)).to_string(),
+            ));
         }
     }
     params.sort_by_key(|p| (p.0, p.1));
@@ -68,20 +74,28 @@ fn build_index(asm: &Assembly) -> Index {
         ix.generics.entry(owner).or_default().push(name);
     }
     for rid in 1..=asm.rows(Table::CustomAttribute) {
-        if let Some((Table::Field, field)) = Coded::HasCustomAttribute.decode(asm.get(Table::CustomAttribute, rid, 0)) {
+        if let Some((Table::Field, field)) =
+            Coded::HasCustomAttribute.decode(asm.get(Table::CustomAttribute, rid, 0))
+        {
             ix.attributes.entry(field).or_default().push(rid);
         }
     }
     for rid in 1..=asm.rows(Table::Constant) {
-        if let Some((Table::Field, field)) = Coded::HasConstant.decode(asm.get(Table::Constant, rid, 1)) {
+        if let Some((Table::Field, field)) =
+            Coded::HasConstant.decode(asm.get(Table::Constant, rid, 1))
+        {
             ix.constants.insert(field, ());
         }
     }
     for rid in 1..=asm.rows(Table::ExportedType) {
-        if let Some((Table::AssemblyRef, r)) = Coded::Implementation.decode(asm.get(Table::ExportedType, rid, 4)) {
+        if let Some((Table::AssemblyRef, r)) =
+            Coded::Implementation.decode(asm.get(Table::ExportedType, rid, 4))
+        {
             let name = asm.string(asm.get(Table::ExportedType, rid, 2)).to_string();
             let ns = asm.string(asm.get(Table::ExportedType, rid, 3)).to_string();
-            ix.forwarded.entry((ns, name)).or_insert_with(|| asm.string(asm.get(Table::AssemblyRef, r, 6)).to_string());
+            ix.forwarded
+                .entry((ns, name))
+                .or_insert_with(|| asm.string(asm.get(Table::AssemblyRef, r, 6)).to_string());
         }
     }
     let methods = asm.rows(Table::MethodDef);
@@ -89,7 +103,11 @@ fn build_index(asm: &Assembly) -> Index {
     let types = asm.rows(Table::TypeDef);
     for rid in 1..=types {
         let start = asm.get(Table::TypeDef, rid, 5);
-        let end = if rid < types { asm.get(Table::TypeDef, rid + 1, 5) } else { methods + 1 };
+        let end = if rid < types {
+            asm.get(Table::TypeDef, rid + 1, 5)
+        } else {
+            methods + 1
+        };
         for m in start..end.min(methods + 1) {
             ix.method_owner[m as usize] = rid;
         }
@@ -102,12 +120,27 @@ impl Managed {
     pub fn new(dir: impl Into<PathBuf>) -> Managed {
         let dir = dir.into();
         let mut files: Vec<String> = std::fs::read_dir(&dir)
-            .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".dll")).collect())
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .filter(|n| n.ends_with(".dll"))
+                    .collect()
+            })
             .unwrap_or_default();
         files.sort();
-        let names = files.iter().enumerate().map(|(i, f)| (f.clone(), i)).collect();
+        let names = files
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.clone(), i))
+            .collect();
         let slots = files.iter().map(|_| OnceLock::new()).collect();
-        Managed { dir, names, files, slots, builtins: OnceLock::new() }
+        Managed {
+            dir,
+            names,
+            files,
+            slots,
+            builtins: OnceLock::new(),
+        }
     }
 
     /// The assembly whose file is `<name>.dll` (or `name` when it already ends in .dll).
@@ -125,7 +158,10 @@ impl Managed {
     }
 
     pub fn loaded(&self, asm: usize) -> &Loaded {
-        self.slots[asm].get().and_then(|l| l.as_deref()).expect("assembly index of a loaded assembly")
+        self.slots[asm]
+            .get()
+            .and_then(|l| l.as_deref())
+            .expect("assembly index of a loaded assembly")
     }
 
     pub fn find(&self, asm: usize, namespace: &str, name: &str) -> Option<TypeId> {
@@ -147,7 +183,10 @@ impl Managed {
             .get(&outer.rid)?
             .iter()
             .find(|&&rid| l.asm.string(l.asm.get(Table::TypeDef, rid, 1)) == name)
-            .map(|&rid| TypeId { asm: outer.asm, rid })
+            .map(|&rid| TypeId {
+                asm: outer.asm,
+                rid,
+            })
     }
 
     /// Resolve a TypeDef/TypeRef row of `asm` to its definition.
@@ -181,21 +220,31 @@ impl Managed {
     pub fn builtin(&self, e: u8) -> Option<TypeId> {
         let table = self.builtins.get_or_init(|| {
             let corlib = self.assembly("mscorlib");
-            (0..=0x1cu8).map(|e| corlib.and_then(|c| self.find(c, "System", sig::builtin_name(e)))).collect()
+            (0..=0x1cu8)
+                .map(|e| corlib.and_then(|c| self.find(c, "System", sig::builtin_name(e))))
+                .collect()
         });
         table.get(e as usize).copied().flatten()
     }
 
     pub fn name(&self, t: TypeId) -> String {
         let l = self.loaded(t.asm);
-        l.asm.string(l.asm.get(Table::TypeDef, t.rid, 1)).to_string()
+        l.asm
+            .string(l.asm.get(Table::TypeDef, t.rid, 1))
+            .to_string()
     }
     pub fn namespace(&self, t: TypeId) -> String {
         let l = self.loaded(t.asm);
-        l.asm.string(l.asm.get(Table::TypeDef, t.rid, 2)).to_string()
+        l.asm
+            .string(l.asm.get(Table::TypeDef, t.rid, 2))
+            .to_string()
     }
     pub fn enclosing(&self, t: TypeId) -> Option<TypeId> {
-        self.loaded(t.asm).index.enclosing.get(&t.rid).map(|&rid| TypeId { asm: t.asm, rid })
+        self.loaded(t.asm)
+            .index
+            .enclosing
+            .get(&t.rid)
+            .map(|&rid| TypeId { asm: t.asm, rid })
     }
     /// Cecil's FullName: `Ns.Name`, nested types as `Ns.Outer/Inner`.
     pub fn full_name(&self, t: TypeId) -> String {
@@ -222,7 +271,11 @@ impl Managed {
         match Coded::TypeDefOrRef.decode(coded) {
             Some((_, 0)) | None => Ok(None),
             Some((Table::TypeSpec, rid)) => Ok(Some(self.type_spec(t.asm, rid)?)),
-            Some((table, rid)) => Ok(Some(Type::Named { table, rid, value_type: false })),
+            Some((table, rid)) => Ok(Some(Type::Named {
+                table,
+                rid,
+                value_type: false,
+            })),
         }
     }
     pub fn type_spec(&self, asm: usize, rid: u32) -> Result<Type> {
@@ -231,14 +284,23 @@ impl Managed {
         sig::SigReader { d: blob, p: 0 }.ty()
     }
     pub fn generic_params(&self, t: TypeId) -> Vec<String> {
-        self.loaded(t.asm).index.generics.get(&t.rid).cloned().unwrap_or_default()
+        self.loaded(t.asm)
+            .index
+            .generics
+            .get(&t.rid)
+            .cloned()
+            .unwrap_or_default()
     }
     /// Field row ids of a type, in declaration order.
     pub fn fields(&self, t: TypeId) -> std::ops::Range<u32> {
         let l = self.loaded(t.asm);
         let a = &l.asm;
         let start = a.get(Table::TypeDef, t.rid, 4);
-        let end = if t.rid < a.rows(Table::TypeDef) { a.get(Table::TypeDef, t.rid + 1, 4) } else { a.rows(Table::Field) + 1 };
+        let end = if t.rid < a.rows(Table::TypeDef) {
+            a.get(Table::TypeDef, t.rid + 1, 4)
+        } else {
+            a.rows(Table::Field) + 1
+        };
         start..end.max(start)
     }
     pub fn field_name(&self, asm: usize, rid: u32) -> String {
@@ -260,19 +322,41 @@ impl Managed {
         let l = self.loaded(asm);
         let a = &l.asm;
         let mut out = Vec::new();
-        for &ca in l.index.attributes.get(&rid).map(Vec::as_slice).unwrap_or(&[]) {
-            let owner = match Coded::CustomAttributeType.decode(a.get(Table::CustomAttribute, ca, 1)) {
-                Some((Table::MethodDef, m)) => Some((Table::TypeDef, l.index.method_owner.get(m as usize).copied().unwrap_or(0))),
-                Some((Table::MemberRef, m)) => Coded::MemberRefParent.decode(a.get(Table::MemberRef, m, 0)),
-                _ => None,
-            };
+        for &ca in l
+            .index
+            .attributes
+            .get(&rid)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
+            let owner =
+                match Coded::CustomAttributeType.decode(a.get(Table::CustomAttribute, ca, 1)) {
+                    Some((Table::MethodDef, m)) => Some((
+                        Table::TypeDef,
+                        l.index.method_owner.get(m as usize).copied().unwrap_or(0),
+                    )),
+                    Some((Table::MemberRef, m)) => {
+                        Coded::MemberRefParent.decode(a.get(Table::MemberRef, m, 0))
+                    }
+                    _ => None,
+                };
             let names = match owner {
-                Some((Table::TypeDef, r)) => Some((a.string(a.get(Table::TypeDef, r, 1)), a.string(a.get(Table::TypeDef, r, 2)))),
-                Some((Table::TypeRef, r)) => Some((a.string(a.get(Table::TypeRef, r, 1)), a.string(a.get(Table::TypeRef, r, 2)))),
+                Some((Table::TypeDef, r)) => Some((
+                    a.string(a.get(Table::TypeDef, r, 1)),
+                    a.string(a.get(Table::TypeDef, r, 2)),
+                )),
+                Some((Table::TypeRef, r)) => Some((
+                    a.string(a.get(Table::TypeRef, r, 1)),
+                    a.string(a.get(Table::TypeRef, r, 2)),
+                )),
                 _ => None,
             };
             if let Some((name, ns)) = names {
-                let full = if ns.is_empty() { name.to_string() } else { format!("{ns}.{name}") };
+                let full = if ns.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{ns}.{name}")
+                };
                 out.push((name.to_string(), full));
             }
         }

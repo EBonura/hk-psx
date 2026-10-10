@@ -14,7 +14,9 @@ use std::process::Command;
 
 /// cook_music.py `sha`: the sha256 of a file.
 pub fn sha_file(path: &Path) -> Result<String> {
-    Ok(sha(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?))
+    Ok(sha(
+        &std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?
+    ))
 }
 
 /// The JSON a type-tree value becomes through `json.dump(..., default=list)`.
@@ -28,7 +30,11 @@ pub fn value_json(v: &Value) -> Json {
         Value::Str(s) => Json::Str(String::from_utf8_lossy(s).into_owned()),
         Value::Bytes(b) => Json::List(b.iter().map(|&x| Json::Int(x as i64)).collect()),
         Value::List(l) => Json::List(l.iter().map(value_json).collect()),
-        Value::Map(m) => Json::Obj(m.iter().map(|(k, x)| (k.to_string(), value_json(x))).collect()),
+        Value::Map(m) => Json::Obj(
+            m.iter()
+                .map(|(k, x)| (k.to_string(), value_json(x)))
+                .collect(),
+        ),
     }
 }
 
@@ -39,7 +45,10 @@ pub fn dump(path: &Path, data: &Json) -> Result<()> {
 
 /// host/source.py `rel`: a path as reports record it, relative to the checkout.
 pub fn rel(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root).unwrap_or(path).to_string_lossy().into_owned()
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Find a key of an ordered JSON object.
@@ -92,31 +101,65 @@ pub struct Profile {
 pub fn encoder_metric(samples: &[i16], data: &[u8]) -> Result<Json> {
     let decoded = decode(data)?;
     let signal: i64 = samples.iter().map(|&s| s as i64 * s as i64).sum();
-    let error: i64 = samples.iter().zip(&decoded).map(|(&s, &d)| (s as i64 - d as i64).pow(2)).sum();
+    let error: i64 = samples
+        .iter()
+        .zip(&decoded)
+        .map(|(&s, &d)| (s as i64 - d as i64).pow(2))
+        .sum();
     Ok(Json::Obj(vec![
         ("samples".into(), Json::Int(samples.len() as i64)),
         ("signal_energy".into(), Json::Float(signal as f64)),
         ("error_energy".into(), Json::Float(error as f64)),
-        ("snr_db".into(), Json::Float(if error > 0 && signal > 0 { 10.0 * (signal as f64 / error as f64).log10() } else { 999.0 })),
+        (
+            "snr_db".into(),
+            Json::Float(if error > 0 && signal > 0 {
+                10.0 * (signal as f64 / error as f64).log10()
+            } else {
+                999.0
+            }),
+        ),
     ]))
 }
 
 /// `decoded_source`: the clip's WAV under `folder` and its identity (metadata
 /// and encoded-resource hashes).
-pub(crate) fn decoded_source(root: &Path, source: &Source, tree: &Value, folder: &Path) -> Result<(PathBuf, Vec<u8>, Json)> {
-    let r = tree.get("m_Resource").ok_or("AudioClip without m_Resource")?;
-    let name = r.get("m_Source").and_then(Value::str).ok_or("m_Resource without m_Source")?;
+pub(crate) fn decoded_source(
+    root: &Path,
+    source: &Source,
+    tree: &Value,
+    folder: &Path,
+) -> Result<(PathBuf, Vec<u8>, Json)> {
+    let r = tree
+        .get("m_Resource")
+        .ok_or("AudioClip without m_Resource")?;
+    let name = r
+        .get("m_Source")
+        .and_then(Value::str)
+        .ok_or("m_Resource without m_Source")?;
     let path = source.directory.join(&name);
-    let resolved = path.canonicalize().map_err(|e| format!("{}: {e}", path.display()))?;
+    let resolved = path
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     if !resolved.starts_with(source.directory.canonicalize().map_err(|e| e.to_string())?) {
         return err("audio resource escapes Windows source");
     }
-    let (offset, size) = (r.get("m_Offset").and_then(Value::int).unwrap_or(0) as usize, r.get("m_Size").and_then(Value::int).unwrap_or(0) as usize);
+    let (offset, size) = (
+        r.get("m_Offset").and_then(Value::int).unwrap_or(0) as usize,
+        r.get("m_Size").and_then(Value::int).unwrap_or(0) as usize,
+    );
     let all = std::fs::read(&resolved).map_err(|e| e.to_string())?;
-    let encoded = all.get(offset..offset + size).ok_or("truncated source audio resource")?;
+    let encoded = all
+        .get(offset..offset + size)
+        .ok_or("truncated source audio resource")?;
     let mut text = String::new();
     dumps_sorted(tree, &mut text);
-    let identity = Json::Obj(vec![("clip_metadata_sha256".into(), Json::Str(sha(text.as_bytes()))), ("encoded_resource_sha256".into(), Json::Str(sha(encoded)))]);
+    let identity = Json::Obj(vec![
+        (
+            "clip_metadata_sha256".into(),
+            Json::Str(sha(text.as_bytes())),
+        ),
+        ("encoded_resource_sha256".into(), Json::Str(sha(encoded))),
+    ]);
     let wav = clip_wav(root, source, tree)?;
     let wav_path = folder.join("source.wav");
     std::fs::write(&wav_path, &wav).map_err(|e| e.to_string())?;
@@ -131,13 +174,26 @@ pub(crate) fn decoded_source(root: &Path, source: &Source, tree: &Value, folder:
 
 pub fn ffmpeg_version() -> Result<String> {
     let out = run(Command::new("ffmpeg").arg("-version"), None)?;
-    Ok(String::from_utf8_lossy(&out).lines().next().unwrap_or("").to_string())
+    Ok(String::from_utf8_lossy(&out)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_string())
 }
 
 /// `cook_clip`: convert and encode a clip at `rate`, one plane per channel.
 /// `restart` is the encoder's loop mode (spu_encode.py without `--ring`).
 #[allow(clippy::too_many_arguments)]
-pub fn cook_clip(root: &Path, tool: &Tool, source: &Source, obj: &Obj, out: &Path, rate: i64, channels: i64, resampler: Resampler) -> Result<Profile> {
+pub fn cook_clip(
+    root: &Path,
+    tool: &Tool,
+    source: &Source,
+    obj: &Obj,
+    out: &Path,
+    rate: i64,
+    channels: i64,
+    resampler: Resampler,
+) -> Result<Profile> {
     let sid = obj.sid();
     let tree = u(source.read(obj))?;
     let folder = out.join(sid.replace(':', "-"));
@@ -157,30 +213,62 @@ pub fn cook_clip(root: &Path, tool: &Tool, source: &Source, obj: &Obj, out: &Pat
             }
             version = "psx_audio_cook::resample::Sinc (SDK shared resampler)".into();
             let pcm = tool.resample(&wav_bytes, rate)?;
-            std::fs::write(&raw_path, pcm.iter().flat_map(|s| s.to_le_bytes()).collect::<Vec<u8>>()).map_err(|e| e.to_string())?;
+            std::fs::write(
+                &raw_path,
+                pcm.iter()
+                    .flat_map(|s| s.to_le_bytes())
+                    .collect::<Vec<u8>>(),
+            )
+            .map_err(|e| e.to_string())?;
             pcm
         }
         Resampler::Ffmpeg => {
-            run(Command::new("ffmpeg").args(["-v", "error", "-y", "-i"]).arg(&wav_path).args(["-ar", &rate.to_string(), "-ac", &channels.to_string(), "-f", "s16le"]).arg(&raw_path), None)?;
+            run(
+                Command::new("ffmpeg")
+                    .args(["-v", "error", "-y", "-i"])
+                    .arg(&wav_path)
+                    .args([
+                        "-ar",
+                        &rate.to_string(),
+                        "-ac",
+                        &channels.to_string(),
+                        "-f",
+                        "s16le",
+                    ])
+                    .arg(&raw_path),
+                None,
+            )?;
             samples_of(&std::fs::read(&raw_path).map_err(|e| e.to_string())?)
         }
     };
-    if pcm.len() % channels as usize != 0 {
+    if !pcm.len().is_multiple_of(channels as usize) {
         return err("partial PCM frame");
     }
     let frames = (pcm.len() / channels as usize) as i64;
     let mut planes = Vec::new();
     let mut plane_json = Vec::new();
     for channel in 0..channels as usize {
-        let mono: Vec<i16> = pcm.iter().skip(channel).step_by(channels as usize).copied().collect();
+        let mono: Vec<i16> = pcm
+            .iter()
+            .skip(channel)
+            .step_by(channels as usize)
+            .copied()
+            .collect();
         let mono_path = folder.join(format!("{rate}-{channels}-ch{channel}.s16le"));
-        std::fs::write(&mono_path, mono.iter().flat_map(|s| s.to_le_bytes()).collect::<Vec<u8>>()).map_err(|e| e.to_string())?;
+        std::fs::write(
+            &mono_path,
+            mono.iter()
+                .flat_map(|s| s.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        )
+        .map_err(|e| e.to_string())?;
         let encoded = mono_path.with_extension("adpcm");
         // spu_encode.py: the SDK encoder, a restartable stream, its own metric.
         let data = tool.encode(&mono, "restart")?;
         std::fs::write(&encoded, &data).map_err(|e| e.to_string())?;
         let metric = encoder_metric(&mono, &data)?;
-        if data.len() as i64 != (frames + 27) / 28 * 16 || data.chunks_exact(16).any(|b| b[1] != 0) {
+        if data.len() as i64 != (frames + 27) / 28 * 16 || data.chunks_exact(16).any(|b| b[1] != 0)
+        {
             return err("invalid encoded payload");
         }
         // Independent FFmpeg decode confirms valid framing and records an
@@ -194,12 +282,23 @@ pub fn cook_clip(root: &Path, tool: &Tool, source: &Source, obj: &Obj, out: &Pat
         header.extend_from_slice(&data);
         std::fs::write(&vag, header).map_err(|e| e.to_string())?;
         let decoded_path = encoded.with_extension("decoded.s16le");
-        run(Command::new("ffmpeg").args(["-v", "error", "-y", "-i"]).arg(&vag).args(["-f", "s16le"]).arg(&decoded_path), None)?;
+        run(
+            Command::new("ffmpeg")
+                .args(["-v", "error", "-y", "-i"])
+                .arg(&vag)
+                .args(["-f", "s16le"])
+                .arg(&decoded_path),
+            None,
+        )?;
         let recon = samples_of(&std::fs::read(&decoded_path).map_err(|e| e.to_string())?);
         if recon.len() as i64 != (frames + 27) / 28 * 28 {
             return err("external decode frame mismatch");
         }
-        let err2: i64 = mono.iter().zip(&recon).map(|(&a, &b)| (a as i64 - b as i64).pow(2)).sum();
+        let err2: i64 = mono
+            .iter()
+            .zip(&recon)
+            .map(|(&a, &b)| (a as i64 - b as i64).pow(2))
+            .sum();
         let sig2: i64 = mono.iter().map(|&a| (a as i64).pow(2)).sum();
         let sha256 = sha(&data);
         let shown = rel(root, &encoded);
@@ -208,9 +307,20 @@ pub fn cook_clip(root: &Path, tool: &Tool, source: &Source, obj: &Obj, out: &Pat
             ("bytes".into(), Json::Int(data.len() as i64)),
             ("sha256".into(), Json::Str(sha256.clone())),
             ("encoder_metric".into(), metric),
-            ("ffmpeg_snr_db".into(), if sig2 != 0 && err2 != 0 { Json::Float(10.0 * (sig2 as f64 / err2 as f64).log10()) } else { Json::Null }),
+            (
+                "ffmpeg_snr_db".into(),
+                if sig2 != 0 && err2 != 0 {
+                    Json::Float(10.0 * (sig2 as f64 / err2 as f64).log10())
+                } else {
+                    Json::Null
+                },
+            ),
         ]));
-        planes.push(Plane { path: encoded, bytes: data.len() as i64, sha256 });
+        planes.push(Plane {
+            path: encoded,
+            bytes: data.len() as i64,
+            sha256,
+        });
     }
     let name = tree.get("m_Name").and_then(Value::str).unwrap_or_default();
     let pitch = py_round(div(rate * 4096, 44100));

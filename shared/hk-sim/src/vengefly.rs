@@ -51,14 +51,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 5], count: 0 }
+        Self {
+            values: [None; 5],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,7 +132,11 @@ impl Vengefly {
     fn chase(&mut self, position: [i32; 2], hero: [i32; 2]) {
         let mut v = self.velocity;
         for axis in 0..2 {
-            v[axis] += if hero[axis] > position[axis] { CHASE_ACCELERATION } else { -CHASE_ACCELERATION };
+            v[axis] += if hero[axis] > position[axis] {
+                CHASE_ACCELERATION
+            } else {
+                -CHASE_ACCELERATION
+            };
         }
         crate::buzz::clamp(&mut v, CHASE_SPEED_MAX);
         self.velocity = v;
@@ -156,7 +165,11 @@ impl Vengefly {
         self.timer = STARTLE_TICKS;
         self.velocity = [0; 2];
         // FaceObject: the sprite faces the hero.
-        self.facing = if senses.hero[0] > senses.position[0] { 1 } else { -1 };
+        self.facing = if senses.hero[0] > senses.position[0] {
+            1
+        } else {
+            -1
+        };
         out.push(Action::StartleSound);
         out.push(Action::Velocity([0; 2]));
         out.push(Action::Play(Clip::Startle, 0));

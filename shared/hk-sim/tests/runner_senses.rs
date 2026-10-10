@@ -1,7 +1,9 @@
 use hk_sim::{runner_senses::*, ONE};
 use std::cell::Cell;
 thread_local! { static INDEX: Cell<Option<EdgeColumns>> = const { Cell::new(None) }; }
-fn indexed(b: [i32; 4]) -> EdgeMask { INDEX.with(|i| i.get().map_or(ALL_EDGES, |i| i.near(b))) }
+fn indexed(b: [i32; 4]) -> EdgeMask {
+    INDEX.with(|i| i.get().map_or(ALL_EDGES, |i| i.near(b)))
+}
 
 fn sight(a: [i32; 2], b: [i32; 2], edges: &[[i32; 4]]) -> bool {
     line_of_sight(a, b, true, edges.len(), |i| edges[i]).unwrap()
@@ -289,8 +291,18 @@ fn a_mirrored_placement_senses_with_the_box_it_was_placed_with() {
     // mirror when they turn, or the guest's collider check panics on entry.
     let alert = [-6 * ONE, -2 * ONE, 6 * ONE, 3 * ONE];
     let actor = [30 * ONE, 4 * ONE];
-    let at = |b: [i32; 4]| [actor[0] + b[0], actor[1] + b[1], actor[0] + b[2], actor[1] + b[3]];
-    for (body, facing) in [([-24576, -96256, 25600, 72704], 1), ([-25600, -96256, 24576, 72704], -1)] {
+    let at = |b: [i32; 4]| {
+        [
+            actor[0] + b[0],
+            actor[1] + b[1],
+            actor[0] + b[2],
+            actor[1] + b[3],
+        ]
+    };
+    for (body, facing) in [
+        ([-24576, -96256, 25600, 72704], 1),
+        ([-25600, -96256, 24576, 72704], -1),
+    ] {
         let shape = Shape::from_placement(body, alert, facing);
         assert_eq!(body_bounds_of(shape, actor, facing).unwrap(), at(body));
         let turned = [-body[2], body[1], -body[0], body[3]];
@@ -299,7 +311,10 @@ fn a_mirrored_placement_senses_with_the_box_it_was_placed_with() {
     }
     // An unmirrored placement is exactly what from_boxes always did.
     let body = [-38912, -97280, 40960, 17408];
-    assert_eq!(Shape::from_placement(body, alert, -1), Shape::from_boxes(body, alert));
+    assert_eq!(
+        Shape::from_placement(body, alert, -1),
+        Shape::from_boxes(body, alert)
+    );
 }
 
 /// The box rejection in front of the exact test never changes an answer:
@@ -315,26 +330,51 @@ fn box_rejection_matches_the_exact_sweep_test() {
         seed ^= seed << 5;
         (seed % (2 * range as u32 + 1)) as i32 - range
     };
-    let directions = [Direction::Left, Direction::Right, Direction::Down, Direction::Up];
+    let directions = [
+        Direction::Left,
+        Direction::Right,
+        Direction::Down,
+        Direction::Up,
+    ];
     let (mut hits, mut checked) = (0, 0);
     for round in 0..4000 {
         let actor = [next(40 * ONE), next(40 * ONE)];
         let offset = [next(2 * ONE), next(2 * ONE)];
         let extents = [next(ONE).abs(), next(ONE).abs()];
-        let sweep = Sweep::new(actor, offset, extents, directions[round % 4], next(2 * ONE), SKIN).unwrap();
+        let sweep = Sweep::new(
+            actor,
+            offset,
+            extents,
+            directions[round % 4],
+            next(2 * ONE),
+            SKIN,
+        )
+        .unwrap();
         let o = sweep.origins();
         for _ in 0..24 {
             // Endpoints near a ray origin, or snapped onto it, so touches
             // and collinear edges are common.
             let base = o[(next(1) + 1) as usize];
             let mut coord = |v: i32| if next(3) == 0 { v } else { v + next(3 * ONE) };
-            let e = [coord(base[0]), coord(base[1]), coord(base[0]), coord(base[1])];
-            assert_eq!(sweep.hits_edge_filtered(e), sweep.hits_edge_unfiltered(e), "{sweep:?} {e:?}");
+            let e = [
+                coord(base[0]),
+                coord(base[1]),
+                coord(base[0]),
+                coord(base[1]),
+            ];
+            assert_eq!(
+                sweep.hits_edge_filtered(e),
+                sweep.hits_edge_unfiltered(e),
+                "{sweep:?} {e:?}"
+            );
             hits += sweep.hits_edge_unfiltered(e) as u32;
             checked += 1;
         }
     }
-    assert!(hits > 1000 && hits < checked - 1000, "{hits} hits of {checked}");
+    assert!(
+        hits > 1000 && hits < checked - 1000,
+        "{hits} hits of {checked}"
+    );
 }
 
 /// The column index changes which edges a walker or sight query visits, never
@@ -373,22 +413,42 @@ fn edge_columns_give_the_same_walker_and_sight_answers_as_every_edge() {
             seen[0] += 1;
             let near_edge = edges[next(count as i32) as usize];
             let actor = if next(3) == 0 {
-                [(next(2 * span) - span) * ONE / 2, (next(span) - span / 2) * ONE / 2]
+                [
+                    (next(2 * span) - span) * ONE / 2,
+                    (next(span) - span / 2) * ONE / 2,
+                ]
             } else {
-                [near_edge[0].clamp(-WORLD_LIMIT, WORLD_LIMIT) + next(4 * ONE) - 2 * ONE,
-                 near_edge[1] + next(3 * ONE)]
+                [
+                    near_edge[0].clamp(-WORLD_LIMIT, WORLD_LIMIT) + next(4 * ONE) - 2 * ONE,
+                    near_edge[1] + next(3 * ONE),
+                ]
             };
-            let hero = [actor[0] + next(30 * ONE) - 15 * ONE, actor[1] + next(10 * ONE) - 5 * ONE];
+            let hero = [
+                actor[0] + next(30 * ONE) - 15 * ONE,
+                actor[1] + next(10 * ONE) - 5 * ONE,
+            ];
             let direction = if next(2) == 0 { -1 } else { 1 };
             let all = walker_queries_of(Shape::RUNNER, actor, direction, count, |i| edges[i]);
             match &all {
-                Ok(q) => { seen[1] += q.wall as usize; seen[2] += q.floor_ahead as usize; }
+                Ok(q) => {
+                    seen[1] += q.wall as usize;
+                    seen[2] += q.floor_ahead as usize;
+                }
                 Err(_) => seen[4] += 1,
             }
-            if line_of_sight(actor, hero, true, count, |i| edges[i]) == Ok(false) { seen[3] += 1; }
+            if line_of_sight(actor, hero, true, count, |i| edges[i]) == Ok(false) {
+                seen[3] += 1;
+            }
             assert_eq!(
                 all,
-                walker_queries_near(Shape::RUNNER, actor, direction, count, |i| edges[i], indexed),
+                walker_queries_near(
+                    Shape::RUNNER,
+                    actor,
+                    direction,
+                    count,
+                    |i| edges[i],
+                    indexed
+                ),
                 "room {room} actor {actor:?}"
             );
             assert_eq!(
@@ -431,6 +491,10 @@ fn selected_visits_what_each_edge_visits() {
             Ok(())
         })
         .unwrap();
-        assert_eq!(selected(count, mask).collect::<Vec<_>>(), expected, "round {round} count {count} mask {mask:x?}");
+        assert_eq!(
+            selected(count, mask).collect::<Vec<_>>(),
+            expected,
+            "round {round} count {count} mask {mask:x?}"
+        );
     }
 }

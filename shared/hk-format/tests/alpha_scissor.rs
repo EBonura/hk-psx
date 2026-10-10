@@ -1,3 +1,4 @@
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/alpha_scissor.rs"]
 mod alpha_scissor;
 use alpha_scissor::{map, Scissors};

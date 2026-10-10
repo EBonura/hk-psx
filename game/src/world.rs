@@ -7,8 +7,14 @@ pub mod debris;
 /// simulation re-runs it at once (frame::simulate) instead of leaving it to
 /// the next drawn frame, so what collides does not depend on the frame rate.
 static mut SCRIPTED_TERRAIN_CHANGED: bool = false;
-pub fn scripted_terrain_changed() { unsafe { SCRIPTED_TERRAIN_CHANGED = true; } }
-pub fn take_scripted_terrain_changed() -> bool { unsafe { core::mem::take(&mut *(&raw mut SCRIPTED_TERRAIN_CHANGED)) } }
+pub fn scripted_terrain_changed() {
+    unsafe {
+        SCRIPTED_TERRAIN_CHANGED = true;
+    }
+}
+pub fn take_scripted_terrain_changed() -> bool {
+    unsafe { core::mem::take(&mut *(&raw mut SCRIPTED_TERRAIN_CHANGED)) }
+}
 
 #[path = "particles.rs"]
 pub mod particles;
@@ -16,7 +22,11 @@ use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
-use hk_format::world_meta::{self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GATE, KIND_GEO_ENEMY, KIND_GRASS, KIND_MASK_FADE, KIND_NPC, KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_REVEAL_MASK, KIND_SHROOM};
+use hk_format::world_meta::{
+    self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GATE,
+    KIND_GEO_ENEMY, KIND_GRASS, KIND_MASK_FADE, KIND_NPC, KIND_POGO, KIND_REGION_STATICS,
+    KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_REVEAL_MASK, KIND_SHROOM,
+};
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
 /// metadata admission, which `State::begin_world_admission` retires views for.
@@ -52,8 +62,10 @@ pub fn bank_region(region: &Region) -> Option<meta::Region<'static>> {
                 }
             }
         }
-        let index = (0..bank.region_count())
-            .find(|&i| bank.region(i).is_some_and(|r| r.global_id() as usize == region.global_id))?;
+        let index = (0..bank.region_count()).find(|&i| {
+            bank.region(i)
+                .is_some_and(|r| r.global_id() as usize == region.global_id)
+        })?;
         unsafe { LAST = (region.global_id, index) };
         bank.region(index)
     }
@@ -155,22 +167,44 @@ impl<'a> Iterator for Breakables<'a> {
                 continue;
             }
             let mut fades = 0;
-            while region.object(index + 1 + fades).is_some_and(|o| o.kind() == KIND_MASK_FADE) {
+            while region
+                .object(index + 1 + fades)
+                .is_some_and(|o| o.kind() == KIND_MASK_FADE)
+            {
                 fades += 1;
             }
-            return Some(Breakable { region, object, index, fades });
+            return Some(Breakable {
+                region,
+                object,
+                index,
+                fades,
+            });
         }
         None
     }
 }
 pub fn breakables(region: meta::Region<'_>) -> Breakables<'_> {
-    Breakables { region: Some(region), index: 0 }
+    Breakables {
+        region: Some(region),
+        index: 0,
+    }
 }
 /// Masks in this region faded by a breakable owned elsewhere:
 /// (owner state id, owner total fade ticks, fade).
-pub fn remote_masks<'a>(region: meta::Region<'a>) -> impl Iterator<Item = (usize, u16, MaskFade<'a>)> + 'a {
-    region.objects().flatten().filter(|o| o.kind() == KIND_REMOTE_MASK)
-        .map(|object| (object.state_id() as usize, object.extra(2) as u16, MaskFade { object }))
+pub fn remote_masks<'a>(
+    region: meta::Region<'a>,
+) -> impl Iterator<Item = (usize, u16, MaskFade<'a>)> + 'a {
+    region
+        .objects()
+        .flatten()
+        .filter(|o| o.kind() == KIND_REMOTE_MASK)
+        .map(|object| {
+            (
+                object.state_id() as usize,
+                object.extra(2) as u16,
+                MaskFade { object },
+            )
+        })
 }
 /// A grass patch read from the bank: scene-global state id plus the shared
 /// `Grass` record (bounds, off draw, on draw).
@@ -180,10 +214,18 @@ pub struct Patch {
     pub grass: Grass,
 }
 pub fn grass<'a>(region: meta::Region<'a>) -> impl Iterator<Item = Patch> + 'a {
-    region.objects().flatten().filter(|o| o.kind() == KIND_GRASS).map(|object| Patch {
-        state: object.state_id() as usize,
-        grass: Grass { bounds: object.bounds(), off_draw: object.extra(0) as usize, on_draw: object.extra(1) as usize },
-    })
+    region
+        .objects()
+        .flatten()
+        .filter(|o| o.kind() == KIND_GRASS)
+        .map(|object| Patch {
+            state: object.state_id() as usize,
+            grass: Grass {
+                bounds: object.bounds(),
+                off_draw: object.extra(0) as usize,
+                on_draw: object.extra(1) as usize,
+            },
+        })
 }
 /// Grass patches of a catalogue region through the admitted bank.
 pub fn region_grass(region: &Region) -> impl Iterator<Item = Patch> {
@@ -197,7 +239,9 @@ pub fn region_actors(
     region: &Region,
 ) -> impl Iterator<Item = (hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)> {
     let specs: &'static [hk_sim::ActorSpec] = SCENE_ACTORS[region.scene];
-    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+    bank_region(region)
+        .into_iter()
+        .flat_map(|bank| bank.objects().flatten())
         .filter(|o| o.kind() == KIND_ACTOR && o.flags() & 64 != 0)
         .map(move |o| (actor_placement(&o), &specs[o.extra(0) as usize]))
 }
@@ -207,15 +251,24 @@ pub fn region_actors_indexed(
     region: &Region,
 ) -> impl Iterator<Item = (usize, hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)> {
     let specs: &'static [hk_sim::ActorSpec] = SCENE_ACTORS[region.scene];
-    bank_region(region).into_iter().flat_map(|bank| (0..bank.object_count()).filter_map(move |i| Some((i, bank.object(i)?))))
+    bank_region(region)
+        .into_iter()
+        .flat_map(|bank| (0..bank.object_count()).filter_map(move |i| Some((i, bank.object(i)?))))
         .filter(|(_, o)| o.kind() == KIND_ACTOR && o.flags() & 64 != 0)
         .map(move |(i, o)| (i, actor_placement(&o), &specs[o.extra(0) as usize]))
 }
 /// The placement `region_actors_indexed` listed at `index`.
-pub fn region_actor(region: &Region, index: usize) -> Option<(hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)> {
+pub fn region_actor(
+    region: &Region,
+    index: usize,
+) -> Option<(hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)> {
     let o = bank_region(region)?.object(index)?;
-    (o.kind() == KIND_ACTOR && o.flags() & 64 != 0)
-        .then(|| (actor_placement(&o), &SCENE_ACTORS[region.scene][o.extra(0) as usize]))
+    (o.kind() == KIND_ACTOR && o.flags() & 64 != 0).then(|| {
+        (
+            actor_placement(&o),
+            &SCENE_ACTORS[region.scene][o.extra(0) as usize],
+        )
+    })
 }
 /// What a table built from `region_actors` is valid for: the catalogue
 /// region, whose bank bytes are the same every time its scene is admitted.
@@ -240,13 +293,21 @@ fn actor_placement(object: &meta::Object<'_>) -> hk_sim::ActorPlacement {
 }
 /// Reveal mask draw bindings of a catalogue region: (controller, draw) pairs
 /// from the region's single `KIND_REVEAL_BINDINGS` object.
-pub fn reveal_bindings(region: &Region) -> impl Iterator<Item = crate::reveal_masks::RevealMaskBinding> {
-    let mut pairs = bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
-        .filter(|o| o.kind() == KIND_REVEAL_BINDINGS).flat_map(|o| o.indices(0));
+pub fn reveal_bindings(
+    region: &Region,
+) -> impl Iterator<Item = crate::reveal_masks::RevealMaskBinding> {
+    let mut pairs = bank_region(region)
+        .into_iter()
+        .flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_REVEAL_BINDINGS)
+        .flat_map(|o| o.indices(0));
     core::iter::from_fn(move || {
         let controller = pairs.next()?;
         let draw = pairs.next()?;
-        Some(crate::reveal_masks::RevealMaskBinding { controller: controller as u8, draw })
+        Some(crate::reveal_masks::RevealMaskBinding {
+            controller: controller as u8,
+            draw,
+        })
     })
 }
 /// A static NailSlash target read from the bank.
@@ -320,7 +381,12 @@ impl CameraLock {
                 points[count] = point;
                 count += 1;
             }
-            for corner in [[body[0], body[1]], [body[2], body[1]], [body[2], body[3]], [body[0], body[3]]] {
+            for corner in [
+                [body[0], body[1]],
+                [body[2], body[1]],
+                [body[2], body[3]],
+                [body[0], body[3]],
+            ] {
                 if inside(&points[..count], corner) {
                     return true;
                 }
@@ -334,9 +400,14 @@ impl CameraLock {
 #[inline(never)]
 #[optimize(size)]
 pub fn camera_lock_objects(mut each: impl FnMut(u16, [i32; 4])) {
-    let Some(region) = admitted_bank().and_then(|bank| bank.region(0)) else { return };
+    let Some(region) = admitted_bank().and_then(|bank| bank.region(0)) else {
+        return;
+    };
     for local in 0..region.object_count() {
-        if let Some(o) = region.object(local).filter(|o| o.kind() == KIND_CAMERA_LOCK) {
+        if let Some(o) = region
+            .object(local)
+            .filter(|o| o.kind() == KIND_CAMERA_LOCK)
+        {
             each(local as u16, o.bounds());
         }
     }
@@ -349,9 +420,15 @@ pub fn camera_lock(local: u16) -> Option<CameraLock> {
     let polygon = object.polygons().next()?.ok()?;
     let mut points = polygon.points().flatten();
     let (low, high) = (points.next()?, points.next()?);
-    Some(CameraLock { id: object.source_id(), bounds: object.bounds(), limits: [low[0], high[0], low[1], high[1]],
-                      flags: object.flags(), owner: (object.state_id() != u32::MAX).then_some(object.state_id() as usize),
-                      expires: object.extra(0) as u16, object })
+    Some(CameraLock {
+        id: object.source_id(),
+        bounds: object.bounds(),
+        limits: [low[0], high[0], low[1], high[1]],
+        flags: object.flags(),
+        owner: (object.state_id() != u32::MAX).then_some(object.state_id() as usize),
+        expires: object.extra(0) as u16,
+        object,
+    })
 }
 /// Source RestBench touching a catalogue region.
 #[derive(Clone, Copy)]
@@ -362,9 +439,15 @@ pub struct Bench {
     pub clip_base: u16,
 }
 pub fn benches(region: &Region) -> impl Iterator<Item = Bench> {
-    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+    bank_region(region)
+        .into_iter()
+        .flat_map(|bank| bank.objects().flatten())
         .filter(|o| o.kind() == KIND_BENCH)
-        .map(|o| Bench { bounds: o.bounds(), seat: [o.extra(0), o.extra(1)], clip_base: o.extra(2) as u16 })
+        .map(|o| Bench {
+            bounds: o.bounds(),
+            seat: [o.extra(0), o.extra(1)],
+            clip_base: o.extra(2) as u16,
+        })
 }
 /// Source BounceShroom touching a catalogue region. The cooker admits only an
 /// axis-aligned box collider, so these bounds are the trigger's exact shape.
@@ -373,7 +456,9 @@ pub struct Shroom {
     pub bounds: [i32; 4],
 }
 pub fn shrooms(region: &Region) -> impl Iterator<Item = Shroom> {
-    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+    bank_region(region)
+        .into_iter()
+        .flat_map(|bank| bank.objects().flatten())
         .filter(|o| o.kind() == KIND_SHROOM)
         .map(|o| Shroom { bounds: o.bounds() })
 }
@@ -394,26 +479,46 @@ pub struct Npc {
 /// with `step` (the pad checkpoint in the guest) run between views.
 pub fn scene_npcs(scene: usize, mut step: impl FnMut(), mut found: impl FnMut(usize, Npc)) {
     let Some(bank) = admitted_bank() else { return };
-    if bank.scene_id() as usize != scene { return; }
+    if bank.scene_id() as usize != scene {
+        return;
+    }
     for region in bank.regions() {
         step();
-        let Some(slot) = (region.global_id() as usize).checked_sub(1) else { continue };
+        let Some(slot) = (region.global_id() as usize).checked_sub(1) else {
+            continue;
+        };
         for o in region.objects().flatten().filter(|o| o.kind() == KIND_NPC) {
-            found(slot, Npc { bounds: o.bounds(), position: [o.extra(0), o.extra(1)],
-                              clip_base: o.extra(2) as u16, source_id: o.source_id() });
+            found(
+                slot,
+                Npc {
+                    bounds: o.bounds(),
+                    position: [o.extra(0), o.extra(1)],
+                    clip_base: o.extra(2) as u16,
+                    source_id: o.source_id(),
+                },
+            );
         }
     }
 }
 pub fn npcs(region: &Region) -> impl Iterator<Item = Npc> {
-    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
+    bank_region(region)
+        .into_iter()
+        .flat_map(|bank| bank.objects().flatten())
         .filter(|o| o.kind() == KIND_NPC)
-        .map(|o| Npc { bounds: o.bounds(), position: [o.extra(0), o.extra(1)],
-                       clip_base: o.extra(2) as u16, source_id: o.source_id() })
+        .map(|o| Npc {
+            bounds: o.bounds(),
+            position: [o.extra(0), o.extra(1)],
+            clip_base: o.extra(2) as u16,
+            source_id: o.source_id(),
+        })
 }
 /// Static targets touching a catalogue region, through the admitted bank.
 pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>> {
-    bank_region(region).into_iter().flat_map(|bank| bank.objects().flatten())
-        .filter(|o| o.kind() == KIND_POGO).map(|object| PogoTarget { object })
+    bank_region(region)
+        .into_iter()
+        .flat_map(|bank| bank.objects().flatten())
+        .filter(|o| o.kind() == KIND_POGO)
+        .map(|object| PogoTarget { object })
 }
 /// True when a broken breakable of this region owns room edge `index`.
 ///
@@ -422,21 +527,29 @@ pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>
 /// Knight's sweep, which runs on the 1 KiB scratchpad stack.
 #[inline(never)]
 fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
-    let Some(bank) = bank_region(region) else { return false };
+    let Some(bank) = bank_region(region) else {
+        return false;
+    };
     for local in 0..bank.object_count() {
-        let Some(object) = bank.object(local) else { continue };
+        let Some(object) = bank.object(local) else {
+            continue;
+        };
         if object.kind() != KIND_BREAKABLE {
             continue;
         }
         let id = object.state_id() as usize;
-        if broken[id / 32] & (1 << (id % 32)) != 0 && object.indices(2).any(|e| e as usize == index) {
+        if broken[id / 32] & (1 << (id % 32)) != 0 && object.indices(2).any(|e| e as usize == index)
+        {
             return true;
         }
     }
     false
 }
 fn region_breakables(region: &Region) -> Breakables<'static> {
-    Breakables { region: bank_region(region), index: 0 }
+    Breakables {
+        region: bank_region(region),
+        index: 0,
+    }
 }
 /// The selected region as a runtime value: identity and bounds from the
 /// admitted bank, effect tables from the per-scene statics and the variant
@@ -460,8 +573,11 @@ pub struct Region {
 /// The scene the False Knight is placed in, for carrying an HKS4 save's won
 /// arena into the SceneData store.
 pub fn false_knight_scene() -> Option<usize> {
-    SCENE_ACTORS.iter().position(|specs| specs.iter()
-        .any(|spec| matches!(spec.controller, hk_sim::ActorController::FalseKnight { .. })))
+    SCENE_ACTORS.iter().position(|specs| {
+        specs
+            .iter()
+            .any(|spec| matches!(spec.controller, hk_sim::ActorController::FalseKnight { .. }))
+    })
 }
 /// Scene owner of a catalogue slot.
 pub fn scene_of(region_id: usize) -> usize {
@@ -477,9 +593,13 @@ pub fn resident(region_id: usize) -> Option<Region> {
         return None;
     }
     let region = bank.region_by_global_id(region_id as u32 + 1)?;
-    let statics = region.objects().flatten().find(|o| o.kind() == KIND_REGION_STATICS)
+    let statics = region
+        .objects()
+        .flatten()
+        .find(|o| o.kind() == KIND_REGION_STATICS)
         .expect("region statics object in the admitted bank");
-    let catalogue = |index: i32, len: usize| (index >= 0 && (index as usize) < len).then_some(index as usize);
+    let catalogue =
+        |index: i32, len: usize| (index >= 0 && (index as usize) < len).then_some(index as usize);
     Some(Region {
         global_id: region_id + 1,
         scene,
@@ -510,7 +630,10 @@ pub struct Gate {
 }
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/regions.rs"));
 #[cfg(not(test))]
-const _: () = assert!(SCENES == crate::disc::SCENE_COUNT, "state tables must cover every disc scene");
+const _: () = assert!(
+    SCENES == crate::disc::SCENE_COUNT,
+    "state tables must cover every disc scene"
+);
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Strike {
@@ -543,7 +666,7 @@ pub struct SecretEvent {
 /// query rescan the bank's breakable objects: each simulation tick then lost two
 /// VBlanks of pad service, the catch-up loop in main could never drain the
 /// queue, and `Fault::QueueFull` panicked the guest into `psx_rt::halt`.
-const EDGE_CACHE:usize=128;
+const EDGE_CACHE: usize = 128;
 /// Slots in the scratch the Lifeblood cocoons, the Great Door and the arena
 /// gates share for their exclusions. Eight held two of these; Crossroads_10's
 /// first view alone binds eight gate edges, so a third controller in that view
@@ -555,20 +678,20 @@ const EDGE_CACHE:usize=128;
 /// lifts those beside two gates' seven, seventeen at once.
 pub const SCRIPT_EDGE_SLOTS: usize = 20;
 pub struct State {
-    edge_cache:[[i32;4];EDGE_CACHE],
-    edge_cache_count:usize,
-    edge_cache_generation:u32,
-    edge_cache_region_id:usize,
-    edge_cache_room_key:usize,
-    edge_cache_valid:bool,
+    edge_cache: [[i32; 4]; EDGE_CACHE],
+    edge_cache_count: usize,
+    edge_cache_generation: u32,
+    edge_cache_region_id: usize,
+    edge_cache_room_key: usize,
+    edge_cache_valid: bool,
     /// Bumped by every exclusion or source change; actor terrain scratch
     /// copies (enemies::ActorEdges) compare it instead of refilling per tick.
-    pub edge_epoch:u32,
-    world_generation:u32,
-    geo_edges:[u16;32],
-    geo_edge_count:usize,
-    lifeblood_edges:[u16;SCRIPT_EDGE_SLOTS],
-    lifeblood_edge_count:usize,
+    pub edge_epoch: u32,
+    world_generation: u32,
+    geo_edges: [u16; 32],
+    geo_edge_count: usize,
+    lifeblood_edges: [u16; SCRIPT_EDGE_SLOTS],
+    lifeblood_edge_count: usize,
     debris: debris::Pool,
     pub effect_draw_dropped: u32,
     impacts: crate::impact::Pool,
@@ -579,7 +702,7 @@ pub struct State {
     // `broken` keeps the session-persistent bit of every scene's objects.
     grass: [u32; GRASS_PER_SCENE / 32],
     pub fade_left: [u16; BREAKABLES_PER_SCENE],
-    fade_active:[u32;BREAKABLES_PER_SCENE/32],
+    fade_active: [u32; BREAKABLES_PER_SCENE / 32],
     triggers: Triggers,
     gates: Gates,
     pub secrets: crate::secret_breaks::Hits,
@@ -596,8 +719,16 @@ struct Gates {
     overflow: bool,
     list: [Gate; GATE_SLOTS],
 }
-const NO_GATE: Gate = Gate { scene: 0, target_scene: 0, target_region: 0, bounds: [0; 4], spawn: [0; 2],
-    entry_vy: 0, side: 0, delay_ticks: 0 };
+const NO_GATE: Gate = Gate {
+    scene: 0,
+    target_scene: 0,
+    target_region: 0,
+    bounds: [0; 4],
+    spawn: [0; 2],
+    entry_vy: 0,
+    side: 0,
+    delay_ticks: 0,
+};
 /// Most hazard and checkpoint objects one bank region may list before the
 /// trigger tests fall back to scanning every object. The largest region on the
 /// disc lists 17: sixteen hazards and a checkpoint.
@@ -618,31 +749,73 @@ struct Triggers {
 const fn local(id: usize) -> usize {
     id % BREAKABLES_PER_SCENE
 }
-fn fill_edges(geo:&[u16],life:&[u16],broken:&[u32],region:&Region,room:&Room,cache:&mut [[i32;4]]) {
-    let count=cache.len();
-    for(i,dst)in cache.iter_mut().enumerate(){*dst=room.edge(i);}
-    let mut blank=|i:u16|{if(i as usize)<count{cache[i as usize]=[0;4];}};
-    for &i in geo.iter().chain(life){blank(i);}
-    for b in region_breakables(region).filter(|b|{let id=b.id();broken[id/32]&(1<<(id%32))!=0}){for i in b.edges(){blank(i);}}
+fn fill_edges(
+    geo: &[u16],
+    life: &[u16],
+    broken: &[u32],
+    region: &Region,
+    room: &Room,
+    cache: &mut [[i32; 4]],
+) {
+    let count = cache.len();
+    for (i, dst) in cache.iter_mut().enumerate() {
+        *dst = room.edge(i);
+    }
+    let mut blank = |i: u16| {
+        if (i as usize) < count {
+            cache[i as usize] = [0; 4];
+        }
+    };
+    for &i in geo.iter().chain(life) {
+        blank(i);
+    }
+    for b in region_breakables(region).filter(|b| {
+        let id = b.id();
+        broken[id / 32] & (1 << (id % 32)) != 0
+    }) {
+        for i in b.edges() {
+            blank(i);
+        }
+    }
 }
 impl State {
     pub const fn new() -> Self {
         Self {
-            edge_cache:[[0;4];EDGE_CACHE],edge_cache_count:0,
-            edge_cache_generation:0,edge_cache_region_id:0,edge_cache_room_key:0,edge_cache_valid:false,edge_epoch:0,
-            world_generation:0,
-            geo_edges:[0;32],geo_edge_count:0,
-            lifeblood_edges:[0;SCRIPT_EDGE_SLOTS],lifeblood_edge_count:0,
+            edge_cache: [[0; 4]; EDGE_CACHE],
+            edge_cache_count: 0,
+            edge_cache_generation: 0,
+            edge_cache_region_id: 0,
+            edge_cache_room_key: 0,
+            edge_cache_valid: false,
+            edge_epoch: 0,
+            world_generation: 0,
+            geo_edges: [0; 32],
+            geo_edge_count: 0,
+            lifeblood_edges: [0; SCRIPT_EDGE_SLOTS],
+            lifeblood_edge_count: 0,
             impacts: crate::impact::Pool::new(),
             debris: debris::Pool::new(),
             effect_draw_dropped: 0,
             broken: [0; SCENES * BREAKABLES_PER_SCENE / 32],
             grass: [0; GRASS_PER_SCENE / 32],
             fade_left: [0; BREAKABLES_PER_SCENE],
-            fade_active:[0;BREAKABLES_PER_SCENE/32],
-            triggers: Triggers { generation: 0, region: 0, hazards: 0, count: 0, overflow: false,
-                object: [0; TRIGGER_SLOTS], bounds: [[0; 4]; TRIGGER_SLOTS] },
-            gates: Gates { generation: 0, scene: 0, count: 0, overflow: false, list: [NO_GATE; GATE_SLOTS] },
+            fade_active: [0; BREAKABLES_PER_SCENE / 32],
+            triggers: Triggers {
+                generation: 0,
+                region: 0,
+                hazards: 0,
+                count: 0,
+                overflow: false,
+                object: [0; TRIGGER_SLOTS],
+                bounds: [[0; 4]; TRIGGER_SLOTS],
+            },
+            gates: Gates {
+                generation: 0,
+                scene: 0,
+                count: 0,
+                overflow: false,
+                list: [NO_GATE; GATE_SLOTS],
+            },
             secrets: crate::secret_breaks::Hits::new(),
         }
     }
@@ -698,7 +871,9 @@ impl State {
         self.broken[id / 32] |= 1 << (id % 32);
         let slot = local(id);
         self.fade_left[slot] = fade_ticks;
-        if fade_ticks!=0 {self.fade_active[slot/32]|=1<<(slot%32);}
+        if fade_ticks != 0 {
+            self.fade_active[slot / 32] |= 1 << (slot % 32);
+        }
         self.invalidate_edges();
         true
     }
@@ -714,9 +889,22 @@ impl State {
     /// same `Slash Impact R` GrassCut spawns, so the views of a scene with
     /// grass already hold its clips; elsewhere nothing is drawn. It faces
     /// away from the Knight, by the side the nail is on, as GrassCut's does.
-    pub fn hit_impact(&mut self, region: &Region, source: usize, bounds: [i32; 4], player_x: i32) -> bool {
-        let sign = if (bounds[0] as i64 + bounds[2] as i64) / 2 >= player_x as i64 { 1 } else { -1 };
-        region.grass_impact.is_some() && self.impacts.spawn(region.scene, source, bounds, bounds, sign)
+    pub fn hit_impact(
+        &mut self,
+        region: &Region,
+        source: usize,
+        bounds: [i32; 4],
+        player_x: i32,
+    ) -> bool {
+        let sign = if (bounds[0] as i64 + bounds[2] as i64) / 2 >= player_x as i64 {
+            1
+        } else {
+            -1
+        };
+        region.grass_impact.is_some()
+            && self
+                .impacts
+                .spawn(region.scene, source, bounds, bounds, sign)
     }
     /// One call per 60 Hz simulation tick, including GPU-wait VBlanks.
     pub fn draw_impacts(&mut self, region: &Region, room: &Room, camera: (i32, i32)) -> u32 {
@@ -727,23 +915,38 @@ impl State {
             self.impacts
                 .draw_limited(region.scene, region.grass_impact, room, camera, 32 - debris);
         self.effect_draw_dropped = self.effect_draw_dropped.saturating_add(skipped);
-        debris
-            + impacts
-            + particles::pool().draw(region.scene, region.particle_bank, room, camera)
+        debris + impacts + particles::pool().draw(region.scene, region.particle_bank, room, camera)
     }
     #[inline(never)]
     pub fn tick_debris(&mut self, region: &Region, room: &Room) {
         particles::pool().tick(region.scene, region.particle_bank);
-        self.refresh_edges(region,room);
-        let count=room.counts[5];
+        self.refresh_edges(region, room);
+        let count = room.counts[5];
         let broken = &self.broken;
-        let geo=&self.geo_edges[..self.geo_edge_count];
-        let life=&self.lifeblood_edges[..self.lifeblood_edge_count];
+        let geo = &self.geo_edges[..self.geo_edge_count];
+        let life = &self.lifeblood_edges[..self.lifeblood_edge_count];
         // Future larger rooms retain the direct path rather than dropping terrain.
-        let cached=&self.edge_cache[..self.edge_cache_count];
-        let edge=|i:usize| if i<cached.len() {cached[i]} else if geo.contains(&(i as u16))||life.contains(&(i as u16))||broken_edge(broken,region,i) {[0;4]}else{room.edge(i)};
-        particles::pool().tick_break(region.scene,region.collision_bounds,count,&edge);
-        self.debris.tick(region.scene,region.door_debris,region.collision_bounds,count,edge);
+        let cached = &self.edge_cache[..self.edge_cache_count];
+        let edge = |i: usize| {
+            if i < cached.len() {
+                cached[i]
+            } else if geo.contains(&(i as u16))
+                || life.contains(&(i as u16))
+                || broken_edge(broken, region, i)
+            {
+                [0; 4]
+            } else {
+                room.edge(i)
+            }
+        };
+        particles::pool().tick_break(region.scene, region.collision_bounds, count, &edge);
+        self.debris.tick(
+            region.scene,
+            region.door_debris,
+            region.collision_bounds,
+            count,
+            edge,
+        );
     }
     /// The resident scene payload is immutable. Explicit world generation plus
     /// global region ID and the borrowed room view select the local edge
@@ -753,38 +956,56 @@ impl State {
     /// into this room, not an identity: a room past `EDGE_CACHE` matches at the
     /// cap and answers the rest uncached.
     #[inline(always)]
-    fn edge_cache_matches(&self,region:&Region,room:&Room)->bool {
+    fn edge_cache_matches(&self, region: &Region, room: &Room) -> bool {
         self.edge_cache_valid
-            && self.edge_cache_count==room.counts[5].min(EDGE_CACHE)
-            && self.edge_cache_generation==self.world_generation
-            && self.edge_cache_region_id==region.global_id
-            && self.edge_cache_room_key==room as *const Room as usize
+            && self.edge_cache_count == room.counts[5].min(EDGE_CACHE)
+            && self.edge_cache_generation == self.world_generation
+            && self.edge_cache_region_id == region.global_id
+            && self.edge_cache_room_key == room as *const Room as usize
     }
     /// Retire every view before the reusable world/geometry arena can be
     /// overwritten. Call once for every metadata admission, including a retry
     /// of the same scene at the same address.
     pub fn begin_world_admission(&mut self) {
-        self.world_generation=self.world_generation.wrapping_add(1);
+        self.world_generation = self.world_generation.wrapping_add(1);
         self.invalidate_edges();
     }
     fn invalidate_edges(&mut self) {
-        self.edge_cache_count=0;
-        self.edge_cache_valid=false;
-        self.edge_epoch=self.edge_epoch.wrapping_add(1);
+        self.edge_cache_count = 0;
+        self.edge_cache_valid = false;
+        self.edge_epoch = self.edge_epoch.wrapping_add(1);
     }
     /// Rebuild only after an exclusion mutation or source change. Returns true
     /// when the table was rebuilt; a room past `EDGE_CACHE` caches its first
     /// `EDGE_CACHE` edges and leaves the tail to `edge_uncached`.
-    pub fn refresh_edges(&mut self,region:&Region,room:&Room)->bool {
-        if self.edge_cache_matches(region,room){return false;}
-        let count=room.counts[5].min(EDGE_CACHE);
-        let Self{edge_cache,edge_cache_count,geo_edges,geo_edge_count,lifeblood_edges,lifeblood_edge_count,broken,..}=self;
-        fill_edges(&geo_edges[..*geo_edge_count],&lifeblood_edges[..*lifeblood_edge_count],broken,region,room,&mut edge_cache[..count]);
-        *edge_cache_count=count;
-        self.edge_cache_generation=self.world_generation;
-        self.edge_cache_region_id=region.global_id;
-        self.edge_cache_room_key=room as *const Room as usize;
-        self.edge_cache_valid=true;
+    pub fn refresh_edges(&mut self, region: &Region, room: &Room) -> bool {
+        if self.edge_cache_matches(region, room) {
+            return false;
+        }
+        let count = room.counts[5].min(EDGE_CACHE);
+        let Self {
+            edge_cache,
+            edge_cache_count,
+            geo_edges,
+            geo_edge_count,
+            lifeblood_edges,
+            lifeblood_edge_count,
+            broken,
+            ..
+        } = self;
+        fill_edges(
+            &geo_edges[..*geo_edge_count],
+            &lifeblood_edges[..*lifeblood_edge_count],
+            broken,
+            region,
+            room,
+            &mut edge_cache[..count],
+        );
+        *edge_cache_count = count;
+        self.edge_cache_generation = self.world_generation;
+        self.edge_cache_region_id = region.global_id;
+        self.edge_cache_room_key = room as *const Room as usize;
+        self.edge_cache_valid = true;
         true
     }
     pub fn tick(&mut self) {
@@ -792,13 +1013,16 @@ impl State {
         self.secrets.tick();
         // Only broken source objects with an unfinished fade need a timer
         // update; retain scene-global countdowns and exact simultaneous expiry.
-        for (word,active) in self.fade_active.iter_mut().enumerate() {
-            let mut bits=*active;
-            while bits!=0 {
-                let bit=bits.trailing_zeros()as usize;bits&=bits-1;
-                let time=&mut self.fade_left[word*32+bit];
-                *time=time.saturating_sub(1);
-                if *time==0 {*active&=!(1<<bit);}
+        for (word, active) in self.fade_active.iter_mut().enumerate() {
+            let mut bits = *active;
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let time = &mut self.fade_left[word * 32 + bit];
+                *time = time.saturating_sub(1);
+                if *time == 0 {
+                    *active &= !(1 << bit);
+                }
             }
         }
     }
@@ -807,7 +1031,7 @@ impl State {
             particles::pool().spawn_death(region.scene, source, position, bank);
         }
     }
-    #[cfg_attr(not(test),optimize(size))]
+    #[cfg_attr(not(test), optimize(size))]
     pub fn reset_scene(&mut self, scene: usize) {
         self.begin_world_admission();
         self.impacts.clear_scene(scene);
@@ -819,14 +1043,17 @@ impl State {
         // The scene being reset is the admitted one: both callers pass the
         // current region's scene before the next admission.
         let bank = admitted_bank().expect("world metadata admitted for scene reset");
-        assert!(bank.scene_id() as usize == scene, "scene reset needs that scene's bank");
+        assert!(
+            bank.scene_id() as usize == scene,
+            "scene reset needs that scene's bank"
+        );
         for object in bank.regions().flat_map(breakables) {
             if !object.persistent() {
                 let id = object.id();
                 self.broken[id / 32] &= !(1 << (id % 32));
                 let slot = local(id);
                 self.fade_left[slot] = 0;
-                self.fade_active[slot/32]&=!(1<<(slot%32));
+                self.fade_active[slot / 32] &= !(1 << (slot % 32));
             }
         }
     }
@@ -879,7 +1106,7 @@ impl State {
                 && object.hit_by(polygon)
                 && self.break_object(id, object.fade_ticks())
             {
-                particles::pool().spawn_break(region.scene,id,nail.kind as u8,player.facing);
+                particles::pool().spawn_break(region.scene, id, nail.kind as u8, player.facing);
                 self.debris.spawn(
                     region.scene,
                     region.door_debris,
@@ -935,7 +1162,10 @@ impl State {
     pub fn secret_particles(&mut self, region: &Region, e: &SecretEvent, facing: i32) {
         let stage = if e.broke {
             0
-        } else if matches!(e.family, crate::secret_breaks::FAMILY_WALL | crate::secret_breaks::FAMILY_WALL_TK2D) {
+        } else if matches!(
+            e.family,
+            crate::secret_breaks::FAMILY_WALL | crate::secret_breaks::FAMILY_WALL_TK2D
+        ) {
             3
         } else {
             e.taken.min(2) as usize
@@ -944,7 +1174,14 @@ impl State {
     }
     /// One nail swing against one secret whose object carries flag 8.
     #[inline(never)]
-    fn strike_secret(&mut self, object: Breakable, bounds: [i32; 4], polygon: &[[i32; 2]], swing: u32, body: [i32; 4]) -> Option<SecretEvent> {
+    fn strike_secret(
+        &mut self,
+        object: Breakable,
+        bounds: [i32; 4],
+        polygon: &[[i32; 2]],
+        swing: u32,
+        body: [i32; 4],
+    ) -> Option<SecretEvent> {
         let spec = object.secret()?;
         let id = object.id();
         if self.broken(id) || !overlap(bounds, object.bounds()) || !object.hit_by(polygon) {
@@ -960,23 +1197,45 @@ impl State {
             crate::secret_breaks::Outcome::Hit(taken) => (taken, false),
             crate::secret_breaks::Outcome::Refused => return None,
         };
-        Some(SecretEvent { id, family: spec.family(), taken, broke, origin: spec.origin() })
+        Some(SecretEvent {
+            id,
+            family: spec.family(),
+            taken,
+            broke,
+            origin: spec.origin(),
+        })
     }
     /// Vengeful Spirit's ball against the region's secrets: `Check If Nail`
     /// sends attackType 2 to `Spell Destroy`, which breaks a hidden wall at
     /// once. A cracked floor refuses spells.
     #[inline(never)]
     pub fn spell_strike(&mut self, region: &Region, ball: [i32; 4]) -> Option<SecretEvent> {
-        let square = [[ball[0], ball[1]], [ball[2], ball[1]], [ball[2], ball[3]], [ball[0], ball[3]]];
+        let square = [
+            [ball[0], ball[1]],
+            [ball[2], ball[1]],
+            [ball[2], ball[3]],
+            [ball[0], ball[3]],
+        ];
         for object in region_breakables(region) {
-            let Some(spec) = object.secret() else { continue };
+            let Some(spec) = object.secret() else {
+                continue;
+            };
             let id = object.id();
             if !spec.spell() || self.broken(id) || !overlap(ball, object.bounds()) {
                 continue;
             }
             if object.hit_by(&square) && self.break_object(id, 0) {
-                unsafe { crate::secret_breaks::HK_SECRET_BREAKS = crate::secret_breaks::HK_SECRET_BREAKS.wrapping_add(1) };
-                return Some(SecretEvent { id, family: spec.family(), taken: spec.hits(), broke: true, origin: spec.origin() });
+                unsafe {
+                    crate::secret_breaks::HK_SECRET_BREAKS =
+                        crate::secret_breaks::HK_SECRET_BREAKS.wrapping_add(1)
+                };
+                return Some(SecretEvent {
+                    id,
+                    family: spec.family(),
+                    taken: spec.hits(),
+                    broke: true,
+                    origin: spec.origin(),
+                });
             }
         }
         None
@@ -987,13 +1246,19 @@ impl State {
     #[inline(never)]
     pub fn draw_secrets(&self, view: &Region, camera: (i32, i32), front: bool) -> u32 {
         let mut n = 0;
-        let Some(bank) = bank_region(view) else { return 0 };
+        let Some(bank) = bank_region(view) else {
+            return 0;
+        };
         for index in 0..bank.object_count() {
-            let Some(object) = bank.object(index) else { continue };
+            let Some(object) = bank.object(index) else {
+                continue;
+            };
             if object.kind() != KIND_BREAKABLE || object.flags() & 8 == 0 {
                 continue;
             }
-            let Some(spec) = crate::secret_breaks::Spec::after(bank, index) else { continue };
+            let Some(spec) = crate::secret_breaks::Spec::after(bank, index) else {
+                continue;
+            };
             let id = object.state_id() as usize;
             if self.broken(id) || !self.secrets.displaced(id, &spec) {
                 continue;
@@ -1006,7 +1271,9 @@ impl State {
                 }
                 n += match recoil {
                     Some(offset) => crate::render::draw_scenery_offset(draw, offset, camera),
-                    None => spec.quad(stage, part).map_or(0, |quad| crate::render::draw_scenery_quad(draw, quad, camera)),
+                    None => spec.quad(stage, part).map_or(0, |quad| {
+                        crate::render::draw_scenery_quad(draw, quad, camera)
+                    }),
                 };
             }
         }
@@ -1017,7 +1284,9 @@ impl State {
     #[inline(never)]
     pub fn apply(&self, region: &Region) {
         crate::render::reset_visibility();
-        let Some(bank) = bank_region(region) else { return };
+        let Some(bank) = bank_region(region) else {
+            return;
+        };
         let mut index = 0;
         let mut owner = (0usize, 0u16);
         while let Some(object) = bank.object(index) {
@@ -1050,9 +1319,11 @@ impl State {
                     }
                 }
                 KIND_MASK_FADE => self.apply_mask(owner.0, owner.1, MaskFade { object }),
-                KIND_REMOTE_MASK => {
-                    self.apply_mask(object.state_id() as usize, object.extra(2) as u16, MaskFade { object })
-                }
+                KIND_REMOTE_MASK => self.apply_mask(
+                    object.state_id() as usize,
+                    object.extra(2) as u16,
+                    MaskFade { object },
+                ),
                 _ => {}
             }
         }
@@ -1081,81 +1352,139 @@ impl State {
     }
 
     /// Only the exact source colliders owned by a broken object disappear.
-    pub fn set_geo_edges(&mut self,edges:&[u16]) {
-        assert!(edges.len()<=self.geo_edges.len());
-        if self.geo_edge_count==edges.len()&&self.geo_edges[..edges.len()].iter().zip(edges).all(|(a,b)|a==b){return;}
-        self.geo_edges[..edges.len()].copy_from_slice(edges);self.geo_edge_count=edges.len();self.invalidate_edges();
+    pub fn set_geo_edges(&mut self, edges: &[u16]) {
+        assert!(edges.len() <= self.geo_edges.len());
+        if self.geo_edge_count == edges.len()
+            && self.geo_edges[..edges.len()]
+                .iter()
+                .zip(edges)
+                .all(|(a, b)| a == b)
+        {
+            return;
+        }
+        self.geo_edges[..edges.len()].copy_from_slice(edges);
+        self.geo_edge_count = edges.len();
+        self.invalidate_edges();
     }
     /// Refresh local cocoon collider bindings on every region activation.
-    pub fn set_lifeblood_edges(&mut self,edges:&[u16]) {
-        assert!(edges.len()<=self.lifeblood_edges.len());
-        if self.lifeblood_edge_count==edges.len()&&self.lifeblood_edges[..edges.len()].iter().zip(edges).all(|(a,b)|a==b){return;}
-        self.lifeblood_edges[..edges.len()].copy_from_slice(edges);self.lifeblood_edge_count=edges.len();self.invalidate_edges();
+    pub fn set_lifeblood_edges(&mut self, edges: &[u16]) {
+        assert!(edges.len() <= self.lifeblood_edges.len());
+        if self.lifeblood_edge_count == edges.len()
+            && self.lifeblood_edges[..edges.len()]
+                .iter()
+                .zip(edges)
+                .all(|(a, b)| a == b)
+        {
+            return;
+        }
+        self.lifeblood_edges[..edges.len()].copy_from_slice(edges);
+        self.lifeblood_edge_count = edges.len();
+        self.invalidate_edges();
     }
     /// Append bounded scripted exclusions after the Lifeblood refresh. The two
     /// controllers share this eight-entry scratch; no second terrain cache.
-    pub fn append_script_edges(&mut self,edges:&[u16]) {
+    pub fn append_script_edges(&mut self, edges: &[u16]) {
         for &edge in edges {
-            if self.lifeblood_edges[..self.lifeblood_edge_count].contains(&edge) {continue;}
-            assert!(self.lifeblood_edge_count<self.lifeblood_edges.len());
-            self.lifeblood_edges[self.lifeblood_edge_count]=edge;
-            self.lifeblood_edge_count+=1;
+            if self.lifeblood_edges[..self.lifeblood_edge_count].contains(&edge) {
+                continue;
+            }
+            assert!(self.lifeblood_edge_count < self.lifeblood_edges.len());
+            self.lifeblood_edges[self.lifeblood_edge_count] = edge;
+            self.lifeblood_edge_count += 1;
             self.invalidate_edges();
         }
     }
     /// Every index below `cache.len()` with the same exclusions as edge(),
     /// built in one pass over the short exclusion lists instead of scanning
     /// them once per edge.
-    pub fn fill_edges(&self,region:&Region,room:&Room,cache:&mut [[i32;4]]) {
-        fill_edges(&self.geo_edges[..self.geo_edge_count],&self.lifeblood_edges[..self.lifeblood_edge_count],&self.broken,region,room,cache);
+    pub fn fill_edges(&self, region: &Region, room: &Room, cache: &mut [[i32; 4]]) {
+        fill_edges(
+            &self.geo_edges[..self.geo_edge_count],
+            &self.lifeblood_edges[..self.lifeblood_edge_count],
+            &self.broken,
+            region,
+            room,
+            cache,
+        );
     }
     /// Validate the source once for a whole physics query. The returned reader
     /// immutably borrows state/room, so exclusions cannot change while it lives.
     /// Indices past the table and invalidated caches retain exact uncached filtering.
     #[inline(always)]
-    pub fn edge_reader<'a>(&'a self,region:&'a Region,room:&'a Room<'a>)
-        ->impl Fn(usize)->[i32;4]+'a {
-        let cached=if self.edge_cache_matches(region,room) {
+    pub fn edge_reader<'a>(
+        &'a self,
+        region: &'a Region,
+        room: &'a Room<'a>,
+    ) -> impl Fn(usize) -> [i32; 4] + 'a {
+        let cached = if self.edge_cache_matches(region, room) {
             &self.edge_cache[..self.edge_cache_count]
-        } else {&[]};
+        } else {
+            &[]
+        };
         move |index| {
-            if index<cached.len(){cached[index]}
-            else{self.edge_uncached(region,room,index)}
+            if index < cached.len() {
+                cached[index]
+            } else {
+                self.edge_uncached(region, room, index)
+            }
         }
     }
     // The cached read must stay in the caller: returning this four-word value
     // through an outlined MIPS call costs more than decoding the original edge.
     #[inline(always)]
     pub fn edge(&self, region: &Region, room: &Room, index: usize) -> [i32; 4] {
-        if index<self.edge_cache_count&&self.edge_cache_matches(region,room) {return self.edge_cache[index];}
-        self.edge_uncached(region,room,index)
+        if index < self.edge_cache_count && self.edge_cache_matches(region, room) {
+            return self.edge_cache[index];
+        }
+        self.edge_uncached(region, room, index)
     }
     /// Materialize a resident actor's terrain once per physics tick. The edge
     /// order and zero sentinels match edge_in_view(), but short exclusion lists
     /// are traversed once rather than once per solver edge query.
-    pub fn fill_edges_in_view(&self, active:&Region, active_room:&Room,
-        target:&Region, target_room:&Room, cache:&mut [[i32;4]]) {
-        assert!(cache.len()<=target_room.counts[5]);
-        if active.global_id==target.global_id {
+    pub fn fill_edges_in_view(
+        &self,
+        active: &Region,
+        active_room: &Room,
+        target: &Region,
+        target_room: &Room,
+        cache: &mut [[i32; 4]],
+    ) {
+        assert!(cache.len() <= target_room.counts[5]);
+        if active.global_id == target.global_id {
             // The table stops at EDGE_CACHE, so a longer request refills rather
             // than reading past what was cached for this room.
-            if self.edge_cache_matches(active,active_room) && cache.len()<=self.edge_cache_count {
+            if self.edge_cache_matches(active, active_room) && cache.len() <= self.edge_cache_count
+            {
                 cache.copy_from_slice(&self.edge_cache[..cache.len()]);
-            } else {self.fill_edges(active,active_room,cache);}
+            } else {
+                self.fill_edges(active, active_room, cache);
+            }
             return;
         }
-        for (i,edge) in cache.iter_mut().enumerate() {*edge=target_room.edge(i);}
-        for b in region_breakables(target).filter(|b|self.broken(b.id())) {
-            for i in b.edges() {if let Some(edge)=cache.get_mut(i as usize) {*edge=[0;4];}}
+        for (i, edge) in cache.iter_mut().enumerate() {
+            *edge = target_room.edge(i);
         }
-        if active.scene==target.scene {
-            for &i in self.geo_edges[..self.geo_edge_count].iter()
-                .chain(&self.lifeblood_edges[..self.lifeblood_edge_count]) {
-                if (i as usize)>=active_room.counts[5] {continue;}
-                let excluded=active_room.edge(i as usize);
-                let reverse=[excluded[2],excluded[3],excluded[0],excluded[1]];
+        for b in region_breakables(target).filter(|b| self.broken(b.id())) {
+            for i in b.edges() {
+                if let Some(edge) = cache.get_mut(i as usize) {
+                    *edge = [0; 4];
+                }
+            }
+        }
+        if active.scene == target.scene {
+            for &i in self.geo_edges[..self.geo_edge_count]
+                .iter()
+                .chain(&self.lifeblood_edges[..self.lifeblood_edge_count])
+            {
+                if (i as usize) >= active_room.counts[5] {
+                    continue;
+                }
+                let excluded = active_room.edge(i as usize);
+                let reverse = [excluded[2], excluded[3], excluded[0], excluded[1]];
                 for edge in cache.iter_mut() {
-                    if hk_sim::same_edge(edge,&excluded) || hk_sim::same_edge(edge,&reverse) {*edge=[0;4];}
+                    if hk_sim::same_edge(edge, &excluded) || hk_sim::same_edge(edge, &reverse) {
+                        *edge = [0; 4];
+                    }
                 }
             }
         }
@@ -1163,32 +1492,53 @@ impl State {
     /// Read another resident collision view without applying this view's local
     /// exclusion indices to unrelated edges. Breakables have stable scene IDs;
     /// transient Geo/cocoon/script exclusions are remapped by source segment.
-    pub fn edge_in_view(&self, active:&Region, active_room:&Room,
-        target:&Region, target_room:&Room, index:usize)->[i32;4] {
-        if active.global_id==target.global_id {
-            return self.edge(active,active_room,index);
+    pub fn edge_in_view(
+        &self,
+        active: &Region,
+        active_room: &Room,
+        target: &Region,
+        target_room: &Room,
+        index: usize,
+    ) -> [i32; 4] {
+        if active.global_id == target.global_id {
+            return self.edge(active, active_room, index);
         }
-        let edge=target_room.edge(index);
-        if broken_edge(&self.broken,target,index) {
-            return [0;4];
+        let edge = target_room.edge(index);
+        if broken_edge(&self.broken, target, index) {
+            return [0; 4];
         }
-        if active.scene==target.scene {
-            for &i in self.geo_edges[..self.geo_edge_count].iter()
-                .chain(&self.lifeblood_edges[..self.lifeblood_edge_count]) {
-                if (i as usize)>=active_room.counts[5] {continue;}
-                let excluded=active_room.edge(i as usize);
-                if hk_sim::same_edge(&edge,&excluded) || hk_sim::same_edge(&edge,&[excluded[2],excluded[3],excluded[0],excluded[1]]) {
-                    return [0;4];
+        if active.scene == target.scene {
+            for &i in self.geo_edges[..self.geo_edge_count]
+                .iter()
+                .chain(&self.lifeblood_edges[..self.lifeblood_edge_count])
+            {
+                if (i as usize) >= active_room.counts[5] {
+                    continue;
+                }
+                let excluded = active_room.edge(i as usize);
+                if hk_sim::same_edge(&edge, &excluded)
+                    || hk_sim::same_edge(
+                        &edge,
+                        &[excluded[2], excluded[3], excluded[0], excluded[1]],
+                    )
+                {
+                    return [0; 4];
                 }
             }
         }
         edge
     }
     #[inline(never)]
-    fn edge_uncached(&self, region:&Region,room:&Room,index:usize)->[i32;4] {
-        if self.geo_edges[..self.geo_edge_count].contains(&(index as u16)) {return [0;4];}
-        if self.lifeblood_edges[..self.lifeblood_edge_count].contains(&(index as u16)) {return [0;4];}
-        if broken_edge(&self.broken,region,index) {return [0;4];}
+    fn edge_uncached(&self, region: &Region, room: &Room, index: usize) -> [i32; 4] {
+        if self.geo_edges[..self.geo_edge_count].contains(&(index as u16)) {
+            return [0; 4];
+        }
+        if self.lifeblood_edges[..self.lifeblood_edge_count].contains(&(index as u16)) {
+            return [0; 4];
+        }
+        if broken_edge(&self.broken, region, index) {
+            return [0; 4];
+        }
         room.edge(index)
     }
     /// List the region's hazards, then its checkpoints, once per region and
@@ -1206,7 +1556,9 @@ impl State {
         t.overflow = false;
         for kind in [META_HAZARD, META_CHECKPOINT] {
             for local in 0..region.object_count() {
-                let Some(object) = region.object(local) else { continue };
+                let Some(object) = region.object(local) else {
+                    continue;
+                };
                 if object.kind() == kind {
                     if t.count as usize == TRIGGER_SLOTS || local > u8::MAX as usize {
                         t.overflow = true;
@@ -1226,19 +1578,34 @@ impl State {
     /// cooked order whose bounds and polygons reach the body.
     /// `skip` passes over objects by source id (a hazard whose damage another
     /// module runs, props::World::owns_hazard).
-    fn trigger<'a>(&mut self, region: meta::Region<'a>, kind: u16, body: [i32; 4], skip: &dyn Fn(u32) -> bool) -> Option<meta::Object<'a>> {
+    fn trigger<'a>(
+        &mut self,
+        region: meta::Region<'a>,
+        kind: u16,
+        body: [i32; 4],
+        skip: &dyn Fn(u32) -> bool,
+    ) -> Option<meta::Object<'a>> {
         self.bind_triggers(region);
         let t = &self.triggers;
         if t.overflow {
             return bank_trigger(region, kind, body, skip);
         }
-        let (first, end) = if kind == META_HAZARD { (0, t.hazards) } else { (t.hazards, t.count) };
+        let (first, end) = if kind == META_HAZARD {
+            (0, t.hazards)
+        } else {
+            (t.hazards, t.count)
+        };
         for slot in first as usize..end as usize {
             if !overlap(body, t.bounds[slot]) {
                 continue;
             }
             if let Some(object) = region.object(t.object[slot] as usize) {
-                if !skip(object.source_id()) && object.polygons().flatten().any(|p| bank_polygon_hits(p, body)) {
+                if !skip(object.source_id())
+                    && object
+                        .polygons()
+                        .flatten()
+                        .any(|p| bank_polygon_hits(p, body))
+                {
                     return Some(object);
                 }
             }
@@ -1250,8 +1617,15 @@ impl State {
     /// admission. `gates` lists nothing while another scene's bank is
     /// admitted, so nothing is kept then.
     #[inline(never)]
-    pub fn gate(&mut self, scene: usize, player: &Player, body: [i32; 4], up: bool, recoiling: bool,
-                scene_ticks: u32) -> Option<Gate> {
+    pub fn gate(
+        &mut self,
+        scene: usize,
+        player: &Player,
+        body: [i32; 4],
+        up: bool,
+        recoiling: bool,
+        scene_ticks: u32,
+    ) -> Option<Gate> {
         if !admitted_bank().is_some_and(|bank| bank.scene_id() as usize == scene) {
             return None;
         }
@@ -1262,7 +1636,10 @@ impl State {
         if g.overflow {
             return gate(scene, player, body, up, recoiling, scene_ticks);
         }
-        g.list[..g.count as usize].iter().find(|g| gate_takes(g, scene, player, body, up, recoiling, scene_ticks)).copied()
+        g.list[..g.count as usize]
+            .iter()
+            .find(|g| gate_takes(g, scene, player, body, up, recoiling, scene_ticks))
+            .copied()
     }
     #[inline(never)]
     fn bind_gates(&mut self, scene: usize) {
@@ -1272,9 +1649,13 @@ impl State {
         g.count = 0;
         g.overflow = false;
         // `gates(scene)`, walked by index: the caller checked the bank is this scene's.
-        let Some(region) = admitted_bank().and_then(|bank| bank.region(0)) else { return };
+        let Some(region) = admitted_bank().and_then(|bank| bank.region(0)) else {
+            return;
+        };
         for local in 0..region.object_count() {
-            let Some(o) = region.object(local) else { continue };
+            let Some(o) = region.object(local) else {
+                continue;
+            };
             if o.kind() != KIND_GATE {
                 continue;
             }
@@ -1295,8 +1676,14 @@ impl State {
     /// `entry` is the gate the Knight came in by, excluded until he has been
     /// `release` units away from it: standing in it just after the entry says
     /// nothing about going back. `Some(usize::MAX)` asks this call to find it.
-    pub fn predict_gate(&mut self, scene: usize, player: &Player, keep: Option<usize>,
-                        entry: &mut Option<usize>, release: i32) -> Option<(usize, Gate, i32)> {
+    pub fn predict_gate(
+        &mut self,
+        scene: usize,
+        player: &Player,
+        keep: Option<usize>,
+        entry: &mut Option<usize>,
+        release: i32,
+    ) -> Option<(usize, Gate, i32)> {
         const BEHIND: i32 = 24; // units
         const HOLD: i32 = 8;
         if !admitted_bank().is_some_and(|bank| bank.scene_id() as usize == scene) {
@@ -1311,24 +1698,42 @@ impl State {
             let dx = (b[0] - player.x).max(player.x - b[2]).max(0) >> 16;
             let dy = (b[1] - player.y).max(player.y - b[3]).max(0) >> 16;
             let centre = (b[0] >> 1) + (b[2] >> 1);
-            dx + dy + if dx > 0 && (centre - player.x).signum() == -player.facing.signum() { BEHIND } else { 0 }
+            dx + dy
+                + if dx > 0 && (centre - player.x).signum() == -player.facing.signum() {
+                    BEHIND
+                } else {
+                    0
+                }
         };
         let list = &g.list[..g.count as usize];
         let distance = |gate: &Gate| {
             let b = gate.bounds;
-            ((b[0] - player.x).max(player.x - b[2]).max(0) >> 16) + ((b[1] - player.y).max(player.y - b[3]).max(0) >> 16)
+            ((b[0] - player.x).max(player.x - b[2]).max(0) >> 16)
+                + ((b[1] - player.y).max(player.y - b[3]).max(0) >> 16)
         };
         if *entry == Some(usize::MAX) {
-            *entry = list.iter().enumerate().min_by_key(|(_, gate)| distance(gate)).map(|(i, _)| i);
+            *entry = list
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, gate)| distance(gate))
+                .map(|(i, _)| i);
         }
         if let Some(e) = *entry {
-            if e >= list.len() || distance(&list[e]) > release { *entry = None; }
+            if e >= list.len() || distance(&list[e]) > release {
+                *entry = None;
+            }
         }
         let skip = *entry;
-        let (best, gate) = list.iter().enumerate().filter(|(i, _)| Some(*i) != skip).min_by_key(|(_, gate)| score(gate))?;
+        let (best, gate) = list
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| Some(*i) != skip)
+            .min_by_key(|(_, gate)| score(gate))?;
         let keep = keep.filter(|&k| Some(k) != skip);
         match keep {
-            Some(k) if k < list.len() && score(&list[k]) <= score(gate) + HOLD => Some((k, list[k], score(&list[k]))),
+            Some(k) if k < list.len() && score(&list[k]) <= score(gate) + HOLD => {
+                Some((k, list[k], score(&list[k])))
+            }
             _ => Some((best, *gate, score(gate))),
         }
     }
@@ -1336,13 +1741,32 @@ impl State {
     /// read from the admitted scene bank. Direction points away from the source
     /// object's transform, for normal recoil.
     /// `skip` names hazards, by source id, whose damage is run elsewhere.
-    pub fn hazard_contact(&mut self, region: meta::Region, player: &Player, params: Params, skip: impl Fn(u32) -> bool) -> Option<(u16, bool, i32)> {
-        hazard_of(self.trigger(region, META_HAZARD, body_box(player, params), &skip)?, player)
+    pub fn hazard_contact(
+        &mut self,
+        region: meta::Region,
+        player: &Player,
+        params: Params,
+        skip: impl Fn(u32) -> bool,
+    ) -> Option<(u16, bool, i32)> {
+        hazard_of(
+            self.trigger(region, META_HAZARD, body_box(player, params), &skip)?,
+            player,
+        )
     }
     /// Authored hazard checkpoint trigger, distinct from a bench or death save:
     /// spawn point and facing from the admitted scene bank.
-    pub fn checkpoint(&mut self, region: meta::Region, player: &Player, params: Params) -> Option<([i32; 2], i32)> {
-        Some(checkpoint_of(self.trigger(region, META_CHECKPOINT, body_box(player, params), &|_| false)?))
+    pub fn checkpoint(
+        &mut self,
+        region: meta::Region,
+        player: &Player,
+        params: Params,
+    ) -> Option<([i32; 2], i32)> {
+        Some(checkpoint_of(self.trigger(
+            region,
+            META_CHECKPOINT,
+            body_box(player, params),
+            &|_| false,
+        )?))
     }
 }
 fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
@@ -1429,7 +1853,10 @@ fn bank_trigger<'a>(
         object.kind() == kind
             && !skip(object.source_id())
             && overlap(body, object.bounds())
-            && object.polygons().flatten().any(|p| bank_polygon_hits(p, body))
+            && object
+                .polygons()
+                .flatten()
+                .any(|p| bank_polygon_hits(p, body))
     })
 }
 fn body_box(player: &Player, params: Params) -> [i32; 4] {
@@ -1450,18 +1877,37 @@ fn hazard_of(hazard: meta::Object, player: &Player) -> Option<(u16, bool, i32)> 
     Some((damage, word >> 16 != 0, direction))
 }
 fn checkpoint_of(checkpoint: meta::Object) -> ([i32; 2], i32) {
-    ([checkpoint.extra(0), checkpoint.extra(1)], checkpoint.extra(2))
+    (
+        [checkpoint.extra(0), checkpoint.extra(1)],
+        checkpoint.extra(2),
+    )
 }
 /// `State::hazard_contact` without the table: the whole-region scan the
 /// tests hold the cached answer to.
 #[cfg(test)]
-pub fn hazard_contact(region: meta::Region, player: &Player, params: Params) -> Option<(u16, bool, i32)> {
-    hazard_of(bank_trigger(region, META_HAZARD, body_box(player, params), &|_| false)?, player)
+pub fn hazard_contact(
+    region: meta::Region,
+    player: &Player,
+    params: Params,
+) -> Option<(u16, bool, i32)> {
+    hazard_of(
+        bank_trigger(region, META_HAZARD, body_box(player, params), &|_| false)?,
+        player,
+    )
 }
 /// `State::checkpoint` without the table, for the tests.
 #[cfg(test)]
-pub fn checkpoint(region: meta::Region, player: &Player, params: Params) -> Option<([i32; 2], i32)> {
-    Some(checkpoint_of(bank_trigger(region, META_CHECKPOINT, body_box(player, params), &|_| false)?))
+pub fn checkpoint(
+    region: meta::Region,
+    player: &Player,
+    params: Params,
+) -> Option<([i32; 2], i32)> {
+    Some(checkpoint_of(bank_trigger(
+        region,
+        META_CHECKPOINT,
+        body_box(player, params),
+        &|_| false,
+    )?))
 }
 
 pub fn contains(bounds: [i32; 4], x: i32, y: i32) -> bool {
@@ -1563,7 +2009,8 @@ pub fn reveal_masks(scene: usize) -> impl Iterator<Item = crate::reveal_masks::R
 /// The authored Idle opacity of one controller, for the frames that render
 /// before a scene is bound. Zero when the bank does not cover it.
 pub fn reveal_initial_opacity(scene: usize, controller: usize) -> u8 {
-    reveal_objects(scene).find(|o| o.state_id() as usize == controller)
+    reveal_objects(scene)
+        .find(|o| o.state_id() as usize == controller)
         .map_or(0, |o| if o.flags() & 2 != 0 { 128 } else { 0 })
 }
 /// The exact trigger test the reveal tick falls through to once its own AABB
@@ -1594,7 +2041,10 @@ fn reveal_objects(scene: usize) -> impl Iterator<Item = meta::Object<'static>> {
         .into_iter()
         .flat_map(|bank| {
             bank.region(0).into_iter().flat_map(|region| {
-                region.objects().flatten().filter(|o| o.kind() == KIND_REVEAL_MASK)
+                region
+                    .objects()
+                    .flatten()
+                    .filter(|o| o.kind() == KIND_REVEAL_MASK)
             })
         })
 }
@@ -1614,7 +2064,10 @@ pub struct GeoEnemy {
 /// every scene-level object.
 pub fn geo_enemy(scene: usize, source: u32) -> Option<GeoEnemy> {
     let bank = admitted_bank().filter(|bank| bank.scene_id() as usize == scene)?;
-    let object = bank.region(0)?.objects().flatten()
+    let object = bank
+        .region(0)?
+        .objects()
+        .flatten()
         .find(|o| o.kind() == KIND_GEO_ENEMY && o.source_id() == source)?;
     let drops = object.state_id();
     Some(GeoEnemy {
@@ -1633,7 +2086,11 @@ pub fn gates(scene: usize) -> impl Iterator<Item = Gate> {
         .into_iter()
         .flat_map(move |bank| {
             bank.region(0).into_iter().flat_map(move |region| {
-                region.objects().flatten().filter(|o| o.kind() == KIND_GATE).map(move |o| gate_of(&o, scene))
+                region
+                    .objects()
+                    .flatten()
+                    .filter(|o| o.kind() == KIND_GATE)
+                    .map(move |o| gate_of(&o, scene))
             })
         })
 }
@@ -1654,13 +2111,26 @@ fn gate_of(o: &meta::Object, scene: usize) -> Gate {
 /// The scan `State::gate` answers from its list, and its fallback for a
 /// scene with more gates than the list holds.
 #[inline(never)]
-pub fn gate(scene: usize, player: &Player, body: [i32; 4], up: bool, recoiling: bool,
-            scene_ticks: u32) -> Option<Gate> {
+pub fn gate(
+    scene: usize,
+    player: &Player,
+    body: [i32; 4],
+    up: bool,
+    recoiling: bool,
+    scene_ticks: u32,
+) -> Option<Gate> {
     gates(scene).find(|g| gate_takes(g, scene, player, body, up, recoiling, scene_ticks))
 }
 /// `TransitionPoint.TryDoTransition` for one gate (see `DOOR` above).
-fn gate_takes(g: &Gate, scene: usize, player: &Player, body: [i32; 4], up: bool, recoiling: bool,
-              scene_ticks: u32) -> bool {
+fn gate_takes(
+    g: &Gate,
+    scene: usize,
+    player: &Player,
+    body: [i32; 4],
+    up: bool,
+    recoiling: bool,
+    scene_ticks: u32,
+) -> bool {
     g.scene == scene
         && !recoiling
         && scene_ticks >= g.delay_ticks as u32
@@ -1686,27 +2156,50 @@ mod broken_edge_tests {
     use super::*;
     #[test]
     fn index_walk_matches_breakable_iteration() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.hkpsx/world-metadata-packed");
-        let mut banks: std::vec::Vec<_> = std::fs::read_dir(&dir).expect("cooked disc banks").flatten()
-            .map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "hkwm")).collect();
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../.hkpsx/world-metadata-packed");
+        let mut banks: std::vec::Vec<_> = std::fs::read_dir(&dir)
+            .expect("cooked disc banks")
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "hkwm"))
+            .collect();
         banks.sort();
         let (mut probes, mut owned) = (0u32, 0u32);
         for path in &banks {
-            let bytes: &'static [u8] = std::boxed::Box::leak(std::fs::read(path).unwrap().into_boxed_slice());
+            let bytes: &'static [u8] =
+                std::boxed::Box::leak(std::fs::read(path).unwrap().into_boxed_slice());
             TEST_BANK.with(|bank| bank.set(bytes));
             let meta = hk_format::WorldMeta::parse(bytes).unwrap();
             for bank_region in meta.regions() {
-                let Some(region) = resident(bank_region.global_id() as usize - 1) else { continue };
-                let top = breakables(bank_region).flat_map(|b| b.edges()).max().map_or(4, |e| e as usize + 2);
+                let Some(region) = resident(bank_region.global_id() as usize - 1) else {
+                    continue;
+                };
+                let top = breakables(bank_region)
+                    .flat_map(|b| b.edges())
+                    .max()
+                    .map_or(4, |e| e as usize + 2);
                 for pattern in 0..3u32 {
                     let broken: std::vec::Vec<u32> = (0..SCENES * BREAKABLES_PER_SCENE / 32)
-                        .map(|i| match pattern { 0 => 0, 1 => u32::MAX, _ => (i as u32).wrapping_mul(0x9e37_79b9) }).collect();
+                        .map(|i| match pattern {
+                            0 => 0,
+                            1 => u32::MAX,
+                            _ => (i as u32).wrapping_mul(0x9e37_79b9),
+                        })
+                        .collect();
                     for index in 0..top {
                         let want = region_breakables(&region).any(|b| {
                             let id = b.id();
-                            broken[id / 32] & (1 << (id % 32)) != 0 && b.edges().any(|e| e as usize == index)
+                            broken[id / 32] & (1 << (id % 32)) != 0
+                                && b.edges().any(|e| e as usize == index)
                         });
-                        assert_eq!(broken_edge(&broken, &region, index), want, "{} region {} edge {index}", path.display(), region.global_id);
+                        assert_eq!(
+                            broken_edge(&broken, &region, index),
+                            want,
+                            "{} region {} edge {index}",
+                            path.display(),
+                            region.global_id
+                        );
                         probes += 1;
                         owned += u32::from(want);
                     }

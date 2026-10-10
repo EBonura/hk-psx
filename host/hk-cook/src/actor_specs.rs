@@ -38,6 +38,9 @@ impl SpecActor<'_> {
     }
 }
 
+/// Per supported actor `source`: its index into the spec list and its placement.
+pub type PlacedActors = Vec<(String, (usize, Placement))>;
+
 /// The words that locate and orient one placement in the scene's metadata bank.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Placement {
@@ -60,8 +63,14 @@ impl Placement {
             ("source_id".into(), Json::Int(self.source_id)),
             ("x".into(), Json::Int(self.x)),
             ("y".into(), Json::Int(self.y)),
-            ("initial_direction".into(), Json::Int(self.initial_direction)),
-            ("random_start_direction".into(), Json::Bool(self.random_start_direction)),
+            (
+                "initial_direction".into(),
+                Json::Int(self.initial_direction),
+            ),
+            (
+                "random_start_direction".into(),
+                Json::Bool(self.random_start_direction),
+            ),
             ("start_alert".into(), Json::Bool(self.start_alert)),
             ("start_right".into(), Json::Bool(self.start_right)),
             ("rotation_quarter".into(), Json::Int(self.rotation_quarter)),
@@ -151,30 +160,57 @@ fn lower(b: bool) -> &'static str {
 
 /// `effects.generated_corpse`.
 pub fn generated_corpse(record: Option<&Json>) -> Result<String> {
-    let Some(record) = record else { return Ok("None".into()) };
-    if ["air_clip", "land_clip", "bounds", "spawn_offset", "bounce_factor"].iter().any(|k| cj(record, k).is_none()) {
+    let Some(record) = record else {
+        return Ok("None".into());
+    };
+    if [
+        "air_clip",
+        "land_clip",
+        "bounds",
+        "spawn_offset",
+        "bounce_factor",
+    ]
+    .iter()
+    .any(|k| cj(record, k).is_none())
+    {
         return err("corpse source missing cooked art/geometry");
     }
     let bounce = match need(record, "bounce_factor")? {
         Json::Int(i) if (0..=65536).contains(i) => *i,
         _ => return err("corpse bounce factor outside Q16 range"),
     };
-    let get_or = |k: &str, default: i64| -> String { cj(record, k).map_or(default.to_string(), py) };
-    let to_int = |k: &str| -> Result<i64> { cj(record, k).map_or(Ok(0), |j| num(j).map(|f| f.trunc() as i64)) };
+    let get_or =
+        |k: &str, default: i64| -> String { cj(record, k).map_or(default.to_string(), py) };
+    let to_int = |k: &str| -> Result<i64> {
+        cj(record, k).map_or(Ok(0), |j| num(j).map(|f| f.trunc() as i64))
+    };
     let fields = [
         ("air_clip", py(need(record, "air_clip")?)),
         ("land_clip", py(need(record, "land_clip")?)),
         ("bounce_factor", bounce.to_string()),
         ("fling_speed", get_or("fling_speed", 15 * 65536)),
         ("gravity", get_or("gravity", 48 * 65536)),
-        ("breaker", lower(cj(record, "breaker").is_some_and(truthy)).to_string()),
+        (
+            "breaker",
+            lower(cj(record, "breaker").is_some_and(truthy)).to_string(),
+        ),
         ("smash_bounces", to_int("smash_bounces")?.to_string()),
-        ("remove_after_land", to_int("remove_after_land")?.to_string()),
+        (
+            "remove_after_land",
+            to_int("remove_after_land")?.to_string(),
+        ),
         ("hold_ticks", to_int("hold_ticks")?.to_string()),
         ("bounds", bracket(list(record, "bounds")?)),
         ("spawn_offset", bracket(list(record, "spawn_offset")?)),
     ];
-    Ok(format!("Some(hk_sim::CorpseSpec {{{}}})", fields.iter().map(|(k, v)| format!("{k}:{v}")).collect::<Vec<_>>().join(",")))
+    Ok(format!(
+        "Some(hk_sim::CorpseSpec {{{}}})",
+        fields
+            .iter()
+            .map(|(k, v)| format!("{k}:{v}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    ))
 }
 
 fn hm_flag(health: &Value, key: &str) -> Result<bool> {
@@ -198,7 +234,11 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
         }
         let (mut start_alert, mut start_right, mut rotation_q16) = (false, false, 0i64);
         let health = &row.health_manager;
-        let control = &row.control.as_ref().ok_or("supported actor without a control")?.1;
+        let control = &row
+            .control
+            .as_ref()
+            .ok_or("supported actor without a control")?
+            .1;
         let kind = match need(control, "kind")? {
             Json::Str(k) => k.as_str(),
             _ => return err("control kind"),
@@ -206,36 +246,78 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
         // A family whose whole hurt surface is a trigger says so.
         let wanted = cj(control, "trigger_body").is_some_and(truthy);
         let bodies: Vec<&Json> = match &row.colliders {
-            Json::List(l) => l.iter().filter(|c| cj(c, "bounds").is_some() && cj(c, "trigger").is_some_and(truthy) == wanted).collect(),
+            Json::List(l) => l
+                .iter()
+                .filter(|c| {
+                    cj(c, "bounds").is_some() && cj(c, "trigger").is_some_and(truthy) == wanted
+                })
+                .collect(),
             _ => Vec::new(),
         };
-        if bodies.is_empty() || bodies.iter().any(|c| cj(c, "bounds") != cj(bodies[0], "bounds")) {
+        if bodies.is_empty()
+            || bodies
+                .iter()
+                .any(|c| cj(c, "bounds") != cj(bodies[0], "bounds"))
+        {
             return err("actor requires unsupported distinct body colliders");
         }
         let invincible = match cj(control, "invincible") {
             Some(j) => truthy(j),
             None => hm_flag(health, "invincible")?,
         };
-        let claims = cj(control, "invincible").is_some_and(truthy) || cj(control, "special_death").is_some_and(truthy);
+        let claims = cj(control, "invincible").is_some_and(truthy)
+            || cj(control, "special_death").is_some_and(truthy);
         let from_direction = cj(control, "invincible_from_direction").map_or(Ok(0.0), num)?;
-        if (hm_flag(health, "hasSpecialDeath")? && !claims) || hm_flag(health, "hasAlternateHitAnimation")? || get(health, "invincibleFromDirection")?.float() != Some(from_direction) {
+        if (hm_flag(health, "hasSpecialDeath")? && !claims)
+            || hm_flag(health, "hasAlternateHitAnimation")?
+            || get(health, "invincibleFromDirection")?.float() != Some(from_direction)
+        {
             return err("actor requires unsupported HealthManager variant");
         }
         let (x, y) = (row.position[0], row.position[1]);
         let box_ = list(bodies[0], "bounds")?;
         let b: Vec<f64> = box_.iter().map(num).collect::<Result<_>>()?;
-        let bounds = [py_round((b[0] - x) * 65536.0), py_round((b[1] - y) * 65536.0), py_round((b[2] - x) * 65536.0), py_round((b[3] - y) * 65536.0)];
-        let clip = |key: &str| -> Result<i64> { actor.clip(key).ok_or_else(|| format!("missing cooked clip {key}")) };
+        let bounds = [
+            py_round((b[0] - x) * 65536.0),
+            py_round((b[1] - y) * 65536.0),
+            py_round((b[2] - x) * 65536.0),
+            py_round((b[3] - y) * 65536.0),
+        ];
+        let clip = |key: &str| -> Result<i64> {
+            actor
+                .clip(key)
+                .ok_or_else(|| format!("missing cooked clip {key}"))
+        };
         let all_present = |keys: &[String]| keys.iter().all(|k| actor.clip(k).is_some());
-        let slot_keys = |slots: &[(&str, &str)]| -> Vec<String> { slots.iter().map(|s| format!("{}_clip", s.0)).collect() };
-        let join_clips = |keys: &[String]| -> Result<String> { Ok(keys.iter().map(|k| clip(k).map(|c| c.to_string())).collect::<Result<Vec<_>>>()?.join(",")) };
+        let slot_keys = |slots: &[(&str, &str)]| -> Vec<String> {
+            slots.iter().map(|s| format!("{}_clip", s.0)).collect()
+        };
+        let join_clips = |keys: &[String]| -> Result<String> {
+            Ok(keys
+                .iter()
+                .map(|k| clip(k).map(|c| c.to_string()))
+                .collect::<Result<Vec<_>>>()?
+                .join(","))
+        };
         let keyed = |keys: &[&str]| -> Vec<String> { keys.iter().map(|s| s.to_string()).collect() };
 
         let mut extra_clips: Vec<String> = Vec::new();
-        let (controller, speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction);
+        let (
+            controller,
+            speed,
+            turn_ticks,
+            turn_cooldown_ticks,
+            initial_direction,
+            random_start_direction,
+        );
         match kind {
             "ZombieSwipeWalker" => {
-                let runner_clips = keyed(&["idle_clip", "anticipate_clip", "lunge_clip", "cooldown_clip"]);
+                let runner_clips = keyed(&[
+                    "idle_clip",
+                    "anticipate_clip",
+                    "lunge_clip",
+                    "cooldown_clip",
+                ]);
                 if !all_present(&runner_clips) {
                     return err(format!("Runner is missing cooked clips: {who}"));
                 }
@@ -256,8 +338,11 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 } else {
                     "hk_sim::runner::Attack::Swipe".to_string()
                 };
-                let pair = |key: &str, i: usize| -> Result<String> { Ok(py(list(p, key)?.get(i).ok_or("short list")?)) };
-                let gravity = py_round(cj(p, "gravity_scale").map_or(Ok(1.0), num)? * 60.0 * 65536.0);
+                let pair = |key: &str, i: usize| -> Result<String> {
+                    Ok(py(list(p, key)?.get(i).ok_or("short list")?))
+                };
+                let gravity =
+                    py_round(cj(p, "gravity_scale").map_or(Ok(1.0), num)? * 60.0 * 65536.0);
                 let params = format!(
                     "hk_sim::runner::Params {{walk_speed:{},lunge_speed:{},walking_wait:[{},{}],paused_wait:[{},{}],attack:{attack_text},gravity:{gravity}}}",
                     pair("walk_velocity_q16", 1)?,
@@ -268,8 +353,14 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                     pair("pause_endpoints_ticks", 1)?
                 );
                 let alert = bracket(list(control, "alert_bounds_q16")?);
-                let named = runner_clips.iter().map(|k| clip(k).map(|c| format!("{k}:{c}"))).collect::<Result<Vec<_>>>()?.join(",");
-                controller = format!("hk_sim::ActorController::Runner {{{named},params:{params},alert:{alert}}}");
+                let named = runner_clips
+                    .iter()
+                    .map(|k| clip(k).map(|c| format!("{k}:{c}")))
+                    .collect::<Result<Vec<_>>>()?
+                    .join(",");
+                controller = format!(
+                    "hk_sim::ActorController::Runner {{{named},params:{params},alert:{alert}}}"
+                );
                 extra_clips = runner_clips;
                 speed = num(need(p, "walk_speed")?)?;
                 turn_ticks = 10;
@@ -281,7 +372,10 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 if actor.clip("stun_clip").is_none() || !actor.has_corpse() {
                     return err(format!("Climber is missing cooked clips or corpse: {who}"));
                 }
-                controller = format!("hk_sim::ActorController::Climber {{stun_clip:{}}}", clip("stun_clip")?);
+                controller = format!(
+                    "hk_sim::ActorController::Climber {{stun_clip:{}}}",
+                    clip("stun_clip")?
+                );
                 speed = 2.0;
                 turn_ticks = 15;
                 turn_cooldown_ticks = 0;
@@ -299,7 +393,11 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 if !all_present(&keys) || !actor.has_corpse() {
                     return err(format!("{kind} is missing cooked clips or corpse: {who}"));
                 }
-                let named = keys.iter().map(|k| clip(k).map(|c| format!("{k}:{c}"))).collect::<Result<Vec<_>>>()?.join(",");
+                let named = keys
+                    .iter()
+                    .map(|k| clip(k).map(|c| format!("{k}:{c}")))
+                    .collect::<Result<Vec<_>>>()?
+                    .join(",");
                 controller = format!("hk_sim::ActorController::{kind} {{{named}}}");
                 extra_clips = keys;
                 speed = 0.0;
@@ -316,14 +414,31 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                     return err(format!("Gruzzer is missing validated corpse: {who}"));
                 }
                 controller = "hk_sim::ActorController::Gruzzer".into();
-                (speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction) = (0.0, 0, 0, -1, false);
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
             }
             "GruzzerReserve" => {
                 if !actor.has_corpse() {
-                    return err(format!("Gruzzer reserve is missing validated corpse: {who}"));
+                    return err(format!(
+                        "Gruzzer reserve is missing validated corpse: {who}"
+                    ));
                 }
-                controller = format!("hk_sim::ActorController::GruzzerReserve {{origin:{}}}", bracket(list(control, "origin")?));
-                (speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction) = (0.0, 0, 0, -1, false);
+                controller = format!(
+                    "hk_sim::ActorController::GruzzerReserve {{origin:{}}}",
+                    bracket(list(control, "origin")?)
+                );
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
             }
             "AcidFlyer" => {
                 if !actor.has_corpse() {
@@ -336,45 +451,92 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                     bracket(list(control, "lead")?),
                     bracket(list(control, "shell")?)
                 );
-                (speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction) = (0.0, 0, 0, -1, false);
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
             }
             "Mosquito" => {
                 let keys = slot_keys(&crate::vengefly::MOSQUITO_SLOTS);
                 if !all_present(&keys) || !actor.has_corpse() {
                     return err(format!("Mosquito is missing cooked clips or corpse: {who}"));
                 }
-                controller = format!("hk_sim::ActorController::Mosquito {{clips:[{}],tile:{}}}", join_clips(&keys)?, bracket(list(control, "tile")?));
+                controller = format!(
+                    "hk_sim::ActorController::Mosquito {{clips:[{}],tile:{}}}",
+                    join_clips(&keys)?,
+                    bracket(list(control, "tile")?)
+                );
                 extra_clips = keys;
-                (speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction) = (0.0, 0, 0, -1, false);
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
             }
             "MossWalker" => {
                 let keys = slot_keys(&crate::climber::MOSS_WALKER_SLOTS);
                 if !all_present(&keys) || !actor.has_corpse() {
-                    return err(format!("Moss Walker is missing cooked clips or corpse: {who}"));
+                    return err(format!(
+                        "Moss Walker is missing cooked clips or corpse: {who}"
+                    ));
                 }
-                controller = format!("hk_sim::ActorController::MossWalker {{clips:[{}]}}", join_clips(&keys)?);
+                controller = format!(
+                    "hk_sim::ActorController::MossWalker {{clips:[{}]}}",
+                    join_clips(&keys)?
+                );
                 extra_clips = keys;
-                (speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction) = (0.0, 0, 0, -1, false);
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
                 // `Roams` rides the placement's start-alert word: a roamer starts awake.
                 start_alert = truthy(need(control, "roams")?);
             }
             "GruzMother" => {
                 controller = "hk_sim::ActorController::GruzMother".into();
-                (speed, turn_ticks, turn_cooldown_ticks, random_start_direction) = (0.0, 0, 0, false);
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    random_start_direction,
+                ) = (0.0, 0, 0, false);
                 initial_direction = int(control, "initial_direction")?;
             }
             "Hatcher" => {
                 if actor.clip("fire_clip").is_none() {
                     return err(format!("Hatcher is missing cooked clips: {who}"));
                 }
-                controller = format!("hk_sim::ActorController::Hatcher {{fire_clip:{}}}", clip("fire_clip")?);
+                controller = format!(
+                    "hk_sim::ActorController::Hatcher {{fire_clip:{}}}",
+                    clip("fire_clip")?
+                );
                 extra_clips = keyed(&["fire_clip"]);
-                (speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction) = (0.0, 0, 0, -1, false);
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
                 start_alert = truthy(need(control, "start_alert")?);
             }
             "HatcherBaby" => {
                 controller = "hk_sim::ActorController::HatcherBaby".into();
-                (speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction) = (0.0, 0, 0, -1, false);
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
             }
             "ZombieShield" => {
                 let slots: Vec<(&str, &str)> = crate::zombie_shield::SLOT_CLIPS.to_vec();
@@ -382,7 +544,11 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 if !all_present(&keys) {
                     return err(format!("Zombie Shield is missing cooked clips: {who}"));
                 }
-                controller = format!("hk_sim::ActorController::ZombieShield {{clips:[{}],attack:{}}}", join_clips(&keys)?, bracket(list(control, "attack_bounds_q16")?));
+                controller = format!(
+                    "hk_sim::ActorController::ZombieShield {{clips:[{}],attack:{}}}",
+                    join_clips(&keys)?,
+                    bracket(list(control, "attack_bounds_q16")?)
+                );
                 extra_clips = keys;
                 speed = num(need(control, "walk_speed")?)?;
                 turn_ticks = int(control, "turn_ticks")?;
@@ -395,9 +561,16 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 let mut keys = slots.clone();
                 keys.extend(keyed(&["spurt_clip", "slam_clip"]));
                 if !all_present(&keys) || !actor.has_corpse() {
-                    return err(format!("Husk Guard is missing cooked clips or corpse: {who}"));
+                    return err(format!(
+                        "Husk Guard is missing cooked clips or corpse: {who}"
+                    ));
                 }
-                controller = format!("hk_sim::ActorController::HuskGuard {{clips:[{}],spurt_clip:{},slam_clip:{}}}", join_clips(&slots)?, clip("spurt_clip")?, clip("slam_clip")?);
+                controller = format!(
+                    "hk_sim::ActorController::HuskGuard {{clips:[{}],spurt_clip:{},slam_clip:{}}}",
+                    join_clips(&slots)?,
+                    clip("spurt_clip")?,
+                    clip("slam_clip")?
+                );
                 extra_clips = keys;
                 speed = 0.0;
                 turn_ticks = 0;
@@ -431,7 +604,10 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 if !all_present(&keys) {
                     return err(format!("Pigeon is missing cooked clips: {who}"));
                 }
-                controller = format!("hk_sim::ActorController::Pigeon {{clips:[{}]}}", join_clips(&keys)?);
+                controller = format!(
+                    "hk_sim::ActorController::Pigeon {{clips:[{}]}}",
+                    join_clips(&keys)?
+                );
                 extra_clips = keys;
                 speed = 0.0;
                 turn_ticks = 0;
@@ -443,20 +619,43 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 if actor.clip("idle_clip").is_none() || !actor.has_corpse() {
                     return err(format!("Egg Sac is missing cooked clips or corpse: {who}"));
                 }
-                controller = format!("hk_sim::ActorController::Static {{idle_clip:{}}}", clip("idle_clip")?);
+                controller = format!(
+                    "hk_sim::ActorController::Static {{idle_clip:{}}}",
+                    clip("idle_clip")?
+                );
                 extra_clips = keyed(&["idle_clip"]);
-                (speed, turn_ticks, turn_cooldown_ticks, initial_direction, random_start_direction) = (0.0, 0, 0, -1, false);
+                (
+                    speed,
+                    turn_ticks,
+                    turn_cooldown_ticks,
+                    initial_direction,
+                    random_start_direction,
+                ) = (0.0, 0, 0, -1, false);
             }
             "FalseKnight" => {
-                let keys = keyed(&["jump_antic_clip", "land_clip", "stun_opened_clip", "attack_clip", "barrel_clip"]);
+                let keys = keyed(&[
+                    "jump_antic_clip",
+                    "land_clip",
+                    "stun_opened_clip",
+                    "attack_clip",
+                    "barrel_clip",
+                ]);
                 if !all_present(&keys) {
                     return err(format!("False Knight is missing cooked clips: {who}"));
                 }
-                let trigger = list(control, "arena_trigger_world")?.iter().map(|v| num(v).map(|f| py_round(f * 65536.0).to_string())).collect::<Result<Vec<_>>>()?.join(",");
+                let trigger = list(control, "arena_trigger_world")?
+                    .iter()
+                    .map(|v| num(v).map(|f| py_round(f * 65536.0).to_string()))
+                    .collect::<Result<Vec<_>>>()?
+                    .join(",");
                 let barrel = need(control, "barrel")?;
                 let spawn = list(barrel, "spawn_world")?;
                 let spawn_y = py_round(num(spawn.get(1).ok_or("spawn_world")?)? * 65536.0);
-                let named = keys.iter().map(|k| clip(k).map(|c| format!("{k}:{c}"))).collect::<Result<Vec<_>>>()?.join(",");
+                let named = keys
+                    .iter()
+                    .map(|k| clip(k).map(|c| format!("{k}:{c}")))
+                    .collect::<Result<Vec<_>>>()?
+                    .join(",");
                 controller = format!("hk_sim::ActorController::FalseKnight {{{named},trigger:[{trigger}],barrel_spawn_y:{spawn_y}}}");
                 extra_clips = keys;
                 speed = 0.0;
@@ -466,7 +665,10 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 random_start_direction = false;
             }
             "Mawlek" => {
-                controller = format!("hk_sim::ActorController::Mawlek {{wake:{}}}", bracket(list(control, "wake_q16")?));
+                controller = format!(
+                    "hk_sim::ActorController::Mawlek {{wake:{}}}",
+                    bracket(list(control, "wake_q16")?)
+                );
                 speed = 0.0;
                 turn_ticks = 0;
                 turn_cooldown_ticks = 0;
@@ -492,11 +694,19 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
             }
         }
         let recoil = row.part("Recoil");
-        let recoil_f = |key: &str| recoil.and_then(|r| r.get(key)).and_then(Value::float).unwrap_or(0.0);
+        let recoil_f = |key: &str| {
+            recoil
+                .and_then(|r| r.get(key))
+                .and_then(Value::float)
+                .unwrap_or(0.0)
+        };
         // A recognizer whose FSM switches DamageHero on later names the value.
         let damage = match cj(control, "contact_damage") {
             Some(j) => py(j),
-            None => row.part("DamageHero").and_then(|d| d.get("damageDealt")).map_or("0".to_string(), |v| py(&crate::music::value_json(v))),
+            None => row
+                .part("DamageHero")
+                .and_then(|d| d.get("damageDealt"))
+                .map_or("0".to_string(), |v| py(&crate::music::value_json(v))),
         };
         // EnemyDreamnailReaction pays SOUL once, unless it sets noSoul or starts suppressed.
         let dream_soul = match row.part("EnemyDreamnailReaction") {
@@ -522,7 +732,8 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
         if placement.initial_direction != -1 && placement.initial_direction != 1 {
             return err(format!("actor initial direction is not a facing: {who}"));
         }
-        let (recoil_speed, recoil_ticks) = crate::runner::recoil_fixed(recoil_f("recoilSpeedBase"), recoil_f("recoilDuration"));
+        let (recoil_speed, recoil_ticks) =
+            crate::runner::recoil_fixed(recoil_f("recoilSpeedBase"), recoil_f("recoilDuration"));
         let fields = [
             ("bounds", format!("[{}]", bounds.iter().map(i64::to_string).collect::<Vec<_>>().join(","))),
             (
@@ -544,20 +755,34 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
             ("recoil_ticks", recoil_ticks.to_string()),
             ("dream_soul", dream_soul.to_string()),
         ];
-        output.push((format!("hk_sim::ActorSpec {{{}}}", fields.iter().map(|(k, v)| format!("{k}:{v}")).collect::<Vec<_>>().join(",")), placement));
+        output.push((
+            format!(
+                "hk_sim::ActorSpec {{{}}}",
+                fields
+                    .iter()
+                    .map(|(k, v)| format!("{k}:{v}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            placement,
+        ));
     }
     Ok(output)
 }
 
 /// `scene_actor_bank(rows)`: one scene's distinct ActorSpec expressions, and per
 /// supported actor `source` its index into that list with its placement.
-pub fn scene_actor_bank(regions: &[Region]) -> Result<(Vec<String>, Vec<(String, (usize, Placement))>)> {
+pub fn scene_actor_bank(regions: &[Region]) -> Result<(Vec<String>, PlacedActors)> {
     let mut order: Vec<&Region> = regions.iter().collect();
     order.sort_by_key(|r| r.chunk_id);
-    let (mut specs, mut placed): (Vec<String>, Vec<(String, (usize, Placement))>) = (Vec::new(), Vec::new());
+    let mut specs: Vec<String> = Vec::new();
+    let mut placed: PlacedActors = Vec::new();
     for region in order {
         let supported: Vec<&SpecActor> = region.actors.iter().filter(|a| a.row.supported).collect();
-        let cooked = supported.iter().filter(|a| a.clip("walk_clip").is_some()).count();
+        let cooked = supported
+            .iter()
+            .filter(|a| a.clip("walk_clip").is_some())
+            .count();
         if cooked == 0 {
             continue;
         }
@@ -590,12 +815,18 @@ pub fn scene_actor_bank(regions: &[Region]) -> Result<(Vec<String>, Vec<(String,
 
 /// `generated_actor_specs(region)`: the ActorSpec expression of each supported actor, in order.
 pub fn generated_actor_specs(actors: &[SpecActor]) -> Result<Vec<String>> {
-    Ok(generated_actor_records(actors)?.into_iter().map(|(text, _)| text).collect())
+    Ok(generated_actor_records(actors)?
+        .into_iter()
+        .map(|(text, _)| text)
+        .collect())
 }
 
 /// `actor_placements(region)`: the placement words of each supported actor, in order.
 pub fn actor_placements(actors: &[SpecActor]) -> Result<Vec<Placement>> {
-    Ok(generated_actor_records(actors)?.into_iter().map(|(_, placement)| placement).collect())
+    Ok(generated_actor_records(actors)?
+        .into_iter()
+        .map(|(_, placement)| placement)
+        .collect())
 }
 
 /// `generated_actor_region(region)`: the inline `&[ActorSpec,...]` form (fixtures and tests).

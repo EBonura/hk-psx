@@ -118,8 +118,19 @@ impl MossWalker {
     /// A floor placement. `roams` is the `Roams` bool: it skips the burial
     /// and walks from the first frame, with a Hide Timer of zero.
     pub fn new(facing: i8, roams: bool, seed: u32) -> Self {
-        let mut m = Self { phase: Phase::Rest, timer: 0, hide_timer: 0, ray_clock: 0, edge: true, wall: false,
-            encountered: false, facing, vx: 0, clip: Clip::Rest, rng: seed };
+        let mut m = Self {
+            phase: Phase::Rest,
+            timer: 0,
+            hide_timer: 0,
+            ray_clock: 0,
+            edge: true,
+            wall: false,
+            encountered: false,
+            facing,
+            vx: 0,
+            clip: Clip::Rest,
+            rng: seed,
+        };
         if roams {
             let mut step = Step::default();
             m.activate(&mut step);
@@ -147,7 +158,10 @@ impl MossWalker {
     /// Buried: invincible with no hit effect, no contact damage, and an
     /// active NonBouncer (a down-slash does not pogo off the tuft).
     pub fn hidden(&self) -> bool {
-        matches!(self.phase, Phase::Rest | Phase::WakePause | Phase::Shake | Phase::Appear | Phase::Bury)
+        matches!(
+            self.phase,
+            Phase::Rest | Phase::WakePause | Phase::Shake | Phase::Appear | Phase::Bury
+        )
     }
     pub fn dead(&self) -> bool {
         self.phase == Phase::Dead
@@ -159,8 +173,9 @@ impl MossWalker {
     pub fn needs(&self) -> Needs {
         Needs {
             wake_range: matches!(self.phase, Phase::Rest)
-                || (matches!(self.phase, Phase::WalkStart | Phase::Walking) && self.hide_timer <= 1),
-            walk_rays: self.phase == Phase::Walking && self.ray_clock % RAY_INTERVAL == 0,
+                || (matches!(self.phase, Phase::WalkStart | Phase::Walking)
+                    && self.hide_timer <= 1),
+            walk_rays: self.phase == Phase::Walking && self.ray_clock.is_multiple_of(RAY_INTERVAL),
             ground_ray: self.phase == Phase::TurnCheck,
         }
     }
@@ -217,7 +232,8 @@ impl MossWalker {
                 self.encountered = true;
                 if senses.wake_range {
                     self.phase = Phase::WakePause;
-                    self.timer = ((self.random() as u64 * (WAKE_PAUSE_TICKS as u64 + 1)) >> 24) as u16;
+                    self.timer =
+                        ((self.random() as u64 * (WAKE_PAUSE_TICKS as u64 + 1)) >> 24) as u16;
                     if self.timer == 0 {
                         self.shake(&mut step);
                     }
@@ -258,7 +274,7 @@ impl MossWalker {
                     }
                     return step;
                 }
-                if self.ray_clock % RAY_INTERVAL == 0 {
+                if self.ray_clock.is_multiple_of(RAY_INTERVAL) {
                     self.edge = senses.edge;
                     self.wall = senses.wall;
                 }
@@ -321,22 +337,40 @@ mod tests {
         }
         panic!("never reached {phase:?}: {:?}", m.phase());
     }
-    const SEEN: Senses = Senses { wake_range: true, edge: true, wall: false, ground: true };
+    const SEEN: Senses = Senses {
+        wake_range: true,
+        edge: true,
+        wall: false,
+        ground: true,
+    };
     #[test]
     fn buried_until_seen_then_shakes_appears_and_walks_left() {
         let mut m = MossWalker::new(-1, false, 9);
         for _ in 0..100 {
-            m.tick(Senses { wake_range: false, ..SEEN });
+            m.tick(Senses {
+                wake_range: false,
+                ..SEEN
+            });
             assert_eq!(m.phase(), Phase::Rest);
             assert!(m.hidden());
         }
         m.tick(SEEN);
         let t = walk_to(&mut m, Phase::Shake, SEEN, WAKE_PAUSE_TICKS as u32 + 2);
         assert!(t <= WAKE_PAUSE_TICKS as u32 + 1);
-        assert_eq!(walk_to(&mut m, Phase::Appear, SEEN, 100), SHAKE_TICKS as u32);
-        assert_eq!(walk_to(&mut m, Phase::WalkStart, SEEN, 100), APPEAR_TICKS as u32);
+        assert_eq!(
+            walk_to(&mut m, Phase::Appear, SEEN, 100),
+            SHAKE_TICKS as u32
+        );
+        assert_eq!(
+            walk_to(&mut m, Phase::WalkStart, SEEN, 100),
+            APPEAR_TICKS as u32
+        );
         assert!(!m.hidden());
-        assert_eq!(m.vx(), -WALK_SPEED, "authored scale 1 faces left and walks left");
+        assert_eq!(
+            m.vx(),
+            -WALK_SPEED,
+            "authored scale 1 faces left and walks left"
+        );
         assert_eq!(m.clip(), Clip::Walk);
     }
     #[test]
@@ -344,18 +378,30 @@ mod tests {
         let mut m = MossWalker::new(-1, true, 1);
         walk_to(&mut m, Phase::Walking, SEEN, 20);
         assert!(m.needs().walk_rays, "Walking casts on enter");
-        let ledge = Senses { edge: false, ..SEEN };
+        let ledge = Senses {
+            edge: false,
+            ..SEEN
+        };
         m.tick(ledge);
         assert_eq!(m.phase(), Phase::TurnCheck);
-        m.tick(Senses { ground: false, ..ledge });
+        m.tick(Senses {
+            ground: false,
+            ..ledge
+        });
         assert_eq!(m.phase(), Phase::CancelFrame);
         m.tick(ledge);
         assert_eq!(m.phase(), Phase::Walking);
         m.tick(ledge);
         assert_eq!(m.phase(), Phase::TurnCheck);
         let step = m.tick(ledge);
-        assert_eq!((m.phase(), step.play, m.vx()), (Phase::Turn, Some(Clip::Turn), 0));
-        assert_eq!(walk_to(&mut m, Phase::WalkStart, SEEN, 40), TURN_TICKS as u32);
+        assert_eq!(
+            (m.phase(), step.play, m.vx()),
+            (Phase::Turn, Some(Clip::Turn), 0)
+        );
+        assert_eq!(
+            walk_to(&mut m, Phase::WalkStart, SEEN, 40),
+            TURN_TICKS as u32
+        );
         assert_eq!((m.facing(), m.vx()), (1, WALK_SPEED));
     }
     #[test]
@@ -363,9 +409,15 @@ mod tests {
         let mut m = MossWalker::new(-1, false, 4);
         m.tick(SEEN);
         walk_to(&mut m, Phase::WalkStart, SEEN, 300);
-        let gone = Senses { wake_range: false, ..SEEN };
+        let gone = Senses {
+            wake_range: false,
+            ..SEEN
+        };
         let t = walk_to(&mut m, Phase::Bury, gone, 400);
-        assert!((HIDE_TICKS[0] as u32 - 1..=HIDE_TICKS[1] as u32).contains(&t), "{t}");
+        assert!(
+            (HIDE_TICKS[0] as u32 - 1..=HIDE_TICKS[1] as u32).contains(&t),
+            "{t}"
+        );
         assert!(m.hidden());
         assert_eq!(walk_to(&mut m, Phase::Rest, gone, 40), BURY_TICKS as u32);
     }
@@ -373,7 +425,10 @@ mod tests {
     fn a_roamer_walks_until_it_has_met_the_hero_and_lost_it() {
         let mut m = MossWalker::new(1, true, 2);
         assert_eq!((m.phase(), m.vx()), (Phase::WalkStart, WALK_SPEED));
-        let gone = Senses { wake_range: false, ..SEEN };
+        let gone = Senses {
+            wake_range: false,
+            ..SEEN
+        };
         for _ in 0..600 {
             m.tick(gone);
             assert!(!m.hidden(), "never met: it keeps walking");

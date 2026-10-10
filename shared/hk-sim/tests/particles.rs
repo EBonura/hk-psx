@@ -1,3 +1,4 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 use hk_sim::ONE;
 const KNIGHT_SCALE: i32 = 60693;
 mod render {
@@ -8,11 +9,13 @@ mod render {
         DRAWS.with(|d| d.borrow_mut().push((id, material)));
     }
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/debris.rs"]
 pub mod debris;
 mod world {
     pub use crate::debris;
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/particles.rs"]
 mod particles;
 use particles::{Bank, EmitterSpec, Pool, Sample, Style, CAPACITY};
@@ -160,7 +163,10 @@ fn overflow_is_exact_counted_and_never_overwrites_existing_particles() {
     // rest as dropped rather than overwriting anything already flying.
     p.spawn_death(0, 12546 + whole as u32, [0; 3], BANK);
     let spilled = whole * death + death - CAPACITY;
-    assert_eq!((p.active(), p.spawned, p.dropped), (CAPACITY, CAPACITY as u32, spilled as u32));
+    assert_eq!(
+        (p.active(), p.spawned, p.dropped),
+        (CAPACITY, CAPACITY as u32, spilled as u32)
+    );
     p.spawn_grass(0, EMITTER, BANK);
     assert_eq!(p.dropped, (spilled + grass) as u32);
     p.clear_scene(1);

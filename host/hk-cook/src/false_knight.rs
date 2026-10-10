@@ -23,15 +23,40 @@ const STAGGERS_TO_DEATH: i64 = 3;
 const HIT_EVASION_SECONDS: f64 = 0.2;
 /// FalseyControl clip inventory: (name, frames, fps, wrapMode, loopStart).
 const CLIPS: [(&str, i64, f64, i64, i64); 34] = [
-    ("Idle", 5, 12.0, 0, 0), ("Jump Antic", 3, 10.0, 2, 0), ("Land", 5, 10.0, 2, 0), ("Jump", 4, 12.0, 0, 0),
-    ("Attack Antic", 6, 12.0, 1, 4), ("Turn", 2, 12.0, 2, 0), ("Jump Attack Up", 5, 12.0, 2, 0), ("Jump Attack Hit 1", 2, 12.0, 2, 0),
-    ("Jump Attack Hit 2", 2, 12.0, 2, 0), ("Jump Attack Hit 3", 2, 12.0, 2, 0), ("Attack", 3, 15.0, 2, 0), ("Attack Recover", 5, 12.0, 2, 0),
-    ("Blank", 1, 30.0, 6, 0), ("Run Antic", 2, 12.0, 2, 0), ("Run", 5, 12.0, 1, 1), ("Stun Roll", 5, 12.0, 1, 2),
-    ("Stun Roll End", 4, 12.0, 2, 0), ("Stun Open", 4, 12.0, 2, 0), ("Stun Hit", 3, 12.0, 2, 0), ("Stun Recover", 6, 12.0, 2, 0),
-    ("Rage", 5, 12.0, 2, 0), ("Death Fall", 3, 12.0, 1, 1), ("Head Idle", 5, 12.0, 0, 0), ("Death Land", 5, 12.0, 2, 0),
-    ("Head Hit", 8, 12.0, 1, 3), ("Death Head 1", 10, 10.0, 2, 0), ("Death Head 2", 4, 10.0, 2, 0), ("Death Spaz", 3, 12.0, 0, 0),
-    ("Body", 1, 30.0, 6, 0), ("Mace Emerge", 16, 12.0, 2, 0), ("Mace Leave", 4, 12.0, 0, 0), ("Stun Opened", 1, 12.0, 2, 0),
-    ("Head Spaz", 3, 12.0, 0, 0), ("Mace Roll", 7, 20.0, 2, 0),
+    ("Idle", 5, 12.0, 0, 0),
+    ("Jump Antic", 3, 10.0, 2, 0),
+    ("Land", 5, 10.0, 2, 0),
+    ("Jump", 4, 12.0, 0, 0),
+    ("Attack Antic", 6, 12.0, 1, 4),
+    ("Turn", 2, 12.0, 2, 0),
+    ("Jump Attack Up", 5, 12.0, 2, 0),
+    ("Jump Attack Hit 1", 2, 12.0, 2, 0),
+    ("Jump Attack Hit 2", 2, 12.0, 2, 0),
+    ("Jump Attack Hit 3", 2, 12.0, 2, 0),
+    ("Attack", 3, 15.0, 2, 0),
+    ("Attack Recover", 5, 12.0, 2, 0),
+    ("Blank", 1, 30.0, 6, 0),
+    ("Run Antic", 2, 12.0, 2, 0),
+    ("Run", 5, 12.0, 1, 1),
+    ("Stun Roll", 5, 12.0, 1, 2),
+    ("Stun Roll End", 4, 12.0, 2, 0),
+    ("Stun Open", 4, 12.0, 2, 0),
+    ("Stun Hit", 3, 12.0, 2, 0),
+    ("Stun Recover", 6, 12.0, 2, 0),
+    ("Rage", 5, 12.0, 2, 0),
+    ("Death Fall", 3, 12.0, 1, 1),
+    ("Head Idle", 5, 12.0, 0, 0),
+    ("Death Land", 5, 12.0, 2, 0),
+    ("Head Hit", 8, 12.0, 1, 3),
+    ("Death Head 1", 10, 10.0, 2, 0),
+    ("Death Head 2", 4, 10.0, 2, 0),
+    ("Death Spaz", 3, 12.0, 0, 0),
+    ("Body", 1, 30.0, 6, 0),
+    ("Mace Emerge", 16, 12.0, 2, 0),
+    ("Mace Leave", 4, 12.0, 0, 0),
+    ("Stun Opened", 1, 12.0, 2, 0),
+    ("Head Spaz", 3, 12.0, 0, 0),
+    ("Mace Roll", 7, 20.0, 2, 0),
 ];
 const BODY_SCALE: f64 = 1.2999999523162842;
 /// Local BoxCollider2D size/offset, before the 1.3 transform scale.
@@ -48,11 +73,29 @@ const BARREL_HAZARD: i64 = 1;
 const BARREL_RANDOM_SCALE: [f64; 2] = [0.800000011920929, 1.0];
 const FALL_BARREL_SHA256: &str = "25064c55a01b08378bddcb4fe51b2dfd76ec74302e06ea443f21c224e5c7dad4";
 /// (art slot, clip).
-const ART_BINDINGS: [(&str, &str); 6] = [("walk", "Idle"), ("turn", "Turn"), ("jump_antic", "Jump Antic"), ("land", "Land"), ("stun_opened", "Stun Opened"), ("attack", "Attack")];
-const FALSEY_CONTROL_SHA256: &str = "21599984415d020af3289824aa6a0d33ab51c9f2c24278e7f34ed72506328f57";
-const CHECK_HEALTH_SHA256: &str = "4f68e313367ba807b5659ab8b8e6e3a623a3f662acfa2b7c7c95587ced8751bc";
+const ART_BINDINGS: [(&str, &str); 6] = [
+    ("walk", "Idle"),
+    ("turn", "Turn"),
+    ("jump_antic", "Jump Antic"),
+    ("land", "Land"),
+    ("stun_opened", "Stun Opened"),
+    ("attack", "Attack"),
+];
+const FALSEY_CONTROL_SHA256: &str =
+    "21599984415d020af3289824aa6a0d33ab51c9f2c24278e7f34ed72506328f57";
+const CHECK_HEALTH_SHA256: &str =
+    "4f68e313367ba807b5659ab8b8e6e3a623a3f662acfa2b7c7c95587ced8751bc";
 
-const SCALAR_PARAM_TABLES: [&str; 8] = ["fsmFloatParams", "fsmIntParams", "fsmBoolParams", "fsmStringParams", "fsmVector2Params", "fsmVector3Params", "fsmColorParams", "fsmRectParams"];
+const SCALAR_PARAM_TABLES: [&str; 8] = [
+    "fsmFloatParams",
+    "fsmIntParams",
+    "fsmBoolParams",
+    "fsmStringParams",
+    "fsmVector2Params",
+    "fsmVector3Params",
+    "fsmColorParams",
+    "fsmRectParams",
+];
 
 /// `_scalar_param`: a typed PlayMaker parameter without its per-scene object reference.
 pub(crate) fn scalar_param(v: &Value) -> Json {
@@ -81,15 +124,23 @@ pub fn fsm_digest(fsm: &Value, ignore: &[&str]) -> Result<String> {
         for (group, items) in groups {
             let Some(items) = items.list() else { continue };
             for v in items {
-                let (Some(name), Some(value)) = (v.get("name"), v.get("value")) else { continue };
+                let (Some(name), Some(value)) = (v.get("name"), v.get("value")) else {
+                    continue;
+                };
                 if !v.is_map() {
                     continue;
                 }
                 let name = name.str().unwrap_or_default();
-                if ignore.contains(&name.as_str()) || (value.is_map() && value.get("m_PathID").is_some()) {
+                if ignore.contains(&name.as_str())
+                    || (value.is_map() && value.get("m_PathID").is_some())
+                {
                     continue;
                 }
-                variables.push((group.to_string(), name, dumps_sorted_compact(&value_json(value))));
+                variables.push((
+                    group.to_string(),
+                    name,
+                    dumps_sorted_compact(&value_json(value)),
+                ));
             }
         }
     }
@@ -98,7 +149,12 @@ pub fn fsm_digest(fsm: &Value, ignore: &[&str]) -> Result<String> {
         list.and_then(Value::list)
             .unwrap_or(&[])
             .iter()
-            .map(|t| Ok(pair(get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(), get(t, "toState")?.str().unwrap_or_default())))
+            .map(|t| {
+                Ok(pair(
+                    get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(),
+                    get(t, "toState")?.str().unwrap_or_default(),
+                ))
+            })
             .collect()
     };
     let mut state_rows = Vec::new();
@@ -106,23 +162,55 @@ pub fn fsm_digest(fsm: &Value, ignore: &[&str]) -> Result<String> {
         let data = get(st, "actionData")?;
         let names = get(data, "actionNames")?.list().unwrap_or(&[]);
         let enabled = get(data, "actionEnabled")?.list().unwrap_or(&[]);
-        let actions: Vec<Json> = names.iter().enumerate().map(|(i, n)| Json::List(vec![Json::Str(n.str().unwrap_or_default()), Json::Int(enabled.get(i).map_or(0, |e| e.int().unwrap_or(0)))])).collect();
+        let actions: Vec<Json> = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                Json::List(vec![
+                    Json::Str(n.str().unwrap_or_default()),
+                    Json::Int(enabled.get(i).map_or(0, |e| e.int().unwrap_or(0))),
+                ])
+            })
+            .collect();
         let list = |k: &str| get(data, k).map(|v| v.list().unwrap_or(&[]).to_vec());
-        let (pn, pt, ps) = (list("paramName")?, list("paramDataType")?, list("paramByteDataSize")?);
-        let params: Vec<Json> = pn.iter().zip(&pt).zip(&ps).map(|((n, t), s)| Json::List(vec![value_json(n), value_json(t), value_json(s)])).collect();
+        let (pn, pt, ps) = (
+            list("paramName")?,
+            list("paramDataType")?,
+            list("paramByteDataSize")?,
+        );
+        let params: Vec<Json> = pn
+            .iter()
+            .zip(&pt)
+            .zip(&ps)
+            .map(|((n, t), s)| Json::List(vec![value_json(n), value_json(t), value_json(s)]))
+            .collect();
         let bytes: String = match get(data, "byteData")? {
             Value::Bytes(b) => b.iter().map(|x| format!("{x:02x}")).collect(),
-            other => other.list().unwrap_or(&[]).iter().map(|x| format!("{:02x}", x.int().unwrap_or(0) as u8)).collect(),
+            other => other
+                .list()
+                .unwrap_or(&[])
+                .iter()
+                .map(|x| format!("{:02x}", x.int().unwrap_or(0) as u8))
+                .collect(),
         };
         let mut typed = Vec::new();
         for table in SCALAR_PARAM_TABLES {
             if let Some(t) = data.get(table) {
-                typed.push((table.to_string(), Json::List(t.list().unwrap_or(&[]).iter().map(scalar_param).collect())));
+                typed.push((
+                    table.to_string(),
+                    Json::List(t.list().unwrap_or(&[]).iter().map(scalar_param).collect()),
+                ));
             }
         }
         state_rows.push(Json::Obj(vec![
-            ("name".into(), Json::Str(get(st, "name")?.str().unwrap_or_default())),
-            ("transitions".into(), Json::List(transitions(st.get("transitions"))?)),
+            (
+                "name".into(),
+                Json::Str(get(st, "name")?.str().unwrap_or_default()),
+            ),
+            (
+                "transitions".into(),
+                Json::List(transitions(st.get("transitions"))?),
+            ),
             ("actions".into(), Json::List(actions)),
             ("starts".into(), value_json(get(data, "actionStartIndex")?)),
             ("params".into(), Json::List(params)),
@@ -131,10 +219,27 @@ pub fn fsm_digest(fsm: &Value, ignore: &[&str]) -> Result<String> {
         ]));
     }
     let summary = Json::Obj(vec![
-        ("name".into(), Json::Str(get(fsm, "name")?.str().unwrap_or_default())),
-        ("start".into(), Json::Str(get(fsm, "startState")?.str().unwrap_or_default())),
-        ("variables".into(), Json::List(variables.into_iter().map(|(g, n, v)| Json::List(vec![Json::Str(g), Json::Str(n), Json::Str(v)])).collect())),
-        ("globals".into(), Json::List(transitions(fsm.get("globalTransitions"))?)),
+        (
+            "name".into(),
+            Json::Str(get(fsm, "name")?.str().unwrap_or_default()),
+        ),
+        (
+            "start".into(),
+            Json::Str(get(fsm, "startState")?.str().unwrap_or_default()),
+        ),
+        (
+            "variables".into(),
+            Json::List(
+                variables
+                    .into_iter()
+                    .map(|(g, n, v)| Json::List(vec![Json::Str(g), Json::Str(n), Json::Str(v)]))
+                    .collect(),
+            ),
+        ),
+        (
+            "globals".into(),
+            Json::List(transitions(fsm.get("globalTransitions"))?),
+        ),
         ("states".into(), Json::List(state_rows)),
     ]);
     Ok(sha(dumps_sorted_compact(&summary).as_bytes()))
@@ -145,7 +250,11 @@ pub(crate) fn fsms<'a>(sc: &'a Scene, gid: i64) -> Vec<(String, &'a Value)> {
     let mut out: Vec<(String, &Value)> = Vec::new();
     for (_, kind, data) in component_records(sc, gid) {
         if kind == "PlayMakerFSM" {
-            let name = data.get("fsm").and_then(|f| f.get("name")).and_then(Value::str).unwrap_or_default();
+            let name = data
+                .get("fsm")
+                .and_then(|f| f.get("name"))
+                .and_then(Value::str)
+                .unwrap_or_default();
             match out.iter_mut().find(|(k, _)| *k == name) {
                 Some(slot) => slot.1 = data,
                 None => out.push((name, data)),
@@ -158,14 +267,31 @@ pub(crate) fn fsms<'a>(sc: &'a Scene, gid: i64) -> Vec<(String, &'a Value)> {
 /// `_box`: the game object's `index`th BoxCollider2D as ((w, h), (ox, oy)).
 fn box_of(sc: &Scene, gid: i64, index: usize) -> Result<[[f64; 2]; 2]> {
     let records = component_records(sc, gid);
-    let boxes: Vec<&Value> = records.iter().filter(|r| r.1 == "BoxCollider2D").map(|r| r.2).collect();
-    let b = boxes.get(index).ok_or_else(|| format!("missing BoxCollider2D on game object {gid}"))?;
+    let boxes: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "BoxCollider2D")
+        .map(|r| r.2)
+        .collect();
+    let b = boxes
+        .get(index)
+        .ok_or_else(|| format!("missing BoxCollider2D on game object {gid}"))?;
     Ok([xy(b, "m_Size")?, xy(b, "m_Offset")?])
 }
 
 /// `_named`: the one game object of the scene with this name.
 pub(crate) fn named(sc: &Scene, name: &str) -> Result<i64> {
-    let mut ids: Vec<i64> = sc.gos.keys().copied().filter(|g| sc.go(*g).and_then(|go| go.get("m_Name")).and_then(Value::str).as_deref() == Some(name)).collect();
+    let mut ids: Vec<i64> = sc
+        .gos
+        .keys()
+        .copied()
+        .filter(|g| {
+            sc.go(*g)
+                .and_then(|go| go.get("m_Name"))
+                .and_then(Value::str)
+                .as_deref()
+                == Some(name)
+        })
+        .collect();
     ids.sort();
     if ids.len() != 1 {
         return err(format!("expected exactly one {name:?} in {}", sc.base.name));
@@ -180,24 +306,45 @@ fn near_all(a: &[[f64; 2]; 2], b: &[[f64; 2]; 2]) -> bool {
 /// `arena_trigger_world_box`: the Battle Scene trigger as a world box.
 fn arena_trigger_world_box(sc: &Scene) -> Result<Vec<f64>> {
     let battle = named(sc, "Battle Scene")?;
-    let m = u(sc.world(*sc.go_transform.get(&battle).ok_or("Battle Scene has no transform")?))?;
-    if !near(Some(&Value::F64(m[0][0])), 1.0) || !near(Some(&Value::F64(m[1][1])), 1.0) || m[0][1].abs() > 1e-6 || m[1][0].abs() > 1e-6 {
+    let m = u(sc.world(
+        *sc.go_transform
+            .get(&battle)
+            .ok_or("Battle Scene has no transform")?,
+    ))?;
+    if !near(Some(&Value::F64(m[0][0])), 1.0)
+        || !near(Some(&Value::F64(m[1][1])), 1.0)
+        || m[0][1].abs() > 1e-6
+        || m[1][0].abs() > 1e-6
+    {
         return err("arena trigger carries an unsupported rotation or scale");
     }
     let [[w, h], [ox, oy]] = box_of(sc, battle, 0)?;
     let p = u(sc.point(battle, 0.0, 0.0, 0.0))?;
     let (x, y) = (p[0], p[1]);
-    Ok(vec![x + ox - w / 2.0, y + oy - h / 2.0, x + ox + w / 2.0, y + oy + h / 2.0])
+    Ok(vec![
+        x + ox - w / 2.0,
+        y + oy - h / 2.0,
+        x + ox + w / 2.0,
+        y + oy + h / 2.0,
+    ])
 }
 
 fn pair_json(a: &[[f64; 2]; 2]) -> Json {
-    Json::List(a.iter().map(|p| Json::List(p.iter().map(|&f| Json::Float(f)).collect())).collect())
+    Json::List(
+        a.iter()
+            .map(|p| Json::List(p.iter().map(|&f| Json::Float(f)).collect()))
+            .collect(),
+    )
 }
 
 /// `clip_contract`: the shared tk2d library behind the body, Hitter, Head and Death Head.
 fn clip_contract(sc: &Scene, source: &Source, gid: i64) -> Result<(String, Vec<[i64; 4]>)> {
     let records = component_records(sc, gid);
-    let animators: Vec<&Value> = records.iter().filter(|r| r.1 == "tk2dSpriteAnimator").map(|r| r.2).collect();
+    let animators: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "tk2dSpriteAnimator")
+        .map(|r| r.2)
+        .collect();
     if animators.len() != 1 {
         return err("expected one tk2dSpriteAnimator on the False Knight");
     }
@@ -227,25 +374,37 @@ fn clip_contract(sc: &Scene, source: &Source, gid: i64) -> Result<(String, Vec<[
 }
 
 fn unit(keys: &[(&str, f64)]) -> Value {
-    Value::Map(keys.iter().map(|(k, v)| ((*k).into(), Value::F64(*v))).collect())
+    Value::Map(
+        keys.iter()
+            .map(|(k, v)| ((*k).into(), Value::F64(*v)))
+            .collect(),
+    )
 }
 
 /// `barrel_source`: `FK Barrel Summon`'s pooled `Falling Barrel`, or a refusal.
 fn barrel_source(sc: &Scene, source: &Source) -> Result<Json> {
     let summoner = named(sc, "FK Barrel Summon")?;
     let records = component_records(sc, summoner);
-    let pools: Vec<&Value> = records.iter().filter(|r| r.1 == "PersonalObjectPool").map(|r| r.2).collect();
+    let pools: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "PersonalObjectPool")
+        .map(|r| r.2)
+        .collect();
     if pools.len() != 1 || get(pools[0], "startupPool")?.list().map(<[Value]>::len) != Some(1) {
         return err("FK Barrel Summon no longer holds exactly one pooled prefab");
     }
     let entry = &get(pools[0], "startupPool")?.list().unwrap()[0];
-    if get(entry, "size")?.int() != Some(BARREL_POOL) || get(entry, "initialiseSpawnedObjects")?.truthy() {
+    if get(entry, "size")?.int() != Some(BARREL_POOL)
+        || get(entry, "initialiseSpawnedObjects")?.truthy()
+    {
         return err("barrel pool reserve changed");
     }
     let prefab = u(sc.deref(get(entry, "prefab")?))?;
     let file = prefab.file.clone();
     let go = u(source.read(&prefab))?;
-    if get(&go, "m_Name")?.str().as_deref() != Some(BARREL_PREFAB) || get(&go, "m_Layer")?.int() != Some(BARREL_LAYER) {
+    if get(&go, "m_Name")?.str().as_deref() != Some(BARREL_PREFAB)
+        || get(&go, "m_Layer")?.int() != Some(BARREL_LAYER)
+    {
         return err("unsupported barrel prefab identity");
     }
     let mut parts: Vec<(String, Value)> = Vec::new();
@@ -268,11 +427,27 @@ fn barrel_source(sc: &Scene, source: &Source) -> Result<Json> {
             parts.push((kind, tree));
         }
     }
-    let part = |k: &str| -> Result<&Value> { parts.iter().find(|p| p.0 == k).map(|p| &p.1).ok_or_else(|| format!("barrel prefab is missing a {k}")) };
-    for kind in ["Transform", "BoxCollider2D", "Rigidbody2D", "SpriteRenderer", "DamageHero", "RandomScale"] {
+    let part = |k: &str| -> Result<&Value> {
+        parts
+            .iter()
+            .find(|p| p.0 == k)
+            .map(|p| &p.1)
+            .ok_or_else(|| format!("barrel prefab is missing a {k}"))
+    };
+    for kind in [
+        "Transform",
+        "BoxCollider2D",
+        "Rigidbody2D",
+        "SpriteRenderer",
+        "DamageHero",
+        "RandomScale",
+    ] {
         part(kind)?;
     }
-    let control = fsm_parts.iter().find(|p| p.0 == "Fall Barrel Control").map(|p| &p.1);
+    let control = fsm_parts
+        .iter()
+        .find(|p| p.0 == "Fall Barrel Control")
+        .map(|p| &p.1);
     let control = match control {
         Some(c) if get(c, "m_Enabled")?.truthy() => c,
         _ => return err("barrel prefab has no enabled Fall Barrel Control"),
@@ -282,7 +457,14 @@ fn barrel_source(sc: &Scene, source: &Source) -> Result<Json> {
         return err(format!("unverified Fall Barrel Control variant: {digest}"));
     }
     let transform = part("Transform")?;
-    if !get(transform, "m_LocalScale")?.py_eq(&unit(&[("x", 1.0), ("y", 1.0), ("z", 1.0)])) || !get(transform, "m_LocalRotation")?.py_eq(&unit(&[("x", 0.0), ("y", 0.0), ("z", 0.0), ("w", 1.0)])) {
+    if !get(transform, "m_LocalScale")?.py_eq(&unit(&[("x", 1.0), ("y", 1.0), ("z", 1.0)]))
+        || !get(transform, "m_LocalRotation")?.py_eq(&unit(&[
+            ("x", 0.0),
+            ("y", 0.0),
+            ("z", 0.0),
+            ("w", 1.0),
+        ]))
+    {
         return err("unsupported barrel prefab transform");
     }
     let bx = part("BoxCollider2D")?;
@@ -293,16 +475,25 @@ fn barrel_source(sc: &Scene, source: &Source) -> Result<Json> {
         return err("unsupported barrel collider");
     }
     let body = part("Rigidbody2D")?;
-    if get(body, "m_BodyType")?.int() != Some(0) || get(body, "m_LinearDamping")?.float() != Some(0.0) || !near(body.get("m_GravityScale"), BARREL_GRAVITY_SCALE) {
+    if get(body, "m_BodyType")?.int() != Some(0)
+        || get(body, "m_LinearDamping")?.float() != Some(0.0)
+        || !near(body.get("m_GravityScale"), BARREL_GRAVITY_SCALE)
+    {
         return err("unsupported barrel body");
     }
     let hurt = part("DamageHero")?;
-    if get(hurt, "damageDealt")?.int() != Some(BARREL_DAMAGE) || get(hurt, "hazardType")?.int() != Some(BARREL_HAZARD) || get(hurt, "shadowDashHazard")?.truthy() {
+    if get(hurt, "damageDealt")?.int() != Some(BARREL_DAMAGE)
+        || get(hurt, "hazardType")?.int() != Some(BARREL_HAZARD)
+        || get(hurt, "shadowDashHazard")?.truthy()
+    {
         return err("unsupported barrel DamageHero");
     }
     let render = part("SpriteRenderer")?;
     if !get(render, "m_Enabled")?.truthy()
-        || get(get(render, "m_Sprite")?, "m_PathID")?.int().unwrap_or(0) == 0
+        || get(get(render, "m_Sprite")?, "m_PathID")?
+            .int()
+            .unwrap_or(0)
+            == 0
         || get(render, "m_FlipX")?.truthy()
         || get(render, "m_FlipY")?.truthy()
         || !get(render, "m_Color")?.py_eq(&unit(&[("r", 1.0), ("g", 1.0), ("b", 1.0), ("a", 1.0)]))
@@ -310,18 +501,33 @@ fn barrel_source(sc: &Scene, source: &Source) -> Result<Json> {
         return err("unsupported barrel SpriteRenderer");
     }
     let scaler = part("RandomScale")?;
-    if !near(scaler.get("minScale"), BARREL_RANDOM_SCALE[0]) || !near(scaler.get("maxScale"), BARREL_RANDOM_SCALE[1]) {
+    if !near(scaler.get("minScale"), BARREL_RANDOM_SCALE[0])
+        || !near(scaler.get("maxScale"), BARREL_RANDOM_SCALE[1])
+    {
         return err("barrel RandomScale range changed");
     }
     // `Determine Spawns` carries a disabled RandomInt 6..8: the live count is the
     // one FalseyControl writes into `Spawns` before it sends SUMMON.
     let all = fsms(sc, summoner);
-    let summon = get(all.iter().find(|f| f.0 == "summon").ok_or("no summon FSM")?.1, "fsm")?;
+    let summon = get(
+        all.iter()
+            .find(|f| f.0 == "summon")
+            .ok_or("no summon FSM")?
+            .1,
+        "fsm",
+    )?;
     let sts = states(summon)?;
-    let data = get(state(&sts, "Determine Spawns").ok_or("no Determine Spawns state")?, "actionData")?;
+    let data = get(
+        state(&sts, "Determine Spawns").ok_or("no Determine Spawns state")?,
+        "actionData",
+    )?;
     let names = get(data, "actionNames")?.list().unwrap_or(&[]);
     let enabled = get(data, "actionEnabled")?.list().unwrap_or(&[]);
-    if names.iter().zip(enabled).any(|(n, e)| n.str().is_some_and(|n| n.ends_with("RandomInt")) && e.truthy()) {
+    if names
+        .iter()
+        .zip(enabled)
+        .any(|(n, e)| n.str().is_some_and(|n| n.ends_with("RandomInt")) && e.truthy())
+    {
         return err("summon now chooses its own spawn count");
     }
     let sprite = u(source.deref(&file, get(render, "m_Sprite")?))?;
@@ -364,10 +570,16 @@ pub fn recognize_placement(sc: &Scene, source: &Source, gid: i64, health: &Value
     let mut names: Vec<&str> = all.iter().map(|f| f.0.as_str()).collect();
     names.sort();
     if names != ["Check Health", "FalseyControl"] {
-        return err(format!("unsupported False Knight FSM set: {}", names.join(", ")));
+        return err(format!(
+            "unsupported False Knight FSM set: {}",
+            names.join(", ")
+        ));
     }
     let mut digests = Vec::new();
-    for (name, expected) in [("FalseyControl", FALSEY_CONTROL_SHA256), ("Check Health", CHECK_HEALTH_SHA256)] {
+    for (name, expected) in [
+        ("FalseyControl", FALSEY_CONTROL_SHA256),
+        ("Check Health", CHECK_HEALTH_SHA256),
+    ] {
         let data = all.iter().find(|f| f.0 == name).unwrap().1;
         if !get(data, "m_Enabled")?.truthy() {
             return err(format!("disabled {name:?} FSM"));
@@ -378,18 +590,30 @@ pub fn recognize_placement(sc: &Scene, source: &Source, gid: i64, health: &Value
         }
         digests.push((name.to_string(), Json::Str(digest)));
     }
-    let control = get(all.iter().find(|f| f.0 == "FalseyControl").unwrap().1, "fsm")?;
+    let control = get(
+        all.iter().find(|f| f.0 == "FalseyControl").unwrap().1,
+        "fsm",
+    )?;
     if get(control, "startState")?.str().as_deref() != Some("State 4") {
         return err("False Knight starts in an unsupported state");
     }
-    if get(health, "hp")?.int() != Some(BODY_HEALTH) || !near(health.get("invulnerableTime"), BODY_INVULNERABLE_TIME) || !get(health, "hasSpecialDeath")?.truthy() || get(health, "invincible")?.truthy() || get(health, "damageOverride")?.truthy() {
+    if get(health, "hp")?.int() != Some(BODY_HEALTH)
+        || !near(health.get("invulnerableTime"), BODY_INVULNERABLE_TIME)
+        || !get(health, "hasSpecialDeath")?.truthy()
+        || get(health, "invincible")?.truthy()
+        || get(health, "damageOverride")?.truthy()
+    {
         return err("unsupported False Knight HealthManager variant");
     }
     if !near_all(&box_of(sc, gid, 0)?, &BODY_BOX) {
         return err("unsupported False Knight body collider");
     }
     let m = u(sc.world(*sc.go_transform.get(&gid).ok_or("actor has no transform")?))?;
-    if !near(Some(&Value::F64(m[0][0].abs())), BODY_SCALE) || !near(Some(&Value::F64(m[1][1])), BODY_SCALE) || m[0][1].abs() > 1e-6 || m[1][0].abs() > 1e-6 {
+    if !near(Some(&Value::F64(m[0][0].abs())), BODY_SCALE)
+        || !near(Some(&Value::F64(m[1][1])), BODY_SCALE)
+        || m[0][1].abs() > 1e-6
+        || m[1][0].abs() > 1e-6
+    {
         return err("unsupported False Knight rotation or scale");
     }
     let (library_source, _rows) = clip_contract(sc, source, gid)?;

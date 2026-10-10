@@ -167,7 +167,9 @@ pub struct Save {
     pub version: u8,
 }
 fn fnv(bytes: &[u8]) -> u32 {
-    bytes.iter().fold(0x811c9dc5u32, |h, &b| (h ^ b as u32).wrapping_mul(16777619))
+    bytes
+        .iter()
+        .fold(0x811c9dc5u32, |h, &b| (h ^ b as u32).wrapping_mul(16777619))
 }
 impl Save {
     /// Write the record and `items` (sorted `persist` words) into `out`, and
@@ -205,7 +207,8 @@ impl Save {
         out[after + 4..after + 8].copy_from_slice(&self.shop_slots.to_le_bytes());
         out[after + 8..after + 8 + SHOP_COUNTERS].copy_from_slice(&self.shop_counters);
         out[HKS4_FIELDS..HKS4_FIELDS + 4].copy_from_slice(&self.player_bools.to_le_bytes());
-        out[HKS4_FIELDS + 4..HKS4_FIELDS + 4 + persist::LEVELS].copy_from_slice(&self.player_levels);
+        out[HKS4_FIELDS + 4..HKS4_FIELDS + 4 + persist::LEVELS]
+            .copy_from_slice(&self.player_levels);
         out[ITEMS_AT - 2..ITEMS_AT].copy_from_slice(&(items.len() as u16).to_le_bytes());
         for (i, item) in items.iter().enumerate() {
             out[ITEMS_AT + i * 4..ITEMS_AT + i * 4 + 4].copy_from_slice(&item.to_le_bytes());
@@ -216,7 +219,7 @@ impl Save {
     }
     /// The record and its SceneData item bytes (four per item, validated and
     /// sorted), or None. An HKS4 record decodes with an empty world.
-    #[cfg_attr(not(test),optimize(size))]
+    #[cfg_attr(not(test), optimize(size))]
     pub fn decode(bytes: &[u8]) -> Option<(Self, &[u8])> {
         let (len, version) = if bytes.get(0..4)? == MAGIC_HKS4 {
             (LEN_HKS4, 4)
@@ -229,12 +232,18 @@ impl Save {
         } else {
             return None;
         };
-        if bytes.len() < len || fnv(&bytes[..len - 4]) != u32::from_le_bytes(bytes[len - 4..len].try_into().ok()?) {
+        if bytes.len() < len
+            || fnv(&bytes[..len - 4]) != u32::from_le_bytes(bytes[len - 4..len].try_into().ok()?)
+        {
             return None;
         }
         let word = |at: usize| i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
         let long = |at: usize| u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
-        let items: &[u8] = if version == 5 { &bytes[ITEMS_AT..len - 4] } else { &[] };
+        let items: &[u8] = if version == 5 {
+            &bytes[ITEMS_AT..len - 4]
+        } else {
+            &[]
+        };
         // A valid checksum over a list no build could have written is still
         // refused: unknown kinds, and keys out of order or repeated.
         let mut last = None;
@@ -245,42 +254,50 @@ impl Save {
             }
             last = Some(item >> 8);
         }
-        Some((Self {
-            scene: word(4) as u32,
-            seat: [word(8), word(12)],
-            facing: word(16).signum().max(-1),
-            region: word(20) as u32,
-            geo: word(24) as u32,
-            door_hits: bytes[28],
-            shade: crate::shade::Record {
-                present: bytes[29] != 0,
-                hp: u16::from_le_bytes([bytes[30], bytes[31]]),
-                geo_pool: word(32) as u32,
-                scene: word(36) as u32,
-                position: [word(40), word(44)],
+        Some((
+            Self {
+                scene: word(4) as u32,
+                seat: [word(8), word(12)],
+                facing: word(16).signum().max(-1),
+                region: word(20) as u32,
+                geo: word(24) as u32,
+                door_hits: bytes[28],
+                shade: crate::shade::Record {
+                    present: bytes[29] != 0,
+                    hp: u16::from_le_bytes([bytes[30], bytes[31]]),
+                    geo_pool: word(32) as u32,
+                    scene: word(36) as u32,
+                    position: [word(40), word(44)],
+                },
+                sequence: word(48) as u32,
+                charms_owned: long(52),
+                charms_equipped: long(60),
+                charm_notches: bytes[68],
+                can_overcharm: bytes[69] != 0,
+                npc_conversations: u32::from_le_bytes(bytes[70..74].try_into().unwrap()),
+                script_fields: core::array::from_fn(|slot| word(74 + slot * 4)),
+                script_field_fnv: word(74 + SCRIPT_FIELD_SLOTS * 4) as u32,
+                shop_slots: word(78 + SCRIPT_FIELD_SLOTS * 4) as u32,
+                shop_counters: core::array::from_fn(|i| bytes[82 + SCRIPT_FIELD_SLOTS * 4 + i]),
+                player_bools: if version == 5 {
+                    word(HKS4_FIELDS) as u32
+                } else {
+                    0
+                },
+                player_levels: if version == 5 {
+                    core::array::from_fn(|i| bytes[HKS4_FIELDS + 4 + i])
+                } else {
+                    [0; persist::LEVELS]
+                },
+                version,
             },
-            sequence: word(48) as u32,
-            charms_owned: long(52),
-            charms_equipped: long(60),
-            charm_notches: bytes[68],
-            can_overcharm: bytes[69] != 0,
-            npc_conversations: u32::from_le_bytes(bytes[70..74].try_into().unwrap()),
-            script_fields: core::array::from_fn(|slot| word(74 + slot * 4)),
-            script_field_fnv: word(74 + SCRIPT_FIELD_SLOTS * 4) as u32,
-            shop_slots: word(78 + SCRIPT_FIELD_SLOTS * 4) as u32,
-            shop_counters: core::array::from_fn(|i| bytes[82 + SCRIPT_FIELD_SLOTS * 4 + i]),
-            player_bools: if version == 5 { word(HKS4_FIELDS) as u32 } else { 0 },
-            player_levels: if version == 5 {
-                core::array::from_fn(|i| bytes[HKS4_FIELDS + 4 + i])
-            } else {
-                [0; persist::LEVELS]
-            },
-            version,
-        }, items))
+            items,
+        ))
     }
     /// The item words of a decoded record's item bytes.
     pub fn items(raw: &[u8]) -> impl Iterator<Item = u32> + '_ {
-        raw.chunks_exact(4).map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+        raw.chunks_exact(4)
+            .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
     }
 }
 /// The hardware card with a pad checkpoint after every frame transfer.
@@ -323,7 +340,7 @@ fn buf() -> &'static mut [u8; MAX_LEN] {
 /// return, so an interruption cannot destroy the save still being relied on.
 /// `items` is `persist`'s SceneData list, already brought up to date.
 #[inline(never)]
-#[cfg_attr(not(test),optimize(size))]
+#[cfg_attr(not(test), optimize(size))]
 pub fn write(profile: usize, save: &Save, items: &[u32]) -> Result<(), Fault> {
     let mut record = *save;
     let copy = unsafe { NEXT_COPY[profile] };
@@ -334,7 +351,9 @@ pub fn write(profile: usize, save: &Save, items: &[u32]) -> Result<(), Fault> {
     let len = record.encode(items, out);
     let mut card = Card::new(PollingCard(HardwareCard::new(psx_mc::Slot::One)));
     let result = card.is_formatted().and_then(|formatted| {
-        if !formatted { card.format()?; }
+        if !formatted {
+            card.format()?;
+        }
         card.write(name, TITLE, &out[..len])
     });
     unsafe {
@@ -400,7 +419,7 @@ fn read_profile<B: Block>(card: &mut Card<B>, profile: usize) -> Result<Slot, Fa
 /// Every profile, for the selection screen. Boot-time, before the pad sampler
 /// starts (nothing else uses SIO0).
 #[inline(never)]
-#[cfg_attr(not(test),optimize(size))]
+#[cfg_attr(not(test), optimize(size))]
 pub fn survey() -> ([Slot; PROFILES], Option<Fault>) {
     let mut card = Card::new(HardwareCard::new(psx_mc::Slot::One));
     let mut slots = [Slot::Empty; PROFILES];
@@ -442,18 +461,25 @@ pub fn load_world(profile: usize, sequence: u32, store: &mut persist::Store) -> 
     let mut card = Card::new(HardwareCard::new(psx_mc::Slot::One));
     let buf = buf();
     let read = card.read(name, buf);
-    let decoded = read.as_ref().ok().and_then(|&len| Save::decode(&buf[..len]));
+    let decoded = read
+        .as_ref()
+        .ok()
+        .and_then(|&len| Save::decode(&buf[..len]));
     match decoded {
         Some((save, items)) if save.sequence == sequence => {
             let mut installed = 0;
             for item in Save::items(items) {
-                let (kind, scene, local, value) = persist::unpack(item).expect("validated by decode");
+                let (kind, scene, local, value) =
+                    persist::unpack(item).expect("validated by decode");
                 installed += usize::from(store.set(kind, scene, local, value));
             }
             installed
         }
         _ => {
-            let fault = match read { Err(error) => Fault::of(error), Ok(_) => Fault::Corrupt };
+            let fault = match read {
+                Err(error) => Fault::of(error),
+                Ok(_) => Fault::Corrupt,
+            };
             unsafe { HK_SAVE_FAULT = fault as u32 + 1 }
             0
         }

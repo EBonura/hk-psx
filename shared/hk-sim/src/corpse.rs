@@ -87,7 +87,10 @@ const UP: [[i32; 2]; 31] = [
 ];
 impl Corpse {
     pub fn spawn(spec: CorpseSpec, x: i32, y: i32, kind: u16, facing: i32, seed: u32) -> Self {
-        assert!((0..=ONE).contains(&spec.bounce_factor), "invalid corpse bounce factor");
+        assert!(
+            (0..=ONE).contains(&spec.bounce_factor),
+            "invalid corpse bounce factor"
+        );
         let mut corpse = Self {
             x: x + spec.spawn_offset[0],
             y: y + spec.spawn_offset[1],
@@ -104,7 +107,10 @@ impl Corpse {
         if spec.hold_ticks != 0 {
             return corpse; // No Rigidbody2D on this prefab: nothing launches it.
         }
-        assert!((ONE..=64 * ONE).contains(&spec.fling_speed), "invalid corpse fling speed");
+        assert!(
+            (ONE..=64 * ONE).contains(&spec.fling_speed),
+            "invalid corpse fling speed"
+        );
         let v = match kind {
             2 => UP[(corpse.random() % 31) as usize],
             3 => [0, -15 * ONE],
@@ -141,7 +147,9 @@ impl Corpse {
                 self.phase = CorpsePhase::Land;
                 self.animation_tick = 0;
             }
-        } else if spec.remove_after_land != 0 && self.animation_tick >= spec.remove_after_land as u32 {
+        } else if spec.remove_after_land != 0
+            && self.animation_tick >= spec.remove_after_land as u32
+        {
             self.phase = CorpsePhase::Removed;
         }
     }
@@ -179,7 +187,15 @@ impl Corpse {
         let mut body = Player::spawn(self.x + offset, self.y);
         body.vy = self.vy;
         body.grounded = self.grounded;
-        let params = Params { speed: self.vx.abs(), gravity: spec.gravity, fall: 100 * ONE, half_width: (b[2] - b[0]) / 2, bottom: b[1], top: b[3], ..Params::ZERO };
+        let params = Params {
+            speed: self.vx.abs(),
+            gravity: spec.gravity,
+            fall: 100 * ONE,
+            half_width: (b[2] - b[0]) / 2,
+            bottom: b[1],
+            top: b[3],
+            ..Params::ZERO
+        };
         let old_x = body.x;
         let old_vy = self.vy;
         body.step(params, self.vx.signum(), false, count, edge);
@@ -209,7 +225,10 @@ impl Corpse {
         // a bounded approximation to Unity's full contact manifold.
         let speed2 = self.vx as i64 * self.vx as i64 + old_vy as i64 * old_vy as i64;
         if (hit_floor || hit_wall || hit_ceiling) && speed2 > (ONE as i64 * ONE as i64) {
-            assert!((0..=ONE).contains(&spec.bounce_factor), "invalid corpse bounce factor");
+            assert!(
+                (0..=ONE).contains(&spec.bounce_factor),
+                "invalid corpse bounce factor"
+            );
             // Rounded Q16 endpoints preserve the existing Crawler's exact
             // [15729,23593] distribution and RNG sequence at factor19661.
             let low = (spec.bounce_factor * 4 + 2) / 5;
@@ -231,7 +250,9 @@ impl Corpse {
             // friction .2 * g / 60. The quotient fits i32 (so matches the i64
             // form) for |gravity| below 2^31 * 60 / 13107, about 150 units/s^2
             // in Q16; cooked corpses use 42 and 48.
-            self.vx = self.vx.signum() * (self.vx.abs() - (psx_math::int32::mul_div_i32(spec.gravity, 13107, 60) >> 16)).max(0);
+            self.vx = self.vx.signum()
+                * (self.vx.abs() - (psx_math::int32::mul_div_i32(spec.gravity, 13107, 60) >> 16))
+                    .max(0);
         }
         // Source Corpse.Update only destroys an airborne corpse below y=-10.
         if self.phase == CorpsePhase::Air && self.y < -10 * ONE {

@@ -35,7 +35,14 @@ pub fn run(names: &BTreeMap<usize, String>) {
                 while y <= b[3] {
                     for direction in [-1, 1] {
                         let all = q::walker_queries([x, y], direction, count, |i| edges[i]);
-                        let idx = q::walker_queries_near(q::Shape::RUNNER, [x, y], direction, count, |i| edges[i], near);
+                        let idx = q::walker_queries_near(
+                            q::Shape::RUNNER,
+                            [x, y],
+                            direction,
+                            count,
+                            |i| edges[i],
+                            near,
+                        );
                         queries += 1;
                         if all != idx {
                             bad += 1;
