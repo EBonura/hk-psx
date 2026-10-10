@@ -551,6 +551,21 @@ pub fn walker_queries_near(
     edge: impl Fn(usize) -> [i32; 4],
     near: fn([i32; 4]) -> EdgeMask,
 ) -> Result<WalkerQueries, QueryError> {
+    walker_queries_with(shape, actor, direction, count, edge, near, true)
+}
+/// `walker_queries_near`, choosing whether the hole Sweep's box is shifted by the
+/// body collider's offset. The Zombie Shield's, measured against the original at
+/// both ends of one platform, is not: it turns 0.3125 units (its offset) later
+/// than the shifted box does. The Runner keeps the shifted box until measured.
+pub fn walker_queries_with(
+    shape: Shape,
+    actor: [i32; 2],
+    direction: i32,
+    count: usize,
+    edge: impl Fn(usize) -> [i32; 4],
+    near: fn([i32; 4]) -> EdgeMask,
+    floor_follows_offset: bool,
+) -> Result<WalkerQueries, QueryError> {
     facing(direction)?;
     let offset = [
         -direction * shape.body_offset_left[0],
@@ -572,7 +587,11 @@ pub fn walker_queries_near(
     point(actor)?;
     let floor = Sweep::new(
         [actor[0] + direction * forward, actor[1]],
-        offset,
+        if floor_follows_offset {
+            offset
+        } else {
+            [0, offset[1]]
+        },
         shape.body_extents,
         Direction::Down,
         ONE / 4,

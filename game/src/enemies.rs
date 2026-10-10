@@ -1218,7 +1218,13 @@ fn climber_ray_hit(
 }
 const EDGES: usize = 128;
 /// Simulation neighbourhood around the active view, in Q16 units (one view).
-const NEAR: [i32; 2] = [24 * ONE, 16 * ONE];
+/// `HK_NEAR_ALL` (a build-time measurement switch, unset in the shipped disc) widens it to the
+/// whole scene, to price advancing every enemy the way the original does.
+const NEAR: [i32; 2] = if option_env!("HK_NEAR_ALL").is_some() {
+    [400 * ONE, 400 * ONE]
+} else {
+    [24 * ONE, 16 * ONE]
+};
 // Round-robin eviction thrashes once the advancing actors cycle through more
 // distinct views than slots; the neighbourhood gate keeps that count small.
 const EDGE_SLOTS: usize = 4;
@@ -4619,7 +4625,7 @@ impl Actor {
             Err(q::QueryError::ZeroLengthSight) => false,
             Err(_) => panic!("Zombie Shield LOS outside validated coordinates"),
         };
-        let probes = q::walker_queries_near(shape, pos, facing, count, edge, edges_near)
+        let probes = q::walker_queries_with(shape, pos, facing, count, edge, edges_near, false)
             .expect("Zombie Shield Sweep outside validated coordinates");
         hk_sim::zombie_shield::Senses {
             camera_in_start_range: hk_sim::runner::camera_in_start_range(
@@ -6074,10 +6080,16 @@ impl EnemyWorld {
                                 }
                             }
                             actor.recoil_left = spec.recoil_ticks;
-                            // The Mosquito's `SetRecoilSpeed` zeroes it for a lunge.
-                            let recoil_speed = actor
-                                .mosquito()
-                                .map_or(spec.recoil_speed, |m| m.controller.recoil_speed());
+                            // The Mosquito's `SetRecoilSpeed` zeroes it for a lunge; otherwise
+                            // it recoils at the cooked speed, which carries the 50 Hz step
+                            // quantisation of its duration.
+                            let recoil_speed = actor.mosquito().map_or(spec.recoil_speed, |m| {
+                                if m.controller.recoil_speed() == 0 {
+                                    0
+                                } else {
+                                    spec.recoil_speed
+                                }
+                            });
                             actor.recoil = match nail.kind {
                                 2 => [0, recoil_speed],
                                 3 => [0, -recoil_speed],
