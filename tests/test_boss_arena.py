@@ -19,6 +19,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 TABLE = ROOT / 'data/battle_gates.rs'
 REPORT = ROOT / '.hkpsx/battle-gates.json'
 REGIONS = ROOT / 'data/regions.json'
@@ -132,11 +135,10 @@ class PlayerDataReserveTests(unittest.TestCase):
     PlayerData bit. The reserve is the cooked bank's alone.
     """
     def test_the_reserve_is_the_cooked_banks_and_the_boss_is_not_in_it(self):
-        slots = int(re.search(r'pub const SCRIPT_FIELD_SLOTS: usize = (\d+);',
-                              (ROOT / 'game/src/save.rs').read_text()).group(1))
-        script = (ROOT / 'game/src/script.rs').read_text()
+        slots = rustsrc.const_int(ROOT / 'game/src/save.rs', 'SCRIPT_FIELD_SLOTS')
+        script = rustsrc.source(ROOT / 'game/src/script.rs')
         self.assertEqual(re.findall(r'pub const FIELD_\w+', script), [])
-        enemies = (ROOT / 'game/src/enemies.rs').read_text()
+        enemies = rustsrc.source(ROOT / 'game/src/enemies.rs')
         self.assertIn('persist::Kind::BattleScene', enemies)
         self.assertIn('persist::FALSE_KNIGHT_FIRST_PLOP', enemies)
         self.assertNotIn('script::player_data', enemies)
@@ -150,9 +152,9 @@ class PlayerDataReserveTests(unittest.TestCase):
 
     def test_the_whole_reserve_reaches_the_record(self):
         """`record`/`boot` must carry every slot, not just the cooked ones."""
-        script = (ROOT / 'game/src/script.rs').read_text()
-        self.assertIn('static mut STORE: [i32; crate::save::SCRIPT_FIELD_SLOTS]', script)
-        self.assertIn('STORE = *values;', script)
+        script = ROOT / 'game/src/script.rs'
+        self.assertTrue(rustsrc.contains(script, 'static mut STORE: [i32; crate::save::SCRIPT_FIELD_SLOTS]'))
+        self.assertTrue(rustsrc.contains(script, 'STORE = *values;'))
 
 
 if __name__ == '__main__':

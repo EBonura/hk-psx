@@ -15,6 +15,9 @@ import json, os, re, subprocess, tempfile, unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 TABLE = ROOT / 'data/shop.rs'
 CATALOG = ROOT / '.hkpsx/shop-catalog.json'
 COOKED = ROOT / '.hkpsx/shop-table.json'
@@ -103,10 +106,9 @@ class CookedStockTests(unittest.TestCase):
 
 class ShopRuntimeTests(unittest.TestCase):
     def test_glyph_budget_constant_matches_the_dialogue_module(self):
-        real = re.search(r'const CAP:usize=(\d+);', (ROOT / 'game/src/dialogue.rs').read_text())
-        stub = re.search(r'CAP: usize = (\d+);', (ROOT / 'tests/shop_runtime.rs').read_text())
-        self.assertTrue(real and stub)
-        self.assertEqual(real.group(1), stub.group(1))
+        real = rustsrc.const_int(ROOT / 'game/src/dialogue.rs', 'CAP')
+        stub = rustsrc.const_int(ROOT / 'tests/shop_runtime.rs', 'CAP')
+        self.assertEqual(real, stub)
 
     @unittest.skipUnless(TABLE.is_file(), 'run host/shops.py first')
     def test_the_purchase_transaction(self):

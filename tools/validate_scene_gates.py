@@ -3,16 +3,17 @@
 
 Consumes tools/replay_cue.py output; never builds, launches, or patches RAM.
 """
-import argparse,csv,hashlib,json,re
+import argparse,csv,hashlib,json,re,sys
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 # The queue's own capacity, from the module that enforces it. Written here as a
 # bare 16 with a `>` test, which no peak can satisfy: the queue never holds
 # more than CAPACITY (a full one drops its oldest sample, counted in
 # HK_INPUT_DROPPED_SAMPLES), so the gate below never fired.
-INPUT_QUEUE_CAPACITY=int(re.search(r'pub const CAPACITY: usize = (\d+);',
-                                   (ROOT/'game/src/input_queue.rs').read_text()).group(1))
+INPUT_QUEUE_CAPACITY=rustsrc.const_int(ROOT/'game/src/input_queue.rs','CAPACITY')
 def source_path(value):
     p=Path(value);return p if p.is_absolute() else ROOT/p
 
