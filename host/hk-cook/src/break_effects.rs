@@ -752,7 +752,7 @@ fn style(
 
 /// What `part_emitter` reads of a scene: the scene itself, or a CreateObject
 /// prefab presented the same way (`PrefabView`).
-trait View {
+pub(crate) trait View {
     fn component_refs(&self, gid: i64) -> Result<Vec<Value>>;
     fn deref(&self, source: &Source, pptr: &Value) -> Result<Obj>;
     fn world_of(&self, gid: i64) -> Result<[[f64; 4]; 4]>;
@@ -1017,7 +1017,7 @@ impl View for PrefabView {
 
 // ---------------------------------------------------------------- emitters
 
-struct Emitter {
+pub(crate) struct Emitter {
     style: Style,
     system: Obj,
     texture: Obj,
@@ -1031,7 +1031,7 @@ struct Emitter {
     part: Option<String>,
 }
 
-enum Found {
+pub(crate) enum Found {
     None,
     Silent,
     Emitter(Box<Emitter>),
@@ -1052,7 +1052,7 @@ fn pair<'a>(list: &'a Value, key: &str) -> Result<&'a Value> {
 /// `part_emitter`: one debrisPart's emitter, Silent when a played system
 /// provably emits nothing, or None when the part is not a particle system.
 #[allow(clippy::too_many_arguments)]
-fn part_emitter(
+pub(crate) fn part_emitter(
     source: &Source,
     view: &dyn View,
     gid: i64,
@@ -1256,7 +1256,8 @@ fn secret_relax(ps: &Value, matrix: &M4, emit: Option<i64>) -> Result<(Value, M4
 }
 
 /// `prefab_emitters`: every emitter a fixed CreateObject prefab instantiates.
-fn prefab_emitters(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prefab_emitters(
     source: &Source,
     file: &Arc<SerializedFile>,
     view_of: &dyn View,
@@ -1264,6 +1265,7 @@ fn prefab_emitters(
     gravity: f64,
     origin: [f64; 3],
     rotation: Option<[f64; 3]>,
+    relaxed: bool,
 ) -> Result<Vec<Emitter>> {
     let prefab = view_of.deref(source, reference)?;
     let _ = file;
@@ -1281,7 +1283,7 @@ fn prefab_emitters(
     let mut found = Vec::new();
     for gid in view.subtree()? {
         if let Found::Emitter(mut e) =
-            part_emitter(source, &view, gid, gravity, true, true, None, false)?
+            part_emitter(source, &view, gid, gravity, true, relaxed, None, false)?
         {
             e.part = Some(format!("{}:{gid}", hk_unity::base_name(&view.file.name)));
             found.push(*e);
@@ -1872,7 +1874,7 @@ fn ignore(owner: Json, part: Json, reason: String) -> Json {
 }
 
 /// `scene_gravity`: PhysicsManager's gravity, which the particle systems use.
-fn scene_gravity(source: &Source) -> Result<f64> {
+pub(crate) fn scene_gravity(source: &Source) -> Result<f64> {
     let file = source
         .file("globalgamemanagers")
         .map_err(|e| e.to_string())?;
@@ -2149,18 +2151,19 @@ fn collect_stalactites(
                     continue;
                 }
                 let owner = STALACTITE_OWNER | slot << 2 | kind;
-                let found =
-                    match prefab_emitters(source, &sc.base, sc, reference, gravity, origin, None) {
-                        Ok(found) => found,
-                        Err(e) => {
-                            c.ignored.push(ignore(
-                                Json::Str(sc.sid(o.id)),
-                                Json::Str(field.into()),
-                                format!("unsupported stalactite particle: {e}"),
-                            ));
-                            continue;
-                        }
-                    };
+                let found = match prefab_emitters(
+                    source, &sc.base, sc, reference, gravity, origin, None, true,
+                ) {
+                    Ok(found) => found,
+                    Err(e) => {
+                        c.ignored.push(ignore(
+                            Json::Str(sc.sid(o.id)),
+                            Json::Str(field.into()),
+                            format!("unsupported stalactite particle: {e}"),
+                        ));
+                        continue;
+                    }
+                };
                 for e in found {
                     let style = c.style_index(e.style.clone());
                     let (origin, basis) = placement(&e.matrix)?;
@@ -2299,6 +2302,7 @@ fn collect_secret(
                             gravity,
                             prefab.origin,
                             Some(prefab.rotation),
+                            true,
                         )? {
                             let part = e.part.clone().unwrap_or_default();
                             found.push((e, None, part));
