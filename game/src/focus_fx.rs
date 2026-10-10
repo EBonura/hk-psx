@@ -163,7 +163,13 @@ struct Wash {
 pub fn append(ot: &mut psx_gpu::ot::OrderingTable<1>) {
     use psx_gpu::material::{BlendMode, TextureMaterial};
     use psx_hw::gpu::{pack_color, pack_vertex, pack_xy};
-    static mut WASH: Wash = Wash { tag: 0, draw_mode: 0, color_cmd: 0, xy: 0, wh: 0 };
+    static mut WASH: Wash = Wash {
+        tag: 0,
+        draw_mode: 0,
+        color_cmd: 0,
+        xy: 0,
+        wh: 0,
+    };
     let g = flash_level();
     if g == 0 {
         return;
