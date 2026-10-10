@@ -54,18 +54,28 @@ pub fn run(names: &BTreeMap<usize, String>) {
                     rec["recoilSpeedBase"].as_f64(),
                     rec["recoilDuration"].as_f64(),
                 );
-                let rec_speed_ok = match rs {
-                    Some(v) => (v * 65536.0).round() as i32 == spec.recoil_speed,
-                    None => spec.recoil_speed == 0,
+                // Recoil moves for ceil(duration / 0.02) fixed steps of speed * 0.02 each; the cook
+                // gives the 60 Hz tick count nearest that time and the speed covering the same distance.
+                let (want_speed, want_ticks) = match (rs, rd) {
+                    (Some(v), Some(d)) => {
+                        let seconds = (d / 0.02 - 1e-5).ceil() * 0.02;
+                        let n = (seconds * 60.0 - 1e-5).ceil();
+                        if n <= 0.0 {
+                            ((v * 65536.0).round() as i32, 0)
+                        } else {
+                            ((v * seconds * 60.0 / n * 65536.0).round() as i32, n as u16)
+                        }
+                    }
+                    _ => (0, 0),
                 };
-                let rec_ticks_ok = match rd {
-                    Some(v) => (v * 60.0).round() as u16 == spec.recoil_ticks,
-                    None => spec.recoil_ticks == 0,
-                };
+                let rec_speed_ok = want_speed == spec.recoil_speed;
+                let rec_ticks_ok = want_ticks == spec.recoil_ticks;
                 let flags_ok = (hm["invincible"].as_i64().unwrap_or(0) != 0)
                     == spec.health.invincible
                     && (hm["damageOverride"].as_i64().unwrap_or(0) != 0)
-                        == spec.health.damage_override;
+                        == spec.health.damage_override
+                    // The FSMActivator wait, from the source component list (the parked reserve and cage are not placed enemies).
+                    && (src["components"].as_object().is_some_and(|c| c.values().any(|k| k == "FSMActivator")) && fam != "GruzzerReserve" && fam != "HatcherBaby") == p.fsm_activator;
                 // The body box: the source's first collider, relative to the actor, either way round
                 // (a mirrored placement flips x), to within two Q16 units.
                 let bounds_ok = match (
