@@ -1,5 +1,5 @@
 //! hk-psx's Rust cookers. Run from the repository root:
-//!   hk-cook actor-persistence|props|break-effects|scene-sfx|xa-music|cook-audio|geo-audio|focus-audio|cook-music|ambience|area-music|runner-audio [--source <hollow_knight_Data>]
+//!   hk-cook actor-persistence|battle-waves|props|break-effects|scene-sfx|xa-music|cook-audio|geo-audio|focus-audio|cook-music|ambience|area-music|runner-audio [--source <hollow_knight_Data>]
 //!   hk-cook opaque-tiles [--grid-shift 2|3] [--variant]|opaque-groups
 //!   hk-cook scene-certificates [--output DIR] [--report PATH] [--manifest PATH]
 //!   hk-cook gpu-census [--profile DIR | --camera X Y] [--region N] [--top N] [--every N]
@@ -19,6 +19,7 @@ fn main() {
         Some("area-music") => hk_cook::area_music::main(&root, source.as_deref()),
         Some("runner-audio") => hk_cook::runner_audio::main(&root, &args[2..], source.as_deref()),
         Some("actor-persistence") => hk_cook::actor_persistence::main(&root, source.as_deref()),
+        Some("battle-waves") => hk_cook::battle_waves::main(&root, source.as_deref()),
         Some("props") => hk_cook::props::main(&root, source.as_deref()),
         Some("break-effects") => hk_cook::break_effects::main(&root, source.as_deref()),
         Some("scene-sfx") => hk_cook::scene_sfx::main(&root, source.as_deref()),
@@ -27,7 +28,7 @@ fn main() {
         Some("opaque-groups") => hk_cook::opaque_groups::main(&root),
         Some("gpu-census") => hk_cook::gpu_census::main(&root, &args[2..]),
         Some("scene-certificates") => hk_cook::scene_certificates::main(&root, &args[2..]),
-        _ => Err("usage: hk-cook actor-persistence|props|break-effects|scene-sfx|xa-music|cook-audio|geo-audio|focus-audio|cook-music|ambience|area-music|runner-audio [--source DIR] | opaque-tiles|opaque-groups|scene-certificates|gpu-census".into()),
+        _ => Err("usage: hk-cook actor-persistence|battle-waves|props|break-effects|scene-sfx|xa-music|cook-audio|geo-audio|focus-audio|cook-music|ambience|area-music|runner-audio [--source DIR] | opaque-tiles|opaque-groups|scene-certificates|gpu-census".into()),
     };
     if let Err(e) = result {
         eprintln!("hk-cook: {e}");

@@ -5,10 +5,11 @@
 //! placements matching docs/HATCHER.md. The source parks a fixed cage of babies per
 //! scene and `Fire` moves one of them to the Hatcher, so the pool is a cook-time
 //! reservation: every baby a Hatcher can ever release owns a guest actor slot before
-//! the scene loads. Two scene-wide bounds decide whether a family is admitted at all:
-//! the 32-slot guest pool and the 20 animation slots a frame may bind. A scene that
-//! does not fit has its whole family refused.
+//! the scene loads. The 32-slot guest pool decides whether a family is admitted at all,
+//! measured on an arena's largest moment (battle.rs). A scene that does not fit has its
+//! whole family refused.
 
+use crate::battle::{self, pool_peak, Member};
 use crate::common::{component_records, err, get, Result};
 use crate::cook_audio::{jobj, js, u};
 use crate::gruzzer::scene_bounds;
@@ -26,7 +27,6 @@ use hk_unity::{Source, Value};
 /// `Extra Tag`, which is what `Initiate`'s FindGameObject looks the cage up by.
 const CAGE_TAG: i64 = 20054;
 const POOL_SLOTS: usize = 32;
-const FRAME_SLOTS: usize = 20;
 /// `enemies.rs::RELEASES`: releases the runtime can carry on one frame.
 const MAX_HATCHERS_PER_SCENE: usize = 4;
 const BODY_SIZE: [f64; 2] = [1.3125, 1.84375];
@@ -77,6 +77,12 @@ const ACTIONS: &[ActionRow] = &[
     ("Fire", "FloatAdd", &[("add", F(-1.0)), ("everyFrame", B(false)), ("perSecond", B(false))]),
     ("Fire", "SendEventByName", &[("sendEvent", S("SPAWN")), ("delay", F(0.0))]),
     ("Fire", "Tk2dWatchAnimationEvents", &[("animationCompleteEvent", S("WAIT"))]),
+];
+/// The `Hatcher NP` rows that replace the placed Hatcher's `Hatched Max Check`.
+#[rustfmt::skip]
+const CAP_ROWS: &[ActionRow] = &[
+    ("Hatched Max Check", "IntCompare", &[("integer1", S("Spawned")), ("integer2", S("Hatched Max")), ("equal", S("TRUE")), ("lessThan", S("FALSE")), ("greaterThan", S("TRUE")), ("everyFrame", B(false))]),
+    ("Fire", "IntAdd", &[("intVariable", S("Spawned")), ("add", I(1)), ("everyFrame", B(false))]),
 ];
 #[rustfmt::skip]
 const BABY_ACTIONS: &[ActionRow] = &[
@@ -282,8 +288,9 @@ fn cage(sc: &Scene) -> Result<(i64, Vec<i64>)> {
     Ok((gid, children))
 }
 
-/// `placed_hatchers`: live Hatcher bodies standing inside the room.
-fn placed_hatchers(sc: &Scene, bounds: [f64; 4]) -> Result<usize> {
+/// `placed_hatchers`: live Hatcher bodies standing inside the room, or summoned
+/// into it by an arena wave, as (wave, removable) members of the pool budget.
+fn placed_hatchers(sc: &Scene, bounds: [f64; 4]) -> Result<Vec<Member>> {
     let owners: Vec<i64> = sc
         .objects
         .iter()
@@ -297,7 +304,7 @@ fn placed_hatchers(sc: &Scene, bounds: [f64; 4]) -> Result<usize> {
                 .and_then(Value::int)
         })
         .collect();
-    let mut found = 0;
+    let mut found = Vec::new();
     for &gid in sc.gos.keys() {
         let name = get(sc.go(gid).ok_or("no such GameObject")?, "m_Name")?
             .str()
@@ -312,34 +319,42 @@ fn placed_hatchers(sc: &Scene, bounds: [f64; 4]) -> Result<usize> {
             continue;
         }
         let p = u(sc.point(gid, 0.0, 0.0, 0.0))?;
-        if bounds[0] <= p[0] && p[0] <= bounds[2] && bounds[1] <= p[1] && p[1] <= bounds[3] {
-            found += 1;
+        let in_room =
+            bounds[0] <= p[0] && p[0] <= bounds[2] && bounds[1] <= p[1] && p[1] <= bounds[3];
+        // A summoned member of an arena wave is parked outside the room until its
+        // wave starts and is as much a Hatcher as one standing in it.
+        let member = battle::membership(sc, gid, &component_records(sc, gid))?;
+        if in_room || member.0 != 0 {
+            found.push(member);
         }
     }
     Ok(found)
 }
 
-/// `family_budget`: refuse the scene's whole family unless the cage fits both guest bounds.
+/// `family_budget`: refuse the scene's whole family unless the cage fits the guest pool.
+///
+/// Both bounds are measured on the arena's largest moment: the placed Hatcher and
+/// what stands outside a wave are there before the battle, and one wave at a time
+/// during it, so Crossroads_22's four summoned Hatchers never stand together and
+/// its cage never has to share slots with every Spitter.
 fn family_budget(
     sc: &Scene,
     bounds: [f64; 4],
-    others: &dyn Fn() -> Result<usize>,
+    others: &dyn Fn() -> Result<Vec<Member>>,
 ) -> Result<usize> {
     let (_, children) = cage(sc)?;
     let hatchers = placed_hatchers(sc, bounds)?;
-    if hatchers > MAX_HATCHERS_PER_SCENE {
-        return err(format!("{hatchers} Hatchers in one scene exceeds the {MAX_HATCHERS_PER_SCENE} releases the guest carries on a frame"));
+    let at_once = pool_peak(&hatchers);
+    if at_once > MAX_HATCHERS_PER_SCENE {
+        return err(format!("{at_once} Hatchers in one scene at once exceeds the {MAX_HATCHERS_PER_SCENE} releases the guest carries on a frame"));
     }
-    let total = others()? + hatchers + children.len();
+    let mut members = others()?;
+    members.extend(hatchers);
+    members.extend(std::iter::repeat_n((0, false), children.len()));
+    let total = pool_peak(&members);
     if total > POOL_SLOTS {
         return err(format!(
             "Hatcher cage of {} needs {total} of the {POOL_SLOTS} guest actor slots this scene has",
-            children.len()
-        ));
-    }
-    if total > FRAME_SLOTS {
-        return err(format!(
-            "Hatcher cage of {} needs {total} of the {FRAME_SLOTS} animation slots a frame binds",
             children.len()
         ));
     }
@@ -357,13 +372,14 @@ pub fn recognize(
     gid: i64,
     position: [f64; 3],
     catalogue: &crate::actors::Catalogue,
-    others: &dyn Fn() -> Result<usize>,
+    others: &dyn Fn() -> Result<Vec<Member>>,
 ) -> Result<Json> {
     check_assemblies(source, "Hatcher")?;
     let records = component_records(sc, gid);
     let bounds = scene_bounds(sc, catalogue)?;
     let (x, y) = (position[0], position[1]);
-    if !(bounds[0] <= x && x <= bounds[2] && bounds[1] <= y && y <= bounds[3]) {
+    let in_room = bounds[0] <= x && x <= bounds[2] && bounds[1] <= y && y <= bounds[3];
+    if !in_room && battle::membership(sc, gid, &records)?.0 == 0 {
         return err("Hatcher parked outside the room is arena content, not a placement");
     }
     let fsm = fsm_named(&records, "Hatcher", "Hatcher")?;
@@ -388,7 +404,46 @@ pub fn recognize(
     {
         return err("unsupported Hatcher start alert");
     }
-    let sts = check_states(fsm, &TRANSITIONS, ACTIONS, "Hatcher")?;
+    // Two audited variants of one FSM. The placed Hatcher's live gate is the cage
+    // child count (`Hatched Max` is its disabled cap); the arena's `Hatcher NP`
+    // fires only while its own `Spawned` is under `Hatched Max`.
+    let raw = states(fsm)?;
+    let check = get(
+        state(&raw, "Hatched Max Check").ok_or("missing state")?,
+        "actionData",
+    )?;
+    let reads_cage = get(check, "actionNames")?
+        .list()
+        .unwrap_or(&[])
+        .iter()
+        .zip(get(check, "actionEnabled")?.list().unwrap_or(&[]))
+        .any(|(n, e)| n.str().is_some_and(|s| s.ends_with("GetChildCount")) && e.truthy());
+    let actions: Vec<ActionRow> = if reads_cage {
+        ACTIONS.to_vec()
+    } else {
+        ACTIONS
+            .iter()
+            .filter(|r| !(r.0 == "Hatched Max Check" && r.1 == "IntCompare"))
+            .chain(CAP_ROWS.iter())
+            .copied()
+            .collect()
+    };
+    let sts = check_states(fsm, &TRANSITIONS, &actions, "Hatcher")?;
+    let mut hatched_max = None;
+    if !reads_cage {
+        let max = vars
+            .iter()
+            .find(|(k, _)| k == "Hatched Max")
+            .and_then(|(_, v)| v.int());
+        let spawned = vars
+            .iter()
+            .find(|(k, _)| k == "Spawned")
+            .and_then(|(_, v)| v.int());
+        match (max, spawned) {
+            (Some(m), Some(0)) if (1..=255).contains(&m) => hatched_max = Some(m),
+            _ => return err("unsupported Hatcher Hatched Max"),
+        }
+    }
     let count_of = |st: &str, suffix: &str| -> Result<Vec<usize>> {
         let data = get(state(&sts, st).ok_or("missing state")?, "actionData")?;
         let names = get(data, "actionNames")?.list().unwrap_or(&[]);
@@ -403,8 +458,7 @@ pub fn recognize(
             .map(|(i, _)| i)
             .collect())
     };
-    // `Hatched Max` is the disabled cap; the live gate is the cage child count.
-    if count_of("Hatched Max Check", "GetChildCount")?.len() != 1 {
+    if reads_cage && count_of("Hatched Max Check", "GetChildCount")?.len() != 1 {
         return err("Hatcher no longer counts its cage before firing");
     }
     if count_of("Fire", "GetRandomChild")?.len() != 1 {
@@ -467,7 +521,7 @@ pub fn recognize(
         "The corpse is Corpse Hatcher v2, a CorpseHatcher rather than the plain Corpse the cook recognizes, so the body is removed on death and the Burst clip is not presented.".into(),
         "FSMActivator.activateStaggered, PersistentBoolItem, the SetZ depth, the flyer_receive_direction_msg push, the global-pool flings, the audio pitch ramp and every one shot are not presented.".into(),
     ];
-    Ok(jobj(vec![
+    let mut control = vec![
         ("kind", js("Hatcher")),
         ("guest_enabled", Json::Bool(true)),
         ("body_bounds_local", float_list(&body)),
@@ -491,7 +545,16 @@ pub fn recognize(
             "limitations",
             Json::List(limitations.into_iter().map(Json::Str).collect()),
         ),
-    ]))
+    ];
+    if let Some(max) = hatched_max {
+        // Python's key order: right after `cage_reserved`.
+        let at = control
+            .iter()
+            .position(|c| c.0 == "cage_reserved")
+            .map_or(control.len(), |i| i + 1);
+        control.insert(at, ("hatched_max", Json::Int(max)));
+    }
+    Ok(jobj(control))
 }
 
 /// One member of a Hatcher's cage: parked until a release, recycled on death.
@@ -500,7 +563,7 @@ pub fn recognize_baby(
     source: &Source,
     gid: i64,
     catalogue: &crate::actors::Catalogue,
-    others: &dyn Fn() -> Result<usize>,
+    others: &dyn Fn() -> Result<Vec<Member>>,
 ) -> Result<Json> {
     check_assemblies(source, "Hatcher Baby")?;
     let records = component_records(sc, gid);

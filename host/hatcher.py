@@ -16,9 +16,9 @@ scene-wide, because `regions.py::postpack_actor_bank` builds one actor bank per
 scene and every region of that scene carries it:
 
 - the 32-slot guest pool (`hk_sim::actors::MAX_ACTORS`), and
-- the 20 animation slots a frame may bind (`enemies.rs::MAX_VISIBLE`), which
-  `prepare_draws` asserts on. Every Hatcher and baby frame measures inside one
-  64x64 slot, so a scene's actor count is its worst-case tile count.
+- the 20 animation slots a frame may bind (`enemies.rs::MAX_VISIBLE`). A baby
+  that is parked draws nothing and the draw pass skips what does not fit, so
+  this is no longer a bound the cook has to prove.
 
 A scene that does not fit has its whole family refused and reported. Truncating
 a cage would silently change how many babies that Hatcher can ever release,
@@ -27,13 +27,13 @@ which is a difficulty change nothing downstream could see.
 from focus import action_fields
 from runner import ASSEMBLIES, axis_aligned_bounds, body_box
 from quality import SCENE_TABLE
+from battle import actor_member, membership, pool_peak
 import hashlib
 
 # `Extra Tag`, which is what `Initiate`'s FindGameObject looks the cage up by.
 CAGE_TAG = 20054
 # Guest bounds this family has to fit inside, both scene-wide.
 POOL_SLOTS = 32
-FRAME_SLOTS = 20
 # `enemies.rs::RELEASES`: releases the runtime can carry on one frame, which
 # bounds the Hatchers a scene may hold because each one fires at most once.
 MAX_HATCHERS_PER_SCENE = 4
@@ -86,6 +86,13 @@ ACTIONS = {
     ('Fire', 'SendEventByName'): {'sendEvent': 'SPAWN', 'delay': 0.},
     ('Fire', 'Tk2dWatchAnimationEvents'): {'animationCompleteEvent': 'WAIT'},
 }
+# The arena's `Hatcher NP`: its `Hatched Max Check` is the live `Spawned` cap
+# (`Hatched Max`, 5) where the placed Hatcher's is the cage child count, and its
+# `Fire` counts what it releases. Everything else is the same audited FSM.
+HATCHED_MAX_CHECK_CAP = {'integer1': 'Spawned', 'integer2': 'Hatched Max', 'equal': 'TRUE',
+                         'lessThan': 'FALSE', 'greaterThan': 'TRUE', 'everyFrame': False}
+ACTIONS_CAP = {**ACTIONS, ('Hatched Max Check', 'IntCompare'): HATCHED_MAX_CHECK_CAP,
+               ('Fire', 'IntAdd'): {'intVariable': 'Spawned', 'add': 1, 'everyFrame': False}}
 BABY_ACTIONS = {
     ('Chase', 'FaceDirection'): {'spriteFacesRight': False, 'playNewAnimation': False,
                                  'everyFrame': True, 'pauseBetweenTurns': True, 'pauseTime': .4},
@@ -227,15 +234,17 @@ def _others(sc):
     rather than whichever list `actor_sources` happens to be building.
 
     The sentinel makes the family refuse itself for the duration of the probe,
-    which is what stops the recursion and what makes the count exclude it.
+    which is what stops the recursion and what makes the count exclude it. What
+    comes back is each supported actor's (wave, removable), because the pool is
+    sized for the arena's largest moment (host/battle.py), not for the sum.
     """
     counted = getattr(sc, 'hatcher_others', None)
     if counted is None:
         sc.hatcher_others = -1
         from actors import actor_sources
-        sc.hatcher_others = sum(1 for a in actor_sources(sc) if a['movement_supported'])
+        sc.hatcher_others = [actor_member(a) for a in actor_sources(sc) if a['movement_supported']]
         counted = sc.hatcher_others
-    if counted < 0:
+    if counted == -1:
         raise ValueError('Hatcher family excluded while its own scene budget is measured')
     return counted
 
@@ -253,25 +262,33 @@ def placed_hatchers(sc):
         if gid not in owners or not sc.active(gid):
             continue
         x, y = sc.point(gid)[:2]
-        if bounds[0] <= x <= bounds[2] and bounds[1] <= y <= bounds[3]:
+        # A summoned member of an arena wave is parked outside the room until
+        # its wave starts and is as much a Hatcher as one standing in it.
+        from actors import _component_records
+        in_room = bounds[0] <= x <= bounds[2] and bounds[1] <= y <= bounds[3]
+        if in_room or membership(sc, gid, _component_records(sc, gid))[0]:
             found.append(gid)
     return found
 
 
 def family_budget(sc):
-    """Refuse the scene's whole family unless the cage fits both guest bounds."""
+    """Refuse the scene's whole family unless the cage fits the guest pool.
+
+    Both bounds are measured on the arena's largest moment: the placed Hatcher
+    and what stands outside a wave are there before the battle, and one wave at
+    a time during it, so Crossroads_22's four summoned Hatchers never stand
+    together and its cage never has to share slots with every Spitter.
+    """
+    from actors import _component_records
     _, children = cage(sc)
-    hatchers = placed_hatchers(sc)
-    if len(hatchers) > MAX_HATCHERS_PER_SCENE:
-        raise ValueError(f'{len(hatchers)} Hatchers in one scene exceeds the {MAX_HATCHERS_PER_SCENE}'
+    hatchers = [membership(sc, gid, _component_records(sc, gid)) for gid in placed_hatchers(sc)]
+    if pool_peak(hatchers) > MAX_HATCHERS_PER_SCENE:
+        raise ValueError(f'{pool_peak(hatchers)} Hatchers in one scene at once exceeds the {MAX_HATCHERS_PER_SCENE}'
                          ' releases the guest carries on a frame')
-    total = _others(sc) + len(hatchers) + len(children)
+    total = pool_peak(_others(sc) + hatchers + [(0, False)] * len(children))
     if total > POOL_SLOTS:
         raise ValueError(f'Hatcher cage of {len(children)} needs {total} of the {POOL_SLOTS} guest'
                          ' actor slots this scene has')
-    if total > FRAME_SLOTS:
-        raise ValueError(f'Hatcher cage of {len(children)} needs {total} of the {FRAME_SLOTS}'
-                         ' animation slots a frame binds')
     return len(children)
 
 
@@ -283,7 +300,7 @@ def recognize(sc, actor):
     records = _component_records(sc, actor['game_object'])
     bounds = scene_bounds(sc)
     x, y = actor['position'][:2]
-    if not (bounds[0] <= x <= bounds[2] and bounds[1] <= y <= bounds[3]):
+    if not actor.get('battle_wave') and not (bounds[0] <= x <= bounds[2] and bounds[1] <= y <= bounds[3]):
         raise ValueError('Hatcher parked outside the room is arena content, not a placement')
     fsm = _fsm(records, 'Hatcher', 'Hatcher')
     if fsm['startState'] != 'Initiate':
@@ -294,13 +311,17 @@ def recognize(sc, actor):
                  for v in group if isinstance(v, dict) and 'name' in v and 'value' in v}
     if variables.get('startAlert') not in (0, 1):
         raise ValueError('unsupported Hatcher start alert')
-    states = _check_states(fsm, TRANSITIONS, ACTIONS, 'Hatcher')
-    # `Hatched Max` is the disabled cap; the live gate is the cage child count,
-    # so the one thing that matters is that `GetChildCount` still reads the cage.
-    cage_reads = [i for i, n in enumerate(states['Hatched Max Check']['actionData']['actionNames'])
-                  if n.endswith('GetChildCount') and states['Hatched Max Check']['actionData']['actionEnabled'][i]]
-    if len(cage_reads) != 1:
-        raise ValueError('Hatcher no longer counts its cage before firing')
+    # Two audited variants of one FSM. The placed Hatcher's live gate is the
+    # cage child count (`Hatched Max` is its disabled cap); the arena's `Hatcher
+    # NP` fires only while its own `Spawned` is under `Hatched Max`.
+    check = next(st for st in fsm['states'] if st['name'] == 'Hatched Max Check')['actionData']
+    reads_cage = any(n.endswith('GetChildCount') and e for n, e in zip(check['actionNames'], check['actionEnabled']))
+    states = _check_states(fsm, TRANSITIONS, ACTIONS if reads_cage else ACTIONS_CAP, 'Hatcher')
+    hatched_max = None
+    if not reads_cage:
+        hatched_max = variables.get('Hatched Max')
+        if not isinstance(hatched_max, int) or not 1 <= hatched_max <= 255 or variables.get('Spawned') != 0:
+            raise ValueError('unsupported Hatcher Hatched Max')
     spawn = [i for i, n in enumerate(states['Fire']['actionData']['actionNames'])
              if n.endswith('GetRandomChild') and states['Fire']['actionData']['actionEnabled'][i]]
     if len(spawn) != 1:
@@ -327,6 +348,7 @@ def recognize(sc, actor):
     reserved = family_budget(sc)
     return {'kind': 'Hatcher', 'guest_enabled': True, 'body_bounds_local': body, 'no_corpse': True,
             'start_alert': bool(variables.get('startAlert')), 'cage_reserved': reserved,
+            **({'hatched_max': hatched_max} if hatched_max else {}),
             'library_source': source.sid(library_object),
             # Neither FaceDirection nor FaceObject plays a clip on this
             # placement, so the turn slot holds Fly the way the Gruzzer's does.
