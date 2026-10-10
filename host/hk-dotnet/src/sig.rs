@@ -25,8 +25,15 @@ pub fn compressed(d: &[u8], p: &mut usize) -> Option<u32> {
 pub enum Type {
     /// ELEMENT_TYPE_* for the built-in types (void, bool, char, i1..u8, r4, r8, string, object, i, u, typedref).
     Builtin(u8),
-    Named { table: Table, rid: u32, value_type: bool },
-    GenericInst { base: Box<Type>, args: Vec<Type> },
+    Named {
+        table: Table,
+        rid: u32,
+        value_type: bool,
+    },
+    GenericInst {
+        base: Box<Type>,
+        args: Vec<Type>,
+    },
     SzArray(Box<Type>),
     Array(Box<Type>, u32),
     Var(u32),
@@ -46,7 +53,10 @@ impl SigReader<'_> {
         compressed(self.d, &mut self.p).ok_or_else(|| Error("truncated signature".into()))
     }
     fn byte(&mut self) -> Result<u8> {
-        let b = *self.d.get(self.p).ok_or_else(|| Error("truncated signature".into()))?;
+        let b = *self
+            .d
+            .get(self.p)
+            .ok_or_else(|| Error("truncated signature".into()))?;
         self.p += 1;
         Ok(b)
     }
@@ -59,8 +69,14 @@ impl SigReader<'_> {
             0x10 => Type::ByRef(Box::new(self.ty()?)),
             0x11 | 0x12 => {
                 let coded = self.u()?;
-                let (table, rid) = Coded::TypeDefOrRef.decode(coded).ok_or_else(|| Error("bad TypeDefOrRef".into()))?;
-                Type::Named { table, rid, value_type: e == 0x11 }
+                let (table, rid) = Coded::TypeDefOrRef
+                    .decode(coded)
+                    .ok_or_else(|| Error("bad TypeDefOrRef".into()))?;
+                Type::Named {
+                    table,
+                    rid,
+                    value_type: e == 0x11,
+                }
             }
             0x13 => Type::Var(self.u()?),
             0x1e => Type::MVar(self.u()?),
@@ -84,7 +100,10 @@ impl SigReader<'_> {
                 for _ in 0..n {
                     args.push(self.ty()?);
                 }
-                Type::GenericInst { base: Box::new(base), args }
+                Type::GenericInst {
+                    base: Box::new(base),
+                    args,
+                }
             }
             0x1d => Type::SzArray(Box::new(self.ty()?)),
             0x1b => {
@@ -156,7 +175,14 @@ mod tests {
         let t = field_type(&[0x06, 0x1d, 0x15, 0x12, 0x09, 0x01, 0x08]).unwrap();
         assert_eq!(
             t,
-            Type::SzArray(Box::new(Type::GenericInst { base: Box::new(Type::Named { table: Table::TypeRef, rid: 2, value_type: false }), args: vec![Type::Builtin(0x08)] }))
+            Type::SzArray(Box::new(Type::GenericInst {
+                base: Box::new(Type::Named {
+                    table: Table::TypeRef,
+                    rid: 2,
+                    value_type: false
+                }),
+                args: vec![Type::Builtin(0x08)]
+            }))
         );
     }
 }

@@ -40,7 +40,12 @@ impl Default for DreamNail {
 }
 impl DreamNail {
     pub const fn new() -> Self {
-        Self { phase: DreamPhase::Off, tick: 0, was_button: false, has_dream_nail: false }
+        Self {
+            phase: DreamPhase::Off,
+            tick: 0,
+            was_button: false,
+            has_dream_nail: false,
+        }
     }
     /// Take Control runs from Start until End, so the Knight has no input for
     /// the whole sequence. Callers treat this like the Focus and bench locks.
@@ -60,8 +65,12 @@ impl DreamNail {
         if self.phase == DreamPhase::Off {
             // CanDreamNail: the Dream Nail, both feet down and not falling, no
             // dash running and not inside an attack's recovery window.
-            let can = self.has_dream_nail && !blocked && player.grounded
-                && player.vy > -ONE / 10 && player.dash_left == 0 && !player.attack_recovering;
+            let can = self.has_dream_nail
+                && !blocked
+                && player.grounded
+                && player.vy > -ONE / 10
+                && player.dash_left == 0
+                && !player.attack_recovering;
             if pressed && can {
                 self.phase = DreamPhase::Start;
                 self.tick = 0;
@@ -93,8 +102,12 @@ impl DreamNail {
 mod tests {
     use super::*;
     const P: DreamNailParams = DreamNailParams {
-        start_ticks: 20, charge_ticks: 35, antic_ticks: 25, slash_ticks: 33,
-        cancelable_ticks: 18, soul: 33,
+        start_ticks: 20,
+        charge_ticks: 35,
+        antic_ticks: 25,
+        slash_ticks: 33,
+        cancelable_ticks: 18,
+        soul: 33,
     };
     fn grounded() -> Player {
         let mut p = Player::spawn(0, 0);
@@ -119,7 +132,11 @@ mod tests {
         let mut p = grounded();
         p.grounded = false;
         d.tick(P, true, &p, false);
-        assert_eq!(d.phase, DreamPhase::Off, "CanDreamNail wants both feet down");
+        assert_eq!(
+            d.phase,
+            DreamPhase::Off,
+            "CanDreamNail wants both feet down"
+        );
         p.grounded = true;
         p.vy = -ONE;
         d.was_button = false;
@@ -155,7 +172,11 @@ mod tests {
         run(&mut d, &p, true, P.start_ticks);
         assert_eq!(d.phase, DreamPhase::Charge);
         d.tick(P, false, &p, false);
-        assert_eq!(d.phase, DreamPhase::Off, "ListenForDreamNail cancels the charge");
+        assert_eq!(
+            d.phase,
+            DreamPhase::Off,
+            "ListenForDreamNail cancels the charge"
+        );
         // Past the charge the release is ignored: the swing is committed.
         d.was_button = false;
         d.tick(P, true, &p, false);

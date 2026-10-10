@@ -7,16 +7,22 @@
 //! and `apply` drops a dead Blocker's block edges from the view's terrain, the
 //! way `battle_gates::apply` drops an open gate's. `host/blocker_terrain.py`
 //! is the cooked join.
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/blocker_terrain.rs"));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../data/blocker_terrain.rs"
+));
 use crate::persist::{self, Kind};
 
 const _: () = assert!(BLOCKERS <= 8, "the dead set is one u8");
 
 /// Blockers the store holds as dead, one bit each; the evidence a replay reads.
-#[no_mangle] pub static mut HK_BLOCKERS_DEAD: u32 = 0;
+#[no_mangle]
+pub static mut HK_BLOCKERS_DEAD: u32 = 0;
 
 fn index(scene: usize, source_id: u32) -> Option<usize> {
-    SOURCES.iter().position(|&(s, id)| s as usize == scene && id == source_id)
+    SOURCES
+        .iter()
+        .position(|&(s, id)| s as usize == scene && id == source_id)
 }
 fn dead_index(i: usize) -> bool {
     persist::get(Kind::Enemy, SOURCES[i].0 as usize, i).is_some()
@@ -30,7 +36,9 @@ pub fn dead(scene: usize, source_id: u32) -> bool {
 pub fn killed(scene: usize, source_id: u32) {
     if let Some(i) = index(scene, source_id) {
         persist::set(Kind::Enemy, scene, i, 1);
-        unsafe { HK_BLOCKERS_DEAD |= 1 << i; }
+        unsafe {
+            HK_BLOCKERS_DEAD |= 1 << i;
+        }
         crate::world::scripted_terrain_changed();
     }
 }
@@ -40,10 +48,14 @@ pub fn apply(state: &mut crate::world::State, region: usize) {
     let slot = region as u16;
     let first = REGIONS.partition_point(|&(row, _, _)| row < slot);
     for &(row, blocker, edges) in &REGIONS[first..] {
-        if row != slot { break; }
+        if row != slot {
+            break;
+        }
         if dead_index(blocker as usize) {
             state.append_script_edges(edges);
-            unsafe { HK_BLOCKERS_DEAD |= 1 << blocker; }
+            unsafe {
+                HK_BLOCKERS_DEAD |= 1 << blocker;
+            }
         }
     }
 }

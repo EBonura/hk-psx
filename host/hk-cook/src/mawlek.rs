@@ -16,13 +16,26 @@ use hk_unity::scene::Scene;
 use hk_unity::Value;
 
 const BODY_NAME: &str = "Mawlek Body";
-const CHILDREN: [&str; 6] = ["Dummy", "Mawlek Arm R", "Mawlek Arm L", "Mawlek Head", "Spit Effect", "Alert Range New"];
+const CHILDREN: [&str; 6] = [
+    "Dummy",
+    "Mawlek Arm R",
+    "Mawlek Arm L",
+    "Mawlek Head",
+    "Spit Effect",
+    "Alert Range New",
+];
 
 /// `_box_world`: a child's one BoxCollider2D as a world box [x0, y0, x1, y1].
 fn box_world(sc: &Scene, gid: i64) -> Result<[f64; 4]> {
     let records = component_records(sc, gid);
-    let name = get(sc.go(gid).ok_or("no such GameObject")?, "m_Name")?.str().unwrap_or_default();
-    let boxes: Vec<&Value> = records.iter().filter(|r| r.1 == "BoxCollider2D").map(|r| r.2).collect();
+    let name = get(sc.go(gid).ok_or("no such GameObject")?, "m_Name")?
+        .str()
+        .unwrap_or_default();
+    let boxes: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "BoxCollider2D")
+        .map(|r| r.2)
+        .collect();
     if boxes.len() != 1 {
         return err(format!("expected one BoxCollider2D on {name}"));
     }
@@ -31,23 +44,35 @@ fn box_world(sc: &Scene, gid: i64) -> Result<[f64; 4]> {
     if m[0][1].abs() > 1e-6 || m[1][0].abs() > 1e-6 {
         return err(format!("{name} is rotated"));
     }
-    let (size, offset) = (crate::recog::xy(b, "m_Size")?, crate::recog::xy(b, "m_Offset")?);
+    let (size, offset) = (
+        crate::recog::xy(b, "m_Size")?,
+        crate::recog::xy(b, "m_Offset")?,
+    );
     let cx = m[0][3] + offset[0] * m[0][0];
     let cy = m[1][3] + offset[1] * m[1][1];
-    let (hw, hh) = ((size[0] * m[0][0]).abs() / 2.0, (size[1] * m[1][1]).abs() / 2.0);
+    let (hw, hh) = (
+        (size[0] * m[0][0]).abs() / 2.0,
+        (size[1] * m[1][1]).abs() / 2.0,
+    );
     Ok([cx - hw, cy - hh, cx + hw, cy + hh])
 }
 
 /// Admit the placed Brooding Mawlek, or refuse with the reason.
 pub fn recognize_placement(sc: &Scene, gid: i64, health: &Value) -> Result<Json> {
     let go = sc.go(gid).ok_or("no such GameObject")?;
-    if get(go, "m_Name")?.str().as_deref() != Some(BODY_NAME) || get(go, "m_Layer")?.int() != Some(11) {
+    if get(go, "m_Name")?.str().as_deref() != Some(BODY_NAME)
+        || get(go, "m_Layer")?.int() != Some(11)
+    {
         return err("not the Mawlek body on the enemy layer");
     }
     let mut fsms: Vec<(String, &Value)> = Vec::new();
     for (_, kind, data) in component_records(sc, gid) {
         if kind == "PlayMakerFSM" {
-            let name = data.get("fsm").and_then(|f| f.get("name")).and_then(Value::str).unwrap_or_default();
+            let name = data
+                .get("fsm")
+                .and_then(|f| f.get("name"))
+                .and_then(Value::str)
+                .unwrap_or_default();
             match fsms.iter_mut().find(|f| f.0 == name) {
                 Some(slot) => slot.1 = data,
                 None => fsms.push((name, data)),
@@ -61,19 +86,41 @@ pub fn recognize_placement(sc: &Scene, gid: i64, health: &Value) -> Result<Json>
         return err(format!("unsupported Mawlek FSM set: {}", sorted.join(", ")));
     }
     let control = get(fsms[0].1, "fsm")?;
-    let states: Vec<String> = get(control, "states")?.list().unwrap_or(&[]).iter().filter_map(|s| s.get("name").and_then(Value::str)).collect();
-    for needed in ["Dormant", "Wake", "Start", "Idle", "Super Select", "Shoot", "Jump", "Land 2", "Music"] {
+    let states: Vec<String> = get(control, "states")?
+        .list()
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|s| s.get("name").and_then(Value::str))
+        .collect();
+    for needed in [
+        "Dormant",
+        "Wake",
+        "Start",
+        "Idle",
+        "Super Select",
+        "Shoot",
+        "Jump",
+        "Land 2",
+        "Music",
+    ] {
         if !states.iter().any(|s| s == needed) {
             return err(format!("Mawlek Control lacks {needed}"));
         }
     }
     let children = children_of(sc, gid)?;
-    let missing: Vec<&str> = CHILDREN.iter().copied().filter(|c| !children.iter().any(|h| h.0 == *c)).collect();
+    let missing: Vec<&str> = CHILDREN
+        .iter()
+        .copied()
+        .filter(|c| !children.iter().any(|h| h.0 == *c))
+        .collect();
     if !missing.is_empty() {
         return err(format!("Mawlek lacks {}", missing.join(", ")));
     }
     // `Start` clears the serialized invincibility; the guest runtime owns that.
-    if get(health, "hasSpecialDeath")?.truthy() || get(health, "damageOverride")?.truthy() || get(health, "invincibleFromDirection")?.truthy() {
+    if get(health, "hasSpecialDeath")?.truthy()
+        || get(health, "damageOverride")?.truthy()
+        || get(health, "invincibleFromDirection")?.truthy()
+    {
         return err("unsupported Mawlek HealthManager variant");
     }
     let m = u(sc.world(*sc.go_transform.get(&gid).ok_or("actor has no transform")?))?;
@@ -81,7 +128,11 @@ pub fn recognize_placement(sc: &Scene, gid: i64, health: &Value) -> Result<Json>
         return err("Mawlek is rotated");
     }
     let p = u(sc.point(gid, 0.0, 0.0, 0.0))?;
-    let alert = children.iter().find(|c| c.0 == "Alert Range New").unwrap().1;
+    let alert = children
+        .iter()
+        .find(|c| c.0 == "Alert Range New")
+        .unwrap()
+        .1;
     let wake = box_world(sc, alert)?;
     let q = |a: f64, o: f64| Json::Int(py_round((a - o) * 65536.0));
     Ok(jobj(vec![

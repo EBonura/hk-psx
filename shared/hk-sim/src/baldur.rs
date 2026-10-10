@@ -53,14 +53,19 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { values: [None; 4], count: 0 }
+        Self {
+            values: [None; 4],
+            count: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         self.values[self.count as usize] = Some(action);
         self.count += 1;
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.values[..self.count as usize].iter().map(|a| a.unwrap())
+        self.values[..self.count as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,14 +93,31 @@ pub struct Baldur {
 }
 impl Baldur {
     pub fn new(seed: u32) -> Self {
-        Self { phase: Phase::Idle, moving_right: false, facing: -1, velocity_x: 0, roll_time: 0, timer: 0, rng: seed, max_speed: MAX_SPEED }
+        Self {
+            phase: Phase::Idle,
+            moving_right: false,
+            facing: -1,
+            velocity_x: 0,
+            roll_time: 0,
+            timer: 0,
+            rng: seed,
+            max_speed: MAX_SPEED,
+        }
     }
     /// `Spawn Roller v2` as the Blocker's `Fire` leaves it: `Initiate` draws a
     /// roll time, `Moving Right?` takes the Blocker's facing, and it is `In Air`
     /// until it lands, when it rolls that way at up to 14 units/s.
     pub fn spawned(seed: u32, moving_right: bool) -> Self {
-        let mut roller = Self { phase: Phase::InAir, moving_right, facing: if moving_right { 1 } else { -1 },
-            velocity_x: 0, roll_time: 0, timer: 0, rng: seed, max_speed: SPAWNED_MAX_SPEED };
+        let mut roller = Self {
+            phase: Phase::InAir,
+            moving_right,
+            facing: if moving_right { 1 } else { -1 },
+            velocity_x: 0,
+            roll_time: 0,
+            timer: 0,
+            rng: seed,
+            max_speed: SPAWNED_MAX_SPEED,
+        };
         roller.roll_time = roller.range(ROLL_MIN, ROLL_MAX);
         roller
     }
@@ -171,13 +193,20 @@ impl Baldur {
                     self.phase = Phase::InAir;
                     self.velocity_x = 0;
                     let sign = if self.moving_right { 1 } else { -1 };
-                    out.push(Action::Velocity([sign * BOUNCE_VELOCITY[0], BOUNCE_VELOCITY[1]]));
+                    out.push(Action::Velocity([
+                        sign * BOUNCE_VELOCITY[0],
+                        BOUNCE_VELOCITY[1],
+                    ]));
                     // Both Collide states set scale.x = 1 (source faces left).
                     self.face(false, &mut out);
                     self.roll_time -= ONE / 60;
                     return out;
                 }
-                self.velocity_x += if self.moving_right { ACCELERATION } else { -ACCELERATION };
+                self.velocity_x += if self.moving_right {
+                    ACCELERATION
+                } else {
+                    -ACCELERATION
+                };
                 self.velocity_x = self.velocity_x.clamp(-self.max_speed, self.max_speed);
                 out.push(Action::VelocityX(self.velocity_x));
                 self.roll_time -= ONE / 60;
@@ -227,18 +256,28 @@ mod spawned_tests {
     fn a_spawned_roller_lands_then_rolls_to_fourteen() {
         let mut roller = Baldur::spawned(7, true);
         assert_eq!(roller.phase(), Phase::InAir);
-        let air = Senses { actor_x: 0, hero_x: 0, can_see_hero: false, wall: false, grounded: false };
+        let air = Senses {
+            actor_x: 0,
+            hero_x: 0,
+            can_see_hero: false,
+            wall: false,
+            grounded: false,
+        };
         assert_eq!(roller.tick(air).iter().count(), 0);
-        let ground = Senses { grounded: true, ..air };
+        let ground = Senses {
+            grounded: true,
+            ..air
+        };
         roller.tick(ground);
         assert_eq!(roller.phase(), Phase::Roll);
         let mut last = 0;
         for _ in 0..40 {
             for action in roller.tick(ground).iter() {
-                if let Action::VelocityX(v) = action { last = v; }
+                if let Action::VelocityX(v) = action {
+                    last = v;
+                }
             }
         }
         assert_eq!(last, SPAWNED_MAX_SPEED);
     }
 }
-

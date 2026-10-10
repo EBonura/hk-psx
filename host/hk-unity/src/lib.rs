@@ -93,13 +93,30 @@ impl Source {
     /// The data directory (`hollow_knight_Data`) of a Windows install.
     pub fn new(directory: impl Into<PathBuf>) -> Result<Source> {
         let directory = directory.into();
-        if !directory.parent().is_some_and(|p| p.join("hollow_knight.exe").is_file()) {
-            return Err(Error::Format("Windows source with hollow_knight.exe required".into()));
+        if !directory
+            .parent()
+            .is_some_and(|p| p.join("hollow_knight.exe").is_file())
+        {
+            return Err(Error::Format(
+                "Windows source with hollow_knight.exe required".into(),
+            ));
         }
-        let source = Source { directory, files: Mutex::default(), generator: OnceLock::new(), mono_nodes: Mutex::default(), scripts: Mutex::default(), fresh_save: OnceLock::new(), resources: Mutex::default(), sprite_textures: Mutex::default() };
+        let source = Source {
+            directory,
+            files: Mutex::default(),
+            generator: OnceLock::new(),
+            mono_nodes: Mutex::default(),
+            scripts: Mutex::default(),
+            fresh_save: OnceLock::new(),
+            resources: Mutex::default(),
+            sprite_textures: Mutex::default(),
+        };
         let header = source.file("globalgamemanagers")?;
         if header.unity_version != UNITY_VERSION || header.format != 22 {
-            return Err(Error::Format(format!("Unvalidated source serialization: {}/{}", header.unity_version, header.format)));
+            return Err(Error::Format(format!(
+                "Unvalidated source serialization: {}/{}",
+                header.unity_version, header.format
+            )));
         }
         Ok(source)
     }
@@ -107,10 +124,17 @@ impl Source {
     /// The install the repository's `.hkpsx/doctor.json` selected.
     pub fn from_doctor(repo_root: &Path) -> Result<Source> {
         let path = repo_root.join(".hkpsx/doctor.json");
-        let text = std::fs::read_to_string(&path).map_err(|e| Error::Io(path.display().to_string(), e))?;
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| Error::Io(path.display().to_string(), e))?;
         let key = "\"data_directory\": \"";
-        let start = text.find(key).ok_or_else(|| Error::Format("doctor.json lacks data_directory".into()))? + key.len();
-        let end = start + text[start..].find('"').ok_or_else(|| Error::Format("doctor.json is malformed".into()))?;
+        let start = text
+            .find(key)
+            .ok_or_else(|| Error::Format("doctor.json lacks data_directory".into()))?
+            + key.len();
+        let end = start
+            + text[start..]
+                .find('"')
+                .ok_or_else(|| Error::Format("doctor.json is malformed".into()))?;
         Source::new(&text[start..end])
     }
 
@@ -118,12 +142,22 @@ impl Source {
     /// (host/source.py `source_path`).
     pub fn resolve(&self, name: &str) -> Result<(PathBuf, String)> {
         let relative = PathBuf::from(name.replace('\\', "/"));
-        if relative.is_absolute() || relative.components().any(|c| matches!(c, Component::ParentDir)) {
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|c| matches!(c, Component::ParentDir))
+        {
             return Err(Error::Format(format!("Unsafe Unity external path: {name}")));
         }
         let mut candidates = vec![relative.clone()];
-        let first_is_library = relative.components().next().is_some_and(|c| c.as_os_str() == "Library");
-        let file_name = relative.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+        let first_is_library = relative
+            .components()
+            .next()
+            .is_some_and(|c| c.as_os_str() == "Library");
+        let file_name = relative
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_default();
         if first_is_library && file_name.starts_with("unity ") {
             candidates.push(PathBuf::from("Resources").join(&file_name));
         }
@@ -139,7 +173,14 @@ impl Source {
     /// The files loaded so far, by the path relative to the data directory
     /// (the keys of host/source.py's `files`), sorted.
     pub fn loaded_files(&self) -> Vec<String> {
-        let mut names: Vec<String> = self.files.lock().unwrap().iter().filter(|(_, slot)| slot.get().is_some()).map(|(k, _)| k.clone()).collect();
+        let mut names: Vec<String> = self
+            .files
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, slot)| slot.get().is_some())
+            .map(|(k, _)| k.clone())
+            .collect();
         names.sort();
         names
     }
@@ -147,27 +188,47 @@ impl Source {
     /// A loaded file, parsed once per source even when threads race for it.
     pub fn file(&self, name: &str) -> Result<Arc<SerializedFile>> {
         let (path, key) = self.resolve(name)?;
-        let slot = self.files.lock().unwrap().entry(key.clone()).or_default().clone();
-        slot.get_or_init(|| SerializedFile::open(&path, key).map(Arc::new).map_err(|e| e.to_string()))
-            .clone()
-            .map_err(Error::Format)
+        let slot = self
+            .files
+            .lock()
+            .unwrap()
+            .entry(key.clone())
+            .or_default()
+            .clone();
+        slot.get_or_init(|| {
+            SerializedFile::open(&path, key)
+                .map(Arc::new)
+                .map_err(|e| e.to_string())
+        })
+        .clone()
+        .map_err(Error::Format)
     }
 
     pub fn object(&self, file: &Arc<SerializedFile>, path_id: i64) -> Result<Obj> {
-        let info = *file.object(path_id).ok_or_else(|| Error::Missing(format!("{}:{path_id} not found", file.name)))?;
-        Ok(Obj { file: file.clone(), info })
+        let info = *file
+            .object(path_id)
+            .ok_or_else(|| Error::Missing(format!("{}:{path_id} not found", file.name)))?;
+        Ok(Obj {
+            file: file.clone(),
+            info,
+        })
     }
 
     /// Follow a PPtr written in `file` (host/source.py `ref`).
     pub fn deref(&self, file: &Arc<SerializedFile>, pptr: &Value) -> Result<Obj> {
-        let (file_id, path_id) = pptr.pptr().ok_or_else(|| Error::Format("not a PPtr".into()))?;
+        let (file_id, path_id) = pptr
+            .pptr()
+            .ok_or_else(|| Error::Format("not a PPtr".into()))?;
         if path_id == 0 {
             return Err(Error::Format("null source reference".into()));
         }
         let target = if file_id == 0 {
             file.clone()
         } else {
-            let ext = file.externals.get(file_id as usize - 1).ok_or_else(|| Error::Format("bad PPtr file id".into()))?;
+            let ext = file
+                .externals
+                .get(file_id as usize - 1)
+                .ok_or_else(|| Error::Format("bad PPtr file id".into()))?;
             self.file(&ext.path)?
         };
         self.object(&target, path_id)
@@ -181,20 +242,31 @@ impl Source {
     /// read without checking that it consumed the whole object.
     pub fn mono_head(&self, obj: &Obj) -> Result<Value> {
         let node = self.builtin_node(obj)?;
-        let mut r = Reader { c: serialized::Cursor::new(obj.raw()?, obj.file.big_endian), flavor: Flavor::Python };
+        let mut r = Reader {
+            c: serialized::Cursor::new(obj.raw()?, obj.file.big_endian),
+            flavor: Flavor::Python,
+        };
         r.read(&node)
     }
 
     /// The MonoScript a MonoBehaviour runs: (assembly, namespace, class).
     pub fn mono_script(&self, obj: &Obj) -> Result<Arc<Script>> {
         let head = self.mono_head(obj)?;
-        let script = self.deref(&obj.file, head.get("m_Script").ok_or_else(|| Error::Format("no m_Script".into()))?)?;
+        let script = self.deref(
+            &obj.file,
+            head.get("m_Script")
+                .ok_or_else(|| Error::Format("no m_Script".into()))?,
+        )?;
         let key = (script.file.name.clone(), script.path_id());
         if let Some(hit) = self.scripts.lock().unwrap().get(&key) {
             return Ok(hit.clone());
         }
         let tree = self.read_builtin(&script)?;
-        let s = |k: &str| tree.get(k).and_then(Value::str).ok_or_else(|| Error::Format(format!("MonoScript lacks {k}")));
+        let s = |k: &str| {
+            tree.get(k)
+                .and_then(Value::str)
+                .ok_or_else(|| Error::Format(format!("MonoScript lacks {k}")))
+        };
         let value = Arc::new((s("m_AssemblyName")?, s("m_Namespace")?, s("m_ClassName")?));
         self.scripts.lock().unwrap().insert(key, value.clone());
         Ok(value)
@@ -223,15 +295,26 @@ impl Source {
     pub fn mono_node(&self, obj: &Obj) -> Result<Arc<Node>> {
         let script = self.mono_script(obj)?;
         let (assembly, namespace, class) = (&script.0, &script.1, &script.2);
-        let full = if namespace.is_empty() { class.clone() } else { format!("{namespace}.{class}") };
-        let assembly = if assembly.ends_with(".dll") { assembly.clone() } else { format!("{assembly}.dll") };
+        let full = if namespace.is_empty() {
+            class.clone()
+        } else {
+            format!("{namespace}.{class}")
+        };
+        let assembly = if assembly.ends_with(".dll") {
+            assembly.clone()
+        } else {
+            format!("{assembly}.dll")
+        };
         let key = (assembly.clone(), full.clone());
         if let Some(n) = self.mono_nodes.lock().unwrap().get(&key) {
             return Ok(n.clone());
         }
         let generator = self
             .generator
-            .get_or_init(|| generator::Generator::load(&self.directory.join("Managed"), UNITY_VERSION).map_err(|e| e.to_string()))
+            .get_or_init(|| {
+                generator::Generator::load(&self.directory.join("Managed"), UNITY_VERSION)
+                    .map_err(|e| e.to_string())
+            })
             .as_ref()
             .map_err(|e| Error::Format(e.clone()))?;
         let mut node = generator.nodes(&assembly, &full)?;
@@ -255,7 +338,9 @@ impl Source {
         let tree = read_exact(obj, &node, Flavor::Python)?;
         let head = self.mono_head(obj)?;
         if tree.get("m_Script") != head.get("m_Script") {
-            return Err(Error::Format("generated header differs from native header".into()));
+            return Err(Error::Format(
+                "generated header differs from native header".into(),
+            ));
         }
         Ok(tree)
     }
@@ -263,10 +348,17 @@ impl Source {
 
 fn read_exact(obj: &Obj, node: &Node, flavor: Flavor) -> Result<Value> {
     let raw = obj.raw()?;
-    let mut r = Reader { c: serialized::Cursor::new(raw, obj.file.big_endian), flavor };
+    let mut r = Reader {
+        c: serialized::Cursor::new(raw, obj.file.big_endian),
+        flavor,
+    };
     let v = r.read(node)?;
     if r.c.pos != raw.len() {
-        return Err(Error::Format(format!("Expected to read {} bytes, but only read {} bytes", raw.len(), r.c.pos)));
+        return Err(Error::Format(format!(
+            "Expected to read {} bytes, but only read {} bytes",
+            raw.len(),
+            r.c.pos
+        )));
     }
     Ok(v)
 }
@@ -291,10 +383,17 @@ impl Source {
         if let Some(m) = self.resources.lock().unwrap().get(path) {
             return Ok(m.clone());
         }
-        let file = std::fs::File::open(path).map_err(|e| Error::Io(path.display().to_string(), e))?;
+        let file =
+            std::fs::File::open(path).map_err(|e| Error::Io(path.display().to_string(), e))?;
         // SAFETY: read-only build input.
-        let map = Arc::new(unsafe { memmap2::Mmap::map(&file) }.map_err(|e| Error::Io(path.display().to_string(), e))?);
-        self.resources.lock().unwrap().insert(path.to_path_buf(), map.clone());
+        let map = Arc::new(
+            unsafe { memmap2::Mmap::map(&file) }
+                .map_err(|e| Error::Io(path.display().to_string(), e))?,
+        );
+        self.resources
+            .lock()
+            .unwrap()
+            .insert(path.to_path_buf(), map.clone());
         Ok(map)
     }
 
@@ -305,7 +404,10 @@ impl Source {
             return Ok(i.clone());
         }
         let img = Arc::new(texture::texture_image(self, tex, false)?);
-        self.sprite_textures.lock().unwrap().insert(key, img.clone());
+        self.sprite_textures
+            .lock()
+            .unwrap()
+            .insert(key, img.clone());
         Ok(img)
     }
 }

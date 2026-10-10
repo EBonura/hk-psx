@@ -67,8 +67,15 @@ pub const MAX_CLUBS: u8 = 4;
 /// `Land`'s two `Shockwave Wave`s: the False Knight's prefab at `Speed` 18 and
 /// x scale 1.25 (host/husk_guard.py reads and proves every field).
 pub const WAVE: crate::shockwave::Params = crate::shockwave::Params {
-    start_speed: 29491, accel: 2359296, wave_box: [-46363, 21182, 7464, 115753], ground_ray: 104858,
-    spurt_box: [-16352, -118, 10151, 114151], damage_from: 3, damage_to: 6, damage: 1, spurt_ticks: 18,
+    start_speed: 29491,
+    accel: 2359296,
+    wave_box: [-46363, 21182, 7464, 115753],
+    ground_ray: 104858,
+    spurt_box: [-16352, -118, 10151, 114151],
+    damage_from: 3,
+    damage_to: 6,
+    damage: 1,
+    spurt_ticks: 18,
 };
 pub const MAX_STOMPS: u8 = 2;
 
@@ -153,7 +160,10 @@ pub struct Actions {
 }
 impl Actions {
     const fn new() -> Self {
-        Self { commands: [None; 6], len: 0 }
+        Self {
+            commands: [None; 6],
+            len: 0,
+        }
     }
     fn push(&mut self, action: Action) {
         if (self.len as usize) < self.commands.len() {
@@ -162,7 +172,9 @@ impl Actions {
         }
     }
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
-        self.commands[..self.len as usize].iter().map(|a| a.unwrap())
+        self.commands[..self.len as usize]
+            .iter()
+            .map(|a| a.unwrap())
     }
 }
 /// Sampled once per tick.
@@ -199,27 +211,53 @@ impl HuskGuard {
     /// spots around the spawn.
     pub fn new(home_x: i32, facing: i8, seed: u32) -> Self {
         let mut guard = Self {
-            phase: Phase::Dormant, facing, home_x, woken: true, running: false, clubs: 0, stomps: 0,
-            walk: 0, run: 0, vx: 0, animation: None, serial: 0, rng: seed | 1,
+            phase: Phase::Dormant,
+            facing,
+            home_x,
+            woken: true,
+            running: false,
+            clubs: 0,
+            stomps: 0,
+            walk: 0,
+            run: 0,
+            vx: 0,
+            animation: None,
+            serial: 0,
+            rng: seed | 1,
         };
         let mut actions = Actions::new();
         guard.play(Clip::Dormant, &mut actions);
         guard
     }
-    pub fn phase(&self) -> Phase { self.phase }
-    pub fn facing(&self) -> i32 { self.facing as i32 }
-    pub fn velocity_x(&self) -> i32 { self.vx }
-    pub fn animation(&self) -> Option<Animation> { self.animation }
-    pub fn clip(&self) -> Clip { self.animation.map_or(Clip::Dormant, |a| a.clip) }
+    pub fn phase(&self) -> Phase {
+        self.phase
+    }
+    pub fn facing(&self) -> i32 {
+        self.facing as i32
+    }
+    pub fn velocity_x(&self) -> i32 {
+        self.vx
+    }
+    pub fn animation(&self) -> Option<Animation> {
+        self.animation
+    }
+    pub fn clip(&self) -> Clip {
+        self.animation.map_or(Clip::Dormant, |a| a.clip)
+    }
     /// The `Swipe` box in world space for a body at `position`.
     pub fn swipe_box(&self, position: [i32; 2]) -> [i32; 4] {
         facing_box(SWIPE, self.facing as i32, position)
     }
     fn play(&mut self, clip: Clip, actions: &mut Actions) {
         // tk2dSpriteAnimator.Play of the clip already playing continues it.
-        if self.animation.is_some_and(|a| a.clip == clip) { return; }
+        if self.animation.is_some_and(|a| a.clip == clip) {
+            return;
+        }
         self.serial = self.serial.wrapping_add(1);
-        let animation = Animation { clip, serial: self.serial };
+        let animation = Animation {
+            clip,
+            serial: self.serial,
+        };
         self.animation = Some(animation);
         actions.push(Action::Play(animation));
     }
@@ -236,7 +274,9 @@ impl HuskGuard {
     /// `HealthManager`'s TAKE DAMAGE/TOOK DAMAGE, which only `Dormant` answers.
     pub fn took_damage(&mut self) -> Actions {
         let mut actions = Actions::new();
-        if self.phase == Phase::Dormant { self.enter(Phase::Wake, &mut actions); }
+        if self.phase == Phase::Dormant {
+            self.enter(Phase::Wake, &mut actions);
+        }
         actions
     }
     pub fn die(&mut self) {
@@ -248,33 +288,74 @@ impl HuskGuard {
         match phase {
             Phase::Wake => self.replay(Clip::Wake, actions),
             Phase::Cooldown(_) | Phase::StompCooldown(_) => self.play(Clip::Idle, actions),
-            Phase::Idle(_) => { self.running = false; self.vx = 0; self.play(Clip::Idle, actions); }
-            Phase::Startle => { self.replay(Clip::Startle, actions); self.woken = true; }
+            Phase::Idle(_) => {
+                self.running = false;
+                self.vx = 0;
+                self.play(Clip::Idle, actions);
+            }
+            Phase::Startle => {
+                self.replay(Clip::Startle, actions);
+                self.woken = true;
+            }
             Phase::Turn(_) => self.replay(Clip::Turn, actions),
-            Phase::Walk => { self.vx = self.walk; self.play(Clip::Walk, actions); }
-            Phase::Run => { self.running = true; self.vx = self.run; self.play(Clip::Run, actions); }
-            Phase::StopWalk => { self.vx = 0; self.replay(Clip::StopWalk, actions); }
-            Phase::StopRun => { self.vx = 0; self.running = false; self.replay(Clip::StopRun, actions); }
+            Phase::Walk => {
+                self.vx = self.walk;
+                self.play(Clip::Walk, actions);
+            }
+            Phase::Run => {
+                self.running = true;
+                self.vx = self.run;
+                self.play(Clip::Run, actions);
+            }
+            Phase::StopWalk => {
+                self.vx = 0;
+                self.replay(Clip::StopWalk, actions);
+            }
+            Phase::StopRun => {
+                self.vx = 0;
+                self.running = false;
+                self.replay(Clip::StopRun, actions);
+            }
             Phase::Return => {
                 self.woken = false;
                 self.running = false;
                 self.vx = self.facing as i32 * WALK_SPEED;
                 self.play(Clip::Walk, actions);
             }
-            Phase::Anticipate => { self.running = false; self.vx = 0; self.replay(Clip::Anticipate, actions); }
-            Phase::Attack(_) => { actions.push(Action::Swipe); self.replay(Clip::Attack, actions); }
-            Phase::Recoil(_) => { self.vx = -(self.facing as i32) * RECOIL_SPEED; }
+            Phase::Anticipate => {
+                self.running = false;
+                self.vx = 0;
+                self.replay(Clip::Anticipate, actions);
+            }
+            Phase::Attack(_) => {
+                actions.push(Action::Swipe);
+                self.replay(Clip::Attack, actions);
+            }
+            Phase::Recoil(_) => {
+                self.vx = -(self.facing as i32) * RECOIL_SPEED;
+            }
             Phase::AttackEnd => self.vx = 0,
-            Phase::StompAntic(_) => { self.vx = 0; self.replay(Clip::StompAntic, actions); }
-            Phase::InAir => { self.vx = -(self.facing as i32) * JUMP_SPEED; self.replay(Clip::StompJump, actions); }
-            Phase::Land => { self.vx = 0; self.replay(Clip::StompLand, actions); }
+            Phase::StompAntic(_) => {
+                self.vx = 0;
+                self.replay(Clip::StompAntic, actions);
+            }
+            Phase::InAir => {
+                self.vx = -(self.facing as i32) * JUMP_SPEED;
+                self.replay(Clip::StompJump, actions);
+            }
+            Phase::Land => {
+                self.vx = 0;
+                self.replay(Clip::StompLand, actions);
+            }
             Phase::Dormant | Phase::Dead => {}
         }
     }
     /// `Alert` and the chain it starts: turn if the hero is behind, else chase.
     fn alert(&mut self, senses: &Senses, actions: &mut Actions) {
         let (hero, me) = (senses.hero[0], senses.position[0]);
-        if hero == me { return; }
+        if hero == me {
+            return;
+        }
         let dir: i8 = if hero < me { -1 } else { 1 };
         self.walk = dir as i32 * WALK_SPEED;
         self.run = dir as i32 * RUN_SPEED;
@@ -290,7 +371,9 @@ impl HuskGuard {
     /// `Face Hero`, `Check Left 2`/`Check Right 2` and `Attack Choice`.
     fn face_hero(&mut self, senses: &Senses, actions: &mut Actions) {
         let (hero, me) = (senses.hero[0], senses.position[0]);
-        if hero == me { return; }
+        if hero == me {
+            return;
+        }
         let dir: i8 = if hero < me { -1 } else { 1 };
         self.walk = dir as i32 * WALK_SPEED;
         self.run = dir as i32 * RUN_SPEED;
@@ -301,7 +384,7 @@ impl HuskGuard {
         }
         loop {
             self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
-            let club = (self.rng >> 8) % 4 != 0;
+            let club = !(self.rng >> 8).is_multiple_of(4);
             if club && self.clubs < MAX_CLUBS {
                 self.clubs += 1;
                 self.stomps = 0;
@@ -327,7 +410,14 @@ impl HuskGuard {
             return;
         }
         if !senses.can_see_hero || !senses.in_alert_range || !self.roaming(senses.hero[0]) {
-            self.enter(if walking { Phase::StopWalk } else { Phase::StopRun }, actions);
+            self.enter(
+                if walking {
+                    Phase::StopWalk
+                } else {
+                    Phase::StopRun
+                },
+                actions,
+            );
             return;
         }
         self.alert(senses, actions);
@@ -337,24 +427,42 @@ impl HuskGuard {
         let see = senses.can_see_hero;
         match self.phase {
             Phase::Dormant => {
-                if senses.in_alert_range && see { self.enter(Phase::Wake, &mut actions); }
+                if senses.in_alert_range && see {
+                    self.enter(Phase::Wake, &mut actions);
+                }
             }
-            Phase::Wake => if self.done(&senses) { self.enter(Phase::Cooldown(0), &mut actions); },
+            Phase::Wake => {
+                if self.done(&senses) {
+                    self.enter(Phase::Cooldown(0), &mut actions);
+                }
+            }
             Phase::Cooldown(t) => {
-                if t + 1 >= COOLDOWN_TICKS { self.enter(Phase::Idle(0), &mut actions); }
-                else { self.phase = Phase::Cooldown(t + 1); }
+                if t + 1 >= COOLDOWN_TICKS {
+                    self.enter(Phase::Idle(0), &mut actions);
+                } else {
+                    self.phase = Phase::Cooldown(t + 1);
+                }
             }
             Phase::Idle(t) => {
                 if senses.in_attack_range && see {
                     self.face_hero(&senses, &mut actions);
                 } else if senses.in_alert_range && see && self.roaming(senses.hero[0]) {
                     // `In Roam Distance?` asks the same range again, then `Woken?`.
-                    if self.woken { self.alert(&senses, &mut actions); }
-                    else { self.enter(Phase::Startle, &mut actions); }
+                    if self.woken {
+                        self.alert(&senses, &mut actions);
+                    } else {
+                        self.enter(Phase::Startle, &mut actions);
+                    }
                 } else if t + 1 >= IDLE_TICKS {
                     // `Return Check`.
                     let x = senses.position[0];
-                    let dir: i8 = if x > self.home_x + IDLE_SPOT { -1 } else if x < self.home_x - IDLE_SPOT { 1 } else { 0 };
+                    let dir: i8 = if x > self.home_x + IDLE_SPOT {
+                        -1
+                    } else if x < self.home_x - IDLE_SPOT {
+                        1
+                    } else {
+                        0
+                    };
                     if dir == 0 {
                         self.phase = Phase::Idle(0);
                     } else if self.facing != dir {
@@ -367,7 +475,11 @@ impl HuskGuard {
                     self.phase = Phase::Idle(t + 1);
                 }
             }
-            Phase::Startle => if self.done(&senses) { self.alert(&senses, &mut actions); },
+            Phase::Startle => {
+                if self.done(&senses) {
+                    self.alert(&senses, &mut actions);
+                }
+            }
             Phase::Turn(then) => {
                 if senses.hero_above {
                     self.enter(Phase::Anticipate, &mut actions);
@@ -380,7 +492,11 @@ impl HuskGuard {
             }
             Phase::Walk => self.pursue(&senses, true, &mut actions),
             Phase::Run => self.pursue(&senses, false, &mut actions),
-            Phase::StopWalk | Phase::StopRun => if self.done(&senses) { self.enter(Phase::Idle(0), &mut actions); },
+            Phase::StopWalk | Phase::StopRun => {
+                if self.done(&senses) {
+                    self.enter(Phase::Idle(0), &mut actions);
+                }
+            }
             Phase::Return => {
                 let x = senses.position[0];
                 if senses.in_attack_range && see {
@@ -388,37 +504,66 @@ impl HuskGuard {
                 } else if senses.in_alert_range && see && self.roaming(senses.hero[0]) {
                     self.alert(&senses, &mut actions);
                 } else if (self.facing > 0 && x > self.home_x - IDLE_SPOT)
-                    || (self.facing < 0 && x < self.home_x + IDLE_SPOT) {
+                    || (self.facing < 0 && x < self.home_x + IDLE_SPOT)
+                {
                     self.enter(Phase::Idle(0), &mut actions);
                 }
             }
-            Phase::Anticipate => if self.done(&senses) { self.enter(Phase::Attack(0), &mut actions); },
+            Phase::Anticipate => {
+                if self.done(&senses) {
+                    self.enter(Phase::Attack(0), &mut actions);
+                }
+            }
             Phase::Attack(t) => {
                 if t + 1 >= ATTACK_TICKS {
                     let f = self.facing as i32;
-                    actions.push(Action::Slam([senses.position[0] + f * SLAM_ORIGIN[0], senses.position[1] + SLAM_ORIGIN[1]]));
+                    actions.push(Action::Slam([
+                        senses.position[0] + f * SLAM_ORIGIN[0],
+                        senses.position[1] + SLAM_ORIGIN[1],
+                    ]));
                     self.enter(Phase::Recoil(0), &mut actions);
-                } else { self.phase = Phase::Attack(t + 1); }
+                } else {
+                    self.phase = Phase::Attack(t + 1);
+                }
             }
             Phase::Recoil(t) => {
-                if t + 1 >= RECOIL_TICKS { self.enter(Phase::AttackEnd, &mut actions); }
-                else { self.phase = Phase::Recoil(t + 1); }
+                if t + 1 >= RECOIL_TICKS {
+                    self.enter(Phase::AttackEnd, &mut actions);
+                } else {
+                    self.phase = Phase::Recoil(t + 1);
+                }
             }
-            Phase::AttackEnd => if self.done(&senses) { self.enter(Phase::Cooldown(0), &mut actions); },
+            Phase::AttackEnd => {
+                if self.done(&senses) {
+                    self.enter(Phase::Cooldown(0), &mut actions);
+                }
+            }
             Phase::StompAntic(t) => {
-                if t + 1 >= STOMP_ANTIC_TICKS { self.enter(Phase::InAir, &mut actions); }
-                else { self.phase = Phase::StompAntic(t + 1); }
+                if t + 1 >= STOMP_ANTIC_TICKS {
+                    self.enter(Phase::InAir, &mut actions);
+                } else {
+                    self.phase = Phase::StompAntic(t + 1);
+                }
             }
-            Phase::InAir => if self.done(&senses) {
-                self.enter(Phase::Land, &mut actions);
-                let p = senses.position;
-                actions.push(Action::Slam([p[0], p[1] + STOMP_SLAM_Y]));
-                actions.push(Action::Shockwaves([p[0], p[1] + WAVE_Y]));
-            },
-            Phase::Land => if self.done(&senses) { self.enter(Phase::StompCooldown(0), &mut actions); },
+            Phase::InAir => {
+                if self.done(&senses) {
+                    self.enter(Phase::Land, &mut actions);
+                    let p = senses.position;
+                    actions.push(Action::Slam([p[0], p[1] + STOMP_SLAM_Y]));
+                    actions.push(Action::Shockwaves([p[0], p[1] + WAVE_Y]));
+                }
+            }
+            Phase::Land => {
+                if self.done(&senses) {
+                    self.enter(Phase::StompCooldown(0), &mut actions);
+                }
+            }
             Phase::StompCooldown(t) => {
-                if t + 1 >= STOMP_COOLDOWN_TICKS { self.enter(Phase::Cooldown(0), &mut actions); }
-                else { self.phase = Phase::StompCooldown(t + 1); }
+                if t + 1 >= STOMP_COOLDOWN_TICKS {
+                    self.enter(Phase::Cooldown(0), &mut actions);
+                } else {
+                    self.phase = Phase::StompCooldown(t + 1);
+                }
             }
             Phase::Dead => {}
         }
@@ -432,24 +577,45 @@ fn distance(a: [i32; 2], b: [i32; 2]) -> i32 {
     let mut r = 0u64;
     let mut bit = 1u64 << 62;
     let mut n = d2;
-    while bit > n { bit >>= 2; }
+    while bit > n {
+        bit >>= 2;
+    }
     while bit != 0 {
-        if n >= r + bit { n -= r + bit; r = (r >> 1) + bit; } else { r >>= 1; }
+        if n >= r + bit {
+            n -= r + bit;
+            r = (r >> 1) + bit;
+        } else {
+            r >>= 1;
+        }
         bit >>= 2;
     }
     r as i32
 }
 /// A box cooked in the art frame (front -x), for a body facing `facing`.
 pub fn facing_box(b: [i32; 4], facing: i32, position: [i32; 2]) -> [i32; 4] {
-    let (x0, x1) = if facing > 0 { (-b[2], -b[0]) } else { (b[0], b[2]) };
-    [position[0] + x0, position[1] + b[1], position[0] + x1, position[1] + b[3]]
+    let (x0, x1) = if facing > 0 {
+        (-b[2], -b[0])
+    } else {
+        (b[0], b[2])
+    };
+    [
+        position[0] + x0,
+        position[1] + b[1],
+        position[0] + x1,
+        position[1] + b[3],
+    ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     fn senses(me: i32, hero: i32) -> Senses {
-        Senses { position: [me, 0], hero: [hero, 0], can_see_hero: true, ..Senses::default() }
+        Senses {
+            position: [me, 0],
+            hero: [hero, 0],
+            can_see_hero: true,
+            ..Senses::default()
+        }
     }
     #[test]
     fn sleeps_until_it_sees_the_hero_in_alert_range_then_wakes_and_cools_down() {
@@ -457,13 +623,21 @@ mod tests {
         assert_eq!(g.phase(), Phase::Dormant);
         g.tick(senses(0, 5 * ONE));
         assert_eq!(g.phase(), Phase::Dormant);
-        let s = Senses { in_alert_range: true, ..senses(0, 5 * ONE) };
+        let s = Senses {
+            in_alert_range: true,
+            ..senses(0, 5 * ONE)
+        };
         g.tick(s);
         assert_eq!(g.phase(), Phase::Wake);
-        let done = Senses { completed: g.animation(), ..s };
+        let done = Senses {
+            completed: g.animation(),
+            ..s
+        };
         g.tick(done);
         assert!(matches!(g.phase(), Phase::Cooldown(_)));
-        for _ in 0..COOLDOWN_TICKS { g.tick(senses(0, 50 * ONE)); }
+        for _ in 0..COOLDOWN_TICKS {
+            g.tick(senses(0, 50 * ONE));
+        }
         assert!(matches!(g.phase(), Phase::Idle(_)));
     }
     fn awake(facing: i8) -> HuskGuard {
@@ -474,16 +648,25 @@ mod tests {
     #[test]
     fn chases_walking_close_running_far_and_turns_to_a_hero_behind() {
         let mut g = awake(1);
-        let s = Senses { in_alert_range: true, ..senses(0, 5 * ONE) };
+        let s = Senses {
+            in_alert_range: true,
+            ..senses(0, 5 * ONE)
+        };
         g.tick(s);
         assert_eq!(g.phase(), Phase::Walk);
         assert_eq!(g.velocity_x(), WALK_SPEED);
-        let far = Senses { in_alert_range: true, ..senses(0, 12 * ONE) };
+        let far = Senses {
+            in_alert_range: true,
+            ..senses(0, 12 * ONE)
+        };
         g.tick(far);
         assert_eq!(g.phase(), Phase::Run);
         assert_eq!(g.velocity_x(), RUN_SPEED);
         let mut g = awake(1);
-        g.tick(Senses { in_alert_range: true, ..senses(0, -5 * ONE) });
+        g.tick(Senses {
+            in_alert_range: true,
+            ..senses(0, -5 * ONE)
+        });
         assert_eq!(g.phase(), Phase::Turn(AfterTurn::Idle));
         assert_eq!(g.facing(), -1);
     }
@@ -493,57 +676,106 @@ mod tests {
         let mut g = awake(1);
         for _ in 0..200 {
             g.phase = Phase::Idle(0);
-            g.tick(Senses { in_attack_range: true, in_alert_range: true, ..senses(0, 3 * ONE) });
+            g.tick(Senses {
+                in_attack_range: true,
+                in_alert_range: true,
+                ..senses(0, 3 * ONE)
+            });
             match g.phase() {
-                Phase::Anticipate => { clubs += 1; run_club += 1; run_stomp = 0; }
-                Phase::StompAntic(_) => { stomps += 1; run_stomp += 1; run_club = 0; }
+                Phase::Anticipate => {
+                    clubs += 1;
+                    run_club += 1;
+                    run_stomp = 0;
+                }
+                Phase::StompAntic(_) => {
+                    stomps += 1;
+                    run_stomp += 1;
+                    run_club = 0;
+                }
                 other => panic!("{other:?}"),
             }
             assert!(run_club <= MAX_CLUBS && run_stomp <= MAX_STOMPS);
         }
-        assert!(clubs > stomps * 2 && stomps > 20, "{clubs} clubs, {stomps} stomps");
+        assert!(
+            clubs > stomps * 2 && stomps > 20,
+            "{clubs} clubs, {stomps} stomps"
+        );
     }
     #[test]
     fn a_club_arms_the_swipe_slams_ahead_recoils_back_and_cools_down() {
         let mut g = awake(1);
         g.enter(Phase::Anticipate, &mut Actions::new());
-        let a = g.tick(Senses { completed: g.animation(), ..senses(0, 3 * ONE) });
+        let a = g.tick(Senses {
+            completed: g.animation(),
+            ..senses(0, 3 * ONE)
+        });
         assert!(a.iter().any(|x| x == Action::Swipe));
         let mut slam = None;
         for _ in 0..ATTACK_TICKS {
-            for x in g.tick(senses(0, 3 * ONE)).iter() { if let Action::Slam(p) = x { slam = Some(p); } }
+            for x in g.tick(senses(0, 3 * ONE)).iter() {
+                if let Action::Slam(p) = x {
+                    slam = Some(p);
+                }
+            }
         }
         assert_eq!(slam, Some([SLAM_ORIGIN[0], SLAM_ORIGIN[1]]));
         assert_eq!(g.velocity_x(), -RECOIL_SPEED);
-        for _ in 0..RECOIL_TICKS { g.tick(senses(0, 3 * ONE)); }
+        for _ in 0..RECOIL_TICKS {
+            g.tick(senses(0, 3 * ONE));
+        }
         assert_eq!(g.phase(), Phase::AttackEnd);
         assert_eq!(g.velocity_x(), 0);
-        g.tick(Senses { completed: g.animation(), ..senses(0, 3 * ONE) });
+        g.tick(Senses {
+            completed: g.animation(),
+            ..senses(0, 3 * ONE)
+        });
         assert!(matches!(g.phase(), Phase::Cooldown(_)));
     }
     #[test]
     fn a_stomp_hops_back_lands_with_two_waves_and_cools_down() {
         let mut g = awake(1);
         g.enter(Phase::StompAntic(0), &mut Actions::new());
-        for _ in 0..STOMP_ANTIC_TICKS { g.tick(senses(0, 3 * ONE)); }
+        for _ in 0..STOMP_ANTIC_TICKS {
+            g.tick(senses(0, 3 * ONE));
+        }
         assert_eq!(g.phase(), Phase::InAir);
         assert_eq!(g.velocity_x(), -JUMP_SPEED);
-        let a = g.tick(Senses { completed: g.animation(), ..senses(0, 3 * ONE) });
+        let a = g.tick(Senses {
+            completed: g.animation(),
+            ..senses(0, 3 * ONE)
+        });
         assert!(a.iter().any(|x| x == Action::Shockwaves([0, WAVE_Y])));
-        g.tick(Senses { completed: g.animation(), ..senses(0, 3 * ONE) });
+        g.tick(Senses {
+            completed: g.animation(),
+            ..senses(0, 3 * ONE)
+        });
         assert_eq!(g.phase(), Phase::StompCooldown(0));
-        for _ in 0..STOMP_COOLDOWN_TICKS { g.tick(senses(0, 50 * ONE)); }
+        for _ in 0..STOMP_COOLDOWN_TICKS {
+            g.tick(senses(0, 50 * ONE));
+        }
         assert!(matches!(g.phase(), Phase::Cooldown(_)));
     }
     #[test]
     fn walks_home_after_idling_away_from_its_spot() {
         let mut g = awake(1);
-        for _ in 0..IDLE_TICKS { g.tick(Senses { can_see_hero: false, ..senses(10 * ONE, 60 * ONE) }); }
+        for _ in 0..IDLE_TICKS {
+            g.tick(Senses {
+                can_see_hero: false,
+                ..senses(10 * ONE, 60 * ONE)
+            });
+        }
         assert_eq!(g.phase(), Phase::Turn(AfterTurn::Return));
-        g.tick(Senses { completed: g.animation(), can_see_hero: false, ..senses(10 * ONE, 60 * ONE) });
+        g.tick(Senses {
+            completed: g.animation(),
+            can_see_hero: false,
+            ..senses(10 * ONE, 60 * ONE)
+        });
         assert_eq!(g.phase(), Phase::Return);
         assert_eq!(g.velocity_x(), -WALK_SPEED);
-        g.tick(Senses { can_see_hero: false, ..senses(0, 60 * ONE) });
+        g.tick(Senses {
+            can_see_hero: false,
+            ..senses(0, 60 * ONE)
+        });
         assert!(matches!(g.phase(), Phase::Idle(_)));
     }
     #[test]

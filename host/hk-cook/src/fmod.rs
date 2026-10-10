@@ -23,13 +23,23 @@ struct Api {
     system_create: unsafe extern "C" fn(*mut Handle, c_uint) -> c_int,
     system_set_output: unsafe extern "C" fn(Handle, c_int) -> c_int,
     system_init: unsafe extern "C" fn(Handle, c_int, c_uint, *mut c_void) -> c_int,
-    create_sound: unsafe extern "C" fn(Handle, *const c_char, c_uint, *mut c_void, *mut Handle) -> c_int,
+    create_sound:
+        unsafe extern "C" fn(Handle, *const c_char, c_uint, *mut c_void, *mut Handle) -> c_int,
     num_subsounds: unsafe extern "C" fn(Handle, *mut c_int) -> c_int,
     get_subsound: unsafe extern "C" fn(Handle, c_int, *mut Handle) -> c_int,
-    get_format: unsafe extern "C" fn(Handle, *mut c_int, *mut c_int, *mut c_int, *mut c_int) -> c_int,
+    get_format:
+        unsafe extern "C" fn(Handle, *mut c_int, *mut c_int, *mut c_int, *mut c_int) -> c_int,
     get_length: unsafe extern "C" fn(Handle, *mut c_uint, c_uint) -> c_int,
     get_defaults: unsafe extern "C" fn(Handle, *mut f32, *mut c_int) -> c_int,
-    lock: unsafe extern "C" fn(Handle, c_uint, c_uint, *mut *mut c_void, *mut *mut c_void, *mut c_uint, *mut c_uint) -> c_int,
+    lock: unsafe extern "C" fn(
+        Handle,
+        c_uint,
+        c_uint,
+        *mut *mut c_void,
+        *mut *mut c_void,
+        *mut c_uint,
+        *mut c_uint,
+    ) -> c_int,
     unlock: unsafe extern "C" fn(Handle, *mut c_void, *mut c_void, c_uint, c_uint) -> c_int,
     release: unsafe extern "C" fn(Handle) -> c_int,
 }
@@ -58,9 +68,20 @@ fn library_path(root: &Path) -> Result<PathBuf> {
     }
     let lib = root.join(".venv/lib");
     for entry in std::fs::read_dir(&lib).map_err(|e| format!("{}: {e}", lib.display()))? {
-        let dir = entry.map_err(|e| e.to_string())?.path().join("site-packages/fmod_toolkit/libfmod");
-        let system = if cfg!(target_os = "macos") { "Darwin" } else { "Linux" };
-        let candidate = dir.join(system).join(if cfg!(target_os = "macos") { "libfmod.dylib" } else { "libfmod.so" });
+        let dir = entry
+            .map_err(|e| e.to_string())?
+            .path()
+            .join("site-packages/fmod_toolkit/libfmod");
+        let system = if cfg!(target_os = "macos") {
+            "Darwin"
+        } else {
+            "Linux"
+        };
+        let candidate = dir.join(system).join(if cfg!(target_os = "macos") {
+            "libfmod.dylib"
+        } else {
+            "libfmod.so"
+        });
         if candidate.is_file() {
             return Ok(candidate);
         }
@@ -88,7 +109,11 @@ fn api(root: &Path) -> Result<&'static Api> {
             let sym = |name: &str| -> std::result::Result<*mut c_void, String> {
                 let n = CString::new(name).unwrap();
                 let p = dlsym(handle, n.as_ptr());
-                if p.is_null() { Err(format!("FMOD has no {name}")) } else { Ok(p) }
+                if p.is_null() {
+                    Err(format!("FMOD has no {name}"))
+                } else {
+                    Ok(p)
+                }
             };
             Ok(Api {
                 system_create: entry(sym("FMOD_System_Create")?),
@@ -111,7 +136,11 @@ fn api(root: &Path) -> Result<&'static Api> {
 }
 
 fn check(what: &str, result: c_int) -> Result<()> {
-    if result == 0 { Ok(()) } else { err(format!("FMOD {what} failed ({result})")) }
+    if result == 0 {
+        Ok(())
+    } else {
+        err(format!("FMOD {what} failed ({result})"))
+    }
 }
 
 /// fmod_toolkit `raw_to_wav` for the first subsound: the WAV bytes of
@@ -130,8 +159,14 @@ pub fn raw_to_wav(root: &Path, data: &[u8], channels: i32, frequency: i32) -> Re
                 check("System_Create", (api.system_create)(&mut s, HEADER_VERSION))?;
                 // Offline decoding never plays anything: mix to NOSOUND so a host
                 // without an audio device decodes too.
-                check("System_SetOutput", (api.system_set_output)(s, OUTPUT_NOSOUND))?;
-                check("System_Init", (api.system_init)(s, channels, 0, std::ptr::null_mut()))?;
+                check(
+                    "System_SetOutput",
+                    (api.system_set_output)(s, OUTPUT_NOSOUND),
+                )?;
+                check(
+                    "System_Init",
+                    (api.system_init)(s, channels, 0, std::ptr::null_mut()),
+                )?;
                 systems.insert(channels, s as usize);
                 s
             }
@@ -144,7 +179,13 @@ pub fn raw_to_wav(root: &Path, data: &[u8], channels: i32, frequency: i32) -> Re
         let mut sound: Handle = std::ptr::null_mut();
         check(
             "CreateSound",
-            (api.create_sound)(system, data.as_ptr() as *const c_char, MODE_OPENMEMORY, exinfo.as_mut_ptr() as *mut c_void, &mut sound),
+            (api.create_sound)(
+                system,
+                data.as_ptr() as *const c_char,
+                MODE_OPENMEMORY,
+                exinfo.as_mut_ptr() as *mut c_void,
+                &mut sound,
+            ),
         )?;
         let mut count = 0;
         check("GetNumSubSounds", (api.num_subsounds)(sound, &mut count))?;
@@ -155,11 +196,20 @@ pub fn raw_to_wav(root: &Path, data: &[u8], channels: i32, frequency: i32) -> Re
         let mut sub: Handle = std::ptr::null_mut();
         check("GetSubSound", (api.get_subsound)(sound, 0, &mut sub))?;
         let (mut kind, mut format, mut chans, mut bits) = (0, 0, 0, 0);
-        check("GetFormat", (api.get_format)(sub, &mut kind, &mut format, &mut chans, &mut bits))?;
+        check(
+            "GetFormat",
+            (api.get_format)(sub, &mut kind, &mut format, &mut chans, &mut bits),
+        )?;
         let mut length: c_uint = 0;
-        check("GetLength", (api.get_length)(sub, &mut length, TIMEUNIT_PCMBYTES))?;
+        check(
+            "GetLength",
+            (api.get_length)(sub, &mut length, TIMEUNIT_PCMBYTES),
+        )?;
         let (mut freq, mut priority) = (0f32, 0);
-        check("GetDefaults", (api.get_defaults)(sub, &mut freq, &mut priority))?;
+        check(
+            "GetDefaults",
+            (api.get_defaults)(sub, &mut freq, &mut priority),
+        )?;
         let rate = freq as i32;
         let (audio_format, bits, data_len, convert) = match format {
             1..=4 => (1i16, bits, length as usize, false),
@@ -184,7 +234,10 @@ pub fn raw_to_wav(root: &Path, data: &[u8], channels: i32, frequency: i32) -> Re
         wav[40..44].copy_from_slice(&(data_len as i32).to_le_bytes());
         let (mut p1, mut p2) = (std::ptr::null_mut(), std::ptr::null_mut());
         let (mut l1, mut l2) = (0, 0);
-        check("Lock", (api.lock)(sub, 0, length, &mut p1, &mut p2, &mut l1, &mut l2))?;
+        check(
+            "Lock",
+            (api.lock)(sub, 0, length, &mut p1, &mut p2, &mut l1, &mut l2),
+        )?;
         for (p, l) in [(p1, l1), (p2, l2)] {
             if p.is_null() || l == 0 {
                 continue;
@@ -216,19 +269,34 @@ pub fn clip_wav(root: &Path, source: &Source, t: &Value) -> Result<Vec<u8>> {
     let data = match t.get("m_AudioData") {
         Some(Value::Bytes(b)) if !b.is_empty() => b.clone(),
         _ => {
-            let r = t.get("m_Resource").ok_or("AudioClip with neither m_AudioData nor m_Resource")?;
+            let r = t
+                .get("m_Resource")
+                .ok_or("AudioClip with neither m_AudioData nor m_Resource")?;
             let path = r.get("m_Source").and_then(Value::str).unwrap_or_default();
             let base = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
             let offset = r.get("m_Offset").and_then(Value::int).unwrap_or(0) as usize;
             let size = r.get("m_Size").and_then(Value::int).unwrap_or(0) as usize;
-            let bytes = source.resource(&source.directory.join(&base)).map_err(|x| x.to_string())?;
-            bytes.get(offset..offset + size).ok_or("audio resource out of range")?.to_vec()
+            let bytes = source
+                .resource(&source.directory.join(&base))
+                .map_err(|x| x.to_string())?;
+            bytes
+                .get(offset..offset + size)
+                .ok_or("audio resource out of range")?
+                .to_vec()
         }
     };
     if data.starts_with(b"RIFF") {
         return Ok(data);
     }
-    let channels = t.get("m_Channels").and_then(Value::int).filter(|&c| c != 0).unwrap_or(2) as i32;
-    let frequency = t.get("m_Frequency").and_then(Value::int).filter(|&c| c != 0).unwrap_or(44100) as i32;
+    let channels = t
+        .get("m_Channels")
+        .and_then(Value::int)
+        .filter(|&c| c != 0)
+        .unwrap_or(2) as i32;
+    let frequency = t
+        .get("m_Frequency")
+        .and_then(Value::int)
+        .filter(|&c| c != 0)
+        .unwrap_or(44100) as i32;
     raw_to_wav(root, &data, channels, frequency)
 }

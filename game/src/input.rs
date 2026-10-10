@@ -60,7 +60,9 @@ fn publish_stats() {
 /// blocking work; all subsequent checkpoints still service pad/audio/display.
 pub fn begin_scene_load(sim_clock: u32) {
     unsafe {
-        if let Err(fault) = SAMPLER.begin_scene_load(sim_clock) { failed(fault); }
+        if let Err(fault) = SAMPLER.begin_scene_load(sim_clock) {
+            failed(fault);
+        }
     }
     publish_stats();
     checkpoint();
@@ -69,7 +71,9 @@ pub fn begin_scene_load(sim_clock: u32) {
 /// gaps as blocked rather than missed until the scene load ends.
 pub fn begin_blocking_transfer() {
     unsafe {
-        if let Err(fault) = SAMPLER.begin_blocking_transfer() { failed(fault); }
+        if let Err(fault) = SAMPLER.begin_blocking_transfer() {
+            failed(fault);
+        }
     }
 }
 /// Return the observed resume boundary, never an unpolled hardware timestamp.
@@ -224,7 +228,10 @@ pub static mut HK_TICK_LOG_COUNT: u32 = 0;
 #[cfg(feature = "tick-log")]
 pub fn log_tick(hero: bool) {
     unsafe {
-        let ordinal = SAMPLER.stats().polls.wrapping_sub(SAMPLER.pending_count() as u32);
+        let ordinal = SAMPLER
+            .stats()
+            .polls
+            .wrapping_sub(SAMPLER.pending_count() as u32);
         HK_TICK_LOG[(HK_TICK_LOG_COUNT & 15) as usize] = ordinal | (u32::from(hero) << 31);
         HK_TICK_LOG_COUNT = HK_TICK_LOG_COUNT.wrapping_add(1);
     }

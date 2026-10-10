@@ -56,7 +56,12 @@ pub(crate) fn div255(x: u32) -> u32 {
 impl Image {
     /// A zero-filled image.
     pub fn new(mode: Mode, width: usize, height: usize) -> Image {
-        Image { mode, width, height, data: vec![0; width * height * mode.pixel_size()] }
+        Image {
+            mode,
+            width,
+            height,
+            data: vec![0; width * height * mode.pixel_size()],
+        }
     }
 
     /// The bytes of the pixel at (`x`, `y`).
@@ -69,7 +74,12 @@ impl Image {
     /// The sub-image inside `b` = [left, upper, right, lower]; each edge is
     /// rounded half to even and any area outside the source is zero.
     pub fn crop(&self, b: [f64; 4]) -> Image {
-        self.crop_int(py_round(b[0]), py_round(b[1]), py_round(b[2]), py_round(b[3]))
+        self.crop_int(
+            py_round(b[0]),
+            py_round(b[1]),
+            py_round(b[2]),
+            py_round(b[3]),
+        )
     }
 
     /// `crop` with integer edges.
@@ -121,6 +131,32 @@ impl Image {
         out
     }
 
+    /// A quarter turn: counter-clockwise when `counter_clockwise`, clockwise otherwise. The result is
+    /// `height` wide and `width` tall, the way an expanding rotation by 90 degrees lays it out.
+    pub fn quarter_turn(&self, counter_clockwise: bool) -> Image {
+        let n = self.mode.pixel_size();
+        let mut out = Image {
+            mode: self.mode,
+            width: self.height,
+            height: self.width,
+            data: vec![0; self.data.len()],
+        };
+        for y in 0..self.height {
+            for x in 0..self.width {
+                // Counter-clockwise sends the right edge to the top; clockwise sends the left edge to the top.
+                let (ox, oy) = if counter_clockwise {
+                    (y, self.width - 1 - x)
+                } else {
+                    (self.height - 1 - y, x)
+                };
+                let from = (y * self.width + x) * n;
+                let to = (oy * out.width + ox) * n;
+                out.data[to..to + n].copy_from_slice(&self.data[from..from + n]);
+            }
+        }
+        out
+    }
+
     /// Paste a same-mode `src` with its top-left corner at (`x0`, `y0`),
     /// clipped to this image. A mask of the source's size selects pixels: a
     /// "1" mask copies where nonzero, an "L" mask blends each byte as
@@ -150,7 +186,8 @@ impl Image {
                         } else {
                             let m_value = m_value as u32;
                             for (db, &sb) in d.iter_mut().zip(s) {
-                                *db = div255(sb as u32 * m_value + *db as u32 * (255 - m_value)) as u8;
+                                *db = div255(sb as u32 * m_value + *db as u32 * (255 - m_value))
+                                    as u8;
                             }
                         }
                     }

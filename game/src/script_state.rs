@@ -25,7 +25,10 @@ impl<const N: usize> Default for Overlaps<N> {
 }
 impl<const N: usize> Overlaps<N> {
     pub const fn new() -> Self {
-        Self { now: [false; N], was: [false; N] }
+        Self {
+            now: [false; N],
+            was: [false; N],
+        }
     }
     /// Forget both ticks. A scene load does this, so the volumes it creates
     /// around the arriving Knight read as an entry rather than as a stay.

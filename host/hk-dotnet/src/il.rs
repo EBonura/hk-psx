@@ -280,14 +280,17 @@ fn two(op: u8) -> Option<(&'static str, Kind)> {
 pub fn body(asm: &Assembly, rva: u32) -> Result<&[u8]> {
     let d = asm.data();
     let at = asm.offset(rva)?;
-    let first = *d.get(at).ok_or_else(|| Error("truncated method body".into()))?;
+    let first = *d
+        .get(at)
+        .ok_or_else(|| Error("truncated method body".into()))?;
     let (start, size) = if first & 3 == 2 {
         (at + 1, (first >> 2) as usize)
     } else {
         let header = (u16_at(d, at)? >> 12) as usize * 4;
         (at + header, u32_at(d, at + 4)? as usize)
     };
-    d.get(start..start + size).ok_or_else(|| Error("truncated method body".into()))
+    d.get(start..start + size)
+        .ok_or_else(|| Error("truncated method body".into()))
 }
 
 pub fn decode(code: &[u8]) -> Result<Vec<Instruction>> {
@@ -298,7 +301,8 @@ pub fn decode(code: &[u8]) -> Result<Vec<Instruction>> {
         let offset = p as u32;
         let (name, kind) = if code[p] == 0xfe {
             p += 2;
-            two(*code.get(p - 1).ok_or_else(bad)?).ok_or_else(|| Error(format!("unknown opcode fe {:02x}", code[p - 1])))?
+            two(*code.get(p - 1).ok_or_else(bad)?)
+                .ok_or_else(|| Error(format!("unknown opcode fe {:02x}", code[p - 1])))?
         } else {
             p += 1;
             one(code[p - 1]).ok_or_else(|| Error(format!("unknown opcode {:02x}", code[p - 1])))?
@@ -332,7 +336,11 @@ pub fn decode(code: &[u8]) -> Result<Vec<Instruction>> {
                 Operand::Switch(n)
             }
         };
-        out.push(Instruction { offset, name, operand });
+        out.push(Instruction {
+            offset,
+            name,
+            operand,
+        });
     }
     Ok(out)
 }
@@ -349,9 +357,18 @@ impl Assembly {
                 continue;
             }
             let start = self.get(Table::TypeDef, t, 5);
-            let end = if t < types { self.get(Table::TypeDef, t + 1, 5) } else { methods + 1 };
+            let end = if t < types {
+                self.get(Table::TypeDef, t + 1, 5)
+            } else {
+                methods + 1
+            };
             for m in start..end {
-                out.push((t, m, self.string(self.get(Table::MethodDef, m, 3)).to_string(), self.get(Table::MethodDef, m, 0)));
+                out.push((
+                    t,
+                    m,
+                    self.string(self.get(Table::MethodDef, m, 3)).to_string(),
+                    self.get(Table::MethodDef, m, 0),
+                ));
             }
         }
         out

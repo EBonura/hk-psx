@@ -29,7 +29,11 @@ impl Edge {
 /// sits at coordinate p: `a` rounds half up, `b` rounds half toward zero.
 fn run(a: f32, b: f32) -> (i64, i64) {
     let lo = (a + 0.5).floor() as i64;
-    let hi = if b >= 0.0 { (b - 0.5).ceil() } else { (b + 0.5).floor() } as i64;
+    let hi = if b >= 0.0 {
+        (b - 0.5).ceil()
+    } else {
+        (b + 0.5).floor()
+    } as i64;
     (lo, hi)
 }
 
@@ -53,7 +57,13 @@ pub fn polygon_fill(im: &mut Image, xy: &[(f64, f64)], ink: u8) {
                 return None;
             }
             let (top, bottom) = if a.1 < b.1 { (a, b) } else { (b, a) };
-            Some(Edge { y_top: top.1, y_bottom: bottom.1, x_start: a.0 as f32, y_start: a.1, dx: (b.0 - a.0) as f32 / (b.1 - a.1) as f32 })
+            Some(Edge {
+                y_top: top.1,
+                y_bottom: bottom.1,
+                x_start: a.0 as f32,
+                y_start: a.1,
+                dx: (b.0 - a.0) as f32 / (b.1 - a.1) as f32,
+            })
         })
         .collect();
     let edges: Vec<&Edge> = by_vertex.iter().flatten().collect();
@@ -65,7 +75,9 @@ pub fn polygon_fill(im: &mut Image, xy: &[(f64, f64)], ink: u8) {
         if pts[(i + n - 1) % n].1 == pts[i].1 || pts[(i + 1) % n].1 == pts[i].1 {
             continue;
         }
-        let prev = (1..=n).map(|k| pts[(i + n - k) % n]).find(|p| p.1 != pts[i].1);
+        let prev = (1..=n)
+            .map(|k| pts[(i + n - k) % n])
+            .find(|p| p.1 != pts[i].1);
         let next = (1..=n).map(|k| pts[(i + k) % n]).find(|p| p.1 != pts[i].1);
         if let (Some(p), Some(q)) = (prev, next) {
             if p.1 < pts[i].1 && q.1 < pts[i].1 {
@@ -79,7 +91,11 @@ pub fn polygon_fill(im: &mut Image, xy: &[(f64, f64)], ink: u8) {
     // (an edge covers its top row but not its bottom row), a tip contributing
     // a zero-length pair, and flat edges.
     let rows_runs = |y: i64| -> Vec<(i64, i64)> {
-        let mut xs: Vec<f32> = edges.iter().filter(|e| e.y_top <= y && y < e.y_bottom).map(|e| e.at(y)).collect();
+        let mut xs: Vec<f32> = edges
+            .iter()
+            .filter(|e| e.y_top <= y && y < e.y_bottom)
+            .map(|e| e.at(y))
+            .collect();
         for &(tx, ty, top, _) in &tips {
             if ty == y && !top {
                 xs.push(tx as f32);
@@ -109,9 +125,13 @@ pub fn polygon_fill(im: &mut Image, xy: &[(f64, f64)], ink: u8) {
             }
             let towards = if top { y + 1 } else { y - 1 };
             let at = run(tx as f32, tx as f32);
-            let Some(r) = runs.iter_mut().find(|r| **r == at) else { continue };
+            let Some(r) = runs.iter_mut().find(|r| **r == at) else {
+                continue;
+            };
             // Where the two edges at this vertex stand in the neighbouring row.
-            let (Some(e1), Some(e2)) = (&by_vertex[(v + n - 1) % n], &by_vertex[v]) else { continue };
+            let (Some(e1), Some(e2)) = (&by_vertex[(v + n - 1) % n], &by_vertex[v]) else {
+                continue;
+            };
             let (x1, x2) = (e1.at(towards), e2.at(towards));
             let tx = tx as f32;
             if x1.max(x2) < tx {
