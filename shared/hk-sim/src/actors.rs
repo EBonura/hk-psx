@@ -95,6 +95,33 @@ pub enum ActorController {
         shot_clip: u16,
         impact_clip: u16,
     },
+    /// Fat Fly, driven by `crate::fat_fly::FatFly`: a Gruzzer's bounce woken by
+    /// the Knight, and a four-way spit. `walk_clip` is Fly and `turn_clip`
+    /// holds it too; `attack_clip` is Attack, and the shot clips belong to the
+    /// projectile pool (`Spitter Shot R`, the Aspid's bullet).
+    FatFly {
+        attack_clip: u16,
+        shot_clip: u16,
+        impact_clip: u16,
+    },
+    /// Plant Trap (Snapper Trap), driven by `crate::plant_trap::PlantTrap`: a
+    /// rooted trap with no body, whose only collider is the box tk2d builds
+    /// for the jaw frame showing. `walk_clip` and `turn_clip` hold Snap Ready;
+    /// `clips` are Snap Ready, Snap and Retract in `plant_trap::Clip::slot`
+    /// order. The `Detector` trigger box is a prefab constant in the module.
+    PlantTrap {
+        clips: [u16; crate::plant_trap::Clip::COUNT],
+    },
+    /// Moss Charger, driven by `crate::moss_charger::MossCharger`: a tuft that
+    /// surfaces beside the Knight and charges. It has no collider of its own and
+    /// the art faces right as authored. `walk_clip` and `turn_clip` hold Appear;
+    /// `clips` are in `moss_charger::Clip` order. `range` is the `Attack Range`
+    /// trigger box relative to the tuft, which `SetParent(null)` leaves where it
+    /// was while the body moves.
+    MossCharger {
+        clips: [u16; crate::moss_charger::Clip::COUNT],
+        range: [i32; 4],
+    },
     /// Hatcher, driven by `crate::hatcher::Hatcher`; `walk_clip` is Fly and
     /// `turn_clip` holds it too, because neither of its two facing actions
     /// plays a turn. It releases the scene's reserved `HatcherBaby` actors.

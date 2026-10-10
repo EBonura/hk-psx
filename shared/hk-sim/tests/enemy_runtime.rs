@@ -605,6 +605,9 @@ mod modules {
     pub const ACID_FLYER: usize = 12;
     pub const MOSQUITO: usize = 13;
     pub const MOSS_WALKER: usize = 14;
+    pub const FAT_FLY: usize = 15;
+    pub const PLANT_TRAP: usize = 16;
+    pub const MOSS_CHARGER: usize = 17;
     pub fn require(_k: usize) -> bool {
         true
     }
@@ -1103,6 +1106,7 @@ fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
             smash_bounces: 0,
             remove_after_land: 0,
             hold_ticks: 0,
+            gas: false,
         }),
         ..SPEC
     };
@@ -1177,6 +1181,7 @@ const EGG_SAC: ActorSpec = ActorSpec {
         smash_bounces: 0,
         remove_after_land: 14,
         hold_ticks: 84,
+        gas: false,
     }),
     recoil_speed: 0,
     recoil_ticks: 0,
@@ -2900,3 +2905,455 @@ fn the_shell_above_the_body_takes_an_ordinary_pogo_and_no_damage() {
     assert_eq!(w.actor_state(0, ACID_AT.source_id).unwrap().2, 30);
 }
 const VITAL_BOUNCE_TICKS: u16 = NAIL_RESPONSE_PARAMS.bounce_ticks;
+
+// ---- The Greenpath families -----------------------------------------------
+
+/// A room whose clips are `(frames, fps, wrap)`, every frame the same one-unit box.
+fn clips_room(clips: &[(u32, u32, u32)]) -> Vec<u8> {
+    let frames = clips.iter().map(|c| c.0).max().unwrap();
+    let mut b = Vec::from(*b"HKROOM02");
+    for n in [1u32, 1, 0, frames, clips.len() as u32, 1, 0, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for n in [0u16, 0, 0, 4, 4, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.extend(0u32.to_le_bytes());
+    for _ in 0..frames {
+        for n in [0i32, -ONE / 2, -ONE, ONE / 2, 0] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    for &(count, fps, wrap) in clips {
+        for n in [0u32, count, fps * 65536, wrap] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    for n in [-20 * ONE, 0, 20 * ONE, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.resize(b.len() + 32 + 32768, 0);
+    b
+}
+/// `submitted` with the camera centred on `at`, so a flyer that has left the origin still draws.
+fn submitted_at(
+    w: &enemies::EnemyWorld,
+    r: &world::Region,
+    room: &hk_format::Room,
+    at: (i32, i32),
+) -> usize {
+    render::QUADS.with(|q| q.borrow_mut().clear());
+    w.prepare_draws(r, room, at).draw();
+    render::QUADS.with(|q| q.borrow().len())
+}
+fn greenpath_region(
+    placements: &'static [(hk_sim::ActorPlacement, &'static ActorSpec)],
+) -> world::Region {
+    world::Region {
+        scene: 0,
+        bounds: [-30 * ONE, -5 * ONE, 30 * ONE, 40 * ONE],
+        collision_bounds: [-34 * ONE, -10 * ONE, 34 * ONE, 44 * ONE],
+        actors: placements,
+    }
+}
+/// `tick` with the Runner events collected instead of refused.
+fn tick_events(
+    w: &mut enemies::EnemyWorld,
+    r: &world::Region,
+    room: &hk_format::Room,
+    p: &mut Player,
+    v: &mut Vitals,
+    n: &Nail,
+    events: &mut Vec<enemies::RunnerEvent>,
+) -> enemies::Events {
+    w.tick(
+        r,
+        room,
+        &mut world::State,
+        p,
+        v,
+        n,
+        &hk_sim::DreamNail::new(),
+        None,
+        &mut NailResponse::new(),
+        no_attack(),
+        [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4],
+        cheats::Settings::new(),
+        [0, 0, -2496922],
+        |e| events.push(e),
+        |_, _, _, _| None,
+    )
+}
+fn swing_nail() -> Nail {
+    let mut n = Nail::new();
+    n.active = true;
+    n.age = 1;
+    n
+}
+const FAT_FLY: ActorSpec = ActorSpec {
+    controller: ActorController::FatFly {
+        attack_clip: 1,
+        shot_clip: 2,
+        impact_clip: 3,
+    },
+    bounds: [-26624, -29696, 31744, 25600],
+    health: EnemyParams {
+        health: 10,
+        contact_damage: 1,
+        evasion_ticks: 12,
+        invincible: false,
+        damage_override: false,
+    },
+    walk: WalkParams {
+        speed: 0,
+        turn_ticks: 0,
+        turn_cooldown_ticks: 0,
+    },
+    walk_clip: 0,
+    turn_clip: 0,
+    corpse: None,
+    recoil_speed: 15 * ONE,
+    recoil_ticks: 9,
+    dream_soul: 33,
+};
+const FAT_FLY_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 147400,
+    x: 0,
+    y: 20 * ONE,
+    initial_direction: -1,
+    ..PLACEMENT
+};
+static FAT_FLY_ACTORS: [(hk_sim::ActorPlacement, &ActorSpec); 1] = [(FAT_FLY_AT, &FAT_FLY)];
+
+/// The Fat Fly through the real runtime: asleep until the Knight is within 25
+/// units, flying at him from then on, and throwing its four shots on the
+/// diagonals two to three seconds after waking.
+#[test]
+fn a_fat_fly_sleeps_wakes_at_twenty_five_units_and_throws_four_shots() {
+    let bytes = clips_room(&[(8, 12, 0), (8, 12, 2), (4, 20, 0), (6, 20, 2)]);
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = greenpath_region(&FAT_FLY_ACTORS);
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let n = Nail::new();
+    let mut events = Vec::new();
+    let mut far = Player::spawn(28 * ONE, 20 * ONE);
+    for _ in 0..180 {
+        tick_events(&mut w, &r, &room, &mut far, &mut v, &n, &mut events);
+    }
+    assert_eq!(
+        w.actor_state(0, 147400),
+        Some((0, 20 * ONE, 10)),
+        "asleep beyond 25 units"
+    );
+    let mut near = Player::spawn(12 * ONE, 20 * ONE);
+    let mut most = 0;
+    let mut first = None;
+    let mut moved = false;
+    for t in 0..600u32 {
+        tick_events(&mut w, &r, &room, &mut near, &mut v, &n, &mut events);
+        moved |= w.actor_state(0, 147400).unwrap().0 != 0;
+        // The flyer is one quad; each shot in flight is another.
+        let at = w.actor_state(0, 147400).unwrap();
+        let quads = submitted_at(&w, &r, &room, (at.0, at.1));
+        if quads >= 5 && first.is_none() {
+            first = Some(t);
+        }
+        most = most.max(quads);
+    }
+    assert!(moved, "it flies once the Knight is close");
+    assert_eq!(most, 5, "one fly and a volley of four");
+    let first = first.unwrap();
+    assert!(
+        (140..=240).contains(&first),
+        "Wait 2 to 3 s, Antic 0.35 s and the trigger frame: {first}"
+    );
+}
+
+/// A hit winds the attack up at once, whatever the wait had left.
+#[test]
+fn hitting_a_fat_fly_makes_it_attack_within_a_second() {
+    let bytes = clips_room(&[(8, 12, 0), (8, 12, 2), (4, 20, 0), (6, 20, 2)]);
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = greenpath_region(&FAT_FLY_ACTORS);
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut events = Vec::new();
+    let mut hero = Player::spawn(0, 20 * ONE);
+    // Wake it with the Knight on top of it, then hit it.
+    tick_events(
+        &mut w,
+        &r,
+        &room,
+        &mut hero,
+        &mut v,
+        &Nail::new(),
+        &mut events,
+    );
+    let hit = tick_events(
+        &mut w,
+        &r,
+        &room,
+        &mut hero,
+        &mut v,
+        &swing_nail(),
+        &mut events,
+    );
+    assert_eq!(hit.hits, 1);
+    let mut most = 0;
+    for t in 0..80 {
+        tick_events(
+            &mut w,
+            &r,
+            &room,
+            &mut hero,
+            &mut v,
+            &Nail::new(),
+            &mut events,
+        );
+        let at = w.actor_state(0, 147400).unwrap();
+        most = most.max(submitted_at(&w, &r, &room, (at.0, at.1)));
+        if most >= 5 {
+            assert!(
+                t >= 40,
+                "0.35 s of Antic and 25 ticks to the trigger frame: {t}"
+            );
+        }
+    }
+    assert_eq!(most, 5, "the volley leaves inside 80 ticks of the hit");
+}
+
+const TRAP: ActorSpec = ActorSpec {
+    controller: ActorController::PlantTrap { clips: [0, 1, 2] },
+    bounds: hk_sim::plant_trap::SNAP_0,
+    health: EnemyParams {
+        health: 16,
+        contact_damage: 1,
+        evasion_ticks: 12,
+        invincible: false,
+        damage_override: false,
+    },
+    walk: WalkParams {
+        speed: 0,
+        turn_ticks: 0,
+        turn_cooldown_ticks: 0,
+    },
+    walk_clip: 0,
+    turn_clip: 0,
+    corpse: Some(CorpseSpec {
+        air_clip: 3,
+        land_clip: 3,
+        bounds: [0; 4],
+        spawn_offset: [0, 0],
+        bounce_factor: 0,
+        fling_speed: 0,
+        gravity: 0,
+        breaker: false,
+        smash_bounces: 0,
+        remove_after_land: 1,
+        hold_ticks: 35,
+        gas: false,
+    }),
+    recoil_speed: 0,
+    recoil_ticks: 0,
+    dream_soul: 33,
+};
+const TRAP_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 128272,
+    x: 0,
+    y: 6 * ONE,
+    initial_direction: -1,
+    ..PLACEMENT
+};
+static TRAP_ACTORS: [(hk_sim::ActorPlacement, &ActorSpec); 1] = [(TRAP_AT, &TRAP)];
+
+/// The Plant Trap has no collider at rest: the nail goes through it, the Knight
+/// stands on it unhurt, and it only bites once he has stepped into its detector.
+#[test]
+fn a_plant_trap_cannot_be_hit_or_hurt_until_it_snaps() {
+    let bytes = clips_room(&[(6, 12, 1), (3, 12, 2), (7, 12, 2), (7, 12, 2)]);
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = greenpath_region(&TRAP_ACTORS);
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut events = Vec::new();
+    // Standing right on its origin: no detector (it sits 1.3 to 2.6 below), no collider.
+    let mut hero = Player::spawn(0, 6 * ONE + ONE);
+    let hit = tick_events(
+        &mut w,
+        &r,
+        &room,
+        &mut hero,
+        &mut v,
+        &swing_nail(),
+        &mut events,
+    );
+    assert_eq!((hit.hits, hit.hurt), (0, Hurt::Ignored));
+    assert_eq!(v.health, 5);
+    // Into the detector: Ready 0.75 s, then the jaws.
+    let mut below = Player::spawn(0, 6 * ONE - 4 * ONE / 3 - ONE / 2);
+    let mut hurt_at = None;
+    let mut hit_at = None;
+    for t in 0..140u32 {
+        // Alternate a quiet frame and a swing: the swing lands only on a live collider.
+        let swing = t % 2 == 1;
+        let e = tick_events(
+            &mut w,
+            &r,
+            &room,
+            &mut below,
+            &mut v,
+            &if swing { swing_nail() } else { Nail::new() },
+            &mut events,
+        );
+        if e.hurt != Hurt::Ignored && hurt_at.is_none() {
+            hurt_at = Some(t);
+        }
+        if e.hits != 0 && hit_at.is_none() {
+            hit_at = Some(t);
+        }
+    }
+    let hurt_at = hurt_at.expect("the jaws bite the Knight standing in them");
+    let hit_at = hit_at.expect("the Knight can hit the jaws while they are open");
+    // Detected on the first frame, Ready 45 ticks, then the first Snap frame.
+    assert!(
+        (45..=47).contains(&hurt_at),
+        "bites when the jaws open: {hurt_at}"
+    );
+    assert!(
+        (45..=48).contains(&hit_at),
+        "and can be hit then, not before: {hit_at}"
+    );
+    assert!(v.health < 5);
+}
+
+const CHARGER: ActorSpec = ActorSpec {
+    controller: ActorController::MossCharger {
+        clips: [0, 1, 2, 3, 4, 5, 6],
+        range: [-1_078_000, -141_000, 1_078_000, -45_000],
+    },
+    bounds: hk_sim::moss_charger::BIG,
+    health: EnemyParams {
+        health: 15,
+        contact_damage: 1,
+        evasion_ticks: 12,
+        invincible: true,
+        damage_override: false,
+    },
+    walk: WalkParams {
+        speed: 0,
+        turn_ticks: 0,
+        turn_cooldown_ticks: 0,
+    },
+    walk_clip: 0,
+    turn_clip: 0,
+    corpse: None,
+    recoil_speed: 15 * ONE,
+    recoil_ticks: 9,
+    dream_soul: 33,
+};
+const CHARGER_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 139240,
+    x: 0,
+    y: 2 * ONE,
+    initial_direction: 1,
+    ..PLACEMENT
+};
+static CHARGER_ACTORS: [(hk_sim::ActorPlacement, &ActorSpec); 1] = [(CHARGER_AT, &CHARGER)];
+
+/// A Moss Charger is nothing until the Knight is in its range, then surfaces 14
+/// units to a side, charges at fifteen, shrugs off the nail and, on the twelfth
+/// blocked hit, bursts out of its armour vulnerable.
+#[test]
+fn a_moss_charger_surfaces_charges_blocks_the_nail_and_bursts_on_the_twelfth_hit() {
+    let bytes = clips_room(&[
+        (6, 12, 2),
+        (4, 15, 0),
+        (12, 12, 2),
+        (3, 12, 0),
+        (4, 18, 2),
+        (6, 12, 1),
+        (14, 12, 2),
+    ]);
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = greenpath_region(&CHARGER_ACTORS);
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut events = Vec::new();
+    // Out of its range box (28 wide, centred on the tuft): hidden, nothing drawn.
+    let mut far = Player::spawn(20 * ONE, ONE / 2);
+    for _ in 0..120 {
+        tick_events(
+            &mut w,
+            &r,
+            &room,
+            &mut far,
+            &mut v,
+            &Nail::new(),
+            &mut events,
+        );
+    }
+    assert_eq!(submitted(&w, &r, &room).len(), 0);
+    // In range and nowhere near its tuft's x: it appears beside him within 1.5 s.
+    let mut hero = Player::spawn(4 * ONE, ONE / 2);
+    let mut seen = false;
+    for _ in 0..120 {
+        tick_events(
+            &mut w,
+            &r,
+            &room,
+            &mut hero,
+            &mut v,
+            &Nail::new(),
+            &mut events,
+        );
+        seen |= submitted(&w, &r, &room).len() == 1;
+        if seen {
+            break;
+        }
+    }
+    assert!(
+        seen,
+        "it surfaces once the Knight has been in range for half a second or so"
+    );
+    let (x, _, hp) = w.actor_state(0, 139240).unwrap();
+    assert_eq!(hp, 15);
+    assert!(
+        ((x - 4 * ONE).abs() - 14 * ONE).abs() < 2 * ONE,
+        "about fourteen units from the Knight: {x}"
+    );
+    // Twelve swings against it, the Knight following it so each reaches: all blocked, and the
+    // twelfth bursts it out of its armour.
+    let mut hits = 0;
+    for _ in 0..12 {
+        hero.x = w.actor_state(0, 139240).unwrap().0;
+        hits += tick_events(
+            &mut w,
+            &r,
+            &room,
+            &mut hero,
+            &mut v,
+            &swing_nail(),
+            &mut events,
+        )
+        .hits;
+        for _ in 0..12 {
+            tick_events(
+                &mut w,
+                &r,
+                &room,
+                &mut hero,
+                &mut v,
+                &Nail::new(),
+                &mut events,
+            );
+        }
+    }
+    assert_eq!(hits, 0, "nothing gets through while it is armoured");
+    assert_eq!(w.actor_state(0, 139240).unwrap().2, 15);
+    assert_eq!(
+        submitted(&w, &r, &room).len(),
+        1,
+        "still there, and now vulnerable"
+    );
+}

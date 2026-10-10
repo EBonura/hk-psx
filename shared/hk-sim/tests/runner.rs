@@ -781,3 +781,128 @@ fn leaper_launches_on_the_trigger_frame_lands_and_walks_again() {
     assert!(r.took_damage(0, 0).iter().next().is_none());
     assert!(r.horizontal_recoil(seen, choose).iter().next().is_none());
 }
+
+#[test]
+fn mossman_runner_ignores_a_hit_in_ready_and_walks_on_with_a_knight_behind_it() {
+    use hk_sim::runner::Params;
+    let mut r = Runner::with_params(Params::MOSSMAN);
+    start(&mut r);
+    assert_eq!(r.walker(), Walker::Walking);
+    // The Crossroads Runner turns on TOOK DAMAGE out of Ready; this older FSM has no such transition.
+    assert!(r.took_damage(10 * ONE, 0).iter().next().is_none());
+    assert_eq!(r.swipe(), Swipe::Ready);
+    // A Knight in range and in sight behind a walking body turns the Runner's Walker, not this one's.
+    let behind = Senses {
+        hero_x: 5 * ONE,
+        in_alert_range: false,
+        can_see_hero: true,
+        ..Senses::default()
+    };
+    let mut turned = false;
+    for _ in 0..20 {
+        turned |= r
+            .step(
+                Senses {
+                    in_alert_range: false,
+                    ..behind
+                },
+                choose,
+            )
+            .iter()
+            .any(|a| matches!(a, Action::Turn(_)));
+    }
+    assert!(!turned);
+    // It still lunges at 9 once the Knight is in its attack range.
+    let seen = Senses {
+        in_alert_range: true,
+        ..behind
+    };
+    r.step(seen, choose);
+    assert_eq!(r.swipe(), Swipe::Anticipate);
+    r.step(
+        Senses {
+            completed: r.animation(),
+            ..seen
+        },
+        choose,
+    );
+    assert_eq!(r.swipe(), Swipe::Lunge);
+    let lunge: Vec<_> = r.step(seen, choose).iter().collect();
+    assert!(lunge.contains(&vx(9 * ONE)));
+}
+
+#[test]
+fn shaker_walks_on_through_the_delay_then_stops_shakes_and_bursts() {
+    use hk_sim::runner::{gas, Params};
+    let delay = |w: Wait, e: [u16; 2]| if w == Wait::Delay { 10u16 } else { e[1] };
+    let mut r = Runner::with_params(Params::SHAKER);
+    r.step(
+        Senses {
+            camera_in_start_range: true,
+            ..Senses::default()
+        },
+        delay,
+    );
+    let seen = Senses {
+        in_alert_range: true,
+        can_see_hero: true,
+        hero_x: -3 * ONE,
+        ..Senses::default()
+    };
+    r.step(seen, delay);
+    assert_eq!(r.swipe(), Swipe::GasDelay);
+    assert_eq!(r.walker(), Walker::Walking, "Attack Delay does not stop it");
+    // No facing change, no lunge: it keeps the way it was walking (left as authored).
+    assert_eq!(r.facing(), -1);
+    for _ in 0..9 {
+        r.step(seen, delay);
+        assert_eq!(r.swipe(), Swipe::GasDelay);
+    }
+    r.step(seen, delay);
+    assert_eq!(
+        (r.swipe(), r.walker()),
+        (Swipe::GasAntic, Walker::StoppedForAttack)
+    );
+    assert_eq!(r.gas_ticks(), None);
+    for _ in 0..gas::ANTIC_TICKS {
+        r.step(seen, delay);
+    }
+    assert_eq!(r.swipe(), Swipe::Gas);
+    let mut live = 0;
+    while r.swipe() == Swipe::Gas {
+        assert_eq!(r.gas_ticks(), Some(live));
+        live += 1;
+        r.step(seen, delay);
+    }
+    assert_eq!(live, gas::BURST_TICKS);
+    assert_eq!(r.swipe(), Swipe::GasCool);
+    for _ in 0..gas::COOL_TICKS {
+        r.step(seen, delay);
+    }
+    assert_eq!(r.swipe(), Swipe::Idle);
+    for _ in 0..gas::IDLE_TICKS {
+        r.step(seen, delay);
+    }
+    // Reset: StartWalker and Ready, whose immediate check sees the Knight and starts again.
+    assert_eq!(r.walker(), Walker::Walking);
+    assert_eq!(r.swipe(), Swipe::GasDelay);
+}
+
+#[test]
+fn gas_box_grows_from_a_fifth_to_full_size_and_mirrors_with_the_facing() {
+    use hk_sim::runner::gas;
+    assert_eq!(gas::scale(0), gas::START_SCALE);
+    assert_eq!(gas::scale(gas::TWEEN_TICKS), ONE);
+    assert!(gas::scale(6) > gas::scale(3) && gas::scale(12) < ONE);
+    // easeOutCirc is front-loaded: a quarter of the way in it is already over half grown.
+    assert!(gas::scale(6) > gas::START_SCALE + (ONE - gas::START_SCALE) / 2);
+    let left = gas::world([100 * ONE, 10 * ONE], -1, gas::TWEEN_TICKS);
+    let right = gas::world([100 * ONE, 10 * ONE], 1, gas::TWEEN_TICKS);
+    for (l, r) in left.iter().zip(right.iter()) {
+        assert_eq!(l[0] - 100 * ONE, -(r[0] - 100 * ONE));
+        assert_eq!(l[1], r[1]);
+    }
+    // The lowest points sit 1.42 below the Shaker's origin, give or take the collider.
+    let low = left.iter().map(|p| p[1]).min().unwrap();
+    assert!(low < 10 * ONE - ONE && low > 10 * ONE - 2 * ONE);
+}

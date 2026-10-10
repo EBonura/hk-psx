@@ -808,6 +808,60 @@ impl BaldurRuntime {
         }
     }
 }
+/// Fat Fly: the controller owns the flight angle, the velocity (written and
+/// slowed in fixed steps), the facing, the clip and the four-shot volley; this
+/// runtime moves the body against terrain and reports the blocked side.
+#[derive(Clone, Copy)]
+struct FatFlyRuntime {
+    controller: hk_sim::fat_fly::FatFly,
+    animation_tick: u32,
+}
+impl FatFlyRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        use hk_sim::fat_fly::Clip;
+        let ActorController::FatFly { attack_clip, .. } = spec.controller else {
+            panic!("Fat Fly runtime with other metadata")
+        };
+        match self.controller.clip() {
+            Clip::Fly => spec.walk_clip,
+            Clip::Attack => attack_clip,
+        }
+    }
+}
+/// Plant Trap: rooted and bodiless. The controller owns the whole cycle and the
+/// collider of the jaw frame showing; this runtime only gives it the Detector.
+#[derive(Clone, Copy)]
+struct PlantTrapRuntime {
+    controller: hk_sim::plant_trap::PlantTrap,
+}
+impl PlantTrapRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::PlantTrap { clips } = spec.controller else {
+            panic!("Plant Trap runtime with other metadata")
+        };
+        clips[self.controller.clip().slot()]
+    }
+}
+/// Moss Charger: the controller owns the hiding, the charge, the burst and the
+/// run, and the collider of the frame showing; this runtime casts the rays it
+/// asks for, slides the body along the ground line and runs the gravity body
+/// for the burst and the flight.
+#[derive(Clone, Copy)]
+struct MossChargerRuntime {
+    controller: hk_sim::moss_charger::MossCharger,
+    /// Bottom contact on the last body step, for `In Air`'s landing.
+    floor: bool,
+}
+impl MossChargerRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::MossCharger { clips, .. } = spec.controller else {
+            panic!("Moss Charger runtime with other metadata")
+        };
+        clips[self.controller.clip() as usize]
+    }
+}
+/// A box that overlaps nothing: the collider of a frame that defines none.
+const NO_COLLIDER: [i32; 4] = [1, 1, 0, 0];
 /// Aspid Hunter: the controller owns velocity, facing, clips and the shot cue.
 #[derive(Clone, Copy)]
 struct AspidRuntime {
@@ -1349,6 +1403,9 @@ enum Runtime {
     MossWalker(MossWalkerRuntime),
     Baldur(BaldurRuntime),
     Aspid(AspidRuntime),
+    FatFly(FatFlyRuntime),
+    PlantTrap(PlantTrapRuntime),
+    MossCharger(MossChargerRuntime),
     Hatcher(HatcherRuntime),
     HatcherBaby(BabyRuntime),
     ZombieShield(ZombieShieldRuntime),
@@ -1447,6 +1504,30 @@ impl Actor {
         };
         Some([self.x + b[0], self.y + b[1], self.x + b[2], self.y + b[3]])
     }
+    fn plant_trap(&self) -> Option<PlantTrapRuntime> {
+        if let Runtime::PlantTrap(t) = self.runtime {
+            crate::modules::require(crate::modules::PLANT_TRAP).then_some(t)
+        } else {
+            None
+        }
+    }
+    fn moss_charger(&self) -> Option<MossChargerRuntime> {
+        if let Runtime::MossCharger(c) = self.runtime {
+            crate::modules::require(crate::modules::MOSS_CHARGER).then_some(c)
+        } else {
+            None
+        }
+    }
+    /// A body whose collider tk2d has switched off with the frame showing (the
+    /// Plant Trap at rest, the Charger hidden or mid-dig): it cannot hurt, be
+    /// hurt or be stood on.
+    fn collider_off(&self) -> bool {
+        self.plant_trap()
+            .is_some_and(|t| t.controller.collider().is_none())
+            || self
+                .moss_charger()
+                .is_some_and(|c| c.controller.collider().is_none())
+    }
     fn moss_walker(&self) -> Option<MossWalkerRuntime> {
         if let Runtime::MossWalker(m) = self.runtime {
             crate::modules::require(crate::modules::MOSS_WALKER).then_some(m)
@@ -1481,6 +1562,13 @@ impl Actor {
     fn baldur_mut(&mut self) -> Option<&mut BaldurRuntime> {
         if let Runtime::Baldur(b) = &mut self.runtime {
             crate::modules::require(crate::modules::BALDUR).then_some(b)
+        } else {
+            None
+        }
+    }
+    fn fat_fly(&self) -> Option<FatFlyRuntime> {
+        if let Runtime::FatFly(f) = self.runtime {
+            crate::modules::require(crate::modules::FAT_FLY).then_some(f)
         } else {
             None
         }
@@ -1667,6 +1755,7 @@ impl Actor {
                 | Runtime::Gruzzer(_)
                 | Runtime::Baldur(_)
                 | Runtime::Aspid(_)
+                | Runtime::FatFly(_)
                 | Runtime::Hatcher(_)
                 | Runtime::HatcherBaby(_)
         )
@@ -1811,6 +1900,23 @@ impl Actor {
                     vx: 0,
                     wall: false,
                 }),
+                ActorController::FatFly { .. } => Runtime::FatFly(FatFlyRuntime {
+                    controller: hk_sim::fat_fly::FatFly::new(seed),
+                    animation_tick: 0,
+                }),
+                ActorController::PlantTrap { .. } => Runtime::PlantTrap(PlantTrapRuntime {
+                    controller: hk_sim::plant_trap::PlantTrap::new(),
+                }),
+                ActorController::MossCharger { range, .. } => {
+                    Runtime::MossCharger(MossChargerRuntime {
+                        controller: hk_sim::moss_charger::MossCharger::new(
+                            [placement.x, placement.y],
+                            range[2] - range[0],
+                            seed,
+                        ),
+                        floor: false,
+                    })
+                }
                 ActorController::Aspid { .. } => {
                     let controller = if placement.start_alert {
                         hk_sim::aspid::Aspid::new_alert([placement.x, placement.y], seed)
@@ -1985,6 +2091,12 @@ impl Actor {
     }
     fn local_bounds(&self, spec: &ActorSpec) -> [i32; 4] {
         let b = spec.bounds;
+        if let Some(t) = self.plant_trap() {
+            return t.controller.collider().unwrap_or(NO_COLLIDER);
+        }
+        if let Some(c) = self.moss_charger() {
+            return c.controller.collider().unwrap_or(NO_COLLIDER);
+        }
         if let Some(climber) = self.climber() {
             // The source box collider turns with the transform; at rest the
             // rotation is cardinal, so the rotated box is again axis aligned.
@@ -2316,6 +2428,36 @@ impl Actor {
         if let Some(mut roller) = self.baldur() {
             self.advance_baldur(&mut roller, spec, count, &edge, context);
             self.runtime = Runtime::Baldur(roller);
+            assert!(
+                self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE,
+                "enemy left validated Q16 scene bounds"
+            );
+            return;
+        }
+        if let Some(mut trap) = self.plant_trap() {
+            // Bodiless like the Blocker: no Rigidbody2D, so it keeps its authored
+            // transform and nothing reaches the terrain solver.
+            self.spawn_state = SpawnState::Ready;
+            let d = hk_sim::plant_trap::DETECT;
+            let detect = [self.x + d[0], self.y + d[1], self.x + d[2], self.y + d[3]];
+            trap.controller.tick(overlap(context.hero_body, detect));
+            self.runtime = Runtime::PlantTrap(trap);
+            return;
+        }
+        if let Some(mut charger) = self.moss_charger() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_moss_charger(&mut charger, spec, count, &edge, context);
+            self.runtime = Runtime::MossCharger(charger);
+            assert!(
+                self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE,
+                "enemy left validated Q16 scene bounds"
+            );
+            return;
+        }
+        if let Some(mut fly) = self.fat_fly() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_fat_fly(&mut fly, spec, count, &edge, context, emit);
+            self.runtime = Runtime::FatFly(fly);
             assert!(
                 self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE,
                 "enemy left validated Q16 scene bounds"
@@ -2888,6 +3030,208 @@ impl Actor {
         } else {
             [0; 2]
         };
+        let b = spec.bounds;
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let mut body = Player::spawn(self.x + offset, self.y);
+        let mut p = Params {
+            speed: v[0].abs(),
+            fall: 100 * ONE,
+            half_width: (b[2] - b[0]) / 2,
+            bottom: b[1],
+            top: b[3],
+            ..Params::ZERO
+        };
+        body.vy = v[1];
+        body.step(p, v[0].signum(), false, count, edge);
+        let moved = [body.x - (self.x + offset), body.y - self.y];
+        let blocked_x = moved[0] != v[0] / 60;
+        let blocked_y = moved[1] != v[1] / 60;
+        if self.recoil_left != 0 {
+            self.recoil_left -= 1;
+            p.speed = self.recoil[0].abs();
+            body.vy = self.recoil[1];
+            body.step(p, self.recoil[0].signum(), false, count, edge);
+        }
+        self.x = body.x - offset;
+        self.y = body.y;
+        let side = if blocked_y && v[1] > 0 {
+            Some(Side::Up)
+        } else if blocked_x && v[0] > 0 {
+            Some(Side::Right)
+        } else if blocked_y && v[1] < 0 {
+            Some(Side::Down)
+        } else if blocked_x && v[0] < 0 {
+            Some(Side::Left)
+        } else {
+            None
+        };
+        if let Some(side) = side {
+            fly.controller.bonk(side);
+        }
+    }
+    /// One 60 Hz step of the Moss Charger: the range box and the rays its state
+    /// asks for, the FSM, then the body: a slide along the ground line while it
+    /// charges and submerges, the gravity body for the burst, the landing and the
+    /// run.
+    // Its own function so the family can stream as a code module.
+    #[inline(never)]
+    fn advance_moss_charger(
+        &mut self,
+        c: &mut MossChargerRuntime,
+        spec: &ActorSpec,
+        count: usize,
+        edge: &impl Fn(usize) -> [i32; 4],
+        context: RunnerContext,
+    ) {
+        use hk_sim::moss_charger as mc;
+        let ActorController::MossCharger { range, .. } = spec.controller else {
+            panic!("Moss Charger runtime with other metadata")
+        };
+        let start = c.controller.start();
+        let in_range = overlap(
+            context.hero_body,
+            [
+                start[0] + range[0],
+                start[1] + range[1],
+                start[0] + range[2],
+                start[1] + range[3],
+            ],
+        );
+        let need = c.controller.needs();
+        let pos = [self.x, self.y];
+        let dir = c.controller.dir();
+        // RayCast2d adds the offset to the position as written and turns only the direction.
+        let ray = |origin: [i32; 2], direction: [i32; 2], length: i32| {
+            climber_ray_hit(
+                hk_sim::climber::Ray {
+                    position: pos,
+                    rotation_degrees_q16: 0,
+                    scale_x_sign: 1,
+                    local_origin: origin,
+                    local_direction: direction,
+                    length,
+                    layer_mask: 256,
+                },
+                count,
+                edge,
+            )
+            .is_some()
+        };
+        let mut senses = mc::Senses {
+            hero_x: context.hero[0],
+            in_range,
+            floor: c.floor,
+            ..mc::Senses::default()
+        };
+        if need.charge_rays {
+            senses.forward_hit = ray(mc::CHARGE_FORWARD.0, [dir * ONE, 0], mc::CHARGE_FORWARD.1);
+            senses.ground_hit = ray(
+                [dir * mc::CHARGE_GROUND.0[0], mc::CHARGE_GROUND.0[1]],
+                [0, -ONE],
+                mc::CHARGE_GROUND.1,
+            );
+        }
+        if need.run_rays {
+            senses.forward_hit = ray([0, 0], [dir * ONE, 0], mc::RUN_FORWARD);
+            senses.ground_hit = ray([dir * mc::RUN_GROUND.0[0], 0], [0, -ONE], mc::RUN_GROUND.1);
+        }
+        let step = c.controller.tick(senses);
+        if let Some(p) = step.teleport {
+            self.x = p[0];
+            self.y = p[1];
+            self.vy = 0;
+            self.grounded = false;
+        }
+        if let Some(launch) = c.controller.take_launch() {
+            self.vy = launch[1];
+            self.grounded = false;
+        }
+        self.walk.direction = c.controller.facing();
+        let v = c.controller.velocity();
+        let gravity = c.controller.gravity();
+        if gravity == 0 {
+            // Appear, Charge and Submerge: a gravity-free slide at the ground line.
+            self.x += v[0] / 60;
+            c.floor = false;
+        } else {
+            let b = c.controller.collider().unwrap_or(mc::STUN);
+            let offset = b[0] + (b[2] - b[0]) / 2;
+            let p = Params {
+                speed: v[0].abs(),
+                gravity,
+                fall: 100 * ONE,
+                half_width: (b[2] - b[0]) / 2,
+                bottom: b[1],
+                top: b[3],
+                ..Params::ZERO
+            };
+            let mut body = Player::spawn(self.x + offset, self.y);
+            body.vy = self.vy;
+            body.grounded = self.grounded;
+            body.step(p, v[0].signum(), false, count, edge);
+            if self.recoil_left != 0 {
+                self.recoil_left -= 1;
+                let mut r = p;
+                r.speed = self.recoil[0].abs();
+                body.step(r, self.recoil[0].signum(), false, count, edge);
+            }
+            self.x = body.x - offset;
+            self.y = body.y;
+            self.vy = body.vy;
+            self.grounded = body.grounded;
+            c.floor = body.grounded;
+        }
+        c.controller.moved_to([self.x, self.y]);
+    }
+    /// One 60 Hz step of the Fat Fly: the wake distance, the two FSMs, the
+    /// volley it throws, then the gravity-free body at the velocity they
+    /// leave it with, Recoil displacement, and the blocked side re-aiming it.
+    // Its own function so the family can stream as a code module.
+    #[inline(never)]
+    fn advance_fat_fly(
+        &mut self,
+        fly: &mut FatFlyRuntime,
+        spec: &ActorSpec,
+        count: usize,
+        edge: &impl Fn(usize) -> [i32; 4],
+        context: RunnerContext,
+        emit: &mut impl FnMut(RunnerEvent),
+    ) {
+        use hk_sim::fat_fly::{Action, Side};
+        fly.animation_tick = fly.animation_tick.saturating_add(1);
+        let pos = [self.x, self.y];
+        let ActorController::FatFly {
+            shot_clip,
+            impact_clip,
+            ..
+        } = spec.controller
+        else {
+            panic!("Fat Fly runtime with other metadata")
+        };
+        let actions = fly.controller.tick(hk_sim::fat_fly::Senses {
+            position: pos,
+            hero: context.hero,
+        });
+        for action in actions.iter() {
+            match action {
+                Action::Play(_) => fly.animation_tick = 0,
+                Action::Fire(velocity) => emit(RunnerEvent {
+                    scene: self.scene,
+                    source_id: self.source_id,
+                    position: pos,
+                    facing: self.walk.direction,
+                    kind: RunnerEventKind::Fire {
+                        velocity,
+                        offset: [0; 2],
+                        goop: false,
+                        shot_clip,
+                        impact_clip,
+                    },
+                }),
+            }
+        }
+        self.walk.direction = fly.controller.facing();
+        let v = fly.controller.velocity();
         let b = spec.bounds;
         let offset = b[0] + (b[2] - b[0]) / 2;
         let mut body = Player::spawn(self.x + offset, self.y);
@@ -5091,6 +5435,9 @@ impl EnemyWorld {
                 Runtime::FalseKnight(_) => 17,
                 Runtime::Mawlek(_) => 18,
                 Runtime::GruzMother(_) => 19,
+                Runtime::FatFly(_) => 20,
+                Runtime::PlantTrap(_) => 21,
+                Runtime::MossCharger(_) => 22,
             };
             let flags =
                 a.grounded as u32 | (a.health.dead as u32) << 1 | ((a.flash_left > 0) as u32) << 2;
@@ -5288,7 +5635,7 @@ impl EnemyWorld {
         );
         // Aspid and Blocker shots spawn after the actor pass (the pool is a
         // sibling field).
-        let mut fires: [Option<(usize, [i32; 2], [i32; 2], ShotKind, u16, u16)>; 4] = [None; 4];
+        let mut fires: [Option<(usize, [i32; 2], [i32; 2], ShotKind, u16, u16)>; 8] = [None; 8];
         // The same deferral for a release: the baby that answers one is another
         // actor in the pool this loop already holds.
         let mut releases: [Option<([i32; 2], [i32; 2])>; RELEASES] = [None; RELEASES];
@@ -5485,6 +5832,31 @@ impl EnemyWorld {
                 }
             }
             if actor.health.dead {
+                // A killed Shaker's corpse bursts into the same gas as its attack.
+                if let (Some(corpse), Some(corpse_spec)) = (&actor.corpse, spec.corpse) {
+                    if let Some(ticks) = corpse.gas_ticks(corpse_spec) {
+                        let cloud = hk_sim::runner::gas::world_from(
+                            [corpse.x, corpse.y],
+                            -1,
+                            ticks,
+                            hk_sim::runner::gas::CORPSE_ORIGIN_Y,
+                        );
+                        if hk_sim::polygon_hits_box(&cloud, body) {
+                            let direction = if player.x < corpse.x { -1 } else { 1 };
+                            let hurt = cheats.hurt(
+                                vitals,
+                                crate::VITAL_PARAMS,
+                                1,
+                                direction,
+                                false,
+                                player.shadow_dashing,
+                            );
+                            if hurt != Hurt::Ignored {
+                                events.hurt = hurt;
+                            }
+                        }
+                    }
+                }
                 continue;
             }
             if (actor.runner().is_some() || actor.zombie_shield().is_some())
@@ -5493,6 +5865,10 @@ impl EnemyWorld {
                 continue; // no attack/recoil sensing against an unavailable terrain owner
             }
             let bounds = actor.bounds(spec);
+            // tk2d has switched this frame's collider off: nothing to hit or be hit by.
+            if actor.collider_off() {
+                continue;
+            }
             // Gruz Mother answers the nail through its own box and phases, and
             // hurts from `Hero Damager` rather than its body.
             if let Some(mut boss) = actor.gruz() {
@@ -5854,6 +6230,14 @@ impl EnemyWorld {
                     },
                     // `invincibleFromDirection` 7: up and down slashes bounce
                     // off; the body is never invincible otherwise.
+                    // The Moss Charger is `invincible` from the start, until its
+                    // burst clears it in `In Air`.
+                    _ if actor.moss_charger().is_some() => hk_sim::EnemyParams {
+                        invincible: actor
+                            .moss_charger()
+                            .is_some_and(|c| c.controller.invincible()),
+                        ..spec.health
+                    },
                     _ if shell.is_some() => hk_sim::EnemyParams {
                         invincible: hk_sim::acid_flyer::blocks(cardinal, false),
                         ..spec.health
@@ -5890,6 +6274,9 @@ impl EnemyWorld {
                                 Runtime::MossWalker(m) => m.controller.die(),
                                 Runtime::Baldur(r) => r.controller.die(),
                                 Runtime::Aspid(a) => a.controller.die(),
+                                Runtime::FatFly(f) => f.controller.die(),
+                                Runtime::PlantTrap(t) => t.controller.die(),
+                                Runtime::MossCharger(c) => c.controller.die(),
                                 Runtime::Hatcher(h) => h.controller.die(),
                                 // A baby is not removed: `Death` puts it back in
                                 // the cage, which the next tick does through
@@ -5999,6 +6386,12 @@ impl EnemyWorld {
                                 blocker.animation_tick = 0;
                             }
                         }
+                        if let Runtime::FatFly(fly) = &mut actor.runtime {
+                            // `TAKE DAMAGE` winds `Fatty Fly Attack` up at once.
+                            if !actor.health.dead {
+                                fly.controller.took_damage();
+                            }
+                        }
                         if let Some(mut fly) = actor.vengefly() {
                             if !actor.health.dead {
                                 let senses =
@@ -6073,6 +6466,13 @@ impl EnemyWorld {
                                 shield.animation_tick = 0;
                             }
                         }
+                        // `Line Loop` counts a blocked hit; the twelfth bursts the Charger.
+                        if actor.moss_charger().is_some() {
+                            if let Runtime::MossCharger(charger) = &mut actor.runtime {
+                                charger.controller.blocked_hit(cardinal);
+                            }
+                            actor.health.evasion_ticks = hk_sim::acid_flyer::BLOCK_EVASION_TICKS;
+                        }
                         // `Invincible` sets evasionByHitRemaining 0.15 s.
                         if shell.is_some() {
                             actor.health.evasion_ticks = hk_sim::acid_flyer::BLOCK_EVASION_TICKS;
@@ -6101,6 +6501,20 @@ impl EnemyWorld {
             } else {
                 0
             };
+            // The Shaker's gas burst: a trigger polygon with a DamageHero of its own,
+            // growing for 0.4 s and live for 0.8.
+            if let Some(runner) = actor.runner() {
+                if let Some(ticks) = runner.controller.gas_ticks() {
+                    let cloud = hk_sim::runner::gas::world(
+                        [actor.x, actor.y],
+                        runner.controller.facing(),
+                        ticks,
+                    );
+                    if hk_sim::polygon_hits_box(&cloud, body) {
+                        damage = damage.max(1);
+                    }
+                }
+            }
             // `Swipe`, armed for its clip: a second DamageHero reaching ahead.
             if let Some(guard) = actor.husk_guard() {
                 if guard.swipe_left != 0
@@ -6339,6 +6753,30 @@ impl EnemyWorld {
                     roller.animation_tick,
                     (actor.x, actor.y),
                     roller.controller.facing(),
+                )
+            } else if let Some(trap) = actor.plant_trap() {
+                (
+                    trap.clip(spec),
+                    trap.controller.clip_ticks(),
+                    (actor.x, actor.y),
+                    -1,
+                )
+            } else if let Some(charger) = actor.moss_charger() {
+                if !charger.controller.visible() {
+                    continue;
+                }
+                (
+                    charger.clip(spec),
+                    charger.controller.clip_ticks(),
+                    (actor.x, actor.y),
+                    charger.controller.facing(),
+                )
+            } else if let Some(fly) = actor.fat_fly() {
+                (
+                    fly.clip(spec),
+                    fly.animation_tick,
+                    (actor.x, actor.y),
+                    fly.controller.facing(),
                 )
             } else if let Some(aspid) = actor.aspid() {
                 (
@@ -7404,6 +7842,7 @@ mod runner_runtime_tests {
             smash_bounces: 0,
             remove_after_land: 0,
             hold_ticks: 0,
+            gas: false,
         }),
         recoil_speed: 10 * ONE,
         recoil_ticks: 9,

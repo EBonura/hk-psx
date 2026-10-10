@@ -11,6 +11,7 @@ const SPEC: CorpseSpec = CorpseSpec {
     smash_bounces: 0,
     remove_after_land: 0,
     hold_ticks: 0,
+    gas: false,
 };
 fn floor(_: usize) -> [i32; 4] {
     [-100 * ONE, 0, 100 * ONE, 0]
@@ -153,6 +154,7 @@ const HELD: CorpseSpec = CorpseSpec {
     gravity: 0,
     remove_after_land: 14,
     hold_ticks: 84,
+    gas: false,
     ..SPEC
 };
 fn no_terrain(_: usize) -> [i32; 4] {
@@ -191,4 +193,38 @@ fn held_corpse_ignores_the_hit_cardinal_that_launches_a_flung_one() {
         let flung = Corpse::spawn(SPEC, 0, 0, kind, 1, 12546);
         assert!(flung.vx != 0 || flung.vy != 0);
     }
+}
+
+const GASSING: CorpseSpec = CorpseSpec { gas: true, ..SPEC };
+#[test]
+fn a_gassing_corpse_lies_still_then_bursts_and_vanishes_inside_its_cloud() {
+    use hk_sim::{GAS_END, GAS_HIDE, GAS_START};
+    let mut c = Corpse::spawn(GASSING, 0, 2 * ONE, 0, 1, 12546);
+    for _ in 0..300 {
+        c.tick(GASSING, 1, floor);
+        if c.phase == CorpsePhase::Land {
+            break;
+        }
+    }
+    assert_eq!(c.phase, CorpsePhase::Land);
+    assert!(c.gas_ticks(GASSING).is_none());
+    // A plain corpse never gasses, whatever its clock says.
+    assert!(c.gas_ticks(SPEC).is_none());
+    let mut burst = None;
+    let mut hidden = None;
+    let mut last = None;
+    for t in 1..400u16 {
+        c.tick(GASSING, 1, floor);
+        if let Some(into) = c.gas_ticks(GASSING) {
+            burst.get_or_insert(t);
+            last = Some(into);
+        }
+        if !c.visible() {
+            hidden.get_or_insert(t);
+        }
+    }
+    assert_eq!(burst, Some(GAS_START));
+    assert_eq!(last, Some(GAS_END - 1));
+    assert_eq!(hidden, Some(GAS_START + GAS_HIDE));
+    assert!(c.gas_ticks(GASSING).is_none() && !c.visible());
 }

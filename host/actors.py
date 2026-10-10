@@ -455,6 +455,43 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        # The Fat Fly refuses in `walker_control` (no Crawler FSM); the name and
+        # its shot pool are the gate (host/fat_fly.py).
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Fat Fly') \
+                and any(kind == 'PersonalObjectPool' for _, kind, _ in records):
+            from fat_fly import recognize as recognize_fat_fly
+            try:
+                control = recognize_fat_fly(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
+        # The Plant Trap carries no collider and no Crawler FSM; the name and its
+        # `Plant Trap Control` FSM are the gate (host/plant_trap.py).
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Plant Trap') \
+                and any(kind == 'DamageHero' for _, kind, _ in records):
+            from plant_trap import recognize as recognize_plant_trap
+            try:
+                control = recognize_plant_trap(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
+        # The Moss Charger has no collider either; its `Mossy Control` FSM and its
+        # `NonBouncer` mark it (host/moss_charger.py). `Mega Moss Charger` is a
+        # different name and stays refused.
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Moss Charger') \
+                and any(kind == 'NonBouncer' for _, kind, _ in records):
+            from moss_charger import recognize as recognize_moss_charger
+            try:
+                control = recognize_moss_charger(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Spitter') \
                 and any(kind == 'PersonalObjectPool' for _, kind, _ in records):
             from aspid import recognize as recognize_aspid
@@ -716,7 +753,9 @@ def generated_actor_records(region):
         wanted = bool(control.get('trigger_body'))
         colliders = [collider for collider in actor['colliders']
                      if 'bounds' in collider and bool(collider.get('trigger')) == wanted]
-        if not colliders or any(collider['bounds'] != colliders[0]['bounds'] for collider in colliders):
+        # A family whose collider tk2d builds from the frame showing has none on
+        # the object; its recognizer names the box the spec needs instead.
+        if 'bounds_q16' not in control and (not colliders or any(collider['bounds'] != colliders[0]['bounds'] for collider in colliders)):
             raise ValueError('actor requires unsupported distinct body colliders')
         # A controller may answer the nail differently from its HealthManager,
         # and the False Knight does: `Check Health` restores the body instead of
@@ -731,9 +770,12 @@ def generated_actor_records(region):
                 or health['invincibleFromDirection'] != control.get('invincible_from_direction', 0):
             raise ValueError('actor requires unsupported HealthManager variant')
         x, y = actor['position'][:2]
-        box = colliders[0]['bounds']
-        bounds = [round((box[0] - x) * 65536), round((box[1] - y) * 65536),
-                  round((box[2] - x) * 65536), round((box[3] - y) * 65536)]
+        if 'bounds_q16' in control:
+            bounds = list(control['bounds_q16'])
+        else:
+            box = colliders[0]['bounds']
+            bounds = [round((box[0] - x) * 65536), round((box[1] - y) * 65536),
+                      round((box[2] - x) * 65536), round((box[3] - y) * 65536)]
         if control['kind'] == 'ZombieSwipeWalker':
             runner_clips = ('idle_clip', 'anticipate_clip', 'lunge_clip', 'cooldown_clip')
             if any(key not in actor for key in runner_clips):
@@ -745,6 +787,10 @@ def generated_actor_records(region):
             if attack['kind'] == 'Leap':
                 attack_text = (f'hk_sim::runner::Attack::Leap {{trigger_ticks:{int(attack["trigger_ticks"])},jump_speed_y:{round(attack["jump_speed_y"] * 65536)},'
                                f'jump_x_factor:{round(attack["jump_x_factor"] * 65536)},idle_ticks:{ticks(attack["idle_time"])}}}')
+            elif attack['kind'] == 'Gas':
+                attack_text = 'hk_sim::runner::Attack::Gas'
+            elif attack['kind'] == 'SwipeCalm':
+                attack_text = 'hk_sim::runner::Attack::SwipeCalm'
             else:
                 attack_text = 'hk_sim::runner::Attack::Swipe'
             params = (f'hk_sim::runner::Params {{walk_speed:{p["walk_velocity_q16"][1]},lunge_speed:{p["lunge_velocity_q16"][1]},'
@@ -790,6 +836,35 @@ def generated_actor_records(region):
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = -1, False
             start_alert = bool(control.get('start_alert'))
+        elif control['kind'] == 'FatFly':
+            fat_fly_clips = ('attack_clip', 'shot_clip', 'impact_clip')
+            if any(key not in actor for key in fat_fly_clips) or not actor.get('corpse'):
+                raise ValueError(f'Fat Fly is missing cooked clips or corpse: {actor["source"]}')
+            controller = 'hk_sim::ActorController::FatFly {' + ','.join(f'{key}:{actor[key]}' for key in fat_fly_clips) + '}'
+            # The controller owns the velocity and the facing; the walk fields are unused.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'PlantTrap':
+            from plant_trap import CLIP_SLOTS as TRAP_SLOTS
+            trap_clips = tuple(slot + '_clip' for slot in TRAP_SLOTS)
+            if any(key not in actor for key in trap_clips) or not actor.get('corpse'):
+                raise ValueError(f'Plant Trap is missing cooked clips or corpse: {actor["source"]}')
+            clips = '[' + ','.join(str(actor[key]) for key in trap_clips) + ']'
+            controller = 'hk_sim::ActorController::PlantTrap {' + f'clips:{clips}' + '}'
+            # It never moves and never turns: the walk fields are carried for the common spec.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
+        elif control['kind'] == 'MossCharger':
+            from moss_charger import CLIP_SLOTS as CHARGER_SLOTS
+            charger_clips = tuple(slot + '_clip' for slot, _ in CHARGER_SLOTS)
+            if any(key not in actor for key in charger_clips) or not actor.get('corpse'):
+                raise ValueError(f'Moss Charger is missing cooked clips or corpse: {actor["source"]}')
+            clips = '[' + ','.join(str(actor[key]) for key in charger_clips) + ']'
+            tuft = '[' + ','.join(map(str, control['range_q16'])) + ']'
+            controller = 'hk_sim::ActorController::MossCharger {' + f'clips:{clips},range:{tuft}' + '}'
+            # The controller owns every velocity and the facing, which the art authors as right.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = 1, False
         elif control['kind'] == 'Gruzzer':
             if not actor.get('corpse'):
                 raise ValueError(f'Gruzzer is missing validated corpse: {actor["source"]}')
@@ -949,6 +1024,9 @@ def generated_actor_records(region):
         clip_fields = ('walk_clip', 'turn_clip') + (runner_clips if control['kind'] == 'ZombieSwipeWalker' else ()) \
             + (vengefly_clips if control['kind'] == 'Vengefly' else ()) + (baldur_clips if control['kind'] == 'Baldur' else ()) \
             + (aspid_clips if control['kind'] == 'Aspid' else ()) + (('idle_clip',) if control['kind'] == 'EggSac' else ()) \
+            + (fat_fly_clips if control['kind'] == 'FatFly' else ()) \
+            + (trap_clips if control['kind'] == 'PlantTrap' else ()) \
+            + (charger_clips if control['kind'] == 'MossCharger' else ()) \
             + (('fire_clip',) if control['kind'] == 'Hatcher' else ()) \
             + (shield_clips if control['kind'] == 'ZombieShield' else ()) \
             + (blocker_clips if control['kind'] == 'Blocker' else ()) \

@@ -28,7 +28,18 @@ pub struct CorpseSpec {
     /// launches or falls, holds `air_clip` for this many ticks and then plays
     /// `land_clip` until `remove_after_land`. Zero keeps the flung body above.
     pub hold_ticks: u16,
+    /// A Mossman_Shaker's `CorpseFungusExplode`: after it lands it lies still for a
+    /// second, jitters for 0.9 s and bursts into the Shaker's gas cloud (`GAS_START`
+    /// ticks after landing), vanishing 0.4 s into it.
+    pub gas: bool,
 }
+/// Ticks after landing at which a gassing corpse bursts: `Land` waits 1 s, then
+/// `Jitter(0.9)`.
+pub const GAS_START: u16 = 114;
+/// The corpse's renderer goes off this many ticks into the burst (0.4 s) ...
+pub const GAS_HIDE: u16 = 24;
+/// ... and the gas box is switched off at twice that (0.8 s).
+pub const GAS_END: u16 = 48;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CorpsePhase {
     Air,
@@ -49,6 +60,7 @@ pub struct Corpse {
     grounded: bool,
     bounces: u8,
     rng: u32,
+    hidden: bool,
 }
 // Source up-hit angle is uniform75..105 degrees, speed15*1.3. Quantized to
 // 31 original-range directions; this deterministic sequence is not Unity RNG.
@@ -103,6 +115,7 @@ impl Corpse {
             grounded: false,
             bounces: 0,
             rng: seed,
+            hidden: false,
         };
         if spec.hold_ticks != 0 {
             return corpse; // No Rigidbody2D on this prefab: nothing launches it.
@@ -134,7 +147,13 @@ impl Corpse {
         }
     }
     pub fn visible(self) -> bool {
-        self.phase != CorpsePhase::Removed
+        self.phase != CorpsePhase::Removed && !self.hidden
+    }
+    /// Ticks into the gas burst while its box is live (a gassing corpse only).
+    pub fn gas_ticks(&self, spec: CorpseSpec) -> Option<u16> {
+        let into = self.land_ticks.checked_sub(GAS_START)?;
+        (spec.gas && matches!(self.phase, CorpsePhase::Land | CorpsePhase::Rest) && into < GAS_END)
+            .then_some(into)
     }
     /// Source `Corpse Egg Sac` Control FSM without its physics: Spit plays the
     /// first clip and waits, Burst plays the second to completion and End
@@ -144,8 +163,14 @@ impl Corpse {
         self.animation_tick = self.animation_tick.saturating_add(1);
         if self.phase == CorpsePhase::Air {
             if self.animation_tick >= spec.hold_ticks as u32 {
-                self.phase = CorpsePhase::Land;
-                self.animation_tick = 0;
+                // One clip played and done (the Plant Trap's Death): a one-tick Land
+                // on the same clip would only flash its first frame, so nothing follows.
+                if spec.remove_after_land == 1 && spec.land_clip == spec.air_clip {
+                    self.phase = CorpsePhase::Removed;
+                } else {
+                    self.phase = CorpsePhase::Land;
+                    self.animation_tick = 0;
+                }
             }
         } else if spec.remove_after_land != 0
             && self.animation_tick >= spec.remove_after_land as u32
@@ -167,6 +192,9 @@ impl Corpse {
             self.land_ticks = self.land_ticks.saturating_add(1);
             if self.phase == CorpsePhase::Land && self.land_ticks >= 60 {
                 self.phase = CorpsePhase::Rest;
+            }
+            if spec.gas && self.land_ticks >= GAS_START + GAS_HIDE {
+                self.hidden = true;
             }
             if spec.remove_after_land != 0 && self.land_ticks >= spec.remove_after_land {
                 self.phase = CorpsePhase::Removed;

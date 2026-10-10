@@ -373,7 +373,11 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
         if 'art_bindings' in control:
             bindings=dict(control['art_bindings'])
         elif control['kind']=='ZombieSwipeWalker':
-            if control['parameters'].get('attack',{}).get('kind')=='Leap':
+            if control['parameters'].get('attack',{}).get('kind')=='Gas':
+                # The Shaker's one Attack clip anticipates, bursts and cools down (its loop section
+                # holds the last three frames); Attack End is never played.
+                bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack','lunge':'Attack','cooldown':'Attack'}
+            elif control['parameters'].get('attack',{}).get('kind')=='Leap':
                 # Leaper: the Attack clip anticipates and keeps playing through the
                 # jump (lunge slot), Land is the cooldown clip.
                 bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack','lunge':'Attack','cooldown':'Land'}

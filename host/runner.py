@@ -16,6 +16,16 @@ from combat import ticks
 FSM_SHA256 = '73f11594e0115a43a66c8d1695a65916b81bfe6057c180636eed3330aaad92c2'
 # Zombie Leap (Leaper): same Walker, a leap attack instead of the swipe.
 LEAP_FSM_SHA256 = '15ecb1c0984cd4955e5412dfae354441eb9a9d19c6b2bff9d7b6fc564dc7fe47'
+# The Greenpath Mossman_Runner: the same Walker with the older, simpler `Zombie Swipe` (no Coward state,
+# no TOOK DAMAGE transition out of Ready, a Pt Roll emitter in place of the Charge Dust particle).
+MOSSMAN_FSM_SHA256 = '7353668aa0259b3ddcfa9046aa4533db332b1573bf02324d83bb5c35e1316b04'
+# Mossman_Shaker: the same Walker with `Fungus Zombie Attack`, a gas burst instead of a lunge.
+GAS_FSM_SHA256 = 'cc88d8649e57979e517d3e38d7107434319755ed316f9c54ba7eec5d19e28aa9'
+# A Mossman_Runner on a collapsing platform also carries `Remove if plat fallen`, whose only
+# collision test sends no event (`sendEvent` is empty), so it never fires.
+PLATFORM_FSM_SHA256 = 'f4efe9b39a056c427d88e41dd747a125fcc6de5d80ad5c7b01ce4c377da99b20'
+GAS_CLIPS = {'Idle': (5, 12, 0), 'Walk': (10, 12, 0), 'Turn': (2, 12, 2), 'Attack': (8, 15, 1),
+             'Attack End': (1, 30, 0), 'Death Air': (3, 12, 2), 'Death Land': (4, 12, 1)}
 LEAP_CLIPS = {'Idle': (6, 12, 0), 'Walk': (7, 12, 0), 'Turn': (2, 10, 2), 'Attack': (11, 12, 2), 'Land': (2, 15, 2),
               'Death Air': (1, 30, 6), 'Death Land': (8, 12, 2)}
 ASSEMBLY_SHA256 = 'e9048ef6a633970f735e01ec166d3959f610eaea7a88d827d48d67b1e5fb87bd'
@@ -27,6 +37,8 @@ CLIPS = {'Idle': (6, 10, 0), 'Walk': (7, 10, 0), 'Turn': (2, 12, 2),
          'Attack Anticipate': (5, 12, 2), 'Attack Lunge': (8, 12, 2),
          'Attack Cooldown': (1, 12, 2), 'Fall': (5, 10, 1),
          'Death Air': (1, 30, 6), 'Death Land': (8, 12, 2)}
+
+MOSSMAN_CLIPS = dict(CLIPS, **{'Death Air': (3, 12, 2), 'Death Land': (3, 12, 2)})
 
 
 def walker_parameters(walker, lunge_speed=6.):
@@ -172,10 +184,79 @@ def driving_fsm(records):
     contract; exactly one movement FSM is.
     """
     matches = [data for _, typ, data in records
-               if typ == 'PlayMakerFSM' and data['fsm']['name'] in ('Zombie Swipe', 'Zombie Leap')]
+               if typ == 'PlayMakerFSM' and data['fsm']['name'] in ('Zombie Swipe', 'Zombie Leap', 'Fungus Zombie Attack')]
     if len(matches) != 1:
-        raise ValueError('Runner requires exactly one Zombie Swipe or Zombie Leap FSM')
+        raise ValueError('Runner requires exactly one Zombie Swipe, Zombie Leap or Fungus Zombie Attack FSM')
+    for _, typ, data in records:
+        if typ == 'PlayMakerFSM' and data is not matches[0]:
+            from fsm_pins import fingerprint
+            if data['fsm']['name'] != 'Remove if plat fallen' or fingerprint(data['fsm']) != PLATFORM_FSM_SHA256:
+                raise ValueError('unverified extra FSM on a Runner: ' + data['fsm']['name'])
     return matches[0]
+
+
+# --- Mossman_Shaker's gas burst ------------------------------------------------
+#
+# `Attack` activates the child `Gas Hit Box` (a trigger PolygonCollider2D on layer 22 carrying a
+# `DamageHero`), sets its scale to 0.2 and tweens it to 1 over 0.4 s with easeOutCirc (enum 19), and
+# `CD` switches it off again. The polygon is a prefab constant of `shared/hk-sim/src/runner.rs`
+# (`gas`): every Shaker carries the same child, and this proves it before admitting one. Local
+# points are relative to the box's own origin, which stands 1.42 below the Shaker, plus the
+# collider's offset of 1.44 in y; Q16.
+GAS_POLYGON_Q16 = [[-182559, 250540], [1475, 307541], [183672, 256693], [284184, 104966],
+                   [301355, -1375], [-296176, -80], [-279846, 114624]]
+GAS_ORIGIN_Q16 = [0, -93061]
+GAS_ACTIONS = {
+    ('Attack Delay', 'WaitRandom'): {'timeMin': 0., 'timeMax': .75},
+    ('Attack Antic', 'Wait'): {'time': .75},
+    ('Attack Antic', 'Tk2dPlayAnimation'): {'clipName': 'Attack'},
+    ('Attack', 'SetScale'): {'x': .2, 'y': .2, 'z': .2},
+    ('Attack', 'iTweenScaleTo'): {'time': .4, 'delay': .005},
+    ('Attack', 'Wait'): {'time': .8},
+    ('CD', 'Wait'): {'time': .5},
+    ('Idle Pause', 'Tk2dPlayAnimation'): {'clipName': 'Idle'},
+    ('Idle Pause', 'Wait'): {'time': .5},
+}
+GAS_TRANSITIONS = {
+    'Initialise': [('FINISHED', 'Ready')], 'Ready': [('ATTACK ALERT', 'Attack Delay')],
+    'Attack Delay': [('FINISHED', 'Attack Antic')], 'Attack Antic': [('FINISHED', 'Attack')],
+    'Attack': [('FINISHED', 'CD')], 'CD': [('FINISHED', 'Idle Pause')], 'Idle Pause': [('FINISHED', 'Reset')],
+    'Reset': [('FINISHED', 'Ready')],
+}
+
+
+def gas_box(sc, gid, fsm):
+    """Prove the Shaker's burst against `runner.rs::gas` and return what the guest needs of it."""
+    from actors import _component_records
+    from fsm_pins import check_action, check_enums, check_transitions, state
+    check_transitions('Mossman_Shaker', fsm, GAS_TRANSITIONS, [('ZERO HP', 'Death')])
+    for (name, action), expected in GAS_ACTIONS.items():
+        check_action('Mossman_Shaker', state(fsm, name), action, expected)
+    check_enums('Mossman_Shaker', state(fsm, 'Attack'), 'iTweenScaleTo', 0, {'easeType': 19})
+    boxes = {}
+    for child in sc.transforms[sc.go_transform[gid]]['m_Children']:
+        tid = child['m_PathID']
+        kid = sc.transforms[tid]['m_GameObject']['m_PathID']
+        boxes[sc.gos[kid]['m_Name']] = (kid, tid)
+    if 'Gas Hit Box' not in boxes:
+        raise ValueError('Mossman_Shaker has no Gas Hit Box')
+    kid, tid = boxes['Gas Hit Box']
+    records = _component_records(sc, kid)
+    polygons = [d for _, t, d in records if t == 'PolygonCollider2D']
+    damage = [d for _, t, d in records if t == 'DamageHero']
+    if sc.gos[kid]['m_Layer'] != 22 or sc.gos[kid]['m_IsActive'] or len(polygons) != 1 or len(damage) != 1 \
+            or not polygons[0]['m_IsTrigger'] or not polygons[0]['m_Enabled'] or damage[0]['damageDealt'] != 1 \
+            or damage[0]['hazardType'] != 1 or not damage[0]['m_Enabled']:
+        raise ValueError('unsupported Mossman_Shaker Gas Hit Box')
+    paths = polygons[0]['m_Points']['m_Paths']
+    offset = polygons[0]['m_Offset']
+    points = [[round(p['x'] * 65536), round((p['y'] + offset['y']) * 65536)] for p in paths[0]] \
+        if len(paths) == 1 and offset['x'] == 0 else None
+    transform = sc.transforms[tid]
+    origin = [round(transform['m_LocalPosition']['x'] * 65536), round(transform['m_LocalPosition']['y'] * 65536)]
+    if points != GAS_POLYGON_Q16 or origin != GAS_ORIGIN_Q16:
+        raise ValueError('Mossman_Shaker Gas Hit Box is not the admitted polygon')
+    return {'polygon_q16': points, 'origin_q16': origin}
 
 
 def recognize(sc, actor):
@@ -188,18 +269,37 @@ def recognize(sc, actor):
     variables = {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
                  for v in group if isinstance(v, dict) and 'name' in v and 'value' in v and not isinstance(v['value'], dict)}
     leap = fsm.get('name') == 'Zombie Leap'
-    parameters = walker_parameters(walker, 1. if leap else variables.get('Lunge Speed'))
+    gas = fsm.get('name') == 'Fungus Zombie Attack'
+    parameters = walker_parameters(walker, 1. if leap or gas else variables.get('Lunge Speed'))
     # The serialized FSM embeds owner references, so the fingerprint covers its
     # structure and scalar parameters (states, transitions, enabled actions and
     # their fields, variables other than Lunge Speed).
     fingerprint = fsm_fingerprint(fsm)
-    if not fsm_component['m_Enabled'] or fingerprint != (LEAP_FSM_SHA256 if leap else FSM_SHA256):
+    if leap:
+        accepted = {LEAP_FSM_SHA256: 'Leaper'}
+    elif gas:
+        accepted = {GAS_FSM_SHA256: 'Shaker'}
+    else:
+        accepted = {FSM_SHA256: 'Runner', MOSSMAN_FSM_SHA256: 'Mossman'}
+    # The Greenpath FSMs are serialized disabled (their FSMActivator enables them), as the Fat Fly's.
+    if (not fsm_component['m_Enabled'] and not any(k == 'FSMActivator' for _, k, _ in records)) \
+            or fingerprint not in accepted:
         raise ValueError('unverified Runner FSM variant')
+    variant = accepted[fingerprint]
     if leap:
         parameters['lunge_speed'] = 0.; parameters['lunge_velocity_q16'] = [0, 0]
         parameters['attack'] = {'kind': 'Leap', 'jump_speed_y': 20., 'jump_x_factor': 1.25, 'idle_time': variables.get('Idle Time')}
         if parameters['attack']['idle_time'] != .5:
             raise ValueError('unsupported Leaper idle time')
+    elif gas:
+        parameters['lunge_speed'] = 0.; parameters['lunge_velocity_q16'] = [0, 0]
+        parameters['attack'] = dict({'kind': 'Gas'}, **gas_box(sc, actor['game_object'], fsm))
+    elif variant == 'Mossman':
+        # What the older FSM and its Walker lack: a TOOK DAMAGE turn out of Ready, and (alertRange null)
+        # the Walker's turn to face a Knight who walks up behind it. Both go together in the source.
+        if walker['alertRange']['m_PathID']:
+            raise ValueError('a Mossman_Runner with an alert range is not the admitted variant')
+        parameters['attack'] = {'kind': 'SwipeCalm'}
     else:
         parameters['attack'] = {'kind': 'Swipe'}
     for name, expected in ASSEMBLIES.items():
@@ -231,7 +331,9 @@ def recognize(sc, actor):
         if ref['m_FileID'] != 0 or not ref['m_PathID']:
             raise ValueError('external or missing Runner sensing component')
         return ref['m_PathID']
-    range_id = local_ref(walker['alertRange'])
+    # The Mossman_Runner's Walker names no alert range; its detector's only one is the `Attack Range`
+    # child its FSM checks by name, which is the box the attack reads either way.
+    range_id = local_ref(walker['alertRange']) if walker['alertRange']['m_PathID'] else local_ref(los['alertRanges'][0])
     if local_ref(walker['lineOfSightDetector']) != los_id or not los['m_Enabled'] or [local_ref(r) for r in los['alertRanges']] != [range_id]:
         raise ValueError('Runner sensing references differ')
     kind, alert = sc.objects[range_id]
@@ -248,7 +350,7 @@ def recognize(sc, actor):
     if not animator['m_Enabled'] or animator['isRealtime']:
         raise ValueError('Runner requires enabled scaled-time animation')
     library = source.ref(sc.file, animator['library']); clips = source.read(library)['clips']
-    animation = clip_contract(clips, LEAP_CLIPS if leap else CLIPS)
+    animation = clip_contract(clips, LEAP_CLIPS if leap else GAS_CLIPS if gas else MOSSMAN_CLIPS if variant == 'Mossman' else CLIPS)
     if leap:
         attack = next(c for c in clips if c['name'] == 'Attack')
         triggers = [i for i, frame in enumerate(attack['frames']) if frame.get('triggerEvent')]
@@ -261,9 +363,12 @@ def recognize(sc, actor):
     _, audio_source = _one(records, 'AudioSource')
     # Unity6 stores the assigned loop in m_Resource; m_audioClip is null here.
     loop = source.ref(sc.file, audio_source['m_Resource'])
-    anticipate = next(state for state in fsm['states'] if state['name'] == 'Anticipate')['actionData']
-    chase = [source.ref(sc.file, ref) for ref in anticipate['unityObjectParams']]
-    if len(chase) != 2 or any(obj.type.name != 'AudioClip' for obj in [loop, *chase]):
+    # The Greenpath mossmen sound their own clips (three chase samples, or none for the Shaker);
+    # the guest plays the resident Runner bank for them, as it does for the Leaper.
+    anticipate = next((state for state in fsm['states'] if state['name'] == 'Anticipate'), None)
+    chase = [source.ref(sc.file, ref) for ref in anticipate['actionData']['unityObjectParams']] if anticipate else []
+    if loop.type.name != 'AudioClip' or any(obj.type.name != 'AudioClip' for obj in chase) \
+            or (variant in ('Runner', 'Leaper') and len(chase) != 2):
         raise ValueError('Runner audio references differ from the verified FSM')
     if leap:
         # The Leaper's random attack samples are not in the resident Runner bank;
@@ -282,7 +387,7 @@ def recognize(sc, actor):
     # placements carry their body and alert boxes through the actor spec.
     if alert_q16[0] != -alert_q16[2] or body_q16[0] >= body_q16[2] or body_q16[1] >= body_q16[3] or alert_q16[1] >= alert_q16[3]:
         raise ValueError('Runner sensing shape is not a mirror-stable box')
-    return {'kind': 'ZombieSwipeWalker', 'guest_enabled': False, 'parameters': parameters,
+    return {'kind': 'ZombieSwipeWalker', 'guest_enabled': False, 'variant': variant, 'parameters': parameters,
             'walker_source': f'{Path(sc.file.name).name}:{walker_id}', 'fsm_sha256': fingerprint,
             'assembly_sha256': ASSEMBLY_SHA256, 'assemblies_sha256': dict(ASSEMBLIES),
             'library_source': source.sid(library),

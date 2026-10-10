@@ -86,6 +86,9 @@ MODULES = {
     'moss_walker': _sim('moss_walker') + _actor('advance_moss_walker'),
     'baldur': _sim('baldur') + _actor('advance_baldur'),
     'aspid': _sim('aspid') + _actor('advance_aspid'),
+    'fat_fly': _sim('fat_fly') + _actor('advance_fat_fly'),
+    'plant_trap': _sim('plant_trap') + _actor('advance_plant_trap'),
+    'moss_charger': _sim('moss_charger') + _actor('advance_moss_charger'),
     'hatcher': _sim('hatcher') + _actor('advance_hatcher', 'advance_baby'),
     'blocker': _sim('blocker') + _actor('advance_blocker'),
     'pigeon': _sim('pigeon') + _actor('advance_pigeon', 'pigeon_senses'),
@@ -120,7 +123,7 @@ CARRIED = {'art_shade': 'data/shade.hk'}
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.
 KIND_MODULE = {'FalseKnight': ('false_knight', 'arena'), 'Mawlek': ('mawlek', 'arena'), 'HuskGuard': 'husks', 'ZombieShield': 'husks',
-               'Vengefly': 'vengefly', 'Gruzzer': 'gruzzer', 'Baldur': 'baldur', 'Aspid': 'aspid',
+               'Vengefly': 'vengefly', 'Gruzzer': 'gruzzer', 'Baldur': 'baldur', 'Aspid': 'aspid', 'FatFly': 'fat_fly', 'PlantTrap': 'plant_trap', 'MossCharger': 'moss_charger',
                'Hatcher': 'hatcher', 'HatcherBaby': 'hatcher', 'Pigeon': 'pigeon', 'Climber': 'climber',
                'GruzMother': ('gruz_mother', 'arena', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'acid_flyer', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
                # The Elder Baldur spits Rollers, which run the Baldur's FSM
