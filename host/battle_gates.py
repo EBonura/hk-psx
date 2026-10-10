@@ -40,6 +40,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
 
+import rustsrc  # noqa: E402
+
 # `game/src/battle_gates.rs` keeps the closed set in one u16, which is the whole
 # reason the runtime costs a single test before it looks at anything.
 MAX_GATES = 16
@@ -53,11 +55,10 @@ def edge_scratch_slots():
     than a wrong room. Reading the number here is what turns that into a
     generator refusal, the way host/cook_scripts.py reads SCRIPT_FIELD_SLOTS.
     """
-    text = (ROOT / 'game/src/world.rs').read_text()
-    found = re.search(r'pub const SCRIPT_EDGE_SLOTS: usize = (\d+);', text)
-    if not found:
-        raise ValueError('cannot read SCRIPT_EDGE_SLOTS out of game/src/world.rs')
-    return int(found.group(1))
+    try:
+        return rustsrc.const_int(ROOT / 'game/src/world.rs', 'SCRIPT_EDGE_SLOTS')
+    except KeyError:
+        raise ValueError('cannot read SCRIPT_EDGE_SLOTS out of game/src/world.rs') from None
 
 
 def _count(body):
@@ -78,20 +79,20 @@ def neighbour_edges():
     if life.is_file():
         # Only the slots that see a cocoon carry a row, so the slot is written.
         for slot, body in re.findall(r'\((\d+),Binding\{off:&\[[^\]]*\],edges:&\[([^\]]*)\]\}\)',
-                                     life.read_text()):
+                                     rustsrc.source(life)):
             counts[int(slot)] = counts.get(int(slot), 0) + _count(body)
     door = ROOT / 'data/great_door.rs'
     if door.is_file():
         # Only the slots that see the door carry a row, so the slot is written.
         for slot, body in re.findall(r'\((\d+),Binding\{frames:\[[^\]]*\],edges:&\[([^\]]*)\]\}\)',
-                                     door.read_text()):
+                                     rustsrc.source(door)):
             counts[int(slot)] = counts.get(int(slot), 0) + _count(body)
     # The False Knight's broken floor lifts `Break Floor` through the same
     # scratch, and on a won arena it does so with every gate open.
     floor = ROOT / 'data/false_knight_art.rs'
     if floor.is_file():
-        table = re.search(r'FK_BREAK_FLOOR_EDGES: \[\(u16, u16\); \d+\] = \[([^\]]*)\]', floor.read_text())
-        for slot, _edge in re.findall(r'\((\d+), (\d+)\)', table.group(1) if table else ''):
+        table = re.search(r'FK_BREAK_FLOOR_EDGES:\[\(u16,u16\);\d+\]=\[([^\]]*)\]', rustsrc.source(floor))
+        for slot, _edge in re.findall(r'\((\d+),(\d+)\)', table.group(1) if table else ''):
             counts[int(slot)] = counts.get(int(slot), 0) + 1
     return counts
 
