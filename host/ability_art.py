@@ -46,6 +46,13 @@ BURST_SHRINK = 1
 # on a palette fitted to the thin lines too: they get a palette of their own, fitted down
 # to the faint edge of their halo (`BURST_BRIGHT_THRESHOLD`, the lines use 24).
 BURST_BRIGHT_FRAMES = 2
+# The Soul Burst: the star at the Knight when the soul orb can heal (`Can Heal 2`), the Knight's
+# `Effects/Soul Burst` (resources.assets:4371, a Unity Animator over a SpriteRenderer, scale 1.67
+# at (0, -0.48), clip Soul_burst000: five sprites at 20 fps, once). Cooked so that its widest frame
+# fits an animation slot (a texel covers about 2.2 screen pixels), into the burst's palette.
+SOUL_BURST_SPRITES = (3114, 3559, 3434, 1947, 2426)
+SOUL_BURST_PLACE = (0.0, -0.48, 1.67)
+SOUL_BURST_SHRINK = 2.2
 BURST_BRIGHT_THRESHOLD = 8
 EFFECT_CLIPS = (('Focus Effect', 'Lines Anim', 6629), ('Focus Effect End', 'Lines Anim', 6629),
                 ('Burst Effect', 'Heal Anim', 6375))
@@ -228,9 +235,20 @@ def cook():
             assert clip['wrapMode'] == 1
             effect_loop = clip['loopStart']
 
+    from cook import native_sprite
+    soul_start = len(images)
+    lx, ly, k = SOUL_BURST_PLACE
+    for pid in SOUL_BURST_SPRITES:
+        image, box = native_sprite(resources.objects[pid])
+        dims = tuple(max(1, math.ceil((box[i + 2] - box[i]) * k * scale / SOUL_BURST_SHRINK)) for i in (0, 1))
+        images.append(image.resize(dims, Image.Resampling.LANCZOS))
+        boxes.append([lx + k * box[0], ly + k * box[1], lx + k * box[2], ly + k * box[3]])
+        art_sources.append(f'resources.assets:{pid}')
+    clips.append(dict(name='Soul Burst', start=soul_start, count=len(SOUL_BURST_SPRITES), fps=20, wrap=2))
+
     # One CLUT per group of clips that fits a single 256x256 quantizer sheet, so
     # every frame of one animation keeps one palette.
-    effect_names = {name for name, _, _ in EFFECT_CLIPS}
+    effect_names = {name for name, _, _ in EFFECT_CLIPS} | {'Soul Burst'}
     groups, current = [], []
     for clip in clips:
         if clip['name'] in effect_names:
@@ -250,7 +268,7 @@ def cook():
     additive_from = len(groups)
     # The Burst's two bright frames get their own palette, last, fitted to their halo.
     burst = next(c for c in clips if c['name'] == 'Burst Effect')
-    bright = list(range(burst['start'], burst['start'] + BURST_BRIGHT_FRAMES))
+    bright = list(range(burst['start'], burst['start'] + BURST_BRIGHT_FRAMES)) + list(range(soul_start, soul_start + len(SOUL_BURST_SPRITES)))
     current = []
     for clip in clips:
         if clip['name'] not in effect_names:

@@ -2432,6 +2432,8 @@ pub fn submit(
         crate::shaman::append(ot);
         crate::title_card::append(ot);
         crate::hud::append(ot, health, max_health, soul, max_soul, paused, blue_health);
+        // The heal's white flash: over the world, under the HUD.
+        crate::focus_fx::append(ot);
         for i in (KICKED..USED).rev() {
             if i & 31 == 0 {
                 crate::input::checkpoint();
