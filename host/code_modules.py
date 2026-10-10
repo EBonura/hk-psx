@@ -362,11 +362,11 @@ def layer(script):
     script = sub(r'^(STACK_RESERVE = [^\n]*)$',
                  r'\1\nPOOL_BYTES = %#x; /* hk-psx: streaming code pool, host/code_modules.py */\n'
                  r'POOL_BASE = STACK_INIT - STACK_RESERVE - POOL_BYTES;' % POOL_BYTES, script)
-    script = sub(r'LENGTH = STACK_INIT - LOAD_ADDR - STACK_RESERVE$',
-                 'LENGTH = STACK_INIT - LOAD_ADDR - STACK_RESERVE - POOL_BYTES\n'
+    script = sub(r'LENGTH = EXE_HEAD_BYTES \+ STACK_INIT - LOAD_ADDR - STACK_RESERVE$',
+                 'LENGTH = EXE_HEAD_BYTES + STACK_INIT - LOAD_ADDR - STACK_RESERVE - POOL_BYTES\n'
                  f'    MODLINK (rwx) : ORIGIN = {LINK_BASE:#x}, LENGTH = {LINK_STRIDE * len(MODULES):#x}', script)
-    # The BIOS loads text and data only.
-    script = sub(r'LONG\(__bss_start - __text_start\);', 'LONG(__data_end - __text_start);', script)
+    # The BIOS loads text and data only: the SDK header's size is `__image_end`, the
+    # data end rounded up to a whole sector, and `split` zero-pads the file to it.
     script = sub(r'__heap_end   = STACK_INIT - STACK_RESERVE;', '__heap_end   = POOL_BASE;', script)
     block = ['    /* hk-psx streaming code modules (host/code_modules.py), linked in a',
              '       link-only space and relocated into the pool at run time. Listed',
@@ -467,20 +467,23 @@ def word_hash(data):
 
 def split(elf, exe_path):
     """Write the PS-X EXE: header, .text and .data, what the BIOS loads."""
-    header, text, data = (elf.by_name[n] for n in ('.psx_exe_header', '.text', '.data'))
+    header, text, data = (elf.by_name[n] for n in ('.ps_exe_head', '.text', '.data'))
     if header['addr'] + header['size'] != text['addr'] or text['addr'] + text['size'] > data['addr']:
         raise ValueError('unexpected section layout')
-    exe = bytearray(elf.bytes_of('.psx_exe_header'))
+    exe = bytearray(elf.bytes_of('.ps_exe_head'))
     exe += elf.bytes_of('.text') + bytes(data['addr'] - text['addr'] - text['size']) + elf.bytes_of('.data')
-    if struct.unpack_from('<I', exe, 0x1c)[0] != len(exe) - HEADER:
+    claimed = struct.unpack_from('<I', exe, 0x1c)[0]
+    short = claimed - (len(exe) - HEADER)
+    if not 0 <= short < 0x800:
         raise ValueError('EXE header payload size disagrees with .text + .data')
+    exe += bytes(short)
     Path(exe_path).write_bytes(exe)
 
 
 def map_with_only(map_text, keep=None):
     """The link map without the other modules' blocks (all of them when `keep`
-    is None): a composite image holds one module, and the SDK tools check the
-    map against the image."""
+    is None): a compact appended image holds one module, and the SDK tools
+    check the map against the image."""
     out, skipping = [], False
     for line in map_text.splitlines(keepends=True):
         if len(line) > 33 and line[33:34] not in (' ', '') and line[:8].strip():
@@ -503,8 +506,8 @@ def _module_of(address):
 def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=None):
     """From the linked ELF to the final EXE and one code chunk per scene that
     needs code: split, patch load-delay hazards (resident code, then each
-    module in a composite image holding it at its link address with its own
-    trampoline area), derive each module's fixups and the resident import
+    module appended to a compact analysis image with explicit linked placement
+    and its own trampoline area), derive each module's fixups and the resident import
     sites, pre-bind every site to the trap, write the chunk tables into the
     EXE, then scan every image. Returns the report."""
     import hazards
@@ -519,7 +522,10 @@ def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=No
     # an empty package, so its rooms still find it "installed".
     empty = {n for n in names if n not in ALWAYS_RESIDENT and ('.mod_' + n) not in elf.by_name}
     mod_index = {elf.index('.mod_' + n): k for k, n in enumerate(names) if n not in ALWAYS_RESIDENT | empty}
-    resident_patch = hazards.patch(exe, link_map)
+    # The EXE holds no module, so the patcher reads the map without their blocks.
+    resident_map = work / 'map-resident.map'
+    resident_map.write_text(map_with_only(text_map))
+    resident_patch = hazards.patch(exe, resident_map)
     report = {'resident_patch': {k: v for k, v in resident_patch.items() if k != 'log'}, 'modules': {}}
 
     # Resident references into module space, from the relocations: only
@@ -554,21 +560,16 @@ def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=No
         image += struct.pack('<II', MAGIC, TRAMP_WORDS) + bytes(4 * TRAMP_WORDS)
         relocs = list(elf.relocations('.mod_' + name))
         before = {off: struct.unpack_from('<I', image, off - base)[0] for off, kind, _ in relocs if kind in (2, 5, 6)}
-        # Composite: the patched EXE with its own trampoline array hidden, so
-        # the SDK patcher uses the module's, then the module at its address.
-        payload = bytearray(exe.read_bytes())
-        first = payload.find(struct.pack('<I', MAGIC), HEADER)
-        while first >= 0 and first % 4:
-            first = payload.find(struct.pack('<I', MAGIC), first + 1)
-        struct.pack_into('<I', payload, first, 0)
-        at = base - LOAD_ADDR + HEADER
+        # The Rust host tool appends the module without changing resident bytes.
+        # --module tells the SDK its distinct link address and placement.
         composite = work / f'composite-{name}.exe'
-        composite.write_bytes(bytes(payload) + bytes(at - len(payload)) + bytes(image))
+        at = hazards.compose_module(exe, image, composite)
         mod_map = work / f'map-{name}.map'
         mod_map.write_text(map_with_only(text_map, name))
         code = [(base, base + code_end), (base + tramp_at, base + len(image))]
-        patched = hazards.patch(composite, mod_map, extra=code, array_at=base + tramp_at)
-        image = bytearray(composite.read_bytes()[at:at + len(image)])
+        patched = hazards.patch(composite, mod_map, extra=code,
+                                module=(base, base + len(image), at))
+        image = bytearray(hazards.extract_module(exe, composite, len(image)))
         for off, word in before.items():
             if struct.unpack_from('<I', image, off - base)[0] != word:
                 raise ValueError(f'the hazard patch moved a relocated word in {name} at {off:#x}: '
@@ -707,24 +708,21 @@ def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=No
             raise ValueError(f'a room ({worst} pool bytes) plus a carried package ({max(carried)}) exceeds the pool')
     report['chunks'] = chunks
     report['pool'] = {'base': pool_base(), 'bytes': POOL_BYTES}
-    # Scans: each module in its composite (rebuilt on the final EXE), then
-    # the resident image with a map that lists no module.
+    # Scans: each module appended to the final resident EXE, with an explicit
+    # link range. The resident image is checked with a map without modules.
     for k, name in enumerate(names):
         if name in ALWAYS_RESIDENT or name in empty:
             continue
         base = link_address(k)
         img = packages[k][20:20 + 4 * struct.unpack_from('<I', packages[k], 8)[0]]
-        payload = bytearray(image)
-        at = base - LOAD_ADDR + HEADER
         composite = work / f'composite-{name}.exe'
-        composite.write_bytes(bytes(payload) + bytes(at - len(payload)) + img)
+        at = hazards.compose_module(exe, img, composite)
         code_end = report['modules'][name]['code_bytes']
         tramp_at = len(img) - 4 * (TRAMP_WORDS + 2)
         hazards.scan(composite, work / f'map-{name}.map', report_path=Path(report_dir) / f'hazards-{name}.json',
-                     extra=[(base, base + code_end), (base + tramp_at + 8, base + len(img))])
-        hazards.stack_guard(composite, work / f'map-{name}.map')
-    resident_map = work / 'map-resident.map'
-    resident_map.write_text(map_with_only(text_map))
+                     extra=[(base, base + code_end), (base + tramp_at + 8, base + len(img))],
+                     module=(base, base + len(img), at))
+        hazards.stack_guard(composite, work / f'map-{name}.map', module=(base, base + len(img), at))
     report['resident_map'] = str(resident_map)
     report['import_sites'] = len(sites)
     return report

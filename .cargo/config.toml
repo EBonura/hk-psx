@@ -3,4 +3,4 @@
 #   cargo hk-build build
 #   cargo hk-build help
 [alias]
-hk-build = "run --release --manifest-path host/hk-build/Cargo.toml --"
+hk-build = "run --release --manifest-path host/hk-build/Cargo.toml --bin hk-psx-build --"

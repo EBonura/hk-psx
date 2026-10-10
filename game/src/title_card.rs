@@ -223,7 +223,7 @@ pub fn prepare() {
 pub fn append(ot: &mut OrderingTable<1>) {
     unsafe {
         for i in (0..USED).rev() {
-            ot.add(0, &mut QUADS[i], QuadTextured::WORDS);
+            crate::display::ot_add(ot, 0, &mut QUADS[i], QuadTextured::WORDS);
         }
     }
 }

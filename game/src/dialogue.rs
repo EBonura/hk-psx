@@ -444,13 +444,13 @@ fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &str) {
 pub fn append(ot: &mut OrderingTable<1>) {
     unsafe {
         for i in (0..USED).rev() {
-            ot.add(0, &mut GLYPHS[i], 5);
+            crate::display::ot_add(ot, 0, &mut GLYPHS[i], 5);
         }
         // Insertion prepends, so this lands between the box and the glyphs: a charm
         // icon sits on the board rather than behind it, and under its own row.
         crate::charms::append_icons(ot);
         for i in (0..BOX_COUNT).rev() {
-            ot.add(0, &mut BOXES[i], 3);
+            crate::display::ot_add(ot, 0, &mut BOXES[i], 3);
         }
     }
 }

@@ -549,7 +549,7 @@ mod presentation {
                     (art.u, art.v),
                     material(art),
                 );
-                ot.add(0, &mut BLUE[i as usize], Sprite::WORDS);
+                crate::display::ot_add(ot, 0, &mut BLUE[i as usize], Sprite::WORDS);
             }
         }
     }

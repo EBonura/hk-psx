@@ -1,23 +1,23 @@
 # Shared scene and gameplay budget
 
-The ordinary-layout build keeps one scene at a time in the RAM
+The SDK and module build keeps one scene at a time in the RAM
 arena and replaces its static VRAM atlases at scene gates. These are linked reservations, not hardware
 performance or main-stack high-water measurements. Exact map and artifact hashes
 are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |807,944|
-| Code-to-data alignment |8|
-| Linked data, including menu and HUD |273,392|
-| BSS, including shared scene arena and runtime pools |797,036|
-| Total static span |1,878,380|
+| Linked code |808,820|
+| Code-to-data alignment |12|
+| Linked data, including menu and HUD |272,136|
+| BSS, including shared scene arena and runtime pools |797,060|
+| Total static span |1,878,036|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |103,828|
+| Unallocated gap before reserved stack |104,172|
 | Room module pool, inside that gap |94,208|
-| Free RAM below the module pool |9,620|
+| Free RAM below the module pool |9,964|
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -103,7 +103,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801da96c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801da814`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support

@@ -18,8 +18,8 @@ def prepare_linker(root, output):
         raise ValueError('Pinned SDK stack declaration changed; review project reservation')
     # STACK_INIT leaves 256 bytes at the top of RAM. Exclude those too so
     # the linker's static limit agrees with the reported stack floor.
-    generated, count = re.subn(r'LENGTH = RAM_SIZE - BIOS_SIZE - STACK_RESERVE',
-                              'LENGTH = STACK_INIT - LOAD_ADDR - STACK_RESERVE', generated)
+    generated, count = re.subn(r'LENGTH = EXE_HEAD_BYTES \+ RAM_SIZE - BIOS_SIZE - STACK_RESERVE',
+                              'LENGTH = EXE_HEAD_BYTES + STACK_INIT - LOAD_ADDR - STACK_RESERVE', generated)
     if count != 1:
         raise ValueError('Pinned SDK RAM region changed; review project reservation')
     # Derive the filename from its contents: Cargo must relink when the budget

@@ -9,6 +9,10 @@ description = "Single-command build, disc and validation driver for hk-psx"
 name = "hk-psx-build"
 path = "main.rs"
 
+[[bin]]
+name = "hk-module-image"
+path = "module_image.rs"
+
 [dependencies]
 hk-cook = { path = "../hk-cook" }
 serde_json = "1"
