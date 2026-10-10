@@ -448,9 +448,10 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
             shade::death_health(params.max_health,params.nail_damage),game.geo.wallet());
         unsafe {HK_GEO_LOST=HK_GEO_LOST.saturating_add(game.geo.death());}
         game.geo.leave_scene(r.scene,geo::GEO_PARAMS);game.geo.reset_enemies(r.scene);
-        // `GameManager.PlayerDead` resets every semi-persistent item: the enemies
-        // the Knight killed this life are back when the scene is seated below.
-        actor_persistence::rest();
+        // `GameManager.PlayerDead` resets every semi-persistent item: the soul
+        // totems refill and the enemies the Knight killed this life are back
+        // when the scene is seated below.
+        persist::reset_semi_persistent();
         game.life.reset();persist::restore_cocoon(game.life);game.props.leave();game.pickups.leave();
         if !game.door.opened() {game.door.reset();}
         blocker_roller::reset();
@@ -536,9 +537,9 @@ pub fn simulate(game: &mut Game, r: &world::Region, room: &Room, cache: &disc::C
         };
         if bench_events.sat {scene_sfx::play(scene_sfx::BENCH_REST);}
         if bench_events.rest {
-            // Resting resets every semi-persistent item: the soul totems refill.
-            soul_totems::rest();
-            actor_persistence::rest();
+            // Resting resets every semi-persistent item: the soul totems refill
+            // and the enemies killed since are back.
+            persist::reset_semi_persistent();
             // Rest Burst: HERO REVIVED and the respawn marker, then ask.
             // The source saves here without asking; this port never
             // writes the card unless the player says so.

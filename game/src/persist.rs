@@ -92,6 +92,12 @@ impl Kind {
         })
     }
 }
+/// `Kind::Enemy` local ids from here up are cooked state groups
+/// (`actor_persistence`); the Blockers' own ids sit below.
+pub const ENEMY_STATE_BASE: usize = 16;
+/// `Kind::Enemy` value for a death a bench rest or the Knight's death forgets
+/// (`semiPersistent`); 1 is a death kept for good.
+pub const ENEMY_DEAD_UNTIL_RESET: u8 = 2;
 pub const MAX_SCENE: usize = 1 << 10;
 pub const MAX_LOCAL: usize = 1 << 10;
 
@@ -219,6 +225,13 @@ impl Store {
         }
         self.len = kept;
     }
+    /// `GameManager.ResetSemiPersistentItems`: the soul totems refill and the
+    /// enemies killed under a `semiPersistent` item are back. Called on a bench
+    /// rest and on the Knight's death (`GameManager.PlayerDead`).
+    pub fn reset_semi_persistent(&mut self) {
+        self.clear_kind(Kind::SoulTotem);
+        self.clear_matching(Kind::Enemy, |local, value| local >= ENEMY_STATE_BASE && value == ENEMY_DEAD_UNTIL_RESET);
+    }
     /// Items of one kind in one scene, as (local, value).
     pub fn scene_items(&self, kind: Kind, scene: usize) -> impl Iterator<Item = (usize, u8)> + '_ {
         self.items().iter().filter_map(move |&item| {
@@ -283,6 +296,13 @@ pub fn get(kind: Kind, scene: usize, local: usize) -> Option<u8> {
 #[inline(never)]
 pub fn set(kind: Kind, scene: usize, local: usize, value: u8) {
     store().set(kind, scene, local, value);
+    publish();
+}
+/// `GameManager.ResetSemiPersistentItems`, on a bench rest and on a death.
+#[cfg(not(test))]
+#[inline(never)]
+pub fn reset_semi_persistent() {
+    store().reset_semi_persistent();
     publish();
 }
 #[cfg(not(test))]
@@ -445,18 +465,21 @@ mod tests {
         assert_eq!(s.all(Kind::GeoRock).collect::<Vec<_>>(), [(3, 2, 0)]);
     }
     #[test]
-    fn clear_matching_drops_only_what_the_test_names() {
+    fn a_reset_forgets_semi_persistent_items_and_only_those() {
         let mut s = Store::new();
-        // A Blocker's death below the state groups, a permanent one and two that
-        // a rest forgets, and a totem the rest does not concern.
+        // A Blocker's death below the state groups, a permanent enemy death and
+        // two a reset forgets, two soul totems, and a broken wall.
         assert!(s.set(Kind::Enemy, 2, 1, 1));
-        assert!(s.set(Kind::Enemy, 2, 16, 1));
-        assert!(s.set(Kind::Enemy, 2, 17, 2));
-        assert!(s.set(Kind::Enemy, 6, 18, 2));
-        assert!(s.set(Kind::SoulTotem, 2, 17, 2));
-        s.clear_matching(Kind::Enemy, |local, value| local >= 16 && value == 2);
-        assert_eq!(s.all(Kind::Enemy).collect::<Vec<_>>(), [(2, 1, 1), (2, 16, 1)]);
-        assert_eq!(s.get(Kind::SoulTotem, 2, 17), Some(2));
+        assert!(s.set(Kind::Enemy, 2, ENEMY_STATE_BASE, 1));
+        assert!(s.set(Kind::Enemy, 2, ENEMY_STATE_BASE + 1, ENEMY_DEAD_UNTIL_RESET));
+        assert!(s.set(Kind::Enemy, 6, ENEMY_STATE_BASE + 2, ENEMY_DEAD_UNTIL_RESET));
+        assert!(s.set(Kind::SoulTotem, 2, 0, 3));
+        assert!(s.set(Kind::SoulTotem, 44, 1, 4));
+        assert!(s.set(Kind::Breakable, 2, 9, 1));
+        s.reset_semi_persistent();
+        assert_eq!(s.all(Kind::Enemy).collect::<Vec<_>>(), [(2, 1, 1), (2, ENEMY_STATE_BASE, 1)]);
+        assert_eq!(s.count(Kind::SoulTotem), 0, "the totems refill");
+        assert_eq!(s.get(Kind::Breakable, 2, 9), Some(1));
         assert_eq!(s.items().len(), 3);
         assert!(s.items().windows(2).all(|w| w[0] >> 8 < w[1] >> 8));
     }
