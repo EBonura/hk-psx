@@ -49,6 +49,7 @@ pub mod prefab;
 pub mod props;
 pub mod pyfloat;
 pub mod pyjson;
+pub mod quality;
 pub mod quantize;
 pub mod recog;
 pub mod region_delta;
