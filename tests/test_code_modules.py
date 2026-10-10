@@ -27,8 +27,8 @@ class LayerTest(unittest.TestCase):
             self.assertIn(f'.mod_{name} {cm.link_address(k):#x} :', self.script)
 
     def test_bios_loads_text_and_data_only_and_the_pool_is_carved(self):
-        self.assertIn('LONG(__data_end - __text_start);', self.script)
-        self.assertIn('LENGTH = STACK_INIT - LOAD_ADDR - STACK_RESERVE - POOL_BYTES', self.script)
+        self.assertIn('LONG(__image_end - __text_start);', self.script)
+        self.assertIn('LENGTH = EXE_HEAD_BYTES + STACK_INIT - LOAD_ADDR - STACK_RESERVE - POOL_BYTES', self.script)
         self.assertIn('__heap_end   = POOL_BASE;', self.script)
 
     def test_code_rules_come_before_tables(self):

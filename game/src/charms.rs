@@ -525,7 +525,7 @@ mod presentation {
     pub fn append_icons(ot: &mut OrderingTable<1>) {
         unsafe {
             for i in (0..ICON_COUNT).rev() {
-                ot.add(0, &mut ICONS[i], QuadTextured::WORDS);
+                crate::display::ot_add(ot, 0, &mut ICONS[i], QuadTextured::WORDS);
             }
             ICON_COUNT = 0;
         }
