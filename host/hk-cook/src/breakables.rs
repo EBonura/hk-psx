@@ -15,7 +15,7 @@ use crate::pyjson::Json;
 use crate::pyset::{int_hash, PySet};
 use hk_unity::playmaker::{action_fields, Fields};
 use hk_unity::scene::Scene;
-use hk_unity::{base_name, Obj, Source, Value};
+use hk_unity::{base_name, Obj, Value};
 use std::collections::{BTreeSet, HashMap};
 
 pub const MAX_SCENE_BREAKABLES: usize = 128;
@@ -1212,9 +1212,8 @@ fn hidden_wall_shape_for(digest: &str) -> Option<Shape> {
 /// `hidden_wall_shape(fsm)`: the pinned hidden-wall shape this FSM is, or None.
 pub fn hidden_wall_shape(fsm: &Value) -> Result<Option<Shape>> {
     let names = state_names(fsm)?;
-    let matches = |states: &[&str]| {
-        names.len() == states.len() && states.iter().all(|s| names.contains(*s))
-    };
+    let matches =
+        |states: &[&str]| names.len() == states.len() && states.iter().all(|s| names.contains(*s));
     if !matches(&WALL_V2_STATES) && !matches(&WALL_TK2D_STATES) {
         return Ok(None);
     }
@@ -1318,7 +1317,16 @@ fn particle_outputs(
     played: &BTreeSet<i64>,
 ) {
     for &gid in gids {
-        match part_emitter(&sc.source, sc, gid, gravity, played.contains(&gid), false, None, false) {
+        match part_emitter(
+            &sc.source,
+            sc,
+            gid,
+            gravity,
+            played.contains(&gid),
+            false,
+            None,
+            false,
+        ) {
             Err(error) => {
                 authored.push(OUTPUT_PARTICLES);
                 missing.push(self::missing(OUTPUT_PARTICLES, Some(&sc.sid(gid)), &error));
@@ -1333,7 +1341,10 @@ fn particle_outputs(
 fn action_slots(data: &Value, index: usize) -> Result<Vec<(String, usize)>> {
     let names = kl(data, "paramName")?;
     let starts = kl(data, "actionStartIndex")?;
-    let start = starts.get(index).and_then(Value::int).ok_or("list index out of range")? as usize;
+    let start = starts
+        .get(index)
+        .and_then(Value::int)
+        .ok_or("list index out of range")? as usize;
     let end = if index + 1 < kl(data, "actionNames")?.len() {
         starts
             .get(index + 1)
@@ -1366,7 +1377,11 @@ fn int_at(data: &Value, key: &str, i: usize) -> Result<i64> {
 
 fn list_at(data: &Value, key: &str, pos: i64) -> Result<Value> {
     let list = kl(data, key)?;
-    let i = if pos < 0 { list.len() as i64 + pos } else { pos };
+    let i = if pos < 0 {
+        list.len() as i64 + pos
+    } else {
+        pos
+    };
     list.get(i as usize)
         .cloned()
         .ok_or_else(|| "list index out of range".to_string())
@@ -1402,10 +1417,7 @@ fn child_bindings(sc: &Scene, gid: i64, fsm: &Value) -> Result<Vec<(String, Opti
             let fields = u(action_fields(data, index, false))?;
             let target = fv(&fields, "gameObject").ok_or("'gameObject'")?;
             if k(target, "ownerOption")?.truthy()
-                && k(target, "gameObject")?
-                    .get("name")
-                    .and_then(Value::str)
-                    != owner
+                && k(target, "gameObject")?.get("name").and_then(Value::str) != owner
             {
                 continue;
             }
@@ -1420,7 +1432,11 @@ fn child_bindings(sc: &Scene, gid: i64, fsm: &Value) -> Result<Vec<(String, Opti
             if int_at(data, "paramDataType", slot)? != 19 {
                 continue;
             }
-            let stored = list_at(data, "fsmGameObjectParams", int_at(data, "paramDataPos", slot)?)?;
+            let stored = list_at(
+                data,
+                "fsmGameObjectParams",
+                int_at(data, "paramDataPos", slot)?,
+            )?;
             if !stored.get("useVariable").is_some_and(Value::truthy)
                 || !stored.get("name").is_some_and(Value::truthy)
             {
@@ -1432,7 +1448,11 @@ fn child_bindings(sc: &Scene, gid: i64, fsm: &Value) -> Result<Vec<(String, Opti
                 .find(|e| e.0 == wanted)
                 .map(|e| e.1.clone())
                 .unwrap_or_default();
-            let value = if found.len() == 1 { Some(found[0]) } else { None };
+            let value = if found.len() == 1 {
+                Some(found[0])
+            } else {
+                None
+            };
             let key = ks(&stored, "name")?;
             match bound.iter_mut().find(|e| e.0 == key) {
                 Some(slot) => slot.1 = value,
@@ -1453,7 +1473,10 @@ fn played_emitters(sc: &Scene, gid: i64, fsm: &Value) -> Result<BTreeSet<i64>> {
         let enabled = kl(data, "actionEnabled")?;
         for (index, raw) in names.iter().enumerate() {
             if !enabled.get(index).is_some_and(Value::truthy)
-                || !raw.str().unwrap_or_default().ends_with(".PlayParticleEmitter")
+                || !raw
+                    .str()
+                    .unwrap_or_default()
+                    .ends_with(".PlayParticleEmitter")
             {
                 continue;
             }
@@ -1498,10 +1521,7 @@ fn prefab_particles(sc: &Scene, reference: &Value) -> Result<Option<(String, Str
     }
     let mut particles = false;
     for component in kl(&tree, "m_Component")? {
-        if let Ok(obj) = sc
-            .source
-            .deref(&prefab.file, k(component, "component")?)
-        {
+        if let Ok(obj) = sc.source.deref(&prefab.file, k(component, "component")?) {
             // ParticleSystem's class id.
             if obj.class_id() == 198 {
                 particles = true;
@@ -1530,20 +1550,30 @@ fn action_parameters(
         let enabled = kl(data, "actionEnabled")?;
         for (index, raw) in names.iter().enumerate() {
             if !enabled.get(index).is_some_and(Value::truthy)
-                || !raw.str().unwrap_or_default().ends_with(&format!(".{action}"))
+                || !raw
+                    .str()
+                    .unwrap_or_default()
+                    .ends_with(&format!(".{action}"))
             {
                 continue;
             }
             let starts = kl(data, "actionStartIndex")?;
-            let start = starts.get(index).and_then(Value::int).ok_or("list index out of range")? as usize;
+            let start = starts
+                .get(index)
+                .and_then(Value::int)
+                .ok_or("list index out of range")? as usize;
             let end = if index + 1 < names.len() {
-                starts.get(index + 1).and_then(Value::int).ok_or("list index out of range")? as usize
+                starts
+                    .get(index + 1)
+                    .and_then(Value::int)
+                    .ok_or("list index out of range")? as usize
             } else {
                 kl(data, "paramName")?.len()
             };
             for i in start..end {
                 let pname = kl(data, "paramName")?.get(i).and_then(Value::str);
-                if pname.as_deref() == Some(parameter) && int_at(data, "paramDataType", i)? == kind {
+                if pname.as_deref() == Some(parameter) && int_at(data, "paramDataType", i)? == kind
+                {
                     out.push(list_at(data, table, int_at(data, "paramDataPos", i)?)?);
                 }
             }
@@ -1603,9 +1633,17 @@ fn owner_variable(fsm: &Value) -> Result<Option<String>> {
             if int_at(data, "paramDataType", slot)? != 19 {
                 continue;
             }
-            let stored = list_at(data, "fsmGameObjectParams", int_at(data, "paramDataPos", slot)?)?;
+            let stored = list_at(
+                data,
+                "fsmGameObjectParams",
+                int_at(data, "paramDataPos", slot)?,
+            )?;
             if stored.get("useVariable").is_some_and(Value::truthy) {
-                if let Some(name) = stored.get("name").filter(|n| n.truthy()).and_then(Value::str) {
+                if let Some(name) = stored
+                    .get("name")
+                    .filter(|n| n.truthy())
+                    .and_then(Value::str)
+                {
                     return Ok(Some(name));
                 }
             }
@@ -1658,7 +1696,12 @@ fn spawn_transform(
 }
 
 /// `_create_object_prefabs(sc, gid, fsm, state_name)`.
-fn create_object_prefabs(sc: &Scene, gid: i64, fsm: &Value, state_name: &str) -> Result<Vec<Prefab>> {
+fn create_object_prefabs(
+    sc: &Scene,
+    gid: i64,
+    fsm: &Value,
+    state_name: &str,
+) -> Result<Vec<Prefab>> {
     let mut out = Vec::new();
     for state in kl(fsm, "states")? {
         if ks(state, "name")? != state_name {
@@ -1684,7 +1727,11 @@ fn create_object_prefabs(sc: &Scene, gid: i64, fsm: &Value, state_name: &str) ->
             if int_at(data, "paramDataType", target)? != 19 {
                 return err("unsupported serialized CreateObject target");
             }
-            let reference = list_at(data, "fsmGameObjectParams", int_at(data, "paramDataPos", target)?)?;
+            let reference = list_at(
+                data,
+                "fsmGameObjectParams",
+                int_at(data, "paramDataPos", target)?,
+            )?;
             if reference.get("useVariable").is_some_and(Value::truthy) {
                 continue;
             }
@@ -1794,7 +1841,11 @@ fn audio_output(clips: &[String], authored: &mut Vec<&'static str>, missing: &mu
             None,
             &format!(
                 "break clip not resident: {}",
-                absent.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                absent
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         ));
     }
@@ -1932,7 +1983,15 @@ pub fn hidden_wall(
         &mut missing_list,
         &played_emitters(sc, gid, fsm)?,
     );
-    prefab_particle_outputs(sc, gid, fsm, &["Break"], gravity, &mut authored, &mut missing_list);
+    prefab_particle_outputs(
+        sc,
+        gid,
+        fsm,
+        &["Break"],
+        gravity,
+        &mut authored,
+        &mut missing_list,
+    );
 
     let mut uncovers = Vec::new();
     let reveals = crate::reveal_masks::reveal_mask_sources(sc)?;
@@ -1960,7 +2019,10 @@ pub fn hidden_wall(
             let mut entry = jobj(vec![
                 ("source", Json::Str(source_id.clone())),
                 ("game_object", Json::Str(sc.sid(target))),
-                ("name", value_json(k(sc.go(target).ok_or("'target'")?, "m_Name")?)),
+                (
+                    "name",
+                    value_json(k(sc.go(target).ok_or("'target'")?, "m_Name")?),
+                ),
                 ("definition", Json::Str(definition_name(k(tree, "fsm")?))),
             ]);
             if admitted.contains(&sc.sid(target)) {
@@ -1998,7 +2060,11 @@ pub fn hidden_wall(
             ));
         }
     }
-    let authored: Vec<&str> = OUTPUTS.iter().copied().filter(|n| authored.contains(n)).collect();
+    let authored: Vec<&str> = OUTPUTS
+        .iter()
+        .copied()
+        .filter(|n| authored.contains(n))
+        .collect();
     let refused_out = refused_outputs(&missing_list, &ENFORCED_OUTPUTS);
     Ok(jobj(vec![
         ("gid", ji(gid)),
@@ -2060,7 +2126,7 @@ fn has_refused(destruction: &Json) -> bool {
 }
 
 /// Sorted PlayMakerFSM objects that are enabled and on an active scene object.
-fn live_fsms(sc: &Scene) -> Result<Vec<(i64, i64, &Value)>> {
+fn live_fsms<'a>(sc: &'a Scene<'_>) -> Result<Vec<(i64, i64, &'a Value)>> {
     let mut objects: Vec<&hk_unity::scene::SceneObject> = sc.objects.iter().collect();
     objects.sort_by_key(|o| o.id);
     let mut out = Vec::new();
@@ -2193,9 +2259,8 @@ fn cracked_floor_shape_for(digest: &str) -> Option<(&'static str, &'static [&'st
 /// `cracked_floor_shape(fsm)`: the pinned cracked-floor shape this FSM is, or None.
 pub fn cracked_floor_shape(fsm: &Value) -> Result<Option<Shape>> {
     let names = state_names(fsm)?;
-    let matches = |states: &[&str]| {
-        names.len() == states.len() && states.iter().all(|s| names.contains(*s))
-    };
+    let matches =
+        |states: &[&str]| names.len() == states.len() && states.iter().all(|s| names.contains(*s));
     if !matches(&FLOOR_STATES) && !matches(&FLOOR_OPEN_STATES) {
         return Ok(None);
     }
@@ -2267,7 +2332,10 @@ pub fn cracked_floor(
             continue;
         }
         for (i, t, c) in components(sc, child)? {
-            if t.ends_with("Collider2D") && k(c, "m_Enabled")?.truthy() && !k(c, "m_IsTrigger")?.truthy() {
+            if t.ends_with("Collider2D")
+                && k(c, "m_Enabled")?.truthy()
+                && !k(c, "m_IsTrigger")?.truthy()
+            {
                 solids.push(Json::Str(sc.sid(i)));
             }
         }
@@ -2311,7 +2379,11 @@ pub fn cracked_floor(
             }
         }
     }
-    let authored: Vec<&str> = OUTPUTS.iter().copied().filter(|n| authored.contains(n)).collect();
+    let authored: Vec<&str> = OUTPUTS
+        .iter()
+        .copied()
+        .filter(|n| authored.contains(n))
+        .collect();
     let refused_out = refused_outputs(&missing_list, &ENFORCED_OUTPUTS);
     Ok(jobj(vec![
         ("gid", ji(gid)),
@@ -2482,8 +2554,10 @@ pub fn infected_vine(sc: &Scene, gid: i64, tree: &Value) -> Result<Json> {
         .map(|key| k(tree, key))
         .collect::<Result<_>>()?;
     let finite_numbers = spatter.iter().all(|v| {
-        matches!(v, Value::Int(_) | Value::UInt(_) | Value::F32(_) | Value::F64(_))
-            && v.float().is_some_and(f64::is_finite)
+        matches!(
+            v,
+            Value::Int(_) | Value::UInt(_) | Value::F32(_) | Value::F64(_)
+        ) && v.float().is_some_and(f64::is_finite)
     });
     if !finite_numbers {
         return err("vine spatter parameters are not finite numbers");
@@ -2768,7 +2842,10 @@ pub fn breakable_sources(
                             value_json(k(sc.go(gid).ok_or("'gid'")?, "m_Name")?),
                         ),
                         ("authored_scene_name", value_json(k(data, "sceneName")?)),
-                        ("semi_persistent", jb(k(component, "semiPersistent")?.truthy())),
+                        (
+                            "semi_persistent",
+                            jb(k(component, "semiPersistent")?.truthy()),
+                        ),
                         ("dont_save", jb(k(component, "dontSave")?.truthy())),
                     ]));
                 }
@@ -2794,7 +2871,10 @@ pub fn breakable_sources(
                 debris_names.push(format!("{file}:{part_gid}"));
                 debris.push(jobj(vec![
                     ("game_object", Json::Str(format!("{file}:{part_gid}"))),
-                    ("name", value_json(k(sc.go(part_gid).ok_or("'part'")?, "m_Name")?)),
+                    (
+                        "name",
+                        value_json(k(sc.go(part_gid).ok_or("'part'")?, "m_Name")?),
+                    ),
                     ("position", jfloats(&point(sc, part_gid)?)),
                     ("components", jl(comps)),
                 ]));
@@ -2935,7 +3015,11 @@ pub fn breakable_sources(
 
 /// `bind_breakables(records, draws, edges)`: attach the region's draw and edge
 /// indices without changing the stable scene state indices.
-pub fn bind_breakables(records: &[Json], draw_sources: &[String], edge_sources: &[String]) -> Vec<Json> {
+pub fn bind_breakables(
+    records: &[Json],
+    draw_sources: &[String],
+    edge_sources: &[String],
+) -> Vec<Json> {
     let mut draw_ids: HashMap<&str, usize> = HashMap::new();
     for (i, s) in draw_sources.iter().enumerate() {
         draw_ids.insert(s, i);
@@ -2989,7 +3073,11 @@ pub fn bind_breakables(records: &[Json], draw_sources: &[String], edge_sources: 
             .filter(|s| !draw_ids.contains_key(s.as_str()))
             .cloned()
             .collect();
-        jset(&mut bound, "unresident_renderer_sources", jstrs(&unresident));
+        jset(
+            &mut bound,
+            "unresident_renderer_sources",
+            jstrs(&unresident),
+        );
         out.push(bound);
     }
     out
