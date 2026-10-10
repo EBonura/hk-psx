@@ -41,7 +41,7 @@ def consumers():
 
 
 def render_row(name):
-    return int(re.search(rf'const {name}:u16=(\d+);', (ROOT / 'game/src/render.rs').read_text()).group(1))
+    return int(re.search(rf'const {name}\s*:\s*u16\s*=\s*(\d+);', (ROOT / 'game/src/render.rs').read_text()).group(1))
 
 
 def generated(path, name):
@@ -49,7 +49,7 @@ def generated(path, name):
     file = ROOT / path
     if not file.is_file():
         return None
-    found = re.search(rf'pub const {re.escape(name)}:usize=(\d+);', file.read_text())
+    found = re.search(rf'pub const {re.escape(name)}\s*:\s*usize\s*=\s*(\d+);', file.read_text())
     return int(found.group(1)) if found else None
 
 

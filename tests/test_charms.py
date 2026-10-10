@@ -132,7 +132,7 @@ class CookedCatalogueTests(unittest.TestCase):
 
 class CharmRuntimeTests(unittest.TestCase):
     def test_glyph_budget_constant_matches_the_dialogue_module(self):
-        real = re.search(r'const CAP:usize=(\d+);', (ROOT / 'game/src/dialogue.rs').read_text())
+        real = re.search(r'const CAP\s*:\s*usize\s*=\s*(\d+);', (ROOT / 'game/src/dialogue.rs').read_text())
         stub = re.search(r'CAP: usize = (\d+);', (ROOT / 'tests/charms_runtime.rs').read_text())
         self.assertTrue(real and stub)
         self.assertEqual(real.group(1), stub.group(1))

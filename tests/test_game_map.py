@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT / 'host'))
 
 def residency():
     text = (ROOT / 'shared/hk-cache/src/residency.rs').read_text()
-    return re.search(r'pub const MAP_PAGE:\(usize,usize,usize,usize\)=\(384\+\(18%10\)\*64,\(18/10\)\*256,64,256\);', text)
+    return re.search(r'pub const MAP_PAGE\s*:\s*\(usize,\s*usize,\s*usize,\s*usize\)\s*=\s*\(\s*384\s*\+\s*\(18\s*%\s*10\)\s*\*\s*64,\s*\(18\s*/\s*10\)\s*\*\s*256,\s*64,\s*256,?\s*\)\s*;', text)
 
 
 class GameMapLayout(unittest.TestCase):

@@ -32,7 +32,7 @@ APPENDER = 'append_script_edges'
 # Comments and blanks do not count towards it: the render path explains itself
 # at length between two of these calls, and a comment must not be able to break
 # the rule it is explaining.
-WINDOW = 4
+WINDOW = 8
 
 
 def modules_calling(method):

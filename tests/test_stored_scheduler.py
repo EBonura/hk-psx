@@ -7,6 +7,7 @@ now admits exclusive scene gates only; joint packing has separate host tests. Th
 residency module's own lease/priority tests remain useful and run separately.
 """
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -600,5 +601,5 @@ impl Cache{METHODS
         for exclusive in ('true',):
             with self.subTest(exclusive=exclusive):self.run_rust(code.replace('EXCLUSIVE',exclusive))
         main = (ROOT / 'game/src/main.rs').read_text()
-        retry = main[main.index('while cache.prepare_ambience()'):]
+        retry = main[re.search(r'while cache\s*\.prepare_ambience\(\)', main).start():]
         self.assertLess(retry.index('cache.reset_bootstrap()'), retry.index('menu::restore('))

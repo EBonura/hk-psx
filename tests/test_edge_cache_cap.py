@@ -29,7 +29,7 @@ ACCEPTED = {236: 'Crossroads_10'}
 
 def cap():
     text = (ROOT / 'game/src/world.rs').read_text()
-    found = re.search(r'const EDGE_CACHE:usize=(\d+);', text)
+    found = re.search(r'const EDGE_CACHE\s*:\s*usize\s*=\s*(\d+);', text)
     if not found:
         raise ValueError('cannot read EDGE_CACHE out of game/src/world.rs')
     return int(found.group(1))

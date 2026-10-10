@@ -753,7 +753,7 @@ def _spare_halfwords():
     disjointness map says is left.
     """
     text = (ROOT / 'shared/hk-cache/src/residency.rs').read_text()
-    return int(re.search(r'pub const SPARE_HALFWORDS:usize=(\d+);', text).group(1))
+    return int(re.search(r'pub const SPARE_HALFWORDS\s*:\s*usize\s*=\s*(\d+);', text).group(1))
 
 
 def icon_measurement(source, catalogue, rows_on_screen):

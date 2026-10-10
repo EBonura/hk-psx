@@ -75,6 +75,6 @@ class GeoTests(unittest.TestCase):
         with self.assertRaises(ValueError):rock_state(rocks,9)
     def test_host_limit_matches_the_guest(self):
         text=(Path(__file__).resolve().parents[1]/'game/src/geo.rs').read_text()
-        self.assertIn(f'pub const MAX_ROCKS_PER_SCENE:usize={MAX_ROCKS_PER_SCENE};',text)
+        self.assertRegex(text,rf'pub const MAX_ROCKS_PER_SCENE\s*:\s*usize\s*=\s*{MAX_ROCKS_PER_SCENE}\s*;')
 
 if __name__=='__main__':unittest.main()
