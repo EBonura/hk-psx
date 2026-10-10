@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 
 # Each consumer: the row it starts at, how many rows nobody else may take, and
 # the generated constant saying how many it actually fills. A consumer that
@@ -43,7 +44,7 @@ def consumers():
 
 
 def render_row(name):
-    return int(re.search(rf'const {name}:\s*u16\s*=\s*(\d+);', (ROOT / 'game/src/render.rs').read_text()).group(1))
+    return rustsrc.const_int(ROOT / 'game/src/render.rs', name)
 
 
 def generated_minus(path, name, k):
@@ -56,8 +57,10 @@ def generated(path, name):
     file = ROOT / path
     if not file.is_file():
         return None
-    found = re.search(rf'pub const {re.escape(name)}:usize=(\d+);', file.read_text())
-    return int(found.group(1)) if found else None
+    try:
+        return rustsrc.const_int(file, name)
+    except KeyError:
+        return None
 
 
 class ClutRowTests(unittest.TestCase):

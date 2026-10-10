@@ -12,21 +12,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 import false_knight as fk
 
 
 def rust_constants(path):
     """Every `pub const NAME: type = value;` in a module, as ints or int lists."""
-    text = path.read_text()
-    found = {}
-    for match in re.finditer(r'pub const (\w+)\s*:\s*[^=]+=\s*([^;]+);', text):
-        name, raw = match.group(1), match.group(2).strip()
-        raw = re.sub(r'//.*', '', raw)
-        try:
-            found[name] = eval(raw.replace('[', '[').replace('ONE', '65536'), {'__builtins__': {}}, {})
-        except Exception:
-            continue
-    return found
+    return rustsrc.consts(path)
 
 
 class FalseKnightSourceContract(unittest.TestCase):
