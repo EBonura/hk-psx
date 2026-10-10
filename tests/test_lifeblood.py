@@ -34,10 +34,10 @@ class LifebloodTests(unittest.TestCase):
   with tempfile.TemporaryDirectory(prefix='hk-life-hud-')as temp:
    args=['rustc','--edition=2021','-Awarnings',str(ROOT/'tests/lifeblood_hud_runtime.rs'),'-o',temp+'/run']
    for crate in ['hk-sim','hk-cache']:
-    deps=ROOT/f'shared/{crate}/target/debug/deps';lib=max(deps.glob('lib'+crate.replace('-','_')+'-*.rlib'),key=lambda p:p.stat().st_mtime)
+    deps=(Path(os.environ['CARGO_TARGET_DIR'])/'debug/deps' if os.environ.get('CARGO_TARGET_DIR') else ROOT/f'shared/{crate}/target/debug/deps');lib=max(deps.glob('lib'+crate.replace('-','_')+'-*.rlib'),key=lambda p:p.stat().st_mtime)
     args+=['--extern',crate.replace('-','_')+'='+str(lib),'-L','dependency='+str(deps)]
    # game/src/lifeblood.rs calls psx-math directly; hk-sim's build leaves it in its deps.
-   deps=ROOT/'shared/hk-sim/target/debug/deps';lib=max(deps.glob('libpsx_math-*.rlib'),key=lambda p:p.stat().st_mtime)
+   deps=(Path(os.environ['CARGO_TARGET_DIR'])/'debug/deps' if os.environ.get('CARGO_TARGET_DIR') else ROOT/'shared/hk-sim/target/debug/deps');lib=max(deps.glob('libpsx_math-*.rlib'),key=lambda p:p.stat().st_mtime)
    args+=['--extern','psx_math='+str(lib)]
    result=subprocess.run(args,env=dict(os.environ,CARGO_MANIFEST_DIR=str(ROOT/'game')),capture_output=True,text=True)
    self.assertEqual(result.returncode,0,result.stdout+result.stderr)

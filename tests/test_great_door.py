@@ -96,7 +96,7 @@ fn main() {
  assert_eq!(w.frame(0,(0,0)),None);assert!(core::mem::size_of::<World>()<=16);
 }'''
    (p/'main.rs').write_text(harness)
-   deps=ROOT/'shared/hk-sim/target/debug/deps';args=['rustc','--edition=2021','-Awarnings',str(p/'main.rs'),'-o',str(p/'run')]
+   deps=(Path(os.environ['CARGO_TARGET_DIR'])/'debug/deps' if os.environ.get('CARGO_TARGET_DIR') else ROOT/'shared/hk-sim/target/debug/deps');args=['rustc','--edition=2021','-Awarnings',str(p/'main.rs'),'-o',str(p/'run')]
    for name in ('hk_sim','hk_format'):
     lib=max(deps.glob('lib'+name+'-*.rlib'),key=lambda f:f.stat().st_mtime);args+=['--extern',name+'='+str(lib)]
    args+=['-L','dependency='+str(deps)]
