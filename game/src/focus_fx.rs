@@ -142,6 +142,11 @@ pub fn frames() -> [Option<usize>; 3] {
 /// alpha blend, so it is an additive wash of that size: grey 58, falling to nothing in 60 ticks.
 const FLASH_TICKS: u32 = 60;
 const FLASH_GREY: u32 = 58;
+/// The wash covers the top 180 of the screen's 240 rows. The tail of the frame after the CPU's last
+/// kick carries it, and the full 320x240 (0.78 clocks a pixel, 61k clocks) tipped two frames just after
+/// the heal over two vblanks; 210 rows still tipped one, 180 none (every-tick hkref replay of the focus
+/// route). The rows left out are the ground and the black under it.
+const FLASH_ROWS: u16 = 180;
 /// The flash's grey level this tick, 0 when none is running.
 pub fn flash_level() -> u8 {
     unsafe { FLASH.map_or(0, |a| (FLASH_GREY * (FLASH_TICKS - a) / FLASH_TICKS) as u8) }
@@ -180,7 +185,7 @@ pub fn append(ot: &mut psx_gpu::ot::OrderingTable<1>) {
             draw_mode: TextureMaterial::blended(0, 0, (0, 0, 0), BlendMode::Add).draw_mode_word(),
             color_cmd: 0x6200_0000 | pack_color(g, g, g),
             xy: pack_vertex(0, 0),
-            wh: pack_xy(320, 240),
+            wh: pack_xy(320, FLASH_ROWS),
         };
         ot.add(0, &mut *(&raw mut WASH), 4);
     }
