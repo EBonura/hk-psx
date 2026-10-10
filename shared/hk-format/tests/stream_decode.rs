@@ -62,11 +62,19 @@ fn corrupt_hash_and_invalid_format_are_never_admitted() {
     let mut arena = raw.clone();
     let mut d = Decoder::new(raw.len(), 0, raw.len(), 0);
     assert_eq!(d.step(&mut arena, 4096), Err(Error::Checksum));
+    // A matching stored hash is the CD integrity check and always runs. The
+    // expanded hash and the format walk only run when the cook is not trusted
+    // (HK_VERIFY_COOK=1 at build time); `make test` covers both builds.
     let mut bad = raw.clone();
     bad[0] = 0;
-    assert_eq!(decode(&bad, &bad, 1, 256), Err(Error::RoomFormat));
     let mut d = Decoder::new(raw.len(), psx_pack::fnv1a32(&raw), raw.len(), 0);
-    assert_eq!(d.step(&mut arena, 4096), Err(Error::Checksum));
+    if room_decode::TRUST_COOK {
+        assert_eq!(decode(&bad, &bad, 1, 256), Ok(bad.clone()));
+        assert_eq!(d.step(&mut arena, 4096), Ok(Some(raw.len())));
+    } else {
+        assert_eq!(decode(&bad, &bad, 1, 256), Err(Error::RoomFormat));
+        assert_eq!(d.step(&mut arena, 4096), Err(Error::Checksum));
+    }
 }
 #[test]
 fn truncated_and_zero_distance_matches_fail_without_overrun() {

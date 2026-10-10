@@ -59,7 +59,7 @@ pub struct Decoder {
 /// bytes is deterministic and bounds-checked, so those two re-proved what the
 /// cook proved, at about 440 ms per gate. The stored hash stays: it is the CD
 /// integrity check. HK_VERIFY_COOK=1 at build time restores both.
-const TRUST_COOK: bool = option_env!("HK_VERIFY_COOK").is_none();
+pub const TRUST_COOK: bool = option_env!("HK_VERIFY_COOK").is_none();
 const FNV: u32 = 0x811c9dc5;
 // 0x01000193 = 2^24 + 13*31. Eight wrapping shifts/adds avoid
 // dependent MULT/MFLO stalls on R3000A without changing either checksum.
@@ -672,7 +672,14 @@ mod word_copy_tests {
                     }
                 };
                 match variant {
-                    1 | 2 => assert_eq!(result, Err(super::Error::Checksum)),
+                    1 => assert_eq!(result, Err(super::Error::Checksum)),
+                    // The expanded hash is only checked when the cook is not
+                    // trusted (HK_VERIFY_COOK=1); the stored hash always is.
+                    2 if !super::TRUST_COOK => assert_eq!(result, Err(super::Error::Checksum)),
+                    2 => {
+                        assert_eq!(result, Ok(Some(raw.len())));
+                        assert_eq!(&arena[..raw.len()], raw);
+                    }
                     3 => assert_eq!(result, Err(super::Error::Decompress)),
                     _ => {
                         assert_eq!(result, Ok(Some(raw.len())));
