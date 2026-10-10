@@ -50,6 +50,8 @@ tools/audit_texture_similarity.py
 tools/texture_match_groups.py
 tools/audit_resident_bank.py
 host/requirements.lock
+# The Rust interrupted-cook receipt verifier controls whether base packs are reused.
+host/hk-build/region_cache.rs
 
 # --- postpass only ---
 # Below this line: code the cook run depends on but a single region's cooked
