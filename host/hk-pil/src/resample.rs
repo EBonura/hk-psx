@@ -84,7 +84,9 @@ fn taps(n_in: usize, n_out: usize, filter: Filter) -> Vec<Taps> {
             // Source pixels whose centres lie in (center - support, center + support].
             let first = (center - support + 0.5).floor().max(0.0) as usize;
             let end = ((center + support + 0.5).floor() as usize).min(n_in);
-            let raw: Vec<f64> = (first..end).map(|i| filter.eval((i as f64 + 0.5 - center) / stretch)).collect();
+            let raw: Vec<f64> = (first..end)
+                .map(|i| filter.eval((i as f64 + 0.5 - center) / stretch))
+                .collect();
             let sum: f64 = raw.iter().sum();
             let weights = raw
                 .iter()
@@ -104,19 +106,39 @@ fn to_u8(acc: i64) -> u8 {
 }
 
 /// One resampling pass along x (`horizontal`) or y.
-fn pass(src: &[u8], width: usize, height: usize, bands: usize, n_out: usize, horizontal: bool, filter: Filter) -> Vec<u8> {
+fn pass(
+    src: &[u8],
+    width: usize,
+    height: usize,
+    bands: usize,
+    n_out: usize,
+    horizontal: bool,
+    filter: Filter,
+) -> Vec<u8> {
     let n_in = if horizontal { width } else { height };
     let taps = taps(n_in, n_out, filter);
-    let (out_w, out_h) = if horizontal { (n_out, height) } else { (width, n_out) };
+    let (out_w, out_h) = if horizontal {
+        (n_out, height)
+    } else {
+        (width, n_out)
+    };
     let mut out = vec![0u8; out_w * out_h * bands];
     let half = 1i64 << (WEIGHT_BITS - 1);
     for y in 0..out_h {
         for x in 0..out_w {
-            let (t, fixed) = if horizontal { (&taps[x], y) } else { (&taps[y], x) };
+            let (t, fixed) = if horizontal {
+                (&taps[x], y)
+            } else {
+                (&taps[y], x)
+            };
             for b in 0..bands {
                 let mut acc = half;
                 for (k, &w) in t.weights.iter().enumerate() {
-                    let at = if horizontal { (fixed * width + t.first + k) * bands + b } else { ((t.first + k) * width + fixed) * bands + b };
+                    let at = if horizontal {
+                        (fixed * width + t.first + k) * bands + b
+                    } else {
+                        ((t.first + k) * width + fixed) * bands + b
+                    };
                     acc += w as i64 * src[at] as i64;
                 }
                 out[(y * out_w + x) * bands + b] = to_u8(acc);
@@ -163,7 +185,11 @@ impl Image {
             return self.clone();
         }
         let alpha = self.mode == Mode::Rgba;
-        let src = if alpha { self.premultiply() } else { self.clone() };
+        let src = if alpha {
+            self.premultiply()
+        } else {
+            self.clone()
+        };
         let bands = self.mode.pixel_size();
         // Rows first, except when the image is more than 100 times taller than
         // wide and loses height: then columns first.
@@ -175,7 +201,12 @@ impl Image {
             let wide = pass(&src.data, src.width, src.height, bands, w, true, filter);
             pass(&wide, w, src.height, bands, h, false, filter)
         };
-        let mut out = Image { mode: src.mode, width: w, height: h, data };
+        let mut out = Image {
+            mode: src.mode,
+            width: w,
+            height: h,
+            data,
+        };
         out.clear_pad();
         if alpha {
             out.unpremultiply()
@@ -191,7 +222,11 @@ impl Image {
     /// interpolating bilinearly. Positions outside the source give zero.
     pub fn affine_bilinear(&self, w: usize, h: usize, a: [f64; 6]) -> Image {
         let alpha = self.mode == Mode::Rgba;
-        let src = if alpha { self.premultiply() } else { self.clone() };
+        let src = if alpha {
+            self.premultiply()
+        } else {
+            self.clone()
+        };
         let bands = self.mode.pixel_size();
         let mut out = Image::new(src.mode, w, h);
         let (sw, sh) = (src.width as f64, src.height as f64);
@@ -214,7 +249,12 @@ impl Image {
                 let (fx, fy) = (u - x0, v - y0);
                 let (x0, y0) = (x0 as i64, y0 as i64);
                 for b in 0..bands {
-                    let (p00, p10, p01, p11) = (at(x0, y0, b), at(x0 + 1, y0, b), at(x0, y0 + 1, b), at(x0 + 1, y0 + 1, b));
+                    let (p00, p10, p01, p11) = (
+                        at(x0, y0, b),
+                        at(x0 + 1, y0, b),
+                        at(x0, y0 + 1, b),
+                        at(x0 + 1, y0 + 1, b),
+                    );
                     // Two fused linear interpolations: p0 + t * (p1 - p0).
                     let top = fx.mul_add(p10 - p00, p00);
                     let bottom = fx.mul_add(p11 - p01, p01);

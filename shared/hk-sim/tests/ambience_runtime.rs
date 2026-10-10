@@ -1,3 +1,5 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/ambience_state.rs"]
 mod state;
 // The cooked table comes through the mixer rather than beside it: the stem
@@ -136,8 +138,16 @@ fn assignment(m: &Mixer) -> [u8; STEMS] {
     for voice in held.iter().filter(|v| **v != NO_VOICE) {
         mask |= 1 << *voice as u32;
     }
-    assert_eq!(m.voice_mask(), mask, "the published voice mask is not the one being driven");
-    assert_eq!(mask & !VOICE_MASK, 0, "a stem is on a voice ambience does not own");
+    assert_eq!(
+        m.voice_mask(),
+        mask,
+        "the published voice mask is not the one being driven"
+    );
+    assert_eq!(
+        mask & !VOICE_MASK,
+        0,
+        "a stem is on a voice ambience does not own"
+    );
     held
 }
 
@@ -171,11 +181,11 @@ fn a_pooled_voice_serves_more_than_one_stem_over_the_cooked_cues() {
         cue(&mut m, scene as u8);
         let held = settle(&mut m, scene);
         assert_eq!(m.playing, data::AMBIENCE_SCENES[scene].mask);
-        for stem in 0..STEMS {
-            if held[stem] != NO_VOICE {
+        for (stem, &voice) in held.iter().enumerate().take(STEMS) {
+            if voice != NO_VOICE {
                 let index = data::AMBIENCE_POOL_VOICES
                     .iter()
-                    .position(|v| *v == held[stem])
+                    .position(|v| *v == voice)
                     .unwrap();
                 users[index] |= 1 << stem;
             }
@@ -221,7 +231,11 @@ fn a_voice_comes_back_to_the_pool_only_after_its_stem_is_released() {
     assert_eq!(m.cue(1, 1 << other, [10; STEMS], 0), 1 << other);
     let stop = m.tick();
     assert_eq!(stop, 1 << stem);
-    assert_eq!(m.voice(stem), voice, "the voice was recycled before key-off");
+    assert_eq!(
+        m.voice(stem),
+        voice,
+        "the voice was recycled before key-off"
+    );
     assert_ne!(m.voice(other), voice);
     m.release(stop);
     assert_eq!(m.voice(stem), NO_VOICE);
@@ -269,9 +283,14 @@ fn malformed_flags_headers_truncation_and_checksum_cannot_be_admitted() {
 /// restating it here, which is how this test came to assert an address the cook
 /// had already moved.
 fn bank_const(file: &str, name: &str) -> u32 {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data").join(file);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data")
+        .join(file);
     let text = std::fs::read_to_string(&path).unwrap();
-    let tail = text.split(&format!("const {name}")).nth(1).unwrap_or_else(|| panic!("no {name} in {file}"));
+    let tail = text
+        .split(&format!("const {name}"))
+        .nth(1)
+        .unwrap_or_else(|| panic!("no {name} in {file}"));
     let digits: String = tail
         .split('=')
         .nth(1)
@@ -297,12 +316,19 @@ fn actual_bank_keeps_every_cue_apart_below_the_tail_and_all_checksums_match() {
         // not contiguous; each still sits inside ambience's range.
         assert!(c.spu_address >= data::AMBIENCE_SPU_START && c.spu_address % 16 == 0);
         if let Some(last) = previous {
-            assert!(c.source_channel > last, "clips must arrive in channel order");
+            assert!(
+                c.source_channel > last,
+                "clips must arrive in channel order"
+            );
         }
         previous = Some(c.source_channel);
         // A pitch of 0 never advances the decoder and anything above 0x1000
         // resamples the clip above its 44.1 kHz source.
-        assert!(c.pitch > 0 && c.pitch <= 0x1000, "clip {i} pitch {} is unplayable", c.pitch);
+        assert!(
+            c.pitch > 0 && c.pitch <= 0x1000,
+            "clip {i} pitch {} is unplayable",
+            c.pitch
+        );
         assert_eq!(c.byte_len % 16, 0);
         let bytes = std::fs::read(root.join(format!("clip_{i}.adpcm"))).unwrap();
         assert!(valid_clip(&bytes, c.byte_len, c.checksum));
@@ -319,8 +345,11 @@ fn actual_bank_keeps_every_cue_apart_below_the_tail_and_all_checksums_match() {
                     continue;
                 }
                 let (x, y) = (data::AMBIENCE_CLIPS[a], data::AMBIENCE_CLIPS[b]);
-                assert!(x.spu_address + x.spu_bytes as u32 <= y.spu_address
-                    || y.spu_address + y.spu_bytes as u32 <= x.spu_address, "stems {a} and {b} of one cue share SPU");
+                assert!(
+                    x.spu_address + x.spu_bytes as u32 <= y.spu_address
+                        || y.spu_address + y.spu_bytes as u32 <= x.spu_address,
+                    "stems {a} and {b} of one cue share SPU"
+                );
             }
         }
     }
@@ -331,12 +360,26 @@ fn actual_bank_keeps_every_cue_apart_below_the_tail_and_all_checksums_match() {
     let world = bank_const("world-sfx.rs", "SPU_BASE");
     let focus = bank_const("focus-audio.rs", "SPU_BASE");
     let runner = bank_const("runner-audio.rs", "BANK_BASE");
-    assert!(end <= data::MUSIC_RING_BASE, "ambience runs into the music ring");
-    assert_eq!(data::MUSIC_RING_BASE + data::MUSIC_RING_BYTES as u32, world, "the music ring no longer sits below the world bank");
-    assert_eq!(world + bank_const("world-sfx.rs", "BANK_BYTES"), focus, "the world bank no longer sits below Focus");
+    assert!(
+        end <= data::MUSIC_RING_BASE,
+        "ambience runs into the music ring"
+    );
+    assert_eq!(
+        data::MUSIC_RING_BASE + data::MUSIC_RING_BYTES as u32,
+        world,
+        "the music ring no longer sits below the world bank"
+    );
+    assert_eq!(
+        world + bank_const("world-sfx.rs", "BANK_BYTES"),
+        focus,
+        "the world bank no longer sits below Focus"
+    );
     // Focus (and the ability one-shots that ride its range) may stop short of
     // Runner: what is left between them is free for more Knight sounds.
-    assert!(focus + bank_const("focus-audio.rs", "BANK_BYTES") <= runner, "the Focus bank runs into Runner");
+    assert!(
+        focus + bank_const("focus-audio.rs", "BANK_BYTES") <= runner,
+        "the Focus bank runs into Runner"
+    );
     assert!(runner + bank_const("runner-audio.rs", "BANK_BYTES") <= 0x80000);
 }
 
@@ -365,7 +408,7 @@ fn a_clip_checked_in_pieces_agrees_with_the_whole_clip_check() {
 
 /// The byte-wise check `ClipCheck::feed` replaced, kept as its oracle.
 fn reference_feed(hash: &mut u32, index: &mut usize, bytes: &[u8], length: usize) -> bool {
-    if length == 0 || length % 16 != 0 {
+    if length == 0 || !length.is_multiple_of(16) {
         return false;
     }
     for &byte in bytes {
@@ -373,10 +416,12 @@ fn reference_feed(hash: &mut u32, index: &mut usize, bytes: &[u8], length: usize
         if i >= length || (i == 0 && byte >> 4 != 0) {
             return false;
         }
-        if i % 16 == 0 && (byte >> 4 > 4 || byte & 15 > 12) {
+        if i.is_multiple_of(16) && (byte >> 4 > 4 || byte & 15 > 12) {
             return false;
         }
-        if i % 16 == 1 && byte != (if i == 1 { 4 } else { 0 } | if i == length - 15 { 3 } else { 0 }) {
+        if i % 16 == 1
+            && byte != (if i == 1 { 4 } else { 0 } | if i == length - 15 { 3 } else { 0 })
+        {
             return false;
         }
         *hash = (*hash ^ byte as u32).wrapping_mul(0x01000193);
@@ -388,29 +433,55 @@ fn reference_feed(hash: &mut u32, index: &mut usize, bytes: &[u8], length: usize
 #[test]
 fn piecewise_clip_checks_match_the_byte_wise_reference() {
     let mut seed = 0x9e37_79b9u32;
-    let mut next = move |n: u32| { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; seed % n };
+    let mut next = move |n: u32| {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        seed % n
+    };
     for round in 0..400 {
         let length = 16 * (1 + next(40) as usize);
         // Mostly well-formed blocks, with an occasional bad header or flag.
-        let mut clip: Vec<u8> = (0..length).map(|i| match i % 16 {
-            0 => if i == 0 { next(13) as u8 } else { ((next(5) << 4) | next(13)) as u8 },
-            1 => (if i == 1 { 4 } else { 0 }) | (if i == length - 15 { 3 } else { 0 }),
-            _ => next(256) as u8,
-        }).collect();
-        if next(4) == 0 { let at = next(length as u32) as usize; clip[at] ^= 1 << next(8); }
+        let mut clip: Vec<u8> = (0..length)
+            .map(|i| match i % 16 {
+                0 => {
+                    if i == 0 {
+                        next(13) as u8
+                    } else {
+                        ((next(5) << 4) | next(13)) as u8
+                    }
+                }
+                1 => (if i == 1 { 4 } else { 0 }) | (if i == length - 15 { 3 } else { 0 }),
+                _ => next(256) as u8,
+            })
+            .collect();
+        if next(4) == 0 {
+            let at = next(length as u32) as usize;
+            clip[at] ^= 1 << next(8);
+        }
         let extra = if next(8) == 0 { 16 } else { 0 };
-        clip.extend(std::iter::repeat(0).take(extra));
+        clip.extend(std::iter::repeat_n(0, extra));
         let (mut hash, mut index) = (0x811c9dc5u32, 0usize);
         let mut check = ClipCheck::new();
         let mut at = 0;
         while at < clip.len() {
             let piece = (1 + next(70) as usize).min(clip.len() - at);
             let expected = reference_feed(&mut hash, &mut index, &clip[at..at + piece], length);
-            assert_eq!(check.feed(&clip[at..at + piece], length), expected, "round {round} at {at}");
-            if !expected { break; }
+            assert_eq!(
+                check.feed(&clip[at..at + piece], length),
+                expected,
+                "round {round} at {at}"
+            );
+            if !expected {
+                break;
+            }
             at += piece;
             for checksum in [hash, hash ^ 1] {
-                assert_eq!(check.finish(length, checksum), index == length && hash == checksum, "round {round}");
+                assert_eq!(
+                    check.finish(length, checksum),
+                    index == length && hash == checksum,
+                    "round {round}"
+                );
             }
         }
     }

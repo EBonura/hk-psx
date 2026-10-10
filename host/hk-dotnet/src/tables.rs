@@ -57,11 +57,51 @@ pub enum Table {
 const ALL: [Table; 45] = {
     use Table::*;
     [
-        Module, TypeRef, TypeDef, FieldPtr, Field, MethodPtr, MethodDef, ParamPtr, Param, InterfaceImpl, MemberRef, Constant,
-        CustomAttribute, FieldMarshal, DeclSecurity, ClassLayout, FieldLayout, StandAloneSig, EventMap, EventPtr, Event,
-        PropertyMap, PropertyPtr, Property, MethodSemantics, MethodImpl, ModuleRef, TypeSpec, ImplMap, FieldRva, EncLog,
-        EncMap, Assembly, AssemblyProcessor, AssemblyOs, AssemblyRef, AssemblyRefProcessor, AssemblyRefOs, File, ExportedType,
-        ManifestResource, NestedClass, GenericParam, MethodSpec, GenericParamConstraint,
+        Module,
+        TypeRef,
+        TypeDef,
+        FieldPtr,
+        Field,
+        MethodPtr,
+        MethodDef,
+        ParamPtr,
+        Param,
+        InterfaceImpl,
+        MemberRef,
+        Constant,
+        CustomAttribute,
+        FieldMarshal,
+        DeclSecurity,
+        ClassLayout,
+        FieldLayout,
+        StandAloneSig,
+        EventMap,
+        EventPtr,
+        Event,
+        PropertyMap,
+        PropertyPtr,
+        Property,
+        MethodSemantics,
+        MethodImpl,
+        ModuleRef,
+        TypeSpec,
+        ImplMap,
+        FieldRva,
+        EncLog,
+        EncMap,
+        Assembly,
+        AssemblyProcessor,
+        AssemblyOs,
+        AssemblyRef,
+        AssemblyRefProcessor,
+        AssemblyRefOs,
+        File,
+        ExportedType,
+        ManifestResource,
+        NestedClass,
+        GenericParam,
+        MethodSpec,
+        GenericParamConstraint,
     ]
 };
 
@@ -90,20 +130,49 @@ impl Coded {
             Coded::TypeDefOrRef => &[Some(TypeDef), Some(TypeRef), Some(TypeSpec)],
             Coded::HasConstant => &[Some(Field), Some(Param), Some(Property)],
             Coded::HasCustomAttribute => &[
-                Some(MethodDef), Some(Field), Some(TypeRef), Some(TypeDef), Some(Param), Some(InterfaceImpl), Some(MemberRef),
-                Some(Module), Some(DeclSecurity), Some(Property), Some(Event), Some(StandAloneSig), Some(ModuleRef),
-                Some(TypeSpec), Some(Assembly), Some(AssemblyRef), Some(File), Some(ExportedType), Some(ManifestResource),
-                Some(GenericParam), Some(GenericParamConstraint), Some(MethodSpec),
+                Some(MethodDef),
+                Some(Field),
+                Some(TypeRef),
+                Some(TypeDef),
+                Some(Param),
+                Some(InterfaceImpl),
+                Some(MemberRef),
+                Some(Module),
+                Some(DeclSecurity),
+                Some(Property),
+                Some(Event),
+                Some(StandAloneSig),
+                Some(ModuleRef),
+                Some(TypeSpec),
+                Some(Assembly),
+                Some(AssemblyRef),
+                Some(File),
+                Some(ExportedType),
+                Some(ManifestResource),
+                Some(GenericParam),
+                Some(GenericParamConstraint),
+                Some(MethodSpec),
             ],
             Coded::HasFieldMarshal => &[Some(Field), Some(Param)],
             Coded::HasDeclSecurity => &[Some(TypeDef), Some(MethodDef), Some(Assembly)],
-            Coded::MemberRefParent => &[Some(TypeDef), Some(TypeRef), Some(ModuleRef), Some(MethodDef), Some(TypeSpec)],
+            Coded::MemberRefParent => &[
+                Some(TypeDef),
+                Some(TypeRef),
+                Some(ModuleRef),
+                Some(MethodDef),
+                Some(TypeSpec),
+            ],
             Coded::HasSemantics => &[Some(Event), Some(Property)],
             Coded::MethodDefOrRef => &[Some(MethodDef), Some(MemberRef)],
             Coded::MemberForwarded => &[Some(Field), Some(MethodDef)],
             Coded::Implementation => &[Some(File), Some(AssemblyRef), Some(ExportedType)],
             Coded::CustomAttributeType => &[None, None, Some(MethodDef), Some(MemberRef), None],
-            Coded::ResolutionScope => &[Some(Module), Some(ModuleRef), Some(AssemblyRef), Some(TypeRef)],
+            Coded::ResolutionScope => &[
+                Some(Module),
+                Some(ModuleRef),
+                Some(AssemblyRef),
+                Some(TypeRef),
+            ],
             Coded::TypeOrMethodDef => &[Some(TypeDef), Some(MethodDef)],
         }
     }
@@ -137,7 +206,14 @@ fn schema(t: Table) -> &'static [Col] {
     match t {
         T::Module => &[U16, Str, Guid, Guid, Guid],
         T::TypeRef => &[Code(Coded::ResolutionScope), Str, Str],
-        T::TypeDef => &[U32, Str, Str, Code(Coded::TypeDefOrRef), Idx(T::Field), Idx(T::MethodDef)],
+        T::TypeDef => &[
+            U32,
+            Str,
+            Str,
+            Code(Coded::TypeDefOrRef),
+            Idx(T::Field),
+            Idx(T::MethodDef),
+        ],
         T::FieldPtr => &[Idx(T::Field)],
         T::Field => &[U16, Str, Blob],
         T::MethodPtr => &[Idx(T::MethodDef)],
@@ -147,7 +223,11 @@ fn schema(t: Table) -> &'static [Col] {
         T::InterfaceImpl => &[Idx(T::TypeDef), Code(Coded::TypeDefOrRef)],
         T::MemberRef => &[Code(Coded::MemberRefParent), Str, Blob],
         T::Constant => &[U16, Code(Coded::HasConstant), Blob],
-        T::CustomAttribute => &[Code(Coded::HasCustomAttribute), Code(Coded::CustomAttributeType), Blob],
+        T::CustomAttribute => &[
+            Code(Coded::HasCustomAttribute),
+            Code(Coded::CustomAttributeType),
+            Blob,
+        ],
         T::FieldMarshal => &[Code(Coded::HasFieldMarshal), Blob],
         T::DeclSecurity => &[U16, Code(Coded::HasDeclSecurity), Blob],
         T::ClassLayout => &[U16, U32, Idx(T::TypeDef)],
@@ -160,7 +240,11 @@ fn schema(t: Table) -> &'static [Col] {
         T::PropertyPtr => &[Idx(T::Property)],
         T::Property => &[U16, Str, Blob],
         T::MethodSemantics => &[U16, Idx(T::MethodDef), Code(Coded::HasSemantics)],
-        T::MethodImpl => &[Idx(T::TypeDef), Code(Coded::MethodDefOrRef), Code(Coded::MethodDefOrRef)],
+        T::MethodImpl => &[
+            Idx(T::TypeDef),
+            Code(Coded::MethodDefOrRef),
+            Code(Coded::MethodDefOrRef),
+        ],
         T::ModuleRef => &[Str],
         T::TypeSpec => &[Blob],
         T::ImplMap => &[U16, Code(Coded::MemberForwarded), Str, Idx(T::ModuleRef)],
@@ -226,7 +310,12 @@ impl Tables {
                     }
                 }
                 Col::Code(k) => {
-                    let max = k.targets().iter().map(|t| t.map_or(0, |t| rows[t as usize])).max().unwrap_or(0);
+                    let max = k
+                        .targets()
+                        .iter()
+                        .map(|t| t.map_or(0, |t| rows[t as usize]))
+                        .max()
+                        .unwrap_or(0);
                     if max < 1 << (16 - k.tag_bits()) {
                         2
                     } else {
@@ -278,7 +367,10 @@ mod tests {
         assert_eq!(Coded::MemberForwarded.tag_bits(), 1);
         // TypeRef row 5 as a TypeDefOrRef: (5 << 2) | 1.
         assert_eq!(Coded::TypeDefOrRef.decode(21), Some((Table::TypeRef, 5)));
-        assert_eq!(Coded::CustomAttributeType.decode((7 << 3) | 3), Some((Table::MemberRef, 7)));
+        assert_eq!(
+            Coded::CustomAttributeType.decode((7 << 3) | 3),
+            Some((Table::MemberRef, 7))
+        );
         assert_eq!(Coded::CustomAttributeType.decode(1), None);
     }
 }

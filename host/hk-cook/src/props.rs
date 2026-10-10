@@ -56,14 +56,22 @@ const WORM_TRANSITIONS: &[(&str, &[(&str, &str)])] = &[
 const WORM_STATES: [&str; 4] = ["Up", "Retract", "Down", "Burst"];
 const GRUB_TRANSITIONS: &[(&str, &[(&str, &str)])] = &[
     ("Init", &[("FINISHED", "Idle")]),
-    ("Idle", &[("ENTER", "Hero Close"), ("FREE", "Free"), ("CRY", "Cry")]),
+    (
+        "Idle",
+        &[("ENTER", "Hero Close"), ("FREE", "Free"), ("CRY", "Cry")],
+    ),
     ("Hero Close", &[("EXIT", "Sad Wait"), ("FREE", "Free")]),
     ("Free", &[("FINISHED", "Leave")]),
     ("Leave", &[("FINISHED", "Dig")]),
     ("Dig", &[("FINISHED", "Destroy")]),
 ];
-const BOTTLE_TRANSITIONS: &[(&str, &[(&str, &str)])] =
-    &[("Idle", &[("NAIL HIT", "Shatter")]), ("Shatter", &[("FINISHED", "Destroy Self"), ("CANCEL", "Return Pause")])];
+const BOTTLE_TRANSITIONS: &[(&str, &[(&str, &str)])] = &[
+    ("Idle", &[("NAIL HIT", "Shatter")]),
+    (
+        "Shatter",
+        &[("FINISHED", "Destroy Self"), ("CANCEL", "Return Pause")],
+    ),
+];
 
 fn scale() -> f64 {
     focal() / -CAM_Z
@@ -100,27 +108,58 @@ impl<'s> Art<'s> {
         self.images.len() - 1
     }
 
-    fn tk(&mut self, file: &Arc<hk_unity::serialized::SerializedFile>, collection: &Value, index: i64, name: &str) -> Result<usize> {
-        let obj = self.source.deref(file, collection).map_err(|e| e.to_string())?;
+    fn tk(
+        &mut self,
+        file: &Arc<hk_unity::serialized::SerializedFile>,
+        collection: &Value,
+        index: i64,
+        name: &str,
+    ) -> Result<usize> {
+        let obj = self
+            .source
+            .deref(file, collection)
+            .map_err(|e| e.to_string())?;
         let key = ("tk".to_string(), obj.sid(), index);
         if let Some(&k) = self.keys.get(&key) {
             return Ok(k);
         }
         let tree = self.source.read(&obj).map_err(|e| e.to_string())?;
-        let (im, b) = tk_sprite(self.source, &obj.file, &tree, index as usize, &mut self.textures)?;
+        let (im, b) = tk_sprite(
+            self.source,
+            &obj.file,
+            &tree,
+            index as usize,
+            &mut self.textures,
+        )?;
         Ok(self.add(key, im, b, name))
     }
 
     /// A tk2d sprite cut at `factor` times its authored size, for art the
     /// guest only ever draws at that size or smaller.
-    fn tk_scaled(&mut self, file: &Arc<hk_unity::serialized::SerializedFile>, collection: &Value, index: i64, factor: f64, name: &str) -> Result<usize> {
-        let obj = self.source.deref(file, collection).map_err(|e| e.to_string())?;
+    fn tk_scaled(
+        &mut self,
+        file: &Arc<hk_unity::serialized::SerializedFile>,
+        collection: &Value,
+        index: i64,
+        factor: f64,
+        name: &str,
+    ) -> Result<usize> {
+        let obj = self
+            .source
+            .deref(file, collection)
+            .map_err(|e| e.to_string())?;
         let key = ("tk-scaled".to_string(), obj.sid(), index);
         if let Some(&k) = self.keys.get(&key) {
             return Ok(k);
         }
         let tree = self.source.read(&obj).map_err(|e| e.to_string())?;
-        let (im, b) = tk_sprite(self.source, &obj.file, &tree, index as usize, &mut self.textures)?;
+        let (im, b) = tk_sprite(
+            self.source,
+            &obj.file,
+            &tree,
+            index as usize,
+            &mut self.textures,
+        )?;
         Ok(self.add(key, im, b.map(|v| v * factor), name))
     }
 
@@ -141,36 +180,60 @@ impl<'s> Art<'s> {
     fn clip(&mut self, sc: &Scene, library_ref: &Value, name: &str, who: &str) -> Result<Clip> {
         let lib_obj: Obj = sc.deref(library_ref).map_err(|e| e.to_string())?;
         let library = self.source.read(&lib_obj).map_err(|e| e.to_string())?;
-        let clips: Vec<&Value> = get(&library, "clips")?.list().unwrap_or(&[]).iter().filter(|c| c.get("name").and_then(Value::str).as_deref() == Some(name)).collect();
+        let clips: Vec<&Value> = get(&library, "clips")?
+            .list()
+            .unwrap_or(&[])
+            .iter()
+            .filter(|c| c.get("name").and_then(Value::str).as_deref() == Some(name))
+            .collect();
         if clips.len() != 1 {
             return err(format!("{who}: missing clip {name}"));
         }
         let clip = clips[0];
         let mut frames = Vec::new();
         for f in get(clip, "frames")?.list().unwrap_or(&[]) {
-            frames.push(self.tk(&lib_obj.file, get(f, "spriteCollection")?, int_of(f, "spriteId")?, &format!("{who} {name}"))?);
+            frames.push(self.tk(
+                &lib_obj.file,
+                get(f, "spriteCollection")?,
+                int_of(f, "spriteId")?,
+                &format!("{who} {name}"),
+            )?);
         }
         let wrap = int_of(clip, "wrapMode")?;
         if !(0..=2).contains(&wrap) {
             return err(format!("{who}: unsupported wrap mode {wrap} on {name}"));
         }
-        Ok(Clip { name: name.to_string(), frames, fps: f64_of(clip, "fps")?, wrap, loop_start: clip.get("loopStart").and_then(Value::int).unwrap_or(0) })
+        Ok(Clip {
+            name: name.to_string(),
+            frames,
+            fps: f64_of(clip, "fps")?,
+            wrap,
+            loop_start: clip.get("loopStart").and_then(Value::int).unwrap_or(0),
+        })
     }
 }
 
 fn clip_name(state: &Value, who: &str) -> Result<String> {
     let plays = actions(state, "Tk2dPlayAnimation")?;
     if plays.len() != 1 {
-        return err(format!("{who}: expected one clip in {}", str_of(state, "name")?));
+        return err(format!(
+            "{who}: expected one clip in {}",
+            str_of(state, "name")?
+        ));
     }
-    scalar(field(&plays[0], "clipName")?).str().ok_or_else(|| "clip name is not a string".into())
+    scalar(field(&plays[0], "clipName")?)
+        .str()
+        .ok_or_else(|| "clip name is not a string".into())
 }
 
 /// props.py `_wait`: float(the one Wait's time).
 fn wait(state: &Value, who: &str) -> Result<f64> {
     let waits = actions(state, "Wait")?;
     if waits.len() != 1 {
-        return err(format!("{who}: expected one Wait in {}", str_of(state, "name")?));
+        return err(format!(
+            "{who}: expected one Wait in {}",
+            str_of(state, "name")?
+        ));
     }
     py_float(&scalar(field(&waits[0], "time")?))
 }
@@ -178,7 +241,10 @@ fn wait(state: &Value, who: &str) -> Result<f64> {
 /// Python `float(x)` on a value the reader produced.
 fn py_float(v: &Value) -> Result<f64> {
     match v {
-        Value::Str(s) => String::from_utf8_lossy(s).trim().parse().map_err(|_| "could not convert string to float".into()),
+        Value::Str(s) => String::from_utf8_lossy(s)
+            .trim()
+            .parse()
+            .map_err(|_| "could not convert string to float".into()),
         other => other.float().ok_or_else(|| "not a number".into()),
     }
 }
@@ -251,47 +317,88 @@ struct Rocks {
 
 fn rocks(sc: &Scene, art: &mut Art, control: &Value) -> Result<Rocks> {
     let source = art.source;
-    let go = sc.deref(get(control, "hitUpRockPrefabs")?).map_err(|e| e.to_string())?;
+    let go = sc
+        .deref(get(control, "hitUpRockPrefabs")?)
+        .map_err(|e| e.to_string())?;
     let tree = source.read(&go).map_err(|e| e.to_string())?;
     let mut parts: HashMap<String, (Obj, Value)> = HashMap::new();
     for c in get(&tree, "m_Component")?.list().unwrap_or(&[]) {
-        let obj = source.deref(&go.file, get(c, "component")?).map_err(|e| e.to_string())?;
+        let obj = source
+            .deref(&go.file, get(c, "component")?)
+            .map_err(|e| e.to_string())?;
         let name = source.typename(&obj).map_err(|e| e.to_string())?;
         let value = source.read(&obj).map_err(|e| e.to_string())?;
         if parts.insert(name.clone(), (obj, value)).is_some() {
             return err(format!("stalactite rock has two {name}"));
         }
     }
-    let part = |name: &str| parts.get(name).map(|p| &p.1).ok_or_else(|| format!("stalactite rock without {name}"));
+    let part = |name: &str| {
+        parts
+            .get(name)
+            .map(|p| &p.1)
+            .ok_or_else(|| format!("stalactite rock without {name}"))
+    };
     let num = |v: &Value, key: &str| py_float(get(v, key)?);
-    let (sprite, debris, body, collider, bounce, finish) =
-        (part("tk2dSprite")?, part("DebrisParticle")?, part("Rigidbody2D")?, part("BoxCollider2D")?, part("ObjectBounce")?, part("FinishingRigidBody")?);
+    let (sprite, debris, body, collider, bounce, finish) = (
+        part("tk2dSprite")?,
+        part("DebrisParticle")?,
+        part("Rigidbody2D")?,
+        part("BoxCollider2D")?,
+        part("ObjectBounce")?,
+        part("FinishingRigidBody")?,
+    );
     // Only the shape the guest runs: a whole-unit sprite scale, a mass-1 body
     // without drag, a frictional box that does not bounce by itself, and a
     // rock that is recycled where it ends.
     let unit = |v: &Value| -> Result<bool> { Ok(num(v, "x")? == 1.0 && num(v, "y")? == 1.0) };
-    if !unit(get(sprite, "_scale")?)? || num(body, "m_Mass")? != 1.0 || num(body, "m_LinearDamping")? != 0.0 || get(body, "m_UseAutoMass")?.truthy() {
+    if !unit(get(sprite, "_scale")?)?
+        || num(body, "m_Mass")? != 1.0
+        || num(body, "m_LinearDamping")? != 0.0
+        || get(body, "m_UseAutoMass")?.truthy()
+    {
         return err("stalactite rock body changed");
     }
     if get(finish, "conclusion")?.int() != Some(1) || get(finish, "persistOffScreen")?.truthy() {
         return err("stalactite rock no longer recycles off screen");
     }
-    let material = source.deref(&parts["BoxCollider2D"].0.file, get(collider, "m_Material")?).map_err(|e| e.to_string())?;
-    if num(&source.read(&material).map_err(|e| e.to_string())?, "bounciness")? != 0.0 {
+    let material = source
+        .deref(&parts["BoxCollider2D"].0.file, get(collider, "m_Material")?)
+        .map_err(|e| e.to_string())?;
+    if num(
+        &source.read(&material).map_err(|e| e.to_string())?,
+        "bounciness",
+    )? != 0.0
+    {
         return err("stalactite rock material bounces");
     }
     let (size, offset) = (get(collider, "m_Size")?, get(collider, "m_Offset")?);
-    let (w, h, ox, oy) = (num(size, "x")?, num(size, "y")?, num(offset, "x")?, num(offset, "y")?);
+    let (w, h, ox, oy) = (
+        num(size, "x")?,
+        num(size, "y")?,
+        num(offset, "x")?,
+        num(offset, "y")?,
+    );
     let collection_file = parts["tk2dSprite"].0.file.clone();
-    let collection_obj = source.deref(&collection_file, get(sprite, "collection")?).map_err(|e| e.to_string())?;
+    let collection_obj = source
+        .deref(&collection_file, get(sprite, "collection")?)
+        .map_err(|e| e.to_string())?;
     let collection = source.read(&collection_obj).map_err(|e| e.to_string())?;
     let definitions = get(&collection, "spriteDefinitions")?.list().unwrap_or(&[]);
     let scale = [num(debris, "scaleMin")?, num(debris, "scaleMax")?];
     let mut frames = Vec::new();
     for id in get(debris, "randomSpriteIds")?.list().unwrap_or(&[]) {
         let name = id.str().ok_or("rock sprite id is not a name")?;
-        let index = definitions.iter().position(|d| d.get("name").and_then(Value::str).as_deref() == Some(name.as_str())).ok_or(format!("no rock sprite {name}"))?;
-        frames.push(art.tk_scaled(&collection_file, get(sprite, "collection")?, index as i64, scale[1], "Stalactite rock")?);
+        let index = definitions
+            .iter()
+            .position(|d| d.get("name").and_then(Value::str).as_deref() == Some(name.as_str()))
+            .ok_or(format!("no rock sprite {name}"))?;
+        frames.push(art.tk_scaled(
+            &collection_file,
+            get(sprite, "collection")?,
+            index as i64,
+            scale[1],
+            "Stalactite rock",
+        )?);
     }
     let (speed_min, speed_max) = (int_of(control, "speedMin")?, int_of(control, "speedMax")?);
     if frames.is_empty() || speed_max <= speed_min || !(0.0 < scale[0] && scale[0] <= scale[1]) {
@@ -340,7 +447,8 @@ fn point2(sc: &Scene, gid: i64) -> Result<[f64; 2]> {
 }
 
 fn world(sc: &Scene, gid: i64) -> Result<[[f64; 4]; 4]> {
-    sc.world(*sc.go_transform.get(&gid).ok_or("no transform")?).map_err(|e| e.to_string())
+    sc.world(*sc.go_transform.get(&gid).ok_or("no transform")?)
+        .map_err(|e| e.to_string())
 }
 
 fn goams(sc: &Scene, art: &mut Art, hazards: &HashMap<String, J>) -> Result<Vec<Goam>> {
@@ -362,8 +470,16 @@ fn goams(sc: &Scene, art: &mut Art, hazards: &HashMap<String, J>) -> Result<Vec<
         let st = states(f, WORM_TRANSITIONS, "Goam")?;
         let vars = variables(f);
         let (box_id, bx) = one(&records, "BoxCollider2D")?;
-        let damage: Vec<&Value> = records.iter().filter(|r| r.1 == "DamageHero").map(|r| r.2).collect();
-        if damage.len() != 1 || !damage[0].get("damageDealt").is_some_and(|d| d.py_eq(&Value::Int(1))) {
+        let damage: Vec<&Value> = records
+            .iter()
+            .filter(|r| r.1 == "DamageHero")
+            .map(|r| r.2)
+            .collect();
+        if damage.len() != 1
+            || !damage[0]
+                .get("damageDealt")
+                .is_some_and(|d| d.py_eq(&Value::Int(1)))
+        {
             return err("Goam contact damage changed");
         }
         let (_, animator) = one(&records, "tk2dSpriteAnimator")?;
@@ -371,7 +487,12 @@ fn goams(sc: &Scene, art: &mut Art, hazards: &HashMap<String, J>) -> Result<Vec<
         let hazard = hazards.get(&sc.sid(box_id)).cloned();
         let mut clips = Vec::new();
         for s in WORM_STATES {
-            clips.push(art.clip(sc, get(animator, "library")?, &clip_name(state(&st, s)?, "Goam")?, "Goam")?);
+            clips.push(art.clip(
+                sc,
+                get(animator, "library")?,
+                &clip_name(state(&st, s)?, "Goam")?,
+                "Goam",
+            )?);
         }
         out.push(Goam {
             scene: 0,
@@ -379,7 +500,10 @@ fn goams(sc: &Scene, art: &mut Art, hazards: &HashMap<String, J>) -> Result<Vec<
             quarter: q,
             mirror,
             stretch,
-            start_down: vars.iter().find(|(k, _)| k == "Start Down").is_some_and(|(_, v)| v.truthy()),
+            start_down: vars
+                .iter()
+                .find(|(k, _)| k == "Start Down")
+                .is_some_and(|(_, v)| v.truthy()),
             collider_on: get(bx, "m_Enabled")?.truthy(),
             hazard,
             hurt: box_world(sc, gid, bx)?,
@@ -432,16 +556,30 @@ fn stalactites(sc: &Scene, art: &mut Art, hazards: &HashMap<String, J>) -> Resul
                 py_max(polygon.iter().map(|p| p.1)) - here[1],
             ];
             embedded_dy = point2(sc, embedded)?[1] - here[1];
-            let er: Vec<&Value> = component_records(sc, embedded).into_iter().filter(|r| r.1 == "SpriteRenderer").map(|r| r.2).collect();
+            let er: Vec<&Value> = component_records(sc, embedded)
+                .into_iter()
+                .filter(|r| r.1 == "SpriteRenderer")
+                .map(|r| r.2)
+                .collect();
             if let Some(r) = er.first() {
-                embedded_frame = Some(art.unity(sc, get(r, "m_Sprite")?, get(r, "m_FlipX")?.truthy(), "Stalactite embedded")?);
+                embedded_frame = Some(art.unity(
+                    sc,
+                    get(r, "m_Sprite")?,
+                    get(r, "m_FlipX")?.truthy(),
+                    "Stalactite embedded",
+                )?);
             }
         }
         let (q, mirror, _) = quarter(&world(sc, gid)?)?;
         if q != 0 || mirror != 1 {
             return err("rotated stalactite unsupported");
         }
-        let frame = art.unity(sc, get(renderer, "m_Sprite")?, get(renderer, "m_FlipX")?.truthy(), "Stalactite")?;
+        let frame = art.unity(
+            sc,
+            get(renderer, "m_Sprite")?,
+            get(renderer, "m_FlipX")?.truthy(),
+            "Stalactite",
+        )?;
         // Cut right after the first stalactite frame, so the rock parts sit
         // inside the stalactites' run of the art (host/code_modules.py gives
         // a part no frame names to the kind before it).
@@ -508,17 +646,41 @@ fn grubs(sc: &Scene, art: &mut Art) -> Result<Vec<Grub>> {
             return err("grub cry timer changed");
         }
         let lib_ref = get(animator, "library")?;
-        let library = sc.source.read(&sc.deref(lib_ref).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        let library = sc
+            .source
+            .read(&sc.deref(lib_ref).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
         let default = int_of(animator, "defaultClipId")?;
-        let idle_name = str_of(get(&library, "clips")?.list().and_then(|l| l.get(default as usize)).ok_or("bad defaultClipId")?, "name")?;
+        let idle_name = str_of(
+            get(&library, "clips")?
+                .list()
+                .and_then(|l| l.get(default as usize))
+                .ok_or("bad defaultClipId")?,
+            "name",
+        )?;
         let clips = vec![
             art.clip(sc, lib_ref, &idle_name, "Grub")?,
-            art.clip(sc, lib_ref, &clip_name(state(&st, "Hero Close")?, "grub")?, "Grub")?,
-            art.clip(sc, lib_ref, &clip_name(state(&st, "Leave")?, "grub")?, "Grub")?,
+            art.clip(
+                sc,
+                lib_ref,
+                &clip_name(state(&st, "Hero Close")?, "grub")?,
+                "Grub",
+            )?,
+            art.clip(
+                sc,
+                lib_ref,
+                &clip_name(state(&st, "Leave")?, "grub")?,
+                "Grub",
+            )?,
         ];
         let position = point2(sc, gid)?;
         let grub_position = point2(sc, grub)?;
-        let glass = art.unity(sc, get(renderer, "m_Sprite")?, get(renderer, "m_FlipX")?.truthy(), "Grub jar")?;
+        let glass = art.unity(
+            sc,
+            get(renderer, "m_Sprite")?,
+            get(renderer, "m_FlipX")?.truthy(),
+            "Grub jar",
+        )?;
         out.push(Grub {
             scene: 0,
             local: 0,
@@ -530,7 +692,10 @@ fn grubs(sc: &Scene, art: &mut Art) -> Result<Vec<Grub>> {
             body: box_world(sc, gid, bx)?,
             reach: box_world(sc, hero_range, reach)?,
             close: box_world(sc, grub, close)?,
-            cry_wait: [py_float(&scalar(field(&cry[0], "timeMin")?))?, py_float(&scalar(field(&cry[0], "timeMax")?))?],
+            cry_wait: [
+                py_float(&scalar(field(&cry[0], "timeMin")?))?,
+                py_float(&scalar(field(&cry[0], "timeMax")?))?,
+            ],
             free_wait: wait(state(&st, "Free")?, "grub")?,
             leave_wait: wait(state(&st, "Leave")?, "grub")?,
             clips,
@@ -542,7 +707,13 @@ fn grubs(sc: &Scene, art: &mut Art) -> Result<Vec<Grub>> {
 }
 
 /// What `pack` returns: palettes, texel blob, parts, (first part, count) per frame, sheets.
-type Packed = (Vec<[u8; 32]>, Vec<u8>, Vec<Part>, Vec<(usize, usize)>, Vec<Image>);
+type Packed = (
+    Vec<[u8; 32]>,
+    Vec<u8>,
+    Vec<Part>,
+    Vec<(usize, usize)>,
+    Vec<Image>,
+);
 
 struct Part {
     offset: usize,
@@ -581,14 +752,18 @@ fn pack(art: &Art) -> Result<Packed> {
     }
     for (i, im) in art.images.iter().enumerate() {
         if im.width > SLOT {
-            return err(format!("{} frame ({}, {}) is wider than an animation slot", art.names[i], im.width, im.height));
+            return err(format!(
+                "{} frame ({}, {}) is wider than an animation slot",
+                art.names[i], im.width, im.height
+            ));
         }
     }
     let size = |i: usize| (art.images[i].width, art.images[i].height);
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for grub_family in [true, false] {
         let mut current: Vec<usize> = Vec::new();
-        for i in (0..art.images.len()).filter(|&i| art.names[i].starts_with("Grub") == grub_family) {
+        for i in (0..art.images.len()).filter(|&i| art.names[i].starts_with("Grub") == grub_family)
+        {
             let mut candidate = current.clone();
             candidate.push(i);
             if shelf(&candidate.iter().map(|&j| size(j)).collect::<Vec<_>>()).is_none() {
@@ -603,11 +778,22 @@ fn pack(art: &Art) -> Result<Packed> {
         }
     }
     if groups.len() > CLUT_ROWS {
-        return err(format!("prop art needs {} palettes, {} rows are free", groups.len(), CLUT_ROWS));
+        return err(format!(
+            "prop art needs {} palettes, {} rows are free",
+            groups.len(),
+            CLUT_ROWS
+        ));
     }
-    let (mut palettes, mut blob, mut parts, mut frames, mut sheets) = (Vec::new(), Vec::new(), Vec::new(), vec![(0, 0); art.images.len()], Vec::new());
+    let (mut palettes, mut blob, mut parts, mut frames, mut sheets) = (
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        vec![(0, 0); art.images.len()],
+        Vec::new(),
+    );
     for (clut, group) in groups.iter().enumerate() {
-        let positions = shelf(&group.iter().map(|&j| size(j)).collect::<Vec<_>>()).ok_or("shelf failed")?;
+        let positions =
+            shelf(&group.iter().map(|&j| size(j)).collect::<Vec<_>>()).ok_or("shelf failed")?;
         let mut sheet = Image::new(Mode::Rgba, 256, 256);
         for (&i, &(x, y)) in group.iter().zip(&positions) {
             sheet.paste(&art.images[i], x as i64, y as i64, None);
@@ -630,8 +816,19 @@ fn pack(art: &Art) -> Result<Packed> {
                     }
                 }
                 let span = b[3] - b[1];
-                let bounds = [b[0], b[3] - span * (top + h) as f64 / im.height as f64, b[2], b[3] - span * top as f64 / im.height as f64];
-                parts.push(Part { offset: blob.len(), width: im.width, height: h, clut, bounds });
+                let bounds = [
+                    b[0],
+                    b[3] - span * (top + h) as f64 / im.height as f64,
+                    b[2],
+                    b[3] - span * top as f64 / im.height as f64,
+                ];
+                parts.push(Part {
+                    offset: blob.len(),
+                    width: im.width,
+                    height: h,
+                    clut,
+                    bounds,
+                });
                 blob.extend_from_slice(&texels);
                 top += SLOT;
             }
@@ -644,7 +841,11 @@ fn pack(art: &Art) -> Result<Packed> {
 
 /// What a nail hit does to a stalactite: the speed a sideways or downward hit
 /// bats it away at, and the rocks an upward one shatters it into.
-fn stalactite_hits(first: Option<&Stalactite>, gravity: f64, time_to_sleep: f64) -> Result<Vec<String>> {
+fn stalactite_hits(
+    first: Option<&Stalactite>,
+    gravity: f64,
+    time_to_sleep: f64,
+) -> Result<Vec<String>> {
     let Some(s) = first else {
         return Ok(vec![
             "pub const STALACTITE_HIT_SPEED:i32=0;".into(),
@@ -693,14 +894,34 @@ fn jstr(v: &J, k: &str) -> String {
 fn scene_table(report: &J) -> HashMap<String, (String, i64)> {
     report["scenes"]
         .as_array()
-        .map(|a| a.iter().map(|s| (jstr(s, "scene_name"), (jstr(s, "file"), s["scene_id"].as_i64().unwrap_or(0)))).collect())
+        .map(|a| {
+            a.iter()
+                .map(|s| {
+                    (
+                        jstr(s, "scene_name"),
+                        (jstr(s, "file"), s["scene_id"].as_i64().unwrap_or(0)),
+                    )
+                })
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 fn physics2d(source: &Source) -> Result<Value> {
-    let file = source.file("globalgamemanagers").map_err(|e| e.to_string())?;
-    let info = file.objects.iter().find(|o| o.class_id == 19).ok_or("no Physics2DSettings")?;
-    source.read(&Obj { file: file.clone(), info: *info }).map_err(|e| e.to_string())
+    let file = source
+        .file("globalgamemanagers")
+        .map_err(|e| e.to_string())?;
+    let info = file
+        .objects
+        .iter()
+        .find(|o| o.class_id == 19)
+        .ok_or("no Physics2DSettings")?;
+    source
+        .read(&Obj {
+            file: file.clone(),
+            info: *info,
+        })
+        .map_err(|e| e.to_string())
 }
 
 fn gravity(source: &Source) -> Result<f64> {
@@ -708,7 +929,10 @@ fn gravity(source: &Source) -> Result<f64> {
 }
 
 fn sha_hex(b: &[u8]) -> String {
-    Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
+    Sha256::digest(b)
+        .iter()
+        .map(|x| format!("{x:02x}"))
+        .collect()
 }
 
 /// Run what `python3 host/props.py` runs: the prop cook, then decor, then drips.
@@ -722,25 +946,43 @@ pub fn main(root: &Path, source_dir: Option<&Path>) -> Result<()> {
     let summary = cook(root, &source, &report)?;
     println!("{summary}");
     println!("decor {}", generate_decor(root, &report)?);
-    println!("drips {}", generate_drips(root, &report, &source, gravity(&source)?)?);
+    println!(
+        "drips {}",
+        generate_drips(root, &report, &source, gravity(&source)?)?
+    );
     Ok(())
 }
 
 fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
     let table = scene_table(report);
-    let regions = report["regions"].as_array().ok_or("report without regions")?;
+    let regions = report["regions"]
+        .as_array()
+        .ok_or("report without regions")?;
     let scene_jsons: Vec<J> = {
         use rayon::prelude::*;
-        regions.par_iter().map(|g| region_scene_json(root, g["chunk_id"].as_i64().unwrap_or(0))).collect::<Result<Vec<_>>>()?
+        regions
+            .par_iter()
+            .map(|g| region_scene_json(root, g["chunk_id"].as_i64().unwrap_or(0)))
+            .collect::<Result<Vec<_>>>()?
     };
     let mut hazards: HashMap<String, HashMap<String, J>> = HashMap::new();
     let mut want: Vec<String> = Vec::new();
     for (g, sj) in regions.iter().zip(&scene_jsons) {
         let scene = jstr(g, "scene_name");
-        for h in g.get("hazards").and_then(J::as_array).map(Vec::as_slice).unwrap_or(&[]) {
-            hazards.entry(scene.clone()).or_default().insert(jstr(h, "collider_source"), h.clone());
+        for h in g
+            .get("hazards")
+            .and_then(J::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
+            hazards
+                .entry(scene.clone())
+                .or_default()
+                .insert(jstr(h, "collider_source"), h.clone());
             let name = jstr(h, "name");
-            if (name.starts_with("Worm") || name.starts_with("Stalactite")) && !want.contains(&scene) {
+            if (name.starts_with("Worm") || name.starts_with("Stalactite"))
+                && !want.contains(&scene)
+            {
                 want.push(scene.clone());
             }
         }
@@ -754,7 +996,14 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
         }
     }
     let g = gravity(source)?;
-    let mut art = Art { source, textures: HashMap::new(), images: Vec::new(), boxes: Vec::new(), names: Vec::new(), keys: HashMap::new() };
+    let mut art = Art {
+        source,
+        textures: HashMap::new(),
+        images: Vec::new(),
+        boxes: Vec::new(),
+        names: Vec::new(),
+        keys: HashMap::new(),
+    };
     let (mut all_goams, mut all_stalactites, mut all_grubs) = (Vec::new(), Vec::new(), Vec::new());
     want.sort_by_key(|n| table[n].1);
     let empty = HashMap::new();
@@ -791,7 +1040,13 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
         }
         let i = clip_rows.len();
         clip_index.push((key, i));
-        clip_rows.push((clip_frames.len(), c.frames.len(), py_round(c.fps * 256.0), c.wrap, c.loop_start));
+        clip_rows.push((
+            clip_frames.len(),
+            c.frames.len(),
+            py_round(c.fps * 256.0),
+            c.wrap,
+            c.loop_start,
+        ));
         clip_frames.extend(&c.frames);
         i
     };
@@ -810,23 +1065,56 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
     };
     let goam_clips = family(all_goams.iter().map(|g| &g.clips).collect(), 4, "Goam")?;
     let grub_clips = family(all_grubs.iter().map(|g| &g.clips).collect(), 3, "grub")?;
-    let same = |v: Vec<Vec<f64>>| v.windows(2).all(|w| w[0].iter().map(|x| x.to_bits()).eq(w[1].iter().map(|x| x.to_bits())));
-    for (field, vals) in [("up_wait", all_goams.iter().map(|g| vec![g.up_wait]).collect::<Vec<_>>()), ("down_wait", all_goams.iter().map(|g| vec![g.down_wait]).collect())] {
+    let same = |v: Vec<Vec<f64>>| {
+        v.windows(2).all(|w| {
+            w[0].iter()
+                .map(|x| x.to_bits())
+                .eq(w[1].iter().map(|x| x.to_bits()))
+        })
+    };
+    for (field, vals) in [
+        (
+            "up_wait",
+            all_goams
+                .iter()
+                .map(|g| vec![g.up_wait])
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "down_wait",
+            all_goams.iter().map(|g| vec![g.down_wait]).collect(),
+        ),
+    ] {
         if !same(vals) {
             return err(format!("Goam members disagree on {field}"));
         }
     }
     for (field, vals) in [
-        ("free_wait", all_grubs.iter().map(|g| vec![g.free_wait]).collect::<Vec<_>>()),
-        ("leave_wait", all_grubs.iter().map(|g| vec![g.leave_wait]).collect()),
-        ("cry_wait", all_grubs.iter().map(|g| g.cry_wait.to_vec()).collect()),
+        (
+            "free_wait",
+            all_grubs
+                .iter()
+                .map(|g| vec![g.free_wait])
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "leave_wait",
+            all_grubs.iter().map(|g| vec![g.leave_wait]).collect(),
+        ),
+        (
+            "cry_wait",
+            all_grubs.iter().map(|g| g.cry_wait.to_vec()).collect(),
+        ),
     ] {
         if !same(vals) {
             return err(format!("grub members disagree on {field}"));
         }
     }
     for s in &all_stalactites {
-        if s.fall_delay != all_stalactites[0].fall_delay || s.gravity_scale != all_stalactites[0].gravity_scale || s.hit_velocity != all_stalactites[0].hit_velocity {
+        if s.fall_delay != all_stalactites[0].fall_delay
+            || s.gravity_scale != all_stalactites[0].gravity_scale
+            || s.hit_velocity != all_stalactites[0].hit_velocity
+        {
             return err("stalactites disagree on their fall");
         }
         if s.rocks != all_stalactites[0].rocks {
@@ -836,38 +1124,94 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
     let ticks = |seconds: f64| py_round(seconds * 60.0);
     let hazard_id = |h: &Option<J>| -> i64 {
         match h {
-            Some(J::Object(m)) if !m.is_empty() => jstr(h.as_ref().unwrap(), "source").rsplit(':').next().and_then(|s| s.parse().ok()).unwrap_or(0),
+            Some(J::Object(m)) if !m.is_empty() => jstr(h.as_ref().unwrap(), "source")
+                .rsplit(':')
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0),
             _ => 0,
         }
     };
-    let hide: std::collections::HashSet<&str> = all_stalactites.iter().map(|s| s.draw.as_str()).chain(all_grubs.iter().map(|g| g.draw.as_str())).collect();
+    let hide: std::collections::HashSet<&str> = all_stalactites
+        .iter()
+        .map(|s| s.draw.as_str())
+        .chain(all_grubs.iter().map(|g| g.draw.as_str()))
+        .collect();
     let mut bindings: Vec<(i64, Vec<usize>)> = Vec::new();
     for (g, sj) in regions.iter().zip(&scene_jsons) {
-        let off: Vec<usize> = sj["draws"].as_array().map(Vec::as_slice).unwrap_or(&[]).iter().enumerate().filter(|(_, d)| hide.contains(jstr(d, "source").as_str())).map(|(i, _)| i).collect();
+        let off: Vec<usize> = sj["draws"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| hide.contains(jstr(d, "source").as_str()))
+            .map(|(i, _)| i)
+            .collect();
         if !off.is_empty() {
             bindings.push((g["chunk_id"].as_i64().unwrap_or(0) - 1, off));
         }
     }
-    let b4 = |b: &[f64]| -> Result<String> { Ok(rust_array(&b.iter().map(|&v| q16(v)).collect::<Result<Vec<_>>>()?)) };
+    let b4 = |b: &[f64]| -> Result<String> {
+        Ok(rust_array(
+            &b.iter().map(|&v| q16(v)).collect::<Result<Vec<_>>>()?,
+        ))
+    };
     let mut rust: Vec<String> = vec![
         "// Generated Goam, stalactite and grub jar art and placements (host/props.py).".into(),
-        format!("pub const CLUT_RECT:(u16,u16,u16,u16)=({},{},{},{});", CLUT.0, CLUT.1, CLUT.2, CLUT.3),
+        format!(
+            "pub const CLUT_RECT:(u16,u16,u16,u16)=({},{},{},{});",
+            CLUT.0, CLUT.1, CLUT.2, CLUT.3
+        ),
         format!("pub const PALETTE_COUNT:usize={};", palettes.len()),
     ];
     let mut p = Vec::new();
     for x in &parts {
-        p.push(format!("Part{{offset:{},width:{},height:{},clut:{},bounds:{}}}", x.offset, x.width, x.height, x.clut, b4(&x.bounds)?));
+        p.push(format!(
+            "Part{{offset:{},width:{},height:{},clut:{},bounds:{}}}",
+            x.offset,
+            x.width,
+            x.height,
+            x.clut,
+            b4(&x.bounds)?
+        ));
     }
     rust.push(format!("pub const PARTS:&[Part]=&[{}];", p.join(",")));
-    rust.push(format!("pub const FRAMES:&[(u16,u16)]=&[{}];", frames.iter().map(|(a, b)| format!("({a},{b})")).collect::<Vec<_>>().join(",")));
-    rust.push(format!("pub const CLIP_FRAMES:&[u16]=&{};", rust_array(&clip_frames)));
+    rust.push(format!(
+        "pub const FRAMES:&[(u16,u16)]=&[{}];",
+        frames
+            .iter()
+            .map(|(a, b)| format!("({a},{b})"))
+            .collect::<Vec<_>>()
+            .join(",")
+    ));
+    rust.push(format!(
+        "pub const CLIP_FRAMES:&[u16]=&{};",
+        rust_array(&clip_frames)
+    ));
     rust.push(format!(
         "pub const CLIPS:&[Clip]=&[{}];",
-        clip_rows.iter().map(|c| format!("Clip{{first:{},count:{},fps:{},wrap:{},loop_start:{}}}", c.0, c.1, c.2, c.3, c.4)).collect::<Vec<_>>().join(",")
+        clip_rows
+            .iter()
+            .map(|c| format!(
+                "Clip{{first:{},count:{},fps:{},wrap:{},loop_start:{}}}",
+                c.0, c.1, c.2, c.3, c.4
+            ))
+            .collect::<Vec<_>>()
+            .join(",")
     ));
-    rust.push(format!("pub const GOAM_CLIPS:[u16;4]={};", rust_array(&goam_clips)));
-    rust.push(format!("pub const GOAM_UP_TICKS:u16={};", all_goams.first().map_or(0, |g| ticks(g.up_wait))));
-    rust.push(format!("pub const GOAM_DOWN_TICKS:u16={};", all_goams.first().map_or(0, |g| ticks(g.down_wait))));
+    rust.push(format!(
+        "pub const GOAM_CLIPS:[u16;4]={};",
+        rust_array(&goam_clips)
+    ));
+    rust.push(format!(
+        "pub const GOAM_UP_TICKS:u16={};",
+        all_goams.first().map_or(0, |g| ticks(g.up_wait))
+    ));
+    rust.push(format!(
+        "pub const GOAM_DOWN_TICKS:u16={};",
+        all_goams.first().map_or(0, |g| ticks(g.down_wait))
+    ));
     let mut gs = Vec::new();
     for g in &all_goams {
         gs.push(format!(
@@ -884,11 +1228,17 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
         ));
     }
     rust.push(format!("pub const GOAMS:&[Goam]=&[{}];", gs.join(",")));
-    rust.push(format!("pub const STALACTITE_DELAY_TICKS:u16={};", all_stalactites.first().map_or(0, |s| ticks(s.fall_delay))));
-    rust.push(format!("pub const STALACTITE_GRAVITY:i32={};", match all_stalactites.first() {
-        Some(s) => q16(g * s.gravity_scale)?,
-        None => 0,
-    }));
+    rust.push(format!(
+        "pub const STALACTITE_DELAY_TICKS:u16={};",
+        all_stalactites.first().map_or(0, |s| ticks(s.fall_delay))
+    ));
+    rust.push(format!(
+        "pub const STALACTITE_GRAVITY:i32={};",
+        match all_stalactites.first() {
+            Some(s) => q16(g * s.gravity_scale)?,
+            None => 0,
+        }
+    ));
     let mut ss = Vec::new();
     for s in &all_stalactites {
         ss.push(format!(
@@ -904,17 +1254,36 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
             hazard_id(&s.hazard)
         ));
     }
-    rust.push(format!("pub const STALACTITES:&[Stalactite]=&[{}];", ss.join(",")));
+    rust.push(format!(
+        "pub const STALACTITES:&[Stalactite]=&[{}];",
+        ss.join(",")
+    ));
     // Named after the STALACTITES table and never with `frame:`, so the art
     // split in host/code_modules.py still reads only the table above.
-    rust.extend(stalactite_hits(all_stalactites.first(), g, py_float(get(&physics2d(source)?, "m_TimeToSleep")?)?)?);
-    rust.push(format!("pub const GRUB_CLIPS:[u16;3]={};", rust_array(&grub_clips)));
+    rust.extend(stalactite_hits(
+        all_stalactites.first(),
+        g,
+        py_float(get(&physics2d(source)?, "m_TimeToSleep")?)?,
+    )?);
+    rust.push(format!(
+        "pub const GRUB_CLIPS:[u16;3]={};",
+        rust_array(&grub_clips)
+    ));
     rust.push(match all_grubs.first() {
-        Some(g) => format!("pub const GRUB_CRY_TICKS:[u16;2]={};", rust_array(&[ticks(g.cry_wait[0]), ticks(g.cry_wait[1])])),
+        Some(g) => format!(
+            "pub const GRUB_CRY_TICKS:[u16;2]={};",
+            rust_array(&[ticks(g.cry_wait[0]), ticks(g.cry_wait[1])])
+        ),
         None => "pub const GRUB_CRY_TICKS:[u16;2]=[0,0];".into(),
     });
-    rust.push(format!("pub const GRUB_FREE_TICKS:u16={};", all_grubs.first().map_or(0, |g| ticks(g.free_wait))));
-    rust.push(format!("pub const GRUB_LEAVE_TICKS:u16={};", all_grubs.first().map_or(0, |g| ticks(g.leave_wait))));
+    rust.push(format!(
+        "pub const GRUB_FREE_TICKS:u16={};",
+        all_grubs.first().map_or(0, |g| ticks(g.free_wait))
+    ));
+    rust.push(format!(
+        "pub const GRUB_LEAVE_TICKS:u16={};",
+        all_grubs.first().map_or(0, |g| ticks(g.leave_wait))
+    ));
     let mut grs = Vec::new();
     for g in &all_grubs {
         grs.push(format!(
@@ -932,7 +1301,14 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
     }
     rust.push(format!("pub const GRUBS:&[Grub]=&[{}];", grs.join(",")));
     rust.push("/// Cooked draws each prop replaces, per catalogue region, sorted.".into());
-    rust.push(format!("pub const BINDINGS:&[(u16,&[u16])]=&[{}];", bindings.iter().map(|(r, off)| format!("({r},&{})", rust_array(off))).collect::<Vec<_>>().join(",")));
+    rust.push(format!(
+        "pub const BINDINGS:&[(u16,&[u16])]=&[{}];",
+        bindings
+            .iter()
+            .map(|(r, off)| format!("({r},&{})", rust_array(off)))
+            .collect::<Vec<_>>()
+            .join(",")
+    ));
     let text = rust.join("\n") + "\n";
     let mut payload: Vec<u8> = palettes.iter().flat_map(|p| p.to_vec()).collect();
     payload.extend_from_slice(&blob);
@@ -943,7 +1319,13 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
     for (i, sheet) in sheets.iter().enumerate() {
         crate::png::save_rgba(&out.join(format!("art{i}.png")), sheet)?;
     }
-    let pairs = |v: Vec<(String, String)>| Json::List(v.into_iter().map(|(a, b)| Json::List(vec![Json::Str(a), Json::Str(b)])).collect());
+    let pairs = |v: Vec<(String, String)>| {
+        Json::List(
+            v.into_iter()
+                .map(|(a, b)| Json::List(vec![Json::Str(a), Json::Str(b)]))
+                .collect(),
+        )
+    };
     let regions_bytes = std::fs::read(root.join("data/regions.json")).map_err(|e| e.to_string())?;
     let provenance = Json::Obj(vec![
         ("goams".into(), Json::Int(all_goams.len() as i64)),
@@ -976,7 +1358,11 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
         ),
     ]);
     std::fs::create_dir_all(root.join(".hkpsx")).map_err(|e| e.to_string())?;
-    std::fs::write(root.join(".hkpsx/props-provenance.json"), dumps(&provenance)).map_err(|e| e.to_string())?;
+    std::fs::write(
+        root.join(".hkpsx/props-provenance.json"),
+        dumps(&provenance),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(format!(
         "Props: {} Goams, {} stalactites, {} grub jars; {} frames in {} slots, {} bytes, {} palettes",
         all_goams.len(),
@@ -993,16 +1379,46 @@ fn cook(root: &Path, source: &Source, report: &J) -> Result<String> {
 fn generate_decor(root: &Path, report: &J) -> Result<String> {
     let (mut views, mut groups, mut steps) = (Vec::new(), Vec::new(), Vec::<i64>::new());
     let mut shared: Vec<(Vec<i64>, usize)> = Vec::new();
-    for (slot, row) in report["regions"].as_array().ok_or("no regions")?.iter().enumerate() {
+    for (slot, row) in report["regions"]
+        .as_array()
+        .ok_or("no regions")?
+        .iter()
+        .enumerate()
+    {
         let first = groups.len();
-        for g in row.get("decor").and_then(J::as_array).map(Vec::as_slice).unwrap_or(&[]) {
-            let draws: Vec<i64> = g["draws"].as_array().ok_or("decor without draws")?.iter().map(|v| v.as_i64().unwrap_or(0)).collect();
-            if draws.iter().enumerate().any(|(i, &d)| d != draws[0] + i as i64) {
-                return err(format!("decor {} draws are not consecutive in view {slot}", jstr(g, "source")));
+        for g in row
+            .get("decor")
+            .and_then(J::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
+            let draws: Vec<i64> = g["draws"]
+                .as_array()
+                .ok_or("decor without draws")?
+                .iter()
+                .map(|v| v.as_i64().unwrap_or(0))
+                .collect();
+            if draws
+                .iter()
+                .enumerate()
+                .any(|(i, &d)| d != draws[0] + i as i64)
+            {
+                return err(format!(
+                    "decor {} draws are not consecutive in view {slot}",
+                    jstr(g, "source")
+                ));
             }
-            let sequence: Vec<i64> = g["sequence"].as_array().ok_or("decor without sequence")?.iter().map(|v| v.as_i64().unwrap_or(0)).collect();
+            let sequence: Vec<i64> = g["sequence"]
+                .as_array()
+                .ok_or("decor without sequence")?
+                .iter()
+                .map(|v| v.as_i64().unwrap_or(0))
+                .collect();
             if draws.len() > 255 || draws[0] > 65535 || sequence.len() > 255 {
-                return err(format!("decor {} does not fit the table", jstr(g, "source")));
+                return err(format!(
+                    "decor {} does not fit the table",
+                    jstr(g, "source")
+                ));
             }
             let at = match shared.iter().find(|(s, _)| *s == sequence) {
                 Some((_, at)) => *at,
@@ -1017,7 +1433,15 @@ fn generate_decor(root: &Path, report: &J) -> Result<String> {
                 return err("decor step table exceeds u16");
             }
             let fps = g["fps"].as_f64().ok_or("decor fps")?;
-            groups.push((draws[0], draws.len(), py_round(fps * 256.0), g["wrap"].as_i64().unwrap_or(0), g["loop_start"].as_i64().unwrap_or(0), at, sequence.len()));
+            groups.push((
+                draws[0],
+                draws.len(),
+                py_round(fps * 256.0),
+                g["wrap"].as_i64().unwrap_or(0),
+                g["loop_start"].as_i64().unwrap_or(0),
+                at,
+                sequence.len(),
+            ));
         }
         if groups.len() > first {
             views.push((slot, first, groups.len() - first));
@@ -1026,14 +1450,39 @@ fn generate_decor(root: &Path, report: &J) -> Result<String> {
     let lines = [
         "// Generated by host/props.py from the decor groups host/cook.py records.".to_string(),
         "/// (catalogue slot, first group, group count), sorted by slot.".into(),
-        format!("pub static VIEWS:&[(u16,u16,u16)]=&[{}];", views.iter().map(|(a, b, c)| format!("({a},{b},{c}),")).collect::<String>()),
+        format!(
+            "pub static VIEWS:&[(u16,u16,u16)]=&[{}];",
+            views
+                .iter()
+                .map(|(a, b, c)| format!("({a},{b},{c}),"))
+                .collect::<String>()
+        ),
         "/// (first draw, draws, fps x256, wrap, loop start, first step, steps).".into(),
-        format!("pub static GROUPS:&[(u16,u8,u16,u8,u8,u16,u8)]=&[{}];", groups.iter().map(|g| format!("({},{},{},{},{},{},{}),", g.0, g.1, g.2, g.3, g.4, g.5, g.6)).collect::<String>()),
+        format!(
+            "pub static GROUPS:&[(u16,u8,u16,u8,u8,u16,u8)]=&[{}];",
+            groups
+                .iter()
+                .map(|g| format!("({},{},{},{},{},{},{}),", g.0, g.1, g.2, g.3, g.4, g.5, g.6))
+                .collect::<String>()
+        ),
         "/// Each clip step's draw offset within its group.".into(),
-        format!("pub static STEPS:&[u8]=&[{}];", steps.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")),
+        format!(
+            "pub static STEPS:&[u8]=&[{}];",
+            steps
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
     ];
-    std::fs::write(root.join("data/decor.rs"), lines.join("\n") + "\n").map_err(|e| e.to_string())?;
-    Ok(format!("{{'views': {}, 'groups': {}, 'steps': {}}}", views.len(), groups.len(), steps.len()))
+    std::fs::write(root.join("data/decor.rs"), lines.join("\n") + "\n")
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "{{'views': {}, 'groups': {}, 'steps': {}}}",
+        views.len(),
+        groups.len(),
+        steps.len()
+    ))
 }
 
 struct Drip {
@@ -1071,7 +1520,12 @@ fn drip_sources(sc: &Scene) -> Result<Vec<Drip>> {
         let m = world(sc, gid)?;
         let sprite = comp("tk2dSprite").ok_or("water drip without tk2dSprite")?;
         let sscale = get(sprite, "_scale")?;
-        if m[0][1].abs() > 1e-6 || m[1][0].abs() > 1e-6 || (m[1][1] - 1.0).abs() > 1e-6 || (f64_of(sscale, "x")? - 1.0).abs() > 1e-6 || (f64_of(sscale, "y")? - 1.0).abs() > 1e-6 {
+        if m[0][1].abs() > 1e-6
+            || m[1][0].abs() > 1e-6
+            || (m[1][1] - 1.0).abs() > 1e-6
+            || (f64_of(sscale, "x")? - 1.0).abs() > 1e-6
+            || (f64_of(sscale, "y")? - 1.0).abs() > 1e-6
+        {
             return err("water drip is rotated or scaled on y");
         }
         let (off, size) = (get(bx, "m_Offset")?, get(bx, "m_Size")?);
@@ -1092,13 +1546,20 @@ fn terrain_below(sc: &Scene, x0: f64, x1: f64, y: f64) -> Result<Option<f64>> {
     let mut best: Option<f64> = None;
     for o in &sc.objects {
         let typ = o.typename.as_str();
-        if !matches!(typ, "EdgeCollider2D" | "BoxCollider2D" | "PolygonCollider2D") {
+        if !matches!(
+            typ,
+            "EdgeCollider2D" | "BoxCollider2D" | "PolygonCollider2D"
+        ) {
             continue;
         }
         let t = &o.tree;
         let gid = go_of(t).ok_or("collider without GameObject")?;
         let Some(go) = sc.go(gid) else { continue };
-        if !sc.active(gid) || !get(t, "m_Enabled")?.truthy() || get(t, "m_IsTrigger")?.truthy() || !get(go, "m_Layer")?.py_eq(&Value::Int(8)) {
+        if !sc.active(gid)
+            || !get(t, "m_Enabled")?.truthy()
+            || get(t, "m_IsTrigger")?.truthy()
+            || !get(go, "m_Layer")?.py_eq(&Value::Int(8))
+        {
             continue;
         }
         let off = get(t, "m_Offset")?;
@@ -1106,14 +1567,27 @@ fn terrain_below(sc: &Scene, x0: f64, x1: f64, y: f64) -> Result<Option<f64>> {
         let xy = |p: &Value| -> Result<(f64, f64)> { Ok((f64_of(p, "x")?, f64_of(p, "y")?)) };
         let paths: Vec<Vec<(f64, f64)>> = match typ {
             "BoxCollider2D" => {
-                let (w, h) = (f64_of(get(t, "m_Size")?, "x")? / 2.0, f64_of(get(t, "m_Size")?, "y")? / 2.0);
+                let (w, h) = (
+                    f64_of(get(t, "m_Size")?, "x")? / 2.0,
+                    f64_of(get(t, "m_Size")?, "y")? / 2.0,
+                );
                 vec![vec![(-w, -h), (w, -h), (w, h), (-w, h), (-w, -h)]]
             }
-            "EdgeCollider2D" => vec![get(t, "m_Points")?.list().unwrap_or(&[]).iter().map(xy).collect::<Result<_>>()?],
+            "EdgeCollider2D" => vec![get(t, "m_Points")?
+                .list()
+                .unwrap_or(&[])
+                .iter()
+                .map(xy)
+                .collect::<Result<_>>()?],
             _ => {
                 let mut v = Vec::new();
                 for p in get(get(t, "m_Points")?, "m_Paths")?.list().unwrap_or(&[]) {
-                    let pts: Vec<(f64, f64)> = p.list().unwrap_or(&[]).iter().map(xy).collect::<Result<_>>()?;
+                    let pts: Vec<(f64, f64)> = p
+                        .list()
+                        .unwrap_or(&[])
+                        .iter()
+                        .map(xy)
+                        .collect::<Result<_>>()?;
                     if !pts.is_empty() {
                         let mut closed = pts.clone();
                         closed.push(pts[0]);
@@ -1124,16 +1598,35 @@ fn terrain_below(sc: &Scene, x0: f64, x1: f64, y: f64) -> Result<Option<f64>> {
             }
         };
         for path in paths {
-            let pts: Vec<[f64; 3]> = path.iter().map(|&(px, py)| sc.point(gid, px + ox, py + oy, 0.0).map_err(|e| e.to_string())).collect::<Result<_>>()?;
+            let pts: Vec<[f64; 3]> = path
+                .iter()
+                .map(|&(px, py)| {
+                    sc.point(gid, px + ox, py + oy, 0.0)
+                        .map_err(|e| e.to_string())
+                })
+                .collect::<Result<_>>()?;
             for w in pts.windows(2) {
                 let (a, b) = (w[0], w[1]);
-                let (lo, hi) = if a[0] <= b[0] { (a[0], b[0]) } else { (b[0], a[0]) };
+                let (lo, hi) = if a[0] <= b[0] {
+                    (a[0], b[0])
+                } else {
+                    (b[0], a[0])
+                };
                 if hi < x0 || lo > x1 {
                     continue;
                 }
-                let at = |x: f64| if a[0] == b[0] { a[1] } else { a[1] + (x - a[0]) * (b[1] - a[1]) / (b[0] - a[0]) };
+                let at = |x: f64| {
+                    if a[0] == b[0] {
+                        a[1]
+                    } else {
+                        a[1] + (x - a[0]) * (b[1] - a[1]) / (b[0] - a[0])
+                    }
+                };
                 // Python max(lo, x0) and min(hi, x1): the first argument on ties.
-                let ys = [at(if x0 > lo { x0 } else { lo }), at(if x1 < hi { x1 } else { hi })];
+                let ys = [
+                    at(if x0 > lo { x0 } else { lo }),
+                    at(if x1 < hi { x1 } else { hi }),
+                ];
                 let top = py_max(ys);
                 if top <= y + 1e-4 && best.is_none_or(|b| top > b) {
                     best = Some(top);
@@ -1156,12 +1649,27 @@ fn py_num(v: &J) -> String {
 fn generate_drips(root: &Path, report: &J, source: &Source, gravity: f64) -> Result<String> {
     let table = scene_table(report);
     let regions = report["regions"].as_array().ok_or("no regions")?;
-    let art: Vec<(usize, &J)> = regions.iter().enumerate().filter_map(|(slot, row)| row.get("drip_art").filter(|a| !a.is_null() && *a != &J::Bool(false) && a.as_object().is_some_and(|o| !o.is_empty())).map(|a| (slot, a))).collect();
+    let art: Vec<(usize, &J)> = regions
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, row)| {
+            row.get("drip_art")
+                .filter(|a| {
+                    !a.is_null()
+                        && *a != &J::Bool(false)
+                        && a.as_object().is_some_and(|o| !o.is_empty())
+                })
+                .map(|a| (slot, a))
+        })
+        .collect();
     if art.is_empty() {
         return err("no view carries the water drip art: run host/regions.py first");
     }
     let first = art[0].1;
-    if art.iter().any(|(_, a)| a["clips"] != first["clips"] || a["rects"] != first["rects"]) {
+    if art
+        .iter()
+        .any(|(_, a)| a["clips"] != first["clips"] || a["rects"] != first["rects"])
+    {
         return err("views disagree about the water drip art");
     }
     let mut scenes: Vec<String> = Vec::new();
@@ -1183,7 +1691,12 @@ fn generate_drips(root: &Path, report: &J, source: &Source, gravity: f64) -> Res
         }
         for d in drips {
             let w = &d.drip;
-            let p = [f64_of(w, "idleTimeMin")?, f64_of(w, "idleTimeMax")?, f64_of(w, "fallVelocity")?, f64_of(w, "impactTranslation")?];
+            let p = [
+                f64_of(w, "idleTimeMin")?,
+                f64_of(w, "idleTimeMax")?,
+                f64_of(w, "fallVelocity")?,
+                f64_of(w, "impactTranslation")?,
+            ];
             let key = p.map(f64::to_bits);
             if !params.contains(&key) {
                 params.push(key);
@@ -1231,10 +1744,12 @@ fn generate_drips(root: &Path, report: &J, source: &Source, gravity: f64) -> Res
     let common: HashMap<i64, i64> = by_scene
         .iter()
         .map(|(s, counts)| {
-            let best = counts.iter().fold(None::<(i64, usize)>, |acc, &(f, c)| match acc {
-                Some((_, bc)) if bc >= c => acc,
-                _ => Some((f, c)),
-            });
+            let best = counts
+                .iter()
+                .fold(None::<(i64, usize)>, |acc, &(f, c)| match acc {
+                    Some((_, bc)) if bc >= c => acc,
+                    _ => Some((f, c)),
+                });
             (*s, best.unwrap().0)
         })
         .collect();
@@ -1280,6 +1795,12 @@ fn generate_drips(root: &Path, report: &J, source: &Source, gravity: f64) -> Res
         format!("pub static SCENE_ART:&[(u8,u16)]=&[{}];", scene_art.iter().map(|(s, f)| format!("({s},{f}),")).collect::<String>()),
         format!("pub static VIEW_ART:&[(u16,u16)]=&[{}];", view_art.iter().map(|(s, f)| format!("({s},{f}),")).collect::<String>()),
     ];
-    std::fs::write(root.join("data/drips.rs"), lines.join("\n") + "\n").map_err(|e| e.to_string())?;
-    Ok(format!("{{'drips': {}, 'views': {}, 'no_ground': {}}}", rows.len(), art.len(), rows.iter().filter(|r| r.3 == 65535).count()))
+    std::fs::write(root.join("data/drips.rs"), lines.join("\n") + "\n")
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "{{'drips': {}, 'views': {}, 'no_ground': {}}}",
+        rows.len(),
+        art.len(),
+        rows.iter().filter(|r| r.3 == 65535).count()
+    ))
 }

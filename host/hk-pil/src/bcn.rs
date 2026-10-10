@@ -16,7 +16,10 @@ impl Bits {
     fn new(block: &[u8]) -> Self {
         let mut b = [0u8; 16];
         b.copy_from_slice(&block[..16]);
-        Bits { v: u128::from_le_bytes(b), pos: 0 }
+        Bits {
+            v: u128::from_le_bytes(b),
+            pos: 0,
+        }
     }
 
     fn take(&mut self, n: u32) -> u32 {
@@ -29,7 +32,11 @@ impl Bits {
 /// RGB565 to 8-bit channels, replicating the high bits into the low ones.
 fn expand565(c: u16) -> [u8; 3] {
     let (r, g, b) = ((c >> 11) as u32 & 31, (c >> 5) as u32 & 63, c as u32 & 31);
-    [((r << 3) | (r >> 2)) as u8, ((g << 2) | (g >> 4)) as u8, ((b << 3) | (b >> 2)) as u8]
+    [
+        ((r << 3) | (r >> 2)) as u8,
+        ((g << 2) | (g >> 4)) as u8,
+        ((b << 3) | (b >> 2)) as u8,
+    ]
 }
 
 /// The four colours of a colour block (eight bytes). With the first endpoint
@@ -45,9 +52,19 @@ fn bc1_palette(block: &[u8], four_colors: bool) -> [Px; 4] {
         [f(0), f(1), f(2), 255]
     };
     if c0 > c1 || four_colors {
-        [[a[0], a[1], a[2], 255], [b[0], b[1], b[2], 255], mix(2, 1, 3), mix(1, 2, 3)]
+        [
+            [a[0], a[1], a[2], 255],
+            [b[0], b[1], b[2], 255],
+            mix(2, 1, 3),
+            mix(1, 2, 3),
+        ]
     } else {
-        [[a[0], a[1], a[2], 255], [b[0], b[1], b[2], 255], mix(1, 1, 2), [0, 0, 0, 0]]
+        [
+            [a[0], a[1], a[2], 255],
+            [b[0], b[1], b[2], 255],
+            mix(1, 1, 2),
+            [0, 0, 0, 0],
+        ]
     }
 }
 
@@ -127,14 +144,94 @@ struct Mode {
 }
 
 const MODES: [Mode; 8] = [
-    Mode { subsets: 3, partition_bits: 4, rotation: false, index_select: false, color_bits: 4, alpha_bits: 0, pbits: PBits::PerEndpoint, index_bits: 3, index2_bits: 0 },
-    Mode { subsets: 2, partition_bits: 6, rotation: false, index_select: false, color_bits: 6, alpha_bits: 0, pbits: PBits::PerSubset, index_bits: 3, index2_bits: 0 },
-    Mode { subsets: 3, partition_bits: 6, rotation: false, index_select: false, color_bits: 5, alpha_bits: 0, pbits: PBits::None, index_bits: 2, index2_bits: 0 },
-    Mode { subsets: 2, partition_bits: 6, rotation: false, index_select: false, color_bits: 7, alpha_bits: 0, pbits: PBits::PerEndpoint, index_bits: 2, index2_bits: 0 },
-    Mode { subsets: 1, partition_bits: 0, rotation: true, index_select: true, color_bits: 5, alpha_bits: 6, pbits: PBits::None, index_bits: 2, index2_bits: 3 },
-    Mode { subsets: 1, partition_bits: 0, rotation: true, index_select: false, color_bits: 7, alpha_bits: 8, pbits: PBits::None, index_bits: 2, index2_bits: 2 },
-    Mode { subsets: 1, partition_bits: 0, rotation: false, index_select: false, color_bits: 7, alpha_bits: 7, pbits: PBits::PerEndpoint, index_bits: 4, index2_bits: 0 },
-    Mode { subsets: 2, partition_bits: 6, rotation: false, index_select: false, color_bits: 5, alpha_bits: 5, pbits: PBits::PerEndpoint, index_bits: 2, index2_bits: 0 },
+    Mode {
+        subsets: 3,
+        partition_bits: 4,
+        rotation: false,
+        index_select: false,
+        color_bits: 4,
+        alpha_bits: 0,
+        pbits: PBits::PerEndpoint,
+        index_bits: 3,
+        index2_bits: 0,
+    },
+    Mode {
+        subsets: 2,
+        partition_bits: 6,
+        rotation: false,
+        index_select: false,
+        color_bits: 6,
+        alpha_bits: 0,
+        pbits: PBits::PerSubset,
+        index_bits: 3,
+        index2_bits: 0,
+    },
+    Mode {
+        subsets: 3,
+        partition_bits: 6,
+        rotation: false,
+        index_select: false,
+        color_bits: 5,
+        alpha_bits: 0,
+        pbits: PBits::None,
+        index_bits: 2,
+        index2_bits: 0,
+    },
+    Mode {
+        subsets: 2,
+        partition_bits: 6,
+        rotation: false,
+        index_select: false,
+        color_bits: 7,
+        alpha_bits: 0,
+        pbits: PBits::PerEndpoint,
+        index_bits: 2,
+        index2_bits: 0,
+    },
+    Mode {
+        subsets: 1,
+        partition_bits: 0,
+        rotation: true,
+        index_select: true,
+        color_bits: 5,
+        alpha_bits: 6,
+        pbits: PBits::None,
+        index_bits: 2,
+        index2_bits: 3,
+    },
+    Mode {
+        subsets: 1,
+        partition_bits: 0,
+        rotation: true,
+        index_select: false,
+        color_bits: 7,
+        alpha_bits: 8,
+        pbits: PBits::None,
+        index_bits: 2,
+        index2_bits: 2,
+    },
+    Mode {
+        subsets: 1,
+        partition_bits: 0,
+        rotation: false,
+        index_select: false,
+        color_bits: 7,
+        alpha_bits: 7,
+        pbits: PBits::PerEndpoint,
+        index_bits: 4,
+        index2_bits: 0,
+    },
+    Mode {
+        subsets: 2,
+        partition_bits: 6,
+        rotation: false,
+        index_select: false,
+        color_bits: 5,
+        alpha_bits: 5,
+        pbits: PBits::PerEndpoint,
+        index_bits: 2,
+        index2_bits: 0,
+    },
 ];
 
 /// Widen an `n`-bit value to 8 bits by replicating its high bits.
@@ -151,7 +248,11 @@ fn anchor_texels(subsets: usize, partition: usize) -> [usize; 3] {
     match subsets {
         1 => [0, usize::MAX, usize::MAX],
         2 => [0, ANCHOR2[partition] as usize, usize::MAX],
-        _ => [0, ANCHOR3[partition][0] as usize, ANCHOR3[partition][1] as usize],
+        _ => [
+            0,
+            ANCHOR3[partition][0] as usize,
+            ANCHOR3[partition][1] as usize,
+        ],
     }
 }
 
@@ -166,7 +267,11 @@ fn decode_bc7(block: &[u8]) -> [Px; 16] {
     let m = &MODES[mode_number];
     let partition = bits.take(m.partition_bits) as usize;
     let rotation = if m.rotation { bits.take(2) } else { 0 };
-    let index_select = if m.index_select { bits.take(1) == 1 } else { false };
+    let index_select = if m.index_select {
+        bits.take(1) == 1
+    } else {
+        false
+    };
 
     let endpoints = m.subsets * 2;
     let mut raw = [[0u32; 4]; 6];
@@ -199,7 +304,11 @@ fn decode_bc7(block: &[u8]) -> [Px; 16] {
     let mut ends = [[0u8; 4]; 6];
     for e in 0..endpoints {
         for c in 0..4 {
-            let (n, v) = if c < 3 { (m.color_bits, raw[e][c]) } else { (m.alpha_bits, raw[e][3]) };
+            let (n, v) = if c < 3 {
+                (m.color_bits, raw[e][c])
+            } else {
+                (m.alpha_bits, raw[e][3])
+            };
             ends[e][c] = if c == 3 && n == 0 {
                 255
             } else if m.pbits != PBits::None {
@@ -223,7 +332,11 @@ fn decode_bc7(block: &[u8]) -> [Px; 16] {
         std::array::from_fn(|t| bits.take(if is_anchor(t) { n - 1 } else { n }))
     };
     let first = read_indices(m.index_bits);
-    let second = if m.index2_bits > 0 { Some(read_indices(m.index2_bits)) } else { None };
+    let second = if m.index2_bits > 0 {
+        Some(read_indices(m.index2_bits))
+    } else {
+        None
+    };
 
     std::array::from_fn(|t| {
         let s = subset_of(t);
@@ -240,7 +353,12 @@ fn decode_bc7(block: &[u8]) -> [Px; 16] {
             }
         };
         let (wc, wa) = (weight(color_bits, color_idx), weight(alpha_bits, alpha_idx));
-        let mut px = [lerp64(lo[0], hi[0], wc), lerp64(lo[1], hi[1], wc), lerp64(lo[2], hi[2], wc), lerp64(lo[3], hi[3], wa)];
+        let mut px = [
+            lerp64(lo[0], hi[0], wc),
+            lerp64(lo[1], hi[1], wc),
+            lerp64(lo[2], hi[2], wc),
+            lerp64(lo[3], hi[3], wa),
+        ];
         if rotation != 0 {
             px.swap(3, rotation as usize - 1);
         }

@@ -42,14 +42,25 @@ const SLACK: u32 = MAX_POLL_GAP + 2;
 pub const MIN_BOUNDARY_TICKS: u32 = {
     let quarter = BOUNDARY_TICKS * 3 / 4;
     let slack = BOUNDARY_TICKS.saturating_sub(SLACK);
-    if quarter < slack { quarter } else { slack }
+    if quarter < slack {
+        quarter
+    } else {
+        slack
+    }
 };
 pub const MAX_BOUNDARY_TICKS: u32 = {
     let eighth = BOUNDARY_TICKS * 9 / 8;
     let slack = BOUNDARY_TICKS + SLACK;
-    if eighth > slack { eighth } else { slack }
+    if eighth > slack {
+        eighth
+    } else {
+        slack
+    }
 };
-const _: () = assert!(MIN_BOUNDARY_TICKS < BOUNDARY_TICKS * 5 / 6, "a PAL half must not look early");
+const _: () = assert!(
+    MIN_BOUNDARY_TICKS < BOUNDARY_TICKS * 5 / 6,
+    "a PAL half must not look early"
+);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Service {
@@ -148,7 +159,11 @@ pub struct Fifo {
 }
 impl Fifo {
     pub const fn new() -> Self {
-        Self { filled: 0, read: 0, write: 0 }
+        Self {
+            filled: 0,
+            read: 0,
+            write: 0,
+        }
     }
     pub fn free(&self) -> usize {
         FIFO_SECTORS - self.filled
@@ -254,7 +269,12 @@ mod hardware {
     pub static mut HK_AUDIO_STREAM_UNDERRUNS: u32 = 0;
 
     pub fn fifo_sector(sector: usize) -> *mut u32 {
-        unsafe { (&raw mut HK_MUSIC_FIFO.0).cast::<u8>().add(sector * SECTOR).cast::<u32>() }
+        unsafe {
+            (&raw mut HK_MUSIC_FIFO.0)
+                .cast::<u8>()
+                .add(sector * SECTOR)
+                .cast::<u32>()
+        }
     }
     fn disable_irq() {
         psx_spu::enable_irq(false);
@@ -265,8 +285,11 @@ mod hardware {
         psx_spu::enable_irq(true);
     }
     fn upload(fifo: &mut Fifo, half: usize) -> bool {
-        let Some(at) = fifo.take_half() else { return false };
-        let bytes = unsafe { core::slice::from_raw_parts_mut(fifo_sector(at).cast::<u8>(), HALF_BYTES) };
+        let Some(at) = fifo.take_half() else {
+            return false;
+        };
+        let bytes =
+            unsafe { core::slice::from_raw_parts_mut(fifo_sector(at).cast::<u8>(), HALF_BYTES) };
         if !flag_half(bytes, half) {
             return false;
         }
@@ -274,7 +297,10 @@ mod hardware {
         // runs from inside a checkpoint, and 8 KiB on top of a heavy tick has
         // carried a poll over a VBlank (journey-crossroads, Crossroads_07).
         for (slice, part) in bytes.chunks(SECTOR).enumerate() {
-            psx_spu::upload_adpcm(unsafe { SpuAddr::new(BASE + (half * HALF_BYTES + slice * SECTOR) as u32) }, part);
+            psx_spu::upload_adpcm(
+                unsafe { SpuAddr::new(BASE + (half * HALF_BYTES + slice * SECTOR) as u32) },
+                part,
+            );
             crate::input::poll_only();
         }
         true
@@ -389,4 +415,7 @@ mod hardware {
     }
 }
 #[cfg(target_arch = "mips")]
-pub use hardware::{fifo_sector, running, service, start, stop, HK_AUDIO_STREAM_MAX_SERVICE_GAP, HK_AUDIO_STREAM_UNDERRUNS};
+pub use hardware::{
+    fifo_sector, running, service, start, stop, HK_AUDIO_STREAM_MAX_SERVICE_GAP,
+    HK_AUDIO_STREAM_UNDERRUNS,
+};

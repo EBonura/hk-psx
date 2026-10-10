@@ -37,7 +37,12 @@ impl Node {
             while *i < rows.len() && rows[*i].0 == level + 1 {
                 children.push(build(rows, i));
             }
-            Node { ty: ty.into(), name: name.into(), meta, children }
+            Node {
+                ty: ty.into(),
+                name: name.into(),
+                meta,
+                children,
+            }
         }
         if rows.is_empty() {
             return Err(Error::Format("empty type tree".into()));
@@ -76,7 +81,10 @@ pub fn builtin(unity_version: &str, class_id: i32) -> Result<Arc<Node>> {
         let mut rows: Vec<Row> = Vec::new();
         let mut flush = |key: &mut Option<(String, i32)>, rows: &mut Vec<Row>| {
             if let Some(k) = key.take() {
-                table.insert(k, Arc::new(Node::from_rows(rows).expect("vendored type tree")));
+                table.insert(
+                    k,
+                    Arc::new(Node::from_rows(rows).expect("vendored type tree")),
+                );
             }
             rows.clear();
         };
@@ -95,7 +103,11 @@ pub fn builtin(unity_version: &str, class_id: i32) -> Result<Arc<Node>> {
     table
         .get(&(unity_version.to_string(), class_id))
         .cloned()
-        .ok_or_else(|| Error::Format(format!("no built-in type tree for class {class_id} in {unity_version}")))
+        .ok_or_else(|| {
+            Error::Format(format!(
+                "no built-in type tree for class {class_id} in {unity_version}"
+            ))
+        })
 }
 
 /// Which UnityPy reader produced the values the Python tools saw.
@@ -161,7 +173,9 @@ impl<'a> Reader<'a> {
             let b = self.value(&node.children[1], has_registry)?;
             Value::List(vec![a, b])
         } else if &*node.ty == "ReferencedObject" {
-            return Err(Error::Format("ReferencedObject fields are not supported".into()));
+            return Err(Error::Format(
+                "ReferencedObject fields are not supported".into(),
+            ));
         } else if node.children.first().is_some_and(|c| &*c.ty == "Array") {
             let array = &node.children[0];
             align |= array.aligned();
@@ -224,9 +238,10 @@ impl<'a> Reader<'a> {
                     items.push(Value::Int(self.c.i16()? as i64));
                 }
             }
-            "string" | "TypelessData" | "SInt8" | "UInt8" | "char" | "short" | "SInt16" | "unsigned short" | "UInt16" | "int"
-            | "SInt32" | "unsigned int" | "UInt32" | "Type*" | "long long" | "SInt64" | "unsigned long long" | "UInt64"
-            | "FileSize" | "float" | "double" | "bool" => {
+            "string" | "TypelessData" | "SInt8" | "UInt8" | "char" | "short" | "SInt16"
+            | "unsigned short" | "UInt16" | "int" | "SInt32" | "unsigned int" | "UInt32"
+            | "Type*" | "long long" | "SInt64" | "unsigned long long" | "UInt64" | "FileSize"
+            | "float" | "double" | "bool" => {
                 for _ in 0..size {
                     items.push(self.scalar(ty)?.unwrap());
                 }
@@ -284,24 +299,54 @@ mod tests {
 
     #[test]
     fn empty_and_overlong_strings_read_as_empty_without_consuming() {
-        let n = node(&[(0, "Base", "Base", 0), (1, "string", "a", 0), (1, "int", "b", 0)]);
+        let n = node(&[
+            (0, "Base", "Base", 0),
+            (1, "string", "a", 0),
+            (1, "int", "b", 0),
+        ]);
         // a: length 0, then b = 7
         let data = [0, 0, 0, 0, 7, 0, 0, 0];
-        let v = Reader { c: Cursor::new(&data, false), flavor: Flavor::Boost }.read(&n).unwrap();
+        let v = Reader {
+            c: Cursor::new(&data, false),
+            flavor: Flavor::Boost,
+        }
+        .read(&n)
+        .unwrap();
         assert_eq!(v.get("a"), Some(&Value::Str(vec![])));
         assert_eq!(v.get("b"), Some(&Value::Int(7)));
         // a: length 100 (past the end) reads "" and leaves the bytes for b.
         let data = [100, 0, 0, 0, 9, 0, 0, 0];
-        let v = Reader { c: Cursor::new(&data, false), flavor: Flavor::Boost }.read(&n).unwrap();
+        let v = Reader {
+            c: Cursor::new(&data, false),
+            flavor: Flavor::Boost,
+        }
+        .read(&n)
+        .unwrap();
         assert_eq!(v.get("b"), Some(&Value::Int(9)));
     }
 
     #[test]
     fn python_flavor_swaps_aligned_u16_array_signedness() {
-        let n = node(&[(0, "Base", "Base", 0), (1, "vector", "v", 0), (2, "Array", "Array", 0), (3, "int", "size", 0), (3, "UInt16", "data", ALIGN)]);
+        let n = node(&[
+            (0, "Base", "Base", 0),
+            (1, "vector", "v", 0),
+            (2, "Array", "Array", 0),
+            (3, "int", "size", 0),
+            (3, "UInt16", "data", ALIGN),
+        ]);
         let data = [1, 0, 0, 0, 0xff, 0xff];
-        let py = Reader { c: Cursor::new(&data, false), flavor: Flavor::Python }.read(&n).unwrap();
-        let boost = Reader { c: Cursor::new(&data, false), flavor: Flavor::Boost }.read(&n).unwrap();
+        let py = Reader {
+            c: Cursor::new(&data, false),
+            flavor: Flavor::Python,
+        }
+        .read(&n)
+        .unwrap();
+        let boost = Reader {
+            c: Cursor::new(&data, false),
+            flavor: Flavor::Boost,
+        }
+        .read(&n)
+        .unwrap();
         assert_eq!(py.get("v"), Some(&Value::List(vec![Value::Int(-1)])));
         assert_eq!(boost.get("v"), Some(&Value::List(vec![Value::Int(65535)])));
     }

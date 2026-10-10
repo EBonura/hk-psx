@@ -1,8 +1,10 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 use hk_sim::ONE;
 const KNIGHT_SCALE: i32 = 60693;
 mod render {
     pub fn texture(_: usize, _: [(i16, i16); 4], _: (u8, u8, u8)) {}
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/impact.rs"]
 mod impact;
 fn room() -> Vec<u8> {

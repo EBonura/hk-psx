@@ -40,7 +40,7 @@ fn fixture_with_groups(groups: &[[u16; 4]]) -> Aligned {
         offsets[i] = end;
         end += counts[i] * sizes[i];
     }
-    let mut b = Aligned(vec![0; (end + 3) / 4]);
+    let mut b = Aligned(vec![0; end.div_ceil(4)]);
     b[..8].copy_from_slice(b"HKOCSC01");
     for (i, n) in [
         OWNER.scene_id,
@@ -294,17 +294,17 @@ fn validator_is_bounded_does_not_publish_early_and_latches_failed_admission() {
     let mut check = CoverageValidation::new(&b, OWNER).unwrap();
     assert!(std::mem::size_of_val(&check) <= 64);
     assert!(!std::mem::needs_drop::<CoverageValidation>());
-    assert_eq!(check.step(0).unwrap(), false);
+    assert!(!check.step(0).unwrap());
     assert!(CoverageValidation::new(&b, OWNER)
         .unwrap()
         .finish()
         .is_err());
     // 2 tile certs +3 map entries +1 group cert +1 group +4 phase transitions.
     for _ in 0..10 {
-        assert_eq!(check.step(1).unwrap(), false);
+        assert!(!check.step(1).unwrap());
     }
-    assert_eq!(check.step(1).unwrap(), true);
-    assert_eq!(check.step(0).unwrap(), true);
+    assert!(check.step(1).unwrap());
+    assert!(check.step(0).unwrap());
     check.finish().unwrap();
     let mut bad = b.clone();
     half(&mut bad, offset(&b, 2) + 4, 2);

@@ -44,13 +44,15 @@ pub enum Error {
 /// x∈[-703,1023], y∈[-511,751], and every original triangle edge is legal.
 /// Use the full `legal` check when false; larger geometry is not rejected here.
 /// Wide init arithmetic makes even hostile i32 source extents fail safely.
-pub fn legal_extent_q8(xy:&[i32;8])->bool {
-    let (mut min_x,mut max_x,mut min_y,mut max_y)=(xy[0],xy[0],xy[1],xy[1]);
+pub fn legal_extent_q8(xy: &[i32; 8]) -> bool {
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (xy[0], xy[0], xy[1], xy[1]);
     for k in 1..4 {
-        min_x=min_x.min(xy[k*2]);max_x=max_x.max(xy[k*2]);
-        min_y=min_y.min(xy[k*2+1]);max_y=max_y.max(xy[k*2+1]);
+        min_x = min_x.min(xy[k * 2]);
+        max_x = max_x.max(xy[k * 2]);
+        min_y = min_y.min(xy[k * 2 + 1]);
+        max_y = max_y.max(xy[k * 2 + 1]);
     }
-    max_x.abs_diff(min_x)<=703*256 && max_y.abs_diff(min_y)<=511*256
+    max_x.abs_diff(min_x) <= 703 * 256 && max_y.abs_diff(min_y) <= 511 * 256
 }
 
 /// Command coordinates are signed 11-bit BEFORE the SDK's drawing offset.
@@ -183,7 +185,12 @@ pub fn subdivide(xy: [(i32, i32); 4], uv: UvRect, out: &mut [Quad]) -> Result<us
     subdivide_in(xy, uv, out, &mut grid)
 }
 #[inline(never)]
-pub fn subdivide_in(xy: [(i32, i32); 4], uv: UvRect, out: &mut [Quad], grid: &mut Grid) -> Result<usize, Error> {
+pub fn subdivide_in(
+    xy: [(i32, i32); 4],
+    uv: UvRect,
+    out: &mut [Quad],
+    grid: &mut Grid,
+) -> Result<usize, Error> {
     if uv.w == 0 || uv.h == 0 || uv.u as u32 + uv.w as u32 > 256 || uv.v as u32 + uv.h as u32 > 256
     {
         return Err(Error::InvalidUv);
@@ -210,7 +217,12 @@ pub fn subdivide_in(xy: [(i32, i32); 4], uv: UvRect, out: &mut [Quad], grid: &mu
     }
     // Two shared rows avoid an unbounded or 65x65 scratch grid. Every entry
     // read below is written first for this call, so the grid needs no clearing.
-    let Grid { us, vs, row_a, row_b } = grid;
+    let Grid {
+        us,
+        vs,
+        row_a,
+        row_b,
+    } = grid;
     // Swap these two references, not their 520-byte backing arrays. The row
     // contents remain in place and each new row overwrites only needed entries.
     let mut previous = row_a;
@@ -395,81 +407,167 @@ mod tests {
 #[cfg(test)]
 mod legal_extent_tests {
     use super::*;
-    fn projected(xy:[i32;8],camera:(i32,i32))->[(i32,i32);4] {
-        core::array::from_fn(|k|(160+((xy[k*2]-camera.0)>>8),120-((xy[k*2+1]-camera.1)>>8)))
+    fn projected(xy: [i32; 8], camera: (i32, i32)) -> [(i32, i32); 4] {
+        core::array::from_fn(|k| {
+            (
+                160 + ((xy[k * 2] - camera.0) >> 8),
+                120 - ((xy[k * 2 + 1] - camera.1) >> 8),
+            )
+        })
     }
-    fn survives(v:&[(i32,i32);4])->bool {
-        !(v.iter().all(|p|p.0<0)||v.iter().all(|p|p.0>320)||v.iter().all(|p|p.1<0)||v.iter().all(|p|p.1>240))
+    fn survives(v: &[(i32, i32); 4]) -> bool {
+        !(v.iter().all(|p| p.0 < 0)
+            || v.iter().all(|p| p.0 > 320)
+            || v.iter().all(|p| p.1 < 0)
+            || v.iter().all(|p| p.1 > 240))
     }
-    #[test]fn every_camera_fraction_at_extent_and_viewport_boundaries() {
-        let mut checks=0;
-        for sx in [0,1,703*256-1,703*256,703*256+1,704*256,1023*256] {
-            for sy in [0,1,511*256-1,511*256,511*256+1,512*256] {
-                let shapes=[[0,0,sx,0,0,sy,sx,sy], [sx,0,0,sy,sx,sy,0,0],
-                    [sx/3,0,sx,sy/3,0,sy*2/3,sx*2/3,sy]];
+    #[test]
+    fn every_camera_fraction_at_extent_and_viewport_boundaries() {
+        let mut checks = 0;
+        for sx in [
+            0,
+            1,
+            703 * 256 - 1,
+            703 * 256,
+            703 * 256 + 1,
+            704 * 256,
+            1023 * 256,
+        ] {
+            for sy in [0, 1, 511 * 256 - 1, 511 * 256, 511 * 256 + 1, 512 * 256] {
+                let shapes = [
+                    [0, 0, sx, 0, 0, sy, sx, sy],
+                    [sx, 0, 0, sy, sx, sy, 0, 0],
+                    [sx / 3, 0, sx, sy / 3, 0, sy * 2 / 3, sx * 2 / 3, sy],
+                ];
                 for xy in shapes {
-                    let flag=legal_extent_q8(&xy);
+                    let flag = legal_extent_q8(&xy);
                     for f in 0..256 {
-                        for edge in [-1024,-703,-511,-1,0,239,240,319,320,511,703,1023] {
-                            let v=projected(xy,((160-edge)*256+f,(120-edge)*256+(255-f)));
-                            if survives(&v) {assert_eq!(flag||legal(&v),legal(&v),"extent{sx},{sy} fraction{f} edge{edge} {v:?}");}
-                            checks+=1;
+                        for edge in [-1024, -703, -511, -1, 0, 239, 240, 319, 320, 511, 703, 1023] {
+                            let v = projected(
+                                xy,
+                                ((160 - edge) * 256 + f, (120 - edge) * 256 + (255 - f)),
+                            );
+                            if survives(&v) {
+                                assert_eq!(
+                                    flag || legal(&v),
+                                    legal(&v),
+                                    "extent{sx},{sy} fraction{f} edge{edge} {v:?}"
+                                );
+                            }
+                            checks += 1;
                         }
                     }
                 }
             }
         }
-        assert_eq!(checks,387072);
+        assert_eq!(checks, 387072);
     }
-    #[test]fn arbitrary_quads_camera_fractions_and_reflections() {
-        let mut seed=0x192af621u32;
-        let mut random=||{seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;seed};
-        let mut accepted=0;
-        for _ in 0..200000 {
-            let sx=(random()%(704*256))as i32;let sy=(random()%(512*256))as i32;
-            let ox=(random()%2000000)as i32-1000000;let oy=(random()%2000000)as i32-1000000;
-            let xy=core::array::from_fn(|i|if i&1==0 {ox+(random()%(sx as u32+1))as i32}else{oy+(random()%(sy as u32+1))as i32});
-            let v=projected(xy,(ox+(random()%300000)as i32-100000,oy+(random()%200000)as i32-100000));
-            if survives(&v) {let flag=legal_extent_q8(&xy);assert_eq!(flag||legal(&v),legal(&v));accepted+=usize::from(flag);}
-        }
-        assert!(accepted>10000);
-    }
-    #[test]fn conservative_threshold_and_hostile_extents() {
-        let boundary=[0,0,703*256,0,0,511*256,703*256,511*256];
-        assert!(legal_extent_q8(&boundary));
-        let mut larger=boundary;larger[2]+=1;assert!(!legal_extent_q8(&larger));
-        let mut larger=boundary;larger[5]+=1;assert!(!legal_extent_q8(&larger));
-        assert!(!legal_extent_q8(&[i32::MIN,0,i32::MAX,0,0,0,0,0]));
-        assert!(!legal_extent_q8(&[0,i32::MIN,0,i32::MAX,0,0,0,0]));
-        let too_wide=projected([0,0,704*256,0,0,256,704*256,256],(-160*256,120*256));
-        assert!(survives(&too_wide));assert!(!legal(&too_wide)); // x=320..1024
-        let too_tall=projected([0,0,256,0,0,512*256,256,512*256],(0,0));
-        assert!(survives(&too_tall));assert!(!legal(&too_tall)); // y edge512
-        let zero=projected([0;8],(160*256,120*256));
-        assert!(survives(&zero));assert!(legal(&zero));
-    }
-    #[test]fn native_unsigned_extent_matches_wide_reference_for_full_i32_domain() {
-        let reference=|xy:&[i32;8]| {
-            let xs=[xy[0],xy[2],xy[4],xy[6]];let ys=[xy[1],xy[3],xy[5],xy[7]];
-            *xs.iter().max().unwrap() as i64-*xs.iter().min().unwrap() as i64<=703*256
-                && *ys.iter().max().unwrap() as i64-*ys.iter().min().unwrap() as i64<=511*256
+    #[test]
+    fn arbitrary_quads_camera_fractions_and_reflections() {
+        let mut seed = 0x192af621u32;
+        let mut random = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
         };
-        for origin in [i32::MIN,i32::MIN+703*256,-703*256,-1,0,1,i32::MAX-703*256,i32::MAX] {
-            for sx in [0,1,703*256-1,703*256,703*256+1,i32::MAX] {
-                for sy in [0,1,511*256-1,511*256,511*256+1,i32::MAX] {
-                    let Some(right)=origin.checked_add(sx)else{continue;};
-                    let Some(bottom)=origin.checked_add(sy)else{continue;};
-                    for xy in [[origin,origin,right,origin,origin,bottom,right,bottom],
-                        [right,bottom,origin,bottom,right,origin,origin,origin]] {
-                        assert_eq!(legal_extent_q8(&xy),reference(&xy));
+        let mut accepted = 0;
+        for _ in 0..200000 {
+            let sx = (random() % (704 * 256)) as i32;
+            let sy = (random() % (512 * 256)) as i32;
+            let ox = (random() % 2000000) as i32 - 1000000;
+            let oy = (random() % 2000000) as i32 - 1000000;
+            let xy = core::array::from_fn(|i| {
+                if i & 1 == 0 {
+                    ox + (random() % (sx as u32 + 1)) as i32
+                } else {
+                    oy + (random() % (sy as u32 + 1)) as i32
+                }
+            });
+            let v = projected(
+                xy,
+                (
+                    ox + (random() % 300000) as i32 - 100000,
+                    oy + (random() % 200000) as i32 - 100000,
+                ),
+            );
+            if survives(&v) {
+                let flag = legal_extent_q8(&xy);
+                assert_eq!(flag || legal(&v), legal(&v));
+                accepted += usize::from(flag);
+            }
+        }
+        assert!(accepted > 10000);
+    }
+    #[test]
+    fn conservative_threshold_and_hostile_extents() {
+        let boundary = [0, 0, 703 * 256, 0, 0, 511 * 256, 703 * 256, 511 * 256];
+        assert!(legal_extent_q8(&boundary));
+        let mut larger = boundary;
+        larger[2] += 1;
+        assert!(!legal_extent_q8(&larger));
+        let mut larger = boundary;
+        larger[5] += 1;
+        assert!(!legal_extent_q8(&larger));
+        assert!(!legal_extent_q8(&[i32::MIN, 0, i32::MAX, 0, 0, 0, 0, 0]));
+        assert!(!legal_extent_q8(&[0, i32::MIN, 0, i32::MAX, 0, 0, 0, 0]));
+        let too_wide = projected(
+            [0, 0, 704 * 256, 0, 0, 256, 704 * 256, 256],
+            (-160 * 256, 120 * 256),
+        );
+        assert!(survives(&too_wide));
+        assert!(!legal(&too_wide)); // x=320..1024
+        let too_tall = projected([0, 0, 256, 0, 0, 512 * 256, 256, 512 * 256], (0, 0));
+        assert!(survives(&too_tall));
+        assert!(!legal(&too_tall)); // y edge512
+        let zero = projected([0; 8], (160 * 256, 120 * 256));
+        assert!(survives(&zero));
+        assert!(legal(&zero));
+    }
+    #[test]
+    fn native_unsigned_extent_matches_wide_reference_for_full_i32_domain() {
+        let reference = |xy: &[i32; 8]| {
+            let xs = [xy[0], xy[2], xy[4], xy[6]];
+            let ys = [xy[1], xy[3], xy[5], xy[7]];
+            *xs.iter().max().unwrap() as i64 - *xs.iter().min().unwrap() as i64 <= 703 * 256
+                && *ys.iter().max().unwrap() as i64 - *ys.iter().min().unwrap() as i64 <= 511 * 256
+        };
+        for origin in [
+            i32::MIN,
+            i32::MIN + 703 * 256,
+            -703 * 256,
+            -1,
+            0,
+            1,
+            i32::MAX - 703 * 256,
+            i32::MAX,
+        ] {
+            for sx in [0, 1, 703 * 256 - 1, 703 * 256, 703 * 256 + 1, i32::MAX] {
+                for sy in [0, 1, 511 * 256 - 1, 511 * 256, 511 * 256 + 1, i32::MAX] {
+                    let Some(right) = origin.checked_add(sx) else {
+                        continue;
+                    };
+                    let Some(bottom) = origin.checked_add(sy) else {
+                        continue;
+                    };
+                    for xy in [
+                        [origin, origin, right, origin, origin, bottom, right, bottom],
+                        [right, bottom, origin, bottom, right, origin, origin, origin],
+                    ] {
+                        assert_eq!(legal_extent_q8(&xy), reference(&xy));
                     }
                 }
             }
         }
-        let mut seed=0x319ff92au32;
+        let mut seed = 0x319ff92au32;
         for _ in 0..200000 {
-            let xy=core::array::from_fn(|_|{seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;seed as i32});
-            assert_eq!(legal_extent_q8(&xy),reference(&xy));
+            let xy = core::array::from_fn(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as i32
+            });
+            assert_eq!(legal_extent_q8(&xy), reference(&xy));
         }
     }
 }

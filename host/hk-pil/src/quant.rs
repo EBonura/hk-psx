@@ -32,10 +32,10 @@ impl BoxOf {
     fn widest(&self) -> usize {
         const WEIGHT: [u32; 3] = [77, 150, 29];
         let mut best = (0, 0u32);
-        for c in 0..3 {
+        for (c, &weight) in WEIGHT.iter().enumerate() {
             let lo = self.entries.iter().map(|e| e.color[c]).min().unwrap();
             let hi = self.entries.iter().map(|e| e.color[c]).max().unwrap();
-            let span = (hi - lo) as u32 * WEIGHT[c];
+            let span = (hi - lo) as u32 * weight;
             if span > best.1 {
                 best = (c, span);
             }
@@ -46,9 +46,13 @@ impl BoxOf {
     fn average(&self) -> Px {
         let n = self.pixels();
         let mut out = [0u8; 3];
-        for c in 0..3 {
-            let sum: u64 = self.entries.iter().map(|e| e.color[c] as u64 * e.count).sum();
-            out[c] = ((sum + n / 2) / n) as u8;
+        for (c, slot) in out.iter_mut().enumerate() {
+            let sum: u64 = self
+                .entries
+                .iter()
+                .map(|e| e.color[c] as u64 * e.count)
+                .sum();
+            *slot = ((sum + n / 2) / n) as u8;
         }
         out
     }
@@ -92,7 +96,11 @@ impl Heap {
             if l >= n {
                 break;
             }
-            let child = if r < n && self.items[l].0 < self.items[r].0 { r } else { l };
+            let child = if r < n && self.items[l].0 < self.items[r].0 {
+                r
+            } else {
+                l
+            };
             if self.items[at].0 <= self.items[child].0 {
                 self.items.swap(at, child);
                 at = child;
@@ -105,7 +113,9 @@ impl Heap {
 }
 
 fn dist(a: &Px, b: &Px) -> u32 {
-    (0..3).map(|c| (a[c] as i32 - b[c] as i32).pow(2) as u32).sum()
+    (0..3)
+        .map(|c| (a[c] as i32 - b[c] as i32).pow(2) as u32)
+        .sum()
 }
 
 /// Median-cut quantization of RGB pixels into at most `colors` entries:
@@ -127,7 +137,9 @@ pub fn median_cut(pixels: &[Px], colors: u32) -> Option<(Vec<Px>, Vec<u8>)> {
     // palette, a split box giving way to its two halves in place.
     let mut arena = vec![BoxOf { entries }];
     let mut order = vec![0usize];
-    let mut heap = Heap { items: vec![(arena[0].pixels(), 0)] };
+    let mut heap = Heap {
+        items: vec![(arena[0].pixels(), 0)],
+    };
     while (order.len() as u32) < colors {
         let Some((_, id)) = heap.pop() else { break };
         // A box of one colour waits in the heap like any other and is passed
@@ -214,7 +226,11 @@ mod tests {
         ];
         for (colors, reds) in expected {
             let (palette, _) = median_cut(&px, colors).unwrap();
-            assert_eq!(palette.iter().map(|p| p[0]).collect::<Vec<_>>(), reds, "{colors} colours");
+            assert_eq!(
+                palette.iter().map(|p| p[0]).collect::<Vec<_>>(),
+                reds,
+                "{colors} colours"
+            );
         }
     }
 
@@ -224,7 +240,10 @@ mod tests {
         let (palette, index) = median_cut(&px, 3).unwrap();
         for (p, &i) in px.iter().zip(&index) {
             let d = |q: &Px| (p[0] as i32 - q[0] as i32).abs();
-            assert_eq!(d(&palette[i as usize]), palette.iter().map(d).min().unwrap());
+            assert_eq!(
+                d(&palette[i as usize]),
+                palette.iter().map(d).min().unwrap()
+            );
         }
     }
 

@@ -8,8 +8,8 @@ pub mod managed;
 pub mod sig;
 mod tables;
 
-pub use tables::{Coded, Table};
 use std::path::Path;
+pub use tables::{Coded, Table};
 
 #[derive(Debug)]
 pub struct Error(pub String);
@@ -27,10 +27,14 @@ fn err<T>(msg: impl Into<String>) -> Result<T> {
 }
 
 pub(crate) fn u16_at(d: &[u8], o: usize) -> Result<u16> {
-    d.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]])).ok_or_else(|| Error("truncated assembly".into()))
+    d.get(o..o + 2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .ok_or_else(|| Error("truncated assembly".into()))
 }
 pub(crate) fn u32_at(d: &[u8], o: usize) -> Result<u32> {
-    d.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).ok_or_else(|| Error("truncated assembly".into()))
+    d.get(o..o + 4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .ok_or_else(|| Error("truncated assembly".into()))
 }
 
 struct Section {
@@ -53,7 +57,10 @@ pub struct Assembly {
 impl Assembly {
     pub fn open(path: &Path) -> Result<Assembly> {
         let data = std::fs::read(path).map_err(|e| Error(format!("{}: {e}", path.display())))?;
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         Assembly::parse(data, name)
     }
 
@@ -73,9 +80,21 @@ impl Assembly {
         let st = opt + opt_size;
         for i in 0..sections_n {
             let s = st + i * 40;
-            sections.push(Section { size: u32_at(&data, s + 8)?, va: u32_at(&data, s + 12)?, raw: u32_at(&data, s + 20)? });
+            sections.push(Section {
+                size: u32_at(&data, s + 8)?,
+                va: u32_at(&data, s + 12)?,
+                raw: u32_at(&data, s + 20)?,
+            });
         }
-        let mut asm = Assembly { file_name, data, sections, strings: (0, 0), blob: (0, 0), us: (0, 0), tables: Default::default() };
+        let mut asm = Assembly {
+            file_name,
+            data,
+            sections,
+            strings: (0, 0),
+            blob: (0, 0),
+            us: (0, 0),
+            tables: Default::default(),
+        };
         if clr_rva == 0 {
             return err(format!("{}: not a .NET assembly", asm.file_name));
         }
@@ -93,8 +112,13 @@ impl Assembly {
             let off = md + u32_at(&asm.data, p)? as usize;
             let size = u32_at(&asm.data, p + 4)? as usize;
             let name_start = p + 8;
-            let name_len = asm.data[name_start..].iter().position(|&b| b == 0).ok_or_else(|| Error("bad stream name".into()))?;
-            let name = std::str::from_utf8(&asm.data[name_start..name_start + name_len]).unwrap_or("").to_string();
+            let name_len = asm.data[name_start..]
+                .iter()
+                .position(|&b| b == 0)
+                .ok_or_else(|| Error("bad stream name".into()))?;
+            let name = std::str::from_utf8(&asm.data[name_start..name_start + name_len])
+                .unwrap_or("")
+                .to_string();
             p = name_start + (name_len + 4) / 4 * 4;
             match name.as_str() {
                 "#~" | "#-" => tables_at = Some(off),
@@ -115,7 +139,10 @@ impl Assembly {
                 return Ok((rva - s.va + s.raw) as usize);
             }
         }
-        err(format!("{}: rva {rva:#x} outside every section", self.file_name))
+        err(format!(
+            "{}: rva {rva:#x} outside every section",
+            self.file_name
+        ))
     }
 
     pub fn data(&self) -> &[u8] {
@@ -128,7 +155,10 @@ impl Assembly {
         if index as usize >= size {
             return "";
         }
-        let end = self.data[start..].iter().position(|&b| b == 0).map_or(self.data.len(), |n| start + n);
+        let end = self.data[start..]
+            .iter()
+            .position(|&b| b == 0)
+            .map_or(self.data.len(), |n| start + n);
         std::str::from_utf8(&self.data[start..end]).unwrap_or("")
     }
 
@@ -154,7 +184,10 @@ impl Assembly {
         let mut p = off + index as usize;
         let len = sig::compressed(&self.data, &mut p).unwrap_or(0) as usize;
         let bytes = self.data.get(p..p + len.saturating_sub(1)).unwrap_or(&[]);
-        let units: Vec<u16> = bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
         String::from_utf16_lossy(&units)
     }
 

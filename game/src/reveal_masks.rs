@@ -156,14 +156,17 @@ impl State {
     /// The save slots of the saved one-way controllers that have fired: the
     /// source's `Activated` on each secret mask's `PersistentBoolItem`.
     pub fn revealed(&self) -> u16 {
-        self.slots[..self.count].iter()
+        self.slots[..self.count]
+            .iter()
             .filter(|slot| slot.one_way && slot.inside && slot.slot >= 0)
             .fold(0, |mask, slot| mask | 1 << slot.slot)
     }
     /// Whether any controller in `fired` (a bit per controller) is authored to
     /// play the reveal chime.
     pub fn chimes(&self, fired: u16) -> bool {
-        self.slots[..self.count].iter().enumerate()
+        self.slots[..self.count]
+            .iter()
+            .enumerate()
             .any(|(index, slot)| fired & (1 << index) != 0 && slot.flags & CHIMES != 0)
     }
     /// Seat the saved one-way controllers whose slots are in `mask` as already
@@ -182,7 +185,11 @@ impl State {
     pub fn restore_driven(&mut self, broken: &dyn Fn(usize) -> bool) {
         for slot in self.slots[..self.count].iter_mut() {
             if slot.flags & DRIVEN != 0 && slot.driver >= 0 && broken(slot.driver as usize) {
-                if slot.flags & REPLAY != 0 { start(slot); } else { uncover(slot); }
+                if slot.flags & REPLAY != 0 {
+                    start(slot);
+                } else {
+                    uncover(slot);
+                }
             }
         }
     }
@@ -215,8 +222,12 @@ impl State {
     /// box, and a tick that touches no trigger never reads the bank's points.
     /// The one-way controllers that fired this tick, a bit each: the moment
     /// their `Activated` becomes worth saving and their chime plays.
-    pub fn tick(&mut self, player: &Player, params: Params,
-                mut reaches: impl FnMut(usize, [i32; 4]) -> bool) -> u16 {
+    pub fn tick(
+        &mut self,
+        player: &Player,
+        params: Params,
+        mut reaches: impl FnMut(usize, [i32; 4]) -> bool,
+    ) -> u16 {
         let mut fired = 0;
         if !self.running {
             return fired;
@@ -284,7 +295,11 @@ impl State {
     /// Counts describe bound draws, allowing route checks without another scan.
     /// `authored` gives a controller's Idle opacity from the admitted bank. It
     /// is read only while no scene is bound, so a settled frame never asks.
-    pub fn apply(&self, authored: impl Fn(usize) -> u8, bindings: impl Iterator<Item = RevealMaskBinding>) -> Applied {
+    pub fn apply(
+        &self,
+        authored: impl Fn(usize) -> u8,
+        bindings: impl Iterator<Item = RevealMaskBinding>,
+    ) -> Applied {
         let mut result = Applied::default();
         for binding in bindings {
             // During a requested full reset the old region may render once
@@ -339,7 +354,12 @@ mod tests {
     const BOX: &[[i32; 2]] = &[[-ONE, -ONE], [ONE, -ONE], [ONE, ONE], [-ONE, ONE]];
 
     fn params() -> Params {
-        Params { half_width: ONE / 4, bottom: -ONE / 2, top: ONE / 2, ..Params::ZERO }
+        Params {
+            half_width: ONE / 4,
+            bottom: -ONE / 2,
+            top: ONE / 2,
+            ..Params::ZERO
+        }
     }
 
     fn at(x: i32) -> Player {
@@ -395,7 +415,11 @@ mod tests {
         }
         for pass in 0..3 {
             for _ in 0..6 {
-                state.tick(&at(if pass % 2 == 0 { 40 * ONE } else { 0 }), params(), reaches);
+                state.tick(
+                    &at(if pass % 2 == 0 { 40 * ONE } else { 0 }),
+                    params(),
+                    reaches,
+                );
             }
             assert_eq!(state.opacity(0), 0);
         }
@@ -437,11 +461,20 @@ mod tests {
     /// source replays the fade on every load.
     #[test]
     fn driven_owner_fires_on_its_secret_and_restores_after_a_load() {
-        let driven = |flags| RevealMask { flags: DRIVEN | flags, driver: 127, slot: -1, ..mask(true) };
+        let driven = |flags| RevealMask {
+            flags: DRIVEN | flags,
+            driver: 127,
+            slot: -1,
+            ..mask(true)
+        };
         let mut state = State::new();
         state.scene_ready(0, [driven(0)].into_iter());
         for _ in 0..4 {
-            assert_eq!(state.tick(&at(0), params(), reaches), 0, "the hero does not fire it");
+            assert_eq!(
+                state.tick(&at(0), params(), reaches),
+                0,
+                "the hero does not fire it"
+            );
         }
         assert_eq!(state.opacity(0), 128);
         assert_eq!(state.fire_driver(126), 0);
@@ -450,7 +483,11 @@ mod tests {
             state.tick(&at(0), params(), reaches);
         }
         assert_eq!(state.opacity(0), 0);
-        assert_eq!(state.revealed(), 0, "a driven owner is saved by its secret, not by a slot");
+        assert_eq!(
+            state.revealed(),
+            0,
+            "a driven owner is saved by its secret, not by a slot"
+        );
         for (flags, settled) in [(0, 0), (REPLAY, 128)] {
             let mut state = State::new();
             state.scene_ready(0, [driven(flags)].into_iter());
@@ -463,8 +500,16 @@ mod tests {
     /// is recorded under its slot rather than its controller index.
     #[test]
     fn chime_and_save_slot_are_per_controller() {
-        let silent = RevealMask { source_id: 2, slot: 3, ..mask(true) };
-        let chiming = RevealMask { flags: CHIMES, slot: 1, ..mask(true) };
+        let silent = RevealMask {
+            source_id: 2,
+            slot: 3,
+            ..mask(true)
+        };
+        let chiming = RevealMask {
+            flags: CHIMES,
+            slot: 1,
+            ..mask(true)
+        };
         let mut state = State::new();
         state.scene_ready(0, [silent, chiming].into_iter());
         let fired = state.tick(&at(0), params(), reaches);
@@ -483,6 +528,13 @@ mod tests {
     #[test]
     #[should_panic]
     fn one_way_owner_cannot_start_uncovered() {
-        State::new().scene_ready(0, [RevealMask { initial_opacity: 0, ..mask(true) }].into_iter());
+        State::new().scene_ready(
+            0,
+            [RevealMask {
+                initial_opacity: 0,
+                ..mask(true)
+            }]
+            .into_iter(),
+        );
     }
 }

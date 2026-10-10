@@ -110,7 +110,12 @@ pub const fn pack(kind: Kind, scene: usize, local: usize, value: u8) -> Option<u
 }
 /// (kind, scene, local, value), or None for a word no build ever wrote.
 pub fn unpack(item: u32) -> Option<(Kind, usize, usize, u8)> {
-    Some((Kind::of(item >> 28)?, (item >> 18 & 0x3ff) as usize, (item >> 8 & 0x3ff) as usize, item as u8))
+    Some((
+        Kind::of(item >> 28)?,
+        (item >> 18 & 0x3ff) as usize,
+        (item >> 8 & 0x3ff) as usize,
+        item as u8,
+    ))
 }
 
 /// PlayerData bools, by bit. Append only: a bit's meaning is part of the card
@@ -161,7 +166,13 @@ pub struct Store {
 }
 impl Store {
     pub const fn new() -> Self {
-        Self { items: [0; MAX_ITEMS], len: 0, player: 0, levels: [0; LEVELS], overflow: 0 }
+        Self {
+            items: [0; MAX_ITEMS],
+            len: 0,
+            player: 0,
+            levels: [0; LEVELS],
+            overflow: 0,
+        }
     }
     pub fn items(&self) -> &[u32] {
         &self.items[..self.len]
@@ -197,7 +208,10 @@ impl Store {
     }
     /// Items of one kind, in every scene.
     pub fn count(&self, kind: Kind) -> usize {
-        self.items().iter().filter(|&&item| item >> 28 == kind as u32).count()
+        self.items()
+            .iter()
+            .filter(|&&item| item >> 28 == kind as u32)
+            .count()
     }
     /// Drop every item of one kind, ahead of re-copying it from its owner.
     pub fn clear_kind(&mut self, kind: Kind) {
@@ -230,7 +244,9 @@ impl Store {
     /// rest and on the Knight's death (`GameManager.PlayerDead`).
     pub fn reset_semi_persistent(&mut self) {
         self.clear_kind(Kind::SoulTotem);
-        self.clear_matching(Kind::Enemy, |local, value| local >= ENEMY_STATE_BASE && value == ENEMY_DEAD_UNTIL_RESET);
+        self.clear_matching(Kind::Enemy, |local, value| {
+            local >= ENEMY_STATE_BASE && value == ENEMY_DEAD_UNTIL_RESET
+        });
     }
     /// Items of one kind in one scene, as (local, value).
     pub fn scene_items(&self, kind: Kind, scene: usize) -> impl Iterator<Item = (usize, u8)> + '_ {
@@ -269,13 +285,17 @@ pub fn store() -> &'static mut Store {
 /// Items held, the PlayerData bools, items restored by the last load, and
 /// items refused. `HK_WORLD_OVERFLOW` is the one a route pins at zero.
 #[cfg(not(test))]
-#[no_mangle] pub static mut HK_WORLD_ITEMS: u32 = 0;
+#[no_mangle]
+pub static mut HK_WORLD_ITEMS: u32 = 0;
 #[cfg(not(test))]
-#[no_mangle] pub static mut HK_WORLD_PLAYER: u32 = 0;
+#[no_mangle]
+pub static mut HK_WORLD_PLAYER: u32 = 0;
 #[cfg(not(test))]
-#[no_mangle] pub static mut HK_WORLD_RESTORED: u32 = 0;
+#[no_mangle]
+pub static mut HK_WORLD_RESTORED: u32 = 0;
 #[cfg(not(test))]
-#[no_mangle] pub static mut HK_WORLD_OVERFLOW: u32 = 0;
+#[no_mangle]
+pub static mut HK_WORLD_OVERFLOW: u32 = 0;
 /// Mirror the store for routes. Called after every mutation site, which are
 /// all events rather than per-tick work.
 #[cfg(not(test))]
@@ -380,15 +400,21 @@ fn migrate_hks4(save: &crate::save::Save, s: &mut Store) -> usize {
         return 0;
     }
     s.set_player(FALSE_KNIGHT_DEFEATED);
-    crate::world::false_knight_scene().map_or(0, |scene| usize::from(s.set(Kind::BattleScene, scene, 0, 1)))
+    crate::world::false_knight_scene().map_or(0, |scene| {
+        usize::from(s.set(Kind::BattleScene, scene, 0, 1))
+    })
 }
 /// Hand the loaded SceneData to the stores that own it for the session:
 /// broken walls to the world, mined rocks to the Geo pool, an opened cocoon to
 /// Lifeblood. Secret masks and arenas read the store when their scene seats.
 #[cfg(not(test))]
 #[inline(never)]
-#[cfg_attr(not(test),optimize(size))]
-pub fn apply(state: &mut crate::world::State, geo: &mut crate::geo::World, life: &mut crate::lifeblood::World) {
+#[cfg_attr(not(test), optimize(size))]
+pub fn apply(
+    state: &mut crate::world::State,
+    geo: &mut crate::geo::World,
+    life: &mut crate::lifeblood::World,
+) {
     let s = store();
     for (scene, local, _) in s.all(Kind::Breakable) {
         state.restore_broken(scene * crate::world::BREAKABLES_PER_SCENE + local);
@@ -413,12 +439,17 @@ pub fn restore_cocoon(life: &mut crate::lifeblood::World) {
 /// still broken in the world's table and have to be told apart by the bank.
 #[cfg(not(test))]
 #[inline(never)]
-#[cfg_attr(not(test),optimize(size))]
+#[cfg_attr(not(test), optimize(size))]
 pub fn snapshot(state: &crate::world::State, geo: &crate::geo::World, scene: usize) {
     let s = store();
     s.clear_kind(Kind::Breakable);
     state.for_each_persistent_broken(scene, |id| {
-        s.set(Kind::Breakable, id / crate::world::BREAKABLES_PER_SCENE, id % crate::world::BREAKABLES_PER_SCENE, 1);
+        s.set(
+            Kind::Breakable,
+            id / crate::world::BREAKABLES_PER_SCENE,
+            id % crate::world::BREAKABLES_PER_SCENE,
+            1,
+        );
     });
     s.clear_kind(Kind::GeoRock);
     for (scene, local, left) in geo.rock_states() {
@@ -430,7 +461,11 @@ pub fn snapshot(state: &crate::world::State, geo: &crate::geo::World, scene: usi
 #[cfg(not(test))]
 #[inline(never)]
 pub fn secrets(scene: usize) -> u16 {
-    store().scene_items(Kind::SecretMask, scene).fold(0, |mask, (local, _)| mask | 1u16.checked_shl(local as u32).unwrap_or(0))
+    store()
+        .scene_items(Kind::SecretMask, scene)
+        .fold(0, |mask, (local, _)| {
+            mask | 1u16.checked_shl(local as u32).unwrap_or(0)
+        })
 }
 /// Record every uncovered one-way controller of this scene.
 #[cfg(not(test))]
@@ -477,7 +512,10 @@ mod tests {
         assert!(s.set(Kind::SoulTotem, 44, 1, 4));
         assert!(s.set(Kind::Breakable, 2, 9, 1));
         s.reset_semi_persistent();
-        assert_eq!(s.all(Kind::Enemy).collect::<Vec<_>>(), [(2, 1, 1), (2, ENEMY_STATE_BASE, 1)]);
+        assert_eq!(
+            s.all(Kind::Enemy).collect::<Vec<_>>(),
+            [(2, 1, 1), (2, ENEMY_STATE_BASE, 1)]
+        );
         assert_eq!(s.count(Kind::SoulTotem), 0, "the totems refill");
         assert_eq!(s.get(Kind::Breakable, 2, 9), Some(1));
         assert_eq!(s.items().len(), 3);
@@ -498,9 +536,15 @@ mod tests {
     }
     #[test]
     fn the_word_layout_round_trips_at_its_bounds() {
-        for (kind, scene, local, value) in [(Kind::BattleScene, 1023, 1023, 255), (Kind::Breakable, 0, 0, 1),
-                                            (Kind::Enemy, 19, 0, 1), (Kind::SoulTotem, 44, 0, 4), (Kind::Visited, 3, 0, 1), (Kind::Pickup, 11, 1, 1),
-                                            (Kind::MapScene, 59, 0, 3)] {
+        for (kind, scene, local, value) in [
+            (Kind::BattleScene, 1023, 1023, 255),
+            (Kind::Breakable, 0, 0, 1),
+            (Kind::Enemy, 19, 0, 1),
+            (Kind::SoulTotem, 44, 0, 4),
+            (Kind::Visited, 3, 0, 1),
+            (Kind::Pickup, 11, 1, 1),
+            (Kind::MapScene, 59, 0, 3),
+        ] {
             let item = pack(kind, scene, local, value).unwrap();
             assert_eq!(unpack(item), Some((kind, scene, local, value)));
         }

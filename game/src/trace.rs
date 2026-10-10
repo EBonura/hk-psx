@@ -54,15 +54,32 @@ pub static mut HK_TRACE: [u32; WORDS] = [0; WORDS];
 #[optimize(size)]
 fn hero_state(game: &Game) -> u32 {
     let p: &Player = &game.player;
-    if game.vitals.dead { 9 }
-    else if game.vitals.recoil_ticks > 0 { 8 }
-    else if p.dash_left > 0 { 4 }
-    else if p.wall_sliding { 5 }
-    else if game.nail.active { 6 }
-    else if game.focus.locks_control() { 7 }
-    else if !p.grounded { if p.vy > 0 { 2 } else { 3 } }
-    else if unsafe { crate::input::CONSUMED_PAD } & (psx_pad::button::LEFT | psx_pad::button::RIGHT) as u32 != 0 { 1 }
-    else { 0 }
+    if game.vitals.dead {
+        9
+    } else if game.vitals.recoil_ticks > 0 {
+        8
+    } else if p.dash_left > 0 {
+        4
+    } else if p.wall_sliding {
+        5
+    } else if game.nail.active {
+        6
+    } else if game.focus.locks_control() {
+        7
+    } else if !p.grounded {
+        if p.vy > 0 {
+            2
+        } else {
+            3
+        }
+    } else if unsafe { crate::input::CONSUMED_PAD }
+        & (psx_pad::button::LEFT | psx_pad::button::RIGHT) as u32
+        != 0
+    {
+        1
+    } else {
+        0
+    }
 }
 
 /// Publish this tick's state. Called once per simulation tick, after it.
@@ -73,12 +90,21 @@ pub fn publish(game: &Game, scene: usize, region: usize) {
     let (cx, cy) = game.camera.position();
     let mut flags = 0u32;
     flags |= (game.paused as u32) | (game.vitals.dead as u32) << 1;
-    flags |= ((crate::dialogue::open() || game.shop_screen.open) as u32) << 2 | (game.door.pending() as u32) << 3;
+    flags |= ((crate::dialogue::open() || game.shop_screen.open) as u32) << 2
+        | (game.door.pending() as u32) << 3;
     let mut hero = 0u32;
-    hero |= p.grounded as u32 | (p.jumping as u32) << 1 | ((p.dash_left > 0) as u32) << 2 | (p.wall_sliding as u32) << 3;
-    hero |= (p.double_jumping as u32) << 4 | (game.nail.active as u32) << 5 | (game.focus.locks_control() as u32) << 6;
+    hero |= p.grounded as u32
+        | (p.jumping as u32) << 1
+        | ((p.dash_left > 0) as u32) << 2
+        | (p.wall_sliding as u32) << 3;
+    hero |= (p.double_jumping as u32) << 4
+        | (game.nail.active as u32) << 5
+        | (game.focus.locks_control() as u32) << 6;
     hero |= ((game.vitals.invulnerable_ticks > 0) as u32) << 7 | (p.wall_locked as u32) << 8;
-    let ball = game.cast.ball_bounds(crate::FIREBALL_PARAMS).map(|_| (game.cast.ball.x, game.cast.ball.y));
+    let ball = game
+        .cast
+        .ball_bounds(crate::FIREBALL_PARAMS)
+        .map(|_| (game.cast.ball.x, game.cast.ball.y));
     unsafe {
         let t = &mut *(&raw mut HK_TRACE);
         t[0] = MAGIC;

@@ -21,14 +21,23 @@
 //! arena that drives it rides on the boss actor, several layers inside
 //! `enemies.rs`, and threading a world down there would have cost more call
 //! sites than the whole feature is worth.
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/battle_gates.rs"));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../data/battle_gates.rs"
+));
 // `Floor Control`'s floor and `FK Armour`, cooked by host/false_knight_art.py.
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/false_knight_floor.rs"));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../data/false_knight_floor.rs"
+));
 /// Rows of a `(slot, value)` table for one catalogue slot.
 fn slot_rows(table: &'static [(u16, u16)], slot: usize) -> impl Iterator<Item = u16> {
     let slot = slot as u16;
     let first = table.partition_point(|&(row, _)| row < slot);
-    table[first..].iter().take_while(move |&&(row, _)| row == slot).map(|&(_, value)| value)
+    table[first..]
+        .iter()
+        .take_while(move |&&(row, _)| row == slot)
+        .map(|&(_, value)| value)
 }
 
 const _: () = assert!(GATES <= 16, "the closed set is one u16");
@@ -73,7 +82,9 @@ const fn placement_poses() -> [u8; GATES] {
     let mut poses = [CLIP_OPENED; GATES];
     let mut i = 0;
     while i < GATES {
-        if PLACEMENT_CLOSED & (1 << i) != 0 { poses[i] = CLIP_CLOSED; }
+        if PLACEMENT_CLOSED & (1 << i) != 0 {
+            poses[i] = CLIP_CLOSED;
+        }
         i += 1;
     }
     poses
@@ -84,8 +95,15 @@ const fn placement_poses() -> [u8; GATES] {
 fn set_poses(mut mask: u16, clip: u8) {
     while mask != 0 {
         let gate = mask.trailing_zeros() as usize;
-        unsafe { POSE[gate] = clip; POSE_START[gate] = CLOCK; }
-        if clip == CLIP_CLOSE_1 { unsafe { POSE_MASK |= 1 << gate } } else { unsafe { POSE_MASK &= !(1 << gate) } }
+        unsafe {
+            POSE[gate] = clip;
+            POSE_START[gate] = CLOCK;
+        }
+        if clip == CLIP_CLOSE_1 {
+            unsafe { POSE_MASK |= 1 << gate }
+        } else {
+            unsafe { POSE_MASK &= !(1 << gate) }
+        }
         mask &= mask - 1;
     }
 }
@@ -99,7 +117,9 @@ pub fn tick() {
     while bits != 0 {
         let gate = bits.trailing_zeros() as usize;
         bits &= bits - 1;
-        if unsafe { POSE[gate] == CLIP_CLOSE_1 && CLOCK.wrapping_sub(POSE_START[gate]) == CLOSE_1_TICKS } {
+        if unsafe {
+            POSE[gate] == CLIP_CLOSE_1 && CLOCK.wrapping_sub(POSE_START[gate]) == CLOSE_1_TICKS
+        } {
             crate::camera::request(crate::camera::Shake::Kill);
         }
     }
@@ -110,7 +130,11 @@ static mut POSE_MASK: u16 = 0;
 /// `BG Close 1`'s length in ticks: its frames at its own rate.
 const CLOSE_1_TICKS: u32 = {
     let fps = CLIP_FPS[CLIP_CLOSE_1 as usize] as u32;
-    if fps == 0 { 0 } else { (CLIP_FRAMES[CLIP_CLOSE_1 as usize].len() as u32 * 60).div_ceil(fps) }
+    if fps == 0 {
+        0
+    } else {
+        (CLIP_FRAMES[CLIP_CLOSE_1 as usize].len() as u32 * 60).div_ceil(fps)
+    }
 };
 /// The clip a gate shows and how many ticks it has been playing. `Close 1`
 /// hands over to `Close 2` when its clip finishes (`Tk2dPlayAnimationWithEvents`
@@ -118,7 +142,9 @@ const CLOSE_1_TICKS: u32 = {
 /// FSM takes on its own; every other clip holds its last frame.
 pub fn pose(gate: usize) -> (u8, u32) {
     let (clip, age) = unsafe { (POSE[gate], CLOCK.wrapping_sub(POSE_START[gate])) };
-    if clip == CLIP_CLOSE_1 && age >= CLOSE_1_TICKS { return (CLIP_CLOSE_2, age - CLOSE_1_TICKS); }
+    if clip == CLIP_CLOSE_1 && age >= CLOSE_1_TICKS {
+        return (CLIP_CLOSE_2, age - CLOSE_1_TICKS);
+    }
     (clip, age)
 }
 /// The gate sprite (an index into `SPRITE_RECT`) a clip shows at an age. Ages
@@ -139,7 +165,9 @@ pub fn sprites(gate: usize) -> (usize, Option<usize>) {
         let frames = CLIP_FRAMES[CLIP_EFFECT as usize];
         let index = (age.min(1 << 16) * CLIP_FPS[CLIP_EFFECT as usize] as u32 / 60) as usize;
         frames.get(index).map(|&f| f as usize)
-    } else { None };
+    } else {
+        None
+    };
     (clip_frame(clip, age), effect)
 }
 /// The gates of one scene, for drawing.
@@ -151,10 +179,12 @@ pub fn scene_gates(scene: usize) -> u16 {
 /// sealed" is a claim no replay can check: a gate draws nothing, so the only
 /// evidence a route could otherwise offer is the Knight failing to walk
 /// somewhere, which a dozen other faults produce.
-#[no_mangle] pub static mut HK_ARENA_GATES: u32 = 0;
+#[no_mangle]
+pub static mut HK_ARENA_GATES: u32 = 0;
 /// `Floor Control` on the False Knight's arena floor: 0 whole, 1 cracked
 /// (`Crack`), 2 broken (`Break`, or `Activate` on a won arena).
-#[no_mangle] pub static mut HK_FK_FLOOR: u32 = 0;
+#[no_mangle]
+pub static mut HK_FK_FLOOR: u32 = 0;
 pub const FLOOR_WHOLE: u8 = 0;
 pub const FLOOR_CRACKED: u8 = 1;
 pub const FLOOR_BROKEN: u8 = 2;
@@ -164,20 +194,27 @@ pub const FLOOR_BROKEN: u8 = 2;
 static mut FLOOR: u8 = FLOOR_WHOLE;
 static mut ARMOUR: bool = false;
 /// `BG CLOSE` broadcasts answered, and `BG OPEN`/`BG QUICK OPEN` answered.
-#[no_mangle] pub static mut HK_ARENA_GATE_CLOSES: u32 = 0;
-#[no_mangle] pub static mut HK_ARENA_GATE_OPENS: u32 = 0;
+#[no_mangle]
+pub static mut HK_ARENA_GATE_CLOSES: u32 = 0;
+#[no_mangle]
+pub static mut HK_ARENA_GATE_OPENS: u32 = 0;
 
 fn scene_mask(scene: usize) -> u16 {
     let mut found = 0;
     for &(id, mask) in SCENE_GATES {
-        if id as usize == scene { found |= mask; }
+        if id as usize == scene {
+            found |= mask;
+        }
     }
     found
 }
 /// Mirror the live mask in one place: every entry point below moves it, and
 /// publishing at each of them is how one of them ends up not publishing.
 fn publish() {
-    unsafe { HK_ARENA_GATES = CLOSED as u32; HK_FK_FLOOR = FLOOR as u32 }
+    unsafe {
+        HK_ARENA_GATES = CLOSED as u32;
+        HK_FK_FLOOR = FLOOR as u32
+    }
     crate::world::scripted_terrain_changed();
 }
 /// `Battle Control`'s `Pause` -> `Init`, run when the arena's scene seats its
@@ -186,7 +223,10 @@ fn publish() {
 /// in; then `Init` quick-opens them if the arena is already won.
 pub fn arena_entry(scene: usize, activated: bool) {
     let mask = scene_mask(scene);
-    unsafe { CLOSED = (CLOSED & !mask) | (PLACEMENT_CLOSED & mask); FIGHTING = 0 }
+    unsafe {
+        CLOSED = (CLOSED & !mask) | (PLACEMENT_CLOSED & mask);
+        FIGHTING = 0
+    }
     set_poses(mask & PLACEMENT_CLOSED, CLIP_CLOSED);
     set_poses(mask & !PLACEMENT_CLOSED, CLIP_OPENED);
     // `Floor Control`'s `Check Broken` asks `falseKnightDefeated`, and
@@ -202,17 +242,25 @@ pub fn arena_entry(scene: usize, activated: bool) {
         // `Quick Open` plays `BG Opened` and lifts the collider, silently.
         set_poses(mask, CLIP_OPENED);
         lift(scene);
-    } else { publish(); }
+    } else {
+        publish();
+    }
 }
 /// `CRACK`: the last slam of the second rage.
 pub fn floor_crack() {
-    unsafe { if FLOOR == FLOOR_WHOLE { FLOOR = FLOOR_CRACKED; } }
+    unsafe {
+        if FLOOR == FLOOR_WHOLE {
+            FLOOR = FLOOR_CRACKED;
+        }
+    }
     publish();
 }
 /// `DESTROY`: the death jump comes down through it. The terrain goes in the
 /// same simulation tick (`world::scripted_terrain_changed`).
 pub fn floor_break() {
-    unsafe { FLOOR = FLOOR_BROKEN; }
+    unsafe {
+        FLOOR = FLOOR_BROKEN;
+    }
     publish();
 }
 pub fn floor() -> u8 {
@@ -225,7 +273,10 @@ pub fn armour_tink_hidden(bounds: [i32; 4]) -> bool {
     // The world bank rounds a box its own way; a sixteenth of a unit is far
     // below anything two different bounce boxes could share.
     const SLACK: i32 = 4096;
-    !unsafe { ARMOUR } && FK_ARMOUR_TINK.iter().any(|b| (0..4).all(|i| (b[i] - bounds[i]).abs() <= SLACK))
+    !unsafe { ARMOUR }
+        && FK_ARMOUR_TINK
+            .iter()
+            .any(|b| (0..4).all(|i| (b[i] - bounds[i]).abs() <= SLACK))
 }
 /// `BG CLOSE`, broadcast to every gate in the room when the hero crosses the
 /// trigger. This is the direction that seals an arena: the gate's edges are in
@@ -295,20 +346,32 @@ pub fn apply(state: &mut crate::world::State, region: usize, view: usize) {
     // every visibility reset like the Geo rocks' and the cocoon's.
     let floor = unsafe { FLOOR };
     if floor != FLOOR_WHOLE {
-        for draw in slot_rows(&FK_FLOOR_NORMAL_DRAWS, view) { crate::render::set_visible(draw as usize, false); }
+        for draw in slot_rows(&FK_FLOOR_NORMAL_DRAWS, view) {
+            crate::render::set_visible(draw as usize, false);
+        }
     }
     if floor == FLOOR_BROKEN {
-        for edge in slot_rows(&FK_BREAK_FLOOR_EDGES, region) { state.append_script_edges(&[edge]); }
+        for edge in slot_rows(&FK_BREAK_FLOOR_EDGES, region) {
+            state.append_script_edges(&[edge]);
+        }
     }
     if !unsafe { ARMOUR } {
-        for draw in slot_rows(&FK_ARMOUR_DRAWS, view) { crate::render::set_visible(draw as usize, false); }
+        for draw in slot_rows(&FK_ARMOUR_DRAWS, view) {
+            crate::render::set_visible(draw as usize, false);
+        }
     }
     let lifted = unsafe { !CLOSED } & COOKED;
-    if lifted == 0 { return; }
+    if lifted == 0 {
+        return;
+    }
     let slot = region as u16;
     let first = REGIONS.partition_point(|&(row, _, _)| row < slot);
     for &(row, gate, edges) in &REGIONS[first..] {
-        if row != slot { break; }
-        if lifted & (1 << gate) != 0 { state.append_script_edges(edges); }
+        if row != slot {
+            break;
+        }
+        if lifted & (1 << gate) != 0 {
+            state.append_script_edges(edges);
+        }
     }
 }

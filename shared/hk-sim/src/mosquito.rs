@@ -104,7 +104,11 @@ pub struct Step {
 }
 impl Step {
     fn sound(&mut self, sound: Sound) {
-        let slot = self.sounds.iter_mut().find(|s| s.is_none()).expect("two sounds a tick");
+        let slot = self
+            .sounds
+            .iter_mut()
+            .find(|s| s.is_none())
+            .expect("two sounds a tick");
         *slot = Some(sound);
     }
 }
@@ -140,9 +144,21 @@ pub struct Mosquito {
 }
 impl Mosquito {
     pub fn new(position: [i32; 2], seed: u32) -> Self {
-        Self { phase: Phase::Idle, velocity: [0; 2], buzz: IdleBuzz::new(position), timer: 0, face_pause: 0,
-            facing: -1, fixed_accumulator: 0, clip: Clip::Idle, aim: [ONE, 0], rotation: [ONE, 0],
-            recoil_off: false, tile_detector: true, rng: seed }
+        Self {
+            phase: Phase::Idle,
+            velocity: [0; 2],
+            buzz: IdleBuzz::new(position),
+            timer: 0,
+            face_pause: 0,
+            facing: -1,
+            fixed_accumulator: 0,
+            clip: Clip::Idle,
+            aim: [ONE, 0],
+            rotation: [ONE, 0],
+            recoil_off: false,
+            tile_detector: true,
+            rng: seed,
+        }
     }
     pub fn phase(&self) -> Phase {
         self.phase
@@ -165,7 +181,11 @@ impl Mosquito {
         self.tile_detector
     }
     pub fn recoil_speed(&self) -> i32 {
-        if self.recoil_off { 0 } else { RECOIL_SPEED }
+        if self.recoil_off {
+            0
+        } else {
+            RECOIL_SPEED
+        }
     }
     pub fn dead(&self) -> bool {
         self.phase == Phase::Dead
@@ -189,17 +209,34 @@ impl Mosquito {
     fn idle_buzz(&mut self, position: [i32; 2]) {
         let mut v = self.velocity;
         let mut buzz = self.buzz;
-        buzz.step_with(position, &mut v, IDLE_SPEED_MAX, IDLE_ACCELERATION_MAX, &mut |lo, hi| self.range(lo, hi));
+        buzz.step_with(
+            position,
+            &mut v,
+            IDLE_SPEED_MAX,
+            IDLE_ACCELERATION_MAX,
+            &mut |lo, hi| self.range(lo, hi),
+        );
         self.buzz = buzz;
         self.velocity = v;
     }
     fn hover(&mut self, senses: Senses) {
-        distance_fly_height(senses.position, senses.hero, HOVER_DISTANCE, HOVER_HEIGHT, HOVER_SPEED_MAX,
-            HOVER_ACCELERATION, &mut self.velocity);
+        distance_fly_height(
+            senses.position,
+            senses.hero,
+            HOVER_DISTANCE,
+            HOVER_HEIGHT,
+            HOVER_SPEED_MAX,
+            HOVER_ACCELERATION,
+            &mut self.velocity,
+        );
     }
     /// FaceObject toward the hero: strictly left of it faces right.
     fn face_hero(&mut self, senses: Senses, clip: bool, step: &mut Step) {
-        let want = if senses.position[0] < senses.hero[0] { 1 } else { -1 };
+        let want = if senses.position[0] < senses.hero[0] {
+            1
+        } else {
+            -1
+        };
         if want != self.facing {
             self.facing = want;
             if clip {
@@ -246,7 +283,8 @@ impl Mosquito {
         let r = (ATTACK_RANGE >> 8) as i64;
         if dx * dx + dy * dy <= r * r {
             self.phase = Phase::AttackPause;
-            self.timer = (self.range(PAUSE_TICKS[0] as i32 * ONE, PAUSE_TICKS[1] as i32 * ONE) >> 16) as u16;
+            self.timer =
+                (self.range(PAUSE_TICKS[0] as i32 * ONE, PAUSE_TICKS[1] as i32 * ONE) >> 16) as u16;
             self.hover(senses);
         }
     }
@@ -256,7 +294,11 @@ impl Mosquito {
         self.play(Clip::Startle, step);
         step.sound(Sound::Call);
         step.sound(Sound::Prepare);
-        self.facing = if senses.position[0] < senses.hero[0] { 1 } else { -1 };
+        self.facing = if senses.position[0] < senses.hero[0] {
+            1
+        } else {
+            -1
+        };
     }
     fn lunge(&mut self, step: &mut Step) {
         // `Check Dir`: [0, 90) and (270, 360) lunge right, [90, 270] left,
@@ -266,10 +308,16 @@ impl Mosquito {
         self.recoil_off = true;
         step.sound(Sound::Charge);
         self.facing = if self.aim[0] > 0 { 1 } else { -1 };
-        self.velocity = [((self.aim[0] as i64 * LUNGE_SPEED as i64) >> 16) as i32,
-            ((self.aim[1] as i64 * LUNGE_SPEED as i64) >> 16) as i32];
+        self.velocity = [
+            ((self.aim[0] as i64 * LUNGE_SPEED as i64) >> 16) as i32,
+            ((self.aim[1] as i64 * LUNGE_SPEED as i64) >> 16) as i32,
+        ];
         // FaceAngle: the velocity's angle, plus 180 for the left-facing art.
-        self.rotation = if self.facing > 0 { self.aim } else { [-self.aim[0], -self.aim[1]] };
+        self.rotation = if self.facing > 0 {
+            self.aim
+        } else {
+            [-self.aim[0], -self.aim[1]]
+        };
         self.play(Clip::Attack, step);
     }
     /// One nominal 60 Hz frame.
@@ -351,9 +399,13 @@ impl Mosquito {
                 if self.timer == AIM_TICKS {
                     // GetAngleToTarget2D toward the hero, half a unit low.
                     let dx = senses.hero[0] as i64 - senses.position[0] as i64;
-                    let dy = senses.hero[1] as i64 + AIM_OFFSET_Y as i64 - senses.position[1] as i64;
+                    let dy =
+                        senses.hero[1] as i64 + AIM_OFFSET_Y as i64 - senses.position[1] as i64;
                     let length = isqrt(dx * dx + dy * dy).max(1);
-                    self.aim = [(dx * ONE as i64 / length) as i32, (dy * ONE as i64 / length) as i32];
+                    self.aim = [
+                        (dx * ONE as i64 / length) as i32,
+                        (dy * ONE as i64 / length) as i32,
+                    ];
                     if dx == 0 && dy == 0 {
                         self.aim = [ONE, 0];
                     }
@@ -370,8 +422,10 @@ impl Mosquito {
                     self.recoil_off = false;
                     self.rotation = [ONE, 0];
                     step.sound(Sound::WallHit);
-                    self.velocity = [((self.velocity[0] as i64 * REBOUND as i64) >> 16) as i32,
-                        ((self.velocity[1] as i64 * REBOUND as i64) >> 16) as i32];
+                    self.velocity = [
+                        ((self.velocity[0] as i64 * REBOUND as i64) >> 16) as i32,
+                        ((self.velocity[1] as i64 * REBOUND as i64) >> 16) as i32,
+                    ];
                     self.decelerate(PULL_OUT_DECELERATION);
                     self.play(Clip::DeathAir, &mut step);
                     return step;
@@ -449,7 +503,12 @@ mod tests {
     use super::*;
 
     fn senses(position: [i32; 2], hero: [i32; 2], see: bool) -> Senses {
-        Senses { position, hero, can_see_hero: see, hit_terrain: false }
+        Senses {
+            position,
+            hero,
+            can_see_hero: see,
+            hit_terrain: false,
+        }
     }
     /// Startle, then hover: a mosquito that sees the hero within 10 units
     /// winds up and lunges at it at 18 units a second.
@@ -466,7 +525,10 @@ mod tests {
         while m.phase() != Phase::Antic {
             m.tick(senses([0, 0], hero, true));
             t += 1;
-            assert!(t < STARTLE_TICKS as u32 + PAUSE_TICKS[1] as u32 + 2, "attack pause too long");
+            assert!(
+                t < STARTLE_TICKS as u32 + PAUSE_TICKS[1] as u32 + 2,
+                "attack pause too long"
+            );
         }
         assert!(!m.tile_detector(), "Attack Antic deactivates TileDetector");
         assert_eq!(m.velocity(), [0, ANTIC_RISE]);
@@ -483,7 +545,9 @@ mod tests {
         let speed = ((v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64) as f64).sqrt();
         assert!((speed - LUNGE_SPEED as f64).abs() < 64.0, "{speed}");
         // Aimed half a unit below the hero: (6, -2.5) from the body.
-        assert!(v[0] > 0 && v[1] < 0 && (v[1] as i64 * 6 * 2 + v[0] as i64 * 5).abs() < 2 * ONE as i64);
+        assert!(
+            v[0] > 0 && v[1] < 0 && (v[1] as i64 * 6 * 2 + v[0] as i64 * 5).abs() < 2 * ONE as i64
+        );
     }
     #[test]
     fn a_wall_rebounds_it_at_thirty_percent_and_restores_knockback() {
@@ -493,17 +557,28 @@ mod tests {
             m.tick(senses([0, 0], hero, true));
         }
         let before = m.velocity();
-        let step = m.tick(Senses { hit_terrain: true, ..senses([0, 0], hero, true) });
+        let step = m.tick(Senses {
+            hit_terrain: true,
+            ..senses([0, 0], hero, true)
+        });
         assert_eq!(m.phase(), Phase::PullOut);
         assert_eq!(step.play, Some(Clip::DeathAir));
         assert_eq!(step.sounds[0], Some(Sound::WallHit));
         assert_eq!(m.recoil_speed(), RECOIL_SPEED);
         let after = m.velocity();
-        assert!(after[0] > 0 && (after[0] - (-(before[0] as i64 * 3 / 10) as i32 - PULL_OUT_DECELERATION)).abs() < 64);
+        assert!(
+            after[0] > 0
+                && (after[0] - (-(before[0] as i64 * 3 / 10) as i32 - PULL_OUT_DECELERATION)).abs()
+                    < 64
+        );
         for _ in 0..PULL_OUT_TICKS + RECOVER_TICKS {
             m.tick(senses([0, 0], hero, true));
         }
-        assert!(matches!(m.phase(), Phase::Chase | Phase::AttackPause), "back to In Sight: {:?}", m.phase());
+        assert!(
+            matches!(m.phase(), Phase::Chase | Phase::AttackPause),
+            "back to In Sight: {:?}",
+            m.phase()
+        );
     }
     #[test]
     fn a_lunge_that_hits_nothing_times_out_without_knockback() {
@@ -516,7 +591,11 @@ mod tests {
             m.tick(senses([0, 0], hero, false));
         }
         assert_eq!(m.phase(), Phase::Recover);
-        assert_eq!(m.recoil_speed(), 0, "only Pull Out restores recoilSpeedBase");
+        assert_eq!(
+            m.recoil_speed(),
+            0,
+            "only Pull Out restores recoilSpeedBase"
+        );
     }
     #[test]
     fn out_of_sight_for_its_attention_span_it_stops_and_idles() {
@@ -539,7 +618,19 @@ mod tests {
     }
     #[test]
     fn integer_square_root_is_exact() {
-        for v in [0i64, 1, 2, 3, 4, 15, 16, 17, 1 << 40, (1 << 40) + 12345, 4294967296 * 9] {
+        for v in [
+            0i64,
+            1,
+            2,
+            3,
+            4,
+            15,
+            16,
+            17,
+            1 << 40,
+            (1 << 40) + 12345,
+            4294967296 * 9,
+        ] {
             let r = isqrt(v);
             assert!(r * r <= v && (r + 1) * (r + 1) > v, "{v}");
         }
