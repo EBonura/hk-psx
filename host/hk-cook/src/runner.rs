@@ -75,6 +75,18 @@ pub fn ticks(seconds: f64) -> i64 {
     (seconds * 60.0 - 1e-5).ceil() as i64
 }
 
+/// combat.py `recoil_fixed`: the Q16 speed and 60 Hz tick count that move an enemy as `Recoil`
+/// does, which translates `speed * 0.02` per FixedUpdate for `ceil(duration / 0.02)` steps.
+pub fn recoil_fixed(speed: f64, duration: f64) -> (i64, i64) {
+    let steps = (duration / 0.02 - 1e-5).ceil() as i64;
+    let seconds = steps as f64 * 0.02;
+    let n = (seconds * 60.0 - 1e-5).ceil() as i64;
+    if n <= 0 {
+        return (crate::common::py_round(speed * 65536.0), 0);
+    }
+    (crate::common::py_round(speed * seconds * 60.0 / n as f64 * 65536.0), n)
+}
+
 /// `walker_parameters`: reject C# controller variants the runner model does not
 /// represent, and return the placement parameters. Walk speed, the pause
 /// wait/time ranges and the FSM `Lunge Speed` are the placement parameters;

@@ -8,7 +8,7 @@ import math
 import struct
 from pathlib import Path
 from polygons import bounded_polygons
-from combat import HIT_EVASION_SECONDS, ticks
+from combat import HIT_EVASION_SECONDS, recoil_fixed, ticks
 from scene import ADDITIVE_ID_BASE
 
 
@@ -966,6 +966,7 @@ def generated_actor_records(region):
         # component sets noSoul or starts suppressed. 33 without Dream Wielder.
         dream = actor.get('EnemyDreamnailReaction')
         dream_soul = 33 if dream and not dream['noSoul'] and not dream['startSuppressed'] else 0
+        recoil_speed, recoil_ticks = recoil_fixed(recoil.get('recoilSpeedBase', 0), recoil.get('recoilDuration', 0))
         fields = {
             'bounds': '[' + ','.join(map(str, bounds)) + ']',
             'health': ('hk_sim::EnemyParams {' + f'health:{actor["health"]},contact_damage:{damage},evasion_ticks:{ticks(HIT_EVASION_SECONDS)},' +
@@ -975,8 +976,8 @@ def generated_actor_records(region):
                      f'turn_cooldown_ticks:{turn_cooldown_ticks}' + '}'),
             'walk_clip': actor['walk_clip'], 'turn_clip': actor['turn_clip'],
             'corpse': generated_corpse(actor.get('corpse')),
-            'recoil_speed': round(recoil.get('recoilSpeedBase', 0) * 65536),
-            'recoil_ticks': ticks(recoil.get('recoilDuration', 0)),
+            'recoil_speed': recoil_speed,
+            'recoil_ticks': recoil_ticks,
             'dream_soul': dream_soul,
         }
         if rotation_q16 % (90 * 65536):
@@ -991,6 +992,11 @@ def generated_actor_records(region):
             'start_alert': start_alert,
             'start_right': start_right,
             'rotation_quarter': (rotation_q16 // (90 * 65536)) % 4,
+            # FSMActivator: the FSMs start disabled and an ActiveRegion trigger (a 50 x 35 box on the
+            # main camera) enables them when the enemy's collider meets it. The parked cage and
+            # reserve members are not placed enemies, so they never wait.
+            'fsm_activator': ('FSMActivator' in actor['components'].values()
+                              and 'GruzzerReserve' not in controller and 'HatcherBaby' not in controller),
         }
         if placement['initial_direction'] not in (-1, 1):
             raise ValueError('actor initial direction is not a facing: ' + actor['source'])

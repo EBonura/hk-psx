@@ -12,6 +12,26 @@ def ticks(seconds):
     # Ceiling in the 60 Hz guest, tolerating serialized float32 roundoff at integers.
     return math.ceil(seconds*60-1e-5)
 
+FIXED_STEP = 0.02
+
+
+def recoil_fixed(speed, duration):
+    """`(speed in Q16 units/s, 60 Hz ticks)` that move an enemy as Recoil.UpdatePhysics does.
+
+    Recoil runs in FixedUpdate: each 0.02 s step it translates by speed * 0.02 and then takes 0.02
+    off `recoilDuration`, cancelling when nothing is left, so it moves for ceil(duration / 0.02)
+    steps and the whole shove is speed * steps * 0.02 (2.4 units for the Crawler's 15 over 0.15 s,
+    not 2.25). The guest has no 50 Hz step, so it moves for the 60 Hz ticks nearest that time and at
+    the speed that covers the same distance.
+    """
+    steps = math.ceil(duration / FIXED_STEP - 1e-5)
+    seconds = steps * FIXED_STEP
+    n = math.ceil(seconds * 60 - 1e-5)
+    if n <= 0:
+        return round(speed * 65536), 0
+    return round(speed * seconds * 60 / n * 65536), n
+
+
 def grass_sources(sc,bounds=None,errors=None):
     """Supported GrassCut instances in `bounds`.
 
