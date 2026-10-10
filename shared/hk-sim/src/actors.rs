@@ -98,8 +98,11 @@ pub enum ActorController {
     /// Hatcher, driven by `crate::hatcher::Hatcher`; `walk_clip` is Fly and
     /// `turn_clip` holds it too, because neither of its two facing actions
     /// plays a turn. It releases the scene's reserved `HatcherBaby` actors.
+    /// `max_hatched` is the arena `Hatcher NP`'s `Hatched Max`, its own cap on
+    /// what it releases; zero is the placed Hatcher, gated by the cage alone.
     Hatcher {
         fire_clip: u16,
+        max_hatched: u8,
     },
     /// One member of a Hatcher's cage, driven by `crate::hatcher::Baby`. It is
     /// seated with the rest of the scene's actors and parked until a Hatcher
