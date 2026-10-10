@@ -2587,8 +2587,8 @@ continue from an HKS5 card, a save with a dozen items, and a pull during that sa
 
 `tools/behaviour-parity` compiles the guest's `game/src/enemies.rs` natively over the cooked rooms, scene
 banks and actor catalogue and compares it with per-frame traces of the original that `tools/hkref scenes`
-records, in three ways. **Idle**: every enemy of 60 scenes left alone for 15 seconds, judged on the
-envelope and speed of its motion. **Strike**: each distinct enemy struck through the game's own
+records, in three ways. **Idle**: every enemy of 60 scenes left alone for 15 seconds (60 seconds for the
+random flyers in 16 scenes), judged on the envelope and speed of its motion. **Strike**: each distinct enemy struck through the game's own
 `HealthManager.Hit` with the no-charm nail every half second, judged on hit points, hits to kill and recoil.
 **Approach**: the Knight walks up to each enemy from 14 units, judged on whether it reacts and how far away.
 A catalogue check (hit points, contact damage, recoil, flags, body box against the source records), a scan of
@@ -2598,7 +2598,9 @@ query as visiting all of them does (7.6 million queries over 943 rooms) run with
 
 Where it agrees: the idle family means are within 4 percent for Crawler (3.78 u/s against 3.79), Climber,
 Runner, Zombie Shield, Mosquito, Acid Flyer and Moss Walker; all 64 strike series agree on hit points and on how
-many hits kill; recoil displacement after a strike agrees (within a quarter, or half a unit) on 62 of 64; no placement
+many hits kill; the random flyers' envelopes need the 60 second window to settle and then agree on all 40 Vengeflies, Aspids and
+Mosquitos (speed means 0.49 against 0.48, 0.48 against 0.46, 0.56 against 0.53);
+recoil displacement after a strike agrees (within a quarter, or half a unit) on 62 of 64; no placement
 panics, falls out of its world or jumps across it under the scan and the harassment run.
 
 Two causes found and fixed:
