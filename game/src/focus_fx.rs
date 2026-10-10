@@ -146,26 +146,36 @@ const FLASH_GREY: u32 = 58;
 pub fn flash_level() -> u8 {
     unsafe { FLASH.map_or(0, |a| (FLASH_GREY * (FLASH_TICKS - a) / FLASH_TICKS) as u8) }
 }
+/// The wash as one packet: the draw mode (additive) and a flat semi-transparent rectangle over the
+/// whole screen. A rectangle fills cheaper than the two Gouraud triangles of a quad.
+#[cfg(not(test))]
+#[repr(C, align(4))]
+struct Wash {
+    tag: u32,
+    draw_mode: u32,
+    color_cmd: u32,
+    xy: u32,
+    wh: u32,
+}
 /// Over the world, under the HUD: insertion prepends, so call this right after the HUD's.
 #[cfg(not(test))]
 #[inline(never)]
 pub fn append(ot: &mut psx_gpu::ot::OrderingTable<1>) {
-    use psx_gpu::{material::BlendMode, prim::QuadGouraudBlended};
-    static mut WASH: QuadGouraudBlended = QuadGouraudBlended::new(
-        [(0, 0), (320, 0), (0, 240), (320, 240)],
-        [(0, 0, 0); 4],
-        BlendMode::Add,
-    );
+    use psx_gpu::material::{BlendMode, TextureMaterial};
+    use psx_hw::gpu::{pack_color, pack_vertex, pack_xy};
+    static mut WASH: Wash = Wash { tag: 0, draw_mode: 0, color_cmd: 0, xy: 0, wh: 0 };
     let g = flash_level();
     if g == 0 {
         return;
     }
     unsafe {
-        WASH = QuadGouraudBlended::new(
-            [(0, 0), (320, 0), (0, 240), (320, 240)],
-            [(g, g, g); 4],
-            BlendMode::Add,
-        );
-        ot.add(0, &mut *(&raw mut WASH), QuadGouraudBlended::WORDS);
+        WASH = Wash {
+            tag: 0,
+            draw_mode: TextureMaterial::blended(0, 0, (0, 0, 0), BlendMode::Add).draw_mode_word(),
+            color_cmd: 0x6200_0000 | pack_color(g, g, g),
+            xy: pack_vertex(0, 0),
+            wh: pack_xy(320, 240),
+        };
+        ot.add(0, &mut *(&raw mut WASH), 4);
     }
 }
