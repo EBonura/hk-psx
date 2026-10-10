@@ -17,8 +17,12 @@
 
 use crate::common::{component_records, err, get, path_id, py_round, Result};
 use crate::cook_audio::{jobj, js, sha, u};
+use crate::fsm_pins::{
+    check_action, check_enums, check_transitions, fingerprint, state as pins_state, Pin,
+};
 use crate::music::value_json;
 use crate::pyjson::{dumps_sorted_compact, Json};
+use crate::recog::child_map;
 use hk_unity::playmaker::action_fields;
 use hk_unity::scene::Scene;
 use hk_unity::{Obj, Source, Value};
@@ -29,7 +33,36 @@ use hk_unity::{Obj, Source, Value};
 const FSM_SHA256: &str = "73f11594e0115a43a66c8d1695a65916b81bfe6057c180636eed3330aaad92c2";
 /// Zombie Leap (Leaper): same Walker, a leap attack instead of the swipe.
 const LEAP_FSM_SHA256: &str = "15ecb1c0984cd4955e5412dfae354441eb9a9d19c6b2bff9d7b6fc564dc7fe47";
+/// The Greenpath Mossman_Runner: the same Walker with the older, simpler `Zombie Swipe` (no Coward
+/// state, no TOOK DAMAGE transition out of Ready, a Pt Roll emitter in place of the Charge Dust particle).
+const MOSSMAN_FSM_SHA256: &str = "7353668aa0259b3ddcfa9046aa4533db332b1573bf02324d83bb5c35e1316b04";
+/// Mossman_Shaker: the same Walker with `Fungus Zombie Attack`, a gas burst instead of a lunge.
+const GAS_FSM_SHA256: &str = "cc88d8649e57979e517d3e38d7107434319755ed316f9c54ba7eec5d19e28aa9";
+/// A Mossman_Runner on a collapsing platform also carries `Remove if plat fallen`, whose only
+/// collision test sends no event (`sendEvent` is empty), so it never fires.
+const PLATFORM_FSM_SHA256: &str =
+    "f4efe9b39a056c427d88e41dd747a125fcc6de5d80ad5c7b01ce4c377da99b20";
 type Clips = [(&'static str, i64)];
+const GAS_CLIPS: &Clips = &[
+    ("Idle", 0),
+    ("Walk", 0),
+    ("Turn", 2),
+    ("Attack", 1),
+    ("Attack End", 0),
+    ("Death Air", 2),
+    ("Death Land", 1),
+];
+const MOSSMAN_CLIPS: &Clips = &[
+    ("Idle", 0),
+    ("Walk", 0),
+    ("Turn", 2),
+    ("Attack Anticipate", 2),
+    ("Attack Lunge", 2),
+    ("Attack Cooldown", 2),
+    ("Fall", 1),
+    ("Death Air", 2),
+    ("Death Land", 2),
+];
 const LEAP_CLIPS: &Clips = &[
     ("Idle", 0),
     ("Walk", 0),
@@ -188,13 +221,21 @@ fn walker_parameters(walker: &Value, lunge_speed: Option<&Value>) -> Result<Vec<
 /// `fsm_fingerprint`: structure and scalar parameters of the Zombie Swipe FSM,
 /// without the per-scene object references and the placement's Lunge Speed.
 pub(crate) fn fsm_fingerprint(fsm: &Value) -> Result<String> {
+    fingerprint_with(fsm, |v| {
+        format!(
+            "VAR:{}",
+            v.get("name").and_then(Value::str).unwrap_or_default()
+        )
+    })
+}
+
+/// The fingerprint with `variable` naming a parameter bound to an FSM variable: `fsm_fingerprint`
+/// reads its `name`, `fsm_pins.fingerprint` also takes a `variableName` and stringifies the rest.
+pub(crate) fn fingerprint_with(fsm: &Value, variable: impl Fn(&Value) -> String) -> Result<String> {
     let scalar = |v: &Value| -> String {
         if v.is_map() {
             if v.get("useVariable").is_some_and(Value::truthy) {
-                format!(
-                    "VAR:{}",
-                    v.get("name").and_then(Value::str).unwrap_or_default()
-                )
+                variable(v)
             } else {
                 match v.get("value").or_else(|| v.get("name")) {
                     Some(x) => py_value_repr(x),
@@ -465,7 +506,8 @@ fn one<'a>(records: &[(i64, &str, &'a Value)], kind: &str) -> Result<(i64, &'a V
 
 /// `driving_fsm`: the Walker's own FSM, chosen by name. A placement may carry a
 /// second FSM that drives no movement (`enemy_corpse`), so the number of
-/// PlayMakerFSM components is not the contract; exactly one movement FSM is.
+/// PlayMakerFSM components is not the contract; exactly one movement FSM is. A Mossman_Runner on a
+/// collapsing platform also carries the one extra FSM that never fires.
 fn driving_fsm<'a>(records: &[(i64, &str, &'a Value)]) -> Result<&'a Value> {
     let matches: Vec<&Value> = records
         .iter()
@@ -475,14 +517,165 @@ fn driving_fsm<'a>(records: &[(i64, &str, &'a Value)]) -> Result<&'a Value> {
                     .get("fsm")
                     .and_then(|f| f.get("name"))
                     .and_then(Value::str)
-                    .is_some_and(|n| n == "Zombie Swipe" || n == "Zombie Leap")
+                    .is_some_and(|n| {
+                        n == "Zombie Swipe" || n == "Zombie Leap" || n == "Fungus Zombie Attack"
+                    })
         })
         .map(|r| r.2)
         .collect();
     if matches.len() != 1 {
-        return err("Runner requires exactly one Zombie Swipe or Zombie Leap FSM");
+        return err(
+            "Runner requires exactly one Zombie Swipe, Zombie Leap or Fungus Zombie Attack FSM",
+        );
+    }
+    for r in records.iter().filter(|r| r.1 == "PlayMakerFSM") {
+        if std::ptr::eq(r.2, matches[0]) {
+            continue;
+        }
+        let fsm = get(r.2, "fsm")?;
+        let name = get(fsm, "name")?.str().unwrap_or_default();
+        if name != "Remove if plat fallen" || fingerprint(fsm)? != PLATFORM_FSM_SHA256 {
+            return err(format!("unverified extra FSM on a Runner: {name}"));
+        }
     }
     Ok(matches[0])
+}
+
+// --- Mossman_Shaker's gas burst ------------------------------------------------
+//
+// `Attack` activates the child `Gas Hit Box` (a trigger PolygonCollider2D on layer 22 carrying a
+// `DamageHero`), sets its scale to 0.2 and tweens it to 1 over 0.4 s with easeOutCirc (enum 19),
+// and `CD` switches it off again. The polygon is a prefab constant of
+// `shared/hk-sim/src/runner.rs` (`gas`): every Shaker carries the same child, and this proves it
+// before admitting one. Local points are relative to the box's own origin, which stands 1.42 below
+// the Shaker, plus the collider's offset of 1.44 in y; Q16.
+pub(crate) const GAS_POLYGON_Q16: [[i64; 2]; 7] = [
+    [-182559, 250540],
+    [1475, 307541],
+    [183672, 256693],
+    [284184, 104966],
+    [301355, -1375],
+    [-296176, -80],
+    [-279846, 114624],
+];
+const GAS_ORIGIN_Q16: [i64; 2] = [0, -93061];
+#[rustfmt::skip]
+const GAS_ACTIONS: &[crate::fsm_pins::PinRow] = &[
+    ("Attack Delay", "WaitRandom", &[("timeMin", Pin::F(0.0)), ("timeMax", Pin::F(0.75))]),
+    ("Attack Antic", "Wait", &[("time", Pin::F(0.75))]),
+    ("Attack Antic", "Tk2dPlayAnimation", &[("clipName", Pin::S("Attack"))]),
+    ("Attack", "SetScale", &[("x", Pin::F(0.2)), ("y", Pin::F(0.2)), ("z", Pin::F(0.2))]),
+    ("Attack", "iTweenScaleTo", &[("time", Pin::F(0.4)), ("delay", Pin::F(0.005))]),
+    ("Attack", "Wait", &[("time", Pin::F(0.8))]),
+    ("CD", "Wait", &[("time", Pin::F(0.5))]),
+    ("Idle Pause", "Tk2dPlayAnimation", &[("clipName", Pin::S("Idle"))]),
+    ("Idle Pause", "Wait", &[("time", Pin::F(0.5))]),
+];
+#[rustfmt::skip]
+const GAS_TRANSITIONS: &[(&str, &[(&str, &str)])] = &[
+    ("Initialise", &[("FINISHED", "Ready")]),
+    ("Ready", &[("ATTACK ALERT", "Attack Delay")]),
+    ("Attack Delay", &[("FINISHED", "Attack Antic")]),
+    ("Attack Antic", &[("FINISHED", "Attack")]),
+    ("Attack", &[("FINISHED", "CD")]),
+    ("CD", &[("FINISHED", "Idle Pause")]),
+    ("Idle Pause", &[("FINISHED", "Reset")]),
+    ("Reset", &[("FINISHED", "Ready")]),
+];
+
+/// `gas_box`: prove the Shaker's burst against `runner.rs::gas` and return what the guest needs of it.
+fn gas_box(sc: &Scene, gid: i64, fsm: &Value) -> Result<Vec<(String, Json)>> {
+    check_transitions(
+        "Mossman_Shaker",
+        fsm,
+        GAS_TRANSITIONS,
+        &[("ZERO HP", "Death")],
+    )?;
+    for &(name, action, expected) in GAS_ACTIONS {
+        check_action("Mossman_Shaker", pins_state(fsm, name)?, action, expected)?;
+    }
+    check_enums(
+        "Mossman_Shaker",
+        pins_state(fsm, "Attack")?,
+        "iTweenScaleTo",
+        0,
+        &[("easeType", 19)],
+    )?;
+    let tid = *sc.go_transform.get(&gid).ok_or("actor has no transform")?;
+    let boxes = child_map(sc, tid)?;
+    let Some(&(_, (kid, ktid))) = boxes.iter().find(|c| c.0 == "Gas Hit Box") else {
+        return err("Mossman_Shaker has no Gas Hit Box");
+    };
+    let records = component_records(sc, kid);
+    let polygons: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "PolygonCollider2D")
+        .map(|r| r.2)
+        .collect();
+    let damage: Vec<&Value> = records
+        .iter()
+        .filter(|r| r.1 == "DamageHero")
+        .map(|r| r.2)
+        .collect();
+    let go = sc.go(kid).ok_or("no such GameObject")?;
+    if get(go, "m_Layer")?.int() != Some(22)
+        || get(go, "m_IsActive")?.truthy()
+        || polygons.len() != 1
+        || damage.len() != 1
+        || !get(polygons[0], "m_IsTrigger")?.truthy()
+        || !get(polygons[0], "m_Enabled")?.truthy()
+        || !get(damage[0], "damageDealt")?.py_eq(&Value::Int(1))
+        || !get(damage[0], "hazardType")?.py_eq(&Value::Int(1))
+        || !get(damage[0], "m_Enabled")?.truthy()
+    {
+        return err("unsupported Mossman_Shaker Gas Hit Box");
+    }
+    let paths = get(get(polygons[0], "m_Points")?, "m_Paths")?
+        .list()
+        .unwrap_or(&[]);
+    let offset = get(polygons[0], "m_Offset")?;
+    let number = |v: &Value, key: &str| -> Result<f64> {
+        get(v, key)?
+            .float()
+            .ok_or_else(|| "not a number".to_string())
+    };
+    let points: Option<Vec<[i64; 2]>> = if paths.len() == 1 && number(offset, "x")? == 0.0 {
+        let oy = number(offset, "y")?;
+        Some(
+            paths[0]
+                .list()
+                .unwrap_or(&[])
+                .iter()
+                .map(|p| {
+                    Ok([
+                        py_round(number(p, "x")? * 65536.0),
+                        py_round((number(p, "y")? + oy) * 65536.0),
+                    ])
+                })
+                .collect::<Result<_>>()?,
+        )
+    } else {
+        None
+    };
+    let position = get(
+        sc.transform(ktid).ok_or("transform missing")?,
+        "m_LocalPosition",
+    )?;
+    let origin = [
+        py_round(number(position, "x")? * 65536.0),
+        py_round(number(position, "y")? * 65536.0),
+    ];
+    if points.as_deref() != Some(&GAS_POLYGON_Q16[..]) || origin != GAS_ORIGIN_Q16 {
+        return err("Mossman_Shaker Gas Hit Box is not the admitted polygon");
+    }
+    let pair = |p: &[i64; 2]| Json::List(vec![Json::Int(p[0]), Json::Int(p[1])]);
+    Ok(vec![
+        (
+            "polygon_q16".into(),
+            Json::List(GAS_POLYGON_Q16.iter().map(pair).collect()),
+        ),
+        ("origin_q16".into(), pair(&origin)),
+    ])
 }
 
 /// The audio references of a recognized Runner (`recognize()['audio_sources']`).
@@ -545,10 +738,11 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     };
     let variable = |name: &str| variables.iter().find(|(k, _)| k == name).map(|(_, v)| *v);
     let leap = get(fsm, "name")?.str().as_deref() == Some("Zombie Leap");
+    let gas = get(fsm, "name")?.str().as_deref() == Some("Fungus Zombie Attack");
     let one_float = Value::F64(1.0);
     let mut parameters = walker_parameters(
         walker,
-        if leap {
+        if leap || gas {
             Some(&one_float)
         } else {
             variable("Lunge Speed")
@@ -557,11 +751,24 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     // The serialized FSM embeds owner references, so the fingerprint covers its
     // structure and scalar parameters.
     let fingerprint = fsm_fingerprint(fsm)?;
-    if !get(fsm_component, "m_Enabled")?.truthy()
-        || fingerprint != if leap { LEAP_FSM_SHA256 } else { FSM_SHA256 }
-    {
+    let accepted: &[(&str, &str)] = if leap {
+        &[(LEAP_FSM_SHA256, "Leaper")]
+    } else if gas {
+        &[(GAS_FSM_SHA256, "Shaker")]
+    } else {
+        &[(FSM_SHA256, "Runner"), (MOSSMAN_FSM_SHA256, "Mossman")]
+    };
+    // The Greenpath FSMs are serialized disabled (their FSMActivator enables them), as the Fat Fly's.
+    let inert = !get(fsm_component, "m_Enabled")?.truthy()
+        && !records.iter().any(|r| r.1 == "FSMActivator");
+    let variant = accepted
+        .iter()
+        .find(|(digest, _)| *digest == fingerprint)
+        .map(|(_, name)| *name)
+        .filter(|_| !inert);
+    let Some(variant) = variant else {
         return err("unverified Runner FSM variant");
-    }
+    };
     if leap {
         set_field(&mut parameters, "lunge_speed", Json::Float(0.0));
         set_field(
@@ -583,6 +790,27 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
         if !eq_num(idle, 0.5) {
             return err("unsupported Leaper idle time");
         }
+    } else if gas {
+        set_field(&mut parameters, "lunge_speed", Json::Float(0.0));
+        set_field(
+            &mut parameters,
+            "lunge_velocity_q16",
+            Json::List(vec![Json::Int(0), Json::Int(0)]),
+        );
+        let mut attack = vec![("kind".to_string(), js("Gas"))];
+        attack.extend(gas_box(sc, gid, fsm)?);
+        set_field(&mut parameters, "attack", Json::Obj(attack));
+    } else if variant == "Mossman" {
+        // What the older FSM and its Walker lack: a TOOK DAMAGE turn out of Ready, and (alertRange null)
+        // the Walker's turn to face a Knight who walks up behind it. Both go together in the source.
+        if path_id(get(walker, "alertRange")?).unwrap_or(0) != 0 {
+            return err("a Mossman_Runner with an alert range is not the admitted variant");
+        }
+        set_field(
+            &mut parameters,
+            "attack",
+            jobj(vec![("kind", js("SwipeCalm"))]),
+        );
     } else {
         set_field(&mut parameters, "attack", jobj(vec![("kind", js("Swipe"))]));
     }
@@ -637,7 +865,19 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     };
     let body_bounds = axis_aligned_bounds(&matrix, xy(body, "m_Offset")?, xy(body, "m_Size")?)?;
     let (los_id, los) = one(&records, "LineOfSightDetector")?;
-    let range_id = local_ref(get(walker, "alertRange")?)?;
+    // The Mossman_Runner's Walker names no alert range; its detector's only one is the `Attack Range`
+    // child its FSM checks by name, which is the box the attack reads either way.
+    let range_id = if path_id(get(walker, "alertRange")?).unwrap_or(0) != 0 {
+        local_ref(get(walker, "alertRange")?)?
+    } else {
+        local_ref(
+            get(los, "alertRanges")?
+                .list()
+                .unwrap_or(&[])
+                .first()
+                .ok_or("no alert range")?,
+        )?
+    };
     let ranges: Vec<i64> = get(los, "alertRanges")?
         .list()
         .unwrap_or(&[])
@@ -686,7 +926,18 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let clips = get(&library_tree, "clips")?
         .list()
         .ok_or("clips is not a list")?;
-    let animation = clip_contract(clips, if leap { LEAP_CLIPS } else { CLIPS })?;
+    let animation = clip_contract(
+        clips,
+        if leap {
+            LEAP_CLIPS
+        } else if gas {
+            GAS_CLIPS
+        } else if variant == "Mossman" {
+            MOSSMAN_CLIPS
+        } else {
+            CLIPS
+        },
+    )?;
     if leap {
         let attack = clips
             .iter()
@@ -726,25 +977,25 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let (_, audio_source) = one(&records, "AudioSource")?;
     // Unity 6 stores the assigned loop in m_Resource; m_audioClip is null here.
     let looped = u(sc.deref(get(audio_source, "m_Resource")?))?;
-    let anticipate = get(
-        get(fsm, "states")?
-            .list()
-            .unwrap_or(&[])
-            .iter()
-            .find(|s| s.get("name").and_then(Value::str).as_deref() == Some("Anticipate"))
-            .ok_or("no Anticipate state")?,
-        "actionData",
-    )?;
-    let chase: Vec<Obj> = get(anticipate, "unityObjectParams")?
+    // The Greenpath mossmen sound their own clips (three chase samples, or none for the Shaker);
+    // the guest plays the resident Runner bank for them, as it does for the Leaper.
+    let anticipate = get(fsm, "states")?
         .list()
         .unwrap_or(&[])
         .iter()
-        .map(|r| u(sc.deref(r)))
-        .collect::<Result<_>>()?;
-    if chase.len() != 2
-        || [&looped, &chase[0], &chase[1]]
+        .find(|s| s.get("name").and_then(Value::str).as_deref() == Some("Anticipate"));
+    let chase: Vec<Obj> = match anticipate {
+        Some(st) => get(get(st, "actionData")?, "unityObjectParams")?
+            .list()
+            .unwrap_or(&[])
             .iter()
-            .any(|o| o.class_id() != 83)
+            .map(|r| u(sc.deref(r)))
+            .collect::<Result<_>>()?,
+        None => Vec::new(),
+    };
+    if looped.class_id() != 83
+        || chase.iter().any(|o| o.class_id() != 83)
+        || ((variant == "Runner" || variant == "Leaper") && chase.len() != 2)
     {
         return err("Runner audio references differ from the verified FSM");
     }
@@ -777,6 +1028,7 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let control = jobj(vec![
         ("kind", js("ZombieSwipeWalker")),
         ("guest_enabled", Json::Bool(false)),
+        ("variant", js(variant)),
         ("parameters", Json::Obj(parameters)),
         ("walker_source", Json::Str(format!("{}:{walker_id}", hk_unity::base_name(&sc.base.name)))),
         ("fsm_sha256", Json::Str(fingerprint)),

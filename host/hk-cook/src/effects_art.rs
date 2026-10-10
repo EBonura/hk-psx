@@ -10,6 +10,7 @@ use crate::atlas::Quantizer;
 use crate::common::{components, err, get, py_round, Result};
 use crate::cook::{focal, tk_sprite, CAM_Z};
 use crate::cook_audio::u;
+use crate::fsm_pins::{check_action, state as pins_state, Pin};
 use crate::music::value_json;
 use crate::prefab::num;
 use crate::pyjson::Json;
@@ -212,6 +213,14 @@ pub fn corpse_source(
         "Baldur" => return roller_corpse(source, sc, gid).map(Some),
         "Aspid" => return aspid_corpse(source, sc, gid).map(Some),
         "AcidFlyer" => return acid_flyer_corpse(source, sc, gid).map(Some),
+        "FatFly" => return fat_fly_corpse(source, sc, gid).map(Some),
+        "PlantTrap" => {
+            let lib = match ctl("library_source") {
+                Some(Json::Str(s)) => s.clone(),
+                _ => return err("Plant Trap without a library source"),
+            };
+            return plant_trap_corpse(source, sc, gid, &lib).map(Some);
+        }
         "EggSac" => {
             let lib = match ctl("library_source") {
                 Some(Json::Str(s)) => s.clone(),
@@ -238,6 +247,7 @@ pub fn corpse_source(
         "Climber",
         "ZombieShield",
         "MossWalker",
+        "MossCharger",
     ]
     .contains(&kind.as_str())
     {
@@ -247,7 +257,12 @@ pub fn corpse_source(
         Some(Json::Str(s)) => Some(s.clone()),
         _ => None,
     };
-    zombie_corpse(source, sc, gid, &kind, library_source).map(Some)
+    // The Greenpath mossmen share the Runner's Walker and corpse shape under their own prefabs and clips.
+    let variant = match ctl("variant") {
+        Some(Json::Str(v)) => Some(v.clone()),
+        _ => None,
+    };
+    zombie_corpse(source, sc, gid, &kind, library_source, variant.as_deref()).map(Some)
 }
 
 /// The conventional Zombie/Crawler/Climber/Moss Walker corpse.
@@ -257,6 +272,7 @@ fn zombie_corpse(
     gid: i64,
     kind: &str,
     library_source: Option<String>,
+    variant: Option<&str>,
 ) -> Result<CorpseSource> {
     let runner = kind == "ZombieSwipeWalker" || kind == "ZombieShield";
     let climber = kind == "Climber";
@@ -270,12 +286,21 @@ fn zombie_corpse(
     } else {
         0.3
     };
-    let expected_timing: [(f64, i64, usize); 2] = if runner {
+    let charger = kind == "MossCharger";
+    let shaker = kind == "ZombieSwipeWalker" && variant == Some("Shaker");
+    let mossman = kind == "ZombieSwipeWalker" && variant == Some("Mossman");
+    let expected_timing: [(f64, i64, usize); 2] = if mossman {
+        [(12.0, 2, 3), (12.0, 2, 3)]
+    } else if shaker {
+        [(12.0, 2, 3), (12.0, 1, 4)]
+    } else if runner {
         [(30.0, 6, 1), (12.0, 2, 8)]
     } else if climber {
         [(30.0, 0, 8), (15.0, 2, 3)]
     } else if moss {
         [(12.0, 0, 4), (12.0, 2, 2)]
+    } else if charger {
+        [(12.0, 2, 2), (12.0, 2, 2)]
     } else {
         [(12.0, 2, 3), (12.0, 2, 2)]
     };
@@ -303,14 +328,22 @@ fn zombie_corpse(
     if runner
         && !(name.starts_with("Corpse Zombie Basic ")
             || name == "Corpse Zombie Leaper"
-            || name == "Corpse Zombie Shield")
+            || name == "Corpse Zombie Shield"
+            || (mossman && name == "Corpse_Mossman_Runner")
+            || (shaker && name == "Corpse_Mossman_Shaker"))
     {
         return err(format!(
             "unvalidated corpse prefab for controller: {kind} spawns {name:?}"
         ));
     }
+    // A killed Shaker's corpse is `CorpseFungusExplode`: it lands like any other and then bursts into gas.
+    let corpse_part = if shaker {
+        "CorpseFungusExplode"
+    } else {
+        "Corpse"
+    };
     if [
-        "Corpse",
+        corpse_part,
         "tk2dSprite",
         "tk2dSpriteAnimator",
         "Rigidbody2D",
@@ -324,7 +357,7 @@ fn zombie_corpse(
         return err("incomplete corpse prefab");
     }
     let (corpse, body, bounce) = (
-        prefab.part("Corpse")?,
+        prefab.part(corpse_part)?,
         prefab.part("Rigidbody2D")?,
         prefab.part("ObjectBounce")?,
     );
@@ -344,6 +377,13 @@ fn zombie_corpse(
     ];
     if !(climber || moss) {
         special.push("resetRotation");
+    }
+    if shaker {
+        special.retain(|k| *k != "fungusExplode");
+        if !flag(corpse, "fungusExplode")? {
+            return err("Shaker corpse does not explode");
+        }
+        corpse_gas_box(source, &prefab)?;
     }
     for k in &special {
         if flag(corpse, k)? {
@@ -389,10 +429,8 @@ fn zombie_corpse(
     if got != expected_timing {
         return err("unvalidated corpse clip timing");
     }
-    if selected
-        .iter()
-        .any(|c| loop_start(c) != 0 || has_trigger(c))
-    {
+    let starts: Vec<i64> = selected.iter().map(loop_start).collect();
+    if starts != if shaker { [0, 1] } else { [0, 0] } || selected.iter().any(has_trigger) {
         return err("unsupported corpse animation events/loop start");
     }
     let (matrix, sx, sy) = actor_scale(sc, gid)?;
@@ -408,6 +446,8 @@ fn zombie_corpse(
                 "ZombieHornhead",
                 "ZombieLeaper",
                 "ZombieShield",
+                "MossmanRunner",
+                "MossmanShaker",
             ]
             .contains(&data_name.as_str())
         {
@@ -482,13 +522,14 @@ fn zombie_corpse(
         ("fling_speed".into(), ji(q16(flt(death, "corpseFlingSpeed")?))),
         ("bounce_factor".into(), ji(q16(expected_bounce))),
         ("land_delay_ticks".into(), ji(60)),
+        ("gas".into(), Json::Bool(shaker)),
         ("limitations".into(), Json::List(vec![jstr("Corpse Steam/Flame and infected wave/spatter remain separate particle/effect work"), jstr("Fixed-point terrain solver is not complete Box2D; bounce RNG is deterministic per source, not Unity global RNG")])),
     ];
     Ok(CorpseSource {
         fields,
         library: library_o,
         clips: selected,
-        tiled: false,
+        tiled: charger || mossman || shaker,
     })
 }
 
@@ -960,6 +1001,342 @@ fn acid_flyer_corpse(source: &Source, sc: &Scene, gid: i64) -> Result<CorpseSour
         library: library_o,
         clips: pair(&air, &air),
         tiled: false,
+    })
+}
+
+/// `_corpse_gas_box`: a Shaker corpse's `Gas Hit Box` child, proved against the polygon `runner.rs`
+/// carries. Its `damages_hero` FSM is the shape HeroController looks for on whatever it touches:
+/// `damageDealt` and `hazardType` ints and no transitions of its own.
+fn corpse_gas_box(source: &Source, prefab: &Prefab) -> Result<()> {
+    type Child = (Value, Value, Vec<(String, Value)>);
+    let mut found: Vec<Child> = Vec::new();
+    for r in get(prefab.part("Transform")?, "m_Children")?
+        .list()
+        .unwrap_or(&[])
+    {
+        let transform = u(source.read(&u(source.deref(&prefab.obj.file, r))?))?;
+        let go = u(source.read(&u(
+            source.deref(&prefab.obj.file, get(&transform, "m_GameObject")?)
+        )?))?;
+        if get(&go, "m_Name")?.str().as_deref() != Some("Gas Hit Box") {
+            continue;
+        }
+        let mut comps: Vec<(String, Value)> = Vec::new();
+        for c in get(&go, "m_Component")?.list().unwrap_or(&[]) {
+            let co = u(source.deref(&prefab.obj.file, get(c, "component")?))?;
+            let kind = u(source.typename(&co))?;
+            let tree = u(source.read(&co))?;
+            match comps.iter_mut().find(|p| p.0 == kind) {
+                Some(slot) => slot.1 = tree,
+                None => comps.push((kind, tree)),
+            }
+        }
+        found.push((go, transform, comps));
+    }
+    if found.len() != 1 {
+        return err("Shaker corpse needs exactly one Gas Hit Box");
+    }
+    let (go, transform, comps) = &found[0];
+    let comp = |k: &str| comps.iter().find(|p| p.0 == k).map(|p| &p.1);
+    let polygon = comp("PolygonCollider2D");
+    let fsm = comp("PlayMakerFSM").and_then(|f| f.get("fsm"));
+    let (Some(polygon), Some(fsm)) = (polygon, fsm) else {
+        return err("unsupported Shaker corpse Gas Hit Box");
+    };
+    if get(fsm, "name")?.str().as_deref() != Some("damages_hero")
+        || !flag(polygon, "m_IsTrigger")?
+        || flag(go, "m_IsActive")?
+    {
+        return err("unsupported Shaker corpse Gas Hit Box");
+    }
+    let mut ints: Vec<(String, &Value)> = Vec::new();
+    for v in get(get(fsm, "variables")?, "intVariables")?
+        .list()
+        .unwrap_or(&[])
+    {
+        ints.push((get(v, "name")?.str().unwrap_or_default(), get(v, "value")?));
+    }
+    let int = |k: &str| ints.iter().rev().find(|p| p.0 == k).map(|p| p.1);
+    let paths = get(get(polygon, "m_Points")?, "m_Paths")?
+        .list()
+        .unwrap_or(&[]);
+    let oy = flt(get(polygon, "m_Offset")?, "y")?;
+    let points: Option<Vec<[i64; 2]>> = if paths.len() == 1 {
+        Some(
+            paths[0]
+                .list()
+                .unwrap_or(&[])
+                .iter()
+                .map(|p| Ok([q16(flt(p, "x")?), q16(flt(p, "y")? + oy)]))
+                .collect::<Result<_>>()?,
+        )
+    } else {
+        None
+    };
+    let position = get(transform, "m_LocalPosition")?;
+    let origin = [q16(flt(position, "x")?), q16(flt(position, "y")?)];
+    if !int("damageDealt").is_some_and(|v| v.py_eq(&Value::Int(1)))
+        || !int("hazardType").is_some_and(|v| v.py_eq(&Value::Int(1)))
+        || points.as_deref() != Some(&crate::runner::GAS_POLYGON_Q16[..])
+        || origin != [0, -65536]
+    {
+        return err("Shaker corpse Gas Hit Box is not the admitted polygon");
+    }
+    Ok(())
+}
+
+/// `Corpse Plant Trap`: no body. Its `corpse plant trap` FSM plays `Death` to completion where the
+/// trap stood and then switches the renderer off, which is the hold form with one clip: held for the
+/// clip's length, then removed.
+fn plant_trap_corpse(
+    source: &Source,
+    sc: &Scene,
+    gid: i64,
+    library_source: &str,
+) -> Result<CorpseSource> {
+    let records = components(sc, gid)?;
+    let death = death_effects(&records)?;
+    // rotateCorpse copies the owner's z rotation onto a corpse that never moves.
+    if !flag(death, "m_Enabled")?
+        || [
+            "isCorpseRecyclable",
+            "corpseFacesRight",
+            "lowCorpseArc",
+            "recycle",
+        ]
+        .iter()
+        .any(|k| death.get(k).is_some_and(Value::truthy))
+        || !get(death, "corpseSpawnPoint")?.py_eq(&vec3(0.0, 0.0, 0.0))
+        || !get(death, "enemyDeathType")?.py_eq(&Value::Int(0))
+        || get(death, "playerDataName")?.str().as_deref() != Some("SnapperTrap")
+    {
+        return err("unsupported Plant Trap corpse launch");
+    }
+    let prefab = Prefab::read(source, sc, get(death, "corpsePrefab")?, true)?;
+    if prefab.name() != "Corpse Plant Trap" {
+        return err("unvalidated Plant Trap corpse identity");
+    }
+    let mut kinds: Vec<&str> = prefab.parts.iter().map(|p| p.0.as_str()).collect();
+    kinds.sort();
+    let mut want = vec![
+        "Transform",
+        "MeshFilter",
+        "MeshRenderer",
+        "tk2dSprite",
+        "tk2dSpriteAnimator",
+        "PlayMakerFSM",
+        "SpriteFlash",
+    ];
+    want.sort();
+    if kinds != want {
+        return err("unsupported Plant Trap corpse prefab");
+    }
+    let (sprite, transform) = (prefab.part("tk2dSprite")?, prefab.part("Transform")?);
+    if !untinted(sprite, transform)? {
+        return err("unsupported corpse scale/color");
+    }
+    let fsm = get(prefab.part("PlayMakerFSM")?, "fsm")?;
+    let states = get(fsm, "states")?.list().unwrap_or(&[]);
+    let names: Vec<String> = states
+        .iter()
+        .map(|st| st.get("name").and_then(Value::str).unwrap_or_default())
+        .collect();
+    let mut transitions: Vec<(String, String)> = Vec::new();
+    for st in states {
+        for t in get(st, "transitions")?.list().unwrap_or(&[]) {
+            transitions.push((
+                get(get(t, "fsmEvent")?, "name")?.str().unwrap_or_default(),
+                get(t, "toState")?.str().unwrap_or_default(),
+            ));
+        }
+    }
+    if get(fsm, "name")?.str().as_deref() != Some("corpse plant trap")
+        || get(fsm, "startState")?.str().as_deref() != Some("Retract")
+        || names != ["Retract", "Death"]
+        || transitions != [("FINISHED".to_string(), "Death".to_string())]
+    {
+        return err("unsupported Plant Trap corpse FSM");
+    }
+    check_action(
+        "Plant Trap corpse",
+        pins_state(fsm, "Retract")?,
+        "Tk2dPlayAnimationWithEvents",
+        &[
+            ("clipName", Pin::S("Death")),
+            ("animationTriggerEvent", Pin::S("")),
+            ("animationCompleteEvent", Pin::S("FINISHED")),
+        ],
+    )?;
+    let anim = prefab.part("tk2dSpriteAnimator")?;
+    let library_o = u(source.deref(&prefab.obj.file, get(anim, "library")?))?;
+    let library = u(source.read(&library_o))?;
+    if library_o.sid() != library_source {
+        return err("Plant Trap corpse animation library differs from the actor library");
+    }
+    let death_clip = named_clip(&library, "Death")?.clone();
+    let (fps, wrap, frames) = timing(&death_clip)?;
+    if (fps, wrap, frames, loop_start(&death_clip)) != (12.0, 2, 7, 0) || has_trigger(&death_clip) {
+        return err("unvalidated Plant Trap corpse clip timing");
+    }
+    let (_, sx, sy) = actor_scale(sc, gid)?;
+    let fields = vec![
+        ("source".to_string(), Json::Str(prefab.obj.sid())),
+        ("library".into(), Json::Str(library_o.sid())),
+        ("scale".into(), Json::List(vec![Json::Float(sx), Json::Float(sy)])),
+        ("bounds".into(), jl(&[0, 0, 0, 0])),
+        ("spawn_offset".into(), jl(&[0, 0])),
+        ("gravity".into(), ji(0)),
+        ("breaker".into(), Json::Bool(false)),
+        ("smash_bounces".into(), ji(0)),
+        ("fling_speed".into(), ji(0)),
+        ("bounce_factor".into(), ji(0)),
+        ("hold_ticks".into(), ji(ticks(frames as f64 / fps))),
+        ("remove_after_land".into(), ji(1)),
+        ("limitations".into(), Json::List(vec![jstr("No body: the corpse plays Death in place and is removed when it completes; the grass and orange puffs are not presented")])),
+    ];
+    Ok(CorpseSource {
+        fields,
+        library: library_o,
+        clips: pair(&death_clip, &death_clip),
+        tiled: true,
+    })
+}
+
+/// `Corpse Fat Fly`: a flung circle body (gravity 0.8, ObjectBounce 0.6, spun by SpinSelfSimple)
+/// whose `Corpse` component sets no special flag, so it lands, plays Death Land and stays. The
+/// circle stands in as its bounding box, as the Acid Flyer's does.
+fn fat_fly_corpse(source: &Source, sc: &Scene, gid: i64) -> Result<CorpseSource> {
+    let records = components(sc, gid)?;
+    let death = death_effects(&records)?;
+    if launch_flags(death)
+        || flt(death, "corpseFlingSpeed")? != 20.0
+        || !get(death, "corpseSpawnPoint")?.py_eq(&vec3(0.0, 0.0, 0.0))
+    {
+        return err("unsupported corpse launch");
+    }
+    let prefab = Prefab::read(source, sc, get(death, "corpsePrefab")?, true)?;
+    if prefab.name() != "Corpse Fat Fly" {
+        return err("unvalidated Fat Fly corpse identity");
+    }
+    if [
+        "Corpse",
+        "tk2dSprite",
+        "tk2dSpriteAnimator",
+        "Rigidbody2D",
+        "CircleCollider2D",
+        "ObjectBounce",
+        "Transform",
+    ]
+    .iter()
+    .any(|k| !prefab.has(k))
+        || prefab.has("BoxCollider2D")
+        || prefab.has("PlayMakerFSM")
+    {
+        return err("unsupported Fat Fly corpse prefab");
+    }
+    let (corpse, body, ob) = (
+        prefab.part("Corpse")?,
+        prefab.part("Rigidbody2D")?,
+        prefab.part("ObjectBounce")?,
+    );
+    if flag(corpse, "smashBounces")?
+        || [
+            "breaker",
+            "bigBreaker",
+            "chunker",
+            "deathStun",
+            "fungusExplode",
+            "goopExplode",
+            "hatcher",
+            "instantChunker",
+            "massless",
+            "resetRotation",
+            "spineBurst",
+            "zomHive",
+        ]
+        .iter()
+        .any(|k| corpse.get(k).is_some_and(Value::truthy))
+        || get(get(corpse, "landEffects")?, "m_PathID")?.truthy()
+    {
+        return err("unsupported special corpse");
+    }
+    if get(body, "m_BodyType")?.int() != Some(0)
+        || flt(body, "m_LinearDamping")? != 0.0
+        || far(body, "m_GravityScale", 0.8)?
+        || get(body, "m_Constraints")?.int() != Some(0)
+    {
+        return err("unsupported corpse body");
+    }
+    if far(ob, "bounceFactor", 0.6)?
+        || flt(ob, "speedThreshold")? != 1.0
+        || ["playSound", "playAnimationOnBounce", "sendFSMEvent"]
+            .iter()
+            .any(|k| ob.get(k).is_some_and(Value::truthy))
+    {
+        return err("unsupported corpse bounce");
+    }
+    let (sprite, transform) = (prefab.part("tk2dSprite")?, prefab.part("Transform")?);
+    if !untinted(sprite, transform)? {
+        return err("unsupported corpse scale/color");
+    }
+    let (_, sx, sy) = actor_scale(sc, gid)?;
+    let circle = prefab.part("CircleCollider2D")?;
+    let (off, r) = (get(circle, "m_Offset")?, flt(circle, "m_Radius")?);
+    if flag(circle, "m_IsTrigger")?
+        || (r - 0.6).abs() > 1e-6
+        || (flt(off, "x")? - 0.02).abs() > 1e-6
+        || (flt(off, "y")? + 0.01).abs() > 1e-6
+    {
+        return err("unsupported Fat Fly corpse collider");
+    }
+    let (ox, oy) = (flt(off, "x")?, flt(off, "y")?);
+    let bounds = [(ox - r) * sx, (oy - r) * sy, (ox + r) * sx, (oy + r) * sy];
+    let anim = prefab.part("tk2dSpriteAnimator")?;
+    let library_o = u(source.deref(&prefab.obj.file, get(anim, "library")?))?;
+    let library = u(source.read(&library_o))?;
+    let selected = vec![
+        named_clip(&library, "Death Air")?.clone(),
+        named_clip(&library, "Death Land")?.clone(),
+    ];
+    let got: Vec<(f64, i64, usize)> = selected.iter().map(timing).collect::<Result<_>>()?;
+    if got != [(12.0, 2, 2), (30.0, 0, 1)] {
+        return err("unvalidated corpse clip timing");
+    }
+    if selected
+        .iter()
+        .any(|c| loop_start(c) != 0 || has_trigger(c))
+    {
+        return err("unsupported corpse animation events/loop start");
+    }
+    let fields = vec![
+        ("source".to_string(), Json::Str(prefab.obj.sid())),
+        ("library".into(), Json::Str(library_o.sid())),
+        (
+            "scale".into(),
+            Json::List(vec![Json::Float(sx), Json::Float(sy)]),
+        ),
+        ("bounds".into(), jl(&bounds.map(q16))),
+        ("spawn_offset".into(), jl(&[0, 0])),
+        ("gravity".into(), ji(48 * 65536)),
+        ("breaker".into(), Json::Bool(false)),
+        ("smash_bounces".into(), ji(0)),
+        ("remove_after_land".into(), ji(0)),
+        ("fling_speed".into(), ji(20 * 65536)),
+        ("bounce_factor".into(), ji(q16(0.6))),
+        ("land_delay_ticks".into(), ji(0)),
+        (
+            "limitations".into(),
+            Json::List(vec![
+                jstr("Circle body as its bounding box with no spin"),
+                jstr("Corpse Flame, Steam and the spore clouds are not presented"),
+            ]),
+        ),
+    ];
+    Ok(CorpseSource {
+        fields,
+        library: library_o,
+        clips: selected,
+        tiled: true,
     })
 }
 
@@ -1451,7 +1828,7 @@ fn append_shot_art(
             Some(Json::Str(k)) => k.clone(),
             _ => String::new(),
         };
-        if !actor.supported || (kind != "Aspid" && kind != "Blocker") {
+        if !actor.supported || (kind != "Aspid" && kind != "Blocker" && kind != "FatFly") {
             continue;
         }
         let shot = ctl(&control, "shot").ok_or("shot control")?;

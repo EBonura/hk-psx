@@ -15,11 +15,14 @@ use crate::climber;
 use crate::colliders;
 use crate::common::{component_records, err, get, path_id, Result};
 use crate::false_knight;
+use crate::fat_fly;
 use crate::gruzzer;
 use crate::hatcher;
 use crate::husk_guard;
 use crate::mawlek;
+use crate::moss_charger;
 use crate::pigeon;
+use crate::plant_trap;
 use crate::pyjson::Json;
 use crate::runner;
 use crate::vengefly;
@@ -208,6 +211,37 @@ fn scan_with(
                     _ => "Gruzzer".to_string(),
                 };
                 control = Some((kind, found));
+            }
+        }
+        // The Fat Fly refuses in `walker_control` (no Crawler FSM); the name and its shot pool are the gate.
+        if control.is_none()
+            && name.starts_with("Fat Fly")
+            && records.iter().any(|r| r.1 == "PersonalObjectPool")
+        {
+            let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+            if let Ok(found) = fat_fly::recognize(sc, source, gid, position, &o.tree) {
+                control = Some(("FatFly".to_string(), found));
+            }
+        }
+        // The Plant Trap carries no collider and no Crawler FSM; the name and its `Plant Trap Control` FSM are the gate.
+        if control.is_none()
+            && name.starts_with("Plant Trap")
+            && records.iter().any(|r| r.1 == "DamageHero")
+        {
+            let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+            if let Ok(found) = plant_trap::recognize(sc, source, gid, position, &o.tree) {
+                control = Some(("PlantTrap".to_string(), found));
+            }
+        }
+        // The Moss Charger has no collider either; its `Mossy Control` FSM and its `NonBouncer` mark it.
+        // `Mega Moss Charger` is a different name and stays refused.
+        if control.is_none()
+            && name.starts_with("Moss Charger")
+            && records.iter().any(|r| r.1 == "NonBouncer")
+        {
+            let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
+            if let Ok(found) = moss_charger::recognize(sc, source, gid, position, &o.tree) {
+                control = Some(("MossCharger".to_string(), found));
             }
         }
         if control.is_none()

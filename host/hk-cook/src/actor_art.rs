@@ -167,11 +167,23 @@ fn bindings_for(control: &Json, library: &Value) -> Result<Vec<(String, String)>
     let kind = jstr(control, "kind")?;
     Ok(match kind.as_str() {
         "ZombieSwipeWalker" => {
-            let leap = cj(control, "parameters")
+            let attack_kind = cj(control, "parameters")
                 .and_then(|p| cj(p, "attack"))
-                .and_then(|a| cj(a, "kind"))
-                == Some(&Json::Str("Leap".into()));
-            let mut b = if leap {
+                .and_then(|a| cj(a, "kind"));
+            let leap = attack_kind == Some(&Json::Str("Leap".into()));
+            let gas = attack_kind == Some(&Json::Str("Gas".into()));
+            let mut b = if gas {
+                // The Shaker's one Attack clip anticipates, bursts and cools down (its loop section holds
+                // the last three frames); Attack End is never played.
+                pairs(&[
+                    ("walk", "Walk"),
+                    ("turn", "Turn"),
+                    ("idle", "Idle"),
+                    ("anticipate", "Attack"),
+                    ("lunge", "Attack"),
+                    ("cooldown", "Attack"),
+                ])
+            } else if leap {
                 // Leaper: the Attack clip anticipates and keeps playing through the jump (lunge slot), Land is the cooldown clip.
                 pairs(&[
                     ("walk", "Walk"),
