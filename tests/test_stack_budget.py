@@ -27,7 +27,7 @@ class StackBudgetTests(unittest.TestCase):
             root = Path(temp)
             sdk = root / '.psoxide/sdk/psoxide.ld'
             sdk.parent.mkdir(parents=True)
-            original = 'STACK_RESERVE = 0x8000; /* SDK */\nLENGTH = RAM_SIZE - BIOS_SIZE - STACK_RESERVE\n'
+            original = 'STACK_RESERVE = 0x8000; /* SDK */\nLENGTH = EXE_HEAD_BYTES + RAM_SIZE - BIOS_SIZE - STACK_RESERVE\n'
             sdk.write_text(original)
             first = prepare_linker(root, root)
             self.assertEqual(sdk.read_text(), original)

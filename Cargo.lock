@@ -57,13 +57,20 @@ version = "0.1.0"
 name = "psx-fmv"
 version = "0.1.0"
 dependencies = [
+ "psx-gpu",
+ "psx-hw",
  "psx-io",
+ "psx-pack",
+ "psx-rt",
+ "psx-spu",
+ "psx-vram",
 ]
 
 [[package]]
 name = "psx-gpu"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "psx-hw",
  "psx-io",
 ]
@@ -129,6 +136,9 @@ dependencies = [
 [[package]]
 name = "psx-telemetry"
 version = "0.1.0"
+dependencies = [
+ "psx-hw",
+]
 
 [[package]]
 name = "psx-tick"

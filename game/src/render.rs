@@ -2370,7 +2370,7 @@ pub fn kick_ready() {
         ot.clear();
         for i in (KICKED..USED).rev() {
             let words = PACKETS[i].word_count();
-            ot.add(0, &mut PACKETS[i], words);
+            crate::display::ot_add(ot, 0, &mut PACKETS[i], words);
         }
         ot.submit_async();
         if CHUNK_COUNT == 0 {
@@ -2415,7 +2415,8 @@ pub fn submit(
                 [(transition, transition, transition); 4],
                 gpu::material::BlendMode::Subtract,
             );
-            ot.add(
+            crate::display::ot_add(
+                ot,
                 0,
                 &mut *(&raw mut TRANSITION),
                 gpu::prim::QuadGouraudBlended::WORDS,
@@ -2437,7 +2438,7 @@ pub fn submit(
                 crate::input::checkpoint();
             }
             let words = PACKETS[i].word_count();
-            ot.add(0, &mut PACKETS[i], words);
+            crate::display::ot_add(ot, 0, &mut PACKETS[i], words);
         }
         KICKED = USED;
     }

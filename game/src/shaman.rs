@@ -544,7 +544,7 @@ mod live {
     pub fn append(ot: &mut OrderingTable<1>) {
         unsafe {
             if VEILED {
-                ot.add(0, &mut *(&raw mut VEIL), QuadGouraudBlended::WORDS);
+                crate::display::ot_add(ot, 0, &mut *(&raw mut VEIL), QuadGouraudBlended::WORDS);
             }
         }
     }

@@ -15,8 +15,8 @@
 //! per profile and written only at a bench; a display setting belongs to the
 //! television, not to a save.
 use psx_gpu::{
-    self as gpu, material::BlendMode, ot::OrderingTable, prim::QuadGouraudBlended, Resolution,
-    VideoMode,
+    self as gpu, display::DisplayConfig, material::BlendMode, ot::OrderingTable,
+    prim::QuadGouraudBlended, Resolution, VideoMode, MAX_NODE_WORDS,
 };
 
 /// Brightness steps either side of the picture as drawn.
@@ -60,6 +60,34 @@ fn grey(level: i8, gain: u32) -> (BlendMode, u8) {
     )
 }
 
+/// Link `prim` into depth slot `z` of `ot`, `words` payload words after its tag
+/// word. The table's frame is continued, not cleared.
+///
+/// # Safety
+///
+/// `prim` must stay live and unmodified, except for its tag word, until the
+/// walk of `ot` has finished. Every caller passes a packet in a static.
+#[inline(always)]
+pub unsafe fn ot_add<T, const N: usize>(
+    ot: &mut OrderingTable<N>,
+    z: usize,
+    prim: &mut T,
+    words: u8,
+) {
+    const {
+        assert!(
+            core::mem::size_of::<T>() <= 4 * (MAX_NODE_WORDS + 1),
+            "primitive larger than one GPU DMA node"
+        )
+    };
+    // SAFETY: forwarded contract; the table is only ever walked after the
+    // caller has built the whole frame.
+    unsafe {
+        ot.resume_frame()
+            .add_raw(z, core::ptr::from_mut(prim).cast::<u32>(), words)
+    };
+}
+
 /// The overlay at the front of the frame's final list, behind only the fade to
 /// black: insertion prepends, so call this right after the fade and before the
 /// HUD and the panels.
@@ -76,7 +104,7 @@ pub fn append(ot: &mut OrderingTable<1>) {
             [(g, g, g); 4],
             mode,
         );
-        ot.add(0, &mut *(&raw mut OVERLAY), QuadGouraudBlended::WORDS);
+        ot_add(ot, 0, &mut *(&raw mut OVERLAY), QuadGouraudBlended::WORDS);
     }
 }
 
@@ -112,5 +140,11 @@ pub fn set_screen(x: i8, y: i8) {
         y.clamp(-SCREEN_RANGE, SCREEN_RANGE),
     );
     unsafe { SCREEN = (x, y) };
-    gpu::set_display_offset(VideoMode::Ntsc, Resolution::R320X240, x as i16, y as i16);
+    let display =
+        DisplayConfig::new(VideoMode::Ntsc, Resolution::R320X240).with_offset((x as i16, y as i16));
+    // SAFETY: this crate predates the peripheral tokens and, like the SDK's own
+    // compatibility layer, takes the GPU token per call. Only GP1 is written, from
+    // the main loop, never while a list is walking.
+    let mut dma = unsafe { psx_io::periph::GpuDma::steal() };
+    gpu::Gpu::from_dma_mut(&mut dma).set_display(display);
 }

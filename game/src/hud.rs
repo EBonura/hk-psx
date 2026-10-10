@@ -83,13 +83,13 @@ pub fn append(
         if paused {
             for (i, x) in [292, 300].into_iter().enumerate().rev() {
                 PAUSE[i] = RectFlat::new(x, 16, 4, 12, 220, 220, 220);
-                ot.add(0, &mut PAUSE[i], RectFlat::WORDS);
+                crate::display::ot_add(ot, 0, &mut PAUSE[i], RectFlat::WORDS);
             }
         }
         for i in (0..max_health.min(9)).rev() {
             let (x, y) = mask_position(i);
             MASKS[i as usize] = sprite(usize::from(i >= health), x, y, 0, 128);
-            ot.add(0, &mut MASKS[i as usize], Sprite::WORDS);
+            crate::display::ot_add(ot, 0, &mut MASKS[i as usize], Sprite::WORDS);
         }
         let fill_h = u16_at(DATA, 34);
         let state = hud_state::SoulSpec {
@@ -106,20 +106,20 @@ pub fn append(
         // Source Eyes Control changes at 50 MP independently of the 33 MP tint.
         if state.eyes {
             ORB[2] = sprite(4, 12 + signed(52), 10 + signed(54), 0, 128);
-            ot.add(0, &mut ORB[2], Sprite::WORDS);
+            crate::display::ot_add(ot, 0, &mut ORB[2], Sprite::WORDS);
         }
         if state.fill {
             ORB[1] = sprite(3, 12 + signed(48), 10 + signed(50), state.cut, state.gain);
-            ot.add(0, &mut ORB[1], Sprite::WORDS);
+            crate::display::ot_add(ot, 0, &mut ORB[1], Sprite::WORDS);
         }
         ORB[0] = sprite(2, 12, 10, 0, 128);
-        ot.add(0, &mut ORB[0], Sprite::WORDS);
+        crate::display::ot_add(ot, 0, &mut ORB[0], Sprite::WORDS);
         MODE.word = TextureMaterial::opaque(
             0,
             Tpage::new(320, 0, TexDepth::Bit4).uv_tpage_word(0),
             (128, 128, 128),
         )
         .draw_mode_word();
-        ot.add(0, &mut *(&raw mut MODE), 1);
+        crate::display::ot_add(ot, 0, &mut *(&raw mut MODE), 1);
     }
 }

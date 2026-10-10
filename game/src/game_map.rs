@@ -382,10 +382,10 @@ pub fn prepare(scene: usize, hero: [i32; 2]) {
 pub fn append(ot: &mut OrderingTable<1>) {
     unsafe {
         for i in (0..USED).rev() {
-            ot.add(0, &mut SPRITES[i], 5);
+            crate::display::ot_add(ot, 0, &mut SPRITES[i], 5);
         }
         if SHOW_BACKDROP {
-            ot.add(0, &mut *(&raw mut BACKDROP), QuadGouraudBlended::WORDS);
+            crate::display::ot_add(ot, 0, &mut *(&raw mut BACKDROP), QuadGouraudBlended::WORDS);
         }
     }
 }

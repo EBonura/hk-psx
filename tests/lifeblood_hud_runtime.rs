@@ -24,6 +24,7 @@ pub mod ot {
  pub struct OrderingTable<const N:usize>{pub sprites:Vec<Sprite>}
  impl<const N:usize> OrderingTable<N>{pub fn add(&mut self,_:usize,p:&mut Sprite,_:usize){self.sprites.push(*p);}}
 }
+mod display{pub unsafe fn ot_add<const N:usize>(ot:&mut crate::ot::OrderingTable<N>,z:usize,p:&mut crate::prim::Sprite,w:usize){ot.add(z,p,w);}}
 pub struct VramRect{pub x:u16,pub y:u16,pub w:u16,pub h:u16}
 impl VramRect{pub fn new(x:u16,y:u16,w:u16,h:u16)->Self{Self{x,y,w,h}}}
 static UPLOADS:Mutex<Vec<(u16,u16,u16,u16)>>=Mutex::new(Vec::new());
