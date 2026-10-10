@@ -1004,6 +1004,11 @@ pub fn simulate(
             game.vitals.health >= game.settings.cheats.params(VITAL_PARAMS).max_health,
         ) {
             ability_sound(audio::FOCUS_READY);
+            world::particles::pool().spawn_break_at(
+                r.scene,
+                focus_fx::MOTES_OWNER,
+                [game.player.x, game.player.y],
+            );
         }
         // Dust L and Dust R at the Knight's feet, in world space, while Focus runs.
         if focus_fx::dust_due() {

@@ -240,6 +240,9 @@ struct Style {
     rotation: [i64; 2],
     colors: [[i64; 3]; 2],
     start_alpha: [i64; 2],
+    /// 1 for `Legacy Shaders/Particles/Additive (Soft)`: drawn as full additive light (the guest's
+    /// soft path with `B + F`), not as a faint coverage or a quarter of it.
+    additive: i64,
     count: i64,
     rate: i64,
     shape: i64,
@@ -298,6 +301,7 @@ impl Style {
                 Json::List(self.colors.iter().map(|c| ints(*c)).collect()),
             ),
             ("start_alpha".into(), ints(self.start_alpha)),
+            ("additive".into(), Json::Int(self.additive)),
             ("count".into(), Json::Int(self.count)),
             ("rate".into(), Json::Int(self.rate)),
             ("shape".into(), Json::Int(self.shape)),
@@ -601,6 +605,18 @@ fn style(
     if limit_on && (truthy(limit, "separateAxis")? || !is_zero(values(get(limit, "drag")?, 0.0)?)) {
         return err("particle velocity limit");
     }
+    // Only a constant magnitude is modelled (a curve or a range would be read at one point), and
+    // a local-space limit is the world one only where the emitter is unscaled or the limit is
+    // zero, and every cooked system today is (docs/BREAK_EFFECTS.md has the census).
+    if limit_on {
+        let magnitude = get(limit, "magnitude")?;
+        let local_and_scaled = !truthy(limit, "inWorldSpace")?
+            && (scale - 1.0).abs() > 1e-9
+            && values(magnitude, 0.0)?[0] != 0.0;
+        if i(magnitude, "minMaxState")? != 0 || local_and_scaled {
+            return err("particle velocity limit magnitude or space");
+        }
+    }
     let size_module = get(ps, "SizeModule")?;
     let color_module = get(ps, "ColorModule")?;
     let rotation_module = get(ps, "RotationModule")?;
@@ -700,6 +716,7 @@ fn style(
         rotation: qs(initial("startRotation")?.map(f64::to_degrees))?,
         colors,
         start_alpha,
+        additive: 0,
         count,
         rate: q(rate[0])?,
         shape: shape_type,
@@ -1061,6 +1078,7 @@ fn part_emitter(
     relaxed: bool,
     emit: Option<i64>,
     unloop: bool,
+    additive_ok: bool,
 ) -> Result<Found> {
     let mut cs: Vec<(String, Obj, Value)> = Vec::new();
     for r in view.component_refs(gid)? {
@@ -1097,7 +1115,11 @@ fn part_emitter(
         i(renderer, "m_RenderMode")?,
         i(renderer, "m_RenderAlignment")?,
     );
-    if !(shader == "Sprites/Lit" || shader == "Sprites/Default") || mode != 0 || align != 0 {
+    let additive = additive_ok && shader == "Legacy Shaders/Particles/Additive (Soft)";
+    if !(shader == "Sprites/Lit" || shader == "Sprites/Default" || additive)
+        || mode != 0
+        || align != 0
+    {
         return err(format!(
             "particle renderer material {shader} mode {mode}/{align}"
         ));
@@ -1123,6 +1145,7 @@ fn part_emitter(
     let scale = particle_scale(&ps, &matrix)?;
     let mut st = style(&ps, gravity, scale, played, relaxed)?;
     st.texture = sid.clone();
+    st.additive = i64::from(additive);
     for color in st.colors.iter_mut() {
         for (c, v) in color.iter_mut().enumerate() {
             *v = py_round(*v as f64 * tint[c]);
@@ -1281,7 +1304,7 @@ fn prefab_emitters(
     let mut found = Vec::new();
     for gid in view.subtree()? {
         if let Found::Emitter(mut e) =
-            part_emitter(source, &view, gid, gravity, true, true, None, false)?
+            part_emitter(source, &view, gid, gravity, true, true, None, false, false)?
         {
             e.part = Some(format!("{}:{gid}", hk_unity::base_name(&view.file.name)));
             found.push(*e);
@@ -1917,18 +1940,19 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         for b in breakable_sources(source, &sc, &wanted)? {
             for &gid in &b.debris {
                 let part = format!("{file}:{gid}");
-                let found = match part_emitter(source, &sc, gid, gravity, false, false, None, false)
-                {
-                    Ok(x) => x,
-                    Err(e) => {
-                        c.ignored.push(ignore(
-                            Json::Str(b.source.clone()),
-                            Json::Str(part),
-                            format!("unsupported particle style: {e}"),
-                        ));
-                        continue;
-                    }
-                };
+                let found =
+                    match part_emitter(source, &sc, gid, gravity, false, false, None, false, false)
+                    {
+                        Ok(x) => x,
+                        Err(e) => {
+                            c.ignored.push(ignore(
+                                Json::Str(b.source.clone()),
+                                Json::Str(part),
+                                format!("unsupported particle style: {e}"),
+                            ));
+                            continue;
+                        }
+                    };
                 let Found::Emitter(e) = found else {
                     let reason = match rigid_fragment(&sc, gid) {
                         Err(e) => format!("unhandled rigid fragment: {e}"),
@@ -2011,7 +2035,31 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         .iter()
         .filter_map(|d| d["scene_id"].as_i64())
         .collect();
-    collect_hero_dust(source, gravity, &scenes, &mut c)?;
+    collect_hero_effect(
+        source,
+        gravity,
+        &scenes,
+        &mut c,
+        HERO_DUST_OWNER,
+        &[(4650, "Dust L"), (5097, "Dust R")],
+        Some(HERO_DUST_BURST),
+        true,
+        (
+            "Knight / Focus Effects",
+            "Dust L and Dust R, per Focus tick",
+        ),
+    )?;
+    collect_hero_effect(
+        source,
+        gravity,
+        &scenes,
+        &mut c,
+        HERO_MOTES_OWNER,
+        &[(7585, "Can Focus Particles")],
+        None,
+        false,
+        ("Knight", "Can Focus Particles, once per Can Heal"),
+    )?;
     if c.styles.len() > 253 {
         return err("particle style IDs");
     }
@@ -2026,11 +2074,26 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
 /// stalactites' effects: a scene whose art budget has no room for the dust texture goes without.
 pub const HERO_DUST_OWNER: i64 = 0xFFFF;
 const HERO_DUST_BURST: i64 = 6;
-fn collect_hero_dust(
+/// The Knight's `Can Focus Particles` (resources.assets:7585), the rising motes: Soul Orb Control's
+/// `Can Heal 2` sends CAN HEAL EFFECT when the SOUL first reaches the Focus cost with health not
+/// full, and the system's own FSM plays it once (0.25 s at 200 a second: fifty motes). Cooked as
+/// authored and raised by the guest on that cue, at the Knight, like the dust.
+pub const HERO_MOTES_OWNER: i64 = 0xFFFE;
+
+/// Systems of the Knight's own, cooked for every scene at the Knight's place. The emitters'
+/// transforms are taken relative to the parent of the first part (`Focus Effects` for the dust,
+/// the Knight for the motes). `emit` and `unloop` are `part_emitter`'s: the dust is an FSM-driven
+/// loop cooked as its repeating burst, the motes a one-shot played as authored.
+fn collect_hero_effect(
     source: &Source,
     gravity: f64,
     scenes: &[i64],
     c: &mut Collected,
+    owner: i64,
+    parts: &[(i64, &str)],
+    emit: Option<i64>,
+    unloop: bool,
+    labels: (&str, &str),
 ) -> Result<()> {
     let file = source.file("resources.assets").map_err(|e| e.to_string())?;
     let read = |id: i64| -> Result<Value> {
@@ -2048,21 +2111,20 @@ fn collect_hero_dust(
         }
         err("no Transform")
     };
-    const DUST: [(i64, &str); 2] = [(4650, "Dust L"), (5097, "Dust R")];
-    let father = i(get(&transform_of(DUST[0].0)?, "m_Father")?, "m_PathID")?;
-    let focus_effects = i(get(&read(father)?, "m_GameObject")?, "m_PathID")?;
+    let father = i(get(&transform_of(parts[0].0)?, "m_Father")?, "m_PathID")?;
+    let root = i(get(&read(father)?, "m_GameObject")?, "m_PathID")?;
     let mut found = Vec::new();
     {
         let view = PrefabView::new(
             source,
             file.clone(),
-            focus_effects,
+            root,
             [0.0, 0.0, 0.0],
             Some([0.0, 0.0, 0.0]),
         )?;
-        for (gid, name) in DUST {
+        for &(gid, name) in parts {
             if get(&read(gid)?, "m_Name")?.str().as_deref() != Some(name) {
-                return err(format!("Focus dust {gid} is not {name}"));
+                return err(format!("Knight effect {gid} is not {name}"));
             }
             match part_emitter(
                 source,
@@ -2071,8 +2133,9 @@ fn collect_hero_dust(
                 gravity,
                 true,
                 true,
-                Some(HERO_DUST_BURST),
-                true,
+                emit,
+                unloop,
+                owner == HERO_MOTES_OWNER,
             )? {
                 Found::Emitter(e) => found.push(*e),
                 _ => return err(format!("{name} is not a particle system")),
@@ -2085,7 +2148,7 @@ fn collect_hero_dust(
             let (origin, basis) = placement(&e.matrix)?;
             c.emitters.push(EmitterRow {
                 scene,
-                owner: HERO_DUST_OWNER,
+                owner,
                 source: e.system.path_id(),
                 style,
                 angle_offset: 0,
@@ -2097,11 +2160,8 @@ fn collect_hero_dust(
     }
     for e in &found {
         c.records.push(Json::Obj(vec![
-            ("owner".into(), Json::Str("Knight / Focus Effects".into())),
-            (
-                "name".into(),
-                Json::Str("Dust L and Dust R, per Focus tick".into()),
-            ),
+            ("owner".into(), Json::Str(labels.0.into())),
+            ("name".into(), Json::Str(labels.1.into())),
             (
                 "part".into(),
                 Json::Str(format!("resources.assets:{}", e.system.path_id())),
@@ -2202,19 +2262,20 @@ fn collect_stalactites(
                         continue;
                     }
                     let part = i(r, "m_PathID")?;
-                    let found =
-                        match part_emitter(source, sc, part, gravity, false, false, None, false) {
-                            Ok(Found::Emitter(e)) => e,
-                            Ok(_) => continue,
-                            Err(e) => {
-                                c.ignored.push(ignore(
-                                    Json::Str(sc.sid(o.id)),
-                                    Json::Str("embedded debris".into()),
-                                    format!("unsupported stalactite particle: {e}"),
-                                ));
-                                continue;
-                            }
-                        };
+                    let found = match part_emitter(
+                        source, sc, part, gravity, false, false, None, false, false,
+                    ) {
+                        Ok(Found::Emitter(e)) => e,
+                        Ok(_) => continue,
+                        Err(e) => {
+                            c.ignored.push(ignore(
+                                Json::Str(sc.sid(o.id)),
+                                Json::Str("embedded debris".into()),
+                                format!("unsupported stalactite particle: {e}"),
+                            ));
+                            continue;
+                        }
+                    };
                     let (origin, basis) = placement(&found.matrix)?;
                     let style = c.style_index(found.style.clone());
                     c.emitters.push(EmitterRow {
@@ -2283,9 +2344,9 @@ fn collect_secret(
                     if !sc.active(child) {
                         return Ok(());
                     }
-                    if let Found::Emitter(e) =
-                        part_emitter(source, sc, child, gravity, true, true, entry.2, false)?
-                    {
+                    if let Found::Emitter(e) = part_emitter(
+                        source, sc, child, gravity, true, true, entry.2, false, false,
+                    )? {
                         found.push((*e, entry.2, sc.sid(child)));
                     }
                 } else {
@@ -2788,7 +2849,7 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
         w(&mut r, st.rate);
         r.push(st.shape as u8);
         r.extend(st.start_alpha.iter().map(|&v| v as u8));
-        r.push(0);
+        r.push(st.additive as u8);
         w(&mut r, st.radius);
         w(&mut r, st.arc);
         for v in st
@@ -3240,6 +3301,7 @@ mod tests {
             rotation: [0, 0],
             colors: [[128; 3]; 2],
             start_alpha: [255, 255],
+            additive: 0,
             count: 1,
             rate: 65536,
             shape: 10,
