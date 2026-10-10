@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
+import rustsrc
 import zombie_shield
 from actors import actor_placements, generated_actor_specs
 
@@ -24,11 +25,10 @@ CONTROLLER = ROOT / 'shared/hk-sim/src/zombie_shield.rs'
 
 def rust_clips():
     """The `Clip` variants of the controller, in declaration order."""
-    text = CONTROLLER.read_text()
-    body = re.search(r'pub enum Clip \{(.*?)\n\}', text, re.S)
-    if body is None:
-        raise AssertionError('zombie_shield.rs no longer declares a Clip enum')
-    return [name for name in re.findall(r'^\s{4}(\w+),$', body.group(1), re.M)]
+    try:
+        return rustsrc.enum_variants(CONTROLLER, 'Clip')
+    except KeyError:
+        raise AssertionError('zombie_shield.rs no longer declares a Clip enum') from None
 
 
 class ClipOrderTests(unittest.TestCase):
@@ -49,8 +49,7 @@ class ClipOrderTests(unittest.TestCase):
         self.assertEqual(list(zombie_shield.CLIP_SLOTS), snake)
 
     def test_the_controller_counts_exactly_the_slots_the_cooker_fills(self):
-        count = re.search(r'pub const COUNT: usize = (\d+);', CONTROLLER.read_text())
-        self.assertEqual(int(count.group(1)), len(zombie_shield.CLIP_SLOTS))
+        self.assertEqual(rustsrc.const_int(CONTROLLER, 'COUNT'), len(zombie_shield.CLIP_SLOTS))
 
     def test_every_slot_names_a_clip_the_recognizer_requires(self):
         self.assertEqual(sorted(zombie_shield.SLOT_CLIPS), sorted(zombie_shield.CLIP_SLOTS))

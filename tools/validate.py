@@ -4,6 +4,7 @@ import argparse,csv,hashlib,json,re,shutil,statistics,struct,subprocess,sys,temp
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'host'))
+import rustsrc
 from paths import DISC_LIBRARY, artifacts
 
 
@@ -14,8 +15,7 @@ def _hk_cache_const(name):
     the animation cache tripled to 49152, so the gate below would have refused
     exactly the frames that change was made to admit.
     """
-    text=(ROOT/'shared/hk-cache/src/lib.rs').read_text()
-    return int(re.search(rf'pub const {name}: u32 = (\d+);',text).group(1))
+    return rustsrc.const_int(ROOT/'shared/hk-cache/src/lib.rs',name)
 
 
 MAX_UPLOAD_BYTES=_hk_cache_const('MAX_UPLOAD_BYTES')

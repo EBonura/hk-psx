@@ -73,7 +73,8 @@ def bind(rows, colliders, report):
     gate_rs = ROOT / 'data/battle_gates.rs'
     if gate_rs.is_file():
         import re
-        for slot, body in re.findall(r'\((\d+),\d+,&\[([^\]]*)\]\)', gate_rs.read_text()):
+        import rustsrc
+        for slot, body in re.findall(r'\((\d+),\d+,&\[([^\]]*)\]\)', rustsrc.source(gate_rs)):
             gates[int(slot)] = gates.get(int(slot), 0) + len([v for v in body.split(',') if v.strip()])
     budget = edge_scratch_slots()
     neighbours = neighbour_edges()
