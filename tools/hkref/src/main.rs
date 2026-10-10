@@ -73,14 +73,14 @@ fn cmd_port(p: &Profile, work: &Path) -> Result<(), String> {
         .iter()
         .copied()
         .find(|t| {
-            tr.get("port.mode", *t) == Some(1.0) && tr.get("hero.x", *t).map_or(false, |x| x != 0.0)
+            tr.get("port.mode", *t) == Some(1.0) && tr.get("hero.x", *t).is_some_and(|x| x != 0.0)
         })
         .ok_or("the port never reached gameplay (mode 1 with a hero)")?;
     let press = tr
         .ticks
         .iter()
         .copied()
-        .find(|t| *t >= first && tr.get("input.pad", *t).map_or(false, |v| v != 0.0))
+        .find(|t| *t >= first && tr.get("input.pad", *t).is_some_and(|v| v != 0.0))
         .unwrap_or(first + 60);
     let mut t0 = p.start_tick.unwrap_or((press - 12).max(first + 5));
     if p.start_tick.is_none() {
@@ -400,7 +400,7 @@ fn real_main() -> Result<(), String> {
                 })
                 .collect::<Result<_, _>>()?;
             let (cw, ch) = (cw, imgs.iter().map(|i| i.h).max().unwrap_or(0) + 18);
-            let rows = (imgs.len() + cols - 1) / cols;
+            let rows = imgs.len().div_ceil(cols);
             let mut sheet = img::Img::new(cols * (cw + 4), rows * (ch + 4), [24, 24, 24]);
             for (k, (i, f)) in imgs.iter().zip(files.iter()).enumerate() {
                 let (x, y) = ((k % cols) * (cw + 4), (k / cols) * (ch + 4));
@@ -428,7 +428,7 @@ fn real_main() -> Result<(), String> {
                 .map(|e| e.path())
                 .filter(|d| {
                     d.file_name()
-                        .map_or(false, |n| n.to_string_lossy().starts_with('a'))
+                        .is_some_and(|n| n.to_string_lossy().starts_with('a'))
                 })
                 .collect();
             dirs.sort();

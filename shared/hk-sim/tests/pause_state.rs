@@ -1,16 +1,17 @@
-// cheats composes the equipped charms into the live parameters and reconciles
-// the all-charms grant. The real module links the cooked catalogue this harness
-// has no manifest directory for, and an empty board composes to the base
-// anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
-// the real one.
-// The real charm module `include!`s the cooked catalogue relative to its own
-// crate, which this one is not, so the board is stubbed down to the contract
-// `pause` actually depends on: a screen that opens, moves and closes. The board
-// itself is exercised for real in tests/charms_runtime.rs, and
-// tests/test_charms.py holds these constants and this contract to the real
-// module so the stub cannot drift away from what it stands in for. The button
-// values matter: pause.rs asserts at compile time that its own match the charm
-// screen's, and a stub with different ones would silently defeat that.
+#![allow(dead_code)] // includes game modules by path and exercises part of each
+                     // cheats composes the equipped charms into the live parameters and reconciles
+                     // the all-charms grant. The real module links the cooked catalogue this harness
+                     // has no manifest directory for, and an empty board composes to the base
+                     // anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
+                     // the real one.
+                     // The real charm module `include!`s the cooked catalogue relative to its own
+                     // crate, which this one is not, so the board is stubbed down to the contract
+                     // `pause` actually depends on: a screen that opens, moves and closes. The board
+                     // itself is exercised for real in tests/charms_runtime.rs, and
+                     // tests/test_charms.py holds these constants and this contract to the real
+                     // module so the stub cannot drift away from what it stands in for. The button
+                     // values matter: pause.rs asserts at compile time that its own match the charm
+                     // screen's, and a stub with different ones would silently defeat that.
 mod charms {
     pub const UP: u16 = 0x10;
     pub const DOWN: u16 = 0x40;
@@ -61,8 +62,10 @@ mod shop {
         base
     }
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/cheats.rs"]
 mod cheats;
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/pause.rs"]
 mod pause;
 fn step(p: &mut pause::State, c: &mut cheats::Settings, b: u16) -> bool {
@@ -151,7 +154,6 @@ fn music_volume_and_adjacent_pages_preserve_each_other() {
     tap(&mut p, &mut c, 0x40);
     assert_eq!(p.row, 0);
     assert!(tap(&mut p, &mut c, 0x4000));
-    drop(tap);
     assert_eq!((sfx, ambience, music), (7, 6, 1));
     assert_eq!(c, cheats::Settings::new());
 }

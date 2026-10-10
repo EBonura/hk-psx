@@ -166,7 +166,7 @@ impl Aspid {
     fn begin_distance_fly(&mut self, out: &mut Actions) {
         self.phase = Phase::DistanceFly;
         // WaitRandom 1.5 to 2.25 s.
-        self.timer = (90 + ((self.random() % 46) as u16)) as u16;
+        self.timer = 90 + ((self.random() % 46) as u16);
         out.push(Action::Play(Clip::Fly, 10)); // Tk2dPlayFrame 2 at 12 fps
     }
     /// Range Out Timer: counts while the Unalert Range is not satisfied, resets otherwise.

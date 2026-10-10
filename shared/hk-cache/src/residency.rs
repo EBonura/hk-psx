@@ -30,6 +30,7 @@ pub const STATIC_PAGES: usize = BANKS * PAGES - 1;
 /// Knight's arena). The map is uploaded before the title, lost while such a
 /// scene is admitted, and read back at the next gate into a scene that leaves
 /// page 18 alone. x,y,width,height in halfwords.
+#[allow(clippy::identity_op)] // written as the page-map formula it replaces
 pub const MAP_PAGE: (usize, usize, usize, usize) = (384 + (18 % 10) * 64, (18 / 10) * 256, 64, 256);
 /// A 64x64 4bpp slot: 16 halfwords wide and 64 rows tall.
 pub const SLOT_HALFWORDS: (usize, usize) = (16, 64);
@@ -434,6 +435,7 @@ mod tests {
     /// inside one texture page, and what is left over still cannot hold
     /// another. This is the measurement behind `crate::MAX_FRAME_TILES`.
     #[test]
+    #[allow(clippy::identity_op)] // the page-map formula, spelled out
     fn the_animation_regions_are_full_and_nothing_spare_can_hold_another_slot() {
         // `crate::SLOTS` is checked against this in lib.rs, which is the only
         // place both are in scope: test_bootstrap_atlas compiles this file on
@@ -527,8 +529,8 @@ mod tests {
     fn soul_hud_slots_fit_reserved_strip_and_encodable_uvs() {
         let mut used = [false; 28 * 32];
         // Max pixel widths admitted by cook_hud: frame40, fill24, eyes16.
-        for (x, w, h) in [(356, 40, 24), (366, 24, 32), (372, 16, 32)] {
-            let words = (w + 3) / 4;
+        for (x, w, h) in [(356usize, 40usize, 24usize), (366, 24, 32), (372, 16, 32)] {
+            let words = w.div_ceil(4);
             assert!(x >= 356 && x + words <= 384);
             let u = (x - 320) * 4;
             assert!(u + w <= 256 && h <= 32);

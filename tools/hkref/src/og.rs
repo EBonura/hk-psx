@@ -168,7 +168,7 @@ pub fn build(env: &Env) -> Result<(), String> {
     let mut files: Vec<PathBuf> = fs::read_dir(&src)
         .map_err(|e| e.to_string())?
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().map_or(false, |x| x == "cs"))
+        .filter(|p| p.extension().is_some_and(|x| x == "cs"))
         .collect();
     files.sort();
     c.args(&files);
@@ -410,7 +410,7 @@ fn num(r: &BTreeMap<String, String>, k: &str) -> f64 {
     r.get(k).and_then(|v| v.parse().ok()).unwrap_or(f64::NAN)
 }
 fn flag(r: &BTreeMap<String, String>, k: &str) -> bool {
-    r.get(k).map_or(false, |v| v == "True")
+    r.get(k).is_some_and(|v| v == "True")
 }
 
 pub fn normalise(
@@ -458,7 +458,7 @@ pub fn normalise(
         let anchor = anchors.get(&e.chan);
         let mut best: Option<(f64, String)> = None;
         for a in &actors {
-            if !a.get("name").map_or(false, |n| n.contains(&e.pattern)) {
+            if !a.get("name").is_some_and(|n| n.contains(&e.pattern)) {
                 continue;
             }
             if num(a, "test_frame") > 3.0 {
@@ -467,7 +467,7 @@ pub fn normalise(
             let d = anchor.map_or(0.0, |(x, y)| {
                 ((num(a, "x") - x).powi(2) + (num(a, "y") - y).powi(2)).sqrt()
             });
-            if best.as_ref().map_or(true, |(bd, _)| d < *bd) {
+            if best.as_ref().is_none_or(|(bd, _)| d < *bd) {
                 best = Some((d, a["id"].clone()));
             }
         }
@@ -503,7 +503,7 @@ pub fn normalise(
         tr.set(
             "og.scene_ok",
             if r.get("scene")
-                .map_or(false, |s| *s == p.scene || p.scene.is_empty())
+                .is_some_and(|s| *s == p.scene || p.scene.is_empty())
             {
                 1.0
             } else {

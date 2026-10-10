@@ -1,3 +1,4 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 use hk_sim::{Params, Player, ONE};
 mod render {
     pub static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -12,6 +13,7 @@ mod render {
     }
     pub fn set_gain(_: usize, _: u8) {}
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/reveal_masks.rs"]
 mod reveal_masks;
 use reveal_masks::*;

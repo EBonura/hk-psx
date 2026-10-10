@@ -1,8 +1,9 @@
-// cheats composes the equipped charms into the live parameters and reconciles
-// the all-charms grant. The real module links the cooked catalogue this harness
-// has no manifest directory for, and an empty board composes to the base
-// anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
-// the real one.
+#![allow(dead_code)] // includes game modules by path and exercises part of each
+                     // cheats composes the equipped charms into the live parameters and reconciles
+                     // the all-charms grant. The real module links the cooked catalogue this harness
+                     // has no manifest directory for, and an empty board composes to the base
+                     // anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
+                     // the real one.
 mod charms {
     pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
         base
@@ -19,12 +20,14 @@ mod shop {
         base
     }
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/cheats.rs"]
 mod cheats;
 // menu_state sizes the save screen by the profile count.
 mod save {
     pub const PROFILES: usize = 4;
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/menu_state.rs"]
 mod menu_state;
 use menu_state::*;
@@ -39,7 +42,7 @@ fn first_confirm_preserves_direct_start_and_default_levels() {
         let mut s = State::new();
         assert!(!s.step(b));
         assert_eq!(s.page, Page::Profiles);
-        assert!(s.step(0) == false);
+        assert!(!s.step(0));
         assert!(s.step(CROSS));
         assert_eq!(s.profile, Some(0));
         assert_eq!(s.settings, Settings::new());

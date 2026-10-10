@@ -550,7 +550,7 @@ impl Player {
         let lip = if self.grounded { STEP_LIP } else { 32 };
         for i in 0..count {
             let [x0, y0, x1, y1] = edge(i);
-            if (x0 == x1 && y0 == y1)
+            if y0 == y1
                 || x0 != x1
                 || oy + p.top <= y0.min(y1) + 32
                 || oy + p.bottom >= y0.max(y1) - lip

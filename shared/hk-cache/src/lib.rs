@@ -272,7 +272,7 @@ mod tests {
             for row in 0..rows {
                 for col in 0..cols {
                     let (x, y, tw, th) = tile_rect(w, h, col, row);
-                    assert!(tw >= 1 && tw <= TILE && th >= 1 && th <= TILE);
+                    assert!((1..=TILE).contains(&tw) && (1..=TILE).contains(&th));
                     assert!(x + tw <= w && y + th <= h);
                     assert_eq!((x, y), (col * TILE, row * TILE));
                     covered += tw * th;
@@ -289,7 +289,7 @@ mod tests {
         assert_eq!(MAX_UPLOAD_BYTES as usize, SLOTS * TILE * TILE / 2);
         assert_eq!(MAX_REQUESTS, SLOTS);
         assert_eq!(MAX_FRAME_TILES, 20);
-        assert!(MAX_FRAME_TILES + RESERVED_SLOTS <= SLOTS);
+        const { assert!(MAX_FRAME_TILES + RESERVED_SLOTS <= SLOTS) };
         assert!(frame_tiles(91, 89) <= MAX_FRAME_TILES);
         // The False Knight's largest frame, 198x169 through host/cook.py's own
         // actor art path. Twelve tiles beside the four reserved keys is 16 of

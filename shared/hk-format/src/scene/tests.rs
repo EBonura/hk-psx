@@ -188,7 +188,7 @@ fn one_work_unit_never_hides_duplicate_or_record_loops_and_zero_is_idle() {
             cursor.next,
         );
         let done = cursor.step(&b, 0).unwrap();
-        assert_eq!(
+        assert!(
             before
                 == (
                     cursor.phase,
@@ -196,8 +196,7 @@ fn one_work_unit_never_hides_duplicate_or_record_loops_and_zero_is_idle() {
                     cursor.section,
                     cursor.index,
                     cursor.next
-                ),
-            true
+                )
         );
         assert_eq!(done, cursor.phase == Phase::Done);
         seen[match cursor.phase {
@@ -252,8 +251,8 @@ fn admitted_large_global_texture_ids_keep_local_frame_and_shared_stream_identity
     put(&mut b, 16, 2048);
     let len = b.len();
     put(&mut b, 48, len as u32);
-    for i in 1..10 {
-        put(&mut b, 64 + i * 4, (old_offsets[i] + extra) as u32);
+    for (i, &old) in old_offsets.iter().enumerate().take(10).skip(1) {
+        put(&mut b, 64 + i * 4, (old + extra) as u32);
     }
     let rooms = offset(&b, 8);
     for room in 0..2 {

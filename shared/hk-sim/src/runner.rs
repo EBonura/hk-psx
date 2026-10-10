@@ -338,7 +338,7 @@ impl Runner {
             // Left or Right?: Jump X Speed = (Hero X - Self X) * 1.25; Anticipate
             // stops, plays Attack (one random-pitch sample) and waits for its
             // trigger frame.
-            self.jump_x = ((hero_x as i64 - actor_x as i64) * jump_x_factor as i64 >> 16) as i32;
+            self.jump_x = (((hero_x as i64 - actor_x as i64) * jump_x_factor as i64) >> 16) as i32;
             self.wait = trigger_ticks;
         }
         out.push(Action::ChaseSound);

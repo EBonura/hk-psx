@@ -203,8 +203,8 @@ impl Shade {
     /// ChaseObject.DoBuzz then ChaseObjectV2.DoChase, in the source order.
     fn chase(&mut self, senses: Senses) {
         let mut v = self.velocity;
-        for axis in 0..2 {
-            v[axis] += if senses.hero[axis] > senses.position[axis] {
+        for (axis, slot) in v.iter_mut().enumerate() {
+            *slot += if senses.hero[axis] > senses.position[axis] {
                 CHASE_ACCELERATION
             } else {
                 -CHASE_ACCELERATION

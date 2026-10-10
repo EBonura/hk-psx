@@ -1,8 +1,9 @@
-// cheats composes the equipped charms into the live parameters and reconciles
-// the all-charms grant. The real module links the cooked catalogue this harness
-// has no manifest directory for, and an empty board composes to the base
-// anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
-// the real one.
+#![allow(dead_code)] // includes game modules by path and exercises part of each
+                     // cheats composes the equipped charms into the live parameters and reconciles
+                     // the all-charms grant. The real module links the cooked catalogue this harness
+                     // has no manifest directory for, and an empty board composes to the base
+                     // anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
+                     // the real one.
 mod charms {
     pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
         base
@@ -19,6 +20,7 @@ mod shop {
         base
     }
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/cheats.rs"]
 mod cheats;
 use cheats::{Action, Settings, CHEAT_ROWS};

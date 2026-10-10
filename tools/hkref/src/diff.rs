@@ -15,13 +15,8 @@ fn tol_for(o: &Opts, chan: &str) -> f64 {
         return *t;
     }
     match chan.rsplit('.').next().unwrap_or("") {
-        "x" | "y" => {
-            if chan.starts_with("cam") {
-                0.3
-            } else {
-                0.1
-            }
-        }
+        "x" | "y" if chan.starts_with("cam") => 0.3,
+        "x" | "y" => 0.1,
         "hp" => 0.0,
         "face" => 0.0,
         "soul" => 0.0,

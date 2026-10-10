@@ -78,7 +78,7 @@ pub fn ease_in_out_sine(p: i32) -> i32 {
     let s = if i >= 64 {
         QUARTER[64]
     } else {
-        QUARTER[i] + ((QUARTER[i + 1] - QUARTER[i]) * frac >> 16)
+        QUARTER[i] + (((QUARTER[i + 1] - QUARTER[i]) * frac) >> 16)
     };
     ((s as u64 * s as u64) >> 16) as i32
 }

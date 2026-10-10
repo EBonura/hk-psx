@@ -1,3 +1,5 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/lifeblood.rs"]
 mod lifeblood;
 use hk_sim::{Hurt, VitalParams, Vitals, ONE};
@@ -79,7 +81,7 @@ fn scene_unload_grants_pending_once_without_awarding_unstruck_bugs() {
     assert_eq!(w.leave_scene(), 1);
     assert_eq!(w.leave_scene(), 0);
     assert!(w.opened());
-    assert_eq!(w.strike_with(p, 0, &POLY).opened, false);
+    assert!(!w.strike_with(p, 0, &POLY).opened);
     w.reset();
     assert!(!w.opened());
     assert_eq!(w.granted, 0);

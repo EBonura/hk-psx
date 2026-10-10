@@ -1,4 +1,5 @@
 //! Exercise the actual guest DMA packet writer, including reuse after scissors.
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/draw_packet.rs"]
 mod packet;
 

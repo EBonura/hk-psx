@@ -70,10 +70,10 @@ impl IdleBuzz {
             }
         }
         if self.wait <= 0 {
-            for axis in 0..2 {
-                let (lo, hi) = if position[axis] < self.start[axis] - ROAMING_RANGE {
+            for (axis, &at) in position.iter().enumerate() {
+                let (lo, hi) = if at < self.start[axis] - ROAMING_RANGE {
                     (0, acceleration_max)
-                } else if position[axis] > self.start[axis] + ROAMING_RANGE {
+                } else if at > self.start[axis] + ROAMING_RANGE {
                     (-acceleration_max, 0)
                 } else {
                     (-acceleration_max, acceleration_max)

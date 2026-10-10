@@ -47,6 +47,7 @@ impl Image {
         }
     }
     /// Box-filtered resample of a source rectangle into a new image.
+    #[allow(clippy::too_many_arguments)]
     fn resample(
         &self,
         x0: f64,
@@ -88,12 +89,8 @@ impl Image {
                         n += 1;
                     }
                 }
-                if n > 0 {
-                    out.set(
-                        x,
-                        y,
-                        [(acc[0] / n) as u8, (acc[1] / n) as u8, (acc[2] / n) as u8],
-                    );
+                if let [Some(r), Some(g), Some(b)] = acc.map(|a| a.checked_div(n)) {
+                    out.set(x, y, [r as u8, g as u8, b as u8]);
                 }
             }
         }

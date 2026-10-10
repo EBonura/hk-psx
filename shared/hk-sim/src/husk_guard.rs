@@ -384,7 +384,7 @@ impl HuskGuard {
         }
         loop {
             self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
-            let club = (self.rng >> 8) % 4 != 0;
+            let club = !(self.rng >> 8).is_multiple_of(4);
             if club && self.clubs < MAX_CLUBS {
                 self.clubs += 1;
                 self.stomps = 0;

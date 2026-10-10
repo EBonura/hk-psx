@@ -1467,7 +1467,7 @@ fn owners(dir: &Path, top: usize) {
             println!("  op {op}: {n} packets, written {w}, surviving {s}");
         }
     }
-    per.sort_by(|a, b| b.0.cmp(&a.0));
+    per.sort_by_key(|b| std::cmp::Reverse(b.0));
     println!("top packets by overwritten pixels (overwritten, written, surviving, index, op, uv0clut, uv1tpage):");
     for p in per.iter().take(top) {
         println!("  {:?}", p);
@@ -1482,7 +1482,7 @@ fn owners(dir: &Path, top: usize) {
         e.2 += 1;
     }
     let mut v: Vec<_> = by.into_iter().collect();
-    v.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+    v.sort_by_key(|b| std::cmp::Reverse(b.1 .0));
     println!("by (clut, tpage): overwritten, written, packets");
     for (k, x) in v.iter().take(top) {
         println!("  {:?} {:?}", k, x);

@@ -107,7 +107,7 @@ impl Fight {
             self.ticks
         );
     }
-    fn to_opened(&mut self) {
+    fn drive_to_opened(&mut self) {
         let actions = self.boss.body_reached_zero();
         for action in actions.iter() {
             match action {
@@ -171,7 +171,7 @@ fn three_head_kills_advance_the_phase_table_and_end_the_fight() {
     assert_eq!(IDLE_TICKS[0], [60, 60], "phase one idles for a flat second");
 
     for expected in 1..=STAGGERS {
-        fight.to_opened();
+        fight.drive_to_opened();
         assert!(fight.boss.head_exposed());
         assert!(
             fight.boss.invincible(),
@@ -204,7 +204,7 @@ fn a_stagger_the_player_lets_time_out_costs_no_phase() {
     let mut fight = Fight::new(3, true);
     fight.boss.battle_start();
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
-    fight.to_opened();
+    fight.drive_to_opened();
     for _ in 0..STUN_WINDOW_TICKS - 1 {
         fight.step();
         assert_eq!(fight.boss.phase(), Phase::Opened);
@@ -225,7 +225,7 @@ fn every_head_hit_restarts_the_five_second_window() {
     let mut fight = Fight::new(5, true);
     fight.boss.battle_start();
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
-    fight.to_opened();
+    fight.drive_to_opened();
     for _ in 0..STUN_WINDOW_TICKS - 30 {
         fight.step();
     }
@@ -249,7 +249,7 @@ fn the_rage_runs_eight_slams_and_only_the_third_phase_cracks_the_floor() {
         fight.boss.battle_start();
         fight.until(600, |f| f.boss.phase() == Phase::Landing);
         for _ in 0..stagger {
-            fight.to_opened();
+            fight.drive_to_opened();
             fight.kill_head();
             if fight.boss.stunned() < stagger {
                 fight.through_rage();
@@ -282,7 +282,7 @@ fn the_third_phase_stops_jumping_and_summons_more_barrels() {
     fight.boss.battle_start();
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
     for _ in 0..2 {
-        fight.to_opened();
+        fight.drive_to_opened();
         fight.kill_head();
         fight.through_rage();
     }
@@ -339,13 +339,13 @@ fn the_first_plop_is_longer_and_only_happens_once_per_save() {
     let mut first = Fight::new(31, false);
     first.boss.battle_start();
     first.until(600, |f| f.boss.phase() == Phase::Landing);
-    first.to_opened();
+    first.drive_to_opened();
     assert!(first.seen.contains(&Action::SetFirstPlop));
 
     let mut later = Fight::new(31, true);
     later.boss.battle_start();
     later.until(600, |f| f.boss.phase() == Phase::Landing);
-    later.to_opened();
+    later.drive_to_opened();
     assert!(!later.seen.contains(&Action::SetFirstPlop));
     assert!(
         later.ticks < first.ticks,
@@ -482,7 +482,7 @@ fn every_launch_but_the_death_jump_shakes_the_camera() {
         "`Land Noise`"
     );
     for _ in 0..STAGGERS {
-        fight.to_opened();
+        fight.drive_to_opened();
         fight.kill_head();
         fight.through_rage();
     }
@@ -503,7 +503,7 @@ fn the_rage_shakes_once_per_slam_and_its_landing_shakes_not_at_all() {
     let mut fight = Fight::new(19, true);
     fight.boss.battle_start();
     fight.until(600, |f| f.boss.phase() == Phase::Landing);
-    fight.to_opened();
+    fight.drive_to_opened();
     fight.kill_head();
     // `Jump 2` launches the rage, and the state it lands in plays no clip and
     // sends no shake, so the next effect is the first `Rage Slam`.

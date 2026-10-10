@@ -1,3 +1,4 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 #![allow(static_mut_refs)]
 extern crate self as psx_pad;
 extern crate self as psx_rt;
@@ -65,10 +66,13 @@ impl PadReader {
 }
 #[allow(non_upper_case_globals)]
 pub static mut HK_PAD_POLL_MAX_VBLANK_GAP: u32 = 0;
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/input.rs"]
 mod input;
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/input_queue.rs"]
 mod input_queue;
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/input_sampler.rs"]
 mod input_sampler;
 #[test]

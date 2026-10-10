@@ -1,3 +1,4 @@
+#[allow(clippy::all, unexpected_cfgs, dead_code)] // game source, linted with the game
 #[path = "../../../game/src/room_decode.rs"]
 mod room_decode;
 use room_decode::{Decoder, Error};

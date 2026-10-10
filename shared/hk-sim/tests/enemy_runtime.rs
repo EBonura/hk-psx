@@ -1,3 +1,4 @@
+#![allow(dead_code)] // includes game modules by path and exercises part of each
 //! Native compile/execution of the guest enemy module with hardware-only drawing
 //! stubbed. Fixtures exercise gameplay rather than mirroring GPU internals.
 use hk_sim::*;
@@ -22,6 +23,7 @@ mod shop {
         base
     }
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/cheats.rs"]
 mod cheats;
 const NAIL_RESPONSE_PARAMS: NailResponseParams = NailResponseParams {
@@ -58,10 +60,12 @@ const VITAL_PARAMS: VitalParams = VitalParams {
     recoil_speed: 15 * ONE,
 };
 mod render {
+    type Quad = (usize, [(i16, i16); 4]);
+    type Flash = (usize, (u8, u8, u8));
     std::thread_local! {
         /// Submitted quads, so a frame drawn as several tiles can be checked
         /// tile by tile instead of only counted.
-        pub static QUADS: std::cell::RefCell<Vec<(usize, [(i16, i16); 4])>> =
+        pub static QUADS: std::cell::RefCell<Vec<Quad>> =
             const { std::cell::RefCell::new(Vec::new()) };
     }
     pub fn texture(id: usize, verts: [(i16, i16); 4], _: (u8, u8, u8)) {
@@ -69,7 +73,7 @@ mod render {
     }
     std::thread_local! {
         /// Hit-flash overlays, with the tint each was modulated by.
-        pub static FLASHES: std::cell::RefCell<Vec<(usize, (u8, u8, u8))>> =
+        pub static FLASHES: std::cell::RefCell<Vec<Flash>> =
             const { std::cell::RefCell::new(Vec::new()) };
     }
     pub fn texture_flash(id: usize, _: [(i16, i16); 4], tint: (u8, u8, u8)) {
@@ -393,6 +397,7 @@ mod world {
 /// `Store`, path-included here so the arena reads and writes the same type the
 /// guest does; only the guest's one global becomes a per-thread one, which
 /// keeps the parallel cases apart.
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/persist.rs"]
 #[allow(dead_code)]
 mod persist_store;
@@ -617,6 +622,7 @@ mod disc {
         };
     }
 }
+#[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/enemies.rs"]
 mod enemies;
 /// The one placement every fixture that does not need its own stands at.
@@ -951,7 +957,7 @@ fn static_spike_accepts_downslash_only_with_active_source_polygon() {
     n.kind = 0;
     assert!(!enemies::pogo_contact(
         &r,
-        &mut world::State,
+        &world::State,
         &mut p,
         &n,
         no_attack(),
@@ -961,7 +967,7 @@ fn static_spike_accepts_downslash_only_with_active_source_polygon() {
     n.kind = 3;
     assert!(enemies::pogo_contact(
         &r,
-        &mut world::State,
+        &world::State,
         &mut p,
         &n,
         no_attack(),
@@ -972,7 +978,7 @@ fn static_spike_accepts_downslash_only_with_active_source_polygon() {
     n.age = 9;
     assert!(!enemies::pogo_contact(
         &r,
-        &mut world::State,
+        &world::State,
         &mut p,
         &n,
         no_attack(),
@@ -2292,7 +2298,6 @@ const PIGEON: ActorSpec = ActorSpec {
     recoil_speed: 0,
     recoil_ticks: 0,
     dream_soul: 0,
-    ..SPEC
 };
 const PIGEON_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
     source_id: 1287965,
@@ -2642,7 +2647,7 @@ fn gruz_mother_sleeps_until_hit_in_range_and_wakes_into_a_sealed_arena() {
             (-60 * ONE..=60 * ONE).contains(&x) && (ONE..=17 * ONE).contains(&y),
             "inside the room: {x} {y}"
         );
-        moved |= (x - 0).abs() > ONE;
+        moved |= x.abs() > ONE;
     }
     assert!(moved);
     assert_eq!(
