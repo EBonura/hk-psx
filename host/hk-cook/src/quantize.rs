@@ -284,6 +284,11 @@ pub fn octree_fallback(im: &Image, w: usize, h: usize) -> Result<Quantized> {
 /// The caller's own quantizer for pure-black art.
 pub type Fallback<'a> = &'a dyn Fn(&Image, usize, usize) -> Result<Quantized>;
 
+/// `Atlas._quantize`: the alpha-aware quantizer, with the octree for pure-black art.
+pub fn atlas_quantizer(im: &Image, w: usize, h: usize) -> Result<Quantized> {
+    quantize(im, w, h, Some(&octree_fallback))
+}
+
 /// `quantize(im, w, h, fallback)`.
 pub fn quantize(
     image: &Image,
