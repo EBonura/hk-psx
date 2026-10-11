@@ -1150,6 +1150,7 @@ fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
 /// Compare nonnegative rational numbers without cross-products or rounding.
 /// Euclidean division reverses the ordering each time the fractional remainder
 /// is inverted; a zero remainder terminates with an exact integer comparison.
+#[inline(never)]
 fn ray_fraction_less(mut a: u64, mut b: u64, mut c: u64, mut d: u64) -> bool {
     debug_assert!(b != 0 && d != 0);
     let mut reversed = false;
