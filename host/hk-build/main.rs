@@ -1763,6 +1763,9 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
         )
         .into());
     }
+    if options.frontend.is_none() && std::env::var_os("HK_PSX_FRONTEND").is_none() {
+        return Err("profiling requires an explicit retained --frontend or HK_PSX_FRONTEND".into());
+    }
     let (frontend, emulator_revision) = pinned_frontend(root, options)?;
     let tapes: Vec<PathBuf> = if options.tapes.is_empty() {
         PGO_TAPES
@@ -1897,10 +1900,18 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
 /// The PC histogram is the emulator's instruction stream, so it moves with the
 /// emulator's timing: vblank waits, CD and DMA latencies all change how often a
 /// loop runs. Two runs profiled by two different frontends produced two
-/// different PGO images from the same commit. Pinning the emulator makes the
-/// profile, and so the image, a function of this checkout alone. --frontend
-/// still picks the emulator the validation routes replay on.
+/// different PGO images from the same commit. An explicit --frontend or
+/// HK_PSX_FRONTEND selects the retained emulator for profiling as well as
+/// validation. Profiling binds it to HK_PSX_FRONTEND_SHA256 and records its
+/// external identity instead of claiming the lock file's source revision.
 fn pinned_frontend(root: &Path, options: &Options) -> Result<(PathBuf, String)> {
+    if let Some(path) = options.frontend.clone().or_else(|| {
+        std::env::var_os("HK_PSX_FRONTEND").map(PathBuf::from)
+    }) {
+        let expected = std::env::var("HK_PSX_FRONTEND_SHA256")
+            .map_err(|_| "an external profiling frontend requires HK_PSX_FRONTEND_SHA256")?;
+        return external_profile_frontend(path, &expected);
+    }
     let pin = read_json(&root.join("emulator.lock.json"))?;
     let revision = pin["revision"]
         .as_str()
@@ -1974,6 +1985,21 @@ fn pinned_frontend(root: &Path, options: &Options) -> Result<(PathBuf, String)> 
 /// Where the SDK's `psoxide-link` package is installed from, as in the
 /// emulator's Makefile.
 const SDK_GIT: &str = "https://github.com/EBonura/PSoXide";
+
+/// Verify an explicitly selected profiling frontend without compiling a fallback.
+fn external_profile_frontend(path: PathBuf, expected: &str) -> Result<(PathBuf, String)> {
+    if expected.len() != 64 || !expected.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("HK_PSX_FRONTEND_SHA256 must contain a SHA256 digest".into());
+    }
+    if !path.is_file() {
+        return Err(format!("profiling frontend not found at {}", path.display()).into());
+    }
+    let actual = sha256_file(&path)?;
+    if !actual.eq_ignore_ascii_case(expected) {
+        return Err(format!("profiling frontend SHA256 mismatch at {}", path.display()).into());
+    }
+    Ok((path, format!("external:sha256:{actual}")))
+}
 
 /// The program and arguments that hydrate an exported emulator tree from the
 /// local SDK (`sdk` is a `sdk=<checkout>` source). A pin that still ships
@@ -2825,6 +2851,30 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_profile_frontend_is_hash_bound_and_records_external_identity() {
+        let dir = tree("external-profile");
+        let path = dir.join("retained-frontend");
+        std::fs::write(&path, b"abc").unwrap();
+        let digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let (selected, identity) = external_profile_frontend(path.clone(), digest).unwrap();
+        assert_eq!(selected, path);
+        assert_eq!(identity, format!("external:sha256:{digest}"));
+        std::fs::write(&path, b"changed").unwrap();
+        assert!(external_profile_frontend(path.clone(), digest).is_err());
+        std::fs::remove_file(&path).unwrap();
+        assert!(external_profile_frontend(path, digest).is_err());
+        assert!(!dir.join(".hkpsx/emulator").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn external_profile_frontend_rejects_missing_or_malformed_recorded_digest() {
+        for digest in ["", "abc", "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"] {
+            assert!(external_profile_frontend(PathBuf::from("absent"), digest).is_err());
+        }
+    }
 
     #[test]
     fn baseline_input_exception_requires_exact_completed_control() {
