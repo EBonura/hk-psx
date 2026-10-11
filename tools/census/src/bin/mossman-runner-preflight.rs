@@ -70,10 +70,30 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
     let source = Source::new(original)?;
     let region_bytes = std::fs::read(cooked)?;
     let regions: J = serde_json::from_slice(&region_bytes)?;
+    let settings = hk_unity::scene::build_settings(&source)?;
     let mut result = Vec::new();
     for &(name, file, scene_id, gid, fid, spec_id, expected) in INSTANCES {
+        if settings.get(name).map(String::as_str) != Some(file) {
+            return Err(format!("original BuildSettings scene binding drift: {name}").into());
+        }
+        let scenes: Vec<_> = regions["scenes"]
+            .as_array()
+            .ok_or("scene table missing")?
+            .iter()
+            .filter(|s| s["scene_id"].as_i64() == Some(scene_id))
+            .collect();
+        if scenes.len() != 1
+            || scenes[0]["scene_name"].as_str() != Some(name)
+            || scenes[0]["file"].as_str() != Some(file)
+        {
+            return Err(format!("current scene ID/name/file binding drift: {scene_id}").into());
+        }
         let asset = source.file(file)?;
         let original_fsm = source.object(&asset, fid)?;
+        let fsm_tree = source.read(&original_fsm)?;
+        if fsm_tree.get("m_GameObject").and_then(Value::pptr) != Some((0, gid)) {
+            return Err("original movement FSM belongs to another GameObject".into());
+        }
         let digest = format!("{:x}", Sha256::digest(original_fsm.raw()?));
         if digest != expected {
             return Err(format!("original FSM drift {}", original_fsm.sid()).into());
@@ -137,6 +157,11 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
             if region["scene_id"].as_i64() != Some(scene_id) {
                 continue;
             }
+            if region["scene_name"].as_str() != Some(name)
+                || region["scene_file"].as_str() != Some(file)
+            {
+                return Err("current region scene name/file differs from scene table".into());
+            }
             for actor in region["actors"].as_array().ok_or("region actors missing")? {
                 if actor["spec_source_id"].as_i64() == Some(spec_id) {
                     if actor["game_object"].as_i64() != Some(gid) {
@@ -148,7 +173,15 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
                             .ok_or("actor source missing")?
                             .to_string(),
                     );
-                    port.push(json!({"chunk_id":region["chunk_id"],"source":actor["source"],"spec_source_id":actor["spec_source_id"],"position":actor["position"],"health":actor["health"],"movement_supported":actor["movement_supported"],"pending_movement_error":actor["pending_movement_error"],"current_actor_bank_bytes":region["actor_bank_bytes"]}));
+                    let bank = match region["actor_bank_bytes"].as_u64() {
+                        Some(bytes) => {
+                            json!({"status":"reported existing cook measurement","bytes":bytes,"reason":"actor_bank_bytes field in hashed cooked regions manifest; no new family art cooked"})
+                        }
+                        None => {
+                            json!({"status":"unknown","bytes":null,"reason":"actor_bank_bytes absent or not a nonnegative integer in cooked manifest"})
+                        }
+                    };
+                    port.push(json!({"chunk_id":region["chunk_id"],"source":actor["source"],"spec_source_id":actor["spec_source_id"],"position":actor["position"],"health":actor["health"],"movement_supported":actor["movement_supported"],"pending_movement_error":actor["pending_movement_error"],"current_actor_bank_evidence":bank}));
                 }
             }
         }
