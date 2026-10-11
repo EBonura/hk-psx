@@ -1,6 +1,6 @@
 //! Resolve each Shiny Control instance's authored routing, not every prefab branch.
 use hk_unity::{
-    playmaker::{action_fields, enabled, field},
+    playmaker::{action_fields_with_plain_strings, enabled, field},
     Value,
 };
 use serde_json::{json, Value as J};
@@ -47,7 +47,7 @@ fn action_list(state: &Value, kind: &str) -> Result<Vec<hk_unity::playmaker::Fie
     enabled(state)
         .into_iter()
         .filter(|(n, _)| n == kind)
-        .map(|(_, i)| action_fields(d, i, false).map_err(|e| e.to_string()))
+        .map(|(_, i)| action_fields_with_plain_strings(d, i, false).map_err(|e| e.to_string()))
         .collect()
 }
 fn target(state: &Value, event: &str) -> Option<String> {
@@ -65,6 +65,19 @@ fn target(state: &Value, event: &str) -> Option<String> {
         .and_then(|t| t.get("toState"))
         .and_then(Value::str)
 }
+fn authored_write(kind: &str, fields: &hk_unity::playmaker::Fields, vars: &BTreeMap<String, Value>) -> J {
+    let key = field(fields, "boolName").or_else(|| field(fields, "intName")).or_else(|| field(fields, "floatName"));
+    let amount = field(fields, "value").or_else(|| field(fields, "amount"));
+    let binding = |v: Option<&Value>| v.filter(|x|x.get("useVariable").is_some_and(Value::truthy)).and_then(|x|x.get("name")).and_then(Value::str);
+    let value = amount.map(|x|scalar(x,vars)).unwrap_or(J::Null);
+    let field_value = key.map(|x|scalar(x,vars)).unwrap_or(J::Null);
+    let typed = match kind { "SetPlayerDataBool" => value.is_boolean(), "SetPlayerDataInt"|"IncrementPlayerDataInt"|"PlayerDataIntAdd" => value.as_i64().is_some(), "SetPlayerDataFloat" => value.is_number(), _=>false };
+    let literal = typed && field_value.is_string() && binding(key).is_none() && binding(amount).is_none();
+    json!({"grant_parameters_version":2,"action":kind,"field":field_value,"field_value_from":binding(key),"value":value,"value_from":binding(amount),"literal_parameters_checked":true,"literal_parameters_proven":literal,"literal_evidence_reason":if key.is_none(){"field parameter absent: unknown"}else if amount.is_none(){"value/amount absent: unknown, no default inferred"}else if !literal{"dynamic or mismatched typed parameters: unknown"}else{"explicit typed literal parameters"}})
+}
+pub fn checked_literal(write: &J) -> bool {
+    write["grant_parameters_version"] == 2 && write["literal_parameters_checked"] == true && write["literal_parameters_proven"] == true
+}
 fn writes(state: &Value, vars: &BTreeMap<String, Value>) -> Result<Vec<J>, String> {
     let d = state.get("actionData").ok_or("no actionData")?;
     let mut out = Vec::new();
@@ -80,13 +93,8 @@ fn writes(state: &Value, vars: &BTreeMap<String, Value>) -> Result<Vec<J>, Strin
         {
             continue;
         }
-        let fields = action_fields(d, index, false).map_err(|e| e.to_string())?;
-        let name = field(&fields, "boolName")
-            .or_else(|| field(&fields, "intName"))
-            .or_else(|| field(&fields, "floatName"))
-            .map(|x| scalar(x, vars));
-        let amount = field(&fields, "value").or_else(|| field(&fields, "amount"));
-        out.push(json!({"action":kind,"field":name,"value":amount.map(|x|scalar(x,vars)).unwrap_or(json!(1)),"value_from":amount.filter(|x|x.get("useVariable").is_some_and(Value::truthy)).and_then(|x|x.get("name")).and_then(Value::str)}));
+        let fields = action_fields_with_plain_strings(d, index, false).map_err(|e| e.to_string())?;
+        out.push(authored_write(&kind, &fields, vars));
     }
     Ok(out)
 }
@@ -225,6 +233,26 @@ pub fn pd_writes(fsm: &Value) -> Vec<J> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_and_dynamic_grant_parameters_are_unknown() {
+        let key = ("intName".into(), Value::Str(b"someField".to_vec()));
+        for kind in ["SetPlayerDataInt","IncrementPlayerDataInt","SetPlayerDataBool"] {
+            let w=authored_write(kind,&vec![key.clone()],&BTreeMap::new());
+            assert!(w["value"].is_null()); assert_eq!(w["literal_parameters_proven"],false);
+        }
+        let dynamic=Value::Map(vec![("useVariable".into(),Value::Bool(true)),("name".into(),Value::Str(b"Runtime Field".to_vec()))]);
+        let fields=vec![("boolName".into(),dynamic),("value".into(),Value::Bool(true))];
+        let vars=BTreeMap::from([("Runtime Field".into(),Value::Str(b"hasDash".to_vec()))]);
+        let w=authored_write("SetPlayerDataBool",&fields,&vars);
+        assert_eq!(w["field_value_from"],"Runtime Field");assert_eq!(w["literal_parameters_proven"],false);
+        let wrong=vec![("boolName".into(),Value::Str(b"hasDash".to_vec())),("value".into(),Value::Str(b"true".to_vec()))];
+        assert_eq!(authored_write("SetPlayerDataBool",&wrong,&vars)["literal_parameters_proven"],false);
+    }
+    #[test]
+    fn old_cache_and_unproved_values_never_become_checked_literals() {
+        assert!(!checked_literal(&json!({"action":"SetPlayerDataInt","field":"fireballLevel","value":1})));
+        assert!(!checked_literal(&json!({"grant_parameters_version":2,"literal_parameters_checked":true,"literal_parameters_proven":false})));
+    }
     fn value(j: J) -> Value {
         match j {
             J::Null => Value::Map(vec![]),

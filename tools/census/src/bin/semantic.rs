@@ -4,6 +4,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 #[path = "../catalogue.rs"]
 mod catalogue;
+#[path = "../grants.rs"]
+mod grants;
 #[path = "../overlays.rs"]
 mod overlays;
 use std::{
@@ -166,14 +168,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 for w in g["writes"].as_array().unwrap_or(&Vec::new()) {
                     if let Some(field) = w["field"].as_str() {
-                        if !w["value"].is_null() && w["value_from"].is_null() {
+                        if grants::checked_literal(w) {
                             add(
                                 "selected pickup grant",
                                 format!("{}={}", field, w["value"]),
                                 json!({"selected_route":g,"write":w,"scope":"Selected first target only; onward graph may grant additional abilities. Zote Event is not a Mantis Claw grant."}),
                             );
                         } else {
-                            unresolved.push(json!({"sid":r["sid"],"reason":"runtime assigned grant value","write":w}));
+                            unresolved.push(json!({"sid":r["sid"],"reason":"unverified legacy decoder or missing/dynamic/mismatched literal grant parameters","write":w}));
                         }
                     }
                 }
@@ -199,7 +201,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .contains(&f)
                 {
                     let value = &w["write"]["value"];
-                    if !value.is_null()
+                    if grants::checked_literal(&w["write"])
+                        && !value.is_null()
                         && w["write"]["value_from"].is_null()
                         && (value == &json!(true) || value.as_i64().is_some_and(|x| x > 0))
                     {
@@ -208,6 +211,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             format!("{}={}", f, value),
                             json!({"fsm":r["fsm_name"],"write":w,"scope":"Enabled authored write, reachability and acquisition trigger still require graph audit."}),
                         );
+                    } else if !grants::checked_literal(&w["write"]) {
+                        unresolved.push(json!({"sid":r["sid"],"scene":r["scene"],"reason":"ability literal from legacy decoder or unproved parameters remains unknown","write":w}));
                     }
                 }
             }
@@ -244,7 +249,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(
         out.join("semantic-summary.json"),
         serde_json::to_vec_pretty(
-            &json!({"counts_by_explicit_unit":counts,"semantic_census_complete":false,"unresolved_grants":unresolved,"validated_authored_graph_overlays":validated_overlays,"overlay_scope":"Additional authored selected write units only; existing runtime, implementation, journey and unresolved-grant dimensions are not promoted or removed.","coverage":"Typed scene and resource metadata, selected Shiny instance branches and explicit enabled PlayerData writes. External sharedasset prefabs, full grant reachability, enemy/boss aliases, localization, equipment catalogue and runtime/journey audits remain incomplete. Counts cannot be summed into a unique gameplay feature total."}),
+            &json!({"counts_by_explicit_unit":counts,"semantic_census_complete":false,"required_grant_parameters_version":2,"legacy_grant_value_policy":"Absent/old version values remain unknown; exact source-hash-bound graph overlays may provide independent authored evidence.","unresolved_grants":unresolved,"validated_authored_graph_overlays":validated_overlays,"overlay_scope":"Additional authored selected write units only; existing runtime, implementation, journey and unresolved-grant dimensions are not promoted or removed.","coverage":"Typed scene and resource metadata, selected Shiny instance branches and explicit enabled PlayerData writes. External sharedasset prefabs, full grant reachability, enemy/boss aliases, localization, equipment catalogue and runtime/journey audits remain incomplete. Counts cannot be summed into a unique gameplay feature total."}),
         )?,
     )?;
     Ok(())
