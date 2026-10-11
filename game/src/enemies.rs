@@ -4635,7 +4635,7 @@ impl Actor {
             Err(q::QueryError::ZeroLengthSight) => false,
             Err(_) => panic!("Zombie Shield LOS outside validated coordinates"),
         };
-        let probes = q::walker_queries_near(shape, pos, facing, count, edge, edges_near)
+        let probes = q::walker_queries_with(shape, pos, facing, count, edge, edges_near, false)
             .expect("Zombie Shield Sweep outside validated coordinates");
         hk_sim::zombie_shield::Senses {
             camera_in_start_range: hk_sim::runner::camera_in_start_range(

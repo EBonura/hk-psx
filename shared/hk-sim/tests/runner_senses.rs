@@ -2,6 +2,28 @@ use hk_sim::{runner_senses::*, ONE};
 use std::cell::Cell;
 
 #[test]
+fn shield_hole_probe_uses_unshifted_authored_box_on_both_platform_ends() {
+    // Crossroads_15's Zombie Shield body: local collider offset -0.3125,
+    // with the original hole check rooted at the actor rather than that offset.
+    let shape = Shape::from_boxes([-57344, -82944, 16384, 30720], [0; 4]);
+    assert_eq!(shape.body_offset_left[0], -20480);
+    for facing in [-1, 1] {
+        let edge = if facing == 1 {
+            [-4 * ONE, -91136, 40960, -91136]
+        } else {
+            [-40960, -91136, 4 * ONE, -91136]
+        };
+        let source = walker_queries_with(shape, [0; 2], facing, 1, |_| edge, all_edges_for_test, false).unwrap();
+        let runner = walker_queries_near(shape, [0; 2], facing, 1, |_| edge, all_edges_for_test).unwrap();
+        assert!(source.floor_ahead, "authored Shield box still reaches the platform");
+        assert!(!runner.floor_ahead, "Runner retains its collider-offset probe");
+        let beyond = [edge[0] - facing * ONE, edge[1], edge[2] - facing * ONE, edge[3]];
+        assert!(!walker_queries_with(shape, [0; 2], facing, 1, |_| beyond, all_edges_for_test, false).unwrap().floor_ahead);
+    }
+}
+fn all_edges_for_test(_: [i32; 4]) -> EdgeMask { ALL_EDGES }
+
+#[test]
 fn authored_odd_body_endpoints_survive_both_facings() {
     let body = [-32769, -49153, 32768, 49152];
     let actor = [70 * ONE, 18 * ONE];
