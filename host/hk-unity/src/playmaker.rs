@@ -85,11 +85,14 @@ fn decode_fields(data: &Value, index: usize, objects: bool, plain_strings: bool)
         let kind = kinds[i];
         let pos = positions[i];
         let size = sizes[i];
+        if kind == 3 && plain_strings {
+            put(&mut fields, name, plain_string(&bytes, pos, size)?);
+            continue;
+        }
         let lo = (pos.max(0) as usize).min(bytes.len());
         let hi = ((pos + size).max(0) as usize).min(bytes.len()).max(lo);
         let raw = &bytes[lo..hi];
         let value = match kind {
-            3 if plain_strings => plain_string(&bytes, pos, size)?,
             15..=17 if size != 0 => {
                 let n = if kind == 17 { 1 } else { 4 };
                 if (size as usize) < n + 1 || raw.len() < n + 1 {
@@ -168,7 +171,7 @@ mod plain_string_tests {
     #[test]
     fn plain_strings_are_additive_to_legacy_fields() {
         let list = |n:i64| Value::List(vec![Value::Int(n)]);
-        let data=Value::Map(vec![
+        let mut data=Value::Map(vec![
             ("actionNames".into(),Value::List(vec![Value::Str(b"CheckAlertRangeByName".to_vec())])),
             ("actionStartIndex".into(),list(0)),
             ("paramName".into(),Value::List(vec![Value::Str(b"childName".to_vec())])),
@@ -177,6 +180,10 @@ mod plain_string_tests {
         assert!(action_fields(&data,0,false).unwrap().is_empty());
         let checked=action_fields_with_plain_strings(&data,0,false).unwrap();
         assert_eq!(field(&checked,"childName").unwrap().str().as_deref(),Some("Attack Range"));
+        if let Value::Map(fields)=&mut data {
+            for (key,value) in fields { if &**key=="paramDataPos" || &**key=="paramByteDataSize" { *value=list(i64::MAX); } }
+        }
+        assert!(action_fields_with_plain_strings(&data,0,false).is_err());
     }
     #[test]
     fn authored_child_name_uses_exact_byte_range() {
