@@ -1,6 +1,8 @@
 //! Semantic catalogues from typed original fields and selected authored grants.
 //! These are evidence rows, not an inferred implementation or parity claim.
 use serde_json::{json, Value};
+#[path = "../catalogue.rs"]
+mod catalogue;
 use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader, Write},
@@ -32,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut features: BTreeMap<(String, String), Vec<Value>> = BTreeMap::new();
     let mut unresolved = Vec::new();
-    for line in BufReader::new(std::fs::File::open(input.join("source-objects.jsonl"))?).lines() {
+    for line in catalogue::Catalogue::open(input)? {
         let r: Value = serde_json::from_str(&line?)?;
         let component = r["component"].as_str().unwrap_or("");
         let mut add = |category: &str, key: String, contract: Value| {

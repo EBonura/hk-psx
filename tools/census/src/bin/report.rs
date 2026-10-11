@@ -3,9 +3,11 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::{BufRead, BufReader, Write},
+    io::Write,
     path::Path,
 };
+#[path = "../catalogue.rs"]
+mod catalogue;
 fn load(p: &Path) -> Result<Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_slice(&std::fs::read(p)?)?)
 }
@@ -97,8 +99,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    let mut writer =
-        std::io::BufWriter::new(std::fs::File::create(out.join("feature-contracts.jsonl"))?);
+    let mut writer = std::io::BufWriter::new(std::fs::File::create(
+        out.join("feature-contracts.jsonl.partial"),
+    )?);
     let mut counts: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
     let mut types: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut rows = 0;
@@ -123,8 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "ShinyItem",
         "SceneManager",
     ];
-    for line in BufReader::new(std::fs::File::open(original.join("source-objects.jsonl"))?).lines()
-    {
+    for line in catalogue::Catalogue::open(original)? {
         let r: Value = serde_json::from_str(&line?)?;
         let component = r["component"].as_str().unwrap();
         if component != "PlayMakerFSM" && !role_components.contains(&component) {
@@ -239,6 +241,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
     writer.flush()?;
+    std::fs::rename(
+        out.join("feature-contracts.jsonl.partial"),
+        out.join("feature-contracts.jsonl"),
+    )?;
     queue.sort_by_key(|r| {
         (
             r["priority"].as_u64().unwrap(),
