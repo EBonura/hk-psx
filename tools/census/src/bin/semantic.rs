@@ -177,6 +177,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             unresolved.push(json!({"sid":r["sid"],"reason":"unverified legacy decoder or missing/dynamic/mismatched literal grant parameters","write":w}));
                         }
+                    } else {
+                        unresolved.push(json!({"sid":r["sid"],"reason":"grant field absent or unresolved","write":w}));
                     }
                 }
             }
