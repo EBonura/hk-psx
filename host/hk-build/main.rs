@@ -677,18 +677,19 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // beside the Snail Shaman), hears the meeting, waits out the summon, jumps
     // into the orb, and after the black, the get-item message and the fade
     // gets up and walks off. The spell, 99 SOUL (100 capped by the vessel) and
-    // the source's own SaveGame at the wake point are what it pins.
+    // no automatic card write at the wake point are what it pins. Card saving
+    // requires a later explicit bench Save confirmation.
     ("mound-spell", "HK_SPELL_EARNED", 1),
     ("mound-spell", "HK_SHAMAN_STATE", 2),
     ("mound-spell", "HK_SHAMAN_TALKS", 1),
     ("mound-spell", "HK_SOUL", 99),
-    ("mound-spell", "HK_SAVE_WRITES", 1),
+    ("mound-spell", "HK_SAVE_WRITES", 0),
     ("mound-spell", "HK_SAVE_ERRORS", 0),
     ("mound-spell", "HK_DEATHS", 0),
     ("mound-spell", "HK_SAVE_LOADED", 1),
     // The Greenpath exit with the earned spell and no cheats. spell-exit boots
-    // from tools/cards/spell-exit.mcd: the record the Snail Shaman's SaveGame
-    // wrote in a mound-spell run (fireballLevel 1), reseated right of
+    // from tools/cards/spell-exit.mcd: a historical earned-spell record
+    // (fireballLevel 1), reseated right of
     // Crossroads_11_alt's Elder Baldur (tools/seed_card.py). SOUL starts at 0,
     // so the four casts come from the four rollers the Baldur spits once the
     // spell is had: three nail hits each for 33 SOUL, then a cast, the last
