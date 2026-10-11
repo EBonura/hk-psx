@@ -253,6 +253,16 @@ pub fn cancel() {
 }
 pub fn status() -> Status {
     exclusive(|t| {
+        // The chained VBlank handler may acknowledge a CD CPU latch that
+        // arrives after our wrapper checked it. The controller still owns
+        // that event: drain it through the same state machine while the CD
+        // source is masked, rather than waiting forever for another edge.
+        if !matches!(t.phase, Phase::Idle | Phase::Done | Phase::Failed)
+            && irq::pending() & CD_BIT == 0
+            && cdrom::irq_flag_value() != 0
+        {
+            service_irq(t);
+        }
         if !matches!(t.phase, Phase::Idle | Phase::Done | Phase::Failed)
             && psx_rt::interrupts::vblank_count().wrapping_sub(t.stamp) > TIMEOUT_VBLANKS
         {
@@ -330,6 +340,10 @@ extern "C" fn hk_cd_interrupt() {
     // Exception entry disables CPU interrupts; no foreground Transfer reference
     // can coexist because exclusive() masks the CD source before borrowing it.
     let t = unsafe { &mut *TRANSFER.0.get() };
+    service_irq(t);
+}
+#[inline(never)]
+fn service_irq(t: &mut Transfer) {
     unsafe {
         HK_CD_IRQ_COUNT = HK_CD_IRQ_COUNT.wrapping_add(1);
     }
@@ -438,6 +452,7 @@ pub fn install() {
     irq::set_mask(mask | CD_BIT);
 }
 
+#[cfg(target_arch = "mips")]
 core::arch::global_asm!(
     r#"
     .set noreorder
@@ -543,3 +558,42 @@ hk_cd_exception_wrapper:
     .set reorder
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn lost_latch_services_owned_events_and_keeps_pause_ownership() {
+        let mut words = [0u32; 512];
+        crate::fixture_reset();
+        exclusive(|t| *t = Transfer { phase: Phase::Reading, destination: words.as_mut_ptr(),
+            count: 1, received: 0, cancelled: false, error: 0, stamp: 0,
+            location: [0; 3], recovering: false });
+        crate::fixture_event(1, false);
+        assert_eq!(status(), Status::Busy);
+        assert_eq!(received(), 1);
+        exclusive(|t| assert_eq!(t.phase, Phase::PauseAck));
+        crate::fixture_event(3, false);
+        assert_eq!(status(), Status::Busy);
+        exclusive(|t| assert_eq!(t.phase, Phase::PauseComplete));
+        crate::fixture_event(2, false);
+        assert_eq!(status(), Status::Done);
+        assert_eq!(crate::fixture_mask(), CD_BIT);
+        assert_eq!(crate::fixture_commands(), vec![cdrom::CMD_PAUSE]);
+    }
+    #[test]
+    fn latched_and_inactive_events_remain_with_their_owner() {
+        crate::fixture_reset();
+        for phase in [Phase::Idle, Phase::Done, Phase::Failed] {
+            exclusive(|t| { t.phase = phase; t.error = 9; });
+            crate::fixture_event(3, false);
+            let _ = status();
+            assert_eq!(crate::fixture_flag(), 3);
+        }
+        exclusive(|t| { t.phase = Phase::Reading; t.stamp = 0; });
+        crate::fixture_event(1, true);
+        assert_eq!(status(), Status::Busy);
+        assert_eq!(crate::fixture_flag(), 1);
+        assert_eq!(crate::fixture_mask(), CD_BIT);
+    }
+}
