@@ -797,7 +797,8 @@ fn save_record(
 }
 /// `Check Fall`'s `Black` and `Set Respawns`: the Knight lies at the wake point
 /// facing right with `AddMPCharge(100)`, the respawn is set there and the game
-/// is saved (`SaveGame`). The spell itself was set by shaman.rs.
+/// stays in memory. The spell itself was set by shaman.rs. Saving requires the
+/// player's explicit bench Save confirmation.
 fn wake(game: &mut Game, scene: usize, cache: &disc::Cache) {
     let (x, y) = (shaman::WAKE_AT[0], shaman::WAKE_AT[1] + ONE / 4);
     audio::reset_movement();
@@ -813,7 +814,6 @@ fn wake(game: &mut Game, scene: usize, cache: &disc::Cache) {
         game.respawn = Some((scene, [x, y], 1, id));
         game.safe = (x, y, id);
         game.safe_facing = 1;
-        game.save_requested = Some(save_record(game, scene, [x, y], 1, id));
     }
 }
 /// What the camera reads off the Knight: position, body box (the trigger
