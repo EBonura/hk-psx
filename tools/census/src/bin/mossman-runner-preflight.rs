@@ -79,6 +79,8 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
             return Err(format!("original FSM drift {}", original_fsm.sid()).into());
         }
         let scene = Scene::new(&source, file)?;
+        let game_object = source.object(&asset, gid)?;
+        let game_object_digest = format!("{:x}", Sha256::digest(game_object.raw()?));
         let health = scene
             .object(spec_id)
             .ok_or("canonical health record absent")?;
@@ -103,6 +105,7 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
                 "tk2dSpriteAnimator",
                 "DamageHero",
                 "PlayMakerFSM",
+                "Transform",
             ]
             .contains(&record.typename.as_str())
             {
@@ -152,7 +155,7 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
         if seen != BTreeSet::from([format!("{file}:{spec_id}")]) {
             return Err(format!("expected exactly one canonical spec for {file}:{spec_id}").into());
         }
-        result.push(json!({"scene":name,"scene_id":scene_id,"game_object_source":format!("{file}:{gid}"),"fsm_source":original_fsm.sid(),"fsm_raw_sha256":digest,"canonical_spec_source":format!("{file}:{spec_id}"),"components":components,"art_libraries":libraries,"current_port":port,"runtime_parity":"unknown","journey_exercised":false,"new_bank_growth_bytes":null,"new_code_growth_bytes":null,"new_static_ram_growth_bytes":null}));
+        result.push(json!({"scene":name,"scene_id":scene_id,"game_object_source":game_object.sid(),"game_object_raw_sha256":game_object_digest,"fsm_source":original_fsm.sid(),"fsm_raw_sha256":digest,"canonical_spec_source":format!("{file}:{spec_id}"),"components":components,"art_libraries":libraries,"current_port":port,"runtime_parity":"unknown","journey_exercised":false,"new_bank_growth_bytes":null,"new_code_growth_bytes":null,"new_static_ram_growth_bytes":null}));
     }
     Ok(
         json!({"scope":"Five selected admitted-scene instances; Fungus1_31 and other families excluded, not a full enemy census.","semantic_census_complete":false,"cook_performed":false,"cooked_regions_sha256":format!("{:x}",Sha256::digest(&region_bytes)),"instances":result}),
