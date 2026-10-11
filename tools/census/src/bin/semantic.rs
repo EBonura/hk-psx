@@ -1,8 +1,11 @@
 //! Semantic catalogues from typed original fields and selected authored grants.
 //! These are evidence rows, not an inferred implementation or parity claim.
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 #[path = "../catalogue.rs"]
 mod catalogue;
+#[path = "../overlays.rs"]
+mod overlays;
 use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader, Write},
@@ -17,8 +20,10 @@ fn string<'a>(r: &'a Value, path: &str) -> Option<&'a str> {
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a: Vec<_> = std::env::args().collect();
-    if a.len() != 3 {
-        return Err("usage: semantic ORIGINAL_OUTPUT REPORT_OUTPUT".into());
+    if a.len() != 3 && a.len() != 4 {
+        return Err(
+            "usage: semantic ORIGINAL_OUTPUT REPORT_OUTPUT [AUTHORED_GRAPH_DIRECTORY]".into(),
+        );
     }
     let input = Path::new(&a[1]);
     let out = Path::new(&a[2]);
@@ -34,12 +39,59 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut features: BTreeMap<(String, String), Vec<Value>> = BTreeMap::new();
     let mut unresolved = Vec::new();
+    let mut graphs = BTreeMap::new();
+    if let Some(directory) = a.get(3) {
+        for entry in std::fs::read_dir(directory)? {
+            let path = entry?.path();
+            if path.extension().and_then(|v| v.to_str()) != Some("json") {
+                continue;
+            }
+            let bytes = std::fs::read(&path)?;
+            let mut graph: Value = serde_json::from_slice(&bytes)?;
+            graph["_overlay_file_sha256"] = json!(format!("{:x}", Sha256::digest(&bytes)));
+            let sid = graph["source_id"]
+                .as_str()
+                .ok_or("graph source ID absent")?
+                .to_string();
+            if graphs.insert(sid, graph).is_some() {
+                return Err("duplicate graph source ID".into());
+            }
+        }
+    }
+    let mut validated_overlays = Vec::new();
     for line in catalogue::Catalogue::open(input)? {
         let r: Value = serde_json::from_str(&line?)?;
+        let overlay = graphs
+            .remove(r["sid"].as_str().unwrap_or(""))
+            .map(|graph| overlays::selected(&graph, &r))
+            .transpose()?;
         let component = r["component"].as_str().unwrap_or("");
         let mut add = |category: &str, key: String, contract: Value| {
             features.entry((category.into(),key)).or_default().push(json!({"scene":r["scene"],"sid":r["sid"],"game_object":r["game_object_name"],"source_sha256":r["source_sha256"],"contract":contract,"runtime_and_journey_audit":audited.get(r["sid"].as_str().unwrap_or("")).filter(|proof|proof["source_sha256"]==r["source_sha256"])}));
         };
+        if let Some(proof) = overlay {
+            for write in proof["writes"].as_array().ok_or("overlay writes missing")? {
+                if let Some(field) = write["field"].as_str() {
+                    if !write["value"].is_null() && write["value_from"].is_null() {
+                        add(
+                            "authored graph selected write",
+                            format!("{}={}", field, write["value"]),
+                            json!({"graph_evidence":proof,"write":write,"runtime_reachability":"unknown","port_implementation":"unknown","journey_exercised":false}),
+                        );
+                        if field == "hasWalljump"
+                            && (write["value"] == true || write["value"].as_i64() == Some(1))
+                        {
+                            add(
+                                "ability authored write",
+                                "hasWalljump=true".into(),
+                                json!({"graph_evidence":proof,"write":write,"scope":"Mantis Claw authored acquisition write; canWallJump is a supporting flag, not another ability. Runtime collection and implementation remain unknown."}),
+                            );
+                        }
+                    }
+                }
+            }
+            validated_overlays.push(proof);
+        }
         if component.starts_with("EnemyDeathEffects") {
             if let Some(key) = string(&r, "/playerDataName") {
                 if !key.is_empty() {
@@ -161,6 +213,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+    if !graphs.is_empty() {
+        return Err("graph source IDs absent from checked catalogue".into());
+    }
     let mut file =
         std::io::BufWriter::new(std::fs::File::create(out.join("semantic-features.jsonl"))?);
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
@@ -173,10 +228,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         file.write_all(b"\n")?;
     }
     file.flush()?;
+    if a.len() == 4 {
+        let total: usize = validated_overlays
+            .iter()
+            .map(|p| p["writes"].as_array().map_or(0, Vec::len))
+            .sum();
+        let mut markdown=format!("# Targeted authored grant overlays\n\nCount unit: authored selected write instances across {} original FSM instances. Missing implementation proven: 0; implemented but unexercised proven: 0; implementation unknown: {total}; total: {total}. All {total} are journey unexercised. Existing unresolved source grants and the complete missing/unexercised queue remain unchanged. Runtime acquisition is unknown for every row.\n\n| Queue ID | Priority | Scene and original ID | Authored state/write | Original raw SHA | Graph file SHA | Port implementation | Journey |\n|---|---|---|---|---|---|---|---|\n",validated_overlays.len());
+        for proof in &validated_overlays {
+            for (index, write) in proof["writes"]
+                .as_array()
+                .ok_or("overlay writes absent")?
+                .iter()
+                .enumerate()
+            {
+                let rank = match proof["source_id"].as_str().unwrap_or("") {
+                    "level178:7543" => 10,
+                    "level348:1225" | "level373:6394" => 30,
+                    "level423:6506" => 40,
+                    "level482:2465" => 60,
+                    "level124:6133" => 70,
+                    _ => 80,
+                };
+                markdown.push_str(&format!("| grant:{}:{index} | {rank} | {} / {} | {}: {}={} | {} | {} | Unknown, no audited implementation binding | No, no structured behavior receipt |\n",proof["source_id"].as_str().unwrap_or(""),proof["scene"].as_str().unwrap_or(""),proof["source_id"].as_str().unwrap_or(""),write["authored_state"].as_str().unwrap_or(""),write["field"].as_str().unwrap_or(""),write["value"],proof["source_sha256"].as_str().unwrap_or(""),proof["graph_file_sha256"].as_str().unwrap_or("")));
+            }
+        }
+        markdown.push_str("\nPriority: walljump progression first, then fragment acquisition, Godfinder, journal mask and grub pin. This ranks audit work, not proven progression blocking. Each JSON guard/trace retains the authored choice and stop reason. Automatic original SaveGame actions remain user-excluded and are never queued as missing implementation.\n");
+        std::fs::write(out.join("authored-grant-overlays.md"), markdown)?;
+    }
     std::fs::write(
         out.join("semantic-summary.json"),
         serde_json::to_vec_pretty(
-            &json!({"counts_by_explicit_unit":counts,"semantic_census_complete":false,"unresolved_grants":unresolved,"coverage":"Typed scene and resource metadata, selected Shiny instance branches and explicit enabled PlayerData writes. External sharedasset prefabs, full grant reachability, enemy/boss aliases, localization, equipment catalogue and runtime/journey audits remain incomplete. Counts cannot be summed into a unique gameplay feature total."}),
+            &json!({"counts_by_explicit_unit":counts,"semantic_census_complete":false,"unresolved_grants":unresolved,"validated_authored_graph_overlays":validated_overlays,"overlay_scope":"Additional authored selected write units only; existing runtime, implementation, journey and unresolved-grant dimensions are not promoted or removed.","coverage":"Typed scene and resource metadata, selected Shiny instance branches and explicit enabled PlayerData writes. External sharedasset prefabs, full grant reachability, enemy/boss aliases, localization, equipment catalogue and runtime/journey audits remain incomplete. Counts cannot be summed into a unique gameplay feature total."}),
         )?,
     )?;
     Ok(())

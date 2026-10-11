@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(data) = state.get("actionData") {
             for (kind, index) in enabled(state) {
                 let fields = action_fields(data, index, false)?;
-                let decoded:Vec<_>=fields.iter().map(|(name,value)|json!({"name":name,"value":grants::scalar(value,&vars),"original_debug":format!("{value:?}")})).collect();
+                let decoded:Vec<_>=fields.iter().map(|(name,value)|json!({"name":name,"value":grants::scalar(value,&vars),"value_from":value.get("useVariable").filter(|v|v.truthy()).and_then(|_|value.get("name")).and_then(Value::str),"original_debug":format!("{value:?}")})).collect();
                 actions.push(json!({"action":kind,"fields":decoded}));
             }
         }
