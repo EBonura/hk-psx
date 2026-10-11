@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "scope": "Audited per-source-ID implementation subsets. Exact original-instance journey assertions plus completed receipts required; drift invalidates proof.",
+  "policy_exclusions": [{
+    "sid": "level76:14190",
+    "source_sha256": "e2f3ecd00e1960f841c01ccdb9dca464863372e2b43545a6bb487b99766243c6",
+    "original_contract": "Check Fall FSM, Snail Shaman Set Respawns SaveGame action",
+    "excluded_behaviour": "Automatic card write after earning Vengeful Spirit",
+    "reason": "Explicit user requirement: no automatic saves. Original SaveGame presence is intentionally excluded, not a missing port feature. Other grant and wake behaviours remain subject to audit."
+  }],
+  "contracts": [
+    {
+      "sid": "level6:12546",
+      "source_sha256": "5179cd3f1fa6ba24c5a565f23867bf56080b9e084be22fe3dc8a4279b1363ac9",
+      "original_role": "Tutorial Crawler actor, not all HealthManager objects",
+      "implementation": [
+        {
+          "file": "game/src/enemies.rs",
+          "sha256": "0f44c74e0549175fc5b2a326e665f5671571501074955624d20cb73a134822bc",
+          "exact_text": "ActorController::Crawler => Runtime::Walker"
+        },
+        {
+          "file": "shared/hk-sim/src/actors.rs",
+          "sha256": "026261cc6edccddff5870b844d7eab7d1be1fc1a98123bdb5c7c2bfc98b7bded",
+          "exact_text": "Crawler,"
+        },
+        {
+          "file": "data/regions.json",
+          "sha256": "13ce661c056e1f4e75f1bbde725818de4fa11eeafd0a2a0426ae7437784debaf",
+          "exact_text": "level6:12546"
+        }
+      ],
+      "implementation_scope": "WalkLeftRight Crawler subset; original global direction events, activation and RNG parity excluded. Source ID12546 placement confirmed in installed complete data/regions.json actor movement_supported=true and movement_control.kind=WalkLeftRight.",
+      "journey": [],
+      "receipts": [],
+      "behaviour_assertion": ""
+    }
+  ]
+}
