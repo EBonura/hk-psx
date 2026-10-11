@@ -2,7 +2,7 @@
 #[path = "../grants.rs"]
 mod grants;
 use hk_unity::{
-    playmaker::{action_fields, enabled},
+    playmaker::{action_fields_with_plain_strings, enabled},
     Source, Value,
 };
 use serde_json::json;
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut actions = Vec::new();
         if let Some(data) = state.get("actionData") {
             for (kind, index) in enabled(state) {
-                let fields = action_fields(data, index, false)?;
+                let fields = action_fields_with_plain_strings(data, index, false)?;
                 let decoded:Vec<_>=fields.iter().map(|(name,value)|json!({"name":name,"value":grants::scalar(value,&vars),"value_from":value.get("useVariable").filter(|v|v.truthy()).and_then(|_|value.get("name")).and_then(Value::str),"original_debug":format!("{value:?}")})).collect();
                 actions.push(json!({"action":kind,"fields":decoded}));
             }

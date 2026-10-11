@@ -35,6 +35,24 @@ fn compact(value: Value, use_variable: bool, name: String) -> Value {
 
 /// host/focus.py `action_fields`: the compact scalar fields of one action.
 pub fn action_fields(data: &Value, index: usize, objects: bool) -> Result<Fields> {
+    decode_fields(data, index, objects, false)
+}
+
+/// Include serialized plain strings without changing existing cooker fingerprint pins.
+pub fn action_fields_with_plain_strings(data: &Value, index: usize, objects: bool) -> Result<Fields> {
+    decode_fields(data, index, objects, true)
+}
+
+fn plain_string(bytes: &[u8], pos: i64, size: i64) -> Result<Value> {
+    let lo = usize::try_from(pos).map_err(|_| Error::Format("negative FSM string offset".into()))?;
+    let size = usize::try_from(size).map_err(|_| Error::Format("negative FSM string size".into()))?;
+    let hi = lo.checked_add(size).ok_or_else(|| Error::Format("FSM string range overflow".into()))?;
+    let raw = bytes.get(lo..hi).ok_or_else(|| Error::Format("truncated plain FSM string".into()))?;
+    std::str::from_utf8(raw).map_err(|_| Error::Format("plain FSM string is not UTF-8".into()))?;
+    Ok(Value::Str(raw.to_vec()))
+}
+
+fn decode_fields(data: &Value, index: usize, objects: bool, plain_strings: bool) -> Result<Fields> {
     let get = |k: &str| {
         data.get(k)
             .ok_or_else(|| Error::Format(format!("actionData lacks {k}")))
@@ -71,6 +89,7 @@ pub fn action_fields(data: &Value, index: usize, objects: bool) -> Result<Fields
         let hi = ((pos + size).max(0) as usize).min(bytes.len()).max(lo);
         let raw = &bytes[lo..hi];
         let value = match kind {
+            3 if plain_strings => plain_string(&bytes, pos, size)?,
             15..=17 if size != 0 => {
                 let n = if kind == 17 { 1 } else { 4 };
                 if (size as usize) < n + 1 || raw.len() < n + 1 {
@@ -141,4 +160,22 @@ pub fn enabled(state: &Value) -> Vec<(String, usize)> {
             (s.rsplit('.').next().unwrap_or("").to_string(), i)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod plain_string_tests {
+    use super::*;
+    #[test]
+    fn authored_child_name_uses_exact_byte_range() {
+        let bytes = b"paddingAttack Rangeunused";
+        assert_eq!(plain_string(bytes, 7, 12).unwrap().str().as_deref(), Some("Attack Range"));
+        assert_eq!(plain_string(bytes, 7, 0).unwrap().str().as_deref(), Some(""));
+    }
+    #[test]
+    fn invalid_ranges_and_encoding_fail_closed() {
+        for (pos,size) in [(-1,1),(0,-1),(2,1),(0,3),(i64::MAX,i64::MAX)] {
+            assert!(plain_string(b"ok",pos,size).is_err());
+        }
+        assert!(plain_string(&[255],0,1).is_err());
+    }
 }
