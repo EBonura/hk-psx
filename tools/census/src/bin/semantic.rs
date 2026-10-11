@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(proof) = overlay {
             for write in proof["writes"].as_array().ok_or("overlay writes missing")? {
                 if let Some(field) = write["field"].as_str() {
-                    if !write["value"].is_null() && write["value_from"].is_null() {
+                    if overlays::literal_write(write) {
                         add(
                             "authored graph selected write",
                             format!("{}={}", field, write["value"]),
@@ -234,23 +234,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|p| p["writes"].as_array().map_or(0, Vec::len))
             .sum();
         let mut markdown=format!("# Targeted authored grant overlays\n\nCount unit: authored selected write instances across {} original FSM instances. Missing implementation proven: 0; implemented but unexercised proven: 0; implementation unknown: {total}; total: {total}. All {total} are journey unexercised. Existing unresolved source grants and the complete missing/unexercised queue remain unchanged. Runtime acquisition is unknown for every row.\n\n| Queue ID | Priority | Scene and original ID | Authored state/write | Original raw SHA | Graph file SHA | Port implementation | Journey |\n|---|---|---|---|---|---|---|---|\n",validated_overlays.len());
-        for proof in &validated_overlays {
-            for (index, write) in proof["writes"]
-                .as_array()
-                .ok_or("overlay writes absent")?
-                .iter()
-                .enumerate()
-            {
-                let rank = match proof["source_id"].as_str().unwrap_or("") {
-                    "level178:7543" => 10,
-                    "level348:1225" | "level373:6394" => 30,
-                    "level423:6506" => 40,
-                    "level482:2465" => 60,
-                    "level124:6133" => 70,
-                    _ => 80,
-                };
-                markdown.push_str(&format!("| grant:{}:{index} | {rank} | {} / {} | {}: {}={} | {} | {} | Unknown, no audited implementation binding | No, no structured behavior receipt |\n",proof["source_id"].as_str().unwrap_or(""),proof["scene"].as_str().unwrap_or(""),proof["source_id"].as_str().unwrap_or(""),write["authored_state"].as_str().unwrap_or(""),write["field"].as_str().unwrap_or(""),write["value"],proof["source_sha256"].as_str().unwrap_or(""),proof["graph_file_sha256"].as_str().unwrap_or("")));
-            }
+        for row in overlays::ranked_rows(&validated_overlays) {
+            let write = &row["write"];
+            markdown.push_str(&format!("| grant:{}:{} | {} | {} / {} | {}: {}={} (key binding {}, literal evidence {}) | {} | {} | Unknown, no audited implementation binding | No, no structured behavior receipt |\n",row["source_id"].as_str().unwrap_or(""),row["index"],row["priority"],row["scene"].as_str().unwrap_or(""),row["source_id"].as_str().unwrap_or(""),write["authored_state"].as_str().unwrap_or(""),write["field"],write["value"],write["field_value_from"],write["literal_evidence_reason"],row["source_sha256"].as_str().unwrap_or(""),row["graph_file_sha256"].as_str().unwrap_or("")));
         }
         markdown.push_str("\nPriority: walljump progression first, then fragment acquisition, Godfinder, journal mask and grub pin. This ranks audit work, not proven progression blocking. Each JSON guard/trace retains the authored choice and stop reason. Automatic original SaveGame actions remain user-excluded and are never queued as missing implementation.\n");
         std::fs::write(out.join("authored-grant-overlays.md"), markdown)?;

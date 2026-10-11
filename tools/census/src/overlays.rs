@@ -80,14 +80,10 @@ pub fn selected(graph: &Value, row: &Value) -> Result<Value, String> {
             {
                 continue;
             }
-            let key = field(action, "boolName")
-                .or_else(|| field(action, "intName"))
-                .ok_or("write field missing")?;
+            let key = field(action, "boolName").or_else(|| field(action, "intName"));
             let value = field(action, "value").or_else(|| field(action, "amount"));
-            let resolved = value
-                .map(|v| v["value"].clone())
-                .unwrap_or_else(|| json!(1));
-            writes.push(json!({"authored_state":name,"action":kind,"field":key["value"],"value":resolved,"value_from":value.map(|v|v["value_from"].clone()).unwrap_or(Value::Null),"runtime_execution":"unknown"}));
+            let resolved = value.map(|v| v["value"].clone()).unwrap_or(Value::Null);
+            writes.push(json!({"authored_state":name,"action":kind,"field":key.map(|k|k["value"].clone()).unwrap_or(Value::Null),"field_value_from":key.map(|k|k["value_from"].clone()).unwrap_or(Value::Null),"value":resolved,"value_from":value.map(|v|v["value_from"].clone()).unwrap_or(Value::Null),"literal_evidence_reason":if key.is_none(){"field parameter absent: unknown"}else if value.is_none(){"value/amount parameter absent: unknown, no default inferred"}else if key.is_some_and(|k|!k["value_from"].is_null()){ "field name bound to variable: unknown" }else{"review actual typed parameters"},"runtime_execution":"unknown"}));
         }
         // Only these exact choice nodes are supported. External events never select a grant.
         if name == "Item Choice" || name == "Type" {
@@ -136,7 +132,7 @@ pub fn selected(graph: &Value, row: &Value) -> Result<Value, String> {
                 name = next;
                 continue;
             }
-            break "choice not proven from immutable authored variables";
+            break "choice not established by checked authored selection";
         }
         let edges = state["transitions"]
             .as_array()
@@ -153,8 +149,58 @@ pub fn selected(graph: &Value, row: &Value) -> Result<Value, String> {
             .into();
     };
     Ok(
-        json!({"source_id":sid,"scene":row["scene"],"source_sha256":hash,"graph_file_sha256":graph["_overlay_file_sha256"],"authored_states":trace,"authored_guards":guards,"writes":writes,"stop_reason":stop,"authored_scope":"Selected immutable instance choice and unique FINISHED edges only","runtime_reachability":"unknown","port_implementation":"unknown","journey_exercised":false,"journey_reason":"No structured original-contract and disc-bound execution receipt"}),
+        json!({"source_id":sid,"scene":row["scene"],"source_sha256":hash,"graph_file_sha256":graph["_overlay_file_sha256"],"authored_states":trace,"authored_guards":guards,"writes":writes,"stop_reason":stop,"authored_scope":"Checked authored selection and unique FINISHED edges; SetBoolValue assignments checked, other mutation mechanisms and runtime reachability unknown","runtime_reachability":"unknown","port_implementation":"unknown","journey_exercised":false,"journey_reason":"No structured original-contract and disc-bound execution receipt"}),
     )
+}
+pub fn literal_write(write: &Value) -> bool {
+    let typed_value = match write["action"].as_str() {
+        Some("SetPlayerDataBool") => write["value"].is_boolean(),
+        Some("SetPlayerDataInt" | "IncrementPlayerDataInt") => write["value"].as_i64().is_some(),
+        _ => false,
+    };
+    write["field"].as_str().is_some()
+        && write["field_value_from"].is_null()
+        && !write["value"].is_null()
+        && write["value_from"].is_null()
+        && typed_value
+}
+pub fn ranked_rows(proofs: &[Value]) -> Vec<Value> {
+    let mut rows = Vec::new();
+    for proof in proofs {
+        let rank = match proof["source_id"].as_str().unwrap_or("") {
+            "level178:7543" => 10,
+            "level348:1225" | "level373:6394" => 30,
+            "level423:6506" => 40,
+            "level482:2465" => 60,
+            "level124:6133" => 70,
+            _ => 80,
+        };
+        for (index, write) in proof["writes"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .enumerate()
+        {
+            rows.push(json!({"priority":rank,"source_id":proof["source_id"],"scene":proof["scene"],"source_sha256":proof["source_sha256"],"graph_file_sha256":proof["graph_file_sha256"],"index":index,"write":write}));
+        }
+    }
+    rows.sort_by(|a, b| {
+        (
+            a["priority"].as_u64(),
+            a["source_id"].as_str(),
+            a["write"]["authored_state"].as_str(),
+            a["write"]["field"].as_str(),
+            a["index"].as_u64(),
+        )
+            .cmp(&(
+                b["priority"].as_u64(),
+                b["source_id"].as_str(),
+                b["write"]["authored_state"].as_str(),
+                b["write"]["field"].as_str(),
+                b["index"].as_u64(),
+            ))
+    });
+    rows
 }
 #[cfg(test)]
 mod tests {
@@ -208,7 +254,49 @@ mod tests {
         assert!(proof["writes"].as_array().unwrap().is_empty());
         assert_eq!(
             proof["stop_reason"],
-            "choice not proven from immutable authored variables"
+            "choice not established by checked authored selection"
         );
+    }
+    #[test]
+    fn absent_set_values_are_unknown_without_invented_defaults() {
+        for kind in [
+            "SetPlayerDataBool",
+            "SetPlayerDataInt",
+            "IncrementPlayerDataInt",
+        ] {
+            let (mut graph, row) = fixture(true);
+            graph["states"][2]["enabled_actions"] = json!([{"action":kind,"fields":[{"name":"intName","value":"someField","value_from":null}]}]);
+            let proof = selected(&graph, &row).unwrap();
+            let write = &proof["writes"][0];
+            assert!(write["value"].is_null());
+            assert!(!literal_write(write));
+        }
+    }
+    #[test]
+    fn bound_field_name_is_preserved_and_excluded_from_literal_counts() {
+        let (mut graph, row) = fixture(true);
+        graph["states"][2]["enabled_actions"][0]["fields"][0]["value_from"] =
+            json!("Runtime Field");
+        let proof = selected(&graph, &row).unwrap();
+        assert_eq!(proof["writes"][0]["field_value_from"], "Runtime Field");
+        assert!(!literal_write(&proof["writes"][0]));
+    }
+    #[test]
+    fn wrong_parameter_type_cannot_count_as_literal_write() {
+        let (graph, row) = fixture(true);
+        let mut write = selected(&graph, &row).unwrap()["writes"][0].clone();
+        write["value"] = json!("true");
+        assert!(!literal_write(&write));
+    }
+    #[test]
+    fn ranked_rows_put_progression_before_source_order() {
+        let (graph, row) = fixture(true);
+        let mut late = selected(&graph, &row).unwrap();
+        late["source_id"] = json!("level124:6133");
+        let mut early = late.clone();
+        early["source_id"] = json!("level178:7543");
+        let rows = ranked_rows(&[late, early]);
+        assert_eq!(rows[0]["priority"], 10);
+        assert_eq!(rows[1]["priority"], 70);
     }
 }
