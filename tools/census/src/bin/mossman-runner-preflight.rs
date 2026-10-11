@@ -101,6 +101,7 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
         let scene = Scene::new(&source, file)?;
         let game_object = source.object(&asset, gid)?;
         let game_object_digest = format!("{:x}", Sha256::digest(game_object.raw()?));
+        let go_tree = source.read(&game_object)?;
         let health = scene
             .object(spec_id)
             .ok_or("canonical health record absent")?;
@@ -110,11 +111,15 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
             return Err("canonical health record does not bind this original object".into());
         }
         let mut components = Vec::new();
+        let mut component_inventory = Vec::new();
         let mut libraries = Vec::new();
         for record in &scene.objects {
             if record.tree.get("m_GameObject").and_then(Value::pptr) != Some((0, gid)) {
                 continue;
             }
+            component_inventory.push(
+                json!({"source_id":format!("{file}:{}",record.id),"component":record.typename}),
+            );
             if ![
                 "Walker",
                 "HealthManager",
@@ -188,7 +193,7 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
         if seen != BTreeSet::from([format!("{file}:{spec_id}")]) {
             return Err(format!("expected exactly one canonical spec for {file}:{spec_id}").into());
         }
-        result.push(json!({"scene":name,"scene_id":scene_id,"game_object_source":game_object.sid(),"game_object_raw_sha256":game_object_digest,"fsm_source":original_fsm.sid(),"fsm_raw_sha256":digest,"canonical_spec_source":format!("{file}:{spec_id}"),"components":components,"art_libraries":libraries,"current_port":port,"runtime_parity":"unknown","journey_exercised":false,"new_bank_growth_bytes":null,"new_code_growth_bytes":null,"new_static_ram_growth_bytes":null}));
+        result.push(json!({"scene":name,"scene_id":scene_id,"game_object_source":game_object.sid(),"game_object_raw_sha256":game_object_digest,"original_game_object_active":go_tree.get("m_IsActive").map(typed),"authored_active_in_hierarchy":scene.authored_active(gid),"original_component_references":go_tree.get("m_Component").map(typed),"component_inventory":component_inventory,"activation_scope":"Authored flags and exact owner components; future parent/runtime script mutations remain unknown. Do not invent an activator fallback for disabled FSMs.","fsm_source":original_fsm.sid(),"fsm_raw_sha256":digest,"canonical_spec_source":format!("{file}:{spec_id}"),"components":components,"art_libraries":libraries,"current_port":port,"runtime_parity":"unknown","journey_exercised":false,"new_bank_growth_bytes":null,"new_code_growth_bytes":null,"new_static_ram_growth_bytes":null}));
     }
     Ok(
         json!({"scope":"Five selected admitted-scene instances; Fungus1_31 and other families excluded, not a full enemy census.","semantic_census_complete":false,"cook_performed":false,"cooked_regions_sha256":format!("{:x}",Sha256::digest(&region_bytes)),"instances":result}),
