@@ -1147,6 +1147,25 @@ fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
         _ => [v[1], -v[0]],
     }
 }
+/// Compare nonnegative rational numbers without cross-products or rounding.
+/// Euclidean division reverses the ordering each time the fractional remainder
+/// is inverted; a zero remainder terminates with an exact integer comparison.
+fn ray_fraction_less(mut a: u64, mut b: u64, mut c: u64, mut d: u64) -> bool {
+    debug_assert!(b != 0 && d != 0);
+    let mut reversed = false;
+    loop {
+        let (aq, cq) = (a / b, c / d);
+        if aq != cq {
+            return if reversed { aq > cq } else { aq < cq };
+        }
+        let (ar, cr) = (a % b, c % d);
+        if ar == 0 || cr == 0 {
+            return if reversed { ar > cr } else { ar < cr };
+        }
+        (a, b, c, d) = (b, ar, d, cr);
+        reversed = !reversed;
+    }
+}
 /// Nearest terrain hit of a Climber point ray, as the source raycast on layer
 /// 256: origin = position + R(rotation) * (scale * local_origin), direction
 /// rotated without scale, bounded by the ray length.
@@ -1201,9 +1220,11 @@ fn climber_ray_hit(
         if t_num < 0 || t_num > den || u_num < 0 || u_num > den {
             return Ok(());
         }
-        // Compare the ray parameter as a fraction t_num/den across edges.
-        let nearer = best.is_none_or(|(t, d, _): (i64, i64, [i32; 2])| t_num * d < t * den);
-        if nearer {
+        // Cross-products overflow on thin Crossroads_07 blocks. Compare exact
+        // fractions by Euclidean division, preserving the first edge on ties.
+        if best.is_none_or(|(t, d, _)| {
+            ray_fraction_less(t_num as u64, den as u64, t as u64, d as u64)
+        }) {
             let point = [
                 (ox + rx * t_num / den) as i32,
                 (oy + ry * t_num / den) as i32,
@@ -8058,5 +8079,71 @@ mod placement_table_tests {
             }
         }
         assert!(checked > 1000, "{checked}");
+    }
+}
+
+#[cfg(test)]
+mod climber_ray_tests {
+    use super::*;
+    #[test]
+    fn exact_order_survives_close_hits_and_large_denominators() {
+        // These distinct hits round to the same Q16 fraction.
+        assert!(ray_fraction_less(1, 100_001, 1, 100_000));
+        assert!(!ray_fraction_less(1, 100_000, 1, 100_001));
+        assert!(ray_fraction_less(u64::MAX - 2, u64::MAX, u64::MAX - 1, u64::MAX));
+        assert!(!ray_fraction_less(1, 3, 2, 6));
+        assert!(ray_fraction_less(0, 9, 1, 9));
+        assert!(!ray_fraction_less(9, 9, 9, 9));
+    }
+    #[test]
+    fn exact_order_matches_wide_reference() {
+        for a in 0..24_u64 {
+            for b in 1..24_u64 {
+                for c in 0..24_u64 {
+                    for d in 1..24_u64 {
+                        assert_eq!(ray_fraction_less(a, b, c, d),
+                            (a as u128 * d as u128) < (c as u128 * b as u128));
+                    }
+                }
+            }
+        }
+    }
+    /// The block under 'Climber 4' of Crossroads_07: 5.99 units wide and 0.88 tall, in the cooked
+    /// room's own Q16 words, its top edge wound the other way from its bottom one.
+    fn block() -> [[i32; 4]; 4] {
+        let (left, right, bottom, top) = (1_536_749, 1_929_310, 3_136_140, 3_193_608);
+        [
+            [left, bottom, right, bottom],
+            [right, bottom, right, top],
+            [right, top, left, top],
+            [left, top, left, bottom],
+        ]
+    }
+    #[test]
+    fn a_ray_through_a_thin_block_reports_the_nearer_face_whichever_way_the_edges_wind() {
+        let edges = block();
+        let reversed = [edges[3], edges[2], edges[1], edges[0]];
+        // The Tiktik is authored on the block's top face. For this ray the two hits' parameters
+        // cross-multiplied to ~6e20, which wrapped i64 and ranked the underside nearer, so it
+        // attached there and walked the block the wrong way round.
+        let ray = hk_sim::climber::Ray {
+            position: [1_735_329, 3_194_868],
+            rotation_degrees_q16: 0,
+            scale_x_sign: 1,
+            local_origin: hk_sim::climber::BODY_OFFSET,
+            local_direction: [0, -ONE],
+            length: 2 * ONE,
+            layer_mask: 256,
+        };
+        let top =
+            climber_ray_hit(ray, edges.len(), &|i| edges[i]).expect("the ray meets the block");
+        assert_eq!(
+            top[1], edges[2][1],
+            "the top face is nearer than the underside"
+        );
+        assert_eq!(
+            climber_ray_hit(ray, reversed.len(), &|i| reversed[i]),
+            Some(top)
+        );
     }
 }
