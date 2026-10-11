@@ -90,6 +90,56 @@ fn writes(state: &Value, vars: &BTreeMap<String, Value>) -> Result<Vec<J>, Strin
     }
     Ok(out)
 }
+/// Follow only a unique FINISHED edge from the instance-selected state.
+/// Multiple/event-dependent edges stop the trace rather than selecting a branch.
+fn finished_writes(
+    states: &BTreeMap<String, &Value>,
+    first: &str,
+    vars: &BTreeMap<String, Value>,
+) -> Result<J, String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut name = first.to_string();
+    let mut trace = Vec::new();
+    let mut all = Vec::new();
+    let reason = loop {
+        if !seen.insert(name.clone()) {
+            break "cycle requires event audit";
+        }
+        let state = states.get(&name).ok_or("missing follow-on state")?;
+        trace.push(name.clone());
+        for mut write in writes(state, vars)? {
+            write["authored_state"] = json!(name);
+            all.push(write);
+        }
+        let transitions = state
+            .get("transitions")
+            .and_then(Value::list)
+            .unwrap_or(&[]);
+        if transitions.is_empty() {
+            break "terminal selected path";
+        }
+        if transitions.len() != 1 {
+            break "multiple event edges require semantic audit";
+        }
+        let transition = &transitions[0];
+        if transition
+            .get("fsmEvent")
+            .and_then(|e| e.get("name"))
+            .and_then(Value::str)
+            .as_deref()
+            != Some("FINISHED")
+        {
+            break "non-FINISHED event requires reachability audit";
+        }
+        name = transition
+            .get("toState")
+            .and_then(Value::str)
+            .ok_or("follow-on transition has no target")?;
+    };
+    Ok(
+        json!({"states":trace,"writes":all,"stop_reason":reason,"scope":"Authored unique FINISHED trace only; runtime completion and external events are not proven."}),
+    )
+}
 pub fn shiny(fsm: &Value) -> Result<Option<J>, String> {
     if fsm.get("name").and_then(Value::str).as_deref() != Some("Shiny Control") {
         return Ok(None);
@@ -119,9 +169,10 @@ pub fn shiny(fsm: &Value) -> Result<Option<J>, String> {
                 .and_then(Value::str)
                 .ok_or("BoolTest no true event")?;
             let name = target(choice, &event).ok_or("no true transition")?;
-            let state = states.get(&name).ok_or("no chosen state")?;
+            states.get(&name).ok_or("no chosen state")?;
+            let trace = finished_writes(&states, &name, &vars)?;
             return Ok(Some(
-                json!({"route":"ability/big item","state":name,"source_choice_variable":flag,"writes":writes(state,&vars)?}),
+                json!({"route":"ability/big item","state":name,"source_choice_variable":flag,"writes":trace["writes"],"authored_finished_trace":trace}),
             ));
         }
     }
@@ -201,6 +252,26 @@ mod tests {
         assert_eq!(grant["writes"][0]["field"], "gotCharm_7");
         assert_eq!(grant["writes"].as_array().unwrap().len(), 1);
         assert!(!grant.to_string().contains("hasDash"));
+    }
+    #[test]
+    fn selected_intermediate_state_follows_only_finished_and_stops_before_alternatives() {
+        let mut event = write_state("Zote Event", "zoteDead", None);
+        event["transitions"] = json!([{"fsmEvent":{"name":"FINISHED"},"toState":"Walljump"}]);
+        let mut wall = write_state("Walljump", "hasWalljump", None);
+        wall["transitions"] = json!([{"fsmEvent":{"name":"YES"},"toState":"Unused Dash"},{"fsmEvent":{"name":"NO"},"toState":"Done"}]);
+        let values = [
+            value(event),
+            value(wall),
+            value(write_state("Unused Dash", "hasDash", None)),
+        ];
+        let states = values
+            .iter()
+            .map(|state| (state.get("name").unwrap().str().unwrap(), state))
+            .collect();
+        let trace = finished_writes(&states, "Zote Event", &BTreeMap::new()).unwrap();
+        assert_eq!(trace["writes"][1]["field"], "hasWalljump");
+        assert_eq!(trace["states"], json!(["Zote Event", "Walljump"]));
+        assert!(!trace.to_string().contains("hasDash"));
     }
     #[test]
     fn runtime_amount_variable_retains_uncertainty_instead_of_granting_default() {
