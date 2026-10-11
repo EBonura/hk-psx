@@ -274,6 +274,36 @@ mod tests {
         assert!(!trace.to_string().contains("hasDash"));
     }
     #[test]
+    fn external_event_does_not_admit_target_grant() {
+        let mut start = write_state("Start", "seenPickup", None);
+        start["transitions"] = json!([{"fsmEvent":{"name":"COLLECT"},"toState":"Grant"}]);
+        let values = [value(start), value(write_state("Grant", "hasDash", None))];
+        let states = values
+            .iter()
+            .map(|s| (s.get("name").unwrap().str().unwrap(), s))
+            .collect();
+        let trace = finished_writes(&states, "Start", &BTreeMap::new()).unwrap();
+        assert_eq!(trace["states"], json!(["Start"]));
+        assert_eq!(
+            trace["stop_reason"],
+            "non-FINISHED event requires reachability audit"
+        );
+        assert!(!trace.to_string().contains("hasDash"));
+    }
+    #[test]
+    fn finished_cycle_stops_without_duplicate_writes() {
+        let mut start = write_state("Start", "seenPickup", None);
+        start["transitions"] = json!([{"fsmEvent":{"name":"FINISHED"},"toState":"Start"}]);
+        let values = [value(start)];
+        let states = values
+            .iter()
+            .map(|s| (s.get("name").unwrap().str().unwrap(), s))
+            .collect();
+        let trace = finished_writes(&states, "Start", &BTreeMap::new()).unwrap();
+        assert_eq!(trace["writes"].as_array().unwrap().len(), 1);
+        assert_eq!(trace["stop_reason"], "cycle requires event audit");
+    }
+    #[test]
     fn runtime_amount_variable_retains_uncertainty_instead_of_granting_default() {
         let fsm = value(
             json!({"variables":{},"states":[write_state("Give Dash","hasDash",Some("Runtime Bool"))]}),
