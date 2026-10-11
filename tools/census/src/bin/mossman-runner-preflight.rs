@@ -91,6 +91,10 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
         let asset = source.file(file)?;
         let original_fsm = source.object(&asset, fid)?;
         let fsm_tree = source.read(&original_fsm)?;
+        let fsm_authored_transitions = json!({
+            "start_state": fsm_tree.get("fsm").and_then(|f| f.get("startState")).map(typed),
+            "global_transitions": fsm_tree.get("fsm").and_then(|f| f.get("globalTransitions")).map(typed)
+        });
         if fsm_tree.get("m_GameObject").and_then(Value::pptr) != Some((0, gid)) {
             return Err("original movement FSM belongs to another GameObject".into());
         }
@@ -110,7 +114,9 @@ fn run(original: &Path, cooked: &Path) -> Result<J, Box<dyn std::error::Error>> 
         {
             return Err("canonical health record does not bind this original object".into());
         }
-        let mut components = Vec::new();
+        let mut components = vec![
+            json!({"component":"AuthoredMovementTransitions","source_id":original_fsm.sid(),"raw_sha256":digest,"fields":fsm_authored_transitions}),
+        ];
         let mut component_inventory = Vec::new();
         let mut libraries = Vec::new();
         for record in &scene.objects {
