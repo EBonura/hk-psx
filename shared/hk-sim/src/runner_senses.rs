@@ -84,12 +84,14 @@ fn translated(local: [i32; 4], actor: [i32; 2]) -> Result<[i32; 4], QueryError> 
 /// and Hornhead placements carry their own boxes through the actor spec.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shape {
+    pub body_local_left: [i32; 4],
     pub body_offset_left: [i32; 2],
     pub body_extents: [i32; 2],
     pub alert_local: [i32; 4],
 }
 impl Shape {
     pub const RUNNER: Self = Self {
+        body_local_left: [BODY_OFFSET_LEFT[0] - BODY_EXTENTS[0], BODY_OFFSET_LEFT[1] - BODY_EXTENTS[1], BODY_OFFSET_LEFT[0] + BODY_EXTENTS[0], BODY_OFFSET_LEFT[1] + BODY_EXTENTS[1]],
         body_offset_left: BODY_OFFSET_LEFT,
         body_extents: BODY_EXTENTS,
         alert_local: ALERT_LOCAL,
@@ -97,6 +99,7 @@ impl Shape {
     /// From a facing-left body box and alert box relative to the actor origin.
     pub const fn from_boxes(body: [i32; 4], alert: [i32; 4]) -> Self {
         Self {
+            body_local_left: body,
             body_offset_left: [(body[0] + body[2]) / 2, (body[1] + body[3]) / 2],
             body_extents: [(body[2] - body[0]) / 2, (body[3] - body[1]) / 2],
             alert_local: alert,
@@ -125,16 +128,10 @@ pub fn body_bounds_of(
     direction: i32,
 ) -> Result<[i32; 4], QueryError> {
     facing(direction)?;
-    let ox = -direction * shape.body_offset_left[0];
-    translated(
-        [
-            ox - shape.body_extents[0],
-            shape.body_offset_left[1] - shape.body_extents[1],
-            ox + shape.body_extents[0],
-            shape.body_offset_left[1] + shape.body_extents[1],
-        ],
-        actor,
-    )
+    // Reconstructing endpoints from integer midpoint and half-width loses a
+    // Q16 unit when authored bounds have odd widths or heights.
+    let b = shape.body_local_left;
+    translated(if direction < 0 { b } else { [-b[2], b[1], -b[0], b[3]] }, actor)
 }
 pub fn alert_bounds(actor: [i32; 2]) -> Result<[i32; 4], QueryError> {
     // Both X extents are equal; the parent's facing mirror leaves this box intact.

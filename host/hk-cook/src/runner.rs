@@ -29,6 +29,40 @@ use hk_unity::{Obj, Source, Value};
 const FSM_SHA256: &str = "73f11594e0115a43a66c8d1695a65916b81bfe6057c180636eed3330aaad92c2";
 /// Zombie Leap (Leaper): same Walker, a leap attack instead of the swipe.
 const LEAP_FSM_SHA256: &str = "15ecb1c0984cd4955e5412dfae354441eb9a9d19c6b2bff9d7b6fc564dc7fe47";
+const MOSSMAN_FSM_SHA256: &str = "7353668aa0259b3ddcfa9046aa4533db332b1573bf02324d83bb5c35e1316b04";
+/// Audited original instances only; no generic family-name admission.
+const MOSSMAN_INSTANCES: &[(&str, i64, i64, &str)] = &[
+    (
+        "level128",
+        736,
+        7539,
+        "bc52daf81c9c7b5e80d200c4ac040568b71e4c7bb7a5de23410404bcf1f04ba1",
+    ),
+    (
+        "level134",
+        110,
+        6132,
+        "2f5b41e9538445c2a96d3276e407d5cb925ff21fd924d1ab6316603a0162294a",
+    ),
+    (
+        "level135",
+        808,
+        6450,
+        "7b4550c76ae19c24d3fa077acb76f501a90e4f58b383878d31e7c179322f49e7",
+    ),
+    (
+        "level136",
+        510,
+        5414,
+        "7a2d72b16986dd7c7f4510c10740d416ad7f442c484a5a8e2700bc014388564f",
+    ),
+    (
+        "level136",
+        1082,
+        5445,
+        "26d15b8d402f150547ded07e16fe3da377ceef9fd174d826e6d77e0fc0217e24",
+    ),
+];
 type Clips = [(&'static str, i64)];
 const LEAP_CLIPS: &Clips = &[
     ("Idle", 0),
@@ -48,6 +82,17 @@ const CLIPS: &Clips = &[
     ("Attack Cooldown", 2),
     ("Fall", 1),
     ("Death Air", 6),
+    ("Death Land", 2),
+];
+const MOSSMAN_CLIPS: &Clips = &[
+    ("Idle", 0),
+    ("Walk", 0),
+    ("Turn", 2),
+    ("Attack Anticipate", 2),
+    ("Attack Lunge", 2),
+    ("Attack Cooldown", 2),
+    ("Fall", 1),
+    ("Death Air", 2),
     ("Death Land", 2),
 ];
 /// The managed assemblies the recognized methods were audited against.
@@ -557,8 +602,61 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     // The serialized FSM embeds owner references, so the fingerprint covers its
     // structure and scalar parameters.
     let fingerprint = fsm_fingerprint(fsm)?;
+    let mossman = fingerprint == MOSSMAN_FSM_SHA256;
+    if mossman {
+        let base = hk_unity::base_name(&sc.base.name);
+        let binding = MOSSMAN_INSTANCES
+            .iter()
+            .find(|(file, go, _, _)| *file == base && *go == gid)
+            .ok_or("Mossman instance outside audited admitted-scene scope")?;
+        let original = u(source.object(&sc.base, binding.2))?;
+        let selected_ids: Vec<_> = records
+            .iter()
+            .filter(|(_, kind, tree)| *kind == "PlayMakerFSM" && std::ptr::eq(*tree, fsm_component))
+            .map(|(id, _, _)| *id)
+            .collect();
+        if selected_ids != [binding.2] {
+            return err("Mossman selected FSM is not the pinned original instance");
+        }
+        if sha(u(original.raw())?) != binding.3
+            || !sc.authored_active(gid)
+            || get(fsm_component, "m_GameObject")?.pptr() != Some((0, gid))
+        {
+            return err("Mossman original ownership/hash/activation drift");
+        }
+        for (id, kind, tree) in &records {
+            if *kind != "PlayMakerFSM" || std::ptr::eq(*tree, fsm_component) {
+                continue;
+            }
+            if base != "level135"
+                || gid != 808
+                || *id != 6463
+                || sha(u(u(source.object(&sc.base, *id))?.raw())?)
+                    != "18a73e0c63c03e05b0779397a306dac8fbd0558ce0af61876399496e3132c844"
+            {
+                return err("unaudited extra Mossman FSM");
+            }
+            if !get(tree, "m_Enabled")?.truthy()
+                || get(tree, "m_GameObject")?.pptr() != Some((0, gid))
+            {
+                return err("Mossman extra FSM activation/owner drift");
+            }
+        }
+        if records.iter().any(|(_, kind, _)| *kind == "FSMActivator")
+            || get(walker, "alertRange")?.pptr() != Some((0, 0))
+        {
+            return err("Mossman activation or Walker alert contract drift");
+        }
+    }
     if !get(fsm_component, "m_Enabled")?.truthy()
-        || fingerprint != if leap { LEAP_FSM_SHA256 } else { FSM_SHA256 }
+        || fingerprint
+            != if leap {
+                LEAP_FSM_SHA256
+            } else if mossman {
+                MOSSMAN_FSM_SHA256
+            } else {
+                FSM_SHA256
+            }
     {
         return err("unverified Runner FSM variant");
     }
@@ -584,7 +682,14 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
             return err("unsupported Leaper idle time");
         }
     } else {
-        set_field(&mut parameters, "attack", jobj(vec![("kind", js("Swipe"))]));
+        set_field(
+            &mut parameters,
+            "attack",
+            jobj(vec![(
+                "kind",
+                js(if mossman { "SwipeCalm" } else { "Swipe" }),
+            )]),
+        );
     }
     for (name, expected) in ASSEMBLIES {
         let bytes = std::fs::read(source.directory.join("Managed").join(name))
@@ -637,13 +742,20 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     };
     let body_bounds = axis_aligned_bounds(&matrix, xy(body, "m_Offset")?, xy(body, "m_Size")?)?;
     let (los_id, los) = one(&records, "LineOfSightDetector")?;
-    let range_id = local_ref(get(walker, "alertRange")?)?;
     let ranges: Vec<i64> = get(los, "alertRanges")?
         .list()
         .unwrap_or(&[])
         .iter()
         .map(local_ref)
         .collect::<Result<_>>()?;
+    let range_id = if mossman {
+        if ranges.len() != 1 {
+            return err("Mossman requires exactly one authored attack range");
+        }
+        ranges[0]
+    } else {
+        local_ref(get(walker, "alertRange")?)?
+    };
     if local_ref(get(walker, "lineOfSightDetector")?)? != los_id
         || !get(los, "m_Enabled")?.truthy()
         || ranges != [range_id]
@@ -657,6 +769,29 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
         return err("Runner alert component disabled or changed");
     }
     let range_go = local_ref(get(&alert_object.tree, "m_GameObject")?)?;
+    if mossman
+        && sc
+            .object(range_go)
+            .and_then(|go| go.tree.get("m_Name"))
+            .and_then(Value::str)
+            .as_deref()
+            != Some("Attack Range")
+    {
+        return err("Mossman attack range child name differs");
+    }
+    if mossman {
+        let child_transform = sc
+            .go_transform
+            .get(&range_go)
+            .ok_or("Mossman attack range lacks transform")?;
+        let parent = sc
+            .object(*child_transform)
+            .and_then(|o| o.tree.get("m_Father"))
+            .and_then(Value::pptr);
+        if parent != sc.go_transform.get(&gid).map(|id| (0, *id)) {
+            return err("Mossman attack range is not an immediate owner child");
+        }
+    }
     if !sc.active(range_go) {
         return err("Runner alert object inactive");
     }
@@ -682,11 +817,27 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
         return err("Runner requires enabled scaled-time animation");
     }
     let library = u(sc.deref(get(animator, "library")?))?;
+    if mossman
+        && (library.sid() != "sharedassets128.assets:192"
+            || sha(u(library.raw())?)
+                != "7f91d58d6a64b613db0cf43cfe45f17e71e50dd941e563094629cbdf0365e1e5")
+    {
+        return err("Mossman original animation library drift");
+    }
     let library_tree = u(source.read(&library))?;
     let clips = get(&library_tree, "clips")?
         .list()
         .ok_or("clips is not a list")?;
-    let animation = clip_contract(clips, if leap { LEAP_CLIPS } else { CLIPS })?;
+    let animation = clip_contract(
+        clips,
+        if leap {
+            LEAP_CLIPS
+        } else if mossman {
+            MOSSMAN_CLIPS
+        } else {
+            CLIPS
+        },
+    )?;
     if leap {
         let attack = clips
             .iter()
@@ -741,10 +892,9 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
         .iter()
         .map(|r| u(sc.deref(r)))
         .collect::<Result<_>>()?;
-    if chase.len() != 2
-        || [&looped, &chase[0], &chase[1]]
-            .iter()
-            .any(|o| o.class_id() != 83)
+    if chase.len() != if mossman { 3 } else { 2 }
+        || looped.class_id() != 83
+        || chase.iter().any(|o| o.class_id() != 83)
     {
         return err("Runner audio references differ from the verified FSM");
     }
@@ -942,6 +1092,13 @@ mod tests {
             .map(|c| clip(c.0, c.1, false))
             .collect();
         assert!(clip_contract(&full, CLIPS).is_ok());
+        let mossman: Vec<Value> = MOSSMAN_CLIPS
+            .iter()
+            .map(|c| clip(c.0, c.1, false))
+            .collect();
+        assert!(clip_contract(&mossman, MOSSMAN_CLIPS).is_ok());
+        assert!(clip_contract(&mossman, CLIPS).is_err());
+        assert!(clip_contract(&full, MOSSMAN_CLIPS).is_err());
         let mut missing = full.clone();
         missing.pop();
         assert!(clip_contract(&missing, CLIPS).is_err());

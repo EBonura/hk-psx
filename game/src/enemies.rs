@@ -15,6 +15,8 @@ use hk_sim::{
 pub enum RunnerEventKind {
     AudioStop,
     AudioPlay,
+    MossmanAudioPlay,
+    MossmanChaseSound {pitch_q16:i32,variant:u8},
     ChaseSound {
         pitch_q16: i32,
         variant: u8,
@@ -4658,15 +4660,21 @@ impl Actor {
                     continue;
                 }
                 Action::AudioStop => RunnerEventKind::AudioStop,
-                Action::AudioPlay => RunnerEventKind::AudioPlay,
+                Action::AudioPlay => if runner.controller.attack_kind()==hk_sim::runner::Attack::SwipeCalm {RunnerEventKind::MossmanAudioPlay}else{RunnerEventKind::AudioPlay},
                 Action::ChaseSound => {
                     // Preserve the first overwritten pitch draw, then the actual
                     // .85..1.15 pitch and equal-weight clip selection. This is a
                     // deterministic per-actor RNG, not Unity global RNG parity.
                     let _overwritten_pitch = RunnerRuntime::draw(&mut runner.rng);
-                    let pitch_q16 = 55706 + (RunnerRuntime::draw(&mut runner.rng) % 19661) as i32;
-                    let variant = (RunnerRuntime::draw(&mut runner.rng) >> 31) as u8;
-                    RunnerEventKind::ChaseSound { pitch_q16, variant }
+                    if runner.controller.attack_kind()==hk_sim::runner::Attack::SwipeCalm {
+                        let pitch_q16=72090+(RunnerRuntime::draw(&mut runner.rng)%6554) as i32;
+                        let variant=(RunnerRuntime::draw(&mut runner.rng)%3) as u8;
+                        RunnerEventKind::MossmanChaseSound{pitch_q16,variant}
+                    }else {
+                        let pitch_q16 = 55706 + (RunnerRuntime::draw(&mut runner.rng) % 19661) as i32;
+                        let variant = (RunnerRuntime::draw(&mut runner.rng) >> 31) as u8;
+                        RunnerEventKind::ChaseSound { pitch_q16, variant }
+                    }
                 }
                 Action::DustStart => RunnerEventKind::DustStart,
                 Action::DustStop => RunnerEventKind::DustStop,
@@ -7484,6 +7492,33 @@ mod runner_runtime_tests {
             collision_bounds: [-100 * ONE, -10 * ONE, 100 * ONE, 30 * ONE],
             actors: &[(AT, &SPEC)],
         }
+    }
+    #[test]
+    fn mossman_runtime_dispatches_three_authored_chase_samples() {
+        let b = bytes();
+        let room = Room::parse(&b).unwrap();
+        let mut seen = [false; 3];
+        for seed in 0..64 {
+            let mut actor = Actor::new(0, &AT, &SPEC);
+            let runner = actor.runner_mut().unwrap();
+            runner.controller = hk_sim::runner::Runner::with_params(hk_sim::runner::Params {
+                attack: hk_sim::runner::Attack::SwipeCalm,
+                ..hk_sim::runner::Params::RUNNER
+            });
+            runner.rng = seed;
+            let mut events = Vec::new();
+            advance(&mut actor, &room, context(3 * ONE), &mut events);
+            assert!(events.iter().any(|e| e.kind == RunnerEventKind::MossmanAudioPlay));
+            assert!(!events.iter().any(|e| matches!(e.kind, RunnerEventKind::AudioPlay | RunnerEventKind::ChaseSound { .. })));
+            let (pitch, variant) = events.iter().find_map(|e| match e.kind {
+                RunnerEventKind::MossmanChaseSound { pitch_q16, variant } => Some((pitch_q16, variant)),
+                _ => None,
+            }).expect("authored Anticipate emits its Mossman chase call");
+            assert!((72090..=78643).contains(&pitch));
+            assert!(variant < 3);
+            seen[variant as usize] = true;
+        }
+        assert_eq!(seen, [true; 3]);
     }
     #[test]
     fn actual_runner_clock_motion_clips_and_ordered_effects() {

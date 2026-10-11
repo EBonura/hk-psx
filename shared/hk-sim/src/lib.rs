@@ -21,6 +21,7 @@ pub mod mosquito;
 pub mod moss_walker;
 pub mod pigeon;
 pub mod runner;
+pub mod runner_audio;
 pub mod runner_senses;
 pub mod shade;
 pub mod shockwave;

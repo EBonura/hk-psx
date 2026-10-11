@@ -332,8 +332,12 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                         py_round(num(need(attack, "jump_x_factor")?)? * 65536.0),
                         ticks(num(need(attack, "idle_time")?)?)
                     )
-                } else {
+                } else if cj(attack, "kind") == Some(&Json::Str("SwipeCalm".into())) {
+                    "hk_sim::runner::Attack::SwipeCalm".to_string()
+                } else if cj(attack, "kind") == Some(&Json::Str("Swipe".into())) {
                     "hk_sim::runner::Attack::Swipe".to_string()
+                } else {
+                    return err(format!("unknown Runner attack kind: {who}"));
                 };
                 let pair = |key: &str, i: usize| -> Result<String> {
                     Ok(py(list(p, key)?.get(i).ok_or("short list")?))

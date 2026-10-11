@@ -1,5 +1,18 @@
 use hk_sim::{runner_senses::*, ONE};
 use std::cell::Cell;
+
+#[test]
+fn authored_odd_body_endpoints_survive_both_facings() {
+    let body = [-32769, -49153, 32768, 49152];
+    let actor = [70 * ONE, 18 * ONE];
+    for initial in [-1, 1] {
+        let shape = Shape::from_placement(body, [-ONE, -ONE, ONE, ONE], initial);
+        assert_eq!(body_bounds_of(shape, actor, initial).unwrap(),
+            [actor[0] + body[0], actor[1] + body[1], actor[0] + body[2], actor[1] + body[3]]);
+        assert_eq!(body_bounds_of(shape, actor, -initial).unwrap(),
+            [actor[0] - body[2], actor[1] + body[1], actor[0] - body[0], actor[1] + body[3]]);
+    }
+}
 thread_local! { static INDEX: Cell<Option<EdgeColumns>> = const { Cell::new(None) }; }
 fn indexed(b: [i32; 4]) -> EdgeMask {
     INDEX.with(|i| i.get().map_or(ALL_EDGES, |i| i.near(b)))

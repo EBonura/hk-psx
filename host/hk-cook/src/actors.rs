@@ -119,6 +119,10 @@ pub fn scan_in(
     catalogue: &Catalogue,
     bounds: [f64; 4],
 ) -> Result<Vec<Row>> {
+    if matches!(hk_unity::base_name(&sc.base.name), "level128" | "level134" | "level135" | "level136") {
+        // Audio is room-wide: validate actors outside this placement chunk too.
+        scan_with(sc, source, catalogue, true, None)?;
+    }
     scan_with(sc, source, catalogue, true, Some(bounds))
 }
 
@@ -392,6 +396,23 @@ fn scan_with(
             limitations,
         });
     }
+    let mut mossman = false;
+    let mut ordinary = false;
+    for row in &rows {
+        if let Some((_, Json::Obj(fields))) = &row.control {
+            if !fields.iter().any(|(k,v)| k == "kind" && *v == Json::Str("ZombieSwipeWalker".into())) { continue; }
+            let calm = fields.iter().find(|(k,_)| k == "parameters").is_some_and(|(_,p)| {
+                if let Json::Obj(p) = p {
+                    p.iter().find(|(k,_)| k == "attack").is_some_and(|(_,a)| {
+                        if let Json::Obj(a) = a { a.iter().any(|(k,v)| k == "kind" && *v == Json::Str("SwipeCalm".into())) } else { false }
+                    })
+                } else { false }
+            });
+            mossman |= calm;
+            ordinary |= !calm;
+        }
+    }
+    if mossman && ordinary { return err("mixed ordinary/Mossman Runner room cannot share the exclusive audio bank"); }
     Ok(rows)
 }
 

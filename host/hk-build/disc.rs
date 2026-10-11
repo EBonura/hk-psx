@@ -13,12 +13,13 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// The ADPCM banks the guest streams from the disc, in the order it uploads
 /// them (the world bank is read before the title, the rest at bootstrap), and
 /// the quick map's room art, which rides the same staged read.
-const AUDIO_BANKS: [&str; 5] = [
+const AUDIO_BANKS: [&str; 6] = [
     "sfx.adpcm",
     "geo-audio.adpcm",
     "runner-audio.adpcm",
     "world-sfx.adpcm",
     "game-map.bin",
+    "mossman-runner-audio.adpcm",
 ];
 
 fn field<'a>(v: &'a Value, key: &str) -> Result<&'a Value> {
@@ -101,11 +102,15 @@ pub fn disc_order(p: &Plan) -> Result<Vec<usize>> {
     };
     let (clip_base, atlas_base) = (ids.rooms, ids.rooms + ids.clips);
     let focus = atlas_base + ids.atlases + 1;
+    if p.bank_ids.len() != AUDIO_BANKS.len() {
+        return Err("six canonical audio/map bank chunks are required".into());
+    }
     if p.scene_sfx_ids.len() != p.rooms.len() {
         return Err("one scene sound bank per manifest scene".into());
     }
     let (boot, world, game_map) = (&p.bank_ids[..3], p.bank_ids[3], p.bank_ids[4]);
     let mut order = vec![world, game_map, p.menu_id, boot[0], focus, boot[1], boot[2]];
+    order.push(p.bank_ids[5]);
     order.extend(clip_base + 1..=clip_base + ids.clips);
     for (index, room) in p.rooms.iter().enumerate() {
         if int(room, "chunk_id")? != index + 1
@@ -405,7 +410,7 @@ mod tests {
                 json!({"scene_id": 6, "chunk_id": 21}),
             ],
             effect_base: 30,
-            bank_ids: vec![40, 41, 42, 43, 44],
+            bank_ids: vec![40, 41, 42, 43, 44,45],
             music_ids: Vec::new(),
             scene_sfx_ids: vec![50, 51],
             menu_id: 52,
@@ -419,7 +424,14 @@ mod tests {
     fn boot_reads_come_first_in_the_order_boot_makes_them() {
         let order = disc_order(&plan()).unwrap();
         // The world bank, the map art, the title art, the SFX bank, Focus, Geo, Runner.
-        assert_eq!(order[..7], [43, 44, 52, 40, 3, 41, 42]);
+        assert_eq!(order[..8], [43, 44, 52, 40, 3, 41, 42,45]);
+    }
+
+    #[test]
+    fn missing_overlay_bank_is_refused() {
+        let mut p = plan();
+        p.bank_ids.pop();
+        assert!(disc_order(&p).is_err());
     }
 
     #[test]

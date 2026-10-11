@@ -25,6 +25,72 @@ pub enum Clip {
     Lunge,
     Cooldown,
 }
+
+#[cfg(test)]
+mod mossman_tests {
+    use super::*;
+
+    fn calm() -> Runner {
+        Runner::with_params(Params {
+            attack: Attack::SwipeCalm,
+            lunge_speed: 9 * ONE,
+            ..Params::RUNNER
+        })
+    }
+
+    #[test]
+    fn accepted_damage_does_not_start_calm_attack() {
+        let mut mossman = calm();
+        assert_eq!(mossman.took_damage(ONE, 0).iter().count(), 0);
+        assert_eq!(mossman.swipe(), Swipe::Ready);
+        let mut ordinary = Runner::new();
+        ordinary.took_damage(ONE, 0);
+        assert_eq!(ordinary.swipe(), Swipe::Anticipate);
+    }
+
+    #[test]
+    fn attack_range_still_starts_calm_attack_and_recoil_resets() {
+        let mut mossman = calm();
+        let visible = Senses {
+            hero_x: ONE,
+            in_alert_range: true,
+            can_see_hero: true,
+            ..Senses::default()
+        };
+        mossman.step_swipe(visible, |_, [hi, _]| hi);
+        assert_eq!(mossman.swipe(), Swipe::Anticipate);
+        mossman.horizontal_recoil(Senses::default(), |_, [hi, _]| hi);
+        assert_eq!(mossman.swipe(), Swipe::Ready);
+    }
+
+    #[test]
+    fn calm_walker_ignores_hero_behind_but_retains_wall_turn() {
+        let mut mossman = calm();
+        mossman.walker = Walker::Walking;
+        mossman.wait = 100;
+        let behind = Senses {
+            hero_x: ONE,
+            in_alert_range: true,
+            can_see_hero: true,
+            ..Senses::default()
+        };
+        mossman.step_walker(behind, |_, [hi, _]| hi);
+        assert_eq!(mossman.walker(), Walker::Walking);
+        mossman.step_walker(
+            Senses {
+                wall: true,
+                ..behind
+            },
+            |_, [hi, _]| hi,
+        );
+        assert_eq!(mossman.walker(), Walker::Turning);
+        let mut ordinary = Runner::new();
+        ordinary.walker = Walker::Walking;
+        ordinary.wait = 100;
+        ordinary.step_walker(behind, |_, [hi, _]| hi);
+        assert_eq!(ordinary.walker(), Walker::Turning);
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Animation {
     pub clip: Clip,
@@ -83,6 +149,9 @@ pub enum Attack {
         jump_x_factor: i32,
         idle_ticks: u16,
     },
+    /// Selected Mossman Runner Zombie Swipe: no Ready TOOK DAMAGE event;
+    /// its Walker has no alertRange, while its attack still uses Attack Range.
+    SwipeCalm,
 }
 /// Per-variant Walker fields and the FSM `Lunge Speed`: the Zombie Swipe FSM
 /// is otherwise identical across Runner, Barger and Hornhead placements.
@@ -266,6 +335,9 @@ impl Runner {
     pub fn walker(&self) -> Walker {
         self.walker
     }
+    pub fn attack_kind(&self) -> Attack {
+        self.params.attack
+    }
     pub fn swipe(&self) -> Swipe {
         self.swipe
     }
@@ -389,7 +461,9 @@ impl Runner {
     ) -> Actions {
         let mut out = Actions::new();
         // The Leap FSM has no RECOIL HORIZONTAL transition.
-        if self.swipe != Swipe::Dead && self.params.attack == Attack::Swipe {
+        if self.swipe != Swipe::Dead
+            && matches!(self.params.attack, Attack::Swipe | Attack::SwipeCalm)
+        {
             self.reset(senses, &mut choose, &mut out);
         }
         out
@@ -572,7 +646,11 @@ impl Runner {
                     let hero_behind = (senses.hero_x > senses.actor_x) != (self.facing > 0);
                     let cause = if senses.wall {
                         Some(TurnCause::Wall)
-                    } else if hero_behind && senses.in_alert_range && senses.can_see_hero {
+                    } else if self.params.attack != Attack::SwipeCalm
+                        && hero_behind
+                        && senses.in_alert_range
+                        && senses.can_see_hero
+                    {
                         Some(TurnCause::Hero)
                     } else if !senses.floor_ahead {
                         Some(TurnCause::Hole)

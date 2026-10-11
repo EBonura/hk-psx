@@ -1321,6 +1321,7 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
         }
     }
     python_step(root, "host/regions.py", region_cook_args(&provenance))?;
+    hk_cook::mossman_scene::cook(root)?;
     if source_input_fingerprints(&source)? != source_inputs || code_fingerprint(root)? != code {
         return Err("retail source or cooker code changed during region cook".into());
     }
@@ -1548,6 +1549,7 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
         root,
     )?;
     python_step_module(root, "build_guest", "prepass")?;
+    hk_cook::mossman_scene::bind_generated_specs(root)?;
     // Certificates bind to the final deduplicated bank geometry and palette
     // words, so they follow the pack. Tiles before groups (groups read the
     // tile report), both before the per-scene bundles.
@@ -1604,7 +1606,10 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "focus-audio" => hk_cook::focus_audio::main(root, None)?,
         "focus-art" => hk_cook::focus_art::main(root, None)?,
         "ambience" => hk_cook::ambience::main(root, None)?,
-        "runner-audio" => hk_cook::runner_audio::main(root, &[], None)?,
+        "runner-audio" => {
+            hk_cook::runner_audio::main(root, &[], None)?;
+            hk_cook::mossman_audio::cook(root)?;
+        }
         "area-music" => hk_cook::area_music::main(root, None)?,
         "opaque-tiles" => hk_cook::opaque_tiles::cook(root, 2, false)?,
         "opaque-groups" => hk_cook::opaque_groups::main(root)?,

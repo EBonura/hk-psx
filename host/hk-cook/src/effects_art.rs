@@ -247,7 +247,24 @@ pub fn corpse_source(
         Some(Json::Str(s)) => Some(s.clone()),
         _ => None,
     };
-    zombie_corpse(source, sc, gid, &kind, library_source).map(Some)
+    let mossman = kind == "ZombieSwipeWalker"
+        && ctl("parameters")
+            .and_then(|p| {
+                if let Json::Obj(f) = p {
+                    f.iter().find(|(k, _)| k == "attack").map(|(_, v)| v)
+                } else {
+                    None
+                }
+            })
+            .and_then(|a| {
+                if let Json::Obj(f) = a {
+                    f.iter().find(|(k, _)| k == "kind").map(|(_, v)| v)
+                } else {
+                    None
+                }
+            })
+            == Some(&Json::Str("SwipeCalm".into()));
+    zombie_corpse(source, sc, gid, &kind, library_source, mossman).map(Some)
 }
 
 /// The conventional Zombie/Crawler/Climber/Moss Walker corpse.
@@ -257,6 +274,7 @@ fn zombie_corpse(
     gid: i64,
     kind: &str,
     library_source: Option<String>,
+    mossman: bool,
 ) -> Result<CorpseSource> {
     let runner = kind == "ZombieSwipeWalker" || kind == "ZombieShield";
     let climber = kind == "Climber";
@@ -270,7 +288,9 @@ fn zombie_corpse(
     } else {
         0.3
     };
-    let expected_timing: [(f64, i64, usize); 2] = if runner {
+    let expected_timing: [(f64, i64, usize); 2] = if mossman {
+        [(12.0, 2, 3), (12.0, 2, 3)]
+    } else if runner {
         [(30.0, 6, 1), (12.0, 2, 8)]
     } else if climber {
         [(30.0, 0, 8), (15.0, 2, 3)]
@@ -300,7 +320,11 @@ fn zombie_corpse(
     let prefab = Prefab::read(source, sc, get(death, "corpsePrefab")?, true)?;
     // Runner, Barger and Hornhead corpses share one structure; identity is checked by name and player data.
     let name = prefab.name();
+    if mossman && name != "Corpse_Mossman_Runner" {
+        return err("Mossman corpse prefab identity differs");
+    }
     if runner
+        && !mossman
         && !(name.starts_with("Corpse Zombie Basic ")
             || name == "Corpse Zombie Leaper"
             || name == "Corpse Zombie Shield")
@@ -402,14 +426,16 @@ fn zombie_corpse(
         let death_enabled = flag(death, "m_Enabled")?;
         let data_name = get(death, "playerDataName")?.str().unwrap_or_default();
         if !death_enabled
-            || ![
-                "ZombieRunner",
-                "ZombieBarger",
-                "ZombieHornhead",
-                "ZombieLeaper",
-                "ZombieShield",
-            ]
-            .contains(&data_name.as_str())
+            || (mossman && data_name != "MossmanRunner")
+            || (!mossman
+                && ![
+                    "ZombieRunner",
+                    "ZombieBarger",
+                    "ZombieHornhead",
+                    "ZombieLeaper",
+                    "ZombieShield",
+                ]
+                .contains(&data_name.as_str()))
         {
             return err("unvalidated Runner corpse identity");
         }
@@ -488,7 +514,7 @@ fn zombie_corpse(
         fields,
         library: library_o,
         clips: selected,
-        tiled: false,
+        tiled: mossman,
     })
 }
 

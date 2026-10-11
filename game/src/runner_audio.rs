@@ -8,6 +8,48 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/runner-audio.rs"
 ));
+mod mossman {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/mossman-runner-audio.rs"));
+}
+pub const MOSSMAN_BANK_BYTES:usize=mossman::BANK_BYTES;
+pub const MOSSMAN_BANK_CHECKSUM:u32=mossman::BANK_CHECKSUM;
+pub fn scene_is_mossman(scene_id:usize)->bool {mossman::SCENE_IDS.contains(&(scene_id as u16))}
+fn clips(mossman:bool)->&'static [hk_sim::runner_audio::Clip] {if mossman {&mossman::CLIPS}else{&CLIPS}}
+pub fn family_ready(mossman:bool)->bool {unsafe{HK_RUNNER_AUDIO_READY==if mossman{2}else{1}}}
+pub fn validate_fragment(mossman:bool,offset:usize,data:&[u8])->bool {
+    hk_sim::runner_audio::valid_manifest(if mossman{MOSSMAN_BANK_BYTES}else{BANK_BYTES},clips(mossman))
+        && hk_sim::runner_audio::valid_fragment(clips(mossman),offset,data)
+}
+/// Revoke publication and silence all three voices before any SPU overwrite.
+pub fn begin_overlay() -> bool {
+    unsafe { HK_RUNNER_AUDIO_READY = 0; LOOP_OWNERS = [0; 2]; }
+    for n in LOOP_VOICES.iter().copied().chain([CALL_VOICE]) {
+        let voice = Voice::new(n);
+        voice.set_volume(Volume::SILENCE, Volume::SILENCE);
+        voice.set_adsr(Adsr { lower: 0x000f, upper: 0 });
+        Voice::key_off(1 << n);
+    }
+    // SPU voice register +0x0c is the current envelope, not the ADSR setting.
+    // Publication stays revoked on timeout; no sample upload occurs then.
+    for poll in 0..2_000_000 {
+        if poll & 4095 == 0 { crate::input::checkpoint(); }
+        if LOOP_VOICES.iter().copied().chain([CALL_VOICE]).all(|n| unsafe {
+            core::ptr::read_volatile((0x1f80_1c00usize + n as usize * 16 + 12) as *const u16) == 0
+        }) { return true; }
+        core::hint::spin_loop();
+    }
+    false
+}
+pub fn upload_fragment(offset:usize,data:&[u8]) {
+    assert!(offset%16==0 && data.len()%16==0 && offset+data.len()<=20464);
+    spu::upload_adpcm(SpuAddr::new(BANK_BASE+offset as u32),data);
+}
+pub fn finish_overlay(mossman:bool) {unsafe{HK_RUNNER_AUDIO_READY=if mossman{2}else{1};}}
+#[no_mangle]
+pub static mut HK_RUNNER_AUDIO_FAMILY_MISMATCH:u32=0;
+fn require_family(mossman:bool)->bool {
+    if family_ready(mossman){true}else{unsafe{HK_RUNNER_AUDIO_FAMILY_MISMATCH=HK_RUNNER_AUDIO_FAMILY_MISMATCH.saturating_add(1)};false}
+}
 const LOOP_VOICES: [u8; 2] = [21, 22];
 const CALL_VOICE: u8 = 23;
 const GAIN: i16 = 5461;
@@ -30,27 +72,9 @@ pub fn upload(bank: &[u8]) {
     if unsafe { HK_RUNNER_AUDIO_READY != 0 } {
         return;
     }
-    assert!(bank.len() == BANK_BYTES);
-    assert!(BANK_BASE % 16 == 0 && BANK_BASE as usize + BANK_BYTES <= 0x80000);
-    let mut expected = BANK_BASE;
-    for &(start, bytes, pitch, low, high, loops) in &CLIPS {
-        // The loop's authored initial pitch (its bounds) sits below the clip's nominal rate.
-        assert!(start == expected && bytes % 16 == 0 && bytes > 0 && pitch > 0 && low <= high);
-        let data = &bank[(start - BANK_BASE) as usize..(start - BANK_BASE) as usize + bytes];
-        for (block, chunk) in data.chunks_exact(16).enumerate() {
-            let last = (block + 1) * 16 == bytes;
-            // ADPCM header byte: shift in the low nibble (0..12), filter in the high (0..4).
-            assert!(chunk[0] & 0x0F <= 12 && chunk[0] >> 4 <= 4);
-            // Loops repeat to their start; one-shots end in the terminal silence block.
-            if loops {
-                assert!(chunk[1] & 1 == u8::from(last));
-            } else {
-                assert!(chunk[1] == u8::from(last));
-            }
-        }
-        expected = start + bytes as u32;
-    }
-    assert!(expected == BANK_BASE + BANK_BYTES as u32);
+    // Bootstrap and scene overlays use the same complete manifest and ADPCM
+    // contract, including the reserved tail and authored loop/terminal flags.
+    assert!(bank.len() == BANK_BYTES && validate_fragment(false, 0, bank));
     spu::upload_adpcm(SpuAddr::new(BANK_BASE), bank);
     unsafe {
         HK_RUNNER_AUDIO_READY = 1;
@@ -77,7 +101,10 @@ fn loop_slot(source: u32) -> Option<usize> {
 /// Start (or restart) a Runner's walk loop on its voice. A third simultaneous
 /// Runner is counted as dropped rather than stealing a live voice.
 pub fn loop_start(source: u32) {
-    if !ready() {
+    loop_start_for(source,false)
+}
+pub fn loop_start_for(source:u32,mossman:bool) {
+    if !require_family(mossman) {
         return;
     }
     let slot = match loop_slot(source).or_else(|| loop_slot(0)) {
@@ -94,7 +121,7 @@ pub fn loop_start(source: u32) {
     }
     let voice = Voice::new(LOOP_VOICES[slot]);
     // The source AudioSource plays the walk loop at its authored initial pitch.
-    let (start, _, _, pitch, _, _) = CLIPS[0];
+    let (start, _, _, pitch, _, _) = clips(mossman)[0];
     Voice::key_off(1 << LOOP_VOICES[slot]);
     let gain = Volume(volume::scale(GAIN, unsafe { LEVEL }));
     voice.set_volume(gain, gain);
@@ -122,10 +149,15 @@ pub fn loop_stop(source: u32) {
 /// Source AudioPlayRandom: one of two calls at the controller's pitch (Q16
 /// multiplier of the clip's nominal pitch, clamped to the authored bounds).
 pub fn call(pitch_q16: i32, variant: u8) {
-    if !ready() {
+    call_for(pitch_q16,variant,false)
+}
+pub fn call_for(pitch_q16:i32,variant:u8,mossman:bool) {
+    if !require_family(mossman) {
         return;
     }
-    let (start, bytes, pitch, low, high, _) = CLIPS[1 + usize::from(variant != 0)];
+    let bank=clips(mossman);
+    if variant as usize>=bank.len()-1 {return;}
+    let (start, bytes, pitch, low, high, _) = bank[1+variant as usize];
     let scaled =
         ((pitch as i64 * pitch_q16.max(0) as i64) >> 16).clamp(low as i64, high as i64) as u16;
     let voice = Voice::new(CALL_VOICE);

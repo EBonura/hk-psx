@@ -38,7 +38,7 @@ use crate::world::particles::break_effects::EFFECT_ART_MANIFEST;
 /// The fifth is not audio: the quick map's room art (`game_map`), read right
 /// after the world bank and uploaded to its own VRAM page, which the title
 /// art does not touch. Linked, it cost 25 KB of RAM for texels VRAM owns.
-const AUDIO_BANKS: [(usize, u32); 5] = [
+const AUDIO_BANKS: [(usize, u32); 6] = [
     (crate::audio::BANK_BYTES, crate::audio::BANK_CHECKSUM),
     (
         crate::geo_audio::BANK_BYTES,
@@ -53,10 +53,12 @@ const AUDIO_BANKS: [(usize, u32); 5] = [
         crate::audio::WORLD_BANK_CHECKSUM,
     ),
     (crate::game_map::BANK_BYTES, crate::game_map::BANK_CHECKSUM),
+    (crate::runner_audio::MOSSMAN_BANK_BYTES,crate::runner_audio::MOSSMAN_BANK_CHECKSUM),
 ];
 /// `AUDIO_BANKS` index of the world one-shots, and of the map art.
 const WORLD_BANK: usize = 3;
 const MAP_BANK: usize = 4;
+const MOSSMAN_BANK:usize=5;
 // Chunk `i` carries id `i+1`, numbered by kind in these runs. Naming each
 // boundary once keeps `chunk_spec`, `group_of` and the per-chunk call sites
 // below reading the same arithmetic instead of three copies of it. Where a
@@ -137,7 +139,8 @@ const fn member(group: usize, j: usize) -> usize {
             3 => BANK_INDEX,
             4 => FOCUS_INDEX,
             5 | 6 => BANK_INDEX + j - 4,
-            _ => SCENE_COUNT + j - 7,
+            7 => BANK_INDEX + MOSSMAN_BANK,
+            _ => SCENE_COUNT + j - 8,
         };
     }
     if group == MUSIC_GROUP {
@@ -178,7 +181,7 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
     let (group, j) = if index < SCENE_COUNT {
         (1 + index, 3 + scene_atlases(index))
     } else if index < ATLAS_INDEX {
-        (0, 7 + index - SCENE_COUNT)
+        (0, 8 + index - SCENE_COUNT)
     } else if index < FOCUS_INDEX {
         let s = ATLASES[index - ATLAS_INDEX].scene_index;
         (1 + s, 3 + index - ATLAS_INDEX - SCENE_ATLAS_RANGES[s].0)
@@ -202,6 +205,8 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
         (0, 0)
     } else if index == BANK_INDEX + MAP_BANK {
         (0, 1)
+    } else if index == BANK_INDEX+MOSSMAN_BANK {
+        (0,7)
     } else if index < MUSIC_INDEX {
         (
             0,
@@ -1388,6 +1393,56 @@ impl Cache {
     /// The arena is word aligned and the bank starts at its front, which is
     /// what keeps the SDK's SPU DMA upload path available; the banks used to
     /// get that from their own `repr(align(4))` static.
+    /// Two passes through a stack sector preserve every admitted arena byte.
+    /// The first validates the complete bank; the second installs it while
+    /// publication is revoked. I/O/hash failure cannot publish a partial bank.
+    #[inline(never)]
+    fn prepare_runner_audio(&mut self,scene:usize)->Result<(),LoadError> {
+        let mossman=crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize);
+        if crate::runner_audio::family_ready(mossman) {return Ok(());}
+        self.init()?;
+        let index=if mossman {MOSSMAN_BANK}else{2};
+        let (size,checksum)=AUDIO_BANKS[index];
+        let entry=self.entry(audio_bank_index(index))?;
+        if entry.byte_size as usize!=size || size%16!=0 || size>20464 {return Err(LoadError::RoomMismatch);}
+        let end = entry.sector_offset.checked_add(entry.sector_count).ok_or(LoadError::HeaderInvalid)?;
+        if entry.sector_count as usize != size.div_ceil(SECTOR_BYTES)
+            || entry.sector_offset < self.group_bases[0] || end > self.group_bases[1] {
+            return Err(LoadError::HeaderInvalid);
+        }
+        let lba = WORLD_PACK_DEFAULT_LBA.checked_add(entry.sector_offset).ok_or(LoadError::HeaderInvalid)?;
+        lba.checked_add(entry.sector_count).ok_or(LoadError::HeaderInvalid)?;
+        prefetch_discard();
+        room_drive();
+        let mut words=[0u32;SECTOR_WORDS];
+        for pass in 0..2 {
+            if pass==1 && !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
+            if !unsafe{self.reader.start_read_seek_first(lba,SEEK_POLL)} {
+                unsafe{self.reader.stop();}
+                return Err(LoadError::PayloadRead);
+            }
+            let result=(|| {
+                let mut hash=0x811c9dc5u32;
+                let mut offset=0;
+                while offset<size {
+                    crate::input::checkpoint();
+                    if !sector(&mut self.reader,&mut words){return Err(LoadError::PayloadRead);}
+                    let n=(size-offset).min(SECTOR_BYTES);
+                    let bytes=unsafe{core::slice::from_raw_parts(words.as_ptr().cast::<u8>(),n)};
+                    if !crate::runner_audio::validate_fragment(mossman,offset,bytes){return Err(LoadError::RoomMismatch);}
+                    for &b in bytes {hash=(hash^u32::from(b)).wrapping_mul(0x01000193);}
+                    if pass==1 {crate::runner_audio::upload_fragment(offset,bytes);}
+                    offset+=n;
+                }
+                if hash!=checksum {return Err(LoadError::RoomMismatch);}
+                Ok(())
+            })();
+            unsafe{self.reader.stop();}
+            result?;
+        }
+        crate::runner_audio::finish_overlay(mossman);
+        Ok(())
+    }
     fn audio_bank(&mut self, bank: usize) -> Result<&[u8], LoadError> {
         self.init()?;
         if self.loaded_scenes != 0 {
@@ -2040,6 +2095,7 @@ impl Cache {
         // Before any read or slide moves the prefetched bytes: finish a
         // background code install for this room, or drop one for another.
         crate::modules::gate_begin(wanted);
+        self.prepare_runner_audio(wanted)?;
         unsafe {
             GATE_VERIFIED = 0;
             GATE_SCENE = EMPTY;
@@ -2338,6 +2394,7 @@ impl Cache {
     pub fn is_ready(&self, region: usize) -> bool {
         REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene, _)| {
             let scene = scene as usize;
+            if !crate::runner_audio::family_ready(crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize)) {return false;}
             if SCENE_GATE_LOAD {
                 self.loaded_scenes == 1
                     && scene == self.resident_scene

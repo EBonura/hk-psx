@@ -78,8 +78,13 @@ const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(0,2),(1,0),(1,1),(1,2)];
-struct SceneDesc{raw_len:usize}
-const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{raw_len:4096},SceneDesc{raw_len:2048}];
+struct SceneDesc{raw_len:usize,scene_id:usize}
+const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{raw_len:4096,scene_id:0},SceneDesc{raw_len:2048,scene_id:46}];
+mod runner_audio{
+ pub static mut READY:bool=true;
+ pub fn scene_is_mossman(scene:usize)->bool{scene==46}
+ pub fn family_ready(_:bool)->bool{unsafe{READY}}
+}
 fn scene_index(region:usize)->usize{REGION_SCENE_LOCAL[region].0}
 #[derive(Clone,Copy,Debug,PartialEq)]enum LoadError{RoomMismatch}
 static mut HK_REGION_ACTIVATIONS:u32=0;
@@ -152,6 +157,9 @@ METHODS
    for region in 0..6{assert!(!c.is_ready(region));assert_eq!(c.try_select(region),Ok(false));}
   }
   c.coverage_len=64;
+  unsafe{runner_audio::READY=false;}
+  for region in 0..6{assert!(!c.is_ready(region));assert_eq!(c.try_select(region),Ok(false));}
+  unsafe{runner_audio::READY=true;}
   for region in 0..6{
    let expected=scene_index(region)==owner;
    assert_eq!(c.is_ready(region),expected);assert_eq!(c.request(region),Ok(expected));
@@ -256,6 +264,9 @@ impl Cache{
  // keeping the table; the harness only needs a chunk index to stand in for one.
  fn entry(&self,index:usize)->Result<usize,LoadError>{Ok(self.entries[index])}
  fn prepare_metadata(&mut self,_wanted:usize,_:Stage)->Result<(),LoadError>{Ok(())}
+ fn prepare_runner_audio(&mut self,_wanted:usize)->Result<(),LoadError>{
+  if unsafe{AUDIO_FAIL}{Err(LoadError::Checksum)}else{Ok(())}
+ }
  fn stage_group(&mut self,_wanted:usize)->Result<Stage,LoadError>{Ok(Stage::Read)}
  fn stage(&mut self,index:usize,st:Stage,lo:usize)->Result<(usize,usize),LoadError>{
   assert!(matches!(st,Stage::Read));let e=self.entry(index)?;self.read(e,lo)?;Ok((SCENE_ARENA_BYTES,0))
@@ -300,7 +311,15 @@ impl Cache{
 METHOD
 }
 fn reset(){unsafe{PAYLOADS=[[0,2,3,2,1,2],[1,1,2,1,3,0]];HK_SCENE_LOADS=0;
- COVERAGE_ATTEMPTS=0;COVERAGE_FAIL=EMPTY;ATLAS_CALLS=0;GEOMETRY_READS=0;DRAW_COUNTS=[3,2];}}
+ COVERAGE_ATTEMPTS=0;COVERAGE_FAIL=EMPTY;AUDIO_FAIL=false;ATLAS_CALLS=0;GEOMETRY_READS=0;DRAW_COUNTS=[3,2];}}
+static mut AUDIO_FAIL:bool=false;
+#[test]fn failed_audio_overlay_prevents_incoming_geometry_admission(){
+ reset();let mut c=Cache::new();unsafe{AUDIO_FAIL=true;}
+ assert_eq!(c.admit_scenes(0),Err(LoadError::Checksum));
+ assert_eq!((c.loaded_scenes,c.resident_scene,c.selected),(0,EMPTY,EMPTY));
+ assert_eq!(unsafe{(COVERAGE_ATTEMPTS,ATLAS_CALLS,GEOMETRY_READS)},(0,0,0));
+ unsafe{AUDIO_FAIL=false;}assert_eq!(c.admit_scenes(0),Ok(()));
+}
 #[test]fn exact_scene_and_atlas_bindings_admit_and_allow_reentry(){
  reset();let mut cache=Cache::new();
  for wanted in [0,1,0,1]{
@@ -520,6 +539,9 @@ const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
+struct SceneDesc{scene_id:usize}
+const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{scene_id:0},SceneDesc{scene_id:46}];
+mod runner_audio{pub fn scene_is_mossman(scene:usize)->bool{scene==46}pub fn family_ready(_:bool)->bool{true}}
 const ATLASES:&[u8]=&[0;23];
 struct CoverageDesc{raw_len:usize}
 const COVERAGE_MANIFEST:&[CoverageDesc]=&[CoverageDesc{raw_len:64},CoverageDesc{raw_len:64}];

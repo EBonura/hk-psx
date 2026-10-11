@@ -127,8 +127,10 @@ fn runner_event(event: enemies::RunnerEvent) {
     use enemies::RunnerEventKind::*;
     match event.kind {
         AudioPlay => runner_audio::loop_start(event.source_id),
+        MossmanAudioPlay => runner_audio::loop_start_for(event.source_id,true),
         AudioStop | Destroy => runner_audio::loop_stop(event.source_id),
         ChaseSound { pitch_q16, variant } => runner_audio::call(pitch_q16, variant),
+        MossmanChaseSound {pitch_q16,variant} => runner_audio::call_for(pitch_q16,variant,true),
         DustStart | DustStop => unsafe {
             HK_RUNNER_DUST_EVENTS = HK_RUNNER_DUST_EVENTS.saturating_add(1);
         },
