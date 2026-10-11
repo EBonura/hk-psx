@@ -2574,6 +2574,8 @@ impl Actor {
             can_see_hero,
             in_alert_range,
             in_attack_range: overlap(world(g::ATTACK), context.hero_body),
+            in_dormant_range: guard.controller.phase() == g::Phase::Dormant
+                && overlap(world(g::DORMANT_ATTACK), context.hero_body),
             hero_above: overlap(world(g::OVERHEAD), context.hero_body),
             completed: guard.completed(spec, room),
         };

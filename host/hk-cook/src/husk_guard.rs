@@ -14,7 +14,8 @@ use crate::prefab::{
 use crate::pyjson::Json;
 use crate::recog::{body_box, check_assemblies, child_map, clips_ok, xy};
 use crate::runner::{axis_aligned_bounds, fsm_fingerprint, ticks};
-use hk_unity::playmaker::field;
+use hk_unity::playmaker::{field, action_fields_with_plain_strings, enabled};
+use sha2::{Digest, Sha256};
 use hk_unity::scene::Scene;
 use hk_unity::{Obj, Source, Value};
 
@@ -57,6 +58,7 @@ pub(crate) const CLIP_SLOTS: [(&str, &str); 12] = [
 ];
 const ALERT_Q16: [i64; 4] = [-1102971, -259850, 1102971, 181207];
 const ATTACK_Q16: [i64; 4] = [-327680, -246088, 327680, 172687];
+const DORMANT_ATTACK_Q16: [i64; 4] = [-533791, -246088, 533791, 172687];
 const OVERHEAD_Q16: [i64; 4] = [-101253, 12880, 101253, 244406];
 const SWIPE_Q16: [i64; 4] = [-323584, -70656, 142336, 299008];
 const WAVE_SPEED: f64 = 18.0;
@@ -335,6 +337,19 @@ pub fn recognize(
     if fingerprint != FSM_SHA256 {
         return err("unverified Husk Guard FSM variant");
     }
+    // A transition named ATTACK ALERT alone does not identify its source box.
+    let dormant = single_state(fsm, "Dormant")?;
+    let dormant_data = get(dormant, "actionData")?;
+    let check_indices: Vec<_> = enabled(dormant).into_iter().filter(|(kind,_)|kind=="CheckAlertRangeByName").collect();
+    if check_indices.len()!=1 { return err("Husk Guard dormant range check is not unique"); }
+    let check_fields = u(action_fields_with_plain_strings(dormant_data,check_indices[0].1,false))?;
+    if field(&check_fields,"childName").and_then(Value::str).as_deref()!=Some("Attack Range") {
+        return err("Husk Guard dormant range child is not the authored Attack Range");
+    }
+    let fsm_id = records.iter().find(|r|r.1=="PlayMakerFSM").ok_or("no FSM record")?.0;
+    let ptr = Value::Map(vec![("m_FileID".into(),Value::Int(0)),("m_PathID".into(),Value::Int(fsm_id))]);
+    let fsm_object = u(sc.deref(&ptr))?;
+    let source_raw_sha = format!("{:x}",Sha256::digest(u(fsm_object.raw())?));
     if get(fsm, "startState")?.str().as_deref() != Some("Initiate")
         || fsm
             .get("globalTransitions")
@@ -417,6 +432,7 @@ pub fn recognize(
     }
     let alert = local_box(sc, kid("Alert Range New").unwrap(), None)?;
     let attack = local_box(sc, kid("Attack Range").unwrap(), Some(10.0))?;
+    let dormant_attack = local_box(sc, kid("Attack Range").unwrap(), None)?;
     let overhead = local_box(sc, kid("Overhead Detect").unwrap(), None)?;
     let swipe = kid("Swipe").unwrap();
     if sc.active(swipe) {
@@ -454,6 +470,7 @@ pub fn recognize(
     for (key, got, want) in [
         ("alert", alert, ALERT_Q16),
         ("attack", attack, ATTACK_Q16),
+        ("dormant_attack", dormant_attack, DORMANT_ATTACK_Q16),
         ("overhead", overhead, OVERHEAD_Q16),
         ("swipe", swipe_box, SWIPE_Q16),
     ] {
@@ -519,6 +536,9 @@ pub fn recognize(
         ("kind", js("HuskGuard")),
         ("guest_enabled", Json::Bool(true)),
         ("fsm_sha256", Json::Str(fingerprint)),
+        ("original_fsm_source", Json::Str(fsm_object.sid())),
+        ("original_fsm_raw_sha256", Json::Str(source_raw_sha)),
+        ("dormant_range_child", js("Attack Range")),
         ("library_source", Json::Str(library_o.sid())),
         // `Initiate` branches on `Start Facing Left`; the art faces -x.
         (
@@ -534,6 +554,7 @@ pub fn recognize(
             jobj(vec![
                 ("alert", ints(&alert)),
                 ("attack", ints(&attack)),
+                ("dormant_attack", ints(&dormant_attack)),
                 ("overhead", ints(&overhead)),
                 ("swipe", ints(&swipe_box)),
             ]),

@@ -30,6 +30,8 @@ use crate::ONE;
 /// actor origin, in the art frame (front at -x).
 pub const ALERT: [i32; 4] = [-1102971, -259850, 1102971, 181207];
 pub const ATTACK: [i32; 4] = [-327680, -246088, 327680, 172687];
+/// Authored Attack Range before Wake scales its width to ten units.
+pub const DORMANT_ATTACK: [i32; 4] = [-533791, -246088, 533791, 172687];
 pub const OVERHEAD: [i32; 4] = [-101253, 12880, 101253, 244406];
 pub const SWIPE: [i32; 4] = [-323584, -70656, 142336, 299008];
 /// `Swipe`'s DamageHero, armed for its own 3-frame 15 fps clip.
@@ -185,6 +187,8 @@ pub struct Senses {
     pub can_see_hero: bool,
     pub in_alert_range: bool,
     pub in_attack_range: bool,
+    /// Authored attack range, used only before Wake rescales it.
+    pub in_dormant_range: bool,
     /// `Overhead Detect`'s HERO ABOVE, sent while the hero is in its box.
     pub hero_above: bool,
     pub completed: Option<Animation>,
@@ -427,7 +431,7 @@ impl HuskGuard {
         let see = senses.can_see_hero;
         match self.phase {
             Phase::Dormant => {
-                if senses.in_alert_range && see {
+                if senses.in_dormant_range && see {
                     self.enter(Phase::Wake, &mut actions);
                 }
             }
@@ -618,12 +622,21 @@ mod tests {
         }
     }
     #[test]
-    fn sleeps_until_it_sees_the_hero_in_alert_range_then_wakes_and_cools_down() {
+    fn sleeps_until_authored_dormant_attack_range_then_wakes_and_cools_down() {
         let mut g = HuskGuard::new(0, 1, 7);
         assert_eq!(g.phase(), Phase::Dormant);
         g.tick(senses(0, 5 * ONE));
         assert_eq!(g.phase(), Phase::Dormant);
+        let small = facing_box(DORMANT_ATTACK, 1, [0, 0]);
+        let wide = facing_box(ALERT, 1, [0, 0]);
+        assert!(12 * ONE > small[2] && 12 * ONE < wide[2]);
+        assert!(5 * ONE > small[0] && 5 * ONE < small[2]);
+        g.tick(Senses { in_alert_range: true, ..senses(0, 12 * ONE) });
+        assert_eq!(g.phase(), Phase::Dormant);
+        g.tick(Senses { in_dormant_range: true, can_see_hero: false, ..senses(0, 5 * ONE) });
+        assert_eq!(g.phase(), Phase::Dormant);
         let s = Senses {
+            in_dormant_range: true,
             in_alert_range: true,
             ..senses(0, 5 * ONE)
         };
