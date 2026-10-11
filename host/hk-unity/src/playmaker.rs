@@ -166,6 +166,19 @@ pub fn enabled(state: &Value) -> Vec<(String, usize)> {
 mod plain_string_tests {
     use super::*;
     #[test]
+    fn plain_strings_are_additive_to_legacy_fields() {
+        let list = |n:i64| Value::List(vec![Value::Int(n)]);
+        let data=Value::Map(vec![
+            ("actionNames".into(),Value::List(vec![Value::Str(b"CheckAlertRangeByName".to_vec())])),
+            ("actionStartIndex".into(),list(0)),
+            ("paramName".into(),Value::List(vec![Value::Str(b"childName".to_vec())])),
+            ("paramDataType".into(),list(3)),("paramDataPos".into(),list(0)),("paramByteDataSize".into(),list(12)),
+            ("byteData".into(),Value::List(b"Attack Range".iter().map(|b|Value::Int(*b as i64)).collect()))]);
+        assert!(action_fields(&data,0,false).unwrap().is_empty());
+        let checked=action_fields_with_plain_strings(&data,0,false).unwrap();
+        assert_eq!(field(&checked,"childName").unwrap().str().as_deref(),Some("Attack Range"));
+    }
+    #[test]
     fn authored_child_name_uses_exact_byte_range() {
         let bytes = b"paddingAttack Rangeunused";
         assert_eq!(plain_string(bytes, 7, 12).unwrap().str().as_deref(), Some("Attack Range"));
