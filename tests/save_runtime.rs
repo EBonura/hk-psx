@@ -163,6 +163,50 @@ fn an_empty_world_is_the_shortest_record_and_a_full_one_fits_the_buffer() {
 }
 
 #[test]
+fn capacity_160_preserves_every_item_on_reload_and_kind_reset() {
+    assert_eq!(persist::MAX_ITEMS, 160);
+    let mut full = persist::Store::new();
+    for local in 0..80 {
+        assert!(full.set(Kind::Breakable, 1, local, 1));
+        assert!(full.set(Kind::SoulTotem, 2, local, 0));
+    }
+    assert_eq!(full.items().len(), 160);
+    assert_eq!(full.overflow, 0);
+    let bytes = encode(&record(), full.items());
+    assert_eq!(bytes.len(), 806);
+    let (_, items) = Save::decode(&bytes).unwrap();
+    let mut reload = persist::Store::new();
+    for item in Save::items(items) {
+        let (kind, scene, local, value) = persist::unpack(item).unwrap();
+        assert!(reload.set(kind, scene, local, value));
+    }
+    assert_eq!(reload.items(), full.items());
+    reload.clear_kind(Kind::SoulTotem);
+    assert_eq!(reload.items().len(), 80);
+    for local in 0..80 {
+        assert_eq!(reload.get(Kind::Breakable, 1, local), Some(1));
+        assert_eq!(reload.get(Kind::SoulTotem, 2, local), None);
+    }
+    let reset = encode(&record(), reload.items());
+    let (_, items) = Save::decode(&reset).unwrap();
+    assert_eq!(Save::items(items).collect::<Vec<_>>(), reload.items());
+    assert_eq!(reload.overflow, 0);
+}
+
+#[test]
+fn maximum_old_128_item_hks5_record_still_loads() {
+    let mut old = persist::Store::new();
+    for local in 0..128 {
+        assert!(old.set(Kind::Breakable, 1, local, 1));
+    }
+    let bytes = encode(&record(), old.items());
+    assert_eq!(&bytes[..4], b"HKS5");
+    assert_eq!(bytes.len(), 678);
+    let (_, items) = Save::decode(&bytes).unwrap();
+    assert_eq!(Save::items(items).collect::<Vec<_>>(), old.items());
+}
+
+#[test]
 fn no_two_fields_share_an_offset() {
     // The round trip above passes even if two fields overlap, as long as the
     // last writer wins consistently. Changing one field at a time and watching

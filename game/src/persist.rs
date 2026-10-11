@@ -27,12 +27,11 @@
 //! so their owners write here the moment the source's own bool flips and read
 //! here when their scene is seated.
 
-/// Items one record can carry. Measured against the admitted world rather than
-/// guessed: 8 persistent breakables, 35 Geo rocks, 9 one-way secret masks, one
-/// cocoon and one arena is 54, so a player who does everything this disc offers
-/// uses under half. A full store refuses the next item and counts it in
-/// `HK_WORLD_OVERFLOW`, which a route pins at zero; it never evicts one.
-pub const MAX_ITEMS: usize = 128;
+/// Items one record can carry. Placement's source-bound admitted-world
+/// preflight needs 155 total keys: 107 permanent and 48 reset-lifetime keys.
+/// A full store refuses the next item and counts it in `HK_WORLD_OVERFLOW`;
+/// it never evicts an existing item. HKS5's item encoding stays unchanged.
+pub const MAX_ITEMS: usize = 160;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]

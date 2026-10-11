@@ -46,7 +46,7 @@ const ITEMS_AT: usize = HKS4_FIELDS + 4 + persist::LEVELS + 2;
 /// The shortest HKS5 record: a world nobody has touched, with no items.
 /// `tools/migrate_cards.py` reads this as the length an HKS4 fixture grows to.
 pub const LEN: usize = 166;
-/// The longest, with the store full. Six 128-byte card frames with the psx-mc
+/// The longest, with the store full. Seven 128-byte card frames with the psx-mc
 /// container ahead of it, against the one 8 KiB block each file owns.
 pub const MAX_LEN: usize = LEN + persist::MAX_ITEMS * 4;
 use crate::persist;
