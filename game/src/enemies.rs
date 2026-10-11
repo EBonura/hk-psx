@@ -2450,13 +2450,10 @@ impl Actor {
         // exactly on Terrain and the segment model invents a perpetual wall.
         //
         // The Zombie Shield carries the same `Walker` and is read by the same
-        // Sweep model, so it takes the same clearance. That is the one number
-        // here borrowed rather than measured on this placement.
-        let foot_skin = if self.runner().is_some() || self.zombie_shield().is_some() {
-            983
-        } else {
-            0
-        };
+        // Sweep model, so it takes the same clearance. The original placement
+        // survey also measures this contact offset on the falling Crawlers and
+        // Husk Guard: it belongs to the Rigidbody floor contact, not a family.
+        let foot_skin = 983;
         let gravity = if let ActorController::Runner { params, .. } = spec.controller {
             params.gravity
         } else {

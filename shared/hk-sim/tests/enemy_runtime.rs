@@ -1032,7 +1032,7 @@ fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
         OVERLAPPING.y
     );
     tick(&mut w, &r, &floor, &mut p, &mut v, &n);
-    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE + 983);
     // A new grid's intersecting edge must not trigger the initial placement
     // correction again. Ordinary movement retains the existing sweep rules.
     let mut changed = room();
@@ -1049,9 +1049,27 @@ fn spawn_overlap_waits_for_resident_terrain_and_never_repeats_on_grid_swap() {
 }
 
 #[test]
+fn falling_crawler_keeps_contact_clearance_while_patrolling_a_level_floor() {
+    let bytes = room();
+    let floor = hk_format::Room::parse(&bytes).unwrap();
+    let r = region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(10 * ONE, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    for _ in 0..60 {
+        tick(&mut w, &r, &floor, &mut p, &mut v, &Nail::new());
+        assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE + 983);
+    }
+    assert!(w.actor_state(0, PLACEMENT.source_id).unwrap().0 < -ONE);
+    assert_eq!(v.health, 5);
+}
+
+#[test]
 fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
     const EMBEDDED: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
-        y: ONE / 2,
+        // Keep the nearest correction upward with the contact clearance too;
+        // half-height was a tie that depended on a zero-clearance body.
+        y: ONE * 3 / 4,
         ..PLACEMENT
     };
     let mut bytes = room();
@@ -1081,7 +1099,7 @@ fn unresolved_initial_geometry_suspends_without_retry_until_scene_reset() {
     assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, EMBEDDED.y);
     w.reset_scene(0);
     tick(&mut w, &r, &clear, &mut p, &mut v, &n);
-    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE);
+    assert_eq!(w.actor_state(0, PLACEMENT.source_id).unwrap().1, ONE + 983);
 }
 
 #[test]
