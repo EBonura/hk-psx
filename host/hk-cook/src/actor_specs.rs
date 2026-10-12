@@ -216,6 +216,13 @@ fn hm_flag(health: &Value, key: &str) -> Result<bool> {
 
 /// `generated_actor_records(region)`: (ActorSpec expression, placement) per supported actor.
 pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Placement)>> {
+    generated_actor_records_bounded(actors, MAX_SCENE_ACTORS)
+}
+
+pub(crate) fn generated_actor_records_bounded(
+    actors: &[SpecActor],
+    limit: usize,
+) -> Result<Vec<(String, Placement)>> {
     let mut output: Vec<(String, Placement)> = Vec::new();
     for actor in actors {
         let row = actor.row;
@@ -226,7 +233,7 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
         if actor.clip("walk_clip").is_none() || actor.clip("turn_clip").is_none() {
             return err(format!("supported actor is missing cooked clips: {who}"));
         }
-        if output.len() == MAX_SCENE_ACTORS {
+        if output.len() == limit {
             return err("guest actor pool exceeds 32");
         }
         let (mut start_alert, mut start_right, mut rotation_q16) = (false, false, 0i64);
@@ -677,8 +684,15 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 random_start_direction = false;
             }
             "WalkLeftRight" => {
-                let duration = row.part("Recoil").and_then(|r| r.get("recoilDuration")).and_then(Value::float).ok_or("Crawler Recoil duration absent")?;
-                controller = format!("hk_sim::ActorController::Crawler {{recoil_steps:{}}}", crate::crawler_recoil::fixed_steps(duration)?);
+                let duration = row
+                    .part("Recoil")
+                    .and_then(|r| r.get("recoilDuration"))
+                    .and_then(Value::float)
+                    .ok_or("Crawler Recoil duration absent")?;
+                controller = format!(
+                    "hk_sim::ActorController::Crawler {{recoil_steps:{}}}",
+                    crate::crawler_recoil::fixed_steps(duration)?
+                );
                 speed = num(need(control, "speed")?)?;
                 turn_ticks = int(control, "turn_ticks")?;
                 turn_cooldown_ticks = int(control, "turn_cooldown_ticks")?;

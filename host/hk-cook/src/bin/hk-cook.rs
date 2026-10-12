@@ -19,6 +19,7 @@ fn main() {
         Some("area-music") => hk_cook::area_music::main(&root, source.as_deref()),
         Some("runner-audio") => hk_cook::runner_audio::main(&root, &args[2..], source.as_deref()),
         Some("actor-persistence") => hk_cook::actor_persistence::main(&root, source.as_deref()),
+        Some("crossroads22-bridge") => hk_cook::crossroads22_bridge::main(&root, source.as_deref(), &args[2..]).map_err(|e|e.to_string()),
         Some("crawler-recoil") => hk_cook::crawler_recoil::bind_generated_specs(&root),
         Some("mossman-bind") => hk_cook::mossman_scene::bind_generated_specs(&root).map_err(|e| e.to_string()),
         Some("shaman-runner-scene") => hk_cook::shaman_runner_scene::cook(&root).map_err(|e| e.to_string()),

@@ -109,7 +109,25 @@ fn guest_enabled(control: Json) -> Json {
 pub type Catalogue = [(String, [f64; 4], String)];
 
 pub fn scan(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<Vec<Row>> {
-    scan_with(sc, source, catalogue, true, None)
+    scan_with(sc, source, catalogue, true, None, false)
+}
+
+/// Explicit host-only bridge scan; ordinary admission retains its existing bounds.
+pub(crate) fn scan_crossroads22(
+    sc: &Scene,
+    source: &Source,
+    catalogue: &Catalogue,
+) -> Result<Vec<Row>> {
+    if hk_unity::base_name(&sc.base.name) != "level59"
+        || hk_unity::scene::build_settings(source)
+            .map_err(|e| e.to_string())?
+            .get("Crossroads_22")
+            .map(String::as_str)
+            != Some("level59")
+    {
+        return err("Crossroads_22 source scene does not match BuildSettings");
+    }
+    scan_with(sc, source, catalogue, true, None, true)
 }
 
 /// `actor_sources(sc, bounds)`: only the actors standing inside `bounds` (x0, y0, x1, y1).
@@ -119,16 +137,19 @@ pub fn scan_in(
     catalogue: &Catalogue,
     bounds: [f64; 4],
 ) -> Result<Vec<Row>> {
-    if matches!(hk_unity::base_name(&sc.base.name), "level128" | "level134" | "level135" | "level136") {
+    if matches!(
+        hk_unity::base_name(&sc.base.name),
+        "level128" | "level134" | "level135" | "level136"
+    ) {
         // Audio is room-wide: validate actors outside this placement chunk too.
-        scan_with(sc, source, catalogue, true, None)?;
+        scan_with(sc, source, catalogue, true, None, false)?;
     }
-    scan_with(sc, source, catalogue, true, Some(bounds))
+    scan_with(sc, source, catalogue, true, Some(bounds), false)
 }
 
 /// `hatcher._others`: the supported actors of the scene with the Hatcher family refused.
 fn supported_others(sc: &Scene, source: &Source, catalogue: &Catalogue) -> Result<usize> {
-    let count = scan_with(sc, source, catalogue, false, None)?
+    let count = scan_with(sc, source, catalogue, false, None, false)?
         .iter()
         .filter(|r| r.supported)
         .count();
@@ -145,6 +166,7 @@ fn scan_with(
     catalogue: &Catalogue,
     family: bool,
     bounds: Option<[f64; 4]>,
+    arena: bool,
 ) -> Result<Vec<Row>> {
     let others_cache = std::cell::Cell::new(None::<usize>);
     let others = || -> Result<usize> {
@@ -154,6 +176,25 @@ fn scan_with(
         let n = supported_others(sc, source, catalogue)?;
         others_cache.set(Some(n));
         Ok(n)
+    };
+    let arena_cache = std::cell::RefCell::new(None::<Vec<crate::battle::Member>>);
+    let arena_others = || -> Result<Vec<crate::battle::Member>> {
+        if let Some(value) = arena_cache.borrow().as_ref() {
+            return Ok(value.clone());
+        }
+        let rows = scan_with(sc, source, catalogue, false, None, true)?;
+        let members = rows
+            .iter()
+            .filter(|r| r.supported)
+            .map(|r| {
+                crate::battle::membership(sc, r.game_object, &component_records(sc, r.game_object))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if crate::battle::pool_peak(&members) > 32 {
+            return err("arena other actors exceed the 32-slot pool");
+        }
+        *arena_cache.borrow_mut() = Some(members.clone());
+        Ok(members)
     };
     let mut rows = Vec::new();
     for o in &sc.objects {
@@ -227,7 +268,11 @@ fn scan_with(
             && name.starts_with("Hatcher Baby")
             && records.iter().any(|r| r.1 == "ObjectBounce")
         {
-            if let Ok(found) = hatcher::recognize_baby(sc, source, gid, catalogue, &others) {
+            if let Ok(found) = if arena {
+                hatcher::recognize_baby_with_budget(sc, source, gid, catalogue, &arena_others, true)
+            } else {
+                hatcher::recognize_baby(sc, source, gid, catalogue, &others)
+            } {
                 control = Some(("HatcherBaby".to_string(), found));
             }
         }
@@ -238,7 +283,19 @@ fn scan_with(
             && records.iter().any(|r| r.1 == "LineOfSightDetector")
         {
             let position = u(sc.point(gid, 0.0, 0.0, 0.0))?;
-            if let Ok(found) = hatcher::recognize(sc, source, gid, position, catalogue, &others) {
+            if let Ok(found) = if arena {
+                hatcher::recognize_with_budget(
+                    sc,
+                    source,
+                    gid,
+                    position,
+                    catalogue,
+                    &arena_others,
+                    true,
+                )
+            } else {
+                hatcher::recognize(sc, source, gid, position, catalogue, &others)
+            } {
                 control = Some(("Hatcher".to_string(), found));
             }
         }
@@ -400,19 +457,37 @@ fn scan_with(
     let mut ordinary = false;
     for row in &rows {
         if let Some((_, Json::Obj(fields))) = &row.control {
-            if !fields.iter().any(|(k,v)| k == "kind" && *v == Json::Str("ZombieSwipeWalker".into())) { continue; }
-            let calm = fields.iter().find(|(k,_)| k == "parameters").is_some_and(|(_,p)| {
-                if let Json::Obj(p) = p {
-                    p.iter().find(|(k,_)| k == "attack").is_some_and(|(_,a)| {
-                        if let Json::Obj(a) = a { a.iter().any(|(k,v)| k == "kind" && *v == Json::Str("SwipeCalm".into())) } else { false }
-                    })
-                } else { false }
-            });
+            if !fields
+                .iter()
+                .any(|(k, v)| k == "kind" && *v == Json::Str("ZombieSwipeWalker".into()))
+            {
+                continue;
+            }
+            let calm = fields
+                .iter()
+                .find(|(k, _)| k == "parameters")
+                .is_some_and(|(_, p)| {
+                    if let Json::Obj(p) = p {
+                        p.iter().find(|(k, _)| k == "attack").is_some_and(|(_, a)| {
+                            if let Json::Obj(a) = a {
+                                a.iter().any(|(k, v)| {
+                                    k == "kind" && *v == Json::Str("SwipeCalm".into())
+                                })
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                });
             mossman |= calm;
             ordinary |= !calm;
         }
     }
-    if mossman && ordinary { return err("mixed ordinary/Mossman Runner room cannot share the exclusive audio bank"); }
+    if mossman && ordinary {
+        return err("mixed ordinary/Mossman Runner room cannot share the exclusive audio bank");
+    }
     Ok(rows)
 }
 

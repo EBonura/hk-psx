@@ -4,6 +4,8 @@
 pub mod actor_art;
 pub mod actor_persistence;
 pub mod actor_specs;
+pub mod battle;
+pub mod crossroads22_bridge;
 pub mod crawler_recoil;
 pub mod shaman_runner_scene;
 pub mod actors;
