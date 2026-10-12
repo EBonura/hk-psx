@@ -1853,7 +1853,8 @@ impl Actor {
                     };
                     Runtime::Aspid(AspidRuntime {
                         controller,
-                        activation: if scene == 5 && matches!(placement.source_id, 5314 | 5315) { 255 } else { 0 },
+                        activation: if (scene == 5 && matches!(placement.source_id, 5314 | 5315))
+                            || (scene == 9 && placement.source_id == 4166) { 255 } else { 0 },
                         animation_tick: 10,
                         clip: hk_sim::aspid::Clip::Fly,
                     })
@@ -4369,7 +4370,8 @@ impl Actor {
         use hk_sim::runner_senses as q;
         let (enabled, animation_start) = hk_sim::aspid::activation_step(
             &mut aspid.activation, [context.camera[0], context.camera[1]], self.bounds(spec),
-            if self.source_id == 5315 { 3 } else { 2 },
+            if self.scene == 9 && self.source_id == 4166 { 1 }
+                else if self.source_id == 5315 { 3 } else { 2 },
         );
         if animation_start { aspid.animation_tick = 0; }
         else if aspid.activation == 0 { aspid.animation_tick = aspid.animation_tick.saturating_add(1); }
@@ -7895,38 +7897,40 @@ mod runner_runtime_tests {
         let bytes = bytes();
         let room = Room::parse(&bytes).unwrap();
         let spec = ActorSpec { controller: ActorController::Aspid { fire_clip: 1, shot_clip: 1, impact_clip: 1 }, ..SPEC };
-        let placement = hk_sim::ActorPlacement { source_id: 5314, ..AT };
-        let mut actor = Actor::new(5, &placement, &spec);
-        let mut context = context(30 * ONE);
-        context.camera[0] = 40 * ONE;
-        let start = (actor.x, actor.y);
-        for _ in 0..90 {
-            let Runtime::Aspid(mut runtime) = actor.runtime else { panic!("Aspid"); };
-            actor.advance_aspid(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context, &mut |_| {});
+        for (scene, source_id) in [(5, 5314), (9, 4166)] {
+            let placement = hk_sim::ActorPlacement { source_id, ..AT };
+            let mut actor = Actor::new(scene, &placement, &spec);
+            let mut context = context(30 * ONE);
+            context.camera[0] = 40 * ONE;
+            let start = (actor.x, actor.y);
+            for _ in 0..90 {
+                let Runtime::Aspid(mut runtime) = actor.runtime else { panic!("Aspid"); };
+                actor.advance_aspid(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context, &mut |_| {});
+                assert_eq!(runtime.activation, 255);
+                assert_eq!(runtime.animation_tick, 10);
+                actor.runtime = Runtime::Aspid(runtime);
+            }
+            assert_eq!((actor.x, actor.y), start);
+            context.camera[0] = 0;
+            for _ in 0..30 {
+                let Runtime::Aspid(mut runtime) = actor.runtime else { panic!("Aspid"); };
+                actor.advance_aspid(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context, &mut |_| {});
+                actor.runtime = Runtime::Aspid(runtime);
+            }
+            assert_ne!((actor.x, actor.y), start);
+            let Runtime::Aspid(runtime) = actor.runtime else { panic!("Aspid"); };
+            assert_eq!(runtime.activation, 0);
+            let mut world = EnemyWorld::new();
+            world.actors[0] = Some(actor);
+            world.reset_scene(scene);
+            assert!(world.actors[0].is_none());
+            let recreated = Actor::new(scene, &placement, &spec);
+            let Runtime::Aspid(runtime) = recreated.runtime else { panic!("Aspid"); };
             assert_eq!(runtime.activation, 255);
-            assert_eq!(runtime.animation_tick, 10);
-            actor.runtime = Runtime::Aspid(runtime);
+            let ordinary = Actor::new(0, &placement, &spec);
+            let Runtime::Aspid(runtime) = ordinary.runtime else { panic!("Aspid"); };
+            assert_eq!(runtime.activation, 0);
         }
-        assert_eq!((actor.x, actor.y), start);
-        context.camera[0] = 0;
-        for _ in 0..30 {
-            let Runtime::Aspid(mut runtime) = actor.runtime else { panic!("Aspid"); };
-            actor.advance_aspid(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context, &mut |_| {});
-            actor.runtime = Runtime::Aspid(runtime);
-        }
-        assert_ne!((actor.x, actor.y), start);
-        let Runtime::Aspid(runtime) = actor.runtime else { panic!("Aspid"); };
-        assert_eq!(runtime.activation, 0);
-        let mut world = EnemyWorld::new();
-        world.actors[0] = Some(actor);
-        world.reset_scene(5);
-        assert!(world.actors[0].is_none());
-        let recreated = Actor::new(5, &placement, &spec);
-        let Runtime::Aspid(runtime) = recreated.runtime else { panic!("Aspid"); };
-        assert_eq!(runtime.activation, 255);
-        let ordinary = Actor::new(0, &placement, &spec);
-        let Runtime::Aspid(runtime) = ordinary.runtime else { panic!("Aspid"); };
-        assert_eq!(runtime.activation, 0);
     }
     #[test]
     fn all_nine_crossroads_gruzzers_wait_for_trigger_then_keep_their_original_distance_check() {

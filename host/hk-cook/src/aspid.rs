@@ -70,6 +70,25 @@ fn f64v(x: f64) -> Value {
 /// Admit the placement at `gid`, or refuse with the first failed check.
 pub fn recognize(sc: &Scene, source: &Source, gid: i64) -> Result<Json> {
     let records = component_records(sc, gid);
+    if sc.base.name == "level44" && gid == 444 {
+        let (id, activator) = only(&records, "FSMActivator", "Crossroads_08 Spitter")?;
+        let (health_id, health) = only(&records, "HealthManager", "Crossroads_08 Spitter")?;
+        let (fsm_id, tree) = only(&records, "PlayMakerFSM", "Crossroads_08 Spitter")?;
+        if id != 3864 || health_id != 4166 || fsm_id != 3865
+            || get(activator, "m_Enabled")?.int() != Some(1)
+            || get(activator, "activateStaggered")?.int() != Some(1)
+            || get(tree, "m_Enabled")?.int() != Some(0)
+            || [activator, health, tree].iter().any(|v|
+                v.get("m_GameObject").and_then(|v| v.get("m_PathID")).and_then(Value::int) != Some(gid)) {
+            return err("Crossroads_08 Spitter activation ownership drift");
+        }
+        let (animator_id, animator) = only(&records, "tk2dSpriteAnimator", "Crossroads_08 Spitter")?;
+        if animator_id != 3745
+            || get(get(animator, "m_GameObject")?, "m_PathID")?.int() != Some(gid)
+            || get(animator, "playAutomatically")?.truthy() || get(animator, "playAutomaticallyOnEnable")?.truthy() {
+            return err("Crossroads_08 Spitter animator starts automatically");
+        }
+    }
     if sc.base.name == "level39" && matches!(gid, 30 | 458) {
         let expected = if gid == 30 { (4773, 5315, vec![4772, 4775, 4885]) }
             else { (4868, 5314, vec![4867, 4870]) };
