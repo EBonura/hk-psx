@@ -1854,7 +1854,8 @@ impl Actor {
                     Runtime::Aspid(AspidRuntime {
                         controller,
                         activation: if (scene == 5 && matches!(placement.source_id, 5314 | 5315))
-                            || (scene == 9 && placement.source_id == 4166) { 255 } else { 0 },
+                            || (scene == 9 && placement.source_id == 4166)
+                            || (scene == 17 && placement.source_id == 4931) { 255 } else { 0 },
                         animation_tick: 10,
                         clip: hk_sim::aspid::Clip::Fly,
                     })
@@ -7897,7 +7898,7 @@ mod runner_runtime_tests {
         let bytes = bytes();
         let room = Room::parse(&bytes).unwrap();
         let spec = ActorSpec { controller: ActorController::Aspid { fire_clip: 1, shot_clip: 1, impact_clip: 1 }, ..SPEC };
-        for (scene, source_id) in [(5, 5314), (9, 4166)] {
+        for (scene, source_id) in [(5, 5314), (9, 4166), (17, 4931)] {
             let placement = hk_sim::ActorPlacement { source_id, ..AT };
             let mut actor = Actor::new(scene, &placement, &spec);
             let mut context = context(30 * ONE);
@@ -7912,9 +7913,11 @@ mod runner_runtime_tests {
             }
             assert_eq!((actor.x, actor.y), start);
             context.camera[0] = 0;
-            for _ in 0..30 {
+            for tick in 0..30 {
                 let Runtime::Aspid(mut runtime) = actor.runtime else { panic!("Aspid"); };
                 actor.advance_aspid(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context, &mut |_| {});
+                let fsms = if scene == 9 { 1u8 } else { 2 };
+                assert_eq!(runtime.activation, fsms.saturating_sub(tick));
                 actor.runtime = Runtime::Aspid(runtime);
             }
             assert_ne!((actor.x, actor.y), start);

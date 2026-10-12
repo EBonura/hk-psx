@@ -70,6 +70,31 @@ fn f64v(x: f64) -> Value {
 /// Admit the placement at `gid`, or refuse with the first failed check.
 pub fn recognize(sc: &Scene, source: &Source, gid: i64) -> Result<Json> {
     let records = component_records(sc, gid);
+    if sc.base.name == "level57" && gid == 670 {
+        let (id, activator) = only(&records, "FSMActivator", "Crossroads_19 Spitter")?;
+        let (health_id, health) = only(&records, "HealthManager", "Crossroads_19 Spitter")?;
+        let components = crate::common::components(sc, gid)?;
+        let owned: Vec<_> = components.iter().filter(|r| r.1 == "PlayMakerFSM").map(|r| r.0).collect();
+        if id != 4448 || health_id != 4931 || owned != [4449, 4447]
+            || get(activator, "m_Enabled")?.int() != Some(1)
+            || get(activator, "activateStaggered")?.int() != Some(1)
+            || [activator, health].iter().any(|v|
+                v.get("m_GameObject").and_then(|v| v.get("m_PathID")).and_then(Value::int) != Some(gid)) {
+            return err("Crossroads_19 Spitter activation ownership drift");
+        }
+        for (_, _, tree) in records.iter().filter(|r| r.1 == "PlayMakerFSM") {
+            if get(tree, "m_Enabled")?.int() != Some(0)
+                || get(get(tree, "m_GameObject")?, "m_PathID")?.int() != Some(gid) {
+                return err("Crossroads_19 Spitter initial FSM activation drift");
+            }
+        }
+        let (animator_id, animator) = only(&records, "tk2dSpriteAnimator", "Crossroads_19 Spitter")?;
+        if animator_id != 4259
+            || get(get(animator, "m_GameObject")?, "m_PathID")?.int() != Some(gid)
+            || get(animator, "playAutomatically")?.truthy() || get(animator, "playAutomaticallyOnEnable")?.truthy() {
+            return err("Crossroads_19 Spitter animator starts automatically");
+        }
+    }
     if sc.base.name == "level44" && gid == 444 {
         let (id, activator) = only(&records, "FSMActivator", "Crossroads_08 Spitter")?;
         let (health_id, health) = only(&records, "HealthManager", "Crossroads_08 Spitter")?;
