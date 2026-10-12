@@ -70,6 +70,39 @@ fn f64v(x: f64) -> Value {
 /// Admit the placement at `gid`, or refuse with the first failed check.
 pub fn recognize(sc: &Scene, source: &Source, gid: i64) -> Result<Json> {
     let records = component_records(sc, gid);
+    if sc.base.name == "level39" && matches!(gid, 30 | 458) {
+        let expected = if gid == 30 { (4773, 5315, vec![4772, 4775, 4885]) }
+            else { (4868, 5314, vec![4867, 4870]) };
+        let (id, activator) = only(&records, "FSMActivator", "Crossroads_03 Spitter")?;
+        if id != expected.0 || get(activator, "m_Enabled")?.int() != Some(1)
+            || get(activator, "activateStaggered")?.int() != Some(1)
+            || get(get(activator, "m_GameObject")?, "m_PathID")?.int() != Some(gid)
+            || only(&records, "HealthManager", "Crossroads_03 Spitter")?.0 != expected.1 {
+            return err("Crossroads_03 Spitter activation ownership drift");
+        }
+        let owned: Vec<_> = records.iter().filter(|r| r.1 == "PlayMakerFSM").map(|r| r.0).collect();
+        if owned != expected.2 { return err("Crossroads_03 Spitter sibling FSM order drift"); }
+        for (_, _, tree) in records.iter().filter(|r| r.1 == "PlayMakerFSM") {
+            let fsm = get(tree, "fsm")?;
+            let name = get(fsm, "name")?.str().ok_or("FSM name")?;
+            let wanted = if name == "Remove if Grub Saved" { 1 } else { 0 };
+            if get(tree, "m_Enabled")?.int() != Some(wanted)
+                || get(get(tree, "m_GameObject")?, "m_PathID")?.int() != Some(gid) {
+                return err("Crossroads_03 Spitter initial FSM activation drift");
+            }
+        }
+        let file = source.file("resources.assets").map_err(|e| e.to_string())?;
+        let collider = source.object(&file, 13709).map_err(|e| e.to_string())?;
+        let collider = source.read(&collider).map_err(|e| e.to_string())?;
+        if xy(&collider, "m_Size")? != [50.0, 35.0] || xy(&collider, "m_Offset")? != [0.0, 0.0]
+            || !get(&collider, "m_IsTrigger")?.truthy() {
+            return err("camera ActiveRegion collider drift");
+        }
+        let (_, animator) = only(&records, "tk2dSpriteAnimator", "Crossroads_03 Spitter")?;
+        if get(animator, "playAutomatically")?.truthy() || get(animator, "playAutomaticallyOnEnable")?.truthy() {
+            return err("Crossroads_03 Spitter animator starts automatically");
+        }
+    }
     check_assemblies(source, "Aspid")?;
     let fsms: Vec<&Value> = records
         .iter()

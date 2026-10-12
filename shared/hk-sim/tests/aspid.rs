@@ -120,3 +120,18 @@ fn losing_the_hero_for_eight_seconds_returns_to_idle_and_obstructed_sight_keeps_
     b.die();
     assert!(b.tick(senses([0, 0], [0, 0], true)).iter().next().is_none());
 }
+
+#[test]
+fn camera_activation_stays_awake_and_recreated_state_starts_asleep() {
+    let body = [-ONE, -ONE, ONE, ONE];
+    let mut state = 255;
+    for _ in 0..90 { assert_eq!(activation_step(&mut state, [40 * ONE, 0], body, 2), (false, false)); }
+    assert_eq!(activation_step(&mut state, [0, 0], body, 2), (true, false));
+    assert_eq!(activation_step(&mut state, [40 * ONE, 0], body, 2), (true, false));
+    assert_eq!(activation_step(&mut state, [40 * ONE, 0], body, 2), (true, true));
+    assert_eq!(activation_step(&mut state, [40 * ONE, 0], body, 2), (true, false));
+    state = 255;
+    assert_eq!(activation_step(&mut state, [40 * ONE, 0], body, 2), (false, false));
+    let mut ordinary = 0;
+    assert_eq!(activation_step(&mut ordinary, [40 * ONE, 0], body, 3), (true, false));
+}

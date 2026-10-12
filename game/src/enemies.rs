@@ -814,6 +814,7 @@ impl BaldurRuntime {
 #[derive(Clone, Copy)]
 struct AspidRuntime {
     controller: hk_sim::aspid::Aspid,
+    activation: u8,
     animation_tick: u32,
     clip: hk_sim::aspid::Clip,
 }
@@ -1849,6 +1850,7 @@ impl Actor {
                     };
                     Runtime::Aspid(AspidRuntime {
                         controller,
+                        activation: if scene == 5 && matches!(placement.source_id, 5314 | 5315) { 255 } else { 0 },
                         animation_tick: 10,
                         clip: hk_sim::aspid::Clip::Fly,
                     })
@@ -4358,7 +4360,12 @@ impl Actor {
     ) {
         use hk_sim::aspid::Action;
         use hk_sim::runner_senses as q;
-        aspid.animation_tick = aspid.animation_tick.saturating_add(1);
+        let (enabled, animation_start) = hk_sim::aspid::activation_step(
+            &mut aspid.activation, [context.camera[0], context.camera[1]], self.bounds(spec),
+            if self.source_id == 5315 { 3 } else { 2 },
+        );
+        if animation_start { aspid.animation_tick = 0; }
+        else if aspid.activation == 0 { aspid.animation_tick = aspid.animation_tick.saturating_add(1); }
         let pos = [self.x, self.y];
         let hb = context.hero_body;
         let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
@@ -4380,7 +4387,7 @@ impl Actor {
             in_unalert_range: in_unalert && clear,
             sight_clear: clear,
         };
-        let actions = aspid.controller.tick(senses);
+        let actions = if enabled { aspid.controller.tick(senses) } else { hk_sim::aspid::Actions::new() };
         let ActorController::Aspid {
             shot_clip,
             impact_clip,
@@ -7875,6 +7882,44 @@ mod runner_runtime_tests {
         assert!(ea
             .iter()
             .any(|e| matches!(e.kind, RunnerEventKind::ChaseSound { .. })));
+    }
+    #[test]
+    fn original_crossroads_spitter_waits_for_camera_and_scene_load_recreates_it() {
+        let bytes = bytes();
+        let room = Room::parse(&bytes).unwrap();
+        let spec = ActorSpec { controller: ActorController::Aspid { fire_clip: 1, shot_clip: 1, impact_clip: 1 }, ..SPEC };
+        let placement = hk_sim::ActorPlacement { source_id: 5314, ..AT };
+        let mut actor = Actor::new(5, &placement, &spec);
+        let mut context = context(30 * ONE);
+        context.camera[0] = 40 * ONE;
+        let start = (actor.x, actor.y);
+        for _ in 0..90 {
+            let Runtime::Aspid(mut runtime) = actor.runtime else { panic!("Aspid"); };
+            actor.advance_aspid(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context, &mut |_| {});
+            assert_eq!(runtime.activation, 255);
+            assert_eq!(runtime.animation_tick, 10);
+            actor.runtime = Runtime::Aspid(runtime);
+        }
+        assert_eq!((actor.x, actor.y), start);
+        context.camera[0] = 0;
+        for _ in 0..30 {
+            let Runtime::Aspid(mut runtime) = actor.runtime else { panic!("Aspid"); };
+            actor.advance_aspid(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context, &mut |_| {});
+            actor.runtime = Runtime::Aspid(runtime);
+        }
+        assert_ne!((actor.x, actor.y), start);
+        let Runtime::Aspid(runtime) = actor.runtime else { panic!("Aspid"); };
+        assert_eq!(runtime.activation, 0);
+        let mut world = EnemyWorld::new();
+        world.actors[0] = Some(actor);
+        world.reset_scene(5);
+        assert!(world.actors[0].is_none());
+        let recreated = Actor::new(5, &placement, &spec);
+        let Runtime::Aspid(runtime) = recreated.runtime else { panic!("Aspid"); };
+        assert_eq!(runtime.activation, 255);
+        let ordinary = Actor::new(0, &placement, &spec);
+        let Runtime::Aspid(runtime) = ordinary.runtime else { panic!("Aspid"); };
+        assert_eq!(runtime.activation, 0);
     }
     #[test]
     fn runner_vertical_hit_does_not_emit_horizontal_restart() {
