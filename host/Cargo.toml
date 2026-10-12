@@ -4,7 +4,7 @@
 # .psoxide. Run the driver from the repository root with `cargo hk-build ...`.
 [workspace]
 resolver = "2"
-members  = ["hk-build", "hk-cook", "hk-dotnet", "hk-lz4", "hk-pil", "hk-unity"]
+members  = ["hk-fsm", "hk-build", "hk-cook", "hk-dotnet", "hk-lz4", "hk-pil", "hk-unity"]
 
 [profile.release]
 codegen-units = 1

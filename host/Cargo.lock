@@ -147,6 +147,19 @@ name = "hk-dotnet"
 version = "0.1.0"
 
 [[package]]
+name = "hk-format"
+version = "0.1.0"
+
+[[package]]
+name = "hk-fsm-cook"
+version = "0.1.0"
+dependencies = [
+ "hk-dotnet",
+ "hk-format",
+ "hk-unity",
+]
+
+[[package]]
 name = "hk-lz4"
 version = "0.1.0"
 
@@ -159,6 +172,7 @@ name = "hk-psx-build"
 version = "0.1.0"
 dependencies = [
  "hk-cook",
+ "hk-fsm-cook",
  "serde_json",
  "sha2",
 ]

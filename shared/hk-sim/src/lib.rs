@@ -12,6 +12,8 @@ pub mod climber;
 mod combat;
 mod corpse;
 pub mod false_knight;
+pub mod fsm;
+pub mod fsm_actions;
 pub mod gruz_mother;
 pub mod gruzzer;
 pub mod hatcher;

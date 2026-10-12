@@ -76,7 +76,7 @@ MODULES = {
     'mawlek': _sim('mawlek') + _actor('apply_mawlek', 'advance_mawlek', 'strike_mawlek'),
     'husks': _sim('husk_guard', 'zombie_shield') + _actor('advance_husk_guard', 'advance_zombie_shield', 'shield_senses'),
     'vengefly': _sim('vengefly') + _actor('advance_vengefly', 'vengefly_senses'),
-    'gruzzer': _sim('gruzzer') + _actor('advance_gruzzer'),
+    'gruzzer': _sim('gruzzer', 'fsm', 'fsm_actions') + ('*9hk_format3fsm*',) + _actor('advance_gruzzer'),
     # Gruz Mother: its controller, its arena handling and its corpse and
     # burster; the seven reserve flies it releases are the Gruzzer module's.
     'gruz_mother': _sim('gruz_mother') + _actor('apply_gruz', 'advance_gruz', 'advance_gruz_dead',

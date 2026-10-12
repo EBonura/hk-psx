@@ -1687,6 +1687,7 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     )?;
     menu_cached(root, options.recook)?;
     assets_cached(root, options.recook)?;
+    hk_fsm_cook::cook_gruzzer(root)?;
     // The boot art chunk and its offsets (data/boot_art.rs) are generated data
     // the guest-compile tests include. build_guest.py writes them too, but only
     // after the suites below, so a checkout that had never built since the

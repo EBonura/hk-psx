@@ -17,3 +17,4 @@ path = "module_image.rs"
 hk-cook = { path = "../hk-cook" }
 serde_json = "1"
 sha2 = "0.10"
+hk-fsm-cook = { path = "../hk-fsm" }

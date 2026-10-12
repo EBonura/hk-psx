@@ -1,112 +1,58 @@
-//! Source-derived Gruzzer (Fly) `Bouncer Control` FSM: wait for the camera,
-//! then fly at a fixed speed along a random angle and re-aim on each bonk.
-//! Evidence: .hkpsx/gruzzer/CONTRACT.md and source.il.
-//!
-//! The caller owns physics (gravity-free dynamic body), turns the angle into a
-//! velocity, detects the blocked side after its solver step (CheckCollisionSide
-//! priority up, right, down, left) and owns hits, Recoil, corpse and Geo.
-//! Random.Range is replaced by a deterministic per-actor sequence.
-use crate::ONE;
-
-pub const SPEED: i32 = 340787; // 5.2 units/s
-pub const CAMERA_RANGE: i32 = 44 * ONE;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Phase {
-    Waiting,
-    Flying,
-    Dead,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Side {
-    Up,
-    Right,
-    Down,
-    Left,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Gruzzer {
-    phase: Phase,
-    /// Q16 degrees, counter-clockwise from +x as the source angle.
-    angle: i32,
-    facing_right: bool,
-    rng: u32,
+//! Original cooked `Bouncer Control` graph through the shared action runtime.
+//! The caller retains camera activation, physics, recoil, damage and corpses.
+//! Port RNG remains deterministic LCG rather than Unity's global RNG.
+use crate::{ONE,fsm::{Machine,Phase as StepPhase,Error},fsm_actions::{Actions,Environment}};
+use hk_format::fsm::Program;
+static BANK:[u8;include_bytes!("../../../data/gruzzer.fsm").len()]=*include_bytes!("../../../data/gruzzer.fsm");
+pub const SPEED:i32=340787;
+pub const CAMERA_RANGE:i32=44*ONE;
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Phase {Waiting,Flying,Dead}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Side {Up,Right,Down,Left}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Gruzzer { machine:Machine, facing:i8, dead:bool }
+// Replaces the old controller. It fits the existing 88-byte widest Runtime
+// payload; the guest's unchanged 92-byte enum assertion remains authoritative.
+const _:()=assert!(core::mem::size_of::<Gruzzer>()<=80);
+struct Body { camera:[i32;3],position:[i32;3],angle:i32,speed:i32,contacts:u8,facing:i8 }
+impl Environment for Body {
+    fn position(&self,object:i32)->Result<[i32;3],Error>{match object{1=>Ok(self.position),2=>Ok(self.camera),_=>Err(Error::Parameter)}}
+    fn face_direction(&mut self,object:i32,right:bool)->Result<(),Error>{
+        if object!=1||right{return Err(Error::Parameter);}
+        // The preceding physics velocity is the current angle/speed. This
+        // action precedes SetVelocityAsAngle in the original Fly state.
+        let angle=self.angle.rem_euclid(360*ONE);
+        self.facing=if self.speed!=0&&!(90*ONE..=270*ONE).contains(&angle){1}else{-1};Ok(())
+    }
+    fn velocity_as_angle(&mut self,object:i32,angle:i32,speed:i32)->Result<(),Error>{
+        if object!=1{return Err(Error::Parameter);}self.angle=angle;self.speed=speed;Ok(())
+    }
+    fn contacts(&self,_:bool,_:bool,_:bool)->u8{self.contacts}
 }
 impl Gruzzer {
-    pub fn new(seed: u32) -> Self {
-        Self {
-            phase: Phase::Waiting,
-            angle: 0,
-            facing_right: false,
-            rng: seed,
-        }
+    pub fn new(seed:u32)->Self {
+        let p=Program::parse(&BANK).expect("checked original Gruzzer graph");
+        Self{machine:Machine::new(p,seed),facing:-1,dead:false}
     }
-    pub fn phase(self) -> Phase {
-        self.phase
+    pub fn phase(self)->Phase {
+        if self.dead {Phase::Dead}else if matches!(self.machine.state(),0|17){Phase::Waiting}else{Phase::Flying}
     }
-    pub fn angle(self) -> i32 {
-        self.angle
+    pub fn angle(self)->i32{self.machine.variables[4]}
+    pub fn facing(self)->i32{self.facing as i32}
+    pub fn die(&mut self){self.dead=true;self.machine.die();}
+    fn step(&mut self,camera:[i32;3],position:[i32;3],contacts:u8,phase:StepPhase){
+        if self.dead{return;}
+        // Every instance constructor checked this same immutable included bank.
+        let p=unsafe{Program::from_verified(&BANK)};
+        let mut k=Actions(Body{camera,position,angle:self.angle(),speed:if self.phase()==Phase::Flying{SPEED}else{0},contacts,facing:self.facing});
+        if self.machine.step(p,phase,&mut k).is_err(){self.die();return;}
+        self.facing=k.0.facing;
     }
-    /// FaceDirection every frame: +1 when the x velocity is positive.
-    pub fn facing(self) -> i32 {
-        let a = self.angle.rem_euclid(360 * ONE);
-        if self.phase == Phase::Flying && !(90 * ONE..=270 * ONE).contains(&a) {
-            1
-        } else {
-            -1
-        }
-    }
-    pub fn die(&mut self) {
-        self.phase = Phase::Dead;
-    }
-    fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
-        self.rng >> 8
-    }
-    fn range(&mut self, low: i32, high: i32) -> i32 {
-        low + ((self.random() as i64 * (high - low) as i64) >> 24) as i32
-    }
-    /// `Left or Right?`: FloatSwitch below 90 RIGHT, below 270 LEFT, below 360 RIGHT.
-    fn aim(&mut self, low_degrees: i32, high_degrees: i32) {
-        self.angle = self.range(low_degrees * ONE, high_degrees * ONE);
-        self.facing_right =
-            self.angle < 90 * ONE || (self.angle >= 270 * ONE && self.angle < 360 * ONE);
-    }
-    /// Initialise: GetDistance(owner, MainCamera) < 44 every frame, then Aim.
-    pub fn tick(&mut self, camera: [i32; 3], position: [i32; 3]) {
-        if self.phase != Phase::Waiting {
-            return;
-        }
-        let limit = CAMERA_RANGE as i64;
-        let mut squared = 0i64;
-        for axis in 0..3 {
-            let delta = camera[axis] as i64 - position[axis] as i64;
-            if delta <= -limit || delta >= limit {
-                return;
-            }
-            squared += delta * delta;
-        }
-        if squared < limit * limit {
-            self.phase = Phase::Flying;
-            self.aim(0, 360);
-        }
-    }
-    /// CheckCollisionSide events while flying: each side re-aims from the
-    /// authored range for the current facing or vertical half.
-    pub fn bonk(&mut self, side: Side) {
-        if self.phase != Phase::Flying {
-            return;
-        }
-        let up = self.angle < 180 * ONE;
-        match (side, self.facing_right, up) {
-            (Side::Up, true, _) => self.aim(320, 350),
-            (Side::Up, false, _) => self.aim(190, 220),
-            (Side::Down, true, _) => self.aim(10, 40),
-            (Side::Down, false, _) => self.aim(140, 170),
-            (Side::Right, _, true) => self.aim(140, 170),
-            (Side::Right, _, false) => self.aim(190, 220),
-            (Side::Left, _, true) => self.aim(10, 40),
-            (Side::Left, _, false) => self.aim(320, 350),
-        }
+    pub fn tick(&mut self,camera:[i32;3],position:[i32;3]){self.step(camera,position,0,StepPhase::Update);}
+    pub fn bonk(&mut self,side:Side){
+        if self.phase()!=Phase::Flying{return;}
+        let bit=match side{Side::Up=>1,Side::Right=>2,Side::Down=>4,Side::Left=>8};
+        self.step([0;3],[0;3],bit,StepPhase::CollisionStay);
     }
 }

@@ -54,6 +54,10 @@ fn bonks_re_aim_from_the_authored_ranges() {
         g.bonk(Side::Down);
         g.bonk(Side::Left);
         assert!((10..=40).contains(&deg(g.angle())));
+        // Original FaceDirection runs before the new angle is assigned to
+        // velocity on state entry; the next Update sees that new velocity.
+        assert_eq!(g.facing(), -1);
+        g.tick(CAMERA, [0,0,0]);
         assert_eq!(g.facing(), 1);
     }
 }

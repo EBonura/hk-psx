@@ -1,0 +1,8 @@
+[package]
+name = "hk-fsm-cook"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+hk-unity = { path = "../hk-unity" }
+hk-format = { path = "../../shared/hk-format" }
+hk-dotnet = { path = "../hk-dotnet" }
