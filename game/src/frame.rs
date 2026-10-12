@@ -910,6 +910,7 @@ pub fn simulate(
         }
         game.geo.leave_scene(r.scene, geo::GEO_PARAMS);
         game.geo.reset_enemies(r.scene);
+        actor_persistence::rest();
         game.life.reset();
         persist::restore_cocoon(game.life);
         game.props.leave();
@@ -1125,6 +1126,7 @@ pub fn simulate(
         if bench_events.rest {
             // Resting resets every semi-persistent item: the soul totems refill.
             soul_totems::rest();
+            actor_persistence::rest();
             // Rest Burst: HERO REVIVED and the respawn marker, then ask.
             // The source saves here without asking; this port never
             // writes the card unless the player says so.

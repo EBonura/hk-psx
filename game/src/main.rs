@@ -54,6 +54,7 @@ mod battle_gate_art;
 mod battle_gates;
 mod blocker_roller;
 mod blocker_terrain;
+mod actor_persistence;
 mod boss_art;
 mod charms;
 mod cheats;

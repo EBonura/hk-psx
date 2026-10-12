@@ -2,6 +2,7 @@
 //! byte-identical output.
 
 pub mod actor_art;
+pub mod actor_persistence;
 pub mod actor_specs;
 pub mod actors;
 pub mod alpha_cover;

@@ -27,11 +27,11 @@
 //! so their owners write here the moment the source's own bool flips and read
 //! here when their scene is seated.
 
-/// Items one record can carry. Placement's source-bound admitted-world
-/// preflight needs 155 total keys: 107 permanent and 48 reset-lifetime keys.
+/// Items one record can carry. The authored admitted-source fixture carries
+/// 138 non-actor keys plus 44 death states: 182 total, including both lifetimes.
 /// A full store refuses the next item and counts it in `HK_WORLD_OVERFLOW`;
 /// it never evicts an existing item. HKS5's item encoding stays unchanged.
-pub const MAX_ITEMS: usize = 160;
+pub const MAX_ITEMS: usize = 192;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -48,8 +48,9 @@ pub enum Kind {
     Cocoon = 4,
     /// A `Battle Scene`'s `Activated`, value 1 is won. Local id 0.
     BattleScene = 5,
-    /// An enemy's own `PersistentBoolItem`, value 1 is dead. Local id is the
-    /// owning table's index (`blocker_terrain::SOURCES` for the Blockers).
+    /// An enemy's own `PersistentBoolItem`: 1 is permanently dead, 2 is dead
+    /// until bench rest or player death. Blockers own locals below 16; other
+    /// source states use stable scene-scoped ids above that reserved range.
     Enemy = 6,
     /// A grub jar's `PersistentBoolItem`, value 1 is broken and its grub
     /// freed. Local id is the jar's index in its scene (host/hk-cook/src/props.rs), and
@@ -216,6 +217,20 @@ impl Store {
         }
         self.len = kept;
     }
+    /// Original semi-persistent actor deaths, excluding Blockers and all other kinds.
+    pub fn clear_semi_actor_deaths(&mut self) {
+        let mut kept = 0;
+        for at in 0..self.len {
+            let item = self.items[at];
+            let semi = item >> 28 == Kind::Enemy as u32
+                && item & 255 == 2 && ((item >> 8) & 1023) >= 16;
+            if !semi {
+                self.items[kept] = item;
+                kept += 1;
+            }
+        }
+        self.len = kept;
+    }
     /// Items of one kind in one scene, as (local, value).
     pub fn scene_items(&self, kind: Kind, scene: usize) -> impl Iterator<Item = (usize, u8)> + '_ {
         self.items().iter().filter_map(move |&item| {
@@ -285,6 +300,10 @@ pub fn get(kind: Kind, scene: usize, local: usize) -> Option<u8> {
 pub fn set(kind: Kind, scene: usize, local: usize, value: u8) {
     store().set(kind, scene, local, value);
     publish();
+}
+#[cfg(not(test))]
+pub fn clear_semi_actor_deaths() {
+    store().clear_semi_actor_deaths();
 }
 #[cfg(not(test))]
 pub fn count(kind: Kind) -> usize {

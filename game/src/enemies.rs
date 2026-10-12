@@ -5185,6 +5185,12 @@ impl EnemyWorld {
                     b.controller.die();
                 }
             }
+            if crate::actor_persistence::dead(region.scene, placement.source_id) {
+                let a = slot.as_mut().expect("the actor just seated");
+                a.health.hp = 0;
+                a.health.dead = true;
+                a.geo_paid = true;
+            }
             // A boss reports its load-time state before anything advances it,
             // so a route that never crosses the trigger still reads 65 hp and a
             // dormant fight rather than the zeros a fresh session starts with.
@@ -5808,6 +5814,7 @@ impl EnemyWorld {
                         Hit::Killed => {
                             events.hits += 1;
                             events.kills += 1;
+                            crate::actor_persistence::killed(actor.scene, actor.source_id);
                             if let Runtime::Blocker(b) = &mut actor.runtime {
                                 b.controller.die();
                                 crate::blocker_terrain::killed(actor.scene, actor.source_id);
@@ -5902,6 +5909,7 @@ impl EnemyWorld {
                         actor.flash_left = FLASH_TICKS;
                         if actor.health.dead {
                             events.kills += 1;
+                            crate::actor_persistence::killed(actor.scene, actor.source_id);
                             if let Some(runner) = actor.runner_mut() {
                                 runner.controller.die();
                                 actor.emit_runner(RunnerEventKind::Destroy, &mut runner_event);

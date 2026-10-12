@@ -414,6 +414,10 @@ mod persist {
             s.borrow_mut().set(kind, scene, local, value);
         })
     }
+    pub fn clear_semi_actor_deaths() {
+        STORE.with(|s| s.borrow_mut().clear_semi_actor_deaths());
+    }
+    pub fn publish() {}
     pub fn player(bit: u32) -> bool {
         STORE.with(|s| s.borrow().player(bit))
     }
@@ -579,6 +583,7 @@ mod blocker_roller {
     }
 }
 mod blocker_terrain {
+    pub const BLOCKERS: usize = 2;
     std::thread_local! {
         pub static KILLED: std::cell::RefCell<Vec<(usize, u32)>> = const { std::cell::RefCell::new(Vec::new()) };
     }
@@ -589,6 +594,17 @@ mod blocker_terrain {
         KILLED.with(|k| k.borrow_mut().push((scene, source_id)));
     }
 }
+mod actor_persistence_table {
+    // Hardware-free world's fixture placements. The shipping table comes from
+    // the original source and is validated by the cooker independently.
+    pub const PERSISTENT_ACTORS: &[hk_sim::PersistentActor] = &[
+        (0, 62546, 16 | hk_sim::SEMI_PERSISTENT),
+        (0, 62547, 16 | hk_sim::SEMI_PERSISTENT),
+        (1, 62546, 17),
+    ];
+}
+#[path = "../../../game/src/actor_persistence.rs"]
+mod actor_persistence;
 mod modules {
     pub const FALSE_KNIGHT: usize = 0;
     pub const MAWLEK: usize = 1;
@@ -1062,6 +1078,61 @@ fn falling_crawler_keeps_contact_clearance_while_patrolling_a_level_floor() {
     }
     assert!(w.actor_state(0, PLACEMENT.source_id).unwrap().0 < -ONE);
     assert_eq!(v.health, 5);
+}
+
+#[test]
+fn source_death_is_seated_dead_without_second_loot_and_rest_restores_only_semi() {
+    actor_persistence::killed(0, 62546);
+    assert!(actor_persistence::dead(0, 62547), "original identity aliases share a death");
+    actor_persistence::killed(1, 62546);
+    let bytes = room();
+    let floor = hk_format::Room::parse(&bytes).unwrap();
+    const SAVED: hk_sim::ActorPlacement = hk_sim::ActorPlacement { source_id: 62546, ..PLACEMENT };
+    let mut r = region(); r.actors = &[(SAVED, &SPEC)];
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(0, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    for _ in 0..30 {
+        let e = tick(&mut w, &r, &floor, &mut p, &mut v, &Nail::new());
+        assert_eq!((e.hurt, e.kills), (Hurt::Ignored, 0));
+    }
+    assert_eq!(w.actor_state(0, 62546).unwrap().2, 0);
+    w.take_geo_deaths(0, |_, _, _| panic!("restored death paid Geo twice"));
+    actor_persistence::rest();
+    assert!(!actor_persistence::dead(0, 62546));
+    assert!(actor_persistence::dead(1, 62546));
+    w.reset_scene(0);
+    w.sync_region(&r);
+    assert_eq!(w.actor_state(0, 62546).unwrap().2, 8);
+}
+
+#[test]
+fn ordinary_nail_kill_is_restored_dead_after_leaving_and_reentering() {
+    const SAVED: hk_sim::ActorPlacement = hk_sim::ActorPlacement { source_id: 62546, ..PLACEMENT };
+    let bytes = room();
+    let floor = hk_format::Room::parse(&bytes).unwrap();
+    let mut r = region(); r.actors = &[(SAVED, &SPEC)];
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(10 * ONE, ONE);
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut n = Nail::new();
+    tick(&mut w, &r, &floor, &mut p, &mut v, &n);
+    let mut kills = 0;
+    for _ in 0..8 {
+        p.x = w.actor_state(0, SAVED.source_id).unwrap().0;
+        p.y = ONE;
+        n.active = true; n.age = 1;
+        kills += tick(&mut w, &r, &floor, &mut p, &mut v, &n).kills;
+        n.active = false;
+        for _ in 0..12 { tick(&mut w, &r, &floor, &mut p, &mut v, &n); }
+        if kills != 0 { break; }
+    }
+    assert_eq!(kills, 1);
+    assert!(actor_persistence::dead(0, SAVED.source_id));
+    w.reset_scene(0);
+    w.sync_region(&r);
+    assert_eq!(w.actor_state(0, SAVED.source_id).unwrap().2, 0);
+    w.take_geo_deaths(0, |_, _, _| panic!("reentry duplicated a paid kill"));
 }
 
 #[test]

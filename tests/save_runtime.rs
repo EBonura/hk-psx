@@ -164,7 +164,7 @@ fn an_empty_world_is_the_shortest_record_and_a_full_one_fits_the_buffer() {
 
 #[test]
 fn capacity_160_preserves_every_item_on_reload_and_kind_reset() {
-    assert_eq!(persist::MAX_ITEMS, 160);
+    assert_eq!(persist::MAX_ITEMS, 192);
     let mut full = persist::Store::new();
     for local in 0..80 {
         assert!(full.set(Kind::Breakable, 1, local, 1));
@@ -204,6 +204,41 @@ fn maximum_old_128_item_hks5_record_still_loads() {
     assert_eq!(bytes.len(), 678);
     let (_, items) = Save::decode(&bytes).unwrap();
     assert_eq!(Save::items(items).collect::<Vec<_>>(), old.items());
+}
+
+#[test]
+fn post_rest_kill_and_combined_182_item_record_survive_cold_load_then_only_semi_reset() {
+    let mut world = persist::Store::new();
+    // The current-source authored fixture's 138 non-actor keys, including nine
+    // totems, plus 43 reset-lifetime actor states and one permanent actor state.
+    for local in 0..129 { assert!(world.set(Kind::Breakable, 1, local, 1)); }
+    for local in 0..9 { assert!(world.set(Kind::SoulTotem, 2, local, 0)); }
+    for local in 16..59 { assert!(world.set(Kind::Enemy, 3, local, 2)); }
+    assert!(world.set(Kind::Enemy, 3, 59, 1));
+    assert_eq!(world.items().len(), 182);
+    let bytes = encode(&record(), world.items());
+    assert_eq!(&bytes[..4], b"HKS5");
+    assert!(16 + bytes.len() <= 8192 - 256);
+    let (_, items) = Save::decode(&bytes).unwrap();
+    let mut cold = persist::Store::new();
+    for word in Save::items(items) { let (k,s,l,v) = persist::unpack(word).unwrap(); assert!(cold.set(k,s,l,v)); }
+    assert_eq!(cold.items(), world.items());
+    cold.clear_semi_actor_deaths();
+    assert_eq!(cold.items().len(), 139);
+    assert_eq!(cold.get(Kind::Enemy,3,59), Some(1));
+    // Rest happened before a projectile killed another enemy while Save was
+    // pending. Confirming Save must capture it without a second reset.
+    assert!(cold.set(Kind::Enemy,3,16,2));
+    let post_rest = encode(&record(), cold.items());
+    let (_, items) = Save::decode(&post_rest).unwrap();
+    let mut loaded = persist::Store::new();
+    for word in Save::items(items) { let (k,s,l,v) = persist::unpack(word).unwrap(); assert!(loaded.set(k,s,l,v)); }
+    assert_eq!(loaded.get(Kind::Enemy,3,16), Some(2));
+    loaded.clear_semi_actor_deaths();
+    assert_eq!(loaded.get(Kind::Enemy,3,16), None);
+    assert_eq!(loaded.get(Kind::Enemy,3,59), Some(1));
+    assert_eq!(loaded.get(Kind::SoulTotem,2,0), Some(0));
+    assert_eq!(loaded.overflow,0);
 }
 
 #[test]
