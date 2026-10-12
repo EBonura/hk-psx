@@ -412,6 +412,31 @@ pub(crate) fn recognize_with_budget(
     }
     check_assemblies(source, "Hatcher")?;
     let records = component_records(sc, gid);
+    if sc.base.name == "level57" && gid == 33 {
+        let (id, activator) = crate::recog::only(&records, "FSMActivator", "Crossroads_19 Hatcher")?;
+        let (health_id, health) = crate::recog::only(&records, "HealthManager", "Crossroads_19 Hatcher")?;
+        let components = crate::common::components(sc, gid)?;
+        let owned: Vec<_> = components.iter().filter(|r| r.1 == "PlayMakerFSM").map(|r| r.0).collect();
+        if id != 4339 || health_id != 5007 || owned != [4341, 4340]
+            || get(activator, "m_Enabled")?.int() != Some(1)
+            || get(activator, "activateStaggered")?.int() != Some(1)
+            || [activator, health].iter().any(|v|
+                v.get("m_GameObject").and_then(|v| v.get("m_PathID")).and_then(Value::int) != Some(gid)) {
+            return err("Crossroads_19 Hatcher activation ownership drift");
+        }
+        for (_, _, tree) in records.iter().filter(|r| r.1 == "PlayMakerFSM") {
+            if get(tree, "m_Enabled")?.int() != Some(0)
+                || get(get(tree, "m_GameObject")?, "m_PathID")?.int() != Some(gid) {
+                return err("Crossroads_19 Hatcher initial FSM activation drift");
+            }
+        }
+        let (animator_id, animator) = crate::recog::only(&records, "tk2dSpriteAnimator", "Crossroads_19 Hatcher")?;
+        if animator_id != 4247
+            || get(get(animator, "m_GameObject")?, "m_PathID")?.int() != Some(gid)
+            || get(animator, "playAutomatically")?.truthy() || get(animator, "playAutomaticallyOnEnable")?.truthy() {
+            return err("Crossroads_19 Hatcher animator starts automatically");
+        }
+    }
     let bounds = scene_bounds(sc, catalogue)?;
     let (x, y) = (position[0], position[1]);
     let in_room = bounds[0] <= x && x <= bounds[2] && bounds[1] <= y && y <= bounds[3];

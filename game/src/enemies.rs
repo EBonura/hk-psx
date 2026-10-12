@@ -836,6 +836,7 @@ impl AspidRuntime {
 #[derive(Clone, Copy)]
 struct HatcherRuntime {
     controller: hk_sim::hatcher::Hatcher,
+    activation: u8,
     animation_tick: u32,
     clip: hk_sim::hatcher::Clip,
 }
@@ -1868,6 +1869,7 @@ impl Actor {
                     };
                     Runtime::Hatcher(HatcherRuntime {
                         controller,
+                        activation: if scene == 17 && placement.source_id == 5007 { 255 } else { 0 },
                         animation_tick: hk_sim::hatcher::FLY_START_TICKS,
                         clip: hk_sim::hatcher::Clip::Fly,
                     })
@@ -4501,7 +4503,15 @@ impl Actor {
     ) {
         use hk_sim::hatcher::Action;
         use hk_sim::runner_senses as q;
-        hatcher.animation_tick = hatcher.animation_tick.saturating_add(1);
+        let (enabled, animation_start) = hk_sim::aspid::activation_step(
+            &mut hatcher.activation, [context.camera[0], context.camera[1]], self.bounds(spec), 2,
+        );
+        if !enabled {
+            self.fly_body(spec, [0; 2], count, edge);
+            return;
+        }
+        if animation_start { hatcher.animation_tick = 0; }
+        else if hatcher.activation == 0 { hatcher.animation_tick = hatcher.animation_tick.saturating_add(1); }
         let pos = [self.x, self.y];
         let hb = context.hero_body;
         let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
@@ -7341,6 +7351,47 @@ mod hatcher_pool_tests {
             assert_eq!((actor.x, actor.y), (CAGE[0], CAGE[1]));
             assert_eq!(actor.health.hp, 5);
         }
+    }
+    #[test]
+    fn crossroads19_hatcher_waits_for_camera_but_retains_recoil_and_scene_reset() {
+        let bytes = bytes();
+        let room = Room::parse(&bytes).unwrap();
+        let placement = hk_sim::ActorPlacement { start_alert: false, ..HATCHER_AT };
+        let mut actor = Actor::new(17, &placement, &HATCHER);
+        let mut c = context(3);
+        c.camera = [60 * ONE, 20 * ONE, -2496922];
+        let start = (actor.x, actor.y);
+        for _ in 0..90 {
+            let Runtime::Hatcher(mut runtime) = actor.runtime else { panic!("Hatcher"); };
+            actor.advance_hatcher(&mut runtime, &HATCHER, room.counts[5], &|i| room.edge(i), c, &mut |_| {});
+            assert_eq!(runtime.activation, 255);
+            assert_eq!(runtime.animation_tick, hk_sim::hatcher::FLY_START_TICKS);
+            actor.runtime = Runtime::Hatcher(runtime);
+        }
+        assert_eq!((actor.x, actor.y), start);
+        let mut recoiling = actor;
+        recoiling.recoil_left = 2;
+        recoiling.recoil = [6 * ONE, 0];
+        let Runtime::Hatcher(mut runtime) = recoiling.runtime else { panic!("Hatcher"); };
+        recoiling.advance_hatcher(&mut runtime, &HATCHER, room.counts[5], &|i| room.edge(i), c, &mut |_| {});
+        assert_eq!(runtime.activation, 255);
+        assert_ne!(recoiling.x, start.0);
+        c.camera[0] = 20 * ONE;
+        for tick in 0..60 {
+            let Runtime::Hatcher(mut runtime) = actor.runtime else { panic!("Hatcher"); };
+            actor.advance_hatcher(&mut runtime, &HATCHER, room.counts[5], &|i| room.edge(i), c, &mut |_| {});
+            assert_eq!(runtime.activation, 2u8.saturating_sub(tick));
+            actor.runtime = Runtime::Hatcher(runtime);
+        }
+        assert_ne!((actor.x, actor.y), start);
+        let mut world = EnemyWorld::new();
+        world.actors[0] = Some(actor);
+        world.reset_scene(17);
+        assert!(world.actors[0].is_none());
+        let Runtime::Hatcher(runtime) = Actor::new(17, &placement, &HATCHER).runtime else { panic!("Hatcher"); };
+        assert_eq!(runtime.activation, 255);
+        let Runtime::Hatcher(runtime) = Actor::new(0, &placement, &HATCHER).runtime else { panic!("Hatcher"); };
+        assert_eq!(runtime.activation, 0);
     }
     #[test]
     fn a_release_wakes_one_reserved_member_below_the_hatcher() {
