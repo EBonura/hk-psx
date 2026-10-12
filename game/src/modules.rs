@@ -22,7 +22,6 @@ const J26: u32 = 1;
 const HI16: u32 = 2;
 const LO16: u32 = 3;
 const W32: u32 = 4;
-const PACKAGE_MAGIC: u32 = 0x444D_4B48;
 
 /// Per code chunk: byte length, byte FNV-1a (the pack directory's) and word
 /// hash (what an install checks), written into the EXE by the build.
@@ -291,30 +290,32 @@ struct Package {
     fixups: *const u32,
     count: usize,
 }
+#[inline(never)]
+fn package(words: &[u32]) -> Option<(Package, usize)> {
+    let (checked, rest) = psx_residency::overlay::Package::parse(words).ok()?;
+    if checked.id as usize >= MODULE_COUNT {
+        return None;
+    }
+    Some((
+        Package {
+            module: checked.id as usize,
+            image: checked.image.as_ptr(),
+            words: checked.image.len(),
+            fixups: checked.fixups.as_ptr(),
+            count: checked.fixups.len(),
+        },
+        words.len() - rest.len(),
+    ))
+}
 /// The package for module `m` in `chunk` (word aligned).
 fn find(chunk: &[u32], m: usize) -> Option<Package> {
-    let mut at = 0;
-    while at + 5 <= chunk.len() {
-        let (magic, id, words, count) = (
-            chunk[at],
-            chunk[at + 1] as usize,
-            chunk[at + 2] as usize,
-            chunk[at + 3] as usize,
-        );
-        if magic != PACKAGE_MAGIC || at + 5 + words + count > chunk.len() {
-            return None;
+    let mut rest = chunk;
+    while !rest.is_empty() {
+        let (pkg, consumed) = package(rest)?;
+        if pkg.module == m {
+            return Some(pkg);
         }
-        if id == m {
-            let p = chunk.as_ptr();
-            return Some(Package {
-                module: id,
-                image: unsafe { p.add(at + 5) },
-                words,
-                fixups: unsafe { p.add(at + 5 + words) },
-                count,
-            });
-        }
-        at += 5 + words + count;
+        rest = &rest[consumed..];
     }
     None
 }
@@ -505,9 +506,17 @@ struct Install {
 }
 impl Install {
     /// Up to `budget` words of work; true when the module is resident.
-    fn run(&mut self, budget: usize) -> bool {
+    fn run(&mut self, budget: usize) -> Result<bool, psx_residency::overlay::Error> {
         let dst = core::ptr::with_exposed_provenance_mut::<u32>(pool() + self.at as usize);
         let words = self.pkg.words;
+        let address = (pool() as u32) + self.at;
+        if words != 0 {
+            psx_residency::overlay::placement(
+                address,
+                (words * 4) as u32,
+                self.module < CODE_MODULES,
+            )?;
+        }
         let mut left = budget;
         while left > 0 && self.step < words {
             let n = left.min(words - self.step);
@@ -521,36 +530,25 @@ impl Install {
             self.step += n;
             left -= n;
         }
-        let address = (pool() as u32) + self.at;
-        let delta = address.wrapping_sub(LINK_BASE + LINK_STRIDE * self.module as u32);
+        let linked = LINK_BASE + LINK_STRIDE * self.module as u32;
         while left > 0 && self.step < words + self.pkg.count {
             let f = unsafe { self.pkg.fixups.add(self.step - words).read() };
             let p = unsafe { dst.add(((f & 0x0fff_ffff) / 4) as usize) };
             unsafe {
                 let w = p.read();
-                p.write(match f >> 28 {
-                    J26 => {
-                        let target = 0x8000_0000 | ((w & 0x03ff_ffff) << 2);
-                        (w & 0xfc00_0000) | ((target.wrapping_add(delta) >> 2) & 0x03ff_ffff)
-                    }
-                    HI16 => (w & 0xffff_0000) | (window_of(address) >> 16),
-                    LO16 => {
-                        let offset = ((w & 0xffff) as i16 as i32 + 0x8000) as u32;
-                        (w & 0xffff_0000)
-                            | (address
-                                .wrapping_add(offset)
-                                .wrapping_sub(window_of(address))
-                                & 0xffff)
-                    }
-                    W32 => w.wrapping_add(delta),
-                    _ => w,
-                });
+                p.write(psx_residency::overlay::relocate(
+                    w,
+                    f >> 28,
+                    linked,
+                    address,
+                    f & 0x0fff_ffff,
+                )?);
             }
             self.step += 1;
             left -= 1;
         }
         if self.step < words + self.pkg.count {
-            return false;
+            return Ok(false);
         }
         bind(self.module, Some(address));
         psx_rt::cache::flush_i_cache();
@@ -566,7 +564,7 @@ impl Install {
             HK_MODULE_POOL_PEAK = HK_MODULE_POOL_PEAK.max(HK_MODULE_POOL_USED);
             HK_MODULE_INSTALLS = HK_MODULE_INSTALLS.saturating_add(1);
         }
-        true
+        Ok(true)
     }
 }
 fn begin(pkg: Package, keep: u32) -> Option<Install> {
@@ -692,7 +690,17 @@ pub fn service() {
                 abort_background();
                 return;
             }
-            if job.run(INSTALL_WORDS) {
+            let done = match job.run(INSTALL_WORDS) {
+                Ok(done) => done,
+                Err(_) => {
+                    unsafe {
+                        GAVE_UP = scene;
+                    }
+                    abort_background();
+                    return;
+                }
+            };
+            if done {
                 unsafe {
                     HK_MODULE_BG_INSTALLS = HK_MODULE_BG_INSTALLS.saturating_add(1);
                 }
@@ -830,7 +838,13 @@ fn install_missing(want: u32, words: &[u32]) -> bool {
                 job
             }
         };
-        while !job.run(usize::MAX) {}
+        loop {
+            match job.run(usize::MAX) {
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(_) => return false,
+            }
+        }
         unsafe {
             HK_MODULE_GATE_INSTALLS = HK_MODULE_GATE_INSTALLS.saturating_add(1);
         }
@@ -1101,7 +1115,17 @@ fn pool_service(budget: usize) {
             }
             Pf::Install { at: w } => {
                 if let Some(job) = p.job.as_mut() {
-                    let done = job.run(left);
+                    let done = match job.run(left) {
+                        Ok(done) => done,
+                        Err(_) => {
+                            let (k, s) = (p.kind, p.scene);
+                            pf_idle();
+                            unsafe {
+                                PF_GAVE_UP = (k as u8, s);
+                            }
+                            return;
+                        }
+                    };
                     left = left.saturating_sub(left.min(1024));
                     if !done {
                         return;
@@ -1113,27 +1137,24 @@ fn pool_service(budget: usize) {
                     continue;
                 }
                 // The next package that is not resident.
-                if w + 5 > words.len() {
+                if w == words.len() {
                     pf_idle();
                     return;
                 }
-                let (m, n, f) = (
-                    words[w + 1] as usize,
-                    words[w + 2] as usize,
-                    words[w + 3] as usize,
-                );
-                p.state = Pf::Install { at: w + 5 + n + f };
-                if words[w] != PACKAGE_MAGIC || m >= MODULE_COUNT || resident() & (1 << m) != 0 {
+                let Some((pkg, consumed)) = words.get(w..).and_then(package) else {
+                    let (k, s) = (p.kind, p.scene);
+                    pf_idle();
+                    unsafe {
+                        PF_GAVE_UP = (k as u8, s);
+                    }
+                    return;
+                };
+                let (m, n) = (pkg.module, pkg.words);
+                p.state = Pf::Install { at: w + consumed };
+                if resident() & (1 << m) != 0 {
                     continue;
                 }
                 let image = pool() as u32 + at + 4 * (w as u32 + 5);
-                let pkg = Package {
-                    module: m,
-                    image: words[w + 5..].as_ptr(),
-                    words: n,
-                    fixups: words[w + 5 + n..].as_ptr(),
-                    count: f,
-                };
                 p.job = if n == 0
                     || m >= CODE_MODULES
                     || window_of(image) == window_of(image + 4 * n as u32 - 1)

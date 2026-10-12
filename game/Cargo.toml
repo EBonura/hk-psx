@@ -29,6 +29,7 @@ original-latency = []
 tick-log = []
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
+psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }
 # 256 trampoline words: with every delay-slot filler search on, the ordinary
 # guest needs 117 and pgo's profiling build 147; psx-rt's default holds 96.
 psx-rt = { path = "../.psoxide/sdk/crates/psx-rt", features = ["hazard-trampolines-256"] }

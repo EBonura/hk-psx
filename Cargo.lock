@@ -34,6 +34,7 @@ dependencies = [
  "psx-mc",
  "psx-pack",
  "psx-pad",
+ "psx-residency",
  "psx-rt",
  "psx-spu",
  "psx-telemetry",
@@ -116,6 +117,10 @@ dependencies = [
  "psx-io",
  "psx-math",
 ]
+
+[[package]]
+name = "psx-residency"
+version = "0.1.0"
 
 [[package]]
 name = "psx-rt"
