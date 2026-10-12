@@ -1556,6 +1556,10 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
     hk_cook::mossman_scene::bind_generated_specs(root)?;
     hk_cook::crawler_recoil::bind_generated_specs(root)?;
     hk_cook::shaman_runner_scene::bind_generated_specs(root)?;
+    // Scene admission and the prepass can change the report these mutable
+    // bindings certify, even when their generated Rust bytes are unchanged.
+    python_step(root, "host/geo.py", &[])?;
+    python_step(root, "host/lifeblood.py", &[])?;
     // Certificates bind to the final deduplicated bank geometry and palette
     // words, so they follow the pack. Tiles before groups (groups read the
     // tile report), both before the per-scene bundles.
