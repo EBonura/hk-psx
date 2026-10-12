@@ -1325,6 +1325,7 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     }
     python_step(root, "host/regions.py", region_cook_args(&provenance))?;
     hk_cook::mossman_scene::cook(root)?;
+    hk_cook::shaman_runner_scene::cook(root)?;
     if source_input_fingerprints(&source)? != source_inputs || code_fingerprint(root)? != code {
         return Err("retail source or cooker code changed during region cook".into());
     }
@@ -1554,6 +1555,7 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
     python_step_module(root, "build_guest", "prepass")?;
     hk_cook::mossman_scene::bind_generated_specs(root)?;
     hk_cook::crawler_recoil::bind_generated_specs(root)?;
+    hk_cook::shaman_runner_scene::bind_generated_specs(root)?;
     // Certificates bind to the final deduplicated bank geometry and palette
     // words, so they follow the pack. Tiles before groups (groups read the
     // tile report), both before the per-scene bundles.

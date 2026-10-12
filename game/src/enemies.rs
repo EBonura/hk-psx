@@ -1736,10 +1736,14 @@ impl Actor {
                         "unsupported Runner initial facing variant"
                     );
                     Runtime::Runner(RunnerRuntime {
-                        controller: hk_sim::runner::Runner::with_facing(
+                        controller: if scene == 44 && placement.source_id == 14796 {
+                            // The cooker pins this original Temple Walker's
+                            // startInactive; its independent Swipe FSM is ready.
+                            hk_sim::runner::Runner::with_facing(params, placement.initial_direction as i8).with_inactive_walker()
+                        } else { hk_sim::runner::Runner::with_facing(
                             params,
                             placement.initial_direction as i8,
-                        ),
+                        ) },
                         rng: seed,
                         vx: 0,
                         animation_tick: 0,
@@ -7563,6 +7567,33 @@ mod runner_runtime_tests {
             seen[variant as usize] = true;
         }
         assert_eq!(seen, [true; 3]);
+    }
+    #[test]
+    fn temple_runner_seats_stopped_and_reentry_restores_that_authored_start() {
+        const TEMPLE: hk_sim::ActorPlacement = hk_sim::ActorPlacement { source_id: 14796, ..AT };
+        let mut r = region(); r.scene = 44; r.actors = &[(TEMPLE, &SPEC)];
+        let mut w = EnemyWorld::new();
+        w.sync_region(&r);
+        assert_eq!(w.actors[0].unwrap().runner().unwrap().controller.walker(), Walker::StoppedForAttack);
+        let runner = w.actors[0].as_mut().unwrap().runner_mut().unwrap();
+        runner.controller.took_damage(ONE, 0);
+        runner.controller.horizontal_recoil(hk_sim::runner::Senses::default(), |_, [_, lo]| lo);
+        assert_eq!(runner.controller.walker(), Walker::Walking);
+        let mut other_view = region(); other_view.scene = 44; other_view.actors = &[];
+        w.sync_region(&other_view);
+        w.sync_region(&r);
+        assert_eq!(w.actors[0].unwrap().runner().unwrap().controller.walker(), Walker::Walking, "a view swap does not restart its Walker");
+        w.reset_scene(44);
+        w.sync_region(&r);
+        assert_eq!(w.actors[0].unwrap().runner().unwrap().controller.walker(), Walker::StoppedForAttack);
+        let mut ordinary = EnemyWorld::new();
+        ordinary.sync_region(&other_view);
+        let mut other = region(); other.scene = 44;
+        ordinary.sync_region(&other);
+        assert_eq!(ordinary.actors[0].unwrap().runner().unwrap().controller.walker(), Walker::Waiting, "ordinary Runner startup is unchanged");
+        let mut other_scene = region(); other_scene.actors = &[(TEMPLE, &SPEC)];
+        let mut alias = EnemyWorld::new(); alias.sync_region(&other_scene);
+        assert_eq!(alias.actors[0].unwrap().runner().unwrap().controller.walker(), Walker::Waiting, "same source id in another scene is not the Temple placement");
     }
     #[test]
     fn actual_runner_clock_motion_clips_and_ordered_effects() {

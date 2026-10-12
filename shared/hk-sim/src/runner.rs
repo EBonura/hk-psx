@@ -91,6 +91,37 @@ mod mossman_tests {
         assert_eq!(ordinary.walker(), Walker::Turning);
     }
 }
+
+#[cfg(test)]
+mod initially_inactive_tests {
+    use super::*;
+    #[test]
+    fn initial_walker_stays_stopped_but_requires_both_authored_attack_conditions() {
+        let mut runner = Runner::new().with_inactive_walker();
+        let mut senses = Senses { camera_in_start_range: true, ..Senses::default() };
+        for _ in 0..600 {
+            assert_eq!(runner.step(senses, |_, [_, lo]| lo).iter().count(), 0);
+            assert_eq!(runner.walker(), Walker::StoppedForAttack);
+            assert_eq!(runner.swipe(), Swipe::Ready);
+        }
+        senses.in_alert_range = true;
+        assert_eq!(runner.step(senses, |_, [_, lo]| lo).iter().count(), 0);
+        senses.can_see_hero = true;
+        let actions = runner.step(senses, |_, [_, lo]| lo);
+        assert!(actions.iter().any(|a| matches!(a, Action::ChaseSound)));
+        assert_eq!(runner.swipe(), Swipe::Anticipate);
+        assert_eq!(runner.walker(), Walker::StoppedForAttack);
+    }
+    #[test]
+    fn accepted_hit_and_original_recoil_reset_start_the_initially_disabled_walker() {
+        let mut runner = Runner::new().with_inactive_walker();
+        assert!(runner.took_damage(ONE, 0).iter().any(|a| matches!(a, Action::ChaseSound)));
+        assert_eq!(runner.walker(), Walker::StoppedForAttack);
+        let actions = runner.horizontal_recoil(Senses::default(), |_, [_, lo]| lo);
+        assert_eq!(runner.walker(), Walker::Walking);
+        assert!(actions.iter().any(|a| matches!(a, Action::AudioPlay)));
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Animation {
     pub clip: Clip,
@@ -334,6 +365,12 @@ impl Runner {
     }
     pub fn walker(&self) -> Walker {
         self.walker
+    }
+    /// Walker.startInactive prevents startup patrol, while the independent
+    /// Zombie Swipe Ready state can still answer its authored alert or hit.
+    pub fn with_inactive_walker(mut self) -> Self {
+        self.walker = Walker::StoppedForAttack;
+        self
     }
     pub fn attack_kind(&self) -> Attack {
         self.params.attack

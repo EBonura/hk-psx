@@ -28,7 +28,7 @@
 //! here when their scene is seated.
 
 /// Items one record can carry. The authored admitted-source fixture carries
-/// 138 non-actor keys plus 44 death states: 182 total, including both lifetimes.
+/// 138 non-actor keys plus 45 death states: 183 total, including both lifetimes.
 /// A full store refuses the next item and counts it in `HK_WORLD_OVERFLOW`;
 /// it never evicts an existing item. HKS5's item encoding stays unchanged.
 pub const MAX_ITEMS: usize = 192;

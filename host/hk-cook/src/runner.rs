@@ -167,6 +167,9 @@ pub fn ticks(seconds: f64) -> i64 {
 /// wait/time ranges and the FSM `Lunge Speed` are the placement parameters;
 /// every other Walker field must match the audited Runner.
 fn walker_parameters(walker: &Value, lunge_speed: Option<&Value>) -> Result<Vec<(String, Json)>> {
+    walker_parameters_with_initial_state(walker, lunge_speed, false)
+}
+fn walker_parameters_with_initial_state(walker: &Value, lunge_speed: Option<&Value>, inactive: bool) -> Result<Vec<(String, Json)>> {
     let expected: [(&str, Value); 16] = [
         ("rightScale", Value::F64(-1.0)),
         ("edgeXAdjuster", Value::F64(0.0)),
@@ -177,7 +180,7 @@ fn walker_parameters(walker: &Value, lunge_speed: Option<&Value>) -> Result<Vec<
         ("walkClip", Value::Str(b"Walk".to_vec())),
         ("turnClip", Value::Str(b"Turn".to_vec())),
         ("ambush", Value::Int(0)),
-        ("startInactive", Value::Int(0)),
+        ("startInactive", Value::Int(i64::from(inactive))),
         ("waitForHeroX", Value::Int(0)),
         ("preventTurn", Value::Int(0)),
         ("ignoreHoles", Value::Int(0)),
@@ -567,6 +570,17 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let records = component_records(sc, gid);
     let (walker_id, walker) = one(&records, "Walker")?;
     let fsm_component = driving_fsm(&records)?;
+    let shaman = hk_unity::base_name(&sc.base.name) == "level76" && gid == 933;
+    if shaman {
+        let selected: Vec<_> = records.iter().filter(|(_, k, v)| *k == "PlayMakerFSM" && std::ptr::eq(*v, fsm_component)).map(|r| r.0).collect();
+        let health: Vec<_> = records.iter().filter(|r| r.1 == "HealthManager").map(|r| r.0).collect();
+        if selected != [14061] || health != [14796] || walker_id != 15008
+            || !sc.authored_active(gid)
+            || get(fsm_component, "m_GameObject")?.pptr() != Some((0, gid))
+            || sha(u(u(source.object(&sc.base, 14061))?.raw())?) != "a743fd5c39aba7ac04c895df1bb8a0fdef05e640ce8857918a691d382578aa4c" {
+            return err("Shaman Runner differs from its admitted original instance");
+        }
+    }
     let fsm = get(fsm_component, "fsm")?;
     let variables = {
         let mut out: Vec<(String, &Value)> = Vec::new();
@@ -591,14 +605,16 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let variable = |name: &str| variables.iter().find(|(k, _)| k == name).map(|(_, v)| *v);
     let leap = get(fsm, "name")?.str().as_deref() == Some("Zombie Leap");
     let one_float = Value::F64(1.0);
-    let mut parameters = walker_parameters(
+    let mut parameters = walker_parameters_with_initial_state(
         walker,
         if leap {
             Some(&one_float)
         } else {
             variable("Lunge Speed")
         },
+        shaman,
     )?;
+    if shaman { parameters.push(("start_inactive".into(), Json::Bool(true))); }
     // The serialized FSM embeds owner references, so the fingerprint covers its
     // structure and scalar parameters.
     let fingerprint = fsm_fingerprint(fsm)?;
@@ -1059,6 +1075,11 @@ mod tests {
         ];
         let lunge = Value::F32(6.0);
         assert!(walker_parameters(&map(fields.clone()), Some(&lunge)).is_ok());
+        assert!(walker_parameters_with_initial_state(&map(fields.clone()), Some(&lunge), true).is_err());
+        fields[9] = ("startInactive", int(1));
+        assert!(walker_parameters(&map(fields.clone()), Some(&lunge)).is_err());
+        assert!(walker_parameters_with_initial_state(&map(fields.clone()), Some(&lunge), true).is_ok());
+        fields[9] = ("startInactive", int(0));
         assert!(walker_parameters(&map(fields.clone()), None).is_err());
         assert!(walker_parameters(&map(fields.clone()), Some(&int(6))).is_err());
         fields[4] = ("pauses", int(0));

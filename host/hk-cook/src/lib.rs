@@ -5,6 +5,7 @@ pub mod actor_art;
 pub mod actor_persistence;
 pub mod actor_specs;
 pub mod crawler_recoil;
+pub mod shaman_runner_scene;
 pub mod actors;
 pub mod alpha_cover;
 pub mod ambience;

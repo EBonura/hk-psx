@@ -29,7 +29,7 @@ fn emit(out: &mut Vec<u8>, n: u32) {
 }
 
 /// Append complete art without moving any existing palette, texel or record index.
-fn append(raw: &[u8], bank: &ArtBank, clip_base: usize) -> Result<Vec<u8>> {
+pub(crate) fn append(raw: &[u8], bank: &ArtBank, clip_base: usize) -> Result<Vec<u8>> {
     let layout = region_delta::layout(raw)?;
     let [np, nt, nd, nf, nc, ne] = layout.counts.map(|x| x as usize);
     let ns = word(raw, 32) as usize;
@@ -137,10 +137,13 @@ fn publish(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 pub fn cook(root: &Path) -> Result<()> {
+    cook_selected(root, &TARGETS, "mossman_bank_adopted", "mossman_actor_specs")
+}
+pub(crate) fn cook_selected(root: &Path, targets: &[(&str, u64, &[i64])], marker: &str, specs_field: &str) -> Result<()> {
     let source = Source::from_doctor(root)?;
     let path = root.join("data/regions.json");
     let mut report: Value = serde_json::from_slice(&std::fs::read(&path)?)?;
-    if report.get("mossman_bank_adopted").is_some() {
+    if report.get(marker).is_some() {
         return Err(
             "Mossman postpass needs the unchanged legacy cook output, not a second append".into(),
         );
@@ -148,7 +151,7 @@ pub fn cook(root: &Path) -> Result<()> {
     let regions = report["regions"].as_array_mut().ok_or("regions absent")?;
     let mut outputs = Vec::new();
     let mut spec_sets = Vec::new();
-    for (file, scene_id, selected) in TARGETS {
+    for &(file, scene_id, selected) in targets {
         let scene = Scene::new(&source, file)?;
         let all = actors::scan(&scene, &source, &[])?;
         let actors: Vec<_> = all
@@ -282,7 +285,8 @@ pub fn cook(root: &Path) -> Result<()> {
                 return Err("Mossman exceeds unchanged 256KiB actor-bank admission".into());
             }
             r["actor_bank_bytes"] = json!(actor_bank_bytes);
-            r["mossman_bank_growth_bytes"] = json!(pack.len() - raw.len());
+            let growth_field = format!("{}_growth_bytes", marker.trim_end_matches("_adopted"));
+            r[&growth_field] = json!(pack.len() - raw.len());
             outputs.push((room_path, pack));
         }
     }
@@ -291,8 +295,8 @@ pub fn cook(root: &Path) -> Result<()> {
         .map(|r| r["bytes"].as_u64().unwrap())
         .sum::<u64>();
     report["total_pack_bytes"] = json!(total);
-    report["mossman_bank_adopted"] = json!(true);
-    report["mossman_actor_specs"] = json!(spec_sets);
+    report[marker] = json!(true);
+    report[specs_field] = json!(spec_sets);
     // All four scenes must fit before any output replaces the old cook.
     for (path, bytes) in outputs {
         publish(&path, &bytes)?;
@@ -304,8 +308,11 @@ pub fn cook(root: &Path) -> Result<()> {
 /// Existing metadata generation retains indices; bind its selected type to SwipeCalm.
 /// The complete expected Rust spec must match, allowing only that attack variant.
 pub fn bind_generated_specs(root: &Path) -> Result<()> {
+    bind_selected_specs(root, "mossman_actor_specs", |s| s.replace("Attack::SwipeCalm", "Attack::Swipe"))
+}
+pub(crate) fn bind_selected_specs(root: &Path, specs_field: &str, legacy_spec: fn(&str) -> String) -> Result<()> {
     let report: Value = serde_json::from_slice(&std::fs::read(root.join("data/regions.json"))?)?;
-    let specs = report["mossman_actor_specs"]
+    let specs = report[specs_field]
         .as_array()
         .ok_or("Mossman specs absent")?;
     let path = root.join("data/regions.rs");
@@ -324,7 +331,7 @@ pub fn bind_generated_specs(root: &Path) -> Result<()> {
         let mut section = text[start..end].to_string();
         for expected in scene["specs"].as_array().ok_or("scene specs")? {
             let expected = expected.as_str().ok_or("spec text")?;
-            let legacy = expected.replace("Attack::SwipeCalm", "Attack::Swipe");
+            let legacy = legacy_spec(expected);
             if section.matches(expected).count() == 1 {
                 continue;
             }
