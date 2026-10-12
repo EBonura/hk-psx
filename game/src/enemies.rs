@@ -707,6 +707,7 @@ impl VengeflyRuntime {
 #[derive(Clone, Copy)]
 struct GruzzerRuntime {
     controller: hk_sim::gruzzer::Gruzzer,
+    activation: u8,
     animation_tick: u32,
     /// One of Gruz Mother's reserve flies (`ActorController::GruzzerReserve`):
     /// parked below the room, no tick, draw or hit, until the burster's
@@ -1772,6 +1773,7 @@ impl Actor {
                 }),
                 ActorController::Gruzzer => Runtime::Gruzzer(GruzzerRuntime {
                     controller: hk_sim::gruzzer::Gruzzer::new(seed),
+                    activation: if scene == 4 && (7038..=7046).contains(&placement.source_id) { 255 } else { 0 },
                     animation_tick: 0,
                     reserve: false,
                     parked: false,
@@ -1779,6 +1781,7 @@ impl Actor {
                 }),
                 ActorController::GruzzerReserve { .. } => Runtime::Gruzzer(GruzzerRuntime {
                     controller: hk_sim::gruzzer::Gruzzer::new(seed),
+                    activation: 0,
                     animation_tick: 0,
                     reserve: true,
                     parked: true,
@@ -2921,8 +2924,12 @@ impl Actor {
         context: RunnerContext,
     ) {
         use hk_sim::gruzzer::{Phase, Side, SPEED};
-        fly.animation_tick = fly.animation_tick.saturating_add(1);
-        fly.controller.tick(context.camera, [self.x, self.y, 0]);
+        let (enabled, animation_start) = hk_sim::aspid::activation_step(
+            &mut fly.activation, [context.camera[0], context.camera[1]], self.bounds(spec), 1,
+        );
+        if animation_start { fly.animation_tick = 0; }
+        else if fly.activation == 0 { fly.animation_tick = fly.animation_tick.saturating_add(1); }
+        if enabled { fly.controller.tick(context.camera, [self.x, self.y, 0]); }
         self.walk.direction = fly.controller.facing();
         let v = if fly.controller.phase() == Phase::Flying {
             crate::world::debris::rotate([SPEED, 0], fly.controller.angle())
@@ -7920,6 +7927,53 @@ mod runner_runtime_tests {
         let ordinary = Actor::new(0, &placement, &spec);
         let Runtime::Aspid(runtime) = ordinary.runtime else { panic!("Aspid"); };
         assert_eq!(runtime.activation, 0);
+    }
+    #[test]
+    fn all_nine_crossroads_gruzzers_wait_for_trigger_then_keep_their_original_distance_check() {
+        let bytes = bytes();
+        let room = Room::parse(&bytes).unwrap();
+        let spec = ActorSpec { controller: ActorController::Gruzzer, ..SPEC };
+        for source_id in 7038..=7046 {
+            let placement = hk_sim::ActorPlacement { source_id, ..AT };
+            let mut actor = Actor::new(4, &placement, &spec);
+            let mut context = context(30 * ONE);
+            context.camera[1] = 22 * ONE;
+            let start = (actor.x, actor.y);
+            // The original 44-unit 3D camera sphere already includes this
+            // point, but the ActiveRegion box has not reached its collider.
+            let mut control = hk_sim::gruzzer::Gruzzer::new(1);
+            control.tick(context.camera, [actor.x, actor.y, 0]);
+            assert_eq!(control.phase(), hk_sim::gruzzer::Phase::Flying);
+            for _ in 0..90 {
+                let Runtime::Gruzzer(mut runtime) = actor.runtime else { panic!("Gruzzer"); };
+                actor.advance_gruzzer(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context);
+                assert_eq!(runtime.activation, 255);
+                assert_eq!(runtime.animation_tick, 0);
+                assert_eq!(runtime.controller.phase(), hk_sim::gruzzer::Phase::Waiting);
+                actor.runtime = Runtime::Gruzzer(runtime);
+            }
+            assert_eq!((actor.x, actor.y), start);
+            context.camera[1] = 2 * ONE;
+            for _ in 0..30 {
+                let Runtime::Gruzzer(mut runtime) = actor.runtime else { panic!("Gruzzer"); };
+                actor.advance_gruzzer(&mut runtime, &spec, room.counts[5], &|i| room.edge(i), context);
+                actor.runtime = Runtime::Gruzzer(runtime);
+            }
+            assert_ne!((actor.x, actor.y), start);
+            let Runtime::Gruzzer(runtime) = actor.runtime else { panic!("Gruzzer"); };
+            assert_eq!(runtime.activation, 0);
+            assert_eq!(runtime.controller.phase(), hk_sim::gruzzer::Phase::Flying);
+            let mut world = EnemyWorld::new();
+            world.actors[0] = Some(actor);
+            world.reset_scene(4);
+            assert!(world.actors[0].is_none());
+            let recreated = Actor::new(4, &placement, &spec);
+            let Runtime::Gruzzer(runtime) = recreated.runtime else { panic!("Gruzzer"); };
+            assert_eq!(runtime.activation, 255);
+            let ordinary = Actor::new(0, &placement, &spec);
+            let Runtime::Gruzzer(runtime) = ordinary.runtime else { panic!("Gruzzer"); };
+            assert_eq!(runtime.activation, 0);
+        }
     }
     #[test]
     fn runner_vertical_hit_does_not_emit_horizontal_restart() {

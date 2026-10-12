@@ -18,9 +18,10 @@ pub const RAYCAST_DISTANCE: i32 = 14 * ONE;
 pub const FACE_PAUSE_TICKS: u16 = 30;
 pub const DISTANCE_FLY: (i32, i32, i32) = (7 * ONE, 4 * ONE, 6554); // distance, speedMax, .1 per step
 pub const FLY_BACK: (i32, i32, i32) = (540672, 4 * ONE, 6554); // 8.25
-/// Two bounded Crossroads_03 instances start with disabled FSMs. The camera
-/// trigger enables their first FSM immediately, then one sibling per frame.
+/// The bounded Crossroads Spitter and Gruzzer instances start with disabled
+/// FSMs. The camera enables their first FSM, then one sibling per frame.
 /// 255 is asleep, 1..4 is the stagger tail, and zero is fully activated.
+#[inline(always)] // shared by separately streamed Aspid and Gruzzer modules
 pub fn activation_step(state: &mut u8, camera: [i32; 2], body: [i32; 4], fsms: u8) -> (bool, bool) {
     if *state == 255 {
         let r = [camera[0] - 25 * ONE, camera[1] - 35 * ONE / 2,

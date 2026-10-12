@@ -195,6 +195,38 @@ pub fn recognize(
     catalogue: &crate::actors::Catalogue,
 ) -> Result<Json> {
     let records = component_records(sc, gid);
+    if sc.base.name == "level43" {
+        let binding = match gid {
+            1535 => Some((7038, 6399, 6396)), 1383 => Some((7039, 6387, 6390)),
+            1329 => Some((7040, 6377, 6380)), 1239 => Some((7041, 6363, 6364)),
+            1262 => Some((7042, 6366, 6365)), 306 => Some((7043, 6212, 6213)),
+            333 => Some((7044, 6216, 6215)), 247 => Some((7045, 6198, 6201)),
+            267 => Some((7046, 6203, 6202)), _ => None,
+        };
+        if let Some((health, activator_id, fsm_id)) = binding {
+            if only(&records, "HealthManager", "Crossroads_02 Gruzzer")?.0 != health {
+                return err("Crossroads_02 Gruzzer source identity drift");
+            }
+            let (id, activator) = only(&records, "FSMActivator", "Crossroads_02 Gruzzer")?;
+            if id != activator_id || get(activator, "m_Enabled")?.int() != Some(1)
+                || get(activator, "activateStaggered")?.int() != Some(1)
+                || get(get(activator, "m_GameObject")?, "m_PathID")?.int() != Some(gid) {
+                return err("Crossroads_02 Gruzzer activation ownership drift");
+            }
+            let (id, tree) = only(&records, "PlayMakerFSM", "Crossroads_02 Gruzzer")?;
+            let fsm = get(tree, "fsm")?;
+            if id != fsm_id || get(tree, "m_Enabled")?.int() != Some(0)
+                || get(get(tree, "m_GameObject")?, "m_PathID")?.int() != Some(gid)
+                || get(fsm, "name")?.str().as_deref() != Some("Bouncer Control")
+                || get(fsm, "startState")?.str().as_deref() != Some("Initialise") {
+                return err("Crossroads_02 Gruzzer initial FSM activation drift");
+            }
+            let (_, animator) = only(&records, "tk2dSpriteAnimator", "Crossroads_02 Gruzzer")?;
+            if get(animator, "playAutomatically")?.truthy() || get(animator, "playAutomaticallyOnEnable")?.truthy() {
+                return err("Crossroads_02 Gruzzer animator starts automatically");
+            }
+        }
+    }
     // Gruz Mother's reserve (Crossroads_04 `Fly Spawn/Fly`..`Fly 6`) waits below
     // the room until the burster moves `Fly Spawn` to itself. Any other Fly
     // outside the room is refused: position is the honest discriminator.
