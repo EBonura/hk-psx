@@ -292,6 +292,7 @@ pub fn publish() {
     }
 }
 #[cfg(not(test))]
+#[inline(never)]
 pub fn get(kind: Kind, scene: usize, local: usize) -> Option<u8> {
     store().get(kind, scene, local)
 }
