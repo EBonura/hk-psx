@@ -1346,6 +1346,7 @@ struct Actor {
     health: ActorHealth,
     walk: WalkState,
     recoil_left: u16,
+    recoil_fixed_accumulator: u8,
     recoil: [i32; 2],
     /// Ticks left of the hit flash (`SpriteFlash.flashInfected`), counted down
     /// once per tick; see `FLASH_TICKS`.
@@ -1718,6 +1719,7 @@ impl Actor {
                 placement.random_start_direction && seed & 0x80000000 != 0,
             ),
             recoil_left: 0,
+            recoil_fixed_accumulator: 0,
             recoil: [0; 2],
             flash_left: 0,
             corpse: None,
@@ -1725,7 +1727,7 @@ impl Actor {
             dream_taken: false,
             located: crate::disc::Located::NONE,
             runtime: match spec.controller {
-                ActorController::Crawler => Runtime::Walker,
+                ActorController::Crawler { .. } => Runtime::Walker,
                 ActorController::Runner { params, .. } => {
                     // A mirrored placement starts facing right; the cooker takes
                     // the sign from the transform, so both are supported now.
@@ -2512,14 +2514,24 @@ impl Actor {
         body.step(p, vx.signum(), false, count, &edge);
         self.vy = body.vy;
         self.grounded = body.grounded;
-        if self.recoil_left != 0 {
+        let crawler_fixed = if matches!(spec.controller, ActorController::Crawler { .. }) {
+            self.recoil_fixed_accumulator += 50;
+            if self.recoil_fixed_accumulator >= 60 {
+                self.recoil_fixed_accumulator -= 60;
+                true
+            } else { false }
+        } else { true };
+        if self.recoil_left != 0 && crawler_fixed {
             // Recoil.UpdatePhysics sweeps a separate transform displacement;
             // it does not replace the walking rigidbody velocity. Reuse the
             // bounded terrain solver for that displacement, preserving gravity.
             self.recoil_left -= 1;
-            p.speed = self.recoil[0].abs();
+            let fixed = matches!(spec.controller, ActorController::Crawler { .. });
+            // The terrain integrator divides velocity by 60. A 20 ms source
+            // displacement therefore supplies 6/5 of the unchanged velocity.
+            p.speed = if fixed { self.recoil[0].abs() * 6 / 5 } else { self.recoil[0].abs() };
             p.gravity = 0;
-            body.vy = self.recoil[1];
+            body.vy = if fixed { self.recoil[1] * 6 / 5 } else { self.recoil[1] };
             body.step(p, self.recoil[0].signum(), false, count, &edge);
         }
         self.x = body.x - offset;
@@ -6089,7 +6101,10 @@ impl EnemyWorld {
                                     }
                                 }
                             }
-                            actor.recoil_left = spec.recoil_ticks;
+                            actor.recoil_left = match spec.controller {
+                                ActorController::Crawler { recoil_steps } => recoil_steps as u16,
+                                _ => spec.recoil_ticks,
+                            };
                             // The Mosquito's `SetRecoilSpeed` zeroes it for a lunge.
                             let recoil_speed = actor
                                 .mosquito()

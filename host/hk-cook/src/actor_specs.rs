@@ -677,7 +677,8 @@ pub fn generated_actor_records(actors: &[SpecActor]) -> Result<Vec<(String, Plac
                 random_start_direction = false;
             }
             "WalkLeftRight" => {
-                controller = "hk_sim::ActorController::Crawler".into();
+                let duration = row.part("Recoil").and_then(|r| r.get("recoilDuration")).and_then(Value::float).ok_or("Crawler Recoil duration absent")?;
+                controller = format!("hk_sim::ActorController::Crawler {{recoil_steps:{}}}", crate::crawler_recoil::fixed_steps(duration)?);
                 speed = num(need(control, "speed")?)?;
                 turn_ticks = int(control, "turn_ticks")?;
                 turn_cooldown_ticks = int(control, "turn_cooldown_ticks")?;

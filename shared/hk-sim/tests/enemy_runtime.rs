@@ -653,7 +653,7 @@ const PLACEMENT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
     rotation_q16: 0,
 };
 const SPEC: ActorSpec = ActorSpec {
-    controller: ActorController::Crawler,
+    controller: ActorController::Crawler { recoil_steps: 8 },
     bounds: [-ONE / 2, -ONE, ONE / 2, 0],
     health: EnemyParams {
         health: 8,
@@ -1104,6 +1104,60 @@ fn source_death_is_seated_dead_without_second_loot_and_rest_restores_only_semi()
     w.reset_scene(0);
     w.sync_region(&r);
     assert_eq!(w.actor_state(0, 62546).unwrap().2, 8);
+}
+
+#[test]
+fn crawler_recoil_uses_eight_authored_fixed_sweeps_at_each_display_phase() {
+    const STILL: ActorSpec = ActorSpec { walk: WalkParams { speed: 0, ..SPEC.walk }, ..SPEC };
+    let bytes = room();
+    let floor = hk_format::Room::parse(&bytes).unwrap();
+    for phase in 0..6 {
+        let mut r = region(); r.actors = &[(PLACEMENT, &STILL)];
+        let mut w = enemies::EnemyWorld::new();
+        let mut p = Player::spawn(10 * ONE, ONE);
+        let mut v = Vitals::new(VITAL_PARAMS);
+        for _ in 0..phase { tick(&mut w, &r, &floor, &mut p, &mut v, &Nail::new()); }
+        p.x = 0; p.facing = 1;
+        let mut nail = Nail::new(); nail.active = true; nail.age = 1;
+        assert_eq!(tick(&mut w, &r, &floor, &mut p, &mut v, &nail).hits, 1);
+        p.x = 10 * ONE;
+        let mut previous = w.actor_state(0, PLACEMENT.source_id).unwrap().0;
+        let start = previous;
+        let mut sweeps = 0;
+        for _ in 0..12 {
+            tick(&mut w, &r, &floor, &mut p, &mut v, &Nail::new());
+            let x = w.actor_state(0, PLACEMENT.source_id).unwrap().0;
+            let dx = x - previous;
+            assert!(dx == 0 || dx == 15 * ONE / 50, "unexpected recoil displacement {dx}, display phase {phase}");
+            sweeps += usize::from(dx != 0);
+            previous = x;
+        }
+        assert_eq!(sweeps, 8, "phase {phase}");
+        assert_eq!(previous - start, 8 * (15 * ONE / 50));
+    }
+}
+
+#[test]
+fn crawler_fixed_recoil_sweeps_stop_at_original_terrain_instead_of_crossing_it() {
+    const STILL: ActorSpec = ActorSpec { walk: WalkParams { speed: 0, ..SPEC.walk }, ..SPEC };
+    let mut bytes = room();
+    bytes[28..32].copy_from_slice(&2u32.to_le_bytes());
+    let wall: Vec<_> = [ONE, 2 * ONE, ONE, 0].into_iter().flat_map(i32::to_le_bytes).collect();
+    bytes.splice(108..108, wall);
+    let terrain = hk_format::Room::parse(&bytes).unwrap();
+    let mut r = region(); r.actors = &[(PLACEMENT, &STILL)];
+    let mut w = enemies::EnemyWorld::new();
+    let mut p = Player::spawn(0, ONE); p.facing = 1;
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let mut nail = Nail::new(); nail.active = true; nail.age = 1;
+    assert_eq!(tick(&mut w, &r, &terrain, &mut p, &mut v, &nail).hits, 1);
+    p.x = 10 * ONE;
+    for _ in 0..12 {
+        tick(&mut w, &r, &terrain, &mut p, &mut v, &Nail::new());
+        let x = w.actor_state(0, PLACEMENT.source_id).unwrap().0;
+        assert!((0..=ONE / 2).contains(&x), "recoil crossed authored wall: {x}");
+    }
+    assert!(w.actor_state(0, PLACEMENT.source_id).unwrap().0 > 0);
 }
 
 #[test]

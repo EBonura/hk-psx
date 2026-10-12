@@ -8,7 +8,10 @@ pub struct WalkParams {
 }
 #[derive(Clone, Copy, Debug)]
 pub enum ActorController {
-    Crawler,
+    Crawler {
+        /// Original Recoil coroutine's 20 ms updates, not display frames.
+        recoil_steps: u8,
+    },
     /// Brooding Mawlek, driven by `crate::mawlek::Mawlek`, whose numbers
     /// host/mawlek_art.py asserts against the source. The spec carries only
     /// `Alert Range New`'s box, relative to the body, that wakes it.

@@ -19,6 +19,7 @@ fn main() {
         Some("area-music") => hk_cook::area_music::main(&root, source.as_deref()),
         Some("runner-audio") => hk_cook::runner_audio::main(&root, &args[2..], source.as_deref()),
         Some("actor-persistence") => hk_cook::actor_persistence::main(&root, source.as_deref()),
+        Some("crawler-recoil") => hk_cook::crawler_recoil::bind_generated_specs(&root),
         Some("props") => hk_cook::props::main(&root, source.as_deref()),
         Some("break-effects") => hk_cook::break_effects::main(&root, source.as_deref()),
         Some("scene-sfx") => hk_cook::scene_sfx::main(&root, source.as_deref()),
