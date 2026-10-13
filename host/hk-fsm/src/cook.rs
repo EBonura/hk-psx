@@ -80,7 +80,7 @@ fn validate_bool_array(data:&Value,index:usize)->Result<()> {
     }
     Ok(())
 }
-struct Tables { variables:Vec<(String,i32,u8)>, declarations:Vec<(String,Value,u8)>, constants:Vec<i32>, events:Vec<String>, operands:Vec<(u8,u16)> }
+struct Tables { paired_chase:bool, variables:Vec<(String,i32,u8)>, declarations:Vec<(String,Value,u8)>, constants:Vec<i32>, events:Vec<String>, operands:Vec<(u8,u16)> }
 impl Tables {
     fn event(&mut self,name:String)->u16{
         if name.is_empty(){return NO_EVENT;}
@@ -137,6 +137,21 @@ impl Tables {
                 self.operands.push((3,CAMERA as u16));self.arg(f,"store",3)?;FIND_OBJECT
             }
             "BoolTest"=>{self.arg(f,"boolVariable",1)?;self.ev(f,"isTrue")?;self.ev(f,"isFalse")?;BOOL_TEST}
+            "GetVelocity2d"=>{
+                let vector=get(f,"vector")?;
+                if !vector.get("useVariable").is_some_and(Value::truthy)||!text(vector.get("name"))?.is_empty(){return Err("GetVelocity2d vector output unsupported".into());}
+                self.object(get(f,"gameObject")?)?;
+                self.arg(f,"x",2)?;self.arg(f,"y",2)?;
+                let space=get(f,"space")?.int().ok_or("GetVelocity2d space enum")?;
+                if space!=0&&space!=1{return Err("GetVelocity2d space unsupported".into());}
+                self.operand(&Value::Int(space),3)?;GET_VELOCITY_2D
+            }
+            "SetVelocity2d"=>{
+                let vector=get(f,"vector")?;
+                if !vector.get("useVariable").is_some_and(Value::truthy)||!text(vector.get("name"))?.is_empty(){return Err("SetVelocity2d vector input unsupported".into());}
+                self.object(get(f,"gameObject")?)?;
+                self.arg(f,"x",2)?;self.arg(f,"y",2)?;SET_VELOCITY_2D
+            }
             "FloatClamp"=>{
                 let output=get(f,"floatVariable")?;
                 if !output.get("useVariable").is_some_and(Value::truthy)||text(output.get("name"))?.is_empty(){return Err("FloatClamp requires a mutable variable".into());}
@@ -175,10 +190,12 @@ impl Tables {
             "RandomFloat"=>{for n in ["min","max","storeResult"]{self.arg(f,n,2)?;}RANDOM_FLOAT}
             "Wait"=>{
                 let time=get(f,"time")?;
-                if time.get("useVariable").is_some_and(Value::truthy)||time.get("value").and_then(Value::float).is_none_or(|v|!v.is_finite()||v>10.0){return Err("Wait duration outside clock adapter bound".into());}
+                if time.get("useVariable").is_some_and(Value::truthy){
+                    if !self.paired_chase||text(time.get("name"))?!="Attention Span"{return Err("dynamic Wait duration unsupported".into());}
+                }else if time.get("value").and_then(Value::float).is_none_or(|v|!v.is_finite()||v<0.0||v>10.0){return Err("Wait duration outside clock adapter bound".into());}
                 self.arg(f,"time",2)?;
-                let name=format!("__wait_{}",self.variables.len());
-                self.declarations.push((name.clone(),Value::F32(0.0),2));
+                let name=if self.paired_chase{"__component_wait".to_owned()}else{format!("__wait_{}",self.variables.len())};
+                if !self.declarations.iter().any(|(n,_,_)|*n==name){self.declarations.push((name.clone(),Value::F32(0.0),2));}
                 let timer=self.variable(name)?;self.operands.push((1,timer));
                 self.ev(f,"finishEvent")?;self.arg(f,"realTime",1)?;
                 flags|=UPDATE;WAIT
@@ -233,7 +250,17 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
     let states=fsm.get("states").and_then(Value::list).ok_or("states")?;
     let names:Vec<_>=states.iter().map(|s|text(s.get("name"))).collect::<Result<_>>()?;
     let state_index=|name:String|->Result<u16>{names.iter().position(|s|*s==name).map(|n|n as u16).ok_or_else(||format!("missing state {name}").into())};
-    let mut t=Tables{variables:vec![],declarations:vec![],constants:vec![],events:vec!["FINISHED".into()],operands:vec![]};
+    let paired_chase=matches!(fsm.get("name").and_then(Value::str).as_deref(),Some("chaser"|"flyer_receive_direction_msg"));
+    if paired_chase {
+        for state in states {
+            let data=state.get("actionData").ok_or("action data")?;
+            let names=data.get("actionNames").and_then(Value::list).ok_or("action names")?;
+            let enabled=data.get("actionEnabled").and_then(Value::list).ok_or("action enabled")?;
+            let waits=names.iter().zip(enabled).filter(|(name,on)|on.truthy()&&name.str().as_deref()==Some("HutongGames.PlayMaker.Actions.Wait")).count();
+            if names.len()!=enabled.len()||waits>1{return Err("paired component has concurrent Wait actions".into());}
+        }
+    }
+    let mut t=Tables{paired_chase,variables:vec![],declarations:vec![],constants:vec![],events:vec!["FINISHED".into()],operands:vec![]};
     let Value::Map(groups)=fsm.get("variables").ok_or("variables")? else{return Err("variables groups".into())};
     let mut all_declarations=vec![];
     for (group,items) in groups {
@@ -353,7 +380,7 @@ mod tests {
     }
     #[test]
     fn typed_variables_do_not_alias_float_and_bool(){
-        let mut t=Tables{variables:vec![],declarations:vec![("x".into(),Value::F32(0.0),2)],constants:vec![],events:vec![],operands:vec![]};
+        let mut t=Tables{paired_chase:false,variables:vec![],declarations:vec![("x".into(),Value::F32(0.0),2)],constants:vec![],events:vec![],operands:vec![]};
         let v=Value::Map(vec![("useVariable".into(),Value::Bool(true)),("name".into(),Value::Str(b"x".to_vec()))]);
         assert!(t.operand(&v,1).is_err());assert!(t.operand(&v,2).is_ok());
     }
