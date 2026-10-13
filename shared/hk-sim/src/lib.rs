@@ -1689,3 +1689,5 @@ mod combination_tests {
         assert!(p.double_jumping);
     }
 }
+
+pub mod fsm_chase;

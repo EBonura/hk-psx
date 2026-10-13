@@ -18,6 +18,8 @@ pub const GROUP_CORE: u8 = 1;
 pub const GROUP_WALK: u8 = 2;
 /// Remaining admitted Gruzzer kernels.
 pub const GROUP_FLY: u8 = 4;
+/// Vengefly-specific kernels; not an admission of the whole graph.
+pub const GROUP_CHASE: u8 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
@@ -74,6 +76,8 @@ impl<'a> Program<'a> {
                 || op == RANDOM_FLOAT || op == GET_DISTANCE || op == FLOAT_COMPARE || op == FLOAT_SWITCH
                 || op == FACE_DIRECTION || op == SET_VELOCITY_ANGLE || op == COLLISION_STAY || op == COLLISION_ENTER {
                 groups |= GROUP_FLY;
+            } else if op==FLOAT_CLAMP||op==BOOL_ALL_TRUE||op==NEXT_FRAME_EVENT {
+                groups|=GROUP_CHASE;
             } else { return Err(Error::Limit); }
         }
         Ok(groups)
@@ -219,6 +223,10 @@ pub const COLLISION_ENTER:u16=251;
 pub const WAIT:u16=269;
 pub const TRANSLATE:u16=283;
 pub const WALK_LEFT_RIGHT:u16=307;
+pub const FLOAT_CLAMP:u16=373;
+pub const BOOL_ALL_TRUE:u16=419;
+pub const NEXT_FRAME_EVENT:u16=431;
+// Installed coverage changes only after the complete consumer is qualified.
 pub const IMPLEMENTED_TYPES:usize=16;
 
 }

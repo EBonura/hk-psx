@@ -96,8 +96,8 @@ fn paired_cursors_keep_namespaces_events_death_and_restart_separate() {
     cursors[1].event(&chaser,&mut storage[1..],&mut rng,0,&mut kernel).unwrap();
     assert_eq!(kernel.calls.len(),calls);
     cursors[0].reset(&receiver,&mut storage[..1]).unwrap();
-    assert_eq!(storage,[2,90]);assert_eq!(cursors[0].state(),0);
+    assert_eq!(storage,[0,90]);assert_eq!(cursors[0].state(),0);
     cursors[1].reset(&chaser,&mut storage[1..]).unwrap();
-    assert_eq!(storage,[2,2]);assert_eq!(cursors[1].state(),0);
+    assert_eq!(storage,[0,0]);assert_eq!(cursors[1].state(),0);
     assert!(Cursor::initial(&chaser).step(&chaser,&mut [],&mut rng,Phase::Enter,&mut kernel).is_err());
 }

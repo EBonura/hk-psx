@@ -117,6 +117,24 @@ impl Tables {
                 self.operands.push((3,CAMERA as u16));self.arg(f,"store",3)?;FIND_OBJECT
             }
             "BoolTest"=>{self.arg(f,"boolVariable",1)?;self.ev(f,"isTrue")?;self.ev(f,"isFalse")?;BOOL_TEST}
+            "FloatClamp"=>{
+                let output=get(f,"floatVariable")?;
+                if !output.get("useVariable").is_some_and(Value::truthy)||text(output.get("name"))?.is_empty(){return Err("FloatClamp requires a mutable variable".into());}
+                for name in ["floatVariable","minValue","maxValue"]{self.arg(f,name,2)?;}
+                FLOAT_CLAMP
+            }
+            "BoolAllTrue"=>{
+                let values:Vec<_>=f.iter().filter(|(n,v)|n.parse::<usize>().is_ok()&&v.get("value").is_some()).map(|(_,v)|v).collect();
+                if values.is_empty()||values.len()>13{return Err("BoolAllTrue array size".into());}
+                for value in values{self.operand(value,1)?;}
+                self.arg(f,"storeResult",1)?;self.ev(f,"sendEvent")?;BOOL_ALL_TRUE
+            }
+            "NextFrameEvent"=>{
+                let name="__next_frame_clock".to_owned();
+                if !self.declarations.iter().any(|(n,_,_)|*n==name){self.declarations.push((name.clone(),Value::F32(0.0),2));}
+                let timer=self.variable(name)?;self.operands.push((1,timer));self.ev(f,"sendEvent")?;
+                flags|=UPDATE;NEXT_FRAME_EVENT
+            }
             "GetDistance"=>{self.object(get(f,"gameObject")?)?;self.object(get(f,"target")?)?;self.arg(f,"storeResult",2)?;GET_DISTANCE}
             "FloatCompare"=>{
                 for n in ["float1","float2","tolerance"]{self.arg(f,n,2)?;}
