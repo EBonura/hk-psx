@@ -1,5 +1,5 @@
 //! Shared PlayMaker action kernels. Graphs supply operands and control flow.
-use hk_format::fsm::{Action, Operand, Program, MAX_VARIABLES, NO_EVENT, UPDATE};
+use hk_format::fsm::{Action, Operand, Program, NO_EVENT, UPDATE};
 use crate::fsm::{Error, Kernel, Phase, ResultAction};
 
 pub use hk_format::fsm::opcode::*;
@@ -23,14 +23,14 @@ pub struct FlyingActions<E>(pub E);
 impl<E: Environment> Kernel for FlyingActions<E> {
     #[inline(always)]
     fn execute(&mut self, p: &Program<'_>, a: Action, phase: Phase,
-        v: &mut [i32; MAX_VARIABLES], rng: &mut u32) -> Result<ResultAction, Error> {
+        v: &mut [i32], rng: &mut u32) -> Result<ResultAction, Error> {
         crate::fsm_fly::execute(&mut self.0, p, a, phase, v, rng)
     }
 }
 impl<E: Environment> Kernel for WalkingActions<E> {
     #[inline(always)]
     fn execute(&mut self, p: &Program<'_>, a: Action, phase: Phase,
-        v: &mut [i32; MAX_VARIABLES], _: &mut u32) -> Result<ResultAction, Error> {
+        v: &mut [i32], _: &mut u32) -> Result<ResultAction, Error> {
         crate::fsm_walk::execute(&mut self.0, p, a, phase, v)
     }
 }
@@ -40,13 +40,13 @@ pub(crate) fn operand(p:&Program<'_>,a:Action,index:u8)->Result<Operand,Error> {
     p.operand(a.operands+index as u16).ok_or(Error::Parameter)
 }
 #[inline(always)]
-pub(crate) fn read(p:&Program<'_>,o:Operand,v:&[i32;MAX_VARIABLES])->Result<i32,Error> {
+pub(crate) fn read(p:&Program<'_>,o:Operand,v:&[i32])->Result<i32,Error> {
     if o.kind==0 {p.constant(o.index).ok_or(Error::Parameter)}
     else if o.kind==1 {v.get(o.index as usize).copied().ok_or(Error::Parameter)}
     else if o.kind==3 {Ok(o.index as i32)} else {Err(Error::Parameter)}
 }
 #[inline(always)]
-pub(crate) fn write(p:&Program<'_>,o:Operand,v:&mut[i32;MAX_VARIABLES],value:i32)->Result<(),Error> {
+pub(crate) fn write(p:&Program<'_>,o:Operand,v:&mut[i32],value:i32)->Result<(),Error> {
     if o.kind!=1 {return Err(Error::Parameter);}
     let kind=p.variable_kind(o.index).ok_or(Error::Parameter)?;
     if (kind==1 && value!=0 && value!=1)||(kind==3 && !(0..=3).contains(&value)) {return Err(Error::Parameter);}
@@ -55,19 +55,19 @@ pub(crate) fn write(p:&Program<'_>,o:Operand,v:&mut[i32;MAX_VARIABLES],value:i32
 #[inline(always)]
 pub(crate) fn event(o:Operand)->Result<u16,Error> {if o.kind==2 {Ok(o.index)}else{Err(Error::Parameter)}}
 #[inline(always)]
-pub(crate) fn boolean(p:&Program<'_>,o:Operand,v:&[i32;MAX_VARIABLES])->Result<bool,Error>{match read(p,o,v)?{0=>Ok(false),1=>Ok(true),_=>Err(Error::Parameter)}}
+pub(crate) fn boolean(p:&Program<'_>,o:Operand,v:&[i32])->Result<bool,Error>{match read(p,o,v)?{0=>Ok(false),1=>Ok(true),_=>Err(Error::Parameter)}}
 #[inline(always)]
-pub(crate) fn value(p:&Program<'_>,a:Action,index:u8,v:&[i32;MAX_VARIABLES])->Result<i32,Error>{read(p,operand(p,a,index)?,v)}
+pub(crate) fn value(p:&Program<'_>,a:Action,index:u8,v:&[i32])->Result<i32,Error>{read(p,operand(p,a,index)?,v)}
 #[inline(always)]
-pub(crate) fn flag(p:&Program<'_>,a:Action,index:u8,v:&[i32;MAX_VARIABLES])->Result<bool,Error>{boolean(p,operand(p,a,index)?,v)}
+pub(crate) fn flag(p:&Program<'_>,a:Action,index:u8,v:&[i32])->Result<bool,Error>{boolean(p,operand(p,a,index)?,v)}
 impl<E:Environment> Kernel for Actions<E> {
     #[inline(always)]
-    fn execute(&mut self,p:&Program<'_>,a:Action,phase:Phase,v:&mut[i32;MAX_VARIABLES],rng:&mut u32)->Result<ResultAction,Error> {
+    fn execute(&mut self,p:&Program<'_>,a:Action,phase:Phase,v:&mut[i32],rng:&mut u32)->Result<ResultAction,Error> {
         execute(&mut self.0, p, a, phase, v, rng)
     }
 }
 #[inline(always)]
-fn execute<E:Environment>(env:&mut E,p:&Program<'_>,a:Action,phase:Phase,v:&mut[i32;MAX_VARIABLES],rng:&mut u32)->Result<ResultAction,Error> {
+fn execute<E:Environment>(env:&mut E,p:&Program<'_>,a:Action,phase:Phase,v:&mut[i32],rng:&mut u32)->Result<ResultAction,Error> {
     if a.opcode==WAIT || a.opcode==TRANSLATE || a.opcode==WALK_LEFT_RIGHT || a.opcode==BOOL_TEST {
         crate::fsm_walk::execute(env,p,a,phase,v)
     } else {

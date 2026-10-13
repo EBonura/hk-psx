@@ -1,11 +1,11 @@
 //! Gruzzer-only action kernels, loaded only for graphs that require them.
 use crate::fsm::{Error, Phase, ResultAction};
 use crate::fsm_actions::{event, flag, operand, read, write, Environment};
-use hk_format::fsm::{opcode::*, Action, Program, MAX_VARIABLES, NO_EVENT, UPDATE};
+use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
 // One action dispatcher for every enemy adapter. Borrowing the table view
 // avoids copying its offsets and counts at each operand operation.
 #[inline(never)]
-pub(crate) fn execute<E:Environment>(env:&mut E,p:&Program<'_>,a:Action,phase:Phase,v:&mut[i32;MAX_VARIABLES],rng:&mut u32)->Result<ResultAction,Error> {
+pub(crate) fn execute<E:Environment>(env:&mut E,p:&Program<'_>,a:Action,phase:Phase,v:&mut[i32],rng:&mut u32)->Result<ResultAction,Error> {
         let op=a.opcode;
         let collision=op==COLLISION_STAY||op==COLLISION_ENTER;
         if collision {

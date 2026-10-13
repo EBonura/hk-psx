@@ -19,7 +19,7 @@ fn bytes(states: &[[u16;4]], actions: &[(u16,u8)], edges: &[[u16;2]]) -> Vec<u8>
 #[derive(Default)]
 struct TestKernel { calls: Vec<(u16,Phase)>, wait: u8 }
 impl Kernel for TestKernel {
-    fn execute(&mut self,_:&Program<'_>,a:hk_format::fsm::Action,p:Phase,v:&mut[i32;16],_:&mut u32)->Result<ResultAction,Error> {
+    fn execute(&mut self,_:&Program<'_>,a:hk_format::fsm::Action,p:Phase,v:&mut[i32],_:&mut u32)->Result<ResultAction,Error> {
         self.calls.push((a.opcode,p));
         if a.opcode==1 { v[0]=7; Ok(ResultAction::finished()) }
         else if a.opcode==2 { Ok(ResultAction{finished:true,event:0}) }
@@ -72,4 +72,32 @@ fn malformed_table_references_and_truncated_program_are_rejected() {
     assert!(Program::parse(&b).is_err()); b.pop(); assert!(Program::parse(&b).is_err());
     let mut b=bytes(&[[0,1,0,0]],&[(5,ENABLED)],&[]); b[16..18].copy_from_slice(&17u16.to_le_bytes());
     assert!(Program::parse(&b).is_err());
+}
+
+#[test]
+fn paired_cursors_keep_namespaces_events_death_and_restart_separate() {
+    use hk_sim::fsm::Cursor;
+    let receiver_bytes=bytes(&[[0,1,0,1],[1,1,1,0]],&[(5,ENABLED),(1,ENABLED)],&[[0,1]]);
+    let chaser_bytes=bytes(&[[0,1,0,1],[1,1,1,0]],&[(5,ENABLED),(3,ENABLED)],&[[0,1]]);
+    let receiver=Program::parse(&receiver_bytes).unwrap();
+    let chaser=Program::parse(&chaser_bytes).unwrap();
+    let mut cursors=[Cursor::initial(&receiver),Cursor::initial(&chaser)];
+    let mut storage=[0i32;2];let mut rng=1;
+    let mut kernel=TestKernel::default();
+    // A direction event executes the receiver first. Its emitted notification
+    // is delivered to the chaser explicitly, preserving component scheduling.
+    cursors[0].event(&receiver,&mut storage[..1],&mut rng,0,&mut kernel).unwrap();
+    assert_eq!(storage,[7,0]);
+    cursors[1].event(&chaser,&mut storage[1..],&mut rng,0,&mut kernel).unwrap();
+    assert_eq!(storage,[7,90]);assert_eq!(cursors[0].state(),1);assert_eq!(cursors[1].state(),1);
+    for cursor in &mut cursors {cursor.die();}
+    let calls=kernel.calls.len();
+    cursors[0].step(&receiver,&mut storage[..1],&mut rng,Phase::Update,&mut kernel).unwrap();
+    cursors[1].event(&chaser,&mut storage[1..],&mut rng,0,&mut kernel).unwrap();
+    assert_eq!(kernel.calls.len(),calls);
+    cursors[0].reset(&receiver,&mut storage[..1]).unwrap();
+    assert_eq!(storage,[2,90]);assert_eq!(cursors[0].state(),0);
+    cursors[1].reset(&chaser,&mut storage[1..]).unwrap();
+    assert_eq!(storage,[2,2]);assert_eq!(cursors[1].state(),0);
+    assert!(Cursor::initial(&chaser).step(&chaser,&mut [],&mut rng,Phase::Enter,&mut kernel).is_err());
 }

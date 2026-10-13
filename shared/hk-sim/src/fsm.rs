@@ -41,7 +41,7 @@ pub trait Kernel {
         program: &Program<'_>,
         action: Action,
         phase: Phase,
-        variables: &mut [i32; MAX_VARIABLES],
+        variables: &mut [i32],
         rng: &mut u32,
     ) -> Result<ResultAction, Error>;
 }
@@ -107,8 +107,8 @@ impl Machine {
 // the selected concrete action group, so the final linker can assign each
 // closure to its own room module without generic-symbol ownership guesses.
 macro_rules! ordered_executor {
-    ($actions:ident,$enter:ident,$step:ident,$event:ident,$transition:ident,$kernel:ty) => {
-        impl Machine {
+    ($machine:ty,$actions:ident,$enter:ident,$step:ident,$event:ident,$transition:ident,$kernel:ty) => {
+        impl $machine {
             #[inline(never)]
             fn $actions(
                 &mut self,
@@ -219,8 +219,9 @@ impl Machine {
         self.transition(program, event, budget)
     }
 }
-ordered_executor!(actions, enter, step, event, transition, impl Kernel);
+ordered_executor!(Machine, actions, enter, step, event, transition, impl Kernel);
 ordered_executor!(
+    Machine,
     actions_walk,
     enter_walk,
     step_walk,
@@ -229,6 +230,7 @@ ordered_executor!(
     crate::fsm_actions::WalkingActions<crate::fsm_body::Walking>
 );
 ordered_executor!(
+    Machine,
     actions_fly,
     enter_fly,
     step_fly,
@@ -236,3 +238,54 @@ ordered_executor!(
     transition,
     crate::fsm_actions::FlyingActions<crate::fsm_body::Flying>
 );
+
+/// State belongs to one original FSM component, independently of its variables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cursor { state:u16, finished:u16, flags:u16 }
+impl Cursor {
+    pub fn initial(program:&Program<'_>)->Self {
+        Self { state:program.start_state(), finished:0, flags:0 }
+    }
+    pub fn state(self)->u16 { self.state }
+    pub fn die(&mut self) { self.flags|=DEAD; }
+    pub fn reset(&mut self,program:&Program<'_>,variables:&mut[i32])->Result<(),Error> {
+        if variables.len()!=program.variable_count() as usize {return Err(Error::Program);}
+        for (index,value) in variables.iter_mut().enumerate() {
+            *value=program.initial(index as u16).ok_or(Error::Program)?;
+        }
+        *self=Self::initial(program);Ok(())
+    }
+    pub fn step(&mut self,program:&Program<'_>,variables:&mut[i32],rng:&mut u32,phase:Phase,kernel:&mut impl Kernel)->Result<(),Error> {
+        let mut frame=BorrowedMachine::resume(program,variables,*self,*rng)?;
+        let result=frame.step(program,phase,kernel);
+        *self=frame.cursor();*rng=frame.rng();result
+    }
+    pub fn event(&mut self,program:&Program<'_>,variables:&mut[i32],rng:&mut u32,event:u16,kernel:&mut impl Kernel)->Result<(),Error> {
+        let mut frame=BorrowedMachine::resume(program,variables,*self,*rng)?;
+        let result=frame.event(program,event,kernel);
+        *self=frame.cursor();*rng=frame.rng();result
+    }
+}
+const _: ()=assert!(core::mem::size_of::<Cursor>()==6);
+
+/// A transient executor borrows exactly one component's variable namespace.
+/// Its cursor is written back even on failure, preserving fail-closed state.
+/// This carries no code pointer and does not allocate another actor variable bank.
+pub struct BorrowedMachine<'a> {
+    variables:&'a mut [i32], rng:u32, state:u16, finished:u16, flags:u16,
+}
+impl<'a> BorrowedMachine<'a> {
+    pub fn resume(program:&Program<'_>,variables:&'a mut [i32],cursor:Cursor,rng:u32)->Result<Self,Error> {
+        if variables.len()!=program.variable_count() as usize {return Err(Error::Program);}
+        Ok(Self {variables,rng,state:cursor.state,finished:cursor.finished,flags:cursor.flags})
+    }
+    pub fn cursor(&self)->Cursor {Cursor {state:self.state,finished:self.finished,flags:self.flags}}
+    pub fn rng(&self)->u32 {self.rng}
+    fn transition(&mut self,program:&Program<'_>,event:u16,budget:&mut usize)->Result<bool,Error> {
+        if event==NO_EVENT {return Ok(false);}
+        let Some(target)=program.target(self.state,event) else{return Ok(false);};
+        if *budget==0 {return Err(Error::TransitionBudget);}
+        *budget-=1;self.state=target;self.finished=0;self.flags &= !(ENTERED|FINISH_SENT);Ok(true)
+    }
+}
+ordered_executor!(BorrowedMachine<'_>, actions, enter, step, event, transition, impl Kernel);
