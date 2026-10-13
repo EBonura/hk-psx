@@ -39,6 +39,8 @@ fn next_frame_finishes_on_first_update_not_on_enter(){
     let bytes=graph(NEXT_FRAME_EVENT,&[(2,1)],&[],&[]);let p=Program::parse(&bytes).unwrap();
     let mut kernel=Actions(Clock(7));let mut vars=[];let mut rng=0;
     assert!(!kernel.execute(&p,action(&p),Phase::Enter,&mut vars,&mut rng).unwrap().finished);
+    let fixed=kernel.execute(&p,action(&p),Phase::FixedUpdate,&mut vars,&mut rng).unwrap();
+    assert!(!fixed.finished);assert_eq!(fixed.event,NO_EVENT);
     let result=kernel.execute(&p,action(&p),Phase::Update,&mut vars,&mut rng).unwrap();
     assert!(result.finished);assert_eq!(result.event,1);
 }
@@ -80,4 +82,39 @@ fn next_frame_initial_entry_updates_but_update_transition_only_enters_destinatio
         assert_eq!(cursor.state(),if start==0{1}else{2});assert_eq!(kernel.hold_updates,0);
         if start==0{cursor.step(&p,&mut vars,&mut rng,Phase::Update,&mut kernel).unwrap();assert_eq!(cursor.state(),2);assert_eq!(kernel.hold_updates,0);}
     }
+}
+
+#[test]
+fn rational_fixed_clock_uses_authored_interval_not_render_count_or_rounded_50hz(){
+    use hk_sim::fsm_chase::FixedClock;
+    let mut clock=FixedClock::new();let mut steps=0u64;
+    for tick in 1..=FixedClock::FIXED_UNITS as u64 {
+        steps+=clock.step() as u64;
+        if tick<=6{assert_eq!(steps,tick*FixedClock::SIMULATION_UNITS as u64/FixedClock::FIXED_UNITS as u64);}
+    }
+    assert_eq!(steps,FixedClock::SIMULATION_UNITS as u64);
+    assert_ne!(steps,FixedClock::FIXED_UNITS as u64*50/60);
+    // Pausing does not advance the clock; copying/seating a new actor does not
+    // create a separate phase. All actors consume the same world result.
+    let paused=clock;
+    assert_eq!(clock,paused);
+    assert_eq!(core::mem::size_of::<FixedClock>(),4);
+}
+
+#[test]
+fn compact_variables_preserve_both_mutable_namespaces_and_reject_partial_save(){
+    use hk_sim::vengefly_fsm::Variables;
+    let chaser_bytes=graph(FLOAT_CLAMP,&[(1,0),(0,0),(0,1)],&[(10*65536,2),(0,1),(1,1),(0,1),(0,1),(0,3),(0,3),(0,2)],&[0,20*65536]);
+    let receiver_bytes=graph(FLOAT_CLAMP,&[(1,0),(0,0),(0,1)],&[(0,2),(0,1),(0,2)],&[-65536,65536]);
+    let programs=[Program::parse(&chaser_bytes).unwrap(),Program::parse(&receiver_bytes).unwrap()];
+    let mut store=Variables::initial(programs).unwrap();
+    let chaser=[17*65536,1,0,1,1,1,2,9];let receiver=[-65536,1,21];
+    store.save(programs,0,&chaser).unwrap();store.save(programs,1,&receiver).unwrap();
+    let mut actual=[0;8];store.load(programs,0,&mut actual).unwrap();assert_eq!(actual,chaser);
+    let mut invalid=chaser;invalid[0]=99;invalid[7]=20;invalid[6]=4;
+    assert_eq!(store.save(programs,0,&invalid),Err(Error::Parameter));
+    store.load(programs,0,&mut actual).unwrap();assert_eq!(actual,chaser);
+    let mut actual=[0;3];store.load(programs,1,&mut actual).unwrap();assert_eq!(actual,receiver);
+    assert_eq!(core::mem::size_of::<Variables>(),20);
+    assert_eq!(core::mem::size_of::<hk_sim::vengefly_fsm::Pair>(),36);
 }

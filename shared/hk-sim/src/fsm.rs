@@ -8,6 +8,8 @@ pub enum Phase {
     Update,
     CollisionStay,
     CollisionEnter,
+    /// Original action OnFixedUpdate, separately scheduled from frame updates.
+    FixedUpdate,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {

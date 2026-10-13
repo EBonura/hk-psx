@@ -76,7 +76,7 @@ impl<'a> Program<'a> {
                 || op == RANDOM_FLOAT || op == GET_DISTANCE || op == FLOAT_COMPARE || op == FLOAT_SWITCH
                 || op == FACE_DIRECTION || op == SET_VELOCITY_ANGLE || op == COLLISION_STAY || op == COLLISION_ENTER {
                 groups |= GROUP_FLY;
-            } else if op==FLOAT_CLAMP||op==BOOL_ALL_TRUE||op==NEXT_FRAME_EVENT {
+            } else if op==FLOAT_CLAMP||op==BOOL_ALL_TRUE||op==NEXT_FRAME_EVENT||op==GET_VELOCITY_2D||op==SET_VELOCITY_2D||op==ADD_FORCE_2D||op==DECELERATE {
                 groups|=GROUP_CHASE;
             } else { return Err(Error::Limit); }
         }
@@ -223,6 +223,10 @@ pub const COLLISION_ENTER:u16=251;
 pub const WAIT:u16=269;
 pub const TRANSLATE:u16=283;
 pub const WALK_LEFT_RIGHT:u16=307;
+pub const GET_VELOCITY_2D:u16=331;
+pub const SET_VELOCITY_2D:u16=347;
+pub const ADD_FORCE_2D:u16=359;
+pub const DECELERATE:u16=449;
 pub const FLOAT_CLAMP:u16=373;
 pub const BOOL_ALL_TRUE:u16=419;
 pub const NEXT_FRAME_EVENT:u16=431;
