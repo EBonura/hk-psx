@@ -76,7 +76,7 @@ impl<'a> Program<'a> {
                 || op == RANDOM_FLOAT || op == GET_DISTANCE || op == FLOAT_COMPARE || op == FLOAT_SWITCH
                 || op == FACE_DIRECTION || op == SET_VELOCITY_ANGLE || op == COLLISION_STAY || op == COLLISION_ENTER {
                 groups |= GROUP_FLY;
-            } else if op==FLOAT_CLAMP||op==BOOL_ALL_TRUE||op==NEXT_FRAME_EVENT||op==GET_VELOCITY_2D||op==SET_VELOCITY_2D||op==ADD_FORCE_2D||op==DECELERATE||op==CHECK_CAN_SEE_HERO||op==CHECK_ALERT_RANGE||op==FIND_ALERT_RANGE||op==PLAY_ANIMATION||op==PLAY_FRAME||op==WATCH_ANIMATION||op==SET_AUDIO_PITCH {
+            } else if op==FLOAT_CLAMP||op==BOOL_ALL_TRUE||op==NEXT_FRAME_EVENT||op==GET_VELOCITY_2D||op==SET_VELOCITY_2D||op==ADD_FORCE_2D||op==DECELERATE||op==CHECK_CAN_SEE_HERO||op==CHECK_ALERT_RANGE||op==FIND_ALERT_RANGE||op==PLAY_ANIMATION||op==PLAY_FRAME||op==WATCH_ANIMATION||op==SET_AUDIO_PITCH||op==IDLE_BUZZ||op==CHASE_OBJECT||op==FACE_OBJECT||op==SET_ROTATION||op==SEND_EVENT_BY_NAME||op==AUDIO_ONE_SHOT {
                 groups|=GROUP_CHASE;
             } else { return Err(Error::Limit); }
         }
@@ -234,6 +234,12 @@ pub const PLAY_ANIMATION:u16=503;
 pub const PLAY_FRAME:u16=521;
 pub const WATCH_ANIMATION:u16=541;
 pub const SET_AUDIO_PITCH:u16=557;
+pub const IDLE_BUZZ:u16=569;
+pub const CHASE_OBJECT:u16=587;
+pub const FACE_OBJECT:u16=601;
+pub const SET_ROTATION:u16=613;
+pub const SEND_EVENT_BY_NAME:u16=631;
+pub const AUDIO_ONE_SHOT:u16=647;
 pub const FLOAT_CLAMP:u16=373;
 pub const BOOL_ALL_TRUE:u16=419;
 pub const NEXT_FRAME_EVENT:u16=431;

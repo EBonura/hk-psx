@@ -155,6 +155,20 @@ impl Tables {
                 self.ev(f,"animationCompleteEvent")?;flags|=UPDATE;WATCH_ANIMATION
             }
             "SetAudioPitch"=>{self.object(get(f,"gameObject")?)?;self.arg(f,"pitch",2)?;SET_AUDIO_PITCH}
+
+            "IdleBuzz"=>{
+                self.object(get(f,"gameObject")?)?;
+                for name in ["waitMin","waitMax","speedMax","accelerationMax","roamingRange"]{self.arg(f,name,2)?;}
+                flags|=UPDATE;IDLE_BUZZ
+            }
+            "ChaseObject"=>{
+                self.object(get(f,"gameObject")?)?;self.object(get(f,"target")?)?;
+                for name in ["targetSpread","spreadResetTimeMin","spreadResetTimeMax"]{
+                    let value=get(f,name)?;
+                    if value.get("useVariable").is_some_and(Value::truthy)||value.get("value").and_then(Value::float)!=Some(0.0){return Err("ChaseObject spread unsupported".into());}
+                }
+                self.arg(f,"speedMax",2)?;self.arg(f,"acceleration",2)?;flags|=UPDATE;CHASE_OBJECT
+            }
             "CheckCanSeeHero"=>{self.arg(f,"storeResult",1)?;CHECK_CAN_SEE_HERO}
             "CheckAlertRange"=>{self.arg(f,"alertRange",3)?;self.arg(f,"storeResult",1)?;CHECK_ALERT_RANGE}
             "FindAlertRange"=>{

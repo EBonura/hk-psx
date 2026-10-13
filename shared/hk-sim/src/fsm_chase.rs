@@ -7,6 +7,19 @@ use crate::{
 use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
 
 pub trait Environment {
+    fn idle_buzz(&mut self, _role: i32, _parameters: [i32; 5], _enter: bool) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn chase(
+        &mut self,
+        _role: i32,
+        _target: i32,
+        _speed: i32,
+        _acceleration: i32,
+        _enter: bool,
+    ) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
     fn face_direction(
         &mut self,
         _role: i32,
@@ -77,7 +90,10 @@ impl<E: Environment> Kernel for Actions<E> {
         if matches!(phase, Phase::CollisionEnter | Phase::CollisionStay) {
             return Ok(ResultAction::running());
         }
-        let fixed = matches!(a.opcode, SET_VELOCITY_2D | ADD_FORCE_2D | DECELERATE);
+        let fixed = matches!(
+            a.opcode,
+            SET_VELOCITY_2D | ADD_FORCE_2D | DECELERATE | IDLE_BUZZ | CHASE_OBJECT
+        );
         if phase != Phase::Enter
             && ((fixed && phase != Phase::FixedUpdate) || (!fixed && phase != Phase::Update))
         {
@@ -88,6 +104,38 @@ impl<E: Environment> Kernel for Actions<E> {
             event: NO_EVENT,
         };
         match a.opcode {
+            IDLE_BUZZ => {
+                if a.operand_count != 6 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                let mut parameters = [0; 5];
+                for (i, value) in parameters.iter_mut().enumerate() {
+                    *value = read(p, operand(p, a, i as u8 + 1)?, v)?;
+                    if *value < 0 {
+                        return Err(Error::Parameter);
+                    }
+                }
+                if parameters[0] > parameters[1] {
+                    return Err(Error::Parameter);
+                }
+                self.0.idle_buzz(role, parameters, phase == Phase::Enter)?;
+            }
+            CHASE_OBJECT => {
+                if a.operand_count != 4 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                let target = read(p, operand(p, a, 1)?, v)?;
+                let speed = read(p, operand(p, a, 2)?, v)?;
+                let acceleration = read(p, operand(p, a, 3)?, v)?;
+                if speed < 0 || acceleration < 0 {
+                    return Err(Error::Parameter);
+                }
+                self.0
+                    .chase(role, target, speed, acceleration, phase == Phase::Enter)?;
+            }
+
             FACE_DIRECTION => {
                 if a.operand_count != 6 {
                     return Err(Error::Parameter);
