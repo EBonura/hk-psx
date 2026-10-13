@@ -226,6 +226,8 @@ impl Tables {
                 let weights:Vec<_>=f.iter().filter(|(name,value)|name.parse::<usize>().is_ok()&&value.get("value").and_then(Value::float).is_some()).map(|(_,value)|value).collect();
                 if clips.len()!=3||weights.len()!=3{return Err("AudioPlayerOneShot requires original three-clip bank".into());}
                 for weight in weights{self.operand(weight,2)?;}
+                let volume=get(f,"volume")?;
+                if volume.get("useVariable").is_some_and(Value::truthy)||volume.get("value").and_then(Value::float)!=Some(1.0){return Err("Vengefly startle volume override unsupported".into());}
                 for name in ["pitchMin","pitchMax","volume"]{self.arg(f,name,2)?;}
                 let delay=get(f,"delay")?;
                 if delay.get("useVariable").is_some_and(Value::truthy)||delay.get("value").and_then(Value::float)!=Some(0.0){return Err("delayed audio spawn unsupported".into());}

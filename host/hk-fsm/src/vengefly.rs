@@ -90,6 +90,21 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
             if enabled!=0&&enabled!=1{return Err("FSM enablement value".into());}
             let fsm = tree.get("fsm").ok_or("FSM")?;
             let name = fsm.get("name").and_then(Value::str).ok_or("FSM name")?;
+            if name == "chaser" {
+                let states = fsm.get("states").and_then(Value::list).ok_or("chaser states")?;
+                let startle = states.iter().find(|state| state.get("name").and_then(Value::str).as_deref() == Some("Startle")).ok_or("Startle state")?;
+                let data = startle.get("actionData").ok_or("Startle action data")?;
+                let clips = data.get("unityObjectParams").and_then(Value::list).ok_or("startle clips")?;
+                let expected = [("sharedassets6.assets:178", "buzzer_startle_01"), ("sharedassets6.assets:172", "buzzer_startle_02"), ("sharedassets6.assets:182", "buzzer_startle_03")];
+                if clips.len() != expected.len() { return Err("startle clip count".into()); }
+                for (reference, (sid, clip)) in clips.iter().zip(expected) {
+                    let object = source.deref(&file, reference)?;
+                    if object.sid() != sid || source.read(&object)?.get("m_Name").and_then(Value::str).as_deref() != Some(clip) { return Err("startle clip binding changed".into()); }
+                }
+                let objects = data.get("fsmGameObjectParams").and_then(Value::list).ok_or("audio prefab parameters")?;
+                let prefab = source.deref(&file, objects.first().and_then(|v| v.get("value")).ok_or("audio prefab")?)?;
+                if prefab.sid() != "resources.assets:4126" || source.read(&prefab)?.get("m_Name").and_then(Value::str).as_deref() != Some("Audio Player Actor") { return Err("audio prefab binding changed".into()); }
+            }
             if !["chaser", "flyer_receive_direction_msg"].contains(&name.as_str()) || named.contains_key(&name) {
                 return Err("unexpected Vengefly FSM graph set".into());
             }

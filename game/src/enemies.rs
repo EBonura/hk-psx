@@ -5839,7 +5839,16 @@ impl EnemyWorld {
                         },
                         None => spec.health,
                     };
-                    match actor.health.hit(params, damage) {
+                    let mut next_health = actor.health;
+                    let hit = next_health.hit(params, damage);
+                    if matches!(hit, Hit::Damaged | Hit::Killed) {
+                        if let Some(mut fly) = actor.vengefly() {
+                            actor.vengefly_graph(&mut fly, spec, &terrain_room, terrain_room.counts[5], &|i| state.edge_in_view(region, room, terrain_region, terrain_room, i), context, true, &mut runner_event);
+                            actor.runtime = Runtime::Vengefly(fly);
+                        }
+                    }
+                    actor.health = next_health;
+                    match hit {
                         Hit::Damaged => {
                             events.hits += 1;
                             actor.flash_left = FLASH_TICKS;
@@ -5848,6 +5857,9 @@ impl EnemyWorld {
                             events.hits += 1;
                             events.kills += 1;
                             crate::actor_persistence::killed(actor.scene, actor.source_id);
+                            if let Runtime::Vengefly(fly) = &mut actor.runtime {
+                                fly.state.die();
+                            }
                             if let Runtime::Blocker(b) = &mut actor.runtime {
                                 b.controller.die();
                                 crate::blocker_terrain::killed(actor.scene, actor.source_id);
@@ -5933,10 +5945,19 @@ impl EnemyWorld {
                     },
                     _ => spec.health,
                 };
-                match actor.health.hit(
-                    health_params,
-                    cheats.params(crate::VITAL_PARAMS).nail_damage,
-                ) {
+                // Preview acceptance without publishing HP: original TakeDamage
+                // sends TOOK DAMAGE before recoil and health subtraction, even
+                // on a lethal hit. Rejected hits emit no graph event.
+                let mut next_health = actor.health;
+                let hit = next_health.hit(health_params, cheats.params(crate::VITAL_PARAMS).nail_damage);
+                if matches!(hit, Hit::Damaged | Hit::Killed) {
+                    if let Some(mut fly) = actor.vengefly() {
+                        actor.vengefly_graph(&mut fly, spec, &terrain_room, terrain_room.counts[5], &|i| state.edge_in_view(region, room, terrain_region, terrain_room, i), context, true, &mut runner_event);
+                        actor.runtime = Runtime::Vengefly(fly);
+                    }
+                }
+                actor.health = next_health;
+                match hit {
                     Hit::Damaged | Hit::Killed => {
                         events.hits += 1;
                         actor.flash_left = FLASH_TICKS;
@@ -6068,12 +6089,6 @@ impl EnemyWorld {
                             if !actor.health.dead && !blocker.controller.took_damage().is_empty() {
                                 blocker.animation_tick = 0;
                             }
-                        }
-                        if let Some(mut fly) = actor.vengefly() {
-                            if !actor.health.dead {
-                                actor.vengefly_graph(&mut fly,spec,&terrain_room,terrain_room.counts[5],&|i|state.edge_in_view(region,room,terrain_region,terrain_room,i),context,true,&mut runner_event);
-                            }
-                            actor.runtime = Runtime::Vengefly(fly);
                         }
                         let dead = actor.health.dead;
                         if let Some(climber) = actor.climber_mut() {

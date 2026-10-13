@@ -127,6 +127,10 @@ pub static mut HK_CLIMBER_HP: i32 = 0;
 fn runner_event(event: enemies::RunnerEvent) {
     use enemies::RunnerEventKind::*;
     match event.kind {
+        VengeflyStartle { variant, pitch_q16, volume_q16 } => {
+            assert_eq!(volume_q16, 65536, "admitted Vengefly startle volume");
+            scene_sfx::play_pitched(47 + variant, (pitch_q16 / 16) as u32);
+        }
         AudioPlay => runner_audio::loop_start(event.source_id),
         MossmanAudioPlay => runner_audio::loop_start_for(event.source_id,true),
         AudioStop | Destroy => runner_audio::loop_stop(event.source_id),

@@ -690,6 +690,11 @@ pub const EVENTS: &[Event] = &[
         57,
         None,
     ),
+    // Original Vengefly weighted startle variants, complete at the existing
+    // short enemy sound rate; per-placement ownership is checked by hk-fsm.
+    ev("vengefly_startle_01", "sharedassets6.assets", 178, "buzzer_startle_01", 5512, &["family", "Buzzer"], 58, None),
+    ev("vengefly_startle_02", "sharedassets6.assets", 172, "buzzer_startle_02", 5512, &["family", "Buzzer"], 59, None),
+    ev("vengefly_startle_03", "sharedassets6.assets", 182, "buzzer_startle_03", 5512, &["family", "Buzzer"], 60, None),
 ];
 
 /// Gruz Mother's arena gates sound like every other arena's.
