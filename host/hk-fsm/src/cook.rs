@@ -169,6 +169,23 @@ impl Tables {
                 }
                 self.arg(f,"speedMax",2)?;self.arg(f,"acceleration",2)?;flags|=UPDATE;CHASE_OBJECT
             }
+
+            "FaceObject"=>{
+                self.object(get(f,"objectA")?)?;self.object(get(f,"objectB")?)?;
+                self.arg(f,"spriteFacesRight",1)?;self.arg(f,"playNewAnimation",1)?;
+                let clip=get(f,"newAnimationClip")?;
+                if clip.get("useVariable").is_some_and(Value::truthy)||!text(clip.get("value"))?.is_empty()||get(f,"playNewAnimation")?.truthy(){return Err("FaceObject animated subset unsupported".into());}
+                self.operand(&Value::Int(0),3)?;self.arg(f,"resetFrame",1)?;FACE_OBJECT
+            }
+            "SetRotation"=>{
+                self.object(get(f,"gameObject")?)?;
+                for name in ["quaternion","vector","xAngle","yAngle"]{
+                    let value=get(f,name)?;
+                    if !value.get("useVariable").is_some_and(Value::truthy)||!text(value.get("name"))?.is_empty(){return Err("SetRotation requires original Z-only form".into());}
+                }
+                if get(f,"lateUpdate")?.truthy()||get(f,"space")?.int()!=Some(0){return Err("SetRotation callback/space unsupported".into());}
+                self.arg(f,"zAngle",2)?;self.operand(&Value::Int(0),3)?;SET_ROTATION
+            }
             "CheckCanSeeHero"=>{self.arg(f,"storeResult",1)?;CHECK_CAN_SEE_HERO}
             "CheckAlertRange"=>{self.arg(f,"alertRange",3)?;self.arg(f,"storeResult",1)?;CHECK_ALERT_RANGE}
             "FindAlertRange"=>{

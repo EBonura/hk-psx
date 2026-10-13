@@ -7,7 +7,25 @@ use crate::{
 use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
 
 pub trait Environment {
-    fn idle_buzz(&mut self, _role: i32, _parameters: [i32; 5], _enter: bool) -> Result<(), Error> {
+    fn set_rotation_z(&mut self, _role: i32, _angle: i32, _space: i32) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn face_object(
+        &mut self,
+        _roles: [i32; 2],
+        _sprite_right: bool,
+        _clip: Option<i32>,
+        _reset_frame: bool,
+    ) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn idle_buzz(
+        &mut self,
+        _role: i32,
+        _parameters: [i32; 5],
+        _enter: bool,
+        _rng: &mut u32,
+    ) -> Result<(), Error> {
         Err(Error::UnsupportedAction)
     }
     fn chase(
@@ -85,7 +103,7 @@ impl<E: Environment> Kernel for Actions<E> {
         a: Action,
         phase: Phase,
         v: &mut [i32],
-        _: &mut u32,
+        rng: &mut u32,
     ) -> Result<ResultAction, Error> {
         if matches!(phase, Phase::CollisionEnter | Phase::CollisionStay) {
             return Ok(ResultAction::running());
@@ -104,6 +122,36 @@ impl<E: Environment> Kernel for Actions<E> {
             event: NO_EVENT,
         };
         match a.opcode {
+            SET_ROTATION => {
+                if a.operand_count != 3 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                let angle = read(p, operand(p, a, 1)?, v)?;
+                let space = read(p, operand(p, a, 2)?, v)?;
+                if space != 0 {
+                    return Err(Error::Parameter);
+                }
+                self.0.set_rotation_z(role, angle, space)?;
+            }
+            FACE_OBJECT => {
+                if a.operand_count != 6 {
+                    return Err(Error::Parameter);
+                }
+                let roles = [
+                    read(p, operand(p, a, 0)?, v)?,
+                    read(p, operand(p, a, 1)?, v)?,
+                ];
+                let sprite_right = boolean(p, operand(p, a, 2)?, v)?;
+                let clip = if boolean(p, operand(p, a, 3)?, v)? {
+                    Some(read(p, operand(p, a, 4)?, v)?)
+                } else {
+                    None
+                };
+                let reset = boolean(p, operand(p, a, 5)?, v)?;
+                self.0.face_object(roles, sprite_right, clip, reset)?;
+            }
+
             IDLE_BUZZ => {
                 if a.operand_count != 6 {
                     return Err(Error::Parameter);
@@ -119,7 +167,8 @@ impl<E: Environment> Kernel for Actions<E> {
                 if parameters[0] > parameters[1] {
                     return Err(Error::Parameter);
                 }
-                self.0.idle_buzz(role, parameters, phase == Phase::Enter)?;
+                self.0
+                    .idle_buzz(role, parameters, phase == Phase::Enter, rng)?;
             }
             CHASE_OBJECT => {
                 if a.operand_count != 4 {
