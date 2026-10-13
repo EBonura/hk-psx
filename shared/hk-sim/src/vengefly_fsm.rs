@@ -37,6 +37,7 @@ impl Variables {
         }
         Ok(())
     }
+    #[inline(never)]
     pub fn initial(programs: [Program<'_>; 2]) -> Result<Self, Error> {
         let mut store = Self {
             floats: [0; 4],
@@ -56,6 +57,7 @@ impl Variables {
         }
         Ok(store)
     }
+    #[inline(never)]
     pub fn load(
         &self,
         programs: [Program<'_>; 2],
@@ -75,6 +77,7 @@ impl Variables {
             Ok(())
         })
     }
+    #[inline(never)]
     pub fn save(
         &mut self,
         programs: [Program<'_>; 2],
@@ -117,6 +120,7 @@ pub struct Pair {
     rng: u32,
 }
 impl Pair {
+    #[inline(never)]
     pub fn initial(programs: [Program<'_>; 2], seed: u32) -> Result<Self, Error> {
         Ok(Self {
             variables: Variables::initial(programs)?,
@@ -124,6 +128,7 @@ impl Pair {
             rng: seed,
         })
     }
+    #[inline(never)]
     pub fn variable(
         &self,
         programs: [Program<'_>; 2],
@@ -140,6 +145,7 @@ impl Pair {
     }
     /// External original component messages may change a scalar without
     /// resetting either graph or touching the other variable namespace.
+    #[inline(never)]
     pub fn set_variable(
         &mut self,
         programs: [Program<'_>; 2],
@@ -156,18 +162,22 @@ impl Pair {
         values[index] = value;
         self.variables.save(programs, component, values)
     }
+    #[inline(never)]
     pub fn die(&mut self) {
         for cursor in &mut self.cursors {
             cursor.die();
         }
     }
+    #[inline(never)]
     pub fn reset(&mut self, programs: [Program<'_>; 2], seed: u32) -> Result<(), Error> {
         *self = Self::initial(programs, seed)?;
         Ok(())
     }
+    #[inline(never)]
     pub fn state(&self, component: usize) -> Option<u16> {
         self.cursors.get(component).map(|c| c.state())
     }
+    #[inline(never)]
     pub fn step(
         &mut self,
         programs: [Program<'_>; 2],
@@ -186,6 +196,7 @@ impl Pair {
         self.variables.save(programs, component, values)?;
         result
     }
+    #[inline(never)]
     pub fn event(
         &mut self,
         programs: [Program<'_>; 2],
@@ -222,6 +233,7 @@ pub struct State {
     pub flags: u8,
 }
 impl State {
+    #[inline(never)]
     pub fn initial(
         programs: [Program<'_>; 2],
         position: [i32; 2],
@@ -246,6 +258,7 @@ impl State {
     }
     /// The admitted bodies have mass 1 and no gravity or linear damping.
     /// Forces remain queued until the shared original fixed-physics boundary.
+    #[inline(never)]
     pub fn integrate_queued_force(&mut self) {
         for axis in 0..2 {
             let impulse = (self.queued_force[axis] as i64
@@ -255,6 +268,7 @@ impl State {
             self.queued_force[axis] = 0;
         }
     }
+    #[inline(never)]
     pub fn queue_force_and_clamp(
         &mut self,
         force: [i32; 2],
@@ -276,6 +290,7 @@ impl State {
         self.velocity = velocity;
         Ok(())
     }
+    #[inline(never)]
     pub fn decelerate(&mut self, amount: i32) -> Result<(), Error> {
         if amount < 0 {
             return Err(Error::Parameter);
@@ -285,9 +300,11 @@ impl State {
         }
         Ok(())
     }
+    #[inline(never)]
     pub fn enabled(&self, component: usize) -> bool {
         component < 2 && self.flags & (1 << component) != 0
     }
+    #[inline(never)]
     pub fn die(&mut self) {
         self.pair.die();
         self.velocity = [0; 2];
@@ -296,3 +313,64 @@ impl State {
     }
 }
 const _: () = assert!(core::mem::size_of::<State>() == 84);
+
+mod graphs {
+    include!("../../../data/vengefly_fsm.rs");
+}
+fn programs() -> [Program<'static>; 2] {
+    [graphs::CHASER, graphs::RECEIVER].map(|index| {
+        let (start, len, ..) = graphs::GRAPHS[index];
+        // The original cooker checks the immutable bank; scene module
+        // admission checks its packed hash. The caller pins this module for
+        // the synchronous entry, and no Program view is stored in the actor.
+        unsafe {
+            Program::from_verified(&graphs::BANK[start as usize..start as usize + len as usize])
+        }
+    })
+}
+#[inline(never)]
+pub fn new(scene: usize, source: u32, position: [i32; 2], seed: u32) -> Option<State> {
+    let row = graphs::INSTANCES
+        .iter()
+        .find(|(s, id, _, _)| *s as usize == scene && *id as u32 == source)?;
+    State::initial(programs(), position, seed, row.2, row.3).ok()
+}
+/// All callbacks are direct calls through the one concrete production body.
+/// DIR MSG is recorded by the body; admission proved both graphs and their
+/// descendants have no transition for it. It is never converted into damage.
+#[inline(never)]
+pub fn run(
+    body: &mut crate::fsm_chase::Actions<crate::fsm_chase_body::Chasing<'_, '_>>,
+    fixed: bool,
+    damage: bool,
+) -> Result<(), Error> {
+    let programs = programs();
+    let mut pair = body.0.state.pair;
+    let result = (|| {
+        if damage {
+            for (component, index) in [graphs::CHASER, graphs::RECEIVER].into_iter().enumerate() {
+                let event = graphs::GRAPHS[index].2;
+                if body.0.state.enabled(component) && event != hk_format::fsm::NO_EVENT {
+                    pair.event(programs, component, event, body)?;
+                }
+            }
+        } else {
+            for component in 0..2 {
+                if body.0.state.enabled(component) {
+                    pair.step(programs, component, Phase::Update, body)?;
+                }
+            }
+            if fixed {
+                for component in 0..2 {
+                    if body.0.state.enabled(component) {
+                        pair.step(programs, component, Phase::FixedUpdate, body)?;
+                    }
+                }
+                body.0.state.integrate_queued_force();
+            }
+        }
+        Ok(())
+    })();
+    body.0.state.pair = pair;
+    result
+}

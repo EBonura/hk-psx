@@ -13,6 +13,7 @@ use hk_sim::{
 /// before a bank/effect is bound; never silently discard them for enabled actors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunnerEventKind {
+    VengeflyStartle{variant:u8,pitch_q16:i32,volume_q16:i32},
     AudioStop,
     AudioPlay,
     MossmanAudioPlay,
@@ -159,6 +160,7 @@ impl RunnerRuntime {
 }
 #[derive(Clone, Copy)]
 struct RunnerContext {
+    fixed_step:bool,
     camera: [i32; 3],
     hero: [i32; 2],
     hero_body: [i32; 4],
@@ -663,44 +665,13 @@ impl ClimberRuntime {
 /// Gravity-free Buzzer: the controller owns velocity and facing; this runtime
 /// integrates the body against terrain with the bounded solver.
 #[derive(Clone, Copy)]
-struct VengeflyRuntime {
-    controller: hk_sim::vengefly::Vengefly,
-    animation_tick: u32,
-    clip: hk_sim::vengefly::Clip,
-}
+struct VengeflyRuntime {state:hk_sim::vengefly_fsm::State}
 impl VengeflyRuntime {
-    fn clip(&self, spec: &ActorSpec) -> u16 {
-        use hk_sim::vengefly::Clip;
-        let ActorController::Vengefly {
-            startle_clip,
-            chase_clip,
-            turn_fly_clip,
-        } = spec.controller
-        else {
-            panic!("Vengefly runtime with other metadata")
-        };
-        match self.clip {
-            Clip::Idle => spec.walk_clip,
-            Clip::TurnToIdle => spec.turn_clip,
-            Clip::Startle => startle_clip,
-            Clip::Chase => chase_clip,
-            Clip::TurnToFly => turn_fly_clip,
-        }
+    fn clips(spec:&ActorSpec)->[u16;5]{
+        let ActorController::Vengefly{startle_clip,chase_clip,turn_fly_clip}=spec.controller else{panic!("Vengefly metadata")};
+        [spec.walk_clip,startle_clip,chase_clip,spec.turn_clip,turn_fly_clip]
     }
-    fn apply(&mut self, actions: hk_sim::vengefly::Actions) {
-        use hk_sim::vengefly::Action;
-        for action in actions.iter() {
-            match action {
-                Action::Play(clip, tick) => {
-                    self.clip = clip;
-                    self.animation_tick = tick;
-                }
-                // Velocity and facing are read from the controller; the
-                // Startle one-shot is not presented.
-                Action::Velocity(_) | Action::Facing(_) | Action::StartleSound => {}
-            }
-        }
-    }
+    fn clip(&self,spec:&ActorSpec)->u16{Self::clips(spec)[self.state.clip as usize]}
 }
 /// Bouncing Fly: the controller owns the flight angle and facing; this runtime
 /// turns it into a 5.2 unit/s velocity and reports the blocked side.
@@ -1775,9 +1746,7 @@ impl Actor {
                     end_token: None,
                 }),
                 ActorController::Vengefly { .. } => Runtime::Vengefly(VengeflyRuntime {
-                    controller: hk_sim::vengefly::Vengefly::new([placement.x, placement.y], seed),
-                    animation_tick: 0,
-                    clip: hk_sim::vengefly::Clip::Idle,
+                    state:hk_sim::vengefly_fsm::new(scene,placement.source_id,[placement.x,placement.y],seed).expect("admitted Vengefly paired graphs"),
                 }),
                 ActorController::Gruzzer => Runtime::Gruzzer(GruzzerRuntime {
                     controller: hk_sim::gruzzer::Gruzzer::new(seed),
@@ -2316,7 +2285,7 @@ impl Actor {
         }
         if let Some(mut fly) = self.vengefly() {
             self.spawn_state = SpawnState::Ready;
-            self.advance_vengefly(&mut fly, spec, count, &edge, context);
+            self.advance_vengefly(&mut fly, spec, room, count, &edge, context,emit);
             self.runtime = Runtime::Vengefly(fly);
             assert!(
                 self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE,
@@ -2691,7 +2660,7 @@ impl Actor {
         context: RunnerContext,
         count: usize,
         edge: &impl Fn(usize) -> [i32; 4],
-    ) -> hk_sim::vengefly::Senses {
+    ) -> (bool,hk_sim::vengefly::Senses) {
         use hk_sim::runner_senses as q;
         let pos = [self.x, self.y];
         // Alert Range New: a 7.804-unit circle trigger against the hero body box.
@@ -2705,51 +2674,45 @@ impl Actor {
             Err(q::QueryError::ZeroLengthSight) => false,
             Err(_) => panic!("Vengefly LOS outside validated coordinates"),
         };
-        hk_sim::vengefly::Senses {
+        (in_alert_range,hk_sim::vengefly::Senses {
             position: pos,
             hero: context.hero,
             can_see_hero,
-        }
+        })
     }
     /// One 60 Hz step of the Buzzer: FSM tick, then the gravity-free body
     /// moves by its velocity against terrain, plus any Recoil displacement.
     // Its own function so the family can stream as a code module.
     #[inline(never)]
-    fn advance_vengefly(
-        &mut self,
-        fly: &mut VengeflyRuntime,
-        spec: &ActorSpec,
-        count: usize,
-        edge: &impl Fn(usize) -> [i32; 4],
-        context: RunnerContext,
-    ) {
-        fly.animation_tick = fly.animation_tick.saturating_add(1);
-        let senses = self.vengefly_senses(context, count, edge);
-        let actions = fly.controller.tick(senses);
-        fly.apply(actions);
-        self.walk.direction = fly.controller.facing();
-        let b = spec.bounds;
-        let offset = b[0] + (b[2] - b[0]) / 2;
-        let v = fly.controller.velocity();
-        let mut body = Player::spawn(self.x + offset, self.y);
-        let mut p = Params {
-            speed: v[0].abs(),
-            fall: 100 * ONE,
-            half_width: (b[2] - b[0]) / 2,
-            bottom: b[1],
-            top: b[3],
-            ..Params::ZERO
-        };
-        body.vy = v[1];
-        body.step(p, v[0].signum(), false, count, edge);
-        if self.recoil_left != 0 {
-            self.recoil_left -= 1;
-            p.speed = self.recoil[0].abs();
-            body.vy = self.recoil[1];
-            body.step(p, self.recoil[0].signum(), false, count, edge);
+    fn advance_vengefly(&mut self,fly:&mut VengeflyRuntime,spec:&ActorSpec,room:&Room,count:usize,edge:&impl Fn(usize)->[i32;4],context:RunnerContext,emit:&mut impl FnMut(RunnerEvent)){
+        fly.state.animation_tick=fly.state.animation_tick.saturating_add(1);
+        fly.state.face_pause=fly.state.face_pause.saturating_sub(1);
+        self.vengefly_graph(fly,spec,room,count,edge,context,false,emit);
+        let b=spec.bounds;let offset=b[0]+(b[2]-b[0])/2;
+        let mut body=Player::spawn(self.x+offset,self.y);
+        let mut p=Params{fall:100*ONE,half_width:(b[2]-b[0])/2,bottom:b[1],top:b[3],..Params::ZERO};
+        if context.fixed_step{
+            let velocity=fly.state.velocity;
+            let scale=|value:i32|->i32{(value as i64*60*hk_sim::fsm_chase::FixedClock::FIXED_UNITS as i64/hk_sim::fsm_chase::FixedClock::SOURCE_RATE as i64) as i32};
+            let vx=scale(velocity[0]);p.speed=vx.abs();body.vy=scale(velocity[1]);
+            body.step(p,vx.signum(),false,count,edge);
+            if body.vy==0&&velocity[1]!=0{fly.state.velocity[1]=0;}
         }
-        self.x = body.x - offset;
-        self.y = body.y;
+        if self.recoil_left!=0{
+            self.recoil_left-=1;p.speed=self.recoil[0].abs();body.vy=self.recoil[1];body.step(p,self.recoil[0].signum(),false,count,edge);
+        }
+        self.x=body.x-offset;self.y=body.y;
+    }
+    #[inline(never)]
+    fn vengefly_graph(&mut self,fly:&mut VengeflyRuntime,spec:&ActorSpec,room:&Room,count:usize,edge:&impl Fn(usize)->[i32;4],context:RunnerContext,damage:bool,emit:&mut impl FnMut(RunnerEvent)){
+        let (in_range,senses)=self.vengefly_senses(context,count,edge);
+        let mut body=hk_sim::fsm_chase::Actions(hk_sim::fsm_chase_body::Chasing{
+            state:&mut fly.state,room,clips:VengeflyRuntime::clips(spec),position:senses.position,hero:senses.hero,facing:self.walk.direction,
+            can_see:senses.can_see_hero,in_range,sound:None,direction_messages:0,
+        });
+        hk_sim::vengefly_fsm::run(&mut body,context.fixed_step,damage).expect("admitted Vengefly action parameters");
+        self.walk.direction=body.0.facing;
+        if let Some(sound)=body.0.sound{emit(RunnerEvent{scene:self.scene,source_id:self.source_id,position:[self.x,self.y],facing:self.walk.direction,kind:RunnerEventKind::VengeflyStartle{variant:sound.variant,pitch_q16:sound.pitch,volume_q16:sound.volume}});}
     }
     /// One 60 Hz step of the Moss Walker: the senses its FSM reads this tick
     /// (the wake circle and line while buried or due a hide check, the
@@ -4781,6 +4744,7 @@ pub struct Events {
     pub dream_soul: u16,
 }
 pub struct EnemyWorld {
+    fixed_clock:hk_sim::fsm_chase::FixedClock,
     actors: [Option<Actor>; MAX_ACTORS],
     shots: [Option<Shot>; SHOTS],
     /// Live `Shockwave Wave`s. A slam makes one and the next slam cannot come
@@ -5133,6 +5097,7 @@ impl EnemyWorld {
     }
     pub const fn new() -> Self {
         Self {
+            fixed_clock:hk_sim::fsm_chase::FixedClock::new(),
             actors: [None; MAX_ACTORS],
             shots: [None; SHOTS],
             waves: [None; WAVES],
@@ -5373,6 +5338,7 @@ impl EnemyWorld {
             player.y + crate::PARAMS.top,
         ];
         let mut context = RunnerContext {
+            fixed_step:self.fixed_clock.step(),
             camera,
             hero: [player.x, player.y],
             hero_body: body,
@@ -5987,7 +5953,7 @@ impl EnemyWorld {
                             }
                             match &mut actor.runtime {
                                 Runtime::Climber(c) => c.controller.die(),
-                                Runtime::Vengefly(f) => f.controller.die(),
+                                Runtime::Vengefly(f) => f.state.die(),
                                 Runtime::Gruzzer(f) => f.controller.die(),
                                 Runtime::AcidFlyer(f) => f.controller.die(),
                                 Runtime::Mosquito(m) => m.controller.die(),
@@ -6105,18 +6071,7 @@ impl EnemyWorld {
                         }
                         if let Some(mut fly) = actor.vengefly() {
                             if !actor.health.dead {
-                                let senses =
-                                    actor.vengefly_senses(context, terrain_room.counts[5], &|i| {
-                                        state.edge_in_view(
-                                            region,
-                                            room,
-                                            terrain_region,
-                                            terrain_room,
-                                            i,
-                                        )
-                                    });
-                                let actions = fly.controller.took_damage(senses);
-                                fly.apply(actions);
+                                actor.vengefly_graph(&mut fly,spec,&terrain_room,terrain_room.counts[5],&|i|state.edge_in_view(region,room,terrain_region,terrain_room,i),context,true,&mut runner_event);
                             }
                             actor.runtime = Runtime::Vengefly(fly);
                         }
@@ -6408,9 +6363,9 @@ impl EnemyWorld {
                 // The source sprite faces left (-1 native, +1 mirrored), as the Crawler.
                 (
                     fly.clip(spec),
-                    fly.animation_tick,
+                    fly.state.animation_tick,
                     (actor.x, actor.y),
-                    fly.controller.facing(),
+                    actor.walk.direction,
                 )
             } else if let Some(fly) = actor.gruzzer() {
                 (
@@ -7316,6 +7271,7 @@ mod hatcher_pool_tests {
     fn context(cage_children: u16) -> RunnerContext {
         let hero = [20 * ONE, 18 * ONE];
         RunnerContext {
+            fixed_step:false,
             camera: [0, 0, -2496922],
             hero,
             hero_body: [
@@ -7606,6 +7562,7 @@ mod runner_runtime_tests {
     fn context(hero_x: i32) -> RunnerContext {
         let y = AT.y;
         RunnerContext {
+            fixed_step:false,
             camera: [0, 2 * ONE, -2496922],
             hero: [hero_x, y],
             hero_body: [

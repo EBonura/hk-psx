@@ -1,9 +1,35 @@
 //! Vengefly action closure under construction. Unknown actions stay refused;
 //! these scalar kernels do not imply admission of either complete graph.
-use crate::{
-    fsm::{Error, Kernel, Phase, ResultAction},
-    fsm_actions::{boolean, event, operand, read, write},
-};
+use crate::fsm::{Error, Kernel, Phase, ResultAction};
+#[inline(never)]
+fn operand(p: &Program<'_>, a: Action, index: u8) -> Result<hk_format::fsm::Operand, Error> {
+    crate::fsm_actions::operand(p, a, index)
+}
+#[inline(never)]
+fn read(p: &Program<'_>, o: hk_format::fsm::Operand, v: &[i32]) -> Result<i32, Error> {
+    crate::fsm_actions::read(p, o, v)
+}
+#[inline(never)]
+fn write(
+    p: &Program<'_>,
+    o: hk_format::fsm::Operand,
+    v: &mut [i32],
+    value: i32,
+) -> Result<(), Error> {
+    crate::fsm_actions::write(p, o, v, value)
+}
+#[inline(never)]
+fn event(o: hk_format::fsm::Operand) -> Result<u16, Error> {
+    crate::fsm_actions::event(o)
+}
+#[inline(never)]
+fn boolean(p: &Program<'_>, o: hk_format::fsm::Operand, v: &[i32]) -> Result<bool, Error> {
+    match read(p, o, v)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(Error::Parameter),
+    }
+}
 use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
 
 pub trait Environment {
@@ -110,6 +136,7 @@ pub trait Environment {
 }
 pub struct Actions<E>(pub E);
 impl<E: Environment> Kernel for Actions<E> {
+    #[inline(never)]
     fn execute(
         &mut self,
         p: &Program<'_>,

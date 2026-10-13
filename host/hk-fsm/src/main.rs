@@ -3,6 +3,7 @@ use hk_fsm_cook::cook;
 use hk_unity::{Source, Value, playmaker::enabled};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.len()==3&&args[1]=="cook-vengeflies"{return hk_fsm_cook::cook_vengeflies(std::path::Path::new(&args[2]));}
     if args.len()==3&&args[1]=="cook-crawlers"{return hk_fsm_cook::cook_crawlers(std::path::Path::new(&args[2]));}
     if (args.len() != 4 || args[1] != "inspect") && (args.len() != 5 || args[1] != "cook") {
         return Err("usage: hk-fsm-cook inspect DATA FILE:PATH_ID | cook DATA FILE:PATH_ID OUTPUT".into());
