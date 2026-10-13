@@ -7,6 +7,16 @@ use crate::{
 use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
 
 pub trait Environment {
+    fn audio_one_shot(
+        &mut self,
+        _role: i32,
+        _weights: [i32; 3],
+        _pitch: [i32; 2],
+        _volume: i32,
+        _rng: &mut u32,
+    ) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
     fn send_took_damage(&mut self) -> Result<(), Error> {
         Err(Error::UnsupportedAction)
     }
@@ -125,6 +135,33 @@ impl<E: Environment> Kernel for Actions<E> {
             event: NO_EVENT,
         };
         match a.opcode {
+            AUDIO_ONE_SHOT => {
+                if a.operand_count != 7 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                let weights = [
+                    read(p, operand(p, a, 1)?, v)?,
+                    read(p, operand(p, a, 2)?, v)?,
+                    read(p, operand(p, a, 3)?, v)?,
+                ];
+                let pitch = [
+                    read(p, operand(p, a, 4)?, v)?,
+                    read(p, operand(p, a, 5)?, v)?,
+                ];
+                let volume = read(p, operand(p, a, 6)?, v)?;
+                if weights.iter().any(|n| *n < 0)
+                    || weights.iter().all(|n| *n == 0)
+                    || pitch[0] <= 0
+                    || pitch[1] < pitch[0]
+                    || volume < 0
+                    || volume > 65536
+                {
+                    return Err(Error::Parameter);
+                }
+                self.0.audio_one_shot(role, weights, pitch, volume, rng)?;
+            }
+
             SEND_EVENT_BY_NAME => {
                 if a.operand_count != 1 || read(p, operand(p, a, 0)?, v)? != 1 {
                     return Err(Error::Parameter);

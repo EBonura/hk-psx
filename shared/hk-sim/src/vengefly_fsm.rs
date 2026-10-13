@@ -206,3 +206,52 @@ impl Pair {
     }
 }
 const _: () = assert!(core::mem::size_of::<Pair>() == 36);
+
+/// Persistent actor payload; sensory queries, rendering and transport remain
+/// borrowed game services. Component enablement uses the original ordered bits.
+#[derive(Clone, Copy)]
+pub struct State {
+    pub pair: Pair,
+    pub buzz: crate::buzz::IdleBuzz,
+    pub velocity: [i32; 2],
+    pub queued_force: [i32; 2],
+    pub audio_pitch: i32,
+    pub animation_tick: u32,
+    pub face_pause: u16,
+    pub clip: u8,
+    pub flags: u8,
+}
+impl State {
+    pub fn initial(
+        programs: [Program<'_>; 2],
+        position: [i32; 2],
+        seed: u32,
+        enabled: u8,
+        audio_pitch: i32,
+    ) -> Result<Self, Error> {
+        if enabled & !3 != 0 || audio_pitch <= 0 {
+            return Err(Error::Parameter);
+        }
+        Ok(Self {
+            pair: Pair::initial(programs, seed)?,
+            buzz: crate::buzz::IdleBuzz::new(position),
+            velocity: [0; 2],
+            queued_force: [0; 2],
+            audio_pitch,
+            animation_tick: 0,
+            face_pause: 0,
+            clip: 0,
+            flags: enabled,
+        })
+    }
+    pub fn enabled(&self, component: usize) -> bool {
+        component < 2 && self.flags & (1 << component) != 0
+    }
+    pub fn die(&mut self) {
+        self.pair.die();
+        self.velocity = [0; 2];
+        self.queued_force = [0; 2];
+        self.flags &= 3;
+    }
+}
+const _: () = assert!(core::mem::size_of::<State>() == 84);

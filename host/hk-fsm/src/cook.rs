@@ -214,6 +214,23 @@ impl Tables {
                 if delay.get("useVariable").is_some_and(Value::truthy)||delay.get("value").and_then(Value::float)!=Some(0.0)||get(f,"everyFrame")?.truthy(){return Err("SendEventByName schedule unsupported".into());}
                 SEND_EVENT_BY_NAME
             }
+
+            "AudioPlayerOneShot"=>{
+                self.object(get(f,"spawnPoint")?)?;
+                let prefab=get(f,"audioPlayer")?;
+                let reference=prefab.get("value").ok_or("audio prefab reference")?;
+                if prefab.get("useVariable").is_some_and(Value::truthy)||reference.get("m_FileID").and_then(Value::int).is_none_or(|n|n<=0)||reference.get("m_PathID").and_then(Value::int).is_none_or(|n|n<=0){return Err("audio prefab override unsupported".into());}
+                let player=get(f,"storePlayer")?;
+                if player.get("useVariable").is_some_and(Value::truthy)&&!text(player.get("name"))?.is_empty(){return Err("audio player output unsupported".into());}
+                let clips:Vec<_>=f.iter().filter(|(name,value)|name.parse::<usize>().is_ok()&&value.get("m_PathID").is_some()).collect();
+                let weights:Vec<_>=f.iter().filter(|(name,value)|name.parse::<usize>().is_ok()&&value.get("value").and_then(Value::float).is_some()).map(|(_,value)|value).collect();
+                if clips.len()!=3||weights.len()!=3{return Err("AudioPlayerOneShot requires original three-clip bank".into());}
+                for weight in weights{self.operand(weight,2)?;}
+                for name in ["pitchMin","pitchMax","volume"]{self.arg(f,name,2)?;}
+                let delay=get(f,"delay")?;
+                if delay.get("useVariable").is_some_and(Value::truthy)||delay.get("value").and_then(Value::float)!=Some(0.0){return Err("delayed audio spawn unsupported".into());}
+                AUDIO_ONE_SHOT
+            }
             "CheckCanSeeHero"=>{self.arg(f,"storeResult",1)?;CHECK_CAN_SEE_HERO}
             "CheckAlertRange"=>{self.arg(f,"alertRange",3)?;self.arg(f,"storeResult",1)?;CHECK_ALERT_RANGE}
             "FindAlertRange"=>{
