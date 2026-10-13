@@ -209,7 +209,7 @@ impl Tables {
                 if target.get("target").and_then(Value::int)!=Some(1)||target.get("excludeSelf").and_then(|v|v.get("value")).is_none_or(Value::truthy)||target.get("sendToChildren").and_then(|v|v.get("value")).is_none_or(|v|!v.truthy())||text(target.get("fsmName").and_then(|v|v.get("value")))?!=""{return Err("SendEventByName recipient subset unsupported".into());}
                 self.object(target.get("gameObject").ok_or("event target owner")?)?;
                 let event=get(f,"sendEvent")?;
-                if event.get("useVariable").is_some_and(Value::truthy)||text(event.get("value"))?!="TOOK DAMAGE"{return Err("SendEventByName message unsupported".into());}
+                if event.get("useVariable").is_some_and(Value::truthy)||text(event.get("value"))?!="DIR MSG"{return Err("SendEventByName message unsupported".into());}
                 let delay=get(f,"delay")?;
                 if delay.get("useVariable").is_some_and(Value::truthy)||delay.get("value").and_then(Value::float)!=Some(0.0)||get(f,"everyFrame")?.truthy(){return Err("SendEventByName schedule unsupported".into());}
                 SEND_EVENT_BY_NAME
@@ -416,7 +416,7 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
                     continue;
                 }
                 let crawler=fsm.get("name").and_then(Value::str).as_deref()==Some("Crawler");
-                if !matches!(v.int(),Some(1|12|15|17|18|19|20|23))&&!(crawler&&matches!(v.int(),Some(2|7|28)))&&!(paired_chase&&matches!(v.int(),Some(3|5|7|24|28|31|35|37))){return Err("unsupported enabled parameter type".into());}
+                if !matches!(v.int(),Some(1|12|15|17|18|19|20|23))&&!(crawler&&matches!(v.int(),Some(2|7|28)))&&!(paired_chase&&matches!(v.int(),Some(3|5|7|16|24|28|31|35|37))){return Err("unsupported enabled parameter type".into());}
             }
             let raw=data.get("actionNames").and_then(Value::list).and_then(|v|v.get(index)).and_then(Value::str).ok_or("action identity")?;
             let expected=format!("HutongGames.PlayMaker.Actions.{name}");

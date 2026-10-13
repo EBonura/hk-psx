@@ -93,6 +93,17 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
             if !["chaser", "flyer_receive_direction_msg"].contains(&name.as_str()) || named.contains_key(&name) {
                 return Err("unexpected Vengefly FSM graph set".into());
             }
+            // The original broadcast DIR MSG has no recipient transition in
+            // this admitted pair. Never reinterpret it as HealthManager's
+            // independent TOOK DAMAGE event.
+            for state in fsm.get("states").and_then(Value::list).ok_or("FSM states")?{
+                for edge in state.get("transitions").and_then(Value::list).ok_or("state transitions")?{
+                    if edge.get("fsmEvent").and_then(|v|v.get("name")).and_then(Value::str).as_deref()==Some("DIR MSG"){return Err("new DIR MSG recipient transition unsupported".into());}
+                }
+            }
+            for edge in fsm.get("globalTransitions").and_then(Value::list).ok_or("global transitions")?{
+                if edge.get("fsmEvent").and_then(|v|v.get("name")).and_then(Value::str).as_deref()==Some("DIR MSG"){return Err("new global DIR MSG recipient unsupported".into());}
+            }
             let bytes = crate::cook(fsm)?;
             let index = if let Some(index) = banks.iter().position(|bank| bank == &bytes) { index }
                 else { let index = banks.len(); banks.push(bytes); index };
