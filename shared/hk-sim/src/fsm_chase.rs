@@ -7,6 +7,19 @@ use crate::{
 use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
 
 pub trait Environment {
+    fn elapsed_ticks(&self, _real_time: bool) -> Result<u16, Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn can_see_hero(&self) -> Result<bool, Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn in_alert_range(&self, _role: i32) -> Result<bool, Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn find_alert_range(&self, _role: i32) -> Result<i32, Error> {
+        Err(Error::UnsupportedAction)
+    }
+
     fn tick(&self) -> u32;
     fn velocity(&self, _object: i32, _space: i32) -> Result<[i32; 2], Error> {
         Err(Error::UnsupportedAction)
@@ -53,6 +66,66 @@ impl<E: Environment> Kernel for Actions<E> {
             event: NO_EVENT,
         };
         match a.opcode {
+            GET_OWNER => {
+                if a.operand_count != 1 {
+                    return Err(Error::Parameter);
+                }
+                write(p, operand(p, a, 0)?, v, 1)?;
+            }
+            BOOL_TEST => {
+                if a.operand_count != 3 {
+                    return Err(Error::Parameter);
+                }
+                let selected = if boolean(p, operand(p, a, 0)?, v)? {
+                    1
+                } else {
+                    2
+                };
+                result.event = event(operand(p, a, selected)?)?;
+            }
+            WAIT => {
+                if a.operand_count != 4 {
+                    return Err(Error::Parameter);
+                }
+                let timer = operand(p, a, 1)?;
+                let remaining = if phase == Phase::Enter {
+                    read(p, operand(p, a, 0)?, v)?
+                        .max(0)
+                        .checked_mul(60)
+                        .ok_or(Error::Parameter)?
+                } else {
+                    let real = boolean(p, operand(p, a, 3)?, v)?;
+                    let elapsed = (self.0.elapsed_ticks(real)? as i32).saturating_mul(65536);
+                    read(p, timer, v)?.saturating_sub(elapsed).max(0)
+                };
+                write(p, timer, v, remaining)?;
+                result.finished = remaining == 0;
+                if result.finished {
+                    result.event = event(operand(p, a, 2)?)?;
+                }
+            }
+
+            CHECK_CAN_SEE_HERO => {
+                if a.operand_count != 1 {
+                    return Err(Error::Parameter);
+                }
+                write(p, operand(p, a, 0)?, v, self.0.can_see_hero()? as i32)?;
+            }
+            CHECK_ALERT_RANGE => {
+                if a.operand_count != 2 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                write(p, operand(p, a, 1)?, v, self.0.in_alert_range(role)? as i32)?;
+            }
+            FIND_ALERT_RANGE => {
+                if a.operand_count != 2 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                write(p, operand(p, a, 1)?, v, self.0.find_alert_range(role)?)?;
+            }
+
             GET_VELOCITY_2D => {
                 if a.operand_count != 4 {
                     return Err(Error::Parameter);

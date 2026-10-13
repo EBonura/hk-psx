@@ -76,7 +76,7 @@ impl<'a> Program<'a> {
                 || op == RANDOM_FLOAT || op == GET_DISTANCE || op == FLOAT_COMPARE || op == FLOAT_SWITCH
                 || op == FACE_DIRECTION || op == SET_VELOCITY_ANGLE || op == COLLISION_STAY || op == COLLISION_ENTER {
                 groups |= GROUP_FLY;
-            } else if op==FLOAT_CLAMP||op==BOOL_ALL_TRUE||op==NEXT_FRAME_EVENT||op==GET_VELOCITY_2D||op==SET_VELOCITY_2D||op==ADD_FORCE_2D||op==DECELERATE {
+            } else if op==FLOAT_CLAMP||op==BOOL_ALL_TRUE||op==NEXT_FRAME_EVENT||op==GET_VELOCITY_2D||op==SET_VELOCITY_2D||op==ADD_FORCE_2D||op==DECELERATE||op==CHECK_CAN_SEE_HERO||op==CHECK_ALERT_RANGE||op==FIND_ALERT_RANGE {
                 groups|=GROUP_CHASE;
             } else { return Err(Error::Limit); }
         }
@@ -227,6 +227,9 @@ pub const GET_VELOCITY_2D:u16=331;
 pub const SET_VELOCITY_2D:u16=347;
 pub const ADD_FORCE_2D:u16=359;
 pub const DECELERATE:u16=449;
+pub const CHECK_CAN_SEE_HERO:u16=461;
+pub const CHECK_ALERT_RANGE:u16=479;
+pub const FIND_ALERT_RANGE:u16=487;
 pub const FLOAT_CLAMP:u16=373;
 pub const BOOL_ALL_TRUE:u16=419;
 pub const NEXT_FRAME_EVENT:u16=431;

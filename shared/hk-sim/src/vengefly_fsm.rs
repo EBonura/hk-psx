@@ -124,6 +124,38 @@ impl Pair {
             rng: seed,
         })
     }
+    pub fn variable(
+        &self,
+        programs: [Program<'_>; 2],
+        component: usize,
+        index: usize,
+    ) -> Result<i32, Error> {
+        if component > 1 || index >= programs[component].variable_count() as usize {
+            return Err(Error::Parameter);
+        }
+        let mut values = [0; MAX_VARIABLES];
+        let values = &mut values[..programs[component].variable_count() as usize];
+        self.variables.load(programs, component, values)?;
+        Ok(values[index])
+    }
+    /// External original component messages may change a scalar without
+    /// resetting either graph or touching the other variable namespace.
+    pub fn set_variable(
+        &mut self,
+        programs: [Program<'_>; 2],
+        component: usize,
+        index: usize,
+        value: i32,
+    ) -> Result<(), Error> {
+        if component > 1 || index >= programs[component].variable_count() as usize {
+            return Err(Error::Parameter);
+        }
+        let mut values = [0; MAX_VARIABLES];
+        let values = &mut values[..programs[component].variable_count() as usize];
+        self.variables.load(programs, component, values)?;
+        values[index] = value;
+        self.variables.save(programs, component, values)
+    }
     pub fn die(&mut self) {
         for cursor in &mut self.cursors {
             cursor.die();

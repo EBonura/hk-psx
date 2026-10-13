@@ -137,6 +137,12 @@ impl Tables {
                 self.operands.push((3,CAMERA as u16));self.arg(f,"store",3)?;FIND_OBJECT
             }
             "BoolTest"=>{self.arg(f,"boolVariable",1)?;self.ev(f,"isTrue")?;self.ev(f,"isFalse")?;BOOL_TEST}
+            "CheckCanSeeHero"=>{self.arg(f,"storeResult",1)?;CHECK_CAN_SEE_HERO}
+            "CheckAlertRange"=>{self.arg(f,"alertRange",3)?;self.arg(f,"storeResult",1)?;CHECK_ALERT_RANGE}
+            "FindAlertRange"=>{
+                if text(Some(get(f,"childName")?))?!="Alert Range New"{return Err("FindAlertRange child binding unsupported".into());}
+                self.object(get(f,"target")?)?;self.arg(f,"storeResult",3)?;FIND_ALERT_RANGE
+            }
             "GetVelocity2d"=>{
                 let vector=get(f,"vector")?;
                 if !vector.get("useVariable").is_some_and(Value::truthy)||!text(vector.get("name"))?.is_empty(){return Err("GetVelocity2d vector output unsupported".into());}
@@ -145,6 +151,9 @@ impl Tables {
                 let space=get(f,"space")?.int().ok_or("GetVelocity2d space enum")?;
                 if space!=0&&space!=1{return Err("GetVelocity2d space unsupported".into());}
                 self.operand(&Value::Int(space),3)?;GET_VELOCITY_2D
+            }
+            "Decelerate"=>{
+                self.object(get(f,"gameObject")?)?;self.arg(f,"deceleration",2)?;flags|=UPDATE;DECELERATE
             }
             "SetVelocity2d"=>{
                 let vector=get(f,"vector")?;
@@ -271,8 +280,15 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
             if all_declarations.contains(&name){return Err("duplicate variable declaration".into());}
             all_declarations.push(name);
         }
-        let kind=match &**group {"boolVariables"=>1,"floatVariables"=>2,"gameObjectVariables"=>3,_=>continue};
-        for item in items {let n=text(item.get("name"))?;t.declarations.push((n,item.get("value").cloned().ok_or("variable initial value")?,kind));}
+        let kind=match &**group {"boolVariables"=>1,"floatVariables"=>2,"gameObjectVariables"=>3,"objectVariables" if paired_chase=>3,_=>continue};
+        for item in items {
+            if group=="objectVariables"&&(text(item.get("name"))?!="Alert Range"||text(item.get("typeName"))?!="AlertRange"||item.get("value").and_then(|v|v.get("m_FileID")).and_then(Value::int)!=Some(0)||item.get("value").and_then(|v|v.get("m_PathID")).and_then(Value::int)!=Some(0)){return Err("unsupported object variable role".into());}
+            let n=text(item.get("name"))?;t.declarations.push((n,item.get("value").cloned().ok_or("variable initial value")?,kind));
+        }
+    }
+    if paired_chase {
+        let names:Vec<_>=t.declarations.iter().map(|(name,_,_)|name.clone()).collect();
+        for name in names{t.variable(name)?;}
     }
     let mut state_rows=vec![];let mut actions=vec![];let mut edges=vec![];let mut collision_layers=vec![];
     for state in states {
@@ -298,14 +314,14 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
                     continue;
                 }
                 let crawler=fsm.get("name").and_then(Value::str).as_deref()==Some("Crawler");
-                if !matches!(v.int(),Some(1|12|15|17|18|19|20|23))&&!(crawler&&matches!(v.int(),Some(2|7|28))){return Err("unsupported enabled parameter type".into());}
+                if !matches!(v.int(),Some(1|12|15|17|18|19|20|23))&&!(crawler&&matches!(v.int(),Some(2|7|28)))&&!(paired_chase&&matches!(v.int(),Some(3|5|7|24|28|31|35|37))){return Err("unsupported enabled parameter type".into());}
             }
             let raw=data.get("actionNames").and_then(Value::list).and_then(|v|v.get(index)).and_then(Value::str).ok_or("action identity")?;
             let expected=format!("HutongGames.PlayMaker.Actions.{name}");
-            if raw!=expected{return Err(format!("unsupported action identity {raw}").into());}
+            if raw!=expected&&!(paired_chase&&matches!(raw.as_str(),"CheckCanSeeHero"|"CheckAlertRange"|"FindAlertRange")){return Err(format!("unsupported action identity {raw}").into());}
             if name=="FloatSwitch"{validate_switch(data,index)?;}
             if name=="BoolAllTrue"{validate_bool_array(data,index)?;}
-            let f=if fsm.get("name").and_then(Value::str).as_deref()==Some("Crawler"){crawler_fields(data,index)?}else{action_fields_with_plain_strings(data,index,true)?};
+            let f=if paired_chase{crate::vengefly::action_fields(data,index)?}else if fsm.get("name").and_then(Value::str).as_deref()==Some("Crawler"){crawler_fields(data,index)?}else{action_fields_with_plain_strings(data,index,true)?};
             let start=t.operands.len() as u16;
             let (opcode,flags)=t.action(&name,&f)?;
             actions.push((opcode,start,(t.operands.len()-start as usize) as u8,flags));
