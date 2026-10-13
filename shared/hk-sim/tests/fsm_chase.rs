@@ -393,10 +393,10 @@ fn force_keeps_present_none_caps_and_uses_fixed_callbacks() {
 
 fn paired_room() -> Vec<u8> {
     let mut b = Vec::from(*b"HKROOM02");
-    for n in [1u32, 1, 0, 1, 5, 1, 0, 0] { b.extend(n.to_le_bytes()); }
+    for n in [1u32, 1, 0, 5, 5, 1, 0, 0] { b.extend(n.to_le_bytes()); }
     for n in [0u16, 0, 0, 4, 4, 0] { b.extend(n.to_le_bytes()); }
     b.extend(0u32.to_le_bytes());
-    for n in [0i32, -65536 / 2, -65536, 65536 / 2, 0] { b.extend(n.to_le_bytes()); }
+    for _ in 0..5 { for n in [0i32, -65536 / 2, -65536, 65536 / 2, 0] { b.extend(n.to_le_bytes()); } }
     for mode in [0u32, 2, 0, 2, 2] {
         for n in [0u32, 5, 12 * 65536, mode] { b.extend(n.to_le_bytes()); }
     }
