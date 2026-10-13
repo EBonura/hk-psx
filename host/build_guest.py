@@ -104,13 +104,18 @@ def boot_art():
     if not path.is_file() or path.read_text()!=text:path.write_text(text)
     if at['read_font.hk'][0]!=len((ROOT/'data/menu.hk').read_bytes()):raise ValueError('the glyphs must follow the title art')
 
-def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=True, profile=None, work=None):
+def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=True, profile=None, work=None, elf_only=False):
     """profile: None for the ordinary build, 'collect' for the profiling flat
     image, 'elf' for the same code linked as an ELF that keeps its DWARF
     (work/hk-psx.elf, no disc or scans), or the path of an LLVM sample profile
     to optimise with. work: put the map, hazard report, EXE and disc in this
     directory instead of the canonical ones."""
+    if profile is None and not elf_only:
+        from shared_publish import tool_source
+        tool_source()  # Fail before any guest compilation when the publisher is unavailable.
     if residency!="scene_gate":raise ValueError('Guest coverage residency requires scene_gate')
+    if elf_only and (work is None or profile is not None):
+        raise ValueError('ELF-only measurement requires --work and canonical production flags without --profile')
     spaced=[str(p) for p in (ROOT,work or '',profile or '') if re.search(r'\s',str(p))]
     if profile is not None and spaced:
         # A profile binds to the checkout path that built it, and the pgo
@@ -155,6 +160,8 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     import code_modules
     scene_code,art=module_tables()
     base_linker=prepare_linker(ROOT,out)
+    # Ordinary publication uses the shared SDK tool; profiling retains its own path.
+    if profile is None:os.environ["HK_SHARED_PUBLISHER"]="1"
     layered=code_modules.layer(base_linker.read_text())
     linker=out/f'hk-psx-ovl-{hashlib.sha256(layered.encode()).hexdigest()[:16]}.ld'
     linker.write_text(layered)
@@ -197,13 +204,26 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     if features:cmd+=['--features',','.join(features)]
     run(cmd,cwd=ROOT/'game',env=env)
     linked=guest_target/'mipsel-sony-psx/release/hk-psx.exe'
-    if profile=='elf':
+    if profile=='elf' or elf_only:
         shutil.copy2(linked,out/'hk-psx.elf')
         return {'elf':out/'hk-psx.elf'}
     # Split and patch from the linker's own bytes, so a cached link stays clean.
     exe=out/'hk-psx-patched.exe'
     from hazards import scan, stack_guard
     report=out/'hazards.json' if work else hazard_report_path(telemetry,candidate)
+    if profile is None:
+        from shared_publish import publish
+        publish(ROOT, linked, link_map, out, scene_code, art)
+        shutil.copy2(out/'runtime.exe',exe)
+        resident_map=out/'resident.map'
+        scan(exe,resident_map,report_path=report)
+        stack_guard(exe,resident_map)
+        check_main_frame(exe,link_map.read_text())
+        if link_map.resolve()!=(out/'hk-psx.map').resolve():shutil.copy2(link_map,out/'hk-psx.map')
+        outputs={'exe':out/'hk-psx.exe','bin':out/'disc/hk-psx.bin','cue':out/'disc/hk-psx.cue'} if work else artifacts(telemetry,candidate)
+        outputs['exe'].parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(exe,outputs['exe'])
+        return outputs
     module_report=code_modules.harden(linked,exe,link_map,out/'module-work',report.parent,scene_code,{**art,**code_modules.carried_blobs(ROOT)})
     (out/'modules.json').write_text(json.dumps(module_report,indent=1))
     # The EXE alone holds no module, so its checks read the map without them.
@@ -226,5 +246,6 @@ if __name__=='__main__':
     parser.add_argument('--no-prepass',action='store_true',help='reuse the packed scenes, tile certificates and coverage bundles already on disk')
     parser.add_argument('--profile',help="PGO stage: 'collect', 'elf', or the sample profile to optimise with")
     parser.add_argument('--work',type=Path,help='write the map, hazards, EXE and disc here instead of the canonical outputs')
+    parser.add_argument('--elf-only',action='store_true',help='stop after linking with canonical production flags; writes ELF/map only, no qualification or disc')
     args=parser.parse_args()
-    build(args.telemetry,candidate=args.candidate,residency=args.residency,run_prepass=not args.no_prepass,profile=args.profile,work=args.work)
+    build(args.telemetry,candidate=args.candidate,residency=args.residency,run_prepass=not args.no_prepass,profile=args.profile,work=args.work,elf_only=args.elf_only)

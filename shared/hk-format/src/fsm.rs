@@ -12,6 +12,12 @@ pub const ENABLED: u8 = 1;
 /// Kernel scheduling requirement, including waits/animation completion even
 /// when the original action has no serialized `everyFrame` property.
 pub const UPDATE: u8 = 2;
+/// Core ordered executor and bounded operand helpers.
+pub const GROUP_CORE: u8 = 1;
+/// Wait, Translate and WalkLeftRight kernels; BoolTest is shared core.
+pub const GROUP_WALK: u8 = 2;
+/// Remaining admitted Gruzzer kernels.
+pub const GROUP_FLY: u8 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
@@ -50,6 +56,28 @@ pub struct Program<'a> {
 fn word(b: &[u8], p: usize) -> u16 { u16::from_le_bytes([b[p], b[p + 1]]) }
 fn integer(b: &[u8], p: usize) -> i32 { i32::from_le_bytes(b[p..p + 4].try_into().unwrap()) }
 impl<'a> Program<'a> {
+    /// Required kernels across the entire immutable action table, including
+    /// every state and global transition destination. Unknown actions refuse
+    /// admission rather than relying on which route happened to execute.
+    pub fn action_groups(self) -> Result<u8, Error> {
+        use opcode::*;
+        let mut groups = GROUP_CORE;
+        for index in 0..self.actions {
+            let action = self.action(index).ok_or(Error::Limit)?;
+            if action.flags & ENABLED == 0 { continue; }
+            let op = action.opcode;
+            if op == BOOL_TEST {
+                // Both concrete family closures implement this core action.
+            } else if op == WAIT || op == TRANSLATE || op == WALK_LEFT_RIGHT {
+                groups |= GROUP_WALK;
+            } else if op == GET_OWNER || op == FIND_OBJECT || op == SET_BOOL || op == SET_FLOAT
+                || op == RANDOM_FLOAT || op == GET_DISTANCE || op == FLOAT_COMPARE || op == FLOAT_SWITCH
+                || op == FACE_DIRECTION || op == SET_VELOCITY_ANGLE || op == COLLISION_STAY || op == COLLISION_ENTER {
+                groups |= GROUP_FLY;
+            } else { return Err(Error::Limit); }
+        }
+        Ok(groups)
+    }
     pub fn parse(bytes: &'a [u8]) -> Result<Self, Error> {
         if bytes.len() < HEADER || &bytes[..8] != MAGIC { return Err(Error::Header); }
         let counts = core::array::from_fn::<_, 8, _>(|i| word(bytes, 8 + i * 2));
@@ -151,7 +179,7 @@ impl<'a> Program<'a> {
         (index < self.variables).then(|| self.bytes[self.offsets[4] + index as usize * 8 + 4])
     }
     #[inline(always)]
-    pub fn initial(self, index: u16) -> Option<i32> {
+    pub fn initial(&self, index: u16) -> Option<i32> {
         (index < self.variables).then(|| integer(self.bytes, self.offsets[4] + index as usize * 8))
     }
     #[inline(always)]
@@ -188,6 +216,9 @@ pub const FACE_DIRECTION:u16=157;
 pub const SET_VELOCITY_ANGLE:u16=191;
 pub const COLLISION_STAY:u16=223;
 pub const COLLISION_ENTER:u16=251;
-pub const IMPLEMENTED_TYPES:usize=13;
+pub const WAIT:u16=269;
+pub const TRANSLATE:u16=283;
+pub const WALK_LEFT_RIGHT:u16=307;
+pub const IMPLEMENTED_TYPES:usize=16;
 
 }

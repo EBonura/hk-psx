@@ -1364,10 +1364,10 @@ struct Actor {
     located: crate::disc::Located,
     runtime: Runtime,
 }
-/// One controller runtime per actor; the Crawler keeps only the shared WalkState.
+/// One controller runtime per actor; Crawler retains its original graph state.
 #[derive(Clone, Copy)]
 enum Runtime {
-    Walker,
+    Crawler(hk_sim::crawler_fsm::Crawler),
     Runner(RunnerRuntime),
     Climber(ClimberRuntime),
     Vengefly(VengeflyRuntime),
@@ -1730,7 +1730,14 @@ impl Actor {
             dream_taken: false,
             located: crate::disc::Located::NONE,
             runtime: match spec.controller {
-                ActorController::Crawler { .. } => Runtime::Walker,
+                ActorController::Crawler { .. } => {
+                    let crawler=hk_sim::crawler_fsm::Crawler::new(scene,placement.source_id,seed);
+                    // Other native geometry fixtures author synthetic actor IDs.
+                    // Production has no fallback for an unbound placement.
+                    #[cfg(test)]
+                    let crawler=crawler.or_else(||{let (s,id,_,_)=hk_sim::crawler_fsm::GRAPHS[0];hk_sim::crawler_fsm::Crawler::new(s as usize,id,seed)});
+                    Runtime::Crawler(crawler.expect("Crawler original graph binding"))
+                },
                 ActorController::Runner { params, .. } => {
                     // A mirrored placement starts facing right; the cooker takes
                     // the sign from the transform, so both are supported now.
@@ -2512,7 +2519,11 @@ impl Actor {
         } else {
             let senses =
                 hk_sim::walker_senses(self.bounds(spec), self.walk.direction, count, &edge);
-            self.walk.tick(spec.walk, senses.0, senses.1, senses.2)
+            if let Runtime::Crawler(mut crawler)=self.runtime {
+                if crate::modules::require(crate::modules::CRAWLER) {
+                    self.advance_crawler_fsm(&mut crawler,spec,senses)
+                } else { 0 }
+            } else { self.walk.tick(spec.walk, senses.0, senses.1, senses.2) }
         };
         // A completed source turn can mirror the asymmetric collider offset.
         let b = self.local_bounds(spec);
@@ -2553,6 +2564,19 @@ impl Actor {
             self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE,
             "enemy left validated Q16 scene bounds"
         );
+    }
+    #[inline(never)]
+    fn advance_crawler_fsm(&mut self,crawler:&mut hk_sim::crawler_fsm::Crawler,spec:&ActorSpec,senses:(bool,bool,bool))->i32{
+        use hk_sim::{fsm_actions::WalkingActions,fsm_body::Walking};
+        #[cfg(not(test))]
+        let real_ticks=crawler.elapsed_real_ticks(psx_rt::interrupts::vblank_count());
+        #[cfg(test)]
+        let real_ticks=1;
+        let mut kernel=WalkingActions(Walking{walk:self.walk,position:[self.x,self.y,0],params:spec.walk,senses,velocity:0,real_ticks,stationary_fixture:cfg!(test)&&spec.walk.speed==0});
+        crawler.step(&mut kernel).expect("checked Crawler action adapter");
+        let body=kernel.0;
+        self.walk=body.walk;self.x=body.position[0];self.y=body.position[1];
+        self.runtime=Runtime::Crawler(*crawler);body.velocity
     }
     // The Husk Warrior's and the Husk Guard's ticks, each its own function so
     // the husks can stream as a code module. Return the walking speed.
@@ -5143,7 +5167,7 @@ impl EnemyWorld {
             }
             let w = &mut out[written * crate::trace::ENEMY_WORDS..][..crate::trace::ENEMY_WORDS];
             let kind = match a.runtime {
-                Runtime::Walker => 0u32,
+                Runtime::Crawler(_) => 0u32,
                 Runtime::Runner(_) => 1,
                 Runtime::Climber(_) => 2,
                 Runtime::Vengefly(_) => 3,
@@ -5984,7 +6008,7 @@ impl EnemyWorld {
                                 Runtime::Pigeon(p) => p.controller.die(),
                                 // The False Knight answers the nail through its
                                 // own branch above and never reaches this one.
-                                Runtime::Walker
+                                Runtime::Crawler(_)
                                 | Runtime::Runner(_)
                                 | Runtime::Static { .. }
                                 | Runtime::FalseKnight(_)

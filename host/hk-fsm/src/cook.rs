@@ -6,6 +6,36 @@ const CAMERA:i32=2;
 type Result<T> = std::result::Result<T,Box<dyn std::error::Error>>;
 fn text(v:Option<&Value>)->Result<String>{v.and_then(Value::str).ok_or_else(||"missing string".into())}
 fn get<'a>(f:&'a Fields,n:&str)->Result<&'a Value>{field(f,n).ok_or_else(||format!("missing field {n}").into())}
+// Additional serialized forms used by the original Crawler actions. Keep the
+// legacy Unity decoder unchanged, so existing cook fingerprints do not drift.
+pub fn crawler_fields(data:&Value,index:usize)->Result<Fields>{
+    let mut fields=action_fields_with_plain_strings(data,index,true)?;
+    let list=|key|data.get(key).and_then(Value::list).ok_or("parameter list");
+    let starts=list("actionStartIndex")?;let names=list("actionNames")?;
+    let parameters=list("paramName")?;let kinds=list("paramDataType")?;
+    let positions=list("paramDataPos")?;let sizes=list("paramByteDataSize")?;
+    if [kinds.len(),positions.len(),sizes.len()].iter().any(|n|*n!=parameters.len()){return Err("parameter lengths".into());}
+    let start=usize::try_from(starts.get(index).and_then(Value::int).ok_or("parameter start")?)?;
+    let end=if index+1<names.len(){usize::try_from(starts.get(index+1).and_then(Value::int).ok_or("parameter end")?)?}else{parameters.len()};
+    if start>end||end>parameters.len(){return Err("parameter bounds".into());}
+    for i in start..end{
+        let name=text(parameters.get(i))?;let kind=kinds[i].int().ok_or("parameter kind")?;
+        let pos=usize::try_from(positions[i].int().ok_or("parameter offset")?)?;
+        let size=usize::try_from(sizes[i].int().ok_or("parameter size")?)?;
+        let value=if kind==2||kind==7{
+            if size!=4{return Err("scalar size".into());}
+            let raw=list("byteData")?.get(pos..pos.checked_add(4).ok_or("scalar overflow")?).ok_or("scalar bounds")?;
+            let mut b=[0;4];for (i,v) in raw.iter().enumerate(){b[i]=u8::try_from(v.int().ok_or("scalar byte")?)?;}
+            if kind==2{let f=f32::from_le_bytes(b);if !f.is_finite(){return Err("nonfinite scalar".into());}Value::F32(f)}else{Value::Int(i32::from_le_bytes(b) as i64)}
+        }else if size==0&&[15,17,28].contains(&kind){
+            let key=match kind{15=>"fsmFloatParams",17=>"fsmBoolParams",_=>"fsmVector3Params"};
+            list(key)?.get(pos).cloned().ok_or("parameter table index")?
+        }else{continue};
+        if name.is_empty(){return Err("unnamed Crawler parameter".into());}
+        fields.retain(|(n,_)|*n!=name);fields.push((name,value));
+    }
+    Ok(fields)
+}
 fn validate_switch(data:&Value,index:usize)->Result<()> {
     let list=|key|data.get(key).and_then(Value::list).ok_or("array metadata missing");
     let starts=list("actionStartIndex")?;let names=list("actionNames")?;
@@ -106,6 +136,38 @@ impl Tables {
             "SetBoolValue"=>{self.arg(f,"boolVariable",1)?;self.arg(f,"boolValue",1)?;SET_BOOL}
             "SetFloatValue"=>{self.arg(f,"floatVariable",2)?;self.arg(f,"floatValue",2)?;SET_FLOAT}
             "RandomFloat"=>{for n in ["min","max","storeResult"]{self.arg(f,n,2)?;}RANDOM_FLOAT}
+            "Wait"=>{
+                let time=get(f,"time")?;
+                if time.get("useVariable").is_some_and(Value::truthy)||time.get("value").and_then(Value::float).is_none_or(|v|!v.is_finite()||v>10.0){return Err("Wait duration outside clock adapter bound".into());}
+                self.arg(f,"time",2)?;
+                let name=format!("__wait_{}",self.variables.len());
+                self.declarations.push((name.clone(),Value::F32(0.0),2));
+                let timer=self.variable(name)?;self.operands.push((1,timer));
+                self.ev(f,"finishEvent")?;self.arg(f,"realTime",1)?;
+                flags|=UPDATE;WAIT
+            }
+            "Translate"=>{
+                self.object(get(f,"gameObject")?)?;
+                let vector=get(f,"vector")?;
+                if !vector.get("useVariable").is_some_and(Value::truthy)||!text(vector.get("name"))?.is_empty(){return Err("Translate named/literal vector unsupported".into());}
+                for n in ["x","y","z"]{self.arg(f,n,2)?;}
+                let space=get(f,"space")?.int().ok_or("Translate space")?;
+                if space!=0&&space!=1{return Err("Translate space enum".into());}
+                self.operand(&Value::Int(space),1)?;self.arg(f,"perSecond",1)?;
+                if get(f,"lateUpdate")?.truthy()||get(f,"fixedUpdate")?.truthy(){return Err("Translate callback phase unsupported".into());}
+                TRANSLATE
+            }
+            "WalkLeftRight"=>{
+                self.object(get(f,"gameObject")?)?;self.operands.pop();
+                for (n,value) in [("groundLayer","Terrain"),("walkAnimName","walk"),("turnAnimName","turn")]{
+                    let v=get(f,n)?;
+                    if v.get("useVariable").is_some_and(Value::truthy)||text(v.get("value"))?!=value{return Err("WalkLeftRight art/layer binding unsupported".into());}
+                }
+                if !get(f,"spriteFacesLeft")?.truthy(){return Err("WalkLeftRight facing contract".into());}
+                self.arg(f,"walkSpeed",2)?;self.arg(f,"turnDelay",2)?;
+                for n in ["startLeft","startRight","keepDirection"]{self.arg(f,n,1)?;}
+                flags|=UPDATE;WALK_LEFT_RIGHT
+            }
             "FaceDirection"=>{
                 if get(f,"playNewAnimation")?.truthy()||get(f,"pauseBetweenTurns")?.truthy(){return Err("unsupported animated FaceDirection".into());}
                 self.object(get(f,"gameObject")?)?;// Retain validated object role for the kernel.
@@ -171,13 +233,14 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
                     collision_layers.push(i32::from_le_bytes(bytes));
                     continue;
                 }
-                if !matches!(v.int(),Some(1|12|15|17|18|19|20|23)){return Err("unsupported enabled parameter type".into());}
+                let crawler=fsm.get("name").and_then(Value::str).as_deref()==Some("Crawler");
+                if !matches!(v.int(),Some(1|12|15|17|18|19|20|23))&&!(crawler&&matches!(v.int(),Some(2|7|28))){return Err("unsupported enabled parameter type".into());}
             }
             let raw=data.get("actionNames").and_then(Value::list).and_then(|v|v.get(index)).and_then(Value::str).ok_or("action identity")?;
             let expected=format!("HutongGames.PlayMaker.Actions.{name}");
             if raw!=expected{return Err(format!("unsupported action identity {raw}").into());}
             if name=="FloatSwitch"{validate_switch(data,index)?;}
-            let f=action_fields_with_plain_strings(data,index,true)?;
+            let f=if fsm.get("name").and_then(Value::str).as_deref()==Some("Crawler"){crawler_fields(data,index)?}else{action_fields_with_plain_strings(data,index,true)?};
             let start=t.operands.len() as u16;
             let (opcode,flags)=t.action(&name,&f)?;
             actions.push((opcode,start,(t.operands.len()-start as usize) as u8,flags));
@@ -237,7 +300,8 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
     for (_,initial,kind) in t.variables{b.extend(initial.to_le_bytes());b.extend([kind,0,0,0]);}
     for n in t.constants{b.extend(n.to_le_bytes());}
     let len=b.len() as u32;b[28..32].copy_from_slice(&len.to_le_bytes());
-    hk_format::fsm::Program::parse(&b).map_err(|e|format!("invalid cooked graph {e:?}"))?;
+    let program=hk_format::fsm::Program::parse(&b).map_err(|e|format!("invalid cooked graph {e:?}"))?;
+    program.action_groups().map_err(|e|format!("unsupported graph action group {e:?}"))?;
     Ok(b)
 }
 #[cfg(test)]

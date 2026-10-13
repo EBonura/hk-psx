@@ -6,3 +6,4 @@ edition = "2021"
 hk-unity = { path = "../hk-unity" }
 hk-format = { path = "../../shared/hk-format" }
 hk-dotnet = { path = "../hk-dotnet" }
+serde_json = "1"

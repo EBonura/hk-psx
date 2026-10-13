@@ -73,10 +73,13 @@ def _actor(*fns):
 
 MODULES = {
     'false_knight': _sim('false_knight') + _actor('apply_false_knight', 'advance_false_knight', 'strike_false_knight'),
-    'mawlek': _sim('mawlek') + _actor('apply_mawlek', 'advance_mawlek', 'strike_mawlek'),
+    # Keep the synchronous FnMut adapter closure resident; only the actual
+    # advance method belongs to cold code, so its callback pointer cannot escape.
+    'mawlek': _sim('mawlek') + _actor('apply_mawlek', 'strike_mawlek') +
+              ('_RNv*Actor14advance_mawlek*', '_RINv*Actor14advance_mawlek*'),
     'husks': _sim('husk_guard', 'zombie_shield') + _actor('advance_husk_guard', 'advance_zombie_shield', 'shield_senses'),
     'vengefly': _sim('vengefly') + _actor('advance_vengefly', 'vengefly_senses'),
-    'gruzzer': _sim('gruzzer', 'fsm', 'fsm_actions') + ('*9hk_format3fsm*',) + _actor('advance_gruzzer'),
+    'gruzzer': _sim('gruzzer', 'fsm_fly') + ('*Machine11actions_fly*', '*Machine8step_fly*', '*Machine9event_fly*') + _actor('advance_gruzzer'),
     # Gruz Mother: its controller, its arena handling and its corpse and
     # burster; the seven reserve flies it releases are the Gruzzer module's.
     'gruz_mother': _sim('gruz_mother') + _actor('apply_gruz', 'advance_gruz', 'advance_gruz_dead',
@@ -91,7 +94,8 @@ MODULES = {
     'pigeon': _sim('pigeon') + _actor('advance_pigeon', 'pigeon_senses'),
     # climber_ray_hit stays resident: the SDK scan cannot resolve its
     # modulo-indexed switch table once the table is in a module.
-    'climber': _sim('climber') + _actor('advance_climber'),
+    # Formatting vtables stay resident; only actual controller methods are cold.
+    'climber': ('_RNvM*6hk_sim7climber*',) + _actor('advance_climber'),
     # Room logic: the boss arena controller (Battle Control), only in arena rooms.
     'arena': _sim('boss'),
     # Room logic behind entry-point guards (modules::loaded): Sly's shelf
@@ -99,6 +103,8 @@ MODULES = {
     'shop': ('*6hk_psx4shop12presentation*',),
     'shaman': ('*6hk_psx6shaman4live4draw*',),
     'cornifer': ('*6hk_psx6mapper4live4tick*',),
+    # One original graph closure; no flying adapter/bank is admitted with it.
+    'crawler': _sim('crawler_fsm', 'fsm_walk') + ('*Machine12actions_walk*', '*Machine9step_walk*', '*Machine10event_walk*', '*Machine15transition_walk*', '*8fsm_body*7Walking*') + _actor('advance_crawler_fsm'),
 }
 # Room logic modules by the room that runs them: (data file, constant) holding
 # the room's scene id.
@@ -119,7 +125,7 @@ CARRIED = {'art_shade': 'data/shade.hk'}
 # hk_sim::ActorController kinds -> the module whose code they run. Runner and
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.
-KIND_MODULE = {'FalseKnight': ('false_knight', 'arena'), 'Mawlek': ('mawlek', 'arena'), 'HuskGuard': 'husks', 'ZombieShield': 'husks',
+KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': ('false_knight', 'arena'), 'Mawlek': ('mawlek', 'arena'), 'HuskGuard': 'husks', 'ZombieShield': 'husks',
                'Vengefly': 'vengefly', 'Gruzzer': 'gruzzer', 'Baldur': 'baldur', 'Aspid': 'aspid',
                'Hatcher': 'hatcher', 'HatcherBaby': 'hatcher', 'Pigeon': 'pigeon', 'Climber': 'climber',
                'GruzMother': ('gruz_mother', 'arena', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'acid_flyer', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
@@ -375,10 +381,17 @@ def layer(script):
     for k, (name, patterns) in enumerate(MODULES.items()):
         if name in ALWAYS_RESIDENT:
             continue
-        rules = [f'        *(.text.{p})' for p in patterns] + [f'        *(.rodata.{p})' for p in patterns]
-        block += [f'    .mod_{name} {link_address(k):#x} : {{', *rules, '    } > MODLINK',
-                  f'    ASSERT(SIZEOF(.mod_{name}) + {4 * (TRAMP_WORDS + 2)} <= {LINK_STRIDE:#x}, "module {name} outgrew 64 KiB")',
-                  f'    ASSERT(SIZEOF(.mod_{name}) + {4 * (TRAMP_WORDS + 2)} <= POOL_BYTES, "module {name} outgrew the pool")']
+        code = [f'        *(.text.{p})' for p in patterns]
+        data = [f'        *(.rodata.{p})' for p in patterns]
+        if os.environ.get('HK_SHARED_PUBLISHER'):
+            block += [f'    .mod_{name} {link_address(k):#x} : {{', *code, '    } > MODLINK',
+                      f'    .mod_{name}_rodata ALIGN(4) : {{', *data, '    } > MODLINK',
+                      f'    ASSERT(SIZEOF(.mod_{name}) + SIZEOF(.mod_{name}_rodata) + {4 * (TRAMP_WORDS + 2)} <= {LINK_STRIDE:#x}, "module {name} outgrew 64 KiB")',
+                      f'    ASSERT(SIZEOF(.mod_{name}) + SIZEOF(.mod_{name}_rodata) + {4 * (TRAMP_WORDS + 2)} <= POOL_BYTES, "module {name} outgrew the pool")']
+        else:
+            block += [f'    .mod_{name} {link_address(k):#x} : {{', *code, *data, '    } > MODLINK',
+                      f'    ASSERT(SIZEOF(.mod_{name}) + {4 * (TRAMP_WORDS + 2)} <= {LINK_STRIDE:#x}, "module {name} outgrew 64 KiB")',
+                      f'    ASSERT(SIZEOF(.mod_{name}) + {4 * (TRAMP_WORDS + 2)} <= POOL_BYTES, "module {name} outgrew the pool")']
     return sub(r'^(    \.text : \{)$', '\n'.join(block) + r'\n\n\1', script)
 
 

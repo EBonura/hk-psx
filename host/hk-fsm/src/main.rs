@@ -1,8 +1,9 @@
 //! Original FSM cooker input decoding. Unsupported parameter forms stay explicit.
 use hk_fsm_cook::cook;
-use hk_unity::{Source, Value, playmaker::{action_fields_with_plain_strings, enabled}};
+use hk_unity::{Source, Value, playmaker::enabled};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.len()==3&&args[1]=="cook-crawlers"{return hk_fsm_cook::cook_crawlers(std::path::Path::new(&args[2]));}
     if (args.len() != 4 || args[1] != "inspect") && (args.len() != 5 || args[1] != "cook") {
         return Err("usage: hk-fsm-cook inspect DATA FILE:PATH_ID | cook DATA FILE:PATH_ID OUTPUT".into());
     }
@@ -40,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for p in start..end {
                 println!("  PARAM{p} name={:?} kind={:?} pos={:?} size={:?}", params[p], kinds.get(p), positions.get(p), sizes.get(p));
             }
-            for (name, value) in action_fields_with_plain_strings(data, index, true)? {
+            for (name, value) in hk_fsm_cook::crawler_fields(data, index)? {
                 println!("  FIELD {name}={value:?}");
             }
         }

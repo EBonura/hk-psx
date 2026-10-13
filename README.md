@@ -184,3 +184,24 @@ python3 tools/test_world.py
 
 Steam files and saves are read-only. Do not distribute generated assets or discs.
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licenses and source tools.
+
+### Shared FSM module publication
+
+Ordinary `hk-psx-build build` / `host/build_guest.py` builds now run the Rust
+`hk-module-publish` pipeline: same-ELF batch composition, complete dependency
+hazard/stack guards, hardened publication, then exact transport chunk binding.
+Set `HK_OVERLAY_SDK` to a clean complete SDK checkout at
+`5e112a7876d2ca3950ee0365937d5b2cc07f8b21` before building. The driver builds
+`overlay-compose`, `hazard-patch`, `hazard-scan` and `stack-guard` from that
+checkout into its private `CARGO_TARGET_DIR/overlay-sdk-tools`. Missing or
+different host-tool source fails before guest compilation.
+
+This host-tool revision is separate from the guest runtime snapshot in
+`sdk.lock.json` (`46895dc5`); the publisher emits its existing checked format
+and does not change the qualified guest runtime. Production ELF measurement
+(`--elf-only --work PATH`) stops before publication. Profiling remains a
+separate build mode and does not qualify the ordinary shared-module release.
+
+The publisher retains full scene content, carried-module occupancy, fixed
+pool and stack limits. It rejects escaped cold pointers; no pinned callback
+exception is used. Manual memory-card Save remains the only card writer.

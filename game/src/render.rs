@@ -1417,7 +1417,7 @@ pub fn texture_sub(id: usize, verts: [(i16, i16); 4], tint: (u8, u8, u8), rect: 
             verts,
             (&*Scratch::occluders(occlusion_scratch::base())).as_slice(),
         ) {
-            HK_DYNAMIC_HIDDEN_QUADS = HK_DYNAMIC_HIDDEN_QUADS.wrapping_add(1);
+            record_dynamic_hidden_quad();
             return;
         }
         assert!(USED < CAP);
@@ -1703,6 +1703,13 @@ pub fn hud_quad(template: &QuadTextured, verts: [(i16, i16); 4], tint: (u8, u8, 
         USED += 1;
     }
 }
+// Keep the resident counter address out of cold renderer-loop scheduling.
+#[inline(never)]
+fn record_dynamic_hidden_quad() {
+    unsafe {
+        HK_DYNAMIC_HIDDEN_QUADS = HK_DYNAMIC_HIDDEN_QUADS.wrapping_add(1);
+    }
+}
 pub fn resident_quad(template: &QuadTextured, verts: [(i16, i16); 4]) {
     resident_quad_tinted(template, verts, (128, 128, 128));
 }
@@ -1714,7 +1721,7 @@ pub fn resident_quad_tinted(template: &QuadTextured, verts: [(i16, i16); 4], tin
             verts,
             (&*Scratch::occluders(occlusion_scratch::base())).as_slice(),
         ) {
-            HK_DYNAMIC_HIDDEN_QUADS = HK_DYNAMIC_HIDDEN_QUADS.wrapping_add(1);
+            record_dynamic_hidden_quad();
             return;
         }
         assert!(USED < CAP);
@@ -1733,7 +1740,7 @@ pub fn texture_material_alpha(id: usize, verts: [(i16, i16); 4], tint: (u8, u8, 
             verts,
             (&*Scratch::occluders(occlusion_scratch::base())).as_slice(),
         ) {
-            HK_DYNAMIC_HIDDEN_QUADS = HK_DYNAMIC_HIDDEN_QUADS.wrapping_add(1);
+            record_dynamic_hidden_quad();
             return;
         }
         assert!(USED < CAP);
