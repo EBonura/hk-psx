@@ -146,7 +146,7 @@ impl<'a> Program<'a> {
             if event >= events || target >= states { return Err(Error::Reference); }
         }
         for i in 0..operands {
-            let o = p.operand(i).ok_or(Error::Reference)?;
+            let o = p.operand_for_format(i).ok_or(Error::Reference)?;
             let valid = if o.kind == 0 { if p.normalized() { o.index < operands } else { o.index < constants } }
                 else if o.kind == 1 { o.index < variables }
                 else if o.kind == 2 { o.index < events || o.index == NO_EVENT }
@@ -199,17 +199,22 @@ impl<'a> Program<'a> {
     pub fn operand(self, index: u16) -> Option<Operand> {
         if index >= self.operands { return None; }
         let p = self.offsets[3] + index as usize * 4;
-        if self.normalized() {
-            let value = integer(self.bytes, p) as u32;
-            return if value & 0x80000000 == 0 { Some(Operand { kind: 0, index }) }
-                else { match value >> 16 {
-                    0x8000 => Some(Operand { kind: 1, index: value as u16 }),
-                    0x8001 => Some(Operand { kind: 2, index: value as u16 }),
-                    0x8002 if value as u16 == 0 => Some(Operand { kind: 4, index: 0 }),
-                    _ => None,
-                }};
-        }
         Some(Operand { kind: self.bytes[p], index: word(self.bytes, p + 2) })
+    }
+    /// Format-aware access is confined to normalized consumers. Existing
+    /// walking/flying kernels keep their legacy accessors and code closure.
+    #[inline(always)]
+    pub fn operand_for_format(self, index: u16) -> Option<Operand> {
+        if !self.normalized() { return self.operand(index); }
+        if index >= self.operands { return None; }
+        let value = integer(self.bytes, self.offsets[3] + index as usize * 4) as u32;
+        if value & 0x80000000 == 0 { return Some(Operand { kind: 0, index }); }
+        match value >> 16 {
+            0x8000 => Some(Operand { kind: 1, index: value as u16 }),
+            0x8001 => Some(Operand { kind: 2, index: value as u16 }),
+            0x8002 if value as u16 == 0 => Some(Operand { kind: 4, index: 0 }),
+            _ => None,
+        }
     }
     #[inline(always)]
     pub fn variable_kind(self, index: u16) -> Option<u8> {
@@ -221,12 +226,14 @@ impl<'a> Program<'a> {
     }
     #[inline(always)]
     pub fn constant(self, index: u16) -> Option<i32> {
-        if self.normalized() {
-            if index >= self.operands { return None; }
-            let value = integer(self.bytes, self.offsets[3] + index as usize * 4);
-            return (value >= 0).then(|| (value << 1) >> 1);
-        }
         (index < self.constants).then(|| integer(self.bytes, self.offsets[5] + index as usize * 4))
+    }
+    #[inline(always)]
+    pub fn constant_for_format(self, index: u16) -> Option<i32> {
+        if !self.normalized() { return self.constant(index); }
+        if index >= self.operands { return None; }
+        let value = integer(self.bytes, self.offsets[3] + index as usize * 4);
+        (value >= 0).then(|| (value << 1) >> 1)
     }
     #[inline(always)]
     pub fn target(self, state: u16, event: u16) -> Option<u16> {
@@ -284,4 +291,34 @@ pub const NEXT_FRAME_EVENT:u16=431;
 // Installed coverage changes only after the complete consumer is qualified.
 pub const IMPLEMENTED_TYPES:usize=16;
 
+}
+
+#[cfg(test)]
+mod normalized_operand_tests {
+    use super::*;
+    extern crate std;
+    use std::vec::Vec;
+    fn bank(words:&[u32])->Vec<u8> {
+        let mut b=Vec::from(*NORMAL_MAGIC);
+        for n in [1u16,1,0,words.len() as u16,1,0,2,0,0,0] { b.extend(n.to_le_bytes()); }
+        b.extend(0u32.to_le_bytes());
+        for n in [0u16,1,0,0] { b.extend(n.to_le_bytes()); }
+        b.extend(opcode::BOOL_TEST.to_le_bytes());b.extend(0u16.to_le_bytes());b.extend([words.len() as u8,ENABLED,0,0]);
+        for word in words {b.extend(word.to_le_bytes());}
+        b.extend(1i32.to_le_bytes());b.extend([1,0,0,0]);
+        let len=b.len() as u32;b[28..32].copy_from_slice(&len.to_le_bytes());b
+    }
+    #[test]
+    fn signed_inline_literals_events_cells_and_none_remain_distinct() {
+        let bytes=bank(&[(-655294464i32 as u32)&0x7fffffff,655294464,0x80000000,0x8001ffff,0x80020000]);
+        let p=Program::parse(&bytes).unwrap();
+        assert_eq!(p.constant_for_format(0),Some(-655294464));
+        assert_eq!(p.constant_for_format(1),Some(655294464));
+        for (at,kind,index) in [(2,1,0),(3,2,NO_EVENT),(4,4,0)] {assert_eq!(p.operand_for_format(at),Some(Operand{kind,index}));}
+        assert_eq!(p.constant_for_format(2),None);
+    }
+    #[test]
+    fn malformed_tags_aliases_event_ids_and_absent_payloads_are_refused() {
+        for word in [0x80030000,0x80000001,0x80010002,0x80020001] {assert!(Program::parse(&bank(&[word])).is_err());}
+    }
 }

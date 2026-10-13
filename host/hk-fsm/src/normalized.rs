@@ -107,10 +107,12 @@ pub fn pair(banks: &[crate::Cooked]) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>, [i32
         // None is converted to zero and no component aliases another's cell.
         for i in 0..operands {
             let before = p.operand(i).unwrap();
-            let after = n.operand(i).unwrap();
+            let after = n.operand_for_format(i).unwrap();
             match before.kind {
                 0 => {
-                    if after.kind != 0 || n.constant(after.index) != p.constant(before.index) {
+                    if after.kind != 0
+                        || n.constant_for_format(after.index) != p.constant(before.index)
+                    {
                         return Err("literal lowering".into());
                     }
                 }
@@ -128,7 +130,9 @@ pub fn pair(banks: &[crate::Cooked]) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>, [i32
                     }
                 }
                 3 => {
-                    if after.kind != 0 || n.constant(after.index) != Some(before.index as i32) {
+                    if after.kind != 0
+                        || n.constant_for_format(after.index) != Some(before.index as i32)
+                    {
                         return Err("role lowering".into());
                     }
                 }

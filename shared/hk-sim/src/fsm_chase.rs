@@ -24,11 +24,13 @@ impl Arguments {
             count: a.operand_count,
         };
         for i in 0..a.operand_count {
-            let o = p.operand(a.operands + i as u16).ok_or(Error::Parameter)?;
+            let o = p
+                .operand_for_format(a.operands + i as u16)
+                .ok_or(Error::Parameter)?;
             let at = i as usize;
             result.kinds[at] = o.kind;
             result.values[at] = match o.kind {
-                0 => p.constant(o.index).ok_or(Error::Parameter)?,
+                0 => p.constant_for_format(o.index).ok_or(Error::Parameter)?,
                 1 => {
                     result.indices[at] = u8::try_from(o.index).map_err(|_| Error::Parameter)?;
                     result.types[at] = p.variable_kind(o.index).ok_or(Error::Parameter)?;
