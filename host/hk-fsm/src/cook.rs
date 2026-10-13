@@ -367,7 +367,7 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
         }
         let kind=match &**group {"boolVariables"=>1,"floatVariables"=>2,"gameObjectVariables"=>3,"objectVariables" if paired_chase=>3,_=>continue};
         for item in items {
-            if group=="objectVariables"&&(text(item.get("name"))?!="Alert Range"||text(item.get("typeName"))?!="AlertRange"||item.get("value").and_then(|v|v.get("m_FileID")).and_then(Value::int)!=Some(0)||item.get("value").and_then(|v|v.get("m_PathID")).and_then(Value::int)!=Some(0)){return Err("unsupported object variable role".into());}
+            if &**group=="objectVariables"&&(text(item.get("name"))?!="Alert Range"||text(item.get("typeName"))?!="AlertRange"||item.get("value").and_then(|v|v.get("m_FileID")).and_then(Value::int)!=Some(0)||item.get("value").and_then(|v|v.get("m_PathID")).and_then(Value::int)!=Some(0)){return Err("unsupported object variable role".into());}
             let n=text(item.get("name"))?;t.declarations.push((n,item.get("value").cloned().ok_or("variable initial value")?,kind));
         }
     }

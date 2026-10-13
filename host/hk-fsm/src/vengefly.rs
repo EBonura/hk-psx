@@ -150,7 +150,7 @@ pub fn action_fields(data:&Value,index:usize)->Result<hk_unity::playmaker::Field
                 for (i,name) in coordinates.iter().enumerate(){
                     let value=f32::from_le_bytes(raw[i*4..i*4+4].try_into()?);
                     if !value.is_finite(){return Err("nonfinite compact vector".into());}
-                    values.push(((*name).to_owned(),Value::F32(value)));
+                    values.push(((*name).into(),Value::F32(value)));
                 }
                 Value::Map(vec![("value".into(),Value::Map(values)),("useVariable".into(),Value::Bool(raw[scalar_bytes]!=0)),("name".into(),Value::Str(variable_name))])
             }
