@@ -26,6 +26,21 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
     let mut table = Vec::new();
     for ((scene, id), (owner, graphs)) in placements {
         if graphs.len() != 2 { return Err("Vengefly requires both owned original FSMs".into()); }
+        let owner_file_name=graphs[0].rsplit_once(':').ok_or("FSM identity")?.0;
+        let owner_file=source.file(owner_file_name)?;
+        let owner_object=source.object(&owner_file,owner)?;
+        let owner_tree=source.read(&owner_object)?;
+        let mut source_order=Vec::new();
+        for reference in owner_tree.get("m_Component").and_then(Value::list).ok_or("owner component order")? {
+            let reference=reference.get("component").ok_or("component reference")?;
+            if reference.get("m_FileID").and_then(Value::int)!=Some(0){return Err("external owner component unsupported".into());}
+            let path=reference.get("m_PathID").and_then(Value::int).ok_or("component path")?;
+            let object=source.object(&owner_file,path)?;
+            if object.class_id()==114 && source.typename(&object)?=="PlayMakerFSM" {
+                source_order.push(format!("{owner_file_name}:{path}"));
+            }
+        }
+        if source_order!=graphs{return Err("Vengefly metadata differs from original component order".into());}
         let mut named = BTreeMap::new();
         let mut ordered = Vec::new();
         for sid in graphs {

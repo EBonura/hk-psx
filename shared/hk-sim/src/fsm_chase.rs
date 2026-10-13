@@ -19,22 +19,21 @@ impl<E:Environment> Kernel for Actions<E> {
                 write(p,target,v,value)?;
             }
             BOOL_ALL_TRUE=>{
-                if a.operand_count<3{return Err(Error::Parameter);}
+                if a.operand_count<2{return Err(Error::Parameter);}
+                // Original empty arrays do not emit or change storeResult.
+                if a.operand_count==2{return Ok(result);}
                 let mut all=true;
                 for i in 0..a.operand_count-2{all &= boolean(p,operand(p,a,i)?,v)?;}
                 let output=operand(p,a,a.operand_count-2)?;
-                if output.kind!=4{write(p,output,v,all as i32)?;}
+                // The selected graphs have no output. A named output would
+                // require the original event-before-store ordering contract.
+                if output.kind!=4{return Err(Error::Parameter);}
                 if all{result.event=event(operand(p,a,a.operand_count-1)?)?;}
             }
             NEXT_FRAME_EVENT=>{
-                if a.operand_count!=2{return Err(Error::Parameter);}
-                let timer=operand(p,a,0)?;
-                let now=self.0.tick();
-                result.finished=false;
-                if phase==Phase::Enter{write(p,timer,v,now as i32)?;}
-                else if phase==Phase::Update && now.wrapping_sub(read(p,timer,v)? as u32)!=0 {
-                    result.finished=true;result.event=event(operand(p,a,1)?)?;
-                }
+                if a.operand_count!=1{return Err(Error::Parameter);}
+                result.finished=phase==Phase::Update;
+                if result.finished{result.event=event(operand(p,a,0)?)?;}
             }
             _=>return Err(Error::UnsupportedAction),
         }

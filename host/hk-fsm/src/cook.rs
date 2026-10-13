@@ -60,6 +60,26 @@ fn validate_switch(data:&Value,index:usize)->Result<()> {
     if counts[0]!=counts[1]||cursor+1!=end||params[cursor].str().as_deref()!=Some("everyFrame")||kinds[cursor].int()!=Some(1){return Err("switch schema".into());}
     Ok(())
 }
+fn validate_bool_array(data:&Value,index:usize)->Result<()> {
+    let list=|key|data.get(key).and_then(Value::list).ok_or("boolean array metadata");
+    let starts=list("actionStartIndex")?;let names=list("actionNames")?;
+    let parameters=list("paramName")?;let kinds=list("paramDataType")?;let positions=list("paramDataPos")?;
+    if parameters.len()!=kinds.len()||parameters.len()!=positions.len(){return Err("boolean array parameter lengths".into());}
+    let start=usize::try_from(starts.get(index).and_then(Value::int).ok_or("array start")?)?;
+    let end=if index+1<names.len(){usize::try_from(starts.get(index+1).and_then(Value::int).ok_or("array end")?)?}else{parameters.len()};
+    if start>=end||end>parameters.len()||parameters[start].str().as_deref()!=Some("boolVariables")||kinds[start].int()!=Some(12){return Err("boolean array marker".into());}
+    let array=usize::try_from(positions[start].int().ok_or("array index")?)?;
+    let count=usize::try_from(list("arrayParamSizes")?.get(array).and_then(Value::int).ok_or("array length")?)?;
+    if count==0||count>13||list("arrayParamTypes")?.get(array).and_then(Value::str).as_deref()!=Some("HutongGames.PlayMaker.FsmBool")||start+count+4!=end{return Err("boolean array shape".into());}
+    for at in start+1..start+count+1{
+        if parameters[at].str().as_deref()!=Some("")||kinds[at].int()!=Some(17){return Err("boolean array element".into());}
+    }
+    for (offset,name,kind) in [(1,"sendEvent",23),(2,"storeResult",17),(3,"everyFrame",1)]{
+        let at=start+count+offset;
+        if parameters[at].str().as_deref()!=Some(name)||kinds[at].int()!=Some(kind){return Err("boolean array trailing fields".into());}
+    }
+    Ok(())
+}
 struct Tables { variables:Vec<(String,i32,u8)>, declarations:Vec<(String,Value,u8)>, constants:Vec<i32>, events:Vec<String>, operands:Vec<(u8,u16)> }
 impl Tables {
     fn event(&mut self,name:String)->u16{
@@ -127,13 +147,12 @@ impl Tables {
                 let values:Vec<_>=f.iter().filter(|(n,v)|n.parse::<usize>().is_ok()&&v.get("value").is_some()).map(|(_,v)|v).collect();
                 if values.is_empty()||values.len()>13{return Err("BoolAllTrue array size".into());}
                 for value in values{self.operand(value,1)?;}
+                let output=get(f,"storeResult")?;
+                if !output.get("useVariable").is_some_and(Value::truthy)||text(output.get("name"))? != "" {return Err("BoolAllTrue named output ordering unsupported".into());}
                 self.arg(f,"storeResult",1)?;self.ev(f,"sendEvent")?;BOOL_ALL_TRUE
             }
             "NextFrameEvent"=>{
-                let name="__next_frame_clock".to_owned();
-                if !self.declarations.iter().any(|(n,_,_)|*n==name){self.declarations.push((name.clone(),Value::F32(0.0),2));}
-                let timer=self.variable(name)?;self.operands.push((1,timer));self.ev(f,"sendEvent")?;
-                flags|=UPDATE;NEXT_FRAME_EVENT
+                self.ev(f,"sendEvent")?;flags|=UPDATE;NEXT_FRAME_EVENT
             }
             "GetDistance"=>{self.object(get(f,"gameObject")?)?;self.object(get(f,"target")?)?;self.arg(f,"storeResult",2)?;GET_DISTANCE}
             "FloatCompare"=>{
@@ -258,6 +277,7 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
             let expected=format!("HutongGames.PlayMaker.Actions.{name}");
             if raw!=expected{return Err(format!("unsupported action identity {raw}").into());}
             if name=="FloatSwitch"{validate_switch(data,index)?;}
+            if name=="BoolAllTrue"{validate_bool_array(data,index)?;}
             let f=if fsm.get("name").and_then(Value::str).as_deref()==Some("Crawler"){crawler_fields(data,index)?}else{action_fields_with_plain_strings(data,index,true)?};
             let start=t.operands.len() as u16;
             let (opcode,flags)=t.action(&name,&f)?;

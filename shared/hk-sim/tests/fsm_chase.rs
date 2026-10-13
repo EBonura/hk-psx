@@ -26,22 +26,58 @@ fn float_clamp_keeps_signed_bounds_and_rejects_reversed_range(){
 }
 #[test]
 fn bool_all_true_only_emits_after_both_conditions_and_validates_each(){
-    let bytes=graph(BOOL_ALL_TRUE,&[(1,0),(1,1),(1,2),(2,1)],&[(0,1),(0,1),(0,1)],&[]);
+    let bytes=graph(BOOL_ALL_TRUE,&[(1,0),(1,1),(4,0),(2,1)],&[(0,1),(0,1)],&[]);
     let p=Program::parse(&bytes).unwrap();let mut kernel=Actions(Clock(0));let mut rng=0;
-    for (a,b,event,stored) in [(0,0,NO_EVENT,0),(1,0,NO_EVENT,0),(0,1,NO_EVENT,0),(1,1,1,1)]{
-        let mut vars=[a,b,0];let result=kernel.execute(&p,action(&p),Phase::Update,&mut vars,&mut rng).unwrap();assert_eq!(result.event,event);assert_eq!(vars[2],stored);
+    for (a,b,event) in [(0,0,NO_EVENT),(1,0,NO_EVENT),(0,1,NO_EVENT),(1,1,1)]{
+        let mut vars=[a,b];let result=kernel.execute(&p,action(&p),Phase::Update,&mut vars,&mut rng).unwrap();assert_eq!(result.event,event);assert_eq!(vars,[a,b]);
     }
     // A false first condition must not disguise an invalid later boolean.
-    assert_eq!(kernel.execute(&p,action(&p),Phase::Update,&mut[0,2,0],&mut rng),Err(Error::Parameter));
+    assert_eq!(kernel.execute(&p,action(&p),Phase::Update,&mut[0,2],&mut rng),Err(Error::Parameter));
 }
 #[test]
-fn next_frame_never_fires_in_same_entry_frame_and_handles_counter_wrap(){
-    let bytes=graph(NEXT_FRAME_EVENT,&[(1,0),(2,1)],&[(0,2)],&[]);let p=Program::parse(&bytes).unwrap();
-    for tick in [7,u32::MAX]{
-        let mut kernel=Actions(Clock(tick));let mut vars=[0];let mut rng=0;
-        assert!(!kernel.execute(&p,action(&p),Phase::Enter,&mut vars,&mut rng).unwrap().finished);
-        assert!(!kernel.execute(&p,action(&p),Phase::Update,&mut vars,&mut rng).unwrap().finished);
-        kernel.0.0=tick.wrapping_add(1);
-        let result=kernel.execute(&p,action(&p),Phase::Update,&mut vars,&mut rng).unwrap();assert!(result.finished);assert_eq!(result.event,1);
+fn next_frame_finishes_on_first_update_not_on_enter(){
+    let bytes=graph(NEXT_FRAME_EVENT,&[(2,1)],&[],&[]);let p=Program::parse(&bytes).unwrap();
+    let mut kernel=Actions(Clock(7));let mut vars=[];let mut rng=0;
+    assert!(!kernel.execute(&p,action(&p),Phase::Enter,&mut vars,&mut rng).unwrap().finished);
+    let result=kernel.execute(&p,action(&p),Phase::Update,&mut vars,&mut rng).unwrap();
+    assert!(result.finished);assert_eq!(result.event,1);
+}
+
+#[test]
+fn bool_all_true_empty_array_does_not_emit_or_write_output() {
+    let bytes=graph(BOOL_ALL_TRUE,&[(1,0),(2,1)],&[(1,1)],&[]);
+    let p=Program::parse(&bytes).unwrap();let mut vars=[1];let mut rng=0;
+    let result=Actions(Clock(0)).execute(&p,action(&p),Phase::Enter,&mut vars,&mut rng).unwrap();
+    assert_eq!(result.event,NO_EVENT);assert_eq!(vars,[1]);
+}
+
+#[test]
+fn next_frame_initial_entry_updates_but_update_transition_only_enters_destination(){
+    use hk_sim::fsm::{Cursor,ResultAction};
+    fn schedule(start:u16)->Vec<u8>{
+        let mut bytes=Vec::from(*hk_format::fsm::MAGIC);
+        for n in [3u16,3,2,1,0,0,2,0,start,0]{bytes.extend(n.to_le_bytes());}
+        bytes.extend(0u32.to_le_bytes());
+        for state in [[0u16,1,0,1],[1,1,1,1],[2,1,2,0]]{for n in state{bytes.extend(n.to_le_bytes());}}
+        for (op,start,count) in [(65001u16,0u16,0u8),(NEXT_FRAME_EVENT,0,1),(65002,1,0)]{
+            bytes.extend(op.to_le_bytes());bytes.extend(start.to_le_bytes());bytes.extend([count,ENABLED|UPDATE,0,0]);
+        }
+        for edge in [[1u16,1],[1,2]]{for n in edge{bytes.extend(n.to_le_bytes());}}
+        bytes.extend([2,0,1,0]);let n=bytes.len() as u32;bytes[28..32].copy_from_slice(&n.to_le_bytes());bytes
+    }
+    #[derive(Default)]
+    struct Wrapper {hold_updates:u32}
+    impl Kernel for Wrapper {
+        fn execute(&mut self,p:&Program<'_>,a:Action,phase:Phase,v:&mut[i32],rng:&mut u32)->Result<ResultAction,Error>{
+            if a.opcode==NEXT_FRAME_EVENT{return Actions(Clock(0)).execute(p,a,phase,v,rng);}
+            if a.opcode==65001{return Ok(ResultAction{finished:false,event:if phase==Phase::Update{1}else{NO_EVENT}});}
+            if phase==Phase::Update{self.hold_updates+=1;}Ok(ResultAction::running())
+        }
+    }
+    for start in [0,1]{
+        let bytes=schedule(start);let p=Program::parse(&bytes).unwrap();let mut cursor=Cursor::initial(&p);let mut vars=[];let mut rng=0;let mut kernel=Wrapper::default();
+        cursor.step(&p,&mut vars,&mut rng,Phase::Update,&mut kernel).unwrap();
+        assert_eq!(cursor.state(),if start==0{1}else{2});assert_eq!(kernel.hold_updates,0);
+        if start==0{cursor.step(&p,&mut vars,&mut rng,Phase::Update,&mut kernel).unwrap();assert_eq!(cursor.state(),2);assert_eq!(kernel.hold_updates,0);}
     }
 }
