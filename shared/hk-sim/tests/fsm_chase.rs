@@ -314,6 +314,21 @@ fn compact_variables_preserve_both_mutable_namespaces_and_reject_partial_save() 
     assert_eq!(actual, receiver);
     assert_eq!(core::mem::size_of::<Variables>(), 20);
     assert_eq!(core::mem::size_of::<hk_sim::vengefly_fsm::Pair>(), 36);
+    let mut state = hk_sim::vengefly_fsm::State::initial(programs, [0, 0], 7, 1, 65536).unwrap();
+    assert!(state.enabled(0));
+    assert!(!state.enabled(1));
+    state.pair.set_variable(programs, 0, 1, 1).unwrap();
+    assert_eq!(state.pair.variable(programs, 0, 1).unwrap(), 1);
+    assert_eq!(state.pair.variable(programs, 1, 1).unwrap(), 0);
+    assert_eq!(state.audio_pitch, 65536);
+    state.queued_force = [123, 456];
+    state.velocity = [789, 12];
+    state.die();
+    assert_eq!(state.queued_force, [0, 0]);
+    assert_eq!(state.velocity, [0, 0]);
+    assert!(state.enabled(0));
+    assert!(!state.enabled(1));
+    assert_eq!(core::mem::size_of::<hk_sim::vengefly_fsm::State>(), 84);
 }
 
 #[test]

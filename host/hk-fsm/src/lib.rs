@@ -64,3 +64,40 @@ mod residency_tests {
         assert_eq!(program.action_groups().unwrap(),hk_format::fsm::GROUP_CORE|hk_format::fsm::GROUP_FLY);
     }
 }
+
+#[cfg(test)]
+mod vengefly_original_tests {
+    #[test]
+    #[ignore = "requires privately owned original installation"]
+    fn every_admitted_vengefly_component_decodes_with_its_own_variables() {
+        use hk_unity::{Source,Value};
+        let root=std::path::PathBuf::from(std::env::var("HK_ORIGINAL_ROOT").expect("private original root"));
+        let source=Source::from_doctor(&root).unwrap();
+        let metadata:serde_json::Value=serde_json::from_slice(&std::fs::read(root.join("data/regions.json")).unwrap()).unwrap();
+        let mut ids=std::collections::BTreeSet::new();
+        for region in metadata["regions"].as_array().unwrap(){for actor in region["actors"].as_array().unwrap(){
+            if actor["movement_control"]["kind"]=="Vengefly"{
+                for id in actor["fsm_ids"].as_array().unwrap(){ids.insert(id.as_str().unwrap().to_owned());}
+            }
+        }}
+        assert_eq!(ids.len(),40);let mut failures=Vec::new();
+        for id in ids{
+            let (file,path)=id.rsplit_once(':').unwrap();let file=source.file(file).unwrap();
+            let object=source.object(&file,path.parse().unwrap()).unwrap();let tree=source.read(&object).unwrap();
+            let fsm=tree.get("fsm").unwrap();
+            match super::cook(fsm){
+                Err(error)=>failures.push(format!("{id}: {error}")),
+                Ok(bytes)=>{
+                    let p=hk_format::fsm::Program::parse(&bytes).unwrap();
+                    assert_eq!(p.action_groups().unwrap(),hk_format::fsm::GROUP_CORE|hk_format::fsm::GROUP_CHASE,"{id}");
+                    let name=fsm.get("name").and_then(Value::str).unwrap();
+                    assert_eq!(p.variable_count(),if name=="chaser"{8}else{3},"{id}");
+                }
+            }
+        }
+        assert!(failures.is_empty(),"{}",failures.join("\n"));
+        // Original component ordering, enablement and broadcast descendants
+        // are additionally checked by the same production admission entry.
+        super::cook_vengeflies(&root).unwrap();
+    }
+}
