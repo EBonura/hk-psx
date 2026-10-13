@@ -3060,8 +3060,8 @@ fn original_vengefly_damage_emits_startle_on_accepted_lethal_and_not_rejected_hi
     for (spec, damage, hp, calls) in [(&FLY, 0, 8, 0), (&BLOCKED_FLY, 5, 8, 0), (&FLY, 5, 3, 1), (&FLY, 8, 0, 1)] {
         let bytes = room();
         let room = hk_format::Room::parse(&bytes).unwrap();
-        let members = [(AT, spec)];
-        let mut r = region(); r.actors = &members;
+        let members = Box::leak(Box::new([(AT, spec)]));
+        let mut r = region(); r.actors = members;
         let mut w = enemies::EnemyWorld::new();
         let mut p = Player::spawn(15 * ONE, ONE);
         let mut v = Vitals::new(VITAL_PARAMS);
