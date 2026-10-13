@@ -390,3 +390,41 @@ fn force_keeps_present_none_caps_and_uses_fixed_callbacks() {
         vec![([40 * 65536, 0], [10 * 65536, 0, 0]); 2]
     );
 }
+
+fn paired_room() -> Vec<u8> {
+    let mut b = Vec::from(*b"HKROOM02");
+    for n in [1u32, 1, 0, 1, 5, 1, 0, 0] { b.extend(n.to_le_bytes()); }
+    for n in [0u16, 0, 0, 4, 4, 0] { b.extend(n.to_le_bytes()); }
+    b.extend(0u32.to_le_bytes());
+    for n in [0i32, -65536 / 2, -65536, 65536 / 2, 0] { b.extend(n.to_le_bytes()); }
+    for mode in [0u32, 2, 0, 2, 2] {
+        for n in [0u32, 5, 12 * 65536, mode] { b.extend(n.to_le_bytes()); }
+    }
+    for n in [-20 * 65536i32, 0, 20 * 65536, 0] { b.extend(n.to_le_bytes()); }
+    b.resize(b.len() + 32 + 32768, 0);
+    b
+}
+#[test]
+fn admitted_pair_damage_enters_startle_then_animation_completes_chase() {
+    let bytes = paired_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let mut state = hk_sim::vengefly_fsm::new(0, 12628, [0, 0], 7).unwrap();
+    let mut body = Actions(hk_sim::fsm_chase_body::Chasing {
+        state: &mut state, room: &room, clips: [0, 1, 2, 3, 4],
+        position: [0, 0], hero: [10 * 65536, 0], facing: 1,
+        can_see: false, in_range: false, sound: None, direction_messages: 0,
+    });
+    hk_sim::vengefly_fsm::run(&mut body, false, false).unwrap();
+    hk_sim::vengefly_fsm::run(&mut body, false, true).unwrap();
+    assert_eq!(body.0.state.clip, 1, "original Startles? TRUE enters Startle");
+    assert_eq!(body.0.state.velocity, [0, 0]);
+    let sound = body.0.sound.take().expect("original Startle one shot");
+    assert!(sound.variant < 3 && sound.pitch >= 78643 && sound.pitch <= 91750);
+    assert_eq!(sound.volume, 65536);
+    body.0.state.animation_tick = 25;
+    hk_sim::vengefly_fsm::run(&mut body, false, false).unwrap();
+    assert_eq!(body.0.state.clip, 2, "animation completion enters Chase Start");
+    assert_eq!(body.0.state.audio_pitch, 81920);
+    body.0.state.die();
+    assert_eq!(body.0.state.velocity, [0, 0]);
+}

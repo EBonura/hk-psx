@@ -3046,3 +3046,33 @@ fn the_shell_above_the_body_takes_an_ordinary_pogo_and_no_damage() {
     assert_eq!(w.actor_state(0, ACID_AT.source_id).unwrap().2, 30);
 }
 const VITAL_BOUNCE_TICKS: u16 = NAIL_RESPONSE_PARAMS.bounce_ticks;
+
+#[test]
+fn original_vengefly_damage_emits_startle_on_accepted_lethal_and_not_rejected_hits() {
+    const FLY: ActorSpec = ActorSpec {
+        controller: ActorController::Vengefly { startle_clip: 0, chase_clip: 0, turn_fly_clip: 0 },
+        ..SPEC
+    };
+    const BLOCKED_FLY: ActorSpec = ActorSpec {
+        health: EnemyParams { invincible: true, ..SPEC.health }, ..FLY
+    };
+    const AT: ActorPlacement = ActorPlacement { source_id: 12628, ..PLACEMENT };
+    for (spec, damage, hp, calls) in [(&FLY, 0, 8, 0), (&BLOCKED_FLY, 5, 8, 0), (&FLY, 5, 3, 1), (&FLY, 8, 0, 1)] {
+        let bytes = room();
+        let room = hk_format::Room::parse(&bytes).unwrap();
+        let members = [(AT, spec)];
+        let mut r = region(); r.actors = &members;
+        let mut w = enemies::EnemyWorld::new();
+        let mut p = Player::spawn(15 * ONE, ONE);
+        let mut v = Vitals::new(VITAL_PARAMS);
+        let mut heard = 0;
+        let events = w.tick(&r, &room, &mut world::State, &mut p, &mut v, &Nail::new(), &DreamNail::new(),
+            Some(([-20 * ONE, -20 * ONE, 20 * ONE, 20 * ONE], damage)), &mut NailResponse::new(), no_attack(),
+            [&[[-ONE,-2*ONE],[ONE,-2*ONE],[ONE,ONE],[-ONE,ONE]];4], cheats::Settings::new(), [0,0,-2496922],
+            |event| { if let enemies::RunnerEventKind::VengeflyStartle { .. } = event.kind { heard += 1; } },
+            |_,_,_,_| None);
+        assert_eq!(heard, calls, "accepted lethal damage must run Startle before death clears the pair");
+        assert_eq!(events.hits, calls);
+        assert_eq!(w.actor_state(0,12628).unwrap().2, hp);
+    }
+}
