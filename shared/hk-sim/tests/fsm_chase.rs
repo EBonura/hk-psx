@@ -321,6 +321,24 @@ fn compact_variables_preserve_both_mutable_namespaces_and_reject_partial_save() 
     assert_eq!(state.pair.variable(programs, 0, 1).unwrap(), 1);
     assert_eq!(state.pair.variable(programs, 1, 1).unwrap(), 0);
     assert_eq!(state.audio_pitch, 65536);
+    state.velocity = [5 * 65536, 2 * 65536];
+    state
+        .queue_force_and_clamp([40 * 65536, 0], [10 * 65536, 0, 0])
+        .unwrap();
+    assert_eq!(state.velocity, [0, 0]);
+    assert_eq!(state.queued_force, [40 * 65536, 0]);
+    state.integrate_queued_force();
+    assert!((state.velocity[0] - 52429).abs() <= 1);
+    assert_eq!(state.velocity[1], 0);
+    assert_eq!(state.queued_force, [0, 0]);
+    state.queued_force = [1, i32::MAX];
+    let velocity = state.velocity;
+    assert_eq!(
+        state.queue_force_and_clamp([3, 1], [0, 0, 0]),
+        Err(Error::Parameter)
+    );
+    assert_eq!(state.queued_force, [1, i32::MAX]);
+    assert_eq!(state.velocity, velocity);
     state.queued_force = [123, 456];
     state.velocity = [789, 12];
     state.die();

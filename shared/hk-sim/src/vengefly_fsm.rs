@@ -244,6 +244,47 @@ impl State {
             flags: enabled,
         })
     }
+    /// The admitted bodies have mass 1 and no gravity or linear damping.
+    /// Forces remain queued until the shared original fixed-physics boundary.
+    pub fn integrate_queued_force(&mut self) {
+        for axis in 0..2 {
+            let impulse = (self.queued_force[axis] as i64
+                * crate::fsm_chase::FixedClock::FIXED_UNITS as i64)
+                / crate::fsm_chase::FixedClock::SOURCE_RATE as i64;
+            self.velocity[axis] = self.velocity[axis].saturating_add(impulse as i32);
+            self.queued_force[axis] = 0;
+        }
+    }
+    pub fn queue_force_and_clamp(
+        &mut self,
+        force: [i32; 2],
+        limits: [i32; 3],
+    ) -> Result<(), Error> {
+        if limits.iter().any(|v| *v < 0) {
+            return Err(Error::Parameter);
+        }
+        let mut queued = self.queued_force;
+        let mut velocity = self.velocity;
+        for axis in 0..2 {
+            queued[axis] = queued[axis]
+                .checked_add(force[axis])
+                .ok_or(Error::Parameter)?;
+            velocity[axis] = velocity[axis].clamp(-limits[axis], limits[axis]);
+        }
+        crate::buzz::clamp(&mut velocity, limits[2]);
+        self.queued_force = queued;
+        self.velocity = velocity;
+        Ok(())
+    }
+    pub fn decelerate(&mut self, amount: i32) -> Result<(), Error> {
+        if amount < 0 {
+            return Err(Error::Parameter);
+        }
+        for axis in &mut self.velocity {
+            *axis = axis.signum() * axis.saturating_abs().saturating_sub(amount).max(0);
+        }
+        Ok(())
+    }
     pub fn enabled(&self, component: usize) -> bool {
         component < 2 && self.flags & (1 << component) != 0
     }

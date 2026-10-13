@@ -11,6 +11,8 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
     for region in metadata["regions"].as_array().ok_or("regions")? {
         for actor in region["actors"].as_array().ok_or("actors")? {
             if actor["movement_control"]["kind"].as_str() != Some("Vengefly") { continue; }
+            let body=&actor["Rigidbody2D"];
+            if body["m_BodyType"].as_i64()!=Some(0)||body["m_Mass"].as_f64()!=Some(1.0)||body["m_LinearDamping"].as_f64()!=Some(0.0)||body["m_GravityScale"].as_f64()!=Some(0.0)||body["m_Constraints"].as_i64()!=Some(4){return Err("Vengefly fixed physics body outside admitted subset".into());}
             let key = (region["scene_id"].as_u64().ok_or("scene")?, actor["spec_source_id"].as_u64().ok_or("source")?);
             let owner = actor["game_object"].as_i64().ok_or("owner")?;
             let graphs = actor["fsm_ids"].as_array().ok_or("FSM ids")?.iter()
