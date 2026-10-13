@@ -55,6 +55,26 @@ impl IdleBuzz {
         acceleration_max: i32,
         range: &mut impl FnMut(i32, i32) -> i32,
     ) {
+        self.step_timed(
+            position,
+            velocity,
+            speed_max,
+            acceleration_max,
+            ONE / 50,
+            range,
+        );
+    }
+    /// Explicit callback delta for a graph's Enter versus FixedUpdate phase.
+    /// Existing hand ports retain their previous fixed-step wrapper above.
+    pub fn step_timed(
+        &mut self,
+        position: [i32; 2],
+        velocity: &mut [i32; 2],
+        speed_max: i32,
+        acceleration_max: i32,
+        delta: i32,
+        range: &mut impl FnMut(i32, i32) -> i32,
+    ) {
         let v = velocity;
         for axis in 0..2 {
             let low = position[axis] < self.start[axis] - ROAMING_RANGE;
@@ -83,7 +103,7 @@ impl IdleBuzz {
             self.wait = range(WAIT_MIN, WAIT_MAX);
         }
         if self.wait > 0 {
-            self.wait -= ONE / 50;
+            self.wait -= delta;
         }
         v[0] += self.accel[0];
         v[1] += self.accel[1];

@@ -357,7 +357,16 @@ impl Tables {
         Ok((opcode,flags))
     }
 }
-pub fn cook(fsm:&Value)->Result<Vec<u8>> {
+pub struct Cooked {
+    pub bytes:Vec<u8>,
+    pub events:Vec<String>,
+    pub variables:Vec<String>,
+    pub states:Vec<String>,
+}
+pub fn cook(fsm:&Value)->Result<Vec<u8>>{Ok(cook_detailed(fsm)?.bytes)}
+/// Side selectors are generated from the same serialized order as the bytes.
+/// They let component messages use their own event/variable namespace.
+pub fn cook_detailed(fsm:&Value)->Result<Cooked> {
     let states=fsm.get("states").and_then(Value::list).ok_or("states")?;
     let names:Vec<_>=states.iter().map(|s|text(s.get("name"))).collect::<Result<_>>()?;
     let state_index=|name:String|->Result<u16>{names.iter().position(|s|*s==name).map(|n|n as u16).ok_or_else(||format!("missing state {name}").into())};
@@ -480,12 +489,13 @@ pub fn cook(fsm:&Value)->Result<Vec<u8>> {
     for (opcode,start,count,flags) in actions{b.extend(opcode.to_le_bytes());b.extend(start.to_le_bytes());b.extend([count,flags,0,0]);}
     for (event,target) in edges{b.extend(event.to_le_bytes());b.extend(target.to_le_bytes());}
     for (kind,index) in t.operands{b.extend([kind,0]);b.extend(index.to_le_bytes());}
+    let variables=t.variables.iter().map(|(name,_,_)|name.clone()).collect();
     for (_,initial,kind) in t.variables{b.extend(initial.to_le_bytes());b.extend([kind,0,0,0]);}
     for n in t.constants{b.extend(n.to_le_bytes());}
     let len=b.len() as u32;b[28..32].copy_from_slice(&len.to_le_bytes());
     let program=hk_format::fsm::Program::parse(&b).map_err(|e|format!("invalid cooked graph {e:?}"))?;
     program.action_groups().map_err(|e|format!("unsupported graph action group {e:?}"))?;
-    Ok(b)
+    Ok(Cooked{bytes:b,events:t.events,variables,states:states.iter().map(|s|text(s.get("name"))).collect::<Result<_>>()?})
 }
 #[cfg(test)]
 mod tests {

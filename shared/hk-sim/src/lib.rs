@@ -1693,3 +1693,5 @@ mod combination_tests {
 pub mod fsm_chase;
 
 pub mod vengefly_fsm;
+
+pub mod fsm_chase_body;

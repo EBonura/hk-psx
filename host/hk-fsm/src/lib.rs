@@ -1,7 +1,7 @@
 mod vengefly;
 pub use vengefly::cook_vengeflies;
 mod cook;
-pub use cook::cook;
+pub use cook::{cook,cook_detailed,Cooked};
 pub use cook::crawler_fields;
 /// Regenerate the original Gruzzer graph used by the guest.
 pub fn cook_gruzzer(root:&std::path::Path)->Result<(),Box<dyn std::error::Error>> {

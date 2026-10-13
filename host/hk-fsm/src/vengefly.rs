@@ -24,7 +24,7 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
         }
     }
     if placements.len() != 20 { return Err("admitted Vengefly placement set changed".into()); }
-    let mut banks: Vec<Vec<u8>> = Vec::new();
+    let mut banks: Vec<crate::Cooked> = Vec::new();
     let mut table = Vec::new();
     for ((scene, id), (owner, graphs)) in placements {
         if graphs.len() != 2 { return Err("Vengefly requires both owned original FSMs".into()); }
@@ -104,20 +104,51 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
             for edge in fsm.get("globalTransitions").and_then(Value::list).ok_or("global transitions")?{
                 if edge.get("fsmEvent").and_then(|v|v.get("name")).and_then(Value::str).as_deref()==Some("DIR MSG"){return Err("new global DIR MSG recipient unsupported".into());}
             }
-            let bytes = crate::cook(fsm)?;
-            let index = if let Some(index) = banks.iter().position(|bank| bank == &bytes) { index }
-                else { let index = banks.len(); banks.push(bytes); index };
+            let cooked = crate::cook_detailed(fsm)?;
+            let index = if let Some(index) = banks.iter().position(|bank| bank.bytes == cooked.bytes && bank.events==cooked.events && bank.variables==cooked.variables && bank.states==cooked.states) { index }
+                else { let index = banks.len(); banks.push(cooked); index };
             ordered.push((index,enabled!=0));
             named.insert(name, index);
         }
         if !named.contains_key("chaser")||!named.contains_key("flyer_receive_direction_msg") {
             return Err("Vengefly component graph missing".into());
         }
-        table.push((scene, id, ordered));
+        let mut pitch=None;
+        for reference in owner_tree.get("m_Component").and_then(Value::list).ok_or("owner components")?{
+            let path=reference.get("component").and_then(|v|v.get("m_PathID")).and_then(Value::int).ok_or("audio component path")?;
+            let object=source.object(&owner_file,path)?;
+            if object.class_id()==82{
+                if pitch.is_some(){return Err("multiple Vengefly AudioSources unsupported".into());}
+                let audio=source.read(&object)?;let value=audio.get("m_Pitch").and_then(Value::float).ok_or("source audio pitch")?;
+                if !value.is_finite()||value<=0.0||value>16.0{return Err("source audio pitch outside bound".into());}
+                pitch=Some((value*65536.0).round() as i32);
+            }
+        }
+        table.push((scene, id, ordered,pitch.ok_or("Vengefly AudioSource missing")?));
     }
-    // Publication remains unavailable until every enabled action is admitted.
-    // A following integration adds runtime scheduling and the exact bank layout.
-    println!("Vengefly: {} placements, {} original graph banks admitted", table.len(), banks.len());
+    use std::fmt::Write;
+    if banks.len()!=2{return Err("Vengefly graph variation requires an explicit runtime bank selector".into());}
+    let mut bundle=Vec::new();let mut offsets=Vec::new();let mut graph_rows=String::new();
+    for graph in &banks{
+        offsets.push(bundle.len());bundle.extend_from_slice(&graph.bytes);
+        let event=|name:&str|->u16{graph.events.iter().position(|n|n==name).map(|n|n as u16).unwrap_or(hk_format::fsm::NO_EVENT)};
+        let alert=graph.variables.iter().position(|n|n=="Start Alert").map(|n|n as u8).unwrap_or(u8::MAX);
+        writeln!(&mut graph_rows,"({}, {}, {}, [{},{},{},{}], {}),",offsets.last().unwrap(),graph.bytes.len(),event("TOOK DAMAGE"),event("GO UP"),event("GO LEFT"),event("GO RIGHT"),event("GO DOWN"),alert)?;
+    }
+    let chaser=table[0].2[0].0;let receiver=table[0].2[1].0;
+    if !banks[chaser].variables.iter().any(|n|n=="Start Alert")||banks[receiver].variables.iter().any(|n|n=="Start Alert"){return Err("Vengefly component role mismatch".into());}
+    let mut rows=String::new();
+    for (scene,id,ordered,pitch) in &table{
+        if ordered[0].0!=chaser||ordered[1].0!=receiver{return Err("Vengefly per-instance graph order variation unsupported".into());}
+        let scene=u8::try_from(*scene)?;let id=u16::try_from(*id)?;
+        let enabled=ordered[0].1 as u8|((ordered[1].1 as u8)<<1);
+        writeln!(&mut rows,"({scene},{id},{enabled},{pitch}),")?;
+    }
+    let generated=format!("// Original paired graphs and exact per-instance enablement.\npub static BANK:[u8;{}]=*include_bytes!(\"vengefly.fsm\");\npub static GRAPHS:&[(u16,u16,u16,[u16;4],u8)]=&[\n{graph_rows}];\npub const CHASER:usize={chaser};\npub const RECEIVER:usize={receiver};\npub static INSTANCES:&[(u8,u16,u8,i32)]=&[\n{rows}];\n",bundle.len());
+    if bundle.len()>u16::MAX as usize{return Err("Vengefly bank offset overflow".into());}
+    std::fs::write(root.join("data/vengefly.fsm"),&bundle)?;
+    std::fs::write(root.join("data/vengefly_fsm.rs"),generated)?;
+    println!("Vengefly: {} placements, {} original graph banks, {} bank bytes",table.len(),banks.len(),bundle.len());
     Ok(())
 }
 
