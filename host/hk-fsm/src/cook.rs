@@ -123,6 +123,8 @@ impl Tables {
         let object=v.get("gameObject").unwrap_or(v);
         if !object.get("useVariable").is_some_and(Value::truthy){return Err("literal object unsupported".into());}
         let name=text(object.get("name"))?;
+        if self.paired_chase&&name=="Hero"{self.operands.push((3,3));return Ok(());}
+        if self.paired_chase&&name=="Self"{self.operand(object,3)?;return Ok(());}
         if self.declarations.iter().find(|(n,_,_)|*n==name).map(|(_,_,k)|*k)!=Some(3){return Err("object variable declaration".into());}
         let role=match name.as_str(){"Self"=>OWNER,"Camera"=>CAMERA,_=>return Err(format!("unsupported object {name}").into())};
         self.operands.push((3,role as u16));Ok(())
@@ -137,6 +139,22 @@ impl Tables {
                 self.operands.push((3,CAMERA as u16));self.arg(f,"store",3)?;FIND_OBJECT
             }
             "BoolTest"=>{self.arg(f,"boolVariable",1)?;self.ev(f,"isTrue")?;self.ev(f,"isFalse")?;BOOL_TEST}
+            "Tk2dPlayAnimation"=>{
+                self.object(get(f,"gameObject")?)?;
+                let library=get(f,"animLibName")?;
+                if library.get("useVariable").is_some_and(Value::truthy)||!text(Some(library.get("value").unwrap_or(library)))?.is_empty(){return Err("animation library override unsupported".into());}
+                let clip=get(f,"clipName")?;
+                if clip.get("useVariable").is_some_and(Value::truthy){return Err("dynamic animation clip unsupported".into());}
+                let clip=match text(Some(clip.get("value").unwrap_or(clip)))?.as_str(){"Idle"=>0,"Startle"=>1,"Chase"=>2,_=>return Err("unsupported Vengefly animation clip".into())};
+                self.operand(&Value::Int(clip),3)?;PLAY_ANIMATION
+            }
+            "Tk2dPlayFrame"=>{self.object(get(f,"gameObject")?)?;self.arg(f,"frame",3)?;PLAY_FRAME}
+            "Tk2dWatchAnimationEvents"=>{
+                self.object(get(f,"gameObject")?)?;
+                if !text(Some(get(f,"animationTriggerEvent")?))?.is_empty(){return Err("animation trigger event unsupported".into());}
+                self.ev(f,"animationCompleteEvent")?;flags|=UPDATE;WATCH_ANIMATION
+            }
+            "SetAudioPitch"=>{self.object(get(f,"gameObject")?)?;self.arg(f,"pitch",2)?;SET_AUDIO_PITCH}
             "CheckCanSeeHero"=>{self.arg(f,"storeResult",1)?;CHECK_CAN_SEE_HERO}
             "CheckAlertRange"=>{self.arg(f,"alertRange",3)?;self.arg(f,"storeResult",1)?;CHECK_ALERT_RANGE}
             "FindAlertRange"=>{
@@ -232,6 +250,14 @@ impl Tables {
                 flags|=UPDATE;WALK_LEFT_RIGHT
             }
             "FaceDirection"=>{
+                if self.paired_chase {
+                    self.object(get(f,"gameObject")?)?;self.arg(f,"spriteFacesRight",1)?;self.arg(f,"playNewAnimation",1)?;
+                    let clip=get(f,"newAnimationClip")?;
+                    if clip.get("useVariable").is_some_and(Value::truthy){return Err("dynamic turn clip unsupported".into());}
+                    let clip=match text(clip.get("value"))?.as_str(){""=>0,"TurnToIdle"=>3,"TurnToFly"=>4,_=>return Err("Vengefly turn clip unsupported".into())};
+                    self.operand(&Value::Int(clip),3)?;self.arg(f,"pauseBetweenTurns",1)?;self.arg(f,"pauseTime",2)?;
+                    return Ok((FACE_DIRECTION,flags));
+                }
                 if get(f,"playNewAnimation")?.truthy()||get(f,"pauseBetweenTurns")?.truthy(){return Err("unsupported animated FaceDirection".into());}
                 self.object(get(f,"gameObject")?)?;// Retain validated object role for the kernel.
                 self.arg(f,"spriteFacesRight",1)?;FACE_DIRECTION

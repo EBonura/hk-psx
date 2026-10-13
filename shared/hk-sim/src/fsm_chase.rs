@@ -7,6 +7,28 @@ use crate::{
 use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
 
 pub trait Environment {
+    fn face_direction(
+        &mut self,
+        _role: i32,
+        _sprite_right: bool,
+        _clip: Option<i32>,
+        _pause: Option<i32>,
+    ) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn play_animation(&mut self, _role: i32, _clip: i32) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn play_frame(&mut self, _role: i32, _frame: i32) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn animation_complete(&self, _role: i32) -> Result<bool, Error> {
+        Err(Error::UnsupportedAction)
+    }
+    fn set_audio_pitch(&mut self, _role: i32, _pitch: i32) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
+
     fn elapsed_ticks(&self, _real_time: bool) -> Result<u16, Error> {
         Err(Error::UnsupportedAction)
     }
@@ -66,6 +88,60 @@ impl<E: Environment> Kernel for Actions<E> {
             event: NO_EVENT,
         };
         match a.opcode {
+            FACE_DIRECTION => {
+                if a.operand_count != 6 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                let sprite_right = boolean(p, operand(p, a, 1)?, v)?;
+                let clip = if boolean(p, operand(p, a, 2)?, v)? {
+                    Some(read(p, operand(p, a, 3)?, v)?)
+                } else {
+                    None
+                };
+                let pause = if boolean(p, operand(p, a, 4)?, v)? {
+                    let time = read(p, operand(p, a, 5)?, v)?;
+                    if time < 0 {
+                        return Err(Error::Parameter);
+                    }
+                    Some(time)
+                } else {
+                    None
+                };
+                self.0.face_direction(role, sprite_right, clip, pause)?;
+            }
+
+            PLAY_ANIMATION | PLAY_FRAME | SET_AUDIO_PITCH => {
+                if a.operand_count != 2 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                let value = read(p, operand(p, a, 1)?, v)?;
+                if a.opcode == PLAY_ANIMATION {
+                    self.0.play_animation(role, value)?;
+                } else if a.opcode == PLAY_FRAME {
+                    if value < 0 {
+                        return Err(Error::Parameter);
+                    }
+                    self.0.play_frame(role, value)?;
+                } else {
+                    if value <= 0 {
+                        return Err(Error::Parameter);
+                    }
+                    self.0.set_audio_pitch(role, value)?;
+                }
+            }
+            WATCH_ANIMATION => {
+                if a.operand_count != 2 {
+                    return Err(Error::Parameter);
+                }
+                let role = read(p, operand(p, a, 0)?, v)?;
+                result.finished = self.0.animation_complete(role)?;
+                if result.finished {
+                    result.event = event(operand(p, a, 1)?)?;
+                }
+            }
+
             GET_OWNER => {
                 if a.operand_count != 1 {
                     return Err(Error::Parameter);
