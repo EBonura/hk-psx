@@ -9,6 +9,27 @@ pub struct Variables {
     booleans: u8,
 }
 impl Variables {
+    /// Typed global cells are emitted by admission with disjoint component maps.
+    /// Mutable values remain lossless; no serialized type walk is needed here.
+    #[inline(never)]
+    fn flat(self) -> [i32; 11] {
+        let mut values = [0; 11];
+        values[..4].copy_from_slice(&self.floats);
+        for i in 0..5 { values[4+i] = ((self.booleans >> i) & 1) as i32; }
+        values[9] = self.roles[0] as i32; values[10] = self.roles[1] as i32;
+        values
+    }
+    #[inline(never)]
+    fn from_flat(values: &[i32;11]) -> Result<Self, Error> {
+        let mut booleans = 0;
+        for i in 0..5 {
+            let value = values[4+i];
+            if !(0..=1).contains(&value) { return Err(Error::Parameter); }
+            booleans |= (value as u8) << i;
+        }
+        if values[9..].iter().any(|v| !(0..=3).contains(v)) { return Err(Error::Parameter); }
+        Ok(Self { floats: values[..4].try_into().unwrap(), booleans, roles: [values[9] as u8, values[10] as u8] })
+    }
     fn visit(
         programs: [Program<'_>; 2],
         component: usize,
@@ -233,6 +254,20 @@ pub struct State {
     pub flags: u8,
 }
 impl State {
+    /// Original external writes address the component's original variable
+    /// namespace. The cook maps each identity to a distinct lossless cell.
+    #[inline(never)]
+    pub fn variable(&self, component: usize, index: usize) -> Result<i32, Error> {
+        let slot = *graphs::CELL_MAPS.get(component).and_then(|map| map.get(index)).ok_or(Error::Parameter)? as usize;
+        Ok(self.pair.variables.flat()[slot])
+    }
+    #[inline(never)]
+    pub fn set_variable(&mut self, component: usize, index: usize, value: i32) -> Result<(), Error> {
+        let slot = *graphs::CELL_MAPS.get(component).and_then(|map| map.get(index)).ok_or(Error::Parameter)? as usize;
+        let mut values = self.pair.variables.flat(); values[slot] = value;
+        self.pair.variables = Variables::from_flat(&values)?;
+        Ok(())
+    }
     #[inline(never)]
     pub fn initial(
         programs: [Program<'_>; 2],
@@ -333,7 +368,11 @@ pub fn new(scene: usize, source: u32, position: [i32; 2], seed: u32) -> Option<S
     let row = graphs::INSTANCES
         .iter()
         .find(|(s, id, _, _)| *s as usize == scene && *id as u32 == source)?;
-    State::initial(programs(), position, seed, row.2, row.3).ok()
+    Some(State {
+        pair: Pair { variables: Variables::from_flat(&graphs::INITIAL).ok()?, cursors: programs().map(|p| Cursor::initial(&p)), rng: seed },
+        buzz: crate::buzz::IdleBuzz::new(position), velocity: [0;2], queued_force: [0;2],
+        audio_pitch: row.3, animation_tick: 0, face_pause: 0, clip: 0, flags: row.2,
+    })
 }
 /// All callbacks are direct calls through the one concrete production body.
 /// DIR MSG is recorded by the body; admission proved both graphs and their
@@ -345,25 +384,27 @@ pub fn run(
     damage: bool,
 ) -> Result<(), Error> {
     let programs = programs();
-    let mut pair = body.0.state.pair;
+    let mut values = body.0.state.pair.variables.flat();
+    let mut cursors = body.0.state.pair.cursors;
+    let mut rng = body.0.state.pair.rng;
     let result = (|| {
         if damage {
             for (component, index) in [graphs::CHASER, graphs::RECEIVER].into_iter().enumerate() {
                 let event = graphs::GRAPHS[index].2;
                 if body.0.state.enabled(component) && event != hk_format::fsm::NO_EVENT {
-                    pair.event(programs, component, event, body)?;
+                    cursors[component].event(&programs[component], &mut values, &mut rng, event, body)?;
                 }
             }
         } else {
             for component in 0..2 {
                 if body.0.state.enabled(component) {
-                    pair.step(programs, component, Phase::Update, body)?;
+                    cursors[component].step(&programs[component], &mut values, &mut rng, Phase::Update, body)?;
                 }
             }
             if fixed {
                 for component in 0..2 {
                     if body.0.state.enabled(component) {
-                        pair.step(programs, component, Phase::FixedUpdate, body)?;
+                        cursors[component].step(&programs[component], &mut values, &mut rng, Phase::FixedUpdate, body)?;
                     }
                 }
                 body.0.state.integrate_queued_force();
@@ -371,6 +412,8 @@ pub fn run(
         }
         Ok(())
     })();
-    body.0.state.pair = pair;
+    body.0.state.pair.variables = Variables::from_flat(&values)?;
+    body.0.state.pair.cursors = cursors;
+    body.0.state.pair.rng = rng;
     result
 }

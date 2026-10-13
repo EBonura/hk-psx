@@ -2,6 +2,9 @@
 use crate::Error;
 
 pub const MAGIC: &[u8; 8] = b"HKFSM01\0";
+/// Cook-normalized operands: signed 31-bit literals, namespace-mapped cells,
+/// explicit events and absent outputs. Original state/action order is retained.
+pub const NORMAL_MAGIC: &[u8; 8] = b"HKFSM02\0";
 pub const HEADER: usize = 32;
 pub const MAX_VARIABLES: usize = 16;
 pub const MAX_STATE_ACTIONS: usize = 16;
@@ -100,7 +103,7 @@ impl<'a> Program<'a> {
         }Ok(chase)
     }
     pub fn parse(bytes: &'a [u8]) -> Result<Self, Error> {
-        if bytes.len() < HEADER || &bytes[..8] != MAGIC { return Err(Error::Header); }
+        if bytes.len() < HEADER || (&bytes[..8] != MAGIC && &bytes[..8] != NORMAL_MAGIC) { return Err(Error::Header); }
         let counts = core::array::from_fn::<_, 8, _>(|i| word(bytes, 8 + i * 2));
         let [states, actions, transitions, operands, variables, constants, events, globals] = counts;
         let start = word(bytes, 24);
@@ -119,6 +122,7 @@ impl<'a> Program<'a> {
         if end != bytes.len() || integer(bytes, 28) as u32 != bytes.len() as u32 {
             return Err(Error::Truncated);
         }
+        if &bytes[..8] == NORMAL_MAGIC && constants != 0 { return Err(Error::Reference); }
         let p = Self { bytes, states, actions, transitions, operands, variables,
             constants, events, globals, start, offsets };
         for i in 0..states {
@@ -131,6 +135,7 @@ impl<'a> Program<'a> {
         }
         for i in 0..actions {
             let a = p.action(i).unwrap();
+            if p.normalized() && a.operand_count > 8 { return Err(Error::Limit); }
             if a.flags & !(ENABLED | UPDATE) != 0
                 || a.operands as u32 + a.operand_count as u32 > operands as u32 {
                 return Err(Error::Reference);
@@ -141,8 +146,8 @@ impl<'a> Program<'a> {
             if event >= events || target >= states { return Err(Error::Reference); }
         }
         for i in 0..operands {
-            let o = p.operand(i).unwrap();
-            let valid = if o.kind == 0 { o.index < constants }
+            let o = p.operand(i).ok_or(Error::Reference)?;
+            let valid = if o.kind == 0 { if p.normalized() { o.index < operands } else { o.index < constants } }
                 else if o.kind == 1 { o.index < variables }
                 else if o.kind == 2 { o.index < events || o.index == NO_EVENT }
                 else if o.kind == 3 { o.index <= 3 }
@@ -171,6 +176,7 @@ impl<'a> Program<'a> {
         for i in 0..6 { offsets[i]=end;end+=counts[i] as usize*[8,8,4,4,8,4][i]; }
         Self{bytes,states,actions,transitions,operands,variables,constants,events,globals,start:word(bytes,24),offsets}
     }
+    pub fn normalized(self) -> bool { &self.bytes[..8] == NORMAL_MAGIC }
     pub fn variable_count(self) -> u16 { self.variables }
     pub fn state_count(self) -> u16 { self.states }
     pub fn event_count(self) -> u16 { self.events }
@@ -193,6 +199,16 @@ impl<'a> Program<'a> {
     pub fn operand(self, index: u16) -> Option<Operand> {
         if index >= self.operands { return None; }
         let p = self.offsets[3] + index as usize * 4;
+        if self.normalized() {
+            let value = integer(self.bytes, p) as u32;
+            return if value & 0x80000000 == 0 { Some(Operand { kind: 0, index }) }
+                else { match value >> 16 {
+                    0x8000 => Some(Operand { kind: 1, index: value as u16 }),
+                    0x8001 => Some(Operand { kind: 2, index: value as u16 }),
+                    0x8002 if value as u16 == 0 => Some(Operand { kind: 4, index: 0 }),
+                    _ => None,
+                }};
+        }
         Some(Operand { kind: self.bytes[p], index: word(self.bytes, p + 2) })
     }
     #[inline(always)]
@@ -205,6 +221,11 @@ impl<'a> Program<'a> {
     }
     #[inline(always)]
     pub fn constant(self, index: u16) -> Option<i32> {
+        if self.normalized() {
+            if index >= self.operands { return None; }
+            let value = integer(self.bytes, self.offsets[3] + index as usize * 4);
+            return (value >= 0).then(|| (value << 1) >> 1);
+        }
         (index < self.constants).then(|| integer(self.bytes, self.offsets[5] + index as usize * 4))
     }
     #[inline(always)]

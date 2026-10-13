@@ -30,9 +30,11 @@ fn range(rng: &mut u32, lo: i32, hi: i32) -> i32 {
     lo + (((*rng >> 8) as i64 * (hi - lo) as i64) >> 24) as i32
 }
 impl Environment for Chasing<'_, '_> {
+    #[inline(never)]
     fn tick(&self) -> u32 {
         self.state.animation_tick
     }
+    #[inline(never)]
     fn elapsed_ticks(&self, real: bool) -> Result<u16, Error> {
         if real {
             Err(Error::UnsupportedAction)
@@ -40,9 +42,11 @@ impl Environment for Chasing<'_, '_> {
             Ok(1)
         }
     }
+    #[inline(never)]
     fn can_see_hero(&self) -> Result<bool, Error> {
         Ok(self.can_see)
     }
+    #[inline(never)]
     fn in_alert_range(&self, role: i32) -> Result<bool, Error> {
         if role == 2 {
             Ok(self.in_range)
@@ -50,10 +54,12 @@ impl Environment for Chasing<'_, '_> {
             Err(Error::Parameter)
         }
     }
+    #[inline(never)]
     fn find_alert_range(&self, role: i32) -> Result<i32, Error> {
         owner(role)?;
         Ok(2)
     }
+    #[inline(never)]
     fn velocity(&self, role: i32, space: i32) -> Result<[i32; 2], Error> {
         owner(role)?;
         if space != 0 && space != 1 {
@@ -61,6 +67,7 @@ impl Environment for Chasing<'_, '_> {
         }
         Ok(self.state.velocity)
     }
+    #[inline(never)]
     fn set_velocity(&mut self, role: i32, v: [Option<i32>; 2]) -> Result<(), Error> {
         owner(role)?;
         for (axis, value) in v.into_iter().enumerate() {
@@ -70,14 +77,17 @@ impl Environment for Chasing<'_, '_> {
         }
         Ok(())
     }
+    #[inline(never)]
     fn add_force(&mut self, role: i32, force: [i32; 2], limits: [i32; 3]) -> Result<(), Error> {
         owner(role)?;
         self.state.queue_force_and_clamp(force, limits)
     }
+    #[inline(never)]
     fn decelerate(&mut self, role: i32, amount: i32) -> Result<(), Error> {
         owner(role)?;
         self.state.decelerate(amount)
     }
+    #[inline(never)]
     fn set_rotation_z(&mut self, role: i32, angle: i32, space: i32) -> Result<(), Error> {
         owner(role)?;
         if angle == 0 && space == 0 {
@@ -86,6 +96,7 @@ impl Environment for Chasing<'_, '_> {
             Err(Error::UnsupportedAction)
         }
     }
+    #[inline(never)]
     fn idle_buzz(
         &mut self,
         role: i32,
@@ -122,6 +133,7 @@ impl Environment for Chasing<'_, '_> {
         );
         Ok(())
     }
+    #[inline(never)]
     fn chase(
         &mut self,
         role: i32,
@@ -147,6 +159,7 @@ impl Environment for Chasing<'_, '_> {
         crate::buzz::clamp(&mut self.state.velocity, speed);
         Ok(())
     }
+    #[inline(never)]
     fn play_animation(&mut self, role: i32, clip: i32) -> Result<(), Error> {
         owner(role)?;
         if !(0..=4).contains(&clip) {
@@ -156,6 +169,7 @@ impl Environment for Chasing<'_, '_> {
         self.state.animation_tick = 0;
         Ok(())
     }
+    #[inline(never)]
     fn play_frame(&mut self, role: i32, frame: i32) -> Result<(), Error> {
         owner(role)?;
         let clip = self
@@ -167,6 +181,7 @@ impl Environment for Chasing<'_, '_> {
         self.state.animation_tick = (frame as u64 * 60 * 65536 / clip[2] as u64) as u32;
         Ok(())
     }
+    #[inline(never)]
     fn animation_complete(&self, role: i32) -> Result<bool, Error> {
         owner(role)?;
         let clip = self
@@ -175,6 +190,7 @@ impl Environment for Chasing<'_, '_> {
         Ok(clip[3] & 65535 == 2
             && self.state.animation_tick as u64 * clip[2] as u64 >= clip[1] as u64 * 60 * 65536)
     }
+    #[inline(never)]
     fn face_direction(
         &mut self,
         role: i32,
@@ -202,6 +218,7 @@ impl Environment for Chasing<'_, '_> {
         }
         Ok(())
     }
+    #[inline(never)]
     fn face_object(
         &mut self,
         roles: [i32; 2],
@@ -224,15 +241,18 @@ impl Environment for Chasing<'_, '_> {
         }
         Ok(())
     }
+    #[inline(never)]
     fn set_audio_pitch(&mut self, role: i32, pitch: i32) -> Result<(), Error> {
         owner(role)?;
         self.state.audio_pitch = pitch;
         Ok(())
     }
+    #[inline(never)]
     fn send_direction_message(&mut self) -> Result<(), Error> {
         self.direction_messages = self.direction_messages.saturating_add(1);
         Ok(())
     }
+    #[inline(never)]
     fn audio_one_shot(
         &mut self,
         role: i32,

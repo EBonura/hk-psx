@@ -1,33 +1,92 @@
 //! Vengefly action closure under construction. Unknown actions stay refused;
 //! these scalar kernels do not imply admission of either complete graph.
 use crate::fsm::{Error, Kernel, Phase, ResultAction};
-#[inline(never)]
-fn operand(p: &Program<'_>, a: Action, index: u8) -> Result<hk_format::fsm::Operand, Error> {
-    crate::fsm_actions::operand(p, a, index)
+/// One shared decode pass per action. Kernels consume typed cells instead of
+/// repeating serialized operand/constant/type lookups for every parameter.
+struct Arguments {
+    values: [i32; 8],
+    indices: [u8; 8],
+    kinds: [u8; 8],
+    types: [u8; 8],
+    count: u8,
 }
-#[inline(never)]
-fn read(p: &Program<'_>, o: hk_format::fsm::Operand, v: &[i32]) -> Result<i32, Error> {
-    crate::fsm_actions::read(p, o, v)
-}
-#[inline(never)]
-fn write(
-    p: &Program<'_>,
-    o: hk_format::fsm::Operand,
-    v: &mut [i32],
-    value: i32,
-) -> Result<(), Error> {
-    crate::fsm_actions::write(p, o, v, value)
-}
-#[inline(never)]
-fn event(o: hk_format::fsm::Operand) -> Result<u16, Error> {
-    crate::fsm_actions::event(o)
-}
-#[inline(never)]
-fn boolean(p: &Program<'_>, o: hk_format::fsm::Operand, v: &[i32]) -> Result<bool, Error> {
-    match read(p, o, v)? {
-        0 => Ok(false),
-        1 => Ok(true),
-        _ => Err(Error::Parameter),
+impl Arguments {
+    #[inline(never)]
+    fn decode(p: &Program<'_>, a: Action, variables: &[i32]) -> Result<Self, Error> {
+        if a.operand_count > 8 {
+            return Err(Error::Parameter);
+        }
+        let mut result = Self {
+            values: [0; 8],
+            indices: [0; 8],
+            kinds: [4; 8],
+            types: [0; 8],
+            count: a.operand_count,
+        };
+        for i in 0..a.operand_count {
+            let o = p.operand(a.operands + i as u16).ok_or(Error::Parameter)?;
+            let at = i as usize;
+            result.kinds[at] = o.kind;
+            result.values[at] = match o.kind {
+                0 => p.constant(o.index).ok_or(Error::Parameter)?,
+                1 => {
+                    result.indices[at] = u8::try_from(o.index).map_err(|_| Error::Parameter)?;
+                    result.types[at] = p.variable_kind(o.index).ok_or(Error::Parameter)?;
+                    *variables.get(o.index as usize).ok_or(Error::Parameter)?
+                }
+                2 | 3 => o.index as i32,
+                4 => 0,
+                _ => return Err(Error::Parameter),
+            };
+        }
+        Ok(result)
+    }
+    #[inline(always)]
+    fn operand(&self, index: u8) -> Result<hk_format::fsm::Operand, Error> {
+        if index >= self.count {
+            return Err(Error::Parameter);
+        }
+        Ok(hk_format::fsm::Operand {
+            kind: self.kinds[index as usize],
+            index: index as u16,
+        })
+    }
+    #[inline(never)]
+    fn read(&self, o: hk_format::fsm::Operand) -> Result<i32, Error> {
+        if !matches!(o.kind, 0 | 1 | 3) {
+            return Err(Error::Parameter);
+        }
+        Ok(self.values[o.index as usize])
+    }
+    #[inline(never)]
+    fn write(&self, o: hk_format::fsm::Operand, v: &mut [i32], value: i32) -> Result<(), Error> {
+        if o.kind != 1 {
+            return Err(Error::Parameter);
+        }
+        let at = o.index as usize;
+        if self.types[at] == 1 && !(0..=1).contains(&value)
+            || self.types[at] == 3 && !(0..=3).contains(&value)
+        {
+            return Err(Error::Parameter);
+        }
+        *v.get_mut(self.indices[at] as usize)
+            .ok_or(Error::Parameter)? = value;
+        Ok(())
+    }
+    #[inline(never)]
+    fn event(&self, o: hk_format::fsm::Operand) -> Result<u16, Error> {
+        if o.kind != 2 {
+            return Err(Error::Parameter);
+        }
+        Ok(self.values[o.index as usize] as u16)
+    }
+    #[inline(never)]
+    fn boolean(&self, o: hk_format::fsm::Operand) -> Result<bool, Error> {
+        match self.read(o)? {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(Error::Parameter),
+        }
     }
 }
 use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
@@ -157,6 +216,7 @@ impl<E: Environment> Kernel for Actions<E> {
         {
             return Ok(ResultAction::running());
         }
+        let args = Arguments::decode(p, a, v)?;
         let mut result = ResultAction {
             finished: a.flags & UPDATE == 0,
             event: NO_EVENT,
@@ -166,17 +226,14 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 7 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
+                let role = args.read(args.operand(0)?)?;
                 let weights = [
-                    read(p, operand(p, a, 1)?, v)?,
-                    read(p, operand(p, a, 2)?, v)?,
-                    read(p, operand(p, a, 3)?, v)?,
+                    args.read(args.operand(1)?)?,
+                    args.read(args.operand(2)?)?,
+                    args.read(args.operand(3)?)?,
                 ];
-                let pitch = [
-                    read(p, operand(p, a, 4)?, v)?,
-                    read(p, operand(p, a, 5)?, v)?,
-                ];
-                let volume = read(p, operand(p, a, 6)?, v)?;
+                let pitch = [args.read(args.operand(4)?)?, args.read(args.operand(5)?)?];
+                let volume = args.read(args.operand(6)?)?;
                 if weights.iter().any(|n| *n < 0)
                     || weights.iter().all(|n| *n == 0)
                     || pitch[0] <= 0
@@ -190,7 +247,7 @@ impl<E: Environment> Kernel for Actions<E> {
             }
 
             SEND_EVENT_BY_NAME => {
-                if a.operand_count != 1 || read(p, operand(p, a, 0)?, v)? != 1 {
+                if a.operand_count != 1 || args.read(args.operand(0)?)? != 1 {
                     return Err(Error::Parameter);
                 }
                 self.0.send_direction_message()?;
@@ -200,9 +257,9 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 3 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
-                let angle = read(p, operand(p, a, 1)?, v)?;
-                let space = read(p, operand(p, a, 2)?, v)?;
+                let role = args.read(args.operand(0)?)?;
+                let angle = args.read(args.operand(1)?)?;
+                let space = args.read(args.operand(2)?)?;
                 if space != 0 {
                     return Err(Error::Parameter);
                 }
@@ -212,17 +269,14 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 6 {
                     return Err(Error::Parameter);
                 }
-                let roles = [
-                    read(p, operand(p, a, 0)?, v)?,
-                    read(p, operand(p, a, 1)?, v)?,
-                ];
-                let sprite_right = boolean(p, operand(p, a, 2)?, v)?;
-                let clip = if boolean(p, operand(p, a, 3)?, v)? {
-                    Some(read(p, operand(p, a, 4)?, v)?)
+                let roles = [args.read(args.operand(0)?)?, args.read(args.operand(1)?)?];
+                let sprite_right = args.boolean(args.operand(2)?)?;
+                let clip = if args.boolean(args.operand(3)?)? {
+                    Some(args.read(args.operand(4)?)?)
                 } else {
                     None
                 };
-                let reset = boolean(p, operand(p, a, 5)?, v)?;
+                let reset = args.boolean(args.operand(5)?)?;
                 self.0.face_object(roles, sprite_right, clip, reset)?;
             }
 
@@ -230,10 +284,10 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 6 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
+                let role = args.read(args.operand(0)?)?;
                 let mut parameters = [0; 5];
                 for (i, value) in parameters.iter_mut().enumerate() {
-                    *value = read(p, operand(p, a, i as u8 + 1)?, v)?;
+                    *value = args.read(args.operand(i as u8 + 1)?)?;
                     if *value < 0 {
                         return Err(Error::Parameter);
                     }
@@ -248,10 +302,10 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 4 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
-                let target = read(p, operand(p, a, 1)?, v)?;
-                let speed = read(p, operand(p, a, 2)?, v)?;
-                let acceleration = read(p, operand(p, a, 3)?, v)?;
+                let role = args.read(args.operand(0)?)?;
+                let target = args.read(args.operand(1)?)?;
+                let speed = args.read(args.operand(2)?)?;
+                let acceleration = args.read(args.operand(3)?)?;
                 if speed < 0 || acceleration < 0 {
                     return Err(Error::Parameter);
                 }
@@ -263,15 +317,15 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 6 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
-                let sprite_right = boolean(p, operand(p, a, 1)?, v)?;
-                let clip = if boolean(p, operand(p, a, 2)?, v)? {
-                    Some(read(p, operand(p, a, 3)?, v)?)
+                let role = args.read(args.operand(0)?)?;
+                let sprite_right = args.boolean(args.operand(1)?)?;
+                let clip = if args.boolean(args.operand(2)?)? {
+                    Some(args.read(args.operand(3)?)?)
                 } else {
                     None
                 };
-                let pause = if boolean(p, operand(p, a, 4)?, v)? {
-                    let time = read(p, operand(p, a, 5)?, v)?;
+                let pause = if args.boolean(args.operand(4)?)? {
+                    let time = args.read(args.operand(5)?)?;
                     if time < 0 {
                         return Err(Error::Parameter);
                     }
@@ -286,8 +340,8 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 2 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
-                let value = read(p, operand(p, a, 1)?, v)?;
+                let role = args.read(args.operand(0)?)?;
+                let value = args.read(args.operand(1)?)?;
                 if a.opcode == PLAY_ANIMATION {
                     self.0.play_animation(role, value)?;
                 } else if a.opcode == PLAY_FRAME {
@@ -306,10 +360,10 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 2 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
+                let role = args.read(args.operand(0)?)?;
                 result.finished = self.0.animation_complete(role)?;
                 if result.finished {
-                    result.event = event(operand(p, a, 1)?)?;
+                    result.event = args.event(args.operand(1)?)?;
                 }
             }
 
@@ -317,38 +371,38 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 1 {
                     return Err(Error::Parameter);
                 }
-                write(p, operand(p, a, 0)?, v, 1)?;
+                args.write(args.operand(0)?, v, 1)?;
             }
             BOOL_TEST => {
                 if a.operand_count != 3 {
                     return Err(Error::Parameter);
                 }
-                let selected = if boolean(p, operand(p, a, 0)?, v)? {
+                let selected = if args.boolean(args.operand(0)?)? {
                     1
                 } else {
                     2
                 };
-                result.event = event(operand(p, a, selected)?)?;
+                result.event = args.event(args.operand(selected)?)?;
             }
             WAIT => {
                 if a.operand_count != 4 {
                     return Err(Error::Parameter);
                 }
-                let timer = operand(p, a, 1)?;
+                let timer = args.operand(1)?;
                 let remaining = if phase == Phase::Enter {
-                    read(p, operand(p, a, 0)?, v)?
+                    args.read(args.operand(0)?)?
                         .max(0)
                         .checked_mul(60)
                         .ok_or(Error::Parameter)?
                 } else {
-                    let real = boolean(p, operand(p, a, 3)?, v)?;
+                    let real = args.boolean(args.operand(3)?)?;
                     let elapsed = (self.0.elapsed_ticks(real)? as i32).saturating_mul(65536);
-                    read(p, timer, v)?.saturating_sub(elapsed).max(0)
+                    args.read(timer)?.saturating_sub(elapsed).max(0)
                 };
-                write(p, timer, v, remaining)?;
+                args.write(timer, v, remaining)?;
                 result.finished = remaining == 0;
                 if result.finished {
-                    result.event = event(operand(p, a, 2)?)?;
+                    result.event = args.event(args.operand(2)?)?;
                 }
             }
 
@@ -356,36 +410,36 @@ impl<E: Environment> Kernel for Actions<E> {
                 if a.operand_count != 1 {
                     return Err(Error::Parameter);
                 }
-                write(p, operand(p, a, 0)?, v, self.0.can_see_hero()? as i32)?;
+                args.write(args.operand(0)?, v, self.0.can_see_hero()? as i32)?;
             }
             CHECK_ALERT_RANGE => {
                 if a.operand_count != 2 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
-                write(p, operand(p, a, 1)?, v, self.0.in_alert_range(role)? as i32)?;
+                let role = args.read(args.operand(0)?)?;
+                args.write(args.operand(1)?, v, self.0.in_alert_range(role)? as i32)?;
             }
             FIND_ALERT_RANGE => {
                 if a.operand_count != 2 {
                     return Err(Error::Parameter);
                 }
-                let role = read(p, operand(p, a, 0)?, v)?;
-                write(p, operand(p, a, 1)?, v, self.0.find_alert_range(role)?)?;
+                let role = args.read(args.operand(0)?)?;
+                args.write(args.operand(1)?, v, self.0.find_alert_range(role)?)?;
             }
 
             GET_VELOCITY_2D => {
                 if a.operand_count != 4 {
                     return Err(Error::Parameter);
                 }
-                let space = read(p, operand(p, a, 3)?, v)?;
+                let space = args.read(args.operand(3)?)?;
                 if space != 0 && space != 1 {
                     return Err(Error::Parameter);
                 }
-                let velocity = self.0.velocity(read(p, operand(p, a, 0)?, v)?, space)?;
+                let velocity = self.0.velocity(args.read(args.operand(0)?)?, space)?;
                 for i in 0..2 {
-                    let output = operand(p, a, i + 1)?;
+                    let output = args.operand(i + 1)?;
                     if output.kind != 4 {
-                        write(p, output, v, velocity[i as usize])?;
+                        args.write(output, v, velocity[i as usize])?;
                     }
                 }
             }
@@ -395,55 +449,52 @@ impl<E: Environment> Kernel for Actions<E> {
                 }
                 let mut velocity = [None; 2];
                 for i in 0..2 {
-                    let value = operand(p, a, i + 1)?;
+                    let value = args.operand(i + 1)?;
                     if value.kind != 4 {
-                        velocity[i as usize] = Some(read(p, value, v)?);
+                        velocity[i as usize] = Some(args.read(value)?);
                     }
                 }
                 self.0
-                    .set_velocity(read(p, operand(p, a, 0)?, v)?, velocity)?;
+                    .set_velocity(args.read(args.operand(0)?)?, velocity)?;
             }
             ADD_FORCE_2D => {
                 if a.operand_count != 6 {
                     return Err(Error::Parameter);
                 }
-                let force = [
-                    read(p, operand(p, a, 1)?, v)?,
-                    read(p, operand(p, a, 2)?, v)?,
-                ];
+                let force = [args.read(args.operand(1)?)?, args.read(args.operand(2)?)?];
                 let limits = [
-                    read(p, operand(p, a, 3)?, v)?,
-                    read(p, operand(p, a, 4)?, v)?,
-                    read(p, operand(p, a, 5)?, v)?,
+                    args.read(args.operand(3)?)?,
+                    args.read(args.operand(4)?)?,
+                    args.read(args.operand(5)?)?,
                 ];
                 if limits.iter().any(|n| *n < 0) {
                     return Err(Error::Parameter);
                 }
                 self.0
-                    .add_force(read(p, operand(p, a, 0)?, v)?, force, limits)?;
+                    .add_force(args.read(args.operand(0)?)?, force, limits)?;
             }
             DECELERATE => {
                 if a.operand_count != 2 {
                     return Err(Error::Parameter);
                 }
-                let amount = read(p, operand(p, a, 1)?, v)?;
+                let amount = args.read(args.operand(1)?)?;
                 if amount < 0 {
                     return Err(Error::Parameter);
                 }
-                self.0.decelerate(read(p, operand(p, a, 0)?, v)?, amount)?;
+                self.0.decelerate(args.read(args.operand(0)?)?, amount)?;
             }
             FLOAT_CLAMP => {
                 if a.operand_count != 3 {
                     return Err(Error::Parameter);
                 }
-                let target = operand(p, a, 0)?;
-                let low = read(p, operand(p, a, 1)?, v)?;
-                let high = read(p, operand(p, a, 2)?, v)?;
+                let target = args.operand(0)?;
+                let low = args.read(args.operand(1)?)?;
+                let high = args.read(args.operand(2)?)?;
                 if low > high {
                     return Err(Error::Parameter);
                 }
-                let value = read(p, target, v)?.clamp(low, high);
-                write(p, target, v, value)?;
+                let value = args.read(target)?.clamp(low, high);
+                args.write(target, v, value)?;
             }
             BOOL_ALL_TRUE => {
                 if a.operand_count < 2 {
@@ -455,16 +506,16 @@ impl<E: Environment> Kernel for Actions<E> {
                 }
                 let mut all = true;
                 for i in 0..a.operand_count - 2 {
-                    all &= boolean(p, operand(p, a, i)?, v)?;
+                    all &= args.boolean(args.operand(i)?)?;
                 }
-                let output = operand(p, a, a.operand_count - 2)?;
+                let output = args.operand(a.operand_count - 2)?;
                 // The selected graphs have no output. A named output would
                 // require the original event-before-store ordering contract.
                 if output.kind != 4 {
                     return Err(Error::Parameter);
                 }
                 if all {
-                    result.event = event(operand(p, a, a.operand_count - 1)?)?;
+                    result.event = args.event(args.operand(a.operand_count - 1)?)?;
                 }
             }
             NEXT_FRAME_EVENT => {
@@ -473,7 +524,7 @@ impl<E: Environment> Kernel for Actions<E> {
                 }
                 result.finished = phase == Phase::Update;
                 if result.finished {
-                    result.event = event(operand(p, a, 0)?)?;
+                    result.event = args.event(args.operand(0)?)?;
                 }
             }
             _ => return Err(Error::UnsupportedAction),

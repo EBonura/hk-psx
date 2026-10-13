@@ -143,12 +143,15 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
     }
     use std::fmt::Write;
     if banks.len()!=2{return Err("Vengefly graph variation requires an explicit runtime bank selector".into());}
+    let (lowered, cell_maps, initial) = crate::normalized::pair(&banks)?;
+    let original: Vec<u8> = banks.iter().flat_map(|g| g.bytes.iter().copied()).collect();
     let mut bundle=Vec::new();let mut offsets=Vec::new();let mut graph_rows=String::new();
-    for graph in &banks{
-        offsets.push(bundle.len());bundle.extend_from_slice(&graph.bytes);
+    for (index,graph) in banks.iter().enumerate(){
+        let bytes = &lowered[index];
+        offsets.push(bundle.len());bundle.extend_from_slice(bytes);
         let event=|name:&str|->u16{graph.events.iter().position(|n|n==name).map(|n|n as u16).unwrap_or(hk_format::fsm::NO_EVENT)};
-        let alert=graph.variables.iter().position(|n|n=="Start Alert").map(|n|n as u8).unwrap_or(u8::MAX);
-        writeln!(&mut graph_rows,"({}, {}, {}, [{},{},{},{}], {}),",offsets.last().unwrap(),graph.bytes.len(),event("TOOK DAMAGE"),event("GO UP"),event("GO LEFT"),event("GO RIGHT"),event("GO DOWN"),alert)?;
+        let alert=graph.variables.iter().position(|n|n=="Start Alert").map(|n|cell_maps[index][n]).unwrap_or(u8::MAX);
+        writeln!(&mut graph_rows,"({}, {}, {}, [{},{},{},{}], {}),",offsets.last().unwrap(),bytes.len(),event("TOOK DAMAGE"),event("GO UP"),event("GO LEFT"),event("GO RIGHT"),event("GO DOWN"),alert)?;
     }
     let chaser=table[0].2[0].0;let receiver=table[0].2[1].0;
     if !banks[chaser].variables.iter().any(|n|n=="Start Alert")||banks[receiver].variables.iter().any(|n|n=="Start Alert"){return Err("Vengefly component role mismatch".into());}
@@ -159,8 +162,9 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
         let enabled=ordered[0].1 as u8|((ordered[1].1 as u8)<<1);
         writeln!(&mut rows,"({scene},{id},{enabled},{pitch}),")?;
     }
-    let generated=format!("// Original paired graphs and exact per-instance enablement.\npub static BANK:[u8;{}]=*include_bytes!(\"vengefly.fsm\");\npub static GRAPHS:&[(u16,u16,u16,[u16;4],u8)]=&[\n{graph_rows}];\npub const CHASER:usize={chaser};\npub const RECEIVER:usize={receiver};\npub static INSTANCES:&[(u8,u16,u8,i32)]=&[\n{rows}];\n",bundle.len());
+    let generated=format!("// Original paired graphs and exact per-instance enablement.\npub static BANK:[u8;{}]=*include_bytes!(\"vengefly.fsm\");\npub static GRAPHS:&[(u16,u16,u16,[u16;4],u8)]=&[\n{graph_rows}];\npub const CHASER:usize={chaser};\npub const RECEIVER:usize={receiver};\npub static INITIAL:[i32;11]={initial:?};\npub static CELL_MAPS:[&[u8];2]=[&{:?},&{:?}];\npub static INSTANCES:&[(u8,u16,u8,i32)]=&[\n{rows}];\n",bundle.len(),cell_maps[0],cell_maps[1]);
     if bundle.len()>u16::MAX as usize{return Err("Vengefly bank offset overflow".into());}
+    std::fs::write(root.join("data/vengefly-original.fsm"),&original)?;
     std::fs::write(root.join("data/vengefly.fsm"),&bundle)?;
     std::fs::write(root.join("data/vengefly_fsm.rs"),generated)?;
     println!("Vengefly: {} placements, {} original graph banks, {} bank bytes",table.len(),banks.len(),bundle.len());

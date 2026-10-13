@@ -2687,7 +2687,8 @@ impl Actor {
     fn advance_vengefly(&mut self,fly:&mut VengeflyRuntime,spec:&ActorSpec,room:&Room,count:usize,edge:&impl Fn(usize)->[i32;4],context:RunnerContext,emit:&mut impl FnMut(RunnerEvent)){
         fly.state.animation_tick=fly.state.animation_tick.saturating_add(1);
         fly.state.face_pause=fly.state.face_pause.saturating_sub(1);
-        self.vengefly_graph(fly,spec,room,count,edge,context,false,emit);
+        let senses = self.vengefly_senses(context, count, edge);
+        if let Some(event) = self.vengefly_graph(fly, spec, room, context.fixed_step, false, senses) { emit(event); }
         let b=spec.bounds;let offset=b[0]+(b[2]-b[0])/2;
         let mut body=Player::spawn(self.x+offset,self.y);
         let mut p=Params{fall:100*ONE,half_width:(b[2]-b[0])/2,bottom:b[1],top:b[3],..Params::ZERO};
@@ -2704,15 +2705,19 @@ impl Actor {
         self.x=body.x-offset;self.y=body.y;
     }
     #[inline(never)]
-    fn vengefly_graph(&mut self,fly:&mut VengeflyRuntime,spec:&ActorSpec,room:&Room,count:usize,edge:&impl Fn(usize)->[i32;4],context:RunnerContext,damage:bool,emit:&mut impl FnMut(RunnerEvent)){
-        let (in_range,senses)=self.vengefly_senses(context,count,edge);
-        let mut body=hk_sim::fsm_chase::Actions(hk_sim::fsm_chase_body::Chasing{
-            state:&mut fly.state,room,clips:VengeflyRuntime::clips(spec),position:senses.position,hero:senses.hero,facing:self.walk.direction,
-            can_see:senses.can_see_hero,in_range,sound:None,direction_messages:0,
+    fn vengefly_graph(&mut self, fly: &mut VengeflyRuntime, spec: &ActorSpec, room: &Room,
+        fixed: bool, damage: bool, (in_range, senses): (bool, hk_sim::vengefly::Senses)) -> Option<RunnerEvent> {
+        let mut body = hk_sim::fsm_chase::Actions(hk_sim::fsm_chase_body::Chasing {
+            state: &mut fly.state, room, clips: VengeflyRuntime::clips(spec), position: senses.position,
+            hero: senses.hero, facing: self.walk.direction, can_see: senses.can_see_hero,
+            in_range, sound: None, direction_messages: 0,
         });
-        hk_sim::vengefly_fsm::run(&mut body,context.fixed_step,damage).expect("admitted Vengefly action parameters");
-        self.walk.direction=body.0.facing;
-        if let Some(sound)=body.0.sound{emit(RunnerEvent{scene:self.scene,source_id:self.source_id,position:[self.x,self.y],facing:self.walk.direction,kind:RunnerEventKind::VengeflyStartle{variant:sound.variant,pitch_q16:sound.pitch,volume_q16:sound.volume}});}
+        hk_sim::vengefly_fsm::run(&mut body, fixed, damage).expect("admitted Vengefly action parameters");
+        self.walk.direction = body.0.facing;
+        body.0.sound.map(|sound| RunnerEvent {
+            scene: self.scene, source_id: self.source_id, position: [self.x, self.y], facing: self.walk.direction,
+            kind: RunnerEventKind::VengeflyStartle { variant: sound.variant, pitch_q16: sound.pitch, volume_q16: sound.volume },
+        })
     }
     /// One 60 Hz step of the Moss Walker: the senses its FSM reads this tick
     /// (the wake circle and line while buried or due a hide check, the
@@ -5843,7 +5848,8 @@ impl EnemyWorld {
                     let hit = next_health.hit(params, damage);
                     if matches!(hit, Hit::Damaged | Hit::Killed) {
                         if let Some(mut fly) = actor.vengefly() {
-                            actor.vengefly_graph(&mut fly, spec, &terrain_room, terrain_room.counts[5], &|i| state.edge_in_view(region, room, terrain_region, terrain_room, i), context, true, &mut runner_event);
+                            let senses = actor.vengefly_senses(context, terrain_room.counts[5], &|i| state.edge_in_view(region, room, terrain_region, terrain_room, i));
+                            if let Some(event) = actor.vengefly_graph(&mut fly, spec, terrain_room, context.fixed_step, true, senses) { runner_event(event); }
                             actor.runtime = Runtime::Vengefly(fly);
                         }
                     }
@@ -5952,7 +5958,8 @@ impl EnemyWorld {
                 let hit = next_health.hit(health_params, cheats.params(crate::VITAL_PARAMS).nail_damage);
                 if matches!(hit, Hit::Damaged | Hit::Killed) {
                     if let Some(mut fly) = actor.vengefly() {
-                        actor.vengefly_graph(&mut fly, spec, &terrain_room, terrain_room.counts[5], &|i| state.edge_in_view(region, room, terrain_region, terrain_room, i), context, true, &mut runner_event);
+                        let senses = actor.vengefly_senses(context, terrain_room.counts[5], &|i| state.edge_in_view(region, room, terrain_region, terrain_room, i));
+                            if let Some(event) = actor.vengefly_graph(&mut fly, spec, terrain_room, context.fixed_step, true, senses) { runner_event(event); }
                         actor.runtime = Runtime::Vengefly(fly);
                     }
                 }
