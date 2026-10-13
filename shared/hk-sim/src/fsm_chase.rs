@@ -7,6 +7,9 @@ use crate::{
 use hk_format::fsm::{opcode::*, Action, Program, NO_EVENT, UPDATE};
 
 pub trait Environment {
+    fn send_took_damage(&mut self) -> Result<(), Error> {
+        Err(Error::UnsupportedAction)
+    }
     fn set_rotation_z(&mut self, _role: i32, _angle: i32, _space: i32) -> Result<(), Error> {
         Err(Error::UnsupportedAction)
     }
@@ -122,6 +125,13 @@ impl<E: Environment> Kernel for Actions<E> {
             event: NO_EVENT,
         };
         match a.opcode {
+            SEND_EVENT_BY_NAME => {
+                if a.operand_count != 1 || read(p, operand(p, a, 0)?, v)? != 1 {
+                    return Err(Error::Parameter);
+                }
+                self.0.send_took_damage()?;
+            }
+
             SET_ROTATION => {
                 if a.operand_count != 3 {
                     return Err(Error::Parameter);

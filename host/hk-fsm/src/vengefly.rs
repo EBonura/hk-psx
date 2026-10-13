@@ -41,6 +41,39 @@ pub fn cook_vengeflies(root: &Path) -> Result<()> {
             }
         }
         if source_order!=graphs{return Err("Vengefly metadata differs from original component order".into());}
+        // Notify Self broadcasts into descendants too. Admit the paired
+        // executor only when those descendants add no original FSM recipient.
+        let mut pending=Vec::new();
+        for reference in owner_tree.get("m_Component").and_then(Value::list).ok_or("owner components")?{
+            let path=reference.get("component").and_then(|v|v.get("m_PathID")).and_then(Value::int).ok_or("component path")?;
+            let object=source.object(&owner_file,path)?;
+            if object.class_id()==4{
+                let transform=source.read(&object)?;
+                for child in transform.get("m_Children").and_then(Value::list).ok_or("transform children")?{
+                    if child.get("m_FileID").and_then(Value::int)!=Some(0){return Err("external child transform unsupported".into());}
+                    pending.push(child.get("m_PathID").and_then(Value::int).ok_or("child transform path")?);
+                }
+            }
+        }
+        let mut visited=std::collections::BTreeSet::new();
+        while let Some(path)=pending.pop(){
+            if !visited.insert(path)||visited.len()>64{return Err("Vengefly child hierarchy unsupported".into());}
+            let transform=source.read(&source.object(&owner_file,path)?)?;
+            let reference=transform.get("m_GameObject").ok_or("child owner")?;
+            if reference.get("m_FileID").and_then(Value::int)!=Some(0){return Err("external child owner unsupported".into());}
+            let child_owner=source.read(&source.object(&owner_file,reference.get("m_PathID").and_then(Value::int).ok_or("child owner path")?)?)?;
+            for reference in child_owner.get("m_Component").and_then(Value::list).ok_or("child components")?{
+                let reference=reference.get("component").ok_or("child component")?;
+                if reference.get("m_FileID").and_then(Value::int)!=Some(0){return Err("external child component unsupported".into());}
+                let object=source.object(&owner_file,reference.get("m_PathID").and_then(Value::int).ok_or("child component path")?)?;
+                if object.class_id()==114&&source.typename(&object)?=="PlayMakerFSM"{return Err("Vengefly descendant FSM recipient unsupported".into());}
+            }
+            for child in transform.get("m_Children").and_then(Value::list).ok_or("child transform children")?{
+                if child.get("m_FileID").and_then(Value::int)!=Some(0){return Err("external child transform unsupported".into());}
+                pending.push(child.get("m_PathID").and_then(Value::int).ok_or("child transform path")?);
+            }
+        }
+
         let mut named = BTreeMap::new();
         let mut ordered = Vec::new();
         for sid in graphs {

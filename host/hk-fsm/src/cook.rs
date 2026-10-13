@@ -186,6 +186,34 @@ impl Tables {
                 if get(f,"lateUpdate")?.truthy()||get(f,"space")?.int()!=Some(0){return Err("SetRotation callback/space unsupported".into());}
                 self.arg(f,"zAngle",2)?;self.operand(&Value::Int(0),3)?;SET_ROTATION
             }
+
+            "AddForce2dV2"=>{
+                self.object(get(f,"gameObject")?)?;
+                for name in ["atPosition","vector","vector3"]{
+                    let value=get(f,name)?;
+                    if !value.get("useVariable").is_some_and(Value::truthy)||!text(value.get("name"))?.is_empty(){return Err("AddForce2dV2 vector/position override unsupported".into());}
+                }
+                // FsmFloat None is a present object. DoAddForce reads its
+                // serialized value for fallback forces and all three clamps.
+                for name in ["x","y","maxSpeedX","maxSpeedY","maxSpeed"]{
+                    let value=get(f,name)?;
+                    if value.get("useVariable").is_some_and(Value::truthy)&&text(value.get("name"))?.is_empty(){
+                        self.operand(value.get("value").ok_or("force None value")?,2)?;
+                    }else{self.operand(value,2)?;}
+                }
+                ADD_FORCE_2D
+            }
+
+            "SendEventByName"=>{
+                let target=get(f,"eventTarget")?;
+                if target.get("target").and_then(Value::int)!=Some(1)||target.get("excludeSelf").and_then(|v|v.get("value")).is_none_or(Value::truthy)||target.get("sendToChildren").and_then(|v|v.get("value")).is_none_or(|v|!v.truthy())||text(target.get("fsmName").and_then(|v|v.get("value")))?!=""{return Err("SendEventByName recipient subset unsupported".into());}
+                self.object(target.get("gameObject").ok_or("event target owner")?)?;
+                let event=get(f,"sendEvent")?;
+                if event.get("useVariable").is_some_and(Value::truthy)||text(event.get("value"))?!="TOOK DAMAGE"{return Err("SendEventByName message unsupported".into());}
+                let delay=get(f,"delay")?;
+                if delay.get("useVariable").is_some_and(Value::truthy)||delay.get("value").and_then(Value::float)!=Some(0.0)||get(f,"everyFrame")?.truthy(){return Err("SendEventByName schedule unsupported".into());}
+                SEND_EVENT_BY_NAME
+            }
             "CheckCanSeeHero"=>{self.arg(f,"storeResult",1)?;CHECK_CAN_SEE_HERO}
             "CheckAlertRange"=>{self.arg(f,"alertRange",3)?;self.arg(f,"storeResult",1)?;CHECK_ALERT_RANGE}
             "FindAlertRange"=>{

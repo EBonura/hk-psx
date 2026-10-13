@@ -63,6 +63,8 @@ impl<'a> Program<'a> {
     /// admission rather than relying on which route happened to execute.
     pub fn action_groups(self) -> Result<u8, Error> {
         use opcode::*;
+        let chase=self.actions_checked_chase()?;
+        if chase{return Ok(GROUP_CORE|GROUP_CHASE);}
         let mut groups = GROUP_CORE;
         for index in 0..self.actions {
             let action = self.action(index).ok_or(Error::Limit)?;
@@ -81,6 +83,21 @@ impl<'a> Program<'a> {
             } else { return Err(Error::Limit); }
         }
         Ok(groups)
+    }
+    fn actions_checked_chase(self)->Result<bool,Error>{
+        use opcode::*;
+        let mut chase=false;
+        for i in 0..self.actions{
+            let a=self.action(i).ok_or(Error::Limit)?;
+            if a.flags&ENABLED!=0&&matches!(a.opcode,IDLE_BUZZ|CHASE_OBJECT|ADD_FORCE_2D|CHECK_CAN_SEE_HERO|CHECK_ALERT_RANGE|FIND_ALERT_RANGE){chase=true;}
+        }
+        if chase{
+            for i in 0..self.actions{
+                let a=self.action(i).ok_or(Error::Limit)?;
+                if a.flags&ENABLED==0{continue;}
+                if !matches!(a.opcode,GET_OWNER|BOOL_TEST|FACE_DIRECTION|WAIT|GET_VELOCITY_2D|SET_VELOCITY_2D|ADD_FORCE_2D|DECELERATE|FLOAT_CLAMP|BOOL_ALL_TRUE|NEXT_FRAME_EVENT|CHECK_CAN_SEE_HERO|CHECK_ALERT_RANGE|FIND_ALERT_RANGE|PLAY_ANIMATION|PLAY_FRAME|WATCH_ANIMATION|SET_AUDIO_PITCH|IDLE_BUZZ|CHASE_OBJECT|FACE_OBJECT|SET_ROTATION|SEND_EVENT_BY_NAME|AUDIO_ONE_SHOT){return Err(Error::Limit);}
+            }
+        }Ok(chase)
     }
     pub fn parse(bytes: &'a [u8]) -> Result<Self, Error> {
         if bytes.len() < HEADER || &bytes[..8] != MAGIC { return Err(Error::Header); }
