@@ -18,16 +18,20 @@ pub const fn r_event(e: u8) -> u16 {
     2 + e as u16
 }
 
+#[allow(dead_code)]
 pub const T_CONST: u16 = 0;
 pub const T_CELL: u16 = 1;
 pub const T_BIT: u16 = 2;
 pub const T_OBJ: u16 = 3;
 pub const T_EVENT: u16 = 4;
+#[allow(dead_code)]
 pub const T_NONE: u16 = 5;
 pub const T_INLINE: u16 = 6;
 
 pub const F_UPDATE: u8 = 1;
+#[allow(dead_code)]
 pub const F_FIXED: u8 = 2;
+#[allow(dead_code)]
 pub const F_LATE: u8 = 4;
 pub const F_OWNER: u8 = 8;
 
@@ -106,11 +110,6 @@ fn arity(fam: u8, op: u8, flags: u8) -> usize {
 }
 
 // ---- operand access (what handlers import) -----------------------------------------
-
-#[inline(never)]
-pub unsafe extern "C" fn k_word(c: &Ctx, n: u8) -> u16 {
-    *c.ops.add(n as usize)
-}
 
 /// Operand as a value. `q16` selects the INLINE reading: a Q16.16 float literal or a plain integer.
 #[inline(never)]

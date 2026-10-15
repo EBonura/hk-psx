@@ -45,6 +45,10 @@ pub struct Profile {
     pub hide: Vec<String>,
     pub enemies: Vec<EnemyMatch>,
     pub og_timeout: u64,
+    /// Root GameObject name whose PlayMaker FSMs the original writes an event trace for.
+    pub fsm_trace: String,
+    /// "GameObject|FSM|EVENT|test frame": one forced event for the trace run.
+    pub fsm_send: String,
     pub fx_off: Vec<String>,
     pub seed: u32,
     pub sweep: Vec<String>,
@@ -191,6 +195,8 @@ impl Profile {
             tour_frames: og.get("tour_frames").and_then(Value::as_u64).unwrap_or(75) as usize,
             tour_targets: og.get("tour_targets").and_then(Value::as_u64).unwrap_or(12) as usize,
             seed: og.get("seed").and_then(Value::as_u64).unwrap_or(1) as u32,
+            fsm_trace: s(og, "fsmtrace"),
+            fsm_send: s(og, "fsmsend"),
             og_timeout: og.get("timeout").and_then(Value::as_u64).unwrap_or(300),
         })
     }

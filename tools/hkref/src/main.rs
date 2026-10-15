@@ -344,6 +344,31 @@ fn cmd_sheet(p: &Profile, approval: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Original only: run the profile's scene with the profile's event tape and write the
+/// PlayMaker event trace (`og/fsmtrace.csv`) for the tree under `og.fsmtrace`. No port
+/// run is needed; this is the oracle half of the FSM v2 fidelity gates.
+fn cmd_fsmtrace(p: &Profile, work: &Path) -> Result<(), String> {
+    if p.fsm_trace.is_empty() {
+        return Err("fsmtrace needs og.fsmtrace (the root GameObject name)".into());
+    }
+    let events = p.events.as_deref().ok_or("fsmtrace needs port.events")?;
+    let masks = tape::from_events(events, p.ticks + 1)?;
+    let mut unmapped = 0u16;
+    let rows = tape::window_rows(&masks, 0, p.ticks, &mut unmapped);
+    let env = og::Env::detect(work);
+    let win = og::Window { frames: p.ticks, rows, start: None, shot_frames: vec![] };
+    let mut attempt = 1;
+    while let Err(e) = og::run(&env, p, &win) {
+        if attempt >= 3 {
+            return Err(e);
+        }
+        eprintln!("[og] attempt {attempt} failed ({e}); retrying");
+        attempt += 1;
+    }
+    eprintln!("[fsmtrace] {}", p.dir.join("og/fsmtrace.csv").display());
+    Ok(())
+}
+
 fn real_main() -> Result<(), String> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let work = work_dir(&mut args);
@@ -360,6 +385,7 @@ fn real_main() -> Result<(), String> {
             Ok(())
         }
         ["port", pr] => cmd_port(&load(pr, &work)?, &work),
+        ["fsmtrace", pr] => cmd_fsmtrace(&load(pr, &work)?, &work),
         ["og", pr] => cmd_og(&load(pr, &work)?, &work, 8),
         ["og", pr, n] => cmd_og(&load(pr, &work)?, &work, n.parse().map_err(|_| "og: shot count".to_string())?),
         ["sweep", pr, seeds] => {

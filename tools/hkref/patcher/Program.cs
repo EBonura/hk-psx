@@ -115,6 +115,67 @@ foreach (var method in Types(original.MainModule.Types).SelectMany(t => t.Method
 foreach (string required in new[] { "Play", "PlayOneShot", "Stop", "TransitionTo" })
     if (!audioSites.Any() || !audioCounts.Keys.Any(k => k.Contains("::" + required + "(")))
         throw new InvalidOperationException("Expected original audio call missing: " + required);
+// PlayMaker trace hooks (HKReference.FsmTrace): state entry, event receipt, transition and
+// per-action enter/tick/finish calls, written into the clone's PlayMaker.dll only. Fails
+// closed when PlayMaker's IL no longer has the exact shapes below.
+{
+    var pmSource = Path.Combine(Path.GetDirectoryName(source)!, "PlayMaker.dll");
+    var pmDestination = Path.Combine(managed, "PlayMaker.dll");
+    if (pmSource == pmDestination || pmDestination.Contains("steamapps")) throw new InvalidOperationException("PlayMaker destination must be the private copy");
+    using var pm = AssemblyDefinition.ReadAssembly(pmSource, new ReaderParameters { AssemblyResolver = resolver });
+    var trace = driver.MainModule.GetType("HKReference.FsmTrace") ?? throw new InvalidOperationException("Missing FsmTrace");
+    MethodReference Hook(string name) => pm.MainModule.ImportReference(trace.Methods.Single(m => m.Name == name));
+    MethodDefinition Method(string type, string name, int parameters) =>
+        pm.MainModule.GetType("HutongGames.PlayMaker." + type).Methods.Single(m => m.Name == name && m.Parameters.Count == parameters && m.HasBody);
+    // Insert before `at`; branches (and switch tables, handlers) that targeted `at` now target the first new instruction.
+    void InsertBefore(MethodDefinition method, Instruction at, params Instruction[] added) {
+        var il = method.Body.GetILProcessor();
+        foreach (var i in added) il.InsertBefore(at, i);
+        foreach (var b in method.Body.Instructions) {
+            if (b.Operand == at) b.Operand = added[0];
+            else if (b.Operand is Instruction[] table) for (int k = 0; k < table.Length; k++) if (table[k] == at) table[k] = added[0];
+        }
+        foreach (var h in method.Body.ExceptionHandlers) {
+            if (h.TryStart == at) h.TryStart = added[0];
+            if (h.TryEnd == at) h.TryEnd = added[0];
+            if (h.HandlerStart == at) h.HandlerStart = added[0];
+            if (h.HandlerEnd == at) h.HandlerEnd = added[0];
+            if (h.FilterStart == at) h.FilterStart = added[0];
+        }
+    }
+    void AtEntry(string type, string name, int parameters, string hook, int args) {
+        var m = Method(type, name, parameters);
+        var first = m.Body.Instructions[0];
+        var added = new List<Instruction> { Instruction.Create(OpCodes.Ldarg_0) };
+        if (args == 2) added.Add(Instruction.Create(OpCodes.Ldarg_1));
+        added.Add(Instruction.Create(OpCodes.Call, Hook(hook)));
+        InsertBefore(m, first, added.ToArray());
+    }
+    AtEntry("Fsm", "EnterState", 1, "StateEnter", 2);
+    AtEntry("Fsm", "ProcessEvent", 2, "EventReceived", 2);
+    AtEntry("Fsm", "DoTransition", 2, "Transition", 2);
+    AtEntry("FsmStateAction", "Finish", 0, "ActionFinish", 1);
+    void BeforeActionCall(string name, string callee, string hook, int phase) {
+        var m = Method("FsmState", name, 0);
+        var calls = m.Body.Instructions.Where(i => i.OpCode == OpCodes.Callvirt && i.Operand is MethodReference r && r.DeclaringType.Name == "FsmStateAction" && r.Name == callee).ToArray();
+        if (calls.Length != 1) throw new InvalidOperationException("FsmState." + name + " source contract changed");
+        var extra = hook == "ActionEnter" ? Instruction.Create(OpCodes.Ldloc_0) : Instruction.Create(OpCodes.Ldc_I4, phase);
+        InsertBefore(m, calls[0], Instruction.Create(OpCodes.Dup), extra, Instruction.Create(OpCodes.Call, Hook(hook)));
+    }
+    var activate = Method("FsmState", "ActivateActions", 1);
+    {
+        var calls = activate.Body.Instructions.Where(i => i.OpCode == OpCodes.Callvirt && i.Operand is MethodReference r && r.DeclaringType.Name == "FsmStateAction" && r.Name == "OnEnter").ToArray();
+        if (calls.Length != 1 || calls[0].Previous?.OpCode != OpCodes.Ldloc_1) throw new InvalidOperationException("FsmState.ActivateActions source contract changed");
+        InsertBefore(activate, calls[0], Instruction.Create(OpCodes.Dup), Instruction.Create(OpCodes.Ldloc_0), Instruction.Create(OpCodes.Call, Hook("ActionEnter")));
+    }
+    BeforeActionCall("OnUpdate", "OnUpdate", "ActionTick", 0);
+    BeforeActionCall("OnFixedUpdate", "OnFixedUpdate", "ActionTick", 1);
+    BeforeActionCall("OnLateUpdate", "OnLateUpdate", "ActionTick", 2);
+    foreach (var method in new[] { "EnterState", "ProcessEvent", "DoTransition" }) WidenBranches(Method("Fsm", method, method == "EnterState" ? 1 : 2));
+    foreach (var name in new[] { "ActivateActions", "OnUpdate", "OnFixedUpdate", "OnLateUpdate" }) WidenBranches(pm.MainModule.GetType("HutongGames.PlayMaker.FsmState").Methods.First(m => m.Name == name && m.HasBody));
+    WidenBranches(Method("FsmStateAction", "Finish", 0));
+    pm.Write(pmDestination);
+}
 original.Write(destination);
 File.Copy(args[2], Path.Combine(managed, Path.GetFileName(args[2])), true);
 Console.WriteLine(JsonSerializer.Serialize(new { source_sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))).ToLowerInvariant(), patched_sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(destination))).ToLowerInvariant(), awake_exits = exits, start_manager_awake_exits = earlyExits,
