@@ -88,6 +88,7 @@ namespace HKReference
             Observations.Initialize(output);
             EnemyTrace.Initialize(output);
             ActorTrace.Initialize(output);
+            FsmTrace.Initialize(output);
             AudioTrace.Initialize(output);
             CameraTrace.Initialize(output);
             ReplayDevice.OpenLog(output);
@@ -187,7 +188,7 @@ namespace HKReference
             catch (Exception error) { Note("ERROR " + error); Stop("driver error", 3); }
         }
 
-        private void FixedUpdate() { physicsSteps++; }
+        private void FixedUpdate() { physicsSteps++; FsmTrace.Steps = physicsSteps; }
 
         private void LateUpdate()
         {
@@ -277,6 +278,8 @@ namespace HKReference
                     if (ReplayDevice.UpdateCount != scheduledAfter + 1)
                         Note("extra original input updates in observed frame: " + (ReplayDevice.UpdateCount - scheduledAfter));
                     testFrame = scheduledFrame;
+                    FsmTrace.Frame = testFrame;
+                    FsmTrace.Poll(testFrame);
                     Capture(gm);
                     if ((shotEvery > 0 && testFrame % shotEvery == 0) || Array.IndexOf(shotAt, testFrame) >= 0) Shot(testFrame);
                     if (Array.IndexOf(fxFrames, testFrame) >= 0) EffectShots(testFrame, hero);
@@ -698,6 +701,7 @@ namespace HKReference
             if (survey != null) { survey.Dispose(); survey = null; }
             EnemyTrace.Dispose();
             ActorTrace.Dispose();
+            FsmTrace.Dispose();
             AudioTrace.Dispose();
             CameraTrace.Dispose();
             ReplayDevice.CloseLog();
