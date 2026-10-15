@@ -5,7 +5,7 @@
 //! `tick` is one nominal 60 Hz frame; the 50 Hz FixedUpdate steps run from an accumulator, ahead of the
 //! update pass as Unity orders them, so the per-step constants stay as authored. Random.Range is a
 //! deterministic per-actor sequence.
-use crate::fsm3::{Env, Tree, DIRTY_FACING, DIRTY_VEL, PH_FIXED, PH_UPDATE, SOUND_STARTLE};
+use crate::fsm3::{Block, Env, Tree, DIRTY_FACING, DIRTY_VEL, PH_FIXED, PH_UPDATE, SOUND_STARTLE};
 use crate::ONE;
 use hk_format::fsm3::Bank;
 include!("../../../data/vengefly_fsm3.rs");
@@ -115,10 +115,12 @@ impl Vengefly {
         me.anim_left = env.anim_left;
         me
     }
-    fn state(&mut self) -> u8 {
-        let mut env = Env::new();
+    fn block(&mut self) -> Block<'static> {
         // SAFETY: the block was laid out for this bank by `new`.
-        unsafe { Tree::attach(bank(), self.mem.as_mut_ptr().cast(), &mut env) }.state(0)
+        unsafe { Block::new(bank(), self.mem.as_mut_ptr().cast()) }
+    }
+    fn state(&mut self) -> u8 {
+        self.block().state(0)
     }
     pub fn phase(mut self) -> Phase {
         let s = self.state();
@@ -136,9 +138,7 @@ impl Vengefly {
     }
 
     fn is_dead(&mut self) -> bool {
-        let mut env = Env::new();
-        // SAFETY: as above.
-        unsafe { Tree::attach(bank(), self.mem.as_mut_ptr().cast(), &mut env) }.dead(0)
+        self.block().dead(0)
     }
     pub fn velocity(self) -> [i32; 2] {
         self.vel
@@ -148,11 +148,9 @@ impl Vengefly {
     }
     pub fn die(&mut self) {
         self.vel = [0; 2];
-        let mut env = Env::new();
-        // SAFETY: as above.
-        let mut t = unsafe { Tree::attach(bank(), self.mem.as_mut_ptr().cast(), &mut env) };
-        t.kill(0);
-        t.kill(1);
+        let b = self.block();
+        b.kill(0);
+        b.kill(1);
     }
     fn env(&self, senses: Senses) -> Env {
         let mut env = Env::new();

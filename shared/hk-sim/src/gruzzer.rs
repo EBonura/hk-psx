@@ -1,7 +1,7 @@
 //! Original `Bouncer Control` graph through the shared HKFSM03 kernel.
 //! The caller retains camera activation, physics, recoil, damage and corpses.
 //! Port RNG remains deterministic LCG rather than Unity's global RNG.
-use crate::fsm3::{Env, Tree, PH_COLLISION_STAY, PH_UPDATE};
+use crate::fsm3::{Block, Env, Tree, PH_COLLISION_STAY, PH_UPDATE};
 use crate::{fsm3::PH_ENTER, ONE};
 use hk_format::fsm3::Bank;
 include!("../../../data/gruzzer_fsm3.rs");
@@ -44,10 +44,12 @@ impl Gruzzer {
         unsafe { Tree::init(bank(), me.mem.as_mut_ptr().cast(), &mut env, seed) };
         me
     }
-    fn state(&mut self) -> u8 {
-        let mut env = Env::new();
+    fn block(&mut self) -> Block<'static> {
         // SAFETY: the block was laid out for this bank by `new`.
-        unsafe { Tree::attach(bank(), self.mem.as_mut_ptr().cast(), &mut env) }.state(0)
+        unsafe { Block::new(bank(), self.mem.as_mut_ptr().cast()) }
+    }
+    fn state(&mut self) -> u8 {
+        self.block().state(0)
     }
     pub fn phase(mut self) -> Phase {
         let state = self.state();
@@ -60,18 +62,14 @@ impl Gruzzer {
         }
     }
     pub fn angle(mut self) -> i32 {
-        let mut env = Env::new();
-        // SAFETY: as above.
-        unsafe { Tree::attach(bank(), self.mem.as_mut_ptr().cast(), &mut env) }.cell(0, CELL_ANGLE as usize)
+        self.block().cell(0, CELL_ANGLE as usize)
     }
     pub fn facing(self) -> i32 {
         self.facing as i32
     }
     pub fn die(&mut self) {
         self.dead = true;
-        let mut env = Env::new();
-        // SAFETY: as above.
-        unsafe { Tree::attach(bank(), self.mem.as_mut_ptr().cast(), &mut env) }.kill(0);
+        self.block().kill(0);
     }
     fn step(&mut self, camera: [i32; 3], position: [i32; 3], contacts: u8, phase: u8) {
         if self.dead {
