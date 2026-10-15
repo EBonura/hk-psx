@@ -25,7 +25,8 @@ const CORE: &[&str] = &[
 ];
 
 fn region_dir(root: &Path, name: &str) -> Result<PathBuf> {
-    if name.len() != 10
+    // `region-NNN`, and `region-NNNN` once the catalogue passes 999 chunks.
+    if !(10..=11).contains(&name.len())
         || !name.starts_with("region-")
         || !name[7..].bytes().all(|b| b.is_ascii_digit())
         || name == "region-000"

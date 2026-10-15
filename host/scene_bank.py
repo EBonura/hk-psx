@@ -339,7 +339,7 @@ def manifest(result,metadata):
     text='// Generated HKSCNE01 scene chunks; source-derived content stays in local banks.\n'
     text+='pub const SCENE_MANIFEST:&[(usize,u32,usize,u32)]=&[\n'
     text+=''.join(f'({s["stored_bytes"]},{s["stored_fnv"]},{s["bytes"]},{s["raw_fnv"]}),\n'for s in scenes)+'];\n'
-    text+='pub const REGION_SCENE_LOCAL:&[(u16,u8)]=&[\n'+''.join(f'({local[r["chunk_id"]][0]},{local[r["chunk_id"]][1]}),\n'for r in rows)+'];\n'
+    text+='pub const REGION_SCENE_LOCAL:&[(u8,u8)]=&[\n'+''.join(f'({local[r["chunk_id"]][0]},{local[r["chunk_id"]][1]}),\n'for r in rows)+'];\n'
     text+=f'pub const SCENE_MAX_RAW_BYTES:usize={max(s["bytes"]for s in scenes)};\n'
     text+=f'pub const SCENE_ALL_RAW_BYTES:usize={sum(aligned(s["bytes"])for s in scenes)};\n'
     return text

@@ -103,7 +103,7 @@ const MUSIC_GROUP: usize = GROUPS - 2;
 const DATA_GROUP: usize = GROUPS - 1;
 const BOOT_CHUNKS: usize = AUDIO_BANKS.len() + CLIP_COUNT + 2;
 const fn scene_atlases(scene: usize) -> usize {
-    SCENE_ATLAS_RANGES[scene].1 - SCENE_ATLAS_RANGES[scene].0
+    (SCENE_ATLAS_RANGES[scene].1 - SCENE_ATLAS_RANGES[scene].0) as usize
 }
 /// 1 when manifest scene `scene`'s group starts with a code chunk.
 const fn code_slots(scene: usize) -> usize {
@@ -169,7 +169,7 @@ const fn member(group: usize, j: usize) -> usize {
     } else if j == 2 {
         EFFECT_INDEX + SCENE_MANIFEST[scene].scene_id as usize
     } else if j < 3 + atlases {
-        ATLAS_INDEX + SCENE_ATLAS_RANGES[scene].0 + j - 3
+        ATLAS_INDEX + SCENE_ATLAS_RANGES[scene].0 as usize + j - 3
     } else if j == 3 + atlases {
         scene
     } else {
@@ -184,7 +184,7 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
         (0, 8 + index - SCENE_COUNT)
     } else if index < FOCUS_INDEX {
         let s = ATLASES[index - ATLAS_INDEX].scene_index;
-        (1 + s, 3 + index - ATLAS_INDEX - SCENE_ATLAS_RANGES[s].0)
+        (1 + s, 3 + index - ATLAS_INDEX - SCENE_ATLAS_RANGES[s].0 as usize)
     } else if index < COVERAGE_INDEX {
         (0, 4)
     } else if index < METADATA_INDEX {
@@ -247,6 +247,7 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
 /// Static pages manifest scene `index` uploads.
 fn scene_pages(index: usize) -> usize {
     let (start, end) = SCENE_ATLAS_RANGES[index];
+    let (start, end) = (start as usize, end as usize);
     ATLASES[start..end]
         .iter()
         .filter(|a| a.kind == 0)
@@ -267,10 +268,10 @@ const _: () = assert!(PACK_HEADER_SECTORS * SECTOR_BYTES <= SCENE_ARENA_BYTES);
 // fails the build here as well as at the cook. host/world.py MAX_REGIONS is the
 // host half of the same ceiling and refuses first; this is the guest's own.
 const _: () = assert!(REGION_SCENE_LOCAL.len() <= 1 << 16);
-// The owner half of a REGION_SCENE_LOCAL slot is a u16. Its other half, the
-// scene-local room index, is a u8, which caps one scene at 256 regions;
-// host/pack_scenes.py refuses that one, where the mapping is built.
-const _: () = assert!(SCENE_COUNT <= 1 << 16);
+// The owner half of a REGION_SCENE_LOCAL slot is a u8, like its other half, the
+// scene-local room index (which caps one scene at 256 regions); host/pack_scenes.py
+// refuses both overflows where the mapping is built.
+const _: () = assert!(SCENE_COUNT <= 1 << 8);
 const EMPTY: usize = usize::MAX;
 const SEEK_POLL: u32 = 4_000_000;
 /// Bytes past the scene arena that only a scene group staged in the tail may
@@ -339,6 +340,7 @@ pub static mut HK_COVERAGE_BYTES: u32 = 0;
 pub static mut HK_COVERAGE_SCENE: u32 = 0;
 fn atlas_fingerprint(scene: usize) -> u32 {
     let (start, end) = SCENE_ATLAS_RANGES[scene];
+    let (start, end) = (start as usize, end as usize);
     let mut hash = 2166136261u32;
     for a in &ATLASES[start..end] {
         for value in [
@@ -386,7 +388,7 @@ fn resident_scene(scene: usize) -> Scene<'static> {
     cache.scene(scene)
 }
 pub const fn scene_region(scene: usize) -> usize {
-    SCENE_REGIONS[scene]
+    SCENE_REGIONS[scene] as usize
 }
 /// Chunk-table index of one bootstrap audio bank, after the effect art chunks.
 /// The host packer appends them in the same order, so existing chunk ids are
@@ -654,8 +656,8 @@ impl Cache {
                 || d.raw_len > d.arena_capacity
                 || d.stored_len == 0
                 || d.stored_len.div_ceil(SECTOR_BYTES) > d.arena_capacity / SECTOR_BYTES
-                || SCENE_REGIONS[i] >= REGION_SCENE_LOCAL.len()
-                || scene_index(SCENE_REGIONS[i]) != i
+                || SCENE_REGIONS[i] as usize >= REGION_SCENE_LOCAL.len()
+                || scene_index(SCENE_REGIONS[i] as usize) != i
             {
                 return Err(LoadError::RoomMismatch);
             }
@@ -680,6 +682,7 @@ impl Cache {
         let (mut pages, mut palettes, mut previous, mut peak_pages, mut peak_palettes) =
             (0usize, 0usize, 0usize, 0usize, 0usize);
         for (scene, &(start, end)) in SCENE_ATLAS_RANGES.iter().enumerate() {
+            let (start, end) = (start as usize, end as usize);
             if start != previous || end <= start || end > ATLASES.len() {
                 return Err(LoadError::RoomMismatch);
             }
@@ -1966,7 +1969,10 @@ impl Cache {
             return Err(LoadError::RoomMismatch);
         }
         let (start, end) = if SCENE_GATE_LOAD {
-            SCENE_ATLAS_RANGES[scene]
+            (
+                SCENE_ATLAS_RANGES[scene].0 as usize,
+                SCENE_ATLAS_RANGES[scene].1 as usize,
+            )
         } else {
             (0, ATLASES.len())
         };
@@ -2019,7 +2025,7 @@ impl Cache {
     pub fn atlases_ready(&self) -> bool {
         if SCENE_GATE_LOAD {
             self.atlas_scene < SCENE_COUNT
-                && self.loaded_atlases == SCENE_ATLAS_RANGES[self.atlas_scene].1
+                && self.loaded_atlases == SCENE_ATLAS_RANGES[self.atlas_scene].1 as usize
         } else {
             self.loaded_atlases == ATLASES.len()
         }
@@ -2206,6 +2212,7 @@ impl Cache {
                 return Err(LoadError::Coverage);
             }
             let (start, end) = SCENE_ATLAS_RANGES[index];
+            let (start, end) = (start as usize, end as usize);
             let mut counts = [0; 2];
             for a in &ATLASES[start..end] {
                 counts[a.kind as usize] += a.count;

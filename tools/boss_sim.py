@@ -94,7 +94,7 @@ def open_gate_edges():
     than restated, because a recook moves both the gate bits and the indices.
     """
     text = (ROOT/'data/battle_gates.rs').read_text()
-    placement = re.search(r'PLACEMENT_CLOSED\s*:\s*u16\s*=\s*(0b[01]+)', text)
+    placement = re.search(r'PLACEMENT_CLOSED\s*:\s*u32\s*=\s*(0b[01]+)', text)
     if not placement:
         raise ValueError('data/battle_gates.rs no longer declares PLACEMENT_CLOSED')
     closed_on_load = int(placement[1], 2)

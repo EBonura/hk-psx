@@ -68,7 +68,7 @@ pub fn prepare(
     len: &mut usize,
 ) -> Draws {
     let mut draws = Draws::NONE;
-    let mask = battle_gates::scene_gates(scene);
+    let mask = battle_gates::scene_gates(scene) & battle_gates::ART_MASK;
     if mask == 0 {
         return draws;
     }

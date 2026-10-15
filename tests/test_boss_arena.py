@@ -38,7 +38,7 @@ def rows():
 
 
 def constant(name):
-    found = re.search(rf'pub const {name}:u16=0b([01]+);', TABLE.read_text())
+    found = re.search(rf'pub const {name}:u32=0b([01]+);', TABLE.read_text())
     return int(found.group(1), 2)
 
 
