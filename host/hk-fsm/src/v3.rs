@@ -29,15 +29,36 @@ pub const F_LATE: u8 = 4;
 /// The first FsmOwnerDefault parameter is "use owner" and its operand is omitted.
 pub const F_OWNER: u8 = 8;
 
-/// Action types that keep state between ticks, so the kernel re-runs them every tick
-/// (UPDATE) and the cook reserves a scratch slot for them. A hand list: PlayMaker has
-/// no flag for this and the handler set is not written yet.
-const STATEFUL: &[&str] = &[
-    "Wait", "WaitRandom", "RandomWait", "Tk2dPlayAnimationWithEvents", "Tk2dWatchAnimationEvents", "iTweenMoveTo",
-    "iTweenMoveBy", "iTweenScaleTo", "iTweenScaleBy", "iTweenRotateTo", "iTweenRotateBy", "EaseFloat", "EaseColor",
-    "SpawnObjectFromGlobalPoolOverTime", "SpawnObjectFromGlobalPoolOverTimeV2", "FlingObjectsFromGlobalPoolTime",
-    "FadeAudio", "WaitForHeroInPosition", "AnimatorPlayStateWait", "NextFrameEvent",
+/// Action types that stay active after `OnEnter` whether or not `everyFrame` is set, so the kernel
+/// runs them in the update pass. PlayMaker has no flag for this; it is the oracle's ACTION_TICK
+/// rows that say which types these are (docs/FSM-V2-DESIGN.md section 4).
+const ACTIVE: &[&str] = &[
+    "Wait", "WaitRandom", "RandomWait", "WalkLeftRight", "NextFrameEvent", "Tk2dPlayAnimationWithEvents", "Tk2dWatchAnimationEvents",
+    "iTweenMoveTo", "iTweenMoveBy", "iTweenScaleTo", "iTweenScaleBy", "iTweenRotateTo", "iTweenRotateBy", "EaseFloat", "EaseColor",
+    "SpawnObjectFromGlobalPoolOverTime", "SpawnObjectFromGlobalPoolOverTimeV2", "FlingObjectsFromGlobalPoolTime", "FadeAudio",
+    "WaitForHeroInPosition", "AnimatorPlayStateWait", "Trigger2dEvent",
 ];
+
+/// Action types that write a string variable: a tree holding one cannot treat its string variables as constants.
+const STRING_WRITERS: &[&str] = &["SetStringValue", "BuildString", "ConvertIntToString", "ConvertFloatToString", "ConvertBoolToString", "GetPlayerDataString", "GetFsmString", "GetNextChild", "GetName"];
+
+/// Action types whose callbacks run in the fixed-step pass whatever their parameters say.
+const FIXED_ALWAYS: &[&str] = &["IdleBuzz", "ChaseObject", "Decelerate"];
+
+/// Scratch bytes a type keeps: `(type, words, persistent)`. A persistent range belongs to the action
+/// site for the life of the FSM (a Unity action instance keeps its fields across visits to its state);
+/// a temporary one is reused by other states. The cook appends the first slot of the action's range as
+/// one more INLINE operand (its byte offset), and the FSM reserves every persistent range plus the largest
+/// temporary total.
+const SCRATCH: &[(&str, u8, bool)] = &[
+    ("Wait", 4, false),
+    ("WaitRandom", 4, false),
+    ("RandomWait", 4, false),
+    ("FaceDirection", 1, true),
+    ("IdleBuzz", 16, true),
+];
+/// A temporary slot operand before the final base is known: marker bit 12 plus the offset.
+const TEMP_SLOT: u32 = 0x1000;
 
 pub fn opd(tag: u16, payload: u32) -> Result<u16> {
     if payload > 0x1fff {
@@ -88,6 +109,10 @@ pub struct FsmIr {
     pub scratch: u8,
     pub fin_bytes: u8,
     pub events: u16,
+    /// State names by state id.
+    pub state_names: Vec<String>,
+    /// Declared variables: (name, operand tag, first slot).
+    pub vars: Vec<(String, u16, u16)>,
 }
 
 /// Byte sizes of the sections of one serialized FSM, and of its runtime block.
@@ -127,6 +152,9 @@ pub struct Stats {
     pub tag_counts: [usize; 8],
     pub unresolved_fsm_refs: usize,
     pub unsupported: BTreeMap<String, usize>,
+    pub unconnected: usize,
+    pub string_const_vars: usize,
+    pub string_writers: usize,
 }
 
 pub struct TreeCtx {
@@ -223,12 +251,24 @@ struct Slot {
     base: u16,
 }
 
+#[derive(Clone)]
+struct Decl {
+    class: Class,
+    comps: Vec<f64>,
+    bit: bool,
+    pid: i64,
+    /// A string variable's initial text.
+    text: Option<String>,
+}
+
 /// One FSM being lowered.
 pub struct Enc<'a> {
     pub tree: &'a mut TreeCtx,
     pub stats: &'a mut Stats,
     fsm: &'a Value,
     vars: HashMap<String, Slot>,
+    decls: HashMap<String, Decl>,
+    persist: u8,
     ir: FsmIr,
     owner_obj: Option<u16>,
     literal_objs: HashMap<i64, u16>,
@@ -270,14 +310,15 @@ fn compact(raw: &[u8], width: usize) -> Result<(bool, String, &[u8])> {
 
 impl<'a> Enc<'a> {
     pub fn new(tree: &'a mut TreeCtx, stats: &'a mut Stats, fsm: &'a Value) -> Result<Self> {
-        let mut e = Enc { tree, stats, fsm, vars: HashMap::new(), ir: FsmIr::default(), owner_obj: None, literal_objs: HashMap::new(), pool_obj: HashMap::new() };
+        let mut e = Enc { tree, stats, fsm, vars: HashMap::new(), decls: HashMap::new(), persist: 0, ir: FsmIr::default(), owner_obj: None, literal_objs: HashMap::new(), pool_obj: HashMap::new() };
         e.ir.name = fsm.get("name").and_then(Value::str).unwrap_or_default();
         e.declare()?;
         Ok(e)
     }
 
-    /// Storage map from the declared variables (DESIGN 2.1). Declaration order is the
-    /// serialized group order, so the layout is reproducible.
+    /// Declared variables (DESIGN 2.1): the class and initial value of each, in serialized group order.
+    /// A variable gets storage the first time an action names it, so the unreferenced ones (a tenth of
+    /// a Gruzzer's, none of which any enabled action reads) cost nothing at run time.
     fn declare(&mut self) -> Result<()> {
         let groups: [(&str, Class); 14] = [
             ("floatVariables", Class::Float),
@@ -300,31 +341,12 @@ impl<'a> Enc<'a> {
             for item in vars.get(key).and_then(Value::list).unwrap_or(&[]) {
                 let name = item.get("name").and_then(Value::str).unwrap_or_default();
                 let value = item.get("value");
-                let base = match class.tag() {
-                    T_BIT => {
-                        let b = self.ir.bits;
-                        self.ir.bits += 1;
-                        if num(value) != 0.0 {
-                            let (byte, bit) = ((b / 8) as usize, b % 8);
-                            if self.ir.bit_init.len() <= byte {
-                                self.ir.bit_init.resize(byte + 1, 0);
-                            }
-                            self.ir.bit_init[byte] |= 1 << bit;
-                        }
-                        b
-                    }
-                    T_OBJ => {
-                        let o = self.ir.objs;
-                        self.ir.objs += 1;
-                        let pid = value.and_then(Value::pptr).map(|p| p.1).unwrap_or(0);
-                        let e = self.tree.entity(pid);
-                        self.ir.obj_init.push(e);
-                        o
-                    }
+                let mut decl = Decl { class, comps: vec![], bit: false, pid: 0, text: None };
+                match class.tag() {
+                    T_BIT => decl.bit = num(value) != 0.0,
+                    T_OBJ => decl.pid = value.and_then(Value::pptr).map(|p| p.1).unwrap_or(0),
                     _ => {
-                        let c = self.ir.cells;
-                        self.ir.cells += class.width();
-                        let comps: Vec<f64> = match class {
+                        decl.comps = match class {
                             Class::Vec2 => vec![num(value.and_then(|v| v.get("x"))), num(value.and_then(|v| v.get("y")))],
                             Class::Vec3 => ["x", "y", "z"].iter().map(|k| num(value.and_then(|v| v.get(k)))).collect(),
                             Class::Quat => ["x", "y", "z", "w"].iter().map(|k| num(value.and_then(|v| v.get(k)))).collect(),
@@ -332,26 +354,62 @@ impl<'a> Enc<'a> {
                             Class::Rect => ["x", "y", "width", "height"].iter().map(|k| num(value.and_then(|v| v.get(k)))).collect(),
                             Class::Str => {
                                 let s = value.and_then(Value::str).unwrap_or_default();
+                                decl.text = Some(s.clone());
                                 vec![if s.is_empty() { 0.0 } else { (self.tree.string(&s) + 1) as f64 / 65536.0 }]
                             }
                             Class::Int | Class::Other => vec![num(value) / 65536.0],
                             _ => vec![num(value)],
                         };
-                        for (i, f) in comps.iter().enumerate() {
-                            let v = q16(*f, self.stats);
-                            if v != 0 {
-                                self.ir.init.push((c + i as u16, v));
-                            }
-                        }
-                        c
                     }
-                };
+                }
                 if !name.is_empty() {
-                    self.vars.insert(name, Slot { class, base });
+                    self.decls.insert(name, decl);
                 }
             }
         }
         Ok(())
+    }
+
+    /// Give a declared variable its storage on first use.
+    fn allocate(&mut self, name: &str) -> Option<(Class, u16)> {
+        if let Some(s) = self.vars.get(name) {
+            return Some((s.class, s.base));
+        }
+        let decl = self.decls.get(name)?.clone();
+        let base = match decl.class.tag() {
+            T_BIT => {
+                let b = self.ir.bits;
+                self.ir.bits += 1;
+                if decl.bit {
+                    let (byte, bit) = ((b / 8) as usize, b % 8);
+                    if self.ir.bit_init.len() <= byte {
+                        self.ir.bit_init.resize(byte + 1, 0);
+                    }
+                    self.ir.bit_init[byte] |= 1 << bit;
+                }
+                b
+            }
+            T_OBJ => {
+                let o = self.ir.objs;
+                self.ir.objs += 1;
+                let e = self.tree.entity(decl.pid);
+                self.ir.obj_init.push(e);
+                o
+            }
+            _ => {
+                let c = self.ir.cells;
+                self.ir.cells += decl.class.width();
+                for (i, f) in decl.comps.iter().enumerate() {
+                    let v = q16(*f, self.stats);
+                    if v != 0 {
+                        self.ir.init.push((c + i as u16, v));
+                    }
+                }
+                c
+            }
+        };
+        self.vars.insert(name.to_owned(), Slot { class: decl.class, base });
+        Some((decl.class, base))
     }
 
     fn pool(&mut self, v: u32) -> Result<u16> {
@@ -383,8 +441,7 @@ impl<'a> Enc<'a> {
         if name.is_empty() {
             return opd(T_NONE, 0);
         }
-        if let Some(s) = self.vars.get(name) {
-            let (class, base) = (s.class, s.base);
+        if let Some((class, base)) = self.allocate(name) {
             let ok = class == expect || matches!((class, expect), (Class::Int, Class::Float) | (Class::Float, Class::Int) | (Class::Other, _));
             if !ok {
                 self.stats.class_mismatch += 1;
@@ -400,7 +457,8 @@ impl<'a> Enc<'a> {
             }
             T_OBJ => {
                 self.ir.objs += 1;
-                self.ir.obj_init.push(0xff);
+                // The PlayMaker global `Hero` is the knight; the other globals are the native side's to fill.
+                self.ir.obj_init.push(if name == "Hero" { 0xfe } else { 0xff });
                 self.ir.objs - 1
             }
             _ => {
@@ -608,6 +666,11 @@ impl<'a> Enc<'a> {
                 let uv = it.get("useVariable").is_some_and(Value::truthy);
                 let name = it.get("name").and_then(Value::str).unwrap_or_default();
                 if uv {
+                    // A string variable no action writes is a constant: its initial text.
+                    if let Some(text) = self.decls.get(&name).filter(|d| d.class == Class::Str).and_then(|d| d.text.clone()) {
+                        self.stats.string_const_vars += 1;
+                        return one(self.string_const(&text)?);
+                    }
                     return one(self.var(&name, Class::Str)?);
                 }
                 let s = it.get("value").and_then(Value::str).unwrap_or_default();
@@ -639,7 +702,13 @@ impl<'a> Enc<'a> {
                 one(self.game_object(go)?)
             }
             23 => {
-                let s = String::from_utf8_lossy(ad.raw(p)?).into_owned();
+                // An event name is either inline bytes or, in the newer serialization, an
+                // entry of `stringParams` addressed by `paramDataPos` (size 0).
+                let s = if p.size == 0 {
+                    ad.item("stringParams", p.pos).ok().and_then(Value::str).unwrap_or_default()
+                } else {
+                    String::from_utf8_lossy(ad.raw(p)?).into_owned()
+                };
                 one(self.event_ref(&s)?)
             }
             31 => {
@@ -679,7 +748,7 @@ impl<'a> Enc<'a> {
 
     /// Lower one enabled action. Returns the IR and the number of operands it would
     /// have had with the owner operand present (for the arity check).
-    fn action(&mut self, state: &Value, index: usize, short: &str) -> Result<(ActionIr, usize)> {
+    fn action(&mut self, state: &Value, index: usize, short: &str, slots: &mut u8) -> Result<(ActionIr, usize)> {
         let d = state.get("actionData").ok_or("actionData")?;
         let bytes: Vec<u8> = d.get("byteData").and_then(Value::list).unwrap_or(&[]).iter().map(|v| v.int().unwrap_or(0) as u8).collect();
         let ad = ActionData { d, bytes };
@@ -693,6 +762,9 @@ impl<'a> Enc<'a> {
         let params: Vec<Param> = (s..e)
             .map(|j| Param { name: names[j].str().unwrap_or_default(), kind: kinds[j].int().unwrap_or(-1), pos: poss[j].int().unwrap_or(0), size: sizes[j].int().unwrap_or(0) })
             .collect();
+        if STRING_WRITERS.contains(&short) {
+            self.stats.string_writers += 1;
+        }
         let (family, op) = op_of(short).ok_or_else(|| format!("unmapped action {short}"))?;
         let mut flags = 0u8;
         let mut owner_first = true;
@@ -728,8 +800,30 @@ impl<'a> Enc<'a> {
         if had_owner_flag {
             self.stats.owner_flag += 1;
         }
-        if STATEFUL.contains(&short) {
+        // Lifecycle: `everyFrame` runs in the update pass unless the action asks for the fixed or late
+        // pass; the stay-active types run in the update pass always.
+        let (every, fixed, late) = (flags & F_UPDATE != 0, flags & F_FIXED != 0, flags & F_LATE != 0);
+        flags = flags & F_OWNER;
+        if (every && !fixed && !late) || ACTIVE.contains(&short) {
             flags |= F_UPDATE;
+        }
+        if fixed {
+            flags |= F_FIXED;
+        }
+        if late {
+            flags |= F_LATE;
+        }
+        if FIXED_ALWAYS.contains(&short) {
+            flags |= F_FIXED;
+        }
+        if let Some((_, n, persistent)) = SCRATCH.iter().find(|(t, _, _)| *t == short) {
+            if *persistent {
+                operands.push(opd(T_INLINE, self.persist as u32)?);
+                self.persist += n;
+            } else {
+                operands.push(opd(T_INLINE, TEMP_SLOT | *slots as u32)?);
+                *slots += n;
+            }
         }
         let base = operands.len() + had_owner_flag as usize;
         for o in &operands {
@@ -760,30 +854,57 @@ impl<'a> Enc<'a> {
                 if e > 255 {
                     return Err("more than 255 tree events".into());
                 }
+                // A transition whose target was never connected does nothing when taken.
+                if to.is_empty() {
+                    self.stats.unconnected += 1;
+                    continue;
+                }
                 ir.transitions.push((e as u8, state_ix(&to)?));
             }
-            let mut scratch = 0;
+            let mut scratch = 0u8;
             for (short, idx) in hk_unity::playmaker::enabled(st) {
-                let (a, base) = self.action(st, idx, &short)?;
+                let (a, base) = self.action(st, idx, &short, &mut scratch)?;
                 *self.stats.arity.entry(short.clone()).or_default().entry(base).or_default() += 1;
-                if STATEFUL.contains(&short.as_str()) {
-                    scratch += 1;
-                }
                 ir.actions.push(a);
             }
             max_actions = max_actions.max(ir.actions.len());
-            max_scratch = max_scratch.max(scratch);
+            max_scratch = max_scratch.max(scratch as usize);
             self.ir.states.push(ir);
         }
         for t in self.fsm.get("globalTransitions").and_then(Value::list).unwrap_or(&[]) {
             let ev = t.get("fsmEvent").and_then(|e| e.get("name")).and_then(Value::str).unwrap_or_default();
             let to = t.get("toState").and_then(Value::str).unwrap_or_default();
             let e = self.tree.event(&ev);
+            if to.is_empty() {
+                self.stats.unconnected += 1;
+                continue;
+            }
             self.ir.globals.push((e as u8, state_ix(&to)?));
         }
-        self.ir.scratch = max_scratch as u8;
+        let persist = self.persist as usize;
+        for st in &mut self.ir.states {
+            for a in &mut st.actions {
+                if let Some((_, _, false)) = SCRATCH.iter().find(|(t, _, _)| op_of(t) == Some((a.family, a.op))) {
+                    let last = a.operands.last_mut().ok_or("scratch operand")?;
+                    let p = (*last & 0x1fff) as u32;
+                    if *last >> 13 != T_INLINE || p & TEMP_SLOT == 0 {
+                        return Err("temporary scratch operand lost its marker".into());
+                    }
+                    *last = opd(T_INLINE, persist as u32 + (p & 0xfff))?;
+                }
+            }
+        }
+        let total = persist + max_scratch;
+        if total > 255 {
+            return Err("more than 255 scratch bytes".into());
+        }
+        self.ir.scratch = total as u8;
         self.ir.fin_bytes = max_actions.div_ceil(8) as u8;
         self.ir.events = self.fsm.get("events").and_then(Value::list).map_or(0, <[_]>::len) as u16;
+        self.ir.state_names = names;
+        let mut vars: Vec<(String, u16, u16)> = self.vars.iter().map(|(n, s)| (n.clone(), s.class.tag(), s.base)).collect();
+        vars.sort();
+        self.ir.vars = vars;
         Ok(self.ir)
     }
 }
@@ -809,12 +930,12 @@ fn align(b: &mut Vec<u8>, n: usize, pad: &mut usize) {
 
 /// Serialize a tree. Returns the bank and per-FSM sizes (FSM sections only; the header
 /// and event map are in `tree_overhead`).
-pub fn serialize(fsms: &[FsmIr], n_events: usize, n_entities: usize, n_strings: usize) -> Result<(Vec<u8>, Vec<Sizes>, usize)> {
+pub fn serialize(fsms: &[FsmIr], n_events: usize, n_entities: usize, n_strings: usize, queue_cap: u8) -> Result<(Vec<u8>, Vec<Sizes>, usize)> {
     let mut b: Vec<u8> = vec![];
     b.extend(b"HKF3");
     b.extend([1, fsms.len() as u8, n_events.min(255) as u8, n_entities.min(255) as u8]);
     put16(&mut b, n_strings as u16);
-    b.extend([0u8; 6]);
+    b.extend([queue_cap, 0, 0, 0, 0, 0]);
     let dir_at = b.len();
     b.resize(dir_at + DIR_RECORD * fsms.len(), 0);
     let mut sizes = vec![Sizes::default(); fsms.len()];
@@ -925,6 +1046,8 @@ pub fn serialize(fsms: &[FsmIr], n_events: usize, n_entities: usize, n_strings: 
     if b.len() > 0xffff {
         return Err(format!("bank {} bytes exceeds 16-bit offsets", b.len()).into());
     }
+    let len = b.len() as u32;
+    b[12..16].copy_from_slice(&len.to_le_bytes());
     Ok((b, sizes, tree_overhead))
 }
 

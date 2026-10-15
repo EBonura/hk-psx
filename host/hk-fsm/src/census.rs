@@ -114,6 +114,18 @@ fn hierarchy(source: &Source, level: &str) -> Result<HashMap<i64, Vec<i64>>> {
     Ok(by_go)
 }
 
+/// The PlayMakerFSM components on the given GameObjects: `(level, game object) -> [(sid, FSM name)]`.
+pub fn fsms_on(cache: &Path, wanted: &[(&str, i64)]) -> Result<HashMap<(String, i64), Vec<(String, String)>>> {
+    let (_, fsm) = rows(cache)?;
+    let mut out: HashMap<(String, i64), Vec<(String, String)>> = HashMap::new();
+    for r in fsm {
+        if wanted.iter().any(|(l, g)| *l == r.level && *g == r.go) {
+            out.entry((r.level, r.go)).or_default().push((r.sid, r.fsm_name));
+        }
+    }
+    Ok(out)
+}
+
 /// All HealthManager placements, levels in sorted order, placements in cache order.
 pub fn load_roots(source: &Source, cache: &Path, threads: usize) -> Result<Vec<Root>> {
     let (hm, fsm) = rows(cache)?;

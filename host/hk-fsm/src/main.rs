@@ -4,6 +4,10 @@ use hk_unity::{Source, Value, playmaker::enabled};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len()==3&&args[1]=="cook-crawlers"{return hk_fsm_cook::cook_crawlers(std::path::Path::new(&args[2]));}
+    if args.len()==3&&args[1]=="cook-scripts3"{return hk_fsm_cook::cook3::cook_scripts3(std::path::Path::new(&args[2])).map_err(|e|e.to_string().into());}
+    if args.len()==3&&args[1]=="cook-vengeflies3"{return hk_fsm_cook::cook3::cook_vengeflies3(std::path::Path::new(&args[2])).map_err(|e|e.to_string().into());}
+    if args.len()==3&&args[1]=="cook-gruzzer3"{return hk_fsm_cook::cook3::cook_gruzzer3(std::path::Path::new(&args[2])).map_err(|e|e.to_string().into());}
+    if args.len()==3&&args[1]=="cook-crawlers3"{return hk_fsm_cook::cook3::cook_crawlers3(std::path::Path::new(&args[2])).map_err(|e|e.to_string().into());}
     if (args.len() != 4 || args[1] != "inspect") && (args.len() != 5 || args[1] != "cook") {
         return Err("usage: hk-fsm-cook inspect DATA FILE:PATH_ID | cook DATA FILE:PATH_ID OUTPUT".into());
     }
