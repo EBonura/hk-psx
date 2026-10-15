@@ -47,6 +47,8 @@ pub enum Grant {
     MaskShard,
     VesselFragment,
     RancidEgg,
+    /// A PlayerData ability bit (`persist::HAS_*`) the shiny's big-item state sets.
+    Ability(u8),
 }
 #[derive(Clone, Copy)]
 pub struct Pickup {
@@ -64,6 +66,9 @@ pub struct Pickup {
     /// A Heart Piece `Battle Control` hides until its arena is won
     /// (Crossroads_09's, after Brooding Mawlek).
     pub after_arena: bool,
+    /// The Cloak Corpse's shiny: `Cloak Corpse Control` activates it once
+    /// `hornet1Defeated`.
+    pub after_hornet: bool,
     pub first: u16,
     pub count: u16,
     /// Frames per second, x256.
@@ -121,6 +126,8 @@ pub struct World {
     pickups: [Option<PickupState>; MAX_PICKUPS],
     up_held: bool,
     kneel: Option<Kneel>,
+    /// `hornet1Defeated`, set by the caller each tick before `collect`.
+    pub hornet_defeated: bool,
 }
 fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
@@ -141,6 +148,7 @@ impl World {
             pickups: [None; MAX_PICKUPS],
             up_held: false,
             kneel: None,
+            hornet_defeated: false,
         }
     }
     /// A scene entered: chests shut and pickups waiting, except what the save
@@ -247,6 +255,7 @@ impl World {
                 if chest_open
                     && (!spec.after_false_knight || false_knight_defeated)
                     && (!spec.after_arena || arena_won)
+                    && (!spec.after_hornet || self.hornet_defeated)
                 {
                     p.phase = Held::Ready;
                     p.ticks = 0;
@@ -560,6 +569,33 @@ mod tests {
         }
         assert_eq!(got, [Grant::CityKey]);
         assert_eq!(w.phase(0), Held::Taken);
+    }
+    #[test]
+    fn the_mothwing_cloak_waits_for_hornet_and_grants_the_dash_bit() {
+        let Some(spec) = PICKUPS.iter().find(|p| p.after_hornet) else {
+            return;
+        };
+        // persist::HAS_DASH, the bit `Shiny Control`'s Dash state's hasDash write is kept in.
+        assert_eq!(spec.grant, Grant::Ability(2));
+        let mut w = World::new();
+        w.enter_scene(spec.scene as usize, &|_| false);
+        for _ in 0..3 {
+            w.hornet_defeated = false;
+            w.collect(spec.reach, true, true, true, |_| {});
+            w.collect(spec.reach, false, true, true, |_| {});
+        }
+        assert!(!w.kneeling(), "nothing before hornet1Defeated");
+        w.hornet_defeated = true;
+        w.collect(spec.reach, false, true, true, |_| {});
+        w.collect(spec.reach, true, true, true, |_| {});
+        assert!(w.kneeling());
+        let mut got = std::vec::Vec::new();
+        while w.kneeling() {
+            if let Some(p) = w.kneel_tick(false) {
+                got.push(p.grant);
+            }
+        }
+        assert_eq!(got, [spec.grant]);
     }
     #[test]
     fn the_arena_piece_waits_for_the_arena() {
