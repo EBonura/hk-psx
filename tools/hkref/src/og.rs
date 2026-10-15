@@ -256,6 +256,9 @@ pub fn run(env: &Env, p: &Profile, w: &Window) -> Result<PathBuf, String> {
     if !p.fsm_trace.is_empty() {
         c.env("HK_REFERENCE_FSMTRACE", &p.fsm_trace);
     }
+    if !p.fsm_seek.is_empty() {
+        c.env("HK_REFERENCE_HEROSEEK", &p.fsm_seek);
+    }
     if !p.fsm_send.is_empty() {
         c.env("HK_REFERENCE_FSMSEND", &p.fsm_send);
     }

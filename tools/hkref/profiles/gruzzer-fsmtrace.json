@@ -1,0 +1,18 @@
+{
+  "name": "gruzzer-fsmtrace",
+  "port": {
+    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "map": "build/hk-psx-normal.map",
+    "polls": 1,
+    "events": "0:left:2"
+  },
+  "window": { "ticks": 1800 },
+  "og": {
+    "scene": "Crossroads_25",
+    "gate": "left1",
+    "seed": 1,
+    "timeout": 900,
+    "fsmtrace": "Fly,Fly (2),Fly (3)",
+    "fsmseek": "Fly|8|0|60"
+  }
+}
