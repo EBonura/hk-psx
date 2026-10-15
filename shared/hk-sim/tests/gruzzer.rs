@@ -1,79 +1,120 @@
-use hk_sim::gruzzer::*;
+//! The Gruzzer's original graph on the shared HKFSM03 kernel, against the hand-written reference of its contract
+//! (tests/reference_gruzzer.rs), call by call.
+use hk_sim::gruzzer as v2;
 use hk_sim::ONE;
+#[path = "reference_gruzzer.rs"]
+mod v1;
 
-const CAMERA: [i32; 3] = [0, 0, -2496922]; // z about -38.1 units
+const CAMERA: [i32; 3] = [0, 0, -2496922];
+
+fn side1(i: u32) -> v1::Side {
+    [v1::Side::Up, v1::Side::Right, v1::Side::Down, v1::Side::Left][(i % 4) as usize]
+}
+fn side2(i: u32) -> v2::Side {
+    [v2::Side::Up, v2::Side::Right, v2::Side::Down, v2::Side::Left][(i % 4) as usize]
+}
+/// The reference faces along the angle the instant it is set; the original's FaceDirection runs on state entry
+/// before the new angle becomes a velocity and sees it on the next update, so facing is compared only once the
+/// angle has survived a step.
+fn same(a: &v1::Gruzzer, b: &v2::Gruzzer, settled: bool, at: &str) {
+    assert_eq!(a.angle(), b.angle(), "angle {at}");
+    if settled {
+        assert_eq!(a.facing(), b.facing(), "facing {at}");
+    }
+    let phase1 = match a.phase() {
+        v1::Phase::Waiting => 0,
+        v1::Phase::Flying => 1,
+        v1::Phase::Dead => 2,
+    };
+    let phase2 = match b.phase() {
+        v2::Phase::Waiting => 0,
+        v2::Phase::Flying => 1,
+        v2::Phase::Dead => 2,
+    };
+    assert_eq!(phase1, phase2, "phase {at}");
+}
 
 #[test]
 fn waits_for_the_camera_then_aims_anywhere() {
-    let mut g = Gruzzer::new(5);
-    g.tick(CAMERA, [30 * ONE, 0, 0]); // planar 30 > sqrt(44^2 - 38.1^2) = 22
-    assert_eq!(g.phase(), Phase::Waiting);
+    let mut g = v2::Gruzzer::new(5);
+    g.tick(CAMERA, [30 * ONE, 0, 0]);
+    assert_eq!(g.phase(), v2::Phase::Waiting);
     assert_eq!(g.facing(), -1);
     g.tick(CAMERA, [10 * ONE, 5 * ONE, 0]);
-    assert_eq!(g.phase(), Phase::Flying);
+    assert_eq!(g.phase(), v2::Phase::Flying);
     assert!((0..360 * ONE).contains(&g.angle()));
+}
+
+#[test]
+fn every_seed_and_call_order_matches_v1() {
+    for seed in 0..200u32 {
+        let mut a = v1::Gruzzer::new(seed);
+        let mut b = v2::Gruzzer::new(seed);
+        let mut x = seed.wrapping_mul(2654435761).wrapping_add(1);
+        let mut prev = a.angle();
+        for step in 0..400u32 {
+            x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+            match (x >> 24) % 5 {
+                0 | 1 => {
+                    // Positions on both sides of the 44 unit camera range, away from its band edge.
+                    let d = ((x >> 8) % 60) as i32;
+                    let p = [d * ONE, ((x >> 4) % 7) as i32 * ONE - 3 * ONE, 0];
+                    a.tick(CAMERA, p);
+                    b.tick(CAMERA, p);
+                }
+                2 | 3 => {
+                    a.bonk(side1(x >> 12));
+                    b.bonk(side2(x >> 12));
+                }
+                _ => {
+                    a.tick(CAMERA, [0, 0, 0]);
+                    b.tick(CAMERA, [0, 0, 0]);
+                }
+            }
+            let settled = a.angle() == prev;
+            prev = a.angle();
+            same(&a, &b, settled, &format!("seed {seed} step {step}"));
+        }
+    }
 }
 
 #[test]
 fn bonks_re_aim_from_the_authored_ranges() {
     let deg = |a: i32| a / ONE;
     for seed in 0..64u32 {
-        let mut g = Gruzzer::new(seed);
+        let mut g = v2::Gruzzer::new(seed);
         g.tick(CAMERA, [0, 0, 0]);
-        // Force a known facing through a floor bonk from each facing half.
-        g.bonk(Side::Down);
+        g.bonk(v2::Side::Down);
         let a = deg(g.angle());
         let right = g.facing() == 1;
-        assert!(
-            if right {
-                (10..=40).contains(&a)
-            } else {
-                (140..=170).contains(&a)
-            },
-            "{a} {right}"
-        );
-        g.bonk(Side::Up);
+        assert!(if right { (10..=40).contains(&a) } else { (140..=170).contains(&a) }, "{a} {right}");
+        g.bonk(v2::Side::Up);
         let a = deg(g.angle());
-        assert!(
-            if right {
-                (320..=350).contains(&a)
-            } else {
-                (190..=220).contains(&a)
-            },
-            "{a} {right}"
-        );
-        // Now heading down (angle >= 180): a wall bonk sends it down-away.
-        g.bonk(Side::Right);
+        assert!(if right { (320..=350).contains(&a) } else { (190..=220).contains(&a) }, "{a} {right}");
+        g.bonk(v2::Side::Right);
         assert!((190..=220).contains(&deg(g.angle())));
-        g.bonk(Side::Left);
+        g.bonk(v2::Side::Left);
         assert!((320..=350).contains(&deg(g.angle())));
-        // Heading up after a floor bonk: wall bonks send it up-away.
-        g.bonk(Side::Down);
-        g.bonk(Side::Right);
+        g.bonk(v2::Side::Down);
+        g.bonk(v2::Side::Right);
         assert!((140..=170).contains(&deg(g.angle())));
-        g.bonk(Side::Down);
-        g.bonk(Side::Left);
+        g.bonk(v2::Side::Down);
+        g.bonk(v2::Side::Left);
         assert!((10..=40).contains(&deg(g.angle())));
-        // Original FaceDirection runs before the new angle is assigned to
-        // velocity on state entry; the next Update sees that new velocity.
         assert_eq!(g.facing(), -1);
-        g.tick(CAMERA, [0,0,0]);
+        g.tick(CAMERA, [0, 0, 0]);
         assert_eq!(g.facing(), 1);
     }
 }
 
 #[test]
-fn dead_and_waiting_ignore_bonks_and_seeds_are_deterministic() {
-    let mut g = Gruzzer::new(1);
-    g.bonk(Side::Up);
+fn dead_and_waiting_ignore_bonks() {
+    let mut g = v2::Gruzzer::new(1);
+    g.bonk(v2::Side::Up);
     assert_eq!(g.angle(), 0);
-    let mut a = Gruzzer::new(9);
-    let mut b = Gruzzer::new(9);
-    a.tick(CAMERA, [0, 0, 0]);
-    b.tick(CAMERA, [0, 0, 0]);
-    assert_eq!(a, b);
-    a.die();
-    let before = a.angle();
-    a.bonk(Side::Left);
-    assert_eq!((a.phase(), a.angle()), (Phase::Dead, before));
+    g.tick(CAMERA, [0, 0, 0]);
+    g.die();
+    let before = g.angle();
+    g.bonk(v2::Side::Left);
+    assert_eq!((g.phase(), g.angle()), (v2::Phase::Dead, before));
 }

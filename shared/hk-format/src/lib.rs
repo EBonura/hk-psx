@@ -1,7 +1,6 @@
 //! HKROOM02: checked, allocation-free little-endian room and animation reader.
 #![no_std]
 pub mod coverage;
-pub mod fsm;
 pub mod fsm3;
 mod scene;
 pub use scene::{Scene, SceneValidation};

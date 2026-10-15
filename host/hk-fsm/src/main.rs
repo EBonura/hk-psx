@@ -1,15 +1,26 @@
-//! Original FSM cooker input decoding. Unsupported parameter forms stay explicit.
-use hk_fsm_cook::cook;
-use hk_unity::{Source, Value, playmaker::enabled};
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! Cook the HKFSM03 banks (`cook-all`, or one of `cook-crawlers3`, `cook-gruzzer3`, `cook-vengeflies3`,
+//! `cook-scripts3`, each over the repository root) or print one original FSM (`inspect DATA FILE:PATH_ID`).
+use hk_fsm_cook::cook3;
+use hk_unity::{playmaker::enabled, Source, Value};
+type Res = Result<(), Box<dyn std::error::Error>>;
+fn main() -> Res {
     let args: Vec<_> = std::env::args().collect();
-    if args.len()==3&&args[1]=="cook-crawlers"{return hk_fsm_cook::cook_crawlers(std::path::Path::new(&args[2]));}
-    if args.len()==3&&args[1]=="cook-scripts3"{return hk_fsm_cook::cook3::cook_scripts3(std::path::Path::new(&args[2])).map_err(|e|e.to_string().into());}
-    if args.len()==3&&args[1]=="cook-vengeflies3"{return hk_fsm_cook::cook3::cook_vengeflies3(std::path::Path::new(&args[2])).map_err(|e|e.to_string().into());}
-    if args.len()==3&&args[1]=="cook-gruzzer3"{return hk_fsm_cook::cook3::cook_gruzzer3(std::path::Path::new(&args[2])).map_err(|e|e.to_string().into());}
-    if args.len()==3&&args[1]=="cook-crawlers3"{return hk_fsm_cook::cook3::cook_crawlers3(std::path::Path::new(&args[2])).map_err(|e|e.to_string().into());}
-    if (args.len() != 4 || args[1] != "inspect") && (args.len() != 5 || args[1] != "cook") {
-        return Err("usage: hk-fsm-cook inspect DATA FILE:PATH_ID | cook DATA FILE:PATH_ID OUTPUT".into());
+    if args.len() == 3 {
+        let root = std::path::Path::new(&args[2]);
+        let done = match args[1].as_str() {
+            "cook-all" => Some(cook3::cook_all(root)),
+            "cook-crawlers3" => Some(cook3::cook_crawlers3(root)),
+            "cook-gruzzer3" => Some(cook3::cook_gruzzer3(root)),
+            "cook-vengeflies3" => Some(cook3::cook_vengeflies3(root)),
+            "cook-scripts3" => Some(cook3::cook_scripts3(root)),
+            _ => None,
+        };
+        if let Some(result) = done {
+            return result.map_err(|e| e.to_string().into());
+        }
+    }
+    if args.len() != 4 || args[1] != "inspect" {
+        return Err("usage: hk-fsm-cook cook-all|cook-crawlers3|cook-gruzzer3|cook-vengeflies3|cook-scripts3 ROOT | inspect DATA FILE:PATH_ID".into());
     }
     let source = Source::new(&args[2])?;
     let (file, id) = args[3].rsplit_once(':').ok_or("source ID")?;
@@ -17,27 +28,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let object = source.object(&file, id.parse()?)?;
     let tree = source.read(&object)?;
     let fsm = tree.get("fsm").ok_or("FSM")?;
-    if args[1] == "cook" {
-        let bytes = cook(fsm)?;
-        let p = hk_format::fsm::Program::parse(&bytes).unwrap();
-        std::fs::write(&args[4], &bytes)?;
-        println!("Cooked {} states, {} actions, {} variables, {} bytes",p.state_count(),p.action_count(),p.variable_count(),bytes.len());
-        return Ok(());
-    }
     println!("FSM {:?} START {:?} GLOBAL {:?}", fsm.get("name"), fsm.get("startState"), fsm.get("globalTransitions"));
     println!("VARIABLES {:?}", fsm.get("variables"));
     for state in fsm.get("states").and_then(Value::list).ok_or("states")? {
         let data = state.get("actionData").ok_or("action data")?;
-        let list = |name: &str| -> Result<&[Value],Box<dyn std::error::Error>> {
-            data.get(name).and_then(Value::list).ok_or_else(|| format!("missing {name}").into())
-        };
+        let list = |name: &str| -> Result<&[Value], Box<dyn std::error::Error>> { data.get(name).and_then(Value::list).ok_or_else(|| format!("missing {name}").into()) };
         let starts = list("actionStartIndex")?;
         let names = list("actionNames")?;
         let params = list("paramName")?;
         let kinds = list("paramDataType")?;
         let positions = list("paramDataPos")?;
         let sizes = list("paramByteDataSize")?;
-        if let Value::Map(fields)=data { for (name,value) in fields {if name.to_lowercase().contains("array") {println!("ARRAY {name}={value:?}");}} }
         for (_, index) in enabled(state) {
             println!("STATE {:?} ACTION {:?}", state.get("name"), names[index]);
             let start = starts[index].int().ok_or("start")? as usize;
@@ -45,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for p in start..end {
                 println!("  PARAM{p} name={:?} kind={:?} pos={:?} size={:?}", params[p], kinds.get(p), positions.get(p), sizes.get(p));
             }
-            for (name, value) in hk_fsm_cook::crawler_fields(data, index)? {
+            for (name, value) in hk_unity::playmaker::action_fields_with_plain_strings(data, index, true)? {
                 println!("  FIELD {name}={value:?}");
             }
         }
