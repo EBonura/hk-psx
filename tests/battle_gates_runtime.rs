@@ -83,7 +83,7 @@ fn scene_of(gate: u8) -> usize {
 /// the table binds there whose bit is clear, in the order `apply` appends them.
 /// Written out of the table rather than repeating `apply`'s arithmetic, so a
 /// test that passes says the two agree about which gate owns which edge.
-fn expected(slot: usize, closed: u16) -> Vec<u16> {
+fn expected(slot: usize, closed: u32) -> Vec<u16> {
     REGIONS.iter()
         .filter(|&&(row, gate, _)| row as usize == slot && closed & (1 << gate) == 0)
         .flat_map(|&(_, _, edges)| edges.iter().copied())
@@ -92,13 +92,13 @@ fn expected(slot: usize, closed: u16) -> Vec<u16> {
 
 fn main() {
     // The table itself, before anything runs against it.
-    assert!(GATES <= 16, "the closed set is one u16");
+    assert!(GATES <= 32, "the closed set is one u32");
     // There is deliberately no `COOKED & !PLACEMENT_CLOSED == 0` assertion here
     // any more. `host/cook.py` bakes every gate, so most of COOKED is gates the
     // source loads open, and those are precisely the edges a fresh session has
     // to lift. The fresh-session block below is what replaced this check.
-    let every_gate: u16 = if GATES == 16 { u16::MAX } else { (1 << GATES) - 1 };
-    let mut seen = 0u16;
+    let every_gate: u32 = if GATES == 32 { u32::MAX } else { (1 << GATES) - 1 };
+    let mut seen = 0u32;
     for &(_, mask) in SCENE_GATES {
         assert_eq!(seen & mask, 0, "a gate belongs to one scene");
         seen |= mask;
@@ -106,7 +106,7 @@ fn main() {
     assert_eq!(seen, every_gate, "every gate belongs to a scene");
     assert!(REGIONS.windows(2).all(|w| (w[0].0, w[0].1) < (w[1].0, w[1].1)),
             "REGIONS must be sorted by slot then gate for the binary search in apply()");
-    let mut bound = 0u16;
+    let mut bound = 0u32;
     for &(_, gate, edges) in REGIONS {
         assert!(!edges.is_empty(), "a binding with no edges is a row that should not exist");
         bound |= 1 << gate;
@@ -133,7 +133,7 @@ fn main() {
     for &(scene, mask) in SCENE_GATES {
         reset();
         arena_entry(scene as usize, true);
-        assert_eq!(unsafe { HK_ARENA_GATES } as u16, PLACEMENT_CLOSED & !mask);
+        assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED & !mask);
         for slot in bound_slots() {
             // Winning the False Knight's arena also breaks its floor, whose
             // edges `apply` lifts ahead of the gates'.
@@ -164,23 +164,23 @@ fn main() {
     let arena_mask = SCENE_GATES.iter().find(|&&(s, _)| s as usize == arena).unwrap().1;
     reset();
     arena_entry(arena, false);
-    assert_eq!(unsafe { HK_ARENA_GATES } as u16, PLACEMENT_CLOSED);
+    assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED);
     close(arena);
-    assert_eq!(unsafe { HK_ARENA_GATES } as u16, PLACEMENT_CLOSED | arena_mask);
+    assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED | arena_mask);
     // Left mid-fight and came back: the arena is unwon, so the gates are placed
     // closed again and nothing is lifted.
     arena_entry(arena, false);
-    assert_eq!(unsafe { HK_ARENA_GATES } as u16, PLACEMENT_CLOSED);
+    assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED);
     close(arena);
     open(arena);
-    assert_eq!(unsafe { HK_ARENA_GATES } as u16, PLACEMENT_CLOSED & !arena_mask);
+    assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED & !arena_mask);
     // Reload with the persisted bit: the same state, with no fight in between.
     arena_entry(arena, true);
-    assert_eq!(unsafe { HK_ARENA_GATES } as u16, PLACEMENT_CLOSED & !arena_mask);
+    assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED & !arena_mask);
     assert_eq!(unsafe { HK_ARENA_GATE_CLOSES }, 2);
     assert_eq!(unsafe { HK_ARENA_GATE_OPENS }, 2);
     reset();
-    assert_eq!(unsafe { HK_ARENA_GATES } as u16, PLACEMENT_CLOSED);
+    assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED);
     assert_eq!(unsafe { (HK_ARENA_GATE_CLOSES, HK_ARENA_GATE_OPENS) }, (0, 0));
 
     // A slot with no binding costs nothing and changes nothing, which is the

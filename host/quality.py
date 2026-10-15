@@ -282,6 +282,20 @@ SCENE_TABLE = (
      'runtime_bounds': [-2, -6, 92, 25], 'camera_global_bounds': [0, 0, 90, 24]},
     {'scene_id': 59, 'scene_name': 'Fungus1_30', 'file': 'level157',
      'runtime_bounds': [-2, -5, 102, 37], 'camera_global_bounds': [0, 0, 100, 32]},
+    # The road to Hornet: Fungus1_22 (the 120-unit shaft up from Fungus1_30's
+    # top1), Fungus1_21 above it and Fungus1_04, Greenpath's Hornet arena, which
+    # additively loads Fungus1_04_boss on a fresh save (hornet1Defeated unset).
+    # Envelopes and views are the ones tools/cook_scene_pack.py derived on
+    # 2026-09-20 for each scene; the whole-world recook is the check that they
+    # still fit. Fungus1_22 and Fungus1_31 were the two scenes the plain grid
+    # left over the draw-packet reservation, so Fungus1_22 carries its measured
+    # 32 views below. Fungus1_04's actor is the unadmitted Hornet Boss 1.
+    {'scene_id': 60, 'scene_name': 'Fungus1_22', 'file': 'level150',
+     'runtime_bounds': [-2, -6, 37, 125], 'camera_global_bounds': [0, 0, 36, 120]},
+    {'scene_id': 61, 'scene_name': 'Fungus1_21', 'file': 'level149',
+     'runtime_bounds': [-2, -6, 92, 55], 'camera_global_bounds': [0, 0, 90, 50]},
+    {'scene_id': 62, 'scene_name': 'Fungus1_04', 'file': 'level132',
+     'runtime_bounds': [-2, -5, 97, 51], 'camera_global_bounds': [0, 0, 95, 50]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)
@@ -455,6 +469,22 @@ MEASURED_VIEW_LAYOUTS = {
     'Fungus1_19': ((-2, -6, 22, 10), (22, -6, 46, 10), (46, -6, 58, 10),
                    (58, -6, 70, 10), (70, -6, 92, 10),
                    (-2, 10, 22, 25), (22, 10, 46, 25), (46, 10, 70, 25), (70, 10, 92, 25)),
+    'Fungus1_22': ((-2, -6, 22, 10), (22, -6, 37, 10), (-2, 10, 10, 26), (10, 10, 22, 18), (10, 18, 16, 26),
+                   (16, 18, 22, 26), (22, 10, 37, 18), (22, 18, 37, 26), (-2, 26, 10, 42), (10, 26, 16, 34),
+                   (16, 26, 22, 30), (16, 30, 22, 34), (10, 34, 16, 42), (16, 34, 22, 42), (22, 26, 37, 34),
+                   (22, 34, 37, 42), (-2, 42, 10, 58), (10, 42, 22, 50), (10, 50, 22, 58), (22, 42, 37, 58),
+                   (-2, 58, 10, 74), (10, 58, 22, 66), (10, 66, 22, 74), (22, 58, 37, 74), (-2, 74, 22, 90),
+                   (22, 74, 37, 90), (-2, 90, 22, 106), (22, 90, 37, 106), (-2, 106, 22, 122),
+                   (22, 106, 37, 122), (-2, 122, 22, 125), (22, 122, 37, 125)),
+    'Fungus1_21': ((-2, -6, 22, 10), (22, -6, 46, 10), (46, -6, 70, 10), (70, -6, 92, 10), (-2, 10, 22, 26),
+                   (22, 10, 46, 26), (46, 10, 58, 26), (58, 10, 70, 26), (70, 10, 92, 26), (-2, 26, 22, 42),
+                   (22, 26, 46, 42), (46, 26, 70, 42), (70, 26, 92, 42), (-2, 42, 22, 55), (22, 42, 46, 55),
+                   (46, 42, 70, 55), (70, 42, 92, 55)),
+    'Fungus1_04': ((-2, -5, 22, 11), (22, -5, 46, 11), (46, -5, 70, 11), (70, -5, 94, 11), (94, -5, 97, 11),
+                   (-2, 11, 22, 27), (22, 11, 34, 27), (34, 11, 46, 27), (46, 11, 70, 27), (70, 11, 94, 27),
+                   (94, 11, 97, 27), (-2, 27, 22, 43), (22, 27, 46, 43), (46, 27, 70, 43), (70, 27, 94, 43),
+                   (94, 27, 97, 43), (-2, 43, 22, 51), (22, 43, 46, 51), (46, 43, 70, 51), (70, 43, 94, 51),
+                   (94, 43, 97, 51)),
 }
 # Scenes after the two hand-tuned ones use the grid over their catalog envelope.
 GRID_SCENE_LAYOUTS = {scene['scene_id']: MEASURED_VIEW_LAYOUTS.get(scene['scene_name'])

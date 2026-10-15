@@ -124,7 +124,7 @@ class PackScenes(unittest.TestCase):
             self.assertEqual(report['required_resident_bytes'],max(e['resident_raw_len']for e in report['scenes']))
             self.assertEqual([(e['ram_offset'],e['page_base'],e['palette_base'])for e in report['scenes']],[(0,0,0)]*2)
             ranges=atlas_ranges(report['scenes'],report['atlases'])
-            self.assertIn('SCENE_ATLAS_RANGES:&[(usize,usize)]=&['+','.join(f'({a},{b})'for a,b in ranges)+'];',text)
+            self.assertIn('SCENE_ATLAS_RANGES:&[(u16,u16)]=&['+','.join(f'({a},{b})'for a,b in ranges)+'];',text)
             for owner,(start,end)in enumerate(ranges):
                 self.assertTrue(all(a['scene_index']==owner for a in report['atlases'][start:end]))
 
@@ -170,7 +170,7 @@ class PackScenes(unittest.TestCase):
         scenes[0]['opaque_cores']=[[0,0,16,8]]
         r={'scenes':scenes,'arena_bytes':1179648,'raw_resident_bytes':1200,'total_pages':3,'total_palettes':4,'atlases':atlases_for(scenes)}
         m={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1},{'chunk_id':3,'scene_id':0}]}
-        text=manifest(r,m);self.assertIn('(0,0),\n(1,0),\n(0,1),',text);self.assertIn('SCENE_REGIONS:&[usize]=&[0,1]',text)
+        text=manifest(r,m);self.assertIn('(0,0),\n(1,0),\n(0,1),',text);self.assertIn('SCENE_REGIONS:&[u16]=&[0,1]',text)
         self.assertIn('SCENE_TEXTURE_CAPACITY:usize=96;',text)
         self.assertIn('SCENE_DRAW_CAPACITY:usize=64;',text)
         self.assertNotIn('SCENE_BLACK_CORES',text);self.assertNotIn('SCENE_OPAQUE_CORES',text)

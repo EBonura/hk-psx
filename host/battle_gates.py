@@ -42,9 +42,55 @@ sys.path.insert(0, str(ROOT / 'host'))
 
 import rustsrc  # noqa: E402
 
-# `game/src/battle_gates.rs` keeps the closed set in one u16, which is the whole
-# reason the runtime costs a single test before it looks at anything.
-MAX_GATES = 16
+# `game/src/battle_gates.rs` keeps the closed set in one u32, which is the whole
+# reason the runtime costs a single test before it looks at anything. It was a
+# u16 until the road to Hornet's arena took the catalogue past 16 gates.
+MAX_GATES = 32
+
+
+# Fungus1_21's `Battle Gate Bone`: BG Control with its own tk2d clips, so its
+# digest differs from breakables.BG_CONTROL_SHA256 and breakables.battle_gates
+# refuses it. It sits on layer 25, not the terrain layer (8), so the cook bakes no
+# edge for it and there is no collider here to open or close: the variant is
+# recognised only so that it is not mistaken for an unreadable gate. host/breakables.py
+# is a region cook input, so the variant is admitted here, after the region cook.
+BONE_GATE_SHA256 = '525bab5a6c08ab2800b7909b6a564f2da7c0dedea43d10ea5f23ffe41d6bc8bc'
+
+
+def _upright(sc, gid):
+    """Whether the gate is drawn as the runtime draws every gate: upright,
+    unscaled, untinted, with its sprite, animator and an enabled renderer.
+    Fungus1_04's `Battle Gate (1)` is mirrored and scaled 1.155, so it is a
+    collider only until the gate draw learns a scale."""
+    from breakables import _components
+    found = {t: c for _, t, c in _components(sc, gid)}
+    sprite, animator, renderer = found.get('tk2dSprite'), found.get('tk2dSpriteAnimator'), found.get('MeshRenderer')
+    if sprite is None or animator is None or renderer is None or not renderer['m_Enabled']:
+        return False
+    matrix = sc.world(sc.go_transform[gid])
+    return not (any(abs(matrix[i][j] - (1 if i == j else 0)) > 1e-6 for i in range(2) for j in range(2))
+                or any(abs(sprite['_scale'][k] - 1) > 1e-6 for k in 'xy')
+                or any(abs(sprite['_color'][k] - 1) > 1e-6 for k in 'rgba'))
+
+
+def all_gates(sc, errors=None):
+    """Every active arena gate of the scene that is terrain: the family's.
+
+    The Bone variant is dropped (see BONE_GATE_SHA256); any other refusal goes to
+    `errors`, or raises when there is none.
+    """
+    from breakables import BG_CONTROL_PLACEMENT_VARIABLE, battle_gates
+    from false_knight import fsm_digest
+    refused = []
+    found = [dict(g, art=_upright(sc, g['gid'])) for g in battle_gates(sc, refused)]
+    for error in refused:
+        tree = sc.objects[int(error['id'].rsplit(':', 1)[1])][1]
+        if fsm_digest(tree['fsm'], (BG_CONTROL_PLACEMENT_VARIABLE,)) == BONE_GATE_SHA256:
+            continue
+        if errors is None:
+            raise ValueError(error['error'])
+        errors.append(error)
+    return found
 
 
 def edge_scratch_slots():
@@ -105,19 +151,18 @@ def survey(source, report):
     owns has to survive a rename in the source.
     """
     from scene import Scene
-    from breakables import battle_gates
     gates = []
     refused = []
     for meta in sorted(report['scenes'], key=lambda s: s['scene_id']):
         errors = []
-        found = battle_gates(Scene(source, meta['file']), errors=errors)
+        found = all_gates(Scene(source, meta['file']), errors=errors)
         for error in errors:
             refused.append(dict(error, scene=meta['scene_name']))
         for record in sorted(found, key=lambda r: int(r['source'].split(':')[-1])):
             gates.append({'scene': meta['scene_id'], 'scene_name': meta['scene_name'],
                           'name': record['name'], 'source': record['source'],
                           'collider_source': record['collider_source'],
-                          'solid_on_load': record['solid_on_load'],
+                          'solid_on_load': record['solid_on_load'], 'art': record['art'],
                           'box': record['box'], 'position': list(record['position'])})
     if refused:
         raise ValueError(f'unreadable BG Control gates: {refused}')
@@ -179,16 +224,19 @@ def generate(gates, rows, report=None):
         '/// The collider state `Opened` leaves each gate in on load: set means the',
         '/// gate carries `Start Closed`, turned its box back on in `Quick Close`, and',
         '/// is waiting for a `BG OPEN` its arena has not sent yet.',
-        f'pub const PLACEMENT_CLOSED:u16={mask(sum(1 << i for i, g in enumerate(gates) if g["solid_on_load"]))};',
+        f'pub const PLACEMENT_CLOSED:u32={mask(sum(1 << i for i, g in enumerate(gates) if g["solid_on_load"]))};',
         '/// The gates whose collider reached a room pack as terrain. `host/cook.py`',
         '/// bakes every gate, so this is normally all of them; a gate outside every',
         '/// region\'s collision bounds would be the one exception, and closing it',
         '/// would move nothing because there is no edge of it anywhere to restore.',
-        f'pub const COOKED:u16={mask(sum(1 << i for i in cooked))};',
+        f'pub const COOKED:u32={mask(sum(1 << i for i in cooked))};',
+        '/// The gates with the family\'s clip set and an upright, unscaled sprite: the',
+        '/// ones the gate draw may put on screen. The rest are colliders only.',
+        f'pub const ART_MASK:u32={mask(sum(1 << i for i, g in enumerate(gates) if g.get("art", True)))};',
         '/// Guest scene id and the gates a `Battle Scene` there broadcasts to. The',
         "/// source's BG CLOSE/BG OPEN reach every gate in the room, not only the two",
         '/// at the arena ends, so the mask is per scene rather than per arena.',
-        'pub static SCENE_GATES:&[(u8,u16)]=&['
+        'pub static SCENE_GATES:&[(u8,u32)]=&['
         + ''.join(f'({scene},{mask(bits)}),' for scene, bits in sorted(scene_gates.items())) + '];',
         '/// (catalogue slot, gate, that gate\'s terrain edges in the slot\'s room',
         '/// pack), sorted by slot then gate so the runtime can binary search it.',
@@ -293,9 +341,9 @@ def append_art(source, sc, atlas, frames):
     (refused otherwise), so a scene appends the frames once, whatever its gate
     count, and the gates differ only in position and state.
     """
-    from breakables import battle_gates
     from cook import tk_sprite, FOCAL, CAM_Z
-    gates = battle_gates(sc)
+    # A variant without a cooked clip set (Fungus1_21's Bone Gate) is a collider only.
+    gates = [g for g in all_gates(sc) if g['art']]
     if not gates:
         return None
     parts = [_gate_parts(source, sc, g['gid']) for g in gates]
