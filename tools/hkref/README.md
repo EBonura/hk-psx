@@ -113,8 +113,23 @@ named by `og.fsmtrace` (comma separated). The patcher writes the hook calls into
 fails closed when that IL changes. `FsmLog` is not used: `LoggingEnabled` gates only state
 entry and events in the shipped player, transitions are logged in the editor only, and actions
 are not logged at all. `og.fsmsend` (`GameObject|FSM|EVENT|test frame`) sends one forced event,
-for a state the tape cannot reach; the row is marked `FORCED_EVENT`. The trace carries names and
-frames, not operand values yet.
+for a state the tape cannot reach; the row is marked `FORCED_EVENT` (several, `;` separated, are allowed).
+`og.fsmseek` (`Root|dx|dy|test frame;...`) places the knight beside a named root at that frame
+(`HERO_SEEK` row), so a sense-driven state is entered from a profile.
+
+Beyond names and frames, the trace carries what the FSM v2 replay needs (docs/FSM-V2-DESIGN.md section 4):
+
+* `EVENT` rows put the thing that raised the event in the second column: `action:Type.Method` for a PlayMaker
+  action, `finish` for an all-actions-finished FINISHED, `ext:Class.Method` for outside code (a callback, another
+  component). Unity inlines some of these frames, so a FINISHED can carry the cause of the callback it was nested in.
+* `VARS` rows list the FSM variables that changed since the previous row of that FSM (`name=value;...`), which is how
+  the numbers an environment-reading action stored (a distance, a random draw, a sight check) reach the replay.
+* `ENV` rows, one per Unity frame that has any FSM row: `rt` (real time), `time` (game time), the knight, the main camera and
+  every tracked root (`Name#id@x y z vx vy`). The frames are not 1/60 s apart in batch mode, so waits are replayed
+  on these clocks, not on a frame count.
+
+`tests/fsm3_replay.rs` in shared/hk-sim replays such a trace into the HKFSM03 kernel
+(`HK_FSM_TRACE_DIR=<runs dir> cargo test --features trace --test fsm3_replay`).
 
 ## The colour grade in batch mode
 

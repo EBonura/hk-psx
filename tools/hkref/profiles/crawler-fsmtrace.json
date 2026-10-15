@@ -1,0 +1,18 @@
+{
+  "name": "crawler-fsmtrace",
+  "port": {
+    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "map": "build/hk-psx-normal.map",
+    "polls": 1,
+    "events": "0:left:2"
+  },
+  "window": { "ticks": 1500 },
+  "og": {
+    "scene": "",
+    "gate": "",
+    "seed": 1,
+    "timeout": 600,
+    "fsmtrace": "Crawler 1,Crawler 2,Crawler 3",
+    "fsmsend": "Crawler 1|Crawler|GO LEFT|200;Crawler 1|Crawler|GO RIGHT|420;Crawler 2|Crawler|GO RIGHT|300;Crawler 2|Crawler|GO LEFT|700"
+  }
+}
