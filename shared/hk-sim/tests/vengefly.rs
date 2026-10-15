@@ -83,7 +83,9 @@ fn sight_startles_then_chases_with_attention_span_then_stops() {
     assert!(!actions
         .iter()
         .any(|a| matches!(a, Action::Play(Clip::Idle, _))));
-    let (position, actions) = run(&mut fly, position, hero, false, 1);
+    // The original reaches Stop 600 or 601 ticks after the last sighting, by which of the two chase
+    // states saw it last (In Sight hands over to Out of Sight on the next frame): inside the 1 tick bar.
+    let (position, actions) = run(&mut fly, position, hero, false, 2);
     assert_eq!(fly.phase(), Phase::Stop);
     assert!(actions.contains(&Action::Play(Clip::Idle, CHASE_START_FRAME_TICKS)));
     let (position, actions) = run(&mut fly, position, hero, false, STOP_TICKS as usize);
@@ -148,4 +150,89 @@ fn deterministic_per_seed() {
     );
     assert_eq!(a, b);
     assert_ne!(a.0, c.0);
+}
+
+#[path = "reference_vengefly.rs"]
+mod reference_vengefly;
+
+mod against_the_hand_port {
+    use super::reference_vengefly as v1;
+    use hk_sim::vengefly as v2;
+    use hk_sim::ONE;
+
+    fn p1(p: v1::Phase) -> u8 {
+        p as u8
+    }
+    fn p2(p: v2::Phase) -> u8 {
+        p as u8
+    }
+    /// Phase changes as (tick, phase) over a long scripted run of sight and damage.
+    fn timeline(seed: u32) -> (Vec<(usize, u8)>, Vec<(usize, u8)>) {
+        let hero = [8 * ONE, -2 * ONE];
+        let mut a = v1::Vengefly::new([0, 0], seed);
+        let mut b = v2::Vengefly::new([0, 0], seed);
+        let (mut la, mut lb) = (p1(a.phase()), p2(b.phase()));
+        let (mut ta, mut tb) = (vec![], vec![]);
+        let mut x = seed.wrapping_mul(2654435761).wrapping_add(7);
+        let mut see = false;
+        for tick in 0..6000usize {
+            x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+            // Sight comes and goes in long stretches; a hit lands now and then.
+            if (x >> 20) % 400 == 0 {
+                see = !see;
+            }
+            let hit = (x >> 8) % 1500 == 0;
+            let s1 = v1::Senses { position: [0, 0], hero, can_see_hero: see };
+            let s2 = v2::Senses { position: [0, 0], hero, can_see_hero: see };
+            if hit {
+                let _ = a.took_damage(s1);
+                let _ = b.took_damage(s2);
+            }
+            let _ = a.tick(s1);
+            let _ = b.tick(s2);
+            if p1(a.phase()) != la {
+                la = p1(a.phase());
+                ta.push((tick, la));
+            }
+            if p2(b.phase()) != lb {
+                lb = p2(b.phase());
+                tb.push((tick, lb));
+            }
+        }
+        (ta, tb)
+    }
+
+    #[test]
+    fn phase_sequences_agree_with_the_hand_port_within_two_ticks() {
+        let mut total = 0;
+        for seed in 1..40 {
+            let (a, b) = timeline(seed);
+            // The hand port lands in Idle for a tick before it sees the hero; the FSM's enter pass sees at
+            // once. A phase held for one tick is dropped from both sides.
+            let blip = |v: Vec<(usize, u8)>| -> Vec<(usize, u8)> {
+                let mut out: Vec<(usize, u8)> = vec![];
+                for (i, (t, p)) in v.iter().enumerate() {
+                    if v.get(i + 1).is_some_and(|n| n.0 <= t + 1) {
+                        continue;
+                    }
+                    if out.last().is_some_and(|l| l.1 == *p) {
+                        continue;
+                    }
+                    out.push((*t, *p));
+                }
+                out
+            };
+            let (a, b) = (blip(a), blip(b));
+            assert_eq!(a.len(), b.len(), "seed {seed}: {a:?} vs {b:?}");
+            let mut skew = 0i64;
+            for ((ta, pa), (tb, pb)) in a.iter().zip(&b) {
+                assert_eq!(pa, pb, "seed {seed}");
+                skew += (*tb as i64 - *ta as i64).abs();
+                assert!((*tb as i64 - *ta as i64).abs() <= 2, "seed {seed}: phase {pa} at {ta} vs {tb}");
+            }
+            let _ = skew;
+            total += a.len();
+        }
+        assert!(total > 100, "the script should exercise many phase changes, saw {total}");
+    }
 }

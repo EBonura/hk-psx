@@ -245,11 +245,6 @@ pub struct Ctx<'t, 'a> {
 pub type Handler = fn(&mut Ctx<'_, '_>, u8) -> u16;
 
 #[inline(always)]
-unsafe fn rd16(p: *const u8) -> usize {
-    p.cast::<u16>().read_unaligned() as usize
-}
-
-#[inline(always)]
 fn dir_u16(bank: Bank<'_>, f: u8, k: usize) -> usize {
     bank.u16_at(bank.dir_at(f) + k)
 }

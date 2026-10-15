@@ -79,7 +79,7 @@ MODULES = {
               ('_RNv*Actor14advance_mawlek*', '_RINv*Actor14advance_mawlek*'),
     'husks': _sim('husk_guard', 'zombie_shield') + _actor('advance_husk_guard', 'advance_zombie_shield', 'shield_senses'),
     'vengefly': _sim('vengefly') + _actor('advance_vengefly', 'vengefly_senses'),
-    'gruzzer': _sim('gruzzer', 'fsm_fly') + ('*Machine11actions_fly*', '*Machine8step_fly*', '*Machine9event_fly*') + _actor('advance_gruzzer'),
+    'gruzzer': _sim('gruzzer') + _actor('advance_gruzzer'),
     # Gruz Mother: its controller, its arena handling and its corpse and
     # burster; the seven reserve flies it releases are the Gruzzer module's.
     'gruz_mother': _sim('gruz_mother') + _actor('apply_gruz', 'advance_gruz', 'advance_gruz_dead',
@@ -103,8 +103,14 @@ MODULES = {
     'shop': ('*6hk_psx4shop12presentation*',),
     'shaman': ('*6hk_psx6shaman4live4draw*',),
     'cornifer': ('*6hk_psx6mapper4live4tick*',),
-    # One original graph closure; no flying adapter/bank is admitted with it.
-    'crawler': _sim('crawler_fsm', 'fsm_walk') + ('*Machine12actions_walk*', '*Machine9step_walk*', '*Machine10event_walk*', '*Machine15transition_walk*', '*8fsm_body*7Walking*') + _actor('advance_crawler_fsm'),
+    'crawler': _sim('crawler_fsm') + _actor('advance_crawler_fsm'),
+    # The shared HKFSM03 runtime's action code (hk_sim::fsm3_*, one source file per PlayMaker action family). The
+    # kernel itself is resident: the simulation runs on the 1 KiB scratchpad stack, where the stack guard refuses
+    # calls through pointers, so the kernel reaches each family by a direct call (an import site) and these
+    # modules hold the families. `core` is the flow, variable, event, timing, object, audio, animation and
+    # PlayerData families, which every FSM tree uses; `body` is movement and the senses.
+    'fsm3_core': _sim('fsm3_flow', 'fsm3_math', 'fsm3_events', 'fsm3_timers', 'fsm3_object', 'fsm3_audio', 'fsm3_animation', 'fsm3_playerdata'),
+    'fsm3_body': _sim('fsm3_transform', 'fsm3_ai'),
 }
 # Room logic modules by the room that runs them: (data file, constant) holding
 # the room's scene id.
@@ -125,10 +131,11 @@ CARRIED = {'art_shade': 'data/shade.hk'}
 # hk_sim::ActorController kinds -> the module whose code they run. Runner and
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.
-KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': ('false_knight', 'arena'), 'Mawlek': ('mawlek', 'arena'), 'HuskGuard': 'husks', 'ZombieShield': 'husks',
-               'Vengefly': 'vengefly', 'Gruzzer': 'gruzzer', 'Baldur': 'baldur', 'Aspid': 'aspid',
+FSM3 = ('fsm3_core', 'fsm3_body')
+KIND_MODULE = {'Crawler': ('crawler', *FSM3), 'FalseKnight': ('false_knight', 'arena'), 'Mawlek': ('mawlek', 'arena'), 'HuskGuard': 'husks', 'ZombieShield': 'husks',
+               'Vengefly': ('vengefly', *FSM3), 'Gruzzer': ('gruzzer', *FSM3), 'Baldur': 'baldur', 'Aspid': 'aspid',
                'Hatcher': 'hatcher', 'HatcherBaby': 'hatcher', 'Pigeon': 'pigeon', 'Climber': 'climber',
-               'GruzMother': ('gruz_mother', 'arena', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'acid_flyer', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
+               'GruzMother': ('gruz_mother', 'arena', 'gruzzer', *FSM3), 'GruzzerReserve': ('gruzzer', *FSM3), 'AcidFlyer': 'acid_flyer', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
                # The Elder Baldur spits Rollers, which run the Baldur's FSM
                # (blocker_roller.rs), so its rooms carry both.
                'Blocker': ('blocker', 'baldur')}
@@ -136,7 +143,7 @@ KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': ('false_knight', 'arena'), '
 # per-actor dispatch in enemies.rs, and the Elder Baldur's Rollers
 # (blocker_roller.rs, inlined into frame::simulate), which exist only while a
 # Blocker's room is resident.
-CALLERS = ('7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame')
+CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame')
 J26, HI16, LO16, W32 = 1, 2, 3, 4
 
 
@@ -163,12 +170,20 @@ def room_scenes():
     return out
 
 
+def script_scenes():
+    """Scenes whose scripts run on the shared FSM runtime (data/script_fsm3.rs)."""
+    text = (Path(__file__).resolve().parents[1] / 'data' / 'script_fsm3.rs').read_text()
+    return {int(m[1]) for m in re.finditer(r'^\s*\((\d+),\d+,\d+,\d+\),', text, flags=re.M)}
+
+
 def scene_modules(regions_rs):
     """{scene id: set of module names} from the cooked actor tables and the
     rooms' own logic."""
     out = {}
     for sid, mods in room_scenes().items():
         out.setdefault(sid, set()).update(mods)
+    for sid in script_scenes():
+        out.setdefault(sid, set()).add('fsm3_core')
     for m in re.finditer(r'SCENE_ACTORS_(\d+)\s*:\s*&\[hk_sim::ActorSpec\]\s*=\s*&\[', regions_rs):
         body = regions_rs[m.end():regions_rs.find('];', m.end())]
         kinds = set(re.findall(r'ActorController::(\w+)', body))
