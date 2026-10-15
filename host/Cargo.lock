@@ -173,6 +173,7 @@ dependencies = [
  "hk-format",
  "hk-unity",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
