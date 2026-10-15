@@ -240,6 +240,9 @@ pub struct Ctx<'t, 'a> {
     /// Index of the action within its state.
     pub index: u8,
     ops: usize,
+    /// Byte offsets from the runtime block of this FSM's regions: cells, scratch bytes, bits, object handles,
+    /// finished set. Worked out once per pass so an operand access is an add, not a walk over the bank.
+    at: [u16; 5],
 }
 
 pub type Handler = fn(&mut Ctx<'_, '_>, u8) -> u16;
@@ -262,6 +265,77 @@ fn fsm_base(bank: Bank<'_>, f: u8) -> usize {
             + bank.byte(bank.dir_at(g) + 3) as usize;
     }
     (at + 3) & !3
+}
+
+/// Where FSM `f`'s data regions start, as byte offsets from the block: 0 cells, 1 scratch bytes, 2 bits,
+/// 3 object handles, 4 finished set.
+#[inline(never)]
+fn layout(b: Bank<'_>, f: u8) -> [u16; 5] {
+    let mut at = fsm_base(b, f);
+    let mut out = [0u16; 5];
+    for k in 0..5 {
+        out[k] = at as u16;
+        at += match k {
+            0 => 4 * dir_u16(b, f, 4),
+            1 => b.byte(b.dir_at(f) + 10) as usize,
+            2 => dir_u16(b, f, 6).div_ceil(8),
+            3 => dir_u16(b, f, 8),
+            _ => 0,
+        };
+    }
+    out
+}
+
+/// A tree's runtime block read without a world: what an actor asks of its graph between steps.
+#[derive(Clone, Copy)]
+pub struct Block<'a> {
+    bank: Bank<'a>,
+    mem: *mut u8,
+}
+impl<'a> Block<'a> {
+    /// # Safety
+    /// `mem` must have been laid out by `Tree::init` for this exact bank.
+    #[inline(always)]
+    pub unsafe fn new(bank: Bank<'a>, mem: *mut u8) -> Self {
+        Self { bank, mem }
+    }
+    #[inline(always)]
+    unsafe fn fh(&self, f: u8) -> *mut u8 {
+        self.mem.add(TREE_HEADER + QUEUE_ENTRY * self.bank.queue_cap() as usize + FSM_HEADER * f as usize)
+    }
+    /// The state FSM `f` is in.
+    #[inline(never)]
+    pub fn state(&self, f: u8) -> u8 {
+        unsafe { *self.fh(f) }
+    }
+    /// The state it came from.
+    pub fn previous(&self, f: u8) -> u8 {
+        unsafe { *self.fh(f).add(1) }
+    }
+    #[inline(never)]
+    pub fn dead(&self, f: u8) -> bool {
+        unsafe { *self.fh(f).add(2) & DEAD != 0 }
+    }
+    /// Stop FSM `f` for good (the actor died).
+    #[inline(never)]
+    pub fn kill(&self, f: u8) {
+        unsafe { *self.fh(f).add(2) |= DEAD }
+    }
+    /// Cell `i` of FSM `f` (tests and telemetry; handlers use the operand API).
+    #[inline(never)]
+    pub fn cell(&self, f: u8, i: usize) -> i32 {
+        unsafe { self.mem.add(layout(self.bank, f)[0] as usize).cast::<i32>().add(i).read_unaligned() }
+    }
+    pub fn set_cell(&self, f: u8, i: usize, v: i32) {
+        unsafe { self.mem.add(layout(self.bank, f)[0] as usize).cast::<i32>().add(i).write_unaligned(v) }
+    }
+    #[inline(never)]
+    pub fn scratch_word(&self, f: u8, off: usize) -> i32 {
+        unsafe { self.mem.add(layout(self.bank, f)[1] as usize).add(off).cast::<i32>().read_unaligned() }
+    }
+    pub fn bit_value(&self, f: u8, i: usize) -> bool {
+        unsafe { *self.mem.add(layout(self.bank, f)[2] as usize).add(i >> 3) & (1 << (i & 7)) != 0 }
+    }
 }
 
 impl<'a> Tree<'a> {
@@ -323,53 +397,39 @@ impl<'a> Tree<'a> {
     unsafe fn fh(&self, f: u8) -> *mut u8 {
         self.mem.add(TREE_HEADER + QUEUE_ENTRY * self.bank.queue_cap() as usize + FSM_HEADER * f as usize)
     }
-    /// One of FSM `f`'s data regions: 0 cells, 1 scratch bytes, 2 bits, 3 object handles, 4 finished set.
-    #[inline(always)]
+    /// One of FSM `f`'s data regions, see `layout`.
+    #[inline(never)]
     unsafe fn region(&self, f: u8, k: usize) -> *mut u8 {
-        let mut at = fsm_base(self.bank, f);
-        if k > 0 {
-            at += 4 * dir_u16(self.bank, f, 4);
-        }
-        if k > 1 {
-            at += self.bank.byte(self.bank.dir_at(f) + 10) as usize;
-        }
-        if k > 2 {
-            at += dir_u16(self.bank, f, 6).div_ceil(8);
-        }
-        if k > 3 {
-            at += dir_u16(self.bank, f, 8);
-        }
-        self.mem.add(at)
+        self.mem.add(layout(self.bank, f)[k] as usize)
     }
 
-    /// The state FSM `f` is in.
-    #[inline(never)]
-    pub fn state(&self, f: u8) -> u8 {
-        unsafe { *self.fh(f) }
+    #[inline(always)]
+    pub fn block(&self) -> Block<'a> {
+        Block { bank: self.bank, mem: self.mem }
     }
-    /// The state it came from.
+    pub fn state(&self, f: u8) -> u8 {
+        self.block().state(f)
+    }
     pub fn previous(&self, f: u8) -> u8 {
-        unsafe { *self.fh(f).add(1) }
+        self.block().previous(f)
     }
     pub fn dead(&self, f: u8) -> bool {
-        unsafe { *self.fh(f).add(2) & DEAD != 0 }
+        self.block().dead(f)
     }
-    /// Stop FSM `f` for good (the actor died).
     pub fn kill(&mut self, f: u8) {
-        unsafe { *self.fh(f).add(2) |= DEAD }
+        self.block().kill(f)
     }
-    /// Cell `i` of FSM `f` (tests and telemetry; handlers use the operand API).
     pub fn cell(&self, f: u8, i: usize) -> i32 {
-        unsafe { self.region(f, 0).cast::<i32>().add(i).read_unaligned() }
+        self.block().cell(f, i)
     }
     pub fn set_cell(&mut self, f: u8, i: usize, v: i32) {
-        unsafe { self.region(f, 0).cast::<i32>().add(i).write_unaligned(v) }
+        self.block().set_cell(f, i, v)
     }
     pub fn scratch_word(&self, f: u8, off: usize) -> i32 {
-        unsafe { self.region(f, 1).add(off).cast::<i32>().read_unaligned() }
+        self.block().scratch_word(f, off)
     }
     pub fn bit_value(&self, f: u8, i: usize) -> bool {
-        unsafe { *self.region(f, 2).add(i >> 3) & (1 << (i & 7)) != 0 }
+        self.block().bit_value(f, i)
     }
     /// Transitions refused because the step ran out of budget.
     pub fn faults(&self) -> u8 {
@@ -447,7 +507,8 @@ impl<'a> Tree<'a> {
         let b = self.bank;
         let h = self.fh(f);
         let rec = self.bank.state(f, *h);
-        let fin = self.region(f, 4);
+        let lay = layout(self.bank, f);
+        let fin = self.mem.add(lay[4] as usize);
         let mut at = rec.block as usize + 2 * rec.transitions as usize;
         for i in 0..rec.actions {
             let head = b.byte(at);
@@ -462,7 +523,7 @@ impl<'a> Tree<'a> {
                 _ => true,
             };
             if !done && wanted {
-                let mut c = Ctx { t: &mut *(self as *mut Self), f, flags, phase, index: i, ops: at + 2 };
+                let mut c = Ctx { t: &mut *(self as *mut Self), f, flags, phase, index: i, ops: at + 2, at: lay };
                 trace!(trace::Ev::Action { fsm: f, state: *h, index: i, family: fam, op, phase });
                 let r = dispatch(&mut c, fam, op);
                 if r & R_FIN != 0 {
@@ -621,6 +682,14 @@ fn dispatch(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
 // ---- operand API (what handlers import) ---------------------------------------------------
 
 impl<'t, 'a> Ctx<'t, 'a> {
+    #[inline(always)]
+    unsafe fn reg(&self, k: usize) -> *mut u8 {
+        self.t.mem.add(self.at[k] as usize)
+    }
+    #[inline(always)]
+    fn bit_at(&self, p: u16) -> bool {
+        unsafe { *self.reg(2).add((p >> 3) as usize) & (1 << (p & 7)) != 0 }
+    }
     /// Operand `n` as its raw word.
     #[inline(always)]
     pub fn word(&self, n: u8) -> u16 {
@@ -633,7 +702,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
         let (tag, p) = f3::split(w);
         unsafe {
             match tag {
-                f3::T_CELL => self.t.region(self.f, 0).cast::<i32>().add(p as usize).read_unaligned(),
+                f3::T_CELL => self.reg(0).cast::<i32>().add(p as usize).read_unaligned(),
                 f3::T_INLINE => {
                     let v = f3::inline_value(p);
                     if q16 {
@@ -643,7 +712,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
                     }
                 }
                 f3::T_CONST => self.t.bank.pool(self.f, p as usize),
-                f3::T_BIT => self.t.bit_value(self.f, p as usize) as i32,
+                f3::T_BIT => self.bit_at(p) as i32,
                 _ => 0,
             }
         }
@@ -689,7 +758,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
     pub fn set(&mut self, n: u8, v: i32) {
         let (tag, p) = f3::split(self.word(n));
         if tag == f3::T_CELL {
-            unsafe { self.t.region(self.f, 0).cast::<i32>().add(p as usize).write_unaligned(v) }
+            unsafe { self.reg(0).cast::<i32>().add(p as usize).write_unaligned(v) }
         }
     }
 
@@ -698,7 +767,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
     pub fn bit(&self, n: u8) -> bool {
         let (tag, p) = f3::split(self.word(n));
         if tag == f3::T_BIT {
-            self.t.bit_value(self.f, p as usize)
+            self.bit_at(p)
         } else {
             p != 0
         }
@@ -708,7 +777,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
         let (tag, p) = f3::split(self.word(n));
         if tag == f3::T_BIT {
             unsafe {
-                let byte = self.t.region(self.f, 2).add((p >> 3) as usize);
+                let byte = self.reg(2).add((p >> 3) as usize);
                 *byte = (*byte & !(1 << (p & 7))) | ((v as u8) << (p & 7));
             }
         }
@@ -719,7 +788,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
     pub fn obj(&self, n: u8) -> u8 {
         let (tag, p) = f3::split(self.word(n));
         if tag == f3::T_OBJ {
-            unsafe { *self.t.region(self.f, 3).add(p as usize) }
+            unsafe { *self.reg(3).add(p as usize) }
         } else {
             NONE8
         }
@@ -728,7 +797,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
     pub fn set_obj(&mut self, n: u8, handle: u8) {
         let (tag, p) = f3::split(self.word(n));
         if tag == f3::T_OBJ {
-            unsafe { *self.t.region(self.f, 3).add(p as usize) = handle }
+            unsafe { *self.reg(3).add(p as usize) = handle }
         }
     }
 
@@ -771,7 +840,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
     pub fn bit_of(&self, w: u16) -> bool {
         let (tag, p) = f3::split(w);
         if tag == f3::T_BIT {
-            self.t.bit_value(self.f, p as usize)
+            self.bit_at(p)
         } else {
             p != 0
         }
@@ -792,27 +861,27 @@ impl<'t, 'a> Ctx<'t, 'a> {
     /// keep their timers here).
     #[inline(never)]
     pub fn scratch32(&self, off: u8) -> i32 {
-        unsafe { self.t.region(self.f, 1).add(off as usize).cast::<i32>().read_unaligned() }
+        unsafe { self.reg(1).add(off as usize).cast::<i32>().read_unaligned() }
     }
     #[inline(never)]
     pub fn set_scratch32(&mut self, off: u8, v: i32) {
-        unsafe { self.t.region(self.f, 1).add(off as usize).cast::<i32>().write_unaligned(v) }
+        unsafe { self.reg(1).add(off as usize).cast::<i32>().write_unaligned(v) }
     }
     #[inline(never)]
     pub fn scratch16(&self, off: u8) -> i16 {
-        unsafe { self.t.region(self.f, 1).add(off as usize).cast::<i16>().read_unaligned() }
+        unsafe { self.reg(1).add(off as usize).cast::<i16>().read_unaligned() }
     }
     #[inline(never)]
     pub fn set_scratch16(&mut self, off: u8, v: i16) {
-        unsafe { self.t.region(self.f, 1).add(off as usize).cast::<i16>().write_unaligned(v) }
+        unsafe { self.reg(1).add(off as usize).cast::<i16>().write_unaligned(v) }
     }
     #[inline(never)]
     pub fn scratch8(&self, off: u8) -> u8 {
-        unsafe { *self.t.region(self.f, 1).add(off as usize) }
+        unsafe { *self.reg(1).add(off as usize) }
     }
     #[inline(never)]
     pub fn set_scratch8(&mut self, off: u8, v: u8) {
-        unsafe { *self.t.region(self.f, 1).add(off as usize) = v }
+        unsafe { *self.reg(1).add(off as usize) = v }
     }
 
     /// The next 32-bit pseudo-random value (a Q16.16-friendly LCG, deterministic per tree).

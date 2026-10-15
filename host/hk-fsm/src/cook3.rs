@@ -355,6 +355,7 @@ pub fn cook_vengeflies3(root: &std::path::Path) -> Result<()> {
     }
     let mut bank: Option<Cooked> = None;
     let mut rows = String::new();
+    let mut receiver_disabled = 0;
     for ((scene, id), (owner, graphs)) in &placements {
         if graphs.len() != 2 {
             return Err("Vengefly requires both owned FSMs".into());
@@ -381,8 +382,13 @@ pub fn cook_vengeflies3(root: &std::path::Path) -> Result<()> {
         };
         let cooked = cook_tree(&[(*owner, chaser), (*owner, receiver)])?;
         let mask = (enabled_by_name["chaser"] != 0) as u8 | ((enabled_by_name["flyer_receive_direction_msg"] != 0) as u8) << 1;
+        // A disabled chaser never runs. A disabled receiver is the same as an enabled one that nothing messages: it idles
+        // until another object sends it a direction, and nothing in the port does.
+        if mask & 1 == 0 {
+            return Err(format!("Vengefly scene {scene} source {id}: the chaser component is disabled").into());
+        }
         if mask != 3 {
-            return Err(format!("Vengefly scene {scene} source {id}: a disabled FSM component (mask {mask}) is not admitted").into());
+            receiver_disabled += 1;
         }
         match &bank {
             None => bank = Some(cooked),
@@ -415,7 +421,7 @@ pub fn cook_vengeflies3(root: &std::path::Path) -> Result<()> {
     write_names(root, "vengefly3", &b)?;
     std::fs::write(root.join("data/vengefly3.hkf3"), &b.bank)?;
     std::fs::write(root.join("data/vengefly_fsm3.rs"), table)?;
-    println!("Vengefly: {} placements, {} bank bytes, {} runtime bytes", placements.len(), b.bank.len(), runtime);
+    println!("Vengefly: {} placements ({receiver_disabled} with the receiver disabled), {} bank bytes, {} runtime bytes", placements.len(), b.bank.len(), runtime);
     Ok(())
 }
 

@@ -13,12 +13,12 @@ fn shield_hole_probe_uses_unshifted_authored_box_on_both_platform_ends() {
         } else {
             [-40960, -91136, 4 * ONE, -91136]
         };
-        let source = walker_queries_with(shape, [0; 2], facing, 1, |_| edge, all_edges_for_test, false).unwrap();
-        let runner = walker_queries_near(shape, [0; 2], facing, 1, |_| edge, all_edges_for_test).unwrap();
+        let source = walker_queries_with(shape, [0; 2], facing, 1, &|_| edge, all_edges_for_test, false).unwrap();
+        let runner = walker_queries_near(shape, [0; 2], facing, 1, &|_| edge, all_edges_for_test).unwrap();
         assert!(source.floor_ahead, "authored Shield box still reaches the platform");
         assert!(!runner.floor_ahead, "Runner retains its collider-offset probe");
         let beyond = [edge[0] - facing * ONE, edge[1], edge[2] - facing * ONE, edge[3]];
-        assert!(!walker_queries_with(shape, [0; 2], facing, 1, |_| beyond, all_edges_for_test, false).unwrap().floor_ahead);
+        assert!(!walker_queries_with(shape, [0; 2], facing, 1, &|_| beyond, all_edges_for_test, false).unwrap().floor_ahead);
     }
 }
 fn all_edges_for_test(_: [i32; 4]) -> EdgeMask { ALL_EDGES }
@@ -41,7 +41,7 @@ fn indexed(b: [i32; 4]) -> EdgeMask {
 }
 
 fn sight(a: [i32; 2], b: [i32; 2], edges: &[[i32; 4]]) -> bool {
-    line_of_sight(a, b, true, edges.len(), |i| edges[i]).unwrap()
+    line_of_sight(a, b, true, edges.len(), &|i| edges[i]).unwrap()
 }
 fn ray(direction: Direction, reach: i32) -> Sweep {
     Sweep::new([0; 2], [0; 2], [0; 2], direction, reach, 0).unwrap()
@@ -91,7 +91,7 @@ fn body_offset_is_mirrored_while_alert_box_is_symmetric() {
 #[test]
 fn los_range_gate_and_clear_blocked_collinear_closed_endpoints() {
     assert_eq!(
-        line_of_sight([0, 0], [2 * ONE, 0], false, 1, |_| panic!(
+        line_of_sight([0, 0], [2 * ONE, 0], false, 1, &|_| panic!(
             "range must gate terrain"
         )),
         Ok(false)
@@ -108,7 +108,7 @@ fn los_range_gate_and_clear_blocked_collinear_closed_endpoints() {
     assert!(sight(a, b, &[[2 * ONE + 1, 0, 3 * ONE, 0]]));
     assert!(sight(a, b, &[[ONE, 0, ONE, 0]])); // cooked disabled edge sentinel
     assert_eq!(
-        line_of_sight(a, a, true, 0, |_| unreachable!()),
+        line_of_sight(a, a, true, 0, &|_| unreachable!()),
         Err(QueryError::ZeroLengthSight)
     );
 }
@@ -243,7 +243,7 @@ fn runner_wall_and_hole_sweeps_use_all_rays_once_and_mirror() {
         [-2 * ONE, -3 * ONE / 2, -ONE, -3 * ONE / 2],
     ];
     let calls = core::cell::Cell::new(0);
-    let found = walker_queries([0; 2], -1, edges.len(), |i| {
+    let found = walker_queries([0; 2], -1, edges.len(), &|i| {
         calls.set(calls.get() + 1);
         edges[i]
     })
@@ -258,11 +258,11 @@ fn runner_wall_and_hole_sweeps_use_all_rays_once_and_mirror() {
     assert_eq!(calls.get(), edges.len());
     let mirror: Vec<_> = edges.iter().map(|e| [-e[0], e[1], -e[2], e[3]]).collect();
     assert_eq!(
-        walker_queries([0; 2], 1, mirror.len(), |i| mirror[i]).unwrap(),
+        walker_queries([0; 2], 1, mirror.len(), &|i| mirror[i]).unwrap(),
         found
     );
     assert_eq!(
-        walker_queries([0; 2], -1, 0, |_| unreachable!()).unwrap(),
+        walker_queries([0; 2], -1, 0, &|_| unreachable!()).unwrap(),
         WalkerQueries {
             wall: false,
             floor_ahead: false
@@ -270,7 +270,7 @@ fn runner_wall_and_hole_sweeps_use_all_rays_once_and_mirror() {
     );
     let slope = [-2 * ONE, -7 * ONE / 4, -ONE, -5 * ONE / 4];
     assert!(
-        walker_queries([0; 2], -1, 1, |_| slope)
+        walker_queries([0; 2], -1, 1, &|_| slope)
             .unwrap()
             .floor_ahead
     );
@@ -284,7 +284,7 @@ fn coordinate_limits_are_checked_even_after_earlier_hit_and_cannot_overflow() {
         &[[-WORLD_LIMIT, WORLD_LIMIT, WORLD_LIMIT, -WORLD_LIMIT]]
     ));
     assert_eq!(
-        line_of_sight([i32::MIN, 0], [0, 0], true, 0, |_| unreachable!()),
+        line_of_sight([i32::MIN, 0], [0, 0], true, 0, &|_| unreachable!()),
         Err(QueryError::CoordinateLimit)
     );
     assert_eq!(
@@ -304,7 +304,7 @@ fn coordinate_limits_are_checked_even_after_earlier_hit_and_cannot_overflow() {
         Err(QueryError::LocalLimit)
     );
     assert_eq!(
-        walker_queries([i32::MAX, 0], 1, 0, |_| unreachable!()),
+        walker_queries([i32::MAX, 0], 1, 0, &|_| unreachable!()),
         Err(QueryError::CoordinateLimit)
     );
     let edges = [[ONE / 2, -ONE, ONE / 2, ONE], [i32::MAX, 0, i32::MAX, ONE]];
@@ -313,7 +313,7 @@ fn coordinate_limits_are_checked_even_after_earlier_hit_and_cannot_overflow() {
         Err(QueryError::CoordinateLimit)
     );
     assert_eq!(
-        line_of_sight([0, 0], [ONE, 0], true, 2, |i| edges[i]),
+        line_of_sight([0, 0], [ONE, 0], true, 2, &|i| edges[i]),
         Err(QueryError::CoordinateLimit)
     );
 }
@@ -463,7 +463,7 @@ fn edge_columns_give_the_same_walker_and_sight_answers_as_every_edge() {
                 actor[1] + next(10 * ONE) - 5 * ONE,
             ];
             let direction = if next(2) == 0 { -1 } else { 1 };
-            let all = walker_queries_of(Shape::RUNNER, actor, direction, count, |i| edges[i]);
+            let all = walker_queries_of(Shape::RUNNER, actor, direction, count, &|i| edges[i]);
             match &all {
                 Ok(q) => {
                     seen[1] += q.wall as usize;
@@ -471,7 +471,7 @@ fn edge_columns_give_the_same_walker_and_sight_answers_as_every_edge() {
                 }
                 Err(_) => seen[4] += 1,
             }
-            if line_of_sight(actor, hero, true, count, |i| edges[i]) == Ok(false) {
+            if line_of_sight(actor, hero, true, count, &|i| edges[i]) == Ok(false) {
                 seen[3] += 1;
             }
             assert_eq!(
@@ -481,14 +481,14 @@ fn edge_columns_give_the_same_walker_and_sight_answers_as_every_edge() {
                     actor,
                     direction,
                     count,
-                    |i| edges[i],
+                    &|i| edges[i],
                     indexed
                 ),
                 "room {room} actor {actor:?}"
             );
             assert_eq!(
-                line_of_sight(actor, hero, true, count, |i| edges[i]),
-                line_of_sight_near(actor, hero, true, count, |i| edges[i], indexed),
+                line_of_sight(actor, hero, true, count, &|i| edges[i]),
+                line_of_sight_near(actor, hero, true, count, &|i| edges[i], indexed),
                 "room {room} actor {actor:?} hero {hero:?}"
             );
         }

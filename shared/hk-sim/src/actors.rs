@@ -503,7 +503,7 @@ pub fn walker_senses(
     bounds: [i32; 4],
     direction: i32,
     count: usize,
-    edge: impl Fn(usize) -> [i32; 4],
+    edge: &impl Fn(usize) -> [i32; 4],
 ) -> (bool, bool, bool) {
     let [left, bottom, right, _] = bounds;
     let x = left + (right - left) / 2;
@@ -729,7 +729,7 @@ mod tests {
         };
         let bounds = [-crate::ONE / 2, 0, crate::ONE / 2, crate::ONE];
         let floor = [-4 * crate::ONE, 0, crate::ONE / 2, 0];
-        let senses = walker_senses(bounds, 1, 1, |_| floor);
+        let senses = walker_senses(bounds, 1, 1, &|_| floor);
         assert_eq!(senses, (true, false, true));
         let mut walk = WalkState::new(1, false);
         assert_eq!(walk.tick(p, senses.0, senses.1, senses.2), 0);
@@ -799,13 +799,13 @@ mod tests {
             for shift in 0..edges.len() {
                 let mut expected = (false, false, true);
                 for e in edges {
-                    let one = walker_senses(bounds, direction, 1, |_| e);
+                    let one = walker_senses(bounds, direction, 1, &|_| e);
                     expected.0 |= one.0;
                     expected.1 |= one.1;
                     expected.2 &= one.2;
                 }
                 let calls = core::cell::Cell::new(0);
-                let actual = walker_senses(bounds, direction, edges.len() * 3, |i| {
+                let actual = walker_senses(bounds, direction, edges.len() * 3, &|i| {
                     calls.set(calls.get() + 1);
                     edges[(i + shift) % edges.len()]
                 });
@@ -826,7 +826,7 @@ mod tests {
                 ],
                 1,
                 1,
-                |_| [0; 4]
+                &|_| [0; 4]
             ),
             (false, false, true)
         );

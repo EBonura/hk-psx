@@ -164,7 +164,7 @@ pub fn line_of_sight(
     hero: [i32; 2],
     in_alert: bool,
     count: usize,
-    edge: impl Fn(usize) -> [i32; 4],
+    edge: &impl Fn(usize) -> [i32; 4],
 ) -> Result<bool, QueryError> {
     line_of_sight_near(actor, hero, in_alert, count, edge, all_edges)
 }
@@ -175,7 +175,7 @@ pub fn line_of_sight_near(
     hero: [i32; 2],
     in_alert: bool,
     count: usize,
-    edge: impl Fn(usize) -> [i32; 4],
+    edge: &impl Fn(usize) -> [i32; 4],
     near: fn([i32; 4]) -> EdgeMask,
 ) -> Result<bool, QueryError> {
     point(actor)?;
@@ -525,7 +525,7 @@ pub fn walker_queries(
     actor: [i32; 2],
     direction: i32,
     count: usize,
-    edge: impl Fn(usize) -> [i32; 4],
+    edge: &impl Fn(usize) -> [i32; 4],
 ) -> Result<WalkerQueries, QueryError> {
     walker_queries_of(Shape::RUNNER, actor, direction, count, edge)
 }
@@ -534,7 +534,7 @@ pub fn walker_queries_of(
     actor: [i32; 2],
     direction: i32,
     count: usize,
-    edge: impl Fn(usize) -> [i32; 4],
+    edge: &impl Fn(usize) -> [i32; 4],
 ) -> Result<WalkerQueries, QueryError> {
     walker_queries_near(shape, actor, direction, count, edge, all_edges)
 }
@@ -545,7 +545,7 @@ pub fn walker_queries_near(
     actor: [i32; 2],
     direction: i32,
     count: usize,
-    edge: impl Fn(usize) -> [i32; 4],
+    edge: &impl Fn(usize) -> [i32; 4],
     near: fn([i32; 4]) -> EdgeMask,
 ) -> Result<WalkerQueries, QueryError> {
     walker_queries_with(shape, actor, direction, count, edge, near, true)
@@ -559,7 +559,7 @@ pub fn walker_queries_with(
     actor: [i32; 2],
     direction: i32,
     count: usize,
-    edge: impl Fn(usize) -> [i32; 4],
+    edge: &impl Fn(usize) -> [i32; 4],
     near: fn([i32; 4]) -> EdgeMask,
     floor_follows_offset: bool,
 ) -> Result<WalkerQueries, QueryError> {
