@@ -24,3 +24,11 @@ preserves gate IDs and serialized conditions, and refuses executable eviction
 when target content is incomplete. Unknown cooked costs remain unknown; source
 atlas sizes are not a PS1 memory budget. These host plans do not yet drive
 runtime room swaps.
+
+`hk-fsm` also holds the FSM v2 measuring tools (docs/FSM-V2-DESIGN.md). `fsm-census` tabulates the
+PlayMaker actions of every HealthManager tree from the Windows Unity files and the
+`hk-feature-census` row cache: `cargo run --release --manifest-path host/Cargo.toml -p hk-fsm-cook
+--bin fsm-census -- DATA CACHE OUT`. `fsm3-sizes` lowers the Crawler, Gruzzer, Vengefly and Hornet 1
+trees to the proposed HKFSM03 layout (`v3.rs`), checks the decode against the source graph and
+reports real byte sizes. Both write to a directory outside the repository; the banks are cooked
+from retail data and are not committed.
