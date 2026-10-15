@@ -29,7 +29,7 @@ class TableTests(unittest.TestCase):
         self.assertIn('pub static KNEELS:&[(u16,u16,bool)]=&[(11,11,false)];', text)
         self.assertIn('geo:[0,20,4]', text, '200 Geo in 24 coins')
         self.assertIn('Pickup{scene:11,local:1,', text)
-        self.assertIn('grant:Grant::CityKey,chest:255,after_false_knight:true,after_arena:false,first:4,count:7,fps:1920,scale:60692,fling:None,name:"City Crest"', text)
+        self.assertIn('grant:Grant::CityKey,chest:255,after_false_knight:true,after_arena:false,after_hornet:false,first:4,count:7,fps:1920,scale:60692,fling:None,name:"City Crest"', text)
         self.assertIn('pub static BASES:&[(u16,u16,u16)]=&[(1,1,40),(2,2,52)];', text)
         self.assertIn('pub static HIDE:&[(u16,&[u16])]=&[(1,&[3])];', text)
 

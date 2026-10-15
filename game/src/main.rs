@@ -494,6 +494,7 @@ fn take_pickup(scene: usize, p: &pickups::Pickup) {
         // one back, so the saved pickup is the whole record.
         pickups::Grant::Trinket(_) => {}
         pickups::Grant::CityKey => persist::set_player(persist::HAS_CITY_KEY),
+        pickups::Grant::Ability(bit) => persist::set_player(bit as u32),
         pickups::Grant::MaskShard => shop::pick_up(|s| {
             s.add_mask_shard();
         }),
