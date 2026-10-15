@@ -2,6 +2,7 @@
 #![no_std]
 pub mod coverage;
 pub mod fsm;
+pub mod fsm3;
 mod scene;
 pub use scene::{Scene, SceneValidation};
 pub mod world_meta;

@@ -2,6 +2,7 @@ mod cook;
 pub mod census;
 pub mod families;
 pub mod v3;
+pub mod cook3;
 pub use cook::cook;
 pub use cook::crawler_fields;
 /// Regenerate the original Gruzzer graph used by the guest.

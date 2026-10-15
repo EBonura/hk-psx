@@ -3,6 +3,10 @@ name="hk-sim"
 version="0.1.0"
 edition="2021"
 [workspace]
+[features]
+# Host-only: the kernel reports every state entry, action, event and transition to a sink (oracle replay).
+trace = []
+
 [dependencies]
 psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }
 hk-format={path="../hk-format"}
