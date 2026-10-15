@@ -49,6 +49,8 @@ pub struct Profile {
     pub fsm_trace: String,
     /// "GameObject|FSM|EVENT|test frame": one forced event for the trace run.
     pub fsm_send: String,
+    /// "Root|dx|dy|test frame;...": place the knight relative to a root for the trace run.
+    pub fsm_seek: String,
     pub fx_off: Vec<String>,
     pub seed: u32,
     pub sweep: Vec<String>,
@@ -197,6 +199,7 @@ impl Profile {
             seed: og.get("seed").and_then(Value::as_u64).unwrap_or(1) as u32,
             fsm_trace: s(og, "fsmtrace"),
             fsm_send: s(og, "fsmsend"),
+            fsm_seek: s(og, "fsmseek"),
             og_timeout: og.get("timeout").and_then(Value::as_u64).unwrap_or(300),
         })
     }

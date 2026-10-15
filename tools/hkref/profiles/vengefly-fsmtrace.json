@@ -1,0 +1,21 @@
+{
+  "name": "vengefly-fsmtrace",
+  "port": {
+    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "map": "build/hk-psx-normal.map",
+    "polls": 1,
+    "events": "0:left:2"
+  },
+  "window": {
+    "ticks": 2400
+  },
+  "og": {
+    "scene": "",
+    "gate": "",
+    "seed": 1,
+    "timeout": 900,
+    "fsmtrace": "Buzzer,Buzzer 1,Buzzer 2",
+    "fsmseek": "Buzzer|6|0|100;Buzzer|80|0|400;Buzzer|5|1|1300",
+    "fsmsend": "Buzzer|chaser|TOOK DAMAGE|2000;Buzzer 1|flyer_receive_direction_msg|GO UP|300;Buzzer 1|flyer_receive_direction_msg|GO LEFT|420;Buzzer 1|flyer_receive_direction_msg|GO RIGHT|540;Buzzer 1|flyer_receive_direction_msg|GO DOWN|660"
+  }
+}
