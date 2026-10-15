@@ -611,8 +611,8 @@ mod modules {
     pub const HUSKS: usize = 2;
     pub const VENGEFLY: usize = 3;
     pub const GRUZZER: usize = 4;
-    pub const FSM_CORE: usize = 15;
-    pub const FSM_WALK: usize = 16;
+    pub const FSM3_CORE: usize = 15;
+    pub const FSM3_BODY: usize = 16;
     pub const CRAWLER: usize = 17;
     pub const BALDUR: usize = 5;
     pub const ASPID: usize = 6;

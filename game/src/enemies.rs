@@ -1364,6 +1364,12 @@ struct Actor {
     located: crate::disc::Located,
     runtime: Runtime,
 }
+/// The module of an FSM-driven family is resident together with the shared action code its graphs run.
+fn fsm3_ready(family: usize) -> bool {
+    crate::modules::require(family)
+        && crate::modules::require(crate::modules::FSM3_CORE)
+        && crate::modules::require(crate::modules::FSM3_BODY)
+}
 /// One controller runtime per actor; Crawler retains its original graph state.
 #[derive(Clone, Copy)]
 enum Runtime {
@@ -1430,14 +1436,14 @@ impl Actor {
     }
     fn vengefly(&self) -> Option<VengeflyRuntime> {
         if let Runtime::Vengefly(v) = self.runtime {
-            crate::modules::require(crate::modules::VENGEFLY).then_some(v)
+            fsm3_ready(crate::modules::VENGEFLY).then_some(v)
         } else {
             None
         }
     }
     fn gruzzer(&self) -> Option<GruzzerRuntime> {
         if let Runtime::Gruzzer(g) = self.runtime {
-            crate::modules::require(crate::modules::GRUZZER).then_some(g)
+            fsm3_ready(crate::modules::GRUZZER).then_some(g)
         } else {
             None
         }
@@ -2520,7 +2526,7 @@ impl Actor {
             let senses =
                 hk_sim::walker_senses(self.bounds(spec), self.walk.direction, count, &edge);
             if let Runtime::Crawler(mut crawler)=self.runtime {
-                if crate::modules::require(crate::modules::CRAWLER) {
+                if fsm3_ready(crate::modules::CRAWLER) {
                     self.advance_crawler_fsm(&mut crawler,spec,senses)
                 } else { 0 }
             } else { self.walk.tick(spec.walk, senses.0, senses.1, senses.2) }
@@ -2567,16 +2573,16 @@ impl Actor {
     }
     #[inline(never)]
     fn advance_crawler_fsm(&mut self,crawler:&mut hk_sim::crawler_fsm::Crawler,spec:&ActorSpec,senses:(bool,bool,bool))->i32{
-        use hk_sim::{fsm_actions::WalkingActions,fsm_body::Walking};
         #[cfg(not(test))]
         let real_ticks=crawler.elapsed_real_ticks(psx_rt::interrupts::vblank_count());
         #[cfg(test)]
         let real_ticks=1;
-        let mut kernel=WalkingActions(Walking{walk:self.walk,position:[self.x,self.y,0],params:spec.walk,senses,velocity:0,real_ticks,stationary_fixture:cfg!(test)&&spec.walk.speed==0});
-        crawler.step(&mut kernel).expect("checked Crawler action adapter");
-        let body=kernel.0;
-        self.walk=body.walk;self.x=body.position[0];self.y=body.position[1];
-        self.runtime=Runtime::Crawler(*crawler);body.velocity
+        let mut env=hk_sim::fsm3::Env::new();
+        env.walk=self.walk;env.walk_params=spec.walk;env.senses=senses;env.pos=[self.x,self.y,0];
+        env.dt_real=real_ticks as i32*65536;
+        crawler.step(&mut env);
+        self.walk=env.walk;self.x=env.pos[0];self.y=env.pos[1];
+        self.runtime=Runtime::Crawler(*crawler);env.velocity
     }
     // The Husk Warrior's and the Husk Guard's ticks, each its own function so
     // the husks can stream as a code module. Return the walking speed.
