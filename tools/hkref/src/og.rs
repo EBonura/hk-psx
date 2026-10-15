@@ -253,6 +253,12 @@ pub fn run(env: &Env, p: &Profile, w: &Window) -> Result<PathBuf, String> {
             .env("HK_REFERENCE_FACE", if f < 0.0 { "-1" } else { "1" });
     }
     c.env("HK_REFERENCE_SEED", p.seed.to_string());
+    if !p.fsm_trace.is_empty() {
+        c.env("HK_REFERENCE_FSMTRACE", &p.fsm_trace);
+    }
+    if !p.fsm_send.is_empty() {
+        c.env("HK_REFERENCE_FSMSEND", &p.fsm_send);
+    }
     if !p.fx_off.is_empty() {
         c.env("HK_REFERENCE_DISABLE_FX", p.fx_off.join(","));
     }

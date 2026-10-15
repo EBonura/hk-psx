@@ -102,6 +102,20 @@ ticks depending on where a press falls against its fixed step.
 * Screenshots are batch-mode Metal renders at 960x540 of every camera in depth order,
   with the original's four camera image effects on (the colour grade, see below).
 
+## PlayMaker event trace (FSM v2 oracle)
+
+`hkref --work $W fsmtrace profiles/hornet1-fsmtrace.json` runs the original only and writes
+`$W/runs/<profile>/og/fsmtrace.csv`: one row per state entry, event receipt, transition, and
+per action enter, per-tick run and finish, for the FSMs on every GameObject under the roots
+named by `og.fsmtrace` (comma separated). The patcher writes the hook calls into the clone's
+`PlayMaker.dll` (`Fsm.EnterState`, `Fsm.ProcessEvent`, `Fsm.DoTransition`,
+`FsmState.ActivateActions/OnUpdate/OnFixedUpdate/OnLateUpdate`, `FsmStateAction.Finish`) and
+fails closed when that IL changes. `FsmLog` is not used: `LoggingEnabled` gates only state
+entry and events in the shipped player, transitions are logged in the editor only, and actions
+are not logged at all. `og.fsmsend` (`GameObject|FSM|EVENT|test frame`) sends one forced event,
+for a state the tape cannot reach; the row is marked `FORCED_EVENT`. The trace carries names and
+frames, not operand values yet.
+
 ## The colour grade in batch mode
 
 The main camera carries four image effects: `BloomOptimized`, `FastNoise` (film grain),
