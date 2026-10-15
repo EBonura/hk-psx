@@ -66,7 +66,7 @@ fn main() -> Result<()> {
             }
         }
         all_schema.extend(schema.iter().map(|(k, v)| (*k, *v)));
-        let (bank, sizes, overhead) = serialize(&irs, ctx.events.len(), ctx.entities.len(), ctx.strings.len())?;
+        let (bank, sizes, overhead) = serialize(&irs, ctx.events.len(), ctx.entities.len(), ctx.strings.len(), 0)?;
         std::fs::write(format!("{}/{}.hkf3", a[3], label.to_lowercase().replace(' ', "")), &bank)?;
         let back = deserialize(&bank, &|f, o, fl| schema[&(f, o)] - (fl & F_OWNER != 0) as usize)?;
         let mut mismatches = 0;
