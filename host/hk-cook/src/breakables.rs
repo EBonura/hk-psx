@@ -789,6 +789,7 @@ pub(crate) fn is_int_in(v: Option<&Value>, allowed: &[i64]) -> bool {
 
 const BG_CONTROL_FSM: &str = "BG Control";
 const BG_CONTROL_SHA256: &str = "98a0b55f39c2f01fa2e16c353d581532179c4893a03437b10cbee49b19e8ca9f";
+const BG_CONTROL_BONE_SHA256: &str = "525bab5a6c08ab2800b7909b6a564f2da7c0dedea43d10ea5f23ffe41d6bc8bc";
 const BG_CONTROL_PLACEMENT_VARIABLE: &str = "Start Closed";
 const BG_CONTROL_START_STATE: &str = "Opened";
 const BG_CONTROL_START_ACTIONS: [&str; 4] =
@@ -958,7 +959,7 @@ pub fn battle_gates(sc: &Scene, mut errors: Option<&mut Vec<Json>>) -> Result<Ve
         let one = (|| -> Result<Json> {
             let fsm = k(&o.tree, "fsm")?;
             let digest = fsm_digest(fsm, &[BG_CONTROL_PLACEMENT_VARIABLE])?;
-            if digest != BG_CONTROL_SHA256 {
+            if digest != BG_CONTROL_SHA256 && digest != BG_CONTROL_BONE_SHA256 {
                 return err(format!("unverified BG Control variant: {digest}"));
             }
             let mut record = battle_gate(sc, gid, fsm)?;
@@ -973,6 +974,7 @@ pub fn battle_gates(sc: &Scene, mut errors: Option<&mut Vec<Json>>) -> Result<Ve
                 "name",
                 value_json(k(sc.go(gid).unwrap(), "m_Name")?),
             );
+            jset(&mut record, "art", Json::Bool(digest == BG_CONTROL_SHA256));
             jset(&mut record, "fsm_sha256", Json::Str(digest));
             Ok(record)
         })();

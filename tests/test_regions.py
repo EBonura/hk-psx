@@ -107,7 +107,7 @@ class RegionTests(unittest.TestCase):
         self.assertEqual(greenpath[-1]['activation_bounds'],[166,27,172,31])
 
     def test_greenpath_records_the_two_layouts_the_grid_could_not_hold(self):
-        """Fungus1_02 and Fungus1_19 carry the boxes their cook chose, not a grid.
+        """Fungus1_02, Fungus1_19 and the road to Hornet (Fungus1_22, 21, 04) carry the boxes their cook chose, not a grid.
 
         Both hold a 24x16 view that cooks 6 pages against STATIC_PAGE_BUDGET 5,
         so the plain grid is not a layout either scene can be admitted at and
@@ -121,7 +121,7 @@ class RegionTests(unittest.TestCase):
         """
         from quality import MEASURED_VIEW_LAYOUTS,grid_layout
         regions=fixed_regions()
-        self.assertEqual(set(MEASURED_VIEW_LAYOUTS),{'Fungus1_02','Fungus1_19'})
+        self.assertEqual(set(MEASURED_VIEW_LAYOUTS),{'Fungus1_02','Fungus1_19','Fungus1_22','Fungus1_21','Fungus1_04'})
         for name,boxes in MEASURED_VIEW_LAYOUTS.items():
             scene=next(s for s in SCENES if s['scene_name']==name)
             laid=[r['activation_bounds'] for r in regions if r['scene_name']==name]
