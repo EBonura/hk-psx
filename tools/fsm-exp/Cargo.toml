@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Host-built guest experiments for the FSM v2 truth pass (docs/FSM-V2-DESIGN.md section 5, step 0):
+# the kernel byte count, the family dispatch cost and the hazard-scanner behaviour of an
+# indirect call. Built like the SDK examples (see README.md); not part of the game.
+[package]
+name    = "fsm-exp"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "fsm-exp"
+path = "src/main.rs"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[dependencies]
+psx-rt = { path = "../../.psoxide/sdk/crates/psx-rt", features = ["hazard-trampolines-256"] }
+psx-io = { path = "../../.psoxide/sdk/crates/psx-io" }
