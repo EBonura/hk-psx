@@ -3,7 +3,7 @@
 //! An instance is bound to its source scene; only the resident scene's instances (at most `LIVE`) have a
 //! runtime block. `tick` runs them once, in cooked order, against the hero's trigger overlap and the save
 //! record's PlayerData reserve.
-use crate::fsm3::{Env, Tree, PH_UPDATE};
+use crate::fsm3::{Block, Env, Tree, PH_UPDATE};
 use hk_format::fsm3::Bank;
 include!("../../../data/script_fsm3.rs");
 
@@ -97,10 +97,11 @@ impl Scripts {
             env.trigger = trigger(i);
             // SAFETY: the block was laid out for this bank by `seat`.
             let mut tree = unsafe { Tree::attach(bank(i), self.mem[n].as_mut_ptr().cast(), &mut env) };
-            let before = tree.state(0);
+            let block = tree.block();
+            let before = block.state(0);
             tree.step(PH_UPDATE);
             report.active += 1;
-            report.transitions += (tree.state(0) != before) as u32;
+            report.transitions += (block.state(0) != before) as u32;
             report.faults += tree.faults() as u32;
             report.writes += env.pd_writes as u32;
         }
@@ -109,8 +110,7 @@ impl Scripts {
     /// State of live block `n` (tests).
     pub fn state(&mut self, n: usize) -> u8 {
         let i = self.live[n] as usize;
-        let mut env = Env::new();
         // SAFETY: as above.
-        unsafe { Tree::attach(bank(i), self.mem[n].as_mut_ptr().cast(), &mut env) }.state(0)
+        unsafe { Block::new(bank(i), self.mem[n].as_mut_ptr().cast()) }.state(0)
     }
 }

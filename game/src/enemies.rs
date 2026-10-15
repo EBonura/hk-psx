@@ -4603,7 +4603,7 @@ impl Actor {
         room: &Room,
         context: RunnerContext,
         count: usize,
-        edge: impl Fn(usize) -> [i32; 4],
+        edge: &impl Fn(usize) -> [i32; 4],
     ) -> hk_sim::runner::Senses {
         use hk_sim::runner_senses as q;
         let pos = [self.x, self.y];
@@ -4627,7 +4627,7 @@ impl Actor {
             context.hero,
             in_alert_range,
             count,
-            &edge,
+            edge,
             edges_near,
         ) {
             Ok(value) => value,
@@ -4670,7 +4670,7 @@ impl Actor {
         room: &Room,
         context: RunnerContext,
         count: usize,
-        edge: impl Fn(usize) -> [i32; 4],
+        edge: &impl Fn(usize) -> [i32; 4],
     ) -> hk_sim::zombie_shield::Senses {
         use hk_sim::runner_senses as q;
         let pos = [self.x, self.y];
@@ -4692,7 +4692,7 @@ impl Actor {
             context.hero,
             in_attack_range,
             count,
-            &edge,
+            edge,
             edges_near,
         ) {
             Ok(value) => value,
@@ -6071,7 +6071,7 @@ impl EnemyWorld {
                                         room,
                                         context,
                                         terrain_room.counts[5],
-                                        |i| {
+                                        &|i| {
                                             state.edge_in_view(
                                                 region,
                                                 room,
@@ -7802,7 +7802,7 @@ mod runner_runtime_tests {
         let runner = actor.runner().unwrap();
         let floor = room.edge(0);
         let wall = [ONE, 0, ONE, 5 * ONE];
-        let blocked = actor.runner_senses(&runner, &SPEC, &room, context(3 * ONE), 2, |i| {
+        let blocked = actor.runner_senses(&runner, &SPEC, &room, context(3 * ONE), 2, &|i| {
             if i == 0 {
                 floor
             } else {
@@ -7811,7 +7811,7 @@ mod runner_runtime_tests {
         });
         assert!(blocked.in_alert_range);
         assert!(!blocked.can_see_hero);
-        let clear = actor.runner_senses(&runner, &SPEC, &room, context(3 * ONE), 2, |i| {
+        let clear = actor.runner_senses(&runner, &SPEC, &room, context(3 * ONE), 2, &|i| {
             if i == 0 {
                 floor
             } else {

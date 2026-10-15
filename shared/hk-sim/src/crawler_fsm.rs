@@ -1,6 +1,6 @@
 //! Each admitted Crawler runs its own original graph on the shared HKFSM03 kernel. The caller keeps
 //! the body: terrain senses, recoil, damage and corpses.
-use crate::fsm3::{Env, Tree, PH_UPDATE};
+use crate::fsm3::{Block, Env, Tree, PH_UPDATE};
 use hk_format::fsm3::Bank;
 include!("../../../data/crawler_fsm3.rs");
 
@@ -31,9 +31,11 @@ impl Crawler {
     }
     /// The state the graph is in.
     pub fn state(&mut self) -> u8 {
-        let mut env = Env::new();
+        self.block().state(0)
+    }
+    fn block(&mut self) -> Block<'static> {
         // SAFETY: the block was laid out for this bank by `new`.
-        unsafe { Tree::attach(bank(self.graph), self.mem.as_mut_ptr().cast(), &mut env) }.state(0)
+        unsafe { Block::new(bank(self.graph), self.mem.as_mut_ptr().cast()) }
     }
     #[inline(never)]
     pub fn elapsed_real_ticks(&mut self, now: u32) -> u16 {
@@ -58,14 +60,10 @@ impl Crawler {
         tree.event(0, event);
     }
     pub fn die(&mut self) {
-        let mut env = Env::new();
-        // SAFETY: as above.
-        unsafe { Tree::attach(bank(self.graph), self.mem.as_mut_ptr().cast(), &mut env) }.kill(0);
+        self.block().kill(0);
     }
     /// Scratch word `i` of the graph's one FSM (the running Wait's remaining time).
     pub fn scratch_word(&mut self, i: usize) -> i32 {
-        let mut env = Env::new();
-        // SAFETY: as above.
-        unsafe { Tree::attach(bank(self.graph), self.mem.as_mut_ptr().cast(), &mut env) }.scratch_word(0, i)
+        self.block().scratch_word(0, i)
     }
 }
