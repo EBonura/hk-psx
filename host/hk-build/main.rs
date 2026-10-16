@@ -1688,6 +1688,9 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     menu_cached(root, options.recook)?;
     assets_cached(root, options.recook)?;
     hk_fsm_cook::cook_gruzzer(root)?;
+    // The admitted Crawlers' original graphs (data/crawler_fsm.rs, data/crawler.fsm) are generated
+    // data the guest and its host tests include; a fresh clone has none until this writes them.
+    hk_fsm_cook::cook_crawlers(root)?;
     // The boot art chunk and its offsets (data/boot_art.rs) are generated data
     // the guest-compile tests include. build_guest.py writes them too, but only
     // after the suites below, so a checkout that had never built since the

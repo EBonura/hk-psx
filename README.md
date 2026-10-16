@@ -197,7 +197,7 @@ checkout into its private `CARGO_TARGET_DIR/overlay-sdk-tools`. Missing or
 different host-tool source fails before guest compilation.
 
 This host-tool revision is separate from the guest runtime snapshot in
-`sdk.lock.json` (`46895dc5`); the publisher emits its existing checked format
+`sdk.lock.json` (`d3840528`); the publisher emits its existing checked format
 and does not change the qualified guest runtime. Production ELF measurement
 (`--elf-only --work PATH`) stops before publication. Profiling remains a
 separate build mode and does not qualify the ordinary shared-module release.
