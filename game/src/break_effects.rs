@@ -533,10 +533,8 @@ fn speed_fraction(speed: i32, range: [i32; 2]) -> u8 {
     }
     let delta = (speed as i64 - range[0] as i64) as u32;
     let span = (range[1] as i64 - range[0] as i64) as u32;
-    match delta.checked_mul(255) {
-        Some(n) => (n / span) as u8,
-        None => (delta as u64 * 255 / span as u64) as u8,
-    }
+    // delta < span here, so the quotient is below 256.
+    hk_sim::exact::mul_div_u32(delta, 255, span) as u8
 }
 /// Preserve truncation toward zero; small components (notably source depth)
 /// use the R3000's32-bit divider without changing the general wide fallback.
@@ -548,7 +546,7 @@ pub(super) fn scale_velocity(v: i32, scale: i32, speed: i32) -> i32 {
             // unsigned quotient fits32 bits; signed restoration preserves the
             // old truncation toward zero without a software wide divider.
             let numerator = v.unsigned_abs() as u64 * scale as u64;
-            let q = psx_math::int32::div_u64_by_u32(
+            let q = hk_sim::exact::div_wide(
                 (numerator >> 32) as u32,
                 numerator as u32,
                 speed as u32,
@@ -559,7 +557,7 @@ pub(super) fn scale_velocity(v: i32, scale: i32, speed: i32) -> i32 {
                 q as i32
             }
         }
-        None => (v as i64 * scale as i64 / speed as i64) as i32,
+        None => psx_math::int32::mul_div_i32(v, scale, speed),
     }
 }
 fn phase(p: &Particle) -> usize {
@@ -744,7 +742,7 @@ fn spawn_specs_with_bases(
             let direction = core::array::from_fn::<_, 3, _>(|j| dot3(e.basis[j], direction));
             let norm = length3(direction).max(1);
             let velocity = core::array::from_fn(|j| {
-                ((direction[j] as i64 * speed as i64) / norm as i64) as i32
+                psx_math::int32::mul_div_i32(direction[j], speed, norm)
                     + range(&mut rng, ordered(s.velocity[j]))
             });
             // Only trusted generated emitter/style slices supply a base. Generic
@@ -769,7 +767,11 @@ fn spawn_specs_with_bases(
                 kind: e.style + 2,
                 life: super::NonZeroU16::new(life).expect("positive particle lifetime"),
                 age: 0,
-                delay: (((i as u64 + 1) * 60 * ONE as u64 - 1) / s.rate as u64).min(255) as u8,
+                delay: {
+                    // floor(((i + 1) * 60 * ONE - 1) / rate), capped at 255.
+                    let ticks = psx_math::WideU::mul((i as u32 + 1) * 60, ONE as u32) - psx_math::WideU::of(1);
+                    hk_sim::exact::div_rem_u32(ticks, s.rate as u32).0.saturate_u32().min(255) as u8
+                },
                 cell: (super::random(&mut rng) % s.frames.len() as u32) as u8,
                 gradient,
                 color,
@@ -975,7 +977,7 @@ fn tick_specs_with_tracks(
                         [normal[0].signum() * ONE, 0]
                     } else {
                         let n = length3([normal[0], normal[1], 0]).max(1);
-                        normal.map(|v| (v as i64 * ONE as i64 / n as i64) as i32)
+                        normal.map(|v| psx_math::int32::mul_div_i32(v, ONE, n))
                     };
                     let dot = mulq(p.velocity[0], unit[0]) + mulq(p.velocity[1], unit[1]);
                     for j in 0..2 {
@@ -1029,8 +1031,11 @@ fn collide(
             }
         } else {
             let height = |x: i32| {
-                y0 + (((x.clamp(x0.min(x1), x0.max(x1)) - x0) as i64 * (y1 - y0) as i64)
-                    / (x1 - x0) as i64) as i32
+                y0 + psx_math::int32::mul_div_i32(
+                    x.clamp(x0.min(x1), x0.max(x1)) - x0,
+                    y1 - y0,
+                    x1 - x0,
+                )
             };
             let (before, surface) = if y0 == y1 {
                 (y0, y0)

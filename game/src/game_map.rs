@@ -359,10 +359,16 @@ pub fn prepare(scene: usize, hero: [i32; 2]) {
             let room = &MAP_ROOMS[s.room as usize];
             let at = s.door.unwrap_or(hero);
             let b = s.bounds;
-            let fx = ((at[0] - b[0]).clamp(0, b[2] - b[0]) as i64 * room.full.w as i64
-                / (b[2] - b[0]).max(1) as i64) as i16;
-            let fy = ((b[3] - at[1]).clamp(0, b[3] - b[1]) as i64 * room.full.h as i64
-                / (b[3] - b[1]).max(1) as i64) as i16;
+            let fx = psx_math::int32::mul_div_i32(
+                (at[0] - b[0]).clamp(0, b[2] - b[0]),
+                room.full.w as i32,
+                (b[2] - b[0]).max(1),
+            ) as i16;
+            let fy = psx_math::int32::mul_div_i32(
+                (b[3] - at[1]).clamp(0, b[3] - b[1]),
+                room.full.h as i32,
+                (b[3] - b[1]).max(1),
+            ) as i16;
             sprite(
                 ox + room.x + fx - (MAP_MARKER.w as i16) / 2,
                 oy + room.y + fy - (MAP_MARKER.h as i16) / 2,

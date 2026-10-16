@@ -864,14 +864,15 @@ fn scale(value: i32, factor: i32) -> i32 {
 /// The unit vector from `from` to `to`, Q16: GetAngleToTarget2D followed by
 /// SetVelocityAsAngle is this times the speed.
 pub fn direction(from: [i32; 2], to: [i32; 2]) -> [i32; 2] {
-    let d = [to[0] as i64 - from[0] as i64, to[1] as i64 - from[1] as i64];
-    let length = psx_math::int32::isqrt_u64((d[0] * d[0] + d[1] * d[1]) as u64) as i64;
+    // World coordinates stay inside +/-512 units, so the differences fit i32.
+    let d = [to[0].wrapping_sub(from[0]), to[1].wrapping_sub(from[1])];
+    let length = psx_math::Wide::mul(d[0], d[0]).mul_add(d[1], d[1]).isqrt() as i32;
     if length == 0 {
         return [ONE, 0];
     }
     [
-        (d[0] * ONE as i64 / length) as i32,
-        (d[1] * ONE as i64 / length) as i32,
+        psx_math::int32::mul_div_i32(d[0], ONE, length),
+        psx_math::int32::mul_div_i32(d[1], ONE, length),
     ]
 }
 

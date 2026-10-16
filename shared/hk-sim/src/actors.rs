@@ -430,6 +430,7 @@ pub fn resolve_actor_spawn(
     false
 }
 
+#[inline(never)]
 fn spawn_separation(b: [i32; 4], e: [i32; 4]) -> Option<[i32; 2]> {
     let [left, bottom, right, top] = b;
     let [x0, y0, x1, y1] = e;
@@ -443,6 +444,7 @@ fn spawn_separation(b: [i32; 4], e: [i32; 4]) -> Option<[i32; 2]> {
     }
     // Clip the segment to each box slab. Rounding outwards by at most one Q16
     // unit ensures a sloped edge cannot remain inside after integer projection.
+    #[inline(never)]
     fn range(a0: i32, b0: i32, a1: i32, b1: i32, lo: i32, hi: i32) -> (i32, i32) {
         if a0 == a1 {
             return (b0.min(b1), b0.max(b1));
@@ -452,13 +454,13 @@ fn spawn_separation(b: [i32; 4], e: [i32; 4]) -> Option<[i32; 2]> {
         } else {
             (a0, b0, a1, b1)
         };
-        let den = (a1 - a0) as i64;
-        let at = |a: i32| (a - a0) as i64 * (b1 - b0) as i64;
+        let den = a1.wrapping_sub(a0) as u32;
+        let at = |a: i32| psx_math::Wide::mul(a - a0, b1 - b0);
         let n0 = at(lo.max(a0));
         let n1 = at(hi.min(a1));
         (
-            b0 + n0.min(n1).div_euclid(den) as i32,
-            b0 + (-(-n0.max(n1)).div_euclid(den)) as i32,
+            b0 + crate::exact::floor_div_u32(n0.min(n1), den),
+            b0 + crate::exact::floor_div_u32(-n0.max(n1), den).wrapping_neg(),
         )
     }
     let (low_y, high_y) = range(x0, y0, x1, y1, left, right);

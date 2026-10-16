@@ -203,7 +203,9 @@ fn sheet_frame(scene: usize, region: usize) -> Option<usize> {
 fn fall_drop(ticks: i32) -> i32 {
     // FALL_SPEED and GRAVITY are Q16 units/s and units/s^2.
     let t = ticks.min(600);
-    (FALL_SPEED as i64 * t as i64 / 60 + GRAVITY as i64 * (t * t) as i64 / 7200) as i32
+    // Each term wraps to 32 bits where the sum would, so adding them wrapped is the same.
+    psx_math::int32::mul_div_i32(FALL_SPEED, t, 60)
+        .wrapping_add(psx_math::int32::mul_div_i32(GRAVITY, t * t, 7200))
 }
 
 impl Draws {

@@ -77,14 +77,23 @@ fn outside(xy: &[(i32, i32); 4]) -> bool {
         || xy.iter().all(|p| p.1 <= 0)
         || xy.iter().all(|p| p.1 >= 240)
 }
+/// `n / d` rounded to nearest, ties to even; `d` is a texel-grid area, so it fits 32 bits,
+/// and the quotient stays inside MAX_COORDINATE. The magnitude divides in two 32-bit words
+/// and the sign is put back on the rounded result.
 fn nearest_even(n: i64, d: i64) -> i64 {
-    debug_assert!(d > 0);
-    let q = n / d;
-    let twice_remainder = (n % d).abs() * 2;
-    if twice_remainder > d || (twice_remainder == d && q & 1 != 0) {
-        q + if n < 0 { -1 } else { 1 }
+    debug_assert!(d > 0 && d <= u32::MAX as i64);
+    let magnitude = n.unsigned_abs();
+    let (q, r) = hk_sim::exact::div_rem_u32(
+        psx_math::WideU::from_parts((magnitude >> 32) as u32, magnitude as u32),
+        d as u32,
+    );
+    let (q, d) = (q.low(), d as u32);
+    let up = r > d - r || (r == d - r && q & 1 != 0);
+    let rounded = i64::from(q + u32::from(up));
+    if n < 0 {
+        -rounded
     } else {
-        q
+        rounded
     }
 }
 // Current cooked rooms have |XY|<=3691 and UV denominator<=65025, so all
@@ -297,6 +306,25 @@ mod tests {
         w: 47,
         h: 39,
     };
+    #[test]
+    fn nearest_even_matches_the_native_division() {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..20_000 {
+            let d = (next() % 65_025 + 1) as i64;
+            let q = (next() % (2 * MAX_COORDINATE as u64 + 1)) as i64 - MAX_COORDINATE as i64;
+            let n = q * d + (next() % d as u64) as i64 * q.signum();
+            let (quotient, remainder) = (n / d, (n % d).abs());
+            let up = remainder * 2 > d || (remainder * 2 == d && quotient & 1 != 0);
+            let expected = quotient + if up { n.signum() } else { 0 };
+            assert_eq!(nearest_even(n, d), expected, "{n} / {d}");
+        }
+    }
     #[test]
     fn nearest_ties_are_even_for_both_signs() {
         for (n, expected) in [

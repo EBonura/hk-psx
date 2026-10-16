@@ -3,7 +3,11 @@ const DISTANCE: i32 = 2496922;
 const NUMERATOR: u64 = crate::KNIGHT_SCALE as u64 * DISTANCE as u64;
 const MIN_FAST: i32 = 1 << 21;
 // The quotient/correction bound is certified for this authored camera scale.
-const _: () = assert!(crate::KNIGHT_SCALE == 60693 && NUMERATOR >> 6 <= u32::MAX as u64);
+const _: () = assert!(
+    crate::KNIGHT_SCALE == 60693 && NUMERATOR >> 6 <= u32::MAX as u64 && NUMERATOR >> 32 < MIN_DEPTH as u64
+);
+/// The nearest depth the caller lets through (it rejects depth <= ONE).
+const MIN_DEPTH: i32 = hk_sim::ONE + 1;
 /// Caller has already rejected depth<=ONE. Truncating both positive operands
 /// by six bits gives an upper estimate: q=floor(floor(N/64)/floor(d/64))
 /// is at least floor(N/d). In this domain d>=2^21, q overshoots by at most3.
@@ -29,7 +33,9 @@ pub(super) fn scale(depth: i32) -> i32 {
         }
         quotient as i32
     } else {
-        (NUMERATOR as i64 / depth as i64) as i32
+        // Callers reject depth <= ONE, so the divisor is positive and, with the
+        // numerator's high word below MIN_DEPTH, the quotient fits one word.
+        hk_sim::exact::div_wide((NUMERATOR >> 32) as u32, NUMERATOR as u32, depth as u32) as i32
     }
 }
 #[cfg(test)]

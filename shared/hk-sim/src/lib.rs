@@ -18,6 +18,7 @@ pub mod fsm_body;
 mod fsm_fly;
 mod fsm_walk;
 pub mod crawler_fsm;
+pub mod exact;
 pub mod gruz_mother;
 pub mod gruzzer;
 pub mod hatcher;

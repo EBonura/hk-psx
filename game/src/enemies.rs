@@ -1150,24 +1150,27 @@ fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
         _ => [v[1], -v[0]],
     }
 }
-/// Compare nonnegative rational numbers without cross-products or rounding.
-/// Euclidean division reverses the ordering each time the fractional remainder
-/// is inverted; a zero remainder terminates with an exact integer comparison.
+/// Whether the nonnegative fraction `a / b` is below `c / d`: the two cross-products
+/// `a * d` and `c * b` compared as exact 128-bit values, built from 32-bit products.
 #[inline(never)]
-fn ray_fraction_less(mut a: u64, mut b: u64, mut c: u64, mut d: u64) -> bool {
+fn ray_fraction_less(a: u64, b: u64, c: u64, d: u64) -> bool {
+    use hk_sim::exact::{cmp_fractions, from_u64};
     debug_assert!(b != 0 && d != 0);
-    let mut reversed = false;
-    loop {
-        let (aq, cq) = (a / b, c / d);
-        if aq != cq {
-            return if reversed { aq > cq } else { aq < cq };
-        }
-        let (ar, cr) = (a % b, c % d);
-        if ar == 0 || cr == 0 {
-            return if reversed { ar > cr } else { ar < cr };
-        }
-        (a, b, c, d) = (b, ar, d, cr);
-        reversed = !reversed;
+    cmp_fractions(from_u64(a), from_u64(b), from_u64(c), from_u64(d)).is_lt()
+}
+/// `trunc(r * t_num / den)` for `0 <= t_num <= den`: the distance `r` along the ray
+/// to the hit.
+fn along_ray(r: i64, t_num: i64, den: i64) -> i64 {
+    use hk_sim::exact::{scale_by_fraction, wide_u};
+    let along = scale_by_fraction(
+        u32::try_from(r.unsigned_abs()).unwrap_or(u32::MAX),
+        wide_u(t_num),
+        wide_u(den),
+    ) as i64;
+    if r < 0 {
+        -along
+    } else {
+        along
     }
 }
 /// Nearest terrain hit of a Climber point ray, as the source raycast on layer
@@ -1230,8 +1233,8 @@ fn climber_ray_hit(
             ray_fraction_less(t_num as u64, den as u64, t as u64, d as u64)
         }) {
             let point = [
-                (ox + rx * t_num / den) as i32,
-                (oy + ry * t_num / den) as i32,
+                (ox + along_ray(rx, t_num, den)) as i32,
+                (oy + along_ray(ry, t_num, den)) as i32,
             ];
             best = Some((t_num, den, point));
         }
@@ -6776,9 +6779,13 @@ fn project_box_at_depth(
     if depth == 0 {
         return project_box(b, position, facing, camera);
     }
-    let k = |v: i32| {
-        ((v as i64 * CAMERA_DISTANCE as i64) / (CAMERA_DISTANCE as i64 + depth as i64)) as i32
-    };
+    // Depths are a few dozen units of Q16, so the sum stays inside i32.
+    let nearest = CAMERA_DISTANCE + depth;
+    #[inline(never)]
+    fn toward_centre(v: i32, nearest: i32) -> i32 {
+        psx_math::int32::mul_div_i32(v, CAMERA_DISTANCE, nearest)
+    }
+    let k = |v: i32| toward_centre(v, nearest);
     let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
     let mut verts = [(0i16, 0i16); 4];
     for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {

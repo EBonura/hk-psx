@@ -403,8 +403,8 @@ impl Mosquito {
                         senses.hero[1] as i64 + AIM_OFFSET_Y as i64 - senses.position[1] as i64;
                     let length = isqrt(dx * dx + dy * dy).max(1);
                     self.aim = [
-                        (dx * ONE as i64 / length) as i32,
-                        (dy * ONE as i64 / length) as i32,
+                        psx_math::int32::mul_div_i32(dx as i32, ONE, length as i32),
+                        psx_math::int32::mul_div_i32(dy as i32, ONE, length as i32),
                     ];
                     if dx == 0 && dy == 0 {
                         self.aim = [ONE, 0];

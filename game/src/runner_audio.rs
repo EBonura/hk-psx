@@ -158,8 +158,10 @@ pub fn call_for(pitch_q16:i32,variant:u8,mossman:bool) {
     let bank=clips(mossman);
     if variant as usize>=bank.len()-1 {return;}
     let (start, bytes, pitch, low, high, _) = bank[1+variant as usize];
+    // max/min rather than clamp: i64::clamp's panic message formats its bounds, which
+    // links the 64-bit Debug printer and its software divide into the guest.
     let scaled =
-        ((pitch as i64 * pitch_q16.max(0) as i64) >> 16).clamp(low as i64, high as i64) as u16;
+        ((pitch as i64 * pitch_q16.max(0) as i64) >> 16).max(low as i64).min(high as i64) as u16;
     let voice = Voice::new(CALL_VOICE);
     Voice::key_off(1 << CALL_VOICE);
     voice.configure_sample(

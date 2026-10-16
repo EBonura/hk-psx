@@ -761,7 +761,11 @@ fn random(seed: &mut u32) -> u32 {
 }
 fn range(seed: &mut u32, b: [i32; 2]) -> i32 {
     assert!(b[0] <= b[1]);
-    b[0] + (random(seed) as u64 % ((b[1] as i64 - b[0] as i64 + 1) as u64)) as i32
+    let span = b[1] as i64 - b[0] as i64 + 1;
+    let r = random(seed);
+    // A span past u32 (the whole i32 range) leaves the draw unreduced.
+    let draw = if span <= u32::MAX as i64 { r % span as u32 } else { r };
+    b[0] + draw as i32
 }
 fn inside(p: [i32; 2], b: [i32; 4]) -> bool {
     p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]

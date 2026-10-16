@@ -143,7 +143,8 @@ pub fn draw(geo: &geo::World, region: usize, camera: (i32, i32)) -> u32 {
     {
         let clip = geo::GEO_COIN_CLIPS[coin.denomination as usize][usize::from(!coin.landed)];
         let index = clip.start as usize
-            + ((u64::from(coin.age) * u64::from(clip.fps) / 60) % u64::from(clip.count)) as usize;
+            // age * fps / 60 stays below 2^32 for any fps up to 60.
+            + (hk_sim::exact::mul_div_u32(coin.age, u32::from(clip.fps), 60) % u32::from(clip.count)) as usize;
         let b = geo::GEO_ART[index].bounds;
         let world = [
             [b[0] + coin.x, b[3] + coin.y],
