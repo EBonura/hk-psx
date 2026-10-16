@@ -273,6 +273,10 @@ const _: () = assert!(REGION_SCENE_LOCAL.len() <= 1 << 16);
 const _: () = assert!(SCENE_COUNT <= 1 << 16);
 const EMPTY: usize = usize::MAX;
 const SEEK_POLL: u32 = 4_000_000;
+/// Byte operations one decoder step may run between pad checkpoints during a load. 4096
+/// took about a VBlank on a dense room (the False Knight journey's first load), which
+/// carried a poll over one; a quarter of that leaves several opportunities per frame.
+const DECODE_STEP: usize = 1024;
 /// Bytes past the scene arena that only a scene group staged in the tail may
 /// use (see `stage_group`). Zero keeps today's RAM; a prefetch that does not
 /// fit the resident scene's slack can be given more here.
@@ -562,13 +566,32 @@ fn mark(state: u32, error: u32) {
         core::ptr::write_volatile(&raw mut HK_ROOM_LOAD_ERROR, error);
     }
 }
+/// The pad poll a seek or a sector wait takes between looks (a named function so the
+/// `dyn FnMut` shims stay two jumps).
+#[inline(never)]
+fn pad_idle() {
+    crate::input::poll_only();
+}
+#[inline(never)]
 fn sector(reader: &mut SectorReader, dst: &mut [u32]) -> bool {
     assert!(dst.len() == SECTOR_WORDS);
     for word in dst.iter_mut() {
         unsafe { core::ptr::write_volatile(word, 0) };
     }
-    if !unsafe { reader.read_sector(dst.try_into().unwrap()) } {
-        return false;
+    // The next sector can be several frames away (the head still settling, the
+    // drive at its own pace), so wait for it a look at a time and take the pad
+    // poll that comes due between looks; `read_sector` spins without one. The
+    // bound is the reader's own (`DATA_POLL`, a worst-case seek).
+    let mut looks = 0u32;
+    loop {
+        match unsafe { reader.try_read_sector(dst.try_into().unwrap()) } {
+            Ok(true) => break,
+            Ok(false) if looks < SEEK_POLL => {
+                looks += 1;
+                crate::input::poll_only();
+            }
+            _ => return false,
+        }
     }
     unsafe { HK_CD_SECTORS_READ = HK_CD_SECTORS_READ.saturating_add(1) };
     scene_sectors(1);
@@ -1417,7 +1440,7 @@ impl Cache {
         let mut words=[0u32;SECTOR_WORDS];
         for pass in 0..2 {
             if pass==1 && !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
-            if !unsafe{self.reader.start_read_seek_first(lba,SEEK_POLL)} {
+            if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_POLL,&mut pad_idle)} {
                 unsafe{self.reader.stop();}
                 return Err(LoadError::PayloadRead);
             }
@@ -1726,7 +1749,7 @@ impl Cache {
                 HK_ROOM_DECODE_PHASE = decoder.phase_id();
             }
             crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-            match decoder.step(arena, 4096) {
+            match decoder.step(arena, DECODE_STEP) {
                 Ok(Some(len)) => {
                     if len != c.raw_len {
                         return Err(LoadError::Coverage);
@@ -1810,7 +1833,7 @@ impl Cache {
         loop {
             crate::input::checkpoint();
             crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-            match decoder.step(arena, 4096) {
+            match decoder.step(arena, DECODE_STEP) {
                 Ok(Some(len)) => {
                     if len != f.raw_len {
                         return Err(LoadError::EffectArt);
@@ -1880,7 +1903,7 @@ impl Cache {
         loop {
             crate::input::checkpoint();
             crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-            match decoder.step(tail, 4096) {
+            match decoder.step(tail, DECODE_STEP) {
                 Ok(Some(len)) => {
                     if len != m.raw_len {
                         return Err(LoadError::WorldMeta);
@@ -1989,7 +2012,7 @@ impl Cache {
                     HK_ROOM_DECODE_PHASE = decoder.phase_id();
                 }
                 crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-                match decoder.step(arena, 4096) {
+                match decoder.step(arena, DECODE_STEP) {
                     Ok(Some(len)) => {
                         if len != a.raw_len {
                             return Err(LoadError::RoomMismatch);
@@ -2180,7 +2203,7 @@ impl Cache {
                     HK_ROOM_DECODE_PHASE = decoder.phase_id();
                 }
                 crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-                match decoder.step(arena, 4096) {
+                match decoder.step(arena, DECODE_STEP) {
                     Ok(Some(len)) => {
                         if len != d.raw_len {
                             return Err(LoadError::RoomMismatch);

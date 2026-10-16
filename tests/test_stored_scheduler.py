@@ -74,6 +74,7 @@ class StoredSchedulerTests(unittest.TestCase):
         code = r'''
 #![allow(dead_code)]
 const EMPTY:usize=usize::MAX;
+const DECODE_STEP:usize=1024;
 const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
@@ -189,6 +190,7 @@ METHODS
         code=r"""
 #![allow(dead_code)]
 const EMPTY:usize=usize::MAX;
+const DECODE_STEP:usize=1024;
 const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
@@ -418,6 +420,7 @@ static mut AUDIO_FAIL:bool=false;
 use room_decode::{Decoder,Error as DecodeError};
 use hk_format::coverage::{CoverageValidation,CoverageView,Expected as CoverageExpected};
 const EMPTY:usize=usize::MAX;
+const DECODE_STEP:usize=1024;
 const SCENE_ARENA_BYTES:usize=4096;
 const COVERAGE_ARENA_BYTES:usize=2048;
 #[derive(Clone,Copy)]struct CoverageDesc{
@@ -535,6 +538,7 @@ const VERIFY:bool=option_env!("HK_VERIFY_COOK").is_some();
         code = r'''
 #![allow(dead_code)]
 const EMPTY:usize=usize::MAX;
+const DECODE_STEP:usize=1024;
 const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
