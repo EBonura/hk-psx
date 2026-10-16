@@ -1200,8 +1200,11 @@ fn pool_gate(scene: usize) {
         Pf::Want => pf_idle(),
         _ if !mine => pf_idle(),
         _ => {
+            // A pool slice at a time with the pad polled between: the whole chunk in one
+            // call (usize::MAX) decoded for most of a frame and carried a poll over a VBlank.
             while pf().state != Pf::Idle {
-                pool_service(usize::MAX);
+                crate::input::checkpoint();
+                pool_service(POOL_WORDS);
             }
         }
     }
@@ -1258,7 +1261,8 @@ pub fn admit_art(scene: usize) -> bool {
         }
         crate::disc::pool_wait();
         while pf().state != Pf::Idle {
-            pool_service(usize::MAX);
+            crate::input::checkpoint();
+            pool_service(POOL_WORDS);
         }
     }
     unsafe {
