@@ -349,7 +349,7 @@ impl World {
             .filter(|p| p.phase == Held::Ready)
         {
             let spec = PICKUPS[p.index as usize];
-            let frame = (u64::from(p.ticks) * u64::from(spec.fps) / (60 * 256)) as u32
+            let frame = hk_sim::fixed::mul_div_floor(u32::from(p.ticks), u32::from(spec.fps), (60 * 256)) as u32
                 % u32::from(spec.count);
             let mut at = spec.position;
             if let Some(from) = spec.fling.filter(|_| p.ticks < FLING_TICKS) {

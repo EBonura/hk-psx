@@ -1,6 +1,7 @@
 """Compile the Snail Shaman state machine and run its own tests."""
 import os, subprocess, tempfile, unittest
 from pathlib import Path
+from hk_externs import externs
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -10,7 +11,7 @@ class ShamanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='hk-shaman-test-') as temp:
             binary = Path(temp) / 'shaman-tests'
             compiled = subprocess.run(['rustc', '--edition=2021', '-Awarnings', '--test',
-                                       str(ROOT / 'tests/shaman_runtime.rs'), '-o', str(binary)],
+                                       str(ROOT / 'tests/shaman_runtime.rs'), '-o', str(binary), *externs()],
                                       capture_output=True, text=True,
                                       env=dict(os.environ, CARGO_MANIFEST_DIR=str(ROOT / 'game')))
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)

@@ -292,7 +292,7 @@ fn mul(a: i32, b: i32) -> i32 {
 fn range(rng: &mut u32, span: [i32; 2]) -> i32 {
     assert!(span[1] >= span[0]);
     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-    span[0] + ((u64::from(*rng) * (span[1] - span[0]) as u64) >> 32) as i32
+    span[0] + psx_math::WideU::mul(*rng, (span[1] - span[0]) as u32).high() as i32
 }
 const SINE: [i32; 91] = [
     0, 1144, 2287, 3430, 4572, 5712, 6850, 7987, 9121, 10252, 11380, 12505, 13626, 14742, 15855,
@@ -365,7 +365,7 @@ impl Bug {
             _ => 2,
         };
         let c = clips[index];
-        let frame = (u64::from(self.animation_age) * u64::from(c.fps) / 60) as usize;
+        let frame = hk_sim::fixed::mul_div_floor(u32::from(self.animation_age), u32::from(c.fps), 60) as usize;
         c.start
             + if c.wrap == 0 {
                 frame % c.count
@@ -463,10 +463,8 @@ mod presentation {
                 let x = origin[0] + mul(x, scale) * facing;
                 let y = origin[1] + mul(y, scale);
                 (
-                    160 + (((i64::from(x) - i64::from(camera.0)) * i64::from(crate::KNIGHT_SCALE))
-                        >> 28) as i32,
-                    120 - (((i64::from(y) - i64::from(camera.1)) * i64::from(crate::KNIGHT_SCALE))
-                        >> 28) as i32,
+                    160 + hk_sim::fixed::project(x, camera.0, crate::KNIGHT_SCALE as i32, 28),
+                    120 - hk_sim::fixed::project(y, camera.1, crate::KNIGHT_SCALE as i32, 28),
                 )
             });
             if vertices.iter().all(|p| p.0 < 0)

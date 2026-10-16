@@ -167,7 +167,7 @@ impl Hatcher {
         self.rng >> 8
     }
     fn range(&mut self, low: i32, high: i32) -> i32 {
-        low + ((self.random() as i64 * (high - low) as i64) >> 24) as i32
+        crate::fixed::range24(self.random(), low, high)
     }
     /// Neither `FaceDirection` (Idle) nor `FaceObject` (Distance Fly) pauses on
     /// this placement, so the sprite follows the sign on the frame it changes.
@@ -357,7 +357,7 @@ impl Baby {
         self.rng >> 8
     }
     fn range(&mut self, low: i32, high: i32) -> i32 {
-        low + ((self.random() as i64 * (high - low) as i64) >> 24) as i32
+        crate::fixed::range24(self.random(), low, high)
     }
     /// SPAWN: `Chase` unparents the body and starts with the velocity the
     /// Hatcher wrote. `ChaseObject::OnEnter` calls `DoBuzz` once, and its timer

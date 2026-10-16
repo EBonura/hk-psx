@@ -186,9 +186,8 @@ impl Nail {
 }
 // Cooked local polygons fit ±16 units; room bounds fit ±512. With Q16.16,
 // the cross products fit i64 (worst-case absolute sum is below 2^54).
-fn cross(a: [i32; 2], b: [i32; 2], p: [i32; 2]) -> i64 {
-    (b[0] as i64 - a[0] as i64) * (p[1] as i64 - a[1] as i64)
-        - (b[1] as i64 - a[1] as i64) * (p[0] as i64 - a[0] as i64)
+fn cross(a: [i32; 2], b: [i32; 2], p: [i32; 2]) -> psx_math::Wide {
+    crate::fixed::cross(a, b, p)
 }
 pub(crate) fn segments_intersect(a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32; 2]) -> bool {
     let (ax0, ax1, ay0, ay1) = (
@@ -214,11 +213,12 @@ pub(crate) fn segments_intersect(a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32;
         cross(c, d, a),
         cross(c, d, b),
     );
-    ((ac > 0 && ad < 0 || ac < 0 && ad > 0) && (ca > 0 && cb < 0 || ca < 0 && cb > 0))
-        || (ac == 0 && (ax0..=ax1).contains(&c[0]) && (ay0..=ay1).contains(&c[1]))
-        || (ad == 0 && (ax0..=ax1).contains(&d[0]) && (ay0..=ay1).contains(&d[1]))
-        || (ca == 0 && (cx0..=cx1).contains(&a[0]) && (cy0..=cy1).contains(&a[1]))
-        || (cb == 0 && (cx0..=cx1).contains(&b[0]) && (cy0..=cy1).contains(&b[1]))
+    ((ac.is_positive() && ad.is_negative() || ac.is_negative() && ad.is_positive())
+        && (ca.is_positive() && cb.is_negative() || ca.is_negative() && cb.is_positive()))
+        || (ac.is_zero() && (ax0..=ax1).contains(&c[0]) && (ay0..=ay1).contains(&c[1]))
+        || (ad.is_zero() && (ax0..=ax1).contains(&d[0]) && (ay0..=ay1).contains(&d[1]))
+        || (ca.is_zero() && (cx0..=cx1).contains(&a[0]) && (cy0..=cy1).contains(&a[1]))
+        || (cb.is_zero() && (cx0..=cx1).contains(&b[0]) && (cy0..=cy1).contains(&b[1]))
 }
 #[cfg(test)]
 #[path = "combat_intersection_tests.rs"]
@@ -261,7 +261,7 @@ pub fn polygon_hits_box(poly: &[[i32; 2]], bounds: [i32; 4]) -> bool {
         }
         if (a[1] > q[1]) != (b[1] > q[1]) {
             let side = cross(a, b, q);
-            if (b[1] > a[1] && side > 0) || (b[1] < a[1] && side < 0) {
+            if (b[1] > a[1] && side.is_positive()) || (b[1] < a[1] && side.is_negative()) {
                 inside = !inside;
             }
         }

@@ -223,8 +223,8 @@ impl Corpse {
         // ObjectBounce reflects contact velocity, source factor * Random(0.8,1.2).
         // Axis contacts reuse the proven body solver. Slope response/friction is
         // a bounded approximation to Unity's full contact manifold.
-        let speed2 = self.vx as i64 * self.vx as i64 + old_vy as i64 * old_vy as i64;
-        if (hit_floor || hit_wall || hit_ceiling) && speed2 > (ONE as i64 * ONE as i64) {
+        let speed2 = crate::fixed::sum_sq(self.vx, old_vy);
+        if (hit_floor || hit_wall || hit_ceiling) && speed2 > crate::fixed::square(ONE) {
             assert!(
                 (0..=ONE).contains(&spec.bounce_factor),
                 "invalid corpse bounce factor"
@@ -234,8 +234,8 @@ impl Corpse {
             let low = (spec.bounce_factor * 4 + 2) / 5;
             let high = (spec.bounce_factor * 6 + 2) / 5;
             let factor = low + (self.random() % (high - low + 1) as u32) as i32;
-            self.vx = ((self.vx as i64 * factor as i64) >> 16) as i32;
-            self.vy = ((old_vy as i64 * factor as i64) >> 16) as i32;
+            self.vx = psx_math::int32::mul_shr_i32(self.vx, factor, 16);
+            self.vy = psx_math::int32::mul_shr_i32(old_vy, factor, 16);
             if hit_wall {
                 self.vx = -self.vx;
             }

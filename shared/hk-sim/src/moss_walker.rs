@@ -233,7 +233,7 @@ impl MossWalker {
                 if senses.wake_range {
                     self.phase = Phase::WakePause;
                     self.timer =
-                        ((self.random() as u64 * (WAKE_PAUSE_TICKS as u64 + 1)) >> 24) as u16;
+                        psx_math::WideU::mul(self.random(), WAKE_PAUSE_TICKS as u32 + 1).shr_u32(24) as u16;
                     if self.timer == 0 {
                         self.shake(&mut step);
                     }
@@ -251,8 +251,8 @@ impl MossWalker {
                     self.phase = Phase::Appear;
                     self.timer = APPEAR_TICKS;
                     self.play(Clip::Appear, &mut step);
-                    let span = (HIDE_TICKS[1] - HIDE_TICKS[0]) as u64 + 1;
-                    self.hide_timer = HIDE_TICKS[0] + ((self.random() as u64 * span) >> 24) as u16;
+                    let span = (HIDE_TICKS[1] - HIDE_TICKS[0]) as u32 + 1;
+                    self.hide_timer = HIDE_TICKS[0] + psx_math::WideU::mul(self.random(), span).shr_u32(24) as u16;
                 }
             }
             Phase::Appear => {

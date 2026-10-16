@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
 import pickups
+from hk_externs import externs
 
 
 def fake_metadata():
@@ -66,7 +67,7 @@ class RuntimeTests(unittest.TestCase):
             binary = Path(temp) / 'pickups-tests'
             env = dict(os.environ, CARGO_MANIFEST_DIR=str(Path(temp) / 'game'))
             built = subprocess.run(['rustc', '--edition=2021', '-Awarnings', '--test', str(ROOT / 'tests/pickups_runtime.rs'),
-                                    '-o', str(binary)], env=env, capture_output=True, text=True)
+                                    '-o', str(binary), *externs()], env=env, capture_output=True, text=True)
             self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
             run = subprocess.run([str(binary)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)

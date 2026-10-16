@@ -108,14 +108,6 @@ pub struct Aspid {
     fixed_accumulator: u8,
     rng: u32,
 }
-/// Floor square root using the shared SDK restoring algorithm.
-fn isqrt(n: i64) -> i64 {
-    if n <= 0 {
-        0
-    } else {
-        psx_math::int32::isqrt_u64(n as u64) as i64
-    }
-}
 impl Aspid {
     pub fn new(position: [i32; 2], seed: u32) -> Self {
         Self {
@@ -155,7 +147,7 @@ impl Aspid {
         self.rng >> 8
     }
     fn range(&mut self, low: i32, high: i32) -> i32 {
-        low + ((self.random() as i64 * (high - low) as i64) >> 24) as i32
+        crate::fixed::range24(self.random(), low, high)
     }
     /// FaceDirection (Idle) follows the x velocity; FaceObject (chasing) the hero.
     fn face(&mut self, want: i32, turn: bool, out: &mut Actions) {
@@ -257,10 +249,10 @@ impl Aspid {
             }
             Phase::Raycast => {
                 // Distance > 14 or an obstructed ray: another Distance Fly.
-                let dx = (senses.hero[0] as i64 - senses.position[0] as i64) >> 8;
-                let dy = (senses.hero[1] as i64 - senses.position[1] as i64) >> 8;
-                let limit = (RAYCAST_DISTANCE >> 8) as i64;
-                if dx * dx + dy * dy > limit * limit || !senses.sight_clear {
+                let dx = crate::fixed::diff8(senses.hero[0], senses.position[0]);
+                let dy = crate::fixed::diff8(senses.hero[1], senses.position[1]);
+                let limit = RAYCAST_DISTANCE >> 8;
+                if crate::fixed::sum_sq(dx, dy) > crate::fixed::square(limit) || !senses.sight_clear {
                     self.begin_distance_fly(&mut out);
                 } else {
                     self.phase = Phase::FlyBack;
@@ -283,13 +275,13 @@ impl Aspid {
                 self.timer -= 1;
                 if self.timer == 0 {
                     // Fire: the shot leaves the actor toward the hero at 15.
-                    let dx = senses.hero[0] as i64 - senses.position[0] as i64;
-                    let dy = senses.hero[1] as i64 - senses.position[1] as i64;
-                    let length = isqrt(dx * dx + dy * dy).max(1);
                     // dx, dy and length fit i32 while positions stay inside +/-2^30 (Q16 +/-16384 units).
+                    let dx = senses.hero[0] - senses.position[0];
+                    let dy = senses.hero[1] - senses.position[1];
+                    let length = crate::fixed::hypot(dx, dy).max(1);
                     let v = [
-                        psx_math::int32::mul_div_i32(dx as i32, SHOT_SPEED, length as i32),
-                        psx_math::int32::mul_div_i32(dy as i32, SHOT_SPEED, length as i32),
+                        psx_math::int32::mul_div_i32(dx, SHOT_SPEED, length as i32),
+                        psx_math::int32::mul_div_i32(dy, SHOT_SPEED, length as i32),
                     ];
                     out.push(Action::Fire(v));
                     self.face_hero(senses, false, &mut out);

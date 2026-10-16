@@ -5,7 +5,30 @@
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct StateId(pub u64);
+pub struct StateId(pub psx_math::WideU);
+
+impl StateId {
+    /// The reserved empty id.
+    pub const ZERO: StateId = StateId(psx_math::WideU::ZERO);
+    /// An id that fits a word (the catalog's small ids, and the tests').
+    pub const fn of(id: u32) -> StateId {
+        StateId(psx_math::WideU::of(id))
+    }
+    /// Is this the reserved empty id?
+    pub const fn is_zero(self) -> bool {
+        self.0.is_zero()
+    }
+    /// The little-endian bytes of the id, as stored in a snapshot.
+    pub fn to_le_bytes(self) -> [u8; 8] {
+        let (low, high) = (self.0.low().to_le_bytes(), self.0.high().to_le_bytes());
+        [low[0], low[1], low[2], low[3], high[0], high[1], high[2], high[3]]
+    }
+    /// The id stored in eight little-endian bytes.
+    pub fn from_le_bytes(bytes: [u8; 8]) -> StateId {
+        let word = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+        StateId(psx_math::WideU::from_parts(word(4), word(0)))
+    }
+}
 
 /// Current installed-source upper bound: 815 PlayerData keys plus 4,468
 /// Breakable owners. Sparse saves may contain fewer entries but never remap IDs.
@@ -81,7 +104,7 @@ impl<const N: usize> Store<N> {
     pub const fn new() -> Self {
         Self {
             entries: [Entry {
-                id: StateId(0),
+                id: StateId::ZERO,
                 value: 0,
             }; N],
             len: 0,
@@ -116,7 +139,7 @@ impl<const N: usize> Store<N> {
         }
     }
     pub fn apply(&mut self, mutation: Mutation) -> Result<Change, Error> {
-        if mutation.id.0 == 0 {
+        if mutation.id.is_zero() {
             return Err(Error::InvalidId);
         }
         match self.position(mutation.id) {
@@ -154,7 +177,7 @@ impl<const N: usize> Store<N> {
     }
     /// Apply one reward exactly once even when metadata duplicates the owner.
     pub fn grant_once(&mut self, token: StateId, reward: Mutation) -> Result<bool, Error> {
-        if token.0 == 0 || reward.id.0 == 0 {
+        if token.is_zero() || reward.id.is_zero() {
             return Err(Error::InvalidId);
         }
         if token == reward.id {
@@ -192,18 +215,18 @@ impl<const N: usize> Store<N> {
         out[4..6].copy_from_slice(&SAVE_VERSION.to_le_bytes());
         out[6..8].copy_from_slice(&(self.len as u16).to_le_bytes());
         let mut at = SAVE_HEADER_BYTES;
-        let mut previous = 0;
+        let mut previous = StateId::ZERO;
         for entry in self.entries() {
-            if entry.id.0 == 0 {
+            if entry.id.is_zero() {
                 return Err(SaveError::InvalidId);
             }
-            if entry.id.0 <= previous {
+            if entry.id <= previous {
                 return Err(SaveError::Unsorted);
             }
-            out[at..at + 8].copy_from_slice(&entry.id.0.to_le_bytes());
+            out[at..at + 8].copy_from_slice(&entry.id.to_le_bytes());
             out[at + 8..at + 12].copy_from_slice(&entry.value.to_le_bytes());
             at += SAVE_ENTRY_BYTES;
-            previous = entry.id.0;
+            previous = entry.id;
         }
         let checksum = checksum(&out[..at]);
         out[at..at + 4].copy_from_slice(&checksum.to_le_bytes());
@@ -236,17 +259,17 @@ impl<const N: usize> Store<N> {
         }
         let mut result = Self::new();
         let mut at = SAVE_HEADER_BYTES;
-        let mut previous = 0;
+        let mut previous = StateId::ZERO;
         for _ in 0..count {
-            let id = u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
-            if id == 0 {
+            let id = StateId::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
+            if id.is_zero() {
                 return Err(SaveError::InvalidId);
             }
             if id <= previous {
                 return Err(SaveError::Unsorted);
             }
             result.entries[result.len] = Entry {
-                id: StateId(id),
+                id,
                 value: i32::from_le_bytes(bytes[at + 8..at + 12].try_into().unwrap()),
             };
             result.len += 1;
@@ -299,11 +322,11 @@ pub struct ActiveScene<const WORDS: usize, const TIMERS: usize> {
 impl<const WORDS: usize, const TIMERS: usize> ActiveScene<WORDS, TIMERS> {
     pub const fn new() -> Self {
         Self {
-            scene: StateId(0),
+            scene: StateId::ZERO,
             generation: 0,
             bits: [0; WORDS],
             timers: [Timer {
-                owner: StateId(0),
+                owner: StateId::ZERO,
                 remaining: 0,
                 event: 0,
             }; TIMERS],
@@ -329,7 +352,7 @@ impl<const WORDS: usize, const TIMERS: usize> ActiveScene<WORDS, TIMERS> {
         Ok(!old)
     }
     pub fn add_timer(&mut self, timer: Timer) -> Result<(), Error> {
-        if timer.owner.0 == 0 {
+        if timer.owner.is_zero() {
             return Err(Error::InvalidId);
         }
         if self.timer_len == TIMERS {
@@ -412,7 +435,7 @@ impl<const G: usize, const M: usize, const W: usize, const T: usize> AdventureSt
         let mut state = Self::new();
         state.global = global;
         state.mode = mode;
-        state.active.enter(StateId(0));
+        state.active.enter(StateId::ZERO);
         Ok(state)
     }
     pub fn reset(&mut self, reset: Reset) {
@@ -424,11 +447,11 @@ impl<const G: usize, const M: usize, const W: usize, const T: usize> AdventureSt
             }
             _ => {}
         }
-        self.active.enter(StateId(0));
+        self.active.enter(StateId::ZERO);
     }
     pub fn load_global(&mut self, saved: Store<G>) {
         self.global = saved;
-        self.active.enter(StateId(0));
+        self.active.enter(StateId::ZERO);
     }
 }
 impl<const G: usize, const M: usize, const W: usize, const T: usize> Default
@@ -448,21 +471,21 @@ mod tests {
         let mut store = Store::<3>::new();
         store
             .apply(Mutation {
-                id: StateId(9),
+                id: StateId::of(9),
                 operation: Operation::Set(3),
             })
             .unwrap();
         store
             .apply(Mutation {
-                id: StateId(2),
+                id: StateId::of(2),
                 operation: Operation::Add(4),
             })
             .unwrap();
-        assert_eq!(store.entries()[0].id, StateId(2));
-        assert_eq!(store.entries()[1].id, StateId(9));
+        assert_eq!(store.entries()[0].id, StateId::of(2));
+        assert_eq!(store.entries()[1].id, StateId::of(9));
         assert_eq!(
             store.apply(Mutation {
-                id: StateId(2),
+                id: StateId::of(2),
                 operation: Operation::Add(i32::MAX)
             }),
             Err(Error::Overflow)
@@ -472,12 +495,12 @@ mod tests {
     fn duplicate_occurrences_grant_one_owner_once() {
         let mut store = Store::<4>::new();
         let reward = Mutation {
-            id: StateId(20),
+            id: StateId::of(20),
             operation: Operation::Add(100),
         };
-        assert_eq!(store.grant_once(StateId(10), reward), Ok(true));
-        assert_eq!(store.grant_once(StateId(10), reward), Ok(false));
-        assert_eq!(store.get(StateId(20)), 100);
+        assert_eq!(store.grant_once(StateId::of(10), reward), Ok(true));
+        assert_eq!(store.grant_once(StateId::of(10), reward), Ok(false));
+        assert_eq!(store.get(StateId::of(20)), 100);
     }
     #[test]
     fn scene_death_bench_and_reload_keep_global_but_clear_active() {
@@ -492,23 +515,23 @@ mod tests {
             state
                 .global
                 .apply(Mutation {
-                    id: StateId(1),
+                    id: StateId::of(1),
                     operation: Operation::Set(7),
                 })
                 .unwrap();
-            state.active.enter(StateId(2));
+            state.active.enter(StateId::of(2));
             state.active.set_bit(5).unwrap();
             state
                 .active
                 .add_timer(Timer {
-                    owner: StateId(3),
+                    owner: StateId::of(3),
                     remaining: 4,
                     event: 5,
                 })
                 .unwrap();
             state.reset(reset);
-            assert_eq!(state.global.get(StateId(1)), 7);
-            assert_eq!(state.active.scene, StateId(0));
+            assert_eq!(state.global.get(StateId::of(1)), 7);
+            assert_eq!(state.active.scene, StateId::ZERO);
             assert!(!state.active.bit(5));
             assert!(state.active.timers().is_empty());
         }
@@ -519,19 +542,19 @@ mod tests {
         state
             .global
             .apply(Mutation {
-                id: StateId(1),
+                id: StateId::of(1),
                 operation: Operation::Set(1),
             })
             .unwrap();
         state
             .mode
             .apply(Mutation {
-                id: StateId(2),
+                id: StateId::of(2),
                 operation: Operation::Set(1),
             })
             .unwrap();
         state.reset(Reset::Challenge);
-        assert_eq!(state.global.get(StateId(1)), 1);
+        assert_eq!(state.global.get(StateId::of(1)), 1);
         assert_eq!(state.mode.len(), 0);
         state.reset(Reset::Mode);
         assert_eq!(state.global.len(), 0);
@@ -539,18 +562,18 @@ mod tests {
     #[test]
     fn reload_replaces_global_snapshot_and_invalidates_active_generation() {
         let mut state = State::new();
-        state.active.enter(StateId(4));
+        state.active.enter(StateId::of(4));
         let generation = state.active.generation;
         let mut saved = Store::new();
         saved
             .apply(Mutation {
-                id: StateId(7),
+                id: StateId::of(7),
                 operation: Operation::Set(9),
             })
             .unwrap();
         state.load_global(saved);
-        assert_eq!(state.global.get(StateId(7)), 9);
-        assert_eq!(state.active.scene, StateId(0));
+        assert_eq!(state.global.get(StateId::of(7)), 9);
+        assert_eq!(state.active.scene, StateId::ZERO);
         assert_ne!(state.active.generation, generation);
     }
     #[test]
@@ -571,13 +594,13 @@ mod tests {
         let mut store = Store::<4>::new();
         store
             .apply(Mutation {
-                id: StateId(9),
+                id: StateId::of(9),
                 operation: Operation::Set(-3),
             })
             .unwrap();
         store
             .apply(Mutation {
-                id: StateId(2),
+                id: StateId::of(2),
                 operation: Operation::Set(17),
             })
             .unwrap();
@@ -592,7 +615,7 @@ mod tests {
         let mut store = Store::<2>::new();
         store
             .apply(Mutation {
-                id: StateId(1),
+                id: StateId::of(1),
                 operation: Operation::Set(4),
             })
             .unwrap();
@@ -619,13 +642,13 @@ mod tests {
         let mut store = Store::<2>::new();
         store
             .apply(Mutation {
-                id: StateId(1),
+                id: StateId::of(1),
                 operation: Operation::Set(1),
             })
             .unwrap();
         store
             .apply(Mutation {
-                id: StateId(2),
+                id: StateId::of(2),
                 operation: Operation::Set(2),
             })
             .unwrap();
@@ -643,25 +666,25 @@ mod tests {
         state
             .global
             .apply(Mutation {
-                id: StateId(3),
+                id: StateId::of(3),
                 operation: Operation::Set(8),
             })
             .unwrap();
         state
             .mode
             .apply(Mutation {
-                id: StateId(7),
+                id: StateId::of(7),
                 operation: Operation::Set(2),
             })
             .unwrap();
-        state.active.enter(StateId(99));
+        state.active.enter(StateId::of(99));
         state.active.set_bit(1).unwrap();
         let mut bytes = [0u8; 256];
         let len = state.encode_snapshot(&mut bytes).unwrap();
         let restored = Full::decode_snapshot(&bytes[..len]).unwrap();
-        assert_eq!(restored.global.get(StateId(3)), 8);
-        assert_eq!(restored.mode.get(StateId(7)), 2);
-        assert_eq!(restored.active.scene, StateId(0));
+        assert_eq!(restored.global.get(StateId::of(3)), 8);
+        assert_eq!(restored.mode.get(StateId::of(7)), 2);
+        assert_eq!(restored.active.scene, StateId::ZERO);
         assert!(!restored.active.bit(1));
     }
 }

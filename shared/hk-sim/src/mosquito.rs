@@ -199,8 +199,7 @@ impl Mosquito {
         self.rng >> 8
     }
     fn range(&mut self, low: i32, high: i32) -> i32 {
-        let span = (high - low) as i64;
-        low + ((self.random() as i64 * span) >> 24) as i32
+        crate::fixed::range24(self.random(), low, high)
     }
     fn play(&mut self, clip: Clip, step: &mut Step) {
         self.clip = clip;
@@ -264,7 +263,7 @@ impl Mosquito {
     }
     fn damp(&mut self) {
         for v in self.velocity.iter_mut() {
-            *v = ((*v as i64 * RECOVER_DAMPING as i64) >> 16) as i32;
+            *v = psx_math::int32::mul_shr_i32(*v, RECOVER_DAMPING, 16);
         }
     }
     /// `Chase - In Sight` entered: Idle (cutting a turn), FaceObject with
@@ -278,10 +277,10 @@ impl Mosquito {
         }
         self.face_hero(senses, true, step);
         self.hover(senses);
-        let dx = (senses.hero[0] as i64 - senses.position[0] as i64) >> 8;
-        let dy = (senses.hero[1] as i64 - senses.position[1] as i64) >> 8;
-        let r = (ATTACK_RANGE >> 8) as i64;
-        if dx * dx + dy * dy <= r * r {
+        let dx = crate::fixed::diff8(senses.hero[0], senses.position[0]);
+        let dy = crate::fixed::diff8(senses.hero[1], senses.position[1]);
+        let r = ATTACK_RANGE >> 8;
+        if crate::fixed::sum_sq(dx, dy) <= crate::fixed::square(r) {
             self.phase = Phase::AttackPause;
             self.timer =
                 (self.range(PAUSE_TICKS[0] as i32 * ONE, PAUSE_TICKS[1] as i32 * ONE) >> 16) as u16;
@@ -309,8 +308,8 @@ impl Mosquito {
         step.sound(Sound::Charge);
         self.facing = if self.aim[0] > 0 { 1 } else { -1 };
         self.velocity = [
-            ((self.aim[0] as i64 * LUNGE_SPEED as i64) >> 16) as i32,
-            ((self.aim[1] as i64 * LUNGE_SPEED as i64) >> 16) as i32,
+            psx_math::int32::mul_shr_i32(self.aim[0], LUNGE_SPEED, 16),
+            psx_math::int32::mul_shr_i32(self.aim[1], LUNGE_SPEED, 16),
         ];
         // FaceAngle: the velocity's angle, plus 180 for the left-facing art.
         self.rotation = if self.facing > 0 {
@@ -398,13 +397,12 @@ impl Mosquito {
                 self.timer += 1;
                 if self.timer == AIM_TICKS {
                     // GetAngleToTarget2D toward the hero, half a unit low.
-                    let dx = senses.hero[0] as i64 - senses.position[0] as i64;
-                    let dy =
-                        senses.hero[1] as i64 + AIM_OFFSET_Y as i64 - senses.position[1] as i64;
-                    let length = isqrt(dx * dx + dy * dy).max(1);
+                    let dx = senses.hero[0] - senses.position[0];
+                    let dy = senses.hero[1] + AIM_OFFSET_Y - senses.position[1];
+                    let length = crate::fixed::hypot(dx, dy).max(1);
                     self.aim = [
-                        psx_math::int32::mul_div_i32(dx as i32, ONE, length as i32),
-                        psx_math::int32::mul_div_i32(dy as i32, ONE, length as i32),
+                        psx_math::int32::mul_div_i32(dx, ONE, length as i32),
+                        psx_math::int32::mul_div_i32(dy, ONE, length as i32),
                     ];
                     if dx == 0 && dy == 0 {
                         self.aim = [ONE, 0];
@@ -423,8 +421,8 @@ impl Mosquito {
                     self.rotation = [ONE, 0];
                     step.sound(Sound::WallHit);
                     self.velocity = [
-                        ((self.velocity[0] as i64 * REBOUND as i64) >> 16) as i32,
-                        ((self.velocity[1] as i64 * REBOUND as i64) >> 16) as i32,
+                        psx_math::int32::mul_shr_i32(self.velocity[0], REBOUND, 16),
+                        psx_math::int32::mul_shr_i32(self.velocity[1], REBOUND, 16),
                     ];
                     self.decelerate(PULL_OUT_DECELERATION);
                     self.play(Clip::DeathAir, &mut step);
@@ -476,26 +474,6 @@ impl Mosquito {
         self.damp();
         self.play(Clip::Idle, step);
     }
-}
-/// Integer square root (bitwise), no floating point on the guest.
-fn isqrt(v: i64) -> i64 {
-    if v <= 0 {
-        return 0;
-    }
-    let (mut x, mut bit, mut v) = (0i64, 1i64 << 62, v);
-    while bit > v {
-        bit >>= 2;
-    }
-    while bit != 0 {
-        if v >= x + bit {
-            v -= x + bit;
-            x = (x >> 1) + bit;
-        } else {
-            x >>= 1;
-        }
-        bit >>= 2;
-    }
-    x
 }
 
 #[cfg(test)]
@@ -615,24 +593,5 @@ mod tests {
             m.tick(senses([0, 0], hero, false));
         }
         assert_eq!(m.phase(), Phase::Idle);
-    }
-    #[test]
-    fn integer_square_root_is_exact() {
-        for v in [
-            0i64,
-            1,
-            2,
-            3,
-            4,
-            15,
-            16,
-            17,
-            1 << 40,
-            (1 << 40) + 12345,
-            4294967296 * 9,
-        ] {
-            let r = isqrt(v);
-            assert!(r * r <= v && (r + 1) * (r + 1) > v, "{v}");
-        }
     }
 }

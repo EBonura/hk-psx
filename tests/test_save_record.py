@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 import sys
 sys.path.insert(0, str(ROOT / 'host'))
 import rustsrc
+from hk_externs import externs
 SAVE_RS = ROOT / 'game/src/save.rs'
 HARNESS = ROOT / 'tests/save_runtime.rs'
 
@@ -25,7 +26,7 @@ class SaveRecordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='hk-save-test-') as temp:
             binary = Path(temp) / 'save-tests'
             compiled = subprocess.run(
-                ['rustc', '--edition=2021', '-Awarnings', '--test', str(HARNESS), '-o', str(binary)],
+                ['rustc', '--edition=2021', '-Awarnings', '--test', str(HARNESS), '-o', str(binary), *externs()],
                 capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
             run = subprocess.run([str(binary)], capture_output=True, text=True)

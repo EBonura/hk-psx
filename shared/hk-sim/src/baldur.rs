@@ -135,7 +135,7 @@ impl Baldur {
         self.rng >> 8
     }
     fn range(&mut self, low: i32, high: i32) -> i32 {
-        low + ((self.random() as i64 * (high - low) as i64) >> 24) as i32
+        crate::fixed::range24(self.random(), low, high)
     }
     fn face(&mut self, right: bool, out: &mut Actions) {
         let want = if right { 1 } else { -1 };

@@ -48,7 +48,7 @@ impl Environment for Walking {
         if phase==Phase::Enter{
             if !keep&&(left||right){self.walk=WalkState::new(if left{-1}else{1},false)}
         }else if phase==Phase::Update{
-            let mut p=self.params;p.turn_cooldown_ticks=u16::try_from((delay as i64*60+65535)/65536).map_err(|_|Error::Parameter)?;
+            let mut p=self.params;p.turn_cooldown_ticks=u16::try_from(psx_math::Wide::mul(delay,60).plus(65535).div_i32_sat(65536,psx_math::Rounding::TowardZero)).map_err(|_|Error::Parameter)?;
             self.velocity=self.walk.tick(p,self.senses.0,self.senses.1,self.senses.2);
         }
         Ok(())
@@ -91,7 +91,7 @@ impl Environment for Body {
         if phase==Phase::Enter{
             if !keep&&(left||right){b.walk=WalkState::new(if left{-1}else{1},false)}
         }else if phase==Phase::Update{
-            let mut p=b.params;p.turn_cooldown_ticks=u16::try_from((delay as i64*60+65535)/65536).map_err(|_|Error::Parameter)?;
+            let mut p=b.params;p.turn_cooldown_ticks=u16::try_from(psx_math::Wide::mul(delay,60).plus(65535).div_i32_sat(65536,psx_math::Rounding::TowardZero)).map_err(|_|Error::Parameter)?;
             b.velocity=b.walk.tick(p,b.senses.0,b.senses.1,b.senses.2);
         }
         Ok(())

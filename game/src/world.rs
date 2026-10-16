@@ -1,5 +1,6 @@
 //! Cooked region indices and bounded, persistent-in-session authored state.
 use hk_format::Room;
+use psx_math::Wide;
 #[path = "debris.rs"]
 pub mod debris;
 /// A gate, the False Knight's floor or a Blocker's block changed this tick.
@@ -895,7 +896,7 @@ impl State {
         bounds: [i32; 4],
         player_x: i32,
     ) -> bool {
-        let sign = if (bounds[0] as i64 + bounds[2] as i64) / 2 >= player_x as i64 {
+        let sign = if Wide::of(bounds[0]).plus(bounds[2]).div_pow2(1).cmp_i32(player_x).is_ge() {
             1
         } else {
             -1
@@ -1134,8 +1135,11 @@ impl State {
                     }
                 }
                 if region.grass_impact.is_some() {
-                    let sign = if (patch.grass.bounds[0] as i64 + patch.grass.bounds[2] as i64) / 2
-                        >= player.x as i64
+                    let sign = if Wide::of(patch.grass.bounds[0])
+                        .plus(patch.grass.bounds[2])
+                        .div_pow2(1)
+                        .cmp_i32(player.x)
+                        .is_ge()
                     {
                         1
                     } else {
@@ -1773,9 +1777,8 @@ fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
 }
 // World coordinates fit +/-512 and nail-local coordinates +/-16 Q16 units;
 // i64 cross products remain below 2^54. Supports concave source polygons.
-fn cross(a: [i32; 2], b: [i32; 2], p: [i32; 2]) -> i64 {
-    (b[0] as i64 - a[0] as i64) * (p[1] as i64 - a[1] as i64)
-        - (b[1] as i64 - a[1] as i64) * (p[0] as i64 - a[0] as i64)
+fn cross(a: [i32; 2], b: [i32; 2], p: [i32; 2]) -> i32 {
+    hk_sim::fixed::cross_sign(a, b, p)
 }
 fn on_segment(a: [i32; 2], b: [i32; 2], p: [i32; 2]) -> bool {
     cross(a, b, p) == 0

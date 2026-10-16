@@ -269,7 +269,7 @@ pub fn clip_ticks(clip: usize) -> u32 {
 pub fn clip_frame(clip: usize, ticks: u32) -> usize {
     let c = CLIPS[clip];
     let count = u32::from(c.count);
-    let elapsed = (u64::from(ticks) * u64::from(c.fps) / (60 * 256)) as u32;
+    let elapsed = hk_sim::fixed::mul_div_floor(u32::from(ticks), u32::from(c.fps), (60 * 256)) as u32;
     let start = u32::from(c.loop_start);
     let frame = match c.wrap {
         0 => elapsed % count,
@@ -315,7 +315,7 @@ fn crosses(a: [i32; 2], b: [i32; 2], e: [i32; 4]) -> bool {
     t >= 0 && t <= d && u >= 0 && u <= d
 }
 const fn mulq(a: i32, b: i32) -> i32 {
-    ((a as i64 * b as i64) >> 16) as i32
+    psx_math::Wide::mul(a, b).shr_i32(16)
 }
 /// The rock's body in the Geo coin pool (`geo::ROCK`): its collider at the
 /// middle of its scale range, of no value, and stopped dead where it lies.
@@ -349,8 +349,10 @@ fn rock_draw(c: &crate::geo::Coin) -> (usize, [i32; 2], u8, i32) {
     let spec = STALACTITE_ROCKS;
     // The frames were cut at art_scale.
     const LOW: i32 =
+        // psx-numeric-allow-next-line: const-evaluated by the compiler, never run on the guest
         (STALACTITE_ROCKS.scale[0] as i64 * ONE as i64 / STALACTITE_ROCKS.art_scale as i64) as i32;
     const HIGH: i32 =
+        // psx-numeric-allow-next-line: const-evaluated by the compiler, never run on the guest
         (STALACTITE_ROCKS.scale[1] as i64 * ONE as i64 / STALACTITE_ROCKS.art_scale as i64) as i32;
     let look = c.denomination;
     let mut scale = LOW + (HIGH - LOW) * i32::from(look >> 3 & 7) / (ROCK_SCALES as i32 - 1);
@@ -681,7 +683,7 @@ impl World {
             out.impact = Some(hurt);
             // Euler(0, 0, angle) * down * hitVelocity: (sin, -cos) of the angle.
             const DIAGONAL: i32 = 46341; // 1/sqrt(2), Q16
-            let speed = (i64::from(STALACTITE_HIT_SPEED) * i64::from(DIAGONAL) >> 16) as i32;
+            let speed = psx_math::int32::mul_shr_i32(STALACTITE_HIT_SPEED, DIAGONAL, 16);
             let (eighths, vx, vy) = match direction {
                 NailDirection::Up => {
                     s.phase = Fall::Broken;
@@ -835,7 +837,7 @@ pub fn corners(b: [i32; 4], origin: [i32; 2], quarter: u8, sx: i32) -> [[i32; 2]
     // tk2d vertex order the quads use: top-left, top-right, bottom-left, bottom-right.
     let local = [[b[0], b[3]], [b[2], b[3]], [b[0], b[1]], [b[2], b[1]]];
     local.map(|[x, y]| {
-        let x = ((i64::from(x) * i64::from(sx)) >> 16) as i32;
+        let x = psx_math::int32::mul_shr_i32(x, sx, 16);
         let (x, y) = match quarter & 3 {
             0 => (x, y),
             1 => (-y, x),
@@ -843,7 +845,7 @@ pub fn corners(b: [i32; 4], origin: [i32; 2], quarter: u8, sx: i32) -> [[i32; 2]
             _ => (y, -x),
         };
         // An eighth of a turn: (x -+ y, y +- x) / sqrt(2).
-        let diagonal = |v: i32| ((i64::from(v) * 46341) >> 16) as i32;
+        let diagonal = |v: i32| psx_math::int32::mul_shr_i32(v, 46341, 16);
         let (x, y) = if quarter & EIGHTH_CCW != 0 {
             (diagonal(x - y), diagonal(x + y))
         } else if quarter & EIGHTH_CW != 0 {
@@ -894,9 +896,9 @@ mod presentation {
     }
     fn project(p: [i32; 2], camera: (i32, i32)) -> (i32, i32) {
         (
-            160 + (((i64::from(p[0]) - i64::from(camera.0)) * i64::from(crate::KNIGHT_SCALE)) >> 28)
+            160 + hk_sim::fixed::project(p[0], camera.0, crate::KNIGHT_SCALE as i32, 28)
                 as i32,
-            120 - (((i64::from(p[1]) - i64::from(camera.1)) * i64::from(crate::KNIGHT_SCALE)) >> 28)
+            120 - hk_sim::fixed::project(p[1], camera.1, crate::KNIGHT_SCALE as i32, 28)
                 as i32,
         )
     }

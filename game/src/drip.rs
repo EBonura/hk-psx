@@ -217,7 +217,7 @@ impl Draws {
             let b = SPRITE_BOX[s];
             let r = SPRITE_RECT[s];
             // The parent's x scale (Crossroads_46, mirrored in 46b) on the box.
-            let sx = |v: i32| ((v as i64 * self.x_scale[i] as i64) >> 12) as i32;
+            let sx = |v: i32| psx_math::int32::mul_shr_i32(v, self.x_scale[i] as i32, 12);
             let coords = [
                 (sx(b[0]), b[3]),
                 (sx(b[2]), b[3]),

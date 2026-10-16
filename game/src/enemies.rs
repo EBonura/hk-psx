@@ -4,6 +4,7 @@
 //! solver parity and global FSM events remain outside this bounded runtime.
 use crate::world::{Region, State};
 use hk_format::{i32_at, u32_at, Room};
+use psx_math::{Wide, WideU};
 use hk_sim::{
     ActorController, ActorHealth, ActorSpec, AttackParams, Hit, Hurt, Nail, Params, Player, Vitals,
     WalkState, MAX_ACTORS, ONE,
@@ -149,7 +150,7 @@ impl RunnerRuntime {
         // Once clips complete at their actual cooked frames/fps boundary.
         // Loop/LoopSection clips never manufacture a completion callback.
         if clip[3] & 65535 == 2
-            && self.animation_tick as u64 * clip[2] as u64 >= clip[1] as u64 * 60 * 65536
+            && psx_math::WideU::mul(self.animation_tick, clip[2]) >= psx_math::WideU::mul(clip[1], 60 * 65536)
         {
             Some(token)
         } else {
@@ -880,7 +881,7 @@ impl ZombieShieldRuntime {
         // Only Once clips complete; the walk and idle loops never do, which is
         // what keeps the two attack chains on their own cooked frame counts.
         if clip[3] & 65535 == 2
-            && self.animation_tick as u64 * clip[2] as u64 >= clip[1] as u64 * 60 * 65536
+            && psx_math::WideU::mul(self.animation_tick, clip[2]) >= psx_math::WideU::mul(clip[1], 60 * 65536)
         {
             Some(token)
         } else {
@@ -918,7 +919,7 @@ impl HuskGuardRuntime {
         let token = self.controller.animation()?;
         let clip = room.clip(self.clip(spec) as usize);
         if clip[3] & 65535 == 2
-            && self.animation_tick as u64 * clip[2] as u64 >= clip[1] as u64 * 60 * 65536
+            && psx_math::WideU::mul(self.animation_tick, clip[2]) >= psx_math::WideU::mul(clip[1], 60 * 65536)
         {
             Some(token)
         } else {
@@ -955,7 +956,7 @@ impl BlockerRuntime {
         // Only Once clips complete. Idle and Closed are the two loops, and both
         // are left on a sense rather than on a `Tk2dWatchAnimationEvents`.
         if clip[3] & 65535 == 2
-            && self.animation_tick as u64 * clip[2] as u64 >= clip[1] as u64 * 60 * 65536
+            && psx_math::WideU::mul(self.animation_tick, clip[2]) >= psx_math::WideU::mul(clip[1], 60 * 65536)
         {
             Some(token)
         } else {
@@ -1114,32 +1115,31 @@ pub(crate) fn segment_crosses(a: [i32; 2], b: [i32; 2], e: [i32; 4]) -> bool {
     if e[0] | e[1] | e[2] | e[3] == 0 {
         return false;
     }
-    let (ox, oy) = (a[0] as i64, a[1] as i64);
-    let (rx, ry) = (b[0] as i64 - ox, b[1] as i64 - oy);
-    let (ax, ay) = (e[0] as i64, e[1] as i64);
-    let (sx, sy) = (e[2] as i64 - ax, e[3] as i64 - ay);
-    let den = rx * sy - ry * sx;
-    if den == 0 {
+    // Coordinates are inside +/-512 units, so every difference fits a word.
+    let (rx, ry) = (b[0] - a[0], b[1] - a[1]);
+    let (sx, sy) = (e[2] - e[0], e[3] - e[1]);
+    let den = Wide::mul(rx, sy).mul_sub(ry, sx);
+    if den.is_zero() {
         return false;
     }
-    let (qx, qy) = (ax - ox, ay - oy);
-    let (mut t, mut u, mut d) = (qx * sy - qy * sx, qx * ry - qy * rx, den);
-    if d < 0 {
+    let (qx, qy) = (e[0] - a[0], e[1] - a[1]);
+    let (mut t, mut u, mut d) = (
+        Wide::mul(qx, sy).mul_sub(qy, sx),
+        Wide::mul(qx, ry).mul_sub(qy, rx),
+        den,
+    );
+    if d.is_negative() {
         t = -t;
         u = -u;
         d = -d;
     }
-    t >= 0 && t <= d && u >= 0 && u <= d
+    !t.is_negative() && t <= d && !u.is_negative() && u <= d
 }
 /// `GetDistance` between two transforms, Q16: the exact floor root. World
 /// coordinates stay inside +/-512 units, so the squares stay well below the
 /// i64 range.
 fn distance_q16(dx: i32, dy: i32) -> i32 {
-    let square = (dx as i64) * (dx as i64) + (dy as i64) * (dy as i64);
-    if square <= 0 {
-        return 0;
-    }
-    psx_math::int32::isqrt_u64(square as u64) as i32
+    hk_sim::fixed::hypot(dx, dy) as i32
 }
 /// Rotate a local offset by quarter turns counter-clockwise.
 fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
@@ -1153,21 +1153,15 @@ fn rotate_quarter(v: [i32; 2], quarter: i32) -> [i32; 2] {
 /// Whether the nonnegative fraction `a / b` is below `c / d`: the two cross-products
 /// `a * d` and `c * b` compared as exact 128-bit values, built from 32-bit products.
 #[inline(never)]
-fn ray_fraction_less(a: u64, b: u64, c: u64, d: u64) -> bool {
-    use hk_sim::exact::{cmp_fractions, from_u64};
-    debug_assert!(b != 0 && d != 0);
-    cmp_fractions(from_u64(a), from_u64(b), from_u64(c), from_u64(d)).is_lt()
+fn ray_fraction_less(a: WideU, b: WideU, c: WideU, d: WideU) -> bool {
+    debug_assert!(!b.is_zero() && !d.is_zero());
+    WideU::cmp_ratio(a, b, c, d).is_lt()
 }
 /// `trunc(r * t_num / den)` for `0 <= t_num <= den`: the distance `r` along the ray
 /// to the hit.
-fn along_ray(r: i64, t_num: i64, den: i64) -> i64 {
-    use hk_sim::exact::{scale_by_fraction, wide_u};
-    let along = scale_by_fraction(
-        u32::try_from(r.unsigned_abs()).unwrap_or(u32::MAX),
-        wide_u(t_num),
-        wide_u(den),
-    ) as i64;
-    if r < 0 {
+fn along_ray(r: Wide, t_num: Wide, den: Wide) -> Wide {
+    let along = Wide::of_u(t_num.cast_unsigned().scale_by_ratio(r.unsigned_abs().saturate_u32(), den.cast_unsigned()));
+    if r.is_negative() {
         -along
     } else {
         along
@@ -1190,51 +1184,51 @@ fn climber_ray_hit(
     let origin = [ray.position[0] + o[0], ray.position[1] + o[1]];
     let d = rotate_quarter(ray.local_direction, quarter);
     let end = [
-        origin[0] as i64 + (d[0] as i64 * ray.length as i64 >> 16),
-        origin[1] as i64 + (d[1] as i64 * ray.length as i64 >> 16),
+        Wide::of(origin[0]).add_w(Wide::mul(d[0], ray.length).sar(16)),
+        Wide::of(origin[1]).add_w(Wide::mul(d[1], ray.length).sar(16)),
     ];
-    let (ox, oy) = (origin[0] as i64, origin[1] as i64);
-    let (rx, ry) = (end[0] - ox, end[1] - oy);
-    let mut best: Option<(i64, i64, [i32; 2])> = None;
+    let (ox, oy) = (Wide::of(origin[0]), Wide::of(origin[1]));
+    let (rx, ry) = (end[0].sub_w(ox), end[1].sub_w(oy));
+    let mut best: Option<(Wide, Wide, [i32; 2])> = None;
     // A hit point is on the ray, so only edges whose x range meets the ray's
     // can hit; the column index skips the rest, in the same index order.
     let bounds = [
-        ox.min(end[0]).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
-        oy.min(end[1]).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
-        ox.max(end[0]).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
-        oy.max(end[1]).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+        ox.min(end[0]).saturate_i32(),
+        oy.min(end[1]).saturate_i32(),
+        ox.max(end[0]).saturate_i32(),
+        oy.max(end[1]).saturate_i32(),
     ];
     let _ = hk_sim::runner_senses::each_edge(count, edges_near(bounds), |i| {
         let e = edge(i);
         if e[0] | e[1] | e[2] | e[3] == 0 {
             return Ok(());
         }
-        let (ax, ay) = (e[0] as i64, e[1] as i64);
-        let (sx, sy) = (e[2] as i64 - ax, e[3] as i64 - ay);
-        let denominator = rx * sy - ry * sx;
-        if denominator == 0 {
+        let (ax, ay) = (Wide::of(e[0]), Wide::of(e[1]));
+        let (sx, sy) = (e[2] - e[0], e[3] - e[1]);
+        let denominator = rx.times(sy).sub_w(ry.times(sx));
+        if denominator.is_zero() {
             return Ok(());
         }
         // origin + t*r = a + u*s, both parameters in [0, 1], scaled by the denominator.
-        let (qx, qy) = (ax - ox, ay - oy);
-        let t_num = qx * sy - qy * sx;
-        let u_num = qx * ry - qy * rx;
-        let (t_num, u_num, den) = if denominator < 0 {
+        let (qx, qy) = (ax.sub_w(ox), ay.sub_w(oy));
+        let t_num = qx.times(sy).sub_w(qy.times(sx));
+        let u_num = qx.mul_w(ry).sub_w(qy.mul_w(rx));
+        let (t_num, u_num, den) = if denominator.is_negative() {
             (-t_num, -u_num, -denominator)
         } else {
             (t_num, u_num, denominator)
         };
-        if t_num < 0 || t_num > den || u_num < 0 || u_num > den {
+        if t_num.is_negative() || t_num > den || u_num.is_negative() || u_num > den {
             return Ok(());
         }
         // Cross-products overflow on thin Crossroads_07 blocks. Compare exact
         // fractions by Euclidean division, preserving the first edge on ties.
         if best.is_none_or(|(t, d, _)| {
-            ray_fraction_less(t_num as u64, den as u64, t as u64, d as u64)
+            ray_fraction_less(t_num.cast_unsigned(), den.cast_unsigned(), t.cast_unsigned(), d.cast_unsigned())
         }) {
             let point = [
-                (ox + along_ray(rx, t_num, den)) as i32,
-                (oy + along_ray(ry, t_num, den)) as i32,
+                ox.add_w(along_ray(rx, t_num, den)).low(),
+                oy.add_w(along_ray(ry, t_num, den)).low(),
             ];
             best = Some((t_num, den, point));
         }
@@ -2699,10 +2693,10 @@ impl Actor {
         let pos = [self.x, self.y];
         // Alert Range New: a 7.804-unit circle trigger against the hero body box.
         let hb = context.hero_body;
-        let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
-        let dy = (pos[1].clamp(hb[1], hb[3]) - pos[1]) as i64;
-        const RADIUS: i64 = 511463; // 7.804 Q16
-        let in_alert_range = dx * dx + dy * dy <= RADIUS * RADIUS;
+        let dx = pos[0].clamp(hb[0], hb[2]) - pos[0];
+        let dy = pos[1].clamp(hb[1], hb[3]) - pos[1];
+        const RADIUS: i32 = 511463; // 7.804 Q16
+        let in_alert_range = hk_sim::fixed::within(dx, dy, RADIUS);
         let can_see_hero = match q::line_of_sight(pos, context.hero, in_alert_range, count, edge) {
             Ok(value) => value,
             Err(q::QueryError::ZeroLengthSight) => false,
@@ -2775,10 +2769,9 @@ impl Actor {
         let pos = [self.x, self.y];
         if need.wake_range {
             let hb = context.hero_body;
-            let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
-            let dy = (pos[1].clamp(hb[1], hb[3]) - pos[1]) as i64;
-            let r = mw::WAKE_RADIUS as i64;
-            let in_circle = dx * dx + dy * dy <= r * r;
+            let dx = pos[0].clamp(hb[0], hb[2]) - pos[0];
+            let dy = pos[1].clamp(hb[1], hb[3]) - pos[1];
+            let in_circle = hk_sim::fixed::within(dx, dy, mw::WAKE_RADIUS as i32);
             senses.wake_range = match q::line_of_sight(pos, context.hero, in_circle, count, edge) {
                 Ok(value) => value,
                 Err(q::QueryError::ZeroLengthSight) => in_circle,
@@ -2872,10 +2865,9 @@ impl Actor {
         use hk_sim::runner_senses as q;
         let pos = [self.x, self.y];
         let hb = context.hero_body;
-        let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
-        let dy = (pos[1].clamp(hb[1], hb[3]) - pos[1]) as i64;
-        let r = hk_sim::mosquito::ALERT_RADIUS as i64;
-        let in_range = dx * dx + dy * dy <= r * r;
+        let dx = pos[0].clamp(hb[0], hb[2]) - pos[0];
+        let dy = pos[1].clamp(hb[1], hb[3]) - pos[1];
+        let in_range = hk_sim::fixed::within(dx, dy, hk_sim::mosquito::ALERT_RADIUS as i32);
         let can_see_hero = match q::line_of_sight(pos, context.hero, in_range, count, edge) {
             Ok(value) => value,
             Err(q::QueryError::ZeroLengthSight) => false,
@@ -3029,10 +3021,9 @@ impl Actor {
             self.y + p::HERO_RANGE_CENTER[1],
         ];
         let hb = context.hero_body;
-        let dx = (eye[0].clamp(hb[0], hb[2]) - eye[0]) as i64;
-        let dy = (eye[1].clamp(hb[1], hb[3]) - eye[1]) as i64;
-        let radius = p::HERO_RANGE_RADIUS as i64;
-        let in_range = dx * dx + dy * dy <= radius * radius;
+        let dx = eye[0].clamp(hb[0], hb[2]) - eye[0];
+        let dy = eye[1].clamp(hb[1], hb[3]) - eye[1];
+        let in_range = hk_sim::fixed::within(dx, dy, p::HERO_RANGE_RADIUS as i32);
         let can_see_hero = match q::line_of_sight(eye, context.hero, in_range, count, edge) {
             Ok(value) => value,
             Err(q::QueryError::ZeroLengthSight) => false,
@@ -3553,7 +3544,7 @@ impl Actor {
         let offset = b[0] + (b[2] - b[0]) / 2;
         let p = Params {
             speed: boss.vx.abs(),
-            gravity: (((60 * ONE) as i64 * boss.gravity as i64) >> 16) as i32,
+            gravity: psx_math::int32::mul_shr_i32(60 * ONE, boss.gravity, 16),
             fall: 100 * ONE,
             half_width: (b[2] - b[0]) / 2,
             bottom: b[1],
@@ -3967,7 +3958,7 @@ impl Actor {
         // stops that axis (Box2D's friction ends the slide on the floor).
         let speed = distance_q16(v[0], v[1]);
         let fast = speed > gz::BURSTER_BOUNCE_THRESHOLD;
-        let half = |value: i32| ((value as i64 * gz::BURSTER_BOUNCE as i64) >> 16) as i32;
+        let half = |value: i32| psx_math::int32::mul_shr_i32(value, gz::BURSTER_BOUNCE, 16);
         let landed = body.grounded && !boss.grounded;
         let mut next = [v[0], body.vy];
         if landed {
@@ -4108,7 +4099,7 @@ impl Actor {
         let p = Params {
             speed: boss.vx.abs(),
             // SetGravity2dScale against the installed Physics2DSettings gravity.
-            gravity: (((60 * ONE) as i64 * boss.gravity as i64) >> 16) as i32,
+            gravity: psx_math::int32::mul_shr_i32(60 * ONE, boss.gravity, 16),
             fall: 100 * ONE,
             half_width: (b[2] - b[0]) / 2,
             bottom: b[1],
@@ -4407,12 +4398,12 @@ impl Actor {
         else if aspid.activation == 0 { aspid.animation_tick = aspid.animation_tick.saturating_add(1); }
         let pos = [self.x, self.y];
         let hb = context.hero_body;
-        let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
-        let dy = (pos[1].clamp(hb[1], hb[3]) - pos[1]) as i64;
-        const ALERT: i64 = 511463; // 7.804
-        const UNALERT: i64 = 792986; // 12.1
-        let in_alert = dx * dx + dy * dy <= ALERT * ALERT;
-        let in_unalert = dx * dx + dy * dy <= UNALERT * UNALERT;
+        let dx = pos[0].clamp(hb[0], hb[2]) - pos[0];
+        let dy = pos[1].clamp(hb[1], hb[3]) - pos[1];
+        const ALERT: i32 = 511463; // 7.804
+        const UNALERT: i32 = 792986; // 12.1
+        let in_alert = hk_sim::fixed::within(dx, dy, ALERT);
+        let in_unalert = hk_sim::fixed::within(dx, dy, UNALERT);
         let sight = |gate: bool| match q::line_of_sight(pos, context.hero, gate, count, edge) {
             Ok(value) => value,
             Err(q::QueryError::ZeroLengthSight) => false,
@@ -4541,10 +4532,10 @@ impl Actor {
         else if hatcher.activation == 0 { hatcher.animation_tick = hatcher.animation_tick.saturating_add(1); }
         let pos = [self.x, self.y];
         let hb = context.hero_body;
-        let dx = (pos[0].clamp(hb[0], hb[2]) - pos[0]) as i64;
-        let dy = (pos[1].clamp(hb[1], hb[3]) - pos[1]) as i64;
-        const ALERT: i64 = hk_sim::hatcher::ALERT_RADIUS as i64;
-        let in_alert = dx * dx + dy * dy <= ALERT * ALERT;
+        let dx = pos[0].clamp(hb[0], hb[2]) - pos[0];
+        let dy = pos[1].clamp(hb[1], hb[3]) - pos[1];
+        const ALERT: i32 = hk_sim::hatcher::ALERT_RADIUS as i32;
+        let in_alert = hk_sim::fixed::within(dx, dy, ALERT);
         let clear = match q::line_of_sight(pos, context.hero, true, count, edge) {
             Ok(value) => value,
             Err(q::QueryError::ZeroLengthSight) => false,
@@ -5693,7 +5684,7 @@ impl EnemyWorld {
                 let fling = |kind: u16| match kind {
                     2 => [0, speed],
                     3 => [0, -speed],
-                    _ => [away * (speed >> 1), ((speed as i64 * 56756) >> 16) as i32],
+                    _ => [away * (speed >> 1), psx_math::int32::mul_shr_i32(speed, 56756, 16)],
                 };
                 if let Some((box_, damage)) = ball {
                     let (_, hit) = actor.strike_mawlek(
@@ -6536,7 +6527,7 @@ impl EnemyWorld {
             };
             assert!((clip_id as usize) < room.counts[4]);
             let clip = room.clip(clip_id as usize);
-            let elapsed = (animation_tick as u64 * clip[2] as u64 / (60 * 65536)) as u32;
+            let elapsed = hk_sim::fixed::mul_div_floor(animation_tick, clip[2], 60 * 65536);
             let mode = clip[3] & 65535;
             let start = clip[3] >> 16;
             let frame = if mode == 0 {
@@ -6580,8 +6571,8 @@ impl EnemyWorld {
                     let x = position.0 - x - camera.0;
                     let y = position.1 + y - camera.1;
                     *v = (
-                        (160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
-                        (120 - (((y as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+                        (160 + psx_math::int32::mul_shr_i32(x >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
+                        (120 - psx_math::int32::mul_shr_i32(y >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
                     );
                 }
                 verts
@@ -6659,7 +6650,7 @@ impl EnemyWorld {
             } as usize;
             assert!(clip_id < room.counts[4]);
             let clip = room.clip(clip_id);
-            let elapsed = (shot.animation_tick as u64 * clip[2] as u64 / (60 * 65536)) as u32;
+            let elapsed = hk_sim::fixed::mul_div_floor(shot.animation_tick, clip[2], 60 * 65536);
             let frame = if clip[3] & 65535 == 0 {
                 elapsed % clip[1]
             } else {
@@ -6674,8 +6665,8 @@ impl EnemyWorld {
                 let x = shot.x - x * facing - camera.0;
                 let y = shot.y + y - camera.1;
                 *v = (
-                    (160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
-                    (120 - (((y as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+                    (160 + psx_math::int32::mul_shr_i32(x >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
+                    (120 - psx_math::int32::mul_shr_i32(y >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
                 );
             }
             if verts.iter().all(|v| v.0 < 0)
@@ -6737,7 +6728,7 @@ fn wave_params(spurt: u16) -> &'static hk_sim::shockwave::Params {
 /// The frame a room clip shows `tick` 60 Hz ticks in, played once.
 fn clip_frame_index(room: &Room, clip: u16, tick: u32) -> usize {
     let clip = room.clip(clip as usize);
-    let elapsed = (tick as u64 * clip[2] as u64 / (60 * 65536)) as u32;
+    let elapsed = hk_sim::fixed::mul_div_floor(tick, clip[2], 60 * 65536);
     (clip[0] + elapsed.min(clip[1] - 1)) as usize
 }
 /// One actor-space box drawn at `position`, mirrored when `facing` is 1, the
@@ -6754,8 +6745,8 @@ fn project_box(
         let x = position.0 - x * facing - camera.0;
         let y = position.1 + y - camera.1;
         *v = (
-            (160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
-            (120 - (((y as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+            (160 + psx_math::int32::mul_shr_i32(x >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
+            (120 - psx_math::int32::mul_shr_i32(y >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
         );
     }
     verts
@@ -6792,8 +6783,8 @@ fn project_box_at_depth(
         let x = k(position.0 - x * facing - camera.0);
         let y = k(position.1 + y - camera.1);
         *v = (
-            (160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
-            (120 - (((y as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+            (160 + psx_math::int32::mul_shr_i32(x >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
+            (120 - psx_math::int32::mul_shr_i32(y >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
         );
     }
     verts
@@ -8325,15 +8316,19 @@ mod placement_table_tests {
 #[cfg(test)]
 mod climber_ray_tests {
     use super::*;
+    fn less(a: u64, b: u64, c: u64, d: u64) -> bool {
+        let w = |x: u64| WideU::from_parts((x >> 32) as u32, x as u32);
+        ray_fraction_less(w(a), w(b), w(c), w(d))
+    }
     #[test]
     fn exact_order_survives_close_hits_and_large_denominators() {
         // These distinct hits round to the same Q16 fraction.
-        assert!(ray_fraction_less(1, 100_001, 1, 100_000));
-        assert!(!ray_fraction_less(1, 100_000, 1, 100_001));
-        assert!(ray_fraction_less(u64::MAX - 2, u64::MAX, u64::MAX - 1, u64::MAX));
-        assert!(!ray_fraction_less(1, 3, 2, 6));
-        assert!(ray_fraction_less(0, 9, 1, 9));
-        assert!(!ray_fraction_less(9, 9, 9, 9));
+        assert!(less(1, 100_001, 1, 100_000));
+        assert!(!less(1, 100_000, 1, 100_001));
+        assert!(less(u64::MAX - 2, u64::MAX, u64::MAX - 1, u64::MAX));
+        assert!(!less(1, 3, 2, 6));
+        assert!(less(0, 9, 1, 9));
+        assert!(!less(9, 9, 9, 9));
     }
     #[test]
     fn exact_order_matches_wide_reference() {
@@ -8341,7 +8336,7 @@ mod climber_ray_tests {
             for b in 1..24_u64 {
                 for c in 0..24_u64 {
                     for d in 1..24_u64 {
-                        assert_eq!(ray_fraction_less(a, b, c, d),
+                        assert_eq!(less(a, b, c, d),
                             (a as u128 * d as u128) < (c as u128 * b as u128));
                     }
                 }

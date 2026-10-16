@@ -295,7 +295,7 @@ impl Bouncer {
     /// RandomFloat over [low, high) degrees, then `Left or Right?`.
     fn aim(&mut self, low: i32, high: i32) {
         let span = (high - low) * ONE;
-        self.angle = low * ONE + ((self.random() as i64 * span as i64) >> 24) as i32;
+        self.angle = low * ONE + crate::fixed::range24(self.random(), 0, span);
         self.facing_right =
             self.angle < 90 * ONE || (self.angle >= 270 * ONE && self.angle < 360 * ONE);
     }
@@ -859,7 +859,7 @@ impl GruzMother {
     }
 }
 fn scale(value: i32, factor: i32) -> i32 {
-    ((value as i64 * factor as i64) >> 16) as i32
+    psx_math::int32::mul_shr_i32(value, factor, 16)
 }
 /// The unit vector from `from` to `to`, Q16: GetAngleToTarget2D followed by
 /// SetVelocityAsAngle is this times the speed.

@@ -33,8 +33,10 @@ pub const MAX_POLL_GAP: u32 = 8;
 /// One half is 512 blocks of 28 samples; how many VBlanks that lasts depends on
 /// the cooked pitch, so the sanity window around each boundary is derived from
 /// it rather than fixed.
-pub const HALF_SAMPLES: u64 = (HALF_BYTES as u64 / 16) * 28;
-pub const BOUNDARY_TICKS: u32 = (HALF_SAMPLES * 60 * 4096 / (44_100 * PITCH as u64)) as u32;
+pub const HALF_SAMPLES: u32 = (HALF_BYTES as u32 / 16) * 28;
+/// 60 * 4096 * samples fits a word for this half size; the const evaluation fails to compile
+/// (overflow) if a larger half ever needs the wide form.
+pub const BOUNDARY_TICKS: u32 = HALF_SAMPLES * 60 * 4096 / (44_100 * PITCH as u32);
 /// The window around each boundary is a quarter/eighth of a half, or a poll
 /// gap either side, whichever is wider: at 22,050 Hz a half is only 39 ticks,
 /// and an eighth of that would fault a boundary seen five checkpoints late.

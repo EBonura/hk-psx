@@ -2120,7 +2120,7 @@ impl Cache {
         crate::modules::gate_begin(wanted);
         self.prepare_runner_audio(wanted)?;
         unsafe {
-            GATE_VERIFIED = 0;
+            GATE_VERIFIED = psx_math::Mask64::EMPTY;
             GATE_SCENE = EMPTY;
         }
         if SCENE_GATE_LOAD && self.resident_scene != wanted {
@@ -2261,7 +2261,7 @@ impl Cache {
         // scene, which no later decode touches until the next admission.
         self.prepare_metadata(wanted, st)?;
         unsafe {
-            GATE_VERIFIED = 0;
+            GATE_VERIFIED = psx_math::Mask64::EMPTY;
             GATE_SCENE = EMPTY;
         }
         // The room's art is part of the room: a gate does not end without it.
@@ -2807,7 +2807,7 @@ struct Verify {
     first: usize,
     pos: usize,
     hash: u32,
-    mask: u64,
+    mask: psx_math::Mask64,
 }
 static mut VERIFY: Verify = Verify {
     generation: u32::MAX,
@@ -2816,7 +2816,7 @@ static mut VERIFY: Verify = Verify {
     first: 0,
     pos: 0,
     hash: 0x811c9dc5,
-    mask: 0,
+    mask: psx_math::Mask64::EMPTY,
 };
 impl Verify {
     fn next(&mut self, sectors: usize) {
@@ -2826,7 +2826,7 @@ impl Verify {
         self.hash = 0x811c9dc5;
     }
 }
-static mut GATE_VERIFIED: u64 = 0;
+static mut GATE_VERIFIED: psx_math::Mask64 = psx_math::Mask64::EMPTY;
 static mut GATE_SCENE: usize = EMPTY;
 #[no_mangle]
 pub static mut HK_PREVERIFIED_BYTES: u32 = 0;
@@ -2840,7 +2840,7 @@ fn preverified(index: usize) -> bool {
     let Some((g, j)) = group_of(index) else {
         return false;
     };
-    let yes = g == 1 + unsafe { GATE_SCENE } && j < 64 && unsafe { GATE_VERIFIED } & (1 << j) != 0;
+    let yes = g == 1 + unsafe { GATE_SCENE } && unsafe { GATE_VERIFIED }.test(j);
     if yes {
         unsafe {
             HK_GATE_PREVERIFIED = HK_GATE_PREVERIFIED.saturating_add(1);
@@ -2864,7 +2864,7 @@ pub fn preverify_step(mut budget: usize) {
             first: 0,
             pos: 0,
             hash: 0x811c9dc5,
-            mask: 0,
+            mask: psx_math::Mask64::EMPTY,
         };
     }
     let g = 1 + p.scene;
@@ -2894,7 +2894,7 @@ pub fn preverify_step(mut budget: usize) {
         }
         if v.pos == size {
             if v.hash == checksum {
-                v.mask |= 1 << v.j;
+                v.mask.set(v.j);
                 unsafe {
                     HK_PREVERIFIED_CHUNKS += 1;
                 }
@@ -2927,7 +2927,7 @@ fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (u
         let skip = p.skip;
         unsafe {
             DRIVE.prefetch = false;
-            GATE_VERIFIED = 0;
+            GATE_VERIFIED = psx_math::Mask64::EMPTY;
             GATE_SCENE = scene;
             HK_PREFETCH_ADOPTED += 1;
         }
@@ -2962,7 +2962,7 @@ fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (u
         GATE_VERIFIED = if k > 0 && v.generation == p.generation && v.scene == scene {
             v.mask
         } else {
-            0
+            psx_math::Mask64::EMPTY
         };
         GATE_SCENE = scene;
     }

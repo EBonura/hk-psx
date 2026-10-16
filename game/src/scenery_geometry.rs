@@ -5,6 +5,8 @@
 //! Subdivision is a sampling approximation: restarting the GPU's Q12 attribute
 //! DDA can change texels and rounded oblique edges. It never clamps source XY.
 
+use psx_math::Wide;
+
 pub const MAX_DIVISIONS: usize = 64;
 /// Bounds all i64 weighted-coordinate intermediates and rejects hostile input.
 pub const MAX_COORDINATE: i32 = 1 << 20;
@@ -80,17 +82,14 @@ fn outside(xy: &[(i32, i32); 4]) -> bool {
 /// `n / d` rounded to nearest, ties to even; `d` is a texel-grid area, so it fits 32 bits,
 /// and the quotient stays inside MAX_COORDINATE. The magnitude divides in two 32-bit words
 /// and the sign is put back on the rounded result.
-fn nearest_even(n: i64, d: i64) -> i64 {
-    debug_assert!(d > 0 && d <= u32::MAX as i64);
-    let magnitude = n.unsigned_abs();
-    let (q, r) = hk_sim::exact::div_rem_u32(
-        psx_math::WideU::from_parts((magnitude >> 32) as u32, magnitude as u32),
-        d as u32,
-    );
+fn nearest_even(n: Wide, d: i32) -> i32 {
+    debug_assert!(d > 0);
+    let magnitude = n.abs();
+    let (q, r) = psx_math::WideU::from_parts(magnitude.high() as u32, magnitude.low_u32()).div_rem_u32(d as u32);
     let (q, d) = (q.low(), d as u32);
     let up = r > d - r || (r == d - r && q & 1 != 0);
-    let rounded = i64::from(q + u32::from(up));
-    if n < 0 {
+    let rounded = (q + u32::from(up)) as i32;
+    if n.is_negative() {
         -rounded
     } else {
         rounded
@@ -145,21 +144,21 @@ fn offsets(range: u16, divisions: usize, values: &mut [u16; MAX_DIVISIONS + 1]) 
     }
     count
 }
-fn point(xy: &[(i32, i32); 4], x: i64, y: i64, width: i64, height: i64) -> (i32, i32) {
+fn point(xy: &[(i32, i32); 4], x: i32, y: i32, width: i32, height: i32) -> (i32, i32) {
     let weights = [
         (width - x) * (height - y),
         x * (height - y),
         (width - x) * y,
         x * y,
     ];
-    let mut px = 0;
-    let mut py = 0;
+    let mut px = Wide::ZERO;
+    let mut py = Wide::ZERO;
     for i in 0..4 {
-        px += xy[i].0 as i64 * weights[i];
-        py += xy[i].1 as i64 * weights[i];
+        px = px.mul_add(xy[i].0, weights[i]);
+        py = py.mul_add(xy[i].1, weights[i]);
     }
     let d = width * height;
-    (nearest_even(px, d) as i32, nearest_even(py, d) as i32)
+    (nearest_even(px, d), nearest_even(py, d))
 }
 fn packed(xy: [(i32, i32); 4], uv: [(u8, u8); 4]) -> Quad {
     Quad {
@@ -236,11 +235,11 @@ pub fn subdivide_in(
     // contents remain in place and each new row overwrites only needed entries.
     let mut previous = row_a;
     let mut current = row_b;
-    let width = (uv.w - 1).max(1) as i64;
-    let height = (uv.h - 1).max(1) as i64;
+    let width = (uv.w - 1).max(1) as i32;
+    let height = (uv.h - 1).max(1) as i32;
     // Weights are nonnegative and sum to this denominator. Bounding every
     // |coordinate|*denominator bounds every term AND every partial sum.
-    let narrow_limit = i32::MAX / (width * height) as i32;
+    let narrow_limit = i32::MAX / (width * height);
     let narrow = xy
         .iter()
         .all(|&(x, y)| x.abs() <= narrow_limit && y.abs() <= narrow_limit);
@@ -251,11 +250,11 @@ pub fn subdivide_in(
         let mut count = 0;
         let mut bad = false;
         for j in 0..nv {
-            let y = if uv.h == 1 { j as i64 } else { vs[j] as i64 };
+            let y = if uv.h == 1 { j as i32 } else { vs[j] as i32 };
             for i in 0..nu {
-                let x = if uv.w == 1 { i as i64 } else { us[i] as i64 };
+                let x = if uv.w == 1 { i as i32 } else { us[i] as i32 };
                 current[i] = if narrow {
-                    point_small(&xy, x as i32, y as i32, width as i32, height as i32)
+                    point_small(&xy, x, y, width, height)
                 } else {
                     point(&xy, x, y, width, height)
                 };
@@ -322,7 +321,11 @@ mod tests {
             let (quotient, remainder) = (n / d, (n % d).abs());
             let up = remainder * 2 > d || (remainder * 2 == d && quotient & 1 != 0);
             let expected = quotient + if up { n.signum() } else { 0 };
-            assert_eq!(nearest_even(n, d), expected, "{n} / {d}");
+            assert_eq!(
+                i64::from(nearest_even(Wide::from_parts((n >> 32) as i32, n as u32), d as i32)),
+                expected,
+                "{n} / {d}"
+            );
         }
     }
     #[test]
@@ -337,7 +340,7 @@ mod tests {
             (-5, -2),
             (-7, -4),
         ] {
-            assert_eq!(nearest_even(n, 2), expected);
+            assert_eq!(nearest_even(Wide::of(n), 2), expected);
         }
     }
     #[test]
@@ -359,7 +362,7 @@ mod tests {
                     for x in [0, 1, width / 2, width] {
                         assert_eq!(
                             point_small(&xy, x, y, width, height),
-                            point(&xy, x as i64, y as i64, width as i64, height as i64)
+                            point(&xy, x, y, width, height)
                         );
                     }
                 }

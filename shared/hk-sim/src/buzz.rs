@@ -105,10 +105,10 @@ pub fn distance_fly(
     acceleration: i32,
     velocity: &mut [i32; 2],
 ) {
-    let dx = (position[0] as i64 - target[0] as i64) >> 8;
-    let dy = (position[1] as i64 - target[1] as i64) >> 8;
-    let d = distance as i64 >> 8;
-    let far = dx * dx + dy * dy > d * d;
+    let dx = crate::fixed::diff8(position[0], target[0]);
+    let dy = crate::fixed::diff8(position[1], target[1]);
+    let d = distance >> 8;
+    let far = crate::fixed::sum_sq(dx, dy) > crate::fixed::square(d);
     for axis in 0..2 {
         let toward = position[axis] < target[axis];
         let sign = if toward == far { 1 } else { -1 };
@@ -128,10 +128,10 @@ pub fn distance_fly_height(
     acceleration: i32,
     velocity: &mut [i32; 2],
 ) {
-    let dx = (position[0] as i64 - target[0] as i64) >> 8;
-    let dy = (position[1] as i64 - target[1] as i64) >> 8;
-    let d = distance as i64 >> 8;
-    let far = dx * dx + dy * dy > d * d;
+    let dx = crate::fixed::diff8(position[0], target[0]);
+    let dy = crate::fixed::diff8(position[1], target[1]);
+    let d = distance >> 8;
+    let far = crate::fixed::sum_sq(dx, dy) > crate::fixed::square(d);
     let toward = position[0] < target[0];
     velocity[0] += if toward == far {
         acceleration

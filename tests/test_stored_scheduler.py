@@ -44,7 +44,8 @@ class StoredSchedulerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='resident-cache-test-', dir=ROOT / '.hkpsx') as temp:
             path = Path(temp)
             (path / 'probe.rs').write_text(code)
-            extra=['-L',f'dependency={path}']
+            from hk_externs import externs
+            extra=['-L',f'dependency={path}',*externs()]
             if coverage_dependencies:
                 for name,source in [('hk_format',ROOT/'shared/hk-format/src/lib.rs'),('room_decode',ROOT/'game/src/room_decode.rs')]:
                     library=path/f'lib{name}.rlib'
@@ -227,7 +228,7 @@ mod gate_probe{pub const SCENE_CHECK:u8=0;pub fn set(_:u8){}pub fn decoder(_:u32
 // admission never touches the drive for art.
 mod modules{pub fn gate_begin(_:usize){} pub fn art_missing(_:usize)->bool{false} pub fn art_begin(_:usize)->bool{false} pub fn admit_art(_:usize)->bool{true}}
 mod cd_stream{pub enum Status{Busy,Done} pub fn status()->Status{Status::Done} pub fn received()->usize{0}}
-static mut GATE_VERIFIED:u64=0;
+static mut GATE_VERIFIED:psx_math::Mask64=psx_math::Mask64::EMPTY;
 static mut GATE_SCENE:usize=EMPTY;
 static mut GROUP_LANDED:usize=EMPTY;
 static mut HK_MODULE_GATE_ART_MISSED:u32=0;

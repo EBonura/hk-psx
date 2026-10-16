@@ -323,7 +323,7 @@ impl Shaman {
             _ => (if trapped { 2 } else { 0 }, age),
         };
         let c = &SHAMAN_CLIPS[clip];
-        let f = (u64::from(age) * u64::from(c.fps) / 60) as usize;
+        let f = hk_sim::fixed::mul_div_floor(u32::from(age), u32::from(c.fps), 60) as usize;
         c.start
             + if c.wrap == 0 {
                 f % c.count
@@ -449,12 +449,8 @@ mod live {
             let vertices = world.map(|[wx, wy]| {
                 let (px, py) = (at[0] + wx, at[1] + wy);
                 (
-                    (160 + (((i64::from(px) - i64::from(camera.0))
-                        * i64::from(crate::KNIGHT_SCALE))
-                        >> 28)) as i32,
-                    (120 - (((i64::from(py) - i64::from(camera.1))
-                        * i64::from(crate::KNIGHT_SCALE))
-                        >> 28)) as i32,
+                    160 + hk_sim::fixed::project(px, camera.0, crate::KNIGHT_SCALE as i32, 28),
+                    120 - hk_sim::fixed::project(py, camera.1, crate::KNIGHT_SCALE as i32, 28),
                 )
             });
             if vertices.iter().all(|p| p.0 < 0)

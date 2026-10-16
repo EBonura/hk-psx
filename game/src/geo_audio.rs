@@ -81,7 +81,7 @@ fn choice(count: u32) -> usize {
     // Separate deterministic PRNG: audio never perturbs gameplay's random state.
     unsafe {
         RANDOM = RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
-        ((u64::from(RANDOM) * u64::from(count)) >> 32) as usize
+        psx_math::WideU::mul(RANDOM, count).high() as usize
     }
 }
 fn play(voice: u8, sample: (u32, u32, i16)) {

@@ -45,7 +45,7 @@ pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.le
 /// The frame of `clip` at a 60 Hz age, honouring loop / loop-section / once.
 pub fn frame_index(clip: usize, age: u32) -> usize {
     let c = ABILITY_CLIPS[clip];
-    let frame = (u64::from(age) * u64::from(c.fps) / 60) as usize;
+    let frame = hk_sim::fixed::mul_div_floor(u32::from(age), u32::from(c.fps), 60) as usize;
     c.start
         + if c.wrap == 0 {
             frame % c.count
@@ -195,10 +195,8 @@ mod presentation {
             let px = x - wx * facing;
             let py = y + wy;
             (
-                160 + (((i64::from(px) - i64::from(camera.0)) * i64::from(crate::KNIGHT_SCALE))
-                    >> 28) as i32,
-                120 - (((i64::from(py) - i64::from(camera.1)) * i64::from(crate::KNIGHT_SCALE))
-                    >> 28) as i32,
+                160 + hk_sim::fixed::project(px, camera.0, crate::KNIGHT_SCALE as i32, 28),
+                120 - hk_sim::fixed::project(py, camera.1, crate::KNIGHT_SCALE as i32, 28),
             )
         });
         if vertices.iter().all(|p| p.0 < 0)

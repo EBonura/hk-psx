@@ -88,24 +88,24 @@ impl Refusal {
 /// `canOvercharm` and the derived `charmSlotsFilled`/`overcharmed`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
-    owned: u64,
-    equipped: u64,
-    broken: u64,
+    owned: psx_math::Mask64,
+    equipped: psx_math::Mask64,
+    broken: psx_math::Mask64,
     pub notches: u8,
     pub can_overcharm: bool,
     /// `UI Charms`' own `Overcharm Attempts`. It is an FSM variable in the
     /// source, not PlayerData, so it lasts the session and is never saved.
     attempts: u8,
 }
-const fn bit(charm: usize) -> u64 {
-    1u64 << (charm - 1)
+const fn bit(charm: usize) -> psx_math::Mask64 {
+    psx_math::Mask64::bit(charm - 1)
 }
 impl State {
     pub const fn new() -> Self {
         Self {
-            owned: 0,
-            equipped: 0,
-            broken: 0,
+            owned: psx_math::Mask64::EMPTY,
+            equipped: psx_math::Mask64::EMPTY,
+            broken: psx_math::Mask64::EMPTY,
             notches: STARTING_NOTCHES,
             can_overcharm: false,
             attempts: 0,
@@ -115,16 +115,16 @@ impl State {
         &CHARMS[charm - 1]
     }
     pub fn owns(&self, charm: usize) -> bool {
-        self.owned & bit(charm) != 0
+        !self.owned.and(bit(charm)).is_empty()
     }
     pub fn equipped(&self, charm: usize) -> bool {
-        self.equipped & bit(charm) != 0
+        !self.equipped.and(bit(charm)).is_empty()
     }
     pub fn broken(&self, charm: usize) -> bool {
-        self.broken & bit(charm) != 0
+        !self.broken.and(bit(charm)).is_empty()
     }
     pub fn give(&mut self, charm: usize) {
-        self.owned |= bit(charm);
+        self.owned = self.owned.or(bit(charm));
     }
     /// `PlayerData::CalculateNotchesUsed`: the cost of everything equipped.
     /// Derived rather than stored so a save can never disagree with itself.
@@ -179,32 +179,33 @@ impl State {
             // `Break` unlocks overcharming and the same attempt goes through.
             self.can_overcharm = true;
         }
-        self.equipped |= bit(charm);
+        self.equipped = self.equipped.or(bit(charm));
         Ok(())
     }
     fn unequip(&mut self, charm: usize) {
-        self.equipped &= !bit(charm);
+        self.equipped = self.equipped.and_not(bit(charm));
     }
     /// Everything the memory card keeps. `filled` and `overcharmed` are derived
     /// and the attempt count is deliberately session-only.
-    pub fn record(&self) -> (u64, u64, u8, bool) {
+    pub fn record(&self) -> (psx_math::Mask64, psx_math::Mask64, u8, bool) {
         (self.owned, self.equipped, self.notches, self.can_overcharm)
     }
     /// Reject a record whose equipped set is not a subset of what it owns, or
     /// whose notch count cannot hold it without the overcharm it did not earn.
-    pub fn restore(owned: u64, equipped: u64, notches: u8, can_overcharm: bool) -> Option<Self> {
-        let mask = if CHARM_COUNT >= 64 {
-            u64::MAX
-        } else {
-            (1u64 << CHARM_COUNT) - 1
-        };
-        if owned & !mask != 0 || equipped & !owned != 0 || notches == 0 {
+    pub fn restore(
+        owned: psx_math::Mask64,
+        equipped: psx_math::Mask64,
+        notches: u8,
+        can_overcharm: bool,
+    ) -> Option<Self> {
+        let mask = psx_math::Mask64::first(CHARM_COUNT);
+        if !owned.and_not(mask).is_empty() || !equipped.and_not(owned).is_empty() || notches == 0 {
             return None;
         }
         let state = Self {
             owned,
             equipped,
-            broken: 0,
+            broken: psx_math::Mask64::EMPTY,
             notches,
             can_overcharm,
             attempts: 0,
@@ -244,14 +245,19 @@ pub fn pick_up(charm: usize) {
     publish();
 }
 /// Load a card record, or start a fresh collection when it does not validate.
-pub fn load(owned: u64, equipped: u64, notches: u8, can_overcharm: bool) -> bool {
+pub fn load(
+    owned: psx_math::Mask64,
+    equipped: psx_math::Mask64,
+    notches: u8,
+    can_overcharm: bool,
+) -> bool {
     let restored = State::restore(owned, equipped, notches, can_overcharm);
     *state() = restored.unwrap_or_else(State::new);
     publish();
     restored.is_some()
 }
 /// The profile's board plus whatever the boot Cheats page already asked for.
-pub fn boot(saved: Option<(u64, u64, u8, bool)>, grant: bool) -> bool {
+pub fn boot(saved: Option<(psx_math::Mask64, psx_math::Mask64, u8, bool)>, grant: bool) -> bool {
     let loaded = match saved {
         Some((owned, equipped, notches, over)) => load(owned, equipped, notches, over),
         None => {
@@ -265,30 +271,33 @@ pub fn boot(saved: Option<(u64, u64, u8, bool)>, grant: bool) -> bool {
     }
     loaded
 }
-pub fn record() -> (u64, u64, u8, bool) {
+pub fn record() -> (psx_math::Mask64, psx_math::Mask64, u8, bool) {
     state().record()
 }
 /// What the cheat added, so turning it off takes back only that and never a
 /// charm the save already owned.
-static mut GRANTED: u64 = 0;
+static mut GRANTED: psx_math::Mask64 = psx_math::Mask64::EMPTY;
 /// The cheat grant, kept out of the equipped set: it only marks charms found,
 /// so equipping still runs the same notch board a real pickup would.
 pub fn grant_all(on: bool) {
     let s = state();
     if on {
-        let mut added = 0;
+        let mut added = psx_math::Mask64::EMPTY;
         for charm in 1..=CHARM_COUNT {
             if !s.owns(charm) {
-                added |= bit(charm);
+                added = added.or(bit(charm));
                 s.give(charm);
             }
         }
-        unsafe { GRANTED |= added };
+        unsafe { GRANTED = GRANTED.or(added) };
     } else {
-        let taken = core::mem::take(unsafe { &mut *core::ptr::addr_of_mut!(GRANTED) });
-        s.owned &= !taken;
+        let taken = core::mem::replace(
+            unsafe { &mut *core::ptr::addr_of_mut!(GRANTED) },
+            psx_math::Mask64::EMPTY,
+        );
+        s.owned = s.owned.and_not(taken);
         // Dropping the grant must not leave a charm worn that is no longer owned.
-        s.equipped &= s.owned;
+        s.equipped = s.equipped.and(s.owned);
     }
     publish();
 }
@@ -307,7 +316,7 @@ fn compose(s: &State, mut base: VitalParams) -> VitalParams {
     // frame that slips past a VBlank boundary changes how many simulation ticks
     // fall between two input polls. The route's combat was identical; only its
     // timing moved. Nothing below this line runs for an empty board.
-    if s.equipped == 0 {
+    if s.equipped.is_empty() {
         return base;
     }
     for charm in 1..=CHARM_COUNT {
@@ -722,7 +731,7 @@ mod tests {
         let mut s = State::new();
         assert_eq!(s.toggle(GRUBSONG), Err(Refusal::NotOwned));
         s.give(FRAGILE_HEART);
-        s.broken |= bit(FRAGILE_HEART);
+        s.broken = s.broken.or(bit(FRAGILE_HEART));
         assert_eq!(s.toggle(FRAGILE_HEART), Err(Refusal::Broken));
         s.give(36);
         assert_eq!(s.toggle(36), Err(Refusal::Bound));
@@ -814,7 +823,7 @@ mod tests {
         assert_eq!(back.record(), (owned, equipped, notches, over));
         assert_eq!(back.filled(), 2);
         // Worn without being owned, and overcharmed without having earned it.
-        assert_eq!(State::restore(0, equipped, notches, over), None);
+        assert_eq!(State::restore(psx_math::Mask64::EMPTY, equipped, notches, over), None);
         assert_eq!(State::restore(owned, equipped, 0, over), None);
         let mut heavy = owning(&[SOUL_EATER, GRUBSONG]);
         heavy.can_overcharm = true;

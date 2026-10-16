@@ -211,7 +211,7 @@ impl Summon {
             self.timer = self.gap();
         }
         let [low, high] = BARREL_SPAWN_X;
-        Some(low + ((self.random() as i64 * (high - low) as i64) >> 24) as i32)
+        Some(crate::fixed::range24(self.random(), low, high))
     }
 }
 
@@ -588,7 +588,7 @@ impl FalseKnight {
         self.rng >> 8
     }
     fn range(&mut self, low: i32, high: i32) -> i32 {
-        low + ((self.random() as i64 * (high - low) as i64) >> 24) as i32
+        crate::fixed::range24(self.random(), low, high)
     }
     fn choose(&mut self, count: u32) -> u32 {
         (self.random() * count) >> 24
@@ -740,7 +740,7 @@ impl FalseKnight {
             };
         } else {
             let hero = senses.hero_x.clamp(HERO_X_CLAMP[0], HERO_X_CLAMP[1]);
-            let gap = (((hero - senses.self_x) as i64 * TOWARDS_FACTOR as i64) >> 16) as i32;
+            let gap = psx_math::int32::mul_shr_i32(hero - senses.self_x, TOWARDS_FACTOR, 16);
             self.jump_x = gap.clamp(-TOWARDS_CLAMP, TOWARDS_CLAMP);
         }
         self.phase = Phase::JumpAntic;
@@ -770,7 +770,7 @@ impl FalseKnight {
         };
         self.recoil_speed = recoil;
         let gap = senses.hero_x + offset - senses.self_x;
-        self.jump_x = (((gap as i64 * JA_ANTIC_FACTOR as i64) >> 16) as i32)
+        self.jump_x = psx_math::int32::mul_shr_i32(gap, JA_ANTIC_FACTOR, 16)
             .clamp(-TOWARDS_CLAMP, TOWARDS_CLAMP);
         self.phase = Phase::JumpAttackAntic;
         self.timer = JUMP_ANTIC_TICKS;
@@ -808,7 +808,7 @@ impl FalseKnight {
             }
             return true;
         }
-        self.jump_x = (((gap as i64 * TOWARDS_FACTOR as i64) >> 16) as i32)
+        self.jump_x = psx_math::int32::mul_shr_i32(gap, TOWARDS_FACTOR, 16)
             .clamp(-TOWARDS_CLAMP, TOWARDS_CLAMP);
         self.phase = Phase::SlamAntic;
         self.timer = JUMP_ANTIC_TICKS;
@@ -969,7 +969,7 @@ impl FalseKnight {
                 };
                 out.push(Action::Velocity([
                     senses.velocity_x,
-                    ((senses.velocity_y as i64 * factor as i64) >> 16) as i32,
+                    psx_math::int32::mul_shr_i32(senses.velocity_y, factor, 16),
                 ]));
                 if !rising && senses.grounded {
                     out.push(Action::VelocityX(0));
@@ -998,7 +998,7 @@ impl FalseKnight {
                 };
                 out.push(Action::Velocity([
                     senses.velocity_x,
-                    ((senses.velocity_y as i64 * factor as i64) >> 16) as i32,
+                    psx_math::int32::mul_shr_i32(senses.velocity_y, factor, 16),
                 ]));
                 // `JA Fall` commits as soon as terrain is within 9.5 units.
                 if !rising && senses.ground_below {
@@ -1238,7 +1238,7 @@ impl FalseKnight {
                     self.phase = Phase::RageJumpAntic;
                     self.timer = JUMP_ANTIC_TICKS;
                     let gap = RAGE_POINT_X - senses.self_x;
-                    self.jump_x = ((gap as i64 * RAGE_JUMP_FACTOR as i64) >> 16) as i32;
+                    self.jump_x = psx_math::int32::mul_shr_i32(gap, RAGE_JUMP_FACTOR, 16);
                     self.play(Clip::JumpAntic, &mut out);
                 }
             }
@@ -1295,7 +1295,7 @@ impl FalseKnight {
                         self.phase = Phase::DeathJumpAntic;
                         self.timer = JUMP_ANTIC_TICKS;
                         let gap = FINAL_POINT_X - senses.self_x;
-                        self.jump_x = ((gap as i64 * FINAL_JUMP_FACTOR as i64) >> 16) as i32;
+                        self.jump_x = psx_math::int32::mul_shr_i32(gap, FINAL_JUMP_FACTOR, 16);
                         out.push(Action::Invincible(true));
                         out.push(Action::Hitter(false));
                         self.face(true, &mut out);

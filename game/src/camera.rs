@@ -89,7 +89,7 @@ pub static mut HK_CAMERA_SHAKES_REFUSED: u32 = 0;
 fn shake_axis(rng: &mut u32, extents: i32, amount_q16: i32) -> i32 {
     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
     let unit = ((*rng >> 15) as i32) - ONE; // [-1, 1) in Q16
-    ((((extents as i64 * unit as i64) >> 16) * amount_q16 as i64) >> 16) as i32
+    psx_math::Wide::mul(extents, unit).sar(16).times(amount_q16).shr_i32(16)
 }
 /// `SendEventByName`: the global transition runs `To <name> Shake`, whose
 /// `FloatCompare` enters the shake only while the live `Priority` is strictly
@@ -157,8 +157,14 @@ const ORIGINAL_HALF: (i32, i32) = (956_826, 543_949);
 /// with these, so the narrower PS1 view reaches the wall the original's
 /// reaches, and every lock limit moves by the same difference (view edges
 /// kept where the original's are), see `view_limits`.
-const X_MIN: i32 = (160i64 * (1 << 28) / crate::KNIGHT_SCALE as i64) as i32;
-const Y_MIN: i32 = (120i64 * (1 << 28) / crate::KNIGHT_SCALE as i64) as i32;
+const X_MIN: i32 = view_limit(160);
+const Y_MIN: i32 = view_limit(120);
+/// `pixels * 2^28 / KNIGHT_SCALE` in Q16 units, in 32-bit arithmetic: with `2^28 = q s + r`
+/// the quotient is `pixels q + pixels r / s`, and `pixels r` stays below 2^32.
+const fn view_limit(pixels: u32) -> i32 {
+    let scale = crate::KNIGHT_SCALE as u32;
+    ((pixels * ((1 << 28) / scale)) + pixels * ((1 << 28) % scale) / scale) as i32
+}
 /// CameraTarget's serialized `xLookAhead` 1, `dashLookAhead` 1.5 and
 /// `snapDistance` 0.15, and the look-ahead's `deltaTime * 6` per frame.
 const LOOK_AHEAD: i32 = ONE;
@@ -331,7 +337,7 @@ fn publish(p: (i32, i32)) {
 }
 /// Q16 product, rounded to nearest so a spring's tail does not creep.
 fn mul(a: i32, b: i32) -> i32 {
-    ((a as i64 * b as i64 + 0x8000) >> 16) as i32
+    psx_math::Wide::mul(a, b).plus(0x8000).shr_i32(16)
 }
 /// Vector3.SmoothDamp on one axis with an infinite maxSpeed and the 1/60 s
 /// tick: omega = 2 / smoothTime, x = omega * dt, exp the cubic Pade of e^-x.
@@ -350,7 +356,7 @@ fn smooth_damp(current: i32, target: i32, velocity: &mut i32, smooth: i32) -> i3
     let temp = *velocity + mul(x, change);
     *velocity = mul(*velocity - mul(x, temp), exp);
     let output = target + mul(change + temp, exp);
-    if (target - current) as i64 * (output - target) as i64 > 0 {
+    if psx_math::Wide::mul(target - current, output - target).is_positive() {
         *velocity = 0;
         return target;
     }

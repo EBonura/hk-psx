@@ -16,6 +16,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
 import rustsrc
+from hk_externs import externs
 
 # CameraShake on _GameCameras/CameraParent, the FSM every SendEventByName
 # "<name>Shake" in the game reaches.
@@ -39,7 +40,7 @@ class CameraShakeTests(unittest.TestCase):
             binary = Path(tmp) / 'test'
             source = ROOT / 'tests/camera_shake_runtime.rs'
             compiled = subprocess.run(['rustc', '--edition=2021', '-Awarnings', '--test',
-                                       str(source), '-o', str(binary)],
+                                       str(source), '-o', str(binary), *externs()],
                                       env=dict(os.environ), capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
             result = subprocess.run([str(binary)], capture_output=True, text=True)

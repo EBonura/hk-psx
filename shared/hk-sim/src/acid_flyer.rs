@@ -80,20 +80,21 @@ pub fn ease_in_out_sine(p: i32) -> i32 {
     } else {
         QUARTER[i] + (((QUARTER[i + 1] - QUARTER[i]) * frac) >> 16)
     };
-    ((s as u64 * s as u64) >> 16) as i32
+    psx_math::WideU::mul(s, s).shr_u32(16) as i32
 }
 /// iTween's speed mode: the move takes |amount| / speed seconds.
 fn half_ticks(amount: i32, speed: i32) -> u16 {
     assert!(speed > 0, "Acid Flyer speed must be positive");
     let ticks = psx_math::WideU::mul(amount.unsigned_abs(), 60) + psx_math::WideU::of(speed as u32 / 2);
-    crate::exact::div_rem_u32(ticks, speed as u32)
+    ticks
+        .div_rem_u32(speed as u32)
         .0
         .saturate_u32()
         .clamp(1, u16::MAX as u32) as u16
 }
 fn eased(amount: i32, tick: u16, ticks: u16) -> i32 {
-    let p = (tick.min(ticks) as i64 * ONE as i64 / ticks as i64) as i32;
-    ((amount as i64 * ease_in_out_sine(p) as i64) >> 16) as i32
+    let p = psx_math::int32::mul_div_i32(tick.min(ticks) as i32, ONE, ticks as i32);
+    psx_math::int32::mul_shr_i32(amount, ease_in_out_sine(p), 16)
 }
 impl AcidFlyer {
     /// `amount` is the placement's `Move Vector` y and `speed` its `Speed`,

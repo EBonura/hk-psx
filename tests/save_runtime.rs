@@ -75,7 +75,8 @@ fn record() -> Save {
         scene: 3, seat: [-65536, 720896], facing: -1, region: 7, geo: 41, door_hits: 13,
         shade: shade::Record { present: true, scene: 2, position: [-131072, 65536], hp: 10, geo_pool: 77 },
         sequence: 9,
-        charms_owned: 0x1234_5678_9abc_def0, charms_equipped: 0x0f0f_0f0f_0f0f_0f0f,
+        charms_owned: psx_math::Mask64::from_words(0x9abc_def0, 0x1234_5678),
+        charms_equipped: psx_math::Mask64::from_words(0x0f0f_0f0f, 0x0f0f_0f0f),
         charm_notches: 7, can_overcharm: true,
         npc_conversations: 0xdead_beef,
         script_fields: core::array::from_fn(|i| (i as i32 + 1) * -3),
@@ -255,8 +256,8 @@ fn no_two_fields_share_an_offset() {
     mutate.push(("geo", Box::new(|s: &mut Save| s.geo ^= 0x5555_5555)));
     mutate.push(("door_hits", Box::new(|s: &mut Save| s.door_hits ^= 0x55)));
     mutate.push(("sequence", Box::new(|s: &mut Save| s.sequence ^= 0x5555_5555)));
-    mutate.push(("charms_owned", Box::new(|s: &mut Save| s.charms_owned ^= 0x5555_5555_5555_5555)));
-    mutate.push(("charms_equipped", Box::new(|s: &mut Save| s.charms_equipped ^= 0x5555_5555_5555_5555)));
+    mutate.push(("charms_owned", Box::new(|s: &mut Save| s.charms_owned = psx_math::Mask64::from_words(s.charms_owned.low() ^ 0x5555_5555, s.charms_owned.high() ^ 0x5555_5555))));
+    mutate.push(("charms_equipped", Box::new(|s: &mut Save| s.charms_equipped = psx_math::Mask64::from_words(s.charms_equipped.low() ^ 0x5555_5555, s.charms_equipped.high() ^ 0x5555_5555))));
     mutate.push(("charm_notches", Box::new(|s: &mut Save| s.charm_notches ^= 0x55)));
     mutate.push(("npc_conversations", Box::new(|s: &mut Save| s.npc_conversations ^= 0x5555_5555)));
     mutate.push(("script_field_fnv", Box::new(|s: &mut Save| s.script_field_fnv ^= 0x5555_5555)));

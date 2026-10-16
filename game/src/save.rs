@@ -127,8 +127,8 @@ pub struct Save {
     /// `overcharmed` are not stored because the source derives both, in
     /// `CalculateNotchesUsed` and `RefreshOvercharm`, and a stored copy could
     /// only ever contradict the set it was derived from.
-    pub charms_owned: u64,
-    pub charms_equipped: u64,
+    pub charms_owned: psx_math::Mask64,
+    pub charms_equipped: psx_math::Mask64,
     pub charm_notches: u8,
     pub can_overcharm: bool,
     /// How far along its cooked conversation chain each talkable NPC has got,
@@ -194,8 +194,10 @@ impl Save {
         out[40..44].copy_from_slice(&self.shade.position[0].to_le_bytes());
         out[44..48].copy_from_slice(&self.shade.position[1].to_le_bytes());
         out[48..52].copy_from_slice(&self.sequence.to_le_bytes());
-        out[52..60].copy_from_slice(&self.charms_owned.to_le_bytes());
-        out[60..68].copy_from_slice(&self.charms_equipped.to_le_bytes());
+        out[52..56].copy_from_slice(&self.charms_owned.low().to_le_bytes());
+        out[56..60].copy_from_slice(&self.charms_owned.high().to_le_bytes());
+        out[60..64].copy_from_slice(&self.charms_equipped.low().to_le_bytes());
+        out[64..68].copy_from_slice(&self.charms_equipped.high().to_le_bytes());
         out[68] = self.charm_notches;
         out[69] = u8::from(self.can_overcharm);
         out[70..74].copy_from_slice(&self.npc_conversations.to_le_bytes());
@@ -238,7 +240,12 @@ impl Save {
             return None;
         }
         let word = |at: usize| i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
-        let long = |at: usize| u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
+        let mask = |at: usize| {
+            psx_math::Mask64::from_words(
+                u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()),
+                u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()),
+            )
+        };
         let items: &[u8] = if version == 5 {
             &bytes[ITEMS_AT..len - 4]
         } else {
@@ -270,8 +277,8 @@ impl Save {
                     position: [word(40), word(44)],
                 },
                 sequence: word(48) as u32,
-                charms_owned: long(52),
-                charms_equipped: long(60),
+                charms_owned: mask(52),
+                charms_equipped: mask(60),
                 charm_notches: bytes[68],
                 can_overcharm: bytes[69] != 0,
                 npc_conversations: u32::from_le_bytes(bytes[70..74].try_into().unwrap()),

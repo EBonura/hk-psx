@@ -5,6 +5,7 @@
 //! the shared 64x64 animation slots under keys above `SCENE_TEXTURE_CAPACITY`.
 //! Only its CLUTs are resident. Behaviour is hk_sim::shade; see docs/SHADE.md.
 use hk_sim::shade::{Action, Clip as Pose, Phase, Senses, Shade};
+use psx_math::Wide;
 use hk_sim::{Params, Player, ONE};
 
 #[derive(Clone, Copy)]
@@ -202,10 +203,9 @@ impl World {
             return events;
         };
         live.age = live.age.saturating_add(1);
-        let dx = (live.position[0].clamp(hero_body[0], hero_body[2]) - live.position[0]) as i64;
-        let dy = (live.position[1].clamp(hero_body[1], hero_body[3]) - live.position[1]) as i64;
-        let radius = ALERT_RADIUS as i64;
-        let in_range = dx * dx + dy * dy <= radius * radius;
+        let dx = live.position[0].clamp(hero_body[0], hero_body[2]) - live.position[0];
+        let dy = live.position[1].clamp(hero_body[1], hero_body[3]) - live.position[1];
+        let in_range = hk_sim::fixed::within(dx, dy, ALERT_RADIUS as i32);
         let can_see_hero = in_range && !segment_hits_terrain(live.position, hero, count, &edge);
         let senses = Senses {
             position: live.position,
@@ -312,7 +312,7 @@ impl World {
     fn frame_index(&self) -> Option<usize> {
         let live = self.live.as_ref()?;
         let clip = SHADE_CLIPS[live.clip];
-        let frame = (u64::from(live.age) * u64::from(clip.fps) / 60) as usize;
+        let frame = hk_sim::fixed::mul_div_floor(u32::from(live.age), u32::from(clip.fps), 60) as usize;
         Some(
             clip.start
                 + if clip.wrap == 0 {
@@ -369,21 +369,21 @@ fn segment_hits_terrain(
     count: usize,
     edge: &impl Fn(usize) -> [i32; 4],
 ) -> bool {
-    let (ox, oy) = (a[0] as i64, a[1] as i64);
-    let (rx, ry) = (b[0] as i64 - ox, b[1] as i64 - oy);
+    let (ox, oy) = (a[0], a[1]);
+    let (rx, ry) = (b[0] - ox, b[1] - oy);
     for i in 0..count {
         let e = edge(i);
-        let (x0, y0, x1, y1) = (e[0] as i64, e[1] as i64, e[2] as i64, e[3] as i64);
+        let (x0, y0, x1, y1) = (e[0], e[1], e[2], e[3]);
         let (sx, sy) = (x1 - x0, y1 - y0);
-        let denominator = rx * sy - ry * sx;
-        if denominator == 0 {
+        let denominator = Wide::mul(rx, sy).mul_sub(ry, sx);
+        if denominator.is_zero() {
             continue;
         }
-        let t = (x0 - ox) * sy - (y0 - oy) * sx;
-        let u = (x0 - ox) * ry - (y0 - oy) * rx;
-        let (t, u) = if denominator < 0 { (-t, -u) } else { (t, u) };
+        let t = Wide::mul(x0 - ox, sy).mul_sub(y0 - oy, sx);
+        let u = Wide::mul(x0 - ox, ry).mul_sub(y0 - oy, rx);
+        let (t, u) = if denominator.is_negative() { (-t, -u) } else { (t, u) };
         let denominator = denominator.abs();
-        if (0..=denominator).contains(&t) && (0..=denominator).contains(&u) {
+        if !t.is_negative() && t <= denominator && !u.is_negative() && u <= denominator {
             return true;
         }
     }
@@ -445,10 +445,8 @@ mod presentation {
                 let x = live.position[0] + x * live.facing;
                 let y = live.position[1] + y;
                 (
-                    160 + (((i64::from(x) - i64::from(camera.0)) * i64::from(crate::KNIGHT_SCALE))
-                        >> 28) as i32,
-                    120 - (((i64::from(y) - i64::from(camera.1)) * i64::from(crate::KNIGHT_SCALE))
-                        >> 28) as i32,
+                    160 + hk_sim::fixed::project(x, camera.0, crate::KNIGHT_SCALE as i32, 28),
+                    120 - hk_sim::fixed::project(y, camera.1, crate::KNIGHT_SCALE as i32, 28),
                 )
             });
             if vertices.iter().all(|p| p.0 < 0)

@@ -109,7 +109,7 @@ pub fn reset() {
 
 fn frame(clip: usize, age: u32, looping: bool) -> usize {
     let c = ABILITY_CLIPS[clip];
-    let f = (u64::from(age) * u64::from(c.fps) / 60) as usize;
+    let f = hk_sim::fixed::mul_div_floor(u32::from(age), u32::from(c.fps), 60) as usize;
     let f = if looping && f >= c.count {
         FOCUS_EFFECT_LOOP_START
             + (f - FOCUS_EFFECT_LOOP_START) % (c.count - FOCUS_EFFECT_LOOP_START)

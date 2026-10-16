@@ -429,8 +429,8 @@ fn panel(pages: &[&'static [&'static str]], page: usize) {
 }
 /// The source prompt marker's label, over the marker's own world point.
 fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &str) {
-    let x = 160 + ((((p[0] - camera.0) >> 8) as i64 * crate::KNIGHT_SCALE as i64) >> 20) as i32;
-    let y = 120 - ((((p[1] - camera.1) >> 8) as i64 * crate::KNIGHT_SCALE as i64) >> 20) as i32;
+    let x = 160 + psx_math::int32::mul_shr_i32((p[0] - camera.0) >> 8, crate::KNIGHT_SCALE as i32, 20);
+    let y = 120 - psx_math::int32::mul_shr_i32((p[1] - camera.1) >> 8, crate::KNIGHT_SCALE as i32, 20);
     let w = width(label);
     let x = (x - w as i32 / 2).clamp(4, 316 - w as i32) as i16;
     let y = y.clamp(32, 220) as i16;

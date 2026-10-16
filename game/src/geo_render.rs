@@ -1,5 +1,6 @@
 //! Geo art is uploaded once into proven VRAM gaps, outside the scene cache.
 use crate::{geo, render, world};
+use psx_math::Wide;
 use psx_gpu::{
     material::{BlendMode, TextureMaterial},
     prim::QuadTextured,
@@ -58,10 +59,8 @@ pub fn apply(geo: &geo::World, state: &mut world::State, region: usize, view: us
 fn draw_art(index: usize, world: [[i32; 2]; 4], camera: (i32, i32)) -> bool {
     let vertices = world.map(|[x, y]| {
         (
-            160 + (((i64::from(x) - i64::from(camera.0)) * i64::from(crate::KNIGHT_SCALE)) >> 28)
-                as i32,
-            120 - (((i64::from(y) - i64::from(camera.1)) * i64::from(crate::KNIGHT_SCALE)) >> 28)
-                as i32,
+            160 + hk_sim::fixed::project(x, camera.0, crate::KNIGHT_SCALE as i32, 28),
+            120 - hk_sim::fixed::project(y, camera.1, crate::KNIGHT_SCALE as i32, 28),
         )
     });
     if vertices.iter().all(|p| p.0 < 0)
@@ -96,8 +95,11 @@ pub fn hud_coin(x: i16, y: i16) -> u32 {
     let b = art.bounds;
     // One and a half times its world size, and at twice the texel's colour: a
     // coin in the world is 9 pixels and dim, and the HUD's has to read.
-    let w = ((i64::from(b[2]) - i64::from(b[0])) * i64::from(crate::KNIGHT_SCALE) * 3 >> 29) as i16;
-    let h = ((i64::from(b[3]) - i64::from(b[1])) * i64::from(crate::KNIGHT_SCALE) * 3 >> 29) as i16;
+    let size = |hi: i32, lo: i32| {
+        Wide::of(hi).sub_w(Wide::of(lo)).times(crate::KNIGHT_SCALE as i32 * 3).shr_i32(29) as i16
+    };
+    let w = size(b[2], b[0]);
+    let h = size(b[3], b[1]);
     let right = (u16::from(art.u) + u16::from(art.w) - 1) as u8;
     let bottom = (u16::from(art.v) + u16::from(art.h) - 1) as u8;
     let uv = [
@@ -144,7 +146,7 @@ pub fn draw(geo: &geo::World, region: usize, camera: (i32, i32)) -> u32 {
         let clip = geo::GEO_COIN_CLIPS[coin.denomination as usize][usize::from(!coin.landed)];
         let index = clip.start as usize
             // age * fps / 60 stays below 2^32 for any fps up to 60.
-            + (hk_sim::exact::mul_div_u32(coin.age, u32::from(clip.fps), 60) % u32::from(clip.count)) as usize;
+            + (hk_sim::fixed::mul_div_floor(coin.age, u32::from(clip.fps), 60) % u32::from(clip.count)) as usize;
         let b = geo::GEO_ART[index].bounds;
         let world = [
             [b[0] + coin.x, b[3] + coin.y],

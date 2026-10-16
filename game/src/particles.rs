@@ -328,7 +328,7 @@ impl Pool {
             p.velocity[1] += p.force / 60;
             // isqrt(L) > ONE exactly when L >= (ONE+1)^2: below that the root
             // is never needed.
-            if length_squared(p.velocity) >= (ONE as u64 + 1) * (ONE as u64 + 1) {
+            if length_squared(p.velocity) >= psx_math::WideU::mul(ONE as u32 + 1, ONE as u32 + 1) {
                 let speed = length3(p.velocity);
                 if speed > ONE {
                     // Source LimitVelocity.dampen is a fractional reduction above speed1;
@@ -410,8 +410,8 @@ impl Pool {
                 let x = p.position[0] + v[0] - camera.0;
                 let y = p.position[1] + v[1] - camera.1;
                 *dst = (
-                    (160 + (((x as i64 >> 8) * scale as i64) >> 20)) as i16,
-                    (120 - (((y as i64 >> 8) * scale as i64) >> 20)) as i16,
+                    (160 + psx_math::int32::mul_shr_i32(x >> 8, scale as i32, 20)) as i16,
+                    (120 - psx_math::int32::mul_shr_i32(y >> 8, scale as i32, 20)) as i16,
                 );
             }
             if verts.iter().all(|v| v.0 < 0)
@@ -438,7 +438,7 @@ fn random(seed: &mut u32) -> u32 {
     *seed
 }
 fn range(seed: &mut u32, b: [i32; 2]) -> i32 {
-    b[0] + ((random(seed) as u64 * (b[1] as i64 - b[0] as i64 + 1) as u64) >> 32) as i32
+    b[0] + psx_math::WideU::mul(random(seed), (b[1] - b[0] + 1) as u32).high() as i32
 }
 fn mulq(a: i32, b: i32) -> i32 {
     psx_math::int32::mul_shr_trunc_i32(a, b, 16)
@@ -449,14 +449,14 @@ fn divq(a: i32, b: i32) -> i32 {
 fn dot3(a: [i32; 3], b: [i32; 3]) -> i32 {
     mulq(a[0], b[0]) + mulq(a[1], b[1]) + mulq(a[2], b[2])
 }
-fn length_squared(v: [i32; 3]) -> u64 {
-    v.iter().map(|x| *x as i64 * *x as i64).sum::<i64>() as u64
+fn length_squared(v: [i32; 3]) -> psx_math::WideU {
+    v.iter().fold(psx_math::WideU::ZERO, |sum, x| sum.mul_add(x.unsigned_abs(), x.unsigned_abs()))
 }
 /// Exact floor length. Outlined once: legacy and break particles share this
 /// hot path, and psx-math's root inlines about 1 KB of unrolled code.
 #[inline(never)]
 fn length3(v: [i32; 3]) -> i32 {
-    psx_math::int32::isqrt_u64(length_squared(v)) as i32
+    length_squared(v).isqrt() as i32
 }
 
 #[cfg(test)]

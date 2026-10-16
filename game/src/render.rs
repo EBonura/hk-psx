@@ -634,15 +634,12 @@ fn derive_draw(d: &Draw) -> u16 {
         if flags & (FRONT | SOLID_BLACK) == SOLID_BLACK && !axis {
             // Optimization admission only: smaller/unproven geometry still
             // renders normally. Full opacity remains a live per-frame test.
-            let w = (*xy.iter().step_by(2).max().unwrap() as i64
-                - *xy.iter().step_by(2).min().unwrap() as i64
-                + 255)
-                >> 8;
-            let h = (*xy.iter().skip(1).step_by(2).max().unwrap() as i64
-                - *xy.iter().skip(1).step_by(2).min().unwrap() as i64
-                + 255)
-                >> 8;
-            if w.min(320) * h.min(240) >= 8192 {
+            let extent = |max: i32, min: i32, limit: i32| {
+                psx_math::Wide::of(max).sub_w(psx_math::Wide::of(min)).plus(255).sar(8).min(psx_math::Wide::of(limit)).low()
+            };
+            let w = extent(*xy.iter().step_by(2).max().unwrap(), *xy.iter().step_by(2).min().unwrap(), 320);
+            let h = extent(*xy.iter().skip(1).step_by(2).max().unwrap(), *xy.iter().skip(1).step_by(2).min().unwrap(), 240);
+            if w * h >= 8192 {
                 info |= SOLID_CORE_CANDIDATE;
             }
         }
@@ -725,8 +722,8 @@ fn collect_occluders(camera: (i32, i32)) {
             if !solid && core[2] == 0 {
                 continue;
             }
-            let cx = (((camera.0 >> 8) as i64 * d.scale as i64) >> 12) as i32;
-            let cy = (((camera.1 >> 8) as i64 * d.scale as i64) >> 12) as i32;
+            let cx = psx_math::int32::mul_shr_i32(camera.0 >> 8, d.scale as i32, 12);
+            let cy = psx_math::int32::mul_shr_i32(camera.1 >> 8, d.scale as i32, 12);
             let v: [(i32, i32); 4] = core::array::from_fn(|k| {
                 (
                     160 + ((d.xy[k * 2] - cx) >> 8),
@@ -821,8 +818,8 @@ fn collect_solid_core(camera: (i32, i32), occluders: &mut Occluders) {
             if DRAW_FLAGS[i] & DRAW_ENABLED == 0 || OPACITIES[i] != 128 {
                 continue;
             }
-            let cx = (((camera.0 >> 8) as i64 * d.scale as i64) >> 12) as i32;
-            let cy = (((camera.1 >> 8) as i64 * d.scale as i64) >> 12) as i32;
+            let cx = psx_math::int32::mul_shr_i32(camera.0 >> 8, d.scale as i32, 12);
+            let cy = psx_math::int32::mul_shr_i32(camera.1 >> 8, d.scale as i32, 12);
             let v = core::array::from_fn::<_, 4, _>(|k| {
                 (
                     160 + ((d.xy[k * 2] - cx) >> 8),
@@ -886,8 +883,8 @@ fn collect_tile_coverage(camera: (i32, i32), coverage: CoverageView<'_>) {
             if DRAW_FLAGS[i] & DRAW_ENABLED == 0 || OPACITIES[i] != 128 {
                 continue;
             }
-            let cx = (((camera.0 >> 8) as i64 * d.scale as i64) >> 12) as i32;
-            let cy = (((camera.1 >> 8) as i64 * d.scale as i64) >> 12) as i32;
+            let cx = psx_math::int32::mul_shr_i32(camera.0 >> 8, d.scale as i32, 12);
+            let cy = psx_math::int32::mul_shr_i32(camera.1 >> 8, d.scale as i32, 12);
             let origin = (160 + ((d.xy[0] - cx) >> 8), 120 - ((d.xy[1] - cy) >> 8));
             if !tile_coverage::intersects(certs, cert, origin) {
                 continue;
@@ -920,8 +917,8 @@ fn collect_tile_coverage(camera: (i32, i32), coverage: CoverageView<'_>) {
         for group in &TILE_GROUPS[..TILE_GROUP_COUNT] {
             crate::input::checkpoint();
             let first = draw_record(group.members[0] as usize);
-            let cx = (((camera.0 >> 8) as i64 * first.scale as i64) >> 12) as i32;
-            let cy = (((camera.1 >> 8) as i64 * first.scale as i64) >> 12) as i32;
+            let cx = psx_math::int32::mul_shr_i32(camera.0 >> 8, first.scale as i32, 12);
+            let cy = psx_math::int32::mul_shr_i32(camera.1 >> 8, first.scale as i32, 12);
             let origin = (
                 160 + ((first.xy[0] - cx) >> 8),
                 120 - ((first.xy[1] - cy) >> 8),
@@ -1566,8 +1563,8 @@ pub fn set_vignette(centre: Option<(i32, i32)>, camera: (i32, i32)) {
                 )
             } else {
                 (
-                    (((camera.0 >> 8) as i64 * d.scale as i64) >> 12) as i32,
-                    (((camera.1 >> 8) as i64 * d.scale as i64) >> 12) as i32,
+                    psx_math::int32::mul_shr_i32(camera.0 >> 8, d.scale as i32, 12),
+                    psx_math::int32::mul_shr_i32(camera.1 >> 8, d.scale as i32, 12),
                 )
             };
             let b = scenery_bounds::project_unclipped(&d.xy, DRAW_BOUNDS[i], cx, cy);
@@ -1624,7 +1621,7 @@ pub fn draw_scenery_offset(draw: usize, offset: [i32; 2], camera: (i32, i32)) ->
             return 0;
         }
         let d = draw_record(draw);
-        let shift = |v: i32| (((v >> 8) as i64 * d.scale as i64) >> 12) as i32;
+        let shift = |v: i32| psx_math::int32::mul_shr_i32(v >> 8, d.scale as i32, 12);
         let (dx, dy) = (shift(offset[0]), shift(offset[1]));
         let xy: [i32; 8] = core::array::from_fn(|k| d.xy[k] + if k % 2 == 0 { dx } else { dy });
         draw_scenery_xy(draw, xy, camera)
@@ -1637,9 +1634,9 @@ pub fn draw_scenery_quad(draw: usize, quad: [[i32; 2]; 4], camera: (i32, i32)) -
         if draw >= DRAW_COUNT {
             return 0;
         }
-        let scale = draw_record(draw).scale as i64;
+        let scale = draw_record(draw).scale as i32;
         let xy: [i32; 8] =
-            core::array::from_fn(|k| (((quad[k / 2][k % 2] >> 8) as i64 * scale) >> 12) as i32);
+            core::array::from_fn(|k| psx_math::int32::mul_shr_i32(quad[k / 2][k % 2] >> 8, scale, 12));
         draw_scenery_xy(draw, xy, camera)
     }
 }
@@ -1655,8 +1652,8 @@ fn draw_scenery_xy(draw: usize, xy: [i32; 8], camera: (i32, i32)) -> u32 {
         {
             return 0;
         }
-        let cx = (((camera.0 >> 8) as i64 * d.scale as i64) >> 12) as i32;
-        let cy = (((camera.1 >> 8) as i64 * d.scale as i64) >> 12) as i32;
+        let cx = psx_math::int32::mul_shr_i32(camera.0 >> 8, d.scale as i32, 12);
+        let cy = psx_math::int32::mul_shr_i32(camera.1 >> 8, d.scale as i32, 12);
         let v: [(i32, i32); 4] = core::array::from_fn(|k| {
             (
                 160 + ((xy[k * 2] - cx) >> 8),
@@ -2039,8 +2036,8 @@ fn scenery_range(camera: (i32, i32), front: bool, start: usize, prebuilding: boo
             let d = draw_record(i);
             // Distant parallax layers can overflow the pre-shift i32 product.
             // The cooker proves the shifted values/subtractions fit i32.
-            let cx = (((camera.0 >> 8) as i64 * d.scale as i64) >> 12) as i32;
-            let cy = (((camera.1 >> 8) as i64 * d.scale as i64) >> 12) as i32;
+            let cx = psx_math::int32::mul_shr_i32(camera.0 >> 8, d.scale as i32, 12);
+            let cy = psx_math::int32::mul_shr_i32(camera.1 >> 8, d.scale as i32, 12);
             let Some(bbox) = scenery_bounds::project_clipped(&d.xy, DRAW_BOUNDS[i], cx, cy) else {
                 continue;
             };

@@ -212,23 +212,22 @@ impl Shade {
         }
         clamp(&mut v, CHASE_SPEED_MAX);
         // ClampMagnitude(hero - self, 1) * accelerationForce, then a magnitude clamp.
-        let dx = (senses.hero[0] as i64 - senses.position[0] as i64) >> 8;
-        let dy = (senses.hero[1] as i64 - senses.position[1] as i64) >> 8;
-        let length = isqrt(dx * dx + dy * dy);
+        let dx = crate::fixed::diff8(senses.hero[0], senses.position[0]);
+        let dy = crate::fixed::diff8(senses.hero[1], senses.position[1]);
+        let length = crate::fixed::hypot(dx, dy);
         if length > 0 {
             // dx and dy are i32 differences shifted by 8, so they and length fit i32.
-            v[0] += psx_math::int32::mul_div_i32(dx as i32, CHASE_FORCE, length as i32);
-            v[1] += psx_math::int32::mul_div_i32(dy as i32, CHASE_FORCE, length as i32);
+            v[0] += psx_math::int32::mul_div_i32(dx, CHASE_FORCE, length as i32);
+            v[1] += psx_math::int32::mul_div_i32(dy, CHASE_FORCE, length as i32);
         }
         clamp_magnitude(&mut v, CHASE_SPEED_MAX);
         self.velocity = v;
     }
     /// Distance from the spawn beyond Max Roam sends RETREAT from Fly/Position.
     fn roamed(&self, senses: Senses) -> bool {
-        let dx = (senses.position[0] as i64 - self.start[0] as i64) >> 8;
-        let dy = (senses.position[1] as i64 - self.start[1] as i64) >> 8;
-        let limit = (MAX_ROAM >> 8) as i64;
-        dx * dx + dy * dy > limit * limit
+        let dx = crate::fixed::diff8(senses.position[0], self.start[0]);
+        let dy = crate::fixed::diff8(senses.position[1], self.start[1]);
+        crate::fixed::sum_sq(dx, dy) > crate::fixed::square(MAX_ROAM >> 8)
     }
     fn begin_retreat(&mut self, senses: Senses, out: &mut Actions) {
         self.phase = Phase::RetreatStart;
@@ -297,10 +296,9 @@ impl Shade {
                     self.begin_retreat(senses, &mut out);
                     return out;
                 }
-                let dx = (senses.hero[0] as i64 - senses.position[0] as i64) >> 8;
-                let dy = (senses.hero[1] as i64 - senses.position[1] as i64) >> 8;
-                let range = (SLASH_RANGE >> 8) as i64;
-                let in_range = dx * dx + dy * dy < range * range;
+                let dx = crate::fixed::diff8(senses.hero[0], senses.position[0]);
+                let dy = crate::fixed::diff8(senses.hero[1], senses.position[1]);
+                let in_range = crate::fixed::sum_sq(dx, dy) < crate::fixed::square(SLASH_RANGE >> 8);
                 let same_y = (senses.hero[1] - senses.position[1]).abs() <= SAME_Y_TOLERANCE;
                 if in_range && same_y {
                     self.phase = Phase::SlashAntic;
@@ -366,7 +364,7 @@ impl Shade {
                 if fixed {
                     // Decelerate .85 retained per fixed step.
                     for axis in self.velocity.iter_mut() {
-                        *axis = ((*axis as i64 * DECELERATION as i64) >> 16) as i32;
+                        *axis = psx_math::int32::mul_shr_i32(*axis, DECELERATION, 16);
                     }
                     out.push(Action::Velocity(self.velocity));
                 }
@@ -427,29 +425,20 @@ impl Shade {
         out
     }
 }
-/// Floor square root using the shared SDK restoring algorithm.
-fn isqrt(n: i64) -> i64 {
-    if n <= 0 {
-        0
-    } else {
-        psx_math::int32::isqrt_u64(n as u64) as i64
-    }
-}
 /// Vector2.ClampMagnitude: scale down only when longer than `max`.
 fn clamp_magnitude(v: &mut [i32; 2], max: i32) {
-    let x = (v[0] >> 8) as i64;
-    let y = (v[1] >> 8) as i64;
-    let limit = (max >> 8) as i64;
-    let square = x * x + y * y;
-    if square <= limit * limit {
+    let (x, y) = (v[0] >> 8, v[1] >> 8);
+    let limit = max >> 8;
+    let square = crate::fixed::sum_sq(x, y);
+    if square <= crate::fixed::square(limit) {
         return;
     }
     // The truncated >>8 magnitude underestimates, so bias the divisor up by one
     // to keep the scaled result at or under `max` when it is measured again.
-    let length = isqrt(square).max(1) + 1;
+    let length = square.isqrt().max(1) + 1;
     // limit and length come from i32 values shifted by 8, so both fit i32.
-    v[0] = psx_math::int32::mul_div_i32(v[0], limit as i32, length as i32);
-    v[1] = psx_math::int32::mul_div_i32(v[1], limit as i32, length as i32);
+    v[0] = psx_math::int32::mul_div_i32(v[0], limit, length as i32);
+    v[1] = psx_math::int32::mul_div_i32(v[1], limit, length as i32);
 }
 
 #[cfg(test)]
@@ -492,8 +481,8 @@ mod tests {
         while s.phase() == Phase::Fly {
             s.tick(senses(START, [10 * ONE, 0], true));
             let v = s.velocity();
-            let speed = isqrt(((v[0] >> 8) as i64).pow(2) + ((v[1] >> 8) as i64).pow(2));
-            assert!(speed <= (CHASE_SPEED_MAX >> 8) as i64, "speed {speed}");
+            let speed = crate::fixed::hypot(v[0] >> 8, v[1] >> 8);
+            assert!(speed <= (CHASE_SPEED_MAX >> 8) as u32, "speed {speed}");
         }
         assert_eq!(s.phase(), Phase::Position);
         assert_eq!(s.facing(), 1);

@@ -576,24 +576,7 @@ impl HuskGuard {
 }
 /// `GetDistance` between the two transforms.
 fn distance(a: [i32; 2], b: [i32; 2]) -> i32 {
-    let (dx, dy) = ((a[0] - b[0]) as i64, (a[1] - b[1]) as i64);
-    let d2 = (dx * dx + dy * dy) as u64;
-    let mut r = 0u64;
-    let mut bit = 1u64 << 62;
-    let mut n = d2;
-    while bit > n {
-        bit >>= 2;
-    }
-    while bit != 0 {
-        if n >= r + bit {
-            n -= r + bit;
-            r = (r >> 1) + bit;
-        } else {
-            r >>= 1;
-        }
-        bit >>= 2;
-    }
-    r as i32
+    crate::fixed::hypot(a[0] - b[0], a[1] - b[1]) as i32
 }
 /// A box cooked in the art frame (front -x), for a body facing `facing`.
 pub fn facing_box(b: [i32; 4], facing: i32, position: [i32; 2]) -> [i32; 4] {

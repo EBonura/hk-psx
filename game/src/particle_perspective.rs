@@ -1,10 +1,14 @@
 //! Exact fixed-numerator particle perspective division for the R3000 divider.
+use psx_math::WideU;
 const DISTANCE: i32 = 2496922;
-const NUMERATOR: u64 = crate::KNIGHT_SCALE as u64 * DISTANCE as u64;
+const NUMERATOR: WideU = WideU::mul(crate::KNIGHT_SCALE as u32, DISTANCE as u32);
+/// The same value as a host integer, for the tests' reference divisions.
+#[cfg(test)]
+const NUMERATOR_REF: u64 = crate::KNIGHT_SCALE as u64 * DISTANCE as u64;
 const MIN_FAST: i32 = 1 << 21;
 // The quotient/correction bound is certified for this authored camera scale.
 const _: () = assert!(
-    crate::KNIGHT_SCALE == 60693 && NUMERATOR >> 6 <= u32::MAX as u64 && NUMERATOR >> 32 < MIN_DEPTH as u64
+    crate::KNIGHT_SCALE == 60693 && NUMERATOR.shr_by(6).high() == 0 && NUMERATOR.high() < MIN_DEPTH as u32
 );
 /// The nearest depth the caller lets through (it rejects depth <= ONE).
 const MIN_DEPTH: i32 = hk_sim::ONE + 1;
@@ -16,16 +20,16 @@ const MIN_DEPTH: i32 = hk_sim::ONE + 1;
 pub(super) fn scale(depth: i32) -> i32 {
     if depth >= MIN_FAST {
         let divisor = depth as u32;
-        let mut quotient = (NUMERATOR >> 6) as u32 / (divisor >> 6);
-        let mut product = quotient as u64 * divisor as u64;
+        let mut quotient = NUMERATOR.shr_u32(6) / (divisor >> 6);
+        let mut product = WideU::mul(quotient, divisor);
         // Keep the proven three corrections explicit: LLVM otherwise turns
         // the subtract loop back into a software64-bit ceiling division.
         if product > NUMERATOR {
             quotient -= 1;
-            product -= divisor as u64;
+            product = product.sub(WideU::of(divisor));
             if product > NUMERATOR {
                 quotient -= 1;
-                product -= divisor as u64;
+                product = product.sub(WideU::of(divisor));
                 if product > NUMERATOR {
                     quotient -= 1;
                 }
@@ -35,7 +39,7 @@ pub(super) fn scale(depth: i32) -> i32 {
     } else {
         // Callers reject depth <= ONE, so the divisor is positive and, with the
         // numerator's high word below MIN_DEPTH, the quotient fits one word.
-        hk_sim::exact::div_wide((NUMERATOR >> 32) as u32, NUMERATOR as u32, depth as u32) as i32
+        NUMERATOR.div_rem_u32(depth as u32).0.low() as i32
     }
 }
 #[cfg(test)]
@@ -45,7 +49,7 @@ pub(super) fn assert_vertices(position: [i32; 3], angle: i32, size: i32, camera:
         return;
     }
     let actual = scale(depth);
-    let expected = (NUMERATOR / depth as u64) as i32;
+    let expected = (NUMERATOR_REF / depth as u64) as i32;
     assert_eq!(actual, expected, "depth {depth}");
     for corner in [
         [-size / 2, size / 2],
@@ -78,7 +82,7 @@ mod tests {
     fn check(depth: i32) {
         assert_eq!(
             scale(depth),
-            (NUMERATOR as i64 / depth as i64) as i32,
+            (NUMERATOR_REF as i64 / depth as i64) as i32,
             "depth {depth}"
         );
     }
@@ -88,7 +92,7 @@ mod tests {
         for depth in hk_sim::ONE + 1..=DISTANCE + 8 * hk_sim::ONE {
             check(depth);
             if depth >= MIN_FAST {
-                let estimate = (NUMERATOR >> 6) as u32 / (depth as u32 >> 6);
+                let estimate = (NUMERATOR_REF >> 6) as u32 / (depth as u32 >> 6);
                 maximum_correction = maximum_correction.max(estimate - scale(depth) as u32);
             }
         }
@@ -96,8 +100,8 @@ mod tests {
     }
     #[test]
     fn every_fast_quotient_boundary_and_extreme_depth_is_exact() {
-        for quotient in 1..=NUMERATOR / MIN_FAST as u64 {
-            let boundary = NUMERATOR / quotient;
+        for quotient in 1..=NUMERATOR_REF / MIN_FAST as u64 {
+            let boundary = NUMERATOR_REF / quotient;
             for delta in [-1, 0, 1] {
                 let depth = boundary as i64 + delta;
                 if depth >= MIN_FAST as i64 && depth <= i32::MAX as i64 {

@@ -32,22 +32,25 @@ pub(crate) fn execute<E:Environment>(env:&mut E,p:&Program<'_>,a:Action,phase:Ph
             let low=read(p,operand(p,a,0)?,v)?;let high=read(p,operand(p,a,1)?,v)?;
             if high<low{return Err(Error::Parameter);}
             *rng=rng.wrapping_mul(1664525).wrapping_add(1013904223);
-            let value=low as i64+(((*rng>>8)as i64*(high as i64-low as i64))>>24);
-            write(p,operand(p,a,2)?,v,i32::try_from(value).map_err(|_|Error::Parameter)?)?;
+            let span=psx_math::Wide::of(high).sub_w(psx_math::Wide::of(low));
+            let value=psx_math::Wide::of(low).add_w(psx_math::Wide::of_u(*rng>>8).mul_w(span).sar(24));
+            write(p,operand(p,a,2)?,v,value.to_i32().ok_or(Error::Parameter)?)?;
         } else if op==GET_DISTANCE {
             let from=env.position(read(p,operand(p,a,0)?,v)?)?;
             let to=env.position(read(p,operand(p,a,1)?,v)?)?;
-            let mut squared=0u64;
+            let mut squared=psx_math::WideU::ZERO;
             for i in 0..3 {
-                let delta=(from[i]as i64-to[i]as i64).unsigned_abs();
-                squared=squared.checked_add(delta.checked_mul(delta).ok_or(Error::Parameter)?).ok_or(Error::Parameter)?;
+                let delta=from[i].abs_diff(to[i]);
+                let sum=squared.add(psx_math::WideU::mul(delta,delta));
+                if sum<squared{return Err(Error::Parameter);}
+                squared=sum;
             }
-            write(p,operand(p,a,2)?,v,i32::try_from(psx_math::int32::isqrt_u64(squared)).map_err(|_|Error::Parameter)?)?;
+            write(p,operand(p,a,2)?,v,i32::try_from(squared.isqrt()).map_err(|_|Error::Parameter)?)?;
         } else if op==FLOAT_COMPARE {
             let x=read(p,operand(p,a,0)?,v)?;let y=read(p,operand(p,a,1)?,v)?;
             let tolerance=read(p,operand(p,a,2)?,v)?;
             if tolerance<0{return Err(Error::Parameter);}
-            let choice=if (x as i64-y as i64).abs()<=tolerance as i64{3}else if x<y{4}else{5};
+            let choice=if psx_math::Wide::of(x).sub_w(psx_math::Wide::of(y)).abs()<=psx_math::Wide::of(tolerance){3}else if x<y{4}else{5};
             result.event=event(operand(p,a,choice)?)?;
         } else if op==FLOAT_SWITCH {
             if a.operand_count<3||a.operand_count%2!=1{return Err(Error::Parameter);}

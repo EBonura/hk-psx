@@ -40,8 +40,10 @@ impl Pool {
             return false;
         };
         // GrassCut uses the midpoint of the two collider bounds centers.
-        let x = ((body[0] as i64 + body[2] as i64 + nail[0] as i64 + nail[2] as i64) / 4) as i32;
-        let y = ((body[1] as i64 + body[3] as i64 + nail[1] as i64 + nail[3] as i64) / 4) as i32;
+        let mid = |a: usize, b: usize| {
+            psx_math::Wide::of(body[a]).plus(body[b]).plus(nail[a]).plus(nail[b]).div_pow2(2).low()
+        };
+        let (x, y) = (mid(0, 2), mid(1, 3));
         *slot = Some(Impact {
             scene: scene as u8,
             x,
@@ -114,8 +116,8 @@ impl Pool {
                 let x = effect.x - x * effect.sign as i32 - camera.0;
                 let y = effect.y + y - camera.1;
                 *v = (
-                    (160 + (((x as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
-                    (120 - (((y as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20)) as i16,
+                    (160 + psx_math::int32::mul_shr_i32(x >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
+                    (120 - psx_math::int32::mul_shr_i32(y >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
                 );
             }
             if verts.iter().all(|v| v.0 < 0)

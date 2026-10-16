@@ -367,7 +367,7 @@ pub fn shot_velocity(rng: &mut u32, speed: [i32; 2], angles: [i32; 2]) -> [i32; 
     fling(s, a)
 }
 fn scale(value: i32, factor: i32) -> i32 {
-    ((value as i64 * factor as i64) >> 16) as i32
+    psx_math::int32::mul_shr_i32(value, factor, 16)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

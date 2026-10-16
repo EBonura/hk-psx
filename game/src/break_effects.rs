@@ -2,6 +2,7 @@
 //! Fixed-step motion, sampled curves and radius/edge contacts approximate Unity.
 use super::{dot3, length3, mulq, range, Particle, Pool};
 use hk_sim::ONE;
+use psx_math::{Wide, WideU};
 #[derive(Clone, Copy)]
 pub struct Sample {
     pub size: [i32; 2],
@@ -514,12 +515,13 @@ fn lerp(pair: [i32; 2], seed: u8) -> i32 {
         let q = (n.unsigned_abs() / 255) as i32;
         return pair[0] + if n < 0 { -q } else { q };
     }
-    let n = (pair[1] as i64 - pair[0] as i64) * seed as i64;
-    let m = n.unsigned_abs();
-    let a = (m >> 16) as u32;
-    let b = (m & 0xffff) as u32;
-    let q = a as u64 * 257 + ((a + b) / 255) as u64;
-    pair[0] + (if n < 0 { q.wrapping_neg() } else { q }) as i32
+    let n = Wide::of(pair[1]).sub_w(Wide::of(pair[0])).times(seed as i32);
+    let magnitude = n.abs();
+    let m = WideU::from_parts(magnitude.high() as u32, magnitude.low_u32());
+    let a = m.shr_u32(16);
+    let b = m.low() & 0xffff;
+    let q = WideU::mul(a, 257).add(WideU::of((a + b) / 255)).low();
+    pair[0] + (if n.is_negative() { q.wrapping_neg() } else { q }) as i32
 }
 /// Clamping before division preserves the source fraction exactly. The authored
 /// 3..12 speed interval needs at most150405120 in the numerator, so only future
@@ -531,10 +533,10 @@ fn speed_fraction(speed: i32, range: [i32; 2]) -> u8 {
     if speed >= range[1] {
         return 255;
     }
-    let delta = (speed as i64 - range[0] as i64) as u32;
-    let span = (range[1] as i64 - range[0] as i64) as u32;
+    let delta = speed.wrapping_sub(range[0]) as u32;
+    let span = range[1].wrapping_sub(range[0]) as u32;
     // delta < span here, so the quotient is below 256.
-    hk_sim::exact::mul_div_u32(delta, 255, span) as u8
+    WideU::mul(delta, 255).div_rem_u32(span).0.low() as u8
 }
 /// Preserve truncation toward zero; small components (notably source depth)
 /// use the R3000's32-bit divider without changing the general wide fallback.
@@ -545,12 +547,10 @@ pub(super) fn scale_velocity(v: i32, scale: i32, speed: i32) -> i32 {
             // Damping cannot increase magnitude, including i32::MIN. Thus the
             // unsigned quotient fits32 bits; signed restoration preserves the
             // old truncation toward zero without a software wide divider.
-            let numerator = v.unsigned_abs() as u64 * scale as u64;
-            let q = hk_sim::exact::div_wide(
-                (numerator >> 32) as u32,
-                numerator as u32,
-                speed as u32,
-            );
+            let q = WideU::mul(v.unsigned_abs(), scale as u32)
+                .div_rem_u32(speed as u32)
+                .0
+                .low();
             if v < 0 {
                 q.wrapping_neg() as i32
             } else {
@@ -712,7 +712,7 @@ fn spawn_specs_with_bases(
                 let unit = crate::world::debris::rotate([ONE, 0], a);
                 // Area-uniform circle sector; radius sampled through integer sqrt.
                 let radial = range(&mut rng, [0, ONE]);
-                let root = integer_sqrt(radial as u64 * ONE as u64) as i32;
+                let root = WideU::mul(radial as u32, ONE as u32).isqrt() as i32;
                 let p = [
                     mulq(mulq(unit[0], root), s.radius),
                     mulq(mulq(unit[1], root), s.radius),
@@ -770,7 +770,7 @@ fn spawn_specs_with_bases(
                 delay: {
                     // floor(((i + 1) * 60 * ONE - 1) / rate), capped at 255.
                     let ticks = psx_math::WideU::mul((i as u32 + 1) * 60, ONE as u32) - psx_math::WideU::of(1);
-                    hk_sim::exact::div_rem_u32(ticks, s.rate as u32).0.saturate_u32().min(255) as u8
+                    ticks.div_rem_u32(s.rate as u32).0.saturate_u32().min(255) as u8
                 },
                 cell: (super::random(&mut rng) % s.frames.len() as u32) as u8,
                 gradient,
@@ -786,9 +786,6 @@ fn spawn_specs_with_bases(
 }
 fn ordered(p: [i32; 2]) -> [i32; 2] {
     [p[0].min(p[1]), p[0].max(p[1])]
-}
-fn integer_sqrt(n: u64) -> u64 {
-    psx_math::int32::isqrt_u64(n) as u64
 }
 /// Non-empty edges are decoded once per tick into this bounded scratch; the
 /// callback returns 16 bytes through memory and a burst visits ~10k edges per
@@ -886,7 +883,7 @@ fn tick_specs_with_tracks(
         // exactly when L >= (limit+1)^2, so below it the square decides alone.
         let speed = if spin_by_speed
             || (s.limit >= 0
-                && super::length_squared(p.velocity) >= (s.limit as u64 + 1) * (s.limit as u64 + 1))
+                && super::length_squared(p.velocity) >= WideU::mul(s.limit as u32 + 1, s.limit as u32 + 1))
         {
             length3(p.velocity)
         } else {
@@ -992,7 +989,7 @@ fn tick_specs_with_tracks(
                     );
                     if (s.kill_speed > 0
                         && super::length_squared(p.velocity)
-                            < s.kill_speed as u64 * s.kill_speed as u64)
+                            < WideU::mul(s.kill_speed as u32, s.kill_speed as u32))
                         || p.age >= p.life.get()
                     {
                         *slot = None;
@@ -1103,16 +1100,16 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32)) -> boo
     }
     // Source-plane particles skip the 64-bit software division exactly.
     let scale = if p.position[2] == 0 {
-        crate::KNIGHT_SCALE as i64
+        crate::KNIGHT_SCALE as i32
     } else {
-        super::perspective::scale(depth) as i64
+        super::perspective::scale(depth)
     };
     let rotation = crate::world::debris::Rotation::new(p.angle);
     let vertices = [[-half, half], [half, half], [-half, -half], [half, -half]].map(|q| {
         let v = rotation.apply(q);
         (
-            160 + (((p.position[0] as i64 + v[0] as i64 - camera.0 as i64) * scale) >> 28) as i32,
-            120 - (((p.position[1] as i64 + v[1] as i64 - camera.1 as i64) * scale) >> 28) as i32,
+            160 + Wide::of(p.position[0]).plus(v[0]).sub_w(Wide::of(camera.0)).times(scale).shr_i32(28),
+            120 - Wide::of(p.position[1]).plus(v[1]).sub_w(Wide::of(camera.1)).times(scale).shr_i32(28),
         )
     });
     if vertices.iter().all(|p| p.0 < 0)

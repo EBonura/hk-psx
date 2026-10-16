@@ -25,7 +25,7 @@ fn previous(poly: &[[i32; 2]], bounds: [i32; 4]) -> bool {
         }
         if (a[1] > q[1]) != (b[1] > q[1]) {
             let side = cross(a, b, q);
-            if (b[1] > a[1] && side > 0) || (b[1] < a[1] && side < 0) {
+            if (b[1] > a[1] && side.is_positive()) || (b[1] < a[1] && side.is_negative()) {
                 inside = !inside;
             }
         }

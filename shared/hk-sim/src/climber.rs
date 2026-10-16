@@ -311,9 +311,9 @@ impl Climber {
         } else {
             self.previous_pos = position;
         }
-        let dx = corrected[0] as i64 - self.previous_turn_pos[0] as i64;
-        let dy = corrected[1] as i64 - self.previous_turn_pos[1] as i64;
-        if dx * dx + dy * dy < MIN_TURN_DISTANCE as i64 * MIN_TURN_DISTANCE as i64 {
+        let dx = psx_math::Wide::of(corrected[0]).sub_w(psx_math::Wide::of(self.previous_turn_pos[0]));
+        let dy = psx_math::Wide::of(corrected[1]).sub_w(psx_math::Wide::of(self.previous_turn_pos[1]));
+        if dx.mul_w(dx).add_w(dy.mul_w(dy)) < psx_math::Wide::mul(MIN_TURN_DISTANCE, MIN_TURN_DISTANCE) {
             return Ok(out);
         }
         if !cast(self.ray(corrected, [0, -ONE], ONE)) {

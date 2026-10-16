@@ -226,8 +226,7 @@ impl Pigeon {
     /// `RandomFloat(low, high)` over Q16 values, deterministic. Not Unity RNG
     /// parity, the same way the Runner's and the Blocker's are not.
     fn range(&mut self, [low, high]: [i32; 2]) -> i32 {
-        let span = (high - low) as i64;
-        low + ((self.random() as i64 * span) >> 24) as i32
+        crate::fixed::range24(self.random(), low, high)
     }
     /// `RandomInt(low, high)` with `inclusiveMax`, and `SendRandomEvent` over
     /// equally weighted events, which is the same draw.

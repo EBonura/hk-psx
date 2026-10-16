@@ -1,4 +1,5 @@
 """Compile the real prop runtime against the cooked art and hk_sim."""
+from hk_externs import externs
 import json,os,subprocess,tempfile,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -13,7 +14,7 @@ class PropsRuntimeTests(unittest.TestCase):
             binary=Path(temp)/'props-tests'
             env=dict(os.environ,CARGO_MANIFEST_DIR=str(ROOT/'game'))
             compiled=subprocess.run(['rustc','--edition=2021','-Awarnings','--test',str(ROOT/'tests/props_runtime.rs'),
-                '--extern','hk_sim='+str(library),'-L','dependency='+str(library.parent/'deps'),'-o',str(binary)],
+                *externs(),'-o',str(binary)],
                 env=env,capture_output=True,text=True)
             self.assertEqual(compiled.returncode,0,compiled.stdout+compiled.stderr)
             run=subprocess.run([str(binary)],capture_output=True,text=True)

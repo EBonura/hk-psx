@@ -761,10 +761,13 @@ fn random(seed: &mut u32) -> u32 {
 }
 fn range(seed: &mut u32, b: [i32; 2]) -> i32 {
     assert!(b[0] <= b[1]);
-    let span = b[1] as i64 - b[0] as i64 + 1;
+    let span = psx_math::Wide::of(b[1]).sub_w(psx_math::Wide::of(b[0])).plus(1);
     let r = random(seed);
     // A span past u32 (the whole i32 range) leaves the draw unreduced.
-    let draw = if span <= u32::MAX as i64 { r % span as u32 } else { r };
+    let draw = match span.to_u32() {
+        Some(span) => r % span,
+        None => r,
+    };
     b[0] + draw as i32
 }
 fn inside(p: [i32; 2], b: [i32; 4]) -> bool {
@@ -774,8 +777,8 @@ fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
 }
 fn length(v: [i32; 2]) -> i32 {
-    let n = (v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64) as u64;
-    psx_math::int32::isqrt_u64(n).min(i32::MAX as u32) as i32
+    let (x, y) = (v[0].unsigned_abs(), v[1].unsigned_abs());
+    psx_math::WideU::mul(x, x).mul_add(y, y).isqrt().min(i32::MAX as u32) as i32
 }
 impl Coin {
     /// A coin leaving `at` at `angle` (Q16 degrees) and `speed`.
@@ -981,9 +984,8 @@ fn mask_and(
 ) -> hk_sim::runner_senses::EdgeMask {
     [a[0] & b[0], a[1] & b[1], a[2] & b[2], a[3] & b[3]]
 }
-fn cross(a: [i32; 2], b: [i32; 2], p: [i32; 2]) -> i64 {
-    (b[0] as i64 - a[0] as i64) * (p[1] as i64 - a[1] as i64)
-        - (b[1] as i64 - a[1] as i64) * (p[0] as i64 - a[0] as i64)
+fn cross(a: [i32; 2], b: [i32; 2], p: [i32; 2]) -> i32 {
+    hk_sim::fixed::cross_sign(a, b, p)
 }
 fn polygons_overlap(a: &[[i32; 2]], b: &[[i32; 2]]) -> bool {
     if a.len() < 3 || b.len() < 3 {

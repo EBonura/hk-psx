@@ -9,6 +9,7 @@ the way `tests/test_shade.py` compiles the Shade runtime.
 Neither half touches the installed game: `host/charms.py` is what reads it, and
 this runs against what that cooked.
 """
+from hk_externs import externs
 import json, os, re, subprocess, tempfile, unittest
 from pathlib import Path
 
@@ -154,8 +155,7 @@ class CharmRuntimeTests(unittest.TestCase):
             env = dict(os.environ, CARGO_MANIFEST_DIR=str(ROOT / 'game'))
             compiled = subprocess.run(
                 ['rustc', '--edition=2021', '-Awarnings', '--test', str(ROOT / 'tests/charms_runtime.rs'),
-                 '--extern', 'hk_sim=' + str(library), '-L', 'dependency=' + str(library.parent / 'deps'),
-                 '-o', str(binary)], env=env, capture_output=True, text=True)
+                 *externs(), '-o', str(binary)], env=env, capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
             # Serialised, because the charm tests share one process-wide
             # `static mut STATE`: the module owns the live board the way the

@@ -290,7 +290,7 @@ fn knight_frame(room: &Room, player: &Player, focus: &hk_sim::Focus) -> usize {
 /// Frame of a room clip at a 60 Hz age, honouring loop / loop-section / once.
 fn clip_frame(room: &Room, clip: usize, age: u32) -> usize {
     let c = room.clip(clip);
-    let time = (age as u64 * c[2] as u64 / (60 * 65536)) as u32;
+    let time = hk_sim::fixed::mul_div_floor(age as u32, c[2] as u32, 60 * 65536);
     let mode = c[3] & 65535;
     let loop_start = c[3] >> 16;
     let frame = if mode == 0 {
@@ -307,7 +307,7 @@ fn nail_frame(room: &Room, nail: &Nail) -> Option<usize> {
         return None;
     }
     let clip = room.clip(nail.effect_clip());
-    let frame = (nail.age as u64 * clip[2] as u64 / (60 * 65536)) as u32;
+    let frame = hk_sim::fixed::mul_div_floor(nail.age as u32, clip[2] as u32, 60 * 65536);
     // Effect clips are one-shot, even while the attack recovery remains active.
     if frame >= clip[1] {
         return None;

@@ -158,10 +158,13 @@ pub fn call_for(pitch_q16:i32,variant:u8,mossman:bool) {
     let bank=clips(mossman);
     if variant as usize>=bank.len()-1 {return;}
     let (start, bytes, pitch, low, high, _) = bank[1+variant as usize];
-    // max/min rather than clamp: i64::clamp's panic message formats its bounds, which
-    // links the 64-bit Debug printer and its software divide into the guest.
-    let scaled =
-        ((pitch as i64 * pitch_q16.max(0) as i64) >> 16).max(low as i64).min(high as i64) as u16;
+    // max/min rather than clamp: Ord::clamp's panic message formats its bounds, which
+    // could link a Debug printer into the guest.
+    let scaled = psx_math::WideU::mul(pitch as u32, pitch_q16.max(0) as u32)
+        .shr_by(16)
+        .max(psx_math::WideU::of(low as u32))
+        .min(psx_math::WideU::of(high as u32))
+        .low() as u16;
     let voice = Voice::new(CALL_VOICE);
     Voice::key_off(1 << CALL_VOICE);
     voice.configure_sample(

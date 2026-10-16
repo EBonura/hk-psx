@@ -4,6 +4,7 @@
 //! sleep tolerances remain explicit and no visual lifetime is invented.
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::ONE;
+use psx_math::{Wide, WideU};
 pub const CAPACITY: usize = 28;
 #[no_mangle]
 pub static mut HK_DEBRIS_ACTIVE: u32 = 0;
@@ -168,8 +169,10 @@ impl Body {
         }
         let old = *self;
         if self.steps == 1 {
-            self.omega = ((self.velocity[0] as i64 * spec.torque as i64) >> 16)
-                .clamp(-360 * ONE as i64, 360 * ONE as i64) as i32;
+            self.omega = Wide::mul(self.velocity[0], spec.torque)
+                .sar(16)
+                .clamp(Wide::of(-360 * ONE), Wide::of(360 * ONE))
+                .low();
         }
         self.steps = (self.steps + 1).min(2);
         self.omega = psx_math::int32::mul_div_i32(self.omega, 1000, 1001);
@@ -251,9 +254,9 @@ impl Body {
         if let Some((edge, a, b)) = hit {
             for i in 0..2 {
                 self.center[i] = old.center[i]
-                    + (((self.center[i] - old.center[i]) as i64 * fraction as i64) >> 16) as i32;
+                    + psx_math::int32::mul_shr_i32(self.center[i] - old.center[i], fraction, 16);
             }
-            self.angle = (old.angle + ((rotation as i64 * fraction as i64) >> 16) as i32)
+            self.angle = (old.angle + psx_math::int32::mul_shr_i32(rotation, fraction, 16))
                 .rem_euclid(360 * ONE);
             let mut normal = unit([edge[1] - edge[3], edge[2] - edge[0]]);
             if dot([old.center[0] - edge[0], old.center[1] - edge[1]], normal) < 0 {
@@ -335,20 +338,17 @@ impl Body {
             // invariant in our bounded approximation. The source scripted
             // bounce is an intentional velocity override and remains exempt.
             if self.bounces == old.bounces {
-                let budget = (energy_before
-                    - 2 * 60 * ONE as i64 * (self.center[1] as i64 - old.center[1] as i64))
-                    .max(0);
+                let budget = energy_before
+                    .sub_w(Wide::mul(2 * 60 * ONE, self.center[1] - old.center[1]))
+                    .max(Wide::ZERO);
                 let energy = kinetic(self.velocity, self.omega, spec);
                 if energy > budget {
                     // budget < energy, so the quotient is at most ONE, and budget >= 0.
-                    let ratio = u64::from(
-                        hk_sim::exact::quotient(
-                            hk_sim::exact::wide_u(budget),
-                            hk_sim::exact::wide_u((energy + 65535) >> 16),
-                        )
-                        .min(ONE as u32),
-                    );
-                    let factor = sqrt(ratio * ONE as u64) as i32;
+                    let ratio = budget
+                        .cast_unsigned()
+                        .quotient(energy.plus(65535).sar(16).cast_unsigned())
+                        .min(ONE as u32);
+                    let factor = WideU::mul(ratio, ONE as u32).isqrt() as i32;
                     for v in &mut self.velocity {
                         *v = mulq(*v, factor);
                     }
@@ -412,8 +412,10 @@ impl Body {
             self.velocity[i] += mulq(amount, direction[i]);
         }
         let radians = mulq(mulq(crossq(lever, direction), amount), inv_i);
-        self.omega = (self.omega as i64 + mulq(radians, 3754936) as i64)
-            .clamp(-360 * ONE as i64, 360 * ONE as i64) as i32;
+        self.omega = Wide::of(self.omega)
+            .plus(mulq(radians, 3754936))
+            .clamp(Wide::of(-360 * ONE), Wide::of(360 * ONE))
+            .low();
     }
 }
 fn mulq(a: i32, b: i32) -> i32 {
@@ -447,23 +449,16 @@ fn supports(body: Body, spec: Spec, e: [i32; 4]) -> bool {
     }
     lo <= 0 && hi >= 0
 }
-fn kinetic(v: [i32; 2], omega: i32, spec: Spec) -> i64 {
-    let radians = mulq(omega, 1144) as i64;
-    let inv_i = mulq(spec.torque, 14298).max(1) as i64;
+fn kinetic(v: [i32; 2], omega: i32, spec: Spec) -> Wide {
+    let radians = mulq(omega, 1144);
+    let inv_i = mulq(spec.torque, 14298).max(1);
     // inv_i >= 1, and radians * radians * ONE is nonnegative.
-    let rotation = psx_math::Wide::mul(radians as i32, radians as i32).shl_by(16);
-    let rotation = hk_sim::exact::div_rem_u32(
-        psx_math::WideU::from_parts(rotation.high() as u32, rotation.low_u32()),
-        inv_i as u32,
-    )
-    .0;
-    v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64 + hk_sim::exact::to_i64(rotation)
-}
-fn sqrt(n: u64) -> u32 {
-    psx_math::int32::isqrt_u64(n)
+    let rotation = Wide::mul(radians, radians).shl_by(16).unsigned_abs().div_rem_u32(inv_i as u32).0;
+    hk_sim::fixed::sum_sq(v[0], v[1]).add_w(rotation.cast_signed())
 }
 fn length(v: [i32; 2]) -> i32 {
-    sqrt((v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64) as u64) as i32
+    let (x, y) = (v[0].unsigned_abs(), v[1].unsigned_abs());
+    WideU::mul(x, x).mul_add(y, y).isqrt() as i32
 }
 
 fn unit(v: [i32; 2]) -> [i32; 2] {
@@ -480,33 +475,33 @@ fn crossing(a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32; 2]) -> Option<i32> {
     if (0..2).any(|i| a[i].min(b[i]) > c[i].max(d[i]) || a[i].max(b[i]) < c[i].min(d[i])) {
         return None;
     }
-    let r = [b[0] as i64 - a[0] as i64, b[1] as i64 - a[1] as i64];
-    let s = [d[0] as i64 - c[0] as i64, d[1] as i64 - c[1] as i64];
-    let q = [c[0] as i64 - a[0] as i64, c[1] as i64 - a[1] as i64];
-    let cross = |a: [i64; 2], b: [i64; 2]| a[0] * b[1] - a[1] * b[0];
+    let r = [b[0] - a[0], b[1] - a[1]];
+    let s = [d[0] - c[0], d[1] - c[1]];
+    let q = [c[0] - a[0], c[1] - a[1]];
+    let cross = |a: [i32; 2], b: [i32; 2]| Wide::mul(a[0], b[1]).mul_sub(a[1], b[0]);
     let mut den = cross(r, s);
-    if den == 0 {
+    if den.is_zero() {
         return None;
     }
     let mut t = cross(q, s);
     let mut u = cross(q, r);
-    if den < 0 {
+    if den.is_negative() {
         den = -den;
         t = -t;
         u = -u;
     }
-    if t < 0 || t > den || u < 0 || u > den {
+    if t.is_negative() || t > den || u.is_negative() || u > den {
         return None;
     }
     // Divide first in the rare long-edge case to keep the shift bounded.
-    let shift = (64 - den.leading_zeros()).saturating_sub(46);
-    let den = den >> shift;
+    let bits = match den.high() as u32 {
+        0 => 32 - den.low_u32().leading_zeros(),
+        high => 64 - high.leading_zeros(),
+    };
+    let shift = bits.saturating_sub(46);
+    let den = den.sar(shift);
     // 0 <= t <= den, so t * ONE / den is at most ONE.
-    let along = hk_sim::exact::scale_by_fraction(
-        ONE as u32,
-        hk_sim::exact::wide_u(t >> shift),
-        hk_sim::exact::wide_u(den),
-    );
+    let along = t.sar(shift).cast_unsigned().scale_by_ratio(ONE as u32, den.cast_unsigned());
     Some(along.min((ONE - 1) as u32) as i32)
 }
 fn scaled(p: [i32; 2], s: [i32; 2]) -> [i32; 2] {
@@ -656,9 +651,9 @@ impl Pool {
             {
                 let q = p.body.point_rotated(local, s.centroid, s.scale, rotation);
                 *v = (
-                    (160 + ((((q[0] - camera.0) as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20))
+                    (160 + psx_math::int32::mul_shr_i32((q[0] - camera.0) >> 8, crate::KNIGHT_SCALE as i32, 20))
                         as i16,
-                    (120 - ((((q[1] - camera.1) as i64 >> 8) * crate::KNIGHT_SCALE as i64) >> 20))
+                    (120 - psx_math::int32::mul_shr_i32((q[1] - camera.1) >> 8, crate::KNIGHT_SCALE as i32, 20))
                         as i16,
                 );
             }

@@ -117,8 +117,7 @@ impl Vengefly {
     /// Random.Range(low, high) over Q16 values, deterministic.
     fn range(&mut self, low: i32, high: i32) -> i32 {
         debug_assert!(low <= high);
-        let span = (high - low) as i64;
-        low + ((self.random() as i64 * span) >> 24) as i32
+        crate::fixed::range24(self.random(), low, high)
     }
     /// IdleBuzz.DoBuzz for one fixed step (also the OnEnter call).
     fn idle_buzz(&mut self, position: [i32; 2]) {

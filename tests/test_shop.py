@@ -11,6 +11,7 @@ harness would not notice.
 Nothing here touches the installed game: `host/shops.py` is what reads it, and
 this runs against what that cooked.
 """
+from hk_externs import externs
 import json, os, re, subprocess, tempfile, unittest
 from pathlib import Path
 
@@ -118,8 +119,7 @@ class ShopRuntimeTests(unittest.TestCase):
             env = dict(os.environ, CARGO_MANIFEST_DIR=str(ROOT / 'game'))
             compiled = subprocess.run(
                 ['rustc', '--edition=2021', '-Awarnings', '--test', str(ROOT / 'tests/shop_runtime.rs'),
-                 '--extern', 'hk_sim=' + str(library), '-L', 'dependency=' + str(library.parent / 'deps'),
-                 '-o', str(binary)], env=env, capture_output=True, text=True)
+                 *externs(), '-o', str(binary)], env=env, capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
             run = subprocess.run([str(binary), *TEST_ARGS], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)

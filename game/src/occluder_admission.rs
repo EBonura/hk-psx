@@ -17,5 +17,6 @@ pub fn possible(xy: &[i32; 8], minimum_core_area: i32) -> bool {
     let w = ceiling(xy[0], xy[2]).min(320);
     let h = ceiling(xy[1], xy[5]).min(240);
     // Match collect_occluders' bbox-area gate, preceding the core-area gate.
-    i64::from(w * h) >= i64::from(minimum_core_area) * 2
+    // w * h <= 320 * 240, and `area >= 2 m` is `area / 2 >= m` for an integer m.
+    ((w * h) / 2) as i32 >= minimum_core_area
 }

@@ -15,6 +15,7 @@
 //! delta-time countdown. Reset then clears turn cooldown and enters Ready with
 //! an immediate alert check. These callbacks do not advance the physics clock.
 use crate::ONE;
+use psx_math::Wide;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Clip {
@@ -307,16 +308,17 @@ impl Default for Senses {
 /// Strict source 3D camera distance < 60. Early axis rejection bounds all
 /// products, even for arbitrary i32 Q16 inputs (no overflow or square root).
 pub fn camera_in_start_range(camera: [i32; 3], actor: [i32; 3]) -> bool {
-    let limit = 60 * ONE as i64;
-    let mut squared = 0i64;
+    let limit = Wide::of(60 * ONE);
+    let mut squared = Wide::ZERO;
     for axis in 0..3 {
-        let delta = camera[axis] as i64 - actor[axis] as i64;
+        let delta = Wide::of(camera[axis]).sub_w(Wide::of(actor[axis]));
         if delta <= -limit || delta >= limit {
             return false;
         }
-        squared += delta * delta;
+        // |delta| < 60 * ONE fits a word, so the square is one multiply.
+        squared = squared + Wide::mul(delta.low(), delta.low());
     }
-    squared < limit * limit
+    squared < Wide::mul(60 * ONE, 60 * ONE)
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Runner {
@@ -447,7 +449,7 @@ impl Runner {
             // Left or Right?: Jump X Speed = (Hero X - Self X) * 1.25; Anticipate
             // stops, plays Attack (one random-pitch sample) and waits for its
             // trigger frame.
-            self.jump_x = (((hero_x as i64 - actor_x as i64) * jump_x_factor as i64) >> 16) as i32;
+            self.jump_x = Wide::of(hero_x).sub_w(Wide::of(actor_x)).times(jump_x_factor).shr_i32(16);
             self.wait = trigger_ticks;
         }
         out.push(Action::ChaseSound);

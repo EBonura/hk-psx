@@ -19,6 +19,7 @@
 //! returns an explicit error pending original query evidence. Rotated/scaled
 //! body variants and non-box Hero shapes require a different query contract.
 use crate::{combat::segments_intersect, ONE};
+use psx_math::Wide;
 
 pub const WORLD_LIMIT: i32 = 512 * ONE;
 pub const LOCAL_LIMIT: i32 = 16 * ONE;
@@ -252,7 +253,7 @@ impl EdgeColumns {
             .unwrap_or(0);
         // Columns a power of two wide, so a lookup is a shift and a clamp.
         let mut shift = 0;
-        while shift < 31 && ((right as i64 - left as i64) >> shift) >= Self::COLUMNS as i64 {
+        while shift < 31 && Wide::of(right).sub_w(Wide::of(left)).sar(shift) >= Wide::of(Self::COLUMNS as i32) {
             shift += 1;
         }
         let mut index = Self {
@@ -277,7 +278,11 @@ impl EdgeColumns {
     }
     #[inline]
     fn column(&self, x: i32) -> usize {
-        ((x as i64 - self.left as i64) >> self.shift).clamp(0, Self::COLUMNS as i64 - 1) as usize
+        Wide::of(x)
+            .sub_w(Wide::of(self.left))
+            .sar(self.shift)
+            .clamp(Wide::ZERO, Wide::of(Self::COLUMNS as i32 - 1))
+            .low() as usize
     }
     /// Every edge whose x range meets `bounds[0]..=bounds[2]` (a superset of
     /// those whose box meets `bounds`).
@@ -366,7 +371,7 @@ impl Direction {
             Self::Up => [0, 1],
         }
     }
-    fn axis_sign(self) -> (usize, i64) {
+    fn axis_sign(self) -> (usize, i32) {
         match self {
             Self::Left => (0, -1),
             Self::Right => (0, 1),
@@ -498,20 +503,20 @@ fn axis_hit(p: [i32; 2], direction: Direction, reach: i32, e: [i32; 4]) -> bool 
     if p[other] < a[other].min(b[other]) || p[other] > a[other].max(b[other]) {
         return false;
     }
-    let mut denominator = b[other] as i64 - a[other] as i64;
+    let mut denominator = b[other] - a[other];
     if denominator == 0 {
-        let x = (a[axis] as i64 - p[axis] as i64) * sign;
-        let y = (b[axis] as i64 - p[axis] as i64) * sign;
-        return x.max(y) >= 0 && x.min(y) < reach as i64;
+        let x = (a[axis] - p[axis]) * sign;
+        let y = (b[axis] - p[axis]) * sign;
+        return x.max(y) >= 0 && x.min(y) < reach;
     }
-    let mut numerator = (a[axis] as i64 - p[axis] as i64) * denominator
-        + (p[other] as i64 - a[other] as i64) * (b[axis] as i64 - a[axis] as i64);
-    numerator *= sign;
+    let mut numerator = Wide::mul(a[axis] - p[axis], denominator)
+        .mul_add(p[other] - a[other], b[axis] - a[axis])
+        .times(sign);
     if denominator < 0 {
         denominator = -denominator;
         numerator = -numerator;
     }
-    numerator >= 0 && numerator < reach as i64 * denominator
+    !numerator.is_negative() && numerator < Wide::mul(reach, denominator)
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WalkerQueries {

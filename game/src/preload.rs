@@ -29,19 +29,20 @@ pub struct Motion {pub grounded:bool,pub bottom:i32,pub vy:i32}
 // Velocity is Q16 world units/second, matching Player::step's vy/60.
 // This short lead only changes approaching direct-exit priority; it cannot
 // cover a whole CD read/decode and does not predict gravity or a future jump.
-const VERTICAL_HORIZON_TICKS:i64=12;
+const VERTICAL_HORIZON_TICKS:i32=12;
 fn approaching_vertical(a:[i32;4],b:[i32;4],x:i32,y:i32,m:Motion)->bool {
     // At a horizontal seam/corner the destination is ambiguous; retain the
     // established ranking instead of inventing a horizontal trajectory.
     if m.grounded || x<=b[0] || x>=b[2] {return false;}
     let (distance,speed)=if m.vy<0 && b[3]<=a[1] {
-        ((y as i64-b[3] as i64).max(0),-(m.vy as i64))
+        (y.saturating_sub(b[3]).max(0),m.vy.saturating_neg())
     }else if m.vy>0 && b[1]>=a[3] {
-        ((b[1] as i64-y as i64).max(0),m.vy as i64)
+        (b[1].saturating_sub(y).max(0),m.vy)
     }else{return false;};
     // Four world units is the source terminal fall's maximum12-tick reach;
     // retain a spatial bound even if another caller supplies extreme velocity.
-    distance<=4*ONE as i64 && distance*60<=speed*VERTICAL_HORIZON_TICKS
+    // distance <= 4 * ONE keeps distance * 60 in a word; a saturated speed product is still larger.
+    distance<=4*ONE && distance*60<=speed.saturating_mul(VERTICAL_HORIZON_TICKS)
 }
 fn adjacent(a:[i32;4],b:[i32;4])->bool {
     let x=b[2].min(a[2])-b[0].max(a[0]);

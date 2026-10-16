@@ -454,13 +454,13 @@ fn spawn_separation(b: [i32; 4], e: [i32; 4]) -> Option<[i32; 2]> {
         } else {
             (a0, b0, a1, b1)
         };
-        let den = a1.wrapping_sub(a0) as u32;
+        let den = a1.wrapping_sub(a0);
         let at = |a: i32| psx_math::Wide::mul(a - a0, b1 - b0);
         let n0 = at(lo.max(a0));
         let n1 = at(hi.min(a1));
         (
-            b0 + crate::exact::floor_div_u32(n0.min(n1), den),
-            b0 + crate::exact::floor_div_u32(-n0.max(n1), den).wrapping_neg(),
+            b0 + n0.min(n1).div_i32_wrap(den, psx_math::Rounding::Floor),
+            b0 + (-n0.max(n1)).div_i32_wrap(den, psx_math::Rounding::Floor).wrapping_neg(),
         )
     }
     let (low_y, high_y) = range(x0, y0, x1, y1, left, right);
@@ -493,9 +493,9 @@ fn axis_ray_hits(ray: [i32; 4], edge: [i32; 4]) -> bool {
     }
     let dx = x1 - x0;
     let dy = y1 - y0;
-    let a = dx as i64 * (bottom - y0) as i64 - dy as i64 * (left - x0) as i64;
-    let b = dx as i64 * (top - y0) as i64 - dy as i64 * (right - x0) as i64;
-    a == 0 || b == 0 || (a < 0) != (b < 0)
+    let a = psx_math::Wide::mul(dx, bottom - y0).mul_sub(dy, left - x0);
+    let b = psx_math::Wide::mul(dx, top - y0).mul_sub(dy, right - x0);
+    a.is_zero() || b.is_zero() || a.is_negative() != b.is_negative()
 }
 
 /// Source probes against the cooked Terrain edges, including sloped segments.

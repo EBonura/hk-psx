@@ -29,7 +29,7 @@ impl Bank {
         }
         let count = count as u32;
         let start = loop_start as u32;
-        let elapsed = (tick as u64 * fps as u64 / (60 * 65536)) as u32;
+        let elapsed = hk_sim::fixed::mul_div_floor(tick as u32, fps as u32, 60 * 65536);
         let frame = if wrap == 0 {
             elapsed % count
         } else if wrap == 1 && elapsed >= count {
