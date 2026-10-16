@@ -126,9 +126,10 @@ pub fn prefetch_done(ok: bool) {
     // checkpoint (the drive pump), like the music ring's refill.
     let at = clip.spu_address + p.offset as u32;
     crate::scene_sfx::overwritten(at, at + bytes as u32);
-    for (i, part) in data.chunks(2048).enumerate() {
+    // 1 KiB at a time: the SPU port stalls the CPU on every write (see UPLOAD_SLICE).
+    for (i, part) in data.chunks(1024).enumerate() {
         spu::upload_adpcm(
-            SpuAddr::new(clip.spu_address + (p.offset + i * 2048) as u32),
+            SpuAddr::new(clip.spu_address + (p.offset + i * 1024) as u32),
             part,
         );
         crate::input::poll_only();
@@ -298,7 +299,13 @@ pub fn upload(index: usize, bytes: &[u8]) -> bool {
         // it every VBlank, and one 49 KiB transfer outlasts one.
         for (slice, part) in bytes.chunks(UPLOAD_SLICE).enumerate() {
             spu::upload_adpcm(SpuAddr::new(start + (slice * UPLOAD_SLICE) as u32), part);
-            crate::input::checkpoint();
+            // The full checkpoint (the music and drive services) as often as it was
+            // when slices were 4 KiB; the slices between take the pad poll only.
+            if slice % (4096 / UPLOAD_SLICE) == 3 {
+                crate::input::checkpoint();
+            } else {
+                crate::input::poll_only();
+            }
         }
         unsafe {
             HK_AMBIENCE_CLIP_LOADS = HK_AMBIENCE_CLIP_LOADS.saturating_add(1);
