@@ -57,6 +57,10 @@ pub fn cmp_fractions(a: WideU, b: WideU, c: WideU, d: WideU) -> Ordering {
 #[inline(never)]
 pub fn div_rem_u32(n: WideU, d: u32) -> (WideU, u32) {
     assert!(d != 0, "attempt to divide by zero");
+    if n.high() == 0 {
+        // One native divide: the common case (a texel-grid sum, a tick count).
+        return (WideU::of(n.low() / d), n.low() % d);
+    }
     let carry = n.high() % d;
     let q_low = div_wide(carry, n.low(), d);
     let rest = WideU::from_parts(carry, n.low()) - WideU::mul(q_low, d);
