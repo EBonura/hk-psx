@@ -273,10 +273,6 @@ const _: () = assert!(REGION_SCENE_LOCAL.len() <= 1 << 16);
 const _: () = assert!(SCENE_COUNT <= 1 << 16);
 const EMPTY: usize = usize::MAX;
 const SEEK_POLL: u32 = 4_000_000;
-/// Byte operations one decoder step may run between pad checkpoints during a load. 4096
-/// took about a VBlank on a dense room (the False Knight journey's first load), which
-/// carried a poll over one; a quarter of that leaves several opportunities per frame.
-const DECODE_STEP: usize = 1024;
 /// Bytes past the scene arena that only a scene group staged in the tail may
 /// use (see `stage_group`). Zero keeps today's RAM; a prefetch that does not
 /// fit the resident scene's slack can be given more here.
@@ -1749,7 +1745,7 @@ impl Cache {
                 HK_ROOM_DECODE_PHASE = decoder.phase_id();
             }
             crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-            match decoder.step(arena, DECODE_STEP) {
+            match decoder.step(arena, 4096) {
                 Ok(Some(len)) => {
                     if len != c.raw_len {
                         return Err(LoadError::Coverage);
@@ -1833,7 +1829,7 @@ impl Cache {
         loop {
             crate::input::checkpoint();
             crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-            match decoder.step(arena, DECODE_STEP) {
+            match decoder.step(arena, 4096) {
                 Ok(Some(len)) => {
                     if len != f.raw_len {
                         return Err(LoadError::EffectArt);
@@ -1903,7 +1899,7 @@ impl Cache {
         loop {
             crate::input::checkpoint();
             crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-            match decoder.step(tail, DECODE_STEP) {
+            match decoder.step(tail, 4096) {
                 Ok(Some(len)) => {
                     if len != m.raw_len {
                         return Err(LoadError::WorldMeta);
@@ -2012,7 +2008,7 @@ impl Cache {
                     HK_ROOM_DECODE_PHASE = decoder.phase_id();
                 }
                 crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-                match decoder.step(arena, DECODE_STEP) {
+                match decoder.step(arena, 4096) {
                     Ok(Some(len)) => {
                         if len != a.raw_len {
                             return Err(LoadError::RoomMismatch);
@@ -2203,7 +2199,7 @@ impl Cache {
                     HK_ROOM_DECODE_PHASE = decoder.phase_id();
                 }
                 crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
-                match decoder.step(arena, DECODE_STEP) {
+                match decoder.step(arena, 4096) {
                     Ok(Some(len)) => {
                         if len != d.raw_len {
                             return Err(LoadError::RoomMismatch);

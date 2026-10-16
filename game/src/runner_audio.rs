@@ -42,10 +42,7 @@ pub fn begin_overlay() -> bool {
 }
 pub fn upload_fragment(offset:usize,data:&[u8]) {
     assert!(offset%16==0 && data.len()%16==0 && offset+data.len()<=20464);
-    for (i,part) in data.chunks(1024).enumerate() {
-        spu::upload_adpcm(SpuAddr::new(BANK_BASE+(offset+i*1024) as u32),part);
-        crate::input::poll_only();
-    }
+    spu::upload_adpcm(SpuAddr::new(BANK_BASE+offset as u32),data);
 }
 pub fn finish_overlay(mossman:bool) {unsafe{HK_RUNNER_AUDIO_READY=if mossman{2}else{1};}}
 #[no_mangle]

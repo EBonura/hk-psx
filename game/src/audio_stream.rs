@@ -17,8 +17,6 @@
 pub const PITCH: u16 = super::MUSIC_PITCH;
 pub const SECTOR: usize = 2048;
 pub const HALF_BYTES: usize = 8_192;
-/// Bytes sent to the SPU between pad polls (a divisor of the sector).
-const UPLOAD_SLICE: usize = 1024;
 pub const RING_BYTES: usize = HALF_BYTES * 2;
 pub const HALF_SECTORS: usize = HALF_BYTES / SECTOR;
 /// 98,304 bytes: 7.8 s at 22,050 Hz mono, longer than any room load measured.
@@ -298,11 +296,9 @@ mod hardware {
         // In 2 KiB slices, taking a pad poll that comes due between them: this
         // runs from inside a checkpoint, and 8 KiB on top of a heavy tick has
         // carried a poll over a VBlank (journey-crossroads, Crossroads_07).
-        // The SPU port stalls the CPU on every write: 2 KiB took most of a VBlank, so a
-        // heavy decode tick plus one slice carried a poll over one. 1 KiB takes half.
-        for (slice, part) in bytes.chunks(UPLOAD_SLICE).enumerate() {
+        for (slice, part) in bytes.chunks(SECTOR).enumerate() {
             psx_spu::upload_adpcm(
-                unsafe { SpuAddr::new(BASE + (half * HALF_BYTES + slice * UPLOAD_SLICE) as u32) },
+                unsafe { SpuAddr::new(BASE + (half * HALF_BYTES + slice * SECTOR) as u32) },
                 part,
             );
             crate::input::poll_only();
