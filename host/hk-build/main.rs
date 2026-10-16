@@ -548,15 +548,17 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("door-jiji", "HK_REGION_ID", 102),
     ("door-jiji", "HK_DEATHS", 0),
     ("door-jiji", "HK_CHEATS", 0),
-    // husk-guard: a seeded card eleven units left of Crossroads_48's Husk Guard,
-    // and the Knight stands still for 1,500 polls. The guard wakes on sight,
-    // walks in, and alternates club slams (short of the Knight) with stomps,
-    // whose two shockwaves (counted with the False Knight's, HK_FK_WAVES) are
-    // what reach him: four stomps, eight waves, four masks, no death.
-    ("husk-guard", "HK_FK_WAVES", 8),
-    ("husk-guard", "HK_FK_WAVE_HITS", 4),
-    ("husk-guard", "HK_DEATHS", 0),
-    ("husk-guard", "HK_REGION_ID", 540),
+    // husk-guard: a seeded card 6.7 units left of Crossroads_48's Husk Guard (the
+    // authored Attack Range, 8.1 units each way, is what wakes a dormant guard; the
+    // wider Alert Range only matters once it is up), and the Knight stands still
+    // for 1,500 polls. The guard wakes on sight and alternates club slams (short
+    // of the Knight) with stomps, whose two shockwaves (counted with the False
+    // Knight's, HK_FK_WAVES) are what reach him: five stomps, ten waves, five
+    // masks, which is his whole health, so one death.
+    ("husk-guard", "HK_FK_WAVES", 10),
+    ("husk-guard", "HK_FK_WAVE_HITS", 5),
+    ("husk-guard", "HK_DEATHS", 1),
+    ("husk-guard", "HK_REGION_ID", 541),
     ("husk-guard", "HK_CHEATS", 0),
     ("husk-guard", "HK_SAVE_LOADED", 1),
     // The journey: Start Game to the False Knight and back, on one card and
