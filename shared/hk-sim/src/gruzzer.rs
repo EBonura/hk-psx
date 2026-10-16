@@ -30,6 +30,9 @@ pub struct Gruzzer {
 // Replaces the old controller inside the existing widest Runtime payload.
 const _: () = assert!(core::mem::size_of::<Gruzzer>() <= 80);
 
+// Out of line so the bank's rodata is only ever named from module code: a resident caller that inlined
+// this would bind the module's rodata, which the module publisher refuses.
+#[inline(never)]
 fn bank() -> Bank<'static> {
     // SAFETY: the cooker parses the bank it emits and the module transport hash-checks it.
     unsafe { Bank::from_verified(&BANK) }
@@ -51,6 +54,7 @@ impl Gruzzer {
     fn state(&mut self) -> u8 {
         self.block().state(0)
     }
+    #[inline(never)]
     pub fn phase(mut self) -> Phase {
         let state = self.state();
         if self.dead {
@@ -61,12 +65,14 @@ impl Gruzzer {
             Phase::Flying
         }
     }
+    #[inline(never)]
     pub fn angle(mut self) -> i32 {
         self.block().cell(0, CELL_ANGLE as usize)
     }
     pub fn facing(self) -> i32 {
         self.facing as i32
     }
+    #[inline(never)]
     pub fn die(&mut self) {
         self.dead = true;
         self.block().kill(0);
@@ -91,6 +97,7 @@ impl Gruzzer {
     pub fn tick(&mut self, camera: [i32; 3], position: [i32; 3]) {
         self.step(camera, position, 0, PH_UPDATE);
     }
+    #[inline(never)]
     pub fn bonk(&mut self, side: Side) {
         if self.phase() != Phase::Flying {
             return;
