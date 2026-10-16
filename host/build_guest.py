@@ -110,6 +110,8 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     (work/hk-psx.elf, no disc or scans), or the path of an LLVM sample profile
     to optimise with. work: put the map, hazard report, EXE and disc in this
     directory instead of the canonical ones."""
+    # No 64-bit integer or float type in guest source: the source half of the symbol gate.
+    run(['sh',ROOT/'tools/check-no64.sh'])
     if profile is None and not elf_only:
         from shared_publish import tool_source
         tool_source()  # Fail before any guest compilation when the publisher is unavailable.
@@ -204,6 +206,8 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     if features:cmd+=['--features',','.join(features)]
     run(cmd,cwd=ROOT/'game',env=env)
     linked=guest_target/'mipsel-sony-psx/release/hk-psx.exe'
+    # No 64-bit integer, 128-bit or soft-float helper may be linked, with no opt-out.
+    run(['sh',ROOT/'.psoxide/tools/guest_symbol_gate.sh',link_map],env={k:v for k,v in os.environ.items() if k!='GUEST_GATE_ALLOW'})
     if profile=='elf' or elf_only:
         shutil.copy2(linked,out/'hk-psx.elf')
         return {'elf':out/'hk-psx.elf'}
