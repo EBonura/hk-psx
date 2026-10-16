@@ -248,7 +248,10 @@ pub fn missing(scene: usize) -> u8 {
     AMBIENCE_SCENES[scene].mask & state::ALL & !unsafe { MIXER.loaded }
 }
 
-const UPLOAD_SLICE: usize = 4096;
+/// Bytes sent to the SPU between pad checkpoints. The SPU port stalls the CPU on every
+/// write, so 4 KiB took most of a VBlank and, behind a heavy decode tick, carried a poll
+/// over one (the False Knight journey's first load).
+const UPLOAD_SLICE: usize = 1024;
 /// Where a clip lives in SPU.
 fn spu_range(index: usize) -> (u32, u32) {
     let clip = CLIPS[index];
