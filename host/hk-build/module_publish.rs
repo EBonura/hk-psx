@@ -76,6 +76,7 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
                 let instruction = read_word(section.bytes, offset)?;
                 if relocation.kind == 4 && is_code && section.flags & 4 != 0 {
                     if ![
+                        "4fsm3",
                         "7enemies",
                         "14blocker_roller",
                         "5frame8simulate",
