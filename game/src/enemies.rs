@@ -1158,11 +1158,13 @@ fn ray_fraction_less(mut a: u64, mut b: u64, mut c: u64, mut d: u64) -> bool {
     debug_assert!(b != 0 && d != 0);
     let mut reversed = false;
     loop {
-        let (aq, cq) = (a / b, c / d);
+        let ((aq, ar), (cq, cr)) = (
+            hk_sim::div64::div_rem_u64(a, b),
+            hk_sim::div64::div_rem_u64(c, d),
+        );
         if aq != cq {
             return if reversed { aq > cq } else { aq < cq };
         }
-        let (ar, cr) = (a % b, c % d);
         if ar == 0 || cr == 0 {
             return if reversed { ar > cr } else { ar < cr };
         }
@@ -1230,8 +1232,8 @@ fn climber_ray_hit(
             ray_fraction_less(t_num as u64, den as u64, t as u64, d as u64)
         }) {
             let point = [
-                (ox + rx * t_num / den) as i32,
-                (oy + ry * t_num / den) as i32,
+                (ox + hk_sim::div64::div_i64(rx * t_num, den)) as i32,
+                (oy + hk_sim::div64::div_i64(ry * t_num, den)) as i32,
             ];
             best = Some((t_num, den, point));
         }
@@ -6776,9 +6778,13 @@ fn project_box_at_depth(
     if depth == 0 {
         return project_box(b, position, facing, camera);
     }
-    let k = |v: i32| {
-        ((v as i64 * CAMERA_DISTANCE as i64) / (CAMERA_DISTANCE as i64 + depth as i64)) as i32
-    };
+    // Depths are a few dozen units of Q16, so the sum stays inside i32.
+    let nearest = CAMERA_DISTANCE + depth;
+    #[inline(never)]
+    fn toward_centre(v: i32, nearest: i32) -> i32 {
+        hk_sim::div64::div_i64(v as i64 * CAMERA_DISTANCE as i64, nearest as i64) as i32
+    }
+    let k = |v: i32| toward_centre(v, nearest);
     let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
     let mut verts = [(0i16, 0i16); 4];
     for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {

@@ -502,9 +502,7 @@ impl<'a> Room<'a> {
         let (width, height) = self.frame_pixels(i);
         let t = self.texture(base + tile);
         let (px, py) = ((tile % cols) * 64, (tile / cols) * 64);
-        let lerp = |from: i32, to: i32, at: usize, of: usize| {
-            from + ((to - from) as i64 * at as i64 / of as i64) as i32
-        };
+        let lerp = |from: i32, to: i32, at: usize, of: usize| lerp_tile(from, to, at as u32, of as u32);
         (
             base + tile,
             [
@@ -970,5 +968,52 @@ mod tests {
         assert_eq!(cursor.step(&later, 1), Ok(false));
         assert_eq!(cursor.step(&later, 1), Err(Error::Reference));
         assert_eq!(Room::parse(&later).err(), Some(Error::Reference));
+    }
+}
+
+/// `from + (to - from) * at / of` truncated toward zero, `at <= of < 65537`,
+/// without a 64-bit multiply or divide: floor(m * at / of) is
+/// (m / of) * at + ((m % of) * at) / of, and both terms fit 32 bits.
+#[inline(never)]
+fn lerp_tile(from: i32, to: i32, at: u32, of: u32) -> i32 {
+    debug_assert!(of != 0 && at <= of && of <= 1 << 16);
+    let delta = to - from;
+    let m = delta.unsigned_abs();
+    let magnitude = (m / of) * at + ((m % of) * at) / of;
+    from + if delta < 0 { -(magnitude as i32) } else { magnitude as i32 }
+}
+
+#[cfg(test)]
+mod lerp_tile_tests {
+    extern crate std;
+    use super::lerp_tile;
+
+    fn wide(from: i32, to: i32, at: u32, of: u32) -> i32 {
+        from + ((to - from) as i64 * at as i64 / of as i64) as i32
+    }
+
+    #[test]
+    fn it_matches_the_wide_form() {
+        let edges = [0, 1, -1, 2, 255, -255, 65535, 1 << 16, -(1 << 16), (1 << 24) + 7, i32::MAX / 2, i32::MIN / 2, 123_456_789, -123_456_789];
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut ofs = std::vec![1u32, 2, 3, 63, 64, 65, 255, 256, 1000, 1023, 4096, 65535, 65536];
+        for _ in 0..40 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            ofs.push((state % 65536) as u32 + 1);
+        }
+        for &of in &ofs {
+            for &from in &edges {
+                for &to in &edges {
+                    if to.checked_sub(from).is_none() {
+                        continue;
+                    }
+                    for at in [0, 1, of / 3, of / 2, of - of / 7, of - 1, of] {
+                        assert_eq!(lerp_tile(from, to, at, of), wide(from, to, at, of), "{from} {to} {at}/{of}");
+                    }
+                }
+            }
+        }
     }
 }

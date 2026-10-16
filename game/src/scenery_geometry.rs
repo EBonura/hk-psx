@@ -77,10 +77,41 @@ fn outside(xy: &[(i32, i32); 4]) -> bool {
         || xy.iter().all(|p| p.1 <= 0)
         || xy.iter().all(|p| p.1 >= 240)
 }
+/// `(n / d, n % d)` truncated toward zero, `d > 0`, without a compiler 64-bit
+/// divide (this file builds alone under `rustc --test`, so it carries its own
+/// instead of using hk_sim::div64): magnitudes inside 32 bits take native
+/// divides, anything wider a 64-step restoring division. The wide path is for
+/// inputs no cooked room reaches.
+#[inline(never)]
+fn div_rem_wide(n: i64, d: i64) -> (i64, i64) {
+    debug_assert!(d > 0);
+    let (m, d) = (n.unsigned_abs(), d as u64);
+    let (q, r) = if m >> 32 == 0 && d >> 32 == 0 {
+        ((m as u32 / d as u32) as u64, (m as u32 % d as u32) as u64)
+    } else {
+        let (mut q, mut r, mut bits) = (0u64, 0u64, m);
+        for _ in 0..64 {
+            let overflow = r >> 63 != 0;
+            r = r << 1 | bits >> 63;
+            bits <<= 1;
+            q <<= 1;
+            if overflow || r >= d {
+                r = r.wrapping_sub(d);
+                q |= 1;
+            }
+        }
+        (q, r)
+    };
+    if n < 0 {
+        ((q as i64).wrapping_neg(), (r as i64).wrapping_neg())
+    } else {
+        (q as i64, r as i64)
+    }
+}
 fn nearest_even(n: i64, d: i64) -> i64 {
     debug_assert!(d > 0);
-    let q = n / d;
-    let twice_remainder = (n % d).abs() * 2;
+    let (q, r) = div_rem_wide(n, d);
+    let twice_remainder = r.abs() * 2;
     if twice_remainder > d || (twice_remainder == d && q & 1 != 0) {
         q + if n < 0 { -1 } else { 1 }
     } else {
@@ -297,6 +328,24 @@ mod tests {
         w: 47,
         h: 39,
     };
+    #[test]
+    fn the_wide_division_matches_the_native_operators() {
+        let mut values = vec![0i64, 1, 2, 255, 65535, 65536, i32::MAX as i64, 1 << 32, (1 << 32) + 1, 1 << 40, i64::MAX, i64::MIN + 1];
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        for _ in 0..300 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            values.push((state >> (state & 63)) as i64);
+        }
+        for &n in &values {
+            for &m in &[n, -n] {
+                for &d in values.iter().filter(|&&d| d > 0) {
+                    assert_eq!(div_rem_wide(m, d), (m / d, m % d), "{m} / {d}");
+                }
+            }
+        }
+    }
     #[test]
     fn nearest_ties_are_even_for_both_signs() {
         for (n, expected) in [

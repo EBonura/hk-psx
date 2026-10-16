@@ -562,13 +562,32 @@ fn mark(state: u32, error: u32) {
         core::ptr::write_volatile(&raw mut HK_ROOM_LOAD_ERROR, error);
     }
 }
+/// The pad poll a seek or a sector wait takes between looks (a named function so the
+/// `dyn FnMut` shims stay two jumps).
+#[inline(never)]
+fn pad_idle() {
+    crate::input::poll_only();
+}
+#[inline(never)]
 fn sector(reader: &mut SectorReader, dst: &mut [u32]) -> bool {
     assert!(dst.len() == SECTOR_WORDS);
     for word in dst.iter_mut() {
         unsafe { core::ptr::write_volatile(word, 0) };
     }
-    if !unsafe { reader.read_sector(dst.try_into().unwrap()) } {
-        return false;
+    // The next sector can be several frames away (the head still settling, the
+    // drive at its own pace), so wait for it a look at a time and take the pad
+    // poll that comes due between looks; `read_sector` spins without one. The
+    // bound is the reader's own (`DATA_POLL`, a worst-case seek).
+    let mut looks = 0u32;
+    loop {
+        match unsafe { reader.try_read_sector(dst.try_into().unwrap()) } {
+            Ok(true) => break,
+            Ok(false) if looks < SEEK_POLL => {
+                looks += 1;
+                crate::input::poll_only();
+            }
+            _ => return false,
+        }
     }
     unsafe { HK_CD_SECTORS_READ = HK_CD_SECTORS_READ.saturating_add(1) };
     scene_sectors(1);
@@ -1417,7 +1436,7 @@ impl Cache {
         let mut words=[0u32;SECTOR_WORDS];
         for pass in 0..2 {
             if pass==1 && !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
-            if !unsafe{self.reader.start_read_seek_first(lba,SEEK_POLL)} {
+            if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_POLL,&mut pad_idle)} {
                 unsafe{self.reader.stop();}
                 return Err(LoadError::PayloadRead);
             }

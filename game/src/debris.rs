@@ -340,7 +340,7 @@ impl Body {
                     .max(0);
                 let energy = kinetic(self.velocity, self.omega, spec);
                 if energy > budget {
-                    let ratio = (budget / ((energy + 65535) >> 16)).clamp(0, ONE as i64) as u64;
+                    let ratio = hk_sim::div64::div_i64(budget, (energy + 65535) >> 16).clamp(0, ONE as i64) as u64;
                     let factor = sqrt(ratio * ONE as u64) as i32;
                     for v in &mut self.velocity {
                         *v = mulq(*v, factor);
@@ -443,7 +443,9 @@ fn supports(body: Body, spec: Spec, e: [i32; 4]) -> bool {
 fn kinetic(v: [i32; 2], omega: i32, spec: Spec) -> i64 {
     let radians = mulq(omega, 1144) as i64;
     let inv_i = mulq(spec.torque, 14298).max(1) as i64;
-    v[0] as i64 * v[0] as i64 + v[1] as i64 * v[1] as i64 + radians * radians * ONE as i64 / inv_i
+    v[0] as i64 * v[0] as i64
+        + v[1] as i64 * v[1] as i64
+        + hk_sim::div64::div_i64(radians * radians * ONE as i64, inv_i)
 }
 fn sqrt(n: u64) -> u32 {
     psx_math::int32::isqrt_u64(n)
@@ -487,7 +489,7 @@ fn crossing(a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32; 2]) -> Option<i32> {
     // Divide first in the rare long-edge case to keep the shift bounded.
     let shift = (64 - den.leading_zeros()).saturating_sub(46);
     let den = den >> shift;
-    Some((((t >> shift) * ONE as i64) / den).min((ONE - 1) as i64) as i32)
+    Some(hk_sim::div64::div_i64((t >> shift) * ONE as i64, den).min((ONE - 1) as i64) as i32)
 }
 fn scaled(p: [i32; 2], s: [i32; 2]) -> [i32; 2] {
     core::array::from_fn(|i| psx_math::int32::mul_shr_trunc_i32(p[i], s[i], 16))

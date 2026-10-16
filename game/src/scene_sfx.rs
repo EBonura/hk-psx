@@ -19,6 +19,11 @@ mod volume;
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/scene_sfx.rs"));
 const VOICE: u8 = crate::ambience::SCENE_SFX_VOICE;
 const NONE: usize = usize::MAX;
+/// Bytes of a clip sent to the SPU between pad checkpoints. The SPU port stalls the CPU on
+/// every write, so a slice takes a good fraction of a frame; 1 KiB keeps a late slice
+/// from carrying a poll over a VBlank (4 KiB did, in the first load of the False Knight
+/// journey).
+const UPLOAD_SLICE: usize = 1024;
 static mut CURRENT: usize = NONE;
 /// Plays per event, and plays asked for that the resident bank does not hold.
 #[no_mangle]
@@ -73,8 +78,8 @@ pub fn upload(scene: usize, bytes: &[u8]) {
         assert!(address % 16 == 0 && offset % 16 == 0);
         crate::ambience::forget(address, address + len);
         let clip = &bytes[offset as usize..(offset + len) as usize];
-        for (slice, part) in clip.chunks(4096).enumerate() {
-            spu::upload_adpcm(SpuAddr::new(address + (slice * 4096) as u32), part);
+        for (slice, part) in clip.chunks(UPLOAD_SLICE).enumerate() {
+            spu::upload_adpcm(SpuAddr::new(address + (slice * UPLOAD_SLICE) as u32), part);
             crate::input::checkpoint();
         }
         total += len;

@@ -29,7 +29,8 @@ pub(super) fn scale(depth: i32) -> i32 {
         }
         quotient as i32
     } else {
-        (NUMERATOR as i64 / depth as i64) as i32
+        // Callers reject depth <= ONE, so the divisor is positive.
+        hk_sim::div64::div_u64(NUMERATOR, depth as u64) as i32
     }
 }
 #[cfg(test)]

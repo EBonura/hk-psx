@@ -85,7 +85,7 @@ pub fn ease_in_out_sine(p: i32) -> i32 {
 /// iTween's speed mode: the move takes |amount| / speed seconds.
 fn half_ticks(amount: i32, speed: i32) -> u16 {
     assert!(speed > 0, "Acid Flyer speed must be positive");
-    ((amount.unsigned_abs() as u64 * 60 + speed as u64 / 2) / speed as u64)
+    crate::div64::div_u64(amount.unsigned_abs() as u64 * 60 + speed as u64 / 2, speed as u64)
         .clamp(1, u16::MAX as u64) as u16
 }
 fn eased(amount: i32, tick: u16, ticks: u16) -> i32 {

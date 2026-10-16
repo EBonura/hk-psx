@@ -870,8 +870,8 @@ pub fn direction(from: [i32; 2], to: [i32; 2]) -> [i32; 2] {
         return [ONE, 0];
     }
     [
-        (d[0] * ONE as i64 / length) as i32,
-        (d[1] * ONE as i64 / length) as i32,
+        crate::div64::div_i64(d[0] * ONE as i64, length) as i32,
+        crate::div64::div_i64(d[1] * ONE as i64, length) as i32,
     ]
 }
 

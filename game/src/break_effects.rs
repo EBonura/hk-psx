@@ -535,7 +535,8 @@ fn speed_fraction(speed: i32, range: [i32; 2]) -> u8 {
     let span = (range[1] as i64 - range[0] as i64) as u32;
     match delta.checked_mul(255) {
         Some(n) => (n / span) as u8,
-        None => (delta as u64 * 255 / span as u64) as u8,
+        // delta < span here, so the quotient is below 256.
+        None => hk_sim::div64::div_u64(delta as u64 * 255, span as u64) as u8,
     }
 }
 /// Preserve truncation toward zero; small components (notably source depth)
@@ -559,7 +560,7 @@ pub(super) fn scale_velocity(v: i32, scale: i32, speed: i32) -> i32 {
                 q as i32
             }
         }
-        None => (v as i64 * scale as i64 / speed as i64) as i32,
+        None => hk_sim::div64::div_i64(v as i64 * scale as i64, speed as i64) as i32,
     }
 }
 fn phase(p: &Particle) -> usize {
@@ -744,7 +745,7 @@ fn spawn_specs_with_bases(
             let direction = core::array::from_fn::<_, 3, _>(|j| dot3(e.basis[j], direction));
             let norm = length3(direction).max(1);
             let velocity = core::array::from_fn(|j| {
-                ((direction[j] as i64 * speed as i64) / norm as i64) as i32
+                hk_sim::div64::div_i64(direction[j] as i64 * speed as i64, norm as i64) as i32
                     + range(&mut rng, ordered(s.velocity[j]))
             });
             // Only trusted generated emitter/style slices supply a base. Generic
@@ -769,7 +770,7 @@ fn spawn_specs_with_bases(
                 kind: e.style + 2,
                 life: super::NonZeroU16::new(life).expect("positive particle lifetime"),
                 age: 0,
-                delay: (((i as u64 + 1) * 60 * ONE as u64 - 1) / s.rate as u64).min(255) as u8,
+                delay: hk_sim::div64::div_u64((i as u64 + 1) * 60 * ONE as u64 - 1, s.rate as u64).min(255) as u8,
                 cell: (super::random(&mut rng) % s.frames.len() as u32) as u8,
                 gradient,
                 color,
@@ -975,7 +976,7 @@ fn tick_specs_with_tracks(
                         [normal[0].signum() * ONE, 0]
                     } else {
                         let n = length3([normal[0], normal[1], 0]).max(1);
-                        normal.map(|v| (v as i64 * ONE as i64 / n as i64) as i32)
+                        normal.map(|v| hk_sim::div64::div_i64(v as i64 * ONE as i64, n as i64) as i32)
                     };
                     let dot = mulq(p.velocity[0], unit[0]) + mulq(p.velocity[1], unit[1]);
                     for j in 0..2 {
@@ -1029,8 +1030,10 @@ fn collide(
             }
         } else {
             let height = |x: i32| {
-                y0 + (((x.clamp(x0.min(x1), x0.max(x1)) - x0) as i64 * (y1 - y0) as i64)
-                    / (x1 - x0) as i64) as i32
+                y0 + hk_sim::div64::div_i64(
+                    (x.clamp(x0.min(x1), x0.max(x1)) - x0) as i64 * (y1 - y0) as i64,
+                    (x1 - x0) as i64,
+                ) as i32
             };
             let (before, surface) = if y0 == y1 {
                 (y0, y0)
