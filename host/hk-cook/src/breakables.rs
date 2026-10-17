@@ -634,7 +634,7 @@ pub fn destruction_contract(sc: &Scene, record: &ContractInput, gravity: f64) ->
             .nth(1)
             .and_then(|v| v.parse().ok())
             .ok_or("bad debris part")?;
-        match part_emitter(sc.source, sc, part_gid, gravity, false, false, None, false) {
+        match part_emitter(sc.source, sc, part_gid, gravity, false, false, None, false, false) {
             Err(error) => {
                 authored.push(OUTPUT_PARTICLES);
                 missing_list.push(missing(OUTPUT_PARTICLES, Some(part), &error));
@@ -1324,6 +1324,7 @@ fn particle_outputs(
             played.contains(&gid),
             false,
             None,
+            false,
             false,
         ) {
             Err(error) => {

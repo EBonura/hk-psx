@@ -71,6 +71,18 @@ radius/edge contacts and a collision lifetime-loss approximation. The PS1 palett
 three opacity levels and Average blending approximate the original lighting and
 transparency. Pool overflow can reduce simultaneous particles and is counted.
 
+Limit Velocity over Lifetime (`ClampVelocityModule`) is cooked as Unity documents it: each
+update, a particle faster than the magnitude loses `dampen` of the excess
+(`speed - (speed - limit) * dampen`, at 60 Hz here). Audited over every cooked
+system (the 640 break-effect records, which include the Knight's dust): 608 use the
+limit, all with a constant magnitude, no separate axes and no drag, and all in local
+space. That is the world limit for every unscaled system (magnitude 12 on 435, 0 on
+123, 1 on 47 with the dust's dampen of 0.1), and the three grave poles at scale 0.81
+have a limit of zero, so no scaled system has a limit to scale. The cook now refuses a
+curve or a range of magnitudes, and a non-zero local-space limit under a scaled
+emitter, instead of reading them at one
+point; none of today's systems is refused.
+
 Geo rocks still lack their separately authored chips, hit jitter and gleam.
 Their existing intact/depleted art and payouts remain; they are not given a
 substitute stone-particle burst. Breakable nail flashes, directional hit dust,
