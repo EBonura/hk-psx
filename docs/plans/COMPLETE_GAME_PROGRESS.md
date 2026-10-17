@@ -4,19 +4,23 @@ This ledger tracks implementation of `COMPLETE_GAME_SOL.md`. A package is
 validated only when its acceptance criteria have current evidence. Source
 extraction, cooking, runtime binding and playable validation remain separate.
 
-## Current authority
+## Current authority (2026-10-17)
 
-- Source branch: `main`; implementation began from commit `8337d68`.
-- Windows source: CrossOver Steam installation, Unity `6000.0.61f1`.
-- Playable disc: build 76; King's Pass, Dirtmouth and seventeen Forgotten
-  Crossroads scenes (01 to 10, 12 to 14, 16, 18, 19, 21) connected through the
-  authored gates: 19 scenes, 329 views, 200 disc chunks.
-- Disc policy: the user authorized rebuilds on 2026-09-16; every build now
-  replays the route tapes in `tools/tapes` and fails on any fault.
-- Current packages: P05-P08, admit checked metadata, build the catalog-wide
-  source matrix, remove scene-multiplied Geo state, and correct the first
-  cross-layer tile-occlusion failure before adding streaming admission. The
-  playable disc is still preserved.
+- Source branch: `main` at `15ec4f6` (installed library disc, bin sha256
+  `30434798...`; SDK pin `355dc911`, emulator pin `b3848054`). The entries
+  below the "Package state" table are dated evidence and are not rewritten;
+  the section "Status at main 15ec4f6" next to it says where they are stale.
+- Windows source: CrossOver Steam installation, Unity `6000.0.61f1`
+  (build input; never modified).
+- Playable disc: 60 scenes in 943 streamed views: King's Pass (Tutorial_01),
+  Town, Room_shop, 43 Forgotten Crossroads scenes and 14 Greenpath (Fungus1)
+  scenes, of the 501 BuildSettings scenes (`host/quality.py SCENE_TABLE`).
+- Disc policy: every build replays the route tapes in `tools/tapes` (55 routes
+  pinned in `host/hk-build/main.rs`) and fails on any fault; the one library
+  entry is updated with a provenance json.
+- Scope and order (Manny, 2026-10-01 and 2026-10-17): the whole game including
+  Grimm Troupe, White Palace and Godhome; feature complete first, optimisation
+  after, with knowledge of the full game. The pacing ceilings stay as pinned.
 
 ## Milestones
 
@@ -29,6 +33,32 @@ extraction, cooking, runtime binding and playable validation remain separate.
 | M4: full combat roster | P19-P22 | in progress |
 | M5: complete content | P23-P27 | pending |
 | M6: release proof | P28-P31 | pending |
+
+## Status at main 15ec4f6 (2026-10-17)
+
+Corrections to the dated package rows below, each checked against the code,
+the cooked `regions.json` or a replayed route on 2026-10-17. Rows not
+mentioned here are unchanged in meaning.
+
+| Package | What changed since the row was written | Evidence |
+| --- | --- | --- |
+| P06/P09 world | 60 scenes admitted (43 Crossroads, 14 Greenpath, Tutorial_01, Town, Room_shop), 943 views, 123 resolved gates. Scene-to-scene travel is still a fade, a CD load of the whole next scene and its code chunk | `host/quality.py`; `data/regions.json` |
+| P05 RAM | Linked code 794,696 B, data 278,568 B, bss 797,588 B (scene arena 354,032 B), module pool 94,208 B, 17,132 B free below the pool. The 64-bit to `psx_math::Wide` pass returned about 16 KB | `docs/BUDGET.md` |
+| P07/P19/P20 enemies | 288 enemy placements in the admitted scenes: 254 have a supported controller, 34 do not (Mossman Shaker 8, Moss Charger 5, Fat Fly 4, Plant Trap 2, plus variants). Controllers added since the row: Mosquito, Acid Flyer, Moss Walker, Mossman Runner, Pigeon, Zombie Shield, Husk Guard, Blocker, Hatcher with babies. Crawler, Gruzzer, Vengefly run on the v1 original-FSM VM | `shared/hk-sim/src`; cooked actor census |
+| P10 scripts | Still frozen on main: 256 of 1,821 FSM instances compile. The replacement runtime (HKFSM03, scene scripts folded in) is on `feat/fsm-v2-phase1-2026-10-16`, not on main; it needs a rebase onto the SDK repin | design in `docs/FSM-V2-DESIGN.md` on branch `design/fsm-v2-truth-2026-10-15` |
+| P13 save | HKS5 stands (166 B untouched world + 4 B per item, cap 192 items). PlayerData implements 8 bools plus map and NPC bits 16 to 25 and 4 level bytes; the original has 815 keys | `game/src/persist.rs` |
+| P14/P15 abilities | Cloak, Claw, Wings, Crystal Heart, Shade Cloak, Dream Nail (movement) exist and are granted only by the Cheats page. Vengeful Spirit is earned from the Shaman. Desolate Dive, Howling Wraiths, nail arts and nail upgrades are not implemented. Hornet 1 and the Cloak pickup exist only on `campaign/hk-hornet-2026-10-15` | tapes `cheat-*`, `mound-spell`; `game/src/shaman.rs` |
+| P16 charms | 40 charms cooked; 6 effects live (ids 3, 4, 20, 21, 23, 25) | `MISSING-FEATURES-hk-psx.md` |
+| P17/P18 shops and NPCs | Sly's shop is admitted (Room_shop) with the full purchase logic; NPCs cooked: Elderbug, Cornifer, Miner. The stag bell costs 50 Geo and travel is free, but no Stag station interior or travel exists | `game/src/shop.rs`; ledger P17 |
+| P21 bosses | False Knight (fair kill pinned), Brooding Mawlek (kill pinned with three cheats on) and Gruz Mother (`gruz-fight`) are native hand ports. No other boss exists. The 22-tree FSM census is in `docs/FSM-V2-DESIGN.md` on `design/fsm-v2-truth-2026-10-15` | tapes `journey-false-knight`, `mawlek-fight`, `gruz-fight` |
+| Audio | Four XA songs (title, Boss Battle 1, Enemy Battle, Boss Defeat), 11 premixed area streams through the SPU ring, per-area ambience, per-scene SFX banks. No whole-game sound or music census exists; most enemy and boss sounds are missing | `docs/MUSIC.md`, `docs/SCENE_SFX.md` |
+| Never started | FMVs and the five endings, the opening cinematic, Grimm Troupe, White Palace, Godhome, about 440 scenes with their music, levers and toll gates, the Stag and Tram networks, inventory and journal screens | lost-audit hk report (2026-10-15) and this audit |
+| Validation | 53 of 55 routes pass; the two reds are pacing ceilings (grub-jar, cornifer-map). Open-loop tapes need realigning whenever a load duration moves | hk-perf notes, 2026-10-17 |
+
+Work in flight on 2026-10-17: lane hk-restore (Crossroads arena actors and
+waves, `fdacb592` on `feat/hk-restore-2026-10-17`). Unmerged and not on
+GitHub from the lost-audit: `gameplay/crossroads22-*` (local-only, bundled),
+`wip/hk-parity-levers`.
 
 ## Package state
 
