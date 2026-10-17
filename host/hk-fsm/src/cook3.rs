@@ -67,7 +67,7 @@ pub fn cook_tree_with(fsms: &[(i64, &Value)], fields: Option<&[String]>) -> Resu
         return Err("a string variable is written, so it cannot be folded to its initial text".into());
     }
     if stats.class_mismatch != 0 || stats.float_overflow != 0 {
-        return Err(format!("{} variable class mismatches, {} Q16.16 overflows", stats.class_mismatch, stats.float_overflow).into());
+        return Err(format!("{} variable class mismatches, {} Q16.16 overflows {:?}", stats.class_mismatch, stats.float_overflow, stats.overflowed).into());
     }
     for ir in &irs {
         for st in &ir.states {
@@ -574,9 +574,14 @@ pub fn cook_all(root: &std::path::Path) -> Result<()> {
 /// Greenpath's Hornet (Fungus1_04_boss): its fight's FSMs and the Encounter's as one boss tree. Writes `data/hornet3.hkf3`,
 /// `data/hornet3_fsm3.rs` and `data/hornet3_names.txt`. The tree reads the Steam level file directly.
 pub fn cook_hornet3(root: &std::path::Path) -> Result<()> {
-    use hk_unity::Value as V;
     let source = hk_unity::Source::from_doctor(root)?;
-    let (boss, sources) = crate::boss::hornet_inputs(&source)?;
+    cook_boss_label(root, &source, "hornet3", "level133", crate::boss::hornet_inputs(&source)?)?;
+    cook_boss_label(root, &source, "hornet_corpse3", "sharedassets105.assets", crate::boss::hornet_corpse_inputs(&source)?)
+}
+
+fn cook_boss_label(root: &std::path::Path, source: &hk_unity::Source, label: &str, level: &str, inputs: (i64, Vec<(i64, String)>)) -> Result<()> {
+    use hk_unity::Value as V;
+    let (boss, sources) = inputs;
     let mut values: Vec<(i64, V)> = vec![];
     for (go, sid) in &sources {
         let (file, path) = sid.rsplit_once(':').ok_or("FSM identity")?;
@@ -587,8 +592,7 @@ pub fn cook_hornet3(root: &std::path::Path) -> Result<()> {
     let fsms: Vec<(i64, &V)> = values.iter().map(|(g, v)| (*g, v)).collect();
     // The PlayerData fields Hornet's FSMs read and write, in the order of the adapter's local reserve.
     let fields: Vec<String> = crate::boss::HORNET_FIELDS.iter().map(|s| s.to_string()).collect();
-    let cooked = crate::boss::cook_boss_tree(&source, "level133", &fsms, &[boss], Some(&fields))?;
-    let label = "hornet3";
+    let cooked = crate::boss::cook_boss_tree(source, level, &fsms, &[boss], Some(&fields))?;
     std::fs::write(root.join(format!("data/{label}.hkf3")), &cooked.cooked.bank)?;
     std::fs::write(root.join(format!("data/{label}_fsm3.rs")), crate::boss::rust_table(label, &cooked, ""))?;
     write_names(root, label, &cooked.cooked)?;

@@ -255,6 +255,29 @@ pub fn hornet_inputs(source: &Source) -> Result<(i64, Vec<(i64, String)>)> {
     Ok((boss, sources))
 }
 
+/// `Corpse Hornet 1`, the prefab Hornet's death effects spawn (sharedassets105): the object and the FSMs of its subtree.
+/// Its Control FSM writes `hornet1Defeated` in its first state and sends `HORNET LEAVE` to the Cloak Corpse in its last.
+pub fn hornet_corpse_inputs(source: &Source) -> Result<(i64, Vec<(i64, String)>)> {
+    const FILE: &str = "sharedassets105.assets";
+    const ROOT: i64 = 30;
+    let kids = crate::census::hierarchy(source, FILE)?;
+    let mut tree = vec![];
+    let mut stack = vec![ROOT];
+    while let Some(g) = stack.pop() {
+        tree.push(g);
+        if let Some(c) = kids.get(&g) {
+            stack.extend(c.iter().copied());
+        }
+    }
+    let fsms = level_fsms(source, FILE)?;
+    let sources: Vec<(i64, String)> =
+        tree.iter().flat_map(|g| fsms.iter().filter(move |(go, _, _)| go == g).map(|(go, sid, _)| (*go, sid.clone()))).collect();
+    if sources.is_empty() {
+        return Err("Corpse Hornet 1 has no FSM".into());
+    }
+    Ok((ROOT, sources))
+}
+
 /// Cook the FSMs `fsms` (`(owner object, FSM)`) as one boss tree whose scene objects are the subtrees of `roots` plus the
 /// objects the FSMs name. `fields` is the PlayerData list the player-data actions resolve against.
 pub fn cook_boss_tree(source: &Source, level: &str, fsms: &[(i64, &Value)], roots: &[i64], fields: Option<&[String]>) -> Result<BossCooked> {
@@ -277,7 +300,7 @@ pub fn cook_boss_tree(source: &Source, level: &str, fsms: &[(i64, &Value)], root
         return Err("a string variable is written, so it cannot be folded to its initial text".into());
     }
     if stats.class_mismatch != 0 || stats.float_overflow != 0 {
-        return Err(format!("{} variable class mismatches, {} Q16.16 overflows", stats.class_mismatch, stats.float_overflow).into());
+        return Err(format!("{} variable class mismatches, {} Q16.16 overflows {:?}", stats.class_mismatch, stats.float_overflow, stats.overflowed).into());
     }
     for ir in &irs {
         for st in &ir.states {
