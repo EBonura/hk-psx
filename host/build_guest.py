@@ -82,6 +82,11 @@ def module_tables():
     props_rs=(ROOT/'data/props.rs').read_text()
     # Room art travels with its rooms too: the prop art split by kind.
     art,art_rs=code_modules.props_art(props_rs,(ROOT/'data/props.hk').read_bytes())
+    if code_modules.HORNET:
+        # Her room's state block: the fight lives in these zeroed pool bytes (shared/hk-sim hornet_fight.rs STATE_BYTES).
+        import re
+        size=int(re.search(r'pub const STATE_BYTES: usize = (\d+);',(ROOT/'shared/hk-sim/src/hornet_fight.rs').read_text())[1])
+        art['art_hornet']=bytes(size)
     for name,text in (('modules.rs',code_modules.manifest_rust(packed,regions_rs,props_rs)),('props_art.rs',art_rs)):
         if not (ROOT/'data'/name).is_file() or (ROOT/'data'/name).read_text()!=text:(ROOT/'data'/name).write_text(text)
     return code_modules.scene_table(packed,regions_rs,props_rs),art
@@ -208,7 +213,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     if not link_map.exists():
         run(['cargo','clean','--release','--target','mipsel-sony-psx','-p','hk-psx'],cwd=ROOT/'game',env=env)
     cmd=['cargo','build','--locked','--release']
-    features=(['emulator-telemetry'] if telemetry else [])+[f for f in os.environ.get('HK_GUEST_FEATURES','').split(',') if f]+(['audio-probe'] if os.environ.get('HK_AUDIO_PROBE') else [])
+    features=(['emulator-telemetry'] if telemetry else [])+[f for f in os.environ.get('HK_GUEST_FEATURES','').split(',') if f]+(['audio-probe'] if os.environ.get('HK_AUDIO_PROBE') else [])+(['hornet'] if (ROOT/'data/hornet_art.rs').is_file() else [])
     if features:cmd+=['--features',','.join(features)]
     run(cmd,cwd=ROOT/'game',env=env)
     linked=guest_target/'mipsel-sony-psx/release/hk-psx.exe'
