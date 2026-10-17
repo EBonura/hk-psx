@@ -86,7 +86,10 @@ pub fn scene_rows(
     groups: &mut HashMap<(usize, String), (usize, bool)>,
 ) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
-    for actor in actors::scan(sc, source, catalogue)? {
+    let actors = if scene == 21 {
+        actors::scan_crossroads22(sc, source, catalogue)?
+    } else { actors::scan(sc, source, catalogue)? };
+    for actor in actors {
         if !actor.supported || actor.spec_source_id >= ADDITIVE_BASE {
             continue;
         }

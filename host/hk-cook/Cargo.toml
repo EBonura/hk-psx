@@ -7,6 +7,7 @@ description = "hk-psx's cookers in Rust: the original install to cooked PS1 data
 
 [dependencies]
 hk-dotnet = { path = "../hk-dotnet" }
+hk-format = { path = "../../shared/hk-format" }
 hk-lz4 = { path = "../hk-lz4" }
 hk-pil = { path = "../hk-pil" }
 hk-unity = { path = "../hk-unity" }

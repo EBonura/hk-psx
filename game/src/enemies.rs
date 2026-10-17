@@ -629,7 +629,9 @@ fn flash_tint(left: u8) -> (u8, u8, u8) {
 /// Quads the enemy pass may submit. Larger than `MAX_VISIBLE` because a part
 /// of the False Knight that lives in its scene's texture pages is a quad with
 /// no animation key: only streamed draws count against the cache.
-pub const MAX_DRAWS: usize = 48;
+// All thirty-two actor slots and thirty-two damaging projectile slots can
+// remain visible together. Texture residency is deduplicated separately.
+pub const MAX_DRAWS: usize = 64;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SpawnState {
     Pending,
@@ -1701,6 +1703,7 @@ impl Actor {
                 | Runtime::HatcherBaby(_)
         )
     }
+    #[inline(never)]
     fn new(scene: usize, placement: &hk_sim::ActorPlacement, spec: &ActorSpec) -> Self {
         // Stable per-source seed, not a claim to reproduce Unity's global RNG.
         let seed = placement
@@ -1870,11 +1873,17 @@ impl Actor {
                         clip: hk_sim::aspid::Clip::Fly,
                     })
                 }
-                ActorController::Hatcher { .. } => {
+                ActorController::Hatcher { max_hatched, .. } => {
                     let controller = if placement.start_alert {
                         hk_sim::hatcher::Hatcher::new_alert([placement.x, placement.y], seed)
                     } else {
                         hk_sim::hatcher::Hatcher::new([placement.x, placement.y], seed)
+                    };
+                    // The arena's `Hatcher NP` counts what it releases.
+                    let controller = if max_hatched != 0 {
+                        controller.with_cap(max_hatched)
+                    } else {
+                        controller
                     };
                     Runtime::Hatcher(HatcherRuntime {
                         controller,
@@ -4779,6 +4788,35 @@ pub struct Events {
     /// SOUL taken by a Dream Nail slash this tick, summed over the actors hit.
     pub dream_soul: u16,
 }
+/// A wave member waiting to land, standing, or counted out.
+#[derive(Clone, Copy)]
+struct Seat {
+    source_id: u32,
+    /// Ticks until `summon`'s fly-in ends and the member stands at its place.
+    wait: u16,
+    state: SeatState,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SeatState {
+    Empty,
+    Waiting,
+    Alive,
+    Done,
+}
+/// The `Battle Control` of a waves arena in the loaded scene: the order of the
+/// fight (`hk_sim::waves`) and the wave in progress. Its members are not seated
+/// with the scene; the pool could not hold every wave beside what stood there
+/// first, so each lands in a slot the last moment freed.
+#[derive(Clone, Copy)]
+struct ArenaRuntime {
+    scene: u8,
+    arena: hk_sim::waves::WaveArena,
+    seats: [Seat; hk_sim::waves::MAX_MEMBERS],
+    /// Set by `BG CLOSE`: what `Remove on battle start` kills stays gone for
+    /// the rest of the visit, whatever region the scene reseats.
+    begun: bool,
+    rng: u32,
+}
 pub struct EnemyWorld {
     actors: [Option<Actor>; MAX_ACTORS],
     shots: [Option<Shot>; SHOTS],
@@ -4806,6 +4844,7 @@ pub struct EnemyWorld {
     placed_key: Option<usize>,
     placement: [u8; MAX_ACTORS],
     placed_spec: [Option<&'static ActorSpec>; MAX_ACTORS],
+    arena: Option<ArenaRuntime>,
 }
 const NO_PLACEMENT: u8 = u8::MAX;
 impl EnemyWorld {
@@ -5140,6 +5179,7 @@ impl EnemyWorld {
             placed_key: None,
             placement: [NO_PLACEMENT; MAX_ACTORS],
             placed_spec: [None; MAX_ACTORS],
+            arena: None,
         }
     }
     /// Compact read-only state for route validation/telemetry.
@@ -5213,6 +5253,9 @@ impl EnemyWorld {
             }
         }
         self.placed_key = None;
+        if self.arena.is_some_and(|a| a.scene as usize == scene) {
+            self.arena = None;
+        }
         self.clear_shots(scene);
         // A death or a gate leaves the arena: no roar or arena end outlives it.
         unsafe {
@@ -5226,12 +5269,14 @@ impl EnemyWorld {
         if key.is_some() && key == self.placed_key {
             return;
         }
+        self.sync_arena(region.scene);
         for (placement, spec) in crate::world::region_actors(region) {
             if self
                 .actors
                 .iter()
                 .flatten()
                 .any(|a| a.scene == region.scene && a.source_id == placement.source_id)
+                || self.arena_holds_back(region.scene, placement.source_id)
             {
                 continue;
             }
@@ -5305,6 +5350,215 @@ impl EnemyWorld {
         }
         self.placed_key = key;
     }
+    /// `Battle Control`'s `Pause` -> `Init` for a scene with a waves arena: the
+    /// gates go back to their placement state and a won arena opens them.
+    #[cfg_attr(not(test), optimize(size))]
+    #[inline(never)]
+    fn sync_arena(&mut self, scene: usize) {
+        if self.arena.is_some_and(|a| a.scene as usize == scene) {
+            return;
+        }
+        self.arena = None;
+        let Some(data) = crate::battle_waves::arena(scene) else {
+            return;
+        };
+        let activated = crate::persist::get(crate::persist::Kind::BattleScene, scene, 0).is_some();
+        let arena = hk_sim::waves::WaveArena::new(activated, data.sizes);
+        crate::battle_gates::arena_entry(
+            scene,
+            arena
+                .enter()
+                .contains(hk_sim::waves::Action::QuickOpenGates),
+        );
+        self.arena = Some(ArenaRuntime {
+            scene: scene as u8,
+            arena,
+            seats: [Seat {
+                source_id: 0,
+                wait: 0,
+                state: SeatState::Empty,
+            }; hk_sim::waves::MAX_MEMBERS],
+            begun: false,
+            rng: 0x9E37_79B9 ^ scene as u32,
+        });
+    }
+    /// Whether the arena keeps this placement out of the scene's own seating:
+    /// a wave member lands when its wave is summoned, and what the battle
+    /// removed stays removed.
+    fn arena_holds_back(&self, scene: usize, source_id: u32) -> bool {
+        let Some(rt) = &self.arena else {
+            return false;
+        };
+        rt.scene as usize == scene
+            && (crate::battle_waves::wave_of(scene, source_id) != 0
+                || (rt.begun && crate::battle_waves::removed(scene, source_id)))
+    }
+    fn drop_slot(&mut self, slot: usize) {
+        self.actors[slot] = None;
+        self.placement[slot] = NO_PLACEMENT;
+        self.placed_spec[slot] = None;
+    }
+    /// One tick of the arena's `Battle Control`: the hero crossing its trigger,
+    /// the summons landing, the dead being counted, and the waits.
+    #[cfg_attr(not(test), optimize(size))]
+    #[inline(never)]
+    fn arena_step(&mut self, region: &Region, hero: [i32; 4]) {
+        use hk_sim::waves::Phase;
+        let Some(mut rt) = self.arena else {
+            return;
+        };
+        let scene = region.scene;
+        if rt.scene as usize != scene {
+            return;
+        }
+        let Some(data) = crate::battle_waves::arena(scene) else {
+            return;
+        };
+        if rt.arena.phase() == Phase::Waiting && overlap(hero, data.trigger) {
+            let started = rt.arena.hero_entered();
+            self.apply_arena(&mut rt, region, started);
+        }
+        for i in 0..rt.seats.len() {
+            let seat = rt.seats[i];
+            match seat.state {
+                SeatState::Waiting => {
+                    let wait = seat.wait.saturating_sub(1);
+                    rt.seats[i].wait = wait;
+                    if wait == 0 && self.land_member(region, seat.source_id) {
+                        rt.seats[i].state = SeatState::Alive;
+                    }
+                }
+                SeatState::Alive => {
+                    let dead = self
+                        .actors
+                        .iter()
+                        .flatten()
+                        .find(|a| a.scene == scene && a.source_id == seat.source_id)
+                        .is_some_and(|a| a.health.dead);
+                    if dead {
+                        rt.seats[i].state = SeatState::Done;
+                        rt.arena.enemy_died();
+                    }
+                }
+                SeatState::Empty | SeatState::Done => {}
+            }
+        }
+        let actions = rt.arena.tick();
+        self.apply_arena(&mut rt, region, actions);
+        self.arena = Some(rt);
+    }
+    /// A summoned member standing at its place: `summon`'s `Summon` state, which
+    /// moves it there, activates it and sends ALERT (the cooker seats it alert).
+    /// False when no slot is free or the region does not list it; it tries again.
+    #[inline(never)]
+    fn land_member(&mut self, region: &Region, source_id: u32) -> bool {
+        let mut found = None;
+        for index in 0..crate::world::region_actor_count(region) {
+            if let Some((placement, spec)) = crate::world::region_actor(region, index) {
+                if placement.source_id == source_id { found = Some((index, placement, spec)); break; }
+            }
+        }
+        let Some((index, placement, spec)) = found else { return false; };
+        let Some(slot) = self.actors.iter().position(Option::is_none) else {
+            return false;
+        };
+        assert!(
+            index < NO_PLACEMENT as usize,
+            "placement index past the table"
+        );
+        self.actors[slot] = Some(Actor::new(region.scene, &placement, spec));
+        self.placement[slot] = index as u8;
+        self.placed_spec[slot] = Some(spec);
+        true
+    }
+    #[cfg_attr(not(test), optimize(size))]
+    #[inline(never)]
+    fn apply_arena(
+        &mut self,
+        rt: &mut ArenaRuntime,
+        region: &Region,
+        actions: hk_sim::waves::Actions,
+    ) {
+        use hk_sim::waves::Action;
+        let scene = region.scene;
+        for action in actions.iter() {
+            match action {
+                // The broadcast reaches every gate of the room, then
+                // `Remove on battle start` answers it.
+                Action::CloseGates => {
+                    crate::battle_gates::close(scene);
+                    rt.begun = true;
+                    self.remove_for_battle(region);
+                }
+                Action::OpenGates => crate::battle_gates::open(scene),
+                // `Init` took the `Activated` branch when the arena was built.
+                Action::QuickOpenGates => {}
+                Action::StartWave(wave) => {
+                    // The last wave is over: its bodies leave the pool.
+                    for seat in &mut rt.seats {
+                        if seat.state != SeatState::Empty {
+                            if let Some(slot) = self.actors.iter().position(|a| {
+                                a.as_ref().is_some_and(|a| {
+                                    a.scene == scene && a.source_id == seat.source_id
+                                })
+                            }) {
+                                self.drop_slot(slot);
+                            }
+                            seat.state = SeatState::Empty;
+                        }
+                    }
+                    let mut next = 0;
+                    for &(_, source_id, word) in crate::battle_waves::members(scene) {
+                        if word & 7 == wave && next < rt.seats.len() {
+                            if rt.rng == 0 {
+                                rt.rng = 1;
+                            }
+                            rt.seats[next] = Seat {
+                                source_id,
+                                wait: hk_sim::waves::summon_delay(&mut rt.rng),
+                                state: SeatState::Waiting,
+                            };
+                            next += 1;
+                        }
+                    }
+                }
+                // `End Pause` writes `Activated` before its waits, so a save
+                // taken during them already counts as cleared.
+                Action::Persist => {
+                    crate::persist::set(crate::persist::Kind::BattleScene, scene, 0, 1)
+                }
+                // `CameraLockArea B` is an authored lock area the world cooks;
+                // `battle_gates::close` and `open` are what switch it.
+                Action::CameraLock(_) => {}
+            }
+        }
+    }
+    /// `Remove on battle start`: `BG CLOSE` sends `CENTIPEDE DEATH` to everything
+    /// that stood in the room, which takes the placed Hatcher and the Spitters
+    /// out of play without a corpse and sends every released cage member back
+    /// to the cage (a parked one has no transition for it and stays).
+    fn remove_for_battle(&mut self, region: &Region) {
+        let scene = region.scene;
+        for slot in 0..MAX_ACTORS {
+            let Some(actor) = &self.actors[slot] else {
+                continue;
+            };
+            if actor.scene != scene {
+                continue;
+            }
+            if crate::battle_waves::removed(scene, actor.source_id) {
+                self.drop_slot(slot);
+            } else if actor.baby().is_some() && !actor.parked_baby() {
+                if let Some((placement, spec)) =
+                    crate::world::region_actor(region, self.placement[slot] as usize)
+                {
+                    if let Some(actor) = self.actors[slot].as_mut() {
+                        actor.park_baby(&placement, spec);
+                    }
+                }
+            }
+        }
+    }
     /// The spec of the slot's placement in `region`, from the table when it
     /// was built for `region`, else by searching the region's placements.
     fn spec_in(&self, slot: usize, region: &Region, source_id: u32) -> Option<&'static ActorSpec> {
@@ -5337,6 +5591,15 @@ impl EnemyWorld {
         resident: impl Fn(usize, i32, i32, &mut crate::disc::Located) -> Option<(Region, Room<'a>)>,
     ) -> Events {
         self.sync_region(region);
+        self.arena_step(
+            region,
+            [
+                player.x - crate::PARAMS.half_width,
+                player.y + crate::PARAMS.bottom,
+                player.x + crate::PARAMS.half_width,
+                player.y + crate::PARAMS.top,
+            ],
+        );
         let mut events = Events {
             hits: 0,
             kills: 0,
@@ -6607,10 +6870,7 @@ impl EnemyWorld {
                 {
                     continue;
                 }
-                assert!(
-                    draws.keys < MAX_VISIBLE && draws.len < MAX_DRAWS,
-                    "visible enemy cache budget exceeded"
-                );
+                assert!(draws.can_push(texture as u16), "visible enemy cache budget exceeded");
                 draws.push(
                     texture as u16,
                     verts,
@@ -6681,10 +6941,9 @@ impl EnemyWorld {
             {
                 continue;
             }
-            if draws.keys >= MAX_VISIBLE || draws.len >= MAX_DRAWS {
-                break;
-            }
-            draws.push(u32_at(f, 0) as u16, verts, 0);
+            let texture = u32_at(f, 0) as u16;
+            assert!(draws.can_push(texture), "visible enemy projectile budget exceeded");
+            draws.push(texture, verts, 0);
         }
         // Every third spurt, which shows each of the clip's 3-tick frames once
         // along the trail rather than paying a quad for all eighteen.
@@ -7096,14 +7355,22 @@ pub struct Draws {
     keys: usize,
 }
 impl Draws {
+    #[inline(never)]
+    fn can_push(&self, texture: u16) -> bool {
+        self.len < MAX_DRAWS && (self.keys < MAX_VISIBLE
+            || !crate::render::streamed(texture as usize)
+            || self.entries[..self.len].iter().flatten().any(|d| d.texture == texture))
+    }
     fn push(&mut self, texture: u16, verts: [(i16, i16); 4], flash: u8) {
+        let new_key = crate::render::streamed(texture as usize)
+            && !self.entries[..self.len].iter().flatten().any(|d| d.texture == texture);
         self.entries[self.len] = Some(Draw {
             texture,
             verts,
             flash,
         });
         self.len += 1;
-        if crate::render::streamed(texture as usize) {
+        if new_key {
             self.keys += 1;
         }
     }
@@ -7133,6 +7400,51 @@ impl Draws {
             }
         }
         self.len as u32
+    }
+}
+
+#[cfg(test)]
+mod shared_frame_tests {
+    use super::*;
+    #[test]
+    fn shared_frames_draw_every_actor_without_spending_duplicate_cache_slots() {
+        let mut draws = Draws { entries: [None; MAX_DRAWS], len: 0, keys: 0 };
+        for i in 0..28 {
+            let texture = (i % 5) as u16;
+            assert!(draws.can_push(texture));
+            draws.push(texture, [(0, 0); 4], 0);
+        }
+        assert_eq!((draws.len, draws.keys), (28, 5));
+        let mut needed = [0; MAX_VISIBLE];
+        let mut count = 0;
+        draws.append_needed(&mut needed, &mut count);
+        assert_eq!(count, 5);
+    }
+    #[test]
+    fn true_unique_cache_overflow_is_refused_but_shared_frames_remain_drawable() {
+        let mut draws = Draws { entries: [None; MAX_DRAWS], len: 0, keys: 0 };
+        for texture in 0..MAX_VISIBLE {
+            assert!(draws.can_push(texture as u16));
+            draws.push(texture as u16, [(0, 0); 4], 0);
+        }
+        assert!(!draws.can_push(MAX_VISIBLE as u16));
+        assert!(draws.can_push(0));
+    }
+
+    #[test]
+    fn arena_peak_and_every_projectile_remain_visible_with_shared_textures() {
+        let mut draws = Draws { entries: [None; MAX_DRAWS], len: 0, keys: 0 };
+        for i in 0..28 {
+            let texture = (i % 11) as u16;
+            assert!(draws.can_push(texture));
+            draws.push(texture, [(0, 0); 4], 0);
+        }
+        for i in 0..32 {
+            let texture = (11 + i % 9) as u16;
+            assert!(draws.can_push(texture));
+            draws.push(texture, [(0, 0); 4], 0);
+        }
+        assert_eq!((draws.len, draws.keys), (60, 20));
     }
 }
 
@@ -7223,7 +7535,10 @@ mod hatcher_pool_tests {
         ..BABY_AT
     };
     const HATCHER: ActorSpec = ActorSpec {
-        controller: ActorController::Hatcher { fire_clip: 1 },
+        controller: ActorController::Hatcher {
+            fire_clip: 1,
+            max_hatched: 0,
+        },
         bounds: [-51200, -71680, 34816, 49152],
         health: hk_sim::EnemyParams {
             health: 20,

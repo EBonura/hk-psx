@@ -52,6 +52,7 @@ mod alpha_scissor;
 mod alpha_scissor_cache;
 mod battle_gate_art;
 mod battle_gates;
+mod battle_waves;
 mod blocker_roller;
 mod blocker_terrain;
 mod actor_persistence;

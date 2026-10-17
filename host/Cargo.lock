@@ -149,6 +149,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "hk-dotnet",
+ "hk-format",
  "hk-lz4",
  "hk-pil",
  "hk-unity",

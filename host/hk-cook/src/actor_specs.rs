@@ -223,7 +223,15 @@ pub(crate) fn generated_actor_records_bounded(
     actors: &[SpecActor],
     limit: usize,
 ) -> Result<Vec<(String, Placement)>> {
-    let mut output: Vec<(String, Placement)> = Vec::new();
+    Ok(generated_actor_records_with_bounds(actors, limit)?.into_iter()
+        .map(|(spec, placement, _)| (spec, placement)).collect())
+}
+
+pub(crate) fn generated_actor_records_with_bounds(
+    actors: &[SpecActor],
+    limit: usize,
+) -> Result<Vec<(String, Placement, [i64; 4])>> {
+    let mut output: Vec<(String, Placement, [i64; 4])> = Vec::new();
     for actor in actors {
         let row = actor.row;
         if !row.supported {
@@ -522,8 +530,13 @@ pub(crate) fn generated_actor_records_bounded(
                 if actor.clip("fire_clip").is_none() {
                     return err(format!("Hatcher is missing cooked clips: {who}"));
                 }
+                let max_hatched = match cj(control, "hatched_max") {
+                    None => 0,
+                    Some(Json::Int(n)) if (1..=255).contains(n) => *n,
+                    _ => return err("Hatcher release cap is not a positive u8 literal"),
+                };
                 controller = format!(
-                    "hk_sim::ActorController::Hatcher {{fire_clip:{}}}",
+                    "hk_sim::ActorController::Hatcher {{fire_clip:{},max_hatched:{max_hatched}}}",
                     clip("fire_clip")?
                 );
                 extra_clips = keyed(&["fire_clip"]);
@@ -776,6 +789,7 @@ pub(crate) fn generated_actor_records_bounded(
                     .join(",")
             ),
             placement,
+            bounds,
         ));
     }
     Ok(output)
