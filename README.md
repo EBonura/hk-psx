@@ -15,9 +15,9 @@ an old handoff snapshot and is marked as such.
 
 ## What is on the disc
 
-- 60 scenes in 943 streamed views: King's Pass, Dirtmouth, Sly's shop, 43
-  Forgotten Crossroads scenes including the Ancestral Mound, and 14 Greenpath
-  scenes. Rooms stream from CD at scene gates behind a black load.
+- 63 scenes in 1,013 streamed views: King's Pass, Dirtmouth, Sly's shop, 43
+  Forgotten Crossroads scenes including the Ancestral Mound, and 17 Greenpath
+  scenes (three of them the road to Hornet's arena, docs/HORNET.md). Rooms stream from CD at scene gates behind a black load.
 - The Knight's movement, nail (side, up, down, pogo), Focus and SOUL, damage,
   hazards and checkpoints, death with a Hollow Shade to recover, and the source
   entry sequences at every gate type (side walk-ins, top drops, bottom rises,
@@ -40,8 +40,11 @@ an old handoff snapshot and is marked as such.
 - Title, Options (separate SFX, ambience and music levels, brightness and screen
   position), Controls and a
   Cheats page. Abilities (Mothwing Cloak, Mantis Claw, Monarch Wings, Crystal
-  Heart, Shade Cloak, Dream Nail, Vengeful Spirit) are implemented but only the
-  Cheats page grants them; no pickup does yet.
+  Heart, Shade Cloak, Dream Nail, Vengeful Spirit) are implemented; only the
+  Cheats page grants most of them. The Mothwing Cloak is a pickup in Hornet's
+  arena, offered once `hornet1Defeated` is set, which nothing sets yet: Hornet's
+  fight runs on the host and in a guest module that is not in the build because
+  her art does not fit (docs/HORNET.md).
 - Title music on CD audio and eight ambience channels. There is no area or
   boss music in play yet.
 
