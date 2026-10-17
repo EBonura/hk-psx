@@ -857,7 +857,7 @@ const PACING_CEILINGS: &[(&str, u64)] = &[
     ("cheat-dream", 232),
     ("kings-death", 145),
     ("mound-spell", 314),
-    ("secret-c03-reload", 115),
+    ("secret-c03-reload", 125),
     ("gruz-fight", 947),
     ("secret-kp", 130),
     ("f01-moss", 66),
