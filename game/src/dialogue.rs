@@ -285,6 +285,7 @@ pub(crate) fn panel_frame(x: i16, y: i16, w: u16, h: u16) {
 pub(crate) const GEO_COIN_X: i16 = 56;
 const GEO_NUMBER_X: i16 = GEO_COIN_X + 14;
 #[inline(never)] // UI composition must not expand main beyond MIPS branch reach.
+#[cfg_attr(not(test), optimize(size))]
 pub fn prepare(
     camera: (i32, i32),
     geo: u32,
