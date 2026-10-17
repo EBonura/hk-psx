@@ -7,19 +7,21 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |793,876|
-| Code-to-data alignment |12|
+| Linked code |794,696|
+| Code-to-data alignment |8|
 | Linked data, including menu and HUD |278,568|
 | BSS, including shared scene arena and runtime pools |797,588|
-| Total static span |1,870,052|
+| Total static span |1,870,868|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |112,156|
+| Unallocated gap before reserved stack |111,340|
 | Room module pool, inside that gap |94,208|
-| Free RAM below the module pool |17,948|
+| Free RAM below the module pool |17,132|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
+
+The 2026-10-17 frame-time pass (the early back pass skips a frame whose Knight art would upload, and every checkpoint takes a CD event the interrupt wrapper missed) took linked code from 793,876 to 794,696 bytes (820), so 17,132 bytes are free below the module pool.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -105,7 +107,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801d88e4`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d8c14`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
