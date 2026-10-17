@@ -156,6 +156,8 @@ pub struct Stats {
     pub unbound_vars: BTreeMap<String, usize>,
     pub class_mismatch: usize,
     pub float_overflow: usize,
+    /// The floats that did not fit (the first few), for the error message.
+    pub overflowed: Vec<f64>,
     pub inline_hits: usize,
     pub const_hits: usize,
     pub operands: usize,
@@ -243,9 +245,19 @@ impl Class {
 }
 
 fn q16(f: f64, stats: &mut Stats) -> i32 {
+    // 99999 is how the authors write "no limit" (a FloatClamp's maximum): it saturates on purpose.
+    if f == 99999.0 {
+        return i32::MAX;
+    }
+    if f == -99999.0 {
+        return i32::MIN;
+    }
     let n = (f * 65536.0).round();
     if n > i32::MAX as f64 || n < i32::MIN as f64 || !n.is_finite() {
         stats.float_overflow += 1;
+        if stats.overflowed.len() < 4 {
+            stats.overflowed.push(f);
+        }
         return if n > 0.0 { i32::MAX } else { i32::MIN };
     }
     n as i32
