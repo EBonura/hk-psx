@@ -30,6 +30,14 @@ mod exit_fade {
         super::FADE_CHECKPOINTS.fetch_add(1, super::Ordering::SeqCst);
     }
 }
+// Every checkpoint also takes a CD event the interrupt wrapper missed while a
+// scene's sectors stream in (disc::stream_checkpoint).
+static STREAM_CHECKPOINTS: AtomicU32 = AtomicU32::new(0);
+mod disc {
+    pub fn stream_checkpoint() {
+        super::STREAM_CHECKPOINTS.fetch_add(1, super::Ordering::SeqCst);
+    }
+}
 pub mod interrupts {
     pub fn vblank_count() -> u32 {
         super::CLOCK.load(super::Ordering::SeqCst)
@@ -105,6 +113,7 @@ fn hardware_wrapper_closes_clock_read_race_and_preserves_pending_pulse() {
     assert_eq!(PRESENT_CHECKPOINTS.load(Ordering::SeqCst), 10);
     assert_eq!(AUDIO_CHECKPOINTS.load(Ordering::SeqCst), 10);
     assert_eq!(FADE_CHECKPOINTS.load(Ordering::SeqCst), 10);
+    assert_eq!(STREAM_CHECKPOINTS.load(Ordering::SeqCst), 10);
     unsafe {
         assert_eq!(input::HK_INPUT_POLLS, 4);
         assert_eq!(input::HK_INPUT_MISSED_VBLANKS, 0);

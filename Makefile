@@ -27,6 +27,8 @@ test:
 	.hkpsx/hud-tests/volume-tests
 	rustc --edition=2021 --test tests/audio_stream_runtime.rs -o .hkpsx/hud-tests/audio-stream-tests
 	.hkpsx/hud-tests/audio-stream-tests
+	rustc --edition=2021 --test tests/cd_stream_runtime.rs -o .hkpsx/hud-tests/cd-stream-tests
+	.hkpsx/hud-tests/cd-stream-tests
 validate:
 	cargo hk-build validate --frontend "$(EMULATOR)"
 validate-legacy:

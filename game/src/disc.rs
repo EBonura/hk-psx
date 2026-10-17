@@ -8,6 +8,12 @@ use hk_format::{Room, Scene, WorldMeta};
 mod cd_stream;
 use psx_pack::cd::{SectorReader, SECTOR_WORDS, WORLD_PACK_DEFAULT_LBA};
 use psx_pack::{parse_entry, parse_header, PackEntry, SECTOR_BYTES};
+/// Called from every cooperative checkpoint: take a CD event the interrupt
+/// wrapper missed (see `cd_stream::recover_lost_edge`).
+#[inline]
+pub fn stream_checkpoint() {
+    cd_stream::recover_lost_edge();
+}
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/scene_manifest.rs"

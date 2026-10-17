@@ -12,7 +12,7 @@ pub fn fixture_event(flag:u32,latched:bool){FLAG.store(flag,Ordering::SeqCst);PE
 pub fn fixture_mask()->u32{MASK.load(Ordering::SeqCst)}
 pub fn fixture_flag()->u32{FLAG.load(Ordering::SeqCst)}
 pub fn fixture_commands()->Vec<u8>{COMMANDS.lock().unwrap().clone()}
-pub unsafe fn read8(address:u32)->u8{if address==0x1f801800{0x40}else{0}}
+pub unsafe fn read8(address:u32)->u8{if address==0x1f801800{0x50}else{0}}
 pub unsafe fn write8(address:u32,value:u8){if address==0x1f801801{COMMANDS.lock().unwrap().push(value);}}
 pub mod irq {
  pub mod source {pub const CDROM:u32=2;}
@@ -36,3 +36,29 @@ pub mod disc_base{pub fn shift_lba(n:u32)->u32{n}}
 pub mod cache{pub fn flush_i_cache(){}}
 static mut HK_CD_SECTORS_READ:u32=0;
 #[path="../game/src/cd_stream.rs"] mod transport;
+
+#[test]
+fn a_lost_edge_is_taken_at_a_checkpoint_only_while_a_transfer_runs() {
+    fixture_reset();
+    // No transfer: a controller event nobody is waiting for is left alone.
+    fixture_event(3,false);
+    transport::recover_lost_edge();
+    assert_eq!(fixture_flag(),3);
+    assert!(fixture_commands().is_empty());
+    fixture_reset();
+    let mut sector=vec![0u32;512];
+    unsafe{transport::start(sector.as_mut_ptr(),1,0).unwrap();}
+    let issued=fixture_commands().len();
+    // Setloc is acknowledged but its interrupt latch was lost to another handler.
+    fixture_event(3,false);
+    transport::recover_lost_edge();
+    assert_eq!(fixture_flag(),0,"the event was drained through the state machine");
+    assert!(fixture_commands().len()>issued,"and the next command (SeekL) went out");
+    assert_eq!(fixture_mask(),4,"the CD source is unmasked again");
+    // A latch that is still pending belongs to the interrupt wrapper.
+    let issued=fixture_commands().len();
+    fixture_event(3,true);
+    transport::recover_lost_edge();
+    assert_eq!(fixture_flag(),3);
+    assert_eq!(fixture_commands().len(),issued);
+}

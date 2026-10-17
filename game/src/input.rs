@@ -108,6 +108,7 @@ pub fn checkpoint() {
     crate::presentation::checkpoint();
     crate::exit_fade::service();
     crate::music::service();
+    crate::disc::stream_checkpoint();
     let now = psx_rt::interrupts::vblank_count();
     if unsafe { SAMPLER.poll_due(now) } {
         poll_slow(now);

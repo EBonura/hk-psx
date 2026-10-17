@@ -277,6 +277,31 @@ pub fn status() -> Status {
     })
 }
 
+/// Whether a transfer is in flight (read without masking: a stale answer only
+/// postpones the check to the next checkpoint).
+fn in_flight() -> bool {
+    let phase = unsafe { core::ptr::read_volatile(&raw const (*TRANSFER.0.get()).phase) };
+    !matches!(phase, Phase::Idle | Phase::Done | Phase::Failed)
+}
+/// The lost-edge recovery of `status`, for the cooperative checkpoints inside
+/// the long stretches of a load that never ask for the status (a scene's
+/// decode and atlas uploads run while the group's sectors keep arriving):
+/// without it a CD event the chained VBlank handler acknowledged waits for
+/// the next `status` call, and every sector that arrives meanwhile is lost.
+pub fn recover_lost_edge() {
+    if !in_flight() {
+        return;
+    }
+    exclusive(|t| {
+        if !matches!(t.phase, Phase::Idle | Phase::Done | Phase::Failed)
+            && irq::pending() & CD_BIT == 0
+            && cdrom::irq_flag_value() != 0
+        {
+            service_irq(t);
+        }
+    });
+}
+
 /// Drain one sector only. No long DATA_POLL loop and no CD DMA start-bit risk.
 fn sector(t: &mut Transfer) -> bool {
     unsafe {
