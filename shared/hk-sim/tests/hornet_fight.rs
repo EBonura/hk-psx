@@ -156,3 +156,20 @@ fn a_standing_knight_is_fought_with_the_whole_move_set() {
     assert!(xs.1 - xs.0 > 3 * ONE, "she never moved");
     assert!(hurt > 0, "a Knight who stands still is never touched");
 }
+
+#[test]
+fn a_fight_can_begin_in_zeroed_memory_and_its_size_is_the_modules_state_block() {
+    use std::mem::{size_of, MaybeUninit};
+    eprintln!("size_of::<Fight>() = {}", size_of::<Fight>());
+    assert!(size_of::<Fight>() <= hk_sim::hornet_fight::STATE_BYTES, "the module's state block is too small: {}", size_of::<Fight>());
+    // The pool hands the guest zeroed bytes; a Fight starts there with no value ever built.
+    let mut mem: Box<MaybeUninit<Fight>> = Box::new_zeroed();
+    // SAFETY: all-zero is a valid Fight until `begin`, which rewrites it.
+    let f: &mut Fight = unsafe { mem.assume_init_mut() };
+    f.begin(5, false, [0; 8]);
+    assert_eq!(f.phase, Phase::Asleep);
+    let input = Input { hero: [5 * ONE, 27 * ONE], hero_body: [0; 4], camera: [0; 3], dt_scaled: ONE, dt_real: ONE, strike: None, conversation_done: false };
+    for _ in 0..120 {
+        f.step(&input, 1, &floor, &mut |_| {});
+    }
+}

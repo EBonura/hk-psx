@@ -173,8 +173,10 @@ pub struct World {
     pub spawned: u8,
     /// Objects outside the tree that actions look up by name: (name id, ENT_HERO / ENT_CAMERA).
     pub outside: [(u16, u8); 4],
-    /// The clips each animated object of the tree can play (the cooker's, from the sprite libraries).
-    pub clips: &'static [ClipInfo],
+    /// The clips each animated object of the tree can play (the cooker's, from the sprite libraries): a pointer and a
+    /// length, so that all-zero bytes are a valid, empty World (the guest keeps one in zeroed pool memory).
+    clips: *const ClipInfo,
+    clips_n: u16,
 }
 
 /// One sprite clip of one animated object, as tk2d's library has it.
@@ -192,7 +194,7 @@ pub struct ClipInfo {
 
 impl World {
     pub const fn new() -> Self {
-        Self { ent: [Ent::new(); MAX_ENT], n: 0, req: [[0; 4]; MAX_REQ], req_n: 0, lost: 0, spawned: NONE8, outside: [(0xffff, NONE8); 4], clips: &[] }
+        Self { ent: [Ent::new(); MAX_ENT], n: 0, req: [[0; 4]; MAX_REQ], req_n: 0, lost: 0, spawned: NONE8, outside: [(0xffff, NONE8); 4], clips: core::ptr::null(), clips_n: 0 }
     }
     #[inline(always)]
     pub fn get(&self, h: u8) -> Option<&Ent> {
@@ -205,12 +207,16 @@ impl World {
     }
     /// Lay the scene objects out as the cooker listed them.
     pub fn load(&mut self, init: &[EntInit]) {
-        let clips = self.clips;
-        *self = Self::new();
-        self.clips = clips;
-        self.n = init.len().min(MAX_ENT) as u8;
-        for (e, i) in self.ent.iter_mut().zip(init) {
+        // Field by field: a whole-World temporary is three kilobytes of stack.
+        for e in self.ent.iter_mut() {
             *e = Ent::new();
+        }
+        self.n = init.len().min(MAX_ENT) as u8;
+        self.req_n = 0;
+        self.lost = 0;
+        self.spawned = NONE8;
+        self.outside = [(0xffff, NONE8); 4];
+        for (e, i) in self.ent.iter_mut().zip(init) {
             e.parent = i.parent;
             e.flags = i.flags;
             e.pos = i.pos;
@@ -222,6 +228,11 @@ impl World {
             e.box_size = i.box_size;
             e.box_offset = i.box_offset;
         }
+    }
+    /// The clip table the objects' animators play from.
+    pub fn set_clips(&mut self, clips: &'static [ClipInfo]) {
+        self.clips = clips.as_ptr();
+        self.clips_n = clips.len() as u16;
     }
     /// Append a request. `object` is the target handle (NONE8 for none).
     #[inline(never)]
@@ -238,7 +249,12 @@ impl World {
     /// The clip `id` of object `t`'s library, if the cooker listed it.
     #[inline(never)]
     pub fn clip_info(&self, t: u8, id: u32) -> Option<&'static ClipInfo> {
-        self.clips.iter().find(|c| c.ent == t && c.id == id)
+        if self.clips.is_null() {
+            return None;
+        }
+        // SAFETY: `set_clips` took a 'static slice of this length.
+        let clips: &'static [ClipInfo] = unsafe { core::slice::from_raw_parts(self.clips, self.clips_n as usize) };
+        clips.iter().find(|c| c.ent == t && c.id == id)
     }
     /// The ticks a clip lasts (0xffff loops), 0xffff for a clip the cooker did not list.
     #[inline(never)]

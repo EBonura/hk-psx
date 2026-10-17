@@ -123,6 +123,8 @@ pub struct Fight {
 }
 
 const PD_FIELDS: usize = 8;
+/// The bytes of the room's state block (host/code_modules.py `art_hornet`): a Fight lives there, in zeroed pool memory.
+pub const STATE_BYTES: usize = 8192;
 
 impl Fight {
     pub const fn blank() -> Self {
@@ -149,7 +151,14 @@ impl Fight {
     /// Lay a fight out. `defeated` is the saved `hornet1Defeated`: Hornet is gone for good (`DeactivateIfPlayerdataTrue`), and
     /// nothing runs.
     pub fn begin(&mut self, seed: u32, defeated: bool, pd: [i32; PD_FIELDS]) {
-        *self = Self::blank();
+        // SAFETY: every field is plain data for which all-zero bytes are a valid value (null pointers, `Phase::Asleep`, empty
+        // tables). Zeroing in place spares the stack a Fight-sized temporary.
+        unsafe { core::ptr::write_bytes(self as *mut Self as *mut u8, 0, core::mem::size_of::<Self>()) };
+        self.boss.bind(&fight::DATA);
+        self.corpse.bind(&corpse::DATA);
+        self.boss.env = crate::fsm3::Env::new();
+        self.corpse.env = crate::fsm3::Env::new();
+        self.phase = Phase::Gone;
         if defeated {
             return;
         }

@@ -46,7 +46,7 @@ pub fn bank() -> Bank<'static> {
 
 /// A boss tree in progress: its memory, its scene objects and the environment of the pass.
 pub struct Boss {
-    data: &'static Data,
+    data: *const Data,
     mem: [u32; MEM_WORDS],
     pub world: World,
     pub env: Env,
@@ -64,23 +64,28 @@ impl Boss {
         Self::with(&corpse::DATA)
     }
     const fn with(data: &'static Data) -> Self {
-        Self { data, mem: [0; MEM_WORDS], world: World::new(), env: Env::new(), pd: [0; 8] }
+        Self { data: data as *const Data, mem: [0; MEM_WORDS], world: World::new(), env: Env::new(), pd: [0; 8] }
+    }
+    /// Point a zeroed tree at its data (the guest keeps trees in zeroed pool memory).
+    pub fn bind(&mut self, data: &'static Data) {
+        self.data = data as *const Data;
     }
     pub fn data(&self) -> &'static Data {
-        self.data
+        // SAFETY: only ever set from a 'static.
+        unsafe { &*self.data }
     }
     fn bank(&self) -> Bank<'static> {
         // SAFETY: as in `bank`.
-        unsafe { Bank::from_verified(self.data.bank) }
+        unsafe { Bank::from_verified(self.data().bank) }
     }
     /// Lay the tree and its objects out in their authored state. The first `step` enters every active FSM's start state.
     pub fn init(&mut self, seed: u32) {
-        self.world.clips = self.data.clips;
-        self.world.load(self.data.ents);
+        self.world.set_clips(self.data().clips);
+        self.world.load(self.data().ents);
         self.env = Env::new();
         self.env.world = &mut self.world;
         self.env.pd = self.pd.as_mut_ptr();
-        for &(ent, clip) in self.data.defaults {
+        for &(ent, clip) in self.data().defaults {
             let ticks = self.world.clip_ticks(ent, clip);
             if let Some(e) = self.world.get_mut(ent) {
                 e.clip = clip;
