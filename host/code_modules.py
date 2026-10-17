@@ -51,9 +51,10 @@ import struct
 from bisect import bisect_right
 from pathlib import Path
 
-# Greenpath's Hornet is in the build once the Hornet postpass has written her art table (host/hk-cook hornet_scene.rs):
-# without it no code, data module or guest feature exists for her.
-HORNET = (Path(__file__).resolve().parents[1] / 'data' / 'hornet_art.rs').exists()
+# Greenpath's Hornet is in the build when HK_HORNET_ART is set and the Hornet postpass has written her art table
+# (host/hk-cook hornet_scene.rs, docs/HORNET.md: her art does not fit yet): otherwise no code, data module or guest feature
+# exists for her.
+HORNET = bool(os.environ.get('HK_HORNET_ART')) and (Path(__file__).resolve().parents[1] / 'data' / 'hornet_art.rs').exists()
 LINK_BASE = 0x80408000
 LINK_STRIDE = 0x10000
 TRAMP_WORDS = 32

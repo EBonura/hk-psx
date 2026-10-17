@@ -207,7 +207,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     if not link_map.exists():
         run(['cargo','clean','--release','--target','mipsel-sony-psx','-p','hk-psx'],cwd=ROOT/'game',env=env)
     cmd=['cargo','build','--locked','--release']
-    features=(['emulator-telemetry'] if telemetry else [])+[f for f in os.environ.get('HK_GUEST_FEATURES','').split(',') if f]+(['audio-probe'] if os.environ.get('HK_AUDIO_PROBE') else [])+(['hornet'] if (ROOT/'data/hornet_art.rs').is_file() else [])
+    features=(['emulator-telemetry'] if telemetry else [])+[f for f in os.environ.get('HK_GUEST_FEATURES','').split(',') if f]+(['audio-probe'] if os.environ.get('HK_AUDIO_PROBE') else [])+(['hornet'] if code_modules.HORNET else [])
     if features:cmd+=['--features',','.join(features)]
     run(cmd,cwd=ROOT/'game',env=env)
     linked=guest_target/'mipsel-sony-psx/release/hk-psx.exe'
