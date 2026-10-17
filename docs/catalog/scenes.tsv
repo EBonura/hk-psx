@@ -135,7 +135,7 @@ index	scene	area	dlc	role	status	views	ram_bytes	vram_bytes	disc_bytes	pages	pal
 129	Fungus1_01b	Greenpath		gameplay	playable	12	96412	208192	60756	6	362	18	Pigeon=18	breakable=4|bench=1|geo_rock=1		2	Fungus1_01|Fungus1_02	0
 130	Fungus1_02	Greenpath		gameplay	playable	21	138352	279488	86080	8	542	2	Mosquito=1|Mossman_Shaker=1	breakable=7|geo_rock=2|persistent=1		3	Fungus1_01b|Fungus1_06|Fungus1_17	0
 131	Fungus1_03	Greenpath		gameplay	cooked-pack	13	125860	243872	77373	7	453	14	Pigeon=5|Moss Walker=4|Zombie Runner=2|Plant Trap=1|Zombie Barger=1|Zombie Hornhead=1	breakable=22|persistent=5|geo_rock=3		3	Fungus1_05|Fungus1_17|Fungus1_31	0
-132	Fungus1_04	Greenpath		gameplay	cooked-pack	20	122824	243264	77612	7	434	0		breakable=7|persistent=5|breakable_wall=1|geo_rock=1|reveal_mask=1|shiny=1	text	2	Fungus1_21|Fungus1_25	0
+132	Fungus1_04	Greenpath		gameplay	playable	20	122824	243264	77612	7	434	0		breakable=7|persistent=5|breakable_wall=1|geo_rock=1|reveal_mask=1|shiny=1	text	2	Fungus1_21|Fungus1_25	0
 133	Fungus1_04_boss	Greenpath		gameplay	no-envelope							1	Hornet Boss=1			0		0
 134	Fungus1_05	Greenpath		gameplay	playable	12	137088	313120	90793	9	569	12	Mosquito=5|Moss Walker=4|Mossman_Shaker=2|Mossman_Runner=1	breakable=6|persistent=3|geo_rock=1		3	Fungus1_03|Fungus1_10|Fungus1_14	0
 135	Fungus1_06	Greenpath		gameplay	playable	24	141836	277152	89118	8	469	7	Mosquito=4|Mossman_Shaker=2|Mossman_Runner=1	breakable=15|persistent=14|conversation=2|reveal_mask=2|grub=1		2	Fungus1_02|Fungus1_07	0
@@ -152,8 +152,8 @@ index	scene	area	dlc	role	status	views	ram_bytes	vram_bytes	disc_bytes	pages	pal
 146	Fungus1_17	Greenpath		gameplay	playable	12	107372	176320	66113	5	390	3	Mosquito=2|Moss Charger=1	breakable=6|persistent=3|reveal_mask=2|inspect=1		2	Fungus1_02|Fungus1_03	0
 147	Fungus1_19	Greenpath		gameplay	playable	9	112664	279232	73209	8	534	7	Fat Fly=4|Moss Walker=1|Mossman_Shaker=1|Plant Trap=1	breakable=8|persistent=5|reveal_mask=2|geo_rock=1|inspect=1		3	Fungus1_07|Fungus1_10|Fungus1_11	0
 148	Fungus1_20_v02	Greenpath		gameplay	cooked-pack	16	135880	278432	85794	8	509	8	Buzzer=4|Crawler=2|Climber=1|Giant Buzzer=1	breakable=15		3	Fungus1_21|Fungus1_28|Fungus1_32	0
-149	Fungus1_21	Greenpath		gameplay	cooked-pack	17	165084	346656	107849	10	593	7	Moss Charger=3|Moss Knight=3|Moss Walker=1	breakable=12|persistent=11|geo_rock=3|battle=1|grub=1|inspect=1|reveal_mask=1		4	Fungus1_04|Fungus1_20_v02|Fungus1_22|Fungus1_32	0
-150	Fungus1_22	Greenpath		gameplay	cooked-pack	32	216616	382240	136021	11	681	13	Plant Trap=6|Mossman_Shaker=3|Mosquito=2|Moss Walker=2	breakable=17|persistent=14|reveal_mask=5|geo_rock=2|breakable_wall=1|gate=1|shiny=1|switch=1		3	Fungus1_16_alt|Fungus1_21|Fungus1_30	0
+149	Fungus1_21	Greenpath		gameplay	playable	17	165084	346656	107849	10	593	7	Moss Charger=3|Moss Knight=3|Moss Walker=1	breakable=12|persistent=11|geo_rock=3|battle=1|grub=1|inspect=1|reveal_mask=1		4	Fungus1_04|Fungus1_20_v02|Fungus1_22|Fungus1_32	0
+150	Fungus1_22	Greenpath		gameplay	playable	32	216616	382240	136021	11	681	13	Plant Trap=6|Mossman_Shaker=3|Mosquito=2|Moss Walker=2	breakable=17|persistent=14|reveal_mask=5|geo_rock=2|breakable_wall=1|gate=1|shiny=1|switch=1		3	Fungus1_16_alt|Fungus1_21|Fungus1_30	0
 151	Fungus1_23	Greenpath		gameplay	cooked-pack	21	118892	242912	71996	7	423	13	Grass Hopper=8|Pigeon=5	breakable=4		2	Fungus3_13|Fungus3_48	0
 152	Fungus1_24	Greenpath		gameplay	cooked-pack	21	146208	278176	91200	8	501	7	Pigeon=7	breakable=7|persistent=4|conversation=3|bench=1|breakable_wall=1|reveal_mask=1		1	Fungus3_05	0
 153	Fungus1_25	Greenpath		gameplay	cooked-pack	8	82288	172800	51612	5	280	0		breakable=4		2	Fungus1_04|Fungus1_26	0
