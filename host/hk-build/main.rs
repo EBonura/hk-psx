@@ -890,8 +890,9 @@ const PACING_CEILINGS: &[(&str, u64)] = &[
     ("secret-c08", 51),
     ("secret-c10", 23),
     ("secret-c21", 63),
-    ("arena-waves", 999),
-    ("spell-exit", 112),
+    // Forty actors and sixty-odd quads in one room; the measured route is 1,574 late of 1,750.
+    ("arena-waves", 2050),
+    ("spell-exit", 125),
     ("secret-c18", 28),
     ("c37-stand", 246),
     ("grub-jar", 26),

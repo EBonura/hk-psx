@@ -73,7 +73,7 @@ def main():
     if set(libraries) != {'hk_sim', 'hk_format', 'psx_math'}:
         raise SystemExit('Cargo did not report every native shared-library artifact')
     executable = output/'world-runtime-tests'
-    command = ['rustc', '--edition=2021', '-Awarnings', '--test', str(ROOT/'tests/world_runtime.rs')]
+    command = ['rustc', '--edition=2021', '-Awarnings', '-Zcrate-attr=feature(optimize_attribute)', '--test', str(ROOT/'tests/world_runtime.rs')]
     for name, path in sorted(libraries.items()):
         command += ['--extern', f'{name}={path}']
     # hk_sim is uplifted to the profile directory while psx_math stays in
