@@ -378,13 +378,14 @@ pub fn corpse_extra(cooked: &Cooked) -> String {
 /// the tree mentions (its cooked string id), with its length in 60 Hz ticks, whether it ends, and the ticks at which frame
 /// triggers show; and the clip each animator starts on its own (`defaultClipId`), whose id is `0x8000_0000 | clip index`
 /// when the tree never names it.
-pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<String> {
+pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<(String, serde_json::Value)> {
     use std::fmt::Write;
     let file = source.file(level)?;
     let by_go: HashMap<i64, usize> = b.ents.iter().enumerate().map(|(i, e)| (e.path_id, i)).collect();
     let ids: HashMap<&str, usize> = b.cooked.strings.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
     let mut rows: Vec<(usize, u32, u32, bool, [u32; 3])> = vec![];
     let mut defaults: Vec<(usize, u32)> = vec![];
+    let mut manifest: Vec<serde_json::Value> = vec![];
     let num = |v: Option<&Value>| -> f64 {
         match v {
             Some(Value::F32(x)) => *x as f64,
@@ -408,9 +409,35 @@ pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<Strin
         if lib.pptr().is_none_or(|p| p.1 == 0) {
             continue;
         }
-        let library = source.read(&source.deref(&file, lib)?)?;
+        let library_obj = source.deref(&file, lib)?;
+        let library = source.read(&library_obj)?;
         let clips = library.get("clips").and_then(Value::list).unwrap_or(&[]);
         let default = num(tree.get("defaultClipId")) as usize;
+        // The art cook needs the library, the sprite's own scale and tint, and the object's scale as authored in the world.
+        let mut sprite_scale = [1.0, 1.0];
+        let mut alpha = 1.0;
+        for other in &file.objects {
+            if other.class_id != 114 {
+                continue;
+            }
+            let o = source.object(&file, other.path_id)?;
+            if source.typename(&o).map_or(true, |t| t != "tk2dSprite") {
+                continue;
+            }
+            let t = source.read(&o)?;
+            if t.get("m_GameObject").and_then(|p| p.pptr()).map(|p| p.1) == Some(go) {
+                sprite_scale = [num(t.get("_scale").and_then(|v| v.get("x"))), num(t.get("_scale").and_then(|v| v.get("y")))];
+                alpha = num(t.get("_color").and_then(|v| v.get("a")));
+            }
+        }
+        let mut world = [1.0f64, 1.0];
+        let mut at = Some(ent);
+        while let Some(i) = at {
+            world = [world[0] * b.ents[i].scale[0], world[1] * b.ents[i].scale[1]];
+            at = b.ents[i].parent.map(|p| p as usize);
+        }
+        let mut manifest_clips = vec![];
+        let mut manifest_default = serde_json::Value::Null;
         for (index, clip) in clips.iter().enumerate() {
             let name = clip.get("name").and_then(Value::str).unwrap_or_default();
             let named = ids.get(name.as_str()).copied();
@@ -432,10 +459,16 @@ pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<Strin
                 }
             }
             rows.push((ent, id, len.min(0xfffe), once, trig));
+            manifest_clips.push(serde_json::json!({"name": name, "id": id}));
             if index == default && num(tree.get("playAutomatically")) != 0.0 {
                 defaults.push((ent, id));
+                manifest_default = serde_json::json!({"name": name, "id": id});
             }
         }
+        manifest.push(serde_json::json!({
+            "ent": ent, "go": go, "library": library_obj.sid(), "sprite_scale": sprite_scale, "world_scale": world,
+            "alpha": alpha, "clips": manifest_clips, "default": manifest_default,
+        }));
     }
     rows.sort();
     rows.dedup();
@@ -449,7 +482,7 @@ pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<Strin
     let _ = writeln!(out, "];");
     let _ = writeln!(out, "/// The clip each animator plays by itself when its object wakes.");
     let _ = writeln!(out, "pub static DEFAULT_CLIPS:[(u8,u32);{}]={:?};", defaults.len(), defaults.iter().map(|(e, i)| (*e as u8, *i)).collect::<Vec<_>>());
-    Ok(out)
+    Ok((out, serde_json::json!({"level": level, "ents": manifest})))
 }
 
 /// Cook the FSMs `fsms` (`(owner object, FSM)`) as one boss tree whose scene objects are the subtrees of `roots` plus the

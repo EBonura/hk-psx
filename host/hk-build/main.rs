@@ -1352,6 +1352,8 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     python_step(root, "host/regions.py", region_cook_args(&provenance))?;
     hk_cook::mossman_scene::cook(root)?;
     hk_cook::shaman_runner_scene::cook(root)?;
+    // Hornet's sprite clips join Fungus1_04's banks once the scene is admitted (host/hk-cook hornet_scene.rs).
+    hk_cook::hornet_scene::cook(root)?;
     if source_input_fingerprints(&source)? != source_inputs || code_fingerprint(root)? != code {
         return Err("retail source or cooker code changed during region cook".into());
     }
