@@ -135,6 +135,8 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // Shade at the spot with nailDamage * clamp(maxHealth / 2, 1, 99) health, and must
     // not touch the card: this port only writes when the player accepts the bench prompt.
     ("kings-death", "HK_DEATHS", 1),
+    // The death reset every semi-persistent item once (GameManager.PlayerDead).
+    ("kings-death", "HK_SEMI_RESETS", 1),
     ("kings-death", "HK_ENEMY_KILLS", 0),
     ("kings-death", "HK_SHADE_PRESENT", 1),
     ("kings-death", "HK_SHADE_HP", 10),
@@ -168,6 +170,8 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // only way this port writes the card, and what the power-cut check interrupts.
     ("bench-save", "HK_BENCH_RESTS", 1),
     ("bench-save", "HK_SAVE_WRITES", 1),
+    // The bench rest resets the semi-persistent items too.
+    ("bench-save", "HK_SEMI_RESETS", 1),
     ("bench-save", "HK_SAVE_ERRORS", 0),
     // town-elderbug resumes in Town, walks into Elderbug's npc_control talk trigger and
     // holds a whole conversation: UP opens it, six presses of X page through all six
@@ -762,6 +766,21 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("secret-c21", "HK_SECRET_REFUSED", 0),
     ("secret-c21", "HK_DEATHS", 0),
     ("secret-c21", "HK_SCENE_SFX_MISSED", 0),
+    // arena-waves seats the Knight on the platform of Crossroads_22's arena (card seeded
+    // with tools/seed_card.py: scene 21, region 355, x 71.65, y 12.3), inside the trigger of
+    // its `Battle Control`, with Invincibility, Pure Nail and Infinite SOUL on (the Cheats
+    // page, which is how the journey travels too), and jumps, slashes up and casts left
+    // and right until every wave is dead. The source's four waves have 2, 3, 3 and 4
+    // members: the gates close once, twelve members land and twelve are counted dead, the
+    // last wave ends the fight and the gates open once.
+    ("arena-waves", "HK_ARENA_GATE_CLOSES", 1),
+    ("arena-waves", "HK_ARENA_GATE_OPENS", 1),
+    ("arena-waves", "HK_ARENA_WAVES", 4),
+    ("arena-waves", "HK_ARENA_LANDED", 12),
+    ("arena-waves", "HK_ARENA_WAVE_DEATHS", 12),
+    ("arena-waves", "HK_CHEATS", 7),
+    ("arena-waves", "HK_DEATHS", 0),
+    ("arena-waves", "HK_SAVE_LOADED", 1),
     ("secret-f08a", "HK_SECRET_HITS", 3),
     ("secret-f08a", "HK_SECRET_BREAKS", 1),
     ("secret-f08a", "HK_SECRET_REFUSED", 0),
@@ -871,6 +890,7 @@ const PACING_CEILINGS: &[(&str, u64)] = &[
     ("secret-c08", 51),
     ("secret-c10", 23),
     ("secret-c21", 63),
+    ("arena-waves", 999),
     ("spell-exit", 112),
     ("secret-c18", 28),
     ("c37-stand", 246),
@@ -945,6 +965,7 @@ const MEMCARDS: &[(&str, &str)] = &[
     ("secret-c13", "secret-c13.mcd"),
     ("secret-c18", "secret-c18.mcd"),
     ("secret-c21", "secret-c21.mcd"),
+    ("arena-waves", "arena-waves.mcd"),
     ("secret-f08a", "secret-f08a.mcd"),
     ("secret-f08b", "secret-f08b.mcd"),
     ("secret-c03-reload", "secret-c03-reload.mcd"),
@@ -1006,6 +1027,7 @@ const ROUTES: &[(&str, bool)] = &[
     ("secret-c13", false),
     ("secret-c18", false),
     ("secret-c21", false),
+    ("arena-waves", false),
     ("secret-f08a", false),
     ("secret-f08b", false),
     ("secret-c03-reload", false),
