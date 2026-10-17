@@ -43,6 +43,11 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         // FloatMultiply [variable, multiplyBy]
         let v = mul_shr_i32(c.fixed(0), c.fixed(1), 16);
         c.set(0, v);
+    } else if op == math::FLOAT_CLAMP {
+        // FloatClamp [variable, minValue, maxValue]
+        let (lo, hi) = (c.fixed(1), c.fixed(2));
+        let v = c.fixed(0).clamp(lo, hi.max(lo));
+        c.set(0, v);
     } else if op == math::FLOAT_SUBTRACT {
         // FloatSubtract [variable, subtract, perSecond]: per second scales by the frame time.
         let mut d = c.fixed(1);
