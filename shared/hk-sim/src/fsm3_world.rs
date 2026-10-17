@@ -173,14 +173,26 @@ pub struct World {
     pub spawned: u8,
     /// Objects outside the tree that actions look up by name: (name id, ENT_HERO / ENT_CAMERA).
     pub outside: [(u16, u8); 4],
-    /// Length in 60 Hz ticks of the clips the tree plays (0xffff loops), by cooked clip id.
-    pub clips: [(u32, u16); 40],
-    pub clip_count: u8,
+    /// The clips each animated object of the tree can play (the cooker's, from the sprite libraries).
+    pub clips: &'static [ClipInfo],
+}
+
+/// One sprite clip of one animated object, as tk2d's library has it.
+#[derive(Clone, Copy, Debug)]
+pub struct ClipInfo {
+    /// The object whose animator's library it is, and the cooked string id of the clip's name.
+    pub ent: u8,
+    pub id: u32,
+    /// Length in 60 Hz ticks. A clip that does not end (tk2d's Loop, PingPong and the random modes) is `once: false`.
+    pub len: u16,
+    pub once: bool,
+    /// The ticks into the clip at which frames with a trigger event show (0xffff: none).
+    pub trig: [u16; 3],
 }
 
 impl World {
     pub const fn new() -> Self {
-        Self { ent: [Ent::new(); MAX_ENT], n: 0, req: [[0; 4]; MAX_REQ], req_n: 0, lost: 0, spawned: NONE8, outside: [(0xffff, NONE8); 4], clips: [(NO_CLIP, 0); 40], clip_count: 0 }
+        Self { ent: [Ent::new(); MAX_ENT], n: 0, req: [[0; 4]; MAX_REQ], req_n: 0, lost: 0, spawned: NONE8, outside: [(0xffff, NONE8); 4], clips: &[] }
     }
     #[inline(always)]
     pub fn get(&self, h: u8) -> Option<&Ent> {
@@ -193,7 +205,9 @@ impl World {
     }
     /// Lay the scene objects out as the cooker listed them.
     pub fn load(&mut self, init: &[EntInit]) {
+        let clips = self.clips;
         *self = Self::new();
+        self.clips = clips;
         self.n = init.len().min(MAX_ENT) as u8;
         for (e, i) in self.ent.iter_mut().zip(init) {
             *e = Ent::new();
@@ -221,15 +235,18 @@ impl World {
         self.req_n += 1;
     }
 
-    /// The ticks a clip lasts (0xffff loops), 0xffff for a clip the adapter did not list.
+    /// The clip `id` of object `t`'s library, if the cooker listed it.
     #[inline(never)]
-    pub fn clip_ticks(&self, id: u32) -> u16 {
-        for i in 0..self.clip_count as usize {
-            if self.clips[i].0 == id {
-                return self.clips[i].1;
-            }
+    pub fn clip_info(&self, t: u8, id: u32) -> Option<&'static ClipInfo> {
+        self.clips.iter().find(|c| c.ent == t && c.id == id)
+    }
+    /// The ticks a clip lasts (0xffff loops), 0xffff for a clip the cooker did not list.
+    #[inline(never)]
+    pub fn clip_ticks(&self, t: u8, id: u32) -> u16 {
+        match self.clip_info(t, id) {
+            Some(c) if c.once => c.len,
+            _ => 0xffff,
         }
-        0xffff
     }
     /// Whether object `h` and every ancestor are active (Unity's `activeInHierarchy`).
     #[inline(never)]

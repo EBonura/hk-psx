@@ -575,11 +575,11 @@ pub fn cook_all(root: &std::path::Path) -> Result<()> {
 /// `data/hornet3_fsm3.rs` and `data/hornet3_names.txt`. The tree reads the Steam level file directly.
 pub fn cook_hornet3(root: &std::path::Path) -> Result<()> {
     let source = hk_unity::Source::from_doctor(root)?;
-    cook_boss_label(root, &source, "hornet3", "level133", crate::boss::hornet_inputs(&source)?)?;
-    cook_boss_label(root, &source, "hornet_corpse3", "sharedassets105.assets", crate::boss::hornet_corpse_inputs(&source)?)
+    cook_boss_label(root, &source, "hornet3", "level133", crate::boss::hornet_inputs(&source)?, true)?;
+    cook_boss_label(root, &source, "hornet_corpse3", "sharedassets105.assets", crate::boss::hornet_corpse_inputs(&source)?, false)
 }
 
-fn cook_boss_label(root: &std::path::Path, source: &hk_unity::Source, label: &str, level: &str, inputs: (i64, Vec<(i64, String)>)) -> Result<()> {
+fn cook_boss_label(root: &std::path::Path, source: &hk_unity::Source, label: &str, level: &str, inputs: (i64, Vec<(i64, String)>), fight: bool) -> Result<()> {
     use hk_unity::Value as V;
     let (boss, sources) = inputs;
     let mut values: Vec<(i64, V)> = vec![];
@@ -594,7 +594,12 @@ fn cook_boss_label(root: &std::path::Path, source: &hk_unity::Source, label: &st
     let fields: Vec<String> = crate::boss::HORNET_FIELDS.iter().map(|s| s.to_string()).collect();
     let cooked = crate::boss::cook_boss_tree(source, level, &fsms, &[boss], Some(&fields))?;
     std::fs::write(root.join(format!("data/{label}.hkf3")), &cooked.cooked.bank)?;
-    std::fs::write(root.join(format!("data/{label}_fsm3.rs")), crate::boss::rust_table(label, &cooked, ""))?;
+    std::fs::write(root.join(format!("data/{label}_fsm3.rs")), {
+        // The fight's numbers ride with its table; the corpse only needs the event it sends.
+        let mut extra = if fight { crate::boss::hornet_extra(source, boss, &cooked.cooked)? } else { crate::boss::corpse_extra(&cooked.cooked) };
+        extra.push_str(&crate::boss::clips_table(source, level, &cooked)?);
+        crate::boss::rust_table(label, &cooked, &extra)
+    })?;
     write_names(root, label, &cooked.cooked)?;
     write_families(root, label, &[&cooked.cooked])
 }

@@ -278,6 +278,180 @@ pub fn hornet_corpse_inputs(source: &Source) -> Result<(i64, Vec<(i64, String)>)
     Ok((ROOT, sources))
 }
 
+/// The first component of script class `class` on GameObject `go` of `level` (a MonoBehaviour), as the type tree reads it.
+pub fn component_on(source: &Source, level: &str, go: i64, class: &str) -> Result<Option<Value>> {
+    let file = source.file(level)?;
+    for info in &file.objects {
+        if info.class_id != 114 {
+            continue;
+        }
+        let obj = source.object(&file, info.path_id)?;
+        if source.typename(&obj).map_or(true, |t| t != class) {
+            continue;
+        }
+        let tree = source.read(&obj)?;
+        if tree.get("m_GameObject").and_then(|p| p.pptr()).map(|p| p.1) == Some(go) {
+            return Ok(Some(tree));
+        }
+    }
+    Ok(None)
+}
+
+/// What the adapter needs of the boss that is not in the tree: the HealthManager's points, the Recoil component's numbers and
+/// the arena the ConstrainPosition holds it in, as Rust constants; and the ids of the events and the FSM the adapter addresses
+/// by name.
+pub fn hornet_extra(source: &Source, boss: i64, cooked: &Cooked) -> Result<String> {
+    use std::fmt::Write;
+    let q = |f: f64| (f * 65536.0).round() as i32;
+    let num = |v: &Value, k: &str| -> Result<f64> {
+        match v.get(k) {
+            Some(Value::F32(x)) => Ok(*x as f64),
+            Some(Value::F64(x)) => Ok(*x),
+            Some(Value::Int(x)) => Ok(*x as f64),
+            _ => Err(format!("component field {k}").into()),
+        }
+    };
+    let need = |class: &str| -> Result<Value> {
+        match component_on(source, "level133", boss, class)? {
+            Some(v) => Ok(v),
+            None => Err(format!("Hornet Boss 1 has no {class}").into()),
+        }
+    };
+    let health = need("HealthManager")?;
+    let recoil = need("Recoil")?;
+    let constrain = need("ConstrainPosition")?;
+    let mut out = String::new();
+    let _ = writeln!(out, "/// `HealthManager.hp` and the evasion window (`invulnerableTime`) in Q16.16 seconds.");
+    let _ = writeln!(out, "pub const HEALTH: i32 = {};", num(&health, "hp")? as i32);
+    let _ = writeln!(out, "pub const INVULNERABLE_TIME: i32 = {};", q(num(&health, "invulnerableTime")?));
+    let _ = writeln!(out, "/// `Recoil`: the speed, the time it lasts (seconds) and whether a hit from below leaves it in place.");
+    let _ = writeln!(out, "pub const RECOIL_SPEED: i32 = {};", q(num(&recoil, "recoilSpeedBase")?));
+    let _ = writeln!(out, "pub const RECOIL_TIME: i32 = {};", q(num(&recoil, "recoilDuration")?));
+    let _ = writeln!(out, "pub const PREVENT_RECOIL_UP: bool = {};", num(&recoil, "preventRecoilUp")? != 0.0);
+    let _ = writeln!(out, "/// `ConstrainPosition`: the arena's x range, which the body never leaves.");
+    let _ = writeln!(out, "pub const ARENA_X: [i32; 2] = [{}, {}];", q(num(&constrain, "xMin")?), q(num(&constrain, "xMax")?));
+    out.push_str(&string_consts(&cooked.strings));
+    for name in ["TOOK DAMAGE", "ATTACKED", "CONVO_FINISH", "WAKE", "START", "HORNET KILLED", "HORNET LEAVE"] {
+        if let Some(i) = cooked.events.iter().position(|e| e == name) {
+            let _ = writeln!(out, "pub const EV_{}: u8 = {i};", name.replace(' ', "_"));
+        }
+    }
+    if let Some(i) = cooked.names.iter().position(|n| n == "Encounter") {
+        let _ = writeln!(out, "/// The Encounter FSM, which a nail strike on its box starts.");
+        let _ = writeln!(out, "pub const FSM_ENCOUNTER: u8 = {i};");
+    }
+    Ok(out)
+}
+
+/// The tree string ids of the names the adapter classifies native calls by (`CallMethodProper`'s behaviour and method).
+fn string_consts(strings: &[String]) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    for name in ["HeroController", "RelinquishControl", "RegainControl", "DialogueBox", "StartConversation", "GameManager", "AwardAchievement"] {
+        if let Some(i) = strings.iter().position(|s| s == name) {
+            let upper: String = name.chars().enumerate().fold(String::new(), |mut a, (k, c)| {
+                if c.is_uppercase() && k > 0 {
+                    a.push('_');
+                }
+                a.push(c.to_ascii_uppercase());
+                a
+            });
+            let _ = writeln!(out, "pub const S_{upper}: i32 = {i};");
+        }
+    }
+    out
+}
+
+/// The event ids the corpse's table names for the adapter.
+pub fn corpse_extra(cooked: &Cooked) -> String {
+    use std::fmt::Write;
+    let mut out = string_consts(&cooked.strings);
+    for name in ["HORNET KILLED", "HORNET LEAVE"] {
+        if let Some(i) = cooked.events.iter().position(|e| e == name) {
+            let _ = writeln!(out, "pub const EV_{}: u8 = {i};", name.replace(' ', "_"));
+        }
+    }
+    out
+}
+
+/// The sprite clips each animated object of the tree can play, as Rust tables: every clip of its animator's library whose name
+/// the tree mentions (its cooked string id), with its length in 60 Hz ticks, whether it ends, and the ticks at which frame
+/// triggers show; and the clip each animator starts on its own (`defaultClipId`), whose id is `0x8000_0000 | clip index`
+/// when the tree never names it.
+pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<String> {
+    use std::fmt::Write;
+    let file = source.file(level)?;
+    let by_go: HashMap<i64, usize> = b.ents.iter().enumerate().map(|(i, e)| (e.path_id, i)).collect();
+    let ids: HashMap<&str, usize> = b.cooked.strings.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
+    let mut rows: Vec<(usize, u32, u32, bool, [u32; 3])> = vec![];
+    let mut defaults: Vec<(usize, u32)> = vec![];
+    let num = |v: Option<&Value>| -> f64 {
+        match v {
+            Some(Value::F32(x)) => *x as f64,
+            Some(Value::F64(x)) => *x,
+            Some(Value::Int(x)) => *x as f64,
+            _ => 0.0,
+        }
+    };
+    for info in &file.objects {
+        if info.class_id != 114 {
+            continue;
+        }
+        let obj = source.object(&file, info.path_id)?;
+        if source.typename(&obj).map_or(true, |t| t != "tk2dSpriteAnimator") {
+            continue;
+        }
+        let tree = source.read(&obj)?;
+        let Some(go) = tree.get("m_GameObject").and_then(|p| p.pptr()).map(|p| p.1) else { continue };
+        let Some(&ent) = by_go.get(&go) else { continue };
+        let Some(lib) = tree.get("library") else { continue };
+        if lib.pptr().is_none_or(|p| p.1 == 0) {
+            continue;
+        }
+        let library = source.read(&source.deref(&file, lib)?)?;
+        let clips = library.get("clips").and_then(Value::list).unwrap_or(&[]);
+        let default = num(tree.get("defaultClipId")) as usize;
+        for (index, clip) in clips.iter().enumerate() {
+            let name = clip.get("name").and_then(Value::str).unwrap_or_default();
+            let named = ids.get(name.as_str()).copied();
+            if named.is_none() && index != default {
+                continue;
+            }
+            let id = named.map_or(0x8000_0000 | index as u32, |i| i as u32);
+            let frames = clip.get("frames").and_then(Value::list).unwrap_or(&[]);
+            let fps = num(clip.get("fps")).max(0.001);
+            let wrap = num(clip.get("wrapMode")) as i64;
+            let once = wrap == 2 || wrap == 6;
+            let len = ((frames.len() as f64) * 60.0 / fps).round().max(1.0) as u32;
+            let mut trig = [0xffff_u32; 3];
+            let mut at = 0;
+            for (i, f) in frames.iter().enumerate() {
+                if f.get("triggerEvent").is_some_and(Value::truthy) && at < 3 {
+                    trig[at] = ((i as f64) * 60.0 / fps).round() as u32;
+                    at += 1;
+                }
+            }
+            rows.push((ent, id, len.min(0xfffe), once, trig));
+            if index == default && num(tree.get("playAutomatically")) != 0.0 {
+                defaults.push((ent, id));
+            }
+        }
+    }
+    rows.sort();
+    rows.dedup();
+    defaults.sort();
+    let mut out = String::new();
+    let _ = writeln!(out, "/// Per animated object and clip: length in ticks, whether it ends, the frame-trigger ticks.");
+    let _ = writeln!(out, "pub static CLIPS:[crate::fsm3_world::ClipInfo;{}]=[", rows.len());
+    for (ent, id, len, once, t) in &rows {
+        let _ = writeln!(out, "    crate::fsm3_world::ClipInfo{{ent:{ent},id:{id},len:{len},once:{once},trig:[{},{},{}]}},", t[0], t[1], t[2]);
+    }
+    let _ = writeln!(out, "];");
+    let _ = writeln!(out, "/// The clip each animator plays by itself when its object wakes.");
+    let _ = writeln!(out, "pub static DEFAULT_CLIPS:[(u8,u32);{}]={:?};", defaults.len(), defaults.iter().map(|(e, i)| (*e as u8, *i)).collect::<Vec<_>>());
+    Ok(out)
+}
+
 /// Cook the FSMs `fsms` (`(owner object, FSM)`) as one boss tree whose scene objects are the subtrees of `roots` plus the
 /// objects the FSMs name. `fields` is the PlayerData list the player-data actions resolve against.
 pub fn cook_boss_tree(source: &Source, level: &str, fsms: &[(i64, &Value)], roots: &[i64], fields: Option<&[String]>) -> Result<BossCooked> {

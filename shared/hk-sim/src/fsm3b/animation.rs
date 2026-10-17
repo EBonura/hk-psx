@@ -76,7 +76,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
 /// adapter to apply.
 #[inline(never)]
 fn play(w: &mut World, t: u8, id: u32) {
-    let ticks = w.clip_ticks(id);
+    let ticks = w.clip_ticks(t, id);
     if let Some(e) = w.get_mut(t) {
         if e.clip == id && e.anim_left != 0 && e.frame < 0 {
             return;

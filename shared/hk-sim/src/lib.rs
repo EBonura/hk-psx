@@ -37,6 +37,8 @@ pub mod hatcher;
 pub mod waves;
 #[cfg(feature = "boss")]
 pub mod hornet;
+#[cfg(feature = "boss")]
+pub mod hornet_fight;
 pub mod husk_guard;
 pub mod mawlek;
 pub mod mosquito;

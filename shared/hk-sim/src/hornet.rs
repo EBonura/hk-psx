@@ -1,41 +1,95 @@
 //! Greenpath's Hornet (Fungus1_04_boss): the original fight's FSMs as one boss tree, the scene objects they act on, and the
-//! adapter surface the actor runtime calls (`Hornet::step`).
+//! adapter surface the actor runtime calls (`Boss::step`). The corpse the death effects spawn is a second tree of the same
+//! kind (`corpse`), run by the same struct.
 //!
-//! The data is the cooker's (host/hk-fsm `fsm3-boss`): the bank, the object table, and which object each FSM is on.
-//! The caller owns what is native in the original: the Rigidbody2D solve against terrain, the colliders' overlap with the
-//! Knight, the HealthManager, the sprite animators (it advances `Ent::clip`, counts `anim_left`, raises `anim_event`) and
-//! everything a request asks for.
+//! The data is the cooker's (host/hk-fsm `cook3::cook_hornet3`): the bank, the object table, and which object each FSM is
+//! on. The caller owns what is native in the original: the Rigidbody2D solve against terrain, the colliders' overlap with
+//! the Knight, the HealthManager, the sprite animators (it advances `Ent::clip`, counts `anim_left`, raises `anim_event`)
+//! and everything a request asks for (`hornet_fight`).
 use crate::fsm3::{Env, Tree, PH_ENTER, PH_FIXED, PH_UPDATE};
-use crate::fsm3_world::{World, MAX_ENT};
+use crate::fsm3_world::{ClipInfo, EntInit, World, MAX_ENT};
 use hk_format::fsm3::Bank;
-include!("../../../data/hornet3_fsm3.rs");
+
+/// One cooked boss tree.
+pub struct Data {
+    pub bank: &'static [u8],
+    pub ents: &'static [EntInit],
+    /// The object each FSM is on, by FSM.
+    pub owners: &'static [u8],
+    pub clips: &'static [ClipInfo],
+    /// The clip each animator starts on, by object.
+    pub defaults: &'static [(u8, u32)],
+    pub runtime: usize,
+}
+
+/// The fight: the boss object's subtree plus the Encounter FSM that wakes it.
+pub mod fight {
+    include!("../../../data/hornet3_fsm3.rs");
+    pub static DATA: super::Data = super::Data { bank: &BANK, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
+}
+/// `Corpse Hornet 1`: what the death effects spawn. Its first state writes `hornet1Defeated`, its last sends `HORNET LEAVE`.
+pub mod corpse {
+    include!("../../../data/hornet_corpse3_fsm3.rs");
+    pub static DATA: super::Data = super::Data { bank: &BANK, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
+}
+pub use fight::{ENTS, OWNERS};
+
+/// Words of tree memory: the larger of the two trees (`fight`) plus one for the alignment slack.
+const MEM_WORDS: usize = 232;
+const _: () = assert!(fight::RUNTIME_BYTES / 4 + 1 <= MEM_WORDS && corpse::RUNTIME_BYTES / 4 + 1 <= MEM_WORDS);
+const _: () = assert!(fight::ENTS.len() <= MAX_ENT && corpse::ENTS.len() <= MAX_ENT);
 
 pub fn bank() -> Bank<'static> {
     // SAFETY: the cooker parses the bank it emits and the module transport hash-checks it.
-    unsafe { Bank::from_verified(&BANK) }
+    unsafe { Bank::from_verified(fight::DATA.bank) }
 }
 
-/// A Hornet fight in progress: the tree's memory, its scene objects and the environment of the pass.
-pub struct Hornet {
-    mem: [u32; RUNTIME_BYTES / 4 + 1],
+/// A boss tree in progress: its memory, its scene objects and the environment of the pass.
+pub struct Boss {
+    data: &'static Data,
+    mem: [u32; MEM_WORDS],
     pub world: World,
     pub env: Env,
     /// The FSM-visible PlayerData reserve (`HORNET_FIELDS`).
     pub pd: [i32; 8],
 }
+/// The fight's tree.
+pub type Hornet = Boss;
 
-impl Hornet {
+impl Boss {
     pub const fn blank() -> Self {
-        Self { mem: [0; RUNTIME_BYTES / 4 + 1], world: World::new(), env: Env::new(), pd: [0; 8] }
+        Self::with(&fight::DATA)
+    }
+    pub const fn blank_corpse() -> Self {
+        Self::with(&corpse::DATA)
+    }
+    const fn with(data: &'static Data) -> Self {
+        Self { data, mem: [0; MEM_WORDS], world: World::new(), env: Env::new(), pd: [0; 8] }
+    }
+    pub fn data(&self) -> &'static Data {
+        self.data
+    }
+    fn bank(&self) -> Bank<'static> {
+        // SAFETY: as in `bank`.
+        unsafe { Bank::from_verified(self.data.bank) }
     }
     /// Lay the tree and its objects out in their authored state. The first `step` enters every active FSM's start state.
     pub fn init(&mut self, seed: u32) {
-        self.world.load(&ENTS);
+        self.world.clips = self.data.clips;
+        self.world.load(self.data.ents);
         self.env = Env::new();
         self.env.world = &mut self.world;
         self.env.pd = self.pd.as_mut_ptr();
-        // SAFETY: `mem` is the bank's runtime size, 4-aligned.
-        let mut tree = unsafe { Tree::init(bank(), self.mem.as_mut_ptr().cast(), &mut self.env, seed) };
+        for &(ent, clip) in self.data.defaults {
+            let ticks = self.world.clip_ticks(ent, clip);
+            if let Some(e) = self.world.get_mut(ent) {
+                e.clip = clip;
+                e.clip_from = 0;
+                e.anim_left = ticks;
+            }
+        }
+        // SAFETY: `mem` is large enough for either bank (`MEM_WORDS`), 4-aligned.
+        let mut tree = unsafe { Tree::init(self.bank(), self.mem.as_mut_ptr().cast(), &mut self.env, seed) };
         crate::fsm3b::object::sync_tree(&mut tree);
     }
     /// The tree with the environment attached, for one pass.
@@ -43,7 +97,7 @@ impl Hornet {
         self.env.world = &mut self.world;
         self.env.pd = self.pd.as_mut_ptr();
         // SAFETY: laid out by `init` for this bank.
-        unsafe { Tree::attach(bank(), self.mem.as_mut_ptr().cast(), &mut self.env) }
+        unsafe { Tree::attach(self.bank(), self.mem.as_mut_ptr().cast(), &mut self.env) }
     }
     /// One simulation frame: the fixed steps owed, then the update pass.
     pub fn step(&mut self, fixed_steps: u32) {
@@ -68,4 +122,3 @@ impl Hornet {
         self.tree().step(PH_ENTER);
     }
 }
-const _: () = assert!(ENTS.len() <= MAX_ENT);
