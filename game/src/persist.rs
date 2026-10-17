@@ -231,6 +231,13 @@ impl Store {
         }
         self.len = kept;
     }
+    /// `GameManager.ResetSemiPersistentItems`: the soul totems refill and the
+    /// enemies killed under a `semiPersistent` item are back. A bench rest and
+    /// the Knight's death (`GameManager.PlayerDead`) both call it.
+    pub fn reset_semi_persistent(&mut self) {
+        self.clear_kind(Kind::SoulTotem);
+        self.clear_semi_actor_deaths();
+    }
     /// Items of one kind in one scene, as (local, value).
     pub fn scene_items(&self, kind: Kind, scene: usize) -> impl Iterator<Item = (usize, u8)> + '_ {
         self.items().iter().filter_map(move |&item| {
@@ -305,6 +312,18 @@ pub fn set(kind: Kind, scene: usize, local: usize, value: u8) {
 #[cfg(not(test))]
 pub fn clear_semi_actor_deaths() {
     store().clear_semi_actor_deaths();
+}
+/// Resets taken (bench rests and deaths); the routes pin it.
+#[no_mangle]
+pub static mut HK_SEMI_RESETS: u32 = 0;
+/// `GameManager.ResetSemiPersistentItems`, on a bench rest and on a death.
+#[cfg(not(test))]
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+pub fn reset_semi_persistent() {
+    store().reset_semi_persistent();
+    unsafe { HK_SEMI_RESETS = HK_SEMI_RESETS.wrapping_add(1) }
+    publish();
 }
 #[cfg(not(test))]
 pub fn count(kind: Kind) -> usize {

@@ -52,12 +52,3 @@ pub fn killed(scene: usize, source_id: u32) {
         persist::set(Kind::Enemy, scene, local, if semi { DEAD_UNTIL_REST } else { DEAD });
     }
 }
-
-/// A bench rest or the Knight's death: `ResetSemiPersistentItems`, which
-/// `GameManager.PlayerDead` calls as well as the bench.
-#[inline(never)]
-#[cfg_attr(target_arch = "mips", optimize(size))]
-pub fn rest() {
-    persist::clear_semi_actor_deaths();
-    persist::publish();
-}

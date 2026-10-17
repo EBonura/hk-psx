@@ -246,6 +246,28 @@ fn post_rest_kill_and_combined_185_item_record_survive_cold_load_then_only_semi_
 }
 
 #[test]
+fn a_rest_or_a_death_refills_the_totems_and_returns_only_the_semi_persistent_enemies() {
+    // `GameManager.PlayerDead` and the bench both call `ResetSemiPersistentItems`.
+    let mut s = persist::Store::new();
+    // A Blocker's death, a permanent enemy death and two a reset forgets, two
+    // soul totems, a broken wall and a won arena.
+    assert!(s.set(Kind::Enemy, 2, 1, 1));
+    assert!(s.set(Kind::Enemy, 2, 16, 1));
+    assert!(s.set(Kind::Enemy, 2, 17, 2));
+    assert!(s.set(Kind::Enemy, 6, 18, 2));
+    assert!(s.set(Kind::SoulTotem, 2, 0, 3));
+    assert!(s.set(Kind::SoulTotem, 44, 1, 4));
+    assert!(s.set(Kind::Breakable, 2, 9, 1));
+    assert!(s.set(Kind::BattleScene, 21, 0, 1));
+    s.reset_semi_persistent();
+    assert_eq!(s.all(Kind::Enemy).collect::<Vec<_>>(), [(2, 1, 1), (2, 16, 1)]);
+    assert_eq!(s.count(Kind::SoulTotem), 0, "the totems refill");
+    assert_eq!(s.get(Kind::Breakable, 2, 9), Some(1));
+    assert_eq!(s.get(Kind::BattleScene, 21, 0), Some(1));
+    assert_eq!(s.items().len(), 4);
+}
+
+#[test]
 fn no_two_fields_share_an_offset() {
     // The round trip above passes even if two fields overlap, as long as the
     // last writer wins consistently. Changing one field at a time and watching

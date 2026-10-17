@@ -1156,7 +1156,7 @@ fn source_death_is_seated_dead_without_second_loot_and_rest_restores_only_semi()
     }
     assert_eq!(w.actor_state(0, 62546).unwrap().2, 0);
     w.take_geo_deaths(0, |_, _, _| panic!("restored death paid Geo twice"));
-    actor_persistence::rest();
+    persist::clear_semi_actor_deaths();
     assert!(!actor_persistence::dead(0, 62546));
     assert!(actor_persistence::dead(1, 62546));
     w.reset_scene(0);
