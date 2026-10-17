@@ -2,7 +2,8 @@
 //! `Value` and pays 8 or 9 soul orbs of `AddMPCharge(2)` each, then the totem
 //! waits 0.25 s; at zero it is depleted. The count left rides the world store
 //! (kind `SoulTotem`) because the source's `PersistentIntItem` does, and like
-//! that item's `semiPersistent` flag every totem refills when the Knight rests.
+//! that item's `semiPersistent` flag every totem refills when the Knight rests or dies
+//! (`persist::reset_semi_persistent`).
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/soul_totems.rs"
@@ -62,9 +63,4 @@ pub fn tick() {
             *c = c.saturating_sub(1);
         }
     }
-}
-/// A bench rest: every `semiPersistent` totem is full again.
-pub fn rest() {
-    persist::store().clear_kind(Kind::SoulTotem);
-    persist::publish();
 }
