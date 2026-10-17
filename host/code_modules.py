@@ -114,9 +114,6 @@ MODULES = {
     'fsm3_world': _sim('fsm3_object', 'fsm3_audio', 'fsm3_animation'),
     'fsm3_body': _sim('fsm3_transform', 'fsm3_ai'),
 }
-if os.environ.get('HK_MEASURE_HARD'):
-    # A measurement build (game feature hard-ops): the Hornet-set handlers as one module no room loads.
-    MODULES['fsm3_hard'] = _sim('fsm3_hard')
 # Room logic modules by the room that runs them: (data file, constant) holding
 # the room's scene id.
 ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),
