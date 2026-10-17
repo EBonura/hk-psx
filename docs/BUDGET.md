@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |801,668|
-| Code-to-data alignment |12|
-| Linked data, including menu and HUD |280,264|
+| Linked code |802,240|
+| Code-to-data alignment |0|
+| Linked data, including menu and HUD |255,192|
 | BSS, including shared scene arena and runtime pools |796,924|
-| Total static span |1,878,876|
+| Total static span |1,854,364|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |103,332|
+| Unallocated gap before reserved stack |127,844|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |932|
+| Free RAM below the module pool |25,444|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -26,6 +26,8 @@ The 2026-10-17 frame-time pass (the early back pass skips a frame whose Knight a
 The 2026-10-17 FSM v2 landing (HKFSM03 kernel, bank format and family code; Crawler, Gruzzer, Vengefly and the scene scripts on it, the v1 executor and the HKSCR01 interpreter gone) left the resident image where it was: linked code 794,696 to 795,812 (+1,116), data 278,568 to 278,280 (-288), BSS 797,588 to 796,908 (-680), so 17,024 bytes were free below the old pool. The worst room (Crossroads: Vengefly, Aspid, Climber and Crawler with the grub jar art, plus the 30,388-byte carried Shade art) needed 96,080 pool bytes against a 90,112-byte limit (the pool less its 4 KiB window fence), because the shared action code (`fsm3_logic` 3,604, `fsm3_world` 1,068 and `fsm3_body` 7,884 bytes, carried per room by the families its banks use) is paid by every room that has a bank. The pool is 100 KiB now (102,400), which leaves 8,788 bytes free below it and 2,224 bytes of margin in that room (98,304 limit). `hk-module-publish` prints the six tightest rooms on every build ("pool fit").
 
 The 2026-10-17 restore of the lost features (Crossroads_22's waves arena with its 64-quad draw list and arena runtime, the Knight's rising Focus motes, the death reset of the soul totems, the Mosquito's recoil speed), rebased on the FSM v2 family-mask build, took linked code from 795,812 to 801,668 bytes (5,856) and linked data from 278,280 to 280,264 (1,984, mostly the arena's cooked tables and the motes' style), so 932 bytes are free below the module pool (8,788 before).
+
+The 2026-10-17 `-Cpanic=immediate-abort` build (host/build_guest.py; `PSOXIDE_PANIC_MESSAGES=1` restores the formatted panic) turned every panic, bounds check and overflow check into a bare `break`. `core::fmt`, the panic `Location` records, their file names and the assertion message strings left the image: linked data fell from 280,264 to 255,192 bytes (25,072) while linked code grew from 801,668 to 802,240 (572, the compiler inlines differently once the panic calls are gone), so 25,444 bytes are free below the module pool (932 before). psx-rt's exception handler still records Cause, EPC and BadVAddr (`__psx_rt_fault_*`), which every route already fails on. Each module image now reserves 96 hazard-trampoline words (SDK `overlay_pack::TRAMPOLINE_WORDS`, `code_modules.TRAMP_WORDS`) instead of 32.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free

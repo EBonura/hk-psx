@@ -176,6 +176,12 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     # cuts the PS-X EXE (header, .text, .data) and the module images out of
     # it; --emit-relocs keeps the relocations its fixups and checks read.
     flags=delay_slot_flags().split()+[f'-Clink-arg=-T{linker}','-Clink-arg=--emit-relocs',f'-Clink-arg=-Map={link_map}']
+    # A panic is a BREAK at the faulting instruction (-Cpanic=immediate-abort), not a formatted message: core::fmt, the panic
+    # Location records and their file names (about 23 KB of the resident image) stay out of RAM. psx-rt's exception handler
+    # records Cause/EPC/BadVAddr (__psx_rt_fault_*), which the gates already read (__psx_rt_fault_count) and
+    # `psoxide-size faults` names. PSOXIDE_PANIC_MESSAGES=1 restores the formatted panic. Modules need the SDK overlay tools
+    # of SDK_TOOL_REVISION (HI16 behind a loop back edge, TRAMPOLINE_WORDS) and code_modules.TRAMP_WORDS to match.
+    if os.environ.get('PSOXIDE_PANIC_MESSAGES','0') in ('','0'):flags=['-Zunstable-options','-Cpanic=immediate-abort']+flags
     if profile=='elf':
         flags=flags+PROFILE_FLAGS.split()
     elif profile=='collect':

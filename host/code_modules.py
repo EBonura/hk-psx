@@ -53,7 +53,7 @@ from pathlib import Path
 
 LINK_BASE = 0x80408000
 LINK_STRIDE = 0x10000
-TRAMP_WORDS = 32
+TRAMP_WORDS = 96
 MAX_IMPORTS = 256
 # The pool: a fixed region below the stack reserve. A module never straddles
 # a 64 KiB `lui` window boundary inside it (the guest's allocator skips them).
