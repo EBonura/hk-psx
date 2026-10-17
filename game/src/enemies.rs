@@ -10,6 +10,40 @@ use hk_sim::{
     WalkState, MAX_ACTORS, ONE,
 };
 
+/// `Recoil.UpdatePhysics` for one tick: the actor's solver is stepped
+/// once more at the recoil velocity. A macro rather than a function because `Player::step` is generic over the terrain
+/// closure, and the solver call has to stay inline in each family's own `advance_*` so the registers the closure sits in are
+/// the ones that call already uses (a function or a `&mut Params` helper cost 100 to 200 bytes in every family).
+/// `vertical` also sets the body's vertical velocity, `no_gravity` zeroes gravity for the step, `scaled(true)` is the
+/// Crawler's 6/5 for a 20 ms source step against the 60 Hz tick.
+macro_rules! recoil_step {
+    ($actor:expr, $body:expr, $p:expr, $count:expr, $edge:expr, horizontal) => {
+        recoil_step!(@go $actor, $body, $p, $count, $edge, false, false, false)
+    };
+    ($actor:expr, $body:expr, $p:expr, $count:expr, $edge:expr, vertical) => {
+        recoil_step!(@go $actor, $body, $p, $count, $edge, true, false, false)
+    };
+    ($actor:expr, $body:expr, $p:expr, $count:expr, $edge:expr, vertical, no_gravity) => {
+        recoil_step!(@go $actor, $body, $p, $count, $edge, true, true, false)
+    };
+    ($actor:expr, $body:expr, $p:expr, $count:expr, $edge:expr, vertical, no_gravity, scaled($fixed:expr)) => {
+        recoil_step!(@go $actor, $body, $p, $count, $edge, true, true, $fixed)
+    };
+    (@go $actor:expr, $body:expr, $p:expr, $count:expr, $edge:expr, $vertical:expr, $no_gravity:expr, $scaled:expr) => {
+        if $actor.recoil_left != 0 {
+            $actor.recoil_left -= 1;
+            let [vx, vy] = $actor.recoil;
+            $p.speed = if $scaled { vx.abs() * 6 / 5 } else { vx.abs() };
+            if $no_gravity {
+                $p.gravity = 0;
+            }
+            if $vertical {
+                $body.vy = if $scaled { vy * 6 / 5 } else { vy };
+            }
+            $body.step($p, vx.signum(), false, $count, $edge);
+        }
+    };
+}
 /// Source AudioSource/Charge Dust actions. The caller must own these events even
 /// before a bank/effect is bound; never silently discard them for enabled actors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -617,7 +651,7 @@ pub const MAX_VISIBLE: usize = 20;
 /// `InfectedEnemyEffects.RecieveHitEffect` calls `SpriteFlash.flashInfected`:
 /// colour (1, 0.31, 0) at amount 0.9, 0.01 s up, 0.01 s held, 0.25 s down.
 /// At 60 Hz that is one tick at full strength and a 15-tick linear fade.
-const FLASH_TICKS: u8 = 16;
+const FLASH_TICKS: u8 = hk_sim::components::FLASH_TICKS;
 /// The flash colour times its amount, as a GPU modulation of a white texel
 /// (128 is 1.0): 0.9 * (1, 0.31, 0).
 const FLASH_TINT: (u32, u32, u32) = (115, 36, 0);
@@ -1347,12 +1381,12 @@ struct Actor {
     spawn_state: SpawnState,
     health: ActorHealth,
     walk: WalkState,
+    /// `Recoil`'s displacement after a nail hit (swept by `recoil_step!`). The hit flash
+    /// (`SpriteFlash.flashInfected`, see `FLASH_TICKS`) rides in `health`.
     recoil_left: u16,
+    /// The Crawler's 50 Hz fixed step, accumulated against the 60 Hz tick.
     recoil_fixed_accumulator: u8,
     recoil: [i32; 2],
-    /// Ticks left of the hit flash (`SpriteFlash.flashInfected`), counted down
-    /// once per tick; see `FLASH_TICKS`.
-    flash_left: u8,
     corpse: Option<hk_sim::Corpse>,
     geo_paid: bool,
     /// A Dream Nail slash pays SOUL once per actor, as the source's
@@ -1584,7 +1618,7 @@ impl Actor {
         self.vy = 0;
         self.recoil_left = 0;
         self.recoil = [0; 2];
-        self.health = ActorHealth::new(spec.health);
+        self.health.refill(spec.health);
         if let Runtime::HatcherBaby(baby) = &mut self.runtime {
             baby.controller.park();
             baby.animation_tick = 0;
@@ -1729,7 +1763,6 @@ impl Actor {
             recoil_left: 0,
             recoil_fixed_accumulator: 0,
             recoil: [0; 2],
-            flash_left: 0,
             corpse: None,
             geo_paid: false,
             dream_taken: false,
@@ -2549,25 +2582,21 @@ impl Actor {
         body.step(p, vx.signum(), false, count, &edge);
         self.vy = body.vy;
         self.grounded = body.grounded;
-        let crawler_fixed = if matches!(spec.controller, ActorController::Crawler { .. }) {
+        let fixed = matches!(spec.controller, ActorController::Crawler { .. });
+        let crawler_fixed = if fixed {
             self.recoil_fixed_accumulator += 50;
             if self.recoil_fixed_accumulator >= 60 {
                 self.recoil_fixed_accumulator -= 60;
                 true
             } else { false }
         } else { true };
-        if self.recoil_left != 0 && crawler_fixed {
+        if crawler_fixed {
             // Recoil.UpdatePhysics sweeps a separate transform displacement;
             // it does not replace the walking rigidbody velocity. Reuse the
             // bounded terrain solver for that displacement, preserving gravity.
-            self.recoil_left -= 1;
-            let fixed = matches!(spec.controller, ActorController::Crawler { .. });
             // The terrain integrator divides velocity by 60. A 20 ms source
             // displacement therefore supplies 6/5 of the unchanged velocity.
-            p.speed = if fixed { self.recoil[0].abs() * 6 / 5 } else { self.recoil[0].abs() };
-            p.gravity = 0;
-            body.vy = if fixed { self.recoil[1] * 6 / 5 } else { self.recoil[1] };
-            body.step(p, self.recoil[0].signum(), false, count, &edge);
+            recoil_step!(self, body, p, count, &edge, vertical, no_gravity, scaled(fixed));
         }
         self.x = body.x - offset;
         self.y = body.y;
@@ -2753,12 +2782,7 @@ impl Actor {
         };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);
-        if self.recoil_left != 0 {
-            self.recoil_left -= 1;
-            p.speed = self.recoil[0].abs();
-            body.vy = self.recoil[1];
-            body.step(p, self.recoil[0].signum(), false, count, edge);
-        }
+        recoil_step!(self, body, p, count, edge, vertical);
         self.x = body.x - offset;
         self.y = body.y;
     }
@@ -2826,7 +2850,7 @@ impl Actor {
         let b = self.local_bounds(spec);
         let offset = b[0] + (b[2] - b[0]) / 2;
         let vx = m.controller.vx();
-        let p = Params {
+        let mut p = Params {
             speed: vx.abs(),
             gravity: 60 * ONE,
             fall: 100 * ONE,
@@ -2851,12 +2875,7 @@ impl Actor {
         if vx != 0 && body.x - before != vx / 60 {
             m.controller.stopped();
         }
-        if self.recoil_left != 0 {
-            self.recoil_left -= 1;
-            let mut p = p;
-            p.speed = self.recoil[0].abs();
-            body.step(p, self.recoil[0].signum(), false, count, edge);
-        }
+        recoil_step!(self, body, p, count, edge, horizontal);
         self.x = body.x - offset;
         self.y = body.y;
         self.vy = body.vy;
@@ -2925,12 +2944,7 @@ impl Actor {
         let moved = [body.x - (self.x + offset), body.y - self.y];
         m.hit_terrain =
             (v[0] != 0 && moved[0] != v[0] / 60) || (v[1] != 0 && moved[1] != v[1] / 60);
-        if self.recoil_left != 0 {
-            self.recoil_left -= 1;
-            p.speed = self.recoil[0].abs();
-            body.vy = self.recoil[1];
-            body.step(p, self.recoil[0].signum(), false, count, edge);
-        }
+        recoil_step!(self, body, p, count, edge, vertical);
         self.x = body.x - offset;
         self.y = body.y;
     }
@@ -2989,12 +3003,7 @@ impl Actor {
         let moved = [body.x - (self.x + offset), body.y - self.y];
         let blocked_x = moved[0] != v[0] / 60;
         let blocked_y = moved[1] != v[1] / 60;
-        if self.recoil_left != 0 {
-            self.recoil_left -= 1;
-            p.speed = self.recoil[0].abs();
-            body.vy = self.recoil[1];
-            body.step(p, self.recoil[0].signum(), false, count, edge);
-        }
+        recoil_step!(self, body, p, count, edge, vertical);
         self.x = body.x - offset;
         self.y = body.y;
         let side = if blocked_y && v[1] > 0 {
@@ -3092,38 +3101,17 @@ impl Actor {
     /// already answers, because `CameraLockArea B` is an authored lock area the
     /// world cooks like any other rather than something the arena switches.
     fn apply_arena(&mut self, boss: &mut FalseKnightRuntime, actions: hk_sim::boss::Actions) {
-        for action in actions.iter() {
-            match action {
-                hk_sim::boss::Action::StartBattle => {
-                    let started = boss.controller.battle_start();
-                    self.apply_false_knight(boss, started);
-                }
-                // The broadcast reaches every gate in the room, not only the two
-                // at the arena ends, which is why the gate world is keyed by
-                // scene. All five of Crossroads_10's are cooked terrain, so this
-                // seals the arena rather than only shutting the middle of it:
-                // see game/src/battle_gates.rs.
-                hk_sim::boss::Action::CloseGates => crate::battle_gates::close(self.scene),
-                hk_sim::boss::Action::OpenGates | hk_sim::boss::Action::QuickOpenGates => {
-                    crate::battle_gates::open(self.scene)
-                }
-                // `End Wait` writes `Activated` before its two-second wait, so a
-                // save taken during the wait already counts as cleared. This
-                // write is the same order: the record reaches the card at the
-                // next bench, which is the only thing that ever writes it.
-                hk_sim::boss::Action::Persist => {
-                    crate::persist::set(crate::persist::Kind::BattleScene, self.scene, 0, 1)
-                }
-                // Still not presented, and each for its own reason.
-                // `KillMinions` has no target because the three pre-battle
-                // Zombies are recorded rather than admitted; `ActivateFloor`
-                // names the arena floor, which is cooked terrain nothing can
-                // break; and `CameraLock` is the authored `CameraLockArea B`.
-                hk_sim::boss::Action::ActivateFloor
-                | hk_sim::boss::Action::CameraLock(_)
-                | hk_sim::boss::Action::KillMinions => {}
-            }
+        // The one arena action that is the boss's own: BATTLE START, which
+        // `hero_entered` lists before the gates it shuts, as this does.
+        if actions.contains(hk_sim::boss::Action::StartBattle) {
+            let started = boss.controller.battle_start();
+            self.apply_false_knight(boss, started);
         }
+        // Gates and the `Activated` write are every arena's. `KillMinions` has
+        // no target because the three pre-battle Zombies are recorded rather
+        // than admitted, and `ActivateFloor` names the arena floor, which is
+        // cooked terrain nothing can break.
+        self.apply_battle_scene(actions);
     }
     /// One `FalseyControl` action list against the guest body.
     fn apply_false_knight(
@@ -3320,11 +3308,15 @@ impl Actor {
             }
         }
     }
-    /// `Battle Control` answered for the Mawlek's arena.
-    /// `Battle Control`'s actions for the Mawlek's and Gruz Mother's arenas:
-    /// gates and the `Activated` write. Resident and shared, because the two
-    /// code modules carried identical copies, which the linker's identical-
-    /// code folding merged into one module that the other then jumped into.
+    /// `Battle Control`'s actions for every arena: gates and the `Activated`
+    /// write. Resident and shared, because the boss code modules carried
+    /// identical copies, which the linker's identical-code folding merged into
+    /// one module that the other then jumped into.
+    ///
+    /// The gates broadcast reaches every gate in the room, not only the two at
+    /// the arena ends, which is why the gate world is keyed by scene. All five
+    /// of Crossroads_10's are cooked terrain, so closing seals the arena rather
+    /// than only shutting the middle of it: see game/src/battle_gates.rs.
     fn apply_battle_scene(&mut self, actions: hk_sim::boss::Actions) {
         for action in actions.iter() {
             match action {
@@ -3703,9 +3695,8 @@ impl Actor {
             invincible: !boss.vulnerable,
             ..spec.health
         };
-        let hit = self.health.hit(params, damage);
-        if matches!(hit, Hit::Damaged | Hit::Killed) {
-            self.flash_left = FLASH_TICKS;
+        let hit = self.health.strike(params, damage);
+        if hit.landed() {
             unsafe { HK_MW_HITS = HK_MW_HITS.saturating_add(1) }
         }
         if hit == Hit::Killed {
@@ -4027,9 +4018,8 @@ impl Actor {
             invincible: boss.controller.invincible(),
             damage_override: false,
         };
-        let hit = self.health.hit(params, damage);
-        if matches!(hit, Hit::Damaged | Hit::Killed) {
-            self.flash_left = FLASH_TICKS;
+        let hit = self.health.strike(params, damage);
+        if hit.landed() {
             unsafe { HK_GZ_HITS = HK_GZ_HITS.saturating_add(1) }
             let actions = if hit == Hit::Killed {
                 boss.controller.die()
@@ -4305,13 +4295,7 @@ impl Actor {
         let old_x = body.x;
         body.step(p, roller.vx.signum(), false, count, edge);
         roller.wall = roller.vx != 0 && body.x != old_x + roller.vx / 60;
-        if self.recoil_left != 0 {
-            self.recoil_left -= 1;
-            p.speed = self.recoil[0].abs();
-            p.gravity = 0;
-            body.vy = self.recoil[1];
-            body.step(p, self.recoil[0].signum(), false, count, edge);
-        }
+        recoil_step!(self, body, p, count, edge, vertical, no_gravity);
         self.vy = body.vy;
         self.grounded = body.grounded;
         self.x = body.x - offset;
@@ -4477,12 +4461,7 @@ impl Actor {
         };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);
-        if self.recoil_left != 0 {
-            self.recoil_left -= 1;
-            p.speed = self.recoil[0].abs();
-            body.vy = self.recoil[1];
-            body.step(p, self.recoil[0].signum(), false, count, edge);
-        }
+        recoil_step!(self, body, p, count, edge, vertical);
         self.x = body.x - offset;
         self.y = body.y;
     }
@@ -4509,12 +4488,7 @@ impl Actor {
         };
         body.vy = v[1];
         body.step(p, v[0].signum(), false, count, edge);
-        if self.recoil_left != 0 {
-            self.recoil_left -= 1;
-            p.speed = self.recoil[0].abs();
-            body.vy = self.recoil[1];
-            body.step(p, self.recoil[0].signum(), false, count, edge);
-        }
+        recoil_step!(self, body, p, count, edge, vertical);
         self.x = body.x - offset;
         self.y = body.y;
     }
@@ -4787,6 +4761,45 @@ pub struct Events {
     pub hurt: Hurt,
     /// SOUL taken by a Dream Nail slash this tick, summed over the actors hit.
     pub dream_soul: u16,
+}
+// The pieces of an enemy's answer to the Knight that every family shares (shared/hk-sim
+// components.rs holds the rest): each family tests its own boxes, then calls these.
+impl Events {
+    /// `DamageHero`: the Knight takes `damage` from an enemy standing at `actor_x`, knocked away from it.
+    fn damage_hero(
+        &mut self,
+        vitals: &mut Vitals,
+        cheats: crate::cheats::Settings,
+        player: &Player,
+        actor_x: i32,
+        damage: u16,
+    ) {
+        let direction = if player.x < actor_x { -1 } else { 1 };
+        let hurt = cheats.hurt(
+            vitals,
+            crate::VITAL_PARAMS,
+            damage,
+            direction,
+            false,
+            player.shadow_dashing,
+        );
+        if hurt != Hurt::Ignored {
+            self.hurt = hurt;
+        }
+    }
+    /// `EnemyDreamnailReaction`: a live Dream Nail slash over `hurt_box` pays the actor's SOUL once.
+    fn dream_reaction(&mut self, taken: &mut bool, soul: u16, slash: &[[i32; 2]], hurt_box: [i32; 4]) {
+        if !slash.is_empty() && soul != 0 && !*taken && hk_sim::polygon_hits_box(slash, hurt_box) {
+            *taken = true;
+            self.dream_soul = self.dream_soul.saturating_add(soul);
+        }
+    }
+}
+/// NailSlash's answer to a strike that reached a target: the recoil and pogo the Knight takes.
+fn nail_answer(vitals: &Vitals, response: &mut hk_sim::NailResponse, nail: &Nail, player: &mut Player) {
+    if vitals.can_control() {
+        response.contact(crate::NAIL_RESPONSE_PARAMS, nail.kind, player.facing, player);
+    }
 }
 /// Waves started, members landed and members counted dead by a waves arena.
 #[no_mangle]
@@ -5235,7 +5248,7 @@ impl EnemyWorld {
                 Runtime::GruzMother(_) => 19,
             };
             let flags =
-                a.grounded as u32 | (a.health.dead as u32) << 1 | ((a.flash_left > 0) as u32) << 2;
+                a.grounded as u32 | (a.health.dead as u32) << 1 | ((a.health.flash > 0) as u32) << 2;
             w[0] = a.source_id;
             w[1] = (a.scene as u32) << 24 | kind << 16 | flags;
             w[2] = a.x as u32;
@@ -5837,7 +5850,7 @@ impl EnemyWorld {
             if !actor.health.dead {
                 actor.health.tick();
             }
-            actor.flash_left = actor.flash_left.saturating_sub(1);
+            actor.health.tick_flash();
             if available {
                 context.cage_children = parked.get();
                 actor.advance_in_view(
@@ -5874,7 +5887,7 @@ impl EnemyWorld {
                 if let Some((box_, damage)) = ball {
                     let (_, hit) =
                         actor.strike_gruz(&mut boss, spec, &|b| overlap(box_, b), damage);
-                    if matches!(hit, Hit::Damaged | Hit::Killed) {
+                    if hit.landed() {
                         events.hits += 1;
                     }
                     if hit == Hit::Killed {
@@ -5890,7 +5903,7 @@ impl EnemyWorld {
                         nail_damage,
                     );
                     reached = hit_box;
-                    if matches!(hit, Hit::Damaged | Hit::Killed) {
+                    if hit.landed() {
                         events.hits += 1;
                         vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
                     }
@@ -5898,13 +5911,8 @@ impl EnemyWorld {
                         events.kills += 1;
                     }
                 }
-                if reached && vitals.can_control() {
-                    response.contact(
-                        crate::NAIL_RESPONSE_PARAMS,
-                        nail.kind,
-                        player.facing,
-                        player,
-                    );
+                if reached {
+                    nail_answer(vitals, response, nail, player);
                 }
                 let (frame, _) = boss.frame_box(spec.bounds);
                 let b = boss.body(frame);
@@ -5914,14 +5922,7 @@ impl EnemyWorld {
                     actor.x + b[2],
                     actor.y + b[3],
                 ];
-                if !dream_polygon.is_empty()
-                    && spec.dream_soul != 0
-                    && !actor.dream_taken
-                    && hk_sim::polygon_hits_box(dream_polygon, hurt_box)
-                {
-                    actor.dream_taken = true;
-                    events.dream_soul = events.dream_soul.saturating_add(spec.dream_soul);
-                }
+                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, dream_polygon, hurt_box);
                 if !actor.health.dead && boss.controller.hurts() {
                     let d = boss.body(crate::gruz_art::GZ_DAMAGER_BOX);
                     if overlap(
@@ -5933,18 +5934,13 @@ impl EnemyWorld {
                             actor.y + d[3],
                         ],
                     ) {
-                        let direction = if player.x < actor.x { -1 } else { 1 };
-                        let hurt = cheats.hurt(
+                        events.damage_hero(
                             vitals,
-                            crate::VITAL_PARAMS,
+                            cheats,
+                            player,
+                            actor.x,
                             hk_sim::gruz_mother::CONTACT_DAMAGE,
-                            direction,
-                            false,
-                            player.shadow_dashing,
                         );
-                        if hurt != Hurt::Ignored {
-                            events.hurt = hurt;
-                        }
                     }
                 }
                 actor.seat_gruz(boss);
@@ -5959,11 +5955,7 @@ impl EnemyWorld {
                 // degrees for a side hit, straight for up and down.
                 let away = if actor.x >= player.x { 1 } else { -1 };
                 let speed = crate::mawlek_art::MW_CORPSE_FLING;
-                let fling = |kind: u16| match kind {
-                    2 => [0, speed],
-                    3 => [0, -speed],
-                    _ => [away * (speed >> 1), psx_math::int32::mul_shr_i32(speed, 56756, 16)],
-                };
+                let fling = |kind: u16| hk_sim::components::death_fling(kind, away, speed);
                 if let Some((box_, damage)) = ball {
                     let (_, hit) = actor.strike_mawlek(
                         &mut boss,
@@ -5972,7 +5964,7 @@ impl EnemyWorld {
                         damage,
                         fling(0),
                     );
-                    if matches!(hit, Hit::Damaged | Hit::Killed) {
+                    if hit.landed() {
                         events.hits += 1;
                     }
                 }
@@ -5987,7 +5979,7 @@ impl EnemyWorld {
                             fling(nail.kind),
                         );
                         reached = hit_box;
-                        if matches!(hit, Hit::Damaged | Hit::Killed) {
+                        if hit.landed() {
                             events.hits += 1;
                             vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
                         }
@@ -6012,22 +6004,10 @@ impl EnemyWorld {
                         }
                     }
                 }
-                if reached && vitals.can_control() {
-                    response.contact(
-                        crate::NAIL_RESPONSE_PARAMS,
-                        nail.kind,
-                        player.facing,
-                        player,
-                    );
+                if reached {
+                    nail_answer(vitals, response, nail, player);
                 }
-                if !dream_polygon.is_empty()
-                    && spec.dream_soul != 0
-                    && !actor.dream_taken
-                    && hk_sim::polygon_hits_box(dream_polygon, bounds)
-                {
-                    actor.dream_taken = true;
-                    events.dream_soul = events.dream_soul.saturating_add(spec.dream_soul);
-                }
+                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, dream_polygon, bounds);
                 if !actor.health.dead {
                     let mut damage = 0;
                     if overlap(body, bounds) {
@@ -6044,18 +6024,7 @@ impl EnemyWorld {
                         }
                     }
                     if damage != 0 {
-                        let direction = if player.x < actor.x { -1 } else { 1 };
-                        let hurt = cheats.hurt(
-                            vitals,
-                            crate::VITAL_PARAMS,
-                            damage,
-                            direction,
-                            false,
-                            player.shadow_dashing,
-                        );
-                        if hurt != Hurt::Ignored {
-                            events.hurt = hurt;
-                        }
+                        events.damage_hero(vitals, cheats, player, actor.x, damage);
                     }
                 }
                 actor.seat_mawlek(boss);
@@ -6069,7 +6038,7 @@ impl EnemyWorld {
                 if let Some((box_, damage)) = ball {
                     let (_, hit) =
                         actor.strike_false_knight(&mut boss, spec, |b| overlap(box_, b), damage);
-                    if matches!(hit, Hit::Damaged | Hit::Killed) {
+                    if hit.landed() {
                         events.hits += 1;
                     }
                 }
@@ -6082,27 +6051,15 @@ impl EnemyWorld {
                         nail_damage,
                     );
                     reached = hit_box;
-                    if matches!(hit, Hit::Damaged | Hit::Killed) {
+                    if hit.landed() {
                         events.hits += 1;
                         vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
                     }
                 }
-                if reached && vitals.can_control() {
-                    response.contact(
-                        crate::NAIL_RESPONSE_PARAMS,
-                        nail.kind,
-                        player.facing,
-                        player,
-                    );
+                if reached {
+                    nail_answer(vitals, response, nail, player);
                 }
-                if !dream_polygon.is_empty()
-                    && spec.dream_soul != 0
-                    && !actor.dream_taken
-                    && hk_sim::polygon_hits_box(dream_polygon, bounds)
-                {
-                    actor.dream_taken = true;
-                    events.dream_soul = events.dream_soul.saturating_add(spec.dream_soul);
-                }
+                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, dream_polygon, bounds);
                 // The body's own DamageHero, which the stagger switches off, and
                 // the `Hitter` trigger the attacks switch on, which reaches
                 // nearly eight units ahead of the body the source never moves.
@@ -6114,18 +6071,7 @@ impl EnemyWorld {
                     damage = hk_sim::false_knight::CONTACT_DAMAGE;
                 }
                 if damage != 0 {
-                    let direction = if player.x < actor.x { -1 } else { 1 };
-                    let hurt = cheats.hurt(
-                        vitals,
-                        crate::VITAL_PARAMS,
-                        damage,
-                        direction,
-                        false,
-                        player.shadow_dashing,
-                    );
-                    if hurt != Hurt::Ignored {
-                        events.hurt = hurt;
-                    }
+                    events.damage_hero(vitals, cheats, player, actor.x, damage);
                 }
                 actor.seat_false_knight(boss);
                 continue;
@@ -6148,7 +6094,7 @@ impl EnemyWorld {
                     match actor.health.hit(params, damage) {
                         Hit::Damaged => {
                             events.hits += 1;
-                            actor.flash_left = FLASH_TICKS;
+                            actor.health.flash = FLASH_TICKS;
                         }
                         Hit::Killed => {
                             events.hits += 1;
@@ -6163,14 +6109,7 @@ impl EnemyWorld {
                     }
                 }
             }
-            if !dream_polygon.is_empty()
-                && spec.dream_soul != 0
-                && !actor.dream_taken
-                && hk_sim::polygon_hits_box(dream_polygon, bounds)
-            {
-                actor.dream_taken = true;
-                events.dream_soul = events.dream_soul.saturating_add(spec.dream_soul);
-            }
+            events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, dream_polygon, bounds);
             let shell = actor.acid_flyer_shell(spec);
             let tile = actor.mosquito_tile(spec);
             if !polygon.is_empty()
@@ -6239,13 +6178,12 @@ impl EnemyWorld {
                     },
                     _ => spec.health,
                 };
-                match actor.health.hit(
+                match actor.health.strike(
                     health_params,
                     cheats.params(crate::VITAL_PARAMS).nail_damage,
                 ) {
                     Hit::Damaged | Hit::Killed => {
                         events.hits += 1;
-                        actor.flash_left = FLASH_TICKS;
                         if actor.health.dead {
                             events.kills += 1;
                             crate::actor_persistence::killed(actor.scene, actor.source_id);
@@ -6428,7 +6366,7 @@ impl EnemyWorld {
                                     }
                                 }
                             }
-                            actor.recoil_left = match spec.controller {
+                            let recoil_ticks = match spec.controller {
                                 ActorController::Crawler { recoil_steps } => recoil_steps as u16,
                                 _ => spec.recoil_ticks,
                             };
@@ -6442,6 +6380,7 @@ impl EnemyWorld {
                                     spec.recoil_speed
                                 }
                             });
+                            actor.recoil_left = recoil_ticks;
                             actor.recoil = match nail.kind {
                                 2 => [0, recoil_speed],
                                 3 => [0, -recoil_speed],
@@ -6495,18 +6434,7 @@ impl EnemyWorld {
                 }
             }
             if damage != 0 {
-                let direction = if player.x < actor.x { -1 } else { 1 };
-                let hurt = cheats.hurt(
-                    vitals,
-                    crate::VITAL_PARAMS,
-                    damage,
-                    direction,
-                    false,
-                    player.shadow_dashing,
-                );
-                if hurt != Hurt::Ignored {
-                    events.hurt = hurt;
-                }
+                events.damage_hero(vitals, cheats, player, actor.x, damage);
             }
         }
         for (scene, position, velocity, kind, shot_clip, impact_clip) in fires.into_iter().flatten()
@@ -6893,7 +6821,7 @@ impl EnemyWorld {
                     if actor.health.dead {
                         0
                     } else {
-                        actor.flash_left
+                        actor.health.flash
                     },
                 );
             }
@@ -7190,7 +7118,7 @@ fn draw_false_knight(
         position,
         facing,
         camera,
-        actor.flash_left,
+        actor.health.flash,
         0,
     );
     if let Some(sprite) = boss.head_sprite() {
@@ -7202,7 +7130,7 @@ fn draw_false_knight(
             position,
             facing,
             camera,
-            actor.flash_left,
+            actor.health.flash,
             0,
         );
     }
@@ -7244,7 +7172,7 @@ fn draw_mawlek(
         return;
     }
     let depth = boss.controller.depth();
-    let flash = actor.flash_left;
+    let flash = actor.health.flash;
     for arm in 0..2 {
         if let Some(sprite) = boss.sprite(2 + arm) {
             push_sprite(
@@ -7335,7 +7263,7 @@ fn draw_gruz(
     let flash = if actor.health.dead {
         0
     } else {
-        actor.flash_left
+        actor.health.flash
     };
     let sink = if boss.controller.sunk() {
         hk_sim::gruz_mother::SLAM_SINK
@@ -7361,7 +7289,7 @@ fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
 struct Draw {
     texture: u16,
     verts: [(i16, i16); 4],
-    /// `flash_left` of the actor this frame belongs to; 0 draws no flash.
+    /// `health.flash` of the actor this frame belongs to; 0 draws no flash.
     flash: u8,
 }
 pub struct Draws {
