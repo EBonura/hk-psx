@@ -331,9 +331,9 @@ pub fn hornet_extra(source: &Source, boss: i64, cooked: &Cooked) -> Result<Strin
     let _ = writeln!(out, "/// `ConstrainPosition`: the arena's x range, which the body never leaves.");
     let _ = writeln!(out, "pub const ARENA_X: [i32; 2] = [{}, {}];", q(num(&constrain, "xMin")?), q(num(&constrain, "xMax")?));
     out.push_str(&string_consts(&cooked.strings));
-    for name in ["TOOK DAMAGE", "ATTACKED", "CONVO_FINISH", "WAKE", "START", "HORNET KILLED", "HORNET LEAVE"] {
+    for name in ["TOOK DAMAGE", "ATTACKED", "CONVO_FINISH", "WAKE", "START", "HORNET KILLED", "HORNET LEAVE", "BG CLOSE", "EnemyKillShake", "AverageShake"] {
         if let Some(i) = cooked.events.iter().position(|e| e == name) {
-            let _ = writeln!(out, "pub const EV_{}: u8 = {i};", name.replace(' ', "_"));
+            let _ = writeln!(out, "pub const EV_{}: u8 = {i};", const_name(name));
         }
     }
     if let Some(i) = cooked.names.iter().position(|n| n == "Encounter") {
@@ -341,6 +341,25 @@ pub fn hornet_extra(source: &Source, boss: i64, cooked: &Cooked) -> Result<Strin
         let _ = writeln!(out, "pub const FSM_ENCOUNTER: u8 = {i};");
     }
     Ok(out)
+}
+
+/// `HORNET LEAVE` and `EnemyKillShake` as Rust constant names: HORNET_LEAVE, ENEMY_KILL_SHAKE.
+fn const_name(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_lower = false;
+    for c in name.chars() {
+        if c == ' ' {
+            out.push('_');
+            prev_lower = false;
+        } else {
+            if c.is_uppercase() && prev_lower {
+                out.push('_');
+            }
+            out.push(c.to_ascii_uppercase());
+            prev_lower = c.is_lowercase();
+        }
+    }
+    out
 }
 
 /// The tree string ids of the names the adapter classifies native calls by (`CallMethodProper`'s behaviour and method).
@@ -366,9 +385,9 @@ fn string_consts(strings: &[String]) -> String {
 pub fn corpse_extra(cooked: &Cooked) -> String {
     use std::fmt::Write;
     let mut out = string_consts(&cooked.strings);
-    for name in ["HORNET KILLED", "HORNET LEAVE"] {
+    for name in ["HORNET KILLED", "HORNET LEAVE", "EnemyKillShake", "AverageShake"] {
         if let Some(i) = cooked.events.iter().position(|e| e == name) {
-            let _ = writeln!(out, "pub const EV_{}: u8 = {i};", name.replace(' ', "_"));
+            let _ = writeln!(out, "pub const EV_{}: u8 = {i};", const_name(name));
         }
     }
     out
