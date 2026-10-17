@@ -6422,10 +6422,16 @@ impl EnemyWorld {
                                 ActorController::Crawler { recoil_steps } => recoil_steps as u16,
                                 _ => spec.recoil_ticks,
                             };
-                            // The Mosquito's `SetRecoilSpeed` zeroes it for a lunge.
-                            let recoil_speed = actor
-                                .mosquito()
-                                .map_or(spec.recoil_speed, |m| m.controller.recoil_speed());
+                            // The Mosquito's `SetRecoilSpeed` zeroes it for a lunge; otherwise
+                            // it recoils at the cooked speed, which carries the 50 Hz step
+                            // quantisation of its duration.
+                            let recoil_speed = actor.mosquito().map_or(spec.recoil_speed, |m| {
+                                if m.controller.recoil_speed() == 0 {
+                                    0
+                                } else {
+                                    spec.recoil_speed
+                                }
+                            });
                             actor.recoil = match nail.kind {
                                 2 => [0, recoil_speed],
                                 3 => [0, -recoil_speed],
