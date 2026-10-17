@@ -6,7 +6,7 @@
 //! Mossman family's pass does (mossman_scene.rs), and writes the table the guest finds them by (`data/hornet_art.rs`):
 //! the bank clip of each (tree, object, clip name id) and the scale each object was authored at.
 use crate::actor_art::{guest_wrap_of, scale_alpha, ArtBank, Clip, Frame};
-use crate::atlas::{Atlas, MAX_FRAME_TILES, MAX_TEXTURE_AXIS, SLOT_PIXELS};
+use crate::atlas::{Atlas, MAX_FRAME_TILES, SLOT_PIXELS};
 use crate::common::{get, py_round};
 use crate::cook::{focal, tk_sprite, CAM_Z};
 use crate::{quality, quantize, region_delta};
@@ -114,7 +114,7 @@ fn cook_bank(source: &Source, ents: &[Ent]) -> Result<(ArtBank, BTreeMap<(Group,
                     scale_alpha(&mut image, e.alpha);
                     let b = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy];
                     let (w, h) = (((b[2] - b[0]) * scale).ceil() as i64, ((b[3] - b[1]) * scale).ceil() as i64);
-                    if w > MAX_TEXTURE_AXIS as i64 || h > MAX_TEXTURE_AXIS as i64 || frame_tiles(w, h) > MAX_FRAME_TILES as i64 {
+                    if frame_tiles(w, h) > MAX_FRAME_TILES as i64 {
                         return Err(format!("Hornet frame {sid}:{index} is {w}x{h}, past the {MAX_FRAME_TILES} animation slots a frame may hold").into());
                     }
                     let texture = bank.atlas.add_tiled(&image, (b[2] - b[0]) * scale, (b[3] - b[1]) * scale, &quantize::atlas_quantizer)?;

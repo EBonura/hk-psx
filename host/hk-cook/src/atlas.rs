@@ -232,7 +232,13 @@ impl Atlas {
 
     /// `add_tiled`: one streamed frame across a rectangle of 64x64 animation slots.
     pub fn add_tiled(&mut self, im: &Image, w: f64, h: f64, quantize: Quantizer) -> Result<usize> {
-        let (w, h) = (clamp_axis(w), clamp_axis(h));
+        // A frame is a grid of slots, not one texture: it may be wider than a single texture axis (a frame of Hornet's is 292
+        // wide) as long as it binds no more than MAX_FRAME_TILES. A frame that fits one slot keeps the old clamp.
+        let (w, h) = if w.ceil() > SLOT_PIXELS as f64 || h.ceil() > SLOT_PIXELS as f64 {
+            ((w.ceil() as usize).clamp(1, 64 * MAX_FRAME_TILES), (h.ceil() as usize).clamp(1, 64 * MAX_FRAME_TILES))
+        } else {
+            (clamp_axis(w), clamp_axis(h))
+        };
         let (cols, rows) = (w.div_ceil(SLOT_PIXELS), h.div_ceil(SLOT_PIXELS));
         if cols * rows > MAX_FRAME_TILES {
             return err(format!(
