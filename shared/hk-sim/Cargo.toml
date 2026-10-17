@@ -6,8 +6,9 @@ edition="2021"
 [features]
 # Host-only: the kernel reports every state entry, action, event and transition to a sink (oracle replay).
 trace = []
-# Measurement handlers for the Hornet 1 action types no shipped bank uses yet (fsm3_hard.rs): not in the ordinary build.
-hard-ops = []
+# The boss tier of the HKFSM03 action families (fsm3b), the scene-object table (fsm3_world) and Greenpath's Hornet on them.
+# Off until a room carries them as a code module: they are 20 KB the resident image does not have.
+boss = []
 
 [dependencies]
 psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }

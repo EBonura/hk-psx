@@ -45,6 +45,11 @@ const STRING_WRITERS: &[&str] = &["SetStringValue", "BuildString", "ConvertIntTo
 /// Action types whose callbacks run in the fixed-step pass whatever their parameters say.
 const FIXED_ALWAYS: &[&str] = &["IdleBuzz", "ChaseObject", "Decelerate"];
 
+/// Boss trees only: types that never finish and run every fixed step (they define `OnFixedUpdate` and have no `everyFrame`)...
+const BOSS_FIXED_ALWAYS: &[&str] = &["DecelerateV2", "DecelerateXY"];
+/// ...and types whose `everyFrame` runs in `OnFixedUpdate`, not `OnUpdate` (read from the original's methods).
+const BOSS_FIXED_EVERY: &[&str] = &["FaceAngle", "FaceAngleV2", "IntAddV2", "SetVelocityAsAngle", "SetVelocity2d", "Translate"];
+
 /// Scratch bytes a type keeps: `(type, words, persistent)`. A persistent range belongs to the action
 /// site for the life of the FSM (a Unity action instance keeps its fields across visits to its state);
 /// a temporary one is reused by other states. The cook appends the first slot of the action's range as
@@ -56,6 +61,10 @@ const SCRATCH: &[(&str, u8, bool)] = &[
     ("RandomWait", 4, false),
     ("FaceDirection", 1, true),
     ("IdleBuzz", 16, true),
+    // iTween: the elapsed ticks, the total and the start x, y (boss trees).
+    ("iTweenMoveTo", 24, false),
+    ("iTweenScaleTo", 24, false),
+    ("iTweenMoveBy", 24, false),
 ];
 /// A temporary slot operand before the final base is known: marker bit 12 plus the offset.
 const TEMP_SLOT: u32 = 0x1000;
@@ -108,6 +117,8 @@ pub struct FsmIr {
     pub objs: u16,
     pub scratch: u8,
     pub fin_bytes: u8,
+    /// The entity handle of the GameObject the FSM is attached to (0 = the actor itself).
+    pub owner: u8,
     pub events: u16,
     /// State names by state id.
     pub state_names: Vec<String>,
@@ -155,6 +166,9 @@ pub struct Stats {
     pub unconnected: usize,
     pub string_const_vars: usize,
     pub string_writers: usize,
+    /// Per action type: the original parameter names behind its operands, in operand order (an owner-default
+    /// parameter dropped into `F_OWNER` is listed as `<owner>`), for the executors' operand tables.
+    pub param_names: BTreeMap<String, Vec<String>>,
 }
 
 pub struct TreeCtx {
@@ -162,11 +176,14 @@ pub struct TreeCtx {
     event_ix: HashMap<String, u16>,
     pub strings: HashMap<String, u32>,
     pub entities: HashMap<i64, u8>,
+    /// A boss tree: its actions run the boss tier's handlers (shared/hk-sim fsm3b), which changes which pass the fixed-step
+    /// types run in and sets the bank's boss flag.
+    pub boss: bool,
 }
 
 impl TreeCtx {
     pub fn new() -> Self {
-        let mut t = TreeCtx { events: vec![], event_ix: HashMap::new(), strings: HashMap::new(), entities: HashMap::new() };
+        let mut t = TreeCtx { events: vec![], event_ix: HashMap::new(), strings: HashMap::new(), entities: HashMap::new(), boss: false };
         t.event("FINISHED");
         t
     }
@@ -769,6 +786,7 @@ impl<'a> Enc<'a> {
         let mut flags = 0u8;
         let mut owner_first = true;
         let mut operands: Vec<u16> = vec![];
+        let mut opnames: Vec<String> = vec![];
         let mut i = 0;
         let mut had_owner_flag = false;
         while i < params.len() {
@@ -788,12 +806,17 @@ impl<'a> Enc<'a> {
                 self.ir.arrays.push(elems.len() as u16);
                 self.ir.arrays.extend(elems);
                 operands.push(opd(T_ARRAY, at as u32)?);
+                opnames.push(format!("{}[]", p.name));
                 continue;
             }
             let before = flags;
             let ops = self.param(&ad, p, &mut flags, &mut owner_first)?;
             if flags & F_OWNER != 0 && before & F_OWNER == 0 {
                 had_owner_flag = true;
+                opnames.push("<owner>".to_owned());
+            }
+            for k in 0..ops.len() {
+                opnames.push(if ops.len() == 1 { p.name.clone() } else { format!("{}.{k}", p.name) });
             }
             operands.extend(ops);
         }
@@ -804,7 +827,10 @@ impl<'a> Enc<'a> {
         // pass; the stay-active types run in the update pass always.
         let (every, fixed, late) = (flags & F_UPDATE != 0, flags & F_FIXED != 0, flags & F_LATE != 0);
         flags = flags & F_OWNER;
-        if (every && !fixed && !late) || ACTIVE.contains(&short) {
+        let boss_fixed = self.tree.boss && every && !fixed && !late && BOSS_FIXED_EVERY.contains(&short);
+        if boss_fixed {
+            flags |= F_FIXED;
+        } else if (every && !fixed && !late) || ACTIVE.contains(&short) {
             flags |= F_UPDATE;
         }
         if fixed {
@@ -813,7 +839,7 @@ impl<'a> Enc<'a> {
         if late {
             flags |= F_LATE;
         }
-        if FIXED_ALWAYS.contains(&short) {
+        if FIXED_ALWAYS.contains(&short) || (self.tree.boss && BOSS_FIXED_ALWAYS.contains(&short)) {
             flags |= F_FIXED;
         }
         if let Some((_, n, persistent)) = SCRATCH.iter().find(|(t, _, _)| *t == short) {
@@ -825,6 +851,7 @@ impl<'a> Enc<'a> {
                 *slots += n;
             }
         }
+        self.stats.param_names.entry(short.to_owned()).or_insert(opnames);
         let base = operands.len() + had_owner_flag as usize;
         for o in &operands {
             self.stats.tag_counts[(*o >> 13) as usize] += 1;
@@ -931,11 +958,16 @@ fn align(b: &mut Vec<u8>, n: usize, pad: &mut usize) {
 /// Serialize a tree. Returns the bank and per-FSM sizes (FSM sections only; the header
 /// and event map are in `tree_overhead`).
 pub fn serialize(fsms: &[FsmIr], n_events: usize, n_entities: usize, n_strings: usize, queue_cap: u8) -> Result<(Vec<u8>, Vec<Sizes>, usize)> {
+    serialize_tier(fsms, n_events, n_entities, n_strings, queue_cap, false)
+}
+
+/// `serialize` with the bank's tier: a boss bank (header byte 11) runs the boss tier's handlers.
+pub fn serialize_tier(fsms: &[FsmIr], n_events: usize, n_entities: usize, n_strings: usize, queue_cap: u8, boss: bool) -> Result<(Vec<u8>, Vec<Sizes>, usize)> {
     let mut b: Vec<u8> = vec![];
     b.extend(b"HKF3");
     b.extend([1, fsms.len() as u8, n_events.min(255) as u8, n_entities.min(255) as u8]);
     put16(&mut b, n_strings as u16);
-    b.extend([queue_cap, 0, 0, 0, 0, 0]);
+    b.extend([queue_cap, boss as u8, 0, 0, 0, 0]);
     let dir_at = b.len();
     b.resize(dir_at + DIR_RECORD * fsms.len(), 0);
     let mut sizes = vec![Sizes::default(); fsms.len()];
@@ -1034,6 +1066,7 @@ pub fn serialize(fsms: &[FsmIr], n_events: usize, n_entities: usize, n_strings: 
         rec[8..10].copy_from_slice(&ir.objs.to_le_bytes());
         rec[10] = ir.scratch;
         rec[11] = wide as u8;
+        rec[30] = ir.owner;
         for (k, v) in [start, globals_at, arrays_at, pool_at, init_at, end].iter().enumerate() {
             rec[12 + 2 * k..14 + 2 * k].copy_from_slice(&(*v as u16).to_le_bytes());
         }
@@ -1066,7 +1099,7 @@ pub fn deserialize(b: &[u8], arity: &dyn Fn(u8, u8, u8) -> usize) -> Result<Vec<
         let (states, globals, start) = (r[0] as usize, r[1] as usize, r[2]);
         let u = |k: usize| u16::from_le_bytes([r[k], r[k + 1]]) as usize;
         let (sec, globals_at, arrays_at, pool_at, init_at, end) = (u(12), u(14), u(16), u(18), u(20), u(22));
-        let mut ir = FsmIr { start, cells: u(4) as u16, bits: u(6) as u16, objs: u(8) as u16, scratch: r[10], fin_bytes: r[3], ..Default::default() };
+        let mut ir = FsmIr { start, cells: u(4) as u16, bits: u(6) as u16, objs: u(8) as u16, scratch: r[10], fin_bytes: r[3], owner: r[30], ..Default::default() };
         for s in 0..states {
             let t = sec + 4 * s;
             let (off, na, nt) = (rd(t), b[t + 2] as usize, b[t + 3] as usize);
