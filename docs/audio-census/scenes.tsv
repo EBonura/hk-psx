@@ -1,0 +1,502 @@
+# index	scene	area	dlc	location	snapshot	atmos	music (reach:cue)
+0	Pre_Menu_Intro	Menus, helpers and tests		menu			
+1	Menu_Title	Menus, helpers and tests		menu	Normal	None	script:None scene:Title
+2	Quit_To_Menu	Menus, helpers and tests		menu	Silent	None	
+3	BetaEnd	Menus, helpers and tests		menu	Silent	None	
+4	Knight_Pickup	Menus, helpers and tests		traversal			script:None
+5	Opening_Sequence	Cinematics and openings		cutscene	Silent	Surface	
+6	Tutorial_01	King's Pass		traversal	Silent	Cave	script:None script:Grimmkin
+7	Town	Dirtmouth		traversal		Surface	script:None region:Dirtmouth
+8	Cinematic_Stag_travel	Cinematics and openings		cutscene	Normal		scene:None
+9	Room_Town_Stag_Station	Interior rooms		traversal	Normal Soft	SurfaceInterior	
+10	Room_Charm_Shop	Interior rooms		traversal	Silent	Cave	scene:None
+11	Room_Mender_House	Interior rooms		traversal	Silent	Cave	
+12	Room_mapper	Interior rooms		traversal	Normal Soft	SurfaceInterior	
+13	Room_nailmaster	Interior rooms		traversal	Silent	SurfaceInterior	scene:None
+14	Room_nailmaster_02	Interior rooms		traversal	Silent	GreenpathInterior	script:None
+15	Room_nailmaster_03	Interior rooms		traversal	Silent	None	script:None
+16	Room_nailsmith	Interior rooms		traversal	Silent	None	
+17	Room_shop	Interior rooms		traversal	Normal Soft	SurfaceInterior	
+18	Room_Sly_Storeroom	Interior rooms		traversal	Silent	SurfaceInterior	scene:None
+19	Room_temple	Interior rooms		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+20	Room_ruinhouse	Interior rooms		traversal	Silent	Cave	
+21	Room_Mask_Maker	Interior rooms		traversal	Silent	None	
+22	Room_Mansion	Interior rooms		traversal	Normal Soft	None	
+23	Room_Tram	Tram		traversal	Normal - Gramaphone	None	scene:None
+24	Room_Tram_RG	Tram		traversal	Normal - Gramaphone	None	scene:None
+25	Room_Bretta	Interior rooms		traversal	Normal Soft	SurfaceInterior	
+26	Room_Bretta_Basement	Interior rooms		traversal	Silent	SurfaceBasement	scene:None
+27	Room_Fungus_Shaman	Interior rooms		traversal	Normal	GreenpathInterior	script:None scene:ShamanTemple
+28	Room_Ouiji	Interior rooms		traversal	Silent	SurfaceInterior	
+29	Room_Jinn	Interior rooms		traversal	Silent	SurfaceInterior	
+30	Room_Colosseum_01	Colosseum of Fools		traversal	Silent	MiscWind	
+31	Room_Colosseum_02	Colosseum of Fools		traversal	Silent	Cave	
+32	Room_Colosseum_Bronze	Colosseum of Fools		boss arena	Silent	MiscWind	scene:None
+33	Room_Colosseum_Silver	Colosseum of Fools		boss arena	Silent	MiscWind	scene:None
+34	Room_Colosseum_Gold	Colosseum of Fools		boss arena	Silent	MiscWind	scene:None
+35	Room_Colosseum_Spectate	Colosseum of Fools		traversal	Silent	MiscWind	
+36	Room_Slug_Shrine	Interior rooms		traversal	Silent	GreenpathInterior	scene:Greenpath
+37	Crossroads_01	Forgotten Crossroads		traversal	Normal	Cave	script:None scene:Crossroads indirect:InfectedCrossroads
+38	Crossroads_02	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+39	Crossroads_03	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+40	Crossroads_04	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads script:EnemyBattle
+41	Crossroads_05	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+42	Crossroads_06	Forgotten Crossroads		traversal	Silent	Cave	
+43	Crossroads_07	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+44	Crossroads_08	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+45	Crossroads_09	Forgotten Crossroads		traversal	Silent	Cave	scene:Crossroads indirect:InfectedCrossroads script:EnemyBattle
+46	Crossroads_10	Forgotten Crossroads		traversal	Silent	Cave	script:None
+47	Crossroads_10_preload	Forgotten Crossroads		traversal			
+48	Crossroads_10_boss	Forgotten Crossroads		boss arena			script:Boss1
+49	Crossroads_10_boss_defeated	Forgotten Crossroads		traversal			
+50	Crossroads_11_alt	Forgotten Crossroads		traversal	Normal	Cave	region:Crossroads
+51	Crossroads_12	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+52	Crossroads_13	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+53	Crossroads_14	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+54	Crossroads_15	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+55	Crossroads_16	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+56	Crossroads_18	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+57	Crossroads_19	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+58	Crossroads_21	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+59	Crossroads_22	Forgotten Crossroads		traversal	Normal	Cave	script:None scene:Crossroads indirect:InfectedCrossroads
+60	Crossroads_25	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+61	Crossroads_27	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+62	Crossroads_30	Forgotten Crossroads		traversal		None	region:Safety
+63	Crossroads_31	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+64	Crossroads_33	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+65	Crossroads_35	Forgotten Crossroads		traversal	Silent	Cave	indirect:InfectedCrossroads
+66	Crossroads_36	Forgotten Crossroads		traversal	Silent	Cave	scene:Crossroads indirect:InfectedCrossroads
+67	Crossroads_37	Forgotten Crossroads		traversal	Silent	Cave	scene:Crossroads indirect:InfectedCrossroads
+68	Crossroads_38	Forgotten Crossroads		traversal	Sub Area	Cave	script:None scene:Crossroads indirect:InfectedCrossroads
+69	Crossroads_39	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+70	Crossroads_40	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+71	Crossroads_42	Forgotten Crossroads		traversal	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+72	Crossroads_43	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+73	Crossroads_45	Forgotten Crossroads		traversal	Silent	Cave	scene:Crossroads indirect:InfectedCrossroads
+74	Crossroads_46	Forgotten Crossroads		traversal	Silent	Cave	
+75	Crossroads_46b	Forgotten Crossroads		traversal	Silent	MiscWind	
+76	Crossroads_ShamanTemple	Forgotten Crossroads		traversal	Silent	Cave	script:None region:ShamanTemple
+77	Crossroads_47	Forgotten Crossroads		traversal		Cave	region:Safety
+78	Crossroads_48	Forgotten Crossroads		traversal	Sub Area	Cave	scene:Crossroads indirect:InfectedCrossroads
+79	Crossroads_49	Forgotten Crossroads		traversal	Silent	Cave	
+80	Crossroads_49b	Forgotten Crossroads		traversal	Silent	Cave	
+81	Crossroads_50	Forgotten Crossroads		traversal	Silent	MiscWind	script:None
+82	Crossroads_52	Forgotten Crossroads		traversal	Silent	Cave	
+83	Ruins_House_01	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+84	Ruins_House_02	City of Tears		traversal	Sub Area	RainyIndoors	
+85	Ruins_House_03	City of Tears		traversal	Silent	None	
+86	Ruins_Elevator	City of Tears		traversal	Sub Area	RainyIndoors	script:None
+87	Ruins_Bathhouse	City of Tears		traversal	Silent	RainyIndoors	region:Safety
+88	Ruins1_01	City of Tears		traversal	Silent	Cave	
+89	Ruins1_02	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+90	Ruins1_03	City of Tears		traversal	Normal	RainyOutdoors	script:None scene:City
+91	Ruins1_04	City of Tears		traversal	Sub Area	DistantRain	scene:City
+92	Ruins1_05	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+93	Ruins1_05b	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+94	Ruins1_05c	City of Tears		traversal	Sub Area	RainyIndoors	script:None scene:City
+95	Ruins1_06	City of Tears		traversal	Normal	RainyOutdoors	
+96	Ruins1_09	City of Tears		traversal	Silent	RainyIndoors	
+97	Ruins1_17	City of Tears		traversal		DistantRain	script:None region:City
+98	Ruins1_18	City of Tears		traversal	Normal	RainyOutdoors	scene:City
+99	Ruins1_23	City of Tears		traversal	Normal	RainyIndoors	scene:SoulSociety script:Waterways
+100	Ruins1_30	City of Tears		traversal	Normal	RainyIndoors	script:None scene:SoulSociety
+101	Ruins1_24	City of Tears		traversal	Silent	RainyIndoors	script:None scene:SoulSociety
+102	Ruins1_24_boss	City of Tears		boss arena			script:None script:BossMageLord script:GG Heavy script:MageLord2
+103	Ruins1_24_boss_defeated	City of Tears		traversal			
+104	Ruins1_25	City of Tears		traversal	Normal	RainyIndoors	scene:SoulSociety
+105	Ruins1_27	City of Tears		traversal	Normal	RainyOutdoors	scene:City
+106	Ruins1_28	City of Tears		traversal	Silent	Cave	script:None script:Grimmkin
+107	Ruins1_29	City of Tears		traversal	Normal	Cave	scene:Safety
+108	Ruins1_31	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+109	Ruins1_31b	City of Tears		traversal	Sub Area	RainyIndoors	script:None scene:City script:Waterways
+110	Ruins1_32	City of Tears		traversal	Normal	DistantRain	script:None scene:SoulSociety
+111	Ruins2_01	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+112	Ruins2_01_b	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+113	Ruins2_03	City of Tears		traversal	Silent	RainyIndoors	script:None scene:City
+114	Ruins2_03b	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+115	Ruins2_03_boss	City of Tears		boss arena			script:Boss1
+116	Ruins2_04	City of Tears		traversal	Normal	RainyOutdoors	scene:City
+117	Ruins2_05	City of Tears		traversal	Sub Area	RainyIndoors	script:None scene:City
+118	Ruins2_06	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+119	Ruins2_07	City of Tears		traversal	Silent	DistantRain	
+120	Ruins2_08	City of Tears		traversal	Normal	RainyOutdoors	script:None scene:Safety
+121	Ruins2_09	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+122	Ruins2_10	City of Tears		traversal	Silent	Cave	
+123	Ruins2_10b	City of Tears		traversal	Sub Area	RainyIndoors	scene:City
+124	Ruins2_11	City of Tears		traversal	Silent	None	script:None region:City
+125	Ruins2_11_b	City of Tears		traversal	Silent	None	
+126	Ruins2_11_boss	City of Tears		boss arena			script:None script:EnemyBattle
+127	Ruins2_Watcher_Room	City of Tears		traversal	Silent	RainyIndoors	
+128	Fungus1_01	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+129	Fungus1_01b	Greenpath		traversal	Sub Area	Greenpath	scene:Greenpath
+130	Fungus1_02	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+131	Fungus1_03	Greenpath		traversal	Sub Area	Greenpath	scene:Greenpath
+132	Fungus1_04	Greenpath		traversal	Normal	Greenpath	script:None scene:Greenpath
+133	Fungus1_04_boss	Greenpath		boss arena			script:BossHornet script:GG Hornet
+134	Fungus1_05	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+135	Fungus1_06	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+136	Fungus1_07	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+137	Fungus1_08	Greenpath		traversal	Silent	Greenpath	script:None scene:Greenpath script:Boss1
+138	Fungus1_09	Greenpath		traversal	Sub Area	Greenpath	scene:Greenpath
+139	Fungus1_10	Greenpath		traversal	Normal	Greenpath	script:None scene:Greenpath script:Grimmkin
+140	Fungus1_11	Greenpath		traversal	Sub Area	Greenpath	script:None scene:Greenpath
+141	Fungus1_12	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+142	Fungus1_13	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+143	Fungus1_14	Greenpath		traversal	Sub Area	Greenpath	script:None scene:Greenpath
+144	Fungus1_15	Greenpath		traversal	Silent	Greenpath	script:None scene:Greenpath
+145	Fungus1_16_alt	Greenpath		traversal	Normal	Greenpath	scene:Safety
+146	Fungus1_17	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+147	Fungus1_19	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+148	Fungus1_20_v02	Greenpath		traversal	Sub Area	Cave	scene:Greenpath
+149	Fungus1_21	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+150	Fungus1_22	Greenpath		traversal	Normal	Greenpath	script:None scene:Greenpath
+151	Fungus1_23	Greenpath		traversal	Normal	QueensGardens	scene:RoyalGardens
+152	Fungus1_24	Greenpath		traversal	Silent	QueensGardens	region:Safety
+153	Fungus1_25	Greenpath		traversal	Sub Area	Greenpath	scene:Greenpath
+154	Fungus1_26	Greenpath		traversal	Silent	Greenpath	scene:Greenpath
+155	Fungus1_28	Greenpath		traversal	Silent	Cave	script:None script:Crossroads
+156	Fungus1_29	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+157	Fungus1_30	Greenpath		traversal	Sub Area	Greenpath	scene:Greenpath
+158	Fungus1_31	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+159	Fungus1_32	Greenpath		traversal	Normal	Greenpath	scene:Greenpath
+160	Fungus1_34	Greenpath		traversal	Sub Area	Greenpath	scene:Greenpath
+161	Fungus1_35	Greenpath		traversal	Silent	None	script:DreamFight
+162	Fungus1_36	Greenpath		traversal	Silent	Greenpath	
+163	Fungus1_37	Greenpath		traversal	Silent	Greenpath	region:Safety
+164	Fungus1_Slug	Greenpath		traversal	Silent	Waterways	script:None
+165	Fungus2_01	Fungal Wastes		traversal	Silent	None	
+166	Fungus2_02	Fungal Wastes		traversal	Normal	None	scene:Safety
+167	Fungus2_03	Fungal Wastes		traversal	Normal	Fungus	script:None scene:Fungus
+168	Fungus2_04	Fungal Wastes		traversal	Normal	Fungus	script:None scene:Fungus
+169	Fungus2_05	Fungal Wastes		traversal	Sub Area	Fungus	script:None script:RoyalGardens scene:Fungus
+170	Fungus2_06	Fungal Wastes		traversal	Normal	Fungus	scene:Fungus
+171	Fungus2_07	Fungal Wastes		traversal	Normal	Fungus	scene:Fungus
+172	Fungus2_08	Fungal Wastes		traversal	Normal	Fungus	scene:Fungus
+173	Fungus2_09	Fungal Wastes		traversal	Silent	Fungus	scene:Fungus
+174	Fungus2_10	Fungal Wastes		traversal	Sub Area	Fungus	scene:Fungus
+175	Fungus2_11	Fungal Wastes		traversal	Normal	Fungus	scene:Fungus
+176	Fungus2_12	Fungal Wastes		traversal	Normal Alt	Fungus	scene:Fungus
+177	Fungus2_13	Fungal Wastes		traversal	Normal Alt	Fungus	scene:Fungus
+178	Fungus2_14	Fungal Wastes		traversal	Normal Alt	Fungus	script:None scene:Fungus
+179	Fungus2_15	Fungal Wastes		traversal	Normal Alt	Fungus	scene:Fungus
+180	Fungus2_15_boss	Fungal Wastes		boss arena			script:BossMantisLords
+181	Fungus2_15_boss_defeated	Fungal Wastes		traversal			script:BossMantisLords
+182	Fungus2_17	Fungal Wastes		traversal	Sub Area	Fungus	script:None scene:Fungus
+183	Fungus2_18	Fungal Wastes		traversal	Sub Area	Fungus	scene:Fungus
+184	Fungus2_19	Fungal Wastes		traversal	Sub Area	Fungus	scene:Fungus
+185	Fungus2_20	Fungal Wastes		traversal	Silent	Fungus	script:None scene:Fungus
+186	Fungus2_21	Fungal Wastes		traversal	Sub Area	Cave	scene:Fungus
+187	Fungus2_23	Fungal Wastes		traversal	Sub Area	Fungus	script:None scene:Fungus
+188	Fungus2_25	Fungal Wastes		traversal	Silent	Cave	
+189	Fungus2_26	Fungal Wastes		traversal	Silent	Fungus	scene:Fungus
+190	Fungus2_28	Fungal Wastes		traversal	Normal	Fungus	scene:Fungus
+191	Fungus2_29	Fungal Wastes		traversal	Normal	Fungus	script:None scene:Fungus
+192	Fungus2_30	Fungal Wastes		traversal	Normal	Fungus	script:None scene:Fungus script:Grimmkin
+193	Fungus2_31	Fungal Wastes		traversal	Sub Area	Fungus	script:None scene:Fungus
+194	Fungus2_32	Fungal Wastes		traversal	Silent	Fungus	script:DreamFight
+195	Fungus2_33	Fungal Wastes		traversal	Sub Area	Fungus	scene:Fungus
+196	Fungus2_34	Fungal Wastes		traversal	Silent	MiscWind	script:None
+197	Fungus3_01	Fog Canyon and Queen's Gardens		traversal	Normal	FogCanyon	scene:FogCanyon
+198	Fungus3_02	Fog Canyon and Queen's Gardens		traversal	Normal	FogCanyon	scene:FogCanyon
+199	Fungus3_03	Fog Canyon and Queen's Gardens		traversal	Silent	FogCanyonMinor	
+200	Fungus3_04	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+201	Fungus3_05	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+202	Fungus3_08	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+203	Fungus3_10	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+204	Fungus3_11	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+205	Fungus3_13	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+206	Fungus3_21	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+207	Fungus3_22	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+208	Fungus3_23	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	scene:RoyalGardens
+209	Fungus3_23_boss	Fog Canyon and Queen's Gardens		boss arena			
+210	Fungus3_24	Fog Canyon and Queen's Gardens		traversal	Normal	FogCanyon	scene:FogCanyon
+211	Fungus3_25	Fog Canyon and Queen's Gardens		traversal	Normal	FogCanyon	scene:FogCanyon
+212	Fungus3_25b	Fog Canyon and Queen's Gardens		traversal	Normal	Cave	scene:FogCanyon
+213	Fungus3_26	Fog Canyon and Queen's Gardens		traversal	Normal	FogCanyon	script:None scene:FogCanyon
+214	Fungus3_27	Fog Canyon and Queen's Gardens		traversal	Normal	FogCanyon	scene:FogCanyon
+215	Fungus3_28	Fog Canyon and Queen's Gardens		traversal		FogCanyon	script:None
+216	Fungus3_30	Fog Canyon and Queen's Gardens		traversal	Silent	FogCanyon	script:None scene:FogCanyon
+217	Fungus3_34	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	script:None scene:RoyalGardens
+218	Fungus3_35	Fog Canyon and Queen's Gardens		traversal	Silent	FogCanyonMinor	
+219	Fungus3_39	Fog Canyon and Queen's Gardens		traversal	Silent	QueensGardens	script:None
+220	Fungus3_40	Fog Canyon and Queen's Gardens		traversal		QueensGardens	region:RoyalGardens region:Safety
+221	Fungus3_40_boss	Fog Canyon and Queen's Gardens		boss arena			script:DreamFight
+222	Fungus3_44	Fog Canyon and Queen's Gardens		traversal	Silent	GreenpathInterior	
+223	Fungus3_47	Fog Canyon and Queen's Gardens		traversal	Silent	FogCanyon	scene:FogCanyon
+224	Fungus3_48	Fog Canyon and Queen's Gardens		traversal	Normal	QueensGardens	script:None scene:RoyalGardens
+225	Fungus3_49	Fog Canyon and Queen's Gardens		traversal	Sub Area	QueensGardens	script:None scene:RoyalGardens
+226	Fungus3_50	Fog Canyon and Queen's Gardens		traversal	Normal - Gramaphone	QueensGardens	scene:None
+227	Fungus3_archive	Fog Canyon and Queen's Gardens		traversal	Silent	None	
+228	Fungus3_archive_02	Fog Canyon and Queen's Gardens		traversal	Silent	None	scene:None
+229	Fungus3_archive_02_boss	Fog Canyon and Queen's Gardens		boss arena			script:EnemyBattle
+230	Cliffs_01	Howling Cliffs		traversal	Silent	Surface	scene:None
+231	Cliffs_02	Howling Cliffs		traversal	Silent	Surface	scene:None
+232	Cliffs_02_boss	Howling Cliffs		boss arena			script:DreamFight
+233	Cliffs_03	Howling Cliffs		traversal	Silent	MiscWind	
+234	Cliffs_04	Howling Cliffs		traversal	Silent	Cave	
+235	Cliffs_05	Howling Cliffs		traversal	Silent	None	script:None region:Special
+236	Cliffs_06	Howling Cliffs		traversal	Silent	MiscWind	
+237	RestingGrounds_02	Resting Grounds		traversal	Normal	MiscWind	scene:RestingGrounds
+238	RestingGrounds_02_boss	Resting Grounds		boss arena			script:DreamFight
+239	RestingGrounds_04	Resting Grounds		traversal	Normal	MiscWind	scene:RestingGrounds
+240	RestingGrounds_05	Resting Grounds		traversal	Normal	MiscWind	scene:RestingGrounds
+241	RestingGrounds_06	Resting Grounds		traversal	Silent	MiscWind	script:None script:Grimmkin
+242	RestingGrounds_07	Resting Grounds		traversal	Silent	MiscWind	script:None
+243	RestingGrounds_08	Resting Grounds		traversal	Normal	MiscWind	script:None scene:RestingGrounds
+244	RestingGrounds_09	Resting Grounds		traversal	Normal	MiscWind	scene:Safety
+245	RestingGrounds_10	Resting Grounds		traversal	Silent	Cave	script:None
+246	RestingGrounds_12	Resting Grounds		traversal	Normal	MiscWind	scene:RestingGrounds
+247	RestingGrounds_17	Resting Grounds		traversal	Silent	MiscWind	script:None
+248	Mines_01	Crystal Peak		traversal	Silent	Cave	script:None region:Crystal
+249	Mines_02	Crystal Peak		traversal	Normal	MinesMachinery	scene:Crystal
+250	Mines_03	Crystal Peak		traversal	Normal	MinesMachinery	scene:Crystal
+251	Mines_04	Crystal Peak		traversal	Normal	MinesMachinery	scene:Crystal
+252	Mines_05	Crystal Peak		traversal	Normal	MinesMachinery	scene:Crystal
+253	Mines_06	Crystal Peak		traversal	Normal	MinesCrystal	scene:Crystal
+254	Mines_07	Crystal Peak		traversal	Sub Area	MinesCrystal	scene:Crystal
+255	Mines_10	Crystal Peak		traversal	Normal	MinesCrystal	script:None scene:Crystal script:Grimmkin
+256	Mines_11	Crystal Peak		traversal	Normal	MinesMachinery	script:None scene:Crystal
+257	Mines_13	Crystal Peak		traversal	Sub Area	MinesCrystal	scene:Crystal
+258	Mines_16	Crystal Peak		traversal	Sub Area	MinesCrystal	scene:Crystal
+259	Mines_17	Crystal Peak		traversal	Normal	MinesMachinery	scene:Crystal
+260	Mines_18	Crystal Peak		traversal	Sub Area	MinesMachinery	scene:Crystal
+261	Mines_18_boss	Crystal Peak		boss arena			
+262	Mines_19	Crystal Peak		traversal	Normal	MinesMachinery	scene:Crystal
+263	Mines_20	Crystal Peak		traversal	Normal	Cave	script:None scene:Crystal
+264	Mines_23	Crystal Peak		traversal	Normal	MinesCrystal	scene:Crystal
+265	Mines_24	Crystal Peak		traversal	Sub Area	MinesCrystal	scene:Crystal
+266	Mines_25	Crystal Peak		traversal	Sub Area	MinesCrystal	scene:Crystal
+267	Mines_28	Crystal Peak		traversal	Silent	MinesCrystal	
+268	Mines_29	Crystal Peak		traversal	Sub Area	MinesCrystal	script:None scene:Crystal
+269	Mines_30	Crystal Peak		traversal	Sub Area	MinesCrystal	script:None scene:Crystal
+270	Mines_31	Crystal Peak		traversal	Normal	MinesMachinery	script:None scene:Crystal
+271	Mines_32	Crystal Peak		traversal	Sub Area	MinesCrystal	scene:Crystal
+272	Mines_33	Crystal Peak		traversal	Silent	Cave	
+273	Mines_34	Crystal Peak		traversal		MinesCrystal	script:None
+274	Mines_35	Crystal Peak		traversal	Silent	MinesCrystal	script:None region:ShamanTemple
+275	Mines_36	Crystal Peak		traversal	Silent	None	script:None scene:Crystal
+276	Mines_37	Crystal Peak		traversal	Normal	MinesMachinery	scene:Crystal
+277	Deepnest_01	Deepnest		traversal	Silent	Fungus	
+278	Deepnest_01b	Deepnest		traversal	Normal	Deepnest	scene:Deepnest
+279	Deepnest_02	Deepnest		traversal	Normal	Deepnest	scene:Deepnest
+280	Deepnest_03	Deepnest		traversal	Normal	Deepnest	scene:Deepnest
+281	Deepnest_09	Deepnest		traversal	Silent	MiscWind	
+282	Deepnest_10	Deepnest		traversal	Silent	MiscWind	scene:Deepnest
+283	Deepnest_14	Deepnest		traversal	Silent	Deepnest	scene:Deepnest
+284	Deepnest_16	Deepnest		traversal	Normal	Deepnest	script:None scene:Deepnest
+285	Deepnest_17	Deepnest		traversal	Normal	Deepnest	scene:Deepnest
+286	Deepnest_26	Deepnest		traversal	Normal	MiscWind	scene:Deepnest
+287	Deepnest_26b	Deepnest		traversal	Normal	MiscWind	script:None scene:Deepnest
+288	Deepnest_30	Deepnest		traversal		Deepnest	region:Deepnest region:Safety
+289	Deepnest_31	Deepnest		traversal	Silent	DeepnestQuiet	
+290	Deepnest_32	Deepnest		traversal	Silent	None	script:None script:MimicSpider
+291	Deepnest_33	Deepnest		traversal	Normal	Deepnest	script:None scene:Deepnest
+292	Deepnest_34	Deepnest		traversal	Normal	Deepnest	scene:Deepnest
+293	Deepnest_35	Deepnest		traversal	Normal	Deepnest	scene:Deepnest
+294	Deepnest_36	Deepnest		traversal	Silent	Deepnest	scene:Deepnest
+295	Deepnest_37	Deepnest		traversal	Normal	Deepnest	scene:Deepnest
+296	Deepnest_38	Deepnest		traversal	Silent	Deepnest	region:Crossroads scene:Deepnest
+297	Deepnest_39	Deepnest		traversal	Normal	Deepnest	script:None scene:Deepnest
+298	Deepnest_40	Deepnest		traversal	Silent	Cave	script:DreamFight scene:Deepnest
+299	Deepnest_41	Deepnest		traversal	Normal	Deepnest	scene:Deepnest
+300	Deepnest_42	Deepnest		traversal	Normal	Cave	scene:Deepnest
+301	Deepnest_43	Deepnest		traversal	Sub Area	QueensGardens	scene:RoyalGardens
+302	Deepnest_44	Deepnest		traversal	Silent	Cave	script:None
+303	Deepnest_45_v02	Deepnest		traversal	Silent	DeepnestQuiet	script:None
+304	Deepnest_Spider_Town	Deepnest		traversal	Silent	Deepnest	script:None region:Inn
+305	Room_spider_small	Deepnest		boss arena	Silent	None	
+306	Deepnest_East_01	Kingdom's Edge		traversal	Silent	MiscWind	
+307	Deepnest_East_02	Kingdom's Edge		traversal	Silent	MiscWind	
+308	Deepnest_East_03	Kingdom's Edge		traversal	Normal	MiscWind	script:None scene:Outskirts script:Grimmkin
+309	Deepnest_East_04	Kingdom's Edge		traversal	Normal	MiscWind	scene:Outskirts
+310	Deepnest_East_06	Kingdom's Edge		traversal	Normal	MiscWind	scene:Outskirts
+311	Deepnest_East_07	Kingdom's Edge		traversal	Normal	MiscWind	script:None scene:Outskirts
+312	Deepnest_East_08	Kingdom's Edge		traversal	Normal	MiscWind	script:None scene:Outskirts
+313	Deepnest_East_09	Kingdom's Edge		traversal	Silent	MiscWind	
+314	Deepnest_East_10	Kingdom's Edge		traversal	Silent	MiscWind	script:DreamFight
+315	Deepnest_East_11	Kingdom's Edge		traversal	Normal	MiscWind	scene:Outskirts
+316	Deepnest_East_12	Kingdom's Edge		traversal	Silent	MiscWind	region:Outskirts
+317	Deepnest_East_13	Kingdom's Edge		traversal	Silent	MiscWind	script:None
+318	Deepnest_East_14	Kingdom's Edge		traversal	Normal	Cave	script:None scene:Outskirts
+319	Deepnest_East_14b	Kingdom's Edge		traversal	Normal	Cave	script:None scene:Outskirts
+320	Deepnest_East_15	Kingdom's Edge		traversal	Silent	MiscWind	
+321	Deepnest_East_16	Kingdom's Edge		traversal	Silent	MiscWind	
+322	Deepnest_East_17	Kingdom's Edge		traversal		MiscWind	
+323	Deepnest_East_18	Kingdom's Edge		traversal	Normal	MiscWind	script:None scene:Outskirts
+324	Deepnest_East_Hornet	Kingdom's Edge		traversal	Silent	MiscWind	
+325	Deepnest_East_Hornet_boss	Kingdom's Edge		boss arena			script:BossHornet
+326	Room_Wyrm	Interior rooms		traversal	Silent	None	script:None
+327	Abyss_01	Ancient Basin and Abyss		traversal	Silent	MiscWind	
+328	Abyss_02	Ancient Basin and Abyss		traversal	Silent	MiscWind	script:None script:Grimmkin
+329	Abyss_03	Ancient Basin and Abyss		traversal	Silent	MiscWind	
+330	Abyss_03_b	Ancient Basin and Abyss		traversal	Silent	Cave	
+331	Abyss_03_c	Ancient Basin and Abyss		traversal	Silent	MiscWind	scene:None
+332	Abyss_04	Ancient Basin and Abyss		traversal	Silent	MiscWind	
+333	Abyss_05	Ancient Basin and Abyss		traversal	Silent	MiscWind	scene:None
+334	Abyss_06_Core	Ancient Basin and Abyss		traversal		None	scene:Abyss
+335	Abyss_08	Ancient Basin and Abyss		traversal	Silent	None	script:None region:Special
+336	Abyss_09	Ancient Basin and Abyss		traversal	Normal	None	
+337	Abyss_10	Ancient Basin and Abyss		traversal	Normal	None	script:None scene:Abyss
+338	Abyss_12	Ancient Basin and Abyss		traversal	Normal		script:None
+339	Abyss_15	Ancient Basin and Abyss		traversal	Normal		script:None scene:Abyss
+340	Abyss_16	Ancient Basin and Abyss		traversal	Normal		
+341	Abyss_17	Ancient Basin and Abyss		traversal	Silent	MiscWind	script:None region:Crossroads
+342	Abyss_18	Ancient Basin and Abyss		traversal	Silent	MiscWind	
+343	Abyss_19	Ancient Basin and Abyss		traversal	Silent	WindTunnel	script:None script:BossIK
+344	Abyss_20	Ancient Basin and Abyss		traversal	Silent	WindTunnel	script:None
+345	Abyss_21	Ancient Basin and Abyss		traversal	Silent	WindTunnel	script:None
+346	Abyss_22	Ancient Basin and Abyss		traversal	Normal	MiscWind	scene:Safety
+347	Abyss_Lighthouse_room	Ancient Basin and Abyss		traversal	Silent	None	
+348	Room_Queen	Interior rooms		traversal	Silent	None	script:Queen
+349	Waterways_01	Royal Waterways		traversal	Normal	WaterwaysFlowing	scene:Waterways
+350	Waterways_02	Royal Waterways		traversal	Normal	Waterways	script:None scene:Waterways
+351	Waterways_03	Royal Waterways		traversal	Silent	Waterways	script:None scene:Waterways
+352	Waterways_04	Royal Waterways		traversal	Normal	WaterwaysFlowing	script:None scene:Waterways
+353	Waterways_04b	Royal Waterways		traversal	Normal	WaterwaysFlowing	script:None scene:Waterways
+354	Waterways_05	Royal Waterways		traversal	Silent	Waterways	script:None scene:Waterways
+355	Waterways_05_boss	Royal Waterways		boss arena			script:DungDefender
+356	Waterways_06	Royal Waterways		traversal	Normal	WaterwaysFlowing	scene:Waterways
+357	Waterways_07	Royal Waterways		traversal	Normal	Waterways	script:None scene:Waterways
+358	Waterways_08	Royal Waterways		traversal	Normal	WaterwaysFlowing	scene:Waterways
+359	Waterways_09	Royal Waterways		traversal	Silent	Cave	scene:Waterways
+360	Waterways_12	Royal Waterways		traversal	Silent	WaterwaysFlowing	script:None scene:Waterways
+361	Waterways_12_boss	Royal Waterways		boss arena			
+362	Waterways_13	Royal Waterways		traversal	Normal	Waterways	script:None scene:Waterways
+363	Waterways_14	Royal Waterways		traversal	Silent	Waterways	region:Waterways
+364	Waterways_15	Royal Waterways		traversal	Silent	Waterways	script:None
+365	White_Palace_01	White Palace		traversal		MiscWind	region:WhitePalace
+366	White_Palace_02	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+367	White_Palace_03_hub	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+368	White_Palace_04	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+369	White_Palace_05	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+370	White_Palace_06	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+371	White_Palace_07	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+372	White_Palace_08	White Palace		traversal	Silent	MiscWind	scene:WhitePalace
+373	White_Palace_09	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+374	White_Palace_11	White Palace		traversal	Silent	MiscWind	
+375	White_Palace_12	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+376	White_Palace_13	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+377	White_Palace_14	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+378	White_Palace_15	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+379	White_Palace_16	White Palace		traversal	Normal	MiscWind	scene:WhitePalace
+380	White_Palace_17	White Palace		traversal	HK Decline 2	MiscWind	scene:HKDecline
+381	White_Palace_18	White Palace		traversal	Silent	MiscWind	region:HKDecline
+382	White_Palace_19	White Palace		traversal	HK Decline 3	MiscWind	scene:HKDecline
+383	White_Palace_20	White Palace		traversal	HK Decline 4	MiscWind	scene:HKDecline
+384	Hive_01	The Hive		traversal	Normal	MiscWind	scene:Hive
+385	Hive_02	The Hive		traversal	Normal	MiscWind	scene:Hive
+386	Hive_03	The Hive		traversal	Normal	MiscWind	script:None scene:Hive script:Grimmkin
+387	Hive_03_c	The Hive		traversal	Normal	MiscWind	scene:Hive
+388	Hive_04	The Hive		traversal	Normal	MiscWind	scene:Hive
+389	Hive_05	The Hive		traversal	Normal	Cave	script:None scene:Hive script:HiveKnight
+390	Grimm_Divine	Grimm Troupe	grimm	traversal	Silent	SurfaceInterior	script:None
+391	Grimm_Main_Tent	Grimm Troupe	grimm	boss arena	Silent	None	scene:None
+392	Grimm_Main_Tent_boss	Grimm Troupe	grimm	boss arena			script:Grimm
+393	Grimm_Nightmare	Grimm Troupe	grimm	boss arena	Silent	None	scene:None script:NightmareGrimm
+394	Dream_Nailcollection	Dreams		cutscene	Sub Area	MiscWind	scene:Dream
+395	Dream_01_False_Knight	Dreams		traversal	Sub Area	MiscWind	scene:Dream script:Boss1
+396	Dream_02_Mage_Lord	Dreams		boss arena	Sub Area	MiscWind	script:None script:BossMageLord script:GG Heavy script:MageLord2 scene:Dream
+397	Dream_03_Infected_Knight	Dreams		boss arena	Sub Area	MiscWind	script:None script:BossIK scene:Dream
+398	Dream_04_White_Defender	Dreams		boss arena	Sub Area	MiscWind	scene:Dream script:WhiteDefender
+399	Dream_Mighty_Zote	Dreams		traversal	Normal	None	scene:Abyss script:GreyPrince
+400	Dream_Guardian_Hegemol	Dreams		traversal	Normal	None	scene:DreamerScene
+401	Dream_Guardian_Lurien	Dreams		traversal	Normal	None	scene:DreamerScene
+402	Dream_Guardian_Monomon	Dreams		traversal	Normal	None	scene:DreamerScene
+403	Cutscene_Boss_Door	Cinematics and openings		cutscene	Normal	Cave	scene:Crossroads indirect:InfectedCrossroads
+404	Dream_Backer_Shrine	Dreams		traversal	Sub Area		scene:Dream
+405	Dream_Room_Believer_Shrine	Dreams		traversal	Normal	None	scene:Dream
+406	Dream_Abyss	Dreams		cutscene	Silent	MiscWind	region:HKDecline
+407	Dream_Final_Boss	Dreams		boss arena	Sub Area	MiscWind	script:None script:GG Heavy script:MageLord2 scene:Dream script:Radiance
+408	Room_Final_Boss_Atrium	Hollow Knight finale		cutscene	Sub Area	None	scene:Atrium
+409	Room_Final_Boss_Core	Hollow Knight finale		boss arena	Main Only		script:None script:HKDecline script:HKBattle scene:HKTension
+410	Cinematic_Ending_A	Cinematics and openings		cutscene	Silent	None	
+411	Cinematic_Ending_B	Cinematics and openings		cutscene	Silent	None	
+412	Cinematic_Ending_C	Cinematics and openings		cutscene	Silent	None	
+413	Cinematic_Ending_D	Cinematics and openings		cutscene	Silent	None	
+414	Cinematic_Ending_E	Cinematics and openings		cutscene	Silent	None	
+415	End_Credits	Other		cutscene	Main Only	None	scene:None
+416	Cinematic_MrMushroom	Cinematics and openings		cutscene	Silent	None	
+417	Menu_Credits	Menus, helpers and tests		menu	Normal	Cave	scene:Title
+418	End_Game_Completion	Other		cutscene	Silent	MiscWind	
+419	PermaDeath	Other		cutscene	Main Only	None	
+420	_test_cocoon_2	Menus, helpers and tests		traversal			
+421	PermaDeath_Unlock	Other		cutscene	Silent	Cave	
+422	_test_cocoon_1	Menus, helpers and tests		traversal			
+423	GG_Waterways	Godhome	godhome	traversal	Silent	MiscWind	script:None
+424	GG_Atrium	Godhome	godhome	traversal	Normal	MiscWind	script:None scene:GGAtrium
+425	GG_Broken_Vessel	Godhome	godhome	boss arena	Main Only	WindTunnel	script:BossIK script:GG Sad
+426	GG_Brooding_Mawlek	Godhome	godhome	boss arena	Silent	MiscWind	script:EnemyBattle script:GG Sad
+427	GG_Collector	Godhome	godhome	boss arena			script:None script:EnemyBattle script:GG Elegant
+428	GG_Crystal_Guardian	Godhome	godhome	boss arena		MinesCrystal	script:Crystal script:GG Normal
+429	GG_Crystal_Guardian_2	Godhome	godhome	boss arena		MinesCrystal	script:Crystal script:GG Normal
+430	GG_Dung_Defender	Godhome	godhome	boss arena		Waterways	script:DungDefender script:GG Normal
+431	GG_Failed_Champion	Godhome	godhome	boss arena		MiscWind	script:GG Heavy script:Boss1
+432	GG_False_Knight	Godhome	godhome	boss arena	Silent	Cave	script:None script:GG Heavy script:GG Normal script:Boss1
+433	GG_Flukemarm	Godhome	godhome	boss arena	Normal	WaterwaysFlowing	script:GG Sad script:Waterways
+434	GG_Ghost_Galien	Godhome	godhome	boss arena	Silent	Cave	script:DreamFight scene:Deepnest script:GG Normal
+435	GG_Ghost_Gorb	Godhome	godhome	boss arena	Silent	Surface	scene:None script:DreamFight script:GG Elegant
+436	GG_Ghost_Hu	Godhome	godhome	boss arena		Fungus	script:DreamFight script:GG Normal
+437	GG_Ghost_Markoth	Godhome	godhome	boss arena		MiscWind	script:DreamFight script:GG Sad
+438	GG_Ghost_Marmu	Godhome	godhome	boss arena			script:DreamFight script:GG Normal
+439	GG_Ghost_No_Eyes	Godhome	godhome	boss arena	Main Only		script:None
+440	GG_Ghost_Xero	Godhome	godhome	boss arena		MiscWind	script:DreamFight script:GG Normal
+441	GG_God_Tamer	Godhome	godhome	boss arena			script:None script:GG Heavy
+442	GG_Grey_Prince_Zote	Godhome	godhome	boss arena			script:GreyPrince script:GG Elegant
+443	GG_Grimm	Godhome	godhome	boss arena	Silent	None	scene:None script:Grimm script:GG Sad
+444	GG_Grimm_Nightmare	Godhome	godhome	boss arena	Silent	None	scene:None script:NightmareGrimm script:GG Sad
+445	GG_Gruz_Mother	Godhome	godhome	boss arena			script:EnemyBattle script:GG Normal
+446	GG_Hive_Knight	Godhome	godhome	boss arena	Normal	Cave	scene:Hive script:HiveKnight script:GG Normal
+447	GG_Hollow_Knight	Godhome	godhome	boss arena	Silent	MiscWind	script:HollowKnightPrime
+448	GG_Hornet_1	Godhome	godhome	boss arena	Silent	MiscWind	script:BossHornet script:GG Hornet
+449	GG_Hornet_2	Godhome	godhome	boss arena	Silent	MiscWind	script:BossHornet script:GG Hornet
+450	GG_Lost_Kin	Godhome	godhome	boss arena		MiscWind	script:BossIK script:GG Sad
+451	GG_Lurker	Godhome	godhome	boss arena	Silent	MiscWind	script:None script:City
+452	GG_Mantis_Lords	Godhome	godhome	boss arena			script:BossMantisLords script:GG Mantis
+453	GG_Mega_Moss_Charger	Godhome	godhome	boss arena		Greenpath	script:Greenpath script:GG Normal
+454	GG_Nailmasters	Godhome	godhome	boss arena	Silent	MiscWind	script:GG Heavy script:GG Normal
+455	GG_Nosk	Godhome	godhome	boss arena		None	script:MimicSpider script:GG Sad
+456	GG_Oblobbles	Godhome	godhome	boss arena		MiscWind	script:EnemyBattle script:GG Normal
+457	GG_Painter	Godhome	godhome	boss arena		MiscWind	script:GG Elegant
+458	GG_Pipeway	Godhome	godhome	traversal	Normal	WaterwaysFlowing	scene:Waterways
+459	GG_Radiance	Godhome	godhome	boss arena	Silent	MiscWind	script:None script:GG Heavy script:MageLord2 script:Radiance
+460	GG_Sly	Godhome	godhome	boss arena	Silent	MiscWind	script:None script:GG Heavy script:GG Normal
+461	GG_Soul_Master	Godhome	godhome	boss arena		RainyOutdoors	script:None script:BossMageLord script:GG Heavy script:MageLord2
+462	GG_Soul_Tyrant	Godhome	godhome	boss arena		RainyOutdoors	script:None script:BossMageLord script:GG Heavy script:MageLord2 script:GG Normal
+463	GG_Spa	Godhome	godhome	traversal	Normal		scene:GGAtrium
+464	GG_Traitor_Lord	Godhome	godhome	boss arena		QueensGardens	script:GG Heavy
+465	GG_Unlock	Godhome	godhome	traversal	Silent	Cave	
+466	GG_Uumuu	Godhome	godhome	boss arena	Silent	None	scene:None script:EnemyBattle script:GG Elegant
+467	GG_Vengefly	Godhome	godhome	boss arena		MiscWind	scene:None script:EnemyBattle script:GG Normal
+468	GG_Watcher_Knights	Godhome	godhome	boss arena		RainyOutdoors	script:GG Heavy script:Boss1
+469	GG_White_Defender	Godhome	godhome	boss arena		MiscWind	script:WhiteDefender script:GG Normal
+470	GG_Workshop	Godhome	godhome	traversal	Normal	MiscWind	scene:GGAtrium
+471	Room_GG_Shortcut	Godhome	godhome	traversal	Silent	WaterwaysFlowing	
+472	GG_End_Sequence	Godhome	godhome	cutscene	Silent	MiscWind	
+473	GG_Atrium_Roof	Godhome	godhome	traversal	Silent	MiscWind	script:None
+474	GG_Blue_Room	Godhome	godhome	traversal	Silent	MiscWind	
+475	GG_Engine	Godhome	godhome	boss arena	Silent	None	scene:None
+476	GG_Engine_Prime	Godhome	godhome	boss arena	Silent	None	scene:None
+477	GG_Engine_Root	Godhome	godhome	boss arena	Silent	MiscWind	scene:None
+478	GG_Mage_Knight	Godhome	godhome	boss arena	Normal		script:GG Elegant
+479	GG_Vengefly_V	Godhome	godhome	boss arena		MiscWind	scene:None script:EnemyBattle script:GG Normal
+480	GG_Entrance_Cutscene	Godhome	godhome	cutscene		None	scene:None
+481	GG_Mighty_Zote	Godhome	godhome	boss arena	Silent	MiscWind	scene:None
+482	GG_Land_of_Storms	Godhome	godhome	traversal	Silent		scene:GGAtrium
+483	GG_Boss_Door_Entrance	Godhome	godhome	traversal	Silent	None	
+484	GG_Gruz_Mother_V	Godhome	godhome	boss arena			script:EnemyBattle script:GG Normal
+485	GG_Brooding_Mawlek_V	Godhome	godhome	boss arena	Silent	MiscWind	script:None script:GG Heavy script:EnemyBattle script:GG Sad
+486	GG_Mantis_Lords_V	Godhome	godhome	boss arena	Silent	MiscWind	script:BossMantisLords script:MimicSpider script:GG Mantis
+487	GG_Nosk_Hornet	Godhome	godhome	boss arena	Silent	MiscWind	scene:None script:MimicSpider script:GG Sad
+488	GG_Uumuu_V	Godhome	godhome	boss arena	Silent	None	scene:None script:EnemyBattle script:GG Elegant
+489	GG_Ghost_Gorb_V	Godhome	godhome	boss arena	Silent	Surface	scene:None script:DreamFight script:GG Elegant
+490	GG_Ghost_Markoth_V	Godhome	godhome	boss arena		MiscWind	script:DreamFight script:GG Sad
+491	GG_Ghost_Marmu_V	Godhome	godhome	boss arena			script:DreamFight script:GG Normal
+492	GG_Ghost_No_Eyes_V	Godhome	godhome	boss arena	Main Only		script:None
+493	GG_Ghost_Xero_V	Godhome	godhome	boss arena		MiscWind	script:DreamFight script:GG Normal
+494	GG_Mage_Knight_V	Godhome	godhome	boss arena			script:GG Elegant
+495	GG_Collector_V	Godhome	godhome	boss arena			script:None script:EnemyBattle script:GG Elegant
+496	GG_Nosk_V	Godhome	godhome	boss arena		None	script:MimicSpider script:GG Sad
+497	GG_Wyrm	Godhome	godhome	boss arena	Silent	MiscWind	scene:None
+498	GG_Unn	Godhome	godhome	boss arena	Silent	Fungus	scene:None
+499	GG_Door_5_Finale	Godhome	godhome	cutscene	Silent	MiscWind	
+500	GG_Unlock_Wastes	Godhome	godhome	traversal	Silent	Surface	scene:None

@@ -1,0 +1,402 @@
+# kind	name	scenes	areas	clips	seconds	B@full	B@half	B@port	in_arena	base
+enemy	Absolute Radiance	1	1	46	123.4	1555440	777888	389056	1	0
+enemy	Abyss Crawler	5	1	4	5.4	68112	34064	17040	0	1
+enemy	Acid Flyer	1	1	12	14.7	185056	92576	46336	0	1
+enemy	Acid Walker	4	2	1	3.0	37584	18800	9392	0	1
+enemy	Angry Buzzer	11	1	8	7.8	98416	49232	24624	0	1
+enemy	Baby Centipede	6	1	11	14.0	176272	88192	44144	0	1
+enemy	Baby Centipede Spawner	2	1	4	5.9	74848	37456	18752	0	1
+enemy	Bee Hatchling Ambient	9	3	1	1.5	19136	9568	4784	0	1
+enemy	Bee Stinger	5	1	9	10.9	137808	68912	34480	0	1
+enemy	Big Bee	3	1	7	8.6	108080	54080	27056	0	1
+enemy	Black Knight 1	2	2	16	20.3	255856	128016	64048	1	1
+enemy	Black Knight 2	2	2	16	20.3	255856	128016	64048	1	1
+enemy	Black Knight 3	2	2	16	20.3	255856	128016	64048	1	1
+enemy	Black Knight 4	2	2	16	20.3	255856	128016	64048	1	1
+enemy	Black Knight 5	2	2	16	20.3	255856	128016	64048	1	1
+enemy	Black Knight 6	2	2	16	20.3	255856	128016	64048	1	1
+enemy	Blocker	2	1	6	6.5	82384	41216	20640	0	1
+enemy	Blocker 1	1	1	6	6.5	82384	41216	20640	0	1
+enemy	Blocker 2	1	1	6	6.5	82384	41216	20640	0	1
+enemy	Blow Fly	4	1	4	4.8	60384	30208	15104	0	1
+enemy	Bursting Bouncer	2	1	5	3.3	41760	20896	10464	0	1
+enemy	Bursting Zombie	8	1	5	6.5	81344	40704	20352	0	1
+enemy	Buzzer	19	5	7	11.3	142640	71344	35680	0	1
+enemy	Buzzer 1	5	3	7	11.3	142640	71344	35680	0	1
+enemy	Buzzer 2	4	3	7	11.3	142640	71344	35680	0	1
+enemy	Buzzer 3	1	1	7	11.3	142640	71344	35680	0	1
+enemy	Ceiling Dropper	16	5	8	5.2	65216	32640	16352	0	1
+enemy	Centipede Hatcher	2	1	14	20.1	252880	126512	63312	0	1
+enemy	Climber	7	3	4	5.7	71344	35680	17840	0	1
+enemy	Climber 1	3	1	4	5.7	71344	35680	17840	0	1
+enemy	Climber 2	2	1	4	5.7	71344	35680	17840	0	1
+enemy	Climber 3	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Climber 4	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Climber 5	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Climber 6	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Climber 7	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Climber 8	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Climber 9	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Colosseum_Miner	2	1	19	12.0	151008	75584	37856	1	1
+enemy	Crawler	8	3	4	5.7	71344	35680	17840	0	1
+enemy	Crawler 1	2	2	4	5.7	71344	35680	17840	0	1
+enemy	Crawler 2	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Crawler 3	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Crawler Fixed	1	1	4	5.7	71344	35680	17840	0	1
+enemy	Crystal Crawler	8	1	5	6.2	77792	38912	19456	0	1
+enemy	Crystal Flyer	8	1	6	4.1	51632	25840	12928	0	1
+enemy	Crystallised Lazer Bug	4	1	6	7.7	97264	48640	24336	0	1
+enemy	Dream Mage Lord	2	2	20	42.8	539904	270048	135040	1	1
+enemy	Dream Mage Lord Phase2	2	2	19	31.9	402080	201104	100624	1	1
+enemy	Dummy Mantis	1	1	2	1.5	18560	9280	4656	1	1
+enemy	Dung Defender	2	2	45	86.0	1083552	541936	271136	1	1
+enemy	Egg Sac	10	6	7	29.0	364944	182512	91264	0	1
+enemy	Electric Mage New	1	1	8	10.6	133920	66992	33520	1	1
+enemy	Enemy	5	1	9	65.8	828624	414352	207168	0	1
+enemy	False Knight Dream	2	2	41	68.5	862944	431664	215904	1	1
+enemy	False Knight New	2	2	42	88.9	1120256	560320	280224	1	1
+enemy	Fat Fluke	1	1	10	26.8	337184	168608	84320	0	0
+enemy	Fat Fly	2	1	6	4.9	61664	30848	15440	0	1
+enemy	Fat Fly 1	1	1	6	4.9	61664	30848	15440	0	1
+enemy	Fat Fly 3	1	1	6	4.9	61664	30848	15440	0	1
+enemy	Fat Fly 4	1	1	6	4.9	61664	30848	15440	0	1
+enemy	Flip Hopper	4	1	6	5.2	65152	32592	16320	0	1
+enemy	Fluke Fly	5	2	3	4.9	61856	30944	15488	0	1
+enemy	Fluke Fly Spawner	3	2	3	4.9	61856	30944	15488	1	1
+enemy	Fluke Mother	2	2	8	41.7	525920	262992	131520	1	1
+enemy	Flukeman	5	2	8	19.4	244992	122528	61296	0	1
+enemy	Fly	3	1	4	4.2	52976	26496	13248	0	1
+enemy	Fly 1	2	1	4	4.2	52976	26496	13248	0	1
+enemy	Fly 10	1	1	4	4.2	52976	26496	13248	0	1
+enemy	Fly 2	3	1	4	4.2	52976	26496	13248	0	1
+enemy	Fly 3	2	1	4	4.2	52976	26496	13248	0	1
+enemy	Fly 4	2	1	4	4.2	52976	26496	13248	0	1
+enemy	Fly 5	2	1	4	4.2	52976	26496	13248	0	1
+enemy	Fly 6	2	1	4	4.2	52976	26496	13248	0	1
+enemy	Fly 7	1	1	4	4.2	52976	26496	13248	0	1
+enemy	Fung Crawler	8	1	4	3.5	43568	21792	10896	0	1
+enemy	Fungoon Baby	8	2	5	13.4	168944	84512	42272	0	1
+enemy	Fungus Flyer	8	1	10	20.1	252816	126480	63248	0	1
+enemy	Garden Zombie	4	2	11	5.6	70336	35216	17648	0	1
+enemy	Gate Mantis	1	1	7	5.2	65568	32816	16432	0	1
+enemy	Ghost Warrior Galien	2	2	8	14.8	186512	93280	46656	1	1
+enemy	Ghost Warrior Hu	2	2	21	48.0	604928	302544	151328	1	1
+enemy	Ghost Warrior Markoth	4	2	10	20.8	262560	131328	65696	1	1
+enemy	Ghost Warrior Marmu	3	2	12	17.2	217376	108720	54368	1	1
+enemy	Ghost Warrior No Eyes	3	2	6	33.1	417296	208672	104336	1	1
+enemy	Ghost Warrior Slug	3	2	12	32.4	407696	203888	101968	1	1
+enemy	Ghost Warrior Xero	3	2	28	50.9	641744	320992	160576	1	1
+enemy	Giant Buzzer	1	1	20	49.1	619056	309600	154816	0	1
+enemy	Giant Buzzer Col	3	2	13	26.9	339504	169792	84912	1	1
+enemy	Giant Fly	3	2	12	55.2	695872	348000	174016	1	1
+enemy	Giant Hopper	5	1	5	3.1	38864	19440	9728	0	1
+enemy	Gorgeous Husk	1	1	5	19.7	248688	124368	62208	0	1
+enemy	Grass Hopper	2	2	4	2.1	26784	13408	6704	0	1
+enemy	Grave Zombie	1	1	11	25.2	318160	159120	79584	0	1
+enemy	Great Shield Zombie	5	2	16	21.2	267648	133872	66976	0	1
+enemy	Great Shield Zombie bottom	1	1	16	21.2	267648	133872	66976	0	1
+enemy	Grey Prince	2	2	38	50.3	634448	317376	158784	1	1
+enemy	Grimm Boss	2	2	36	50.8	640000	320128	160160	1	0
+enemy	Grub Mimic	1	1	8	9.2	115568	57808	28912	0	1
+enemy	Grub Mimic 1	1	1	8	9.2	115568	57808	28912	0	1
+enemy	Grub Mimic 2	1	1	8	9.2	115568	57808	28912	0	1
+enemy	Grub Mimic 3	1	1	8	9.2	115568	57808	28912	0	1
+enemy	HK Prime	1	1	37	78.1	984832	492560	246384	1	0
+enemy	Hatcher	4	1	4	7.9	99664	49840	24928	0	1
+enemy	Hatcher 1	1	1	4	7.9	99664	49840	24928	0	1
+enemy	Hatcher 2	1	1	4	7.9	99664	49840	24928	0	1
+enemy	Hatcher Baby Spawner	4	1	1	2.9	36768	18384	9200	0	1
+enemy	Hatcher NP	1	1	5	10.8	136432	68224	34128	0	1
+enemy	Hive Knight	2	2	26	61.1	769600	384912	192528	1	1
+enemy	Hiveling Spawner	3	1	1	1.5	19136	9568	4784	0	1
+enemy	Hollow Knight Boss	1	1	37	62.6	789424	394864	197568	1	1
+enemy	Hopper	8	1	4	2.3	28800	14416	7216	0	1
+enemy	Hornet Boss 1	2	2	25	17.9	226208	113216	56656	1	1
+enemy	Hornet Boss 2	2	2	28	21.2	266784	133504	66800	1	1
+enemy	Hornet Nosk	1	1	18	33.0	415792	207952	104032	1	0
+enemy	Infected Knight	2	2	24	55.7	701536	350864	175472	1	1
+enemy	Inflater	7	1	7	14.9	187616	93856	46960	0	1
+enemy	Jar Collector	3	2	58	85.3	1075024	537760	269040	1	1
+enemy	Jellyfish	9	1	3	3.0	38096	19056	9536	0	1
+enemy	Jellyfish 1	1	1	3	3.0	38096	19056	9536	0	1
+enemy	Jellyfish 2	1	1	3	3.0	38096	19056	9536	0	1
+enemy	Jellyfish 3	1	1	3	3.0	38096	19056	9536	0	1
+enemy	Jellyfish 4	1	1	3	3.0	38096	19056	9536	0	1
+enemy	Jellyfish 6	1	1	3	3.0	38096	19056	9536	0	1
+enemy	Jellyfish Baby	8	1	2	4.6	57472	28752	14384	0	1
+enemy	Jellyfish Baby Inert	1	1	1	0.5	5808	2912	1456	0	1
+enemy	Lancer	2	2	14	10.5	133056	66576	33344	1	1
+enemy	Lesser Mawlek	1	1	8	6.0	75056	37552	18800	0	1
+enemy	Lesser Mawlek 1	1	1	8	6.0	75056	37552	18800	0	1
+enemy	Lesser Mawlek 2	1	1	8	6.0	75056	37552	18800	0	1
+enemy	Lobster	2	2	8	15.6	196048	98064	49056	1	1
+enemy	Lost Kin	2	2	19	25.6	322816	161488	80784	1	1
+enemy	Mage	5	2	8	10.7	134336	67200	33616	1	1
+enemy	Mage Balloon	2	1	9	10.7	134608	67344	33696	0	1
+enemy	Mage Balloon Spawner	3	3	6	9.2	115920	57984	29008	1	1
+enemy	Mage Blob 1	5	2	10	14.4	182160	91136	45600	1	1
+enemy	Mage Blob 2	5	2	10	14.4	182160	91136	45600	1	1
+enemy	Mage Knight	5	3	12	10.6	133120	66592	33328	1	1
+enemy	Mage Lord	2	2	23	55.0	693744	346992	173504	1	1
+enemy	Mage Lord Phase2	2	2	20	56.8	715824	357984	179056	1	1
+enemy	Mantis	5	1	7	5.2	65568	32816	16432	0	1
+enemy	Mantis Flyer Child	4	1	3	6.5	81408	40720	20384	0	1
+enemy	Mantis Heavy	3	1	11	6.8	85504	42800	21456	1	1
+enemy	Mantis Heavy Flyer	8	2	4	5.1	64736	32384	16208	0	1
+enemy	Mantis Heavy Spawn	1	1	11	6.8	85504	42800	21456	0	1
+enemy	Mantis Lord	3	2	14	9.2	116560	58352	29216	1	1
+enemy	Mantis Lord S1	3	2	14	9.2	116560	58352	29216	1	1
+enemy	Mantis Lord S2	3	2	14	9.2	116560	58352	29216	1	1
+enemy	Mantis Lord S3	1	1	14	9.2	116560	58352	29216	1	0
+enemy	Mantis Traitor Lord	2	2	19	34.0	429024	214592	107344	1	1
+enemy	Mato	1	1	27	39.6	499136	249712	124960	1	0
+enemy	Mawlek Body	3	2	15	48.1	606288	303200	151632	1	1
+enemy	Mawlek Turret	1	1	8	6.3	79056	39552	19792	0	1
+enemy	Mawlek Turret Ceiling	1	1	8	6.3	79056	39552	19792	0	1
+enemy	Mega Fat Bee	2	2	9	14.4	181856	90960	45488	1	1
+enemy	Mega Jellyfish	1	1	21	37.3	470720	235424	117792	1	1
+enemy	Mega Jellyfish GG	2	1	22	39.4	496576	248352	124256	1	0
+enemy	Mega Moss Charger	2	2	12	20.3	256304	128176	64128	1	1
+enemy	Mega Zombie Beam Miner	2	2	13	18.9	238656	119376	59744	1	1
+enemy	Mender Bug	1	1	8	20.6	260144	130096	65056	0	1
+enemy	Mimic Spider	3	2	19	29.7	373936	187056	93584	1	1
+enemy	Mines Crawler	7	1	7	6.7	84176	42112	21072	0	1
+enemy	Mosquito	7	2	8	5.4	68464	34272	17168	0	1
+enemy	Moss Charger	3	1	9	9.4	117968	59008	29520	0	1
+enemy	Moss Charger 1	1	1	9	9.4	117968	59008	29520	0	1
+enemy	Moss Flyer	12	2	5	6.0	75328	37680	18832	0	1
+enemy	Moss Knight	2	1	20	13.7	172624	86400	43280	0	1
+enemy	Moss Knight B	1	1	20	13.7	172624	86400	43280	0	1
+enemy	Moss Knight C	1	1	20	13.7	172624	86400	43280	0	1
+enemy	Moss Knight Fat	1	1	6	3.7	47008	23520	11776	0	1
+enemy	Moss Walker	16	3	8	7.3	91984	46032	23024	0	1
+enemy	Mossman_Runner	5	1	9	7.4	93184	46640	23344	0	1
+enemy	Mossman_Shaker	7	1	11	11.0	138448	69264	34672	0	1
+enemy	Mushroom Baby	6	1	7	4.7	58672	29360	14704	0	1
+enemy	Mushroom Brawler	3	1	4	3.8	48272	24144	12096	0	1
+enemy	Mushroom Brawler 1	1	1	4	3.8	48272	24144	12096	0	1
+enemy	Mushroom Brawler 2	1	1	4	3.8	48272	24144	12096	0	1
+enemy	Mushroom Roller	5	1	10	8.5	107056	53552	26800	0	1
+enemy	Mushroom Turret	8	1	6	5.7	71392	35712	17872	0	1
+enemy	Nightmare Grimm Boss	2	2	32	49.0	617104	308672	154400	1	0
+enemy	Ordeal Zoteling	1	1	7	17.4	219616	109840	54928	1	0
+enemy	Oro	1	1	27	39.2	494512	247408	123808	1	0
+enemy	Pale Lurker	1	1	36	44.3	558224	279280	139760	1	0
+enemy	Parasite Balloon	2	1	2	5.2	65472	32736	16368	0	1
+enemy	Pigeon	8	1	3	6.8	85552	42784	21408	0	1
+enemy	Plant Trap	7	2	1	1.6	20640	10320	5168	0	1
+enemy	Plant Turret	3	1	13	9.9	125456	62784	31424	0	1
+enemy	Plant Turret Right	1	1	13	9.9	125456	62784	31424	0	1
+enemy	Prayer Slug	1	1	19	50.5	636464	318304	159136	0	1
+enemy	Radiance	1	1	40	89.7	1130608	565424	282832	1	1
+enemy	Roller	2	2	3	4.5	56832	28432	14240	0	1
+enemy	Roller 1	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 10	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 11	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 2	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 3	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 4	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 6	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 7	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 8	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Roller 9	1	1	3	4.5	56832	28432	14240	0	1
+enemy	Royal Gaurd	3	1	15	12.4	156704	78416	39248	0	1
+enemy	Royal Zombie 1	9	1	9	10.5	132432	66240	33136	0	1
+enemy	Royal Zombie Coward	9	1	7	9.0	113472	56752	28400	0	1
+enemy	Royal Zombie Fat	8	1	7	7.5	94544	47296	23664	0	1
+enemy	Ruins Flying Sentry	12	4	13	12.7	159680	79888	40000	0	1
+enemy	Ruins Flying Sentry Javelin	9	3	14	16.2	204576	102352	51216	0	1
+enemy	Ruins Flying SentryB	1	1	13	12.7	159680	79888	40000	0	1
+enemy	Ruins Sentry 1	13	4	17	16.8	211936	106032	53104	0	1
+enemy	Ruins Sentry Fat	6	2	17	17.7	223600	111888	56000	0	1
+enemy	Ruins Sentry Fat B	1	1	17	17.7	223600	111888	56000	0	1
+enemy	Ruins Sentry FatB	1	1	17	17.7	223600	111888	56000	0	1
+enemy	Ruins SentryB 1	1	1	17	16.8	211936	106032	53104	0	1
+enemy	Shade Sibling	2	1	2	7.2	91328	45664	22848	0	1
+enemy	Sheo Boss	1	1	33	34.0	428080	214176	107200	1	0
+enemy	Slash Spider	4	1	12	8.0	100736	50400	25232	0	1
+enemy	Sly Boss	1	1	42	46.0	580176	290304	145296	1	0
+enemy	Spider Flyer	3	1	5	4.3	53648	26832	13424	0	1
+enemy	Spider Mini	10	1	7	5.1	64048	32048	16048	0	1
+enemy	Spitter	6	2	6	9.0	113632	56832	28416	0	1
+enemy	Spitter 1	1	1	6	9.0	113632	56832	28416	0	1
+enemy	Spitting Zombie	6	1	8	4.9	62368	31200	15632	0	1
+enemy	Super Spitter	6	1	6	9.0	113632	56832	28416	0	1
+enemy	Tiny Spider	4	1	4	3.6	45328	22672	11344	0	1
+enemy	White Defender	2	2	57	103.9	1309296	654864	327664	1	1
+enemy	White Palace Fly	5	1	7	12.7	160272	80160	40096	0	1
+enemy	Zombie Barger	13	5	7	6.9	86544	43296	21680	1	1
+enemy	Zombie Barger 1	1	1	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Barger 2	1	1	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Barger 3	1	1	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Beam Miner	3	1	7	8.1	102576	51296	25664	0	1
+enemy	Zombie Beam Miner Rematch	2	2	27	32.4	408304	204256	102240	1	1
+enemy	Zombie Fungus A	2	1	6	5.2	65104	32576	16304	0	1
+enemy	Zombie Fungus B	2	1	6	5.2	65104	32576	16304	0	1
+enemy	Zombie Guard	2	1	9	12.4	156592	78336	39216	0	1
+enemy	Zombie Hive	3	1	7	6.0	75088	37568	18800	0	1
+enemy	Zombie Hornhead	16	6	7	6.9	86544	43296	21680	1	1
+enemy	Zombie Hornhead 1	2	1	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Hornhead 2	1	1	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Hornhead Sp	4	1	6	7.8	97872	48960	24512	0	1
+enemy	Zombie Leaper	9	4	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Leaper 1	1	1	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Miner 1	8	1	14	8.0	101088	50608	25360	0	1
+enemy	Zombie Myla	1	1	15	13.0	163600	81872	40992	0	1
+enemy	Zombie Runner	13	3	7	6.9	86544	43296	21680	1	1
+enemy	Zombie Runner 1	3	1	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Runner 2	1	1	7	6.9	86544	43296	21680	0	1
+enemy	Zombie Runner Sp	4	1	6	7.8	97872	48960	24512	0	1
+enemy	Zombie Shield	1	1	9	5.7	71616	35840	17936	0	1
+enemy	Zombie Shield 1	1	1	9	5.7	71616	35840	17936	0	1
+enemy	Zombie Shield 2	1	1	9	5.7	71616	35840	17936	0	1
+enemy	Zombie Spider 1	2	1	3	4.2	52432	26224	13120	0	1
+enemy	Zombie Spider 2	2	1	3	4.2	52432	26224	13120	0	1
+enemy	Zote Balloon	3	2	6	16.2	204016	102032	51008	1	1
+enemy	Zote Balloon Ordeal	1	1	6	16.2	204016	102032	51008	1	0
+enemy	Zote Boss	1	1	19	38.7	488096	244112	122112	1	0
+enemy	Zote Crew Fat	1	1	12	13.2	166944	83504	41792	1	0
+enemy	Zote Crew Normal	1	1	16	22.1	279152	139632	69872	1	0
+enemy	Zote Crew Tall	1	1	16	22.1	279152	139632	69872	1	0
+enemy	Zote Fluke	1	1	3	3.9	49504	24752	12384	1	0
+enemy	Zote Salubra	1	1	1	18.2	228912	114464	57232	1	0
+enemy	Zote Thwomp	1	1	9	12.1	152384	76224	38160	1	0
+enemy	Zote Turret	1	1	6	4.7	59536	29792	14928	1	0
+enemy	Zoteling	2	2	7	17.4	219616	109840	54928	1	1
+npc	Antique Dealer Outside	1	1	2	2.7	34304	17152	8576	0	1
+npc	Banker	1	1	7	7.6	96336	48192	24112	0	1
+npc	Big Caterpillar	1	1	10	25.6	322144	161120	80592	0	1
+npc	Bretta Dazed	1	1	3	17.6	222288	111152	55600	0	1
+npc	Bretta Zote Fan	1	1	1	3.2	40368	20192	10096	0	1
+npc	Bronze Trial Board	1	1	4	6.5	81600	40816	20416	0	1
+npc	Brum NPC	1	1	4	67.1	845840	422928	211472	1	0
+npc	Brumm Lantern NPV	1	1	7	11.5	144432	72240	36160	0	1
+npc	Brumm Torch NPC	1	1	9	23.3	294064	147072	73536	1	1
+npc	Challenge Prompt	1	1	1	0.3	4144	2080	1040	1	1
+npc	Charm Slug	1	1	9	37.0	466688	233376	116720	0	1
+npc	City Gate Control	1	1	2	1.9	24400	12208	6112	0	1
+npc	Cloth Ghost NPC	1	1	1	1.4	17472	8736	4368	0	1
+npc	Cloth NPC 1	1	1	7	19.8	249664	124864	62448	0	1
+npc	Cloth NPC 2	1	1	3	6.2	78112	39056	19536	0	1
+npc	Cloth NPC QG Entrance	1	1	2	3.4	42272	21152	10576	0	1
+npc	Cloth NPC Town	1	1	4	13.2	166256	83136	41584	0	1
+npc	Cloth NPC Tramway	1	1	9	24.2	304736	152400	76224	0	1
+npc	Coffin	1	1	4	13.4	169328	84688	42352	0	0
+npc	Conversation	2	1	7	84.5	1064576	532320	266176	0	0
+npc	Cornifer	11	10	11	61.3	772656	386384	193184	0	1
+npc	Cornifer Deepnest	2	2	3	5.4	68496	34256	17136	0	1
+npc	Defeated NPC	1	1	21	58.6	738992	369552	184816	1	0
+npc	Divine NPC	1	1	18	51.6	649872	325008	162576	0	0
+npc	Dream Moth	1	1	22	94.2	1187376	593792	296976	0	1
+npc	Dream Nail Get	1	1	3	11.1	139856	69936	34960	0	1
+npc	Dreamer Plaque Inspect	1	1	1	0.1	1216	608	304	0	1
+npc	Dung Defender NPC	1	1	6	11.0	138608	69328	34688	0	1
+npc	Eggs Inspect	1	1	1	4.0	50784	25392	12704	0	1
+npc	Elderbug	1	1	8	15.6	196864	98480	49248	0	1
+npc	Elderbug Grimm	1	1	1	1.7	21680	10848	5424	0	1
+npc	Emilitia NPC	1	1	7	29.1	366416	183232	91616	0	1
+npc	End Scene	1	1	1	3.5	44208	22112	11056	0	1
+npc	Fluke Hermit	1	1	11	41.3	520624	260384	130176	0	0
+npc	Fountain Inspect	1	1	1	0.1	1216	608	304	0	1
+npc	Ghost False Knight NPC	1	1	2	6.3	79088	39552	19792	0	1
+npc	Ghost Infected Knight NPC	1	1	2	6.3	79088	39552	19792	0	1
+npc	Ghost Mage Lord NPC	1	1	1	3.8	48272	24144	12080	0	1
+npc	Ghost NPC	3	2	3	62.2	784256	392144	196064	0	1
+npc	Ghost NPC 100 nail	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost NPC Joni	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost Warrior NPC	7	7	3	11.6	146752	73392	36720	1	1
+npc	Ghost atra	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost boss	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost caspian	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost chagax	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost garro	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost grohac	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost hex	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost kcin	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost magnus	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost milly	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost molten	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost perpetos	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost revek	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost thistlewind	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost waldie	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost wayner	1	1	2	6.8	85136	42576	21296	0	1
+npc	Ghost wyatt	1	1	2	6.8	85136	42576	21296	0	1
+npc	Giraffe NPC	1	1	7	23.2	292896	146480	73280	0	1
+npc	Godseeker Awake	1	1	7	34.6	435392	217728	108880	0	0
+npc	Godseeker Dazed	1	1	1	11.8	148688	74352	37168	0	0
+npc	Godseeker EngineRoom NPC	2	1	7	21.2	267008	133520	66800	1	0
+npc	Godseeker Young NPC	3	1	3	12.4	156832	78432	39232	1	0
+npc	Gold Trial Board	1	1	4	6.5	81600	40816	20416	0	1
+npc	Gravedigger NPC	1	1	2	6.8	85136	42576	21296	0	1
+npc	Head	1	1	2	4.0	50464	25248	12640	0	1
+npc	Hornet Abyss NPC	1	1	2	2.8	35744	17872	8944	0	1
+npc	Hornet Beast Den NPC	1	1	2	2.8	35744	17872	8944	0	1
+npc	Hornet Black Egg NPC	1	1	2	2.8	35744	17872	8944	0	1
+npc	Hunter Eyes	1	1	14	42.5	535712	267920	133984	0	1
+npc	Hunter Hangout NPC	1	1	3	4.7	59088	29552	14800	0	1
+npc	Inspect	4	2	9	21.7	273776	136928	68480	0	1
+npc	Inspect Region	2	1	1	2.7	34400	17200	8608	0	1
+npc	Iselda	1	1	4	7.6	95296	47664	23840	0	1
+npc	Jiji Door	1	1	4	6.1	76368	38192	19120	0	1
+npc	Jiji NPC	1	1	10	22.0	276752	138416	69232	0	1
+npc	Jinn NPC	1	1	11	15.1	190096	95120	47632	0	1
+npc	Junk_Fluke_Nervous	1	1	1	11.2	141552	70784	35392	0	0
+npc	Leg Eater	1	1	10	46.7	589104	294592	147328	0	1
+npc	Little Fool NPC	1	1	5	7.0	88272	44160	22080	0	1
+npc	Love Door	1	1	3	5.5	69328	34672	17360	0	1
+npc	Mage Door	1	1	7	10.2	128672	64352	32208	0	1
+npc	Maskmaker NPC	1	1	8	60.9	767936	383984	192016	0	1
+npc	Miner	1	1	9	23.2	292976	146544	73264	0	1
+npc	Moss Cultist	1	1	2	14.5	182976	91504	45744	0	1
+npc	Moth NPC	1	1	3	15.1	190496	95248	47648	0	1
+npc	Mr Mushroom NPC	7	7	10	33.4	420560	210304	105184	0	1
+npc	Myla Crazy NPC	1	1	2	6.2	78640	39328	19680	0	1
+npc	NM Mato NPC	1	1	12	30.2	380816	190448	95216	0	1
+npc	NM Oro NPC	1	1	14	30.6	386160	193136	96560	0	1
+npc	NM Sheo NPC	1	1	8	20.7	260336	130192	65088	0	1
+npc	NM Sheo NPC Modeller	1	1	1	2.1	26496	13248	6624	0	1
+npc	NPC	4	3	11	22.6	285232	142640	71360	1	1
+npc	Nailsmith	1	1	7	17.7	223344	111712	55888	0	1
+npc	Nailsmith Cliff NPC	1	1	2	3.9	49344	24688	12352	0	1
+npc	Nailsmith Modelling NPC	1	1	2	2.9	37008	18512	9264	0	1
+npc	Nailsmith Painted NPC	1	1	2	2.9	37008	18512	9264	0	1
+npc	Nymm NPC	1	1	4	7.5	94000	47008	23536	0	1
+npc	Queen	1	1	8	12.0	150896	75472	37760	0	1
+npc	Quirrel	2	2	10	16.0	201936	101040	50560	0	1
+npc	Quirrel Archive Ext	1	1	2	2.6	33280	16656	8336	0	1
+npc	Quirrel Bench	1	1	5	8.1	101856	50960	25488	0	1
+npc	Quirrel Lakeside	1	1	2	3.4	43328	21680	10832	0	1
+npc	Quirrel Mantis NPC	1	1	2	5.2	65840	32928	16464	0	1
+npc	Quirrel Mines	1	1	5	8.1	101856	50960	25488	0	1
+npc	Quirrel Slug Shrine	1	1	5	8.1	101856	50960	25488	0	1
+npc	Quirrel Spa	1	1	4	7.3	92272	46160	23088	0	1
+npc	Quirrel Station NPC	1	1	3	4.8	60000	30016	15008	0	1
+npc	Quirrel Wounded	1	1	1	1.5	18512	9264	4640	0	1
+npc	Relic Dealer	1	1	6	9.6	120528	60272	30160	0	1
+npc	Shaman Killed Blocker	1	1	4	13.2	166880	83456	41744	0	1
+npc	Shaman Meeting	1	1	7	23.0	290304	145168	72608	0	1
+npc	Shaman Trapped	1	1	4	13.2	166880	83456	41744	0	1
+npc	Silver Trial Board	1	1	4	6.5	81600	40816	20416	0	1
+npc	Sly Basement NPC	1	1	4	4.1	51184	25616	12832	0	1
+npc	Sly Dazed	1	1	4	18.6	234400	117232	58624	0	1
+npc	Sly Shop	1	1	6	7.2	90288	45184	22592	0	1
+npc	Spider Royal Short	1	1	5	12.8	161360	80688	40368	0	1
+npc	Spider Royal Tall	1	1	5	12.8	161360	80688	40368	0	1
+npc	Stag	11	10	8	29.5	371536	185792	92896	0	1
+npc	Talk NPC	1	1	5	8.8	111040	55552	27808	0	1
+npc	Tiso Bench NPC	1	1	2	3.2	40848	20432	10208	0	1
+npc	Tiso Col NPC	1	1	3	4.8	61024	30528	15264	0	1
+npc	Tiso Lake NPC	1	1	2	3.6	44880	22448	11232	0	1
+npc	Tiso Town NPC	1	1	2	3.5	44384	22192	11104	0	1
+npc	Tram Call Box	5	2	2	5.0	62848	31424	15728	0	1
+npc	Tuk NPC	1	1	11	47.9	603264	301696	150864	0	1
+npc	Vespa NPC	1	1	2	6.8	85136	42576	21296	0	1
+npc	Waterways Machine	1	1	2	1.2	14624	7312	3664	0	1
+npc	Xun NPC	1	1	10	24.7	311152	155616	77840	0	1
+npc	Zote Colosseum	1	1	2	4.8	60224	30112	15056	0	1
+npc	Zote Final	1	1	6	41.3	520704	260368	130176	0	1
+npc	Zote Ruins	1	1	1	2.0	25216	12608	6304	0	1
+npc	Zote Town	1	1	2	3.4	43376	21696	10848	0	1
+npc	gg_white_flower_collect	1	1	20	81.0	1021248	510720	255392	0	1
+npc	karina	1	1	2	6.8	85136	42576	21296	0	1

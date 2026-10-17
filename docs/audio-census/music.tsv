@@ -1,0 +1,56 @@
+# cue	event	layers (clip:seconds)	scenes	base	dlc	locations	variants	xa_ok
+Abyss	ABYSS	Abyss-01:230.3	4	1	0	traversal	1	0
+Title	TITLE	Title:81.8	2	1	0	menu	1	1
+GG Heavy	GG HEAVY	GG3_part_B2:57.2	14	1	1	boss arena	1	1
+BossMageLord	BOSS MAGE LORD	S34-43 MAGE BOSS:108.0	4	1	1	boss arena	1	1
+MageLord2	MAGE LORD 2	S55-13 Mage Under Glass:69.7	6	1	1	boss arena	1	1
+GG Hornet	GG HEAVY	GG8 Hornet-155:110.5	3	1	1	boss arena	1	1
+BossHornet	BOSS HORNET	S45 HORNET-110:110.5	4	1	1	boss arena	1	1
+RoyalGardens	ROYAL GARDENS	S42 Queens Garden-30 MAIN:96.0 | S42 Queens Garden-30 ACTION:96.0 | S42 Queens Garden-30 SUB:96.0 | S19 Optional Drone:5.4	16	1	0	traversal	2	0
+DreamFight	DREAM FIGHT	S53-30 Dream Battle:160.0	17	1	1	boss arena,traversal	1	1
+Fungus	FUNGUS	S25 Fungal Wastes BASS Pizz:168.0 | S25 Fungal Wastes BASS Mantis:168.0 | S25 Fungal Wastes MAIN:168.0 | S19 Optional Drone:5.4	25	1	0	traversal	3	0
+BossMantisLords	BOSS MANTIS LORDS	S47-85 Mantis Lords:88.1	4	1	1	boss arena,traversal	1	1
+InfectedCrossroads	INFECTED CROSSROADS	S19 Infected:153.6 | S19 Action:153.6 | S19 Optional Drone:5.4	33	1	0	cutscene,traversal	1	0
+Crossroads	CROSSROADS	S19 Crossroads Bass:153.6 | S19 Action:153.6 | S19 Crossroads Main:153.6 | S19 Optional Drone:5.4	36	1	0	cutscene,traversal	3	0
+ShamanTemple	SHAMAN TEMPLE	S19 Action:153.6 | S19 Shaman:153.6 | S19 Optional Drone:5.4	3	1	0	traversal	1	0
+FogCanyon	FOG CANYON	S5 Fog Canyon v2:152.5 | S19 Optional Drone:5.4	9	1	0	traversal	1	0
+Safety	SAFETY	Safety:94.3	13	1	0	traversal	1	0
+Special	SPECIAL	S14 Temple LOOP:74.5 | S19 Optional Drone:5.4	2	1	0	traversal	1	0
+RestingGroundsWithDreamNail	RESTING GROUNDS WITH DREAMNAIL	RESTING GROUNDS S51-14:118.0 | S19 Optional Drone:5.4	5	1	0	traversal	1	0
+Crystal	CRYSTAL	S26 Crystal BASS:96.0 | S19 Optional Drone:5.4 | S26 Crystal ACTION:96.0 | S26 Crystal MAIN:96.0 | S19 Optional Drone:5.4	26	1	1	boss arena,traversal	2	0
+Deepnest	DEEPNEST	S32_Deepnest:118.2 | S19 Optional Drone:5.4	21	1	1	boss arena,traversal	1	0
+MimicSpider	MIMIC SPIDER	S49B-23 MIMIC SPIDER:61.7	5	1	1	boss arena,traversal	1	1
+Inn	INN	S56-03 Optional NPC Room:50.8	1	1	0	traversal	1	0
+Outskirts	OUTSKIRTS	S39 Kingdoms Edge-23:129.0 | S19 Optional Drone:5.4	10	1	0	traversal	1	0
+BossIK	BOSS IK	S52-99 BROKEN WANDERER:95.1	4	1	1	boss arena,traversal	1	1
+Queen	QUEEN	RoyalTheme_QueenNew:121.5	1	1	0	traversal	1	1
+DungDefender	DUNG DEFENDER	S48-66 Dung Defender:85.2	2	1	1	boss arena	1	1
+Greenpath	GREENPATH	S5 Green Path Bass:152.5 | S5 Green Path Action:152.5 | S5 Green Path Main:152.5 | S19 Optional Drone:5.4	30	1	1	boss arena,traversal	2	0
+WhitePalace	WHITE PALACE	S30 White Palace:245.1	14	1	0	traversal	1	0
+HKDecline	HK DECLINE	S59-55 Final Stage 1:36.0 | S59-55 Final Stage 5:36.0 | S59-55 Final Stage 2:36.0 | S59-55 Final Stage 3:36.0 | S59-55 Final Stage 4:36.0 | S59-55 Final Stage 6:3.7	6	1	0	cutscene,boss arena,traversal	3	0
+Hive	HIVE	S68-04 HIVE:54.9	7	1	1	boss arena,traversal	1	0
+HiveKnight	HIVE	Hive Knight v2-86:82.0	2	1	1	boss arena,traversal	1	1
+Grimm	GRIMM	S82-115 Grimm:65.1 | S82-122 Grimm Epic Layer:65.1	2	0	1	boss arena	1	1
+NightmareGrimm	NIGHTMARE GRIMM	S87-168 Nightmare Grimm:161.5 | S82-122 Grimm Epic Layer:65.1	2	0	1	boss arena	1	1
+DreamerScene	DREAMER SCENE	S36 04.10.2016-04 Dream:150.2	3	1	0	traversal	1	0
+Dream	DREAM	S44-01 New Dream Cello:110.0 | S36 04.10.2016-04 Dream:150.2 | S19 Optional Drone:5.4	8	1	0	cutscene,boss arena,traversal	2	0
+WhiteDefender	WHITE DEFENDER	S76b-458 White Defender:146.4	2	1	1	boss arena	1	1
+GreyPrince	GREY PRINCE	S81-195 Grey Prince Zote:112.0	2	1	1	boss arena,traversal	1	1
+EnemyBattle	ENEMY BATTLE	S18 Enemy Battle-02 LOOP:112.3	15	1	1	boss arena,traversal	1	1
+Radiance	RADIANCE	S72-140 FINAL FINAL BOSS:128.5	2	1	1	boss arena	1	1
+Atrium	ATRIUM	S61-161 Suspence 1:4.9 | final_boss_atrium_pt_1:96.5	1	1	0	cutscene	2	1
+HKTension	HK TENSION	S61-161 Suspence 1:4.9 | S61-161 Suspence 2:5.5 | S61-161 Suspence 3:5.3 | S61-161 Suspence 4:4.5	1	1	0	boss arena	1	1
+HKBattle	HK BATTLE	S61-216 Hollow Knight:88.0	1	1	0	boss arena	1	1
+GGAtrium		GG5-04_atrium:85.3	4	0	1	traversal	1	0
+GG Sad	GG SAD	GG4-31 Sad 1 Main:90.0 | GG4-31 Sad 2 Timp and Snare:90.0 | GG4-31 Sad 3 High Theme:90.0 | GG4-31 Sad 4 High Short StringsAndBrass:90.0	12	0	1	boss arena	1	1
+GG Elegant	GG HEAVY	GG3_part_B3:59.1	10	0	1	boss arena	1	1
+GG Normal	GG HEAVY	GG3_part_A:96.0	21	0	1	boss arena	1	1
+HollowKnightPrime		GG10-53 Vessel:86.7	1	0	1	boss arena	1	1
+GG Mantis	GG HEAVY	GG7 Mantis Lords-51:88.1	2	0	1	boss arena	1	1
+Boss1	BOSS 1	Boss Battle 1:168.0	7	1	1	boss arena,traversal	1	1
+Grimmkin	GRIMMKIN	S88-05 Accordion Chase:29.3	9	1	0	traversal	1	1
+Dirtmouth	DIRTMOUTH	Dirtmouth 1:103.7	1	1	0	traversal	1	0
+DirtmouthAccordion	DIRTMOUTH ACCORDION	S89 Accordion Dirtmouth-16:46.8	1	1	0	traversal	1	0
+City	CITY	S23-11 OUTSIDE LOOP:312.0 | S19 Optional Drone:5.4 | S23-19 ACTION LOOP:312.0 | S23-11 INSIDE LOOP:312.0 | S19 Optional Drone:5.4	23	1	1	boss arena,traversal	3	0
+Waterways	WATERWAYS	S31 Waterways:163.5 | S54-12 Waterways Action:51.2 | S19 Optional Drone:5.4	17	1	1	boss arena,traversal	1	0
+SoulSociety	SOUL SOCIETY	s63-20 SOUL SOCIETY:141.0	5	1	0	traversal	1	0

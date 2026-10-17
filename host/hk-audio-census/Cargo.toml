@@ -1,0 +1,10 @@
+[package]
+name = "hk-audio-census"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Whole-game audio census of the Windows Hollow Knight install: names, durations and sizes only"
+
+[dependencies]
+hk-unity = { path = "../hk-unity" }
+rayon = "1"

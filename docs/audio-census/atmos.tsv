@@ -1,0 +1,23 @@
+# atmos cue	scenes	channel=clip:seconds
+None	55	
+Greenpath	31	7=green_path_atmos_loop:10.0
+GreenpathInterior	4	0=cave_wind_loop:21.6 7=green_path_atmos_loop:10.0
+QueensGardens	19	7=green_path_atmos_loop:10.0
+Waterways	9	10=waterways_atmos_loop:22.2
+Fungus	28	0=cave_wind_loop:21.6 8=fungal_wastes_atmos_loop:14.0
+FogCanyon	9	9=fog_canyon_atmos_loop:24.9
+FogCanyonMinor	2	0=cave_wind_loop:21.6 4=cave_noises:43.7 9=fog_canyon_atmos_loop:24.9
+MinesMachinery	10	0=cave_wind_loop:21.6 4=cave_noises:43.7 12=mines_crystal_shimmer_loop:16.6 13=mines_machinery_atmos:16.7
+MinesCrystal	16	0=cave_wind_loop:21.6 12=mines_crystal_shimmer_loop:16.6
+SurfaceBasement	1	0=cave_wind_loop:21.6 1=dirtmouth_wind_loop_a:12.6 3=dirtmouth_wind_loop_c_gate:8.5 5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0
+Deepnest	16	5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0 14=deepnest_atmos_loop:59.4
+DeepnestQuiet	2	5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0 14=deepnest_atmos_loop:59.4
+MiscWind	113	15=cave_atmos_misc_3:17.4
+WindTunnel	4	1=dirtmouth_wind_loop_a:12.6 2=dirtmouth_wind_loop_b_grass:8.1 3=dirtmouth_wind_loop_c_gate:8.5 5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0
+WaterwaysFlowing	9	10=waterways_atmos_loop:22.2 11=waterway_waterfall_medium:9.9
+Surface	7	1=dirtmouth_wind_loop_a:12.6 3=dirtmouth_wind_loop_c_gate:8.5 5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0
+Cave	75	0=cave_wind_loop:21.6 4=cave_noises:43.7 5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0
+RainyIndoors	24	1=dirtmouth_wind_loop_a:12.6 3=dirtmouth_wind_loop_c_gate:8.5 5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0 7=green_path_atmos_loop:10.0
+SurfaceInterior	9	1=dirtmouth_wind_loop_a:12.6 3=dirtmouth_wind_loop_c_gate:8.5 5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0
+RainyOutdoors	9	1=dirtmouth_wind_loop_a:12.6 3=dirtmouth_wind_loop_c_gate:8.5 5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0
+DistantRain	4	0=cave_wind_loop:21.6 4=cave_noises:43.7 5=ruins_rain_indoor_loop:7.0 6=ruins_rain_outdoor_loop:10.0

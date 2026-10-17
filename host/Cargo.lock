@@ -144,6 +144,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hk-audio-census"
+version = "0.1.0"
+dependencies = [
+ "hk-unity",
+ "rayon",
+]
+
+[[package]]
 name = "hk-cook"
 version = "0.1.0"
 dependencies = [
