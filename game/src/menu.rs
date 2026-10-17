@@ -235,6 +235,7 @@ fn present(fb: &mut FrameBuffer) -> u16 {
 /// Returns the profile the player confirmed on the save screen.
 #[inline(never)] // Keep title rendering outside main's MIPS PC16 branch span.
 #[cfg_attr(not(test), optimize(size))]
+#[cfg_attr(not(test), optimize(size))]
 pub fn run(
     fb: &mut FrameBuffer,
     art: Option<&[u8]>,
