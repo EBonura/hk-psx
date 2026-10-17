@@ -17,6 +17,8 @@ trace = []
 gate-tour = []
 # Tour builds only: prefetch the tour's next scene instead of predicting it.
 prefetch-oracle = ["gate-tour"]
+# Spike: decode and upload the next scene's atlases ahead of its gate.
+vram-ahead = []
 # The original's HeroLight behind the Knight and the hero vignette
 # (hero_light.rs). On the 49 builder routes the two together cost 0.71% of
 # presented fps on average and 3.90% at worst (boss-fight); the palette
