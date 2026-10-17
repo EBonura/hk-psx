@@ -20,6 +20,7 @@ pub mod blas;
 pub mod blocker;
 pub mod break_effects;
 pub mod breakables;
+pub mod catalog;
 pub mod climber;
 pub mod colliders;
 pub mod combat;

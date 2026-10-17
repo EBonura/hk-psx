@@ -11,6 +11,7 @@ test:
 	HK_VERIFY_COOK=1 cargo test --manifest-path shared/hk-format/Cargo.toml --locked
 	cargo test --manifest-path shared/hk-sim/Cargo.toml --locked
 	cargo test --manifest-path shared/hk-cache/Cargo.toml --locked
+	cargo test --manifest-path host/Cargo.toml -p hk-cook --lib catalog
 	$(PYTHON) tools/test_world.py
 	mkdir -p .hkpsx/hud-tests
 	rustc --edition=2021 --test game/src/hud_state.rs -o .hkpsx/hud-tests/hud-state-tests
