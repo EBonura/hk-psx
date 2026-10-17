@@ -2,6 +2,7 @@
 use crate::fsm3::{r_with, Ctx, PH_ENTER, R_CONT};
 use hk_format::fsm3::{ops::timers, NONE8};
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == timers::WAIT {
@@ -35,6 +36,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// The scratch word counts the time left in Q16.16 simulation ticks; a realTime wait also counts ticks the game was paused for.
 /// `drawn` is the time WaitRandom chose on entry (used only on entry).
 #[inline(never)]

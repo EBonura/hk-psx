@@ -2,6 +2,7 @@
 use crate::fsm3::{r_stateless, r_with, Ctx, PH_UPDATE, R_CONT, R_FIN};
 use hk_format::fsm3::{ops::flow, NONE8};
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == flow::BOOL_TEST {
@@ -68,12 +69,14 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Finished unless the action runs every frame.
 #[inline(always)]
 fn fin(c: &Ctx<'_, '_>) -> bool {
     r_stateless(c.flags) & R_FIN != 0
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// BoolTestMulti [boolVariables[], boolStates[], trueEvent, falseEvent, storeResult]: every variable equals its state.
 #[inline(never)]
 fn bool_test_multi(c: &mut Ctx<'_, '_>) -> u16 {
@@ -94,6 +97,7 @@ fn bool_test_multi(c: &mut Ctx<'_, '_>) -> u16 {
     r_with(fin(c), if all { c.event(2) } else { c.event(3) })
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Oracle replay: the index of the event the original drew, when the replay says which.
 #[cfg(feature = "trace")]
 fn forced_index(c: &mut Ctx<'_, '_>, events: usize, n: usize) -> Option<usize> {
@@ -113,6 +117,7 @@ fn forced_index(c: &mut Ctx<'_, '_>, events: usize, n: usize) -> Option<usize> {
     }
     None
 }
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[cfg(not(feature = "trace"))]
 #[inline(always)]
 fn forced_index(_: &mut Ctx<'_, '_>, _: usize, _: usize) -> Option<usize> {
@@ -143,6 +148,7 @@ pub(crate) fn weighted_index(c: &mut Ctx<'_, '_>, weights: usize, n: usize) -> O
     Some(n - 1)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// SendRandomEvent [events[], weights[], delay]: one weighted event, now or after `delay` seconds.
 #[inline(never)]
 fn send_random(c: &mut Ctx<'_, '_>) -> u16 {
@@ -164,6 +170,7 @@ fn send_random(c: &mut Ctx<'_, '_>) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// SendRandomEventV2 [events[], weights[], trackingInts[], eventMax[]]: as above, but an event that has been sent
 /// `eventMax` times in a row is not sent again; the counts of the others reset.
 #[inline(never)]
@@ -190,6 +197,7 @@ fn send_random_v2(c: &mut Ctx<'_, '_>) -> u16 {
     R_FIN
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// SendRandomEventV3 [events[], weights[], trackingInts[], eventMax[], trackingIntsMissed[], missedMax[]]: V2, and an
 /// event that has gone unsent `missedMax` times is sent next whatever the draw.
 #[inline(never)]

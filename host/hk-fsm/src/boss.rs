@@ -384,6 +384,8 @@ pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<(Stri
     let by_go: HashMap<i64, usize> = b.ents.iter().enumerate().map(|(i, e)| (e.path_id, i)).collect();
     let ids: HashMap<&str, usize> = b.cooked.strings.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
     let mut rows: Vec<(usize, u32, u32, bool, [u32; 3])> = vec![];
+    let mut libs: Vec<String> = vec![];
+    let mut ent_lib: Vec<u8> = vec![255; b.ents.len()];
     let mut defaults: Vec<(usize, u32)> = vec![];
     let mut manifest: Vec<serde_json::Value> = vec![];
     let num = |v: Option<&Value>| -> f64 {
@@ -411,6 +413,14 @@ pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<(Stri
         }
         let library_obj = source.deref(&file, lib)?;
         let library = source.read(&library_obj)?;
+        let lib_index = match libs.iter().position(|l| *l == library_obj.sid()) {
+            Some(i) => i,
+            None => {
+                libs.push(library_obj.sid());
+                libs.len() - 1
+            }
+        };
+        ent_lib[ent] = lib_index as u8;
         let clips = library.get("clips").and_then(Value::list).unwrap_or(&[]);
         let default = num(tree.get("defaultClipId")) as usize;
         // The art cook needs the library, the sprite's own scale and tint, and the object's scale as authored in the world.
@@ -458,7 +468,7 @@ pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<(Stri
                     at += 1;
                 }
             }
-            rows.push((ent, id, len.min(0xfffe), once, trig));
+            rows.push((lib_index, id, len.min(0xfffe), once, trig));
             manifest_clips.push(serde_json::json!({"name": name, "id": id}));
             if index == default && num(tree.get("playAutomatically")) != 0.0 {
                 defaults.push((ent, id));
@@ -474,12 +484,14 @@ pub fn clips_table(source: &Source, level: &str, b: &BossCooked) -> Result<(Stri
     rows.dedup();
     defaults.sort();
     let mut out = String::new();
-    let _ = writeln!(out, "/// Per animated object and clip: length in ticks, whether it ends, the frame-trigger ticks.");
+    let _ = writeln!(out, "/// Per sprite library and clip: length in ticks, whether it ends, the frame-trigger ticks.");
     let _ = writeln!(out, "pub static CLIPS:[crate::fsm3_world::ClipInfo;{}]=[", rows.len());
-    for (ent, id, len, once, t) in &rows {
-        let _ = writeln!(out, "    crate::fsm3_world::ClipInfo{{ent:{ent},id:{id},len:{len},once:{once},trig:[{},{},{}]}},", t[0], t[1], t[2]);
+    for (lib, id, len, once, t) in &rows {
+        let _ = writeln!(out, "    crate::fsm3_world::ClipInfo{{lib:{lib},id:{id},len:{len},once:{once},trig:[{},{},{}]}},", t[0], t[1], t[2]);
     }
     let _ = writeln!(out, "];");
+    let _ = writeln!(out, "/// The library each animated object plays from (255: none).");
+    let _ = writeln!(out, "pub static ENT_LIB:[u8;{}]={:?};", ent_lib.len(), ent_lib);
     let _ = writeln!(out, "/// The clip each animator plays by itself when its object wakes.");
     let _ = writeln!(out, "pub static DEFAULT_CLIPS:[(u8,u32);{}]={:?};", defaults.len(), defaults.iter().map(|(e, i)| (*e as u8, *i)).collect::<Vec<_>>());
     Ok((out, serde_json::json!({"level": level, "ents": manifest})))

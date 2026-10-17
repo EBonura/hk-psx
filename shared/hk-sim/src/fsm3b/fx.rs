@@ -3,6 +3,7 @@ use crate::fsm3::{r_stateless, Ctx, R_CONT};
 use crate::fsm3_world::k;
 use hk_format::fsm3::ops::fx;
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == fx::PLAY_PARTICLE_EMITTER {

@@ -4,6 +4,7 @@ use crate::fsm3::{r_stateless, Ctx, R_CONT};
 use crate::fsm3_world::{flag, k};
 use hk_format::fsm3::ops::{collider, combat};
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     let t = c.otarget();
@@ -33,6 +34,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Family 12.
 #[inline(never)]
 pub fn combat_entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {

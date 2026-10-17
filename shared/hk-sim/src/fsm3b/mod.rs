@@ -27,6 +27,7 @@ pub mod transform;
 use crate::fsm3::{Ctx, R_CONT};
 use hk_format::fsm3::{ENT_CAMERA, ENT_HERO};
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
     if family == 0 {
@@ -60,6 +61,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Where entity `h` stands in the world: the hero and the camera from the environment, anything else from the table.
 #[inline(never)]
 pub fn position_of(c: &mut Ctx<'_, '_>, h: u8) -> [i32; 3] {
@@ -72,6 +74,7 @@ pub fn position_of(c: &mut Ctx<'_, '_>, h: u8) -> [i32; 3] {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// A Q16.16 duration in seconds as 60 Hz ticks, rounded to nearest.
 #[inline(always)]
 pub fn ticks_of(seconds: i32) -> u16 {

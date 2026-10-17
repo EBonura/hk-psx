@@ -17,6 +17,8 @@ pub struct Data {
     /// The object each FSM is on, by FSM.
     pub owners: &'static [u8],
     pub clips: &'static [ClipInfo],
+    /// The sprite library each object's animator plays from (255: none), one byte per object.
+    pub ent_lib: &'static [u8],
     /// The clip each animator starts on, by object.
     pub defaults: &'static [(u8, u32)],
     pub runtime: usize,
@@ -25,12 +27,12 @@ pub struct Data {
 /// The fight: the boss object's subtree plus the Encounter FSM that wakes it.
 pub mod fight {
     include!("../../../data/hornet3_fsm3.rs");
-    pub static DATA: super::Data = super::Data { bank: &BANK, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
+    pub static DATA: super::Data = super::Data { bank: &BANK, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
 }
 /// `Corpse Hornet 1`: what the death effects spawn. Its first state writes `hornet1Defeated`, its last sends `HORNET LEAVE`.
 pub mod corpse {
     include!("../../../data/hornet_corpse3_fsm3.rs");
-    pub static DATA: super::Data = super::Data { bank: &BANK, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
+    pub static DATA: super::Data = super::Data { bank: &BANK, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
 }
 pub use fight::{ENTS, OWNERS};
 
@@ -39,6 +41,7 @@ const MEM_WORDS: usize = 232;
 const _: () = assert!(fight::RUNTIME_BYTES / 4 + 1 <= MEM_WORDS && corpse::RUNTIME_BYTES / 4 + 1 <= MEM_WORDS);
 const _: () = assert!(fight::ENTS.len() <= MAX_ENT && corpse::ENTS.len() <= MAX_ENT);
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 pub fn bank() -> Bank<'static> {
     // SAFETY: the cooker parses the bank it emits and the module transport hash-checks it.
     unsafe { Bank::from_verified(fight::DATA.bank) }
@@ -57,30 +60,36 @@ pub struct Boss {
 pub type Hornet = Boss;
 
 impl Boss {
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub const fn blank() -> Self {
         Self::with(&fight::DATA)
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub const fn blank_corpse() -> Self {
         Self::with(&corpse::DATA)
     }
     const fn with(data: &'static Data) -> Self {
         Self { data: data as *const Data, mem: [0; MEM_WORDS], world: World::new(), env: Env::new(), pd: [0; 8] }
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Point a zeroed tree at its data (the guest keeps trees in zeroed pool memory).
     pub fn bind(&mut self, data: &'static Data) {
         self.data = data as *const Data;
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub fn data(&self) -> &'static Data {
         // SAFETY: only ever set from a 'static.
         unsafe { &*self.data }
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     fn bank(&self) -> Bank<'static> {
         // SAFETY: as in `bank`.
         unsafe { Bank::from_verified(self.data().bank) }
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Lay the tree and its objects out in their authored state. The first `step` enters every active FSM's start state.
     pub fn init(&mut self, seed: u32) {
-        self.world.set_clips(self.data().clips);
+        self.world.set_clips(self.data().clips, self.data().ent_lib);
         self.world.load(self.data().ents);
         self.env = Env::new();
         self.env.world = &mut self.world;
@@ -97,6 +106,7 @@ impl Boss {
         let mut tree = unsafe { Tree::init(self.bank(), self.mem.as_mut_ptr().cast(), &mut self.env, seed) };
         crate::fsm3b::object::sync_tree(&mut tree);
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The tree with the environment attached, for one pass.
     pub fn tree(&mut self) -> Tree<'_> {
         self.env.world = &mut self.world;
@@ -104,6 +114,7 @@ impl Boss {
         // SAFETY: laid out by `init` for this bank.
         unsafe { Tree::attach(self.bank(), self.mem.as_mut_ptr().cast(), &mut self.env) }
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// One simulation frame: the fixed steps owed, then the update pass.
     pub fn step(&mut self, fixed_steps: u32) {
         for _ in 0..fixed_steps {
@@ -112,6 +123,7 @@ impl Boss {
         }
         self.tree().step(PH_UPDATE);
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The physics step after the fixed-update scripts: every body but the boss's own moves by its velocity (the 50 Hz step).
     fn integrate(&mut self) {
         for i in 1..self.world.n as usize {
@@ -122,6 +134,7 @@ impl Boss {
             }
         }
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Enter the start states (the very first pass of a fresh tree).
     pub fn enter(&mut self) {
         self.tree().step(PH_ENTER);

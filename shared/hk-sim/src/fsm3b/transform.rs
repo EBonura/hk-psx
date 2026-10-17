@@ -6,6 +6,7 @@ use psx_math::int32::mul_div_i32;
 
 const DEG360: i32 = 360 << 16;
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == transform::SET_VELOCITY2D {
@@ -139,6 +140,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// GetPosition / SetPosition [gameObject, vector, x, y, z, space]: world (0) or the parent's frame (1). A missing component
 /// keeps the current value.
 #[inline(never)]
@@ -174,6 +176,7 @@ fn position(c: &mut Ctx<'_, '_>, set: bool) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// GetScale / SetScale [gameObject, vector, x, y, z]: the local scale (Get reports the local scale too).
 #[inline(never)]
 fn scale(c: &mut Ctx<'_, '_>, set: bool) -> u16 {
@@ -205,6 +208,7 @@ fn scale(c: &mut Ctx<'_, '_>, set: bool) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// GetRotation / SetRotation [gameObject, quaternion, vector, xAngle, yAngle, zAngle, space]: the 2D rotation is the z Euler
 /// angle in degrees; world space adds the parents' rotations.
 #[inline(never)]
@@ -237,6 +241,7 @@ fn rotation(c: &mut Ctx<'_, '_>, set: bool) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Translate [gameObject, vector, x, y, z, space, perSecond]: a move by the offset, in world (0) or the object's own frame (1),
 /// every update if it runs every frame.
 #[inline(never)]
@@ -265,6 +270,7 @@ fn translate(c: &mut Ctx<'_, '_>) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// iTween MoveTo / MoveBy / ScaleTo: eased motion, then the finish event. Layouts (b is the owner skip):
 /// MoveTo [gameObject, id, transformPosition, vectorPosition, time, delay, speed, space, easeType, loopType, orientToPath,
 /// lookAtObject, lookAtVector, lookTime, axis, moveToPath, lookAhead, transforms[], vectors[], reverse, startEvent, finishEvent,
@@ -346,6 +352,7 @@ fn tween(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// iTween's `EaseType` curves the original's trees use: quad (0 to 2), cubic (3 to 5), sine (12 to 14) and linear (21), by `u`
 /// in [0, 1]; the cooker refuses a type not listed.
 pub fn ease_curve(kind: i32, u: i32) -> i32 {

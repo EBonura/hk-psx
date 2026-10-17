@@ -3,6 +3,7 @@ use crate::fsm3::{r_stateless, Ctx, R_CONT, R_FIN};
 use crate::fsm3_world::{flag, k, mul, World};
 use hk_format::fsm3::{ops::object, ENT_CAMERA, ENT_HERO, NONE8};
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == object::GET_OWNER {
@@ -109,6 +110,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Set object `t` (and, recursive, every descendant) active or not, and switch the FSMs of everything whose hierarchy
 /// state changed: a re-activated object's FSMs start over, a deactivated one's stop.
 #[inline(never)]
@@ -132,6 +134,7 @@ pub fn set_active(c: &mut Ctx<'_, '_>, t: u8, on: bool, recursive: bool) {
     sync_activity(c);
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Bring every FSM's on/off state in line with its object's hierarchy state.
 #[inline(never)]
 pub fn sync_activity(c: &mut Ctx<'_, '_>) {
@@ -143,6 +146,7 @@ pub fn sync_activity(c: &mut Ctx<'_, '_>) {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 fn descends(w: &World, h: u8, top: u8) -> bool {
     let mut at = h;
@@ -160,6 +164,7 @@ fn descends(w: &World, h: u8, top: u8) -> bool {
     false
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// SetParent [gameObject, parent, resetLocalPosition, resetLocalRotation]: the object keeps its place in the world unless
 /// a reset says to take the parent's origin or rotation; a missing parent is the scene root.
 #[inline(never)]
@@ -185,6 +190,7 @@ fn set_parent(c: &mut Ctx<'_, '_>) {
     sync_activity(c);
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// `sync_activity` for a tree no pass is running: switch the FSMs of the objects that start inactive off.
 #[inline(never)]
 pub fn sync_tree(t: &mut crate::fsm3::Tree<'_>) {

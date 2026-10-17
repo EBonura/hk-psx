@@ -70,6 +70,7 @@ pub struct Ent {
 }
 
 impl Ent {
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub const fn new() -> Self {
         Self {
             parent: NONE8,
@@ -92,10 +93,12 @@ impl Ent {
             trig: 0,
         }
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     #[inline(always)]
     pub fn on(&self, f: u8) -> bool {
         self.flags & f != 0
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     #[inline(always)]
     pub fn set(&mut self, f: u8, on: bool) {
         if on {
@@ -177,13 +180,16 @@ pub struct World {
     /// length, so that all-zero bytes are a valid, empty World (the guest keeps one in zeroed pool memory).
     clips: *const ClipInfo,
     clips_n: u16,
+    /// The library each object's animator plays from (255: none).
+    ent_lib: *const u8,
 }
 
 /// One sprite clip of one animated object, as tk2d's library has it.
 #[derive(Clone, Copy, Debug)]
 pub struct ClipInfo {
-    /// The object whose animator's library it is, and the cooked string id of the clip's name.
-    pub ent: u8,
+    /// The sprite library it belongs to (objects that share a library share its clips), and the cooked string id of the
+    /// clip's name.
+    pub lib: u8,
     pub id: u32,
     /// Length in 60 Hz ticks. A clip that does not end (tk2d's Loop, PingPong and the random modes) is `once: false`.
     pub len: u16,
@@ -193,18 +199,22 @@ pub struct ClipInfo {
 }
 
 impl World {
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub const fn new() -> Self {
-        Self { ent: [Ent::new(); MAX_ENT], n: 0, req: [[0; 4]; MAX_REQ], req_n: 0, lost: 0, spawned: NONE8, outside: [(0xffff, NONE8); 4], clips: core::ptr::null(), clips_n: 0 }
+        Self { ent: [Ent::new(); MAX_ENT], n: 0, req: [[0; 4]; MAX_REQ], req_n: 0, lost: 0, spawned: NONE8, outside: [(0xffff, NONE8); 4], clips: core::ptr::null(), clips_n: 0, ent_lib: core::ptr::null() }
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     #[inline(always)]
     pub fn get(&self, h: u8) -> Option<&Ent> {
         self.ent[..self.n as usize].get(h as usize)
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     #[inline(always)]
     pub fn get_mut(&mut self, h: u8) -> Option<&mut Ent> {
         let n = self.n as usize;
         self.ent[..n].get_mut(h as usize)
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Lay the scene objects out as the cooker listed them.
     pub fn load(&mut self, init: &[EntInit]) {
         // Field by field: a whole-World temporary is three kilobytes of stack.
@@ -229,11 +239,14 @@ impl World {
             e.box_offset = i.box_offset;
         }
     }
-    /// The clip table the objects' animators play from.
-    pub fn set_clips(&mut self, clips: &'static [ClipInfo]) {
+    #[cfg_attr(target_arch = "mips", optimize(size))]
+    /// The clip table the objects' animators play from, and which library each object plays.
+    pub fn set_clips(&mut self, clips: &'static [ClipInfo], ent_lib: &'static [u8]) {
         self.clips = clips.as_ptr();
         self.clips_n = clips.len() as u16;
+        self.ent_lib = ent_lib.as_ptr();
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Append a request. `object` is the target handle (NONE8 for none).
     #[inline(never)]
     pub fn request(&mut self, kind: u8, object: u8, flags: u8, values: [i32; 3]) {
@@ -246,16 +259,19 @@ impl World {
         self.req_n += 1;
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The clip `id` of object `t`'s library, if the cooker listed it.
     #[inline(never)]
     pub fn clip_info(&self, t: u8, id: u32) -> Option<&'static ClipInfo> {
-        if self.clips.is_null() {
+        if self.clips.is_null() || t as usize >= MAX_ENT {
             return None;
         }
-        // SAFETY: `set_clips` took a 'static slice of this length.
+        // SAFETY: `set_clips` took 'static tables, one library byte per object of the tree.
+        let lib = unsafe { *self.ent_lib.add(t as usize) };
         let clips: &'static [ClipInfo] = unsafe { core::slice::from_raw_parts(self.clips, self.clips_n as usize) };
-        clips.iter().find(|c| c.ent == t && c.id == id)
+        clips.iter().find(|c| c.lib == lib && c.id == id)
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The ticks a clip lasts (0xffff loops), 0xffff for a clip the cooker did not list.
     #[inline(never)]
     pub fn clip_ticks(&self, t: u8, id: u32) -> u16 {
@@ -264,6 +280,7 @@ impl World {
             _ => 0xffff,
         }
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Whether object `h` and every ancestor are active (Unity's `activeInHierarchy`).
     #[inline(never)]
     pub fn active_in_hierarchy(&self, h: u8) -> bool {
@@ -281,6 +298,7 @@ impl World {
         }
         true
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The object `name` under `parent` (a direct child), or NONE8.
     #[inline(never)]
     pub fn find_child(&self, parent: u8, name: u16) -> u8 {
@@ -292,6 +310,7 @@ impl World {
         }
         NONE8
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The composed transform of object `h`: (position, scale, rotation). A parentless object is its local transform.
     #[inline(never)]
     pub fn world_of(&self, h: u8) -> ([i32; 3], [i32; 2], i32) {
@@ -323,6 +342,7 @@ impl World {
         (pos, scale, rot)
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Where object `h`'s local position must be for it to stand at world position `at` (x, y; z kept).
     #[inline(never)]
     pub fn local_for(&self, h: u8, at: [i32; 3]) -> [i32; 3] {
@@ -338,11 +358,13 @@ impl World {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Q16.16 multiply.
 #[inline(always)]
 pub fn mul(a: i32, b: i32) -> i32 {
     psx_math::int32::mul_shr_i32(a, b, 16)
 }
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Q16.16 divide; a zero divisor leaves the value (a scale of zero would otherwise trap).
 #[inline(always)]
 pub fn div(a: i32, b: i32) -> i32 {
@@ -353,6 +375,7 @@ pub fn div(a: i32, b: i32) -> i32 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// (sin, cos) of an angle in Q16.16 degrees, as Q16.16.
 #[inline(never)]
 pub fn sincos(deg: i32) -> (i32, i32) {
@@ -366,6 +389,7 @@ mod tests {
     use super::*;
     use crate::ONE;
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     #[test]
     fn a_child_composes_with_its_parents_scale_and_rotation() {
         let mut w = World::new();
@@ -385,6 +409,7 @@ mod tests {
         assert_eq!(r, 90 * ONE);
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     #[test]
     fn local_for_inverts_world_of() {
         let mut w = World::new();
@@ -399,6 +424,7 @@ mod tests {
         assert!((p[0] - 7 * ONE).abs() < 200 && (p[1] - 9 * ONE).abs() < 200, "{p:?}");
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     #[test]
     fn requests_beyond_the_queue_are_counted_not_kept() {
         let mut w = World::new();

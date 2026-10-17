@@ -4,6 +4,7 @@ use crate::fsm3::{r_stateless, r_with, Ctx, PH_ENTER, R_CONT};
 use crate::fsm3_world::{flag, World};
 use hk_format::fsm3::ops::animation;
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == animation::TK2D_PLAY_ANIMATION {
@@ -72,6 +73,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// `tk2dSpriteAnimator.Play(clip)`: starts the clip unless it is already the one playing, then marks the object for the
 /// adapter to apply.
 #[inline(never)]

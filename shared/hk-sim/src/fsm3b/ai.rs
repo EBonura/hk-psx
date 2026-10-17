@@ -6,6 +6,7 @@ use hk_format::fsm3::{ops::ai, NONE8};
 /// Degrees in a Q12 turn step, as Q16.16: 360 degrees over 4096 steps.
 const DEG_PER_Q12: i32 = 5760;
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == ai::CHECK_COLLISION_SIDE {
@@ -33,6 +34,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// atan2(y, x) in degrees, Q16.16 in [0, 360).
 #[inline(never)]
 pub fn angle_deg(y: i32, x: i32) -> i32 {
@@ -40,6 +42,7 @@ pub fn angle_deg(y: i32, x: i32) -> i32 {
     q * DEG_PER_Q12
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// CheckCollisionSide and its Enter form [up, right, down, left outputs, up, right, down, left events, ...]: the first
 /// contacted side, in that order, raises its event. They never finish.
 #[inline(never)]
@@ -56,6 +59,7 @@ fn check_collision_side(c: &mut Ctx<'_, '_>, listening: u8) -> u16 {
     R_CONT
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// FaceObject [objectA, objectB, spriteFacesRight, playNewAnimation, newAnimationClip, resetFrame]: A's local x scale takes the
 /// sign that makes it face B, magnitude kept; a change may restart or replace the clip.
 #[inline(never)]
@@ -85,6 +89,7 @@ fn face_object(c: &mut Ctx<'_, '_>) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// FaceAngle [gameObject, angleOffset] / FaceAngleV2 [gameObject, angleOffset, worldSpace]: on entry and every fixed step,
 /// the z rotation is the heading of the body's velocity plus the offset.
 #[inline(never)]
@@ -106,6 +111,7 @@ fn face_angle(c: &mut Ctx<'_, '_>, v2: bool) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// CheckTargetDirection [gameObject, target, aboveEvent, belowEvent, rightEvent, leftEvent, aboveBool, belowBool, rightBool,
 /// leftBool]: where the target is relative to the object, on the bools and as events (the first now, the rest queued).
 #[inline(never)]

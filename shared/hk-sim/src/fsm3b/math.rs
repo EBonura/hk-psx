@@ -3,6 +3,7 @@ use crate::fsm3::{r_stateless, Ctx, R_CONT};
 use hk_format::fsm3::ops::math;
 use psx_math::int32::{mul_div_i32, mul_shr_i32};
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == math::SET_BOOL_VALUE {
