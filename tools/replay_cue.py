@@ -37,6 +37,8 @@ WATCHES+=['HK_ABILITY_DRAWN']
 # A queued display flip the GPU never released (no GP0(1Fh) reached it) and
 # the present loop wrote by hand after its timeout: a frame missing its close.
 WATCHES+=['HK_FLIP_TIMEOUTS']
+# Crossroads_22's waves arena (enemies.rs) and the semi-persistent reset (persist.rs).
+WATCHES+='HK_ARENA_WAVES HK_ARENA_LANDED HK_ARENA_WAVE_DEATHS HK_SEMI_RESETS'.split()
 # Hidden walls and cracked floors (secret_breaks.rs): hits the counters took,
 # breaks, and swings a floor refused for the Knight standing outside its range.
 WATCHES+='HK_SECRET_HITS HK_SECRET_BREAKS HK_SECRET_REFUSED HK_REVEAL_MASKS_HIDDEN HK_REVEAL_MASKS_PARTIAL HK_REVEAL_MASKS_VISIBLE'.split()

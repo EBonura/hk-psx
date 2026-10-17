@@ -4788,6 +4788,13 @@ pub struct Events {
     /// SOUL taken by a Dream Nail slash this tick, summed over the actors hit.
     pub dream_soul: u16,
 }
+/// Waves started, members landed and members counted dead by a waves arena.
+#[no_mangle]
+pub static mut HK_ARENA_WAVES: u32 = 0;
+#[no_mangle]
+pub static mut HK_ARENA_LANDED: u32 = 0;
+#[no_mangle]
+pub static mut HK_ARENA_WAVE_DEATHS: u32 = 0;
 /// A wave member waiting to land, standing, or counted out.
 #[derive(Clone, Copy)]
 struct Seat {
@@ -5426,6 +5433,7 @@ impl EnemyWorld {
                     rt.seats[i].wait = wait;
                     if wait == 0 && self.land_member(region, seat.source_id) {
                         rt.seats[i].state = SeatState::Alive;
+                        unsafe { HK_ARENA_LANDED = HK_ARENA_LANDED.wrapping_add(1) }
                     }
                 }
                 SeatState::Alive => {
@@ -5438,6 +5446,7 @@ impl EnemyWorld {
                     if dead {
                         rt.seats[i].state = SeatState::Done;
                         rt.arena.enemy_died();
+                        unsafe { HK_ARENA_WAVE_DEATHS = HK_ARENA_WAVE_DEATHS.wrapping_add(1) }
                     }
                 }
                 SeatState::Empty | SeatState::Done => {}
@@ -5494,6 +5503,7 @@ impl EnemyWorld {
                 // `Init` took the `Activated` branch when the arena was built.
                 Action::QuickOpenGates => {}
                 Action::StartWave(wave) => {
+                    unsafe { HK_ARENA_WAVES = HK_ARENA_WAVES.wrapping_add(1) }
                     // The last wave is over: its bodies leave the pool.
                     for seat in &mut rt.seats {
                         if seat.state != SeatState::Empty {
