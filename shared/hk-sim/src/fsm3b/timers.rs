@@ -14,8 +14,9 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
             let draw = (c.rand() >> 8) as i32;
             #[cfg(feature = "trace")]
             let draw_time = {
-                let f = c.env().forced_wait;
-                c.env().forced_wait = -1;
+                let at = (c.f as usize).min(23);
+                let f = c.env().forced_wait[at];
+                c.env().forced_wait[at] = -1;
                 if f >= 0 {
                     f
                 } else {
