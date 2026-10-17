@@ -121,7 +121,13 @@ if HORNET:
     # The fight (hornet_fight.rs), her two trees (hornet.rs), the boss tier's action code (fsm3b, which the resident kernel
     # reaches through one import site) and the scene objects it acts on (fsm3_world), and the guest side that ticks and draws
     # her (enemies/hornet.rs).
-    MODULES['hornet'] = _sim('hornet', 'hornet_fight', 'fsm3b', 'fsm3_world') + ('*7enemies6hornet*',)
+    MODULES['hornet'] = (_sim('hornet', 'hornet_fight', 'fsm3b', 'fsm3_world') + ('*7enemies6hornet*',) +
+                         # What the boss tier added to the resident kernel's types, which only its handlers and the adapter call.
+                         tuple(f'*{len(t)}{t}{len(f)}{f}*' for t, f in (
+                             ('Ctx', 'comp'), ('Ctx', 'set_comp'), ('Ctx', 'pd_read_at'), ('Ctx', 'set_of'),
+                             ('Block', 'set_active'), ('Block', 'inactive'), ('Block', 'set_bit'), ('Block', 'obj'),
+                             ('Block', 'set_obj'), ('Tree', 'set_active'), ('Tree', 'set_bit'), ('Tree', 'obj'),
+                             ('Tree', 'set_obj'))))
 # Room logic modules by the room that runs them: (data file, constant) holding
 # the room's scene id.
 ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),

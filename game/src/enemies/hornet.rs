@@ -5,10 +5,11 @@
 //! All of it lives in the room's `hornet` module and its zeroed state block (`art_hornet`): the fight's two trees and their
 //! scene objects are ten kilobytes the resident image has no room for. The resident code only asks the module to tick and
 //! to draw, while the module is resident.
-use super::Draws;
+use super::{Draws, Events, Nail, Vitals};
+use crate::world::{Region, State as World};
 use crate::world::debris::Rotation;
 use hk_format::{i32_at, u32_at, Room};
-use hk_sim::fsm3_world::{flag, MAX_ENT, NO_CLIP};
+use hk_sim::fsm3_world::{flag, NO_CLIP};
 use hk_sim::hornet_fight::{self as hf, Effect, Fight, Input, Phase, Strike};
 use hk_sim::Player;
 
@@ -21,30 +22,21 @@ const MAGIC: u32 = 0x484f_524e;
 pub struct State {
     fight: Fight,
     ready: u32,
-    /// Per tree and object, the cooked clip name id last looked up and the room clip it is (u16::MAX: none).
-    art: [[(u32, u16); MAX_ENT]; 2],
     /// Ticks until the conversation the Encounter started has been read (the dialogue box is not wired yet).
     convo: u16,
     done: bool,
 }
 const _: () = assert!(core::mem::size_of::<State>() <= hf::STATE_BYTES);
 
-/// What the module hands back to the tick: the numbers `Events` and the Knight's vitals are updated from.
-pub struct Out {
-    pub hits: u16,
-    pub kills: u16,
-    /// The slash reached her (landed, blocked or in her evasion window): the Knight takes his recoil and pogo.
-    pub reached: bool,
-    pub hurt: Option<(u8, i32)>,
-}
-
-fn state() -> Option<&'static mut State> {
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn state_block() -> Option<&'static mut State> {
     let p = crate::modules::data_mut(crate::modules::ART_HORNET)?;
     debug_assert!(p as usize % 4 == 0);
     // SAFETY: the room's zeroed state block, aligned and `STATE_BYTES` long; nothing else touches it.
     Some(unsafe { &mut *(p as *mut State) })
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// The fight's saved PlayerData reserve, in `hk-fsm boss::HORNET_FIELDS` order.
 fn saved() -> [i32; 8] {
     let mut pd = [0; 8];
@@ -53,27 +45,29 @@ fn saved() -> [i32; 8] {
     pd
 }
 
-/// One 60 Hz tick of the fight in `scene`, if it is Fungus1_04 with the module resident.
+#[cfg_attr(target_arch = "mips", optimize(size))]
+/// One 60 Hz tick of the fight: the Knight against her, and her against the Knight. The resident tick only calls this while
+/// Fungus1_04's room module is resident.
 #[inline(never)]
 pub fn tick(
-    player: &Player,
+    events: &mut Events,
+    player: &mut Player,
+    vitals: &mut Vitals,
+    response: &mut hk_sim::NailResponse,
+    nail: &Nail,
+    cheats: crate::cheats::Settings,
     body: [i32; 4],
     polygon: &[[i32; 2]],
-    kind: u8,
-    damage: i32,
-    count: usize,
-    edge: &dyn Fn(usize) -> [i32; 4],
     camera: [i32; 3],
-    out: &mut Out,
+    world: &World,
+    region: &Region,
+    room: &Room,
 ) {
-    let Some(s) = state() else { return };
+    let Some(s) = state_block() else { return };
     if s.ready != MAGIC {
         let defeated = crate::persist::player(crate::persist::HORNET_1_DEFEATED);
         s.fight.begin(0x484f_524e, defeated, saved());
         s.ready = MAGIC;
-        for tree in s.art.iter_mut() {
-            *tree = [(0, u16::MAX); MAX_ENT];
-        }
         s.convo = 0;
         s.done = false;
     }
@@ -84,7 +78,8 @@ pub fn tick(
         s.convo -= 1;
         s.done = s.convo == 0;
     }
-    let strike = (!polygon.is_empty()).then_some(Strike { polygon, kind, damage, facing: player.facing });
+    let damage = cheats.params(crate::VITAL_PARAMS).nail_damage as i32;
+    let strike = (!polygon.is_empty()).then_some(Strike { polygon, kind: nail.kind as u8, damage, facing: player.facing });
     let input = Input {
         hero: [player.x, player.y],
         hero_body: body,
@@ -94,33 +89,45 @@ pub fn tick(
         strike,
         conversation_done: core::mem::take(&mut s.done),
     };
-    let mut convo = 0u16;
-    s.fight.step(&input, count, edge, &mut |e| {
+    let (mut hits, mut kills, mut hurt, mut convo) = (0u16, 0u16, None, 0u16);
+    let edge = |i: usize| world.edge(region, room, i);
+    s.fight.step(&input, room.counts[5], &edge, &mut |e| {
         if let Effect::Persist { field, value } = e {
             if field == hf::field::HORNET1_DEFEATED && value != 0 {
                 crate::persist::set_player(crate::persist::HORNET_1_DEFEATED);
             }
         } else if let Effect::Struck { .. } = e {
-            out.hits += 1;
+            hits += 1;
         } else if let Effect::Died = e {
-            out.kills += 1;
+            kills += 1;
         } else if let Effect::HeroHurt { damage, from_x } = e {
-            out.hurt = Some((damage, from_x));
+            hurt = Some((damage, from_x));
         } else if let Effect::Conversation { .. } = e {
             // Her greeting is read in a few seconds; the box itself is not drawn yet.
             convo = 60 * 4;
         }
     });
-    out.reached |= s.fight.reached;
     if convo != 0 {
         s.convo = convo;
     }
+    events.hits += hits;
+    events.kills += kills;
+    if hits != 0 {
+        vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+    }
+    if s.fight.reached {
+        super::nail_answer(vitals, response, nail, player);
+    }
+    if let Some((damage, x)) = hurt {
+        events.damage_hero(vitals, cheats, player, x, damage as u16);
+    }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Everything of the fight on screen: each visible object of the live tree, from its current clip.
 #[inline(never)]
 pub fn draw(draws: &mut Draws, room: &Room, camera: (i32, i32)) {
-    let Some(s) = state() else { return };
+    let Some(s) = state_block() else { return };
     if s.ready != MAGIC {
         return;
     }
@@ -135,7 +142,10 @@ pub fn draw(draws: &mut Draws, room: &Room, camera: (i32, i32)) {
         if !e.on(flag::MESH) || e.clip == NO_CLIP || !world.active_in_hierarchy(i) {
             continue;
         }
-        let Some(&(_, _, _, clip)) = HORNET_ART_CLIPS.iter().find(|r| r.0 == tree && r.1 == i && r.2 == e.clip) else {
+        let Some(&(_, _, group, sx, sy)) = HORNET_ART_ENTS.iter().find(|r| r.0 == tree && r.1 == i) else {
+            continue;
+        };
+        let Some(&(_, _, _, clip)) = HORNET_ART_CLIPS.iter().find(|r| r.0 == tree && r.1 == group && r.2 == e.clip) else {
             continue;
         };
         if clip as usize >= room.counts[4] {
@@ -158,7 +168,7 @@ pub fn draw(draws: &mut Draws, room: &Room, camera: (i32, i32)) {
         };
         let frame_index = (c[0] + frame) as usize;
         let (pos, scale, rot) = world.world_of(i);
-        let authored = HORNET_ART_SCALES.iter().find(|r| r.0 == tree && r.1 == i).map_or((crate::ONE, crate::ONE), |r| (r.2, r.3));
+        let authored = (sx, sy);
         let ratio = (
             if authored.0 != 0 { hk_sim::fixed::mul_div_floor(scale[0].unsigned_abs(), crate::ONE as u32, authored.0 as u32) as i32 } else { crate::ONE },
             if authored.1 != 0 { hk_sim::fixed::mul_div_floor(scale[1].unsigned_abs(), crate::ONE as u32, authored.1 as u32) as i32 } else { crate::ONE },

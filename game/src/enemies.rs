@@ -6554,29 +6554,7 @@ impl EnemyWorld {
         // Greenpath's Hornet, while her arena's module is resident (game/src/enemies/hornet.rs).
         #[cfg(feature = "hornet")]
         if region.scene == hornet::HORNET_ART_SCENE && crate::modules::loaded(crate::modules::HORNET) {
-            let mut out = hornet::Out { hits: 0, kills: 0, reached: false, hurt: None };
-            hornet::tick(
-                player,
-                body,
-                polygon,
-                nail.kind as u8,
-                cheats.params(crate::VITAL_PARAMS).nail_damage as i32,
-                room.counts[5],
-                &|i| state.edge(region, room, i),
-                camera,
-                &mut out,
-            );
-            events.hits += out.hits;
-            events.kills += out.kills;
-            if out.hits != 0 {
-                vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
-            }
-            if out.reached {
-                nail_answer(vitals, response, nail, player);
-            }
-            if let Some((damage, x)) = out.hurt {
-                events.damage_hero(vitals, cheats, player, x, damage as u16);
-            }
+            hornet::tick(&mut events, player, vitals, response, nail, cheats, body, polygon, camera, state, region, room);
         }
         events
     }

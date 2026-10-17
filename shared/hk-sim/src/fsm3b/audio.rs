@@ -6,6 +6,7 @@ use psx_math::int32::mul_shr_i32;
 
 const ONE: i32 = crate::ONE;
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == audio::AUDIO_PLAY_SIMPLE {
@@ -57,6 +58,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// The shared tail of the two one-shot players: operands from `at` are pitchMin, pitchMax, volume, delay.
 #[inline(never)]
 fn one_shot(c: &mut Ctx<'_, '_>, clip: i32, at: u8) {

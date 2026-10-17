@@ -100,13 +100,11 @@ pub struct Input<'a> {
 /// The fight in progress. Large (two trees with their object tables): the actor runtime keeps one, in the room module's data.
 pub struct Fight {
     pub boss: Boss,
-    corpse: Boss,
     pub phase: Phase,
     pub health: ActorHealth,
     params: EnemyParams,
     /// FSM-visible PlayerData as of the last step, to find what a pass wrote.
     pd_seen: [i32; 8],
-    pd_seen_corpse: [i32; 8],
     /// Bit per object: the Knight was inside its trigger last step.
     inside: u32,
     /// Contact sides of the body last step (bit 0 up, 1 right, 2 down, 3 left).
@@ -126,18 +124,17 @@ pub struct Fight {
 
 const PD_FIELDS: usize = 8;
 /// The bytes of the room's state block (host/code_modules.py `art_hornet`): a Fight lives there, in zeroed pool memory.
-pub const STATE_BYTES: usize = 10240;
+pub const STATE_BYTES: usize = 4096;
 
 impl Fight {
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub const fn blank() -> Self {
         Self {
             boss: Boss::blank(),
-            corpse: Boss::blank_corpse(),
             phase: Phase::Gone,
             health: ActorHealth::new(EnemyParams { health: 0, contact_damage: 0, evasion_ticks: 0, invincible: false, damage_override: false }),
             params: EnemyParams { health: 0, contact_damage: 0, evasion_ticks: 0, invincible: false, damage_override: false },
             pd_seen: [0; PD_FIELDS],
-            pd_seen_corpse: [0; PD_FIELDS],
             inside: 0,
             contacts: 0,
             corpse_contacts: 0,
@@ -151,6 +148,7 @@ impl Fight {
         }
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Lay a fight out. `defeated` is the saved `hornet1Defeated`: Hornet is gone for good (`DeactivateIfPlayerdataTrue`), and
     /// nothing runs.
     pub fn begin(&mut self, seed: u32, defeated: bool, pd: [i32; PD_FIELDS]) {
@@ -158,9 +156,7 @@ impl Fight {
         // tables). Zeroing in place spares the stack a Fight-sized temporary.
         unsafe { core::ptr::write_bytes(self as *mut Self as *mut u8, 0, core::mem::size_of::<Self>()) };
         self.boss.bind(&fight::DATA);
-        self.corpse.bind(&corpse::DATA);
         self.boss.env = crate::fsm3::Env::new();
-        self.corpse.env = crate::fsm3::Env::new();
         self.phase = Phase::Gone;
         if defeated {
             return;
@@ -182,6 +178,7 @@ impl Fight {
         self.boss.enter();
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// One 60 Hz tick.
     pub fn step(&mut self, input: &Input<'_>, count: usize, edge: &dyn Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
         self.tick = self.tick.wrapping_add(1);
@@ -195,6 +192,7 @@ impl Fight {
 
     // ---- the fight --------------------------------------------------------------------------------------------------
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     fn step_fight(&mut self, input: &Input<'_>, count: usize, edge: &dyn Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
         self.health.tick_flash();
         self.health.tick();
@@ -225,10 +223,11 @@ impl Fight {
         self.boss.step(steps);
         self.constrain();
         self.drain(sink, input);
-        self.check_pd(sink, false);
+        self.check_pd(sink);
         self.hurt_hero(hero_body, sink);
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The Knight against every trigger volume of the tree: entered, inside, left, as Unity's callbacks give them.
     fn update_triggers(&mut self, hero_body: [i32; 4]) {
         let w = &mut self.boss.world;
@@ -258,11 +257,13 @@ impl Fight {
         }
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Sprite animators: `anim_left` runs down, and a clip's frame triggers raise `anim_event` as their frames show.
     fn count_animations(&mut self) {
         animate(&mut self.boss.world);
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The boss's Rigidbody2D against the terrain; returns the contact sides (bit 0 up, 1 right, 2 down, 3 left).
     fn move_body(&mut self, count: usize, edge: &dyn Fn(usize) -> [i32; 4]) -> u8 {
         // A recoil sweeps a separate displacement over its few ticks; it is the Recoil component's, not the FSM's.
@@ -275,6 +276,7 @@ impl Fight {
         body_step(&mut self.boss.world, self.contacts, recoil, count, edge)
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// `CheckCollisionSide(Enter)` is told about sides that just touched, `CheckCollisionSide` about all that touch.
     fn report_contacts(&mut self, now: u8) {
         let entered = now & !self.contacts;
@@ -290,6 +292,7 @@ impl Fight {
         self.boss.env.contacts = 0;
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// `ConstrainPosition`: the body stays between the arena's walls.
     fn constrain(&mut self) {
         let e = &mut self.boss.world.ent[0];
@@ -297,6 +300,7 @@ impl Fight {
         e.pos[0] = e.pos[0].clamp(lo, hi);
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// A nail strike against the boss's collider (the HealthManager) and the Encounter's box (`ATTACKED`).
     fn strike(&mut self, s: &Strike<'_>, sink: &mut impl FnMut(Effect)) {
         // The Encounter starts on a strike as on the Knight's walking in.
@@ -341,6 +345,7 @@ impl Fight {
         }
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     fn send_to_owner_fsms(&mut self, object: u8, event: u8) {
         for (f, &o) in fight::OWNERS.iter().enumerate() {
             if o == object {
@@ -349,36 +354,41 @@ impl Fight {
         }
     }
 
-    /// `HealthManager.Die`: the boss object goes, and the corpse prefab is spawned where it stood.
+    #[cfg_attr(target_arch = "mips", optimize(size))]
+    /// `HealthManager.Die`: the boss object goes, and the corpse prefab is spawned where it stood. The corpse tree takes over
+    /// the one tree's memory: nothing of the fight outlives her.
     fn die(&mut self, sink: &mut impl FnMut(Effect)) {
         let at = self.boss.world.world_of(0).0;
-        self.phase = Phase::Dying;
-        self.boss.world.ent[0].set(flag::ACTIVE, false);
+        let facing = self.boss.world.ent[0].scale[0];
         let mut pd = self.boss.pd;
         pd[field::DISABLE_PAUSE as usize] = 0;
-        self.corpse.pd = pd;
-        self.corpse.init(self.tick ^ 0x484f_524e);
-        self.corpse.world.ent[0].pos = at;
+        self.phase = Phase::Dying;
+        self.boss.bind(&corpse::DATA);
+        self.boss.pd = pd;
+        self.boss.init(self.tick ^ 0x484f_524e);
         // Hornet faces the way she was facing; the corpse's own FSM flings her.
-        self.corpse.world.ent[0].scale[0] = self.boss.world.ent[0].scale[0];
-        self.pd_seen_corpse = pd;
-        self.corpse.enter();
+        self.boss.world.ent[0].pos = at;
+        self.boss.world.ent[0].scale[0] = facing;
+        self.pd_seen = pd;
+        self.boss.enter();
         sink(Effect::Died);
     }
 
     /// The corpse tree's scene objects (drawn while she is dying).
     pub fn corpse_world(&self) -> &crate::fsm3_world::World {
-        &self.corpse.world
+        &self.boss.world
     }
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The corpse's Control state (for tests and the debug overlay).
     pub fn corpse_state(&mut self) -> u8 {
-        self.corpse.tree().state(0)
+        self.boss.tree().state(0)
     }
 
     // ---- the corpse -------------------------------------------------------------------------------------------------
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     fn step_corpse(&mut self, input: &Input<'_>, count: usize, edge: &dyn Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
-        let c = &mut self.corpse;
+        let c = &mut self.boss;
         c.env.hero = [input.hero[0], input.hero[1], 0];
         c.env.camera = input.camera;
         c.env.dt_scaled = input.dt_scaled;
@@ -389,38 +399,39 @@ impl Fight {
             self.fixed -= 60;
             steps += 1;
         }
-        animate(&mut self.corpse.world);
-        let now = body_step(&mut self.corpse.world, self.corpse_contacts, None, count, edge);
+        animate(&mut self.boss.world);
+        let now = body_step(&mut self.boss.world, self.corpse_contacts, None, count, edge);
         let entered = now & !self.corpse_contacts;
         self.corpse_contacts = now;
         if entered != 0 {
-            self.corpse.env.contacts = entered;
-            self.corpse.tree().step(crate::fsm3::PH_COLLISION_ENTER);
+            self.boss.env.contacts = entered;
+            self.boss.tree().step(crate::fsm3::PH_COLLISION_ENTER);
         }
         if now != 0 {
-            self.corpse.env.contacts = now;
-            self.corpse.tree().step(crate::fsm3::PH_COLLISION_STAY);
+            self.boss.env.contacts = now;
+            self.boss.tree().step(crate::fsm3::PH_COLLISION_STAY);
         }
-        self.corpse.env.contacts = 0;
-        self.corpse.step(steps);
+        self.boss.env.contacts = 0;
+        self.boss.step(steps);
         // The corpse's own events and requests: it sends `HORNET LEAVE` to the Cloak Corpse, plays sounds, flings pieces.
-        let n = self.corpse.world.req_n as usize;
+        let n = self.boss.world.req_n as usize;
         for i in 0..n {
-            let r = self.corpse.world.req[i];
+            let r = self.boss.world.req[i];
             let (kind, object) = (r[0] as u8, (r[0] >> 8) as u8);
             if kind == k::MESSAGE && r[1] == corpse::EV_HORNET_LEAVE as i32 {
                 sink(Effect::CloakLeaves);
                 self.phase = Phase::Gone;
             } else {
-                map_request(r, sink, &self.corpse.world, object);
+                map_request(r, sink, &self.boss.world, object);
             }
         }
-        self.corpse.world.req_n = 0;
-        self.check_pd(sink, true);
+        self.boss.world.req_n = 0;
+        self.check_pd(sink);
     }
 
     // ---- requests and PlayerData ------------------------------------------------------------------------------------
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     fn drain(&mut self, sink: &mut impl FnMut(Effect), _input: &Input<'_>) {
         let n = self.boss.world.req_n as usize;
         for i in 0..n {
@@ -448,6 +459,7 @@ impl Fight {
         self.boss.world.req_n = 0;
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Give a pooled object a free slot of the tree's table: the first inactive object the tree never uses by name.
     fn spawn(&mut self, _pool: i32, at: [i32; 2]) -> u8 {
         let w = &mut self.boss.world;
@@ -456,9 +468,10 @@ impl Fight {
         w.spawned
     }
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Fields of the PlayerData reserve the pass wrote.
-    fn check_pd(&mut self, sink: &mut impl FnMut(Effect), corpse: bool) {
-        let (now, seen) = if corpse { (self.corpse.pd, &mut self.pd_seen_corpse) } else { (self.boss.pd, &mut self.pd_seen) };
+    fn check_pd(&mut self, sink: &mut impl FnMut(Effect)) {
+        let (now, seen) = (self.boss.pd, &mut self.pd_seen);
         for f in 0..PD_FIELDS {
             if now[f] != seen[f] {
                 seen[f] = now[f];
@@ -469,6 +482,7 @@ impl Fight {
 
     // ---- the Knight ---------------------------------------------------------------------------------------------------
 
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Every active DamageHero object of the tree against the Knight.
     fn hurt_hero(&mut self, hero_body: [i32; 4], sink: &mut impl FnMut(Effect)) {
         let w = &self.boss.world;
@@ -485,6 +499,7 @@ impl Fight {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Object 0's Rigidbody2D against the terrain: its velocity (units a second, set by the FSMs) and gravity scale, the collider
 /// it has now. Returns the contact sides (bit 0 up, 1 right, 2 down, 3 left). A kinematic body moves by its velocity alone.
 ///
@@ -569,6 +584,7 @@ fn body_step(w: &mut crate::fsm3_world::World, was: u8, recoil: Option<i32>, cou
     contacts
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// One tick of every sprite animator of a tree: the clip's clock (`clip_from` counts the ticks since it started), the frame
 /// triggers it passes and the end of a clip that ends.
 fn animate(w: &mut crate::fsm3_world::World) {
@@ -593,6 +609,7 @@ fn animate(w: &mut crate::fsm3_world::World) {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// The requests with nothing of the fight's state in them become effects as they are.
 fn map_request(r: [i32; 4], sink: &mut impl FnMut(Effect), _w: &crate::fsm3_world::World, object: u8) {
     let (kind, flags) = (r[0] as u8, (r[0] >> 16) as u8);
@@ -620,6 +637,7 @@ fn map_request(r: [i32; 4], sink: &mut impl FnMut(Effect), _w: &crate::fsm3_worl
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// A native component call by the names the cooker gave the behaviour and method: the fight's string ids (the corpse's table
 /// has the same names under its own ids, but it calls only `GameManager.AwardAchievement`, which is nothing here).
 fn classify_call(object: u8, behaviour: i32, method: i32, arg: i32) -> Effect {
@@ -634,6 +652,7 @@ fn classify_call(object: u8, behaviour: i32, method: i32, arg: i32) -> Effect {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// The world box of object `i`'s collider: its centre (transform plus the offset scaled by the world scale) and its size.
 fn world_box(w: &crate::fsm3_world::World, i: u8) -> [i32; 4] {
     let e = &w.ent[i as usize];
@@ -645,10 +664,12 @@ fn world_box(w: &crate::fsm3_world::World, i: u8) -> [i32; 4] {
     [c[0] - half[0], c[1] - half[1], c[0] + half[0], c[1] + half[1]]
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 fn mul(a: i32, b: i32) -> i32 {
     psx_math::int32::mul_shr_i32(a, b, 16)
 }

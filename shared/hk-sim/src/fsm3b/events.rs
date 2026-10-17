@@ -7,6 +7,7 @@ use crate::fsm3::{r_event, r_stateless, Ctx, R_CONT};
 use crate::fsm3_world::k;
 use hk_format::fsm3::{ops::events, NONE8};
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     if op == events::SEND_EVENT_BY_NAME {
@@ -44,6 +45,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     }
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// SendEventByName [target mode | flags, target object, fsm name, event, delay]. The mode is the low nibble of the first
 /// operand (0 self, 1 game object, 2 game object FSM, 3 FSM component, 4 broadcast all, 5 host FSM, 6 sub FSMs), bit 4 excludes
 /// the sender and bit 5 includes the object's children. Recipients inside the tree get the event after the delay; the rest of
@@ -103,6 +105,7 @@ fn send_event_by_name(c: &mut Ctx<'_, '_>) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// Whether object `h` is a descendant of `top`.
 #[inline(never)]
 fn is_within(c: &mut Ctx<'_, '_>, h: u8, top: u8) -> bool {
@@ -121,6 +124,7 @@ fn is_within(c: &mut Ctx<'_, '_>, h: u8, top: u8) -> bool {
     false
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// SetFsmBool / Float / String / GameObject [gameObject?, fsm index, variable slot, value] (the object operand is absent for
 /// the owner-default forms). An FSM index of 255 means the engine owns the variable: the names ride out as a request.
 #[inline(never)]
@@ -152,6 +156,7 @@ fn set_fsm(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     r_stateless(c.flags)
 }
 
+#[cfg_attr(target_arch = "mips", optimize(size))]
 /// GetFsmInt / GetFsmGameObject [gameObject?, fsm index, variable slot, store].
 #[inline(never)]
 fn get_fsm(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
