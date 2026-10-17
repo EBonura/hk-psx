@@ -27,6 +27,9 @@ pub static mut HK_FOCUS_DUST_BURSTS: u32 = 0;
 /// The owner the cook gives the Knight's `Dust L` and `Dust R` emitters in every scene
 /// (host/hk-cook break_effects.rs `HERO_DUST_OWNER`).
 pub const DUST_OWNER: usize = 0xFFFF;
+/// The owner of the rising motes (`Can Focus Particles`), raised when the soul orb's ready cue
+/// plays (host/hk-cook break_effects.rs `HERO_MOTES_OWNER`).
+pub const MOTES_OWNER: usize = 0xFFFE;
 /// Each cooked burst is six particles over six ticks (60 a second, the rate the Spell Control
 /// FSM sets while Focus runs), so a burst every six ticks is the continuous emission.
 const DUST_PERIOD: u32 = 6;
