@@ -82,7 +82,7 @@ fn rows(cache: &Path) -> Result<(Vec<Row>, Vec<Row>)> {
 }
 
 /// Child GameObjects of every GameObject of one file, through the Transform tree.
-fn hierarchy(source: &Source, level: &str) -> Result<HashMap<i64, Vec<i64>>> {
+pub fn hierarchy(source: &Source, level: &str) -> Result<HashMap<i64, Vec<i64>>> {
     let file = source.file(level)?;
     // File object order is the child order, as the Python reader had it.
     let mut father = vec![];
