@@ -57,15 +57,20 @@ impl Cache {
 /// The generated descriptor inventory is checked for exact, disjoint page and
 /// palette coverage within each scene by Cache::init before uploads start.
 pub fn upload_atlas(a: &crate::disc::AtlasDesc, bytes: &[u8]) {
+    upload_atlas_at(a, bytes, a.first, a.first)
+}
+/// `upload_atlas` with the first physical page and palette stated (the spike's
+/// scenes admitted ahead sit away from the manifest's bases).
+pub fn upload_atlas_at(a: &crate::disc::AtlasDesc, bytes: &[u8], page0: usize, pal0: usize) {
     assert_eq!(bytes.len(), a.raw_len);
     assert!(!crate::render::dma_pending() && !psx_rt::interrupts::gp1_queue_pending());
     crate::input::checkpoint();
     match a.kind {
         0 => {
             assert_eq!(bytes.len(), a.count * 32768);
-            assert!(a.first + a.count <= residency::STATIC_PAGES);
+            assert!(page0 + a.count <= residency::STATIC_PAGES);
             for i in 0..a.count {
-                let (x, y) = residency::page_xy(a.first + i);
+                let (x, y) = residency::page_xy(page0 + i);
                 crate::texture_upload::upload(
                     VramRect::new(x, y, 64, 256),
                     &bytes[i * 32768..(i + 1) * 32768],
@@ -75,9 +80,9 @@ pub fn upload_atlas(a: &crate::disc::AtlasDesc, bytes: &[u8]) {
         }
         1 => {
             assert_eq!(bytes.len(), a.count * 32);
-            assert!(a.first + a.count <= residency::SCENE_CLUTS);
+            assert!(pal0 + a.count <= residency::SCENE_CLUTS);
             for i in 0..a.count {
-                let palette = a.first + i;
+                let palette = pal0 + i;
                 let (x, y) =
                     residency::clut_xy(palette / residency::CLUTS, palette % residency::CLUTS);
                 crate::texture_upload::upload(
