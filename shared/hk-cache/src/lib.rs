@@ -137,6 +137,11 @@ impl Cache {
         self.phase = Phase::Prepared;
         Ok(stats)
     }
+    /// Whether `key` already sits in a ready slot, so a frame that asks for it
+    /// uploads nothing for it. Touches neither the LRU clock nor any pin.
+    pub fn is_resident(&self, key: u16) -> bool {
+        self.slots.peek(key).is_some()
+    }
     /// Only a member of the declared frame working set may be drawn.
     pub fn slot(&self, key: u16) -> Option<usize> {
         if self.phase == Phase::Idle || !self.keys[..self.key_count].contains(&key) {
@@ -183,6 +188,16 @@ mod tests {
         assert_eq!(frame(&mut c, &[1, 1]).misses, 1);
         assert_eq!(frame(&mut c, &[1]).hits, 1);
         assert_eq!(frame(&mut c, &[1]).upload_bytes, 0);
+    }
+    #[test]
+    fn residency_query_sees_only_uploaded_keys_and_changes_nothing() {
+        let mut c = Cache::new();
+        assert!(!c.is_resident(7));
+        frame(&mut c, &[7]);
+        assert!(c.is_resident(7) && !c.is_resident(8));
+        // Asking never reserves a slot: the next frame still counts 8 as a miss.
+        assert_eq!(frame(&mut c, &[7, 8]).misses, 1);
+        assert!(!c.is_resident(u16::MAX));
     }
     #[test]
     fn global_scene_keys_remain_distinct_and_reusable_across_frame_sets() {

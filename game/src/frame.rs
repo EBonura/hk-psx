@@ -157,7 +157,34 @@ pub fn render(
     // before it (the world and the HUD): every one of those pixels ends black
     // whatever it was, so the scenery passes under it are not drawn.
     let veiled = shaman::shade() == 255;
-    let early = other_npc.is_none() && game.view == game.region_id && render::early_back(room);
+    // The bench owns the body first, then an ability, then the room clip.
+    let kneel = pickups::kneel_frame(game.pickups, game.region_id);
+    let pose = if game.bench.animation().is_some() || kneel.is_some() {
+        None
+    } else {
+        ability_pose(&game.player, &game.dream, &game.cast)
+    };
+    let body_frame = if let Some(f) = kneel {
+        f
+    } else if let Some((clip, age)) = game.bench.animation() {
+        clip_frame(room, clip, age)
+    } else {
+        knight_frame(room, &game.player, &game.focus)
+    };
+    let effect_frame = nail_frame(room, &game.nail);
+    let ability_frame = pose.map(|(clip, age)| ability_art::frame_index(clip, age));
+    // The Knight's own art is the request that most often misses (his frame
+    // advances), and a miss makes the uploads wait for the early back pass's
+    // whole DMA with the CPU idle: such a frame draws in the ordinary order.
+    let knight_key = match ability_frame {
+        Some(i) => ability_art::KEY_BASE + i as u16,
+        None => u32_at(room.frame(body_frame), 0) as u16,
+    };
+    let early = other_npc.is_none()
+        && game.view == game.region_id
+        && render::early_back(room)
+        && animation_cache::resident(knight_key)
+        && effect_frame.is_none_or(|f| animation_cache::resident(u32_at(room.frame(f), 0) as u16));
     let mut prims = 0;
     if early {
         render::begin_frame(fb.buffer_y(fb.drawing));
@@ -184,23 +211,7 @@ pub fn render(
         }
     }
     let door_frame = game.door.frame(game.region_id, camera);
-    // The bench owns the body first, then an ability, then the room clip.
-    let kneel = pickups::kneel_frame(game.pickups, game.region_id);
-    let pose = if game.bench.animation().is_some() || kneel.is_some() {
-        None
-    } else {
-        ability_pose(&game.player, &game.dream, &game.cast)
-    };
-    let body_frame = if let Some(f) = kneel {
-        f
-    } else if let Some((clip, age)) = game.bench.animation() {
-        clip_frame(room, clip, age)
-    } else {
-        knight_frame(room, &game.player, &game.focus)
-    };
-    let effect_frame = nail_frame(room, &game.nail);
     let enemy_draws = game.enemies.prepare_draws(r, room, camera);
-    let ability_frame = pose.map(|(clip, age)| ability_art::frame_index(clip, age));
     // Vengeful Spirit's projectile carries its own frame and key.
     let ball_frame = game
         .cast

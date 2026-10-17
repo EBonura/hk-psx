@@ -20,6 +20,12 @@ pub static mut HK_ANIM_UPLOAD_MAX_FRAME: u32 = 0;
 pub fn init() {
     unsafe { CACHE = Cache::new() };
 }
+/// Whether the frame's art for `key` is already in a slot: a frame whose
+/// first requests are all resident does not wait on the GPU DMA channel in
+/// `prepare`.
+pub fn resident(key: u16) -> bool {
+    unsafe { (*(&raw const CACHE)).is_resident(key) }
+}
 /// Pixel UV of a slot inside its own texture page.
 pub fn uv(slot: usize) -> (u16, u16) {
     let (_, _, u, v) = residency::slot_placement(slot);
