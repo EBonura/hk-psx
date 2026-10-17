@@ -6,7 +6,7 @@
 //! scene objects are ten kilobytes the resident image has no room for. The resident code only asks the module to tick and
 //! to draw, while the module is resident.
 use super::Draws;
-use crate::debris::Rotation;
+use crate::world::debris::Rotation;
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::fsm3_world::{flag, MAX_ENT, NO_CLIP};
 use hk_sim::hornet_fight::{self as hf, Effect, Fight, Input, Phase, Strike};

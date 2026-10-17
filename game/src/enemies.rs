@@ -6559,7 +6559,7 @@ impl EnemyWorld {
                 player,
                 body,
                 polygon,
-                nail.kind,
+                nail.kind as u8,
                 cheats.params(crate::VITAL_PARAMS).nail_damage as i32,
                 room.counts[5],
                 &|i| state.edge(region, room, i),
@@ -7039,7 +7039,7 @@ fn project_box_turned(
     facing: i32,
     camera: (i32, i32),
     depth: i32,
-    turn: Option<crate::debris::Rotation>,
+    turn: Option<crate::world::debris::Rotation>,
 ) -> [(i16, i16); 4] {
     let nearest = CAMERA_DISTANCE + depth;
     let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];

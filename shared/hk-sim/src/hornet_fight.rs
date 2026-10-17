@@ -327,7 +327,7 @@ impl Fight {
         match self.health.strike(p, s.damage.clamp(0, 255) as u16) {
             Hit::Damaged | Hit::Killed => {
                 self.phase = Phase::Fighting;
-                self.recoil_left = (fight::RECOIL_TIME as i64 * 60 / 65536) as u16 + 1;
+                self.recoil_left = psx_math::int32::mul_shr_i32(fight::RECOIL_TIME, 60, 16) as u16 + 1;
                 let away = if s.kind == 0 { s.facing } else { 0 };
                 self.recoil_vx = away * self.recoil_speed;
                 sink(Effect::Struck { hp: self.health.hp as i32 });
