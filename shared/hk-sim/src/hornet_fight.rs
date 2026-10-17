@@ -14,7 +14,7 @@
 use crate::fsm3_world::{flag, k, Ent};
 use hk_format::fsm3::NONE8;
 use crate::hornet::{corpse, fight, Boss};
-use crate::{ActorHealth, EnemyParams, Hit, Params, Player, ONE};
+use crate::{ActorHealth, EnemyParams, Hit, ONE};
 
 /// Where the fight is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,11 +120,13 @@ pub struct Fight {
     invincible: bool,
     /// Simulation ticks since `begin`.
     pub tick: u32,
+    /// This tick's strike reached her collider (landed, blocked or inside her evasion window).
+    pub reached: bool,
 }
 
 const PD_FIELDS: usize = 8;
 /// The bytes of the room's state block (host/code_modules.py `art_hornet`): a Fight lives there, in zeroed pool memory.
-pub const STATE_BYTES: usize = 8192;
+pub const STATE_BYTES: usize = 10240;
 
 impl Fight {
     pub const fn blank() -> Self {
@@ -145,6 +147,7 @@ impl Fight {
             recoil_speed: 0,
             invincible: false,
             tick: 0,
+            reached: false,
         }
     }
 
@@ -180,8 +183,9 @@ impl Fight {
     }
 
     /// One 60 Hz tick.
-    pub fn step(&mut self, input: &Input<'_>, count: usize, edge: &impl Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
+    pub fn step(&mut self, input: &Input<'_>, count: usize, edge: &dyn Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
         self.tick = self.tick.wrapping_add(1);
+        self.reached = false;
         match self.phase {
             Phase::Gone => {}
             Phase::Dying => self.step_corpse(input, count, edge, sink),
@@ -191,7 +195,7 @@ impl Fight {
 
     // ---- the fight --------------------------------------------------------------------------------------------------
 
-    fn step_fight(&mut self, input: &Input<'_>, count: usize, edge: &impl Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
+    fn step_fight(&mut self, input: &Input<'_>, count: usize, edge: &dyn Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
         self.health.tick_flash();
         self.health.tick();
         let b = &mut self.boss;
@@ -260,7 +264,7 @@ impl Fight {
     }
 
     /// The boss's Rigidbody2D against the terrain; returns the contact sides (bit 0 up, 1 right, 2 down, 3 left).
-    fn move_body(&mut self, count: usize, edge: &impl Fn(usize) -> [i32; 4]) -> u8 {
+    fn move_body(&mut self, count: usize, edge: &dyn Fn(usize) -> [i32; 4]) -> u8 {
         // A recoil sweeps a separate displacement over its few ticks; it is the Recoil component's, not the FSM's.
         let recoil = if self.recoil_left != 0 {
             self.recoil_left -= 1;
@@ -318,6 +322,7 @@ impl Fight {
         if !crate::polygon_hits_box(s.polygon, world_box(&self.boss.world, 0)) {
             return;
         }
+        self.reached = true;
         let p = EnemyParams { invincible: self.invincible, ..self.params };
         match self.health.strike(p, s.damage.clamp(0, 255) as u16) {
             Hit::Damaged | Hit::Killed => {
@@ -361,6 +366,10 @@ impl Fight {
         sink(Effect::Died);
     }
 
+    /// The corpse tree's scene objects (drawn while she is dying).
+    pub fn corpse_world(&self) -> &crate::fsm3_world::World {
+        &self.corpse.world
+    }
     /// The corpse's Control state (for tests and the debug overlay).
     pub fn corpse_state(&mut self) -> u8 {
         self.corpse.tree().state(0)
@@ -368,7 +377,7 @@ impl Fight {
 
     // ---- the corpse -------------------------------------------------------------------------------------------------
 
-    fn step_corpse(&mut self, input: &Input<'_>, count: usize, edge: &impl Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
+    fn step_corpse(&mut self, input: &Input<'_>, count: usize, edge: &dyn Fn(usize) -> [i32; 4], sink: &mut impl FnMut(Effect)) {
         let c = &mut self.corpse;
         c.env.hero = [input.hero[0], input.hero[1], 0];
         c.env.camera = input.camera;
@@ -478,7 +487,11 @@ impl Fight {
 
 /// Object 0's Rigidbody2D against the terrain: its velocity (units a second, set by the FSMs) and gravity scale, the collider
 /// it has now. Returns the contact sides (bit 0 up, 1 right, 2 down, 3 left). A kinematic body moves by its velocity alone.
-fn body_step(w: &mut crate::fsm3_world::World, was: u8, recoil: Option<i32>, count: usize, edge: &impl Fn(usize) -> [i32; 4]) -> u8 {
+///
+/// A sweep of its own rather than `Player::step`: the Knight's solver is a four-kilobyte instantiation per terrain closure,
+/// which the resident image has no room for, and a boss only needs the walls, the floor and the ceiling. The rules are
+/// the Knight's: vertical edges are walls, any other edge holds from above and from below, with the same lip.
+fn body_step(w: &mut crate::fsm3_world::World, was: u8, recoil: Option<i32>, count: usize, edge: &dyn Fn(usize) -> [i32; 4]) -> u8 {
     let e: Ent = w.ent[0];
     if !e.on(flag::ACTIVE) {
         return 0;
@@ -491,49 +504,67 @@ fn body_step(w: &mut crate::fsm3_world::World, was: u8, recoil: Option<i32>, cou
         }
         return 0;
     }
-    let mut contacts = 0u8;
     let (bw, bh) = (e.box_size[0].max(ONE / 8), e.box_size[1].max(ONE / 8));
     let (cx, cy) = (e.box_offset[0], e.box_offset[1]);
-    let mut body = Player::spawn(e.pos[0] + cx, e.pos[1]);
-    let mut p = Params {
-        speed: e.vel[0].abs(),
-        gravity: psx_math::int32::mul_shr_i32(e.gravity, 60 * ONE, 16),
-        fall: 100 * ONE,
-        half_width: bw / 2,
-        bottom: cy - bh / 2,
-        top: cy + bh / 2,
-        ..Params::ZERO
-    };
-    body.vy = e.vel[1];
-    body.grounded = was & 4 != 0;
-    let dir = e.vel[0].signum();
-    let before = body.x;
-    match recoil {
-        Some(vx) => {
-            p.speed = vx.abs();
-            body.step(p, vx.signum(), false, count, edge);
+    let (half, bottom, top) = (bw / 2, cy - bh / 2, cy + bh / 2);
+    let (ox, oy) = (e.pos[0] + cx, e.pos[1]);
+    let vx = recoil.unwrap_or(e.vel[0]);
+    let gravity = psx_math::int32::mul_shr_i32(e.gravity, 60 * ONE, 16);
+    let vy = (e.vel[1] - gravity / 60).max(-100 * ONE);
+    let mut nx = ox + vx / 60;
+    const LIP: i32 = ONE / 20;
+    let lip = if was & 4 != 0 { LIP } else { 32 };
+    let mut contacts = 0u8;
+    for i in 0..count {
+        let [x0, y0, x1, y1] = edge(i);
+        if y0 == y1 || x0 != x1 || oy + top <= y0.min(y1) + 32 || oy + bottom >= y0.max(y1) - lip {
+            continue;
         }
-        None => body.step(p, dir, false, count, edge),
+        if nx > ox && ox + half <= x0 && nx + half > x0 {
+            nx = x0 - half;
+            contacts |= 2;
+        }
+        if nx < ox && ox - half >= x0 && nx - half < x0 {
+            nx = x0 + half;
+            contacts |= 8;
+        }
     }
-    let moved = body.x - before;
-    if dir != 0 && recoil.is_none() && moved.abs() * 2 < e.vel[0].abs() / 60 {
-        contacts |= if dir > 0 { 2 } else { 8 };
+    let mut ny = oy + vy / 60;
+    let mut vy = vy;
+    for i in 0..count {
+        let [x0, y0, x1, y1] = edge(i);
+        if x0 == x1 || nx + half <= x0.min(x1) + 32 || nx - half >= x0.max(x1) - 32 {
+            continue;
+        }
+        let height = |x: i32| {
+            if y0 == y1 {
+                y0
+            } else {
+                y0 + psx_math::int32::mul_div_i32(x.clamp(x0.min(x1), x0.max(x1)) - x0, y1 - y0, x1 - x0)
+            }
+        };
+        let (old_surface, surface) = (height(ox), height(nx));
+        if ny < oy && oy + bottom >= old_surface - ONE / 20 && ny + bottom <= surface {
+            ny = surface - bottom;
+            vy = 0;
+            contacts |= 4;
+        }
+        if ny > oy && oy + top <= old_surface && ny + top >= surface {
+            ny = surface - top;
+            vy = 0;
+            contacts |= 1;
+        }
     }
-    if body.grounded {
+    // Resting on the floor: gravity's small step keeps the body in contact.
+    if was & 4 != 0 && contacts & 5 == 0 && e.vel[1] <= 0 && vy <= 0 && ny >= oy - 2 {
         contacts |= 4;
     }
-    if e.vel[1] > 0 && body.vy <= 0 {
-        contacts |= 1;
-    }
     let ent = &mut w.ent[0];
-    ent.pos[0] = body.x - cx;
-    ent.pos[1] = body.y;
-    ent.vel[1] = body.vy;
-    if contacts & 10 != 0 {
+    ent.pos[0] = nx - cx;
+    ent.pos[1] = ny;
+    ent.vel[1] = vy;
+    if contacts & 10 != 0 && recoil.is_none() {
         ent.vel[0] = 0;
-    }
-    if contacts & 4 != 0 && ent.vel[1] < 0 {
-        ent.vel[1] = 0;
     }
     contacts
 }

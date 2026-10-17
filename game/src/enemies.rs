@@ -4,6 +4,8 @@
 //! solver parity and global FSM events remain outside this bounded runtime.
 use crate::world::{Region, State};
 use hk_format::{i32_at, u32_at, Room};
+#[cfg(feature = "hornet")]
+mod hornet;
 use psx_math::{Wide, WideU};
 use hk_sim::{
     ActorController, ActorHealth, ActorSpec, AttackParams, Hit, Hurt, Nail, Params, Player, Vitals,
@@ -6549,6 +6551,33 @@ impl EnemyWorld {
                 events.hurt = hurt;
             }
         }
+        // Greenpath's Hornet, while her arena's module is resident (game/src/enemies/hornet.rs).
+        #[cfg(feature = "hornet")]
+        if region.scene == hornet::HORNET_ART_SCENE && crate::modules::loaded(crate::modules::HORNET) {
+            let mut out = hornet::Out { hits: 0, kills: 0, reached: false, hurt: None };
+            hornet::tick(
+                player,
+                body,
+                polygon,
+                nail.kind,
+                cheats.params(crate::VITAL_PARAMS).nail_damage as i32,
+                room.counts[5],
+                &|i| state.edge(region, room, i),
+                camera,
+                &mut out,
+            );
+            events.hits += out.hits;
+            events.kills += out.kills;
+            if out.hits != 0 {
+                vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+            }
+            if out.reached {
+                nail_answer(vitals, response, nail, player);
+            }
+            if let Some((damage, x)) = out.hurt {
+                events.damage_hero(vitals, cheats, player, x, damage as u16);
+            }
+        }
         events
     }
     /// Create the immutable visible working set before preparing the GPU cache.
@@ -6826,6 +6855,10 @@ impl EnemyWorld {
                 );
             }
         }
+        #[cfg(feature = "hornet")]
+        if region.scene == hornet::HORNET_ART_SCENE && crate::modules::loaded(crate::modules::HORNET) {
+            hornet::draw(&mut draws, room, camera);
+        }
         for shot in self
             .shots
             .iter()
@@ -6990,6 +7023,37 @@ fn project_box_at_depth(
     for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {
         let x = k(position.0 - x * facing - camera.0);
         let y = k(position.1 + y - camera.1);
+        *v = (
+            (160 + psx_math::int32::mul_shr_i32(x >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
+            (120 - psx_math::int32::mul_shr_i32(y >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
+        );
+    }
+    verts
+}
+/// `project_box_at_depth` for an object that is also turned about its own origin (Q16 degrees, as the actor draw's rotation
+/// reads it: the mirror, then the turn).
+#[cfg(feature = "hornet")]
+fn project_box_turned(
+    b: [i32; 4],
+    position: (i32, i32),
+    facing: i32,
+    camera: (i32, i32),
+    depth: i32,
+    turn: Option<crate::debris::Rotation>,
+) -> [(i16, i16); 4] {
+    let nearest = CAMERA_DISTANCE + depth;
+    let corners = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
+    let mut verts = [(0i16, 0i16); 4];
+    for (v, &(x, y)) in verts.iter_mut().zip(corners.iter()) {
+        let [x, y] = match turn {
+            Some(t) => t.apply([x * facing, y]),
+            None => [x * facing, y],
+        };
+        let (mut x, mut y) = (position.0 - x - camera.0, position.1 + y - camera.1);
+        if depth != 0 {
+            x = psx_math::int32::mul_div_i32(x, CAMERA_DISTANCE, nearest);
+            y = psx_math::int32::mul_div_i32(y, CAMERA_DISTANCE, nearest);
+        }
         *v = (
             (160 + psx_math::int32::mul_shr_i32(x >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
             (120 - psx_math::int32::mul_shr_i32(y >> 8, crate::KNIGHT_SCALE as i32, 20)) as i16,
