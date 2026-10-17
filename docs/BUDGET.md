@@ -7,23 +7,23 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |795,728|
-| Code-to-data alignment |0|
-| Linked data, including menu and HUD |278,264|
-| BSS, including shared scene arena and runtime pools |796,896|
-| Total static span |1,870,896|
+| Linked code |795,812|
+| Code-to-data alignment |12|
+| Linked data, including menu and HUD |278,280|
+| BSS, including shared scene arena and runtime pools |796,908|
+| Total static span |1,871,020|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |111,312|
+| Unallocated gap before reserved stack |111,188|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |8,912|
+| Free RAM below the module pool |8,788|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
 The 2026-10-17 frame-time pass (the early back pass skips a frame whose Knight art would upload, and every checkpoint takes a CD event the interrupt wrapper missed) took linked code from 793,876 to 794,696 bytes (820), so 17,132 bytes are free below the module pool.
 
-The 2026-10-17 FSM v2 landing (HKFSM03 kernel, bank format and family code; Crawler, Gruzzer, Vengefly and the scene scripts on it, the v1 executor and the HKSCR01 interpreter gone) left the resident image where it was: linked code 794,696 to 795,728 (+1,032), data 278,568 to 278,264 (-304), BSS 797,588 to 796,896 (-692), so 17,096 bytes were free below the old pool. The worst room (Crossroads vengefly, aspid, climber and crawler with the grub jar art, plus the 30,388-byte carried Shade art) needed 95,944 pool bytes against a 90,112-byte limit (the pool less its 4 KiB window fence), because the shared action code (`fsm3_core` 4,536 and `fsm3_body` 7,884 bytes) is paid by every room that has a bank. The pool is 100 KiB now (102,400), which leaves 8,912 bytes free below it and 2,360 bytes of margin in that room (98,304 limit). `hk-module-publish` prints the six tightest rooms on every build ("pool fit").
+The 2026-10-17 FSM v2 landing (HKFSM03 kernel, bank format and family code; Crawler, Gruzzer, Vengefly and the scene scripts on it, the v1 executor and the HKSCR01 interpreter gone) left the resident image where it was: linked code 794,696 to 795,812 (+1,116), data 278,568 to 278,280 (-288), BSS 797,588 to 796,908 (-680), so 17,024 bytes were free below the old pool. The worst room (Crossroads: Vengefly, Aspid, Climber and Crawler with the grub jar art, plus the 30,388-byte carried Shade art) needed 96,080 pool bytes against a 90,112-byte limit (the pool less its 4 KiB window fence), because the shared action code (`fsm3_logic` 3,604, `fsm3_world` 1,068 and `fsm3_body` 7,884 bytes, carried per room by the families its banks use) is paid by every room that has a bank. The pool is 100 KiB now (102,400), which leaves 8,788 bytes free below it and 2,224 bytes of margin in that room (98,304 limit). `hk-module-publish` prints the six tightest rooms on every build ("pool fit").
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -109,7 +109,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801d8c30`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d8cac`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
