@@ -27,6 +27,9 @@ hero-vignette = []
 original-latency = []
 # Per-tick poll ordinal and consumer, for re-encoding route tapes (input.rs).
 tick-log = []
+# Greenpath's Hornet (enemies/hornet.rs): the boss tier of the FSM kernel and her fight, in the Fungus1_04 room module. The build
+# turns it on when the Hornet postpass has written data/hornet_art.rs.
+hornet = ["hk-sim/boss"]
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
 psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }
