@@ -158,6 +158,20 @@ pub fn require(m: usize) -> bool {
     }
     false
 }
+/// Every module of the bitmask `m` is resident (an HKFSM03 tree's family modules); counts a miss otherwise.
+pub fn require_all(m: u32) -> bool {
+    if (resident() | ALWAYS) & m == m {
+        return true;
+    }
+    unsafe {
+        HK_MODULE_MISSING = HK_MODULE_MISSING.saturating_add(1);
+    }
+    false
+}
+/// Every module of the bitmask `m` is resident, without counting a miss (a tick that simply waits for its room).
+pub fn loaded_all(m: u32) -> bool {
+    (resident() | ALWAYS) & m == m
+}
 pub const fn scene_modules(scene: usize) -> u32 {
     SCENE_MODULES[scene]
 }

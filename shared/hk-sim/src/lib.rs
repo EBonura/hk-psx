@@ -20,6 +20,8 @@ pub mod fsm3_animation;
 pub mod fsm3_audio;
 pub mod fsm3_events;
 pub mod fsm3_flow;
+#[cfg(feature = "hard-ops")]
+pub mod fsm3_hard;
 pub mod fsm3_math;
 pub mod fsm3_object;
 pub mod fsm3_playerdata;

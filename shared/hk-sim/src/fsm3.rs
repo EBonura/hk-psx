@@ -158,6 +158,16 @@ pub struct Env {
     pub pd_writes: u16,
     /// The hero's contact with this script's trigger volume this tick: bit 0 entered, 1 inside, 2 left.
     pub trigger: u8,
+    /// Measurement handlers only (fsm3_hard.rs): the requests a pass made, the handle of the object just spawned and
+    /// whether the clip fired a frame trigger.
+    #[cfg(feature = "hard-ops")]
+    pub req: [[i32; 4]; 8],
+    #[cfg(feature = "hard-ops")]
+    pub req_n: u8,
+    #[cfg(feature = "hard-ops")]
+    pub spawned: u8,
+    #[cfg(feature = "hard-ops")]
+    pub anim_trigger: bool,
     /// Oracle replay only: values the next RandomFloat calls return instead of drawing (consumed in order).
     #[cfg(feature = "trace")]
     pub forced_random: [i32; 8],
@@ -199,6 +209,14 @@ impl Env {
             pd: core::ptr::null_mut(),
             pd_writes: 0,
             trigger: 0,
+            #[cfg(feature = "hard-ops")]
+            req: [[0; 4]; 8],
+            #[cfg(feature = "hard-ops")]
+            req_n: 0,
+            #[cfg(feature = "hard-ops")]
+            spawned: 0xff,
+            #[cfg(feature = "hard-ops")]
+            anim_trigger: false,
             #[cfg(feature = "trace")]
             forced_random: [0; 8],
             #[cfg(feature = "trace")]
@@ -664,6 +682,27 @@ fn dispatch(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
         fsm3_ai, fsm3_animation, fsm3_audio, fsm3_events, fsm3_flow, fsm3_math, fsm3_object, fsm3_playerdata,
         fsm3_timers, fsm3_transform,
     };
+    #[cfg(feature = "hard-ops")]
+    {
+        use crate::fsm3_hard as h;
+        let r = match family {
+            0 => h::flow(c, op),
+            1 => h::math(c, op),
+            2 => h::events(c, op),
+            4 => h::transform(c, op),
+            5 => h::ai(c, op),
+            7 => h::animation(c, op),
+            8 => h::object(c, op),
+            9 => h::audio(c, op),
+            10 => h::particles(c, op),
+            11 => h::collider(c, op),
+            12 => h::combat(c, op),
+            _ => R_CONT,
+        };
+        if r != R_CONT {
+            return r;
+        }
+    }
     match family {
         0 => fsm3_flow::entry(c, op),
         1 => fsm3_math::entry(c, op),

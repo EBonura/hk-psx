@@ -164,7 +164,7 @@ pub fn tick(scene: usize, body: [i32; 4]) {
     unsafe {
         let scripts = &mut *(&raw mut RUNNING);
         // The family code the scripts run is a room module: nothing runs until the room's has landed.
-        if !crate::modules::loaded(crate::modules::FSM3_CORE) {
+        if !crate::modules::loaded_all(crate::modules::FSM3_SCRIPTS3) {
             return;
         }
         if scripts.scene() != scene {

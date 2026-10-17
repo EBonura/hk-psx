@@ -1361,11 +1361,10 @@ struct Actor {
     located: crate::disc::Located,
     runtime: Runtime,
 }
-/// The module of an FSM-driven family is resident together with the shared action code its graphs run.
-fn fsm3_ready(family: usize) -> bool {
-    crate::modules::require(family)
-        && crate::modules::require(crate::modules::FSM3_CORE)
-        && crate::modules::require(crate::modules::FSM3_BODY)
+/// The module of an FSM-driven family is resident together with the shared action code its graph runs
+/// (`tree`: the family modules of that bank, data/modules.rs).
+fn fsm3_ready(family: usize, tree: u32) -> bool {
+    crate::modules::require(family) && crate::modules::require_all(tree)
 }
 /// One controller runtime per actor; Crawler retains its original graph state.
 #[derive(Clone, Copy)]
@@ -1433,14 +1432,14 @@ impl Actor {
     }
     fn vengefly(&self) -> Option<VengeflyRuntime> {
         if let Runtime::Vengefly(v) = self.runtime {
-            fsm3_ready(crate::modules::VENGEFLY).then_some(v)
+            fsm3_ready(crate::modules::VENGEFLY, crate::modules::FSM3_VENGEFLY3).then_some(v)
         } else {
             None
         }
     }
     fn gruzzer(&self) -> Option<GruzzerRuntime> {
         if let Runtime::Gruzzer(g) = self.runtime {
-            fsm3_ready(crate::modules::GRUZZER).then_some(g)
+            fsm3_ready(crate::modules::GRUZZER, crate::modules::FSM3_GRUZZER3).then_some(g)
         } else {
             None
         }
@@ -2523,7 +2522,7 @@ impl Actor {
             let senses =
                 hk_sim::walker_senses(self.bounds(spec), self.walk.direction, count, &edge);
             if let Runtime::Crawler(mut crawler)=self.runtime {
-                if fsm3_ready(crate::modules::CRAWLER) {
+                if fsm3_ready(crate::modules::CRAWLER, crate::modules::FSM3_CRAWLER3) {
                     self.advance_crawler_fsm(&mut crawler,spec,senses)
                 } else { 0 }
             } else { self.walk.tick(spec.walk, senses.0, senses.1, senses.2) }

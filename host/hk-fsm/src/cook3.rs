@@ -117,6 +117,25 @@ fn write_names(root: &std::path::Path, label: &str, c: &Cooked) -> Result<()> {
     Ok(())
 }
 
+/// The action families a set of cooked trees uses, one line of space-separated family numbers to
+/// `data/<label>_families.txt`. `host/code_modules.py` turns it into the family modules a room carries, so a
+/// room loads only the action code its enemies' and scripts' banks can reach.
+fn write_families(root: &std::path::Path, label: &str, banks: &[&Cooked]) -> Result<()> {
+    let mut used = std::collections::BTreeSet::new();
+    for c in banks {
+        for ir in &c.irs {
+            for st in &ir.states {
+                for a in &st.actions {
+                    used.insert(a.family);
+                }
+            }
+        }
+    }
+    let line: Vec<String> = used.iter().map(|f| f.to_string()).collect();
+    std::fs::write(root.join(format!("data/{label}_families.txt")), line.join(" ") + "\n")?;
+    Ok(())
+}
+
 /// Per-op contracts the handlers rely on and do not re-check at run time.
 fn check_contracts(irs: &[FsmIr], ctx: &TreeCtx) -> Result<()> {
     let walk = op_of("WalkLeftRight");
@@ -277,6 +296,7 @@ pub fn cook_crawlers3(root: &std::path::Path) -> Result<()> {
         ev("GO RIGHT")?
     );
     write_names(root, "crawler3", &banks[0])?;
+    write_families(root, "crawler3", &banks.iter().collect::<Vec<_>>())?;
     std::fs::write(root.join("data/crawler3.hkf3"), &bundle)?;
     std::fs::write(root.join("data/crawler_fsm3.rs"), table)?;
     println!("Crawler: {} placements, {} distinct graphs, {} bank bytes, {} runtime bytes", selected.len(), banks.len(), bundle.len(), runtime);
@@ -320,6 +340,7 @@ pub fn cook_gruzzer3(root: &std::path::Path) -> Result<()> {
         ev("STOP")?
     );
     write_names(root, "gruzzer3", &cooked)?;
+    write_families(root, "gruzzer3", &[&cooked])?;
     std::fs::write(root.join("data/gruzzer3.hkf3"), &cooked.bank)?;
     std::fs::write(root.join("data/gruzzer_fsm3.rs"), table)?;
     println!("Gruzzer: {} bank bytes, {} runtime bytes", cooked.bank.len(), runtime);
@@ -419,6 +440,7 @@ pub fn cook_vengeflies3(root: &std::path::Path) -> Result<()> {
         sid("Idle")?, sid("TurnToIdle")?, sid("Startle")?, sid("Chase")?, sid("TurnToFly")?
     );
     write_names(root, "vengefly3", &b)?;
+    write_families(root, "vengefly3", &[&b])?;
     std::fs::write(root.join("data/vengefly3.hkf3"), &b.bank)?;
     std::fs::write(root.join("data/vengefly_fsm3.rs"), table)?;
     println!("Vengefly: {} placements ({receiver_disabled} with the receiver disabled), {} bank bytes, {} runtime bytes", placements.len(), b.bank.len(), runtime);
@@ -516,6 +538,7 @@ pub fn cook_scripts3(root: &std::path::Path) -> Result<()> {
         bundle.len(),
         max_runtime
     );
+    write_families(root, "scripts3", &banks.iter().collect::<Vec<_>>())?;
     std::fs::write(root.join("data/scripts3.hkf3"), &bundle)?;
     std::fs::write(root.join("data/script_fsm3.rs"), table)?;
     println!("Scripts: {} instances, {} distinct banks, {} bank bytes, {} runtime bytes at most", report["instances"].as_array().map_or(0, Vec::len), banks.len(), bundle.len(), max_runtime);

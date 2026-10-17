@@ -6,6 +6,8 @@ edition="2021"
 [features]
 # Host-only: the kernel reports every state entry, action, event and transition to a sink (oracle replay).
 trace = []
+# Measurement handlers for the Hornet 1 action types no shipped bank uses yet (fsm3_hard.rs): not in the ordinary build.
+hard-ops = []
 
 [dependencies]
 psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }
