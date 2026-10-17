@@ -1,0 +1,9 @@
+survey runs/sfx-survey-slice
+play RouteCrossroads runs/sfx-play-route-crossroads/play
+play RouteGreenpath runs/sfx-play-route-greenpath/play
+play Dirtmouth-walk runs/sfx-play-town/play
+play Dirtmouth-NPCs runs/sfx-play-dirtmouth-npcs/play
+play Boss:GruzMother runs/sfx-play-gruz/play 600 2100
+play Boss:Mawlek runs/sfx-play-mawlek/play 0 3700
+play Boss:FalseKnight-long runs/sfx-play-false-knight/play 100 30000
+play Boss:FalseKnight-short runs/sfx-play-false-knight-short/play 100 9000

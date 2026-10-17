@@ -1,0 +1,119 @@
+scene,status,load_frames,exits,actor_types,actors,sfx_clips_played,fsm_audio_actions,audio_sources
+Crossroads_01,ok,20,door1@52.6100 10.6900->bot1:Town;top1@52.5000 25.5000->Town:bot1;top2@52.5000 42.5000->Town:bot1;right1@100.5000 18.0000->Crossroads_02:left1;left1@-0.5000 9.0000->Crossroads_07:right1;,6,8,18,20,94
+Crossroads_02,ok,20,left1@-0.5000 7.0000->Crossroads_01:right1;right1@90.5000 5.0000->Crossroads_39:left1;door1@46.4700 3.7700->:;,0,0,0,0,74
+Crossroads_03,ok,20,left1@0.5000 34.0000->Crossroads_21:right1;top1@14.0000 72.5000->Crossroads_16:bot1;right2@30.5000 60.0000->Mines_33:left1;bot1@15.0000 -0.5000->Crossroads_19:top1;left2@-0.5000 11.0000->Crossroads_47:right1;right1@30.5000 35.0000->Crossroads_15:left1;,5,10,15,27,90
+Crossroads_04,ok,20,right1@160.5000 25.0000->Crossroads_50:left1;door1@85.0500 2.8200->Room_ruinhouse:left1;top1@76.0000 30.5000->Crossroads_27:bot1;door_charmshop@144.0600 10.7400->:;left1@-0.5000 17.0000->Crossroads_19:right1;door_Mender_House@57.1000 2.6674->:;,8,16,15,42,110
+Crossroads_05,ok,20,left1@-0.5000 7.0000->Crossroads_07:right2;right1@75.0000 8.0000->Crossroads_40:left1;,6,11,18,22,66
+Crossroads_06,ok,20,right1@60.5000 6.0000->Crossroads_10:left1;door1@28.4100 29.6600->:;left1@-0.5000 6.0000->Crossroads_33:right1;,0,0,0,10,29
+Crossroads_07,ok,20,left3@-0.5000 20.0000->Crossroads_25:right1;right2@43.5000 44.0000->Crossroads_05:left1;left2@-0.5000 40.5000->Crossroads_11_alt:right1;bot1@20.0000 0.5000->Crossroads_33:top1;right1@43.5000 83.0000->Crossroads_01:left1;left1@2.5000 83.0000->Crossroads_38:right1;,4,23,4,11,147
+Crossroads_08,ok,20,left2@-0.5000 6.0000->Crossroads_18:right1;right2@52.5000 9.0000->Crossroads_13:left1;right1@51.5000 24.0000->Crossroads_30:left1;left1@-0.5000 22.0000->Crossroads_33:right2;,3,6,8,31,70
+Crossroads_09,ok,20,right1@86.5000 5.0000->Crossroads_33:left1;left1@-0.5000 9.0000->Crossroads_36:right2;,1,1,9,35,28
+Crossroads_10,ok,20,door_dreamReturn@36.3800 47.6500->:;left1@-0.5000 4.0000->Crossroads_06:right1;right1@75.5000 4.0000->Crossroads_21:left1;,0,0,1,77,79
+Crossroads_10_boss,ok,20,,5,5,18,53,8
+Crossroads_10_boss_defeated,ok,20,,1,2,1,20,4
+Crossroads_10_preload,ok,20,,0,0,0,0,0
+Crossroads_11_alt,ok,20,left1@-0.5000 19.0000->Fungus1_01:right1;right1@120.5000 13.0000->Crossroads_07:left2;,2,3,12,15,56
+Crossroads_12,ok,20,right1@70.5000 11.0000->Crossroads_33:left2;left1@-0.5000 13.0000->Crossroads_35:right1;,1,1,2,7,41
+Crossroads_13,ok,20,left1@-0.5000 13.0000->Crossroads_08:right2;right1@80.5000 14.0000->Crossroads_42:left1;,4,5,11,40,96
+Crossroads_14,ok,20,left2@-0.5000 11.0000->Crossroads_16:right1;left1@-0.5000 34.0000->Crossroads_39:right1;right1@33.5000 35.5000->Crossroads_48:left1;right2@33.5000 7.0000->Crossroads_45:left1;,1,1,2,3,46
+Crossroads_15,ok,20,right1@60.5000 4.0000->Crossroads_27:left1;left1@-0.5000 4.0000->Crossroads_03:right1;,2,4,8,28,52
+Crossroads_16,ok,20,left1@-0.5000 10.0000->Crossroads_40:right1;right1@76.5000 15.0000->Crossroads_14:left2;bot1@58.0000 -0.5000->Crossroads_03:top1;,3,7,12,17,68
+Crossroads_18,ok,20,right2@41.5000 9.0000->Crossroads_52:left1;right1@41.5000 37.0000->Crossroads_08:left2;bot1@21.0000 -0.5000->Fungus2_06:top1;,0,0,0,19,57
+Crossroads_19,ok,20,right1@50.5000 7.0000->Crossroads_04:left1;top1@18.0000 45.5000->Crossroads_03:bot1;left2@-0.5000 7.0000->Crossroads_43:right1;left1@-0.5000 35.0000->Crossroads_42:right1;,5,19,11,10,101
+Crossroads_21,ok,20,top1@9.0000 29.5000->Crossroads_22:bot1;left1@-0.5000 6.0000->Crossroads_10:right1;top2@45.0000 26.5000->Crossroads_22:bot2;right1@100.0000 17.0000->Crossroads_03:left1;,7,9,12,37,76
+Crossroads_22,ok,20,bot1@8.0000 -0.5000->Crossroads_21:top1;,4,40,6,29,95
+Crossroads_25,ok,20,left1@-0.5000 8.0000->Crossroads_36:right1;right1@70.5000 8.0000->Crossroads_07:left3;,2,4,3,10,13
+Crossroads_27,ok,20,right1@30.5000 21.0000->Crossroads_46:left1;bot1@15.0000 -0.5000->Crossroads_04:top1;left1@-0.5000 66.0000->Crossroads_15:right1;left2@-0.5000 39.0000->Crossroads_31:right1;,2,18,5,11,81
+Crossroads_30,ok,20,left1@1.5000 8.0000->Crossroads_08:right1;,0,0,0,9,22
+Crossroads_31,ok,20,right1@69.5000 5.0000->Crossroads_27:left2;,0,0,0,6,32
+Crossroads_33,ok,20,right2@45.5000 10.5000->Crossroads_08:left1;left2@-0.5000 10.0000->Crossroads_12:right1;right1@45.5000 35.0000->Crossroads_06:left1;top1@21.0000 49.5000->Crossroads_07:bot1;left1@-0.5000 37.0000->Crossroads_09:right1;,0,0,0,0,42
+Crossroads_35,ok,20,bot1@64.0000 -0.5000->Fungus3_26:top1;right1@70.5000 49.0000->Crossroads_12:left1;,2,17,3,15,40
+Crossroads_36,ok,20,right1@60.5000 45.0000->Crossroads_25:left1;right2@60.5000 5.0000->Crossroads_09:left1;,0,0,0,12,14
+Crossroads_37,ok,20,right1@110.5000 4.0000->Crossroads_49:left1;,4,14,10,29,51
+Crossroads_38,ok,20,right1@68.5000 4.0000->Crossroads_07:left1;,0,0,0,32,64
+Crossroads_39,ok,20,right1@88.5000 7.0000->Crossroads_14:left1;left1@-0.5000 7.0000->Crossroads_02:right1;,4,6,14,23,73
+Crossroads_40,ok,20,right1@88.5000 4.0000->Crossroads_16:left1;left1@-0.5000 4.5000->Crossroads_05:right1;,6,9,16,14,66
+Crossroads_42,ok,20,right1@110.5000 5.0000->Crossroads_19:left1;left1@-0.5000 4.0000->Crossroads_13:right1;,2,7,7,25,99
+Crossroads_43,ok,20,right1@88.5000 4.0000->Crossroads_19:left2;left1@-0.5000 10.0000->Crossroads_49:right1;,2,3,2,16,46
+Crossroads_45,ok,20,right1@70.5000 41.0000->Mines_01:left1;left1@-0.5000 9.0000->Crossroads_14:right2;,1,1,5,24,3
+Crossroads_46,ok,20,left1@-0.5000 11.0000->Crossroads_27:right1;door_tram@18.4500 9.9900->:;,0,0,0,10,7
+Crossroads_46b,ok,20,right1@55.5000 11.0000->RestingGrounds_02:left1;door_tram@-7.5800 49.9900->:;,0,0,0,6,6
+Crossroads_47,ok,20,door_stagExit@16.2000 5.7400->:;right1@47.5000 7.0000->Crossroads_03:left2;,0,0,0,21,6
+Crossroads_48,ok,20,left1@-0.5000 4.0000->Crossroads_14:right1;,1,1,5,16,12
+Crossroads_49,ok,20,left1@-0.5000 161.0000->Crossroads_37:right1;elev_entrance@14.9500 158.7900->:;right1@30.5000 161.0000->Crossroads_43:left1;,0,0,0,11,7
+Crossroads_49b,ok,20,left1@-0.5000 10.0000->Fungus2_07:;right1@30.5000 6.0000->Ruins1_28:left1;elev_entrance@15.1500 34.2200->:;,0,0,0,33,1
+Crossroads_50,ok,20,left1@-0.5000 45.0000->Crossroads_04:right1;right1@260.5000 28.0000->RestingGrounds_06:left1;,4,6,12,18,27
+Crossroads_52,ok,20,left1@-0.5000 61.0000->Crossroads_18:right2;,0,0,0,6,5
+Crossroads_ShamanTemple,ok,20,left1@-0.5000 9.0000->Crossroads_06:door1;,5,17,18,108,118
+Fungus1_01,ok,20,left1@-0.5000 7.0000->Fungus1_01b:right1;right1@170.5000 9.5000->Crossroads_11_alt:left1;,5,16,20,37,122
+Fungus1_01b,ok,20,left1@-0.5000 7.0000->Fungus1_02:right1;right1@45.5000 7.0000->Fungus1_01:left1;,1,18,3,23,115
+Fungus1_02,ok,20,right1@46.5000 62.0000->Fungus1_01b:left1;right2@46.5000 11.0000->Fungus1_06:left1;left1@-0.5000 62.0000->Fungus1_17:right1;,2,2,8,21,66
+Fungus1_03,ok,20,bot1@45.0000 -0.5000->Fungus1_05:top1;right1@80.5000 18.0000->Fungus1_17:left1;left1@-0.5000 30.0000->Fungus1_31:right1;,6,14,12,29,81
+Fungus1_04,ok,20,right1@95.5000 33.0000->Fungus1_21:left1;left1@-0.5000 6.0000->Fungus1_25:right1;,0,0,0,22,46
+Fungus1_04_boss,ok,20,,1,1,0,44,5
+Fungus1_05,ok,20,right1@31.5000 13.0000->Fungus1_14:left1;bot1@15.0000 -0.5000->Fungus1_10:top1;top1@22.0000 85.5000->Fungus1_03:bot1;,4,12,22,46,95
+Fungus1_06,ok,20,bot1@103.0000 -0.5000->Fungus1_07:top1;left1@-0.5000 17.0000->Fungus1_02:right2;,3,7,16,66,118
+Fungus1_07,ok,20,right1@70.5000 44.0000->Fungus1_08:left1;top1@36.0000 58.5000->Fungus1_06:bot1;left1@-0.5000 14.0000->Fungus1_19:right1;,3,5,17,31,90
+Fungus1_08,ok,20,left1@-0.5000 39.0000->Fungus1_07:right1;,0,0,0,35,37
+Fungus1_09,ok,20,right1@250.5000 14.0000->Fungus1_30:left1;left1@-0.5000 11.0000->Fungus1_15:right1;,1,18,1,38,101
+Fungus1_10,ok,20,right1@180.5000 13.0000->Fungus1_19:left1;top1@44.0000 25.5000->Fungus1_05:bot1;left1@-0.5000 14.0000->Fungus1_30:right1;,2,7,10,49,89
+Fungus1_11,ok,20,left1@-0.5000 33.0000->Fungus1_29:right1;bot1@35.0000 -0.5000->Fungus3_01:top1;top1@41.0000 69.0000->Fungus1_19:bot1;right2@55.5000 62.0000->Fungus1_37:left1;right1@55.5000 40.0000->Fungus1_34:left1;,4,6,5,106,127
+Fungus1_12,ok,20,right1@32.5000 28.0000->Fungus1_29:left1;left1@-0.5000 8.0000->Fungus1_13:right1;,5,15,9,55,96
+Fungus1_13,ok,20,right1@220.5000 18.0000->Fungus1_12:left1;left1@-0.5000 23.0000->Fungus3_22:right1;,3,14,5,30,260
+Fungus1_14,ok,20,left1@-0.5000 13.0000->Fungus1_05:right1;,0,0,1,19,60
+Fungus1_15,ok,20,door1@36.9500 33.7500->Room_nailmaster_02:left1;right1@57.5000 8.0000->Fungus1_09:left1;,0,0,0,14,35
+Fungus1_16_alt,ok,20,right1@47.5000 7.0000->Fungus1_22:left1;door_stagExit@16.0900 5.8100->:;,0,0,0,19,17
+Fungus1_17,ok,20,right1@80.5000 7.0000->Fungus1_02:left1;left1@-0.5000 9.0000->Fungus1_03:right1;,2,3,10,23,51
+Fungus1_19,ok,20,bot1@67.0000 -0.5000->Fungus1_11:top1;right1@90.5000 14.0000->Fungus1_07:left1;left1@-0.5000 14.0000->Fungus1_10:right1;,4,7,14,47,89
+Fungus1_20_v02,ok,20,right1@180.5000 13.0000->Fungus1_28:left2;bot2@163.0000 -0.5000->Fungus1_32:top1;bot1@7.0000 -0.5000->Fungus1_21:top1;,4,8,4,14,29
+Fungus1_21,ok,20,top1@9.0000 50.5000->Fungus1_20_v02:bot1;right1@90.5000 14.0000->Fungus1_32:left1;bot1@21.0000 -0.5000->Fungus1_22:top1;left1@-0.5000 14.0000->Fungus1_04:right1;,3,7,18,90,132
+Fungus1_22,ok,20,left1@-0.5000 104.0000->Fungus1_16_alt:right1;top1@8.0000 120.5000->Fungus1_21:bot1;bot1@30.0000 -0.5000->Fungus1_30:top1;,4,13,18,55,194
+Fungus1_23,ok,20,right1@150.5000 10.0000->Fungus3_13:left1;left1@-0.5000 7.0000->Fungus3_48:right2;,2,13,9,15,98
+Fungus1_24,ok,20,left1@-0.5000 11.0000->Fungus3_05:right1;,1,7,7,27,130
+Fungus1_25,ok,20,right1@90.5000 11.0000->Fungus1_04:left1;left1@-0.5000 14.5000->Fungus1_26:right1;,0,0,0,0,64
+Fungus1_26,ok,20,door_SlugShrine@77.9800 14.7600->Room_Slug_Shrine:left1;right1@110.5000 19.5000->Fungus1_25:left1;left1@-0.5000 22.0000->Fungus1_Slug:right1;,3,3,10,26,23
+Fungus1_28,ok,20,left1@-0.5000 59.0000->Cliffs_01:right3;left2@-0.5000 18.0000->Fungus1_20_v02:right1;,4,8,10,39,25
+Fungus1_29,ok,20,right1@85.5000 15.0000->Fungus1_11:left1;left1@-0.5000 15.0000->Fungus1_12:right1;,3,6,10,39,58
+Fungus1_30,ok,20,right1@100.5000 15.0000->Fungus1_10:left1;top3@94.0000 32.5000->Fungus1_31:bot1;left1@-0.5000 15.0000->Fungus1_09:right1;top1@28.0000 32.5000->Fungus1_22:bot1;,0,0,0,11,67
+Fungus1_31,ok,20,top1@14.0000 133.5000->Fungus1_32:bot1;bot1@21.0000 -0.5000->Fungus1_30:top3;right1@36.5000 116.0000->Fungus1_03:left1;,4,11,19,37,119
+Fungus1_32,ok,20,top1@68.0000 40.5000->Fungus1_20_v02:bot2;left1@-0.5000 4.0000->Fungus1_21:right1;bot1@7.0000 -0.5000->Fungus1_31:top1;,3,3,5,51,72
+Fungus1_34,ok,20,left1@-0.5000 5.0000->Fungus1_11:right1;door1@103.1600 3.7300->Fungus1_35:left1;,5,5,13,8,47
+Fungus1_35,ok,20,right1@120.5000 17.0000->Fungus1_36:left1;left1@-0.5000 4.0000->Fungus1_34:door1;,1,1,0,8,25
+Fungus1_36,ok,20,left1@-0.5000 4.0000->Fungus1_35:right1;,1,5,3,10,37
+Fungus1_37,ok,20,left1@-0.5000 7.0000->Fungus1_11:right2;,0,0,0,1,10
+Fungus1_Slug,ok,20,right1@70.5000 102.0000->Fungus1_26:left1;,0,0,0,49,65
+Room_Bretta,ok,20,right1@24.5000 7.0000->Town:door_bretta;door1@16.5600 5.6700->:;,0,0,0,3,1
+Room_Bretta_Basement,ok,20,door1@20.4900 5.5200->:;door_dreamReturn@17.5500 5.6300->:;top1@20.5000 15.0000->Room_Bretta:door1;,0,0,0,0,3
+Room_Charm_Shop,ok,20,left1@11.5000 7.0000->Crossroads_04:door_charmshop;,0,0,0,41,2
+Room_Colosseum_01,ok,20,right1@60.5000 9.0000->:left1;bot1@44.0000 3.0000->Room_Colosseum_02:top1;left1@13.5000 9.0000->Deepnest_East_09:right1;,0,0,0,19,5
+Room_Colosseum_02,ok,20,top2@135.5000 56.0000->Room_Colosseum_Spectate:bot1;top1@43.5000 56.0000->Room_Colosseum_01:bot1;,0,0,0,30,20
+Room_Colosseum_Bronze,ok,20,left1@1.5000 7.0000->Room_Colosseum_01:right1;left1 (1)@1.5000 11.0000->Room_Colosseum_01:right1;,9,48,10,287,125
+Room_Colosseum_Gold,ok,20,left1@1.5000 7.0000->Room_Colosseum_01:right1;left1 (1)@1.5000 11.0000->Room_Colosseum_01:right1;,22,137,21,564,300
+Room_Colosseum_Silver,ok,20,left1@1.5000 7.0000->Room_Colosseum_01:right1;left1 (1)@1.5000 11.0000->Room_Colosseum_01:right1;,17,84,19,315,197
+Room_Colosseum_Spectate,ok,20,bot1@135.0000 2.5000->Room_Colosseum_02:top2;right1@176.0000 9.0000->GG_Lurker:left1;,1,1,2,31,10
+Room_Final_Boss_Atrium,ok,20,left1@6.5000 9.0000->Room_temple:door1;right1@246.0000 9.0000->Room_Final_Boss_Core:left1;,0,0,0,15,11
+Room_Final_Boss_Core,ok,20,left1@7.5000 9.0000->Room_Final_Boss_atrium:right1;,1,1,0,114,21
+Room_Fungus_Shaman,ok,20,left1@-0.5000 11.0000->Fungus3_44:door1;,1,14,2,86,59
+Room_GG_Shortcut,ok,20,left1@28.5000 5.0000->GG_Waterways:door1;top1@4.5000 108.5000->Ruins1_04:bot1;,1,5,5,38,22
+Room_Jinn,ok,20,left1@10.0000 8.0000->Town:door_jiji;,0,0,0,7,4
+Room_Mansion,ok,20,left1@11.0000 7.0000->RestingGrounds_12:door_Mansion;,0,0,0,19,4
+Room_Mask_Maker,ok,20,right1@60.5000 7.0000->Deepnest_42:left1;,0,0,0,3,6
+Room_Mender_House,ok,20,left1@11.5000 7.0000->Crossroads_04:door_Mender_House;,0,0,0,0,0
+Room_Ouiji,ok,20,left1@10.0000 8.0000->Town:door_jiji;,0,0,0,17,4
+Room_Queen,ok,20,left1@4.5000 45.0000->Fungus3_48:door1;,0,0,0,24,8
+Room_Slug_Shrine,ok,20,left1@11.5000 7.0000->Fungus1_26:door_SlugShrine;,0,0,0,5,6
+Room_Sly_Storeroom,ok,20,top1@16.0000 16.5000->Room_shop:door1;door1@16.0100 3.6500->:;,0,0,0,32,0
+Room_Town_Stag_Station,ok,20,left1@23.0000 21.0000->Town:door_station;door_stagExit@55.6400 5.7400->:;,0,0,0,21,9
+Room_Tram,ok,20,door1@19.5900 8.6300->:;,0,0,1,8,5
+Room_Tram_RG,ok,20,door1@19.5900 8.6300->:;,0,0,1,8,5
+Room_Wyrm,ok,20,right1@108.5000 12.0000->Deepnest_East_Hornet:left2;,0,0,0,21,3
+Room_mapper,ok,20,left1@11.5000 7.0000->Town:door_mapper;,0,0,0,42,1
+Room_nailmaster,ok,20,left1@11.0000 5.0000->Cliffs_02:door1;,0,0,0,14,4
+Room_nailmaster_02,ok,20,left1@10.0000 5.0000->Fungus1_15:door1;,0,0,0,18,1
+Room_nailmaster_03,ok,20,left1@10.0000 5.0000->Deepnest_East_06:door1;,0,0,0,17,1
+Room_nailsmith,ok,20,left1@8.5000 5.5000->Ruins1_04:door1;,0,0,2,8,5
+Room_ruinhouse,ok,20,left1@9.5000 7.5000->Crossroads_04:door1;,0,0,0,3,1
+Room_shop,ok,20,door1@19.0700 5.6872->:;left1@9.5000 7.0000->Town:door_sly;,0,0,0,45,0
+Room_spider_small,ok,20,left1@12.5000 14.0000->Deepnest_10:door2;,0,0,0,10,2
+Room_temple,ok,20,door1@35.4100 4.5700->:;left1@2.0000 5.0000->Crossroads_02:door1;,0,0,0,10,17
+Town,ok,20,door_jiji@252.0000 7.7500->Room_Ouiji:left1;bot1@185.0000 -1.5000->Crossroads_01:top1;door_mapper@154.7986 10.7136->Room_mapper:left1;door_station@142.5016 10.6452->:;door_sly@120.8584 10.6448->:;room_divine@72.1432 10.8265->Grimm_Divine:left1;room_grimm@82.7571 10.8265->Grimm_Tent:left1;door_bretta@165.6210 10.8740->:;left1@1.5000 49.0000->Tutorial_01:right1;top1@33.5000 72.0000->Cliffs_02:right1;door_dreamReturn@82.7600 10.6488->:;right1@263.5000 53.0000->Mines_10:left1;,0,0,3,67,72

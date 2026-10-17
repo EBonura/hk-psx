@@ -1,0 +1,149 @@
+# scenario	kind	seconds	calls	near_calls	distinct	local_distinct	persistent_distinct	loops	wide_distinct	peak_voices_all	peak_voices_near	peak_distinct_sounds	peak_at_s	peak_set	local_B@22050	local_B@5512	local_B@min15	local_B@min20	local_B@min30	local_B@min40	wide_B@5512	wide_B@min15	wide_B@min20	stream_distinct	stream_seconds	cover90_clips	cover90_B@m15	cover99_clips	cover99_B@m15	fsm_reach_local_clips	fsm_reach_B@5512	fsm_reach_B@min20	census_reach_local_clips	census_reach_B@5512
+Crossroads_01	survey	7.2	29	22	13	3	1	0	9	6	5	6	3.3	grass_move_1|grass_move_2|grass_move_3|grass_move_6|water_drip_3|zombie_five_footstep	45408	11376	38528	40816	43024	45408	15712	54880	56272	0	0.0	10	64784	12	93408	19	63216	187008	17	68176
+Crossroads_02	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	1	1392	5568	3	2976
+Crossroads_03	survey	7.2	35	27	14	2	3	0	9	6	5	6	15.1	Grub_sad_idle_01|grass_move_1|grass_move_5|platform_dirt_fall_2|water_drip_3|water_drip_4	26720	6688	3888	4384	8880	23616	22576	87168	87360	0	0.0	8	55936	11	91056	25	101552	132928	24	79664
+Crossroads_04	survey	11.0	37	20	15	3	3	0	9	7	4	5	23.6	grass_move_3|water_drip_1|water_drip_4|zombie_chase_2|zombie_five_footstepx3	45408	11376	38528	40816	43024	45408	18848	68496	69744	0	0.0	10	78400	12	107024	24	105216	230720	32	223312
+Crossroads_05	survey	8.5	47	39	17	6	1	0	10	9	8	6	32.4	Grub_sad_idle_03|grass_move_2|grass_move_3x3|grass_move_6x2|water_drip_2|zombie_five_footstep	74528	18672	33152	39664	51024	74528	19264	69088	70480	0	0.0	12	84096	16	102240	28	89648	204160	25	93952
+Crossroads_06	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	26640	55696	7	23872
+Crossroads_07	survey	6.0	17	11	4	1	1	0	2	5	3	2	40.7	hero_land_soft|platform_land_from_cr7x4	6880	1728	4992	5904	6880	6880	1040	1168	1360	0	0.0	2	5568	3	6160	8	30496	48656	7	46128
+Crossroads_08	survey	4.8	13	13	6	1	1	0	4	7	7	4	47.9	gate_slamx4|platform_dirt_fall_1|water_drip_1x2	36784	9200	2672	2672	36784	36784	6672	19872	21120	0	0.0	4	21968	5	22544	18	65264	150704	15	44464
+Crossroads_09	survey	2.2	8	8	7	5	1	0	1	6	6	5	51.2	gate_slamx2|grass_move_2|hero_land_soft|mawlek_jump|mawlek_jump_offscreen	150432	37648	30608	46640	107344	138736	2992	11968	11968	0	0.0	6	42576	6	42576	17	95152	178240	21	214736
+Crossroads_10	survey	1.0	3	3	1	1	0	0	0	3	3	1	52.5	zombie_five_footstepx3	16784	4208	9904	12192	14400	16784	0	0	0	0	0.0	1	9904	1	9904	17	80224	169456	9	47104
+Crossroads_10_boss	survey	7.2	43	26	14	6	8	0	0	14	14	6	56.9	enemy_damagex6|enemy_death_swordx3|false_knight_ceiling_break|false_knight_land_1st_time|zombie_chase_1x2|zombie_chase_2	111248	27856	44256	60688	87952	102880	0	0	0	0	0.0	6	44256	6	44256	31	133008	170064	41	255680
+Crossroads_10_boss_defeated	survey	2.2	1	1	1	0	1	0	0	1	1	1	64.9	hero_falling	0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	13	37280	28800	14	38272
+Crossroads_10_preload	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	0	0	0	0	0
+Crossroads_11_alt	survey	3.5	5	4	4	0	3	0	1	3	3	3	67.9	blocker_close|blocker_open|hero_land_soft	0	0	0	0	0	0	624	576	624	0	0.0	1	576	1	576	7	17648	51568	13	28816
+Crossroads_12	survey	2.2	2	2	2	1	1	0	0	2	2	2	70.8	hero_land_soft|worm	26880	6720	9760	23040	26880	26880	0	0	0	0	0.0	1	9760	1	9760	11	27200	90432	10	32528
+Crossroads_13	survey	6.0	47	31	10	4	1	0	5	20	12	6	74.3	grass_move_2|grass_move_4x2|hero_land_soft|wormx14|zombie_chase_2|zombie_five_footstep	66720	16704	36256	51968	60208	65632	10672	39696	39888	0	0.0	5	61328	9	75952	21	76080	242720	22	121712
+Crossroads_14	survey	2.2	3	3	2	0	1	0	1	3	3	2	80.0	grass_move_6x2|hero_land_soft	0	0	0	0	0	0	2432	9680	9680	0	0.0	1	9680	1	9680	4	11376	31856	5	11936
+Crossroads_15	survey	3.5	9	9	7	4	1	0	2	4	4	4	83.2	grass_move_1|hero_land_soft|zombie_five_footstep|zombie_shield_move	27760	6960	15968	20208	25376	27760	3712	12928	12976	0	0.0	6	28896	6	28896	8	8800	30624	12	16256
+Crossroads_16	survey	4.8	15	14	11	4	1	0	6	5	5	4	88.2	buzzer_startle_01x2|water_drip_2|water_drip_3|zombie_five_footstep	42528	10672	24880	27408	33952	41440	12032	44048	45344	0	0.0	9	55792	10	68928	13	29744	104384	13	33024
+Crossroads_18	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	10	47936	78128	8	13200
+Crossroads_19	survey	7.2	21	17	10	2	1	0	7	4	4	4	93.5	grass_move_3|hero_land_soft|platform_dirt_fall_1|zombie_five_footstep	32272	8080	25392	27680	29888	32272	17632	64480	65824	0	0.0	8	74384	9	89872	11	35536	99920	9	24176
+Crossroads_21	survey	9.8	35	29	10	7	1	0	2	6	6	4	102.2	water_drip_3|zombie_chase_1|zombie_chase_2|zombie_five_footstepx3	91472	22928	57888	67488	81504	91472	1040	1168	1360	0	0.0	7	41568	9	59056	29	107344	297216	27	93696
+Crossroads_22	survey	6.0	6	3	5	0	3	0	2	3	1	3	114.1	grass_move_2|hero_falling|platform_dirt_fall_1	0	0	0	0	0	0	7344	29344	29344	0	0.0	2	29344	2	29344	4	18176	36704	5	19056
+Crossroads_25	survey	3.5	3	3	2	0	1	0	1	2	2	2	117.8	hero_land_soft|platform_dirt_fall_2	0	0	0	0	0	0	5008	20000	20000	0	0.0	1	20000	1	20000	3	19872	38176	6	18320
+Crossroads_27	survey	3.5	5	3	4	0	1	0	3	3	2	3	121.9	hero_land_soft|platform_dirt_fall_1|water_drip_4	0	0	0	0	0	0	5392	18544	18736	0	0.0	3	18544	3	18544	8	30160	48320	3	2976
+Crossroads_30	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	31792	59120	7	36176
+Crossroads_31	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	14	48176	54832	16	49760
+Crossroads_33	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	1	2096	8368	11	40672
+Crossroads_35	survey	3.5	4	2	3	1	1	0	1	2	1	2	130.3	Grub_sad_idle_02|grass_move_6	16128	4032	1184	2048	2928	5120	2432	9680	9680	0	0.0	2	10864	2	10864	16	66656	87440	17	60576
+Crossroads_36	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	9	46544	72560	1	6656
+Crossroads_37	survey	6.0	64	38	10	3	1	0	6	18	11	8	137.2	grass_move_2x3|grass_move_3|grass_move_5|zombie_chase_2|zombie_five_footstepx12	45408	11376	38528	40816	43024	45408	16528	66000	66000	0	0.0	6	69360	9	104528	12	52688	121504	8	72560
+Crossroads_38	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	13	56112	85296	25	148992
+Crossroads_39	survey	6.0	22	22	13	4	5	0	4	7	7	6	145.5	enemy_damagex2|enemy_death_sword|geo_small_collect_1|stalactite_break|water_drip_2|zombie_chase_1	60176	15072	49248	55584	57792	60176	11120	41456	42608	0	0.0	7	75216	8	90704	11	31232	122800	17	43760
+Crossroads_40	survey	8.5	46	38	15	3	1	0	11	7	7	7	150.4	grass_move_1x2|grass_move_6|zombie_chase_1|zombie_five_footstepx3	45408	11376	38528	40816	43024	45408	31856	122384	123584	0	0.0	10	106992	14	160912	10	29136	114432	14	36624
+Crossroads_42	survey	3.5	13	9	6	3	1	0	2	8	4	4	158.0	grass_move_1x2|hero_land_soft|water_drip_3|wormx4	40496	10144	13344	27312	36368	39408	3504	12944	13088	0	0.0	4	25696	5	26288	11	27200	90432	10	32528
+Crossroads_43	survey	3.5	3	3	2	0	1	0	1	1	1	1	160.0	hero_land_soft	0	0	0	0	0	0	624	576	624	0	0.0	1	576	1	576	7	7744	25664	11	14336
+Crossroads_45	survey	2.2	6	2	4	3	1	0	0	3	1	3	163.8	hero_land_soft|lift_activate|myla_pickaxe_1	68720	17184	43968	46160	54544	60944	0	0	0	0	0.0	3	43968	3	43968	21	123792	188528	22	118576
+Crossroads_46	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	10	38656	47712	4	18240
+Crossroads_46b	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	4	18240	14048	4	18240
+Crossroads_47	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	14	111920	261840	16	119040
+Crossroads_48	survey	2.2	3	3	3	2	1	0	0	2	2	2	178.3	hero_land_soft|zombie_guard_awake	19632	4928	11200	16832	19632	19632	0	0	0	0	0.0	2	11200	2	11200	21	84848	157440	21	84848
+Crossroads_49	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	5	21376	23520	5	21376
+Crossroads_49b	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	9	41104	77392	9	41104
+Crossroads_50	survey	6.0	14	12	11	2	3	0	6	6	5	5	186.1	buzzer_startle_02|grass_move_2|hero_swim_loop|water_drip_4|water_splashx2	13616	3424	3584	4272	9488	12528	14288	53184	53280	0	0.0	8	56768	8	56768	10	35072	96816	9	30688
+Crossroads_52	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	16064	39056	0	0
+Crossroads_ShamanTemple	survey	7.2	27	16	16	12	3	0	1	7	3	7	174.7	Fire_pop_02|health_cocoon_move|hero_land_soft|mawlek_spit_b|orange_shot_impact|platform_dirt_fall_1|roller_rolling	171760	43024	89808	111248	138128	158144	4352	17376	17376	0	0.0	11	87040	13	107184	32	186064	412640	35	200576
+Fungus1_01	survey	7.2	21	15	13	8	1	0	4	10	8	7	193.7	grass_move_2|grass_move_6|mossman_runner_walk_loop|mossman_shaker_walk_loopx2|pigeon_fly_away|pigeon_fly_away_3x3|secret_discovered_temp	162512	40656	118256	143360	150208	159152	21216	37696	37696	0	0.0	10	112704	12	155952	22	86800	231632	18	73952
+Fungus1_01b	survey	2.2	5	5	2	2	0	0	0	5	5	2	198.6	pigeon_fly_awayx3|pigeon_fly_away_2x2	56784	14208	54320	56784	56784	56784	0	0	0	0	0.0	2	54320	2	54320	9	42928	122544	6	44160
+Fungus1_02	survey	3.5	8	7	7	6	0	0	1	4	4	4	202.4	Mosskin_attack_03|fluke_fairy_call|mosquito_charge_prepare|mossman_shaker_explode_prepare	80256	20112	54512	76400	80256	80256	2608	10384	10384	0	0.0	7	64896	7	64896	16	33536	96848	13	33392
+Fungus1_03	survey	8.5	24	23	11	8	1	0	2	11	11	7	208.8	grass_move_2|pigeon_fly_away|pigeon_fly_away_2|pigeon_fly_away_3x3|zombie_chase_1|zombie_chase_2|zombie_five_footstepx3	163936	41040	142432	152896	157392	163936	6544	26176	26176	0	0.0	8	114288	10	168608	15	54720	198688	13	63568
+Fungus1_04	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	10	35360	80256	3	16896
+Fungus1_04_boss	survey	2.2	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	26	69808	187280	27	74864
+Fungus1_05	survey	6.0	58	39	21	15	0	0	6	14	11	9	218.2	fluke_fairy_callx3|grass_move_1|grass_move_2x2|grass_move_5|grass_move_6|mosquito_charge_preparex3|moss_walker_footstep_loop|mossman_shaker_walk_loopx2	194336	48688	135280	171648	180816	194336	16528	66000	66000	0	0.0	16	156480	21	201280	21	53232	139600	18	53088
+Fungus1_06	survey	4.8	16	9	15	12	0	0	3	6	3	6	225.7	Mosskin_attack_01|grass_move_5|mosquito_charge_charge|mosquito_wall_hit|mossman_runner_walk_loop|mossman_shaker_explode_prepare	144144	36128	92336	128688	135104	140784	7456	29760	29760	0	0.0	14	114720	15	122096	43	142496	267552	37	124720
+Fungus1_07	survey	4.8	25	21	16	10	0	0	6	7	7	6	231.2	grass_move_4x2|grass_move_5|grass_move_6x2|mosquito_wall_hit|mossman_roll_attack	111520	27952	77552	92688	98000	111520	16528	66000	66000	0	0.0	14	117744	16	143552	33	103984	182464	30	94288
+Fungus1_08	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	17	115808	303856	17	130320
+Fungus1_09	survey	2.2	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	3	5936	23712	9	26384
+Fungus1_10	survey	3.5	11	10	9	6	0	0	3	9	9	8	240.1	ceiling_dropper_look_4|grass_move_1|grass_move_3|grass_move_5x2|moss_charger_charging|moss_charger_emerge|moss_charger_return|moss_flyer_walker_emerge	106736	26704	74032	100288	102576	106736	7552	30144	30144	0	0.0	8	81328	9	104176	17	60288	175936	36	187552
+Fungus1_11	survey	6.0	4	3	3	3	0	0	0	2	2	2	246.7	ceiling_dropper_look_5|moss_flyer_walker_emerge	67936	17008	39200	43312	53872	67936	0	0	0	0	0.0	3	39200	3	39200	21	67680	200288	17	46160
+Fungus1_12	survey	7.2	13	13	8	7	0	0	1	9	9	5	251.0	grass_move_1|pigeon_fly_awayx2|pigeon_fly_away_2x3|pigeon_fly_away_3x2|plant_turret_emerge	140128	35072	109008	119600	129808	140128	3088	12352	12352	0	0.0	7	115488	8	121360	14	64480	183200	14	51456
+Fungus1_13	survey	4.8	17	6	4	4	0	0	0	8	5	3	256.8	acid_walker_walk_loopx6|ceiling_dropper_look_5|moss_flyer_walker_emerge	83216	20832	54480	58592	69152	83216	0	0	0	0	0.0	3	39200	4	54480	31	103136	233712	30	169792
+Fungus1_14	survey	1.0	3	1	1	1	0	0	0	3	1	1	260.7	zap_bug_pt1x3	18624	4656	18624	18624	18624	18624	0	0	0	0	0.0	1	18624	1	18624	3	12032	48032	5	16816
+Fungus1_15	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	2	18160	24384	3	22752
+Fungus1_16_alt	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	12	101712	226848	14	108832
+Fungus1_17	survey	3.5	13	11	9	8	0	0	1	7	5	7	267.3	grass_move_4|mosquito_charge_prepare|mosquito_fly_loop|mosquito_wall_hit|moss_charger_charging|moss_charger_emerge|moss_charger_return	103216	25856	72400	98400	99664	103216	3552	14208	14208	0	0.0	8	72912	9	86608	10	37664	98480	10	29520
+Fungus1_19	survey	6.0	43	27	13	7	1	0	5	10	8	8	270.7	grass_move_2x2|grass_move_3|grass_move_4x2|grass_move_6|moss_walker_footstep_loop|mossman_shaker_walk_loop|orange_shot_impact|spitting_zombie_spit	90240	22608	61520	81808	87088	90240	14672	58592	58592	0	0.0	8	83200	12	120112	33	91664	260656	19	55168
+Fungus1_20_v02	survey	6.0	3	1	3	1	0	0	2	1	1	1	276.7	buzzer_startle_03	5040	1264	736	832	2976	5040	1488	1936	3232	0	0.0	3	2672	3	2672	8	30160	85344	13	59168
+Fungus1_21	survey	4.8	21	13	17	11	1	0	5	10	4	9	285.1	Grub_sad_idle_01|ceiling_dropper_look_2|grass_move_3x2|grass_move_4|grass_move_6|moss_charger_charging|moss_charger_emerge|moss_flyer_walker_emerge|moss_knight_walk_loop	166384	41632	81008	111584	133552	159440	13440	53648	53648	0	0.0	14	131904	16	134656	41	120704	237200	42	127984
+Fungus1_22	survey	6.0	32	20	17	11	0	0	6	10	8	8	290.2	ceiling_dropper_look_5|grass_move_1x2|grass_move_2|grass_move_4|mosquito_fly_loop|moss_flyer_walker_emerge|mossman_shaker_walk_loopx2|zombie_fungus_a_explode	141776	35520	100848	123152	128992	138416	16528	66000	66000	0	0.0	14	123952	17	166848	25	83568	196448	22	63984
+Fungus1_23	survey	3.5	69	26	8	2	0	0	6	20	15	7	295.3	grass_hopper_jumpx2|grass_move_1x3|grass_move_2x3|grass_move_3x4|grass_move_4x2|grass_move_5x3|pigeon_fly_away_3x3	31824	7968	27280	31824	31824	31824	16528	66000	66000	0	0.0	6	58944	8	93280	4	22176	88608	4	22176
+Fungus1_24	survey	2.2	8	8	4	2	0	0	2	8	8	4	297.1	grass_move_1|grass_move_4x3|pigeon_fly_awayx2|pigeon_fly_away_2x2	56784	14208	54320	56784	56784	56784	6640	26560	26560	0	0.0	4	80880	4	80880	15	89360	172896	16	77072
+Fungus1_25	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	0	0	0	0	0
+Fungus1_26	survey	4.8	9	5	8	6	0	0	2	7	5	7	304.5	Moss_Knight_attack_01|Moss_Knight_attack_02|grass_move_2|grass_move_4|moss_knight_rustle|moss_knight_sword|pigeon_fly_away	79872	20000	56000	58592	63952	71904	6544	26176	26176	0	0.0	8	82176	8	82176	18	62448	150880	19	54208
+Fungus1_28	survey	6.0	4	3	4	2	2	0	0	3	2	3	310.1	Grub_sad_idle_02|blocker_close|blocker_open	22176	5552	3664	5072	8976	11168	0	0	0	0	0.0	2	3664	2	3664	30	101520	172080	26	75856
+Fungus1_29	survey	4.8	13	8	9	5	1	0	3	6	4	5	315.6	grass_move_1|grass_move_3|grass_move_4|moss_knight_rustle|moss_walker_footstep_loopx2	68528	17168	55696	57984	60624	68528	9248	36944	36944	0	0.0	7	79872	8	92640	22	93056	266240	26	99504
+Fungus1_30	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	3	18192	31424	3	11632
+Fungus1_31	survey	6.0	39	25	18	12	0	0	6	11	7	8	323.1	ceiling_dropper_look_4|grass_move_3|grass_move_4|moss_flyer_walker_emerge|mossman_runner_walk_loop|mossman_shaker_walk_loopx2|orange_shot_impactx4	158864	39808	106432	143056	151552	158864	16528	66000	66000	0	0.0	15	149424	18	172432	23	106480	185072	20	91184
+Fungus1_32	survey	4.8	4	4	4	3	0	0	1	4	4	4	328.0	ceiling_dropper_look_2|grass_move_5|health_cocoon_move|moss_flyer_walker_emerge	68240	17072	43280	50704	61424	68240	1856	7408	7408	0	0.0	4	50688	4	50688	25	82336	150192	31	86368
+Fungus1_34	survey	7.2	53	38	12	3	3	0	6	11	10	6	335.1	grass_move_1x2|grass_move_3x3|grass_move_5x2|grass_move_6|zombie_chase_2|zombie_five_footstepx2	45408	11376	38528	40816	43024	45408	16528	66000	66000	0	0.0	7	77072	9	104528	7	25600	83168	8	29968
+Fungus1_35	survey	2.2	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	3	23568	65456	5	47936
+Fungus1_36	survey	2.2	5	5	3	3	0	0	0	5	5	3	340.6	pigeon_fly_away|pigeon_fly_away_2x3|pigeon_fly_away_3	85552	21408	78976	85552	85552	85552	0	0	0	0	0.0	3	78976	3	78976	5	35552	125232	8	82432
+Fungus1_37	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	1	13808	7024	2	18192
+Fungus1_Slug	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	39280	63968	2	11264
+Room_Bretta	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	2	14144	39680	5	61024
+Room_Bretta_Basement	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	0	0	0	1	4368
+Room_Charm_Shop	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	19	124528	300288	24	197776
+Room_Colosseum_01	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	9	46272	55936	8	45136
+Room_Colosseum_02	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	18	93744	153152	15	73136
+Room_Colosseum_Bronze	survey	12.2	16	16	7	5	0	0	0	6	6	5	390.3	Fire_pop_01|Fire_pop_02x2|col_cage_appear|crowd_cheer|crowd_idle_loop	143408	35872	39696	61568	111424	127360	0	0	0	2	13.9	4	27616	5	39696	65	205104	364240	84	623408
+Room_Colosseum_Gold	survey	18.5	33	29	15	12	0	1	0	8	8	7	425.0	Fire_pop_01x2|Fire_pop_02|S57 COLOSSEUM STING|col_cage_appear|col_cage_open|crowd_cheer|crowd_idle_loop	204768	51248	65232	96272	158944	187344	0	0	0	2	13.9	9	59968	12	65232	146	401552	801904	178	847904
+Room_Colosseum_Silver	survey	18.5	30	30	14	11	0	1	0	8	8	8	405.5	Col_worm_leap_02|Fire_pop_02|S57 COLOSSEUM STING|col_cage_appear|col_cage_disappear|col_cage_open|crowd_cheer|crowd_idle_loop	190864	47776	49504	78576	139424	170864	0	0	0	2	13.9	9	47584	11	49504	131	348048	595168	160	788768
+Room_Colosseum_Spectate	survey	2.2	1	1	1	0	1	0	0	1	1	1	430.4	enemy_damage	0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	23	82496	109248	25	139760
+Room_Final_Boss_Atrium	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	7	79552	212272	7	72816
+Room_Final_Boss_Core	survey	2.2	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	38	182080	384112	39	183584
+Room_Fungus_Shaman	survey	2.2	2	0	2	0	0	0	2	2	0	2	371.9	grass_move_2|grass_move_4	0	0	0	0	0	0	6544	26176	26176	0	0.0	2	26176	2	26176	16	73680	181456	9	46864
+Room_GG_Shortcut	survey	2.2	4	3	2	1	1	0	0	4	3	2	442.9	enemy_damage_over_time|fungoon_baby_fly_loopx3	67600	16896	7360	7360	9824	11040	0	0	0	0	0.0	1	7360	1	7360	13	55680	147504	19	91552
+Room_Jinn	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	11	47616	91360	11	47632
+Room_Mansion	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	12	92000	170880	13	129504
+Room_Mask_Maker	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	5	22928	25136	6	72880
+Room_Mender_House	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	0	0	0	0	0
+Room_Ouiji	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	10	69232	148032	11	70224
+Room_Queen	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	11	59088	109840	10	54736
+Room_Slug_Shrine	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	42640	67360	7	43680
+Room_Sly_Storeroom	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	11	56176	131680	16	117920
+Room_Town_Stag_Station	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	14	95600	225376	16	110320
+Room_Tram	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	33472	25952	6	36432
+Room_Tram_RG	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	33472	25952	6	36432
+Room_Wyrm	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	8	50752	66848	4	34112
+Room_mapper	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	18	101712	200208	22	162464
+Room_nailmaster	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	11	78432	104672	22	165760
+Room_nailmaster_02	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	8	43760	89264	9	76944
+Room_nailmaster_03	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	12	65968	102976	13	79632
+Room_nailsmith	survey	1.0	2	2	1	1	0	0	0	2	2	1	356.6	nailsmith_anvilx2	9520	2384	6912	6912	9520	9520	0	0	0	0	0.0	1	6912	1	6912	7	43840	110464	7	43840
+Room_ruinhouse	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	3	15776	15568	3	15776
+Room_shop	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	18	96160	195424	22	156912
+Room_spider_small	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	8	45728	61408	8	45728
+Room_temple	survey	1.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	59056	64432	11	84544
+Town	survey	1.0	2	1	2	0	0	0	1	2	1	2	344.9	break_wall_after_tutorial_area|breakable_wall_death	0	0	0	0	0	0	8352	3648	9088	1	6.7	1	3648	1	3648	33	198576	353952	35	210096
+RouteCrossroads:Crossroads_01	play	17.1	98	72	24	1	6	0	17	9	8	9	6.4	grass_cut_4|grass_cut_5|grass_move_1|grass_move_2|grass_move_3|hero_land_soft|hero_run_footsteps_stone|sword_4|zombie_five_footstep	16784	4208	9904	12192	14400	16784	25824	87264	92768	0	0.0	13	81440	18	97168	19	63216	187008	17	68176
+RouteCrossroads:Crossroads_03	play	30.9	167	129	16	3	3	0	10	8	7	8	166.5	Grub_sad_idle_01|grass_move_1|grass_move_2|grass_move_3|hero_jump|hero_land_soft|hero_run_footsteps_stone|water_drip_2	69072	17296	9904	13824	20784	62000	19264	69088	70480	0	0.0	10	69088	13	78992	25	101552	132928	24	79664
+RouteCrossroads:Crossroads_05	play	28.0	194	167	30	5	11	0	14	14	14	10	66.5	Grub_sad_idle_03|enemy_damagex4|enemy_death_swordx2|hero_damage_less_harsh|hero_jump|hero_run_footsteps_stone|sword_4|zombie_chase_2x2|zombie_five_footstep	95792	23984	33328	40000	47696	80816	24272	86816	89456	0	0.0	13	97696	19	120144	28	89648	204160	25	93952
+RouteCrossroads:Crossroads_06	play	0.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	6	26640	55696	7	23872
+RouteCrossroads:Crossroads_07	play	40.0	179	136	21	3	10	0	8	7	7	6	27.6	hero_jump|hero_land_soft|hero_run_footsteps_metal|platform_land_from_cr7x3|wagon_death	62720	15696	45584	57392	62720	62720	12240	41008	42400	0	0.0	5	8080	11	86592	8	30496	48656	7	46128
+RouteCrossroads:Crossroads_10	play	40.0	128	122	9	1	3	0	5	6	6	5	230.2	grass_move_6|hero_jump|hero_land_soft|hero_run_footsteps_stone|zombie_five_footstepx2	16784	4208	9904	12192	14400	16784	13536	54032	54032	0	0.0	4	39344	6	63936	17	80224	169456	9	47104
+RouteCrossroads:Crossroads_16	play	29.2	131	117	29	4	12	0	13	10	10	8	128.2	enemy_damagex2|enemy_death_sword|hero_damage_less_harsh|hero_run_footsteps_stone|props_grass_stud_move_2|sword_4|zombie_chase_2x2|zombie_five_footstep	52976	13280	39632	42064	46464	51888	20992	72768	76160	0	0.0	13	92912	17	112400	13	29744	104384	13	33024
+RouteCrossroads:Crossroads_21	play	23.6	141	119	26	11	9	0	6	11	10	10	202.6	breakable_pole_hit_1|enemy_damagex2|enemy_death_sword|hero_damage_less_harsh|hero_land_soft|hero_run_footsteps_stone|sword_3|water_drip_3|zombie_chase_2|zombie_five_footstep	126112	31600	61120	85504	111088	122992	8432	22496	26448	0	0.0	10	39008	17	83616	29	107344	297216	27	93696
+RouteCrossroads:Crossroads_40	play	40.0	307	275	36	5	11	0	20	14	14	12	88.3	breakable_pole_death|enemy_damage|grass_cut_2|grass_cut_3|grass_cut_5|grass_move_4|grass_move_5x3|grass_move_6|sword_3|zombie_chase_1|zombie_chase_2|zombie_five_footstep	54080	13552	47200	49488	51696	54080	35184	126112	131616	0	0.0	15	120848	24	172032	10	29136	114432	14	36624
+RouteCrossroads	play-total	248.8	1345	1137	58	19	15	0	24	15	15	12	88.3	breakable_pole_death|enemy_damage|grass_cut_2|grass_cut_3|grass_cut_5|grass_move_4|grass_move_5x3|grass_move_6|sword_3|zombie_chase_1|zombie_chase_2|zombie_five_footstepx2	281600	70528	118896	160016	200960	259312	42768	152752	160112	0	0.0	15	103856	37	230192	0	0	0	0	0
+RouteGreenpath:Fungus1_01	play	3.7	6	2	5	2	1	0	2	3	1	3	3.5	grass_move_5|grass_move_6|mossman_runner_walk_loop	45632	11424	23536	41776	45632	45632	4288	17088	17088	0	0.0	4	40624	4	40624	22	86800	231632	18	73952
+RouteGreenpath:Fungus1_01b	play	19.1	67	66	16	3	4	0	9	8	8	6	6.9	hero_jump|pigeon_fly_away|pigeon_fly_away_2|pigeon_fly_away_3x2|water_drip_1|water_drip_2x2	85552	21408	78976	85552	85552	85552	15712	54880	56272	0	0.0	9	67568	12	133856	9	42928	122544	6	44160
+RouteGreenpath:Fungus1_02	play	40.0	174	164	16	3	7	0	6	9	9	8	37.2	grass_move_2|grass_move_3x2|grass_move_6|hero_jump|hero_land_soft|hero_run_footsteps_grass|leaves_fall_from_platformx2	49712	12448	35760	44000	49056	49712	16528	66000	66000	0	0.0	7	85920	9	101760	16	33536	96848	13	33392
+RouteGreenpath:Fungus1_06	play	40.0	219	169	28	10	10	0	8	9	9	9	73.6	Grub_sad_idle_04|enemy_damage|grass_move_3|grass_move_5|hero_jump|mosquito_fly_loop|mossman_shaker_walk_loopx2|sword_3	156928	39312	65584	78928	91888	138848	19968	75232	78944	0	0.0	11	94288	17	133904	43	142496	267552	37	124720
+RouteGreenpath:Fungus1_07	play	40.0	200	191	37	13	11	0	13	13	13	10	111.6	Mosskin_attack_02x2|enemy_damagex3|enemy_death_sword|focus_ready|geo_small_collect_1|hero_damage_less_harsh|hero_run_footsteps_grass|mossman_roll_attack|mossman_runner_walk_loop|sword_4	203424	50928	112960	132352	142256	185088	23440	90144	91152	0	0.0	18	134912	26	203104	33	103984	182464	30	94288
+RouteGreenpath:Fungus1_09	play	12.2	35	34	14	1	7	0	6	6	6	6	240.1	grass_move_4|grass_move_5|hero_damage_less_harsh|hero_land_soft|hero_run_footsteps_grass|leaves_fall_from_platform	18208	4560	18208	18208	18208	18208	16528	66000	66000	0	0.0	6	66000	7	84208	3	5936	23712	9	26384
+RouteGreenpath:Fungus1_10	play	40.0	98	77	11	1	6	0	4	6	6	6	153.9	grass_move_3x2|grass_move_4x2|grass_move_6|moss_walker_footstep_loop	15280	3824	15280	15280	15280	15280	10448	41680	41680	0	0.0	4	49552	5	56960	17	60288	175936	36	187552
+RouteGreenpath:Fungus1_11	play	0.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	21	67680	200288	17	46160
+RouteGreenpath:Fungus1_15	play	0.0	0	0	0	0	0	0	0	0	0	0	0.0		0	0	0	0	0	0	0	0	0	0	0.0	0	0	0	0	2	18160	24384	3	22752
+RouteGreenpath:Fungus1_19	play	10.3	78	62	22	7	7	0	8	12	11	11	150.2	Mosskin_attack_02|enemy_damage|grass_cut_3|grass_cut_4|grass_move_2|grass_move_6|hero_jump|hero_land_soft|mossman_shaker_explode_prepare|orange_shot_impactx2|sword_3	90240	22608	61520	81808	87088	90240	18768	74928	74928	0	0.0	10	105888	15	136448	33	91664	260656	19	55168
+RouteGreenpath:Fungus1_30	play	40.0	132	132	12	1	4	0	7	7	7	7	223.3	grass_move_1|grass_move_3|grass_move_4|hero_jump|hero_land_soft|hero_run_footsteps_grass|soul_totem_awake	18208	4560	18208	18208	18208	18208	27648	69232	69232	0	0.0	6	66000	8	87440	3	18192	31424	3	11632
+RouteGreenpath	play-total	245.4	1009	897	62	28	14	0	20	13	13	12	103.2	grass_move_1|grass_move_2x3|grass_move_3x2|grass_move_5|grass_move_6x2|hero_jump|mossman_runner_walk_loopx2|mossman_shaker_walk_loop	428560	107328	279952	328832	347408	407120	40736	105696	111808	0	0.0	20	153872	44	366832	0	0	0	0	0
+Dirtmouth-walk:Crossroads_01	play	0.0	2	0	2	0	0	0	2	2	0	2	29.6	grass_move_4|grass_move_5	0	0	0	0	0	0	5408	21616	21616	0	0.0	2	21616	2	21616	19	63216	187008	17	68176
+Dirtmouth-walk:Town	play	29.6	29	29	8	2	6	0	0	3	3	3	16.4	Elderbug_first_call|hero_land_soft|hero_walk_footsteps_stone	13328	3344	1120	2560	7072	11120	0	0	0	0	0.0	2	1120	2	1120	33	198576	353952	35	210096
+Dirtmouth-walk	play-total	29.6	31	29	10	2	6	0	2	3	3	3	16.4	Elderbug_first_call|hero_land_soft|hero_walk_footsteps_stone	13328	3344	1120	2560	7072	11120	5408	21616	21616	0	0.0	4	22736	4	22736	0	0	0	0	0
+Dirtmouth-NPCs	play	112.6	69	43	10	3	6	0	1	2	2	2	16.7	Elderbug_first_call|hero_walk_footsteps_stone	64752	16208	13600	21920	43488	60496	304	96	96	0	0.0	2	9536	4	13696	33	198576	353952	35	210096
+Boss:GruzMother	play	25.0	275	253	31	10	10	0	10	24	22	9	33.9	Boss Defeat|boss_explode|geo_hit_ground_1x18|grass_move_4|zombie_five_footstepx3	284832	71248	94544	135920	215008	247008	19264	69088	70480	1	24.9	13	91296	20	163632	24	105216	230720	32	223312
+Boss:Mawlek	play	61.7	533	508	41	16	8	0	15	16	16	9	38.2	enemy_damage|hero_damage_less_harsh|mawlek_jump|orange_shot_impactx12|sword_3	354720	88736	129136	178720	278320	330016	20464	68176	71824	2	34.4	15	33152	29	173840	17	95152	178240	21	214736
+Boss:FalseKnight-long	play	498.3	2189	2171	52	31	13	0	7	22	22	11	434.5	FKnight_Rage|false_knight_damage_armour|false_knight_strike_groundx8|hero_damage_less_harsh|hero_land_soft|hero_run_footsteps_stone|sword_3|wagon_deathx8	460432	115264	136096	180064	326272	415488	24880	69648	75088	1	7.2	16	48800	32	135472	17	80224	169456	9	47104
+Boss:FalseKnight-short	play	148.3	784	780	56	34	14	0	6	20	20	11	76.2	FKnight_Rage|false_knight_strike_groundx8|hero_damage_less_harsh|hero_land_soft|hero_run_footsteps_stone|wagon_deathx8	645792	161616	211456	301824	471680	574144	22448	59968	65408	2	32.1	26	150656	39	261520	17	80224	169456	9	47104
