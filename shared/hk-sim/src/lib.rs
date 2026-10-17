@@ -21,9 +21,11 @@ pub mod fsm3_ai;
 pub mod fsm3_animation;
 pub mod fsm3_audio;
 pub mod fsm3_events;
+#[cfg(feature = "boss")]
+pub mod fsm3_world;
 pub mod fsm3_flow;
-#[cfg(feature = "hard-ops")]
-pub mod fsm3_hard;
+#[cfg(feature = "boss")]
+pub mod fsm3b;
 pub mod fsm3_math;
 pub mod fsm3_object;
 pub mod fsm3_playerdata;
@@ -33,6 +35,8 @@ pub mod gruz_mother;
 pub mod gruzzer;
 pub mod hatcher;
 pub mod waves;
+#[cfg(feature = "boss")]
+pub mod hornet;
 pub mod husk_guard;
 pub mod mawlek;
 pub mod mosquito;

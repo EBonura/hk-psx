@@ -98,6 +98,11 @@ pub fn cook_tree_with(fsms: &[(i64, &Value)], fields: Option<&[String]>) -> Resu
 /// The names behind a cooked tree's ids, as lines the oracle replay reads (`tools/hkref` traces use names):
 /// `fsm<TAB>index<TAB>name`, `state<TAB>fsm<TAB>index<TAB>name`, `var<TAB>fsm<TAB>name<TAB>tag<TAB>slot`,
 /// `event<TAB>index<TAB>name`.
+/// `write_names` for the boss cooker (bin fsm3-boss).
+pub fn write_names_pub(root: &std::path::Path, label: &str, c: &Cooked) -> Result<()> {
+    write_names(root, label, c)
+}
+
 fn write_names(root: &std::path::Path, label: &str, c: &Cooked) -> Result<()> {
     use std::fmt::Write;
     let mut out = String::new();
@@ -112,6 +117,9 @@ fn write_names(root: &std::path::Path, label: &str, c: &Cooked) -> Result<()> {
     }
     for (i, e) in c.events.iter().enumerate() {
         writeln!(out, "event\t{i}\t{e}")?;
+    }
+    for (i, t) in c.strings.iter().enumerate() {
+        writeln!(out, "string\t{i}\t{}", t.replace('\t', " ").replace('\n', " "))?;
     }
     std::fs::write(root.join(format!("data/{label}_names.txt")), out)?;
     Ok(())
@@ -450,6 +458,11 @@ pub fn cook_vengeflies3(root: &std::path::Path) -> Result<()> {
 /// The PlayerData actions name a field; the runtime wants its slot in the save record's reserve.
 const PLAYER_DATA: &[&str] = &["SetPlayerDataBool", "SetPlayerDataInt", "GetPlayerDataBool", "GetPlayerDataInt", "PlayerDataBoolTest"];
 
+/// `resolve_player_data` for the boss cooker (boss.rs).
+pub fn resolve_player_data_pub(irs: &mut [FsmIr], ctx: &TreeCtx, fields: Option<&[String]>) -> Result<()> {
+    resolve_player_data(irs, ctx, fields)
+}
+
 fn resolve_player_data(irs: &mut [FsmIr], ctx: &TreeCtx, fields: Option<&[String]>) -> Result<()> {
     let keys: Vec<Option<(u8, u8)>> = PLAYER_DATA.iter().map(|n| op_of(n)).collect();
     for ir in irs.iter_mut() {
@@ -460,7 +473,10 @@ fn resolve_player_data(irs: &mut [FsmIr], ctx: &TreeCtx, fields: Option<&[String
                     continue;
                 }
                 let fields = fields.ok_or("a PlayerData action in a tree cooked without a field list")?;
-                let w = a.operands[0];
+                // The reads and the test lead with the object they ask when it is not the owner: the field name follows it.
+                let has_object = ["GetPlayerDataBool", "GetPlayerDataInt", "PlayerDataBoolTest"].iter().any(|n| op_of(n) == Some((a.family, a.op)));
+                let name_at = (has_object && a.flags & F_OWNER == 0) as usize;
+                let w = a.operands[name_at];
                 let id = if w >> 13 == T_CONST { ir.pool[(w & 0x1fff) as usize] } else { return Err("PlayerData field name is not a constant".into()) };
                 let name = ctx.strings.iter().find(|(_, i)| **i == id).map(|(s, _)| s.clone()).ok_or("PlayerData field string")?;
                 let slot = fields.iter().position(|f| *f == name).ok_or_else(|| format!("PlayerData field {name} is not in the save record's list"))? as u32;
@@ -471,7 +487,7 @@ fn resolve_player_data(irs: &mut [FsmIr], ctx: &TreeCtx, fields: Option<&[String
                         ir.pool.len() - 1
                     }
                 };
-                ir.states[si].actions[ai].operands[0] = opd(T_CONST, at as u32)?;
+                ir.states[si].actions[ai].operands[name_at] = opd(T_CONST, at as u32)?;
             }
         }
     }
