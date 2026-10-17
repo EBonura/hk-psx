@@ -6,6 +6,15 @@ use crate::world::{Region, State};
 use hk_format::{i32_at, u32_at, Room};
 #[cfg(feature = "hornet")]
 mod hornet;
+/// Ticks until the Cloak Corpse's shiny wakes: `Cloak Corpse Control` waits for `HORNET LEAVE`, then `Fall Pause` (0.5 s) and
+/// `Fall` (0.4 s) before `Activate Item`. u16::MAX while Hornet has not left yet; the fight sets both, a later visit finds
+/// the shiny already active (`Check PD`).
+#[no_mangle]
+pub static mut HK_HORNET_CLOAK_WAIT: u16 = 0;
+/// The Cloak Corpse is still waiting to show its shiny.
+pub fn cloak_waiting() -> bool {
+    unsafe { HK_HORNET_CLOAK_WAIT != 0 }
+}
 use psx_math::{Wide, WideU};
 use hk_sim::{
     ActorController, ActorHealth, ActorSpec, AttackParams, Hit, Hurt, Nail, Params, Player, Vitals,

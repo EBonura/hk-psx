@@ -67,9 +67,17 @@ pub fn tick(
     if s.ready != MAGIC {
         let defeated = crate::persist::player(crate::persist::HORNET_1_DEFEATED);
         s.fight.begin(0x484f_524e, defeated, saved());
+        // A Hornet already beaten has left: the shiny is out (`Check PD`).
+        unsafe { super::HK_HORNET_CLOAK_WAIT = 0 };
         s.ready = MAGIC;
         s.convo = 0;
         s.done = false;
+    }
+    unsafe {
+        let wait = super::HK_HORNET_CLOAK_WAIT;
+        if wait != 0 && wait != u16::MAX {
+            super::HK_HORNET_CLOAK_WAIT = wait - 1;
+        }
     }
     if s.fight.phase == Phase::Gone {
         return;
@@ -100,6 +108,10 @@ pub fn tick(
             hits += 1;
         } else if let Effect::Died = e {
             kills += 1;
+            unsafe { super::HK_HORNET_CLOAK_WAIT = u16::MAX };
+        } else if let Effect::CloakLeaves = e {
+            // `Fall Pause` 0.5 s, `Fall` 0.4 s.
+            unsafe { super::HK_HORNET_CLOAK_WAIT = 54 };
         } else if let Effect::HeroHurt { damage, from_x } = e {
             hurt = Some((damage, from_x));
         } else if let Effect::Conversation { .. } = e {
