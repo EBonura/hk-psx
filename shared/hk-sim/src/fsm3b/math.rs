@@ -123,7 +123,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
             c.set_comp(0, k, v);
         }
     } else {
-        return R_CONT;
+        return super::unknown(c, 1, op);
     }
     r_stateless(c.flags)
 }

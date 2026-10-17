@@ -30,7 +30,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     } else if op == ai::CHECK_TARGET_DIRECTION {
         check_target_direction(c)
     } else {
-        R_CONT
+        super::unknown(c, 5, op)
     }
 }
 

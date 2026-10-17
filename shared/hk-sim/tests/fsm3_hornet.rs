@@ -434,6 +434,7 @@ fn hornet_matches_the_original() {
         }
     }
     unsafe { trace::SINK = None };
+    assert_eq!(hornet.world.unhandled, 0, "an action type with no handler was reached (family << 8 | op)");
     if let Ok(f) = std::env::var("HK_REPLAY_FSM") {
         let f: usize = f.parse().unwrap();
         let a: Vec<&Obs> = ours.iter().filter(|o| o.2 == f).collect();

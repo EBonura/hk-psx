@@ -41,7 +41,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         c.world().request(k::CALL, object, 1, [-1, method, arg]);
         r_stateless(c.flags)
     } else {
-        R_CONT
+        super::unknown(c, 2, op)
     }
 }
 

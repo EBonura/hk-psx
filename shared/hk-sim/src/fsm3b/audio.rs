@@ -53,7 +53,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         let (snap, time) = (c.int(0), c.fixed(1));
         c.world().request(k::SNAPSHOT, NONE8, 0, [snap, time, 0]);
     } else {
-        return R_CONT;
+        return super::unknown(c, 9, op);
     }
     r_stateless(c.flags)
 }

@@ -17,6 +17,6 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         c.world().request(k::PARTICLES, t, 0, [0; 3]);
         r_stateless(c.flags)
     } else {
-        R_CONT
+        super::unknown(c, 10, op)
     }
 }
