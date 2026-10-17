@@ -259,6 +259,7 @@ pub fn region_actors_indexed(
         .map(move |(i, o)| (i, actor_placement(&o), &specs[o.extra(0) as usize]))
 }
 /// The placement `region_actors_indexed` listed at `index`.
+#[inline(never)]
 pub fn region_actor(
     region: &Region,
     index: usize,
@@ -270,6 +271,10 @@ pub fn region_actor(
             &SCENE_ACTORS[region.scene][o.extra(0) as usize],
         )
     })
+}
+/// Upper bound for placement indices, including the scenery between actors.
+pub fn region_actor_count(region: &Region) -> usize {
+    bank_region(region).map_or(0, |bank| bank.object_count())
 }
 /// What a table built from `region_actors` is valid for: the catalogue
 /// region, whose bank bytes are the same every time its scene is admitted.

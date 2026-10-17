@@ -208,15 +208,17 @@ fn maximum_old_128_item_hks5_record_still_loads() {
 }
 
 #[test]
-fn post_rest_kill_and_combined_183_item_record_survive_cold_load_then_only_semi_reset() {
+fn post_rest_kill_and_combined_185_item_record_survive_cold_load_then_only_semi_reset() {
     let mut world = persist::Store::new();
     // The current-source authored fixture's 138 non-actor keys, including nine
-    // totems, plus 44 reset-lifetime actor states and one permanent actor state.
+    // totems, plus 45 reset-lifetime actor states, one permanent actor state
+    // and the Crossroads_22 arena completion key.
     for local in 0..129 { assert!(world.set(Kind::Breakable, 1, local, 1)); }
     for local in 0..9 { assert!(world.set(Kind::SoulTotem, 2, local, 0)); }
-    for local in 16..60 { assert!(world.set(Kind::Enemy, 3, local, 2)); }
-    assert!(world.set(Kind::Enemy, 3, 60, 1));
-    assert_eq!(world.items().len(), 183);
+    for local in 16..61 { assert!(world.set(Kind::Enemy, 3, local, 2)); }
+    assert!(world.set(Kind::Enemy, 3, 61, 1));
+    assert!(world.set(Kind::BattleScene, 21, 0, 1));
+    assert_eq!(world.items().len(), 185);
     let bytes = encode(&record(), world.items());
     assert_eq!(&bytes[..4], b"HKS5");
     assert!(16 + bytes.len() <= 8192 - 256);
@@ -225,8 +227,9 @@ fn post_rest_kill_and_combined_183_item_record_survive_cold_load_then_only_semi_
     for word in Save::items(items) { let (k,s,l,v) = persist::unpack(word).unwrap(); assert!(cold.set(k,s,l,v)); }
     assert_eq!(cold.items(), world.items());
     cold.clear_semi_actor_deaths();
-    assert_eq!(cold.items().len(), 139);
-    assert_eq!(cold.get(Kind::Enemy,3,60), Some(1));
+    assert_eq!(cold.items().len(), 140);
+    assert_eq!(cold.get(Kind::BattleScene, 21, 0), Some(1));
+    assert_eq!(cold.get(Kind::Enemy,3,61), Some(1));
     // Rest happened before a projectile killed another enemy while Save was
     // pending. Confirming Save must capture it without a second reset.
     assert!(cold.set(Kind::Enemy,3,16,2));
@@ -237,7 +240,7 @@ fn post_rest_kill_and_combined_183_item_record_survive_cold_load_then_only_semi_
     assert_eq!(loaded.get(Kind::Enemy,3,16), Some(2));
     loaded.clear_semi_actor_deaths();
     assert_eq!(loaded.get(Kind::Enemy,3,16), None);
-    assert_eq!(loaded.get(Kind::Enemy,3,60), Some(1));
+    assert_eq!(loaded.get(Kind::Enemy,3,61), Some(1));
     assert_eq!(loaded.get(Kind::SoulTotem,2,0), Some(0));
     assert_eq!(loaded.overflow,0);
 }

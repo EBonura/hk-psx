@@ -1555,7 +1555,9 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
         ],
         root,
     )?;
+    hk_cook::crossroads22_wave::prepare(root)?;
     python_step_module(root, "build_guest", "prepass")?;
+    hk_cook::crossroads22_wave::finish(root)?;
     hk_cook::mossman_scene::bind_generated_specs(root)?;
     hk_cook::crawler_recoil::bind_generated_specs(root)?;
     hk_cook::shaman_runner_scene::bind_generated_specs(root)?;

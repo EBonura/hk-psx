@@ -1,5 +1,6 @@
 //! Bounded deterministic chamber movement. Q16.16 world units, 60 Hz steps.
 #![no_std]
+#![cfg_attr(target_arch = "mips", feature(optimize_attribute))]
 use hk_format::Room;
 pub mod acid_flyer;
 mod actors;
@@ -22,6 +23,7 @@ pub mod fixed;
 pub mod gruz_mother;
 pub mod gruzzer;
 pub mod hatcher;
+pub mod waves;
 pub mod husk_guard;
 pub mod mawlek;
 pub mod mosquito;

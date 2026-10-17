@@ -183,14 +183,14 @@ pub fn main(
             corpse: a.corpse.as_ref(),
         })
         .collect();
-    let generated = actor_specs::generated_actor_records_bounded(&input, COUNT)?;
+    let generated = actor_specs::generated_actor_records_with_bounds(&input, COUNT)?;
     if generated.len() != rows.len() || input.len() != COUNT || art.len() != COUNT {
         return Err("source, cooked art and generated placement lengths differ".into());
     }
     let mut specs = Vec::new();
     let mut records = Vec::new();
     let mut placements = Vec::new();
-    for ((spec, p), (row, member)) in generated.into_iter().zip(rows.iter().zip(&members)) {
+    for (row_index, ((spec, p, bounds), (row, member))) in generated.into_iter().zip(rows.iter().zip(&members)).enumerate() {
         if p.source_id != row.spec_source_id {
             return Err("generated placement does not match its ordered original source id".into());
         }
@@ -208,13 +208,16 @@ pub fn main(
             .get("hatched_max")
             .and_then(Value::as_u64)
             .unwrap_or(0);
+        let contract = if member.0 != 0 { Some(crate::battle_waves::arrival_position(&scene, row)?) } else { None };
+        let arrival = contract.map(|c| c.0);
+        let authored_depth = contract.map(|c| c.1);
         records.push((
             index,
             p.clone(),
             *member,
             u16::try_from(cap).map_err(|_| "Hatcher cap exceeds wire range")?,
         ));
-        placements.push(json!({"source":row.source,"game_object":row.game_object,"spec_index":index,"placement":serde_json::from_str::<Value>(&crate::pyjson::dumps(&p.to_json()))?,"wave":member.0,"removed_on_start":member.1,"hatcher_cap":cap}));
+        placements.push(json!({"source":row.source,"game_object":row.game_object,"spec_index":index,"placement":serde_json::from_str::<Value>(&crate::pyjson::dumps(&p.to_json()))?,"arrival":arrival,"authored_depth":authored_depth,"bounds":bounds,"wave":member.0,"removed_on_start":member.1,"hatcher_cap":cap,"controller":control["kind"],"clips":art[row_index].clips,"corpse":art[row_index].corpse.as_ref().map(crate::pyjson::dumps)}));
     }
     let meta = metadata(&records, specs.len())?;
     let out = args

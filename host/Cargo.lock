@@ -148,6 +148,7 @@ name = "hk-cook"
 version = "0.1.0"
 dependencies = [
  "hk-dotnet",
+ "hk-format",
  "hk-lz4",
  "hk-pil",
  "hk-unity",
