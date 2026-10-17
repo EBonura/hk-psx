@@ -11,6 +11,14 @@ mod hornet;
 /// the shiny already active (`Check PD`).
 #[no_mangle]
 pub static mut HK_HORNET_CLOAK_WAIT: u16 = 0;
+/// `HeroController.RelinquishControl`: a scripted scene owns the Knight until it hands him back (Hornet's encounter).
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HERO_LOCK: bool = false;
+#[cfg(feature = "hornet")]
+pub fn hero_locked() -> bool {
+    unsafe { HK_HERO_LOCK }
+}
 /// The Cloak Corpse is still waiting to show its shiny.
 pub fn cloak_waiting() -> bool {
     unsafe { HK_HORNET_CLOAK_WAIT != 0 }

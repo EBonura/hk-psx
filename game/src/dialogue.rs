@@ -111,6 +111,10 @@ pub fn restore_met(bits: u32) {
 /// A panel owns the Knight: a tablet, a conversation, Cornifer's, or the quick
 /// map, which the source runs with control relinquished and pause disabled.
 pub fn open() -> bool {
+    #[cfg(feature = "hornet")]
+    if crate::enemies::hero_locked() {
+        return true;
+    }
     (unsafe { STATE.open() || CONVO.open() })
         || crate::mapper::open()
         || crate::game_map::open()
