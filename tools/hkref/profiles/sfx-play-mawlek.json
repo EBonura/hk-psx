@@ -1,0 +1,5 @@
+{
+  "name": "sfx-play-mawlek",
+  "port": {"disc": "~/Downloads/ps1 games/hk-psx.cue", "map": "build/hk-psx-normal.map", "polls": 1},
+  "og": {"scene": "Crossroads_09", "gate": "right1", "teleport": "74,6.5", "autopilot": "fight:Mawlek Body@66", "heal": true, "frames": 12000, "timeout": 500, "seed": 1}
+}

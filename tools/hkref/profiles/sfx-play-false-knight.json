@@ -1,0 +1,5 @@
+{
+  "name": "sfx-play-false-knight",
+  "port": {"disc": "~/Downloads/ps1 games/hk-psx.cue", "map": "build/hk-psx-normal.map", "polls": 1},
+  "og": {"scene": "Crossroads_10", "gate": "right1", "teleport": "20,27.5", "autopilot": "fight:False Knight|Head@10", "heal": true, "frames": 30000, "timeout": 1000, "seed": 1}
+}

@@ -295,6 +295,72 @@ pub fn run(env: &Env, p: &Profile, w: &Window) -> Result<PathBuf, String> {
     Ok(out)
 }
 
+/// Run the original with a closed-loop hero (the driver's autopilot, profile `og.autopilot`)
+/// from `og.scene`/`og.gate` for `og.frames` test frames, with no tape. Output goes to
+/// `<run>/play`: `audio-calls.csv` (every audio request with its position), `state.csv`,
+/// `actors.csv`. Not bit-repeatable against the port; it measures what the original does.
+pub fn play(env: &Env, p: &Profile) -> Result<PathBuf, String> {
+    if p.autopilot.is_empty() || p.scene.is_empty() {
+        return Err("play needs og.scene, og.gate and og.autopilot".into());
+    }
+    let out = p.dir.join("play");
+    let _ = fs::remove_dir_all(&out);
+    fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+    let home = env.work.join("og/fakehome");
+    fs::create_dir_all(&home).map_err(|e| e.to_string())?;
+    let exe = env.app().join("Contents/MacOS/Hollow Knight");
+    let mut c = Command::new("sandbox-exec");
+    c.args(["-p", SANDBOX])
+        .arg(&exe)
+        .args(["-batchmode", "-logFile"])
+        .arg(out.join("unity.log"))
+        .current_dir(env.work.join("og"))
+        .env("SteamAppId", "367520")
+        .env("SteamGameId", "367520")
+        .env("HOME", &home)
+        .env("CFFIXED_USER_HOME", &home)
+        .env("HK_REFERENCE_OUTPUT", &out)
+        .env("HK_REFERENCE_MAX_FRAMES", p.play_frames.to_string())
+        .env("HK_REFERENCE_MAX_SECONDS", p.og_timeout.to_string())
+        .env("HK_REFERENCE_SCENE", format!("{}:{}", p.scene, p.gate))
+        .env("HK_REFERENCE_SEED", p.seed.to_string())
+        .env("HK_REFERENCE_AUTOPILOT", &p.autopilot)
+        .env(
+            "HK_REFERENCE_AUTOPILOT_HEAL",
+            if p.heal { "1" } else { "0" },
+        )
+        .env("HK_REFERENCE_AUTOPILOT_ENEMY_HP", p.enemy_hp.to_string());
+    if !p.fx_off.is_empty() {
+        c.env("HK_REFERENCE_DISABLE_FX", p.fx_off.join(","));
+    }
+    if !p.player_data.is_empty() {
+        c.env("HK_REFERENCE_PD", &p.player_data);
+    }
+    if !p.teleport.is_empty() {
+        c.env("HK_REFERENCE_TELEPORT", &p.teleport)
+            .env("HK_REFERENCE_FACE", "-1");
+    }
+    let o = fs::File::create(out.join("stdout.txt")).map_err(|e| e.to_string())?;
+    let child = c
+        .stdout(Stdio::from(o.try_clone().map_err(|e| e.to_string())?))
+        .stderr(Stdio::from(o))
+        .spawn()
+        .map_err(|e| format!("original: {e}"))?;
+    append_pid(&env.work, &format!("play-{}", p.name), child.id());
+    eprintln!(
+        "[play] original pid {} (muted), up to {} frames",
+        child.id(),
+        p.play_frames
+    );
+    if !util::wait_with_timeout(child, p.og_timeout + 60)? {
+        return Err(format!(
+            "original exited non-zero or timed out; see {}",
+            out.join("driver.log").display()
+        ));
+    }
+    Ok(out)
+}
+
 /// Run the scene survey in as many original processes as it takes. Each process
 /// writes into its own `a<N>` directory (test frames restart at 0) and shares one
 /// state directory, so a scene that crashed the player is recorded and skipped and a

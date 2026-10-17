@@ -1,0 +1,11 @@
+[package]
+name = "hk-sfx-trace"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Play-trace tally and per-clip rate need for the Hollow Knight SFX tiers: names, counts, seconds and bytes only"
+
+[dependencies]
+hk-cook = { path = "../hk-cook" }
+hk-unity = { path = "../hk-unity" }
+rayon = "1"

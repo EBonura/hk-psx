@@ -1,0 +1,5 @@
+{
+  "name": "sfx-play-gruz",
+  "port": {"disc": "~/Downloads/ps1 games/hk-psx.cue", "map": "build/hk-psx-normal.map", "polls": 1},
+  "og": {"scene": "Crossroads_04", "gate": "left1", "autopilot": "fight:Giant Fly", "heal": true, "frames": 3000, "timeout": 300, "seed": 1}
+}

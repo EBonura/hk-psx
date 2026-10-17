@@ -1,0 +1,5 @@
+{
+  "name": "sfx-play-town",
+  "port": {"disc": "~/Downloads/ps1 games/hk-psx.cue", "map": "build/hk-psx-normal.map", "polls": 1},
+  "og": {"scene": "Town", "gate": "left1", "autopilot": "route:bot1", "heal": true, "frames": 9000, "timeout": 400, "seed": 1}
+}

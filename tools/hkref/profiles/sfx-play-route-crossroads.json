@@ -1,0 +1,5 @@
+{
+  "name": "sfx-play-route-crossroads",
+  "port": {"disc": "~/Downloads/ps1 games/hk-psx.cue", "map": "build/hk-psx-normal.map", "polls": 1},
+  "og": {"scene": "Crossroads_01", "gate": "top1", "autopilot": "route:left1,right2,right1,right1,bot1,left1,left1,left1", "heal": true, "frames": 21600, "timeout": 900, "seed": 1}
+}

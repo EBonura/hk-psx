@@ -46,6 +46,8 @@ namespace HKReference
         private int[] shotAt = new int[0];
         // Scene survey (HK_REFERENCE_SURVEY): visit scenes, record their contents.
         private SceneSurvey survey;
+        // Closed-loop hero (HK_REFERENCE_AUTOPILOT): walk or fight without a tape.
+        private Autopilot autopilot;
         private int shotWidth = 640;
         private int shotHeight = 360;
         private Texture2D shotTexture;
@@ -116,6 +118,8 @@ namespace HKReference
                 fxFrames = Array.ConvertAll(fxSpec.Split(','), v => Int32.Parse(v.Trim(), CultureInfo.InvariantCulture));
             shotEvery = IntSetting("HK_REFERENCE_SHOT_EVERY", 0);
             survey = SceneSurvey.FromEnvironment(output);
+            autopilot = Autopilot.FromEnvironment(output);
+            if (autopilot != null && tape != null) throw new InvalidOperationException("An autopilot and a tape both drive the hero");
             string shotAtSpec = Environment.GetEnvironmentVariable("HK_REFERENCE_SHOT_AT");
             if (!String.IsNullOrEmpty(shotAtSpec))
                 shotAt = Array.ConvertAll(shotAtSpec.Split(','), v => Int32.Parse(v.Trim(), CultureInfo.InvariantCulture));
@@ -282,6 +286,11 @@ namespace HKReference
                     if (Array.IndexOf(fxFrames, testFrame) >= 0) EffectShots(testFrame, hero);
                     if (Array.IndexOf(censusFrames, testFrame) >= 0) Census(testFrame);
                     if (survey != null && survey.Step(testFrame, gm, hero as Component)) { Stop("survey complete", 0); return; }
+                    if (autopilot != null)
+                    {
+                        autopilot.Step(testFrame, gm, hero as Component);
+                        if (autopilot.Done) { Stop("autopilot: " + autopilot.Why, 0); return; }
+                    }
                     if (testFrame + 1 >= maxFrames) { Stop("completed input frames", 0); return; }
                     scheduledFrame++;
                     ReplayDevice.TestFrame = scheduledFrame;

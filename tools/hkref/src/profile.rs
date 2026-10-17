@@ -51,6 +51,11 @@ pub struct Profile {
     pub sweep_frames: usize,
     pub tour_frames: usize,
     pub tour_targets: usize,
+    pub autopilot: String,
+    pub heal: bool,
+    pub play_frames: usize,
+    pub teleport: String,
+    pub enemy_hp: u32,
 }
 
 fn s(v: &Value, k: &str) -> String {
@@ -190,6 +195,11 @@ impl Profile {
             sweep_frames: og.get("sweep_frames").and_then(Value::as_u64).unwrap_or(60) as usize,
             tour_frames: og.get("tour_frames").and_then(Value::as_u64).unwrap_or(75) as usize,
             tour_targets: og.get("tour_targets").and_then(Value::as_u64).unwrap_or(12) as usize,
+            autopilot: s(og, "autopilot"),
+            heal: og.get("heal").and_then(Value::as_bool).unwrap_or(false),
+            teleport: s(og, "teleport"),
+            enemy_hp: og.get("enemy_hp").and_then(Value::as_u64).unwrap_or(0) as u32,
+            play_frames: og.get("frames").and_then(Value::as_u64).unwrap_or(3600) as usize,
             seed: og.get("seed").and_then(Value::as_u64).unwrap_or(1) as u32,
             og_timeout: og.get("timeout").and_then(Value::as_u64).unwrap_or(300),
         })

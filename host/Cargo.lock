@@ -204,6 +204,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hk-sfx-trace"
+version = "0.1.0"
+dependencies = [
+ "hk-cook",
+ "hk-unity",
+ "rayon",
+]
+
+[[package]]
 name = "hk-unity"
 version = "0.1.0"
 dependencies = [

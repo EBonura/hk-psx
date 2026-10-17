@@ -1,0 +1,5 @@
+{
+  "name": "sfx-play-dirtmouth-npcs",
+  "port": {"disc": "~/Downloads/ps1 games/hk-psx.cue", "map": "build/hk-psx-normal.map", "polls": 1},
+  "og": {"scene": "Town", "gate": "left1", "autopilot": "talk:3", "heal": true, "frames": 14000, "timeout": 500, "seed": 1}
+}

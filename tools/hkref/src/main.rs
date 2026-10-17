@@ -8,6 +8,7 @@
 //!   tape info TAPE
 //!   port PROFILE                  replay on the port, write traces + window
 //!   og PROFILE                    replay the same inputs on the original
+//!   play PROFILE                  original only, closed-loop autopilot hero (og.autopilot), writes <run>/play
 //!   sweep PROFILE 1,2,3           original under several RNG seeds vs the port
 //!   scenes PROFILE                survey og.sweep scenes (names, Prefix_* or *): actors, FSM audio, sounds
 //!   scenes-summary PROFILE        rebuild the survey files from the runs already on disk
@@ -360,8 +361,24 @@ fn real_main() -> Result<(), String> {
             Ok(())
         }
         ["port", pr] => cmd_port(&load(pr, &work)?, &work),
+        ["play", pr] => {
+            let p = load(pr, &work)?;
+            let mut attempt = 1;
+            while let Err(e) = og::play(&og::Env::detect(&work), &p) {
+                if attempt >= 2 {
+                    return Err(e);
+                }
+                eprintln!("[play] attempt {attempt} failed ({e}); retrying");
+                attempt += 1;
+            }
+            Ok(())
+        }
         ["og", pr] => cmd_og(&load(pr, &work)?, &work, 8),
-        ["og", pr, n] => cmd_og(&load(pr, &work)?, &work, n.parse().map_err(|_| "og: shot count".to_string())?),
+        ["og", pr, n] => cmd_og(
+            &load(pr, &work)?,
+            &work,
+            n.parse().map_err(|_| "og: shot count".to_string())?,
+        ),
         ["sweep", pr, seeds] => {
             let list: Vec<u32> = seeds.split(',').filter_map(|x| x.parse().ok()).collect();
             cmd_sweep(&load(pr, &work)?, &work, &list)
