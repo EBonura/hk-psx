@@ -34,6 +34,7 @@ pub mod runner_audio;
 pub mod runner_senses;
 pub mod shade;
 pub mod shockwave;
+pub mod switches;
 pub mod vengefly;
 pub mod zombie_shield;
 pub use corpse::{Corpse, CorpsePhase, CorpseSpec};
