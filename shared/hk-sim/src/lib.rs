@@ -11,6 +11,7 @@ pub mod boss;
 pub mod buzz;
 pub mod climber;
 mod combat;
+pub mod components;
 mod corpse;
 pub mod crawler_fsm;
 pub mod fixed;
