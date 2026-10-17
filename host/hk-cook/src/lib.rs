@@ -72,6 +72,7 @@ pub mod reveal_masks;
 pub mod runner;
 pub mod runner_audio;
 pub mod mossman_audio;
+pub mod hornet_scene;
 pub mod mossman_scene;
 pub mod scene_certificates;
 pub mod scene_sfx;

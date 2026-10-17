@@ -593,13 +593,18 @@ fn cook_boss_label(root: &std::path::Path, source: &hk_unity::Source, label: &st
     // The PlayerData fields Hornet's FSMs read and write, in the order of the adapter's local reserve.
     let fields: Vec<String> = crate::boss::HORNET_FIELDS.iter().map(|s| s.to_string()).collect();
     let cooked = crate::boss::cook_boss_tree(source, level, &fsms, &[boss], Some(&fields))?;
+    let mut art_manifest = serde_json::Value::Null;
     std::fs::write(root.join(format!("data/{label}.hkf3")), &cooked.cooked.bank)?;
     std::fs::write(root.join(format!("data/{label}_fsm3.rs")), {
         // The fight's numbers ride with its table; the corpse only needs the event it sends.
         let mut extra = if fight { crate::boss::hornet_extra(source, boss, &cooked.cooked)? } else { crate::boss::corpse_extra(&cooked.cooked) };
-        extra.push_str(&crate::boss::clips_table(source, level, &cooked)?);
+        let (clips, manifest) = crate::boss::clips_table(source, level, &cooked)?;
+        extra.push_str(&clips);
+        art_manifest = manifest;
         crate::boss::rust_table(label, &cooked, &extra)
     })?;
+    // The art cook (hk-cook hornet_scene) reads which libraries and clips each animated object needs.
+    std::fs::write(root.join(format!("data/{label}_art.json")), serde_json::to_vec_pretty(&art_manifest)?)?;
     write_names(root, label, &cooked.cooked)?;
     write_families(root, label, &[&cooked.cooked])
 }

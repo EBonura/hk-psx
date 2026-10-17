@@ -92,3 +92,7 @@ host/npc_sources.py
 host/npc_dialogue.py
 host/npcs.py
 host/quality.py
+# Greenpath's Hornet: her sprite clips appended to Fungus1_04's banks after the legacy cook (a Rust postpass, like
+# the Mossman family's), and the boss tree cooker that says which clips each of her objects plays.
+host/hk-cook/src/hornet_scene.rs
+host/hk-fsm/src/boss.rs
