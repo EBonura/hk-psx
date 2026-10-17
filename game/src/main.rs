@@ -1134,6 +1134,7 @@ fn main() {
                 }
                 input::checkpoint();
                 let _ = cache.pump(); // Detailed errors remain in the CD markers.
+                cache.ahead_step();
                 input::checkpoint();
                 let now = psx_rt::interrupts::vblank_count();
                 // A simulation slower than real time skips ticks rather than
