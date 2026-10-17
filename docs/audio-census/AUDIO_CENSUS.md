@@ -380,16 +380,16 @@ Music reached only by DLC scenes: 8 pieces, 12 distinct stems, 17.8 min of stems
 
 ## 9. Music: disc cost of each mechanism
 
-68 premix variants over the 55 pieces (135.4 min of variant audio). XA figures: lower bound = seconds x 44,100 B/s (one sector in four per channel, 2,352-byte sectors); packed = variants grouped four to a file channel set, each set as long as its longest member (the existing MUSIC.XA layout).
+68 premix variants over the 55 pieces (135.4 min of variant audio). Sizes are what the data takes from the disc, counted as sectors x 2,048 bytes (a Mode 2 XA sector costs the same disc space as a Mode 1 data sector; 333,000 sectors fill a 74 minute disc, 360,000 an 80 minute one). XA lower bound = seconds x 38,400 B/s (one sector in four per channel at single speed); packed = variants grouped four to a channel set, each set as long as its longest member (the existing MUSIC.XA layout, whose 12,844 sectors are 25.1 MB on this basis). Ring columns are 22,050 and 11,025 Hz mono ADPCM, rounded up to whole sectors.
 
-| Selection | Variants | Minutes | XA lower MB | XA packed MB | Ring 22,050 mono MB | Ring 11,025 mono MB |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| All pieces, base + DLC | 68 | 135.4 | 341.7 | 361.7 | 97.7 | 48.9 |
-| All pieces, base game only | 60 | 123.2 | 310.9 | 331.4 | 88.9 | 44.5 |
-| CD-free pieces only (fights, events, arenas, cutscenes, title) | 30 | 47.7 | 120.3 | 129.8 | 34.4 | 17.2 |
-| CD-free pieces, base game | 23 | 36.9 | 93.1 | 106.7 | 26.6 | 13.3 |
-| Traversal themes only (CD busy: need the ring) | 38 | 87.7 | 221.4 | 242.8 | 63.3 | 31.7 |
-| Traversal themes, base game | 37 | 86.3 | 217.8 | 242.1 | 62.3 | 31.1 |
+| Selection | Variants | Minutes | XA lower MB | XA packed MB | XA packed sectors | Ring 22,050 mono MB | Ring 11,025 mono MB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| All pieces, base + DLC | 68 | 135.4 | 297.5 | 315.0 | 161258 | 97.7 | 48.9 |
+| All pieces, base game only | 60 | 123.2 | 270.7 | 288.6 | 147738 | 88.9 | 44.5 |
+| CD-free pieces only (fights, events, arenas, cutscenes, title) | 30 | 47.7 | 104.8 | 113.0 | 57845 | 34.4 | 17.2 |
+| CD-free pieces, base game | 23 | 36.9 | 81.1 | 92.9 | 47576 | 26.6 | 13.3 |
+| Traversal themes only (CD busy: need the ring) | 38 | 87.7 | 192.8 | 211.4 | 108256 | 63.3 | 31.7 |
+| Traversal themes, base game | 37 | 86.3 | 189.6 | 210.8 | 107954 | 62.3 | 31.1 |
 
-Long stereo clips outside the cues that are heard only outside traversal rooms (cutscene audio, arena loops): 14.7 min, XA lower bound 37.2 MB.
+Long stereo clips outside the cues that are heard only outside traversal rooms (cutscene audio, arena loops): 14.7 min, XA lower bound 32.4 MB.
 Drive share while playing: a 22,050 Hz mono ring stream reads 12,600 B/s, 8.2% of a 1x drive (153,600 B/s of Mode 1 data) and 4.1% of 2x; XA or CD-DA takes the whole drive.

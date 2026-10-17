@@ -1101,10 +1101,10 @@ pub fn write(w: &World, out: &Path) -> Result<(), String> {
     let xa_packed = |sel: &dyn Fn(&V) -> bool| -> (f64, f64) {
         let mut secs: Vec<f64> = vs.iter().filter(|v| sel(v)).map(|v| v.secs).collect();
         secs.sort_by(|a, b| b.partial_cmp(a).unwrap());
-        let lower: f64 = secs.iter().sum::<f64>() * 44_100.0;
+        let lower: f64 = secs.iter().sum::<f64>() * 38_400.0;
         let mut real = 0.0;
         for chunk in secs.chunks(4) {
-            real += chunk.iter().cloned().fold(0.0, f64::max) * 75.0 * 2352.0;
+            real += chunk.iter().cloned().fold(0.0, f64::max) * 75.0 * 2048.0;
         }
         (lower, real)
     };
@@ -1116,8 +1116,8 @@ pub fn write(w: &World, out: &Path) -> Result<(), String> {
             .map(|v| ring_bytes(v.secs, rate))
             .sum()
     };
-    let _ = writeln!(m, "{} premix variants over the {} pieces ({} min of variant audio). XA figures: lower bound = seconds x 44,100 B/s (one sector in four per channel, 2,352-byte sectors); packed = variants grouped four to a file channel set, each set as long as its longest member (the existing MUSIC.XA layout).\n", vs.len(), plist.len(), mins(sum_secs(&|_| true)));
-    let _ = writeln!(m, "| Selection | Variants | Minutes | XA lower MB | XA packed MB | Ring 22,050 mono MB | Ring 11,025 mono MB |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+    let _ = writeln!(m, "{} premix variants over the {} pieces ({} min of variant audio). Sizes are what the data takes from the disc, counted as sectors x 2,048 bytes (a Mode 2 XA sector costs the same disc space as a Mode 1 data sector; 333,000 sectors fill a 74 minute disc, 360,000 an 80 minute one). XA lower bound = seconds x 38,400 B/s (one sector in four per channel at single speed); packed = variants grouped four to a channel set, each set as long as its longest member (the existing MUSIC.XA layout, whose 12,844 sectors are 25.1 MB on this basis). Ring columns are 22,050 and 11,025 Hz mono ADPCM, rounded up to whole sectors.\n", vs.len(), plist.len(), mins(sum_secs(&|_| true)));
+    let _ = writeln!(m, "| Selection | Variants | Minutes | XA lower MB | XA packed MB | XA packed sectors | Ring 22,050 mono MB | Ring 11,025 mono MB |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
     let rows: Vec<(&str, Box<dyn Fn(&V) -> bool>)> = vec![
         ("All pieces, base + DLC", Box::new(|_| true)),
         ("All pieces, base game only", Box::new(|v: &V| v.base)),
@@ -1143,17 +1143,18 @@ pub fn write(w: &World, out: &Path) -> Result<(), String> {
         let (lo, real) = xa_packed(f.as_ref());
         let _ = writeln!(
             m,
-            "| {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} |",
             label,
             n,
             mins(sum_secs(f.as_ref())),
             mb(lo as u64),
             mb(real as u64),
+            (real / 2048.0) as u64,
             mb(ring(f.as_ref(), 22050.0) as u64),
             mb(ring(f.as_ref(), 11025.0) as u64)
         );
     }
-    let _ = writeln!(m, "\nLong stereo clips outside the cues that are heard only outside traversal rooms (cutscene audio, arena loops): {} min, XA lower bound {} MB.", mins(long_xa), mb((long_xa * 44_100.0) as u64));
+    let _ = writeln!(m, "\nLong stereo clips outside the cues that are heard only outside traversal rooms (cutscene audio, arena loops): {} min, XA lower bound {} MB.", mins(long_xa), mb((long_xa * 38_400.0) as u64));
     let _ = writeln!(m, "Drive share while playing: a 22,050 Hz mono ring stream reads 12,600 B/s, 8.2% of a 1x drive (153,600 B/s of Mode 1 data) and 4.1% of 2x; XA or CD-DA takes the whole drive.");
 
     put(out, "AUDIO_CENSUS.md", m)?;
