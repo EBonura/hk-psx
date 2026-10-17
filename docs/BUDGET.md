@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |801,720|
+| Linked code |800,728|
 | Code-to-data alignment |8|
-| Linked data, including menu and HUD |280,232|
-| BSS, including shared scene arena and runtime pools |796,924|
-| Total static span |1,878,892|
+| Linked data, including menu and HUD |282,152|
+| BSS, including shared scene arena and runtime pools |796,828|
+| Total static span |1,879,724|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |103,316|
+| Unallocated gap before reserved stack |102,484|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |916|
+| Free RAM below the module pool |84|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -28,6 +28,8 @@ The 2026-10-17 FSM v2 landing (HKFSM03 kernel, bank format and family code; Craw
 The 2026-10-17 restore of the lost features (Crossroads_22's waves arena with its 64-quad draw list and arena runtime, the Knight's rising Focus motes, the death reset of the soul totems, the Mosquito's recoil speed), rebased on the FSM v2 family-mask build, took linked code from 795,812 to 801,668 bytes (5,856) and linked data from 278,280 to 280,264 (1,984, mostly the arena's cooked tables and the motes' style), so 932 bytes are free below the module pool (8,788 before).
 
 The generic native components (health flash, one recoil path, the Knight-hurt, Dream Nail and nail-strike answers in `game/src/enemies.rs`, `hk_sim::components`) went in on top of that and moved linked code from 801,668 to 801,720 bytes (+52, most of it function alignment), linked data from 280,264 to 280,232 and BSS not at all, so 916 bytes are free below the module pool (932 before). On the pre-restore base the same change was byte-neutral; the seven duplicated recoil displacement blocks are one `recoil_step!` macro (a macro because the terrain solver call has to stay inline in each family: a `Recoil` struct with methods cost 1.5 KB resident).
+
+The road to Hornet's arena (Fungus1_22, Fungus1_21 and Fungus1_04: 70 more views, so per-view and per-scene tables, with the region and atlas index tables narrowed to two bytes to pay for them) and the Cloak pickup took linked data from 280,232 to 282,152 (+1,920) and, with four cold functions built for size (the save write, the menu, the panel text and the render init: 192 bytes), linked code from 801,720 to 800,728 (-992) and BSS from 796,924 to 796,828, so 84 bytes are free below the module pool (916 before). The boss tier of the FSM kernel and Hornet's fight are in the source and out of the build (`HK_HORNET_ART`, docs/HORNET.md): with them on, the resident image takes the kernel's inactive-FSM tests, one import site and the tick's call, and the room module `hornet` takes 63 KB of the 64 KiB a module may be. `optimize(size)` on `disc.rs`'s prepare functions did nothing, and on `world.rs`'s `reset_scene`, `break_effects::load_scene` and `Actor::new` it made the image 1.4 KB bigger (inlining changes), so those stay as they were.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -113,7 +115,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801dab6c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801daeac`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
