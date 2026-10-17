@@ -19,6 +19,23 @@ pub static mut HK_HERO_LOCK: bool = false;
 pub fn hero_locked() -> bool {
     unsafe { HK_HERO_LOCK }
 }
+/// Hornet's fight, for the route logs: its phase (0 asleep, 1 fighting, 2 dying, 3 over), her points, the ticks the fight has run,
+/// the times she hurt the Knight and the encounters begun.
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_PHASE: u32 = 0;
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_HP: u32 = 0;
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_TICKS: u32 = 0;
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_HURT: u32 = 0;
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_ENCOUNTERS: u32 = 0;
 /// The Cloak Corpse is still waiting to show its shiny.
 pub fn cloak_waiting() -> bool {
     unsafe { HK_HORNET_CLOAK_WAIT != 0 }
