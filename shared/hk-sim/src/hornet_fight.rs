@@ -60,6 +60,11 @@ pub enum Effect {
     Struck { hp: i32 },
     /// The corpse sent `HORNET LEAVE`: the Cloak Corpse starts to fall.
     CloakLeaves,
+    /// The arena's battle gates close (`BG CLOSE`, from the Encounter) or open (`HORNET KILLED`).
+    GatesClose,
+    GatesOpen,
+    /// `EnemyKillShake` (average: false) or `AverageShake`.
+    Shake { average: bool },
     /// The boss died: the corpse tree has been spawned.
     Died,
 }
@@ -421,6 +426,10 @@ impl Fight {
             if kind == k::MESSAGE && r[1] == corpse::EV_HORNET_LEAVE as i32 {
                 sink(Effect::CloakLeaves);
                 self.phase = Phase::Gone;
+            } else if kind == k::MESSAGE && r[1] == corpse::EV_HORNET_KILLED as i32 {
+                sink(Effect::GatesOpen);
+            } else if kind == k::MESSAGE && (r[1] == corpse::EV_ENEMY_KILL_SHAKE as i32 || r[1] == corpse::EV_AVERAGE_SHAKE as i32) {
+                sink(Effect::Shake { average: r[1] == corpse::EV_AVERAGE_SHAKE as i32 });
             } else {
                 map_request(r, sink, &self.boss.world, object);
             }
@@ -440,6 +449,10 @@ impl Fight {
             if kind == k::INVINCIBLE {
                 // SetInvincible [on, from direction]: the HealthManager's flag (the direction filter is the strike's).
                 self.invincible = flags & 1 != 0;
+            } else if kind == k::MESSAGE && r[1] == fight::EV_BG_CLOSE as i32 {
+                sink(Effect::GatesClose);
+            } else if kind == k::MESSAGE && r[1] == fight::EV_ENEMY_KILL_SHAKE as i32 {
+                sink(Effect::Shake { average: false });
             } else if kind == k::RECOIL {
                 self.recoil_speed = r[1];
             } else if kind == k::SPAWN {

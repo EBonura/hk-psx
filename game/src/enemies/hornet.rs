@@ -99,6 +99,7 @@ pub fn tick(
         conversation_done: core::mem::take(&mut s.done),
     };
     let (mut hits, mut kills, mut hurt, mut convo) = (0u16, 0u16, None, 0u16);
+    let scene = region.scene;
     let edge = |i: usize| world.edge(region, room, i);
     s.fight.step(&input, room.counts[5], &edge, &mut |e| {
         if let Effect::Persist { field, value } = e {
@@ -115,6 +116,14 @@ pub fn tick(
             unsafe { super::HK_HORNET_CLOAK_WAIT = 54 };
         } else if let Effect::HeroHurt { damage, from_x } = e {
             hurt = Some((damage, from_x));
+        } else if let Effect::GatesClose = e {
+            crate::battle_gates::close(scene);
+            crate::music::boss(true);
+        } else if let Effect::GatesOpen = e {
+            crate::battle_gates::open(scene);
+            crate::music::boss(false);
+        } else if let Effect::Shake { average } = e {
+            crate::camera::request(if average { crate::camera::Shake::Average } else { crate::camera::Shake::Kill });
         } else if let Effect::HeroControl { regain } = e {
             unsafe { super::HK_HERO_LOCK = !regain };
         } else if let Effect::Conversation { .. } = e {
