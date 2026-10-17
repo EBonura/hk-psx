@@ -4,7 +4,7 @@ use crate::fsm3::{
 };
 use crate::{WalkState, ONE};
 use hk_format::fsm3::{ops::ai, ENT_SELF, NONE8};
-use psx_math::int32::{isqrt_u64, mul_div_i32, mul_shr_i32};
+use psx_math::int32::{mul_div_i32, mul_shr_i32};
 
 #[inline(never)]
 pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
@@ -66,27 +66,15 @@ fn walk_left_right(c: &mut Ctx<'_, '_>) -> u16 {
     R_CONT
 }
 
-/// The square of a u32 as (high, low) words, without a 64-bit multiply.
-#[inline(always)]
-fn square(a: u32) -> (u32, u32) {
-    let (h, l) = (a >> 16, a & 0xffff);
-    let (hh, mid, ll) = (h * h, h * l, l * l);
-    let (lo, carry) = ll.overflowing_add(mid << 17);
-    (hh + (mid >> 15) + carry as u32, lo)
-}
-
 /// Euclidean distance of two points, exact to the Q16.16 floor of the root of the exact squared sum.
 #[inline(never)]
 pub fn distance(a: [i32; 3], b: [i32; 3]) -> i32 {
-    let (mut hi, mut lo) = (0u32, 0u32);
+    let mut squared = psx_math::WideU::ZERO;
     for i in 0..3 {
-        let (h, l) = square(a[i].abs_diff(b[i]));
-        let (l2, carry) = lo.overflowing_add(l);
-        lo = l2;
-        hi = hi.wrapping_add(h).wrapping_add(carry as u32);
+        let delta = a[i].abs_diff(b[i]);
+        squared = squared.add(psx_math::WideU::mul(delta, delta));
     }
-    let root = isqrt_u64(((hi as u64) << 32) | lo as u64);
-    root.min(i32::MAX as u32) as i32
+    squared.isqrt().min(i32::MAX as u32) as i32
 }
 
 /// GetDistance [gameObject, target, storeResult].

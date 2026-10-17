@@ -512,26 +512,49 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
         .into_iter()
         .max()
         .unwrap_or(0);
-    for room in config["rooms"].as_array().ok_or("rooms")? {
-        let need = room.as_array().ok_or("room modules")?.iter().try_fold(
-            0u32,
-            |total, id| -> Result<u32> {
-                Ok(total
-                    .checked_add(
-                        *sizes
-                            .get(id.as_u64().ok_or("room id")? as usize)
-                            .ok_or("room module")?,
-                    )
-                    .ok_or("room sum")?)
-            },
-        )?;
-        if need.checked_add(carried).ok_or("carried sum")? > 0x17000 - 0x1000 {
-            return Err("whole room plus carried package exceeds fixed pool".into());
+    // Every room's own modules plus the largest carried package must fit the pool less one 4 KiB window fence.
+    let pool = config["pool"].as_u64().unwrap_or(0x17000) as u32;
+    let limit = pool - 0x1000;
+    let names = config["names"].as_array().ok_or("names")?;
+    let mut table = Vec::new();
+    for (index, room) in config["rooms"].as_array().ok_or("rooms")?.iter().enumerate() {
+        let ids = room.as_array().ok_or("room modules")?;
+        let mut need = 0u32;
+        let mut listed = Vec::new();
+        for id in ids {
+            let id = id.as_u64().ok_or("room id")? as usize;
+            need = need
+                .checked_add(*sizes.get(id).ok_or("room module")?)
+                .ok_or("room sum")?;
+            listed.push(format!("{}={}", names[id].as_str().unwrap_or("?"), sizes[id]));
+        }
+        table.push((need, index, listed));
+    }
+    table.sort_by(|a, b| b.cmp(a));
+    let mut report_rooms = Vec::new();
+    for (need, index, listed) in &table {
+        report_rooms.push(json!({"room":index,"bytes":need,"with_carried":need + carried,"modules":listed}));
+    }
+    for (need, index, listed) in table.iter().take(6) {
+        eprintln!(
+            "pool fit: room {index} {need} + carried {carried} = {} of {limit} ({:+}): {}",
+            need + carried,
+            (limit as i64) - ((need + carried) as i64),
+            listed.join(" ")
+        );
+    }
+    if let Some((need, _, _)) = table.first() {
+        if need.checked_add(carried).ok_or("carried sum")? > limit {
+            return Err(format!(
+                "whole room plus carried package exceeds fixed pool: {} of {limit}",
+                need + carried
+            )
+            .into());
         }
     }
     fs::write(output.join("runtime.exe"), runtime)?;
     let report = serde_json::to_vec_pretty(
-        &json!({"chunks":chunks,"module_sizes":sizes,"carried_bytes":carried}),
+        &json!({"chunks":chunks,"module_sizes":sizes,"carried_bytes":carried,"pool_bytes":pool,"pool_limit":limit,"rooms":report_rooms}),
     )?;
     fs::write(output.join("transport.json"), &report)?;
     fs::write(output.join("modules.json"), &report)?;
