@@ -6,8 +6,8 @@
 //! enter the same states, raise the same events and take the same transitions, per FSM, within a frame of the original.
 //! Skipped unless HK_HORNET_TRACE names a `fsmtrace.csv`.
 //!
-//! HK_HORNET_TRACE=.../runs/hornet1-fsmtrace/og/fsmtrace.csv cargo test --features trace --test fsm3_hornet -- --nocapture
-#![cfg(feature = "trace")]
+//! HK_HORNET_TRACE=.../runs/hornet1-fsmtrace/og/fsmtrace.csv cargo test --features trace,boss --test fsm3_hornet -- --nocapture
+#![cfg(all(feature = "trace", feature = "boss"))]
 use hk_format::fsm3::{ops, Bank, NONE8};
 use hk_sim::fsm3::trace::{self, Cause, Ev};
 use hk_sim::fsm3::{PH_COLLISION_ENTER, PH_COLLISION_STAY};
