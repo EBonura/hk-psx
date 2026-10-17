@@ -80,6 +80,11 @@ pub fn tick(
             super::HK_HORNET_CLOAK_WAIT = wait - 1;
         }
     }
+    unsafe {
+        super::HK_HORNET_PHASE = s.fight.phase as u32;
+        super::HK_HORNET_HP = s.fight.health.hp.max(0) as u32;
+        super::HK_HORNET_TICKS += 1;
+    }
     if s.fight.phase == Phase::Gone {
         return;
     }
@@ -116,6 +121,7 @@ pub fn tick(
             unsafe { super::HK_HORNET_CLOAK_WAIT = 54 };
         } else if let Effect::HeroHurt { damage, from_x } = e {
             hurt = Some((damage, from_x));
+            unsafe { super::HK_HORNET_HURT += 1 };
         } else if let Effect::GatesClose = e {
             crate::battle_gates::close(scene);
             crate::music::boss(true);
@@ -127,6 +133,7 @@ pub fn tick(
         } else if let Effect::HeroControl { regain } = e {
             unsafe { super::HK_HERO_LOCK = !regain };
         } else if let Effect::Conversation { .. } = e {
+            unsafe { super::HK_HORNET_ENCOUNTERS += 1 };
             // Her greeting is read in a few seconds; the box itself is not drawn yet.
             convo = 60 * 4;
         }
