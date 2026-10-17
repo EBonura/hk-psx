@@ -29,7 +29,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
             e.set(flag::COLLIDER, on);
         }
     } else {
-        return R_CONT;
+        return super::unknown(c, 11, op);
     }
     r_stateless(c.flags)
 }
@@ -55,7 +55,7 @@ pub fn combat_entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         let s = c.fixed(c.skip());
         c.world().request(k::RECOIL, t, 0, [s, 0, 0]);
     } else {
-        return R_CONT;
+        return super::unknown(c, 12, op);
     }
     r_stateless(c.flags)
 }

@@ -105,7 +105,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         let h = c.world().spawned;
         c.set_obj(4, h);
     } else {
-        return R_CONT;
+        return super::unknown(c, 8, op);
     }
     r_stateless(c.flags)
 }

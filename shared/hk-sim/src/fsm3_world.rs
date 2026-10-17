@@ -180,6 +180,8 @@ pub struct World {
     /// length, so that all-zero bytes are a valid, empty World (the guest keeps one in zeroed pool memory).
     clips: *const ClipInfo,
     clips_n: u16,
+    /// The last action type no handler took (family << 8 | op), 0 if none: a tree that reaches one waits for ever.
+    pub unhandled: u16,
     /// The library each object's animator plays from (255: none).
     ent_lib: *const u8,
 }
@@ -201,7 +203,7 @@ pub struct ClipInfo {
 impl World {
     #[cfg_attr(target_arch = "mips", optimize(size))]
     pub const fn new() -> Self {
-        Self { ent: [Ent::new(); MAX_ENT], n: 0, req: [[0; 4]; MAX_REQ], req_n: 0, lost: 0, spawned: NONE8, outside: [(0xffff, NONE8); 4], clips: core::ptr::null(), clips_n: 0, ent_lib: core::ptr::null() }
+        Self { ent: [Ent::new(); MAX_ENT], n: 0, req: [[0; 4]; MAX_REQ], req_n: 0, lost: 0, spawned: NONE8, outside: [(0xffff, NONE8); 4], clips: core::ptr::null(), clips_n: 0, unhandled: 0, ent_lib: core::ptr::null() }
     }
     #[cfg_attr(target_arch = "mips", optimize(size))]
     #[inline(always)]

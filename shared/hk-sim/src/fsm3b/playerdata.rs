@@ -30,7 +30,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         let v = c.int(1);
         write(c, v);
     } else {
-        return R_CONT;
+        return super::unknown(c, 13, op);
     }
     r_stateless(c.flags)
 }

@@ -32,7 +32,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         };
         count(c, 4, Some(t))
     } else {
-        R_CONT
+        super::unknown(c, 3, op)
     }
 }
 

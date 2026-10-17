@@ -106,6 +106,7 @@ fn killing_hornet_runs_the_corpse_to_the_defeat_and_the_leave() {
     assert!(wrote, "the corpse never wrote hornet1Defeated");
     assert!(r.effects.iter().any(|e| matches!(e, Effect::CloakLeaves)), "the corpse never sent HORNET LEAVE");
     assert_eq!(r.f.phase, Phase::Gone);
+    assert_eq!(r.f.boss.world.unhandled, 0, "an action type with no handler was reached (family << 8 | op)");
 }
 
 #[test]
@@ -155,6 +156,7 @@ fn a_standing_knight_is_fought_with_the_whole_move_set() {
     assert!(states.len() >= 10, "{states:?}");
     assert!(xs.1 - xs.0 > 3 * ONE, "she never moved");
     assert!(hurt > 0, "a Knight who stands still is never touched");
+    assert_eq!(r.f.boss.world.unhandled, 0, "an action type with no handler was reached (family << 8 | op)");
 }
 
 #[test]

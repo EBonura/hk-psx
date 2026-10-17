@@ -57,8 +57,17 @@ pub fn entry(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
     } else if family == 13 {
         playerdata::entry(c, op)
     } else {
-        R_CONT
+        unknown(c, family, op)
     }
+}
+
+/// An action type no handler of its family takes: it would wait for ever as if it were stateful, so the world says which one it was
+/// (`World::unhandled`, family << 8 | op) for the tests to refuse.
+#[cfg_attr(target_arch = "mips", optimize(size))]
+#[inline(never)]
+pub fn unknown(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
+    c.world().unhandled = (family as u16) << 8 | op as u16;
+    R_CONT
 }
 
 #[cfg_attr(target_arch = "mips", optimize(size))]

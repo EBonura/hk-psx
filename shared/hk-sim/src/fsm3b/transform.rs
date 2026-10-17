@@ -136,7 +136,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         }
         r_stateless(c.flags)
     } else {
-        R_CONT
+        super::unknown(c, 4, op)
     }
 }
 

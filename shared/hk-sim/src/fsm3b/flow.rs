@@ -65,7 +65,7 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
     } else if op == flow::SEND_RANDOM_EVENT_V3 {
         send_random_v3(c)
     } else {
-        R_CONT
+        super::unknown(c, 0, op)
     }
 }
 
