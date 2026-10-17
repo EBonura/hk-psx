@@ -1683,6 +1683,9 @@ fn prepare_cook(root: &Path, options: &Options) -> Result<()> {
     sdk(root, &sdk_source(root, options))?;
     // The XA encoder is exported from the same checkout (hk-cook xa_music).
     std::env::set_var("HK_SDK_SOURCE", sdk_source(root, options));
+    // Hornet's boss trees come first: the cook below appends her sprite clips to Fungus1_04's banks and reads which clips
+    // each of her objects plays from the manifests this writes (data/hornet3_art.json).
+    hk_fsm_cook::cook3::cook_hornet3(root).map_err(|e| e.to_string())?;
     cook_cached(root, options.recook)?;
     Ok(())
 }
