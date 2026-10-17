@@ -829,6 +829,32 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     ("c37-stand", "HK_DEATHS", 0),
     ("c37-stand", "HK_REGION_ID", 454),
     ("c37-stand", "HK_SECRET_HITS", 0),
+    // Greenpath's road to Hornet's arena: Fungus1_22 from its upper shaft, up
+    // through its top gate into Fungus1_21, left through its gate into
+    // Fungus1_04, to the Cloak Corpse (region 1005). Ordinary controls, no
+    // cheat, no death; the fixture is seeded at (24, 12) in Fungus1_22 because
+    // the shaft's lower hall is sealed by a Metal Gate its Gate Switch opens
+    // from above. hornet1Defeated is clear, so UP at the shiny does nothing.
+    ("hornet-road", "HK_SCENE_GATE_LOADS", 2),
+    ("hornet-road", "HK_REGION_ID", 1005),
+    ("hornet-road", "HK_DEATHS", 0),
+    ("hornet-road", "HK_HEALTH", 5),
+    ("hornet-road", "HK_CHEATS", 0),
+    ("hornet-road", "HK_WORLD_PLAYER", 0),
+    ("hornet-road", "HK_ABILITY_DRAWN", 0),
+    ("hornet-road", "HK_ROOM_LOAD_ERROR", 0),
+    ("hornet-road", "HK_CD_STREAM_ERROR", 0),
+    // The same walk on a card whose only difference is hornet1Defeated (PlayerData
+    // bit 26): the shiny is offered, UP takes it, hasDash (bit 2) is saved and the
+    // dash runs. World bits 26 and 2 are 0x4000004.
+    ("hornet-road-defeated", "HK_SCENE_GATE_LOADS", 2),
+    ("hornet-road-defeated", "HK_REGION_ID", 1005),
+    ("hornet-road-defeated", "HK_DEATHS", 0),
+    ("hornet-road-defeated", "HK_HEALTH", 5),
+    ("hornet-road-defeated", "HK_CHEATS", 0),
+    ("hornet-road-defeated", "HK_WORLD_PLAYER", 67108868),
+    ("hornet-road-defeated", "HK_ROOM_LOAD_ERROR", 0),
+    ("hornet-road-defeated", "HK_CD_STREAM_ERROR", 0),
 ];
 /// Telemetry a route must reach at least, rather than exactly.
 ///
@@ -907,6 +933,10 @@ const PACING_CEILINGS: &[(&str, u64)] = &[
     ("boss-fight", 2),
     ("cornifer-map", 102),
     ("focus", 15),
+    // Measured on the 2026-10-15 build: 2,318 and 2,328 of about 2,350 frames (the Fungus rooms run near 20 fps); the ceiling is
+    // that plus five percent.
+    ("hornet-road", 2440),
+    ("hornet-road-defeated", 2450),
 ];
 const REQUIRED_MIN: &[(&str, &str, u64)] = &[
     // Survived the traversal at all. HK_DEATHS 0 above is the real assertion;
@@ -919,6 +949,7 @@ const REQUIRED_MIN: &[(&str, &str, u64)] = &[
     ("mawlek-fight", "HK_MW_SWIPES", 1),
     ("mawlek-fight", "HK_MW_PARRIES", 1),
     ("mawlek-fight", "HK_MW_HEAD_SHOTS", 1),
+    ("hornet-road-defeated", "HK_ABILITY_DRAWN", 5),
     ("cheat-spell", "HK_ABILITY_DRAWN", 20),
     ("cheat-heart", "HK_ABILITY_DRAWN", 50),
     ("cheat-dream", "HK_ABILITY_DRAWN", 400),
@@ -975,6 +1006,8 @@ const MEMCARDS: &[(&str, &str)] = &[
     ("secret-c46-eggs", "secret-c46-eggs.mcd"),
     ("secret-c37", "secret-c37.mcd"),
     ("c37-stand", "secret-c37.mcd"),
+    ("hornet-road", "hornet-road.mcd"),
+    ("hornet-road-defeated", "hornet-road-defeated.mcd"),
 ];
 /// The journey's segments, in order. Each boots from the card the one before
 /// it wrote, and the first from no card at all; `validate` runs them one after
@@ -1040,6 +1073,9 @@ const ROUTES: &[(&str, bool)] = &[
     // Manny's King's Pass playtest of 2026-10-03 walks back and forth across
     // the bind between views 2 and 12, where scenery went dark.
     ("kp-playtest", false),
+    // Greenpath's road to Hornet, walked from a seeded start (docs/HORNET.md).
+    ("hornet-road", false),
+    ("hornet-road-defeated", false),
 ];
 
 /// Tapes `pgo` profiles when none is given: the King's Pass climb and the
@@ -2699,13 +2735,21 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         );
         Ok(())
     };
-    for chunk in ROUTES.chunks(jobs) {
+    // HK_VALIDATE_ONLY=route,route replays just those routes (no journey, power-cut or earned-focus checks), for work on
+    // one route.
+    let only: Option<Vec<String>> = std::env::var("HK_VALIDATE_ONLY").ok().map(|list| list.split(',').map(str::to_owned).collect());
+    let routes: Vec<(&'static str, bool)> = ROUTES
+        .iter()
+        .filter(|(name, _)| only.as_ref().is_none_or(|o| o.iter().any(|x| x == name)))
+        .copied()
+        .collect();
+    for chunk in routes.chunks(jobs) {
         let children: Vec<_> = chunk.iter().map(|(name, _)| spawn(name)).collect();
         for ((name, gates), child) in chunk.iter().zip(children) {
             evaluate(name, *gates, child.and_then(|c| c.wait_with_output()), None)?;
         }
     }
-    for (index, name) in JOURNEY.iter().enumerate() {
+    for (index, name) in JOURNEY.iter().enumerate().filter(|_| only.is_none()) {
         let card = out.join(format!("{name}.mcd"));
         if index > 0 {
             let _ = std::fs::copy(out.join(format!("{}.mcd", JOURNEY[index - 1])), &card);
@@ -2731,6 +2775,10 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         out.join("summary.json"),
         serde_json::to_string_pretty(&Value::Object(summary))?,
     )?;
+    if failed.is_empty() && only.is_some() {
+        println!("{} selected routes pass.", routes.len());
+        return Ok(());
+    }
     if failed.is_empty() {
         println!(
             "{} unqualified routes pass; {baseline_qualified} routes complete under the documented one-count baseline input gap on the final CUE.",

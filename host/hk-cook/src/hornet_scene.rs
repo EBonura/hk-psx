@@ -149,8 +149,92 @@ fn publish(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+
+/// What her art would cost in the standard boss bank (host/hk-cook fk_bank.rs `plan`), with room for everything: the measurement
+/// that says whether the bank has the space (pages and stream bytes in `docs/HORNET.md`). Prints the plan's totals.
+pub fn measure(root: &Path) -> Result<()> {
+    use crate::fk_bank::{plan, ArtClipRec, SourceArt, SpriteKey, SpriteRec};
+    let source = Source::from_doctor(root)?;
+    let mut ents = manifest(root, "hornet3", 0)?;
+    ents.extend(manifest(root, "hornet_corpse3", 1)?);
+    let scale = focal() / -CAM_Z;
+    let mut textures: HashMap<String, Arc<hk_pil::Image>> = HashMap::new();
+    let mut collections: HashMap<String, Value> = HashMap::new();
+    let mut art = SourceArt { sprites: vec![], clips: vec![], floor_frames: vec![], objects: crate::pyjson::Json::Null };
+    let mut names: Vec<String> = vec![];
+    let mut wanted: BTreeMap<Group, (&Ent, BTreeSet<String>)> = BTreeMap::new();
+    for e in &ents {
+        let slot = wanted.entry(group_of(e)).or_insert_with(|| (e, BTreeSet::new()));
+        slot.1.extend(e.clips.iter().map(|c| c.0.clone()));
+    }
+    for (group, (e, clip_names)) in &wanted {
+        let (file, path) = e.library.rsplit_once(':').ok_or("library id")?;
+        let library_file = source.file(file)?;
+        let library_o = source.object(&library_file, path.parse()?)?;
+        let library = source.read(&library_o)?;
+        let (sx, sy) = (f64::from_bits(group.1), f64::from_bits(group.2));
+        for name in clip_names {
+            let clip = library
+                .get("clips")
+                .and_then(Value::list)
+                .and_then(|l| l.iter().find(|c| c.get("name").and_then(Value::str).as_deref() == Some(name.as_str())))
+                .ok_or_else(|| format!("{} has no clip {name}", e.library))?;
+            let mut keys = vec![];
+            for frame in clip.get("frames").and_then(Value::list).unwrap_or(&[]) {
+                let co = source.deref(&library_o.file, get(frame, "spriteCollection")?)?;
+                let sid = co.sid();
+                if !collections.contains_key(&sid) {
+                    collections.insert(sid.clone(), source.read(&co)?);
+                }
+                let index = get(frame, "spriteId")?.int().unwrap_or(0);
+                let key = SpriteKey::tk(&sid, index, sx, sy, e.alpha);
+                if !art.sprites.iter().any(|s| s.0 == key) {
+                    let (mut image, b) = tk_sprite(&source, &co.file, &collections[&sid], index as usize, &mut textures)?;
+                    scale_alpha(&mut image, e.alpha);
+                    let b = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy];
+                    let (w, h) = (((b[2] - b[0]) * scale).ceil() as usize, ((b[3] - b[1]) * scale).ceil() as usize);
+                    art.sprites.push((key.clone(), SpriteRec { image, box_: b, w: w.max(1), h: h.max(1) }));
+                }
+                keys.push(key);
+            }
+            let label = format!("{}#{}/{name}", e.library, art.clips.len());
+            names.push(label.clone());
+            art.clips.push((label, ArtClipRec { record: clip.clone(), keys }));
+        }
+    }
+    // Per group: how many sprites and pixels its clips bring.
+    for (group, (e, clip_names)) in &wanted {
+        let mut seen: Vec<&SpriteKey> = vec![];
+        for (label, rec) in &art.clips {
+            if label.starts_with(&format!("{}#", e.library)) && clip_names.iter().any(|n| label.ends_with(&format!("/{n}"))) {
+                for k in &rec.keys {
+                    if !seen.contains(&k) {
+                        seen.push(k);
+                    }
+                }
+            }
+        }
+        let px: usize = seen.iter().map(|k| art.sprite(k).w * art.sprite(k).h).sum();
+        println!("  group {} scale {:.3}x{:.3}: {} clips, {} sprites, {} px (ents {:?})", e.library, f64::from_bits(group.1), f64::from_bits(group.2), clip_names.len(), seen.len(), px,
+            ents.iter().filter(|x| group_of(x) == *group).map(|x| (x.tree, x.ent)).collect::<Vec<_>>());
+    }
+    let priority: Vec<&str> = names.iter().map(String::as_str).collect();
+    let quantize = &quantize::atlas_quantizer;
+    let planned = plan(&art, &[], quantize, &priority, 100, 1 << 40, "Hornet")?;
+    let pixels: usize = art.sprites.iter().map(|s| s.1.w * s.1.h).sum();
+    println!("hornet art: {} sprites, {} clips, {} px; plan {}", art.sprites.len(), art.clips.len(), pixels, crate::pyjson::dumps(&planned.totals));
+    Ok(())
+}
+
 /// The pass: after the legacy region cook, before anything reads the rooms.
 pub fn cook(root: &Path) -> Result<()> {
+    // Her art does not fit the room format (docs/HORNET.md: 455 sprites, 835 parts, 496 KB against 640 textures and 416
+    // palettes per room, of which Fungus1_04 already holds about 200), so the pass is opt-in: without HK_HORNET_ART the
+    // fight is not in the build. `hk-cook hornet-measure` prints what her art costs.
+    if std::env::var_os("HK_HORNET_ART").is_none() {
+        println!("  hornet art: skipped (HK_HORNET_ART unset; docs/HORNET.md)");
+        return Ok(());
+    }
     // The scene is not admitted in every build: without it the boss has no room to appear in.
     let Some(row) = quality::SCENE_TABLE.iter().find(|r| r.scene_name == SCENE) else {
         println!("  hornet art: {SCENE} is not admitted, skipped");
