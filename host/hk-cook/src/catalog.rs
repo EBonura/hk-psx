@@ -113,6 +113,7 @@ pub struct Row {
     pub index: u32,
     pub scene: String,
     pub area: String,
+    pub dlc: String,
     pub role: String,
     pub status: Status,
     pub views: Option<u32>,
@@ -154,6 +155,15 @@ pub fn area_of(scene: &str, role: &str) -> &'static str {
             }
         }
         _ => by_name,
+    }
+}
+
+/// The expansion a scene belongs to, if any: "grimm" (Grimm Troupe) or "godhome" (Godhome), else "".
+pub fn dlc_of(area: &str) -> &'static str {
+    match area {
+        "Grimm Troupe" => "grimm",
+        "Godhome" => "godhome",
+        _ => "",
     }
 }
 
@@ -466,6 +476,7 @@ pub fn extract(world_import: &Path, playable: &[&str]) -> Result<Catalog, String
             index: as_u32(&s["index"]).ok_or("scene without index")?,
             scene: name.to_string(),
             area: area_of(name, &role).to_string(),
+            dlc: dlc_of(area_of(name, &role)).to_string(),
             role,
             status,
             views: as_u32(get(cooking, &["pack", "regions"])),
@@ -492,8 +503,8 @@ fn interactables_boss(scene: &Value) -> bool {
     scene["content"]["bosses"]["BossSceneController"].as_u64().unwrap_or(0) > 0
 }
 
-const COLUMNS: [&str; 18] = [
-    "index", "scene", "area", "role", "status", "views", "ram_bytes", "vram_bytes", "disc_bytes",
+const COLUMNS: [&str; 19] = [
+    "index", "scene", "area", "dlc", "role", "status", "views", "ram_bytes", "vram_bytes", "disc_bytes",
     "pages", "palettes", "enemies", "families", "interactables", "flags", "gates", "exits",
     "scripted_loads",
 ];
@@ -523,6 +534,7 @@ impl Catalog {
                 r.index.to_string(),
                 r.scene.clone(),
                 r.area.clone(),
+                r.dlc.clone(),
                 r.role.clone(),
                 r.status.label().to_string(),
                 opt(&r.views),
@@ -585,26 +597,27 @@ impl Catalog {
             let list = |s: &str| -> Vec<String> {
                 s.split('|').filter(|i| !i.is_empty()).map(str::to_string).collect()
             };
-            let families = map(c[12])?;
+            let families = map(c[13])?;
             rows.push(Row {
                 index: c[0].parse().map_err(|e| format!("{:?}: {e}", c[0]))?,
                 scene: c[1].to_string(),
                 area: c[2].to_string(),
-                role: c[3].to_string(),
-                status: Status::parse(c[4])?,
-                views: num(c[5])?.map(|v| v as u32),
-                ram_bytes: num(c[6])?,
-                vram_bytes: num(c[7])?,
-                disc_bytes: num(c[8])?,
-                pages: num(c[9])?.map(|v| v as u32),
-                palettes: num(c[10])?.map(|v| v as u32),
-                enemies: c[11].parse().map_err(|e| format!("{:?}: {e}", c[11]))?,
+                dlc: c[3].to_string(),
+                role: c[4].to_string(),
+                status: Status::parse(c[5])?,
+                views: num(c[6])?.map(|v| v as u32),
+                ram_bytes: num(c[7])?,
+                vram_bytes: num(c[8])?,
+                disc_bytes: num(c[9])?,
+                pages: num(c[10])?.map(|v| v as u32),
+                palettes: num(c[11])?.map(|v| v as u32),
+                enemies: c[12].parse().map_err(|e| format!("{:?}: {e}", c[12]))?,
                 families,
-                interactables: map(c[13])?,
-                flags: list(c[14]),
-                gates: c[15].parse().map_err(|e| format!("{:?}: {e}", c[15]))?,
-                exits: list(c[16]),
-                scripted_loads: c[17].parse().map_err(|e| format!("{:?}: {e}", c[17]))?,
+                interactables: map(c[14])?,
+                flags: list(c[15]),
+                gates: c[16].parse().map_err(|e| format!("{:?}: {e}", c[16]))?,
+                exits: list(c[17]),
+                scripted_loads: c[18].parse().map_err(|e| format!("{:?}: {e}", c[18]))?,
             });
         }
         if !header_seen {
@@ -654,6 +667,24 @@ impl Catalog {
         o
     }
 
+    /// Base game against each expansion: scenes, cook state, enemies and cooked KB.
+    pub fn dlc_table(&self) -> String {
+        let mut o = String::new();
+        o.push_str("| Part | Scenes | Playable | Cooked pack | No envelope | Over 128 views | Enemies | Cooked KB |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        for (tag, name) in [("", "Base game"), ("grimm", "Grimm Troupe"), ("godhome", "Godhome")] {
+            let rows: Vec<&Row> = self.rows.iter().filter(|r| r.dlc == tag).collect();
+            let n = |s: Status| rows.iter().filter(|r| r.status == s).count();
+            let enemies: u64 = rows.iter().map(|r| r.enemies as u64).sum();
+            let bytes: u64 = rows.iter().filter_map(|r| r.disc_bytes).sum();
+            let _ = writeln!(
+                o,
+                "| {name} | {} | {} | {} | {} | {} | {enemies} | {} |",
+                rows.len(), n(Status::Playable), n(Status::CookedPack), n(Status::NoEnvelope), n(Status::Over128Views), kb(bytes)
+            );
+        }
+        o
+    }
+
     fn count(&self, area: &str, status: Status) -> usize {
         self.rows.iter().filter(|r| r.area == area && r.status == status).count()
     }
@@ -686,6 +717,11 @@ impl Catalog {
         o.push_str("## Areas\n\n");
         o.push_str("Area comes from the scene name prefix (`area_of` in `host/hk-cook/src/catalog.rs`). Fungus3 holds both Fog Canyon and the Queen's Gardens and is not split. `Interior rooms` are the `Room_*` scenes that do not name their area. Enemies are HealthManager objects (bosses, minions and spawners included). Cooked KB is the summed stored pack size of the scenes that cook.\n\n");
         o.push_str(&self.area_table());
+        o.push('\n');
+
+        o.push_str("## Base game and expansions\n\n");
+        o.push_str("Grimm Troupe and Godhome are the two expansions the port will carry after the base game; their scenes are tagged `dlc` in the TSV so budgets can be sized with them in mind. Everything else is the base game.\n\n");
+        o.push_str(&self.dlc_table());
         o.push('\n');
 
         o.push_str("## Scenes without an envelope\n\n");
@@ -856,6 +892,7 @@ mod tests {
         for (i, r) in cat.rows.iter().enumerate() {
             assert_eq!(r.index as usize, i, "rows are in build order");
             assert!(AREAS.contains(&r.area.as_str()), "{}: {}", r.scene, r.area);
+            assert_eq!(r.dlc, dlc_of(&r.area), "{}", r.scene);
         }
         let names: BTreeSet<&str> = cat.rows.iter().map(|r| r.scene.as_str()).collect();
         assert_eq!(names.len(), 501, "scene names are unique");

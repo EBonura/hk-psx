@@ -2,505 +2,505 @@
 # Names, counts and byte sizes only. Regenerate: cargo run --release --manifest-path host/Cargo.toml -p hk-cook --bin hk-catalog -- all <world-import dir>
 # source_world_fingerprint=cac49e9826463f629043d52586daa5ebfc31cd340cb178d097ce8f86c906d52e
 # pack_matrix_inventory_fingerprint=763003846b5b2be2d8783767c371eb04e4165fa64f4b0e6fdd0910cd9e96f72d
-index	scene	area	role	status	views	ram_bytes	vram_bytes	disc_bytes	pages	palettes	enemies	families	interactables	flags	gates	exits	scripted_loads
-0	Pre_Menu_Intro	Menus, helpers and tests	transition_or_bootstrap_helper	no-envelope							0			text	0		0
-1	Menu_Title	Menus, helpers and tests	menu	no-envelope							0			text	0		0
-2	Quit_To_Menu	Menus, helpers and tests	transition_or_bootstrap_helper	no-envelope							0				0		0
-3	BetaEnd	Menus, helpers and tests	transition_or_bootstrap_helper	no-envelope							0				0		0
-4	Knight_Pickup	Menus, helpers and tests	shared_player_prefab_scene	no-envelope							0				0		2
-5	Opening_Sequence	Cinematics and openings	gameplay	no-envelope							0			text	0		0
-6	Tutorial_01	King's Pass	gameplay	playable	84	316892	623968	180977	18	1067	7	Buzzer=3|Crawler=3|Crawler Fixed=1	breakable=43|persistent=24|reveal_mask=8|geo_rock=5|breakable_wall=1|chest=1|conversation=1|shiny=1	text	3	Cliffs_02|Town	1
-7	Town	Dirtmouth	gameplay	playable	72	117812	209440	59266	6	401	0		conversation=10|persistent=8|door=7|breakable=4|shiny=2|bench=1|inspect=1|lift=1|switch=1		12	Cliffs_02|Crossroads_01|Grimm_Divine|Grimm_Tent|Mines_10|Room_Ouiji|Room_mapper|Tutorial_01	7
-8	Cinematic_Stag_travel	Cinematics and openings	cinematic	no-envelope							0				0		0
-9	Room_Town_Stag_Station	Interior rooms	gameplay	cooked-pack	9	56208	71584	30306	2	189	0		breakable=1|conversation=1|door=1|lift=1|persistent=1|stag=1|switch=1		2	Town	2
-10	Room_Charm_Shop	Interior rooms	gameplay	cooked-pack	4	35176	35488	18341	1	85	0		shop=2|conversation=1	text	1	Crossroads_04	0
-11	Room_Mender_House	Interior rooms	gameplay	cooked-pack	4	35084	35392	18242	1	82	0		conversation=1		1	Crossroads_04	0
-12	Room_mapper	Interior rooms	gameplay	cooked-pack	4	35264	35552	18449	1	87	0		shop=2|conversation=1	text	1	Town	0
-13	Room_nailmaster	Interior rooms	gameplay	cooked-pack	12	49080	70016	26216	2	140	0		persistent=3|reveal_mask=3|conversation=2|bench=1		1	Cliffs_02	0
-14	Room_nailmaster_02	Interior rooms	gameplay	cooked-pack	9	40232	36032	20923	1	102	0		conversation=4		1	Fungus1_15	0
-15	Room_nailmaster_03	Interior rooms	gameplay	cooked-pack	9	39408	35904	20189	1	98	0		breakable=4|conversation=1		1	Deepnest_East_06	0
-16	Room_nailsmith	Interior rooms	gameplay	cooked-pack	4	35060	35456	18120	1	84	0		conversation=1		1	Ruins1_04	0
-17	Room_shop	Interior rooms	gameplay	playable	6	36104	35552	18595	1	87	0		shop=2|conversation=1|door=1	text	2	Town	1
-18	Room_Sly_Storeroom	Interior rooms	gameplay	cooked-pack	15	51932	70784	27175	2	164	0		breakable=6|shop=2|conversation=1|door=1	text	2	Room_shop	1
-19	Room_temple	Interior rooms	gameplay	cooked-pack	9	44168	36224	22983	1	108	0		breakable=7|conversation=2|door=1|persistent=1		2	Crossroads_02	1
-20	Room_ruinhouse	Interior rooms	gameplay	cooked-pack	4	34120	35392	17749	1	82	0		conversation=1		1	Crossroads_04	0
-21	Room_Mask_Maker	Interior rooms	gameplay	cooked-pack	6	42632	36704	22831	1	123	0		conversation=1		1	Deepnest_42	0
-22	Room_Mansion	Interior rooms	gameplay	cooked-pack	6	38380	35968	19917	1	100	0		breakable=1|conversation=1|persistent=1		1	RestingGrounds_12	0
-23	Room_Tram	Tram	gameplay	cooked-pack	6	38520	36128	20092	1	105	0		breakable=5|persistent=2|bench=1|door=1		1		1
-24	Room_Tram_RG	Tram	gameplay	cooked-pack	6	38440	36064	20021	1	103	0		breakable=5|persistent=2|bench=1|door=1		1		1
-25	Room_Bretta	Interior rooms	gameplay	cooked-pack	4	35832	35776	18734	1	94	0		conversation=1|door=1|persistent=1		2	Town	1
-26	Room_Bretta_Basement	Interior rooms	gameplay	cooked-pack	4	36672	35904	19248	1	98	0		door=1		3	Room_Bretta	2
-27	Room_Fungus_Shaman	Interior rooms	gameplay	cooked-pack	21	95612	172544	55423	5	272	7	Mosquito=7	breakable=7|persistent=3|battle=1|breakable_wall=1|geo_rock=1|reveal_mask=1		1	Fungus3_44	0
-28	Room_Ouiji	Interior rooms	gameplay	cooked-pack	9	47524	37248	25393	1	140	0		breakable=8|conversation=1		1	Town	0
-29	Room_Jinn	Interior rooms	gameplay	cooked-pack	9	44820	69856	23932	2	135	0		conversation=2		1	Town	0
-30	Room_Colosseum_01	Colosseum of Fools	gameplay	cooked-pack	9	47088	70304	25328	2	149	0		conversation=4		3	Deepnest_East_09|Room_Colosseum_02	0
-31	Room_Colosseum_02	Colosseum of Fools	gameplay	cooked-pack	40	90740	172064	47062	5	257	0		reveal_mask=4|persistent=3|conversation=2|bench=1|breakable_wall=1		2	Room_Colosseum_01|Room_Colosseum_Spectate	0
-32	Room_Colosseum_Bronze	Colosseum of Fools	gameplay	cooked-pack	21	72764	105344	39803	3	220	1	Giant Buzzer Col=1	persistent=2|battle=1|reveal_mask=1|shiny=1		2	Room_Colosseum_01	0
-33	Room_Colosseum_Silver	Colosseum of Fools	gameplay	cooked-pack	21	72576	105344	39713	3	220	3	Mega Fat Bee=2|Colosseum_Miner=1	persistent=2|battle=1|reveal_mask=1|shiny=1		2	Room_Colosseum_01	0
-34	Room_Colosseum_Gold	Colosseum of Fools	gameplay	cooked-pack	21	79568	105504	43705	3	225	26	Mage Balloon Spawner=9|Mage=6|Electric Mage New=4|Mage Blob=3|Mage Knight=2|Lancer=1|Lobster=1	persistent=4|battle=1|reveal_mask=1|shiny=1	text	2	Room_Colosseum_01	0
-35	Room_Colosseum_Spectate	Colosseum of Fools	gameplay	cooked-pack	24	69316	104736	37526	3	201	1	Colosseum_Miner=1	persistent=2|breakable_wall=1|reveal_mask=1		2	GG_Lurker|Room_Colosseum_02	0
-36	Room_Slug_Shrine	Interior rooms	gameplay	cooked-pack	4	38548	36608	21059	1	120	0		bench=1|conversation=1		1	Fungus1_26	0
-37	Crossroads_01	Forgotten Crossroads	gameplay	playable	20	103960	245408	63161	7	501	8	Climber=2|Zombie Runner=2|Angry Buzzer=1|Bursting Zombie=1|Crawler=1|Mender Bug=1	breakable=24|persistent=6|bench=1|door=1|geo_rock=1|reveal_mask=1|shiny=1		5	Crossroads_02|Crossroads_07|Town|bot1	1
-38	Crossroads_02	Forgotten Crossroads	gameplay	playable	12	62364	105568	35484	3	227	0		breakable=26|door=1		3	Crossroads_01|Crossroads_39	1
-39	Crossroads_03	Forgotten Crossroads	gameplay	playable	12	100556	210976	62081	6	449	10	Angry Buzzer=3|Buzzer=2|Climber=2|Spitter=2|Crawler=1	breakable=18|persistent=6|toll_gate=2|grub=1|reveal_mask=1		6	Crossroads_15|Crossroads_16|Crossroads_19|Crossroads_21|Crossroads_47|Mines_33	0
-40	Crossroads_04	Forgotten Crossroads	gameplay	playable	21	109972	243392	64663	7	438	16	Fly=7|Bursting Zombie=2|Spitting Zombie=2|Angry Buzzer=1|Giant Fly=1|Zombie Barger=1|Zombie Hornhead=1|Zombie Runner=1	breakable=24|persistent=13|door=3|reveal_mask=2|battle=1|bench=1|breakable_wall=1|conversation=1		6	Crossroads_19|Crossroads_27|Crossroads_50|Room_ruinhouse	3
-41	Crossroads_05	Forgotten Crossroads	gameplay	playable	8	78928	141536	47326	4	327	11	Crawler=3|Angry Buzzer=2|Bursting Zombie=2|Climber=2|Buzzer=1|Zombie Runner=1	breakable=19|persistent=6|geo_rock=1|grub=1		2	Crossroads_07|Crossroads_40	0
-42	Crossroads_06	Forgotten Crossroads	gameplay	playable	15	82584	173472	47509	5	301	0		breakable=22|persistent=2|door=1|switch=1		3	Crossroads_10|Crossroads_33	1
-43	Crossroads_07	Forgotten Crossroads	gameplay	playable	16	113228	210016	68476	6	419	23	Fly=9|Climber=7|Bursting Bouncer=6|Crawler=1	persistent=39|breakable=28|geo_rock=3|breakable_wall=1|reveal_mask=1		6	Crossroads_01|Crossroads_05|Crossroads_11_alt|Crossroads_25|Crossroads_33|Crossroads_38	0
-44	Crossroads_08	Forgotten Crossroads	gameplay	playable	12	91076	208928	55406	6	385	6	Spitter=4|Bursting Zombie=1|Spitting Zombie=1	breakable=15|persistent=5|geo_rock=4|battle=1|reveal_mask=1		4	Crossroads_13|Crossroads_18|Crossroads_30|Crossroads_33	0
-45	Crossroads_09	Forgotten Crossroads	gameplay	playable	8	62916	105152	36411	3	214	1	Mawlek Body=1	persistent=4|battle=1|breakable_wall=1		2	Crossroads_33|Crossroads_36	0
-46	Crossroads_10	Forgotten Crossroads	gameplay	playable	20	144228	277824	85922	8	490	0		breakable=36|persistent=3|breakable_wall=1|chest=1|conversation=1|door=1|geo_rock=1|reveal_mask=1|shiny=1	text	3	Crossroads_06|Crossroads_21	1
-47	Crossroads_10_preload	Forgotten Crossroads	transition_or_bootstrap_helper	no-envelope							0				0		0
-48	Crossroads_10_boss	Forgotten Crossroads	gameplay	no-envelope							5	False Knight New=1|Head=1|Zombie Barger=1|Zombie Hornhead=1|Zombie Runner=1	persistent=4|battle=1		0		0
-49	Crossroads_10_boss_defeated	Forgotten Crossroads	additive_boss_defeated_variant	no-envelope							2	Prayer Slug=2	breakable=8|persistent=2		0		1
-50	Crossroads_11_alt	Forgotten Crossroads	gameplay	playable	18	117428	244896	70718	7	485	3	Angry Buzzer=2|Blocker=1	breakable=8|persistent=4|inspect=1		2	Crossroads_07|Fungus1_01	0
-51	Crossroads_12	Forgotten Crossroads	gameplay	playable	8	81840	141440	49595	4	324	1	Angry Buzzer=1	breakable=7|geo_rock=1|persistent=1		2	Crossroads_33|Crossroads_35	0
-52	Crossroads_13	Forgotten Crossroads	gameplay	playable	16	128404	212128	79795	6	485	5	Angry Buzzer=2|Bursting Zombie=1|Buzzer=1|Zombie Barger=1	breakable=21|persistent=6|geo_rock=2|breakable_wall=1		2	Crossroads_08|Crossroads_42	0
-53	Crossroads_14	Forgotten Crossroads	gameplay	playable	8	68936	140416	41210	4	292	1	Angry Buzzer=1	breakable=7|persistent=1		4	Crossroads_16|Crossroads_39|Crossroads_45|Crossroads_48	0
-54	Crossroads_15	Forgotten Crossroads	gameplay	playable	6	54072	71712	31655	2	193	4	Spitting Zombie=2|Zombie Shield=2	breakable=15|persistent=4		2	Crossroads_03|Crossroads_27	0
-55	Crossroads_16	Forgotten Crossroads	gameplay	playable	12	75760	141376	44552	4	322	7	Angry Buzzer=3|Buzzer=3|Zombie Hornhead=1	breakable=17|persistent=4|geo_rock=1		3	Crossroads_03|Crossroads_14|Crossroads_40	0
-56	Crossroads_18	Forgotten Crossroads	gameplay	playable	8	101628	211008	63965	6	450	0		breakable=17|geo_rock=3|persistent=3|reveal_mask=2|breakable_wall=1|soul_totem=1		3	Crossroads_08|Crossroads_52|Fungus2_06	0
-57	Crossroads_19	Forgotten Crossroads	gameplay	playable	12	92716	176512	56440	5	396	19	Hatcher Baby Spawner=15|Hatcher=1|Spitter=1|Zombie Leaper=1|Zombie Runner=1	breakable=14|persistent=4|geo_rock=1|soul_totem=1		4	Crossroads_03|Crossroads_04|Crossroads_42|Crossroads_43	0
-58	Crossroads_21	Forgotten Crossroads	gameplay	playable	15	101892	208352	60635	6	367	9	Angry Buzzer=2|Zombie Barger=2|Bursting Zombie=1|Spitting Zombie=1|Zombie Guard=1|Zombie Leaper=1|Zombie Runner=1	breakable=24|persistent=13|reveal_mask=3|breakable_wall=2|geo_rock=1		4	Crossroads_03|Crossroads_10|Crossroads_22	0
-59	Crossroads_22	Forgotten Crossroads	gameplay	playable	15	116432	176544	73209	5	397	40	Hatcher Baby Spawner=23|Spitter=12|Hatcher NP=4|Hatcher=1	breakable=14|persistent=3|battle=1|shiny=1		1	Crossroads_21	0
-60	Crossroads_25	Forgotten Crossroads	gameplay	playable	12	70980	140000	41568	4	279	4	Fly=3|Bursting Bouncer=1	breakable=3|persistent=2|soul_totem=1		2	Crossroads_07|Crossroads_36	0
-61	Crossroads_27	Forgotten Crossroads	gameplay	playable	10	88244	175808	54796	5	374	18	Hatcher Baby Spawner=15|Hatcher=3	breakable=17|persistent=4|geo_rock=1		4	Crossroads_04|Crossroads_15|Crossroads_31|Crossroads_46	0
-62	Crossroads_30	Forgotten Crossroads	gameplay	playable	6	56952	105536	34043	3	226	0		bench=1		1	Crossroads_08	0
-63	Crossroads_31	Forgotten Crossroads	gameplay	playable	6	63816	105504	36986	3	225	0		breakable=8|grub=1|persistent=1		1	Crossroads_27	0
-64	Crossroads_33	Forgotten Crossroads	gameplay	playable	12	91128	176000	54745	5	380	0		breakable=11|conversation=2|persistent=1		5	Crossroads_06|Crossroads_07|Crossroads_08|Crossroads_09|Crossroads_12	0
-65	Crossroads_35	Forgotten Crossroads	gameplay	playable	24	110120	244256	66857	7	465	17	Hatcher Baby Spawner=15|Hatcher=2	breakable=10|persistent=5|grub=1|reveal_mask=1|soul_totem=1		2	Crossroads_12|Fungus3_26	0
-66	Crossroads_36	Forgotten Crossroads	gameplay	playable	12	116296	209632	71635	6	407	0		persistent=7|breakable=2|breakable_wall=2|reveal_mask=2|geo_rock=1|soul_totem=1		2	Crossroads_09|Crossroads_25	0
-67	Crossroads_37	Forgotten Crossroads	gameplay	playable	15	100432	174688	61004	5	339	14	Zombie Barger=6|Zombie Hornhead=4|Zombie Leaper=2|Zombie Runner=2	persistent=19|breakable=9|reveal_mask=3|breakable_wall=1|geo_rock=1		1	Crossroads_49	0
-68	Crossroads_38	Forgotten Crossroads	gameplay	playable	6	58676	105408	34621	3	222	0		persistent=13|shiny=6		1	Crossroads_07	0
-69	Crossroads_39	Forgotten Crossroads	gameplay	playable	8	66860	140032	39012	4	280	6	Bursting Zombie=2|Zombie Runner=2|Spitting Zombie=1|Zombie Hornhead=1	breakable=27|persistent=6		2	Crossroads_02|Crossroads_14	0
-70	Crossroads_40	Forgotten Crossroads	gameplay	playable	8	73192	106560	41948	3	258	9	Bursting Zombie=2|Spitting Zombie=2|Zombie Leaper=2|Fly=1|Zombie Hornhead=1|Zombie Runner=1	breakable=10|persistent=8		2	Crossroads_05|Crossroads_16	0
-71	Crossroads_42	Forgotten Crossroads	gameplay	playable	10	106544	244320	66623	7	467	7	Buzzer=4|Angry Buzzer=3	breakable=23|persistent=3|geo_rock=2		2	Crossroads_13|Crossroads_19	0
-72	Crossroads_43	Forgotten Crossroads	gameplay	playable	8	75804	106528	43689	3	257	3	Spitter=2|Zombie Shield=1	breakable=21|persistent=1		2	Crossroads_19|Crossroads_49	0
-73	Crossroads_45	Forgotten Crossroads	gameplay	playable	16	85180	139712	49791	4	270	1	Zombie Myla=1	breakable=15|conversation=2|persistent=2|lift=1|soul_totem=1		2	Crossroads_14|Mines_01	0
-74	Crossroads_46	Forgotten Crossroads	gameplay	playable	6	57636	104992	33416	3	209	0		reveal_mask=2|breakable=1|conversation=1|door=1|geo_rock=1|tram=1		2	Crossroads_27	1
-75	Crossroads_46b	Forgotten Crossroads	gameplay	playable	6	55900	104608	32128	3	197	0		breakable=1|conversation=1|door=1|tram=1		2	RestingGrounds_02	1
-76	Crossroads_ShamanTemple	Forgotten Crossroads	gameplay	playable	42	220956	316768	137683	9	683	17	Roller=11|Buzzer=3|Blocker=1|Climber=1|Zombie Runner=1	persistent=55|breakable=47|geo_rock=4|conversation=3|reveal_mask=2|soul_totem=2|bench=1|gate=1|shiny=1		1	Crossroads_06	0
-77	Crossroads_47	Forgotten Crossroads	gameplay	playable	6	48128	70976	26658	2	170	0		breakable=3|conversation=2|bench=1|door=1|stag=1		2	Crossroads_03	2
-78	Crossroads_48	Forgotten Crossroads	gameplay	playable	6	53812	104736	30507	3	201	1	Zombie Guard=1	breakable=5|persistent=2|grub=1		1	Crossroads_14	0
-79	Crossroads_49	Forgotten Crossroads	gameplay	playable	24	56888	70016	26486	2	140	0		breakable=2|door=2		3	Crossroads_37|Crossroads_43	1
-80	Crossroads_49b	Forgotten Crossroads	gameplay	playable	12	49892	70528	26271	2	156	0		door=2		3	Fungus2_07|Ruins1_28	1
-81	Crossroads_50	Forgotten Crossroads	gameplay	playable	55	137052	244512	75195	7	473	6	Buzzer=3|Climber=1|Crawler=1|Egg Sac=1	conversation=2|persistent=1		2	Crossroads_04|RestingGrounds_06	0
-82	Crossroads_52	Forgotten Crossroads	gameplay	playable	15	61680	105184	34655	3	215	0		persistent=3|geo_rock=2|reveal_mask=2|breakable=1|breakable_wall=1|conversation=1		1	Crossroads_18	0
-83	Ruins_House_01	City of Tears	gameplay	cooked-pack	6	39596	36256	20776	1	109	1	Great Shield Zombie=1	breakable=3|persistent=2|grub=1		1	Ruins2_04	0
-84	Ruins_House_02	City of Tears	gameplay	cooked-pack	6	41932	36384	22340	1	113	5	Royal Zombie Coward=2|Gorgeous Husk=1|Royal Zombie=1|Royal Zombie Fat=1	persistent=9|breakable=6|reveal_mask=1		1	Ruins2_04	0
-85	Ruins_House_03	City of Tears	gameplay	cooked-pack	15	57400	71040	30930	2	172	0		persistent=3|breakable=2|conversation=1|switch=1		2	Ruins2_04|Waterways_07	0
-86	Ruins_Elevator	City of Tears	gameplay	cooked-pack	55	99112	138720	46907	4	239	0		breakable=19|persistent=11|reveal_mask=6|shiny=2|breakable_wall=1|conversation=1|geo_rock=1|inspect=1|lever=1|lift=1		2	Ruins2_04|Ruins_Bathhouse	0
-87	Ruins_Bathhouse	City of Tears	gameplay	cooked-pack	16	80524	173984	46528	5	317	0		reveal_mask=4|persistent=3|conversation=2|bench=1|breakable_wall=1|door=1		2	Ruins2_10b|Ruins_Elevator	1
-88	Ruins1_01	City of Tears	gameplay	cooked-pack	18	97536	173632	54436	5	306	6	Ceiling Dropper=2|Ruins Sentry=1|Zombie Barger=1|Zombie Hornhead=1|Zombie Leaper=1	breakable=31|persistent=6		3	Fungus2_21|Ruins1_02|Ruins1_17	0
-89	Ruins1_02	City of Tears	gameplay	cooked-pack	18	107244	208384	60494	6	368	2	Ruins Sentry=2	breakable=32|persistent=4|bench=1|conversation=1|inspect=1|lever=1|lift=1|reveal_mask=1		2	Ruins1_01|Ruins1_03	0
-90	Ruins1_03	City of Tears	gameplay	cooked-pack	35	167148	280512	94950	8	574	12	Ruins Sentry=4|Ruins Flying Sentry=3|Buzzer=2|Zombie Hornhead=2|Zombie Leaper=1	breakable=40|persistent=12|geo_rock=1|inspect=1|lever=1|lift=1|shiny=1		4	Ruins1_02|Ruins1_04|Ruins1_05b|Ruins1_05c	0
-91	Ruins1_04	City of Tears	gameplay	cooked-pack	35	130152	177088	77991	5	414	6	Buzzer=3|Ruins Sentry=1|Zombie Barger=1|Zombie Runner=1	breakable=23|persistent=4|reveal_mask=3|breakable_wall=1|conversation=1|door=1		3	Room_GG_Shortcut|Room_nailmsith|Ruins1_03	1
-92	Ruins1_05	City of Tears	gameplay	cooked-pack	37	140380	244224	76511	7	464	9	Ruins Flying Sentry=2|Ceiling Dropper=1|Ruins Flying Sentry Javelin=1|Ruins Flying SentryB=1|Ruins Sentry Fat B=1|Ruins Sentry FatB=1|Ruins SentryB=1|Zombie Hornhead=1	breakable=29|persistent=11|battle=1|grub=1|lever=1|lift=1|switch=1|toll_gate=1		6	Ruins1_05c|Ruins1_09|Ruins1_18|Ruins1_31	0
-93	Ruins1_05b	City of Tears	gameplay	cooked-pack	9	74776	173696	43093	5	308	0		breakable=13|conversation=3|reveal_mask=3|persistent=2|shop=2|door=1|geo_rock=1|lever=1|lift=1|switch=1|toll_gate=1	text	4	Ruins1_03|Ruins1_05c|Ruins1_27|Waterways_01	0
-94	Ruins1_05c	City of Tears	gameplay	cooked-pack	34	156816	311808	87983	9	528	11	Ceiling Dropper=3|Buzzer=2|Ruins Sentry=2|Ruins Sentry Fat=2|Ruins Flying Sentry Javelin=1|Zombie Barger=1	breakable=33|persistent=15|toll_gate=4|reveal_mask=2|switch=2|geo_rock=1|lever=1|lift=1|shiny=1		5	Ruins1_03|Ruins1_05|Ruins1_05b	0
-95	Ruins1_06	City of Tears	gameplay	cooked-pack	15	88928	139232	48411	4	255	0		breakable=22|conversation=1		2	Ruins1_17|Ruins1_31	0
-96	Ruins1_09	City of Tears	gameplay	cooked-pack	12	55708	71168	29642	2	176	1	Mage=1	breakable=8|persistent=2|battle=1		2	Ruins1_05|Ruins1_23	0
-97	Ruins1_17	City of Tears	gameplay	cooked-pack	24	123872	242080	69371	7	397	8	Ruins Flying Sentry=2|Ruins Flying Sentry Javelin=2|Buzzer=1|Ruins Sentry=1|Zombie Hornhead=1|Zombie Leaper=1	persistent=44|breakable=33|reveal_mask=6|shiny=1|switch=1|toll_gate=1		3	Ruins1_01|Ruins1_06|Ruins1_28	0
-98	Ruins1_18	City of Tears	gameplay	cooked-pack	12	79780	106112	43620	3	244	0		breakable=16|bench=1|persistent=1|switch=1|toll_gate=1		3	Ruins1_05|Ruins2_01|Ruins2_03b	0
-99	Ruins1_23	City of Tears	gameplay	cooked-pack	21	117448	241856	66379	7	390	7	Mage Blob=4|Mage=2|Mage Knight=1	breakable=29|persistent=10|lever=2|lift=2|switch=2|toll_gate=2|battle=1|inspect=1		5	Ruins1_09|Ruins1_25|Ruins1_30|Ruins1_31	0
-100	Ruins1_30	City of Tears	gameplay	cooked-pack	20	136428	242336	79129	7	405	16	Mage Blob=9|Mage Balloon=4|Mage=3	breakable=51|persistent=19|reveal_mask=7|breakable_wall=3|shiny=1|switch=1|toll_gate=1		4	Ruins1_23|Ruins1_24|Ruins1_25	0
-101	Ruins1_24	City of Tears	gameplay	cooked-pack	20	119352	243744	70823	7	449	0		persistent=5|breakable=3|door=1|reveal_mask=1|soul_totem=1		5	Ruins1_30|Ruins1_32	1
-102	Ruins1_24_boss	City of Tears	gameplay	no-envelope							2	Mage Lord=1|Mage Lord Phase=1			0		0
-103	Ruins1_24_boss_defeated	City of Tears	additive_boss_defeated_variant	no-envelope							0		conversation=1		0		1
-104	Ruins1_25	City of Tears	gameplay	cooked-pack	16	111412	208128	63706	6	360	7	Mage Blob=5|Mage=2	breakable=25|persistent=6|lever=1|lift=1|switch=1|toll_gate=1		3	Ruins1_23|Ruins1_30	0
-105	Ruins1_27	City of Tears	gameplay	cooked-pack	16	81940	174112	46417	5	321	4	Royal Zombie=2|Royal Zombie Coward=2	breakable=9|persistent=6|conversation=2|reveal_mask=1|switch=1|toll_gate=1	text	2	Ruins1_05b|Ruins2_01_b	0
-106	Ruins1_28	City of Tears	gameplay	cooked-pack	18	119264	210624	67460	6	438	4	Zombie Runner=2|Ruins Flying Sentry=1|Zombie Barger=1	breakable=67|persistent=7|shiny=1		3	Crossroads_49b|Ruins1_17|Ruins1_29	0
-107	Ruins1_29	City of Tears	gameplay	cooked-pack	6	53996	71584	29937	2	189	0		breakable=9|bench=1|conversation=1|door=1|stag=1	text	2	Ruins1_28	2
-108	Ruins1_31	City of Tears	gameplay	cooked-pack	18	88960	174560	49225	5	335	0		breakable=8|persistent=6|conversation=3|bench=1|breakable_wall=1|door=1|lever=1|lift=1|reveal_mask=1|toll_gate=1		5	Ruins1_05|Ruins1_06|Ruins1_23|Ruins1_31b	0
-109	Ruins1_31b	City of Tears	gameplay	cooked-pack	18	77128	140736	42541	4	302	25	Mage Balloon Spawner=24|Mage Knight=1	breakable=7|persistent=2|battle=1|switch=1|toll_gate=1		2	Ruins1_31	0
-110	Ruins1_32	City of Tears	gameplay	cooked-pack	24	136580	242880	80916	7	422	28	Mage Blob=16|Mage Balloon=12	breakable=24|persistent=18|breakable_wall=7|reveal_mask=3|soul_totem=2|switch=2|toll_gate=2|chest=1|geo_rock=1|grub=1|inspect=1|shiny=1		2	Ruins1_24	0
-111	Ruins2_01	City of Tears	gameplay	cooked-pack	28	106468	174208	58100	5	324	13	Royal Zombie Coward=3|Royal Zombie=2|Royal Zombie Fat=2|Ruins Flying Sentry Javelin=2|Great Shield Zombie=1|Ruins Flying Sentry=1|Ruins Sentry=1|Ruins Sentry Fat=1	breakable=32|persistent=18|reveal_mask=2|switch=2|toll_gate=2|battle=1|geo_rock=1		3	Ruins1_18|Ruins2_01_b|Ruins2_03b	0
-112	Ruins2_01_b	City of Tears	gameplay	cooked-pack	16	82160	139680	44833	4	269	4	Royal Zombie Fat=2|Royal Zombie=1|Royal Zombie Coward=1	breakable=15|persistent=8|lever=2|lift=2|battle=1|breakable_wall=1		3	Ruins1_27|Ruins2_01|Ruins2_04	0
-113	Ruins2_03	City of Tears	gameplay	cooked-pack	36	122236	174784	65151	5	342	2	Great Shield Zombie=1|Ruins Flying Sentry Javelin=1	breakable=22|persistent=9|reveal_mask=8|battle=1|breakable_wall=1|chest=1|grub=1|lever=1|lift=1|shiny=1		3	Ruins2_03b|Ruins2_Watcher_Room	0
-114	Ruins2_03b	City of Tears	gameplay	cooked-pack	36	96348	139584	48528	4	266	7	Royal Zombie=2|Ruins Flying Sentry=2|Great Shield Zombie bottom=1|Royal Zombie Coward=1|Royal Zombie Fat=1	breakable=19|persistent=9|battle=1|lever=1|lift=1		4	Ruins1_18|Ruins2_01|Ruins2_03	0
-115	Ruins2_03_boss	City of Tears	gameplay	no-envelope							6	Black Knight=6	battle=1|persistent=1		0		0
-116	Ruins2_04	City of Tears	gameplay	cooked-pack	35	139880	176224	75694	5	387	10	Great Shield Zombie=4|Royal Zombie=2|Royal Zombie Coward=2|Royal Zombie Fat=2	breakable=21|persistent=10|door=4|conversation=1		8	Abyss_01|Ruins2_01_b|Ruins2_06|Ruins_Elevator|Ruins_House_01|Ruins_House_02|Ruins_House_03	4
-117	Ruins2_05	City of Tears	gameplay	cooked-pack	18	109160	208352	61370	6	367	16	Ruins Sentry=4|Royal Zombie=3|Royal Zombie Coward=3|Royal Zombie Fat=3|Ruins Sentry Fat=2|Ruins Flying Sentry=1	persistent=19|breakable=11|lever=2|lift=2|geo_rock=1|shiny=1		3	Ruins2_06|Ruins2_09|Ruins2_10b	0
-118	Ruins2_06	City of Tears	gameplay	cooked-pack	13	124116	142368	68826	4	353	4	Royal Zombie=1|Royal Zombie Fat=1|Ruins Flying Sentry Javelin=1|Zombie Hornhead=1	breakable=34|persistent=6|reveal_mask=2|geo_rock=1		5	Ruins2_04|Ruins2_05|Ruins2_07|Ruins2_08	0
-119	Ruins2_07	City of Tears	gameplay	cooked-pack	12	100496	209824	61036	6	413	5	Ceiling Dropper=3|Buzzer=2	persistent=6|breakable=3|grub=1		3	Deepnest_East_03|Ruins2_06|Ruins2_11_b	0
-120	Ruins2_08	City of Tears	gameplay	cooked-pack	9	63416	105728	35978	3	232	0		breakable=3|bench=1|conversation=1|door=1|persistent=1|shiny=1|stag=1		2	Ruins2_06	2
-121	Ruins2_09	City of Tears	gameplay	cooked-pack	8	71768	140064	43499	4	281	13	Ruins Flying Sentry=3|Ruins Sentry Fat=3|Ruins Flying Sentry Javelin=2|Ruins Sentry=2|Royal Zombie=1|Royal Zombie Coward=1|Royal Zombie Fat=1	breakable=9|persistent=5|battle=1		1	Ruins2_05	0
-122	Ruins2_10	City of Tears	gameplay	cooked-pack	24	55164	70176	26152	2	145	0		door=2|breakable=1		3	RestingGrounds_06|RestingGrounds_10	1
-123	Ruins2_10b	City of Tears	gameplay	cooked-pack	24	81668	139328	44458	4	258	0		breakable=4|door=2		4	Deepnest_East_09|Ruins2_05|Ruins_Bathhouse	1
-124	Ruins2_11	City of Tears	gameplay	cooked-pack	40	103024	173344	53900	5	297	2	Buzzer=2	persistent=19|grub=3|reveal_mask=3|shiny=1		1	Ruins2_11_b	0
-125	Ruins2_11_b	City of Tears	gameplay	cooked-pack	40	82460	103808	37313	3	172	0		persistent=6|reveal_mask=2|toll_gate=2|conversation=1|switch=1		3	Deepnest_East_07|Ruins2_07|Ruins2_11	0
-126	Ruins2_11_boss	City of Tears	gameplay	no-envelope							1	Jar Collector=1	persistent=1		0		0
-127	Ruins2_Watcher_Room	City of Tears	gameplay	cooked-pack	44	115984	174400	58028	5	330	1	Royal Zombie Coward=1	breakable=22|persistent=5|inspect=2|reveal_mask=2|conversation=1|lever=1|lift=1		2	Ruins2_03	1
-128	Fungus1_01	Greenpath	gameplay	playable	24	167572	314528	106679	9	613	16	Pigeon=8|Moss Walker=4|Mossman_Shaker=2|Mossman_Runner=1|Plant Trap=1	breakable=10|persistent=5|geo_rock=1|reveal_mask=1		2	Crossroads_11_alt|Fungus1_01b	0
-129	Fungus1_01b	Greenpath	gameplay	playable	12	96412	208192	60756	6	362	18	Pigeon=18	breakable=4|bench=1|geo_rock=1		2	Fungus1_01|Fungus1_02	0
-130	Fungus1_02	Greenpath	gameplay	playable	21	138352	279488	86080	8	542	2	Mosquito=1|Mossman_Shaker=1	breakable=7|geo_rock=2|persistent=1		3	Fungus1_01b|Fungus1_06|Fungus1_17	0
-131	Fungus1_03	Greenpath	gameplay	cooked-pack	13	125860	243872	77373	7	453	14	Pigeon=5|Moss Walker=4|Zombie Runner=2|Plant Trap=1|Zombie Barger=1|Zombie Hornhead=1	breakable=22|persistent=5|geo_rock=3		3	Fungus1_05|Fungus1_17|Fungus1_31	0
-132	Fungus1_04	Greenpath	gameplay	cooked-pack	20	122824	243264	77612	7	434	0		breakable=7|persistent=5|breakable_wall=1|geo_rock=1|reveal_mask=1|shiny=1	text	2	Fungus1_21|Fungus1_25	0
-133	Fungus1_04_boss	Greenpath	gameplay	no-envelope							1	Hornet Boss=1			0		0
-134	Fungus1_05	Greenpath	gameplay	playable	12	137088	313120	90793	9	569	12	Mosquito=5|Moss Walker=4|Mossman_Shaker=2|Mossman_Runner=1	breakable=6|persistent=3|geo_rock=1		3	Fungus1_03|Fungus1_10|Fungus1_14	0
-135	Fungus1_06	Greenpath	gameplay	playable	24	141836	277152	89118	8	469	7	Mosquito=4|Mossman_Shaker=2|Mossman_Runner=1	breakable=15|persistent=14|conversation=2|reveal_mask=2|grub=1		2	Fungus1_02|Fungus1_07	0
-136	Fungus1_07	Greenpath	gameplay	playable	20	126900	242464	79423	7	409	5	Mosquito=2|Mossman_Runner=2|Moss Walker=1	persistent=9|breakable=4|geo_rock=1|grub=1|reveal_mask=1|soul_totem=1		3	Fungus1_06|Fungus1_08|Fungus1_19	0
-137	Fungus1_08	Greenpath	gameplay	playable	16	112040	242592	69929	7	413	0		persistent=5|breakable_wall=2|conversation=2|shiny=2|inspect=1|reveal_mask=1		1	Fungus1_07	0
-138	Fungus1_09	Greenpath	gameplay	playable	33	164388	209504	97919	6	403	18	Acid Flyer=18	breakable=4|persistent=1		2	Fungus1_15|Fungus1_30	0
-139	Fungus1_10	Greenpath	gameplay	playable	24	167384	279296	100820	8	536	7	Moss Charger=4|Moss Walker=3	breakable=22|persistent=6|geo_rock=1|shiny=1		3	Fungus1_05|Fungus1_19|Fungus1_30	0
-140	Fungus1_11	Greenpath	gameplay	cooked-pack	19	144916	313504	92220	9	581	6	Plant Turret=3|Acid Walker=1|Moss Walker=1|Shell=1	breakable=15|persistent=3|reveal_mask=1|shiny=1		5	Fungus1_19|Fungus1_29|Fungus1_34|Fungus1_37|Fungus3_01	0
-141	Fungus1_12	Greenpath	gameplay	cooked-pack	10	100708	175616	63464	5	368	15	Pigeon=7|Plant Turret=5|Acid Walker=1|Plant Turret Right=1|Shell=1	breakable=6|persistent=4|geo_rock=3|reveal_mask=3|breakable_wall=1		2	Fungus1_13|Fungus1_29	0
-142	Fungus1_13	Greenpath	gameplay	cooked-pack	40	198148	313088	122053	9	568	14	Acid Walker=6|Shell=6|Moss Walker=2	persistent=57|breakable=7|chest=1|grub=1|inspect=1		2	Fungus1_12|Fungus3_22	0
-143	Fungus1_14	Greenpath	gameplay	playable	10	84580	139680	52011	4	269	0		persistent=2|shiny=1		1	Fungus1_05	0
-144	Fungus1_15	Greenpath	gameplay	playable	12	88384	140864	54717	4	306	0		breakable=4|bench=1|door=1|persistent=1|shiny=1		2	Fungus1_09|Room_nailmaster_02	1
-145	Fungus1_16_alt	Greenpath	gameplay	cooked-pack	6	61172	138880	36919	4	244	0		bench=1|breakable=1|conversation=1|door=1|stag=1		2	Fungus1_22	2
-146	Fungus1_17	Greenpath	gameplay	playable	12	107372	176320	66113	5	390	3	Mosquito=2|Moss Charger=1	breakable=6|persistent=3|reveal_mask=2|inspect=1		2	Fungus1_02|Fungus1_03	0
-147	Fungus1_19	Greenpath	gameplay	playable	9	112664	279232	73209	8	534	7	Fat Fly=4|Moss Walker=1|Mossman_Shaker=1|Plant Trap=1	breakable=8|persistent=5|reveal_mask=2|geo_rock=1|inspect=1		3	Fungus1_07|Fungus1_10|Fungus1_11	0
-148	Fungus1_20_v02	Greenpath	gameplay	cooked-pack	16	135880	278432	85794	8	509	8	Buzzer=4|Crawler=2|Climber=1|Giant Buzzer=1	breakable=15		3	Fungus1_21|Fungus1_28|Fungus1_32	0
-149	Fungus1_21	Greenpath	gameplay	cooked-pack	17	165084	346656	107849	10	593	7	Moss Charger=3|Moss Knight=3|Moss Walker=1	breakable=12|persistent=11|geo_rock=3|battle=1|grub=1|inspect=1|reveal_mask=1		4	Fungus1_04|Fungus1_20_v02|Fungus1_22|Fungus1_32	0
-150	Fungus1_22	Greenpath	gameplay	cooked-pack	32	216616	382240	136021	11	681	13	Plant Trap=6|Mossman_Shaker=3|Mosquito=2|Moss Walker=2	breakable=17|persistent=14|reveal_mask=5|geo_rock=2|breakable_wall=1|gate=1|shiny=1|switch=1		3	Fungus1_16_alt|Fungus1_21|Fungus1_30	0
-151	Fungus1_23	Greenpath	gameplay	cooked-pack	21	118892	242912	71996	7	423	13	Grass Hopper=8|Pigeon=5	breakable=4		2	Fungus3_13|Fungus3_48	0
-152	Fungus1_24	Greenpath	gameplay	cooked-pack	21	146208	278176	91200	8	501	7	Pigeon=7	breakable=7|persistent=4|conversation=3|bench=1|breakable_wall=1|reveal_mask=1		1	Fungus3_05	0
-153	Fungus1_25	Greenpath	gameplay	cooked-pack	8	82288	172800	51612	5	280	0		breakable=4		2	Fungus1_04|Fungus1_26	0
-154	Fungus1_26	Greenpath	gameplay	cooked-pack	25	103396	207456	62248	6	339	9	Pigeon=7|Lazy Flyer Enemy=1|Moss Knight=1	breakable=5|persistent=4|reveal_mask=2|door=1		3	Fungus1_25|Fungus1_Slug|Room_Slug_Shrine	1
-155	Fungus1_28	Greenpath	gameplay	cooked-pack	35	198936	415072	126124	12	683	8	Crawler=3|Blocker=2|Climber=2|Buzzer=1	breakable=24|persistent=9|reveal_mask=5|breakable_wall=2|geo_rock=2|chest=1|grub=1|shiny=1		2	Cliffs_01|Fungus1_20_v02	0
-156	Fungus1_29	Greenpath	gameplay	cooked-pack	12	110560	207840	68542	6	351	6	Plant Turret=3|Moss Walker=2|Mega Moss Charger=1	breakable=5|geo_rock=1|persistent=1|soul_totem=1		2	Fungus1_11|Fungus1_12	0
-157	Fungus1_30	Greenpath	gameplay	playable	15	134232	210752	84600	6	442	0		breakable=11|inspect=1|persistent=1|soul_totem=1		4	Fungus1_09|Fungus1_10|Fungus1_22|Fungus1_31	0
-158	Fungus1_31	Greenpath	gameplay	cooked-pack	33	220944	384736	136638	11	759	11	Fat Fly=5|Moss Walker=3|Mossman_Shaker=2|Mossman_Runner=1	breakable=9|persistent=6|geo_rock=3|toll_gate=2|bench=1|breakable_wall=1|reveal_mask=1		3	Fungus1_03|Fungus1_30|Fungus1_32	0
-159	Fungus1_32	Greenpath	gameplay	cooked-pack	18	131580	279136	85336	8	531	3	Moss Knight B=1|Moss Knight C=1|Moss Walker=1	breakable=14|persistent=5|reveal_mask=2|battle=1|breakable_wall=1|inspect=1		3	Fungus1_20_v02|Fungus1_21|Fungus1_31	0
-160	Fungus1_34	Greenpath	gameplay	cooked-pack	18	72968	71360	40154	2	182	5	Moss Walker=1|Plant Trap=1|Zombie Hornhead=1|Zombie Leaper=1|Zombie Runner=1	persistent=4|breakable=3|door=1		2	Fungus1_11|Fungus1_35	1
-161	Fungus1_35	Greenpath	gameplay	cooked-pack	18	97888	105632	56237	3	229	1	Ghost Warrior No Eyes=1	breakable=1|conversation=1|inspect=1		2	Fungus1_34|Fungus1_36	0
-162	Fungus1_36	Greenpath	gameplay	cooked-pack	4	46652	70688	26788	2	161	5	Pigeon=5	persistent=2|breakable=1|reveal_mask=1		1	Fungus1_35	0
-163	Fungus1_37	Greenpath	gameplay	cooked-pack	4	46556	70304	26981	2	149	0		bench=1		1	Fungus1_11	0
-164	Fungus1_Slug	Greenpath	gameplay	cooked-pack	32	116620	138560	68042	4	234	0		persistent=7|reveal_mask=3|breakable_wall=2|shiny=2		1	Fungus1_26	0
-165	Fungus2_01	Fungal Wastes	gameplay	cooked-pack	15	148152	211424	86935	6	463	0		breakable=5|persistent=3|conversation=1|reveal_mask=1|switch=1|toll_gate=1		4	Fungus2_02|Fungus2_03|Fungus2_34|Fungus3_02	0
-166	Fungus2_02	Fungal Wastes	gameplay	cooked-pack	6	54392	104448	31194	3	192	0		bench=1|breakable=1|conversation=1|door=1|stag=1		2	Fungus2_01	2
-167	Fungus2_03	Fungal Wastes	gameplay	cooked-pack	36	133800	176512	80868	5	396	13	Mushroom Turret=5|Fungoon Baby=3|Fungus Flyer=3|Zombie Fungus B=1|Zombie Hornhead=1	breakable=46|persistent=6|shiny=1		3	Fungus2_01|Fungus2_04|Fungus2_18	0
-168	Fungus2_04	Fungal Wastes	gameplay	cooked-pack	12	110372	176160	71924	5	385	4	Mushroom Turret=3|Fung Crawler=1	breakable=28|persistent=3|gate=2|switch=2|geo_rock=1|inspect=1|shiny=1		4	Fungus2_03|Fungus2_05|Fungus2_28	0
-169	Fungus2_05	Fungal Wastes	gameplay	cooked-pack	12	76220	140992	45508	4	310	12	Mushroom Baby=6|Cap Hit=3|Mushroom Brawler=3	breakable=12|persistent=4|shiny=2|battle=1		2	Fungus2_04|Fungus2_06	0
-170	Fungus2_06	Fungal Wastes	gameplay	cooked-pack	22	179652	281600	119145	8	608	6	Fungus Flyer=4|Fung Crawler=2	breakable=42|persistent=4		5	Crossroads_18|Fungus2_05|Fungus2_07|Fungus2_26|Fungus2_33	0
-171	Fungus2_07	Fungal Wastes	gameplay	cooked-pack	12	82936	106784	51706	3	265	5	Mushroom Baby=3|Mushroom Roller=2	breakable=17|persistent=4|reveal_mask=2|inspect=1		2	Fungus2_06|Fungus2_08	0
-172	Fungus2_08	Fungal Wastes	gameplay	cooked-pack	10	93712	141760	60175	4	334	4	Mushroom Turret=3|Fungus Flyer=1	breakable=19|geo_rock=1|persistent=1		3	Fungus2_07|Fungus2_09|Fungus2_32	0
-173	Fungus2_09	Fungal Wastes	gameplay	cooked-pack	8	73032	106080	44811	3	243	0		breakable=17|conversation=1		2	Fungus2_08|Fungus2_10	0
-174	Fungus2_10	Fungal Wastes	gameplay	cooked-pack	24	142204	211296	91157	6	459	2	Zombie Fungus A=1|Zombie Fungus B=1	breakable=45|persistent=5|breakable_wall=1|geo_rock=1|reveal_mask=1|soul_totem=1		3	Fungus2_09|Fungus2_11|Fungus2_21	0
-175	Fungus2_11	Fungal Wastes	gameplay	cooked-pack	10	99560	141920	64643	4	339	5	Fung Crawler=2|Mushroom Turret=2|Fungus Flyer=1	breakable=24|geo_rock=2|persistent=1		4	Fungus2_10|Fungus2_12|Fungus2_17|Fungus2_18	0
-176	Fungus2_12	Fungal Wastes	gameplay	cooked-pack	24	131496	209728	82798	6	410	7	Mantis Flyer Child=4|Mantis=3	breakable=31|persistent=3|inspect=1		2	Fungus2_11|Fungus2_13	0
-177	Fungus2_13	Fungal Wastes	gameplay	cooked-pack	16	149504	245632	99435	7	508	9	Mantis=5|Mantis Flyer Child=4	breakable=49|persistent=5|geo_rock=3|bench=1		3	Fungus2_12|Fungus2_14|Fungus2_23	0
-178	Fungus2_14	Fungal Wastes	gameplay	cooked-pack	34	190308	352576	121859	10	778	8	Mantis Flyer Child=5|Mantis=2|Gate Mantis=1	breakable=23|persistent=6|geo_rock=5|gate=3|switch=2|conversation=1|inspect=1|shiny=1		5	Fungus2_13|Fungus2_15|Fungus2_17	0
-179	Fungus2_15	Fungal Wastes	gameplay	cooked-pack	28	210628	388800	141518	11	886	7	Mantis Flyer Child=4|Mantis=3	breakable=31|persistent=10|gate=6|switch=5|geo_rock=2|breakable_wall=1|reveal_mask=1		5	Fungus2_14|Fungus2_25|Fungus2_31	0
-180	Fungus2_15_boss	Fungal Wastes	gameplay	no-envelope							6	Mantis Lord S=4|Mantis Lord=2	battle=1		0		0
-181	Fungus2_15_boss_defeated	Fungal Wastes	additive_boss_defeated_variant	no-envelope							0				0		0
-182	Fungus2_17	Fungal Wastes	gameplay	cooked-pack	12	97216	141792	63626	4	335	7	Fungoon Baby=5|Fung Crawler=2	breakable=20|persistent=20|shiny=1		3	Fungus2_11|Fungus2_14|Fungus2_29	0
-183	Fungus2_18	Fungal Wastes	gameplay	cooked-pack	35	200760	246976	128799	7	550	15	Fungoon Baby=11|Fung Crawler=2|Fungus Flyer=1|Zombie Fungus A=1	breakable=85|persistent=5|geo_rock=4|conversation=3|gate=1|grub=1|switch=1		3	Fungus2_03|Fungus2_11|Fungus2_19	0
-184	Fungus2_19	Fungal Wastes	gameplay	cooked-pack	9	72828	106368	44778	3	252	2	Fungoon Baby=2			2	Fungus2_18|Fungus2_20	0
-185	Fungus2_20	Fungal Wastes	gameplay	cooked-pack	12	100852	142304	65158	4	351	1	Mushroom Turret=1	breakable=19|persistent=6|reveal_mask=3|breakable_wall=2|grub=1|inspect=1|shiny=1		2	Deepnest_01|Fungus2_19	0
-186	Fungus2_21	Fungal Wastes	gameplay	cooked-pack	28	130704	210464	81173	6	433	1	Fung Crawler=1	persistent=7|breakable=3|reveal_mask=3|lever=2|breakable_wall=1|conversation=1|geo_rock=1|inspect=1|soul_totem=1		2	Fungus2_10|Ruins1_01	0
-187	Fungus2_23	Fungal Wastes	gameplay	cooked-pack	20	136636	210784	88688	6	443	8	Mushroom Baby=5|Mushroom Roller=2|Mushroom Turret=1	breakable=20|persistent=5|breakable_wall=1|conversation=1|gate=1|reveal_mask=1|shiny=1		2	Fungus2_13|Waterways_09	0
-188	Fungus2_25	Fungal Wastes	gameplay	cooked-pack	24	117212	174528	70020	5	334	0		breakable=14|geo_rock=3|persistent=3|breakable_wall=2|conversation=1		4	Deepnest_16|Fungus2_15|Fungus2_30	0
-189	Fungus2_26	Fungal Wastes	gameplay	cooked-pack	6	64604	106176	40053	3	246	0		breakable=10|shop=2|bench=1|conversation=1	text	1	Fungus2_06	0
-190	Fungus2_28	Fungal Wastes	gameplay	cooked-pack	15	100596	140544	64254	4	296	17	Mushroom Baby=11|Mushroom Roller=4|Fung Crawler=2	breakable=35|persistent=4		2	Fungus2_04	0
-191	Fungus2_29	Fungal Wastes	gameplay	cooked-pack	25	179364	244928	118026	7	486	21	Fungoon Baby=6|Mushroom Roller=4|Mushroom Turret=4|Cap Hit=2|Fungus Flyer=2|Mushroom Brawler=2|Mushroom Baby=1	breakable=71|persistent=14|reveal_mask=3|breakable_wall=1|geo_rock=1|shiny=1|soul_totem=1		2	Fungus2_17|Fungus2_30	0
-192	Fungus2_30	Fungal Wastes	gameplay	cooked-pack	40	183380	211456	116776	6	464	31	Fungoon Baby=9|Mushroom Baby=7|Fung Crawler=4|Mushroom Roller=4|Cap Hit=2|Fungus Flyer=2|Mushroom Brawler=2|Mushroom Turret=1	breakable=58|persistent=10|geo_rock=2|inspect=1|reveal_mask=1		2	Fungus2_25|Fungus2_29	0
-193	Fungus2_31	Fungal Wastes	gameplay	cooked-pack	12	84092	140928	52455	4	308	1	Mantis=1	breakable=9|persistent=9|chest=3|reveal_mask=2|shiny=2|bench=1		1	Fungus2_15	0
-194	Fungus2_32	Fungal Wastes	gameplay	cooked-pack	8	58464	71136	35333	2	175	1	Ghost Warrior Hu=1	breakable=21|conversation=1|inspect=1		1	Fungus2_08	0
-195	Fungus2_33	Fungal Wastes	gameplay	cooked-pack	18	75068	70976	42940	2	170	5	Fungoon Baby=3|Fungus Flyer=2	persistent=23|breakable=5		2	Fungus2_06|Fungus3_26	0
-196	Fungus2_34	Fungal Wastes	gameplay	cooked-pack	6	57388	72256	33131	2	210	0		persistent=4|reveal_mask=3|conversation=2|shiny=1		1	Fungus2_01	0
-197	Fungus3_01	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	12	112416	175616	70747	5	368	13	Jellyfish Baby=7|Jellyfish=6	breakable=9|persistent=6		4	Fungus1_11|Fungus3_02|Fungus3_24|Fungus3_25	0
-198	Fungus3_02	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	14	135772	278624	87697	8	515	15	Jellyfish Baby=10|Jellyfish=5	breakable=11|persistent=5		5	Fungus2_01|Fungus3_01|Fungus3_03|Fungus3_35|Fungus3_47	0
-199	Fungus3_03	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	10	87320	207744	54113	6	348	0		geo_rock=1		2	Fungus3_02|Fungus3_34	0
-200	Fungus3_04	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	14	110432	208192	67526	6	362	4	Mantis Heavy Flyer=2|Moss Flyer=2	breakable=15|persistent=4|switch=1		4	Fungus3_05|Fungus3_13|Fungus3_21|Fungus3_34	0
-201	Fungus3_05	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	20	107976	173568	64511	5	304	8	Mantis Heavy Flyer=5|Plant Trap=3	breakable=9|persistent=9|battle=1|breakable_wall=1|gate=1|reveal_mask=1|switch=1		3	Fungus1_24|Fungus3_04|Fungus3_11	0
-202	Fungus3_08	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	21	93956	139904	52632	4	276	8	Mantis Heavy Flyer=4|Moss Flyer=4	breakable=6|persistent=4		3	Deepnest_43|Fungus3_10|Fungus3_11	0
-203	Fungus3_10	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	20	105428	172576	61722	5	273	16	Garden Zombie=4|Mantis Heavy=4|Mantis Heavy Flyer=4|Moss Flyer=4	breakable=12|persistent=8|battle=1|geo_rock=1|grub=1|reveal_mask=1		2	Fungus3_08|Fungus3_13	0
-204	Fungus3_11	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	18	99604	139392	58562	4	260	5	Moss Flyer=5	persistent=30|breakable=9		3	Fungus3_05|Fungus3_08|Fungus3_39	0
-205	Fungus3_13	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	10	79900	173664	48001	5	307	6	Moss Flyer=6	breakable=5		5	Fungus1_23|Fungus3_04|Fungus3_10|Fungus3_40|Fungus3_49	0
-206	Fungus3_21	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	12	76236	104800	43906	3	203	0		breakable=3|persistent=1|soul_totem=1		2	Fungus3_04|Fungus3_22	0
-207	Fungus3_22	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	20	145880	277184	91550	8	470	9	Moss Flyer=4|Garden Zombie=3|Mantis Heavy Flyer=2	breakable=9|persistent=7|grub=1		3	Fungus1_13|Fungus3_21|Fungus3_23	0
-208	Fungus3_23	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	20	110852	207200	66091	6	331	0		breakable=8|persistent=2|conversation=1|reveal_mask=1		2	Fungus3_22|Fungus3_48	0
-209	Fungus3_23_boss	Fog Canyon and Queen's Gardens	gameplay	no-envelope							5	Mantis Heavy=3|Dummy Mantis=1|Mantis Traitor Lord=1	battle=1|persistent=1		0		0
-210	Fungus3_24	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	15	92016	174464	56504	5	332	0		breakable=3		3	Fungus3_01|Fungus3_30|Fungus3_44	0
-211	Fungus3_25	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	20	93120	139616	54929	4	267	19	Jellyfish Baby=13|Jellyfish=6	persistent=7|conversation=2|breakable=1		2	Fungus3_01|Fungus3_25b	0
-212	Fungus3_25b	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	15	102332	175936	62484	5	378	15	Jellyfish Baby=12|Jellyfish=3	breakable=5|persistent=3		2	Fungus3_25|Fungus3_26	0
-213	Fungus3_26	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	16	99032	140480	61153	4	294	15	Jellyfish Baby=10|Jellyfish=5	persistent=7|breakable=5|geo_rock=1|reveal_mask=1|shiny=1		5	Crossroads_35|Fungus2_33|Fungus3_25b|Fungus3_27|Fungus3_28	0
-214	Fungus3_27	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	8	77128	140224	47202	4	286	13	Jellyfish Baby=9|Jellyfish=4	persistent=4|breakable=3		2	Fungus3_26|Fungus3_47	0
-215	Fungus3_28	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	13	105464	140576	67903	4	297	15	Jellyfish Baby=10|Jellyfish=5	persistent=7|breakable=2|breakable_wall=1|shiny=1		1	Fungus3_26	0
-216	Fungus3_30	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	6	66780	139520	41356	4	264	0		breakable=9|persistent=2|shiny=1		1	Fungus3_24	0
-217	Fungus3_34	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	21	132280	344352	82844	10	521	7	Garden Zombie=3|Moss Flyer=3|Egg Sac=1	breakable=11|persistent=4|conversation=1		3	Fungus3_03|Fungus3_04|Fungus3_44	0
-218	Fungus3_35	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	6	68536	138752	41919	4	240	0		breakable=6|conversation=1|shop=1	text	1	Fungus3_02	0
-219	Fungus3_39	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	20	128040	243040	80293	7	427	12	Moss Flyer=4|Moss Knight Fat=3|Mantis Heavy=2|Acid Walker=1|Mantis Heavy Spawn=1|Shell=1	persistent=11|conversation=4|geo_rock=2|battle=1|breakable_wall=1|reveal_mask=1|shiny=1		2	Deepnest_01|Fungus3_11	0
-220	Fungus3_40	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	24	134132	243328	81852	7	436	6	Mantis Heavy Flyer=2|Moss Flyer=2|Moss Walker=2	persistent=8|reveal_mask=3|bench=1|breakable=1|conversation=1|door=1|inspect=1|soul_totem=1|stag=1|switch=1		3	Fungus3_13|Fungus3_48	2
-221	Fungus3_40_boss	Fog Canyon and Queen's Gardens	gameplay	no-envelope							1	Ghost Warrior Marmu=1	conversation=1		0		0
-222	Fungus3_44	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	25	124444	241952	77343	7	393	5	Moss Flyer=5	persistent=3|breakable=2|breakable_wall=1|conversation=1|door=1|gate=1|reveal_mask=1|switch=1		3	Fungus3_24|Fungus3_34|Room_Fung_Shaman	1
-223	Fungus3_47	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	16	79788	138432	46201	4	230	11	Jellyfish=11	breakable=4|persistent=3|breakable_wall=1|conversation=1|door=1|grub=1|reveal_mask=1		3	Fungus3_02|Fungus3_27|Fungus3_archive	1
-224	Fungus3_48	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	40	145008	172768	85816	5	279	26	Plant Trap=12|Grass Hopper=9|Mantis Heavy Flyer=2|Moss Flyer=2|Lazy Flyer Enemy=1	persistent=18|reveal_mask=2|door=1|geo_rock=1|grub=1|shiny=1		4	Fungus1_23|Fungus3_23|Fungus3_40	1
-225	Fungus3_49	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	12	64828	70656	36152	2	160	0		conversation=2		1	Fungus3_13	0
-226	Fungus3_50	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	18	53836	70240	27445	2	147	0		persistent=2|bench=1		1	Deepnest_43	0
-227	Fungus3_archive	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	15	82388	105184	44595	3	215	0		breakable=9|bench=1		2	Fungus3_47|Fungus3_archive_02	0
-228	Fungus3_archive_02	Fog Canyon and Queen's Gardens	gameplay	cooked-pack	65	223840	208544	115665	6	373	41	Jellyfish Baby Inert=24|Jellyfish Baby=10|Jellyfish=7	breakable=34|persistent=7|conversation=4|inspect=3		2	Fungus3_archive	1
-229	Fungus3_archive_02_boss	Fog Canyon and Queen's Gardens	gameplay	no-envelope							1	Mega Jellyfish=1			0		0
-230	Cliffs_01	Howling Cliffs	gameplay	cooked-pack	73	315488	591744	207023	17	1084	21	Crawler=8|Climber=7|Buzzer=6	persistent=54|reveal_mask=7|breakable=5|geo_rock=4|breakable_wall=3|conversation=2|shiny=2|soul_totem=1		4	Cliffs_02|Cliffs_04|Cliffs_06|Fungus1_28	0
-231	Cliffs_02	Howling Cliffs	gameplay	cooked-pack	100	244020	486944	145424	14	881	10	Buzzer=3|Crawler=3|Climber=2|Zombie Barger=1|Zombie Hornhead=1	persistent=9|breakable=5|reveal_mask=4|geo_rock=2|breakable_wall=1|door=1|inspect=1|soul_totem=1		6	Cliffs_01|Cliffs_03|Room_nailmaster|Town|Tutorial_01	1
-232	Cliffs_02_boss	Howling Cliffs	gameplay	no-envelope							1	Ghost Warrior Slug=1	conversation=1		0		0
-233	Cliffs_03	Howling Cliffs	gameplay	cooked-pack	40	145312	245056	81621	7	490	0		breakable=4|conversation=2|lift=1|stag=1		2	Cliffs_02	1
-234	Cliffs_04	Howling Cliffs	gameplay	cooked-pack	20	132192	278912	85272	8	524	13	Buzzer=8|Zombie Leaper=3|Zombie Barger=1|Zombie Hornhead=1	breakable=15|persistent=8|breakable_wall=1|reveal_mask=1|soul_totem=1		2	Cliffs_01|Cliffs_05	0
-235	Cliffs_05	Howling Cliffs	gameplay	cooked-pack	20	88048	141120	54110	4	314	0		breakable=21|persistent=4|conversation=1|reveal_mask=1|shiny=1		1	Cliffs_04	0
-236	Cliffs_06	Howling Cliffs	gameplay	cooked-pack	10	60068	105376	34980	3	221	0		persistent=3|reveal_mask=2|conversation=1|inspect=1		1	Cliffs_01	0
-237	RestingGrounds_02	Resting Grounds	gameplay	cooked-pack	18	86584	174368	49194	5	329	0		breakable=17|inspect=1		4	Crossroads_46b|Mines_28|RestingGrounds_04|RestingGrounds_06	0
-238	RestingGrounds_02_boss	Resting Grounds	gameplay	no-envelope							1	Ghost Warrior Xero=1	conversation=1		0		0
-239	RestingGrounds_04	Resting Grounds	gameplay	cooked-pack	15	71380	139296	40618	4	257	0		breakable=14|conversation=1	text	2	RestingGrounds_02|RestingGrounds_05	1
-240	RestingGrounds_05	Resting Grounds	gameplay	cooked-pack	21	110200	208032	62140	6	357	0		persistent=23|breakable=7|breakable_wall=1|soul_totem=1		6	RestingGrounds_04|RestingGrounds_07|RestingGrounds_08|RestingGrounds_09|RestingGrounds_10|RestingGrounds_17	0
-241	RestingGrounds_06	Resting Grounds	gameplay	cooked-pack	15	81180	173984	47195	5	317	2	Great Shield Zombie=1|Ruins Flying Sentry=1	breakable=8|persistent=7|reveal_mask=2|breakable_wall=1|soul_totem=1|switch=1		3	Crossroads_50|RestingGrounds_02|Ruins2_10	0
-242	RestingGrounds_07	Resting Grounds	gameplay	cooked-pack	9	45012	70176	24118	2	145	0		conversation=1|persistent=1|reveal_mask=1		2	RestingGrounds_05	0
-243	RestingGrounds_08	Resting Grounds	gameplay	cooked-pack	60	190948	343968	107237	10	509	1	Ruins Sentry=1	persistent=57|breakable=22|conversation=19|door=1|reveal_mask=1|shiny=1		2	RestingGrounds_05	2
-244	RestingGrounds_09	Resting Grounds	gameplay	cooked-pack	6	55484	105248	32058	3	217	0		conversation=2|persistent=2|bench=1|breakable=1|door=1|stag=1|switch=1	text	2	RestingGrounds_05	2
-245	RestingGrounds_10	Resting Grounds	gameplay	cooked-pack	30	138700	273024	80552	8	340	8	Ceiling Dropper=4|Grave Zombie=4	persistent=35|reveal_mask=23|breakable_wall=17|breakable=5|geo_rock=3|shiny=3|chest=1|grub=1		3	RestingGrounds_05|RestingGrounds_12|Ruins2_10	0
-246	RestingGrounds_12	Resting Grounds	gameplay	cooked-pack	15	63984	138144	37446	4	221	0		bench=1|door=1|persistent=1		2	RestingGrounds_10|Room_Mansion	1
-247	RestingGrounds_17	Resting Grounds	gameplay	cooked-pack	8	58636	105408	33694	3	222	0		breakable=2|persistent=1|shiny=1		1	RestingGrounds_05	0
-248	Mines_01	Crystal Peak	gameplay	cooked-pack	10	80684	139936	48239	4	277	1	Egg Sac=1	breakable=18|persistent=2		2	Crossroads_45|Mines_02	0
-249	Mines_02	Crystal Peak	gameplay	cooked-pack	21	175784	316672	112393	9	680	4	Crystal Crawler=2|Zombie Miner=2	breakable=30|geo_rock=3|persistent=2		4	Mines_01|Mines_03|Mines_29|Mines_33	0
-250	Mines_03	Crystal Peak	gameplay	cooked-pack	12	123480	210528	78404	6	435	5	Zombie Miner=3|Crystal Crawler=2	breakable=11|persistent=5|grub=1|switch=1|toll_gate=1		3	Mines_02|Mines_05|Mines_17	0
-251	Mines_04	Crystal Peak	gameplay	cooked-pack	12	112840	244288	71899	7	466	6	Crystal Flyer=4|Zombie Miner=2	breakable=12|persistent=8|geo_rock=2|grub=1|switch=1|toll_gate=1		5	Mines_07|Mines_17|Mines_29|Mines_37	0
-252	Mines_05	Crystal Peak	gameplay	cooked-pack	12	107196	210656	66197	6	439	11	Crystallised Lazer Bug=10|Zombie Miner=1	persistent=12|breakable=11|breakable_wall=1|geo_rock=1		5	Mines_03|Mines_06|Mines_11|Mines_19|Mines_30	0
-253	Mines_06	Crystal Peak	gameplay	cooked-pack	21	102076	141216	60491	4	317	0		breakable=12|persistent=2|breakable_wall=1|reveal_mask=1		2	Mines_05|Mines_36	0
-254	Mines_07	Crystal Peak	gameplay	cooked-pack	12	78728	174560	47654	5	335	3	Crystal Flyer=2|Crystal Crawler=1	breakable=2|persistent=2		2	Mines_04|Mines_28	0
-255	Mines_10	Crystal Peak	gameplay	cooked-pack	16	112136	210336	69626	6	429	0		breakable=6|persistent=1		3	Mines_16|Mines_30|Town	0
-256	Mines_11	Crystal Peak	gameplay	cooked-pack	10	96968	142656	61526	4	362	9	Crystallised Lazer Bug=5|Mines Crawler=2|Crystal Crawler=1|Zombie Miner=1	breakable=34|persistent=7|shiny=1		3	Mines_05|Mines_13|Mines_18	0
-257	Mines_13	Crystal Peak	gameplay	cooked-pack	20	85228	173312	48569	5	296	0		breakable=8|conversation=1		3	Mines_11|Mines_20|Mines_34	0
-258	Mines_16	Crystal Peak	gameplay	cooked-pack	9	91248	209216	57934	6	394	3	Crystal Flyer=2|Grub Mimic=1	breakable=6|persistent=6|reveal_mask=4|grub=2|breakable_wall=1|geo_rock=1		1	Mines_10	0
-259	Mines_17	Crystal Peak	gameplay	cooked-pack	12	71132	140096	42479	4	282	2	Zombie Miner=2	persistent=2|breakable=1		2	Mines_03|Mines_04	0
-260	Mines_18	Crystal Peak	gameplay	cooked-pack	9	67072	139616	40477	4	267	0		breakable=5|bench=1		3	Mines_11|Mines_20|Mines_32	0
-261	Mines_18_boss	Crystal Peak	gameplay	no-envelope							1	Mega Zombie Beam Miner=1	persistent=2		0		0
-262	Mines_19	Crystal Peak	gameplay	cooked-pack	9	71664	139296	41651	4	257	0		persistent=3|switch=2|gate=1|grub=1		2	Mines_05|Mines_20	0
-263	Mines_20	Crystal Peak	gameplay	cooked-pack	52	207512	346752	123748	10	596	18	Crystallised Lazer Bug=7|Crystal Flyer=4|Zombie Miner=3|Crystal Crawler=2|Egg Sac=1|Mines Crawler=1	breakable=27|persistent=21|geo_rock=3|switch=3|gate=2|breakable_wall=1|shiny=1|soul_totem=1|toll_gate=1		6	Mines_13|Mines_18|Mines_19|Mines_23|Mines_31|Mines_37	0
-264	Mines_23	Crystal Peak	gameplay	cooked-pack	24	124196	242112	76357	7	398	8	Zombie Beam Miner=5|Crystal Flyer=3	persistent=30|breakable=13		4	Mines_20|Mines_24|Mines_25|Mines_34	0
-265	Mines_24	Crystal Peak	gameplay	cooked-pack	6	46768	69920	26041	2	137	3	Mines Crawler=2|Zombie Beam Miner=1	persistent=2|grub=1		1	Mines_23	0
-266	Mines_25	Crystal Peak	gameplay	cooked-pack	36	126684	242272	76107	7	403	13	Mines Crawler=6|Zombie Beam Miner=4|Crystal Flyer=3	persistent=12|breakable=6|geo_rock=5|reveal_mask=4|breakable_wall=3|soul_totem=1		2	Mines_23|Mines_34	0
-267	Mines_28	Crystal Peak	gameplay	cooked-pack	25	76140	104800	41186	3	203	0		breakable=4|door=1|persistent=1|soul_totem=1		3	Mines_07|Mines_35|RestingGrounds_02	1
-268	Mines_29	Crystal Peak	gameplay	cooked-pack	15	86552	173792	51851	5	311	0		breakable=15|bench=1|persistent=1|shiny=1		3	Mines_02|Mines_04	0
-269	Mines_30	Crystal Peak	gameplay	cooked-pack	16	71300	104416	40259	3	191	1	Crystal Crawler=1	breakable=12|conversation=2|persistent=2|shiny=1		2	Mines_05|Mines_10	0
-270	Mines_31	Crystal Peak	gameplay	cooked-pack	55	161936	242400	93014	7	407	0		breakable=20|persistent=5|soul_totem=2|geo_rock=1|grub=1|reveal_mask=1		1	Mines_20	0
-271	Mines_32	Crystal Peak	gameplay	cooked-pack	9	58300	105184	33812	3	215	1	Zombie Beam Miner Rematch=1	breakable=7|persistent=3		1	Mines_18	0
-272	Mines_33	Crystal Peak	gameplay	cooked-pack	10	86372	174848	50523	5	344	2	Crystal Crawler=2	breakable=16|persistent=4|geo_rock=3|toll_gate=2|breakable_wall=1|reveal_mask=1		2	Crossroads_03|Mines_02	0
-273	Mines_34	Crystal Peak	gameplay	cooked-pack	63	109104	173248	55157	5	294	6	Mines Crawler=4|Crystal Crawler=1|Crystal Flyer=1	breakable=3|persistent=3|reveal_mask=1|shiny=1		4	Mines_13|Mines_23|Mines_25	0
-274	Mines_35	Crystal Peak	gameplay	cooked-pack	30	125836	174400	75578	5	330	5	Crystal Flyer=3|Mines Crawler=1|Roller=1	breakable=22|persistent=8|breakable_wall=1|grub=1|reveal_mask=1|soul_totem=1		1	Mines_28	0
-275	Mines_36	Crystal Peak	gameplay	cooked-pack	6	42416	36032	22915	1	102	0		breakable=3|persistent=1|shiny=1		1	Mines_06	0
-276	Mines_37	Crystal Peak	gameplay	cooked-pack	20	122784	244000	74671	7	457	8	Zombie Miner=5|Crystallised Lazer Bug=2|Mines Crawler=1	persistent=11|breakable=10|switch=3|geo_rock=2|toll_gate=2|chest=1		2	Mines_04|Mines_20	0
-277	Deepnest_01	Deepnest	gameplay	cooked-pack	9	77184	140320	48249	4	289	0		breakable=5|persistent=4|breakable_wall=2|geo_rock=2|reveal_mask=2		4	Deepnest_01b|Fungus2_20|Fungus3_39	0
-278	Deepnest_01b	Deepnest	gameplay	cooked-pack	29	150848	312352	94818	9	545	11	Baby Centipede=11	breakable=19|persistent=4|breakable_wall=1|conversation=1|reveal_mask=1		5	Deepnest_01|Deepnest_02|Deepnest_17	0
-279	Deepnest_02	Deepnest	gameplay	cooked-pack	12	111020	211200	71300	6	456	7	Baby Centipede=5|Spider Mini=2	breakable=28|persistent=3|breakable_wall=2|geo_rock=2|reveal_mask=2		3	Deepnest_01b|Deepnest_36	0
-280	Deepnest_03	Deepnest	gameplay	cooked-pack	24	181448	312928	117808	9	563	14	Spider Mini=7|Zombie Hornhead Sp=4|Zombie Runner Sp=3	breakable=42|persistent=11|geo_rock=3|breakable_wall=2|reveal_mask=2|grub=1		4	Deepnest_30|Deepnest_31|Deepnest_33|Deepnest_34	0
-281	Deepnest_09	Deepnest	gameplay	cooked-pack	6	54216	105312	31992	3	219	0		breakable=4|conversation=1|door=1|stag=1		2	Deepnest_10	2
-282	Deepnest_10	Deepnest	gameplay	cooked-pack	40	101724	174880	55548	5	345	0		breakable=14|door=2|persistent=1|soul_totem=1		5	Deepnest_09|Deepnest_41|Room_spider_small	2
-283	Deepnest_14	Deepnest	gameplay	cooked-pack	20	124688	210528	77232	6	435	0		breakable=22|persistent=3|bench=1|breakable_wall=1|conversation=1		7	Deepnest_17|Deepnest_26|Deepnest_33	0
-284	Deepnest_16	Deepnest	gameplay	cooked-pack	30	201424	278848	126970	8	522	13	Spider Mini=7|Baby Centipede=6	breakable=49|persistent=8|geo_rock=5|reveal_mask=4|breakable_wall=2|shiny=1		2	Deepnest_17|Fungus2_25	0
-285	Deepnest_17	Deepnest	gameplay	cooked-pack	10	104508	175744	65725	5	372	3	Baby Centipede=3	breakable=21		4	Deepnest_01b|Deepnest_14|Deepnest_16|Deepnest_30	0
-286	Deepnest_26	Deepnest	gameplay	cooked-pack	44	136744	209664	78051	6	408	8	Baby Centipede Spawner=6|Centipede Hatcher=2	breakable=14|persistent=8|reveal_mask=3|switch=1|toll_gate=1		4	Deepnest_14|Deepnest_26b|Deepnest_35	0
-287	Deepnest_26b	Deepnest	gameplay	cooked-pack	24	91892	173856	54167	5	313	10	Baby Centipede Spawner=6|Centipede Hatcher=4	persistent=8|breakable=7|reveal_mask=2|shiny=1|switch=1|toll_gate=1		2	Deepnest_26	0
-288	Deepnest_30	Deepnest	gameplay	cooked-pack	66	218112	280128	130228	8	562	3	Baby Centipede=3	breakable=33|persistent=9|breakable_wall=5|reveal_mask=3|bench=1|conversation=1		3	Deepnest_03|Deepnest_17|Deepnest_37	0
-289	Deepnest_31	Deepnest	gameplay	cooked-pack	30	155276	208512	94512	6	372	0		breakable=21|persistent=10|reveal_mask=6|breakable_wall=3|geo_rock=3|grub=1		2	Deepnest_03|Deepnest_32	0
-290	Deepnest_32	Deepnest	gameplay	cooked-pack	16	90384	139136	54246	4	252	1	Mimic Spider=1	breakable=14|persistent=2|shiny=1		1	Deepnest_31	0
-291	Deepnest_33	Deepnest	gameplay	cooked-pack	18	135272	209440	85037	6	401	19	Zombie Spider=10|Spider Mini=5|Zombie Hornhead Sp=3|Zombie Runner Sp=1	breakable=37|persistent=8|battle=1|breakable_wall=1|conversation=1|reveal_mask=1|shiny=1		3	Deepnest_03|Deepnest_14	0
-292	Deepnest_34	Deepnest	gameplay	cooked-pack	28	120444	208384	73461	6	368	5	Zombie Runner Sp=2|Slash Spider=1|Spider Mini=1|Zombie Hornhead Sp=1	breakable=49|persistent=5|reveal_mask=1		3	Deepnest_03|Deepnest_35|Deepnest_39	0
-293	Deepnest_35	Deepnest	gameplay	cooked-pack	24	124616	242336	78454	7	405	9	Spider Mini=6|Zombie Hornhead Sp=2|Zombie Runner Sp=1	breakable=41|persistent=3|geo_rock=2		3	Deepnest_26|Deepnest_34|Deepnest_40	0
-294	Deepnest_36	Deepnest	gameplay	cooked-pack	12	71748	105600	42529	3	228	3	Grub Mimic=3	breakable=11|persistent=7|grub=4		1	Deepnest_02	0
-295	Deepnest_37	Deepnest	gameplay	cooked-pack	12	109448	140576	66745	4	297	0		breakable=24|geo_rock=2		4	Abyss_03_b|Deepnest_30|Deepnest_38|Deepnest_44	0
-296	Deepnest_38	Deepnest	gameplay	cooked-pack	36	167832	209568	101656	6	405	1	Baby Centipede=1	breakable=16|persistent=5|breakable_wall=2|reveal_mask=2|soul_totem=1		1	Deepnest_37	0
-297	Deepnest_39	Deepnest	gameplay	cooked-pack	45	226308	311648	138599	9	523	22	Spider Flyer=11|Tiny Spider=6|Slash Spider=4|Egg Sac=1	persistent=66|breakable=58|breakable_wall=11|geo_rock=3|reveal_mask=3|door=1|grub=1		4	Deepnest_34|Deepnest_41|Deepnest_42|Deepnest_45_v02	1
-298	Deepnest_40	Deepnest	gameplay	cooked-pack	35	123560	174336	72576	5	328	1	Ghost Warrior Galien=1	breakable=21|conversation=2|inspect=1|persistent=1		1	Deepnest_35	0
-299	Deepnest_41	Deepnest	gameplay	cooked-pack	48	171436	244160	101815	7	462	12	Spider Flyer=6|Spider Mini=3|Tiny Spider=2|Slash Spider=1	breakable=32|persistent=12|breakable_wall=8|reveal_mask=4|conversation=1|toll_gate=1		3	Deepnest_10|Deepnest_39	0
-300	Deepnest_42	Deepnest	gameplay	cooked-pack	20	135696	210176	86374	6	424	14	Spider Flyer=8|Spider Mini=4|Tiny Spider=2	breakable=33|persistent=5|reveal_mask=1|soul_totem=1		3	Deepnest_39|Deepnest_43|Room_Mask_Maker	0
-301	Deepnest_43	Deepnest	gameplay	cooked-pack	18	119096	174880	74730	5	345	6	Garden Zombie=2|Moss Flyer=2|Mantis Heavy Flyer=1|Moss Walker=1	persistent=4|breakable=2|geo_rock=2|reveal_mask=1		3	Deepnest_42|Fungus3_08|Fungus3_50	0
-302	Deepnest_44	Deepnest	gameplay	cooked-pack	35	147996	140800	88998	4	304	0		persistent=6|breakable=5|reveal_mask=3|breakable_wall=1|conversation=1|shiny=1		1	Deepnest_37	0
-303	Deepnest_45_v02	Deepnest	gameplay	cooked-pack	35	134260	207232	78896	6	332	5	Spider Mini=5	breakable=23|persistent=10|reveal_mask=7|breakable_wall=3|shiny=2|chest=1		1	Deepnest_39	0
-304	Deepnest_Spider_Town	Deepnest	gameplay	cooked-pack	66	276088	242496	169989	7	410	23	Tiny Spider=9|Slash Spider=5|Spider Mini=5|Zombie Spider=3|Egg Sac=1	breakable=95|persistent=34|breakable_wall=11|reveal_mask=10|geo_rock=8|conversation=6|bench=1|grub=1|inspect=1|shiny=1|soul_totem=1		2	Deepnest_10	1
-305	Room_spider_small	Deepnest	gameplay	cooked-pack	9	43680	36576	22995	1	119	0		breakable=3|conversation=1		1	Deepnest_10	0
-306	Deepnest_East_01	Kingdom's Edge	gameplay	cooked-pack	18	89080	139776	53109	4	272	11	Blow Fly=6|Bee Hatchling Ambient=5	persistent=9|geo_rock=2|breakable=1|breakable_wall=1|conversation=1|reveal_mask=1|soul_totem=1		3	Abyss_03_c|Deepnest_East_02|Hive_03_c	0
-307	Deepnest_East_02	Kingdom's Edge	gameplay	cooked-pack	15	111704	172832	67605	5	281	12	Bee Hatchling Ambient=12	persistent=3|breakable_wall=2|geo_rock=2|soul_totem=1		4	Deepnest_East_01|Deepnest_East_03|Hive_03|Waterways_14	0
-308	Deepnest_East_03	Kingdom's Edge	gameplay	cooked-pack	40	112312	174176	61392	5	323	6	Blow Fly=6	persistent=13|breakable=8|conversation=2|reveal_mask=1		6	Deepnest_East_02|Deepnest_East_04|Deepnest_East_06|Deepnest_East_07|Deepnest_east_07|Ruins2_07	0
-309	Deepnest_East_04	Kingdom's Edge	gameplay	cooked-pack	39	171304	174112	102524	5	321	8	Super Spitter=5|Blow Fly=3	breakable=34|persistent=12|reveal_mask=7|breakable_wall=1|conversation=1|geo_rock=1		4	Deepnest_East_03|Deepnest_East_07|Deepnest_East_11|Deepnest_East_15	0
-310	Deepnest_East_06	Kingdom's Edge	gameplay	cooked-pack	60	204804	209824	116872	6	413	18	Hopper=11|Giant Hopper=4|Super Spitter=3	breakable=21|persistent=9|geo_rock=2|bench=1|breakable_wall=1|door=1|reveal_mask=1		5	Deepnest_East_03|Deepnest_East_14b|Deepnest_East_16|Deepnest_East_18|Room_nailmaster_03	1
-311	Deepnest_East_07	Kingdom's Edge	gameplay	cooked-pack	52	193052	242784	113506	7	419	26	Hopper=11|Ceiling Dropper=7|Super Spitter=5|Blow Fly=3	persistent=73|breakable=15|reveal_mask=3|geo_rock=2|shiny=2|soul_totem=1		5	Deepnest_East_03|Deepnest_East_04|Deepnest_East_08|Ruins2_11_b	0
-312	Deepnest_East_08	Kingdom's Edge	gameplay	cooked-pack	24	106540	139744	62032	4	271	14	Hopper=9|Ceiling Dropper=4|Giant Hopper=1	breakable=13|persistent=7|reveal_mask=3|breakable_wall=1|geo_rock=1|shiny=1		2	Deepnest_East_07|Deepnest_East_09	0
-313	Deepnest_East_09	Kingdom's Edge	gameplay	cooked-pack	36	96180	138752	51174	4	240	7	Ceiling Dropper=7	persistent=9|breakable_wall=1|reveal_mask=1		3	Deepnest_East_08|Room_Colosseum_01|Ruins2_10b	0
-314	Deepnest_East_10	Kingdom's Edge	gameplay	cooked-pack	9	52244	70656	29569	2	160	1	Ghost Warrior Markoth=1	conversation=1|inspect=1		1	Deepnest_East_18	0
-315	Deepnest_East_11	Kingdom's Edge	gameplay	cooked-pack	45	150220	208192	86228	6	362	8	Hopper=4|Super Spitter=4	breakable=20|reveal_mask=10|persistent=9|breakable_wall=2|grub=1|soul_totem=1		4	Deepnest_East_04|Deepnest_East_12|Deepnest_East_13|Deepnest_East_18	0
-316	Deepnest_East_12	Kingdom's Edge	gameplay	cooked-pack	18	75060	138176	41885	4	222	0		breakable=12|persistent=1		3	Deepnest_East_11|Deepnest_East_Hornet	0
-317	Deepnest_East_13	Kingdom's Edge	gameplay	cooked-pack	9	44496	70144	24415	2	144	0		bench=1|persistent=1|shiny=1		1	Deepnest_East_11	0
-318	Deepnest_East_14	Kingdom's Edge	gameplay	cooked-pack	35	144384	207648	86110	6	345	12	Hopper=8|Super Spitter=2|Egg Sac=1|Giant Hopper=1	breakable=21|persistent=12|breakable_wall=3|reveal_mask=2|soul_totem=2|door=1|grub=1		3	Deepnest_East_14b|Deepnest_East_16|Deepnest_East_17	1
-319	Deepnest_East_14b	Kingdom's Edge	gameplay	cooked-pack	20	88380	173568	51606	5	304	11	Bee Hatchling Ambient=5|Super Spitter=4|Giant Hopper=1|Hopper=1	persistent=11|breakable=7|reveal_mask=4|shiny=1		2	Deepnest_East_06|Deepnest_East_14	0
-320	Deepnest_East_15	Kingdom's Edge	gameplay	cooked-pack	6	47356	70112	27031	2	143	0		breakable=3|persistent=1		1	Deepnest_East_04	0
-321	Deepnest_East_16	Kingdom's Edge	gameplay	cooked-pack	9	54820	104320	31586	3	188	3	Giant Hopper=2|Ghost Warrior Markoth=1	persistent=4|breakable=2|reveal_mask=2|breakable_wall=1|soul_totem=1		2	Deepnest_East_06|Deepnest_East_14	0
-322	Deepnest_East_17	Kingdom's Edge	gameplay	cooked-pack	42	167100	208544	98842	6	373	3	Hopper=3	persistent=15|breakable_wall=11|breakable=10|reveal_mask=3|geo_rock=2|soul_totem=1		1	Deepnest_East_14	0
-323	Deepnest_East_18	Kingdom's Edge	gameplay	cooked-pack	20	91216	139360	52934	4	259	9	Hopper=9	breakable=11|persistent=4|breakable_wall=2|reveal_mask=1|shiny=1		3	Deepnest_East_06|Deepnest_East_10|Deepnest_East_11	0
-324	Deepnest_East_Hornet	Kingdom's Edge	gameplay	cooked-pack	21	95088	173792	56793	5	311	0		breakable=1		2	Deepnest_East_12|Room_Wyrm	0
-325	Deepnest_East_Hornet_boss	Kingdom's Edge	gameplay	no-envelope							1	Hornet Boss=1	conversation=1		0		0
-326	Room_Wyrm	Interior rooms	gameplay	cooked-pack	15	58104	69632	31027	2	128	0		persistent=1|shiny=1		1	Deepnest_East_Hornet	0
-327	Abyss_01	Ancient Basin and Abyss	gameplay	cooked-pack	24	118868	176096	69860	5	383	2	Ruins Flying Sentry=2	persistent=41|geo_rock=3|breakable=1|reveal_mask=1		5	Abyss_02|Ruins2_04|Waterways_05|Waterways_06|Waterways_07	0
-328	Abyss_02	Ancient Basin and Abyss	gameplay	cooked-pack	32	151352	209248	92611	6	395	8	Ruins Flying Sentry=2|Ruins Flying Sentry Javelin=2|Zombie Barger=2|Ruins Sentry=1|Zombie Hornhead=1	persistent=10|breakable=5|geo_rock=3|shiny=1		2	Abyss_01|Abyss_03	0
-329	Abyss_03	Ancient Basin and Abyss	gameplay	cooked-pack	18	72232	104640	40474	3	198	0		breakable=5|door=2|conversation=1|tram=1		5	Abyss_02|Abyss_04|Abyss_17	1
-330	Abyss_03_b	Ancient Basin and Abyss	gameplay	cooked-pack	8	62012	105248	36966	3	217	0		door=2|breakable=1|conversation=1|tram=1		3	Deepnest_37	1
-331	Abyss_03_c	Ancient Basin and Abyss	gameplay	cooked-pack	21	96368	173184	57193	5	292	3	Bee Hatchling Ambient=3	door=2|reveal_mask=2|breakable=1|breakable_wall=1|conversation=1|persistent=1|tram=1		4	Deepnest_East_01|Hive_01	1
-332	Abyss_04	Ancient Basin and Abyss	gameplay	cooked-pack	49	210648	345536	124389	10	558	9	Abyss Crawler=9	breakable=15|persistent=6|conversation=3|reveal_mask=3|inspect=1|soul_totem=1		4	Abyss_03|Abyss_05|Abyss_06_Core|Abyss_18	0
-333	Abyss_05	Ancient Basin and Abyss	gameplay	cooked-pack	54	115816	173696	57792	5	308	0		reveal_mask=7|breakable_wall=1|inspect=1|persistent=1		4	Abyss_04|Abyss_22	2
-334	Abyss_06_Core	Ancient Basin and Abyss	gameplay	cooked-pack	90	274968	487936	168104	14	912	21	Abyss Crawler=21	breakable=21|geo_rock=3|inspect=2|persistent=2|reveal_mask=2|conversation=1		7	Abyss_04|Abyss_08|Abyss_12|Abyss_15|Abyss_16	0
-335	Abyss_08	Ancient Basin and Abyss	gameplay	cooked-pack	47	216652	315584	136270	9	646	0		breakable=11|persistent=4|shiny=2|breakable_wall=1|reveal_mask=1		1	Abyss_06_Core	1
-336	Abyss_09	Ancient Basin and Abyss	gameplay	cooked-pack	88	170992	241664	89396	7	384	22	Shade Sibling=22	breakable=14|conversation=1|persistent=1|reveal_mask=1		4	Abyss_10|Abyss_16|Abyss_Lighthouse_room	0
-337	Abyss_10	Ancient Basin and Abyss	gameplay	cooked-pack	24	116220	175392	70050	5	361	0		breakable=20|persistent=2|reveal_mask=1|shiny=1		2	Abyss_09	0
-338	Abyss_12	Ancient Basin and Abyss	gameplay	cooked-pack	24	90228	139584	51360	4	266	5	Abyss Crawler=5	breakable=5	text	1	Abyss_06_Core	0
-339	Abyss_15	Ancient Basin and Abyss	gameplay	cooked-pack	56	207392	345312	132420	10	551	16	Shade Sibling=16	door=1|persistent=1|shiny=1		2	Abyss_06_Core	2
-340	Abyss_16	Ancient Basin and Abyss	gameplay	cooked-pack	15	77988	139648	46486	4	268	0		breakable=8		2	Abyss_06_Core|Abyss_09	0
-341	Abyss_17	Ancient Basin and Abyss	gameplay	cooked-pack	40	162644	207872	98080	6	352	15	Lesser Mawlek=8|Ceiling Dropper=4|Spitter=3	breakable=46|persistent=19|breakable_wall=2|reveal_mask=2|battle=1|conversation=1|grub=1|shiny=1		1	Abyss_03	0
-342	Abyss_18	Ancient Basin and Abyss	gameplay	cooked-pack	27	100156	139648	57239	4	268	0		breakable=3|bench=1|geo_rock=1|persistent=1		2	Abyss_04|Abyss_19	0
-343	Abyss_19	Ancient Basin and Abyss	gameplay	cooked-pack	49	185032	345024	113492	10	542	8	Parasite Balloon=4|Abyss Crawler=3|Infected Knight=1	breakable=27|persistent=5|conversation=2|geo_rock=2|breakable_wall=1|door=1|grub=1|reveal_mask=1|shiny=1		5	Abyss_18|Abyss_20|Abyss_21	2
-344	Abyss_20	Ancient Basin and Abyss	gameplay	cooked-pack	40	161892	243136	98604	7	430	12	Abyss Crawler=4|Mawlek Turret=4|Mawlek Turret Ceiling=2|Parasite Balloon=2	breakable=23|persistent=11|reveal_mask=4|shiny=1		2	Abyss_19	0
-345	Abyss_21	Ancient Basin and Abyss	gameplay	over-128-views	136						0		breakable=9|conversation=1		1	Abyss_19	0
-346	Abyss_22	Ancient Basin and Abyss	gameplay	cooked-pack	12	60432	105088	33220	3	212	0		bench=1|breakable=1|conversation=1|door=1|stag=1		2	Abyss_05	2
-347	Abyss_Lighthouse_room	Ancient Basin and Abyss	gameplay	cooked-pack	9	39384	35968	19846	1	100	0		persistent=3|breakable=2|switch=1		1	Abyss_09	0
-348	Room_Queen	Interior rooms	gameplay	cooked-pack	16	62780	71072	33575	2	173	0		persistent=3|conversation=1|reveal_mask=1|shiny=1	text	1	Fungus3_48	1
-349	Waterways_01	Royal Waterways	gameplay	cooked-pack	28	123292	242592	71427	7	413	14	Ceiling Dropper=5|Inflater=5|Flip Hopper=4	persistent=7|breakable=6|geo_rock=2|reveal_mask=2|breakable_wall=1|soul_totem=1		4	Ruins1_05b|Waterways_02|Waterways_03|Waterways_04	0
-350	Waterways_02	Royal Waterways	gameplay	cooked-pack	44	165116	277248	97360	8	472	11	Flukeman=4|Flip Hopper=3|Fluke Fly=2|Ceiling Dropper=1|Egg Sac=1	persistent=14|breakable=11|reveal_mask=5|breakable_wall=3|bench=1		5	Waterways_01|Waterways_04|Waterways_05|Waterways_06|Waterways_08	0
-351	Waterways_03	Royal Waterways	gameplay	cooked-pack	10	56572	71680	32238	2	192	0		breakable=4|conversation=1|persistent=1|shiny=1		1	Waterways_01	0
-352	Waterways_04	Royal Waterways	gameplay	cooked-pack	28	119916	207680	68280	6	346	13	Inflater=9|Flukeman=2|Ceiling Dropper=1|Egg Sac=1	breakable=16|persistent=9|reveal_mask=6|breakable_wall=3|grub=1		4	Waterways_01|Waterways_02|Waterways_04b	0
-353	Waterways_04b	Royal Waterways	gameplay	cooked-pack	24	109972	173824	63271	5	312	15	Inflater=7|Fluke Fly=4|Ceiling Dropper=2|Flukeman=2	persistent=9|reveal_mask=2|breakable=1|geo_rock=1|shiny=1|soul_totem=1		3	Waterways_04|Waterways_09	0
-354	Waterways_05	Royal Waterways	gameplay	cooked-pack	24	93304	140064	53252	4	281	0		persistent=5|breakable_wall=2|shiny=2|conversation=1|switch=1		3	Abyss_01|Waterways_02|Waterways_15	0
-355	Waterways_05_boss	Royal Waterways	gameplay	no-envelope							1	Dung Defender=1			0		0
-356	Waterways_06	Royal Waterways	gameplay	cooked-pack	24	102360	174432	58807	5	331	6	Flip Hopper=3|Fluke Fly=3	breakable=5		2	Abyss_01|Waterways_02	0
-357	Waterways_07	Royal Waterways	gameplay	cooked-pack	35	168068	312288	104406	9	543	11	Inflater=4|Flip Hopper=2|Ruins Sentry=2|Ceiling Dropper=1|Egg Sac=1|Ruins Sentry Fat=1	breakable=12|persistent=10|breakable_wall=1|door=1|geo_rock=1|inspect=1|reveal_mask=1|soul_totem=1		5	Abyss_01|Ruins_House_03|Waterways_13|Waterways_14	1
-358	Waterways_08	Royal Waterways	gameplay	cooked-pack	31	189064	312192	122140	9	540	104	fluke_baby=85|Flukeman=9|Ceiling Dropper=5|Fluke Fly=5	persistent=19|reveal_mask=4|breakable_wall=2|geo_rock=1|soul_totem=1		3	GG_Pipeway|Waterways_02|Waterways_12	0
-359	Waterways_09	Royal Waterways	gameplay	cooked-pack	12	74260	139648	43083	4	268	8	Inflater=8	breakable=16|persistent=4|conversation=2|battle=1|breakable_wall=1|gate=1|switch=1		2	Fungus2_23|Waterways_04b	0
-360	Waterways_12	Royal Waterways	gameplay	cooked-pack	12	61092	71040	34722	2	172	1	Fluke Fly Spawner=1	persistent=1|shiny=1	text	1	Waterways_08	0
-361	Waterways_12_boss	Royal Waterways	gameplay	no-envelope							7	Fluke Fly Spawner=6|Fluke Mother=1			0		0
-362	Waterways_13	Royal Waterways	gameplay	cooked-pack	42	167168	274880	102510	8	398	14	Ruins Flying Sentry=5|Ceiling Dropper=2|Inflater=2|Ruins Flying Sentry Javelin=2|Ruins Sentry Fat=2|Ruins Sentry=1	persistent=7|battle=1|grub=1		2	Waterways_07	0
-363	Waterways_14	Royal Waterways	gameplay	cooked-pack	44	129664	207808	71658	6	350	3	Inflater=3	breakable=8|persistent=3|breakable_wall=1|grub=1|reveal_mask=1		2	Deepnest_East_02|Waterways_07	0
-364	Waterways_15	Royal Waterways	gameplay	cooked-pack	9	47592	69472	26337	2	123	0		persistent=5|reveal_mask=4|conversation=1|shiny=1		2	Waterways_05	1
-365	White_Palace_01	White Palace	gameplay	cooked-pack	106	260344	242368	127875	7	406	3	White Palace Fly=3	breakable=7|bench=1		3	White_Palace_02|White_Palace_03_hub|White_Palace_11	0
-366	White_Palace_02	White Palace	gameplay	cooked-pack	59	181816	206912	94768	6	322	1	Royal Gaurd=1	persistent=4|battle=1|breakable_wall=1|soul_totem=1|switch=1		1	White_Palace_01	0
-367	White_Palace_03_hub	White Palace	gameplay	cooked-pack	50	186912	208000	100220	6	356	17	Enemy=17	breakable=8|persistent=2|bench=1|door=1|soul_totem=1|switch=1|toll_gate=1		7	White_Palace_01|White_Palace_04|White_Palace_06|White_Palace_14|White_Palace_15	1
-368	White_Palace_04	White Palace	gameplay	cooked-pack	54	158172	173408	81742	5	299	6	Enemy=6	persistent=1|soul_totem=1		2	White_Palace_03_hub|White_Palace_14	0
-369	White_Palace_05	White Palace	gameplay	cooked-pack	91	303108	242592	169248	7	413	0				4	White_Palace_15|White_Palace_16	0
-370	White_Palace_06	White Palace	gameplay	cooked-pack	18	72692	104672	39130	3	199	5	White Palace Fly=5	reveal_mask=2|bench=1|breakable_wall=1|persistent=1		4	White_Palace_03_hub|White_Palace_07|White_Palace_18	0
-371	White_Palace_07	White Palace	gameplay	cooked-pack	75	233264	242432	129201	7	408	0		breakable=2		2	White_Palace_06|White_Palace_12	0
-372	White_Palace_08	White Palace	gameplay	cooked-pack	28	83156	104864	44011	3	205	0		inspect=1		2	White_Palace_13	0
-373	White_Palace_09	White Palace	gameplay	cooked-pack	71	186892	242432	96593	7	408	0		breakable=4|persistent=4|breakable_wall=2|reveal_mask=2|inspect=1|shiny=1|soul_totem=1		1	White_Palace_13	1
-374	White_Palace_11	White Palace	gameplay	cooked-pack	48	97700	105696	46245	3	231	1	Royal Gaurd=1	door=2|persistent=1		3	White_Palace_01	2
-375	White_Palace_12	White Palace	gameplay	cooked-pack	68	205232	208288	110028	6	365	2	Enemy=2	breakable=4|persistent=3|breakable_wall=2|reveal_mask=2|toll_gate=2|switch=1		2	White_Palace_07|White_Palace_13	0
-376	White_Palace_13	White Palace	gameplay	over-128-views	135						5	White Palace Fly=5	breakable=6		4	White_Palace_08|White_Palace_09|White_Palace_12	0
-377	White_Palace_14	White Palace	gameplay	cooked-pack	90	189620	207648	92504	6	345	4	Enemy=4	breakable=2|persistent=1|switch=1		2	White_Palace_03_hub|White_Palace_04	0
-378	White_Palace_15	White Palace	gameplay	cooked-pack	36	141648	140256	78212	4	287	4	Enemy=4	persistent=4|switch=2|toll_gate=2|breakable_wall=1|soul_totem=1		3	White_Palace_03_hub|White_Palace_05	0
-379	White_Palace_16	White Palace	gameplay	cooked-pack	99	127388	105056	54600	3	211	0				2	White_Palace_05	0
-380	White_Palace_17	White Palace	gameplay	cooked-pack	48	176692	206976	97205	6	324	0		persistent=3|soul_totem=2|breakable=1|breakable_wall=1|reveal_mask=1|switch=1|toll_gate=1		2	White_Palace_18|White_Palace_19	0
-381	White_Palace_18	White Palace	gameplay	cooked-pack	104	159856	139360	75434	4	259	12	White Palace Fly=12	persistent=2|reveal_mask=2|soul_totem=2|inspect=1		2	White_Palace_06|White_Palace_17	0
-382	White_Palace_19	White Palace	gameplay	cooked-pack	96	146496	139008	67172	4	248	6	White Palace Fly=6	persistent=3|reveal_mask=2|soul_totem=2		2	White_Palace_17|White_Palace_20	0
-383	White_Palace_20	White Palace	gameplay	over-128-views	156						2	Royal Gaurd=2	battle=1|conversation=1|persistent=1|soul_totem=1		1	White_Palace_19	1
-384	Hive_01	The Hive	gameplay	cooked-pack	30	112712	175456	64093	5	363	15	Hiveling Spawner=10|Bee Hatchling Ambient=3|Bee Stinger=1|Zombie Hive=1	breakable=45|persistent=5|bench=1|geo_rock=1		3	Abyss_03_c|Hive_02	0
-385	Hive_02	The Hive	gameplay	cooked-pack	54	144116	175616	77827	5	368	39	Hiveling Spawner=20|Bee Hatchling Ambient=13|Bee Stinger=3|Zombie Hive=3	breakable=61|persistent=28|geo_rock=3		3	Hive_01|Hive_03_c	0
-386	Hive_03	The Hive	gameplay	cooked-pack	60	109272	139936	53900	4	277	14	Bee Hatchling Ambient=11|Bee Stinger=2|Big Bee=1	breakable=25|persistent=6|geo_rock=3|grub=1|reveal_mask=1		3	Deepnest_East_02|Hive_03_c|Hive_04	0
-387	Hive_03_c	The Hive	gameplay	cooked-pack	48	121124	174976	65083	5	348	14	Bee Hatchling Ambient=9|Bee Stinger=3|Big Bee=2	breakable=31|persistent=8|breakable_wall=1|reveal_mask=1		4	Deepnest_East_01|Hive_02|Hive_03|Hive_04	0
-388	Hive_04	The Hive	gameplay	cooked-pack	100	163036	209408	78933	6	400	32	Hiveling Spawner=20|Bee Hatchling Ambient=4|Bee Stinger=4|Big Bee=2|Zombie Hive=2	breakable=58|persistent=14|geo_rock=2|grub=1		3	Hive_03|Hive_03_c|Hive_05	0
-389	Hive_05	The Hive	gameplay	cooked-pack	30	88604	139936	47805	4	277	1	Hive Knight=1	breakable=23|persistent=5|conversation=1|shiny=1		1	Hive_04	0
-390	Grimm_Divine	Grimm Troupe	gameplay	cooked-pack	4	36444	35744	18921	1	93	0		persistent=3|shiny=3|conversation=1		1	Town	0
-391	Grimm_Main_Tent	Grimm Troupe	gameplay	cooked-pack	40	85644	105312	41476	3	219	0		persistent=4|chest=2|conversation=2|reveal_mask=2|shiny=1		2	Town	1
-392	Grimm_Main_Tent_boss	Grimm Troupe	gameplay	no-envelope							2	Grimm Boss=1|Real Bat=1			0		0
-393	Grimm_Nightmare	Grimm Troupe	gameplay	cooked-pack	33	78092	104896	38099	3	206	2	Nightmare Grimm Boss=1|Real Bat=1	persistent=1	text	1		1
-394	Dream_Nailcollection	Dreams	dream_gameplay_or_variant	cooked-pack	78	121168	104768	54532	3	202	0		conversation=2		4		2
-395	Dream_01_False_Knight	Dreams	dream_gameplay_or_variant	cooked-pack	35	97852	140096	51765	4	282	3	False Knight Dream=1|Head=1|Tinger=1	battle=1|door=1|persistent=1		1		2
-396	Dream_02_Mage_Lord	Dreams	dream_gameplay_or_variant	cooked-pack	25	95688	141248	53911	4	318	3	Dream Mage Lord Phase=2|Dream Mage Lord=1	door=1		1		2
-397	Dream_03_Infected_Knight	Dreams	dream_gameplay_or_variant	cooked-pack	32	80232	104576	40371	3	196	1	Lost Kin=1	conversation=2|persistent=2|door=1|shiny=1		1		2
-398	Dream_04_White_Defender	Dreams	dream_gameplay_or_variant	cooked-pack	24	90732	139040	50988	4	249	1	White Defender=1			1		1
-399	Dream_Mighty_Zote	Dreams	dream_gameplay_or_variant	cooked-pack	30	61488	104704	30560	3	200	9	Zote Balloon=4|Zoteling=4|Grey Prince=1	battle=1	text	1		0
-400	Dream_Guardian_Hegemol	Dreams	dream_gameplay_or_variant	cooked-pack	20	46056	36064	22099	1	103	0				1		3
-401	Dream_Guardian_Lurien	Dreams	dream_gameplay_or_variant	cooked-pack	20	46188	36064	22150	1	103	0				1		3
-402	Dream_Guardian_Monomon	Dreams	dream_gameplay_or_variant	cooked-pack	20	46112	36064	22126	1	103	0				1		3
-403	Cutscene_Boss_Door	Cinematics and openings	gameplay	cooked-pack	6	34988	35488	17999	1	85	0				1		1
-404	Dream_Backer_Shrine	Dreams	dream_gameplay_or_variant	cooked-pack	25	56472	69856	27165	2	135	0		door=2		2	0.	3
-405	Dream_Room_Believer_Shrine	Dreams	dream_gameplay_or_variant	cooked-pack	30	93216	70688	47586	2	161	0		breakable=63|inspect=63|persistent=63		1	Dream_Backer_Shrine	1
-406	Dream_Abyss	Dreams	dream_gameplay_or_variant	cooked-pack	90	258472	419744	154703	12	829	0		breakable=19|door=1		1		2
-407	Dream_Final_Boss	Dreams	dream_gameplay_or_variant	cooked-pack	52	63404	35936	25114	1	99	1	Radiance=1	persistent=1|reveal_mask=1	text	1		0
-408	Room_Final_Boss_Atrium	Hollow Knight finale	gameplay	cooked-pack	33	71004	37856	34934	1	159	0		breakable=4|bench=1	text	2	Room_Final_Boss_Core|Room_temple	0
-409	Room_Final_Boss_Core	Hollow Knight finale	gameplay	cooked-pack	12	61952	71296	34847	2	180	1	Hollow Knight Boss=1	breakable=3	text	1	Room_Final_Boss_atrium	1
-410	Cinematic_Ending_A	Cinematics and openings	cinematic	no-envelope							0				0		0
-411	Cinematic_Ending_B	Cinematics and openings	cinematic	no-envelope							0				0		0
-412	Cinematic_Ending_C	Cinematics and openings	cinematic	no-envelope							0				0		0
-413	Cinematic_Ending_D	Cinematics and openings	cinematic	no-envelope							0				0		0
-414	Cinematic_Ending_E	Cinematics and openings	cinematic	no-envelope							0				0		0
-415	End_Credits	Menus, helpers and tests	credits	no-envelope							0			text	0		0
-416	Cinematic_MrMushroom	Cinematics and openings	cinematic	no-envelope							0			text	0		0
-417	Menu_Credits	Menus, helpers and tests	credits	no-envelope							0			text	0		0
-418	End_Game_Completion	Menus, helpers and tests	completion_screen	no-envelope							0			text	0		0
-419	PermaDeath	Menus, helpers and tests	transition_or_bootstrap_helper	no-envelope							0			text	0		0
-420	_test_cocoon_2	Menus, helpers and tests	gameplay	cooked-pack	6	34548	35360	17607	1	81	0		persistent=1		1	_test_cocoon_1	0
-421	PermaDeath_Unlock	Menus, helpers and tests	transition_or_bootstrap_helper	no-envelope							0			text	0		0
-422	_test_cocoon_1	Menus, helpers and tests	gameplay	cooked-pack	6	34800	35360	17737	1	81	0		persistent=2		1	_test_cocoon_2	0
-423	GG_Waterways	Godhome	gameplay	cooked-pack	63	173848	344256	98710	10	518	0		persistent=8|chest=5|breakable=4|conversation=4|reveal_mask=2|door=1|shiny=1		3	GG_Pipeway|Room_GG_Shortcut	10
-424	GG_Atrium	Godhome	gameplay	cooked-pack	120	177436	208224	81547	6	363	0		boss_door=5|door=3|persistent=2|bench=1|reveal_mask=1|switch=1		11	GG_Atrium_Roof|GG_Blue_Room|GG_Workshop	10
-425	GG_Broken_Vessel	Godhome	boss_arena	cooked-pack	49	80164	72064	38352	2	204	1	Infected Knight=1	breakable=2|conversation=1	boss	1		2
-426	GG_Brooding_Mawlek	Godhome	boss_arena	cooked-pack	8	60212	104896	36488	3	206	1	Mawlek Body=1		boss	1		2
-427	GG_Collector	Godhome	boss_arena	cooked-pack	40	76708	104864	37767	3	205	1	Jar Collector=1		boss	1		2
-428	GG_Crystal_Guardian	Godhome	boss_arena	cooked-pack	9	60336	105120	35835	3	213	1	Mega Zombie Beam Miner=1	breakable=3	boss	1		2
-429	GG_Crystal_Guardian_2	Godhome	boss_arena	cooked-pack	9	54752	71584	31425	2	189	1	Zombie Beam Miner Rematch=1		boss	1		2
-430	GG_Dung_Defender	Godhome	boss_arena	cooked-pack	24	70696	105056	37911	3	211	1	Dung Defender=1		boss	1		2
-431	GG_Failed_Champion	Godhome	boss_arena	cooked-pack	35	76280	104576	38159	3	196	3	False Knight Dream=1|Head=1|Tinger=1	battle=1	boss	1		2
-432	GG_False_Knight	Godhome	boss_arena	cooked-pack	20	69644	104704	38285	3	200	2	False Knight New=1|Head=1	battle=1|persistent=1|shiny=1	boss	1		2
-433	GG_Flukemarm	Godhome	boss_arena	cooked-pack	12	60876	71776	34651	2	195	7	Fluke Fly Spawner=6|Fluke Mother=1		boss	1		2
-434	GG_Ghost_Galien	Godhome	boss_arena	cooked-pack	35	77516	105696	39805	3	231	1	Ghost Warrior Galien=1		boss	1		2
-435	GG_Ghost_Gorb	Godhome	boss_arena	cooked-pack	66	82880	70912	34767	2	168	1	Ghost Warrior Slug=1	breakable=1	boss	1		2
-436	GG_Ghost_Hu	Godhome	boss_arena	cooked-pack	8	59540	105408	36178	3	222	1	Ghost Warrior Hu=1	breakable=12	boss	1		2
-437	GG_Ghost_Markoth	Godhome	boss_arena	cooked-pack	6	60816	105664	37573	3	230	1	Ghost Warrior Markoth=1		boss	1		2
-438	GG_Ghost_Marmu	Godhome	boss_arena	cooked-pack	24	79012	106144	43277	3	245	1	Ghost Warrior Marmu=1		boss	1		2
-439	GG_Ghost_No_Eyes	Godhome	boss_arena	cooked-pack	18	72216	105792	40992	3	234	1	Ghost Warrior No Eyes=1		boss	1		2
-440	GG_Ghost_Xero	Godhome	boss_arena	cooked-pack	12	54748	71168	30553	2	176	1	Ghost Warrior Xero=1	breakable=4	boss	1		2
-441	GG_God_Tamer	Godhome	boss_arena	cooked-pack	21	68368	105184	37319	3	215	2	Lancer=1|Lobster=1		boss	1		2
-442	GG_Grey_Prince_Zote	Godhome	boss_arena	cooked-pack	30	62144	71488	30915	2	186	9	Zote Balloon=4|Zoteling=4|Grey Prince=1		boss|text	1		2
-443	GG_Grimm	Godhome	boss_arena	cooked-pack	40	72476	104800	34607	3	203	2	Grimm Boss=1|Real Bat=1		boss	1		2
-444	GG_Grimm_Nightmare	Godhome	boss_arena	cooked-pack	33	58304	70400	27424	2	152	2	Nightmare Grimm Boss=1|Real Bat=1		boss|text	1		2
-445	GG_Gruz_Mother	Godhome	boss_arena	cooked-pack	21	65640	104512	35471	3	194	1	Giant Fly=1	battle=1	boss	1		2
-446	GG_Hive_Knight	Godhome	boss_arena	cooked-pack	30	72532	105280	37271	3	218	1	Hive Knight=1	breakable=11	boss	1		2
-447	GG_Hollow_Knight	Godhome	boss_arena	cooked-pack	12	53060	37344	29304	1	143	1	HK Prime=1	persistent=2|reveal_mask=2	boss|text	1		2
-448	GG_Hornet_1	Godhome	boss_arena	cooked-pack	20	66988	71424	36596	2	184	1	Hornet Boss=1		boss	1		2
-449	GG_Hornet_2	Godhome	boss_arena	cooked-pack	21	62512	71552	32677	2	188	1	Hornet Boss=1		boss	1		2
-450	GG_Lost_Kin	Godhome	boss_arena	cooked-pack	32	64180	71488	31638	2	186	1	Lost Kin=1	conversation=1	boss	1		2
-451	GG_Lurker	Godhome	gameplay	cooked-pack	122	295724	243296	169128	7	435	1	Pale Lurker=1	persistent=4|breakable=2|reveal_mask=2|shiny=2|geo_rock=1|soul_totem=1		1	Room_Colosseum_Spectate	0
-452	GG_Mantis_Lords	Godhome	boss_arena	cooked-pack	24	67496	104480	35853	3	193	6	Mantis Lord S=4|Mantis Lord=2	battle=1	boss	1		2
-453	GG_Mega_Moss_Charger	Godhome	boss_arena	cooked-pack	12	79564	140704	47866	4	301	1	Mega Moss Charger=1		boss	1		2
-454	GG_Nailmasters	Godhome	boss_arena	cooked-pack	24	71344	105216	38913	3	216	2	Mato=1|Oro=1		boss	1		2
-455	GG_Nosk	Godhome	boss_arena	cooked-pack	16	61528	71968	34767	2	201	1	Mimic Spider=1		boss	1		2
-456	GG_Oblobbles	Godhome	boss_arena	cooked-pack	21	72212	105504	40232	3	225	2	Mega Fat Bee=2		boss	1		2
-457	GG_Painter	Godhome	boss_arena	cooked-pack	24	74044	104640	40147	3	198	1	Sheo Boss=1		boss	1		2
-458	GG_Pipeway	Godhome	gameplay	cooked-pack	28	196828	208768	126946	6	380	25	fluke_baby=14|Fluke Fly=5|Fat Fluke=4|Flukeman=2	breakable=9|persistent=8|breakable_wall=2|geo_rock=1		2	GG_Waterways|Waterways_08	0
-459	GG_Radiance	Godhome	boss_arena	cooked-pack	52	77872	70464	34001	2	154	1	Absolute Radiance=1		boss|text	1		2
-460	GG_Sly	Godhome	boss_arena	cooked-pack	24	61796	71936	32513	2	200	1	Sly Boss=1	breakable=7	boss	1		2
-461	GG_Soul_Master	Godhome	boss_arena	cooked-pack	15	60088	71808	33281	2	196	2	Mage Lord=1|Mage Lord Phase=1	breakable=2	boss	1		2
-462	GG_Soul_Tyrant	Godhome	boss_arena	cooked-pack	25	68644	105216	36806	3	216	3	Dream Mage Lord Phase=2|Dream Mage Lord=1	breakable=5	boss	1		2
-463	GG_Spa	Godhome	boss_arena	cooked-pack	21	72444	104992	41596	3	209	0		persistent=2|bench=1|breakable=1|reveal_mask=1	boss	2		2
-464	GG_Traitor_Lord	Godhome	boss_arena	cooked-pack	20	72420	105824	40551	3	235	1	Mantis Traitor Lord=1	battle=1	boss	1		2
-465	GG_Unlock	Godhome	transition_or_bootstrap_helper	no-envelope							0			text	0		0
-466	GG_Uumuu	Godhome	boss_arena	cooked-pack	65	89236	70784	35134	2	164	1	Mega Jellyfish GG=1		boss	1		2
-467	GG_Vengefly	Godhome	boss_arena	cooked-pack	16	54104	70464	28879	2	154	1	Giant Buzzer Col=1		boss	1		2
-468	GG_Watcher_Knights	Godhome	boss_arena	cooked-pack	36	79940	105088	40982	3	212	6	Black Knight=6	battle=1	boss	1		2
-469	GG_White_Defender	Godhome	boss_arena	cooked-pack	24	73312	71776	38143	2	195	1	White Defender=1		boss	1		2
-470	GG_Workshop	Godhome	gameplay	cooked-pack	90	172416	209504	88529	6	403	0		boss_statue=37|inspect=37|reveal_mask=8|persistent=5|conversation=3|breakable_wall=2|bench=1		38	GG_Atrium	37
-471	Room_GG_Shortcut	Godhome	gameplay	cooked-pack	48	143624	244032	84049	7	458	5	Fungoon Baby=5	breakable=11|reveal_mask=5|persistent=3|geo_rock=2|breakable_wall=1|conversation=1		2	GG_Waterways|Ruins1_04	0
-472	GG_End_Sequence	Godhome	gameplay	cooked-pack	6	34548	35328	17614	1	80	0				0		0
-473	GG_Atrium_Roof	Godhome	gameplay	cooked-pack	119	190676	208192	84466	6	362	0		persistent=8|reveal_mask=6|bench=1|boss_door=1|breakable_wall=1|door=1|switch=1		5	GG_Atrium|GG_Land_of_Storms	2
-474	GG_Blue_Room	Godhome	gameplay	cooked-pack	21	53860	70432	27204	2	153	0		breakable=2|persistent=1|reveal_mask=1		1	GG_Atrium	0
-475	GG_Engine	Godhome	boss_arena	cooked-pack	21	49496	36416	23860	1	114	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
-476	GG_Engine_Prime	Godhome	boss_arena	cooked-pack	21	50404	36608	25160	1	120	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
-477	GG_Engine_Root	Godhome	boss_arena	cooked-pack	21	50848	36960	25060	1	131	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
-478	GG_Mage_Knight	Godhome	boss_arena	cooked-pack	30	65008	71328	32414	2	181	1	Mage Knight=1	breakable=2	boss	1		2
-479	GG_Vengefly_V	Godhome	boss_arena	cooked-pack	16	54104	70464	28879	2	154	2	Giant Buzzer Col=2		boss	1		2
-480	GG_Entrance_Cutscene	Godhome	gameplay	no-envelope							0		conversation=1		0		1
-481	GG_Mighty_Zote	Godhome	boss_arena	cooked-pack	21	61676	71712	32588	2	193	19	Zote Crew Normal=4|Zote Crew Fat=3|Ordeal Zoteling=2|Zote Crew Tall=2|Zote Turret=2|Zote Balloon=1|Zote Balloon Ordeal=1|Zote Boss=1|Zote Fluke=1|Zote Salubra=1|Zote Thwomp=1	breakable=4	boss|text	1		2
-482	GG_Land_of_Storms	Godhome	gameplay	cooked-pack	75	110712	105376	53553	3	221	0		door=1|persistent=1|shiny=1		1	GG_Atrium_Roof	2
-483	GG_Boss_Door_Entrance	Godhome	gameplay	no-envelope							0		conversation=1		0		1
-484	GG_Gruz_Mother_V	Godhome	boss_arena	cooked-pack	21	65836	71392	35062	2	183	1	Giant Fly=1	battle=1	boss	1		2
-485	GG_Brooding_Mawlek_V	Godhome	boss_arena	cooked-pack	8	60008	104768	36529	3	202	1	Mawlek Body=1		boss	1		2
-486	GG_Mantis_Lords_V	Godhome	boss_arena	cooked-pack	24	67496	104480	35858	3	193	8	Mantis Lord S=6|Mantis Lord=2	battle=1	boss	1		2
-487	GG_Nosk_Hornet	Godhome	boss_arena	cooked-pack	16	55092	70688	29719	2	161	1	Hornet Nosk=1	battle=1	boss	1		2
-488	GG_Uumuu_V	Godhome	boss_arena	cooked-pack	65	88572	70592	34774	2	158	1	Mega Jellyfish GG=1		boss	1		2
-489	GG_Ghost_Gorb_V	Godhome	boss_arena	cooked-pack	66	81608	70496	33702	2	155	1	Ghost Warrior Slug=1		boss	1		2
-490	GG_Ghost_Markoth_V	Godhome	boss_arena	cooked-pack	6	51840	71136	30376	2	175	1	Ghost Warrior Markoth=1		boss	1		2
-491	GG_Ghost_Marmu_V	Godhome	boss_arena	cooked-pack	24	71136	72032	37259	2	203	1	Ghost Warrior Marmu=1		boss	1		2
-492	GG_Ghost_No_Eyes_V	Godhome	boss_arena	cooked-pack	18	70880	105408	40052	3	222	1	Ghost Warrior No Eyes=1		boss	1		2
-493	GG_Ghost_Xero_V	Godhome	boss_arena	cooked-pack	12	50616	70240	27643	2	147	1	Ghost Warrior Xero=1		boss	1		2
-494	GG_Mage_Knight_V	Godhome	boss_arena	cooked-pack	30	65008	71328	32414	2	181	37	Mage Balloon Spawner=36|Mage Knight=1	breakable=2|battle=1	boss	1		2
-495	GG_Collector_V	Godhome	boss_arena	cooked-pack	40	76708	104864	37767	3	205	1	Jar Collector=1		boss	1		2
-496	GG_Nosk_V	Godhome	boss_arena	cooked-pack	16	62192	72032	35338	2	203	1	Mimic Spider=1		boss	1		2
-497	GG_Wyrm	Godhome	boss_arena	cooked-pack	21	71908	138400	39718	4	229	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
-498	GG_Unn	Godhome	boss_arena	cooked-pack	21	53920	70208	27518	2	146	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
-499	GG_Door_5_Finale	Cinematics and openings	cinematic	cooked-pack	21	48888	36320	23670	1	111	0				0		1
-500	GG_Unlock_Wastes	Godhome	gameplay	cooked-pack	12	61716	138944	37070	4	246	0		conversation=1|inspect=1		1		1
+index	scene	area	dlc	role	status	views	ram_bytes	vram_bytes	disc_bytes	pages	palettes	enemies	families	interactables	flags	gates	exits	scripted_loads
+0	Pre_Menu_Intro	Menus, helpers and tests		transition_or_bootstrap_helper	no-envelope							0			text	0		0
+1	Menu_Title	Menus, helpers and tests		menu	no-envelope							0			text	0		0
+2	Quit_To_Menu	Menus, helpers and tests		transition_or_bootstrap_helper	no-envelope							0				0		0
+3	BetaEnd	Menus, helpers and tests		transition_or_bootstrap_helper	no-envelope							0				0		0
+4	Knight_Pickup	Menus, helpers and tests		shared_player_prefab_scene	no-envelope							0				0		2
+5	Opening_Sequence	Cinematics and openings		gameplay	no-envelope							0			text	0		0
+6	Tutorial_01	King's Pass		gameplay	playable	84	316892	623968	180977	18	1067	7	Buzzer=3|Crawler=3|Crawler Fixed=1	breakable=43|persistent=24|reveal_mask=8|geo_rock=5|breakable_wall=1|chest=1|conversation=1|shiny=1	text	3	Cliffs_02|Town	1
+7	Town	Dirtmouth		gameplay	playable	72	117812	209440	59266	6	401	0		conversation=10|persistent=8|door=7|breakable=4|shiny=2|bench=1|inspect=1|lift=1|switch=1		12	Cliffs_02|Crossroads_01|Grimm_Divine|Grimm_Tent|Mines_10|Room_Ouiji|Room_mapper|Tutorial_01	7
+8	Cinematic_Stag_travel	Cinematics and openings		cinematic	no-envelope							0				0		0
+9	Room_Town_Stag_Station	Interior rooms		gameplay	cooked-pack	9	56208	71584	30306	2	189	0		breakable=1|conversation=1|door=1|lift=1|persistent=1|stag=1|switch=1		2	Town	2
+10	Room_Charm_Shop	Interior rooms		gameplay	cooked-pack	4	35176	35488	18341	1	85	0		shop=2|conversation=1	text	1	Crossroads_04	0
+11	Room_Mender_House	Interior rooms		gameplay	cooked-pack	4	35084	35392	18242	1	82	0		conversation=1		1	Crossroads_04	0
+12	Room_mapper	Interior rooms		gameplay	cooked-pack	4	35264	35552	18449	1	87	0		shop=2|conversation=1	text	1	Town	0
+13	Room_nailmaster	Interior rooms		gameplay	cooked-pack	12	49080	70016	26216	2	140	0		persistent=3|reveal_mask=3|conversation=2|bench=1		1	Cliffs_02	0
+14	Room_nailmaster_02	Interior rooms		gameplay	cooked-pack	9	40232	36032	20923	1	102	0		conversation=4		1	Fungus1_15	0
+15	Room_nailmaster_03	Interior rooms		gameplay	cooked-pack	9	39408	35904	20189	1	98	0		breakable=4|conversation=1		1	Deepnest_East_06	0
+16	Room_nailsmith	Interior rooms		gameplay	cooked-pack	4	35060	35456	18120	1	84	0		conversation=1		1	Ruins1_04	0
+17	Room_shop	Interior rooms		gameplay	playable	6	36104	35552	18595	1	87	0		shop=2|conversation=1|door=1	text	2	Town	1
+18	Room_Sly_Storeroom	Interior rooms		gameplay	cooked-pack	15	51932	70784	27175	2	164	0		breakable=6|shop=2|conversation=1|door=1	text	2	Room_shop	1
+19	Room_temple	Interior rooms		gameplay	cooked-pack	9	44168	36224	22983	1	108	0		breakable=7|conversation=2|door=1|persistent=1		2	Crossroads_02	1
+20	Room_ruinhouse	Interior rooms		gameplay	cooked-pack	4	34120	35392	17749	1	82	0		conversation=1		1	Crossroads_04	0
+21	Room_Mask_Maker	Interior rooms		gameplay	cooked-pack	6	42632	36704	22831	1	123	0		conversation=1		1	Deepnest_42	0
+22	Room_Mansion	Interior rooms		gameplay	cooked-pack	6	38380	35968	19917	1	100	0		breakable=1|conversation=1|persistent=1		1	RestingGrounds_12	0
+23	Room_Tram	Tram		gameplay	cooked-pack	6	38520	36128	20092	1	105	0		breakable=5|persistent=2|bench=1|door=1		1		1
+24	Room_Tram_RG	Tram		gameplay	cooked-pack	6	38440	36064	20021	1	103	0		breakable=5|persistent=2|bench=1|door=1		1		1
+25	Room_Bretta	Interior rooms		gameplay	cooked-pack	4	35832	35776	18734	1	94	0		conversation=1|door=1|persistent=1		2	Town	1
+26	Room_Bretta_Basement	Interior rooms		gameplay	cooked-pack	4	36672	35904	19248	1	98	0		door=1		3	Room_Bretta	2
+27	Room_Fungus_Shaman	Interior rooms		gameplay	cooked-pack	21	95612	172544	55423	5	272	7	Mosquito=7	breakable=7|persistent=3|battle=1|breakable_wall=1|geo_rock=1|reveal_mask=1		1	Fungus3_44	0
+28	Room_Ouiji	Interior rooms		gameplay	cooked-pack	9	47524	37248	25393	1	140	0		breakable=8|conversation=1		1	Town	0
+29	Room_Jinn	Interior rooms		gameplay	cooked-pack	9	44820	69856	23932	2	135	0		conversation=2		1	Town	0
+30	Room_Colosseum_01	Colosseum of Fools		gameplay	cooked-pack	9	47088	70304	25328	2	149	0		conversation=4		3	Deepnest_East_09|Room_Colosseum_02	0
+31	Room_Colosseum_02	Colosseum of Fools		gameplay	cooked-pack	40	90740	172064	47062	5	257	0		reveal_mask=4|persistent=3|conversation=2|bench=1|breakable_wall=1		2	Room_Colosseum_01|Room_Colosseum_Spectate	0
+32	Room_Colosseum_Bronze	Colosseum of Fools		gameplay	cooked-pack	21	72764	105344	39803	3	220	1	Giant Buzzer Col=1	persistent=2|battle=1|reveal_mask=1|shiny=1		2	Room_Colosseum_01	0
+33	Room_Colosseum_Silver	Colosseum of Fools		gameplay	cooked-pack	21	72576	105344	39713	3	220	3	Mega Fat Bee=2|Colosseum_Miner=1	persistent=2|battle=1|reveal_mask=1|shiny=1		2	Room_Colosseum_01	0
+34	Room_Colosseum_Gold	Colosseum of Fools		gameplay	cooked-pack	21	79568	105504	43705	3	225	26	Mage Balloon Spawner=9|Mage=6|Electric Mage New=4|Mage Blob=3|Mage Knight=2|Lancer=1|Lobster=1	persistent=4|battle=1|reveal_mask=1|shiny=1	text	2	Room_Colosseum_01	0
+35	Room_Colosseum_Spectate	Colosseum of Fools		gameplay	cooked-pack	24	69316	104736	37526	3	201	1	Colosseum_Miner=1	persistent=2|breakable_wall=1|reveal_mask=1		2	GG_Lurker|Room_Colosseum_02	0
+36	Room_Slug_Shrine	Interior rooms		gameplay	cooked-pack	4	38548	36608	21059	1	120	0		bench=1|conversation=1		1	Fungus1_26	0
+37	Crossroads_01	Forgotten Crossroads		gameplay	playable	20	103960	245408	63161	7	501	8	Climber=2|Zombie Runner=2|Angry Buzzer=1|Bursting Zombie=1|Crawler=1|Mender Bug=1	breakable=24|persistent=6|bench=1|door=1|geo_rock=1|reveal_mask=1|shiny=1		5	Crossroads_02|Crossroads_07|Town|bot1	1
+38	Crossroads_02	Forgotten Crossroads		gameplay	playable	12	62364	105568	35484	3	227	0		breakable=26|door=1		3	Crossroads_01|Crossroads_39	1
+39	Crossroads_03	Forgotten Crossroads		gameplay	playable	12	100556	210976	62081	6	449	10	Angry Buzzer=3|Buzzer=2|Climber=2|Spitter=2|Crawler=1	breakable=18|persistent=6|toll_gate=2|grub=1|reveal_mask=1		6	Crossroads_15|Crossroads_16|Crossroads_19|Crossroads_21|Crossroads_47|Mines_33	0
+40	Crossroads_04	Forgotten Crossroads		gameplay	playable	21	109972	243392	64663	7	438	16	Fly=7|Bursting Zombie=2|Spitting Zombie=2|Angry Buzzer=1|Giant Fly=1|Zombie Barger=1|Zombie Hornhead=1|Zombie Runner=1	breakable=24|persistent=13|door=3|reveal_mask=2|battle=1|bench=1|breakable_wall=1|conversation=1		6	Crossroads_19|Crossroads_27|Crossroads_50|Room_ruinhouse	3
+41	Crossroads_05	Forgotten Crossroads		gameplay	playable	8	78928	141536	47326	4	327	11	Crawler=3|Angry Buzzer=2|Bursting Zombie=2|Climber=2|Buzzer=1|Zombie Runner=1	breakable=19|persistent=6|geo_rock=1|grub=1		2	Crossroads_07|Crossroads_40	0
+42	Crossroads_06	Forgotten Crossroads		gameplay	playable	15	82584	173472	47509	5	301	0		breakable=22|persistent=2|door=1|switch=1		3	Crossroads_10|Crossroads_33	1
+43	Crossroads_07	Forgotten Crossroads		gameplay	playable	16	113228	210016	68476	6	419	23	Fly=9|Climber=7|Bursting Bouncer=6|Crawler=1	persistent=39|breakable=28|geo_rock=3|breakable_wall=1|reveal_mask=1		6	Crossroads_01|Crossroads_05|Crossroads_11_alt|Crossroads_25|Crossroads_33|Crossroads_38	0
+44	Crossroads_08	Forgotten Crossroads		gameplay	playable	12	91076	208928	55406	6	385	6	Spitter=4|Bursting Zombie=1|Spitting Zombie=1	breakable=15|persistent=5|geo_rock=4|battle=1|reveal_mask=1		4	Crossroads_13|Crossroads_18|Crossroads_30|Crossroads_33	0
+45	Crossroads_09	Forgotten Crossroads		gameplay	playable	8	62916	105152	36411	3	214	1	Mawlek Body=1	persistent=4|battle=1|breakable_wall=1		2	Crossroads_33|Crossroads_36	0
+46	Crossroads_10	Forgotten Crossroads		gameplay	playable	20	144228	277824	85922	8	490	0		breakable=36|persistent=3|breakable_wall=1|chest=1|conversation=1|door=1|geo_rock=1|reveal_mask=1|shiny=1	text	3	Crossroads_06|Crossroads_21	1
+47	Crossroads_10_preload	Forgotten Crossroads		transition_or_bootstrap_helper	no-envelope							0				0		0
+48	Crossroads_10_boss	Forgotten Crossroads		gameplay	no-envelope							5	False Knight New=1|Head=1|Zombie Barger=1|Zombie Hornhead=1|Zombie Runner=1	persistent=4|battle=1		0		0
+49	Crossroads_10_boss_defeated	Forgotten Crossroads		additive_boss_defeated_variant	no-envelope							2	Prayer Slug=2	breakable=8|persistent=2		0		1
+50	Crossroads_11_alt	Forgotten Crossroads		gameplay	playable	18	117428	244896	70718	7	485	3	Angry Buzzer=2|Blocker=1	breakable=8|persistent=4|inspect=1		2	Crossroads_07|Fungus1_01	0
+51	Crossroads_12	Forgotten Crossroads		gameplay	playable	8	81840	141440	49595	4	324	1	Angry Buzzer=1	breakable=7|geo_rock=1|persistent=1		2	Crossroads_33|Crossroads_35	0
+52	Crossroads_13	Forgotten Crossroads		gameplay	playable	16	128404	212128	79795	6	485	5	Angry Buzzer=2|Bursting Zombie=1|Buzzer=1|Zombie Barger=1	breakable=21|persistent=6|geo_rock=2|breakable_wall=1		2	Crossroads_08|Crossroads_42	0
+53	Crossroads_14	Forgotten Crossroads		gameplay	playable	8	68936	140416	41210	4	292	1	Angry Buzzer=1	breakable=7|persistent=1		4	Crossroads_16|Crossroads_39|Crossroads_45|Crossroads_48	0
+54	Crossroads_15	Forgotten Crossroads		gameplay	playable	6	54072	71712	31655	2	193	4	Spitting Zombie=2|Zombie Shield=2	breakable=15|persistent=4		2	Crossroads_03|Crossroads_27	0
+55	Crossroads_16	Forgotten Crossroads		gameplay	playable	12	75760	141376	44552	4	322	7	Angry Buzzer=3|Buzzer=3|Zombie Hornhead=1	breakable=17|persistent=4|geo_rock=1		3	Crossroads_03|Crossroads_14|Crossroads_40	0
+56	Crossroads_18	Forgotten Crossroads		gameplay	playable	8	101628	211008	63965	6	450	0		breakable=17|geo_rock=3|persistent=3|reveal_mask=2|breakable_wall=1|soul_totem=1		3	Crossroads_08|Crossroads_52|Fungus2_06	0
+57	Crossroads_19	Forgotten Crossroads		gameplay	playable	12	92716	176512	56440	5	396	19	Hatcher Baby Spawner=15|Hatcher=1|Spitter=1|Zombie Leaper=1|Zombie Runner=1	breakable=14|persistent=4|geo_rock=1|soul_totem=1		4	Crossroads_03|Crossroads_04|Crossroads_42|Crossroads_43	0
+58	Crossroads_21	Forgotten Crossroads		gameplay	playable	15	101892	208352	60635	6	367	9	Angry Buzzer=2|Zombie Barger=2|Bursting Zombie=1|Spitting Zombie=1|Zombie Guard=1|Zombie Leaper=1|Zombie Runner=1	breakable=24|persistent=13|reveal_mask=3|breakable_wall=2|geo_rock=1		4	Crossroads_03|Crossroads_10|Crossroads_22	0
+59	Crossroads_22	Forgotten Crossroads		gameplay	playable	15	116432	176544	73209	5	397	40	Hatcher Baby Spawner=23|Spitter=12|Hatcher NP=4|Hatcher=1	breakable=14|persistent=3|battle=1|shiny=1		1	Crossroads_21	0
+60	Crossroads_25	Forgotten Crossroads		gameplay	playable	12	70980	140000	41568	4	279	4	Fly=3|Bursting Bouncer=1	breakable=3|persistent=2|soul_totem=1		2	Crossroads_07|Crossroads_36	0
+61	Crossroads_27	Forgotten Crossroads		gameplay	playable	10	88244	175808	54796	5	374	18	Hatcher Baby Spawner=15|Hatcher=3	breakable=17|persistent=4|geo_rock=1		4	Crossroads_04|Crossroads_15|Crossroads_31|Crossroads_46	0
+62	Crossroads_30	Forgotten Crossroads		gameplay	playable	6	56952	105536	34043	3	226	0		bench=1		1	Crossroads_08	0
+63	Crossroads_31	Forgotten Crossroads		gameplay	playable	6	63816	105504	36986	3	225	0		breakable=8|grub=1|persistent=1		1	Crossroads_27	0
+64	Crossroads_33	Forgotten Crossroads		gameplay	playable	12	91128	176000	54745	5	380	0		breakable=11|conversation=2|persistent=1		5	Crossroads_06|Crossroads_07|Crossroads_08|Crossroads_09|Crossroads_12	0
+65	Crossroads_35	Forgotten Crossroads		gameplay	playable	24	110120	244256	66857	7	465	17	Hatcher Baby Spawner=15|Hatcher=2	breakable=10|persistent=5|grub=1|reveal_mask=1|soul_totem=1		2	Crossroads_12|Fungus3_26	0
+66	Crossroads_36	Forgotten Crossroads		gameplay	playable	12	116296	209632	71635	6	407	0		persistent=7|breakable=2|breakable_wall=2|reveal_mask=2|geo_rock=1|soul_totem=1		2	Crossroads_09|Crossroads_25	0
+67	Crossroads_37	Forgotten Crossroads		gameplay	playable	15	100432	174688	61004	5	339	14	Zombie Barger=6|Zombie Hornhead=4|Zombie Leaper=2|Zombie Runner=2	persistent=19|breakable=9|reveal_mask=3|breakable_wall=1|geo_rock=1		1	Crossroads_49	0
+68	Crossroads_38	Forgotten Crossroads		gameplay	playable	6	58676	105408	34621	3	222	0		persistent=13|shiny=6		1	Crossroads_07	0
+69	Crossroads_39	Forgotten Crossroads		gameplay	playable	8	66860	140032	39012	4	280	6	Bursting Zombie=2|Zombie Runner=2|Spitting Zombie=1|Zombie Hornhead=1	breakable=27|persistent=6		2	Crossroads_02|Crossroads_14	0
+70	Crossroads_40	Forgotten Crossroads		gameplay	playable	8	73192	106560	41948	3	258	9	Bursting Zombie=2|Spitting Zombie=2|Zombie Leaper=2|Fly=1|Zombie Hornhead=1|Zombie Runner=1	breakable=10|persistent=8		2	Crossroads_05|Crossroads_16	0
+71	Crossroads_42	Forgotten Crossroads		gameplay	playable	10	106544	244320	66623	7	467	7	Buzzer=4|Angry Buzzer=3	breakable=23|persistent=3|geo_rock=2		2	Crossroads_13|Crossroads_19	0
+72	Crossroads_43	Forgotten Crossroads		gameplay	playable	8	75804	106528	43689	3	257	3	Spitter=2|Zombie Shield=1	breakable=21|persistent=1		2	Crossroads_19|Crossroads_49	0
+73	Crossroads_45	Forgotten Crossroads		gameplay	playable	16	85180	139712	49791	4	270	1	Zombie Myla=1	breakable=15|conversation=2|persistent=2|lift=1|soul_totem=1		2	Crossroads_14|Mines_01	0
+74	Crossroads_46	Forgotten Crossroads		gameplay	playable	6	57636	104992	33416	3	209	0		reveal_mask=2|breakable=1|conversation=1|door=1|geo_rock=1|tram=1		2	Crossroads_27	1
+75	Crossroads_46b	Forgotten Crossroads		gameplay	playable	6	55900	104608	32128	3	197	0		breakable=1|conversation=1|door=1|tram=1		2	RestingGrounds_02	1
+76	Crossroads_ShamanTemple	Forgotten Crossroads		gameplay	playable	42	220956	316768	137683	9	683	17	Roller=11|Buzzer=3|Blocker=1|Climber=1|Zombie Runner=1	persistent=55|breakable=47|geo_rock=4|conversation=3|reveal_mask=2|soul_totem=2|bench=1|gate=1|shiny=1		1	Crossroads_06	0
+77	Crossroads_47	Forgotten Crossroads		gameplay	playable	6	48128	70976	26658	2	170	0		breakable=3|conversation=2|bench=1|door=1|stag=1		2	Crossroads_03	2
+78	Crossroads_48	Forgotten Crossroads		gameplay	playable	6	53812	104736	30507	3	201	1	Zombie Guard=1	breakable=5|persistent=2|grub=1		1	Crossroads_14	0
+79	Crossroads_49	Forgotten Crossroads		gameplay	playable	24	56888	70016	26486	2	140	0		breakable=2|door=2		3	Crossroads_37|Crossroads_43	1
+80	Crossroads_49b	Forgotten Crossroads		gameplay	playable	12	49892	70528	26271	2	156	0		door=2		3	Fungus2_07|Ruins1_28	1
+81	Crossroads_50	Forgotten Crossroads		gameplay	playable	55	137052	244512	75195	7	473	6	Buzzer=3|Climber=1|Crawler=1|Egg Sac=1	conversation=2|persistent=1		2	Crossroads_04|RestingGrounds_06	0
+82	Crossroads_52	Forgotten Crossroads		gameplay	playable	15	61680	105184	34655	3	215	0		persistent=3|geo_rock=2|reveal_mask=2|breakable=1|breakable_wall=1|conversation=1		1	Crossroads_18	0
+83	Ruins_House_01	City of Tears		gameplay	cooked-pack	6	39596	36256	20776	1	109	1	Great Shield Zombie=1	breakable=3|persistent=2|grub=1		1	Ruins2_04	0
+84	Ruins_House_02	City of Tears		gameplay	cooked-pack	6	41932	36384	22340	1	113	5	Royal Zombie Coward=2|Gorgeous Husk=1|Royal Zombie=1|Royal Zombie Fat=1	persistent=9|breakable=6|reveal_mask=1		1	Ruins2_04	0
+85	Ruins_House_03	City of Tears		gameplay	cooked-pack	15	57400	71040	30930	2	172	0		persistent=3|breakable=2|conversation=1|switch=1		2	Ruins2_04|Waterways_07	0
+86	Ruins_Elevator	City of Tears		gameplay	cooked-pack	55	99112	138720	46907	4	239	0		breakable=19|persistent=11|reveal_mask=6|shiny=2|breakable_wall=1|conversation=1|geo_rock=1|inspect=1|lever=1|lift=1		2	Ruins2_04|Ruins_Bathhouse	0
+87	Ruins_Bathhouse	City of Tears		gameplay	cooked-pack	16	80524	173984	46528	5	317	0		reveal_mask=4|persistent=3|conversation=2|bench=1|breakable_wall=1|door=1		2	Ruins2_10b|Ruins_Elevator	1
+88	Ruins1_01	City of Tears		gameplay	cooked-pack	18	97536	173632	54436	5	306	6	Ceiling Dropper=2|Ruins Sentry=1|Zombie Barger=1|Zombie Hornhead=1|Zombie Leaper=1	breakable=31|persistent=6		3	Fungus2_21|Ruins1_02|Ruins1_17	0
+89	Ruins1_02	City of Tears		gameplay	cooked-pack	18	107244	208384	60494	6	368	2	Ruins Sentry=2	breakable=32|persistent=4|bench=1|conversation=1|inspect=1|lever=1|lift=1|reveal_mask=1		2	Ruins1_01|Ruins1_03	0
+90	Ruins1_03	City of Tears		gameplay	cooked-pack	35	167148	280512	94950	8	574	12	Ruins Sentry=4|Ruins Flying Sentry=3|Buzzer=2|Zombie Hornhead=2|Zombie Leaper=1	breakable=40|persistent=12|geo_rock=1|inspect=1|lever=1|lift=1|shiny=1		4	Ruins1_02|Ruins1_04|Ruins1_05b|Ruins1_05c	0
+91	Ruins1_04	City of Tears		gameplay	cooked-pack	35	130152	177088	77991	5	414	6	Buzzer=3|Ruins Sentry=1|Zombie Barger=1|Zombie Runner=1	breakable=23|persistent=4|reveal_mask=3|breakable_wall=1|conversation=1|door=1		3	Room_GG_Shortcut|Room_nailmsith|Ruins1_03	1
+92	Ruins1_05	City of Tears		gameplay	cooked-pack	37	140380	244224	76511	7	464	9	Ruins Flying Sentry=2|Ceiling Dropper=1|Ruins Flying Sentry Javelin=1|Ruins Flying SentryB=1|Ruins Sentry Fat B=1|Ruins Sentry FatB=1|Ruins SentryB=1|Zombie Hornhead=1	breakable=29|persistent=11|battle=1|grub=1|lever=1|lift=1|switch=1|toll_gate=1		6	Ruins1_05c|Ruins1_09|Ruins1_18|Ruins1_31	0
+93	Ruins1_05b	City of Tears		gameplay	cooked-pack	9	74776	173696	43093	5	308	0		breakable=13|conversation=3|reveal_mask=3|persistent=2|shop=2|door=1|geo_rock=1|lever=1|lift=1|switch=1|toll_gate=1	text	4	Ruins1_03|Ruins1_05c|Ruins1_27|Waterways_01	0
+94	Ruins1_05c	City of Tears		gameplay	cooked-pack	34	156816	311808	87983	9	528	11	Ceiling Dropper=3|Buzzer=2|Ruins Sentry=2|Ruins Sentry Fat=2|Ruins Flying Sentry Javelin=1|Zombie Barger=1	breakable=33|persistent=15|toll_gate=4|reveal_mask=2|switch=2|geo_rock=1|lever=1|lift=1|shiny=1		5	Ruins1_03|Ruins1_05|Ruins1_05b	0
+95	Ruins1_06	City of Tears		gameplay	cooked-pack	15	88928	139232	48411	4	255	0		breakable=22|conversation=1		2	Ruins1_17|Ruins1_31	0
+96	Ruins1_09	City of Tears		gameplay	cooked-pack	12	55708	71168	29642	2	176	1	Mage=1	breakable=8|persistent=2|battle=1		2	Ruins1_05|Ruins1_23	0
+97	Ruins1_17	City of Tears		gameplay	cooked-pack	24	123872	242080	69371	7	397	8	Ruins Flying Sentry=2|Ruins Flying Sentry Javelin=2|Buzzer=1|Ruins Sentry=1|Zombie Hornhead=1|Zombie Leaper=1	persistent=44|breakable=33|reveal_mask=6|shiny=1|switch=1|toll_gate=1		3	Ruins1_01|Ruins1_06|Ruins1_28	0
+98	Ruins1_18	City of Tears		gameplay	cooked-pack	12	79780	106112	43620	3	244	0		breakable=16|bench=1|persistent=1|switch=1|toll_gate=1		3	Ruins1_05|Ruins2_01|Ruins2_03b	0
+99	Ruins1_23	City of Tears		gameplay	cooked-pack	21	117448	241856	66379	7	390	7	Mage Blob=4|Mage=2|Mage Knight=1	breakable=29|persistent=10|lever=2|lift=2|switch=2|toll_gate=2|battle=1|inspect=1		5	Ruins1_09|Ruins1_25|Ruins1_30|Ruins1_31	0
+100	Ruins1_30	City of Tears		gameplay	cooked-pack	20	136428	242336	79129	7	405	16	Mage Blob=9|Mage Balloon=4|Mage=3	breakable=51|persistent=19|reveal_mask=7|breakable_wall=3|shiny=1|switch=1|toll_gate=1		4	Ruins1_23|Ruins1_24|Ruins1_25	0
+101	Ruins1_24	City of Tears		gameplay	cooked-pack	20	119352	243744	70823	7	449	0		persistent=5|breakable=3|door=1|reveal_mask=1|soul_totem=1		5	Ruins1_30|Ruins1_32	1
+102	Ruins1_24_boss	City of Tears		gameplay	no-envelope							2	Mage Lord=1|Mage Lord Phase=1			0		0
+103	Ruins1_24_boss_defeated	City of Tears		additive_boss_defeated_variant	no-envelope							0		conversation=1		0		1
+104	Ruins1_25	City of Tears		gameplay	cooked-pack	16	111412	208128	63706	6	360	7	Mage Blob=5|Mage=2	breakable=25|persistent=6|lever=1|lift=1|switch=1|toll_gate=1		3	Ruins1_23|Ruins1_30	0
+105	Ruins1_27	City of Tears		gameplay	cooked-pack	16	81940	174112	46417	5	321	4	Royal Zombie=2|Royal Zombie Coward=2	breakable=9|persistent=6|conversation=2|reveal_mask=1|switch=1|toll_gate=1	text	2	Ruins1_05b|Ruins2_01_b	0
+106	Ruins1_28	City of Tears		gameplay	cooked-pack	18	119264	210624	67460	6	438	4	Zombie Runner=2|Ruins Flying Sentry=1|Zombie Barger=1	breakable=67|persistent=7|shiny=1		3	Crossroads_49b|Ruins1_17|Ruins1_29	0
+107	Ruins1_29	City of Tears		gameplay	cooked-pack	6	53996	71584	29937	2	189	0		breakable=9|bench=1|conversation=1|door=1|stag=1	text	2	Ruins1_28	2
+108	Ruins1_31	City of Tears		gameplay	cooked-pack	18	88960	174560	49225	5	335	0		breakable=8|persistent=6|conversation=3|bench=1|breakable_wall=1|door=1|lever=1|lift=1|reveal_mask=1|toll_gate=1		5	Ruins1_05|Ruins1_06|Ruins1_23|Ruins1_31b	0
+109	Ruins1_31b	City of Tears		gameplay	cooked-pack	18	77128	140736	42541	4	302	25	Mage Balloon Spawner=24|Mage Knight=1	breakable=7|persistent=2|battle=1|switch=1|toll_gate=1		2	Ruins1_31	0
+110	Ruins1_32	City of Tears		gameplay	cooked-pack	24	136580	242880	80916	7	422	28	Mage Blob=16|Mage Balloon=12	breakable=24|persistent=18|breakable_wall=7|reveal_mask=3|soul_totem=2|switch=2|toll_gate=2|chest=1|geo_rock=1|grub=1|inspect=1|shiny=1		2	Ruins1_24	0
+111	Ruins2_01	City of Tears		gameplay	cooked-pack	28	106468	174208	58100	5	324	13	Royal Zombie Coward=3|Royal Zombie=2|Royal Zombie Fat=2|Ruins Flying Sentry Javelin=2|Great Shield Zombie=1|Ruins Flying Sentry=1|Ruins Sentry=1|Ruins Sentry Fat=1	breakable=32|persistent=18|reveal_mask=2|switch=2|toll_gate=2|battle=1|geo_rock=1		3	Ruins1_18|Ruins2_01_b|Ruins2_03b	0
+112	Ruins2_01_b	City of Tears		gameplay	cooked-pack	16	82160	139680	44833	4	269	4	Royal Zombie Fat=2|Royal Zombie=1|Royal Zombie Coward=1	breakable=15|persistent=8|lever=2|lift=2|battle=1|breakable_wall=1		3	Ruins1_27|Ruins2_01|Ruins2_04	0
+113	Ruins2_03	City of Tears		gameplay	cooked-pack	36	122236	174784	65151	5	342	2	Great Shield Zombie=1|Ruins Flying Sentry Javelin=1	breakable=22|persistent=9|reveal_mask=8|battle=1|breakable_wall=1|chest=1|grub=1|lever=1|lift=1|shiny=1		3	Ruins2_03b|Ruins2_Watcher_Room	0
+114	Ruins2_03b	City of Tears		gameplay	cooked-pack	36	96348	139584	48528	4	266	7	Royal Zombie=2|Ruins Flying Sentry=2|Great Shield Zombie bottom=1|Royal Zombie Coward=1|Royal Zombie Fat=1	breakable=19|persistent=9|battle=1|lever=1|lift=1		4	Ruins1_18|Ruins2_01|Ruins2_03	0
+115	Ruins2_03_boss	City of Tears		gameplay	no-envelope							6	Black Knight=6	battle=1|persistent=1		0		0
+116	Ruins2_04	City of Tears		gameplay	cooked-pack	35	139880	176224	75694	5	387	10	Great Shield Zombie=4|Royal Zombie=2|Royal Zombie Coward=2|Royal Zombie Fat=2	breakable=21|persistent=10|door=4|conversation=1		8	Abyss_01|Ruins2_01_b|Ruins2_06|Ruins_Elevator|Ruins_House_01|Ruins_House_02|Ruins_House_03	4
+117	Ruins2_05	City of Tears		gameplay	cooked-pack	18	109160	208352	61370	6	367	16	Ruins Sentry=4|Royal Zombie=3|Royal Zombie Coward=3|Royal Zombie Fat=3|Ruins Sentry Fat=2|Ruins Flying Sentry=1	persistent=19|breakable=11|lever=2|lift=2|geo_rock=1|shiny=1		3	Ruins2_06|Ruins2_09|Ruins2_10b	0
+118	Ruins2_06	City of Tears		gameplay	cooked-pack	13	124116	142368	68826	4	353	4	Royal Zombie=1|Royal Zombie Fat=1|Ruins Flying Sentry Javelin=1|Zombie Hornhead=1	breakable=34|persistent=6|reveal_mask=2|geo_rock=1		5	Ruins2_04|Ruins2_05|Ruins2_07|Ruins2_08	0
+119	Ruins2_07	City of Tears		gameplay	cooked-pack	12	100496	209824	61036	6	413	5	Ceiling Dropper=3|Buzzer=2	persistent=6|breakable=3|grub=1		3	Deepnest_East_03|Ruins2_06|Ruins2_11_b	0
+120	Ruins2_08	City of Tears		gameplay	cooked-pack	9	63416	105728	35978	3	232	0		breakable=3|bench=1|conversation=1|door=1|persistent=1|shiny=1|stag=1		2	Ruins2_06	2
+121	Ruins2_09	City of Tears		gameplay	cooked-pack	8	71768	140064	43499	4	281	13	Ruins Flying Sentry=3|Ruins Sentry Fat=3|Ruins Flying Sentry Javelin=2|Ruins Sentry=2|Royal Zombie=1|Royal Zombie Coward=1|Royal Zombie Fat=1	breakable=9|persistent=5|battle=1		1	Ruins2_05	0
+122	Ruins2_10	City of Tears		gameplay	cooked-pack	24	55164	70176	26152	2	145	0		door=2|breakable=1		3	RestingGrounds_06|RestingGrounds_10	1
+123	Ruins2_10b	City of Tears		gameplay	cooked-pack	24	81668	139328	44458	4	258	0		breakable=4|door=2		4	Deepnest_East_09|Ruins2_05|Ruins_Bathhouse	1
+124	Ruins2_11	City of Tears		gameplay	cooked-pack	40	103024	173344	53900	5	297	2	Buzzer=2	persistent=19|grub=3|reveal_mask=3|shiny=1		1	Ruins2_11_b	0
+125	Ruins2_11_b	City of Tears		gameplay	cooked-pack	40	82460	103808	37313	3	172	0		persistent=6|reveal_mask=2|toll_gate=2|conversation=1|switch=1		3	Deepnest_East_07|Ruins2_07|Ruins2_11	0
+126	Ruins2_11_boss	City of Tears		gameplay	no-envelope							1	Jar Collector=1	persistent=1		0		0
+127	Ruins2_Watcher_Room	City of Tears		gameplay	cooked-pack	44	115984	174400	58028	5	330	1	Royal Zombie Coward=1	breakable=22|persistent=5|inspect=2|reveal_mask=2|conversation=1|lever=1|lift=1		2	Ruins2_03	1
+128	Fungus1_01	Greenpath		gameplay	playable	24	167572	314528	106679	9	613	16	Pigeon=8|Moss Walker=4|Mossman_Shaker=2|Mossman_Runner=1|Plant Trap=1	breakable=10|persistent=5|geo_rock=1|reveal_mask=1		2	Crossroads_11_alt|Fungus1_01b	0
+129	Fungus1_01b	Greenpath		gameplay	playable	12	96412	208192	60756	6	362	18	Pigeon=18	breakable=4|bench=1|geo_rock=1		2	Fungus1_01|Fungus1_02	0
+130	Fungus1_02	Greenpath		gameplay	playable	21	138352	279488	86080	8	542	2	Mosquito=1|Mossman_Shaker=1	breakable=7|geo_rock=2|persistent=1		3	Fungus1_01b|Fungus1_06|Fungus1_17	0
+131	Fungus1_03	Greenpath		gameplay	cooked-pack	13	125860	243872	77373	7	453	14	Pigeon=5|Moss Walker=4|Zombie Runner=2|Plant Trap=1|Zombie Barger=1|Zombie Hornhead=1	breakable=22|persistent=5|geo_rock=3		3	Fungus1_05|Fungus1_17|Fungus1_31	0
+132	Fungus1_04	Greenpath		gameplay	cooked-pack	20	122824	243264	77612	7	434	0		breakable=7|persistent=5|breakable_wall=1|geo_rock=1|reveal_mask=1|shiny=1	text	2	Fungus1_21|Fungus1_25	0
+133	Fungus1_04_boss	Greenpath		gameplay	no-envelope							1	Hornet Boss=1			0		0
+134	Fungus1_05	Greenpath		gameplay	playable	12	137088	313120	90793	9	569	12	Mosquito=5|Moss Walker=4|Mossman_Shaker=2|Mossman_Runner=1	breakable=6|persistent=3|geo_rock=1		3	Fungus1_03|Fungus1_10|Fungus1_14	0
+135	Fungus1_06	Greenpath		gameplay	playable	24	141836	277152	89118	8	469	7	Mosquito=4|Mossman_Shaker=2|Mossman_Runner=1	breakable=15|persistent=14|conversation=2|reveal_mask=2|grub=1		2	Fungus1_02|Fungus1_07	0
+136	Fungus1_07	Greenpath		gameplay	playable	20	126900	242464	79423	7	409	5	Mosquito=2|Mossman_Runner=2|Moss Walker=1	persistent=9|breakable=4|geo_rock=1|grub=1|reveal_mask=1|soul_totem=1		3	Fungus1_06|Fungus1_08|Fungus1_19	0
+137	Fungus1_08	Greenpath		gameplay	playable	16	112040	242592	69929	7	413	0		persistent=5|breakable_wall=2|conversation=2|shiny=2|inspect=1|reveal_mask=1		1	Fungus1_07	0
+138	Fungus1_09	Greenpath		gameplay	playable	33	164388	209504	97919	6	403	18	Acid Flyer=18	breakable=4|persistent=1		2	Fungus1_15|Fungus1_30	0
+139	Fungus1_10	Greenpath		gameplay	playable	24	167384	279296	100820	8	536	7	Moss Charger=4|Moss Walker=3	breakable=22|persistent=6|geo_rock=1|shiny=1		3	Fungus1_05|Fungus1_19|Fungus1_30	0
+140	Fungus1_11	Greenpath		gameplay	cooked-pack	19	144916	313504	92220	9	581	6	Plant Turret=3|Acid Walker=1|Moss Walker=1|Shell=1	breakable=15|persistent=3|reveal_mask=1|shiny=1		5	Fungus1_19|Fungus1_29|Fungus1_34|Fungus1_37|Fungus3_01	0
+141	Fungus1_12	Greenpath		gameplay	cooked-pack	10	100708	175616	63464	5	368	15	Pigeon=7|Plant Turret=5|Acid Walker=1|Plant Turret Right=1|Shell=1	breakable=6|persistent=4|geo_rock=3|reveal_mask=3|breakable_wall=1		2	Fungus1_13|Fungus1_29	0
+142	Fungus1_13	Greenpath		gameplay	cooked-pack	40	198148	313088	122053	9	568	14	Acid Walker=6|Shell=6|Moss Walker=2	persistent=57|breakable=7|chest=1|grub=1|inspect=1		2	Fungus1_12|Fungus3_22	0
+143	Fungus1_14	Greenpath		gameplay	playable	10	84580	139680	52011	4	269	0		persistent=2|shiny=1		1	Fungus1_05	0
+144	Fungus1_15	Greenpath		gameplay	playable	12	88384	140864	54717	4	306	0		breakable=4|bench=1|door=1|persistent=1|shiny=1		2	Fungus1_09|Room_nailmaster_02	1
+145	Fungus1_16_alt	Greenpath		gameplay	cooked-pack	6	61172	138880	36919	4	244	0		bench=1|breakable=1|conversation=1|door=1|stag=1		2	Fungus1_22	2
+146	Fungus1_17	Greenpath		gameplay	playable	12	107372	176320	66113	5	390	3	Mosquito=2|Moss Charger=1	breakable=6|persistent=3|reveal_mask=2|inspect=1		2	Fungus1_02|Fungus1_03	0
+147	Fungus1_19	Greenpath		gameplay	playable	9	112664	279232	73209	8	534	7	Fat Fly=4|Moss Walker=1|Mossman_Shaker=1|Plant Trap=1	breakable=8|persistent=5|reveal_mask=2|geo_rock=1|inspect=1		3	Fungus1_07|Fungus1_10|Fungus1_11	0
+148	Fungus1_20_v02	Greenpath		gameplay	cooked-pack	16	135880	278432	85794	8	509	8	Buzzer=4|Crawler=2|Climber=1|Giant Buzzer=1	breakable=15		3	Fungus1_21|Fungus1_28|Fungus1_32	0
+149	Fungus1_21	Greenpath		gameplay	cooked-pack	17	165084	346656	107849	10	593	7	Moss Charger=3|Moss Knight=3|Moss Walker=1	breakable=12|persistent=11|geo_rock=3|battle=1|grub=1|inspect=1|reveal_mask=1		4	Fungus1_04|Fungus1_20_v02|Fungus1_22|Fungus1_32	0
+150	Fungus1_22	Greenpath		gameplay	cooked-pack	32	216616	382240	136021	11	681	13	Plant Trap=6|Mossman_Shaker=3|Mosquito=2|Moss Walker=2	breakable=17|persistent=14|reveal_mask=5|geo_rock=2|breakable_wall=1|gate=1|shiny=1|switch=1		3	Fungus1_16_alt|Fungus1_21|Fungus1_30	0
+151	Fungus1_23	Greenpath		gameplay	cooked-pack	21	118892	242912	71996	7	423	13	Grass Hopper=8|Pigeon=5	breakable=4		2	Fungus3_13|Fungus3_48	0
+152	Fungus1_24	Greenpath		gameplay	cooked-pack	21	146208	278176	91200	8	501	7	Pigeon=7	breakable=7|persistent=4|conversation=3|bench=1|breakable_wall=1|reveal_mask=1		1	Fungus3_05	0
+153	Fungus1_25	Greenpath		gameplay	cooked-pack	8	82288	172800	51612	5	280	0		breakable=4		2	Fungus1_04|Fungus1_26	0
+154	Fungus1_26	Greenpath		gameplay	cooked-pack	25	103396	207456	62248	6	339	9	Pigeon=7|Lazy Flyer Enemy=1|Moss Knight=1	breakable=5|persistent=4|reveal_mask=2|door=1		3	Fungus1_25|Fungus1_Slug|Room_Slug_Shrine	1
+155	Fungus1_28	Greenpath		gameplay	cooked-pack	35	198936	415072	126124	12	683	8	Crawler=3|Blocker=2|Climber=2|Buzzer=1	breakable=24|persistent=9|reveal_mask=5|breakable_wall=2|geo_rock=2|chest=1|grub=1|shiny=1		2	Cliffs_01|Fungus1_20_v02	0
+156	Fungus1_29	Greenpath		gameplay	cooked-pack	12	110560	207840	68542	6	351	6	Plant Turret=3|Moss Walker=2|Mega Moss Charger=1	breakable=5|geo_rock=1|persistent=1|soul_totem=1		2	Fungus1_11|Fungus1_12	0
+157	Fungus1_30	Greenpath		gameplay	playable	15	134232	210752	84600	6	442	0		breakable=11|inspect=1|persistent=1|soul_totem=1		4	Fungus1_09|Fungus1_10|Fungus1_22|Fungus1_31	0
+158	Fungus1_31	Greenpath		gameplay	cooked-pack	33	220944	384736	136638	11	759	11	Fat Fly=5|Moss Walker=3|Mossman_Shaker=2|Mossman_Runner=1	breakable=9|persistent=6|geo_rock=3|toll_gate=2|bench=1|breakable_wall=1|reveal_mask=1		3	Fungus1_03|Fungus1_30|Fungus1_32	0
+159	Fungus1_32	Greenpath		gameplay	cooked-pack	18	131580	279136	85336	8	531	3	Moss Knight B=1|Moss Knight C=1|Moss Walker=1	breakable=14|persistent=5|reveal_mask=2|battle=1|breakable_wall=1|inspect=1		3	Fungus1_20_v02|Fungus1_21|Fungus1_31	0
+160	Fungus1_34	Greenpath		gameplay	cooked-pack	18	72968	71360	40154	2	182	5	Moss Walker=1|Plant Trap=1|Zombie Hornhead=1|Zombie Leaper=1|Zombie Runner=1	persistent=4|breakable=3|door=1		2	Fungus1_11|Fungus1_35	1
+161	Fungus1_35	Greenpath		gameplay	cooked-pack	18	97888	105632	56237	3	229	1	Ghost Warrior No Eyes=1	breakable=1|conversation=1|inspect=1		2	Fungus1_34|Fungus1_36	0
+162	Fungus1_36	Greenpath		gameplay	cooked-pack	4	46652	70688	26788	2	161	5	Pigeon=5	persistent=2|breakable=1|reveal_mask=1		1	Fungus1_35	0
+163	Fungus1_37	Greenpath		gameplay	cooked-pack	4	46556	70304	26981	2	149	0		bench=1		1	Fungus1_11	0
+164	Fungus1_Slug	Greenpath		gameplay	cooked-pack	32	116620	138560	68042	4	234	0		persistent=7|reveal_mask=3|breakable_wall=2|shiny=2		1	Fungus1_26	0
+165	Fungus2_01	Fungal Wastes		gameplay	cooked-pack	15	148152	211424	86935	6	463	0		breakable=5|persistent=3|conversation=1|reveal_mask=1|switch=1|toll_gate=1		4	Fungus2_02|Fungus2_03|Fungus2_34|Fungus3_02	0
+166	Fungus2_02	Fungal Wastes		gameplay	cooked-pack	6	54392	104448	31194	3	192	0		bench=1|breakable=1|conversation=1|door=1|stag=1		2	Fungus2_01	2
+167	Fungus2_03	Fungal Wastes		gameplay	cooked-pack	36	133800	176512	80868	5	396	13	Mushroom Turret=5|Fungoon Baby=3|Fungus Flyer=3|Zombie Fungus B=1|Zombie Hornhead=1	breakable=46|persistent=6|shiny=1		3	Fungus2_01|Fungus2_04|Fungus2_18	0
+168	Fungus2_04	Fungal Wastes		gameplay	cooked-pack	12	110372	176160	71924	5	385	4	Mushroom Turret=3|Fung Crawler=1	breakable=28|persistent=3|gate=2|switch=2|geo_rock=1|inspect=1|shiny=1		4	Fungus2_03|Fungus2_05|Fungus2_28	0
+169	Fungus2_05	Fungal Wastes		gameplay	cooked-pack	12	76220	140992	45508	4	310	12	Mushroom Baby=6|Cap Hit=3|Mushroom Brawler=3	breakable=12|persistent=4|shiny=2|battle=1		2	Fungus2_04|Fungus2_06	0
+170	Fungus2_06	Fungal Wastes		gameplay	cooked-pack	22	179652	281600	119145	8	608	6	Fungus Flyer=4|Fung Crawler=2	breakable=42|persistent=4		5	Crossroads_18|Fungus2_05|Fungus2_07|Fungus2_26|Fungus2_33	0
+171	Fungus2_07	Fungal Wastes		gameplay	cooked-pack	12	82936	106784	51706	3	265	5	Mushroom Baby=3|Mushroom Roller=2	breakable=17|persistent=4|reveal_mask=2|inspect=1		2	Fungus2_06|Fungus2_08	0
+172	Fungus2_08	Fungal Wastes		gameplay	cooked-pack	10	93712	141760	60175	4	334	4	Mushroom Turret=3|Fungus Flyer=1	breakable=19|geo_rock=1|persistent=1		3	Fungus2_07|Fungus2_09|Fungus2_32	0
+173	Fungus2_09	Fungal Wastes		gameplay	cooked-pack	8	73032	106080	44811	3	243	0		breakable=17|conversation=1		2	Fungus2_08|Fungus2_10	0
+174	Fungus2_10	Fungal Wastes		gameplay	cooked-pack	24	142204	211296	91157	6	459	2	Zombie Fungus A=1|Zombie Fungus B=1	breakable=45|persistent=5|breakable_wall=1|geo_rock=1|reveal_mask=1|soul_totem=1		3	Fungus2_09|Fungus2_11|Fungus2_21	0
+175	Fungus2_11	Fungal Wastes		gameplay	cooked-pack	10	99560	141920	64643	4	339	5	Fung Crawler=2|Mushroom Turret=2|Fungus Flyer=1	breakable=24|geo_rock=2|persistent=1		4	Fungus2_10|Fungus2_12|Fungus2_17|Fungus2_18	0
+176	Fungus2_12	Fungal Wastes		gameplay	cooked-pack	24	131496	209728	82798	6	410	7	Mantis Flyer Child=4|Mantis=3	breakable=31|persistent=3|inspect=1		2	Fungus2_11|Fungus2_13	0
+177	Fungus2_13	Fungal Wastes		gameplay	cooked-pack	16	149504	245632	99435	7	508	9	Mantis=5|Mantis Flyer Child=4	breakable=49|persistent=5|geo_rock=3|bench=1		3	Fungus2_12|Fungus2_14|Fungus2_23	0
+178	Fungus2_14	Fungal Wastes		gameplay	cooked-pack	34	190308	352576	121859	10	778	8	Mantis Flyer Child=5|Mantis=2|Gate Mantis=1	breakable=23|persistent=6|geo_rock=5|gate=3|switch=2|conversation=1|inspect=1|shiny=1		5	Fungus2_13|Fungus2_15|Fungus2_17	0
+179	Fungus2_15	Fungal Wastes		gameplay	cooked-pack	28	210628	388800	141518	11	886	7	Mantis Flyer Child=4|Mantis=3	breakable=31|persistent=10|gate=6|switch=5|geo_rock=2|breakable_wall=1|reveal_mask=1		5	Fungus2_14|Fungus2_25|Fungus2_31	0
+180	Fungus2_15_boss	Fungal Wastes		gameplay	no-envelope							6	Mantis Lord S=4|Mantis Lord=2	battle=1		0		0
+181	Fungus2_15_boss_defeated	Fungal Wastes		additive_boss_defeated_variant	no-envelope							0				0		0
+182	Fungus2_17	Fungal Wastes		gameplay	cooked-pack	12	97216	141792	63626	4	335	7	Fungoon Baby=5|Fung Crawler=2	breakable=20|persistent=20|shiny=1		3	Fungus2_11|Fungus2_14|Fungus2_29	0
+183	Fungus2_18	Fungal Wastes		gameplay	cooked-pack	35	200760	246976	128799	7	550	15	Fungoon Baby=11|Fung Crawler=2|Fungus Flyer=1|Zombie Fungus A=1	breakable=85|persistent=5|geo_rock=4|conversation=3|gate=1|grub=1|switch=1		3	Fungus2_03|Fungus2_11|Fungus2_19	0
+184	Fungus2_19	Fungal Wastes		gameplay	cooked-pack	9	72828	106368	44778	3	252	2	Fungoon Baby=2			2	Fungus2_18|Fungus2_20	0
+185	Fungus2_20	Fungal Wastes		gameplay	cooked-pack	12	100852	142304	65158	4	351	1	Mushroom Turret=1	breakable=19|persistent=6|reveal_mask=3|breakable_wall=2|grub=1|inspect=1|shiny=1		2	Deepnest_01|Fungus2_19	0
+186	Fungus2_21	Fungal Wastes		gameplay	cooked-pack	28	130704	210464	81173	6	433	1	Fung Crawler=1	persistent=7|breakable=3|reveal_mask=3|lever=2|breakable_wall=1|conversation=1|geo_rock=1|inspect=1|soul_totem=1		2	Fungus2_10|Ruins1_01	0
+187	Fungus2_23	Fungal Wastes		gameplay	cooked-pack	20	136636	210784	88688	6	443	8	Mushroom Baby=5|Mushroom Roller=2|Mushroom Turret=1	breakable=20|persistent=5|breakable_wall=1|conversation=1|gate=1|reveal_mask=1|shiny=1		2	Fungus2_13|Waterways_09	0
+188	Fungus2_25	Fungal Wastes		gameplay	cooked-pack	24	117212	174528	70020	5	334	0		breakable=14|geo_rock=3|persistent=3|breakable_wall=2|conversation=1		4	Deepnest_16|Fungus2_15|Fungus2_30	0
+189	Fungus2_26	Fungal Wastes		gameplay	cooked-pack	6	64604	106176	40053	3	246	0		breakable=10|shop=2|bench=1|conversation=1	text	1	Fungus2_06	0
+190	Fungus2_28	Fungal Wastes		gameplay	cooked-pack	15	100596	140544	64254	4	296	17	Mushroom Baby=11|Mushroom Roller=4|Fung Crawler=2	breakable=35|persistent=4		2	Fungus2_04	0
+191	Fungus2_29	Fungal Wastes		gameplay	cooked-pack	25	179364	244928	118026	7	486	21	Fungoon Baby=6|Mushroom Roller=4|Mushroom Turret=4|Cap Hit=2|Fungus Flyer=2|Mushroom Brawler=2|Mushroom Baby=1	breakable=71|persistent=14|reveal_mask=3|breakable_wall=1|geo_rock=1|shiny=1|soul_totem=1		2	Fungus2_17|Fungus2_30	0
+192	Fungus2_30	Fungal Wastes		gameplay	cooked-pack	40	183380	211456	116776	6	464	31	Fungoon Baby=9|Mushroom Baby=7|Fung Crawler=4|Mushroom Roller=4|Cap Hit=2|Fungus Flyer=2|Mushroom Brawler=2|Mushroom Turret=1	breakable=58|persistent=10|geo_rock=2|inspect=1|reveal_mask=1		2	Fungus2_25|Fungus2_29	0
+193	Fungus2_31	Fungal Wastes		gameplay	cooked-pack	12	84092	140928	52455	4	308	1	Mantis=1	breakable=9|persistent=9|chest=3|reveal_mask=2|shiny=2|bench=1		1	Fungus2_15	0
+194	Fungus2_32	Fungal Wastes		gameplay	cooked-pack	8	58464	71136	35333	2	175	1	Ghost Warrior Hu=1	breakable=21|conversation=1|inspect=1		1	Fungus2_08	0
+195	Fungus2_33	Fungal Wastes		gameplay	cooked-pack	18	75068	70976	42940	2	170	5	Fungoon Baby=3|Fungus Flyer=2	persistent=23|breakable=5		2	Fungus2_06|Fungus3_26	0
+196	Fungus2_34	Fungal Wastes		gameplay	cooked-pack	6	57388	72256	33131	2	210	0		persistent=4|reveal_mask=3|conversation=2|shiny=1		1	Fungus2_01	0
+197	Fungus3_01	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	12	112416	175616	70747	5	368	13	Jellyfish Baby=7|Jellyfish=6	breakable=9|persistent=6		4	Fungus1_11|Fungus3_02|Fungus3_24|Fungus3_25	0
+198	Fungus3_02	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	14	135772	278624	87697	8	515	15	Jellyfish Baby=10|Jellyfish=5	breakable=11|persistent=5		5	Fungus2_01|Fungus3_01|Fungus3_03|Fungus3_35|Fungus3_47	0
+199	Fungus3_03	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	10	87320	207744	54113	6	348	0		geo_rock=1		2	Fungus3_02|Fungus3_34	0
+200	Fungus3_04	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	14	110432	208192	67526	6	362	4	Mantis Heavy Flyer=2|Moss Flyer=2	breakable=15|persistent=4|switch=1		4	Fungus3_05|Fungus3_13|Fungus3_21|Fungus3_34	0
+201	Fungus3_05	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	20	107976	173568	64511	5	304	8	Mantis Heavy Flyer=5|Plant Trap=3	breakable=9|persistent=9|battle=1|breakable_wall=1|gate=1|reveal_mask=1|switch=1		3	Fungus1_24|Fungus3_04|Fungus3_11	0
+202	Fungus3_08	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	21	93956	139904	52632	4	276	8	Mantis Heavy Flyer=4|Moss Flyer=4	breakable=6|persistent=4		3	Deepnest_43|Fungus3_10|Fungus3_11	0
+203	Fungus3_10	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	20	105428	172576	61722	5	273	16	Garden Zombie=4|Mantis Heavy=4|Mantis Heavy Flyer=4|Moss Flyer=4	breakable=12|persistent=8|battle=1|geo_rock=1|grub=1|reveal_mask=1		2	Fungus3_08|Fungus3_13	0
+204	Fungus3_11	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	18	99604	139392	58562	4	260	5	Moss Flyer=5	persistent=30|breakable=9		3	Fungus3_05|Fungus3_08|Fungus3_39	0
+205	Fungus3_13	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	10	79900	173664	48001	5	307	6	Moss Flyer=6	breakable=5		5	Fungus1_23|Fungus3_04|Fungus3_10|Fungus3_40|Fungus3_49	0
+206	Fungus3_21	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	12	76236	104800	43906	3	203	0		breakable=3|persistent=1|soul_totem=1		2	Fungus3_04|Fungus3_22	0
+207	Fungus3_22	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	20	145880	277184	91550	8	470	9	Moss Flyer=4|Garden Zombie=3|Mantis Heavy Flyer=2	breakable=9|persistent=7|grub=1		3	Fungus1_13|Fungus3_21|Fungus3_23	0
+208	Fungus3_23	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	20	110852	207200	66091	6	331	0		breakable=8|persistent=2|conversation=1|reveal_mask=1		2	Fungus3_22|Fungus3_48	0
+209	Fungus3_23_boss	Fog Canyon and Queen's Gardens		gameplay	no-envelope							5	Mantis Heavy=3|Dummy Mantis=1|Mantis Traitor Lord=1	battle=1|persistent=1		0		0
+210	Fungus3_24	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	15	92016	174464	56504	5	332	0		breakable=3		3	Fungus3_01|Fungus3_30|Fungus3_44	0
+211	Fungus3_25	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	20	93120	139616	54929	4	267	19	Jellyfish Baby=13|Jellyfish=6	persistent=7|conversation=2|breakable=1		2	Fungus3_01|Fungus3_25b	0
+212	Fungus3_25b	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	15	102332	175936	62484	5	378	15	Jellyfish Baby=12|Jellyfish=3	breakable=5|persistent=3		2	Fungus3_25|Fungus3_26	0
+213	Fungus3_26	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	16	99032	140480	61153	4	294	15	Jellyfish Baby=10|Jellyfish=5	persistent=7|breakable=5|geo_rock=1|reveal_mask=1|shiny=1		5	Crossroads_35|Fungus2_33|Fungus3_25b|Fungus3_27|Fungus3_28	0
+214	Fungus3_27	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	8	77128	140224	47202	4	286	13	Jellyfish Baby=9|Jellyfish=4	persistent=4|breakable=3		2	Fungus3_26|Fungus3_47	0
+215	Fungus3_28	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	13	105464	140576	67903	4	297	15	Jellyfish Baby=10|Jellyfish=5	persistent=7|breakable=2|breakable_wall=1|shiny=1		1	Fungus3_26	0
+216	Fungus3_30	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	6	66780	139520	41356	4	264	0		breakable=9|persistent=2|shiny=1		1	Fungus3_24	0
+217	Fungus3_34	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	21	132280	344352	82844	10	521	7	Garden Zombie=3|Moss Flyer=3|Egg Sac=1	breakable=11|persistent=4|conversation=1		3	Fungus3_03|Fungus3_04|Fungus3_44	0
+218	Fungus3_35	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	6	68536	138752	41919	4	240	0		breakable=6|conversation=1|shop=1	text	1	Fungus3_02	0
+219	Fungus3_39	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	20	128040	243040	80293	7	427	12	Moss Flyer=4|Moss Knight Fat=3|Mantis Heavy=2|Acid Walker=1|Mantis Heavy Spawn=1|Shell=1	persistent=11|conversation=4|geo_rock=2|battle=1|breakable_wall=1|reveal_mask=1|shiny=1		2	Deepnest_01|Fungus3_11	0
+220	Fungus3_40	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	24	134132	243328	81852	7	436	6	Mantis Heavy Flyer=2|Moss Flyer=2|Moss Walker=2	persistent=8|reveal_mask=3|bench=1|breakable=1|conversation=1|door=1|inspect=1|soul_totem=1|stag=1|switch=1		3	Fungus3_13|Fungus3_48	2
+221	Fungus3_40_boss	Fog Canyon and Queen's Gardens		gameplay	no-envelope							1	Ghost Warrior Marmu=1	conversation=1		0		0
+222	Fungus3_44	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	25	124444	241952	77343	7	393	5	Moss Flyer=5	persistent=3|breakable=2|breakable_wall=1|conversation=1|door=1|gate=1|reveal_mask=1|switch=1		3	Fungus3_24|Fungus3_34|Room_Fung_Shaman	1
+223	Fungus3_47	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	16	79788	138432	46201	4	230	11	Jellyfish=11	breakable=4|persistent=3|breakable_wall=1|conversation=1|door=1|grub=1|reveal_mask=1		3	Fungus3_02|Fungus3_27|Fungus3_archive	1
+224	Fungus3_48	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	40	145008	172768	85816	5	279	26	Plant Trap=12|Grass Hopper=9|Mantis Heavy Flyer=2|Moss Flyer=2|Lazy Flyer Enemy=1	persistent=18|reveal_mask=2|door=1|geo_rock=1|grub=1|shiny=1		4	Fungus1_23|Fungus3_23|Fungus3_40	1
+225	Fungus3_49	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	12	64828	70656	36152	2	160	0		conversation=2		1	Fungus3_13	0
+226	Fungus3_50	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	18	53836	70240	27445	2	147	0		persistent=2|bench=1		1	Deepnest_43	0
+227	Fungus3_archive	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	15	82388	105184	44595	3	215	0		breakable=9|bench=1		2	Fungus3_47|Fungus3_archive_02	0
+228	Fungus3_archive_02	Fog Canyon and Queen's Gardens		gameplay	cooked-pack	65	223840	208544	115665	6	373	41	Jellyfish Baby Inert=24|Jellyfish Baby=10|Jellyfish=7	breakable=34|persistent=7|conversation=4|inspect=3		2	Fungus3_archive	1
+229	Fungus3_archive_02_boss	Fog Canyon and Queen's Gardens		gameplay	no-envelope							1	Mega Jellyfish=1			0		0
+230	Cliffs_01	Howling Cliffs		gameplay	cooked-pack	73	315488	591744	207023	17	1084	21	Crawler=8|Climber=7|Buzzer=6	persistent=54|reveal_mask=7|breakable=5|geo_rock=4|breakable_wall=3|conversation=2|shiny=2|soul_totem=1		4	Cliffs_02|Cliffs_04|Cliffs_06|Fungus1_28	0
+231	Cliffs_02	Howling Cliffs		gameplay	cooked-pack	100	244020	486944	145424	14	881	10	Buzzer=3|Crawler=3|Climber=2|Zombie Barger=1|Zombie Hornhead=1	persistent=9|breakable=5|reveal_mask=4|geo_rock=2|breakable_wall=1|door=1|inspect=1|soul_totem=1		6	Cliffs_01|Cliffs_03|Room_nailmaster|Town|Tutorial_01	1
+232	Cliffs_02_boss	Howling Cliffs		gameplay	no-envelope							1	Ghost Warrior Slug=1	conversation=1		0		0
+233	Cliffs_03	Howling Cliffs		gameplay	cooked-pack	40	145312	245056	81621	7	490	0		breakable=4|conversation=2|lift=1|stag=1		2	Cliffs_02	1
+234	Cliffs_04	Howling Cliffs		gameplay	cooked-pack	20	132192	278912	85272	8	524	13	Buzzer=8|Zombie Leaper=3|Zombie Barger=1|Zombie Hornhead=1	breakable=15|persistent=8|breakable_wall=1|reveal_mask=1|soul_totem=1		2	Cliffs_01|Cliffs_05	0
+235	Cliffs_05	Howling Cliffs		gameplay	cooked-pack	20	88048	141120	54110	4	314	0		breakable=21|persistent=4|conversation=1|reveal_mask=1|shiny=1		1	Cliffs_04	0
+236	Cliffs_06	Howling Cliffs		gameplay	cooked-pack	10	60068	105376	34980	3	221	0		persistent=3|reveal_mask=2|conversation=1|inspect=1		1	Cliffs_01	0
+237	RestingGrounds_02	Resting Grounds		gameplay	cooked-pack	18	86584	174368	49194	5	329	0		breakable=17|inspect=1		4	Crossroads_46b|Mines_28|RestingGrounds_04|RestingGrounds_06	0
+238	RestingGrounds_02_boss	Resting Grounds		gameplay	no-envelope							1	Ghost Warrior Xero=1	conversation=1		0		0
+239	RestingGrounds_04	Resting Grounds		gameplay	cooked-pack	15	71380	139296	40618	4	257	0		breakable=14|conversation=1	text	2	RestingGrounds_02|RestingGrounds_05	1
+240	RestingGrounds_05	Resting Grounds		gameplay	cooked-pack	21	110200	208032	62140	6	357	0		persistent=23|breakable=7|breakable_wall=1|soul_totem=1		6	RestingGrounds_04|RestingGrounds_07|RestingGrounds_08|RestingGrounds_09|RestingGrounds_10|RestingGrounds_17	0
+241	RestingGrounds_06	Resting Grounds		gameplay	cooked-pack	15	81180	173984	47195	5	317	2	Great Shield Zombie=1|Ruins Flying Sentry=1	breakable=8|persistent=7|reveal_mask=2|breakable_wall=1|soul_totem=1|switch=1		3	Crossroads_50|RestingGrounds_02|Ruins2_10	0
+242	RestingGrounds_07	Resting Grounds		gameplay	cooked-pack	9	45012	70176	24118	2	145	0		conversation=1|persistent=1|reveal_mask=1		2	RestingGrounds_05	0
+243	RestingGrounds_08	Resting Grounds		gameplay	cooked-pack	60	190948	343968	107237	10	509	1	Ruins Sentry=1	persistent=57|breakable=22|conversation=19|door=1|reveal_mask=1|shiny=1		2	RestingGrounds_05	2
+244	RestingGrounds_09	Resting Grounds		gameplay	cooked-pack	6	55484	105248	32058	3	217	0		conversation=2|persistent=2|bench=1|breakable=1|door=1|stag=1|switch=1	text	2	RestingGrounds_05	2
+245	RestingGrounds_10	Resting Grounds		gameplay	cooked-pack	30	138700	273024	80552	8	340	8	Ceiling Dropper=4|Grave Zombie=4	persistent=35|reveal_mask=23|breakable_wall=17|breakable=5|geo_rock=3|shiny=3|chest=1|grub=1		3	RestingGrounds_05|RestingGrounds_12|Ruins2_10	0
+246	RestingGrounds_12	Resting Grounds		gameplay	cooked-pack	15	63984	138144	37446	4	221	0		bench=1|door=1|persistent=1		2	RestingGrounds_10|Room_Mansion	1
+247	RestingGrounds_17	Resting Grounds		gameplay	cooked-pack	8	58636	105408	33694	3	222	0		breakable=2|persistent=1|shiny=1		1	RestingGrounds_05	0
+248	Mines_01	Crystal Peak		gameplay	cooked-pack	10	80684	139936	48239	4	277	1	Egg Sac=1	breakable=18|persistent=2		2	Crossroads_45|Mines_02	0
+249	Mines_02	Crystal Peak		gameplay	cooked-pack	21	175784	316672	112393	9	680	4	Crystal Crawler=2|Zombie Miner=2	breakable=30|geo_rock=3|persistent=2		4	Mines_01|Mines_03|Mines_29|Mines_33	0
+250	Mines_03	Crystal Peak		gameplay	cooked-pack	12	123480	210528	78404	6	435	5	Zombie Miner=3|Crystal Crawler=2	breakable=11|persistent=5|grub=1|switch=1|toll_gate=1		3	Mines_02|Mines_05|Mines_17	0
+251	Mines_04	Crystal Peak		gameplay	cooked-pack	12	112840	244288	71899	7	466	6	Crystal Flyer=4|Zombie Miner=2	breakable=12|persistent=8|geo_rock=2|grub=1|switch=1|toll_gate=1		5	Mines_07|Mines_17|Mines_29|Mines_37	0
+252	Mines_05	Crystal Peak		gameplay	cooked-pack	12	107196	210656	66197	6	439	11	Crystallised Lazer Bug=10|Zombie Miner=1	persistent=12|breakable=11|breakable_wall=1|geo_rock=1		5	Mines_03|Mines_06|Mines_11|Mines_19|Mines_30	0
+253	Mines_06	Crystal Peak		gameplay	cooked-pack	21	102076	141216	60491	4	317	0		breakable=12|persistent=2|breakable_wall=1|reveal_mask=1		2	Mines_05|Mines_36	0
+254	Mines_07	Crystal Peak		gameplay	cooked-pack	12	78728	174560	47654	5	335	3	Crystal Flyer=2|Crystal Crawler=1	breakable=2|persistent=2		2	Mines_04|Mines_28	0
+255	Mines_10	Crystal Peak		gameplay	cooked-pack	16	112136	210336	69626	6	429	0		breakable=6|persistent=1		3	Mines_16|Mines_30|Town	0
+256	Mines_11	Crystal Peak		gameplay	cooked-pack	10	96968	142656	61526	4	362	9	Crystallised Lazer Bug=5|Mines Crawler=2|Crystal Crawler=1|Zombie Miner=1	breakable=34|persistent=7|shiny=1		3	Mines_05|Mines_13|Mines_18	0
+257	Mines_13	Crystal Peak		gameplay	cooked-pack	20	85228	173312	48569	5	296	0		breakable=8|conversation=1		3	Mines_11|Mines_20|Mines_34	0
+258	Mines_16	Crystal Peak		gameplay	cooked-pack	9	91248	209216	57934	6	394	3	Crystal Flyer=2|Grub Mimic=1	breakable=6|persistent=6|reveal_mask=4|grub=2|breakable_wall=1|geo_rock=1		1	Mines_10	0
+259	Mines_17	Crystal Peak		gameplay	cooked-pack	12	71132	140096	42479	4	282	2	Zombie Miner=2	persistent=2|breakable=1		2	Mines_03|Mines_04	0
+260	Mines_18	Crystal Peak		gameplay	cooked-pack	9	67072	139616	40477	4	267	0		breakable=5|bench=1		3	Mines_11|Mines_20|Mines_32	0
+261	Mines_18_boss	Crystal Peak		gameplay	no-envelope							1	Mega Zombie Beam Miner=1	persistent=2		0		0
+262	Mines_19	Crystal Peak		gameplay	cooked-pack	9	71664	139296	41651	4	257	0		persistent=3|switch=2|gate=1|grub=1		2	Mines_05|Mines_20	0
+263	Mines_20	Crystal Peak		gameplay	cooked-pack	52	207512	346752	123748	10	596	18	Crystallised Lazer Bug=7|Crystal Flyer=4|Zombie Miner=3|Crystal Crawler=2|Egg Sac=1|Mines Crawler=1	breakable=27|persistent=21|geo_rock=3|switch=3|gate=2|breakable_wall=1|shiny=1|soul_totem=1|toll_gate=1		6	Mines_13|Mines_18|Mines_19|Mines_23|Mines_31|Mines_37	0
+264	Mines_23	Crystal Peak		gameplay	cooked-pack	24	124196	242112	76357	7	398	8	Zombie Beam Miner=5|Crystal Flyer=3	persistent=30|breakable=13		4	Mines_20|Mines_24|Mines_25|Mines_34	0
+265	Mines_24	Crystal Peak		gameplay	cooked-pack	6	46768	69920	26041	2	137	3	Mines Crawler=2|Zombie Beam Miner=1	persistent=2|grub=1		1	Mines_23	0
+266	Mines_25	Crystal Peak		gameplay	cooked-pack	36	126684	242272	76107	7	403	13	Mines Crawler=6|Zombie Beam Miner=4|Crystal Flyer=3	persistent=12|breakable=6|geo_rock=5|reveal_mask=4|breakable_wall=3|soul_totem=1		2	Mines_23|Mines_34	0
+267	Mines_28	Crystal Peak		gameplay	cooked-pack	25	76140	104800	41186	3	203	0		breakable=4|door=1|persistent=1|soul_totem=1		3	Mines_07|Mines_35|RestingGrounds_02	1
+268	Mines_29	Crystal Peak		gameplay	cooked-pack	15	86552	173792	51851	5	311	0		breakable=15|bench=1|persistent=1|shiny=1		3	Mines_02|Mines_04	0
+269	Mines_30	Crystal Peak		gameplay	cooked-pack	16	71300	104416	40259	3	191	1	Crystal Crawler=1	breakable=12|conversation=2|persistent=2|shiny=1		2	Mines_05|Mines_10	0
+270	Mines_31	Crystal Peak		gameplay	cooked-pack	55	161936	242400	93014	7	407	0		breakable=20|persistent=5|soul_totem=2|geo_rock=1|grub=1|reveal_mask=1		1	Mines_20	0
+271	Mines_32	Crystal Peak		gameplay	cooked-pack	9	58300	105184	33812	3	215	1	Zombie Beam Miner Rematch=1	breakable=7|persistent=3		1	Mines_18	0
+272	Mines_33	Crystal Peak		gameplay	cooked-pack	10	86372	174848	50523	5	344	2	Crystal Crawler=2	breakable=16|persistent=4|geo_rock=3|toll_gate=2|breakable_wall=1|reveal_mask=1		2	Crossroads_03|Mines_02	0
+273	Mines_34	Crystal Peak		gameplay	cooked-pack	63	109104	173248	55157	5	294	6	Mines Crawler=4|Crystal Crawler=1|Crystal Flyer=1	breakable=3|persistent=3|reveal_mask=1|shiny=1		4	Mines_13|Mines_23|Mines_25	0
+274	Mines_35	Crystal Peak		gameplay	cooked-pack	30	125836	174400	75578	5	330	5	Crystal Flyer=3|Mines Crawler=1|Roller=1	breakable=22|persistent=8|breakable_wall=1|grub=1|reveal_mask=1|soul_totem=1		1	Mines_28	0
+275	Mines_36	Crystal Peak		gameplay	cooked-pack	6	42416	36032	22915	1	102	0		breakable=3|persistent=1|shiny=1		1	Mines_06	0
+276	Mines_37	Crystal Peak		gameplay	cooked-pack	20	122784	244000	74671	7	457	8	Zombie Miner=5|Crystallised Lazer Bug=2|Mines Crawler=1	persistent=11|breakable=10|switch=3|geo_rock=2|toll_gate=2|chest=1		2	Mines_04|Mines_20	0
+277	Deepnest_01	Deepnest		gameplay	cooked-pack	9	77184	140320	48249	4	289	0		breakable=5|persistent=4|breakable_wall=2|geo_rock=2|reveal_mask=2		4	Deepnest_01b|Fungus2_20|Fungus3_39	0
+278	Deepnest_01b	Deepnest		gameplay	cooked-pack	29	150848	312352	94818	9	545	11	Baby Centipede=11	breakable=19|persistent=4|breakable_wall=1|conversation=1|reveal_mask=1		5	Deepnest_01|Deepnest_02|Deepnest_17	0
+279	Deepnest_02	Deepnest		gameplay	cooked-pack	12	111020	211200	71300	6	456	7	Baby Centipede=5|Spider Mini=2	breakable=28|persistent=3|breakable_wall=2|geo_rock=2|reveal_mask=2		3	Deepnest_01b|Deepnest_36	0
+280	Deepnest_03	Deepnest		gameplay	cooked-pack	24	181448	312928	117808	9	563	14	Spider Mini=7|Zombie Hornhead Sp=4|Zombie Runner Sp=3	breakable=42|persistent=11|geo_rock=3|breakable_wall=2|reveal_mask=2|grub=1		4	Deepnest_30|Deepnest_31|Deepnest_33|Deepnest_34	0
+281	Deepnest_09	Deepnest		gameplay	cooked-pack	6	54216	105312	31992	3	219	0		breakable=4|conversation=1|door=1|stag=1		2	Deepnest_10	2
+282	Deepnest_10	Deepnest		gameplay	cooked-pack	40	101724	174880	55548	5	345	0		breakable=14|door=2|persistent=1|soul_totem=1		5	Deepnest_09|Deepnest_41|Room_spider_small	2
+283	Deepnest_14	Deepnest		gameplay	cooked-pack	20	124688	210528	77232	6	435	0		breakable=22|persistent=3|bench=1|breakable_wall=1|conversation=1		7	Deepnest_17|Deepnest_26|Deepnest_33	0
+284	Deepnest_16	Deepnest		gameplay	cooked-pack	30	201424	278848	126970	8	522	13	Spider Mini=7|Baby Centipede=6	breakable=49|persistent=8|geo_rock=5|reveal_mask=4|breakable_wall=2|shiny=1		2	Deepnest_17|Fungus2_25	0
+285	Deepnest_17	Deepnest		gameplay	cooked-pack	10	104508	175744	65725	5	372	3	Baby Centipede=3	breakable=21		4	Deepnest_01b|Deepnest_14|Deepnest_16|Deepnest_30	0
+286	Deepnest_26	Deepnest		gameplay	cooked-pack	44	136744	209664	78051	6	408	8	Baby Centipede Spawner=6|Centipede Hatcher=2	breakable=14|persistent=8|reveal_mask=3|switch=1|toll_gate=1		4	Deepnest_14|Deepnest_26b|Deepnest_35	0
+287	Deepnest_26b	Deepnest		gameplay	cooked-pack	24	91892	173856	54167	5	313	10	Baby Centipede Spawner=6|Centipede Hatcher=4	persistent=8|breakable=7|reveal_mask=2|shiny=1|switch=1|toll_gate=1		2	Deepnest_26	0
+288	Deepnest_30	Deepnest		gameplay	cooked-pack	66	218112	280128	130228	8	562	3	Baby Centipede=3	breakable=33|persistent=9|breakable_wall=5|reveal_mask=3|bench=1|conversation=1		3	Deepnest_03|Deepnest_17|Deepnest_37	0
+289	Deepnest_31	Deepnest		gameplay	cooked-pack	30	155276	208512	94512	6	372	0		breakable=21|persistent=10|reveal_mask=6|breakable_wall=3|geo_rock=3|grub=1		2	Deepnest_03|Deepnest_32	0
+290	Deepnest_32	Deepnest		gameplay	cooked-pack	16	90384	139136	54246	4	252	1	Mimic Spider=1	breakable=14|persistent=2|shiny=1		1	Deepnest_31	0
+291	Deepnest_33	Deepnest		gameplay	cooked-pack	18	135272	209440	85037	6	401	19	Zombie Spider=10|Spider Mini=5|Zombie Hornhead Sp=3|Zombie Runner Sp=1	breakable=37|persistent=8|battle=1|breakable_wall=1|conversation=1|reveal_mask=1|shiny=1		3	Deepnest_03|Deepnest_14	0
+292	Deepnest_34	Deepnest		gameplay	cooked-pack	28	120444	208384	73461	6	368	5	Zombie Runner Sp=2|Slash Spider=1|Spider Mini=1|Zombie Hornhead Sp=1	breakable=49|persistent=5|reveal_mask=1		3	Deepnest_03|Deepnest_35|Deepnest_39	0
+293	Deepnest_35	Deepnest		gameplay	cooked-pack	24	124616	242336	78454	7	405	9	Spider Mini=6|Zombie Hornhead Sp=2|Zombie Runner Sp=1	breakable=41|persistent=3|geo_rock=2		3	Deepnest_26|Deepnest_34|Deepnest_40	0
+294	Deepnest_36	Deepnest		gameplay	cooked-pack	12	71748	105600	42529	3	228	3	Grub Mimic=3	breakable=11|persistent=7|grub=4		1	Deepnest_02	0
+295	Deepnest_37	Deepnest		gameplay	cooked-pack	12	109448	140576	66745	4	297	0		breakable=24|geo_rock=2		4	Abyss_03_b|Deepnest_30|Deepnest_38|Deepnest_44	0
+296	Deepnest_38	Deepnest		gameplay	cooked-pack	36	167832	209568	101656	6	405	1	Baby Centipede=1	breakable=16|persistent=5|breakable_wall=2|reveal_mask=2|soul_totem=1		1	Deepnest_37	0
+297	Deepnest_39	Deepnest		gameplay	cooked-pack	45	226308	311648	138599	9	523	22	Spider Flyer=11|Tiny Spider=6|Slash Spider=4|Egg Sac=1	persistent=66|breakable=58|breakable_wall=11|geo_rock=3|reveal_mask=3|door=1|grub=1		4	Deepnest_34|Deepnest_41|Deepnest_42|Deepnest_45_v02	1
+298	Deepnest_40	Deepnest		gameplay	cooked-pack	35	123560	174336	72576	5	328	1	Ghost Warrior Galien=1	breakable=21|conversation=2|inspect=1|persistent=1		1	Deepnest_35	0
+299	Deepnest_41	Deepnest		gameplay	cooked-pack	48	171436	244160	101815	7	462	12	Spider Flyer=6|Spider Mini=3|Tiny Spider=2|Slash Spider=1	breakable=32|persistent=12|breakable_wall=8|reveal_mask=4|conversation=1|toll_gate=1		3	Deepnest_10|Deepnest_39	0
+300	Deepnest_42	Deepnest		gameplay	cooked-pack	20	135696	210176	86374	6	424	14	Spider Flyer=8|Spider Mini=4|Tiny Spider=2	breakable=33|persistent=5|reveal_mask=1|soul_totem=1		3	Deepnest_39|Deepnest_43|Room_Mask_Maker	0
+301	Deepnest_43	Deepnest		gameplay	cooked-pack	18	119096	174880	74730	5	345	6	Garden Zombie=2|Moss Flyer=2|Mantis Heavy Flyer=1|Moss Walker=1	persistent=4|breakable=2|geo_rock=2|reveal_mask=1		3	Deepnest_42|Fungus3_08|Fungus3_50	0
+302	Deepnest_44	Deepnest		gameplay	cooked-pack	35	147996	140800	88998	4	304	0		persistent=6|breakable=5|reveal_mask=3|breakable_wall=1|conversation=1|shiny=1		1	Deepnest_37	0
+303	Deepnest_45_v02	Deepnest		gameplay	cooked-pack	35	134260	207232	78896	6	332	5	Spider Mini=5	breakable=23|persistent=10|reveal_mask=7|breakable_wall=3|shiny=2|chest=1		1	Deepnest_39	0
+304	Deepnest_Spider_Town	Deepnest		gameplay	cooked-pack	66	276088	242496	169989	7	410	23	Tiny Spider=9|Slash Spider=5|Spider Mini=5|Zombie Spider=3|Egg Sac=1	breakable=95|persistent=34|breakable_wall=11|reveal_mask=10|geo_rock=8|conversation=6|bench=1|grub=1|inspect=1|shiny=1|soul_totem=1		2	Deepnest_10	1
+305	Room_spider_small	Deepnest		gameplay	cooked-pack	9	43680	36576	22995	1	119	0		breakable=3|conversation=1		1	Deepnest_10	0
+306	Deepnest_East_01	Kingdom's Edge		gameplay	cooked-pack	18	89080	139776	53109	4	272	11	Blow Fly=6|Bee Hatchling Ambient=5	persistent=9|geo_rock=2|breakable=1|breakable_wall=1|conversation=1|reveal_mask=1|soul_totem=1		3	Abyss_03_c|Deepnest_East_02|Hive_03_c	0
+307	Deepnest_East_02	Kingdom's Edge		gameplay	cooked-pack	15	111704	172832	67605	5	281	12	Bee Hatchling Ambient=12	persistent=3|breakable_wall=2|geo_rock=2|soul_totem=1		4	Deepnest_East_01|Deepnest_East_03|Hive_03|Waterways_14	0
+308	Deepnest_East_03	Kingdom's Edge		gameplay	cooked-pack	40	112312	174176	61392	5	323	6	Blow Fly=6	persistent=13|breakable=8|conversation=2|reveal_mask=1		6	Deepnest_East_02|Deepnest_East_04|Deepnest_East_06|Deepnest_East_07|Deepnest_east_07|Ruins2_07	0
+309	Deepnest_East_04	Kingdom's Edge		gameplay	cooked-pack	39	171304	174112	102524	5	321	8	Super Spitter=5|Blow Fly=3	breakable=34|persistent=12|reveal_mask=7|breakable_wall=1|conversation=1|geo_rock=1		4	Deepnest_East_03|Deepnest_East_07|Deepnest_East_11|Deepnest_East_15	0
+310	Deepnest_East_06	Kingdom's Edge		gameplay	cooked-pack	60	204804	209824	116872	6	413	18	Hopper=11|Giant Hopper=4|Super Spitter=3	breakable=21|persistent=9|geo_rock=2|bench=1|breakable_wall=1|door=1|reveal_mask=1		5	Deepnest_East_03|Deepnest_East_14b|Deepnest_East_16|Deepnest_East_18|Room_nailmaster_03	1
+311	Deepnest_East_07	Kingdom's Edge		gameplay	cooked-pack	52	193052	242784	113506	7	419	26	Hopper=11|Ceiling Dropper=7|Super Spitter=5|Blow Fly=3	persistent=73|breakable=15|reveal_mask=3|geo_rock=2|shiny=2|soul_totem=1		5	Deepnest_East_03|Deepnest_East_04|Deepnest_East_08|Ruins2_11_b	0
+312	Deepnest_East_08	Kingdom's Edge		gameplay	cooked-pack	24	106540	139744	62032	4	271	14	Hopper=9|Ceiling Dropper=4|Giant Hopper=1	breakable=13|persistent=7|reveal_mask=3|breakable_wall=1|geo_rock=1|shiny=1		2	Deepnest_East_07|Deepnest_East_09	0
+313	Deepnest_East_09	Kingdom's Edge		gameplay	cooked-pack	36	96180	138752	51174	4	240	7	Ceiling Dropper=7	persistent=9|breakable_wall=1|reveal_mask=1		3	Deepnest_East_08|Room_Colosseum_01|Ruins2_10b	0
+314	Deepnest_East_10	Kingdom's Edge		gameplay	cooked-pack	9	52244	70656	29569	2	160	1	Ghost Warrior Markoth=1	conversation=1|inspect=1		1	Deepnest_East_18	0
+315	Deepnest_East_11	Kingdom's Edge		gameplay	cooked-pack	45	150220	208192	86228	6	362	8	Hopper=4|Super Spitter=4	breakable=20|reveal_mask=10|persistent=9|breakable_wall=2|grub=1|soul_totem=1		4	Deepnest_East_04|Deepnest_East_12|Deepnest_East_13|Deepnest_East_18	0
+316	Deepnest_East_12	Kingdom's Edge		gameplay	cooked-pack	18	75060	138176	41885	4	222	0		breakable=12|persistent=1		3	Deepnest_East_11|Deepnest_East_Hornet	0
+317	Deepnest_East_13	Kingdom's Edge		gameplay	cooked-pack	9	44496	70144	24415	2	144	0		bench=1|persistent=1|shiny=1		1	Deepnest_East_11	0
+318	Deepnest_East_14	Kingdom's Edge		gameplay	cooked-pack	35	144384	207648	86110	6	345	12	Hopper=8|Super Spitter=2|Egg Sac=1|Giant Hopper=1	breakable=21|persistent=12|breakable_wall=3|reveal_mask=2|soul_totem=2|door=1|grub=1		3	Deepnest_East_14b|Deepnest_East_16|Deepnest_East_17	1
+319	Deepnest_East_14b	Kingdom's Edge		gameplay	cooked-pack	20	88380	173568	51606	5	304	11	Bee Hatchling Ambient=5|Super Spitter=4|Giant Hopper=1|Hopper=1	persistent=11|breakable=7|reveal_mask=4|shiny=1		2	Deepnest_East_06|Deepnest_East_14	0
+320	Deepnest_East_15	Kingdom's Edge		gameplay	cooked-pack	6	47356	70112	27031	2	143	0		breakable=3|persistent=1		1	Deepnest_East_04	0
+321	Deepnest_East_16	Kingdom's Edge		gameplay	cooked-pack	9	54820	104320	31586	3	188	3	Giant Hopper=2|Ghost Warrior Markoth=1	persistent=4|breakable=2|reveal_mask=2|breakable_wall=1|soul_totem=1		2	Deepnest_East_06|Deepnest_East_14	0
+322	Deepnest_East_17	Kingdom's Edge		gameplay	cooked-pack	42	167100	208544	98842	6	373	3	Hopper=3	persistent=15|breakable_wall=11|breakable=10|reveal_mask=3|geo_rock=2|soul_totem=1		1	Deepnest_East_14	0
+323	Deepnest_East_18	Kingdom's Edge		gameplay	cooked-pack	20	91216	139360	52934	4	259	9	Hopper=9	breakable=11|persistent=4|breakable_wall=2|reveal_mask=1|shiny=1		3	Deepnest_East_06|Deepnest_East_10|Deepnest_East_11	0
+324	Deepnest_East_Hornet	Kingdom's Edge		gameplay	cooked-pack	21	95088	173792	56793	5	311	0		breakable=1		2	Deepnest_East_12|Room_Wyrm	0
+325	Deepnest_East_Hornet_boss	Kingdom's Edge		gameplay	no-envelope							1	Hornet Boss=1	conversation=1		0		0
+326	Room_Wyrm	Interior rooms		gameplay	cooked-pack	15	58104	69632	31027	2	128	0		persistent=1|shiny=1		1	Deepnest_East_Hornet	0
+327	Abyss_01	Ancient Basin and Abyss		gameplay	cooked-pack	24	118868	176096	69860	5	383	2	Ruins Flying Sentry=2	persistent=41|geo_rock=3|breakable=1|reveal_mask=1		5	Abyss_02|Ruins2_04|Waterways_05|Waterways_06|Waterways_07	0
+328	Abyss_02	Ancient Basin and Abyss		gameplay	cooked-pack	32	151352	209248	92611	6	395	8	Ruins Flying Sentry=2|Ruins Flying Sentry Javelin=2|Zombie Barger=2|Ruins Sentry=1|Zombie Hornhead=1	persistent=10|breakable=5|geo_rock=3|shiny=1		2	Abyss_01|Abyss_03	0
+329	Abyss_03	Ancient Basin and Abyss		gameplay	cooked-pack	18	72232	104640	40474	3	198	0		breakable=5|door=2|conversation=1|tram=1		5	Abyss_02|Abyss_04|Abyss_17	1
+330	Abyss_03_b	Ancient Basin and Abyss		gameplay	cooked-pack	8	62012	105248	36966	3	217	0		door=2|breakable=1|conversation=1|tram=1		3	Deepnest_37	1
+331	Abyss_03_c	Ancient Basin and Abyss		gameplay	cooked-pack	21	96368	173184	57193	5	292	3	Bee Hatchling Ambient=3	door=2|reveal_mask=2|breakable=1|breakable_wall=1|conversation=1|persistent=1|tram=1		4	Deepnest_East_01|Hive_01	1
+332	Abyss_04	Ancient Basin and Abyss		gameplay	cooked-pack	49	210648	345536	124389	10	558	9	Abyss Crawler=9	breakable=15|persistent=6|conversation=3|reveal_mask=3|inspect=1|soul_totem=1		4	Abyss_03|Abyss_05|Abyss_06_Core|Abyss_18	0
+333	Abyss_05	Ancient Basin and Abyss		gameplay	cooked-pack	54	115816	173696	57792	5	308	0		reveal_mask=7|breakable_wall=1|inspect=1|persistent=1		4	Abyss_04|Abyss_22	2
+334	Abyss_06_Core	Ancient Basin and Abyss		gameplay	cooked-pack	90	274968	487936	168104	14	912	21	Abyss Crawler=21	breakable=21|geo_rock=3|inspect=2|persistent=2|reveal_mask=2|conversation=1		7	Abyss_04|Abyss_08|Abyss_12|Abyss_15|Abyss_16	0
+335	Abyss_08	Ancient Basin and Abyss		gameplay	cooked-pack	47	216652	315584	136270	9	646	0		breakable=11|persistent=4|shiny=2|breakable_wall=1|reveal_mask=1		1	Abyss_06_Core	1
+336	Abyss_09	Ancient Basin and Abyss		gameplay	cooked-pack	88	170992	241664	89396	7	384	22	Shade Sibling=22	breakable=14|conversation=1|persistent=1|reveal_mask=1		4	Abyss_10|Abyss_16|Abyss_Lighthouse_room	0
+337	Abyss_10	Ancient Basin and Abyss		gameplay	cooked-pack	24	116220	175392	70050	5	361	0		breakable=20|persistent=2|reveal_mask=1|shiny=1		2	Abyss_09	0
+338	Abyss_12	Ancient Basin and Abyss		gameplay	cooked-pack	24	90228	139584	51360	4	266	5	Abyss Crawler=5	breakable=5	text	1	Abyss_06_Core	0
+339	Abyss_15	Ancient Basin and Abyss		gameplay	cooked-pack	56	207392	345312	132420	10	551	16	Shade Sibling=16	door=1|persistent=1|shiny=1		2	Abyss_06_Core	2
+340	Abyss_16	Ancient Basin and Abyss		gameplay	cooked-pack	15	77988	139648	46486	4	268	0		breakable=8		2	Abyss_06_Core|Abyss_09	0
+341	Abyss_17	Ancient Basin and Abyss		gameplay	cooked-pack	40	162644	207872	98080	6	352	15	Lesser Mawlek=8|Ceiling Dropper=4|Spitter=3	breakable=46|persistent=19|breakable_wall=2|reveal_mask=2|battle=1|conversation=1|grub=1|shiny=1		1	Abyss_03	0
+342	Abyss_18	Ancient Basin and Abyss		gameplay	cooked-pack	27	100156	139648	57239	4	268	0		breakable=3|bench=1|geo_rock=1|persistent=1		2	Abyss_04|Abyss_19	0
+343	Abyss_19	Ancient Basin and Abyss		gameplay	cooked-pack	49	185032	345024	113492	10	542	8	Parasite Balloon=4|Abyss Crawler=3|Infected Knight=1	breakable=27|persistent=5|conversation=2|geo_rock=2|breakable_wall=1|door=1|grub=1|reveal_mask=1|shiny=1		5	Abyss_18|Abyss_20|Abyss_21	2
+344	Abyss_20	Ancient Basin and Abyss		gameplay	cooked-pack	40	161892	243136	98604	7	430	12	Abyss Crawler=4|Mawlek Turret=4|Mawlek Turret Ceiling=2|Parasite Balloon=2	breakable=23|persistent=11|reveal_mask=4|shiny=1		2	Abyss_19	0
+345	Abyss_21	Ancient Basin and Abyss		gameplay	over-128-views	136						0		breakable=9|conversation=1		1	Abyss_19	0
+346	Abyss_22	Ancient Basin and Abyss		gameplay	cooked-pack	12	60432	105088	33220	3	212	0		bench=1|breakable=1|conversation=1|door=1|stag=1		2	Abyss_05	2
+347	Abyss_Lighthouse_room	Ancient Basin and Abyss		gameplay	cooked-pack	9	39384	35968	19846	1	100	0		persistent=3|breakable=2|switch=1		1	Abyss_09	0
+348	Room_Queen	Interior rooms		gameplay	cooked-pack	16	62780	71072	33575	2	173	0		persistent=3|conversation=1|reveal_mask=1|shiny=1	text	1	Fungus3_48	1
+349	Waterways_01	Royal Waterways		gameplay	cooked-pack	28	123292	242592	71427	7	413	14	Ceiling Dropper=5|Inflater=5|Flip Hopper=4	persistent=7|breakable=6|geo_rock=2|reveal_mask=2|breakable_wall=1|soul_totem=1		4	Ruins1_05b|Waterways_02|Waterways_03|Waterways_04	0
+350	Waterways_02	Royal Waterways		gameplay	cooked-pack	44	165116	277248	97360	8	472	11	Flukeman=4|Flip Hopper=3|Fluke Fly=2|Ceiling Dropper=1|Egg Sac=1	persistent=14|breakable=11|reveal_mask=5|breakable_wall=3|bench=1		5	Waterways_01|Waterways_04|Waterways_05|Waterways_06|Waterways_08	0
+351	Waterways_03	Royal Waterways		gameplay	cooked-pack	10	56572	71680	32238	2	192	0		breakable=4|conversation=1|persistent=1|shiny=1		1	Waterways_01	0
+352	Waterways_04	Royal Waterways		gameplay	cooked-pack	28	119916	207680	68280	6	346	13	Inflater=9|Flukeman=2|Ceiling Dropper=1|Egg Sac=1	breakable=16|persistent=9|reveal_mask=6|breakable_wall=3|grub=1		4	Waterways_01|Waterways_02|Waterways_04b	0
+353	Waterways_04b	Royal Waterways		gameplay	cooked-pack	24	109972	173824	63271	5	312	15	Inflater=7|Fluke Fly=4|Ceiling Dropper=2|Flukeman=2	persistent=9|reveal_mask=2|breakable=1|geo_rock=1|shiny=1|soul_totem=1		3	Waterways_04|Waterways_09	0
+354	Waterways_05	Royal Waterways		gameplay	cooked-pack	24	93304	140064	53252	4	281	0		persistent=5|breakable_wall=2|shiny=2|conversation=1|switch=1		3	Abyss_01|Waterways_02|Waterways_15	0
+355	Waterways_05_boss	Royal Waterways		gameplay	no-envelope							1	Dung Defender=1			0		0
+356	Waterways_06	Royal Waterways		gameplay	cooked-pack	24	102360	174432	58807	5	331	6	Flip Hopper=3|Fluke Fly=3	breakable=5		2	Abyss_01|Waterways_02	0
+357	Waterways_07	Royal Waterways		gameplay	cooked-pack	35	168068	312288	104406	9	543	11	Inflater=4|Flip Hopper=2|Ruins Sentry=2|Ceiling Dropper=1|Egg Sac=1|Ruins Sentry Fat=1	breakable=12|persistent=10|breakable_wall=1|door=1|geo_rock=1|inspect=1|reveal_mask=1|soul_totem=1		5	Abyss_01|Ruins_House_03|Waterways_13|Waterways_14	1
+358	Waterways_08	Royal Waterways		gameplay	cooked-pack	31	189064	312192	122140	9	540	104	fluke_baby=85|Flukeman=9|Ceiling Dropper=5|Fluke Fly=5	persistent=19|reveal_mask=4|breakable_wall=2|geo_rock=1|soul_totem=1		3	GG_Pipeway|Waterways_02|Waterways_12	0
+359	Waterways_09	Royal Waterways		gameplay	cooked-pack	12	74260	139648	43083	4	268	8	Inflater=8	breakable=16|persistent=4|conversation=2|battle=1|breakable_wall=1|gate=1|switch=1		2	Fungus2_23|Waterways_04b	0
+360	Waterways_12	Royal Waterways		gameplay	cooked-pack	12	61092	71040	34722	2	172	1	Fluke Fly Spawner=1	persistent=1|shiny=1	text	1	Waterways_08	0
+361	Waterways_12_boss	Royal Waterways		gameplay	no-envelope							7	Fluke Fly Spawner=6|Fluke Mother=1			0		0
+362	Waterways_13	Royal Waterways		gameplay	cooked-pack	42	167168	274880	102510	8	398	14	Ruins Flying Sentry=5|Ceiling Dropper=2|Inflater=2|Ruins Flying Sentry Javelin=2|Ruins Sentry Fat=2|Ruins Sentry=1	persistent=7|battle=1|grub=1		2	Waterways_07	0
+363	Waterways_14	Royal Waterways		gameplay	cooked-pack	44	129664	207808	71658	6	350	3	Inflater=3	breakable=8|persistent=3|breakable_wall=1|grub=1|reveal_mask=1		2	Deepnest_East_02|Waterways_07	0
+364	Waterways_15	Royal Waterways		gameplay	cooked-pack	9	47592	69472	26337	2	123	0		persistent=5|reveal_mask=4|conversation=1|shiny=1		2	Waterways_05	1
+365	White_Palace_01	White Palace		gameplay	cooked-pack	106	260344	242368	127875	7	406	3	White Palace Fly=3	breakable=7|bench=1		3	White_Palace_02|White_Palace_03_hub|White_Palace_11	0
+366	White_Palace_02	White Palace		gameplay	cooked-pack	59	181816	206912	94768	6	322	1	Royal Gaurd=1	persistent=4|battle=1|breakable_wall=1|soul_totem=1|switch=1		1	White_Palace_01	0
+367	White_Palace_03_hub	White Palace		gameplay	cooked-pack	50	186912	208000	100220	6	356	17	Enemy=17	breakable=8|persistent=2|bench=1|door=1|soul_totem=1|switch=1|toll_gate=1		7	White_Palace_01|White_Palace_04|White_Palace_06|White_Palace_14|White_Palace_15	1
+368	White_Palace_04	White Palace		gameplay	cooked-pack	54	158172	173408	81742	5	299	6	Enemy=6	persistent=1|soul_totem=1		2	White_Palace_03_hub|White_Palace_14	0
+369	White_Palace_05	White Palace		gameplay	cooked-pack	91	303108	242592	169248	7	413	0				4	White_Palace_15|White_Palace_16	0
+370	White_Palace_06	White Palace		gameplay	cooked-pack	18	72692	104672	39130	3	199	5	White Palace Fly=5	reveal_mask=2|bench=1|breakable_wall=1|persistent=1		4	White_Palace_03_hub|White_Palace_07|White_Palace_18	0
+371	White_Palace_07	White Palace		gameplay	cooked-pack	75	233264	242432	129201	7	408	0		breakable=2		2	White_Palace_06|White_Palace_12	0
+372	White_Palace_08	White Palace		gameplay	cooked-pack	28	83156	104864	44011	3	205	0		inspect=1		2	White_Palace_13	0
+373	White_Palace_09	White Palace		gameplay	cooked-pack	71	186892	242432	96593	7	408	0		breakable=4|persistent=4|breakable_wall=2|reveal_mask=2|inspect=1|shiny=1|soul_totem=1		1	White_Palace_13	1
+374	White_Palace_11	White Palace		gameplay	cooked-pack	48	97700	105696	46245	3	231	1	Royal Gaurd=1	door=2|persistent=1		3	White_Palace_01	2
+375	White_Palace_12	White Palace		gameplay	cooked-pack	68	205232	208288	110028	6	365	2	Enemy=2	breakable=4|persistent=3|breakable_wall=2|reveal_mask=2|toll_gate=2|switch=1		2	White_Palace_07|White_Palace_13	0
+376	White_Palace_13	White Palace		gameplay	over-128-views	135						5	White Palace Fly=5	breakable=6		4	White_Palace_08|White_Palace_09|White_Palace_12	0
+377	White_Palace_14	White Palace		gameplay	cooked-pack	90	189620	207648	92504	6	345	4	Enemy=4	breakable=2|persistent=1|switch=1		2	White_Palace_03_hub|White_Palace_04	0
+378	White_Palace_15	White Palace		gameplay	cooked-pack	36	141648	140256	78212	4	287	4	Enemy=4	persistent=4|switch=2|toll_gate=2|breakable_wall=1|soul_totem=1		3	White_Palace_03_hub|White_Palace_05	0
+379	White_Palace_16	White Palace		gameplay	cooked-pack	99	127388	105056	54600	3	211	0				2	White_Palace_05	0
+380	White_Palace_17	White Palace		gameplay	cooked-pack	48	176692	206976	97205	6	324	0		persistent=3|soul_totem=2|breakable=1|breakable_wall=1|reveal_mask=1|switch=1|toll_gate=1		2	White_Palace_18|White_Palace_19	0
+381	White_Palace_18	White Palace		gameplay	cooked-pack	104	159856	139360	75434	4	259	12	White Palace Fly=12	persistent=2|reveal_mask=2|soul_totem=2|inspect=1		2	White_Palace_06|White_Palace_17	0
+382	White_Palace_19	White Palace		gameplay	cooked-pack	96	146496	139008	67172	4	248	6	White Palace Fly=6	persistent=3|reveal_mask=2|soul_totem=2		2	White_Palace_17|White_Palace_20	0
+383	White_Palace_20	White Palace		gameplay	over-128-views	156						2	Royal Gaurd=2	battle=1|conversation=1|persistent=1|soul_totem=1		1	White_Palace_19	1
+384	Hive_01	The Hive		gameplay	cooked-pack	30	112712	175456	64093	5	363	15	Hiveling Spawner=10|Bee Hatchling Ambient=3|Bee Stinger=1|Zombie Hive=1	breakable=45|persistent=5|bench=1|geo_rock=1		3	Abyss_03_c|Hive_02	0
+385	Hive_02	The Hive		gameplay	cooked-pack	54	144116	175616	77827	5	368	39	Hiveling Spawner=20|Bee Hatchling Ambient=13|Bee Stinger=3|Zombie Hive=3	breakable=61|persistent=28|geo_rock=3		3	Hive_01|Hive_03_c	0
+386	Hive_03	The Hive		gameplay	cooked-pack	60	109272	139936	53900	4	277	14	Bee Hatchling Ambient=11|Bee Stinger=2|Big Bee=1	breakable=25|persistent=6|geo_rock=3|grub=1|reveal_mask=1		3	Deepnest_East_02|Hive_03_c|Hive_04	0
+387	Hive_03_c	The Hive		gameplay	cooked-pack	48	121124	174976	65083	5	348	14	Bee Hatchling Ambient=9|Bee Stinger=3|Big Bee=2	breakable=31|persistent=8|breakable_wall=1|reveal_mask=1		4	Deepnest_East_01|Hive_02|Hive_03|Hive_04	0
+388	Hive_04	The Hive		gameplay	cooked-pack	100	163036	209408	78933	6	400	32	Hiveling Spawner=20|Bee Hatchling Ambient=4|Bee Stinger=4|Big Bee=2|Zombie Hive=2	breakable=58|persistent=14|geo_rock=2|grub=1		3	Hive_03|Hive_03_c|Hive_05	0
+389	Hive_05	The Hive		gameplay	cooked-pack	30	88604	139936	47805	4	277	1	Hive Knight=1	breakable=23|persistent=5|conversation=1|shiny=1		1	Hive_04	0
+390	Grimm_Divine	Grimm Troupe	grimm	gameplay	cooked-pack	4	36444	35744	18921	1	93	0		persistent=3|shiny=3|conversation=1		1	Town	0
+391	Grimm_Main_Tent	Grimm Troupe	grimm	gameplay	cooked-pack	40	85644	105312	41476	3	219	0		persistent=4|chest=2|conversation=2|reveal_mask=2|shiny=1		2	Town	1
+392	Grimm_Main_Tent_boss	Grimm Troupe	grimm	gameplay	no-envelope							2	Grimm Boss=1|Real Bat=1			0		0
+393	Grimm_Nightmare	Grimm Troupe	grimm	gameplay	cooked-pack	33	78092	104896	38099	3	206	2	Nightmare Grimm Boss=1|Real Bat=1	persistent=1	text	1		1
+394	Dream_Nailcollection	Dreams		dream_gameplay_or_variant	cooked-pack	78	121168	104768	54532	3	202	0		conversation=2		4		2
+395	Dream_01_False_Knight	Dreams		dream_gameplay_or_variant	cooked-pack	35	97852	140096	51765	4	282	3	False Knight Dream=1|Head=1|Tinger=1	battle=1|door=1|persistent=1		1		2
+396	Dream_02_Mage_Lord	Dreams		dream_gameplay_or_variant	cooked-pack	25	95688	141248	53911	4	318	3	Dream Mage Lord Phase=2|Dream Mage Lord=1	door=1		1		2
+397	Dream_03_Infected_Knight	Dreams		dream_gameplay_or_variant	cooked-pack	32	80232	104576	40371	3	196	1	Lost Kin=1	conversation=2|persistent=2|door=1|shiny=1		1		2
+398	Dream_04_White_Defender	Dreams		dream_gameplay_or_variant	cooked-pack	24	90732	139040	50988	4	249	1	White Defender=1			1		1
+399	Dream_Mighty_Zote	Dreams		dream_gameplay_or_variant	cooked-pack	30	61488	104704	30560	3	200	9	Zote Balloon=4|Zoteling=4|Grey Prince=1	battle=1	text	1		0
+400	Dream_Guardian_Hegemol	Dreams		dream_gameplay_or_variant	cooked-pack	20	46056	36064	22099	1	103	0				1		3
+401	Dream_Guardian_Lurien	Dreams		dream_gameplay_or_variant	cooked-pack	20	46188	36064	22150	1	103	0				1		3
+402	Dream_Guardian_Monomon	Dreams		dream_gameplay_or_variant	cooked-pack	20	46112	36064	22126	1	103	0				1		3
+403	Cutscene_Boss_Door	Cinematics and openings		gameplay	cooked-pack	6	34988	35488	17999	1	85	0				1		1
+404	Dream_Backer_Shrine	Dreams		dream_gameplay_or_variant	cooked-pack	25	56472	69856	27165	2	135	0		door=2		2	0.	3
+405	Dream_Room_Believer_Shrine	Dreams		dream_gameplay_or_variant	cooked-pack	30	93216	70688	47586	2	161	0		breakable=63|inspect=63|persistent=63		1	Dream_Backer_Shrine	1
+406	Dream_Abyss	Dreams		dream_gameplay_or_variant	cooked-pack	90	258472	419744	154703	12	829	0		breakable=19|door=1		1		2
+407	Dream_Final_Boss	Dreams		dream_gameplay_or_variant	cooked-pack	52	63404	35936	25114	1	99	1	Radiance=1	persistent=1|reveal_mask=1	text	1		0
+408	Room_Final_Boss_Atrium	Hollow Knight finale		gameplay	cooked-pack	33	71004	37856	34934	1	159	0		breakable=4|bench=1	text	2	Room_Final_Boss_Core|Room_temple	0
+409	Room_Final_Boss_Core	Hollow Knight finale		gameplay	cooked-pack	12	61952	71296	34847	2	180	1	Hollow Knight Boss=1	breakable=3	text	1	Room_Final_Boss_atrium	1
+410	Cinematic_Ending_A	Cinematics and openings		cinematic	no-envelope							0				0		0
+411	Cinematic_Ending_B	Cinematics and openings		cinematic	no-envelope							0				0		0
+412	Cinematic_Ending_C	Cinematics and openings		cinematic	no-envelope							0				0		0
+413	Cinematic_Ending_D	Cinematics and openings		cinematic	no-envelope							0				0		0
+414	Cinematic_Ending_E	Cinematics and openings		cinematic	no-envelope							0				0		0
+415	End_Credits	Menus, helpers and tests		credits	no-envelope							0			text	0		0
+416	Cinematic_MrMushroom	Cinematics and openings		cinematic	no-envelope							0			text	0		0
+417	Menu_Credits	Menus, helpers and tests		credits	no-envelope							0			text	0		0
+418	End_Game_Completion	Menus, helpers and tests		completion_screen	no-envelope							0			text	0		0
+419	PermaDeath	Menus, helpers and tests		transition_or_bootstrap_helper	no-envelope							0			text	0		0
+420	_test_cocoon_2	Menus, helpers and tests		gameplay	cooked-pack	6	34548	35360	17607	1	81	0		persistent=1		1	_test_cocoon_1	0
+421	PermaDeath_Unlock	Menus, helpers and tests		transition_or_bootstrap_helper	no-envelope							0			text	0		0
+422	_test_cocoon_1	Menus, helpers and tests		gameplay	cooked-pack	6	34800	35360	17737	1	81	0		persistent=2		1	_test_cocoon_2	0
+423	GG_Waterways	Godhome	godhome	gameplay	cooked-pack	63	173848	344256	98710	10	518	0		persistent=8|chest=5|breakable=4|conversation=4|reveal_mask=2|door=1|shiny=1		3	GG_Pipeway|Room_GG_Shortcut	10
+424	GG_Atrium	Godhome	godhome	gameplay	cooked-pack	120	177436	208224	81547	6	363	0		boss_door=5|door=3|persistent=2|bench=1|reveal_mask=1|switch=1		11	GG_Atrium_Roof|GG_Blue_Room|GG_Workshop	10
+425	GG_Broken_Vessel	Godhome	godhome	boss_arena	cooked-pack	49	80164	72064	38352	2	204	1	Infected Knight=1	breakable=2|conversation=1	boss	1		2
+426	GG_Brooding_Mawlek	Godhome	godhome	boss_arena	cooked-pack	8	60212	104896	36488	3	206	1	Mawlek Body=1		boss	1		2
+427	GG_Collector	Godhome	godhome	boss_arena	cooked-pack	40	76708	104864	37767	3	205	1	Jar Collector=1		boss	1		2
+428	GG_Crystal_Guardian	Godhome	godhome	boss_arena	cooked-pack	9	60336	105120	35835	3	213	1	Mega Zombie Beam Miner=1	breakable=3	boss	1		2
+429	GG_Crystal_Guardian_2	Godhome	godhome	boss_arena	cooked-pack	9	54752	71584	31425	2	189	1	Zombie Beam Miner Rematch=1		boss	1		2
+430	GG_Dung_Defender	Godhome	godhome	boss_arena	cooked-pack	24	70696	105056	37911	3	211	1	Dung Defender=1		boss	1		2
+431	GG_Failed_Champion	Godhome	godhome	boss_arena	cooked-pack	35	76280	104576	38159	3	196	3	False Knight Dream=1|Head=1|Tinger=1	battle=1	boss	1		2
+432	GG_False_Knight	Godhome	godhome	boss_arena	cooked-pack	20	69644	104704	38285	3	200	2	False Knight New=1|Head=1	battle=1|persistent=1|shiny=1	boss	1		2
+433	GG_Flukemarm	Godhome	godhome	boss_arena	cooked-pack	12	60876	71776	34651	2	195	7	Fluke Fly Spawner=6|Fluke Mother=1		boss	1		2
+434	GG_Ghost_Galien	Godhome	godhome	boss_arena	cooked-pack	35	77516	105696	39805	3	231	1	Ghost Warrior Galien=1		boss	1		2
+435	GG_Ghost_Gorb	Godhome	godhome	boss_arena	cooked-pack	66	82880	70912	34767	2	168	1	Ghost Warrior Slug=1	breakable=1	boss	1		2
+436	GG_Ghost_Hu	Godhome	godhome	boss_arena	cooked-pack	8	59540	105408	36178	3	222	1	Ghost Warrior Hu=1	breakable=12	boss	1		2
+437	GG_Ghost_Markoth	Godhome	godhome	boss_arena	cooked-pack	6	60816	105664	37573	3	230	1	Ghost Warrior Markoth=1		boss	1		2
+438	GG_Ghost_Marmu	Godhome	godhome	boss_arena	cooked-pack	24	79012	106144	43277	3	245	1	Ghost Warrior Marmu=1		boss	1		2
+439	GG_Ghost_No_Eyes	Godhome	godhome	boss_arena	cooked-pack	18	72216	105792	40992	3	234	1	Ghost Warrior No Eyes=1		boss	1		2
+440	GG_Ghost_Xero	Godhome	godhome	boss_arena	cooked-pack	12	54748	71168	30553	2	176	1	Ghost Warrior Xero=1	breakable=4	boss	1		2
+441	GG_God_Tamer	Godhome	godhome	boss_arena	cooked-pack	21	68368	105184	37319	3	215	2	Lancer=1|Lobster=1		boss	1		2
+442	GG_Grey_Prince_Zote	Godhome	godhome	boss_arena	cooked-pack	30	62144	71488	30915	2	186	9	Zote Balloon=4|Zoteling=4|Grey Prince=1		boss|text	1		2
+443	GG_Grimm	Godhome	godhome	boss_arena	cooked-pack	40	72476	104800	34607	3	203	2	Grimm Boss=1|Real Bat=1		boss	1		2
+444	GG_Grimm_Nightmare	Godhome	godhome	boss_arena	cooked-pack	33	58304	70400	27424	2	152	2	Nightmare Grimm Boss=1|Real Bat=1		boss|text	1		2
+445	GG_Gruz_Mother	Godhome	godhome	boss_arena	cooked-pack	21	65640	104512	35471	3	194	1	Giant Fly=1	battle=1	boss	1		2
+446	GG_Hive_Knight	Godhome	godhome	boss_arena	cooked-pack	30	72532	105280	37271	3	218	1	Hive Knight=1	breakable=11	boss	1		2
+447	GG_Hollow_Knight	Godhome	godhome	boss_arena	cooked-pack	12	53060	37344	29304	1	143	1	HK Prime=1	persistent=2|reveal_mask=2	boss|text	1		2
+448	GG_Hornet_1	Godhome	godhome	boss_arena	cooked-pack	20	66988	71424	36596	2	184	1	Hornet Boss=1		boss	1		2
+449	GG_Hornet_2	Godhome	godhome	boss_arena	cooked-pack	21	62512	71552	32677	2	188	1	Hornet Boss=1		boss	1		2
+450	GG_Lost_Kin	Godhome	godhome	boss_arena	cooked-pack	32	64180	71488	31638	2	186	1	Lost Kin=1	conversation=1	boss	1		2
+451	GG_Lurker	Godhome	godhome	gameplay	cooked-pack	122	295724	243296	169128	7	435	1	Pale Lurker=1	persistent=4|breakable=2|reveal_mask=2|shiny=2|geo_rock=1|soul_totem=1		1	Room_Colosseum_Spectate	0
+452	GG_Mantis_Lords	Godhome	godhome	boss_arena	cooked-pack	24	67496	104480	35853	3	193	6	Mantis Lord S=4|Mantis Lord=2	battle=1	boss	1		2
+453	GG_Mega_Moss_Charger	Godhome	godhome	boss_arena	cooked-pack	12	79564	140704	47866	4	301	1	Mega Moss Charger=1		boss	1		2
+454	GG_Nailmasters	Godhome	godhome	boss_arena	cooked-pack	24	71344	105216	38913	3	216	2	Mato=1|Oro=1		boss	1		2
+455	GG_Nosk	Godhome	godhome	boss_arena	cooked-pack	16	61528	71968	34767	2	201	1	Mimic Spider=1		boss	1		2
+456	GG_Oblobbles	Godhome	godhome	boss_arena	cooked-pack	21	72212	105504	40232	3	225	2	Mega Fat Bee=2		boss	1		2
+457	GG_Painter	Godhome	godhome	boss_arena	cooked-pack	24	74044	104640	40147	3	198	1	Sheo Boss=1		boss	1		2
+458	GG_Pipeway	Godhome	godhome	gameplay	cooked-pack	28	196828	208768	126946	6	380	25	fluke_baby=14|Fluke Fly=5|Fat Fluke=4|Flukeman=2	breakable=9|persistent=8|breakable_wall=2|geo_rock=1		2	GG_Waterways|Waterways_08	0
+459	GG_Radiance	Godhome	godhome	boss_arena	cooked-pack	52	77872	70464	34001	2	154	1	Absolute Radiance=1		boss|text	1		2
+460	GG_Sly	Godhome	godhome	boss_arena	cooked-pack	24	61796	71936	32513	2	200	1	Sly Boss=1	breakable=7	boss	1		2
+461	GG_Soul_Master	Godhome	godhome	boss_arena	cooked-pack	15	60088	71808	33281	2	196	2	Mage Lord=1|Mage Lord Phase=1	breakable=2	boss	1		2
+462	GG_Soul_Tyrant	Godhome	godhome	boss_arena	cooked-pack	25	68644	105216	36806	3	216	3	Dream Mage Lord Phase=2|Dream Mage Lord=1	breakable=5	boss	1		2
+463	GG_Spa	Godhome	godhome	boss_arena	cooked-pack	21	72444	104992	41596	3	209	0		persistent=2|bench=1|breakable=1|reveal_mask=1	boss	2		2
+464	GG_Traitor_Lord	Godhome	godhome	boss_arena	cooked-pack	20	72420	105824	40551	3	235	1	Mantis Traitor Lord=1	battle=1	boss	1		2
+465	GG_Unlock	Godhome	godhome	transition_or_bootstrap_helper	no-envelope							0			text	0		0
+466	GG_Uumuu	Godhome	godhome	boss_arena	cooked-pack	65	89236	70784	35134	2	164	1	Mega Jellyfish GG=1		boss	1		2
+467	GG_Vengefly	Godhome	godhome	boss_arena	cooked-pack	16	54104	70464	28879	2	154	1	Giant Buzzer Col=1		boss	1		2
+468	GG_Watcher_Knights	Godhome	godhome	boss_arena	cooked-pack	36	79940	105088	40982	3	212	6	Black Knight=6	battle=1	boss	1		2
+469	GG_White_Defender	Godhome	godhome	boss_arena	cooked-pack	24	73312	71776	38143	2	195	1	White Defender=1		boss	1		2
+470	GG_Workshop	Godhome	godhome	gameplay	cooked-pack	90	172416	209504	88529	6	403	0		boss_statue=37|inspect=37|reveal_mask=8|persistent=5|conversation=3|breakable_wall=2|bench=1		38	GG_Atrium	37
+471	Room_GG_Shortcut	Godhome	godhome	gameplay	cooked-pack	48	143624	244032	84049	7	458	5	Fungoon Baby=5	breakable=11|reveal_mask=5|persistent=3|geo_rock=2|breakable_wall=1|conversation=1		2	GG_Waterways|Ruins1_04	0
+472	GG_End_Sequence	Godhome	godhome	gameplay	cooked-pack	6	34548	35328	17614	1	80	0				0		0
+473	GG_Atrium_Roof	Godhome	godhome	gameplay	cooked-pack	119	190676	208192	84466	6	362	0		persistent=8|reveal_mask=6|bench=1|boss_door=1|breakable_wall=1|door=1|switch=1		5	GG_Atrium|GG_Land_of_Storms	2
+474	GG_Blue_Room	Godhome	godhome	gameplay	cooked-pack	21	53860	70432	27204	2	153	0		breakable=2|persistent=1|reveal_mask=1		1	GG_Atrium	0
+475	GG_Engine	Godhome	godhome	boss_arena	cooked-pack	21	49496	36416	23860	1	114	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
+476	GG_Engine_Prime	Godhome	godhome	boss_arena	cooked-pack	21	50404	36608	25160	1	120	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
+477	GG_Engine_Root	Godhome	godhome	boss_arena	cooked-pack	21	50848	36960	25060	1	131	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
+478	GG_Mage_Knight	Godhome	godhome	boss_arena	cooked-pack	30	65008	71328	32414	2	181	1	Mage Knight=1	breakable=2	boss	1		2
+479	GG_Vengefly_V	Godhome	godhome	boss_arena	cooked-pack	16	54104	70464	28879	2	154	2	Giant Buzzer Col=2		boss	1		2
+480	GG_Entrance_Cutscene	Godhome	godhome	gameplay	no-envelope							0		conversation=1		0		1
+481	GG_Mighty_Zote	Godhome	godhome	boss_arena	cooked-pack	21	61676	71712	32588	2	193	19	Zote Crew Normal=4|Zote Crew Fat=3|Ordeal Zoteling=2|Zote Crew Tall=2|Zote Turret=2|Zote Balloon=1|Zote Balloon Ordeal=1|Zote Boss=1|Zote Fluke=1|Zote Salubra=1|Zote Thwomp=1	breakable=4	boss|text	1		2
+482	GG_Land_of_Storms	Godhome	godhome	gameplay	cooked-pack	75	110712	105376	53553	3	221	0		door=1|persistent=1|shiny=1		1	GG_Atrium_Roof	2
+483	GG_Boss_Door_Entrance	Godhome	godhome	gameplay	no-envelope							0		conversation=1		0		1
+484	GG_Gruz_Mother_V	Godhome	godhome	boss_arena	cooked-pack	21	65836	71392	35062	2	183	1	Giant Fly=1	battle=1	boss	1		2
+485	GG_Brooding_Mawlek_V	Godhome	godhome	boss_arena	cooked-pack	8	60008	104768	36529	3	202	1	Mawlek Body=1		boss	1		2
+486	GG_Mantis_Lords_V	Godhome	godhome	boss_arena	cooked-pack	24	67496	104480	35858	3	193	8	Mantis Lord S=6|Mantis Lord=2	battle=1	boss	1		2
+487	GG_Nosk_Hornet	Godhome	godhome	boss_arena	cooked-pack	16	55092	70688	29719	2	161	1	Hornet Nosk=1	battle=1	boss	1		2
+488	GG_Uumuu_V	Godhome	godhome	boss_arena	cooked-pack	65	88572	70592	34774	2	158	1	Mega Jellyfish GG=1		boss	1		2
+489	GG_Ghost_Gorb_V	Godhome	godhome	boss_arena	cooked-pack	66	81608	70496	33702	2	155	1	Ghost Warrior Slug=1		boss	1		2
+490	GG_Ghost_Markoth_V	Godhome	godhome	boss_arena	cooked-pack	6	51840	71136	30376	2	175	1	Ghost Warrior Markoth=1		boss	1		2
+491	GG_Ghost_Marmu_V	Godhome	godhome	boss_arena	cooked-pack	24	71136	72032	37259	2	203	1	Ghost Warrior Marmu=1		boss	1		2
+492	GG_Ghost_No_Eyes_V	Godhome	godhome	boss_arena	cooked-pack	18	70880	105408	40052	3	222	1	Ghost Warrior No Eyes=1		boss	1		2
+493	GG_Ghost_Xero_V	Godhome	godhome	boss_arena	cooked-pack	12	50616	70240	27643	2	147	1	Ghost Warrior Xero=1		boss	1		2
+494	GG_Mage_Knight_V	Godhome	godhome	boss_arena	cooked-pack	30	65008	71328	32414	2	181	37	Mage Balloon Spawner=36|Mage Knight=1	breakable=2|battle=1	boss	1		2
+495	GG_Collector_V	Godhome	godhome	boss_arena	cooked-pack	40	76708	104864	37767	3	205	1	Jar Collector=1		boss	1		2
+496	GG_Nosk_V	Godhome	godhome	boss_arena	cooked-pack	16	62192	72032	35338	2	203	1	Mimic Spider=1		boss	1		2
+497	GG_Wyrm	Godhome	godhome	boss_arena	cooked-pack	21	71908	138400	39718	4	229	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
+498	GG_Unn	Godhome	godhome	boss_arena	cooked-pack	21	53920	70208	27518	2	146	0		conversation=1|persistent=1|reveal_mask=1	boss	2		2
+499	GG_Door_5_Finale	Cinematics and openings		cinematic	cooked-pack	21	48888	36320	23670	1	111	0				0		1
+500	GG_Unlock_Wastes	Godhome	godhome	gameplay	cooked-pack	12	61716	138944	37070	4	246	0		conversation=1|inspect=1		1		1

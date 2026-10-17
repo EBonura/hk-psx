@@ -49,6 +49,16 @@ Area comes from the scene name prefix (`area_of` in `host/hk-cook/src/catalog.rs
 | Godhome | 77 | 0 | 74 | 3 | 0 | 185 | 3003 |
 | **Total** | **501** | **60** | **397** | **41** | **3** | **2499** | **26606** |
 
+## Base game and expansions
+
+Grimm Troupe and Godhome are the two expansions the port will carry after the base game; their scenes are tagged `dlc` in the TSV so budgets can be sized with them in mind. Everything else is the base game.
+
+| Part | Scenes | Playable | Cooked pack | No envelope | Over 128 views | Enemies | Cooked KB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Base game | 420 | 60 | 320 | 37 | 3 | 2310 | 23506 |
+| Grimm Troupe | 4 | 0 | 3 | 1 | 0 | 4 | 96 |
+| Godhome | 77 | 0 | 74 | 3 | 0 | 185 | 3003 |
+
 ## Scenes without an envelope
 
 These cannot cook as rooms today. The role is the importer's evidence-backed classification.
