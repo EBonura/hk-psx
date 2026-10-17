@@ -185,6 +185,76 @@ pub struct BossCooked {
     pub owners: Vec<u8>,
 }
 
+/// Every PlayMakerFSM of one level file: `(owner GameObject, source id, FSM name)`, in file order.
+pub fn level_fsms(source: &Source, level: &str) -> Result<Vec<(i64, String, String)>> {
+    let file = source.file(level)?;
+    let mut out = vec![];
+    for info in &file.objects {
+        if info.class_id != 114 {
+            continue;
+        }
+        let obj = source.object(&file, info.path_id)?;
+        if source.typename(&obj).map_or(true, |t| t != "PlayMakerFSM") {
+            continue;
+        }
+        let tree = source.read(&obj)?;
+        let go = tree.get("m_GameObject").and_then(|p| p.pptr()).map(|p| p.1).ok_or("FSM owner")?;
+        let name = tree.get("fsm").and_then(|f| f.get("name")).and_then(Value::str).unwrap_or_default();
+        out.push((go, obj.sid(), name));
+    }
+    Ok(out)
+}
+
+/// The GameObject of `level` named `name` (it must be the only one).
+pub fn find_object(source: &Source, level: &str, name: &str) -> Result<i64> {
+    let file = source.file(level)?;
+    let mut found = None;
+    for info in &file.objects {
+        if info.class_id != 1 {
+            continue;
+        }
+        let obj = source.object(&file, info.path_id)?;
+        let tree = source.read(&obj)?;
+        if tree.get("m_Name").and_then(Value::str).as_deref() == Some(name) && found.replace(info.path_id).is_some() {
+            return Err(format!("{level} has two objects named {name}").into());
+        }
+    }
+    found.ok_or_else(|| format!("{level} has no object named {name}").into())
+}
+
+/// The PlayerData fields Hornet's FSMs read and write, in the order of the adapter's local reserve (`hornet::HORNET_FIELDS`).
+pub const HORNET_FIELDS: [&str; 6] = ["hornetGreenpath", "hornet1Defeated", "disablePause", "dreamerScene1", "hasDash", "equippedCharm_15"];
+
+/// Greenpath's Hornet (Fungus1_04_boss, level133): the boss object, the FSMs of its subtree and the Encounter FSM that
+/// wakes it. Returns `(boss object, [(owner object, FSM source id)])`.
+pub fn hornet_inputs(source: &Source) -> Result<(i64, Vec<(i64, String)>)> {
+    const LEVEL: &str = "level133";
+    let boss = find_object(source, LEVEL, "Hornet Boss 1")?;
+    let kids = crate::census::hierarchy(source, LEVEL)?;
+    let mut tree = vec![];
+    let mut stack = vec![boss];
+    while let Some(g) = stack.pop() {
+        tree.push(g);
+        if let Some(c) = kids.get(&g) {
+            stack.extend(c.iter().copied());
+        }
+    }
+    let fsms = level_fsms(source, LEVEL)?;
+    // The Encounter FSM rides in the same tree: it wakes the boss and shuts the gates.
+    let mut sources: Vec<(i64, String)> = vec![];
+    for g in &tree {
+        for (go, sid, _) in fsms.iter().filter(|(go, _, _)| go == g) {
+            sources.push((*go, sid.clone()));
+        }
+    }
+    let encounter: Vec<_> = fsms.iter().filter(|(_, _, n)| n == "Encounter").collect();
+    match encounter.as_slice() {
+        [(go, sid, _)] => sources.push((*go, sid.clone())),
+        _ => return Err(format!("{} Encounter FSMs in {LEVEL}", encounter.len()).into()),
+    }
+    Ok((boss, sources))
+}
+
 /// Cook the FSMs `fsms` (`(owner object, FSM)`) as one boss tree whose scene objects are the subtrees of `roots` plus the
 /// objects the FSMs name. `fields` is the PlayerData list the player-data actions resolve against.
 pub fn cook_boss_tree(source: &Source, level: &str, fsms: &[(i64, &Value)], roots: &[i64], fields: Option<&[String]>) -> Result<BossCooked> {
