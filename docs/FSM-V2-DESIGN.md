@@ -392,6 +392,24 @@ Open after the truth pass.
 - **Trace coverage.** 31 of Hornet's 77 Control states were entered in one run; the oracle needs more seeds and forced entries before G1 can be called.
 - **`cargo llvm-lines` attribution** of `hk_psx::enemies` (the third funding source in 3.4) was not part of the truth pass and is still unknown.
 
+## 7. Phase 1 results (landing, 2026-10-17)
+
+Steps 1 to 4 of section 5 are on main: the HKFSM03 bank format and resident kernel (`shared/hk-format/src/fsm3*`, `shared/hk-sim/src/fsm3.rs`), the family code (`fsm3_*.rs`, one source file per family), the cooker (`host/hk-fsm`, `cook3.rs`), the scene scripts folded onto the same kernel (HKSCR01 and the v1 executor are gone), and Crawler, Gruzzer and Vengefly running from original banks. Everything below was measured on the landing branch (`feat/fsm-v2-land-2026-10-17`, 15ec4f6 plus the phase 1 work) with the frontend pinned by `emulator.lock.json`.
+
+**Fidelity.**
+- G0: the cooker parses every bank back with the guest's own `Bank::parse`; `fsm3-sizes` asserts the decode round trip and the source listing for every tree it lowers.
+- G1: `cargo test --features trace` in `shared/hk-sim` with `HK_FSM_TRACE_DIR` at the `tools/hkref` runs (`fsmtrace`): Crawler 19 observations matched (4 of 5 states), Gruzzer 1,219 (Bouncer Control 21 of 23 states), Vengefly 1,123 (chaser 8 of 8, receiver 7 of 7), GetDistance worst error 0.000014 units. The scene scripts equal HKSCR01 over a wandering hero, except that v2 raises the first `NextFrameEvent` one tick earlier, which is what PlayMaker does; no route outcome moved.
+- Closed loop: the 55 routes of `cargo hk-build validate` end where main's end. Every route completed with no fault and its final x, y, region, scene loads and gate loads equal main's. 53 of 55 pass; the two reds are the old pacing reds (grub-jar, cornifer-map). No ceiling changed.
+- Cost: late frames over the route set went from 7,521 to 8,045 (+524, 7 percent), all within their ceilings. The largest rises are journey-kings (641 to 809 of 857), journey-false-knight (1,016 to 1,105 of 1,542) and journey-crossroads (999 to 1,042 of 1,225). The interpreter pass per tick is the suspect; it has not been profiled.
+
+**Memory (docs/BUDGET.md).** Resident cost is nil: linked code +1,032 B, data -304, BSS -692 (the fold paid for the kernel; the 3.75 KB estimate held). What the substrate costs is pool: the shared action code is paid by every room that carries a bank, so the worst room (Crossroads: Vengefly, Aspid, Climber and Crawler, the grub jar art and the carried Shade art) needed 95,944 pool bytes against a 90,112-byte limit. The pool is 100 KiB now (102,400, 8,912 B free below it) and the build prints the six tightest rooms (`pool fit`). The module split that follows from 3.2 is `fsm3_logic` (flow, math, events, timers, PlayerData: 3.6 KB), `fsm3_world` (object, audio, animation: 1.1 KB) and `fsm3_body` (transform, ai: 7.9 KB). The cooker writes the families each bank uses (`data/<tree>_families.txt`), `host/code_modules.py` maps them to modules per scene (`FAMILY_MODULE`), and the guest requires exactly that set (`FSM3_<TREE>` masks in `data/modules.rs`). Of the 40 rooms with modules, 23 carry no v2 code, 11 carry all three, 5 (scripts only) carry logic, 1 (Crawler only) carries logic and body. v1 modules replaced: crawler 7.5 to 1.7 KB, gruzzer 21.4 to 6.5 KB, vengefly 8.1 to 7.7 KB.
+
+**The hard families, measured** (`shared/hk-sim/src/fsm3_hard.rs`, behind the `hard-ops` feature, linked as a module no room loads by `HK_MEASURE_HARD=1 HK_GUEST_FEATURES=hard-ops`). These are request-style handlers (decode operands, append a record to `Env::req`, the native adapter executes it): 59 Hornet 1 action types in 11,000 B of code and 648 of rodata, 186 B per type. With the production handlers the family means are: flow 229, math 145, events 120, timers 472 (Wait), object 132, audio 172, animation 222, PlayerData 104, transform 263, ai 433, collider 148, combat 144, particles 216 (raycast has no measurement; 250 assumed). The expensive shapes are the stateful ones (iTween move or scale 564 B per type, GetAngleToTarget2D about 360 with its atan2 table). So the "2 to 3 times the estimate" risk of section 6 did not occur: the hard families cost 1.0 to 1.4 times the section 3.3 assumptions, and the 300 B per type bar holds on the mean. The 277 distinct types of the 59 census trees add up to about 58.5 KB of family code that is never co-resident. Hornet 1's 90 types are about 19.0 KB.
+
+**Per-boss fit** is Appendix D (method: bank sizes from the real encoder via `fsm3-fit`, family code from the means above, runtime = FSM blocks plus 30 B per entity plus the 64 B queue, 7 KB for services and native components as in 3.3). Hornet 1 is 35.7 KB (66.1 KB with the carried Shade art, +32 KB inside the limit). The tightest are Hollow Knight (56.7 KB, 87.1 KB with the Shade art, +11.2 KB at 100 KiB; it would have been +3.1 KB at the old 92 KiB), Absolute Radiance (48.7 KB), Radiance (46.7 KB) and Pure Vessel (42.4 KB). The Grimm Troupe trees (Grimm 39.0 KB, Nightmare King 38.3 KB) and every Godhome statue tree fit with at least 19 KB to spare; the Attuned, Ascended and Radiant variants reuse the base trees (the `_V` trees measured here have the same bank size as their base).
+
+**Still open.** The services and native components (7 KB) are an estimate until M3 writes them. The kernel pass cost is unprofiled. `raycast` has no handler. The False Knight tree does not lower (`FalseyControl` names a state, `Check Facing`, that is not in the source listing), which is irrelevant while it stays a native port.
+
 ## Appendix A: top 80 action types by coverage
 
 Columns: enabled instances over all 7,768 FSM instances, FSM definitions using it (of 412), enemy roots whose tree uses it (of 2,487), how many of the 24 listed bosses use it, whether v1 implements it today, whether Hornet 1 uses it.
@@ -525,3 +543,64 @@ Guest experiment results (PSoXide cycle model):
 | kernel code / resident tables | 3,328 B / 422 B |
 | tick pass on the Hornet 1 bank, stub handlers, 17 FSMs | about 7,000 cycles per tick |
 | handlers (14) | 64 to 292 B, mean 140 B |
+
+## Appendix D: per-boss module fit (phase 1 landing)
+
+Bytes in the room's code chunk. `fsm3-fit` (`host/hk-fsm`, `fsm3-fit DATA CACHE OUTDIR`) lowers each tree with the real encoder, so the bank and the runtime FSM blocks are measured; the runtime column adds 30 B per entity handle and the 64 B queue. Family code is the number of distinct action types times the measured mean bytes per type of the family (section 7); services is the 7 KB of 3.3 for the native shims and generic components and is an estimate. The module total also carries three 136 B module headers. The pool limit is 98,304 (the 102,400 pool less the 4 KiB window fence); the carried Shade art (30,388 B) rides on top of any room. Trees that did not lower: False Knight.
+
+| tree | FSMs | actions | types | bank | runtime | family code | services | module total | with Shade (30,388) | margin, 98,304 limit |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **Base game, in the order of the plan** | | | | | | | | | | |
+| Hornet 1 | 17 | 526 | 90 | 7,744 | 1,550 | 19,035 | 7,000 | 35,737 | 66,125 | +32,179 |
+| Mantis Lords | 1 | 183 | 43 | 2,511 | 394 | 8,633 | 7,000 | 18,946 | 49,334 | +48,970 |
+| Soul Master | 9 | 436 | 79 | 6,231 | 1,349 | 15,637 | 7,000 | 30,625 | 61,013 | +37,291 |
+| Collector | 7 | 357 | 87 | 5,237 | 885 | 16,008 | 7,000 | 29,538 | 59,926 | +38,378 |
+| Watcher Knights | 6 | 304 | 71 | 4,686 | 1,004 | 14,095 | 7,000 | 27,193 | 57,581 | +40,723 |
+| Dung Defender | 13 | 527 | 76 | 7,218 | 1,335 | 14,595 | 7,000 | 30,556 | 60,944 | +37,360 |
+| Flukemarm | 6 | 126 | 46 | 1,761 | 567 | 8,438 | 7,000 | 18,174 | 48,562 | +49,742 |
+| Uumuu | 4 | 222 | 63 | 3,192 | 424 | 12,096 | 7,000 | 23,120 | 53,508 | +44,796 |
+| Traitor Lord | 13 | 536 | 86 | 7,972 | 2,169 | 17,278 | 7,000 | 34,827 | 65,215 | +33,089 |
+| Crystal Guardian | 10 | 291 | 71 | 4,134 | 1,089 | 14,786 | 7,000 | 27,417 | 57,805 | +40,499 |
+| Nosk | 6 | 255 | 58 | 3,870 | 769 | 11,784 | 7,000 | 23,831 | 54,219 | +44,085 |
+| Hive Knight | 5 | 276 | 70 | 4,417 | 711 | 13,498 | 7,000 | 26,034 | 56,422 | +41,882 |
+| Hornet 2 | 23 | 721 | 104 | 10,922 | 2,061 | 20,997 | 7,000 | 41,388 | 71,776 | +26,528 |
+| Broken Vessel | 23 | 687 | 94 | 10,284 | 1,880 | 18,446 | 7,000 | 38,018 | 68,406 | +29,898 |
+| White Defender | 19 | 767 | 80 | 10,297 | 2,046 | 15,860 | 7,000 | 35,611 | 65,999 | +32,305 |
+| Radiance | 45 | 1194 | 90 | 17,899 | 3,542 | 17,890 | 7,000 | 46,739 | 77,127 | +21,177 |
+| Hollow Knight | 29 | 1521 | 128 | 21,710 | 2,833 | 24,717 | 7,000 | 56,668 | 87,056 | +11,248 |
+| Gruz Mother | 4 | 235 | 60 | 3,441 | 456 | 12,951 | 7,000 | 24,256 | 54,644 | +43,660 |
+| Brooding Mawlek | 13 | 325 | 65 | 5,176 | 964 | 12,852 | 7,000 | 26,400 | 56,788 | +41,516 |
+| **Base game, dream and optional fights** | | | | | | | | | | |
+| Lost Kin | 18 | 593 | 93 | 8,753 | 1,632 | 18,893 | 7,000 | 36,686 | 67,074 | +31,230 |
+| Grey Prince Zote | 11 | 652 | 90 | 9,244 | 1,160 | 18,010 | 7,000 | 35,822 | 66,210 | +32,094 |
+| Soul Tyrant (dream) | 15 | 525 | 81 | 7,482 | 1,692 | 16,473 | 7,000 | 33,055 | 63,443 | +34,861 |
+| Soul Tyrant phase 2 | 15 | 372 | 68 | 5,446 | 1,507 | 13,598 | 7,000 | 27,959 | 58,347 | +39,957 |
+| Oro (Nailmasters) | 12 | 762 | 86 | 11,355 | 1,359 | 17,345 | 7,000 | 37,467 | 67,855 | +30,449 |
+| Mato (Nailmasters) | 12 | 762 | 86 | 11,351 | 1,329 | 17,345 | 7,000 | 37,433 | 67,821 | +30,483 |
+| Soul Warrior | 13 | 277 | 65 | 4,462 | 1,028 | 13,452 | 7,000 | 26,350 | 56,738 | +41,566 |
+| Xero | 11 | 302 | 52 | 4,933 | 905 | 11,116 | 7,000 | 24,362 | 54,750 | +43,554 |
+| Markoth | 11 | 154 | 46 | 2,845 | 919 | 9,707 | 7,000 | 20,879 | 51,267 | +47,037 |
+| Galien | 10 | 178 | 55 | 3,009 | 889 | 11,776 | 7,000 | 23,082 | 53,470 | +44,834 |
+| No Eyes | 10 | 233 | 46 | 3,697 | 796 | 9,644 | 7,000 | 21,545 | 51,933 | +46,371 |
+| Mantis Heavy | 12 | 389 | 63 | 5,520 | 1,446 | 13,626 | 7,000 | 28,000 | 58,388 | +39,916 |
+| **Grimm Troupe** | | | | | | | | | | |
+| Grimm | 15 | 779 | 97 | 11,116 | 1,501 | 18,992 | 7,000 | 39,017 | 69,405 | +28,899 |
+| Nightmare King Grimm | 15 | 776 | 91 | 11,183 | 1,677 | 18,057 | 7,000 | 38,325 | 68,713 | +29,591 |
+| **Godhome (statue trees; the Attuned, Ascended and Radiant variants reuse them)** | | | | | | | | | | |
+| Absolute Radiance (GG) | 45 | 1310 | 95 | 19,220 | 3,584 | 18,526 | 7,000 | 48,738 | 79,126 | +19,178 |
+| Pure Vessel (GG) | 16 | 923 | 103 | 13,330 | 1,719 | 19,928 | 7,000 | 42,385 | 72,773 | +25,531 |
+| Sly (Godhome) | 13 | 930 | 90 | 13,793 | 1,399 | 18,786 | 7,000 | 41,386 | 71,774 | +26,530 |
+| Troupe Master Grimm (GG) | 15 | 779 | 97 | 11,114 | 1,621 | 18,992 | 7,000 | 39,135 | 69,523 | +28,781 |
+| Nightmare King (GG) | 15 | 776 | 91 | 11,183 | 1,677 | 18,057 | 7,000 | 38,325 | 68,713 | +29,591 |
+| Hornet 2 (GG) | 22 | 718 | 104 | 10,846 | 2,047 | 20,997 | 7,000 | 41,298 | 71,686 | +26,618 |
+| Broken Vessel (GG) | 23 | 687 | 94 | 10,284 | 1,880 | 18,446 | 7,000 | 38,018 | 68,406 | +29,898 |
+| White Defender (GG) | 19 | 767 | 80 | 10,297 | 2,046 | 15,860 | 7,000 | 35,611 | 65,999 | +32,305 |
+| Lost Kin (GG) | 18 | 593 | 93 | 8,753 | 1,632 | 18,893 | 7,000 | 36,686 | 67,074 | +31,230 |
+| Crystal Guardian 2 | 12 | 307 | 71 | 4,390 | 1,157 | 14,787 | 7,000 | 27,742 | 58,130 | +40,174 |
+| Dung Defender (GG) | 12 | 518 | 73 | 7,038 | 1,297 | 14,118 | 7,000 | 29,861 | 60,249 | +38,055 |
+| Traitor Lord (GG) | 13 | 536 | 86 | 7,970 | 2,169 | 17,278 | 7,000 | 34,825 | 65,213 | +33,091 |
+| Grey Prince Zote (GG) | 11 | 652 | 90 | 9,244 | 1,160 | 18,010 | 7,000 | 35,822 | 66,210 | +32,094 |
+| Brooding Mawlek (V) | 13 | 325 | 65 | 5,176 | 994 | 12,852 | 7,000 | 26,430 | 56,818 | +41,486 |
+| Soul Warrior (V) | 13 | 277 | 65 | 4,462 | 1,028 | 13,452 | 7,000 | 26,350 | 56,738 | +41,566 |
+| Xero (V) | 11 | 302 | 52 | 4,933 | 905 | 11,116 | 7,000 | 24,362 | 54,750 | +43,554 |
+| Markoth (V) | 11 | 154 | 46 | 2,845 | 919 | 9,707 | 7,000 | 20,879 | 51,267 | +47,037 |
