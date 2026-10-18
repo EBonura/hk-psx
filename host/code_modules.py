@@ -64,8 +64,13 @@ MAX_IMPORTS = 256
 # 100 KiB since the FSM v2 kernel (2026-10-17, was 92 KiB since the 2026-10-02 merge): at 96 KiB the merged resident image
 # overflowed RAM by 2,944 bytes. The worst room plus the carried Shade art
 # needs 80,972 bytes, under this less the 4 KiB window fence.
-POOL_BYTES = 0x19000
+# 111.75 KiB (0x1BF00) since Greenpath's Hornet (2026-10-18): her `hornet` module is 65,312 bytes, which only one window can hold,
+# the window [0x801D8000, 0x801E8000), so the pool starts exactly there (the pool's end is the stack reserve's). Her room is then
+# the module, 4,096 bytes of state and the carried Shade (99,796 bytes) in 114,432. At 100 KiB (base 0x801DAF00) the pool holds no
+# window of more than 53,504 bytes, and the build did not say so: the gate searched forever (host/hk-build module_publish.rs
+# now refuses a module wider than the widest window the pool holds).
 STACK_FLOOR = 0x801FFF00 - 0xC000
+POOL_BYTES = STACK_FLOOR - 0x801D8000
 
 def _sim(*mods):
     return tuple(f'*6hk_sim{len(m)}{m}*' for m in mods)

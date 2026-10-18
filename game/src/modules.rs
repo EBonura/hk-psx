@@ -411,6 +411,11 @@ fn gap_in(bytes: u32, fenced: bool) -> Option<u32> {
     if bytes == 0 {
         return Some(0);
     }
+    if fenced && bytes > 0x1_0000 {
+        // No window holds it: without this the search below moves from window to window for good. A code chunk bigger than a window
+        // (the Hornet module with its fixups) is then never planned ahead of its gate; the gate stages and installs it.
+        return None;
+    }
     let mut at = 0u32;
     loop {
         let mut moved = false;
@@ -891,7 +896,14 @@ pub fn admit(scene: usize, chunk: impl FnOnce() -> Option<&'static [u8]>) -> boo
     }
     let words =
         unsafe { core::slice::from_raw_parts(bytes.as_ptr().cast::<u32>(), bytes.len() / 4) };
-    if hash(words, 0x811c_9dc5) != chunk_hash(c) {
+    // In blocks with a pad service between them: the Hornet chunk is 17,000 words, and one pass over it plus the install of
+    // her module outlasted two VBlanks in the gap before the first poll of the load.
+    let mut h = 0x811c_9dc5;
+    for block in words.chunks(INSTALL_STEP) {
+        h = hash(block, h);
+        crate::input::checkpoint();
+    }
+    if h != chunk_hash(c) {
         return false;
     }
     // A fragmented restart may drop modules installed earlier in the pass;
@@ -909,6 +921,8 @@ pub fn admit(scene: usize, chunk: impl FnOnce() -> Option<&'static [u8]>) -> boo
     }
     want & !resident() == 0
 }
+/// Words of install work (copy or fix-up) or hash between two pad services on the gate path: about 20,000 cycles of each.
+const INSTALL_STEP: usize = 4096;
 fn install_missing(want: u32, words: &[u32]) -> bool {
     for m in 0..MODULE_COUNT {
         if want & !resident() & (1 << m) == 0 {
@@ -933,9 +947,9 @@ fn install_missing(want: u32, words: &[u32]) -> bool {
             }
         };
         loop {
-            match job.run(usize::MAX) {
+            match job.run(INSTALL_STEP) {
                 Ok(true) => break,
-                Ok(false) => {}
+                Ok(false) => crate::input::checkpoint(),
                 Err(_) => return false,
             }
         }

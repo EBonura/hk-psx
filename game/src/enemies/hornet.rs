@@ -84,6 +84,9 @@ pub fn tick(
         super::HK_HORNET_PHASE = s.fight.phase as u32;
         super::HK_HORNET_HP = s.fight.health.hp.max(0) as u32;
         super::HK_HORNET_TICKS += 1;
+        let at = s.fight.boss.world.world_of(0).0;
+        super::HK_HORNET_X = at[0];
+        super::HK_HORNET_Y = at[1];
     }
     if s.fight.phase == Phase::Gone {
         return;

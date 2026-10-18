@@ -133,6 +133,9 @@ impl<B: Blob> Bank<B> {
         }
         Some(bank)
     }
+    // `clip` and `sprite` stay out of line, like `part`: each is a dozen table reads, and one copy of each keeps the Hornet
+    // module, which draws a boss, under its 64 KiB.
+    #[inline(never)]
     pub fn clip(&self, i: usize) -> Clip {
         let p = self.off[0] as usize + i * CLIP_BYTES;
         Clip { first: self.u16_at(p), count: self.u16_at(p + 2), fps: self.u32_at(p + 4), wrap: self.blob.byte(p + 8), loop_start: self.blob.byte(p + 9) }
@@ -141,6 +144,7 @@ impl<B: Blob> Bank<B> {
     pub fn seq_sprite(&self, i: usize) -> usize {
         self.u16_at(self.off[1] as usize + i * 2) as usize
     }
+    #[inline(never)]
     pub fn sprite(&self, i: usize) -> Sprite {
         let p = self.off[2] as usize + i * SPRITE_BYTES;
         Sprite {
