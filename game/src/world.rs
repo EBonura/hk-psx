@@ -1732,17 +1732,17 @@ impl State {
             }
         }
         // The gate the Knight came in by says nothing about where he goes while he
-        // walks away from it. A room with no other gate has only that way out, and a
-        // Knight who turns back toward it is going through it again: neither waits
-        // for the release distance (a quick return left the drive idle until he was
-        // through).
+        // walks away from it, but a Knight who turns back toward it inside the release
+        // distance is going through it again: that does not wait for him to get away
+        // and come back (a quick return left the drive idle until he was through).
         let behind = |gate: &Gate| {
             let b = gate.bounds;
             let dx = (b[0] - player.x).max(player.x - b[2]).max(0) >> 16;
             let centre = (b[0] >> 1) + (b[2] >> 1);
             dx > 0 && (centre - player.x).signum() == -player.facing.signum()
         };
-        let skip = (*entry).filter(|&e| list.len() > 1 && behind(&list[e]));
+        // HK_OLD_PREDICT keeps the earlier rule (the entry gate is excluded until released).
+        let skip = (*entry).filter(|&e| option_env!("HK_OLD_PREDICT").is_some() || behind(&list[e]));
         let (best, gate) = list
             .iter()
             .enumerate()
