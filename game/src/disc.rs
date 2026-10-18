@@ -3451,6 +3451,7 @@ fn ahead_done(scene: usize, idx: usize) -> bool {
     let a = ahead();
     AHEAD_ON && a.started && a.scene == scene && {
         let (start, _) = SCENE_ATLAS_RANGES[scene];
+        let start = usize::from(start);
         idx >= start && idx - start < a.done.len() && a.done[idx - start]
     }
 }
@@ -3519,6 +3520,7 @@ impl Cache {
             return;
         }
         let (start, _) = SCENE_ATLAS_RANGES[b];
+        let start = usize::from(start);
         let base_off = (p.base as usize) - unsafe { (&raw const BUFFERS.words) as usize };
         for _ in 0..if upload { AHEAD_STEPS } else { 1 } {
             if a.next >= a.end {
@@ -3603,6 +3605,7 @@ impl Cache {
             return false;
         }
         let (start, end) = SCENE_ATLAS_RANGES[b];
+        let (start, end) = (usize::from(start), usize::from(end));
         if end - start > a.done.len() {
             return false;
         }
@@ -3616,6 +3619,7 @@ impl Cache {
         }
         let (mut pa, mut ca) = (0usize, 0usize);
         let (cs, ce) = SCENE_ATLAS_RANGES[cur];
+        let (cs, ce) = (usize::from(cs), usize::from(ce));
         for x in &ATLASES[cs..ce] {
             if x.kind == 0 {
                 pa += x.count;
