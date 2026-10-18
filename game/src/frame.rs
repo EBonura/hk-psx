@@ -1238,7 +1238,7 @@ pub fn simulate(
                 vx.signum(),
                 false,
                 room.counts[5],
-                game.state.edge_reader(r, room),
+                &game.state.edge_reader(r, room),
             );
             game.player.facing = -game.vitals.recoil_direction;
         } else {
@@ -1264,7 +1264,7 @@ pub fn simulate(
                         dir,
                         jump,
                         room.counts[5],
-                        game.state.edge_reader(r, room),
+                        &game.state.edge_reader(r, room),
                     )
                 })
             };

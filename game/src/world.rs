@@ -663,15 +663,19 @@ pub struct SecretEvent {
 /// Coins, Scuttlers, enemies and effects otherwise re-decode and re-filter every
 /// edge per body per tick, which exceeded a VBlank with 16 coins and 7 broken objects.
 ///
-/// A room with more edges than this caches its first `EDGE_CACHE` and leaves the
-/// rest to `edge_uncached`, rather than losing the table altogether. That cliff
-/// was reachable: Crossroads_10's view below and right of the False Knight arena
-/// (region slot 236, chunk 237) cooks 129 edges, one over, and it is the only
-/// one of the 693 that passes 128 at all. Walking into it made every terrain
-/// query rescan the bank's breakable objects: each simulation tick then lost two
-/// VBlanks of pad service, the catch-up loop in main could never drain the
-/// queue, and `Fault::QueueFull` panicked the guest into `psx_rt::halt`.
-const EDGE_CACHE: usize = 128;
+/// Edges the terrain tables hold per room: this one, the Knight's, and each
+/// slot of the actors' copies (enemies::ActorEdges). Every solver reads its
+/// terrain from one of these tables, so a room has to fit: the cook refuses
+/// a room with more edges (host/hk-build certificates) and `refresh_edges`
+/// asserts it. The largest room cooks 136 edges (Crossroads_10, the False
+/// Knight's arena). The limit used to be 128, with an uncached tail for the
+/// rooms past it; that tail was a cliff (Crossroads_10's neighbouring view
+/// cooked 129 edges and every terrain query rescanned the bank's breakable
+/// objects, so each simulation tick lost two VBlanks of pad service, the
+/// catch-up loop in main could never drain the queue and `Fault::QueueFull`
+/// panicked the guest into `psx_rt::halt`), and it also made every solver
+/// generic over a second, slower reader type, 118 KB of duplicated code.
+pub const EDGE_CACHE: usize = 144;
 /// Slots in the scratch the Lifeblood cocoons, the Great Door and the arena
 /// gates share for their exclusions. Eight held two of these; Crossroads_10's
 /// first view alone binds eight gate edges, so a third controller in that view
@@ -782,6 +786,19 @@ fn fill_edges(
             blank(i);
         }
     }
+}
+/// The one type of terrain reader: every solver (`Player::step`, the
+/// `Actor::advance_*` family, the sight and ray queries, the pools) is
+/// generic over `impl Fn(usize) -> [i32; 4]`, and Rust compiles each of them
+/// once per closure type. Four types (the Knight's table, an actor's table,
+/// an actor's uncached read, a reference to the first) once made 118 KB of
+/// duplicated code. All readers come from here, over a table of
+/// at most `EDGE_CACHE` edges, so there is one copy of each solver and its
+/// terrain read is a bounds-checked load. Hand a reader to a solver by
+/// reference or by value consistently; `&F` and `F` are two instances.
+#[inline(always)]
+pub fn terrain(table: &[[i32; 4]]) -> impl Fn(usize) -> [i32; 4] + '_ {
+    move |index| table[index]
 }
 impl State {
     pub const fn new() -> Self {
@@ -927,23 +944,7 @@ impl State {
         particles::pool().tick(region.scene, region.particle_bank);
         self.refresh_edges(region, room);
         let count = room.counts[5];
-        let broken = &self.broken;
-        let geo = &self.geo_edges[..self.geo_edge_count];
-        let life = &self.lifeblood_edges[..self.lifeblood_edge_count];
-        // Future larger rooms retain the direct path rather than dropping terrain.
-        let cached = &self.edge_cache[..self.edge_cache_count];
-        let edge = |i: usize| {
-            if i < cached.len() {
-                cached[i]
-            } else if geo.contains(&(i as u16))
-                || life.contains(&(i as u16))
-                || broken_edge(broken, region, i)
-            {
-                [0; 4]
-            } else {
-                room.edge(i)
-            }
-        };
+        let edge = terrain(&self.edge_cache[..self.edge_cache_count]);
         particles::pool().tick_break(region.scene, region.collision_bounds, count, &edge);
         self.debris.tick(
             region.scene,
@@ -957,13 +958,11 @@ impl State {
     /// global region ID and the borrowed room view select the local edge
     /// reference list. The view address only disambiguates two immutable room
     /// slices during one generation; world_generation invalidates it whenever
-    /// the reusable arena is replaced. The count is how far the table reaches
-    /// into this room, not an identity: a room past `EDGE_CACHE` matches at the
-    /// cap and answers the rest uncached.
+    /// the reusable arena is replaced.
     #[inline(always)]
     fn edge_cache_matches(&self, region: &Region, room: &Room) -> bool {
         self.edge_cache_valid
-            && self.edge_cache_count == room.counts[5].min(EDGE_CACHE)
+            && self.edge_cache_count == room.counts[5]
             && self.edge_cache_generation == self.world_generation
             && self.edge_cache_region_id == region.global_id
             && self.edge_cache_room_key == room as *const Room as usize
@@ -981,13 +980,13 @@ impl State {
         self.edge_epoch = self.edge_epoch.wrapping_add(1);
     }
     /// Rebuild only after an exclusion mutation or source change. Returns true
-    /// when the table was rebuilt; a room past `EDGE_CACHE` caches its first
-    /// `EDGE_CACHE` edges and leaves the tail to `edge_uncached`.
+    /// when the table was rebuilt.
     pub fn refresh_edges(&mut self, region: &Region, room: &Room) -> bool {
         if self.edge_cache_matches(region, room) {
             return false;
         }
-        let count = room.counts[5].min(EDGE_CACHE);
+        let count = room.counts[5];
+        assert!(count <= EDGE_CACHE, "room terrain past the edge table");
         let Self {
             edge_cache,
             edge_cache_count,
@@ -1415,27 +1414,17 @@ impl State {
             cache,
         );
     }
-    /// Validate the source once for a whole physics query. The returned reader
-    /// immutably borrows state/room, so exclusions cannot change while it lives.
-    /// Indices past the table and invalidated caches retain exact uncached filtering.
+    /// The terrain of `room` for one physics query: the table, rebuilt first if
+    /// an exclusion or the source changed since it was filled. The reader
+    /// borrows the state, so exclusions cannot change while it lives.
     #[inline(always)]
     pub fn edge_reader<'a>(
-        &'a self,
-        region: &'a Region,
-        room: &'a Room<'a>,
+        &'a mut self,
+        region: &Region,
+        room: &Room,
     ) -> impl Fn(usize) -> [i32; 4] + 'a {
-        let cached = if self.edge_cache_matches(region, room) {
-            &self.edge_cache[..self.edge_cache_count]
-        } else {
-            &[]
-        };
-        move |index| {
-            if index < cached.len() {
-                cached[index]
-            } else {
-                self.edge_uncached(region, room, index)
-            }
-        }
+        self.refresh_edges(region, room);
+        terrain(&self.edge_cache[..self.edge_cache_count])
     }
     // The cached read must stay in the caller: returning this four-word value
     // through an outlined MIPS call costs more than decoding the original edge.

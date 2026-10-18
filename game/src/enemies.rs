@@ -2,7 +2,7 @@
 //! Actors use their own resident collision view, independently of the camera.
 //! Actors outside all loaded views are suspended. Full Unity activation, Box2D
 //! solver parity and global FSM events remain outside this bounded runtime.
-use crate::world::{Region, State};
+use crate::world::{terrain, Region, State};
 use hk_format::{i32_at, u32_at, Room};
 #[cfg(feature = "hornet")]
 mod hornet;
@@ -1308,7 +1308,7 @@ fn climber_ray_hit(
     });
     best.map(|(_, _, p)| p)
 }
-const EDGES: usize = 128;
+const EDGES: usize = crate::world::EDGE_CACHE;
 /// Simulation neighbourhood around the active view, in Q16 units (one view).
 const NEAR: [i32; 2] = [24 * ONE, 16 * ONE];
 // Round-robin eviction thrashes once the advancing actors cycle through more
@@ -1362,6 +1362,21 @@ fn edges_near(bounds: [i32; 4]) -> hk_sim::runner_senses::EdgeMask {
     let _ = bounds;
     hk_sim::runner_senses::ALL_EDGES
 }
+/// The unit tests have no resident cache to share (they run in parallel and
+/// swap rooms behind one region): each lookup fills a copy that lives for the
+/// test.
+#[cfg(test)]
+fn actor_edges<'a>(
+    state: &State,
+    active: &Region,
+    active_room: &Room,
+    target: &Region,
+    target_room: &Room,
+) -> (&'a [[i32; 4]], usize) {
+    let mut edges = std::vec![[0; 4]; target_room.counts[5]];
+    state.fill_edges_in_view(active, active_room, target, target_room, &mut edges);
+    (std::boxed::Box::leak(edges.into_boxed_slice()), EDGE_SLOTS)
+}
 #[cfg(not(test))]
 fn actor_edges<'a>(
     state: &State,
@@ -1371,6 +1386,7 @@ fn actor_edges<'a>(
     target_room: &Room,
 ) -> (&'a [[i32; 4]], usize) {
     let count = target_room.counts[5];
+    assert!(count <= EDGES, "room terrain past the edge table");
     // The scene payload behind a global id is immutable within an edge epoch
     // (world re-admission bumps it), so the copy is keyed by ids, not by the
     // transient Room view address. Geo/Lifeblood exclusions are indices into
@@ -2236,7 +2252,7 @@ impl Actor {
         &mut self,
         boss: &mut FalseKnightRuntime,
         spec: &ActorSpec,
-        hits: impl Fn([i32; 4]) -> bool,
+        hits: &dyn Fn([i32; 4]) -> bool,
         damage: u16,
     ) -> (bool, Hit) {
         if boss.controller.head_exposed() {
@@ -2298,41 +2314,13 @@ impl Actor {
         emit: &mut impl FnMut(RunnerEvent),
     ) {
         let count = target_room.counts[5];
-        if count <= EDGES {
-            // Tests swap rooms behind one region fixture and run in parallel:
-            // they fill a private copy instead of the shared keyed slots.
-            #[cfg(test)]
-            {
-                let mut edges = [[0; 4]; EDGES];
-                state.fill_edges_in_view(
-                    active,
-                    active_room,
-                    target,
-                    target_room,
-                    &mut edges[..count],
-                );
-                return self.advance_body(spec, active_room, count, |i| edges[i], context, emit);
-            }
-            #[cfg(not(test))]
-            {
-                let (edges, slot) = actor_edges(state, active, active_room, target, target_room);
-                unsafe {
-                    ACTOR_SLOT = slot;
-                }
-                self.advance_body(spec, active_room, count, |i| edges[i], context, emit);
-                unsafe {
-                    ACTOR_SLOT = EDGE_SLOTS;
-                }
-            }
-        } else {
-            self.advance_body(
-                spec,
-                active_room,
-                count,
-                |i| state.edge_in_view(active, active_room, target, target_room, i),
-                context,
-                emit,
-            );
+        let (edges, slot) = actor_edges(state, active, active_room, target, target_room);
+        unsafe {
+            ACTOR_SLOT = slot;
+        }
+        self.advance_body(spec, active_room, count, terrain(edges), context, emit);
+        unsafe {
+            ACTOR_SLOT = EDGE_SLOTS;
         }
     }
     fn advance_body(
@@ -6077,7 +6065,7 @@ impl EnemyWorld {
                 let mut reached = false;
                 if let Some((box_, damage)) = ball {
                     let (_, hit) =
-                        actor.strike_false_knight(&mut boss, spec, |b| overlap(box_, b), damage);
+                        actor.strike_false_knight(&mut boss, spec, &|b| overlap(box_, b), damage);
                     if hit.landed() {
                         events.hits += 1;
                     }
@@ -6087,7 +6075,7 @@ impl EnemyWorld {
                     let (hit_box, hit) = actor.strike_false_knight(
                         &mut boss,
                         spec,
-                        |b| hk_sim::polygon_hits_box(polygon, b),
+                        &|b| hk_sim::polygon_hits_box(polygon, b),
                         nail_damage,
                     );
                     reached = hit_box;
@@ -6321,15 +6309,16 @@ impl EnemyWorld {
                                         room,
                                         context,
                                         terrain_room.counts[5],
-                                        &|i| {
-                                            state.edge_in_view(
+                                        &terrain(
+                                            actor_edges(
+                                                state,
                                                 region,
                                                 room,
                                                 terrain_region,
                                                 terrain_room,
-                                                i,
                                             )
-                                        },
+                                            .0,
+                                        ),
                                     );
                                     let actions =
                                         runner.controller.horizontal_recoil(senses, |w, e| {
@@ -6355,16 +6344,13 @@ impl EnemyWorld {
                         }
                         if let Some(mut fly) = actor.vengefly() {
                             if !actor.health.dead {
-                                let senses =
-                                    actor.vengefly_senses(context, terrain_room.counts[5], &|i| {
-                                        state.edge_in_view(
-                                            region,
-                                            room,
-                                            terrain_region,
-                                            terrain_room,
-                                            i,
-                                        )
-                                    });
+                                let (edges, _) =
+                                    actor_edges(state, region, room, terrain_region, terrain_room);
+                                let senses = actor.vengefly_senses(
+                                    context,
+                                    terrain_room.counts[5],
+                                    &terrain(edges),
+                                );
                                 let actions = fly.controller.took_damage(senses);
                                 fly.apply(actions);
                             }
@@ -6553,7 +6539,7 @@ impl EnemyWorld {
             region,
             body,
             room.counts[5],
-            &|i| state.edge(region, room, i),
+            &state.edge_reader(region, room),
             |damage, direction| {
                 cheats.hurt(
                     vitals,
@@ -6573,7 +6559,7 @@ impl EnemyWorld {
                 region,
                 body,
                 room.counts[5],
-                &|i| state.edge(region, room, i),
+                &state.edge_reader(region, room),
                 |damage, direction| {
                     cheats.hurt(
                         vitals,

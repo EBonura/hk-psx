@@ -388,6 +388,17 @@ mod world {
         pub fn edge(&self, _: &Region, r: &hk_format::Room, i: usize) -> [i32; 4] {
             r.edge(i)
         }
+        pub fn edge_reader<'a>(
+            &'a self,
+            _: &Region,
+            r: &'a hk_format::Room<'a>,
+        ) -> impl Fn(usize) -> [i32; 4] + 'a {
+            move |i| r.edge(i)
+        }
+    }
+    pub const EDGE_CACHE: usize = 144;
+    pub fn terrain(table: &[[i32; 4]]) -> impl Fn(usize) -> [i32; 4] + '_ {
+        move |i| table[i]
     }
     pub fn contains(b: [i32; 4], x: i32, y: i32) -> bool {
         x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]
