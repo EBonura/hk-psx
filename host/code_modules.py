@@ -51,6 +51,10 @@ import struct
 from bisect import bisect_right
 from pathlib import Path
 
+# Greenpath's Hornet is in the build when HK_HORNET_ART is set and the Hornet postpass has written her art table
+# (host/hk-cook hornet_scene.rs, docs/HORNET.md: her art does not fit yet): otherwise no code, data module or guest feature
+# exists for her.
+HORNET = bool(os.environ.get('HK_HORNET_ART')) and (Path(__file__).resolve().parents[1] / 'data' / 'hornet_art.rs').exists()
 LINK_BASE = 0x80408000
 LINK_STRIDE = 0x10000
 TRAMP_WORDS = 96
@@ -114,19 +118,30 @@ MODULES = {
     'fsm3_world': _sim('fsm3_object', 'fsm3_audio', 'fsm3_animation'),
     'fsm3_body': _sim('fsm3_transform', 'fsm3_ai'),
 }
-if os.environ.get('HK_MEASURE_HARD'):
-    # A measurement build (game feature hard-ops): the Hornet-set handlers as one module no room loads.
-    MODULES['fsm3_hard'] = _sim('fsm3_hard')
+if HORNET:
+    # The fight (hornet_fight.rs), her two trees (hornet.rs), the boss tier's action code (fsm3b, which the resident kernel
+    # reaches through one import site) and the scene objects it acts on (fsm3_world), and the guest side that ticks and draws
+    # her (enemies/hornet.rs).
+    MODULES['hornet'] = (_sim('hornet', 'hornet_fight', 'fsm3b', 'fsm3_world') + ('*7enemies6hornet*',) +
+                         # What the boss tier added to the resident kernel's types, which only its handlers and the adapter call.
+                         tuple(f'*{len(t)}{t}{len(f)}{f}*' for t, f in (
+                             ('Ctx', 'comp'), ('Ctx', 'set_comp'), ('Ctx', 'pd_read_at'), ('Ctx', 'set_of'),
+                             ('Block', 'set_active'), ('Block', 'inactive'), ('Block', 'set_bit'), ('Block', 'obj'),
+                             ('Block', 'set_obj'), ('Tree', 'set_active'), ('Tree', 'set_bit'), ('Tree', 'obj'),
+                             ('Tree', 'set_obj'))))
 # Room logic modules by the room that runs them: (data file, constant) holding
 # the room's scene id.
 ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),
                 'cornifer': ('cornifer.rs', 'CORNIFER_SCENE')}
+if HORNET:
+    ROOM_MODULES['hornet'] = ('hornet_art.rs', 'HORNET_ART_SCENE')
+    ROOM_MODULES['art_hornet'] = ('hornet_art.rs', 'HORNET_ART_SCENE')
 # Families kept resident for a measurement (HK_RESIDENT_MODULES=climber,vengefly):
 # their code links into .text as before and their rooms carry nothing for them.
 ALWAYS_RESIDENT = {m for m in os.environ.get('HK_RESIDENT_MODULES', '').split(',') if m}
 # Room art: the prop art (host/props.py) split by prop kind, carried by the
 # rooms that place that kind. Data packages: no fixups, no import sites.
-DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam')
+DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if HORNET else ())
 # Carried data: packages no room's static table needs, which gameplay asks for
 # at run time with `modules::carry` (the Shade's art follows the scene the
 # Knight died in). Each ships in its own chunk, in the disc's last group, and

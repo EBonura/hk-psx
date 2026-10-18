@@ -1,0 +1,15 @@
+card = hornet-road-defeated.mcd
+pacing = 2450
+# The same walk on a card whose only difference is hornet1Defeated (PlayerData
+# bit 26): the shiny is offered, UP takes it, hasDash (bit 2) is saved and the
+# dash runs. World bits 26 and 2 are 0x4000004. Pacing measured on the
+# 2026-10-15 build: 2,328 of about 2,350 frames; the ceiling is that plus five percent.
+HK_SCENE_GATE_LOADS = 2
+HK_REGION_ID = 1005
+HK_DEATHS = 0
+HK_HEALTH = 5
+HK_CHEATS = 0
+HK_WORLD_PLAYER = 67108868
+HK_ABILITY_DRAWN >= 5
+HK_ROOM_LOAD_ERROR = 0
+HK_CD_STREAM_ERROR = 0

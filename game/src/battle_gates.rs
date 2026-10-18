@@ -40,7 +40,7 @@ fn slot_rows(table: &'static [(u16, u16)], slot: usize) -> impl Iterator<Item = 
         .map(|&(_, value)| value)
 }
 
-const _: () = assert!(GATES <= 16, "the closed set is one u16");
+const _: () = assert!(GATES <= 32, "the closed set is one u32");
 // There is deliberately no `COOKED & !PLACEMENT_CLOSED == 0` here any more.
 // That assertion encoded the cook baking only the gates that load closed, and
 // inverting it would be worse than useless: a gate legitimately carries no row
@@ -51,7 +51,7 @@ const _: () = assert!(GATES <= 16, "the closed set is one u16");
 /// Bit per gate, set while the gate's collider is solid. Starts at the state
 /// `BG Control`'s own start state leaves each gate in, which for twelve of the
 /// fifteen is open, so `apply` has edges to lift from the first frame.
-static mut CLOSED: u16 = PLACEMENT_CLOSED;
+static mut CLOSED: u32 = PLACEMENT_CLOSED;
 /// The scene (plus one) whose arena a `BG CLOSE` sealed and no open has
 /// lifted: a Battle Control's `CameraLockArea B` is live for exactly that span
 /// (camera.rs, `LOCK_BATTLE`).
@@ -92,7 +92,7 @@ const fn placement_poses() -> [u8; GATES] {
 /// Start `clip` on every gate in `mask`. Out of line and bit-walked rather
 /// than a loop over all `GATES`, which LLVM unrolled into every caller.
 #[inline(never)]
-fn set_poses(mut mask: u16, clip: u8) {
+fn set_poses(mut mask: u32, clip: u8) {
     while mask != 0 {
         let gate = mask.trailing_zeros() as usize;
         unsafe {
@@ -126,7 +126,7 @@ pub fn tick() {
 }
 /// Gates whose pose changed since load and might still be in `Close 1`, so
 /// `tick` costs one test outside the five arena rooms.
-static mut POSE_MASK: u16 = 0;
+static mut POSE_MASK: u32 = 0;
 /// `BG Close 1`'s length in ticks: its frames at its own rate.
 const CLOSE_1_TICKS: u32 = {
     let fps = CLIP_FPS[CLIP_CLOSE_1 as usize] as u32;
@@ -171,7 +171,7 @@ pub fn sprites(gate: usize) -> (usize, Option<usize>) {
     (clip_frame(clip, age), effect)
 }
 /// The gates of one scene, for drawing.
-pub fn scene_gates(scene: usize) -> u16 {
+pub fn scene_gates(scene: usize) -> u32 {
     scene_mask(scene)
 }
 
@@ -199,7 +199,7 @@ pub static mut HK_ARENA_GATE_CLOSES: u32 = 0;
 #[no_mangle]
 pub static mut HK_ARENA_GATE_OPENS: u32 = 0;
 
-fn scene_mask(scene: usize) -> u16 {
+fn scene_mask(scene: usize) -> u32 {
     let mut found = 0;
     for &(id, mask) in SCENE_GATES {
         if id as usize == scene {

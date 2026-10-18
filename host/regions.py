@@ -754,7 +754,7 @@ def postpack_actor_bank(report, source, scenes=None):
         import pickups
         # Arena gates draw from the same bank (host/battle_gates.py), so a scene
         # with gates and nothing else still takes one.
-        from breakables import battle_gates as gate_sources
+        from battle_gates import all_gates as gate_sources
         from battle_gates import append_art as append_gate_art,bind_art as bind_gate_art
         # Water drips too (host/props.py drip_art).
         from props import drip_sources,drip_art,bind_drip_art

@@ -138,6 +138,9 @@ pub const MET_ISELDA: u32 = 23;
 /// PlayerData `shaman` (0..3 here), two bits: game/src/shaman.rs.
 pub const SHAMAN_LOW: u32 = 24;
 pub const SHAMAN_HIGH: u32 = 25;
+/// `hornet1Defeated`: Greenpath's Hornet beaten. The Cloak Corpse's shiny (the
+/// Mothwing Cloak) is offered once it is set.
+pub const HORNET_1_DEFEATED: u32 = 26;
 /// PlayerData small integers, by index: `fireballLevel`, `quakeLevel`,
 /// `screamLevel`. The fourth byte is zero and reserved.
 pub const FIREBALL_LEVEL: usize = 0;

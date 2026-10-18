@@ -159,6 +159,16 @@ impl<'a> Bank<'a> {
     pub fn string_count(self) -> u16 {
         self.u16_at(8) as u16
     }
+    /// The entity handle of the GameObject FSM `f` is attached to.
+    #[inline(always)]
+    pub fn owner(self, f: u8) -> u8 {
+        self.byte(self.dir_at(f) + 30)
+    }
+    /// Whether this is a boss tree: its actions run the boss tier's handlers (fsm3b), which act on a scene-object table.
+    #[inline(always)]
+    pub fn boss(self) -> bool {
+        self.byte(11) & 1 != 0
+    }
     /// Delayed-event queue entries the runtime block reserves.
     #[inline(always)]
     pub fn queue_cap(self) -> u8 {

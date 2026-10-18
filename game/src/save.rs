@@ -348,6 +348,7 @@ fn buf() -> &'static mut [u8; MAX_LEN] {
 /// `items` is `persist`'s SceneData list, already brought up to date.
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
+#[cfg_attr(not(test), optimize(size))]
 pub fn write(profile: usize, save: &Save, items: &[u32]) -> Result<(), Fault> {
     let mut record = *save;
     let copy = unsafe { NEXT_COPY[profile] };

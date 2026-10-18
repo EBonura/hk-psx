@@ -401,6 +401,8 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     python_step(root, "host/regions.py", region_cook_args(&provenance))?;
     hk_cook::mossman_scene::cook(root)?;
     hk_cook::shaman_runner_scene::cook(root)?;
+    // Hornet's sprite clips join Fungus1_04's banks once the scene is admitted (host/hk-cook hornet_scene.rs).
+    hk_cook::hornet_scene::cook(root)?;
     if source_input_fingerprints(&source)? != source_inputs || code_fingerprint(root)? != code {
         return Err("retail source or cooker code changed during region cook".into());
     }
@@ -730,6 +732,9 @@ fn prepare_cook(root: &Path, options: &Options) -> Result<()> {
     sdk(root, &sdk_source(root, options))?;
     // The XA encoder is exported from the same checkout (hk-cook xa_music).
     std::env::set_var("HK_SDK_SOURCE", sdk_source(root, options));
+    // Hornet's boss trees come first: the cook below appends her sprite clips to Fungus1_04's banks and reads which clips
+    // each of her objects plays from the manifests this writes (data/hornet3_art.json).
+    hk_fsm_cook::cook3::cook_hornet3(root).map_err(|e| e.to_string())?;
     cook_cached(root, options.recook)?;
     Ok(())
 }

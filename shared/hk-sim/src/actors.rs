@@ -269,11 +269,24 @@ pub enum Hit {
     Damaged,
     Killed,
 }
+impl Hit {
+    /// The hit took points off: damaged or killed.
+    #[inline(always)]
+    pub const fn landed(self) -> bool {
+        matches!(self, Hit::Damaged | Hit::Killed)
+    }
+}
+/// The generic `HealthManager`: hit points, the evasion window after a hit, death, and the hit flash
+/// (`SpriteFlash.flashInfected`) every enemy and boss shares. Which hits it accepts is the caller's
+/// `EnemyParams` (invincible and damage override ride in live, as the source's `SetInvincible` does);
+/// what a hit then does to the body is the family's own business.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ActorHealth {
     pub hp: i16,
     pub evasion_ticks: u16,
     pub dead: bool,
+    /// Ticks left of the hit flash, counted down once per simulation tick by `tick_flash`.
+    pub flash: u8,
 }
 impl ActorHealth {
     pub const fn new(p: EnemyParams) -> Self {
@@ -281,10 +294,22 @@ impl ActorHealth {
             hp: p.health,
             evasion_ticks: 0,
             dead: p.health <= 0,
+            flash: 0,
         }
+    }
+    /// `SetHP`: back to the authored points with the evasion window cleared. A flash in progress runs out.
+    pub fn refill(&mut self, p: EnemyParams) {
+        *self = Self {
+            flash: self.flash,
+            ..Self::new(p)
+        };
     }
     pub fn tick(&mut self) {
         self.evasion_ticks = self.evasion_ticks.saturating_sub(1);
+    }
+    /// The flash runs on through death, so it counts down apart from the evasion window.
+    pub fn tick_flash(&mut self) {
+        self.flash = self.flash.saturating_sub(1);
     }
     pub fn contact_damage(&self, p: EnemyParams) -> u16 {
         if self.dead {
@@ -310,6 +335,14 @@ impl ActorHealth {
             self.evasion_ticks = p.evasion_ticks;
             Hit::Damaged
         }
+    }
+    /// `hit`, then the flash for a hit that landed.
+    pub fn strike(&mut self, p: EnemyParams, damage: u16) -> Hit {
+        let hit = self.hit(p, damage);
+        if hit.landed() {
+            self.flash = crate::components::FLASH_TICKS;
+        }
+        hit
     }
 }
 

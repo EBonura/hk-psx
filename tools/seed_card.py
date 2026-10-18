@@ -74,6 +74,10 @@ def seed(image, magic, length, items=(), **fields):
         for name, (offset, fmt) in FIELDS.items():
             if name in fields:
                 struct.pack_into(fmt, record, offset, fields[name])
+        if fields.get('player_bits'):
+            # PlayerData bools (persist.rs bit numbers) ORed into the saved word.
+            old, = struct.unpack_from('<I', record, PLAYER_BOOLS_AT)
+            struct.pack_into('<I', record, PLAYER_BOOLS_AT, old | fields['player_bits'])
         struct.pack_into('<I', record, length - 4, fnv(record[:length - 4]))
         # The container's lengths describe this record before anything grows it.
         raw, stored = struct.unpack_from('<II', out, at - CONTAINER_LEN + 8)
@@ -89,7 +93,9 @@ def seed(image, magic, length, items=(), **fields):
     return bytes(out), written
 
 
-# Offsets from `Save::encode` in game/src/save.rs.
+# Offsets from `Save::encode` in game/src/save.rs. The PlayerData bool word sits
+# four bytes ahead of the small integers `fireball` writes.
+PLAYER_BOOLS_AT = 152
 FIELDS = {
     'scene': (4, '<i'), 'seat_x': (8, '<i'), 'seat_y': (12, '<i'),
     'facing': (16, '<i'), 'region': (20, '<i'), 'geo': (24, '<i'),
@@ -109,6 +115,8 @@ def main():
     p.add_argument('--facing', type=int, default=1)
     p.add_argument('--geo', type=int)
     p.add_argument('--fireball', type=int, help='PlayerData fireballLevel (Vengeful Spirit is 1)')
+    p.add_argument('--player-bit', type=int, action='append', default=[], metavar='BIT',
+                   help='a PlayerData bool to set (game/src/persist.rs bit number), repeatable')
     p.add_argument('--item', action='append', default=[], metavar='KIND:SCENE:LOCAL:VALUE',
                    help='a SceneData item to seed (persist.rs Kind number), repeatable')
     a = p.parse_args()
@@ -119,6 +127,8 @@ def main():
         fields['geo'] = a.geo
     if a.fireball is not None:
         fields['fireball'] = a.fireball
+    if a.player_bit:
+        fields['player_bits'] = sum(1 << bit for bit in a.player_bit)
     image = a.from_card.read_bytes()
     if magic not in image:
         raise SystemExit(f'{a.from_card} is not on the current {magic.decode()} format; '

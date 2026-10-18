@@ -46,7 +46,7 @@ pub const SCENERY_SCENE_CAPS: [(&str, i64); 4] = [
 ];
 
 /// `SCENE_TABLE`.
-pub const SCENE_TABLE: [SceneRow; 60] = [
+pub const SCENE_TABLE: [SceneRow; 63] = [
     SceneRow {
         scene_id: 0,
         scene_name: "Tutorial_01",
@@ -467,6 +467,27 @@ pub const SCENE_TABLE: [SceneRow; 60] = [
         runtime_bounds: [Num::I(-2), Num::I(-5), Num::I(102), Num::I(37)],
         camera_global_bounds: [Num::I(0), Num::I(0), Num::I(100), Num::I(32)],
     },
+    SceneRow {
+        scene_id: 60,
+        scene_name: "Fungus1_22",
+        file: "level150",
+        runtime_bounds: [Num::I(-2), Num::I(-6), Num::I(37), Num::I(125)],
+        camera_global_bounds: [Num::I(0), Num::I(0), Num::I(36), Num::I(120)],
+    },
+    SceneRow {
+        scene_id: 61,
+        scene_name: "Fungus1_21",
+        file: "level149",
+        runtime_bounds: [Num::I(-2), Num::I(-6), Num::I(92), Num::I(55)],
+        camera_global_bounds: [Num::I(0), Num::I(0), Num::I(90), Num::I(50)],
+    },
+    SceneRow {
+        scene_id: 62,
+        scene_name: "Fungus1_04",
+        file: "level132",
+        runtime_bounds: [Num::I(-2), Num::I(-5), Num::I(97), Num::I(51)],
+        camera_global_bounds: [Num::I(0), Num::I(0), Num::I(95), Num::I(50)],
+    },
 ];
 
 /// `REGION_LAYOUT`: (scene id, bounds).
@@ -572,7 +593,7 @@ pub const REGION_LAYOUT: [(usize, Bounds); 98] = [
 ];
 
 /// `MEASURED_VIEW_LAYOUTS`: scene name to its measured view boxes.
-pub const MEASURED_VIEW_LAYOUTS: [(&str, &[Bounds]); 2] = [
+pub const MEASURED_VIEW_LAYOUTS: [(&str, &[Bounds]); 5] = [
     (
         "Fungus1_02",
         &[
@@ -611,6 +632,91 @@ pub const MEASURED_VIEW_LAYOUTS: [(&str, &[Bounds]); 2] = [
             [Num::I(22), Num::I(10), Num::I(46), Num::I(25)],
             [Num::I(46), Num::I(10), Num::I(70), Num::I(25)],
             [Num::I(70), Num::I(10), Num::I(92), Num::I(25)],
+        ],
+    ),
+    (
+        "Fungus1_22",
+        &[
+            [Num::I(-2), Num::I(-6), Num::I(22), Num::I(10)],
+            [Num::I(22), Num::I(-6), Num::I(37), Num::I(10)],
+            [Num::I(-2), Num::I(10), Num::I(10), Num::I(26)],
+            [Num::I(10), Num::I(10), Num::I(22), Num::I(18)],
+            [Num::I(10), Num::I(18), Num::I(16), Num::I(26)],
+            [Num::I(16), Num::I(18), Num::I(22), Num::I(26)],
+            [Num::I(22), Num::I(10), Num::I(37), Num::I(18)],
+            [Num::I(22), Num::I(18), Num::I(37), Num::I(26)],
+            [Num::I(-2), Num::I(26), Num::I(10), Num::I(42)],
+            [Num::I(10), Num::I(26), Num::I(16), Num::I(34)],
+            [Num::I(16), Num::I(26), Num::I(22), Num::I(30)],
+            [Num::I(16), Num::I(30), Num::I(22), Num::I(34)],
+            [Num::I(10), Num::I(34), Num::I(16), Num::I(42)],
+            [Num::I(16), Num::I(34), Num::I(22), Num::I(42)],
+            [Num::I(22), Num::I(26), Num::I(37), Num::I(34)],
+            [Num::I(22), Num::I(34), Num::I(37), Num::I(42)],
+            [Num::I(-2), Num::I(42), Num::I(10), Num::I(58)],
+            [Num::I(10), Num::I(42), Num::I(22), Num::I(50)],
+            [Num::I(10), Num::I(50), Num::I(22), Num::I(58)],
+            [Num::I(22), Num::I(42), Num::I(37), Num::I(58)],
+            [Num::I(-2), Num::I(58), Num::I(10), Num::I(74)],
+            [Num::I(10), Num::I(58), Num::I(22), Num::I(66)],
+            [Num::I(10), Num::I(66), Num::I(22), Num::I(74)],
+            [Num::I(22), Num::I(58), Num::I(37), Num::I(74)],
+            [Num::I(-2), Num::I(74), Num::I(22), Num::I(90)],
+            [Num::I(22), Num::I(74), Num::I(37), Num::I(90)],
+            [Num::I(-2), Num::I(90), Num::I(22), Num::I(106)],
+            [Num::I(22), Num::I(90), Num::I(37), Num::I(106)],
+            [Num::I(-2), Num::I(106), Num::I(22), Num::I(122)],
+            [Num::I(22), Num::I(106), Num::I(37), Num::I(122)],
+            [Num::I(-2), Num::I(122), Num::I(22), Num::I(125)],
+            [Num::I(22), Num::I(122), Num::I(37), Num::I(125)],
+        ],
+    ),
+    (
+        "Fungus1_21",
+        &[
+            [Num::I(-2), Num::I(-6), Num::I(22), Num::I(10)],
+            [Num::I(22), Num::I(-6), Num::I(46), Num::I(10)],
+            [Num::I(46), Num::I(-6), Num::I(70), Num::I(10)],
+            [Num::I(70), Num::I(-6), Num::I(92), Num::I(10)],
+            [Num::I(-2), Num::I(10), Num::I(22), Num::I(26)],
+            [Num::I(22), Num::I(10), Num::I(46), Num::I(26)],
+            [Num::I(46), Num::I(10), Num::I(58), Num::I(26)],
+            [Num::I(58), Num::I(10), Num::I(70), Num::I(26)],
+            [Num::I(70), Num::I(10), Num::I(92), Num::I(26)],
+            [Num::I(-2), Num::I(26), Num::I(22), Num::I(42)],
+            [Num::I(22), Num::I(26), Num::I(46), Num::I(42)],
+            [Num::I(46), Num::I(26), Num::I(70), Num::I(42)],
+            [Num::I(70), Num::I(26), Num::I(92), Num::I(42)],
+            [Num::I(-2), Num::I(42), Num::I(22), Num::I(55)],
+            [Num::I(22), Num::I(42), Num::I(46), Num::I(55)],
+            [Num::I(46), Num::I(42), Num::I(70), Num::I(55)],
+            [Num::I(70), Num::I(42), Num::I(92), Num::I(55)],
+        ],
+    ),
+    (
+        "Fungus1_04",
+        &[
+            [Num::I(-2), Num::I(-5), Num::I(22), Num::I(11)],
+            [Num::I(22), Num::I(-5), Num::I(46), Num::I(11)],
+            [Num::I(46), Num::I(-5), Num::I(70), Num::I(11)],
+            [Num::I(70), Num::I(-5), Num::I(94), Num::I(11)],
+            [Num::I(94), Num::I(-5), Num::I(97), Num::I(11)],
+            [Num::I(-2), Num::I(11), Num::I(22), Num::I(27)],
+            [Num::I(22), Num::I(11), Num::I(34), Num::I(27)],
+            [Num::I(34), Num::I(11), Num::I(46), Num::I(27)],
+            [Num::I(46), Num::I(11), Num::I(70), Num::I(27)],
+            [Num::I(70), Num::I(11), Num::I(94), Num::I(27)],
+            [Num::I(94), Num::I(11), Num::I(97), Num::I(27)],
+            [Num::I(-2), Num::I(27), Num::I(22), Num::I(43)],
+            [Num::I(22), Num::I(27), Num::I(46), Num::I(43)],
+            [Num::I(46), Num::I(27), Num::I(70), Num::I(43)],
+            [Num::I(70), Num::I(27), Num::I(94), Num::I(43)],
+            [Num::I(94), Num::I(27), Num::I(97), Num::I(43)],
+            [Num::I(-2), Num::I(43), Num::I(22), Num::I(51)],
+            [Num::I(22), Num::I(43), Num::I(46), Num::I(51)],
+            [Num::I(46), Num::I(43), Num::I(70), Num::I(51)],
+            [Num::I(70), Num::I(43), Num::I(94), Num::I(51)],
+            [Num::I(94), Num::I(43), Num::I(97), Num::I(51)],
         ],
     ),
 ];

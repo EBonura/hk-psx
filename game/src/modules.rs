@@ -236,6 +236,16 @@ pub fn data(m: usize) -> Option<&'static [u8]> {
         )
     })
 }
+/// A resident data package as writable memory: a room's state block (`art_hornet`), zeroed by its install. Null-free or None.
+#[cfg(feature = "hornet")]
+#[inline(never)]
+pub fn data_mut(m: usize) -> Option<*mut u8> {
+    if resident() & (1 << m) == 0 {
+        return None;
+    }
+    let s = slots()[m];
+    Some(core::ptr::with_exposed_provenance_mut::<u8>(pool() + s.offset as usize))
+}
 /// Every module `scene`'s actors need is resident.
 pub fn all_resident(scene: usize) -> bool {
     SCENE_MODULES[scene] & !resident() == 0

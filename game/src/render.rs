@@ -343,6 +343,7 @@ pub fn bound_view() -> usize {
 }
 #[inline(never)]
 #[optimize(size)]
+#[cfg_attr(not(test), optimize(size))]
 pub fn init(room: &Room, bank: usize, region: usize, coverage: CoverageView<'_>) {
     crate::input::checkpoint();
     unsafe {

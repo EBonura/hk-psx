@@ -83,6 +83,8 @@ pub mod trace {
         ActionFinish { fsm: u8, state: u8, index: u8 },
         Event { fsm: u8, state: u8, event: u8, cause: Cause },
         Transition { fsm: u8, event: u8, from: u8, to: u8 },
+        /// A boss tree's action switched a scene object on or off.
+        Activate { fsm: u8, object: u8, on: bool },
     }
     pub static mut SINK: Option<fn(Ev)> = None;
     pub fn emit(e: Ev) {
@@ -112,6 +114,11 @@ const QUEUE_ENTRY: usize = 4;
 const ENTERED: u8 = 1;
 const FIN_SENT: u8 = 2;
 const DEAD: u8 = 4;
+/// The FSM's GameObject (or an ancestor) is inactive: it is not stepped and gets no events until it is activated again.
+const INACTIVE: u8 = 8;
+/// What the kernel tests for it: nothing in a build without boss trees (their banks are the only ones that switch an FSM
+/// off), so the light trees' kernel is the same code as before the boss tier.
+const GATE: u8 = if cfg!(feature = "boss") { INACTIVE } else { 0 };
 
 /// What the actor gives the actions and takes back. All Q16.16.
 #[derive(Clone, Copy, Debug)]
@@ -158,21 +165,22 @@ pub struct Env {
     pub pd_writes: u16,
     /// The hero's contact with this script's trigger volume this tick: bit 0 entered, 1 inside, 2 left.
     pub trigger: u8,
-    /// Measurement handlers only (fsm3_hard.rs): the requests a pass made, the handle of the object just spawned and
-    /// whether the clip fired a frame trigger.
-    #[cfg(feature = "hard-ops")]
-    pub req: [[i32; 4]; 8],
-    #[cfg(feature = "hard-ops")]
-    pub req_n: u8,
-    #[cfg(feature = "hard-ops")]
-    pub spawned: u8,
-    #[cfg(feature = "hard-ops")]
-    pub anim_trigger: bool,
+    /// A boss tree's scene objects and native requests (fsm3_world.rs); null for a light tree.
+    #[cfg(feature = "boss")]
+    pub world: *mut crate::fsm3_world::World,
     /// Oracle replay only: values the next RandomFloat calls return instead of drawing (consumed in order).
     #[cfg(feature = "trace")]
     pub forced_random: [i32; 8],
     #[cfg(feature = "trace")]
     pub forced_n: u8,
+    /// Oracle replay only: the event the next SendRandomEvent draw must pick, and the length (Q16.16 seconds) the next
+    /// WaitRandom of each FSM must wait (-1: draw).
+    #[cfg(feature = "trace")]
+    pub forced_events: [u8; 4],
+    #[cfg(feature = "trace")]
+    pub forced_events_n: u8,
+    #[cfg(feature = "trace")]
+    pub forced_wait: [i32; 24],
 }
 pub const NO_PLAY: u32 = u32::MAX;
 pub const SOUND_STARTLE: u8 = 1;
@@ -209,18 +217,18 @@ impl Env {
             pd: core::ptr::null_mut(),
             pd_writes: 0,
             trigger: 0,
-            #[cfg(feature = "hard-ops")]
-            req: [[0; 4]; 8],
-            #[cfg(feature = "hard-ops")]
-            req_n: 0,
-            #[cfg(feature = "hard-ops")]
-            spawned: 0xff,
-            #[cfg(feature = "hard-ops")]
-            anim_trigger: false,
+            #[cfg(feature = "boss")]
+            world: core::ptr::null_mut(),
             #[cfg(feature = "trace")]
             forced_random: [0; 8],
             #[cfg(feature = "trace")]
             forced_n: 0,
+            #[cfg(feature = "trace")]
+            forced_events: [0xff; 4],
+            #[cfg(feature = "trace")]
+            forced_events_n: 0,
+            #[cfg(feature = "trace")]
+            forced_wait: [-1; 24],
         }
     }
 }
@@ -334,6 +342,34 @@ impl<'a> Block<'a> {
     pub fn dead(&self, f: u8) -> bool {
         unsafe { *self.fh(f).add(2) & DEAD != 0 }
     }
+    /// Activate (restart from its start state, variables kept) or deactivate FSM `f`, as Unity does with its GameObject.
+    /// Returns whether anything changed.
+    #[inline(never)]
+    pub fn set_active(&self, f: u8, on: bool) -> bool {
+        unsafe {
+            let h = self.fh(f);
+            let was_off = *h.add(2) & INACTIVE != 0;
+            if on && was_off {
+                let start = self.bank.dir(f).start;
+                *h = start;
+                *h.add(1) = start;
+                *h.add(2) &= !(ENTERED | FIN_SENT | INACTIVE);
+                let lay = layout(self.bank, f);
+                core::ptr::write_bytes(self.mem.add(lay[4] as usize), 0, self.bank.byte(self.bank.dir_at(f) + 3) as usize);
+                true
+            } else if !on && !was_off {
+                *h.add(2) |= INACTIVE;
+                true
+            } else {
+                false
+            }
+        }
+    }
+    /// Whether FSM `f` is switched off with its GameObject.
+    #[inline(never)]
+    pub fn inactive(&self, f: u8) -> bool {
+        unsafe { *self.fh(f).add(2) & INACTIVE != 0 }
+    }
     /// Stop FSM `f` for good (the actor died).
     #[inline(never)]
     pub fn kill(&self, f: u8) {
@@ -353,6 +389,19 @@ impl<'a> Block<'a> {
     }
     pub fn bit_value(&self, f: u8, i: usize) -> bool {
         unsafe { *self.mem.add(layout(self.bank, f)[2] as usize).add(i >> 3) & (1 << (i & 7)) != 0 }
+    }
+    pub fn set_bit(&self, f: u8, i: usize, v: bool) {
+        unsafe {
+            let byte = self.mem.add(layout(self.bank, f)[2] as usize).add(i >> 3);
+            *byte = (*byte & !(1 << (i & 7))) | ((v as u8) << (i & 7));
+        }
+    }
+    /// Object handle slot `i` of FSM `f`.
+    pub fn obj(&self, f: u8, i: usize) -> u8 {
+        unsafe { *self.mem.add(layout(self.bank, f)[3] as usize).add(i) }
+    }
+    pub fn set_obj(&self, f: u8, i: usize, h: u8) {
+        unsafe { *self.mem.add(layout(self.bank, f)[3] as usize).add(i) = h }
     }
 }
 
@@ -437,6 +486,9 @@ impl<'a> Tree<'a> {
     pub fn kill(&mut self, f: u8) {
         self.block().kill(f)
     }
+    pub fn set_active(&mut self, f: u8, on: bool) -> bool {
+        self.block().set_active(f, on)
+    }
     pub fn cell(&self, f: u8, i: usize) -> i32 {
         self.block().cell(f, i)
     }
@@ -448,6 +500,15 @@ impl<'a> Tree<'a> {
     }
     pub fn bit_value(&self, f: u8, i: usize) -> bool {
         self.block().bit_value(f, i)
+    }
+    pub fn set_bit(&mut self, f: u8, i: usize, v: bool) {
+        self.block().set_bit(f, i, v)
+    }
+    pub fn obj(&self, f: u8, i: usize) -> u8 {
+        self.block().obj(f, i)
+    }
+    pub fn set_obj(&mut self, f: u8, i: usize, h: u8) {
+        self.block().set_obj(f, i, h)
     }
     /// Transitions refused because the step ran out of budget.
     pub fn faults(&self) -> u8 {
@@ -508,7 +569,7 @@ impl<'a> Tree<'a> {
     unsafe fn enter(&mut self, f: u8) {
         loop {
             let h = self.fh(f);
-            if *h.add(2) & (ENTERED | DEAD) != 0 {
+            if *h.add(2) & (ENTERED | DEAD | GATE) != 0 {
                 return;
             }
             *h.add(2) |= ENTERED;
@@ -531,6 +592,9 @@ impl<'a> Tree<'a> {
         for i in 0..rec.actions {
             let head = b.byte(at);
             let (fam, flags, op) = (head & 0xf, head >> 4, b.byte(at + 1));
+            if *h.add(2) & GATE != 0 {
+                return false;
+            }
             let k = self.bank.arity_at(at);
             let done = *fin.add((i >> 3) as usize) & (1 << (i & 7)) != 0;
             let wanted = match phase {
@@ -602,9 +666,9 @@ impl<'a> Tree<'a> {
             *self.mem.add(4) = (n - 1) as u8;
             self.budget = BUDGET;
             for g in 0..self.bank.fsm_count() {
-                if (target == NONE8 && self.bank.handles(g, ev)) || target == g {
+                if ((target == NONE8 && self.bank.handles(g, ev)) || target == g) && *self.fh(g).add(2) & (DEAD | GATE) == 0 {
                     trace!(trace::Ev::Event { fsm: g, state: *self.fh(g), event: ev, cause: trace::Cause::Queue });
-                    if *self.fh(g).add(2) & DEAD == 0 && self.transition(g, ev) {
+                    if self.transition(g, ev) {
                         self.enter(g);
                     }
                 }
@@ -637,7 +701,7 @@ impl<'a> Tree<'a> {
                 self.drain();
             }
             for f in 0..self.bank.fsm_count() {
-                if *self.fh(f).add(2) & DEAD != 0 {
+                if *self.fh(f).add(2) & (DEAD | GATE) != 0 {
                     continue;
                 }
                 self.budget = BUDGET;
@@ -655,7 +719,7 @@ impl<'a> Tree<'a> {
     #[inline(never)]
     pub fn event(&mut self, f: u8, event: u8) {
         unsafe {
-            if *self.fh(f).add(2) & DEAD != 0 {
+            if *self.fh(f).add(2) & (DEAD | GATE) != 0 {
                 return;
             }
             self.budget = BUDGET;
@@ -682,26 +746,10 @@ fn dispatch(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
         fsm3_ai, fsm3_animation, fsm3_audio, fsm3_events, fsm3_flow, fsm3_math, fsm3_object, fsm3_playerdata,
         fsm3_timers, fsm3_transform,
     };
-    #[cfg(feature = "hard-ops")]
-    {
-        use crate::fsm3_hard as h;
-        let r = match family {
-            0 => h::flow(c, op),
-            1 => h::math(c, op),
-            2 => h::events(c, op),
-            4 => h::transform(c, op),
-            5 => h::ai(c, op),
-            7 => h::animation(c, op),
-            8 => h::object(c, op),
-            9 => h::audio(c, op),
-            10 => h::particles(c, op),
-            11 => h::collider(c, op),
-            12 => h::combat(c, op),
-            _ => R_CONT,
-        };
-        if r != R_CONT {
-            return r;
-        }
+    // A boss tree runs the boss tier's handlers, which act on its scene objects (fsm3_world.rs).
+    #[cfg(feature = "boss")]
+    if c.t.bank.boss() {
+        return crate::fsm3b::entry(c, family, op);
     }
     match family {
         0 => fsm3_flow::entry(c, op),
@@ -777,6 +825,16 @@ impl<'t, 'a> Ctx<'t, 'a> {
     pub fn skip(&self) -> u8 {
         (self.flags & f3::F_OWNER == 0) as u8
     }
+    /// The entity an owner-default parameter names in a boss tree: the FSM's own GameObject, not the boss (handle 0).
+    #[cfg(feature = "boss")]
+    #[inline(always)]
+    pub fn otarget(&self) -> u8 {
+        if self.flags & f3::F_OWNER != 0 {
+            self.t.bank.owner(self.f)
+        } else {
+            self.obj(0)
+        }
+    }
     /// The entity an owner-default parameter names.
     #[inline(always)]
     pub fn target(&self) -> u8 {
@@ -822,6 +880,41 @@ impl<'t, 'a> Ctx<'t, 'a> {
         }
     }
 
+    /// Component `k` of a vector operand: a run of cells (a variable) or of constants (a literal). Anything else reads 0.
+    #[inline(never)]
+    pub fn comp(&self, n: u8, k: u8) -> i32 {
+        let (tag, p) = f3::split(self.word(n));
+        unsafe {
+            match tag {
+                f3::T_CELL => self.reg(0).cast::<i32>().add(p as usize + k as usize).read_unaligned(),
+                f3::T_CONST => self.t.bank.pool(self.f, p as usize + k as usize),
+                _ => 0,
+            }
+        }
+    }
+    /// Store `v` as component `k` of a vector variable operand (anything but a variable discards it).
+    #[inline(never)]
+    pub fn set_comp(&mut self, n: u8, k: u8, v: i32) {
+        let (tag, p) = f3::split(self.word(n));
+        if tag == f3::T_CELL {
+            unsafe { self.reg(0).cast::<i32>().add(p as usize + k as usize).write_unaligned(v) }
+        }
+    }
+    /// The world the boss tier's actions act on. A boss bank always runs with one.
+    #[cfg(feature = "boss")]
+    #[inline(always)]
+    pub fn world(&mut self) -> &mut crate::fsm3_world::World {
+        let w = self.t.env.world;
+        debug_assert!(!w.is_null());
+        // SAFETY: the adapter that attached the tree set `env.world` to its own World for the length of the pass.
+        unsafe { &mut *w }
+    }
+    /// The entity the FSM `g` belongs to (its GameObject), as the cook wrote it.
+    #[cfg(feature = "boss")]
+    #[inline(always)]
+    pub fn fsm_owner(&self, g: u8) -> u8 {
+        self.t.bank.owner(g)
+    }
     /// Operand `n` as an entity handle (NONE8 when unset).
     #[inline(never)]
     pub fn obj(&self, n: u8) -> u8 {
@@ -874,6 +967,19 @@ impl<'t, 'a> Ctx<'t, 'a> {
         }
     }
 
+    /// `pd_read` for a field slot named by operand `n`.
+    #[inline(never)]
+    pub fn pd_read_at(&mut self, n: u8) -> i32 {
+        let slot = self.int(n) as usize;
+        let e = self.env();
+        if e.pd.is_null() {
+            0
+        } else {
+            // SAFETY: as in the writer, the slot is inside the reserve.
+            unsafe { *e.pd.add(slot) }
+        }
+    }
+
     /// Operand word `w` (an array element) as a boolean.
     #[inline(never)]
     pub fn bit_of(&self, w: u16) -> bool {
@@ -882,6 +988,15 @@ impl<'t, 'a> Ctx<'t, 'a> {
             self.bit_at(p)
         } else {
             p != 0
+        }
+    }
+
+    /// Store `v` through operand word `w` (an array element): a variable takes it, anything else discards it.
+    #[inline(never)]
+    pub fn set_of(&mut self, w: u16, v: i32) {
+        let (tag, p) = f3::split(w);
+        if tag == f3::T_CELL {
+            unsafe { self.reg(0).cast::<i32>().add(p as usize).write_unaligned(v) }
         }
     }
 

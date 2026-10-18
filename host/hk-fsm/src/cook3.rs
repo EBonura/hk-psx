@@ -67,7 +67,7 @@ pub fn cook_tree_with(fsms: &[(i64, &Value)], fields: Option<&[String]>) -> Resu
         return Err("a string variable is written, so it cannot be folded to its initial text".into());
     }
     if stats.class_mismatch != 0 || stats.float_overflow != 0 {
-        return Err(format!("{} variable class mismatches, {} Q16.16 overflows", stats.class_mismatch, stats.float_overflow).into());
+        return Err(format!("{} variable class mismatches, {} Q16.16 overflows {:?}", stats.class_mismatch, stats.float_overflow, stats.overflowed).into());
     }
     for ir in &irs {
         for st in &ir.states {
@@ -98,6 +98,11 @@ pub fn cook_tree_with(fsms: &[(i64, &Value)], fields: Option<&[String]>) -> Resu
 /// The names behind a cooked tree's ids, as lines the oracle replay reads (`tools/hkref` traces use names):
 /// `fsm<TAB>index<TAB>name`, `state<TAB>fsm<TAB>index<TAB>name`, `var<TAB>fsm<TAB>name<TAB>tag<TAB>slot`,
 /// `event<TAB>index<TAB>name`.
+/// `write_names` for the boss cooker (bin fsm3-boss).
+pub fn write_names_pub(root: &std::path::Path, label: &str, c: &Cooked) -> Result<()> {
+    write_names(root, label, c)
+}
+
 fn write_names(root: &std::path::Path, label: &str, c: &Cooked) -> Result<()> {
     use std::fmt::Write;
     let mut out = String::new();
@@ -112,6 +117,9 @@ fn write_names(root: &std::path::Path, label: &str, c: &Cooked) -> Result<()> {
     }
     for (i, e) in c.events.iter().enumerate() {
         writeln!(out, "event\t{i}\t{e}")?;
+    }
+    for (i, t) in c.strings.iter().enumerate() {
+        writeln!(out, "string\t{i}\t{}", t.replace('\t', " ").replace('\n', " "))?;
     }
     std::fs::write(root.join(format!("data/{label}_names.txt")), out)?;
     Ok(())
@@ -450,6 +458,11 @@ pub fn cook_vengeflies3(root: &std::path::Path) -> Result<()> {
 /// The PlayerData actions name a field; the runtime wants its slot in the save record's reserve.
 const PLAYER_DATA: &[&str] = &["SetPlayerDataBool", "SetPlayerDataInt", "GetPlayerDataBool", "GetPlayerDataInt", "PlayerDataBoolTest"];
 
+/// `resolve_player_data` for the boss cooker (boss.rs).
+pub fn resolve_player_data_pub(irs: &mut [FsmIr], ctx: &TreeCtx, fields: Option<&[String]>) -> Result<()> {
+    resolve_player_data(irs, ctx, fields)
+}
+
 fn resolve_player_data(irs: &mut [FsmIr], ctx: &TreeCtx, fields: Option<&[String]>) -> Result<()> {
     let keys: Vec<Option<(u8, u8)>> = PLAYER_DATA.iter().map(|n| op_of(n)).collect();
     for ir in irs.iter_mut() {
@@ -460,7 +473,10 @@ fn resolve_player_data(irs: &mut [FsmIr], ctx: &TreeCtx, fields: Option<&[String
                     continue;
                 }
                 let fields = fields.ok_or("a PlayerData action in a tree cooked without a field list")?;
-                let w = a.operands[0];
+                // The reads and the test lead with the object they ask when it is not the owner: the field name follows it.
+                let has_object = ["GetPlayerDataBool", "GetPlayerDataInt", "PlayerDataBoolTest"].iter().any(|n| op_of(n) == Some((a.family, a.op)));
+                let name_at = (has_object && a.flags & F_OWNER == 0) as usize;
+                let w = a.operands[name_at];
                 let id = if w >> 13 == T_CONST { ir.pool[(w & 0x1fff) as usize] } else { return Err("PlayerData field name is not a constant".into()) };
                 let name = ctx.strings.iter().find(|(_, i)| **i == id).map(|(s, _)| s.clone()).ok_or("PlayerData field string")?;
                 let slot = fields.iter().position(|f| *f == name).ok_or_else(|| format!("PlayerData field {name} is not in the save record's list"))? as u32;
@@ -471,7 +487,7 @@ fn resolve_player_data(irs: &mut [FsmIr], ctx: &TreeCtx, fields: Option<&[String
                         ir.pool.len() - 1
                     }
                 };
-                ir.states[si].actions[ai].operands[0] = opd(T_CONST, at as u32)?;
+                ir.states[si].actions[ai].operands[name_at] = opd(T_CONST, at as u32)?;
             }
         }
     }
@@ -551,5 +567,44 @@ pub fn cook_all(root: &std::path::Path) -> Result<()> {
     cook_crawlers3(root)?;
     cook_gruzzer3(root)?;
     cook_vengeflies3(root)?;
+    cook_hornet3(root)?;
     cook_scripts3(root)
+}
+
+/// Greenpath's Hornet (Fungus1_04_boss): its fight's FSMs and the Encounter's as one boss tree. Writes `data/hornet3.hkf3`,
+/// `data/hornet3_fsm3.rs` and `data/hornet3_names.txt`. The tree reads the Steam level file directly.
+pub fn cook_hornet3(root: &std::path::Path) -> Result<()> {
+    let source = hk_unity::Source::from_doctor(root)?;
+    cook_boss_label(root, &source, "hornet3", "level133", crate::boss::hornet_inputs(&source)?, true)?;
+    cook_boss_label(root, &source, "hornet_corpse3", "sharedassets105.assets", crate::boss::hornet_corpse_inputs(&source)?, false)
+}
+
+fn cook_boss_label(root: &std::path::Path, source: &hk_unity::Source, label: &str, level: &str, inputs: (i64, Vec<(i64, String)>), fight: bool) -> Result<()> {
+    use hk_unity::Value as V;
+    let (boss, sources) = inputs;
+    let mut values: Vec<(i64, V)> = vec![];
+    for (go, sid) in &sources {
+        let (file, path) = sid.rsplit_once(':').ok_or("FSM identity")?;
+        let file = source.file(file)?;
+        let tree = source.read(&source.object(&file, path.parse()?)?)?;
+        values.push((*go, tree.get("fsm").ok_or("fsm")?.clone()));
+    }
+    let fsms: Vec<(i64, &V)> = values.iter().map(|(g, v)| (*g, v)).collect();
+    // The PlayerData fields Hornet's FSMs read and write, in the order of the adapter's local reserve.
+    let fields: Vec<String> = crate::boss::HORNET_FIELDS.iter().map(|s| s.to_string()).collect();
+    let cooked = crate::boss::cook_boss_tree(source, level, &fsms, &[boss], Some(&fields))?;
+    let mut art_manifest = serde_json::Value::Null;
+    std::fs::write(root.join(format!("data/{label}.hkf3")), &cooked.cooked.bank)?;
+    std::fs::write(root.join(format!("data/{label}_fsm3.rs")), {
+        // The fight's numbers ride with its table; the corpse only needs the event it sends.
+        let mut extra = if fight { crate::boss::hornet_extra(source, boss, &cooked.cooked)? } else { crate::boss::corpse_extra(&cooked.cooked) };
+        let (clips, manifest) = crate::boss::clips_table(source, level, &cooked)?;
+        extra.push_str(&clips);
+        art_manifest = manifest;
+        crate::boss::rust_table(label, &cooked, &extra)
+    })?;
+    // The art cook (hk-cook hornet_scene) reads which libraries and clips each animated object needs.
+    std::fs::write(root.join(format!("data/{label}_art.json")), serde_json::to_vec_pretty(&art_manifest)?)?;
+    write_names(root, label, &cooked.cooked)?;
+    write_families(root, label, &[&cooked.cooked])
 }

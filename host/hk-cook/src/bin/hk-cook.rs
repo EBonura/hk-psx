@@ -28,6 +28,7 @@ fn main() {
         Some("mossman-bind") => hk_cook::mossman_scene::bind_generated_specs(&root).map_err(|e| e.to_string()),
         Some("shaman-runner-scene") => hk_cook::shaman_runner_scene::cook(&root).map_err(|e| e.to_string()),
         Some("shaman-runner-bind") => hk_cook::shaman_runner_scene::bind_generated_specs(&root).map_err(|e| e.to_string()),
+        Some("hornet-measure") => hk_cook::hornet_scene::measure(&root).map_err(|e| e.to_string()),
         Some("props") => hk_cook::props::main(&root, source.as_deref()),
         Some("break-effects") => hk_cook::break_effects::main(&root, source.as_deref()),
         Some("scene-sfx") => hk_cook::scene_sfx::main(&root, source.as_deref()),

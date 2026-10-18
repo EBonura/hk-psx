@@ -111,6 +111,10 @@ pub fn restore_met(bits: u32) {
 /// A panel owns the Knight: a tablet, a conversation, Cornifer's, or the quick
 /// map, which the source runs with control relinquished and pause disabled.
 pub fn open() -> bool {
+    #[cfg(feature = "hornet")]
+    if crate::enemies::hero_locked() {
+        return true;
+    }
     (unsafe { STATE.open() || CONVO.open() })
         || crate::mapper::open()
         || crate::game_map::open()
@@ -281,6 +285,7 @@ pub(crate) fn panel_frame(x: i16, y: i16, w: u16, h: u16) {
 pub(crate) const GEO_COIN_X: i16 = 56;
 const GEO_NUMBER_X: i16 = GEO_COIN_X + 14;
 #[inline(never)] // UI composition must not expand main beyond MIPS branch reach.
+#[cfg_attr(not(test), optimize(size))]
 pub fn prepare(
     camera: (i32, i32),
     geo: u32,

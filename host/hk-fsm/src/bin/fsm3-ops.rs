@@ -16,6 +16,8 @@ use std::fmt::Write;
 
 pub const TREES: [(&str, &str); 4] =
     [("Crossroads_05", "Crawler"), ("Crossroads_04", "Fly"), ("Fungus1_20_v02", "Buzzer"), ("Fungus1_04_boss", "Hornet Boss 1")];
+/// Single FSMs measured on their own (`file:path id`): Hornet's encounter and the corpse prefab it leaves.
+pub const EXTRA: [&str; 2] = ["level133:239", "sharedassets105.assets:62"];
 /// The scene scripts HKSCR01 carried (.hkpsx/script-bank.json), now cooked as HKFSM03.
 pub const SCRIPTS: [&str; 11] = [
     "level6:709", "level7:94", "level7:189", "level37:425", "level39:630", "level42:234", "level56:393", "level65:710", "level81:1205",
@@ -72,6 +74,15 @@ fn main() -> Result<()> {
             ctx.entity(*go);
             measure(tree.get("fsm").ok_or("fsm")?, &mut ctx, &mut stats)?;
         }
+    }
+    for sid in EXTRA {
+        let (f, p) = sid.rsplit_once(':').ok_or("sid")?;
+        let file = source.file(f)?;
+        let obj = source.object(&file, p.parse()?)?;
+        let tree = source.read(&obj)?;
+        let mut ctx = TreeCtx::new();
+        let mut stats = Stats::default();
+        measure(tree.get("fsm").ok_or("fsm")?, &mut ctx, &mut stats)?;
     }
     let wanted: Vec<(&str, i64)> = SCRIPTS.iter().map(|s| { let (l, g) = s.split_once(':').unwrap(); (l, g.parse().unwrap()) }).collect();
     let found = hk_fsm_cook::census::fsms_on(std::path::Path::new(&a[2]), &wanted)?;

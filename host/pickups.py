@@ -33,7 +33,17 @@ CHEST_TRANSITIONS = {
 SHINY_TRANSITIONS = {'Idle': [('START INSPECT', 'Hero Down')]}
 PIECE_TRANSITIONS = {'Idle': [('GET', 'Pickup Disabled?')]}
 PIECE_FSMS = {'Heart Container Control': 'mask_shard', 'Vessel Fragment Control': 'vessel_fragment'}
+# `Shiny Control`'s big-item states write PlayerData bools; the ones the port
+# keeps as ability bits (game/src/persist.rs, checked against it in `_ability_bit`).
+ABILITY_FIELDS = {'hasDash': 'HAS_DASH'}
+# The UI sheet line each ability's message names (`Msg Control`'s `Set Dash`).
+ABILITY_NAMES = {'hasDash': 'INV_NAME_DASH'}
+# Shiny parents whose item an event brings: the Key Giver's after the False
+# Knight, the Cloak Corpse's after Hornet (`Cloak Corpse Control` activates the
+# shiny once `hornet1Defeated`).
+WAITING_PARENTS = {'Key Giver': 'false_knight', 'Cloak Corpse': 'hornet'}
 GRANTS = {'charm': 'Grant::Charm({})', 'trinket': 'Grant::Trinket({})', 'city_key': 'Grant::CityKey',
+          'ability': 'Grant::Ability({})',
           'mask_shard': 'Grant::MaskShard', 'vessel_fragment': 'Grant::VesselFragment',
           'rancid_egg': 'Grant::RancidEgg'}
 NO_CHEST = 255
@@ -62,7 +72,22 @@ def _grant(fsm):
         return 'city_key', 0
     if route == 'trinket' and state == 'Egg':
         return 'rancid_egg', 0
+    if route == 'big item':
+        fields = [w['field'] for w in grant['writes'] if w['field'] in ABILITY_FIELDS]
+        if len(fields) == 1 and state == 'Dash':
+            return 'ability', _ability_bit(fields[0])
     return None
+
+
+def _ability_bit(field):
+    """The persist.rs PlayerData bit an ability field is kept in."""
+    import re
+    name = ABILITY_FIELDS[field]
+    text = (ROOT / 'game/src/persist.rs').read_text()
+    found = re.search(rf'pub const {name}: u32 = (\d+);', text)
+    if not found:
+        raise ValueError(f'persist.rs lost {name}')
+    return int(found.group(1))
 
 
 def _name(fsm, grant, ui):
@@ -72,6 +97,8 @@ def _name(fsm, grant, ui):
     kind, value = grant
     if kind == 'charm':
         key = f'CHARM_NAME_{value}'
+    elif kind == 'ability':
+        key = next(ABILITY_NAMES[f] for f, n in ABILITY_FIELDS.items() if _ability_bit(f) == value)
     else:
         wanted = {'city_key': 'City Key', 'rancid_egg': 'Egg'}.get(kind, f'Trink {value}')
         state = next(s for s in fsm['states'] if s['name'] == wanted)
@@ -172,11 +199,12 @@ def collect(sc, ui):
             fsm = fsms['Shiny Control']
             parent = sc.transforms[sc.go_transform[gid]]['m_Father']['m_PathID']
             parent_gid = sc.transforms[parent]['m_GameObject']['m_PathID'] if parent else None
-            key_giver = parent_gid is not None and sc.gos[parent_gid]['m_Name'] == 'Key Giver'
+            waits = WAITING_PARENTS.get(sc.gos[parent_gid]['m_Name']) if parent_gid is not None else None
+            key_giver = waits == 'false_knight'
             chest = in_chest.get(gid)
             # A fresh save activates only these: the rest belong to an NPC's
             # or an event's reward and wait on systems the port does not run.
-            if chest is None and not key_giver and not sc.active(gid):
+            if chest is None and waits is None and not sc.active(gid):
                 continue
             grant = _grant(fsm)
             if grant is None:
@@ -201,6 +229,7 @@ def collect(sc, ui):
                 fling_from = [(body[0] + body[2]) / 2, body[3]]
             pickups.append({'source': sc.sid(gid), 'position': position, 'z': sc.point(gid)[2], 'touch': False,
                             'reach': reach, 'grant': grant, 'chest': chest, 'after_false_knight': key_giver,
+                            'after_hornet': waits == 'hornet',
                             'fling_from': fling_from,
                             'name': _name(fsm, grant, ui), 'images': _glint(source, sc, records)[::GLINT_STEP],
                             'fps': 15.0 / GLINT_STEP,
@@ -467,6 +496,7 @@ def rust(metadata):
                          f'reach:{b4(p["reach"])},touch:{str(p["touch"]).lower()},grant:{GRANTS[kind].format(value)},'
                          f'chest:{chest},after_false_knight:{str(p["after_false_knight"]).lower()},'
                          f'after_arena:{str(p.get("after_arena", False)).lower()},'
+                         f'after_hornet:{str(p.get("after_hornet", False)).lower()},'
                          f'first:{p["frames"][0]},count:{len(p["frames"])},fps:{round(p["fps"] * 256)},scale:{p["scale"]},'
                          f'fling:{"Some(" + b4(p["fling_from"]) + ")" if p.get("fling_from") else "None"},'
                          f'name:{json.dumps(p["name"])}}},')

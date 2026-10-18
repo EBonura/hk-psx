@@ -24,6 +24,34 @@ fn main() -> Result<()> {
     for t in hk_fsm_cook::families::all_types() {
         names.insert(op_of(t).ok_or("op")?, t);
     }
+    if a.get(3).is_some_and(|l| l == "Sids") {
+        // fsm3-dump DATA CACHE Sids FILE:PATH_ID...: single FSMs, with the parameter names of their action types.
+        let mut ctx = TreeCtx::new();
+        let mut stats = Stats::default();
+        for sid in &a[4..] {
+            let (f, p) = sid.rsplit_once(':').ok_or("sid")?;
+            let file = source.file(f)?;
+            let obj = source.object(&file, p.parse()?)?;
+            let tree = source.read(&obj)?;
+            let fsm = tree.get("fsm").ok_or("fsm")?;
+            ctx.entity(tree.get("m_GameObject").and_then(|v| v.get("m_PathID")).and_then(Value::int).unwrap_or(0));
+            let ir = Enc::new(&mut ctx, &mut stats, fsm)?.encode()?;
+            println!("## {sid} {} start={}", ir.name, ir.state_names[ir.start as usize]);
+            for (si, st) in ir.states.iter().enumerate() {
+                println!("state {si} {:?}", ir.state_names[si]);
+                for (e, t) in &st.transitions { println!("    on {} -> {}", ctx.events[*e as usize], ir.state_names[*t as usize]); }
+                for (ai, ac) in st.actions.iter().enumerate() {
+                    let ops: Vec<String> = ac.operands.iter().map(|o| { let (tag, p) = (o >> 13, (o & 0x1fff) as i32); match tag { T_CONST => format!("pool[{p}]={}", ir.pool.get(p as usize).map(|x| *x as i32).unwrap_or(0)), T_CELL => format!("cell{p}"), T_BIT => format!("bit{p}"), T_OBJ => format!("obj{p}"), T_EVENT => format!("ev:{}", ctx.events[p as usize]), T_NONE => "none".to_owned(), T_INLINE => format!("lit{}", (p << 19) >> 19), _ => format!("arr@{p}") } }).collect();
+                    println!("    a{ai} {} f={:#x} [{}]", names[&(ac.family, ac.op)], ac.flags, ops.join(", "));
+                }
+            }
+        }
+        for (name, params) in &stats.param_names { println!("params {name}: {}", params.join(", ")); }
+        let mut strs: Vec<_> = ctx.strings.iter().collect();
+        strs.sort_by_key(|(_, i)| **i);
+        println!("strings: {:?}", strs);
+        return Ok(());
+    }
     if a.get(3).is_some_and(|l| l == "Scripts") {
         const SCRIPTS: [&str; 11] = ["level6:709", "level7:94", "level7:189", "level37:425", "level39:630", "level42:234", "level56:393", "level65:710", "level81:1205", "level76:1739", "level146:575"];
         let wanted: Vec<(&str, i64)> = SCRIPTS.iter().map(|s| { let (l, g) = s.split_once(':').unwrap(); (l, g.parse().unwrap()) }).collect();

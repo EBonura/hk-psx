@@ -561,6 +561,7 @@ pub fn interact(
     // pieces are taken on touch. Each is saved as it is taken.
     let inspect =
         can_inspect && !dialogue::open() && !game.shop_screen.open && pad.is_held(button::UP);
+    game.pickups.hornet_defeated = persist::player(persist::HORNET_1_DEFEATED) && !crate::enemies::cloak_waiting();
     game.pickups.collect(
         body,
         inspect,
