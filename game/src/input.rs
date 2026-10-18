@@ -236,6 +236,8 @@ pub fn poll_only() {
 #[inline(never)]
 fn poll_slow(now: u32) {
     unsafe {
+        #[cfg(feature = "gate-events")]
+        let missed = SAMPLER.missed();
         let result = SAMPLER.checkpoint(now, || {
             let bits = poll_bits();
             LAST_POLLED = bits;
@@ -245,6 +247,13 @@ fn poll_slow(now: u32) {
             Ok(false) => {}
             Ok(true) => {
                 publish_stats();
+                #[cfg(feature = "gate-events")]
+                {
+                    let more = SAMPLER.missed().wrapping_sub(missed);
+                    if more != 0 {
+                        crate::gate_probe::event(16, more, crate::gate_probe::stall_ctx());
+                    }
+                }
             }
             Err(fault) => failed(fault),
         }

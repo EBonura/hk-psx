@@ -20,15 +20,22 @@ pub fn validate_fragment(mossman:bool,offset:usize,data:&[u8])->bool {
     hk_sim::runner_audio::valid_manifest(if mossman{MOSSMAN_BANK_BYTES}else{BANK_BYTES},clips(mossman))
         && hk_sim::runner_audio::valid_fragment(clips(mossman),offset,data)
 }
-/// Revoke publication and silence all three voices before any SPU overwrite.
-pub fn begin_overlay() -> bool {
-    unsafe { HK_RUNNER_AUDIO_READY = 0; LOOP_OWNERS = [0; 2]; }
+/// Silence all three voices (key off, release): the first half of `begin_overlay`,
+/// started when a gate's exit fade begins so the release has run by the time the
+/// other family's bank is uploaded.
+#[inline(never)]
+pub fn release_voices() {
     for n in LOOP_VOICES.iter().copied().chain([CALL_VOICE]) {
         let voice = Voice::new(n);
         voice.set_volume(Volume::SILENCE, Volume::SILENCE);
         voice.set_adsr(Adsr { lower: 0x000f, upper: 0 });
         Voice::key_off(1 << n);
     }
+}
+/// Revoke publication and silence all three voices before any SPU overwrite.
+pub fn begin_overlay() -> bool {
+    unsafe { HK_RUNNER_AUDIO_READY = 0; LOOP_OWNERS = [0; 2]; }
+    release_voices();
     // SPU voice register +0x0c is the current envelope, not the ADSR setting.
     // Publication stays revoked on timeout; no sample upload occurs then.
     for poll in 0..2_000_000 {

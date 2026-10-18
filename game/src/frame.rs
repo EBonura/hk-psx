@@ -2011,6 +2011,12 @@ pub fn simulate(
                 crate::gate_probe::trigger(r.scene, g.target_scene);
                 // Read ahead from now: the fade covers the drive's work.
                 crate::disc::prefetch_hint(crate::disc::scene_index(g.target_region));
+                // The other runner audio family: let this room's voices release
+                // during the fade, so the bank swap at the gate need not wait.
+                if crate::disc::bank_pending(crate::disc::scene_index(g.target_region)) {
+                    crate::gate_probe::ctx(6);
+                    crate::runner_audio::release_voices();
+                }
                 if door_exit {
                     // The Great Door's own FADE OUT INSTANT: no fade here.
                     take_gate(game, r, g, door_exit, target);

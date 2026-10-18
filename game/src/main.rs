@@ -1232,7 +1232,7 @@ fn main() {
                 }
                 input::checkpoint();
                 let _ = cache.pump(); // Detailed errors remain in the CD markers.
-                cache.ahead_step();
+                cache.ahead_step(true);
                 input::checkpoint();
                 let now = psx_rt::interrupts::vblank_count();
                 // A simulation slower than real time skips ticks rather than
@@ -1298,6 +1298,8 @@ fn main() {
                         );
                         #[cfg(feature = "tick-log")]
                         input::log_tick(!menu);
+                        #[cfg(feature = "tour-walk")]
+                        gate_tour::walk(&mut game.player, r.scene);
                     } else {
                         #[cfg(feature = "tick-log")]
                         input::log_tick(false);
@@ -1381,7 +1383,7 @@ fn main() {
                         })
                     };
                 }
-                present_spin(sim_clock);
+                present_spin(sim_clock, cache);
             }
             presentation::finish();
             render::finish_gpu_frame();
@@ -1502,7 +1504,7 @@ fn main() {
 /// wait-loop detector counts it as work). A flip whose GPU never signals is
 /// written by hand after FLIP_TIMEOUT_VBLANKS instead of waiting forever.
 #[inline(never)]
-fn present_spin(sim_clock: u32) {
+fn present_spin(sim_clock: u32, cache: &mut disc::Cache) {
     let queued = presentation::queued();
     loop {
         presentation::checkpoint();
@@ -1521,6 +1523,7 @@ fn present_spin(sim_clock: u32) {
         // in small slices so the gate need not (disc.rs).
         render::warm_step(2);
         disc::preverify_step(256);
+        cache.ahead_step(false);
     }
 }
 
