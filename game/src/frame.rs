@@ -325,6 +325,12 @@ pub fn render(
         &mut needed,
         &mut needed_len,
     );
+    // The text panel's ornaments: like the board, they yield to the view.
+    crate::dialogue_art::append_needed(
+        !game.paused && crate::dialogue::panel_up(),
+        &mut needed,
+        &mut needed_len,
+    );
     // After the board: a prop that finds no room is left out of the frame.
     game.props
         .append_needed(camera, game.geo, &mut needed, &mut needed_len);
@@ -454,10 +460,9 @@ pub fn render(
             tint,
         );
     }
-    prims += geo_render::hud_coin(
-        dialogue::GEO_COIN_X,
-        hud::geo_y(vitals.max_health.saturating_add(game.vitals.blue_health)) - 1,
-    );
+    // The Geo coin is a cell of the panel font now (dialogue::prepare draws it
+    // with the count); it still counts as the frame's one HUD primitive.
+    prims += 1;
     dialogue::prepare(
         camera,
         game.geo.wallet(),

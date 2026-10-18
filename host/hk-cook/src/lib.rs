@@ -31,6 +31,7 @@ pub mod const_eval;
 pub mod cook;
 pub mod cook_audio;
 pub mod coverage;
+pub mod dialogue_art;
 pub mod dream_nail;
 pub mod effects_art;
 pub mod false_knight;

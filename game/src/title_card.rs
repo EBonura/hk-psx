@@ -21,7 +21,8 @@ use crate::persist::{self, Kind};
 const NONE: u8 = u8::MAX;
 const FADE: u16 = 30;
 const HOLD: u16 = 150;
-const GLYPHS: usize = 48;
+// The longest card is 22 letters (Dirtmouth, The Fading Town); a charm name is at most 17.
+const GLYPHS: usize = 24;
 #[derive(Clone, Copy, PartialEq)]
 enum Style {
     Area,
@@ -51,6 +52,28 @@ static mut STATE: State = State {
 };
 static mut QUADS: [QuadTextured; GLYPHS] =
     [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (0, 0, 0)) }; GLYPHS];
+/// A 12x12 textured rectangle with its draw mode in the packet (the panel's glyph).
+#[repr(C, align(4))]
+struct Rect {
+    tag: u32,
+    mode: u32,
+    color: u32,
+    xy: u32,
+    uv: u32,
+    wh: u32,
+}
+static mut RECTS: [Rect; GLYPHS] = [const {
+    Rect {
+        tag: 0,
+        mode: 0,
+        color: 0,
+        xy: 0,
+        uv: 0,
+        wh: 0,
+    }
+}; GLYPHS];
+/// Whether slot `i` of the frame's glyphs is a rectangle (scale 1) or a quad (scale 2).
+static mut KINDS: [bool; GLYPHS] = [false; GLYPHS];
 static mut USED: usize = 0;
 /// Cards shown, and the title index (plus one) of the last.
 #[no_mangle]
@@ -165,18 +188,40 @@ fn line(text: &str, y: i16, scale: i16, level: u8, centre: i16) {
     for b in text.bytes() {
         let i = (b - 32) as usize;
         if b != b' ' && unsafe { USED } < GLYPHS {
-            let (u, page) = ((i % 21 * 12) as u8, (i / 21 * 64) as u16);
-            let size = 12 * scale;
+            let u = crate::dialogue::glyph_u(i) as u8;
+            let page = (i / 21 * 64) as u16;
+            let clut = Clut::new(320, 481).uv_clut_word();
+            let tpage = Tpage::new(page, 256, TexDepth::Bit4).uv_tpage_word(0);
             unsafe {
-                QUADS[USED] = QuadTextured::new(
-                    [(x, y), (x + size, y), (x, y + size), (x + size, y + size)],
-                    // Half-open: the cell's twelfth column is its neighbour's
-                    // first under a scaled polygon, so the quad stops at 11.
-                    [(u, 244), (u + 11, 244), (u, 255), (u + 11, 255)],
-                    Clut::new(320, 481).uv_clut_word(),
-                    Tpage::new(page, 256, TexDepth::Bit4).uv_tpage_word(0),
-                    (level, level, level),
-                );
+                if scale == 1 {
+                    // A 12x12 rectangle samples texel for texel: exact.
+                    RECTS[USED] = Rect {
+                        tag: 0,
+                        mode: 0xe100_0000 | tpage as u32,
+                        color: 0x6400_0000 | u32::from(level) * 0x0001_0101,
+                        xy: x as u16 as u32 | ((y as u16 as u32) << 16),
+                        uv: u32::from(u) | (244 << 8) | (u32::from(clut) << 16),
+                        wh: 12 | (12 << 16),
+                    };
+                } else {
+                    // A polygon seeds its texture coordinate half a texel in and steps a
+                    // fixed amount a pixel, so doubling a glyph exactly means starting one
+                    // texel early: the polygon spans 12 texels over 24 pixels from the
+                    // blank column before the glyph (cells start 4 into the strip) and
+                    // 11 rows from the blank top row over 22 pixels (row 255 is the last
+                    // texel there is). That shows 11 of the 12 rows, 2 pixels each, with
+                    // only the last row of a descender halved.
+                    let (w, h) = (12 * scale, 11 * scale);
+                    let y = y + scale / 2;
+                    QUADS[USED] = QuadTextured::new(
+                        [(x, y), (x + w, y), (x, y + h), (x + w, y + h)],
+                        [(u - 1, 244), (u + 11, 244), (u - 1, 255), (u + 11, 255)],
+                        clut,
+                        tpage,
+                        (level, level, level),
+                    );
+                }
+                KINDS[USED] = scale == 1;
                 USED += 1;
             }
         }
@@ -223,7 +268,11 @@ pub fn prepare() {
 pub fn append(ot: &mut OrderingTable<1>) {
     unsafe {
         for i in (0..USED).rev() {
-            crate::display::ot_add(ot, 0, &mut QUADS[i], QuadTextured::WORDS);
+            if KINDS[i] {
+                crate::display::ot_add(ot, 0, &mut RECTS[i], 5);
+            } else {
+                crate::display::ot_add(ot, 0, &mut QUADS[i], QuadTextured::WORDS);
+            }
         }
     }
 }

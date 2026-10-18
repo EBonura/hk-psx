@@ -30,6 +30,9 @@ const ASSET_SCRIPTS: &[&str] = &[
     "rust:focus-audio",
     "rust:runner-audio",
     "rust:ambience",
+    // The text panel's ornaments (their palette is the font's ramp) and the HUD's
+    // Geo icon, which read_points.py pastes into the glyph strip.
+    "rust:dialogue-art",
     "read_points.py",
     "geo.py",
     "rust:geo-audio",
@@ -1683,6 +1686,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "geo-audio" => hk_cook::geo_audio::main(root, None)?,
         "focus-audio" => hk_cook::focus_audio::main(root, None)?,
         "focus-art" => hk_cook::focus_art::main(root, None)?,
+        "dialogue-art" => hk_cook::dialogue_art::main(root, None)?,
         "ambience" => hk_cook::ambience::main(root, None)?,
         "runner-audio" => {
             hk_cook::runner_audio::main(root, &[], None)?;

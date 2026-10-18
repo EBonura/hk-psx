@@ -9,6 +9,8 @@ pub const CIRCLE: u16 = 1 << 13;
 pub const CROSS: u16 = 1 << 14;
 /// Brightness steps either side of the picture as drawn, and the screen
 /// position's reach either side of centre in pixels (display.rs).
+/// Where glyph cells start inside the 256 pixel strip (host/read_points.py `GLYPH_U0`).
+pub const GLYPH_U0: usize = 4;
 pub const BRIGHT_STEPS: i8 = 5;
 pub const SCREEN_RANGE: i8 = 16;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

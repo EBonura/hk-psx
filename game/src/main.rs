@@ -61,6 +61,7 @@ mod charms;
 mod cheats;
 mod decor;
 mod dialogue;
+mod dialogue_art;
 mod disc;
 mod display;
 mod draw_packet;

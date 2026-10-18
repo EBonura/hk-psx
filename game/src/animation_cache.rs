@@ -62,6 +62,13 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                 // table, in the order they were added, and stream from linked
                 // RAM. The props (Goams, stalactites, grub jars) were added
                 // last and are the highest.
+                if key >= crate::dialogue_art::KEY_BASE {
+                    // The text panel's ornaments, above the props: linked RAM.
+                    let (bytes, width, height) =
+                        crate::dialogue_art::texels((key - crate::dialogue_art::KEY_BASE) as usize)?;
+                    crate::texture_upload::upload(dest(slot, width, height), bytes);
+                    return Some(bytes.len() as u32);
+                }
                 if key >= crate::props::KEY_BASE {
                     // Goams, stalactites and grub jars, above the board's
                     // icons: the props cooker (host/hk-cook/src/props.rs) cuts every frame to slot-sized parts.

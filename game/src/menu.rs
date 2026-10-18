@@ -73,7 +73,7 @@ fn text(x: i16, y: i16, value: &str, gain: u8) {
                 y,
                 12,
                 12,
-                ((i % 21 * 12) as u8, 244),
+                ((state::GLYPH_U0 + i % 21 * 12) as u8, 244),
                 TextureMaterial::opaque(
                     Clut::new(320, 481).uv_clut_word(),
                     Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(0),
