@@ -618,18 +618,33 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
     if !force && cache.exists() {
         let old = read_json(&cache)?;
         if old["key"].as_str() == Some(key.as_str()) {
-            let intact = old["outputs"].as_object().is_some_and(|outputs| {
-                outputs.iter().all(|(p, h)| {
-                    let path = root.join(p);
-                    path.is_file() && sha256_file(&path).ok().as_deref() == h.as_str()
+            let changed: Vec<&str> = old["outputs"]
+                .as_object()
+                .map(|outputs| {
+                    outputs
+                        .iter()
+                        .filter(|(p, h)| {
+                            let path = root.join(p);
+                            !(path.is_file()
+                                && sha256_file(&path).ok().as_deref() == h.as_str())
+                        })
+                        .map(|(p, _)| p.as_str())
+                        .collect()
                 })
-            });
-            if intact {
+                .unwrap_or_default();
+            if changed.is_empty() && old["outputs"].is_object() {
                 println!(
                     "Asset cache hit: cooker code, region report and generated outputs match."
                 );
                 return Ok(true);
             }
+            println!(
+                "Asset cache miss: {} generated output(s) differ from the last run, first: {}",
+                changed.len(),
+                changed.iter().take(5).copied().collect::<Vec<_>>().join(", ")
+            );
+        } else {
+            println!("Asset cache miss: cooker code, region report or cache verdict changed.");
         }
     }
     // The scripts and `prepare` below start from the report as the region cook wrote it, as a
