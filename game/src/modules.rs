@@ -722,6 +722,16 @@ pub fn gave_up(scene: usize) -> bool {
 }
 const VERIFY_WORDS: usize = 2048;
 const INSTALL_WORDS: usize = 1024;
+/// At a gate the screen is black and no frame is waiting: one slice of an install does
+/// this many times the in-game budget (still a few milliseconds, well inside a VBlank).
+static mut AT_GATE: bool = false;
+fn gate_scale() -> usize {
+    if unsafe { AT_GATE } {
+        4
+    } else {
+        1
+    }
+}
 
 fn bg() -> &'static mut Bg {
     unsafe { &mut *(&raw mut BG) }
@@ -739,7 +749,7 @@ fn abort_background() {
 /// Knight is approaching, check its code chunk as it lands and install the
 /// modules it holds that are not resident, a slice of work per frame.
 pub fn service() {
-    pool_service(POOL_WORDS);
+    pool_service(POOL_WORDS * gate_scale());
     unsafe {
         CARRY_SETTLED = true;
     }
@@ -779,7 +789,7 @@ pub fn service() {
                 abort_background();
                 return;
             }
-            let n = VERIFY_WORDS.min(chunk.len() - *done);
+            let n = (VERIFY_WORDS * gate_scale()).min(chunk.len() - *done);
             *h = hash(&chunk[*done..*done + n], *h);
             *done += n;
             if *done == chunk.len() {
@@ -803,7 +813,7 @@ pub fn service() {
                 abort_background();
                 return;
             }
-            let done = match job.run(INSTALL_WORDS) {
+            let done = match job.run(INSTALL_WORDS * gate_scale()) {
                 Ok(done) => done,
                 Err(_) => {
                     unsafe {
@@ -850,8 +860,18 @@ fn next_background(scene: usize, gen: u32, chunk: &[u32]) {
 /// prefetched bytes: finish a background install for this room, drop any
 /// other one.
 pub fn gate_begin(scene: usize) {
+    unsafe {
+        AT_GATE = true;
+    }
+    gate_begin_run(scene);
+    unsafe {
+        AT_GATE = false;
+    }
+}
+fn gate_begin_run(scene: usize) {
     pool_gate(scene);
     loop {
+        crate::input::checkpoint();
         match bg() {
             Bg::Idle => return,
             Bg::Verify { scene: s, .. } | Bg::Install { scene: s, .. } if *s != scene => {
@@ -1026,6 +1046,7 @@ fn release() {
 fn pf_idle() {
     release();
     let p = pf();
+    crate::gate_probe::event(13, p.scene as u32, (p.kind as u32) << 8 | match p.state { Pf::Idle => 0, Pf::Want => 1, Pf::Reading => 2, Pf::Landed => 3, Pf::Decode => 4, Pf::Verify { .. } => 5, Pf::Install { .. } => 6 });
     p.state = Pf::Idle;
     p.job = None;
     unsafe {
@@ -1327,7 +1348,7 @@ fn pool_gate(scene: usize) {
             // call (usize::MAX) decoded for most of a frame and carried a poll over a VBlank.
             while pf().state != Pf::Idle {
                 crate::input::checkpoint();
-                pool_service(POOL_WORDS);
+                pool_service(POOL_WORDS * gate_scale());
             }
         }
     }
@@ -1409,7 +1430,7 @@ pub fn admit_art(scene: usize) -> bool {
         crate::disc::pool_wait();
         while pf().state != Pf::Idle {
             crate::input::checkpoint();
-            pool_service(POOL_WORDS);
+            pool_service(POOL_WORDS * 4);
         }
     }
     unsafe {

@@ -32,11 +32,27 @@ pub fn decoder(phase_id: u32) -> u8 {
         _ => LZ4,
     }
 }
-#[cfg(feature = "gate-tour")]
+#[cfg(feature = "gate-log")]
 mod imp {
     use psx_io::timers::{self, Timer};
-    pub const RECORDS: usize = 200;
-    pub const WORDS: usize = 32;
+    /// Gate records kept: the whole 164-step tour by default; diagnosis builds that stop
+    /// early (HK_TOUR_STOP) ask for fewer (HK_GATE_RECORDS) to leave BSS for the event ring.
+    pub const RECORDS: usize = match option_env!("HK_GATE_RECORDS") {
+        Some(s) => parse(s),
+        None => 164,
+    };
+    const fn parse(s: &str) -> usize {
+        let b = s.as_bytes();
+        let mut i = 0;
+        let mut v = 0;
+        while i < b.len() {
+            v = v * 10 + (b[i] - b'0') as usize;
+            i += 1;
+        }
+        v
+    }
+    pub const WORDS: usize = 23;
+    /// Phases p = 2..=17 accumulate as u16 HBlank halves of words 11..=18.
     const ACC: usize = 11;
     #[no_mangle]
     pub static mut HK_GATE_LOG: [[u32; WORDS]; RECORDS] = [[0; WORDS]; RECORDS];
@@ -63,9 +79,14 @@ mod imp {
             LAST = now;
         }
         let cur = unsafe { CUR } as usize;
-        if unsafe { OPEN } && cur != 0 {
+        if unsafe { OPEN } && cur >= 2 {
             if let Some(r) = record() {
-                r[ACC + cur - 1] = r[ACC + cur - 1].wrapping_add(delta);
+                let i = cur - 2;
+                let w = &mut r[ACC + i / 2];
+                let sh = (i % 2) * 16;
+                let old = (*w >> sh) & 0xffff;
+                let v = (old + delta).min(0xffff);
+                *w = (*w & !(0xffff << sh)) | v << sh;
             }
         }
     }
@@ -98,6 +119,7 @@ mod imp {
             r[2] = dst as u32;
             r[3] = vbl();
         }
+        event(11, src as u32, dst as u32);
     }
     pub fn load_start(prefetch: u32) {
         if let Some(r) = record() {
@@ -133,8 +155,8 @@ mod imp {
             set(0);
         }
         // The first presented frame that is not fully black: the fade-in start.
-        if r[6] != 0 && r[28] == 0 && shade < 255 {
-            r[28] = vbl();
+        if r[6] != 0 && r[19] == 0 && shade < 255 {
+            r[19] = vbl();
         }
         if r[6] != 0 && r[7] == 0 && shade == 0 {
             r[7] = vbl();
@@ -144,34 +166,89 @@ mod imp {
             }
         }
     }
+    /// Drive events for the gate study: (vblank << 8 | kind, a << 16 | b & 0xffff).
+    #[cfg(feature = "gate-events")]
+    pub const EVENTS: usize = 160;
+    #[cfg(not(feature = "gate-events"))]
+    pub const EVENTS: usize = 1;
+    #[no_mangle]
+    pub static mut HK_EVENT_LOG: [[u32; 2]; EVENTS] = [[0; 2]; EVENTS];
+    #[no_mangle]
+    pub static mut HK_EVENT_N: u32 = 0;
+    #[no_mangle]
+    pub static mut HK_GAP_LOG: [[u32; 2]; 24] = [[0; 2]; 24];
+    #[no_mangle]
+    pub static mut HK_GAP_N: u32 = 0;
+    #[cfg(not(feature = "gate-events"))]
+    pub fn event(_: u8, _: u32, _: u32) {}
+    #[cfg(feature = "gate-events")]
+    pub fn event(kind: u8, a: u32, b: u32) {
+        if kind == 16 {
+            // Poll gaps are kept apart: the first 24 of the whole run.
+            unsafe {
+                let n = HK_GAP_N;
+                HK_GAP_N = n + 1;
+                if (n as usize) < 24 {
+                    (*(&raw mut HK_GAP_LOG))[n as usize] = [vbl(), a << 16 | (b & 0xffff)];
+                }
+            }
+        }
+        unsafe {
+            let n = HK_EVENT_N;
+            HK_EVENT_N = n.wrapping_add(1);
+            (*(&raw mut HK_EVENT_LOG))[n as usize % EVENTS] =
+                [vbl() << 8 | kind as u32, (a << 16) | (b & 0xffff)];
+        }
+    }
+    /// What ran last among the long operations, for attributing a stall (set by `ctx`).
+    static mut CTX: u32 = 0;
+    pub fn ctx(c: u32) {
+        unsafe {
+            CTX = c;
+        }
+    }
+    pub fn stall_ctx() -> u32 {
+        unsafe { CTX << 8 | HK_GATE_PHASE }
+    }
     pub fn note(word: usize, value: u32) {
         if let Some(r) = record() {
-            if (28..WORDS).contains(&word) {
+            if (19..WORDS).contains(&word) {
                 r[word] = value;
             }
         }
     }
 }
-#[cfg(feature = "gate-tour")]
-pub use imp::{display_on, frame, load_start, note, read_started, set, trigger};
-#[cfg(not(feature = "gate-tour"))]
+#[cfg(feature = "gate-log")]
+pub use imp::{ctx, display_on, event, frame, load_start, note, read_started, set, stall_ctx, trigger};
+#[cfg(not(feature = "gate-log"))]
 #[inline(always)]
 pub fn set(_: u8) {}
-#[cfg(not(feature = "gate-tour"))]
+#[cfg(not(feature = "gate-log"))]
 #[inline(always)]
 pub fn trigger(_: usize, _: usize) {}
-#[cfg(not(feature = "gate-tour"))]
+#[cfg(not(feature = "gate-log"))]
 #[inline(always)]
 pub fn load_start(_: u32) {}
-#[cfg(not(feature = "gate-tour"))]
+#[cfg(not(feature = "gate-log"))]
 #[inline(always)]
 pub fn display_on() {}
-#[cfg(not(feature = "gate-tour"))]
+#[cfg(not(feature = "gate-log"))]
 #[inline(always)]
 pub fn frame(_: u8) {}
-#[cfg(not(feature = "gate-tour"))]
+#[cfg(not(feature = "gate-log"))]
 #[inline(always)]
 pub fn read_started() {}
-#[cfg(not(feature = "gate-tour"))]
+#[cfg(not(feature = "gate-log"))]
 #[inline(always)]
 pub fn note(_: usize, _: u32) {}
+#[cfg(not(feature = "gate-log"))]
+#[inline(always)]
+pub fn event(_: u8, _: u32, _: u32) {}
+#[cfg(not(feature = "gate-log"))]
+#[inline(always)]
+pub fn ctx(_: u32) {}
+#[cfg(not(feature = "gate-log"))]
+#[inline(always)]
+pub fn stall_ctx() -> u32 {
+    0
+}

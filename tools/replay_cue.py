@@ -110,6 +110,7 @@ def main():
     p.add_argument('--screenshot-interval',type=int,default=60)
     p.add_argument('--frontend',type=Path,default=ROOT.parent/'PSoXide-emulator/target/release/frontend')
     p.add_argument('--cue',type=Path,help='disc pair selected by the build report')
+    p.add_argument('--steps',default='6000000000',help='instruction budget (long gate tours need more)')
     p.add_argument('--memcard',type=Path,help='port 1 card image; a missing file boots freshly formatted and is written back')
     a=p.parse_args();r=json.loads((ROOT/'.hkpsx/build.json').read_text())
     cue=Path(r['artifacts']['cue']);exe=Path(r['artifacts']['exe']);mp=Path(r['link_map']['path'])
@@ -127,7 +128,7 @@ def main():
         if flag not in help_text:raise ValueError('Unsupported frontend flag '+flag)
     (out/'frontend-help.txt').write_text(help_text)
     command=[str(a.frontend),'launch','--path',str(cue),'--embedded-playtest',
-        '--config-dir',str(out/'emulator'),'--steps','6000000000','--input-tape',str(tape),
+        '--config-dir',str(out/'emulator'),'--steps',str(a.steps),'--input-tape',str(tape),
         '--stop-at-poll',str(start+count),'--route-screenshot-interval',str(a.screenshot_interval)]
     for flag,name in {'route-log':'route.csv','route-screenshot-dir':'screenshots','dump-display':'display.ppm',
         'dump-hw':'hw.ppm','dump-vram':'vram.ppm','dump-spu-ram':'spu.bin','dump-ram':'ram.bin','dump-audio':'audio.wav','cd-command-log':'cd.csv'}.items():

@@ -74,6 +74,9 @@ class StoredSchedulerTests(unittest.TestCase):
             'protect_upload', 'pending', 'is_ready', 'atlases_ready'))
         code = r'''
 #![allow(dead_code)]
+mod gate_probe{pub fn event(_:u8,_:u32,_:u32){}}
+fn bank_needed(_:usize)->usize{0}
+fn plan_bank(_:usize,_:usize,_:usize){}
 const EMPTY:usize=usize::MAX;
 const DECODE_STEP:usize=1024;
 const SCENE_GATE_LOAD:bool=EXCLUSIVE;
@@ -224,7 +227,7 @@ static mut PAYLOADS:[[u32;6];2]=[[0,2,3,2,1,2],[1,1,2,1,3,0]];
 mod input{pub fn checkpoint(){}}
 fn checkpoint(){input::checkpoint();}
 mod ambience{pub fn missing(_:usize)->u8{0}}
-mod gate_probe{pub const SCENE_CHECK:u8=0;pub fn set(_:u8){}pub fn decoder(_:u32)->u8{0}}
+mod gate_probe{pub const SCENE_CHECK:u8=0;pub fn set(_:u8){}pub fn event(_:u8,_:u32,_:u32){}pub fn decoder(_:u32)->u8{0}}
 // Rooms without streamed code or art: the module calls are no-ops, and the
 // admission never touches the drive for art.
 mod modules{pub fn gate_begin(_:usize){} pub fn art_missing(_:usize)->bool{false} pub fn art_begin(_:usize)->bool{false} pub fn admit_art(_:usize)->bool{true}}
@@ -449,7 +452,7 @@ mod input{pub fn checkpoint(){unsafe{
 }}}
 fn checkpoint(){input::checkpoint();}
 #[derive(Debug,PartialEq)]enum LoadError{Coverage,Checksum,Decompress,PayloadRead}
-mod gate_probe{pub const COVERAGE_CHECK:u8=0;pub fn set(_:u8){}pub fn decoder(_:u32)->u8{0}}
+mod gate_probe{pub const COVERAGE_CHECK:u8=0;pub fn set(_:u8){}pub fn event(_:u8,_:u32,_:u32){}pub fn decoder(_:u32)->u8{0}}
 // No chunk was hashed ahead of this admission: the decoder checks it all.
 fn preverified(_:usize)->bool{false}
 #[derive(Clone,Copy)]enum Stage{Read,Tail{base:usize,pre:usize}}

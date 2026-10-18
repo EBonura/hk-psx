@@ -407,10 +407,10 @@ pub fn manifest_index(scene_id: usize) -> Option<usize> {
 static mut SHIFT_PAGE: [u8; SCENE_COUNT] = [0; SCENE_COUNT];
 static mut SHIFT_PAL: [u16; SCENE_COUNT] = [0; SCENE_COUNT];
 pub fn scene_page_base(scene: usize) -> usize {
-    SCENE_MANIFEST[scene].page_base + unsafe { SHIFT_PAGE[scene] } as usize
+    SCENE_MANIFEST[scene].page_base + if AHEAD_ON { unsafe { SHIFT_PAGE[scene] as usize } } else { 0 }
 }
 pub fn scene_palette_base(scene: usize) -> usize {
-    SCENE_MANIFEST[scene].palette_base + unsafe { SHIFT_PAL[scene] } as usize
+    SCENE_MANIFEST[scene].palette_base + if AHEAD_ON { unsafe { SHIFT_PAL[scene] as usize } } else { 0 }
 }
 /// Per-texture attributes of the resident scene bank (packer-derived flags
 /// and cores), read through the admitted Scene view.
@@ -1004,6 +1004,12 @@ impl Cache {
             let e = self.entry(SCENE_COUNT + clip)?;
             crate::ambience::set_clip_lba(clip, WORLD_PACK_DEFAULT_LBA + e.sector_offset);
         }
+        for (slot, bank) in [(0, 2), (1, MOSSMAN_BANK)] {
+            let e = self.entry(audio_bank_index(bank))?;
+            unsafe {
+                BANK_LBA[slot] = WORLD_PACK_DEFAULT_LBA + e.sector_offset;
+            }
+        }
         unsafe {
             DRIVE.installed = true;
         }
@@ -1257,16 +1263,17 @@ impl Cache {
         // resident (installed while the Knight walked here); nothing reads
         // them. They count as staged, so every chunk keeps its place.
         let (skip, held, adopted) = prefetch_take(scene, total, self.code_skip(scene), !split);
+        crate::gate_probe::event(9, scene as u32, (skip + held) as u32 | (adopted as u32) << 15);
         let pre = skip + held;
         if adopted {
             // The prefetch still reading is exactly the read this gate would
             // start: decode its chunks as they land instead of waiting for all.
-            crate::gate_probe::note(29, pre as u32);
-            crate::gate_probe::note(30, total as u32);
+            crate::gate_probe::note(20, pre as u32);
+            crate::gate_probe::note(21, total as u32);
             return Ok(Stage::Tail { base, pre });
         }
-        crate::gate_probe::note(29, pre as u32);
-        crate::gate_probe::note(30, total as u32);
+        crate::gate_probe::note(20, pre as u32);
+        crate::gate_probe::note(21, total as u32);
         if held > 0 && pre < total {
             // A partial prefetch is the group's prefix, left at the very end
             // of the arena while the resident scene still needed the rest.
@@ -1560,6 +1567,37 @@ impl Cache {
         }
         let lba = WORLD_PACK_DEFAULT_LBA.checked_add(entry.sector_offset).ok_or(LoadError::HeaderInvalid)?;
         lba.checked_add(entry.sector_count).ok_or(LoadError::HeaderInvalid)?;
+        // Read ahead with the prefetch: validate and upload it from RAM.
+        let b = prefetch_state().bank;
+        if b.ok && b.scene == scene && b.sectors == size.div_ceil(SECTOR_BYTES) {
+            prefetch_state().bank.ok = false;
+            let bytes = unsafe {
+                core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(b.at), size)
+            };
+            let mut hash = 0x811c9dc5u32;
+            let mut good = true;
+            for (i, part) in bytes.chunks(SECTOR_BYTES).enumerate() {
+                crate::input::checkpoint();
+                good &= crate::runner_audio::validate_fragment(mossman, i * SECTOR_BYTES, part);
+                for &x in part {
+                    hash = (hash ^ u32::from(x)).wrapping_mul(0x01000193);
+                }
+            }
+            if good && hash == checksum && crate::runner_audio::begin_overlay() {
+                for (i, part) in bytes.chunks(SECTOR_BYTES).enumerate() {
+                    crate::input::checkpoint();
+                    crate::runner_audio::upload_fragment(i * SECTOR_BYTES, part);
+                }
+                crate::runner_audio::finish_overlay(mossman);
+                unsafe {
+                    HK_BANK_AHEAD_USED += 1;
+                }
+                return Ok(());
+            }
+        }
+        unsafe {
+            HK_BANK_GATE_READS += 1;
+        }
         prefetch_discard();
         room_drive();
         let mut words=[0u32;SECTOR_WORDS];
@@ -2182,8 +2220,7 @@ impl Cache {
         while self.loaded_atlases < end {
             if ahead_done(scene, self.loaded_atlases) {
                 unsafe {
-                    let g = (HK_AHEAD_GATES as usize).min(199);
-                    HK_AHEAD_SKIPPED[g] = HK_AHEAD_SKIPPED[g].saturating_add(1);
+                    HK_AHEAD_SKIPPED += 1;
                 }
                 self.loaded_atlases += 1;
                 continue;
@@ -2516,6 +2553,7 @@ impl Cache {
             return Err(LoadError::RoomMismatch);
         }
         mark(1, 0);
+        bank_settle();
         ahead_gate_begin(scene_index(region));
         if let Err(error) = self.admit_scenes(scene_index(region)) {
             mark(3, error as u32);
@@ -2586,6 +2624,7 @@ impl Cache {
         }
         // A read for a scene no longer expected is stopped; it lands as Idle.
         if p.state == Fetch::Reading {
+            crate::gate_probe::event(10, p.scene as u32, scene as u32);
             cd_stream::cancel();
         }
         if p.want.is_some_and(|w| w.0 == scene) {
@@ -2616,6 +2655,9 @@ impl Cache {
         // vblanks), so the whole group is read with its code at its head.
         let code_only =
             CODE_FIRST && skip == 0 && code > 0 && code <= slack && !crate::modules::gave_up(scene);
+        // A room of the other runner audio family: its bank rides below the prefix.
+        let bank = bank_needed(scene);
+        let slack = if bank > 0 && slack > bank { slack - bank } else if bank > 0 { 0 } else { slack };
         let sectors = if code_only {
             code
         } else {
@@ -2624,6 +2666,7 @@ impl Cache {
         if sectors == 0 {
             return Ok(());
         }
+        plan_bank(scene, sectors, bank);
         let destination = unsafe {
             (&raw mut BUFFERS.words)
                 .cast::<u8>()
@@ -2632,6 +2675,7 @@ impl Cache {
         };
         // The group's prefix: the chunks the gate decodes first, so the rest
         // can still be arriving while they decode.
+        crate::gate_probe::event(2, scene as u32, sectors as u32 | (skip as u32) << 10);
         p.want = Some((
             scene,
             total,
@@ -2990,7 +3034,41 @@ struct Prefetch {
     code_only: bool,
     /// The next read `pump` should start: scene, total, prefix sectors, LBA, destination.
     want: Option<(usize, usize, usize, u32, *mut u32, usize, bool)>,
+    /// The runner audio bank the room's family needs when the SPU holds the other
+    /// one, read ahead of the group into the free arena below it so the gate
+    /// uploads it from RAM instead of reading it (and discarding the prefetch).
+    bank: Bank,
+    /// A partial prefix leaves the head parked at the first sector it lacks
+    /// (see `maybe_park`): where that is, a park in flight, and the transfer
+    /// count after the park (the head is still there while it has not moved).
+    park_lba: u32,
+    park_flight: bool,
+    parked: u32,
 }
+#[derive(Clone, Copy)]
+struct Bank {
+    /// Read to start: destination, sectors, LBA.
+    want: Option<(*mut u32, usize, u32)>,
+    /// Manifest scene it was staged for (EMPTY: none), arena offset, byte length, landed whole.
+    scene: usize,
+    at: usize,
+    sectors: usize,
+    ok: bool,
+    /// A bank read is the transfer in flight, and the plan it belongs to.
+    flight: bool,
+    seq: u32,
+    flight_seq: u32,
+}
+const NO_BANK: Bank = Bank {
+    want: None,
+    scene: EMPTY,
+    at: 0,
+    sectors: 0,
+    ok: false,
+    flight: false,
+    seq: 0,
+    flight_seq: 0,
+};
 static mut PREFETCH: Prefetch = Prefetch {
     hint: EMPTY,
     scene: EMPTY,
@@ -3002,9 +3080,93 @@ static mut PREFETCH: Prefetch = Prefetch {
     skip: 0,
     code_only: false,
     want: None,
+    bank: NO_BANK,
+    park_lba: 0,
+    park_flight: false,
+    parked: u32::MAX,
 };
 #[no_mangle]
 pub static mut HK_PREFETCH_READS: u32 = 0;
+/// Gates that took their runner audio bank from the prefetch's RAM copy.
+#[no_mangle]
+pub static mut HK_BANK_AHEAD_USED: u32 = 0;
+/// Gates that read the runner audio bank themselves (and dropped the prefetch).
+#[no_mangle]
+pub static mut HK_BANK_GATE_READS: u32 = 0;
+/// WORLD.PAK-relative LBA of the two runner audio banks (`AUDIO_BANKS` 2 and `MOSSMAN_BANK`).
+static mut BANK_LBA: [u32; 2] = [0; 2];
+/// Park the head at the first sector a partial prefix lacks, so the gate's read of
+/// the rest pays no long seek (a music refill in between moves the head away; this
+/// brings it back). Off with HK_NO_PARK.
+const PARK_ON: bool = option_env!("HK_NO_PARK").is_none();
+fn maybe_park() -> bool {
+    let p = prefetch_state();
+    if !PARK_ON
+        || p.state != Fetch::Ready
+        || p.scene == EMPTY
+        || p.skip + p.sectors >= p.total
+        || p.park_lba == 0
+        || p.parked == cd_stream::starts()
+    {
+        return false;
+    }
+    crate::gate_probe::ctx(4);
+    if cd_stream::park(p.park_lba).is_ok() {
+        p.park_flight = true;
+        unsafe {
+            DRIVE.prefetch = true;
+        }
+        true
+    } else {
+        false
+    }
+}
+/// Let a bank read or a park in flight land (the gate starts reads of its own).
+fn bank_settle() {
+    while (prefetch_state().bank.flight || prefetch_state().park_flight) && unsafe { DRIVE.prefetch } {
+        crate::input::checkpoint();
+        land_prefetch();
+    }
+}
+/// Whether the gate into `scene` swaps the runner audio family.
+pub fn bank_pending(scene: usize) -> bool {
+    bank_needed(scene) > 0
+}
+/// Sectors of the runner audio bank `scene`'s family needs, 0 when the SPU already holds it.
+fn bank_needed(scene: usize) -> usize {
+    if option_env!("HK_NO_BANK_AHEAD").is_some() {
+        return 0;
+    }
+    let m = crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize);
+    if crate::runner_audio::family_ready(m) {
+        0
+    } else {
+        AUDIO_BANKS[if m { MOSSMAN_BANK } else { 2 }].0.div_ceil(SECTOR_BYTES)
+    }
+}
+/// Plan the bank read for the group prefix of `sectors` just planned (the bank
+/// goes right below it): `bank` sectors from `bank_needed`, 0 for none.
+fn plan_bank(scene: usize, sectors: usize, bank: usize) {
+    let p = prefetch_state();
+    let b = &mut p.bank;
+    b.want = None;
+    b.ok = false;
+    b.scene = EMPTY;
+    b.seq = b.seq.wrapping_add(1);
+    if bank == 0 || sectors == 0 {
+        return;
+    }
+    let m = crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize);
+    let lba = unsafe { BANK_LBA[m as usize] };
+    if lba == 0 {
+        return;
+    }
+    b.at = ARENA_TOTAL - (sectors + bank) * SECTOR_BYTES;
+    b.sectors = bank;
+    b.scene = scene;
+    let dest = unsafe { (&raw mut BUFFERS.words).cast::<u8>().add(b.at).cast::<u32>() };
+    b.want = Some((dest, bank, lba));
+}
 #[no_mangle]
 pub static mut HK_PREFETCH_SECTORS: u32 = 0;
 /// Gate loads that found some of their group prefetched, and the sectors reused.
@@ -3028,7 +3190,11 @@ fn prefetch_state() -> &'static mut Prefetch {
 /// planned in `Cache::pump` and started by the drive when it is free.
 pub fn prefetch_hint(scene: usize) {
     if PREFETCH_ON {
-        prefetch_state().hint = scene;
+        let p = prefetch_state();
+        if p.hint != scene {
+            crate::gate_probe::event(1, scene as u32, 0);
+        }
+        p.hint = scene;
     }
 }
 /// Study builds can turn the prefetch off (HK_NO_PREFETCH) to measure cold gates.
@@ -3151,7 +3317,13 @@ const CODE_FIRST: bool = false;
 /// on its own; a prefetch that skipped code the room no longer has resident
 /// is dropped.
 fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (usize, usize, bool) {
+    bank_settle();
     let p = prefetch_state();
+    crate::gate_probe::event(
+        12,
+        (p.state as u32) | (p.skip as u32) << 4 | ((p.scene == scene) as u32) << 14 | ((p.total == total) as u32) << 15,
+        skip_now as u32 | (p.sectors as u32) << 8,
+    );
     // A whole-group prefetch of this room still reading lands where the gate
     // stages (the arena's end), from the same sector: the gate takes it over.
     if adopt
@@ -3224,6 +3396,7 @@ fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (u
 }
 /// Drop a prefetch whose bytes the arena front up to `bytes` would overwrite.
 fn prefetch_guard(bytes: usize) {
+    bank_settle();
     let p = prefetch_state();
     if p.state == Fetch::Reading {
         while unsafe { DRIVE.prefetch } {
@@ -3242,7 +3415,11 @@ fn prefetch_guard(bytes: usize) {
 }
 /// Forget any prefetch (the tail is about to be reused).
 fn prefetch_discard() {
+    bank_settle();
     let p = prefetch_state();
+    p.bank.want = None;
+    p.bank.ok = false;
+    p.bank.scene = EMPTY;
     if p.state == Fetch::Reading {
         cd_stream::cancel();
         while unsafe { DRIVE.prefetch } {
@@ -3278,9 +3455,36 @@ fn land_prefetch() {
         return;
     }
     let p = prefetch_state();
+    if p.park_flight || p.bank.flight {
+        // A side transfer (a runner audio bank read or a head park) is in flight.
+        match cd_stream::status() {
+            cd_stream::Status::Done => {
+                d.prefetch = false;
+                if p.bank.flight {
+                    p.bank.ok = cd_stream::received() == p.bank.sectors
+                        && p.bank.seq == p.bank.flight_seq;
+                } else {
+                    p.parked = cd_stream::starts();
+                }
+                p.bank.flight = false;
+                p.park_flight = false;
+            }
+            cd_stream::Status::Failed(diag) => {
+                d.prefetch = false;
+                p.bank.flight = false;
+                p.park_flight = false;
+                unsafe {
+                    HK_CD_DIAG = diag;
+                }
+            }
+            cd_stream::Status::Idle | cd_stream::Status::Busy => {}
+        }
+        return;
+    }
     match cd_stream::status() {
         cd_stream::Status::Done => {
             d.prefetch = false;
+            crate::gate_probe::event(4, p.scene as u32, cd_stream::received() as u32);
             p.state = if cd_stream::received() == p.sectors {
                 Fetch::Ready
             } else {
@@ -3305,6 +3509,23 @@ fn land_prefetch() {
 }
 fn start_prefetch() -> bool {
     let p = prefetch_state();
+    // The room's runner audio bank first: 10 sectors, and the gate then has it.
+    if p.want.is_some() {
+        if let Some((destination, sectors, lba)) = p.bank.want.take() {
+            crate::gate_probe::event(15, p.bank.scene as u32, sectors as u32);
+            // Safety: the arena tail below the group prefix is free of the resident
+            // scene and its metadata (Cache::pump checked the slack).
+            if unsafe { cd_stream::start(destination, sectors, lba) }.is_ok() {
+                p.bank.flight = true;
+                p.bank.flight_seq = p.bank.seq;
+                unsafe {
+                    DRIVE.prefetch = true;
+                }
+                return true;
+            }
+            p.bank.scene = EMPTY;
+        }
+    }
     let Some((scene, total, sectors, lba, destination, skip, code_only)) = p.want.take() else {
         return false;
     };
@@ -3316,12 +3537,15 @@ fn start_prefetch() -> bool {
     p.scene = scene;
     p.total = total;
     p.sectors = sectors;
+    p.park_lba = lba + sectors as u32;
+    p.parked = u32::MAX;
     p.base = destination.cast::<u8>();
     p.generation += 1;
     p.skip = skip;
     p.code_only = code_only;
     // Safety: the tail from `destination` is free of the resident scene and its
     // metadata (Cache::pump checked the slack) until the next gate consumes it.
+    crate::gate_probe::event(3, scene as u32, sectors as u32);
     match unsafe { cd_stream::start(destination, sectors, lba) } {
         Ok(()) => {
             p.state = Fetch::Reading;
@@ -3350,6 +3574,9 @@ fn start_prefetch() -> bool {
 /// scene does not use, so the gate finds them in place and skips their decode and
 /// upload. Only whole-group prefetches whose pages and palettes fit beside the
 /// resident scene take part.
+/// Off in the shipped disc (feature `vram-ahead` turns it on for the gate study): with the
+/// entry hold overlapping the load's end, the load time it saves on a covered gate hides
+/// under the hold, and it costs 3.4 KB of code in a build with 1.2 KB of headroom to spare.
 pub const AHEAD_ON: bool = cfg!(feature = "vram-ahead");
 /// Decoder steps run per call (each at most DECODE_STEP byte operations).
 const AHEAD_STEPS: usize = match option_env!("HK_AHEAD_STEPS") {
@@ -3395,9 +3622,9 @@ pub static mut HK_AHEAD_STEPS_RUN: u32 = 0;
 /// Why a plan was refused: not a whole-group prefetch, pages, palettes, gap.
 #[no_mangle]
 pub static mut HK_AHEAD_WHY: [u32; 4] = [0; 4];
-/// Per gate (in admission order): atlas chunks the gate found already uploaded.
+/// Atlas chunks the gates found already uploaded.
 #[no_mangle]
-pub static mut HK_AHEAD_SKIPPED: [u8; 200] = [0; 200];
+pub static mut HK_AHEAD_SKIPPED: u32 = 0;
 #[no_mangle]
 pub static mut HK_AHEAD_GATES: u32 = 0;
 fn ahead() -> &'static mut Ahead {
@@ -3441,7 +3668,9 @@ fn ahead_gate_begin(wanted: usize) {
 }
 impl Cache {
     /// One bounded slice of ahead work; call from idle time in the present loop.
-    pub fn ahead_step(&mut self) {
+    /// `upload`: the GPU path is free to take a page (the main loop, between frames);
+    /// the present loop's idle time only decodes.
+    pub fn ahead_step(&mut self, upload: bool) {
         if !AHEAD_ON {
             return;
         }
@@ -3478,12 +3707,14 @@ impl Cache {
         if !a.ok {
             return;
         }
-        if crate::render::dma_pending() || psx_rt::interrupts::gp1_queue_pending() {
+        crate::gate_probe::ctx(1 + upload as u32);
+        let gpu_busy = crate::render::dma_pending() || psx_rt::interrupts::gp1_queue_pending();
+        if gpu_busy && upload {
             return;
         }
         let (start, _) = SCENE_ATLAS_RANGES[b];
         let base_off = (p.base as usize) - unsafe { (&raw const BUFFERS.words) as usize };
-        for _ in 0..AHEAD_STEPS {
+        for _ in 0..if upload { AHEAD_STEPS } else { 1 } {
             if a.next >= a.end {
                 return;
             }
@@ -3534,6 +3765,10 @@ impl Cache {
                 }
             }
             if a.pending_upload {
+                if !upload || gpu_busy {
+                    return;
+                }
+                crate::gate_probe::ctx(3);
                 crate::vram_cache::upload_atlas_at(
                     at,
                     &arena[..at.raw_len],
@@ -3600,7 +3835,11 @@ impl Cache {
             return false;
         };
         let resident = ((SCENE_MANIFEST[cur].raw_len + 3) & !3) + self.metadata_len;
-        let base_off = (p.base as usize) - unsafe { (&raw const BUFFERS.words) as usize };
+        let mut base_off = (p.base as usize) - unsafe { (&raw const BUFFERS.words) as usize };
+        // The runner audio bank, when one rides below the prefix, is the tail's floor.
+        if p.bank.scene == b && p.bank.sectors > 0 {
+            base_off = base_off.min(p.bank.at);
+        }
         // The largest chunk decodes into the gap between the resident scene and the tail.
         let raw_max = ATLASES[start..end].iter().map(|x| x.raw_len).max().unwrap_or(0);
         if base_off < resident + raw_max + 64 {
@@ -3678,6 +3917,7 @@ fn land_pool() {
     match cd_stream::status() {
         cd_stream::Status::Done => {
             d.pool = false;
+            crate::gate_probe::event(6, cd_stream::received() as u32, unsafe { POOL_SECTORS } as u32);
             crate::modules::pool_landed(cd_stream::received() == unsafe { POOL_SECTORS });
         }
         cd_stream::Status::Failed(diag) => {
@@ -3694,6 +3934,7 @@ fn start_pool(code: bool) -> bool {
     let Some((destination, sectors, chunk)) = crate::modules::pool_want(code) else {
         return false;
     };
+    crate::gate_probe::event(5, chunk as u32, sectors as u32);
     // Safety: the pool bytes are reserved for this read until it lands (modules.rs).
     match unsafe {
         cd_stream::start(
@@ -3806,6 +4047,7 @@ pub fn pump() {
     }
     if let Some((destination, sectors, lba)) = crate::ambience::want_prefetch() {
         // Safety: the stage buffer is the clip prefetch's until prefetch_done.
+        crate::gate_probe::event(8, sectors as u32, 0);
         match unsafe { cd_stream::start(destination, sectors, lba) } {
             Ok(()) => d.clip = true,
             Err(diag) => {
@@ -3819,9 +4061,12 @@ pub fn pump() {
     }
     if let Some((destination, sectors, lba)) = crate::music::want_read(false) {
         start_music(destination, sectors, lba);
+        return;
     }
+    maybe_park();
 }
 fn start_music(destination: *mut u32, sectors: usize, lba: u32) {
+    crate::gate_probe::event(7, sectors as u32, 0);
     // Safety: the music FIFO owns these sectors until read_done.
     match unsafe { cd_stream::start(destination, sectors, lba) } {
         Ok(()) => unsafe {
