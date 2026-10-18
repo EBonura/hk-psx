@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod budget_doc;
 mod disc;
 mod earned_focus;
 mod region_cache;
@@ -830,6 +831,9 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
         report_args.push("--pgo");
     }
     python_step(root, "host/build_report.py", &report_args)?;
+    if !pgo && budget_doc::sync(root)? {
+        println!("docs/BUDGET.md: pinned figures rewritten from .hkpsx/build-normal.json (commit the doc with this change)");
+    }
     check_hot_order(root, !pgo && !options.telemetry)?;
     if options.validate {
         validate(root, options)?;
