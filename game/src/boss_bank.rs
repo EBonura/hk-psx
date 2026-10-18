@@ -85,26 +85,39 @@ pub struct View<'a, 'r> {
     room: &'a Room<'r>,
     cur: Cell<(usize, &'r [u8])>,
 }
+impl<'r> View<'_, 'r> {
+    /// Chunk `chunk`'s bytes, the last one read being remembered.
+    fn chunk(&self, chunk: usize) -> Option<&'r [u8]> {
+        let (have, bytes) = self.cur.get();
+        if have == chunk {
+            return Some(bytes);
+        }
+        let ix = unsafe { &*(&raw const INDEX) };
+        if chunk >= ix.count as usize {
+            return None;
+        }
+        let bytes = self.room.stream_pixels(self.room.texture(ix.chunks[chunk] as usize))?;
+        self.cur.set((chunk, bytes));
+        Some(bytes)
+    }
+}
 impl Blob for View<'_, '_> {
     fn byte(&self, at: usize) -> u8 {
         let (chunk, offset) = fmt::locate(at);
-        let (have, bytes) = self.cur.get();
-        let bytes = if have == chunk {
-            bytes
-        } else {
-            let ix = unsafe { &*(&raw const INDEX) };
-            if chunk >= ix.count as usize {
-                return 0;
+        self.chunk(chunk).and_then(|b| b.get(offset).copied()).unwrap_or(0)
+    }
+    fn read(&self, at: usize, out: &mut [u8]) {
+        let (mut at, mut done) = (at, 0);
+        while done < out.len() {
+            let (chunk, offset) = fmt::locate(at);
+            let n = (out.len() - done).min(fmt::CHUNK_BYTES - offset);
+            match self.chunk(chunk).and_then(|b| b.get(offset..offset + n)) {
+                Some(run) => out[done..done + n].copy_from_slice(run),
+                None => out[done..done + n].fill(0),
             }
-            match self.room.stream_pixels(self.room.texture(ix.chunks[chunk] as usize)) {
-                Some(b) => {
-                    self.cur.set((chunk, b));
-                    b
-                }
-                None => return 0,
-            }
-        };
-        bytes.get(offset).copied().unwrap_or(0)
+            at += n;
+            done += n;
+        }
     }
 }
 
@@ -136,10 +149,7 @@ pub fn upload(room: &Room, index: usize, dest: impl FnOnce(u16, u16) -> psx_vram
             return None;
         }
         let mut buf = Buf([0; 2048]);
-        let mut d = bank.decode(&part);
-        for b in buf.0[..len].iter_mut() {
-            *b = d.next_byte()?;
-        }
+        bank.decode_into(&part, &mut buf.0)?;
         crate::texture_upload::upload(dest(part.width as u16, part.height as u16), &buf.0[..len]);
         unsafe { HK_BOSS_UPLOADS = HK_BOSS_UPLOADS.wrapping_add(1) };
         Some(len as u32)
