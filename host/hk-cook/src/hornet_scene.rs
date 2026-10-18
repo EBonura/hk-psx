@@ -5,9 +5,9 @@
 //! are (streamed animation slots, no scene pages), appends them to every region of the scene after the legacy cook, as the
 //! Mossman family's pass does (mossman_scene.rs), and writes the table the guest finds them by (`data/hornet_art.rs`):
 //! the bank clip of each (tree, object, clip name id) and the scale each object was authored at.
-use crate::actor_art::{guest_wrap_of, scale_alpha, ArtBank, Clip, Frame};
-use crate::atlas::{Atlas, MAX_FRAME_TILES, SLOT_PIXELS};
+use crate::actor_art::{scale_alpha, ArtBank};
 use crate::common::{get, py_round};
+use crate::atlas::SLOT_PIXELS;
 use crate::cook::{focal, tk_sprite, CAM_Z};
 use crate::{quality, quantize, region_delta};
 use hk_unity::{Source, Value};
@@ -24,17 +24,17 @@ const SCENE: &str = "Fungus1_04";
 const MARKER: &str = "hornet_bank_adopted";
 
 /// One animated object of a boss tree, from the tree cooker's manifest.
-struct Ent {
-    tree: u8,
-    ent: u8,
-    library: String,
-    sprite_scale: [f64; 2],
-    world_scale: [f64; 2],
-    alpha: f64,
-    clips: Vec<(String, u32)>,
+pub(crate) struct Ent {
+    pub(crate) tree: u8,
+    pub(crate) ent: u8,
+    pub(crate) library: String,
+    pub(crate) sprite_scale: [f64; 2],
+    pub(crate) world_scale: [f64; 2],
+    pub(crate) alpha: f64,
+    pub(crate) clips: Vec<(String, u32)>,
 }
 
-fn manifest(root: &Path, label: &str, tree: u8) -> Result<Vec<Ent>> {
+pub(crate) fn manifest(root: &Path, label: &str, tree: u8) -> Result<Vec<Ent>> {
     let v: J = serde_json::from_slice(&std::fs::read(root.join(format!("data/{label}_art.json")))?)?;
     let mut out = vec![];
     for e in v["ents"].as_array().ok_or("manifest ents")? {
@@ -65,77 +65,12 @@ fn frame_tiles(w: i64, h: i64) -> i64 {
 }
 
 /// What a bank group is cooked at: the sprite library and the sprite's scale as it stands in the world.
-type Group = (String, u64, u64, i64);
+pub(crate) type Group = (String, u64, u64, i64);
 
-fn group_of(e: &Ent) -> Group {
+pub(crate) fn group_of(e: &Ent) -> Group {
     let sx = (e.sprite_scale[0] * e.world_scale[0]).abs();
     let sy = (e.sprite_scale[1] * e.world_scale[1]).abs();
     (e.library.clone(), sx.to_bits(), sy.to_bits(), py_round(e.alpha * 255.0))
-}
-
-/// Cook every clip the manifests name into one bank. Returns the bank and, per group, the bank clip of each clip name.
-fn cook_bank(source: &Source, ents: &[Ent]) -> Result<(ArtBank, BTreeMap<(Group, String), usize>)> {
-    let mut bank = ArtBank::new(Atlas::standard());
-    let mut clip_of: BTreeMap<(Group, String), usize> = BTreeMap::new();
-    let scale = focal() / -CAM_Z;
-    let mut textures: HashMap<String, Arc<hk_pil::Image>> = HashMap::new();
-    let mut collections: HashMap<String, Value> = HashMap::new();
-    let mut cache: HashMap<(String, i64, u64, u64, i64), (usize, [f64; 4])> = HashMap::new();
-    // The clips each group needs, in a fixed order.
-    let mut wanted: BTreeMap<Group, (&Ent, BTreeSet<String>)> = BTreeMap::new();
-    for e in ents {
-        let slot = wanted.entry(group_of(e)).or_insert_with(|| (e, BTreeSet::new()));
-        slot.1.extend(e.clips.iter().map(|c| c.0.clone()));
-    }
-    for (group, (e, names)) in &wanted {
-        let (file, path) = e.library.rsplit_once(':').ok_or("library id")?;
-        let library_file = source.file(file)?;
-        let library_o = source.object(&library_file, path.parse()?)?;
-        let library = source.read(&library_o)?;
-        let (sx, sy) = (f64::from_bits(group.1), f64::from_bits(group.2));
-        for name in names {
-            let clip = library
-                .get("clips")
-                .and_then(Value::list)
-                .and_then(|l| l.iter().find(|c| c.get("name").and_then(Value::str).as_deref() == Some(name.as_str())))
-                .ok_or_else(|| format!("{} has no clip {name}", e.library))?;
-            let frames = clip.get("frames").and_then(Value::list).unwrap_or(&[]);
-            let start = bank.frames.len();
-            for frame in frames {
-                let co = source.deref(&library_o.file, get(frame, "spriteCollection")?)?;
-                let sid = co.sid();
-                if !collections.contains_key(&sid) {
-                    collections.insert(sid.clone(), source.read(&co)?);
-                }
-                let index = get(frame, "spriteId")?.int().unwrap_or(0);
-                let key = (sid.clone(), index, group.1, group.2, group.3);
-                if !cache.contains_key(&key) {
-                    let (mut image, b) = tk_sprite(source, &co.file, &collections[&sid], index as usize, &mut textures)?;
-                    scale_alpha(&mut image, e.alpha);
-                    let b = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy];
-                    let (w, h) = (((b[2] - b[0]) * scale).ceil() as i64, ((b[3] - b[1]) * scale).ceil() as i64);
-                    if frame_tiles(w, h) > MAX_FRAME_TILES as i64 {
-                        return Err(format!("Hornet frame {sid}:{index} is {w}x{h}, past the {MAX_FRAME_TILES} animation slots a frame may hold").into());
-                    }
-                    let texture = bank.atlas.add_tiled(&image, (b[2] - b[0]) * scale, (b[3] - b[1]) * scale, &quantize::atlas_quantizer)?;
-                    cache.insert(key.clone(), (texture, b));
-                }
-                let (texture, b) = cache[&key];
-                bank.frames.push(Frame { texture, box_: b, sprite: format!("{sid}:{index}"), box_q16: None, event: frame.clone() });
-            }
-            clip_of.insert((group.clone(), name.clone()), bank.clips.len());
-            bank.clips.push(Clip {
-                name: format!("{}/{name}", e.library),
-                start,
-                count: frames.len(),
-                fps: clip.get("fps").and_then(Value::float).unwrap_or(12.0),
-                wrap: guest_wrap_of(clip, frames.len())?,
-                loop_start: clip.get("loopStart").and_then(Value::int).unwrap_or(0),
-            });
-        }
-    }
-    bank.atlas.pack()?;
-    Ok((bank, clip_of))
 }
 
 fn word(raw: &[u8], at: usize) -> u32 {
@@ -226,27 +161,113 @@ pub fn measure(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The pass: after the legacy region cook, before anything reads the rooms.
+/// The clips each animated object plays, from the simulated fights (`shared/hk-sim/tests/hornet_clip_trace.rs`, collected by
+/// `hk-cook boss-measure --write-used`): one `tree<TAB>object<TAB>clip` row each. The tree cooker names every clip any object of a
+/// library could play on every object of it, which is five times what the fight shows; objects the fights never reach are added
+/// by `effect_like` below, and a clip the bank lacks draws nothing and is counted by the guest (`HK_BOSS_CLIP_MISSES`).
+const PLAYED: &str = include_str!("hornet_clips.tsv");
+
+fn effect_like(name: &str) -> bool {
+    ["Effect", "Thread", "Flash", "Needle", "Ball"].iter().any(|k| name.contains(k))
+}
+
+pub(crate) fn played(ents: &[Ent]) -> crate::boss_art::Used {
+    let mut used = crate::boss_art::Used::new();
+    for line in PLAYED.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
+        let f: Vec<&str> = line.split('\t').collect();
+        if let (Ok(tree), Ok(ent)) = (f[0].parse::<u8>(), f[1].parse::<u8>()) {
+            used.entry((tree, ent)).or_default().insert(f[2].to_owned());
+        }
+    }
+    // Her own body plays every clip her trees name.
+    for e in ents.iter().filter(|e| e.tree == 0 && e.ent == 0) {
+        used.entry((0, 0)).or_default().extend(e.clips.iter().map(|c| c.0.clone()));
+    }
+    // An object the simulated fights never played, on her own library: its effect clips.
+    for e in ents {
+        if e.library.starts_with("sharedassets105.assets") && !used.contains_key(&(e.tree, e.ent)) {
+            used.entry((e.tree, e.ent)).or_default().extend(e.clips.iter().map(|c| c.0.clone()).filter(|n| effect_like(n)));
+        }
+    }
+    used.retain(|_, v| !v.is_empty());
+    used
+}
+
+/// Shared palettes of the Hornet bank (docs/BOSS-ART.md: 16 add 4.3 RMS per channel over the room quantizer on 218 sprites).
+const PALETTES: usize = 16;
+const BANK_ID: u16 = 1;
+
+/// What the Hornet bank would be (`hk-cook hornet-bank`): the stats `cook` prints, with no regions touched.
+pub fn bank_report(root: &Path, sheet: Option<&Path>) -> Result<()> {
+    let source = Source::from_doctor(root)?;
+    let mut ents = manifest(root, "hornet3", 0)?;
+    ents.extend(manifest(root, "hornet_corpse3", 1)?);
+    let used = played(&ents);
+    for ((tree, ent), names) in &used {
+        println!("  tree {tree} object {ent}: {} clips", names.len());
+    }
+    let lib = crate::boss_art::load(&source, &ents, Some(&used))?;
+    let built = crate::boss_bank::build(&lib, BANK_ID, PALETTES)?;
+    println!("hornet bank: {:#?}", built.stats);
+    if let Some(dir) = sheet {
+        // Original art next to what the guest will decode from the chunks, one row per clip of her body (middle frame).
+        use hk_pil::{Image, Mode};
+        let blob = crate::boss_bank::blob_of(&built);
+        let bg = [70.0f64, 72.0, 84.0];
+        let rows: Vec<usize> = lib.clips.iter().filter(|c| !c.frames.is_empty()).map(|c| c.frames[c.frames.len() / 2]).collect::<BTreeSet<_>>().into_iter().filter(|&i| lib.sprites[i].w <= 220).take(24).collect();
+        let cell = (rows.iter().map(|&i| lib.sprites[i].w).max().unwrap_or(64) + 4, rows.iter().map(|&i| lib.sprites[i].h).max().unwrap_or(64) + 4);
+        let mut out = Image::new(Mode::Rgba, cell.0 * 2, cell.1 * rows.len());
+        for (r, &i) in rows.iter().enumerate() {
+            let s = &lib.sprites[i];
+            let (plane, pal, w, h) = crate::boss_bank::decode_sprite(&blob, &built, i).ok_or("bank does not open")?;
+            let mut left = Image::new(Mode::Rgba, w, h);
+            let mut right = Image::new(Mode::Rgba, w, h);
+            for k in 0..w * h {
+                let a = s.image.data[k * 4 + 3] as f64 / 255.0;
+                let src = [0, 1, 2].map(|c| s.image.data[k * 4 + c] as f64 * a + bg[c] * (1.0 - a));
+                let dec = if plane[k] == 0 {
+                    bg
+                } else {
+                    let d = crate::boss_art::display(pal[plane[k] as usize] & 0x7fff);
+                    if pal[plane[k] as usize] & 0x8000 != 0 { [0, 1, 2].map(|c| (bg[c] + d[c]).min(255.0)) } else { d }
+                };
+                for c in 0..3 {
+                    left.data[k * 4 + c] = src[c] as u8;
+                    right.data[k * 4 + c] = dec[c] as u8;
+                }
+                left.data[k * 4 + 3] = 255;
+                right.data[k * 4 + 3] = 255;
+            }
+            out.paste(&left, 0, (r * cell.1) as i64, None);
+            out.paste(&right, cell.0 as i64, (r * cell.1) as i64, None);
+        }
+        std::fs::create_dir_all(dir)?;
+        crate::png::save_rgba(&dir.join("hornet-bank-sheet.png"), &out)?;
+        println!("sheet: {}/hornet-bank-sheet.png (left: original art at its on-screen size, right: decoded from the bank chunks)", dir.display());
+    }
+    Ok(())
+}
+
+/// The pass: after the legacy region cook, before anything reads the rooms. Her art is a boss bank (`boss_bank.rs`) carried by
+/// every region of her scene as streamed chunk textures. `HK_HORNET_ART=off` leaves her out of the build, `=empty` cooks the
+/// guest tables with no art (a smoke build for the module).
 pub fn cook(root: &Path) -> Result<()> {
-    // Her art does not fit the room format (docs/HORNET.md: 455 sprites, 835 parts, 496 KB against 640 textures and 416
-    // palettes per room, of which Fungus1_04 already holds about 200), so the pass is opt-in: without HK_HORNET_ART the
-    // fight is not in the build. `hk-cook hornet-measure` prints what her art costs.
     let mode = std::env::var("HK_HORNET_ART").unwrap_or_default();
-    if mode.is_empty() {
-        println!("  hornet art: skipped (HK_HORNET_ART unset; docs/HORNET.md)");
+    if mode == "off" {
+        println!("  hornet art: skipped (HK_HORNET_ART=off)");
+        let _ = std::fs::remove_file(root.join("data/hornet_art.rs"));
         return Ok(());
     }
     // The scene is not admitted in every build: without it the boss has no room to appear in.
     let Some(row) = quality::SCENE_TABLE.iter().find(|r| r.scene_name == SCENE) else {
         println!("  hornet art: {SCENE} is not admitted, skipped");
+        let _ = std::fs::remove_file(root.join("data/hornet_art.rs"));
         return Ok(());
     };
     let scene_id = row.scene_id as u64;
     if mode == "empty" {
-        // The fight without her sprites, to exercise the module, the state block and the fight on a disc (not a build to ship):
-        // nothing is appended to the rooms and nothing of hers is drawn.
         let table = format!(
-            "// Generated by host/hk-cook hornet_scene.rs (HK_HORNET_ART=empty: no art); do not edit.\npub const HORNET_ART_SCENE:usize={scene_id};\npub static HORNET_ART_CLIPS: [(u8, u8, u32, u16); 0] = [];\npub static HORNET_ART_ENTS: [(u8, u8, u8, i32, i32); 0] = [];\n"
+            "// Generated by host/hk-cook hornet_scene.rs (HK_HORNET_ART=empty: no art); do not edit.\npub const HORNET_ART_SCENE:usize={scene_id};\npub const HORNET_BANK_ID:u16={BANK_ID};\npub static HORNET_ART_CLIPS: [(u8, u8, u32, u16); 0] = [];\npub static HORNET_ART_ENTS: [(u8, u8, u8, i32, i32); 0] = [];\n"
         );
         publish(&root.join("data/hornet_art.rs"), table.as_bytes())?;
         println!("  hornet art: none appended (HK_HORNET_ART=empty)");
@@ -260,23 +281,26 @@ pub fn cook(root: &Path) -> Result<()> {
     if report.get(MARKER).is_some() {
         return Err("the Hornet postpass needs the unchanged legacy cook output, not a second append".into());
     }
-    let (bank, clip_of) = cook_bank(&source, &ents)?;
+    let lib = crate::boss_art::load(&source, &ents, Some(&played(&ents)))?;
+    let built = crate::boss_bank::build(&lib, BANK_ID, PALETTES)?;
+    let atlas = crate::boss_bank::atlas_of(&built)?;
+    println!(
+        "  hornet art: {:?}",
+        built.stats
+    );
+    let bank = ArtBank { atlas, frames: vec![], clips: vec![] };
     let regions = report["regions"].as_array_mut().ok_or("regions absent")?;
     let indices: Vec<usize> =
         regions.iter().enumerate().filter_map(|(i, r)| (r["scene_id"].as_u64() == Some(scene_id)).then_some(i)).collect();
     if indices.is_empty() {
         return Err("Fungus1_04 is not admitted".into());
     }
-    let mut clip_base = 0;
-    for &i in &indices {
-        let raw = std::fs::read(root.join(regions[i]["path"].as_str().ok_or("room path")?))?;
-        clip_base = clip_base.max(region_delta::layout(&raw)?.counts[4] as usize);
-    }
     let mut outputs = vec![];
     for &i in &indices {
         let r = &mut regions[i];
         let room_path = root.join(r["path"].as_str().ok_or("room path")?);
         let raw = std::fs::read(&room_path)?;
+        let clip_base = region_delta::layout(&raw)?.counts[4] as usize;
         let pack = crate::mossman_scene::append(&raw, &bank, clip_base)?;
         let layout = region_delta::layout(&pack)?;
         r["bytes"] = json!(pack.len());
@@ -295,8 +319,8 @@ pub fn cook(root: &Path) -> Result<()> {
     let total = regions.iter().map(|r| r["bytes"].as_u64().unwrap()).sum::<u64>();
     report["total_pack_bytes"] = json!(total);
     report[MARKER] = json!(true);
-    // The guest's table: the bank clip of every (tree, group, clip name) and, per animated object, its group (objects of one
-    // library at one scale share their clips) and the world scale it was cooked at.
+    // The guest's table: the bank clip of every (tree, group, clip name id) and, per animated object, its group (objects of one
+    // library at one scale share their clips) and the world scale it was cooked at (Q16.16), which the bank's boxes carry.
     let mut groups: Vec<Group> = vec![];
     for e in &ents {
         let g = group_of(e);
@@ -304,28 +328,29 @@ pub fn cook(root: &Path) -> Result<()> {
             groups.push(g);
         }
     }
-    let mut table = String::new();
-    table.push_str("// Generated by host/hk-cook hornet_scene.rs; do not edit.\n");
-    table.push_str(&format!("pub const HORNET_ART_SCENE:usize={scene_id};\n"));
     let mut rows: Vec<(u8, usize, u32, usize)> = vec![];
     for e in &ents {
         let group = group_of(e);
         let at = groups.iter().position(|g| *g == group).unwrap();
         for (name, id) in &e.clips {
-            let clip = clip_of[&(group.clone(), name.clone())];
-            rows.push((e.tree, at, *id, clip + clip_base));
+            if let Some(&clip) = built.clip_of.get(&(group.clone(), name.clone())) {
+                rows.push((e.tree, at, *id, clip));
+            }
         }
     }
     rows.sort();
     rows.dedup();
-    table.push_str("/// Per tree (0 the fight, 1 the corpse), group and clip name id: the room clip that plays it.\n");
+    let mut table = String::new();
+    table.push_str("// Generated by host/hk-cook hornet_scene.rs; do not edit.\n");
+    table.push_str(&format!("pub const HORNET_ART_SCENE:usize={scene_id};\npub const HORNET_BANK_ID:u16={BANK_ID};\n"));
+    table.push_str("/// Per tree (0 the fight, 1 the corpse), group and clip name id: the bank clip that plays it.\n");
     table.push_str(&format!("pub static HORNET_ART_CLIPS: [(u8, u8, u32, u16); {}] = [\n", rows.len()));
     for (tree, group, id, clip) in &rows {
         table.push_str(&format!("    ({tree}, {group}, {id}, {clip}),\n"));
     }
     table.push_str("];\n");
     let q = |f: f64| py_round(f * 65536.0);
-    table.push_str("/// Per animated object: its group and the world scale it was cooked at (Q16.16), which the clips' boxes carry.\n");
+    table.push_str("/// Per animated object: its group and the world scale it was cooked at (Q16.16).\n");
     table.push_str(&format!("pub static HORNET_ART_ENTS: [(u8, u8, u8, i32, i32); {}] = [\n", ents.len()));
     for e in &ents {
         let group = group_of(e);

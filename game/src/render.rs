@@ -1415,6 +1415,42 @@ pub fn texture_flash(id: usize, verts: [(i16, i16); 4], tint: (u8, u8, u8)) {
         HK_FLASH_QUADS = HK_FLASH_QUADS.wrapping_add(1);
     }
 }
+/// The CLUT word of palette `palette` of the active scene bank: what `template` computes for a texture's own palette. The boss
+/// bank's chunk textures carry its shared palettes into the scene's CLUTs (boss_bank.rs).
+pub fn clut_word(palette: u16) -> u16 {
+    let palette = crate::disc::scene_palette_base(unsafe { ACTIVE_BANK }) + palette as usize;
+    let (x, y) = hk_cache::residency::clut_xy(
+        palette / hk_cache::residency::CLUTS,
+        palette % hk_cache::residency::CLUTS,
+    );
+    Clut::new(x, y).uv_clut_word()
+}
+/// `texture_flash` for a quad that has a template of its own rather than a room texture: the same silhouette CLUT, Add blend and
+/// optional-allowance rules.
+#[inline(never)]
+pub fn resident_quad_flash(template: &QuadTextured, verts: [(i16, i16); 4], tint: (u8, u8, u8)) {
+    unsafe {
+        if EXTRA_USED >= EXTRA_ALLOWANCE || USED + 1 >= CAP {
+            HK_FLASH_SKIPPED = HK_FLASH_SKIPPED.wrapping_add(1);
+            return;
+        }
+        if occlusion_scratch::dynamic_hidden(
+            verts,
+            (&*Scratch::occluders(occlusion_scratch::base())).as_slice(),
+        ) {
+            return;
+        }
+        let mut words = quad_words(template, verts, tint, None, 128);
+        words[0] |= 1 << 25;
+        words[2] = (words[2] & 0xffff)
+            | ((Clut::new(FLASH_CLUT_X, FLASH_CLUT_Y).uv_clut_word() as u32) << 16);
+        words[4] = (words[4] & !(3 << 21)) | (1 << 21);
+        PACKETS[USED].write_plain(words);
+        USED += 1;
+        EXTRA_USED += 1;
+        HK_FLASH_QUADS = HK_FLASH_QUADS.wrapping_add(1);
+    }
+}
 /// A texel rectangle `[x, y, w, h]` of one texture, measured from its origin:
 /// art cooked as several sprites in one texture (battle_gate_art.rs packs every
 /// arena gate pose into one animation slot), so it costs a view one texture

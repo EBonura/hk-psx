@@ -62,6 +62,10 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                 // table, in the order they were added, and stream from linked
                 // RAM. The props (Goams, stalactites, grub jars) were added
                 // last and are the highest.
+                // A boss's parts sit above the props' keys and stream from the boss's bank in the scene (boss_bank.rs).
+                if key >= crate::boss_bank::KEY_BASE {
+                    return crate::boss_bank::upload(room, (key - crate::boss_bank::KEY_BASE) as usize, |w, h| dest(slot, w, h));
+                }
                 if key >= crate::dialogue_art::KEY_BASE {
                     // The text panel's ornaments, above the props: linked RAM.
                     let (bytes, width, height) =

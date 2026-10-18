@@ -66,6 +66,7 @@ mod blocker_roller;
 mod blocker_terrain;
 mod actor_persistence;
 mod boss_art;
+mod boss_bank;
 mod charms;
 mod cheats;
 mod decor;
