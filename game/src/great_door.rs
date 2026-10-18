@@ -284,7 +284,11 @@ impl World {
         let e = self.entry_spec();
         let total = e.settle + e.lead + self.walk_ticks();
         let elapsed = total.saturating_sub(self.entry);
-        let credit = ticks.min((e.settle + e.fade_delay).saturating_sub(elapsed));
+        // Whole 5-tick steps (6 vblanks): the simulation's 50 Hz phase against the 60 Hz
+        // polls repeats every 5 ticks, so a recorded input tape stays in phase with the
+        // entry timeline after a credited hold.
+        let ticks = ticks - ticks % 5;
+        let credit = ticks.min((e.settle + e.fade_delay).saturating_sub(elapsed) / 5 * 5);
         self.entry -= credit;
         self.publish();
     }
