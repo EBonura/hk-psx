@@ -1,0 +1,10 @@
+# Scene loads of the baseline replay (polls), cut by `cargo hk-build cuts`.
+# baseline disc sha256 642466c16812ff38070d342a964de1cd46aef2c29fb03244b53847fd216c1cdd
+# see docs/ROUTES.md
+load 21 22 1
+load 384 421 2
+load 1798 1829 3
+load 3210 3321 4
+load 10959 11064 5
+load 12632 12673 6
+load 13115 13138 7
