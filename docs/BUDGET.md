@@ -7,19 +7,19 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |805,764|
+| Linked code |805,844|
 | Code-to-data alignment |12|
 | Linked data, including menu and HUD |255,656|
 | BSS, including shared scene arena and runtime pools |797,024|
-| Total static span |1,858,464|
+| Total static span |1,858,544|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |123,744|
+| Unallocated gap before reserved stack |123,664|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |21,344|
+| Free RAM below the module pool |21,264|
 
-The 2026-10-17 seamless-gates pass (the runner audio bank read ahead with the prefetch, a head park for partial prefixes, the entry gate kept in the prediction when it is the only way out or the Knight has turned back toward it, faster gate-time module slices, the entry hold overlapping the load's end, and a 112-byte larger scene arena so Tutorial_01's two-window group fits) took linked code from 802,240 to 805,764 bytes (+3,524), linked data from 255,192 to 255,656 (+464) and BSS from 796,924 to 797,024 (+100), 4,100 bytes of the 25,444 free below the module pool (21,344 left). The decode-ahead into spare VRAM pages stays out of the disc (feature `vram-ahead`, 3.4 KB of code more): with the hold overlapping the load it saves black only on gates whose load already fits under the hold.
+The 2026-10-17 seamless-gates pass (the runner audio bank read ahead with the prefetch, a head park for partial prefixes, the entry gate kept in the prediction when it is the only way out or the Knight has turned back toward it, faster gate-time module slices, the entry hold overlapping the load's end, and a 112-byte larger scene arena so Tutorial_01's two-window group fits) took linked code from 802,240 to 805,844 bytes (+3,604), linked data from 255,192 to 255,656 (+464) and BSS from 796,924 to 797,024 (+100), 4,180 bytes of the 25,444 free below the module pool (21,264 left). The decode-ahead into spare VRAM pages stays out of the disc (feature `vram-ahead`, 3.4 KB of code more): with the hold overlapping the load it saves black only on gates whose load already fits under the hold.
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -115,7 +115,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801d5ba0`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d5bf0`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,724 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
