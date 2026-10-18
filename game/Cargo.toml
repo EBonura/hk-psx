@@ -30,6 +30,9 @@ tick-log = []
 # Greenpath's Hornet (enemies/hornet.rs): the boss tier of the FSM kernel and her fight, in the Fungus1_04 room module. The build
 # turns it on when the Hornet postpass has written data/hornet_art.rs.
 hornet = ["hk-sim/boss"]
+# The opening movies on a new game (intro.rs): the player travels as a blob in the boot art chunk, which only a
+# build with this feature (HK_INTRO=1, `cargo hk-build build --intro`) reads.
+intro = []
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
 psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }

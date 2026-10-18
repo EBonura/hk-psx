@@ -1,0 +1,12 @@
+[package]
+name = "psx-chainloader"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Shared PSX collection executable transport, diagnostics and hardware handoff (vendored from EBonura/PSoXide-editor engine/crates/psx-chainloader at ff9b1723)"
+
+[dependencies]
+psx-pack = { path = "../../../.psoxide/sdk/crates/psx-pack" }
+psx-io = { path = "../../../.psoxide/sdk/crates/psx-io" }
+psx-hw = { path = "../../../.psoxide/crates/psx-hw" }
+psx-font = { path = "../../../.psoxide/sdk/crates/psx-font" }

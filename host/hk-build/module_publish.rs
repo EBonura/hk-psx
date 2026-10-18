@@ -563,7 +563,7 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let result = match args.as_slice() {
-        [command, root, work, library] if command == "pack" => disc::package(Path::new(root), &Path::new(work).join("runtime.exe"), Path::new(work), Path::new(library), &disc::Songs { xa:vec![Path::new(root).join("data/music.xa")], cdda:Vec::new() }),
+        [command, root, work, library] if command == "pack" => disc::package(Path::new(root), &Path::new(work).join("runtime.exe"), Path::new(work), Path::new(library), &disc::Songs { xa:vec![Path::new(root).join("data/music.xa")], cdda:Vec::new() }, None),
         [command, elf, config, publication, output] if command == "assemble" => assemble(Path::new(elf),Path::new(config),Path::new(publication),Path::new(output)),
         [command, elf, declaration, output] if command == "describe" => describe(Path::new(elf), Path::new(declaration), Path::new(output)),
         [command, composer, elf, config, output] if command == "publish" => publish(Path::new(composer), Path::new(elf), Path::new(config), Path::new(output), None),

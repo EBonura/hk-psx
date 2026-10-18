@@ -1,0 +1,108 @@
+# New Game: the Knight enters King's Pass from the top gate, falls down the shaft and lands on the ledge,
+# and stays on solid ground. Route-split: no pad tape, every wait is on a word the game decides.
+#
+#   psoxide-gate run tools/journeys/new-game-lands.toml --disc <hk-psx.cue> --no-hw --out <dir>
+#
+# from the repository root, with build/hk-psx.map the link map of that disc (`symbols` resolves against the
+# working directory). The disc is the plain one (no opening movies: a new game on an intro disc plays them first).
+name = "new-game-lands"
+title = "new game: the drop lands and stays"
+disc = ["lib/hk-psx.cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "title"
+wait = 200
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+label = "the movies start (the player is loading and then streaming)"
+wait = 300
+
+[[step]]
+label = "Start skips them; the game comes back and drops in (region 79 = the top view of the shaft)"
+press = ["start"]
+hold = 3
+timeout = 7200
+[step.wait_until]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "eq"
+value = 79
+
+[[step]]
+label = "the Knight starts at the top of the shaft"
+checkpoint = "start"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "gt"
+value = 3_000_000
+note = "above y 45.8 in Q16: the drop begins at the top gate, not on the ledge"
+
+[[step]]
+label = "he has landed: on the ledge height, not below it"
+timeout = 1200
+[step.wait_until]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "lt"
+value = 800_000
+
+[[step]]
+label = "settled on the ledge"
+wait = 120
+checkpoint = "landed"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "between"
+value = 720_000
+value_hi = 770_000
+note = "the ledge (y 11.37, Q16 745,000), not the chasm below"
+[[step.assert]]
+kind = "ram"
+sym = "HK_DEATHS"
+op = "eq"
+value = 0
+
+[[step]]
+label = "and he stays there"
+wait = 600
+checkpoint = "stays"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "between"
+value = 720_000
+value_hi = 770_000
+[[step.assert]]
+kind = "ram"
+sym = "HK_DEATHS"
+op = "eq"
+value = 0
+[[step.assert]]
+kind = "ram"
+sym = "HK_HEALTH"
+op = "ge"
+value = 5
+note = "a fall onto the ledge costs nothing"

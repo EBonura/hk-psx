@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |796,372|
-| Code-to-data alignment |12|
-| Linked data, including menu and HUD |256,968|
-| BSS, including shared scene arena and runtime pools |796,828|
-| Total static span |1,850,188|
+| Linked code |799,584|
+| Code-to-data alignment |0|
+| Linked data, including menu and HUD |259,976|
+| BSS, including shared scene arena and runtime pools |797,444|
+| Total static span |1,857,012|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |132,020|
+| Unallocated gap before reserved stack |125,196|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |29,620|
+| Free RAM below the module pool |22,796|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -30,6 +30,8 @@ The 2026-10-17 restore of the lost features (Crossroads_22's waves arena with it
 The 2026-10-17 `-Cpanic=immediate-abort` build (host/build_guest.py; `PSOXIDE_PANIC_MESSAGES=1` restores the formatted panic) turned every panic, bounds check and overflow check into a bare `break`. `core::fmt`, the panic `Location` records, their file names and the assertion message strings left the image: linked data fell from 280,264 to 255,192 bytes (25,072) while linked code grew from 801,668 to 802,240 (572, the compiler inlines differently once the panic calls are gone), so 25,444 bytes are free below the module pool (932 before). psx-rt's exception handler still records Cause, EPC and BadVAddr (`__psx_rt_fault_*`), which every route already fails on. Each module image now reserves 96 hazard-trampoline words (SDK `overlay_pack::TRAMPOLINE_WORDS`, `code_modules.TRAMP_WORDS`) instead of 32.
 
 The generic native components and the road to Hornet's arena (Fungus1_22, Fungus1_21 and Fungus1_04: 70 more views, with the region and atlas index tables narrowed to two bytes to pay for them, and the Cloak pickup) on top of the abort build left 29,620 bytes free below the module pool (25,444 before): linked code 802,240 to 796,372, linked data 255,192 to 256,968, BSS 796,924 to 796,828. Four cold functions (the save write, the menu, the panel text, the render init) are built for size. `optimize(size)` on `disc.rs`'s prepare functions did nothing, and on `world.rs`'s `reset_scene`, `break_effects::load_scene` and `Actor::new` it made the image 1.4 KB bigger (inlining changes), so those stay as they were. The boss tier of the FSM kernel and Hornet's fight are in the source and out of the build (`HK_HORNET_ART`, docs/HORNET.md).
+
+The 2026-10-18 polish pass (the original dialogue box, a crisper font and Geo coin, exact title-card glyphs) took 6,824 bytes of the 29,620 that were free below the module pool, leaving 22,796: linked code 796,372 to 799,584 (+3,212: the ornate panel's layout and backboard, the animation-cache branch for its tiles, the title card's two glyph paths), linked data 256,968 to 259,976 (+3,008: 3,568 bytes of dialogue ornaments and their 56-byte tile table, less the title card's glyph arrays halved from 48 to 24 and the removed Geo coin quad), BSS +616. The ornaments (`data/dialogue-art.hk`, host/hk-cook/src/dialogue_art.rs) are the whole of the data cost; they reach VRAM through the animation cache's 64x64 slots on demand, so VRAM, which has 304 spare halfwords, pays nothing. The Geo coin lives in a spare cell of the font strip (boot art chunk, no RAM) and replaced `geo_render::hud_coin`. The opening-movie player is a blob in the boot art chunk (intro/, only for `build --intro`), so it costs no resident data; the `intro` feature adds a few hundred bytes of code.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -115,7 +117,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801d3b4c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d55f4`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support

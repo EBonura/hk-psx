@@ -10,6 +10,7 @@ use std::process::Command;
 
 mod disc;
 mod earned_focus;
+mod intro;
 mod region_cache;
 mod scene_gate;
 
@@ -1108,6 +1109,8 @@ struct Options {
     work: Option<PathBuf>,
     library: Option<PathBuf>,
     cdda: Vec<PathBuf>,
+    /// `build`/`disc`: the opening movies on a new game (a build with this flag has the player in its boot art).
+    intro: bool,
 }
 
 /// The repository root: this package lives in host/hk-build.
@@ -1532,9 +1535,14 @@ fn asset_outputs(root: &Path) -> Result<BTreeMap<String, String>> {
             if path.is_dir() {
                 walk(root, &path, out)?;
             } else if path.is_file()
-                && !path
-                    .file_name()
-                    .is_some_and(|n| n.to_string_lossy().ends_with(".tmp"))
+                && !path.file_name().is_some_and(|n| {
+                    let n = n.to_string_lossy();
+                    // The guest build writes the boot art chunk (and, for `--intro`, the
+                    // player it carries) after the cookers have run and the cache is
+                    // stamped, so they are not cooker outputs: counting them made every
+                    // rebuild after a first one recook everything.
+                    n.ends_with(".tmp") || matches!(&*n, "boot-art.hk" | "boot_art.rs" | "intro.exe")
+                })
             {
                 out.insert(
                     path.strip_prefix(root)
@@ -1644,6 +1652,28 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
     Ok(false)
 }
 
+/// The opening movies for a disc built with `--intro`: cooked here when they are
+/// not yet, and the player compiled into `data/intro.exe` for the guest build.
+fn intro_stage(root: &Path, wanted: bool) -> Result<Option<disc::Intro>> {
+    if !wanted {
+        return Ok(None);
+    }
+    let movies = match intro::cooked(root) {
+        Some(movies) => movies,
+        None => {
+            intro::cook(root, &selected_source(root)?)?;
+            intro::cooked(root).ok_or("no intro movies were cooked")?
+        }
+    };
+    intro::compile(root, &root.join(".psoxide"))?;
+    // The guest build reads these: the player goes into the boot art and the
+    // `intro` feature on.
+    std::env::set_var("HK_INTRO", "1");
+    Ok(Some(disc::Intro {
+        movies: intro::MOVIE_FILES.iter().map(|n| movies.join(n)).collect(),
+    }))
+}
+
 /// Where the finished disc goes: the user's disc library, which a build replaces
 /// only once the new pair is complete.
 fn disc_library() -> PathBuf {
@@ -1658,7 +1688,7 @@ fn selected_library(options: &Options) -> PathBuf {
 
 /// Pack the disc from the guest build in `work` (its patched EXE, `modules.json`
 /// and the cooked chunks): WORLD.PAK in read order and the XA song file.
-fn package_disc(root: &Path, work: &Path, library: &Path) -> Result<()> {
+fn package_disc(root: &Path, work: &Path, library: &Path, intro: Option<&disc::Intro>) -> Result<()> {
     let songs = disc::Songs {
         xa: vec![root.join("data/music.xa")],
         cdda: Vec::new(),
@@ -1669,6 +1699,7 @@ fn package_disc(root: &Path, work: &Path, library: &Path) -> Result<()> {
         work,
         library,
         &songs,
+        intro,
     )
 }
 
@@ -1750,6 +1781,9 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     if !mode.runs_guest() {
         return Ok(());
     }
+    // `--intro`: the player compiled into data/intro.exe and HK_INTRO set before
+    // the guest build reads them; the movies go onto the disc packed below.
+    let intro = intro_stage(root, options.intro)?;
     let pgo = mode == BuildMode::Pgo;
     // The asset cookers (charms, items, shops, NPCs, scripts) read the admitted
     // scene list from .hkpsx/selected-regions.json, which the prepass used to
@@ -1814,7 +1848,7 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
         profile_guided_guest(root, options, &guest_args)?;
     } else {
         python_step(root, "host/build_guest.py", &guest_args)?;
-        package_disc(root, &root.join("build"), &selected_library(options))?;
+        package_disc(root, &root.join("build"), &selected_library(options), intro.as_ref())?;
     }
     let mut report_args = telemetry.to_vec();
     if pgo {
@@ -1880,7 +1914,7 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
     let mut args = guest_args.to_vec();
     args.extend(["--profile", "collect", "--work", collect.to_str().unwrap()]);
     python_step(root, "host/build_guest.py", &args)?;
-    package_disc(root, &collect, &collect.join("disc"))?;
+    package_disc(root, &collect, &collect.join("disc"), None)?;
     let mut args = telemetry.to_vec();
     args.extend([
         "--no-prepass",
@@ -1983,7 +2017,7 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
     let mut args = telemetry.to_vec();
     args.extend(["--no-prepass", "--profile", profile.to_str().unwrap()]);
     python_step(root, "host/build_guest.py", &args)?;
-    package_disc(root, &root.join("build"), &selected_library(options))
+    package_disc(root, &root.join("build"), &selected_library(options), None)
 }
 
 /// The emulator `pgo` profiles with: the revision in emulator.lock.json,
@@ -2824,7 +2858,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|earned-focus|gate-receipt|disc|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|earned-focus|gate-receipt|disc|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace hk-psx.bin/.cue in --library, report, then validate\n\
@@ -2837,7 +2871,10 @@ fn usage() -> ! {
          gate-receipt  check one baseline-qualified scene-gate replay at --work\n\
          disc      pack the disc from the guest build in --work (default build/) into --library\n          \
          (default the disc library): WORLD.PAK and the XA songs, plus any --cdda-track\n          \
-         --library applies to build, pgo, validate and disc"
+         --library applies to build, pgo, validate and disc\n\
+         disc --intro  the same disc with the opening-cinematics program as its boot executable and the\n          \
+         game as the root file HKGAME.EXE (needs intro-cook; the replay gates use the plain disc)\n\
+         intro-cook  encode the install's Prologue and Intro clips into .hkpsx/intro (host/hk-intro-cook)"
     );
     std::process::exit(2)
 }
@@ -2870,6 +2907,7 @@ fn main() {
         work: None,
         library: None,
         cdda: Vec::new(),
+        intro: false,
     };
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -2900,6 +2938,7 @@ fn main() {
                 )
             }
             "--prune" => options.prune = true,
+            "--intro" => options.intro = true,
             "--work" => options.work = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--library" => {
                 options.library = Some(PathBuf::from(args.next().unwrap_or_else(|| usage())))
@@ -2937,14 +2976,26 @@ fn main() {
                 xa: vec![root.join("data/music.xa")],
                 cdda: options.cdda.clone(),
             };
-            disc::package(
-                &root,
-                &work.join("hk-psx-patched.exe"),
-                &work,
-                &library,
-                &songs,
-            )
+            intro_stage(&root, options.intro).and_then(|stage| {
+                disc::package(
+                    &root,
+                    &work.join("hk-psx-patched.exe"),
+                    &work,
+                    &library,
+                    &songs,
+                    stage.as_ref(),
+                )
+            })
         }
+        "intro-cook" => selected_source(&root).and_then(|source| {
+            intro::cook(&root, &source).and_then(|cooked| {
+                if cooked {
+                    Ok(())
+                } else {
+                    Err("no intro movies were cooked".into())
+                }
+            })
+        }),
         _ => usage(),
     };
     if let Err(error) = result {

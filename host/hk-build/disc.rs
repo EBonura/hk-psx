@@ -159,6 +159,12 @@ pub fn disc_order(p: &Plan) -> Result<Vec<usize>> {
     Ok(order)
 }
 
+/// The opening movies of a disc: raw-sector XA files, in play order. The player
+/// that reads them is a blob inside the game's boot art, not a disc program.
+pub struct Intro {
+    pub movies: Vec<PathBuf>,
+}
+
 /// What goes into the image besides the pack.
 pub struct Songs {
     /// Raw 2336-byte-sector XA files (`mkisopsx --xa-file`).
@@ -337,7 +343,16 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
 /// are read in and the songs, into `library/hk-psx.bin` and `.cue`, replacing
 /// the previous pair only once the new one is complete. `work` holds the chunk
 /// staging and the order file (the guest build's output directory).
-pub fn package(root: &Path, exe: &Path, work: &Path, library: &Path, songs: &Songs) -> Result<()> {
+///
+/// `intro`: the opening movies, for a game built with the `intro` feature.
+pub fn package(
+    root: &Path,
+    exe: &Path,
+    work: &Path,
+    library: &Path,
+    songs: &Songs,
+    intro: Option<&Intro>,
+) -> Result<()> {
     let modules = json(&work.join("modules.json"))?;
     let chunks = work.join("disc-chunks");
     let _ = std::fs::remove_dir_all(&chunks);
@@ -369,6 +384,11 @@ pub fn package(root: &Path, exe: &Path, work: &Path, library: &Path, songs: &Son
         .arg(&chunks)
         .arg("--world-pack-order-file")
         .arg(&order);
+    if let Some(intro) = intro {
+        for movie in &intro.movies {
+            command.arg("--xa-file").arg(movie);
+        }
+    }
     for track in &songs.cdda {
         command.arg("--cdda-track").arg(track);
     }
