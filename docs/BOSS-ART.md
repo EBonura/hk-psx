@@ -1,6 +1,6 @@
 # Boss art: one bank per boss, carried by its scene
 
-Status, 2026-10-18. Proven on Greenpath's Hornet (Hornet 1). Measured, not built, for the other bosses (table at the end).
+Status, 2026-10-18. Built and replayed on Greenpath's Hornet (Hornet 1): the build numbers are under "Built". Measured, not built, for the other bosses (table at the end).
 
 ## The problem
 
@@ -89,6 +89,26 @@ that streams scenes streams it. The palettes reach VRAM with the scene's CLUTs, 
   working set is counted in `HK_BOSS_DROPS` (pop-in), which a journey pins at 0.
 
 Cost: see `docs/BUDGET.md` (resident bytes, pool fit) and the build numbers in `hk-boss-art/NOTES.md`.
+
+## Built (Hornet 1, 2026-10-18, disc build of `hk-psx` on this branch)
+
+| | before the bank | with it |
+| --- | ---: | ---: |
+| Fungus1_04 scene stream (limit 256 KiB) | 41,624 | 184,984 (the bank is 70 x 2,048 = 143,360) |
+| Fungus1_04 scene textures (records) | 224 | 294 (a view holds at most 640) |
+| Fungus1_04 scene palettes | 197 | 213 (a view holds at most 416) |
+| Fungus1_04 scene pages | 11 | 11 |
+| `hornet` room module (a window is 65,536) | | 65,312 |
+| Hornet room in the pool (module + 4,096 state + 30,388 carried Shade) | | 99,796 of 114,432 |
+| free RAM below the pool | 29,620 | 7,672 |
+
+On the disc the Knight crossing her arena (`hornet-road`) saw 70 chunks found, 226 parts drawn from 102 uploads, no part dropped
+(`HK_BOSS_DROPS` 0) and no clip the bank lacks (`HK_BOSS_CLIP_MISSES` 0). The bank costs the scene its load: 143 KB more streamed
+bytes at the Fungus1_04 gate, with no read during the fight.
+
+Two things the build taught that the design did not know. A boss module and its fixups can exceed one `lui` window, so the pool
+must start at a window boundary and the gate (not the prefetch) installs it (docs/BUDGET.md); and the gate path must service the
+pad between the steps of a big install, or the first poll of the load is a vblank late.
 
 ## The other bosses
 

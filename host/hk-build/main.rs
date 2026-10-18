@@ -853,6 +853,22 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // The same walk on a card whose only difference is hornet1Defeated (PlayerData
     // bit 26): the shiny is offered, UP takes it, hasDash (bit 2) is saved and the
     // dash runs. World bits 26 and 2 are 0x4000004.
+    // The fight: cheats 3 (invincible and pure nail) toggled from the pause menu, so no mask is lost and her 225 points are
+    // 11 strikes; she dies (phase 3), her corpse writes hornet1Defeated (bit 26) and the Knight takes the Cloak (bit 2) and
+    // dashes. Every part she showed came out of the bank.
+    ("hornet-fight", "HK_SCENE_GATE_LOADS", 2),
+    ("hornet-fight", "HK_REGION_ID", 1005),
+    ("hornet-fight", "HK_DEATHS", 0),
+    ("hornet-fight", "HK_HEALTH", 5),
+    ("hornet-fight", "HK_CHEATS", 3),
+    ("hornet-fight", "HK_HORNET_ENCOUNTERS", 1),
+    ("hornet-fight", "HK_HORNET_PHASE", 3),
+    ("hornet-fight", "HK_HORNET_HP", 0),
+    ("hornet-fight", "HK_WORLD_PLAYER", 67108868),
+    ("hornet-fight", "HK_BOSS_DROPS", 0),
+    ("hornet-fight", "HK_BOSS_CLIP_MISSES", 0),
+    ("hornet-fight", "HK_ROOM_LOAD_ERROR", 0),
+    ("hornet-fight", "HK_CD_STREAM_ERROR", 0),
     ("hornet-road-defeated", "HK_SCENE_GATE_LOADS", 2),
     ("hornet-road-defeated", "HK_HORNET_ENCOUNTERS", 0),
     ("hornet-road-defeated", "HK_BOSS_PARTS_DRAWN", 0),
@@ -946,6 +962,7 @@ const PACING_CEILINGS: &[(&str, u64)] = &[
     // that plus five percent.
     ("hornet-road", 2440),
     ("hornet-road-defeated", 2450),
+    ("hornet-fight", 2660),
 ];
 const REQUIRED_MIN: &[(&str, &str, u64)] = &[
     // Survived the traversal at all. HK_DEATHS 0 above is the real assertion;
@@ -959,6 +976,7 @@ const REQUIRED_MIN: &[(&str, &str, u64)] = &[
     ("mawlek-fight", "HK_MW_PARRIES", 1),
     ("mawlek-fight", "HK_MW_HEAD_SHOTS", 1),
     ("hornet-road-defeated", "HK_ABILITY_DRAWN", 5),
+    ("hornet-fight", "HK_ABILITY_DRAWN", 5),
     ("cheat-spell", "HK_ABILITY_DRAWN", 20),
     ("cheat-heart", "HK_ABILITY_DRAWN", 50),
     ("cheat-dream", "HK_ABILITY_DRAWN", 400),
@@ -1017,6 +1035,7 @@ const MEMCARDS: &[(&str, &str)] = &[
     ("c37-stand", "secret-c37.mcd"),
     ("hornet-road", "hornet-road.mcd"),
     ("hornet-road-defeated", "hornet-road-defeated.mcd"),
+    ("hornet-fight", "hornet-road.mcd"),
 ];
 /// The journey's segments, in order. Each boots from the card the one before
 /// it wrote, and the first from no card at all; `validate` runs them one after
@@ -1085,6 +1104,10 @@ const ROUTES: &[(&str, bool)] = &[
     // Greenpath's road to Hornet, walked from a seeded start (docs/HORNET.md).
     ("hornet-road", false),
     ("hornet-road-defeated", false),
+    // Hornet killed on the disc (docs/HORNET.md): the road tape with the invincible and pure nail cheats toggled in the pause
+    // menu, a strike-mash through her fight, the Cloak taken from the corpse's shiny and the dash run.
+    // RED (2026-10-18): one HK_INPUT_MISSED_VBLANKS at tape 8939, see hk-boss-art/NOTES.md.
+    ("hornet-fight", false),
 ];
 
 /// Tapes `pgo` profiles when none is given: the King's Pass climb and the

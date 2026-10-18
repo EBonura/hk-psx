@@ -1,9 +1,8 @@
 # Hornet (Greenpath) and the Mothwing Cloak
 
-Status, 2026-10-17. The Mothwing Cloak cannot be earned yet: Hornet 1 has to be beaten, and her fight runs on the host and in a
-guest module that no build includes, because her art does not fit the room format (measured below). Everything else on the way is
-in: the road to her arena, the native components, the original's FSMs on the boss tier of the kernel, the corpse that sends
-`HORNET LEAVE`, and the Cloak pickup that waits for it.
+Status, 2026-10-18. Her fight, her art and the Cloak are in the default build. The fight runs in a guest module on the original's
+FSMs; her art is a boss bank carried by Fungus1_04's scene (docs/BOSS-ART.md); the Cloak pickup waits for the corpse's
+`HORNET LEAVE`. `HK_HORNET_ART=off` leaves her out of a build.
 
 ## What the original does
 
@@ -42,49 +41,33 @@ in: the road to her arena, the native components, the original's FSMs on the bos
   `HORNET LEAVE`. On the host she visits 21 of her Control states in ninety seconds, covers the whole arena, hurts a Knight who
   stands still, and dies to a Knight who strikes her.
 - The guest side (`game/src/enemies/hornet.rs`, the `hornet` feature): the fight ticks once a frame in the Fungus1_04 room module
-  (`hornet`, 63 KB of the 64 KiB a module may be) over a 4 KB zeroed state block (`art_hornet`), with her gates, shakes, boss
-  music, the Knight's lock during the encounter, and the Cloak wait. The build includes none of it unless the Hornet postpass
-  (`hk_cook::hornet_scene`, opt-in with `HK_HORNET_ART=1`) has appended her art.
+  (`hornet`, 65,312 bytes: one 64 KiB window and 224 bytes to spare) over a 4 KB zeroed state block (`art_hornet`), with her gates,
+  shakes, boss music, the Knight's lock during the encounter, and the Cloak wait. Her sprites are parts of the scene's boss bank
+  (`game/src/boss_bank.rs`). The module's code chunk is 69 KB with its fixups, so the pool starts at a window boundary and the
+  gate, not the prefetch, installs it (docs/BUDGET.md).
 
-## Her art does not fit
+## Her art (history and what replaced it)
 
-`hk-cook hornet-measure` cooks her sprites the way the other bosses' are cooked and prints what the standard boss bank would take
-(`fk_bank::plan`, with room for everything):
-
-| | |
-| --- | ---: |
-| sprite libraries | 2 (her own, with 61 clips of which 35 are named by her trees; the Hornet NPC sheet, 22 of which 13 are) |
-| unique sprites | 341 + 114 (the corpse's 5 NPC clips share the second set) |
-| pixels | 1.34 M |
-| parts (trimmed bands, one texture entry each) | 835 |
-| texels | 496 KB, 16 scene pages |
-
-What the format allows: 640 texture entries per room (`hk_format::MAX_TEXTURES`; the guest's per-texture tables in `render.rs` are sized by it, a
-primitive template, two cores, a cover record and bit sets: some sixty bytes of resident BSS each), 416 palette slots per view (`TEXTURE_BUDGET`), and 20 pages per region. Fungus1_04's views
-already hold 114 to 202 textures and up to 9 pages. So her art needs about three times the texture entries the room has left and
-twice its palettes, before the sprite pixels (11 free pages hold 352 KB of the 496). The False Knight, the largest boss bank, is
-99 sprites and 444 parts.
-
-Options, none of them mine to take (each costs fidelity or an engine change):
-
-1. Raise `MAX_TEXTURES` and the palette banks: roughly 26 KB of resident BSS for 1,100 textures, and the free RAM below the pool
-   is 916 bytes.
-2. A boss art bank loaded as its own region for the fight (the room already streams; a second table for one actor).
-3. Stream her clips from disc a clip at a time into the animation slots (the CD is held by the boss music; the cheapest clip
-   change is a seek).
-4. Cut frames (stride 2 on the 12 to 20 fps clips) and share one palette per clip: about 180 sprites and 100 palettes, visibly
-   coarser animation than the original.
+The tree cooker's way (`hk-cook hornet-measure`: every clip any of her objects could play, whole 64x64 cell grids, one texture entry
+and about two palettes per part) asked for 835 parts, 496 KB and 16 pages against a view's 640 texture entries, 416 palettes and
+256 KiB of stream, so the first build left her out. `hk-cook boss-measure` then counted what her fights play: 229 sprites, which
+the boss bank (docs/BOSS-ART.md) holds as 335 parts in 142 KB, 16 shared palettes and 70 chunks of 2 KiB carried as streamed
+textures of Fungus1_04. It costs a view 70 texture entries, 16 palettes and no VRAM page, and the scene 143 KB of its 256 KiB stream.
 
 ## Journeys
 
-Both replay on the disc with no cheat, no death and zero faults (`HK_VALIDATE_ONLY=hornet-road,hornet-road-defeated cargo
-hk-build validate`).
+`hornet-road` and `hornet-road-defeated` replay on the disc with no cheat, no death and zero faults (`HK_VALIDATE_ONLY=hornet-road,hornet-road-defeated cargo hk-build validate`).
 
 - `hornet-road`: seeded at (24, 12) in Fungus1_22, climbs the 120 unit shaft, takes the top gate into Fungus1_21, its left gate into
-  Fungus1_04 and walks to the Cloak Corpse (region 1005, two gate loads). `hornet1Defeated` is clear, so pressing UP at the shiny
+  Fungus1_04 and walks to the Cloak Corpse (region 1005, two gate loads). Her Encounter starts on the way and she touches the Knight
+  once (4 masks); the bank gives every part (226 drawn, none dropped). `hornet1Defeated` is clear, so pressing UP at the shiny
   does nothing: `HK_WORLD_PLAYER` 0, `HK_ABILITY_DRAWN` 0.
 - `hornet-road-defeated`: the same tape on a card whose only difference is `hornet1Defeated`. The Knight takes the Cloak,
   `HK_WORLD_PLAYER` is 0x4000004 (bits 26 and 2) and the dash runs (`HK_ABILITY_DRAWN` 5 or more).
+- `hornet-fight` (red: one late input poll at tape 8939 while she fights): the road tape with the pause menu's Invincible and Pure
+  Nail cheats toggled at poll 296 (36 polls, a multiple of 6 to keep the 50 Hz phase), a Square mash with a left/right sweep, her death
+  (phase 2 then 3), the corpse's `hornet1Defeated` (bit 26), the shiny taken (bit 2) and the dash run. This is the Cloak earned on the
+  disc; the fair (no cheat) kill is the journey a closed-loop route has to author (hk-routes).
 
 ## What blocks a walk from Greenpath
 

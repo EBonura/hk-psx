@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |802,612|
-| Code-to-data alignment |12|
+| Linked code |804,840|
+| Code-to-data alignment |8|
 | Linked data, including menu and HUD |257,544|
 | BSS, including shared scene arena and runtime pools |797,704|
-| Total static span |1,857,880|
+| Total static span |1,860,104|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |124,328|
+| Unallocated gap before reserved stack |122,104|
 | Room module pool, inside that gap |114,432|
-| Free RAM below the module pool |9,896|
+| Free RAM below the module pool |7,672|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -31,7 +31,7 @@ The 2026-10-17 `-Cpanic=immediate-abort` build (host/build_guest.py; `PSOXIDE_PA
 
 The generic native components and the road to Hornet's arena (Fungus1_22, Fungus1_21 and Fungus1_04: 70 more views, with the region and atlas index tables narrowed to two bytes to pay for them, and the Cloak pickup) on top of the abort build left 29,620 bytes free below the module pool (25,444 before): linked code 802,240 to 796,372, linked data 255,192 to 256,968, BSS 796,924 to 796,828. Four cold functions (the save write, the menu, the panel text, the render init) are built for size. `optimize(size)` on `disc.rs`'s prepare functions did nothing, and on `world.rs`'s `reset_scene`, `break_effects::load_scene` and `Actor::new` it made the image 1.4 KB bigger (inlining changes), so those stay as they were. The boss tier of the FSM kernel and Hornet's fight are in the source and out of the build (`HK_HORNET_ART`, docs/HORNET.md).
 
-Greenpath's Hornet, built in (2026-10-18; her fight, art bank and the Cloak, docs/BOSS-ART.md): linked code 796,372 to 802,612 (+6,240), linked data 256,968 to 257,544 (+576) and BSS 796,828 to 797,704 (+876). Her `hornet` module is 65,312 bytes (224 under a window; `Bank::clip` and `Bank::sprite` stay out of line for it) and its code chunk about 69,000 with the fixups, so it goes to the one 64 KiB window the pool must now hold in full: the pool starts at `0x801D8000` and is 114,432 bytes (12,032 more), which leaves 9,896 bytes free below it (29,620 before her). Her room, the module with its 4,096-byte state block and the 30,388-byte carried Shade art, needs 99,796 of the pool's 114,432 (110,336 less the window fence). Her art costs the pool nothing: it is the boss bank in the scene stream (docs/BOSS-ART.md). A code chunk over 64 KiB is not planned ahead of its gate; the gate stages and installs it.
+Greenpath's Hornet, built in (2026-10-18; her fight, art bank and the Cloak, docs/BOSS-ART.md): linked code 796,372 to 804,840 (+8,468), linked data 256,968 to 257,544 (+576) and BSS 796,828 to 797,704 (+876). Her `hornet` module is 65,312 bytes (224 under a window; `Bank::clip` and `Bank::sprite` stay out of line for it) and its code chunk about 69,000 with the fixups, so it goes to the one 64 KiB window the pool must now hold in full: the pool starts at `0x801D8000` and is 114,432 bytes (12,032 more), which leaves 7,672 bytes free below it (29,620 before her). Her room, the module with its 4,096-byte state block and the 30,388-byte carried Shade art, needs 99,796 of the pool's 114,432 (110,336 less the window fence). Her art costs the pool nothing: it is the boss bank in the scene stream (docs/BOSS-ART.md). A code chunk over 64 KiB is not planned ahead of its gate; the gate stages and installs it.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -117,7 +117,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801d5958`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d6208`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
