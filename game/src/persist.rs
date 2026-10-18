@@ -71,6 +71,10 @@ pub enum Kind {
     /// `scenesMapped` in bit 1 of the value (`game_map.rs`). Local id 0.
     /// 8, 9 and 10 are fix/slice-gaps-3's (soul totems, title cards, pickups).
     MapScene = 11,
+    /// A nail-struck switch's or a pillar's own `Activated` (`PersistentBoolItem`), value 1 once
+    /// set. Local id is the switch's index in its scene, or 8 plus the pillar's index among the
+    /// scene's targets (game/src/interactables.rs).
+    Switch = 12,
 }
 impl Kind {
     fn of(bits: u32) -> Option<Kind> {
@@ -86,6 +90,7 @@ impl Kind {
             9 => Kind::Visited,
             10 => Kind::Pickup,
             11 => Kind::MapScene,
+            12 => Kind::Switch,
             _ => return None,
         })
     }
@@ -525,12 +530,13 @@ mod tests {
             (Kind::Visited, 3, 0, 1),
             (Kind::Pickup, 11, 1, 1),
             (Kind::MapScene, 59, 0, 3),
+            (Kind::Switch, 39, 9, 1),
         ] {
             let item = pack(kind, scene, local, value).unwrap();
             assert_eq!(unpack(item), Some((kind, scene, local, value)));
         }
         // The first kind no build has written.
-        assert_eq!(unpack(0xC000_0000), None);
+        assert_eq!(unpack(0xD000_0000), None);
         assert_eq!(unpack(0), None);
     }
 }

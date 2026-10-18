@@ -775,16 +775,26 @@ fn gate_sheets(
         }
         sized.push(Sized { image: image.to_rgba().resize(w, h, Filter::Lanczos), box_: b });
     }
+    let images: Vec<&Image> = sized.iter().map(|s| &s.image).collect();
+    let (sheets, rects) = pack_images(&images);
+    Ok((sheets, rects, sized.iter().map(|s| s.box_).collect()))
+}
+
+/// Sprites (each at most one slot square) packed into as few slot-sized sheets as fit: the sheets and, per
+/// sprite, [sheet, x, y, w, h]. Columns, tallest first; a column takes further sprites below while they fit,
+/// a sheet takes further columns while they fit, and a new sheet starts when neither does.
+pub fn pack_images(images: &[&Image]) -> (Vec<Image>, Vec<[usize; 5]>) {
+    let slot = SHEET_SLOT;
     let gap = SHEET_GAP;
-    let mut order: Vec<usize> = (0..sized.len()).collect();
-    order.sort_by_key(|&i| (std::cmp::Reverse(sized[i].image.height), i));
+    let mut order: Vec<usize> = (0..images.len()).collect();
+    order.sort_by_key(|&i| (std::cmp::Reverse(images[i].height), i));
 
     // Columns of tall sprites, each taking more below while they fit.
     let columns = || -> (usize, Vec<(usize, usize, usize)>) {
         let mut sheets: Vec<Vec<[usize; 3]>> = Vec::new();
-        let mut placed = vec![(0, 0, 0); sized.len()];
+        let mut placed = vec![(0, 0, 0); images.len()];
         for &i in &order {
-            let im = &sized[i].image;
+            let im = &images[i];
             let mut spot: Option<(usize, usize)> = None;
             for (n, cols) in sheets.iter_mut().enumerate() {
                 let mut col = cols.iter().position(|c| c[2] + im.height <= slot && im.width <= c[1]);
@@ -817,9 +827,9 @@ fn gate_sheets(
     // Rows of small sprites, left to right, a new row when one is full.
     let shelves = || -> (usize, Vec<(usize, usize, usize)>) {
         let mut sheets: Vec<[usize; 3]> = Vec::new(); // per sheet: [y of the current row, its height, next x]
-        let mut placed = vec![(0, 0, 0); sized.len()];
+        let mut placed = vec![(0, 0, 0); images.len()];
         for &i in &order {
-            let im = &sized[i].image;
+            let im = &images[i];
             let mut spot: Option<usize> = None;
             for (n, row) in sheets.iter_mut().enumerate() {
                 if row[2] + im.width <= slot && im.height <= row[1] {
@@ -848,19 +858,19 @@ fn gate_sheets(
     };
     let (by_columns, by_shelves) = (columns(), shelves());
     let (count, placed) = if by_shelves.0 < by_columns.0 { by_shelves } else { by_columns };
-    let mut images = Vec::new();
+    let mut sheets_out = Vec::new();
     for n in 0..count {
         let mine: Vec<usize> = order.iter().copied().filter(|&i| placed[i].0 == n).collect();
-        let width = mine.iter().map(|&i| placed[i].1 + sized[i].image.width).max().unwrap_or(1);
-        let height = mine.iter().map(|&i| placed[i].2 + sized[i].image.height).max().unwrap_or(1);
+        let width = mine.iter().map(|&i| placed[i].1 + images[i].width).max().unwrap_or(1);
+        let height = mine.iter().map(|&i| placed[i].2 + images[i].height).max().unwrap_or(1);
         let mut sheet = Image::new(Mode::Rgba, width, height);
         for &i in &mine {
-            sheet.paste(&sized[i].image, placed[i].1 as i64, placed[i].2 as i64, None);
+            sheet.paste(&images[i], placed[i].1 as i64, placed[i].2 as i64, None);
         }
-        images.push(sheet);
+        sheets_out.push(sheet);
     }
-    let rects = (0..sized.len()).map(|i| [placed[i].0, placed[i].1, placed[i].2, sized[i].image.width, sized[i].image.height]).collect();
-    Ok((images, rects, sized.iter().map(|s| s.box_).collect()))
+    let rects = (0..images.len()).map(|i| [placed[i].0, placed[i].1, placed[i].2, images[i].width, images[i].height]).collect();
+    (sheets_out, rects)
 }
 
 /// `append_art`'s cooking half: the gate clips' frames of a scene, or `None` without gates.
@@ -1046,6 +1056,22 @@ pub fn cook_art(root: &Path) -> Result<()> {
             ]),
         ));
     }
+    // The switches' and gates' sheets (interactables.rs), per scene.
+    let mut interact: HashMap<String, Json> = HashMap::new();
+    for (file, sheets) in crate::interactables::cook_sheets(&source, &dir)? {
+        let list = sheets
+            .into_iter()
+            .map(|(w, h, file)| Json::Obj(vec![("w".into(), Json::Int(w as i64)), ("h".into(), Json::Int(h as i64)), ("file".into(), Json::Str(file))]))
+            .collect();
+        interact.insert(file, Json::List(list));
+    }
+    for (file, scene) in scenes.iter_mut() {
+        if let Json::Obj(fields) = scene {
+            let sheets = interact.remove(file.as_str());
+            fields.push(("interact".into(), Json::Int(sheets.as_ref().map_or(0, |_| 1))));
+            fields.push(("interact_art".into(), sheets.unwrap_or(Json::Null)));
+        }
+    }
     std::fs::write(dir.join("index.json"), dumps(&Json::Obj(scenes)) + "\n").map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -1053,8 +1079,13 @@ pub fn cook_art(root: &Path) -> Result<()> {
 /// Scripted-edge exclusions the generated gate table already holds per catalogue slot
 /// (blocker_terrain.py read them off `data/battle_gates.rs` the same way).
 pub fn region_edge_counts(root: &Path) -> HashMap<usize, usize> {
+    edge_counts_in(root, "data/battle_gates.rs")
+}
+
+/// The same count for any generated `(slot,owner,&[edges])` table (the Blockers' and the switches' use the shape).
+pub fn edge_counts_in(root: &Path, table: &str) -> HashMap<usize, usize> {
     let mut counts: HashMap<usize, usize> = HashMap::new();
-    let Ok(text) = std::fs::read_to_string(root.join("data/battle_gates.rs")) else {
+    let Ok(text) = std::fs::read_to_string(root.join(table)) else {
         return counts;
     };
     let text = compact(&text);

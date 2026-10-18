@@ -48,6 +48,7 @@ pub mod gruz_art;
 pub mod gruzzer;
 pub mod hatcher;
 pub mod interact_census;
+pub mod interactables;
 pub mod husk_guard;
 pub mod materials;
 pub mod mawlek;

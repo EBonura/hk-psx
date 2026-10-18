@@ -22,6 +22,8 @@ fn main() {
         Some("battle-gates") => hk_cook::battle_gates::main(&root, source.as_deref()),
         Some("blocker-terrain") => hk_cook::blocker_terrain::main(&root, source.as_deref()),
         Some("sheet-art") => hk_cook::battle_gates::cook_art(&root),
+        Some("interactables") => hk_cook::interactables::main(&root, source.as_deref()),
+        Some("interact-report") => hk_cook::interactables::report(&root, &args[2..]),
         Some("interact-census") => hk_cook::interact_census::main(&root, &args[2..], source.as_deref()),
         Some("battle-waves") => hk_cook::battle_waves::main(&root, source.as_deref()),
         Some("crossroads22-wave-prepare") => hk_cook::crossroads22_wave::prepare(&root).map_err(|e| e.to_string()),

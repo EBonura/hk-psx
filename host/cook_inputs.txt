@@ -82,6 +82,7 @@ host/title_cards.py
 # The arena gates' and water drips' sheets, cut by Rust before the region cook (`hk-cook sheet-art`) and
 # appended to the same bank by regions.py; the BG Control and WaterDrip readers they use.
 host/hk-cook/src/battle_gates.rs
+host/hk-cook/src/interactables.rs
 host/hk-cook/src/breakables.rs
 host/hk-cook/src/props.rs
 host/props.py

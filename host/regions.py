@@ -795,6 +795,23 @@ def bind_drip_art(record,row,frame_base):
     return dict(record,frame_base=frame_base+record['first'])
 
 
+def append_interact_art(sheets,atlas,frames,scene_file):
+    """The switches', gates' and pillars' sheets as streamed frames of a scene actor bank, or None."""
+    art=sheets['interact_art']
+    if art is None:return None
+    first=len(frames)
+    for i,entry in enumerate(art):
+        sheet=_sheet_image(entry)
+        texture=atlas.add(sheet,sheet.width,sheet.height,streamed=True)
+        frames.append({'texture':texture,'box':[0,0,1,1],'event':{},'sprite':f"{scene_file}:interact-sheet-{i}"})
+    return {'first':first,'sheets':len(art)}
+
+
+def bind_interact_art(record,row,frame_base):
+    if record is None:return None
+    return {'frame_base':frame_base+record['first'],'sheets':record['sheets']}
+
+
 def postpack_actor_bank(report, source, scenes=None):
     """Append a shared scene actor bank from immutable pre-append base packs.
 
@@ -812,7 +829,7 @@ def postpack_actor_bank(report, source, scenes=None):
         # Arena gates draw from the same bank (host/hk-cook battle_gates.rs), so a scene
         # with gates and nothing else still takes one. Water drips too.
         sheets=sheet_art(info['file'])
-        if not actors and not pickups.present(sc) and not sheets['gates'] and not sheets['drips']:continue
+        if not actors and not pickups.present(sc) and not sheets['gates'] and not sheets['drips'] and not sheets['interact']:continue
         scene_rows=[row for row in report['regions'] if row['scene_id']==info['scene_id']]
         # The False Knight's art is its own bank (host/false_knight_art.py):
         # the generic path cooks only its barrel and a Blank for every body
@@ -853,6 +870,7 @@ def postpack_actor_bank(report, source, scenes=None):
               pickup_base=len(frames);pickup_record=pickups.append_art(source,sc,atlas,frames,level) if level else None
               gate_record=append_gate_art(sheets,atlas,frames)
               drip_record=append_drip_art(sheets,atlas,frames)
+              interact_record=append_interact_art(sheets,atlas,frames,info['file'])
               atlas.pack()
               if atlas.pages and boss is None and mawlek is None and gruz is None:raise ValueError('Scene actor bank unexpectedly requires resident pages')
               # Actor clips start at one scene-wide clip index so every region of the
@@ -884,6 +902,7 @@ def postpack_actor_bank(report, source, scenes=None):
                   row['pickups']=pickups.bind(pickup_record,row,nf+pickup_base)
                   row['battle_gate_art']=bind_gate_art(gate_record,row,nf)
                   row['drip_art']=bind_drip_art(drip_record,row,nf)
+                  row['interact_art']=bind_interact_art(interact_record,row,nf)
                   if row['chunk_id']==1:
                       (ROOT/'data/room.hk').write_bytes(pack)
                       provenance_path=ROOT/'.hkpsx/provenance.json'

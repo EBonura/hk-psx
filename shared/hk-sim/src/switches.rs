@@ -8,7 +8,7 @@
 //!   activated plays the activated pose and destroys the gates outright.
 //! * `Switch Control` (Crossroads_06's `Gate Switch`, Town's `Mines Lever`): the
 //!   same hit with a 0.75 s wait; `Open` sends ACTIVATE to its target. Loaded
-//!   activated, `Activated` plays the pose and sends ACTIVATE, then runs `Open`.
+//!   activated, `Activated` plays the pose and sends ACTIVATE AGAIN, then runs `Open`, which sends ACTIVATE.
 //! * `Toll Gate`: OPEN plays `Toll Gate Open` to its last frame, then
 //!   `Destroy Self` (collider and art gone); DESTROY goes there at once.
 //! * `Pillar Control` (Crossroads_06's `Raising Pillar`): ACTIVATE starts
@@ -35,6 +35,8 @@ pub enum Event {
     Open,
     /// A switch's `ACTIVATE`.
     Activate,
+    /// A switch's `ACTIVATE AGAIN`: what a switch loaded already activated sends first.
+    ActivateAgain,
     /// `DestroyObject` on a gate: gone without playing its clip.
     Destroy,
 }
@@ -66,6 +68,8 @@ pub enum Action {
     ColliderOff,
     /// `DestroySelf`: the art is gone too.
     Destroy,
+    /// `SetMeshRenderer` false: the art is gone, the collider is whatever it was.
+    Hide,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,6 +97,8 @@ pub struct Machine {
     /// The state a scene loaded with `Activated` true begins in.
     pub restored: u8,
     pub states: &'static [State],
+    /// Events answered from every state (PlayMaker's global transitions).
+    pub global: &'static [(Event, u8)],
 }
 
 const fn state(
@@ -110,6 +116,7 @@ pub static TOLL_SWITCH: Machine = Machine {
     name: "toll switch",
     start: 0,
     restored: 3,
+    global: &[],
     states: &[
         state("Idle", &[Action::Clip(Role::Idle)], Wait::None, None, &[(Event::NailHit, 1)]),
         state(
@@ -135,6 +142,7 @@ pub static SWITCH_CONTROL: Machine = Machine {
     name: "Switch Control",
     start: 0,
     restored: 3,
+    global: &[],
     states: &[
         state("Idle", &[Action::Clip(Role::Idle)], Wait::None, None, &[(Event::NailHit, 1)]),
         state(
@@ -145,10 +153,11 @@ pub static SWITCH_CONTROL: Machine = Machine {
             &[],
         ),
         state("Open", &[Action::Send(Event::Activate)], Wait::None, None, &[]),
-        // The source's `Activated` ends with FINISHED into `Open`, which sends again.
+        // The source's `Activated` sends ACTIVATE AGAIN and ends with FINISHED into `Open`,
+        // which sends ACTIVATE.
         state(
             "Activated",
-            &[Action::Clip(Role::Activated), Action::Send(Event::Activate)],
+            &[Action::Clip(Role::Activated), Action::Send(Event::ActivateAgain)],
             Wait::Ticks(1),
             Some(2),
             &[],
@@ -161,6 +170,7 @@ pub static TOLL_GATE: Machine = Machine {
     name: "Toll Gate",
     start: 0,
     restored: 2,
+    global: &[],
     states: &[
         state(
             "Idle",
@@ -185,9 +195,11 @@ pub static PILLAR_CONTROL: Machine = Machine {
     name: "Pillar Control",
     start: 0,
     restored: 4,
+    global: &[],
     states: &[
         state("Idle", &[Action::Clip(Role::Idle)], Wait::None, None, &[(Event::Activate, 1)]),
-        state("Shake", &[Action::Clip(Role::Shake)], Wait::Ticks(45), Some(2), &[]),
+        // `SetBoolValue Activated`: the pillar's own PersistentBoolItem.
+        state("Shake", &[Action::Persist, Action::Clip(Role::Shake)], Wait::Ticks(45), Some(2), &[]),
         state(
             "Open",
             &[Action::Clip(Role::Opening), Action::ColliderOff],
@@ -197,6 +209,22 @@ pub static PILLAR_CONTROL: Machine = Machine {
         ),
         state("Finish Opening", &[Action::Clip(Role::Finish)], Wait::Ticks(30), Some(4), &[]),
         state("Opened", &[Action::Clip(Role::Opened), Action::ColliderOff], Wait::None, None, &[]),
+    ],
+};
+
+/// `Gate` (Fungus1_22's Metal Gate): ACTIVATE waits half a second, plays `Gate Open` with its collider
+/// off and then hides the art; ACTIVATE AGAIN (a switch loaded activated) skips to the open pose.
+pub static METAL_GATE: Machine = Machine {
+    name: "Gate",
+    start: 0,
+    restored: 0,
+    global: &[(Event::ActivateAgain, 4)],
+    states: &[
+        state("Idle", &[Action::Clip(Role::Idle)], Wait::None, None, &[(Event::Activate, 1)]),
+        state("Open Pause", &[], Wait::Ticks(30), Some(2), &[]),
+        state("Open", &[Action::Clip(Role::Opening), Action::ColliderOff], Wait::ClipEnd, Some(3), &[]),
+        state("Opened", &[Action::Hide], Wait::None, None, &[]),
+        state("Activate", &[Action::ColliderOff, Action::Clip(Role::Opened)], Wait::None, None, &[]),
     ],
 };
 
@@ -262,7 +290,13 @@ impl Instance {
     /// Deliver an event (PlayMaker's synchronous `SendEvent`).
     pub fn event(&mut self, event: Event, out: &mut Actions) {
         let current = &self.machine.states[self.state as usize];
-        if let Some(&(_, to)) = current.on.iter().find(|&&(e, _)| e == event) {
+        let to = current
+            .on
+            .iter()
+            .chain(self.machine.global)
+            .find(|&&(e, _)| e == event)
+            .map(|&(_, to)| to);
+        if let Some(to) = to {
             self.enter(to, out);
         }
     }
@@ -379,6 +413,7 @@ mod tests {
         assert_eq!(
             log,
             [
+                (45, Action::Persist),
                 (45, Action::Clip(Role::Shake)),
                 (89, Action::Clip(Role::Opening)),
                 (89, Action::ColliderOff),
@@ -396,9 +431,47 @@ mod tests {
         assert_eq!(pillar.state(), "Opened");
         assert!(enter.contains(Action::ColliderOff));
         let (mut switch, enter) = Instance::new(&SWITCH_CONTROL, CLIPS, true);
-        assert!(enter.contains(Action::Send(Event::Activate)));
-        // `Activated` ends into `Open`, which sends ACTIVATE a second time.
+        assert!(enter.contains(Action::Send(Event::ActivateAgain)));
+        // `Activated` ends into `Open`, which sends ACTIVATE.
         let after = run(&mut switch, 5);
         assert_eq!(after, [(1, Action::Send(Event::Activate))]);
+    }
+
+    #[test]
+    fn a_metal_gate_waits_then_opens_and_is_hidden_when_its_clip_ends() {
+        let (mut gate, _) = Instance::new(&METAL_GATE, CLIPS, false);
+        let mut out = Actions::none();
+        gate.event(Event::Activate, &mut out);
+        assert!(out.iter().next().is_none());
+        let log = run(&mut gate, 100);
+        // Half a second, then `Gate Open` (36 ticks here) with the collider off from its start,
+        // and the art is hidden once the clip has played.
+        assert_eq!(
+            log,
+            [(30, Action::Clip(Role::Opening)), (30, Action::ColliderOff), (66, Action::Hide)]
+        );
+        assert_eq!(gate.state(), "Opened");
+    }
+
+    #[test]
+    fn a_metal_gate_sent_activate_again_opens_at_once_and_keeps_its_art() {
+        let (mut gate, _) = Instance::new(&METAL_GATE, CLIPS, false);
+        let mut out = Actions::none();
+        gate.event(Event::ActivateAgain, &mut out);
+        assert_eq!(out.iter().collect::<Vec<_>>(), [Action::ColliderOff, Action::Clip(Role::Opened)]);
+        // The ACTIVATE that follows from the switch's `Open` changes nothing.
+        let mut again = Actions::none();
+        gate.event(Event::Activate, &mut again);
+        assert!(again.iter().next().is_none());
+    }
+
+    #[test]
+    fn a_pillar_ignores_activate_again_and_persists_when_it_starts_to_shake() {
+        let (mut pillar, _) = Instance::new(&PILLAR_CONTROL, CLIPS, false);
+        let mut out = Actions::none();
+        pillar.event(Event::ActivateAgain, &mut out);
+        assert!(out.iter().next().is_none());
+        pillar.event(Event::Activate, &mut out);
+        assert_eq!(out.iter().collect::<Vec<_>>(), [Action::Persist, Action::Clip(Role::Shake)]);
     }
 }

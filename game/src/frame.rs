@@ -147,6 +147,7 @@ pub fn render(
     // two seconds after the boss dies with nothing standing in the doorway.
     battle_gates::apply(&mut game.state, game.region_id, game.view);
     blocker_terrain::apply(&mut game.state, game.region_id);
+    interactables::apply(&mut game.state, game.region_id);
     // Build and start kicking the back pass now, before the actors, the
     // working set and its uploads below, so the GPU starts drawing while the
     // CPU does that work. Only where nothing bound below can change one of its
@@ -312,6 +313,14 @@ pub fn render(
         &mut needed,
         &mut needed_len,
     );
+    let switch_draws = interactables::prepare(
+        room,
+        game.region_id,
+        r.scene,
+        camera,
+        &mut needed,
+        &mut needed_len,
+    );
     if let Some((_, f)) = npc_frame {
         // An NPC frame larger than one 64x64 slot binds a rectangle of
         // them, so it can contribute several keys.
@@ -364,6 +373,7 @@ pub fn render(
     }
     prims += gate_draws.draw(camera);
     prims += drip_draws.draw(camera);
+    prims += switch_draws.draw(camera);
     prims += game.shade.draw(camera);
     prims += geo_render::draw(game.geo, game.view, camera);
     prims += lifeblood::draw(game.life, game.region_id, camera);
@@ -712,6 +722,7 @@ pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
     game.life.reset();
     game.door.reset();
     battle_gates::reset();
+    interactables::invalidate();
     music::boss(false);
     title_card::reset();
     blocker_roller::reset();
@@ -862,6 +873,7 @@ pub fn simulate(
     spatial_target: &mut bool,
 ) {
     battle_gates::tick();
+    interactables::tick(r.scene);
     drip::tick(r.scene);
     // What the enemies see is the camera as the previous tick left it: in the
     // original their FSMs run in Update and read the camera transform its
@@ -1336,6 +1348,7 @@ pub fn simulate(
             game.player.x + PARAMS.half_width,
             game.player.y + PARAMS.top,
         ]);
+        strike_switches(r.scene, &game.nail, &game.player, game.attacks);
         let totem_soul = strike_totems(r.scene, &game.nail, &game.player, game.attacks);
         if totem_soul > 0 {
             game.vitals.add_soul(VITAL_PARAMS, totem_soul);
@@ -1382,6 +1395,7 @@ pub fn simulate(
             great_door::apply(&game.door, &mut game.state, game.region_id);
             battle_gates::apply(&mut game.state, game.region_id, game.view);
             blocker_terrain::apply(&mut game.state, game.region_id);
+            interactables::apply(&mut game.state, game.region_id);
         }
         let door_hit = strike_great_door(&mut game.door, r.scene, &game.nail, &game.player);
         if door_hit.hit {
@@ -1620,6 +1634,7 @@ pub fn simulate(
             great_door::apply(&game.door, &mut game.state, game.region_id);
             battle_gates::apply(&mut game.state, game.region_id, game.view);
             blocker_terrain::apply(&mut game.state, game.region_id);
+            interactables::apply(&mut game.state, game.region_id);
             game.state.refresh_edges(r, room);
         }
         // The wall stop comes after the enemies have seen the ball: in the

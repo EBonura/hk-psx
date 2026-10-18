@@ -72,6 +72,7 @@ mod geo;
 mod geo_audio;
 mod geo_render;
 mod great_door;
+mod interactables;
 mod gruz_art;
 #[cfg(any(feature = "hero-light", feature = "hero-vignette"))]
 mod hero_light;
@@ -727,6 +728,19 @@ fn strike_totems(scene: usize, nail: &Nail, player: &Player, swing: u32) -> u16 
     }
     soul_totems::strike(scene, &polygon[..source.len()], swing)
 }
+/// The active nail polygon against the scene's switches (the arena gates' and toll gates' levers).
+fn strike_switches(scene: usize, nail: &Nail, player: &Player, swing: u32) {
+    if !nail.hitting(ATTACK_PARAMS) {
+        return;
+    }
+    let source = NAIL_POLYGONS[nail.kind as usize];
+    let mut polygon = [[0; 2]; 16];
+    assert!((3..=16).contains(&source.len()));
+    for (dst, p) in polygon.iter_mut().zip(source) {
+        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+    }
+    interactables::strike(scene, &polygon[..source.len()], swing);
+}
 fn strike_geo(geo: &mut geo::World, scene: usize, nail: &Nail, player: &Player) -> geo::Strike {
     if !nail.hitting(ATTACK_PARAMS) {
         return geo::Strike::default();
@@ -918,6 +932,7 @@ fn main() {
     // After the Game exists, whether or not a save loaded: a new game hands
     // over an empty store and changes nothing.
     persist::apply(&mut game.state, game.geo, game.life);
+    interactables::invalidate();
     let mut frame = 0u32;
     let mut scene_ticks_scene = usize::MAX;
     let mut entry_gate: Option<usize> = None;
@@ -1034,6 +1049,7 @@ fn main() {
         great_door::apply(&game.door, &mut game.state, game.region_id);
         battle_gates::apply(&mut game.state, game.region_id, game.view);
         blocker_terrain::apply(&mut game.state, game.region_id);
+        interactables::apply(&mut game.state, game.region_id);
         unsafe {
             HK_GAME_MODE = 1;
             HK_REGION_ID = game.region_id as u32 + 1;
@@ -1268,6 +1284,7 @@ fn main() {
                     great_door::apply(&game.door, &mut game.state, game.region_id);
                     battle_gates::apply(&mut game.state, game.region_id, game.view);
                     blocker_terrain::apply(&mut game.state, game.region_id);
+                    interactables::apply(&mut game.state, game.region_id);
                     let next_camera = game.camera.position();
                     // begin_deferred_swap already selected the future draw side.
                     // No draw-target writes, uploads or GPU kicks occur here.
