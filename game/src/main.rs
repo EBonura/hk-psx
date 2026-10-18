@@ -831,6 +831,11 @@ fn main() {
             music::set_volume(settings.music);
             display::set_brightness(settings.brightness);
             display::set_screen(settings.screen_x, settings.screen_y);
+            // Start skipped the movies and may still be down: as at the end of the
+            // title, consume it so it cannot also pause the new game.
+            while input::poll_bits() & (button::START | button::CROSS) != 0 {
+                psx_rt::interrupts::wait_vblank();
+            }
             (settings, profile)
         }
         None => menu::run(&mut fb, art, &slot_lines, profile_fault),

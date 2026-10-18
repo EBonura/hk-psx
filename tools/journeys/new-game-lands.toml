@@ -30,18 +30,30 @@ hold = 3
 
 [[step]]
 label = "the movies start (the player is loading and then streaming)"
-wait = 300
+wait = 450
 
 [[step]]
-label = "Start skips them; the game comes back and drops in (region 79 = the top view of the shaft)"
+label = "Start skips the movies"
 press = ["start"]
 hold = 3
+
+[[step]]
+label = "the game comes back and drops in (region 79 = the top view of the shaft)"
 timeout = 7200
 [step.wait_until]
 kind = "ram"
 sym = "HK_REGION_ID"
 op = "eq"
 value = 79
+
+[[step]]
+label = "the Knight is at the top of the shaft"
+timeout = 600
+[step.wait_until]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "gt"
+value = 3_000_000
 
 [[step]]
 label = "the Knight starts at the top of the shaft"
