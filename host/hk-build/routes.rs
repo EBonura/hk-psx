@@ -338,9 +338,11 @@ pub fn write_journey(route: &Route, tape: &Tape, cuts: &Cuts, setup: &Setup, out
                 let names: Vec<String> =
                     BUTTONS.iter().filter(|(_, m)| held & m != 0).map(|(n, _)| format!("\"{n}\"")).collect();
                 if !names.is_empty() {
-                    // The stretch ends mid-walk: keep the last buttons down until the load has begun.
-                    let _ = writeln!(toml, "\n[[step]]\nlabel = \"keep walking until load {k} begins\"\npress = [{}]\ntimeout = 1800", names.join(", "));
-                    let _ = writeln!(toml, "[step.hold_until]\nkind = \"ram\"\nsym = \"HK_GAME_MODE\"\nop = \"eq\"\nvalue = 2");
+                    // The stretch ends mid-walk: keep the last buttons down until the load has been admitted.
+                    // HK_SCENE_LOADS, not HK_GAME_MODE == 2: a gate that loads while the game keeps playing
+                    // (seamless doorways) never shows mode 2, and the walk must still reach it.
+                    let _ = writeln!(toml, "\n[[step]]\nlabel = \"keep walking until load {k} is admitted\"\npress = [{}]\ntimeout = 7200", names.join(", "));
+                    let _ = writeln!(toml, "[step.hold_until]\nkind = \"ram\"\nsym = \"HK_SCENE_LOADS\"\nop = \"ge\"\nvalue = {}", load.loads_after);
                 }
                 let _ = writeln!(toml, "\n[[step]]\nlabel = \"wait for scene load {k} to be admitted\"\ntimeout = 7200");
                 let _ = writeln!(toml, "[step.wait_until]\nkind = \"ram\"\nsym = \"HK_SCENE_LOADS\"\nop = \"ge\"\nvalue = {}", load.loads_after);
