@@ -1731,7 +1731,18 @@ impl State {
                 *entry = None;
             }
         }
-        let skip = *entry;
+        // The gate the Knight came in by says nothing about where he goes while he
+        // walks away from it. A room with no other gate has only that way out, and a
+        // Knight who turns back toward it is going through it again: neither waits
+        // for the release distance (a quick return left the drive idle until he was
+        // through).
+        let behind = |gate: &Gate| {
+            let b = gate.bounds;
+            let dx = (b[0] - player.x).max(player.x - b[2]).max(0) >> 16;
+            let centre = (b[0] >> 1) + (b[2] >> 1);
+            dx > 0 && (centre - player.x).signum() == -player.facing.signum()
+        };
+        let skip = (*entry).filter(|&e| list.len() > 1 && behind(&list[e]));
         let (best, gate) = list
             .iter()
             .enumerate()

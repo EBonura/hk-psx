@@ -77,18 +77,25 @@ pub static mut HK_CD_DISCARDED_SECTORS: u32 = 0;
 pub static mut HK_CD_STREAM_PHASE: u32 = 0;
 #[no_mangle]
 pub static mut HK_CD_STREAM_ERROR: u32 = 0;
+/// Transfers started so far (reads and parks): a parked head is still where it
+/// was left while this has not moved.
+#[no_mangle]
+pub static mut HK_CD_STARTS: u32 = 0;
+pub fn starts() -> u32 {
+    unsafe { core::ptr::read_volatile(&raw const HK_CD_STARTS) }
+}
 
 /// gate-tour builds: the last 128 controller events, for cancel/ordering
 /// questions (kind<<24 | phase<<16 | flag or command<<8 | received&0xff).
-#[cfg(feature = "gate-tour")]
+#[cfg(feature = "gate-log")]
 #[no_mangle]
 static mut HK_CD_TRACE: [u32; 128] = [0; 128];
-#[cfg(feature = "gate-tour")]
+#[cfg(feature = "gate-log")]
 #[no_mangle]
 static mut HK_CD_TRACE_N: u32 = 0;
 #[inline(always)]
 fn trace(_kind: u32, _t: &Transfer, _value: u8) {
-    #[cfg(feature = "gate-tour")]
+    #[cfg(feature = "gate-log")]
     unsafe {
         let n = HK_CD_TRACE_N;
         HK_CD_TRACE_N = n.wrapping_add(1);
@@ -199,6 +206,9 @@ pub unsafe fn start(destination: *mut u32, count: usize, lba: u32) -> Result<(),
             return Err(0xfd00_0000);
         }
         trace(3, t, 0);
+        unsafe {
+            HK_CD_STARTS = HK_CD_STARTS.wrapping_add(1);
+        }
         let recover = matches!(t.phase, Phase::Failed);
         let absolute = psx_io::disc_base::shift_lba(lba).saturating_add(150);
         let params = [
@@ -228,6 +238,48 @@ pub unsafe fn start(destination: *mut u32, count: usize, lba: u32) -> Result<(),
             }
             command(t, cdrom::CMD_SETLOC, &params, Phase::Setloc);
         }
+        if t.phase == Phase::Failed {
+            Err(t.error)
+        } else {
+            Ok(())
+        }
+    })
+}
+/// Seek to `lba` and stop there, reading nothing: the head waits at the
+/// sector a gate will read next, so that read pays no long seek. The transfer
+/// ends (Done) when the seek completes; `count` 0 marks it.
+/// Called only while the controller is idle, like `start`.
+pub fn park(lba: u32) -> Result<(), u32> {
+    exclusive(|t| {
+        if !matches!(t.phase, Phase::Idle | Phase::Done) {
+            return Err(0xfc00_0000);
+        }
+        trace(3, t, 1);
+        unsafe {
+            HK_CD_STARTS = HK_CD_STARTS.wrapping_add(1);
+        }
+        let absolute = psx_io::disc_base::shift_lba(lba).saturating_add(150);
+        let params = [
+            cdrom::bin_to_bcd((absolute / (60 * 75)) as u8),
+            cdrom::bin_to_bcd(((absolute / 75) % 60) as u8),
+            cdrom::bin_to_bcd((absolute % 75) as u8),
+        ];
+        *t = Transfer {
+            phase: Phase::Idle,
+            destination: core::ptr::null_mut(),
+            count: 0,
+            received: 0,
+            cancelled: false,
+            error: 0,
+            stamp: 0,
+            location: params,
+            recovering: false,
+        };
+        unsafe {
+            index(0);
+            psx_io::write8(CD + 3, 0);
+        }
+        command(t, cdrom::CMD_SETLOC, &params, Phase::Setloc);
         if t.phase == Phase::Failed {
             Err(t.error)
         } else {
@@ -405,6 +457,13 @@ fn service_irq(t: &mut Transfer) {
     match (t.phase, flag) {
         (Phase::Setloc, 3) => command(t, cdrom::CMD_SEEKL, &[], Phase::SeekAck),
         (Phase::SeekAck, 3) => change(t, Phase::SeekComplete),
+        (Phase::SeekComplete, 2) if t.count == 0 => {
+            // A park: the head is where it was sent.
+            change(t, Phase::Done);
+            unsafe {
+                output(0);
+            }
+        }
         (Phase::SeekComplete, 2) => command(
             t,
             cdrom::CMD_SETMODE,

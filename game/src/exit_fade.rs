@@ -108,7 +108,7 @@ pub fn service() {
         // Show the other buffer (black too) so the renderer's first frame,
         // drawn into this one, is never on screen while it is drawn.
         psx_io::gpu::write_gp1(gp1::display_start(0, f.shown as u32));
-        crate::gate_probe::note(31, now);
+        crate::gate_probe::note(22, now);
         f.active = false;
     }
 }

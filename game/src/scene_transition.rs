@@ -36,7 +36,7 @@ pub fn load(
         while psx_rt::interrupts::gp1_queue_pending() {
             crate::input::checkpoint();
         }
-        crate::gate_probe::note(31, psx_rt::interrupts::vblank_count());
+        crate::gate_probe::note(22, psx_rt::interrupts::vblank_count());
     }
     psx_gpu::draw_sync();
     crate::render::release_scene();

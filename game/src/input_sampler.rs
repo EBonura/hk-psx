@@ -336,6 +336,9 @@ impl Sampler {
         self.consumed = target;
         Ok(Some(target))
     }
+    pub fn missed(&self) -> u32 {
+        self.stats.missed_vblanks
+    }
     pub fn stats(&self) -> Stats {
         self.stats
     }

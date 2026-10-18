@@ -13,9 +13,15 @@ trace = []
 # FSM v2 measurement handlers (hk-sim fsm3_hard.rs); module `fsm3_hard` exists only when HK_MEASURE_HARD=1 too.
 hard-ops = ["hk-sim/hard-ops"]
 # Seamless-transition study: scripted gate tour and per-phase gate timing.
-gate-tour = []
+# Gate phase timing (HK_GATE_LOG) in an otherwise ordinary build, for walking routes.
+gate-log = []
+# Drive-event ring (HK_EVENT_LOG) for diagnosing one gate; 2 KB of BSS.
+gate-events = ["gate-log"]
+gate-tour = ["gate-log"]
 # Tour builds only: prefetch the tour's next scene instead of predicting it.
 prefetch-oracle = ["gate-tour"]
+# Tour builds only: walk the Knight to each listed gate instead of standing (real predictor).
+tour-walk = ["gate-tour"]
 # Spike: decode and upload the next scene's atlases ahead of its gate.
 vram-ahead = []
 # The original's HeroLight behind the Knight and the hero vignette
