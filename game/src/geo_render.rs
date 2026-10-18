@@ -87,39 +87,6 @@ fn draw_art(index: usize, world: [[i32; 2]; 4], camera: (i32, i32)) -> bool {
     render::resident_quad(&template, vertices.map(|(x, y)| (x as i16, y as i16)));
     true
 }
-/// The Geo coin of the HUD: the small coin's first landed frame at the world
-/// scale, its top left at (`x`, `y`), beside the wallet's count.
-pub fn hud_coin(x: i16, y: i16) -> u32 {
-    let index = geo::GEO_COIN_CLIPS[0][0].start as usize;
-    let art = &geo::GEO_ART[index];
-    let b = art.bounds;
-    // One and a half times its world size, and at twice the texel's colour: a
-    // coin in the world is 9 pixels and dim, and the HUD's has to read.
-    let size = |hi: i32, lo: i32| {
-        Wide::of(hi).sub_w(Wide::of(lo)).times(crate::KNIGHT_SCALE as i32 * 3).shr_i32(29) as i16
-    };
-    let w = size(b[2], b[0]);
-    let h = size(b[3], b[1]);
-    let right = (u16::from(art.u) + u16::from(art.w) - 1) as u8;
-    let bottom = (u16::from(art.v) + u16::from(art.h) - 1) as u8;
-    let uv = [
-        (art.u, art.v),
-        (right, art.v),
-        (art.u, bottom),
-        (right, bottom),
-    ];
-    let template = QuadTextured::with_material(
-        [(0, 0); 4],
-        uv,
-        TextureMaterial::blended(art.clut, art.tpage, (128, 128, 128), BlendMode::Average),
-    );
-    render::hud_quad(
-        &template,
-        [(x, y), (x + w, y), (x, y + h), (x + w, y + h)],
-        (255, 255, 255),
-    );
-    1
-}
 #[inline(never)]
 pub fn draw(geo: &geo::World, region: usize, camera: (i32, i32)) -> u32 {
     let scene = world::scene_of(region);

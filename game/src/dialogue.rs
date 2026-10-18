@@ -1,5 +1,9 @@
 //! Original tablet and NPC text/Perpetua font; bounded PS1 panel adaptation.
-use psx_gpu::{ot::OrderingTable, prim::RectFlat};
+use psx_gpu::{
+    material::BlendMode,
+    ot::OrderingTable,
+    prim::{QuadGouraudBlended, RectFlat},
+};
 use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
 #[path = "npc_state.rs"]
 mod npc_state;
@@ -65,6 +69,12 @@ const EMPTY: Glyph = Glyph {
 };
 static mut GLYPHS: [Glyph; CAP] = [const { EMPTY }; CAP];
 static mut BOXES: [RectFlat; 2] = [const { RectFlat::new(0, 0, 0, 0, 0, 0, 0) }; 2];
+/// The ornate panel's backboard: a 3x3 grid of translucent quads, flat in the
+/// middle and fading out at every edge.
+static mut BACKBOARD: [QuadGouraudBlended; 9] = [const {
+    QuadGouraudBlended::new([(0, 0); 4], [(0, 0, 0); 4], BlendMode::Subtract)
+}; 9];
+static mut BACKBOARD_COUNT: usize = 0;
 static mut USED: usize = 0;
 static mut BOX_COUNT: usize = 0;
 pub fn upload() {
@@ -241,7 +251,7 @@ fn text(x: i16, y: i16, text: &str) {
                     | Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(0) as u32;
                 p.color = 0x6480_8080;
                 p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
-                p.uv = (i % 21 * 12) as u32
+                p.uv = glyph_u(i) as u32
                     | (244 << 8)
                     | ((Clut::new(320, 481).uv_clut_word() as u32) << 16);
                 p.wh = 12 | (12 << 16);
@@ -250,6 +260,28 @@ fn text(x: i16, y: i16, text: &str) {
         x += ADVANCES[i] as i16;
     }
 }
+/// U of glyph cell `i` in its strip, 21 cells to a strip.
+pub(crate) const fn glyph_u(i: usize) -> usize {
+    crate::menu::state::GLYPH_U0 + i % 21 * 12
+}
+/// One cell of the glyph strip drawn 1:1 at (`x`, `y`), by its index: 0 to 94
+/// are the ASCII glyphs `text` draws, 95 is the Geo coin (host/read_points.py).
+fn cell(i: usize, x: i16, y: i16) {
+    unsafe {
+        assert!(USED < CAP);
+        let p = &mut GLYPHS[USED];
+        USED += 1;
+        p.mode = 0xe100_0000 | Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(0) as u32;
+        p.color = 0x6480_8080;
+        p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
+        p.uv = glyph_u(i) as u32
+            | (244 << 8)
+            | ((Clut::new(320, 481).uv_clut_word() as u32) << 16);
+        p.wh = 12 | (12 << 16);
+    }
+}
+/// The glyph strip's cell for the Geo coin.
+const GEO_COIN_CELL: usize = 95;
 fn number(x: i16, y: i16, value: u32) {
     let mut digits = [0u8; psx_math::fmt::U32_DEC_MAX];
     text(x, y, psx_math::fmt::u32_dec(&mut digits, value));
@@ -296,8 +328,10 @@ pub fn prepare(
     unsafe {
         USED = 0;
         BOX_COUNT = 0;
+        BACKBOARD_COUNT = 0;
         let geo_y = crate::hud::geo_y(total_masks);
         number(GEO_NUMBER_X, geo_y, geo);
+        cell(GEO_COIN_CELL, GEO_COIN_X, geo_y - 1);
         if let Some((p, settings)) = pause {
             BOXES[0] = RectFlat::new(38, 61, 244, 162, 150, 150, 150);
             BOXES[1] = RectFlat::new(40, 63, 240, 158, 0, 0, 0);
@@ -488,8 +522,21 @@ fn save_notice(ui: crate::save_ui::Ui) {
         }
     }
 }
-/// The one text panel, shared by a tablet and an NPC conversation.
+/// Whether a tablet or an NPC conversation is up, which is when the panel
+/// wants its ornaments in the frame's animation working set (`frame.rs`).
+pub(crate) fn panel_up() -> bool {
+    unsafe { STATE.active.is_some() || CONVO.active.is_some() }
+}
+/// The one text panel, shared by a tablet and an NPC conversation. A frame
+/// whose working set carries the ornaments draws the source's box (fleurs
+/// above and below the centred text, the arrow or the stop under it, over a
+/// dark backboard); any other frame draws the plain box, which is also what
+/// a view that has claimed the whole cache leaves room for.
 fn panel(pages: &[&'static [&'static str]], page: usize) {
+    if crate::dialogue_art::prepared() {
+        ornate(pages[page], page + 1 < pages.len());
+        return;
+    }
     unsafe {
         BOXES[0] = RectFlat::new(10, 46, 300, 152, 150, 150, 150);
         BOXES[1] = RectFlat::new(12, 48, 296, 148, 0, 0, 0);
@@ -504,6 +551,78 @@ fn panel(pages: &[&'static [&'static str]], page: usize) {
         "X / O: Close"
     };
     text(160 - width(footer) / 2, 178, footer);
+}
+/// One ornament piece at (`x`, `y`): a textured rectangle per tile, 1:1.
+fn ornament(piece: (usize, usize, u16, u16), x: i16, y: i16) {
+    let clut = Clut::new(320, 481).uv_clut_word() as u32;
+    for tile in piece.0..piece.0 + piece.1 {
+        let (_, w, h, dx) = crate::dialogue_art::DIALOGUE_TILES[tile];
+        let key = crate::dialogue_art::KEY_BASE + tile as u16;
+        let (u, v) = crate::render::animation_uv(key);
+        unsafe {
+            assert!(USED < CAP);
+            let p = &mut GLYPHS[USED];
+            USED += 1;
+            p.mode = 0xe100_0000 | crate::render::animation_tpage_word(key) as u32;
+            p.color = 0x6480_8080;
+            p.xy = (x + dx as i16) as u16 as u32 | ((y as u16 as u32) << 16);
+            p.uv = u32::from(u) | (u32::from(v) << 8) | (clut << 16);
+            p.wh = u32::from(w) | (u32::from(h) << 16);
+        }
+    }
+}
+/// The ornate panel, near the top of the screen: fleur, the page's lines centred,
+/// arrow or stop, fleur. The height follows the page, as the source's does.
+fn ornate(lines: &[&str], more: bool) {
+    use crate::dialogue_art::{
+        DIALOGUE_ARROW, DIALOGUE_FLEUR_BOTTOM, DIALOGUE_FLEUR_TOP, DIALOGUE_STOP, ICON_H, ICON_W,
+    };
+    const PITCH: i16 = 14;
+    const GAP: i16 = 6;
+    let rows = lines.len().max(1) as i16;
+    let top_h = DIALOGUE_FLEUR_TOP.3 as i16;
+    let bottom_h = DIALOGUE_FLEUR_BOTTOM.3 as i16;
+    let total = top_h + GAP + rows * PITCH + 4 + ICON_H + 4 + bottom_h;
+    // Near the top of the screen like the source's, so the speaker below stays in
+    // view; clear of the HUD's masks and Geo count above, and a full page of eight
+    // lines is exactly what the screen holds from there.
+    let top = 52.min(240 - total).max(40);
+    let fleur = |piece: (usize, usize, u16, u16)| 160 - piece.2 as i16 / 2;
+    ornament(DIALOGUE_FLEUR_TOP, fleur(DIALOGUE_FLEUR_TOP), top);
+    let first = top + top_h + GAP;
+    for (i, line) in lines.iter().enumerate() {
+        text(160 - width(line) / 2, first + i as i16 * PITCH, line);
+    }
+    let icon_y = first + rows * PITCH + 4;
+    let icon = if more { DIALOGUE_ARROW } else { DIALOGUE_STOP };
+    ornament(icon, 160 - ICON_W / 2 + (ICON_W - icon.2 as i16) / 2, icon_y);
+    let bottom_y = icon_y + ICON_H + 4;
+    ornament(DIALOGUE_FLEUR_BOTTOM, fleur(DIALOGUE_FLEUR_BOTTOM), bottom_y);
+    // The backboard: a 3x3 grid of translucent quads that darkens what is behind
+    // the panel by a fixed amount inside and fades to nothing over the outer 24
+    // pixels sideways and 10 above and below, like the source's soft backboard.
+    const LEFT: i16 = 8;
+    const RIGHT: i16 = 312;
+    const FADE_X: i16 = 24;
+    const FADE_Y: i16 = 10;
+    const DARK: u8 = 96;
+    let (y0, y1) = (top - 6 - FADE_Y, bottom_y + bottom_h + 6 + FADE_Y);
+    let xs = [LEFT, LEFT + FADE_X, RIGHT - FADE_X, RIGHT];
+    let ys = [y0, y0 + FADE_Y, y1 - FADE_Y, y1];
+    let node = |i: usize, j: usize| if i % 3 == 0 || j % 3 == 0 { 0 } else { DARK };
+    for r in 0..3 {
+        for c in 0..3 {
+            let (a, b, d, e) = (node(c, r), node(c + 1, r), node(c, r + 1), node(c + 1, r + 1));
+            unsafe {
+                BACKBOARD[r * 3 + c] = QuadGouraudBlended::new(
+                    [(xs[c], ys[r]), (xs[c + 1], ys[r]), (xs[c], ys[r + 1]), (xs[c + 1], ys[r + 1])],
+                    [(a, a, a), (b, b, b), (d, d, d), (e, e, e)],
+                    BlendMode::Subtract,
+                );
+            }
+        }
+    }
+    unsafe { BACKBOARD_COUNT = 9 };
 }
 /// The source prompt marker's label, over the marker's own world point.
 fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &str) {
@@ -529,6 +648,14 @@ pub fn append(ot: &mut OrderingTable<1>) {
         crate::charms::append_icons(ot);
         for i in (0..BOX_COUNT).rev() {
             crate::display::ot_add(ot, 0, &mut BOXES[i], 3);
+        }
+        for i in (0..BACKBOARD_COUNT).rev() {
+            crate::display::ot_add(
+                ot,
+                0,
+                &mut *(&raw mut BACKBOARD[i]),
+                QuadGouraudBlended::WORDS,
+            );
         }
     }
 }
