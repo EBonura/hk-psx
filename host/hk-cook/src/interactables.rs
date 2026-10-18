@@ -508,12 +508,10 @@ fn things_of(source: &Source, sc: &Scene) -> Result<Vec<Thing>> {
     let mut out = Vec::new();
     let sw = switches(source, sc)?;
     let tg: Vec<Target> = targets(source, sc)?.into_iter().filter(|t| t.active).collect();
+    // A switch whose target is a lift (the town's, the stag station's) is left out with the lift: its hit
+    // would play a lever that opens nothing. The scenes it appears in are reported by `report`.
+    let sw: Vec<&Switch> = sw.iter().filter(|s| s.targets.iter().all(|t| tg.iter().any(|x| x.gid == *t))).collect();
     for (si, s) in sw.iter().enumerate() {
-        for t in &s.targets {
-            if !tg.iter().any(|x| x.gid == *t) {
-                return err(format!("switch {:?} opens object {t}, which no cooked target is", s.name));
-            }
-        }
         out.push(Thing {
             machine: if s.kind == SwitchKind::Toll { MACHINE_TOLL_SWITCH } else { MACHINE_SWITCH_CONTROL },
             name: s.name.clone(),
