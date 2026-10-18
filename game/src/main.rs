@@ -1488,6 +1488,10 @@ fn main() {
                         fb.buffer_y(fb.drawing),
                     )
                     .expect("scene gate load");
+                    // The entry's blackout hold ran while the load finished.
+                    game.door.credit_hold(
+                        (unsafe { scene_transition::HK_GATE_BLACK_CREDIT } * 5 / 6).min(255) as u16,
+                    );
                     hk_clock.realign(sim_clock.wrapping_add(1));
                     input::seed_latency();
                     #[cfg(feature = "load-log")]
