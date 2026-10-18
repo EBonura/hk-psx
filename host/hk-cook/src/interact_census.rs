@@ -16,11 +16,12 @@ use hk_unity::{Source, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-fn file_for(name: &str) -> String {
+fn file_for(source: &Source, name: &str) -> String {
     crate::quality::SCENE_TABLE
         .iter()
         .find(|r| r.scene_name == name)
         .map(|r| r.file.to_owned())
+        .or_else(|| hk_unity::scene::build_settings(source).ok().and_then(|m| m.get(name).cloned()))
         .unwrap_or_else(|| name.to_owned())
 }
 
@@ -93,6 +94,8 @@ pub fn main(root: &Path, args: &[String], source: Option<&Path>) -> std::result:
     let mut wanted: Option<&str> = None;
     let mut like: Vec<&str> = Vec::new();
     let mut component: Option<&str> = None;
+    let mut animated = false;
+    let mut playerdata: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -108,13 +111,24 @@ pub fn main(root: &Path, args: &[String], source: Option<&Path>) -> std::result:
                 component = args.get(i + 1).map(String::as_str);
                 i += 1;
             }
+            "--animated" => animated = true,
+            "--playerdata" => {
+                playerdata.push(args.get(i + 1).map(String::as_str).unwrap_or(""));
+                i += 1;
+            }
             "--source" => i += 1,
             _ => scenes.push(&args[i]),
         }
         i += 1;
     }
+    if !playerdata.is_empty() {
+        let defaults = source.fresh_save().map_err(|e| e.to_string())?;
+        for key in &playerdata {
+            println!("PlayerData {key}: {:?}", defaults.get(*key));
+        }
+    }
     for name in scenes {
-        let sc = Scene::new(&source, &file_for(name)).map_err(|e| e.to_string())?;
+        let sc = Scene::new(&source, &file_for(&source, name)).map_err(|e| e.to_string())?;
         println!("== {name} ({})", file_of(&sc));
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         for o in sc.objects.iter().filter(|o| o.typename == "PlayMakerFSM") {
@@ -157,6 +171,20 @@ pub fn main(root: &Path, args: &[String], source: Option<&Path>) -> std::result:
                 let mut text = String::new();
                 dump_fsm(fsm, &mut text)?;
                 print!("{text}");
+            }
+        }
+        if animated {
+            for o in sc.objects.iter().filter(|o| o.typename == "tk2dSpriteAnimator") {
+                let gid = o.tree.get("m_GameObject").and_then(|g| g.get("m_PathID")).and_then(Value::int).unwrap_or(0);
+                let go_name = sc.go(gid).and_then(|g| g.get("m_Name")).and_then(Value::str).unwrap_or_default();
+                let at = sc.point(gid, 0.0, 0.0, 0.0).map(|p| format!("({:.2}, {:.2}, {:.2})", p[0], p[1], p[2])).unwrap_or_default();
+                let layer = sc.go(gid).and_then(|g| ki(g, "m_Layer").ok()).unwrap_or(-1);
+                let default = o.tree.get("library").and_then(|l| source.deref(&sc.base, l).ok()).and_then(|lo| source.read(&lo).ok()).map(|lib| {
+                    let id = o.tree.get("defaultClipId").and_then(Value::int).unwrap_or(-1);
+                    let names: Vec<String> = lib.get("clips").and_then(Value::list).unwrap_or(&[]).iter().map(|c| c.get("name").and_then(Value::str).unwrap_or_default()).collect();
+                    format!("default {:?} of {}", names.get(id as usize), names.join("|"))
+                }).unwrap_or_default();
+                println!("  animator id {} on {go_name:?} gid {gid} active {} layer {layer} at {at} path {} {default}", o.id, sc.active(gid), path_of(&sc, gid));
             }
         }
         if let Some(name) = component {
