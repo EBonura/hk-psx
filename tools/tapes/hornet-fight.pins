@@ -1,0 +1,19 @@
+card = hornet-road.mcd
+pacing = 2660
+# The fight: cheats 3 (invincible and pure nail) toggled from the pause menu, so no mask is lost and her 225 points are
+# 11 strikes; she dies (phase 3), her corpse writes hornet1Defeated (bit 26) and the Knight takes the Cloak (bit 2) and
+# dashes. Every part she showed came out of the bank.
+HK_SCENE_GATE_LOADS = 2
+HK_REGION_ID = 1005
+HK_DEATHS = 0
+HK_HEALTH = 5
+HK_CHEATS = 3
+HK_HORNET_ENCOUNTERS = 1
+HK_HORNET_PHASE = 3
+HK_HORNET_HP = 0
+HK_WORLD_PLAYER = 67108868
+HK_BOSS_DROPS = 0
+HK_BOSS_CLIP_MISSES = 0
+HK_ABILITY_DRAWN >= 5
+HK_ROOM_LOAD_ERROR = 0
+HK_CD_STREAM_ERROR = 0

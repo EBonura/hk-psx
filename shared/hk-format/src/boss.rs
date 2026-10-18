@@ -27,10 +27,22 @@ pub const RAW: u16 = 0x8000;
 /// The bank's logical bytes. Reads past the end give 0.
 pub trait Blob {
     fn byte(&self, at: usize) -> u8;
+    /// `out.len()` bytes from `at`. A blob that can copy a run at once should say so: a guest decoding a part reads thousands.
+    fn read(&self, at: usize, out: &mut [u8]) {
+        for (i, b) in out.iter_mut().enumerate() {
+            *b = self.byte(at + i);
+        }
+    }
 }
 impl Blob for &[u8] {
     fn byte(&self, at: usize) -> u8 {
         self.get(at).copied().unwrap_or(0)
+    }
+    fn read(&self, at: usize, out: &mut [u8]) {
+        let have = self.get(at..).unwrap_or(&[]);
+        let n = have.len().min(out.len());
+        out[..n].copy_from_slice(&have[..n]);
+        out[n..].fill(0);
     }
 }
 
@@ -168,6 +180,33 @@ impl<B: Blob> Bank<B> {
             offset: self.u32_at(p + 10),
         }
     }
+    /// The part's decoded texel bytes into `out` (at least `texel_bytes` long), a run at a time. The same bytes `decode` yields.
+    pub fn decode_into(&self, part: &Part, out: &mut [u8]) -> Option<()> {
+        let n = part.texel_bytes();
+        let out = out.get_mut(..n)?;
+        let mut at = part.offset as usize;
+        if part.coded & RAW != 0 {
+            self.blob.read(at, out);
+            return Some(());
+        }
+        let mut done = 0;
+        while done < n {
+            let token = self.blob.byte(at);
+            at += 1;
+            if token < 0x80 {
+                let len = (token as usize + 1).min(n - done);
+                self.blob.read(at, &mut out[done..done + len]);
+                at += token as usize + 1;
+                done += len;
+            } else {
+                let len = ((token & 0x7f) as usize + 2).min(n - done);
+                out[done..done + len].fill(self.blob.byte(at));
+                at += 1;
+                done += len;
+            }
+        }
+        Some(())
+    }
     /// The part's decoded texel bytes, in order.
     pub fn decode(&self, part: &Part) -> Decode<'_, B> {
         Decode {
@@ -304,12 +343,18 @@ mod tests {
         let mut d = bank.decode(&part);
         let out: Vec<u8> = core::iter::from_fn(|| d.next_byte()).collect();
         assert_eq!(out, [0x11, 0x11, 0x11, 0x11, 0x11, 0xa, 0xb, 0xc]);
+        let mut whole = [0u8; 8];
+        bank.decode_into(&part, &mut whole).unwrap();
+        assert_eq!(&whole[..], &out[..]);
         let raw = [1, 2, 3, 4, 5, 6, 7, 8];
         let bytes = bank_bytes(&raw, true, 8, 2);
         let bank = Bank::open(bytes.as_slice()).unwrap();
         let mut d = bank.decode(&bank.part(0));
         let out: Vec<u8> = core::iter::from_fn(|| d.next_byte()).collect();
         assert_eq!(out, raw);
+        let mut whole = [0u8; 8];
+        bank.decode_into(&bank.part(0), &mut whole).unwrap();
+        assert_eq!(whole, raw);
     }
 
     #[test]
