@@ -7,13 +7,19 @@ long_frames = 2
 # Fungus1_04, to the Cloak Corpse (region 1005). Ordinary controls, no
 # cheat, no death; the fixture is seeded at (24, 12) in Fungus1_22 because
 # the shaft's lower hall is sealed by a Metal Gate its Gate Switch opens
-# from above. hornet1Defeated is clear, so UP at the shiny does nothing.
+# from above. hornet1Defeated is clear, so UP at the shiny does nothing. Hornet is in the build (her art is a boss bank in
+# the scene, docs/BOSS-ART.md): the Knight crosses her arena, her Encounter starts and she touches him once, so he ends on 4
+# masks; every part she shows came out of the bank (no drop, no clip the bank lacks) and the bank's 70 chunks were found.
 # Pacing measured on the 2026-10-15 build: 2,318 of about 2,350 frames (the
 # Fungus rooms run near 20 fps); the ceiling is that plus five percent.
 HK_SCENE_GATE_LOADS = 2
 HK_REGION_ID = 1005
 HK_DEATHS = 0
-HK_HEALTH = 5
+HK_HEALTH = 4
+HK_HORNET_ENCOUNTERS = 1
+HK_BOSS_BANK_FOUND = 70
+HK_BOSS_DROPS = 0
+HK_BOSS_CLIP_MISSES = 0
 HK_CHEATS = 0
 HK_WORLD_PLAYER = 0
 HK_ABILITY_DRAWN = 0
