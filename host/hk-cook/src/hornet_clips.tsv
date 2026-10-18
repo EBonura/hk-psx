@@ -1,0 +1,35 @@
+# tree	object	clip: what the simulated fights played (shared/hk-sim/tests/hornet_clip_trace.rs); `hk-cook boss-measure --trace T --write-used PATH` rewrites it
+0	0	Evade
+0	0	Evade Antic
+0	0	Fall
+0	0	Flourish
+0	0	G Dash
+0	0	G Dash Antic
+0	0	G Dash Recover1
+0	0	G Dash Recover2
+0	0	Idle
+0	0	Jump
+0	0	Jump Antic
+0	0	Land
+0	0	Run
+0	0	Sphere Antic A
+0	0	Sphere Attack
+0	0	Sphere Recover A
+0	0	Throw
+0	0	Throw Antic
+0	0	Throw Recover
+0	3	Flash
+0	6	Throw Effect
+0	7	Needle
+0	9	Sphere Ball
+0	15	Evade
+0	15	Evade Antic
+0	15	Idle
+0	15	Point
+1	0	Death Air
+1	0	Wounded
+1	6	Harpoon Side
+1	6	Jump Full
+1	6	Throw Side
+1	6	Throw Side Start
+1	7	Thread 1

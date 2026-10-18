@@ -8,7 +8,7 @@
 use super::{Draws, Events, Nail, Vitals};
 use crate::world::{Region, State as World};
 use crate::world::debris::Rotation;
-use hk_format::{i32_at, u32_at, Room};
+use hk_format::Room;
 use hk_sim::fsm3_world::{flag, NO_CLIP};
 use hk_sim::hornet_fight::{self as hf, Effect, Fight, Input, Phase, Strike};
 use hk_sim::Player;
@@ -155,11 +155,16 @@ pub fn tick(
 }
 
 #[cfg_attr(target_arch = "mips", optimize(size))]
-/// Everything of the fight on screen: each visible object of the live tree, from its current clip.
+/// Everything of the fight on screen: each visible object of the live tree, from its current clip, as parts of the Hornet bank
+/// (boss_bank.rs) queued for this frame's pass.
 #[inline(never)]
-pub fn draw(draws: &mut Draws, room: &Room, camera: (i32, i32)) {
+pub fn draw(_draws: &mut Draws, room: &Room, camera: (i32, i32)) {
+    crate::boss_bank::begin();
     let Some(s) = state_block() else { return };
     if s.ready != MAGIC {
+        return;
+    }
+    if !crate::boss_bank::attach(room, HORNET_BANK_ID) {
         return;
     }
     let flash = s.fight.health.flash;
@@ -168,67 +173,56 @@ pub fn draw(draws: &mut Draws, room: &Room, camera: (i32, i32)) {
         Phase::Dying => (1u8, s.fight.corpse_world()),
         Phase::Gone => return,
     };
-    for i in 0..world.n {
-        let e = &world.ent[i as usize];
-        if !e.on(flag::MESH) || e.clip == NO_CLIP || !world.active_in_hierarchy(i) {
-            continue;
-        }
-        let Some(&(_, _, group, sx, sy)) = HORNET_ART_ENTS.iter().find(|r| r.0 == tree && r.1 == i) else {
-            continue;
-        };
-        let Some(&(_, _, _, clip)) = HORNET_ART_CLIPS.iter().find(|r| r.0 == tree && r.1 == group && r.2 == e.clip) else {
-            continue;
-        };
-        if clip as usize >= room.counts[4] {
-            continue;
-        }
-        let c = room.clip(clip as usize);
-        let frame = if e.frame >= 0 {
-            (e.frame as u32).min(c[1] - 1)
-        } else {
-            let elapsed = hk_sim::fixed::mul_div_floor(e.clip_from as u32, c[2], 60 * 65536);
-            let mode = c[3] & 65535;
-            let start = c[3] >> 16;
-            if mode == 0 {
-                elapsed % c[1]
-            } else if mode == 1 && elapsed >= c[1] {
-                start + (elapsed - start) % (c[1] - start)
-            } else {
-                elapsed.min(c[1] - 1)
-            }
-        };
-        let frame_index = (c[0] + frame) as usize;
-        let (pos, scale, rot) = world.world_of(i);
-        let authored = (sx, sy);
-        let ratio = (
-            if authored.0 != 0 { hk_sim::fixed::mul_div_floor(scale[0].unsigned_abs(), crate::ONE as u32, authored.0 as u32) as i32 } else { crate::ONE },
-            if authored.1 != 0 { hk_sim::fixed::mul_div_floor(scale[1].unsigned_abs(), crate::ONE as u32, authored.1 as u32) as i32 } else { crate::ONE },
-        );
-        // The art faces left at scale +1: a mirrored object takes the other facing.
-        let facing = if scale[0] < 0 { 1 } else { -1 };
-        let turn = (rot != 0).then(|| Rotation::new(-rot));
-        let (cols, rows) = room.texture(u32_at(room.frame(frame_index), 0) as usize).tile_grid();
-        for tile in 0..cols * rows {
-            let (texture, b) = if cols * rows == 1 {
-                let f = room.frame(frame_index);
-                (u32_at(f, 0) as usize, core::array::from_fn::<_, 4, _>(|k| i32_at(f, 4 + k * 4)))
-            } else {
-                room.frame_tile(frame_index, tile)
-            };
-            let b = [
-                psx_math::int32::mul_shr_i32(b[0], ratio.0, 16),
-                psx_math::int32::mul_shr_i32(b[1], ratio.1, 16),
-                psx_math::int32::mul_shr_i32(b[2], ratio.0, 16),
-                psx_math::int32::mul_shr_i32(b[3], ratio.1, 16),
-            ];
-            let verts = super::project_box_turned(b, (pos[0], pos[1]), facing, camera, pos[2], turn);
-            if super::offscreen(&verts) {
+    crate::boss_bank::with(room, |bank| {
+        for i in 0..world.n {
+            let e = &world.ent[i as usize];
+            if !e.on(flag::MESH) || e.clip == NO_CLIP || !world.active_in_hierarchy(i) {
                 continue;
             }
-            if !draws.can_push(texture as u16) {
-                return;
+            let Some(&(_, _, group, sx, sy)) = HORNET_ART_ENTS.iter().find(|r| r.0 == tree && r.1 == i) else {
+                continue;
+            };
+            let Some(&(_, _, _, clip)) = HORNET_ART_CLIPS.iter().find(|r| r.0 == tree && r.1 == group && r.2 == e.clip) else {
+                unsafe { crate::boss_bank::HK_BOSS_CLIP_MISSES += 1 };
+                continue;
+            };
+            if clip as u32 >= bank.clips {
+                continue;
             }
-            draws.push(texture as u16, verts, if i == 0 { flash } else { 0 });
+            let c = bank.clip(clip as usize);
+            if c.count == 0 {
+                continue;
+            }
+            let frame = if e.frame >= 0 { (e.frame as usize).min(c.count as usize - 1) } else { c.frame(e.clip_from as u32) };
+            let sprite = bank.sprite(bank.seq_sprite(c.first as usize + frame));
+            let (pos, scale, rot) = world.world_of(i);
+            let authored = (sx, sy);
+            let ratio = (
+                if authored.0 != 0 { hk_sim::fixed::mul_div_floor(scale[0].unsigned_abs(), crate::ONE as u32, authored.0 as u32) as i32 } else { crate::ONE },
+                if authored.1 != 0 { hk_sim::fixed::mul_div_floor(scale[1].unsigned_abs(), crate::ONE as u32, authored.1 as u32) as i32 } else { crate::ONE },
+            );
+            // The art faces left at scale +1: a mirrored object takes the other facing.
+            let facing = if scale[0] < 0 { 1 } else { -1 };
+            let turn = (rot != 0).then(|| Rotation::new(-rot));
+            let clut = crate::boss_bank::clut(room, sprite.palette);
+            for p in 0..sprite.parts as usize {
+                let index = sprite.first_part as usize + p;
+                let part = bank.part(index);
+                let b = hk_format::boss::Bank::<&[u8]>::part_bounds(&sprite, &part);
+                let b = [
+                    psx_math::int32::mul_shr_i32(b[0], ratio.0, 16),
+                    psx_math::int32::mul_shr_i32(b[1], ratio.1, 16),
+                    psx_math::int32::mul_shr_i32(b[2], ratio.0, 16),
+                    psx_math::int32::mul_shr_i32(b[3], ratio.1, 16),
+                ];
+                let verts = super::project_box_turned(b, (pos[0], pos[1]), facing, camera, pos[2], turn);
+                if super::offscreen(&verts) {
+                    continue;
+                }
+                if !crate::boss_bank::queue(index, clut, part.width, part.height, verts, if i == 0 { flash } else { 0 }) {
+                    return;
+                }
+            }
         }
-    }
+    });
 }
