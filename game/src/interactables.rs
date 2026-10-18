@@ -41,6 +41,8 @@ pub struct Clip {
     pub count: u8,
     pub fps: u8,
     pub looping: bool,
+    /// A play-once clip's length in 60 Hz ticks (65535 for a loop), from the cook.
+    pub ticks: u16,
 }
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/interactables.rs"));
 
@@ -110,8 +112,7 @@ fn clip_ticks(clips: &[u16; ROLES]) -> [u16; ROLES] {
     let mut out = [0; ROLES];
     for (role, &clip) in clips.iter().enumerate() {
         if clip != NO_CLIP {
-            let c = &CLIPS[clip as usize];
-            out[role] = if c.looping { u16::MAX } else { (c.count as u32 * 60).div_ceil(c.fps.max(1) as u32) as u16 };
+            out[role] = CLIPS[clip as usize].ticks;
         }
     }
     out
@@ -138,6 +139,7 @@ fn restored(o: &Obj, scene: usize) -> bool {
 
 /// Build a scene's machines as a load does.
 #[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
 fn enter(scene: usize) {
     let first = OBJECTS.partition_point(|o| (o.scene as usize) < scene);
     let count = OBJECTS[first..].iter().take_while(|o| o.scene as usize == scene).count().min(MO);
@@ -169,6 +171,7 @@ fn ensure(scene: usize) {
 /// What an object's machine asked of the world: its events reach its links at once, as
 /// PlayMaker's `SendEventByName` does. `only` picks the sends or everything else, which the load
 /// orders (see `enter`); a running machine does both through `run`.
+#[cfg_attr(not(test), optimize(size))]
 fn act(i: usize, out: Actions, only: bool) {
     let n = now();
     let scene = n.scene;
@@ -215,6 +218,7 @@ fn lift(live: &mut Live, i: usize) {
 }
 
 /// Deliver an event to one object of the scene.
+#[cfg_attr(not(test), optimize(size))]
 fn send(i: usize, event: Event) {
     let mut reply = Actions::none();
     if let Some(t) = now().live.get_mut(i).and_then(Option::as_mut) {
@@ -224,12 +228,14 @@ fn send(i: usize, event: Event) {
 }
 
 /// Everything a machine asked for, the plain actions first.
+#[cfg_attr(not(test), optimize(size))]
 fn run(i: usize, out: Actions) {
     act(i, out, false);
     act(i, out, true);
 }
 
 /// Deliver an event to every object of `machine` in `scene` (the stag module's `Paid`).
+#[cfg_attr(not(test), optimize(size))]
 pub fn send_to(scene: usize, machine: u8, event: Event) {
     ensure(scene);
     for i in 0..now().count {
@@ -251,6 +257,7 @@ pub fn stag_ready(scene: usize) -> bool {
 
 /// One simulation tick of the current scene's machines. A new scene is built first.
 #[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
 pub fn tick(scene: usize) {
     ensure(scene);
     if now().count == 0 {
@@ -269,6 +276,7 @@ pub fn tick(scene: usize) {
 /// One nail swing's polygon against the scene's switches and bell; `swing` is the attack counter, so
 /// one swing strikes an object once however long it overlaps.
 #[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
 pub fn strike(scene: usize, polygon: &[[i32; 2]], swing: u32) {
     ensure(scene);
     for i in 0..now().count {
@@ -293,6 +301,7 @@ pub fn strike(scene: usize, polygon: &[[i32; 2]], swing: u32) {
 
 /// Lift the terrain of every object whose collider is off in `region`'s view (after the
 /// Lifeblood refresh, beside the gates' and the Blockers').
+#[cfg_attr(not(test), optimize(size))]
 pub fn apply(state: &mut crate::world::State, region: usize) {
     let first = EDGES.partition_point(|&(slot, ..)| (slot as usize) < region);
     for &(slot, object, from, count) in &EDGES[first..] {
@@ -366,6 +375,7 @@ fn view_frame(region: usize) -> Option<usize> {
 
 /// Pick the pieces on screen and append each sheet they use once.
 #[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
 pub fn prepare(room: &Room, region: usize, scene: usize, camera: (i32, i32), needed: &mut [u16], len: &mut usize) -> Draws {
     let mut draws = Draws::NONE;
     let n = now();
@@ -438,6 +448,7 @@ pub fn prepare(room: &Room, region: usize, scene: usize, camera: (i32, i32), nee
 impl Draws {
     /// The pieces on the gameplay plane, untinted.
     #[inline(never)]
+    #[cfg_attr(not(test), optimize(size))]
     pub fn draw(&self, camera: (i32, i32)) -> u32 {
         for i in 0..self.count {
             let p = self.origin[i];

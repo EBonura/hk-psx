@@ -852,7 +852,9 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         }
         n_sprite += art.sprites.len();
         for c in &art.clips {
-            write!(clip_rows, "Clip{{first:{},count:{},fps:{},looping:{}}},", clip_sprites.len(), c.sprites.len(), c.fps as i64, c.looping).unwrap();
+            // `ticks`: a play-once clip's length at the 60 Hz simulation rate; a looping one never ends.
+            let ticks = if c.looping || c.fps == 0.0 { 65535 } else { (c.sprites.len() * 60).div_ceil(c.fps as usize).min(65534) };
+            write!(clip_rows, "Clip{{first:{},count:{},fps:{},looping:{},ticks:{ticks}}},", clip_sprites.len(), c.sprites.len(), c.fps as i64, c.looping).unwrap();
             clip_sprites.extend(c.sprites.iter().map(|s| sprite_base + s));
         }
         n_clip += art.clips.len();

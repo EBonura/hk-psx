@@ -135,6 +135,8 @@ fn close(s: &mut Screen) {
 
 /// One tick of the station the Knight stands in. `eligible` is the grounded-and-unlocked test the NPC
 /// prompt answers, `bits` the held pad word (the release hold watches a button stay down).
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
 pub fn tick(scene: usize, body: [i32; 4], eligible: bool, bits: u16, geo: u32) -> Out {
     let mut out = Out { pay: 0, depart: None };
     let s = screen();
@@ -257,6 +259,8 @@ mod presentation {
     use super::*;
 
     /// What the screen draws: the prompt marker over the bell or the stag, or one of the three panels.
+    #[inline(never)]
+    #[cfg_attr(not(test), optimize(size))]
     pub fn prepare(scene: usize, camera: (i32, i32), paused: bool) {
         if paused {
             return;
