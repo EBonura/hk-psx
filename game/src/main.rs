@@ -73,6 +73,7 @@ mod geo_audio;
 mod geo_render;
 mod great_door;
 mod interactables;
+mod stag;
 mod gruz_art;
 #[cfg(any(feature = "hero-light", feature = "hero-vignette"))]
 mod hero_light;
@@ -933,6 +934,7 @@ fn main() {
     // over an empty store and changes nothing.
     persist::apply(&mut game.state, game.geo, game.life);
     interactables::invalidate();
+    stag::reset();
     let mut frame = 0u32;
     let mut scene_ticks_scene = usize::MAX;
     let mut entry_gate: Option<usize> = None;

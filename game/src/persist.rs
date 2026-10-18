@@ -146,6 +146,11 @@ pub const SHAMAN_HIGH: u32 = 25;
 /// `hornet1Defeated`: Greenpath's Hornet beaten. The Cloak Corpse's shiny (the
 /// Mothwing Cloak) is offered once it is set.
 pub const HORNET_1_DEFEATED: u32 = 26;
+/// `openedCrossroads`: the Crossroads stag station's toll is paid (the bell's grate is open). The Dirtmouth
+/// station, `openedTown`, starts true and has no bit.
+pub const OPENED_CROSSROADS: u32 = 27;
+/// `metStag`: the stag's first conversation has been heard (game/src/stag.rs).
+pub const MET_STAG: u32 = 28;
 /// PlayerData small integers, by index: `fireballLevel`, `quakeLevel`,
 /// `screamLevel`. The fourth byte is zero and reserved.
 pub const FIREBALL_LEVEL: usize = 0;
@@ -153,6 +158,8 @@ pub const FIREBALL_LEVEL: usize = 0;
 pub const QUAKE_LEVEL: usize = 1;
 #[allow(dead_code)]
 pub const SCREAM_LEVEL: usize = 2;
+/// `stagPosition + 1` rides the fourth, formerly reserved, byte (game/src/stag.rs); zero is the source's -1.
+pub const STAG_POSITION: usize = 3;
 pub const LEVELS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

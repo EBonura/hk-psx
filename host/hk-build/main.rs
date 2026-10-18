@@ -54,6 +54,10 @@ const ASSET_SCRIPTS: &[&str] = &[
     // sprite pieces and the terrain edges each gate stands in (host/hk-cook interactables.rs). After the
     // gates and the Blockers, whose rows share the guest's scripted-edge scratch.
     "rust:interactables",
+    // The stag stations' table: where the stag and bell stand, which bool opens each station, what the bell
+    // costs, where a passenger arrives and the texts (host/hk-cook stags.rs). After the interactables, whose
+    // props it keeps company, and read_points.py, whose glyph advances it wraps against.
+    "rust:stags",
     // Soul totems and area titles, read from the source scenes; the totems
     // before the scene sounds, which give their scenes the totem's sound.
     "soul_totems.py",
@@ -1702,6 +1706,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "battle-gates" => hk_cook::battle_gates::main(root, None)?,
         "blocker-terrain" => hk_cook::blocker_terrain::main(root, None)?,
         "interactables" => hk_cook::interactables::main(root, None)?,
+        "stags" => hk_cook::stags::main(root, None)?,
         other => return Err(format!("no Rust cooker named {other}").into()),
     }
     println!("  hk-cook {tool}: {:.1?}", start.elapsed());

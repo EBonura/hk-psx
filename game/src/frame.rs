@@ -479,6 +479,7 @@ pub fn render(
     if crate::modules::loaded(crate::modules::SHOP) {
         shop::prepare(&game.shop_screen, camera, game.paused);
     }
+    stag::prepare(r.scene, camera, game.paused);
     title_card::prepare();
     render::submit(
         game.vitals.health,
@@ -518,6 +519,7 @@ pub fn interact(
         can_inspect
             && !game.bench.locks_control()
             && !game.shop_screen.open
+            && !stag::open_screen()
             && !dialogue::open()
             && game.save_prompt.is_none(),
         game.player.grounded,
@@ -570,7 +572,7 @@ pub fn interact(
     // Shiny items answer UP the way the shop and NPCs do; heart and vessel
     // pieces are taken on touch. Each is saved as it is taken.
     let inspect =
-        can_inspect && !dialogue::open() && !game.shop_screen.open && pad.is_held(button::UP);
+        can_inspect && !dialogue::open() && !game.shop_screen.open && !stag::open_screen() && pad.is_held(button::UP);
     game.pickups.hornet_defeated = persist::player(persist::HORNET_1_DEFEATED) && !crate::enemies::cloak_waiting();
     game.pickups.collect(
         body,
@@ -586,6 +588,35 @@ pub fn interact(
     if paid > 0 {
         game.geo.take(paid, geo::GEO_PARAMS);
     }
+    // The stag network: the bell's toll, the stag's conversation and the trip to the next station.
+    let trip = stag::tick(
+        r.scene,
+        body,
+        can_inspect && !dialogue::open() && !game.shop_screen.open,
+        pad.bits(),
+        game.geo.wallet(),
+    );
+    if trip.pay > 0 {
+        game.geo.take(trip.pay, geo::GEO_PARAMS);
+    }
+    if let Some((scene, region, spawn)) = trip.depart {
+        // The trip leaves through the exit fade of a scene gate and arrives on the destination's platform.
+        game.exit = Some(Exit {
+            gate: world::Gate {
+                scene: r.scene,
+                target_scene: scene,
+                target_region: region,
+                bounds: [0; 4],
+                spawn,
+                entry_vy: 0,
+                side: 0,
+                delay_ticks: 0,
+            },
+            door_exit: false,
+            age: 0,
+            dir: 0,
+        });
+    }
     // The cooked FSM programs. Their trigger volumes take the
     // same hero body the NPC range does, so a script and an NPC
     // standing in the same place agree on where the Knight is.
@@ -593,7 +624,7 @@ pub fn interact(
     ambience::tick();
     let start = pad.is_held(button::START);
     let mut ui_consumed = game.paused;
-    if start && !game.start_held && !dialogue::open() && !game.shop_screen.open {
+    if start && !game.start_held && !dialogue::open() && !game.shop_screen.open && !stag::open_screen() {
         game.paused = !game.paused;
         ui_consumed = true;
         if game.paused {
@@ -673,6 +704,7 @@ pub fn interact(
     if game.paused
         || dialogue::open()
         || game.shop_screen.open
+        || stag::open_screen()
         || (game.door.pending() && !game.door.entering())
         || game.vitals.dead
         || !game.vitals.can_control()
@@ -707,6 +739,7 @@ pub fn menu_reads_pad(game: &Game) -> bool {
         || dialogue::open()
         || dialogue::consumes_actions()
         || game.shop_screen.consumes_actions()
+        || stag::consumes_actions()
         || game.save_prompt.is_some()
 }
 
@@ -723,6 +756,7 @@ pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
     game.door.reset();
     battle_gates::reset();
     interactables::invalidate();
+    stag::reset();
     music::boss(false);
     title_card::reset();
     blocker_roller::reset();
@@ -985,7 +1019,8 @@ pub fn simulate(
         *target = Some(game.safe.2);
     } else if !game.vitals.dead {
         let door_exit = game.door.tick(r.scene);
-        let read_consumes = dialogue::consumes_actions() || game.shop_screen.consumes_actions();
+        let read_consumes =
+            dialogue::consumes_actions() || game.shop_screen.consumes_actions() || stag::consumes_actions();
         // Source Spell Control: the cast button waits Button Down Time
         // for a release. Let go inside that and it casts; keep holding
         // and the Focus starts instead. One button, two moves.
@@ -1174,6 +1209,7 @@ pub fn simulate(
         let locked = game.focus.locks_control()
             || dialogue::open()
             || game.shop_screen.open
+            || stag::open_screen()
             || game.door.pending()
             || game.bench.locks_control()
             || game.save_prompt.is_some()

@@ -191,7 +191,8 @@ pub fn main(root: &Path, args: &[String], source: Option<&Path>) -> std::result:
             for o in sc.objects.iter().filter(|o| o.typename == name) {
                 let gid = o.tree.get("m_GameObject").and_then(|g| g.get("m_PathID")).and_then(Value::int).unwrap_or(0);
                 let go_name = sc.go(gid).and_then(|g| g.get("m_Name")).and_then(Value::str).unwrap_or_default();
-                println!("  {name} id {} on {go_name:?} gid {gid} path {}: {}", o.id, path_of(&sc, gid), dumps_sorted_compact(&value_json(&o.tree)));
+                let at = sc.point(gid, 0.0, 0.0, 0.0).map(|p| format!("({:.3}, {:.3}, {:.3})", p[0], p[1], p[2])).unwrap_or_default();
+                println!("  {name} id {} on {go_name:?} gid {gid} at {at} path {}: {}", o.id, path_of(&sc, gid), dumps_sorted_compact(&value_json(&o.tree)));
             }
         }
         if wanted.is_none() && like.is_empty() && component.is_none() {

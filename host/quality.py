@@ -296,6 +296,11 @@ SCENE_TABLE = (
      'runtime_bounds': [-2, -6, 92, 55], 'camera_global_bounds': [0, 0, 90, 50]},
     {'scene_id': 62, 'scene_name': 'Fungus1_04', 'file': 'level132',
      'runtime_bounds': [-2, -5, 97, 51], 'camera_global_bounds': [0, 0, 95, 50]},
+    # Dirtmouth's Stag Station: the stag's other end of the Crossroads line, so the two admitted stations
+    # can be ridden between. The envelope is the one tools/cook_scene_pack.py derives (the 70 by 35 tilemap
+    # at the origin plus its gates, padded); the whole-world recook is the check that the views fit.
+    {'scene_id': 63, 'scene_name': 'Room_Town_Stag_Station', 'file': 'level9',
+     'runtime_bounds': [-1, -5, 71, 36], 'camera_global_bounds': [0, 0, 70, 35]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)

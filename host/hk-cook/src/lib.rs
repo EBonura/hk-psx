@@ -50,6 +50,7 @@ pub mod hatcher;
 pub mod interact_census;
 pub mod interactables;
 pub mod language;
+pub mod stags;
 pub mod husk_guard;
 pub mod materials;
 pub mod mawlek;

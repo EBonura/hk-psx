@@ -338,44 +338,245 @@ pub fn targets(source: &Source, sc: &Scene) -> Result<Vec<Target>> {
 
 // ------------------------------------------------------------------ the scenes
 
-/// One admitted scene's interactables.
+pub const ROLES: usize = 7;
+pub const NO_CLIP: u16 = u16::MAX;
+/// The sheets one scene may carry (the guest keeps them in a bit set of this many).
+pub const MAX_SHEETS: usize = 128;
+const NONE_LOCAL: u8 = 255;
+
+/// The machines of `hk-sim switches.rs`, by the number the guest finds them under.
+pub const MACHINE_TOLL_SWITCH: u8 = 0;
+pub const MACHINE_SWITCH_CONTROL: u8 = 1;
+pub const MACHINE_TOLL_GATE: u8 = 2;
+pub const MACHINE_PILLAR: u8 = 3;
+pub const MACHINE_METAL_GATE: u8 = 4;
+pub const MACHINE_STAG_GRATE: u8 = 5;
+pub const MACHINE_STAG_BELL_BOX: u8 = 6;
+pub const MACHINE_STAG_BELL: u8 = 7;
+pub const MACHINE_STAG_BODY: u8 = 8;
+pub const MACHINE_STAG_ARRIVAL: u8 = 9;
+pub const MACHINE_STATIC: u8 = 10;
+
+/// One animated object of a scene, whatever machine drives it.
+#[derive(Clone, Debug)]
+pub struct Thing {
+    pub machine: u8,
+    pub name: String,
+    pub gid: i64,
+    pub position: [f64; 3],
+    pub scale: [f64; 2],
+    /// The nail's target (a switch or the bell), world box.
+    pub hit: Option<[f64; 4]>,
+    /// The persisted id of its `Activated` (255: none).
+    pub local: u8,
+    /// A solid terrain box the world cook baked, whose edges the machine lifts.
+    pub collider: Option<String>,
+    /// Clip name per role (Idle, Hit, Activated, Opening, Shake, Finish, Opened).
+    pub clips: [Option<String>; ROLES],
+    pub frame: u8,
+    /// Objects its events reach.
+    pub links: Vec<i64>,
+}
+
+/// One admitted scene's animated objects, switches first, then gates, then the stag station's.
 pub struct SceneSet {
     pub guest: usize,
     pub file: String,
     pub name: String,
-    pub switches: Vec<Switch>,
-    pub targets: Vec<Target>,
+    pub things: Vec<Thing>,
 }
 
-/// Every admitted scene that holds a switch or a target.
+fn role_clips(pairs: &[(usize, &str)]) -> [Option<String>; ROLES] {
+    let mut out: [Option<String>; ROLES] = Default::default();
+    for (role, name) in pairs {
+        out[*role] = Some((*name).to_owned());
+    }
+    out
+}
+
+const R_IDLE: usize = 0;
+const R_HIT: usize = 1;
+const R_ACTIVATED: usize = 2;
+const R_OPENING: usize = 3;
+const R_SHAKE: usize = 4;
+const R_FINISH: usize = 5;
+const R_OPENED: usize = 6;
+
+fn collider_of(sc: &Scene, gid: i64) -> Result<[f64; 4]> {
+    let all: Vec<_> = components(sc, gid)?.into_iter().filter(|c| c.1.ends_with("Collider2D")).collect();
+    if all.len() != 1 {
+        return err(format!("{} has {} colliders", ks(sc.go(gid).ok_or("go")?, "m_Name")?, all.len()));
+    }
+    let polys = collider_polygons(sc, gid, all[0].1, all[0].2)?;
+    let xs = polys.iter().flatten().map(|p| p.0);
+    let ys = polys.iter().flatten().map(|p| p.1);
+    Ok([py_min(xs.clone()), py_min(ys.clone()), py_max(xs), py_max(ys)])
+}
+
+/// The stag station's objects: grate, bell stand, bell, the stag and its arrival animations, the
+/// bell's front. Present whether or not they are active on a fresh save (the bell is not).
+fn station(source: &Source, sc: &Scene) -> Result<Vec<Thing>> {
+    let mut by_fsm: HashMap<String, i64> = HashMap::new();
+    for o in sc.objects.iter().filter(|o| o.typename == "PlayMakerFSM") {
+        let name = fsm_name(&o.tree)?;
+        if matches!(name.as_str(), "Stag Control" | "Stag Bell" | "Bell Control" | "Grate Control") {
+            let gid = crate::common::go_of(&o.tree).ok_or("fsm without object")?;
+            if by_fsm.insert(name.clone(), gid).is_some() {
+                return err(format!("a scene with two {name} FSMs"));
+            }
+        }
+    }
+    if by_fsm.is_empty() {
+        return Ok(vec![]);
+    }
+    let get = |n: &str| by_fsm.get(n).copied().ok_or_else(|| format!("a stag station without its {n}"));
+    let (body, box_, bell, grate) = (get("Stag Control")?, get("Stag Bell")?, get("Bell Control")?, get("Grate Control")?);
+    let fsm_of = |gid: i64, name: &str| -> Result<&Value> {
+        let o = sc
+            .objects
+            .iter()
+            .find(|o| o.typename == "PlayMakerFSM" && crate::common::go_of(&o.tree) == Some(gid) && fsm_name(&o.tree).as_deref() == Ok(name))
+            .ok_or("no such FSM")?;
+        k(&o.tree, "fsm")
+    };
+    let body_kids = crate::common::kids(sc, body)?;
+    let box_kids = crate::common::kids(sc, box_)?;
+    let kid = |kids: &[(String, i64)], name: &str| crate::common::kid(kids, name).ok_or_else(|| format!("no {name} child"));
+    let (anim, dust, front) = (kid(&body_kids, "Arrival Anim")?, kid(&body_kids, "Arrival Dust")?, kid(&box_kids, "Front")?);
+    if kid(&box_kids, "Bell")? != bell {
+        return err("the bell stand's Bell child is not the Bell Control object");
+    }
+    let idle = |gid: i64| -> Result<String> {
+        let (_, animator) = art_parts(sc, gid)?;
+        default_clip(source, sc, animator)
+    };
+    let make = |machine: u8, gid: i64, hit: Option<[f64; 4]>, clips: [Option<String>; ROLES], links: Vec<i64>| -> Result<Thing> {
+        let (position, scale) = placed(sc, gid)?;
+        Ok(Thing {
+            machine,
+            name: ks(sc.go(gid).ok_or("go")?, "m_Name")?,
+            gid,
+            position,
+            scale,
+            hit,
+            local: NONE_LOCAL,
+            collider: None,
+            clips,
+            frame: 0,
+            links,
+        })
+    };
+    let grate_fsm = fsm_of(grate, "Grate Control")?;
+    let box_fsm = fsm_of(box_, "Stag Bell")?;
+    let bell_fsm = fsm_of(bell, "Bell Control")?;
+    Ok(vec![
+        make(
+            MACHINE_STAG_GRATE,
+            grate,
+            None,
+            role_clips(&[(R_IDLE, &idle(grate)?), (R_OPENING, &clip_of_state(grate_fsm, "Grate Control", "Open")?)]),
+            vec![],
+        )?,
+        make(
+            MACHINE_STAG_BELL_BOX,
+            box_,
+            None,
+            role_clips(&[
+                (R_IDLE, &idle(box_)?),
+                (R_OPENING, &clip_of_state(box_fsm, "Stag Bell", "Box Disappear Anim")?),
+                (R_SHAKE, &clip_of_state(box_fsm, "Stag Bell", "Bell Up")?),
+                (R_OPENED, &clip_of_state(box_fsm, "Stag Bell", "Opened")?),
+            ]),
+            vec![grate, bell],
+        )?,
+        make(
+            MACHINE_STAG_BELL,
+            bell,
+            Some(collider_of(sc, bell)?),
+            role_clips(&[(R_IDLE, &idle(bell)?), (R_OPENING, &clip_of_state(bell_fsm, "Bell Control", "Ring R")?)]),
+            vec![body, anim, dust],
+        )?,
+        make(MACHINE_STAG_BODY, body, None, role_clips(&[(R_IDLE, &idle(body)?)]), vec![])?,
+        make(MACHINE_STAG_ARRIVAL, anim, None, role_clips(&[(R_OPENING, &idle(anim)?)]), vec![body])?,
+        make(MACHINE_STAG_ARRIVAL, dust, None, role_clips(&[(R_OPENING, &idle(dust)?)]), vec![])?,
+        make(MACHINE_STATIC, front, None, role_clips(&[(R_IDLE, &idle(front)?)]), vec![])?,
+    ])
+}
+
+/// Every animated object of one scene, in the order the guest numbers them.
+fn things_of(source: &Source, sc: &Scene) -> Result<Vec<Thing>> {
+    let mut out = Vec::new();
+    let sw = switches(source, sc)?;
+    let tg: Vec<Target> = targets(source, sc)?.into_iter().filter(|t| t.active).collect();
+    for (si, s) in sw.iter().enumerate() {
+        for t in &s.targets {
+            if !tg.iter().any(|x| x.gid == *t) {
+                return err(format!("switch {:?} opens object {t}, which no cooked target is", s.name));
+            }
+        }
+        out.push(Thing {
+            machine: if s.kind == SwitchKind::Toll { MACHINE_TOLL_SWITCH } else { MACHINE_SWITCH_CONTROL },
+            name: s.name.clone(),
+            gid: s.gid,
+            position: s.position,
+            scale: s.scale,
+            hit: Some(s.hit_box),
+            local: si as u8,
+            collider: None,
+            clips: role_clips(&[(R_IDLE, &s.idle), (R_HIT, &s.hit), (R_ACTIVATED, &s.activated)]),
+            frame: s.activated_frame.unwrap_or(0) as u8,
+            links: s.targets.clone(),
+        });
+    }
+    for (ti, t) in tg.iter().enumerate() {
+        let mut clips = role_clips(&[(R_IDLE, &t.idle)]);
+        for (role, clip) in &t.clips {
+            let at = match role.as_str() {
+                "Opening" => R_OPENING,
+                "Shake" => R_SHAKE,
+                "Finish" => R_FINISH,
+                _ => R_OPENED,
+            };
+            clips[at] = Some(clip.clone());
+        }
+        let (machine, local) = match t.kind {
+            TargetKind::TollGate => (MACHINE_TOLL_GATE, NONE_LOCAL),
+            TargetKind::Pillar => (MACHINE_PILLAR, (8 + ti) as u8),
+            TargetKind::MetalGate => (MACHINE_METAL_GATE, NONE_LOCAL),
+        };
+        out.push(Thing {
+            machine,
+            name: t.name.clone(),
+            gid: t.gid,
+            position: t.position,
+            scale: t.scale,
+            hit: None,
+            local,
+            collider: Some(t.collider_source.clone()),
+            clips,
+            frame: 0,
+            links: vec![],
+        });
+    }
+    out.extend(station(source, sc)?);
+    Ok(out)
+}
+
+/// Every admitted scene that holds an animated object.
 pub fn survey(source: &Source) -> Result<Vec<SceneSet>> {
     let mut out = Vec::new();
     for row in crate::quality::SCENE_TABLE.iter() {
         let sc = Scene::new(source, row.file).map_err(|e| e.to_string())?;
-        let switches = switches(source, &sc)?;
-        let targets: Vec<Target> = targets(source, &sc)?.into_iter().filter(|t| t.active).collect();
-        if switches.is_empty() && targets.is_empty() {
+        let things = things_of(source, &sc)?;
+        if things.is_empty() {
             continue;
         }
-        for s in &switches {
-            for t in &s.targets {
-                // A target that is not a gate, pillar or toll gate of this table (the town's lift) is the
-                // lift's business; a switch that points at nothing known is refused.
-                if !targets.iter().any(|x| x.gid == *t) {
-                    return err(format!("{}: switch {:?} opens object {t}, which no cooked target is", row.scene_name, s.name));
-                }
-            }
-        }
-        out.push(SceneSet { guest: row.scene_id, file: row.file.to_owned(), name: row.scene_name.to_owned(), switches, targets });
+        out.push(SceneSet { guest: row.scene_id, file: row.file.to_owned(), name: row.scene_name.to_owned(), things });
     }
     Ok(out)
 }
 
 // ------------------------------------------------------------------ art
-
-/// The clips an instance plays, by role: Idle, Hit, Activated, Opening, Shake, Finish, Opened.
-pub const ROLES: usize = 7;
-pub const NO_CLIP: u16 = u16::MAX;
 
 /// One sprite at one object scale, cut into pieces of at most one slot.
 #[derive(Clone, Debug)]
@@ -417,33 +618,31 @@ impl SceneArt {
     }
 }
 
-/// An object to cook art for: its animator's library, scale and the clips it plays.
-struct Wanted {
-    library: Obj,
-    scale: [f64; 2],
-    clips: Vec<String>,
-}
-
-fn wanted(source: &Source, sc: &Scene, gid: i64, scale: [f64; 2], clips: Vec<String>) -> Result<Wanted> {
+fn library_of(source: &Source, sc: &Scene, gid: i64) -> Result<Obj> {
     let (_, animator) = art_parts(sc, gid)?;
-    let library = source.deref(&sc.base, k(animator, "library")?).map_err(|e| e.to_string())?;
-    Ok(Wanted { library, scale, clips })
+    source.deref(&sc.base, k(animator, "library")?).map_err(|e| e.to_string())
 }
 
-fn objects_of(source: &Source, sc: &Scene, set: &SceneSet) -> Result<Vec<Wanted>> {
-    let mut out = Vec::new();
-    for s in &set.switches {
-        out.push(wanted(source, sc, s.gid, s.scale, vec![s.idle.clone(), s.hit.clone(), s.activated.clone()])?);
-    }
-    for t in &set.targets {
-        let mut clips = vec![t.idle.clone()];
-        clips.extend(t.clips.iter().map(|c| c.1.clone()));
-        out.push(wanted(source, sc, t.gid, t.scale, clips)?);
-    }
-    Ok(out)
+/// The most pieces (64x64 tiles) one clip may cost before it plays on a stride (see `scene_art`).
+pub const MAX_CLIP_PIECES: usize = 40;
+
+/// How many pieces a sprite cuts into at an object scale: its mesh box at the gameplay plane's scale.
+fn piece_count(collection: &Value, id: i64, object: [f64; 2], scale: f64) -> Result<usize> {
+    let d = collection
+        .get("spriteDefinitions")
+        .and_then(Value::list)
+        .and_then(|l| l.get(id as usize))
+        .ok_or("sprite index out of range")?;
+    let positions = d.get("positions").and_then(Value::list).ok_or("sprite positions")?;
+    let xs: Vec<f64> = positions.iter().filter_map(|p| p.get("x").and_then(Value::float)).collect();
+    let ys: Vec<f64> = positions.iter().filter_map(|p| p.get("y").and_then(Value::float)).collect();
+    let w = (((py_max(xs.iter().copied()) - py_min(xs.iter().copied())) * object[0].abs() * scale).ceil() as usize).max(1);
+    let h = (((py_max(ys.iter().copied()) - py_min(ys.iter().copied())) * object[1].abs() * scale).ceil() as usize).max(1);
+    let slot = crate::atlas::SLOT_PIXELS;
+    Ok(w.div_ceil(slot) * h.div_ceil(slot))
 }
 
-/// Cut a scene's interactables out of the tk2d collections and pack them into sheets.
+/// Cut a scene's objects out of the tk2d collections and pack them into sheets.
 pub fn scene_art(source: &Source, sc: &Scene, set: &SceneSet) -> Result<SceneArt> {
     use crate::battle_gates::pack_images;
     let scale = focal() / -CAM_Z;
@@ -454,11 +653,12 @@ pub fn scene_art(source: &Source, sc: &Scene, set: &SceneSet) -> Result<SceneArt
     let mut variant_order: Vec<(Obj, i64, [f64; 2])> = Vec::new();
     let mut clips: Vec<ClipRec> = Vec::new();
     let mut index = HashMap::new();
-    for w in objects_of(source, sc, set)? {
-        let library = source.read(&w.library).map_err(|e| e.to_string())?;
-        let lib_sid = w.library.sid();
-        for name in &w.clips {
-            let key = (lib_sid.clone(), name.clone(), w.scale[0].abs().to_bits(), w.scale[1].abs().to_bits());
+    for t in &set.things {
+        let library_o = library_of(source, sc, t.gid)?;
+        let library = source.read(&library_o).map_err(|e| e.to_string())?;
+        let lib_sid = library_o.sid();
+        for name in t.clips.iter().flatten() {
+            let key = (lib_sid.clone(), name.clone(), t.scale[0].abs().to_bits(), t.scale[1].abs().to_bits());
             if index.contains_key(&key) {
                 continue;
             }
@@ -469,18 +669,42 @@ pub fn scene_art(source: &Source, sc: &Scene, set: &SceneSet) -> Result<SceneArt
                 .ok_or_else(|| format!("{lib_sid} has no clip {name:?}"))?;
             let wrap = clip.get("wrapMode").and_then(Value::int).unwrap_or(-1);
             let fps = clip.get("fps").and_then(Value::float).unwrap_or(0.0);
-            if fps != fps.trunc() || !(0.0..256.0).contains(&fps) || !matches!(wrap, 0 | 2 | 6) {
-                return err(format!("interactable clip {name:?} is not a whole-rate loop or play-once clip"));
+            if fps != fps.trunc() || !(0.0..256.0).contains(&fps) || !matches!(wrap, 0 | 1 | 2 | 6) {
+                return err(format!("interactable clip {name:?} is not a whole-rate loop or play-once clip (fps {fps}, wrap {wrap})"));
             }
-            let mut sprites = Vec::new();
+            let mut frames: Vec<(Obj, i64)> = Vec::new();
             for frame in kl(clip, "frames")? {
-                let co = source.deref(&w.library.file, k(frame, "spriteCollection")?).map_err(|e| e.to_string())?;
-                let id = ki(frame, "spriteId")?;
-                let vk = (co.sid(), id, w.scale[0].abs().to_bits(), w.scale[1].abs().to_bits());
+                let co = source.deref(&library_o.file, k(frame, "spriteCollection")?).map_err(|e| e.to_string())?;
+                frames.push((co, ki(frame, "spriteId")?));
+            }
+            // A clip whose frames would cost more than MAX_CLIP_PIECES pieces plays every stride-th frame
+            // (and its last), each held for the frames it stands in for: the timing is the source's, the
+            // stepping is coarser. Only the stag's big sprites reach it.
+            let mut cost = 0;
+            let mut seen = std::collections::BTreeSet::new();
+            for (co, id) in &frames {
+                if seen.insert((co.sid(), *id)) {
+                    let sid = co.sid();
+                    if !collections.contains_key(&sid) {
+                        collections.insert(sid.clone(), source.read(co).map_err(|e| e.to_string())?);
+                    }
+                    cost += piece_count(&collections[&sid], *id, t.scale, scale)?;
+                }
+            }
+            let stride = cost.div_ceil(MAX_CLIP_PIECES).max(1);
+            let last = frames.len().saturating_sub(1);
+            let mut sprites = Vec::new();
+            for f in 0..frames.len() {
+                let mut src = f / stride * stride;
+                if stride > 1 && f == last {
+                    src = last;
+                }
+                let (co, id) = &frames[src];
+                let vk = (co.sid(), *id, t.scale[0].abs().to_bits(), t.scale[1].abs().to_bits());
                 let at = match variants.get(&vk) {
                     Some(&at) => at,
                     None => {
-                        variant_order.push((co.clone(), id, w.scale));
+                        variant_order.push((co.clone(), *id, t.scale));
                         variants.insert(vk, variant_order.len() - 1);
                         variant_order.len() - 1
                     }
@@ -532,8 +756,26 @@ pub fn scene_art(source: &Source, sc: &Scene, set: &SceneSet) -> Result<SceneArt
         p.sheet = r[0];
         p.rect = [r[1], r[2], r[3], r[4]];
     }
-    if sheets.len() > 32 {
-        return err(format!("{} interactable sheets in one scene exceed the guest's 32", sheets.len()));
+    if sheets.len() > MAX_SHEETS {
+        let mut big: Vec<(usize, usize)> = sprites.iter().enumerate().map(|(i, s)| (s.count, i)).collect();
+        big.sort_unstable_by(|a, b| b.cmp(a));
+        let by_clip: Vec<String> = index
+            .iter()
+            .map(|((lib, name, _, _), &c)| {
+                let sp: std::collections::BTreeSet<usize> = clips[c].sprites.iter().copied().collect();
+                let pcs: usize = sp.iter().map(|&i| sprites[i].count).sum();
+                format!("{name}: {} frames, {} sprites, {} pieces ({lib})", clips[c].sprites.len(), sp.len(), pcs)
+            })
+            .collect();
+        eprintln!("{}", by_clip.join("\n"));
+        let detail: Vec<String> = big.iter().take(6).map(|(n, i)| format!("sprite {i} {} pieces ({}x{})", n, variant_order[*i].0.sid(), variant_order[*i].1)).collect();
+        return err(format!(
+            "{} interactable sheets in one scene exceed the guest's {MAX_SHEETS} ({} sprites, {} pieces; {})",
+            sheets.len(),
+            sprites.len(),
+            pieces.len(),
+            detail.join(", ")
+        ));
     }
     Ok(SceneArt { sheets, clips, sprites, pieces, index })
 }
@@ -557,12 +799,6 @@ pub fn cook_sheets(source: &Source, dir: &Path) -> Result<Vec<(String, Vec<(usiz
 
 // ------------------------------------------------------------------ tables
 
-const MACHINE_TOLL_SWITCH: u8 = 0;
-const MACHINE_SWITCH_CONTROL: u8 = 1;
-const MACHINE_TOLL_GATE: u8 = 2;
-const MACHINE_PILLAR: u8 = 3;
-const MACHINE_METAL_GATE: u8 = 4;
-
 fn q16(v: f64) -> i64 {
     crate::common::py_round(v * 65536.0)
 }
@@ -579,7 +815,7 @@ fn other_edges(root: &Path) -> HashMap<usize, usize> {
     spent
 }
 
-/// Generate `data/interactables.rs` and `.hkpsx/interactables.json` from the source scenes and the region report.
+/// Generate `data/interactables.rs` and `.hkpsx/interactables.txt` from the source scenes and the region report.
 pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
     use std::fmt::Write;
     let source = match source {
@@ -591,16 +827,14 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         .map_err(|e| e.to_string())?;
     let regions = report["regions"].as_array().ok_or("regions")?;
     let sets = survey(&source)?;
-    // Global tables.
-    let mut switch_rows = String::new();
-    let mut target_rows = String::new();
+    let mut object_rows = String::new();
     let mut links: Vec<u8> = Vec::new();
     let mut clip_rows = String::new();
     let mut clip_sprites: Vec<usize> = Vec::new();
     let mut sprite_rows = String::new();
     let mut piece_rows = String::new();
-    let (mut n_switch, mut n_target, mut n_clip, mut n_sprite, mut n_piece) = (0usize, 0usize, 0usize, 0usize, 0usize);
-    // (scene, first global target, collider source) for the edge join.
+    let (mut n_object, mut n_clip, mut n_sprite, mut n_piece) = (0usize, 0usize, 0usize, 0usize);
+    // (scene, global object, collider source) for the edge join.
     let mut colliders: Vec<(usize, usize, String)> = Vec::new();
     let mut art_rows: Vec<(usize, usize)> = Vec::new();
     let mut summary = Vec::new();
@@ -622,66 +856,42 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
             clip_sprites.extend(c.sprites.iter().map(|s| sprite_base + s));
         }
         n_clip += art.clips.len();
-        let target_base = n_target;
-        let scene_target = |gid: i64| set.targets.iter().position(|t| t.gid == gid).unwrap();
-        for (si, s) in set.switches.iter().enumerate() {
-            let lib = switch_library(&source, &sc, s.gid)?;
+        for t in &set.things {
+            let lib = library_of(&source, &sc, t.gid)?.sid();
             let mut clips = [NO_CLIP; ROLES];
-            clips[0] = art.clip(&lib, &s.idle, s.scale)?;
-            clips[1] = art.clip(&lib, &s.hit, s.scale)?;
-            clips[2] = art.clip(&lib, &s.activated, s.scale)?;
-            let machine = if s.kind == SwitchKind::Toll { MACHINE_TOLL_SWITCH } else { MACHINE_SWITCH_CONTROL };
-            let link_first = links.len();
-            links.extend(s.targets.iter().map(|g| scene_target(*g) as u8));
-            let flip = (s.scale[0] < 0.0) as u8 | ((s.scale[1] < 0.0) as u8) << 1;
-            write!(
-                switch_rows,
-                "Switch{{scene:{},local:{},machine:{machine},flip:{flip},pos:[{},{}],hit:[{},{},{},{}],clips:[{}],frame:{},links:{link_first},link_count:{}}},",
-                set.guest,
-                si,
-                q16(s.position[0]),
-                q16(s.position[1]),
-                q16(s.hit_box[0]),
-                q16(s.hit_box[1]),
-                q16(s.hit_box[2]),
-                q16(s.hit_box[3]),
-                clips.iter().map(|c| if *c == NO_CLIP { "NO_CLIP".to_owned() } else { (clip_base + *c as usize).to_string() }).collect::<Vec<_>>().join(","),
-                s.activated_frame.unwrap_or(0),
-                s.targets.len()
-            )
-            .unwrap();
-            n_switch += 1;
-        }
-        for (ti, t) in set.targets.iter().enumerate() {
-            let lib = target_library(&source, &sc, t.gid)?;
-            let mut clips = [NO_CLIP; ROLES];
-            clips[0] = art.clip(&lib, &t.idle, t.scale)?;
-            let role_of = |name: &str| match name {
-                "Opening" => 3,
-                "Shake" => 4,
-                "Finish" => 5,
-                _ => 6,
-            };
-            for (role, clip) in &t.clips {
-                clips[role_of(role)] = art.clip(&lib, clip, t.scale)?;
+            for (role, name) in t.clips.iter().enumerate() {
+                if let Some(name) = name {
+                    clips[role] = (clip_base + art.clip(&lib, name, t.scale)? as usize) as u16;
+                }
             }
-            let (machine, local) = match t.kind {
-                TargetKind::TollGate => (MACHINE_TOLL_GATE, 255usize),
-                TargetKind::Pillar => (MACHINE_PILLAR, 8 + ti),
-                TargetKind::MetalGate => (MACHINE_METAL_GATE, 255),
-            };
+            let link_first = links.len();
+            for g in &t.links {
+                let at = set.things.iter().position(|x| x.gid == *g).ok_or("a link to an object this scene does not cook")?;
+                links.push(at as u8);
+            }
             let flip = (t.scale[0] < 0.0) as u8 | ((t.scale[1] < 0.0) as u8) << 1;
+            let hit = t.hit.unwrap_or([0.0; 4]);
             write!(
-                target_rows,
-                "Target{{scene:{},local:{local},machine:{machine},flip:{flip},pos:[{},{}],clips:[{}]}},",
+                object_rows,
+                "Obj{{scene:{},local:{},machine:{},flip:{flip},pos:[{},{}],hit:[{},{},{},{}],clips:[{}],frame:{},links:{link_first},link_count:{}}},",
                 set.guest,
+                t.local,
+                t.machine,
                 q16(t.position[0]),
                 q16(t.position[1]),
-                clips.iter().map(|c| if *c == NO_CLIP { "NO_CLIP".to_owned() } else { (clip_base + *c as usize).to_string() }).collect::<Vec<_>>().join(",")
+                q16(hit[0]),
+                q16(hit[1]),
+                q16(hit[2]),
+                q16(hit[3]),
+                clips.iter().map(|c| if *c == NO_CLIP { "NO_CLIP".to_owned() } else { c.to_string() }).collect::<Vec<_>>().join(","),
+                t.frame,
+                t.links.len()
             )
             .unwrap();
-            colliders.push((set.guest, target_base + ti, t.collider_source.clone()));
-            n_target += 1;
+            if let Some(c) = &t.collider {
+                colliders.push((set.guest, n_object, c.clone()));
+            }
+            n_object += 1;
         }
         // The view frames of this scene's sheets.
         let mut frames = 0;
@@ -699,10 +909,9 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
             frames += 1;
         }
         summary.push(format!(
-            "{}: {} switches, {} targets, {} sheets, {} pieces, {} clips, {frames} views",
+            "{}: {} objects, {} sheets, {} pieces, {} clips, {frames} views",
             set.name,
-            set.switches.len(),
-            set.targets.len(),
+            set.things.len(),
             art.sheets.len(),
             art.pieces.len(),
             art.clips.len()
@@ -737,17 +946,17 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
             edge_list.extend(edges);
         }
     }
-    let unbound: Vec<usize> = (0..n_target).filter(|t| !bound.contains(t)).collect();
+    let unbound: Vec<usize> = colliders.iter().map(|c| c.1).filter(|t| !bound.contains(t)).collect();
+    let most = sets.iter().map(|s| s.things.len()).max().unwrap_or(1).max(1);
     let mut lines = vec![
-        "// Generated from the source switch, gate and pillar FSMs and the cooked region edge sources.".to_owned(),
+        "// Generated from the source switch, gate, pillar and stag station FSMs and the cooked region edge sources.".to_owned(),
         "// host/hk-cook/src/interactables.rs is the generator.".to_owned(),
         "pub const NO_CLIP:u16=65535;".to_owned(),
-        "/// The most switches and targets one scene holds: the guest sizes its scene state by them.".to_owned(),
-        format!("pub const SCENE_SWITCHES:usize={};", sets.iter().map(|s| s.switches.len()).max().unwrap_or(1).max(1)),
-        format!("pub const SCENE_TARGETS:usize={};", sets.iter().map(|s| s.targets.len()).max().unwrap_or(1).max(1)),
-        format!("pub static SWITCHES:[Switch;{n_switch}]=[{switch_rows}];"),
-        format!("pub static TARGETS:[Target;{n_target}]=[{target_rows}];"),
-        "/// Per switch: the scene-local indices (into its scene's targets, in table order) it sends to.".to_owned(),
+        "/// The most objects one scene holds: the guest sizes its scene state by it.".to_owned(),
+        format!("pub const SCENE_OBJECTS:usize={most};"),
+        "/// Every animated object, sorted by scene: the machine (hk-sim switches.rs) that drives it, its persisted id,".to_owned(),
+        "/// the clip of each role, and the scene-local objects its events reach (LINKS).".to_owned(),
+        format!("pub static OBJECTS:[Obj;{n_object}]=[{object_rows}];"),
         format!("pub static LINKS:[u8;{}]=[{}];", links.len(), links.iter().map(u8::to_string).collect::<Vec<_>>().join(",")),
         format!("pub static CLIPS:[Clip;{n_clip}]=[{clip_rows}];"),
         format!("pub static CLIP_SPRITES:[u16;{}]=[{}];", clip_sprites.len(), clip_sprites.iter().map(usize::to_string).collect::<Vec<_>>().join(",")),
@@ -757,7 +966,7 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         format!("pub static PIECES:[(u8,[u8;4],[i32;4]);{n_piece}]=[{piece_rows}];"),
         "/// (catalogue slot, first sheet frame of that view's actor bank).".to_owned(),
         format!("pub static ART:&[(u16,u16)]=&[{}];", art_rows.iter().map(|(s, f)| format!("({s},{f}),")).collect::<String>()),
-        "/// (catalogue slot, target, first, count into EDGE_LIST): the terrain edges the target stands in.".to_owned(),
+        "/// (catalogue slot, object, first, count into EDGE_LIST): the terrain edges the object stands in.".to_owned(),
         format!("pub static EDGES:&[(u16,u8,u16,u8)]=&[{edge_rows}];"),
         format!("pub static EDGE_LIST:&[u16]=&[{}];", edge_list.iter().map(usize::to_string).collect::<Vec<_>>().join(",")),
     ];
@@ -768,18 +977,9 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
     std::fs::write(root.join(".hkpsx/interactables.txt"), &text).map_err(|e| e.to_string())?;
     print!("{text}");
     if !unbound.is_empty() {
-        println!("  note: {} targets have no cooked terrain in any region: {unbound:?}", unbound.len());
+        println!("  note: {} objects have no cooked terrain in any region: {unbound:?}", unbound.len());
     }
     Ok(())
-}
-
-fn switch_library(source: &Source, sc: &Scene, gid: i64) -> Result<String> {
-    let (_, animator) = art_parts(sc, gid)?;
-    Ok(source.deref(&sc.base, k(animator, "library")?).map_err(|e| e.to_string())?.sid())
-}
-
-fn target_library(source: &Source, sc: &Scene, gid: i64) -> Result<String> {
-    switch_library(source, sc, gid)
 }
 
 /// Print what the scenes hold (development report; the tables come from `main`).
@@ -790,6 +990,7 @@ pub fn report(root: &Path, scenes: &[String]) -> Result<()> {
             .iter()
             .find(|r| r.scene_name == name.as_str())
             .map(|r| r.file.to_owned())
+            .or_else(|| hk_unity::scene::build_settings(&source).ok().and_then(|m| m.get(name).cloned()))
             .unwrap_or_else(|| name.clone());
         let sc = Scene::new(&source, &file).map_err(|e| e.to_string())?;
         for s in switches(&source, &sc)? {
@@ -805,6 +1006,9 @@ pub fn report(root: &Path, scenes: &[String]) -> Result<()> {
             println!("{name}: target {:?} {:?} gid {} at {:?} scale {:?} box {:?} idle {:?} clips {:?} active {} collider {} digest {digest}",
                 t.kind, t.name, t.gid, t.position, t.scale, t.box_, t.idle, t.clips, t.active, t.collider_source);
         }
+        for t in station(&source, &sc)? {
+            println!("{name}: station object machine {} {:?} gid {} at {:?} scale {:?} hit {:?} clips {:?} links {:?}", t.machine, t.name, t.gid, t.position, t.scale, t.hit, t.clips, t.links);
+        }
     }
     for set in survey(&source)? {
         if !scenes.is_empty() && !scenes.contains(&set.name) {
@@ -815,14 +1019,6 @@ pub fn report(root: &Path, scenes: &[String]) -> Result<()> {
         let texels: usize = art.pieces.iter().map(|p| p.rect[2] * p.rect[3]).sum();
         let sheet_texels: usize = art.sheets.iter().map(|i| i.width * i.height).sum();
         println!("{}: art {} sheets ({} texels of {} on sheets), {} pieces, {} sprites, {} clips", set.name, art.sheets.len(), texels, sheet_texels, art.pieces.len(), art.sprites.len(), art.clips.len());
-        for (i, c) in art.clips.iter().enumerate() {
-            println!("   clip {i}: fps {} loop {} sprites {:?}", c.fps, c.looping, c.sprites);
-        }
-        for (i, sp) in art.sprites.iter().enumerate() {
-            let w: usize = art.pieces[sp.first..sp.first + sp.count].iter().map(|p| p.rect[2]).max().unwrap_or(0);
-            println!("   sprite {i}: {} pieces first {} (piece0 {:?})", sp.count, sp.first, art.pieces[sp.first].rect);
-            let _ = w;
-        }
     }
     Ok(())
 }

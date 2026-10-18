@@ -23,6 +23,7 @@ fn main() {
         Some("blocker-terrain") => hk_cook::blocker_terrain::main(&root, source.as_deref()),
         Some("sheet-art") => hk_cook::battle_gates::cook_art(&root),
         Some("interactables") => hk_cook::interactables::main(&root, source.as_deref()),
+        Some("stags") => hk_cook::stags::main(&root, source.as_deref()),
         Some("language") => hk_cook::language::main(&root, &args[2..]),
         Some("interact-report") => hk_cook::interactables::report(&root, &args[2..]),
         Some("interact-census") => hk_cook::interact_census::main(&root, &args[2..], source.as_deref()),
