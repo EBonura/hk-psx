@@ -726,7 +726,8 @@ const INSTALL_WORDS: usize = 1024;
 /// this many times the in-game budget (still a few milliseconds, well inside a VBlank).
 static mut AT_GATE: bool = false;
 fn gate_scale() -> usize {
-    if unsafe { AT_GATE } {
+    // HK_NO_GATE_SLICES: study builds keep the in-game budget at a gate.
+    if unsafe { AT_GATE } && option_env!("HK_NO_GATE_SLICES").is_none() {
         4
     } else {
         1
@@ -1430,7 +1431,7 @@ pub fn admit_art(scene: usize) -> bool {
         crate::disc::pool_wait();
         while pf().state != Pf::Idle {
             crate::input::checkpoint();
-            pool_service(POOL_WORDS * 4);
+            pool_service(POOL_WORDS * if option_env!("HK_NO_GATE_SLICES").is_none() { 4 } else { 1 });
         }
     }
     unsafe {
