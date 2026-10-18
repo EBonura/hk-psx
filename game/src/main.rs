@@ -11,6 +11,11 @@ use psx_pad::{button, ButtonState};
 use psx_telemetry::{counter, emit, stage, task};
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
+/// Where a new game starts: x and y in Q16 world units (the `top1` gate of
+/// Tutorial_01 at x 34.5, just inside the scene's top edge y 92) and the global
+/// region whose activation bounds hold that point (regions.json index 78, chunk
+/// 79: x 24..48, y 91..100). The drop to SPAWN is a straight fall in the shaft.
+const NEW_GAME_ENTRY: (i32, i32, usize) = (34 * 65536 + 32768, 92 * 65536, 78);
 mod ability_art;
 mod ambience;
 mod animation_cache;
@@ -65,6 +70,8 @@ mod cheats;
 mod decor;
 mod dialogue;
 mod dialogue_art;
+#[cfg(feature = "intro")]
+mod intro;
 mod disc;
 mod display;
 mod draw_packet;
@@ -819,7 +826,23 @@ fn main() {
         geo_render::upload(boot);
         lifeblood::upload(boot);
     }
-    let (settings, profile) = menu::run(&mut fb, art, &slot_lines, profile_fault);
+    // A new game back from the opening movies (intro.rs) skips the title it
+    // already went through, with the choices it made there.
+    #[cfg(feature = "intro")]
+    let resumed = intro::take();
+    #[cfg(not(feature = "intro"))]
+    let resumed: Option<(menu::Settings, usize)> = None;
+    let (settings, profile) = match resumed {
+        Some((settings, profile)) => {
+            audio::set_volume(settings.sfx);
+            ambience::set_volume(settings.ambience);
+            music::set_volume(settings.music);
+            display::set_brightness(settings.brightness);
+            display::set_screen(settings.screen_x, settings.screen_y);
+            (settings, profile)
+        }
+        None => menu::run(&mut fb, art, &slot_lines, profile_fault),
+    };
     focus_audio::set_volume(settings.sfx);
     menu::loading(&mut fb);
     #[cfg(feature = "card-diag")]
@@ -835,6 +858,14 @@ fn main() {
         (s.region as usize) < world::REGION_SCENES.len()
             && world::scene_of(s.region as usize) == s.scene as usize
     });
+    // A new game on a disc that carries the movies plays them first and comes
+    // back here with `resumed` set. Never returns when it leaves.
+    #[cfg(feature = "intro")]
+    if saved.is_none() && resumed.is_none() {
+        if let Some(boot) = art {
+            intro::launch(boot, &settings, profile);
+        }
+    }
     // Sly's half of PlayerData before the charm board, and both before the
     // first Vitals: a mask a shard fuse bought is `maxHealthBase` and Fragile
     // Heart adds to it, so the base has to be in place before anything reads
@@ -927,6 +958,17 @@ fn main() {
         game.door.restore(s.door_hits);
         game.shade.restore(s.shade);
         game.shade.carry(None);
+    } else if resumed.is_some() && world::scene_of(NEW_GAME_ENTRY.2) == 0 {
+        // A new game that went through the opening movies (intro.rs) enters King's
+        // Pass the way the source's opening does: `GameManager.OnWillActivateFirstLevel`
+        // sets the entry gate to `top1` (Tutorial_01, (34.5, 93.5)) and the Knight
+        // drops down the shaft onto the ledge his death respawn marker (SPAWN) stands
+        // on. Dying before a bench still respawns at the marker, which `game.safe`
+        // keeps. A build without the player (the replay gates and every recorded
+        // tape start a new game from the title) keeps starting on the ledge, so its
+        // tapes stay as recorded until they are converted to state-driven routes.
+        game.player = Player::spawn(NEW_GAME_ENTRY.0, NEW_GAME_ENTRY.1);
+        game.region_id = NEW_GAME_ENTRY.2;
     }
     // After the Game exists, whether or not a save loaded: a new game hands
     // over an empty store and changes nothing.

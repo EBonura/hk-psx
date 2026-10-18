@@ -1,0 +1,20 @@
+[package]
+name = "hk-intro-cook"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Encodes the two opening cinematics of the user's own Hollow Knight install for the PS1 intro program"
+
+# Its own workspace: the repository root is the PS1 game's, and ../Cargo.toml
+# is the host tools' (this cooker needs the SDK, which they do not).
+[workspace]
+
+[dependencies]
+# The movies are measured with the SDK's own bitstream decoder, so a stream
+# the player cannot decode fails the build rather than the console.
+psx-fmv = { path = "../../.psoxide/sdk/crates/psx-fmv" }
+# The clips are read out of the install through the repository's Unity reader.
+hk-unity = { path = "../hk-unity" }
+
+[profile.release]
+codegen-units = 1

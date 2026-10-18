@@ -36,6 +36,9 @@ hornet = ["hk-sim/boss"]
 # Scene-load poll telemetry (input.rs HK_LOAD_LOG): per load, the poll count when it
 # resumed and when gameplay was published, which is how a route's neutral ticks are measured.
 load-log = []
+# The opening movies on a new game (intro.rs): the player travels as a blob in the boot art chunk, which only a
+# build with this feature (HK_INTRO=1, `cargo hk-build build --intro`) reads.
+intro = []
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
 psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }
