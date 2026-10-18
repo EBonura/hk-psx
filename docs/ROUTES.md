@@ -1,65 +1,63 @@
-# State-driven routes
+# Routes: pins, tapes and state-driven (closed loop) play
 
-Status: design with a working proof of concept (`tools/census/src/bin/route-split.rs`). Written 2026-10-17 against main `acb16c8`.
+Status: landed. `cargo hk-build validate` plays every route open loop on the pinned frontend, and every route with a cut list again closed loop on `psoxide-gate`. Design and first proof 2026-10-17 on main `acb16c8`; wired into the driver 2026-10-18 on `cbf459a`.
+
+## A route is three files
+
+```
+tools/tapes/NAME.pxtape   the recorded pad, one sample per port-1 poll (PXITAPE2)
+tools/tapes/NAME.pins     what the route must show at its end, and its metadata
+tools/tapes/NAME.cuts     where the baseline replay saw the game load a scene (optional)
+```
+
+The driver globs `*.pins`; a lane that adds a route adds files and edits no table (the tables that used to sit in `host/hk-build/main.rs` were the merge hotspot). A pin file is one entry per line, `#` starts a comment:
+
+```text
+card = town-continue.mcd     boots from tools/cards/town-continue.mcd (absent: a freshly formatted card)
+scene_gate = true            also run the resident-scene verifier on the open-loop replay
+journey = 2                  segment 2 of the save journey: boots from the card segment 1 wrote
+pacing = 303                 late frames (over two vblanks) the route may still show
+art_late = 44                frames the route may still show late art for
+HK_REGION_ID = 150           final telemetry that must be exactly this
+HK_HEALTH >= 2               final telemetry that must be at least this
+```
 
 ## The problem
 
-A route tape (`tools/tapes/*.pxtape`, format PXITAPE2) holds one pad sample per port-1 poll. The poll index is the only clock, so every event after a scene load is placed by how many polls the loads before it took. When a load gets faster or slower, the Knight is somewhere else when the next event lands. That is why three tapes needed realigning in one week (`journey-false-knight` twice, `journey-reload` once), and why 441 more scenes cannot be re-taped by hand.
+A tape holds one pad sample per port-1 poll. The poll index is the only clock, so every event after a scene load is placed by how many polls the loads before it took. When a load gets faster or slower, the Knight is somewhere else when the next event lands. Admitting the road to Hornet moved every scene seek by 447 sectors, and `journey-false-knight` and `journey-reload` were realigned by hand for the third time in a week; `HK_NO_PREFETCH=1 ./build` (a disc whose gameplay is identical and whose gate loads are slower) fails the unchanged `crossroads-gate` tape on four pins.
 
-The failure is easy to reproduce without touching the game. `HK_NO_PREFETCH=1 ./build` gives a disc whose gameplay is identical and whose gate loads are slower. The unchanged `crossroads-gate` tape then fails on it:
+## The closed loop
 
-| Disc | `HK_SCENE_GATE_LOADS` | `HK_REGION_ID` | `HK_ENEMY_KILLS` | `HK_ENEMY_HITS` |
-| --- | ---: | ---: | ---: | ---: |
-| main 15ec4f6 (library disc) | 2 | 150 | 1 | 2 |
-| same source, `HK_NO_PREFETCH=1` | 1 | 107 | 0 | 0 |
+`psoxide-gate` (PSoXide-emulator `tools/psoxide-gate`) plays a TOML journey headlessly: a step can play a poll-bound tape (`tape`), start it at the current poll instead of its recorded one (`tape_rebase`), hold buttons until a RAM condition holds (`hold_until`), wait on a RAM condition (`wait_until`), and persist or reboot the memory card. HK exports what a closed loop needs: `HK_GAME_MODE` (0 title, 1 gameplay, 2 loading, 3 disc error), `HK_SCENE_LOADS`, `HK_SCENE_GATE_LOADS`, `HK_REGION_ID`.
 
-(pinned emulator frontend b3848054, `tools/replay_cue.py`, card `town-continue.mcd`; the pins are the `REQUIRED` rows of `host/hk-build/main.rs`.)
+The tape stays bit-exact inside a stretch of play; only the loads are closed loop:
 
-## What already exists
+1. `cargo hk-build validate` on a disc where the tapes play as recorded writes `route.csv` per route (`HK_GAME_MODE` and `HK_SCENE_LOADS` against `port1_polls`). `cargo hk-build cuts --tape NAME...` turns those into `NAME.cuts`: the polls where each `HK_GAME_MODE == 2` span began and ended, for every route with two or more loads.
+2. For a route with a cut list, `validate` generates the journey on the fly: stretch k is the tape between the end of load k-1 and the start of load k. The journey plays stretch 0; then for each load it keeps the stretch's last held buttons down until `HK_GAME_MODE == 2` (the Knight is still walking into the gate), waits for `HK_SCENE_LOADS >= n` and `HK_GAME_MODE == 1`, and plays the next stretch with `tape_rebase`.
+3. The route's pins become `ram` asserts at the end. A route in the save journey ends with a card snapshot that the next segment boots from (`card_fixture`), like the open-loop chain.
 
-* `psoxide-gate` (PSoXide-emulator `tools/psoxide-gate`) plays a TOML journey headlessly. A step can play a poll-bound tape (`tape`), start it at the current poll instead of its recorded one (`tape_rebase`), hold buttons until a RAM condition holds (`hold_until`), and wait on a RAM condition (`wait_until`, kinds `ram`, `pixels`, `flat`, `dark`). RAM conditions name a symbol from the link map, so every `#[no_mangle] HK_*` word the game already exports is usable.
-* oot-psx did the same for its journeys (`chore/oot-deterministic-gates-2026-10-17`, `docs/gate-lock-journeys.md`): journeys in simulation ticks, `wait_until` on game state for loads, fades and dialogue, plus a `gatelock` test feature that makes one simulation tick per frame on a fixed VBlank grid so that a pad hold of k frames is read by exactly k ticks at any phase. OoT needed that feature because its simulation is paced at 20 Hz against 60 VBlanks. Its hash chain (`gate-lock diff`) proves a perf change did not alter the game.
+A load that takes 60 polls more or fewer than in the baseline now moves nothing after it. The rule for a route author is the one oot-psx states: use `wait_until` on the words the game decides, never a fixed wait through a load.
 
-## The HK equivalent
+`cuts` files may also carry `wait POLL SYMBOL OP VALUE` lines for drift inside a scene: the tape is cut at that poll and the next stretch is released only when the state holds (a region reached, an enemy dead). Cut where the pad is neutral.
 
-HK already exports what a closed loop needs: `HK_GAME_MODE` (0 title, 1 gameplay, 2 loading, 3 disc error), `HK_SCENE_LOADS`, `HK_SCENE_GATE_LOADS`, `HK_REGION_ID`. The proposal keeps every existing tape bit-exact inside a stretch of play and makes only the loads closed-loop:
+## What is judged where
 
-1. Run the tape once on a known-good disc with `replay_cue.py`. `route.csv` records `HK_GAME_MODE` and `HK_SCENE_LOADS` against `port1_polls` for every tick.
-2. Cut the tape at each stretch where `HK_GAME_MODE == 2`. Stretch k is the polls between the end of load k-1 and the start of load k.
-3. Emit one journey: play stretch 0; then for each load keep the stretch's last held buttons down until `HK_GAME_MODE == 2` (the Knight is still walking into the gate), `wait_until HK_SCENE_LOADS >= n`, `wait_until HK_GAME_MODE == 1`, and play the next stretch with `tape_rebase = true`.
-4. End with a `ram` assert per `REQUIRED` pin of the route.
+* Open loop (frontend, `replay_cue.py`, unchanged): the tape completed, no fault counter, no stale vignette or camera miss, late art within `art_late`, the scene-gate verifier for `scene_gate` routes, pacing against `pacing`. For routes without a cut list the pins are judged here.
+* Closed loop (gate): the pins of every route that has a cut list. The open-loop figures of such a route still count, except that its pacing is compared with the ceiling only when the open-loop tape still reaches the same pins on this disc: a tape that drifted did not play the route the ceiling was measured on, and the closed-loop run (which has no late-frame counter) is what judges the route. The report line says so.
 
-A load that takes 60 polls more or fewer than in the baseline now moves nothing after it. The rule for a route author is the one OoT states: use `wait_until` on the words the game decides, never a fixed wait through a load.
-
-`tools/census/src/bin/route-split.rs` does steps 2 to 4:
+## Running it
 
 ```sh
-route-split --tape tools/tapes/crossroads-gate.pxtape --csv BASELINE/route.csv --map BASELINE/game.map \
-  --symbols MAP_OF_DISC_UNDER_TEST --card tools/cards/town-continue.mcd --out OUT --name crossroads-gate-sd \
-  --disc DISC.cue --pin HK_SCENE_GATE_LOADS=2 --pin HK_REGION_ID=150 --pin HK_ENEMY_KILLS=1 --pin HK_ENEMY_HITS=2
-psoxide-gate run OUT/crossroads-gate-sd.toml --disc DISC.cue --no-hw --out OUT/report
+export HK_PSX_GATE=/path/to/psoxide-gate HK_PSX_GATE_SHA256=$(shasum -a 256 $HK_PSX_GATE | cut -d' ' -f1)
+cargo hk-build validate --library DIR --jobs 2          # open loop, then closed loop for the routes with cuts
+cargo hk-build routes   --library DIR --jobs 2          # closed-loop routes only (HK_VALIDATE_ONLY=a,b narrows)
+cargo hk-build cuts --work .hkpsx/validate --tape crossroads-gate   # after a validate on a disc where the tapes play as recorded
 ```
 
-## Proof of concept
+The gate must be built from an emulator revision that has `tape_rebase` (`287b51d1` and later, the `codex/gate-tape-rebase-2026-10-11` line). `routes` looks for `DIR/game.map` (the link map of the disc under test) before `.hkpsx/build.json`, so a disc built in another checkout can be tried without rebuilding.
 
-Both journeys below were cut from one baseline run on the library disc and played by a `psoxide-gate` built from the emulator branch that added `tape_rebase` (the gate's core is older than the pinned frontend, so the control run is on the same gate).
+## Limits
 
-| Route | Disc | Open-loop tape (frontend) | State-driven journey (gate) |
-| --- | --- | --- | --- |
-| `crossroads-gate` (2 gates, a kill and 2 hits) | library disc | pass | pass, 6 of 6 pins |
-| `crossroads-gate` | `HK_NO_PREFETCH=1` | fails 4 pins (above) | pass, 6 of 6 pins (`HK_SCENE_GATE_LOADS` 2, `HK_REGION_ID` 150, kills 1, hits 2) |
-| `journey-kings` (new game to Dirtmouth, save) | library disc | pass | pass, 8 of 8 pins |
-| `journey-kings` | `HK_NO_PREFETCH=1` | pass (the one gate there is not prefetched either way) | pass, 8 of 8 pins |
-
-The journey is generated, so the tapes stay the source of truth and nothing is re-recorded.
-
-## What it does not do yet
-
-* **Phase inside a stretch.** HK samples input on polls and simulates at the source's 50 Hz phase (`docs/STREAMING.md`: after a load the simulation resumes from the last observed input timestamp). The rebase starts the next stretch at the poll where `HK_GAME_MODE` returned to 1, so the stretch's phase against the simulation is whatever the load end gives. The two routes above show it is stable enough for a combat route, but a route with a frame-exact jump right after a load may need what OoT built: a `route-lock` guest feature (test builds only) that snaps the simulation clock to the VBlank grid when a scene entry finishes, so a stretch always starts on the same tick phase. The main loop already realigns the frame clock after every gate load (`hk_clock.realign` in `main.rs`), which is why the phase is stable today; a lock feature would make that alignment independent of the input timeline too. It touches the guest, so it is left as the next step, not done here.
-* **Pacing.** The gate does not produce the late-frame counts that `PACING_CEILINGS` pins. Keep `replay_cue.py` and the existing tapes for pacing on the baseline disc, and use the state-driven journeys for function. They answer different questions, and only the function pins were the ones breaking.
-* **The gate binary.** It must be built at the emulator pin (b3848054 or later with `tape_rebase`) and driven by `cargo hk-build validate` (a `journeys/` directory beside `tools/tapes/`, run after the replays). Per-route pin files (the refactor in `hk-gaps/PLAN.md` section 5) are the natural place for the `--pin` values, so the generator reads them instead of the command line.
-* **Authoring new routes.** `route-split` converts recorded tapes. For the 441 new scenes a route is written as goals (walk right until `HK_REGION_ID == n`, `hold_until` on `HK_PLAYER_X`), which `psoxide-gate` already supports; the tape is then the exception, kept for bit-exact combat.
-
-## Recommendation
-
-Adopt the split journeys as the gating form for function pins, keep tapes for pacing, and add the `route-lock` feature only when a real route needs frame-exact input right after a load. Convert the 55 routes in one pass with `route-split` once per-route pin files exist; the journey routes chain one card through power cycles, which needs the gate's `card` steps (snapshot and persisted reboot), so they convert last.
+* The gate is built from a newer emulator core than the pinned frontend (`b3848054`): pins are function, not cycles, and the proof discs pass with both. Pacing stays on the frontend.
+* Phase inside a stretch. HK samples input on polls and simulates at the source's 50 Hz phase (`docs/STREAMING.md`). A stretch starts at the poll where `HK_GAME_MODE` returned to 1, so its phase against the simulation is whatever the load end gives. If a route with frame-exact input right after a load drifts, add `wait` cuts or the OoT answer, a `route-lock` guest feature that snaps the simulation clock to the VBlank grid at scene entry. Not needed so far; see the proof below.
+* New scenes: a route written as goals (walk right until `HK_REGION_ID == n`, `hold_until` on `HK_PLAYER_X`) needs no tape at all; the tape is the exception, kept for bit-exact combat.

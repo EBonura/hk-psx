@@ -11,13 +11,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 import sys
 sys.path.insert(0, str(ROOT / 'host'))
-import rustsrc
 sys.path.insert(0, str(ROOT / 'tools'))
 
 
 def journey():
-    body = rustsrc.const_expr(rustsrc.source(ROOT / 'host/hk-build/main.rs'), 'JOURNEY')
-    return re.findall(r'"([^"]+)"', body)
+    """The journey segments in order: the pin files that say `journey = N`."""
+    found = []
+    for pins in (ROOT / 'tools/tapes').glob('*.pins'):
+        m = re.search(r'^journey\s*=\s*(\d+)\s*$', pins.read_text(), re.M)
+        if m:
+            found.append((int(m[1]), pins.stem))
+    return [name for _, name in sorted(found)]
 
 
 class JourneyTapeTests(unittest.TestCase):
@@ -39,9 +43,9 @@ class JourneyTapeTests(unittest.TestCase):
     def test_no_segment_boots_from_a_fixture(self):
         # The point of the journey is that nothing is seeded: the first segment
         # boots with no card and every later one with its predecessor's.
-        memcards = rustsrc.const_expr(rustsrc.source(ROOT / 'host/hk-build/main.rs'), 'MEMCARDS')
         for name in journey():
-            self.assertNotIn(f'"{name}"', memcards)
+            pins = (ROOT / f'tools/tapes/{name}.pins').read_text()
+            self.assertIsNone(re.search(r'^card\s*=', pins, re.M), f'{name} boots from a fixture')
 
 
 if __name__ == '__main__':

@@ -436,8 +436,14 @@ pub fn spawn_closed(
     card_in: Option<&Path>,
 ) -> Result<ClosedRun> {
     let cuts = route.cuts.as_ref().ok_or("route has no cut list")?;
-    let build: Value = serde_json::from_slice(&std::fs::read(root.join(".hkpsx/build.json"))?)?;
-    let map = PathBuf::from(build["link_map"]["path"].as_str().ok_or("build.json has no link map")?);
+    // The link map of the disc under test: game.map beside it in the library (a disc built elsewhere
+    // than the last build), else the last build's.
+    let map = if library.join("game.map").is_file() {
+        library.join("game.map")
+    } else {
+        let build: Value = serde_json::from_slice(&std::fs::read(root.join(".hkpsx/build.json"))?)?;
+        PathBuf::from(build["link_map"]["path"].as_str().ok_or("build.json has no link map")?)
+    };
     let tape = Tape::parse(&std::fs::read(root.join(format!("tools/tapes/{}.pxtape", route.name)))?)?;
     let dir = out.join(format!("{}-sd", route.name));
     let _ = std::fs::remove_dir_all(&dir);
