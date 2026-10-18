@@ -380,7 +380,7 @@ fn a_well_checksummed_list_no_build_wrote_is_refused() {
     };
     let a = persist::pack(Kind::Breakable, 0, 1, 1).unwrap();
     let b = persist::pack(Kind::Breakable, 0, 2, 1).unwrap();
-    for items in [vec![b, a], vec![a, a | 2], vec![0xC000_0000]] {
+    for items in [vec![b, a], vec![a, a | 2], vec![0xD000_0000]] {
         let mut bytes = encode(&record(), &[a, b]);
         for (i, item) in items.iter().enumerate() {
             bytes[LEN - 4 + i * 4..LEN + i * 4].copy_from_slice(&item.to_le_bytes());
