@@ -738,6 +738,63 @@ def postpack_npc_bank(report, source, scenes):
     return placed
 
 
+SHEET_ART=None
+
+
+def sheet_art(scene_file):
+    """The arena gates' and water drips' sheets, cut from the source scenes by `hk-cook sheet-art`.
+
+    Rust cooks them (host/hk-cook/src/battle_gates.rs) before the region cook and leaves them in
+    .hkpsx/sheet-art/; this postpass only appends them to the scene actor bank's atlas.
+    """
+    global SHEET_ART
+    if SHEET_ART is None:SHEET_ART=json.loads((ROOT/'.hkpsx/sheet-art/index.json').read_text())
+    return SHEET_ART[scene_file]
+
+
+def _sheet_image(entry):
+    from PIL import Image
+    return Image.frombytes('RGBA',(entry['w'],entry['h']),(ROOT/'.hkpsx/sheet-art'/entry['file']).read_bytes())
+
+
+def append_gate_art(sheets,atlas,frames):
+    """The gate clips' sheets as streamed frames of a scene actor bank, or None without gates."""
+    art=sheets['art']
+    if art is None:return None
+    first=len(frames)
+    for i,entry in enumerate(art['sheets']):
+        sheet=_sheet_image(entry)
+        texture=atlas.add(sheet,sheet.width,sheet.height,streamed=True)
+        frames.append({'texture':texture,'box':[0,0,1,1],'event':{},'sprite':f"{art['collection']}:gate-sheet-{i}"})
+    return {'scene':art['scene'],'first':first,'sheets':len(art['sheets']),'sprites':art['sprites'],'clips':art['clips'],
+            'rects':art['rects'],'boxes':art['boxes'],'effect_offset':art['effect_offset'],
+            'collection':art['collection'],'library':art['library']}
+
+
+def bind_gate_art(record,row,frame_base):
+    """A view's own frame index of the first gate frame, for the generated table."""
+    if record is None:return None
+    return {'frame_base':frame_base+record['first'],'sprites':record['sprites'],'clips':record['clips'],'rects':record['rects'],
+            'boxes':record['boxes'],'sheets':record['sheets'],'effect_offset':record['effect_offset'],
+            'collection':record['collection'],'library':record['library']}
+
+
+def append_drip_art(sheets,atlas,frames):
+    """The water drip sheet as a streamed frame of a scene actor bank, or None without drips."""
+    art=sheets['drip_art']
+    if art is None:return None
+    sheet=_sheet_image(art['sheet'])
+    first=len(frames)
+    texture=atlas.add(sheet,sheet.width,sheet.height,streamed=True)
+    frames.append({'texture':texture,'box':[0,0,1,1],'event':{},'sprite':f"{art['collection']}:drip-sheet"})
+    return {'first':first,'clips':art['clips'],'rects':art['rects'],'boxes':art['boxes'],'library':art['library']}
+
+
+def bind_drip_art(record,row,frame_base):
+    if record is None:return None
+    return dict(record,frame_base=frame_base+record['first'])
+
+
 def postpack_actor_bank(report, source, scenes=None):
     """Append a shared scene actor bank from immutable pre-append base packs.
 
@@ -752,13 +809,10 @@ def postpack_actor_bank(report, source, scenes=None):
         sc=scenes[info['scene_id']]
         actors=[a for a in actor_sources(sc) if a['movement_supported']]
         import pickups
-        # Arena gates draw from the same bank (host/battle_gates.py), so a scene
-        # with gates and nothing else still takes one.
-        from battle_gates import all_gates as gate_sources
-        from battle_gates import append_art as append_gate_art,bind_art as bind_gate_art
-        # Water drips too (host/props.py drip_art).
-        from props import drip_sources,drip_art,bind_drip_art
-        if not actors and not pickups.present(sc) and not gate_sources(sc) and not drip_sources(sc):continue
+        # Arena gates draw from the same bank (host/hk-cook battle_gates.rs), so a scene
+        # with gates and nothing else still takes one. Water drips too.
+        sheets=sheet_art(info['file'])
+        if not actors and not pickups.present(sc) and not sheets['gates'] and not sheets['drips']:continue
         scene_rows=[row for row in report['regions'] if row['scene_id']==info['scene_id']]
         # The False Knight's art is its own bank (host/false_knight_art.py):
         # the generic path cooks only its barrel and a Blank for every body
@@ -797,8 +851,8 @@ def postpack_actor_bank(report, source, scenes=None):
                   boss_art,write_boss_art=gruz_cook_scene_bank(source,sc,gruz,scene_rows,atlas,frames,clips)
               # Chests and pickups ride the same per-scene bank (host/pickups.py).
               pickup_base=len(frames);pickup_record=pickups.append_art(source,sc,atlas,frames,level) if level else None
-              gate_record=append_gate_art(source,sc,atlas,frames)
-              drip_record=drip_art(source,sc,atlas,frames)
+              gate_record=append_gate_art(sheets,atlas,frames)
+              drip_record=append_drip_art(sheets,atlas,frames)
               atlas.pack()
               if atlas.pages and boss is None and mawlek is None and gruz is None:raise ValueError('Scene actor bank unexpectedly requires resident pages')
               # Actor clips start at one scene-wide clip index so every region of the

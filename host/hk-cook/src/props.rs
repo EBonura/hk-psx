@@ -1485,9 +1485,11 @@ fn generate_decor(root: &Path, report: &J) -> Result<String> {
     ))
 }
 
-struct Drip {
+pub(crate) struct Drip {
     position: [f64; 3],
     drip: Value,
+    pub(crate) sprite: Value,
+    pub(crate) animator: Value,
     bottom: f64,
     x_scale: f64,
     half_width: f64,
@@ -1495,7 +1497,7 @@ struct Drip {
 }
 
 /// props.py `drip_sources`: active WaterDrips with the component values the runtime assumes.
-fn drip_sources(sc: &Scene) -> Result<Vec<Drip>> {
+pub(crate) fn drip_sources(sc: &Scene) -> Result<Vec<Drip>> {
     let mut gids: Vec<i64> = sc.gos.keys().copied().collect();
     gids.sort();
     let mut out = Vec::new();
@@ -1532,6 +1534,8 @@ fn drip_sources(sc: &Scene) -> Result<Vec<Drip>> {
         out.push(Drip {
             position: sc.point(gid, 0.0, 0.0, 0.0).map_err(|e| e.to_string())?,
             drip: w.clone(),
+            sprite: sprite.clone(),
+            animator: comp("tk2dSpriteAnimator").ok_or("water drip without tk2dSpriteAnimator")?.clone(),
             bottom: f64_of(off, "y")? - f64_of(size, "y")? / 2.0,
             x_scale: m[0][0],
             half_width: m[0][0].abs() * f64_of(size, "x")? / 2.0,

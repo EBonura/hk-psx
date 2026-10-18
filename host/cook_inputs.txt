@@ -79,9 +79,11 @@ host/false_knight_art.py
 host/pickups.py
 host/items.py
 host/title_cards.py
-# The arena gates' art, appended to the same bank (append_art), and the
-# BG Control reader it shares with the gate table.
-host/battle_gates.py
+# The arena gates' and water drips' sheets, cut by Rust before the region cook (`hk-cook sheet-art`) and
+# appended to the same bank by regions.py; the BG Control and WaterDrip readers they use.
+host/hk-cook/src/battle_gates.rs
+host/hk-cook/src/breakables.rs
+host/hk-cook/src/props.rs
 host/props.py
 host/language.py
 # Brooding Mawlek's contract check and bank, the same postpass for Crossroads_09.

@@ -7,8 +7,10 @@ PlayerData reserve the fight persists through, because the guest's own guard is
 a `const` assertion that only fires on a guest build, and the host suite runs
 first.
 
-Nothing here touches the installed game: `host/battle_gates.py` is what reads
-it, and this runs against what that generated.
+Nothing here touches the installed game: `hk-cook battle-gates`
+(host/hk-cook/src/battle_gates.rs) is what reads it, and this runs against what that
+generated. The scratch-budget check (gates, the Great Door and the Lifeblood cocoons
+share one exclusion list) is a Rust test in that file.
 """
 import json
 import os
@@ -42,7 +44,7 @@ def constant(name):
     return int(found.group(1), 2)
 
 
-@unittest.skipUnless(TABLE.is_file() and REPORT.is_file(), 'run host/battle_gates.py first')
+@unittest.skipUnless(TABLE.is_file() and REPORT.is_file(), 'run hk-cook battle-gates first')
 class GateTableTests(unittest.TestCase):
     def setUp(self):
         self.report = json.loads(REPORT.read_text())
@@ -98,19 +100,6 @@ class GateTableTests(unittest.TestCase):
         baked = {owner[source] for region in regions
                  for source in set(region['edge_sources']) if source in owner}
         self.assertEqual(baked, {gate for _, gate, _ in rows()})
-
-    def test_the_shared_exclusion_scratch_holds_every_slot(self):
-        """Gates, the Great Door and the Lifeblood cocoons share one list."""
-        import sys
-        sys.path.insert(0, str(ROOT / 'host'))
-        import battle_gates
-        budget = battle_gates.edge_scratch_slots()
-        neighbours = battle_gates.neighbour_edges()
-        spent = dict(neighbours)
-        for slot, _, edges in rows():
-            spent[slot] = spent.get(slot, 0) + len(edges)
-        worst = max(spent.items(), key=lambda item: item[1])
-        self.assertLessEqual(worst[1], budget, f'catalogue slot {worst[0]} needs {worst[1]}')
 
     def test_the_guest_module_against_the_real_table(self):
         with tempfile.TemporaryDirectory(prefix='hk-arena-gates-') as temp:

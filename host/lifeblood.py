@@ -166,8 +166,8 @@ def cook():
         # was 8 here and moved to 12 when the arena gates needed room, and a
         # second copy of a number that moves is how a generator goes on
         # refusing work the guest would have taken.
-        from battle_gates import edge_scratch_slots
-        if len(edges)>edge_scratch_slots():raise ValueError('Lifeblood edge binding capacity')
+        import rustsrc
+        if len(edges)>rustsrc.const_int(ROOT/"game/src/world.rs","SCRIPT_EDGE_SLOTS"):raise ValueError('Lifeblood edge binding capacity')
         bindings.append(dict(off=off,edges=edges))
     spec=dict(scene=0,origin=sc.point(973)[:2],bounds=bounds,fling_speed=[fling['minSpeed'],fling['maxSpeed']],fling_angle=[fling['minAngle'],fling['maxAngle']],spread=[fling['originVariation'][k]for k in'xy'],scale=[1.35,1.5],speed=[6.,9.],body=body_box,gravity=gravity,acceleration=.3,activate_ticks=15,heal_ticks=72,land_ticks=15,bounce_ticks=30)
     rust=['// Generated source Lifeblood art and behavior; no embedded retail source dump.','pub const LIFE_SPEC:Spec=Spec{']

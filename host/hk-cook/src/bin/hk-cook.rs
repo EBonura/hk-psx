@@ -1,5 +1,5 @@
 //! hk-psx's Rust cookers. Run from the repository root:
-//!   hk-cook actor-persistence|props|break-effects|scene-sfx|xa-music|cook-audio|geo-audio|focus-audio|cook-music|ambience|area-music|runner-audio [--source <hollow_knight_Data>]
+//!   hk-cook battle-gates|sheet-art|actor-persistence|props|break-effects|scene-sfx|xa-music|cook-audio|geo-audio|focus-audio|cook-music|ambience|area-music|runner-audio [--source <hollow_knight_Data>]
 //!   hk-cook opaque-tiles [--grid-shift 2|3] [--variant]|opaque-groups
 //!   hk-cook scene-certificates [--output DIR] [--report PATH] [--manifest PATH]
 //!   hk-cook gpu-census [--profile DIR | --camera X Y] [--region N] [--top N] [--every N]
@@ -19,6 +19,10 @@ fn main() {
         Some("area-music") => hk_cook::area_music::main(&root, source.as_deref()),
         Some("runner-audio") => hk_cook::runner_audio::main(&root, &args[2..], source.as_deref()),
         Some("actor-persistence") => hk_cook::actor_persistence::main(&root, source.as_deref()),
+        Some("battle-gates") => hk_cook::battle_gates::main(&root, source.as_deref()),
+        Some("blocker-terrain") => hk_cook::blocker_terrain::main(&root, source.as_deref()),
+        Some("sheet-art") => hk_cook::battle_gates::cook_art(&root),
+        Some("interact-census") => hk_cook::interact_census::main(&root, &args[2..], source.as_deref()),
         Some("battle-waves") => hk_cook::battle_waves::main(&root, source.as_deref()),
         Some("crossroads22-wave-prepare") => hk_cook::crossroads22_wave::prepare(&root).map_err(|e| e.to_string()),
         Some("crossroads22-wave-finish") => hk_cook::crossroads22_wave::finish(&root).map_err(|e| e.to_string()),

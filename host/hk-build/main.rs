@@ -43,13 +43,13 @@ const ASSET_SCRIPTS: &[&str] = &[
     // The arena gates, after both tables that share the guest's scripted-edge
     // scratch: it reads data/lifeblood.rs and data/great_door.rs to check the
     // union in one catalogue slot rather than its own rows alone.
-    "battle_gates.py",
+    "rust:battle-gates",
     // Which killed enemies the source keeps dead (data/actor_persistence.rs).
     // Reads the source scenes and the region report.
     "rust:actor-persistence",
     // The Blockers' Terrain Block edges, after the gates: its scratch budget
     // check adds the gates' rows in the same catalogue slot.
-    "blocker_terrain.py",
+    "rust:blocker-terrain",
     // Soul totems and area titles, read from the source scenes; the totems
     // before the scene sounds, which give their scenes the totem's sound.
     "soul_totems.py",
@@ -1386,6 +1386,9 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
             return Ok(());
         }
     }
+    // The gate and drip sheets the region postpass appends to the scene actor banks are cut from the source
+    // scenes first (host/hk-cook battle_gates.rs).
+    hk_cook::battle_gates::cook_art(root)?;
     python_step(root, "host/regions.py", region_cook_args(&provenance))?;
     hk_cook::mossman_scene::cook(root)?;
     hk_cook::shaman_runner_scene::cook(root)?;
@@ -1692,6 +1695,8 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "opaque-tiles" => hk_cook::opaque_tiles::cook(root, 2, false)?,
         "opaque-groups" => hk_cook::opaque_groups::main(root)?,
         "scene-certificates" => hk_cook::scene_certificates::main(root, &[])?,
+        "battle-gates" => hk_cook::battle_gates::main(root, None)?,
+        "blocker-terrain" => hk_cook::blocker_terrain::main(root, None)?,
         other => return Err(format!("no Rust cooker named {other}").into()),
     }
     println!("  hk-cook {tool}: {:.1?}", start.elapsed());
