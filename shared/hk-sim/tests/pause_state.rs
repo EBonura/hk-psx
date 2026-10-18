@@ -144,7 +144,7 @@ fn music_volume_and_adjacent_pages_preserve_each_other() {
     assert!(p.cheats);
     // Up from row 0 wraps to the last row, which is Back.
     tap(&mut p, &mut c, 0x10);
-    assert_eq!(p.row, cheats::CHEAT_ROWS + 3);
+    assert_eq!(p.row, cheats::CHEAT_ROWS + 4);
     assert!(!tap(&mut p, &mut c, 0x4000));
     // Down from Cheats passes through Charms before wrapping to Resume.
     assert!(!p.cheats);

@@ -13,7 +13,7 @@ from validate import poll_tape
 
 TITLE = '9:up:1,12:cross:1,15:cross:1,18:down:1,21:cross:1,24:down:1,27:cross:1,30:down:1,33:cross:1,36:circle:1,39:down:1,42:start:1,200:start:1,203:up:1,206:cross:1'
 PAUSE = '9:start:1,120:start:1,123:up:1,126:cross:1,129:cross:1,132:down:1,135:cross:1,138:down:1,141:cross:1,144:down:1,147:cross:1,150:down:1,153:cross:1,156:down:1,159:cross:8,170:cross:1,174:cross:1,178:cross:1,182:circle:1,186:circle:1'
-RESET = PAUSE + ',220:select:1,280:start:1,283:up:1,286:cross:1,289:up:1,292:up:1,295:cross:1,298:circle:1,301:circle:1'
+RESET = PAUSE + ',220:start:1,223:up:1,226:up:1,229:cross:1,232:up:1,235:up:1,238:cross:1,241:cross:1,280:start:1,283:up:1,286:cross:1,289:up:1,292:up:1,295:cross:1,298:circle:1,301:circle:1'
 ROUTES = {'title': (TITLE, 260), 'pause': (PAUSE, 210), 'reset': (RESET, 360)}
 
 

@@ -229,9 +229,9 @@ def main():
     combat.update(grass_cut_mask=cut,nail_attacks=swings,sfx=sfx(state/'combat-ram.bin'))
     if combat['sfx']['nail']!=swings:raise ValueError('Accepted nail attack did not play exactly one swing sound')
     reset=launch('final-reset',paths['cue'],['--stop-at-poll',170,'--dump-display',out/'reset.ppm',
-                 '--dump-ram',state/'reset-ram.bin'],presses=COMBAT_ROUTE+',104:select:1')
+                 '--dump-ram',state/'reset-ram.bin'],presses=COMBAT_ROUTE+',104:start:1,107:up:1,110:up:1,113:cross:1,116:up:1,119:up:1,122:cross:1,125:cross:1')
     if word(state/'reset-ram.bin','HK_GRASS_CUT_MASK') or word(state/'reset-ram.bin','HK_NAIL_ATTACK_COUNT'):
-        raise ValueError('Select failed to reset grass/nail state')
+        raise ValueError('The Cheats page Reset session failed to clear grass/nail state')
     if word(state/'reset-ram.bin','__psx_rt_fault_count'):raise ValueError('Reset runtime exception')
     reset['residency']=residency(state/'reset-ram.bin')
     door_extra=['--stop-at-poll',500,'--dump-display',out/'doors.ppm','--dump-hw',out/'doors-hardware.ppm',

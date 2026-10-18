@@ -1,5 +1,5 @@
 //! Optional session cheats. Disabled settings delegate to normal gameplay.
-//! Toggles survive death/Select reset; only Reset All turns them off. Disabling
+//! Toggles survive death and the Reset session row; only Reset All turns them off. Disabling
 //! max masks clamps excess red health; earned blue masks remain independent.
 use hk_sim::{Hurt, VitalParams, Vitals};
 // Windows PlayerData.AddGGPlayerDataOverrides sets nailDamage=21 and upgrades=4.

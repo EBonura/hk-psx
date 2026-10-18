@@ -5,9 +5,64 @@ static mut SAMPLER: Sampler = Sampler::new();
 /// a poll the driver rejects reads as the last clean state instead of every
 /// button released, so a held button cannot fire twice. See PAD-ANALOG.md.
 static mut PAD: psx_pad::PadReader = psx_pad::PadReader::port1();
-/// One poll of port 1 through the reader, as button bits.
+/// The original's default controller layout on the PS1 pad, one for one.
+///
+/// Source: the Steam build's `Assembly-CSharp.dll` (1.5.78), `ControllerMapping..ctor`,
+/// which `GameSettings.ResetGamepadSettings` installs for every gamepad type and
+/// `InputHandler.MapControllerButtons` binds: jump = Action1, attack = Action3,
+/// dash = RightTrigger, cast = Action2, superDash = LeftTrigger, dreamNail =
+/// Action4, quickMap = LeftBumper, quickCast = RightBumper. InControl's
+/// PlayStation naming puts Action1..4 on Cross, Circle, Square, Triangle, and the
+/// triggers and bumpers on L2/R2 and L1/R1. The PS4 build adds the inventory on
+/// the touchpad button (`InputControlType.TouchPadButton`) and pause on Options;
+/// the PS1 pad has neither, so they take Select and Start. Movement is the d-pad
+/// and the left stick on the same four direction actions
+/// (`InputHandler.SetupNonMappableBindings`).
+pub mod bind {
+    use psx_pad::button;
+    pub const JUMP: u16 = button::CROSS;
+    pub const ATTACK: u16 = button::SQUARE;
+    /// Tap casts, hold focuses (`Spell Control`'s Button Down Time).
+    pub const CAST: u16 = button::CIRCLE;
+    pub const DASH: u16 = button::R2;
+    pub const SUPER_DASH: u16 = button::L2;
+    pub const DREAM_NAIL: u16 = button::TRIANGLE;
+    pub const QUICK_MAP: u16 = button::L1;
+    pub const QUICK_CAST: u16 = button::R1;
+    pub const INVENTORY: u16 = button::SELECT;
+    pub const PAUSE: u16 = button::START;
+}
+/// Left-stick deflection (of 127) that counts as a d-pad press, per axis, so a
+/// diagonal push sets two bits like a diagonal on the d-pad. Celeste's threshold
+/// (pico8-psx `shared/src/input.rs`): wide enough that a worn stick registers,
+/// narrow enough that centre drift (12 to 20 counts on a console SCPH-110) does
+/// not. The original reads its stick through the same direction actions as the
+/// d-pad (InControl, `HeroActions.left/right/up/down`), so the stick is a
+/// second d-pad here as well.
+const STICK_THRESHOLD: i16 = 48;
+/// `state`'s buttons with its left stick folded into the d-pad bits. A pad that
+/// reports no sticks (digital, or garbled and replaced by the reader's last
+/// clean state) has them centred and adds nothing. Menus, dialogue and play all
+/// read the pad through `poll_bits`, so all of them answer the stick.
+pub fn with_stick(state: psx_pad::PadState) -> u16 {
+    let (x, y) = state.sticks.left_centered();
+    let mut bits = state.buttons.bits();
+    if x <= -STICK_THRESHOLD {
+        bits |= psx_pad::button::LEFT;
+    } else if x >= STICK_THRESHOLD {
+        bits |= psx_pad::button::RIGHT;
+    }
+    if y <= -STICK_THRESHOLD {
+        bits |= psx_pad::button::UP;
+    } else if y >= STICK_THRESHOLD {
+        bits |= psx_pad::button::DOWN;
+    }
+    bits
+}
+/// One poll of port 1 through the reader, as button bits with the left stick
+/// folded into the d-pad.
 pub fn poll_bits() -> u16 {
-    unsafe { (*(&raw mut PAD)).poll().buttons.bits() }
+    with_stick(unsafe { (*(&raw mut PAD)).poll() })
 }
 #[no_mangle]
 pub static mut HK_INPUT_POLLS: u32 = 0;

@@ -302,7 +302,19 @@ pub fn prepare(
             BOXES[0] = RectFlat::new(38, 61, 244, 162, 150, 150, 150);
             BOXES[1] = RectFlat::new(40, 63, 240, 158, 0, 0, 0);
             BOX_COUNT = 2;
-            if p.charms.open {
+            if p.confirm_reset {
+                text(160 - width("Reset session?") / 2, 108, "Reset session?");
+                text(
+                    160 - width("Back to the new game spawn.") / 2,
+                    130,
+                    "Back to the new game spawn.",
+                );
+                text(
+                    160 - width("X: Reset    O: Cancel") / 2,
+                    160,
+                    "X: Reset    O: Cancel",
+                );
+            } else if p.charms.open {
                 crate::charms::panel(&p.charms);
             } else if p.cheats {
                 BOXES[0] = RectFlat::new(14, 28, 292, 204, 150, 150, 150);
@@ -315,13 +327,14 @@ pub fn prepare(
                             "Restore health + SOUL",
                             "Add 5 Lifeblood masks",
                             "Turn all cheats off",
+                            "Reset session",
                             "Back",
                         ]
                         .iter(),
                     )
                     .enumerate()
                 {
-                    let y = 44 + i as i16 * 11;
+                    let y = 44 + i as i16 * 10;
                     text(46, y, line);
                     if p.row == i {
                         text(29, y, ">");
@@ -340,25 +353,26 @@ pub fn prepare(
                 }
                 text(
                     160 - width("X: apply    Left/Right: off/on    O: back") / 2,
-                    214,
+                    219,
                     "X: apply    Left/Right: off/on    O: back",
                 );
             } else if p.controls {
                 text(160 - width("Controls") / 2, 69, "Controls");
                 for (i, line) in [
-                    "D-pad: Move / aim",
-                    "X: Jump    Square: Nail",
-                    "O: Hold to Focus / heal",
-                    "Up: Inspect    Start: Pause",
-                    "Air Down + Square: Pogo",
-                    "L1: Dash    Hold R1: Crystal Heart",
+                    "D-pad / left stick: Move",
+                    "X: Jump    Square: Nail    Up: Inspect",
+                    "O: Cast (tap) or Focus (hold)",
+                    "R1: Quick Cast    Air Down + Sq: Pogo",
+                    "R2: Dash    Hold L2: Crystal Heart",
                     "Hold Triangle: Dream Nail",
+                    "L1: Quick Map (needs a map)",
+                    "Select: Charms    Start: Pause",
                     "X / O: Back",
                 ]
                 .iter()
                 .enumerate()
                 {
-                    text(53, 84 + i as i16 * 16, line);
+                    text(46, 84 + i as i16 * 14, line);
                 }
             } else {
                 text(160 - width("Paused") / 2, 69, "Paused");

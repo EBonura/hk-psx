@@ -45,6 +45,7 @@ pub struct Game {
     pub shop_screen: shop::Screen,
     pub paused: bool,
     pub start_held: bool,
+    pub inventory_held: bool,
     pub prev_pad: ButtonState,
     // Row 0 is Yes, row 1 is No, while the seated save prompt is open.
     pub save_prompt: Option<u8>,
@@ -591,6 +592,19 @@ pub fn interact(
         }
     }
     game.start_held = start;
+    // The inventory button (Select) opens the charm board, the port's inventory,
+    // and closes whatever pause screen is up.
+    let inventory = pad.is_held(input::bind::INVENTORY);
+    if inventory && !game.inventory_held && !dialogue::open() && !game.shop_screen.open {
+        game.paused = !game.paused;
+        ui_consumed = true;
+        if game.paused {
+            game.pause_menu.enter_inventory(pad.bits());
+        } else {
+            game.player.was_jump = pad.is_held(button::CROSS);
+        }
+    }
+    game.inventory_held = inventory;
     if game.paused {
         let before = (
             game.settings.sfx,
@@ -700,8 +714,8 @@ pub fn menu_reads_pad(game: &Game) -> bool {
         || game.save_prompt.is_some()
 }
 
-/// SELECT: the development reset, back to the new-game spawn with every
-/// counter the route tables read cleared.
+/// The Cheats page's Reset session row (it was SELECT): the development reset, back to
+/// the new-game spawn with every counter the route tables read cleared.
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
 pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
@@ -978,7 +992,7 @@ pub fn simulate(
         // for a release. Let go inside that and it casts; keep holding
         // and the Focus starts instead. One button, two moves.
         let cast_button =
-            pad.is_held(button::CIRCLE) && !read_consumes && game.vitals.can_control();
+            pad.is_held(input::bind::CAST) && !read_consumes && game.vitals.can_control();
         let cast_blocked = !game.vitals.can_control() || game.door.pending() || read_consumes;
         game.cast.has_fireball =
             game.settings.cheats.spell || persist::store().levels[persist::FIREBALL_LEVEL] > 0;
@@ -988,6 +1002,14 @@ pub fn simulate(
             FIREBALL_ANTIC_TICKS,
             FIREBALL_CAST_TICKS,
             cast_button,
+            &mut game.vitals.soul,
+            &game.player,
+            cast_blocked,
+        );
+        // Quick Cast: the same cast from its own button, with no hold to wait out.
+        game.cast.quick(
+            FIREBALL_PARAMS,
+            pad.is_held(input::bind::QUICK_CAST) && !read_consumes && game.vitals.can_control(),
             &mut game.vitals.soul,
             &game.player,
             cast_blocked,
@@ -1071,13 +1093,13 @@ pub fn simulate(
             game.settings.cheats.cloak || persist::player(persist::HAS_SHADOW_DASH);
         game.player.super_dash_input(
             PARAMS,
-            pad.is_held(button::R1)
+            pad.is_held(input::bind::SUPER_DASH)
                 && game.vitals.can_control()
                 && !locked_for_dash(&game.focus, &game.door, &game.bench),
         );
         game.player.dash_input(
             PARAMS,
-            pad.is_held(button::L1)
+            pad.is_held(input::bind::DASH)
                 && game.vitals.can_control()
                 && !locked_for_dash(&game.focus, &game.door, &game.bench),
         );
@@ -1172,7 +1194,7 @@ pub fn simulate(
             game.settings.cheats.dream || persist::player(persist::HAS_DREAM_NAIL);
         game.dream.tick(
             DREAM_NAIL_PARAMS,
-            pad.is_held(button::TRIANGLE) && game.vitals.can_control(),
+            pad.is_held(input::bind::DREAM_NAIL) && game.vitals.can_control(),
             &game.player,
             locked,
         );

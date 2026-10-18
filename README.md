@@ -134,13 +134,15 @@ brightness (five steps either way, one blended quad over the frame, free at the
 default) and the screen position (16 pixels either way in the display range);
 like the volumes they last for the session. Start Game lists the four
 save profiles: an empty one starts a new game at the opening marker (there is
-no opening cinematic) and a used one continues from its bench. In gameplay, D-pad moves, Cross jumps, Square swings
-the nail, and holding Circle focuses to heal with SOUL. Up + Square attacks
+no opening cinematic) and a used one continues from its bench. In gameplay, the D-pad or left stick moves, Cross jumps, Square swings
+the nail, and Circle casts on a tap and focuses to heal with SOUL on a hold. Up + Square attacks
 upward; airborne Down + Square attacks downward. At a bench, Up sits and the
 prompt saves to the card in port 1. At a tablet's Inspect prompt, press Up or
 Down to read, Cross to advance or close, Circle to close. Start opens the pause
-menu, whose Controls page lists every binding. Select resets the development
-session. Open the CUE to play: the standalone EXE needs its matching disc.
+menu, whose Controls page lists every binding; Select opens the charm board. R2 dashes, hold L2 for
+Crystal Heart, hold Triangle for the Dream Nail, R1 quick casts and L1 holds the quick map (the original's
+own PlayStation layout; the map needs one bought from Cornifer). The Cheats page's Reset session row
+resets the development session. Open the CUE to play: the standalone EXE needs its matching disc.
 
 The builder locates Windows files, checks source and generated-output hashes,
 cooks when those inputs change, validates the pack, compiles the guest, checks

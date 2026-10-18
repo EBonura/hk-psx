@@ -453,7 +453,7 @@ pub fn stop_footsteps() {
     }
 }
 
-/// Scene/respawn/Select reset: discard the previous location's fall duration.
+/// Scene/respawn/Reset session: discard the previous location's fall duration.
 pub fn reset_movement() {
     stop_footsteps();
     unsafe {

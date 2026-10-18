@@ -96,10 +96,10 @@ pub const CHEAT_ITEMS: [&str; 12] = [
     "Pure Nail (21 damage)",
     "Infinite SOUL",
     "Max masks (9)",
-    "Mothwing Cloak (L1 dash)",
+    "Mothwing Cloak (R2 dash)",
     "Mantis Claw (wall jump)",
     "Monarch Wings (double jump)",
-    "Crystal Heart (hold R1)",
+    "Crystal Heart (hold L2)",
     "Shade Cloak (dash i-frames)",
     "Dream Nail (hold Triangle)",
     "Vengeful Spirit (tap O)",
@@ -116,20 +116,20 @@ pub const OPTION_ITEMS: [&str; 7] = [
 ];
 /// The row that leaves the options page.
 pub const OPTION_BACK: usize = OPTION_ITEMS.len() - 1;
-pub const CONTROL_LINES: [&str; 12] = [
-    "D-pad: move",
+pub const CONTROL_LINES: [&str; 14] = [
+    "D-pad or left stick: move",
     "X: jump",
     "Square: swing nail",
-    "Hold O: Focus / heal",
+    "O: cast (tap) or Focus (hold)",
     "Up + Square: upward nail",
     "Airborne Down + Square: downward nail",
     "Up/Down at tablet: inspect",
     "Start: pause / resume",
-    "Select: reset session",
-    // The abilities below are reachable only through Cheats until their
-    // pickups exist, but the mapping is the shipped one.
-    "L1: dash (Mothwing Cloak)",
-    "Hold R1: Crystal Heart",
+    "Select: charms (inventory)",
+    "L1: quick map (needs a map)",
+    "R1: quick cast",
+    "R2: dash (Mothwing Cloak)",
+    "Hold L2: Crystal Heart",
     "Hold Triangle: Dream Nail",
 ];
 pub struct State {

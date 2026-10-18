@@ -47,6 +47,7 @@ pub struct Cast {
     /// Set when Vengeful Spirit has been acquired; nothing grants it yet.
     pub has_fireball: bool,
     was_button: bool,
+    was_quick: bool,
     held: u16,
 }
 impl Default for Cast {
@@ -68,6 +69,7 @@ impl Cast {
             },
             has_fireball: false,
             was_button: false,
+            was_quick: false,
             held: 0,
         }
     }
@@ -108,11 +110,7 @@ impl Cast {
         if self.phase == CastPhase::Off {
             // Can Cast?: HeroController.CanCast, MPCharge >= MP Cost, and
             // Has Fireball? wants fireballLevel above zero.
-            let can = self.has_fireball
-                && !blocked
-                && *soul >= p.cost
-                && player.dash_left == 0
-                && !player.attack_recovering;
+            let can = self.can_cast(p, *soul, player, blocked);
             if tapped && can {
                 *soul -= p.cost;
                 self.phase = CastPhase::Antic;
@@ -143,6 +141,37 @@ impl Cast {
             };
         }
         launching
+    }
+    /// Can Cast?: `HeroController.CanCast`, `MPCharge >= MP Cost`, and `Has Fireball?`
+    /// wants `fireballLevel` above zero.
+    fn can_cast(&self, p: FireballParams, soul: u16, player: &Player, blocked: bool) -> bool {
+        self.has_fireball
+            && !blocked
+            && soul >= p.cost
+            && player.dash_left == 0
+            && !player.attack_recovering
+    }
+    /// The Quick Cast button: a press casts at once, with no Button Down Time
+    /// to wait out and so no Focus to start. Call it after `tick` on the same
+    /// tick, so a cast it starts runs its first clip tick on the next one, as a
+    /// released tap does. Returns true on the tick the cast starts.
+    pub fn quick(
+        &mut self,
+        p: FireballParams,
+        button: bool,
+        soul: &mut u16,
+        player: &Player,
+        blocked: bool,
+    ) -> bool {
+        let pressed = button && !self.was_quick;
+        self.was_quick = button;
+        if pressed && self.phase == CastPhase::Off && self.can_cast(p, *soul, player, blocked) {
+            *soul -= p.cost;
+            self.phase = CastPhase::Antic;
+            self.tick = 0;
+            return true;
+        }
+        false
     }
     /// Advance the projectile and stop it at a wall, as its Idle state does
     /// through the terrain layer collision events.
@@ -255,6 +284,39 @@ mod tests {
         tap(&mut c, &mut soul, &k, 3);
         assert_eq!(c.phase, CastPhase::Antic);
         assert_eq!(soul, 99 - P.cost, "MP Cost is paid at the cast");
+    }
+    #[test]
+    fn quick_cast_casts_on_the_press_and_never_focuses() {
+        let (mut c, k) = (Cast::new(), knight());
+        c.has_fireball = true;
+        let mut soul = 99;
+        assert!(c.quick(P, true, &mut soul, &k, false));
+        assert_eq!(c.phase, CastPhase::Antic);
+        assert_eq!(soul, 99 - P.cost);
+        // Held down it is one press, not a cast per tick.
+        for _ in 0..ANTIC + CAST + 4 {
+            c.tick(P, ANTIC, CAST, false, &mut soul, &k, false);
+            assert!(!c.quick(P, true, &mut soul, &k, false));
+        }
+        assert_eq!(c.phase, CastPhase::Off);
+        assert_eq!(soul, 99 - P.cost);
+        // Let go and press again: a second cast.
+        c.quick(P, false, &mut soul, &k, false);
+        assert!(c.quick(P, true, &mut soul, &k, false));
+        assert_eq!(soul, 99 - 2 * P.cost);
+    }
+    #[test]
+    fn quick_cast_obeys_the_same_gates_as_a_tap() {
+        let (mut c, k) = (Cast::new(), knight());
+        let mut soul = 99;
+        assert!(!c.quick(P, true, &mut soul, &k, false), "no spell yet");
+        c.has_fireball = true;
+        c.quick(P, false, &mut soul, &k, false);
+        assert!(!c.quick(P, true, &mut soul, &k, true), "blocked");
+        c.quick(P, false, &mut soul, &k, false);
+        let mut dry = P.cost - 1;
+        assert!(!c.quick(P, true, &mut dry, &k, false), "too little SOUL");
+        assert_eq!(dry, P.cost - 1);
     }
     #[test]
     fn too_little_soul_refuses_the_cast_outright() {

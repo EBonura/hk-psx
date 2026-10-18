@@ -72,7 +72,7 @@ fn main() {
     let mut bank = admit_scene(scene);
     let mut player = Player::spawn(SPAWN.0, SPAWN.1);
     // Only the abilities that need a button are granted, so a route that never
-    // presses L1, R1 or Triangle behaves exactly as the guest does. The Mantis
+    // presses R2, L2 or Triangle behaves exactly as the guest does. The Mantis
     // Claw is deliberately withheld: a wall slide and a wall jump need no
     // button at all, so granting it would make any route that presses into a
     // wall in mid-air slide or kick off here and not on the disc. That cost a
@@ -97,8 +97,8 @@ dash,wall,superdash,dream");
         let room = &rooms[index];
         let region = world::resident(index).expect("selected region resident in its admitted bank");
         dream.tick(DREAM_NAIL_PARAMS, held("triangle"), &player, false);
-        player.super_dash_input(PARAMS, held("r1"));
-        player.dash_input(PARAMS, held("l1"));
+        player.super_dash_input(PARAMS, held("l2"));
+        player.dash_input(PARAMS, held("r2"));
         let locked = dream.locks_control();
         player.step(PARAMS,
             if locked { 0 } else { held("right") as i32 - held("left") as i32 },

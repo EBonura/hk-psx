@@ -44,7 +44,7 @@ def main():
         args.ticks = 1000
     for event in route.split(','):
         start, button, duration = event.split(':')
-        if int(start) < 0 or int(duration) < 1 or button not in ('start', 'left', 'right', 'cross', 'square', 'up', 'down', 'l1', 'r1', 'triangle'):
+        if int(start) < 0 or int(duration) < 1 or button not in ('start', 'left', 'right', 'cross', 'square', 'up', 'down', 'l1', 'r1', 'l2', 'r2', 'triangle'):
             raise ValueError('Invalid route event: '+event)
     if args.ticks < 1:
         raise ValueError('ticks must be positive')

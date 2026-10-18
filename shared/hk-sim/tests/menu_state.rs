@@ -94,7 +94,7 @@ fn controls_and_back_are_functional_and_confirm_never_retriggers_while_held() {
     }
     assert_eq!(MAIN_ITEMS.len(), 4);
     assert_eq!(OPTION_ITEMS.len(), 7);
-    assert_eq!(CONTROL_LINES.len(), 12);
+    assert_eq!(CONTROL_LINES.len(), 14);
 }
 #[test]
 fn held_directions_repeat_at_bounded_cadence_and_opposites_cancel() {

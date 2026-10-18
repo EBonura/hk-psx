@@ -168,7 +168,7 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
             centered(51, "CONTROLS", gain);
             for (i, line) in state::CONTROL_LINES.iter().enumerate() {
-                text(30, 66 + i as i16 * 12, line, gain);
+                text(30, 64 + i as i16 * 10, line, gain);
             }
             centered(214, "X / O / START: back", gain);
         }

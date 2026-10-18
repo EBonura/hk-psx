@@ -884,6 +884,7 @@ fn main() {
         shop_screen: shop::Screen::new(),
         paused: false,
         start_held: false,
+        inventory_held: false,
         prev_pad: ButtonState::from_bits(0),
         save_prompt: None,
         save_requested: None,
@@ -1157,6 +1158,7 @@ fn main() {
                     // not simulate the destination player against outgoing terrain.
                     if target.is_some_and(|id| world::scene_of(id) != r.scene) {
                         game.start_held = pad.is_held(button::START);
+                        game.inventory_held = pad.is_held(input::bind::INVENTORY);
                         game.player.was_jump = pad.is_held(button::CROSS);
                         continue;
                     }
@@ -1167,7 +1169,8 @@ fn main() {
                     let ready_crossing = spatial_target
                         && target.is_some_and(|id| cache.is_ready(id) && vram.ready(id))
                         && world::contains(r.collision_bounds, game.player.x, game.player.y);
-                    if target.is_some() && !ready_crossing && !pad.is_held(button::SELECT) {
+                    let reset = game.pause_menu.reset_requested;
+                    if target.is_some() && !ready_crossing && !reset {
                         boundary_ticks = boundary_ticks.saturating_add(1);
                         unsafe {
                             HK_BOUNDARY_WAIT_TICKS = HK_BOUNDARY_WAIT_TICKS.saturating_add(1);
@@ -1183,7 +1186,8 @@ fn main() {
                     let room = cache.room();
                     emit::task_begin(task::FIXED_UPDATE);
                     emit::stage_begin(stage::UPDATE);
-                    if pad.is_held(button::SELECT) {
+                    if reset {
+                        game.pause_menu.reset_requested = false;
                         frame::debug_reset(&mut game, &mut target);
                     } else if !game.paused && !ui_consumed && !game.vitals.tick() {
                         frame::simulate(
@@ -1339,6 +1343,7 @@ fn main() {
                 let held = ButtonState::from_bits(input::held_buttons());
                 game.player.was_jump = held.is_held(button::CROSS);
                 game.start_held = held.is_held(button::START);
+                game.inventory_held = held.is_held(input::bind::INVENTORY);
             }
             if let Some(id) = target {
                 if !cache.is_ready(id) {
@@ -1369,6 +1374,7 @@ fn main() {
                     let held = ButtonState::from_bits(input::held_buttons());
                     game.player.was_jump = held.is_held(button::CROSS);
                     game.start_held = held.is_held(button::START);
+                    game.inventory_held = held.is_held(input::bind::INVENTORY);
                 }
                 // Every spatial view within the selected scene remains resident.
                 if vram.ready(id) && matches!(cache.try_select(id), Ok(true)) {

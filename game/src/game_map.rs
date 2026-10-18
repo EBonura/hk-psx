@@ -8,8 +8,8 @@
 //! a map bought (`hasMap`) opens it; letting go, leaving the ground, a hit or a
 //! scene gate closes it. While it is up the Knight stands (the source lets him
 //! walk slowly, `Map Walk`, which is not reproduced) and the world runs on.
-//! The port's map button is L2: the pad has no spare face button, and this is
-//! the one L1's neighbour leaves free.
+//! The map button is the original's Quick Map button (L1, `input::bind`). With no
+//! map bought the FSM tests `hasMap` and does nothing, so neither does this.
 //!
 //! The page is shared with the one scene that needs all nineteen static
 //! pages, the False Knight's arena: while it is admitted the map is not there
@@ -83,7 +83,7 @@ const _: () = assert!((MAP_ROWS as usize) < hk_cache::residency::MAP_PAGE.3);
 
 /// `Map Control`'s `Button Down Time`, 0.1 s at the 60 Hz tick.
 pub const BUTTON_DOWN_TICKS: u16 = 6;
-pub const MAP_BUTTON: u16 = psx_pad::button::L2;
+pub const MAP_BUTTON: u16 = crate::input::bind::QUICK_MAP;
 /// `MapScene` item value bits.
 pub const VISITED: u8 = 1;
 pub const MAPPED: u8 = 2;
