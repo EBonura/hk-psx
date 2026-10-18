@@ -1,0 +1,16 @@
+pacing = 102
+card = cornifer-map.mcd
+# The map and its mapper. cornifer-map boots from tools/cards/cornifer-map.mcd,
+# town-continue's record seeded in Crossroads_33 beside Cornifer with 100 Geo
+# (tools/seed_card.py), talks to him, pages through the meeting, buys the map
+# for 30 at the yes/no box, clears the first-map prompt and the Iselda pages,
+# holds L2 for the quick map, then talks again (the introduction). The 16
+# rooms are Cornifer's charted Crossroads rooms, rough, with no quill.
+HK_CORNIFER_SOLD = 1
+HK_CORNIFER_TALKS = 2
+HK_GEO_WALLET = 70
+HK_MAP_OPENS = 1
+HK_MAP_ROOMS_DRAWN = 16
+HK_REGION_ID = 410
+HK_DEATHS = 0
+HK_SAVE_LOADED = 1

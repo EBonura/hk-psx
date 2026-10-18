@@ -1,0 +1,9 @@
+card = town-continue.mcd
+# Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the save
+# screen's first slot resumes in the Town view with that record's wallet and opened Great Door. A catalogue change
+# that moves the Town slot invalidates the fixture: copy .hkpsx/validate/town-bench.mcd over it.
+HK_SAVE_LOADED = 1
+HK_MENU_ROW = 0
+HK_REGION_ID = 100
+HK_GEO_WALLET = 6
+HK_GREAT_DOOR_HITS = 13

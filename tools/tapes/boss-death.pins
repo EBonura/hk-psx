@@ -1,0 +1,45 @@
+card = boss-fight.mcd
+art_late = 44
+# Losing to the False Knight, and walking back in for a second go.
+# 
+# boss-fight above is the win. This is the loss, and the two together are
+# what P21 actually asks for. A Knight who presses nothing after walking
+# into the trigger is dead in 1,002 polls, on five separate hits.
+# 
+# What the second half proves is the retry. The death leaves a Shade in the
+# arena, respawns at the seat with five masks, resets the arena to Waiting
+# and restores the boss to 65 and 40, and the closed gate goes back to its
+# placement state on the same tick the scene reloads, so nothing is sealed
+# in with nothing to fight. Walking right again drops the boss a second
+# time: TRIGGERED and DROPPED are 2, and GATE_CLOSES is 2.
+# 
+# The tape stops at poll 1,600 and that is not where the fight ends. At
+# poll 1,897, about 490 polls into the second fight, the frame collapses:
+# two missed VBlanks per poll, every poll, with the input queue climbing
+# from 5 to 16 in 21 polls until the sampler faults QueueFull and the guest
+# panics. Health is steady at 3 through all of it, so it is not damage. A
+# fight with a Shade in the room is the ordinary case after any death, and
+# it is the one case the port cannot currently survive. Do not extend this
+# tape past 1,600 expecting it to pass; fix that first.
+HK_CHEATS = 0
+HK_DEATHS = 1
+HK_SHADE_PRESENT = 1
+HK_SHADE_HP = 10
+HK_FK_TRIGGERED = 2
+HK_FK_DROPPED = 2
+HK_FK_HP = 65
+HK_FK_HEAD_HP = 40
+HK_FK_ARENA = 2
+HK_FK_DEATHS = 0
+HK_FK_STAGGERS = 0
+HK_ARENA_GATE_CLOSES = 2
+HK_SCENE_LOADS = 1
+HK_ENEMY_KILLS = 0
+HK_SAVE_LOADED = 1
+HK_SAVE_ERRORS = 0
+HK_REGION_ID = 239
+HK_FK_FLOOR = 0
+# Alive when the tape runs out. How many masks the second fight has cost by
+# then is frame timing; HK_DEATHS 1 above is the assertion that he died
+# exactly once and got back up.
+HK_HEALTH >= 1

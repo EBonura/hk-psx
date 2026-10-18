@@ -1,0 +1,29 @@
+# Canonical reload of that completed save on the same emulator has 662
+# slow frames; matched region transitions differ by at most two polls.
+pacing = 861
+journey = 4
+scene_gate = true
+# journey-reload boots that card and walks the same way back towards the
+# arena, and where it used to cross the arena floor it now falls through
+# the broken one before it reaches the Battle Scene trigger. The boss
+# never leaves the ceiling: nothing triggered, nothing dropped, the gates
+# quick-opened on entry and never closed, and the Crossroads_10 gates are
+# open (ARENA_GATES 1 is Crossroads_04's gate, closed on load, alone). The
+# seven items restored are the six King's Pass walls and the arena.
+HK_SAVE_LOADED = 1
+HK_WORLD_RESTORED = 10
+HK_WORLD_ITEMS = 10
+HK_WORLD_PLAYER = 3
+HK_FK_TRIGGERED = 0
+HK_FK_DROPPED = 0
+HK_FK_DEATHS = 0
+HK_FK_ACTIVATED = 1
+HK_FK_ARENA = 4
+HK_ARENA_GATE_CLOSES = 0
+HK_ARENA_GATE_OPENS = 1
+HK_ARENA_GATES = 1
+# The floor stays broken on the reload, so the walk that used to cross
+# the arena floor drops through the hole into the room below instead.
+HK_DEATHS = 0
+HK_REGION_ID = 232
+HK_FK_FLOOR = 2

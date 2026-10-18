@@ -1,0 +1,9 @@
+pacing = 2
+card = town-continue.mcd
+# bench-save resumes at the Dirtmouth bench, sits, and accepts the prompt. It is the
+# only way this port writes the card, and what the power-cut check interrupts.
+HK_BENCH_RESTS = 1
+HK_SAVE_WRITES = 1
+# The bench rest resets the semi-persistent items too.
+HK_SEMI_RESETS = 1
+HK_SAVE_ERRORS = 0

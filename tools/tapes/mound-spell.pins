@@ -1,0 +1,17 @@
+pacing = 314
+card = mound-spell.mcd
+# Vengeful Spirit earned in play. mound-spell boots from
+# tools/cards/mound-spell.mcd (the same record seeded in the Ancestral Mound
+# beside the Snail Shaman), hears the meeting, waits out the summon, jumps
+# into the orb, and after the black, the get-item message and the fade
+# gets up and walks off. The spell, 99 SOUL (100 capped by the vessel) and
+# no automatic card write at the wake point are what it pins. Card saving
+# requires a later explicit bench Save confirmation.
+HK_SPELL_EARNED = 1
+HK_SHAMAN_STATE = 2
+HK_SHAMAN_TALKS = 1
+HK_SOUL = 99
+HK_SAVE_WRITES = 0
+HK_SAVE_ERRORS = 0
+HK_DEATHS = 0
+HK_SAVE_LOADED = 1

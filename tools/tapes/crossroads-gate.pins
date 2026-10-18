@@ -1,0 +1,23 @@
+pacing = 303
+card = town-continue.mcd
+scene_gate = true
+# crossroads-gate carries well-drop on into the Crossroads: after the well it walks
+# west along the shaft floor and takes the Crossroads_01 side gate into Crossroads_07,
+# so a scene gate between two Crossroads scenes is covered again. Two gate loads and
+# the Crossroads_07 entry view are what it is here to prove; the deaths count keeps a
+# respawn from standing in for the traversal.
+HK_SCENE_GATE_LOADS = 2
+HK_REGION_ID = 150
+HK_DEATHS = 0
+HK_SAVE_LOADED = 1
+# The traversal also fights, and nothing pinned that: it swings twice, kills one
+# of the two families living in these scenes and takes a mask doing it. Exact on
+# purpose. A Climber left alive at full health is the point of the last one, so a
+# regression that stops the Climber contacting the Knight shows here.
+HK_ENEMY_KILLS = 1
+HK_ENEMY_HITS = 2
+HK_HEALTH = 4
+HK_CLIMBER_HP = 8
+HK_SCRIPT_TRANSITIONS = 1
+HK_SCRIPT_WRITES = 1
+HK_SCRIPT_FLAGS = 2

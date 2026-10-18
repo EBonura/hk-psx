@@ -1,0 +1,18 @@
+pacing = 125
+card = spell-exit.mcd
+# The Greenpath exit with the earned spell and no cheats. spell-exit boots
+# from tools/cards/spell-exit.mcd: a historical earned-spell record
+# (fireballLevel 1), reseated right of
+# Crossroads_11_alt's Elder Baldur (tools/seed_card.py). SOUL starts at 0,
+# so the four casts come from the four rollers the Baldur spits once the
+# spell is had: three nail hits each for 33 SOUL, then a cast, the last
+# after a step left under a goop. Then the Knight walks on into region 338.
+HK_BLOCKERS_DEAD = 1
+HK_ENEMY_HITS = 4
+HK_ROLLERS_SPAWNED = 4
+HK_ROLLERS_KILLED = 4
+HK_ROLLER_HITS = 12
+HK_CHEATS = 0
+HK_DEATHS = 0
+HK_REGION_ID = 338
+HK_SAVE_LOADED = 1

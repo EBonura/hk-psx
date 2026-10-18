@@ -1,0 +1,5 @@
+# Crystal Heart: 48 polls of charge, then 23.3 units of travel with no
+# direction pressed, which is not an ordinary dash's 5.0.
+HK_CHEATS = 128
+HK_PLAYER_X = 3851091
+HK_ABILITY_DRAWN >= 50

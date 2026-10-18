@@ -11,6 +11,7 @@ use std::process::Command;
 mod disc;
 mod earned_focus;
 mod region_cache;
+mod routes;
 mod scene_gate;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -87,960 +88,6 @@ const ASSET_SCRIPTS: &[&str] = &[
     // scenes and .hkpsx/selected-regions.json and writes data/scripts.rs.
     "cook_scripts.py",
 ];
-/// Route tapes replayed against the final CUE; the ones flagged in ROUTES also run the scene-gate verifier.
-/// Final telemetry a route must reach besides completing its tape.
-const REQUIRED: &[(&str, &str, u64)] = &[
-    // well-drop resumes at the Dirtmouth bench and walks right into the well, so the
-    // Town to Crossroads gate is exercised without replaying King's Pass.
-    ("well-drop", "HK_SCENE_GATE_LOADS", 1),
-    // town-reset2 resumes, walks, then Select resets the session back to the spawn.
-    ("town-reset2", "HK_REGION_ID", 1),
-    // crossroads-gate carries well-drop on into the Crossroads: after the well it walks
-    // west along the shaft floor and takes the Crossroads_01 side gate into Crossroads_07,
-    // so a scene gate between two Crossroads scenes is covered again. Two gate loads and
-    // the Crossroads_07 entry view are what it is here to prove; the deaths count keeps a
-    // respawn from standing in for the traversal.
-    ("crossroads-gate", "HK_SCENE_GATE_LOADS", 2),
-    ("crossroads-gate", "HK_REGION_ID", 150),
-    ("crossroads-gate", "HK_DEATHS", 0),
-    ("crossroads-gate", "HK_SAVE_LOADED", 1),
-    // The traversal also fights, and nothing pinned that: it swings twice, kills one
-    // of the two families living in these scenes and takes a mask doing it. Exact on
-    // purpose. A Climber left alive at full health is the point of the last one, so a
-    // regression that stops the Climber contacting the Knight shows here.
-    ("crossroads-gate", "HK_ENEMY_KILLS", 1),
-    ("crossroads-gate", "HK_ENEMY_HITS", 2),
-    ("crossroads-gate", "HK_HEALTH", 4),
-    ("crossroads-gate", "HK_CLIMBER_HP", 8),
-    // Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the save
-    // screen's first slot resumes in the Town view with that record's wallet and opened Great Door. A catalogue change
-    // that moves the Town slot invalidates the fixture: copy .hkpsx/validate/town-bench.mcd over it.
-    ("town-continue", "HK_SAVE_LOADED", 1),
-    ("town-continue", "HK_MENU_ROW", 0),
-    ("town-continue", "HK_REGION_ID", 100),
-    ("town-continue", "HK_GEO_WALLET", 6),
-    ("town-continue", "HK_GREAT_DOOR_HITS", 13),
-    // town-shade boots from a card whose record already carries a Hollow Shade six units
-    // from the Dirtmouth bench with a 99-Geo pool. It must spawn, chase and hurt the
-    // Knight, die to the nail, and hand the pool back on top of the saved six.
-    ("town-shade", "HK_SHADE_KILLS", 1),
-    ("town-shade", "HK_SHADE_PRESENT", 0),
-    ("town-shade", "HK_GEO_WALLET", 105),
-    // Two masks, not the three this cost before build 120: ATTACK_QUEUE_STEPS now
-    // carries a swing pressed a few ticks early, so the same tape kills the Shade
-    // sooner and eats one fewer hit. Exact on purpose, so a later regression shows.
-    ("town-shade", "HK_HEALTH", 3),
-    // kings-death walks the King's Pass traversal with the nail silent past the fifth
-    // breakable, so the Crawler there survives to kill the Knight. Death must record a
-    // Shade at the spot with nailDamage * clamp(maxHealth / 2, 1, 99) health, and must
-    // not touch the card: this port only writes when the player accepts the bench prompt.
-    ("kings-death", "HK_DEATHS", 1),
-    // The death reset every semi-persistent item once (GameManager.PlayerDead).
-    ("kings-death", "HK_SEMI_RESETS", 1),
-    ("kings-death", "HK_ENEMY_KILLS", 0),
-    ("kings-death", "HK_SHADE_PRESENT", 1),
-    ("kings-death", "HK_SHADE_HP", 10),
-    ("kings-death", "HK_SAVE_WRITES", 0),
-    ("kings-death", "HK_SAVE_ERRORS", 0),
-    // kings-return boots from the card kings-death itself wrote, so the Shade it spawns
-    // comes from a real death rather than a hand-seeded record. Walking the same
-    // traversal back must find it there and recover it without dying again. Regenerate
-    // the fixture from .hkpsx/validate/kings-death.mcd whenever the save record changes.
-    ("kings-return", "HK_SAVE_LOADED", 1),
-    ("kings-return", "HK_SHADE_KILLS", 1),
-    ("kings-return", "HK_SHADE_PRESENT", 0),
-    ("kings-return", "HK_DEATHS", 0),
-    // Walking back past the Crawler that did the killing costs three of the five
-    // masks, and the Knight kills it this time. Unpinned until now, so the return
-    // traversal could have stopped fighting entirely and still passed.
-    // Re-baselined at build 141, when tiled frames added a little per-frame cost
-    // to everything drawn. kings-return is the most timing-sensitive route this
-    // project has, being its longest continuous contact-heavy traversal, and it
-    // came back 4.1 units short having taken one hit fewer. What says that is
-    // timing rather than behaviour: its kill, its two hits, its Shade recovery,
-    // its five breakables and its zero deaths are all unchanged, and nine other
-    // routes returned byte-identical positions, including the longest ones.
-    ("kings-return", "HK_ENEMY_KILLS", 1),
-    ("kings-return", "HK_ENEMY_HITS", 2),
-    // well-drop falls the length of the well and must arrive unhurt: the drop is not
-    // a hazard and nothing down there reaches the Knight on the way.
-    ("well-drop", "HK_HEALTH", 5),
-    ("well-drop", "HK_DEATHS", 0),
-    // bench-save resumes at the Dirtmouth bench, sits, and accepts the prompt. It is the
-    // only way this port writes the card, and what the power-cut check interrupts.
-    ("bench-save", "HK_BENCH_RESTS", 1),
-    ("bench-save", "HK_SAVE_WRITES", 1),
-    // The bench rest resets the semi-persistent items too.
-    ("bench-save", "HK_SEMI_RESETS", 1),
-    ("bench-save", "HK_SAVE_ERRORS", 0),
-    // town-elderbug resumes in Town, walks into Elderbug's npc_control talk trigger and
-    // holds a whole conversation: UP opens it, six presses of X page through all six
-    // cooked entries and close it. SOURCE back to 0 is what proves it closed rather than
-    // ran out of tape; OPENED stays 1 because the trigger the Knight is standing in must
-    // not reopen it behind the closing press. metElderbug is written on the way through.
-    // A .pxtape is opaque once written, so this is the string that made it, through
-    // tools/validate.py's poll_tape at count 900:
-    //   9:start:1,12:cross:1,400:left:120,600:right:84,700:up:4,
-    //   730:cross:2,755:cross:2,780:cross:2,805:cross:2,830:cross:2,855:cross:2
-    ("town-elderbug", "HK_NPC_OPENED", 1),
-    ("town-elderbug", "HK_NPC_SOURCE", 0),
-    ("town-elderbug", "HK_MET_ELDERBUG", 1),
-    ("town-elderbug", "HK_REGION_ID", 100),
-    ("town-elderbug", "HK_SAVE_LOADED", 1),
-    ("town-elderbug", "HK_DEATHS", 0),
-    // The conversation is a chain, so the cursor moving is what says the next
-    // visit gets the next conversation rather than the introduction again.
-    ("town-elderbug", "HK_NPC_MET", 1),
-    // The first cooked PlayMaker FSM to run on the disc. Town's Area Resetter
-    // waits in Detect for its Trigger2dEvent volume at x 182.7 to 187.4, y 2.14
-    // to 3.14, which is the mouth of the well, takes TOUCH to Reset and writes
-    // currentArea. FLAGS bit 1 is that field, so 2 is the write having landed
-    // in the persistent store rather than the transition merely having fired.
-    // crossroads-gate carries the same walk on, and ends with no instance
-    // resident because Crossroads_07 has none.
-    ("well-drop", "HK_SCRIPT_TRANSITIONS", 1),
-    ("well-drop", "HK_SCRIPT_WRITES", 1),
-    ("well-drop", "HK_SCRIPT_FLAGS", 2),
-    ("well-drop", "HK_SCRIPT_ACTIVE", 1),
-    ("crossroads-gate", "HK_SCRIPT_TRANSITIONS", 1),
-    ("crossroads-gate", "HK_SCRIPT_WRITES", 1),
-    ("crossroads-gate", "HK_SCRIPT_FLAGS", 2),
-    // The bank emits no native call, so one arriving means the bank and the
-    // runtime have diverged. Same for a halt: every program is meant to fit its
-    // op budget, so a halt is a cooked program the executor could not run.
-    ("well-drop", "HK_SCRIPT_HALTS", 0),
-    ("well-drop", "HK_SCRIPT_NATIVE", 0),
-    ("kings-death", "HK_SCRIPT_HALTS", 0),
-    ("kings-death", "HK_SCRIPT_NATIVE", 0),
-    // Instances resident per scene: one in King's Pass, two in Town. This is
-    // what says the bank is being seated at all, on routes where nothing fires.
-    // Nothing reaches Tutorial_01's own acting volume (Set Seen Focus Tablet at
-    // x 102.0 to 103.7, y 27.98 to 37.9): kings-death stays below y 25 and
-    // kings-return passes underneath at y 11.4. That needs the King's Pass
-    // climb, which no route does yet.
-    ("kings-death", "HK_SCRIPT_ACTIVE", 1),
-    ("town-elderbug", "HK_SCRIPT_ACTIVE", 2),
-    ("town-elderbug", "HK_SCRIPT_HALTS", 0),
-    // The ability routes. Every one boots fresh and grants its ability from the
-    // pause Cheats page, because no admitted scene holds an ability pickup, and
-    // every one presses exactly one ability button. HK_ABILITY_DRAWN counts
-    // frames an ability clip owned the Knight's body, so paired with the cheat
-    // bit it says the ability ran rather than that the Knight moved.
-    //
-    // Vengeful Spirit: Restore fills SOUL to 99 and exactly FIREBALL_PARAMS.cost
-    // leaves the pool. The only other consumer of 33 is Focus, which the zero
-    // rules out.
-    ("cheat-spell", "HK_CHEATS", 1024),
-    ("cheat-spell", "HK_SOUL", 66),
-    ("cheat-spell", "HK_FOCUS_STARTED", 0),
-    // Mothwing Cloak: the tape presses no direction at all, so the alternative
-    // to a dash is X unchanged. The delta is dash_speed times dash_ticks exactly.
-    ("cheat-dash", "HK_CHEATS", 16),
-    ("cheat-dash", "HK_PLAYER_X", 2651581),
-    // Monarch Wings against ctrl-wings, the same tape with the grant removed.
-    // The Knight lands on the same floor either way, so the double jump shows
-    // only in the clip count, which is why this route had no assertion at all
-    // until HK_ABILITY_DRAWN was watched.
-    ("cheat-wings", "HK_CHEATS", 64),
-    ("ctrl-wings", "HK_CHEATS", 0),
-    ("ctrl-wings", "HK_ABILITY_DRAWN", 0),
-    // Crystal Heart: 48 polls of charge, then 23.3 units of travel with no
-    // direction pressed, which is not an ordinary dash's 5.0.
-    ("cheat-heart", "HK_CHEATS", 128),
-    ("cheat-heart", "HK_PLAYER_X", 3851091),
-    // Dream Nail: SOUL on this port comes from a nail hit, a Focus refund or
-    // DREAM_NAIL_PARAMS.soul. Enemy hits and Focus are both zero, so the 33 is
-    // EnemyDreamnailReaction on the Crawler and nothing else. Invincibility is
-    // granted so Crawler contact cannot interrupt the take-control sequence.
-    ("cheat-dream", "HK_CHEATS", 513),
-    ("cheat-dream", "HK_SOUL", 33),
-    ("cheat-dream", "HK_ENEMY_HITS", 0),
-    ("cheat-dream", "HK_ENEMY_KILLS", 0),
-    ("cheat-dream", "HK_HEALTH", 5),
-    ("cheat-dream", "HK_BREAK_COUNT", 5),
-    // The King's Pass climb, which reproduced in the probe and had never been
-    // done on the disc, and the first cooked script to fire in Tutorial_01:
-    // FLAGS bit 0 is seenFocusTablet. The climb needs no ability, it needs to
-    // survive two Crawler hits, which is what the Invincibility grant buys;
-    // ctrl-climb is the same tape without the grant and reaches none of it.
-    ("kings-climb", "HK_CHEATS", 1),
-    ("kings-climb", "HK_SCRIPT_TRANSITIONS", 1),
-    ("kings-climb", "HK_SCRIPT_WRITES", 1),
-    ("kings-climb", "HK_SCRIPT_FLAGS", 1),
-    ("kings-climb", "HK_SCRIPT_HALTS", 0),
-    ("kings-climb", "HK_SCRIPT_NATIVE", 0),
-    ("kings-climb", "HK_REGION_ID", 30),
-    ("kings-climb", "HK_DEATHS", 0),
-    ("kings-climb", "HK_HEALTH", 5),
-    ("kings-climb", "HK_ENEMY_KILLS", 2),
-    ("kings-climb", "HK_ENEMY_HITS", 4),
-    ("kings-climb", "HK_BREAK_COUNT", 11),
-    ("kings-climb", "HK_SOUL", 44),
-    ("ctrl-climb", "HK_CHEATS", 0),
-    ("ctrl-climb", "HK_SCRIPT_FLAGS", 0),
-    ("ctrl-climb", "HK_SCRIPT_WRITES", 0),
-    // Sly's shop is shut on a fresh save, as in the source: Dirtmouth's
-    // `Check Opened` turns `Sly_shop/open` off until `slyRescued`, and door_sly
-    // is a child of it, so no gate cooks there. Sly is rescued in
-    // Room_ruinhouse, which is not on this disc, so the shop stays shut for the
-    // whole slice (its logic is still covered by tests/shop_runtime.rs).
-    // town-shop is the same tape as before, on its 1,000 Geo card: it walks to
-    // where the door was, presses UP and the buttons that used to buy twice,
-    // and nothing opens and nothing is spent.
-    ("town-shop", "HK_SCENE_GATE_LOADS", 0),
-    ("town-shop", "HK_SHOP_OPENED", 0),
-    ("town-shop", "HK_SHOP_PURCHASES", 0),
-    ("town-shop", "HK_SHOP_GEO_SPENT", 0),
-    ("town-shop", "HK_GEO_WALLET", 1000),
-    ("town-shop", "HK_SAVE_LOADED", 1),
-    ("town-shop", "HK_DEATHS", 0),
-    // The False Knight, fought fairly and killed. No cheats, five masks at the
-    // end and not one of them lost: HK_CHEATS 0 and HK_HEALTH 5 hold at every
-    // poll of the tape, not only at the last one. Three staggers, three
-    // conversions, the death event, the arena cleared and its gates reopened.
-    //
-    // The tape before this one ran with Invincibility on, set by its own
-    // pause-menu polls, so the port had proved a boss that could be killed and
-    // had never proved a fight that could be won. Strip those seven events from
-    // it and the Knight dies without landing a single stagger.
-    //
-    // STAGGERS equal to CONVERSIONS is the assertion worth having. The source
-    // lets a hero stagger the boss out of its own rage, after which the fight
-    // never ends because Rage Check only reads the stagger count once the rage
-    // counter reaches zero; an earlier tape measured 8 staggers against 1
-    // conversion, and the recook that sealed the arena left the cheated tape at
-    // 4 against 2. Equal counts are the proof this one held fire through both
-    // rages instead.
-    //
-    // Three things had to be found before any tape could finish this fight. The
-    // exposed Head sits at y 30.24 to 32.47 and a Knight standing on the arena
-    // floor reaches y 30.18 with an up slash, so it is unreachable from the
-    // ground by 0.06 units and the tape jumps and swings at the apex. Every
-    // landed hit recoils the Knight 0.69 units away from his facing. And the
-    // arena has to seal: with both end gates cooked as terrain that recoil can
-    // no longer walk him off the floor, which is what left an earlier tape
-    // stuck at exactly 10 hp, and it gives the hero a bounded band from x 19 to
-    // x 39 to dodge in. This route did not exist until the gates did.
-    //
-    // The card is seeded rather than earned, so this proves the fight and not
-    // the journey to it. The route string is tools/tapes/boss-fight.route, kept
-    // because a .pxtape is opaque; it is 239 events over 4,609 polls, and the
-    // only buttons in it are square, left, right, cross and one start.
-    //
-    // Fragile to anything that moves the boss path, the actor bounds or the
-    // nail geometry. Three that silently break a tape and cost real time to
-    // find: Actor::local_bounds mirrors the placement box when the walk
-    // direction leaves the cooked initial_direction, which flips this boss's
-    // collision offset by 0.142 units the moment it turns right;
-    // respond_to_hurt cancels the swing and the nail recoil on any landed hit,
-    // whatever the source; and the barrel summoner seeds from 1 out of
-    // EnemyWorld::new rather than from the scene id, because nothing in this
-    // route reloads the scene for clear_shots to re-seed it.
-    ("boss-fight", "HK_FK_TRIGGERED", 1),
-    ("boss-fight", "HK_FK_DROPPED", 1),
-    ("boss-fight", "HK_FK_STAGGERS", 3),
-    ("boss-fight", "HK_FK_CONVERSIONS", 3),
-    ("boss-fight", "HK_FK_DEATHS", 1),
-    ("boss-fight", "HK_FK_STUNNED", 3),
-    ("boss-fight", "HK_FK_ARENA", 4),
-    ("boss-fight", "HK_FK_ACTIVATED", 1),
-    ("boss-fight", "HK_ARENA_GATE_CLOSES", 1),
-    ("boss-fight", "HK_ARENA_GATE_OPENS", 1),
-    ("boss-fight", "HK_HEALTH", 5),
-    ("boss-fight", "HK_DEATHS", 0),
-    ("boss-fight", "HK_ENEMY_KILLS", 0),
-    ("boss-fight", "HK_CHEATS", 0),
-    ("boss-fight", "HK_SAVE_LOADED", 1),
-    // The last jump breaks the floor and the fight ends in the room below it:
-    // the Knight follows the boss down, finishes the Head in `Opened 2` and
-    // stands there while the Death Head drops out and the arena opens. The
-    // route's death exposure is a repeated jump-and-swing chosen because it
-    // still kills with a poll dropped or doubled anywhere in it, which is what
-    // tools/boss_sim.py's own search could not promise.
-    ("boss-fight", "HK_REGION_ID", 232),
-    ("boss-fight", "HK_FK_FLOOR", 2),
-    ("boss-fight", "HK_FK_HEAD_HITS", 28),
-    // `Floor Break` takes the mixer to `Silent`: the Boss1 XA has faded and
-    // stopped by the time the Head is finished below, and it started once.
-    ("boss-fight", "HK_MUSIC_BOSS", 0),
-    ("boss-fight", "HK_MUSIC_BOSS_STARTS", 1),
-    // Every False Knight voice the fight asks Crossroads_10's scene bank for is
-    // there (host/hk-cook/src/scene_sfx.rs): none falls through to a miss.
-    ("boss-fight", "HK_SCENE_SFX_MISSED", 0),
-    // Every barrel the rage flung reached terrain or the hero. Spawns and
-    // breaks are separate counters because a barrel the pool recycled under
-    // pressure never breaks, so equal counts are what tells a fight the player
-    // dodged from one where the rage's own barrels evicted each other.
-    ("boss-fight", "HK_FK_BARRELS", 24),
-    ("boss-fight", "HK_FK_BARRELS_BROKEN", 24),
-    // Losing to the False Knight, and walking back in for a second go.
-    //
-    // boss-fight above is the win. This is the loss, and the two together are
-    // what P21 actually asks for. A Knight who presses nothing after walking
-    // into the trigger is dead in 1,002 polls, on five separate hits.
-    //
-    // What the second half proves is the retry. The death leaves a Shade in the
-    // arena, respawns at the seat with five masks, resets the arena to Waiting
-    // and restores the boss to 65 and 40, and the closed gate goes back to its
-    // placement state on the same tick the scene reloads, so nothing is sealed
-    // in with nothing to fight. Walking right again drops the boss a second
-    // time: TRIGGERED and DROPPED are 2, and GATE_CLOSES is 2.
-    //
-    // The tape stops at poll 1,600 and that is not where the fight ends. At
-    // poll 1,897, about 490 polls into the second fight, the frame collapses:
-    // two missed VBlanks per poll, every poll, with the input queue climbing
-    // from 5 to 16 in 21 polls until the sampler faults QueueFull and the guest
-    // panics. Health is steady at 3 through all of it, so it is not damage. A
-    // fight with a Shade in the room is the ordinary case after any death, and
-    // it is the one case the port cannot currently survive. Do not extend this
-    // tape past 1,600 expecting it to pass; fix that first.
-    ("boss-death", "HK_CHEATS", 0),
-    ("boss-death", "HK_DEATHS", 1),
-    ("boss-death", "HK_SHADE_PRESENT", 1),
-    ("boss-death", "HK_SHADE_HP", 10),
-    ("boss-death", "HK_FK_TRIGGERED", 2),
-    ("boss-death", "HK_FK_DROPPED", 2),
-    ("boss-death", "HK_FK_HP", 65),
-    ("boss-death", "HK_FK_HEAD_HP", 40),
-    ("boss-death", "HK_FK_ARENA", 2),
-    ("boss-death", "HK_FK_DEATHS", 0),
-    ("boss-death", "HK_FK_STAGGERS", 0),
-    ("boss-death", "HK_ARENA_GATE_CLOSES", 2),
-    ("boss-death", "HK_SCENE_LOADS", 1),
-    ("boss-death", "HK_ENEMY_KILLS", 0),
-    ("boss-death", "HK_SAVE_LOADED", 1),
-    ("boss-death", "HK_SAVE_ERRORS", 0),
-    ("boss-death", "HK_REGION_ID", 239),
-    ("boss-death", "HK_FK_FLOOR", 0),
-    // The slam wave. The Knight backs away to the arena's left end, so the
-    // boss slams from range (`S Check Hero Pos` skips the leap from twelve
-    // units) and each `S Attack Recover` sends a Shockwave Wave across the
-    // floor at it. The first one lands, the next three are jumped; the tape is
-    // tools/boss_sim.py's, which shares hk_sim::shockwave with the guest, and
-    // the disc took exactly the hits it predicted. The music is still the
-    // fight's XA when the tape ends, because nothing broke the floor.
-    ("boss-wave", "HK_SAVE_LOADED", 1),
-    ("boss-wave", "HK_FK_TRIGGERED", 1),
-    ("boss-wave", "HK_FK_WAVES", 4),
-    ("boss-wave", "HK_FK_WAVE_HITS", 1),
-    ("boss-wave", "HK_HEALTH", 2),
-    ("boss-wave", "HK_DEATHS", 0),
-    ("boss-wave", "HK_CHEATS", 0),
-    ("boss-wave", "HK_FK_STAGGERS", 0),
-    ("boss-wave", "HK_MUSIC_BOSS", 1),
-    ("boss-wave", "HK_REGION_ID", 239),
-    // Greenpath, walked rather than cooked. The Knight boots from a seeded card
-    // ten units inside Fungus1_01 and holds left, crossing into Fungus1_01b and
-    // then into Fungus1_02, which is the room every other Greenpath scene is
-    // reached through. Two scene gates, three scene loads, five masks, no
-    // faults.
-    //
-    // The region trail is the assertion worth having beyond the gate count.
-    // Inside Fungus1_02 he crosses five distinct regions, and that scene is one
-    // of the two in the catalogue carrying a recorded view layout rather than
-    // the derived grid, because six of its fifteen grid views want a sixth
-    // static page. So this route is what says those hand-recorded boxes hold up
-    // on hardware, not just in the cook.
-    //
-    // The route string, since a .pxtape is opaque, through poll_tape at 3000:
-    //   9:start:1,12:cross:1,150:left:260,600:left:400,1100:left:400,
-    //   1600:left:400,2100:left:400,2600:left:350
-    ("greenpath-walk", "HK_SCENE_GATE_LOADS", 2),
-    ("greenpath-walk", "HK_SCENE_LOADS", 3),
-    ("greenpath-walk", "HK_REGION_ID", 742),
-    ("greenpath-walk", "HK_HEALTH", 5),
-    ("greenpath-walk", "HK_DEATHS", 0),
-    ("greenpath-walk", "HK_SAVE_LOADED", 1),
-    ("greenpath-walk", "HK_ROOM_LOAD_ERROR", 0),
-    ("greenpath-walk", "HK_CD_STREAM_ERROR", 0),
-    // grub-jar boots from a seeded card (tools/seed_card.py) on the Crossroads_05
-    // ledge beside its grub jar, facing it, and swings: the first swing breaks
-    // the jar, the grub is freed and gone by the end, and the world store
-    // holds one Grub item. Seeded, so it proves the jar, not the way to it.
-    //   9:start:1,12:cross:1,200:square:2,230:square:2,260:square:2 (450 polls)
-    ("grub-jar", "HK_GRUBS_FREED", 1),
-    ("grub-jar", "HK_GRUBS", 1),
-    ("grub-jar", "HK_CHEATS", 0),
-    ("grub-jar", "HK_DEATHS", 0),
-    ("grub-jar", "HK_HEALTH", 5),
-    ("grub-jar", "HK_REGION_ID", 194),
-    ("grub-jar", "HK_SAVE_LOADED", 1),
-    // baldur-spell is the Greenpath exit: a seeded card right of Crossroads_11_alt's
-    // Elder Baldur, the spell and three other cheats on from the pause menu
-    // (CHEATS 1031 says so: Vengeful Spirit cannot be earned on this branch
-    // yet), walk left to it and cast every 45 polls. Four spell hits kill it,
-    // its Terrain Block lifts (0be2f3e) and the Knight walks on past it into
-    // region 338, before the drop into the acid. tools/tapes/baldur-spell.route.
-    ("baldur-spell", "HK_ENEMY_KILLS", 1),
-    ("baldur-spell", "HK_ENEMY_HITS", 4),
-    ("baldur-spell", "HK_DEATHS", 0),
-    ("baldur-spell", "HK_REGION_ID", 338),
-    ("baldur-spell", "HK_CHEATS", 1031),
-    ("baldur-spell", "HK_SAVE_LOADED", 1),
-    // mawlek-fight boots from a seeded card (tools/seed_card.py from grub-jar.mcd)
-    // on the Crossroads_09 floor left of the arena: the only walk in is from
-    // Crossroads_36, past an Elder Baldur the spell cheat has to kill, and the
-    // Crossroads_33 side is `full_wall_left` until the arena is won. Seeded, so
-    // it proves the fight, not the way to it. Invincibility and the max nail
-    // from the pause menu (KILL_CHEATS 3 says so), walk right into `Alert Range
-    // New`: it wakes, leaps out of the background, roars, the EnemyBattle cue
-    // starts as an XA song, and the Knight swings at it every 16 polls. Fifteen max
-    // nail hits kill it, the corpse steams and blows, Boss Defeat plays from
-    // XA channel 3 (HK_MUSIC_BOSS_TRACK) to its end, and the gates open 10.5 s after BATTLE END.
-    // The Heart Piece `End Wait` shows 5.5 s after BATTLE END is then a running
-    // jump up and right from the arena floor: one mask shard (SHOP_SHARDS 1),
-    // saved beside the arena's `Activated` (WORLD_ITEMS 2).
-    // The counts are this tape's; SWIPES, PARRIES and HEAD_SHOTS are minimums.
-    // tools/tapes/mawlek-fight.route.
-    ("mawlek-fight", "HK_MW_WOKEN", 1),
-    ("mawlek-fight", "HK_MW_DEATHS", 1),
-    ("mawlek-fight", "HK_MW_BLOWN", 1),
-    ("mawlek-fight", "HK_MW_ARENA", 4),
-    ("mawlek-fight", "HK_MW_ACTIVATED", 1),
-    ("mawlek-fight", "HK_MW_KILL_CHEATS", 3),
-    ("mawlek-fight", "HK_MW_HITS", 15),
-    ("mawlek-fight", "HK_MW_SPRAYS", 1),
-    ("mawlek-fight", "HK_MW_LEAPS", 4),
-    ("mawlek-fight", "HK_MW_PHASE", 22),
-    ("mawlek-fight", "HK_ARENA_GATE_CLOSES", 1),
-    ("mawlek-fight", "HK_ARENA_GATE_OPENS", 1),
-    ("mawlek-fight", "HK_MUSIC_BOSS", 0),
-    ("mawlek-fight", "HK_MUSIC_BOSS_STARTS", 2),
-    ("mawlek-fight", "HK_MUSIC_BOSS_TRACK", 3),
-    ("mawlek-fight", "HK_SCENE_SFX_MISSED", 0),
-    ("mawlek-fight", "HK_DEATHS", 0),
-    ("mawlek-fight", "HK_WORLD_ITEMS", 2),
-    ("mawlek-fight", "HK_SHOP_SHARDS", 1),
-    ("mawlek-fight", "HK_SAVE_LOADED", 1),
-    ("mawlek-fight", "HK_CHEATS", 3),
-    ("mawlek-fight", "HK_REGION_ID", 225),
-    // gruz-fight boots from a seeded card (tools/seed_card.py from secret-c04.mcd)
-    // on Gruz Mother's ledge in Crossroads_04, left of where it sleeps. Seeded,
-    // so it proves the fight, not the way to it. Invincibility and the max nail
-    // from the pause menu (KILL_CHEATS 3 says so), walk right into `Battle
-    // Range` and hit it once: it wakes (the Gruz Mother title, BATTLE START
-    // seals the arena, the EnemyBattle cue), and the Knight steps back and
-    // watches it buzz, charge and slam for twelve seconds before swinging every
-    // 16 polls. Five max-nail hits kill it; the corpse steams and blows (Boss
-    // Defeat on XA), the burster drops 50 Geo, lands, gurgles and bursts,
-    // releasing the seven reserve flies, whose deaths (`Battle Enemies` 7) end
-    // the arena: BG OPEN two seconds after the last, `Activated` saved.
-    // SCENE_SFX_MISSED counts the Gruz Mother clips Crossroads_04's full scene
-    // bank refuses (host/hk-cook/src/scene_sfx.rs). tools/tapes/gruz-fight.route.
-    ("gruz-fight", "HK_GZ_WOKEN", 1),
-    ("gruz-fight", "HK_GZ_DEATHS", 1),
-    ("gruz-fight", "HK_GZ_BLOWN", 1),
-    ("gruz-fight", "HK_GZ_RELEASED", 1),
-    ("gruz-fight", "HK_GZ_FLY_DEATHS", 7),
-    ("gruz-fight", "HK_GZ_ARENA", 4),
-    ("gruz-fight", "HK_GZ_ACTIVATED", 1),
-    ("gruz-fight", "HK_GZ_KILL_CHEATS", 3),
-    ("gruz-fight", "HK_GZ_HITS", 5),
-    ("gruz-fight", "HK_GZ_PHASE", 26),
-    ("gruz-fight", "HK_ARENA_GATE_CLOSES", 1),
-    ("gruz-fight", "HK_ARENA_GATE_OPENS", 1),
-    ("gruz-fight", "HK_DEATHS", 0),
-    ("gruz-fight", "HK_CHEATS", 3),
-    // door-jiji is a door whose room is not on the disc: a seeded card by
-    // Dirtmouth's door_jiji, walk right, UP opens the source's locked-door line
-    // (Prompts JIJI_DOOR_NOKEY), Cross closes it and UP opens it again. No gate
-    // load. tools/tapes/door-jiji.route.
-    ("door-jiji", "HK_READ_OPENED", 2),
-    ("door-jiji", "HK_READ_CLOSED", 1),
-    ("door-jiji", "HK_READ_SOURCE", 4407),
-    ("door-jiji", "HK_SCENE_GATE_LOADS", 0),
-    ("door-jiji", "HK_REGION_ID", 102),
-    ("door-jiji", "HK_DEATHS", 0),
-    ("door-jiji", "HK_CHEATS", 0),
-    // husk-guard: a seeded card 6.7 units left of Crossroads_48's Husk Guard (the
-    // authored Attack Range, 8.1 units each way, is what wakes a dormant guard; the
-    // wider Alert Range only matters once it is up), and the Knight stands still
-    // for 1,500 polls. The guard wakes on sight and alternates club slams (short
-    // of the Knight) with stomps, whose two shockwaves (counted with the False
-    // Knight's, HK_FK_WAVES) are what reach him: five stomps, ten waves, five
-    // masks, which is his whole health, so one death.
-    ("husk-guard", "HK_FK_WAVES", 10),
-    ("husk-guard", "HK_FK_WAVE_HITS", 5),
-    ("husk-guard", "HK_DEATHS", 1),
-    ("husk-guard", "HK_REGION_ID", 541),
-    ("husk-guard", "HK_CHEATS", 0),
-    ("husk-guard", "HK_SAVE_LOADED", 1),
-    // The journey: Start Game to the False Knight and back, on one card and
-    // four power cycles, with no fixture anywhere. See JOURNEY for the order
-    // and tools/tapes/journey-*.route for what each segment presses.
-    //
-    // journey-kings starts a new game on an empty card, climbs King's Pass,
-    // breaks the Great Door into Dirtmouth and saves at the Dirtmouth bench.
-    // The six walls it breaks on the way are persistent breakables, so the
-    // save is 166 + 6 * 4 = 190 bytes. Invincibility carries it past the
-    // King's Pass Crawlers, whose knockback knocks every open-loop climb off
-    // its route (ledger, route coverage); CHEATS 1 says so rather than hiding it.
-    ("journey-kings", "HK_SAVE_LOADED", 0),
-    ("journey-kings", "HK_CHEATS", 1),
-    ("journey-kings", "HK_GREAT_DOOR_OPENED", 1),
-    ("journey-kings", "HK_SCENE_GATE_LOADS", 1),
-    ("journey-kings", "HK_BENCH_RESTS", 1),
-    ("journey-kings", "HK_SAVE_WRITES", 1),
-    ("journey-kings", "HK_SAVE_ERRORS", 0),
-    ("journey-kings", "HK_SAVE_BYTES", 198),
-    ("journey-kings", "HK_WORLD_ITEMS", 8),
-    ("journey-kings", "HK_WORLD_OVERFLOW", 0),
-    ("journey-kings", "HK_DEATHS", 0),
-    ("journey-kings", "HK_REGION_ID", 100),
-    // journey-crossroads continues from that save and crosses nine scene gates
-    // to the Crossroads_47 stag bench: the well, the Crossroads_07 shaft to its
-    // floor, Crossroads_33, 08, 13, 42 and 19, up through Crossroads_19's top
-    // gate into the bottom of Crossroads_03 and out of its left2. The two
-    // shorter ways are shut in the source on a fresh save (the Crossroads_33
-    // sliding wall and Crossroads_03's toll gates), and the Crossroads_19 top
-    // gate is the one this port could not take until its bottom-gate entry
-    // stopped dropping the Knight back through the hole he came up.
-    ("journey-crossroads", "HK_SAVE_LOADED", 1),
-    ("journey-crossroads", "HK_WORLD_RESTORED", 8),
-    ("journey-crossroads", "HK_SCENE_GATE_LOADS", 9),
-    ("journey-crossroads", "HK_SAVE_WRITES", 1),
-    ("journey-crossroads", "HK_SAVE_ERRORS", 0),
-    ("journey-crossroads", "HK_WORLD_ITEMS", 9),
-    ("journey-crossroads", "HK_DEATHS", 0),
-    ("journey-crossroads", "HK_REGION_ID", 535),
-    // journey-false-knight continues from the stag bench, climbs Crossroads_03
-    // to its left1, crosses Crossroads_21 and climbs Crossroads_10 to the arena
-    // floor, turns Invincibility off in the pause menu and walks into the
-    // trigger from the right. The fight is tools/boss_sim.py's search from that
-    // arrival, and FK_KILL_CHEATS 0 is the cheat bits on the tick the boss died,
-    // which is what makes the kill fair even though the travel either side of
-    // it is not. Since the floor break, the fight ends in the room below the
-    // arena: the tape keeps the original travel and the first three phases,
-    // and the death exposure is the same repeated jump-and-swing the
-    // boss-fight route uses. Then Invincibility back on, along the bottom of
-    // Crossroads_10 to its right1 once the gates reopen, the original route
-    // from Crossroads_21 on back to the stag bench, and a save that carries
-    // the arena's Activated (a seventh item) and falseKnightDefeated with
-    // falseKnightFirstPlop.
-    ("journey-false-knight", "HK_SAVE_LOADED", 1),
-    ("journey-false-knight", "HK_WORLD_RESTORED", 9),
-    ("journey-false-knight", "HK_FK_TRIGGERED", 1),
-    ("journey-false-knight", "HK_FK_DEATHS", 1),
-    ("journey-false-knight", "HK_FK_KILL_CHEATS", 0),
-    ("journey-false-knight", "HK_FK_STAGGERS", 3),
-    ("journey-false-knight", "HK_FK_CONVERSIONS", 3),
-    ("journey-false-knight", "HK_FK_ARENA", 4),
-    ("journey-false-knight", "HK_FK_ACTIVATED", 1),
-    ("journey-false-knight", "HK_FK_BARRELS", 24),
-    // 24 barrels: what the rage phases of the boss_sim fight drop. The fight is searched against a
-    // simulation whose 50 Hz input phase matches the disc's (BOSS_SIM_PHASE=2, no BOSS_SIM_RELOAD:
-    // calibrated by replaying the old tape on this disc and finding the phase at which the simulated
-    // Knight's hits land on the real run's polls); a change that moves the ticks per poll moves the
-    // phase, and `tools/boss_sim.py search` finds the fight again.
-    ("journey-false-knight", "HK_FK_BARRELS_BROKEN", 24),
-    ("journey-false-knight", "HK_ARENA_GATE_CLOSES", 1),
-    ("journey-false-knight", "HK_ARENA_GATE_OPENS", 1),
-    ("journey-false-knight", "HK_DEATHS", 0),
-    ("journey-false-knight", "HK_SAVE_WRITES", 1),
-    ("journey-false-knight", "HK_SAVE_ERRORS", 0),
-    ("journey-false-knight", "HK_WORLD_ITEMS", 10),
-    ("journey-false-knight", "HK_WORLD_PLAYER", 3),
-    ("journey-false-knight", "HK_SAVE_BYTES", 206),
-    ("journey-false-knight", "HK_REGION_ID", 535),
-    ("journey-false-knight", "HK_FK_FLOOR", 2),
-    // journey-reload boots that card and walks the same way back towards the
-    // arena, and where it used to cross the arena floor it now falls through
-    // the broken one before it reaches the Battle Scene trigger. The boss
-    // never leaves the ceiling: nothing triggered, nothing dropped, the gates
-    // quick-opened on entry and never closed, and the Crossroads_10 gates are
-    // open (ARENA_GATES 1 is Crossroads_04's gate, closed on load, alone). The
-    // seven items restored are the six King's Pass walls and the arena.
-    ("journey-reload", "HK_SAVE_LOADED", 1),
-    ("journey-reload", "HK_WORLD_RESTORED", 10),
-    ("journey-reload", "HK_WORLD_ITEMS", 10),
-    ("journey-reload", "HK_WORLD_PLAYER", 3),
-    ("journey-reload", "HK_FK_TRIGGERED", 0),
-    ("journey-reload", "HK_FK_DROPPED", 0),
-    ("journey-reload", "HK_FK_DEATHS", 0),
-    ("journey-reload", "HK_FK_ACTIVATED", 1),
-    ("journey-reload", "HK_FK_ARENA", 4),
-    ("journey-reload", "HK_ARENA_GATE_CLOSES", 0),
-    ("journey-reload", "HK_ARENA_GATE_OPENS", 1),
-    ("journey-reload", "HK_ARENA_GATES", 1),
-    // The floor stays broken on the reload, so the walk that used to cross
-    // the arena floor drops through the hole into the room below instead.
-    ("journey-reload", "HK_DEATHS", 0),
-    ("journey-reload", "HK_REGION_ID", 232),
-    ("journey-reload", "HK_FK_FLOOR", 2),
-    // The map and its mapper. cornifer-map boots from tools/cards/cornifer-map.mcd,
-    // town-continue's record seeded in Crossroads_33 beside Cornifer with 100 Geo
-    // (tools/seed_card.py), talks to him, pages through the meeting, buys the map
-    // for 30 at the yes/no box, clears the first-map prompt and the Iselda pages,
-    // holds L2 for the quick map, then talks again (the introduction). The 16
-    // rooms are Cornifer's charted Crossroads rooms, rough, with no quill.
-    ("cornifer-map", "HK_CORNIFER_SOLD", 1),
-    ("cornifer-map", "HK_CORNIFER_TALKS", 2),
-    ("cornifer-map", "HK_GEO_WALLET", 70),
-    ("cornifer-map", "HK_MAP_OPENS", 1),
-    ("cornifer-map", "HK_MAP_ROOMS_DRAWN", 16),
-    ("cornifer-map", "HK_REGION_ID", 410),
-    ("cornifer-map", "HK_DEATHS", 0),
-    ("cornifer-map", "HK_SAVE_LOADED", 1),
-    // Vengeful Spirit earned in play. mound-spell boots from
-    // tools/cards/mound-spell.mcd (the same record seeded in the Ancestral Mound
-    // beside the Snail Shaman), hears the meeting, waits out the summon, jumps
-    // into the orb, and after the black, the get-item message and the fade
-    // gets up and walks off. The spell, 99 SOUL (100 capped by the vessel) and
-    // no automatic card write at the wake point are what it pins. Card saving
-    // requires a later explicit bench Save confirmation.
-    ("mound-spell", "HK_SPELL_EARNED", 1),
-    ("mound-spell", "HK_SHAMAN_STATE", 2),
-    ("mound-spell", "HK_SHAMAN_TALKS", 1),
-    ("mound-spell", "HK_SOUL", 99),
-    ("mound-spell", "HK_SAVE_WRITES", 0),
-    ("mound-spell", "HK_SAVE_ERRORS", 0),
-    ("mound-spell", "HK_DEATHS", 0),
-    ("mound-spell", "HK_SAVE_LOADED", 1),
-    // The Greenpath exit with the earned spell and no cheats. spell-exit boots
-    // from tools/cards/spell-exit.mcd: a historical earned-spell record
-    // (fireballLevel 1), reseated right of
-    // Crossroads_11_alt's Elder Baldur (tools/seed_card.py). SOUL starts at 0,
-    // so the four casts come from the four rollers the Baldur spits once the
-    // spell is had: three nail hits each for 33 SOUL, then a cast, the last
-    // after a step left under a goop. Then the Knight walks on into region 338.
-    ("spell-exit", "HK_BLOCKERS_DEAD", 1),
-    ("spell-exit", "HK_ENEMY_HITS", 4),
-    ("spell-exit", "HK_ROLLERS_SPAWNED", 4),
-    ("spell-exit", "HK_ROLLERS_KILLED", 4),
-    ("spell-exit", "HK_ROLLER_HITS", 12),
-    ("spell-exit", "HK_CHEATS", 0),
-    ("spell-exit", "HK_DEATHS", 0),
-    ("spell-exit", "HK_REGION_ID", 338),
-    ("spell-exit", "HK_SAVE_LOADED", 1),
-    // Secrets (docs/SECRETS.md). Each secret-* route boots seated beside one
-    // hidden wall or cracked floor and nails it to breaking with the source
-    // hit count. Crossroads_37 has no route: that room overruns the input
-    // queue on this build and the base alike (docs/SECRETS.md).
-    ("secret-kp", "HK_SECRET_HITS", 3),
-    ("secret-kp", "HK_SECRET_BREAKS", 1),
-    ("secret-kp", "HK_SECRET_REFUSED", 0),
-    ("secret-kp", "HK_DEATHS", 0),
-    ("secret-kp", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c07", "HK_SECRET_HITS", 4),
-    ("secret-c07", "HK_SECRET_BREAKS", 1),
-    ("secret-c07", "HK_SECRET_REFUSED", 0),
-    ("secret-c07", "HK_DEATHS", 0),
-    ("secret-c07", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c03", "HK_SECRET_HITS", 4),
-    ("secret-c03", "HK_SECRET_BREAKS", 1),
-    ("secret-c03", "HK_SECRET_REFUSED", 0),
-    ("secret-c03", "HK_DEATHS", 0),
-    ("secret-c03", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c04", "HK_SECRET_HITS", 3),
-    ("secret-c04", "HK_SECRET_BREAKS", 1),
-    ("secret-c04", "HK_SECRET_REFUSED", 0),
-    ("secret-c04", "HK_DEATHS", 0),
-    ("secret-c04", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c08", "HK_SECRET_HITS", 4),
-    ("secret-c08", "HK_SECRET_BREAKS", 1),
-    ("secret-c08", "HK_SECRET_REFUSED", 0),
-    ("secret-c08", "HK_DEATHS", 0),
-    ("secret-c08", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c09", "HK_SECRET_HITS", 3),
-    ("secret-c09", "HK_SECRET_BREAKS", 1),
-    ("secret-c09", "HK_SECRET_REFUSED", 0),
-    ("secret-c09", "HK_DEATHS", 0),
-    ("secret-c09", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c10", "HK_SECRET_HITS", 4),
-    ("secret-c10", "HK_SECRET_BREAKS", 1),
-    ("secret-c10", "HK_SECRET_REFUSED", 0),
-    ("secret-c10", "HK_DEATHS", 0),
-    ("secret-c10", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c13", "HK_SECRET_HITS", 3),
-    ("secret-c13", "HK_SECRET_BREAKS", 1),
-    ("secret-c13", "HK_SECRET_REFUSED", 0),
-    ("secret-c13", "HK_DEATHS", 0),
-    ("secret-c13", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c18", "HK_SECRET_HITS", 4),
-    ("secret-c18", "HK_SECRET_BREAKS", 1),
-    ("secret-c18", "HK_SECRET_REFUSED", 0),
-    ("secret-c18", "HK_DEATHS", 0),
-    ("secret-c18", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c21", "HK_SECRET_HITS", 4),
-    ("secret-c21", "HK_SECRET_BREAKS", 1),
-    ("secret-c21", "HK_SECRET_REFUSED", 0),
-    ("secret-c21", "HK_DEATHS", 0),
-    ("secret-c21", "HK_SCENE_SFX_MISSED", 0),
-    // arena-waves seats the Knight on the platform of Crossroads_22's arena (card seeded
-    // with tools/seed_card.py: scene 21, region 355, x 71.65, y 12.3), inside the trigger of
-    // its `Battle Control`, with Invincibility, Pure Nail and Infinite SOUL on (the Cheats
-    // page, which is how the journey travels too), and jumps, slashes up and casts left
-    // and right until every wave is dead. The source's four waves have 2, 3, 3 and 4
-    // members: the gates close once, twelve members land and twelve are counted dead, the
-    // last wave ends the fight and the gates open once.
-    ("arena-waves", "HK_ARENA_GATE_CLOSES", 1),
-    ("arena-waves", "HK_ARENA_GATE_OPENS", 1),
-    ("arena-waves", "HK_ARENA_WAVES", 4),
-    ("arena-waves", "HK_ARENA_LANDED", 12),
-    ("arena-waves", "HK_ARENA_WAVE_DEATHS", 12),
-    ("arena-waves", "HK_CHEATS", 7),
-    ("arena-waves", "HK_DEATHS", 0),
-    ("arena-waves", "HK_SAVE_LOADED", 1),
-    ("secret-f08a", "HK_SECRET_HITS", 3),
-    ("secret-f08a", "HK_SECRET_BREAKS", 1),
-    ("secret-f08a", "HK_SECRET_REFUSED", 0),
-    ("secret-f08a", "HK_DEATHS", 0),
-    ("secret-f08a", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-f08b", "HK_SECRET_HITS", 3),
-    ("secret-f08b", "HK_SECRET_BREAKS", 1),
-    ("secret-f08b", "HK_SECRET_REFUSED", 0),
-    ("secret-f08b", "HK_DEATHS", 0),
-    ("secret-f08b", "HK_SCENE_SFX_MISSED", 0),
-    // The -reload routes boot a card that already holds the broken wall and
-    // walk through where it stood: no hits, and the Knight ends past it.
-    ("secret-c03-reload", "HK_SECRET_HITS", 0),
-    ("secret-c03-reload", "HK_SECRET_BREAKS", 0),
-    // 643737 before the pad-fix SDK pin and the analog request at boot; 634672 on every
-    // run since. The cause is not isolated between the two.
-    ("secret-c03-reload", "HK_PLAYER_X", 634672),
-    ("secret-c03-reload", "HK_REGION_ID", 159),
-    ("secret-c10-reload", "HK_SECRET_HITS", 0),
-    ("secret-c10-reload", "HK_SECRET_BREAKS", 0),
-    ("secret-c10-reload", "HK_PLAYER_X", 3162112),
-    ("secret-c10-reload", "HK_REGION_ID", 245),
-    ("secret-c18-reload", "HK_SECRET_HITS", 0),
-    ("secret-c18-reload", "HK_SECRET_BREAKS", 0),
-    ("secret-c18-reload", "HK_PLAYER_X", 1589248),
-    ("secret-c18-reload", "HK_REGION_ID", 298),
-    // Crossroads_46 (Ancestral Mound): walking in fades the three egg-room masks.
-    ("secret-c46-eggs", "HK_REVEAL_MASKS_HIDDEN", 3),
-    ("secret-c46-eggs", "HK_REVEAL_MASKS_VISIBLE", 0),
-    ("secret-c46-eggs", "HK_DEATHS", 0),
-    // Crossroads_37's floor, nailed early (polls 60, 96, 132) so its hit and
-    // break particles land while the room's thirteen Husks are awake. This
-    // tape panicked the guest at poll 159 ("input sampler contract",
-    // QueueFull): standing still there the simulation fell behind the pad by
-    // a tick every 10 to 30 polls, because every Walker swept all its view's
-    // edges with the exact i64 ray test twice a tick. replay_cue fails any
-    // route whose simulation skips a tick or drops a sample.
-    ("secret-c37", "HK_SECRET_HITS", 3),
-    ("secret-c37", "HK_SECRET_BREAKS", 1),
-    ("secret-c37", "HK_SECRET_REFUSED", 0),
-    ("secret-c37", "HK_DEATHS", 0),
-    ("secret-c37", "HK_SCENE_SFX_MISSED", 0),
-    ("secret-c37", "HK_REGION_ID", 454),
-    // Standing still in Crossroads_37 for 3,000 polls, the case that panicked
-    // at poll 125 on the ship6 disc.
-    ("c37-stand", "HK_DEATHS", 0),
-    ("c37-stand", "HK_REGION_ID", 454),
-    ("c37-stand", "HK_SECRET_HITS", 0),
-];
-/// Telemetry a route must reach at least, rather than exactly.
-///
-/// Reserved for counters that sit on a knife edge. The frame is stall-bound, so
-/// per-tick cost changes how many simulation ticks fall between two input polls,
-/// and these four flip on any change at all: kings-return's surviving mask count
-/// went 2, 3, 4 across three builds while its kill, its two hits, its Shade
-/// recovery, its five breakables and its zero deaths never moved, and
-/// cheat-spell's drawn-frame count went 22, 23, 22. Pinning those exactly
-/// reports every unrelated change as a failure, which is noise rather than
-/// signal.
-///
-/// The perf-regression signal this table gives up is not lost: fourteen routes
-/// still hold exact positions, and nine of them stayed byte-identical through
-/// the change that moved these.
-/// Frames a route may still show late art for (`HK_MODULE_ART_LATE`). Both deaths
-/// leave a Shade whose art package is not resident at the respawn for 44 frames (so does
-/// the husk-guard route, whose Knight dies to the guard's stomps):
-/// pop-in, which the rule forbids, listed so a new case fails instead.
-const ART_LATE_ALLOWED: &[(&str, u64)] = &[("kings-death", 44), ("boss-death", 44), ("husk-guard", 44)];
-/// Frames over two vblanks a route may still have (see `pacing`): the 2026-10-08
-/// measurement (hkperf sweep and this replay, the larger of the two) plus 30%,
-/// four frames for the counts that matter and one for a single stray, since frame
-/// pacing moves by tens of frames between builds with no relevant change. This is
-/// the debt against the 30 fps rule within one pinned emulator. Repinning the
-/// emulator requires a measured canonical recalibration; a route not listed
-/// has none to spare. The view bind after each load is counted apart (`pacing`), so no route carries one.
-const PACING_CEILINGS: &[(&str, u64)] = &[
-    // Canonical 0d32a16e on pinned 0868022 completed the same boss death,
-    // save, and return with 1186 slow frames; the ceiling is 130% rounded up.
-    ("journey-false-knight", 1542),
-    // Canonical reload of that completed save on the same emulator has 662
-    // slow frames; matched region transitions differ by at most two polls.
-    ("journey-reload", 861),
-    ("journey-kings", 857),
-    ("kings-climb", 388),
-    ("journey-crossroads", 1225),
-    ("ctrl-climb", 202),
-    ("f17-charger", 154),
-    ("secret-f08a", 227),
-    ("secret-c03", 151),
-    ("crossroads-gate", 303),
-    ("kings-return", 150),
-    ("kp-playtest", 177),
-    ("cheat-dream", 232),
-    ("kings-death", 165),
-    ("mound-spell", 314),
-    ("secret-c03-reload", 125),
-    ("gruz-fight", 947),
-    ("secret-kp", 130),
-    ("f01-moss", 66),
-    ("greenpath-walk", 968),
-    ("well-drop", 171),
-    ("secret-c37", 55),
-    ("secret-c04", 28),
-    ("baldur-spell", 47),
-    ("secret-c13", 97),
-    ("secret-c07", 52),
-    ("secret-c08", 51),
-    ("secret-c10", 23),
-    ("secret-c21", 63),
-    // Forty actors and sixty-odd quads in one room; the measured route is 1,574 late of 1,750.
-    ("arena-waves", 2050),
-    ("spell-exit", 125),
-    ("secret-c18", 28),
-    ("c37-stand", 246),
-    ("grub-jar", 26),
-    ("husk-guard", 12),
-    ("secret-f08b", 12),
-    ("bench-save", 2),
-    ("mawlek-fight", 2),
-    ("secret-c09", 2),
-    ("secret-c10-reload", 2),
-    ("secret-c18-reload", 2),
-    ("secret-c46-eggs", 19),
-    ("boss-fight", 2),
-    ("cornifer-map", 102),
-    ("focus", 15),
-];
-const REQUIRED_MIN: &[(&str, &str, u64)] = &[
-    // Survived the traversal at all. HK_DEATHS 0 above is the real assertion;
-    // this only says the Knight was not left on one mask by something new.
-    ("kings-return", "HK_HEALTH", 2),
-    // An ability clip owned the Knight's body. The count is frame timing; that
-    // it is not zero is the ability having run, and each control route with the
-    // grant removed is pinned at exactly 0 in REQUIRED.
-    // Brooding Mawlek's arms swung, one swing met the nail, the Head spat.
-    ("mawlek-fight", "HK_MW_SWIPES", 1),
-    ("mawlek-fight", "HK_MW_PARRIES", 1),
-    ("mawlek-fight", "HK_MW_HEAD_SHOTS", 1),
-    ("cheat-spell", "HK_ABILITY_DRAWN", 20),
-    ("cheat-heart", "HK_ABILITY_DRAWN", 50),
-    ("cheat-dream", "HK_ABILITY_DRAWN", 400),
-    ("cheat-wings", "HK_ABILITY_DRAWN", 5),
-    ("cheat-dash", "HK_ABILITY_DRAWN", 5),
-    // Alive when the tape runs out. How many masks the second fight has cost by
-    // then is frame timing; HK_DEATHS 1 above is the assertion that he died
-    // exactly once and got back up.
-    ("boss-death", "HK_HEALTH", 1),
-];
-
-/// Routes that boot with a port-1 memory card: a fixture under tools/cards, or a
-/// fresh formatted card when the fixture is absent (the run writes it back there).
-const MEMCARDS: &[(&str, &str)] = &[
-    ("town-continue", "town-continue.mcd"),
-    ("town-shade", "town-shade.mcd"),
-    ("kings-death", "kings-death.mcd"),
-    ("kings-return", "kings-return.mcd"),
-    ("bench-save", "town-continue.mcd"),
-    ("well-drop", "town-continue.mcd"),
-    ("town-reset2", "town-continue.mcd"),
-    ("crossroads-gate", "town-continue.mcd"),
-    ("town-elderbug", "town-continue.mcd"),
-    ("town-shop", "town-shop.mcd"),
-    ("boss-fight", "boss-fight.mcd"),
-    ("boss-death", "boss-fight.mcd"),
-    ("boss-wave", "boss-fight.mcd"),
-    ("greenpath-walk", "greenpath.mcd"),
-    ("grub-jar", "grub-jar.mcd"),
-    ("baldur-spell", "baldur-spell.mcd"),
-    ("door-jiji", "door-jiji.mcd"),
-    ("husk-guard", "husk-guard.mcd"),
-    ("cornifer-map", "cornifer-map.mcd"),
-    ("mound-spell", "mound-spell.mcd"),
-    ("spell-exit", "spell-exit.mcd"),
-    ("mawlek-fight", "mawlek.mcd"),
-    ("gruz-fight", "gruz-fight.mcd"),
-    ("secret-kp", "secret-kp.mcd"),
-    ("secret-c07", "secret-c07.mcd"),
-    ("secret-c03", "secret-c03.mcd"),
-    ("secret-c04", "secret-c04.mcd"),
-    ("secret-c08", "secret-c08.mcd"),
-    ("secret-c09", "secret-c09.mcd"),
-    ("secret-c10", "secret-c10.mcd"),
-    ("secret-c13", "secret-c13.mcd"),
-    ("secret-c18", "secret-c18.mcd"),
-    ("secret-c21", "secret-c21.mcd"),
-    ("arena-waves", "arena-waves.mcd"),
-    ("secret-f08a", "secret-f08a.mcd"),
-    ("secret-f08b", "secret-f08b.mcd"),
-    ("secret-c03-reload", "secret-c03-reload.mcd"),
-    ("secret-c10-reload", "secret-c10-reload.mcd"),
-    ("secret-c18-reload", "secret-c18-reload.mcd"),
-    ("secret-c46-eggs", "secret-c46-eggs.mcd"),
-    ("secret-c37", "secret-c37.mcd"),
-    ("c37-stand", "secret-c37.mcd"),
-];
-/// The journey's segments, in order. Each boots from the card the one before
-/// it wrote, and the first from no card at all; `validate` runs them one after
-/// another beside the independent ROUTES.
-const JOURNEY: &[&str] = &[
-    "journey-kings",
-    "journey-crossroads",
-    "journey-false-knight",
-    "journey-reload",
-];
-const ROUTES: &[(&str, bool)] = &[
-    ("focus", false),
-    ("well-drop", true),
-    ("town-reset2", true),
-    ("crossroads-gate", true),
-    ("town-continue", false),
-    ("town-shade", false),
-    ("kings-death", false),
-    ("kings-return", false),
-    ("bench-save", false),
-    ("town-elderbug", false),
-    ("cheat-spell", false),
-    ("cheat-dash", false),
-    ("cheat-wings", false),
-    ("ctrl-wings", false),
-    ("cheat-heart", false),
-    ("cheat-dream", false),
-    ("kings-climb", false),
-    ("ctrl-climb", false),
-    ("town-shop", false),
-    ("boss-fight", false),
-    ("boss-death", false),
-    ("boss-wave", false),
-    ("greenpath-walk", true),
-    ("grub-jar", false),
-    ("baldur-spell", false),
-    ("door-jiji", false),
-    ("husk-guard", false),
-    ("cornifer-map", false),
-    ("mound-spell", false),
-    ("spell-exit", false),
-    ("mawlek-fight", false),
-    ("gruz-fight", false),
-    ("secret-kp", false),
-    ("secret-c07", false),
-    ("secret-c03", false),
-    ("secret-c04", false),
-    ("secret-c08", false),
-    ("secret-c09", false),
-    ("secret-c10", false),
-    ("secret-c13", false),
-    ("secret-c18", false),
-    ("secret-c21", false),
-    ("arena-waves", false),
-    ("secret-f08a", false),
-    ("secret-f08b", false),
-    ("secret-c03-reload", false),
-    ("secret-c10-reload", false),
-    ("secret-c18-reload", false),
-    ("secret-c46-eggs", false),
-    ("secret-c37", false),
-    ("c37-stand", false),
-    // Manny's King's Pass playtest of 2026-10-03 walks back and forth across
-    // the bind between views 2 and 12, where scenery went dark.
-    ("kp-playtest", false),
-];
 
 /// Tapes `pgo` profiles when none is given: the King's Pass climb and the
 /// Crossroads gate walk. With every delay-slot filler search on, this recipe
@@ -1054,6 +101,8 @@ struct Options {
     sdk_source: Option<PathBuf>,
     emulator_source: Option<PathBuf>,
     frontend: Option<PathBuf>,
+    /// `psoxide-gate` for closed-loop routes (HK_PSX_GATE and HK_PSX_GATE_SHA256 otherwise).
+    gate: Option<PathBuf>,
     telemetry: bool,
     recook: bool,
     validate: bool,
@@ -1875,7 +924,11 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
-        if let Some((_, card)) = MEMCARDS.iter().find(|(route, _)| *route == stem) {
+        if let Some(card) = routes::load(root)?
+            .into_iter()
+            .find(|route| route.name == stem)
+            .and_then(|route| route.card)
+        {
             // The replay writes the card back: use a scratch copy so the fixture stays put.
             let scratch = work.join(format!("{stem}.mcd"));
             std::fs::copy(root.join("tools/cards").join(card), &scratch)?;
@@ -2485,18 +1538,34 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     // caps all replay concurrency, including the journey. `--prune` deletes each
     // passing route's dumps once it is judged (keeping its command.json), for a disk that cannot hold
     // every route's dumps at once (about 50 MB each).
-    let jobs = options.jobs.unwrap_or(ROUTES.len()).max(1);
-    let spawn = |name: &str| {
-        let card = MEMCARDS
-            .iter()
-            .find(|(route, _)| *route == name)
-            .map(|(_, card)| {
-                // The replay writes the card back: run against a scratch copy so the fixture stays put.
-                let scratch = out.join(format!("{name}.mcd"));
-                let _ = std::fs::copy(root.join("tools/cards").join(card), &scratch);
-                scratch
-            });
-        replay_command(root, &frontend, &out, &library, name, card).spawn()
+    let all_routes = routes::load(root)?;
+    // HK_VALIDATE_ONLY=route,route replays just those routes (the journey when "journey" is listed; no
+    // power-cut or earned-focus checks), for work on one route.
+    let only: Option<Vec<String>> =
+        std::env::var("HK_VALIDATE_ONLY").ok().map(|list| list.split(',').map(str::to_owned).collect());
+    let selected = |route: &routes::Route| {
+        only.as_ref().is_none_or(|o| {
+            o.iter().any(|x| *x == route.name || (route.journey.is_some() && x == "journey"))
+        })
+    };
+    let plain: Vec<&routes::Route> =
+        all_routes.iter().filter(|r| r.journey.is_none() && selected(r)).collect();
+    let chain: Vec<&routes::Route> =
+        all_routes.iter().filter(|r| r.journey.is_some() && selected(r)).collect();
+    let jobs = options.jobs.unwrap_or(plain.len()).max(1);
+    let gate = if all_routes.iter().any(|r| r.cuts.is_some()) {
+        Some(gate_binary(options)?)
+    } else {
+        None
+    };
+    let spawn = |route: &routes::Route| {
+        let card = route.card.as_ref().map(|card| {
+            // The replay writes the card back: run against a scratch copy so the fixture stays put.
+            let scratch = out.join(format!("{}.mcd", route.name));
+            let _ = std::fs::copy(root.join("tools/cards").join(card), &scratch);
+            scratch
+        });
+        replay_command(root, &frontend, &out, &library, &route.name, card).spawn()
     };
     // The journey is one save carried through power cycles, so its segments
     // run in order after the independent routes: the first boots with no card
@@ -2504,13 +1573,14 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     // wrote. A segment whose predecessor failed still runs, against whatever
     // that predecessor left, and fails on its own pins.
     let mut summary = serde_json::Map::new();
-    let mut failed = Vec::new();
+    let failed: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
     let mut baseline_qualified = 0usize;
-    let mut evaluate = |name: &'static str,
-                        gates: bool,
+    let mut evaluate = |route: &routes::Route,
                         replay: std::io::Result<std::process::Output>,
                         input_card_sha: Option<&str>|
      -> Result<()> {
+        let name = route.name.as_str();
+        let gates = route.scene_gate;
         let output = out.join(name);
         let replay = replay?;
         let text = String::from_utf8_lossy(&replay.stdout).to_string();
@@ -2602,9 +1672,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                 Ok(0) => {}
                 Ok(count)
                     if symbol == "HK_MODULE_ART_LATE"
-                        && ART_LATE_ALLOWED
-                            .iter()
-                            .any(|(route, most)| *route == name && count as u64 <= *most) => {}
+                        && count as u64 <= route.art_late => {}
                 Ok(count) => {
                     println!("{name}: {symbol}={count} expected 0");
                     ok = false;
@@ -2615,30 +1683,47 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                 }
             }
         }
-        for (route, key, expected) in REQUIRED {
-            if *route == name && ram[*key].as_u64() != Some(*expected) {
-                println!("{name}: {key}={} expected {expected}", ram[*key]);
-                ok = false;
-            }
-        }
-        for (route, key, least) in REQUIRED_MIN {
-            if *route == name && ram[*key].as_u64().is_none_or(|v| v < *least) {
-                println!("{name}: {key}={} expected at least {least}", ram[*key]);
-                ok = false;
+        // The route's pins. A route with a cut list is judged on its closed-loop run (below):
+        // this tape counts polls, and a load that took other polls than the baseline's moves
+        // everything after it. Its pins still tell us whether the tape played as recorded,
+        // which is what the pacing figure is worth.
+        let closed = route.cuts.is_some();
+        let mut open_pins_hold = true;
+        for pin in &route.pins {
+            let held = match ram[pin.symbol.as_str()].as_u64() {
+                Some(v) if pin.at_least => v >= pin.value,
+                Some(v) => v == pin.value,
+                None => false,
+            };
+            if !held {
+                open_pins_hold = false;
+                if !closed {
+                    println!(
+                        "{name}: {}={} expected {}{}",
+                        pin.symbol,
+                        ram[pin.symbol.as_str()],
+                        if pin.at_least { "at least " } else { "" },
+                        pin.value
+                    );
+                    ok = false;
+                }
             }
         }
         // The 30 fps bar: no gameplay frame over two vblanks. A route may not
-        // exceed its ceiling in PACING_CEILINGS (zero when unlisted); the list
-        // is the debt that remains and only ever goes down.
+        // exceed its ceiling (`pacing` in its pin file, zero when absent); the
+        // ceilings are the debt that remains and only ever go down. A closed-loop
+        // route whose tape drifted on this disc did not play the route that was
+        // measured, so its figure is not compared.
         match pacing(&output) {
             Ok((frames, over, longest, streak, bind, bind_longest)) => {
-                let ceiling = PACING_CEILINGS
-                    .iter()
-                    .find(|(route, _)| *route == name)
-                    .map_or(0, |c| c.1);
-                println!("{name}: pacing {over} of {frames} frames over 2 vblanks (ceiling {ceiling}), longest {longest}, worst streak {streak}; view binds {bind}, longest {bind_longest}");
-                if over > ceiling {
-                    ok = false;
+                let ceiling = route.pacing;
+                if closed && !open_pins_hold {
+                    println!("{name}: pacing {over} of {frames} frames over 2 vblanks, not judged: the open-loop tape drifted on this disc (the closed-loop run judges the route)");
+                } else {
+                    println!("{name}: pacing {over} of {frames} frames over 2 vblanks (ceiling {ceiling}), longest {longest}, worst streak {streak}; view binds {bind}, longest {bind_longest}");
+                    if over > ceiling {
+                        ok = false;
+                    }
                 }
             }
             Err(e) => {
@@ -2664,7 +1749,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
             ram["HK_SCENE_GATE_LOADS"]
         );
         if !ok {
-            failed.push(name);
+            failed.borrow_mut().push(name.to_string());
         } else if baseline_input_gap {
             baseline_qualified += 1;
         }
@@ -2694,25 +1779,66 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         );
         Ok(())
     };
-    for chunk in ROUTES.chunks(jobs) {
-        let children: Vec<_> = chunk.iter().map(|(name, _)| spawn(name)).collect();
-        for ((name, gates), child) in chunk.iter().zip(children) {
-            evaluate(name, *gates, child.and_then(|c| c.wait_with_output()), None)?;
+    // Closed-loop routes (those with a cut list) are judged by `psoxide-gate` walking the
+    // tape stretch by stretch through the scene loads; see docs/ROUTES.md.
+    let mut closed_summary = serde_json::Map::new();
+    let mut judge_closed = |route: &routes::Route, run: routes::ClosedRun| -> Result<Option<PathBuf>> {
+        let result = routes::finish_closed(run)?;
+        println!("{} {} (closed loop): {}", if result.ok { "PASS" } else { "FAIL" }, route.name, result.headline);
+        for line in &result.failures {
+            println!("{}: {line}", route.name);
+        }
+        if !result.ok && !failed.borrow().iter().any(|n| *n == route.name) {
+            failed.borrow_mut().push(route.name.clone());
+        }
+        closed_summary.insert(route.name.clone(), serde_json::json!({"pass": result.ok, "headline": result.headline}));
+        Ok(result.card)
+    };
+    for chunk in plain.chunks(jobs) {
+        let children: Vec<_> = chunk.iter().map(|route| spawn(route)).collect();
+        for (route, child) in chunk.iter().zip(children) {
+            evaluate(route, child.and_then(|c| c.wait_with_output()), None)?;
+        }
+        if let Some(gate) = &gate {
+            let runs: Vec<_> = chunk
+                .iter()
+                .filter(|route| route.cuts.is_some())
+                .map(|route| (*route, routes::spawn_closed(root, gate, &library, &out, route, None)))
+                .collect();
+            for (route, run) in runs {
+                judge_closed(route, run?)?;
+            }
         }
     }
-    for (index, name) in JOURNEY.iter().enumerate() {
+    let mut open_card: Option<PathBuf> = None;
+    let mut closed_card: Option<PathBuf> = None;
+    for route in &chain {
+        let name = route.name.as_str();
         let card = out.join(format!("{name}.mcd"));
-        if index > 0 {
-            let _ = std::fs::copy(out.join(format!("{}.mcd", JOURNEY[index - 1])), &card);
+        if let Some(previous) = &open_card {
+            let _ = std::fs::copy(previous, &card);
         }
         let input_card_sha = if card.is_file() {
             Some(sha256_file(&card)?)
         } else {
             None
         };
-        let output = replay_command(root, &frontend, &out, &library, name, Some(card)).output();
-        evaluate(name, true, output, input_card_sha.as_deref())?;
+        let output = replay_command(root, &frontend, &out, &library, name, Some(card.clone())).output();
+        evaluate(route, output, input_card_sha.as_deref())?;
+        open_card = Some(card);
+        if let Some(gate) = &gate {
+            if route.cuts.is_some() {
+                let run = routes::spawn_closed(root, gate, &library, &out, route, closed_card.as_deref())?;
+                closed_card = judge_closed(route, run)?;
+            }
+        }
     }
+    summary.insert("closed_loop".into(), Value::Object(closed_summary));
+    summary.insert("disc_sha256".into(), Value::String(disc_sha.clone()));
+    summary.insert(
+        "gate_sha256".into(),
+        Value::String(gate.as_ref().map(|g| g.sha256.clone()).unwrap_or_default()),
+    );
     let bin = root.join("dist/hk-psx.exe");
     summary.insert(
         "exe_sha256".into(),
@@ -2726,10 +1852,15 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         out.join("summary.json"),
         serde_json::to_string_pretty(&Value::Object(summary))?,
     )?;
+    let failed = failed.into_inner();
+    if failed.is_empty() && only.is_some() {
+        println!("{} selected routes pass.", plain.len() + chain.len());
+        return Ok(());
+    }
     if failed.is_empty() {
         println!(
             "{} unqualified routes pass; {baseline_qualified} routes complete under the documented one-count baseline input gap on the final CUE.",
-            ROUTES.len() + JOURNEY.len() - baseline_qualified
+            plain.len() + chain.len() - baseline_qualified
         );
         // Card writes free a file's directory entry before rewriting it, so a
         // save that used one file had a window where an interruption left
@@ -2764,9 +1895,68 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     }
 }
 
+/// The `psoxide-gate` binary for closed-loop routes (`--gate`, or `HK_PSX_GATE` with its SHA-256).
+fn gate_binary(options: &Options) -> Result<routes::Gate> {
+    routes::Gate::resolve(options.gate.as_deref())
+}
+
+/// `cargo hk-build routes`: play only the closed-loop routes (those with a cut list) on the
+/// selected disc, without the open-loop replays. HK_VALIDATE_ONLY narrows the list.
+fn closed_routes(root: &Path, options: &Options) -> Result<()> {
+    let library = selected_library(options);
+    let gate = gate_binary(options)?;
+    let out = root.join(".hkpsx/validate-closed");
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out)?;
+    let only: Option<Vec<String>> =
+        std::env::var("HK_VALIDATE_ONLY").ok().map(|list| list.split(',').map(str::to_owned).collect());
+    let selected: Vec<routes::Route> = routes::load(root)?
+        .into_iter()
+        .filter(|r| r.cuts.is_some())
+        .filter(|r| {
+            only.as_ref()
+                .is_none_or(|o| o.iter().any(|x| *x == r.name || (r.journey.is_some() && x == "journey")))
+        })
+        .collect();
+    let jobs = options.jobs.unwrap_or(2).max(1);
+    let mut failed = Vec::new();
+    let mut judge = |route: &routes::Route, run: routes::ClosedRun| -> Result<Option<PathBuf>> {
+        let result = routes::finish_closed(run)?;
+        println!("{} {} (closed loop): {}", if result.ok { "PASS" } else { "FAIL" }, route.name, result.headline);
+        for line in &result.failures {
+            println!("{}: {line}", route.name);
+        }
+        if !result.ok {
+            failed.push(route.name.clone());
+        }
+        Ok(result.card)
+    };
+    let plain: Vec<&routes::Route> = selected.iter().filter(|r| r.journey.is_none()).collect();
+    for chunk in plain.chunks(jobs) {
+        let runs: Vec<_> = chunk
+            .iter()
+            .map(|route| (*route, routes::spawn_closed(root, &gate, &library, &out, route, None)))
+            .collect();
+        for (route, run) in runs {
+            judge(route, run?)?;
+        }
+    }
+    let mut card: Option<PathBuf> = None;
+    for route in selected.iter().filter(|r| r.journey.is_some()) {
+        let run = routes::spawn_closed(root, &gate, &library, &out, route, card.as_deref())?;
+        card = judge(route, run)?;
+    }
+    if failed.is_empty() {
+        println!("{} closed-loop routes pass.", selected.len());
+        Ok(())
+    } else {
+        Err(format!("closed-loop routes failed: {}", failed.join(", ")).into())
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|earned-focus|gate-receipt|disc|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|earned-focus|gate-receipt|disc|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace hk-psx.bin/.cue in --library, report, then validate\n\
@@ -2775,6 +1965,10 @@ fn usage() -> ! {
          from --emulator-source, default ../PSoXide-emulator); needs a checkout path without spaces\n\
          validate  replay the route tapes in tools/tapes against the current CUE, on the pinned\n          \
          emulator unless --frontend (or HK_PSX_FRONTEND) names another\n\
+         routes    play only the closed-loop routes (those with a .cuts file) with psoxide-gate (--gate, or\n          \
+         HK_PSX_GATE and HK_PSX_GATE_SHA256) against the current CUE\n\
+         cuts      write NAME.cuts from the baseline replays in --work (default .hkpsx/validate), for every\n          \
+         --tape NAME with two or more scene loads\n\
          earned-focus  prove four earned hits, two kills, real damage, and one Focus heal\n\
          gate-receipt  check one baseline-qualified scene-gate replay at --work\n\
          disc      pack the disc from the guest build in --work (default build/) into --library\n          \
@@ -2803,6 +1997,7 @@ fn main() {
         sdk_source: None,
         emulator_source: None,
         frontend: None,
+        gate: None,
         telemetry: false,
         recook: false,
         validate: true,
@@ -2831,6 +2026,7 @@ fn main() {
             "--frontend" => {
                 options.frontend = Some(PathBuf::from(args.next().unwrap_or_else(|| usage())))
             }
+            "--gate" => options.gate = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--tape" => options
                 .tapes
                 .push(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
@@ -2859,6 +2055,8 @@ fn main() {
         "build" => build(&root, &options, BuildMode::Normal),
         "pgo" => build(&root, &options, BuildMode::Pgo),
         "validate" => validate(&root, &options),
+        "routes" => closed_routes(&root, &options),
+        "cuts" => routes::write_cuts(&root, &options.work.clone().unwrap_or_else(|| root.join(".hkpsx/validate")), &options.tapes.iter().filter_map(|t| t.file_stem().map(|s| s.to_string_lossy().to_string())).collect::<Vec<_>>(), 2),
         "earned-focus" => frontend(&root, &options).and_then(|frontend| {
             earned_focus::validate(
                 &root,
@@ -3104,6 +2302,7 @@ mod tests {
             sdk_source: None,
             emulator_source: None,
             frontend: None,
+            gate: None,
             telemetry: false,
             recook: false,
             validate: false,

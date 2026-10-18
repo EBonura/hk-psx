@@ -1,0 +1,18 @@
+# Forty actors and sixty-odd quads in one room; the measured route is 1,574 late of 1,750.
+pacing = 2050
+card = arena-waves.mcd
+# arena-waves seats the Knight on the platform of Crossroads_22's arena (card seeded
+# with tools/seed_card.py: scene 21, region 355, x 71.65, y 12.3), inside the trigger of
+# its `Battle Control`, with Invincibility, Pure Nail and Infinite SOUL on (the Cheats
+# page, which is how the journey travels too), and jumps, slashes up and casts left
+# and right until every wave is dead. The source's four waves have 2, 3, 3 and 4
+# members: the gates close once, twelve members land and twelve are counted dead, the
+# last wave ends the fight and the gates open once.
+HK_ARENA_GATE_CLOSES = 1
+HK_ARENA_GATE_OPENS = 1
+HK_ARENA_WAVES = 4
+HK_ARENA_LANDED = 12
+HK_ARENA_WAVE_DEATHS = 12
+HK_CHEATS = 7
+HK_DEATHS = 0
+HK_SAVE_LOADED = 1

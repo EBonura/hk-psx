@@ -1,0 +1,25 @@
+pacing = 150
+card = kings-return.mcd
+# kings-return boots from the card kings-death itself wrote, so the Shade it spawns
+# comes from a real death rather than a hand-seeded record. Walking the same
+# traversal back must find it there and recover it without dying again. Regenerate
+# the fixture from .hkpsx/validate/kings-death.mcd whenever the save record changes.
+HK_SAVE_LOADED = 1
+HK_SHADE_KILLS = 1
+HK_SHADE_PRESENT = 0
+HK_DEATHS = 0
+# Walking back past the Crawler that did the killing costs three of the five
+# masks, and the Knight kills it this time. Unpinned until now, so the return
+# traversal could have stopped fighting entirely and still passed.
+# Re-baselined at build 141, when tiled frames added a little per-frame cost
+# to everything drawn. kings-return is the most timing-sensitive route this
+# project has, being its longest continuous contact-heavy traversal, and it
+# came back 4.1 units short having taken one hit fewer. What says that is
+# timing rather than behaviour: its kill, its two hits, its Shade recovery,
+# its five breakables and its zero deaths are all unchanged, and nine other
+# routes returned byte-identical positions, including the longest ones.
+HK_ENEMY_KILLS = 1
+HK_ENEMY_HITS = 2
+# Survived the traversal at all. HK_DEATHS 0 above is the real assertion;
+# this only says the Knight was not left on one mask by something new.
+HK_HEALTH >= 2

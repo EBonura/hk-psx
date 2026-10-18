@@ -1,0 +1,19 @@
+pacing = 1225
+journey = 2
+scene_gate = true
+# journey-crossroads continues from that save and crosses nine scene gates
+# to the Crossroads_47 stag bench: the well, the Crossroads_07 shaft to its
+# floor, Crossroads_33, 08, 13, 42 and 19, up through Crossroads_19's top
+# gate into the bottom of Crossroads_03 and out of its left2. The two
+# shorter ways are shut in the source on a fresh save (the Crossroads_33
+# sliding wall and Crossroads_03's toll gates), and the Crossroads_19 top
+# gate is the one this port could not take until its bottom-gate entry
+# stopped dropping the Knight back through the hole he came up.
+HK_SAVE_LOADED = 1
+HK_WORLD_RESTORED = 8
+HK_SCENE_GATE_LOADS = 9
+HK_SAVE_WRITES = 1
+HK_SAVE_ERRORS = 0
+HK_WORLD_ITEMS = 9
+HK_DEATHS = 0
+HK_REGION_ID = 535

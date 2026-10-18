@@ -1,0 +1,29 @@
+pacing = 947
+card = gruz-fight.mcd
+# gruz-fight boots from a seeded card (tools/seed_card.py from secret-c04.mcd)
+# on Gruz Mother's ledge in Crossroads_04, left of where it sleeps. Seeded,
+# so it proves the fight, not the way to it. Invincibility and the max nail
+# from the pause menu (KILL_CHEATS 3 says so), walk right into `Battle
+# Range` and hit it once: it wakes (the Gruz Mother title, BATTLE START
+# seals the arena, the EnemyBattle cue), and the Knight steps back and
+# watches it buzz, charge and slam for twelve seconds before swinging every
+# 16 polls. Five max-nail hits kill it; the corpse steams and blows (Boss
+# Defeat on XA), the burster drops 50 Geo, lands, gurgles and bursts,
+# releasing the seven reserve flies, whose deaths (`Battle Enemies` 7) end
+# the arena: BG OPEN two seconds after the last, `Activated` saved.
+# SCENE_SFX_MISSED counts the Gruz Mother clips Crossroads_04's full scene
+# bank refuses (host/hk-cook/src/scene_sfx.rs). tools/tapes/gruz-fight.route.
+HK_GZ_WOKEN = 1
+HK_GZ_DEATHS = 1
+HK_GZ_BLOWN = 1
+HK_GZ_RELEASED = 1
+HK_GZ_FLY_DEATHS = 7
+HK_GZ_ARENA = 4
+HK_GZ_ACTIVATED = 1
+HK_GZ_KILL_CHEATS = 3
+HK_GZ_HITS = 5
+HK_GZ_PHASE = 26
+HK_ARENA_GATE_CLOSES = 1
+HK_ARENA_GATE_OPENS = 1
+HK_DEATHS = 0
+HK_CHEATS = 3

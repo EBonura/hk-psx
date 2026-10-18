@@ -1,0 +1,14 @@
+pacing = 26
+card = grub-jar.mcd
+# grub-jar boots from a seeded card (tools/seed_card.py) on the Crossroads_05
+# ledge beside its grub jar, facing it, and swings: the first swing breaks
+# the jar, the grub is freed and gone by the end, and the world store
+# holds one Grub item. Seeded, so it proves the jar, not the way to it.
+#   9:start:1,12:cross:1,200:square:2,230:square:2,260:square:2 (450 polls)
+HK_GRUBS_FREED = 1
+HK_GRUBS = 1
+HK_CHEATS = 0
+HK_DEATHS = 0
+HK_HEALTH = 5
+HK_REGION_ID = 194
+HK_SAVE_LOADED = 1

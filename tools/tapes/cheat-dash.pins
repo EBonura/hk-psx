@@ -1,0 +1,5 @@
+# Mothwing Cloak: the tape presses no direction at all, so the alternative
+# to a dash is X unchanged. The delta is dash_speed times dash_ticks exactly.
+HK_CHEATS = 16
+HK_PLAYER_X = 2651581
+HK_ABILITY_DRAWN >= 5

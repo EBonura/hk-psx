@@ -1,0 +1,19 @@
+pacing = 388
+# The King's Pass climb, which reproduced in the probe and had never been
+# done on the disc, and the first cooked script to fire in Tutorial_01:
+# FLAGS bit 0 is seenFocusTablet. The climb needs no ability, it needs to
+# survive two Crawler hits, which is what the Invincibility grant buys;
+# ctrl-climb is the same tape without the grant and reaches none of it.
+HK_CHEATS = 1
+HK_SCRIPT_TRANSITIONS = 1
+HK_SCRIPT_WRITES = 1
+HK_SCRIPT_FLAGS = 1
+HK_SCRIPT_HALTS = 0
+HK_SCRIPT_NATIVE = 0
+HK_REGION_ID = 30
+HK_DEATHS = 0
+HK_HEALTH = 5
+HK_ENEMY_KILLS = 2
+HK_ENEMY_HITS = 4
+HK_BREAK_COUNT = 11
+HK_SOUL = 44

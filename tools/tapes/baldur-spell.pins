@@ -1,0 +1,14 @@
+pacing = 47
+card = baldur-spell.mcd
+# baldur-spell is the Greenpath exit: a seeded card right of Crossroads_11_alt's
+# Elder Baldur, the spell and three other cheats on from the pause menu
+# (CHEATS 1031 says so: Vengeful Spirit cannot be earned on this branch
+# yet), walk left to it and cast every 45 polls. Four spell hits kill it,
+# its Terrain Block lifts (0be2f3e) and the Knight walks on past it into
+# region 338, before the drop into the acid. tools/tapes/baldur-spell.route.
+HK_ENEMY_KILLS = 1
+HK_ENEMY_HITS = 4
+HK_DEATHS = 0
+HK_REGION_ID = 338
+HK_CHEATS = 1031
+HK_SAVE_LOADED = 1

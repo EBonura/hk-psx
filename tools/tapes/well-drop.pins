@@ -1,0 +1,26 @@
+pacing = 171
+card = town-continue.mcd
+scene_gate = true
+# well-drop resumes at the Dirtmouth bench and walks right into the well, so the
+# Town to Crossroads gate is exercised without replaying King's Pass.
+HK_SCENE_GATE_LOADS = 1
+# well-drop falls the length of the well and must arrive unhurt: the drop is not
+# a hazard and nothing down there reaches the Knight on the way.
+HK_HEALTH = 5
+HK_DEATHS = 0
+# The first cooked PlayMaker FSM to run on the disc. Town's Area Resetter
+# waits in Detect for its Trigger2dEvent volume at x 182.7 to 187.4, y 2.14
+# to 3.14, which is the mouth of the well, takes TOUCH to Reset and writes
+# currentArea. FLAGS bit 1 is that field, so 2 is the write having landed
+# in the persistent store rather than the transition merely having fired.
+# crossroads-gate carries the same walk on, and ends with no instance
+# resident because Crossroads_07 has none.
+HK_SCRIPT_TRANSITIONS = 1
+HK_SCRIPT_WRITES = 1
+HK_SCRIPT_FLAGS = 2
+HK_SCRIPT_ACTIVE = 1
+# The bank emits no native call, so one arriving means the bank and the
+# runtime have diverged. Same for a halt: every program is meant to fit its
+# op budget, so a halt is a cooked program the executor could not run.
+HK_SCRIPT_HALTS = 0
+HK_SCRIPT_NATIVE = 0

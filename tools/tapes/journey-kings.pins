@@ -1,0 +1,25 @@
+pacing = 857
+journey = 1
+scene_gate = true
+# The journey: Start Game to the False Knight and back, on one card and
+# four power cycles, with no fixture anywhere. See JOURNEY for the order
+# and tools/tapes/journey-*.route for what each segment presses.
+# 
+# journey-kings starts a new game on an empty card, climbs King's Pass,
+# breaks the Great Door into Dirtmouth and saves at the Dirtmouth bench.
+# The six walls it breaks on the way are persistent breakables, so the
+# save is 166 + 6 * 4 = 190 bytes. Invincibility carries it past the
+# King's Pass Crawlers, whose knockback knocks every open-loop climb off
+# its route (ledger, route coverage); CHEATS 1 says so rather than hiding it.
+HK_SAVE_LOADED = 0
+HK_CHEATS = 1
+HK_GREAT_DOOR_OPENED = 1
+HK_SCENE_GATE_LOADS = 1
+HK_BENCH_RESTS = 1
+HK_SAVE_WRITES = 1
+HK_SAVE_ERRORS = 0
+HK_SAVE_BYTES = 198
+HK_WORLD_ITEMS = 8
+HK_WORLD_OVERFLOW = 0
+HK_DEATHS = 0
+HK_REGION_ID = 100

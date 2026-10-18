@@ -1,0 +1,7 @@
+pacing = 246
+card = secret-c37.mcd
+# Standing still in Crossroads_37 for 3,000 polls, the case that panicked
+# at poll 125 on the ship6 disc.
+HK_DEATHS = 0
+HK_REGION_ID = 454
+HK_SECRET_HITS = 0

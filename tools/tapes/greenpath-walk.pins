@@ -1,0 +1,27 @@
+pacing = 968
+card = greenpath.mcd
+scene_gate = true
+# Greenpath, walked rather than cooked. The Knight boots from a seeded card
+# ten units inside Fungus1_01 and holds left, crossing into Fungus1_01b and
+# then into Fungus1_02, which is the room every other Greenpath scene is
+# reached through. Two scene gates, three scene loads, five masks, no
+# faults.
+# 
+# The region trail is the assertion worth having beyond the gate count.
+# Inside Fungus1_02 he crosses five distinct regions, and that scene is one
+# of the two in the catalogue carrying a recorded view layout rather than
+# the derived grid, because six of its fifteen grid views want a sixth
+# static page. So this route is what says those hand-recorded boxes hold up
+# on hardware, not just in the cook.
+# 
+# The route string, since a .pxtape is opaque, through poll_tape at 3000:
+#   9:start:1,12:cross:1,150:left:260,600:left:400,1100:left:400,
+#   1600:left:400,2100:left:400,2600:left:350
+HK_SCENE_GATE_LOADS = 2
+HK_SCENE_LOADS = 3
+HK_REGION_ID = 742
+HK_HEALTH = 5
+HK_DEATHS = 0
+HK_SAVE_LOADED = 1
+HK_ROOM_LOAD_ERROR = 0
+HK_CD_STREAM_ERROR = 0

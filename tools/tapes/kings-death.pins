@@ -1,0 +1,24 @@
+pacing = 165
+card = kings-death.mcd
+art_late = 44
+# kings-death walks the King's Pass traversal with the nail silent past the fifth
+# breakable, so the Crawler there survives to kill the Knight. Death must record a
+# Shade at the spot with nailDamage * clamp(maxHealth / 2, 1, 99) health, and must
+# not touch the card: this port only writes when the player accepts the bench prompt.
+HK_DEATHS = 1
+# The death reset every semi-persistent item once (GameManager.PlayerDead).
+HK_SEMI_RESETS = 1
+HK_ENEMY_KILLS = 0
+HK_SHADE_PRESENT = 1
+HK_SHADE_HP = 10
+HK_SAVE_WRITES = 0
+HK_SAVE_ERRORS = 0
+HK_SCRIPT_HALTS = 0
+HK_SCRIPT_NATIVE = 0
+# Instances resident per scene: one in King's Pass, two in Town. This is
+# what says the bank is being seated at all, on routes where nothing fires.
+# Nothing reaches Tutorial_01's own acting volume (Set Seen Focus Tablet at
+# x 102.0 to 103.7, y 27.98 to 37.9): kings-death stays below y 25 and
+# kings-return passes underneath at y 11.4. That needs the King's Pass
+# climb, which no route does yet.
+HK_SCRIPT_ACTIVE = 1

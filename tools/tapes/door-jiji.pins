@@ -1,0 +1,12 @@
+card = door-jiji.mcd
+# door-jiji is a door whose room is not on the disc: a seeded card by
+# Dirtmouth's door_jiji, walk right, UP opens the source's locked-door line
+# (Prompts JIJI_DOOR_NOKEY), Cross closes it and UP opens it again. No gate
+# load. tools/tapes/door-jiji.route.
+HK_READ_OPENED = 2
+HK_READ_CLOSED = 1
+HK_READ_SOURCE = 4407
+HK_SCENE_GATE_LOADS = 0
+HK_REGION_ID = 102
+HK_DEATHS = 0
+HK_CHEATS = 0

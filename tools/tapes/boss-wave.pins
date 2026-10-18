@@ -1,0 +1,18 @@
+card = boss-fight.mcd
+# The slam wave. The Knight backs away to the arena's left end, so the
+# boss slams from range (`S Check Hero Pos` skips the leap from twelve
+# units) and each `S Attack Recover` sends a Shockwave Wave across the
+# floor at it. The first one lands, the next three are jumped; the tape is
+# tools/boss_sim.py's, which shares hk_sim::shockwave with the guest, and
+# the disc took exactly the hits it predicted. The music is still the
+# fight's XA when the tape ends, because nothing broke the floor.
+HK_SAVE_LOADED = 1
+HK_FK_TRIGGERED = 1
+HK_FK_WAVES = 4
+HK_FK_WAVE_HITS = 1
+HK_HEALTH = 2
+HK_DEATHS = 0
+HK_CHEATS = 0
+HK_FK_STAGGERS = 0
+HK_MUSIC_BOSS = 1
+HK_REGION_ID = 239

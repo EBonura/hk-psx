@@ -1,0 +1,45 @@
+# Canonical 0d32a16e on pinned 0868022 completed the same boss death,
+# save, and return with 1186 slow frames; the ceiling is 130% rounded up.
+pacing = 1542
+journey = 3
+scene_gate = true
+# journey-false-knight continues from the stag bench, climbs Crossroads_03
+# to its left1, crosses Crossroads_21 and climbs Crossroads_10 to the arena
+# floor, turns Invincibility off in the pause menu and walks into the
+# trigger from the right. The fight is tools/boss_sim.py's search from that
+# arrival, and FK_KILL_CHEATS 0 is the cheat bits on the tick the boss died,
+# which is what makes the kill fair even though the travel either side of
+# it is not. Since the floor break, the fight ends in the room below the
+# arena: the tape keeps the original travel and the first three phases,
+# and the death exposure is the same repeated jump-and-swing the
+# boss-fight route uses. Then Invincibility back on, along the bottom of
+# Crossroads_10 to its right1 once the gates reopen, the original route
+# from Crossroads_21 on back to the stag bench, and a save that carries
+# the arena's Activated (a seventh item) and falseKnightDefeated with
+# falseKnightFirstPlop.
+HK_SAVE_LOADED = 1
+HK_WORLD_RESTORED = 9
+HK_FK_TRIGGERED = 1
+HK_FK_DEATHS = 1
+HK_FK_KILL_CHEATS = 0
+HK_FK_STAGGERS = 3
+HK_FK_CONVERSIONS = 3
+HK_FK_ARENA = 4
+HK_FK_ACTIVATED = 1
+HK_FK_BARRELS = 24
+# 24 barrels: what the rage phases of the boss_sim fight drop. The fight is searched against a
+# simulation whose 50 Hz input phase matches the disc's (BOSS_SIM_PHASE=2, no BOSS_SIM_RELOAD:
+# calibrated by replaying the old tape on this disc and finding the phase at which the simulated
+# Knight's hits land on the real run's polls); a change that moves the ticks per poll moves the
+# phase, and `tools/boss_sim.py search` finds the fight again.
+HK_FK_BARRELS_BROKEN = 24
+HK_ARENA_GATE_CLOSES = 1
+HK_ARENA_GATE_OPENS = 1
+HK_DEATHS = 0
+HK_SAVE_WRITES = 1
+HK_SAVE_ERRORS = 0
+HK_WORLD_ITEMS = 10
+HK_WORLD_PLAYER = 3
+HK_SAVE_BYTES = 206
+HK_REGION_ID = 535
+HK_FK_FLOOR = 2

@@ -1,0 +1,81 @@
+pacing = 2
+card = boss-fight.mcd
+# The False Knight, fought fairly and killed. No cheats, five masks at the
+# end and not one of them lost: HK_CHEATS 0 and HK_HEALTH 5 hold at every
+# poll of the tape, not only at the last one. Three staggers, three
+# conversions, the death event, the arena cleared and its gates reopened.
+# 
+# The tape before this one ran with Invincibility on, set by its own
+# pause-menu polls, so the port had proved a boss that could be killed and
+# had never proved a fight that could be won. Strip those seven events from
+# it and the Knight dies without landing a single stagger.
+# 
+# STAGGERS equal to CONVERSIONS is the assertion worth having. The source
+# lets a hero stagger the boss out of its own rage, after which the fight
+# never ends because Rage Check only reads the stagger count once the rage
+# counter reaches zero; an earlier tape measured 8 staggers against 1
+# conversion, and the recook that sealed the arena left the cheated tape at
+# 4 against 2. Equal counts are the proof this one held fire through both
+# rages instead.
+# 
+# Three things had to be found before any tape could finish this fight. The
+# exposed Head sits at y 30.24 to 32.47 and a Knight standing on the arena
+# floor reaches y 30.18 with an up slash, so it is unreachable from the
+# ground by 0.06 units and the tape jumps and swings at the apex. Every
+# landed hit recoils the Knight 0.69 units away from his facing. And the
+# arena has to seal: with both end gates cooked as terrain that recoil can
+# no longer walk him off the floor, which is what left an earlier tape
+# stuck at exactly 10 hp, and it gives the hero a bounded band from x 19 to
+# x 39 to dodge in. This route did not exist until the gates did.
+# 
+# The card is seeded rather than earned, so this proves the fight and not
+# the journey to it. The route string is tools/tapes/boss-fight.route, kept
+# because a .pxtape is opaque; it is 239 events over 4,609 polls, and the
+# only buttons in it are square, left, right, cross and one start.
+# 
+# Fragile to anything that moves the boss path, the actor bounds or the
+# nail geometry. Three that silently break a tape and cost real time to
+# find: Actor::local_bounds mirrors the placement box when the walk
+# direction leaves the cooked initial_direction, which flips this boss's
+# collision offset by 0.142 units the moment it turns right;
+# respond_to_hurt cancels the swing and the nail recoil on any landed hit,
+# whatever the source; and the barrel summoner seeds from 1 out of
+# EnemyWorld::new rather than from the scene id, because nothing in this
+# route reloads the scene for clear_shots to re-seed it.
+HK_FK_TRIGGERED = 1
+HK_FK_DROPPED = 1
+HK_FK_STAGGERS = 3
+HK_FK_CONVERSIONS = 3
+HK_FK_DEATHS = 1
+HK_FK_STUNNED = 3
+HK_FK_ARENA = 4
+HK_FK_ACTIVATED = 1
+HK_ARENA_GATE_CLOSES = 1
+HK_ARENA_GATE_OPENS = 1
+HK_HEALTH = 5
+HK_DEATHS = 0
+HK_ENEMY_KILLS = 0
+HK_CHEATS = 0
+HK_SAVE_LOADED = 1
+# The last jump breaks the floor and the fight ends in the room below it:
+# the Knight follows the boss down, finishes the Head in `Opened 2` and
+# stands there while the Death Head drops out and the arena opens. The
+# route's death exposure is a repeated jump-and-swing chosen because it
+# still kills with a poll dropped or doubled anywhere in it, which is what
+# tools/boss_sim.py's own search could not promise.
+HK_REGION_ID = 232
+HK_FK_FLOOR = 2
+HK_FK_HEAD_HITS = 28
+# `Floor Break` takes the mixer to `Silent`: the Boss1 XA has faded and
+# stopped by the time the Head is finished below, and it started once.
+HK_MUSIC_BOSS = 0
+HK_MUSIC_BOSS_STARTS = 1
+# Every False Knight voice the fight asks Crossroads_10's scene bank for is
+# there (host/hk-cook/src/scene_sfx.rs): none falls through to a miss.
+HK_SCENE_SFX_MISSED = 0
+# Every barrel the rage flung reached terrain or the hero. Spawns and
+# breaks are separate counters because a barrel the pool recycled under
+# pressure never breaks, so equal counts are what tells a fight the player
+# dodged from one where the rage's own barrels evicted each other.
+HK_FK_BARRELS = 24
+HK_FK_BARRELS_BROKEN = 24

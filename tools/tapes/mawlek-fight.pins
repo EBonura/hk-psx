@@ -1,0 +1,46 @@
+pacing = 2
+card = mawlek.mcd
+# mawlek-fight boots from a seeded card (tools/seed_card.py from grub-jar.mcd)
+# on the Crossroads_09 floor left of the arena: the only walk in is from
+# Crossroads_36, past an Elder Baldur the spell cheat has to kill, and the
+# Crossroads_33 side is `full_wall_left` until the arena is won. Seeded, so
+# it proves the fight, not the way to it. Invincibility and the max nail
+# from the pause menu (KILL_CHEATS 3 says so), walk right into `Alert Range
+# New`: it wakes, leaps out of the background, roars, the EnemyBattle cue
+# starts as an XA song, and the Knight swings at it every 16 polls. Fifteen max
+# nail hits kill it, the corpse steams and blows, Boss Defeat plays from
+# XA channel 3 (HK_MUSIC_BOSS_TRACK) to its end, and the gates open 10.5 s after BATTLE END.
+# The Heart Piece `End Wait` shows 5.5 s after BATTLE END is then a running
+# jump up and right from the arena floor: one mask shard (SHOP_SHARDS 1),
+# saved beside the arena's `Activated` (WORLD_ITEMS 2).
+# The counts are this tape's; SWIPES, PARRIES and HEAD_SHOTS are minimums.
+# tools/tapes/mawlek-fight.route.
+HK_MW_WOKEN = 1
+HK_MW_DEATHS = 1
+HK_MW_BLOWN = 1
+HK_MW_ARENA = 4
+HK_MW_ACTIVATED = 1
+HK_MW_KILL_CHEATS = 3
+HK_MW_HITS = 15
+HK_MW_SPRAYS = 1
+HK_MW_LEAPS = 4
+HK_MW_PHASE = 22
+HK_ARENA_GATE_CLOSES = 1
+HK_ARENA_GATE_OPENS = 1
+HK_MUSIC_BOSS = 0
+HK_MUSIC_BOSS_STARTS = 2
+HK_MUSIC_BOSS_TRACK = 3
+HK_SCENE_SFX_MISSED = 0
+HK_DEATHS = 0
+HK_WORLD_ITEMS = 2
+HK_SHOP_SHARDS = 1
+HK_SAVE_LOADED = 1
+HK_CHEATS = 3
+HK_REGION_ID = 225
+# An ability clip owned the Knight's body. The count is frame timing; that
+# it is not zero is the ability having run, and each control route with the
+# grant removed is pinned at exactly 0 in REQUIRED.
+# Brooding Mawlek's arms swung, one swing met the nail, the Head spat.
+HK_MW_SWIPES >= 1
+HK_MW_PARRIES >= 1
+HK_MW_HEAD_SHOTS >= 1
