@@ -17,6 +17,11 @@ mod scene_gate;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// The region report exactly as `host/regions.py` wrote it. `data/regions.json` is rewritten by the
+/// asset stage (`crossroads22_wave::prepare`, which refuses an already rewritten file), so every cache
+/// key and every asset-stage restart starts from this copy, never from the live report.
+const REGIONS_BASE: &str = ".hkpsx/regions-base.json";
+
 /// Cooker inputs, one repo-relative path per line; shared with host/regions.py.
 const COOK_INPUTS: &str = include_str!("../cook_inputs.txt");
 const ASSET_SCRIPTS: &[&str] = &[
@@ -393,6 +398,7 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
             && old["code"] == code
             && old["source_manifest_sha256"].as_str() == Some(&source_manifest_sha256)
             && inputs_unchanged(&source, &prov)
+            && old["outputs"].get(REGIONS_BASE).is_some()
             && outputs_intact
         {
             println!("Cook cache hit: source hashes and generated outputs match.");
@@ -407,8 +413,12 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     if source_input_fingerprints(&source)? != source_inputs || code_fingerprint(root)? != code {
         return Err("retail source or cooker code changed during region cook".into());
     }
+    // The asset stage rewrites data/regions.json (the arena waves, see
+    // `assets_cached`), so the cache can only vouch for the report as the region
+    // cook left it: keep that copy and record it instead of the live file.
+    std::fs::copy(root.join("data/regions.json"), root.join(REGIONS_BASE))?;
     let mut outputs: BTreeMap<String, String> = BTreeMap::new();
-    for name in ["data/room.hk", "data/params.rs", "data/regions.json"] {
+    for name in ["data/room.hk", "data/params.rs", REGIONS_BASE] {
         outputs.insert(name.into(), sha256_file(&root.join(name))?);
     }
     for entry in std::fs::read_dir(root.join("data/regions"))? {
@@ -513,7 +523,7 @@ fn assets_key(root: &Path) -> Result<String> {
     ] {
         collect_files(&root.join(dir), &mut files)?;
     }
-    files.push(root.join("data/regions.json"));
+    files.push(root.join(REGIONS_BASE));
     files.push(root.join(".hkpsx/regions-cook-cache.json"));
     files.push(root.join(".hkpsx/menu-provenance.json"));
     files.sort();
@@ -610,6 +620,9 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
             }
         }
     }
+    // The scripts and `prepare` below start from the report as the region cook wrote it, as a
+    // cold build does; a previous run left the arena waves in the live file.
+    std::fs::copy(root.join(REGIONS_BASE), root.join("data/regions.json"))?;
     for script in ASSET_SCRIPTS {
         match script.strip_prefix("rust:") {
             Some(tool) => rust_step(root, tool)?,
@@ -765,7 +778,7 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     // write only after them: a fresh clone had none, and every other build fed
     // them the previous cook's list. It is a copy of this cook's report.
     std::fs::copy(
-        root.join("data/regions.json"),
+        root.join(REGIONS_BASE),
         root.join(".hkpsx/selected-regions.json"),
     )?;
     menu_cached(root, options.recook)?;
