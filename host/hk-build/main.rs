@@ -834,11 +834,17 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // Fungus1_04, to the Cloak Corpse (region 1005). Ordinary controls, no
     // cheat, no death; the fixture is seeded at (24, 12) in Fungus1_22 because
     // the shaft's lower hall is sealed by a Metal Gate its Gate Switch opens
-    // from above. hornet1Defeated is clear, so UP at the shiny does nothing.
+    // from above. hornet1Defeated is clear, so UP at the shiny does nothing. Hornet is in the build now (her art is a boss bank in
+    // the scene, docs/BOSS-ART.md): the Knight crosses her arena, her Encounter starts and she touches him once, so he ends on 4
+    // masks; every part she shows came out of the bank (no drop, no clip the bank lacks) and the bank's 70 chunks were found.
     ("hornet-road", "HK_SCENE_GATE_LOADS", 2),
     ("hornet-road", "HK_REGION_ID", 1005),
     ("hornet-road", "HK_DEATHS", 0),
-    ("hornet-road", "HK_HEALTH", 5),
+    ("hornet-road", "HK_HEALTH", 4),
+    ("hornet-road", "HK_HORNET_ENCOUNTERS", 1),
+    ("hornet-road", "HK_BOSS_BANK_FOUND", 70),
+    ("hornet-road", "HK_BOSS_DROPS", 0),
+    ("hornet-road", "HK_BOSS_CLIP_MISSES", 0),
     ("hornet-road", "HK_CHEATS", 0),
     ("hornet-road", "HK_WORLD_PLAYER", 0),
     ("hornet-road", "HK_ABILITY_DRAWN", 0),
@@ -848,6 +854,8 @@ const REQUIRED: &[(&str, &str, u64)] = &[
     // bit 26): the shiny is offered, UP takes it, hasDash (bit 2) is saved and the
     // dash runs. World bits 26 and 2 are 0x4000004.
     ("hornet-road-defeated", "HK_SCENE_GATE_LOADS", 2),
+    ("hornet-road-defeated", "HK_HORNET_ENCOUNTERS", 0),
+    ("hornet-road-defeated", "HK_BOSS_PARTS_DRAWN", 0),
     ("hornet-road-defeated", "HK_REGION_ID", 1005),
     ("hornet-road-defeated", "HK_DEATHS", 0),
     ("hornet-road-defeated", "HK_HEALTH", 5),

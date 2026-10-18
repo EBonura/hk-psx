@@ -36,6 +36,13 @@ pub static mut HK_HORNET_HURT: u32 = 0;
 #[cfg(feature = "hornet")]
 #[no_mangle]
 pub static mut HK_HORNET_ENCOUNTERS: u32 = 0;
+/// Her body's position (Q16.16 world units), for authoring a route against her.
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_X: i32 = 0;
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_Y: i32 = 0;
 /// The Cloak Corpse is still waiting to show its shiny.
 pub fn cloak_waiting() -> bool {
     unsafe { HK_HORNET_CLOAK_WAIT != 0 }

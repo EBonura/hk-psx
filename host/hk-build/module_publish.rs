@@ -515,6 +515,26 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
     // Every room's own modules plus the largest carried package must fit the pool less one 4 KiB window fence.
     let pool = config["pool"].as_u64().unwrap_or(0x17000) as u32;
     let limit = pool - 0x1000;
+    // A code module never straddles a 64 KiB `lui` window (game/src/modules.rs `gap_in`), so it needs a window's worth of pool
+    // between the pool's start (or a window boundary) and the next boundary or the pool's end. The sum above does not say that.
+    let base = config["pool_base"].as_u64().ok_or("pool base")? as u32;
+    let widest = (0u32..)
+        .map(|k| ((base.wrapping_add(0x8000) >> 16) + k) << 16)
+        .map(|w| w.wrapping_sub(0x8000))
+        .take_while(|&w| w < base + pool)
+        .map(|w| (w + 0x1_0000).min(base + pool) - w.max(base))
+        .max()
+        .unwrap_or(0);
+    let code_count = config["code_count"].as_u64().ok_or("code count")? as usize;
+    for (id, size) in sizes.iter().take(code_count).enumerate() {
+        if *size > widest {
+            return Err(format!(
+                "code module {} is {size} bytes; the widest 64 KiB window the pool (base {base:#x}, {pool:#x} bytes) holds is {widest}",
+                config["names"][id].as_str().unwrap_or("?")
+            )
+            .into());
+        }
+    }
     let names = config["names"].as_array().ok_or("names")?;
     let mut table = Vec::new();
     for (index, room) in config["rooms"].as_array().ok_or("rooms")?.iter().enumerate() {
