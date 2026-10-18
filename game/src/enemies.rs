@@ -691,7 +691,7 @@ const FLASH_TICKS: u8 = hk_sim::components::FLASH_TICKS;
 /// The flash colour times its amount, as a GPU modulation of a white texel
 /// (128 is 1.0): 0.9 * (1, 0.31, 0).
 const FLASH_TINT: (u32, u32, u32) = (115, 36, 0);
-fn flash_tint(left: u8) -> (u8, u8, u8) {
+pub(crate) fn flash_tint(left: u8) -> (u8, u8, u8) {
     let k = (left as u32).min(FLASH_TICKS as u32);
     let s = |c: u32| (c * k / FLASH_TICKS as u32) as u8;
     (s(FLASH_TINT.0), s(FLASH_TINT.1), s(FLASH_TINT.2))

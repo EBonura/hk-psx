@@ -261,6 +261,7 @@ pub fn render(
     }
     enemy_draws.append_needed(&mut needed, &mut needed_len);
     game.shade.append_needed(&mut needed, &mut needed_len);
+    crate::boss_bank::append_needed(&mut needed, &mut needed_len);
     if let Some(i) = ball_frame {
         assert!(
             needed_len < needed.len(),
@@ -355,6 +356,7 @@ pub fn render(
         }
     }
     prims += enemy_draws.draw();
+    prims += crate::boss_bank::draw();
     prims += game.props.draw(camera);
     prims += pickup_draws.draw(room, camera);
     render::kick_ready();
