@@ -256,6 +256,28 @@ impl World {
         self.entry = e.settle + e.lead + ENTER_BOT_TICKS;
         self.publish();
     }
+    /// A gate load that ran behind an already black screen counts toward the entry's
+    /// blackout hold (settle plus the fade delay): the source starts that wait once
+    /// the scene is active, so it runs while the rest of the load finishes. Credits
+    /// at most the hold still to run, so a load shorter than the hold leaves the
+    /// rest of it, and a longer one adds nothing on top. Only the black stretch is
+    /// credited: the lead and the walk-in keep their full length.
+    pub fn credit_hold(&mut self, ticks: u16) {
+        // Study builds can switch the overlap off (HK_NO_LEAD_OVERLAP) to measure it.
+        if option_env!("HK_NO_LEAD_OVERLAP").is_some() || self.entry == 0 || self.dropping || self.entry_delay != 0 {
+            return;
+        }
+        let e = self.entry_spec();
+        let total = e.settle + e.lead + self.walk_ticks();
+        let elapsed = total.saturating_sub(self.entry);
+        // Whole 5-tick steps (6 vblanks): the simulation's 50 Hz phase against the 60 Hz
+        // polls repeats every 5 ticks, so a recorded input tape stays in phase with the
+        // entry timeline after a credited hold.
+        let ticks = ticks - ticks % 5;
+        let credit = ticks.min((e.settle + e.fade_delay).saturating_sub(elapsed) / 5 * 5);
+        self.entry -= credit;
+        self.publish();
+    }
     /// The drop begins on the tick the Knight reappears.
     pub fn drop_starts(&self) -> bool {
         self.entry_vertical && self.entry == self.walk_ticks()

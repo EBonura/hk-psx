@@ -4,6 +4,17 @@
 pub static mut HK_SCENE_GATE_LOADS: u32 = 0;
 #[no_mangle]
 pub static mut HK_SCENE_GATE_TICKS: u32 = 0;
+/// VBlank at which the gate's screen went fully black (the exit fade's last
+/// step, or the blackout when no fade was armed), and VBlanks of black the
+/// last gate load had behind it when the picture came back.
+static mut BLACK_AT: u32 = 0;
+#[no_mangle]
+pub static mut HK_GATE_BLACK_CREDIT: u32 = 0;
+pub fn mark_black(vblank: u32) {
+    unsafe {
+        BLACK_AT = vblank;
+    }
+}
 #[inline(never)]
 /// `shown` and `other` are the framebuffer rows of the frame on screen and of
 /// the other buffer: an exit fade still running finishes from them.
@@ -36,7 +47,8 @@ pub fn load(
         while psx_rt::interrupts::gp1_queue_pending() {
             crate::input::checkpoint();
         }
-        crate::gate_probe::note(31, psx_rt::interrupts::vblank_count());
+        crate::gate_probe::note(22, psx_rt::interrupts::vblank_count());
+        mark_black(psx_rt::interrupts::vblank_count());
     }
     psx_gpu::draw_sync();
     crate::render::release_scene();
@@ -68,6 +80,7 @@ pub fn load(
     let now = crate::input::end_scene_load();
     crate::gate_probe::display_on();
     unsafe {
+        HK_GATE_BLACK_CREDIT = psx_rt::interrupts::vblank_count().wrapping_sub(BLACK_AT);
         HK_SCENE_GATE_LOADS = HK_SCENE_GATE_LOADS.saturating_add(1);
         HK_SCENE_GATE_TICKS = HK_SCENE_GATE_TICKS.saturating_add(now.wrapping_sub(clock));
     }

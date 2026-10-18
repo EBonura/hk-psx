@@ -293,7 +293,11 @@ def scene_arena_bytes(entries,meta,bodies,output_dir,residency):
     """
     sector=lambda n:(n+2047)//2048*2048
     banks,_=world_metadata_banks(meta,Path(output_dir)/'unused',{e['scene_id']:e['raw_fnv'] for e in entries})
-    tails={b['scene_id']:max(aligned(b['raw_len']),sector(b['stored_len'])) for b in banks}
+    # The guest checks each in-place decode with raw + (stored >> 8) + 32 bytes of margin
+    # (disc.rs window_fits_at), so the tail must hold that, not just the raw bank: without it
+    # Tutorial_01 (whose 69,076-byte bank sets the arena) fell 106 bytes short and its group,
+    # which fits the arena in two windows, was read chunk by chunk (19 reads) at its gate.
+    tails={b['scene_id']:max(aligned(b['raw_len']+(b['stored_len']>>8)+32),sector(b['stored_len'])) for b in banks}
     widest=max(tails.values(),default=0)
     def need(e):
         # Under scene-gate residency only one scene and its own bank are ever

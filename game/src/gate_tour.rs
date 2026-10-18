@@ -22,6 +22,11 @@ mod imp {
     }
     #[no_mangle]
     pub static mut HK_TOUR_STEP: u32 = 0;
+    /// Stop the tour after this many steps (a diagnosis run); 0 runs the whole list.
+    const STOP: u32 = match option_env!("HK_TOUR_STOP") {
+        Some(s) => parse(s),
+        None => 0,
+    };
     #[no_mangle]
     pub static mut HK_TOUR_MISSES: u32 = 0;
     #[no_mangle]
@@ -40,14 +45,76 @@ mod imp {
     pub fn pad(_bits: u16) -> u16 {
         0
     }
+    /// Walk mode (`tour-walk`): units per second the Knight runs, as Q16 per 50 Hz tick.
+    const WALK_Q16_PER_TICK: i32 = (8_3 * 65536 / 10) / 50;
+    /// Ticks a walk may take before the tour gives the step up as missed.
+    const WALK_LIMIT: u32 = 6000;
+    static mut ARRIVED: bool = false;
+    /// Walk the Knight straight from where the entry left him to the next listed
+    /// gate at running speed, ignoring terrain, so the ordinary gate predictor
+    /// sees a Knight that approaches (the tour otherwise stands still). The
+    /// step is due when he is inside the gate's trigger box.
+    #[cfg(feature = "tour-walk")]
+    pub fn walk(player: &mut hk_sim::Player, scene: usize) {
+        unsafe {
+            if HK_TOUR_DONE != 0 || IDLE < 2 {
+                return;
+            }
+            let step = HK_TOUR_STEP as usize;
+            let Some(&(from, to, region)) = TOUR.get(step) else {
+                return;
+            };
+            if from as usize != scene {
+                return;
+            }
+            let Some(g) = crate::world::gates(scene)
+                .find(|g| g.target_scene == to as usize && g.target_region == region as usize)
+            else {
+                return;
+            };
+            let b = g.bounds;
+            let tx = player.x.clamp(b[0], b[2]);
+            let ty = player.y.clamp(b[1], b[3]);
+            if tx == player.x && ty == player.y {
+                ARRIVED = true;
+                return;
+            }
+            // Head for the box's centre; stop at its edge.
+            let cx = (b[0] >> 1) + (b[2] >> 1);
+            let cy = (b[1] >> 1) + (b[3] >> 1);
+            let (dx, dy) = (cx - player.x, cy - player.y);
+            let far = dx.abs().max(dy.abs()).max(1);
+            let step_q = WALK_Q16_PER_TICK.min(far);
+            // 32-bit only: scale the shorter axis by step/far in units of 1/16.
+            let (fd, sd) = (far >> 12, step_q);
+            if fd == 0 {
+                player.x = cx;
+                player.y = cy;
+            } else {
+                player.x += (dx >> 12) * sd / fd;
+                player.y += (dy >> 12) * sd / fd;
+            }
+            player.vy = 0;
+            if dx != 0 {
+                player.facing = dx.signum();
+            }
+        }
+    }
     /// The tour's next (target scene, target region), if it is due now.
     pub fn due(scene: usize) -> Option<(usize, usize)> {
         unsafe {
+            #[cfg(feature = "tour-walk")]
+            {
+                if HK_TOUR_DONE != 0 || !(ARRIVED || IDLE >= WALK_LIMIT) {
+                    return None;
+                }
+            }
+            #[cfg(not(feature = "tour-walk"))]
             if HK_TOUR_DONE != 0 || IDLE < DWELL {
                 return None;
             }
             let step = HK_TOUR_STEP as usize;
-            if step >= TOUR.len() {
+            if step >= TOUR.len() || (STOP != 0 && HK_TOUR_STEP >= STOP) {
                 HK_TOUR_DONE = 1;
                 return None;
             }
@@ -64,6 +131,7 @@ mod imp {
         unsafe {
             HK_TOUR_STEP += 1;
             IDLE = 0;
+            ARRIVED = false;
         }
     }
     pub fn active() -> bool {
@@ -78,6 +146,8 @@ mod imp {
 }
 #[cfg(feature = "gate-tour")]
 pub use imp::{active, due, pad, taken, tick, upcoming};
+#[cfg(feature = "tour-walk")]
+pub use imp::walk;
 #[cfg(not(feature = "gate-tour"))]
 #[inline(always)]
 pub fn tick(_: bool) {}
