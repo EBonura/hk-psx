@@ -37,6 +37,8 @@ pub static mut HK_CARD_PROBE: u32 = 0;
 pub static mut HK_CARD_PROBE_TIMING: u32 = 0;
 
 /// Called by the card layer after every frame transaction.
+#[inline(never)]
+#[optimize(size)]
 pub fn note(trace: &TransportTrace, retries: u32) {
     unsafe {
         if (*(&raw const FIRST)).is_none() {
@@ -47,6 +49,8 @@ pub fn note(trace: &TransportTrace, retries: u32) {
     }
 }
 /// Called by `survey` once its first frame has been read.
+#[inline(never)]
+#[optimize(size)]
 pub fn boot(gate: Option<Fault>) {
     unsafe { HK_CARD_GATE = gate.map_or(0, |f| f as u32 + 1) }
 }
@@ -56,12 +60,16 @@ struct Line {
     len: usize,
 }
 impl Line {
+    #[inline(never)]
+    #[optimize(size)]
     fn new() -> Self {
         Self {
             bytes: [b' '; 46],
             len: 0,
         }
     }
+    #[inline(never)]
+    #[optimize(size)]
     fn s(mut self, text: &str) -> Self {
         for b in text.bytes() {
             if self.len < 46 {
@@ -71,10 +79,14 @@ impl Line {
         }
         self
     }
+    #[inline(never)]
+    #[optimize(size)]
     fn n(self, value: u32) -> Self {
         let mut d = [0u8; psx_math::fmt::U32_DEC_MAX];
         self.s(psx_math::fmt::u32_dec(&mut d, value))
     }
+    #[inline(never)]
+    #[optimize(size)]
     fn x(mut self, value: u32, digits: usize) -> Self {
         for i in (0..digits).rev() {
             let nibble = (value >> (4 * i)) & 15;
@@ -90,16 +102,22 @@ impl Line {
         }
         self
     }
+    #[inline(never)]
+    #[optimize(size)]
     fn as_str(&self) -> &str {
         core::str::from_utf8(&self.bytes[..self.len]).unwrap_or("")
     }
 }
+#[inline(never)]
+#[optimize(size)]
 fn hex_bytes(mut line: Line, bytes: &[u8]) -> Line {
     for b in bytes {
         line = line.x(*b as u32, 2).s(" ");
     }
     line
 }
+#[inline(never)]
+#[optimize(size)]
 fn fault_name(f: TransportFault) -> &'static str {
     match f {
         TransportFault::None => "-",
@@ -109,6 +127,8 @@ fn fault_name(f: TransportFault) -> &'static str {
         TransportFault::AckReleaseTimeout => "ACKREL",
     }
 }
+#[inline(never)]
+#[optimize(size)]
 fn error_name(e: Error) -> &'static str {
     match e {
         Error::NoCard => "NoCard",
@@ -122,6 +142,8 @@ fn error_name(e: Error) -> &'static str {
         _ => "Other",
     }
 }
+#[inline(never)]
+#[optimize(size)]
 fn result_name(r: &Result<(), Error>) -> &'static str {
     match r {
         Ok(()) => "ok",
@@ -129,6 +151,8 @@ fn result_name(r: &Result<(), Error>) -> &'static str {
     }
 }
 /// `exch N ack N fault KIND@EXCHANGE` for a trace.
+#[inline(never)]
+#[optimize(size)]
 fn trace_line(prefix: &str, t: &TransportTrace) -> Line {
     let mut line = Line::new()
         .s(prefix)
@@ -144,17 +168,23 @@ fn trace_line(prefix: &str, t: &TransportTrace) -> Line {
     line
 }
 
+#[inline(never)]
+#[optimize(size)]
 fn port() -> ControllerPort {
     // SAFETY: a token is a logic guard (psx_io::periph); the pad sampler has
     // not started where this runs, so nothing else drives SIO0.
     unsafe { ControllerPort::steal() }
 }
+#[inline(never)]
+#[optimize(size)]
 fn now() -> u32 {
     psx_rt::interrupts::vblank_count()
 }
 /// One frame 63 write-back with `timing`: read it, write the same bytes, read
 /// it again. Returns the result of each step and the video periods the write
 /// took.
+#[inline(never)]
+#[optimize(size)]
 fn write_back(timing: Timing) -> (Result<(), Error>, TransportTrace, u32, bool) {
     let mut card = HardwareCard::on_port_with_timing(port(), Slot::One, timing);
     let mut before = [0u8; 128];
@@ -172,6 +202,8 @@ fn write_back(timing: Timing) -> (Result<(), Error>, TransportTrace, u32, bool) 
 
 /// The probe page. After the title and before the pad sampler starts, the
 /// same place the audio probe runs.
+#[inline(never)]
+#[optimize(size)]
 pub fn run(fb: &mut FrameBuffer) {
     let mut lines: [Line; 14] = core::array::from_fn(|_| Line::new());
     let mut n = 0;
@@ -274,6 +306,8 @@ pub fn run(fb: &mut FrameBuffer) {
 }
 
 /// The two bottom lines of every gameplay frame, drawn with the panel font.
+#[inline(never)]
+#[optimize(size)]
 pub fn overlay() {
     let (gpustat, dma2) = unsafe {
         (
