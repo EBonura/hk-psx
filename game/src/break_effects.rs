@@ -1008,8 +1008,6 @@ fn tick_specs_with_tracks(
     pool.publish();
 }
 /// Sequential swept-circle contacts against every non-empty edge, in edge order.
-/// Only the loop is generic over where the edges come from (the copied scratch
-/// or the live terrain walk); the contact itself is one function.
 #[inline(never)]
 fn collide(
     old: [i32; 3],
@@ -1018,48 +1016,42 @@ fn collide(
     radius: i32,
     edges: impl Iterator<Item = [i32; 4]>,
 ) {
-    for edge in edges {
-        contact(old, next, normal, radius, edge);
-    }
-}
-/// One swept circle against one edge.
-#[inline(never)]
-fn contact(old: [i32; 3], next: &mut [i32; 3], normal: &mut [i32; 2], radius: i32, edge: [i32; 4]) {
-    let [x0, y0, x1, y1] = edge;
-    if next[0].max(old[0]) + radius < x0.min(x1)
-        || next[0].min(old[0]) - radius > x0.max(x1)
-        || next[1].max(old[1]) + radius < y0.min(y1)
-        || next[1].min(old[1]) - radius > y0.max(y1)
-    {
-        return;
-    }
-    if x0 == x1 {
-        if next[0] > old[0] && old[0] + radius <= x0 && next[0] + radius > x0 {
-            next[0] = x0 - radius;
-            *normal = [-ONE, 0];
-        } else if next[0] < old[0] && old[0] - radius >= x0 && next[0] - radius < x0 {
-            next[0] = x0 + radius;
-            *normal = [ONE, 0];
+    for [x0, y0, x1, y1] in edges {
+        if next[0].max(old[0]) + radius < x0.min(x1)
+            || next[0].min(old[0]) - radius > x0.max(x1)
+            || next[1].max(old[1]) + radius < y0.min(y1)
+            || next[1].min(old[1]) - radius > y0.max(y1)
+        {
+            continue;
         }
-    } else {
-        let height = |x: i32| {
-            y0 + psx_math::int32::mul_div_i32(
-                x.clamp(x0.min(x1), x0.max(x1)) - x0,
-                y1 - y0,
-                x1 - x0,
-            )
-        };
-        let (before, surface) = if y0 == y1 {
-            (y0, y0)
+        if x0 == x1 {
+            if next[0] > old[0] && old[0] + radius <= x0 && next[0] + radius > x0 {
+                next[0] = x0 - radius;
+                *normal = [-ONE, 0];
+            } else if next[0] < old[0] && old[0] - radius >= x0 && next[0] - radius < x0 {
+                next[0] = x0 + radius;
+                *normal = [ONE, 0];
+            }
         } else {
-            (height(old[0]), height(next[0]))
-        };
-        if next[1] < old[1] && old[1] - radius >= before && next[1] - radius <= surface {
-            next[1] = surface + radius;
-            *normal = [-(y1 - y0), x1 - x0];
-        } else if next[1] > old[1] && old[1] + radius <= before && next[1] + radius >= surface {
-            next[1] = surface - radius;
-            *normal = [y1 - y0, -(x1 - x0)];
+            let height = |x: i32| {
+                y0 + psx_math::int32::mul_div_i32(
+                    x.clamp(x0.min(x1), x0.max(x1)) - x0,
+                    y1 - y0,
+                    x1 - x0,
+                )
+            };
+            let (before, surface) = if y0 == y1 {
+                (y0, y0)
+            } else {
+                (height(old[0]), height(next[0]))
+            };
+            if next[1] < old[1] && old[1] - radius >= before && next[1] - radius <= surface {
+                next[1] = surface + radius;
+                *normal = [-(y1 - y0), x1 - x0];
+            } else if next[1] > old[1] && old[1] + radius <= before && next[1] + radius >= surface {
+                next[1] = surface - radius;
+                *normal = [y1 - y0, -(x1 - x0)];
+            }
         }
     }
 }
