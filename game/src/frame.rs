@@ -35,6 +35,8 @@ pub struct Game {
     pub shade: shade::World,
     pub bench: bench::State,
     pub camera: camera::Camera,
+    /// The look clip the Knight plays while he stands (look_pose.rs).
+    pub look: crate::look_pose::LookPose,
     pub geo: &'static mut geo::World,
     pub life: &'static mut lifeblood::World,
     pub props: &'static mut props::World,
@@ -164,7 +166,7 @@ pub fn render(
     let pose = if game.bench.animation().is_some() || kneel.is_some() {
         None
     } else {
-        ability_pose(&game.player, &game.dream, &game.cast)
+        ability_pose(&game.player, &game.dream, &game.cast).or_else(|| game.look.pose())
     };
     let body_frame = if let Some(f) = kneel {
         f
@@ -233,10 +235,14 @@ pub fn render(
         } else {
             0
         };
-        (
-            npc.position,
-            clip_frame(room, npc.clip_base as usize + slot, sim_clock),
-        )
+        crate::scene_sfx::myla_sing(slot != 0);
+        let frame = clip_frame(room, npc.clip_base as usize + slot, sim_clock);
+        // Myla's pickaxe: the strike frame of her Idle clip (scene_sfx::myla_strike).
+        if slot == 0 {
+            let first = room.clip(npc.clip_base as usize)[0] as usize;
+            crate::scene_sfx::myla_strike(camera, npc.position, frame - first);
+        }
+        (npc.position, frame)
     });
     // An NPC of another view the camera shows: it idles (it can only talk to a
     // Knight standing in its own view, which would make it `npc` above).
@@ -430,11 +436,13 @@ pub fn render(
         prims += 1;
     }
     if let Some(i) = ball_frame {
+        // `draw` mirrors for facing +1 because the Knight's atlas faces left; the
+        // Fireball's own sprite faces right, so the cast direction is its mirror.
         prims += ability_art::draw(
             i,
             game.cast.ball.x,
             game.cast.ball.y,
-            game.cast.ball.facing,
+            -game.cast.ball.facing,
             camera,
             128,
         );
@@ -1271,6 +1279,12 @@ pub fn simulate(
             game.door.landed(game.player.grounded);
         }
         hero_sounds(&before, &game.player);
+        great_door::probe(
+            game.door.entering(),
+            game.player.grounded,
+            game.player.y,
+            game.player.jumping,
+        );
         audio::movement_tick(
             was_grounded,
             game.player.grounded,
@@ -1531,6 +1545,11 @@ pub fn simulate(
             game.camera.tick(r, &hero, look, game.scene_ticks, &|id| {
                 game.state.broken(id)
             });
+            // HeroAnimationController: the look clips belong to a standing Knight only.
+            game.look.tick(
+                game.camera.look_anim(),
+                idle && !game.nail.active && game.focus.animation().is_none(),
+            );
         }
         if game.shade.present_here() {
             let hero_body = [

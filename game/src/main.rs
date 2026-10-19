@@ -80,6 +80,7 @@ mod gruz_art;
 mod hero_light;
 mod impact;
 mod lifeblood;
+mod look_pose;
 mod mapper;
 mod mawlek_art;
 mod menu;
@@ -882,6 +883,7 @@ fn main() {
         shade: shade::World::new(),
         bench: bench::State::new(),
         camera: camera::Camera::new(),
+        look: look_pose::LookPose::new(),
         geo: unsafe { &mut *(&raw mut GEO_WORLD) },
         life: unsafe { &mut *(&raw mut LIFE_WORLD) },
         props: unsafe { &mut *(&raw mut PROPS_WORLD) },
@@ -1131,6 +1133,11 @@ fn main() {
             let other_npc = other
                 .zip(other_room.as_ref())
                 .map(|((_, n), room)| (*n, room));
+            // Myla's hum belongs to her scene, whichever view the camera is in.
+            scene_sfx::myla_hum(
+                camera,
+                scene_npcs.iter().flatten().next().map(|(_, n)| n.position),
+            );
             let prims = frame::render(
                 &mut game, r, &rv, &room, other_npc, &mut fb, region_npc, camera, sim_clock,
             );

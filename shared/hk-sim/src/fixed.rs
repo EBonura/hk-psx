@@ -75,3 +75,60 @@ pub fn hypot(dx: i32, dy: i32) -> u32 {
     let (x, y) = (dx.unsigned_abs(), dy.unsigned_abs());
     psx_math::WideU::mul(x, x).mul_add(y, y).isqrt()
 }
+
+/// What Unity's AudioSource rolloff leaves of a source `dx`, `dy` (Q16 units) from the
+/// listener, in 4096ths. The listener is the camera, 38 units in front of the play plane
+/// (CAM_Z), so the source is `sqrt(dx^2 + dy^2 + 38^2)` away: full volume to `min` (39 units),
+/// then the source's custom curve (1 at 0.693 of `max`, 0 at `max` 56.3, slopes -5.15 and
+/// -1.63) down to silence. Distances are taken in 1/16 units so the squares stay in 32 bits.
+pub fn source_rolloff(dx: i32, dy: i32, min: i32, max: i32) -> i32 {
+    let (x, y) = ((dx >> 12).abs().min(1000), (dy >> 12).abs().min(1000));
+    let d2 = x * x + y * y + (38 * 16) * (38 * 16);
+    // Integer square root by Newton steps.
+    let mut d = 38 * 16 + x.max(y);
+    for _ in 0..6 {
+        d = (d + d2 / d) / 2;
+    }
+    let (lo, hi) = (min * 16, max * 16);
+    if d <= lo {
+        return 4096;
+    }
+    if d >= hi {
+        return 0;
+    }
+    // Hermite segment on u in 0..1 over lo..hi, slopes in value per unit of u.
+    let u = (d - lo) * 4096 / (hi - lo);
+    let (u2, u3) = (u * u / 4096, u * u / 4096 * u / 4096);
+    const M0: i32 = -1583; // -5.1528 * 0.3073, in 1/1000
+    const M1: i32 = -501; // -1.6285 * 0.3073
+    let h00 = 2 * u3 - 3 * u2 + 4096;
+    let h10 = u3 - 2 * u2 + u;
+    let h11 = u3 - u2;
+    (h00 + h10 * M0 / 1000 + h11 * M1 / 1000).clamp(0, 4096)
+}
+
+
+#[cfg(test)]
+mod rolloff_tests {
+    use super::source_rolloff;
+    const ONE: i32 = 65536;
+    #[test]
+    fn full_volume_inside_the_minimum_distance_silent_beyond_the_maximum() {
+        // The listener sits 38 units off the play plane, so 39 units is 8.8 units across it.
+        assert_eq!(source_rolloff(0, 0, 39, 56), 4096);
+        assert_eq!(source_rolloff(8 * ONE, 0, 39, 56), 4096);
+        assert_eq!(source_rolloff(50 * ONE, 0, 39, 56), 0);
+        assert_eq!(source_rolloff(-60 * ONE, 30 * ONE, 39, 56), 0);
+    }
+    #[test]
+    fn falls_monotonically_between_them() {
+        let mut last = 4096;
+        for x in 9..=42 {
+            let level = source_rolloff(x * ONE, 0, 39, 56);
+            assert!(level <= last, "x={x}: {level} > {last}");
+            last = level;
+        }
+        assert!(source_rolloff(20 * ONE, 0, 39, 56) > 0);
+        assert!(source_rolloff(20 * ONE, 0, 39, 56) < 4096);
+    }
+}

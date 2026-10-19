@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |754,836|
-| Code-to-data alignment |12|
-| Linked data, including menu and HUD |258,536|
-| BSS, including shared scene arena and runtime pools |797,132|
-| Total static span |1,810,524|
+| Linked code |758,912|
+| Code-to-data alignment |0|
+| Linked data, including menu and HUD |263,432|
+| BSS, including shared scene arena and runtime pools |797,196|
+| Total static span |1,819,548|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |171,684|
+| Unallocated gap before reserved stack |162,660|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |69,284|
+| Free RAM below the module pool |60,260|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -539,3 +539,5 @@ sections every frame, and dropping the admission-only pair from the resident
 copy would save 6,932 bytes on the scene that sizes the buffer. They cannot be
 consumed early, because `bind_tile_groups` needs the admitted `Room` and the
 scene decode has already taken the arena by then.
+
+The 2026-10-19 console-fix pass (gate arrivals grounded by the cooker, the Knight's LookUp/LookDown clips, loop-section ability clips, the Shade and Vengeful Spirit mirror fixes, Myla's hum, pickaxe and sung line, gate-entry and look telemetry, the soft-dust gain) took linked code from 754,836 to 758,912 bytes (4,076) and linked data from 258,536 to 263,432 (4,896: 17 look frames and the loop table, scene-sfx rows), so 60,260 bytes are free below the module pool (69,284 before); static end 0x801cc39c.

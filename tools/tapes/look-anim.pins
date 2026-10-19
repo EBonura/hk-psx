@@ -1,0 +1,12 @@
+pacing = 10
+card = town-continue.mcd
+# look-anim: from the Dirtmouth bench of the town-continue card walk right a few steps (past the
+# bench's reach), hold UP for 100 polls, then DOWN for 100. HeroAnimationController plays LookUp
+# (LookDown) once the look timer passes LOOK_ANIM_DELAY, 0.25 s, and the end clip when the
+# direction is released. tools/tapes/look-anim.route.
+HK_LOOK_UP_TICKS = 86
+HK_LOOK_DOWN_TICKS = 86
+HK_LOOK_ENDS = 2
+HK_DEATHS = 0
+HK_SCENE_GATE_LOADS = 0
+HK_REGION_ID = 100

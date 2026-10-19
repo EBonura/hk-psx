@@ -17,3 +17,8 @@ HK_SAVE_ERRORS = 0
 HK_WORLD_ITEMS = 9
 HK_DEATHS = 0
 HK_REGION_ID = 535
+# Every arrival by a side gate stands the Knight on the ground (HeroController.EnterScene's
+# FindGroundPointY), so no walk-in ends above the floor: the largest fall from where an entry
+# ended to the ground is zero. It was 0.61 units (40,000) before the gate spawn was grounded.
+HK_GATE_ENTRIES = 7
+HK_GATE_ENTRY_DROP_MAX = 0

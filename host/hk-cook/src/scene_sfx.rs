@@ -690,6 +690,54 @@ pub const EVENTS: &[Event] = &[
         57,
         None,
     ),
+    // Myla (the `Miner` NPC of Crossroads_45): her AudioSource loops `Miner_idle_hum` from the
+    // start of the scene (PlayOnAwake, volume 0.854, rolloff 39 to 56.3 from the camera), and
+    // `Miner FX` plays one of the two pickaxe clips whenever her sprite reaches frame 20 (the
+    // fifth frame of `Idle`). The hum is looped by the guest (game/src/scene_sfx.rs `make_loop`
+    // sets the SPU loop flags as it uploads), so its row is an ordinary one-shot here. Late rows:
+    // they take what the scene's other clips leave and move none of them.
+    ev(
+        "miner_idle_hum",
+        "sharedassets73.assets",
+        43,
+        "Miner_idle_hum",
+        4000,
+        &["scene", "Crossroads_45"],
+        62,
+        None,
+    ),
+    ev(
+        "myla_pickaxe_1",
+        "sharedassets73.assets",
+        46,
+        "myla_pickaxe_1",
+        8000,
+        &["scene", "Crossroads_45"],
+        63,
+        None,
+    ),
+    ev(
+        "myla_pickaxe_2",
+        "sharedassets73.assets",
+        44,
+        "myla_pickaxe_2",
+        8000,
+        &["scene", "Crossroads_45"],
+        64,
+        None,
+    ),
+    // Her sung line: `Conversation Control` plays `Miner_01_sing` with the first meeting's text
+    // (`Meet 1`) and with the repeat (`Meet Repeat`), which is every conversation this port has.
+    ev(
+        "miner_01_sing",
+        "sharedassets73.assets",
+        34,
+        "Miner_01_sing",
+        4000,
+        &["scene", "Crossroads_45"],
+        65,
+        None,
+    ),
 ];
 
 /// Gruz Mother's arena gates sound like every other arena's.

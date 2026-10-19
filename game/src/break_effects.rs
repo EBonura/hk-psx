@@ -1055,6 +1055,24 @@ fn collide(
         }
     }
 }
+/// A soft style's colour gain in halves. The soft path adds a quarter of the texel at colour times
+/// opacity (`B + a*F/4`) where the source blends `B(1-a) + F*a`: at a gain of 2 (colour times opacity)
+/// the Break Dust puffs add about a quarter of what the source puffs add on a dark room, which the
+/// Crossroads' blue backgrounds hide entirely (27 puffs drawn per urn, none visible on the emulator
+/// frames). 6 gives three times that. HK_DUST_GAIN overrides it for experiments.
+const SOFT_GAIN_HALVES: u32 = match option_env!("HK_DUST_GAIN") {
+    Some(s) => {
+        let b = s.as_bytes();
+        let mut i = 0;
+        let mut v = 0u32;
+        while i < b.len() {
+            v = v * 10 + (b[i] - b'0') as u32;
+            i += 1;
+        }
+        v
+    }
+    None => 6,
+};
 #[cfg(not(test))]
 #[inline(never)]
 pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32)) -> bool {
@@ -1081,7 +1099,7 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32)) -> boo
         let gain = if resident.hero_dust == p.kind - 2 {
             HERO_DUST_GAIN_HALVES
         } else {
-            2
+            SOFT_GAIN_HALVES
         };
         let c = p
             .color

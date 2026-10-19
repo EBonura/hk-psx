@@ -193,6 +193,10 @@ const FALL_CATCH_MAX: i32 = 25 * ONE;
 /// timer first reaches it after 52 frames, so the 53rd standing frame looks.
 const LOOK_OFFSET: i32 = 6 * ONE;
 const LOOK_DELAY_TICKS: u8 = 52;
+/// `LOOK_ANIM_DELAY` 0.25 s: the held look's timer reaches it after 15 frames and
+/// `lookingUpAnim` / `lookingDownAnim` start the Knight's LookUp / LookDown clip,
+/// 0.6 s before the camera follows (HeroController.Update).
+const LOOK_ANIM_TICKS: u8 = 15;
 /// A hero displacement this large in one tick, inside one scene, is a respawn:
 /// the hazard respawn's `CameraRepositionToHero`.
 const SNAP_DISTANCE: i32 = 20 * ONE;
@@ -324,6 +328,9 @@ pub struct Camera {
     look_timer: u8,
     /// +1 looking up, -1 looking down.
     looking: i8,
+    /// +1 while up is held, -1 while down is held, in the idle look block: the
+    /// direction `lookingUpAnim` / `lookingDownAnim` follow once the timer allows.
+    look_dir: i8,
     last_hero: Option<(i32, i32)>,
 }
 
@@ -439,6 +446,7 @@ impl Camera {
             exited: 0,
             look_timer: 0,
             looking: 0,
+            look_dir: 0,
             last_hero: None,
         }
     }
@@ -516,11 +524,13 @@ impl Camera {
         if input.reset || (self.looking != 0 && input.moving) {
             self.looking = 0;
             self.look_timer = 0;
+            self.look_dir = 0;
         }
         if !input.idle {
             return;
         }
         if input.up || input.down {
+            self.look_dir = if input.up { 1 } else { -1 };
             if (self.looking > 0) != input.up && self.looking != 0 {
                 self.looking = 0;
             }
@@ -532,6 +542,16 @@ impl Camera {
         } else {
             self.looking = 0;
             self.look_timer = 0;
+            self.look_dir = 0;
+        }
+    }
+    /// `cState.lookingUpAnim` (+1) or `lookingDownAnim` (-1): the look clip the
+    /// Knight plays while he stands, 0 when neither is set.
+    pub fn look_anim(&self) -> i8 {
+        if self.look_timer >= LOOK_ANIM_TICKS {
+            self.look_dir
+        } else {
+            0
         }
     }
     /// GetTilemapInfo, both SceneInits, the hero placed (his trigger enters

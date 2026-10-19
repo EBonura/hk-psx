@@ -408,3 +408,43 @@ pub fn draw(room: &Room, frame: usize, camera: (i32, i32), dx: i32) -> u32 {
     }
     (cols * rows) as u32
 }
+
+/// Route telemetry for the gate arrivals (`probe`): entries that ended, and the largest drop, in
+/// Q16 units, the Knight fell from where his walk-in ended to the ground. A Knight set down on the
+/// ground (HeroController.EnterScene's FindGroundPointY) falls by the 0.01 of its lift or not at all.
+#[no_mangle]
+pub static mut HK_GATE_ENTRIES: u32 = 0;
+#[no_mangle]
+pub static mut HK_GATE_ENTRY_DROP_MAX: u32 = 0;
+/// One tick after the Knight's movement: `entering` is `World::entering`.
+pub fn probe(entering: bool, grounded: bool, y: i32, jumping: bool) {
+    const NONE: i32 = i32::MIN;
+    static mut WAS: bool = false;
+    static mut FROM: i32 = NONE;
+    static mut AIR: bool = false;
+    static mut TICKS: u8 = 0;
+    unsafe {
+        if WAS && !entering {
+            FROM = y;
+            AIR = false;
+            TICKS = 0;
+            HK_GATE_ENTRIES = HK_GATE_ENTRIES.wrapping_add(1);
+        }
+        WAS = entering;
+        if FROM == NONE || entering {
+            return;
+        }
+        TICKS = TICKS.saturating_add(1);
+        if jumping {
+            FROM = NONE;
+        } else if !grounded {
+            AIR = true;
+        } else if AIR {
+            let drop = (FROM - y).max(0) as u32;
+            HK_GATE_ENTRY_DROP_MAX = HK_GATE_ENTRY_DROP_MAX.max(drop);
+            FROM = NONE;
+        } else if TICKS >= 3 {
+            FROM = NONE;
+        }
+    }
+}

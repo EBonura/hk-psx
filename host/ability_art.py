@@ -51,6 +51,11 @@ BURST_BRIGHT_THRESHOLD = 8
 FLASH_CLUT_Y = 495
 EFFECT_CLIPS = (('Focus Effect', 'Lines Anim', 6629), ('Focus Effect End', 'Lines Anim', 6629),
                 ('Burst Effect', 'Heal Anim', 6375))
+# The Knight looking up and down while he stands (HeroAnimationController.UpdateAnimation: `LookUp`
+# while `lookingUpAnim`, `LookDown` while `lookingDownAnim`; PlayIdle answers a released look with
+# `LookUpEnd` / `LookDownEnd` before Idle). Appended last so no earlier clip index moves. The two
+# look clips loop from frame 1 (tk2d loopStart), the two ends play once.
+LOOK_CLIPS = ('LookUp', 'LookDown', 'LookUpEnd', 'LookDownEnd')
 
 def knight_animation(source):
     """The Knight's own tk2d animation table, found by the clips it carries."""
@@ -186,7 +191,7 @@ def cook():
     source = Source()
     anim_obj, table = knight_animation(source)
     by_name = {c['name']: c for c in table['clips']}
-    missing = [n for n in ORDER if n not in by_name]
+    missing = [n for n in ORDER + LOOK_CLIPS if n not in by_name]
     assert not missing, f'the Knight animation lost {missing}'
     resources = source.file('resources.assets')
     scale = FOCAL / -CAM_Z
@@ -215,7 +220,7 @@ def cook():
         for frame in clip['frames']:
             sprite(frame['spriteCollection'], frame['spriteId'])
         clips.append(dict(name=name, start=start, count=len(clip['frames']),
-                          fps=int(clip['fps']), wrap=clip['wrapMode']))
+                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
 
     effects = effect_animation(source)
     effect_loop = None
@@ -225,7 +230,7 @@ def cook():
         for frame in clip['frames']:
             sprite(frame['spriteCollection'], frame['spriteId'], (lx, ly, k), BURST_SHRINK if name == 'Burst Effect' else 1)
         clips.append(dict(name=name, start=start, count=len(clip['frames']),
-                          fps=int(clip['fps']), wrap=clip['wrapMode']))
+                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
         if name == 'Focus Effect':
             assert clip['wrapMode'] == 1
             effect_loop = clip['loopStart']
@@ -239,7 +244,7 @@ def cook():
             images.append(image.copy())
         boxes.append(frame['box'])
         art_sources.append(frame['source'])
-    clips.append(dict(name='Soul Burst', start=soul_start, count=5, fps=20, wrap=2))
+    clips.append(dict(name='Soul Burst', start=soul_start, count=5, fps=20, wrap=2, loop=0))
 
     flash_start = len(images)
     frame = focus_frames[5]
@@ -247,7 +252,19 @@ def cook():
         images.append(image.copy())
     boxes.append(frame['box'])
     art_sources.append(frame['source'])
-    clips.append(dict(name='Heal Flash', start=flash_start, count=1, fps=1, wrap=2))
+    clips.append(dict(name='Heal Flash', start=flash_start, count=1, fps=1, wrap=2, loop=0))
+
+    for name in LOOK_CLIPS:
+        clip = by_name[name]
+        start = len(images)
+        for frame in clip['frames']:
+            sprite(frame['spriteCollection'], frame['spriteId'])
+        clips.append(dict(name=name, start=start, count=len(clip['frames']),
+                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
+        if name in ('LookUp', 'LookDown'):
+            assert clip['wrapMode'] == 1 and clip['loopStart'] == 1, f'{name} no longer loops from frame 1'
+        else:
+            assert clip['wrapMode'] == 2, f'{name} no longer plays once'
 
     # One CLUT per group of clips that fits a single 256x256 quantizer sheet, so
     # every frame of one animation keeps one palette.
@@ -336,6 +353,8 @@ def cook():
         'pub const ABILITY_CLIPS:&[Clip]=&[' + ','.join(
             'Clip{' + ','.join(f'{k}:{c[k]}' for k in ('start', 'count', 'fps', 'wrap')) + '}'
             for c in clips) + '];',
+        # tk2d loopStart of every clip, which only a wrap-1 (loop section) clip reads.
+        'pub const ABILITY_LOOP:&[u8]=&[' + ','.join(str(c['loop']) for c in clips) + '];',
         'pub const ABILITY_FRAMES:&[Frame]=&[' + ','.join(
             'Frame{offset:%d,width:%d,height:%d,clut:%d,bounds:[%s]}' % (
                 f['offset'], f['width'], f['height'], f['clut'],

@@ -228,6 +228,75 @@ def locate_region(regions, scene_id, xy):
     return None
 
 
+_ENTRY_TERRAIN = {}
+_HERO_ELEVATION = []
+
+
+def hero_ground_elevation():
+    """`FindGroundPoint`'s lift: the Knight collider's half height less its offset, plus 0.01.
+
+    HeroController.FindGroundPointY returns `hit.point.y + col2d.bounds.extents.y -
+    col2d.offset.y + 0.01`, the Knight's origin height when his feet stand on the hit.
+    """
+    if not _HERO_ELEVATION:
+        from source import Source
+        source = Source()
+        resource = source.file('resources.assets')
+        hero = next(o for o in resource.objects.values()
+                    if o.type.name == 'MonoBehaviour' and source.typename(o) == 'HeroController')
+        game_object = source.ref(resource, source.read(hero)['m_GameObject'])
+        body = next(source.read(o) for o in (source.ref(resource, c['component']) for c in source.read(game_object)['m_Component'])
+                    if o.type.name == 'BoxCollider2D')
+        _HERO_ELEVATION.append(body['m_Size']['y'] / 2 - body['m_Offset']['y'] + 0.01)
+    return _HERO_ELEVATION[0]
+
+
+def entry_terrain(scene_file):
+    """The solid terrain edges (layer 8, enabled, not a trigger) of one source scene, as world segments."""
+    if scene_file not in _ENTRY_TERRAIN:
+        from source import Source
+        from scene import Scene
+        sc = Scene(Source(), scene_file)
+        edges = []
+        for kind, tree in sc.objects.values():
+            if kind not in ('BoxCollider2D', 'PolygonCollider2D', 'EdgeCollider2D'):
+                continue
+            gid = tree['m_GameObject']['m_PathID']
+            if not tree['m_Enabled'] or tree['m_IsTrigger'] or not sc.active(gid) or sc.gos[gid]['m_Layer'] != 8:
+                continue
+            offset = tree['m_Offset']
+            if kind == 'BoxCollider2D':
+                x, y = tree['m_Size']['x'] / 2, tree['m_Size']['y'] / 2
+                paths = [[{'x': u, 'y': v} for u, v in [(-x, -y), (x, -y), (x, y), (-x, y), (-x, -y)]]]
+            elif kind == 'EdgeCollider2D':
+                paths = [tree['m_Points']]
+            else:
+                paths = [path + path[:1] for path in tree['m_Points']['m_Paths']]
+            for path in paths:
+                points = [sc.point(gid, p['x'] + offset['x'], p['y'] + offset['y']) for p in path]
+                edges.extend(zip(points, points[1:]))
+        _ENTRY_TERRAIN[scene_file] = edges
+    return _ENTRY_TERRAIN[scene_file]
+
+
+def entry_ground_y(scene_file, x, y):
+    """The Knight's origin height after `HeroController.EnterScene` places him at a left or right gate.
+
+    The source calls `FindGroundPointY(rayX, gate.y, false)`: a raycast straight down
+    `FIND_GROUND_POINT_DISTANCE` (10) units from the gate's own height onto layer 8, and
+    discards `entryOffset.y`. The ray's x is the spawn x this module already computes.
+    None when the ray hits nothing, where the source logs an error.
+    """
+    hits = []
+    for a, b in entry_terrain(scene_file):
+        if a[0] == b[0] or not min(a[0], b[0]) <= x <= max(a[0], b[0]):
+            continue
+        ground = a[1] + (x - a[0]) * (b[1] - a[1]) / (b[0] - a[0])
+        if 0 <= y - ground <= 10:
+            hits.append(ground)
+    return max(hits) + hero_ground_elevation() if hits else None
+
+
 def resolve_gates(report, regions, scene):
     """Admitted TransitionPoints of one scene, resolved against the whole world.
 
@@ -258,7 +327,21 @@ def resolve_gates(report, regions, scene):
             xy[0] += 1
         elif destination['name'].startswith('right'):
             xy[0] -= 1
+        # HeroController.EnterScene stands a Knight entering by a left or right gate on
+        # the ground below the gate (FindGroundPointY from the gate's height, entryOffset.y
+        # unused), not at the gate's own height: the walk-in keeps him at this height, so
+        # a gate set above the floor floated him in over it.
         target_region = locate_region(regions, target['scene_id'], xy)
+        if destination['name'].startswith(('left', 'right')) and 'position' in destination:
+            ground = entry_ground_y(target['file'], xy[0], destination['position'][1])
+            if ground is not None:
+                grounded = [xy[0], ground]
+                # The region search follows the grounded spawn; the authored point still
+                # finds one where a view's bounds stop between the two heights.
+                target_region = locate_region(regions, target['scene_id'], grounded)
+                if target_region is None:
+                    target_region = locate_region(regions, target['scene_id'], xy)
+                xy = grounded
         if target_region is None:
             continue
         # Source HeroController top entries (the Dirtmouth well is the verified

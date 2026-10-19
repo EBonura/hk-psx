@@ -39,6 +39,13 @@ pub const SOUL_BURST: usize = 19;
 /// The heal's `White Flash R`: one frame of greys, faded by the draw's tint.
 pub const HEAL_FLASH: usize = 20;
 
+/// The Knight standing and looking up or down, then the clips that end a released look
+/// (`host/ability_art.py` LOOK_CLIPS, after the Focus clips).
+pub const LOOK_UP: usize = 21;
+pub const LOOK_DOWN: usize = 22;
+pub const LOOK_UP_END: usize = 23;
+pub const LOOK_DOWN_END: usize = 24;
+
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;
 
@@ -47,11 +54,24 @@ pub fn frame_index(clip: usize, age: u32) -> usize {
     let c = ABILITY_CLIPS[clip];
     let frame = hk_sim::fixed::mul_div_floor(u32::from(age), u32::from(c.fps), 60) as usize;
     c.start
-        + if c.wrap == 0 {
-            frame % c.count
-        } else {
-            frame.min(c.count - 1)
+        + match c.wrap {
+            0 => frame % c.count,
+            // tk2d LoopSection: play through once, then repeat from `loopStart`.
+            1 => {
+                let start = ABILITY_LOOP[clip] as usize;
+                if frame < c.count || start >= c.count {
+                    frame.min(c.count - 1)
+                } else {
+                    start + (frame - start) % (c.count - start)
+                }
+            }
+            _ => frame.min(c.count - 1),
         }
+}
+/// Ticks one play of a clip takes (a once clip's whole run), at the 60 Hz tick.
+pub fn clip_ticks(clip: usize) -> u32 {
+    let c = ABILITY_CLIPS[clip];
+    (c.count as u32 * 60).div_ceil(u32::from(c.fps))
 }
 /// Width and height of one ability frame's texels.
 pub fn size(index: usize) -> Option<(u16, u16)> {

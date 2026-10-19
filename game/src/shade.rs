@@ -442,7 +442,9 @@ mod presentation {
             let b = frame.bounds;
             let world = [[b[0], b[3]], [b[2], b[3]], [b[0], b[1]], [b[2], b[1]]];
             let vertices = world.map(|[x, y]| {
-                let x = live.position[0] + x * live.facing;
+                // Every sprite here mirrors for facing +1 (position - x * facing): the art faces
+                // left, and the Shade's facing -1 is left, like its slash box above.
+                let x = live.position[0] - x * live.facing;
                 let y = live.position[1] + y;
                 (
                     160 + hk_sim::fixed::project(x, camera.0, crate::KNIGHT_SCALE as i32, 28),
