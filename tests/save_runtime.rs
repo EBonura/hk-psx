@@ -37,9 +37,19 @@ pub trait Block {
     fn read_frame(&mut self, frame: u16, out: &mut [u8; FRAME_SIZE]) -> Result<()>;
     fn write_frame(&mut self, frame: u16, data: &[u8; FRAME_SIZE]) -> Result<()>;
 }
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TransportFault { None, TxTimeout, RxTimeout, AckTimeout, AckReleaseTimeout }
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct TransportTrace { pub exchanges: u16, pub acknowledgements: u16, pub fault: TransportFault,
+    pub fault_exchange: u16, pub response_prefix: [u8; 10] }
+pub struct SaveIcon { pub palette: [u16; 16], pub pixels: [u8; FRAME_SIZE] }
+impl SaveIcon {
+    pub const fn new(palette: [u16; 16], pixels: [u8; FRAME_SIZE]) -> Self { Self { palette, pixels } }
+}
 pub struct HardwareCard;
 impl HardwareCard {
     pub fn new(_: Slot) -> Self { panic!("card I/O is not exercised by this harness") }
+    pub fn last_trace(&self) -> TransportTrace { unreachable!() }
 }
 impl Block for HardwareCard {
     fn read_frame(&mut self, _: u16, _: &mut [u8; FRAME_SIZE]) -> Result<()> { unreachable!() }
@@ -50,7 +60,9 @@ impl<B: Block> Card<B> {
     pub fn new(_: B) -> Self { panic!("card I/O is not exercised by this harness") }
     pub fn is_formatted(&mut self) -> Result<bool> { unreachable!() }
     pub fn format(&mut self) -> Result<()> { unreachable!() }
+    pub fn delete(&mut self, _: &str) -> Result<()> { unreachable!() }
     pub fn write(&mut self, _: &str, _: &str, _: &[u8]) -> Result<()> { unreachable!() }
+    pub fn write_with_icon(&mut self, _: &str, _: &str, _: &[u8], _: &SaveIcon) -> Result<()> { unreachable!() }
     pub fn read(&mut self, _: &str, _: &mut [u8]) -> Result<usize> { unreachable!() }
 }
 
@@ -60,12 +72,16 @@ pub mod shade {
 }
 pub mod input {
     pub fn checkpoint() {}
+    pub fn vblanks() -> u32 { 0 }
+    pub fn wait_vblanks(_: u32) {}
 }
 
 #[path = "../game/src/persist.rs"]
 pub mod persist;
 #[path = "../game/src/save.rs"]
 pub mod save;
+#[path = "../game/src/save_ui.rs"]
+pub mod save_ui;
 
 use persist::Kind;
 use save::{Save, LEN, LEN_HKS4, MAX_LEN, SCRIPT_FIELD_SLOTS, SHOP_COUNTERS};
@@ -407,4 +423,193 @@ fn the_length_is_exactly_what_the_fields_need() {
     assert_eq!(LEN_HKS4, 74 + SCRIPT_FIELD_SLOTS * 4 + 4 + 4 + SHOP_COUNTERS + 4);
     assert_eq!(LEN, LEN_HKS4 - 4 + 4 + persist::LEVELS + 2 + 4);
     assert_eq!(MAX_LEN, LEN + persist::MAX_ITEMS * 4);
+}
+
+// ---------------------------------------------------------------------------
+// What the player sees of a card operation (game/src/save_ui.rs, save.rs).
+// ---------------------------------------------------------------------------
+use save::Fault;
+use save_ui::{Edges, Ui};
+
+const ALL_FAULTS: [Fault; 7] = [Fault::NoCard, Fault::Full, Fault::Corrupt, Fault::Unformatted,
+    Fault::Other, Fault::Comms, Fault::Write];
+
+fn press(ui: &mut Ui, e: Edges) -> Option<bool> { ui.step(e) }
+const CROSS: Edges = Edges { up: false, down: false, cross: true, circle: false };
+const CIRCLE: Edges = Edges { up: false, down: false, cross: false, circle: true };
+const DOWN: Edges = Edges { up: false, down: true, cross: false, circle: false };
+
+#[test]
+fn every_card_fault_says_what_happened_and_the_numbers_are_stable() {
+    // HK_SAVE_FAULT publishes discriminant + 1 and the replay pins read it, so
+    // a new kind goes on the end and the old ones never move.
+    assert_eq!(ALL_FAULTS.map(|f| f as u32), [0, 1, 2, 3, 4, 5, 6]);
+    for f in ALL_FAULTS {
+        assert!(!f.message().is_empty(), "{f:?} has no message");
+        // The panel is 296 pixels wide; the font averages under 6.5 per glyph.
+        assert!(f.message().len() <= 40 && f.hint().len() <= 44, "{f:?} would not fit its box");
+        assert!(f.message().bytes().chain(f.hint().bytes()).all(|b| (32..=126).contains(&b)));
+    }
+    let messages: Vec<_> = ALL_FAULTS.iter().map(|f| f.message()).collect();
+    for (i, a) in messages.iter().enumerate() {
+        assert!(!messages[i + 1..].contains(a), "two faults share the message {a:?}");
+    }
+    // The formatting question is its own prompt, so it has no hint of its own.
+    assert_eq!(Fault::Unformatted.hint(), "");
+    for f in ALL_FAULTS.iter().filter(|f| **f != Fault::Unformatted) {
+        assert!(!f.hint().is_empty());
+    }
+}
+
+#[test]
+fn a_card_that_answers_and_then_misbehaves_is_not_reported_as_absent() {
+    use psx_mc::Error::*;
+    // A read: protocol or checksum trouble is the card talking, not silence.
+    assert_eq!(Fault::of(NoCard), Fault::NoCard);
+    assert_eq!(Fault::of(Protocol), Fault::Comms);
+    assert_eq!(Fault::of(BadChecksum), Fault::Corrupt);
+    assert_eq!(Fault::of(NoSpace), Fault::Full);
+    assert_eq!(Fault::of(NotFormatted), Fault::Unformatted);
+    assert_eq!(Fault::of(Corrupt), Fault::Corrupt);
+    // A write: the card refusing or losing a frame is a write error.
+    assert_eq!(Fault::of_write(Protocol), Fault::Write);
+    assert_eq!(Fault::of_write(BadChecksum), Fault::Write);
+    assert_eq!(Fault::of_write(NoCard), Fault::NoCard);
+    assert_eq!(Fault::of_write(NoSpace), Fault::Full);
+    assert_eq!(Fault::of_write(NotFormatted), Fault::Unformatted);
+}
+
+#[test]
+fn the_card_manager_title_is_double_width_shift_jis() {
+    let mut out = [0xaa; 64];
+    save::sjis_title("HOLLOW KNIGHT PSX", &mut out);
+    // A..Z are 0x8260.., the double-width space 0x8140.
+    let want: [u8; 34] = [0x82, 0x67, 0x82, 0x6e, 0x82, 0x6b, 0x82, 0x6b, 0x82, 0x6e, 0x82, 0x76, 0x81, 0x40,
+        0x82, 0x6a, 0x82, 0x6d, 0x82, 0x68, 0x82, 0x66, 0x82, 0x67, 0x82, 0x73, 0x81, 0x40,
+        0x82, 0x6f, 0x82, 0x72, 0x82, 0x77];
+    assert_eq!(&out[..34], &want);
+    assert!(out[34..].iter().all(|&b| b == 0), "the rest of the 64 bytes is zero padding");
+    let mut digits = [0u8; 8];
+    save::sjis_title("Ab 9", &mut digits);
+    assert_eq!(digits, [0x82, 0x60, 0x82, 0x82, 0x81, 0x40, 0x82, 0x58]);
+}
+
+#[test]
+fn the_save_icon_is_a_sixteen_by_sixteen_mask_the_manager_can_draw() {
+    let icon = &save::ICON;
+    assert_eq!(icon.pixels.len(), 128);
+    // Palette index 0 is the transparent background, 1 the white mask.
+    assert_eq!(icon.palette[0], 0);
+    assert_eq!(icon.palette[1], 0x7fff);
+    let pixel = |x: usize, y: usize| {
+        let byte = icon.pixels[y * 8 + x / 2];
+        if x % 2 == 0 { byte & 15 } else { byte >> 4 }
+    };
+    let mut lit = 0;
+    for y in 0..16 {
+        for x in 0..16 {
+            assert!(pixel(x, y) <= 1, "only the two drawn colours are used");
+            lit += pixel(x, y) as u32;
+            // The Knight's mask is symmetric, left to right.
+            assert_eq!(pixel(x, y), pixel(15 - x, y), "asymmetric at {x},{y}");
+        }
+    }
+    assert!(lit > 60 && lit < 200, "{lit} lit pixels");
+    assert!((0..16).all(|x| pixel(x, 0) == 0 && pixel(x, 15) == 0), "a clear border row top and bottom");
+}
+
+#[test]
+fn the_seated_prompt_saves_on_yes_and_leaves_on_no_or_circle() {
+    let mut ui = Ui::Idle;
+    ui.ask();
+    assert_eq!(ui, Ui::Ask(0));
+    assert!(ui.modal() && ui.reads_pad());
+    assert_eq!(press(&mut ui, CROSS), Some(false));
+    assert_eq!(ui, Ui::Saving { frames: 0, format: false });
+    let mut ui = Ui::Idle;
+    ui.ask();
+    assert_eq!(press(&mut ui, DOWN), None);
+    assert_eq!(ui, Ui::Ask(1));
+    assert_eq!(press(&mut ui, CROSS), None, "No writes nothing");
+    assert_eq!(ui, Ui::Idle);
+    ui.ask();
+    assert_eq!(press(&mut ui, CIRCLE), None);
+    assert_eq!(ui, Ui::Idle);
+}
+
+#[test]
+fn the_notice_is_up_for_several_frames_before_the_write_begins() {
+    let mut ui = Ui::Ask(0);
+    press(&mut ui, CROSS);
+    assert!(ui.modal() && !ui.reads_pad(), "a write in progress holds the Knight and ignores the pad");
+    assert_eq!(press(&mut ui, CROSS), None);
+    assert!(matches!(ui, Ui::Saving { .. }), "input while saving changes nothing");
+    let mut presented = 0;
+    while !ui.armed() {
+        presented += 1;
+        assert!(presented < 20);
+    }
+    // The write starts only after the notice has been drawn NOTICE_FRAMES times.
+    assert_eq!(presented, save_ui::NOTICE_FRAMES as u32);
+    assert!(!Ui::Idle.armed());
+}
+
+#[test]
+fn a_successful_save_says_so_and_then_clears() {
+    let mut ui = Ui::Saving { frames: 9, format: false };
+    ui.finish(Ok(()));
+    assert_eq!(ui, Ui::Saved(save_ui::SAVED_TICKS));
+    assert!(!ui.modal(), "the Knight is free again while 'Game saved' shows");
+    for _ in 0..save_ui::SAVED_TICKS {
+        assert_ne!(ui, Ui::Idle);
+        ui.step(Edges::default());
+    }
+    assert_eq!(ui, Ui::Idle);
+}
+
+#[test]
+fn no_card_error_is_ever_silent() {
+    for fault in ALL_FAULTS {
+        let mut ui = Ui::Saving { frames: 9, format: false };
+        ui.finish(Err(fault));
+        match fault {
+            // The card can be formatted, so the player is asked rather than told.
+            Fault::Unformatted => assert_eq!(ui, Ui::Format(0)),
+            _ => assert_eq!(ui, Ui::Failed(fault)),
+        }
+        assert!(ui.modal() && ui.reads_pad(), "{fault:?} must stay up until the player answers");
+        assert_ne!(ui.code(), 0);
+        // Ticks alone never dismiss it.
+        for _ in 0..1000 {
+            ui.step(Edges::default());
+        }
+        assert!(ui.modal(), "{fault:?} was dismissed by the passage of time");
+    }
+}
+
+#[test]
+fn a_failure_closes_on_cross_or_circle_and_the_format_question_can_be_answered() {
+    let mut ui = Ui::Failed(Fault::NoCard);
+    assert_eq!(press(&mut ui, CROSS), None);
+    assert_eq!(ui, Ui::Idle);
+    let mut ui = Ui::Failed(Fault::Full);
+    press(&mut ui, CIRCLE);
+    assert_eq!(ui, Ui::Idle);
+    // "Format it and save?" Yes asks for a write that may format the card.
+    let mut ui = Ui::Format(0);
+    assert_eq!(press(&mut ui, CROSS), Some(true));
+    assert_eq!(ui, Ui::Saving { frames: 0, format: true });
+    // No leaves the card as it was.
+    let mut ui = Ui::Format(0);
+    press(&mut ui, DOWN);
+    assert_eq!(ui, Ui::Format(1));
+    assert_eq!(press(&mut ui, CROSS), None);
+    assert_eq!(ui, Ui::Idle);
+}
+
+#[test]
+fn the_telemetry_code_distinguishes_every_phase() {
+    let codes = [Ui::Idle, Ui::Ask(0), Ui::Format(0), Ui::Saving { frames: 0, format: false },
+        Ui::Saved(1), Ui::Failed(Fault::Write)].map(|u| u.code());
+    assert_eq!(codes, [0, 1, 2, 3, 4, 5]);
 }

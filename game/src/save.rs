@@ -7,8 +7,11 @@
 //! HKS5 the port's own PlayerData and SceneData (`persist.rs`): bosses beaten,
 //! walls broken, cocoons opened, secrets revealed, Geo rocks mined. Writes run
 //! between input checkpoints so the pad sampler keeps polling (SIO0 is shared,
-//! so a card frame and a pad poll never overlap). A missing or unformatted card
-//! is a silent no-save; the rest still happens.
+//! so a card frame and a pad poll never overlap). A card that cannot be written
+//! is never silent: `write` returns the `Fault`, `save_ui.rs` says so on screen
+//! and the card layer's last transaction is exported (`HK_CARD_*`) for a console
+//! photograph or an emulator watch. An unformatted card is only formatted when
+//! the player agrees.
 //!
 //! Two files are written alternately, each carrying a sequence number, and the
 //! newer valid one wins at boot. `Card::write` frees the file's directory entry
@@ -16,7 +19,7 @@
 //! ms an interrupted write leaves that file unfindable with its predecessor
 //! already destroyed. Alternating means an interrupted write never touches the
 //! copy currently being relied on.
-use psx_mc::{Block, Card, HardwareCard, FRAME_SIZE};
+use psx_mc::{Block, Card, HardwareCard, SaveIcon, TransportFault, FRAME_SIZE};
 
 /// Source save profiles. Each one owns two card files so an interrupted write
 /// cannot destroy the copy in use, which is 8 of the card's 15 blocks.
@@ -80,6 +83,8 @@ pub enum Slot {
     Corrupt,
 }
 /// Why a card operation could not be completed, in the terms the plan asks for.
+/// The discriminants are published in `HK_SAVE_FAULT` (plus one), so new kinds
+/// go on the end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
     NoCard,
@@ -87,25 +92,53 @@ pub enum Fault {
     Corrupt,
     Unformatted,
     Other,
+    /// A card answered and then broke the protocol on a read.
+    Comms,
+    /// A card answered and then refused or lost a frame write.
+    Write,
 }
 impl Fault {
-    fn of(error: psx_mc::Error) -> Self {
+    /// A read-side error. A card that answers and then breaks protocol is not
+    /// an absent card, and saying "no card" for it would send the player to
+    /// reseat a card that is fine.
+    pub fn of(error: psx_mc::Error) -> Self {
         use psx_mc::Error::*;
         match error {
-            NoCard | Protocol => Fault::NoCard,
+            NoCard => Fault::NoCard,
+            Protocol => Fault::Comms,
             NoSpace => Fault::Full,
             BadChecksum | Corrupt | BadContainer => Fault::Corrupt,
             NotFormatted => Fault::Unformatted,
             _ => Fault::Other,
         }
     }
+    /// A write-side error: the card's refusal of a frame is a write error, not
+    /// damage the player could find with the card manager.
+    pub fn of_write(error: psx_mc::Error) -> Self {
+        match error {
+            psx_mc::Error::Protocol | psx_mc::Error::BadChecksum => Fault::Write,
+            other => Self::of(other),
+        }
+    }
     pub fn message(self) -> &'static str {
         match self {
             Fault::NoCard => "No memory card in slot 1",
-            Fault::Full => "Memory card full",
-            Fault::Corrupt => "Memory card data damaged",
-            Fault::Unformatted => "Memory card not formatted",
+            Fault::Full => "Memory card is full",
+            Fault::Corrupt => "Memory card data is damaged",
+            Fault::Unformatted => "Memory card is not formatted",
+            Fault::Comms => "Memory card is not responding",
+            Fault::Write => "Could not write to the memory card",
             Fault::Other => "Memory card error",
+        }
+    }
+    /// What to do about it, for the failure notice.
+    pub fn hint(self) -> &'static str {
+        match self {
+            Fault::NoCard => "Insert a card in slot 1 and save again.",
+            Fault::Full => "Free a block in the memory card manager.",
+            Fault::Corrupt => "Check the card in the memory card manager.",
+            Fault::Unformatted => "",
+            Fault::Comms | Fault::Write | Fault::Other => "Check the card and try again.",
         }
     }
 }
@@ -307,19 +340,166 @@ impl Save {
             .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
     }
 }
-/// The hardware card with a pad checkpoint after every frame transfer.
-struct PollingCard(HardwareCard);
-impl Block for PollingCard {
+/// Frame retries before an error stands. A silicon card read under load has
+/// dropped an `/ACK` once in a dozen frames (hardware-tests v2.1) and a write
+/// frame is idempotent, so a transient protocol error is tried again after the
+/// card has had two video periods to settle. An absent card is asked again too,
+/// because the first frame after a chain-load is the one that finds the port in
+/// whatever state the launcher left it.
+const FRAME_RETRIES: u32 = 3;
+const RETRY_VBLANKS: u32 = 2;
+/// Whether a transaction's failure might be a transient one worth repeating.
+fn transient(error: psx_mc::Error, write: bool) -> bool {
+    match error {
+        psx_mc::Error::Protocol | psx_mc::Error::BadChecksum => true,
+        // A card pulled mid-write will not come back, but one that did not
+        // answer the first frame may simply not have been listening yet.
+        psx_mc::Error::NoCard => !write,
+        _ => false,
+    }
+}
+/// The hardware card with retries, a record of the last transaction, and (for
+/// a save in play) a pad checkpoint after every frame transfer.
+struct SlotOne {
+    card: HardwareCard,
+    poll: bool,
+}
+impl SlotOne {
+    fn new(poll: bool) -> Self {
+        Self {
+            card: HardwareCard::new(psx_mc::Slot::One),
+            poll,
+        }
+    }
+    /// Publish the transaction that decided the result.
+    fn note(&self, retries: u32, frame: u16, write: bool) {
+        let trace = self.card.last_trace();
+        unsafe {
+            HK_CARD_FAULT = match trace.fault {
+                TransportFault::None => 0,
+                TransportFault::TxTimeout => 1,
+                TransportFault::RxTimeout => 2,
+                TransportFault::AckTimeout => 3,
+                TransportFault::AckReleaseTimeout => 4,
+            };
+            HK_CARD_FAULT_EXCHANGE = trace.fault_exchange as u32;
+            HK_CARD_RETRIES = HK_CARD_RETRIES.saturating_add(retries);
+            HK_CARD_FRAMES = HK_CARD_FRAMES.saturating_add(1);
+            HK_CARD_LAST = u32::from(write) << 16 | frame as u32;
+            #[cfg(feature = "card-diag")]
+            crate::card_diag::note(&trace, retries);
+        }
+    }
+}
+impl Block for SlotOne {
     fn read_frame(&mut self, frame: u16, out: &mut [u8; FRAME_SIZE]) -> psx_mc::Result<()> {
-        let r = self.0.read_frame(frame, out);
-        crate::input::checkpoint();
+        let mut retries = 0;
+        let mut r = self.card.read_frame(frame, out);
+        while let Err(e) = r {
+            if retries == FRAME_RETRIES || !transient(e, false) {
+                break;
+            }
+            retries += 1;
+            crate::input::wait_vblanks(RETRY_VBLANKS);
+            r = self.card.read_frame(frame, out);
+        }
+        self.note(retries, frame, false);
+        if self.poll {
+            crate::input::checkpoint();
+        }
         r
     }
     fn write_frame(&mut self, frame: u16, data: &[u8; FRAME_SIZE]) -> psx_mc::Result<()> {
-        let r = self.0.write_frame(frame, data);
-        crate::input::checkpoint();
+        let mut retries = 0;
+        let mut r = self.write_once(frame, data);
+        while let Err(e) = r {
+            if retries == FRAME_RETRIES || !transient(e, true) {
+                break;
+            }
+            retries += 1;
+            crate::input::wait_vblanks(RETRY_VBLANKS);
+            r = self.write_once(frame, data);
+        }
+        self.note(retries, frame, true);
+        if self.poll {
+            crate::input::checkpoint();
+        }
         r
     }
+}
+impl SlotOne {
+    /// One frame write, with the title frame in the BIOS card manager's own
+    /// Shift-JIS: a retail save's title is double-width Latin, and the manager's
+    /// font is what draws it, so the ASCII the filesystem layer copies would be
+    /// the one thing about this save that the manager might not show.
+    fn write_once(&mut self, frame: u16, data: &[u8; FRAME_SIZE]) -> psx_mc::Result<()> {
+        if frame >= FRAMES_PER_BLOCK && frame % FRAMES_PER_BLOCK == 0 && data[..2] == *b"SC" {
+            let mut titled = *data;
+            sjis_title(TITLE, &mut titled[4..68]);
+            return self.card.write_frame(frame, &titled);
+        }
+        self.card.write_frame(frame, data)
+    }
+}
+const FRAMES_PER_BLOCK: u16 = 64;
+/// `title` as double-width Shift-JIS Latin (A-Z, 0-9, space), zero padded.
+/// Anything else becomes a double-width space.
+pub fn sjis_title(title: &str, out: &mut [u8]) {
+    out.fill(0);
+    for (i, b) in title.bytes().enumerate() {
+        let (hi, lo) = match b {
+            b'A'..=b'Z' => (0x82, 0x60 + (b - b'A')),
+            b'a'..=b'z' => (0x82, 0x81 + (b - b'a')),
+            b'0'..=b'9' => (0x82, 0x4f + (b - b'0')),
+            _ => (0x81, 0x40),
+        };
+        if 2 * i + 1 < out.len() {
+            out[2 * i] = hi;
+            out[2 * i + 1] = lo;
+        }
+    }
+}
+/// The save's icon in the card manager: the Knight's mask, white on black.
+pub const ICON: SaveIcon = SaveIcon::new(
+    [
+        0x0000, 0x7fff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ],
+    pack_icon([
+        "................",
+        "..1..........1..",
+        "..11........11..",
+        "..111......111..",
+        "..111111111111..",
+        ".11111111111111.",
+        ".11111111111111.",
+        ".11..111111..11.",
+        ".11..111111..11.",
+        ".111.111111.111.",
+        "..111111111111..",
+        "...1111111111...",
+        "....11111111....",
+        "......1111......",
+        "................",
+        "................",
+    ]),
+);
+/// Sixteen rows of sixteen palette digits, packed as the card manager wants
+/// them: two pixels per byte, the left one in the low nibble.
+const fn pack_icon(rows: [&str; 16]) -> [u8; FRAME_SIZE] {
+    let mut out = [0u8; FRAME_SIZE];
+    let mut y = 0;
+    while y < 16 {
+        let row = rows[y].as_bytes();
+        let mut x = 0;
+        while x < 16 {
+            let v = if row[x] == b'.' { 0 } else { row[x] - b'0' };
+            let at = y * 8 + x / 2;
+            out[at] |= if x % 2 == 0 { v } else { v << 4 };
+            x += 1;
+        }
+        y += 1;
+    }
+    out
 }
 #[no_mangle]
 pub static mut HK_SAVE_WRITES: u32 = 0;
@@ -335,6 +515,24 @@ pub static mut HK_SAVE_PROFILE: u32 = 0;
 /// Zero for none, otherwise the Fault discriminant plus one.
 #[no_mangle]
 pub static mut HK_SAVE_FAULT: u32 = 0;
+/// The transaction that decided the last card operation: zero for none, else
+/// the first low-level fault (1 TX never ready, 2 RX never filled, 3 `/ACK`
+/// never came, 4 `/ACK` never released) and the exchange it happened at. With
+/// the fault it is the whole answer to "the card did not respond" on a console.
+#[no_mangle]
+pub static mut HK_CARD_FAULT: u32 = 0;
+#[no_mangle]
+pub static mut HK_CARD_FAULT_EXCHANGE: u32 = 0;
+/// Frame retries taken, frames transferred, the last frame (bit 16 set for a
+/// write) and the video periods the last save held the CPU for.
+#[no_mangle]
+pub static mut HK_CARD_RETRIES: u32 = 0;
+#[no_mangle]
+pub static mut HK_CARD_FRAMES: u32 = 0;
+#[no_mangle]
+pub static mut HK_CARD_LAST: u32 = 0;
+#[no_mangle]
+pub static mut HK_CARD_WRITE_VBLANKS: u32 = 0;
 /// The one record buffer: every card read and write goes through it, so the
 /// longest record costs `MAX_LEN` bytes of BSS once rather than stack in the
 /// deepest card path. Nothing here is re-entrant.
@@ -346,10 +544,11 @@ fn buf() -> &'static mut [u8; MAX_LEN] {
 /// samples polled while the card is busy). Writes the copy `read` did not
 /// return, so an interruption cannot destroy the save still being relied on.
 /// `items` is `persist`'s SceneData list, already brought up to date.
+/// An unformatted card is refused with `Fault::Unformatted` unless `format` is
+/// set: the player is asked first, as the console's own card manager does.
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
-#[cfg_attr(not(test), optimize(size))]
-pub fn write(profile: usize, save: &Save, items: &[u32]) -> Result<(), Fault> {
+pub fn write(profile: usize, save: &Save, items: &[u32], format: bool) -> Result<(), Fault> {
     let mut record = *save;
     let copy = unsafe { NEXT_COPY[profile] };
     record.sequence = unsafe { LAST_SEQUENCE[profile] }.wrapping_add(1);
@@ -357,14 +556,28 @@ pub fn write(profile: usize, save: &Save, items: &[u32]) -> Result<(), Fault> {
     let name = file_name(profile, copy, &mut name);
     let out = buf();
     let len = record.encode(items, out);
-    let mut card = Card::new(PollingCard(HardwareCard::new(psx_mc::Slot::One)));
+    let began = crate::input::vblanks();
+    let mut card = Card::new(SlotOne::new(true));
     let result = card.is_formatted().and_then(|formatted| {
         if !formatted {
+            if !format {
+                return Err(psx_mc::Error::NotFormatted);
+            }
             card.format()?;
         }
-        card.write(name, TITLE, &out[..len])
+        match card.write_with_icon(name, TITLE, &out[..len], &ICON) {
+            // Replacing a copy needs room for both until the new one is whole.
+            // On a card with one block free, the older copy of this profile is
+            // the one to give up: the newer one stays on the card throughout.
+            Err(psx_mc::Error::NoSpace) => {
+                card.delete(name)?;
+                card.write_with_icon(name, TITLE, &out[..len], &ICON)
+            }
+            other => other,
+        }
     });
     unsafe {
+        HK_CARD_WRITE_VBLANKS = crate::input::vblanks().wrapping_sub(began);
         match result {
             Ok(()) => {
                 HK_SAVE_WRITES = HK_SAVE_WRITES.saturating_add(1);
@@ -377,7 +590,7 @@ pub fn write(profile: usize, save: &Save, items: &[u32]) -> Result<(), Fault> {
             }
             Err(error) => {
                 HK_SAVE_ERRORS = HK_SAVE_ERRORS.saturating_add(1);
-                let fault = Fault::of(error);
+                let fault = Fault::of_write(error);
                 HK_SAVE_FAULT = fault as u32 + 1;
                 Err(fault)
             }
@@ -429,10 +642,23 @@ fn read_profile<B: Block>(card: &mut Card<B>, profile: usize) -> Result<Slot, Fa
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
 pub fn survey() -> ([Slot; PROFILES], Option<Fault>) {
-    let mut card = Card::new(HardwareCard::new(psx_mc::Slot::One));
+    let mut card = Card::new(SlotOne::new(false));
     let mut slots = [Slot::Empty; PROFILES];
-    let mut fault = None;
+    // The first frame decides whether there is a usable card at all. Reading
+    // the directory of a blank card finds nothing and says nothing, which is
+    // how an unformatted card passed for an empty one until the first save.
+    let gate = match card.is_formatted() {
+        Ok(true) => None,
+        Ok(false) => Some(Fault::Unformatted),
+        Err(error) => Some(Fault::of(error)),
+    };
+    #[cfg(feature = "card-diag")]
+    crate::card_diag::boot(gate);
+    let mut fault = gate;
     for profile in 0..PROFILES {
+        if gate.is_some() {
+            break;
+        }
         match read_profile(&mut card, profile) {
             Ok(slot) => slots[profile] = slot,
             Err(seen) => {
@@ -466,7 +692,7 @@ pub fn load_world(profile: usize, sequence: u32, store: &mut persist::Store) -> 
     let copy = 1 - unsafe { NEXT_COPY[profile] };
     let mut name = [0u8; 19];
     let name = file_name(profile, copy, &mut name);
-    let mut card = Card::new(HardwareCard::new(psx_mc::Slot::One));
+    let mut card = Card::new(SlotOne::new(false));
     let buf = buf();
     let read = card.read(name, buf);
     let decoded = read

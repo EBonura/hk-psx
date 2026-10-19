@@ -17,6 +17,8 @@ mod animation_cache;
 mod audio;
 #[cfg(feature = "audio-probe")]
 mod audio_probe;
+#[cfg(feature = "card-diag")]
+mod card_diag;
 mod bench;
 mod camera;
 mod enemies;
@@ -32,6 +34,7 @@ mod music;
 mod persist;
 mod presentation;
 mod save;
+mod save_ui;
 mod scene_transition;
 mod shade;
 #[cfg(feature = "trace")]
@@ -408,6 +411,10 @@ pub static mut HK_SOUL: u32 = 0;
 pub static mut HK_REGION_ID: u32 = 0;
 #[no_mangle]
 pub static mut HK_BREAK_COUNT: u32 = 0;
+/// Ordinary breakables broken, each of which asks the camera for the source's
+/// `EnemyKillShake` (`Breakable.Break`). A hidden wall's break is its own.
+#[no_mangle]
+pub static mut HK_BREAK_SHAKES: u32 = 0;
 #[no_mangle]
 pub static mut HK_HEALTH: u32 = 5;
 #[no_mangle]
@@ -813,6 +820,8 @@ fn main() {
     let (settings, profile) = menu::run(&mut fb, art, &slot_lines, profile_fault);
     focus_audio::set_volume(settings.sfx);
     menu::loading(&mut fb);
+    #[cfg(feature = "card-diag")]
+    card_diag::run(&mut fb);
     #[cfg(feature = "audio-probe")]
     audio_probe::run(unsafe { &mut *(&raw mut ROOM_CACHE) }, &mut fb);
     let saved = match slots[profile] {
@@ -886,7 +895,7 @@ fn main() {
         start_held: false,
         inventory_held: false,
         prev_pad: ButtonState::from_bits(0),
-        save_prompt: None,
+        save_ui: save_ui::Ui::Idle,
         save_requested: None,
         respawn: None,
         safe: (SPAWN.0, SPAWN.1, 0usize),
@@ -1346,12 +1355,19 @@ fn main() {
                     disc::prefetch_hint(scene);
                 }
             }
-            if let Some(s) = game.save_requested.take() {
+            // The write holds the CPU for longer than a video period, so the
+            // "Saving" notice has to be on screen first (save_ui.rs).
+            if game.save_ui.armed() {
+                let format = matches!(game.save_ui, save_ui::Ui::Saving { format: true, .. });
+                let s = game.save_requested.take();
                 // Card frames share SIO0 with the pad: bracket the write like a scene load
                 // so the sampler drops the polls it cannot take instead of faulting.
                 input::begin_scene_load(sim_clock);
                 input::begin_blocking_transfer();
-                let _ = save::write(profile, &s, persist::store().items());
+                game.save_ui.finish(match &s {
+                    Some(s) => save::write(profile, s, persist::store().items(), format),
+                    None => Err(save::Fault::Other),
+                });
                 sim_clock = input::end_scene_load();
                 hk_clock.realign(sim_clock.wrapping_add(1));
                 input::seed_latency();

@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod card_check;
 mod disc;
 mod earned_focus;
 mod region_cache;
@@ -1984,7 +1985,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|earned-focus|gate-receipt|disc|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|earned-focus|gate-receipt|disc|card-check|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace hk-psx.bin/.cue in --library, report, then validate\n\
@@ -1999,6 +2000,7 @@ fn usage() -> ! {
          HK_PSX_GATE and HK_PSX_GATE_SHA256) against the current CUE\n\
          cuts      write NAME.cuts from the baseline replays in --work (default .hkpsx/validate), for every\n          \
          --tape NAME with two or more scene loads\n\
+         card-check  list a memory card image (.mcd) the way the console's card manager would, and check its layout\n          \
          earned-focus  prove four earned hits, two kills, real damage, and one Focus heal\n\
          gate-receipt  check one baseline-qualified scene-gate replay at --work\n\
          disc      pack the disc from the guest build in --work (default build/) into --library\n          \
@@ -2011,6 +2013,17 @@ fn usage() -> ! {
 fn main() {
     let mut args = std::env::args().skip(1);
     let action = args.next().unwrap_or_else(|| "build".into());
+    if action == "card-check" {
+        let files: Vec<String> = args.collect();
+        if files.is_empty() {
+            usage();
+        }
+        if let Err(error) = card_check::run(&files) {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if action == "region-cache-check" || action == "region-cache-record" {
         let region = args.next().unwrap_or_else(|| usage());
         if args.next().is_some() {

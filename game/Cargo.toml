@@ -7,6 +7,9 @@ license = "GPL-2.0-or-later"
 emulator-telemetry = ["psx-telemetry/emit"]
 # Console probes for the music transport instead of the game (audio_probe.rs).
 audio-probe = []
+# Memory card diagnostics for a console (card_diag.rs): a CARD DIAG page after the
+# title and a two-line state overlay in play. A diagnostic disc only, never shipped.
+card-diag = []
 # The per-tick HK_TRACE block (trace.rs) for the replay harness: 512 bytes of RAM and
 # 1,260 of code that the shipped disc has no use for. No in-tree tool reads it yet.
 trace = []

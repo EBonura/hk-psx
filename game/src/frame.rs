@@ -47,8 +47,9 @@ pub struct Game {
     pub start_held: bool,
     pub inventory_held: bool,
     pub prev_pad: ButtonState,
-    // Row 0 is Yes, row 1 is No, while the seated save prompt is open.
-    pub save_prompt: Option<u8>,
+    // The seated save prompt and what follows it: the notice while the card is
+    // written, the result, and a failure the player has to see (save_ui.rs).
+    pub save_ui: save_ui::Ui,
     // Pending Save Game record, written at the frame boundary once the player
     // accepts the bench prompt. Nothing else ever writes the card.
     pub save_requested: Option<save::Save>,
@@ -361,7 +362,8 @@ pub fn render(
     render::kick_ready();
     prims += game.state.draw_impacts(r, room, camera);
     if let Some(f) = door_frame {
-        prims += great_door::draw(room, f, camera);
+        let away = if game.player.x < great_door::POSITION[0] { 1 } else { -1 };
+        prims += great_door::draw(room, f, camera, game.door.flinch_x(away));
     }
     prims += gate_draws.draw(camera);
     prims += drip_draws.draw(camera);
@@ -464,7 +466,7 @@ pub fn render(
         game.geo.wallet(),
         game.paused.then_some((&game.pause_menu, &game.settings)),
         vitals.max_health.saturating_add(game.vitals.blue_health),
-        game.save_prompt,
+        game.save_ui,
     );
     game_map::prepare(r.scene, [game.player.x, game.player.y]);
     if crate::modules::loaded(crate::modules::SHOP) {
@@ -510,7 +512,7 @@ pub fn interact(
             && !game.bench.locks_control()
             && !game.shop_screen.open
             && !dialogue::open()
-            && game.save_prompt.is_none(),
+            && !game.save_ui.modal(),
         game.player.grounded,
     );
     let can_inspect = can_inspect && !game_map::open();
@@ -711,7 +713,7 @@ pub fn menu_reads_pad(game: &Game) -> bool {
         || dialogue::open()
         || dialogue::consumes_actions()
         || game.shop_screen.consumes_actions()
-        || game.save_prompt.is_some()
+        || game.save_ui.modal()
 }
 
 /// The Cheats page's Reset session row (it was SELECT): the development reset, back to
@@ -1105,25 +1107,22 @@ pub fn simulate(
         );
         // The seated prompt owns input while it is up, so the bench
         // neither reads a leave press nor starts another rest.
-        let asking = game.save_prompt.is_some();
-        if let Some(row) = game.save_prompt {
-            if pressed(button::UP) || pressed(button::DOWN) {
-                game.save_prompt = Some(1 - row);
-            } else if pressed(button::CROSS) {
-                if row == 0 {
-                    let stand = [game.bench.seat()[0], game.player.y];
-                    game.save_requested = Some(save_record(
-                        game,
-                        r.scene,
-                        stand,
-                        game.player.facing,
-                        game.region_id,
-                    ));
-                }
-                game.save_prompt = None;
-            } else if pressed(button::CIRCLE) {
-                game.save_prompt = None;
-            }
+        let asking = game.save_ui.modal();
+        let edges = save_ui::Edges {
+            up: pressed(button::UP),
+            down: pressed(button::DOWN),
+            cross: pressed(button::CROSS),
+            circle: pressed(button::CIRCLE),
+        };
+        if game.save_ui.step(edges).is_some() {
+            let stand = [game.bench.seat()[0], game.player.y];
+            game.save_requested = Some(save_record(
+                game,
+                r.scene,
+                stand,
+                game.player.facing,
+                game.region_id,
+            ));
         }
         let bench_events = {
             let hero_body = [
@@ -1179,14 +1178,14 @@ pub fn simulate(
             game.respawn = Some((r.scene, stand, game.player.facing, game.region_id));
             // The bench updates the map with the quill (`UpdateGameMap`).
             game_map::update_game_map();
-            game.save_prompt = Some(0);
+            game.save_ui.ask();
         }
         let locked = game.focus.locks_control()
             || dialogue::open()
             || game.shop_screen.open
             || game.door.pending()
             || game.bench.locks_control()
-            || game.save_prompt.is_some()
+            || game.save_ui.modal()
             || game.cast.locks_control()
             || game.pickups.kneeling();
         // Take Control: the Dream Nail owns the Knight from Start to End.
@@ -1327,6 +1326,16 @@ pub fn simulate(
         unsafe {
             HK_BREAK_COUNT = HK_BREAK_COUNT.saturating_add(strike.broken as u32);
         }
+        // `Breakable.Break` ends by sending `EnemyKillShake` to the camera on
+        // every break, a hidden wall's own `AverageShake` (secret_feedback, which
+        // outranks it) included.
+        let ordinary_breaks = strike.broken - u16::from(strike.secret.is_some_and(|e| e.broke));
+        if ordinary_breaks > 0 {
+            camera::request(camera::Shake::Kill);
+            unsafe {
+                HK_BREAK_SHAKES = HK_BREAK_SHAKES.saturating_add(ordinary_breaks as u32);
+            }
+        }
         if let Some(e) = strike.secret {
             secret_feedback(game, r, e);
         }
@@ -1408,6 +1417,23 @@ pub fn simulate(
         let door_hit = strike_great_door(&mut game.door, r.scene, &game.nail, &game.player);
         if door_hit.hit {
             audio::great_door_hit();
+            // The source's `Hit` state: a nail impact where the nail met the
+            // door, `EnemyKillShake` (`AverageShake` when the hit changed its
+            // pose), and the sound. Its debris and dust are particle prefabs
+            // the cook does not carry.
+            let (x, y) = (great_door::BOUNDS[0], game.player.y + hk_sim::ONE / 2);
+            let quarter = hk_sim::ONE / 4;
+            game.state.hit_impact(
+                r,
+                game.door.hits() as usize,
+                [x - quarter, y - quarter, x + quarter, y + quarter],
+                game.player.x,
+            );
+            camera::request(if door_hit.staged {
+                camera::Shake::Average
+            } else {
+                camera::Shake::Kill
+            });
         }
         if door_hit.opened {
             great_door::apply(&game.door, &mut game.state, game.region_id);

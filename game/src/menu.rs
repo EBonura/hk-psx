@@ -338,7 +338,7 @@ fn status(fb: &mut FrameBuffer, patch: u8) -> u16 {
 }
 
 /// One screen of probe results over the dimmed title art (audio_probe.rs).
-#[cfg(feature = "audio-probe")]
+#[cfg(any(feature = "audio-probe", feature = "card-diag"))]
 pub fn probe_screen(fb: &mut FrameBuffer, lines: &[&str]) {
     draw(40);
     for (row, line) in lines.iter().enumerate() {

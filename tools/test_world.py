@@ -82,7 +82,7 @@ def main():
         command += ['-L', f'dependency={directory}']
     command += ['-o', str(executable)]
     subprocess.run(command, cwd=ROOT, env=dict(env, CARGO_MANIFEST_DIR=str(ROOT/'game'), **world_banks(output)), check=True)
-    subprocess.run([str(executable)], cwd=ROOT, check=True)
+    subprocess.run([str(executable)]+sys.argv[1:], cwd=ROOT, check=True)
 
 
 if __name__ == '__main__':
