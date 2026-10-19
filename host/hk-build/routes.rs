@@ -305,6 +305,9 @@ pub struct Setup<'a> {
     /// Read the guest's scene-load telemetry at every gameplay-is-back point and at the end, as
     /// deliberately failing asserts whose detail carries the values (`cargo hk-build measure`).
     pub probe: bool,
+    /// Hold L3 from the load's start until gameplay is published, which asks the game for the route
+    /// lock (input::lock_requested). Off for a measuring run, which wants the layout's own timing.
+    pub lock: bool,
 }
 
 enum Cut<'a> {
@@ -360,8 +363,11 @@ pub fn write_journey(route: &Route, tape: &Tape, cuts: &Cuts, setup: &Setup, out
         match cut {
             Cut::Load(load) => {
                 let held = if hi > lo_k { tape.mask(hi - 1) } else { 0 };
-                let names: Vec<String> =
+                let mut names: Vec<String> =
                     BUTTONS.iter().filter(|(_, m)| held & m != 0).map(|(n, _)| format!("\"{n}\"")).collect();
+                if setup.lock {
+                    names.push("\"l3\"".into());
+                }
                 if !names.is_empty() {
                     // The stretch ends mid-walk: keep the last buttons down until the load has been admitted.
                     // HK_SCENE_LOADS, not HK_GAME_MODE == 2: a gate that loads while the game keeps playing
@@ -369,10 +375,16 @@ pub fn write_journey(route: &Route, tape: &Tape, cuts: &Cuts, setup: &Setup, out
                     let _ = writeln!(toml, "\n[[step]]\nlabel = \"keep walking until load {k} is admitted\"\npress = [{}]\ntimeout = 7200", names.join(", "));
                     let _ = writeln!(toml, "[step.hold_until]\nkind = \"ram\"\nsym = \"HK_SCENE_LOADS\"\nop = \"ge\"\nvalue = {}", load.loads_after);
                 }
-                let _ = writeln!(toml, "\n[[step]]\nlabel = \"wait for scene load {k} to be admitted\"\ntimeout = 7200");
-                let _ = writeln!(toml, "[step.wait_until]\nkind = \"ram\"\nsym = \"HK_SCENE_LOADS\"\nop = \"ge\"\nvalue = {}", load.loads_after);
-                let _ = writeln!(toml, "\n[[step]]\nlabel = \"wait for gameplay\"\ntimeout = 7200");
-                let _ = writeln!(toml, "[step.wait_until]\nkind = \"ram\"\nsym = \"HK_GAME_MODE\"\nop = \"eq\"\nvalue = 1");
+                if setup.lock {
+                    // L3 stays down until the game publishes gameplay: that asks for the route lock.
+                    let _ = writeln!(toml, "\n[[step]]\nlabel = \"wait for gameplay (route lock requested)\"\npress = [\"l3\"]\ntimeout = 7200");
+                    let _ = writeln!(toml, "[step.hold_until]\nkind = \"ram\"\nsym = \"HK_GAME_MODE\"\nop = \"eq\"\nvalue = 1");
+                } else {
+                    let _ = writeln!(toml, "\n[[step]]\nlabel = \"wait for scene load {k} to be admitted\"\ntimeout = 7200");
+                    let _ = writeln!(toml, "[step.wait_until]\nkind = \"ram\"\nsym = \"HK_SCENE_LOADS\"\nop = \"ge\"\nvalue = {}", load.loads_after);
+                    let _ = writeln!(toml, "\n[[step]]\nlabel = \"wait for gameplay\"\ntimeout = 7200");
+                    let _ = writeln!(toml, "[step.wait_until]\nkind = \"ram\"\nsym = \"HK_GAME_MODE\"\nop = \"eq\"\nvalue = 1");
+                }
                 if setup.probe {
                     let _ = writeln!(toml, "\n[[step]]\nlabel = \"probe the poll count\"\ncheckpoint = \"probe{k}\"\ngolden = false\nno_matrix = true");
                     let _ = writeln!(toml, "[[step.assert]]\nkind = \"ram\"\nsym = \"HK_INPUT_POLLS\"\nop = \"eq\"\nvalue = -1\nnote = \"probe-polls-{}\"", load_index);
@@ -506,6 +518,7 @@ pub fn spawn_closed(
         card: card.as_ref().map(|(p, s)| (*p, s.clone())),
         snapshot: route.journey.is_some(),
         probe,
+        lock: !probe,
     };
     let toml = write_journey(route, &tape, cuts, &setup, &dir)?;
     let child = std::process::Command::new(&gate.binary)
@@ -562,7 +575,7 @@ pub fn finish_closed(run: ClosedRun) -> Result<Closed> {
 /// The neutral ticks each load left the baseline simulation before the stretch that followed it:
 /// the controller polls taken when gameplay was back (`probe-polls-i`) minus the polls taken when
 /// load i resumed (`probe-resume-i`, from the guest's `HK_LOAD_LOG`), both in the gate log's
-/// failing-assert detail. Valid only on a disc built without the route lock (`HK_ROUTE_LOCK=0`),
+/// failing-assert detail. Valid only for a run that did not ask for the route lock,
 /// where the gate's stretch starts after the region setup the layout happened to cost.
 pub fn parse_probes(gate_log: &str, loads: usize) -> Result<Vec<usize>> {
     let find = |kind: &str, i: usize| -> Result<usize> {
@@ -728,6 +741,7 @@ mod tests {
             card: None,
             snapshot: true,
             probe: false,
+            lock: false,
         };
         let file = write_journey(&route, &tape, &cuts, &setup, &dir).unwrap();
         let toml = std::fs::read_to_string(file).unwrap();
@@ -742,6 +756,14 @@ mod tests {
         assert!(toml.contains("op = \"ge\"\nvalue = 2"));
         assert!(toml.contains("action = \"snapshot\""));
         assert!(dir.join("r-sd-seg0.pxtape").is_file() && dir.join("r-sd-seg1.pxtape").is_file());
+        assert!(!toml.contains("l3"), "a measuring run must not ask for the route lock");
+        // A playing run holds L3 through the load and until gameplay is published.
+        let locked = write_journey(&route, &tape, &cuts, &Setup { lock: true, ..setup }, &dir).unwrap();
+        let toml = std::fs::read_to_string(locked).unwrap();
+        assert!(toml.contains("press = [\"right\", \"l3\"]"));
+        assert!(toml.contains("press = [\"l3\"]"));
+        assert!(toml.contains("sym = \"HK_GAME_MODE\"\nop = \"eq\"\nvalue = 1"));
+        assert!(!toml.contains("wait_until"));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -1994,7 +1994,7 @@ fn usage() -> ! {
          from --emulator-source, default ../PSoXide-emulator); needs a checkout path without spaces\n\
          validate  replay the route tapes in tools/tapes against the current CUE, on the pinned\n          \
          emulator unless --frontend (or HK_PSX_FRONTEND) names another\n\
-         measure   play the closed-loop routes on a disc built with HK_ROUTE_LOCK=0 and write each load's\n          \
+         measure   play the closed-loop routes without the route lock and write each load's\n          \
          neutral ticks (telemetry) into the cuts files\n\
          routes    play only the closed-loop routes (those with a .cuts file) with psoxide-gate (--gate, or\n          \
          HK_PSX_GATE and HK_PSX_GATE_SHA256) against the current CUE\n\

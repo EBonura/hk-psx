@@ -52,7 +52,7 @@ export HK_PSX_GATE=/path/to/psoxide-gate HK_PSX_GATE_SHA256=$(shasum -a 256 $HK_
 cargo hk-build validate --library DIR --jobs 2          # open loop, then closed loop for the routes with cuts
 cargo hk-build routes   --library DIR --jobs 2          # closed-loop routes only (HK_VALIDATE_ONLY=a,b narrows)
 cargo hk-build cuts --work .hkpsx/validate --tape crossroads-gate   # after a validate on a disc where the tapes play as recorded
-HK_ROUTE_LOCK=0 ... build; cargo hk-build measure --library DIR       # writes each load's neutral ticks (pad N) into the cuts files
+cargo hk-build measure --library DIR       # on a disc where the route passes; writes each load's neutral ticks (pad N) into the cuts files
 ```
 
 The gate must be built from an emulator revision that has `tape_rebase` (`287b51d1` and later, the `codex/gate-tape-rebase-2026-10-11` line). `routes` looks for `DIR/game.map` (the link map of the disc under test) before `.hkpsx/build.json`, so a disc built in another checkout can be tried without rebuilding.
@@ -63,18 +63,18 @@ A stretch is bit-exact tape, so it replays like the baseline only if the simulat
 
 The fix has two halves, and no number is ever tuned per disc:
 
-* The route lock (`game/src/input.rs lock_resume`, on in every build; `HK_ROUTE_LOCK=0` at build time turns it off to measure). When a scene load has resumed and its region setup is done, the game acknowledges every poll taken since the resume, waits for one fresh poll, and publishes `HK_GAME_MODE = 1` right after it. The gate sees gameplay at that poll, so the first tick the simulation runs is the next one on every layout. The same hook covers the first scene of a boot. The only change to play is that the 1 or 2 ticks that used to run at once from the polls taken during the setup do not run.
-* The neutral ticks are part of the route. `cargo hk-build measure --library DIR` plays the closed-loop routes on a disc built with `HK_ROUTE_LOCK=0`, reads from the guest's `HK_LOAD_LOG` how many controller polls each load's gameplay-is-back point followed its resume by, and writes that as `pad N` on the load line. A lock build then plays exactly N neutral ticks before the stretch. Regenerate with `cuts` (new baseline) then `measure` (on a lock-free disc that passes), and commit both.
+* The route lock (`game/src/input.rs lock_resume`). A route under `psoxide-gate` holds L3 (no tape and no screen uses it) from the moment a load starts until gameplay is published; the game sees it down at that point and, when a scene load has resumed and its region setup is done, it acknowledges every poll taken since the resume, waits for one fresh poll, and publishes `HK_GAME_MODE = 1` right after it. The gate sees gameplay at that poll, so the first tick the simulation runs is the next one on every layout. The same hook covers the first scene of a boot. A player's pad and the open-loop tapes never hold L3, so their timing is untouched; the lock exists only in state-driven runs.
+* The neutral ticks are part of the route. `cargo hk-build measure --library DIR` plays the closed-loop routes without asking for the lock (the layout's own timing), reads from the guest's `HK_LOAD_LOG` how many controller polls each load's gameplay-is-back point followed its resume by, and writes that as `pad N` on the load line. `routes` and `validate` then ask for the lock and play exactly N neutral ticks before the stretch, on any disc. Regenerate with `cuts` (new baseline) then `measure` (on a disc where the route passes without the lock), and commit both.
 
-The real-time Wait timers of the Crawler FSM (`advance_crawler_fsm`) counted the VBlank counter, which moves with how long each frame took; they now count the simulation's own ticks, so frame pacing no longer reaches the simulation.
+The real-time Wait timers of the Crawler FSM (`advance_crawler_fsm`) follow the VBlank counter, which moves with how long each frame took; once a run has asked for the lock they count the simulation's own ticks, so frame pacing no longer reaches the simulation. Plain play keeps the VBlank counter: the open-loop tapes were tuned to it.
 
 ## Proof status (2026-10-19)
 
 All on the pinned frontend `b3848054` for the open loop and `psoxide-gate` (emulator lineage `287b51d1`) for the closed loop, four journeys, one set of `.cuts` (measured on a lock-free disc), 12, 8, 21 and 15 checks:
 
-* lock-free reference disc (pads measured here): 4 of 4 with the pads removed, 4 of 4 with them;
-* lock disc: 4 of 4;
-* lock disc with `HK_PREFETCH_EXTRA=10240` (different load timing: kings runs 83 ticks shorter): 4 of 4;
+* the pads' reference disc without the lock: 4 of 4 with the pads removed;
+* with the lock and the pads: 4 of 4;
+* with `HK_PREFETCH_EXTRA=10240` (different load timing: kings runs 83 ticks shorter): 4 of 4;
 * the tree with the hk-ram and console-fix changes (a smaller EXE, every sector moved): see the landing notes in `hk-route-phase/NOTES.md`.
 
 Not proven: the unlanded seamless-gates branch; open-loop routes that cross loads are still timed by the length of those loads and need cut lists like the journeys.

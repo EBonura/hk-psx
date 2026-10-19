@@ -2631,12 +2631,16 @@ impl Actor {
     }
     #[inline(never)]
     fn advance_crawler_fsm(&mut self,crawler:&mut hk_sim::crawler_fsm::Crawler,spec:&ActorSpec,senses:(bool,bool,bool))->i32{
-        // The Wait timers that run on real time count the simulation's own ticks, not the VBlank
-        // counter: that moves with how long each frame took on this disc layout (skipped and
-        // caught-up ticks), which made a route's outcome depend on the layout. At 60 Hz without
-        // skipped ticks the two are the same clock.
+        // The Wait timers that run on real time follow the VBlank counter, which moves with how long
+        // each frame took on this disc layout. A closed-loop route (psoxide-gate, see
+        // input::lock_requested) counts the simulation's own ticks instead, so its outcome does not
+        // depend on the layout. At 60 Hz without skipped ticks the two are the same clock.
         #[cfg(not(test))]
-        let real_ticks=crawler.elapsed_real_ticks(unsafe { crate::input::CONSUMED });
+        let real_ticks=crawler.elapsed_real_ticks(if crate::input::route_armed() {
+            unsafe { crate::input::CONSUMED }
+        } else {
+            psx_rt::interrupts::vblank_count()
+        });
         #[cfg(test)]
         let real_ticks=1;
         let mut env=hk_sim::fsm3::Env::new();

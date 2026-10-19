@@ -162,12 +162,26 @@ pub fn held_buttons() -> u16 {
 pub fn polls() -> u32 {
     unsafe { SAMPLER.stats().polls }
 }
-/// Route lock, on unless the build sets `HK_ROUTE_LOCK=0` (only to measure what a disc does
-/// without it, docs/ROUTES.md "Phase").
-pub const ROUTE_LOCK: bool = match option_env!("HK_ROUTE_LOCK") {
-    Some(s) => !s.as_bytes().is_empty() && s.as_bytes()[0] != b'0',
-    None => true,
-};
+/// The buttons the last controller poll read, for `lock_requested`.
+static mut LAST_POLLED: u16 = 0;
+/// A closed-loop route has asked for the lock at least once.
+static mut ARMED: bool = false;
+/// A route under psoxide-gate holds L3 (a button no tape and no game screen uses) from the moment
+/// a scene load starts until gameplay is published; seeing it down at that point asks for
+/// `lock_resume`. A player's pad never does, and the open-loop routes never do, so their
+/// timing is what it always was. Asking once also arms `route_armed` for the rest of the run.
+pub fn lock_requested() -> bool {
+    let on = unsafe { LAST_POLLED } & psx_pad::button::L3 != 0;
+    if on {
+        unsafe { ARMED = true };
+    }
+    on
+}
+/// True once a closed-loop route has asked for the lock: the run is a state-driven one, and the
+/// simulation takes its real-time Wait timers from its own ticks (enemies.rs).
+pub fn route_armed() -> bool {
+    unsafe { ARMED }
+}
 /// Route lock: end the scene load's catch-up on a poll boundary. Everything the
 /// pad did since the load resumed is acknowledged as loading input, and the call
 /// returns just after a fresh poll, so the simulation's first tick consumes the
@@ -224,6 +238,7 @@ fn poll_slow(now: u32) {
     unsafe {
         let result = SAMPLER.checkpoint(now, || {
             let bits = poll_bits();
+            LAST_POLLED = bits;
             (psx_rt::interrupts::vblank_count(), bits)
         });
         match result {

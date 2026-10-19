@@ -1051,7 +1051,7 @@ fn main() {
         blocker_terrain::apply(&mut game.state, game.region_id);
         if load_published_pending {
             load_published_pending = false;
-            if input::ROUTE_LOCK {
+            if input::lock_requested() {
                 sim_clock = input::lock_resume(sim_clock);
                 hk_clock.realign(sim_clock.wrapping_add(1));
                 input::seed_latency();
