@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |797,492|
-| Code-to-data alignment |12|
-| Linked data, including menu and HUD |257,256|
-| BSS, including shared scene arena and runtime pools |796,828|
-| Total static span |1,851,596|
+| Linked code |805,384|
+| Code-to-data alignment |8|
+| Linked data, including menu and HUD |257,800|
+| BSS, including shared scene arena and runtime pools |796,868|
+| Total static span |1,860,068|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |130,612|
+| Unallocated gap before reserved stack |122,140|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |28,212|
+| Free RAM below the module pool |19,740|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -30,6 +30,8 @@ The 2026-10-17 restore of the lost features (Crossroads_22's waves arena with it
 The 2026-10-17 `-Cpanic=immediate-abort` build (host/build_guest.py; `PSOXIDE_PANIC_MESSAGES=1` restores the formatted panic) turned every panic, bounds check and overflow check into a bare `break`. `core::fmt`, the panic `Location` records, their file names and the assertion message strings left the image: linked data fell from 280,264 to 255,192 bytes (25,072) while linked code grew from 801,668 to 802,240 (572, the compiler inlines differently once the panic calls are gone), so 25,444 bytes are free below the module pool (932 before). psx-rt's exception handler still records Cause, EPC and BadVAddr (`__psx_rt_fault_*`), which every route already fails on. Each module image now reserves 96 hazard-trampoline words (SDK `overlay_pack::TRAMPOLINE_WORDS`, `code_modules.TRAMP_WORDS`) instead of 32.
 
 The generic native components and the road to Hornet's arena (Fungus1_22, Fungus1_21 and Fungus1_04: 70 more views, with the region and atlas index tables narrowed to two bytes to pay for them, and the Cloak pickup) on top of the abort build left 29,620 bytes free below the module pool (25,444 before): linked code 802,240 to 796,372, linked data 255,192 to 256,968, BSS 796,924 to 796,828. Four cold functions (the save write, the menu, the panel text, the render init) are built for size. `optimize(size)` on `disc.rs`'s prepare functions did nothing, and on `world.rs`'s `reset_scene`, `break_effects::load_scene` and `Actor::new` it made the image 1.4 KB bigger (inlining changes), so those stay as they were. The boss tier of the FSM kernel and Hornet's fight are in the source and out of the build (`HK_HORNET_ART`, docs/HORNET.md).
+
+The 2026-10-19 console-fix pass (the bench Save notice, card errors and retries, the card-manager title and icon, the Great Door's per-hit reaction and the break shake; game/src/save_ui.rs, docs/SAVE.md) took linked code from 797,492 to 805,384 bytes (7,892) and linked data from 257,256 to 257,800, so 19,740 bytes are free below the module pool (28,212 before). The two `card-diag` features (card_diag.rs) are not in the ordinary build.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -115,7 +117,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801d40cc`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d61e4`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
