@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |745,300|
-| Code-to-data alignment |12|
+| Linked code |745,900|
+| Code-to-data alignment |4|
 | Linked data, including menu and HUD |257,720|
 | BSS, including shared scene arena and runtime pools |796,828|
-| Total static span |1,799,868|
+| Total static span |1,800,460|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |182,340|
+| Unallocated gap before reserved stack |181,748|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |79,940|
+| Free RAM below the module pool |79,348|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -31,7 +31,7 @@ The 2026-10-17 `-Cpanic=immediate-abort` build (host/build_guest.py; `PSOXIDE_PA
 
 The generic native components and the road to Hornet's arena (Fungus1_22, Fungus1_21 and Fungus1_04: 70 more views, with the region and atlas index tables narrowed to two bytes to pay for them, and the Cloak pickup) on top of the abort build left 29,620 bytes free below the module pool (25,444 before): linked code 802,240 to 796,372, linked data 255,192 to 256,968, BSS 796,924 to 796,828. Four cold functions (the save write, the menu, the panel text, the render init) are built for size. `optimize(size)` on `disc.rs`'s prepare functions did nothing, and on `world.rs`'s `reset_scene`, `break_effects::load_scene` and `Actor::new` it made the image 1.4 KB bigger (inlining changes), so those stay as they were. The boss tier of the FSM kernel and Hornet's fight are in the source and out of the build (`HK_HORNET_ART`, docs/HORNET.md).
 
-The 2026-10-18 monomorphisation pass took linked code from 796,372 to 745,300 bytes (-51,072), linked data from 256,968 to 257,720 (+752: the edge tables grew from 128 to 144 edges), and left 79,940 bytes free below the module pool (29,620 before). Every terrain solver (`Player::step`, the `Actor::advance_*` family, the sight and ray queries) is generic over `impl Fn(usize) -> [i32; 4]` and was compiled once per closure type: four types reached them (the Knight's edge table with its uncached tail, an actor's table, an actor's uncached read for rooms past 128 edges, and a reference to the first), which duplicated `Player::step` four times and each enemy family twice, 118,624 bytes of code in 29 groups, most of it in the room modules. Every reader now comes from `world::terrain` over a table of at most `EDGE_CACHE` (144) edges, so each solver exists once and a terrain read is a bounds-checked load. The largest cooked room has 136 edges (Crossroads_10), so the uncached tail is gone; `tests/test_edge_cache_cap.py` refuses a bigger room. The module images shrank by about 50 KB, so the pool has margin to spare (see modules.json). `strike_false_knight` takes its hit test as `&dyn Fn` like `strike_mawlek` and `strike_gruz`, and the break-effect `collide` loop calls one `contact` function.
+The 2026-10-18 monomorphisation pass took linked code from 796,372 to 745,900 bytes (-50,472), linked data from 256,968 to 257,720 (+752: the edge tables grew from 128 to 144 edges), and left 79,348 bytes free below the module pool (29,620 before). Every terrain solver (`Player::step`, the `Actor::advance_*` family, the sight and ray queries) is generic over `impl Fn(usize) -> [i32; 4]` and was compiled once per closure type: four types reached them (the Knight's edge table with its uncached tail, an actor's table, an actor's uncached read for rooms past 128 edges, and a reference to the first), which duplicated `Player::step` four times and each enemy family twice, 118,624 bytes of code in 29 groups, most of it in the room modules. Every reader now comes from `world::terrain` over a table of at most `EDGE_CACHE` (144) edges, so each solver exists once and a terrain read is a bounds-checked load. The largest cooked room has 136 edges (Crossroads_10), so the uncached tail is gone; `tests/test_edge_cache_cap.py` refuses a bigger room. The module images shrank by about 50 KB, so the pool has margin to spare (see modules.json). `strike_false_knight` takes its hit test as `&dyn Fn` like `strike_mawlek` and `strike_gruz`. The break-effect `collide` pair stays as it was: splitting the contact maths out of it doubled its instructions in a particle storm.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -117,7 +117,7 @@ executable into the title art chunk the boot already reads from disc
 (399e989, 17,774 bytes). The scene arena grew 3,908 for Tutorial_01's secret
 metadata.
 
-Static data ends at `0x801c76bc`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801c790c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
