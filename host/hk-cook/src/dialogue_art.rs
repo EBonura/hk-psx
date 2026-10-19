@@ -15,6 +15,11 @@
 //! (64 pixels) is cut into slot-wide tiles, each streamed to VRAM by the
 //! cache like any other animation texture.
 //!
+//! The pause menu and the charm board share the pieces: the pause screen's
+//! top and bottom fleurs are the last frames of the `pause_top_fleur` and
+//! `bottom_fleur` sprites (resources.assets sprites 3137 and 1697), cut the
+//! same way.
+//!
 //! Writes `data/dialogue-art.hk` (the tiles' 4bpp texels back to back, rows
 //! padded to whole halfwords, first pixel in the low nibble), the constants
 //! the guest links (`data/dialogue_art.rs`) and a preview under
@@ -34,15 +39,27 @@ const COLLECTION: i64 = 21989;
 /// Width of an animation-cache slot, which bounds a tile.
 const TILE: usize = 64;
 
-/// A piece: its name, the tk2d sprite id of its last frame, its size on the
-/// PS1 screen. The fleurs keep the source's proportions to within a pixel; the
-/// arrow and the stop are drawn larger than their share of the fleur so that
-/// they read at 320x240.
-const PIECES: [(&str, usize, usize, usize); 4] = [
-    ("fleur_top", 35, 192, 25),
-    ("fleur_bottom", 44, 128, 14),
-    ("arrow", 11, 15, 17),
-    ("stop", 15, 14, 17),
+/// Where a piece's pixels come from.
+#[derive(Clone, Copy)]
+enum Origin {
+    /// A frame of the `Dialogue Cln` tk2d collection.
+    Tk(usize),
+    /// A Unity `Sprite` of resources.assets, by path id.
+    Sprite(i64),
+}
+
+/// A piece: its name, where it comes from, its size on the PS1 screen. The
+/// fleurs keep the source's proportions to within a pixel; the arrow and the
+/// stop are drawn larger than their share of the fleur so that they read at
+/// 320x240. The pause screen's two fleurs are the final frames of their
+/// animations (`pause_top_fleur0008`, `bottom_fleur0008`).
+const PIECES: [(&str, Origin, usize, usize); 6] = [
+    ("fleur_top", Origin::Tk(35), 192, 25),
+    ("fleur_bottom", Origin::Tk(44), 128, 14),
+    ("arrow", Origin::Tk(11), 15, 17),
+    ("stop", Origin::Tk(15), 14, 17),
+    ("pause_top", Origin::Sprite(3137), 160, 46),
+    ("pause_bottom", Origin::Sprite(1697), 112, 24),
 ];
 
 /// Coverage to one of 16 levels. Thin strokes lose their contrast when the
@@ -56,6 +73,27 @@ fn level(alpha: u8, luma: u8) -> u8 {
     // of anti-aliased curves and still firms up the edges.
     let v = 0.5 * s + 0.5 * t;
     (v * 15.0).round() as u8
+}
+
+/// The pieces the title draws whole, in the order its VRAM strip keeps them, and the menu
+/// pointer's source sprite and size.
+const TITLE_PIECES: [&str; 2] = ["fleur_top", "fleur_bottom"];
+const TITLE_ORDER: [&str; 4] = ["fleur_top", "fleur_bottom", "pointer", "pointer_mirrored"];
+const POINTER_SPRITE: i64 = 101;
+const POINTER_W: usize = 20;
+const POINTER_H: usize = 14;
+
+/// `grey` (one index per pixel) as 4bpp rows padded to whole halfwords, first pixel in the low nibble.
+fn whole_rows(grey: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let padded = width.div_ceil(4) * 4;
+    let mut out = Vec::with_capacity(padded / 2 * height);
+    for y in 0..height {
+        for x in (0..padded).step_by(2) {
+            let at = |xx: usize| if xx < width { grey[y * width + xx] } else { 0 };
+            out.push(at(x) | (at(x + 1) << 4));
+        }
+    }
+    out
 }
 
 /// The HUD's Geo icon: `Geo Sprite` of the UI collection (resources.assets:21155
@@ -117,10 +155,30 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         p.copy_from_slice(&[24, 28, 40, 255]);
     }
     let mut cursor = [4i64, 4i64];
-    for (name, id, width, height) in PIECES {
-        let (full, _) = tk_sprite(&source, &resources, &collection, id, &mut textures)?;
+    // The title's ornaments are the same pieces, whole instead of cut to cache tiles, plus the
+    // menu pointer (see `title_pieces`): rows padded to halfwords, in the order the guest uploads.
+    let mut title: Vec<(&str, usize, usize, Vec<u8>)> = Vec::new();
+    for (name, from, width, height) in PIECES {
+        let (full, source_name) = match from {
+            Origin::Tk(id) => (
+                tk_sprite(&source, &resources, &collection, id, &mut textures)?.0,
+                format!("resources.assets:{COLLECTION} sprite {id}"),
+            ),
+            Origin::Sprite(id) => {
+                let object = source.object(&resources, id).map_err(|e| e.to_string())?;
+                (
+                    hk_unity::texture::sprite_image(&source, &object)
+                        .map_err(|e| e.to_string())?
+                        .0,
+                    format!("resources.assets Sprite {id}"),
+                )
+            }
+        };
         let shrunk = full.resize(width, height, Filter::Lanczos);
         let grey = indices(&shrunk);
+        if TITLE_PIECES.contains(&name) {
+            title.push((name, width, height, whole_rows(&grey, width, height)));
+        }
         let first = tiles.len();
         let mut dx = 0;
         while dx < width {
@@ -160,11 +218,46 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         save_rgba(&preview_dir.join(format!("{name}.png")), &shown)?;
         report.push(json!({
             "piece": name,
-            "source": format!("resources.assets:{COLLECTION} sprite {id}"),
+            "source": source_name,
             "source_size": [full.width, full.height],
             "size": [width, height],
             "tiles": tiles.len() - first,
         }));
+    }
+    // The menu pointer: the final frame of the title menu's `main_menu_pointer_anim`
+    // (sharedassets0.assets Sprite 101), as it points left of the chosen row and mirrored for the right.
+    {
+        let shared = source.file("sharedassets0.assets").map_err(|e| e.to_string())?;
+        let object = source.object(&shared, POINTER_SPRITE).map_err(|e| e.to_string())?;
+        let (full, _) = hk_unity::texture::sprite_image(&source, &object).map_err(|e| e.to_string())?;
+        let small = full.resize(POINTER_W, POINTER_H, Filter::Lanczos);
+        for (name, image) in [("pointer", small.clone()), ("pointer_mirrored", small.flip_left_right())] {
+            let grey = indices(&image);
+            let mut shown = Image::new(Mode::Rgba, POINTER_W, POINTER_H);
+            for (i, &v) in grey.iter().enumerate() {
+                let g = (u32::from(v) * 255 / 15) as u8;
+                shown.data[i * 4..i * 4 + 4].copy_from_slice(&[g, g, g, 255]);
+            }
+            save_rgba(&preview_dir.join(format!("{name}.png")), &shown)?;
+            title.push((name, POINTER_W, POINTER_H, whole_rows(&grey, POINTER_W, POINTER_H)));
+        }
+    }
+    {
+        let mut ornaments: Vec<u8> = Vec::new();
+        let mut rust = String::from("// Generated by hk-cook dialogue-art (host/hk-cook/src/dialogue_art.rs).\n");
+        rust += "/// offset into the title ornaments, width and height in pixels; rows padded to halfwords.\n";
+        for wanted in TITLE_ORDER {
+            let (_, w, h, rows) = title.iter().find(|t| t.0 == wanted).ok_or("title piece missing")?;
+            rust += &format!(
+                "pub const TITLE_{}: (usize, u8, u8) = ({}, {w}, {h});\n",
+                wanted.to_uppercase(),
+                ornaments.len()
+            );
+            ornaments.extend_from_slice(rows);
+        }
+        rust += &format!("pub const TITLE_ORNAMENT_BYTES: usize = {};\n", ornaments.len());
+        std::fs::write(root.join("data/menu-ornaments.hk"), &ornaments).map_err(|e| e.to_string())?;
+        std::fs::write(root.join("data/menu_ornaments.rs"), rust).map_err(|e| e.to_string())?;
     }
     // The Geo icon, cut to one font cell. read_points.py pastes it into the
     // glyph strip's first unused cell (95), where the guest draws it as a glyph:
@@ -187,9 +280,9 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         }
         save_rgba(&preview_dir.join("coin.png"), &shown)?;
     }
-    if blob.len() > 4096 {
+    if blob.len() > 9216 {
         return err(format!(
-            "dialogue art is {} bytes, the resident budget is 4096",
+            "dialogue art is {} bytes, the resident budget is 9216",
             blob.len()
         ));
     }
