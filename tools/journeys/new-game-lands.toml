@@ -4,7 +4,7 @@
 #   psoxide-gate run tools/journeys/new-game-lands.toml --disc <hk-psx.cue> --no-hw --out <dir>
 #
 # from the repository root, with build/hk-psx.map the link map of that disc (`symbols` resolves against the
-# working directory). The disc is the plain one (no opening movies: a new game on an intro disc plays them first).
+# working directory). The disc is the plain one (no opening movies); new-game-lands-intro.toml is the same journey on a disc built with `build --intro`.
 name = "new-game-lands"
 title = "new game: the drop lands and stays"
 disc = ["lib/hk-psx.cue"]
@@ -29,16 +29,7 @@ press = ["cross"]
 hold = 3
 
 [[step]]
-label = "the movies start (the player is loading and then streaming)"
-wait = 450
-
-[[step]]
-label = "Start skips the movies"
-press = ["start"]
-hold = 3
-
-[[step]]
-label = "the game comes back and drops in (region 79 = the top view of the shaft)"
+label = "the Knight drops in (region 79 = the top view of the shaft)"
 timeout = 7200
 [step.wait_until]
 kind = "ram"

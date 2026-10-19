@@ -252,6 +252,11 @@ pub fn loads_from_csv(text: &str, mode: &str, loads: &str) -> Result<Vec<Load>> 
     Ok(spans)
 }
 
+/// The mask of a button by the name a journey uses (`r3`, `cross`, ...).
+pub fn button_mask(name: &str) -> Option<u16> {
+    BUTTONS.iter().find(|(n, _)| *n == name).map(|(_, m)| *m)
+}
+
 const BUTTONS: [(&str, u16); 16] = [
     ("select", 1), ("l3", 2), ("r3", 4), ("start", 8), ("up", 16), ("right", 32), ("down", 64),
     ("left", 128), ("l2", 256), ("r2", 512), ("l1", 1024), ("r1", 2048), ("triangle", 4096),
@@ -613,6 +618,23 @@ pub fn set_pads(text: &str, pads: &[usize]) -> String {
     out
 }
 
+/// `tape` with the buttons in `mask` held from sample `first` up to (not including) `last`. A new
+/// game's tape holds R3 across the load so that the game begins on the ledge rather than with the
+/// opening drop (game/src/main.rs), the state every recorded route is bit-exact from.
+pub fn hold_buttons(tape: &[u8], first: usize, last: usize, mask: u16) -> Result<Vec<u8>> {
+    let parsed = Tape::parse(tape)?;
+    if first >= last || last > parsed.len() {
+        return Err(format!("polls {first}..{last} are outside the tape ({} polls)", parsed.len()).into());
+    }
+    let mut out = tape.to_vec();
+    for i in first..last {
+        let at = 16 + i * 6;
+        let held = u16::from_le_bytes([out[at], out[at + 1]]) | mask;
+        out[at..at + 2].copy_from_slice(&held.to_le_bytes());
+    }
+    Ok(out)
+}
+
 /// `cargo hk-build cuts`: write `NAME.cuts` for every route whose baseline replay in `from`
 /// (a `validate` output directory) loaded at least `minimum` scenes after the first.
 pub fn write_cuts(root: &Path, from: &Path, names: &[String], minimum: usize) -> Result<()> {
@@ -701,6 +723,20 @@ mod tests {
                    x FAIL a/r: ram HK_LOAD_LOG eq -1: value = [9399 (@0x1)] [probe-resume-1]\n";
         assert_eq!(parse_probes(log, 2).unwrap(), vec![3, 1]);
         assert!(parse_probes(log, 3).is_err());
+    }
+
+    #[test]
+    fn a_held_button_is_added_to_the_polls_it_covers() {
+        let mut bytes = b"PXITAPE2".to_vec();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        for mask in [0u16, 0x8, 0] {
+            bytes.extend_from_slice(&mask.to_le_bytes());
+            bytes.extend_from_slice(&[0x80; 4]);
+        }
+        let tape = Tape::parse(&hold_buttons(&bytes, 1, 3, 4).unwrap()).unwrap();
+        assert_eq!((0..3).map(|i| tape.mask(i)).collect::<Vec<_>>(), vec![0, 0xc, 4]);
+        assert!(hold_buttons(&bytes, 2, 4, 4).is_err());
     }
 
     #[test]

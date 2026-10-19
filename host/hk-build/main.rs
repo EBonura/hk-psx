@@ -2023,7 +2023,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|earned-focus|gate-receipt|disc|card-check|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|earned-focus|gate-receipt|disc|card-check|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace hk-psx.bin/.cue in --library, report, then validate\n\
@@ -2037,7 +2037,8 @@ fn usage() -> ! {
          routes    play only the closed-loop routes (those with a .cuts file) with psoxide-gate (--gate, or\n          \
          HK_PSX_GATE and HK_PSX_GATE_SHA256) against the current CUE\n\
          cuts      write NAME.cuts from the baseline replays in --work (default .hkpsx/validate), for every\n          \
-         --tape NAME with two or more scene loads\n\
+         --tape NAME with two or more scene loads (HK_CUTS_MIN=1 lets a one-load route have a cut list, for a wait)\n\
+         tape-hold NAME FIRST LAST BUTTON  hold BUTTON over polls FIRST..LAST of tools/tapes/NAME.pxtape\n\
          card-check  list a memory card image (.mcd) the way the console's card manager would, and check its layout\n          \
          earned-focus  prove four earned hits, two kills, real damage, and one Focus heal\n\
          gate-receipt  check one baseline-qualified scene-gate replay at --work\n\
@@ -2060,6 +2061,30 @@ fn main() {
             usage();
         }
         if let Err(error) = card_check::run(&files) {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if action == "tape-hold" {
+        // tape-hold NAME FIRST LAST BUTTON: hold BUTTON (cross, or several joined with +) over polls FIRST..LAST of tools/tapes/NAME.pxtape.
+        let (name, first, last, button) = (args.next(), args.next(), args.next(), args.next());
+        let (Some(name), Some(Ok(first)), Some(Ok(last)), Some(button)) =
+            (name, first.map(|v| v.parse::<usize>()), last.map(|v| v.parse::<usize>()), button)
+        else {
+            usage()
+        };
+        let result = (|| -> Result<()> {
+            let mut mask = 0;
+            for name in button.split('+') {
+                mask |= routes::button_mask(name).ok_or(format!("unknown button {name}"))?;
+            }
+            let path = root().join(format!("tools/tapes/{name}.pxtape"));
+            std::fs::write(&path, routes::hold_buttons(&std::fs::read(&path)?, first, last, mask)?)?;
+            println!("{name}: {button} held over polls {first}..{last}");
+            Ok(())
+        })();
+        if let Err(error) = result {
             eprintln!("error: {error}");
             std::process::exit(1);
         }
@@ -2143,7 +2168,7 @@ fn main() {
         "validate" => validate(&root, &options),
         "routes" => closed_routes(&root, &options, false),
         "measure" => closed_routes(&root, &options, true),
-        "cuts" => routes::write_cuts(&root, &options.work.clone().unwrap_or_else(|| root.join(".hkpsx/validate")), &options.tapes.iter().filter_map(|t| t.file_stem().map(|s| s.to_string_lossy().to_string())).collect::<Vec<_>>(), 2),
+        "cuts" => routes::write_cuts(&root, &options.work.clone().unwrap_or_else(|| root.join(".hkpsx/validate")), &options.tapes.iter().filter_map(|t| t.file_stem().map(|s| s.to_string_lossy().to_string())).collect::<Vec<_>>(), std::env::var("HK_CUTS_MIN").ok().and_then(|v| v.parse().ok()).unwrap_or(2)),
         "earned-focus" => frontend(&root, &options).and_then(|frontend| {
             earned_focus::validate(
                 &root,
@@ -2411,6 +2436,7 @@ mod tests {
             work: None,
             library: Some(library.clone()),
             cdda: Vec::new(),
+            intro: false,
         };
         assert_eq!(selected_library(&options), library);
         assert_ne!(selected_library(&options), disc_library());

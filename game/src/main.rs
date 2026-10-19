@@ -11,10 +11,10 @@ use psx_pad::{button, ButtonState};
 use psx_telemetry::{counter, emit, stage, task};
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
-/// Where a new game starts: x and y in Q16 world units (the `top1` gate of
-/// Tutorial_01 at x 34.5, just inside the scene's top edge y 92) and the global
-/// region whose activation bounds hold that point (regions.json index 78, chunk
-/// 79: x 24..48, y 91..100). The drop to SPAWN is a straight fall in the shaft.
+/// Where a new game starts: x and y in Q16 world units (the `top1` gate of Tutorial_01 at x 34.5,
+/// just inside the scene's top edge y 92) and the global region whose activation bounds hold that
+/// point (regions.json index 78, chunk 79: x 24..48, y 91..100). The drop to SPAWN is a straight
+/// fall in the shaft.
 const NEW_GAME_ENTRY: (i32, i32, usize) = (34 * 65536 + 32768, 92 * 65536, 78);
 mod ability_art;
 mod ambience;
@@ -963,15 +963,17 @@ fn main() {
         game.door.restore(s.door_hits);
         game.shade.restore(s.shade);
         game.shade.carry(None);
-    } else if resumed.is_some() && world::scene_of(NEW_GAME_ENTRY.2) == 0 {
-        // A new game that went through the opening movies (intro.rs) enters King's
-        // Pass the way the source's opening does: `GameManager.OnWillActivateFirstLevel`
-        // sets the entry gate to `top1` (Tutorial_01, (34.5, 93.5)) and the Knight
-        // drops down the shaft onto the ledge his death respawn marker (SPAWN) stands
-        // on. Dying before a bench still respawns at the marker, which `game.safe`
-        // keeps. A build without the player (the replay gates and every recorded
-        // tape start a new game from the title) keeps starting on the ledge, so its
-        // tapes stay as recorded until they are converted to state-driven routes.
+    } else if world::scene_of(NEW_GAME_ENTRY.2) == 0
+        && !menu::skip_drop()
+    {
+        // A new game enters King's Pass the way the source does: `GameManager.OnWillActivateFirstLevel`
+        // sets the entry gate to `top1` (Tutorial_01, (34.5, 93.5)) and the Knight drops down the
+        // shaft onto the ledge his death respawn marker (SPAWN) stands on. Dying before a bench
+        // still respawns at the marker, which `game.safe` keeps. Every build does this, with or
+        // without the opening movies (intro.rs). Holding all four shoulder buttons (L1 R1 L2 R2, which
+        // a digital pad can give and nobody does by accident) while the save slot is chosen starts him on the ledge instead: the recorded routes (tools/tapes) are bit-exact
+        // from that ledge, and the drop's own frame timing, title card and region binds cannot be made
+        // to match the ones they were recorded in.
         game.player = Player::spawn(NEW_GAME_ENTRY.0, NEW_GAME_ENTRY.1);
         game.region_id = NEW_GAME_ENTRY.2;
     }

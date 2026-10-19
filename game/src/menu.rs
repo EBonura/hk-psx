@@ -24,6 +24,14 @@ pub static mut HK_MENU_MUSIC: u32 = 10;
 // arena before the title and uploaded to VRAM; only its size, checksum and the
 // glyph advances stay linked.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/menu.rs"));
+/// Held together while the save slot is chosen, the four shoulder buttons start a new game on the
+/// ledge instead of with the drop from the top gate (main.rs). The recorded routes (tools/tapes)
+/// press them so they begin where they were recorded.
+const SKIP_DROP: u16 = button::L1 | button::R1 | button::L2 | button::R2;
+static mut SKIP_DROP_HELD: bool = false;
+pub fn skip_drop() -> bool {
+    unsafe { SKIP_DROP_HELD }
+}
 /// Whether the title art reached VRAM: a retry screen whose read failed draws
 /// no background rather than whatever a scene left in those pages.
 static mut ART: bool = false;
@@ -261,6 +269,9 @@ pub fn run(
             let old = menu.settings;
             let (page, row) = (menu.page, menu.selected);
             start = menu.step(bits);
+            if start {
+                unsafe { SKIP_DROP_HELD = bits & SKIP_DROP == SKIP_DROP };
+            }
             // MenuAudioController: startGame when a save is chosen, submit or
             // cancel (one clip) when a button changes the page, select for the
             // cursor and slider for an option step.

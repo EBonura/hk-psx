@@ -79,6 +79,10 @@ All on the pinned frontend `b3848054` for the open loop and `psoxide-gate` (emul
 
 Not proven: the unlanded seamless-gates branch; open-loop routes that cross loads are still timed by the length of those loads and need cut lists like the journeys.
 
+## New game: the drop and the shoulder hold
+
+A new game enters King's Pass the way the source does, from the `top1` gate at the top of the shaft, and falls to the ledge (about 250 polls). The recorded routes were made from the ledge spawn and are bit-exact through fights and jumps, and the drop's frame timing, title card and region binds cannot be made to match the ones they were recorded in (a tape delayed by the fall tracked the recorded Knight to within 0.6 units for 6,600 polls and then missed a jump). So a tape that starts a new game holds L1, R1, L2 and R2 together across the load, polls 12 up to the first gameplay poll plus six: the game reads them at the press that chooses the save slot and starts on the ledge (R3 would be nicer, but a digital pad, which is what the frontend replays, has none). `cargo hk-build tape-hold NAME FIRST LAST l1+r1+l2+r2` adds the hold to a tape; journey-kings carries it in its route string (`12:r3:18`). The drop itself is `tools/journeys/new-game-lands.toml` (plain disc) and `new-game-lands-intro.toml` (disc built with `--intro`), which press no R3.
+
 ## Limits
 
 * The gate is built from a newer emulator core than the pinned frontend (`b3848054`): pins are function, not cycles. Pacing stays on the frontend.
