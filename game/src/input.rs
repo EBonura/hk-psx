@@ -145,6 +145,33 @@ pub fn end_scene_load() -> u32 {
 pub fn held_buttons() -> u16 {
     unsafe { SAMPLER.held_buttons() }
 }
+/// Controller polls the sampler has taken so far (what `HK_INPUT_POLLS` publishes
+/// at the next checkpoint).
+pub fn polls() -> u32 {
+    unsafe { SAMPLER.stats().polls }
+}
+/// Route lock, on unless the build sets `HK_ROUTE_LOCK=0` (only to measure what a disc does
+/// without it, docs/ROUTES.md "Phase").
+pub const ROUTE_LOCK: bool = match option_env!("HK_ROUTE_LOCK") {
+    Some(s) => !s.as_bytes().is_empty() && s.as_bytes()[0] != b'0',
+    None => true,
+};
+/// Route lock: end the scene load's catch-up on a poll boundary. Everything the
+/// pad did since the load resumed is acknowledged as loading input, and the call
+/// returns just after a fresh poll, so the simulation's first tick consumes the
+/// poll after it. The caller publishes `HK_GAME_MODE = 1` at once; a closed-loop
+/// route (psoxide-gate) starts its next stretch of tape at the poll count where
+/// it sees that, so every disc then feeds the stretch to the simulation on the
+/// same tick, whatever the region setup cost on this layout (docs/ROUTES.md,
+/// "Phase"). `clock` is the last tick the simulation ran, none since the load.
+pub fn lock_resume(clock: u32) -> u32 {
+    begin_scene_load(clock);
+    let taken = polls();
+    while polls() == taken {
+        checkpoint();
+    }
+    end_scene_load()
+}
 fn failed(fault: Fault) -> ! {
     unsafe {
         HK_INPUT_FAULT = fault.code();
@@ -271,6 +298,35 @@ pub fn seed_latency() {
         LATE_PREVIOUS = SAMPLER.held_buttons();
         LATE_TAKEN = LATE_PREVIOUS;
         STEP_PHASE = PHASE_AT_LOAD;
+    }
+}
+/// Scene-load telemetry for the route phase study (`load-log`, implied by
+/// default): per scene-gate load, four words. Poll count and VBlank count
+/// when the load resumed, then the same two when the region setup that follows
+/// published `HK_GAME_MODE = 1`. The difference of the poll counts is how many
+/// ticks of held pad the simulation owes before a closed-loop stretch starts.
+#[cfg(feature = "load-log")]
+#[no_mangle]
+pub static mut HK_LOAD_LOG: [u32; 64] = [0; 64];
+/// Loads logged so far (the log keeps the last sixteen).
+#[cfg(feature = "load-log")]
+#[no_mangle]
+pub static mut HK_LOAD_LOG_COUNT: u32 = 0;
+#[cfg(feature = "load-log")]
+pub fn log_resume() {
+    unsafe {
+        let i = (HK_LOAD_LOG_COUNT as usize & 15) * 4;
+        HK_LOAD_LOG[i] = polls();
+        HK_LOAD_LOG[i + 1] = psx_rt::interrupts::vblank_count();
+    }
+}
+#[cfg(feature = "load-log")]
+pub fn log_published() {
+    unsafe {
+        let i = (HK_LOAD_LOG_COUNT as usize & 15) * 4;
+        HK_LOAD_LOG[i + 2] = polls();
+        HK_LOAD_LOG[i + 3] = psx_rt::interrupts::vblank_count();
+        HK_LOAD_LOG_COUNT = HK_LOAD_LOG_COUNT.wrapping_add(1);
     }
 }
 /// Route re-encoding telemetry (`tick-log`): per consumed tick, the poll

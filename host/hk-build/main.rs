@@ -1808,7 +1808,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
             let runs: Vec<_> = chunk
                 .iter()
                 .filter(|route| route.cuts.is_some())
-                .map(|route| (*route, routes::spawn_closed(root, gate, &library, &out, route, None)))
+                .map(|route| (*route, routes::spawn_closed(root, gate, &library, &out, route, None, false)))
                 .collect();
             for (route, run) in runs {
                 judge_closed(route, run?)?;
@@ -1833,7 +1833,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         open_card = Some(card);
         if let Some(gate) = &gate {
             if route.cuts.is_some() {
-                let run = routes::spawn_closed(root, gate, &library, &out, route, closed_card.as_deref())?;
+                let run = routes::spawn_closed(root, gate, &library, &out, route, closed_card.as_deref(), false)?;
                 closed_card = judge_closed(route, run)?;
             }
         }
@@ -1905,9 +1905,22 @@ fn gate_binary(options: &Options) -> Result<routes::Gate> {
     routes::Gate::resolve(options.gate.as_deref())
 }
 
+/// `cargo hk-build measure`, after one route's measuring run: read the neutral ticks per load
+/// from the gate log and write them into the route's cuts file.
+fn measured(root: &Path, out: &Path, route: &routes::Route) -> Result<()> {
+    let cuts = route.cuts.as_ref().ok_or("route has no cut list")?;
+    let log = std::fs::read_to_string(out.join(format!("{}-sd", route.name)).join("gate.log"))?;
+    let pads = routes::parse_probes(&log, cuts.loads.len())?;
+    let path = root.join(format!("tools/tapes/{}.cuts", route.name));
+    let text = routes::set_pads(&std::fs::read_to_string(&path)?, &pads);
+    std::fs::write(&path, text)?;
+    println!("{}: neutral ticks per load {:?} -> {}", route.name, pads, path.display());
+    Ok(())
+}
+
 /// `cargo hk-build routes`: play only the closed-loop routes (those with a cut list) on the
 /// selected disc, without the open-loop replays. HK_VALIDATE_ONLY narrows the list.
-fn closed_routes(root: &Path, options: &Options) -> Result<()> {
+fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
     let library = selected_library(options);
     let gate = gate_binary(options)?;
     let out = root.join(".hkpsx/validate-closed");
@@ -1927,11 +1940,15 @@ fn closed_routes(root: &Path, options: &Options) -> Result<()> {
     let mut failed = Vec::new();
     let mut judge = |route: &routes::Route, run: routes::ClosedRun| -> Result<Option<PathBuf>> {
         let result = routes::finish_closed(run)?;
-        println!("{} {} (closed loop): {}", if result.ok { "PASS" } else { "FAIL" }, route.name, result.headline);
-        for line in &result.failures {
+        // A measuring run fails its probes on purpose (the gate prints a failing assert's value).
+        let ok = result.ok
+            || (measure
+                && result.failures.iter().all(|l| l.contains("[probe-") || l.as_str() == result.headline.trim()));
+        println!("{} {} (closed loop): {}", if ok { "PASS" } else { "FAIL" }, route.name, result.headline);
+        for line in result.failures.iter().filter(|l| !(measure && (l.contains("[probe-") || l.as_str() == result.headline.trim()))) {
             println!("{}: {line}", route.name);
         }
-        if !result.ok {
+        if !ok {
             failed.push(route.name.clone());
         }
         Ok(result.card)
@@ -1940,16 +1957,22 @@ fn closed_routes(root: &Path, options: &Options) -> Result<()> {
     for chunk in plain.chunks(jobs) {
         let runs: Vec<_> = chunk
             .iter()
-            .map(|route| (*route, routes::spawn_closed(root, &gate, &library, &out, route, None)))
+            .map(|route| (*route, routes::spawn_closed(root, &gate, &library, &out, route, None, measure)))
             .collect();
         for (route, run) in runs {
             judge(route, run?)?;
+            if measure {
+                measured(root, &out, route)?;
+            }
         }
     }
     let mut card: Option<PathBuf> = None;
     for route in selected.iter().filter(|r| r.journey.is_some()) {
-        let run = routes::spawn_closed(root, &gate, &library, &out, route, card.as_deref())?;
+        let run = routes::spawn_closed(root, &gate, &library, &out, route, card.as_deref(), measure)?;
         card = judge(route, run)?;
+        if measure {
+            measured(root, &out, route)?;
+        }
     }
     if failed.is_empty() {
         println!("{} closed-loop routes pass.", selected.len());
@@ -1970,6 +1993,8 @@ fn usage() -> ! {
          from --emulator-source, default ../PSoXide-emulator); needs a checkout path without spaces\n\
          validate  replay the route tapes in tools/tapes against the current CUE, on the pinned\n          \
          emulator unless --frontend (or HK_PSX_FRONTEND) names another\n\
+         measure   play the closed-loop routes on a disc built with HK_ROUTE_LOCK=0 and write each load's\n          \
+         neutral ticks (telemetry) into the cuts files\n\
          routes    play only the closed-loop routes (those with a .cuts file) with psoxide-gate (--gate, or\n          \
          HK_PSX_GATE and HK_PSX_GATE_SHA256) against the current CUE\n\
          cuts      write NAME.cuts from the baseline replays in --work (default .hkpsx/validate), for every\n          \
@@ -2060,7 +2085,8 @@ fn main() {
         "build" => build(&root, &options, BuildMode::Normal),
         "pgo" => build(&root, &options, BuildMode::Pgo),
         "validate" => validate(&root, &options),
-        "routes" => closed_routes(&root, &options),
+        "routes" => closed_routes(&root, &options, false),
+        "measure" => closed_routes(&root, &options, true),
         "cuts" => routes::write_cuts(&root, &options.work.clone().unwrap_or_else(|| root.join(".hkpsx/validate")), &options.tapes.iter().filter_map(|t| t.file_stem().map(|s| s.to_string_lossy().to_string())).collect::<Vec<_>>(), 2),
         "earned-focus" => frontend(&root, &options).and_then(|frontend| {
             earned_focus::validate(

@@ -135,6 +135,12 @@ pub struct Load {
     pub end: usize,
     /// `HK_SCENE_LOADS` at that moment.
     pub loads_after: u64,
+    /// Neutral ticks played between the game saying gameplay is back and the next stretch. A game
+    /// built with `route-lock` resumes the simulation on a poll boundary, so these are the only
+    /// ticks the simulation runs before the stretch, on every disc layout. The baseline gives the
+    /// number: a replay without the lock ran as many neutral ticks as the region setup and the
+    /// gate's frame granularity left, 1 to 4 on the discs measured (docs/ROUTES.md, "Phase").
+    pub pad: usize,
 }
 
 /// A state the game must reach before the next stretch of tape is played, for drift
@@ -165,6 +171,13 @@ impl Cuts {
                     start: a.parse()?,
                     end: b.parse()?,
                     loads_after: c.parse()?,
+                    pad: 0,
+                }),
+                ["load", a, b, c, "pad", n] => cuts.loads.push(Load {
+                    start: a.parse()?,
+                    end: b.parse()?,
+                    loads_after: c.parse()?,
+                    pad: n.parse()?,
                 }),
                 ["wait", poll, symbol, op, value] => cuts.waits.push(Wait {
                     poll: poll.parse()?,
@@ -184,7 +197,11 @@ impl Cuts {
             let _ = writeln!(out, "# {line}");
         }
         for l in &self.loads {
-            let _ = writeln!(out, "load {} {} {}", l.start, l.end, l.loads_after);
+            if l.pad > 0 {
+                let _ = writeln!(out, "load {} {} {} pad {}", l.start, l.end, l.loads_after, l.pad);
+            } else {
+                let _ = writeln!(out, "load {} {} {}", l.start, l.end, l.loads_after);
+            }
         }
         for w in &self.waits {
             let _ = writeln!(out, "wait {} {} {} {}", w.poll, w.symbol, w.op, w.value);
@@ -226,7 +243,7 @@ pub fn loads_from_csv(text: &str, mode: &str, loads: &str) -> Result<Vec<Load>> 
         match (open, m) {
             (None, 2) => open = Some(polls),
             (Some(start), m) if m != 2 => {
-                spans.push(Load { start, end: polls, loads_after: l });
+                spans.push(Load { start, end: polls, loads_after: l, pad: 0 });
                 open = None;
             }
             _ => {}
@@ -285,6 +302,9 @@ pub struct Setup<'a> {
     pub card: Option<(&'a Path, String)>,
     /// Write the card back as a snapshot at the end (the next journey segment boots from it).
     pub snapshot: bool,
+    /// Read the guest's scene-load telemetry at every gameplay-is-back point and at the end, as
+    /// deliberately failing asserts whose detail carries the values (`cargo hk-build measure`).
+    pub probe: bool,
 }
 
 enum Cut<'a> {
@@ -319,11 +339,16 @@ pub fn write_journey(route: &Route, tape: &Tape, cuts: &Cuts, setup: &Setup, out
     let seg = |k: usize| format!("{name}-seg{k}.pxtape");
     // Stretch k runs from the end of cut k-1 to the start of cut k.
     let mut lo = 0usize;
+    let mut pad = 0usize;
+    let mut load_index = 0usize;
     for k in 0..=order.len() {
         let hi = order.get(k).map_or(tape.len(), |(poll, _)| *poll).min(tape.len());
         let lo_k = lo.min(hi);
         if hi > lo_k {
             std::fs::write(out.join(seg(k)), tape.slice(lo_k, hi))?;
+            if pad > 0 {
+                let _ = writeln!(toml, "\n[[step]]\nlabel = \"{pad} neutral ticks before stretch {k}\"\nwait = {pad}");
+            }
             let _ = writeln!(toml, "\n[[step]]\nlabel = \"play stretch {k} (polls {lo_k}..{hi} of the baseline)\"\ntape = \"{}\"", seg(k));
             if k > 0 {
                 let _ = writeln!(toml, "tape_rebase = true");
@@ -348,13 +373,26 @@ pub fn write_journey(route: &Route, tape: &Tape, cuts: &Cuts, setup: &Setup, out
                 let _ = writeln!(toml, "[step.wait_until]\nkind = \"ram\"\nsym = \"HK_SCENE_LOADS\"\nop = \"ge\"\nvalue = {}", load.loads_after);
                 let _ = writeln!(toml, "\n[[step]]\nlabel = \"wait for gameplay\"\ntimeout = 7200");
                 let _ = writeln!(toml, "[step.wait_until]\nkind = \"ram\"\nsym = \"HK_GAME_MODE\"\nop = \"eq\"\nvalue = 1");
+                if setup.probe {
+                    let _ = writeln!(toml, "\n[[step]]\nlabel = \"probe the poll count\"\ncheckpoint = \"probe{k}\"\ngolden = false\nno_matrix = true");
+                    let _ = writeln!(toml, "[[step.assert]]\nkind = \"ram\"\nsym = \"HK_INPUT_POLLS\"\nop = \"eq\"\nvalue = -1\nnote = \"probe-polls-{}\"", load_index);
+                }
                 lo = load.end;
+                pad = load.pad;
+                load_index += 1;
             }
             Cut::Wait(wait) => {
                 let _ = writeln!(toml, "\n[[step]]\nlabel = \"wait for {} {} {}\"\ntimeout = 7200", wait.symbol, wait.op, wait.value);
                 let _ = writeln!(toml, "[step.wait_until]\nkind = \"ram\"\nsym = \"{}\"\nop = \"{}\"\nvalue = {}", wait.symbol, wait.op, wait.value);
                 lo = wait.poll;
+                pad = 0;
             }
+        }
+    }
+    if setup.probe && load_index > 0 {
+        let _ = writeln!(toml, "\n[[step]]\nlabel = \"probe the resume polls\"\ncheckpoint = \"probe-resume\"\ngolden = false\nno_matrix = true");
+        for i in 0..load_index.min(16) {
+            let _ = writeln!(toml, "[[step.assert]]\nkind = \"ram\"\nsym = \"HK_LOAD_LOG\"\noffset = {}\nop = \"eq\"\nvalue = -1\nnote = \"probe-resume-{i}\"", 16 * i);
         }
     }
     // Pins first; the card snapshot after them so a failed run still says why.
@@ -436,6 +474,7 @@ pub fn spawn_closed(
     out: &Path,
     route: &Route,
     card_in: Option<&Path>,
+    probe: bool,
 ) -> Result<ClosedRun> {
     let cuts = route.cuts.as_ref().ok_or("route has no cut list")?;
     // The link map of the disc under test: game.map beside it in the library (a disc built elsewhere
@@ -466,6 +505,7 @@ pub fn spawn_closed(
         symbols: &map,
         card: card.as_ref().map(|(p, s)| (*p, s.clone())),
         snapshot: route.journey.is_some(),
+        probe,
     };
     let toml = write_journey(route, &tape, cuts, &setup, &dir)?;
     let child = std::process::Command::new(&gate.binary)
@@ -517,6 +557,47 @@ pub fn finish_closed(run: ClosedRun) -> Result<Closed> {
         None => None,
     };
     Ok(Closed { ok, card, failures, headline })
+}
+
+/// The neutral ticks each load left the baseline simulation before the stretch that followed it:
+/// the controller polls taken when gameplay was back (`probe-polls-i`) minus the polls taken when
+/// load i resumed (`probe-resume-i`, from the guest's `HK_LOAD_LOG`), both in the gate log's
+/// failing-assert detail. Valid only on a disc built without the route lock (`HK_ROUTE_LOCK=0`),
+/// where the gate's stretch starts after the region setup the layout happened to cost.
+pub fn parse_probes(gate_log: &str, loads: usize) -> Result<Vec<usize>> {
+    let find = |kind: &str, i: usize| -> Result<usize> {
+        let note = format!("[probe-{kind}-{i}]");
+        let line = gate_log.lines().find(|l| l.contains(&note)).ok_or(format!("no {note} in the gate log"))?;
+        let after = line.split("value = [").nth(1).ok_or(format!("no value in `{line}`"))?;
+        Ok(after.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("").parse()?)
+    };
+    (0..loads)
+        .map(|i| {
+            let (polls, resume) = (find("polls", i)?, find("resume", i)?);
+            polls.checked_sub(resume).ok_or_else(|| format!("load {i}: polls {polls} before resume {resume}").into())
+        })
+        .collect()
+}
+
+/// `text` (a cuts file) with the `pad` of its load lines replaced, in order.
+pub fn set_pads(text: &str, pads: &[usize]) -> String {
+    let mut k = 0;
+    let mut out = String::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.first() == Some(&"load") && f.len() >= 4 {
+            let pad = pads.get(k).copied().unwrap_or(0);
+            k += 1;
+            if pad > 0 {
+                let _ = writeln!(out, "load {} {} {} pad {}", f[1], f[2], f[3], pad);
+            } else {
+                let _ = writeln!(out, "load {} {} {}", f[1], f[2], f[3]);
+            }
+        } else {
+            let _ = writeln!(out, "{line}");
+        }
+    }
+    out
 }
 
 /// `cargo hk-build cuts`: write `NAME.cuts` for every route whose baseline replay in `from`
@@ -593,16 +674,32 @@ mod tests {
         assert_eq!(
             loads,
             vec![
-                Load { start: 0, end: 3, loads_after: 1 },
-                Load { start: 9, end: 14, loads_after: 2 }
+                Load { start: 0, end: 3, loads_after: 1, pad: 0 },
+                Load { start: 9, end: 14, loads_after: 2, pad: 0 }
             ]
         );
     }
 
     #[test]
+    fn probes_give_each_loads_neutral_ticks() {
+        let log = "x FAIL a/probe1: ram HK_INPUT_POLLS eq -1: value = [26 (@0x1)] [probe-polls-0]\n\
+                   x FAIL a/probe2: ram HK_INPUT_POLLS eq -1: value = [9400 (@0x1)] [probe-polls-1]\n\
+                   x FAIL a/r: ram HK_LOAD_LOG eq -1: value = [23 (@0x1)] [probe-resume-0]\n\
+                   x FAIL a/r: ram HK_LOAD_LOG eq -1: value = [9399 (@0x1)] [probe-resume-1]\n";
+        assert_eq!(parse_probes(log, 2).unwrap(), vec![3, 1]);
+        assert!(parse_probes(log, 3).is_err());
+    }
+
+    #[test]
+    fn pads_are_rewritten_in_place() {
+        let text = "# header\nload 21 24 1\nload 9280 9374 2 pad 5\nwait 5 HK_X eq 1\n";
+        assert_eq!(set_pads(text, &[3, 0]), "# header\nload 21 24 1 pad 3\nload 9280 9374 2\nwait 5 HK_X eq 1\n");
+    }
+
+    #[test]
     fn cuts_round_trip() {
         let cuts = Cuts {
-            loads: vec![Load { start: 4, end: 9, loads_after: 1 }],
+            loads: vec![Load { start: 4, end: 9, loads_after: 1, pad: 3 }],
             waits: vec![Wait { poll: 20, symbol: "HK_REGION_ID".into(), op: "eq".into(), value: 240 }],
         };
         assert_eq!(Cuts::parse(&cuts.render("baseline x\nsecond line")).unwrap(), cuts);
@@ -619,7 +716,7 @@ mod tests {
         }
         let tape = Tape::parse(&bytes).unwrap();
         let cuts = Cuts {
-            loads: vec![Load { start: 5, end: 8, loads_after: 1 }],
+            loads: vec![Load { start: 5, end: 8, loads_after: 1, pad: 2 }],
             waits: vec![],
         };
         let route = parse_pins("r", "HK_A = 1\nHK_B >= 2\n").unwrap();
@@ -630,11 +727,16 @@ mod tests {
             symbols: Path::new("/m.map"),
             card: None,
             snapshot: true,
+            probe: false,
         };
         let file = write_journey(&route, &tape, &cuts, &setup, &dir).unwrap();
         let toml = std::fs::read_to_string(file).unwrap();
         assert!(toml.contains("polls 0..5") && toml.contains("polls 8..12"));
         assert!(toml.contains("tape_rebase = true"));
+        // The load's neutral ticks are played once, between the load and the stretch that follows it.
+        assert_eq!(toml.matches("wait = 2").count(), 1);
+        assert!(toml.find("wait = 2").unwrap() > toml.find("polls 0..5").unwrap());
+        assert!(toml.find("wait = 2").unwrap() < toml.find("polls 8..12").unwrap());
         assert!(toml.contains("press = [\"right\"]"));
         assert!(toml.contains("sym = \"HK_SCENE_LOADS\"\nop = \"ge\"\nvalue = 1"));
         assert!(toml.contains("op = \"ge\"\nvalue = 2"));

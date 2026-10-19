@@ -18,7 +18,7 @@ prefetch-oracle = ["gate-tour"]
 # (hero_light.rs). On the 49 builder routes the two together cost 0.71% of
 # presented fps on average and 3.90% at worst (boss-fight); the palette
 # grade is free and always on.
-default = ["hero-light", "hero-vignette", "original-latency"]
+default = ["hero-light", "hero-vignette", "original-latency", "load-log"]
 hero-light = []
 hero-vignette = []
 # The original's one-frame walk/jump latency in the Knight's simulation
@@ -30,6 +30,9 @@ tick-log = []
 # Greenpath's Hornet (enemies/hornet.rs): the boss tier of the FSM kernel and her fight, in the Fungus1_04 room module. The build
 # turns it on when the Hornet postpass has written data/hornet_art.rs.
 hornet = ["hk-sim/boss"]
+# Scene-load poll telemetry (input.rs HK_LOAD_LOG): per load, the poll count when it
+# resumed and when gameplay was published, which is how a route's neutral ticks are measured.
+load-log = []
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
 psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }

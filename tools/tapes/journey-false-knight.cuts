@@ -1,10 +1,12 @@
 # Scene loads of the baseline replay (polls), cut by `cargo hk-build cuts`.
 # baseline disc sha256 642466c16812ff38070d342a964de1cd46aef2c29fb03244b53847fd216c1cdd
 # see docs/ROUTES.md
-load 21 22 1
-load 384 421 2
-load 1798 1829 3
-load 3210 3321 4
-load 10959 11064 5
-load 12632 12673 6
-load 13115 13138 7
+# pad N: neutral ticks the simulation ran after that load on the reference disc (built with HK_ROUTE_LOCK=0,
+# disc sha256 693dfef232cc01a3a446ddd8ad115c92b37b712276c421c0e05ac7db90f5858a), measured from guest telemetry by `cargo hk-build measure`; a game with the route lock replays exactly N.
+load 21 22 1 pad 2
+load 384 421 2 pad 2
+load 1798 1829 3 pad 2
+load 3210 3321 4 pad 3
+load 10959 11064 5 pad 3
+load 12632 12673 6 pad 2
+load 13115 13138 7 pad 1

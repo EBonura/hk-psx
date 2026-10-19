@@ -935,6 +935,8 @@ fn main() {
         sim_clock.wrapping_add(1),
     );
     let mut initial = true;
+    // A scene-gate load has resumed and its region setup has not yet published gameplay.
+    let mut load_published_pending = false;
     // Timer1 counts HBlanks for frame-pacing telemetry only.
     psx_io::timers::set_mode(psx_io::timers::Timer::Timer1, 0x0100);
     'region: loop {
@@ -975,6 +977,9 @@ fn main() {
             sim_clock = psx_rt::interrupts::vblank_count();
             hk_clock.realign(sim_clock.wrapping_add(1));
             input::start(sim_clock);
+            #[cfg(feature = "load-log")]
+            input::log_resume();
+            load_published_pending = true;
         }
         // Region entry follows a scene load or a boundary crossing without a
         // poll since the last frame. Service the pad around each bank-driven
@@ -1035,6 +1040,16 @@ fn main() {
         great_door::apply(&game.door, &mut game.state, game.region_id);
         battle_gates::apply(&mut game.state, game.region_id, game.view);
         blocker_terrain::apply(&mut game.state, game.region_id);
+        if load_published_pending {
+            load_published_pending = false;
+            if input::ROUTE_LOCK {
+                sim_clock = input::lock_resume(sim_clock);
+                hk_clock.realign(sim_clock.wrapping_add(1));
+                input::seed_latency();
+            }
+            #[cfg(feature = "load-log")]
+            input::log_published();
+        }
         unsafe {
             HK_GAME_MODE = 1;
             HK_REGION_ID = game.region_id as u32 + 1;
@@ -1371,6 +1386,9 @@ fn main() {
                     .expect("scene gate load");
                     hk_clock.realign(sim_clock.wrapping_add(1));
                     input::seed_latency();
+                    #[cfg(feature = "load-log")]
+                    input::log_resume();
+                    load_published_pending = true;
                     let held = ButtonState::from_bits(input::held_buttons());
                     game.player.was_jump = held.is_held(button::CROSS);
                     game.start_held = held.is_held(button::START);
