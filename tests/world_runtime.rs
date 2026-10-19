@@ -770,3 +770,66 @@ fn actor_terrain_scratch_matches_direct_filter_for_both_views_and_mutations() {
         check(&state,&active,&source);check(&state,&other,&target);
     }
 }
+
+mod nail_data {
+    include!("../data/params.rs");
+}
+
+/// Every non-secret breakable of every cooked disc bank answers a nail swing
+/// from some place the Knight can stand: a sweep of Knight positions and facings
+/// around the object, with each of the four swing shapes, finds one that breaks
+/// it. A breakable that no swing reaches is a cook or runtime fault, and the
+/// reachable-from-the-front cases are the ones a player notices.
+#[test]
+fn every_breakable_on_every_disc_bank_can_be_struck_open() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.hkpsx/world-metadata-packed");
+    let mut banks: Vec<_> = std::fs::read_dir(&dir).expect("cooked disc banks").flatten()
+        .map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "hkwm")).collect();
+    banks.sort();
+    let (mut objects, mut unreachable) = (0u32, Vec::new());
+    let step = hk_sim::ONE / 2;
+    for path in &banks {
+        let bytes: &'static [u8] = Box::leak(std::fs::read(path).unwrap().into_boxed_slice());
+        use_bank(bytes);
+        let meta = hk_format::WorldMeta::parse(bytes).unwrap();
+        let scene = meta.scene_id() as usize;
+        for m in meta.regions() {
+            let global = m.global_id() as usize;
+            if world::scene_of(global - 1) != scene { continue; }
+            let region = world::resident(global - 1).expect("region resident in its bank");
+            for b in world::breakables(m) {
+                if b.secret().is_some() { continue; }
+                objects += 1;
+                let bounds = b.bounds();
+                let mut state = State::new();
+                let mut found = false;
+                'search: for kind in 0..4u16 {
+                    let mut nail = Nail::new();
+                    nail.active = true;
+                    nail.age = 3;
+                    nail.kind = kind;
+                    let mut x = bounds[0] - 5 * hk_sim::ONE;
+                    while x <= bounds[2] + 5 * hk_sim::ONE {
+                        let mut y = bounds[1] - 5 * hk_sim::ONE;
+                        while y <= bounds[3] + 5 * hk_sim::ONE {
+                            for facing in [-1, 1] {
+                                let mut player = Player::spawn(x, y);
+                                player.facing = facing;
+                                let body = [x - hk_sim::ONE / 4, y - hk_sim::ONE, x + hk_sim::ONE / 4, y];
+                                state.strike(&region, &nail, nail_data::ATTACK_PARAMS, nail_data::NAIL_POLYGONS, &player, 1, body);
+                                if state.broken(b.id()) { found = true; break 'search; }
+                            }
+                            y += step;
+                        }
+                        x += step;
+                    }
+                }
+                if !found { unreachable.push((path.file_name().unwrap().to_string_lossy().into_owned(), global, b.id(), bounds)); }
+            }
+        }
+    }
+    eprintln!("{objects} breakables over {} banks, {} that no swing breaks", banks.len(), unreachable.len());
+    for u in &unreachable { eprintln!("  never breaks: {u:?}"); }
+    assert!(objects > 0);
+    assert!(unreachable.is_empty(), "{unreachable:?}");
+}

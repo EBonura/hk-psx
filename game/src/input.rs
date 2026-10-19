@@ -111,6 +111,18 @@ fn publish_stats() {
         crate::HK_PAD_POLL_MAX_VBLANK_GAP = stats.max_poll_gap;
     }
 }
+/// The video period counter, for timing a card operation.
+pub fn vblanks() -> u32 {
+    psx_rt::interrupts::vblank_count()
+}
+/// Wait `n` video periods without servicing the pad (card retries, where the
+/// card must be left alone and the sampler may not exist yet).
+pub fn wait_vblanks(n: u32) {
+    let end = psx_rt::interrupts::vblank_count().wrapping_add(n);
+    while (psx_rt::interrupts::vblank_count().wrapping_sub(end) as i32) < 0 {
+        core::hint::spin_loop();
+    }
+}
 /// Explicitly pause input consumption for a scene replacement. Enter before
 /// blocking work; all subsequent checkpoints still service pad/audio/display.
 pub fn begin_scene_load(sim_clock: u32) {

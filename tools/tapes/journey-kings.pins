@@ -14,6 +14,13 @@ scene_gate = true
 HK_SAVE_LOADED = 0
 HK_CHEATS = 1
 HK_GREAT_DOOR_OPENED = 1
+# Every one of the door's 13 accepted hits answered with the source's Hit reaction
+# (nail impact, camera shake, art recoil), not only the stage changes and the sound.
+HK_GREAT_DOOR_FX = 13
+# The six walls it breaks each asked the camera for EnemyKillShake.
+HK_BREAK_SHAKES = 6
+# The save notice went up, the write was accepted and nothing failed.
+HK_SAVE_UI = 4
 HK_SCENE_GATE_LOADS = 1
 HK_BENCH_RESTS = 1
 HK_SAVE_WRITES = 1

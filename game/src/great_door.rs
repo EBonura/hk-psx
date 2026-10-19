@@ -33,6 +33,10 @@ include!(concat!(
 pub struct Strike {
     pub hit: bool,
     pub opened: bool,
+    /// This hit moved the door to a more damaged pose (`Break 1`, `Break 2`),
+    /// which the source answers with `AverageShake`; an ordinary `Hit` sends
+    /// `EnemyKillShake`.
+    pub staged: bool,
 }
 pub struct World {
     hits: u8,
@@ -74,6 +78,16 @@ pub static mut HK_GREAT_DOOR_WAIT: u32 = 0;
 pub static mut HK_GREAT_DOOR_ENTRY_WAIT: u32 = 0;
 #[no_mangle]
 pub static mut HK_GREAT_DOOR_TRANSITIONS: u32 = 0;
+/// Hits answered with the source's `Hit` reaction (the nail impact, the camera
+/// shake and the door's recoil), one per accepted hit: 13 for a whole door.
+#[no_mangle]
+pub static mut HK_GREAT_DOOR_FX: u32 = 0;
+/// How far, in Q16 world units, and for how many ticks the art moves on a hit:
+/// the walls' own 0.1 unit (docs/SECRETS.md), out and back. The recoil rides the
+/// hit cooldown (the world state is held to 16 bytes), so it is the cooldown's
+/// first `FLINCH_TICKS` ticks.
+const FLINCH_TICKS: u8 = 3;
+const FLINCH_UNITS: i32 = 6554;
 impl World {
     pub const fn new() -> Self {
         Self {
@@ -322,14 +336,31 @@ impl World {
         {
             return Strike::default();
         }
+        let before = self.stage();
         self.hits += 1;
         self.cooldown = PARAMS.cooldown;
         let opened = self.opened();
         if opened {
             self.wait = PARAMS.transition;
         }
+        unsafe {
+            HK_GREAT_DOOR_FX = HK_GREAT_DOOR_FX.saturating_add(1);
+        }
         self.publish();
-        Strike { hit: true, opened }
+        Strike {
+            hit: true,
+            opened,
+            staged: !opened && self.stage() != before,
+        }
+    }
+    /// The door art's horizontal offset: it recoils away from the Knight for
+    /// half the flinch and returns for the rest.
+    pub fn flinch_x(&self, away: i32) -> i32 {
+        if self.cooldown > PARAMS.cooldown.saturating_sub(FLINCH_TICKS) {
+            FLINCH_UNITS * away
+        } else {
+            0
+        }
     }
     pub fn frame(&self, region: usize, camera: (i32, i32)) -> Option<usize> {
         if self.opened() {
@@ -361,7 +392,7 @@ pub fn apply(world: &World, state: &mut crate::world::State, region: usize) {
 }
 /// One door pose, drawn as the rectangle of animation slots it was cooked into,
 /// each tile covering its own share of the pose's world box.
-pub fn draw(room: &Room, frame: usize, camera: (i32, i32)) -> u32 {
+pub fn draw(room: &Room, frame: usize, camera: (i32, i32), dx: i32) -> u32 {
     let (_, cols, rows) = room.frame_grid(frame);
     for tile in 0..cols * rows {
         let (texture, b) = room.frame_tile(frame, tile);
@@ -369,7 +400,7 @@ pub fn draw(room: &Room, frame: usize, camera: (i32, i32)) -> u32 {
         let mut vertices = [(0i16, 0i16); 4];
         for (k, (x, y)) in coords.iter().enumerate() {
             vertices[k] = (
-                (160 + ((((POSITION[0] + x - camera.0) >> 8) * SCALE) >> 20)) as i16,
+                (160 + ((((POSITION[0] + dx + x - camera.0) >> 8) * SCALE) >> 20)) as i16,
                 (120 - ((((POSITION[1] + y - camera.1) >> 8) * SCALE) >> 20)) as i16,
             );
         }

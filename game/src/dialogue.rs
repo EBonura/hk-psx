@@ -291,7 +291,7 @@ pub fn prepare(
     geo: u32,
     pause: Option<(&crate::pause::State, &crate::menu::Settings)>,
     total_masks: u16,
-    save_prompt: Option<u8>,
+    save_ui: crate::save_ui::Ui,
 ) {
     unsafe {
         USED = 0;
@@ -403,19 +403,8 @@ pub fn prepare(
                 text(239, 140, "/10");
                 text(58, 207, "Left / Right: Volume   O: Resume");
             }
-        } else if let Some(row) = save_prompt {
-            // Seated at a bench. The source saves silently; this port asks first.
-            BOXES[0] = RectFlat::new(92, 84, 136, 72, 150, 150, 150);
-            BOXES[1] = RectFlat::new(94, 86, 132, 68, 0, 0, 0);
-            BOX_COUNT = 2;
-            text(160 - width("Save game?") / 2, 96, "Save game?");
-            for (i, label) in ["Yes", "No"].iter().enumerate() {
-                let y = 116 + i as i16 * 18;
-                text(146, y, label);
-                if row as usize == i {
-                    text(130, y, ">");
-                }
-            }
+        } else if save_ui != crate::save_ui::Ui::Idle {
+            save_notice(save_ui);
         } else if let Some(id) = STATE.active {
             panel(POINTS[id].pages, STATE.page);
         } else if let Some(id) = CONVO.active {
@@ -426,6 +415,76 @@ pub fn prepare(
             prompt_marker(camera, POINTS[id].marker, POINTS[id].label);
         } else if let Some(id) = CONVO.prompt {
             prompt_marker(camera, NPC_LINES[id].marker, NPC_LINES[id].label);
+        }
+        #[cfg(feature = "card-diag")]
+        crate::card_diag::overlay();
+    }
+}
+/// The bench's Save prompt and the notices that follow it: Saving, Saved, the
+/// format question and a failure, each in the same bordered box.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+fn save_notice(ui: crate::save_ui::Ui) {
+    use crate::save_ui::Ui;
+    let centered = |y: i16, line: &str| text(160 - width(line) / 2, y, line);
+    let rows = |row: u8, y: i16| {
+        for (i, label) in ["Yes", "No"].iter().enumerate() {
+            let y = y + i as i16 * 18;
+            text(146, y, label);
+            if row as usize == i {
+                text(130, y, ">");
+            }
+        }
+    };
+    match ui {
+        Ui::Idle => {}
+        // Seated at a bench. The source saves silently; this port asks first.
+        Ui::Ask(row) => {
+            panel_frame(92, 84, 136, 72);
+            centered(96, "Save game?");
+            rows(row, 116);
+        }
+        Ui::Format(row) => {
+            panel_frame(36, 76, 248, 96);
+            centered(86, "Memory card is not formatted.");
+            centered(102, "Format it and save?");
+            rows(row, 128);
+        }
+        Ui::Saving { format, .. } => {
+            panel_frame(36, 92, 248, 52);
+            centered(
+                102,
+                if format {
+                    "Formatting and saving..."
+                } else {
+                    "Saving..."
+                },
+            );
+            centered(120, "Do not remove the memory card.");
+        }
+        Ui::Saved(_) => {
+            panel_frame(104, 196, 112, 24);
+            centered(202, "Game saved");
+        }
+        Ui::Failed(fault) => {
+            panel_frame(12, 68, 296, 108);
+            centered(78, "Save failed");
+            centered(96, fault.message());
+            centered(112, fault.hint());
+            let (hardware, exchange) = unsafe {
+                (
+                    crate::save::HK_CARD_FAULT,
+                    crate::save::HK_CARD_FAULT_EXCHANGE.min(999),
+                )
+            };
+            let mut digits = [0u8; psx_math::fmt::U32_DEC_MAX];
+            text(24, 132, "Code");
+            text(
+                56,
+                132,
+                psx_math::fmt::u32_dec(&mut digits, fault as u32 * 10_000 + hardware * 1000 + exchange),
+            );
+            centered(152, "X: OK");
         }
     }
 }
