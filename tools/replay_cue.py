@@ -34,6 +34,9 @@ WATCHES+='HK_SCRIPT_ACTIVE HK_SCRIPT_TRANSITIONS HK_SCRIPT_WRITES HK_SCRIPT_FLAG
 # frame rather than that the Knight moved. Exported since the ability art
 # landed and never watched, which left every ability route asserting a
 # position instead.
+# The bench save's notice (save_ui.rs) and the card layer's last transaction (save.rs), the Great
+# Door's per-hit reaction and the camera shake an ordinary break asks for.
+WATCHES+='HK_SAVE_UI HK_CARD_FAULT HK_CARD_FAULT_EXCHANGE HK_CARD_RETRIES HK_CARD_FRAMES HK_CARD_LAST HK_CARD_WRITE_VBLANKS HK_GREAT_DOOR_FX HK_BREAK_SHAKES'.split()
 WATCHES+=['HK_ABILITY_DRAWN']
 # A queued display flip the GPU never released (no GP0(1Fh) reached it) and
 # the present loop wrote by hand after its timeout: a frame missing its close.
