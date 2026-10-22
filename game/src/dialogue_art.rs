@@ -11,7 +11,7 @@
 //! asks the cache for nothing.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/dialogue_art.rs"));
 #[cfg(not(test))]
-pub use presentation::{append_needed, prepared, texels, KEY_BASE};
+pub use presentation::{append_needed, board_prepared, pause_prepared, prepared, texels, Art, KEY_BASE};
 
 /// Pixels between the arrow or stop and the bottom fleur, and the width of the
 /// panel's backboard on either side of the fleur: layout shared with the
@@ -31,36 +31,57 @@ mod presentation {
     const _: () = assert!(KEY_BASE as usize + DIALOGUE_TILE_COUNT <= hk_cache::MAX_KEYS);
     const _: () = assert!(ART.len() == DIALOGUE_ART_BYTES);
     // A tile is one slot upload, and a slot is 64x64 4bpp.
-    const _: () = assert!(DIALOGUE_ART_BYTES <= 4096);
-    /// Whether this frame's working set carries the panel's tiles. `panel`
-    /// draws ornaments only for a frame that asked for them, so a panel that
-    /// opened after the set was fixed draws plain for one frame instead of
-    /// asking the cache for a slot it was never given.
-    static mut PREPARED: bool = false;
-    /// Frames the panel wanted its ornaments and the view behind it had
+    const _: () = assert!(DIALOGUE_ART_BYTES <= 9216);
+    /// The text panel's tiles come first, the pause screen's fleurs after them.
+    const PANEL_TILES: usize = DIALOGUE_PAUSE_TOP.0;
+    /// Which screen asks for ornaments in a frame.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub enum Art {
+        None,
+        /// A tablet or a conversation: the box's fleurs and its arrow or stop.
+        Panel,
+        /// The pause list and its pages: the crest and the flourish.
+        Pause,
+        /// The charm board: the thin flourish above and below.
+        Board,
+    }
+    /// What this frame's working set carries. A screen draws ornaments only for the
+    /// kind its frame asked for, so one that opened after the set was fixed draws
+    /// plain for one frame instead of asking the cache for a slot it was never given.
+    static mut PREPARED: Art = Art::None;
+    /// Frames a screen wanted its ornaments and the view behind it had
     /// already claimed every request the cache takes.
     #[no_mangle]
     pub static mut HK_DIALOGUE_ART_CROWDED: u32 = 0;
 
-    /// The panel's tiles for the frame's working set; nothing when no panel is up.
+    /// The tiles of `art` for the frame's working set; nothing when no screen is up.
     #[inline(never)]
-    pub fn append_needed(open: bool, needed: &mut [u16], len: &mut usize) {
-        unsafe { PREPARED = false };
-        if !open {
-            return;
-        }
-        if *len + DIALOGUE_TILE_COUNT > needed.len() {
+    pub fn append_needed(art: Art, needed: &mut [u16], len: &mut usize) {
+        unsafe { PREPARED = Art::None };
+        let tiles = match art {
+            Art::None => return,
+            Art::Panel => 0..PANEL_TILES,
+            Art::Pause => PANEL_TILES..DIALOGUE_TILE_COUNT,
+            Art::Board => DIALOGUE_FLEUR_BOTTOM.0..DIALOGUE_FLEUR_BOTTOM.0 + DIALOGUE_FLEUR_BOTTOM.1,
+        };
+        if *len + tiles.len() > needed.len() {
             unsafe { HK_DIALOGUE_ART_CROWDED = HK_DIALOGUE_ART_CROWDED.saturating_add(1) };
             return;
         }
-        for i in 0..DIALOGUE_TILE_COUNT {
+        for i in tiles {
             needed[*len] = KEY_BASE + i as u16;
             *len += 1;
         }
-        unsafe { PREPARED = true };
+        unsafe { PREPARED = art };
     }
     pub fn prepared() -> bool {
-        unsafe { PREPARED }
+        unsafe { PREPARED == Art::Panel }
+    }
+    pub fn pause_prepared() -> bool {
+        unsafe { PREPARED == Art::Pause }
+    }
+    pub fn board_prepared() -> bool {
+        unsafe { PREPARED == Art::Board }
     }
     /// Texels of one tile, for the animation cache's upload closure.
     pub fn texels(index: usize) -> Option<(&'static [u8], u16, u16)> {

@@ -429,7 +429,7 @@ impl Screen {
 #[cfg(not(test))]
 mod presentation {
     use super::*;
-    use crate::dialogue::{panel_frame, panel_number, panel_text, panel_width};
+    use crate::dialogue::{panel_number, panel_text, panel_width};
     use psx_gpu::{
         material::{BlendMode, TextureMaterial},
         ot::OrderingTable,
@@ -571,7 +571,11 @@ mod presentation {
     /// sets the row pitch and the row pitch sets everything under it.
     pub fn panel(screen: &Screen) {
         unsafe { ICON_COUNT = 0 };
-        panel_frame(PANEL_RECT.0, PANEL_RECT.1, PANEL_RECT.2, PANEL_RECT.3);
+        let top = screen.top();
+        crate::dialogue::board_frame(
+            ROW_TOP + (screen.row - top) as i16 * ROW_PITCH,
+            ROW_PITCH,
+        );
         panel_text(160 - panel_width("Charms") / 2, TITLE_Y, "Charms");
         let s = state();
         let label = if s.overcharmed() {
@@ -583,7 +587,6 @@ mod presentation {
         panel_number(110 + panel_width(label) + 6, NOTCH_Y, u32::from(s.filled()));
         panel_text(110 + panel_width(label) + 18, NOTCH_Y, "/");
         panel_number(110 + panel_width(label) + 26, NOTCH_Y, u32::from(s.notches));
-        let top = screen.top();
         let drawable = unsafe { PREPARED } == Some(top);
         for offset in 0..VISIBLE {
             let charm = top + offset + 1;
@@ -592,13 +595,11 @@ mod presentation {
             }
             let y = ROW_TOP + offset as i16 * ROW_PITCH;
             let text_y = y + ROW_TEXT_OFFSET;
-            if charm == screen.row + 1 {
-                panel_text(CURSOR_X, text_y, ">");
-            }
+            let gain = crate::dialogue::row_gain(charm == screen.row + 1);
             if drawable {
                 icon(charm - 1, ICON_X, y);
             }
-            panel_text(
+            crate::dialogue::panel_text_gain(
                 MARK_X,
                 text_y,
                 if s.equipped(charm) {
@@ -608,8 +609,9 @@ mod presentation {
                 } else {
                     "-"
                 },
+                gain,
             );
-            panel_text(NAME_X, text_y, State::charm(charm).name);
+            crate::dialogue::panel_text_gain(NAME_X, text_y, State::charm(charm).name, gain);
             panel_number(COST_X, text_y, u32::from(State::charm(charm).cost));
         }
         for (i, line) in State::charm(screen.row + 1).lines.iter().enumerate() {
