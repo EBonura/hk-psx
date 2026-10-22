@@ -498,7 +498,7 @@ mod live {
         }
     }
     pub fn prepare(camera: (i32, i32)) -> bool {
-        use crate::dialogue::{panel_frame, panel_pages, panel_prompt, panel_text, panel_width};
+        use crate::dialogue::{panel_box, panel_pages, panel_prompt, panel_text, panel_width};
         let s = me();
         match s.phase {
             Some(Phase::Talk(talk, page)) => {
@@ -506,20 +506,22 @@ mod live {
                 true
             }
             Some(Phase::Message) => {
-                panel_frame(30, 64, 260, 112);
-                panel_text(160 - panel_width(SPELL_NAME) / 2, 76, SPELL_NAME);
+                // The conversation box's line pitch.
+                const ROW: i16 = 16;
+                let y = panel_box(2 + SPELL_NOTE.len() as i16);
+                panel_text(160 - panel_width(SPELL_NAME) / 2, y, SPELL_NAME);
                 let o = "O";
                 let w = panel_width(TAP) + 6 + panel_width(o) + 6 + panel_width(SPELL_LINE);
                 let x = 160 - w / 2;
-                panel_text(x, 104, TAP);
-                panel_text(x + panel_width(TAP) + 6, 104, o);
+                panel_text(x, y + ROW, TAP);
+                panel_text(x + panel_width(TAP) + 6, y + ROW, o);
                 panel_text(
                     x + panel_width(TAP) + 6 + panel_width(o) + 6,
-                    104,
+                    y + ROW,
                     SPELL_LINE,
                 );
                 for (i, line) in SPELL_NOTE.iter().enumerate() {
-                    panel_text(160 - panel_width(line) / 2, 130 + i as i16 * 16, line);
+                    panel_text(160 - panel_width(line) / 2, y + (2 + i as i16) * ROW, line);
                 }
                 true
             }

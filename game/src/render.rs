@@ -2436,7 +2436,6 @@ pub fn submit(
         // The Shaman's black and fade: over the world and the HUD, under the
         // panel text, so the spell's message shows on black.
         crate::shaman::append(ot);
-        crate::title_card::append(ot);
         crate::hud::append(ot, health, max_health, soul, max_soul, paused, blue_health);
         for i in (KICKED..USED).rev() {
             if i & 31 == 0 {

@@ -75,9 +75,12 @@ static mut GLYPHS: [Glyph; CAP] = [const { EMPTY }; CAP];
 static mut BOXES: [RectFlat; 2] = [const { RectFlat::new(0, 0, 0, 0, 0, 0, 0) }; 2];
 /// The ornate panel's backboard: a 3x3 grid of translucent quads, flat in the
 /// middle and fading out at every edge.
-static mut BACKBOARD: [QuadGouraudBlended; 9] = [const {
+static mut BACKBOARD: [QuadGouraudBlended; BACKBOARDS] = [const {
     QuadGouraudBlended::new([(0, 0); 4], [(0, 0, 0); 4], BlendMode::Subtract)
-}; 9];
+}; BACKBOARDS];
+/// Backboard quads a frame can carry: the charm board's black, nine of purple glow and two of
+/// light behind the chosen slot.
+const BACKBOARDS: usize = 12;
 static mut BACKBOARD_COUNT: usize = 0;
 static mut USED: usize = 0;
 static mut BOX_COUNT: usize = 0;
@@ -398,11 +401,6 @@ pub fn prepare(
                     130,
                     "Back to the new game spawn.",
                 );
-                text(
-                    160 - width("X: Reset    O: Cancel") / 2,
-                    160,
-                    "X: Reset    O: Cancel",
-                );
             } else if p.charms.open {
                 crate::charms::panel(&p.charms);
             } else if p.cheats {
@@ -447,11 +445,6 @@ pub fn prepare(
                         );
                     }
                 }
-                text(
-                    160 - width("X: apply    Left/Right: off/on    O: back") / 2,
-                    214,
-                    "X: apply    Left/Right: off/on    O: back",
-                );
                 // More rows above or below the window.
                 if first > 0 {
                     text(296, 14, "^");
@@ -460,7 +453,7 @@ pub fn prepare(
                     text(157, TOP + WINDOW as i16 * CHEAT_PITCH, "v");
                 }
             } else if p.controls {
-                pause_backdrop(fleurs, LIST_Y + 9 * 13 + 3);
+                pause_backdrop(fleurs, LIST_Y + 8 * 13 + 3);
                 for (i, line) in [
                     "D-pad / left stick: Move",
                     "X: Jump    Square: Nail    Up: Inspect",
@@ -470,7 +463,6 @@ pub fn prepare(
                     "Hold Triangle: Dream Nail",
                     "L1: Quick Map (needs a map)",
                     "Select: Charms    Start: Pause",
-                    "X / O: Back",
                 ]
                 .iter()
                 .enumerate()
@@ -500,12 +492,9 @@ pub fn prepare(
                     .enumerate()
                 {
                     let y = LIST_Y + (i as i16 + 1) * LIST_PITCH;
-                    number(VOLUME_X, y, u32::from(*volume));
-                    text(VOLUME_X + 17, y, "/10");
+                    // The source's volume rows read the bare number, 0 to 100.
+                    number(VOLUME_X, y, u32::from(*volume) * 10);
                 }
-                // Under the flourish, as the box's footer was.
-                let hint = "Left / Right: Volume   O: Resume";
-                text(160 - width(hint) / 2, 220, hint);
             }
         } else if save_ui != crate::save_ui::Ui::Idle {
             save_notice(save_ui);
@@ -525,15 +514,16 @@ pub fn prepare(
     }
 }
 /// The bench's Save prompt and the notices that follow it: Saving, Saved, the
-/// format question and a failure, each in the same bordered box.
+/// format question and a failure, each in the conversation box.
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
 fn save_notice(ui: crate::save_ui::Ui) {
     use crate::save_ui::Ui;
+    // A line centred on the box, and the Yes and No rows with the cursor.
     let centered = |y: i16, line: &str| text(160 - width(line) / 2, y, line);
     let rows = |row: u8, y: i16| {
         for (i, label) in ["Yes", "No"].iter().enumerate() {
-            let y = y + i as i16 * 18;
+            let y = y + i as i16 * ORNATE_PITCH;
             text(146, y, label);
             if row as usize == i {
                 text(130, y, ">");
@@ -544,37 +534,39 @@ fn save_notice(ui: crate::save_ui::Ui) {
         Ui::Idle => {}
         // Seated at a bench. The source saves silently; this port asks first.
         Ui::Ask(row) => {
-            panel_frame(92, 84, 136, 72);
-            centered(96, "Save game?");
-            rows(row, 116);
+            let y = ornate_frame(3, Under::Nothing, None);
+            centered(y, "Save game?");
+            rows(row, y + ORNATE_PITCH);
         }
         Ui::Format(row) => {
-            panel_frame(36, 76, 248, 96);
-            centered(86, "Memory card is not formatted.");
-            centered(102, "Format it and save?");
-            rows(row, 128);
+            let y = ornate_frame(4, Under::Nothing, None);
+            centered(y, "Memory card is not formatted.");
+            centered(y + ORNATE_PITCH, "Format it and save?");
+            rows(row, y + 2 * ORNATE_PITCH);
         }
         Ui::Saving { format, .. } => {
-            panel_frame(36, 92, 248, 52);
+            let y = ornate_frame(2, Under::Nothing, None);
             centered(
-                102,
+                y,
                 if format {
                     "Formatting and saving..."
                 } else {
                     "Saving..."
                 },
             );
-            centered(120, "Do not remove the memory card.");
+            centered(y + ORNATE_PITCH, "Do not remove the memory card.");
         }
         Ui::Saved(_) => {
-            panel_frame(104, 196, 112, 24);
-            centered(202, "Game saved");
+            // Low on the screen, out of the way of the bench.
+            let top = 240 - ornate_height(1, Under::Nothing) - 6;
+            let y = ornate_frame(1, Under::Nothing, Some(top));
+            centered(y, "Game saved");
         }
         Ui::Failed(fault) => {
-            panel_frame(12, 68, 296, 108);
-            centered(78, "Save failed");
-            centered(96, fault.message());
-            centered(112, fault.hint());
+            let y = ornate_frame(4, Under::Stop, None);
+            centered(y, "Save failed");
+            centered(y + ORNATE_PITCH, fault.message());
+            centered(y + 2 * ORNATE_PITCH, fault.hint());
             let (hardware, exchange) = unsafe {
                 (
                     crate::save::HK_CARD_FAULT,
@@ -582,45 +574,30 @@ fn save_notice(ui: crate::save_ui::Ui) {
                 )
             };
             let mut digits = [0u8; psx_math::fmt::U32_DEC_MAX];
-            text(24, 132, "Code");
-            text(
-                56,
-                132,
-                psx_math::fmt::u32_dec(&mut digits, fault as u32 * 10_000 + hardware * 1000 + exchange),
-            );
-            centered(152, "X: OK");
+            let code = psx_math::fmt::u32_dec(&mut digits, fault as u32 * 10_000 + hardware * 1000 + exchange);
+            let w = width("Code ") + width(code);
+            text(160 - w / 2, y + 3 * ORNATE_PITCH, "Code ");
+            text(160 - w / 2 + width("Code "), y + 3 * ORNATE_PITCH, code);
         }
     }
 }
 /// Whether a tablet or an NPC conversation is up, which is when the panel
 /// wants its ornaments in the frame's animation working set (`frame.rs`).
-pub(crate) fn panel_up() -> bool {
-    unsafe { STATE.active.is_some() || CONVO.active.is_some() }
+#[inline(never)] // `frame::render` is large enough already.
+pub(crate) fn panel_up(save_ui: crate::save_ui::Ui) -> bool {
+    save_ui != crate::save_ui::Ui::Idle
+        || unsafe { STATE.active.is_some() || CONVO.active.is_some() }
+        || crate::mapper::open()
+        || crate::shaman::open()
 }
-/// The one text panel, shared by a tablet and an NPC conversation. A frame
+/// The one text panel, shared by a tablet and an NPC conversation (and, through `panel_box`, by
+/// Cornifer, the Snail Shaman and the bench's notices). A frame
 /// whose working set carries the ornaments draws the source's box (fleurs
 /// above and below the centred text, the arrow or the stop under it, over a
 /// dark backboard); any other frame draws the plain box, which is also what
 /// a view that has claimed the whole cache leaves room for.
 fn panel(pages: &[&'static [&'static str]], page: usize) {
-    if crate::dialogue_art::prepared() {
-        ornate(pages[page], page + 1 < pages.len());
-        return;
-    }
-    unsafe {
-        BOXES[0] = RectFlat::new(10, 46, 300, 160, 150, 150, 150);
-        BOXES[1] = RectFlat::new(12, 48, 296, 156, 0, 0, 0);
-        BOX_COUNT = 2;
-    }
-    for (i, line) in pages[page].iter().enumerate() {
-        text(24, 54 + i as i16 * 16, line);
-    }
-    let footer = if page + 1 < pages.len() {
-        "X: Next    O: Close"
-    } else {
-        "X / O: Close"
-    };
-    text(160 - width(footer) / 2, 184, footer);
+    ornate(pages[page], page + 1 < pages.len());
 }
 /// One ornament piece at (`x`, `y`): a textured rectangle per tile, 1:1.
 fn ornament(piece: (usize, usize, u16, u16), x: i16, y: i16) {
@@ -630,7 +607,32 @@ fn ornament(piece: (usize, usize, u16, u16), x: i16, y: i16) {
 pub(crate) fn board_art(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: u8) {
     ornament_tint(piece, x, y, tint);
 }
+/// One textured rectangle for a caller that has packed its own words (the area cards' glyphs):
+/// `tpage` is the page word, `uv` the texel and CLUT words and `wh` the size as the GPU takes them.
+/// A frame with no room left draws without it, as the packet table is the panels' too.
+pub(crate) fn raw_rect(x: i16, y: i16, tpage: u16, color: u32, uv: u32, wh: u32) {
+    unsafe {
+        if USED >= CAP {
+            return;
+        }
+        let p = &mut GLYPHS[USED];
+        USED += 1;
+        p.mode = 0xe100_0000 | u32::from(tpage);
+        p.color = color;
+        p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
+        p.uv = uv;
+        p.wh = wh;
+    }
+}
 fn ornament_tint(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: u8) {
+    ornament_color(piece, x, y, u32::from(tint) * 0x0001_0101);
+}
+/// One art piece of the charm board, drawn 1:1 at (`x`, `y`) in a colour (r, g, b): the grey
+/// ramp times it, 0x80 a channel as it is.
+pub(crate) fn board_art_rgb(piece: (usize, usize, u16, u16), x: i16, y: i16, (r, g, b): (u8, u8, u8)) {
+    ornament_color(piece, x, y, u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r));
+}
+fn ornament_color(piece: (usize, usize, u16, u16), x: i16, y: i16, color: u32) {
     let clut = Clut::new(320, 481).uv_clut_word() as u32;
     for tile in piece.0..piece.0 + piece.1 {
         let (_, w, h, dx) = crate::dialogue_art::DIALOGUE_TILES[tile];
@@ -641,39 +643,69 @@ fn ornament_tint(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: u8) {
             let p = &mut GLYPHS[USED];
             USED += 1;
             p.mode = 0xe100_0000 | crate::render::animation_tpage_word(key) as u32;
-            p.color = 0x6400_0000 | u32::from(tint) * 0x0001_0101;
+            p.color = 0x6400_0000 | color;
             p.xy = (x + dx as i16) as u16 as u32 | ((y as u16 as u32) << 16);
             p.uv = u32::from(u) | (u32::from(v) << 8) | (clut << 16);
             p.wh = u32::from(w) | (u32::from(h) << 16);
         }
     }
 }
-/// The ornate panel, near the top of the screen: fleur, the page's lines centred,
-/// arrow or stop, fleur. The height follows the page, as the source's does.
-fn ornate(lines: &[&str], more: bool) {
+/// Pixels between a line and the next in the ornate panel, and between the top fleur and the
+/// first line.
+const ORNATE_PITCH: i16 = 16;
+const ORNATE_GAP: i16 = 6;
+/// What the ornate panel carries under its last line: the arrow while there is more to read, the
+/// stop at the end, or nothing for a question or a notice.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Under {
+    Nothing,
+    Arrow,
+    Stop,
+}
+/// The panel's height for `rows` lines.
+fn ornate_height(rows: i16, under: Under) -> i16 {
+    use crate::dialogue_art::{DIALOGUE_FLEUR_BOTTOM, DIALOGUE_FLEUR_TOP, ICON_H};
+    let below = if under == Under::Nothing { 6 } else { 4 + ICON_H + 4 };
+    DIALOGUE_FLEUR_TOP.3 as i16
+        + ORNATE_GAP
+        + rows * ORNATE_PITCH
+        + below
+        + DIALOGUE_FLEUR_BOTTOM.3 as i16
+}
+/// The conversation box around `rows` lines: the fleurs, the arrow or the stop and the backboard,
+/// from `top` or, by default, near the top of the screen like the source's, so the speaker below
+/// stays in view; clear of the HUD's masks and Geo count above, and a full page of eight lines is
+/// exactly what the screen holds from there. Returns the y of the first line, which the caller
+/// draws (`ORNATE_PITCH` apart).
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+fn ornate_frame(rows: i16, under: Under, top: Option<i16>) -> i16 {
     use crate::dialogue_art::{
         DIALOGUE_ARROW, DIALOGUE_FLEUR_BOTTOM, DIALOGUE_FLEUR_TOP, DIALOGUE_STOP, ICON_H, ICON_W,
     };
-    const PITCH: i16 = 16;
-    const GAP: i16 = 6;
-    let rows = lines.len().max(1) as i16;
     let top_h = DIALOGUE_FLEUR_TOP.3 as i16;
     let bottom_h = DIALOGUE_FLEUR_BOTTOM.3 as i16;
-    let total = top_h + GAP + rows * PITCH + 4 + ICON_H + 4 + bottom_h;
-    // Near the top of the screen like the source's, so the speaker below stays in
-    // view; clear of the HUD's masks and Geo count above, and a full page of eight
-    // lines is exactly what the screen holds from there.
-    let top = 52.min(240 - total).max(40);
+    let total = ornate_height(rows, under);
+    let top = top.unwrap_or_else(|| 52.min(240 - total).max(40));
+    // A frame whose working set lacks the ornaments (the view behind has claimed the whole
+    // cache) gets a plain box of the same size, so the lines sit where they would.
+    if !crate::dialogue_art::prepared() {
+        panel_frame(10, top - 4, 300, (total + 8) as u16);
+        return top + top_h + ORNATE_GAP;
+    }
     let fleur = |piece: (usize, usize, u16, u16)| 160 - piece.2 as i16 / 2;
     ornament(DIALOGUE_FLEUR_TOP, fleur(DIALOGUE_FLEUR_TOP), top);
-    let first = top + top_h + GAP;
-    for (i, line) in lines.iter().enumerate() {
-        text(160 - width(line) / 2, first + i as i16 * PITCH, line);
-    }
-    let icon_y = first + rows * PITCH + 4;
-    let icon = if more { DIALOGUE_ARROW } else { DIALOGUE_STOP };
-    ornament(icon, 160 - ICON_W / 2 + (ICON_W - icon.2 as i16) / 2, icon_y);
-    let bottom_y = icon_y + ICON_H + 4;
+    let first = top + top_h + ORNATE_GAP;
+    let after = first + rows * ORNATE_PITCH;
+    let bottom_y = match under {
+        Under::Nothing => after + 6,
+        Under::Arrow | Under::Stop => {
+            let icon_y = after + 4;
+            let icon = if under == Under::Arrow { DIALOGUE_ARROW } else { DIALOGUE_STOP };
+            ornament(icon, 160 - ICON_W / 2 + (ICON_W - icon.2 as i16) / 2, icon_y);
+            icon_y + ICON_H + 4
+        }
+    };
     ornament(DIALOGUE_FLEUR_BOTTOM, fleur(DIALOGUE_FLEUR_BOTTOM), bottom_y);
     // The backboard: a 3x3 grid of translucent quads that darkens what is behind
     // the panel by a fixed amount inside and fades to nothing over the outer 24
@@ -700,6 +732,20 @@ fn ornate(lines: &[&str], more: bool) {
         }
     }
     unsafe { BACKBOARD_COUNT = 9 };
+    first
+}
+/// The ornate panel with one page of text: the page's lines centred, arrow or stop under them.
+fn ornate(lines: &[&str], more: bool) {
+    let rows = lines.len().max(1) as i16;
+    let first = ornate_frame(rows, if more { Under::Arrow } else { Under::Stop }, None);
+    for (i, line) in lines.iter().enumerate() {
+        text(160 - width(line) / 2, first + i as i16 * ORNATE_PITCH, line);
+    }
+}
+/// The conversation box for a caller that draws its own `rows` lines (Cornifer's question, the
+/// map notice, the Shaman's spell): returns the y of the first line, `ORNATE_PITCH` per row.
+pub(crate) fn panel_box(rows: i16) -> i16 {
+    ornate_frame(rows, Under::Nothing, None)
 }
 /// Where the pause screens put their pieces: the crest, the list under it and
 /// the flourish under that, all centred. The HUD's masks and Geo count sit above.
@@ -760,20 +806,70 @@ fn glow(left: i16, right: i16, y: i16, height: i16) {
         BACKBOARD_COUNT = n + 2;
     }
 }
-/// The charm board's backdrop: the view dimmed twice and a soft light behind the chosen slot.
-pub(crate) fn board_frame(left: i16, right: i16, y: i16, height: i16) {
-    pause_backdrop(false, 0);
-    // The source's inventory sits on its own near-black backboard: the dim again, so the
-    // description is never added to a bright piece of the frozen view behind it.
+/// The charm board's backdrop, as the source's `Charms` pane: the view blacked out, a purple glow
+/// strongest up and to the left (a 3x3 grid of additive quads shaded from the middle out to
+/// nothing at the screen's edge), and a soft light behind the chosen slot.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+pub(crate) fn board_backdrop(left: i16, right: i16, y: i16, height: i16) {
+    // Node colours at the four inner corners of the glow's 4x4 node grid; the outer ring is black.
+    const XS: [i16; 4] = [0, 60, 180, 320];
+    const YS: [i16; 4] = [0, 30, 120, 240];
+    let tone = |i: usize, j: usize| match (i, j) {
+        (1, 1) => (140, 52, 196),
+        (2, 1) => (96, 36, 140),
+        (1, 2) => (84, 30, 124),
+        (2, 2) => (44, 16, 66),
+        _ => (0, 0, 0),
+    };
     unsafe {
-        BACKBOARD[1] = QuadGouraudBlended::new(
+        BACKBOARD[0] = QuadGouraudBlended::new(
             [(0, 0), (320, 0), (0, 240), (320, 240)],
-            [(PAUSE_DIM, PAUSE_DIM, PAUSE_DIM); 4],
+            [(255, 255, 255); 4],
             BlendMode::Subtract,
         );
-        BACKBOARD_COUNT = 2;
+        for r in 0..3 {
+            for c in 0..3 {
+                BACKBOARD[1 + r * 3 + c] = QuadGouraudBlended::new(
+                    [(XS[c], YS[r]), (XS[c + 1], YS[r]), (XS[c], YS[r + 1]), (XS[c + 1], YS[r + 1])],
+                    [tone(c, r), tone(c + 1, r), tone(c, r + 1), tone(c + 1, r + 1)],
+                    BlendMode::Add,
+                );
+            }
+        }
+        BACKBOARD_COUNT = 10;
+        BOX_COUNT = 0;
     }
     glow(left, right, y, height);
+}
+/// A one texel rule, as the source's under its "Collection" label.
+pub(crate) fn board_rule(x: i16, y: i16, w: u16) {
+    unsafe {
+        BOXES[0] = RectFlat::new(x, y, w, 1, 150, 130, 176);
+        BOX_COUNT = 1;
+    }
+}
+/// A board art piece tinted (r, g, b) and added to what is behind it: the soul vessel's glow.
+pub(crate) fn board_glow_art(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: (u8, u8, u8)) {
+    let clut = Clut::new(320, 481).uv_clut_word() as u32;
+    let tile = piece.0;
+    let (_, w, h, dx) = crate::dialogue_art::DIALOGUE_TILES[tile];
+    let key = crate::dialogue_art::KEY_BASE + tile as u16;
+    let (u, v) = crate::render::animation_uv(key);
+    unsafe {
+        assert!(USED < CAP);
+        let p = &mut GLYPHS[USED];
+        USED += 1;
+        // Semi-transparency mode 1 (B+F) in the page word, and the semi-transparent command.
+        p.mode = 0xe100_0000 | u32::from(crate::render::animation_tpage_word(key) & !0x60 | 0x20);
+        p.color = 0x6600_0000
+            | u32::from(tint.2) << 16
+            | u32::from(tint.1) << 8
+            | u32::from(tint.0);
+        p.xy = (x + dx as i16) as u16 as u32 | ((y as u16 as u32) << 16);
+        p.uv = u32::from(u) | (u32::from(v) << 8) | (clut << 16);
+        p.wh = u32::from(w) | (u32::from(h) << 16);
+    }
 }
 pub(crate) fn panel_text_gain(x: i16, y: i16, value: &str, gain: u8) {
     text_gain(x, y, value, gain);

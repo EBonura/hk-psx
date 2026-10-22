@@ -282,21 +282,23 @@ mod live {
     /// is nothing of Cornifer's to draw, so the caller can draw something else.
     pub fn prepare(camera: (i32, i32), geo: u32) -> bool {
         use crate::dialogue::{
-            panel_frame, panel_number, panel_pages, panel_prompt, panel_text, panel_width,
+            panel_box, panel_number, panel_pages, panel_prompt, panel_text, panel_width,
         };
+        // The conversation box's line pitch.
+        const ROW: i16 = 16;
         let convo = unsafe { &*(&raw const CONVO) };
         match convo.step {
             Some(Step::Pages(talk, page)) => panel_pages(talk.pages(), page),
             Some(Step::YesNo(row)) => {
-                panel_frame(40, 70, 240, 100);
+                let y = panel_box(4);
                 let q = PROMPT[0][0];
-                panel_text(160 - panel_width(q) / 2, 82, q);
+                panel_text(160 - panel_width(q) / 2, y, q);
                 // The box's Geo Text: the toll.
-                panel_number(146, 102, CORNIFER_PRICE);
-                panel_text(174, 102, "Geo");
+                panel_number(146, y + ROW, CORNIFER_PRICE);
+                panel_text(174, y + ROW, "Geo");
                 let affordable = geo >= CORNIFER_PRICE;
                 for (i, label) in ["Yes", "No"].iter().enumerate() {
-                    let y = 124 + i as i16 * 18;
+                    let y = y + (2 + i as i16) * ROW;
                     if i == 0 && !affordable {
                         continue;
                     }
@@ -307,13 +309,13 @@ mod live {
                 }
             }
             Some(Step::FirstMap) => {
-                panel_frame(30, 70, 260, 100);
-                panel_text(160 - panel_width(GET_MAP_1) / 2, 84, GET_MAP_1);
+                let y = panel_box(3);
+                panel_text(160 - panel_width(GET_MAP_1) / 2, y, GET_MAP_1);
                 let hold = "L2";
                 let line_w = panel_width(HOLD) + 8 + panel_width(hold);
-                panel_text(160 - line_w / 2, 112, HOLD);
-                panel_text(160 - line_w / 2 + panel_width(HOLD) + 8, 112, hold);
-                panel_text(160 - panel_width(GET_MAP_2) / 2, 138, GET_MAP_2);
+                panel_text(160 - line_w / 2, y + ROW, HOLD);
+                panel_text(160 - line_w / 2 + panel_width(HOLD) + 8, y + ROW, hold);
+                panel_text(160 - panel_width(GET_MAP_2) / 2, y + 2 * ROW, GET_MAP_2);
             }
             None => {
                 if !convo.prompt {

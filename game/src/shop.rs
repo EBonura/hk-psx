@@ -677,7 +677,8 @@ impl Screen {
 /// Rows of the shelf on screen at once. The list pages rather than scrolling
 /// under a fixed cursor, the way the charm board's does.
 pub const VISIBLE: usize = 6;
-const FOOTER: &str = "X: buy    O: leave";
+/// The shelf has no hint row, as the source's has none; a refusal takes this line while it stands.
+const FOOTER: &str = "";
 /// Drawn glyphs, which is what the shared panel budget counts: `dialogue::text`
 /// spends a slot per non-space byte.
 const fn glyphs(text: &str) -> usize {

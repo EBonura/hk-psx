@@ -182,9 +182,9 @@ impl<'a> Font<'a> {
     }
 }
 
-/// Cook `chars` of `font` at `em` into cells of `w` x `h`: baseline at `base`, grid fitted to the
-/// lines of `lines` (the glyphs whose heights define x-height, cap height, ascender and descender).
-fn cells(font: &Font, chars: &[char], em: f32, w: usize, h: usize, base: f32, tracking: u8, zones: &[char]) -> Result<(Vec<Vec<u8>>, Vec<u8>)> {
+/// The vertical fit of `font` at `em`: x-height, cap height, ascender and descender lines of
+/// `zones` (the glyphs that define them) moved onto whole pixels.
+fn fit_for(font: &Font, em: f32, zones: &[char]) -> Result<Fit> {
     let mut knots = vec![(0.0f32, 0.0f32)];
     let mut last = 0.0f32;
     for &z in zones {
@@ -198,7 +198,13 @@ fn cells(font: &Font, chars: &[char], em: f32, w: usize, h: usize, base: f32, tr
         }
     }
     knots.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    let fit = Fit(knots);
+    Ok(Fit(knots))
+}
+
+/// Cook `chars` of `font` at `em` into cells of `w` x `h`: baseline at `base`, grid fitted to the
+/// lines of `lines` (the glyphs whose heights define x-height, cap height, ascender and descender).
+fn cells(font: &Font, chars: &[char], em: f32, w: usize, h: usize, base: f32, tracking: u8, zones: &[char]) -> Result<(Vec<Vec<u8>>, Vec<u8>)> {
+    let fit = fit_for(font, em, zones)?;
     let mut out = Vec::new();
     let mut advances = Vec::new();
     for &ch in chars {
@@ -292,6 +298,236 @@ pub fn cook(body_bytes: &[u8], caps_bytes: &[u8], coin: &[u8]) -> Result<Strip> 
     assert_eq!(blob.len(), STRIP_BYTES);
     let preview = image.iter().map(|t| t * 17).collect();
     Ok(Strip { blob, advances, caps_advances, caps_w: cw, preview })
+}
+
+/// The area and boss cards' main lines, which the card strip carries the glyphs of
+/// (host/title_cards.py asserts every cooked main line is drawable from them).
+pub const CARD_MAINS: [&str; 8] =
+    ["Crossroads", "Dirtmouth", "Greenpath", "King's Pass", "Mound", "False Knight", "Mawlek", "Gruz"];
+/// The cards' em in pixels: Perpetua rasterised at this size, grid fitted, instead of the 14 px
+/// glyphs doubled.
+pub const CARD_EM: f32 = 40.0;
+/// The strip's VRAM rectangle, x, y, width and height in halfwords: the twelve rows below the
+/// scenery CLUT rows that held the font before the font image moved, outside both frame buffers.
+/// Texels are 4bpp, so it is 1280 texels wide: five texture pages of 256 at y 256, rows 244..255.
+pub const CARD_RECT: (u16, u16, u16, u16) = (0, 500, 320, 12);
+pub const CARD_ROWS: usize = 12;
+pub const CARD_PAGE_W: usize = 256;
+pub const CARD_PAGES: usize = 5;
+pub const CARD_STRIP_BYTES: usize = CARD_PAGES * CARD_PAGE_W * CARD_ROWS / 2;
+/// Rows from the top of a glyph's canvas to its baseline, and the canvas height.
+const CARD_BASE: usize = 31;
+const CARD_CANVAS_H: usize = 52;
+
+/// One piece of a card glyph, at most `CARD_ROWS` rows tall so it fits the strip.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CardBand {
+    /// Texel column in the strip's 1280, and row in the strip.
+    pub x: u16,
+    pub v: u8,
+    pub w: u8,
+    pub h: u8,
+    /// Where it draws, from the glyph's pen position and the top of the line.
+    pub dx: i8,
+    pub dy: u8,
+}
+pub struct CardGlyph {
+    pub ch: char,
+    pub advance: u8,
+    pub bands: Vec<CardBand>,
+}
+pub struct Cards {
+    /// `CARD_STRIP_BYTES` of 4bpp texels, uploaded at `CARD_RECT`.
+    pub blob: Vec<u8>,
+    /// Sorted by character.
+    pub glyphs: Vec<CardGlyph>,
+    /// Texels used out of the strip's 15,360.
+    pub used: usize,
+}
+
+struct Free {
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+}
+/// Guillotine packer over the five 256 x 12 pages: the best fit by leftover area, split into the
+/// part right of the piece and the part under it. A piece never crosses a page.
+fn pack(sizes: &[(usize, usize)]) -> Result<Vec<(usize, usize)>> {
+    let mut free: Vec<Free> =
+        (0..CARD_PAGES).map(|p| Free { x: p * CARD_PAGE_W, y: 0, w: CARD_PAGE_W, h: CARD_ROWS }).collect();
+    let mut order: Vec<usize> = (0..sizes.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse((sizes[i].1, sizes[i].0)));
+    let mut at = vec![(0, 0); sizes.len()];
+    for i in order {
+        let (w, h) = sizes[i];
+        let best = free
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.w >= w && f.h >= h)
+            .min_by_key(|(_, f)| (f.w * f.h - w * h, f.x))
+            .map(|(k, _)| k);
+        let Some(k) = best else {
+            return err(format!("the card strip is full: a {w}x{h} piece has no room"));
+        };
+        let f = free.swap_remove(k);
+        at[i] = (f.x, f.y);
+        if f.w > w {
+            free.push(Free { x: f.x + w, y: f.y, w: f.w - w, h: f.h });
+        }
+        if f.h > h {
+            free.push(Free { x: f.x, y: f.y + h, w, h: f.h - h });
+        }
+    }
+    Ok(at)
+}
+
+/// Cook the glyphs of `CARD_MAINS` at `CARD_EM`: each grid fitted, trimmed to its ink and cut into
+/// bands of at most `CARD_ROWS` rows, packed into the strip.
+pub fn cook_cards(body_bytes: &[u8]) -> Result<Cards> {
+    let font = Font::new(body_bytes)?;
+    let mut chars: Vec<char> = CARD_MAINS.iter().flat_map(|m| m.chars()).filter(|&c| c != ' ').collect();
+    chars.sort_unstable();
+    chars.dedup();
+    let fit = fit_for(&font, CARD_EM, &['x', 'H', 'l', 'p'])?;
+    struct Raster {
+        ch: char,
+        advance: u8,
+        dx: i32,
+        top: usize,
+        rows: Vec<Vec<u8>>,
+    }
+    const PAD: usize = 4;
+    let mut rasters = Vec::new();
+    for &ch in &chars {
+        let a = font.advance(ch, CARD_EM)?;
+        let advance = a.round().max(1.0) as usize;
+        let shift = PAD as f32 + (a.round() - a) / 2.0;
+        let w = advance + 2 * PAD + 4;
+        let cov = font.coverage(ch, CARD_EM, &fit, shift, CARD_BASE as f32, w, CARD_CANVAS_H);
+        let lv: Vec<u8> = cov.iter().map(|&c| level(c)).collect();
+        let ink = |x: usize, y: usize| lv[y * w + x] != 0;
+        let rows: Vec<usize> = (0..CARD_CANVAS_H).filter(|&y| (0..w).any(|x| ink(x, y))).collect();
+        let cols: Vec<usize> = (0..w).filter(|&x| (0..CARD_CANVAS_H).any(|y| ink(x, y))).collect();
+        let (Some(&y0), Some(&y1), Some(&x0), Some(&x1)) =
+            (rows.first(), rows.last(), cols.first(), cols.last())
+        else {
+            return err(format!("card glyph {ch:?} has no ink"));
+        };
+        if y1 + 1 >= CARD_CANVAS_H || y0 == 0 {
+            return err(format!("card glyph {ch:?} leaves the {CARD_CANVAS_H} row canvas"));
+        }
+        let strip: Vec<Vec<u8>> = (y0..=y1).map(|y| lv[y * w + x0..y * w + x1 + 1].to_vec()).collect();
+        rasters.push(Raster { ch, advance: advance as u8, dx: x0 as i32 - PAD as i32, top: y0, rows: strip });
+    }
+    // Bands: equal heights, as few as the 12 row limit allows.
+    struct Piece {
+        glyph: usize,
+        top: usize,
+        h: usize,
+        w: usize,
+    }
+    let mut pieces = Vec::new();
+    for (g, r) in rasters.iter().enumerate() {
+        let height = r.rows.len();
+        let count = height.div_ceil(CARD_ROWS);
+        let mut y = 0;
+        for k in 0..count {
+            let h = (height - y).div_ceil(count - k);
+            pieces.push(Piece { glyph: g, top: y, h, w: r.rows[0].len() });
+            y += h;
+        }
+    }
+    let at = pack(&pieces.iter().map(|p| (p.w, p.h)).collect::<Vec<_>>())?;
+    let mut image = vec![0u8; CARD_PAGES * CARD_PAGE_W * CARD_ROWS];
+    let width = CARD_PAGES * CARD_PAGE_W;
+    let mut glyphs: Vec<CardGlyph> = rasters
+        .iter()
+        .map(|r| CardGlyph { ch: r.ch, advance: r.advance, bands: Vec::new() })
+        .collect();
+    let mut used = 0;
+    for (p, &(x, y)) in pieces.iter().zip(&at) {
+        let r = &rasters[p.glyph];
+        for row in 0..p.h {
+            for col in 0..p.w {
+                image[(y + row) * width + x + col] = r.rows[p.top + row][col];
+            }
+        }
+        used += p.w * p.h;
+        glyphs[p.glyph].bands.push(CardBand {
+            x: x as u16,
+            v: y as u8,
+            w: p.w as u8,
+            h: p.h as u8,
+            dx: i8::try_from(r.dx).map_err(|_| "card glyph offset")?,
+            dy: u8::try_from(r.top + p.top).map_err(|_| "card glyph row")?,
+        });
+    }
+    let blob: Vec<u8> = image.chunks_exact(2).map(|t| t[0] | (t[1] << 4)).collect();
+    assert_eq!(blob.len(), CARD_STRIP_BYTES);
+    Ok(Cards { blob, glyphs, used })
+}
+
+/// The card strip as a grey-ramp image, 1280 x 12, for a preview.
+pub fn cards_preview(cards: &Cards) -> Vec<u8> {
+    let mut out = Vec::with_capacity(cards.blob.len() * 2);
+    for b in &cards.blob {
+        out.push((b & 15) * 17);
+        out.push((b >> 4) * 17);
+    }
+    out
+}
+
+/// `font_layout.rs`' card glyph table: a flat band table and, for each character in `CARD_CHARS`,
+/// the index of its first band (and one past the last), so a glyph costs no pointer.
+pub fn cards_rust(cards: &Cards) -> String {
+    let chars: String = cards.glyphs.iter().map(|g| g.ch).collect();
+    let mut first = vec![0usize];
+    let mut bands = String::new();
+    let mut n = 0;
+    for g in &cards.glyphs {
+        for b in &g.bands {
+            bands += &format!(
+                "    CardBand {{ x: {}, v: {}, w: {}, h: {}, dx: {}, dy: {} }},\n",
+                b.x, b.v, b.w, b.h, b.dx, b.dy
+            );
+            n += 1;
+        }
+        first.push(n);
+    }
+    let list = |v: &[String]| v.join(", ");
+    format!(
+        "/// The area and boss cards' main lines at {em} px (font_strip.rs `cook_cards`): the glyphs the\n\
+         /// cards use, each cut into bands of at most {rows} rows that sit in the {bytes} byte strip\n\
+         /// uploaded at ({rx}, {ry}) as {rw}x{rh} halfwords (texture pages x 0..256 at y 256, rows 244..255).\n\
+         pub const CARD_BYTES: usize = {bytes};\n\
+         pub const CARD_PAGE_Y: u16 = 256;\n\
+         pub const CARD_V0: u8 = {v0};\n\
+         pub const CARD_CHARS: &[u8] = b\"{chars}\";\n\
+         pub const CARD_ADVANCES: [u8; {count}] = [{adv}];\n\
+         pub const CARD_FIRST: [u8; {firsts}] = [{first}];\n\
+         /// Ink position in the strip, size, and where it draws from the pen and the line's top.\n\
+         pub struct CardBand {{ pub x: u16, pub v: u8, pub w: u8, pub h: u8, pub dx: i8, pub dy: u8 }}\n\
+         pub static CARD_BANDS: [CardBand; {nbands}] = [\n{bands}];\n\
+         /// Rows from the top of a card line to its baseline.\n\
+         pub const CARD_BASE: i16 = {base};\n",
+        em = CARD_EM,
+        rows = CARD_ROWS,
+        bytes = CARD_STRIP_BYTES,
+        rx = CARD_RECT.0,
+        ry = CARD_RECT.1,
+        rw = CARD_RECT.2,
+        rh = CARD_RECT.3,
+        v0 = 256 - CARD_ROWS,
+        chars = chars,
+        count = cards.glyphs.len(),
+        adv = list(&cards.glyphs.iter().map(|g| g.advance.to_string()).collect::<Vec<_>>()),
+        firsts = first.len(),
+        first = list(&first.iter().map(|f| f.to_string()).collect::<Vec<_>>()),
+        nbands = n,
+        bands = bands,
+        base = CARD_BASE,
+    )
 }
 
 #[cfg(test)]
