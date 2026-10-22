@@ -34,17 +34,18 @@ class CookedCatalogueTests(unittest.TestCase):
         self.assertEqual(int(re.search(r'CHARM_COUNT:usize=(\d+);', text).group(1)), 40)
         self.assertEqual(int(re.search(r'STARTING_NOTCHES:u8=(\d+);', text).group(1)), 3)
         self.assertEqual(int(re.search(r'OVERCHARM_BREAK_ATTEMPT:u8=(\d+);', text).group(1)), 5)
-        rows = re.findall(r'Charm\{name:"([^"]*)",cost:(\d+),lines:&\[([^\]]*)\]', text)
+        rows = re.findall(r'Charm\{name:"([^"]*)",cost:(\d+),text:"([^"]*)"', text)
         self.assertEqual(len(rows), 40)
-        for name, cost, lines in rows:
+        for name, cost, joined in rows:
             self.assertTrue(name.isascii() and name.isprintable(), name)
             self.assertGreaterEqual(int(cost), 1, name)
-            drawn = re.findall(r'"([^"]*)"', lines)
+            # The wrapped lines of a description, joined by newlines.
+            drawn = joined.split('\\n')
             self.assertTrue(drawn, f'{name} has no description')
             for line in drawn:
                 # The guest font strip is ASCII 32..126 and nothing else.
                 self.assertTrue(all(32 <= ord(c) <= 126 for c in line), f'{name}: {line!r}')
-            self.assertLessEqual(len(drawn), 6, f'{name} needs {len(drawn)} description lines')
+            self.assertLessEqual(len(drawn), 11, f'{name} needs {len(drawn)} description lines')
 
     @unittest.skipUnless(REPORT.is_file(), 'run host/charms.py first')
     def test_every_effectless_charm_names_the_missing_system(self):
@@ -94,7 +95,10 @@ class CookedCatalogueTests(unittest.TestCase):
         self.assertTrue(seatable, icons['verdict'])
         self.assertEqual(icons['icon_px'], max(seatable))
         for side, layout in layouts.items():
-            self.assertEqual(layout['fits'], layout['scanlines_needed'] <= icons['panel_scanlines'])
+            # A size fits when the board's parts fit the 240 scanlines and the grid fits beside
+            # the description column.
+            if layout['fits']:
+                self.assertLessEqual(layout['scanlines_needed'], icons['panel_scanlines'])
         # What must not change is the reason: the screen refuses the larger
         # sizes, and a trimmed row count or a shorter description is not allowed
         # to buy a bigger icon.
@@ -134,6 +138,26 @@ class CookedCatalogueTests(unittest.TestCase):
         # Every palette is used, or a resident CLUT row is being held for
         # nothing; the rows come out of the block the Shade reserved.
         self.assertEqual(sorted(set(rows)), list(range(palettes)))
+
+
+class CharmColumnTests(unittest.TestCase):
+    @unittest.skipUnless(TABLE.is_file(), 'run host/charms.py first')
+    def test_every_name_line_and_refusal_fits_the_description_column(self):
+        # The guest centres these in the board's right-hand column (`COL_W`), and the refusals
+        # stand in the Equip line four texels in; the widths are the cooked font's own advances.
+        advances = json.loads((ROOT / 'data/font-metrics.json').read_text())['advances']
+        width = lambda text: sum(advances[ord(c) - 32] for c in text)
+        text = cooked()
+        col = int(re.search(r'COL_W:i16=(\d+);', text).group(1))
+        for name, joined in re.findall(r'Charm\{name:"([^"]*)",cost:\d+,text:"([^"]*)"', text):
+            self.assertLessEqual(width(name), col, name)
+            for line in joined.split('\\n'):
+                self.assertLessEqual(width(line), col, line)
+        source = (ROOT / 'game/src/charms.rs').read_text()
+        messages = re.findall(r'Refusal::\w+(?:\(_\))? => "([^"]*)"', source)
+        self.assertEqual(len(messages), 6)
+        for message in messages:
+            self.assertLessEqual(width(message), col - 4, message)
 
 
 class CharmRuntimeTests(unittest.TestCase):

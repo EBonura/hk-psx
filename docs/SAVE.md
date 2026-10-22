@@ -8,11 +8,11 @@ and what to look at when a real console disagrees with the emulator.
 
 | Moment | Screen |
 | --- | --- |
-| Sitting at a bench | `Save game?` Yes / No |
+| Sitting at a bench | `Save game?` Yes / No, in the conversation box (the same fleurs and backboard as Elderbug's) |
 | Yes | `Saving...` / `Do not remove the memory card.` The box is drawn for several frames before the write starts, because the write holds the CPU for longer than a video period and the frame on screen is the last one drawn until it ends |
 | Done | `Game saved` for 1.5 s |
 | Card not formatted | `Memory card is not formatted.` / `Format it and save?` Yes / No. The card is never formatted without an answer; a blank card used to be formatted silently by the first save |
-| Anything else | `Save failed`, the reason, what to do, a `Code` number and `X: OK`. It stays until closed |
+| Anything else | `Save failed`, the reason, what to do, a `Code` number and the box's stop mark (X or O closes it). It stays until closed |
 
 Reasons: no memory card in slot 1; card not responding (it answered and broke protocol); could not write
 to the card; card full (free a block); card data damaged; unformatted (the question above).

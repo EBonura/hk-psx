@@ -336,7 +336,7 @@ pub fn render(
     // The text panel's ornaments: like the board, they yield to the view.
     crate::dialogue_art::append_needed(
         if !game.paused {
-            if crate::dialogue::panel_up() {
+            if crate::dialogue::panel_up(game.save_ui) {
                 crate::dialogue_art::Art::Panel
             } else {
                 crate::dialogue_art::Art::None

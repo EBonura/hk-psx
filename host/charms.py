@@ -51,12 +51,13 @@ from read_points import wrap_page
 from source import ROOT, dump
 
 CHARMS = items.CHARMS
-# The inventory panel this feeds is narrower and shorter than the tablet
-# reader's: the charm list keeps the rows above it, so the description gets the
-# bottom six lines of the box. Six is what the longest cooked description needs
-# at this width, measured over all forty rather than chosen.
-DESC_WIDTH = 264
-DESC_LINES = 6
+# The board's right-hand column, as the source's `Charms` pane has it: the chosen charm's cost,
+# its picture, its name and its description centred in a column beside the grid. The column is
+# `COL_W` texels wide and the description is wrapped to it; the longest of the forty needs ten
+# lines at this width (measured over all forty, not chosen), and the guest draws a blank line
+# between paragraphs at `BLANK_PITCH` rather than a full line.
+DESC_WIDTH = 130
+DESC_LINES = 11
 # The board is a grid like the source's `Collected Charms`: ten charms to a row, the rows staggered
 # (BB 1..40 of the source's Charms/Backboards sit 1.5 units apart, every second row 0.9 further in).
 GRID_COLS = 10
@@ -71,15 +72,16 @@ BOUND = 36
 # measured against; `panel_layout` derives the rest, because the icon size is
 # whatever the leftover scanlines allow rather than a number chosen here.
 DESC_PITCH = 13
+BLANK_PITCH = 6
 GLYPH_PX = 14
 SCREEN_LINES = 240
-PANEL_X = 14
-PANEL_W = 292
-PANEL_BORDER = 2
-PANEL_GAP = 3
-# What the board keeps clear of the screen edge. The cheats page already sits
-# eight lines off the bottom, so eight is what this port has decided is safe.
-PANEL_MARGIN = 5
+# What the board keeps clear of the screen edge.
+PANEL_MARGIN = 4
+# The column beside the grid: x of its left edge and width, the cost circles, the picture
+# (a charm's 16 texel icon drawn at twice the size) and the rows under them.
+COL_X = 186
+COL_W = 130
+BIG_PX = 32
 # Icon sizes the measurement below costs out. The panel takes the largest one
 # it can seat; nothing here picks a number to make a budget work.
 ICON_SIZES = (16, 24, 32)
@@ -544,9 +546,13 @@ def generated_charms_rs(rows, rules, defaults, layout, art):
         return '"' + value + '"'
     entries = []
     for row in rows:
-        lines = ','.join(quoted(line) for line in row['lines'])
-        entries.append('Charm{name:%s,cost:%d,lines:&[%s],effect:%s,fragile:%s,bound:%s}' % (
-            quoted(row['name']), row['cost'], lines, row['effect'] or 'Effect::None',
+        # One string a charm, its wrapped lines joined by newlines (an empty line is a paragraph
+        # break): a `&str` per line cost eight bytes of linked data each.
+        for line in row['lines']:
+            quoted(line)
+        text = '"' + '\\n'.join(row['lines']) + '"'
+        entries.append('Charm{name:%s,cost:%d,text:%s,effect:%s,fragile:%s,bound:%s}' % (
+            quoted(row['name']), row['cost'], text, row['effect'] or 'Effect::None',
             'true' if row['fragile'] else 'false', 'true' if row['bound'] else 'false'))
     return '\n'.join([
         '// Generated charm catalogue; localized text from the installed language sheets.',
@@ -569,8 +575,18 @@ def generated_charms_rs(rows, rules, defaults, layout, art):
         f"pub const SLOT_PX:i16={layout['slot_px']};",
         f"pub const NAME_Y:i16={layout['name_y']};",
         f"pub const DESC_TOP:i16={layout['description_y']};",
-        f"pub const DESC_X:i16={layout['description_x']};",
         f"pub const DESC_PITCH:i16={layout['description_pitch']};",
+        '/// A blank line between paragraphs of a description is this tall rather than a full line.',
+        f"pub const BLANK_PITCH:i16={BLANK_PITCH};",
+        '/// The right-hand column: left edge and width, the cost circles, the chosen charm\'s picture.',
+        f"pub const COL_X:i16={layout['col_x']};",
+        f"pub const COL_W:i16={layout['col_w']};",
+        f"pub const COST_Y:i16={layout['cost_y']};",
+        f"pub const BIG_Y:i16={layout['big_y']};",
+        f"pub const BIG_PX:i16={layout['big_px']};",
+        '/// The "Collection" label and the rule under it, above the grid.',
+        f"pub const COLLECTION_Y:i16={layout['collection_y']};",
+        f"pub const RULE_Y:i16={layout['rule_y']};",
         f"pub const FOOTER_Y:i16={layout['footer_y']};",
         f"pub const LABEL_X:i16={layout['label_x']};",
         f"pub const ROW_X:i16={layout['row_x']};",
@@ -598,42 +614,44 @@ RESERVED_ANIMATION_SLOTS = 4
 def panel_layout(icon_px, charms=40):
     """Where the charm board's parts sit for an icon this many pixels square.
 
-    The board is the source inventory's own arrangement fitted to 320x240: the
-    equipped charms and the notch circles on top, `GRID_COLS` slots to a row,
-    the chosen charm's name with its cost circles, then its description and a
-    footer. A slot is the icon plus a one pixel ring either side; the grid has
-    to fit the width, the parts the 240 scanlines. Returning None-like (`fits`
-    false) when they do not is how the icon size gets derived instead of chosen.
+    The board is the source `Charms` pane's arrangement fitted to 320x240: on the left the worn
+    charms and the notch circles, the "Collection" rule and the grid of `GRID_COLS` slots to a
+    row, every second row shifted in; on the right the chosen charm's cost, picture, name and
+    description, centred, and its Equip line under them. The grid has to fit beside the column
+    and the column's parts inside the 240 scanlines; `fits` is false when they do not, which is
+    how the icon size gets derived instead of chosen.
     """
     slot = icon_px + 2
-    col_pitch = slot + 4
-    row_pitch = slot + 1
-    shift = col_pitch // 2 + 1
+    col_pitch = icon_px
+    row_pitch = icon_px + 5
+    shift = col_pitch // 2
     rows = -(-charms // GRID_COLS)
+    grid_x = 12
     grid_w = (GRID_COLS - 1) * col_pitch + slot + shift
-    parts = [icon_px, 12, rows * row_pitch - 1, GLYPH_PX, DESC_LINES * DESC_PITCH, GLYPH_PX]
-    gaps = [3, 6, 3, 1, 4]
-    height = sum(parts) + sum(gaps)
-    needed = height + 2 * PANEL_MARGIN
-    if needed > SCREEN_LINES or grid_w > 320 - 2 * PANEL_MARGIN:
-        return {'icon_px': icon_px, 'scanlines_needed': needed, 'grid_width': grid_w, 'fits': False}
-    top = (SCREEN_LINES - height) // 2
-    at, y = [], top
-    for i, part in enumerate(parts):
-        at.append(y)
-        y += part + (gaps[i] if i < len(gaps) else 0)
-    equipped, notches, grid, name, description, footer = at
-    return {
-        'icon_px': icon_px, 'scanlines_needed': needed, 'grid_width': grid_w, 'fits': True,
-        'panel': [0, top, 320, height],
-        'equipped_y': equipped, 'notch_y': notches, 'grid_y': grid, 'name_y': name,
-        'description_y': description, 'description_pitch': DESC_PITCH, 'footer_y': footer,
-        'grid_x': (320 - grid_w) // 2, 'col_pitch': col_pitch, 'row_pitch': row_pitch,
+    big = min(BIG_PX, 2 * icon_px)
+    cost_y, big_y = 30, 44
+    name_y = big_y + big + 3
+    description_y = name_y + GLYPH_PX + 3
+    # The footer sits under the longest description: DESC_LINES lines, one a blank paragraph break.
+    footer_y = description_y + (DESC_LINES - 2) * DESC_PITCH + BLANK_PITCH + 3
+    right = grid_x + grid_w + 4
+    needed = footer_y + GLYPH_PX + PANEL_MARGIN
+    fits = needed <= SCREEN_LINES and right <= COL_X and COL_X + COL_W <= 320 - 4
+    layout = {'icon_px': icon_px, 'scanlines_needed': needed, 'grid_width': grid_w, 'fits': fits}
+    if not fits:
+        return layout
+    layout.update({
+        'panel': [0, 0, 320, needed],
+        'equipped_y': 8, 'notch_y': 32, 'collection_y': 90, 'rule_y': 106, 'grid_y': 114,
+        'cost_y': cost_y, 'big_y': big_y, 'big_px': big, 'name_y': name_y,
+        'description_y': description_y, 'description_pitch': DESC_PITCH, 'footer_y': footer_y,
+        'grid_x': grid_x, 'col_pitch': col_pitch, 'row_pitch': row_pitch,
         'odd_shift': shift, 'slot_px': slot,
+        'col_x': COL_X, 'col_w': COL_W,
         # Labels at the left, the rows of icons and circles from one common column.
-        'label_x': 14, 'row_x': 92, 'icon_pitch': icon_px + 4, 'notch_pitch': 12,
-        'description_x': 28,
-    }
+        'label_x': 14, 'row_x': 92, 'icon_pitch': icon_px + 1, 'notch_pitch': 12,
+    })
+    return layout
 
 
 def _charm_icon_sprites(source, catalogue):
@@ -830,14 +848,14 @@ def icon_measurement(source, catalogue, sheets_on_screen):
         verdict.append(
             f'The screen is what set the size, not the RAM: {chosen}-pixel icons need '
             f"{layouts[chosen]['scanlines_needed']} of {SCREEN_LINES} scanlines and a {layouts[chosen]['grid_width']} pixel grid beside "
-            f'a six-line description'
+            f'the {COL_W} pixel description column'
             + (f", and {bigger[0]}-pixel ones need {layouts[bigger[0]]['scanlines_needed']}."
                if bigger else '.')
             + f' Icons ship at {chosen}x{chosen}: {linked(chosen)} bytes of texels, plus a'
               ' 32-byte palette for each resident CLUT row they share.')
     elif needed_slots <= slots:
         verdict.append(
-            'No offered icon size can be seated beside the grid and a six-line description inside '
+            'No offered icon size can be seated beside the grid and the description column inside '
             f'{SCREEN_LINES} scanlines, so the board stays text only.')
     if not chosen:
         verdict.append('Shipping the screen without icons costs nothing to revisit; trimming an '
