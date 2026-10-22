@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |762,188|
-| Code-to-data alignment |4|
+| Linked code |762,160|
+| Code-to-data alignment |0|
 | Linked data, including menu and HUD |266,456|
 | BSS, including shared scene arena and runtime pools |797,812|
-| Total static span |1,826,468|
+| Total static span |1,826,436|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |155,740|
+| Unallocated gap before reserved stack |155,772|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |53,340|
+| Free RAM below the module pool |53,372|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -33,7 +33,7 @@ The generic native components and the road to Hornet's arena (Fungus1_22, Fungus
 
 The 2026-10-19 console-fix pass (the bench Save notice, card errors and retries, the card-manager title and icon, the Great Door's per-hit reaction and the break shake; game/src/save_ui.rs, docs/SAVE.md) took linked code from 797,492 to 805,384 bytes (7,892) and linked data from 257,256 to 257,800, so 19,740 bytes are free below the module pool (28,212 before). The two `card-diag` features (card_diag.rs) are not in the ordinary build.
 
-The 2026-10-19 polish pass (the original dialogue box, a crisper font and Geo coin, exact title-card glyphs, and the new game's drop in from King's Pass's top gate) took 6,920 bytes of the 60,260 that were free below the module pool, leaving 53,340: linked code 758,912 to 762,188 (+3,276: the ornate panel's layout and backboard, the animation-cache branch for its tiles, the title card's two glyph paths, the new-game entry), linked data 263,432 to 266,456 (+3,024: 3,568 bytes of dialogue ornaments and their 56-byte tile table, less the title card's glyph arrays halved from 48 to 24 and the removed Geo coin quad), BSS +616. The ornaments (`data/dialogue-art.hk`, host/hk-cook/src/dialogue_art.rs) are the whole of the data cost; they reach VRAM through the animation cache's 64x64 slots on demand, so VRAM, which has 304 spare halfwords, pays nothing. The Geo coin lives in a spare cell of the font strip (boot art chunk, no RAM) and replaced `geo_render::hud_coin`. The opening-movie player is a blob in the boot art chunk (intro/, only for `build --intro`), so it costs no resident data; the `intro` feature adds 1,652 bytes of code (an intro build has 1,652 bytes less free below the pool than this table).
+The 2026-10-19 polish pass (the original dialogue box, a crisper font and Geo coin, exact title-card glyphs, and the new game's drop in from King's Pass's top gate) took 6,888 bytes of the 60,260 that were free below the module pool, leaving 53,372: linked code 758,912 to 762,160 (+3,248: the ornate panel's layout and backboard, the animation-cache branch for its tiles, the title card's two glyph paths, the new-game entry), linked data 263,432 to 266,456 (+3,024: 3,568 bytes of dialogue ornaments and their 56-byte tile table, less the title card's glyph arrays halved from 48 to 24 and the removed Geo coin quad), BSS +616. The ornaments (`data/dialogue-art.hk`, host/hk-cook/src/dialogue_art.rs) are the whole of the data cost; they reach VRAM through the animation cache's 64x64 slots on demand, so VRAM, which has 304 spare halfwords, pays nothing. The Geo coin lives in a spare cell of the font strip (boot art chunk, no RAM) and replaced `geo_render::hud_coin`. The opening-movie player is a blob in the boot art chunk (intro/, only for `build --intro`), so it costs no resident data; the `intro` feature adds 1,652 bytes of code (an intro build has 1,652 bytes less free below the pool than this table).
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -121,7 +121,7 @@ metadata.
 
 The 2026-10-19 pass (one terrain reader type for every solver, so Player::step and the Actor::advance_* family compile once; the route lock and its 256-byte load log) took linked code from 805,384 to 754,836 bytes, data from 257,800 to 258,536 and BSS from 796,868 to 797,132, so 69,284 bytes are free below the module pool (19,740 before).
 
-Static data ends at `0x801cdea4`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801cde84`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
