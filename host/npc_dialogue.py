@@ -16,8 +16,7 @@ Not cooked: the branches that need PlayerData the port has no producer for
 (those stop the chain), the yes/no box, the NPC name plate and the
 conversation's own audio.
 """
-import hashlib, io, math, re
-from PIL import ImageFont
+import hashlib, json, re
 from source import ROOT, dump
 from language import sheet as language_sheet
 from npcs import DEACTIVATORS, conversation_chain, playerdata_defaults
@@ -37,17 +36,15 @@ MAX_SLOTS = 32 // CURSOR_BITS
 
 
 def font_advances(source):
-    """The panel's Perpetua cell advances, recomputed the way read_points does.
+    """The panel's Perpetua cell advances, as hk-cook dialogue-art cooked them.
 
-    read_points.py builds the font strip and the ADVANCES table the guest links;
-    wrapping to a different width here would overflow the same panel, so the
-    recomputed widths are checked against that generated table instead of two
-    copies being trusted to stay equal.
+    The cooker writes the glyph strip and data/font-metrics.json together;
+    read_points.py links the same advances into data/read_points.rs. Wrapping
+    to a different width here would overflow the same panel, so the table the
+    guest links is checked against the cooked one instead of two copies being
+    trusted to stay equal.
     """
-    obj = next(o for o in source.file('resources.assets').objects.values()
-               if o.type.name == 'Font' and o.read().m_Name == 'Perpetua')
-    font = ImageFont.truetype(io.BytesIO(bytes(source.read(obj)['m_FontData'])), 12)
-    advances = [max(1, math.ceil(font.getlength(chr(c)))) for c in range(32, 127)]
+    advances = json.loads((ROOT / 'data/font-metrics.json').read_text())['advances']
     generated = ROOT / 'data/read_points.rs'
     if generated.is_file():
         found = re.search(r'ADVANCES:\[u8;95\]=\[([^\]]*)\]', generated.read_text())

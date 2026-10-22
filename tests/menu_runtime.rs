@@ -15,7 +15,9 @@ pub mod framebuf{
 }
 pub mod material{
  pub struct TextureMaterial;
- impl TextureMaterial{pub fn opaque(_:u16,_:u16,tint:(u8,u8,u8))->Self{assert!(tint.0<=128&&tint.1<=128&&tint.2<=128);Self}}
+ #[derive(Clone,Copy)]pub enum BlendMode{Opaque,Add}
+ impl TextureMaterial{pub fn opaque(_:u16,_:u16,tint:(u8,u8,u8))->Self{assert!(tint.0<=128&&tint.1<=128&&tint.2<=128);Self}
+  pub fn blended(_:u16,_:u16,tint:(u8,u8,u8),_:BlendMode)->Self{assert!(tint.0<=128&&tint.1<=128&&tint.2<=128);Self}}
 }
 #[derive(Clone,Copy,Debug)]pub struct VramRect{pub x:u16,pub y:u16,pub w:u16,pub h:u16}
 impl VramRect{pub fn new(x:u16,y:u16,w:u16,h:u16)->Self{assert!(x+w<=1024&&y+h<=512);Self{x,y,w,h}}}

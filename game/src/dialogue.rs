@@ -242,7 +242,9 @@ fn text(x: i16, y: i16, text: &str) {
 }
 /// `text` at a brightness: 0x80 draws the glyph ramp as it is, less dims it.
 fn text_gain(x: i16, y: i16, text: &str, gain: u8) {
-    let color = 0x6400_0000 | u32::from(gain) * 0x0001_0101;
+    // Semi-transparent, adding: the glyph palette's entries carry the semi-transparency bit, so a
+    // glyph's anti-aliased edge brightens what is behind it (host/hk-cook/src/font_strip.rs).
+    let color = 0x6600_0000 | u32::from(gain) * 0x0001_0101;
     let mut x = x;
     for b in text.bytes() {
         assert!((32..=126).contains(&b));
@@ -253,7 +255,7 @@ fn text_gain(x: i16, y: i16, text: &str, gain: u8) {
                 let p = &mut GLYPHS[USED];
                 USED += 1;
                 p.mode = 0xe100_0000
-                    | Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(0) as u32;
+                    | Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(1) as u32;
                 p.color = color;
                 p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
                 p.uv = glyph_u(i) as u32
@@ -334,9 +336,13 @@ pub fn prepare(
         USED = 0;
         BOX_COUNT = 0;
         BACKBOARD_COUNT = 0;
-        let geo_y = crate::hud::geo_y(total_masks);
-        number(GEO_NUMBER_X, geo_y, geo);
-        cell(GEO_COIN_CELL, GEO_COIN_X, geo_y - 1);
+        let board = pause.is_some_and(|(p, _)| p.charms.open && !p.confirm_reset);
+        crate::hud::hide(board);
+        if !board {
+            let geo_y = crate::hud::geo_y(total_masks);
+            number(GEO_NUMBER_X, geo_y, geo);
+            cell(GEO_COIN_CELL, GEO_COIN_X, geo_y - 1);
+        }
         if let Some((p, settings)) = pause {
             // Every pause screen is the game dimmed behind the source's own ornaments, with
             // a soft light behind the chosen row, not a box. The charm board keeps its frame.
@@ -560,6 +566,13 @@ fn panel(pages: &[&'static [&'static str]], page: usize) {
 }
 /// One ornament piece at (`x`, `y`): a textured rectangle per tile, 1:1.
 fn ornament(piece: (usize, usize, u16, u16), x: i16, y: i16) {
+    ornament_tint(piece, x, y, 0x80);
+}
+/// One art piece of the charm board, drawn 1:1 at (`x`, `y`) at a brightness: 0x80 as it is.
+pub(crate) fn board_art(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: u8) {
+    ornament_tint(piece, x, y, tint);
+}
+fn ornament_tint(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: u8) {
     let clut = Clut::new(320, 481).uv_clut_word() as u32;
     for tile in piece.0..piece.0 + piece.1 {
         let (_, w, h, dx) = crate::dialogue_art::DIALOGUE_TILES[tile];
@@ -570,7 +583,7 @@ fn ornament(piece: (usize, usize, u16, u16), x: i16, y: i16) {
             let p = &mut GLYPHS[USED];
             USED += 1;
             p.mode = 0xe100_0000 | crate::render::animation_tpage_word(key) as u32;
-            p.color = 0x6480_8080;
+            p.color = 0x6400_0000 | u32::from(tint) * 0x0001_0101;
             p.xy = (x + dx as i16) as u16 as u32 | ((y as u16 as u32) << 16);
             p.uv = u32::from(u) | (u32::from(v) << 8) | (clut << 16);
             p.wh = u32::from(w) | (u32::from(h) << 16);
@@ -639,7 +652,7 @@ const LIST_X: i16 = 84;
 const VOLUME_X: i16 = 190;
 /// How much the game behind a pause screen is darkened, and how bright the light behind the
 /// chosen row is (the source's `menu_backboard_*` and `List_Selection_Glow` sprites).
-const PAUSE_DIM: u8 = 100;
+const PAUSE_DIM: u8 = 150;
 const ROW_GLOW: u8 = 56;
 /// The chosen row's text is full brightness, the others a step down.
 pub(crate) fn row_gain(chosen: bool) -> u8 {
@@ -689,17 +702,20 @@ fn glow(left: i16, right: i16, y: i16, height: i16) {
         BACKBOARD_COUNT = n + 2;
     }
 }
-/// The charm board's backdrop: the view dimmed, the thin flourish above the title and
-/// below the footer, and the light behind the chosen row.
-pub(crate) fn board_frame(glow_y: i16, glow_h: i16) {
+/// The charm board's backdrop: the view dimmed twice and a soft light behind the chosen slot.
+pub(crate) fn board_frame(left: i16, right: i16, y: i16, height: i16) {
     pause_backdrop(false, 0);
-    if crate::dialogue_art::board_prepared() {
-        let piece = crate::dialogue_art::DIALOGUE_FLEUR_BOTTOM;
-        let x = 160 - piece.2 as i16 / 2;
-        ornament(piece, x, 0);
-        ornament(piece, x, 240 - piece.3 as i16);
+    // The source's inventory sits on its own near-black backboard: the dim again, so the
+    // description is never added to a bright piece of the frozen view behind it.
+    unsafe {
+        BACKBOARD[1] = QuadGouraudBlended::new(
+            [(0, 0), (320, 0), (0, 240), (320, 240)],
+            [(PAUSE_DIM, PAUSE_DIM, PAUSE_DIM); 4],
+            BlendMode::Subtract,
+        );
+        BACKBOARD_COUNT = 2;
     }
-    glow(18, 302, glow_y, glow_h);
+    glow(left, right, y, height);
 }
 pub(crate) fn panel_text_gain(x: i16, y: i16, value: &str, gain: u8) {
     text_gain(x, y, value, gain);

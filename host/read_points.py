@@ -2,7 +2,6 @@
 import base64, hashlib, io, json, math, re, shutil, struct, subprocess
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from PIL import Image, ImageDraw, ImageFont
 from source import Source, ROOT
 from scene import Scene
 from breakables import _components, collider_polygons
@@ -40,12 +39,12 @@ def language_sheet(source, name):
 GLYPH_U0=4
 
 
-def glyph_cell(font,char):
-    """One glyph as a 12x12 monochrome cell. J, b, h and j have ink left of their origin; drawn straight into
-    the strip it lands in the neighbouring cell, so such a glyph moves right by what it overhangs instead."""
-    canvas=Image.new('L',(36,12));d=ImageDraw.Draw(canvas);d.fontmode='1';d.text((12,-1),char,font=font,fill=255)
-    box=canvas.getbbox();dx=max(0,12-box[0]) if box else 0
-    return canvas.crop((12-dx,0,24-dx,12))
+def font_advances_cooked():
+    """The glyph advances of ASCII 32..126 that hk-cook dialogue-art cooked with the strip."""
+    metrics=json.loads((ROOT/'data/font-metrics.json').read_text())
+    advances=metrics['advances']
+    if len(advances)!=95 or not all(1<=a<=12 for a in advances):raise ValueError('data/font-metrics.json has no usable advances')
+    return advances
 
 
 def wrap_page(text, advances, width=272, lines_per_page=8):
@@ -110,30 +109,10 @@ def door_points(source,advances):
 def cook():
     source=Source();sc=Scene(source,'level6');entries,sheet=language_sheet(source,'EN_Lore Tablets')
     f=source.file('resources.assets');font_obj=next(o for o in f.objects.values() if o.type.name=='Font' and o.read().m_Name=='Perpetua')
-    font=ImageFont.truetype(io.BytesIO(bytes(source.read(font_obj)['m_FontData'])),12)
-    advances=[max(1,math.ceil(font.getlength(chr(c)))) for c in range(32,127)]
-    if max(advances)>12:raise ValueError('Source font exceeds reserved cell')
-    pixels=[];previews=[]
-    # One-bit glyphs through FreeType's monochrome hinting: every stem lands on
-    # whole pixels, so a 12 pixel glyph is as crisp as the screen allows. The
-    # anti-aliased strip it replaces spread each stem over two grey columns.
-    # The strip keeps its 4bpp cells and its grey ramp (index 15 is the white).
-    # Cells start 4 pixels into the 256 pixel strip (GLYPH_U0, game/src/dialogue.rs): a scaled polygon
-    # can only be exact by starting one texel before its glyph, and the first cell must have a texel
-    # there. Row 0 of every cell is blank, for the same reason vertically.
-    coin=ROOT/'data/hud-coin.l'
-    for page in range(5):
-        im=Image.new('L',(256,12))
-        for col in range(21):
-            c=32+page*21+col
-            if c<=126:im.paste(glyph_cell(font,chr(c)),(GLYPH_U0+col*12,0))
-            # Cell 95, the first past ASCII: the HUD's Geo icon (hk-cook dialogue-art).
-            elif page*21+col==95 and coin.is_file():im.paste(Image.frombytes('L',(12,12),coin.read_bytes()),(GLYPH_U0+col*12,0))
-        values=bytes((v+8)//17 for v in im.tobytes())
-        pixels.extend(values[i]|(values[i+1]<<4) for i in range(0,len(values),2));previews.append(im)
-    palette=[0]+[((v*17>>3)*0x421) for v in range(1,16)]
-    blob=struct.pack('<16H',*palette)+bytes(pixels)
-    assert len(blob)==7712
+    # The glyph strip and its advances are cooked by hk-cook dialogue-art (host/hk-cook/src/font_strip.rs):
+    # anti-aliased Perpetua at the PS1 size, one baseline, advances rounded to the pixel.
+    advances=font_advances_cooked()
+    if len((ROOT/'data/read_font.hk').read_bytes())!=7712:raise ValueError('data/read_font.hk is not the 7712 byte glyph strip')
     points=[]
     for ident,(kind,t) in sc.objects.items():
         if kind!='PlayMakerFSM':continue
@@ -175,11 +154,8 @@ def cook():
         pages=','.join('&['+','.join(json.dumps(line) for line in page)+']' for page in p['pages'])
         out.append('ReadPoint{scene:'+str(p['scene'])+',source_id:'+p['source'].split(':')[1]+',polygon:&['+poly+'],marker:['+marker+'],pages:&['+pages+'],label:'+json.dumps(p['label'])+'},')
     out.extend(['];','pub const ADVANCES:[u8;95]=['+','.join(map(str,advances))+'];'])
-    (ROOT/'data/read_points.rs').write_text('\n'.join(out)+'\n');(ROOT/'data/read_font.hk').write_bytes(blob)
+    (ROOT/'data/read_points.rs').write_text('\n'.join(out)+'\n')
     audit=ROOT/'.hkpsx/read-points';audit.mkdir(exist_ok=True)
-    preview=Image.new('L',(256,60))
-    for i,im in enumerate(previews):preview.paste(im,(0,i*12))
-    preview.save(audit/'font.png')
     (audit/'provenance.json').write_text(json.dumps({'points':points,'sheet':sheet,'font_source':source.sid(font_obj),'font_sha256':hashlib.sha256(font_obj.get_raw_data()).hexdigest(),
       'outputs':{name:hashlib.sha256((ROOT/'data'/name).read_bytes()).hexdigest() for name in ['read_points.rs','read_font.hk']},
       'adaptations':['Bounded static page layout at320x240','Cross advances, Circle closes','Original hero alignment/turn animation, dialogue sounds and Focus-specific prompt art remain unimplemented']},indent=2)+'\n')

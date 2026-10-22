@@ -377,10 +377,12 @@ fn charge_on_damage(s: &State, vitals: &mut Vitals, params: VitalParams) {
 // The board's own pad bits. `pause` holds its copy to these, so the two panels
 // sharing one pad cannot silently answer different buttons.
 pub const UP: u16 = 0x10;
+pub const RIGHT: u16 = 0x20;
 pub const DOWN: u16 = 0x40;
+pub const LEFT: u16 = 0x80;
 pub const CIRCLE: u16 = 0x2000;
 pub const CROSS: u16 = 0x4000;
-/// The cursor and the last refusal on the pause charm screen.
+/// The cursor (a charm's index, 0 to 39) and the last refusal on the pause charm screen.
 pub struct Screen {
     pub open: bool,
     pub row: usize,
@@ -399,23 +401,29 @@ impl Screen {
         self.row = 0;
         self.message = None;
     }
-    /// The window of rows the cursor sits in, so the list scrolls a page at a
-    /// time rather than one row at a time under a fixed cursor.
-    pub fn top(&self) -> usize {
-        self.row / VISIBLE * VISIBLE
-    }
     /// One edge-triggered step. Returns true when the screen has closed.
     pub fn step(&mut self, press: u16) -> bool {
         if press & CIRCLE != 0 {
             self.open = false;
             return true;
         }
-        if press & UP != 0 {
+        // The board is a grid of GRID_COLS slots a row, as the source's is: left and right step a
+        // slot (and wrap through the whole collection), up and down a row (and wrap round the
+        // columns, so the cursor stays in its column).
+        let before = self.row;
+        if press & LEFT != 0 {
             self.row = (self.row + CHARM_COUNT - 1) % CHARM_COUNT;
-            self.message = None;
+        }
+        if press & RIGHT != 0 {
+            self.row = (self.row + 1) % CHARM_COUNT;
+        }
+        if press & UP != 0 {
+            self.row = (self.row + CHARM_COUNT - GRID_COLS) % CHARM_COUNT;
         }
         if press & DOWN != 0 {
-            self.row = (self.row + 1) % CHARM_COUNT;
+            self.row = (self.row + GRID_COLS) % CHARM_COUNT;
+        }
+        if self.row != before {
             self.message = None;
         }
         if press & CROSS != 0 {
@@ -429,7 +437,8 @@ impl Screen {
 #[cfg(not(test))]
 mod presentation {
     use super::*;
-    use crate::dialogue::{panel_number, panel_text, panel_width};
+    use crate::dialogue::{panel_text, panel_text_gain, panel_width};
+    use crate::dialogue_art::{DIALOGUE_BOARD_NOTCH, DIALOGUE_BOARD_NOTCH_LIT, DIALOGUE_BOARD_SLOT};
     use psx_gpu::{
         material::{BlendMode, TextureMaterial},
         ot::OrderingTable,
@@ -443,29 +452,40 @@ mod presentation {
     /// Animation-cache keys above the ability clips', which are themselves
     /// above the Shade's. A pause screen is reachable from every view, so these
     /// icons can no more ride in a room atlas than the Shade can: they stay in
-    /// linked RAM and reach VRAM through the shared 64x64 slots on demand.
+    /// linked RAM and reach VRAM through the shared 64x64 slots on demand. The
+    /// board shows every slot at once, so the icons travel sixteen to a slot
+    /// (`ICON_SHEETS` keys, not one a charm).
     pub const KEY_BASE: u16 =
         crate::ability_art::KEY_BASE + crate::ability_art::ABILITY_FRAMES.len() as u16;
-    const _: () = assert!(KEY_BASE as usize + CHARM_COUNT <= hk_cache::MAX_KEYS);
+    /// Keys the sheets take.
+    pub const KEYS: usize = ICON_SHEETS;
+    const _: () = assert!(KEY_BASE as usize + KEYS <= hk_cache::MAX_KEYS);
     const _: () = assert!(
-        ICON_BYTES <= 2048,
-        "an icon has to reach VRAM in one slot upload"
+        SHEET_BYTES <= 2048,
+        "a sheet has to reach VRAM in one slot upload"
     );
-    // The board's own claim on the cache. It is not the whole story: the frozen
-    // view behind the panel keeps requesting its enemies, whose cap is larger
-    // than what is left, so `append_needed` yields rather than asserting.
-    const _: () = assert!(VISIBLE + hk_cache::RESERVED_SLOTS <= hk_cache::MAX_REQUESTS);
-    /// Frames the board wanted an icon for and could not have, because the view
+    const _: () = assert!(ICON_PX as usize * ICONS_PER_SHEET_ROW == 64);
+    // The board's own claim on the cache: the sheets and its three art tiles. It is not the
+    // whole story: the frozen view behind the panel keeps requesting its enemies, whose cap is
+    // larger than what is left, so `append_needed` yields rather than asserting.
+    const _: () = assert!(KEYS + 3 + hk_cache::RESERVED_SLOTS <= hk_cache::MAX_REQUESTS);
+    const PER_SHEET: usize = ICONS_PER_SHEET_ROW * ICONS_PER_SHEET_ROW;
+    const _: () = assert!(ICON_SHEETS * PER_SHEET >= CHARM_COUNT);
+    /// Frames the board wanted its icons for and could not have, because the view
     /// behind it had already claimed every request the cache takes in a frame.
     #[no_mangle]
     pub static mut HK_CHARM_ICONS_CROWDED: u32 = 0;
-    /// The row window `append_needed` declared to the animation cache this
-    /// frame. `panel` draws for this rather than for its own current window, so
-    /// a board that opened after the working set was fixed draws no icon that
-    /// frame instead of asking the cache for a slot it was never given.
-    static mut PREPARED: Option<usize> = None;
-    static mut ICONS: [QuadTextured; VISIBLE] =
-        [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (128, 128, 128)) }; VISIBLE];
+    /// Whether `append_needed` declared the sheets to the animation cache this
+    /// frame. `panel` draws icons only then, so a board that opened after the
+    /// working set was fixed draws none that frame instead of asking the cache
+    /// for a slot it was never given.
+    static mut PREPARED: bool = false;
+    /// Worn charms the top row seats (`ROW_X` to the right margin, `ICON_PITCH` apart).
+    const EQUIPPED_SLOTS: usize = 11;
+    /// A grid slot's icon for every charm found, and the worn ones a second time on top.
+    const MAX_ICONS: usize = CHARM_COUNT + EQUIPPED_SLOTS;
+    static mut ICONS: [QuadTextured; MAX_ICONS] =
+        [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (128, 128, 128)) }; MAX_ICONS];
     static mut ICON_COUNT: usize = 0;
 
     /// One resident CLUT row per cooked palette, above the four the ability
@@ -488,49 +508,46 @@ mod presentation {
             );
         }
     }
-    /// Texels for one charm icon, for the animation cache's upload closure.
-    /// Every icon is the same square, so the offset is a multiply rather than
-    /// the `Frame` table the Shade and the ability clips carry.
-    pub fn texels(index: usize) -> Option<(&'static [u8], u16, u16)> {
-        if index >= CHARM_COUNT {
+    /// Texels of one icon sheet, for the animation cache's upload closure: four icons to a
+    /// row of the 64 texel slot, in charm order, the last sheet only as tall as it is full.
+    pub fn texels(sheet: usize) -> Option<(&'static [u8], u16, u16)> {
+        if sheet >= ICON_SHEETS {
             return None;
         }
-        let start = ICON_PALETTE_BYTES + index * ICON_BYTES;
-        Some((&ICON_DATA[start..start + ICON_BYTES], ICON_PX, ICON_PX))
+        let icons = (CHARM_COUNT - sheet * PER_SHEET).min(PER_SHEET);
+        let height = icons.div_ceil(ICONS_PER_SHEET_ROW) * ICON_PX as usize;
+        let start = ICON_PALETTE_BYTES + sheet * SHEET_BYTES;
+        Some((&ICON_DATA[start..start + 32 * height], 64, height as u16))
     }
-    /// The visible rows' animation keys, for the frame's working set. A board
-    /// that is not on screen adds nothing, so an unpaused frame pays one branch
-    /// for this.
+    /// The sheets' animation keys, for the frame's working set. A board that is not on screen
+    /// adds nothing, so an unpaused frame pays one branch for this.
     ///
     /// `paused` is not redundant with `screen.open`. Start unpauses without
     /// going through `pause::State::step`, so the board can stay open behind
     /// resumed play until the next `enter` resets it, and the same `paused` is
     /// what `dialogue::prepare` already gates the panel on. Without it those
-    /// six keys would be claimed out of the cache all through that play.
+    /// keys would be claimed out of the cache all through that play.
     #[inline(never)]
     pub fn append_needed(paused: bool, screen: &Screen, needed: &mut [u16], len: &mut usize) {
-        unsafe { PREPARED = None };
+        unsafe { PREPARED = false };
         if !paused || !screen.open {
             return;
         }
-        let top = screen.top();
-        let rows = VISIBLE.min(CHARM_COUNT - top);
-        if *len + rows > needed.len() {
+        if *len + KEYS > needed.len() {
             // The view behind the board already needs every request the cache
             // takes this frame. The icons are what can wait a frame; the view
-            // cannot, and losing rows off the board to fit would be worse than
-            // a text-only page.
+            // cannot.
             unsafe { HK_CHARM_ICONS_CROWDED = HK_CHARM_ICONS_CROWDED.saturating_add(1) };
             return;
         }
-        for charm in top..top + rows {
-            needed[*len] = KEY_BASE + charm as u16;
+        for sheet in 0..KEYS {
+            needed[*len] = KEY_BASE + sheet as u16;
             *len += 1;
         }
-        unsafe { PREPARED = Some(top) };
+        unsafe { PREPARED = true };
     }
     /// Added between the panel box and the panel text, so an icon sits on the
-    /// board and under the row it belongs to. Consumes the set it draws.
+    /// board and under the text. Consumes the set it draws.
     pub fn append_icons(ot: &mut OrderingTable<1>) {
         unsafe {
             for i in (0..ICON_COUNT).rev() {
@@ -539,9 +556,12 @@ mod presentation {
             ICON_COUNT = 0;
         }
     }
-    fn icon(index: usize, x: i16, y: i16) {
-        let key = KEY_BASE + index as u16;
+    fn icon(index: usize, x: i16, y: i16, gain: u8) {
+        let key = KEY_BASE + (index / PER_SHEET) as u16;
+        let k = index % PER_SHEET;
         let (u, v) = crate::render::animation_uv(key);
+        let u = u + (k % ICONS_PER_SHEET_ROW) as u8 * ICON_PX as u8;
+        let v = v + (k / ICONS_PER_SHEET_ROW) as u8 * ICON_PX as u8;
         let right = (u16::from(u) + ICON_PX - 1) as u8;
         let bottom = (u16::from(v) + ICON_PX - 1) as u8;
         let clut = Clut::new(
@@ -551,71 +571,100 @@ mod presentation {
         .uv_clut_word();
         let (x1, y1) = (x + ICON_PX as i16, y + ICON_PX as i16);
         unsafe {
+            assert!(ICON_COUNT < MAX_ICONS);
             ICONS[ICON_COUNT] = QuadTextured::with_material(
                 [(x, y), (x1, y), (x, y1), (x1, y1)],
                 [(u, v), (right, v), (u, bottom), (right, bottom)],
                 TextureMaterial::blended(
                     clut,
                     crate::render::animation_tpage_word(key),
-                    (128, 128, 128),
+                    (gain, gain, gain),
                     BlendMode::Average,
                 ),
             );
             ICON_COUNT += 1;
         }
     }
-    /// The charm board, over the paused view. Rows carry the icon, the
-    /// collection mark, the name and the notch cost; the selected charm's
-    /// description fills the bottom of the box, and a refusal replaces the
-    /// footer while it stands. Every position is cooked, because the icon size
-    /// sets the row pitch and the row pitch sets everything under it.
+    /// Where slot `index` of the grid sits: ten to a row, every second row shifted in.
+    pub fn slot_xy(index: usize) -> (i16, i16) {
+        let (col, row) = ((index % GRID_COLS) as i16, (index / GRID_COLS) as i16);
+        (GRID_X + col * COL_PITCH + (row & 1) * ODD_SHIFT, GRID_Y + row * ROW_PITCH)
+    }
+    /// The charm board, over the paused view: the equipped charms and the notch circles on top
+    /// (lit as far as the equipped charms spend them, tinted past the board's own notches), the
+    /// whole collection as a grid of slots (an empty ring where a charm has not been found,
+    /// the icon where it has, a lit mark on the worn ones), and under it the chosen charm's
+    /// name, cost and description; a refusal replaces the footer while it stands.
     pub fn panel(screen: &Screen) {
         unsafe { ICON_COUNT = 0 };
-        let top = screen.top();
-        crate::dialogue::board_frame(
-            ROW_TOP + (screen.row - top) as i16 * ROW_PITCH,
-            ROW_PITCH,
-        );
-        panel_text(160 - panel_width("Charms") / 2, TITLE_Y, "Charms");
         let s = state();
-        let label = if s.overcharmed() {
-            "Overcharmed"
-        } else {
-            "Notches"
-        };
-        panel_text(110, NOTCH_Y, label);
-        panel_number(110 + panel_width(label) + 6, NOTCH_Y, u32::from(s.filled()));
-        panel_text(110 + panel_width(label) + 18, NOTCH_Y, "/");
-        panel_number(110 + panel_width(label) + 26, NOTCH_Y, u32::from(s.notches));
-        let drawable = unsafe { PREPARED } == Some(top);
-        for offset in 0..VISIBLE {
-            let charm = top + offset + 1;
-            if charm > CHARM_COUNT {
-                break;
+        let sel = screen.row;
+        let (sx, sy) = slot_xy(sel);
+        crate::dialogue::board_frame(sx - 9, sx + SLOT_PX + 9, sy - 2, SLOT_PX + 4);
+        let art = crate::dialogue_art::board_prepared();
+        let icons = unsafe { PREPARED } && art;
+        // Equipped, then Notches, each a label and a row.
+        panel_text(LABEL_X, EQUIPPED_Y + 2, "Equipped");
+        let mut x = ROW_X;
+        let mut seated = 0;
+        for charm in 1..=CHARM_COUNT {
+            if s.equipped(charm) && seated < EQUIPPED_SLOTS {
+                if icons {
+                    icon(charm - 1, x, EQUIPPED_Y, 128);
+                }
+                x += ICON_PITCH;
+                seated += 1;
             }
-            let y = ROW_TOP + offset as i16 * ROW_PITCH;
-            let text_y = y + ROW_TEXT_OFFSET;
-            let gain = crate::dialogue::row_gain(charm == screen.row + 1);
-            if drawable {
-                icon(charm - 1, ICON_X, y);
-            }
-            crate::dialogue::panel_text_gain(
-                MARK_X,
-                text_y,
-                if s.equipped(charm) {
-                    "E"
-                } else if s.owns(charm) {
-                    "o"
-                } else {
-                    "-"
-                },
-                gain,
-            );
-            crate::dialogue::panel_text_gain(NAME_X, text_y, State::charm(charm).name, gain);
-            panel_number(COST_X, text_y, u32::from(State::charm(charm).cost));
         }
-        for (i, line) in State::charm(screen.row + 1).lines.iter().enumerate() {
-            panel_text(28, DESC_TOP + i as i16 * DESC_PITCH, line);
+        panel_text(
+            LABEL_X,
+            NOTCH_Y,
+            if s.overcharmed() { "Overcharmed" } else { "Notches" },
+        );
+        if art {
+            let filled = usize::from(s.filled());
+            for i in 0..filled.max(usize::from(s.notches)) {
+                let (piece, tint) = if i >= usize::from(s.notches) {
+                    (DIALOGUE_BOARD_NOTCH_LIT, 0x70) // spent past the board's own notches
+                } else if i < filled {
+                    (DIALOGUE_BOARD_NOTCH_LIT, 0x80)
+                } else {
+                    (DIALOGUE_BOARD_NOTCH, 0x80)
+                };
+                crate::dialogue::board_art(piece, ROW_X + i as i16 * NOTCH_PITCH, NOTCH_Y + 1, tint);
+            }
+        }
+        for charm in 1..=CHARM_COUNT {
+            let (x, y) = slot_xy(charm - 1);
+            if s.owns(charm) {
+                if icons {
+                    icon(charm - 1, x + 1, y + 1, if charm - 1 == sel { 128 } else { 100 });
+                }
+                if s.equipped(charm) && art {
+                    crate::dialogue::board_art(DIALOGUE_BOARD_NOTCH_LIT, x + SLOT_PX - 8, y - 3, 0x80);
+                }
+            } else if art {
+                crate::dialogue::board_art(DIALOGUE_BOARD_SLOT, x, y, if charm - 1 == sel { 0x80 } else { 0x50 });
+            }
+        }
+        // The chosen charm, once it has been found; the source's `Collected Charms` shows nothing
+        // for an empty slot either.
+        let charm = State::charm(sel + 1);
+        if s.owns(sel + 1) {
+            panel_text_gain(DESC_X, NAME_Y, charm.name, 0x80);
+            if art {
+                for i in 0..usize::from(charm.cost) {
+                    crate::dialogue::board_art(
+                        DIALOGUE_BOARD_NOTCH_LIT,
+                        320 - DESC_X - 10 - i as i16 * NOTCH_PITCH,
+                        NAME_Y + 1,
+                        0x80,
+                    );
+                }
+            }
+            for (i, line) in charm.lines.iter().enumerate() {
+                panel_text(DESC_X, DESC_TOP + i as i16 * DESC_PITCH, line);
+            }
         }
         let footer = match screen.message {
             Some(refusal) => refusal.message(),
@@ -625,7 +674,7 @@ mod presentation {
     }
 }
 #[cfg(not(test))]
-pub use presentation::{append_icons, append_needed, panel, texels, upload, KEY_BASE};
+pub use presentation::{append_icons, append_needed, panel, texels, upload, KEYS, KEY_BASE};
 
 #[cfg(test)]
 mod tests {
@@ -836,27 +885,29 @@ mod tests {
         assert!(State::restore(owned, equipped, notches, true).is_some());
     }
     #[test]
-    fn the_screen_pages_the_list_and_reports_the_refusal() {
+    fn the_cursor_walks_the_grid_and_reports_the_refusal() {
         *state() = State::new();
         let mut screen = Screen::new();
         screen.enter();
-        assert_eq!(screen.top(), 0);
-        for _ in 0..VISIBLE {
-            screen.step(0x40);
-        }
-        assert_eq!(screen.row, VISIBLE);
-        assert_eq!(screen.top(), VISIBLE);
-        screen.step(0x10);
-        assert_eq!(screen.top(), 0);
-        // Up from the first row wraps to the last, as the pause rows do.
-        screen.row = 0;
-        screen.step(0x10);
+        assert_eq!(screen.row, 0);
+        // Right and left step a slot and wrap through the whole collection.
+        screen.step(RIGHT);
+        assert_eq!(screen.row, 1);
+        screen.step(LEFT);
+        screen.step(LEFT);
         assert_eq!(screen.row, CHARM_COUNT - 1);
+        // Down and up step a row and keep the column, wrapping round it.
+        screen.row = 3;
+        screen.step(DOWN);
+        assert_eq!(screen.row, 3 + GRID_COLS);
+        screen.step(UP);
+        screen.step(UP);
+        assert_eq!(screen.row, 3 + CHARM_COUNT - GRID_COLS);
         *state() = State::new();
         screen.row = 0;
         screen.step(0x4000);
         assert_eq!(screen.message, Some(Refusal::NotOwned));
-        screen.step(0x40);
+        screen.step(DOWN);
         assert_eq!(screen.message, None);
         assert!(screen.step(0x2000) && !screen.open);
     }
@@ -867,33 +918,33 @@ mod tests {
             .iter()
             .all(|&p| (p as usize) < ICON_PALETTE_COUNT));
         assert_eq!(ICON_PALETTE_BYTES, ICON_PALETTE_COUNT * 32);
-        // A 4bpp row is the width rounded up to four pixels, and one icon has
-        // to reach VRAM in a single 64x64 animation slot upload.
+        // A 4bpp row is the width rounded up to four pixels; four icons tile one row of a 64
+        // texel slot, and a sheet has to reach VRAM in a single slot upload.
         assert_eq!(
             ICON_BYTES,
             (ICON_PX as usize + 3) / 4 * 2 * ICON_PX as usize
         );
-        assert!(ICON_BYTES <= 2048);
+        assert_eq!(ICON_PX as usize * ICONS_PER_SHEET_ROW, 64);
+        assert!(SHEET_BYTES <= 2048);
+        let per_sheet = ICONS_PER_SHEET_ROW * ICONS_PER_SHEET_ROW;
+        assert_eq!(ICON_SHEETS, (CHARM_COUNT + per_sheet - 1) / per_sheet);
     }
     #[test]
     fn the_cooked_board_seats_every_part_inside_the_screen() {
-        // `host/charms.py::panel_layout` picked the icon size against these 240
-        // scanlines and emitted the positions. This is the same arithmetic from
-        // the other side, so a hand-edited layout fails here rather than
-        // overlapping two rows on a television.
+        // `host/charms.py::panel_layout` fitted the grid to the width and the parts to the 240
+        // scanlines and emitted the positions. This is the same arithmetic from the other
+        // side, so a hand-edited layout fails here rather than overlapping on a television.
         const GLYPH: i16 = 12;
-        let (x, top, width, height) = PANEL_RECT;
-        let bottom = top + height as i16;
-        assert!(x > 0 && i32::from(x) + i32::from(width) < 320);
-        assert!(top > 0 && bottom < 240);
-        assert!(ROW_PITCH >= ICON_PX as i16 && ROW_TEXT_OFFSET >= 0);
-        assert!(TITLE_Y > top && NOTCH_Y >= TITLE_Y + GLYPH);
-        assert!(ROW_TOP >= NOTCH_Y + GLYPH);
-        let rows_end = ROW_TOP + (VISIBLE as i16 - 1) * ROW_PITCH + ICON_PX as i16;
-        assert!(
-            DESC_TOP >= rows_end,
-            "the last row runs into the description"
-        );
+        let rows = ((CHARM_COUNT + GRID_COLS - 1) / GRID_COLS) as i16;
+        let grid_right = GRID_X + (GRID_COLS as i16 - 1) * COL_PITCH + ODD_SHIFT + SLOT_PX;
+        assert!(GRID_X >= 8 && grid_right <= 320 - 8, "the grid leaves the screen");
+        assert!(SLOT_PX >= ICON_PX as i16 + 2 && COL_PITCH >= SLOT_PX && ROW_PITCH >= SLOT_PX);
+        assert!(ODD_SHIFT + SLOT_PX <= COL_PITCH * 2, "a shifted row crosses a slot");
+        let grid_bottom = GRID_Y + (rows - 1) * ROW_PITCH + SLOT_PX;
+        // Top to bottom: equipped icons, notch circles, the grid, the name, the description, the footer.
+        assert!(EQUIPPED_Y >= 0 && EQUIPPED_Y + ICON_PX as i16 <= NOTCH_Y);
+        assert!(NOTCH_Y + 11 <= GRID_Y - 2, "the notch row runs into the grid");
+        assert!(NAME_Y >= grid_bottom && NAME_Y + GLYPH <= DESC_TOP);
         let lines = (1..=CHARM_COUNT)
             .map(|n| State::charm(n).lines.len())
             .max()
@@ -902,44 +953,37 @@ mod tests {
             FOOTER_Y >= DESC_TOP + (lines - 1) * DESC_PITCH + GLYPH,
             "the longest description runs into the footer"
         );
-        assert!(FOOTER_Y + GLYPH <= bottom);
-        // The icon column has to clear the cursor and leave the name its width.
-        assert!(ICON_X >= CURSOR_X + GLYPH && MARK_X >= ICON_X + ICON_PX as i16);
-        assert!(NAME_X > MARK_X && COST_X > NAME_X + 100);
+        assert!(FOOTER_Y + GLYPH <= 240 - 8);
+        // The labels clear the circles and icons they head, and twelve notches and a
+        // description's width fit a line.
+        assert!(LABEL_X + 61 <= ROW_X, "Overcharmed runs into its row");
+        assert!(ROW_X + 17 * NOTCH_PITCH <= 320 - 8, "seventeen circles run off the screen");
+        assert!(ROW_X + 11 * ICON_PITCH <= 320 - 8, "eleven equipped icons run off the screen");
+        assert!(DESC_X + 264 <= 320 - 8);
     }
     #[test]
     fn panel_fits_the_glyph_budget() {
-        // `dialogue` draws one glyph per non-space character into a 416-entry
-        // table and asserts on overflow, so the worst page has to fit at cook
-        // time rather than at the moment the player opens the screen.
-        let fixed = [
-            "Charms",
-            "Overcharmed",
-            "/",
-            ">",
-            "E",
-            "X: equip    O: back",
-        ]
-        .iter()
-        .map(|s| s.len())
-        .sum::<usize>()
-            + 8;
-        let widest_rows = (0..CHARM_COUNT / VISIBLE)
-            .map(|page| {
-                (0..VISIBLE)
-                    .map(|i| State::charm(page * VISIBLE + i + 1).name.len() + 2)
-                    .sum::<usize>()
+        // `dialogue` draws one packet per non-space character and per art piece into a
+        // 416-entry table and asserts on overflow, so the worst board has to fit at cook time
+        // rather than at the moment the player opens the screen. The worst board: the chosen
+        // charm owned with the longest description, every other slot an empty ring (but the
+        // owned one), seventeen notch circles, eleven worn-charm marks and a full cost.
+        let fixed = ["Equipped", "Overcharmed", "X: equip    O: back"]
+            .iter()
+            .map(|s| s.len())
+            .sum::<usize>();
+        let widest = (1..=CHARM_COUNT)
+            .map(|n| {
+                let c = State::charm(n);
+                c.name.len() + c.lines.iter().map(|l| l.len()).sum::<usize>()
             })
             .max()
             .unwrap_or(0);
-        let widest_text = (1..=CHARM_COUNT)
-            .map(|n| State::charm(n).lines.iter().map(|l| l.len()).sum::<usize>())
-            .max()
-            .unwrap_or(0);
+        let art = (CHARM_COUNT - 1) + 17 + 11 + 6;
         assert!(
-            fixed + widest_rows + widest_text <= crate::dialogue::CAP,
+            fixed + widest + art <= crate::dialogue::CAP,
             "charm panel needs {} glyphs",
-            fixed + widest_rows + widest_text
+            fixed + widest + art
         );
     }
 }

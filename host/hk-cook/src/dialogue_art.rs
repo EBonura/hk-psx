@@ -53,13 +53,20 @@ enum Origin {
 /// stop are drawn larger than their share of the fleur so that they read at
 /// 320x240. The pause screen's two fleurs are the final frames of their
 /// animations (`pause_top_fleur0008`, `bottom_fleur0008`).
-const PIECES: [(&str, Origin, usize, usize); 6] = [
+const PIECES: [(&str, Origin, usize, usize); 9] = [
     ("fleur_top", Origin::Tk(35), 192, 25),
     ("fleur_bottom", Origin::Tk(44), 128, 14),
     ("arrow", Origin::Tk(11), 15, 17),
     ("stop", Origin::Tk(15), 14, 17),
     ("pause_top", Origin::Sprite(3137), 160, 46),
     ("pause_bottom", Origin::Sprite(1697), 112, 24),
+    // The charm board's own parts (the source's `Charms` pane: the slot backboard of `Collected Charms`
+    // and the unlit and lit notch circles of `Notches`; its cursor is four corner flourishes, drawn
+    // as flat corners here because a rectangle cannot be flipped), after everything the
+    // other screens ask for: the guest asks for this range alone.
+    ("board_slot", Origin::Sprite(3731), 18, 18),
+    ("board_notch", Origin::Sprite(2531), 10, 10),
+    ("board_notch_lit", Origin::Sprite(2221), 10, 10),
 ];
 
 /// Coverage to one of 16 levels. Thin strokes lose their contrast when the
@@ -130,6 +137,29 @@ struct Tile {
     height: usize,
     /// Left edge of the tile inside its piece.
     dx: usize,
+}
+
+/// The source's Perpetua font: its serialized name and the TrueType bytes.
+fn font_data(source: &Source, resources: &std::sync::Arc<hk_unity::serialized::SerializedFile>) -> Result<(String, Vec<u8>)> {
+    for info in resources.objects.iter().filter(|i| i.class_id == 128) {
+        let object = source.object(resources, info.path_id).map_err(|e| e.to_string())?;
+        let value = source.read(&object).map_err(|e| e.to_string())?;
+        if value.get("m_Name").and_then(|n| n.str()).as_deref() != Some("Perpetua") {
+            continue;
+        }
+        let bytes = match value.get("m_FontData") {
+            Some(hk_unity::Value::Bytes(b)) => b.clone(),
+            Some(hk_unity::Value::List(l)) => l.iter().map(|v| v.int().unwrap_or(0) as u8).collect(),
+            _ => return err("Perpetua has no font data"),
+        };
+        return Ok((object.sid(), bytes));
+    }
+    err("no Perpetua font in resources.assets")
+}
+
+fn hk_sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
@@ -279,6 +309,28 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
             shown.data[i * 4..i * 4 + 4].copy_from_slice(&[g, g, g, if g == 0 { 0 } else { 255 }]);
         }
         save_rgba(&preview_dir.join("coin.png"), &shown)?;
+        // The glyph strip: Perpetua, rasterised at the PS1 size (font_strip.rs), with the coin in cell 95.
+        let font = font_data(&source, &resources)?;
+        let strip = crate::font_strip::cook(&font.1, Some(&cell))?;
+        std::fs::write(root.join("data/read_font.hk"), &strip.blob).map_err(|e| e.to_string())?;
+        let advances: Vec<String> = strip.advances.iter().map(|a| a.to_string()).collect();
+        std::fs::write(
+            root.join("data/font-metrics.json"),
+            format!(
+                "{{\n  \"font\": \"Perpetua\",\n  \"source\": \"{}\",\n  \"font_sha256\": \"{}\",\n  \"em_px\": {},\n  \"advances\": [{}]\n}}\n",
+                font.0,
+                hk_sha256(&font.1),
+                crate::font_strip::EM,
+                advances.join(", ")
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+        let mut shown = Image::new(Mode::Rgba, 256, 60);
+        for (i, g) in strip.preview.iter().enumerate() {
+            shown.data[i * 4..i * 4 + 4].copy_from_slice(&[*g, *g, *g, 255]);
+        }
+        save_rgba(&preview_dir.join("font.png"), &shown)?;
+        println!("Font strip: {} bytes, shifted for an overhang: {:?}", strip.blob.len(), strip.shifted);
     }
     if blob.len() > 9216 {
         return err(format!(

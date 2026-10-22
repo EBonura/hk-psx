@@ -1,7 +1,11 @@
 //! Boot-only functional menu with original title assets and Perpetua glyphs.
 //! Scene admission reuses its title texture storage; no gameplay allocation.
 use crate::input::poll_bits;
-use psx_gpu::{self as gpu, framebuf::FrameBuffer, material::TextureMaterial};
+use psx_gpu::{
+    self as gpu,
+    framebuf::FrameBuffer,
+    material::{BlendMode, TextureMaterial},
+};
 use psx_pad::button;
 use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
 
@@ -105,10 +109,12 @@ fn text(x: i16, y: i16, value: &str, gain: u8) {
                 12,
                 12,
                 ((state::GLYPH_U0 + i % 21 * 12) as u8, 244),
-                TextureMaterial::opaque(
+                // Adding: the glyph palette's entries are semi-transparent (font_strip.rs).
+                TextureMaterial::blended(
                     Clut::new(320, 481).uv_clut_word(),
                     Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(0),
                     (gain, gain, gain),
+                    BlendMode::Add,
                 ),
             );
         }
@@ -174,12 +180,14 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                     pointers(160 - half, 160 + half, y, gain);
                 }
             }
-            centered(222, "Up/Down: choose    X/START: select", gain);
         }
         Page::Profiles => {
-            centered(120, "SELECT SAVE", gain);
+            // A page of its own, as the source's Select Game is: no logo behind it.
+            gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
+            flourishes(24, 224, gain);
+            centered(51, "SELECT GAME", gain);
             for i in 0..crate::save::PROFILES {
-                let y = 142 + i as i16 * 18;
+                let y = 84 + i as i16 * 24;
                 let g = if i == menu.selected {
                     gain
                 } else {
@@ -192,19 +200,17 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                 }
             }
             centered(
-                218,
-                if fault.is_empty() {
-                    "X: select    O: back"
-                } else {
-                    fault
-                },
+                208,
+                if fault.is_empty() { "O: back" } else { fault },
                 gain,
             );
         }
         Page::Options => {
-            // No heading: the logo's flourish reaches y 142, and seven rows need the space under it.
+            gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
+            flourishes(24, 224, gain);
+            centered(51, "OPTIONS", gain);
             for (i, label) in state::OPTION_ITEMS.iter().enumerate() {
-                let y = 134 + i as i16 * 12;
+                let y = 72 + i as i16 * 17;
                 let g = if i == menu.selected {
                     gain
                 } else {
@@ -227,7 +233,7 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                     pointer(62, y, gain);
                 }
             }
-            centered(221, "Left/Right: adjust    O: back", gain);
+            centered(204, "Left/Right: adjust    O: back", gain);
         }
         Page::Controls => {
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
